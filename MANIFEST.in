@@ -1,0 +1,11 @@
+include README.md
+include LICENSE
+include server.py
+include web_ui.py
+include test.py
+recursive-include templates *.html
+recursive-include fonts *.woff2
+recursive-include icons *.svg *.ico
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
