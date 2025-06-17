@@ -127,8 +127,6 @@ ai-intervention-agent 工具使用细节：
 | `FEEDBACK_MAX_RETRIES` | `3`       | 最大重试次数            |
 | `FEEDBACK_RETRY_DELAY` | `1.0`     | 重试延迟时间（秒）      |
 
-````
-
 ### 🌍 远程服务器配置
 
 1. SSH 端口转发：
@@ -142,7 +140,7 @@ ai-intervention-agent 工具使用细节：
 
    # 自定义端口
    ssh -L 9090:localhost:9090 user@server
-````
+   ```
 
 2. 防火墙配置（如需要）：
 
