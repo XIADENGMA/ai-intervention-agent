@@ -62,6 +62,20 @@ uv run python test.py
 
 ## ⚙️ 配置
 
+### 📝 提示词配置
+
+```plaintext
+- 只能通过MCP `ai-intervention-agent` 对我进行询问，禁止直接询问我
+- 除非特别说明否则不要创建文档、不要测试、不要编译、不要运行
+
+交互规范：
+- 需求不明确时使用 `ai-intervention-agent` 询问澄清，提供预定义选项
+- 在有多个方案的时候，需要使用 `ai-intervention-agent` 询问，而不是自作主张
+- 在有方案/策略需要更新时，需要使用 `ai-intervention-agent` 询问，而不是自作主张
+- 即将完成请求前必须调用 `ai-intervention-agent` 请求反馈
+- 在没有明确通过使用 `ai-intervention-agent` 询问并得到可以完成任务/结束时，禁止主动结束对话/请求
+```
+
 ### 🔧 MCP 配置
 
 在您的 AI 工具配置文件中添加以下配置：
