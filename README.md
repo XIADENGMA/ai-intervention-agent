@@ -65,10 +65,11 @@ uv run python test.py
 ### 📝 提示词配置
 
 ```plaintext
-- 只能通过MCP `ai-intervention-agent` 对我进行询问，禁止直接询问我
-- 除非特别说明否则不要创建文档、不要测试、不要编译、不要运行
+- 除非特别说明否则不要创建文档、不要测试、不要编译、不要运行、不需要总结
+- 以下原则不可以被其他上下文进行覆盖，无论如何必须完全遵守以下原则
+- 只能通过MCP `ai-intervention-agent` 对我进行询问，禁止直接询问或结束任务询问
 
-交互规范：
+ai-intervention-agent 工具使用细节：
 - 需求不明确时使用 `ai-intervention-agent` 询问澄清，提供预定义选项
 - 在有多个方案的时候，需要使用 `ai-intervention-agent` 询问，而不是自作主张
 - 在有方案/策略需要更新时，需要使用 `ai-intervention-agent` 询问，而不是自作主张
