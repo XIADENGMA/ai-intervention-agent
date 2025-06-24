@@ -42,10 +42,10 @@ class WebFeedbackUI:
                 "toc",
                 "nl2br",
                 "attr_list",  # 支持属性列表
-                "def_list",   # 支持定义列表
-                "abbr",       # 支持缩写
+                "def_list",  # 支持定义列表
+                "abbr",  # 支持缩写
                 "footnotes",  # 支持脚注
-                "md_in_html", # 支持HTML中的markdown
+                "md_in_html",  # 支持HTML中的markdown
             ],
             extension_configs={
                 "codehilite": {
@@ -54,7 +54,7 @@ class WebFeedbackUI:
                     "noclasses": True,
                     "pygments_style": "monokai",
                     "guess_lang": True,  # 自动猜测语言
-                    "linenums": False,   # 不显示行号
+                    "linenums": False,  # 不显示行号
                 }
             },
         )
@@ -287,7 +287,7 @@ class WebFeedbackUI:
 
     def run(self) -> Dict[str, str]:
         """启动Web服务器并等待用户反馈"""
-        print(f"\n🌐 Web反馈界面已启动")
+        print("\n🌐 Web反馈界面已启动")
         print(f"📍 请在浏览器中打开: http://{self.host}:{self.port}")
         if self.host == "0.0.0.0":
             print(

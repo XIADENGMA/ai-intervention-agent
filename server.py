@@ -6,14 +6,12 @@ import sys
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
-from urllib.parse import urlparse
 
 import requests
 from fastmcp import FastMCP
 from pydantic import Field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
 
 mcp = FastMCP("AI Intervention Agent MCP")
 
@@ -26,8 +24,8 @@ log_handlers = [logging.StreamHandler(sys.stderr)]
 
 logging.basicConfig(
     level=logging.WARNING,  # 只显示警告和错误，减少日志噪音
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=log_handlers
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=log_handlers,
 )
 logger = logging.getLogger(__name__)
 
@@ -35,6 +33,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class WebUIConfig:
     """Web UI 配置类"""
+
     host: str
     port: int
     timeout: int = 30
@@ -65,7 +64,7 @@ def get_web_ui_config() -> WebUIConfig:
             port=port,
             timeout=timeout,
             max_retries=max_retries,
-            retry_delay=retry_delay
+            retry_delay=retry_delay,
         )
         logger.info(f"Web UI 配置加载成功: {host}:{port}")
         return config
@@ -74,7 +73,9 @@ def get_web_ui_config() -> WebUIConfig:
         raise ValueError(f"Web UI 配置错误: {e}")
 
 
-def validate_input(prompt: str, predefined_options: Optional[list] = None) -> Tuple[str, list]:
+def validate_input(
+    prompt: str, predefined_options: Optional[list] = None
+) -> Tuple[str, list]:
     """验证输入参数"""
     # 验证 prompt
     if not isinstance(prompt, str):
@@ -115,7 +116,7 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
         total=config.max_retries,
         backoff_factor=config.retry_delay,
         status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "POST"]
+        allowed_methods=["HEAD", "GET", "POST"],
     )
 
     adapter = HTTPAdapter(max_retries=retry_strategy)
@@ -260,7 +261,9 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
     if health_check_service(config):
         logger.info(f"🌐 Web 服务启动成功: http://{config.host}:{config.port}")
     else:
-        raise Exception(f"Web 服务启动超时 ({max_wait}秒)，请检查端口 {config.port} 是否被占用")
+        raise Exception(
+            f"Web 服务启动超时 ({max_wait}秒)，请检查端口 {config.port} 是否被占用"
+        )
 
 
 def update_web_content(
@@ -273,10 +276,7 @@ def update_web_content(
     target_host = "localhost" if config.host == "0.0.0.0" else config.host
     url = f"http://{target_host}:{config.port}/api/update"
 
-    data = {
-        "prompt": cleaned_summary,
-        "predefined_options": cleaned_options
-    }
+    data = {"prompt": cleaned_summary, "predefined_options": cleaned_options}
 
     session = create_http_session(config)
 
@@ -307,10 +307,10 @@ def update_web_content(
 
     except requests.exceptions.Timeout:
         logger.error(f"更新内容超时 ({config.timeout}秒)")
-        raise Exception(f"更新内容超时，请检查网络连接")
+        raise Exception("更新内容超时，请检查网络连接")
     except requests.exceptions.ConnectionError:
         logger.error(f"无法连接到 Web 服务: {url}")
-        raise Exception(f"无法连接到 Web 服务，请确认服务正在运行")
+        raise Exception("无法连接到 Web 服务，请确认服务正在运行")
     except requests.exceptions.RequestException as e:
         logger.error(f"更新内容时网络请求失败: {e}")
         raise Exception(f"更新内容失败: {e}")
@@ -364,8 +364,9 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
             feedback_response = session.get(feedback_url, timeout=5)
             if feedback_response.status_code == 200:
                 feedback_data = feedback_response.json()
-                if (feedback_data.get("status") == "success" and
-                    feedback_data.get("feedback")):
+                if feedback_data.get("status") == "success" and feedback_data.get(
+                    "feedback"
+                ):
                     logger.info("✅ 收到用户反馈")
                     return feedback_data["feedback"]
 
@@ -383,8 +384,9 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
                     feedback_response = session.get(feedback_url, timeout=5)
                     if feedback_response.status_code == 200:
                         feedback_data = feedback_response.json()
-                        if (feedback_data.get("status") == "success" and
-                            feedback_data.get("feedback")):
+                        if feedback_data.get(
+                            "status"
+                        ) == "success" and feedback_data.get("feedback"):
                             logger.info("✅ 收到用户反馈")
                             return feedback_data["feedback"]
 
@@ -395,7 +397,9 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
                 last_has_content = current_has_content
                 consecutive_errors = 0  # 重置错误计数
             else:
-                logger.warning(f"获取配置状态失败，状态码: {config_response.status_code}")
+                logger.warning(
+                    f"获取配置状态失败，状态码: {config_response.status_code}"
+                )
                 consecutive_errors += 1
 
         except requests.exceptions.Timeout:
@@ -495,7 +499,9 @@ def interactive_feedback(
             if isinstance(predefined_options, list):
                 predefined_options_list = predefined_options
             else:
-                logger.warning(f"predefined_options 类型错误，期望 list，实际 {type(predefined_options)}")
+                logger.warning(
+                    f"predefined_options 类型错误，期望 list，实际 {type(predefined_options)}"
+                )
                 predefined_options_list = None
 
         logger.info(f"收到反馈请求: {message[:50]}...")
@@ -506,10 +512,7 @@ def interactive_feedback(
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}")
         # 返回错误信息而不是抛出异常，以便 MCP 客户端能够处理
-        return {
-            "interactive_feedback": f"反馈收集失败: {str(e)}",
-            "error": True
-        }
+        return {"interactive_feedback": f"反馈收集失败: {str(e)}", "error": True}
 
 
 def main():

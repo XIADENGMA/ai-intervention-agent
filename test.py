@@ -28,7 +28,7 @@ def test_config_validation():
     print("🔧 测试配置验证...")
 
     try:
-        from server import get_web_ui_config, WebUIConfig, validate_input
+        from server import get_web_ui_config, validate_input
 
         # 测试正常配置
         config = get_web_ui_config()
@@ -57,7 +57,11 @@ def test_service_health():
     print("🏥 测试服务健康检查...")
 
     try:
-        from server import get_web_ui_config, is_web_service_running, health_check_service
+        from server import (
+            get_web_ui_config,
+            health_check_service,
+            is_web_service_running,
+        )
 
         config = get_web_ui_config()
 
@@ -84,7 +88,7 @@ def test_persistent_workflow():
     print("🔄 测试智能介入工作流程...")
 
     try:
-        from server import launch_feedback_ui, get_web_ui_config
+        from server import get_web_ui_config, launch_feedback_ui
 
         config = get_web_ui_config()
         service_url = f"http://localhost:{config.port}/api/config"
@@ -96,7 +100,10 @@ def test_persistent_workflow():
 **一个让用户能够实时控制 AI 执行过程的 MCP 工具。**
 
 支持`Cursor`、`Vscode`、`Claude Code`、`Augment`、`Windsurf`、`Trae`等 AI 工具。"""
-        options1 = ["🔄 继续了解", "✅ 立刻开始"]#"✅ 服务正常", "🔄 准备第二次测试", "📊 查看详细信息"
+        options1 = [
+            "🔄 继续了解",
+            "✅ 立刻开始",
+        ]  # "✅ 服务正常", "🔄 准备第二次测试", "📊 查看详细信息"
 
         result1 = None
 
@@ -119,7 +126,7 @@ def test_persistent_workflow():
 
         print("✅ 服务启动成功，请在浏览器中提交反馈")
         print(f"🌐 浏览器地址: http://localhost:{config.port}")
-        thread1.join(timeout=120)
+        thread1.join(timeout=300)
 
         if result1:
             print(f"✅ 第一次反馈: {result1}")
