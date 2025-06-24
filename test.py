@@ -3,6 +3,7 @@
 AI Intervention Agent 智能介入代理测试工具
 """
 
+import argparse
 import os
 import sys
 import threading
@@ -252,10 +253,112 @@ $$
         return False
 
 
+def parse_arguments():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(
+        description="AI Intervention Agent 智能介入代理测试工具"
+    )
+
+    parser.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=None,
+        help="指定测试使用的端口号 (默认使用环境变量FEEDBACK_WEB_PORT或8080)",
+    )
+
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=None,
+        help="指定测试使用的主机地址 (默认使用环境变量FEEDBACK_WEB_HOST或0.0.0.0)",
+    )
+
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="指定超时时间（秒）(默认使用环境变量FEEDBACK_TIMEOUT或30)",
+    )
+
+    parser.add_argument("--verbose", "-v", action="store_true", help="显示详细日志信息")
+
+    return parser.parse_args()
+
+
+def setup_test_environment(args):
+    """根据命令行参数设置测试环境"""
+    # 设置日志级别
+    if args.verbose:
+        import logging
+
+        logging.getLogger().setLevel(logging.DEBUG)
+        print("🔊 已启用详细日志模式")
+
+    # 设置环境变量（如果指定了参数）
+    if args.port is not None:
+        # 检查端口是否被占用
+        if check_port_availability(args.port):
+            os.environ["FEEDBACK_WEB_PORT"] = str(args.port)
+            print(f"📌 设置端口: {args.port}")
+        else:
+            print(f"⚠️ 端口 {args.port} 已被占用，将尝试自动查找可用端口...")
+            available_port = find_available_port(args.port)
+            if available_port:
+                os.environ["FEEDBACK_WEB_PORT"] = str(available_port)
+                print(f"✅ 找到可用端口: {available_port}")
+            else:
+                print("❌ 无法找到可用端口，将使用默认配置")
+
+    if args.host is not None:
+        os.environ["FEEDBACK_WEB_HOST"] = args.host
+        print(f"📌 设置主机: {args.host}")
+
+    if args.timeout is not None:
+        os.environ["FEEDBACK_TIMEOUT"] = str(args.timeout)
+        print(f"📌 设置超时: {args.timeout}秒")
+
+
+def check_port_availability(port):
+    """检查端口是否可用"""
+    try:
+        import socket
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1)
+            result = sock.connect_ex(("localhost", port))
+            return result != 0  # 端口未被占用返回True
+    except Exception:
+        return False
+
+
+def find_available_port(start_port, max_attempts=10):
+    """从指定端口开始查找可用端口"""
+    for port in range(start_port, start_port + max_attempts):
+        if 1 <= port <= 65535 and check_port_availability(port):
+            return port
+    return None
+
+
 def main():
     """主测试函数"""
     print("🧪 AI Intervention Agent 智能介入代理测试")
     print("=" * 50)
+
+    # 显示当前配置
+    try:
+        from server import get_web_ui_config
+
+        config = get_web_ui_config()
+        print("📋 当前测试配置:")
+        print(f"   主机: {config.host}")
+        print(f"   端口: {config.port}")
+        print(f"   超时: {config.timeout}秒")
+        print(f"   重试: {config.max_retries}次")
+        print("=" * 50)
+    except Exception as e:
+        print(f"⚠️ 无法获取配置: {e}")
+        print("=" * 50)
 
     # 运行所有测试
     tests = [
@@ -306,8 +409,18 @@ def main():
     else:
         print("⚠️ 部分测试失败，请检查日志")
 
+    # 显示使用示例
+    print("\n💡 使用提示:")
+    print("   指定端口: python test.py --port 9000")
+    print("   指定主机: python test.py --host 127.0.0.1")
+    print("   详细日志: python test.py --verbose")
+    print("   组合使用: python test.py --port 9000 --verbose")
+    print("   查看帮助: python test.py --help")
+
     return passed == total
 
 
 if __name__ == "__main__":
+    args = parse_arguments()
+    setup_test_environment(args)
     main()

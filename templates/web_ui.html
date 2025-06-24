@@ -469,6 +469,364 @@
         opacity: 0.8;
       }
 
+      /* 图片预览区域样式 */
+      .image-preview-container {
+        margin-bottom: 1.5rem;
+        padding: 1.5rem;
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.06) 0%,
+          rgba(255, 255, 255, 0.03) 50%,
+          rgba(255, 255, 255, 0.05) 100%
+        );
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 20px;
+        position: relative;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .image-preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .image-count-text {
+        font-size: 0.875rem;
+        color: rgba(245, 245, 247, 0.8);
+        font-weight: 500;
+      }
+
+      .clear-all-images-btn {
+        background: rgba(255, 69, 58, 0.1);
+        color: #ff453a;
+        border: 1px solid rgba(255, 69, 58, 0.2);
+        border-radius: 12px;
+        padding: 0.5rem 1rem;
+        font-size: 0.8125rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .clear-all-images-btn:hover {
+        background: rgba(255, 69, 58, 0.15);
+        border-color: rgba(255, 69, 58, 0.3);
+      }
+
+      .image-previews {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 1rem;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .image-preview-item {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        /* 移除cursor: pointer和hover动效 */
+      }
+
+      .image-preview-thumbnail {
+        width: 100%;
+        height: 80px;
+        object-fit: cover;
+        display: block;
+        /* 保留cursor: pointer用于点击放大功能 */
+        cursor: pointer;
+      }
+
+      .image-preview-info {
+        padding: 0.5rem;
+        background: rgba(0, 0, 0, 0.3);
+        color: #f5f5f7;
+        font-size: 0.75rem;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .image-preview-remove {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        background: rgba(255, 69, 58, 0.9);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        font-size: 12px;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.8;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        transform: scale(1);
+      }
+
+      .image-preview-remove:hover {
+        opacity: 1;
+        background: rgba(255, 69, 58, 1);
+        transform: scale(1.1);
+        box-shadow: 0 2px 8px rgba(255, 69, 58, 0.4);
+      }
+
+      /* 移除图片缩略图的hover动效 */
+
+      /* 图片放大预览模态框 */
+      .image-modal {
+        display: none;
+        position: fixed;
+        z-index: 10000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        backdrop-filter: blur(5px);
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+
+      .image-modal.show {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.3s ease-out;
+      }
+
+      .image-modal-content {
+        position: relative;
+        max-width: 90%;
+        max-height: 90%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .image-modal img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      }
+
+      .image-modal-close {
+        position: absolute;
+        top: -40px;
+        right: -40px;
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        font-size: 24px;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+      }
+
+      .image-modal-close:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: scale(1.1);
+      }
+
+      .image-modal-info {
+        position: absolute;
+        bottom: -50px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: white;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 8px;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      /* 移动设备优化 */
+      @media (max-width: 768px) {
+        .image-preview-container {
+          margin: 1rem 0;
+        }
+
+        .image-previews {
+          gap: 0.75rem;
+          grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        }
+
+        .image-preview-item {
+          min-height: 80px;
+        }
+
+        .image-preview-thumbnail {
+          max-height: 60px;
+        }
+
+        .image-preview-remove {
+          width: 22px;
+          height: 22px;
+          font-size: 12px;
+          top: 2px;
+          right: 2px;
+        }
+
+        .image-modal-close {
+          top: 10px;
+          right: 10px;
+          width: 40px;
+          height: 40px;
+          font-size: 20px;
+        }
+
+        .image-modal-info {
+          bottom: 10px;
+          left: 10px;
+          right: 10px;
+          font-size: 12px;
+        }
+
+        /* 触摸友好的按钮大小 */
+        .btn {
+          min-height: 44px;
+          padding: 0.75rem 1rem;
+        }
+
+        /* 拖拽提示优化 */
+        .drag-overlay-content {
+          padding: 1.5rem;
+          max-width: 300px;
+        }
+
+        .drag-icon {
+          font-size: 3rem;
+        }
+
+        .drag-text {
+          font-size: 1.25rem;
+        }
+      }
+
+      /* 触摸设备优化 - 已移除所有hover动效，无需特殊处理 */
+
+      /* 拖拽覆盖层样式 */
+      .drag-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(10px);
+      }
+
+      .drag-overlay-content {
+        text-align: center;
+        color: #f5f5f7;
+        padding: 2rem;
+        border: 2px dashed rgba(0, 122, 255, 0.5);
+        border-radius: 20px;
+        background: rgba(0, 122, 255, 0.1);
+        max-width: 400px;
+      }
+
+      .drag-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.8;
+      }
+
+      .drag-text {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+
+      .drag-subtext {
+        font-size: 1rem;
+        opacity: 0.7;
+      }
+
+      /* 拖拽区域高亮效果 */
+      .textarea-drag-over {
+        border-color: rgba(0, 122, 255, 0.6) !important;
+        background: rgba(0, 122, 255, 0.05) !important;
+        box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3) !important;
+      }
+
+      /* 加载状态样式 */
+      .image-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 80px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        color: rgba(245, 245, 247, 0.6);
+        font-size: 0.875rem;
+      }
+
+      .loading-spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top: 2px solid #007aff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-right: 0.5rem;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* 错误状态样式 */
+      .image-error {
+        background: rgba(255, 69, 58, 0.1);
+        border-color: rgba(255, 69, 58, 0.3);
+        color: #ff453a;
+      }
+
+      .error-icon {
+        font-size: 1.5rem;
+        margin-bottom: 0.5rem;
+      }
+
       /* 高性能Markdown渲染样式 */
       .markdown-content {
         line-height: 1.5;
@@ -1429,6 +1787,46 @@
 
           <div class="separator" id="separator" style="display: none"></div>
 
+          <!-- 图片预览区域 -->
+          <div class="image-preview-container" id="image-preview-container" style="display: none">
+            <div class="image-preview-header">
+              <span class="image-count-text">已选择 <span id="image-count">0</span> 张图片</span>
+              <button class="clear-all-images-btn" id="clear-all-images-btn" title="清除所有图片">
+                🗑️ 清除全部
+              </button>
+            </div>
+            <div class="image-previews" id="image-previews">
+              <!-- 图片预览缩略图将在这里动态添加 -->
+            </div>
+          </div>
+
+          <!-- 拖拽提示覆盖层 -->
+          <div class="drag-overlay" id="drag-overlay" style="display: none">
+            <div class="drag-overlay-content">
+              <div class="drag-icon">📁</div>
+              <div class="drag-text">拖放图片到这里</div>
+              <div class="drag-subtext">支持 JPG、PNG、GIF、WEBP 格式</div>
+            </div>
+          </div>
+
+          <!-- 图片放大预览模态框 -->
+          <div class="image-modal" id="image-modal">
+            <div class="image-modal-content">
+              <img id="modal-image" src="" alt="" />
+              <button class="image-modal-close" onclick="closeImageModal()">×</button>
+              <div class="image-modal-info" id="modal-info"></div>
+            </div>
+          </div>
+
+          <!-- 隐藏的文件上传input -->
+          <input
+            type="file"
+            id="file-upload-input"
+            multiple
+            accept="image/*"
+            style="display: none"
+          />
+
           <textarea
             class="feedback-textarea"
             id="feedback-text"
@@ -1439,6 +1837,7 @@
 
           <div class="button-container">
             <button class="btn btn-secondary" id="insert-code-btn">📋 插入代码</button>
+            <button class="btn btn-secondary" id="upload-image-btn">📷 上传图片</button>
             <button class="btn btn-primary" id="submit-btn">🚀 发送请求</button>
           </div>
 
@@ -1829,9 +2228,9 @@
           })
         }
 
-        if (!feedbackText && selectedOptions.length === 0) {
+        if (!feedbackText && selectedOptions.length === 0 && selectedImages.length === 0) {
           // 如果没有任何输入，显示错误信息
-          showStatus('请输入反馈内容或选择预定义选项', 'error')
+          showStatus('请输入反馈内容、选择预定义选项或上传图片', 'error')
           return
         }
 
@@ -1840,6 +2239,14 @@
           submitBtn.disabled = true
           submitBtn.textContent = '提交中...'
 
+          // 准备图片数据
+          const imageData = selectedImages.map(img => ({
+            name: img.name,
+            size: img.size,
+            type: img.file.type,
+            base64: img.base64
+          }))
+
           const response = await fetch('/api/submit', {
             method: 'POST',
             headers: {
@@ -1847,7 +2254,8 @@
             },
             body: JSON.stringify({
               feedback_text: feedbackText,
-              selected_options: selectedOptions
+              selected_options: selectedOptions,
+              images: imageData
             })
           })
 
@@ -1859,6 +2267,8 @@
             document.getElementById('feedback-text').value = ''
             // 取消选中所有复选框
             document.querySelectorAll('input[type="checkbox"]').forEach(cb => (cb.checked = false))
+            // 清除所有图片
+            clearAllImages()
 
             // 立即更新本地状态，然后隐藏反馈内容
             if (config) {
@@ -2036,6 +2446,752 @@
         }
       }
 
+      // ========== 图片处理功能 ==========
+
+      // 图片管理数组
+      let selectedImages = []
+
+      // 性能优化工具函数
+
+      // 防抖函数
+      function debounce(func, wait) {
+        let timeout
+        return function executedFunction(...args) {
+          const later = () => {
+            clearTimeout(timeout)
+            func(...args)
+          }
+          clearTimeout(timeout)
+          timeout = setTimeout(later, wait)
+        }
+      }
+
+      // 节流函数
+      function throttle(func, limit) {
+        let inThrottle
+        return function (...args) {
+          if (!inThrottle) {
+            func.apply(this, args)
+            inThrottle = true
+            setTimeout(() => (inThrottle = false), limit)
+          }
+        }
+      }
+
+      // RAF优化的更新函数
+      function rafUpdate(callback) {
+        if (window.requestAnimationFrame) {
+          requestAnimationFrame(callback)
+        } else {
+          setTimeout(callback, 16) // 降级为60fps
+        }
+      }
+
+      // 支持的图片格式
+      const SUPPORTED_IMAGE_TYPES = [
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'image/bmp',
+        'image/svg+xml'
+      ]
+      const MAX_IMAGE_SIZE = 10 * 1024 * 1024 // 10MB
+      const MAX_IMAGE_COUNT = 10
+      const MAX_IMAGE_DIMENSION = 1920 // 最大宽度或高度
+      const COMPRESS_QUALITY = 0.8 // 压缩质量 (0.1-1.0)
+
+      // 验证图片文件
+      function validateImageFile(file) {
+        const errors = []
+
+        // 基础文件检查
+        if (!file || !file.type) {
+          errors.push('无效的文件对象')
+          return errors
+        }
+
+        // 文件类型验证
+        if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+          errors.push(`不支持的文件格式: ${file.type}`)
+        }
+
+        // 文件大小验证
+        if (file.size > MAX_IMAGE_SIZE) {
+          errors.push(`文件大小超过限制: ${(file.size / 1024 / 1024).toFixed(2)}MB > 10MB`)
+        }
+
+        // 文件名验证（防止XSS）
+        if (file.name && file.name.length > 255) {
+          errors.push('文件名过长')
+        }
+
+        // 基本安全检查
+        const suspiciousExtensions = [
+          '.exe',
+          '.bat',
+          '.cmd',
+          '.scr',
+          '.com',
+          '.pif',
+          '.vbs',
+          '.js',
+          '.jar'
+        ]
+        if (suspiciousExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
+          errors.push('检测到可疑文件类型')
+        }
+
+        return errors
+      }
+
+      // 安全的文件名清理
+      function sanitizeFileName(fileName) {
+        return fileName
+          .replace(/[<>:"/\\|?*]/g, '') // 移除特殊字符
+          .replace(/\s+/g, '_') // 空格替换为下划线
+          .trim()
+          .substring(0, 100) // 限制长度
+      }
+
+      // 将文件转换为Base64
+      function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = () => reject(new Error('文件读取失败'))
+          reader.readAsDataURL(file)
+        })
+      }
+
+      // 内存管理跟踪
+      let objectURLs = new Set()
+
+      // 创建安全的Object URL
+      function createObjectURL(file) {
+        const url = URL.createObjectURL(file)
+        objectURLs.add(url)
+        return url
+      }
+
+      // 清理Object URL
+      function revokeObjectURL(url) {
+        if (objectURLs.has(url)) {
+          URL.revokeObjectURL(url)
+          objectURLs.delete(url)
+        }
+      }
+
+      // 清理所有Object URLs
+      function cleanupAllObjectURLs() {
+        objectURLs.forEach(url => URL.revokeObjectURL(url))
+        objectURLs.clear()
+      }
+
+      // 优化的图片压缩函数
+      function compressImage(file) {
+        return new Promise(resolve => {
+          // SVG 图片和 GIF 不进行压缩
+          if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
+            resolve(file)
+            return
+          }
+
+          // 大文件使用分步压缩
+          const isLargeFile = file.size > 5 * 1024 * 1024 // 5MB
+
+          const canvas = document.createElement('canvas')
+          const ctx = canvas.getContext('2d', {
+            alpha: file.type === 'image/png',
+            willReadFrequently: false
+          })
+          const img = new Image()
+
+          const objectURL = createObjectURL(file)
+
+          img.onload = () => {
+            // 计算压缩后的尺寸
+            let { width, height } = img
+            const originalArea = width * height
+
+            // 大图片使用更激进的压缩
+            let maxDimension = MAX_IMAGE_DIMENSION
+            if (isLargeFile || originalArea > 4000000) {
+              // 4MP
+              maxDimension = Math.min(MAX_IMAGE_DIMENSION, 1200)
+            }
+
+            if (width > maxDimension || height > maxDimension) {
+              const ratio = Math.min(maxDimension / width, maxDimension / height)
+              width = Math.floor(width * ratio)
+              height = Math.floor(height * ratio)
+            }
+
+            canvas.width = width
+            canvas.height = height
+
+            // 优化的绘制设置
+            ctx.imageSmoothingEnabled = true
+            ctx.imageSmoothingQuality = 'high'
+
+            // 使用RAF进行非阻塞绘制
+            rafUpdate(() => {
+              ctx.drawImage(img, 0, 0, width, height)
+
+              // 根据文件大小调整压缩质量
+              let quality = COMPRESS_QUALITY
+              if (isLargeFile) {
+                quality = Math.max(0.6, COMPRESS_QUALITY - 0.2)
+              }
+
+              // 转换为 Blob
+              canvas.toBlob(
+                blob => {
+                  // 清理资源
+                  revokeObjectURL(objectURL)
+
+                  if (blob && blob.size < file.size) {
+                    const compressedFile = new File([blob], file.name, {
+                      type: file.type,
+                      lastModified: file.lastModified
+                    })
+                    console.log(
+                      `图片压缩: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
+                        blob.size / 1024
+                      ).toFixed(2)}KB (压缩率: ${((1 - blob.size / file.size) * 100).toFixed(1)}%)`
+                    )
+                    resolve(compressedFile)
+                  } else {
+                    resolve(file)
+                  }
+                },
+                file.type === 'image/png' ? 'image/png' : 'image/jpeg',
+                quality
+              )
+            })
+          }
+
+          img.onerror = () => {
+            revokeObjectURL(objectURL)
+            resolve(file)
+          }
+
+          img.src = objectURL
+        })
+      }
+
+      // 添加图片到列表
+      async function addImageToList(file) {
+        // 验证图片数量
+        if (selectedImages.length >= MAX_IMAGE_COUNT) {
+          showStatus(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片`, 'error')
+          return false
+        }
+
+        // 验证文件
+        const errors = validateImageFile(file)
+        if (errors.length > 0) {
+          showStatus(errors.join('; '), 'error')
+          return false
+        }
+
+        // 检查是否已经添加过相同文件
+        const isDuplicate = selectedImages.some(
+          img =>
+            img.name === file.name &&
+            img.size === file.size &&
+            img.lastModified === file.lastModified
+        )
+        if (isDuplicate) {
+          showStatus('该图片已经添加过了', 'error')
+          return false
+        }
+
+        try {
+          // 创建加载占位符
+          const imageId = Date.now() + Math.random()
+          const imageItem = {
+            id: imageId,
+            file: file,
+            name: file.name,
+            size: file.size,
+            base64: null,
+            lastModified: file.lastModified
+          }
+
+          selectedImages.push(imageItem)
+          renderImagePreview(imageItem, true) // true表示显示加载状态
+          updateImageCounter()
+
+          // 压缩图片（如果需要）
+          const processedFile = await compressImage(file)
+
+          // 更新文件信息
+          imageItem.file = processedFile
+          imageItem.size = processedFile.size
+
+          // 异步转换为base64
+          const base64 = await fileToBase64(processedFile)
+          imageItem.base64 = base64
+
+          // 更新预览
+          renderImagePreview(imageItem, false)
+
+          console.log('图片添加成功:', file.name, `(${(imageItem.size / 1024).toFixed(2)}KB)`)
+          return true
+        } catch (error) {
+          console.error('图片处理失败:', error)
+          showStatus('图片处理失败: ' + error.message, 'error')
+          // 从列表中移除失败的图片
+          selectedImages = selectedImages.filter(img => img.id !== imageId)
+          updateImageCounter()
+          return false
+        }
+      }
+
+      // 批量DOM更新队列
+      let domUpdateQueue = []
+      let domUpdateScheduled = false
+
+      // 批量处理DOM更新
+      function scheduleDOMUpdate(callback) {
+        domUpdateQueue.push(callback)
+        if (!domUpdateScheduled) {
+          domUpdateScheduled = true
+          rafUpdate(() => {
+            const fragment = document.createDocumentFragment()
+            domUpdateQueue.forEach(callback => callback(fragment))
+            domUpdateQueue = []
+            domUpdateScheduled = false
+          })
+        }
+      }
+
+      // 优化的图片预览渲染
+      function renderImagePreview(imageItem, isLoading = false) {
+        rafUpdate(() => {
+          const previewContainer = document.getElementById('image-previews')
+          let previewElement = document.getElementById(`preview-${imageItem.id}`)
+
+          if (!previewElement) {
+            previewElement = document.createElement('div')
+            previewElement.id = `preview-${imageItem.id}`
+            previewElement.className = 'image-preview-item'
+            previewContainer.appendChild(previewElement)
+          }
+
+          if (isLoading) {
+            previewElement.innerHTML = `
+              <div class="image-loading">
+                <div class="loading-spinner"></div>
+                加载中...
+              </div>
+              <div class="image-preview-info">${sanitizeText(imageItem.name)}</div>
+            `
+          } else {
+            // 延迟创建图片元素以优化性能
+            const img = new Image()
+            img.onload = () => {
+              rafUpdate(() => {
+                previewElement.innerHTML = `
+                  <img src="${imageItem.base64}" alt="${sanitizeText(imageItem.name)}"
+                       class="image-preview-thumbnail"
+                       onclick="openImageModal('${imageItem.base64}', '${sanitizeText(
+                  imageItem.name
+                )}', ${imageItem.size})"
+                       loading="lazy">
+                  <div class="image-preview-info">${sanitizeText(imageItem.name)} (${(
+                  imageItem.size / 1024
+                ).toFixed(2)}KB)</div>
+                  <button class="image-preview-remove" onclick="removeImage('${
+                    imageItem.id
+                  }')" title="删除图片">×</button>
+                `
+              })
+            }
+            img.src = imageItem.base64
+          }
+        })
+      }
+
+      // 文本安全化函数，防止XSS
+      function sanitizeText(text) {
+        const div = document.createElement('div')
+        div.textContent = text
+        return div.innerHTML
+      }
+
+      // 删除图片
+      function removeImage(imageId) {
+        selectedImages = selectedImages.filter(img => img.id != imageId)
+        const previewElement = document.getElementById(`preview-${imageId}`)
+        if (previewElement) {
+          previewElement.remove()
+        }
+        updateImageCounter()
+        updateImagePreviewVisibility()
+      }
+
+      // 清除所有图片
+      function clearAllImages() {
+        // 清理内存中的Object URLs
+        selectedImages.forEach(img => {
+          if (img.base64 && img.base64.startsWith('blob:')) {
+            revokeObjectURL(img.base64)
+          }
+        })
+
+        selectedImages = []
+        const previewContainer = document.getElementById('image-previews')
+        previewContainer.innerHTML = ''
+        updateImageCounter()
+        updateImagePreviewVisibility()
+
+        // 强制垃圾回收提示（仅在开发环境）
+        if (window.gc && typeof window.gc === 'function') {
+          setTimeout(() => window.gc(), 1000)
+        }
+
+        console.log('所有图片已清除，内存已释放')
+      }
+
+      // 页面卸载时的清理
+      function cleanupOnUnload() {
+        cleanupAllObjectURLs()
+        clearAllImages()
+      }
+
+      // 监听页面卸载事件
+      window.addEventListener('beforeunload', cleanupOnUnload)
+      window.addEventListener('pagehide', cleanupOnUnload)
+
+      // 更新图片计数
+      function updateImageCounter() {
+        const countElement = document.getElementById('image-count')
+        if (countElement) {
+          countElement.textContent = selectedImages.length
+        }
+      }
+
+      // 更新图片预览区域可见性
+      function updateImagePreviewVisibility() {
+        const container = document.getElementById('image-preview-container')
+        if (selectedImages.length > 0) {
+          container.style.display = 'block'
+        } else {
+          container.style.display = 'none'
+        }
+      }
+
+      // 优化的批量文件处理
+      async function handleFileUpload(files) {
+        const fileArray = Array.from(files)
+        const maxConcurrent = 3 // 限制并发处理数量
+        let processed = 0
+        let successful = 0
+
+        // 显示批量处理进度
+        if (fileArray.length > 1) {
+          showStatus(`正在处理 ${fileArray.length} 个文件...`, 'info')
+        }
+
+        // 分批处理文件，避免内存溢出
+        for (let i = 0; i < fileArray.length; i += maxConcurrent) {
+          const batch = fileArray.slice(i, i + maxConcurrent)
+
+          const batchPromises = batch.map(async file => {
+            try {
+              const success = await addImageToList(file)
+              if (success) successful++
+              processed++
+
+              // 更新进度
+              if (fileArray.length > 1) {
+                showStatus(`处理进度: ${processed}/${fileArray.length}`, 'info')
+              }
+
+              return success
+            } catch (error) {
+              console.error('文件处理失败:', file.name, error)
+              processed++
+              return false
+            }
+          })
+
+          // 等待当前批次完成
+          await Promise.all(batchPromises)
+
+          // 批次间添加小延迟，避免阻塞UI
+          if (i + maxConcurrent < fileArray.length) {
+            await new Promise(resolve => setTimeout(resolve, 50))
+          }
+        }
+
+        updateImagePreviewVisibility()
+
+        // 显示最终结果
+        if (fileArray.length > 1) {
+          showStatus(
+            `完成处理: ${successful}/${fileArray.length} 个文件成功`,
+            successful > 0 ? 'success' : 'error'
+          )
+        } else if (fileArray.length === 1) {
+          showStatus(
+            successful > 0 ? '文件处理成功' : '文件处理失败',
+            successful > 0 ? 'success' : 'error'
+          )
+        }
+      }
+
+      // 优化的拖放功能实现
+      function initializeDragAndDrop() {
+        const textarea = document.getElementById('feedback-text')
+        const dragOverlay = document.getElementById('drag-overlay')
+        let dragCounter = 0
+        let dragTimer = null
+
+        // 阻止默认的拖放行为
+        ;['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+          document.addEventListener(eventName, preventDefaults, { passive: false })
+        })
+
+        function preventDefaults(e) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+
+        // 节流的拖拽处理函数
+        const throttledDragEnter = throttle(e => {
+          dragCounter++
+          if (e.dataTransfer.types.includes('Files')) {
+            rafUpdate(() => {
+              dragOverlay.style.display = 'flex'
+              textarea.classList.add('textarea-drag-over')
+            })
+          }
+        }, 100)
+
+        const throttledDragLeave = throttle(e => {
+          dragCounter--
+          if (dragCounter <= 0) {
+            dragCounter = 0
+            clearTimeout(dragTimer)
+            dragTimer = setTimeout(() => {
+              rafUpdate(() => {
+                dragOverlay.style.display = 'none'
+                textarea.classList.remove('textarea-drag-over')
+              })
+            }, 100)
+          }
+        }, 50)
+
+        const throttledDragOver = throttle(e => {
+          if (e.dataTransfer.types.includes('Files')) {
+            e.dataTransfer.dropEffect = 'copy'
+          }
+        }, 50)
+
+        // 拖拽事件监听
+        document.addEventListener('dragenter', throttledDragEnter)
+        document.addEventListener('dragleave', throttledDragLeave)
+        document.addEventListener('dragover', throttledDragOver)
+
+        // 拖拽放下
+        document.addEventListener('drop', function (e) {
+          dragCounter = 0
+          clearTimeout(dragTimer)
+
+          rafUpdate(() => {
+            dragOverlay.style.display = 'none'
+            textarea.classList.remove('textarea-drag-over')
+          })
+
+          if (e.dataTransfer.files.length > 0) {
+            // 验证文件数量限制
+            const totalFiles = selectedImages.length + e.dataTransfer.files.length
+            if (totalFiles > MAX_IMAGE_COUNT) {
+              showStatus(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片`, 'error')
+              return
+            }
+
+            handleFileUpload(e.dataTransfer.files)
+          }
+        })
+      }
+
+      // 粘贴功能实现
+      function initializePasteFunction() {
+        document.addEventListener('paste', async function (e) {
+          const clipboardData = e.clipboardData
+          if (!clipboardData) return
+
+          const items = Array.from(clipboardData.items)
+          const imageItems = items.filter(item => item.type.startsWith('image/'))
+
+          if (imageItems.length > 0) {
+            e.preventDefault() // 阻止默认粘贴行为
+
+            for (const item of imageItems) {
+              const file = item.getAsFile()
+              if (file) {
+                await addImageToList(file)
+              }
+            }
+
+            updateImagePreviewVisibility()
+            showStatus(`从剪贴板添加了 ${imageItems.length} 张图片`, 'success')
+          }
+        })
+      }
+
+      // 文件选择功能
+      function initializeFileSelection() {
+        const fileInput = document.getElementById('file-upload-input')
+        const uploadBtn = document.getElementById('upload-image-btn')
+
+        uploadBtn.addEventListener('click', () => {
+          fileInput.click()
+        })
+
+        fileInput.addEventListener('change', e => {
+          if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files)
+            // 清空input，允许重复选择相同文件
+            e.target.value = ''
+          }
+        })
+      }
+
+      // 图片模态框功能
+      function openImageModal(base64, name, size) {
+        const modal = document.getElementById('image-modal')
+        const modalImage = document.getElementById('modal-image')
+        const modalInfo = document.getElementById('modal-info')
+
+        modalImage.src = base64
+        modalImage.alt = name
+        modalInfo.textContent = `${name} (${(size / 1024).toFixed(2)}KB)`
+
+        modal.classList.add('show')
+
+        // 添加键盘事件监听
+        document.addEventListener('keydown', handleModalKeydown)
+
+        // 点击模态框背景关闭
+        modal.addEventListener('click', function (e) {
+          if (e.target === modal) {
+            closeImageModal()
+          }
+        })
+      }
+
+      function closeImageModal() {
+        const modal = document.getElementById('image-modal')
+        modal.classList.remove('show')
+
+        // 移除键盘事件监听
+        document.removeEventListener('keydown', handleModalKeydown)
+      }
+
+      function handleModalKeydown(event) {
+        if (event.key === 'Escape') {
+          closeImageModal()
+        }
+      }
+
+      // 浏览器兼容性检测
+      function checkBrowserCompatibility() {
+        const features = {
+          fileAPI: !!(window.File && window.FileReader && window.FileList && window.Blob),
+          dragDrop: 'ondragstart' in document.createElement('div'),
+          canvas: !!document.createElement('canvas').getContext,
+          webWorker: !!window.Worker,
+          requestAnimationFrame: !!(
+            window.requestAnimationFrame || window.webkitRequestAnimationFrame
+          ),
+          objectURL: !!(window.URL && window.URL.createObjectURL),
+          clipboard: !!(navigator.clipboard && navigator.clipboard.read)
+        }
+
+        console.log('浏览器兼容性检测:', features)
+
+        // 关键功能检查
+        if (!features.fileAPI) {
+          showStatus('您的浏览器不支持文件API，部分功能可能无法使用', 'warning')
+          return false
+        }
+
+        if (!features.canvas) {
+          showStatus('您的浏览器不支持Canvas，图片压缩功能将被禁用', 'warning')
+        }
+
+        return true
+      }
+
+      // 特性降级处理
+      function setupFeatureFallbacks() {
+        // RAF降级
+        if (!window.requestAnimationFrame) {
+          window.requestAnimationFrame =
+            window.webkitRequestAnimationFrame ||
+            window.mozRequestAnimationFrame ||
+            window.oRequestAnimationFrame ||
+            window.msRequestAnimationFrame ||
+            function (callback) {
+              return setTimeout(callback, 16)
+            }
+        }
+
+        // 复制API降级
+        if (!navigator.clipboard) {
+          console.warn('剪贴板API不可用，使用降级方案')
+        }
+
+        // Object.assign降级
+        if (!Object.assign) {
+          Object.assign = function (target, ...sources) {
+            sources.forEach(source => {
+              if (source) {
+                Object.keys(source).forEach(key => {
+                  target[key] = source[key]
+                })
+              }
+            })
+            return target
+          }
+        }
+      }
+
+      // 初始化图片功能
+      function initializeImageFeatures() {
+        // 兼容性检查
+        if (!checkBrowserCompatibility()) {
+          console.error('浏览器兼容性检查失败')
+          return
+        }
+
+        // 设置降级处理
+        setupFeatureFallbacks()
+
+        try {
+          initializeDragAndDrop()
+          initializePasteFunction()
+          initializeFileSelection()
+
+          // 清除所有图片按钮事件
+          const clearBtn = document.getElementById('clear-all-images-btn')
+          if (clearBtn) {
+            clearBtn.addEventListener('click', clearAllImages)
+          }
+
+          console.log('图片功能初始化完成')
+        } catch (error) {
+          console.error('图片功能初始化失败:', error)
+          showStatus('图片功能初始化失败，请刷新页面重试', 'error')
+        }
+      }
+
       // 事件监听器
       document.addEventListener('DOMContentLoaded', () => {
         loadConfig()
@@ -2058,6 +3214,9 @@
             }, 3000)
           })
 
+        // 初始化图片功能
+        initializeImageFeatures()
+
         // 按钮事件
         document
           .getElementById('insert-code-btn')
@@ -2076,6 +3235,17 @@
           } else if (event.altKey && event.key === 's') {
             event.preventDefault()
             submitFeedback()
+          } else if (event.ctrlKey && event.key === 'v') {
+            // Ctrl+V 粘贴图片 - 浏览器默认处理，我们只在paste事件中处理
+            console.log('快捷键: Ctrl+V 粘贴')
+          } else if (event.ctrlKey && event.key === 'u') {
+            event.preventDefault()
+            document.getElementById('upload-image-btn').click()
+            console.log('快捷键: Ctrl+U 上传图片')
+          } else if (event.key === 'Delete' && selectedImages.length > 0) {
+            event.preventDefault()
+            clearAllImages()
+            console.log('快捷键: Delete 清除所有图片')
           }
         })
       })

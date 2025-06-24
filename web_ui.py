@@ -96,6 +96,7 @@ class WebFeedbackUI:
             data = request.json
             feedback_text = data.get("feedback_text", "").strip()
             selected_options = data.get("selected_options", [])
+            images = data.get("images", [])
 
             # Combine selected options and feedback text
             final_feedback_parts = []
@@ -108,10 +109,21 @@ class WebFeedbackUI:
             if feedback_text:
                 final_feedback_parts.append(feedback_text)
 
+            # Add image information
+            if images:
+                image_info = f"\n\n[包含 {len(images)} 张图片]"
+                for i, img in enumerate(images, 1):
+                    image_info += f"\n图片{i}: {img.get('name', 'unknown')} ({img.get('size', 0)} bytes)"
+                final_feedback_parts.append(image_info)
+
             # Join with a newline if both parts exist
             final_feedback = "\n\n".join(final_feedback_parts)
 
-            self.feedback_result = {"interactive_feedback": final_feedback}
+            # 包含图片数据在结果中
+            self.feedback_result = {
+                "interactive_feedback": final_feedback,
+                "images": images,
+            }
 
             # 清空内容并等待下一次调用
             self.current_prompt = ""
