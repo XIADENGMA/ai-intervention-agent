@@ -9,6 +9,7 @@ from typing import Dict, Optional, Tuple
 
 import requests
 from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
 from pydantic import Field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -23,7 +24,7 @@ log_handlers = [logging.StreamHandler(sys.stderr)]
 # log_handlers.append(logging.FileHandler(log_file))
 
 logging.basicConfig(
-    level=logging.WARNING,  # 只显示警告和错误，减少日志噪音
+    level=logging.DEBUG,  # 临时启用调试信息来排查问题
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=log_handlers,
 )
@@ -319,6 +320,129 @@ def update_web_content(
         raise Exception(f"更新 Web 内容失败: {e}")
 
 
+def parse_structured_response(response_data):
+    """解析结构化的反馈数据，返回适合MCP的Content对象列表"""
+    import base64
+
+    result = []
+    text_parts = []
+
+    # 调试信息：记录接收到的原始数据
+    logger.debug("parse_structured_response 接收到的数据:")
+    logger.debug(f"  - 原始数据类型: {type(response_data)}")
+    logger.debug(f"  - 原始数据内容: {response_data}")
+
+    # 1. 直接从新格式中获取用户输入和选择的选项
+    user_input = response_data.get("user_input", "")
+    selected_options = response_data.get("selected_options", [])
+
+    # 调试信息：记录解析后的数据
+    logger.debug("解析后的数据:")
+    logger.debug(
+        f"  - user_input: '{user_input}' (类型: {type(user_input)}, 长度: {len(user_input) if isinstance(user_input, str) else 'N/A'})"
+    )
+    logger.debug(
+        f"  - selected_options: {selected_options} (类型: {type(selected_options)}, 长度: {len(selected_options) if isinstance(selected_options, list) else 'N/A'})"
+    )
+    logger.debug(f"  - images数量: {len(response_data.get('images', []))}")
+
+    # 2. 构建返回的文本内容
+    if selected_options:
+        text_parts.append(f"选择的选项: {', '.join(selected_options)}")
+        logger.debug(f"添加选项文本: '选择的选项: {', '.join(selected_options)}'")
+
+    if user_input:
+        text_parts.append(f"用户输入: {user_input}")
+        logger.debug(f"添加用户输入文本: '用户输入: {user_input}'")
+    else:
+        logger.debug("用户输入为空，跳过添加用户输入文本")
+
+    # 3. 处理图片附件 - 使用 FastMCP 的 Image 类型
+    for index, image in enumerate(response_data.get("images", [])):
+        if isinstance(image, dict) and image.get("data"):
+            try:
+                # 解码 base64 数据
+                image_data = base64.b64decode(image["data"])
+
+                # 确定图片格式
+                content_type = image.get("content_type", "image/jpeg")
+                if content_type == "image/jpeg":
+                    format_name = "jpeg"
+                elif content_type == "image/png":
+                    format_name = "png"
+                elif content_type == "image/gif":
+                    format_name = "gif"
+                elif content_type == "image/webp":
+                    format_name = "webp"
+                else:
+                    format_name = "jpeg"  # 默认格式
+
+                # 创建 FastMCP Image 对象
+                image_obj = Image(data=image_data, format=format_name)
+                result.append(image_obj)
+
+                # 添加图片信息到文本中
+                filename = image.get("filename", f"image_{index + 1}")
+                size = image.get("size", len(image_data))
+
+                # 计算图片大小显示
+                if size < 1024:
+                    size_str = f"{size} B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size / 1024:.1f} KB"
+                else:
+                    size_str = f"{size / (1024 * 1024):.1f} MB"
+
+                text_parts.append(
+                    f"=== 图片 {index + 1} ===\n文件名: {filename}\n类型: {content_type}\n大小: {size_str}"
+                )
+            except Exception as e:
+                logger.error(f"处理图片 {index + 1} 时出错: {e}")
+                text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {str(e)}")
+
+    # 4. 添加文本内容
+    logger.debug("准备添加文本内容:")
+    logger.debug(f"  - text_parts: {text_parts}")
+    logger.debug(f"  - text_parts长度: {len(text_parts)}")
+
+    if text_parts:
+        combined_text = "\n\n".join(text_parts)
+        result.append(combined_text)
+        logger.debug(f"添加合并文本: '{combined_text}'")
+    else:
+        logger.debug("text_parts为空，不添加文本内容")
+
+    # 5. 如果没有任何内容，检查是否真的没有用户输入
+    if not result:
+        logger.debug("result为空，检查是否需要添加默认内容")
+        # 检查是否有用户输入或选择的选项
+        if user_input or selected_options:
+            # 有内容但没有添加到result中，这是一个bug，应该添加文本内容
+            if text_parts:
+                combined_text = "\n\n".join(text_parts)
+                result.append(combined_text)
+                logger.debug(f"补充添加文本内容: '{combined_text}'")
+            else:
+                result.append("用户未提供任何内容")
+                logger.debug("添加默认内容: '用户未提供任何内容'")
+        else:
+            result.append("用户未提供任何内容")
+            logger.debug("添加默认内容: '用户未提供任何内容'")
+    else:
+        logger.debug(f"result不为空，包含 {len(result)} 个元素")
+
+    logger.debug("最终返回结果:")
+    for i, item in enumerate(result):
+        if isinstance(item, str):
+            logger.debug(
+                f"  - [{i}] 文本: '{item[:100]}{'...' if len(item) > 100 else ''}'"
+            )
+        else:
+            logger.debug(f"  - [{i}] 对象: {type(item)}")
+
+    return result
+
+
 def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]:
     """等待用户提交反馈"""
     target_host = "localhost" if config.host == "0.0.0.0" else config.host
@@ -364,10 +488,12 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
             feedback_response = session.get(feedback_url, timeout=5)
             if feedback_response.status_code == 200:
                 feedback_data = feedback_response.json()
+                logger.debug(f"获取反馈数据: {feedback_data}")
                 if feedback_data.get("status") == "success" and feedback_data.get(
                     "feedback"
                 ):
                     logger.info("✅ 收到用户反馈")
+                    logger.debug(f"返回反馈数据: {feedback_data['feedback']}")
                     return feedback_data["feedback"]
 
             # 然后检查内容状态变化
@@ -379,20 +505,28 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
                 # 如果从有内容变为无内容，说明用户提交了反馈
                 if last_has_content and not current_has_content:
                     logger.debug("检测到内容状态变化，尝试获取反馈")
+                    logger.debug(
+                        f"状态变化: {last_has_content} -> {current_has_content}"
+                    )
 
                     # 再次尝试获取反馈内容
                     feedback_response = session.get(feedback_url, timeout=5)
                     if feedback_response.status_code == 200:
                         feedback_data = feedback_response.json()
+                        logger.debug(f"状态变化后获取反馈数据: {feedback_data}")
                         if feedback_data.get(
                             "status"
                         ) == "success" and feedback_data.get("feedback"):
                             logger.info("✅ 收到用户反馈")
+                            logger.debug(
+                                f"状态变化后返回反馈数据: {feedback_data['feedback']}"
+                            )
                             return feedback_data["feedback"]
 
                     # 如果没有获取到具体反馈内容，返回默认结果
                     logger.info("✅ 收到用户反馈（无具体内容）")
-                    return {"interactive_feedback": "用户已提交反馈"}
+                    logger.debug("返回默认空结果")
+                    return {"user_input": "", "selected_options": [], "images": []}
 
                 last_has_content = current_has_content
                 consecutive_errors = 0  # 重置错误计数
@@ -476,7 +610,7 @@ def interactive_feedback(
         default=None,
         description="Predefined options for the user to choose from (optional)",
     ),
-) -> Dict[str, str]:
+) -> list:
     """Request interactive feedback from the user
 
     Args:
@@ -507,12 +641,27 @@ def interactive_feedback(
         logger.info(f"收到反馈请求: {message[:50]}...")
         result = launch_feedback_ui(message, predefined_options_list)
         logger.info("反馈请求处理完成")
-        return result
+
+        # 检查是否有结构化的反馈数据（包含图片）
+        if isinstance(result, dict) and "images" in result:
+            return parse_structured_response(result)
+        else:
+            # 兼容旧格式：只有文本反馈
+            if isinstance(result, dict):
+                # 检查是否是新格式
+                if "user_input" in result or "selected_options" in result:
+                    return parse_structured_response(result)
+                else:
+                    # 旧格式
+                    text_content = result.get("interactive_feedback", str(result))
+                    return [text_content]
+            else:
+                return [str(result)]
 
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}")
         # 返回错误信息而不是抛出异常，以便 MCP 客户端能够处理
-        return {"interactive_feedback": f"反馈收集失败: {str(e)}", "error": True}
+        return [f"反馈收集失败: {str(e)}"]
 
 
 def main():

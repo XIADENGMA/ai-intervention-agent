@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-intervention-agent"
-version = "1.0.1"
+version = "1.0.2"
 description = "AI Intervention Agent: MCP server enabling real-time user intervention in AI-assisted development workflows."
 readme = "README.md"
 license = "MIT"

@@ -1830,7 +1830,7 @@
           <textarea
             class="feedback-textarea"
             id="feedback-text"
-            placeholder="请在此输入您的反馈内容..."
+            placeholder="请在此输入您的反馈内容... (支持直接粘贴图片 Ctrl+V)"
           ></textarea>
 
           <div class="shortcut-hint">按 Ctrl+Enter 快速提交反馈</div>
@@ -2239,24 +2239,21 @@
           submitBtn.disabled = true
           submitBtn.textContent = '提交中...'
 
-          // 准备图片数据
-          const imageData = selectedImages.map(img => ({
-            name: img.name,
-            size: img.size,
-            type: img.file.type,
-            base64: img.base64
-          }))
+          // 使用 FormData 上传文件，避免 base64 编码
+          const formData = new FormData()
+          formData.append('feedback_text', feedbackText)
+          formData.append('selected_options', JSON.stringify(selectedOptions))
+
+          // 添加图片文件（直接使用原始文件，不需要base64）
+          selectedImages.forEach((img, index) => {
+            if (img.file) {
+              formData.append(`image_${index}`, img.file)
+            }
+          })
 
           const response = await fetch('/api/submit', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              feedback_text: feedbackText,
-              selected_options: selectedOptions,
-              images: imageData
-            })
+            body: formData // 不设置 Content-Type，让浏览器自动设置 multipart/form-data
           })
 
           const result = await response.json()
@@ -2555,15 +2552,7 @@
           .substring(0, 100) // 限制长度
       }
 
-      // 将文件转换为Base64
-      function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result)
-          reader.onerror = () => reject(new Error('文件读取失败'))
-          reader.readAsDataURL(file)
-        })
-      }
+      // 注意：已移除 fileToBase64 函数，现在直接使用文件对象上传
 
       // 内存管理跟踪
       let objectURLs = new Set()
@@ -2711,12 +2700,14 @@
         try {
           // 创建加载占位符
           const imageId = Date.now() + Math.random()
+          const timestamp = Date.now()
           const imageItem = {
             id: imageId,
             file: file,
             name: file.name,
             size: file.size,
             base64: null,
+            timestamp: timestamp,
             lastModified: file.lastModified
           }
 
@@ -2731,9 +2722,9 @@
           imageItem.file = processedFile
           imageItem.size = processedFile.size
 
-          // 异步转换为base64
-          const base64 = await fileToBase64(processedFile)
-          imageItem.base64 = base64
+          // 创建预览URL（避免base64编码）
+          const previewUrl = URL.createObjectURL(processedFile)
+          imageItem.previewUrl = previewUrl
 
           // 更新预览
           renderImagePreview(imageItem, false)
@@ -2795,9 +2786,9 @@
             img.onload = () => {
               rafUpdate(() => {
                 previewElement.innerHTML = `
-                  <img src="${imageItem.base64}" alt="${sanitizeText(imageItem.name)}"
+                  <img src="${imageItem.previewUrl}" alt="${sanitizeText(imageItem.name)}"
                        class="image-preview-thumbnail"
-                       onclick="openImageModal('${imageItem.base64}', '${sanitizeText(
+                       onclick="openImageModal('${imageItem.previewUrl}', '${sanitizeText(
                   imageItem.name
                 )}', ${imageItem.size})"
                        loading="lazy">
@@ -2810,7 +2801,7 @@
                 `
               })
             }
-            img.src = imageItem.base64
+            img.src = imageItem.previewUrl
           }
         })
       }
@@ -2824,6 +2815,16 @@
 
       // 删除图片
       function removeImage(imageId) {
+        // 找到要删除的图片并释放URL
+        const imageToRemove = selectedImages.find(img => img.id == imageId)
+        if (
+          imageToRemove &&
+          imageToRemove.previewUrl &&
+          imageToRemove.previewUrl.startsWith('blob:')
+        ) {
+          URL.revokeObjectURL(imageToRemove.previewUrl)
+        }
+
         selectedImages = selectedImages.filter(img => img.id != imageId)
         const previewElement = document.getElementById(`preview-${imageId}`)
         if (previewElement) {
@@ -2837,8 +2838,8 @@
       function clearAllImages() {
         // 清理内存中的Object URLs
         selectedImages.forEach(img => {
-          if (img.base64 && img.base64.startsWith('blob:')) {
-            revokeObjectURL(img.base64)
+          if (img.previewUrl && img.previewUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(img.previewUrl)
           }
         })
 

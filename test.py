@@ -13,6 +13,38 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
+def format_feedback_result(result):
+    """格式化反馈结果用于显示，限制images的data字段长度"""
+    if not isinstance(result, dict):
+        return str(result)
+
+    formatted_result = {}
+
+    # 处理用户输入
+    if "user_input" in result:
+        formatted_result["user_input"] = result["user_input"]
+
+    # 处理选择的选项
+    if "selected_options" in result:
+        formatted_result["selected_options"] = result["selected_options"]
+
+    # 处理图片数据，限制data字段长度
+    if "images" in result and result["images"]:
+        formatted_images = []
+        for img in result["images"]:
+            if isinstance(img, dict):
+                formatted_img = img.copy()
+                # 限制data字段显示长度为50个字符
+                if "data" in formatted_img and len(formatted_img["data"]) > 50:
+                    formatted_img["data"] = formatted_img["data"][:50] + "..."
+                formatted_images.append(formatted_img)
+            else:
+                formatted_images.append(img)
+        formatted_result["images"] = formatted_images
+
+    return formatted_result
+
+
 def check_service(url, timeout=5):
     """检查服务是否可用"""
     try:
@@ -130,7 +162,8 @@ def test_persistent_workflow():
         thread1.join(timeout=300)
 
         if result1:
-            print(f"✅ 第一次反馈: {result1}")
+            formatted_result1 = format_feedback_result(result1)
+            print(f"✅ 第一次反馈: {formatted_result1}")
         else:
             print("⚠️ 第一次反馈超时")
             return False
@@ -241,7 +274,8 @@ $$
         result2 = launch_feedback_ui(prompt2, options2)
 
         if result2:
-            print(f"✅ 第二次反馈: {result2}")
+            formatted_result2 = format_feedback_result(result2)
+            print(f"✅ 第二次反馈: {formatted_result2}")
             print("🎉 智能介入测试完成！")
             return True
         else:
@@ -411,10 +445,10 @@ def main():
 
     # 显示使用示例
     print("\n💡 使用提示:")
-    print("   指定端口: python test.py --port 9000")
+    print("   指定端口: python test.py --port 8081")
     print("   指定主机: python test.py --host 127.0.0.1")
     print("   详细日志: python test.py --verbose")
-    print("   组合使用: python test.py --port 9000 --verbose")
+    print("   组合使用: python test.py --port 8081 --verbose")
     print("   查看帮助: python test.py --help")
 
     return passed == total

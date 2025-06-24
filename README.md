@@ -60,7 +60,7 @@ pip install uv && uv sync
 uv run python test.py
 
 # 测试工具支持端口指定
-python test.py --port 8081 --verbose
+uv run python test.py --port 8081 --verbose
 ```
 
 ## ⚙️ 配置

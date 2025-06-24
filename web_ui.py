@@ -1,6 +1,7 @@
 # Web UI for AI Intervention Agent MCP
 # Enhanced version supporting both GUI and Web modes for SSH remote usage
 import json
+import logging
 import os
 import threading
 from typing import Dict, List, Optional
@@ -8,6 +9,9 @@ from typing import Dict, List, Optional
 import markdown
 from flask import Flask, jsonify, render_template_string, request, send_from_directory
 from flask_cors import CORS
+
+# 设置日志
+logger = logging.getLogger(__name__)
 
 
 class WebFeedbackUI:
@@ -93,37 +97,114 @@ class WebFeedbackUI:
 
         @self.app.route("/api/submit", methods=["POST"])
         def submit_feedback():
-            data = request.json
-            feedback_text = data.get("feedback_text", "").strip()
-            selected_options = data.get("selected_options", [])
-            images = data.get("images", [])
+            # 检查是否有文件上传（优先检查 request.files）
+            if request.files:
+                # 处理文件上传请求（multipart/form-data）
+                feedback_text = request.form.get("feedback_text", "").strip()
+                selected_options_str = request.form.get("selected_options", "[]")
+                try:
+                    selected_options = json.loads(selected_options_str)
+                except json.JSONDecodeError:
+                    selected_options = []
 
-            # Combine selected options and feedback text
-            final_feedback_parts = []
+                # 调试信息：记录接收到的数据
+                logger.debug("接收到的反馈数据:")
+                logger.debug(
+                    f"  - 文字内容: '{feedback_text}' (长度: {len(feedback_text)})"
+                )
+                logger.debug(f"  - 选项数据: {selected_options_str}")
+                logger.debug(f"  - 解析后选项: {selected_options}")
+                logger.debug(f"  - 文件数量: {len(request.files)}")
 
-            # Add selected options
-            if selected_options:
-                final_feedback_parts.append("; ".join(selected_options))
+                # 处理上传的图片文件
+                uploaded_images = []
+                for key in request.files:
+                    if key.startswith("image_"):
+                        file = request.files[key]
+                        if file and file.filename:
+                            try:
+                                # 读取文件内容
+                                file_content = file.read()
+                                # 转换为base64（用于MCP传输）
+                                import base64
 
-            # Add user's text feedback
-            if feedback_text:
-                final_feedback_parts.append(feedback_text)
+                                base64_data = base64.b64encode(file_content).decode(
+                                    "utf-8"
+                                )
 
-            # Add image information
-            if images:
-                image_info = f"\n\n[包含 {len(images)} 张图片]"
-                for i, img in enumerate(images, 1):
-                    image_info += f"\n图片{i}: {img.get('name', 'unknown')} ({img.get('size', 0)} bytes)"
-                final_feedback_parts.append(image_info)
+                                uploaded_images.append(
+                                    {
+                                        "filename": file.filename,
+                                        "content_type": file.content_type
+                                        or "application/octet-stream",
+                                        "data": base64_data,
+                                        "size": len(file_content),
+                                    }
+                                )
+                                logger.debug(
+                                    f"  - 处理图片: {file.filename} ({len(file_content)} bytes)"
+                                )
+                            except Exception as e:
+                                logger.error(f"处理文件 {file.filename} 时出错: {e}")
+                                continue
 
-            # Join with a newline if both parts exist
-            final_feedback = "\n\n".join(final_feedback_parts)
+                images = uploaded_images
+            elif request.form:
+                # 处理表单数据（没有文件）
+                feedback_text = request.form.get("feedback_text", "").strip()
+                selected_options_str = request.form.get("selected_options", "[]")
+                try:
+                    selected_options = json.loads(selected_options_str)
+                except json.JSONDecodeError:
+                    selected_options = []
 
-            # 包含图片数据在结果中
+                # 调试信息：记录接收到的数据
+                logger.debug("接收到的表单数据:")
+                logger.debug(
+                    f"  - 文字内容: '{feedback_text}' (长度: {len(feedback_text)})"
+                )
+                logger.debug(f"  - 选项数据: {selected_options_str}")
+                logger.debug(f"  - 解析后选项: {selected_options}")
+
+                images = []
+            else:
+                # 兼容原有的JSON请求格式
+                try:
+                    data = request.get_json() or {}
+                    feedback_text = data.get("feedback_text", "").strip()
+                    selected_options = data.get("selected_options", [])
+                    images = data.get("images", [])
+
+                    # 调试信息：记录接收到的数据
+                    logger.debug("接收到的JSON数据:")
+                    logger.debug(
+                        f"  - 文字内容: '{feedback_text}' (长度: {len(feedback_text)})"
+                    )
+                    logger.debug(f"  - 选项: {selected_options}")
+                    logger.debug(f"  - 图片数量: {len(images)}")
+                except Exception:
+                    # 如果无法解析JSON，使用默认值
+                    feedback_text = ""
+                    selected_options = []
+                    images = []
+                    logger.debug("JSON解析失败，使用默认值")
+
+            # 构建新的返回格式
             self.feedback_result = {
-                "interactive_feedback": final_feedback,
+                "user_input": feedback_text,
+                "selected_options": selected_options,
                 "images": images,
             }
+
+            # 调试信息：记录最终存储的数据
+            logger.debug("最终存储的反馈结果:")
+            logger.debug(
+                f"  - user_input: '{self.feedback_result['user_input']}' (长度: {len(self.feedback_result['user_input'])})"
+            )
+            logger.debug(
+                f"  - selected_options: {self.feedback_result['selected_options']}"
+            )
+            logger.debug(f"  - images数量: {len(self.feedback_result['images'])}")
 
             # 清空内容并等待下一次调用
             self.current_prompt = ""
@@ -197,9 +278,9 @@ class WebFeedbackUI:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             icons_dir = os.path.join(current_dir, "icons")
             icon_path = os.path.join(icons_dir, "icon.ico")
-            print(f"🔍 Favicon请求 - 图标目录: {icons_dir}")
-            print(f"🔍 Favicon请求 - 图标文件: {icon_path}")
-            print(f"🔍 Favicon请求 - 文件存在: {os.path.exists(icon_path)}")
+            logger.debug(f"Favicon请求 - 图标目录: {icons_dir}")
+            logger.debug(f"Favicon请求 - 图标文件: {icon_path}")
+            logger.debug(f"Favicon请求 - 文件存在: {os.path.exists(icon_path)}")
 
             # 设置正确的MIME类型和缓存控制
             response = send_from_directory(icons_dir, "icon.ico")
@@ -293,9 +374,9 @@ class WebFeedbackUI:
         self.current_options = new_options if new_options is not None else []
         self.has_content = bool(new_prompt)
         if new_prompt:
-            print(f"📝 内容已更新: {new_prompt[:50]}...")
+            logger.info(f"📝 内容已更新: {new_prompt[:50]}...")
         else:
-            print("📝 内容已清空，显示无有效内容页面")
+            logger.info("📝 内容已清空，显示无有效内容页面")
 
     def run(self) -> Dict[str, str]:
         """启动Web服务器并等待用户反馈"""
@@ -316,7 +397,11 @@ class WebFeedbackUI:
         except KeyboardInterrupt:
             pass
 
-        return self.feedback_result or {"interactive_feedback": ""}
+        return self.feedback_result or {
+            "user_input": "",
+            "selected_options": [],
+            "images": [],
+        }
 
 
 def web_feedback_ui(
@@ -373,7 +458,17 @@ if __name__ == "__main__":
         args.port,
     )
     if result:
-        print(f"\n收到反馈:\n{result['interactive_feedback']}")
+        user_input = result.get("user_input", "")
+        selected_options = result.get("selected_options", [])
+        images = result.get("images", [])
+
+        print("\n收到反馈:")
+        if selected_options:
+            print(f"选择的选项: {', '.join(selected_options)}")
+        if user_input:
+            print(f"用户输入: {user_input}")
+        if images:
+            print(f"包含 {len(images)} 张图片")
     import sys
 
     sys.exit(0)
