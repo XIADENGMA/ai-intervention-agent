@@ -59,8 +59,10 @@ pip install uv && uv sync
 # 验证安装
 uv run python test.py
 
-# 测试工具支持端口指定
+# 测试工具支持多种参数配置
 uv run python test.py --port 8081 --verbose
+uv run python test.py --thread-timeout 600  # 设置线程等待超时为600秒
+uv run python test.py --timeout 60 --thread-timeout 300 --verbose  # 组合使用
 ```
 
 ## ⚙️ 配置
@@ -129,6 +131,18 @@ ai-intervention-agent 工具使用细节：
 | `FEEDBACK_TIMEOUT`     | `30`      | HTTP 请求超时时间（秒） |
 | `FEEDBACK_MAX_RETRIES` | `3`       | 最大重试次数            |
 | `FEEDBACK_RETRY_DELAY` | `1.0`     | 重试延迟时间（秒）      |
+
+### 🧪 测试工具参数
+
+测试工具 `test.py` 支持以下命令行参数：
+
+| 参数               | 默认值    | 说明                                       |
+| ------------------ | --------- | ------------------------------------------ |
+| `--port`           | `8080`    | 指定测试使用的端口号                       |
+| `--host`           | `0.0.0.0` | 指定测试使用的主机地址                     |
+| `--timeout`        | `30`      | 指定反馈超时时间（秒）                     |
+| `--thread-timeout` | `300`     | 指定线程等待超时时间（秒），0 表示无限等待 |
+| `--verbose`, `-v`  | -         | 显示详细日志信息                           |
 
 ### 🌍 远程服务器配置
 

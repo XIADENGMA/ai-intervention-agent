@@ -164,9 +164,13 @@ def test_service_health():
         return False
 
 
-def test_persistent_workflow():
+def test_persistent_workflow(timeout=300):
     """测试智能介入工作流程"""
     print("🔄 测试智能介入工作流程...")
+    if timeout == 0:
+        print("⏱️ 线程等待超时时间: 无限等待")
+    else:
+        print(f"⏱️ 线程等待超时时间: {timeout}秒")
 
     try:
         from server import get_web_ui_config, launch_feedback_ui
@@ -207,7 +211,12 @@ def test_persistent_workflow():
 
         print("✅ 服务启动成功，请在浏览器中提交反馈")
         print(f"🌐 浏览器地址: http://localhost:{config.port}")
-        thread1.join(timeout=300)
+
+        # 如果 timeout 为 0，表示无限等待
+        if timeout == 0:
+            thread1.join()  # 无限等待
+        else:
+            thread1.join(timeout=timeout)
 
         if result1:
             formatted_result1 = format_feedback_result(result1)
@@ -370,42 +379,66 @@ def parse_arguments():
         help="指定超时时间（秒）(默认使用环境变量FEEDBACK_TIMEOUT或30)",
     )
 
+    parser.add_argument(
+        "--thread-timeout",
+        type=int,
+        default=300,
+        help="指定线程等待超时时间（秒）(默认300秒)",
+    )
+
     parser.add_argument("--verbose", "-v", action="store_true", help="显示详细日志信息")
 
     return parser.parse_args()
 
 
 def setup_test_environment(args):
-    """根据命令行参数设置测试环境"""
-    # 设置日志级别
-    if args.verbose:
-        import logging
+    """根据命令行参数设置测试环境
 
-        logging.getLogger().setLevel(logging.DEBUG)
-        print("🔊 已启用详细日志模式")
+    Args:
+        args: 命令行参数对象
 
-    # 设置环境变量（如果指定了参数）
-    if args.port is not None:
-        # 检查端口是否被占用
-        if check_port_availability(args.port):
-            os.environ["FEEDBACK_WEB_PORT"] = str(args.port)
-            print(f"📌 设置端口: {args.port}")
-        else:
-            print(f"⚠️ 端口 {args.port} 已被占用，将尝试自动查找可用端口...")
-            available_port = find_available_port(args.port)
-            if available_port:
-                os.environ["FEEDBACK_WEB_PORT"] = str(available_port)
-                print(f"✅ 找到可用端口: {available_port}")
+    Returns:
+        bool: 环境设置是否成功
+    """
+    try:
+        # 设置日志级别
+        if args.verbose:
+            import logging
+
+            logging.getLogger().setLevel(logging.DEBUG)
+            print("🔊 已启用详细日志模式")
+
+        # 设置环境变量（如果指定了参数）
+        if args.port is not None:
+            # 检查端口是否被占用
+            if check_port_availability(args.port):
+                os.environ["FEEDBACK_WEB_PORT"] = str(args.port)
+                print(f"📌 设置端口: {args.port}")
             else:
-                print("❌ 无法找到可用端口，将使用默认配置")
+                print(f"⚠️ 端口 {args.port} 已被占用，将尝试自动查找可用端口...")
+                available_port = find_available_port(args.port)
+                if available_port:
+                    os.environ["FEEDBACK_WEB_PORT"] = str(available_port)
+                    print(f"✅ 找到可用端口: {available_port}")
+                else:
+                    print("❌ 无法找到可用端口，将使用默认配置")
 
-    if args.host is not None:
-        os.environ["FEEDBACK_WEB_HOST"] = args.host
-        print(f"📌 设置主机: {args.host}")
+        if args.host is not None:
+            os.environ["FEEDBACK_WEB_HOST"] = args.host
+            print(f"📌 设置主机: {args.host}")
 
-    if args.timeout is not None:
-        os.environ["FEEDBACK_TIMEOUT"] = str(args.timeout)
-        print(f"📌 设置超时: {args.timeout}秒")
+        if args.timeout is not None:
+            os.environ["FEEDBACK_TIMEOUT"] = str(args.timeout)
+            print(f"📌 设置反馈超时: {args.timeout}秒")
+
+        if args.thread_timeout is not None:
+            print(f"📌 设置线程等待超时: {args.thread_timeout}秒")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ 环境设置失败: {e}")
+        return False
 
 
 def check_port_availability(port):
@@ -429,34 +462,107 @@ def find_available_port(start_port, max_attempts=10):
     return None
 
 
-def main():
-    """主测试函数"""
+def validate_args(args):
+    """验证命令行参数的合理性"""
+    if args.thread_timeout is not None and args.thread_timeout < 0:
+        print("❌ 错误: 线程等待超时时间不能为负数")
+        return False
+
+    if args.timeout is not None and args.timeout <= 0:
+        print("❌ 错误: 反馈超时时间必须大于0")
+        return False
+
+    if args.port is not None and (args.port < 1 or args.port > 65535):
+        print("❌ 错误: 端口号必须在1-65535范围内")
+        return False
+
+    return True
+
+
+def get_test_config(args):
+    """获取测试配置信息"""
+    try:
+        from server import get_web_ui_config
+
+        config = get_web_ui_config()
+
+        # 获取线程等待超时时间
+        thread_timeout_value = (
+            args.thread_timeout if args and args.thread_timeout is not None else 300
+        )
+
+        return {
+            "server_config": config,
+            "thread_timeout": thread_timeout_value,
+            "success": True,
+        }
+    except Exception as e:
+        # 如果无法获取服务器配置，使用默认值
+        thread_timeout_value = (
+            args.thread_timeout if args and args.thread_timeout is not None else 300
+        )
+
+        return {
+            "server_config": None,
+            "thread_timeout": thread_timeout_value,
+            "success": False,
+            "error": str(e),
+        }
+
+
+def display_test_config(config_info):
+    """显示测试配置信息"""
+    print("📋 当前测试配置:")
+
+    if config_info["success"] and config_info["server_config"]:
+        server_config = config_info["server_config"]
+        print(f"   主机: {server_config.host}")
+        print(f"   端口: {server_config.port}")
+        print(f"   反馈超时: {server_config.timeout}秒")
+        print(f"   重试: {server_config.max_retries}次")
+    else:
+        print("   ⚠️ 无法获取服务器配置，使用默认值")
+        if config_info.get("error"):
+            print(f"   错误信息: {config_info['error']}")
+
+    thread_timeout = config_info["thread_timeout"]
+    if thread_timeout == 0:
+        print("   线程等待超时: 无限等待")
+    else:
+        print(f"   线程等待超时: {thread_timeout}秒")
+    print("=" * 50)
+
+
+def main(args=None):
+    """主测试函数
+
+    Args:
+        args: 命令行参数对象，包含用户指定的配置选项
+
+    Returns:
+        bool: 所有测试是否都通过
+    """
     # 设置信号处理器和清理机制
     setup_signal_handlers()
 
     print("🧪 AI Intervention Agent 智能介入代理测试")
     print("=" * 50)
 
-    # 显示当前配置
-    try:
-        from server import get_web_ui_config
+    # 验证参数
+    if args and not validate_args(args):
+        return False
 
-        config = get_web_ui_config()
-        print("📋 当前测试配置:")
-        print(f"   主机: {config.host}")
-        print(f"   端口: {config.port}")
-        print(f"   超时: {config.timeout}秒")
-        print(f"   重试: {config.max_retries}次")
-        print("=" * 50)
-    except Exception as e:
-        print(f"⚠️ 无法获取配置: {e}")
-        print("=" * 50)
+    # 获取和显示配置
+    config_info = get_test_config(args)
+    display_test_config(config_info)
+
+    thread_timeout_value = config_info["thread_timeout"]
 
     # 运行所有测试
     tests = [
         ("配置验证", test_config_validation),
         ("服务健康检查", test_service_health),
-        ("智能介入工作流程", test_persistent_workflow),
+        ("智能介入工作流程", lambda: test_persistent_workflow(thread_timeout_value)),
     ]
 
     results = []
@@ -505,16 +611,34 @@ def main():
 
     # 显示使用示例
     print("\n💡 使用提示:")
-    print("   指定端口: python test.py --port 8081")
-    print("   指定主机: python test.py --host 127.0.0.1")
-    print("   详细日志: python test.py --verbose")
-    print("   组合使用: python test.py --port 8081 --verbose")
-    print("   查看帮助: python test.py --help")
+    print("   指定端口: --port 8081")
+    print("   指定主机: -host 127.0.0.1")
+    print("   指定线程等待超时: --thread-timeout 600")
+    print("   指定反馈超时: --timeout 60")
+    print("   详细日志: --verbose")
+    print("   查看帮助: --help")
 
     return passed == total
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    setup_test_environment(args)
-    main()
+    try:
+        args = parse_arguments()
+
+        # 设置测试环境
+        if not setup_test_environment(args):
+            print("❌ 环境设置失败，程序退出")
+            sys.exit(1)
+
+        # 运行主测试
+        success = main(args)
+        sys.exit(0 if success else 1)
+
+    except KeyboardInterrupt:
+        print("\n👋 程序被用户中断")
+        cleanup_services()
+        sys.exit(0)
+    except Exception as e:
+        print(f"❌ 程序运行出错: {e}")
+        cleanup_services()
+        sys.exit(1)
