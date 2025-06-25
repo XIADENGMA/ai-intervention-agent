@@ -4,7 +4,7 @@
   - 并没有正确传入到 cursor 或其他 ide -> 修改为不使用 base64，使用 fastmcp image 的形式
 - [ ] 允许接收到反馈时以合适的方式通知（声音/系统通知/bark 通知……）
 - [ ] 更换页面上字体为版权合适字体
-- [ ] 全平台快捷键支持
+- [x] 全平台快捷键支持
 - [ ] 更新 README，英文、中文版本
   - 参考：https://github.com/Minidoracat/mcp-feedback-enhanced/blob/main/README.zh-CN.md
 - [ ] 重构主题

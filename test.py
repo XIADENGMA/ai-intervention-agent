@@ -4,13 +4,61 @@ AI Intervention Agent 智能介入代理测试工具
 """
 
 import argparse
+import atexit
 import os
+import signal
 import sys
 import threading
 import time
 
 # 添加当前目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+# 全局变量用于跟踪清理状态
+_cleanup_registered = False
+
+
+def setup_signal_handlers():
+    """设置信号处理器"""
+    global _cleanup_registered
+
+    if _cleanup_registered:
+        return
+
+    def signal_handler(signum, frame):
+        """信号处理器"""
+        print(f"\n🛑 收到中断信号 {signum}，正在清理资源...")
+        cleanup_services()
+        print("👋 程序已安全退出")
+        sys.exit(0)
+
+    def cleanup_on_exit():
+        """程序退出时的清理函数"""
+        print("🧹 程序退出，正在清理资源...")
+        cleanup_services()
+
+    # 注册信号处理器
+    if hasattr(signal, "SIGINT"):
+        signal.signal(signal.SIGINT, signal_handler)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, signal_handler)
+
+    # 注册退出清理函数
+    atexit.register(cleanup_on_exit)
+
+    _cleanup_registered = True
+    print("🔧 信号处理器和清理机制已注册")
+
+
+def cleanup_services():
+    """清理所有服务进程"""
+    try:
+        from server import cleanup_services as server_cleanup
+
+        server_cleanup()
+    except Exception as e:
+        print(f"⚠️ 清理服务时出错: {e}")
 
 
 def format_feedback_result(result):
@@ -282,8 +330,15 @@ $$
             print("⚠️ 第二次反馈失败")
             return False
 
+    except KeyboardInterrupt:
+        print("\n🛑 测试被用户中断")
+        print("🧹 正在清理资源...")
+        cleanup_services()
+        return False
     except Exception as e:
         print(f"❌ 智能介入测试失败: {e}")
+        print("🧹 正在清理资源...")
+        cleanup_services()
         return False
 
 
@@ -376,6 +431,9 @@ def find_available_port(start_port, max_attempts=10):
 
 def main():
     """主测试函数"""
+    # 设置信号处理器和清理机制
+    setup_signal_handlers()
+
     print("🧪 AI Intervention Agent 智能介入代理测试")
     print("=" * 50)
 
@@ -418,6 +476,8 @@ def main():
 
         except KeyboardInterrupt:
             print(f"\n👋 {test_name} 测试被中断")
+            print("🧹 正在清理资源...")
+            cleanup_services()
             break
         except Exception as e:
             print(f"❌ {test_name} 测试出错: {e}")

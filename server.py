@@ -1,8 +1,11 @@
+import atexit
 import logging
 import os
+import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
@@ -24,11 +27,178 @@ log_handlers = [logging.StreamHandler(sys.stderr)]
 # log_handlers.append(logging.FileHandler(log_file))
 
 logging.basicConfig(
-    level=logging.DEBUG,  # 临时启用调试信息来排查问题
+    level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=log_handlers,
 )
 logger = logging.getLogger(__name__)
+
+
+class ServiceManager:
+    """服务管理器 - 单例模式管理所有启动的服务进程"""
+
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if not getattr(self, "_initialized", False):
+            self._processes = {}
+            self._cleanup_registered = False
+            self._initialized = True
+            self._register_cleanup()
+
+    def _register_cleanup(self):
+        """注册清理函数"""
+        if not self._cleanup_registered:
+            atexit.register(self.cleanup_all)
+            # 只在主线程中注册信号处理器
+            try:
+                if hasattr(signal, "SIGINT"):
+                    signal.signal(signal.SIGINT, self._signal_handler)
+                if hasattr(signal, "SIGTERM"):
+                    signal.signal(signal.SIGTERM, self._signal_handler)
+                logger.debug("服务管理器信号处理器已注册")
+            except ValueError as e:
+                # 如果不在主线程中，信号处理器注册会失败，这是正常的
+                logger.debug(f"信号处理器注册跳过（非主线程）: {e}")
+            self._cleanup_registered = True
+            logger.debug("服务管理器清理机制已注册")
+
+    def _signal_handler(self, signum, frame):
+        """信号处理器"""
+        logger.info(f"收到信号 {signum}，正在清理服务...")
+        self.cleanup_all()
+        sys.exit(0)
+
+    def register_process(
+        self, name: str, process: subprocess.Popen, config: "WebUIConfig"
+    ):
+        """注册服务进程"""
+        with self._lock:
+            self._processes[name] = {
+                "process": process,
+                "config": config,
+                "start_time": time.time(),
+            }
+            logger.info(f"已注册服务进程: {name} (PID: {process.pid})")
+
+    def unregister_process(self, name: str):
+        """注销服务进程"""
+        with self._lock:
+            if name in self._processes:
+                del self._processes[name]
+                logger.debug(f"已注销服务进程: {name}")
+
+    def get_process(self, name: str) -> Optional[subprocess.Popen]:
+        """获取服务进程"""
+        with self._lock:
+            process_info = self._processes.get(name)
+            return process_info["process"] if process_info else None
+
+    def is_process_running(self, name: str) -> bool:
+        """检查进程是否在运行"""
+        process = self.get_process(name)
+        if process is None:
+            return False
+
+        try:
+            # 检查进程是否还在运行
+            return process.poll() is None
+        except Exception:
+            return False
+
+    def terminate_process(self, name: str, timeout: float = 5.0) -> bool:
+        """终止进程"""
+        process_info = self._processes.get(name)
+        if not process_info:
+            return True
+
+        process = process_info["process"]
+        config = process_info["config"]
+
+        try:
+            if process.poll() is not None:
+                logger.debug(f"进程 {name} 已经结束")
+                self.unregister_process(name)
+                return True
+
+            logger.info(f"正在终止服务进程: {name} (PID: {process.pid})")
+
+            # 首先尝试关闭
+            process.terminate()
+
+            # 等待进程结束
+            try:
+                process.wait(timeout=timeout)
+                logger.info(f"服务进程 {name} 已关闭")
+            except subprocess.TimeoutExpired:
+                # 如果超时，强制终止
+                logger.warning(f"服务进程 {name} 超时，强制终止")
+                process.kill()
+                process.wait(timeout=2.0)
+
+            # 检查端口是否释放
+            self._wait_for_port_release(config.host, config.port)
+
+            self.unregister_process(name)
+            return True
+
+        except Exception as e:
+            logger.error(f"终止进程 {name} 时出错: {e}")
+            return False
+
+    def _wait_for_port_release(self, host: str, port: int, timeout: float = 10.0):
+        """等待端口释放"""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if not is_web_service_running(host, port, timeout=1.0):
+                logger.debug(f"端口 {host}:{port} 已释放")
+                return
+            time.sleep(0.5)
+        logger.warning(f"端口 {host}:{port} 在 {timeout}秒内未释放")
+
+    def cleanup_all(self):
+        """清理所有服务进程"""
+        if not self._processes:
+            return
+
+        logger.info("开始清理所有服务进程...")
+
+        with self._lock:
+            processes_to_cleanup = list(self._processes.keys())
+
+        for name in processes_to_cleanup:
+            try:
+                self.terminate_process(name)
+            except Exception as e:
+                logger.error(f"清理进程 {name} 时出错: {e}")
+
+        logger.info("服务进程清理完成")
+
+    def get_status(self) -> Dict[str, Dict]:
+        """获取所有服务状态"""
+        status = {}
+        with self._lock:
+            for name, info in self._processes.items():
+                process = info["process"]
+                status[name] = {
+                    "pid": process.pid,
+                    "running": process.poll() is None,
+                    "start_time": info["start_time"],
+                    "config": {
+                        "host": info["config"].host,
+                        "port": info["config"].port,
+                    },
+                }
+        return status
 
 
 @dataclass
@@ -192,13 +362,15 @@ def health_check_service(config: WebUIConfig) -> bool:
 def start_web_service(config: WebUIConfig, script_dir: str) -> None:
     """启动Web服务 - 启动时为"无有效内容"状态"""
     web_ui_path = os.path.join(script_dir, "web_ui.py")
+    service_manager = ServiceManager()
+    service_name = f"web_ui_{config.host}_{config.port}"
 
     # 验证 web_ui.py 文件是否存在
     if not os.path.exists(web_ui_path):
         raise FileNotFoundError(f"Web UI 脚本不存在: {web_ui_path}")
 
     # 检查服务是否已经在运行
-    if health_check_service(config):
+    if service_manager.is_process_running(service_name) or health_check_service(config):
         logger.info(f"Web 服务已在运行: http://{config.host}:{config.port}")
         return
 
@@ -228,6 +400,9 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
             close_fds=True,
         )
         logger.info(f"Web 服务进程已启动，PID: {process.pid}")
+
+        # 注册进程到服务管理器
+        service_manager.register_process(service_name, process, config)
 
     except FileNotFoundError as e:
         logger.error(f"Python 解释器或脚本文件未找到: {e}")
@@ -664,6 +839,55 @@ def interactive_feedback(
         return [f"反馈收集失败: {str(e)}"]
 
 
+class FeedbackServiceContext:
+    """反馈服务上下文管理器"""
+
+    def __init__(self):
+        self.service_manager = ServiceManager()
+        self.config = None
+        self.script_dir = None
+
+    def __enter__(self):
+        """进入上下文"""
+        try:
+            self.config = get_web_ui_config()
+            self.script_dir = os.path.dirname(os.path.abspath(__file__))
+            logger.info("反馈服务上下文已初始化")
+            return self
+        except Exception as e:
+            logger.error(f"初始化反馈服务上下文失败: {e}")
+            raise
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """退出上下文"""
+        try:
+            self.service_manager.cleanup_all()
+            if exc_type is KeyboardInterrupt:
+                logger.info("收到中断信号，服务已清理")
+            elif exc_type is not None:
+                logger.error(f"异常退出，服务已清理: {exc_type.__name__}: {exc_val}")
+            else:
+                logger.info("正常退出，服务已清理")
+        except Exception as e:
+            logger.error(f"清理服务时出错: {e}")
+
+    def launch_feedback_ui(
+        self, summary: str, predefined_options: Optional[list[str]] = None
+    ) -> Dict[str, str]:
+        """在上下文中启动反馈界面"""
+        return launch_feedback_ui(summary, predefined_options)
+
+
+def cleanup_services():
+    """清理所有服务进程的便捷函数"""
+    try:
+        service_manager = ServiceManager()
+        service_manager.cleanup_all()
+        logger.info("服务清理完成")
+    except Exception as e:
+        logger.error(f"服务清理失败: {e}")
+
+
 def main():
     """Main entry point for the AI Intervention Agent MCP server."""
     try:
@@ -671,8 +895,10 @@ def main():
         mcp.run(transport="stdio")
     except KeyboardInterrupt:
         logger.info("收到中断信号，正在关闭服务器")
+        cleanup_services()
     except Exception as e:
         logger.error(f"服务器启动失败: {e}")
+        cleanup_services()
         sys.exit(1)
 
 
