@@ -84,17 +84,150 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
     return json.loads(cleaned_content)
 
 
+def _is_uvx_mode() -> bool:
+    """检测是否为uvx方式运行
+
+    通过检查以下特征判断：
+    1. 执行路径是否包含uvx相关路径
+    2. 环境变量是否包含uvx标识
+    3. 当前工作目录是否为临时目录
+
+    Returns:
+        True if running via uvx, False otherwise
+    """
+    import os
+    import sys
+
+    # 检查执行路径
+    executable_path = sys.executable
+    if "uvx" in executable_path or ".local/share/uvx" in executable_path:
+        return True
+
+    # 检查环境变量
+    if os.getenv("UVX_PROJECT"):
+        return True
+
+    # 检查是否在项目开发目录（包含pyproject.toml等开发文件）
+    current_dir = Path.cwd()
+    dev_files = ["pyproject.toml", "setup.py", "setup.cfg", ".git"]
+
+    # 如果当前目录或父目录包含开发文件，认为是开发模式
+    for path in [current_dir] + list(current_dir.parents):
+        if any((path / dev_file).exists() for dev_file in dev_files):
+            return False
+
+    # 默认认为是uvx模式（更安全的假设）
+    return True
+
+
+def find_config_file(config_filename: str = "config.jsonc") -> Path:
+    """查找配置文件路径
+
+    根据运行方式查找配置文件：
+    - uvx方式：只使用用户配置目录的全局配置
+    - 开发模式：优先当前目录，然后用户配置目录
+
+    跨平台配置目录位置：
+    - Linux: ~/.config/ai-intervention-agent/
+    - macOS: ~/Library/Application Support/ai-intervention-agent/
+    - Windows: %APPDATA%/ai-intervention-agent/
+
+    Args:
+        config_filename: 配置文件名
+
+    Returns:
+        配置文件的Path对象
+    """
+    # 检测是否为uvx方式运行
+    is_uvx_mode = _is_uvx_mode()
+
+    if is_uvx_mode:
+        logger.info("检测到uvx运行模式，使用用户配置目录")
+    else:
+        logger.info("检测到开发模式，优先使用当前目录配置")
+
+    if not is_uvx_mode:
+        # 开发模式：1. 检查当前工作目录
+        current_dir_config = Path(config_filename)
+        if current_dir_config.exists():
+            logger.info(f"使用当前目录的配置文件: {current_dir_config.absolute()}")
+            return current_dir_config
+
+        # 向后兼容：检查当前目录的.json文件
+        if config_filename == "config.jsonc":
+            current_dir_json = Path("config.json")
+            if current_dir_json.exists():
+                logger.info(
+                    f"使用当前目录的JSON配置文件: {current_dir_json.absolute()}"
+                )
+                return current_dir_json
+
+    # 2. 检查用户配置目录（使用跨平台标准位置）
+    try:
+        # 尝试使用 platformdirs 库获取标准配置目录
+        try:
+            from platformdirs import user_config_dir
+
+            user_config_dir_path = Path(user_config_dir("ai-intervention-agent"))
+        except ImportError:
+            # 如果没有 platformdirs，回退到手动判断
+            user_config_dir_path = _get_user_config_dir_fallback()
+
+        user_config_file = user_config_dir_path / config_filename
+
+        if user_config_file.exists():
+            logger.info(f"使用用户配置目录的配置文件: {user_config_file}")
+            return user_config_file
+
+        # 向后兼容：检查用户配置目录的.json文件
+        if config_filename == "config.jsonc":
+            user_json_file = user_config_dir_path / "config.json"
+            if user_json_file.exists():
+                logger.info(f"使用用户配置目录的JSON配置文件: {user_json_file}")
+                return user_json_file
+
+        # 3. 如果都不存在，返回用户配置目录路径（用于创建默认配置）
+        logger.info(f"配置文件不存在，将在用户配置目录创建: {user_config_file}")
+        return user_config_file
+
+    except Exception as e:
+        logger.warning(f"获取用户配置目录失败: {e}，使用当前目录")
+        return Path(config_filename)
+
+
+def _get_user_config_dir_fallback() -> Path:
+    """获取用户配置目录的回退实现（不依赖 platformdirs）"""
+    import os
+    import platform
+
+    system = platform.system().lower()
+    home = Path.home()
+
+    if system == "windows":
+        # Windows: %APPDATA%/ai-intervention-agent/
+        appdata = os.getenv("APPDATA")
+        if appdata:
+            return Path(appdata) / "ai-intervention-agent"
+        else:
+            return home / "AppData" / "Roaming" / "ai-intervention-agent"
+    elif system == "darwin":
+        # macOS: ~/Library/Application Support/ai-intervention-agent/
+        return home / "Library" / "Application Support" / "ai-intervention-agent"
+    else:
+        # Linux/Unix: ~/.config/ai-intervention-agent/
+        xdg_config_home = os.getenv("XDG_CONFIG_HOME")
+        if xdg_config_home:
+            return Path(xdg_config_home) / "ai-intervention-agent"
+        else:
+            return home / ".config" / "ai-intervention-agent"
+
+
 class ConfigManager:
     """配置管理器"""
 
     def __init__(self, config_file: str = "config.jsonc"):
-        self.config_file = Path(config_file)
-        # 向后兼容：如果 .jsonc 不存在但 .json 存在，则使用 .json
-        if not self.config_file.exists() and config_file == "config.jsonc":
-            json_file = Path("config.json")
-            if json_file.exists():
-                self.config_file = json_file
-                logger.info("使用现有的 config.json 文件")
+        # 使用新的配置文件查找逻辑
+        self.config_file = find_config_file(config_file)
 
         self._config = {}
         self._lock = threading.RLock()
@@ -150,7 +283,7 @@ class ConfigManager:
                 else:
                     # 创建默认配置文件
                     self._config = self._get_default_config()
-                    self._save_config()
+                    self._create_default_config_file()
                     logger.info(f"创建默认配置文件: {self.config_file}")
 
                 # 合并默认配置（确保新增的配置项存在）
@@ -230,9 +363,65 @@ class ConfigManager:
 
         return "\n".join(result_lines)
 
+    def _create_default_config_file(self):
+        """创建带注释的默认配置文件"""
+        try:
+            # 确保配置文件目录存在
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # 创建带注释的JSONC配置文件内容
+            default_content = """{
+  // 通知配置
+  "notification": {
+    "enabled": true,                    // 是否启用通知功能
+    "web_enabled": true,                // 是否启用Web浏览器通知
+    "auto_request_permission": true,    // 是否自动请求通知权限
+    "sound_enabled": true,              // 是否启用声音通知
+    "sound_mute": false,                // 是否静音
+    "sound_volume": 800000,             // 声音音量 (0-1000000)
+    "mobile_optimized": true,           // 是否启用移动端优化
+    "mobile_vibrate": true,             // 移动端是否启用震动
+    "bark_enabled": false,              // 是否启用Bark推送通知
+    "bark_url": "",                     // Bark服务器URL (例如: https://api.day.app/push)
+    "bark_device_key": "",              // Bark设备密钥
+    "bark_icon": "",                    // Bark通知图标URL (可选)
+    "bark_action": "none"               // Bark通知动作 (none/url/copy)
+  },
+
+  // Web界面配置
+  "web_ui": {
+    "host": "0.0.0.0",                  // Web服务监听地址
+    "port": 8082,                       // Web服务端口
+    "debug": false,                     // 是否启用调试模式
+    "max_retries": 3,                   // 最大重试次数
+    "retry_delay": 1.0                  // 重试延迟时间(秒)
+  },
+
+  // 反馈配置
+  "feedback": {
+    "timeout": 300                      // 反馈超时时间(秒)
+  }
+}"""
+
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                f.write(default_content)
+
+            # 保存原始内容用于后续更新时保留注释
+            self._original_content = default_content
+
+            logger.info(f"已创建默认JSONC配置文件: {self.config_file}")
+
+        except Exception as e:
+            logger.error(f"创建默认配置文件失败: {e}")
+            # 如果创建JSONC文件失败，回退到普通JSON文件
+            self._save_config()
+
     def _save_config(self):
         """保存配置文件"""
         try:
+            # 确保配置文件目录存在
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+
             with open(self.config_file, "w", encoding="utf-8") as f:
                 if (
                     self.config_file.suffix.lower() == ".jsonc"

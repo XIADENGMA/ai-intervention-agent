@@ -102,10 +102,32 @@ ai-intervention-agent 工具使用细节：
 
 项目使用 `config.jsonc` 文件进行配置管理，这是一种支持注释的 JSON 格式，让配置更加清晰易懂。
 
-#### 📁 配置文件结构
+#### 📁 配置文件查找顺序
 
-- `config.jsonc.default` - 默认配置模板文件（包含详细注释说明）
-- `config.jsonc` - 实际使用的配置文件（首次运行时会自动从默认模板创建）
+系统会根据运行方式智能选择配置文件：
+
+**🚀 uvx 方式（推荐）**：
+
+- 只使用用户配置目录的全局配置
+- 自动创建默认配置文件
+
+**🛠️ 开发模式**：
+
+1. **当前工作目录** - `./config.jsonc`
+2. **用户配置目录** - 跨平台标准位置的配置文件
+3. **自动创建** - 如果都不存在，会在用户配置目录自动创建默认配置文件
+
+#### 🌍 跨平台配置目录位置
+
+不同操作系统的用户配置目录位置：
+
+| 操作系统       | 配置目录位置                                           |
+| -------------- | ------------------------------------------------------ |
+| **Linux/Unix** | `~/.config/ai-intervention-agent/`                     |
+| **macOS**      | `~/Library/Application Support/ai-intervention-agent/` |
+| **Windows**    | `%APPDATA%/ai-intervention-agent/`                     |
+
+> 💡 系统会自动检测操作系统并使用对应的标准配置目录
 
 ### 🧪 测试工具参数
 
@@ -160,6 +182,9 @@ graph TB
         C -->|启动服务| E[start_web_service]
         C -->|更新内容| F[update_web_content]
         C -->|等待反馈| G[wait_for_feedback]
+
+        B -->|配置管理| CM[config_manager.py]
+        B -->|通知系统| NM[notification_manager.py]
     end
 
     subgraph "Web 服务"
@@ -167,19 +192,28 @@ graph TB
         H -->|Flask App| I[WebFeedbackUI]
         I -->|路由| J[API Endpoints]
         I -->|模板| K[HTML Template]
+        I -->|静态资源| SR[fonts/icons/sounds]
     end
 
     subgraph "用户界面"
         J -->|HTTP| L[浏览器]
         K -->|渲染| L
         L -->|Markdown| M[富文本显示]
+        L -->|图片上传| IMG[Image Upload]
         L -->|交互| N[用户反馈]
+    end
+
+    subgraph "通知功能"
+        NM -->|多种通知| NT[Web/Sound/Bark/System]
     end
 
     N -->|POST /api/submit| J
     J -->|JSON Response| G
     G -->|结果| B
     B -->|MCP Response| A
+
+    C -->|触发通知| NM
+    CM -->|JSONC配置| CF[config.jsonc]
 ```
 
 ## 同类产品
