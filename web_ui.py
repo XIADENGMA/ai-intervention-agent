@@ -263,7 +263,7 @@ class WebFeedbackUI:
             try:
                 # 获取请求数据
                 data = request.json or {}
-                bark_url = data.get("bark_url", "https://bark.xiadengma.com/push")
+                bark_url = data.get("bark_url", "https://api.day.app/push")
                 bark_device_key = data.get("bark_device_key", "")
                 bark_icon = data.get("bark_icon", "")
                 bark_action = data.get("bark_action", "none")
@@ -278,7 +278,6 @@ class WebFeedbackUI:
                     from notification_manager import (
                         NotificationTrigger,
                         NotificationType,
-                        notification_manager,
                     )
                     from notification_providers import BarkNotificationProvider
 

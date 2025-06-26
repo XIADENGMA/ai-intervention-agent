@@ -247,9 +247,9 @@ class ConfigManager:
                 "mobile_optimized": True,
                 "mobile_vibrate": True,
                 "bark_enabled": False,
-                "bark_url": "https://bark.xiadengma.com/push",
+                "bark_url": "https://api.day.app/push",
                 "bark_device_key": "",
-                "bark_icon": "https://filess.s3.bitiful.net/Bark/btc.png",
+                "bark_icon": "",
                 "bark_action": "none",
             },
             "web_ui": {
@@ -259,7 +259,7 @@ class ConfigManager:
                 "max_retries": 3,
                 "retry_delay": 1.0,
             },
-            "feedback": {"timeout": 300},
+            "feedback": {"timeout": 600},
         }
 
     def _load_config(self):
@@ -399,7 +399,7 @@ class ConfigManager:
 
   // 反馈配置
   "feedback": {
-    "timeout": 300                      // 反馈超时时间(秒)
+    "timeout": 600                      // 反馈超时时间(秒)
   }
 }"""
 
