@@ -254,7 +254,7 @@ class ConfigManager:
             },
             "web_ui": {
                 "host": "0.0.0.0",
-                "port": 8082,
+                "port": 8080,
                 "debug": False,
                 "max_retries": 3,
                 "retry_delay": 1.0,
@@ -391,7 +391,7 @@ class ConfigManager:
   // Web界面配置
   "web_ui": {
     "host": "0.0.0.0",                  // Web服务监听地址
-    "port": 8082,                       // Web服务端口
+    "port": 8080,                       // Web服务端口
     "debug": false,                     // 是否启用调试模式
     "max_retries": 3,                   // 最大重试次数
     "retry_delay": 1.0                  // 重试延迟时间(秒)

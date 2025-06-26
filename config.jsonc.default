@@ -13,18 +13,18 @@
     "bark_url": "",                     // Bark服务器URL (例如: https://api.day.app/push)
     "bark_device_key": "",              // Bark设备密钥
     "bark_icon": "",                    // Bark通知图标URL (可选)
-    "bark_action": "none"               // Bark通知动作 (none/url/copy)
+    "bark_action": "none"               // Bark通知动作 (none【无操作】/url【打开链接】/copy【复制】)
   },
   // Web界面配置
   "web_ui": {
     "host": "0.0.0.0",                  // Web服务监听地址
-    "port": 8081,                       // Web服务端口
+    "port": 8080,                       // Web服务端口
     "debug": false,                     // 是否启用调试模式
     "max_retries": 3,                   // 最大重试次数
     "retry_delay": 1.0                  // 重试延迟时间(秒)
   },
   // 反馈配置
   "feedback": {
-    "timeout": 300                      // 反馈超时时间(秒)
+    "timeout": 600                      // 反馈超时时间(秒)
   }
 }
