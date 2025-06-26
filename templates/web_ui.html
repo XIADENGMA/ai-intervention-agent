@@ -139,6 +139,9 @@
         padding: 1rem 1.75rem;
         border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
         position: relative;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
       }
 
       .header::after {
@@ -168,6 +171,610 @@
         display: flex;
         align-items: center;
         justify-content: center;
+      }
+
+      /* 设置按钮样式 - 简化版 */
+      .settings-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+        color: #f5f5f7;
+        padding: 0.5rem;
+        font-size: 1.2rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .settings-btn:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .settings-btn:active {
+        transform: translateY(0);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .settings-btn:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
+      }
+
+      /* 设置面板样式 - 简化版 */
+      .settings-panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        backdrop-filter: blur(8px);
+        animation: fadeIn 0.2s ease-out;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .settings-content {
+        background: linear-gradient(145deg, rgba(30, 30, 40, 0.98), rgba(25, 25, 35, 0.95));
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 20px;
+        max-width: 800px;
+        width: 100%;
+        max-height: 85vh;
+        overflow: hidden;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+        backdrop-filter: blur(20px);
+        position: relative;
+      }
+
+      .settings-content::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+      }
+
+      .settings-content::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .settings-content::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 3px;
+      }
+
+      .settings-content::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
+        border-radius: 3px;
+      }
+
+      .settings-content::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.2));
+      }
+
+      .settings-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 2.5rem 2.5rem 2rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01));
+        position: relative;
+      }
+
+      .settings-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+      }
+
+      .settings-header::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 2.5rem;
+        right: 2.5rem;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(0, 122, 255, 0.3), transparent);
+      }
+
+      .settings-header h3 {
+        margin: 0;
+        color: #ffffff;
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .settings-close-btn {
+        background: linear-gradient(135deg, rgba(255, 69, 58, 0.12), rgba(255, 69, 58, 0.08));
+        border: 1.5px solid rgba(255, 69, 58, 0.25);
+        border-radius: 50%;
+        color: #ff453a;
+        padding: 0;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        box-shadow: 0 2px 12px rgba(255, 69, 58, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .settings-close-btn::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 14px;
+        height: 2px;
+        background: currentColor;
+        transform: translate(-50%, -50%) rotate(45deg);
+        border-radius: 1px;
+        transition: all 0.2s ease;
+      }
+
+      .settings-close-btn::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 14px;
+        height: 2px;
+        background: currentColor;
+        transform: translate(-50%, -50%) rotate(-45deg);
+        border-radius: 1px;
+        transition: all 0.2s ease;
+      }
+
+      .settings-close-btn:hover {
+        background: linear-gradient(135deg, rgba(255, 69, 58, 0.2), rgba(255, 69, 58, 0.15));
+        border-color: rgba(255, 69, 58, 0.4);
+        transform: scale(1.08);
+        box-shadow: 0 4px 20px rgba(255, 69, 58, 0.25), 0 2px 8px rgba(0, 0, 0, 0.15);
+        color: #ff2d20;
+      }
+
+      .settings-close-btn:hover::before,
+      .settings-close-btn:hover::after {
+        width: 16px;
+        height: 2.5px;
+      }
+
+      .settings-close-btn:active {
+        transform: scale(0.92);
+        box-shadow: 0 1px 6px rgba(255, 69, 58, 0.3), inset 0 1px 2px rgba(0, 0, 0, 0.1);
+        background: linear-gradient(135deg, rgba(255, 69, 58, 0.25), rgba(255, 69, 58, 0.2));
+      }
+
+      .settings-body {
+        padding: 2rem;
+        max-height: calc(85vh - 140px);
+        overflow-y: auto;
+        background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.005));
+      }
+
+      .settings-main-title {
+        color: #ffffff;
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin: 0 0 1.5rem 0;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .setting-group {
+        margin-bottom: 2rem;
+        background: rgba(45, 45, 60, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 24px;
+        padding: 1.5rem;
+        position: relative;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+      }
+
+      .setting-group::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+      }
+
+      .setting-group:last-child {
+        margin-bottom: 0;
+      }
+
+      .setting-group::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+        border-radius: 16px 16px 0 0;
+      }
+
+      .setting-group-title {
+        color: #f5f5f7;
+        font-size: 1.2rem;
+        font-weight: 700;
+        margin: 0 0 1.5rem 0;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+        background: linear-gradient(135deg, #f5f5f7, rgba(0, 122, 255, 0.8));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        position: relative;
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .setting-group-title::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 40%;
+        height: 2px;
+        background: linear-gradient(90deg, #007aff, rgba(0, 122, 255, 0.4), transparent);
+        border-radius: 1px;
+      }
+
+      .setting-subgroup {
+        margin: 1.5rem 0;
+        padding: 1rem;
+        background: rgba(255, 255, 255, 0.02);
+        border-radius: 12px;
+        position: relative;
+      }
+
+      .setting-subgroup-title {
+        color: rgba(245, 245, 247, 0.95);
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 1rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .setting-item {
+        margin-bottom: 1rem;
+        padding: 0.5rem 0;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        transition: none;
+        position: relative;
+      }
+
+      .setting-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .setting-label {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        cursor: pointer;
+        margin-bottom: 0;
+        padding: 0.25rem;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+      }
+
+      .setting-label input[type='checkbox'] {
+        width: 20px;
+        height: 20px;
+        accent-color: #007aff;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.2s ease;
+        position: relative;
+      }
+
+      .setting-label input[type='checkbox']:checked {
+        transform: scale(1.1);
+        box-shadow: 0 0 10px rgba(0, 122, 255, 0.3);
+      }
+
+      .setting-title {
+        color: #f5f5f7;
+        font-size: 1rem;
+        font-weight: 600;
+        flex: 1;
+        transition: color 0.2s ease;
+        letter-spacing: -0.01em;
+      }
+
+      .setting-label:hover .setting-title {
+        color: rgba(245, 245, 247, 0.9);
+      }
+
+      .setting-description {
+        color: rgba(245, 245, 247, 0.65);
+        font-size: 0.9rem;
+        line-height: 1.5;
+        margin-left: 3rem;
+        font-style: italic;
+        transition: color 0.2s ease;
+      }
+
+      .setting-item:hover .setting-description {
+        color: rgba(245, 245, 247, 0.75);
+      }
+
+      /* 音量滑块样式 - 美化版 */
+      .volume-slider {
+        flex: 1;
+        margin: 0 1rem;
+        height: 6px;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+        border-radius: 3px;
+        outline: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        position: relative;
+      }
+
+      .volume-slider::-webkit-slider-thumb {
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        background: linear-gradient(135deg, #007aff, #0056cc);
+        border-radius: 50%;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3), 0 0 0 2px rgba(255, 255, 255, 0.1);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .volume-slider::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
+        box-shadow: 0 4px 15px rgba(0, 122, 255, 0.4), 0 0 0 3px rgba(255, 255, 255, 0.2),
+          0 0 20px rgba(0, 122, 255, 0.2);
+      }
+
+      .volume-slider::-moz-range-thumb {
+        width: 20px;
+        height: 20px;
+        background: linear-gradient(135deg, #007aff, #0056cc);
+        border-radius: 50%;
+        cursor: pointer;
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .volume-value {
+        color: #007aff;
+        font-size: 1rem;
+        font-weight: 700;
+        min-width: 50px;
+        text-align: right;
+        background: linear-gradient(135deg, #007aff, rgba(0, 122, 255, 0.8));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-shadow: 0 0 10px rgba(0, 122, 255, 0.3);
+      }
+
+      /* 设置输入框样式 */
+      .setting-input {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        margin-top: 0.5rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: #f5f5f7;
+        font-size: 0.95rem;
+        font-family: inherit;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+      }
+
+      .setting-input:focus {
+        outline: none;
+        border-color: #007aff;
+        background: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+      }
+
+      .setting-input::placeholder {
+        color: rgba(245, 245, 247, 0.5);
+      }
+
+      /* 设置选择框样式 */
+      .setting-select {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        margin-top: 0.5rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        color: #f5f5f7;
+        font-size: 0.95rem;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+        appearance: none;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5f5f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right 1rem center;
+        background-size: 16px;
+        padding-right: 3rem;
+      }
+
+      .setting-select:focus {
+        outline: none;
+        border-color: #007aff;
+        background-color: rgba(255, 255, 255, 0.08);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+      }
+
+      .setting-select option {
+        background: #1a1a1f;
+        color: #f5f5f7;
+        padding: 0.5rem;
+      }
+
+      /* 设置标签布局调整 */
+      .setting-label.has-input {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+
+      .setting-label.has-input .setting-title {
+        margin-bottom: 0.25rem;
+      }
+
+      /* 按钮样式 - 简化版 */
+      .btn {
+        background: rgba(0, 122, 255, 0.8);
+        border: 1px solid rgba(0, 122, 255, 0.3);
+        border-radius: 10px;
+        color: #ffffff;
+        padding: 0.75rem 1.5rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+      }
+
+      .btn:hover {
+        background: rgba(0, 122, 255, 0.9);
+        border-color: rgba(0, 122, 255, 0.5);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+      }
+
+      .btn:active {
+        transform: translateY(0);
+        background: rgba(0, 122, 255, 0.7);
+      }
+
+      .btn-secondary {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #f5f5f7;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(10px);
+      }
+
+      .btn-secondary:hover {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.1));
+        border-color: rgba(255, 255, 255, 0.25);
+        color: #ffffff;
+      }
+
+      /* 状态信息样式 - 美化版 */
+      .status-info {
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        padding: 1.75rem;
+        position: relative;
+        backdrop-filter: blur(15px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      .status-info::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        border-radius: 16px 16px 0 0;
+      }
+
+      .status-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        transition: all 0.2s ease;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.005));
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .status-row:last-child {
+        margin-bottom: 0;
+      }
+
+      .status-row span:first-child {
+        color: rgba(245, 245, 247, 0.85);
+        font-size: 0.95rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .status-row span:last-child {
+        color: #f5f5f7;
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 0.4rem 0.75rem;
+        border-radius: 8px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(5px);
       }
 
       .content {
@@ -458,9 +1065,9 @@
       }
 
       .shortcut-hint {
-        position: absolute;
-        bottom: -18px;
-        left: 8px;
+        position: relative;
+        bottom: auto;
+        left: auto;
         display: flex; /* 默认显示 */
         align-items: center;
         gap: 0.25rem;
@@ -499,9 +1106,9 @@
 
       .shortcut-tooltip {
         position: absolute;
-        bottom: 100%;
+        top: 100%;
         left: 0;
-        margin-bottom: 8px;
+        margin-top: 8px;
         background: linear-gradient(
           135deg,
           rgba(30, 41, 59, 0.95) 0%,
@@ -542,11 +1149,11 @@
       .shortcut-hint::before {
         content: '';
         position: absolute;
-        bottom: 100%;
+        top: 100%;
         left: 16px;
-        margin-bottom: 2px;
+        margin-top: 2px;
         border: 6px solid transparent;
-        border-top-color: rgb(17, 24, 39);
+        border-bottom-color: rgb(17, 24, 39);
         opacity: 0;
         visibility: hidden;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1332,6 +1939,11 @@
           display: none !important;
         }
 
+        /* 移动端隐藏快捷键部分 */
+        .shortcuts-section {
+          display: none !important;
+        }
+
         body {
           padding: 0;
           font-size: 16px; /* 防止iOS缩放 */
@@ -1461,9 +2073,9 @@
         }
 
         .shortcut-tooltip {
-          bottom: 100%;
+          top: 100%;
           left: 0;
-          margin-bottom: 6px;
+          margin-top: 6px;
           width: fit-content;
           font-size: 0.6rem;
           padding: 6px 10px;
@@ -1614,6 +2226,39 @@
         .markdown-content ol ul {
           padding-left: 1rem;
         }
+
+        /* 设置面板中等屏幕优化 */
+        .settings-content {
+          max-width: 90%;
+          width: 90%;
+        }
+
+        .settings-header {
+          padding: 1.25rem 1.25rem 1rem;
+        }
+
+        .settings-body {
+          padding: 1.25rem;
+        }
+
+        .setting-label {
+          min-height: 40px;
+        }
+
+        .setting-label input[type='checkbox'] {
+          width: 18px;
+          height: 18px;
+        }
+
+        .btn {
+          min-height: 40px;
+          padding: 0.625rem 1rem;
+        }
+
+        .settings-close-btn {
+          min-width: 40px;
+          min-height: 40px;
+        }
       }
 
       /* 小屏幕手机适配 */
@@ -1745,6 +2390,154 @@
         .markdown-content ol ul {
           padding-left: 1.25rem;
         }
+
+        /* 设置面板移动端优化 */
+        .settings-panel {
+          padding: 0;
+          align-items: stretch;
+          justify-content: stretch;
+        }
+
+        .settings-content {
+          max-width: 100%;
+          width: 100%;
+          height: 100vh;
+          height: 100dvh;
+          max-height: 100vh;
+          max-height: 100dvh;
+          margin: 0;
+          border-radius: 0;
+          border: none;
+          background: rgba(30, 30, 40, 0.98);
+          display: flex;
+          flex-direction: column;
+        }
+
+        .settings-header {
+          padding: 1rem 1rem 0.75rem;
+          position: sticky;
+          top: 0;
+          background: rgba(30, 30, 40, 0.98);
+          z-index: 10;
+        }
+
+        .settings-header h3 {
+          font-size: 1.1rem;
+        }
+
+        .settings-close-btn {
+          width: 40px;
+          height: 40px;
+          min-width: 40px;
+          min-height: 40px;
+          border-radius: 50%;
+        }
+
+        .settings-close-btn::before,
+        .settings-close-btn::after {
+          width: 16px;
+          height: 2.5px;
+        }
+
+        .settings-body {
+          padding: 1rem;
+          padding-bottom: max(1rem, env(safe-area-inset-bottom));
+          flex: 1;
+          overflow-y: auto;
+          max-height: none !important;
+          height: auto;
+        }
+
+        .settings-main-title {
+          font-size: 1.1rem;
+          margin-bottom: 1rem;
+          padding-bottom: 0.5rem;
+        }
+
+        .setting-group {
+          margin-bottom: 1.5rem;
+          padding: 1rem;
+          border-radius: 12px;
+        }
+
+        .setting-group-title {
+          font-size: 0.95rem;
+          margin-bottom: 1rem;
+          padding-bottom: 0.5rem;
+        }
+
+        .setting-subgroup {
+          margin: 1rem 0;
+          padding: 0.75rem;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.01);
+        }
+
+        .setting-subgroup-title {
+          font-size: 0.85rem;
+          margin-bottom: 0.75rem;
+          padding-bottom: 0.25rem;
+        }
+
+        .setting-item {
+          margin-bottom: 0.75rem;
+          padding: 0.5rem 0;
+          border-radius: 0;
+          background: transparent;
+          border: none;
+        }
+
+        .setting-label {
+          gap: 0.75rem;
+          margin-bottom: 0;
+          min-height: 44px;
+          align-items: center;
+          padding: 0;
+        }
+
+        .setting-label input[type='checkbox'] {
+          width: 20px;
+          height: 20px;
+          min-width: 20px;
+          min-height: 20px;
+        }
+
+        .setting-title {
+          font-size: 1rem;
+          line-height: 1.4;
+        }
+
+        .setting-description {
+          font-size: 0.9rem;
+          line-height: 1.4;
+          margin-left: 3rem;
+        }
+
+        .volume-slider {
+          margin: 0 1rem;
+          min-height: 44px;
+        }
+
+        .btn {
+          min-height: 44px;
+          padding: 0.75rem 1rem;
+          font-size: 0.95rem;
+          border-radius: 12px;
+        }
+
+        .status-info {
+          padding: 0.75rem;
+        }
+
+        .status-row {
+          margin-bottom: 0.75rem;
+          min-height: 44px;
+          align-items: center;
+        }
+
+        .status-row span {
+          font-size: 0.95rem;
+        }
       }
     </style>
   </head>
@@ -1833,6 +2626,7 @@
           </div>
           AI Intervention Agent
         </h1>
+        <button class="settings-btn" id="settings-btn" title="通知设置">⚙️</button>
       </div>
 
       <!-- 无有效内容页面 -->
@@ -1949,11 +2743,6 @@
               id="feedback-text"
               placeholder="请在此输入您的反馈内容... (支持直接粘贴图片 Ctrl+V)"
             ></textarea>
-            <div class="shortcut-hint">
-              <span class="keyboard-icon">⌨️</span>
-              <span>常用快捷键</span>
-              <div class="shortcut-tooltip" id="shortcut-tooltip"></div>
-            </div>
           </div>
 
           <div class="button-container">
@@ -1963,6 +2752,216 @@
           </div>
 
           <div class="status-message" id="status-message"></div>
+        </div>
+      </div>
+
+      <!-- 设置面板 -->
+      <div class="settings-panel" id="settings-panel" style="display: none">
+        <div class="settings-content">
+          <div class="settings-header">
+            <h3>⚙️ 设置</h3>
+            <button
+              class="settings-close-btn"
+              id="settings-close-btn"
+              aria-label="关闭设置"
+            ></button>
+          </div>
+
+          <div class="settings-body">
+            <!-- 通知标题 -->
+            <h4 class="settings-main-title">🔔 通知</h4>
+
+            <!-- 通知设置 -->
+            <div class="setting-group">
+              <!-- 通知总开关 -->
+              <div class="setting-item">
+                <label class="setting-label">
+                  <input type="checkbox" id="notification-enabled" checked />
+                  <span class="setting-title">启用通知功能</span>
+                </label>
+              </div>
+
+              <!-- 桌面通知设置 -->
+              <div class="setting-subgroup">
+                <h5 class="setting-subgroup-title">🌐 桌面通知</h5>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <input type="checkbox" id="web-notification-enabled" checked />
+                    <span class="setting-title">桌面通知</span>
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <input type="checkbox" id="auto-request-permission" checked />
+                    <span class="setting-title">自动请求通知权限</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 声音通知设置 -->
+              <div class="setting-subgroup">
+                <h5 class="setting-subgroup-title">🔊 声音通知</h5>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <input type="checkbox" id="sound-notification-enabled" checked />
+                    <span class="setting-title">声音通知</span>
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <input type="checkbox" id="sound-mute" />
+                    <span class="setting-title">静音模式</span>
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <span class="setting-title">音量调节</span>
+                    <input
+                      type="range"
+                      id="sound-volume"
+                      min="0"
+                      max="100"
+                      value="80"
+                      class="volume-slider"
+                    />
+                    <span class="volume-value">80%</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 移动设备通知设置 -->
+              <div class="setting-subgroup">
+                <h5 class="setting-subgroup-title">📱 移动设备</h5>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <input type="checkbox" id="mobile-optimized" checked />
+                    <span class="setting-title">移动设备优化</span>
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <input type="checkbox" id="mobile-vibrate" checked />
+                    <span class="setting-title">震动提醒</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Bark 通知设置 -->
+              <div class="setting-subgroup">
+                <h5 class="setting-subgroup-title">🍎 Bark 通知 (iOS)</h5>
+                <div class="setting-item">
+                  <label class="setting-label">
+                    <input type="checkbox" id="bark-notification-enabled" />
+                    <span class="setting-title">启用 Bark 通知</span>
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label has-input">
+                    <span class="setting-title">Bark URL</span>
+                    <input
+                      type="url"
+                      id="bark-url"
+                      class="setting-input"
+                      placeholder="https://bark.xiadengma.com/push"
+                      value="https://bark.xiadengma.com/push"
+                    />
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label has-input">
+                    <span class="setting-title">Device Key</span>
+                    <input
+                      type="text"
+                      id="bark-device-key"
+                      class="setting-input"
+                      placeholder="请输入您的 Bark Device Key"
+                      value="uvMegCBMH9PQ8M2gDMpC4A"
+                    />
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label has-input">
+                    <span class="setting-title">图标 URL (可选)</span>
+                    <input
+                      type="url"
+                      id="bark-icon"
+                      class="setting-input"
+                      placeholder="https://example.com/icon.png"
+                      value="https://filess.s3.bitiful.net/Bark/btc.png"
+                    />
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <label class="setting-label has-input">
+                    <span class="setting-title">点击行为</span>
+                    <select id="bark-action" class="setting-select">
+                      <option value="none">无操作</option>
+                      <option value="url">打开链接</option>
+                      <option value="copy">复制内容</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="setting-item">
+                  <button class="btn btn-secondary" id="test-bark-notification-btn">
+                    🧪 测试 Bark 通知
+                  </button>
+                </div>
+              </div>
+
+              <!-- 通知状态信息 -->
+              <div class="setting-subgroup">
+                <h5 class="setting-subgroup-title">ℹ️ 状态信息</h5>
+                <div class="status-row">
+                  <span>浏览器支持：</span>
+                  <span id="browser-support-status">检测中...</span>
+                </div>
+                <div class="status-row">
+                  <span>通知权限：</span>
+                  <span id="notification-permission-status">检测中...</span>
+                </div>
+                <div class="status-row">
+                  <span>音频状态：</span>
+                  <span id="audio-status">检测中...</span>
+                </div>
+              </div>
+
+              <!-- 测试功能 -->
+              <div class="setting-subgroup">
+                <h5 class="setting-subgroup-title">🧪 测试功能</h5>
+                <div class="setting-item">
+                  <button class="btn btn-secondary" id="test-notification-btn">🔔 测试通知</button>
+                </div>
+                <div class="setting-item">
+                  <button class="btn btn-secondary" id="reset-settings-btn">🔄 重置设置</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 常用快捷键 -->
+            <h4 class="settings-main-title shortcuts-section">⌨️ 常用快捷键</h4>
+            <div class="setting-group shortcuts-section">
+              <div class="status-row">
+                <span>🚀 提交反馈：</span>
+                <span id="shortcut-submit">Ctrl+Enter</span>
+              </div>
+              <div class="status-row">
+                <span>💻 插入代码：</span>
+                <span id="shortcut-code">Alt+C</span>
+              </div>
+              <div class="status-row">
+                <span>📋 粘贴图片：</span>
+                <span id="shortcut-paste">Ctrl+V</span>
+              </div>
+              <div class="status-row">
+                <span>📷 上传图片：</span>
+                <span id="shortcut-upload">Ctrl+U</span>
+              </div>
+              <div class="status-row">
+                <span>🗑️ 清除图片：</span>
+                <span id="shortcut-delete">Delete</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2162,6 +3161,8 @@
 
           // 显示正常内容页面
           showContentPage()
+
+          // 页面首次加载不发送通知，只在内容变化时通知
 
           // 更新描述 - 使用高性能渲染函数
           const descriptionElement = document.getElementById('description')
@@ -2381,6 +3382,9 @@
 
           if (response.ok) {
             showStatus(result.message, 'success')
+
+            // 反馈提交成功，不需要通知（用户要求）
+
             // 清空表单
             document.getElementById('feedback-text').value = ''
             // 取消选中所有复选框
@@ -2489,6 +3493,28 @@
             if (newHasContent && !currentHasContent) {
               // 从无内容状态变为有内容状态
               console.log('✅ 检测到新内容，更新页面')
+
+              // 发送新内容通知（非阻塞）
+              try {
+                notificationManager
+                  .sendNotification('AI 需要您的反馈', '新的反馈请求已到达，请查看并回复', {
+                    tag: 'new-content',
+                    requireInteraction: true,
+                    onClick: () => {
+                      window.focus()
+                      const textarea = document.getElementById('feedback-text')
+                      if (textarea) {
+                        textarea.focus()
+                      }
+                    }
+                  })
+                  .catch(error => {
+                    console.warn('发送新内容通知失败:', error)
+                  })
+              } catch (error) {
+                console.warn('通知功能不可用:', error)
+              }
+
               config = newConfig
               showContentPage()
               updatePageContent()
@@ -2508,6 +3534,21 @@
 
               if (promptChanged || optionsChanged) {
                 console.log('🔄 检测到内容更新，刷新页面')
+
+                // 发送内容更新通知（非阻塞）
+                try {
+                  notificationManager
+                    .sendNotification('AI 反馈内容已更新', '反馈请求内容已更新，请查看最新内容', {
+                      tag: 'content-updated',
+                      requireInteraction: false
+                    })
+                    .catch(error => {
+                      console.warn('发送内容更新通知失败:', error)
+                    })
+                } catch (error) {
+                  console.warn('通知功能不可用:', error)
+                }
+
                 config = newConfig
                 updatePageContent()
                 showStatus('内容已更新！', 'success')
@@ -2568,6 +3609,872 @@
 
       // 图片管理数组
       let selectedImages = []
+
+      // 通知管理系统
+      class NotificationManager {
+        constructor() {
+          this.isSupported = 'Notification' in window
+          this.permission = this.isSupported ? Notification.permission : 'denied'
+          this.audioContext = null
+          this.audioBuffers = new Map()
+          this.config = {
+            enabled: true,
+            webEnabled: true,
+            soundEnabled: true,
+            soundVolume: 0.8,
+            soundMute: false,
+            autoRequestPermission: true,
+            timeout: 5000,
+            icon: '/icons/icon.svg',
+            mobileOptimized: true,
+            mobileVibrate: true
+          }
+          this.init()
+        }
+
+        async init() {
+          console.log('初始化通知管理器...')
+
+          // 检查浏览器支持
+          if (!this.isSupported) {
+            console.warn('浏览器不支持Web Notification API')
+            return
+          }
+
+          // 自动请求通知权限
+          if (this.config.autoRequestPermission && this.permission === 'default') {
+            await this.requestPermission()
+          }
+
+          // 初始化音频系统
+          await this.initAudio()
+
+          console.log('通知管理器初始化完成')
+        }
+
+        async requestPermission() {
+          if (!this.isSupported) {
+            console.warn('浏览器不支持Web Notification API')
+            return false
+          }
+
+          try {
+            // 兼容旧版本浏览器的权限请求方式
+            if (Notification.requestPermission.length === 0) {
+              // 新版本 - 返回Promise
+              this.permission = await Notification.requestPermission()
+            } else {
+              // 旧版本 - 使用回调
+              this.permission = await new Promise(resolve => {
+                Notification.requestPermission(resolve)
+              })
+            }
+
+            console.log(`通知权限状态: ${this.permission}`)
+            return this.permission === 'granted'
+          } catch (error) {
+            console.error('请求通知权限失败:', error)
+            return false
+          }
+        }
+
+        async initAudio() {
+          try {
+            // 检查浏览器音频支持
+            const AudioContextClass =
+              window.AudioContext || window.webkitAudioContext || window.mozAudioContext
+            if (!AudioContextClass) {
+              console.warn('浏览器不支持Web Audio API')
+              return
+            }
+
+            // 创建音频上下文（需要用户交互后才能启用）
+            this.audioContext = new AudioContextClass()
+
+            // 预加载默认音频文件
+            await this.loadAudioFile('default', '/sounds/deng[噔].mp3')
+
+            console.log('音频系统初始化完成')
+          } catch (error) {
+            console.warn('音频系统初始化失败:', error)
+            // 降级：禁用音频功能
+            this.config.soundEnabled = false
+          }
+        }
+
+        async loadAudioFile(name, url) {
+          if (!this.audioContext) return false
+
+          try {
+            const response = await fetch(url)
+            const arrayBuffer = await response.arrayBuffer()
+            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
+            this.audioBuffers.set(name, audioBuffer)
+            console.log(`音频文件加载成功: ${name}`)
+            return true
+          } catch (error) {
+            console.warn(`音频文件加载失败 ${name}:`, error)
+            return false
+          }
+        }
+
+        async showNotification(title, message, options = {}) {
+          if (!this.config.enabled || !this.config.webEnabled) {
+            console.log('Web通知已禁用')
+            return null
+          }
+
+          if (!this.isSupported) {
+            console.warn('浏览器不支持通知，使用降级方案')
+            this.showFallbackNotification(title, message)
+            return null
+          }
+
+          if (this.permission !== 'granted') {
+            console.warn('没有通知权限')
+            if (this.config.autoRequestPermission) {
+              await this.requestPermission()
+              if (this.permission !== 'granted') {
+                this.showFallbackNotification(title, message)
+                return null
+              }
+            } else {
+              this.showFallbackNotification(title, message)
+              return null
+            }
+          }
+
+          try {
+            const notificationOptions = {
+              body: message,
+              icon: options.icon || this.config.icon,
+              badge: options.badge || this.config.icon,
+              tag: options.tag || 'ai-intervention-agent',
+              requireInteraction: options.requireInteraction || false,
+              silent: options.silent || false,
+              ...options
+            }
+
+            const notification = new Notification(title, notificationOptions)
+
+            // 设置超时自动关闭
+            if (this.config.timeout > 0) {
+              setTimeout(() => {
+                notification.close()
+              }, this.config.timeout)
+            }
+
+            // 点击事件处理
+            notification.onclick = () => {
+              window.focus()
+              notification.close()
+              if (options.onClick) {
+                options.onClick()
+              }
+            }
+
+            // 移动设备震动
+            if (this.config.mobileVibrate && 'vibrate' in navigator) {
+              navigator.vibrate([200, 100, 200])
+            }
+
+            console.log('通知已显示:', title)
+            return notification
+          } catch (error) {
+            console.error('显示通知失败:', error)
+            return null
+          }
+        }
+
+        async playSound(soundName = 'default', volume = null, retryCount = 0) {
+          if (!this.config.enabled || !this.config.soundEnabled || this.config.soundMute) {
+            console.log('声音通知已禁用')
+            return false
+          }
+
+          if (!this.audioContext) {
+            console.warn('音频上下文未初始化，尝试降级方案')
+            this.recordFallbackEvent('audio', { reason: 'no_audio_context', soundName })
+            return this.playSoundFallback(soundName)
+          }
+
+          // 恢复音频上下文（如果被暂停）
+          if (this.audioContext.state === 'suspended') {
+            try {
+              await this.audioContext.resume()
+              console.log('音频上下文已恢复')
+            } catch (error) {
+              console.warn('恢复音频上下文失败:', error)
+              this.recordFallbackEvent('audio', {
+                reason: 'resume_failed',
+                error: error.message,
+                soundName
+              })
+              return this.playSoundFallback(soundName)
+            }
+          }
+
+          const audioBuffer = this.audioBuffers.get(soundName)
+          if (!audioBuffer) {
+            console.warn(`音频文件未找到: ${soundName}`)
+            // 尝试加载默认音频文件
+            if (soundName !== 'default') {
+              console.log('尝试使用默认音频文件')
+              return this.playSound('default', volume, retryCount)
+            }
+            this.recordFallbackEvent('audio', { reason: 'buffer_not_found', soundName })
+            return this.playSoundFallback(soundName)
+          }
+
+          try {
+            const source = this.audioContext.createBufferSource()
+            const gainNode = this.audioContext.createGain()
+
+            source.buffer = audioBuffer
+            source.connect(gainNode)
+            gainNode.connect(this.audioContext.destination)
+
+            // 设置音量
+            const finalVolume = volume !== null ? volume : this.config.soundVolume
+            gainNode.gain.value = Math.max(0, Math.min(1, finalVolume))
+
+            // 添加错误处理
+            source.addEventListener('ended', () => {
+              console.log(`声音播放完成: ${soundName}`)
+            })
+
+            source.addEventListener('error', error => {
+              console.error('音频播放错误:', error)
+              this.recordFallbackEvent('audio', {
+                reason: 'playback_error',
+                error: error.message,
+                soundName
+              })
+            })
+
+            source.start(0)
+            console.log(`播放声音: ${soundName}`)
+            return true
+          } catch (error) {
+            console.error('播放声音失败:', error)
+            this.recordFallbackEvent('audio', {
+              reason: 'playback_failed',
+              error: error.message,
+              soundName
+            })
+
+            // 重试机制
+            if (retryCount < 2) {
+              console.log(`重试播放声音 (${retryCount + 1}/2): ${soundName}`)
+              await new Promise(resolve => setTimeout(resolve, 500)) // 等待500ms后重试
+              return this.playSound(soundName, volume, retryCount + 1)
+            }
+
+            // 重试失败，使用降级方案
+            return this.playSoundFallback(soundName)
+          }
+        }
+
+        playSoundFallback(soundName) {
+          // 音频播放降级方案
+          console.log(`使用音频降级方案: ${soundName}`)
+
+          try {
+            // 方案1: 尝试使用HTML5 Audio元素
+            const audio = new Audio(
+              `/sounds/${soundName === 'default' ? 'deng[噔].mp3' : soundName + '.mp3'}`
+            )
+            audio.volume = this.config.soundVolume
+
+            const playPromise = audio.play()
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  console.log('HTML5 Audio播放成功')
+                })
+                .catch(error => {
+                  console.warn('HTML5 Audio播放失败:', error)
+                  // 方案2: 使用振动API（移动设备）
+                  this.vibrateFallback()
+                })
+            }
+            return true
+          } catch (error) {
+            console.warn('HTML5 Audio降级失败:', error)
+            // 方案2: 使用振动API（移动设备）
+            return this.vibrateFallback()
+          }
+        }
+
+        vibrateFallback() {
+          // 振动降级方案（移动设备）
+          if (this.config.mobileVibrate && 'vibrate' in navigator) {
+            try {
+              navigator.vibrate([200, 100, 200]) // 振动模式：200ms振动，100ms停止，200ms振动
+              console.log('使用振动提醒')
+              return true
+            } catch (error) {
+              console.warn('振动提醒失败:', error)
+            }
+          }
+
+          console.log('所有音频降级方案都失败了')
+          return false
+        }
+
+        async sendNotification(title, message, options = {}) {
+          const results = []
+
+          // 同时执行Web通知和音频播放，确保同步
+          const promises = []
+
+          // 显示Web通知
+          if (this.config.webEnabled) {
+            promises.push(
+              this.showNotification(title, message, options).then(notification => ({
+                type: 'web',
+                success: notification !== null
+              }))
+            )
+          }
+
+          // 播放声音
+          if (this.config.soundEnabled) {
+            promises.push(
+              this.playSound(options.sound).then(soundSuccess => ({
+                type: 'sound',
+                success: soundSuccess
+              }))
+            )
+          }
+
+          // 等待所有通知方式完成
+          if (promises.length > 0) {
+            try {
+              const promiseResults = await Promise.all(promises)
+              results.push(...promiseResults)
+            } catch (error) {
+              console.warn('通知执行过程中出现错误:', error)
+            }
+          }
+
+          return results
+        }
+
+        showFallbackNotification(title, message, options = {}) {
+          // 增强的降级方案：使用多种方式确保用户能收到通知
+          console.log(`降级通知: ${title} - ${message}`)
+
+          // 1. 尝试使用页面状态消息
+          if (typeof showStatus === 'function') {
+            showStatus(`${title}: ${message}`, 'info')
+          }
+
+          // 2. 尝试使用浏览器标题闪烁
+          this.flashTitle(title)
+
+          // 3. 尝试使用页面内弹窗（如果没有其他方式）
+          if (!this.isSupported || this.permission === 'denied') {
+            this.showInPageNotification(title, message, options)
+          }
+
+          // 4. 尝试使用控制台样式输出
+          console.log(`%c🔔 ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
+          console.log(`%c${message}`, 'color: #666; font-size: 12px;')
+
+          // 5. 记录降级事件用于统计
+          this.recordFallbackEvent('notification', {
+            title,
+            message,
+            reason: options.reason || 'unknown'
+          })
+        }
+
+        flashTitle(message) {
+          // 标题闪烁提醒
+          const originalTitle = document.title
+          let flashCount = 0
+          const maxFlashes = 6
+
+          const flashInterval = setInterval(() => {
+            document.title = flashCount % 2 === 0 ? `🔔 ${message}` : originalTitle
+            flashCount++
+
+            if (flashCount >= maxFlashes) {
+              clearInterval(flashInterval)
+              document.title = originalTitle
+            }
+          }, 1000)
+        }
+
+        updateConfig(newConfig) {
+          this.config = { ...this.config, ...newConfig }
+          console.log('通知配置已更新:', this.config)
+        }
+
+        getStatus() {
+          return {
+            supported: this.isSupported,
+            permission: this.permission,
+            audioContext: this.audioContext ? this.audioContext.state : 'unavailable',
+            config: this.config
+          }
+        }
+
+        showInPageNotification(title, message, options = {}) {
+          // 创建页面内通知元素
+          const notification = document.createElement('div')
+          notification.className = 'in-page-notification'
+          notification.innerHTML = `
+            <div class="in-page-notification-content">
+              <div class="in-page-notification-title">${title}</div>
+              <div class="in-page-notification-message">${message}</div>
+              <button class="in-page-notification-close">✕</button>
+            </div>
+          `
+
+          // 添加样式
+          notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(30, 30, 40, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 1rem;
+            max-width: 300px;
+            z-index: 10000;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            color: #f5f5f7;
+            font-family: inherit;
+          `
+
+          // 添加内容样式
+          const titleEl = notification.querySelector('.in-page-notification-title')
+          const messageEl = notification.querySelector('.in-page-notification-message')
+          const closeEl = notification.querySelector('.in-page-notification-close')
+
+          titleEl.style.cssText = 'font-weight: 600; margin-bottom: 0.5rem; font-size: 1rem;'
+          messageEl.style.cssText =
+            'font-size: 0.9rem; line-height: 1.4; color: rgba(245, 245, 247, 0.8);'
+          closeEl.style.cssText = `
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: none;
+            border: none;
+            color: rgba(245, 245, 247, 0.6);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0.25rem;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+          `
+
+          // 添加到页面
+          document.body.appendChild(notification)
+
+          // 关闭按钮事件
+          closeEl.addEventListener('click', () => {
+            notification.style.transform = 'translateX(100%)'
+            notification.style.opacity = '0'
+            setTimeout(() => {
+              if (notification.parentNode) {
+                notification.parentNode.removeChild(notification)
+              }
+            }, 300)
+          })
+
+          closeEl.addEventListener('mouseenter', () => {
+            closeEl.style.background = 'rgba(255, 255, 255, 0.1)'
+            closeEl.style.color = '#f5f5f7'
+          })
+
+          closeEl.addEventListener('mouseleave', () => {
+            closeEl.style.background = 'none'
+            closeEl.style.color = 'rgba(245, 245, 247, 0.6)'
+          })
+
+          // 入场动画
+          notification.style.transform = 'translateX(100%)'
+          notification.style.transition = 'all 0.3s ease-out'
+          setTimeout(() => {
+            notification.style.transform = 'translateX(0)'
+          }, 10)
+
+          // 自动关闭
+          setTimeout(() => {
+            if (notification.parentNode) {
+              closeEl.click()
+            }
+          }, options.timeout || 5000)
+
+          return notification
+        }
+
+        recordFallbackEvent(type, data) {
+          // 记录降级事件用于分析和改进
+          const event = {
+            type,
+            data,
+            timestamp: Date.now(),
+            userAgent: navigator.userAgent,
+            url: window.location.href
+          }
+
+          // 存储到本地存储（用于调试）
+          try {
+            const events = JSON.parse(
+              localStorage.getItem('ai-intervention-fallback-events') || '[]'
+            )
+            events.push(event)
+            // 只保留最近100个事件
+            if (events.length > 100) {
+              events.splice(0, events.length - 100)
+            }
+            localStorage.setItem('ai-intervention-fallback-events', JSON.stringify(events))
+          } catch (error) {
+            console.warn('无法记录降级事件:', error)
+          }
+
+          if (this.config.debug) {
+            console.log('降级事件记录:', event)
+          }
+        }
+      }
+
+      // 创建全局通知管理器实例
+      const notificationManager = new NotificationManager()
+
+      // 设置管理器
+      class SettingsManager {
+        constructor() {
+          this.storageKey = 'ai-intervention-agent-settings'
+          this.defaultSettings = {
+            enabled: true,
+            webEnabled: true,
+            autoRequestPermission: true,
+            soundEnabled: true,
+            soundMute: false,
+            soundVolume: 80,
+            mobileOptimized: true,
+            mobileVibrate: true,
+            barkEnabled: false,
+            barkUrl: 'https://bark.xiadengma.com/push',
+            barkDeviceKey: 'uvMegCBMH9PQ8M2gDMpC4A',
+            barkIcon: 'https://filess.s3.bitiful.net/Bark/btc.png',
+            barkAction: 'none'
+          }
+          this.init()
+        }
+
+        async init() {
+          this.settings = await this.loadSettings()
+          this.initEventListeners()
+        }
+
+        async loadSettings() {
+          try {
+            // 优先从服务器加载配置
+            const response = await fetch('/api/get-notification-config')
+            if (response.ok) {
+              const result = await response.json()
+              if (result.status === 'success') {
+                // 将服务器配置映射到前端格式
+                const serverConfig = result.config
+                const settings = {
+                  enabled: serverConfig.enabled ?? this.defaultSettings.enabled,
+                  webEnabled: serverConfig.web_enabled ?? this.defaultSettings.webEnabled,
+                  autoRequestPermission:
+                    serverConfig.auto_request_permission ??
+                    this.defaultSettings.autoRequestPermission,
+                  soundEnabled: serverConfig.sound_enabled ?? this.defaultSettings.soundEnabled,
+                  soundMute: serverConfig.sound_mute ?? this.defaultSettings.soundMute,
+                  soundVolume: serverConfig.sound_volume ?? this.defaultSettings.soundVolume,
+                  mobileOptimized:
+                    serverConfig.mobile_optimized ?? this.defaultSettings.mobileOptimized,
+                  mobileVibrate: serverConfig.mobile_vibrate ?? this.defaultSettings.mobileVibrate,
+                  barkEnabled: serverConfig.bark_enabled ?? this.defaultSettings.barkEnabled,
+                  barkUrl: serverConfig.bark_url ?? this.defaultSettings.barkUrl,
+                  barkDeviceKey: serverConfig.bark_device_key ?? this.defaultSettings.barkDeviceKey,
+                  barkIcon: serverConfig.bark_icon ?? this.defaultSettings.barkIcon,
+                  barkAction: serverConfig.bark_action ?? this.defaultSettings.barkAction
+                }
+                console.log('从服务器加载配置成功')
+                return settings
+              }
+            }
+          } catch (error) {
+            console.warn('从服务器加载配置失败，尝试localStorage:', error)
+          }
+
+          // 回退到localStorage
+          try {
+            const stored = localStorage.getItem(this.storageKey)
+            if (stored) {
+              const parsed = JSON.parse(stored)
+              return { ...this.defaultSettings, ...parsed }
+            }
+          } catch (error) {
+            console.warn('加载设置失败，使用默认设置:', error)
+          }
+          return { ...this.defaultSettings }
+        }
+
+        saveSettings() {
+          try {
+            localStorage.setItem(this.storageKey, JSON.stringify(this.settings))
+            console.log('设置已保存')
+          } catch (error) {
+            console.error('保存设置失败:', error)
+          }
+        }
+
+        updateSetting(key, value) {
+          this.settings[key] = value
+          this.saveSettings()
+          this.applySettings()
+          console.log(`设置已更新: ${key} = ${value}`)
+        }
+
+        applySettings() {
+          // 更新前端通知管理器配置
+          if (notificationManager) {
+            notificationManager.updateConfig({
+              enabled: this.settings.enabled,
+              webEnabled: this.settings.webEnabled,
+              autoRequestPermission: this.settings.autoRequestPermission,
+              soundEnabled: this.settings.soundEnabled,
+              soundMute: this.settings.soundMute,
+              soundVolume: this.settings.soundVolume / 100,
+              mobileOptimized: this.settings.mobileOptimized,
+              mobileVibrate: this.settings.mobileVibrate,
+              barkEnabled: this.settings.barkEnabled,
+              barkUrl: this.settings.barkUrl,
+              barkDeviceKey: this.settings.barkDeviceKey,
+              barkIcon: this.settings.barkIcon,
+              barkAction: this.settings.barkAction
+            })
+          }
+
+          // 同步配置到后端
+          this.syncConfigToBackend()
+        }
+
+        async syncConfigToBackend() {
+          try {
+            const response = await fetch('/api/update-notification-config', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(this.settings)
+            })
+
+            const result = await response.json()
+            if (response.ok && result.status === 'success') {
+              console.log('后端通知配置已同步')
+            } else {
+              console.warn('同步后端配置失败:', result.message)
+            }
+          } catch (error) {
+            console.error('同步后端配置失败:', error)
+          }
+        }
+
+        resetSettings() {
+          this.settings = { ...this.defaultSettings }
+          this.saveSettings()
+          this.updateUI()
+          this.applySettings()
+          console.log('设置已重置为默认值')
+        }
+
+        updateUI() {
+          // 更新设置面板中的控件状态
+          document.getElementById('notification-enabled').checked = this.settings.enabled
+          document.getElementById('web-notification-enabled').checked = this.settings.webEnabled
+          document.getElementById('auto-request-permission').checked =
+            this.settings.autoRequestPermission
+          document.getElementById('sound-notification-enabled').checked = this.settings.soundEnabled
+          document.getElementById('sound-mute').checked = this.settings.soundMute
+          document.getElementById('sound-volume').value = this.settings.soundVolume
+          document.querySelector('.volume-value').textContent = `${this.settings.soundVolume}%`
+          document.getElementById('mobile-optimized').checked = this.settings.mobileOptimized
+          document.getElementById('mobile-vibrate').checked = this.settings.mobileVibrate
+
+          // 更新 Bark 设置
+          document.getElementById('bark-notification-enabled').checked = this.settings.barkEnabled
+          document.getElementById('bark-url').value = this.settings.barkUrl
+          document.getElementById('bark-device-key').value = this.settings.barkDeviceKey
+          document.getElementById('bark-icon').value = this.settings.barkIcon
+          document.getElementById('bark-action').value = this.settings.barkAction
+        }
+
+        updateStatus() {
+          // 更新状态信息
+          const browserSupport = notificationManager.isSupported ? '✅ 支持' : '❌ 不支持'
+          const permission =
+            notificationManager.permission === 'granted'
+              ? '✅ 已授权'
+              : notificationManager.permission === 'denied'
+              ? '❌ 已拒绝'
+              : '⚠️ 未请求'
+
+          // 音频状态中文化
+          let audioState = '❌ 不可用'
+          if (notificationManager.audioContext) {
+            const state = notificationManager.audioContext.state
+            switch (state) {
+              case 'running':
+                audioState = '✅ 运行中'
+                break
+              case 'suspended':
+                audioState = '⏸️ 已暂停'
+                break
+              case 'closed':
+                audioState = '❌ 已关闭'
+                break
+              default:
+                audioState = `⚠️ ${state}`
+            }
+          }
+
+          document.getElementById('browser-support-status').textContent = browserSupport
+          document.getElementById('notification-permission-status').textContent = permission
+          document.getElementById('audio-status').textContent = audioState
+        }
+
+        initEventListeners() {
+          // 设置按钮点击事件
+          document.addEventListener('click', e => {
+            if (e.target.id === 'settings-btn') {
+              this.showSettings()
+            } else if (e.target.id === 'settings-close-btn') {
+              this.hideSettings()
+            } else if (e.target.id === 'test-notification-btn') {
+              this.testNotification()
+            } else if (e.target.id === 'test-bark-notification-btn') {
+              this.testBarkNotification()
+            } else if (e.target.id === 'reset-settings-btn') {
+              this.resetSettings()
+            }
+          })
+
+          // 设置面板背景点击关闭
+          document.addEventListener('click', e => {
+            if (e.target.id === 'settings-panel') {
+              this.hideSettings()
+            }
+          })
+
+          // 设置项变更事件
+          document.addEventListener('change', e => {
+            const settingMap = {
+              'notification-enabled': 'enabled',
+              'web-notification-enabled': 'webEnabled',
+              'auto-request-permission': 'autoRequestPermission',
+              'sound-notification-enabled': 'soundEnabled',
+              'sound-mute': 'soundMute',
+              'mobile-optimized': 'mobileOptimized',
+              'mobile-vibrate': 'mobileVibrate',
+              'bark-notification-enabled': 'barkEnabled'
+            }
+
+            if (settingMap[e.target.id]) {
+              this.updateSetting(settingMap[e.target.id], e.target.checked)
+            } else if (e.target.id === 'sound-volume') {
+              this.updateSetting('soundVolume', parseInt(e.target.value))
+              document.querySelector('.volume-value').textContent = `${e.target.value}%`
+            } else if (e.target.id === 'bark-url') {
+              this.updateSetting('barkUrl', e.target.value)
+            } else if (e.target.id === 'bark-device-key') {
+              this.updateSetting('barkDeviceKey', e.target.value)
+            } else if (e.target.id === 'bark-icon') {
+              this.updateSetting('barkIcon', e.target.value)
+            } else if (e.target.id === 'bark-action') {
+              this.updateSetting('barkAction', e.target.value)
+            }
+          })
+        }
+
+        showSettings() {
+          this.updateUI()
+          this.updateStatus()
+          // 同步当前设置到后端
+          this.syncConfigToBackend()
+          document.getElementById('settings-panel').style.display = 'flex'
+        }
+
+        hideSettings() {
+          document.getElementById('settings-panel').style.display = 'none'
+        }
+
+        async testNotification() {
+          try {
+            await notificationManager.sendNotification(
+              '设置测试',
+              '这是一个测试通知，用于验证当前设置是否正常工作',
+              {
+                tag: 'settings-test',
+                requireInteraction: false
+              }
+            )
+            showStatus('测试通知已发送', 'success')
+          } catch (error) {
+            console.error('测试通知失败:', error)
+            showStatus('测试通知失败: ' + error.message, 'error')
+          }
+        }
+
+        async testBarkNotification() {
+          try {
+            if (!this.settings.barkEnabled) {
+              showStatus('请先启用 Bark 通知', 'warning')
+              return
+            }
+
+            if (!this.settings.barkUrl || !this.settings.barkDeviceKey) {
+              showStatus('请先配置 Bark URL 和 Device Key', 'warning')
+              return
+            }
+
+            // 显示发送中状态
+            showStatus('正在发送 Bark 测试通知...', 'info')
+
+            // 通过后端API发送Bark通知，避免CORS问题
+            const response = await fetch('/api/test-bark', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                bark_url: this.settings.barkUrl,
+                bark_device_key: this.settings.barkDeviceKey,
+                bark_icon: this.settings.barkIcon,
+                bark_action: this.settings.barkAction
+              })
+            })
+
+            const result = await response.json()
+
+            if (response.ok && result.status === 'success') {
+              showStatus(result.message, 'success')
+              console.log('Bark 通知发送成功:', result)
+            } else {
+              showStatus(result.message || 'Bark 通知发送失败', 'error')
+              console.error('Bark 通知发送失败:', result)
+            }
+          } catch (error) {
+            console.error('Bark 测试通知失败:', error)
+            showStatus('Bark 测试通知失败: ' + error.message, 'error')
+          }
+        }
+      }
+
+      // 创建全局设置管理器实例
+      const settingsManager = new SettingsManager()
 
       // 性能优化工具函数
 
@@ -3279,24 +5186,36 @@
       }
 
       function initializeShortcutTooltip() {
-        const shortcutHint = document.querySelector('.shortcut-hint')
-
-        // 移动设备隐藏快捷键提示
-        if (isMobileDevice()) {
-          if (shortcutHint) {
-            shortcutHint.style.display = 'none'
-          }
-          console.log('检测到移动设备，已隐藏快捷键提示')
-          return
-        }
-
-        // 桌面设备（包括缩小的浏览器窗口）显示快捷键提示
-        const platform = detectPlatform()
-        const tooltipElement = document.getElementById('shortcut-tooltip')
-        if (tooltipElement) {
-          tooltipElement.textContent = getShortcutText(platform)
+        // 桌面设备显示快捷键信息
+        if (!isMobileDevice()) {
+          const platform = detectPlatform()
+          updateShortcutDisplay(platform)
           console.log(`检测到桌面平台: ${platform}，已设置对应快捷键`)
+        } else {
+          console.log('检测到移动设备，已隐藏快捷键部分')
         }
+      }
+
+      function updateShortcutDisplay(platform) {
+        const isMac = platform === 'mac'
+        const ctrlOrCmd = isMac ? 'Cmd' : 'Ctrl'
+        const altOrOption = isMac ? 'Option' : 'Alt'
+
+        // 更新各个快捷键显示
+        const shortcuts = {
+          'shortcut-submit': `${ctrlOrCmd}+Enter`,
+          'shortcut-code': `${altOrOption}+C`,
+          'shortcut-paste': `${ctrlOrCmd}+V`,
+          'shortcut-upload': `${ctrlOrCmd}+U`,
+          'shortcut-delete': 'Delete'
+        }
+
+        Object.entries(shortcuts).forEach(([id, shortcut]) => {
+          const element = document.getElementById(id)
+          if (element) {
+            element.textContent = shortcut
+          }
+        })
       }
 
       // 浏览器兼容性检测
@@ -3419,6 +5338,18 @@
         // 初始化快捷键提示
         initializeShortcutTooltip()
 
+        // 初始化通知管理器
+        notificationManager
+          .init()
+          .then(() => {
+            console.log('通知管理器初始化完成')
+            // 应用设置管理器的配置
+            settingsManager.applySettings()
+          })
+          .catch(error => {
+            console.warn('通知管理器初始化失败:', error)
+          })
+
         // 按钮事件
         document
           .getElementById('insert-code-btn')
@@ -3449,8 +5380,53 @@
             event.preventDefault()
             clearAllImages()
             console.log('快捷键: Delete 清除所有图片')
+          } else if (ctrlOrCmd && event.shiftKey && event.key === 'N') {
+            // Ctrl+Shift+N 测试通知
+            event.preventDefault()
+            testNotification()
+            console.log(`快捷键: ${isMac ? 'Cmd' : 'Ctrl'}+Shift+N 测试通知`)
           }
         })
+
+        // 用户首次交互时启用音频上下文
+        function enableAudioOnFirstInteraction() {
+          if (
+            notificationManager.audioContext &&
+            notificationManager.audioContext.state === 'suspended'
+          ) {
+            notificationManager.audioContext
+              .resume()
+              .then(() => {
+                console.log('音频上下文已启用')
+              })
+              .catch(error => {
+                console.warn('启用音频上下文失败:', error)
+              })
+          }
+        }
+
+        // 添加首次交互监听器
+        document.addEventListener('click', enableAudioOnFirstInteraction, { once: true })
+        document.addEventListener('keydown', enableAudioOnFirstInteraction, { once: true })
+        document.addEventListener('touchstart', enableAudioOnFirstInteraction, { once: true })
+
+        // 测试通知功能
+        async function testNotification() {
+          try {
+            await notificationManager.sendNotification(
+              '通知测试',
+              '这是一个测试通知，用于验证通知功能是否正常工作',
+              {
+                tag: 'test-notification',
+                requireInteraction: false
+              }
+            )
+            showStatus('测试通知已发送', 'success')
+          } catch (error) {
+            console.error('测试通知失败:', error)
+            showStatus('测试通知失败', 'error')
+          }
+        }
       })
     </script>
   </body>

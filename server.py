@@ -33,6 +33,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 导入通知系统
+try:
+    from notification_manager import (
+        NotificationTrigger,
+        NotificationType,
+        notification_manager,
+    )
+    from notification_providers import initialize_notification_system
+
+    NOTIFICATION_AVAILABLE = True
+    logger.info("通知系统已导入")
+except ImportError as e:
+    logger.warning(f"通知系统不可用: {e}")
+    NOTIFICATION_AVAILABLE = False
+
 
 class ServiceManager:
     """服务管理器 - 单例模式管理所有启动的服务进程"""
@@ -224,11 +239,17 @@ class WebUIConfig:
 def get_web_ui_config() -> WebUIConfig:
     """获取Web UI配置"""
     try:
-        host = os.environ.get("FEEDBACK_WEB_HOST", "0.0.0.0")
-        port = int(os.environ.get("FEEDBACK_WEB_PORT", "8080"))
-        timeout = int(os.environ.get("FEEDBACK_TIMEOUT", "30"))
-        max_retries = int(os.environ.get("FEEDBACK_MAX_RETRIES", "3"))
-        retry_delay = float(os.environ.get("FEEDBACK_RETRY_DELAY", "1.0"))
+        from config_manager import get_config
+
+        config_mgr = get_config()
+        web_ui_config = config_mgr.get_section("web_ui")
+        feedback_config = config_mgr.get_section("feedback")
+
+        host = web_ui_config.get("host", "0.0.0.0")
+        port = web_ui_config.get("port", 8080)
+        timeout = feedback_config.get("timeout", 300)
+        max_retries = web_ui_config.get("max_retries", 3)
+        retry_delay = web_ui_config.get("retry_delay", 1.0)
 
         config = WebUIConfig(
             host=host,
@@ -242,6 +263,9 @@ def get_web_ui_config() -> WebUIConfig:
     except (ValueError, TypeError) as e:
         logger.error(f"配置参数错误: {e}")
         raise ValueError(f"Web UI 配置错误: {e}")
+    except Exception as e:
+        logger.error(f"配置文件加载失败: {e}")
+        raise ValueError(f"Web UI 配置加载失败: {e}")
 
 
 def validate_input(
@@ -364,6 +388,14 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
     web_ui_path = os.path.join(script_dir, "web_ui.py")
     service_manager = ServiceManager()
     service_name = f"web_ui_{config.host}_{config.port}"
+
+    # 初始化通知系统
+    if NOTIFICATION_AVAILABLE:
+        try:
+            initialize_notification_system(notification_manager.get_config())
+            logger.info("通知系统初始化完成")
+        except Exception as e:
+            logger.warning(f"通知系统初始化失败: {e}")
 
     # 验证 web_ui.py 文件是否存在
     if not os.path.exists(web_ui_path):
@@ -630,7 +662,10 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
     last_progress_time = start_time
     progress_interval = 30.0  # 进度报告间隔
 
-    logger.info(f"⏳ 等待用户反馈... (超时: {timeout}秒)")
+    if timeout == 0:
+        logger.info("⏳ 等待用户反馈... (无限等待)")
+    else:
+        logger.info(f"⏳ 等待用户反馈... (超时: {timeout}秒)")
 
     # 首先获取当前状态
     last_has_content = True  # 默认假设有内容
@@ -648,14 +683,18 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
     consecutive_errors = 0
     max_consecutive_errors = 5
 
-    while time.time() - start_time < timeout:
+    # 如果timeout为0，则无限循环；否则按时间限制循环
+    while timeout == 0 or time.time() - start_time < timeout:
         current_time = time.time()
         elapsed_time = current_time - start_time
 
         # 定期报告进度
         if current_time - last_progress_time >= progress_interval:
-            remaining_time = timeout - elapsed_time
-            logger.info(f"⏳ 继续等待用户反馈... (剩余: {remaining_time:.0f}秒)")
+            if timeout == 0:
+                logger.info("⏳ 继续等待用户反馈... (无限等待)")
+            else:
+                remaining_time = timeout - elapsed_time
+                logger.info(f"⏳ 继续等待用户反馈... (剩余: {remaining_time:.0f}秒)")
             last_progress_time = current_time
 
         try:
@@ -733,13 +772,18 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
         sleep_time = check_interval if consecutive_errors == 0 else 1.0
         time.sleep(sleep_time)
 
-    # 超时处理
-    logger.error(f"等待用户反馈超时 ({timeout}秒)")
-    raise Exception(f"等待用户反馈超时 ({timeout}秒)，请检查用户是否看到了反馈界面")
+    # 超时处理（只有在设置了超时时间时才会到达这里）
+    if timeout > 0:
+        logger.error(f"等待用户反馈超时 ({timeout}秒)")
+        raise Exception(f"等待用户反馈超时 ({timeout}秒)，请检查用户是否看到了反馈界面")
+    else:
+        # timeout=0时不应该到达这里，但为了安全起见
+        logger.error("无限等待模式异常退出")
+        raise Exception("无限等待模式异常退出")
 
 
 def launch_feedback_ui(
-    summary: str, predefined_options: Optional[list[str]] = None
+    summary: str, predefined_options: Optional[list[str]] = None, timeout: int = 300
 ) -> Dict[str, str]:
     """启动反馈界面 - 使用Web服务工作流程"""
     try:
@@ -762,8 +806,43 @@ def launch_feedback_ui(
         # 传递消息和选项，在页面上显示（无论是第一次还是后续调用）
         update_web_content(cleaned_summary, cleaned_options, config)
 
-        # 等待用户反馈
-        result = wait_for_feedback(config)
+        # 发送通知（如果可用）
+        if NOTIFICATION_AVAILABLE and cleaned_summary.strip():
+            try:
+                # 尝试从Web界面获取最新的通知配置
+                try:
+                    import requests
+
+                    target_host = (
+                        "localhost" if config.host == "0.0.0.0" else config.host
+                    )
+                    config_url = f"http://{target_host}:{config.port}/api/get-notification-config"
+                    response = requests.get(config_url, timeout=2)
+                    if response.ok:
+                        web_config = response.json()
+                        if web_config.get("status") == "success":
+                            # 更新通知管理器配置
+                            notification_manager.update_config(**web_config["config"])
+                            logger.debug("已从Web界面同步通知配置")
+                except Exception as e:
+                    logger.debug(f"无法从Web界面获取配置，使用默认配置: {e}")
+
+                notification_manager.send_notification(
+                    title="AI 需要您的反馈",
+                    message="新的反馈请求已到达，请查看并回复",
+                    trigger=NotificationTrigger.IMMEDIATE,
+                    metadata={
+                        "summary_preview": cleaned_summary[:100],
+                        "options_count": len(cleaned_options) if cleaned_options else 0,
+                        "timestamp": time.time(),
+                    },
+                )
+                logger.debug("反馈请求通知已发送")
+            except Exception as e:
+                logger.warning(f"发送通知失败: {e}")
+
+        # 等待用户反馈，传递timeout参数
+        result = wait_for_feedback(config, timeout)
         logger.info("用户反馈收集完成")
         return result
 
@@ -872,10 +951,13 @@ class FeedbackServiceContext:
             logger.error(f"清理服务时出错: {e}")
 
     def launch_feedback_ui(
-        self, summary: str, predefined_options: Optional[list[str]] = None
+        self,
+        summary: str,
+        predefined_options: Optional[list[str]] = None,
+        timeout: int = 300,
     ) -> Dict[str, str]:
         """在上下文中启动反馈界面"""
-        return launch_feedback_ui(summary, predefined_options)
+        return launch_feedback_ui(summary, predefined_options, timeout)
 
 
 def cleanup_services():

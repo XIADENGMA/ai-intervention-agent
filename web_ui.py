@@ -257,6 +257,172 @@ class WebFeedbackUI:
             else:
                 return jsonify({"status": "waiting", "feedback": None})
 
+        @self.app.route("/api/test-bark", methods=["POST"])
+        def test_bark_notification():
+            """测试Bark通知的API端点"""
+            try:
+                # 获取请求数据
+                data = request.json or {}
+                bark_url = data.get("bark_url", "https://bark.xiadengma.com/push")
+                bark_device_key = data.get("bark_device_key", "")
+                bark_icon = data.get("bark_icon", "")
+                bark_action = data.get("bark_action", "none")
+
+                if not bark_device_key:
+                    return jsonify(
+                        {"status": "error", "message": "Device Key 不能为空"}
+                    ), 400
+
+                # 尝试导入通知系统
+                try:
+                    from notification_manager import (
+                        NotificationTrigger,
+                        NotificationType,
+                        notification_manager,
+                    )
+                    from notification_providers import BarkNotificationProvider
+
+                    # 创建临时的Bark配置
+                    class TempConfig:
+                        def __init__(self):
+                            self.bark_enabled = True
+                            self.bark_url = bark_url
+                            self.bark_device_key = bark_device_key
+                            self.bark_icon = bark_icon
+                            self.bark_action = bark_action
+
+                    # 创建Bark通知提供者并发送测试通知
+                    temp_config = TempConfig()
+                    bark_provider = BarkNotificationProvider(temp_config)
+
+                    # 创建测试事件
+                    import time
+
+                    from notification_manager import NotificationEvent
+
+                    test_event = NotificationEvent(
+                        id=f"test_bark_{int(time.time())}",
+                        title="AI Intervention Agent 测试",
+                        message="这是一个 Bark 通知测试，如果您收到此消息，说明配置正确！",
+                        trigger=NotificationTrigger.IMMEDIATE,
+                        types=[NotificationType.BARK],
+                        metadata={"test": True},
+                    )
+
+                    # 发送通知
+                    success = bark_provider.send(test_event)
+
+                    if success:
+                        return jsonify(
+                            {
+                                "status": "success",
+                                "message": "Bark 测试通知发送成功！请检查您的设备",
+                            }
+                        )
+                    else:
+                        return jsonify(
+                            {
+                                "status": "error",
+                                "message": "Bark 通知发送失败，请检查配置",
+                            }
+                        ), 500
+
+                except ImportError as e:
+                    logger.error(f"导入通知系统失败: {e}")
+                    return jsonify(
+                        {"status": "error", "message": "通知系统不可用"}
+                    ), 500
+
+            except Exception as e:
+                logger.error(f"Bark 测试通知失败: {e}")
+                return jsonify(
+                    {"status": "error", "message": f"测试失败: {str(e)}"}
+                ), 500
+
+        @self.app.route("/api/update-notification-config", methods=["POST"])
+        def update_notification_config():
+            """更新通知配置的API端点"""
+            try:
+                # 获取前端设置
+                data = request.json or {}
+
+                # 尝试导入配置管理器和通知系统
+                try:
+                    from config_manager import get_config
+                    from notification_manager import notification_manager
+
+                    # 更新配置文件
+                    config_mgr = get_config()
+                    notification_config = {
+                        "enabled": data.get("enabled", True),
+                        "web_enabled": data.get("webEnabled", True),
+                        "auto_request_permission": data.get(
+                            "autoRequestPermission", True
+                        ),
+                        "sound_enabled": data.get("soundEnabled", True),
+                        "sound_mute": data.get("soundMute", False),
+                        "sound_volume": data.get("soundVolume", 80),
+                        "mobile_optimized": data.get("mobileOptimized", True),
+                        "mobile_vibrate": data.get("mobileVibrate", True),
+                        "bark_enabled": data.get("barkEnabled", False),
+                        "bark_url": data.get("barkUrl", ""),
+                        "bark_device_key": data.get("barkDeviceKey", ""),
+                        "bark_icon": data.get("barkIcon", ""),
+                        "bark_action": data.get("barkAction", "none"),
+                    }
+                    config_mgr.update_section("notification", notification_config)
+
+                    # 更新通知管理器配置
+                    notification_manager.update_config(
+                        enabled=data.get("enabled", True),
+                        web_enabled=data.get("webEnabled", True),
+                        web_permission_auto_request=data.get(
+                            "autoRequestPermission", True
+                        ),
+                        sound_enabled=data.get("soundEnabled", True),
+                        sound_mute=data.get("soundMute", False),
+                        sound_volume=data.get("soundVolume", 80) / 100,
+                        mobile_optimized=data.get("mobileOptimized", True),
+                        mobile_vibrate=data.get("mobileVibrate", True),
+                        bark_enabled=data.get("barkEnabled", False),
+                        bark_url=data.get("barkUrl", ""),
+                        bark_device_key=data.get("barkDeviceKey", ""),
+                        bark_icon=data.get("barkIcon", ""),
+                        bark_action=data.get("barkAction", "none"),
+                    )
+
+                    logger.info("通知配置已更新到配置文件和内存")
+                    return jsonify({"status": "success", "message": "通知配置已更新"})
+
+                except ImportError as e:
+                    logger.error(f"导入配置系统失败: {e}")
+                    return jsonify(
+                        {"status": "error", "message": "配置系统不可用"}
+                    ), 500
+
+            except Exception as e:
+                logger.error(f"更新通知配置失败: {e}")
+                return jsonify(
+                    {"status": "error", "message": f"更新失败: {str(e)}"}
+                ), 500
+
+        @self.app.route("/api/get-notification-config", methods=["GET"])
+        def get_notification_config():
+            """获取当前通知配置"""
+            try:
+                from config_manager import get_config
+
+                config_mgr = get_config()
+                notification_config = config_mgr.get_section("notification")
+
+                return jsonify({"status": "success", "config": notification_config})
+
+            except Exception as e:
+                logger.error(f"获取通知配置失败: {e}")
+                return jsonify(
+                    {"status": "error", "message": f"获取配置失败: {str(e)}"}
+                ), 500
+
         # 静态文件路由
         @self.app.route("/fonts/<filename>")
         def serve_fonts(filename):
@@ -271,6 +437,13 @@ class WebFeedbackUI:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             icons_dir = os.path.join(current_dir, "icons")
             return send_from_directory(icons_dir, filename)
+
+        @self.app.route("/sounds/<filename>")
+        def serve_sounds(filename):
+            """提供音频文件"""
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            sounds_dir = os.path.join(current_dir, "sounds")
+            return send_from_directory(sounds_dir, filename)
 
         @self.app.route("/favicon.ico")
         def favicon():

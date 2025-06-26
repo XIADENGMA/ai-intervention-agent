@@ -169,8 +169,12 @@ def test_persistent_workflow(timeout=300):
     print("🔄 测试智能介入工作流程...")
     if timeout == 0:
         print("⏱️ 线程等待超时时间: 无限等待")
+        # 如果线程等待时间为0（无限等待），则反馈等待时间也设为0（无限等待）
+        feedback_timeout = 0
     else:
         print(f"⏱️ 线程等待超时时间: {timeout}秒")
+        # 反馈等待时间应该略小于线程等待时间，以便线程能够正常结束
+        feedback_timeout = max(timeout - 10, 30) if timeout > 40 else timeout
 
     try:
         from server import get_web_ui_config, launch_feedback_ui
@@ -195,7 +199,7 @@ def test_persistent_workflow(timeout=300):
         def run_first():
             nonlocal result1
             try:
-                result1 = launch_feedback_ui(prompt1, options1)
+                result1 = launch_feedback_ui(prompt1, options1, feedback_timeout)
             except Exception as e:
                 print(f"❌ 第一次调用失败: {e}")
 
@@ -328,7 +332,7 @@ $$
 请选择一个选项来完成测试流程："""
         options2 = ["🎉 内容更新成功", "✅ 测试完成"]
 
-        result2 = launch_feedback_ui(prompt2, options2)
+        result2 = launch_feedback_ui(prompt2, options2, feedback_timeout)
 
         if result2:
             formatted_result2 = format_feedback_result(result2)
@@ -362,21 +366,21 @@ def parse_arguments():
         "-p",
         type=int,
         default=None,
-        help="指定测试使用的端口号 (默认使用环境变量FEEDBACK_WEB_PORT或8080)",
+        help="指定测试使用的端口号 (默认使用配置文件中的设置或8082)",
     )
 
     parser.add_argument(
         "--host",
         type=str,
         default=None,
-        help="指定测试使用的主机地址 (默认使用环境变量FEEDBACK_WEB_HOST或0.0.0.0)",
+        help="指定测试使用的主机地址 (默认使用配置文件中的设置或0.0.0.0)",
     )
 
     parser.add_argument(
         "--timeout",
         type=int,
         default=None,
-        help="指定超时时间（秒）(默认使用环境变量FEEDBACK_TIMEOUT或30)",
+        help="指定超时时间（秒）(默认使用配置文件中的设置或300)",
     )
 
     parser.add_argument(
@@ -398,7 +402,7 @@ def setup_test_environment(args):
         args: 命令行参数对象
 
     Returns:
-        bool: 环境设置是否成功
+        bool: 配置设置是否成功
     """
     try:
         # 设置日志级别
@@ -408,36 +412,53 @@ def setup_test_environment(args):
             logging.getLogger().setLevel(logging.DEBUG)
             print("🔊 已启用详细日志模式")
 
-        # 设置环境变量（如果指定了参数）
+        # 更新配置文件（如果指定了参数）
+        config_updated = False
+
+        try:
+            from config_manager import get_config
+
+            config_mgr = get_config()
+        except ImportError:
+            print("⚠️ 无法导入配置管理器，跳过配置更新")
+            return True
+
         if args.port is not None:
             # 检查端口是否被占用
             if check_port_availability(args.port):
-                os.environ["FEEDBACK_WEB_PORT"] = str(args.port)
+                config_mgr.set("web_ui.port", args.port)
+                config_updated = True
                 print(f"📌 设置端口: {args.port}")
             else:
                 print(f"⚠️ 端口 {args.port} 已被占用，将尝试自动查找可用端口...")
                 available_port = find_available_port(args.port)
                 if available_port:
-                    os.environ["FEEDBACK_WEB_PORT"] = str(available_port)
+                    config_mgr.set("web_ui.port", available_port)
+                    config_updated = True
                     print(f"✅ 找到可用端口: {available_port}")
                 else:
                     print("❌ 无法找到可用端口，将使用默认配置")
 
         if args.host is not None:
-            os.environ["FEEDBACK_WEB_HOST"] = args.host
+            config_mgr.set("web_ui.host", args.host)
+            config_updated = True
             print(f"📌 设置主机: {args.host}")
 
         if args.timeout is not None:
-            os.environ["FEEDBACK_TIMEOUT"] = str(args.timeout)
+            config_mgr.set("feedback.timeout", args.timeout)
+            config_updated = True
             print(f"📌 设置反馈超时: {args.timeout}秒")
 
         if args.thread_timeout is not None:
             print(f"📌 设置线程等待超时: {args.thread_timeout}秒")
 
+        if config_updated:
+            print("✅ 配置文件已更新")
+
         return True
 
     except Exception as e:
-        print(f"❌ 环境设置失败: {e}")
+        print(f"❌ 配置设置失败: {e}")
         return False
 
 
@@ -627,7 +648,7 @@ if __name__ == "__main__":
 
         # 设置测试环境
         if not setup_test_environment(args):
-            print("❌ 环境设置失败，程序退出")
+            print("❌ 配置设置失败，程序退出")
             sys.exit(1)
 
         # 运行主测试

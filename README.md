@@ -29,20 +29,7 @@
 
 ### 🚀 方式一：uvx 直接使用（推荐）
 
-无需安装，直接从 GitHub 使用最新版本：
-
-```bash
-# 无需任何安装步骤，uvx 会自动从GitHub获取并运行
-# 直接在 MCP 配置中使用即可
-uvx git+https://github.com/xiadengma/ai-intervention-agent.git
-```
-
-**优势**：
-
-- ✅ 无需本地安装和管理依赖
-- ✅ 自动使用最新版本
-- ✅ 隔离的运行环境
-- ✅ 直接从源码运行
+无需安装，直接配置 MCP 以使用最新版本
 
 ### ️ 方式二：开发模式（本地使用）
 
@@ -58,11 +45,6 @@ pip install uv && uv sync
 
 # 验证安装
 uv run python test.py
-
-# 测试工具支持多种参数配置
-uv run python test.py --port 8081 --verbose
-uv run python test.py --thread-timeout 600  # 设置线程等待超时为600秒
-uv run python test.py --timeout 60 --thread-timeout 300 --verbose  # 组合使用
 ```
 
 ## ⚙️ 配置
@@ -95,11 +77,7 @@ ai-intervention-agent 工具使用细节：
       "command": "uvx",
       "args": ["git+https://github.com/xiadengma/ai-intervention-agent.git"],
       "timeout": 600,
-      "autoApprove": ["interactive_feedback"],
-      "env": {
-        "FEEDBACK_WEB_HOST": "0.0.0.0",
-        "FEEDBACK_WEB_PORT": "8080"
-      }
+      "autoApprove": ["interactive_feedback"]
     }
   }
 }
@@ -110,27 +88,24 @@ ai-intervention-agent 工具使用细节：
 ```json
 {
   "mcpServers": {
-    "ai-intervention-agent": {
+    "ai-intervention-agent-local": {
       "command": "uv",
       "args": ["--directory", "/path/to/ai-intervention-agent", "run", "server.py"],
-      "env": {
-        "FEEDBACK_WEB_HOST": "0.0.0.0",
-        "FEEDBACK_WEB_PORT": "8080"
-      }
+      "timeout": 600,
+      "autoApprove": ["interactive_feedback"]
     }
   }
 }
 ```
 
-### 🌐 环境变量配置
+### ⚙️ 配置文件说明
 
-| 环境变量               | 默认值    | 说明                    |
-| ---------------------- | --------- | ----------------------- |
-| `FEEDBACK_WEB_HOST`    | `0.0.0.0` | Web 服务监听地址        |
-| `FEEDBACK_WEB_PORT`    | `8080`    | Web 服务端口            |
-| `FEEDBACK_TIMEOUT`     | `30`      | HTTP 请求超时时间（秒） |
-| `FEEDBACK_MAX_RETRIES` | `3`       | 最大重试次数            |
-| `FEEDBACK_RETRY_DELAY` | `1.0`     | 重试延迟时间（秒）      |
+项目使用 `config.jsonc` 文件进行配置管理，这是一种支持注释的 JSON 格式，让配置更加清晰易懂。
+
+#### 📁 配置文件结构
+
+- `config.jsonc.default` - 默认配置模板文件（包含详细注释说明）
+- `config.jsonc` - 实际使用的配置文件（首次运行时会自动从默认模板创建）
 
 ### 🧪 测试工具参数
 

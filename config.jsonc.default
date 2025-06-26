@@ -1,0 +1,30 @@
+{
+  // 通知配置
+  "notification": {
+    "enabled": true,                    // 是否启用通知功能
+    "web_enabled": true,                // 是否启用Web浏览器通知
+    "auto_request_permission": true,    // 是否自动请求通知权限
+    "sound_enabled": true,              // 是否启用声音通知
+    "sound_mute": false,                // 是否静音
+    "sound_volume": 800000,             // 声音音量 (0-1000000)
+    "mobile_optimized": true,           // 是否启用移动端优化
+    "mobile_vibrate": true,             // 移动端是否启用震动
+    "bark_enabled": false,              // 是否启用Bark推送通知
+    "bark_url": "",                     // Bark服务器URL (例如: https://api.day.app/push)
+    "bark_device_key": "",              // Bark设备密钥
+    "bark_icon": "",                    // Bark通知图标URL (可选)
+    "bark_action": "none"               // Bark通知动作 (none/url/copy)
+  },
+  // Web界面配置
+  "web_ui": {
+    "host": "0.0.0.0",                  // Web服务监听地址
+    "port": 8081,                       // Web服务端口
+    "debug": false,                     // 是否启用调试模式
+    "max_retries": 3,                   // 最大重试次数
+    "retry_delay": 1.0                  // 重试延迟时间(秒)
+  },
+  // 反馈配置
+  "feedback": {
+    "timeout": 300                      // 反馈超时时间(秒)
+  }
+}
