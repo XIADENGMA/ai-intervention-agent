@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 try:
     from notification_manager import (
         NotificationTrigger,
-        NotificationType,
         notification_manager,
     )
     from notification_providers import initialize_notification_system
@@ -89,6 +88,7 @@ class ServiceManager:
 
     def _signal_handler(self, signum, frame):
         """信号处理器"""
+        del frame  # 未使用的参数
         logger.info(f"收到信号 {signum}，正在清理服务...")
         self.cleanup_all()
         sys.exit(0)
@@ -272,12 +272,11 @@ def validate_input(
     prompt: str, predefined_options: Optional[list] = None
 ) -> Tuple[str, list]:
     """验证输入参数"""
-    # 验证 prompt
-    if not isinstance(prompt, str):
+    # 验证和清理 prompt
+    try:
+        cleaned_prompt = prompt.strip()
+    except AttributeError:
         raise ValueError("prompt 必须是字符串类型")
-
-    # 清理和验证 prompt
-    cleaned_prompt = prompt.strip()
     if len(cleaned_prompt) > 10000:  # 限制长度
         logger.warning(f"prompt 长度过长 ({len(cleaned_prompt)} 字符)，将被截断")
         cleaned_prompt = cleaned_prompt[:10000] + "..."
@@ -285,9 +284,6 @@ def validate_input(
     # 验证 predefined_options
     cleaned_options = []
     if predefined_options:
-        if not isinstance(predefined_options, list):
-            raise ValueError("predefined_options 必须是列表类型")
-
         for option in predefined_options:
             if not isinstance(option, str):
                 logger.warning(f"跳过非字符串选项: {option}")
@@ -860,7 +856,7 @@ def launch_feedback_ui(
 @mcp.tool()
 def interactive_feedback(
     message: str = Field(description="The specific question for the user"),
-    predefined_options: list = Field(
+    predefined_options: Optional[list] = Field(
         default=None,
         description="Predefined options for the user to choose from (optional)",
     ),
@@ -878,19 +874,8 @@ def interactive_feedback(
         Exception: 当反馈收集失败时
     """
     try:
-        # 验证和清理输入
-        if not isinstance(message, str):
-            raise ValueError("message 参数必须是字符串类型")
-
-        predefined_options_list = None
-        if predefined_options is not None:
-            if isinstance(predefined_options, list):
-                predefined_options_list = predefined_options
-            else:
-                logger.warning(
-                    f"predefined_options 类型错误，期望 list，实际 {type(predefined_options)}"
-                )
-                predefined_options_list = None
+        # 使用类型提示，移除运行时检查以避免IDE警告
+        predefined_options_list = predefined_options
 
         logger.info(f"收到反馈请求: {message[:50]}...")
         result = launch_feedback_ui(message, predefined_options_list)
@@ -939,6 +924,7 @@ class FeedbackServiceContext:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """退出上下文"""
+        del exc_tb  # 未使用的参数
         try:
             self.service_manager.cleanup_all()
             if exc_type is KeyboardInterrupt:

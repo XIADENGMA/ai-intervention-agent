@@ -28,6 +28,7 @@ def setup_signal_handlers():
 
     def signal_handler(signum, frame):
         """信号处理器"""
+        del frame  # 未使用的参数
         print(f"\n🛑 收到中断信号 {signum}，正在清理资源...")
         cleanup_services()
         print("👋 程序已安全退出")

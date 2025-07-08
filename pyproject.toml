@@ -111,3 +111,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "--cov=ai_intervention_agent --cov-report=term-missing"
+
+[dependency-groups]
+dev = [
+    "flake8>=7.2.0",
+]

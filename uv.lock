@@ -27,6 +27,11 @@ dev = [
     { name = "pytest-cov" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "flake8" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
@@ -45,6 +50,9 @@ requires-dist = [
     { name = "urllib3", specifier = ">=1.26.0" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "flake8", specifier = ">=7.2.0" }]
 
 [[package]]
 name = "annotated-types"

@@ -6,7 +6,7 @@
     "auto_request_permission": true,    // 是否自动请求通知权限
     "sound_enabled": true,              // 是否启用声音通知
     "sound_mute": false,                // 是否静音
-    "sound_volume": 800000,             // 声音音量 (0-1000000)
+    "sound_volume": 80,             // 声音音量 (0-100)
     "mobile_optimized": true,           // 是否启用移动端优化
     "mobile_vibrate": true,             // 移动端是否启用震动
     "bark_enabled": false,              // 是否启用Bark推送通知
