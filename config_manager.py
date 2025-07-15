@@ -50,7 +50,7 @@ class ReadWriteLock:
             try:
                 self._readers -= 1
                 if self._readers == 0:
-                    self._read_ready.notifyAll()
+                    self._read_ready.notify_all()
             finally:
                 self._read_ready.release()
 
@@ -721,7 +721,6 @@ class ConfigManager:
             if not key_match:
                 return line
 
-            prefix = key_match.group(1)
             value_start = key_match.end()
 
             # 从值开始位置查找值的结束位置

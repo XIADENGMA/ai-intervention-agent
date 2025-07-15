@@ -23,5 +23,6 @@
   - 自动发布
   - 自动化测试
   - 自动化 pr
+- 修复 uvx 模式图片反馈问题：`Error calling tool 'interactive_feedback': Unable to serialize unknown type: <class 'fastmcp.utilities.types.Image'>`，而本地测试正常
 
 # List
