@@ -1,5 +1,5 @@
 import atexit
-import logging
+import base64
 import os
 import signal
 import socket
@@ -17,21 +17,15 @@ from pydantic import Field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from config_manager import get_config
+
+# 使用增强的日志系统 - 解决重复输出和级别错误问题
+from enhanced_logging import EnhancedLogger
+
 mcp = FastMCP("AI Intervention Agent MCP")
 
-# 配置日志系统
-log_handlers = [logging.StreamHandler(sys.stderr)]
-
-# 可选：同时输出到文件（取消注释下面两行来启用文件日志）
-# log_file = os.path.join(os.path.dirname(__file__), 'ai_intervention_agent.log')
-# log_handlers.append(logging.FileHandler(log_file))
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=log_handlers,
-)
-logger = logging.getLogger(__name__)
+# 创建增强日志实例
+logger = EnhancedLogger(__name__)
 
 # 导入通知系统
 try:
@@ -63,11 +57,16 @@ class ServiceManager:
         return cls._instance
 
     def __init__(self):
+        # 🔒 线程安全的初始化过程
         if not getattr(self, "_initialized", False):
-            self._processes = {}
-            self._cleanup_registered = False
-            self._initialized = True
-            self._register_cleanup()
+            with self._lock:
+                # 再次检查，防止竞态条件
+                if not getattr(self, "_initialized", False):
+                    self._processes = {}
+                    self._cleanup_registered = False
+                    self._should_exit = False  # 退出标志
+                    self._initialized = True
+                    self._register_cleanup()
 
     def _register_cleanup(self):
         """注册清理函数"""
@@ -87,11 +86,23 @@ class ServiceManager:
             logger.debug("服务管理器清理机制已注册")
 
     def _signal_handler(self, signum, frame):
-        """信号处理器"""
+        """信号处理器 - 兼容MCP异步架构"""
         del frame  # 未使用的参数
         logger.info(f"收到信号 {signum}，正在清理服务...")
-        self.cleanup_all()
-        sys.exit(0)
+        try:
+            self.cleanup_all()
+        except Exception as e:
+            logger.error(f"清理服务时出错: {e}")
+
+        # 在MCP环境中，不直接调用sys.exit，而是设置标志让主循环退出
+        import threading
+
+        if threading.current_thread() is threading.main_thread():
+            # 只在主线程中设置退出标志
+            self._should_exit = True
+        else:
+            # 在非主线程中，记录日志但不强制退出
+            logger.info("非主线程收到信号，已清理服务但不强制退出")
 
     def register_process(
         self, name: str, process: subprocess.Popen, config: "WebUIConfig"
@@ -131,7 +142,7 @@ class ServiceManager:
             return False
 
     def terminate_process(self, name: str, timeout: float = 5.0) -> bool:
-        """终止进程"""
+        """🔒 改进的进程终止方法 - 确保资源完全清理"""
         process_info = self._processes.get(name)
         if not process_info:
             return True
@@ -140,35 +151,99 @@ class ServiceManager:
         config = process_info["config"]
 
         try:
+            # 检查进程是否已经结束
             if process.poll() is not None:
                 logger.debug(f"进程 {name} 已经结束")
-                self.unregister_process(name)
+                self._cleanup_process_resources(name, process_info)
                 return True
 
             logger.info(f"正在终止服务进程: {name} (PID: {process.pid})")
 
-            # 首先尝试关闭
-            process.terminate()
+            # 分级终止策略：关闭 -> 强制终止 -> 系统清理
+            success = self._graceful_shutdown(process, name, timeout)
 
-            # 等待进程结束
-            try:
-                process.wait(timeout=timeout)
-                logger.info(f"服务进程 {name} 已关闭")
-            except subprocess.TimeoutExpired:
-                # 如果超时，强制终止
-                logger.warning(f"服务进程 {name} 超时，强制终止")
-                process.kill()
-                process.wait(timeout=2.0)
+            if not success:
+                success = self._force_shutdown(process, name)
 
-            # 检查端口是否释放
+            # 无论终止是否成功，都要清理资源
+            self._cleanup_process_resources(name, process_info)
+
+            # 检查端口释放
             self._wait_for_port_release(config.host, config.port)
 
-            self.unregister_process(name)
-            return True
+            return success
 
         except Exception as e:
             logger.error(f"终止进程 {name} 时出错: {e}")
+            # 即使出错也要尝试清理资源
+            try:
+                self._cleanup_process_resources(name, process_info)
+            except Exception as cleanup_error:
+                logger.error(f"清理进程资源时出错: {cleanup_error}")
             return False
+        finally:
+            # 确保进程从管理器中移除
+            self.unregister_process(name)
+
+    def _graceful_shutdown(
+        self, process: subprocess.Popen, name: str, timeout: float
+    ) -> bool:
+        """关闭进程"""
+        try:
+            process.terminate()
+            process.wait(timeout=timeout)
+            logger.info(f"服务进程 {name} 已关闭")
+            return True
+        except subprocess.TimeoutExpired:
+            logger.warning(f"服务进程 {name} 关闭超时")
+            return False
+        except Exception as e:
+            logger.error(f"关闭进程 {name} 失败: {e}")
+            return False
+
+    def _force_shutdown(self, process: subprocess.Popen, name: str) -> bool:
+        """强制终止进程"""
+        try:
+            logger.warning(f"强制终止服务进程: {name}")
+            process.kill()
+            process.wait(timeout=2.0)
+            logger.info(f"服务进程 {name} 已强制终止")
+            return True
+        except subprocess.TimeoutExpired:
+            logger.error(f"强制终止进程 {name} 仍然超时")
+            return False
+        except Exception as e:
+            logger.error(f"强制终止进程 {name} 失败: {e}")
+            return False
+
+    def _cleanup_process_resources(self, name: str, process_info: dict):
+        """清理进程相关资源"""
+        try:
+            process = process_info["process"]
+
+            # 关闭进程的标准输入输出
+            if hasattr(process, "stdin") and process.stdin:
+                try:
+                    process.stdin.close()
+                except Exception:
+                    pass
+
+            if hasattr(process, "stdout") and process.stdout:
+                try:
+                    process.stdout.close()
+                except Exception:
+                    pass
+
+            if hasattr(process, "stderr") and process.stderr:
+                try:
+                    process.stderr.close()
+                except Exception:
+                    pass
+
+            logger.debug(f"进程 {name} 的资源已清理")
+
+        except Exception as e:
+            logger.error(f"清理进程 {name} 资源时出错: {e}")
 
     def _wait_for_port_release(self, host: str, port: int, timeout: float = 10.0):
         """等待端口释放"""
@@ -181,22 +256,50 @@ class ServiceManager:
         logger.warning(f"端口 {host}:{port} 在 {timeout}秒内未释放")
 
     def cleanup_all(self):
-        """清理所有服务进程"""
+        """🔒 改进的清理所有服务进程方法 - 确保完全清理"""
         if not self._processes:
+            logger.debug("没有需要清理的进程")
             return
 
         logger.info("开始清理所有服务进程...")
+        cleanup_errors = []
 
+        # 获取需要清理的进程列表（避免在迭代时修改字典）
         with self._lock:
-            processes_to_cleanup = list(self._processes.keys())
+            processes_to_cleanup = list(self._processes.items())
 
-        for name in processes_to_cleanup:
+        # 并行清理多个进程（如果有多个）
+        for name, _ in processes_to_cleanup:  # process_info未使用，用_替代
             try:
-                self.terminate_process(name)
+                logger.debug(f"正在清理进程: {name}")
+                success = self.terminate_process(name)
+                if not success:
+                    cleanup_errors.append(f"进程 {name} 清理失败")
             except Exception as e:
-                logger.error(f"清理进程 {name} 时出错: {e}")
+                error_msg = f"清理进程 {name} 时出错: {e}"
+                logger.error(error_msg)
+                cleanup_errors.append(error_msg)
 
-        logger.info("服务进程清理完成")
+        # 最终检查：确保所有进程都已从管理器中移除
+        with self._lock:
+            remaining_processes = list(self._processes.keys())
+            if remaining_processes:
+                logger.warning(f"仍有进程未清理完成: {remaining_processes}")
+                # 强制清理剩余进程
+                for name in remaining_processes:
+                    try:
+                        del self._processes[name]
+                        logger.debug(f"强制移除进程记录: {name}")
+                    except Exception as e:
+                        logger.error(f"强制移除进程记录失败 {name}: {e}")
+
+        # 报告清理结果
+        if cleanup_errors:
+            logger.warning(f"服务进程清理完成，但有 {len(cleanup_errors)} 个错误:")
+            for error in cleanup_errors:
+                logger.warning(f"  - {error}")
+        else:
+            logger.info("所有服务进程清理完成")
 
     def get_status(self) -> Dict[str, Dict]:
         """获取所有服务状态"""
@@ -239,13 +342,15 @@ class WebUIConfig:
 def get_web_ui_config() -> WebUIConfig:
     """获取Web UI配置"""
     try:
-        from config_manager import get_config
-
         config_mgr = get_config()
         web_ui_config = config_mgr.get_section("web_ui")
         feedback_config = config_mgr.get_section("feedback")
+        network_security_config = config_mgr.get_section("network_security")
 
-        host = web_ui_config.get("host", "0.0.0.0")
+        # 优先使用network_security配置中的bind_interface，然后是web_ui中的host
+        host = network_security_config.get(
+            "bind_interface", web_ui_config.get("host", "127.0.0.1")
+        )
         port = web_ui_config.get("port", 8080)
         timeout = feedback_config.get("timeout", 300)
         max_retries = web_ui_config.get("max_retries", 3)
@@ -525,7 +630,6 @@ def update_web_content(
 
 def parse_structured_response(response_data):
     """解析结构化的反馈数据，返回适合MCP的Content对象列表"""
-    import base64
 
     result = []
     text_parts = []
@@ -766,7 +870,18 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
 
         # 如果有错误，缩短等待时间
         sleep_time = check_interval if consecutive_errors == 0 else 1.0
-        time.sleep(sleep_time)
+
+        # 检查是否需要退出
+        service_manager = ServiceManager()
+        if getattr(service_manager, "_should_exit", False):
+            logger.info("收到退出信号，停止等待用户反馈")
+            raise KeyboardInterrupt("收到退出信号")
+
+        try:
+            time.sleep(sleep_time)
+        except KeyboardInterrupt:
+            logger.info("等待用户反馈被中断")
+            raise
 
     # 超时处理（只有在设置了超时时间时才会到达这里）
     if timeout > 0:
@@ -807,8 +922,6 @@ def launch_feedback_ui(
             try:
                 # 尝试从Web界面获取最新的通知配置
                 try:
-                    import requests
-
                     target_host = (
                         "localhost" if config.host == "0.0.0.0" else config.host
                     )
@@ -817,14 +930,16 @@ def launch_feedback_ui(
                     if response.ok:
                         web_config = response.json()
                         if web_config.get("status") == "success":
-                            # 更新通知管理器配置
-                            notification_manager.update_config(**web_config["config"])
+                            # 更新通知管理器配置（不保存到文件，避免重复保存）
+                            notification_manager.update_config_without_save(
+                                **web_config["config"]
+                            )
                             logger.debug("已从Web界面同步通知配置")
                 except Exception as e:
                     logger.debug(f"无法从Web界面获取配置，使用默认配置: {e}")
 
                 notification_manager.send_notification(
-                    title="AI 需要您的反馈",
+                    title="AI Intervention Agent",
                     message="新的反馈请求已到达，请查看并回复",
                     trigger=NotificationTrigger.IMMEDIATE,
                     metadata={

@@ -4,15 +4,16 @@ AI Intervention Agent - 通知提供者实现
 包含各种通知方式的具体实现
 """
 
-import logging
 import time
 from typing import Any, Dict
 
 import requests
 
+# 使用增强的日志系统
+from enhanced_logging import EnhancedLogger
 from notification_manager import NotificationEvent, NotificationType
 
-logger = logging.getLogger(__name__)
+logger = EnhancedLogger(__name__)
 
 
 class WebNotificationProvider:
@@ -169,7 +170,7 @@ class BarkNotificationProvider:
                 timeout=10,
                 headers={
                     "Content-Type": "application/json",
-                    "User-Agent": "AI-Intervention-Agent/1.0",
+                    "User-Agent": "AI-Intervention-Agent",
                 },
             )
 

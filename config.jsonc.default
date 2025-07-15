@@ -6,7 +6,7 @@
     "auto_request_permission": true,    // 是否自动请求通知权限
     "sound_enabled": true,              // 是否启用声音通知
     "sound_mute": false,                // 是否静音
-    "sound_volume": 80,             // 声音音量 (0-100)
+    "sound_volume": 80,                 // 声音音量 (0-100)
     "mobile_optimized": true,           // 是否启用移动端优化
     "mobile_vibrate": true,             // 移动端是否启用震动
     "bark_enabled": false,              // 是否启用Bark推送通知
@@ -17,11 +17,24 @@
   },
   // Web界面配置
   "web_ui": {
-    "host": "0.0.0.0",                  // Web服务监听地址
+    "host": "127.0.0.1",                // Web服务监听地址 (默认仅本地访问)
     "port": 8080,                       // Web服务端口
     "debug": false,                     // 是否启用调试模式
     "max_retries": 3,                   // 最大重试次数
     "retry_delay": 1.0                  // 重试延迟时间(秒)
+  },
+  // 网络安全配置
+  "network_security": {
+    "bind_interface": "0.0.0.0",        // 绑定网络接口 (127.0.0.1=仅本地, 0.0.0.0=所有接口)
+    "allowed_networks": [               // 允许访问的网络段
+      "127.0.0.0/8",                    // 本地回环地址
+      "::1/128",                        // IPv6本地回环地址
+      "192.168.0.0/16",                 // 私有网络 192.168.x.x
+      "10.0.0.0/8",                     // 私有网络 10.x.x.x
+      "172.16.0.0/12"                   // 私有网络 172.16.x.x - 172.31.x.x
+    ],
+    "blocked_ips": [],                  // IP黑名单
+    "enable_access_control": true       // 是否启用访问控制
   },
   // 反馈配置
   "feedback": {

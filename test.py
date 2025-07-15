@@ -14,9 +14,66 @@ import time
 # 添加当前目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 初始化增强日志系统
+try:
+    from enhanced_logging import EnhancedLogger
+
+    test_logger = EnhancedLogger("test")
+    ENHANCED_LOGGING_AVAILABLE = True
+except ImportError:
+    import logging
+
+    test_logger = logging.getLogger("test")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    ENHANCED_LOGGING_AVAILABLE = False
+
 
 # 全局变量用于跟踪清理状态
 _cleanup_registered = False
+
+
+def log_and_print(message: str, level: str = "info", emoji: str = ""):
+    """统一的日志和控制台输出函数"""
+    # 构建完整消息
+    full_message = f"{emoji} {message}" if emoji else message
+
+    # 输出到控制台（保持原有的用户体验）
+    print(full_message)
+
+    # 同时记录到日志系统
+    if ENHANCED_LOGGING_AVAILABLE:
+        getattr(test_logger, level.lower())(message)
+    else:
+        # 降级到标准日志
+        getattr(test_logger, level.lower())(full_message)
+
+
+def log_info(message: str, emoji: str = "ℹ️"):
+    """记录信息级别日志"""
+    log_and_print(message, "info", emoji)
+
+
+def log_success(message: str, emoji: str = "✅"):
+    """记录成功信息"""
+    log_and_print(message, "info", emoji)
+
+
+def log_warning(message: str, emoji: str = "⚠️"):
+    """记录警告信息"""
+    log_and_print(message, "warning", emoji)
+
+
+def log_error(message: str, emoji: str = "❌"):
+    """记录错误信息"""
+    log_and_print(message, "error", emoji)
+
+
+def log_debug(message: str, emoji: str = "🔍"):
+    """记录调试信息"""
+    log_and_print(message, "debug", emoji)
 
 
 def setup_signal_handlers():
@@ -29,14 +86,14 @@ def setup_signal_handlers():
     def signal_handler(signum, frame):
         """信号处理器"""
         del frame  # 未使用的参数
-        print(f"\n🛑 收到中断信号 {signum}，正在清理资源...")
+        log_warning(f"收到中断信号 {signum}，正在清理资源...", "🛑")
         cleanup_services()
-        print("👋 程序已安全退出")
+        log_info("程序已安全退出", "👋")
         sys.exit(0)
 
     def cleanup_on_exit():
         """程序退出时的清理函数"""
-        print("🧹 程序退出，正在清理资源...")
+        log_info("程序退出，正在清理资源...", "🧹")
         cleanup_services()
 
     # 注册信号处理器
@@ -49,7 +106,7 @@ def setup_signal_handlers():
     atexit.register(cleanup_on_exit)
 
     _cleanup_registered = True
-    print("🔧 信号处理器和清理机制已注册")
+    log_debug("信号处理器和清理机制已注册", "🔧")
 
 
 def cleanup_services():
@@ -58,8 +115,9 @@ def cleanup_services():
         from server import cleanup_services as server_cleanup
 
         server_cleanup()
+        log_debug("服务清理完成")
     except Exception as e:
-        print(f"⚠️ 清理服务时出错: {e}")
+        log_warning(f"清理服务时出错: {e}")
 
 
 def format_feedback_result(result):
@@ -107,36 +165,38 @@ def check_service(url, timeout=5):
 
 def test_config_validation():
     """测试配置验证功能"""
-    print("🔧 测试配置验证...")
+    log_info("测试配置验证...", "🔧")
 
     try:
         from server import get_web_ui_config, validate_input
 
         # 测试正常配置
         config = get_web_ui_config()
-        print(f"✅ 配置加载成功: {config.host}:{config.port}")
+        log_success(f"配置加载成功: {config.host}:{config.port}")
 
         # 测试输入验证
         prompt, options = validate_input("测试消息", ["选项1", "选项2"])
-        print(f"✅ 输入验证成功: prompt='{prompt[:20]}...', options={len(options)}个")
+        log_success(
+            f"输入验证成功: prompt='{prompt[:20]}...', options={len(options)}个"
+        )
 
         # 测试异常输入
         try:
             validate_input("", None)
-            print("✅ 空输入处理正常")
+            log_success("空输入处理正常")
         except Exception as e:
-            print(f"⚠️ 空输入处理异常: {e}")
+            log_warning(f"空输入处理异常: {e}")
 
         return True
 
     except Exception as e:
-        print(f"❌ 配置验证测试失败: {e}")
+        log_error(f"配置验证测试失败: {e}")
         return False
 
 
 def test_service_health():
     """测试服务健康检查"""
-    print("🏥 测试服务健康检查...")
+    log_info("测试服务健康检查...", "🏥")
 
     try:
         from server import (
@@ -149,31 +209,31 @@ def test_service_health():
 
         # 测试端口检查
         is_running = is_web_service_running(config.host, config.port)
-        print(f"✅ 端口检查完成: {'运行中' if is_running else '未运行'}")
+        log_success(f"端口检查完成: {'运行中' if is_running else '未运行'}")
 
         # 测试健康检查
         if is_running:
             is_healthy = health_check_service(config)
-            print(f"✅ 健康检查完成: {'健康' if is_healthy else '不健康'}")
+            log_success(f"健康检查完成: {'健康' if is_healthy else '不健康'}")
         else:
-            print("ℹ️ 服务未运行，跳过健康检查")
+            log_info("服务未运行，跳过健康检查")
 
         return True
 
     except Exception as e:
-        print(f"❌ 服务健康检查测试失败: {e}")
+        log_error(f"服务健康检查测试失败: {e}")
         return False
 
 
 def test_persistent_workflow(timeout=300):
     """测试智能介入工作流程"""
-    print("🔄 测试智能介入工作流程...")
+    log_info("测试智能介入工作流程...", "🔄")
     if timeout == 0:
-        print("⏱️ 线程等待超时时间: 无限等待")
+        log_info("线程等待超时时间: 无限等待", "⏱️")
         # 如果线程等待时间为0（无限等待），则反馈等待时间也设为0（无限等待）
         feedback_timeout = 0
     else:
-        print(f"⏱️ 线程等待超时时间: {timeout}秒")
+        log_info(f"线程等待超时时间: {timeout}秒", "⏱️")
         # 反馈等待时间应该略小于线程等待时间，以便线程能够正常结束
         feedback_timeout = max(timeout - 10, 30) if timeout > 40 else timeout
 
@@ -184,7 +244,7 @@ def test_persistent_workflow(timeout=300):
         service_url = f"http://localhost:{config.port}/api/config"
 
         # 第一次调用 - 启动服务
-        print("🚀 启动介入服务...")
+        log_info("启动介入服务...", "🚀")
         prompt1 = """
         # 你好，我是AI Intervention Agent
 **一个让用户能够实时控制 AI 执行过程的 MCP 工具。**
@@ -202,20 +262,20 @@ def test_persistent_workflow(timeout=300):
             try:
                 result1 = launch_feedback_ui(prompt1, options1, feedback_timeout)
             except Exception as e:
-                print(f"❌ 第一次调用失败: {e}")
+                log_error(f"第一次调用失败: {e}")
 
         thread1 = threading.Thread(target=run_first)
         thread1.start()
 
         # 等待服务启动并检查
-        print("⏳ 等待服务启动...")
+        log_info("等待服务启动...", "⏳")
         time.sleep(5)
         if not check_service(service_url):
-            print("❌ 服务启动失败")
+            log_error("服务启动失败")
             return False
 
-        print("✅ 服务启动成功，请在浏览器中提交反馈")
-        print(f"🌐 浏览器地址: http://localhost:{config.port}")
+        log_success("服务启动成功，请在浏览器中提交反馈")
+        log_info(f"浏览器地址: http://localhost:{config.port}", "🌐")
 
         # 如果 timeout 为 0，表示无限等待
         if timeout == 0:
@@ -225,9 +285,9 @@ def test_persistent_workflow(timeout=300):
 
         if result1:
             formatted_result1 = format_feedback_result(result1)
-            print(f"✅ 第一次反馈: {formatted_result1}")
+            log_success(f"第一次反馈: {formatted_result1}")
         else:
-            print("⚠️ 第一次反馈超时")
+            log_warning("第一次反馈超时")
             return False
 
         # 第二次调用 - 更新内容
@@ -408,10 +468,19 @@ def setup_test_environment(args):
     try:
         # 设置日志级别
         if args.verbose:
-            import logging
+            try:
+                import logging
 
-            logging.getLogger().setLevel(logging.DEBUG)
-            print("🔊 已启用详细日志模式")
+                from enhanced_logging import EnhancedLogger  # noqa: F401
+
+                # 设置全局日志级别为DEBUG
+                logging.getLogger().setLevel(logging.DEBUG)
+                print("🔊 已启用详细日志模式（使用增强日志系统）")
+            except ImportError:
+                import logging
+
+                logging.getLogger().setLevel(logging.DEBUG)
+                print("🔊 已启用详细日志模式（使用标准日志系统）")
 
         # 更新配置文件（如果指定了参数）
         config_updated = False
@@ -427,26 +496,28 @@ def setup_test_environment(args):
         if args.port is not None:
             # 检查端口是否被占用
             if check_port_availability(args.port):
-                config_mgr.set("web_ui.port", args.port)
+                config_mgr.set("web_ui.port", args.port, save=False)  # 不保存到文件
                 config_updated = True
                 print(f"📌 设置端口: {args.port}")
             else:
                 print(f"⚠️ 端口 {args.port} 已被占用，将尝试自动查找可用端口...")
                 available_port = find_available_port(args.port)
                 if available_port:
-                    config_mgr.set("web_ui.port", available_port)
+                    config_mgr.set(
+                        "web_ui.port", available_port, save=False
+                    )  # 不保存到文件
                     config_updated = True
                     print(f"✅ 找到可用端口: {available_port}")
                 else:
                     print("❌ 无法找到可用端口，将使用默认配置")
 
         if args.host is not None:
-            config_mgr.set("web_ui.host", args.host)
+            config_mgr.set("web_ui.host", args.host, save=False)  # 不保存到文件
             config_updated = True
             print(f"📌 设置主机: {args.host}")
 
         if args.timeout is not None:
-            config_mgr.set("feedback.timeout", args.timeout)
+            config_mgr.set("feedback.timeout", args.timeout, save=False)  # 不保存到文件
             config_updated = True
             print(f"📌 设置反馈超时: {args.timeout}秒")
 
@@ -454,7 +525,7 @@ def setup_test_environment(args):
             print(f"📌 设置线程等待超时: {args.thread_timeout}秒")
 
         if config_updated:
-            print("✅ 配置文件已更新")
+            print("✅ 配置已更新（仅在内存中，不修改配置文件）")
 
         return True
 

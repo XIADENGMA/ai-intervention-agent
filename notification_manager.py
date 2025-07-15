@@ -18,7 +18,18 @@ try:
 except ImportError:
     CONFIG_FILE_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+# 使用增强的日志系统
+from enhanced_logging import EnhancedLogger
+
+# 尝试导入通知提供者
+try:
+    from notification_providers import BarkNotificationProvider
+
+    NOTIFICATION_PROVIDERS_AVAILABLE = True
+except ImportError:
+    NOTIFICATION_PROVIDERS_AVAILABLE = False
+
+logger = EnhancedLogger(__name__)
 
 
 class NotificationType(Enum):
@@ -293,7 +304,13 @@ class NotificationManager:
         return self.config
 
     def update_config(self, **kwargs):
-        """更新配置"""
+        """更新配置并保存到文件"""
+        self.update_config_without_save(**kwargs)
+        # 保存配置到文件
+        self._save_config_to_file()
+
+    def update_config_without_save(self, **kwargs):
+        """更新配置但不保存到文件（避免重复保存）"""
         bark_was_enabled = self.config.bark_enabled
 
         for key, value in kwargs.items():
@@ -306,17 +323,14 @@ class NotificationManager:
         if bark_was_enabled != bark_now_enabled:
             self._update_bark_provider()
 
-        # 保存配置到文件
-        self._save_config_to_file()
-
     def _update_bark_provider(self):
         """动态更新Bark通知提供者"""
         try:
             if self.config.bark_enabled:
                 # 启用Bark通知，添加提供者
                 if NotificationType.BARK not in self._providers:
-                    from notification_providers import BarkNotificationProvider
-
+                    if not NOTIFICATION_PROVIDERS_AVAILABLE:
+                        raise ImportError("通知提供者不可用")
                     bark_provider = BarkNotificationProvider(self.config)
                     self.register_provider(NotificationType.BARK, bark_provider)
                     logger.info("Bark通知提供者已动态添加")
@@ -335,13 +349,23 @@ class NotificationManager:
 
         try:
             config_mgr = get_config()
+
+            # 确保sound_volume在正确的范围内
+            sound_volume_value = self.config.sound_volume
+            if sound_volume_value <= 1.0:
+                # 如果是0-1范围，转换为0-100范围
+                sound_volume_int = int(sound_volume_value * 100)
+            else:
+                # 如果已经是0-100范围，直接使用
+                sound_volume_int = int(sound_volume_value)
+
             notification_config = {
                 "enabled": self.config.enabled,
                 "web_enabled": self.config.web_enabled,
                 "auto_request_permission": self.config.web_permission_auto_request,
                 "sound_enabled": self.config.sound_enabled,
                 "sound_mute": self.config.sound_mute,
-                "sound_volume": int(self.config.sound_volume * 100),  # 转换回0-100范围
+                "sound_volume": sound_volume_int,
                 "mobile_optimized": self.config.mobile_optimized,
                 "mobile_vibrate": self.config.mobile_vibrate,
                 "bark_enabled": self.config.bark_enabled,

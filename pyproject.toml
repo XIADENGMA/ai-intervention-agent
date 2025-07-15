@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-intervention-agent"
-version = "1.0.4"
+version = "1.1.0"
 description = "AI Intervention Agent: MCP server enabling real-time user intervention in AI-assisted development workflows."
 readme = "README.md"
 license = "MIT"
@@ -36,11 +36,15 @@ dependencies = [
     "fastmcp>=2.0.0",
     "flask>=2.3.0",
     "flask-cors>=4.0.0",
+    "flask-limiter>=3.5.0",
     "markdown>=3.5.0",
     "platformdirs>=3.0.0",
+    "plyer>=2.1.0",
+    "psutil>=5.9.0",
     "pygments>=2.16.0",
     "requests>=2.31.0",
     "urllib3>=1.26.0",
+    "watchdog>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -113,6 +117,4 @@ python_functions = ["test_*"]
 addopts = "--cov=ai_intervention_agent --cov-report=term-missing"
 
 [dependency-groups]
-dev = [
-    "flake8>=7.2.0",
-]
+dev = ["flake8>=7.2.0"]

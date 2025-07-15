@@ -5,6 +5,10 @@
 - [x] 允许接收到反馈时以合适的方式通知（声音/系统通知/bark 通知……
 - [ ] 更换页面上字体为版权合适字体
 - [x] 全平台快捷键支持
+- [x] 统一使用配置文件，移除环境变量依赖
+- [x] 支持 JSONC 格式配置文件（带注释的 JSON）
+- [x] 系统通知修复`import plyer`
+- [ ] 页面显示的 markdown 样式优化
 - [ ] 更新 README，英文、中文版本
   - 参考：https://github.com/Minidoracat/mcp-feedback-enhanced/blob/main/README.zh-CN.md
 - [ ] 重构主题
@@ -19,7 +23,5 @@
   - 自动发布
   - 自动化测试
   - 自动化 pr
-- [x] 统一使用配置文件，移除环境变量依赖
-- [x] 支持 JSONC 格式配置文件（带注释的 JSON）
 
 # List

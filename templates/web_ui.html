@@ -38,11 +38,11 @@
         }
       }
     </script>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
     <script
       id="MathJax-script"
       async
-      src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+      src="/static/js/tex-mml-chtml.js"
+      nonce="{{ csp_nonce }}"
     ></script>
 
     <style>
@@ -2549,20 +2549,20 @@
             <svg width="32" height="32" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <linearGradient id="masterBg" x1="50%" y1="0%" x2="50%" y2="100%">
-                  <stop offset="0%" style="stop-color: #e8ecf5" />
-                  <stop offset="100%" style="stop-color: #dee4f1" />
+                  <stop offset="0%" class="svg-stop-1" />
+                  <stop offset="100%" class="svg-stop-2" />
                 </linearGradient>
                 <radialGradient id="aiFluidCore" cx="50%" cy="50%" r="70%" fx="52%" fy="48%">
-                  <stop offset="0%" style="stop-color: #a855f7; stop-opacity: 1" />
-                  <stop offset="30%" style="stop-color: #8b5cf6; stop-opacity: 0.95" />
-                  <stop offset="60%" style="stop-color: #6366f1; stop-opacity: 0.9" />
-                  <stop offset="100%" style="stop-color: #312e81; stop-opacity: 0.85" />
+                  <stop offset="0%" class="svg-stop-3" />
+                  <stop offset="30%" class="svg-stop-4" />
+                  <stop offset="60%" class="svg-stop-5" />
+                  <stop offset="100%" class="svg-stop-6" />
                 </radialGradient>
                 <linearGradient id="interventionControl" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" style="stop-color: #fde047" />
-                  <stop offset="30%" style="stop-color: #facc15" />
-                  <stop offset="70%" style="stop-color: #eab308" />
-                  <stop offset="100%" style="stop-color: #ca8a04" />
+                  <stop offset="0%" class="svg-stop-7" />
+                  <stop offset="30%" class="svg-stop-8" />
+                  <stop offset="70%" class="svg-stop-9" />
+                  <stop offset="100%" class="svg-stop-10" />
                 </linearGradient>
               </defs>
               <g>
@@ -2630,60 +2630,18 @@
       </div>
 
       <!-- 无有效内容页面 -->
-      <div
-        id="no-content-container"
-        style="
-          display: none;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 3rem 1.75rem;
-          text-align: center;
-          min-height: 400px;
-        "
-      >
-        <div style="font-size: 4rem; margin-bottom: 1rem; opacity: 0.8">⏳</div>
-        <h2 style="color: #f5f5f7; font-size: 2rem; margin-bottom: 0.5rem; font-weight: 600">
-          无有效内容
-        </h2>
-        <p style="color: #8e8e93; font-size: 1rem; margin-bottom: 2rem">等待新的反馈请求...</p>
-        <div
-          style="
-            width: 240px;
-            height: 6px;
-            background: linear-gradient(
-              135deg,
-              rgba(255, 255, 255, 0.1),
-              rgba(255, 255, 255, 0.05)
-            );
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) inset;
-          "
-        >
-          <div
-            style="
-              width: 100%;
-              height: 100%;
-              background: #007aff;
-              animation: loading 1.5s linear infinite;
-              border-radius: 8px;
-            "
-          ></div>
+      <div id="no-content-container" class="no-content-container">
+        <div class="no-content-icon">⏳</div>
+        <h2 class="no-content-title">无有效内容</h2>
+        <p class="no-content-description">等待新的反馈请求...</p>
+        <div class="no-content-progress">
+          <div class="no-content-progress-bar"></div>
         </div>
-        <div
-          class="button-container"
-          id="no-content-buttons"
-          style="display: none; margin-top: 2rem"
-        >
+        <div class="button-container no-content-buttons" id="no-content-buttons">
           <button class="btn btn-secondary" id="close-btn">❌ 关闭服务</button>
         </div>
         <!-- 无内容页面的状态消息显示区域 -->
-        <div
-          class="status-message"
-          id="no-content-status-message"
-          style="display: none; margin-top: 1rem"
-        ></div>
+        <div class="status-message no-content-status" id="no-content-status-message"></div>
       </div>
 
       <!-- 正常内容页面 -->
@@ -2691,14 +2649,14 @@
         <div class="feedback-group">
           <div class="description markdown-content" id="description">加载中...</div>
 
-          <div class="options-container" id="options-container" style="display: none">
+          <div class="options-container hidden" id="options-container">
             <!-- 预定义选项将在这里动态加载 -->
           </div>
 
-          <div class="separator" id="separator" style="display: none"></div>
+          <div class="separator hidden" id="separator"></div>
 
           <!-- 图片预览区域 -->
-          <div class="image-preview-container" id="image-preview-container" style="display: none">
+          <div class="image-preview-container hidden" id="image-preview-container">
             <div class="image-preview-header">
               <span class="image-count-text">已选择 <span id="image-count">0</span> 张图片</span>
               <button class="clear-all-images-btn" id="clear-all-images-btn" title="清除所有图片">
@@ -2711,7 +2669,7 @@
           </div>
 
           <!-- 拖拽提示覆盖层 -->
-          <div class="drag-overlay" id="drag-overlay" style="display: none">
+          <div class="drag-overlay hidden" id="drag-overlay">
             <div class="drag-overlay-content">
               <div class="drag-icon">📁</div>
               <div class="drag-text">拖放图片到这里</div>
@@ -2729,19 +2687,13 @@
           </div>
 
           <!-- 隐藏的文件上传input -->
-          <input
-            type="file"
-            id="file-upload-input"
-            multiple
-            accept="image/*"
-            style="display: none"
-          />
+          <input type="file" id="file-upload-input" multiple accept="image/*" class="hidden" />
 
           <div class="textarea-container">
             <textarea
               class="feedback-textarea"
               id="feedback-text"
-              placeholder="请在此输入您的反馈内容... (支持直接粘贴图片 Ctrl+V)"
+              placeholder="请在此输入您的反馈内容……"
             ></textarea>
           </div>
 
@@ -2756,7 +2708,7 @@
       </div>
 
       <!-- 设置面板 -->
-      <div class="settings-panel" id="settings-panel" style="display: none">
+      <div class="settings-panel hidden" id="settings-panel">
         <div class="settings-content">
           <div class="settings-header">
             <h3>⚙️ 设置</h3>
@@ -2966,6 +2918,9 @@
       </div>
     </div>
 
+    <!-- 🔒 DOM安全工具 - 防止XSS攻击 -->
+    <script src="/static/js/dom-security.js"></script>
+
     <script>
       let config = null
 
@@ -3046,16 +3001,8 @@
             toolbar.appendChild(langLabel)
           }
 
-          // 创建复制按钮
-          const copyButton = document.createElement('button')
-          copyButton.className = 'copy-button'
-          copyButton.innerHTML = '📋 复制'
-          copyButton.setAttribute('aria-label', '复制代码')
-
-          // 添加复制功能
-          copyButton.addEventListener('click', () => {
-            copyCodeToClipboard(pre, copyButton)
-          })
+          // 🔒 使用安全的复制按钮创建方法
+          const copyButton = DOMSecurity.createCopyButton(pre.textContent || '')
 
           toolbar.appendChild(copyButton)
 
@@ -3468,19 +3415,40 @@
 
       // 注意：原来的复杂关闭逻辑已被简化为统一的刷新逻辑
 
-      // 内容轮询检查
-      let pollingInterval = null
+      // 内容轮询检查 - 带指数退避策略
+      let pollingTimeout = null
+      let currentPollingInterval = 2000 // 初始间隔2秒
+      const basePollingInterval = 2000 // 基础间隔
+      const maxPollingInterval = 30000 // 最大间隔30秒
+      let consecutiveErrors = 0
+
       function startContentPolling() {
-        if (pollingInterval) {
+        if (pollingTimeout) {
           console.log('轮询已经在运行，跳过启动')
           return // 避免重复启动
         }
 
         console.log('开始启动内容轮询...')
-        pollingInterval = setInterval(async () => {
+        scheduleNextPoll()
+      }
+
+      function scheduleNextPoll() {
+        pollingTimeout = setTimeout(async () => {
           try {
             const response = await fetch('/api/config')
+
+            // 检查是否遇到速率限制
+            if (response.status === 429) {
+              console.warn('遇到速率限制，增加轮询间隔')
+              handlePollingError(true)
+              return
+            }
+
             const newConfig = await response.json()
+
+            // 请求成功，重置错误计数和间隔
+            consecutiveErrors = 0
+            currentPollingInterval = basePollingInterval
 
             const currentHasContent = config ? config.has_content : false
             const newHasContent = newConfig.has_content
@@ -3497,7 +3465,7 @@
               // 发送新内容通知（非阻塞）
               try {
                 notificationManager
-                  .sendNotification('AI 需要您的反馈', '新的反馈请求已到达，请查看并回复', {
+                  .sendNotification('AI Intervention Agent', '新的反馈请求已到达，请查看并回复', {
                     tag: 'new-content',
                     requireInteraction: true,
                     onClick: () => {
@@ -3538,10 +3506,14 @@
                 // 发送内容更新通知（非阻塞）
                 try {
                   notificationManager
-                    .sendNotification('AI 反馈内容已更新', '反馈请求内容已更新，请查看最新内容', {
-                      tag: 'content-updated',
-                      requireInteraction: false
-                    })
+                    .sendNotification(
+                      'AI Intervention Agent',
+                      '反馈请求内容已更新，请查看最新内容',
+                      {
+                        tag: 'content-updated',
+                        requireInteraction: false
+                      }
+                    )
                     .catch(error => {
                       console.warn('发送内容更新通知失败:', error)
                     })
@@ -3557,18 +3529,42 @@
               // 都没有内容，更新配置但不改变显示
               config = newConfig
             }
+
+            // 安排下一次轮询
+            scheduleNextPoll()
           } catch (error) {
             console.error('轮询错误:', error)
+            handlePollingError(false)
           }
-        }, 2000) // 每2秒检查一次
-        console.log('内容轮询已启动，间隔2秒')
+        }, currentPollingInterval)
+
+        console.log(`内容轮询已安排，间隔${currentPollingInterval}ms`)
+      }
+
+      function handlePollingError(isRateLimit) {
+        consecutiveErrors++
+
+        if (isRateLimit || consecutiveErrors > 1) {
+          // 指数退避：2s -> 4s -> 8s -> 16s -> 30s (最大)
+          currentPollingInterval = Math.min(
+            basePollingInterval * Math.pow(2, consecutiveErrors),
+            maxPollingInterval
+          )
+          console.log(`轮询遇到错误，增加间隔到${currentPollingInterval}ms`)
+        }
+
+        // 继续轮询
+        scheduleNextPoll()
       }
 
       function stopContentPolling() {
-        if (pollingInterval) {
-          clearInterval(pollingInterval)
-          pollingInterval = null
+        if (pollingTimeout) {
+          clearTimeout(pollingTimeout)
+          pollingTimeout = null
         }
+        // 重置轮询状态
+        currentPollingInterval = basePollingInterval
+        consecutiveErrors = 0
       }
 
       // 更新页面内容
@@ -3584,16 +3580,13 @@
         // 更新预定义选项
         const optionsContainer = document.getElementById('options-container')
         if (optionsContainer) {
-          optionsContainer.innerHTML = ''
+          // 🔒 安全清空容器内容
+          DOMSecurity.clearContent(optionsContainer)
 
           if (config.predefined_options && config.predefined_options.length > 0) {
             config.predefined_options.forEach((option, index) => {
-              const optionDiv = document.createElement('div')
-              optionDiv.className = 'option-item'
-              optionDiv.innerHTML = `
-                            <input type="checkbox" id="option-${index}" value="${option}">
-                            <label for="option-${index}">${option}</label>
-                        `
+              // 🔒 使用安全的DOM创建方法
+              const optionDiv = DOMSecurity.createCheckboxOption(`option-${index}`, option, option)
               optionsContainer.appendChild(optionDiv)
             })
             optionsContainer.style.display = 'block'
@@ -4023,15 +4016,8 @@
 
         showInPageNotification(title, message, options = {}) {
           // 创建页面内通知元素
-          const notification = document.createElement('div')
-          notification.className = 'in-page-notification'
-          notification.innerHTML = `
-            <div class="in-page-notification-content">
-              <div class="in-page-notification-title">${title}</div>
-              <div class="in-page-notification-message">${message}</div>
-              <button class="in-page-notification-close">✕</button>
-            </div>
-          `
+          // 🔒 使用安全的通知创建方法
+          const notification = DOMSecurity.createNotification(title, message)
 
           // 添加样式
           notification.style.cssText = `
@@ -4123,23 +4109,85 @@
             url: window.location.href
           }
 
-          // 存储到本地存储（用于调试）
+          // 🚀 性能优化：存储到本地存储（用于调试）
           try {
-            const events = JSON.parse(
-              localStorage.getItem('ai-intervention-fallback-events') || '[]'
-            )
-            events.push(event)
-            // 只保留最近100个事件
-            if (events.length > 100) {
-              events.splice(0, events.length - 100)
+            const storageKey = 'ai-intervention-fallback-events'
+            const events = JSON.parse(localStorage.getItem(storageKey) || '[]')
+
+            // 🚀 性能优化：清理过期事件（保留7天）
+            const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+            const validEvents = events.filter(e => e.timestamp > sevenDaysAgo)
+
+            validEvents.push(event)
+
+            // 🚀 性能优化：只保留最近50个事件（从100减少到50）
+            if (validEvents.length > 50) {
+              validEvents.splice(0, validEvents.length - 50)
             }
-            localStorage.setItem('ai-intervention-fallback-events', JSON.stringify(events))
+
+            localStorage.setItem(storageKey, JSON.stringify(validEvents))
+
+            // 🚀 性能优化：监控存储空间使用
+            this.monitorLocalStorageUsage(storageKey)
           } catch (error) {
             console.warn('无法记录降级事件:', error)
+            // 如果存储失败，尝试清理存储空间
+            this.cleanupLocalStorage()
           }
 
           if (this.config.debug) {
             console.log('降级事件记录:', event)
+          }
+        }
+
+        // 🚀 性能优化：监控localStorage使用情况
+        monitorLocalStorageUsage(key) {
+          try {
+            const data = localStorage.getItem(key)
+            if (data) {
+              const sizeInBytes = new Blob([data]).size
+              const sizeInKB = (sizeInBytes / 1024).toFixed(2)
+
+              if (sizeInBytes > 100 * 1024) {
+                // 超过100KB时警告
+                console.warn(`localStorage事件记录过大: ${sizeInKB}KB，建议清理`)
+              }
+
+              if (this.config.debug) {
+                console.log(`localStorage事件记录大小: ${sizeInKB}KB`)
+              }
+            }
+          } catch (error) {
+            console.warn('无法监控localStorage使用情况:', error)
+          }
+        }
+
+        // 🚀 性能优化：清理localStorage
+        cleanupLocalStorage() {
+          try {
+            const storageKey = 'ai-intervention-fallback-events'
+            const events = JSON.parse(localStorage.getItem(storageKey) || '[]')
+
+            // 只保留最近24小时的事件
+            const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000
+            const recentEvents = events.filter(e => e.timestamp > oneDayAgo)
+
+            // 进一步限制到最多20个事件
+            if (recentEvents.length > 20) {
+              recentEvents.splice(0, recentEvents.length - 20)
+            }
+
+            localStorage.setItem(storageKey, JSON.stringify(recentEvents))
+            console.log(`localStorage清理完成，保留 ${recentEvents.length} 个事件`)
+          } catch (error) {
+            console.error('localStorage清理失败:', error)
+            // 最后手段：清空事件记录
+            try {
+              localStorage.removeItem('ai-intervention-fallback-events')
+              console.log('已清空localStorage事件记录')
+            } catch (clearError) {
+              console.error('无法清空localStorage:', clearError)
+            }
           }
         }
       }
@@ -4582,28 +4630,88 @@
 
       // 注意：已移除 fileToBase64 函数，现在直接使用文件对象上传
 
-      // 内存管理跟踪
+      // 🔒 改进的内存管理跟踪 - 防止内存泄漏
       let objectURLs = new Set()
+      let urlToFileMap = new WeakMap() // 使用WeakMap跟踪URL与文件的关联
+      let urlCreationTime = new Map() // 跟踪URL创建时间，用于自动清理
 
       // 创建安全的Object URL
       function createObjectURL(file) {
-        const url = URL.createObjectURL(file)
-        objectURLs.add(url)
-        return url
+        try {
+          const url = URL.createObjectURL(file)
+          objectURLs.add(url)
+          urlToFileMap.set(file, url)
+          urlCreationTime.set(url, Date.now())
+
+          // 设置自动清理定时器（30分钟后自动清理）
+          setTimeout(() => {
+            if (objectURLs.has(url)) {
+              console.warn(`自动清理过期的URL对象: ${url}`)
+              revokeObjectURL(url)
+            }
+          }, 30 * 60 * 1000) // 30分钟
+
+          return url
+        } catch (error) {
+          console.error('创建Object URL失败:', error)
+          return null
+        }
       }
 
       // 清理Object URL
       function revokeObjectURL(url) {
-        if (objectURLs.has(url)) {
-          URL.revokeObjectURL(url)
-          objectURLs.delete(url)
+        if (!url) return
+
+        try {
+          if (objectURLs.has(url)) {
+            URL.revokeObjectURL(url)
+            objectURLs.delete(url)
+            urlCreationTime.delete(url)
+            console.debug(`已清理URL对象: ${url}`)
+          }
+        } catch (error) {
+          console.error('清理URL对象失败:', error)
         }
       }
 
       // 清理所有Object URLs
       function cleanupAllObjectURLs() {
-        objectURLs.forEach(url => URL.revokeObjectURL(url))
+        console.log(`开始清理 ${objectURLs.size} 个URL对象`)
+        const startTime = performance.now()
+
+        objectURLs.forEach(url => {
+          try {
+            URL.revokeObjectURL(url)
+          } catch (error) {
+            console.error(`清理URL失败: ${url}`, error)
+          }
+        })
+
         objectURLs.clear()
+        urlCreationTime.clear()
+
+        const endTime = performance.now()
+        console.log(`URL对象清理完成，耗时: ${(endTime - startTime).toFixed(2)}ms`)
+      }
+
+      // 定期清理过期的URL对象（每5分钟检查一次）
+      function startPeriodicCleanup() {
+        setInterval(() => {
+          const now = Date.now()
+          const expiredUrls = []
+
+          urlCreationTime.forEach((creationTime, url) => {
+            // 清理超过20分钟的URL对象
+            if (now - creationTime > 20 * 60 * 1000) {
+              expiredUrls.push(url)
+            }
+          })
+
+          if (expiredUrls.length > 0) {
+            console.log(`定期清理 ${expiredUrls.length} 个过期URL对象`)
+            expiredUrls.forEach(url => revokeObjectURL(url))
+          }
+        }, 5 * 60 * 1000) // 每5分钟检查一次
       }
 
       // 优化的图片压缩函数
@@ -4750,9 +4858,13 @@
           imageItem.file = processedFile
           imageItem.size = processedFile.size
 
-          // 创建预览URL（避免base64编码）
-          const previewUrl = URL.createObjectURL(processedFile)
-          imageItem.previewUrl = previewUrl
+          // 🔒 创建安全的预览URL（避免base64编码）
+          const previewUrl = createObjectURL(processedFile)
+          if (previewUrl) {
+            imageItem.previewUrl = previewUrl
+          } else {
+            throw new Error('创建预览URL失败')
+          }
 
           // 更新预览
           renderImagePreview(imageItem, false)
@@ -4800,33 +4912,23 @@
             previewContainer.appendChild(previewElement)
           }
 
-          if (isLoading) {
-            previewElement.innerHTML = `
-              <div class="image-loading">
-                <div class="loading-spinner"></div>
-                加载中...
-              </div>
-              <div class="image-preview-info">${sanitizeText(imageItem.name)}</div>
-            `
-          } else {
-            // 延迟创建图片元素以优化性能
+          // 🔒 使用安全的图片预览创建方法
+          const newPreviewElement = DOMSecurity.createImagePreview(imageItem, isLoading)
+          DOMSecurity.replaceContent(
+            previewElement,
+            newPreviewElement.firstChild || newPreviewElement
+          )
+
+          if (!isLoading && imageItem.previewUrl) {
+            // 延迟加载图片以优化性能
             const img = new Image()
             img.onload = () => {
               rafUpdate(() => {
-                previewElement.innerHTML = `
-                  <img src="${imageItem.previewUrl}" alt="${sanitizeText(imageItem.name)}"
-                       class="image-preview-thumbnail"
-                       onclick="openImageModal('${imageItem.previewUrl}', '${sanitizeText(
-                  imageItem.name
-                )}', ${imageItem.size})"
-                       loading="lazy">
-                  <div class="image-preview-info">${sanitizeText(imageItem.name)} (${(
-                  imageItem.size / 1024
-                ).toFixed(2)}KB)</div>
-                  <button class="image-preview-remove" onclick="removeImage('${
-                    imageItem.id
-                  }')" title="删除图片">×</button>
-                `
+                const updatedPreviewElement = DOMSecurity.createImagePreview(imageItem, false)
+                DOMSecurity.replaceContent(
+                  previewElement,
+                  updatedPreviewElement.firstChild || updatedPreviewElement
+                )
               })
             }
             img.src = imageItem.previewUrl
@@ -4843,14 +4945,14 @@
 
       // 删除图片
       function removeImage(imageId) {
-        // 找到要删除的图片并释放URL
+        // 🔒 找到要删除的图片并安全释放URL
         const imageToRemove = selectedImages.find(img => img.id == imageId)
         if (
           imageToRemove &&
           imageToRemove.previewUrl &&
           imageToRemove.previewUrl.startsWith('blob:')
         ) {
-          URL.revokeObjectURL(imageToRemove.previewUrl)
+          revokeObjectURL(imageToRemove.previewUrl)
         }
 
         selectedImages = selectedImages.filter(img => img.id != imageId)
@@ -4864,16 +4966,17 @@
 
       // 清除所有图片
       function clearAllImages() {
-        // 清理内存中的Object URLs
+        // 🔒 清理内存中的Object URLs
         selectedImages.forEach(img => {
           if (img.previewUrl && img.previewUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(img.previewUrl)
+            revokeObjectURL(img.previewUrl)
           }
         })
 
         selectedImages = []
         const previewContainer = document.getElementById('image-previews')
-        previewContainer.innerHTML = ''
+        // 🔒 安全清空容器内容
+        DOMSecurity.clearContent(previewContainer)
         updateImageCounter()
         updateImagePreviewVisibility()
 
@@ -5334,6 +5437,9 @@
 
         // 初始化图片功能
         initializeImageFeatures()
+
+        // 🔒 启动URL对象定期清理
+        startPeriodicCleanup()
 
         // 初始化快捷键提示
         initializeShortcutTooltip()
