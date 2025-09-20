@@ -68,7 +68,7 @@ ai-intervention-agent 工具使用细节：
 
 在您的 AI 工具配置文件中添加以下配置：
 
-#### 🌟 配置方式一：uvx（推荐）
+#### 🌟 配置方式一：从 git 下载
 
 ```json
 {
@@ -89,8 +89,8 @@ ai-intervention-agent 工具使用细节：
 {
   "mcpServers": {
     "ai-intervention-agent-local": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/ai-intervention-agent", "run", "server.py"],
+      "command": "uvx",
+      "args": ["--from", "/path/to/ai-intervention-agent", "ai-intervention-agent"],
       "timeout": 600,
       "autoApprove": ["interactive_feedback"]
     }
@@ -106,7 +106,7 @@ ai-intervention-agent 工具使用细节：
 
 系统会根据运行方式智能选择配置文件：
 
-**🚀 uvx 方式（推荐）**：
+**🚀 从 git 下载**：
 
 - 只使用用户配置目录的全局配置
 - 自动创建默认配置文件

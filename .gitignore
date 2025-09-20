@@ -208,6 +208,7 @@ pids
 
 # Project specific
 .cursor/rules/
+.claude
 
 # Configuration files
 config.jsonc
