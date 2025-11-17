@@ -496,11 +496,13 @@ $$
 def _launch_task_in_thread(prompt, options, feedback_timeout, task_id=None):
     """在独立线程中启动任务
 
+    ⚠️ 注意：task_id 参数已废弃，系统会自动生成唯一ID
+
     Args:
         prompt: 任务提示内容
         options: 用户选项列表
         feedback_timeout: 反馈超时时间（秒）
-        task_id: 任务ID（可选）
+        task_id: （已废弃）任务ID，此参数将被忽略
 
     Returns:
         tuple: (thread, result_container) 元组
@@ -513,10 +515,11 @@ def _launch_task_in_thread(prompt, options, feedback_timeout, task_id=None):
 
     def run_task():
         try:
+            # task_id 参数已废弃，系统会自动生成唯一ID
             result_container["result"] = launch_feedback_ui(
                 prompt,
                 options,
-                task_id=task_id,
+                task_id=task_id,  # 此参数将被忽略
                 timeout=feedback_timeout,
             )
         except Exception as e:
@@ -794,10 +797,12 @@ def test_parallel_tasks():
 
 **请在此任务中输入 "task{task_num}" 然后点击"继续下一步"**"""
 
+                # ⚠️ 注意：task_id 参数已废弃，系统会自动生成唯一ID
+                # 这里保留是为了向后兼容测试代码，但实际会被忽略
                 result = launch_feedback_ui(
                     summary=prompt,
                     predefined_options=["✅ 继续下一步"],
-                    task_id=f"parallel-task-{task_num}",
+                    task_id=f"parallel-task-{task_num}",  # 此参数将被忽略
                     timeout=TestConfig.PARALLEL_TASK_TIMEOUT,
                 )
                 task_results[task_num] = result

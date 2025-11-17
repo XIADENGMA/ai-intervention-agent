@@ -103,8 +103,15 @@ function updateTasksList(tasks) {
 
 /**
  * 更新任务统计信息
+ *
+ * ⚠️ 注意：任务计数徽章已移除，此函数保留用于向后兼容
  */
 function updateTasksStats(stats) {
+  // 任务计数徽章已从UI中移除，此函数不再执行任何操作
+  // 保留此函数是为了避免其他代码调用时出错
+  return
+
+  /* 旧代码已注释（徽章功能已移除）
   const badge = document.getElementById('task-count-badge')
   if (!badge) {
     console.warn('任务计数徽章元素未找到')
@@ -116,6 +123,7 @@ function updateTasksStats(stats) {
   } else {
     badge.classList.add('hidden')
   }
+  */
 }
 
 // ==================== 标签页渲染 ====================

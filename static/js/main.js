@@ -1186,9 +1186,14 @@ class NotificationManager {
         }
       }
 
-      // 移动设备震动
+      // 移动设备震动（需要用户交互后才能调用）
       if (this.config.mobileVibrate && 'vibrate' in navigator) {
-        navigator.vibrate([200, 100, 200])
+        try {
+          navigator.vibrate([200, 100, 200])
+        } catch (error) {
+          // 静默处理：浏览器可能阻止未经用户交互的振动调用
+          // 这是正常的安全限制，不需要警告
+        }
       }
 
       console.log('通知已显示:', title)
@@ -1328,7 +1333,8 @@ class NotificationManager {
         console.log('使用振动提醒')
         return true
       } catch (error) {
-        console.warn('振动提醒失败:', error)
+        // 静默处理：浏览器可能阻止未经用户交互的振动调用
+        // 这是正常的安全限制，不需要警告
       }
     }
 

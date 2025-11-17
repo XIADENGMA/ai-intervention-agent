@@ -145,7 +145,8 @@ class WebFeedbackUI:
                 "'sha256-JLEjeN9e5dGsz5475WyRaoA4eQOdNPxDIeUhclnJDCE=' "  # MathJax inline styles
                 "'sha256-mQyxHEuwZJqpxCw3SLmc4YOySNKXunyu2Oiz1r3/wAE=' "  # MathJax inline styles
                 "'sha256-OCf+kv5Asiwp++8PIevKBYSgnNLNUZvxAp4a7wMLuKA=' "  # MathJax inline styles
-                "'sha256-pYs3hdAJmGSBSoN18N3tD9lPxkQenuhgv/HGUB12p1M='; "
+                "'sha256-pYs3hdAJmGSBSoN18N3tD9lPxkQenuhgv/HGUB12p1M=' "  # MathJax inline styles
+                "'sha256-nJYll+6UOZ/Z+0asaVjfopbKH/nqoxUrJmlh3Qxn5H4='; "  # MathJax inline styles (additional)
                 "img-src 'self' data: blob:; "
                 "font-src 'self' data:; "
                 "connect-src 'self'; "

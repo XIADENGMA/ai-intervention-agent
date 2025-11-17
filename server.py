@@ -1138,10 +1138,13 @@ def launch_feedback_ui(
 ) -> Dict[str, str]:
     """启动反馈界面，使用 TaskQueue 支持多任务并发
 
+    ⚠️ **已废弃：请使用 interactive_feedback() 工具代替**
+    此函数保留用于向后兼容，但 task_id 参数将被忽略，系统会自动生成。
+
     Args:
         summary: 反馈摘要
         predefined_options: 预定义选项列表
-        task_id: 任务ID，未提供则自动生成
+        task_id: （已废弃）任务ID，将被忽略，系统自动生成
         timeout: 超时时间（秒）
 
     Returns:
@@ -1152,18 +1155,15 @@ def launch_feedback_ui(
         ValueError: 参数验证失败
     """
     try:
-        import os
-        import random
+        import time
 
-        # 如果未提供 task_id，自动生成
-        if not task_id:
-            cwd = os.getcwd()
-            project_name = os.path.basename(cwd)
-            random_suffix = random.randint(1000, 9999)
-            if project_name:
-                task_id = f"{project_name}-{random_suffix}"
-            else:
-                task_id = f"default-{random_suffix}"
+        # 自动生成唯一 task_id（使用时间戳+随机数确保唯一性）
+        # task_id 参数将被忽略，始终使用自动生成
+        cwd = os.getcwd()
+        project_name = os.path.basename(cwd) or "task"
+        timestamp = int(time.time() * 1000) % 1000000
+        random_suffix = random.randint(100, 999)
+        task_id = f"{project_name}-{timestamp}-{random_suffix}"
 
         # 验证输入参数
         cleaned_summary, cleaned_options = validate_input(summary, predefined_options)
@@ -1171,7 +1171,9 @@ def launch_feedback_ui(
         # 获取配置
         config, auto_resubmit_timeout = get_web_ui_config()
 
-        logger.info(f"启动反馈界面: {cleaned_summary[:100]}... (task_id: {task_id})")
+        logger.info(
+            f"启动反馈界面: {cleaned_summary[:100]}... (自动生成task_id: {task_id})"
+        )
 
         # 确保 Web UI 正在运行
         ensure_web_ui_running(config)
@@ -1232,54 +1234,48 @@ def interactive_feedback(
         default=None,
         description="Predefined options for the user to choose from (optional)",
     ),
-    task_id: Optional[str] = Field(
-        default=None,
-        description="Task identifier to distinguish different tasks. If not provided, will auto-generate a unique ID based on project name. Format: alphanumeric + hyphens + underscores only, must be unique.",
-    ),
 ) -> list:
     """Request interactive feedback from the user
 
     This tool creates an interactive feedback task in the Web UI (default: http://localhost:8081).
     Users can provide text input, select predefined options, and optionally upload images.
 
+    ⚠️ **重要说明：task_id 已移除，系统会自动生成唯一ID**
+    - task_id 现在完全由系统自动生成，确保唯一性
+    - 格式："{project_name}-{timestamp}-{random}"
+    - 不再支持手动指定 task_id，避免冲突问题
+
     Args:
         message: 向用户显示的问题或消息 (required)
         predefined_options: 可选的预定义选项列表 (optional, can be multi-selected)
-        task_id: 任务标识符，用于区分不同任务 (required, auto-generated if not provided)
-            - Format requirements: alphanumeric characters, hyphens (-), underscores (_)
-            - Must be unique across all active tasks
-            - Auto-generated format: "{project_name}-{random_4digits}"
-            - Example: "my-project-1234" or "custom-task-001"
 
     Returns:
         包含用户反馈的列表，可能包含文本、选项和图片数据
 
     Raises:
-        Exception: 当反馈收集失败时（如任务队列已满、任务ID重复、Web UI未响应等）
+        Exception: 当反馈收集失败时（如任务队列已满、Web UI未响应等）
 
     Examples:
         interactive_feedback(
             message="Review the changes:",
-            predefined_options=["Approve", "Request Changes", "Reject"],
-            task_id="code-review-0001"
+            predefined_options=["Approve", "Request Changes", "Reject"]
         )
     """
     try:
         # 使用类型提示，移除运行时检查以避免IDE警告
         predefined_options_list = predefined_options
 
-        # 如果没有提供 task_id，则尝试自动生成
-        if not task_id:
-            # 尝试从当前工作目录获取项目名称
-            cwd = os.getcwd()
-            project_name = os.path.basename(cwd)
-            random_suffix = random.randint(1000, 9999)
-            if project_name:
-                task_id = f"{project_name}-{random_suffix}"
-            else:
-                task_id = f"default-{random_suffix}"
+        # 自动生成唯一 task_id（使用时间戳+随机数确保唯一性）
+        import time
 
-        logger.info(f"收到反馈请求: {message[:50]}... (task_id: {task_id})")
+        cwd = os.getcwd()
+        project_name = os.path.basename(cwd) or "task"
+        # 使用毫秒时间戳和随机数的组合，几乎不可能冲突
+        timestamp = int(time.time() * 1000) % 1000000  # 取后6位毫秒时间戳
+        random_suffix = random.randint(100, 999)
+        task_id = f"{project_name}-{timestamp}-{random_suffix}"
+
+        logger.info(f"收到反馈请求: {message[:50]}... (自动生成task_id: {task_id})")
 
         # 获取配置
         config, auto_resubmit_timeout = get_web_ui_config()
