@@ -34,18 +34,18 @@ class DOMSecurity {
    */
   static createElement(tagName, text = '', attributes = {}) {
     const element = document.createElement(tagName)
-    
+
     if (text) {
       element.textContent = text
     }
-    
+
     // 安全地设置属性
     Object.entries(attributes).forEach(([key, value]) => {
       if (typeof value === 'string' || typeof value === 'number') {
         element.setAttribute(key, String(value))
       }
     })
-    
+
     return element
   }
 
@@ -59,19 +59,47 @@ class DOMSecurity {
   static createCheckboxOption(id, value, label) {
     const container = document.createElement('div')
     container.className = 'option-item'
-    
+
     const checkbox = document.createElement('input')
     checkbox.type = 'checkbox'
     checkbox.id = id
     checkbox.value = this.sanitizeAttribute(value)
-    
+
+    // 添加立即视觉反馈：确保checked属性变化立即可见
+    checkbox.addEventListener('change', function(e) {
+      // 强制同步更新，确保状态立即反映
+      this.checked = e.target.checked
+    })
+
     const labelElement = document.createElement('label')
     labelElement.setAttribute('for', id)
     labelElement.textContent = label
-    
+
+    // 点击整个容器区域都能触发checkbox（提升点击体验）
+    container.addEventListener('click', function(e) {
+      // 如果点击的不是checkbox本身或label，则手动切换checkbox状态
+      if (e.target !== checkbox && e.target !== labelElement) {
+        checkbox.checked = !checkbox.checked
+        // 触发change事件，确保事件监听器被调用
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    // 防止双击时选中文本
+    container.addEventListener('mousedown', function(e) {
+      if (e.detail > 1) {
+        e.preventDefault()
+      }
+    })
+
+    // 防止拖动选择文本
+    container.addEventListener('selectstart', function(e) {
+      e.preventDefault()
+    })
+
     container.appendChild(checkbox)
     container.appendChild(labelElement)
-    
+
     return container
   }
 
@@ -85,28 +113,28 @@ class DOMSecurity {
   static createNotification(title, message, type = 'info') {
     const notification = document.createElement('div')
     notification.className = 'in-page-notification'
-    
+
     const content = document.createElement('div')
     content.className = 'in-page-notification-content'
-    
+
     const titleElement = document.createElement('div')
     titleElement.className = 'in-page-notification-title'
     titleElement.textContent = title
-    
+
     const messageElement = document.createElement('div')
     messageElement.className = 'in-page-notification-message'
     messageElement.textContent = message
-    
+
     const closeButton = document.createElement('button')
     closeButton.className = 'in-page-notification-close'
     closeButton.textContent = '×'
     closeButton.setAttribute('aria-label', '关闭通知')
-    
+
     content.appendChild(titleElement)
     content.appendChild(messageElement)
     content.appendChild(closeButton)
     notification.appendChild(content)
-    
+
     return notification
   }
 
@@ -120,17 +148,17 @@ class DOMSecurity {
     const previewElement = document.createElement('div')
     previewElement.className = 'image-preview-item'
     previewElement.id = `preview-${imageItem.id}`
-    
+
     if (isLoading) {
       const loadingDiv = document.createElement('div')
       loadingDiv.className = 'image-loading'
-      
+
       const spinner = document.createElement('div')
       spinner.className = 'loading-spinner'
-      
+
       const text = document.createElement('div')
       text.textContent = '处理中...'
-      
+
       loadingDiv.appendChild(spinner)
       loadingDiv.appendChild(text)
       previewElement.appendChild(loadingDiv)
@@ -139,22 +167,22 @@ class DOMSecurity {
       img.src = imageItem.previewUrl
       img.alt = this.sanitizeAttribute(imageItem.name)
       img.className = 'image-preview-thumbnail'
-      
+
       const removeButton = document.createElement('button')
       removeButton.className = 'image-remove-btn'
       removeButton.textContent = '×'
       removeButton.setAttribute('aria-label', '删除图片')
       removeButton.onclick = () => removeImage(imageItem.id)
-      
+
       const info = document.createElement('div')
       info.className = 'image-info'
       info.textContent = `${imageItem.name} (${(imageItem.size / 1024).toFixed(1)}KB)`
-      
+
       previewElement.appendChild(img)
       previewElement.appendChild(removeButton)
       previewElement.appendChild(info)
     }
-    
+
     return previewElement
   }
 
@@ -168,7 +196,7 @@ class DOMSecurity {
     button.className = 'copy-button'
     button.textContent = '📋 复制'
     button.setAttribute('aria-label', '复制代码')
-    
+
     button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(targetText)
@@ -177,7 +205,7 @@ class DOMSecurity {
         this.updateButtonState(button, '❌ 复制失败', 'error')
       }
     })
-    
+
     return button
   }
 
@@ -191,10 +219,10 @@ class DOMSecurity {
   static updateButtonState(button, text, className, duration = 2000) {
     const originalText = button.textContent
     const originalClasses = button.className
-    
+
     button.textContent = text
     button.classList.add(className)
-    
+
     setTimeout(() => {
       button.textContent = originalText
       button.className = originalClasses
@@ -208,7 +236,7 @@ class DOMSecurity {
    */
   static sanitizeAttribute(value) {
     if (typeof value !== 'string') return ''
-    
+
     return value
       .replace(/[<>'"&]/g, (match) => {
         const entities = {
@@ -230,7 +258,7 @@ class DOMSecurity {
    */
   static sanitizeText(text) {
     if (typeof text !== 'string') return ''
-    
+
     const div = document.createElement('div')
     div.textContent = text
     return div.textContent || div.innerText || ''
@@ -243,9 +271,9 @@ class DOMSecurity {
    */
   static replaceContent(element, content) {
     if (!element) return
-    
+
     this.clearContent(element)
-    
+
     if (content instanceof DocumentFragment || content instanceof HTMLElement) {
       element.appendChild(content)
     }
@@ -266,7 +294,7 @@ class DOMSecurity {
    */
   static isValidURL(url) {
     if (typeof url !== 'string') return false
-    
+
     try {
       const urlObj = new URL(url)
       // 只允许http和https协议

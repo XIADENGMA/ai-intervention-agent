@@ -838,12 +838,12 @@
         );
         border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 20px;
-        /* 移除过渡动画 */
+        transition: all 0.15s ease;
         cursor: pointer;
         position: relative;
-        /* 移除毛玻璃效果 */
         margin-bottom: 0.75rem;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+        user-select: none;
       }
 
       .option-item::before {
@@ -865,26 +865,48 @@
           rgba(255, 255, 255, 0.08) 100%
         );
         border-color: rgba(0, 122, 255, 0.4);
-        /* 移除transform效果 */
+        transform: translateY(-1px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
       }
 
+      .option-item:active {
+        transform: translateY(0);
+        transition: all 0.05s ease;
+      }
+
       .option-item input[type='checkbox'] {
-        margin-right: 1rem; /* 增加复选框与文字的间距 */
-        width: 18px; /* 增大复选框尺寸 */
-        height: 18px;
+        margin-right: 1rem;
+        width: 20px;
+        height: 20px;
         accent-color: #007aff;
+        cursor: pointer;
+        flex-shrink: 0;
+        position: relative;
+      }
+
+      .option-item input[type='checkbox']::before {
+        content: '';
+        position: absolute;
+        top: -10px;
+        left: -10px;
+        right: -10px;
+        bottom: -10px;
         cursor: pointer;
       }
 
       .option-item label {
-        font-size: 1rem; /* 增大字体 */
+        font-size: 1rem;
         cursor: pointer;
         color: #f5f5f7;
         flex: 1;
         font-weight: 400;
         letter-spacing: -0.022em;
-        line-height: 1.5; /* 增加行高 */
+        line-height: 1.5;
+        padding: 0.5rem 0;
+        user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
       }
 
       .separator {
@@ -2629,6 +2651,13 @@
         <button class="settings-btn" id="settings-btn" title="通知设置">⚙️</button>
       </div>
 
+      <!-- 任务标签页 -->
+      <div class="task-tabs-container hidden" id="task-tabs-container">
+        <div class="task-tabs" id="task-tabs">
+          <!-- 标签页将由 JS 动态生成 -->
+        </div>
+      </div>
+
       <!-- 无有效内容页面 -->
       <div id="no-content-container" class="no-content-container">
         <div class="no-content-icon">⏳</div>
@@ -2647,6 +2676,19 @@
       <!-- 正常内容页面 -->
       <div id="content-container" class="content">
         <div class="feedback-group">
+          <!-- Task ID 和倒计时显示区域 -->
+          <div class="header-info-container">
+            <div class="task-id-container hidden" id="task-id-container">
+              <span class="task-id-label">📋 任务:</span>
+              <span class="task-id-text" id="task-id-text"></span>
+            </div>
+
+            <div class="countdown-container hidden" id="countdown-container">
+              <span class="countdown-label">⏰</span>
+              <span class="countdown-text" id="countdown-text">0秒后自动重新询问</span>
+            </div>
+          </div>
+
           <div class="description markdown-content" id="description">加载中...</div>
 
           <div class="options-container hidden" id="options-container">
@@ -2918,8 +2960,11 @@
       </div>
     </div>
 
-    <!-- 🔒 DOM安全工具 - 防止XSS攻击 -->
+    <!-- DOM 安全工具：防止 XSS 攻击 -->
     <script src="/static/js/dom-security.js"></script>
+
+    <!-- 📋 多任务管理模块 -->
+    <script src="/static/js/multi_task.js"></script>
 
     <script>
       let config = null
@@ -3001,7 +3046,7 @@
             toolbar.appendChild(langLabel)
           }
 
-          // 🔒 使用安全的复制按钮创建方法
+          // 使用安全的复制按钮创建方法
           const copyButton = DOMSecurity.createCopyButton(pre.textContent || '')
 
           toolbar.appendChild(copyButton)
@@ -3483,9 +3528,10 @@
                 console.warn('通知功能不可用:', error)
               }
 
+              const oldConfig = config
               config = newConfig
               showContentPage()
-              updatePageContent()
+              updatePageContent(oldConfig)
               showStatus('收到新的反馈请求！', 'success')
             } else if (!newHasContent && currentHasContent) {
               // 从有内容状态变为无内容状态
@@ -3521,8 +3567,9 @@
                   console.warn('通知功能不可用:', error)
                 }
 
+                const oldConfig = config
                 config = newConfig
-                updatePageContent()
+                updatePageContent(oldConfig)
                 showStatus('内容已更新！', 'success')
               }
             } else {
@@ -3568,7 +3615,8 @@
       }
 
       // 更新页面内容
-      function updatePageContent() {
+      // oldConfig: 可选参数，用于正确保存选中状态（避免配置更新时状态丢失）
+      function updatePageContent(oldConfig = null) {
         if (!config) return
 
         // 更新提示内容 - 使用高性能渲染函数
@@ -3580,14 +3628,30 @@
         // 更新预定义选项
         const optionsContainer = document.getElementById('options-container')
         if (optionsContainer) {
-          // 🔒 安全清空容器内容
+          // 保存当前选中状态 - 使用旧配置的选项列表（如果提供）
+          const selectedStates = []
+          const configForSaving = oldConfig || config
+          if (configForSaving && configForSaving.predefined_options) {
+            configForSaving.predefined_options.forEach((option, index) => {
+              const checkbox = document.getElementById(`option-${index}`)
+              selectedStates[index] = checkbox ? checkbox.checked : false
+            })
+          }
+
+          // 安全清空容器内容
           DOMSecurity.clearContent(optionsContainer)
 
           if (config.predefined_options && config.predefined_options.length > 0) {
             config.predefined_options.forEach((option, index) => {
-              // 🔒 使用安全的DOM创建方法
+              // 使用安全的 DOM 创建方法
               const optionDiv = DOMSecurity.createCheckboxOption(`option-${index}`, option, option)
               optionsContainer.appendChild(optionDiv)
+
+              // 恢复选中状态
+              const checkbox = document.getElementById(`option-${index}`)
+              if (checkbox && selectedStates[index]) {
+                checkbox.checked = true
+              }
             })
             optionsContainer.style.display = 'block'
             document.getElementById('separator').style.display = 'block'
@@ -4016,7 +4080,7 @@
 
         showInPageNotification(title, message, options = {}) {
           // 创建页面内通知元素
-          // 🔒 使用安全的通知创建方法
+          // 使用安全的通知创建方法
           const notification = DOMSecurity.createNotification(title, message)
 
           // 添加样式
@@ -4109,25 +4173,25 @@
             url: window.location.href
           }
 
-          // 🚀 性能优化：存储到本地存储（用于调试）
+          // 性能优化：存储到本地存储
           try {
             const storageKey = 'ai-intervention-fallback-events'
             const events = JSON.parse(localStorage.getItem(storageKey) || '[]')
 
-            // 🚀 性能优化：清理过期事件（保留7天）
+            // 性能优化：清理过期事件
             const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
             const validEvents = events.filter(e => e.timestamp > sevenDaysAgo)
 
             validEvents.push(event)
 
-            // 🚀 性能优化：只保留最近50个事件（从100减少到50）
+            // 性能优化：只保留最近50个事件
             if (validEvents.length > 50) {
               validEvents.splice(0, validEvents.length - 50)
             }
 
             localStorage.setItem(storageKey, JSON.stringify(validEvents))
 
-            // 🚀 性能优化：监控存储空间使用
+            // 性能优化：监控存储空间使用
             this.monitorLocalStorageUsage(storageKey)
           } catch (error) {
             console.warn('无法记录降级事件:', error)
@@ -4140,7 +4204,7 @@
           }
         }
 
-        // 🚀 性能优化：监控localStorage使用情况
+        // 性能优化：监控 localStorage 使用情况
         monitorLocalStorageUsage(key) {
           try {
             const data = localStorage.getItem(key)
@@ -4162,7 +4226,7 @@
           }
         }
 
-        // 🚀 性能优化：清理localStorage
+        // 性能优化：清理 localStorage
         cleanupLocalStorage() {
           try {
             const storageKey = 'ai-intervention-fallback-events'
@@ -4630,7 +4694,7 @@
 
       // 注意：已移除 fileToBase64 函数，现在直接使用文件对象上传
 
-      // 🔒 改进的内存管理跟踪 - 防止内存泄漏
+      // 改进的内存管理跟踪：防止内存泄漏
       let objectURLs = new Set()
       let urlToFileMap = new WeakMap() // 使用WeakMap跟踪URL与文件的关联
       let urlCreationTime = new Map() // 跟踪URL创建时间，用于自动清理
@@ -4858,7 +4922,7 @@
           imageItem.file = processedFile
           imageItem.size = processedFile.size
 
-          // 🔒 创建安全的预览URL（避免base64编码）
+          // 创建安全的预览 URL
           const previewUrl = createObjectURL(processedFile)
           if (previewUrl) {
             imageItem.previewUrl = previewUrl
@@ -4912,7 +4976,7 @@
             previewContainer.appendChild(previewElement)
           }
 
-          // 🔒 使用安全的图片预览创建方法
+          // 使用安全的图片预览创建方法
           const newPreviewElement = DOMSecurity.createImagePreview(imageItem, isLoading)
           DOMSecurity.replaceContent(
             previewElement,
@@ -4945,7 +5009,7 @@
 
       // 删除图片
       function removeImage(imageId) {
-        // 🔒 找到要删除的图片并安全释放URL
+        // 找到要删除的图片并安全释放 URL
         const imageToRemove = selectedImages.find(img => img.id == imageId)
         if (
           imageToRemove &&
@@ -4966,7 +5030,7 @@
 
       // 清除所有图片
       function clearAllImages() {
-        // 🔒 清理内存中的Object URLs
+        // 清理内存中的 Object URLs
         selectedImages.forEach(img => {
           if (img.previewUrl && img.previewUrl.startsWith('blob:')) {
             revokeObjectURL(img.previewUrl)
@@ -4975,7 +5039,7 @@
 
         selectedImages = []
         const previewContainer = document.getElementById('image-previews')
-        // 🔒 安全清空容器内容
+        // 安全清空容器内容
         DOMSecurity.clearContent(previewContainer)
         updateImageCounter()
         updateImagePreviewVisibility()
@@ -5425,6 +5489,11 @@
               prompt_length: config.prompt ? config.prompt.length : 0
             })
             startContentPolling()
+
+            // 初始化多任务支持
+            if (typeof initMultiTaskSupport === 'function') {
+              initMultiTaskSupport()
+            }
           })
           .catch(error => {
             console.error('❌ 配置加载失败:', error)
@@ -5432,13 +5501,18 @@
             setTimeout(() => {
               console.log('🔄 配置加载失败，延迟启动轮询...')
               startContentPolling()
+
+              // 初始化多任务支持
+              if (typeof initMultiTaskSupport === 'function') {
+                initMultiTaskSupport()
+              }
             }, 3000)
           })
 
         // 初始化图片功能
         initializeImageFeatures()
 
-        // 🔒 启动URL对象定期清理
+        // 启动 URL 对象定期清理
         startPeriodicCleanup()
 
         // 初始化快捷键提示

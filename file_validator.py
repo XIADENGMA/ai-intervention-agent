@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-文件验证模块 - 实现安全的文件上传验证
-包含文件头部魔数验证、文件类型检查、恶意内容扫描等功能
+文件验证模块
+
+实现安全的文件上传验证，包含：
+- 文件头部魔数验证
+- 文件类型检查
+- 恶意内容扫描
+- 文件大小限制
 """
 
 import logging
@@ -11,7 +16,6 @@ from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# 支持的图片格式魔数字典
 IMAGE_MAGIC_NUMBERS = {
     # PNG格式
     b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a": {

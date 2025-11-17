@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class ReadWriteLock:
-    """🔒 读写锁实现 - 允许多个读者同时访问，但写者独占访问"""
+    """读写锁实现
+
+    允许多个读者同时访问，但写者独占访问，适用于读多写少的场景
+    """
 
     def __init__(self):
         self._read_ready = threading.Condition(threading.RLock())
@@ -36,7 +39,11 @@ class ReadWriteLock:
 
     @contextmanager
     def read_lock(self):
-        """获取读锁的上下文管理器"""
+        """获取读锁的上下文管理器
+
+        Yields:
+            None: 在持有读锁期间执行
+        """
         self._read_ready.acquire()
         try:
             self._readers += 1
@@ -56,10 +63,13 @@ class ReadWriteLock:
 
     @contextmanager
     def write_lock(self):
-        """获取写锁的上下文管理器"""
+        """获取写锁的上下文管理器
+
+        Yields:
+            None: 在持有写锁期间执行（独占访问）
+        """
         self._read_ready.acquire()
         try:
-            # 等待所有读者完成
             while self._readers > 0:
                 self._read_ready.wait()
             yield
@@ -74,9 +84,11 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
         content: JSONC 格式的字符串内容
 
     Returns:
-        解析后的字典对象
+        Dict[str, Any]: 解析后的字典对象
+
+    Raises:
+        json.JSONDecodeError: JSON 解析失败
     """
-    # 更安全的注释移除方式
     lines = content.split("\n")
     cleaned_lines = []
     in_multiline_comment = False
@@ -138,18 +150,16 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
 
 
 def _is_uvx_mode() -> bool:
-    """检测是否为uvx方式运行
+    """检测是否为 uvx 方式运行
 
     通过检查以下特征判断：
-    1. 执行路径是否包含uvx相关路径
-    2. 环境变量是否包含uvx标识
+    1. 执行路径是否包含 uvx 相关路径
+    2. 环境变量是否包含 uvx 标识
     3. 当前工作目录是否为临时目录
 
     Returns:
-        True if running via uvx, False otherwise
+        bool: True 表示 uvx 模式，False 表示开发模式
     """
-
-    # 检查执行路径
     executable_path = sys.executable
     if "uvx" in executable_path or ".local/share/uvx" in executable_path:
         return True
@@ -158,16 +168,13 @@ def _is_uvx_mode() -> bool:
     if os.getenv("UVX_PROJECT"):
         return True
 
-    # 检查是否在项目开发目录（包含pyproject.toml等开发文件）
     current_dir = Path.cwd()
     dev_files = ["pyproject.toml", "setup.py", "setup.cfg", ".git"]
 
-    # 如果当前目录或父目录包含开发文件，认为是开发模式
     for path in [current_dir] + list(current_dir.parents):
         if any((path / dev_file).exists() for dev_file in dev_files):
             return False
 
-    # 默认认为是uvx模式（更安全的假设）
     return True
 
 
@@ -175,7 +182,7 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
     """查找配置文件路径
 
     根据运行方式查找配置文件：
-    - uvx方式：只使用用户配置目录的全局配置
+    - uvx 方式：只使用用户配置目录的全局配置
     - 开发模式：优先当前目录，然后用户配置目录
 
     跨平台配置目录位置：
@@ -184,10 +191,10 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
     - Windows: %APPDATA%/ai-intervention-agent/
 
     Args:
-        config_filename: 配置文件名
+        config_filename: 配置文件名，默认为 "config.jsonc"
 
     Returns:
-        配置文件的Path对象
+        Path: 配置文件的路径对象
     """
     # 检测是否为uvx方式运行
     is_uvx_mode = _is_uvx_mode()
@@ -247,23 +254,25 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
 
 
 def _get_user_config_dir_fallback() -> Path:
-    """获取用户配置目录的回退实现（不依赖 platformdirs）"""
+    """获取用户配置目录的回退实现
 
+    不依赖 platformdirs，手动判断平台并返回标准配置目录
+
+    Returns:
+        Path: 用户配置目录路径
+    """
     system = platform.system().lower()
     home = Path.home()
 
     if system == "windows":
-        # Windows: %APPDATA%/ai-intervention-agent/
         appdata = os.getenv("APPDATA")
         if appdata:
             return Path(appdata) / "ai-intervention-agent"
         else:
             return home / "AppData" / "Roaming" / "ai-intervention-agent"
     elif system == "darwin":
-        # macOS: ~/Library/Application Support/ai-intervention-agent/
         return home / "Library" / "Application Support" / "ai-intervention-agent"
     else:
-        # Linux/Unix: ~/.config/ai-intervention-agent/
         xdg_config_home = os.getenv("XDG_CONFIG_HOME")
         if xdg_config_home:
             return Path(xdg_config_home) / "ai-intervention-agent"
@@ -272,20 +281,28 @@ def _get_user_config_dir_fallback() -> Path:
 
 
 class ConfigManager:
-    """配置管理器"""
+    """配置管理器
+
+    统一管理应用程序配置，支持：
+    - JSONC 格式配置文件
+    - 跨平台配置目录
+    - 配置热重载
+    - 网络安全配置独立管理
+    - 线程安全的读写操作
+    """
 
     def __init__(self, config_file: str = "config.jsonc"):
         # 使用新的配置文件查找逻辑
         self.config_file = find_config_file(config_file)
 
         self._config = {}
-        # 🔒 使用读写锁提高并发性能
+        # 使用读写锁提高并发性能
         self._rw_lock = ReadWriteLock()
         self._lock = threading.RLock()  # 保留原有锁用于向后兼容
         self._original_content: Optional[str] = None  # 保存原始文件内容
         self._last_access_time = time.time()  # 跟踪最后访问时间
 
-        # 🚀 性能优化：配置写入缓冲机制
+        # 性能优化：配置写入缓冲机制
         self._pending_changes = {}  # 待写入的配置变更
         self._save_timer: Optional[threading.Timer] = None  # 延迟保存定时器
         self._save_delay = 3.0  # 延迟保存时间（秒）
@@ -352,7 +369,7 @@ class ConfigManager:
                         full_config = json.loads(content)
                         logger.info(f"JSON 配置文件已加载: {self.config_file}")
 
-                    # 🔒 完全排除 network_security，不加载到内存中
+                    # 完全排除 network_security，不加载到内存中
                     self._config = {}
                     for key, value in full_config.items():
                         if key != "network_security":
@@ -363,7 +380,7 @@ class ConfigManager:
                 else:
                     # 创建默认配置文件
                     self._config = self._get_default_config()
-                    # 🔒 从默认配置中也排除 network_security
+                    # 从默认配置中也排除 network_security
                     if "network_security" in self._config:
                         del self._config["network_security"]
                     self._create_default_config_file()
@@ -371,7 +388,7 @@ class ConfigManager:
 
                 # 合并默认配置（确保新增的配置项存在）
                 default_config = self._get_default_config()
-                # 🔒 从默认配置中排除 network_security
+                # 从默认配置中排除 network_security
                 if "network_security" in default_config:
                     del default_config["network_security"]
 
@@ -380,7 +397,7 @@ class ConfigManager:
             except Exception as e:
                 logger.error(f"加载配置文件失败: {e}")
                 self._config = self._get_default_config()
-                # 🔒 从默认配置中排除 network_security
+                # 从默认配置中排除 network_security
                 if "network_security" in self._config:
                     del self._config["network_security"]
 
@@ -392,7 +409,7 @@ class ConfigManager:
 
         # 只添加缺失的默认键，不修改现有值
         for key, default_value in default.items():
-            # 🔒 额外安全措施：确保不合并 network_security
+            # 额外安全措施：确保不合并 network_security
             if key == "network_security":
                 logger.debug("_merge_config: 跳过 network_security 配置")
                 continue
@@ -404,7 +421,7 @@ class ConfigManager:
                 # 递归合并嵌套字典，但保持现有值优先
                 result[key] = self._merge_config(default_value, result[key])
 
-        # 🔒 确保结果中不包含 network_security
+        # 确保结果中不包含 network_security
         if "network_security" in result:
             del result["network_security"]
             logger.debug("_merge_config: 从合并结果中移除 network_security")
@@ -543,7 +560,7 @@ class ConfigManager:
 
     def _save_jsonc_with_comments(self, config: Dict[str, Any]) -> str:
         """保存 JSONC 格式配置，保留原有注释和格式"""
-        # 🔒 双重保险：确保 network_security 不被处理
+        # 双重保险：确保 network_security 不被处理
         config_to_save = config.copy()
         if "network_security" in config_to_save:
             del config_to_save["network_security"]
@@ -556,7 +573,7 @@ class ConfigManager:
         lines = self._original_content.split("\n")
         result_lines = lines.copy()
 
-        # 🔒 找到 network_security 段的行范围，确保不会修改该段内容
+        # 找到 network_security 段的行范围，确保不会修改该段内容
         network_security_range = self._find_network_security_range(lines)
 
         def find_array_range(lines: list, start_line: int, key: str) -> tuple:
@@ -779,7 +796,7 @@ class ConfigManager:
                 else:
                     # 查找键的定义行
                     for i, line in enumerate(result_lines):
-                        # 🔒 检查当前行是否在 network_security 段内，如果是则跳过
+                        # 检查当前行是否在 network_security 段内，如果是则跳过
                         if (
                             network_security_range[0] != -1
                             and network_security_range[0]
@@ -865,7 +882,7 @@ class ConfigManager:
                 logger.warning(
                     f"模板文件不存在: {template_file}，使用默认配置创建JSON文件"
                 )
-                # 🔒 获取默认配置并排除 network_security
+                # 获取默认配置并排除 network_security
                 default_config = self._get_default_config()
                 if "network_security" in default_config:
                     del default_config["network_security"]
@@ -884,7 +901,7 @@ class ConfigManager:
             logger.error(f"创建默认配置文件失败: {e}")
             # 如果创建配置文件失败，回退到普通JSON文件
             try:
-                # 🔒 获取默认配置并排除 network_security
+                # 获取默认配置并排除 network_security
                 default_config = self._get_default_config()
                 if "network_security" in default_config:
                     del default_config["network_security"]
@@ -900,7 +917,7 @@ class ConfigManager:
                 raise
 
     def _schedule_save(self):
-        """🚀 性能优化：调度延迟保存配置文件"""
+        """性能优化：调度延迟保存配置文件"""
         with self._lock:
             # 取消之前的保存定时器
             if self._save_timer is not None:
@@ -912,7 +929,7 @@ class ConfigManager:
             logger.debug(f"已调度配置保存，将在 {self._save_delay} 秒后执行")
 
     def _delayed_save(self):
-        """🚀 性能优化：延迟保存配置文件"""
+        """性能优化：延迟保存配置文件"""
         try:
             with self._lock:
                 self._save_timer = None
@@ -1038,7 +1055,7 @@ class ConfigManager:
         logger.debug("配置文件结构验证通过")
 
     def get(self, key: str, default: Any = None) -> Any:
-        """🔒 获取配置值，支持点号分隔的嵌套键 - 使用读锁提高并发性能"""
+        """获取配置值，支持点号分隔的嵌套键 - 使用读锁提高并发性能"""
         with self._rw_lock.read_lock():
             self._last_access_time = time.time()
             keys = key.split(".")
@@ -1051,17 +1068,17 @@ class ConfigManager:
                 return default
 
     def set(self, key: str, value: Any, save: bool = True):
-        """🔒 设置配置值，支持点号分隔的嵌套键 - 使用写锁确保原子操作"""
+        """设置配置值，支持点号分隔的嵌套键 - 使用写锁确保原子操作"""
         with self._rw_lock.write_lock():
             self._last_access_time = time.time()
 
-            # 🚀 性能优化：检查当前值是否与新值相同
+            # 性能优化：检查当前值是否与新值相同
             current_value = self.get(key)
             if current_value == value:
                 logger.debug(f"配置值未变化，跳过更新: {key} = {value}")
                 return
 
-            # 🚀 性能优化：使用缓冲机制
+            # 性能优化：使用缓冲机制
             if save:
                 # 将变更添加到待写入队列
                 self._pending_changes[key] = value
@@ -1076,11 +1093,11 @@ class ConfigManager:
             logger.debug(f"配置已更新: {key} = {value}")
 
     def update(self, updates: Dict[str, Any], save: bool = True):
-        """🔒 批量更新配置 - 使用写锁确保原子操作"""
+        """批量更新配置 - 使用写锁确保原子操作"""
         with self._rw_lock.write_lock():
             self._last_access_time = time.time()
 
-            # 🚀 性能优化：过滤出真正有变化的配置项
+            # 性能优化：过滤出真正有变化的配置项
             actual_changes = {}
             for key, value in updates.items():
                 current_value = self.get(key)
@@ -1091,7 +1108,7 @@ class ConfigManager:
                 logger.debug("批量更新中没有配置变化，跳过保存")
                 return
 
-            # 🚀 性能优化：使用批量缓冲机制
+            # 性能优化：使用批量缓冲机制
             if save:
                 # 将所有变更添加到待写入队列
                 self._pending_changes.update(actual_changes)
@@ -1110,7 +1127,7 @@ class ConfigManager:
             logger.debug(f"批量更新完成，共更新 {len(actual_changes)} 个配置项")
 
     def force_save(self):
-        """🚀 强制立即保存配置文件（用于关键操作）"""
+        """强制立即保存配置文件（用于关键操作）"""
         with self._lock:
             # 取消延迟保存定时器
             if self._save_timer is not None:
@@ -1133,7 +1150,7 @@ class ConfigManager:
 
     def get_section(self, section: str) -> Dict[str, Any]:
         """获取配置段"""
-        # 🔒 特殊处理 network_security 配置段
+        # 特殊处理 network_security 配置段
         if section == "network_security":
             return self.get_network_security_config()
         return self.get(section, {})
@@ -1185,7 +1202,7 @@ class ConfigManager:
             return self._config.copy()
 
     def get_network_security_config(self) -> Dict[str, Any]:
-        """🔒 特殊方法：直接从文件读取 network_security 配置
+        """特殊方法：直接从文件读取 network_security 配置
 
         由于 network_security 配置不加载到内存中，需要特殊方法来读取
         """

@@ -77,7 +77,7 @@ function processCodeBlocks(container) {
       toolbar.appendChild(langLabel)
     }
 
-    // 🔒 使用安全的复制按钮创建方法
+    // 使用安全的复制按钮创建方法
     const copyButton = DOMSecurity.createCopyButton(pre.textContent || '')
 
     toolbar.appendChild(copyButton)
@@ -169,8 +169,139 @@ function processStrikethrough(container) {
   })
 }
 
+// 更新 task_id 显示
+function updateTaskIdDisplay(taskId) {
+  const taskIdContainer = document.getElementById('task-id-container')
+  const taskIdText = document.getElementById('task-id-text')
+
+  if (taskId && taskId.trim()) {
+    taskIdText.textContent = taskId
+    taskIdContainer.classList.remove('hidden')
+  } else {
+    taskIdContainer.classList.add('hidden')
+  }
+}
+
+// 倒计时相关变量
+let countdownTimer = null
+let remainingSeconds = 0
+
+// 多任务相关全局变量
+let currentTasks = [] // 所有任务列表
+let activeTaskId = null // 当前活动任务ID
+let taskCountdowns = {} // 每个任务的独立倒计时
+let tasksPollingTimer = null // 任务轮询定时器
+
+// 启动倒计时
+function startCountdown(timeoutSeconds) {
+  // 清除之前的定时器
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+
+  remainingSeconds = timeoutSeconds
+
+  // 更新倒计时显示
+  updateCountdownDisplay()
+
+  // 启动定时器，每秒更新一次
+  countdownTimer = setInterval(() => {
+    remainingSeconds--
+
+    if (remainingSeconds <= 0) {
+      // 倒计时结束，自动提交
+      autoSubmitFeedback()
+    } else {
+      // 更新显示
+      updateCountdownDisplay()
+    }
+  }, 1000)
+}
+
+// 更新倒计时显示
+function updateCountdownDisplay() {
+  const countdownContainer = document.getElementById('countdown-container')
+  const countdownText = document.getElementById('countdown-text')
+
+  if (remainingSeconds > 0) {
+    countdownText.textContent = `${remainingSeconds}秒后自动重新询问`
+    countdownContainer.classList.remove('hidden')
+  } else {
+    countdownContainer.classList.add('hidden')
+  }
+}
+
+// 停止倒计时
+function stopCountdown() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+
+  const countdownContainer = document.getElementById('countdown-container')
+  countdownContainer.classList.add('hidden')
+}
+
+// 获取选中的选项（辅助函数）
+function getSelectedOptions() {
+  const selectedOptions = []
+  if (config && config.predefined_options) {
+    config.predefined_options.forEach((option, index) => {
+      const checkbox = document.getElementById(`option-${index}`)
+      if (checkbox && checkbox.checked) {
+        selectedOptions.push(option)
+      }
+    })
+  }
+  return selectedOptions
+}
+
+// 自动提交反馈
+async function autoSubmitFeedback() {
+  try {
+    // 停止倒计时
+    stopCountdown()
+
+    // 备份用户输入（如果有）
+    const feedbackTextarea = document.getElementById('feedback-text')
+    const userInput = feedbackTextarea ? feedbackTextarea.value.trim() : ''
+
+    if (userInput) {
+      // 如果用户有输入，尝试复制到剪贴板
+      try {
+        await navigator.clipboard.writeText(userInput)
+        console.log('[自动提交] 用户输入已备份到剪贴板')
+      } catch (err) {
+        console.warn('[自动提交] 无法复制到剪贴板:', err)
+      }
+    }
+
+    // 构建默认反馈消息（固定文本）
+    const defaultMessage = '好的，代码先保持现状，然后重新调用 interactive_feedback 工具，调用interactive_feedback后会有一个窗口，我将在窗口中告诉你下一步指令，请先调用interactive_feedback工具'
+
+    // 使用FormData提交（与正常提交一致）
+    const formData = new FormData()
+    formData.append('feedback_text', defaultMessage)
+    formData.append('selected_options', JSON.stringify([]))
+
+    const response = await fetch('/api/submit', {
+      method: 'POST',
+      body: formData
+    })
+
+    if (response.ok) {
+      console.log('[自动提交] 已自动提交默认反馈以保持会话活跃')
+    } else {
+      console.error('[自动提交] 提交失败，HTTP状态:', response.status)
+    }
+  } catch (error) {
+    console.error('[自动提交] 自动提交失败:', error)
+  }
+}
+
 // 加载配置
-async function loadConfig() {
+async function loadConfig(shouldNotify = true) {
   try {
     const response = await fetch('/api/config')
     config = await response.json()
@@ -185,7 +316,31 @@ async function loadConfig() {
     // 显示正常内容页面
     showContentPage()
 
-    // 页面首次加载不发送通知，只在内容变化时通知
+    // 只在明确需要时发送通知（首次加载或新内容到达）
+    if (shouldNotify) {
+      try {
+        notificationManager
+          .sendNotification('AI Intervention Agent', '新的反馈请求已到达，请查看并回复', {
+            tag: 'new-content',
+            requireInteraction: true,
+            onClick: () => {
+              window.focus()
+              const textarea = document.getElementById('feedback-text')
+              if (textarea) {
+                textarea.focus()
+              }
+            }
+          })
+          .catch(error => {
+            console.warn('发送新内容通知失败:', error)
+          })
+      } catch (error) {
+        console.warn('通知功能不可用:', error)
+      }
+    }
+
+    // 更新 task_id 显示
+    updateTaskIdDisplay(config.task_id)
 
     // 更新描述 - 使用高性能渲染函数
     const descriptionElement = document.getElementById('description')
@@ -219,6 +374,12 @@ async function loadConfig() {
       separator.classList.remove('hidden')
       separator.classList.add('visible')
     }
+
+    // 启动自动重调倒计时
+    if (config.auto_resubmit_timeout && config.auto_resubmit_timeout > 0) {
+      console.log(`[倒计时] 启动自动重调倒计时: ${config.auto_resubmit_timeout}秒`)
+      startCountdown(config.auto_resubmit_timeout)
+    }
   } catch (error) {
     console.error('加载配置失败:', error)
     showStatus('加载配置失败', 'error')
@@ -239,6 +400,15 @@ function showNoContentPage() {
 
   // 添加无内容模式的CSS类，启用特殊布局
   document.body.classList.add('no-content-mode')
+
+  // 清空描述内容，避免显示"加载中..."
+  const descriptionElement = document.getElementById('description')
+  if (descriptionElement) {
+    descriptionElement.textContent = ''
+  }
+
+  // 停止倒计时（如果正在运行）
+  stopCountdown()
 
   // 显示关闭按钮，让用户可以关闭服务
   if (config) {
@@ -372,6 +542,9 @@ async function insertCodeFromClipboard() {
 
 // 提交反馈
 async function submitFeedback() {
+  // 停止倒计时（用户手动提交）
+  stopCountdown()
+
   const feedbackText = document.getElementById('feedback-text').value.trim()
   const selectedOptions = []
 
@@ -396,9 +569,13 @@ async function submitFeedback() {
     submitBtn.disabled = true
     submitBtn.textContent = '提交中...'
 
+    // 附加固定的说明文本到用户输入后
+    const additionalText = '\n 请回答以上问题或要求。\n并且注意，除非我主动让你结束，否则不要结束对话，必须回复。回复或反思优化步骤完成后必须重新调用interactive_feedback工具拉起反馈窗口来询问我的反馈，因为反馈窗口仅对当前轮次对话有效，旧的窗口已无效，所以每一轮新对话必须重新调用，只有这样才能保证会话连续性，如果你本轮仅仅回复了内容但是没有调用interactive_feedback工具询问我的反馈，那么对话将会终止，任务将会失败！所以决不允许只回复内容不调用工具询问反馈，直接在回复中询问是无效的，用户看不到，所以必须重新调用工具在反馈窗口中询问反馈！'
+    const finalFeedbackText = feedbackText ? feedbackText + additionalText : additionalText
+
     // 使用 FormData 上传文件，避免 base64 编码
     const formData = new FormData()
-    formData.append('feedback_text', feedbackText)
+    formData.append('feedback_text', finalFeedbackText)
     formData.append('selected_options', JSON.stringify(selectedOptions))
 
     // 添加图片文件（直接使用原始文件，不需要base64）
@@ -427,13 +604,16 @@ async function submitFeedback() {
       // 清除所有图片
       clearAllImages()
 
-      // 立即更新本地状态，然后隐藏反馈内容
-      if (config) {
-        config.has_content = false
-        console.log('反馈提交后，本地状态已更新为无内容')
+      // 提交后，立即重新加载配置，让后端决定下一步
+      // 如果有剩余任务，会自动激活并显示
+      console.log('反馈提交成功，重新加载配置...')
+      await loadConfig(false)  // 不发送通知，这是内部切换
+
+      // 立即刷新任务列表，确保标签栏同步
+      if (typeof window.multiTaskModule !== 'undefined' && window.multiTaskModule.refreshTasksList) {
+        await window.multiTaskModule.refreshTasksList()
+        console.log('任务列表已同步更新')
       }
-      showNoContentPage()
-      // 不再显示动态状态消息，只保留HTML中的固定文本
     } else {
       showStatus(result.message || '提交失败', 'error')
     }
@@ -553,11 +733,11 @@ function scheduleNextPoll() {
         // 从无内容状态变为有内容状态
         console.log('✅ 检测到新内容，更新页面')
 
-        // 发送新内容通知（非阻塞）
+        // 恢复通知：只在从无内容到有内容时通知一次
         try {
           notificationManager
             .sendNotification('AI Intervention Agent', '新的反馈请求已到达，请查看并回复', {
-              tag: 'new-content',
+              tag: 'new-content',  // 使用tag防止重复
               requireInteraction: true,
               onClick: () => {
                 window.focus()
@@ -574,9 +754,10 @@ function scheduleNextPoll() {
           console.warn('通知功能不可用:', error)
         }
 
+        const oldConfig = config
         config = newConfig
         showContentPage()
-        updatePageContent()
+        updatePageContent(oldConfig)
         showStatus('收到新的反馈请求！', 'success')
       } else if (!newHasContent && currentHasContent) {
         // 从有内容状态变为无内容状态
@@ -594,7 +775,9 @@ function scheduleNextPoll() {
         if (promptChanged || optionsChanged) {
           console.log('🔄 检测到内容更新，刷新页面')
 
+          // 禁用通知，避免重复打扰
           // 发送内容更新通知（非阻塞）
+          /*
           try {
             notificationManager
               .sendNotification('AI Intervention Agent', '反馈请求内容已更新，请查看最新内容', {
@@ -607,9 +790,12 @@ function scheduleNextPoll() {
           } catch (error) {
             console.warn('通知功能不可用:', error)
           }
+          */
 
+          // 在更新前保存旧配置，用于正确保存选中状态
+          const oldConfig = config
           config = newConfig
-          updatePageContent()
+          updatePageContent(oldConfig)
           showStatus('内容已更新！', 'success')
         }
       } else {
@@ -665,8 +851,12 @@ function stopContentPolling() {
 }
 
 // 更新页面内容
-function updatePageContent() {
+// oldConfig: 可选参数，用于正确保存选中状态（避免配置更新时状态丢失）
+function updatePageContent(oldConfig = null) {
   if (!config) return
+
+  // 更新 task_id 显示
+  updateTaskIdDisplay(config.task_id)
 
   // 更新提示内容 - 使用高性能渲染函数
   const descriptionElement = document.getElementById('description')
@@ -677,14 +867,30 @@ function updatePageContent() {
   // 更新预定义选项
   const optionsContainer = document.getElementById('options-container')
   if (optionsContainer) {
-    // 🔒 安全清空容器内容
+    // 保存当前选中状态 - 使用旧配置的选项列表（如果提供）
+    const selectedStates = []
+    const configForSaving = oldConfig || config
+    if (configForSaving && configForSaving.predefined_options) {
+      configForSaving.predefined_options.forEach((option, index) => {
+        const checkbox = document.getElementById(`option-${index}`)
+        selectedStates[index] = checkbox ? checkbox.checked : false
+      })
+    }
+
+    // 安全清空容器内容
     DOMSecurity.clearContent(optionsContainer)
 
     if (config.predefined_options && config.predefined_options.length > 0) {
       config.predefined_options.forEach((option, index) => {
-        // 🔒 使用安全的DOM创建方法
+        // 使用安全的 DOM 创建方法
         const optionDiv = DOMSecurity.createCheckboxOption(`option-${index}`, option, option)
         optionsContainer.appendChild(optionDiv)
+
+        // 恢复选中状态
+        const checkbox = document.getElementById(`option-${index}`)
+        if (checkbox && selectedStates[index]) {
+          checkbox.checked = true
+        }
       })
       optionsContainer.classList.remove('hidden')
       optionsContainer.classList.add('visible')
@@ -697,6 +903,15 @@ function updatePageContent() {
       document.getElementById('separator').classList.remove('visible')
     }
   }
+
+  // 重新启动自动重调倒计时
+  if (config.auto_resubmit_timeout && config.auto_resubmit_timeout > 0) {
+    console.log(`[倒计时] 内容更新，重新启动倒计时: ${config.auto_resubmit_timeout}秒`)
+    startCountdown(config.auto_resubmit_timeout)
+  } else {
+    // 如果超时时间为0或未设置，停止倒计时
+    stopCountdown()
+  }
 }
 
 // ========== 图片处理功能 ==========
@@ -704,7 +919,7 @@ function updatePageContent() {
 // 图片管理数组
 let selectedImages = []
 
-// 🚀 性能优化：音频缓存管理器
+// 性能优化：音频缓存管理器
 class AudioCacheManager {
   constructor() {
     this.cache = new Map() // 使用Map保持插入顺序，便于LRU实现
@@ -804,7 +1019,7 @@ class NotificationManager {
     this.permission = this.isSupported ? Notification.permission : 'denied'
     this.audioContext = null
 
-    // 🚀 性能优化：音频缓存管理
+    // 性能优化：音频缓存管理
     this.audioCache = new AudioCacheManager()
 
     this.config = {
@@ -895,7 +1110,7 @@ class NotificationManager {
   async loadAudioFile(name, url) {
     if (!this.audioContext) return false
 
-    // 🚀 性能优化：检查缓存中是否已存在
+    // 性能优化：检查缓存中是否已存在
     if (this.audioCache.has(name)) {
       console.log(`音频文件已在缓存中: ${name}`)
       return true
@@ -906,7 +1121,7 @@ class NotificationManager {
       const arrayBuffer = await response.arrayBuffer()
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
 
-      // 🚀 性能优化：使用缓存管理器存储
+      // 性能优化：使用缓存管理器存储
       this.audioCache.set(name, audioBuffer)
       console.log(`音频文件加载成功: ${name}`)
       return true
@@ -1012,7 +1227,7 @@ class NotificationManager {
       }
     }
 
-    // 🚀 性能优化：从缓存管理器获取音频
+    // 性能优化：从缓存管理器获取音频
     const audioBuffer = this.audioCache.get(soundName)
     if (!audioBuffer) {
       console.warn(`音频文件未找到: ${soundName}`)
@@ -1222,7 +1437,7 @@ class NotificationManager {
 
   showInPageNotification(title, message, options = {}) {
     // 创建页面内通知元素
-    // 🔒 使用安全的通知创建方法
+    // 使用安全的通知创建方法
     const notification = DOMSecurity.createNotification(title, message)
 
     // 添加CSS类
@@ -1271,25 +1486,25 @@ class NotificationManager {
       url: window.location.href
     }
 
-    // 🚀 性能优化：存储到本地存储（用于调试）
+    // 性能优化：存储到本地存储（用于调试）
     try {
       const storageKey = 'ai-intervention-fallback-events'
       const events = JSON.parse(localStorage.getItem(storageKey) || '[]')
 
-      // 🚀 性能优化：清理过期事件（保留7天）
+      // 性能优化：清理过期事件（保留7天）
       const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
       const validEvents = events.filter(e => e.timestamp > sevenDaysAgo)
 
       validEvents.push(event)
 
-      // 🚀 性能优化：只保留最近50个事件（从100减少到50）
+      // 性能优化：只保留最近50个事件（从100减少到50）
       if (validEvents.length > 50) {
         validEvents.splice(0, validEvents.length - 50)
       }
 
       localStorage.setItem(storageKey, JSON.stringify(validEvents))
 
-      // 🚀 性能优化：监控存储空间使用
+      // 性能优化：监控存储空间使用
       this.monitorLocalStorageUsage(storageKey)
     } catch (error) {
       console.warn('无法记录降级事件:', error)
@@ -1302,7 +1517,7 @@ class NotificationManager {
     }
   }
 
-  // 🚀 性能优化：监控localStorage使用情况
+  // 性能优化：监控localStorage使用情况
   monitorLocalStorageUsage(key) {
     try {
       const data = localStorage.getItem(key)
@@ -1324,7 +1539,7 @@ class NotificationManager {
     }
   }
 
-  // 🚀 性能优化：清理localStorage
+  // 性能优化：清理localStorage
   cleanupLocalStorage() {
     try {
       const storageKey = 'ai-intervention-fallback-events'
@@ -1793,7 +2008,7 @@ function sanitizeFileName(fileName) {
 
 // 注意：已移除 fileToBase64 函数，现在直接使用文件对象上传
 
-// 🔒 改进的内存管理跟踪 - 防止内存泄漏
+// 改进的内存管理跟踪：防止内存泄漏
 let objectURLs = new Set()
 let urlToFileMap = new WeakMap() // 使用WeakMap跟踪URL与文件的关联
 let urlCreationTime = new Map() // 跟踪URL创建时间，用于自动清理
@@ -2019,7 +2234,7 @@ async function addImageToList(file) {
     imageItem.file = processedFile
     imageItem.size = processedFile.size
 
-    // 🔒 创建安全的预览URL（避免base64编码）
+    // 创建安全的预览 URL
     const previewUrl = createObjectURL(processedFile)
     if (previewUrl) {
       imageItem.previewUrl = previewUrl
@@ -2073,7 +2288,7 @@ function renderImagePreview(imageItem, isLoading = false) {
       previewContainer.appendChild(previewElement)
     }
 
-    // 🔒 使用安全的图片预览创建方法
+    // 使用安全的图片预览创建方法
     const newPreviewElement = DOMSecurity.createImagePreview(imageItem, isLoading)
     DOMSecurity.replaceContent(previewElement, newPreviewElement.firstChild || newPreviewElement)
 
@@ -2103,7 +2318,7 @@ function sanitizeText(text) {
 
 // 删除图片
 function removeImage(imageId) {
-  // 🔒 找到要删除的图片并安全释放URL
+  // 找到要删除的图片并安全释放 URL
   const imageToRemove = selectedImages.find(img => img.id == imageId)
   if (imageToRemove && imageToRemove.previewUrl && imageToRemove.previewUrl.startsWith('blob:')) {
     revokeObjectURL(imageToRemove.previewUrl)
@@ -2120,7 +2335,7 @@ function removeImage(imageId) {
 
 // 清除所有图片
 function clearAllImages() {
-  // 🔒 清理内存中的Object URLs
+  // 清理内存中的 Object URLs
   selectedImages.forEach(img => {
     if (img.previewUrl && img.previewUrl.startsWith('blob:')) {
       revokeObjectURL(img.previewUrl)
@@ -2129,7 +2344,7 @@ function clearAllImages() {
 
   selectedImages = []
   const previewContainer = document.getElementById('image-previews')
-  // 🔒 安全清空容器内容
+  // 安全清空容器内容
   DOMSecurity.clearContent(previewContainer)
   updateImageCounter()
   updateImagePreviewVisibility()
@@ -2570,6 +2785,14 @@ function initializeImageFeatures() {
 
 // 事件监听器
 document.addEventListener('DOMContentLoaded', () => {
+  // 初始化多任务支持
+  if (typeof window.multiTaskModule !== 'undefined' && typeof window.multiTaskModule.initMultiTaskSupport === 'function') {
+    window.multiTaskModule.initMultiTaskSupport()
+    console.log('✅ 多任务支持已初始化')
+  } else {
+    console.warn('⚠️ 多任务模块未加载，可能是multi_task.js加载失败')
+  }
+
   loadConfig()
     .then(() => {
       // 在配置加载完成后启动轮询
@@ -2593,7 +2816,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 初始化图片功能
   initializeImageFeatures()
 
-  // 🔒 启动URL对象定期清理
+  // 启动 URL 对象定期清理
   startPeriodicCleanup()
 
   // 初始化快捷键提示

@@ -209,6 +209,7 @@ pids
 # Project specific
 .cursor/rules/
 .claude
+CLAUDE.md
 
 # Configuration files
 config.jsonc

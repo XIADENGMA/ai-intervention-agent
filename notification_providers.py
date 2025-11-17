@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 AI Intervention Agent - 通知提供者实现
-包含各种通知方式的具体实现
+
+包含各种通知方式的具体实现：
+- Web 浏览器通知
+- 声音通知
+- Bark 推送通知
 """
 
 import time
@@ -9,7 +13,6 @@ from typing import Any, Dict
 
 import requests
 
-# 使用增强的日志系统
 from enhanced_logging import EnhancedLogger
 from notification_manager import NotificationEvent, NotificationType
 
@@ -17,25 +20,51 @@ logger = EnhancedLogger(__name__)
 
 
 class WebNotificationProvider:
-    """Web通知提供者 - 通过WebSocket或HTTP推送到浏览器"""
+    """Web 通知提供者
+
+    通过 WebSocket 或 HTTP 推送通知到浏览器
+    """
 
     def __init__(self, config):
+        """初始化 Web 通知提供者
+
+        Args:
+            config: 通知配置对象
+        """
         self.config = config
-        self.web_clients: Dict[str, Any] = {}  # 存储连接的Web客户端
+        self.web_clients: Dict[str, Any] = {}
 
     def register_client(self, client_id: str, client_info: Dict[str, Any]):
-        """注册Web客户端"""
+        """注册 Web 客户端
+
+        Args:
+            client_id: 客户端唯一标识
+            client_info: 客户端信息字典
+        """
         self.web_clients[client_id] = {"info": client_info, "last_seen": time.time()}
         logger.debug(f"Web客户端已注册: {client_id}")
 
     def unregister_client(self, client_id: str):
-        """注销Web客户端"""
+        """注销 Web 客户端
+
+        Args:
+            client_id: 客户端唯一标识
+        """
         if client_id in self.web_clients:
             del self.web_clients[client_id]
             logger.debug(f"Web客户端已注销: {client_id}")
 
     def send(self, event: NotificationEvent) -> bool:
-        """发送Web通知"""
+        """发送 Web 通知
+
+        准备通知数据并存储到事件的 metadata 中，供前端获取
+
+        Args:
+            event: 通知事件对象
+
+        Returns:
+            bool: 是否成功准备通知数据
+        """
         try:
             # 构建通知数据
             notification_data = {
@@ -54,8 +83,6 @@ class WebNotificationProvider:
                 "metadata": event.metadata,
             }
 
-            # 这里实际上是准备数据，真正的发送会在前端JavaScript中处理
-            # 我们将通知数据存储到事件的metadata中，供前端获取
             event.metadata["web_notification_data"] = notification_data
 
             logger.debug(f"Web通知数据已准备: {event.id}")
@@ -67,9 +94,17 @@ class WebNotificationProvider:
 
 
 class SoundNotificationProvider:
-    """声音通知提供者 - 通过Web Audio API播放声音"""
+    """声音通知提供者
+
+    通过 Web Audio API 播放声音
+    """
 
     def __init__(self, config):
+        """初始化声音通知提供者
+
+        Args:
+            config: 通知配置对象
+        """
         self.config = config
         self.sound_files = {
             "default": "deng[噔].mp3",
@@ -77,18 +112,25 @@ class SoundNotificationProvider:
         }
 
     def send(self, event: NotificationEvent) -> bool:
-        """发送声音通知"""
+        """发送声音通知
+
+        准备声音通知数据并存储到事件的 metadata 中
+
+        Args:
+            event: 通知事件对象
+
+        Returns:
+            bool: 是否成功准备声音数据
+        """
         try:
             if self.config.sound_mute:
                 logger.debug("声音通知已静音，跳过播放")
                 return True
 
-            # 确定音频文件
             sound_file = self.sound_files.get(
                 self.config.sound_file, self.sound_files["default"]
             )
 
-            # 构建声音通知数据
             sound_data = {
                 "id": event.id,
                 "type": "sound",
@@ -98,7 +140,6 @@ class SoundNotificationProvider:
                 "metadata": event.metadata,
             }
 
-            # 将声音数据存储到事件的metadata中，供前端获取
             event.metadata["sound_notification_data"] = sound_data
 
             logger.debug(f"声音通知数据已准备: {event.id} - {sound_file}")
@@ -110,18 +151,34 @@ class SoundNotificationProvider:
 
 
 class BarkNotificationProvider:
-    """Bark通知提供者 - iOS推送通知"""
+    """Bark 通知提供者
+
+    iOS 推送通知服务，支持自定义图标、动作和元数据
+    """
 
     def __init__(self, config):
+        """初始化 Bark 通知提供者
+
+        Args:
+            config: 通知配置对象
+        """
         self.config = config
         self.session = requests.Session()
-        # 设置请求超时和重试
         adapter = requests.adapters.HTTPAdapter(max_retries=3)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
     def send(self, event: NotificationEvent) -> bool:
-        """发送Bark通知"""
+        """发送 Bark 通知
+
+        通过 HTTP POST 请求发送通知到 Bark 服务器
+
+        Args:
+            event: 通知事件对象
+
+        Returns:
+            bool: 是否成功发送通知
+        """
         try:
             if not self.config.bark_enabled:
                 logger.debug("Bark通知已禁用")
@@ -131,7 +188,6 @@ class BarkNotificationProvider:
                 logger.warning("Bark配置不完整，跳过发送")
                 return False
 
-            # 构建Bark API请求数据
             bark_data = {
                 "title": event.title,
                 "body": event.message,
@@ -139,31 +195,24 @@ class BarkNotificationProvider:
                 "action": self.config.bark_action,
             }
 
-            # 添加图标（如果配置了）
             if self.config.bark_icon:
                 bark_data["icon"] = self.config.bark_icon
 
-            # 添加自定义数据（仅添加可JSON序列化的数据）
             if event.metadata:
                 for key, value in event.metadata.items():
-                    # 只添加基本类型的数据，避免循环引用
                     if isinstance(value, (str, int, float, bool, type(None))):
                         bark_data[key] = value
                     elif isinstance(value, (list, dict)):
                         try:
-                            # 尝试JSON序列化测试
                             import json
 
                             json.dumps(value)
                             bark_data[key] = value
                         except (TypeError, ValueError):
-                            # 如果不能序列化，转换为字符串
                             bark_data[key] = str(value)
                     else:
-                        # 其他类型转换为字符串
                         bark_data[key] = str(value)
 
-            # 发送请求
             response = self.session.post(
                 self.config.bark_url,
                 json=bark_data,
@@ -195,16 +244,26 @@ class BarkNotificationProvider:
 
 
 class SystemNotificationProvider:
-    """系统通知提供者 - 操作系统级别的通知（可选实现）"""
+    """系统通知提供者
+
+    操作系统级别的通知（可选实现），需要 plyer 库支持
+    """
 
     def __init__(self, config):
+        """初始化系统通知提供者
+
+        Args:
+            config: 通知配置对象
+        """
         self.config = config
         self._check_system_support()
 
     def _check_system_support(self):
-        """检查系统通知支持"""
+        """检查系统通知支持
+
+        尝试导入 plyer 库，设置支持状态
+        """
         try:
-            # 尝试导入系统通知库
             import plyer
 
             self.plyer = plyer
@@ -216,18 +275,26 @@ class SystemNotificationProvider:
             logger.debug("系统通知不支持（缺少plyer库）")
 
     def send(self, event: NotificationEvent) -> bool:
-        """发送系统通知"""
+        """发送系统通知
+
+        使用 plyer 库发送操作系统级别的通知
+
+        Args:
+            event: 通知事件对象
+
+        Returns:
+            bool: 是否成功发送通知
+        """
         try:
             if not self.supported:
                 logger.debug("系统通知不支持，跳过发送")
                 return False
 
-            # 使用plyer发送系统通知
             self.plyer.notification.notify(
                 title=event.title,
                 message=event.message,
                 app_name="AI Intervention Agent",
-                timeout=self.config.web_timeout // 1000,  # 转换为秒
+                timeout=self.config.web_timeout // 1000,
             )
 
             logger.debug(f"系统通知发送成功: {event.id}")
@@ -239,25 +306,30 @@ class SystemNotificationProvider:
 
 
 def create_notification_providers(config) -> Dict[NotificationType, Any]:
-    """创建所有通知提供者"""
+    """创建所有通知提供者
+
+    根据配置创建并返回所有启用的通知提供者
+
+    Args:
+        config: 通知配置对象
+
+    Returns:
+        Dict[NotificationType, Any]: 通知类型到提供者的映射字典
+    """
     providers = {}
 
-    # Web通知提供者
     if config.web_enabled:
         providers[NotificationType.WEB] = WebNotificationProvider(config)
         logger.debug("Web通知提供者已创建")
 
-    # 声音通知提供者
     if config.sound_enabled:
         providers[NotificationType.SOUND] = SoundNotificationProvider(config)
         logger.debug("声音通知提供者已创建")
 
-    # Bark通知提供者
     if config.bark_enabled:
         providers[NotificationType.BARK] = BarkNotificationProvider(config)
         logger.debug("Bark通知提供者已创建")
 
-    # 系统通知提供者（可选）
     try:
         system_provider = SystemNotificationProvider(config)
         if system_provider.supported:
@@ -271,10 +343,18 @@ def create_notification_providers(config) -> Dict[NotificationType, Any]:
 
 
 def initialize_notification_system(config):
-    """初始化通知系统"""
+    """初始化通知系统
+
+    创建所有通知提供者并注册到通知管理器
+
+    Args:
+        config: 通知配置对象
+
+    Returns:
+        notification_manager: 初始化后的通知管理器实例
+    """
     from notification_manager import notification_manager
 
-    # 创建并注册所有提供者
     providers = create_notification_providers(config)
 
     for notification_type, provider in providers.items():

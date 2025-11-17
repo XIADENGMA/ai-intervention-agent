@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 AI Intervention Agent - 通知管理器
-负责管理各种通知方式的统一接口和配置
+
+统一管理各种通知方式的接口和配置，支持：
+- Web 通知
+- 声音通知
+- Bark 推送通知
+- 系统通知
 """
 
 import logging
@@ -18,10 +23,8 @@ try:
 except ImportError:
     CONFIG_FILE_AVAILABLE = False
 
-# 使用增强的日志系统
 from enhanced_logging import EnhancedLogger
 
-# 尝试导入通知提供者
 try:
     from notification_providers import BarkNotificationProvider
 
@@ -33,7 +36,14 @@ logger = EnhancedLogger(__name__)
 
 
 class NotificationType(Enum):
-    """通知类型枚举"""
+    """通知类型枚举
+
+    Attributes:
+        WEB: Web 浏览器通知
+        SOUND: 声音通知
+        BARK: Bark 推送通知
+        SYSTEM: 系统通知
+    """
 
     WEB = "web"
     SOUND = "sound"
@@ -42,18 +52,29 @@ class NotificationType(Enum):
 
 
 class NotificationTrigger(Enum):
-    """通知触发时机枚举"""
+    """通知触发时机枚举
 
-    IMMEDIATE = "immediate"  # 立即通知
-    DELAYED = "delayed"  # 延迟通知
-    REPEAT = "repeat"  # 重复提醒
-    FEEDBACK_RECEIVED = "feedback_received"  # 反馈收到时
-    ERROR = "error"  # 错误时
+    Attributes:
+        IMMEDIATE: 立即通知
+        DELAYED: 延迟通知
+        REPEAT: 重复提醒
+        FEEDBACK_RECEIVED: 反馈收到时通知
+        ERROR: 错误时通知
+    """
+
+    IMMEDIATE = "immediate"
+    DELAYED = "delayed"
+    REPEAT = "repeat"
+    FEEDBACK_RECEIVED = "feedback_received"
+    ERROR = "error"
 
 
 @dataclass
 class NotificationConfig:
-    """通知配置类"""
+    """通知配置类
+
+    包含所有通知相关的配置选项
+    """
 
     # 总开关
     enabled: bool = True
@@ -95,7 +116,14 @@ class NotificationConfig:
 
     @classmethod
     def from_config_file(cls) -> "NotificationConfig":
-        """从配置文件创建配置实例"""
+        """从配置文件创建配置实例
+
+        Returns:
+            NotificationConfig: 从配置文件加载的配置实例
+
+        Raises:
+            Exception: 配置文件管理器不可用时抛出异常
+        """
         if not CONFIG_FILE_AVAILABLE:
             logger.error("配置文件管理器不可用，无法初始化通知配置")
             raise Exception("配置文件管理器不可用")
@@ -126,7 +154,19 @@ class NotificationConfig:
 
 @dataclass
 class NotificationEvent:
-    """通知事件数据结构"""
+    """通知事件数据结构
+
+    Attributes:
+        id: 事件唯一标识符
+        title: 通知标题
+        message: 通知消息内容
+        trigger: 触发时机
+        types: 通知类型列表
+        metadata: 元数据字典
+        timestamp: 事件时间戳
+        retry_count: 重试次数
+        max_retries: 最大重试次数
+    """
 
     id: str
     title: str
@@ -140,7 +180,10 @@ class NotificationEvent:
 
 
 class NotificationManager:
-    """通知管理器 - 单例模式"""
+    """通知管理器
+
+    单例模式，统一管理所有通知提供者和事件队列
+    """
 
     _instance = None
     _lock = threading.Lock()
@@ -154,8 +197,14 @@ class NotificationManager:
         return cls._instance
 
     def __init__(self):
+        """初始化通知管理器
+
+        使用配置文件初始化，创建事件队列和工作线程
+
+        Raises:
+            Exception: 配置文件加载失败时抛出异常
+        """
         if not getattr(self, "_initialized", False):
-            # 使用配置文件初始化
             try:
                 self.config = NotificationConfig.from_config_file()
                 logger.info("使用配置文件初始化通知管理器")
@@ -178,19 +227,35 @@ class NotificationManager:
                 logger.info("通知管理器初始化完成")
 
     def register_provider(self, notification_type: NotificationType, provider: Any):
-        """注册通知提供者"""
+        """注册通知提供者
+
+        Args:
+            notification_type: 通知类型
+            provider: 通知提供者实例
+        """
         self._providers[notification_type] = provider
         logger.debug(f"已注册通知提供者: {notification_type.value}")
 
     def add_callback(self, event_name: str, callback: Callable):
-        """添加事件回调"""
+        """添加事件回调
+
+        Args:
+            event_name: 事件名称
+            callback: 回调函数
+        """
         if event_name not in self._callbacks:
             self._callbacks[event_name] = []
         self._callbacks[event_name].append(callback)
         logger.debug(f"已添加回调: {event_name}")
 
     def trigger_callbacks(self, event_name: str, *args, **kwargs):
-        """触发事件回调"""
+        """触发事件回调
+
+        Args:
+            event_name: 事件名称
+            *args: 位置参数
+            **kwargs: 关键字参数
+        """
         if event_name in self._callbacks:
             for callback in self._callbacks[event_name]:
                 try:
@@ -206,7 +271,20 @@ class NotificationManager:
         types: Optional[List[NotificationType]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """发送通知"""
+        """发送通知
+
+        创建通知事件并添加到队列中
+
+        Args:
+            title: 通知标题
+            message: 通知消息内容
+            trigger: 触发时机，默认为立即触发
+            types: 通知类型列表，None 时使用默认类型
+            metadata: 元数据字典
+
+        Returns:
+            str: 事件ID，如果通知被禁用则返回空字符串
+        """
         if not self.config.enabled:
             logger.debug("通知功能已禁用，跳过发送")
             return ""
@@ -252,7 +330,13 @@ class NotificationManager:
         return event_id
 
     def _process_event(self, event: NotificationEvent):
-        """处理通知事件"""
+        """处理通知事件
+
+        发送通知到所有指定的提供者，并处理失败重试和降级
+
+        Args:
+            event: 通知事件对象
+        """
         try:
             logger.debug(f"处理通知事件: {event.id}")
 
@@ -276,7 +360,15 @@ class NotificationManager:
     def _send_single_notification(
         self, notification_type: NotificationType, event: NotificationEvent
     ) -> bool:
-        """发送单个类型的通知"""
+        """发送单个类型的通知
+
+        Args:
+            notification_type: 通知类型
+            event: 通知事件对象
+
+        Returns:
+            bool: 是否成功发送
+        """
         provider = self._providers.get(notification_type)
         if not provider:
             logger.debug(f"未找到通知提供者: {notification_type.value}")
@@ -294,23 +386,41 @@ class NotificationManager:
             return False
 
     def _handle_fallback(self, event: NotificationEvent):
-        """处理降级方案"""
+        """处理降级方案
+
+        当所有通知提供者失败时执行降级逻辑
+
+        Args:
+            event: 通知事件对象
+        """
         logger.info(f"执行降级处理: {event.id}")
-        # 这里可以实现降级逻辑，比如记录到日志、发送邮件等
         self.trigger_callbacks("notification_fallback", event)
 
     def get_config(self) -> NotificationConfig:
-        """获取当前配置"""
+        """获取当前配置
+
+        Returns:
+            NotificationConfig: 当前通知配置对象
+        """
         return self.config
 
     def update_config(self, **kwargs):
-        """更新配置并保存到文件"""
+        """更新配置并保存到文件
+
+        Args:
+            **kwargs: 要更新的配置键值对
+        """
         self.update_config_without_save(**kwargs)
-        # 保存配置到文件
         self._save_config_to_file()
 
     def update_config_without_save(self, **kwargs):
-        """更新配置但不保存到文件（避免重复保存）"""
+        """更新配置但不保存到文件
+
+        避免重复保存，适用于批量更新配置
+
+        Args:
+            **kwargs: 要更新的配置键值对
+        """
         bark_was_enabled = self.config.bark_enabled
 
         for key, value in kwargs.items():
@@ -324,7 +434,10 @@ class NotificationManager:
             self._update_bark_provider()
 
     def _update_bark_provider(self):
-        """动态更新Bark通知提供者"""
+        """动态更新 Bark 通知提供者
+
+        根据配置启用或禁用 Bark 通知
+        """
         try:
             if self.config.bark_enabled:
                 # 启用Bark通知，添加提供者
@@ -343,14 +456,17 @@ class NotificationManager:
             logger.error(f"更新Bark提供者失败: {e}")
 
     def _save_config_to_file(self):
-        """保存当前配置到配置文件"""
+        """保存当前配置到配置文件
+
+        将内存中的通知配置持久化到配置文件
+        自动处理 sound_volume 的范围转换（0-1 转为 0-100）
+        """
         if not CONFIG_FILE_AVAILABLE:
             return
 
         try:
             config_mgr = get_config()
 
-            # 确保sound_volume在正确的范围内
             sound_volume_value = self.config.sound_volume
             if sound_volume_value <= 1.0:
                 # 如果是0-1范围，转换为0-100范围
@@ -380,7 +496,17 @@ class NotificationManager:
             logger.error(f"保存配置到文件失败: {e}")
 
     def get_status(self) -> Dict[str, Any]:
-        """获取通知管理器状态"""
+        """获取通知管理器状态
+
+        返回当前通知系统的运行状态和配置信息
+
+        Returns:
+            Dict[str, Any]: 包含以下信息的字典：
+                - enabled: 通知是否启用
+                - providers: 已注册的通知提供者列表
+                - queue_size: 事件队列大小
+                - config: 当前配置详情
+        """
         with self._queue_lock:
             queue_size = len(self._event_queue)
 

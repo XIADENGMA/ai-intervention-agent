@@ -1,5 +1,11 @@
 """
-增强的日志系统 - 解决MCP日志重复和级别错误问题
+增强的日志系统
+
+解决 MCP 日志重复和级别错误问题，提供：
+- 单例日志管理器，防止重复初始化
+- 基于级别的多流输出
+- 日志脱敏和注入防护
+- 日志去重
 """
 
 import hashlib
@@ -14,7 +20,10 @@ from typing import Any, Dict, Optional, Set, Tuple  # noqa: F401
 
 
 class SingletonLogManager:
-    """单例日志管理器，防止重复初始化"""
+    """单例日志管理器
+
+    确保每个 logger 只被初始化一次，防止重复输出
+    """
 
     _instance = None
     _lock = threading.Lock()
@@ -27,8 +36,18 @@ class SingletonLogManager:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def setup_logger(self, name: str, level=logging.INFO):
-        """确保每个logger只被设置一次"""
+    def setup_logger(self, name: str, level=logging.WARNING):
+        """设置并返回 logger
+
+        确保每个 logger 只被设置一次，默认级别为 WARNING
+
+        Args:
+            name: logger 名称
+            level: 日志级别，默认为 WARNING
+
+        Returns:
+            logging.Logger: 配置好的 logger 实例
+        """
         if name in self._initialized_loggers:
             return logging.getLogger(name)
 
@@ -51,11 +70,13 @@ class SingletonLogManager:
 
 
 class LevelBasedStreamHandler:
-    """基于级别的多流输出处理器 - 解决IDE级别错误问题"""
+    """基于级别的多流输出处理器
+
+    所有日志输出到 stderr，避免污染 MCP 的 stdio 通信
+    """
 
     def __init__(self):
-        # INFO和DEBUG使用stdout
-        self.stdout_handler = logging.StreamHandler(sys.stdout)
+        self.stdout_handler = logging.StreamHandler(sys.stderr)
         self.stdout_handler.setLevel(logging.DEBUG)
         self.stdout_handler.addFilter(self._stdout_filter)
 
@@ -76,17 +97,31 @@ class LevelBasedStreamHandler:
         self.stderr_handler.addFilter(anti_injection_filter)
 
     def _stdout_filter(self, record):
-        """只允许INFO和DEBUG级别通过stdout"""
+        """过滤器：只允许 INFO 和 DEBUG 级别通过
+
+        Args:
+            record: 日志记录
+
+        Returns:
+            bool: 是否允许通过
+        """
         return record.levelno <= logging.INFO
 
     def attach_to_logger(self, logger):
-        """将处理器附加到指定logger"""
+        """将处理器附加到指定 logger
+
+        Args:
+            logger: logging.Logger 实例
+        """
         logger.addHandler(self.stdout_handler)
         logger.addHandler(self.stderr_handler)
 
 
 class LogSanitizer:
-    """日志脱敏处理器 - 只脱敏真正敏感的密钥信息"""
+    """日志脱敏处理器
+
+    只脱敏真正敏感的密钥信息，保护密码、API 密钥等
+    """
 
     def __init__(self):
         # 只保护真正的密码和密钥，避免过度脱敏
@@ -108,8 +143,16 @@ class LogSanitizer:
         ]
 
     def sanitize(self, message: str) -> str:
-        """脱敏处理日志消息 - 只处理真正的密码和密钥"""
-        # 只脱敏明确的密码和密钥字段
+        """脱敏处理日志消息
+
+        只处理真正的密码和密钥
+
+        Args:
+            message: 原始日志消息
+
+        Returns:
+            str: 脱敏后的日志消息
+        """
         for pattern in self.sensitive_patterns:
             message = pattern.sub("***REDACTED***", message)
 
@@ -117,7 +160,10 @@ class LogSanitizer:
 
 
 class SecureLogFormatter(logging.Formatter):
-    """安全的日志格式化器 - 包含脱敏功能"""
+    """安全的日志格式化器
+
+    继承自标准 Formatter，增加脱敏功能
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -131,10 +177,20 @@ class SecureLogFormatter(logging.Formatter):
 
 
 class AntiInjectionFilter(logging.Filter):
-    """防止日志注入攻击的过滤器"""
+    """防止日志注入攻击的过滤器
+
+    转义危险字符，防止日志分割攻击
+    """
 
     def filter(self, record):
-        # 只转义真正危险的字符，避免过度转义影响可读性
+        """过滤并转义日志记录
+
+        Args:
+            record: 日志记录
+
+        Returns:
+            bool: 始终返回 True（允许记录）
+        """
         if hasattr(record, "msg") and isinstance(record.msg, str):
             # 只转义可能导致日志注入的危险字符，不转义HTML字符
             record.msg = record.msg.replace("\x00", "\\x00")  # 空字节
@@ -159,16 +215,32 @@ class AntiInjectionFilter(logging.Filter):
 
 
 class LogDeduplicator:
-    """日志去重器 - 解决重复日志问题"""
+    """日志去重器
+
+    在指定时间窗口内去除重复日志
+    """
 
     def __init__(self, time_window=5.0, max_cache_size=1000):
+        """初始化日志去重器
+
+        Args:
+            time_window: 时间窗口（秒），默认 5.0
+            max_cache_size: 最大缓存大小，默认 1000
+        """
         self.time_window = time_window  # 时间窗口（秒）
         self.max_cache_size = max_cache_size
         self.cache: Dict[str, Tuple[float, int]] = {}  # {log_hash: (timestamp, count)}
         self.lock = threading.Lock()
 
     def should_log(self, message: str) -> Tuple[bool, Optional[str]]:
-        """检查是否应该记录日志，返回(是否记录, 重复信息)"""
+        """检查是否应该记录日志
+
+        Args:
+            message: 日志消息
+
+        Returns:
+            Tuple[bool, Optional[str]]: (是否记录, 重复信息)
+        """
         with self.lock:
             current_time = time.time()
 
@@ -192,8 +264,11 @@ class LogDeduplicator:
                 return True, None
 
     def _cleanup_cache(self, current_time: float):
-        """清理过期缓存"""
-        # 清理过期条目
+        """清理过期缓存
+
+        Args:
+            current_time: 当前时间戳
+        """
         expired_keys = [
             key
             for key, (timestamp, _) in self.cache.items()
@@ -211,17 +286,24 @@ class LogDeduplicator:
 
 
 class EnhancedLogger:
-    """增强的日志记录器 - 集成所有优化功能"""
+    """增强的日志记录器
+
+    集成所有优化功能：单例管理、去重、脱敏、注入防护
+    """
 
     def __init__(self, name: str):
+        """初始化增强日志记录器
+
+        Args:
+            name: logger 名称
+        """
         self.log_manager = SingletonLogManager()
         self.logger = self.log_manager.setup_logger(name)
         self.deduplicator = LogDeduplicator(
-            time_window=5.0,  # 5秒去重窗口
-            max_cache_size=1000,  # 最大缓存1000条
+            time_window=5.0,
+            max_cache_size=1000,
         )
 
-        # 日志级别映射 - 降低冗余信息的级别
         self.level_mapping = {
             "收到反馈请求": logging.DEBUG,
             "Web UI 配置加载成功": logging.DEBUG,
@@ -235,39 +317,53 @@ class EnhancedLogger:
         }
 
     def _get_effective_level(self, message: str, default_level: int) -> int:
-        """根据消息内容获取有效的日志级别"""
+        """根据消息内容获取有效的日志级别
+
+        Args:
+            message: 日志消息
+            default_level: 默认日志级别
+
+        Returns:
+            int: 有效的日志级别
+        """
         for pattern, level in self.level_mapping.items():
             if pattern in message:
                 return level
         return default_level
 
     def log(self, level: int, message: str, *args, **kwargs):
-        """带去重和级别优化的日志记录"""
-        # 获取有效级别
-        effective_level = self._get_effective_level(message, level)
+        """记录日志（带去重和级别优化）
 
-        # 检查是否应该记录（去重）
+        Args:
+            level: 日志级别
+            message: 日志消息
+            *args: 额外参数
+            **kwargs: 关键字参数
+        """
+        effective_level = self._get_effective_level(message, level)
         should_log, duplicate_info = self.deduplicator.should_log(message)
 
         if should_log:
             if duplicate_info:
                 message += f" ({duplicate_info})"
 
-            # 使用有效级别记录日志
             self.logger.log(effective_level, message, *args, **kwargs)
 
     def debug(self, message: str, *args, **kwargs):
+        """记录 DEBUG 级别日志"""
         self.log(logging.DEBUG, message, *args, **kwargs)
 
     def info(self, message: str, *args, **kwargs):
+        """记录 INFO 级别日志"""
         self.log(logging.INFO, message, *args, **kwargs)
 
     def warning(self, message: str, *args, **kwargs):
+        """记录 WARNING 级别日志"""
         self.log(logging.WARNING, message, *args, **kwargs)
 
     def error(self, message: str, *args, **kwargs):
+        """记录 ERROR 级别日志"""
         self.log(logging.ERROR, message, *args, **kwargs)
 
 
-# 全局增强日志实例
 enhanced_logger = EnhancedLogger(__name__)
