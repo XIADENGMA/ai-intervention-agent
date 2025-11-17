@@ -56,9 +56,12 @@ function updateTasksList(tasks) {
   // 检测新任务
   const addedTasks = newTaskIds.filter(id => !oldTaskIds.includes(id))
   if (addedTasks.length > 0) {
-    console.log(`检测到 ${addedTasks.length} 个新任务`)
-    // 禁用通知，避免重复打扰
-    // showNewTaskNotification(addedTasks.length)
+    console.log(`✨ 检测到 ${addedTasks.length} 个新任务`)
+
+    // 如果当前有活动任务,显示视觉提示
+    if (activeTaskId) {
+      showNewTaskVisualHint(addedTasks.length)
+    }
 
     // 为所有新任务启动倒计时（包括pending任务）
     tasks.filter(t => addedTasks.includes(t.task_id)).forEach(task => {
@@ -135,9 +138,20 @@ function renderTaskTabs() {
   const tabsContainer = document.getElementById('task-tabs')
   const container = document.getElementById('task-tabs-container')
 
-  // 添加null检查，防止DOM未加载时报错
+  // 【修复】添加null检查并延迟重试，防止DOM未加载时报错
   if (!container || !tabsContainer) {
-    console.warn('标签栏容器未找到，可能DOM还未加载完成')
+    console.warn('标签栏容器未找到，可能DOM还未加载完成，将在100ms后重试')
+    // 延迟100ms后重试一次
+    setTimeout(() => {
+      const retryContainer = document.getElementById('task-tabs-container')
+      const retryTabsContainer = document.getElementById('task-tabs')
+      if (retryContainer && retryTabsContainer) {
+        console.log('✅ 重试成功，开始渲染标签栏')
+        renderTaskTabs()
+      } else {
+        console.error('❌ 重试失败，标签栏容器仍然未找到')
+      }
+    }, 100)
     return
   }
 
@@ -611,16 +625,54 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
 // ==================== 新任务通知 ====================
 
 /**
- * 显示新任务通知
+ * 显示新任务视觉提示
+ * 在标签栏旁边显示一个临时的视觉提示,提醒用户有新任务
+ */
+function showNewTaskVisualHint(count) {
+  const container = document.getElementById('task-tabs-container')
+  if (!container) return
+
+  // 创建提示元素
+  const hint = document.createElement('div')
+  hint.id = 'new-task-hint'
+  hint.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 10000;
+    animation: slideInRight 0.3s ease-out, fadeOutUp 0.3s ease-in 2.7s forwards;
+    pointer-events: none;
+  `
+  hint.innerHTML = `✨ ${count} 个新任务已添加到标签栏`
+
+  // 添加到页面
+  document.body.appendChild(hint)
+
+  // 3秒后自动移除
+  setTimeout(() => {
+    if (hint.parentNode) {
+      hint.parentNode.removeChild(hint)
+    }
+  }, 3000)
+
+  console.log(`显示新任务视觉提示: ${count} 个新任务`)
+}
+
+/**
+ * 显示新任务通知 (保留用于向后兼容)
  */
 function showNewTaskNotification(count) {
-  const badge = document.getElementById('task-count-badge')
-  if (badge) {
-    badge.textContent = count
-    badge.classList.remove('hidden')
-  }
+  // 使用新的视觉提示代替旧的通知
+  showNewTaskVisualHint(count)
 
-  // 显示浏览器通知（如果有通知管理器）
+  // 可选: 显示浏览器通知（如果有通知管理器）
   if (typeof notificationManager !== 'undefined') {
     notificationManager
       .sendNotification('AI Intervention Agent', `收到 ${count} 个新任务`, {
@@ -631,8 +683,6 @@ function showNewTaskNotification(count) {
         console.warn('发送新任务通知失败:', error)
       })
   }
-
-  console.log(`显示新任务通知: ${count} 个新任务`)
 }
 
 // ==================== 初始化 ====================
@@ -649,7 +699,16 @@ async function initMultiTaskSupport() {
   // 启动定时轮询
   startTasksPolling()
 
-  console.log('多任务支持初始化完成')
+  // 【修复】添加轮询健康检查机制
+  // 每30秒检查一次轮询器是否还在运行,如果停止则重新启动
+  setInterval(() => {
+    if (!tasksPollingTimer) {
+      console.warn('⚠️ 任务轮询已停止,自动重新启动')
+      startTasksPolling()
+    }
+  }, 30000)
+
+  console.log('多任务支持初始化完成 (包含轮询健康检查)')
 }
 
 /**

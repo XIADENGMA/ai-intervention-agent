@@ -3030,3 +3030,43 @@ code,
     font-size: 16px;
   }
 }
+
+/* ==================== 新任务提示动画 ==================== */
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOutUp {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+}
+
+/* 新任务提示样式 (由JavaScript动态添加,这里提供默认样式以防需要) */
+#new-task-hint {
+  font-family: 'SFProText', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* 移动端适配 - 新任务提示 */
+@media (max-width: 768px) {
+  #new-task-hint {
+    top: 10px !important;
+    right: 10px !important;
+    left: 10px !important;
+    font-size: 12px !important;
+    padding: 10px 16px !important;
+  }
+}

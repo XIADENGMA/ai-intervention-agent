@@ -1240,11 +1240,6 @@ def interactive_feedback(
     This tool creates an interactive feedback task in the Web UI (default: http://localhost:8081).
     Users can provide text input, select predefined options, and optionally upload images.
 
-    ⚠️ **重要说明：task_id 已移除，系统会自动生成唯一ID**
-    - task_id 现在完全由系统自动生成，确保唯一性
-    - 格式："{project_name}-{timestamp}-{random}"
-    - 不再支持手动指定 task_id，避免冲突问题
-
     Args:
         message: 向用户显示的问题或消息 (required)
         predefined_options: 可选的预定义选项列表 (optional, can be multi-selected)

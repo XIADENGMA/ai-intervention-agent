@@ -433,6 +433,13 @@ function showContentPage() {
   document.body.classList.remove('no-content-mode')
 
   enableSubmitButton()
+
+  // 【修复】确保多任务轮询正在运行
+  // 在页面从"无内容"切换到"有内容"状态时,重新启动任务轮询
+  if (typeof window.multiTaskModule !== 'undefined' && typeof window.multiTaskModule.startTasksPolling === 'function') {
+    window.multiTaskModule.startTasksPolling()
+    console.log('✅ 任务轮询已重新启动 (showContentPage)')
+  }
 }
 
 // 禁用提交按钮
