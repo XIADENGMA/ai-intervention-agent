@@ -1,6 +1,8 @@
 import atexit
 import base64
+import io
 import os
+import random
 import signal
 import socket
 import subprocess
@@ -10,11 +12,22 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
+import requests
+from fastmcp import FastMCP
+from fastmcp.utilities.types import Image
+from pydantic import Field
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from config_manager import get_config
+from enhanced_logging import EnhancedLogger
+from task_queue import TaskQueue
+
 # 禁用 FastMCP banner 和 Rich 输出，避免污染 stdio
-os.environ['NO_COLOR'] = '1'
-os.environ['TERM'] = 'dumb'
-os.environ['FASTMCP_NO_BANNER'] = '1'
-os.environ['FASTMCP_QUIET'] = '1'
+os.environ["NO_COLOR"] = "1"
+os.environ["TERM"] = "dumb"
+os.environ["FASTMCP_NO_BANNER"] = "1"
+os.environ["FASTMCP_QUIET"] = "1"
 
 # 全局配置日志输出到 stderr，避免污染 stdio
 import logging as _stdlib_logging
@@ -34,9 +47,8 @@ _root_logger.propagate = False
 
 # 禁用 Rich Console 输出
 try:
-    import io
-    from rich.console import Console
     import rich.console as rich_console_module
+    from rich.console import Console
 
     _devnull = io.StringIO()
 
@@ -49,23 +61,12 @@ try:
                 force_interactive=False,
                 quiet=True,
                 *args,
-                **kwargs
+                **kwargs,
             )
 
     rich_console_module.Console = SilentConsole
 except ImportError:
     pass
-import requests
-from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
-from pydantic import Field
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
-from config_manager import get_config
-
-from enhanced_logging import EnhancedLogger
-from task_queue import TaskQueue
 
 mcp = FastMCP("AI Intervention Agent MCP")
 logger = EnhancedLogger(__name__)
@@ -79,11 +80,10 @@ def get_task_queue() -> TaskQueue:
         TaskQueue: 全局任务队列实例
     """
     return _global_task_queue
+
+
 try:
-    from notification_manager import (
-        NotificationTrigger,
-        notification_manager,
-    )
+    from notification_manager import notification_manager
     from notification_providers import initialize_notification_system
 
     NOTIFICATION_AVAILABLE = True
@@ -1194,7 +1194,9 @@ def launch_feedback_ui(
 
             if response.status_code != 200:
                 logger.error(f"添加任务失败: HTTP {response.status_code}")
-                return {"error": f"添加任务失败: {response.json().get('error', '未知错误')}"}
+                return {
+                    "error": f"添加任务失败: {response.json().get('error', '未知错误')}"
+                }
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
 
@@ -1232,26 +1234,37 @@ def interactive_feedback(
     ),
     task_id: Optional[str] = Field(
         default=None,
-        description="Task identifier to distinguish different tasks (auto-generated if not provided)",
+        description="Task identifier to distinguish different tasks. If not provided, will auto-generate a unique ID based on project name. Format: alphanumeric + hyphens + underscores only, must be unique.",
     ),
 ) -> list:
     """Request interactive feedback from the user
 
+    This tool creates an interactive feedback task in the Web UI (default: http://localhost:8081).
+    Users can provide text input, select predefined options, and optionally upload images.
+
     Args:
-        message: 向用户显示的问题或消息
-        predefined_options: 可选的预定义选项列表
-        task_id: 任务标识符，用于区分不同任务（不提供时自动生成）
+        message: 向用户显示的问题或消息 (required)
+        predefined_options: 可选的预定义选项列表 (optional, can be multi-selected)
+        task_id: 任务标识符，用于区分不同任务 (required, auto-generated if not provided)
+            - Format requirements: alphanumeric characters, hyphens (-), underscores (_)
+            - Must be unique across all active tasks
+            - Auto-generated format: "{project_name}-{random_4digits}"
+            - Example: "my-project-1234" or "custom-task-001"
 
     Returns:
-        包含用户反馈的字典
+        包含用户反馈的列表，可能包含文本、选项和图片数据
 
     Raises:
-        Exception: 当反馈收集失败时
+        Exception: 当反馈收集失败时（如任务队列已满、任务ID重复、Web UI未响应等）
+
+    Examples:
+        interactive_feedback(
+            message="Review the changes:",
+            predefined_options=["Approve", "Request Changes", "Reject"],
+            task_id="code-review-0001"
+        )
     """
     try:
-        import os
-        import random
-
         # 使用类型提示，移除运行时检查以避免IDE警告
         predefined_options_list = predefined_options
 
@@ -1403,10 +1416,10 @@ def cleanup_services():
 def main():
     """MCP 服务器主入口"""
     try:
-        mcp_logger = _stdlib_logging.getLogger('mcp')
+        mcp_logger = _stdlib_logging.getLogger("mcp")
         mcp_logger.setLevel(_stdlib_logging.WARNING)
 
-        fastmcp_logger = _stdlib_logging.getLogger('fastmcp')
+        fastmcp_logger = _stdlib_logging.getLogger("fastmcp")
         fastmcp_logger.setLevel(_stdlib_logging.WARNING)
 
         mcp.run(transport="stdio")

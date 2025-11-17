@@ -239,21 +239,21 @@ class WebFeedbackUI:
                     # 如果没有激活任务，检查是否有 pending 任务
                     all_tasks = task_queue.get_all_tasks()
                     # 过滤出未完成的任务（排除 completed 状态）
-                    incomplete_tasks = [t for t in all_tasks if t["status"] != "completed"]
+                    incomplete_tasks = [t for t in all_tasks if t.status != "completed"]
 
                     if incomplete_tasks:
                         # 有未完成任务存在，激活第一个
                         first_task = incomplete_tasks[0]
-                        task_queue.set_active_task(first_task["task_id"])
-                        logger.info(f"自动激活第一个pending任务: {first_task['task_id']}")
+                        task_queue.set_active_task(first_task.task_id)
+                        logger.info(f"自动激活第一个pending任务: {first_task.task_id}")
 
                         return jsonify(
                             {
-                                "prompt": first_task["prompt"],
-                                "prompt_html": self.render_markdown(first_task["prompt"]),
-                                "predefined_options": first_task["predefined_options"],
-                                "task_id": first_task["task_id"],
-                                "auto_resubmit_timeout": first_task["auto_resubmit_timeout"],
+                                "prompt": first_task.prompt,
+                                "prompt_html": self.render_markdown(first_task.prompt),
+                                "predefined_options": first_task.predefined_options,
+                                "task_id": first_task.task_id,
+                                "auto_resubmit_timeout": first_task.auto_resubmit_timeout,
                                 "persistent": True,
                                 "has_content": True,
                                 "initial_empty": False,
