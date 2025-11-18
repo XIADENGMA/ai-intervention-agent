@@ -208,6 +208,7 @@ pids
 
 # Project specific
 .cursor/rules/
+.cursorignore
 .claude
 CLAUDE.md
 

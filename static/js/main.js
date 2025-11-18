@@ -191,6 +191,9 @@ let currentTasks = [] // 所有任务列表
 let activeTaskId = null // 当前活动任务ID
 let taskCountdowns = {} // 每个任务的独立倒计时
 let tasksPollingTimer = null // 任务轮询定时器
+let taskTextareaContents = {} // 存储每个任务的 textarea 内容（修复切换标签后内容消失问题）
+let taskOptionsStates = {} // 存储每个任务的选项勾选状态
+let taskImages = {} // 存储每个任务的图片列表
 
 // 启动倒计时
 function startCountdown(timeoutSeconds) {
@@ -293,6 +296,22 @@ async function autoSubmitFeedback() {
 
     if (response.ok) {
       console.log('[自动提交] 已自动提交默认反馈以保持会话活跃')
+      
+      // 【修复】自动提交成功后，清除当前任务保存的所有状态
+      if (activeTaskId) {
+        if (taskTextareaContents[activeTaskId] !== undefined) {
+          delete taskTextareaContents[activeTaskId]
+          console.log(`✅ [自动提交] 已清除任务 ${activeTaskId} 保存的 textarea 内容`)
+        }
+        if (taskOptionsStates[activeTaskId] !== undefined) {
+          delete taskOptionsStates[activeTaskId]
+          console.log(`✅ [自动提交] 已清除任务 ${activeTaskId} 保存的选项勾选状态`)
+        }
+        if (taskImages[activeTaskId] !== undefined) {
+          delete taskImages[activeTaskId]
+          console.log(`✅ [自动提交] 已清除任务 ${activeTaskId} 保存的图片列表`)
+        }
+      }
     } else {
       console.error('[自动提交] 提交失败，HTTP状态:', response.status)
     }
@@ -614,6 +633,22 @@ async function submitFeedback() {
       document.querySelectorAll('input[type="checkbox"]').forEach(cb => (cb.checked = false))
       // 清除所有图片
       clearAllImages()
+
+      // 【修复】清除当前任务保存的所有状态（textarea、选项、图片）
+      if (activeTaskId) {
+        if (taskTextareaContents[activeTaskId] !== undefined) {
+          delete taskTextareaContents[activeTaskId]
+          console.log(`✅ 已清除任务 ${activeTaskId} 保存的 textarea 内容`)
+        }
+        if (taskOptionsStates[activeTaskId] !== undefined) {
+          delete taskOptionsStates[activeTaskId]
+          console.log(`✅ 已清除任务 ${activeTaskId} 保存的选项勾选状态`)
+        }
+        if (taskImages[activeTaskId] !== undefined) {
+          delete taskImages[activeTaskId]
+          console.log(`✅ 已清除任务 ${activeTaskId} 保存的图片列表`)
+        }
+      }
 
       // 提交后，立即重新加载配置，让后端决定下一步
       // 如果有剩余任务，会自动激活并显示

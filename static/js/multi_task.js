@@ -45,6 +45,7 @@ function stopTasksPolling() {
 
 // 防止轮询与手动切换冲突的标志
 let isManualSwitching = false
+let manualSwitchingTimer = null  // 【修复】用于管理切换标志的计时器，防止竞态条件
 
 /**
  * 更新任务列表
@@ -87,6 +88,10 @@ function updateTasksList(tasks) {
     // 如果activeTaskId为null，且有任务，自动设置第一个任务为active
     activeTaskId = tasks[0].task_id
     console.log(`自动设置第一个任务为active: ${activeTaskId}`)
+  } else if (tasks.length === 0 && activeTaskId) {
+    // 【修复】如果任务列表为空，重置 activeTaskId（防止指向已不存在的任务）
+    console.log(`✅ 任务列表已清空，重置 activeTaskId: ${activeTaskId} -> null`)
+    activeTaskId = null
   }
 
   // 更新标签页UI
@@ -288,6 +293,31 @@ function createTaskTab(task) {
  * 切换到指定任务
  */
 async function switchTask(taskId) {
+  // 【修复】保存当前任务的 textarea 内容、选项勾选状态和图片列表（防止切换标签后内容消失）
+  if (activeTaskId) {
+    const textarea = document.getElementById('feedback-text')
+    if (textarea) {
+      taskTextareaContents[activeTaskId] = textarea.value
+      console.log(`✅ 已保存任务 ${activeTaskId} 的 textarea 内容`)
+    }
+    
+    // 保存选项勾选状态
+    const optionsContainer = document.getElementById('options-container')
+    if (optionsContainer) {
+      const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
+      const optionsStates = []
+      checkboxes.forEach((checkbox, index) => {
+        optionsStates[index] = checkbox.checked
+      })
+      taskOptionsStates[activeTaskId] = optionsStates
+      console.log(`✅ 已保存任务 ${activeTaskId} 的选项勾选状态`)
+    }
+    
+    // 保存图片列表
+    taskImages[activeTaskId] = [...selectedImages]  // 深拷贝数组
+    console.log(`✅ 已保存任务 ${activeTaskId} 的图片列表 (${selectedImages.length} 张)`)
+  }
+
   // 设置手动切换标志，防止轮询干扰
   isManualSwitching = true
 
@@ -315,9 +345,14 @@ async function switchTask(taskId) {
   } catch (error) {
     console.error('切换任务失败:', error)
   } finally {
-    // 200ms后解除标志，允许轮询恢复
-    setTimeout(() => {
+    // 【修复】清除旧计时器，重新设置200ms后解除标志（防止快速切换的竞态条件）
+    if (manualSwitchingTimer) {
+      clearTimeout(manualSwitchingTimer)
+    }
+    manualSwitchingTimer = setTimeout(() => {
       isManualSwitching = false
+      manualSwitchingTimer = null
+      console.log('✅ 任务切换锁定已解除，允许轮询恢复')
     }, 200)
   }
 }
@@ -364,6 +399,41 @@ async function loadTaskDetails(taskId) {
       updateTaskIdDisplay(task.task_id)
       updateDescriptionDisplay(task.prompt)
       updateOptionsDisplay(task.predefined_options)
+
+      // 【修复】恢复该任务之前保存的 textarea 内容
+      const textarea = document.getElementById('feedback-text')
+      if (textarea && taskTextareaContents[taskId] !== undefined) {
+        textarea.value = taskTextareaContents[taskId]
+        console.log(`✅ 已恢复任务 ${taskId} 的 textarea 内容`)
+      } else if (textarea) {
+        // 如果之前没有保存过内容，清空 textarea
+        textarea.value = ''
+      }
+      
+      // 【修复】恢复该任务之前保存的图片列表
+      if (taskImages[taskId] && taskImages[taskId].length > 0) {
+        selectedImages = [...taskImages[taskId]]  // 恢复图片数组
+        // 重新渲染图片预览
+        const previewContainer = document.getElementById('image-previews')
+        if (previewContainer) {
+          previewContainer.innerHTML = ''
+          selectedImages.forEach(imageItem => {
+            renderImagePreview(imageItem, false)
+          })
+          updateImageCounter()
+          updateImagePreviewVisibility()
+        }
+        console.log(`✅ 已恢复任务 ${taskId} 的图片列表 (${selectedImages.length} 张)`)
+      } else {
+        // 如果之前没有保存过图片，清空图片列表
+        selectedImages = []
+        const previewContainer = document.getElementById('image-previews')
+        if (previewContainer) {
+          previewContainer.innerHTML = ''
+        }
+        updateImageCounter()
+        updateImagePreviewVisibility()
+      }
 
       // 只在倒计时不存在时启动，避免切换标签时重置倒计时
       if (!taskCountdowns[task.task_id]) {
@@ -422,12 +492,18 @@ function updateOptionsDisplay(options) {
   const optionsContainer = document.getElementById('options-container')
   if (!optionsContainer) return
 
-  // 保存当前选中状态
-  const selectedStates = []
-  const existingCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
-  existingCheckboxes.forEach((checkbox, index) => {
-    selectedStates[index] = checkbox.checked
-  })
+  // 【修复】优先使用该任务之前保存的勾选状态
+  let selectedStates = []
+  if (activeTaskId && taskOptionsStates[activeTaskId]) {
+    selectedStates = taskOptionsStates[activeTaskId]
+    console.log(`✅ 已恢复任务 ${activeTaskId} 的选项勾选状态`)
+  } else {
+    // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
+    const existingCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
+    existingCheckboxes.forEach((checkbox, index) => {
+      selectedStates[index] = checkbox.checked
+    })
+  }
 
   // 清空现有选项
   optionsContainer.innerHTML = ''
@@ -483,6 +559,20 @@ async function closeTask(taskId) {
     if (taskCountdowns[taskId]) {
       clearInterval(taskCountdowns[taskId].timer)
       delete taskCountdowns[taskId]
+    }
+
+    // 【修复】清除该任务保存的所有状态
+    if (taskTextareaContents[taskId] !== undefined) {
+      delete taskTextareaContents[taskId]
+      console.log(`✅ [关闭任务] 已清除任务 ${taskId} 保存的 textarea 内容`)
+    }
+    if (taskOptionsStates[taskId] !== undefined) {
+      delete taskOptionsStates[taskId]
+      console.log(`✅ [关闭任务] 已清除任务 ${taskId} 保存的选项勾选状态`)
+    }
+    if (taskImages[taskId] !== undefined) {
+      delete taskImages[taskId]
+      console.log(`✅ [关闭任务] 已清除任务 ${taskId} 保存的图片列表`)
     }
 
     // 从列表中移除
@@ -613,6 +703,19 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       if (taskCountdowns[taskId]) {
         clearInterval(taskCountdowns[taskId].timer)
         delete taskCountdowns[taskId]
+      }
+      // 【修复】清除该任务保存的所有状态（textarea、选项、图片）
+      if (taskTextareaContents[taskId] !== undefined) {
+        delete taskTextareaContents[taskId]
+        console.log(`✅ 已清除任务 ${taskId} 保存的 textarea 内容`)
+      }
+      if (taskOptionsStates[taskId] !== undefined) {
+        delete taskOptionsStates[taskId]
+        console.log(`✅ 已清除任务 ${taskId} 保存的选项勾选状态`)
+      }
+      if (taskImages[taskId] !== undefined) {
+        delete taskImages[taskId]
+        console.log(`✅ 已清除任务 ${taskId} 保存的图片列表`)
       }
     } else {
       console.error('提交任务失败:', data.error)
