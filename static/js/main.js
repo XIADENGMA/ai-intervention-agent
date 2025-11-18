@@ -278,7 +278,8 @@ async function autoSubmitFeedback() {
     }
 
     // 构建默认反馈消息（固定文本）
-    const defaultMessage = '好的，代码先保持现状，然后重新调用 interactive_feedback 工具，调用interactive_feedback后会有一个窗口，我将在窗口中告诉你下一步指令，请先调用interactive_feedback工具'
+    const defaultMessage =
+      '好的，代码先保持现状，然后重新调用 interactive_feedback 工具，调用interactive_feedback后会有一个窗口，我将在窗口中告诉你下一步指令，请先调用interactive_feedback工具'
 
     // 使用FormData提交（与正常提交一致）
     const formData = new FormData()
@@ -436,7 +437,10 @@ function showContentPage() {
 
   // 【修复】确保多任务轮询正在运行
   // 在页面从"无内容"切换到"有内容"状态时,重新启动任务轮询
-  if (typeof window.multiTaskModule !== 'undefined' && typeof window.multiTaskModule.startTasksPolling === 'function') {
+  if (
+    typeof window.multiTaskModule !== 'undefined' &&
+    typeof window.multiTaskModule.startTasksPolling === 'function'
+  ) {
     window.multiTaskModule.startTasksPolling()
     console.log('✅ 任务轮询已重新启动 (showContentPage)')
   }
@@ -577,7 +581,7 @@ async function submitFeedback() {
     submitBtn.textContent = '提交中...'
 
     // 附加固定的说明文本到用户输入后
-    const additionalText = '\n 请回答以上问题或要求。\n并且注意，除非我主动让你结束，否则不要结束对话，必须回复。回复或反思优化步骤完成后必须重新调用interactive_feedback工具拉起反馈窗口来询问我的反馈，因为反馈窗口仅对当前轮次对话有效，旧的窗口已无效，所以每一轮新对话必须重新调用，只有这样才能保证会话连续性，如果你本轮仅仅回复了内容但是没有调用interactive_feedback工具询问我的反馈，那么对话将会终止，任务将会失败！所以决不允许只回复内容不调用工具询问反馈，直接在回复中询问是无效的，用户看不到，所以必须重新调用工具在反馈窗口中询问反馈！'
+    const additionalText = '\n请积极调用interactive_feedback工具'
     const finalFeedbackText = feedbackText ? feedbackText + additionalText : additionalText
 
     // 使用 FormData 上传文件，避免 base64 编码
@@ -614,10 +618,13 @@ async function submitFeedback() {
       // 提交后，立即重新加载配置，让后端决定下一步
       // 如果有剩余任务，会自动激活并显示
       console.log('反馈提交成功，重新加载配置...')
-      await loadConfig(false)  // 不发送通知，这是内部切换
+      await loadConfig(false) // 不发送通知，这是内部切换
 
       // 立即刷新任务列表，确保标签栏同步
-      if (typeof window.multiTaskModule !== 'undefined' && window.multiTaskModule.refreshTasksList) {
+      if (
+        typeof window.multiTaskModule !== 'undefined' &&
+        window.multiTaskModule.refreshTasksList
+      ) {
         await window.multiTaskModule.refreshTasksList()
         console.log('任务列表已同步更新')
       }
@@ -744,7 +751,7 @@ function scheduleNextPoll() {
         try {
           notificationManager
             .sendNotification('AI Intervention Agent', '新的反馈请求已到达，请查看并回复', {
-              tag: 'new-content',  // 使用tag防止重复
+              tag: 'new-content', // 使用tag防止重复
               requireInteraction: true,
               onClick: () => {
                 window.focus()
@@ -2799,7 +2806,10 @@ function initializeImageFeatures() {
 // 事件监听器
 document.addEventListener('DOMContentLoaded', () => {
   // 初始化多任务支持
-  if (typeof window.multiTaskModule !== 'undefined' && typeof window.multiTaskModule.initMultiTaskSupport === 'function') {
+  if (
+    typeof window.multiTaskModule !== 'undefined' &&
+    typeof window.multiTaskModule.initMultiTaskSupport === 'function'
+  ) {
     window.multiTaskModule.initMultiTaskSupport()
     console.log('✅ 多任务支持已初始化')
   } else {
