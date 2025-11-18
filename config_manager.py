@@ -1,7 +1,40 @@
 #!/usr/bin/env python3
 """
 配置管理模块
-统一管理应用程序的所有配置
+
+【核心功能】
+统一管理应用程序的所有配置，提供跨平台的配置文件管理能力。
+
+【主要特性】
+- JSONC 格式支持：支持带注释的 JSON 配置文件，保留用户注释
+- 跨平台配置目录：自动识别不同操作系统的标准配置目录位置
+- 运行模式检测：区分 uvx 运行模式和开发模式，智能选择配置文件位置
+- 配置热重载：支持运行时重新加载配置文件
+- 网络安全配置独立管理：network_security 配置段特殊处理，不加载到内存
+- 线程安全：使用读写锁实现高性能的并发访问控制
+- 延迟保存优化：批量配置更新时减少磁盘 I/O 次数
+- 配置验证：保存后自动验证配置文件格式和结构
+
+【配置文件位置】
+- 开发模式：优先使用当前目录的 config.jsonc，其次用户配置目录
+- uvx 模式：仅使用用户配置目录的全局配置
+- Linux: ~/.config/ai-intervention-agent/config.jsonc
+- macOS: ~/Library/Application Support/ai-intervention-agent/config.jsonc
+- Windows: %APPDATA%/ai-intervention-agent/config.jsonc
+
+【使用方式】
+通过模块级全局实例 config_manager 访问配置，或使用 get_config() 函数获取实例。
+
+【配置段说明】
+- notification: 通知系统配置（Web、声音、Bark 推送）
+- web_ui: Web UI 服务器配置（地址、端口、重试策略）
+- network_security: 网络安全配置（访问控制、IP 白名单/黑名单）
+- feedback: 反馈系统配置（超时设置）
+
+【线程安全保证】
+- 使用读写锁（ReadWriteLock）实现读多写少的高效并发
+- 所有公共方法均为线程安全
+- 支持多线程并发读取配置，写入时独占访问
 """
 
 import json
@@ -30,16 +63,62 @@ logger = logging.getLogger(__name__)
 class ReadWriteLock:
     """读写锁实现
 
-    允许多个读者同时访问，但写者独占访问，适用于读多写少的场景
+    【设计目的】
+    实现读写锁模式，允许多个读者并发访问，但写者需要独占访问。
+    适用于读多写少的场景，提升并发性能。
+
+    【锁模式】
+    - 读模式：多个线程可同时持有读锁，互不阻塞
+    - 写模式：只有一个线程可持有写锁，且必须等待所有读锁释放
+
+    【实现原理】
+    - 使用 Condition 变量协调读写线程
+    - 使用计数器 _readers 追踪当前读者数量
+    - 写者在进入前等待所有读者退出
+    - 最后一个读者退出时通知等待的写者
+
+    【使用场景】
+    - ConfigManager 的配置读取和更新
+    - 其他读多写少的共享资源访问
+
+    【线程安全】
+    - 基于 threading.Condition 和 threading.RLock 实现
+    - 保证读写操作的正确同步
     """
 
     def __init__(self):
+        """初始化读写锁
+
+        【内部状态】
+        - _read_ready: Condition 变量，用于协调读写线程
+        - _readers: 当前持有读锁的线程数量
+        """
         self._read_ready = threading.Condition(threading.RLock())
         self._readers = 0
 
     @contextmanager
     def read_lock(self):
         """获取读锁的上下文管理器
+
+        【功能说明】
+        获取读锁以访问共享资源。多个线程可同时持有读锁。
+
+        【使用流程】
+        1. 获取 Condition 锁
+        2. 增加读者计数
+        3. 释放 Condition 锁
+        4. 执行用户代码（持有读锁期间）
+        5. 重新获取 Condition 锁
+        6. 减少读者计数
+        7. 如果是最后一个读者，通知等待的写者
+        8. 释放 Condition 锁
+
+        【阻塞条件】
+        - 仅在写者持有锁时阻塞
+        - 读者之间不会相互阻塞
+
+        【典型用法】
+        在 ConfigManager.get() 方法中使用
 
         Yields:
             None: 在持有读锁期间执行
@@ -65,6 +144,26 @@ class ReadWriteLock:
     def write_lock(self):
         """获取写锁的上下文管理器
 
+        【功能说明】
+        获取写锁以独占访问共享资源。写者必须等待所有读者退出。
+
+        【使用流程】
+        1. 获取 Condition 锁
+        2. 等待所有读者退出（_readers == 0）
+        3. 执行用户代码（持有写锁期间，独占访问）
+        4. 释放 Condition 锁
+
+        【阻塞条件】
+        - 有读者持有读锁时阻塞
+        - 其他写者持有写锁时阻塞
+
+        【独占性】
+        - 持有写锁期间，任何读者和写者都无法获取锁
+        - 保证数据修改的原子性和一致性
+
+        【典型用法】
+        在 ConfigManager.set() 和 ConfigManager.update() 方法中使用
+
         Yields:
             None: 在持有写锁期间执行（独占访问）
         """
@@ -80,6 +179,33 @@ class ReadWriteLock:
 def parse_jsonc(content: str) -> Dict[str, Any]:
     """解析 JSONC (JSON with Comments) 格式的内容
 
+    【功能说明】
+    将带注释的 JSON 字符串解析为 Python 字典对象。
+
+    【支持的注释格式】
+    - 单行注释：// 注释内容（到行尾）
+    - 多行注释：/* 注释内容 */（可跨行）
+
+    【处理流程】
+    1. 逐行扫描输入内容
+    2. 识别并移除多行注释块
+    3. 识别并移除单行注释（排除字符串内的 //）
+    4. 拼接清理后的内容
+    5. 使用标准 json.loads 解析
+
+    【注意事项】
+    - 字符串内的 // 和 /* */ 不会被视为注释
+    - 处理转义字符以避免误判字符串边界
+    - 保留原始 JSON 的换行和缩进（清理后）
+
+    【错误处理】
+    - 注释清理过程中的错误会导致解析失败
+    - JSON 语法错误会抛出 json.JSONDecodeError
+
+    【性能考虑】
+    - 逐字符扫描，适用于中小型配置文件
+    - 对于大型文件可能性能不佳
+
     Args:
         content: JSONC 格式的字符串内容
 
@@ -87,7 +213,7 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
         Dict[str, Any]: 解析后的字典对象
 
     Raises:
-        json.JSONDecodeError: JSON 解析失败
+        json.JSONDecodeError: JSON 解析失败时抛出
     """
     lines = content.split("\n")
     cleaned_lines = []
@@ -152,10 +278,30 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
 def _is_uvx_mode() -> bool:
     """检测是否为 uvx 方式运行
 
-    通过检查以下特征判断：
-    1. 执行路径是否包含 uvx 相关路径
-    2. 环境变量是否包含 uvx 标识
-    3. 当前工作目录是否为临时目录
+    【功能说明】
+    判断应用是通过 uvx 工具运行还是开发模式运行，影响配置文件位置选择。
+
+    【检测特征】
+    1. 执行路径检查：sys.executable 是否包含 "uvx" 或 ".local/share/uvx"
+    2. 环境变量检查：是否存在 UVX_PROJECT 环境变量
+    3. 项目文件检查：当前目录及父目录是否包含开发文件
+       - pyproject.toml：Python 项目配置
+       - setup.py / setup.cfg：传统 Python 打包文件
+       - .git：Git 版本控制目录
+
+    【判断逻辑】
+    - 如果检测到 uvx 特征 → 返回 True（uvx 模式）
+    - 如果检测到开发文件 → 返回 False（开发模式）
+    - 都未检测到 → 返回 True（默认为 uvx 模式）
+
+    【模式影响】
+    - uvx 模式：仅使用用户配置目录的全局配置
+    - 开发模式：优先使用当前目录的配置文件
+
+    【设计考虑】
+    - uvx 模式通常用于生产环境或用户安装的应用
+    - 开发模式允许开发者在项目目录调试配置
+    - 避免 uvx 模式下意外使用临时目录的配置
 
     Returns:
         bool: True 表示 uvx 模式，False 表示开发模式
@@ -181,20 +327,52 @@ def _is_uvx_mode() -> bool:
 def find_config_file(config_filename: str = "config.jsonc") -> Path:
     """查找配置文件路径
 
-    根据运行方式查找配置文件：
-    - uvx 方式：只使用用户配置目录的全局配置
-    - 开发模式：优先当前目录，然后用户配置目录
+    【功能说明】
+    根据运行模式智能查找配置文件位置，支持开发模式和 uvx 生产模式。
 
-    跨平台配置目录位置：
-    - Linux: ~/.config/ai-intervention-agent/
-    - macOS: ~/Library/Application Support/ai-intervention-agent/
-    - Windows: %APPDATA%/ai-intervention-agent/
+    【查找策略】
+    **uvx 模式**（生产环境）：
+    - 仅使用用户配置目录的全局配置
+    - 避免使用临时目录中的配置文件
+    - 确保配置持久化且全局一致
+
+    **开发模式**（本地开发）：
+    1. 优先级1：当前工作目录的 config.jsonc
+    2. 优先级2：当前工作目录的 config.json（向后兼容）
+    3. 优先级3：用户配置目录的 config.jsonc
+    4. 优先级4：用户配置目录的 config.json（向后兼容）
+    5. 默认：返回用户配置目录路径（用于创建新配置）
+
+    【跨平台配置目录】
+    自动适配不同操作系统的标准配置目录：
+    - **Linux**: ~/.config/ai-intervention-agent/
+    - **macOS**: ~/Library/Application Support/ai-intervention-agent/
+    - **Windows**: %APPDATA%/ai-intervention-agent/
+
+    【配置目录获取】
+    - 优先使用 platformdirs 库（如果可用）
+    - 回退到 _get_user_config_dir_fallback 手动判断
+
+    【向后兼容】
+    - 支持 .jsonc 和 .json 两种扩展名
+    - 优先使用 .jsonc 格式（支持注释）
+    - 自动查找并使用旧的 .json 配置文件
+
+    【文件不存在处理】
+    - 返回用户配置目录的目标路径
+    - 由 ConfigManager 负责创建默认配置文件
+    - 记录日志说明将创建新配置
+
+    【异常处理】
+    - 配置目录获取失败时回退到当前目录
+    - 记录警告日志但不抛出异常
+    - 确保应用能在各种环境下启动
 
     Args:
         config_filename: 配置文件名，默认为 "config.jsonc"
 
     Returns:
-        Path: 配置文件的路径对象
+        Path: 配置文件的路径对象（可能尚不存在）
     """
     # 检测是否为uvx方式运行
     is_uvx_mode = _is_uvx_mode()
@@ -256,10 +434,37 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
 def _get_user_config_dir_fallback() -> Path:
     """获取用户配置目录的回退实现
 
-    不依赖 platformdirs，手动判断平台并返回标准配置目录
+    【功能说明】
+    在 platformdirs 库不可用时，手动判断操作系统并返回标准配置目录路径。
+
+    【支持的平台】
+    - **Windows**: %APPDATA%/ai-intervention-agent 或 ~/AppData/Roaming/ai-intervention-agent
+    - **macOS (darwin)**: ~/Library/Application Support/ai-intervention-agent
+    - **Linux 和其他 Unix**: $XDG_CONFIG_HOME/ai-intervention-agent 或 ~/.config/ai-intervention-agent
+
+    【平台检测】
+    使用 platform.system() 识别操作系统：
+    - "windows" → Windows 路径
+    - "darwin" → macOS 路径
+    - 其他 → Linux/Unix 路径
+
+    【环境变量支持】
+    - Windows: 优先使用 APPDATA 环境变量
+    - Linux: 优先使用 XDG_CONFIG_HOME 环境变量（符合 XDG 规范）
+
+    【回退路径】
+    环境变量不存在时使用硬编码的标准路径：
+    - Windows: ~/AppData/Roaming/ai-intervention-agent
+    - macOS: ~/Library/Application Support/ai-intervention-agent
+    - Linux: ~/.config/ai-intervention-agent
+
+    【设计考虑】
+    - 遵循各平台的标准配置目录规范
+    - 确保在没有第三方库时也能正常工作
+    - 使用 Path.home() 获取用户主目录，跨平台兼容
 
     Returns:
-        Path: 用户配置目录路径
+        Path: 用户配置目录路径（不包含配置文件名）
     """
     system = platform.system().lower()
     home = Path.home()
@@ -283,23 +488,87 @@ def _get_user_config_dir_fallback() -> Path:
 class ConfigManager:
     """配置管理器
 
-    统一管理应用程序配置，支持：
-    - JSONC 格式配置文件
-    - 跨平台配置目录
-    - 配置热重载
-    - 网络安全配置独立管理
-    - 线程安全的读写操作
+    【设计模式】
+    单例模式（通过模块级全局实例 config_manager 实现）
+
+    【核心职责】
+    1. 配置文件加载和解析（JSONC 和 JSON 格式）
+    2. 配置值的读取和更新（支持嵌套键）
+    3. 配置文件的持久化（保留注释和格式）
+    4. 线程安全的并发访问控制
+    5. 性能优化（延迟保存、读写锁）
+
+    【主要特性】
+    - **JSONC 支持**：保留用户在配置文件中的注释和格式
+    - **跨平台**：自动适配不同操作系统的配置目录
+    - **热重载**：支持运行时重新加载配置文件
+    - **网络安全配置独立管理**：network_security 段不加载到内存，特殊方法读取
+    - **线程安全**：使用读写锁实现高性能并发访问
+    - **延迟保存**：批量配置更新时减少磁盘 I/O
+    - **配置验证**：保存后自动验证文件格式和结构
+
+    【配置段管理】
+    - notification: 加载到内存，正常访问
+    - web_ui: 加载到内存，正常访问
+    - feedback: 加载到内存，正常访问
+    - network_security: **不加载到内存**，使用 get_network_security_config() 特殊读取
+
+    【线程安全】
+    - 读操作使用读锁，允许多线程并发读取
+    - 写操作使用写锁，独占访问
+    - 延迟保存使用额外的 RLock 保护定时器
+
+    【性能优化】
+    - 延迟保存机制：批量更新后统一保存，减少磁盘 I/O
+    - 读写锁：读多写少场景下提升并发性能
+    - 值变化检测：跳过未变化的配置更新
+
+    【使用方式】
+    通过模块级全局实例 config_manager 访问，避免手动创建实例。
     """
 
     def __init__(self, config_file: str = "config.jsonc"):
+        """初始化配置管理器
+
+        【初始化流程】
+        1. 查找配置文件路径（根据运行模式）
+        2. 初始化内部状态（配置字典、锁、定时器）
+        3. 加载配置文件内容
+        4. 合并默认配置（确保新增配置项存在）
+
+        【内部状态】
+        - config_file: 配置文件路径（Path 对象）
+        - _config: 内存中的配置字典（不含 network_security）
+        - _rw_lock: 读写锁，用于配置读写
+        - _lock: 可重入锁，用于延迟保存定时器
+        - _original_content: 原始文件内容（用于保留注释）
+        - _last_access_time: 最后访问时间（用于统计）
+        - _pending_changes: 待写入的配置变更字典
+        - _save_timer: 延迟保存定时器
+        - _save_delay: 延迟保存时间（默认3秒）
+        - _last_save_time: 上次保存时间
+
+        【配置文件查找】
+        使用 find_config_file() 根据运行模式查找配置文件位置
+
+        【默认配置】
+        如果配置文件不存在，自动创建带注释的默认配置文件
+
+        Args:
+            config_file: 配置文件名，默认为 "config.jsonc"
+        """
         # 使用新的配置文件查找逻辑
         self.config_file = find_config_file(config_file)
 
+        # 初始化配置字典
         self._config = {}
-        # 使用读写锁提高并发性能
-        self._rw_lock = ReadWriteLock()
-        self._lock = threading.RLock()  # 保留原有锁用于向后兼容
-        self._original_content: Optional[str] = None  # 保存原始文件内容
+
+        # 初始化锁机制
+        self._rw_lock = ReadWriteLock()  # 读写锁，用于配置读写
+        self._lock = threading.RLock()  # 可重入锁，用于延迟保存定时器
+
+        # 初始化文件内容和访问时间
+        self._original_content: Optional[str] = None  # 保存原始文件内容（用于保留注释）
         self._last_access_time = time.time()  # 跟踪最后访问时间
 
         # 性能优化：配置写入缓冲机制
@@ -308,10 +577,51 @@ class ConfigManager:
         self._save_delay = 3.0  # 延迟保存时间（秒）
         self._last_save_time = 0  # 上次保存时间
 
+        # 加载配置文件
         self._load_config()
 
     def _get_default_config(self) -> Dict[str, Any]:
-        """获取默认配置"""
+        """获取默认配置
+
+        【功能说明】
+        返回应用程序的默认配置字典，用于初始化和合并配置。
+
+        【配置段说明】
+        - **notification**: 通知系统配置
+          * enabled: 通知总开关
+          * web_enabled: Web 浏览器通知
+          * sound_enabled, sound_volume: 声音通知
+          * bark_enabled, bark_url, bark_device_key: Bark 推送服务
+          * mobile_optimized, mobile_vibrate: 移动设备优化
+
+        - **web_ui**: Web UI 服务器配置
+          * host: 绑定地址（默认 127.0.0.1，仅本地访问）
+          * port: 监听端口（默认 8080）
+          * debug: 调试模式
+          * max_retries, retry_delay: 重试策略
+
+        - **network_security**: 网络安全配置（特殊处理，不加载到内存）
+          * bind_interface: 绑定网络接口
+          * allowed_networks: IP 白名单（CIDR 格式）
+          * blocked_ips: IP 黑名单
+          * enable_access_control: 是否启用访问控制
+
+        - **feedback**: 反馈系统配置
+          * timeout: 反馈超时时间（秒）
+
+        【安全性考虑】
+        - host 默认为 127.0.0.1（仅本地访问），提升安全性
+        - allowed_networks 包含常见私有网络段，防止公网直接访问
+        - enable_access_control 默认启用，保护 Web UI
+
+        【使用场景】
+        - 配置文件不存在时创建默认配置
+        - 合并配置时补充缺失的配置项
+        - 获取配置项的默认值
+
+        Returns:
+            Dict[str, Any]: 默认配置字典，包含所有配置段
+        """
         return {
             "notification": {
                 "enabled": True,
@@ -351,7 +661,51 @@ class ConfigManager:
         }
 
     def _load_config(self):
-        """加载配置文件"""
+        """加载配置文件
+
+        【功能说明】
+        从磁盘加载配置文件并解析到内存中的 _config 字典。
+
+        【加载流程】
+        1. 检查配置文件是否存在
+        2. 如果存在：
+           - 读取文件内容
+           - 保存原始内容（用于保留注释）
+           - 根据扩展名选择解析器（JSONC 或 JSON）
+           - 排除 network_security 配置段（不加载到内存）
+           - 记录成功日志
+        3. 如果不存在：
+           - 使用默认配置
+           - 排除 network_security 配置段
+           - 调用 _create_default_config_file 创建文件
+           - 记录创建日志
+        4. 合并默认配置（确保所有配置项存在）
+
+        【network_security 特殊处理】
+        - **设计原因**：网络安全配置非常敏感，独立管理更安全
+        - **实现方式**：加载时完全排除该配置段
+        - **访问方式**：通过 get_network_security_config() 特殊方法直接读取文件
+        - **好处**：防止意外修改、减少内存占用、提高安全性
+
+        【文件格式识别】
+        - .jsonc 后缀：使用 parse_jsonc 解析（支持注释）
+        - .json 后缀：使用 json.loads 解析（标准 JSON）
+
+        【合并策略】
+        - 保持用户配置的优先级
+        - 仅添加缺失的默认配置项
+        - 递归合并嵌套字典
+        - 确保 network_security 不被合并
+
+        【异常处理】
+        - 文件读取失败：记录错误日志，使用默认配置
+        - 解析失败：记录错误日志，使用默认配置
+        - 不抛出异常，确保应用能启动
+
+        【线程安全】
+        - 使用 _lock 保护整个加载过程
+        - 确保配置加载的原子性
+        """
         with self._lock:
             try:
                 if self.config_file.exists():
@@ -404,7 +758,49 @@ class ConfigManager:
     def _merge_config(
         self, default: Dict[str, Any], current: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """合并配置，确保所有默认键都存在，但保持现有值不变"""
+        """合并配置，确保所有默认键都存在，但保持现有值不变
+
+        【功能说明】
+        将默认配置与当前配置合并，补充缺失的配置项，但保持用户配置优先。
+
+        【合并原则】
+        1. 用户配置优先：现有配置项的值不会被默认值覆盖
+        2. 补充缺失项：仅添加默认配置中存在但当前配置中缺失的键
+        3. 递归合并：对嵌套字典递归应用相同的合并逻辑
+        4. 排除特殊配置：确保 network_security 不被合并
+
+        【处理流程】
+        1. 以当前配置为基础创建结果字典
+        2. 遍历默认配置的所有键
+        3. 跳过 network_security 配置段（特殊处理）
+        4. 对于缺失的键，直接使用默认值
+        5. 对于已存在的嵌套字典，递归合并
+        6. 最终移除结果中的 network_security（双重保险）
+
+        【使用场景】
+        - 应用启动时合并配置文件和默认配置
+        - 应用版本更新后添加新的配置项
+        - 确保所有代码依赖的配置项都存在
+
+        【示例逻辑】
+        假设：
+        - default = {"a": 1, "b": {"b1": 2, "b2": 3}}
+        - current = {"a": 100, "b": {"b1": 200}}
+        结果：
+        - result = {"a": 100, "b": {"b1": 200, "b2": 3}}
+        说明：a 和 b.b1 保持用户值，b.b2 从默认配置补充
+
+        【network_security 处理】
+        - 多次检查确保该配置段不被合并
+        - 记录调试日志标记排除操作
+
+        Args:
+            default: 默认配置字典
+            current: 当前配置字典
+
+        Returns:
+            Dict[str, Any]: 合并后的配置字典，包含所有默认键但保持用户值
+        """
         result = current.copy()  # 以当前配置为基础
 
         # 只添加缺失的默认键，不修改现有值
@@ -429,7 +825,27 @@ class ConfigManager:
         return result
 
     def _extract_current_value(self, lines: list, line_index: int, key: str) -> Any:
-        """从当前行中提取配置值"""
+        """从当前行中提取配置值
+
+        【功能说明】
+        从配置文件的特定行中提取指定键的当前值。
+
+        【处理类型】
+        - 数组值：调用 _find_array_range_simple 查找数组范围并提取
+        - 简单值：使用正则表达式直接提取
+
+        【使用场景】
+        - _save_jsonc_with_comments 中检查值是否变化
+        - 避免不必要的配置更新
+
+        Args:
+            lines: 文件内容行列表
+            line_index: 目标行索引
+            key: 配置键名
+
+        Returns:
+            Any: 提取的配置值，提取失败返回 None
+        """
         try:
             line = lines[line_index]
             # 对于数组类型
@@ -475,7 +891,29 @@ class ConfigManager:
         return None
 
     def _find_array_range_simple(self, lines: list, start_line: int, key: str) -> tuple:
-        """简化版的数组范围查找"""
+        """简化版的数组范围查找
+
+        【功能说明】
+        查找多行数组的开始和结束行号。
+
+        【查找逻辑】
+        - 确认开始行匹配数组开始模式
+        - 逐字符扫描，追踪括号层级
+        - 处理字符串和转义字符
+        - 找到匹配的右括号时返回范围
+
+        【使用场景】
+        - _extract_current_value 中提取数组值
+        - 简化版实现，用于值比较
+
+        Args:
+            lines: 文件内容行列表
+            start_line: 数组开始行索引
+            key: 数组键名
+
+        Returns:
+            tuple: (开始行, 结束行)，如果不是数组返回 (start_line, start_line)
+        """
         # 确认开始行确实是数组开始
         start_pattern = rf'"{re.escape(key)}"\s*:\s*\['
         if not re.search(start_pattern, lines[start_line]):
@@ -509,7 +947,27 @@ class ConfigManager:
         return start_line, start_line
 
     def _find_network_security_range(self, lines: list) -> tuple:
-        """找到 network_security 配置段的行范围"""
+        """找到 network_security 配置段的行范围
+
+        【功能说明】
+        扫描文件内容，查找 network_security 配置段的起止行号。
+
+        【查找逻辑】
+        - 查找包含 "network_security" 的行（排除注释）
+        - 追踪大括号层级，找到匹配的右大括号
+        - 处理字符串和转义字符
+        - 返回配置段的行范围
+
+        【使用场景】
+        - _save_jsonc_with_comments 中跳过 network_security 段
+        - 确保不修改网络安全配置
+
+        Args:
+            lines: 文件内容行列表
+
+        Returns:
+            tuple: (开始行, 结束行)，未找到返回 (-1, -1)
+        """
         start_line = -1
         end_line = -1
 
@@ -559,7 +1017,68 @@ class ConfigManager:
         return (start_line, len(lines) - 1)
 
     def _save_jsonc_with_comments(self, config: Dict[str, Any]) -> str:
-        """保存 JSONC 格式配置，保留原有注释和格式"""
+        """保存 JSONC 格式配置，保留原有注释和格式
+
+        【核心功能】
+        智能更新 JSONC 配置文件，保留用户的注释、格式和空行。这是配置管理器最复杂的方法之一。
+
+        【设计原则】
+        - 保留原始文件的所有注释
+        - 保持原有的缩进和格式
+        - 仅更新变化的配置项
+        - 完全排除 network_security 配置段
+
+        【处理流程】
+        1. 排除 network_security 配置（双重保险）
+        2. 如果没有原始内容，使用标准 JSON 格式
+        3. 按行处理原始文件内容
+        4. 定位 network_security 段范围并跳过
+        5. 递归处理配置段，更新变化的值
+        6. 拼接处理后的行返回
+
+        【嵌套函数】（约4个内部函数）
+        - find_array_range: 查找多行数组的行范围
+        - update_array_block: 更新数组块，保留格式
+        - update_simple_value: 更新简单值，保留注释
+        - process_config_section: 递归处理配置段
+
+        【数组处理】
+        - 单行数组：直接替换
+        - 多行数组：保留格式、缩进和元素注释
+        - 元素注释：尝试匹配并保留
+
+        【简单值处理】
+        - 精确定位值的起止位置
+        - 保留行尾注释和逗号
+        - 处理字符串、布尔、数字、null
+
+        【值变化检测】
+        - 使用 _extract_current_value 读取当前值
+        - 仅当值变化时才更新
+        - 减少不必要的文件修改
+
+        【network_security 保护】
+        - 多层检查确保不修改该配置段
+        - 定位该段的行范围并跳过
+        - 记录调试日志标记跳过操作
+
+        【复杂度】
+        - 约300行代码
+        - 包含4个嵌套函数
+        - 处理多种边界情况
+        - 是保留JSONC注释的关键实现
+
+        【使用场景】
+        - _save_config_immediate 中保存 JSONC 文件
+        - 确保用户注释不丢失
+        - 保持配置文件可读性
+
+        Args:
+            config: 要保存的配置字典
+
+        Returns:
+            str: 更新后的 JSONC 内容字符串
+        """
         # 双重保险：确保 network_security 不被处理
         config_to_save = config.copy()
         if "network_security" in config_to_save:
@@ -861,7 +1380,51 @@ class ConfigManager:
         return "\n".join(result_lines)
 
     def _create_default_config_file(self):
-        """创建带注释的默认配置文件"""
+        """创建带注释的默认配置文件
+
+        【功能说明】
+        在配置文件不存在时，创建一个带详细注释的默认配置文件。
+
+        【创建流程】
+        1. 确保配置文件目录存在
+        2. 尝试使用模板文件（config.jsonc.default）
+        3. 如果模板文件存在：
+           - 复制模板文件到目标位置
+           - 读取模板内容作为原始内容
+           - 记录成功日志
+        4. 如果模板文件不存在：
+           - 使用默认配置字典生成 JSON 文件
+           - 排除 network_security 配置段
+           - 记录警告日志
+        5. 失败时进行回退处理
+
+        【模板文件】
+        - 位置：与本模块同目录的 config.jsonc.default
+        - 优点：包含详细的配置说明和注释
+        - 格式：JSONC（支持注释）
+
+        【回退机制】
+        - 模板不存在：使用默认配置生成 JSON
+        - 复制失败：使用默认配置生成 JSON
+        - 生成失败：抛出异常，阻止应用启动
+
+        【network_security 处理】
+        - 从默认配置中排除该配置段
+        - 模板文件中应包含 network_security 注释说明
+        - 确保不在内存配置中出现
+
+        【目录创建】
+        - parents=True：创建所有必需的父目录
+        - exist_ok=True：目录已存在时不报错
+
+        【异常处理】
+        - 记录错误日志
+        - 尝试回退方案
+        - 回退也失败时抛出异常
+
+        Raises:
+            Exception: 所有创建方法都失败时抛出
+        """
         try:
             # 确保配置文件目录存在
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
@@ -917,7 +1480,40 @@ class ConfigManager:
                 raise
 
     def _schedule_save(self):
-        """性能优化：调度延迟保存配置文件"""
+        """性能优化：调度延迟保存配置文件
+
+        【功能说明】
+        调度一个延迟保存任务，在指定时间后保存配置文件。
+
+        【处理流程】
+        1. 取消之前的保存定时器（如果存在）
+        2. 创建新的 threading.Timer，延迟 _save_delay 秒
+        3. 启动定时器
+        4. 记录调试日志
+
+        【延迟保存机制】
+        - 默认延迟：3秒（_save_delay）
+        - 多次调用：每次调用都会取消之前的定时器，重新计时
+        - 效果：批量更新后只执行一次保存操作
+
+        【性能优化原理】
+        - 避免频繁的磁盘 I/O
+        - 批量更新时合并到一次保存
+        - 减少配置文件的写入次数
+
+        【使用场景】
+        - set() 方法调用后（如果 save=True）
+        - update() 方法调用后（如果 save=True）
+        - update_section() 方法调用后（如果 save=True）
+
+        【取消机制】
+        - force_save() 会取消延迟保存并立即保存
+        - 多次调度会取消前一个定时器
+
+        【线程安全】
+        - 使用 _lock 保护定时器操作
+        - 确保定时器的创建和取消是线程安全的
+        """
         with self._lock:
             # 取消之前的保存定时器
             if self._save_timer is not None:
@@ -929,7 +1525,42 @@ class ConfigManager:
             logger.debug(f"已调度配置保存，将在 {self._save_delay} 秒后执行")
 
     def _delayed_save(self):
-        """性能优化：延迟保存配置文件"""
+        """性能优化：延迟保存配置文件
+
+        【功能说明】
+        由延迟保存定时器触发，应用所有待保存的变更并写入文件。
+
+        【执行流程】
+        1. 清空定时器引用
+        2. 应用所有 _pending_changes 中的配置变更
+        3. 清空 _pending_changes 字典
+        4. 调用 _save_config_immediate 立即保存
+        5. 更新最后保存时间
+        6. 记录调试日志
+
+        【待保存变更】
+        - _pending_changes 字典存储所有待保存的配置项
+        - 键为配置路径，值为新值
+        - 通过 _set_config_value 应用到 _config
+
+        【触发时机】
+        - 由 _schedule_save 创建的定时器触发
+        - 默认延迟3秒后执行
+        - 多次更新会合并到一次保存
+
+        【异常处理】
+        - 捕获所有异常并记录错误日志
+        - 不向上传播异常，避免影响其他操作
+        - 保存失败不影响内存中的配置状态
+
+        【线程安全】
+        - 使用 _lock 保护整个保存过程
+        - 确保应用变更和保存操作的原子性
+
+        【性能考虑】
+        - 批量应用变更，减少锁的持有时间
+        - 一次性写入文件，减少磁盘 I/O
+        """
         try:
             with self._lock:
                 self._save_timer = None
@@ -950,7 +1581,40 @@ class ConfigManager:
             logger.error(f"延迟保存配置失败: {e}")
 
     def _set_config_value(self, key: str, value: Any):
-        """设置配置值（内部方法，不触发保存）"""
+        """设置配置值（内部方法，不触发保存）
+
+        【功能说明】
+        直接更新配置字典中的值，不触发保存操作。
+
+        【处理流程】
+        1. 将键按 "." 分割成路径列表
+        2. 从 _config 字典开始逐层导航到目标位置
+        3. 对于不存在的中间字典，自动创建空字典
+        4. 设置最终键的值
+
+        【自动路径创建】
+        如果键路径 "a.b.c" 中 "a" 或 "b" 不存在，会自动创建：
+        - _config["a"] = {}
+        - _config["a"]["b"] = {}
+        - _config["a"]["b"]["c"] = value
+
+        【使用场景】
+        - set() 方法内部调用，更新单个配置项
+        - update() 方法内部调用，批量更新配置
+        - _delayed_save() 应用待保存的变更
+
+        【与 set() 的区别】
+        - _set_config_value：仅更新内存，不触发保存，不加锁，不检查值变化
+        - set()：更新内存 + 触发保存，加锁保护，检查值变化
+
+        【线程安全】
+        - 不加锁，由调用方保证线程安全
+        - 通常在已持有写锁的上下文中调用
+
+        Args:
+            key: 配置键，支持点号分隔的嵌套路径
+            value: 要设置的新值
+        """
         keys = key.split(".")
         config = self._config
 
@@ -964,11 +1628,87 @@ class ConfigManager:
         config[keys[-1]] = value
 
     def _save_config(self):
-        """保存配置文件（使用延迟保存优化）"""
+        """保存配置文件（使用延迟保存优化）
+
+        【功能说明】
+        触发配置保存，使用延迟保存机制优化性能。
+
+        【实现方式】
+        直接调用 _schedule_save() 调度延迟保存任务。
+
+        【延迟保存】
+        - 不立即保存，而是调度延迟任务
+        - 默认延迟3秒后执行
+        - 多次调用会合并到一次保存
+
+        【使用场景】
+        - set() 方法内部调用（save=True 时）
+        - update() 方法内部调用（save=True 时）
+        - update_section() 方法内部调用（save=True 时）
+
+        【性能优势】
+        - 批量更新时减少磁盘 I/O
+        - 频繁配置更改时避免重复保存
+        - 提升配置更新的响应速度
+
+        【与 force_save() 的区别】
+        - _save_config：延迟保存，性能优先
+        - force_save：立即保存，可靠性优先
+
+        【注意事项】
+        - 如果应用立即退出，可能丢失未保存的变更
+        - 关键操作后应使用 force_save() 确保持久化
+        """
         self._schedule_save()
 
     def _save_config_immediate(self):
-        """立即保存配置文件（原始保存逻辑）"""
+        """立即保存配置文件（原始保存逻辑）
+
+        【功能说明】
+        立即将内存中的配置写入磁盘文件，绕过延迟保存机制。
+
+        【保存流程】
+        1. 确保配置文件目录存在
+        2. 打开配置文件进行写入
+        3. 根据文件格式选择保存方式：
+           - JSONC 文件且有原始内容：调用 _save_jsonc_with_comments 保留注释
+           - 其他情况：使用标准 JSON 格式保存
+        4. 更新 _original_content（用于下次保存）
+        5. 记录调试日志
+        6. 调用 _validate_saved_config 验证保存的文件
+
+        【JSONC 格式处理】
+        - 文件扩展名为 .jsonc 且有原始内容时，尝试保留注释和格式
+        - 使用 _save_jsonc_with_comments 方法智能更新配置
+        - 保留用户在配置文件中的注释和格式
+
+        【JSON 格式处理】
+        - 使用 json.dumps 生成标准 JSON 格式
+        - indent=2：美化输出，缩进2个空格
+        - ensure_ascii=False：支持中文等非ASCII字符
+
+        【目录创建】
+        - parents=True：创建所有必需的父目录
+        - exist_ok=True：目录已存在时不报错
+
+        【文件验证】
+        - 保存后自动验证文件格式和结构
+        - 检测配置损坏和格式错误
+        - 验证失败会抛出异常
+
+        【异常处理】
+        - 捕获所有异常并记录错误日志
+        - 向上传播异常，由调用方决定如何处理
+        - 保存失败会导致配置不一致，需要特别注意
+
+        【使用场景】
+        - force_save() 立即保存
+        - _delayed_save() 延迟保存执行
+        - 不应直接调用，使用 force_save() 或 _save_config()
+
+        Raises:
+            Exception: 文件写入失败、验证失败时抛出
+        """
         try:
             # 确保配置文件目录存在
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1002,7 +1742,37 @@ class ConfigManager:
             raise
 
     def _validate_saved_config(self):
-        """验证保存的配置文件是否有效"""
+        """验证保存的配置文件是否有效
+
+        【功能说明】
+        保存配置文件后，验证文件格式和结构是否正确。
+
+        【验证流程】
+        1. 读取配置文件内容
+        2. 根据文件扩展名选择解析器
+        3. 尝试解析配置文件
+        4. 调用 _validate_config_structure 验证结构
+        5. 记录验证通过日志
+
+        【验证内容】
+        - JSON 语法正确性
+        - 配置结构完整性
+        - 数组定义无重复
+        - network_security 配置格式
+
+        【异常处理】
+        - 解析失败：记录错误日志并抛出异常
+        - 结构错误：记录错误日志并抛出异常
+        - 验证失败会阻止配置保存
+
+        【使用场景】
+        - _save_config_immediate 保存后自动调用
+        - 确保保存的文件可被正确读取
+        - 及早发现配置文件损坏
+
+        Raises:
+            Exception: 配置文件解析失败或结构验证失败时抛出
+        """
         try:
             with open(self.config_file, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -1022,7 +1792,44 @@ class ConfigManager:
             raise
 
     def _validate_config_structure(self, parsed_config: Dict[str, Any], content: str):
-        """验证配置文件结构，检查是否存在格式损坏"""
+        """验证配置文件结构，检查是否存在格式损坏
+
+        【功能说明】
+        深度验证配置文件的结构完整性，检测常见的格式损坏问题。
+
+        【验证项目】
+        1. 数组定义重复检查：
+           - 扫描文件内容查找数组定义行
+           - 检测 allowed_networks 等数组是否重复定义
+           - 重复定义是格式损坏的典型标志
+
+        2. network_security 配置验证（如果存在）：
+           - allowed_networks 必须是数组类型
+           - 数组元素必须都是字符串
+           - 验证 IP 地址/网络段格式（CIDR）
+
+        【格式损坏检测】
+        - 重复的数组定义
+        - 无效的数据类型
+        - 非字符串的网络地址
+
+        【使用场景】
+        - _validate_saved_config 中调用
+        - 保存后验证文件结构
+        - 防止配置文件被破坏
+
+        【异常处理】
+        - 检测到格式损坏时抛出 ValueError
+        - 包含详细的错误信息（行号、字段名）
+        - 记录调试日志
+
+        Args:
+            parsed_config: 已解析的配置字典
+            content: 原始文件内容字符串
+
+        Raises:
+            ValueError: 检测到配置格式损坏时抛出
+        """
         # 检查是否存在重复的数组定义（格式损坏的典型标志）
         lines = content.split("\n")
         array_definitions = {}
@@ -1055,7 +1862,46 @@ class ConfigManager:
         logger.debug("配置文件结构验证通过")
 
     def get(self, key: str, default: Any = None) -> Any:
-        """获取配置值，支持点号分隔的嵌套键 - 使用读锁提高并发性能"""
+        """获取配置值，支持点号分隔的嵌套键 - 使用读锁提高并发性能
+
+        【功能说明】
+        从配置字典中读取指定键的值，支持点号分隔的嵌套路径。
+
+        【键路径格式】
+        - 简单键：直接访问顶层配置，如 "notification"
+        - 嵌套键：使用点号分隔，如 "notification.sound_volume"
+        - 深度嵌套：支持任意深度，如 "web_ui.retry.max_attempts"
+
+        【查找过程】
+        1. 将键按 "." 分割成路径列表
+        2. 从 _config 字典开始逐层导航
+        3. 遇到 KeyError 或 TypeError 时返回默认值
+
+        【线程安全】
+        - 使用读锁（ReadWriteLock.read_lock）
+        - 允许多个线程并发读取
+        - 读操作不阻塞其他读操作
+
+        【性能优化】
+        - 更新最后访问时间（用于统计）
+        - 读锁机制提升并发性能
+
+        【特殊配置访问】
+        - **network_security 配置**：不在 _config 中，返回 None 或默认值
+        - 应使用 get_network_security_config() 特殊方法访问
+
+        【错误处理】
+        - 键不存在：返回 default 参数值
+        - 中间路径不是字典：返回 default 参数值
+        - 不抛出异常，确保调用安全
+
+        Args:
+            key: 配置键，支持点号分隔的嵌套路径
+            default: 键不存在时的默认返回值，默认为 None
+
+        Returns:
+            Any: 配置值，如果键不存在则返回 default
+        """
         with self._rw_lock.read_lock():
             self._last_access_time = time.time()
             keys = key.split(".")
@@ -1068,7 +1914,55 @@ class ConfigManager:
                 return default
 
     def set(self, key: str, value: Any, save: bool = True):
-        """设置配置值，支持点号分隔的嵌套键 - 使用写锁确保原子操作"""
+        """设置配置值，支持点号分隔的嵌套键 - 使用写锁确保原子操作
+
+        【功能说明】
+        更新配置字典中指定键的值，支持点号分隔的嵌套路径。
+
+        【键路径格式】
+        - 简单键：更新顶层配置，如 "enabled"
+        - 嵌套键：使用点号分隔，如 "notification.sound_volume"
+        - 自动创建中间路径：如果中间字典不存在，自动创建
+
+        【更新流程】
+        1. 获取写锁（独占访问）
+        2. 更新最后访问时间
+        3. 检查当前值是否与新值相同（性能优化）
+        4. 如果值未变化，记录日志并跳过
+        5. 如果值变化：
+           - 立即更新内存中的 _config
+           - 如果 save=True，将变更加入待保存队列并调度延迟保存
+           - 如果 save=False，仅更新内存
+        6. 记录调试日志
+
+        【性能优化】
+        - 值变化检测：跳过未变化的更新，减少不必要的保存
+        - 延迟保存机制：批量更新时统一保存，减少磁盘 I/O
+        - 读写锁：写操作独占，但不影响其他读操作
+
+        【保存机制】
+        - save=True（默认）：更新后调度延迟保存（3秒后）
+        - save=False：仅更新内存，不保存到文件
+        - 延迟保存：多次更新会合并到一次保存操作
+
+        【线程安全】
+        - 使用写锁（ReadWriteLock.write_lock）
+        - 独占访问，阻塞其他读写操作
+        - 确保配置更新的原子性
+
+        【自动路径创建】
+        - 如果中间字典不存在，自动创建空字典
+        - 使用 _set_config_value 内部方法处理路径导航
+
+        【特殊配置更新】
+        - **network_security 配置**：不在 _config 中，更新会被忽略
+        - 应通过修改配置文件并调用 reload() 更新
+
+        Args:
+            key: 配置键，支持点号分隔的嵌套路径
+            value: 要设置的新值，可以是任意类型
+            save: 是否保存到文件，默认为 True
+        """
         with self._rw_lock.write_lock():
             self._last_access_time = time.time()
 
@@ -1093,7 +1987,52 @@ class ConfigManager:
             logger.debug(f"配置已更新: {key} = {value}")
 
     def update(self, updates: Dict[str, Any], save: bool = True):
-        """批量更新配置 - 使用写锁确保原子操作"""
+        """批量更新配置 - 使用写锁确保原子操作
+
+        【功能说明】
+        一次性更新多个配置项，比多次调用 set() 更高效。
+
+        【更新流程】
+        1. 获取写锁（独占访问）
+        2. 更新最后访问时间
+        3. 过滤出真正有变化的配置项（性能优化）
+        4. 如果没有变化，记录日志并跳过
+        5. 如果有变化：
+           - 立即更新内存中的 _config
+           - 如果 save=True，将所有变更加入待保存队列并调度延迟保存
+           - 如果 save=False，仅更新内存
+        6. 记录每个配置项的更新日志
+        7. 记录批量更新完成日志
+
+        【性能优化】
+        - 值变化检测：仅处理真正有变化的配置项
+        - 批量缓冲：所有变更合并到一次保存操作
+        - 单次调度：无论更新多少配置项，只调度一次延迟保存
+        - 减少磁盘 I/O：相比多次 set() 大幅减少磁盘操作
+
+        【保存机制】
+        - save=True（默认）：批量更新后调度延迟保存（3秒后）
+        - save=False：仅更新内存，不保存到文件
+        - 延迟保存：多次批量更新也会合并到一次保存操作
+
+        【线程安全】
+        - 使用写锁（ReadWriteLock.write_lock）
+        - 独占访问，阻塞其他读写操作
+        - 确保批量更新的原子性
+
+        【使用场景】
+        - 初始化时批量设置多个配置项
+        - 应用设置页面保存多个配置更改
+        - 配置迁移或导入
+
+        【与 set() 的对比】
+        - set()：单个配置项更新
+        - update()：多个配置项批量更新，性能更优
+
+        Args:
+            updates: 配置更新字典，键为配置路径，值为新值
+            save: 是否保存到文件，默认为 True
+        """
         with self._rw_lock.write_lock():
             self._last_access_time = time.time()
 
@@ -1127,7 +2066,37 @@ class ConfigManager:
             logger.debug(f"批量更新完成，共更新 {len(actual_changes)} 个配置项")
 
     def force_save(self):
-        """强制立即保存配置文件（用于关键操作）"""
+        """强制立即保存配置文件（用于关键操作）
+
+        【功能说明】
+        立即保存配置文件，绕过延迟保存机制。
+
+        【使用场景】
+        - 应用退出前保存配置
+        - 关键配置更改需要立即持久化
+        - 测试环境中验证配置保存
+        - 避免延迟保存导致的配置丢失
+
+        【执行流程】
+        1. 取消延迟保存定时器（如果存在）
+        2. 应用所有待写入的配置变更
+        3. 调用 _save_config_immediate 立即保存
+        4. 更新最后保存时间
+        5. 记录调试日志
+
+        【与延迟保存的对比】
+        - 延迟保存：批量更新后3秒保存，减少磁盘 I/O
+        - 强制保存：立即保存，确保配置持久化
+
+        【线程安全】
+        - 使用 _lock 保护整个保存过程
+        - 确保保存操作的原子性
+
+        【性能考虑】
+        - 频繁调用会导致磁盘 I/O 增加
+        - 应仅在必要时使用
+        - 一般情况下依赖延迟保存机制即可
+        """
         with self._lock:
             # 取消延迟保存定时器
             if self._save_timer is not None:
@@ -1149,14 +2118,84 @@ class ConfigManager:
             logger.debug("强制配置保存完成")
 
     def get_section(self, section: str) -> Dict[str, Any]:
-        """获取配置段"""
+        """获取配置段
+
+        【功能说明】
+        获取指定名称的整个配置段字典。
+
+        【配置段】
+        - notification: 通知系统配置
+        - web_ui: Web UI 服务器配置
+        - feedback: 反馈系统配置
+        - network_security: 网络安全配置（特殊处理）
+
+        【特殊处理】
+        - **network_security 配置段**：不在内存中，通过 get_network_security_config() 从文件读取
+        - 其他配置段：通过 get() 方法从内存读取
+
+        【返回值】
+        - 配置段存在：返回该配置段的字典
+        - 配置段不存在：返回空字典 {}
+
+        【使用场景】
+        - 获取某个功能模块的所有配置
+        - 配置页面展示某个配置段
+        - 批量读取配置项
+
+        Args:
+            section: 配置段名称（顶层配置键）
+
+        Returns:
+            Dict[str, Any]: 配置段字典，如果不存在则返回空字典
+        """
         # 特殊处理 network_security 配置段
         if section == "network_security":
             return self.get_network_security_config()
         return self.get(section, {})
 
     def update_section(self, section: str, updates: Dict[str, Any], save: bool = True):
-        """更新配置段"""
+        """更新配置段
+
+        【功能说明】
+        批量更新指定配置段内的多个配置项。
+
+        【更新流程】
+        1. 获取当前配置段的所有配置
+        2. 检查是否有配置项真的发生变化
+        3. 如果没有变化，记录日志并跳过
+        4. 如果有变化：
+           - 应用更新到配置段
+           - 更新内存中的 _config
+           - 如果 save=True，调度延迟保存
+        5. 记录更新日志
+
+        【值变化检测】
+        - 逐项比较新旧值
+        - 仅当至少有一项变化时才执行更新
+        - 记录每项变化的调试日志
+
+        【保存机制】
+        - save=True（默认）：更新后调度延迟保存
+        - save=False：仅更新内存，不保存到文件
+
+        【线程安全】
+        - 使用 _lock 保护整个更新过程
+        - 确保配置段更新的原子性
+
+        【使用场景】
+        - 更新某个功能模块的多个配置
+        - 从 API 接收配置段更新
+        - 配置导入或迁移
+
+        【与 update() 的对比】
+        - update()：支持跨配置段的更新，键需要完整路径
+        - update_section()：限定在单个配置段内，键无需前缀
+
+        Args:
+            section: 配置段名称（顶层配置键）
+            updates: 配置更新字典，键为配置段内的键名，值为新值
+            save: 是否保存到文件，默认为 True
+        """
         with self._lock:
             current_section = self.get_section(section)
 
@@ -1192,19 +2231,120 @@ class ConfigManager:
             logger.debug(f"配置段已更新: {section}")
 
     def reload(self):
-        """重新加载配置文件"""
+        """重新加载配置文件
+
+        【功能说明】
+        从磁盘重新加载配置文件，覆盖内存中的配置。
+
+        【使用场景】
+        - 配置文件被外部修改后需要重新加载
+        - 开发调试时频繁修改配置
+        - 配置热更新，无需重启应用
+        - 恢复到文件中的配置（放弃内存中的未保存更改）
+
+        【注意事项】
+        - 内存中未保存的配置更改会丢失
+        - 调用前应考虑是否需要 force_save()
+        - 重新加载会触发完整的配置文件解析流程
+
+        【执行流程】
+        1. 记录信息日志
+        2. 调用 _load_config() 重新加载
+        3. 重新解析配置文件
+        4. 合并默认配置
+        5. 更新 _original_content
+
+        【线程安全】
+        - _load_config() 内部使用锁保护
+        - 重新加载期间其他操作会被阻塞
+        """
         logger.info("重新加载配置文件")
         self._load_config()
 
     def get_all(self) -> Dict[str, Any]:
-        """获取所有配置"""
+        """获取所有配置
+
+        【功能说明】
+        返回内存中所有配置的副本。
+
+        【返回值】
+        - 配置字典的浅拷贝
+        - **不包含** network_security 配置段
+        - 修改返回的字典不影响内存中的配置
+
+        【使用场景】
+        - 配置导出或备份
+        - 配置页面展示所有配置
+        - 配置比较或差异分析
+        - API 返回完整配置
+
+        【性能考虑】
+        - 返回副本，避免外部直接修改内部状态
+        - 浅拷贝，嵌套字典仍是引用
+        - 对于大型配置可能有性能开销
+
+        【线程安全】
+        - 使用 _lock 保护拷贝操作
+        - 确保返回一致的配置快照
+
+        【network_security 配置】
+        - 使用 get_network_security_config() 单独获取
+        - 不会包含在返回值中
+
+        Returns:
+            Dict[str, Any]: 所有配置的副本（不含 network_security）
+        """
         with self._lock:
             return self._config.copy()
 
     def get_network_security_config(self) -> Dict[str, Any]:
         """特殊方法：直接从文件读取 network_security 配置
 
-        由于 network_security 配置不加载到内存中，需要特殊方法来读取
+        【设计原因】
+        network_security 配置包含敏感的网络访问控制信息，独立管理更安全：
+        - 防止意外修改或泄露
+        - 减少内存占用
+        - 降低安全风险
+        - 明确区分安全配置和业务配置
+
+        【功能说明】
+        直接从配置文件读取 network_security 配置段，不经过内存缓存。
+
+        【读取流程】
+        1. 检查配置文件是否存在
+        2. 如果不存在，返回默认的 network_security 配置
+        3. 如果存在：
+           - 读取文件内容
+           - 根据扩展名选择解析器（JSONC 或 JSON）
+           - 提取 network_security 配置段
+           - 如果配置段不存在，返回默认配置
+        4. 发生异常时返回默认配置
+
+        【默认配置】
+        - bind_interface: "0.0.0.0"（允许所有接口）
+        - allowed_networks: 包含本地和私有网络段
+        - blocked_ips: 空列表
+        - enable_access_control: True（启用访问控制）
+
+        【使用场景】
+        - Web UI 启动时读取网络安全配置
+        - 检查客户端 IP 是否允许访问
+        - 配置页面展示网络安全设置
+        - API 返回网络安全配置
+
+        【性能考虑】
+        - 每次调用都重新读取文件
+        - 适用于访问频率不高的场景
+        - 避免了内存缓存的安全风险
+
+        【错误处理】
+        - 文件不存在：返回默认配置
+        - 解析失败：记录错误日志，返回默认配置
+        - 配置段缺失：返回默认配置
+        - 不抛出异常，确保应用能正常启动
+
+        Returns:
+            Dict[str, Any]: network_security 配置字典，如果读取失败则返回默认配置
         """
         try:
             if not self.config_file.exists():
@@ -1243,5 +2383,24 @@ config_manager = ConfigManager()
 
 
 def get_config() -> ConfigManager:
-    """获取配置管理器实例"""
+    """获取配置管理器实例
+
+    【功能说明】
+    返回全局唯一的配置管理器实例。
+
+    【单例模式】
+    - config_manager 在模块加载时创建
+    - 整个应用生命周期内只有一个实例
+    - 所有模块共享同一个配置状态
+
+    【使用方式】
+    推荐使用此函数获取配置管理器，而非直接访问 config_manager 变量。
+
+    【线程安全】
+    - config_manager 实例本身线程安全
+    - 可从多线程安全调用此函数
+
+    Returns:
+        ConfigManager: 全局配置管理器实例
+    """
     return config_manager

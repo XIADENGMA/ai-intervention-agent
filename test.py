@@ -1,10 +1,145 @@
 #!/usr/bin/env python3
 """
 AI Intervention Agent 智能介入代理测试工具
+
+提供全面的功能测试套件，验证AI介入代理的各项功能是否正常工作。
+
+## 功能概览
+
+### 1. 配置管理测试
+- 配置文件加载和验证
+- 输入数据验证
+- 异常配置处理
+
+### 2. 服务健康检查
+- 端口可用性检测
+- Web服务运行状态
+- API端点健康检查
+
+### 3. 智能介入工作流程测试
+- 服务启动和初始化
+- 用户交互反馈收集
+- 内容动态更新
+- Markdown渲染验证
+
+### 4. 多任务并发测试
+- 多任务API端点验证
+- 任务标签页UI验证
+- 任务切换功能验证
+- 并行任务创建和管理
+
+## 主要特性
+
+### 信号处理和资源清理
+- 捕获 SIGINT 和 SIGTERM 信号
+- 优雅关闭服务和清理资源
+- atexit 注册的退出清理
+
+### 智能端口管理
+- 动态从配置获取端口
+- 端口占用检测
+- 自动查找可用端口
+
+### 灵活的超时配置
+- 可配置的线程等待超时
+- 可配置的反馈超时
+- 智能超时计算策略
+
+### 详细的日志和反馈
+- Emoji 增强的日志输出
+- 测试进度实时显示
+- 测试结果统计和摘要
+
+## 使用方法
+
+### 基本用法
+- 直接运行：`python test.py`
+
+### 高级用法
+- 指定端口：`--port 8081`
+- 指定主机：`--host 127.0.0.1`
+- 指定线程等待超时（秒）：`--thread-timeout 600`
+- 指定反馈超时（秒）：`--timeout 60`
+- 启用详细日志：`--verbose`
+- 组合使用：支持同时使用多个参数
+
+## 命令行参数
+
+- `--port, -p`: 指定测试使用的端口号
+- `--host`: 指定测试使用的主机地址
+- `--timeout`: 指定反馈超时时间（秒）
+- `--thread-timeout`: 指定线程等待超时时间（秒）
+- `--verbose, -v`: 显示详细日志信息
+- `--help, -h`: 显示帮助信息
+
+## 测试流程
+
+1. **环境初始化**
+   - 解析命令行参数
+   - 验证参数合理性
+   - 设置测试环境
+   - 注册信号处理器
+
+2. **配置验证**
+   - 加载配置文件
+   - 验证配置项
+   - 测试输入验证
+
+3. **服务健康检查**
+   - 检查端口状态
+   - 验证服务运行
+   - 健康检查API
+
+4. **智能介入工作流程**
+   - 启动介入服务
+   - 等待用户交互
+   - 验证内容更新
+   - 检查渲染效果
+
+5. **并行任务测试**
+   - 创建多个并发任务
+   - 验证任务标签页
+   - 测试任务切换
+   - 检查独立倒计时
+
+6. **结果统计**
+   - 汇总测试结果
+   - 显示通过率
+   - 提供使用提示
+
+## 测试结果
+
+测试完成后会显示：
+- 每个测试的通过/失败状态
+- 总体通过率
+- 详细的错误信息（如有）
+- 使用提示和建议
+
+## 注意事项
+
+- 测试需要Web浏览器交互
+- 某些测试有较长的超时时间
+- 可以使用Ctrl+C安全中断测试
+- 测试过程中会自动清理资源
+- 配置参数仅在内存中修改，不会写入文件
+
+## 依赖项
+
+- Python 3.7+
+- requests (HTTP请求)
+- server.py (AI介入代理服务)
+- enhanced_logging (可选，增强日志)
+- config_manager (配置管理)
+
+## 作者和维护
+
+此测试工具是 AI Intervention Agent 项目的一部分。
+详细信息请参考项目README。
 """
 
 import argparse
 import atexit
+import json
 import os
 import signal
 import sys
@@ -33,7 +168,66 @@ except ImportError:
 
 # 测试配置常量
 class TestConfig:
-    """测试配置常量类：统一管理测试相关的硬编码数据"""
+    """测试配置常量类
+
+    集中管理测试相关的所有硬编码常量，便于维护和调整。
+
+    ## 设计原则
+
+    - 所有常量集中定义，避免魔法数字
+    - 使用类属性而非实例属性（无需实例化）
+    - 清晰的命名和分类
+    - 详细的注释说明用途
+
+    ## 常量分类
+
+    ### 1. 超时配置（秒）
+    控制各种等待和超时的时间限制
+
+    ### 2. 反馈超时计算参数
+    用于动态计算反馈超时时间
+
+    ### 3. 网络配置
+    API端点路径定义
+
+    ### 4. 端口配置
+    端口号范围和查找策略
+
+    ### 5. 并行任务配置
+    并发任务的创建和管理参数
+
+    ## 使用方式
+
+    - 直接访问类属性（无需实例化）
+    - 示例：访问 `TestConfig.DEFAULT_THREAD_TIMEOUT` 获取默认超时
+    - 示例：访问 `TestConfig.API_CONFIG_PATH` 获取API路径
+
+    ## 修改建议
+
+    - 修改常量值时应同步更新注释
+    - 超时值应考虑实际网络延迟
+    - 端口范围应符合操作系统限制
+    - 并行任务数不宜过多（避免资源耗尽）
+
+    Attributes:
+        DEFAULT_THREAD_TIMEOUT (int): 默认线程等待超时（600秒=10分钟）
+        SERVICE_STARTUP_WAIT_TIME (int): 服务启动等待时间（5秒）
+        HTTP_REQUEST_TIMEOUT (int): HTTP请求超时（5秒）
+        PARALLEL_TASK_TIMEOUT (int): 并行任务超时（600秒）
+        PARALLEL_THREAD_JOIN_TIMEOUT (int): 并行任务线程等待超时（650秒）
+        PORT_CHECK_TIMEOUT (int): 端口检查超时（1秒）
+        FEEDBACK_TIMEOUT_BUFFER (int): 反馈超时缓冲时间（10秒）
+        FEEDBACK_TIMEOUT_MIN (int): 反馈超时最小值（30秒）
+        FEEDBACK_TIMEOUT_THRESHOLD (int): 应用缓冲的阈值（40秒）
+        API_CONFIG_PATH (str): 配置API端点路径
+        API_TASKS_PATH (str): 任务API端点路径
+        API_HEALTH_PATH (str): 健康检查API端点路径
+        PORT_MIN (int): 最小端口号（1）
+        PORT_MAX (int): 最大端口号（65535）
+        PORT_SEARCH_MAX_ATTEMPTS (int): 查找可用端口的最大尝试次数（10）
+        PARALLEL_TASKS_COUNT (int): 并行任务数量（3）
+        PARALLEL_TASK_START_DELAY (float): 并行任务启动间隔秒数（0.5）
+    """
 
     # 超时配置（秒）
     DEFAULT_THREAD_TIMEOUT = 600  # 默认线程等待超时时间
@@ -64,30 +258,147 @@ class TestConfig:
 
 
 class SignalHandlerManager:
-    """信号处理器管理类：单例模式管理清理状态"""
+    """信号处理器管理类
+
+    使用单例模式全局管理信号处理器的注册状态，防止重复注册。
+
+    ## 设计目标
+
+    1. **单例模式**：全局唯一实例，统一管理注册状态
+    2. **重复防护**：确保信号处理器只注册一次
+    3. **简洁设计**：最小化状态管理复杂度
+
+    ## 使用场景
+
+    - 程序启动时注册信号处理器（SIGINT、SIGTERM等）
+    - 避免多次注册导致的重复处理
+    - 测试环境中检查注册状态
+
+    ## 使用场景
+
+    - 获取单例实例并检查是否已注册
+    - 注册信号处理器前检查重复
+    - 标记注册状态防止重复注册
+
+    ## 注意事项
+
+    - 不提供线程安全保证（假设在单线程初始化阶段使用）
+    - 适用于简单的注册状态管理
+    - 不负责实际的信号处理逻辑
+
+    Attributes:
+        _instance (SignalHandlerManager | None): 单例实例（类属性）
+        _cleanup_registered (bool): 信号处理器是否已注册（类属性）
+    """
 
     _instance = None
     _cleanup_registered = False
 
     def __new__(cls):
-        """单例模式：确保只有一个实例"""
+        """单例模式实现
+
+        确保全局只有一个 SignalHandlerManager 实例。
+
+        Returns:
+            SignalHandlerManager: 全局唯一的实例
+
+        ## 实现说明
+
+        - 简单检查：如果实例不存在则创建，否则返回现有实例
+        - 非线程安全：假设在单线程环境下初始化
+        - 适用于简单场景
+
+        ## 使用说明
+
+        - 多次调用返回相同实例
+        - 实例比较时使用 `is` 操作符判断相等
+        """
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     @classmethod
     def is_registered(cls):
-        """检查信号处理器是否已注册"""
+        """检查信号处理器是否已注册
+
+        Returns:
+            bool: True 表示已注册，False 表示未注册
+
+        ## 使用场景
+
+        - 注册信号处理器前检查避免重复注册
+        - 判断是否需要执行注册逻辑
+
+        ## 注意事项
+
+        - 类方法，无需实例化即可调用
+        - 返回全局注册状态（非实例状态）
+        """
         return cls._cleanup_registered
 
     @classmethod
     def mark_registered(cls):
-        """标记信号处理器已注册"""
+        """标记信号处理器已注册
+
+        设置全局注册标志为 True，表示信号处理器已注册。
+
+        ## 使用场景
+
+        - 成功注册信号处理器后调用此方法
+        - 标记注册状态，防止重复注册
+
+        ## 注意事项
+
+        - 类方法，无需实例化即可调用
+        - 操作是不可逆的（没有 unregister 方法）
+        - 应该在确认注册成功后调用
+        """
         cls._cleanup_registered = True
 
 
 class TestLogger:
-    """测试日志工具类：统一管理日志输出和emoji"""
+    """测试日志工具类
+
+    统一管理测试过程中的日志输出，提供友好的emoji和多级别日志记录。
+
+    ## 设计目标
+
+    1. **视觉友好**：使用 emoji 增强可读性
+    2. **双重输出**：同时输出到控制台和日志文件
+    3. **灵活配置**：支持自定义 emoji 和日志级别
+    4. **降级兼容**：在增强日志不可用时自动降级
+
+    ## 支持的日志级别
+
+    - `info`: 一般信息（ℹ️）
+    - `success`: 成功消息（✅）
+    - `warning`: 警告信息（⚠️）
+    - `error`: 错误信息（❌）
+    - `debug`: 调试信息（🔍）
+    - `config`: 配置信息（🔧）
+    - `network`: 网络信息（🌐）
+    - `timing`: 时间信息（⏱️）
+    - `start`: 启动信息（🚀）
+    - `stop`: 停止信息（🛑）
+    - `cleanup`: 清理信息（🧹）
+    - `bye`: 结束信息（👋）
+
+    ## 使用场景
+
+    - 基础日志：记录测试开始、结束等信息
+    - 自定义 emoji：使用自定义 emoji 增强可读性
+    - 异常记录：记录异常信息和堆栈跟踪
+
+    ## 输出行为
+
+    - **控制台**：输出 emoji + 消息（用户友好）
+    - **日志文件**：
+        - 增强日志可用：仅消息（避免重复 emoji）
+        - 标准日志：emoji + 消息（保持一致性）
+
+    Attributes:
+        DEFAULT_EMOJIS (dict): 默认的 emoji 映射表
+    """
 
     DEFAULT_EMOJIS = {
         "info": "ℹ️",
@@ -109,9 +420,37 @@ class TestLogger:
         """统一的日志输出函数
 
         Args:
-            message: 日志消息
-            level: 日志级别（info/warning/error/debug）
-            emoji: 自定义emoji，如果为None则使用默认emoji
+            message (str): 日志消息内容
+            level (str, optional): 日志级别，默认为 "info"。
+                支持: info/success/warning/error/debug/config/network/timing/start/stop/cleanup/bye
+            emoji (str, optional): 自定义 emoji，为 None 时使用默认 emoji
+
+        ## 处理流程
+
+        1. **Emoji 选择**：优先使用自定义 emoji，否则从 DEFAULT_EMOJIS 查找
+        2. **消息构建**：emoji + 空格 + 消息
+        3. **控制台输出**：print 完整消息（含 emoji）
+        4. **日志记录**：根据增强日志可用性决定输出格式
+
+        ## 输出行为
+
+        - 控制台：始终输出 `emoji + message`
+        - 日志文件：
+            - 增强日志：仅 `message`（避免重复）
+            - 标准日志：`emoji + message`（保持一致）
+
+        ## 使用说明
+
+        - 默认级别和 emoji：使用默认 info 级别和 ℹ️ emoji
+        - 指定级别：传入 level 参数指定日志级别
+        - 自定义 emoji：传入自定义 emoji 覆盖默认值
+        - 无 emoji：传入空字符串取消 emoji 前缀
+
+        ## 注意事项
+
+        - level 不区分大小写，但建议使用小写
+        - 未知 level 自动降级为 "info"
+        - emoji 为空字符串时不添加前缀
         """
         # 获取emoji（优先使用自定义，然后默认，最后为空）
         if emoji is None:
@@ -137,10 +476,37 @@ class TestLogger:
     ):
         """记录异常信息
 
+        专门用于记录异常和错误，支持自动提取异常类型和堆栈跟踪。
+
         Args:
-            message: 错误消息
-            exc: 异常对象（可选）
-            include_traceback: 是否包含完整的堆栈跟踪
+            message (str): 错误描述消息
+            exc (Exception, optional): 异常对象，为 None 时仅记录 message
+            include_traceback (bool, optional): 是否包含完整的堆栈跟踪，默认 False
+
+        ## 处理流程
+
+        1. **消息构建**：
+           - 有异常对象：`message: ExceptionType - exception_str`
+           - 无异常对象：`message`
+        2. **控制台输出**：使用 error 级别（❌ emoji）
+        3. **堆栈跟踪**：如果 `include_traceback=True`，额外记录完整堆栈
+
+        ## 使用场景
+
+        - 仅记录错误消息：不传入异常对象
+        - 记录异常对象（不含堆栈）：传入异常对象但不启用 include_traceback
+        - 记录异常 + 完整堆栈：传入异常对象并启用 include_traceback
+
+        ## 输出说明
+
+        - 控制台：输出错误消息（含异常类型和消息）
+        - 日志文件：当启用 include_traceback 时输出完整堆栈跟踪
+
+        ## 注意事项
+
+        - 堆栈跟踪仅记录到日志文件，不输出到控制台
+        - 建议在调试时启用 `include_traceback`
+        - 生产环境可关闭堆栈跟踪以减少日志量
         """
         error_msg = message
         if exc:
@@ -160,39 +526,130 @@ class TestLogger:
 
 # 便捷函数（保持向后兼容）
 def log_info(message: str, emoji: str = None):
-    """记录信息级别日志"""
+    """记录信息级别日志
+
+    Args:
+        message (str): 日志消息
+        emoji (str, optional): 自定义 emoji，默认 ℹ️
+
+    ## 使用说明
+
+    - 记录一般信息消息
+    - 可选自定义 emoji
+    """
     TestLogger.log(message, "info", emoji)
 
 
 def log_success(message: str, emoji: str = None):
-    """记录成功信息"""
+    """记录成功信息
+
+    Args:
+        message (str): 成功消息
+        emoji (str, optional): 自定义 emoji，默认 ✅
+
+    ## 使用说明
+
+    - 记录成功完成的操作
+    - 默认使用 ✅ emoji
+    """
     TestLogger.log(message, "success", emoji or "✅")
 
 
 def log_warning(message: str, emoji: str = None):
-    """记录警告信息"""
+    """记录警告信息
+
+    Args:
+        message (str): 警告消息
+        emoji (str, optional): 自定义 emoji，默认 ⚠️
+
+    ## 使用说明
+
+    - 记录警告级别的消息
+    - 用于非致命问题提示
+    """
     TestLogger.log(message, "warning", emoji)
 
 
 def log_error(message: str, emoji: str = None):
-    """记录错误信息"""
+    """记录错误信息
+
+    Args:
+        message (str): 错误消息
+        emoji (str, optional): 自定义 emoji，默认 ❌
+
+    ## 使用说明
+
+    - 记录错误级别的消息
+    - 用于操作失败或异常情况
+    """
     TestLogger.log(message, "error", emoji)
 
 
 def log_debug(message: str, emoji: str = None):
-    """记录调试信息"""
+    """记录调试信息
+
+    Args:
+        message (str): 调试消息
+        emoji (str, optional): 自定义 emoji，默认 🔍
+
+    ## 使用说明
+
+    - 记录调试级别的详细信息
+    - 用于开发和排查问题
+    """
     TestLogger.log(message, "debug", emoji)
 
 
 def setup_signal_handlers():
-    """设置信号处理器"""
+    """设置信号处理器
+
+    注册 SIGINT/SIGTERM 信号处理器和 atexit 清理机制，确保程序安全退出。
+
+    ## 注册内容
+
+    1. **信号处理器**：捕获 SIGINT（Ctrl+C）和 SIGTERM
+    2. **退出回调**：使用 atexit 注册正常退出时的清理函数
+    3. **重复防护**：通过 SignalHandlerManager 防止重复注册
+
+    ## 处理流程
+
+    - 收到信号：打印警告 → 清理服务 → 打印退出消息 → sys.exit(0)
+    - 正常退出：打印清理消息 → 清理服务
+
+    ## 使用说明
+
+    - 在测试开始前调用一次
+    - 后续可以放心使用 Ctrl+C 中断
+
+    ## 清理机制
+
+    - **信号触发**：用户按 Ctrl+C 或系统发送 SIGTERM
+    - **正常退出**：程序执行完毕或调用 sys.exit()
+    - **清理服务**：关闭 Web UI、停止线程、释放资源
+
+    ## 跨平台兼容性
+
+    - 使用 `hasattr(signal, "SIGINT")` 检查信号是否可用
+    - Windows 不支持 SIGTERM，会自动跳过
+
+    ## 注意事项
+
+    - 信号处理器应该快速执行（避免耗时操作）
+    - 清理逻辑应该是幂等的（多次调用安全）
+    - 避免在信号处理器中抛出异常
+    """
     handler_manager = SignalHandlerManager()
 
     if handler_manager.is_registered():
         return
 
     def signal_handler(signum, frame):
-        """信号处理器"""
+        """信号处理器
+
+        Args:
+            signum (int): 信号编号（SIGINT=2, SIGTERM=15）
+            frame: 堆栈帧对象（未使用）
+        """
         del frame  # 未使用的参数
         log_warning(f"收到中断信号 {signum}，正在清理资源...", "🛑")
         cleanup_services()
@@ -200,7 +657,10 @@ def setup_signal_handlers():
         sys.exit(0)
 
     def cleanup_on_exit():
-        """程序退出时的清理函数"""
+        """程序退出时的清理函数
+
+        通过 atexit 注册，在程序正常退出时自动调用。
+        """
         log_info("程序退出，正在清理资源...", "🧹")
         cleanup_services()
 
@@ -218,7 +678,32 @@ def setup_signal_handlers():
 
 
 def cleanup_services():
-    """清理所有服务进程"""
+    """清理所有服务进程
+
+    关闭 Web UI、停止线程、释放资源。
+
+    ## 清理内容
+
+    1. 调用 `server.cleanup_services()` 关闭 Web UI 服务
+    2. 停止所有活跃线程
+    3. 释放网络端口和文件句柄
+
+    ## 异常处理
+
+    - 清理失败时记录错误日志但不抛出异常
+    - 确保清理过程不会导致程序崩溃
+
+    ## 使用说明
+
+    - 手动清理：直接调用此函数
+    - 自动清理：通过信号处理器或 atexit 自动调用
+
+    ## 注意事项
+
+    - 幂等操作：多次调用安全
+    - 快速执行：避免耗时操作
+    - 异常隔离：不影响其他清理步骤
+    """
     try:
         from server import cleanup_services as server_cleanup
 
@@ -229,27 +714,49 @@ def cleanup_services():
 
 
 def format_feedback_result(result):
-    """格式化反馈结果用于显示，限制images的data字段长度"""
+    """格式化反馈结果用于显示
+
+    保留 API 返回的所有字段，仅对 images 字段的 data 内容进行截断。
+
+    Args:
+        result: 反馈结果对象（通常是字典）
+
+    Returns:
+        dict | str: 格式化后的结果
+
+    ## 处理逻辑
+
+    1. **非字典类型**：直接转为字符串返回
+    2. **字典类型**：
+       - 保留 **所有字段**（与 API 返回一致）
+       - 仅截断 `images[].data` 字段（限制为 50 个字符 + "..."）
+       - 其他字段原样输出
+
+    ## 使用说明
+
+    - 传入反馈结果字典
+    - 自动截断 images 数据字段（避免日志过长）
+    - 返回格式化后的完整结果
+
+    ## 注意事项
+
+    - 仅截断 images.data 显示，不修改原始数据
+    - 其他字段原样输出，不过滤
+    - 适用于日志记录和调试输出
+    """
     if not isinstance(result, dict):
         return str(result)
 
-    formatted_result = {}
+    # ✅ 修复：保留所有字段，而不是选择性输出
+    formatted_result = result.copy()
 
-    # 处理用户输入
-    if "user_input" in result:
-        formatted_result["user_input"] = result["user_input"]
-
-    # 处理选择的选项
-    if "selected_options" in result:
-        formatted_result["selected_options"] = result["selected_options"]
-
-    # 处理图片数据，限制data字段长度
-    if "images" in result and result["images"]:
+    # 仅处理图片数据，限制 data 字段长度
+    if "images" in formatted_result and formatted_result["images"]:
         formatted_images = []
-        for img in result["images"]:
+        for img in formatted_result["images"]:
             if isinstance(img, dict):
                 formatted_img = img.copy()
-                # 限制data字段显示长度为50个字符
+                # 限制 data 字段显示长度为 50 个字符
                 if "data" in formatted_img and len(formatted_img["data"]) > 50:
                     formatted_img["data"] = formatted_img["data"][:50] + "..."
                 formatted_images.append(formatted_img)
@@ -263,12 +770,38 @@ def format_feedback_result(result):
 def check_service(url, timeout=None):
     """检查服务是否可用
 
+    发送 HTTP GET 请求检查服务健康状态。
+
     Args:
-        url: 服务URL
-        timeout: 请求超时时间（秒）
+        url (str): 服务 URL（如 http://localhost:8081/api/health）
+        timeout (int, optional): 请求超时时间（秒），默认使用 TestConfig.HTTP_REQUEST_TIMEOUT
 
     Returns:
-        bool: 服务是否可用
+        bool: True 表示服务可用（HTTP 200），False 表示不可用或异常
+
+    ## 检查逻辑
+
+    1. 发送 GET 请求到指定 URL
+    2. 检查响应状态码是否为 200
+    3. 捕获所有异常并返回 False
+
+    ## 使用说明
+
+    - 等待服务启动：循环调用直到返回 True
+    - 健康检查：调用并检查返回值
+
+    ## 异常处理
+
+    - 连接失败：返回 False
+    - 超时：返回 False
+    - 非 200 状态码：返回 False
+    - 调试模式会记录异常详情
+
+    ## 注意事项
+
+    - 仅检查 HTTP 200 状态码
+    - 不解析响应内容
+    - 适用于简单的健康检查
     """
     if timeout is None:
         timeout = TestConfig.HTTP_REQUEST_TIMEOUT
@@ -283,7 +816,24 @@ def check_service(url, timeout=None):
 
 
 def test_config_validation():
-    """测试配置验证功能"""
+    """测试配置验证功能
+
+    验证配置加载和输入验证逻辑的正确性。
+
+    Returns:
+        bool: 测试是否通过
+
+    ## 测试内容
+
+    1. **配置加载**：验证 `get_web_ui_config()` 返回有效配置
+    2. **输入验证**：验证 `validate_input()` 正确处理正常和异常输入
+    3. **异常处理**：验证空输入的处理逻辑
+
+    ## 使用说明
+
+    - 调用函数执行配置验证测试
+    - 返回 True 表示测试通过
+    """
     log_info("测试配置验证...", "🔧")
 
     try:
@@ -316,7 +866,28 @@ def test_config_validation():
 
 
 def test_service_health():
-    """测试服务健康检查"""
+    """测试服务健康检查
+
+    验证服务的端口检查和健康检查功能。
+
+    Returns:
+        bool: 测试是否通过
+
+    ## 测试内容
+
+    1. **端口检查**：验证 `is_web_service_running()` 正确检测端口状态
+    2. **健康检查**：验证 `health_check_service()` 正确检测服务健康状态
+
+    ## 使用说明
+
+    - 调用函数执行服务健康检查测试
+    - 返回 True 表示测试通过
+
+    ## 注意事项
+
+    - 如果服务未运行，跳过健康检查
+    - 端口检查和健康检查是两个独立的测试
+    """
     log_info("测试服务健康检查...", "🏥")
 
     try:
@@ -349,11 +920,38 @@ def test_service_health():
 def _calculate_feedback_timeout(timeout):
     """计算反馈超时时间
 
+    根据线程等待超时时间计算合理的反馈超时值。
+
     Args:
-        timeout: 线程等待超时时间（秒）
+        timeout (int): 线程等待超时时间（秒），0 表示无限等待
 
     Returns:
         int: 反馈超时时间（秒）
+
+    ## 计算规则
+
+    1. **无限等待**（timeout=0）：返回 0
+    2. **大于阈值**（timeout > FEEDBACK_TIMEOUT_THRESHOLD）：
+       返回 `max(timeout - FEEDBACK_TIMEOUT_BUFFER, FEEDBACK_TIMEOUT_MIN)`
+    3. **小于等于阈值**：直接返回 timeout
+
+    ## 配置参数
+
+    - `FEEDBACK_TIMEOUT_BUFFER`: 缓冲时间（默认 10 秒）
+    - `FEEDBACK_TIMEOUT_MIN`: 最小超时（默认 30 秒）
+    - `FEEDBACK_TIMEOUT_THRESHOLD`: 应用缓冲的阈值（默认 40 秒）
+
+    ## 计算说明
+
+    - timeout=0：返回 0（无限等待）
+    - timeout≤阈值：直接返回 timeout
+    - timeout>阈值：返回 max(timeout-缓冲, 最小超时)
+
+    ## 设计目的
+
+    - 为后端预留缓冲时间处理结果
+    - 避免前端超时而后端仍在处理
+    - 确保最小超时时间的合理性
     """
     if timeout == 0:
         log_info("线程等待超时时间: 无限等待", "⏱️")
@@ -369,8 +967,20 @@ def _calculate_feedback_timeout(timeout):
 def _create_first_task_content():
     """生成第一个任务的内容
 
+    返回欢迎消息和初始选项。
+
     Returns:
-        tuple: (prompt, options) 元组
+        tuple[str, list[str]]: (prompt, options) 元组
+
+    ## 内容说明
+
+    - **prompt**: 包含 AI Intervention Agent 的介绍和功能说明
+    - **options**: 用户可选的操作选项
+
+    ## 使用说明
+
+    - 调用函数获取欢迎消息和选项
+    - 用于第一次交互
     """
     prompt = """
         # 你好，我是AI Intervention Agent
@@ -387,8 +997,31 @@ def _create_first_task_content():
 def _create_second_task_content():
     """生成第二个任务的复杂 Markdown 内容
 
+    返回包含高级 Markdown 特性的测试内容。
+
     Returns:
-        tuple: (prompt, options) 元组
+        tuple[str, list[str]]: (prompt, options) 元组
+
+    ## 内容特性
+
+    测试内容包含以下 Markdown 元素：
+    - 表格渲染
+    - 任务列表
+    - 文本格式（粗体、斜体、删除线）
+    - 代码块（带语法高亮）
+    - 引用块
+    - 数学公式（如果支持）
+    - 链接
+
+    ## 使用说明
+
+    - 调用函数获取复杂 Markdown 测试内容
+    - 用于第二次交互和渲染测试
+
+    ## 注意事项
+
+    - 用于验证 Markdown 渲染的完整性
+    - 适合作为 UI 测试的参考内容
     """
     prompt = """# 🎉 内容已更新！- 第二次调用
 
@@ -601,7 +1234,10 @@ def test_persistent_workflow(timeout=None):
         result1 = result_container1["result"]
         if result1:
             formatted_result1 = format_feedback_result(result1)
-            log_success(f"第一次反馈: {formatted_result1}")
+            formatted_output = json.dumps(
+                formatted_result1, ensure_ascii=False, indent=4
+            )
+            log_success(f"第一次反馈:\n{formatted_output}")
         else:
             log_warning("第一次反馈超时")
             return False
@@ -619,7 +1255,10 @@ def test_persistent_workflow(timeout=None):
 
         if result2:
             formatted_result2 = format_feedback_result(result2)
-            print(f"✅ 第二次反馈: {formatted_result2}")
+            formatted_output = json.dumps(
+                formatted_result2, ensure_ascii=False, indent=4
+            )
+            print(f"✅ 第二次反馈:\n{formatted_output}")
             print("🎉 智能介入测试完成！")
             return True
         else:
@@ -639,13 +1278,50 @@ def test_persistent_workflow(timeout=None):
 
 
 def test_web_ui_features():
-    """测试 Web UI 功能（通过浏览器交互验证）"""
+    """测试 Web UI 功能（通过浏览器交互验证）
+
+    验证 Web UI 的关键功能：task_id 显示和倒计时。
+
+    Returns:
+        bool: 测试是否通过
+
+    ## 测试内容
+
+    1. **task_id 显示**：验证页面显示任务 ID
+    2. **倒计时功能**：验证倒计时持续递减
+
+    ## 验证方式
+
+    - 启动 Web UI 并展示验证清单
+    - 用户在浏览器中手动验证功能
+    - 通过交互式选项收集验证结果
+
+    ## 使用说明
+
+    - 调用函数执行 Web UI 功能测试
+    - 返回 True 表示测试通过
+
+    ## 注意事项
+
+    - 需要手动访问浏览器验证
+    - 端口号从配置文件动态获取
+    - 测试失败不会阻塞后续测试
+    """
+    # 从配置获取端口号
+    try:
+        from server import get_web_ui_config
+
+        config, _ = get_web_ui_config()
+        port = config.port
+    except Exception:
+        port = 8081  # 默认端口
+
     log_info("Web UI 功能测试 - 等待浏览器交互验证", "🌐")
     log_info("测试内容：", "ℹ️")
     log_info("1. task_id显示功能 - 验证task_id在页面上真实显示", "  ")
     log_info("2. 自动重调倒计时功能 - 验证倒计时持续递减", "  ")
     log_info("", "")
-    log_info("请在浏览器中访问 http://localhost:8080 进行以下验证：", "💡")
+    log_info(f"请在浏览器中访问 http://localhost:{port} 进行以下验证：", "💡")
     log_info("  - 检查页面上是否显示 task_id（如 '📋 任务: xxx'）", "")
     log_info("  - 检查倒计时是否显示并持续递减", "")
     log_info("  - 等待几秒后确认倒计时数值确实在减少", "")
@@ -655,9 +1331,9 @@ def test_web_ui_features():
     try:
         from server import launch_feedback_ui
 
-        prompt = """## 🌐 第1轮：Web UI 功能验证
+        prompt = f"""## 🌐 第1轮：Web UI 功能验证
 
-请在浏览器中访问 **http://localhost:8080** 进行验证：
+请在浏览器中访问 **http://localhost:{port}** 进行验证：
 
 ### ✅ 验证清单：
 
@@ -697,23 +1373,60 @@ def test_web_ui_features():
 
 
 def test_multi_task_concurrent():
-    """测试多任务并发功能（通过浏览器交互验证）"""
+    """测试多任务并发功能（通过浏览器交互验证）
+
+    验证多任务 UI 和 API 的正确性。
+
+    Returns:
+        bool: 测试是否通过
+
+    ## 测试内容
+
+    1. **多任务 API 端点**：验证 `/api/tasks`, `/api/health` 可用
+    2. **多任务 UI 元素**：验证标签页容器、任务徽章显示
+
+    ## 验证方式
+
+    - 启动 Web UI 并展示验证清单
+    - 用户在浏览器中手动验证 UI 元素
+    - 通过交互式选项收集验证结果
+
+    ## 使用说明
+
+    - 调用函数执行多任务并发测试
+    - 返回 True 表示测试通过
+
+    ## 注意事项
+
+    - 需要手动访问浏览器验证
+    - 端口号从配置文件动态获取
+    - 测试失败不会阻塞后续测试
+    """
+    # 从配置获取端口号
+    try:
+        from server import get_web_ui_config
+
+        config, _ = get_web_ui_config()
+        port = config.port
+    except Exception:
+        port = 8081  # 默认端口
+
     log_info("多任务并发功能测试 - 等待浏览器交互验证", "🔄")
     log_info("测试内容：", "ℹ️")
     log_info("1. 多任务API端点验证（/api/tasks, /api/health）", "  ")
     log_info("2. 多任务UI元素验证（标签页容器、任务徽章）", "  ")
     log_info("3. JavaScript模块验证（multi_task.js, initMultiTaskSupport）", "  ")
     log_info("", "")
-    log_info("请在浏览器中访问 http://localhost:8080 进行验证", "💡")
+    log_info(f"请在浏览器中访问 http://localhost:{port} 进行验证", "💡")
     log_info("", "")
 
     # 使用交互MCP等待用户验证
     try:
         from server import launch_feedback_ui
 
-        prompt = """## 🔄 第2轮：多任务并发功能验证
+        prompt = f"""## 🔄 第2轮：多任务并发功能验证
 
-请在浏览器中访问 **http://localhost:8080** 进行验证：
+请在浏览器中访问 **http://localhost:{port}** 进行验证：
 
 ### ✅ 验证清单：
 
@@ -758,7 +1471,38 @@ def test_multi_task_concurrent():
 
 
 def test_parallel_tasks():
-    """测试并行任务功能（通过浏览器交互验证）"""
+    """测试并行任务功能（通过浏览器交互验证）
+
+    创建多个并发任务，验证任务管理和 UI 切换功能。
+
+    Returns:
+        bool: 测试是否通过
+
+    ## 测试内容
+
+    1. **并发任务创建**：同时创建 3 个并发任务
+    2. **任务标签页**：验证标签页显示和切换功能
+    3. **独立倒计时**：验证每个任务有独立的倒计时
+
+    ## 测试流程
+
+    1. 启动 3 个并行线程，每个创建一个任务
+    2. 用户在浏览器中验证任务切换功能
+    3. 收集各任务的反馈结果
+    4. 验证所有任务完成且结果正确
+
+    ## 使用说明
+
+    - 调用函数执行并行任务测试
+    - 返回 True 表示测试通过
+
+    ## 注意事项
+
+    - 使用线程池并发创建任务
+    - 需要等待所有任务创建完成
+    - 用户需手动切换标签页验证
+    - 测试失败不会阻塞后续测试
+    """
     log_info("并行任务功能测试 - 创建3个并发任务", "🔄")
     log_info("测试内容：", "ℹ️")
     log_info("1. 同时创建3个并发任务", "  ")
@@ -827,7 +1571,15 @@ def test_parallel_tasks():
         log_info(f"{tasks_count}个任务已启动！", "⏳")
         log_info("", "")
         log_info("📊 并行任务验证说明：", "ℹ️")
-        log_info("请在浏览器 http://localhost:8080 验证：", "  ")
+        # 从配置获取端口号
+        try:
+            from server import get_web_ui_config
+
+            config, _ = get_web_ui_config()
+            port = config.port
+        except Exception:
+            port = 8081  # 默认端口
+        log_info(f"请在浏览器 http://localhost:{port} 验证：", "  ")
         log_info(f"1. 页面顶部显示{tasks_count}个任务标签", "  ")
         log_info("2. 可以点击标签切换任务", "  ")
         log_info("3. 每个任务有独立倒计时", "  ")
@@ -858,7 +1610,34 @@ def test_parallel_tasks():
 
 
 def parse_arguments():
-    """解析命令行参数"""
+    """解析命令行参数
+
+    解析测试工具的命令行参数，支持自定义端口、主机、超时等配置。
+
+    Returns:
+        argparse.Namespace: 解析后的参数对象
+
+    ## 支持的参数
+
+    - `--port, -p`: 指定端口号（默认从配置文件读取）
+    - `--host`: 指定主机地址（默认从配置文件读取或 0.0.0.0）
+    - `--timeout`: 指定超时时间（秒，默认从配置文件读取或 300）
+    - `--thread-timeout`: 指定线程等待超时时间（秒，默认 600）
+    - `--verbose, -v`: 显示详细日志信息
+
+    ## 使用说明
+
+    - 使用默认配置：`python test.py`
+    - 指定端口：`--port 9000`
+    - 指定主机和超时：`--host 127.0.0.1 --timeout 600`
+    - 启用详细日志：`--verbose`
+
+    ## 注意事项
+
+    - 命令行参数优先级高于配置文件
+    - 端口会检查可用性，冲突时自动查找可用端口
+    - timeout 和 thread-timeout 是不同的概念
+    """
     parser = argparse.ArgumentParser(
         description="AI Intervention Agent 智能介入代理测试工具"
     )
@@ -868,7 +1647,7 @@ def parse_arguments():
         "-p",
         type=int,
         default=None,
-        help="指定测试使用的端口号 (默认使用配置文件中的设置或8082)",
+        help="指定测试使用的端口号 (默认使用配置文件中的设置)",
     )
 
     parser.add_argument(
@@ -900,11 +1679,40 @@ def parse_arguments():
 def setup_test_environment(args):
     """根据命令行参数设置测试环境
 
+    根据命令行参数配置日志级别、端口、主机、超时等。
+
     Args:
-        args: 命令行参数对象
+        args (argparse.Namespace): 命令行参数对象
 
     Returns:
         bool: 配置设置是否成功
+
+    ## 配置内容
+
+    1. **日志级别**：根据 `--verbose` 启用详细日志
+    2. **端口配置**：检查端口可用性，冲突时查找可用端口
+    3. **主机配置**：更新主机地址
+    4. **超时配置**：更新超时时间
+
+    ## 处理流程
+
+    1. 设置日志级别（如果启用 verbose）
+    2. 检查并更新端口（如果指定）
+    3. 更新主机地址（如果指定）
+    4. 更新超时时间（如果指定）
+    5. 保存配置更新
+
+    ## 使用说明
+
+    - 解析命令行参数后调用此函数
+    - 设置测试环境
+    - 返回 True 表示设置成功
+
+    ## 注意事项
+
+    - 端口冲突时会自动查找可用端口
+    - 配置更新会持久化到配置文件
+    - 失败时不会中断程序，仅记录警告
     """
     try:
         # 设置日志级别
@@ -1066,7 +1874,30 @@ def get_test_config(args):
 
 
 def display_test_config(config_info):
-    """显示测试配置信息"""
+    """显示测试配置信息
+
+    在控制台打印当前的测试配置详情。
+
+    Args:
+        config_info (dict): 配置信息字典，包含以下键：
+            - server_config: 服务器配置对象（或 None）
+            - thread_timeout: 线程等待超时时间（秒）
+            - success: 配置获取是否成功
+            - error: 错误信息（如果有）
+
+    ## 显示内容
+
+    - 主机地址
+    - 端口号
+    - 反馈超时时间
+    - 最大重试次数
+    - 线程等待超时时间
+
+    ## 使用说明
+
+    - 传入配置信息字典
+    - 自动格式化并打印到控制台
+    """
     print("📋 当前测试配置:")
 
     if config_info["success"] and config_info["server_config"]:
@@ -1091,11 +1922,37 @@ def display_test_config(config_info):
 def main(args=None):
     """主测试函数
 
+    AI Intervention Agent 测试工具的入口函数。
+
     Args:
-        args: 命令行参数对象，包含用户指定的配置选项
+        args (argparse.Namespace, optional): 命令行参数对象
 
     Returns:
         bool: 所有测试是否都通过
+
+    ## 测试流程
+
+    1. **信号处理器注册**：设置 Ctrl+C 和退出清理
+    2. **参数验证**：验证命令行参数的有效性
+    3. **配置获取**：获取并显示测试配置
+    4. **配置验证测试**：测试配置加载和验证功能
+    5. **服务健康检查测试**：测试服务健康检查功能
+    6. **Web UI 功能测试**：测试 task_id 显示和倒计时
+    7. **多任务并发测试**：测试多任务 UI 和 API
+    8. **并行任务测试**：测试并行任务创建和切换
+    9. **清理资源**：关闭服务和清理临时文件
+
+    ## 使用说明
+
+    - 命令行运行：`python test.py`
+    - 程序内调用：导入并调用 main 函数
+
+    ## 注意事项
+
+    - 需要手动在浏览器中验证 UI 功能
+    - 测试失败不会中断程序，会继续执行后续测试
+    - 测试结束后自动清理资源
+    - 支持 Ctrl+C 中断并安全退出
     """
     # 设置信号处理器和清理机制
     setup_signal_handlers()

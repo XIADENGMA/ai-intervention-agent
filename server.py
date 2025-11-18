@@ -1,5 +1,78 @@
+"""
+AI Intervention Agent MCP 服务器核心模块
+
+本模块提供基于 Model Context Protocol (MCP) 的交互式反馈服务，允许 AI 助手通过 Web UI
+主动向用户请求反馈、确认和输入。
+
+核心功能
+--------
+1. **MCP 工具集成**: 提供 `interactive_feedback` MCP 工具，支持文本输入、选项选择和图片上传
+2. **Web UI 服务管理**: 自动启动、监控和清理 Web 反馈界面服务进程
+3. **多任务并发**: 基于 TaskQueue 的任务队列，支持多个反馈任务同时展示和处理
+4. **通知系统集成**: 支持 Web、声音、Bark 和系统通知，实时提醒用户响应反馈请求
+5. **健壮的超时管理**: 前后端超时时间自动协调，确保后端始终有足够的时间等待前端响应
+
+主要组件
+--------
+- ServiceManager: 单例模式的服务进程生命周期管理器，处理启动、终止、清理和信号
+- WebUIConfig: Web UI 配置数据类，包含主机、端口、超时和重试参数
+- interactive_feedback: MCP 工具函数，AI 助手调用此函数请求用户交互反馈
+- FeedbackServiceContext: 上下文管理器，自动管理服务的启动和清理生命周期
+
+工作流程
+--------
+1. AI 助手调用 `interactive_feedback` MCP 工具，传入消息和可选选项
+2. 服务器自动生成唯一任务 ID，通过 HTTP API 将任务添加到 Web UI 的任务队列
+3. Web UI 在浏览器中展示反馈界面，用户可输入文本、选择选项、上传图片
+4. 用户提交反馈后，服务器通过轮询 API 获取反馈结果
+5. 反馈数据（文本、选项、图片）被解析为 MCP 标准格式（TextContent + ImageContent）并返回给 AI 助手
+
+配置要求
+--------
+- 依赖 config_manager 提供的全局配置（web_ui、feedback、network_security 配置段）
+- 默认 Web UI 地址: http://127.0.0.1:8081
+- 超时规则: 后端超时 = max(前端倒计时 + 60秒, 300秒)，确保后端始终等待足够长
+- 支持通知管理器（notification_manager）和通知提供者（notification_providers）
+
+线程安全
+--------
+- ServiceManager 使用双重检查锁实现线程安全的单例模式
+- 所有服务注册、注销和清理操作使用 threading.Lock 保护
+- 信号处理器（SIGINT、SIGTERM）确保优雅关闭，避免孤儿进程
+
+典型用法
+--------
+作为 MCP 服务器运行（通过 stdio 传输）:
+    python server.py
+
+在其他 Python 代码中集成反馈服务:
+    使用 FeedbackServiceContext 上下文管理器自动管理服务生命周期
+
+注意事项
+--------
+- 本模块禁用了 Rich Console 和 FastMCP Banner 输出，避免污染 stdio 通信通道
+- 所有日志输出重定向到 stderr，确保 stdout 仅用于 MCP 协议通信
+- 服务启动时会清理所有残留任务，确保 Web UI 处于"无有效内容"状态
+- launch_feedback_ui 函数已废弃，推荐直接使用 interactive_feedback MCP 工具
+
+环境变量
+--------
+- NO_COLOR="1": 禁用彩色输出
+- TERM="dumb": 禁用终端特性
+- FASTMCP_NO_BANNER="1": 禁用 FastMCP Banner
+- FASTMCP_QUIET="1": 静默模式
+
+依赖模块
+--------
+- config_manager: 配置管理（JSONC 配置文件加载、热重载、跨平台）
+- enhanced_logging: 增强日志（emoji、彩色输出、结构化日志）
+- task_queue: 任务队列（多任务并发、状态管理、自动清理）
+- notification_manager: 通知管理（Web、声音、Bark、系统通知）
+- notification_providers: 通知提供者（具体通知类型的实现插件）
+- web_ui: Web 反馈界面（Flask 服务、Markdown 渲染、安全策略）
+"""
+
 import atexit
-import base64
 import io
 import os
 import random
@@ -14,7 +87,6 @@ from typing import Dict, Optional, Tuple
 
 import requests
 from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
 from pydantic import Field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -94,12 +166,84 @@ except ImportError as e:
 
 
 class ServiceManager:
-    """服务管理器 - 单例模式管理所有启动的服务进程"""
+    """
+    服务进程生命周期管理器（单例模式）
+
+    功能概述
+    --------
+    负责管理所有 Web UI 服务进程的完整生命周期，包括注册、监控、终止和资源清理。
+    使用单例模式确保全局唯一实例，提供线程安全的进程管理和优雅的退出机制。
+
+    核心职责
+    --------
+    1. **进程注册**: 跟踪所有启动的服务进程（PID、配置、启动时间）
+    2. **进程监控**: 检查进程运行状态，识别僵尸进程或异常退出
+    3. **进程终止**: 使用分级策略（优雅关闭 -> 强制终止 -> 资源清理）安全停止进程
+    4. **信号处理**: 捕获 SIGINT/SIGTERM 信号，确保进程不会意外成为孤儿进程
+    5. **端口管理**: 等待端口释放，避免端口占用冲突
+    6. **退出清理**: 通过 atexit 注册清理函数，确保程序退出时所有进程被终止
+
+    单例实现
+    --------
+    使用双重检查锁（Double-Checked Locking）实现线程安全的单例模式：
+    - 第一次检查: 避免不必要的锁竞争（性能优化）
+    - 加锁: 确保只有一个线程创建实例
+    - 第二次检查: 防止多个线程同时通过第一次检查后创建多个实例
+
+    内部状态
+    --------
+    - _processes: Dict[str, Dict] - 进程注册表，键为服务名，值为进程信息字典
+        {
+            "process": subprocess.Popen,  # 进程对象
+            "config": WebUIConfig,        # 服务配置
+            "start_time": float           # 启动时间戳
+        }
+    - _cleanup_registered: bool - 标记是否已注册清理函数（避免重复注册）
+    - _should_exit: bool - 退出标志，用于通知等待循环提前终止
+    - _initialized: bool - 初始化标志，确保 __init__ 只执行一次
+
+    线程安全
+    --------
+    - 所有修改 _processes 的操作都使用 _lock 保护
+    - 单例创建使用双重检查锁，避免竞态条件
+    - 信号处理器仅在主线程中设置退出标志
+
+    信号处理
+    --------
+    - SIGINT（Ctrl+C）: 捕获并触发清理流程
+    - SIGTERM（kill 命令）: 捕获并触发清理流程
+    - 非主线程接收信号时: 执行清理但不强制退出（避免线程安全问题）
+
+    使用场景
+    --------
+    - 自动管理 Web UI 服务进程的启动和关闭
+    - 确保程序异常退出或被杀死时不会留下孤儿进程
+    - 在测试场景中安全地启动和清理多个服务实例
+
+    注意事项
+    --------
+    - 进程终止超时时间默认 5 秒，可在 terminate_process 中调整
+    - 端口释放等待时间默认 10 秒，超时后会记录警告但不会阻塞
+    - 清理失败的进程会被强制从注册表移除，避免阻塞后续清理操作
+    - 信号处理器注册失败（如非主线程）会被忽略，不影响其他功能
+    """
 
     _instance = None
     _lock = threading.Lock()
 
     def __new__(cls):
+        """
+        创建或返回单例实例（双重检查锁实现）
+
+        返回
+        ----
+        ServiceManager
+            全局唯一的 ServiceManager 实例
+
+        线程安全
+        --------
+        使用双重检查锁确保多线程环境下只创建一个实例
+        """
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -108,6 +252,19 @@ class ServiceManager:
         return cls._instance
 
     def __init__(self):
+        """
+        初始化服务管理器（仅在首次创建时执行）
+
+        初始化流程
+        ----------
+        1. 检查是否已初始化（避免重复初始化）
+        2. 初始化进程注册表和状态标志
+        3. 注册清理函数和信号处理器
+
+        线程安全
+        --------
+        使用 _lock 确保初始化代码只执行一次，即使多线程同时调用
+        """
         if not getattr(self, "_initialized", False):
             with self._lock:
                 if not getattr(self, "_initialized", False):
@@ -118,7 +275,25 @@ class ServiceManager:
                     self._register_cleanup()
 
     def _register_cleanup(self):
-        """注册清理函数和信号处理器"""
+        """
+        注册清理函数和信号处理器
+
+        功能
+        ----
+        1. 通过 atexit 注册 cleanup_all，确保程序正常退出时清理所有进程
+        2. 注册 SIGINT 和 SIGTERM 信号处理器，捕获 Ctrl+C 和 kill 命令
+        3. 标记清理机制已注册，避免重复注册
+
+        异常处理
+        ----------
+        - 信号处理器注册失败（如非主线程）会被忽略并记录调试信息
+        - 注册失败不影响其他功能，但可能导致信号无法被正确捕获
+
+        注意事项
+        --------
+        - 只能在主线程中成功注册信号处理器
+        - atexit 注册会在所有退出场景中生效（包括异常退出）
+        """
         if not self._cleanup_registered:
             atexit.register(self.cleanup_all)
             try:
@@ -133,11 +308,35 @@ class ServiceManager:
             logger.debug("服务管理器清理机制已注册")
 
     def _signal_handler(self, signum, frame):
-        """信号处理器
+        """
+        信号处理器，捕获 SIGINT 和 SIGTERM
 
-        Args:
-            signum: 信号编号
-            frame: 当前栈帧
+        参数
+        ----
+        signum : int
+            信号编号（SIGINT=2, SIGTERM=15）
+        frame : FrameType
+            当前栈帧对象（未使用）
+
+        处理流程
+        --------
+        1. 记录接收到的信号编号
+        2. 调用 cleanup_all() 清理所有服务进程
+        3. 如果在主线程中，设置 _should_exit 标志通知等待循环退出
+        4. 如果在子线程中，仅清理服务但不设置退出标志（避免线程安全问题）
+
+        异常处理
+        ----------
+        清理过程中的异常会被捕获并记录，不会阻止后续处理
+
+        线程安全
+        --------
+        只有主线程会设置 _should_exit 标志，子线程仅执行清理操作
+
+        注意事项
+        --------
+        - 此函数在信号上下文中执行，应避免复杂操作
+        - cleanup_all() 内部使用锁保护，确保线程安全
         """
         del frame
         logger.info(f"收到信号 {signum}，正在清理服务...")
@@ -156,12 +355,33 @@ class ServiceManager:
     def register_process(
         self, name: str, process: subprocess.Popen, config: "WebUIConfig"
     ):
-        """注册服务进程
+        """
+        注册服务进程到管理器
 
-        Args:
-            name: 服务名称
-            process: 进程对象
-            config: Web UI 配置
+        参数
+        ----
+        name : str
+            服务名称，用作注册表键（格式: "web_ui_{host}_{port}"）
+        process : subprocess.Popen
+            启动的服务进程对象
+        config : WebUIConfig
+            服务的配置对象（包含 host、port、timeout 等）
+
+        功能
+        ----
+        将进程信息添加到内部注册表 _processes，包含：
+        - process: 进程对象，用于后续监控和终止
+        - config: 配置对象，用于健康检查和端口管理
+        - start_time: 启动时间戳，用于统计和调试
+
+        线程安全
+        --------
+        使用 _lock 保护注册表修改操作
+
+        使用场景
+        --------
+        - start_web_service() 启动服务后立即注册
+        - 确保服务可以被 cleanup_all() 正确清理
         """
         with self._lock:
             self._processes[name] = {
@@ -172,10 +392,31 @@ class ServiceManager:
             logger.info(f"已注册服务进程: {name} (PID: {process.pid})")
 
     def unregister_process(self, name: str):
-        """注销服务进程
+        """
+        从管理器注销服务进程
 
-        Args:
-            name: 服务名称
+        参数
+        ----
+        name : str
+            服务名称
+
+        功能
+        ----
+        从内部注册表 _processes 中移除指定进程的记录
+
+        线程安全
+        --------
+        使用 _lock 保护注册表修改操作
+
+        使用场景
+        --------
+        - terminate_process() 成功终止进程后调用
+        - cleanup_all() 清理进程后强制移除记录
+
+        注意事项
+        --------
+        - 不会终止进程本身，仅移除记录
+        - 如果服务名不存在，操作会被忽略（不会抛出异常）
         """
         with self._lock:
             if name in self._processes:
@@ -183,26 +424,63 @@ class ServiceManager:
                 logger.debug(f"已注销服务进程: {name}")
 
     def get_process(self, name: str) -> Optional[subprocess.Popen]:
-        """获取服务进程
+        """
+        获取指定服务的进程对象
 
-        Args:
-            name: 服务名称
+        参数
+        ----
+        name : str
+            服务名称
 
-        Returns:
-            Optional[subprocess.Popen]: 进程对象，不存在则返回 None
+        返回
+        ----
+        Optional[subprocess.Popen]
+            进程对象（存在）或 None（不存在）
+
+        线程安全
+        --------
+        使用 _lock 保护注册表读取操作
+
+        使用场景
+        --------
+        - is_process_running() 检查进程状态
+        - terminate_process() 获取要终止的进程
         """
         with self._lock:
             process_info = self._processes.get(name)
             return process_info["process"] if process_info else None
 
     def is_process_running(self, name: str) -> bool:
-        """检查进程是否在运行
+        """
+        检查服务进程是否正在运行
 
-        Args:
-            name: 服务名称
+        参数
+        ----
+        name : str
+            服务名称
 
-        Returns:
-            bool: 进程是否运行中
+        返回
+        ----
+        bool
+            True: 进程正在运行
+            False: 进程不存在或已终止
+
+        判断逻辑
+        ----------
+        1. 通过 get_process() 获取进程对象
+        2. 如果进程不存在，返回 False
+        3. 调用 process.poll() 检查进程状态：
+           - None: 进程运行中（返回 True）
+           - 非 None: 进程已退出（返回 False）
+
+        异常处理
+        ----------
+        任何异常都会被捕获并返回 False（安全回退）
+
+        使用场景
+        --------
+        - start_web_service() 检查服务是否已启动，避免重复启动
+        - 健康检查前的快速状态验证
         """
         process = self.get_process(name)
         if process is None:
@@ -214,16 +492,51 @@ class ServiceManager:
             return False
 
     def terminate_process(self, name: str, timeout: float = 5.0) -> bool:
-        """终止进程并清理资源
+        """
+        终止服务进程并清理所有相关资源
 
-        使用分级终止策略：优雅关闭 -> 强制终止 -> 资源清理
+        参数
+        ----
+        name : str
+            服务名称
+        timeout : float, optional
+            优雅关闭超时时间（秒），默认 5.0 秒
 
-        Args:
-            name: 服务名称
-            timeout: 优雅关闭超时时间（秒）
+        返回
+        ----
+        bool
+            True: 进程成功终止
+            False: 终止过程中发生错误
 
-        Returns:
-            bool: 是否成功终止
+        终止策略（分级）
+        ----------------
+        1. **检查进程状态**: 如果进程已退出，直接清理资源并返回
+        2. **优雅关闭**: 发送 SIGTERM 信号，等待进程正常退出（最多 timeout 秒）
+        3. **强制终止**: 如果优雅关闭超时，发送 SIGKILL 信号强制杀死进程
+        4. **资源清理**: 关闭进程的 stdin、stdout、stderr 文件句柄
+        5. **端口释放**: 等待端口被释放（最多 10 秒）
+        6. **注销进程**: 从注册表中移除进程记录（finally 块确保执行）
+
+        异常处理
+        ----------
+        - 终止过程中的异常会被捕获并记录
+        - 资源清理失败会单独捕获，不影响注销操作
+        - finally 块确保进程一定会从注册表中移除
+
+        线程安全
+        --------
+        获取进程信息使用 _lock 保护（通过 _processes.get()）
+
+        使用场景
+        --------
+        - cleanup_all() 批量清理所有进程
+        - 手动停止特定服务
+        - 服务异常后的清理重启
+
+        注意事项
+        --------
+        - 如果进程不存在（未注册），直接返回 True（视为成功）
+        - 端口释放超时不会导致返回 False，仅记录警告
         """
         process_info = self._processes.get(name)
         if not process_info:
@@ -263,15 +576,41 @@ class ServiceManager:
     def _graceful_shutdown(
         self, process: subprocess.Popen, name: str, timeout: float
     ) -> bool:
-        """优雅关闭进程
+        """
+        优雅关闭进程（发送 SIGTERM 信号）
 
-        Args:
-            process: 进程对象
-            name: 服务名称
-            timeout: 超时时间（秒）
+        参数
+        ----
+        process : subprocess.Popen
+            要关闭的进程对象
+        name : str
+            服务名称（用于日志）
+        timeout : float
+            等待进程退出的超时时间（秒）
 
-        Returns:
-            bool: 是否成功关闭
+        返回
+        ----
+        bool
+            True: 进程在超时前成功退出
+            False: 超时或发生异常
+
+        工作流程
+        --------
+        1. 调用 process.terminate() 发送 SIGTERM 信号
+        2. 调用 process.wait(timeout) 等待进程退出
+        3. 如果在超时前退出，返回 True
+        4. 如果超时，记录警告并返回 False
+
+        异常处理
+        ----------
+        - subprocess.TimeoutExpired: 超时异常，返回 False
+        - 其他异常: 记录错误并返回 False
+
+        注意事项
+        --------
+        - SIGTERM 允许进程执行清理操作（如保存状态、关闭连接）
+        - 不是所有进程都会响应 SIGTERM（可能需要强制终止）
+        - Windows 上 terminate() 等同于 kill()（无优雅关闭）
         """
         try:
             process.terminate()
@@ -286,14 +625,45 @@ class ServiceManager:
             return False
 
     def _force_shutdown(self, process: subprocess.Popen, name: str) -> bool:
-        """强制终止进程
+        """
+        强制终止进程（发送 SIGKILL 信号）
 
-        Args:
-            process: 进程对象
-            name: 服务名称
+        参数
+        ----
+        process : subprocess.Popen
+            要强制终止的进程对象
+        name : str
+            服务名称（用于日志）
 
-        Returns:
-            bool: 是否成功终止
+        返回
+        ----
+        bool
+            True: 进程被成功杀死
+            False: 仍然超时或发生异常
+
+        工作流程
+        --------
+        1. 调用 process.kill() 发送 SIGKILL 信号（无法被捕获或忽略）
+        2. 调用 process.wait(timeout=2.0) 等待进程被内核清理
+        3. 如果在 2 秒内完成，返回 True
+        4. 如果仍然超时（罕见），记录错误并返回 False
+
+        异常处理
+        ----------
+        - subprocess.TimeoutExpired: 罕见情况，可能进程已成为僵尸进程
+        - 其他异常: 记录错误并返回 False
+
+        注意事项
+        --------
+        - SIGKILL 不允许进程执行任何清理操作（立即终止）
+        - 可能导致数据丢失或资源泄漏（应优先使用 _graceful_shutdown）
+        - 仅在优雅关闭失败后调用此方法
+        - Windows 上 kill() 和 terminate() 行为一致
+
+        使用场景
+        --------
+        - 优雅关闭超时后的备选方案
+        - 进程无响应或卡死的情况
         """
         try:
             logger.warning(f"强制终止服务进程: {name}")
@@ -309,11 +679,39 @@ class ServiceManager:
             return False
 
     def _cleanup_process_resources(self, name: str, process_info: dict):
-        """清理进程相关资源
+        """
+        清理进程相关的文件句柄资源
 
-        Args:
-            name: 服务名称
-            process_info: 进程信息字典
+        参数
+        ----
+        name : str
+            服务名称（用于日志）
+        process_info : dict
+            进程信息字典，包含 "process" 键
+
+        功能
+        ----
+        关闭进程的标准输入、输出和错误流文件句柄：
+        - stdin: 防止管道阻塞
+        - stdout: 释放文件描述符
+        - stderr: 释放文件描述符
+
+        异常处理
+        ----------
+        - 每个流的关闭操作独立进行，单个失败不影响其他
+        - 所有异常都会被捕获并忽略（安全清理）
+        - 整体清理失败会记录错误日志
+
+        注意事项
+        --------
+        - 在进程终止后调用，确保没有数据残留在管道中
+        - 即使流已经关闭，重复关闭也是安全的
+        - 不会等待流中的数据被读取完毕（直接关闭）
+
+        使用场景
+        --------
+        - terminate_process() 终止进程后清理资源
+        - 防止文件描述符泄漏
         """
         try:
             process = process_info["process"]
@@ -342,12 +740,40 @@ class ServiceManager:
             logger.error(f"清理进程 {name} 资源时出错: {e}")
 
     def _wait_for_port_release(self, host: str, port: int, timeout: float = 10.0):
-        """等待端口释放
+        """
+        等待端口被操作系统释放
 
-        Args:
-            host: 主机地址
-            port: 端口号
-            timeout: 超时时间（秒）
+        参数
+        ----
+        host : str
+            主机地址（如 "127.0.0.1"、"0.0.0.0"）
+        port : int
+            端口号（1-65535）
+        timeout : float, optional
+            最大等待时间（秒），默认 10.0 秒
+
+        功能
+        ----
+        循环检查端口是否可用（每 0.5 秒检查一次），直到：
+        1. 端口被释放（is_web_service_running 返回 False）
+        2. 超时（记录警告但不抛出异常）
+
+        使用场景
+        --------
+        - 终止进程后确保端口可以被重新绑定
+        - 避免"Address already in use"错误
+        - 防止端口占用冲突
+
+        注意事项
+        --------
+        - 超时不会导致函数失败，仅记录警告
+        - 某些操作系统可能需要更长时间释放端口（尤其是 TIME_WAIT 状态）
+        - 如果端口被其他进程占用，此函数无法检测到（需要额外检查）
+
+        性能考虑
+        ----------
+        - 检查间隔 0.5 秒是平衡响应性和 CPU 占用的折中选择
+        - 大部分情况下端口会在 1-2 秒内释放
         """
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -358,7 +784,46 @@ class ServiceManager:
         logger.warning(f"端口 {host}:{port} 在 {timeout}秒内未释放")
 
     def cleanup_all(self):
-        """清理所有服务进程，确保完全清理资源"""
+        """
+        清理所有已注册的服务进程，确保完全清理资源
+
+        功能
+        ----
+        批量终止所有注册在 _processes 中的服务进程，并清理相关资源。
+        使用容错设计，单个进程清理失败不会阻止其他进程的清理。
+
+        清理流程
+        --------
+        1. 检查是否有进程需要清理（空注册表直接返回）
+        2. 复制进程列表（避免在迭代时修改字典）
+        3. 逐个调用 terminate_process() 清理进程
+        4. 收集清理失败的进程和错误信息
+        5. 强制移除仍然残留在注册表中的进程记录
+        6. 汇总并记录清理结果
+
+        异常处理
+        ----------
+        - 单个进程清理失败不会中断整体流程
+        - 所有清理错误会被收集并统一记录
+        - 强制移除记录失败也会被单独捕获和记录
+
+        线程安全
+        --------
+        - 使用 _lock 保护进程列表的复制和最终的强制移除操作
+        - terminate_process() 内部也使用锁保护
+
+        使用场景
+        --------
+        - 程序正常退出时（通过 atexit 自动调用）
+        - 接收到 SIGINT/SIGTERM 信号时（信号处理器调用）
+        - 手动清理所有服务（如测试场景）
+
+        注意事项
+        --------
+        - 此函数可能被多次调用（atexit + 信号处理器），但设计上是幂等的
+        - 强制移除确保即使清理失败，进程记录也会被移除（避免后续误判）
+        - 清理完成后注册表会被清空（_processes 为空字典）
+        """
         if not self._processes:
             logger.debug("没有需要清理的进程")
             return
@@ -399,10 +864,40 @@ class ServiceManager:
             logger.info("所有服务进程清理完成")
 
     def get_status(self) -> Dict[str, Dict]:
-        """获取所有服务状态
+        """
+        获取所有服务的运行状态信息
 
-        Returns:
-            Dict[str, Dict]: 服务状态字典，键为服务名，值为状态信息
+        返回
+        ----
+        Dict[str, Dict]
+            服务状态字典，键为服务名，值为包含以下字段的状态字典：
+            - "pid": 进程 ID（int）
+            - "running": 是否正在运行（bool）
+            - "start_time": 启动时间戳（float）
+            - "config": 配置信息字典
+                - "host": 绑定主机（str）
+                - "port": 端口号（int）
+
+        功能
+        ----
+        遍历所有已注册的服务进程，提取关键状态信息用于监控和调试。
+
+        线程安全
+        --------
+        使用 _lock 保护 _processes 的遍历操作，确保读取一致性
+
+        使用场景
+        --------
+        - 健康检查：验证服务是否正常运行
+        - 调试诊断：查看所有服务的 PID 和配置
+        - 监控面板：展示服务运行状态
+        - 测试验证：确认服务启动成功
+
+        注意事项
+        --------
+        - "running" 字段通过 process.poll() 判断（None 表示运行中）
+        - 返回的是状态快照，调用后状态可能立即变化
+        - 不会修改任何状态，仅读取操作
         """
         status = {}
         with self._lock:
@@ -422,14 +917,68 @@ class ServiceManager:
 
 @dataclass
 class WebUIConfig:
-    """Web UI 配置类
+    """
+    Web UI 服务配置数据类
 
-    Attributes:
-        host: 绑定的主机地址
-        port: 端口号
-        timeout: 超时时间（秒）
-        max_retries: 最大重试次数
-        retry_delay: 重试延迟（秒）
+    功能概述
+    --------
+    封装 Web UI 服务的所有配置参数，包括网络绑定、超时设置和重试策略。
+    使用 @dataclass 装饰器自动生成 __init__、__repr__ 等方法。
+
+    属性
+    ----
+    host : str
+        绑定的主机地址
+        - "127.0.0.1": 仅本地访问（默认，安全）
+        - "0.0.0.0": 允许外部访问（需配置网络安全策略）
+        - 具体 IP 地址: 绑定到特定网络接口
+
+    port : int
+        Web 服务监听端口号（1-65535）
+        默认: 8081
+
+    timeout : int
+        HTTP 请求超时时间（秒）
+        默认: 30 秒
+        适用于: 健康检查、API 请求、内容更新等
+
+    max_retries : int
+        HTTP 请求失败时的最大重试次数
+        默认: 3 次
+        适用于: 网络波动、临时故障等
+
+    retry_delay : float
+        重试之间的基础延迟时间（秒）
+        默认: 1.0 秒
+        实际延迟使用指数退避策略（backoff_factor）
+
+    配置来源
+    ----------
+    - host: 优先使用 network_security.bind_interface，回退到 web_ui.host
+    - port: web_ui.port
+    - timeout: web_ui.timeout（HTTP 请求超时，与前端倒计时无关）
+    - max_retries: web_ui.max_retries
+    - retry_delay: web_ui.retry_delay
+
+    验证规则
+    --------
+    在 __post_init__ 中自动验证参数有效性：
+    - port: 必须在 1-65535 范围内
+    - timeout: 必须大于 0
+    - max_retries: 不能为负数
+
+    使用场景
+    --------
+    - 创建 HTTP session（create_http_session）
+    - 启动 Web 服务（start_web_service）
+    - 健康检查（health_check_service）
+    - 更新 Web 内容（update_web_content）
+
+    注意事项
+    --------
+    - 此配置对象是不可变的（所有字段在创建后不应修改）
+    - 重试策略使用 requests + urllib3.util.retry 实现
+    - timeout 是 HTTP 层的超时，不是前端倒计时的 auto_resubmit_timeout
     """
 
     host: str
@@ -439,7 +988,28 @@ class WebUIConfig:
     retry_delay: float = 1.0
 
     def __post_init__(self):
-        """验证配置参数"""
+        """
+        数据类初始化后的验证钩子
+
+        功能
+        ----
+        自动验证所有配置参数的有效性，确保服务启动前发现配置错误。
+
+        验证项
+        ------
+        1. 端口号范围: 1-65535
+        2. 超时时间正数: > 0
+        3. 重试次数非负: >= 0
+
+        异常
+        ----
+        ValueError
+            任何参数不符合要求时抛出，包含错误详情和当前值
+
+        调用时机
+        --------
+        在 __init__ 自动执行后立即调用，无需手动调用
+        """
         if not (1 <= self.port <= 65535):
             raise ValueError(f"端口号必须在 1-65535 范围内，当前值: {self.port}")
         if self.timeout <= 0:
@@ -448,14 +1018,61 @@ class WebUIConfig:
             raise ValueError(f"重试次数不能为负数，当前值: {self.max_retries}")
 
 
-def get_web_ui_config() -> WebUIConfig:
-    """获取 Web UI 配置
+def get_web_ui_config() -> Tuple[WebUIConfig, int]:
+    """
+    从配置管理器加载 Web UI 配置
 
-    Returns:
-        Tuple[WebUIConfig, int]: 配置对象和自动重调超时时间
+    返回
+    ----
+    Tuple[WebUIConfig, int]
+        - WebUIConfig: Web UI 服务配置对象
+        - int: 前端自动重新提交超时时间（auto_resubmit_timeout，单位秒）
 
-    Raises:
-        ValueError: 配置参数错误或加载失败
+    功能
+    ----
+    从全局配置文件（config.jsonc）中读取 Web UI 相关的所有配置参数，
+    并构造 WebUIConfig 对象和提取前端倒计时时间。
+
+    配置来源
+    --------
+    依赖以下配置段：
+    1. **web_ui**: 主要配置（port、timeout、max_retries、retry_delay）
+    2. **feedback**: 反馈配置（auto_resubmit_timeout）
+    3. **network_security**: 网络安全配置（bind_interface）
+
+    配置优先级
+    ----------
+    - host: network_security.bind_interface > web_ui.host > "127.0.0.1"
+    - 其他字段: 配置文件值 > 函数内的默认值
+
+    默认值
+    ------
+    - host: "127.0.0.1"（仅本地访问）
+    - port: 8080
+    - timeout: 30 秒（HTTP 请求超时）
+    - max_retries: 3 次
+    - retry_delay: 1.0 秒
+    - auto_resubmit_timeout: 240 秒（前端倒计时）
+
+    异常处理
+    ----------
+    ValueError
+        - 配置参数类型错误（TypeError）
+        - 配置参数验证失败（WebUIConfig.__post_init__）
+        - 配置文件加载失败（ConfigManager 异常）
+
+    使用场景
+    --------
+    - interactive_feedback() 工具初始化
+    - launch_feedback_ui() 函数调用
+    - start_web_service() 服务启动
+    - wait_for_feedback() 等待反馈
+
+    注意事项
+    --------
+    - auto_resubmit_timeout 是前端倒计时，不是 HTTP 请求超时
+    - 配置加载失败会抛出 ValueError，调用者需要捕获处理
+    - 每次调用都会重新读取配置（支持配置热重载）
     """
     try:
         config_mgr = get_config()
@@ -467,15 +1084,15 @@ def get_web_ui_config() -> WebUIConfig:
             "bind_interface", web_ui_config.get("host", "127.0.0.1")
         )
         port = web_ui_config.get("port", 8080)
-        timeout = feedback_config.get("timeout", 300)
-        auto_resubmit_timeout = feedback_config.get("auto_resubmit_timeout", 290)
+        auto_resubmit_timeout = feedback_config.get("auto_resubmit_timeout", 240)
         max_retries = web_ui_config.get("max_retries", 3)
         retry_delay = web_ui_config.get("retry_delay", 1.0)
+        http_timeout = web_ui_config.get("timeout", 30)  # HTTP请求超时时间
 
         config = WebUIConfig(
             host=host,
             port=port,
-            timeout=timeout,
+            timeout=http_timeout,
             max_retries=max_retries,
             retry_delay=retry_delay,
         )
@@ -494,17 +1111,57 @@ def get_web_ui_config() -> WebUIConfig:
 def validate_input(
     prompt: str, predefined_options: Optional[list] = None
 ) -> Tuple[str, list]:
-    """验证和清理输入参数
+    """
+    验证和清理用户输入参数，防止恶意或异常输入
 
-    Args:
-        prompt: 提示文本
-        predefined_options: 预定义选项列表
+    参数
+    ----
+    prompt : str
+        提示文本或问题内容
+    predefined_options : Optional[list], optional
+        预定义选项列表，默认 None
 
-    Returns:
-        Tuple[str, list]: 清理后的提示文本和选项列表
+    返回
+    ----
+    Tuple[str, list]
+        - str: 清理后的提示文本（去除首尾空白、截断过长内容）
+        - list: 清理后的选项列表（过滤非字符串、截断过长选项）
 
-    Raises:
-        ValueError: prompt 类型错误
+    功能
+    ----
+    1. **提示文本清理**:
+       - 去除首尾空白字符（strip）
+       - 长度限制: 最大 10000 字符，超出部分截断并添加 "..."
+       - 类型检查: 必须是字符串，否则抛出 ValueError
+
+    2. **选项列表清理**:
+       - 过滤非字符串选项（记录警告）
+       - 去除每个选项的首尾空白
+       - 长度限制: 每个选项最大 500 字符，超出部分截断并添加 "..."
+       - 过滤空选项（strip 后为空）
+
+    异常处理
+    ----------
+    ValueError
+        prompt 不是字符串类型时抛出（AttributeError 转换为 ValueError）
+
+    安全考虑
+    ----------
+    - 防止超长输入导致内存溢出或界面显示问题
+    - 过滤非法类型的选项，避免序列化错误
+    - 自动记录警告信息，便于调试和监控
+
+    使用场景
+    --------
+    - launch_feedback_ui() 启动反馈界面前验证输入
+    - update_web_content() 更新内容前清理数据
+    - interactive_feedback() MCP 工具接收参数后验证
+
+    注意事项
+    --------
+    - 截断操作会丢失部分信息，但保证系统稳定性
+    - 空选项列表（None 或全部被过滤）会返回空列表 []
+    - 截断的内容会添加 "..." 标记，用户可见
     """
     try:
         cleaned_prompt = prompt.strip()
@@ -531,13 +1188,54 @@ def validate_input(
 
 
 def create_http_session(config: WebUIConfig) -> requests.Session:
-    """创建配置了重试机制的 HTTP 会话
+    """
+    创建配置了重试机制和超时设置的 HTTP 会话
 
-    Args:
-        config: Web UI 配置
+    参数
+    ----
+    config : WebUIConfig
+        Web UI 配置对象（包含 max_retries、retry_delay、timeout）
 
-    Returns:
-        requests.Session: 配置好的会话对象
+    返回
+    ----
+    requests.Session
+        配置好的 requests 会话对象，支持自动重试和超时控制
+
+    功能
+    ----
+    使用 urllib3.util.retry.Retry 配置智能重试策略：
+    1. **重试次数**: config.max_retries（默认 3 次）
+    2. **退避策略**: 指数退避（backoff_factor），基础延迟为 config.retry_delay
+       - 第 1 次重试: retry_delay * 2^0 秒
+       - 第 2 次重试: retry_delay * 2^1 秒
+       - 第 3 次重试: retry_delay * 2^2 秒
+    3. **重试条件**: HTTP 状态码为 429（Too Many Requests）、500（服务器错误）、
+       502（Bad Gateway）、503（服务不可用）、504（网关超时）
+    4. **允许方法**: HEAD、GET、POST（幂等和非幂等请求）
+    5. **超时设置**: config.timeout（默认 30 秒）
+
+    挂载适配器
+    ----------
+    为 http:// 和 https:// 协议挂载相同的重试适配器，确保所有请求都使用重试策略。
+
+    使用场景
+    --------
+    - health_check_service() 健康检查请求
+    - update_web_content() 更新内容请求
+    - wait_for_feedback() 轮询反馈状态
+    - wait_for_task_completion() 轮询任务完成
+
+    性能考虑
+    ----------
+    - 重试策略可减少因临时网络波动导致的请求失败
+    - 指数退避避免对服务器造成过大压力
+    - 超时设置防止请求无限挂起
+
+    注意事项
+    --------
+    - session.timeout 是默认超时，单个请求可以覆盖
+    - POST 请求默认也会重试（非标准行为，但适用于本项目的幂等 API）
+    - 重试不适用于连接错误（如服务未启动），仅适用于 HTTP 响应错误
     """
     session = requests.Session()
 
@@ -557,15 +1255,59 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
 
 
 def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
-    """检查 Web 服务是否正在运行
+    """
+    检查 Web 服务是否正在运行（基于 TCP 端口连接性）
 
-    Args:
-        host: 主机地址
-        port: 端口号
-        timeout: 连接超时时间（秒）
+    参数
+    ----
+    host : str
+        主机地址（如 "127.0.0.1"、"0.0.0.0"、域名）
+    port : int
+        端口号（1-65535）
+    timeout : float, optional
+        连接超时时间（秒），默认 2.0 秒
 
-    Returns:
-        bool: 服务是否运行中
+    返回
+    ----
+    bool
+        True: 端口可连接（服务可能正在运行）
+        False: 端口不可连接或检查失败
+
+    功能
+    ----
+    使用 TCP socket 尝试连接指定的主机和端口，判断服务是否在监听。
+
+    检查流程
+    --------
+    1. 验证端口号范围（1-65535）
+    2. 转换 0.0.0.0 为 localhost（0.0.0.0 绑定所有接口，但客户端需连接具体地址）
+    3. 创建 TCP socket 并设置超时
+    4. 尝试连接（非阻塞检查）
+    5. 根据连接结果返回布尔值
+
+    异常处理
+    ----------
+    - socket.gaierror: 主机名解析失败（DNS 错误），返回 False
+    - 其他异常: 捕获并记录错误，返回 False（安全回退）
+
+    注意事项
+    --------
+    - **非应用层检查**: 仅验证端口可连接，不保证 HTTP 服务正常工作
+    - **0.0.0.0 转换**: 服务绑定 0.0.0.0 时，客户端需连接 localhost 或具体 IP
+    - **超时设置**: 较短的超时（2 秒）可快速失败，避免阻塞
+    - **防火墙影响**: 防火墙可能阻止连接，导致误判
+
+    使用场景
+    --------
+    - start_web_service() 检查服务是否已启动，避免重复启动
+    - ServiceManager._wait_for_port_release() 等待端口释放
+    - 快速状态检查（比 HTTP 请求更轻量）
+
+    性能考虑
+    ----------
+    - connect_ex() 是非阻塞调用，不会挂起进程
+    - 上下文管理器自动关闭 socket，无资源泄漏
+    - 超时 2 秒在失败场景下快速返回
     """
     try:
         if not (1 <= port <= 65535):
@@ -595,13 +1337,63 @@ def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
 
 
 def health_check_service(config: WebUIConfig) -> bool:
-    """健康检查，验证服务是否正常响应
+    """
+    应用层健康检查，验证 Web 服务是否正常响应 HTTP 请求
 
-    Args:
-        config: Web UI 配置
+    参数
+    ----
+    config : WebUIConfig
+        Web UI 配置对象（包含 host、port、timeout 等）
 
-    Returns:
-        bool: 服务是否健康
+    返回
+    ----
+    bool
+        True: 服务健康（端口可连接且 HTTP 请求成功）
+        False: 服务不健康或检查失败
+
+    功能
+    ----
+    执行两层检查，确保服务完全可用：
+    1. **传输层检查**: 调用 is_web_service_running() 验证端口可连接
+    2. **应用层检查**: 发送 HTTP GET 请求到 /api/config，验证服务正常响应
+
+    检查流程
+    --------
+    1. 首先检查端口是否可连接（快速失败）
+    2. 如果端口不可达，直接返回 False
+    3. 创建 HTTP session 并发送 GET 请求到 /api/config
+    4. 检查响应状态码（200 表示健康）
+    5. 返回健康状态
+
+    健康标准
+    --------
+    - 端口可连接（TCP 层）
+    - HTTP 请求成功（状态码 200）
+    - /api/config 端点可访问（Flask 应用正常运行）
+
+    异常处理
+    ----------
+    - requests.exceptions.RequestException: 网络请求异常（连接错误、超时等），返回 False
+    - 其他异常: 捕获并记录错误，返回 False（安全回退）
+
+    使用场景
+    --------
+    - start_web_service() 启动服务后验证服务正常
+    - ensure_web_ui_running() 检查服务是否需要重启
+    - 定期健康检查（监控脚本）
+
+    性能考虑
+    ----------
+    - 超时设置为 5 秒（比默认 30 秒更快）
+    - 先检查端口（轻量），再发送 HTTP 请求（重量）
+    - 使用带重试的 session（自动处理临时故障）
+
+    注意事项
+    --------
+    - 仅验证 /api/config 端点，不保证所有功能正常
+    - 0.0.0.0 地址会自动转换为 localhost
+    - 健康检查失败不会抛出异常，仅返回 False
+    - 重试策略可能延长检查时间（最多 3 次重试）
     """
     if not is_web_service_running(config.host, config.port):
         return False
@@ -630,13 +1422,99 @@ def health_check_service(config: WebUIConfig) -> bool:
 
 
 def start_web_service(config: WebUIConfig, script_dir: str) -> None:
-    """启动 Web 服务
+    """
+    启动 Web UI 反馈服务（Flask 子进程）
 
-    启动时清理所有残留任务，确保服务处于"无有效内容"状态
+    参数
+    ----
+    config : WebUIConfig
+        Web UI 配置对象（包含 host、port、timeout 等）
+    script_dir : str
+        脚本目录路径（包含 web_ui.py 的目录）
 
-    Args:
-        config: Web UI 配置
-        script_dir: 脚本目录路径
+    功能
+    ----
+    以子进程方式启动 Flask Web UI 服务，提供浏览器反馈界面。
+    包含完整的启动流程、健康检查和错误处理。
+
+    启动流程
+    --------
+    1. **任务清理**: 清空全局任务队列中的所有残留任务（确保"无有效内容"状态）
+    2. **通知系统初始化**: 如果通知模块可用，初始化通知管理器和提供者
+    3. **文件验证**: 检查 web_ui.py 是否存在
+    4. **重复启动检查**: 检查服务是否已在运行（避免端口冲突）
+    5. **进程启动**: 使用 subprocess.Popen 启动 web_ui.py
+    6. **进程注册**: 将进程注册到 ServiceManager（确保可被清理）
+    7. **健康检查轮询**: 每 0.5 秒检查一次服务是否启动成功（最多 15 秒）
+    8. **成功返回或超时异常**: 服务启动成功返回，超时则抛出异常
+
+    启动参数
+    ----------
+    传递给 web_ui.py 的命令行参数：
+    - sys.executable: Python 解释器路径（确保使用相同的 Python 环境）
+    - -u: 禁用输出缓冲（unbuffered），确保日志实时输出
+    - web_ui.py: Flask 应用脚本路径
+    - --prompt "": 初始提示文本为空（无有效内容状态）
+    - --predefined-options "": 初始选项为空
+    - --host: 绑定主机地址（如 127.0.0.1 或 0.0.0.0）
+    - --port: 监听端口号
+
+    进程配置
+    ----------
+    - stdout=subprocess.DEVNULL: 丢弃标准输出（避免污染 MCP stdio）
+    - stderr=subprocess.DEVNULL: 丢弃标准错误（Flask 日志不通过 stderr）
+    - stdin=subprocess.DEVNULL: 关闭标准输入（服务不需要交互）
+    - close_fds=True: 关闭所有文件描述符（避免泄漏）
+
+    健康检查
+    ----------
+    - 检查间隔: 0.5 秒
+    - 最大等待时间: 15 秒
+    - 检查方法: health_check_service()（TCP 连接 + HTTP 请求）
+    - 进度日志: 每 2 秒记录一次等待状态
+
+    异常处理
+    ----------
+    - FileNotFoundError: web_ui.py 或 Python 解释器不存在
+    - PermissionError: 没有执行权限或端口绑定权限
+    - 其他异常: 捕获并检查服务是否已运行（容错处理）
+    - 超时: 15 秒内未通过健康检查，抛出 Exception
+
+    幂等性
+    --------
+    - 重复调用不会导致多个进程（检查已运行状态）
+    - 启动失败后会检查服务是否已由其他方式启动
+    - 任务清理确保每次启动都是干净状态
+
+    通知系统
+    ----------
+    如果通知模块可用（notification_manager 和 notification_providers 导入成功）：
+    - 调用 initialize_notification_system() 初始化所有通知提供者
+    - 初始化失败仅记录警告，不影响服务启动
+
+    使用场景
+    --------
+    - interactive_feedback() 工具首次调用时
+    - ensure_web_ui_running() 检测到服务未运行时
+    - 测试脚本中手动启动服务
+
+    注意事项
+    --------
+    - 子进程会继承父进程的环境变量
+    - 服务进程的生命周期由 ServiceManager 管理
+    - 服务异常退出不会自动重启（需要外部监控）
+    - 端口被占用时会启动失败（超时异常）
+    - 启动时的空内容状态符合"无有效内容"设计原则
+
+    异常
+    ----
+    FileNotFoundError
+        web_ui.py 文件不存在
+    Exception
+        - Python 解释器或脚本文件未找到
+        - 权限不足
+        - 启动失败且服务未运行
+        - 启动超时（15 秒内未通过健康检查）
     """
     task_queue = get_task_queue()
     cleared_count = task_queue.clear_all_tasks()
@@ -738,7 +1616,89 @@ def update_web_content(
     auto_resubmit_timeout: int,
     config: WebUIConfig,
 ) -> None:
-    """更新Web服务的内容"""
+    """
+    通过 HTTP API 更新 Web UI 展示的内容
+
+    参数
+    ----
+    summary : str
+        反馈摘要或问题文本
+    predefined_options : Optional[list[str]]
+        预定义选项列表，用户可多选
+    task_id : Optional[str]
+        任务唯一标识符，None 表示更新主内容区
+    auto_resubmit_timeout : int
+        前端自动重新提交超时时间（秒）
+    config : WebUIConfig
+        Web UI 配置对象
+
+    功能
+    ----
+    向 Web UI 的 /api/update 端点发送 POST 请求，更新浏览器中展示的反馈界面内容。
+
+    API 请求
+    --------
+    - URL: http://{host}:{port}/api/update
+    - Method: POST
+    - Content-Type: application/json
+    - Body:
+        {
+            "prompt": str,                    # 清理后的提示文本
+            "predefined_options": list[str],  # 清理后的选项列表
+            "task_id": str | null,            # 任务 ID
+            "auto_resubmit_timeout": int      # 前端倒计时（秒）
+        }
+
+    处理流程
+    --------
+    1. 调用 validate_input() 验证和清理输入参数
+    2. 转换 0.0.0.0 为 localhost（客户端连接地址）
+    3. 构造 JSON 请求体
+    4. 创建带重试的 HTTP session
+    5. 发送 POST 请求
+    6. 验证响应状态码和 JSON 格式
+    7. 成功返回或抛出异常
+
+    响应状态码
+    ----------
+    - 200: 更新成功，验证 JSON 响应中的 "status" 字段
+    - 400: 请求参数错误（summary/options 格式问题）
+    - 404: API 端点不存在（服务未正确启动）
+    - 其他: 服务内部错误
+
+    异常处理
+    ----------
+    - requests.exceptions.Timeout: 请求超时（超过 config.timeout 秒）
+    - requests.exceptions.ConnectionError: 无法连接到服务（服务未启动或网络问题）
+    - requests.exceptions.RequestException: 其他网络请求错误
+    - Exception: 其他未知错误
+
+    验证逻辑
+    --------
+    即使响应状态码为 200，也会尝试解析 JSON 并检查 "status" 字段：
+    - 如果 "status" != "success"，记录警告（但不抛出异常）
+    - 如果响应不是有效 JSON，记录警告（但不抛出异常）
+
+    使用场景
+    --------
+    - 废弃（不再使用）: 旧架构中用于更新单一内容区
+    - 新架构: 使用任务队列 API（/api/tasks）代替
+
+    注意事项
+    --------
+    - 此函数不等待用户反馈，仅更新界面内容
+    - 0.0.0.0 地址会自动转换为 localhost
+    - 所有异常都会被转换为 Exception 抛出
+    - 重试策略（3 次）在 create_http_session() 中配置
+    - 超时时间使用 config.timeout（HTTP 层），不是 auto_resubmit_timeout（前端倒计时）
+
+    异常
+    ----
+    Exception
+        - 更新内容超时
+        - 无法连接到 Web 服务
+        - 更新内容失败（各种网络或服务错误）
+    """
     # 验证输入
     cleaned_summary, cleaned_options = validate_input(summary, predefined_options)
 
@@ -796,7 +1756,93 @@ def update_web_content(
 
 
 def parse_structured_response(response_data):
-    """解析结构化的反馈数据，返回适合MCP的Content对象列表"""
+    """
+    解析 Web UI 反馈数据并转换为 MCP 标准 Content 对象列表
+
+    参数
+    ----
+    response_data : dict
+        从 Web UI /api/feedback 或 /api/tasks/{id} 获取的反馈数据字典
+        预期结构:
+        {
+            "user_input": str,           # 用户输入的文本
+            "selected_options": list[str],  # 用户选择的选项列表
+            "images": list[dict],        # 上传的图片列表
+        }
+
+    返回
+    ----
+    list
+        MCP 标准 Content 对象列表，包含 TextContent 和/或 ImageContent：
+        - TextContent: {"type": "text", "text": str}
+        - ImageContent: {"type": "image", "data": str, "mimeType": str}
+
+    功能
+    ----
+    将 Web UI 的反馈数据格式转换为 MCP 协议标准格式，供 AI 助手处理。
+
+    处理流程
+    --------
+    1. **提取基础数据**: 从 response_data 提取 user_input 和 selected_options
+    2. **构建文本部分**:
+       - 如果有选项被选中，添加 "选择的选项: xxx"
+       - 如果有用户输入，添加 "用户输入: xxx"
+    3. **处理图片附件**:
+       - 遍历 images 列表
+       - 验证 base64 数据有效性
+       - 创建 ImageContent 对象（纯 base64，不使用 data URI）
+       - 添加图片元信息到文本部分（文件名、类型、大小）
+    4. **合并文本内容**: 使用 "\n\n" 连接所有文本部分
+    5. **添加 TextContent**: 将合并的文本包装为 TextContent 对象
+    6. **处理空内容**: 如果没有任何内容，添加默认文本 "用户未提供任何内容"
+    7. **返回结果列表**: 先返回 ImageContent，后返回 TextContent（MCP 惯例）
+
+    MCP 标准格式
+    ------------
+    遵循 Model Context Protocol (MCP) 定义的 Content 对象格式：
+    - **TextContent**: {"type": "text", "text": "具体文本内容"}
+    - **ImageContent**: {"type": "image", "data": "纯base64字符串", "mimeType": "image/jpeg"}
+
+    图片处理
+    ----------
+    - **Base64 编码**: 直接使用后端提供的纯 base64 字符串（不是 data URI）
+    - **MIME 类型**: 从 content_type 字段获取（默认 "image/jpeg"）
+    - **大小计算**: 优先使用 size 字段，否则估算（base64长度 * 3/4）
+    - **大小显示**: 自动转换为 B/KB/MB 单位
+    - **错误处理**: 单个图片处理失败不影响其他内容
+
+    调试日志
+    ----------
+    记录详细的调试信息（debug 级别）：
+    - 接收到的原始数据类型和内容
+    - 解析后的 user_input 和 selected_options
+    - 图片数量和处理状态
+    - 文本部分的构建过程
+    - 最终返回的 Content 对象列表
+
+    异常处理
+    ----------
+    - 单个图片处理失败: 记录错误并添加"处理失败"文本，继续处理其他图片
+    - 整体处理失败: 不会抛出异常，确保至少返回"用户未提供任何内容"
+
+    使用场景
+    --------
+    - interactive_feedback() MCP 工具函数返回结果前调用
+    - 将 Web UI 的 JSON 响应转换为 AI 助手可理解的格式
+
+    注意事项
+    --------
+    - 图片的 base64 数据可能很大（几百 KB 到几 MB）
+    - 返回的列表顺序: ImageContent 在前，TextContent 在后
+    - 空内容也会返回列表（包含默认文本），不会返回空列表
+    - 所有 Content 对象都是普通字典（dict），不是特定类实例
+
+    兼容性
+    --------
+    兼容旧格式的反馈数据：
+    - 如果没有 user_input/selected_options 字段，尝试从其他字段提取
+    - 如果没有 images 字段，跳过图片处理
+    """
 
     result = []
     text_parts = []
@@ -831,33 +1877,42 @@ def parse_structured_response(response_data):
     else:
         logger.debug("用户输入为空，跳过添加用户输入文本")
 
-    # 3. 处理图片附件 - 使用 FastMCP 的 Image 类型
+    # 3. 处理图片附件 - 使用 MCP 标准协议格式
     for index, image in enumerate(response_data.get("images", [])):
         if isinstance(image, dict) and image.get("data"):
             try:
-                # 解码 base64 数据
-                image_data = base64.b64decode(image["data"])
+                # 【MCP标准】直接使用纯 base64 数据，不使用 data URI
+                # 后端已经将图片编码为 base64，直接使用即可
+                base64_data = image["data"]  # 纯 base64 字符串
 
-                # 确定图片格式
+                # 【健壮性检查】确保 base64_data 是字符串且非空
+                if not isinstance(base64_data, str) or not base64_data.strip():
+                    logger.warning(
+                        f"图片 {index + 1} 的 data 字段无效: {type(base64_data)}"
+                    )
+                    text_parts.append(
+                        f"=== 图片 {index + 1} ===\n处理失败: 图片数据无效"
+                    )
+                    continue
+
+                # 确定 MIME 类型
                 content_type = image.get("content_type", "image/jpeg")
-                if content_type == "image/jpeg":
-                    format_name = "jpeg"
-                elif content_type == "image/png":
-                    format_name = "png"
-                elif content_type == "image/gif":
-                    format_name = "gif"
-                elif content_type == "image/webp":
-                    format_name = "webp"
-                else:
-                    format_name = "jpeg"  # 默认格式
 
-                # 创建 FastMCP Image 对象
-                image_obj = Image(data=image_data, format=format_name)
-                result.append(image_obj)
+                # 创建符合 MCP 标准协议的 ImageContent dict
+                # 格式：{ type: "image", data: "纯base64", mimeType: "..." }
+                image_content = {
+                    "type": "image",
+                    "data": base64_data,  # 纯 base64，不是 data URI
+                    "mimeType": content_type,
+                }
+                result.append(image_content)
 
                 # 添加图片信息到文本中
                 filename = image.get("filename", f"image_{index + 1}")
-                size = image.get("size", len(image_data))
+                # 【性能优化】使用已有的 size 字段，避免解码计算
+                size = image.get(
+                    "size", len(base64_data) * 3 // 4
+                )  # base64估算：3/4 的编码长度
 
                 # 计算图片大小显示
                 if size < 1024:
@@ -874,14 +1929,16 @@ def parse_structured_response(response_data):
                 logger.error(f"处理图片 {index + 1} 时出错: {e}")
                 text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {str(e)}")
 
-    # 4. 添加文本内容
+    # 4. 添加文本内容 - 使用 MCP 标准协议格式
     logger.debug("准备添加文本内容:")
     logger.debug(f"  - text_parts: {text_parts}")
     logger.debug(f"  - text_parts长度: {len(text_parts)}")
 
     if text_parts:
         combined_text = "\n\n".join(text_parts)
-        result.append(combined_text)
+        # 【MCP标准】文本使用 TextContent 格式：{ type: "text", text: "..." }
+        text_content = {"type": "text", "text": combined_text}
+        result.append(text_content)
         logger.debug(f"添加合并文本: '{combined_text}'")
     else:
         logger.debug("text_parts为空，不添加文本内容")
@@ -894,31 +1951,78 @@ def parse_structured_response(response_data):
             # 有内容但没有添加到result中，这是一个bug，应该添加文本内容
             if text_parts:
                 combined_text = "\n\n".join(text_parts)
-                result.append(combined_text)
+                text_content = {"type": "text", "text": combined_text}
+                result.append(text_content)
                 logger.debug(f"补充添加文本内容: '{combined_text}'")
             else:
-                result.append("用户未提供任何内容")
+                text_content = {"type": "text", "text": "用户未提供任何内容"}
+                result.append(text_content)
                 logger.debug("添加默认内容: '用户未提供任何内容'")
         else:
-            result.append("用户未提供任何内容")
+            text_content = {"type": "text", "text": "用户未提供任何内容"}
+            result.append(text_content)
             logger.debug("添加默认内容: '用户未提供任何内容'")
     else:
         logger.debug(f"result不为空，包含 {len(result)} 个元素")
 
     logger.debug("最终返回结果:")
     for i, item in enumerate(result):
-        if isinstance(item, str):
-            logger.debug(
-                f"  - [{i}] 文本: '{item[:100]}{'...' if len(item) > 100 else ''}'"
-            )
+        if isinstance(item, dict):
+            # 所有内容都是 dict（ImageContent 或 TextContent）
+            content_type = item.get("type", "unknown")
+            if content_type == "text":
+                text_preview = item.get("text", "")[:100]
+                if len(item.get("text", "")) > 100:
+                    text_preview += "..."
+                logger.debug(f"  - [{i}] TextContent: '{text_preview}'")
+            elif content_type == "image":
+                mime_type = item.get("mimeType", "unknown")
+                data_length = len(item.get("data", ""))
+                logger.debug(
+                    f"  - [{i}] ImageContent: mimeType={mime_type}, data_length={data_length}"
+                )
+            else:
+                logger.debug(f"  - [{i}] 未知类型: {content_type}")
         else:
-            logger.debug(f"  - [{i}] 对象: {type(item)}")
+            # 不应该出现非 dict 的情况，记录警告
+            logger.warning(f"  - [{i}] ⚠️ 非标准类型: {type(item)}")
 
     return result
 
 
 def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]:
-    """等待用户提交反馈"""
+    """
+    ⚠️ **废弃函数**: 旧架构中等待用户提交反馈（单一内容区轮询）
+
+    功能
+    ----
+    轮询 /api/config 和 /api/feedback 端点，检测内容状态变化和反馈提交。
+
+    注意
+    ----
+    - **已废弃**: 新架构使用 wait_for_task_completion() 代替
+    - 保留用于向后兼容
+    - 基于内容状态变化检测（has_content 标志）
+    - 最小超时 300 秒
+
+    参数
+    ----
+    config : WebUIConfig
+        Web UI配置
+    timeout : int, optional
+        超时时间（秒），默认300秒，最小300秒
+
+    返回
+    ----
+    Dict[str, str]
+        反馈数据字典或 {"error": "错误信息"}
+
+    使用场景
+    --------
+    旧版本的反馈等待机制，现已被任务队列架构取代。
+    """
+    # 确保超时时间不小于300秒
+    timeout = max(timeout, 300)
     target_host = "localhost" if config.host == "0.0.0.0" else config.host
     config_url = f"http://{target_host}:{config.port}/api/config"
     feedback_url = f"http://{target_host}:{config.port}/api/feedback"
@@ -1062,15 +2166,87 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
 
 def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]:
     """
-    等待任务完成（通过HTTP API轮询）
+    通过轮询 HTTP API 等待任务完成
 
-    Args:
-        task_id: 任务ID
-        timeout: 超时时间（秒）
+    参数
+    ----
+    task_id : str
+        任务唯一标识符
+    timeout : int, optional
+        超时时间（秒），默认 300 秒，最小 300 秒（后端最低等待时间）
 
-    Returns:
-        Dict[str, str]: 任务结果
+    返回
+    ----
+    Dict[str, str]
+        任务结果字典：
+        - 成功: 返回 task["result"]（包含 user_input、selected_options、images）
+        - 失败: {"error": "错误信息"}
+
+    功能
+    ----
+    轮询 Web UI 的 /api/tasks/{task_id} 端点，检查任务状态直到完成或超时。
+
+    轮询流程
+    --------
+    1. 确保超时时间不小于 300 秒（后端最低等待时间）
+    2. 获取 Web UI 配置和 API URL
+    3. 循环轮询（每 1 秒一次）：
+       - 发送 GET /api/tasks/{task_id} 请求
+       - 检查响应状态码（404=不存在，200=成功）
+       - 解析任务状态和结果
+       - 如果 status="completed" 且有 result，返回结果
+       - 否则继续轮询
+    4. 超时返回 {"error": "任务超时"}
+
+    API 响应格式
+    ------------
+    成功响应:
+    {
+        "success": true,
+        "task": {
+            "id": str,
+            "prompt": str,
+            "options": list,
+            "status": "pending" | "active" | "completed",
+            "result": dict,  # 包含 user_input、selected_options、images
+            "created_at": float,
+            "completed_at": float
+        }
+    }
+
+    超时计算
+    ----------
+    - 最小超时: 300 秒（后端最低等待时间）
+    - 实际超时: max(传入timeout, 300)
+    - 超时后立即返回，不等待当前轮询完成
+
+    异常处理
+    ----------
+    - requests.exceptions.RequestException: 记录警告并继续轮询（网络波动容错）
+    - HTTP 404: 任务不存在，立即返回错误
+    - HTTP 非 200: 记录警告并继续轮询（临时错误容错）
+
+    性能考虑
+    ----------
+    - 轮询间隔: 1 秒（平衡响应性和服务器负载）
+    - 请求超时: 2 秒（快速失败）
+    - 轮询次数: timeout 秒数（如 300 次）
+
+    使用场景
+    --------
+    - interactive_feedback() MCP 工具等待用户反馈
+    - launch_feedback_ui() 函数等待用户反馈
+    - 任务队列架构的核心等待机制
+
+    注意事项
+    --------
+    - 任务完成后，Web UI 会从队列中移除任务（可能导致 404）
+    - 轮询失败不会立即返回错误，会继续尝试（容错设计）
+    - 超时时间应该大于前端倒计时时间（通常为前端 + 60 秒）
+    - 返回的 result 字典格式取决于 Web UI 的实现
     """
+    # 确保超时时间不小于300秒
+    timeout = max(timeout, 300)
     config, _ = get_web_ui_config()
     target_host = "localhost" if config.host == "0.0.0.0" else config.host
     api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
@@ -1109,10 +2285,39 @@ def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]
 
 
 def ensure_web_ui_running(config):
-    """确保 Web UI 正在运行，未运行则启动
+    """
+    确保 Web UI 服务正在运行，未运行则自动启动
 
-    Args:
-        config: Web UI 配置对象
+    参数
+    ----
+    config : WebUIConfig
+        Web UI 配置对象
+
+    功能
+    ----
+    检查 Web UI 服务的健康状态，如果未运行则自动启动。
+    提供服务自愈能力，确保 interactive_feedback() 工具始终可用。
+
+    检查流程
+    --------
+    1. 发送 GET /api/health 请求（超时 2 秒）
+    2. 如果响应状态码为 200，表示服务已运行，直接返回
+    3. 如果请求失败（异常或非 200），判断服务未运行
+    4. 调用 start_web_service() 启动服务
+    5. 等待 2 秒确保服务完全启动
+
+    使用场景
+    --------
+    - interactive_feedback() 工具调用前
+    - launch_feedback_ui() 函数调用前
+    - 确保服务可用性
+
+    注意事项
+    --------
+    - 健康检查超时设置为 2 秒（快速失败）
+    - 所有异常都会被捕获并视为服务未运行
+    - 启动后等待 2 秒，可能不足以完全启动（但 start_web_service 内部有更完整的等待逻辑）
+    - 不会抛出异常，启动失败由 start_web_service() 处理
     """
     try:
         response = requests.get(
@@ -1136,24 +2341,60 @@ def launch_feedback_ui(
     task_id: Optional[str] = None,
     timeout: int = 300,
 ) -> Dict[str, str]:
-    """启动反馈界面，使用 TaskQueue 支持多任务并发
-
-    ⚠️ **已废弃：请使用 interactive_feedback() 工具代替**
-    此函数保留用于向后兼容，但 task_id 参数将被忽略，系统会自动生成。
-
-    Args:
-        summary: 反馈摘要
-        predefined_options: 预定义选项列表
-        task_id: （已废弃）任务ID，将被忽略，系统自动生成
-        timeout: 超时时间（秒）
-
-    Returns:
-        Dict[str, str]: 用户反馈结果
-
-    Raises:
-        TimeoutError: 等待反馈超时
-        ValueError: 参数验证失败
     """
+    ⚠️ **废弃函数**: 启动反馈界面（旧版 API，请使用 interactive_feedback() MCP 工具代替）
+
+    功能
+    ----
+    通过 HTTP API 创建反馈任务并等待用户提交。基于任务队列架构。
+
+    注意
+    ----
+    - **已废弃**: 推荐使用 `interactive_feedback()` MCP 工具
+    - 保留用于向后兼容
+    - task_id 参数被忽略，系统自动生成
+    - 最小超时 300 秒
+
+    参数
+    ----
+    summary : str
+        反馈摘要或问题
+    predefined_options : Optional[list[str]], optional
+        预定义选项列表
+    task_id : Optional[str], optional
+        （废弃）任务ID，将被忽略
+    timeout : int, optional
+        超时时间（秒），默认300秒，最小300秒
+
+    返回
+    ----
+    Dict[str, str]
+        用户反馈结果字典或 {"error": "错误信息"}
+
+    工作流程
+    --------
+    1. 自动生成唯一 task_id（忽略传入的 task_id 参数）
+    2. 验证和清理输入参数
+    3. 获取配置
+    4. 确保 Web UI 运行
+    5. 通过 POST /api/tasks 创建任务
+    6. 计算后端超时时间 = max(前端 + 60秒, 传入timeout, 300秒)
+    7. 轮询等待任务完成
+    8. 返回结果
+
+    异常
+    ----
+    Exception
+        - 参数验证失败
+        - 文件未找到
+        - 反馈界面启动失败
+
+    使用场景
+    --------
+    旧版本的 Python API，现已被 MCP 工具架构取代。
+    """
+    # 确保超时时间不小于300秒
+    timeout = max(timeout, 300)
     try:
         import time
 
@@ -1206,8 +2447,18 @@ def launch_feedback_ui(
             logger.error(f"添加任务请求失败: {e}")
             return {"error": f"无法连接到Web UI: {e}"}
 
-        # 等待任务完成
-        result = wait_for_task_completion(task_id, timeout=timeout)
+        # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，无最大限制）
+        if auto_resubmit_timeout <= 0:
+            # 禁用自动提交时，使用传入的timeout或默认300秒
+            backend_timeout = max(timeout, 300)
+        else:
+            # 后端 = max(前端 + 60秒, 传入timeout, 300秒)
+            backend_timeout = max(auto_resubmit_timeout + 60, timeout, 300)
+
+        logger.info(
+            f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒, 传入timeout: {timeout}秒)"
+        )
+        result = wait_for_task_completion(task_id, timeout=backend_timeout)
 
         if "error" in result:
             logger.error(f"任务执行失败: {result['error']}")
@@ -1235,24 +2486,141 @@ def interactive_feedback(
         description="Predefined options for the user to choose from (optional)",
     ),
 ) -> list:
-    """Request interactive feedback from the user
+    """
+    MCP 工具：请求用户通过 Web UI 提供交互式反馈
 
-    This tool creates an interactive feedback task in the Web UI (default: http://localhost:8081).
-    Users can provide text input, select predefined options, and optionally upload images.
+    功能概述
+    --------
+    这是 AI Intervention Agent 的核心 MCP 工具函数，允许 AI 助手主动向用户请求反馈、确认或输入。
+    通过 Web 浏览器界面（默认 http://localhost:8081），用户可以输入文本、选择选项和上传图片。
 
-    Args:
-        message: 向用户显示的问题或消息 (required)
-        predefined_options: 可选的预定义选项列表 (optional, can be multi-selected)
+    参数
+    ----
+    message : str, required
+        向用户显示的问题或消息（Markdown 格式支持）
+        最大长度: 10000 字符（超出部分自动截断）
+    predefined_options : Optional[list], optional
+        预定义选项列表，用户可多选或单选
+        - 每个选项最大长度: 500 字符
+        - 非字符串选项会被自动过滤
+        - None 或空列表表示无预定义选项
 
-    Returns:
-        包含用户反馈的列表，可能包含文本、选项和图片数据
+    返回
+    ----
+    list
+        MCP 标准 Content 对象列表，包含用户反馈：
+        - TextContent: {"type": "text", "text": str}
+          包含选项选择和用户输入的文本
+        - ImageContent: {"type": "image", "data": str, "mimeType": str}
+          用户上传的图片（base64 编码）
 
-    Raises:
-        Exception: 当反馈收集失败时（如任务队列已满、Web UI未响应等）
+    工作流程
+    --------
+    1. **生成任务 ID**: 使用 {project_name}-{timestamp}-{random} 格式
+    2. **加载配置**: 获取 Web UI 配置和前端倒计时时间
+    3. **确保服务运行**: 调用 ensure_web_ui_running() 检查或启动服务
+    4. **创建任务**: 通过 POST /api/tasks 添加任务到队列
+    5. **计算后端超时**: 后端 = max(前端 + 60秒, 300秒)
+    6. **轮询等待**: 调用 wait_for_task_completion() 轮询任务状态
+    7. **解析反馈**: 调用 parse_structured_response() 转换为 MCP 格式
+    8. **返回结果**: 返回 MCP Content 对象列表
 
-    Examples:
+    超时策略
+    ----------
+    - **前端倒计时**: auto_resubmit_timeout（默认 240 秒）
+      用户超时未提交时自动提交空反馈
+    - **后端等待**: backend_timeout = max(前端 + 60秒, 300秒)
+      后端轮询超时时间，确保比前端长
+    - **禁用自动提交**: 如果 auto_resubmit_timeout <= 0，使用默认 300 秒
+
+    任务 ID 生成
+    ------------
+    格式: {project_name}-{timestamp}-{random}
+    - project_name: 当前工作目录名称（默认 "task"）
+    - timestamp: 毫秒时间戳的后6位（0-999999）
+    - random: 3位随机数（100-999）
+
+    确保唯一性，避免任务 ID 冲突。
+
+    异常处理
+    ----------
+    不会抛出异常，所有错误都转换为 MCP TextContent 返回：
+    - 添加任务失败: "添加任务失败: {error}"
+    - 连接失败: "无法连接到Web UI: {error}"
+    - 任务执行失败: "{error}"
+    - 工具执行失败: "反馈收集失败: {error}"
+
+    通知系统
+    ----------
+    如果通知系统可用，会触发通知提醒用户：
+    - Immediate 触发: 任务创建时立即通知
+    - Delayed 触发: 延迟一段时间后再次提醒
+    - Repeat 触发: 定期重复提醒直到用户响应
+
+    兼容性
+    --------
+    兼容多种反馈数据格式：
+    - 新格式: {"user_input": str, "selected_options": list, "images": list}
+    - 旧格式: {"interactive_feedback": str}
+    - 简单字符串: 直接转换为 TextContent
+
+    使用场景
+    --------
+    - 请求用户确认代码更改
+    - 询问用户选择实现方案
+    - 收集用户反馈和建议
+    - 请求用户上传文件或图片
+    - 询问用户偏好设置
+
+    性能考虑
+    ----------
+    - 创建任务: < 100ms（HTTP POST 请求）
+    - 轮询间隔: 1 秒（wait_for_task_completion）
+    - 典型响应时间: 取决于用户操作速度
+    - 超时后自动返回: 避免无限等待
+
+    注意事项
+    --------
+    - Web UI 默认绑定 localhost，仅本地访问
+    - 用户需要手动打开浏览器访问反馈界面
+    - 多个任务会并发展示，用户可自由切换
+    - 任务完成后会自动从队列中移除
+    - 图片上传可能导致返回数据较大（几 MB）
+    - 前端支持 Markdown 渲染、代码高亮和 LaTeX 公式
+
+    安全考虑
+    ----------
+    - 输入参数会自动验证和清理（validate_input）
+    - 网络绑定受 network_security 配置控制
+    - 支持 IP 白名单/黑名单
+    - 所有 HTTP 响应包含安全头（CSP、X-Frame-Options 等）
+    - 图片上传大小限制（前端配置）
+
+    调试
+    ----
+    - 所有关键步骤都记录详细日志（info/debug 级别）
+    - 任务 ID 包含在所有日志中，便于追踪
+    - 返回的 Content 对象会记录 debug 日志
+
+    示例
+    ----
+    简单文本反馈:
+        interactive_feedback(message="确认删除文件吗？")
+
+    带选项的反馈:
         interactive_feedback(
-            message="Review the changes:",
+            message="选择代码风格：",
+            predefined_options=["Google", "PEP8", "Airbnb"]
+        )
+
+    复杂问题:
+        interactive_feedback(
+            message=\"\"\"请审查以下更改：
+            1. 重构了 ServiceManager 类
+            2. 添加了多任务支持
+            3. 优化了通知系统
+
+            请选择操作：\"\"\",
             predefined_options=["Approve", "Request Changes", "Reject"]
         )
     """
@@ -1296,20 +2664,34 @@ def interactive_feedback(
 
             if response.status_code != 200:
                 logger.error(f"添加任务失败: HTTP {response.status_code}")
-                return [f"添加任务失败: {response.json().get('error', '未知错误')}"]
+                # 使用 MCP 标准 TextContent 格式返回错误
+                error_msg = f"添加任务失败: {response.json().get('error', '未知错误')}"
+                return [{"type": "text", "text": error_msg}]
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
 
         except requests.exceptions.RequestException as e:
             logger.error(f"添加任务请求失败: {e}")
-            return [f"无法连接到Web UI: {e}"]
+            # 使用 MCP 标准 TextContent 格式返回错误
+            return [{"type": "text", "text": f"无法连接到Web UI: {e}"}]
 
-        # 等待任务完成
-        result = wait_for_task_completion(task_id, timeout=300)
+        # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，无最大限制）
+        if auto_resubmit_timeout <= 0:
+            # 禁用自动提交时，使用默认300秒
+            backend_timeout = 300
+        else:
+            # 后端 = max(前端 + 60秒, 300秒)
+            backend_timeout = max(auto_resubmit_timeout + 60, 300)
+
+        logger.info(
+            f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒)"
+        )
+        result = wait_for_task_completion(task_id, timeout=backend_timeout)
 
         if "error" in result:
             logger.error(f"任务执行失败: {result['error']}")
-            return [result["error"]]
+            # 使用 MCP 标准 TextContent 格式返回错误
+            return [{"type": "text", "text": result["error"]}]
 
         logger.info("反馈请求处理完成")
 
@@ -1323,31 +2705,108 @@ def interactive_feedback(
                 if "user_input" in result or "selected_options" in result:
                     return parse_structured_response(result)
                 else:
-                    # 旧格式
+                    # 旧格式 - 使用 MCP 标准 TextContent 格式
                     text_content = result.get("interactive_feedback", str(result))
-                    return [text_content]
+                    return [{"type": "text", "text": text_content}]
             else:
-                return [str(result)]
+                # 简单字符串结果 - 使用 MCP 标准 TextContent 格式
+                return [{"type": "text", "text": str(result)}]
 
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}")
-        # 返回错误信息而不是抛出异常，以便 MCP 客户端能够处理
-        return [f"反馈收集失败: {str(e)}"]
+        # 返回错误信息 - 使用 MCP 标准 TextContent 格式
+        return [{"type": "text", "text": f"反馈收集失败: {str(e)}"}]
 
 
 class FeedbackServiceContext:
-    """反馈服务上下文管理器
+    """
+    反馈服务生命周期上下文管理器
 
-    用于管理反馈服务的生命周期，确保服务正确启动和清理
+    功能概述
+    --------
+    自动管理反馈服务的启动和清理，使用 Python 的 with 语句确保资源正确释放。
+    适用于需要完全控制服务生命周期的场景。
+
+    核心特性
+    --------
+    1. **自动清理**: 退出上下文时自动清理所有服务进程
+    2. **异常安全**: 即使发生异常也确保服务被清理
+    3. **配置管理**: 自动加载和保存配置
+    4. **日志记录**: 记录初始化、清理和异常信息
+
+    内部状态
+    --------
+    - service_manager: ServiceManager 实例（单例）
+    - config: WebUIConfig 配置对象
+    - script_dir: 脚本目录路径
+    - auto_resubmit_timeout: 前端自动重新提交超时时间
+
+    使用场景
+    --------
+    - 测试脚本中临时启动反馈服务
+    - 需要精确控制服务生命周期的场景
+    - 批量收集多个反馈（一次启动，多次调用）
+
+    注意事项
+    --------
+    - **现代架构**: 推荐使用 interactive_feedback() MCP 工具代替
+    - 本类主要用于向后兼容和特殊场景
+    - 不会自动启动服务，需要手动调用 launch_feedback_ui()
+    - 退出上下文会清理所有服务进程（包括其他方式启动的）
+
+    线程安全
+    --------
+    - 通过 ServiceManager 单例保证线程安全
+    - 不支持并发使用多个 FeedbackServiceContext 实例
     """
 
     def __init__(self):
+        """
+        初始化上下文管理器
+
+        初始化流程
+        ----------
+        1. 获取全局 ServiceManager 实例（单例）
+        2. 初始化配置和脚本目录为 None（延迟加载）
+
+        注意事项
+        --------
+        - 构造函数不加载配置（延迟到 __enter__ 方法）
+        - 不会启动服务（需要手动调用 launch_feedback_ui）
+        """
         self.service_manager = ServiceManager()
         self.config = None
         self.script_dir = None
 
     def __enter__(self):
-        """进入上下文，初始化服务"""
+        """
+        进入上下文，初始化配置
+
+        功能
+        ----
+        加载 Web UI 配置和脚本目录，准备启动服务。
+
+        初始化流程
+        ----------
+        1. 调用 get_web_ui_config() 加载配置
+        2. 获取当前脚本的目录路径
+        3. 保存配置和脚本目录到实例变量
+        4. 记录初始化成功日志
+        5. 返回 self（用于 with 语句）
+
+        返回
+        ----
+        FeedbackServiceContext
+            上下文管理器实例本身
+
+        异常处理
+        ----------
+        配置加载失败会抛出异常并中断上下文进入。
+
+        使用场景
+        --------
+        自动被 with 语句调用，无需手动调用。
+        """
         try:
             self.config, self.auto_resubmit_timeout = get_web_ui_config()
             self.script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1360,7 +2819,46 @@ class FeedbackServiceContext:
             raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """退出上下文，清理服务"""
+        """
+        退出上下文，清理所有服务进程
+
+        参数
+        ----
+        exc_type : type | None
+            异常类型（如果有异常）
+        exc_val : Exception | None
+            异常实例（如果有异常）
+        exc_tb : traceback | None
+            异常堆栈（未使用）
+
+        功能
+        ----
+        无论正常退出还是异常退出，都确保所有服务进程被清理。
+
+        清理流程
+        --------
+        1. 调用 service_manager.cleanup_all() 清理所有进程
+        2. 根据退出类型记录不同级别的日志：
+           - KeyboardInterrupt: info 级别
+           - 其他异常: error 级别（包含异常详情）
+           - 正常退出: info 级别
+        3. 捕获清理过程中的异常并记录
+
+        返回
+        ----
+        None
+            不抑制异常，异常会继续传播
+
+        异常处理
+        ----------
+        清理过程中的异常会被捕获并记录，但不会抑制原始异常。
+
+        注意事项
+        --------
+        - 退出上下文会清理所有服务进程（不仅限于本上下文启动的）
+        - 异常信息会被记录但不会抑制
+        - 确保清理函数一定被调用（即使发生异常）
+        """
         del exc_tb
         try:
             self.service_manager.cleanup_all()
@@ -1380,22 +2878,61 @@ class FeedbackServiceContext:
         task_id: Optional[str] = None,
         timeout: int = 300,
     ) -> Dict[str, str]:
-        """在上下文中启动反馈界面
+        """
+        在上下文中启动反馈界面
 
-        Args:
-            summary: 反馈摘要
-            predefined_options: 预定义选项列表
-            task_id: 任务ID
-            timeout: 超时时间（秒）
+        功能
+        ----
+        委托给全局 launch_feedback_ui() 函数处理。
 
-        Returns:
-            Dict[str, str]: 用户反馈结果
+        参数
+        ----
+        summary : str
+            反馈摘要
+        predefined_options : Optional[list[str]], optional
+            预定义选项列表
+        task_id : Optional[str], optional
+            任务ID（废弃参数，会被忽略）
+        timeout : int, optional
+            超时时间（秒），默认300秒
+
+        返回
+        ----
+        Dict[str, str]
+            用户反馈结果
+
+        注意事项
+        --------
+        - 这是一个简单的委托方法
+        - 实际逻辑在全局 launch_feedback_ui() 函数中
+        - 不使用上下文的配置（函数内部重新加载配置）
         """
         return launch_feedback_ui(summary, predefined_options, task_id, timeout)
 
 
 def cleanup_services():
-    """清理所有服务进程"""
+    """
+    清理所有启动的服务进程
+
+    功能
+    ----
+    获取全局 ServiceManager 实例并调用 cleanup_all() 清理所有已注册的服务进程。
+
+    使用场景
+    --------
+    - main() 函数捕获 KeyboardInterrupt 时
+    - main() 函数捕获其他异常时
+    - 程序退出前的清理操作
+
+    异常处理
+    ----------
+    捕获所有异常并记录错误，确保清理过程不会中断程序退出。
+
+    注意事项
+    --------
+    - 通过 ServiceManager 单例模式访问进程注册表
+    - 清理失败不会抛出异常，仅记录错误日志
+    """
     try:
         service_manager = ServiceManager()
         service_manager.cleanup_all()
@@ -1405,7 +2942,49 @@ def cleanup_services():
 
 
 def main():
-    """MCP 服务器主入口"""
+    """
+    MCP 服务器主入口函数
+
+    功能
+    ----
+    配置日志级别并启动 FastMCP 服务器，使用 stdio 传输协议与 AI 助手通信。
+
+    运行流程
+    --------
+    1. 降低 mcp 和 fastmcp 日志级别为 WARNING（避免污染 stdio）
+    2. 调用 mcp.run(transport="stdio") 启动 MCP 服务器
+    3. 服务器持续运行，监听 stdio 上的 MCP 协议消息
+    4. 捕获中断信号（Ctrl+C）或异常，执行清理并退出
+
+    异常处理
+    ----------
+    - KeyboardInterrupt: 捕获 Ctrl+C，清理服务后正常退出
+    - 其他异常: 记录错误，清理服务后以状态码 1 退出
+
+    日志配置
+    ----------
+    - mcp 日志级别: WARNING
+    - fastmcp 日志级别: WARNING
+    - 避免 DEBUG/INFO 日志污染 stdio 通信通道
+
+    传输协议
+    ----------
+    使用 stdio 传输，MCP 消息通过标准输入/输出进行交换：
+    - stdin: 接收来自 AI 助手的请求
+    - stdout: 发送 MCP 响应（必须保持纯净）
+    - stderr: 日志输出
+
+    使用场景
+    --------
+    - 直接运行: python server.py
+    - 作为 MCP 服务器被 AI 助手调用
+
+    注意事项
+    --------
+    - 必须确保 stdout 仅用于 MCP 协议通信
+    - 所有日志输出重定向到 stderr
+    - 服务进程由 ServiceManager 管理，退出时自动清理
+    """
     try:
         mcp_logger = _stdlib_logging.getLogger("mcp")
         mcp_logger.setLevel(_stdlib_logging.WARNING)

@@ -1,8 +1,15 @@
 let config = null
 
-// 高性能markdown渲染函数
+/**
+ * 高性能Markdown渲染函数
+ * 使用requestAnimationFrame和DocumentFragment优化DOM操作性能
+ *
+ * @param {HTMLElement} element - 目标DOM元素
+ * @param {string} htmlContent - 渲染后的HTML内容
+ * @description 渲染流程：批量DOM操作 → 代码块处理 → 删除线语法 → MathJax公式
+ */
 function renderMarkdownContent(element, htmlContent) {
-  // 使用requestAnimationFrame优化渲染时机
+  // 使用requestAnimationFrame优化渲染时机，避免阻塞主线程
   requestAnimationFrame(() => {
     if (htmlContent) {
       // 批量DOM操作优化
@@ -37,13 +44,53 @@ function renderMarkdownContent(element, htmlContent) {
   })
 }
 
-// 处理代码块，添加复制按钮和语言标识
+/**
+ * 处理代码块，添加复制按钮和语言标识
+ * 为所有代码块添加工具栏（语言标签+复制按钮）
+ *
+ * @param {HTMLElement} container - 包含代码块的容器元素
+ * @description 处理流程：检测语言 → 创建工具栏 → 添加复制按钮 → 应用样式
+ */
 function processCodeBlocks(container) {
   const codeBlocks = container.querySelectorAll('pre')
 
   codeBlocks.forEach(pre => {
-    // 检查是否已经被处理过
-    if (pre.parentElement && pre.parentElement.classList.contains('code-block-container')) {
+    // 避免重复处理代码块（Pygments 和原生 Markdown）
+    if (
+      (pre.parentElement && pre.parentElement.classList.contains('code-block-container')) ||
+      (pre.parentElement && pre.parentElement.classList.contains('codehilite'))
+    ) {
+      // 如果是 Pygments 生成的代码块，仍然添加复制按钮，但不重新包装
+      if (pre.parentElement.classList.contains('codehilite')) {
+        const existingToolbar = pre.parentElement.querySelector('.code-toolbar')
+        if (!existingToolbar) {
+          const toolbar = document.createElement('div')
+          toolbar.className = 'code-toolbar'
+
+          // 检测语言类型（从 class 中提取）
+          let language = 'text'
+          const parentClasses = pre.parentElement.className
+          const langMatch = parentClasses.match(/language-(\w+)/)
+          if (langMatch) {
+            language = langMatch[1]
+          }
+
+          // 添加语言标识
+          if (language !== 'text') {
+            const langLabel = document.createElement('span')
+            langLabel.className = 'language-label'
+            langLabel.textContent = language.toUpperCase()
+            toolbar.appendChild(langLabel)
+          }
+
+          // 使用安全的复制按钮创建方法
+          const copyButton = DOMSecurity.createCopyButton(pre.textContent || '')
+          toolbar.appendChild(copyButton)
+
+          // 将工具栏添加到 .codehilite 容器中
+          pre.parentElement.appendChild(toolbar)
+        }
+      }
       return
     }
 
@@ -87,7 +134,15 @@ function processCodeBlocks(container) {
   })
 }
 
-// 复制代码到剪贴板
+/**
+ * 复制代码到剪贴板
+ * 使用Clipboard API实现代码复制功能，并提供视觉反馈
+ *
+ * @param {HTMLElement} preElement - 代码块的pre元素
+ * @param {HTMLElement} button - 复制按钮元素
+ * @returns {Promise<void>}
+ * @description 复制成功显示"✅ 已复制"，失败显示"❌ 复制失败"，2秒后恢复
+ */
 async function copyCodeToClipboard(preElement, button) {
   try {
     const codeElement = preElement.querySelector('code')
@@ -95,7 +150,7 @@ async function copyCodeToClipboard(preElement, button) {
 
     await navigator.clipboard.writeText(textToCopy)
 
-    // 更新按钮状态
+    // 更新按钮状态为成功
     const originalText = button.innerHTML
     button.innerHTML = '✅ 已复制'
     button.classList.add('copied')
@@ -118,7 +173,13 @@ async function copyCodeToClipboard(preElement, button) {
   }
 }
 
-// 处理删除线语法 ~~text~~
+/**
+ * 处理删除线语法 ~~text~~
+ * 将Markdown删除线语法转换为HTML <del>标签
+ *
+ * @param {HTMLElement} container - 包含文本的容器元素
+ * @description 遍历所有文本节点，匹配 ~~...~~ 模式并替换为<del>标签，排除代码块
+ */
 function processStrikethrough(container) {
   // 获取所有文本节点，但排除代码块
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
@@ -169,7 +230,13 @@ function processStrikethrough(container) {
   })
 }
 
-// 更新 task_id 显示
+/**
+ * 更新任务ID显示
+ * 根据任务ID是否存在控制显示/隐藏状态
+ *
+ * @param {string} taskId - 任务ID
+ * @description 有效的taskId显示在页面上，无效或空值则隐藏容器
+ */
 function updateTaskIdDisplay(taskId) {
   const taskIdContainer = document.getElementById('task-id-container')
   const taskIdText = document.getElementById('task-id-text')
@@ -195,9 +262,15 @@ let taskTextareaContents = {} // 存储每个任务的 textarea 内容（修复�
 let taskOptionsStates = {} // 存储每个任务的选项勾选状态
 let taskImages = {} // 存储每个任务的图片列表
 
-// 启动倒计时
+/**
+ * 启动倒计时
+ * 初始化并启动自动提交倒计时定时器
+ *
+ * @param {number} timeoutSeconds - 倒计时秒数
+ * @description 每秒更新显示，倒计时结束时自动提交反馈。清除旧定时器避免重复
+ */
 function startCountdown(timeoutSeconds) {
-  // 清除之前的定时器
+  // 清除之前的定时器，避免重复倒计时
   if (countdownTimer) {
     clearInterval(countdownTimer)
     countdownTimer = null
@@ -213,7 +286,7 @@ function startCountdown(timeoutSeconds) {
     remainingSeconds--
 
     if (remainingSeconds <= 0) {
-      // 倒计时结束，自动提交
+      // 倒计时结束，自动提交默认反馈
       autoSubmitFeedback()
     } else {
       // 更新显示
@@ -222,7 +295,12 @@ function startCountdown(timeoutSeconds) {
   }, 1000)
 }
 
-// 更新倒计时显示
+/**
+ * 更新倒计时显示
+ * 根据剩余秒数更新UI显示文本和可见性
+ *
+ * @description 显示格式："N秒后自动重新询问"，倒计时结束时隐藏容器
+ */
 function updateCountdownDisplay() {
   const countdownContainer = document.getElementById('countdown-container')
   const countdownText = document.getElementById('countdown-text')
@@ -235,7 +313,12 @@ function updateCountdownDisplay() {
   }
 }
 
-// 停止倒计时
+/**
+ * 停止倒计时
+ * 清除定时器并隐藏倒计时容器
+ *
+ * @description 用于用户手动提交或关闭任务时停止倒计时
+ */
 function stopCountdown() {
   if (countdownTimer) {
     clearInterval(countdownTimer)
@@ -246,7 +329,13 @@ function stopCountdown() {
   countdownContainer.classList.add('hidden')
 }
 
-// 获取选中的选项（辅助函数）
+/**
+ * 获取选中的选项
+ * 遍历所有checkbox并返回选中项的数组
+ *
+ * @returns {string[]} 选中的选项文本数组
+ * @description 辅助函数，用于提交反馈时收集用户选择
+ */
 function getSelectedOptions() {
   const selectedOptions = []
   if (config && config.predefined_options) {
@@ -260,7 +349,17 @@ function getSelectedOptions() {
   return selectedOptions
 }
 
-// 自动提交反馈
+/**
+ * 自动提交反馈
+ * 倒计时结束时自动提交默认反馈，保持AI会话活跃
+ *
+ * @returns {Promise<void>}
+ * @description
+ * 1. 备份用户输入到剪贴板（如果有）
+ * 2. 提交默认消息
+ * 3. 清除任务状态和表单
+ * 4. 刷新任务列表
+ */
 async function autoSubmitFeedback() {
   try {
     // 停止倒计时
@@ -271,7 +370,7 @@ async function autoSubmitFeedback() {
     const userInput = feedbackTextarea ? feedbackTextarea.value.trim() : ''
 
     if (userInput) {
-      // 如果用户有输入，尝试复制到剪贴板
+      // 如果用户有输入，尝试复制到剪贴板作为备份
       try {
         await navigator.clipboard.writeText(userInput)
         console.log('[自动提交] 用户输入已备份到剪贴板')
@@ -280,7 +379,7 @@ async function autoSubmitFeedback() {
       }
     }
 
-    // 构建默认反馈消息（固定文本）
+    // 构建默认反馈消息（固定文本，引导AI继续调用工具）
     const defaultMessage =
       '好的，代码先保持现状，然后重新调用 interactive_feedback 工具，调用interactive_feedback后会有一个窗口，我将在窗口中告诉你下一步指令，请先调用interactive_feedback工具'
 
@@ -296,8 +395,8 @@ async function autoSubmitFeedback() {
 
     if (response.ok) {
       console.log('[自动提交] 已自动提交默认反馈以保持会话活跃')
-      
-      // 【修复】自动提交成功后，清除当前任务保存的所有状态
+
+      // 清除当前任务保存的所有状态
       if (activeTaskId) {
         if (taskTextareaContents[activeTaskId] !== undefined) {
           delete taskTextareaContents[activeTaskId]
@@ -312,6 +411,28 @@ async function autoSubmitFeedback() {
           console.log(`✅ [自动提交] 已清除任务 ${activeTaskId} 保存的图片列表`)
         }
       }
+
+      // 清空表单
+      if (feedbackTextarea) {
+        feedbackTextarea.value = ''
+      }
+      // 取消选中所有复选框
+      document.querySelectorAll('input[type="checkbox"]').forEach(cb => (cb.checked = false))
+      // 清除所有图片
+      clearAllImages()
+
+      // 重新加载配置并刷新任务列表
+      console.log('[自动提交] 重新加载配置...')
+      await loadConfig(false) // 不发送通知
+
+      // 立即刷新任务列表
+      if (
+        typeof window.multiTaskModule !== 'undefined' &&
+        window.multiTaskModule.refreshTasksList
+      ) {
+        await window.multiTaskModule.refreshTasksList()
+        console.log('[自动提交] 任务列表已同步更新')
+      }
     } else {
       console.error('[自动提交] 提交失败，HTTP状态:', response.status)
     }
@@ -320,7 +441,18 @@ async function autoSubmitFeedback() {
   }
 }
 
-// 加载配置
+/**
+ * 加载配置
+ * 从服务器获取任务配置并更新UI
+ *
+ * @param {boolean} shouldNotify - 是否发送桌面通知（默认true）
+ * @returns {Promise<void>}
+ * @description
+ * 1. 获取配置（任务ID、描述、选项、超时设置）
+ * 2. 检查是否有有效内容
+ * 3. 发送桌面通知（可选）
+ * 4. 更新UI元素和启动倒计时
+ */
 async function loadConfig(shouldNotify = true) {
   try {
     const response = await fetch('/api/config')
@@ -371,6 +503,9 @@ async function loadConfig(shouldNotify = true) {
       const optionsContainer = document.getElementById('options-container')
       const separator = document.getElementById('separator')
 
+      // 清空选项避免重复添加
+      optionsContainer.innerHTML = ''
+
       config.predefined_options.forEach((option, index) => {
         const optionDiv = document.createElement('div')
         optionDiv.className = 'option-item'
@@ -407,7 +542,16 @@ async function loadConfig(shouldNotify = true) {
   }
 }
 
-// 显示无内容页面
+/**
+ * 显示无内容页面
+ * 当没有待处理任务时显示等待界面
+ *
+ * @description
+ * - 隐藏内容容器，显示无内容提示
+ * - 添加no-content-mode CSS类
+ * - 停止倒计时
+ * - 显示关闭按钮
+ */
 function showNoContentPage() {
   const contentContainer = document.getElementById('content-container')
   const noContentContainer = document.getElementById('no-content-container')
@@ -438,7 +582,16 @@ function showNoContentPage() {
   }
 }
 
-// 显示内容页面
+/**
+ * 显示内容页面
+ * 当有任务时显示正常内容界面
+ *
+ * @description
+ * - 显示内容容器，隐藏无内容提示
+ * - 移除no-content-mode CSS类
+ * - 启用提交按钮
+ * - 重新启动任务轮询
+ */
 function showContentPage() {
   const contentContainer = document.getElementById('content-container')
   const noContentContainer = document.getElementById('no-content-container')
@@ -454,8 +607,7 @@ function showContentPage() {
 
   enableSubmitButton()
 
-  // 【修复】确保多任务轮询正在运行
-  // 在页面从"无内容"切换到"有内容"状态时,重新启动任务轮询
+  // 确保多任务轮询正在运行（在页面从"无内容"切换到"有内容"状态时,重新启动任务轮询）
   if (
     typeof window.multiTaskModule !== 'undefined' &&
     typeof window.multiTaskModule.startTasksPolling === 'function'
@@ -465,7 +617,12 @@ function showContentPage() {
   }
 }
 
-// 禁用提交按钮
+/**
+ * 禁用提交按钮
+ * 禁用所有输入控件（提交按钮、插入按钮、文本框）
+ *
+ * @description 用于无内容状态或加载中状态
+ */
 function disableSubmitButton() {
   const submitBtn = document.getElementById('submit-btn')
   const insertBtn = document.getElementById('insert-code-btn')
@@ -488,7 +645,12 @@ function disableSubmitButton() {
   }
 }
 
-// 启用提交按钮
+/**
+ * 启用提交按钮
+ * 启用所有输入控件（提交按钮、插入按钮、文本框）
+ *
+ * @description 用于有内容状态，允许用户交互
+ */
 function enableSubmitButton() {
   const submitBtn = document.getElementById('submit-btn')
   const insertBtn = document.getElementById('insert-code-btn')
@@ -511,7 +673,17 @@ function enableSubmitButton() {
   }
 }
 
-// 显示状态消息
+/**
+ * 显示状态消息
+ * 显示成功/错误/信息提示
+ *
+ * @param {string} message - 消息内容
+ * @param {string} type - 消息类型（success/error/info）
+ * @description
+ * - 根据当前页面状态选择显示位置
+ * - success消息1秒后自动隐藏
+ * - 其他消息3秒后自动隐藏
+ */
 function showStatus(message, type) {
   // 检查当前是否在无内容页面
   const noContentContainer = document.getElementById('no-content-container')
@@ -533,7 +705,18 @@ function showStatus(message, type) {
   }
 }
 
-// 插入代码功能 - 与GUI版本逻辑完全一致
+/**
+ * 插入代码功能
+ * 从剪贴板读取文本并插入为Markdown代码块
+ *
+ * @returns {Promise<void>}
+ * @description
+ * - 从剪贴板读取文本
+ * - 在光标位置插入代码块（```语法）
+ * - 智能处理换行（开头不加换行）
+ * - 移动光标到代码块末尾
+ * - 触发方式：Alt/Option+C
+ */
 async function insertCodeFromClipboard() {
   try {
     const text = await navigator.clipboard.readText()
@@ -570,7 +753,20 @@ async function insertCodeFromClipboard() {
   }
 }
 
-// 提交反馈
+/**
+ * 提交反馈
+ * 收集用户输入并通过FormData提交到服务器
+ *
+ * @returns {Promise<void>}
+ * @description
+ * 提交流程：
+ * 1. 停止倒计时
+ * 2. 收集反馈文本、选项、图片
+ * 3. 验证至少有一项输入
+ * 4. FormData上传（支持文件）
+ * 5. 清除表单和任务状态
+ * 6. 刷新配置和任务列表
+ */
 async function submitFeedback() {
   // 停止倒计时（用户手动提交）
   stopCountdown()
@@ -634,7 +830,7 @@ async function submitFeedback() {
       // 清除所有图片
       clearAllImages()
 
-      // 【修复】清除当前任务保存的所有状态（textarea、选项、图片）
+      // 清除当前任务保存的所有状态
       if (activeTaskId) {
         if (taskTextareaContents[activeTaskId] !== undefined) {
           delete taskTextareaContents[activeTaskId]
@@ -676,7 +872,17 @@ async function submitFeedback() {
   }
 }
 
-// 关闭界面 - 简化版本，统一刷新逻辑
+/**
+ * 关闭界面
+ * 关闭服务并刷新页面
+ *
+ * @returns {Promise<void>}
+ * @description
+ * - 停止内容轮询
+ * - 调用/api/close关闭服务
+ * - 2秒后刷新页面
+ * - 无论成功失败都会刷新
+ */
 async function closeInterface() {
   try {
     showStatus('正在关闭服务...', 'info')
@@ -708,7 +914,16 @@ async function closeInterface() {
   }, 2000)
 }
 
-// 安全刷新页面函数
+/**
+ * 安全刷新页面
+ * 多层降级确保页面刷新成功
+ *
+ * @description
+ * 降级策略：
+ * 1. window.location.reload()
+ * 2. 跳转到根路径
+ * 3. 跳转到空白页
+ */
 function refreshPageSafely() {
   console.log('正在刷新页面...')
   try {
@@ -732,7 +947,10 @@ function refreshPageSafely() {
 
 // 注意：原来的复杂关闭逻辑已被简化为统一的刷新逻辑
 
-// 内容轮询检查 - 智能退避策略（优化及时性）
+/**
+ * 内容轮询检查 - 智能退避策略
+ * 使用自适应间隔定期检查配置更新
+ */
 let pollingTimeout = null
 let currentPollingInterval = 2000 // 初始间隔2秒
 const basePollingInterval = 2000 // 基础间隔
@@ -741,6 +959,15 @@ const rateLimitInterval = 5000 // 速率限制时的间隔5秒
 let consecutiveErrors = 0
 let lastErrorType = null
 
+/**
+ * 启动内容轮询
+ * 开始定期检查服务器配置更新
+ *
+ * @description
+ * - 防止重复启动
+ * - 使用智能退避策略
+ * - 基础间隔2秒，最大15秒
+ */
 function startContentPolling() {
   if (pollingTimeout) {
     console.log('轮询已经在运行，跳过启动')
@@ -751,6 +978,17 @@ function startContentPolling() {
   scheduleNextPoll()
 }
 
+/**
+ * 调度下一次轮询
+ * 递归调度轮询任务，实现智能退避策略
+ *
+ * @description
+ * - 使用setTimeout实现异步轮询
+ * - 检测速率限制和错误
+ * - 智能退避策略（错误时指数退避）
+ * - 检测内容变化并发送通知
+ * - 自动恢复和重置错误计数
+ */
 function scheduleNextPoll() {
   pollingTimeout = setTimeout(async () => {
     try {
@@ -863,6 +1101,16 @@ function scheduleNextPoll() {
   console.log(`内容轮询已安排，间隔${currentPollingInterval}ms`)
 }
 
+/**
+ * 处理轮询错误
+ * 根据错误类型使用不同的退避策略
+ *
+ * @param {string} errorType - 错误类型（rate_limit/network_error）
+ * @description
+ * - rate_limit: 固定5秒间隔
+ * - network_error: 指数退避（1.5^n），最大15秒
+ * - 其他：保持原间隔
+ */
 function handlePollingError(errorType) {
   consecutiveErrors++
   lastErrorType = errorType
@@ -888,6 +1136,12 @@ function handlePollingError(errorType) {
   scheduleNextPoll()
 }
 
+/**
+ * 停止内容轮询
+ * 清除定时器并重置轮询状态
+ *
+ * @description 用于关闭界面或切换到无内容状态
+ */
 function stopContentPolling() {
   if (pollingTimeout) {
     clearTimeout(pollingTimeout)
@@ -899,10 +1153,23 @@ function stopContentPolling() {
   lastErrorType = null
 }
 
-// 更新页面内容
-// oldConfig: 可选参数，用于正确保存选中状态（避免配置更新时状态丢失）
+/**
+ * 更新页面内容
+ * 根据新配置更新UI，保持用户选中状态
+ *
+ * @param {Object|null} oldConfig - 旧配置对象（用于保存选中状态）
+ * @description
+ * - 更新任务ID、描述、选项
+ * - 保持用户已选择的选项状态
+ * - 重新启动倒计时
+ */
 function updatePageContent(oldConfig = null) {
   if (!config) return
+
+  // 保存 textarea 内容
+  const feedbackTextarea = document.getElementById('feedback-text')
+  const currentTextareaValue = feedbackTextarea ? feedbackTextarea.value : ''
+  console.log(`💾 保存当前 textarea 内容: ${currentTextareaValue.length} 个字符`)
 
   // 更新 task_id 显示
   updateTaskIdDisplay(config.task_id)
@@ -953,6 +1220,14 @@ function updatePageContent(oldConfig = null) {
     }
   }
 
+  // 恢复 textarea 内容
+  if (feedbackTextarea) {
+    feedbackTextarea.value = currentTextareaValue
+    if (currentTextareaValue.length > 0) {
+      console.log(`♻️ 已恢复 textarea 内容: ${currentTextareaValue.length} 个字符`)
+    }
+  }
+
   // 重新启动自动重调倒计时
   if (config.auto_resubmit_timeout && config.auto_resubmit_timeout > 0) {
     console.log(`[倒计时] 内容更新，重新启动倒计时: ${config.auto_resubmit_timeout}秒`)
@@ -976,6 +1251,7 @@ class AudioCacheManager {
     this.maxCacheSize = 10 // 最大缓存音频文件数量
     this.maxCacheAge = 30 * 60 * 1000 // 最大缓存时间：30分钟
     this.cleanupInterval = 5 * 60 * 1000 // 清理间隔：5分钟
+    this.cleanupTimer = null // 保存定时器ID便于清理
 
     // 启动定期清理
     this.startPeriodicCleanup()
@@ -1039,7 +1315,12 @@ class AudioCacheManager {
   }
 
   startPeriodicCleanup() {
-    setInterval(() => {
+    // 清除旧的定时器
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer)
+    }
+    // 保存新的定时器ID
+    this.cleanupTimer = setInterval(() => {
       this.cleanupExpired()
     }, this.cleanupInterval)
   }
@@ -1047,6 +1328,11 @@ class AudioCacheManager {
   clear() {
     this.cache.clear()
     this.accessTimes.clear()
+    // 清除定时器
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer)
+      this.cleanupTimer = null
+    }
     console.log('音频缓存已清空')
   }
 
@@ -1959,7 +2245,18 @@ const settingsManager = new SettingsManager()
 
 // 性能优化工具函数
 
-// 防抖函数
+/**
+ * 防抖函数
+ * 延迟执行，只在最后一次调用后执行
+ *
+ * @param {Function} func - 待防抖的函数
+ * @param {number} wait - 延迟时间（毫秒）
+ * @returns {Function} 防抖后的函数
+ * @description
+ * - 多次调用只执行最后一次
+ * - 常用于搜索框输入、窗口resize
+ * - 避免频繁触发高成本操作
+ */
 function debounce(func, wait) {
   let timeout
   return function executedFunction(...args) {
@@ -1972,7 +2269,15 @@ function debounce(func, wait) {
   }
 }
 
-// 节流函数
+/**
+ * 节流函数
+ * 限制函数调用频率，性能优化
+ *
+ * @param {Function} func - 待节流的函数
+ * @param {number} limit - 节流时间间隔（毫秒）
+ * @returns {Function} 节流后的函数
+ * @description 在limit时间内只执行一次，常用于高频事件（scroll、resize、drag）
+ */
 function throttle(func, limit) {
   let inThrottle
   return function (...args) {
@@ -1984,7 +2289,13 @@ function throttle(func, limit) {
   }
 }
 
-// RAF优化的更新函数
+/**
+ * RAF优化的更新函数
+ * 使用requestAnimationFrame优化DOM更新性能
+ *
+ * @param {Function} callback - 更新回调
+ * @description 优先使用RAF，降级使用setTimeout（60fps）
+ */
 function rafUpdate(callback) {
   if (window.requestAnimationFrame) {
     requestAnimationFrame(callback)
@@ -2003,12 +2314,26 @@ const SUPPORTED_IMAGE_TYPES = [
   'image/bmp',
   'image/svg+xml'
 ]
+const MIN_IMAGE_SIZE = 100 // 100字节（防止空文件/损坏文件）
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024 // 10MB
 const MAX_IMAGE_COUNT = 10
 const MAX_IMAGE_DIMENSION = 1920 // 最大宽度或高度
 const COMPRESS_QUALITY = 0.8 // 压缩质量 (0.1-1.0)
 
-// 验证图片文件
+/**
+ * 验证图片文件
+ * 执行多层安全验证（类型、大小、文件名、可疑扩展）
+ *
+ * @param {File} file - 待验证的文件对象
+ * @returns {string[]} 错误消息数组，空数组表示验证通过
+ * @description
+ * 验证项：
+ * - 文件对象有效性
+ * - 类型白名单（SUPPORTED_IMAGE_TYPES）
+ * - 大小范围（100B - 10MB）
+ * - 文件名长度（≤255字符）
+ * - 可疑扩展名检测（.exe, .bat等）
+ */
 function validateImageFile(file) {
   const errors = []
 
@@ -2024,6 +2349,10 @@ function validateImageFile(file) {
   }
 
   // 文件大小验证
+  if (file.size < MIN_IMAGE_SIZE) {
+    errors.push(`文件太小，可能是空文件或损坏文件: ${file.size}字节 < ${MIN_IMAGE_SIZE}字节`)
+  }
+
   if (file.size > MAX_IMAGE_SIZE) {
     errors.push(`文件大小超过限制: ${(file.size / 1024 / 1024).toFixed(2)}MB > 10MB`)
   }
@@ -2052,7 +2381,14 @@ function validateImageFile(file) {
   return errors
 }
 
-// 安全的文件名清理
+/**
+ * 安全的文件名清理
+ * 移除特殊字符，防止XSS和文件系统攻击
+ *
+ * @param {string} fileName - 原始文件名
+ * @returns {string} 清理后的安全文件名
+ * @description 清理规则：移除<>:"/\|?*，空格转下划线，限制100字符
+ */
 function sanitizeFileName(fileName) {
   return fileName
     .replace(/[<>:"/\\|?*]/g, '') // 移除特殊字符
@@ -2067,8 +2403,16 @@ function sanitizeFileName(fileName) {
 let objectURLs = new Set()
 let urlToFileMap = new WeakMap() // 使用WeakMap跟踪URL与文件的关联
 let urlCreationTime = new Map() // 跟踪URL创建时间，用于自动清理
+let urlCleanupTimer = null
 
-// 创建安全的Object URL
+/**
+ * 创建安全的Object URL
+ * 为文件创建临时URL并跟踪，防止内存泄漏
+ *
+ * @param {File|Blob} file - 文件或Blob对象
+ * @returns {string|null} 对象URL，失败返回null
+ * @description 自动跟踪URL生命周期，30分钟后自动清理未释放的URL
+ */
 function createObjectURL(file) {
   try {
     const url = URL.createObjectURL(file)
@@ -2091,7 +2435,17 @@ function createObjectURL(file) {
   }
 }
 
-// 清理Object URL
+/**
+ * 清理Object URL
+ * 释放单个Blob URL并从跟踪集合中移除
+ *
+ * @param {string} url - 待释放的Object URL
+ * @description
+ * - 释放Blob URL
+ * - 从跟踪集合移除
+ * - 防止内存泄漏
+ * - 安全处理无效URL
+ */
 function revokeObjectURL(url) {
   if (!url) return
 
@@ -2108,6 +2462,16 @@ function revokeObjectURL(url) {
 }
 
 // 清理所有Object URLs
+/**
+ * 清理所有已创建的Object URLs
+ * 释放所有Blob URL并清除定时器
+ *
+ * @description
+ * - 遍历释放所有URL
+ * - 清除跟踪Map
+ * - 停止定期清理定时器
+ * - 记录性能指标
+ */
 function cleanupAllObjectURLs() {
   console.log(`开始清理 ${objectURLs.size} 个URL对象`)
   const startTime = performance.now()
@@ -2123,13 +2487,30 @@ function cleanupAllObjectURLs() {
   objectURLs.clear()
   urlCreationTime.clear()
 
+  // 清除定期清理定时器
+  if (urlCleanupTimer) {
+    clearInterval(urlCleanupTimer)
+    urlCleanupTimer = null
+  }
+
   const endTime = performance.now()
   console.log(`URL对象清理完成，耗时: ${(endTime - startTime).toFixed(2)}ms`)
 }
 
-// 定期清理过期的URL对象（每5分钟检查一次）
+/**
+ * 定期清理过期的URL对象
+ * 每5分钟检查并释放超过20分钟的Object URL
+ *
+ * @description 防止长时间运行时的内存泄漏，自动管理URL生命周期
+ */
 function startPeriodicCleanup() {
-  setInterval(() => {
+  // 清除旧的定时器
+  if (urlCleanupTimer) {
+    clearInterval(urlCleanupTimer)
+  }
+
+  // 保存新的定时器ID
+  urlCleanupTimer = setInterval(() => {
     const now = Date.now()
     const expiredUrls = []
 
@@ -2147,7 +2528,18 @@ function startPeriodicCleanup() {
   }, 5 * 60 * 1000) // 每5分钟检查一次
 }
 
-// 优化的图片压缩函数
+/**
+ * 优化的图片压缩函数
+ * 智能压缩图片，根据文件大小自适应压缩策略
+ *
+ * @param {File} file - 原始图片文件
+ * @returns {Promise<File>} 压缩后的文件（如果压缩失败或无需压缩则返回原文件）
+ * @description
+ * - SVG和GIF不压缩
+ * - 大文件（>5MB）使用更激进的压缩
+ * - 自动调整尺寸（≤1920px）和质量
+ * - 使用RAF优化，避免阻塞UI
+ */
 function compressImage(file) {
   return new Promise(resolve => {
     // SVG 图片和 GIF 不进行压缩
@@ -2239,7 +2631,21 @@ function compressImage(file) {
   })
 }
 
-// 添加图片到列表
+/**
+ * 添加图片到列表
+ * 验证、压缩并添加图片到selectedImages数组
+ *
+ * @param {File} file - 图片文件对象
+ * @returns {Promise<boolean>} 成功返回true，失败返回false
+ * @description
+ * 处理流程：
+ * 1. 验证数量限制（≤10张）
+ * 2. 验证文件（类型、大小、安全性）
+ * 3. 检查重复
+ * 4. 压缩图片
+ * 5. 创建预览URL
+ * 6. 渲染预览
+ */
 async function addImageToList(file) {
   // 验证图片数量
   if (selectedImages.length >= MAX_IMAGE_COUNT) {
@@ -2264,10 +2670,11 @@ async function addImageToList(file) {
     return false
   }
 
+  const imageId = Date.now() + Math.random()
+  const timestamp = Date.now()
+
   try {
     // 创建加载占位符
-    const imageId = Date.now() + Math.random()
-    const timestamp = Date.now()
     const imageItem = {
       id: imageId,
       file: file,
@@ -2316,7 +2723,17 @@ async function addImageToList(file) {
 let domUpdateQueue = []
 let domUpdateScheduled = false
 
-// 批量处理DOM更新
+/**
+ * 批量处理DOM更新
+ * 将多个DOM操作合并到一个RAF周期内执行
+ *
+ * @param {Function} callback - DOM更新回调函数
+ * @description
+ * - 收集多个更新操作到队列
+ * - 使用RAF批量执行，减少重排重绘
+ * - 使用DocumentFragment优化性能
+ * - 避免DOM抖动和卡顿
+ */
 function scheduleDOMUpdate(callback) {
   domUpdateQueue.push(callback)
   if (!domUpdateScheduled) {
@@ -2330,7 +2747,18 @@ function scheduleDOMUpdate(callback) {
   }
 }
 
-// 优化的图片预览渲染
+/**
+ * 优化的图片预览渲染
+ * 使用RAF和安全DOM操作渲染图片预览
+ *
+ * @param {Object} imageItem - 图片对象（包含id, name, size, previewUrl等）
+ * @param {boolean} isLoading - 是否显示加载状态（默认false）
+ * @description
+ * - 使用RAF优化性能，避免阻塞
+ * - 通过DOMSecurity确保安全
+ * - 延迟加载图片
+ * - 支持加载状态显示
+ */
 function renderImagePreview(imageItem, isLoading = false) {
   rafUpdate(() => {
     const previewContainer = document.getElementById('image-previews')
@@ -2364,14 +2792,30 @@ function renderImagePreview(imageItem, isLoading = false) {
   })
 }
 
-// 文本安全化函数，防止XSS
+/**
+ * 文本安全化函数
+ * 防止XSS攻击，将文本转义为安全HTML
+ *
+ * @param {string} text - 待清理的文本
+ * @returns {string} 转义后的安全HTML
+ * @description 使用textContent确保特殊字符被正确转义
+ */
 function sanitizeText(text) {
   const div = document.createElement('div')
   div.textContent = text
   return div.innerHTML
 }
 
-// 删除图片
+/**
+ * 删除图片
+ * 从列表中移除图片并释放相关资源
+ *
+ * @param {number|string} imageId - 图片ID
+ * @description
+ * - 释放Blob URL避免内存泄漏
+ * - 移除DOM元素
+ * - 更新计数器和可见性
+ */
 function removeImage(imageId) {
   // 找到要删除的图片并安全释放 URL
   const imageToRemove = selectedImages.find(img => img.id == imageId)
@@ -2388,7 +2832,16 @@ function removeImage(imageId) {
   updateImagePreviewVisibility()
 }
 
-// 清除所有图片
+/**
+ * 清除所有图片
+ * 移除所有图片并释放所有相关资源
+ *
+ * @description
+ * - 释放所有Blob URL
+ * - 清空selectedImages数组
+ * - 清理DOM
+ * - 尝试触发垃圾回收（开发环境）
+ */
 function clearAllImages() {
   // 清理内存中的 Object URLs
   selectedImages.forEach(img => {
@@ -2412,7 +2865,16 @@ function clearAllImages() {
   console.log('所有图片已清除，内存已释放')
 }
 
-// 页面卸载时的清理
+/**
+ * 页面卸载时的清理
+ * 在页面关闭或刷新时释放所有资源
+ *
+ * @description
+ * - 清理所有Object URLs
+ * - 清除所有图片数据
+ * - 防止内存泄漏
+ * - 绑定到beforeunload事件
+ */
 function cleanupOnUnload() {
   cleanupAllObjectURLs()
   clearAllImages()
@@ -2422,7 +2884,12 @@ function cleanupOnUnload() {
 window.addEventListener('beforeunload', cleanupOnUnload)
 window.addEventListener('pagehide', cleanupOnUnload)
 
-// 更新图片计数
+/**
+ * 更新图片计数
+ * 显示当前已选图片数量
+ *
+ * @description 更新页面上的图片计数器显示
+ */
 function updateImageCounter() {
   const countElement = document.getElementById('image-count')
   if (countElement) {
@@ -2430,7 +2897,12 @@ function updateImageCounter() {
   }
 }
 
-// 更新图片预览区域可见性
+/**
+ * 更新图片预览区域可见性
+ * 根据图片数量控制预览容器的显示/隐藏
+ *
+ * @description 有图片时显示容器，无图片时隐藏
+ */
 function updateImagePreviewVisibility() {
   const container = document.getElementById('image-preview-container')
   if (selectedImages.length > 0) {
@@ -2442,9 +2914,31 @@ function updateImagePreviewVisibility() {
   }
 }
 
-// 优化的批量文件处理
+/**
+ * 优化的批量文件处理
+ * 并发处理多个文件上传，带进度反馈
+ *
+ * @param {FileList|File[]} files - 文件列表
+ * @returns {Promise<void>}
+ * @description
+ * - 预检查数量限制
+ * - 限制并发数（3个）
+ * - 显示处理进度
+ * - 批量统计成功/失败
+ */
 async function handleFileUpload(files) {
   const fileArray = Array.from(files)
+
+  // 预检查防止超过数量限制
+  const totalCount = selectedImages.length + fileArray.length
+  if (totalCount > MAX_IMAGE_COUNT) {
+    showStatus(
+      `最多只能上传 ${MAX_IMAGE_COUNT} 张图片（当前 ${selectedImages.length} 张，尝试添加 ${fileArray.length} 张）`,
+      'error'
+    )
+    return
+  }
+
   const maxConcurrent = 3 // 限制并发处理数量
   let processed = 0
   let successful = 0
@@ -2503,6 +2997,16 @@ async function handleFileUpload(files) {
 }
 
 // 优化的拖放功能实现
+/**
+ * 初始化拖拽功能
+ * 支持拖拽文件到页面上传
+ *
+ * @description
+ * - 阻止默认拖拽行为
+ * - 显示拖拽遮罩层
+ * - 使用节流优化性能
+ * - 支持文件数量预检查
+ */
 function initializeDragAndDrop() {
   const textarea = document.getElementById('feedback-text')
   const dragOverlay = document.getElementById('drag-overlay')
@@ -2514,6 +3018,16 @@ function initializeDragAndDrop() {
     document.addEventListener(eventName, preventDefaults, { passive: false })
   })
 
+  /**
+   * 阻止默认行为
+   * 阻止浏览器默认的拖拽行为（如打开文件）
+   *
+   * @param {DragEvent} e - 拖拽事件
+   * @description
+   * - 阻止默认行为（打开文件等）
+   * - 停止事件冒泡
+   * - 确保自定义拖拽逻辑生效
+   */
   function preventDefaults(e) {
     e.preventDefault()
     e.stopPropagation()
@@ -2581,7 +3095,16 @@ function initializeDragAndDrop() {
   })
 }
 
-// 粘贴功能实现
+/**
+ * 初始化粘贴功能
+ * 支持从剪贴板粘贴图片
+ *
+ * @description
+ * - 监听paste事件
+ * - 预检查数量限制
+ * - 批量处理图片
+ * - 显示处理结果
+ */
 function initializePasteFunction() {
   document.addEventListener('paste', async function (e) {
     const clipboardData = e.clipboardData
@@ -2593,20 +3116,51 @@ function initializePasteFunction() {
     if (imageItems.length > 0) {
       e.preventDefault() // 阻止默认粘贴行为
 
+      // 预先检查图片数量限制
+      const totalCount = selectedImages.length + imageItems.length
+      if (totalCount > MAX_IMAGE_COUNT) {
+        showStatus(
+          `最多只能上传 ${MAX_IMAGE_COUNT} 张图片（当前 ${selectedImages.length} 张，尝试添加 ${imageItems.length} 张）`,
+          'error'
+        )
+        return
+      }
+
+      // 统计成功和失败数量
+      let successCount = 0
       for (const item of imageItems) {
         const file = item.getAsFile()
         if (file) {
-          await addImageToList(file)
+          const success = await addImageToList(file)
+          if (success) successCount++
         }
       }
 
       updateImagePreviewVisibility()
-      showStatus(`从剪贴板添加了 ${imageItems.length} 张图片`, 'success')
+      // 显示添加结果
+      if (successCount > 0) {
+        showStatus(
+          successCount === imageItems.length
+            ? `从剪贴板添加了 ${successCount} 张图片`
+            : `从剪贴板添加了 ${successCount}/${imageItems.length} 张图片`,
+          successCount === imageItems.length ? 'success' : 'warning'
+        )
+      } else {
+        showStatus('图片添加失败', 'error')
+      }
     }
   })
 }
 
-// 文件选择功能
+/**
+ * 初始化文件选择功能
+ * 绑定上传按钮和文件input事件
+ *
+ * @description
+ * - 点击按钮触发文件选择
+ * - 选择后自动上传
+ * - 清空input支持重复选择
+ */
 function initializeFileSelection() {
   const fileInput = document.getElementById('file-upload-input')
   const uploadBtn = document.getElementById('upload-image-btn')
@@ -2624,7 +3178,18 @@ function initializeFileSelection() {
   })
 }
 
-// 图片模态框功能
+/**
+ * 打开图片模态框
+ * 全屏查看图片详情
+ *
+ * @param {string} base64 - 图片base64或URL
+ * @param {string} name - 文件名
+ * @param {number} size - 文件大小（字节）
+ * @description
+ * - 显示图片和信息
+ * - 支持ESC键关闭
+ * - 点击背景关闭
+ */
 function openImageModal(base64, name, size) {
   const modal = document.getElementById('image-modal')
   const modalImage = document.getElementById('modal-image')
@@ -2647,6 +3212,12 @@ function openImageModal(base64, name, size) {
   })
 }
 
+/**
+ * 关闭图片模态框
+ * 隐藏模态框并清理事件监听
+ *
+ * @description 移除键盘事件监听，防止内存泄漏
+ */
 function closeImageModal() {
   const modal = document.getElementById('image-modal')
   modal.classList.remove('show')
@@ -2655,13 +3226,27 @@ function closeImageModal() {
   document.removeEventListener('keydown', handleModalKeydown)
 }
 
+/**
+ * 处理模态框键盘事件
+ * ESC键关闭模态框
+ *
+ * @param {KeyboardEvent} event - 键盘事件
+ */
 function handleModalKeydown(event) {
   if (event.key === 'Escape') {
     closeImageModal()
   }
 }
 
-// 移动设备检测
+/**
+ * 移动设备检测
+ * 检测是否为移动设备或平板
+ *
+ * @returns {boolean} 是否为移动设备
+ * @description
+ * - 检测UserAgent
+ * - 检测触摸点数量（iPad检测）
+ */
 function isMobileDevice() {
   return (
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
@@ -2671,7 +3256,13 @@ function isMobileDevice() {
   )
 }
 
-// 平台检测和快捷键设置
+/**
+ * 平台检测
+ * 检测操作系统类型（Mac/Windows/Linux）
+ *
+ * @returns {string} 平台类型（'mac'/'windows'/'linux'）
+ * @description 通过navigator.platform和userAgent检测
+ */
 function detectPlatform() {
   const platform = navigator.platform.toLowerCase()
   const userAgent = navigator.userAgent.toLowerCase()
@@ -2686,6 +3277,13 @@ function detectPlatform() {
   return 'windows' // 默认为Windows
 }
 
+/**
+ * 获取快捷键文本
+ * 根据平台返回对应的快捷键说明
+ *
+ * @param {string} platform - 平台类型
+ * @returns {string} 快捷键文本（多行）
+ */
 function getShortcutText(platform) {
   const shortcuts = {
     mac: [
@@ -2715,6 +3313,12 @@ function getShortcutText(platform) {
   return lines.join('\n')
 }
 
+/**
+ * 初始化快捷键提示
+ * 根据平台显示对应的快捷键说明
+ *
+ * @description 桌面设备显示快捷键，移动设备隐藏
+ */
 function initializeShortcutTooltip() {
   // 桌面设备显示快捷键信息
   if (!isMobileDevice()) {
@@ -2726,6 +3330,13 @@ function initializeShortcutTooltip() {
   }
 }
 
+/**
+ * 更新快捷键显示
+ * 更新UI上的快捷键文本
+ *
+ * @param {string} platform - 平台类型
+ * @description 根据平台使用Cmd/Ctrl，Option/Alt
+ */
 function updateShortcutDisplay(platform) {
   const isMac = platform === 'mac'
   const ctrlOrCmd = isMac ? 'Cmd' : 'Ctrl'
@@ -2748,7 +3359,14 @@ function updateShortcutDisplay(platform) {
   })
 }
 
-// 浏览器兼容性检测
+/**
+ * 浏览器兼容性检测
+ * 检查浏览器是否支持所需特性
+ *
+ * @returns {boolean} 是否兼容
+ * @description
+ * 检测特性：FileAPI、拖拽、Canvas、WebWorker、RAF、ObjectURL、Clipboard
+ */
 function checkBrowserCompatibility() {
   const features = {
     fileAPI: !!(window.File && window.FileReader && window.FileList && window.Blob),
@@ -2775,7 +3393,16 @@ function checkBrowserCompatibility() {
   return true
 }
 
-// 特性降级处理
+/**
+ * 特性降级处理
+ * 为旧浏览器提供现代API的Polyfill
+ *
+ * @description
+ * 降级项：
+ * - requestAnimationFrame: 降级为多个厂商前缀或setTimeout
+ * - Clipboard API: 检测并警告
+ * - Object.assign: ES6特性polyfill
+ */
 function setupFeatureFallbacks() {
   // RAF降级
   if (!window.requestAnimationFrame) {
@@ -2809,7 +3436,16 @@ function setupFeatureFallbacks() {
   }
 }
 
-// 初始化图片功能
+/**
+ * 初始化图片功能
+ * 初始化所有图片相关功能（拖拽、粘贴、上传）
+ *
+ * @description
+ * - 兼容性检查
+ * - 初始化拖拽、粘贴、文件选择
+ * - 绑定按钮事件
+ * - 启动URL清理机制
+ */
 function initializeImageFeatures() {
   // 兼容性检查
   if (!checkBrowserCompatibility()) {
@@ -2932,7 +3568,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   })
 
-  // 用户首次交互时启用音频上下文
+  /**
+   * 用户首次交互时启用音频上下文
+   * 解决浏览器自动播放策略限制
+   *
+   * @description
+   * - 检测AudioContext状态
+   * - 恢复suspended状态的音频上下文
+   * - 确保通知声音能够正常播放
+   */
   function enableAudioOnFirstInteraction() {
     if (
       notificationManager.audioContext &&
@@ -2954,7 +3598,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', enableAudioOnFirstInteraction, { once: true })
   document.addEventListener('touchstart', enableAudioOnFirstInteraction, { once: true })
 
-  // 测试通知功能
+  /**
+   * 测试通知功能
+   * 发送测试通知以验证通知系统是否正常工作
+   *
+   * @returns {Promise<void>}
+   * @description
+   * - 触发方式：Ctrl/Cmd+Shift+N
+   * - 发送测试通知
+   * - 显示成功/失败状态
+   * - 用于调试和权限检查
+   */
   async function testNotification() {
     try {
       await notificationManager.sendNotification(
