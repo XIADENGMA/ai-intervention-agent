@@ -72,6 +72,7 @@ AI Intervention Agent MCP 服务器核心模块
 - web_ui: Web 反馈界面（Flask 服务、Markdown 渲染、安全策略）
 """
 
+import asyncio
 import atexit
 import io
 import os
@@ -2164,9 +2165,9 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
         raise Exception("无限等待模式异常退出")
 
 
-def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]:
+async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]:
     """
-    通过轮询 HTTP API 等待任务完成
+    通过轮询 HTTP API 等待任务完成（异步版本）
 
     参数
     ----
@@ -2185,17 +2186,18 @@ def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]
     功能
     ----
     轮询 Web UI 的 /api/tasks/{task_id} 端点，检查任务状态直到完成或超时。
+    使用异步等待，不阻塞事件循环，允许并发处理其他 MCP 请求。
 
     轮询流程
     --------
     1. 确保超时时间不小于 300 秒（后端最低等待时间）
     2. 获取 Web UI 配置和 API URL
     3. 循环轮询（每 1 秒一次）：
-       - 发送 GET /api/tasks/{task_id} 请求
+       - 在线程池中发送 GET /api/tasks/{task_id} 请求
        - 检查响应状态码（404=不存在，200=成功）
        - 解析任务状态和结果
        - 如果 status="completed" 且有 result，返回结果
-       - 否则继续轮询
+       - 使用 await asyncio.sleep(1) 异步等待，不阻塞事件循环
     4. 超时返回 {"error": "任务超时"}
 
     API 响应格式
@@ -2231,6 +2233,7 @@ def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]
     - 轮询间隔: 1 秒（平衡响应性和服务器负载）
     - 请求超时: 2 秒（快速失败）
     - 轮询次数: timeout 秒数（如 300 次）
+    - 异步等待不阻塞事件循环，允许并发处理其他请求
 
     使用场景
     --------
@@ -2244,19 +2247,26 @@ def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]
     - 轮询失败不会立即返回错误，会继续尝试（容错设计）
     - 超时时间应该大于前端倒计时时间（通常为前端 + 60 秒）
     - 返回的 result 字典格式取决于 Web UI 的实现
+    - 使用 asyncio.to_thread 在线程池中运行同步 HTTP 请求
     """
-    # 确保超时时间不小于300秒
-    timeout = max(timeout, 300)
+    # 确保超时时间不小于300秒（0表示无限等待，保持不变）
+    if timeout > 0:
+        timeout = max(timeout, 300)
+
     config, _ = get_web_ui_config()
     target_host = "localhost" if config.host == "0.0.0.0" else config.host
     api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
 
     start_time = time.time()
-    logger.info(f"等待任务完成: {task_id}, 超时时间: {timeout}秒")
+    if timeout == 0:
+        logger.info(f"等待任务完成: {task_id}, 超时时间: 无限等待")
+    else:
+        logger.info(f"等待任务完成: {task_id}, 超时时间: {timeout}秒")
 
-    while time.time() - start_time < timeout:
+    while timeout == 0 or time.time() - start_time < timeout:
         try:
-            response = requests.get(api_url, timeout=2)
+            # 在线程池中执行同步 HTTP 请求，不阻塞事件循环
+            response = await asyncio.to_thread(requests.get, api_url, timeout=2)
 
             if response.status_code == 404:
                 logger.warning(f"任务不存在: {task_id}")
@@ -2264,7 +2274,7 @@ def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]
 
             if response.status_code != 200:
                 logger.warning(f"获取任务状态失败: HTTP {response.status_code}")
-                time.sleep(1)
+                await asyncio.sleep(1)  # 异步等待，不阻塞事件循环
                 continue
 
             task_data = response.json()
@@ -2278,15 +2288,15 @@ def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]
         except requests.exceptions.RequestException as e:
             logger.warning(f"轮询任务状态失败: {e}")
 
-        time.sleep(1)  # 每秒检查一次
+        await asyncio.sleep(1)  # 异步等待，不阻塞事件循环
 
     logger.warning(f"任务超时: {task_id}")
     return {"error": "任务超时"}
 
 
-def ensure_web_ui_running(config):
+async def ensure_web_ui_running(config):
     """
-    确保 Web UI 服务正在运行，未运行则自动启动
+    确保 Web UI 服务正在运行，未运行则自动启动（异步版本）
 
     参数
     ----
@@ -2297,19 +2307,20 @@ def ensure_web_ui_running(config):
     ----
     检查 Web UI 服务的健康状态，如果未运行则自动启动。
     提供服务自愈能力，确保 interactive_feedback() 工具始终可用。
+    使用异步 I/O，不阻塞事件循环。
 
     检查流程
     --------
-    1. 发送 GET /api/health 请求（超时 2 秒）
+    1. 在线程池中发送 GET /api/health 请求（超时 2 秒）
     2. 如果响应状态码为 200，表示服务已运行，直接返回
     3. 如果请求失败（异常或非 200），判断服务未运行
-    4. 调用 start_web_service() 启动服务
-    5. 等待 2 秒确保服务完全启动
+    4. 在线程池中调用 start_web_service() 启动服务
+    5. 异步等待 2 秒确保服务完全启动
 
     使用场景
     --------
     - interactive_feedback() 工具调用前
-    - launch_feedback_ui() 函数调用前
+    - launch_feedback_ui() 函数调用前（通过 asyncio.run）
     - 确保服务可用性
 
     注意事项
@@ -2318,10 +2329,12 @@ def ensure_web_ui_running(config):
     - 所有异常都会被捕获并视为服务未运行
     - 启动后等待 2 秒，可能不足以完全启动（但 start_web_service 内部有更完整的等待逻辑）
     - 不会抛出异常，启动失败由 start_web_service() 处理
+    - 使用 asyncio.to_thread 在线程池中运行同步操作，不阻塞事件循环
     """
     try:
-        response = requests.get(
-            f"http://{config.host}:{config.port}/api/health", timeout=2
+        # 在线程池中执行同步 HTTP 请求
+        response = await asyncio.to_thread(
+            requests.get, f"http://{config.host}:{config.port}/api/health", timeout=2
         )
         if response.status_code == 200:
             logger.debug("Web UI 已经在运行")
@@ -2331,8 +2344,9 @@ def ensure_web_ui_running(config):
 
     logger.info("Web UI 未运行，正在启动...")
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    start_web_service(config, script_dir)
-    time.sleep(2)
+    # 在线程池中执行服务启动（因为 start_web_service 可能是同步的）
+    await asyncio.to_thread(start_web_service, config, script_dir)
+    await asyncio.sleep(2)  # 异步等待，不阻塞事件循环
 
 
 def launch_feedback_ui(
@@ -2393,8 +2407,9 @@ def launch_feedback_ui(
     --------
     旧版本的 Python API，现已被 MCP 工具架构取代。
     """
-    # 确保超时时间不小于300秒
-    timeout = max(timeout, 300)
+    # 确保超时时间不小于300秒（0表示无限等待，保持不变）
+    if timeout > 0:
+        timeout = max(timeout, 300)
     try:
         import time
 
@@ -2416,8 +2431,8 @@ def launch_feedback_ui(
             f"启动反馈界面: {cleaned_summary[:100]}... (自动生成task_id: {task_id})"
         )
 
-        # 确保 Web UI 正在运行
-        ensure_web_ui_running(config)
+        # 确保 Web UI 正在运行（在同步函数中运行异步函数）
+        asyncio.run(ensure_web_ui_running(config))
 
         # 通过 HTTP API 向 web_ui 添加任务
         target_host = "localhost" if config.host == "0.0.0.0" else config.host
@@ -2447,8 +2462,11 @@ def launch_feedback_ui(
             logger.error(f"添加任务请求失败: {e}")
             return {"error": f"无法连接到Web UI: {e}"}
 
-        # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，无最大限制）
-        if auto_resubmit_timeout <= 0:
+        # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，timeout=0表示无限等待）
+        if timeout == 0:
+            # 无限等待模式
+            backend_timeout = 0
+        elif auto_resubmit_timeout <= 0:
             # 禁用自动提交时，使用传入的timeout或默认300秒
             backend_timeout = max(timeout, 300)
         else:
@@ -2458,7 +2476,8 @@ def launch_feedback_ui(
         logger.info(
             f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒, 传入timeout: {timeout}秒)"
         )
-        result = wait_for_task_completion(task_id, timeout=backend_timeout)
+        # 在同步函数中运行异步函数（废弃的 API，保持向后兼容）
+        result = asyncio.run(wait_for_task_completion(task_id, timeout=backend_timeout))
 
         if "error" in result:
             logger.error(f"任务执行失败: {result['error']}")
@@ -2479,7 +2498,7 @@ def launch_feedback_ui(
 
 
 @mcp.tool()
-def interactive_feedback(
+async def interactive_feedback(
     message: str = Field(description="The specific question for the user"),
     predefined_options: Optional[list] = Field(
         default=None,
@@ -2644,14 +2663,16 @@ def interactive_feedback(
         config, auto_resubmit_timeout = get_web_ui_config()
 
         # 确保 Web UI 正在运行
-        ensure_web_ui_running(config)
+        await ensure_web_ui_running(config)
 
         # 通过 HTTP API 添加任务
         target_host = "localhost" if config.host == "0.0.0.0" else config.host
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
         try:
-            response = requests.post(
+            # 在线程池中执行同步 HTTP 请求，不阻塞事件循环
+            response = await asyncio.to_thread(
+                requests.post,
                 api_url,
                 json={
                     "task_id": task_id,
@@ -2686,7 +2707,7 @@ def interactive_feedback(
         logger.info(
             f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒)"
         )
-        result = wait_for_task_completion(task_id, timeout=backend_timeout)
+        result = await wait_for_task_completion(task_id, timeout=backend_timeout)
 
         if "error" in result:
             logger.error(f"任务执行失败: {result['error']}")
@@ -2948,18 +2969,28 @@ def main():
     功能
     ----
     配置日志级别并启动 FastMCP 服务器，使用 stdio 传输协议与 AI 助手通信。
+    包含自动重试机制，提高服务稳定性。
 
     运行流程
     --------
     1. 降低 mcp 和 fastmcp 日志级别为 WARNING（避免污染 stdio）
     2. 调用 mcp.run(transport="stdio") 启动 MCP 服务器
     3. 服务器持续运行，监听 stdio 上的 MCP 协议消息
-    4. 捕获中断信号（Ctrl+C）或异常，执行清理并退出
+    4. 捕获中断信号（Ctrl+C）或异常，执行清理
+    5. 如果发生异常，最多重试 3 次，每次间隔 1 秒
 
     异常处理
     ----------
     - KeyboardInterrupt: 捕获 Ctrl+C，清理服务后正常退出
-    - 其他异常: 记录错误，清理服务后以状态码 1 退出
+    - 其他异常: 记录错误，清理服务，尝试重启（最多 3 次）
+    - 重试失败: 达到最大重试次数后以状态码 1 退出
+
+    重试策略
+    ----------
+    - 最大重试次数: 3 次
+    - 重试间隔: 1 秒
+    - 每次重试前清理所有服务进程
+    - 记录完整的错误堆栈和重试历史
 
     日志配置
     ----------
@@ -2984,22 +3015,51 @@ def main():
     - 必须确保 stdout 仅用于 MCP 协议通信
     - 所有日志输出重定向到 stderr
     - 服务进程由 ServiceManager 管理，退出时自动清理
+    - 重试机制可以自动恢复临时性错误
     """
-    try:
-        mcp_logger = _stdlib_logging.getLogger("mcp")
-        mcp_logger.setLevel(_stdlib_logging.WARNING)
+    # 配置日志级别（在重试循环外，只配置一次）
+    mcp_logger = _stdlib_logging.getLogger("mcp")
+    mcp_logger.setLevel(_stdlib_logging.WARNING)
 
-        fastmcp_logger = _stdlib_logging.getLogger("fastmcp")
-        fastmcp_logger.setLevel(_stdlib_logging.WARNING)
+    fastmcp_logger = _stdlib_logging.getLogger("fastmcp")
+    fastmcp_logger.setLevel(_stdlib_logging.WARNING)
 
-        mcp.run(transport="stdio")
-    except KeyboardInterrupt:
-        logger.info("收到中断信号，正在关闭服务器")
-        cleanup_services()
-    except Exception as e:
-        logger.error(f"服务器启动失败: {e}")
-        cleanup_services()
-        sys.exit(1)
+    # 重试配置
+    max_retries = 3
+    retry_count = 0
+
+    while retry_count < max_retries:
+        try:
+            if retry_count > 0:
+                logger.info(f"尝试重新启动 MCP 服务器 (第 {retry_count + 1} 次)")
+
+            mcp.run(transport="stdio")
+
+            # 如果 mcp.run() 正常退出（不抛异常），跳出循环
+            logger.info("MCP 服务器正常退出")
+            break
+
+        except KeyboardInterrupt:
+            logger.info("收到中断信号，正在关闭服务器")
+            cleanup_services()
+            break  # 用户中断，不重试
+
+        except Exception as e:
+            retry_count += 1
+            logger.error(
+                f"MCP 服务器运行时错误 (第 {retry_count}/{max_retries} 次): {e}",
+                exc_info=True,
+            )
+
+            # 清理服务进程
+            cleanup_services()
+
+            if retry_count < max_retries:
+                logger.warning("将在 1 秒后尝试重启服务器...")
+                time.sleep(1)
+            else:
+                logger.error(f"达到最大重试次数 ({max_retries})，服务退出")
+                sys.exit(1)
 
 
 if __name__ == "__main__":
