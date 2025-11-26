@@ -380,8 +380,7 @@ async function autoSubmitFeedback() {
     }
 
     // 构建默认反馈消息（固定文本，引导AI继续调用工具）
-    const defaultMessage =
-      '好的，代码先保持现状，然后重新调用 interactive_feedback 工具，调用interactive_feedback后会有一个窗口，我将在窗口中告诉你下一步指令，请先调用interactive_feedback工具'
+    const defaultMessage = '请立即调用 interactive_feedback 工具'
 
     // 使用FormData提交（与正常提交一致）
     const formData = new FormData()
@@ -470,25 +469,56 @@ async function loadConfig(shouldNotify = true) {
 
     // 只在明确需要时发送通知（首次加载或新内容到达）
     if (shouldNotify) {
-      try {
-        notificationManager
-          .sendNotification('AI Intervention Agent', '新的反馈请求已到达，请查看并回复', {
-            tag: 'new-content',
-            requireInteraction: true,
-            onClick: () => {
-              window.focus()
-              const textarea = document.getElementById('feedback-text')
-              if (textarea) {
-                textarea.focus()
-              }
-            }
-          })
-          .catch(error => {
-            console.warn('发送新内容通知失败:', error)
-          })
-      } catch (error) {
-        console.warn('通知功能不可用:', error)
-      }
+      // 延迟通知到页面更新完成后
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // 状态一致性检查
+          const contentContainer = document.getElementById('content-container')
+          const noContentContainer = document.getElementById('no-content-container')
+
+          const isShowingContent = contentContainer &&
+                                  contentContainer.style.display !== 'none' &&
+                                  noContentContainer &&
+                                  noContentContainer.style.display === 'none'
+
+          if (!isShowingContent) {
+            console.warn('⚠️  页面状态不一致，跳过通知（内容页面未显示）')
+            return
+          }
+
+          // 获取任务 ID
+          const taskId = config.task_id || 'unknown'
+          const truncatedId = taskId.substring(Math.max(0, taskId.length - 10))
+
+          try {
+            notificationManager
+              .sendNotification(
+                'AI Intervention Agent',
+                `新任务 ${truncatedId}: 请查看并回复`,
+                {
+                  tag: `task-${taskId}`,
+                  requireInteraction: true,
+                  data: { taskId: taskId },
+                  onClick: () => {
+                    window.focus()
+                    if (typeof switchToTask === 'function') {
+                      switchToTask(taskId)
+                    }
+                    const textarea = document.getElementById('feedback-text')
+                    if (textarea) {
+                      textarea.focus()
+                    }
+                  }
+                }
+              )
+              .catch(error => {
+                console.warn('发送新内容通知失败:', error)
+              })
+          } catch (error) {
+            console.warn('通知功能不可用:', error)
+          }
+        })
+      })
     }
 
     // 更新 task_id 显示
@@ -821,7 +851,12 @@ async function submitFeedback() {
     if (response.ok) {
       showStatus(result.message, 'success')
 
-      // 反馈提交成功，不需要通知（用户要求）
+      // 反馈提交成功，取消对应任务的通知
+      if (config && config.task_id) {
+        const taskId = config.task_id
+        notificationManager.cancelNotification(`task-${taskId}`)
+        console.log(`✅ 已取消任务 ${taskId} 的通知`)
+      }
 
       // 清空表单
       document.getElementById('feedback-text').value = ''
@@ -1020,32 +1055,64 @@ function scheduleNextPoll() {
         // 从无内容状态变为有内容状态
         console.log('✅ 检测到新内容，更新页面')
 
-        // 恢复通知：只在从无内容到有内容时通知一次
-        try {
-          notificationManager
-            .sendNotification('AI Intervention Agent', '新的反馈请求已到达，请查看并回复', {
-              tag: 'new-content', // 使用tag防止重复
-              requireInteraction: true,
-              onClick: () => {
-                window.focus()
-                const textarea = document.getElementById('feedback-text')
-                if (textarea) {
-                  textarea.focus()
-                }
-              }
-            })
-            .catch(error => {
-              console.warn('发送新内容通知失败:', error)
-            })
-        } catch (error) {
-          console.warn('通知功能不可用:', error)
-        }
-
+        // 先更新页面状态
         const oldConfig = config
         config = newConfig
         showContentPage()
         updatePageContent(oldConfig)
         showStatus('收到新的反馈请求！', 'success')
+
+        // 延迟通知到页面更新完成后（使用双重 RAF 确保渲染完成）
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            // 二次确认当前确实在内容页面（状态一致性检查）
+            const contentContainer = document.getElementById('content-container')
+            const noContentContainer = document.getElementById('no-content-container')
+
+            const isShowingContent = contentContainer &&
+                                    contentContainer.style.display !== 'none' &&
+                                    noContentContainer &&
+                                    noContentContainer.style.display === 'none'
+
+            if (!isShowingContent) {
+              console.warn('⚠️  页面状态不一致，跳过通知（内容页面未显示）')
+              return
+            }
+
+            // 获取任务 ID（用于 tag 去重）
+            const taskId = config.task_id || 'unknown'
+            const truncatedId = taskId.substring(Math.max(0, taskId.length - 10))  // 最后10个字符
+
+            try {
+              notificationManager
+                .sendNotification(
+                  'AI Intervention Agent',
+                  `新任务 ${truncatedId}: 请查看并回复`,  // 包含任务简短 ID
+                  {
+                    tag: `task-${taskId}`,  // 每个任务独立的 tag，防止重复
+                    requireInteraction: true,
+                    data: { taskId: taskId },  // 附加任务数据
+                    onClick: () => {
+                      window.focus()
+                      // 如果是多任务，切换到对应任务
+                      if (typeof switchToTask === 'function') {
+                        switchToTask(taskId)
+                      }
+                      const textarea = document.getElementById('feedback-text')
+                      if (textarea) {
+                        textarea.focus()
+                      }
+                    }
+                  }
+                )
+                .catch(error => {
+                  console.warn('发送新内容通知失败:', error)
+                })
+            } catch (error) {
+              console.warn('通知功能不可用:', error)
+            }
+          })
+        })
       } else if (!newHasContent && currentHasContent) {
         // 从有内容状态变为无内容状态
         console.log('📝 内容已清空，显示无内容页面')
@@ -1353,6 +1420,8 @@ class NotificationManager {
     this.isSupported = 'Notification' in window
     this.permission = this.isSupported ? Notification.permission : 'denied'
     this.audioContext = null
+    this.userHasInteracted = false // 用户交互标志，避免 vibrate 被阻止警告
+    this.activeNotifications = new Map()  // 跟踪活动通知：tag → Notification 对象
 
     // 性能优化：音频缓存管理
     this.audioCache = new AudioCacheManager()
@@ -1370,6 +1439,58 @@ class NotificationManager {
       mobileVibrate: true
     }
     this.init()
+    this.setupUserInteractionDetection()
+  }
+
+  setupUserInteractionDetection() {
+    // 检测用户交互以允许振动 API
+    const markAsInteracted = () => {
+      this.userHasInteracted = true
+      // 移除事件监听器，只需要检测一次
+      document.removeEventListener('click', markAsInteracted)
+      document.removeEventListener('touchstart', markAsInteracted)
+      document.removeEventListener('keydown', markAsInteracted)
+    }
+
+    document.addEventListener('click', markAsInteracted, { once: true })
+    document.addEventListener('touchstart', markAsInteracted, { once: true })
+    document.addEventListener('keydown', markAsInteracted, { once: true })
+  }
+
+  /**
+   * 取消指定 tag 的通知
+   *
+   * @param {string} tag - 通知标签
+   */
+  cancelNotification(tag) {
+    if (this.activeNotifications.has(tag)) {
+      const notification = this.activeNotifications.get(tag)
+      try {
+        notification.close()
+        console.log(`✅ 已取消通知: ${tag}`)
+      } catch (error) {
+        console.warn(`⚠️  取消通知失败: ${tag}`, error)
+      }
+      this.activeNotifications.delete(tag)
+    }
+  }
+
+  /**
+   * 取消所有活动通知
+   */
+  cancelAllNotifications() {
+    const count = this.activeNotifications.size
+    if (count > 0) {
+      console.log(`🧹 取消所有通知 (${count} 个)`)
+      for (const [tag, notification] of this.activeNotifications) {
+        try {
+          notification.close()
+        } catch (error) {
+          console.warn(`⚠️  取消通知失败: ${tag}`, error)
+        }
+      }
+      this.activeNotifications.clear()
+    }
   }
 
   async init() {
@@ -1503,7 +1624,29 @@ class NotificationManager {
         ...options
       }
 
+      // 如果已有相同 tag 的通知，先关闭旧通知（去重）
+      const tag = notificationOptions.tag
+      if (this.activeNotifications.has(tag)) {
+        const oldNotification = this.activeNotifications.get(tag)
+        try {
+          oldNotification.close()
+          console.log(`♻️  关闭旧通知: ${tag}`)
+        } catch (error) {
+          console.warn(`⚠️  关闭旧通知失败: ${tag}`, error)
+        }
+      }
+
       const notification = new Notification(title, notificationOptions)
+
+      // 添加到活动通知跟踪
+      this.activeNotifications.set(tag, notification)
+      console.log(`➕ 添加到活动通知跟踪: ${tag} (总计: ${this.activeNotifications.size})`)
+
+      // 通知关闭时从跟踪中移除
+      notification.onclose = () => {
+        this.activeNotifications.delete(tag)
+        console.log(`➖ 从活动通知中移除: ${tag} (剩余: ${this.activeNotifications.size})`)
+      }
 
       // 设置超时自动关闭
       if (this.config.timeout > 0) {
@@ -1522,7 +1665,7 @@ class NotificationManager {
       }
 
       // 移动设备震动（需要用户交互后才能调用）
-      if (this.config.mobileVibrate && 'vibrate' in navigator) {
+      if (this.config.mobileVibrate && this.userHasInteracted && 'vibrate' in navigator) {
         try {
           navigator.vibrate([200, 100, 200])
         } catch (error) {
@@ -1662,7 +1805,7 @@ class NotificationManager {
 
   vibrateFallback() {
     // 振动降级方案（移动设备）
-    if (this.config.mobileVibrate && 'vibrate' in navigator) {
+    if (this.config.mobileVibrate && this.userHasInteracted && 'vibrate' in navigator) {
       try {
         navigator.vibrate([200, 100, 200]) // 振动模式：200ms振动，100ms停止，200ms振动
         console.log('使用振动提醒')

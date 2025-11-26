@@ -210,12 +210,14 @@ function updateTasksList(tasks) {
     }
 
     // 为所有新任务启动倒计时（包括pending任务）
-    tasks.filter(t => addedTasks.includes(t.task_id)).forEach(task => {
-      if (task.status !== 'completed' && !taskCountdowns[task.task_id]) {
-        startTaskCountdown(task.task_id, task.auto_resubmit_timeout || 290)
-        console.log(`已为新任务启动倒计时: ${task.task_id}`)
-      }
-    })
+    tasks
+      .filter(t => addedTasks.includes(t.task_id))
+      .forEach(task => {
+        if (task.status !== 'completed' && !taskCountdowns[task.task_id]) {
+          startTaskCountdown(task.task_id, task.auto_resubmit_timeout || 290)
+          console.log(`已为新任务启动倒计时: ${task.task_id}`)
+        }
+      })
   }
 
   // 检测已删除的任务并清理倒计时
@@ -408,8 +410,9 @@ function renderTaskTabs() {
   const incompleteTaskIds = incompleteTasks.map(t => t.task_id)
 
   // 检查是否需要重建（任务列表变化）
-  const needsRebuild = existingTaskIds.length !== incompleteTaskIds.length ||
-                       existingTaskIds.some((id, i) => id !== incompleteTaskIds[i])
+  const needsRebuild =
+    existingTaskIds.length !== incompleteTaskIds.length ||
+    existingTaskIds.some((id, i) => id !== incompleteTaskIds[i])
 
   if (needsRebuild) {
     // 任务列表变化，完全重建
@@ -482,8 +485,8 @@ function createTaskTab(task) {
   // 智能显示：前缀截断 + 完整数字
   // 例如: "ai-intervention-agent-2822" → "ai-interven... 2822"
   const taskParts = task.task_id.split('-')
-  const lastPart = taskParts[taskParts.length - 1]  // 最后的数字
-  const prefixParts = taskParts.slice(0, -1).join('-')  // 前面部分
+  const lastPart = taskParts[taskParts.length - 1] // 最后的数字
+  const prefixParts = taskParts.slice(0, -1).join('-') // 前面部分
 
   let displayName
   if (prefixParts.length > 12) {
@@ -494,7 +497,7 @@ function createTaskTab(task) {
   }
 
   textSpan.textContent = displayName
-  textSpan.title = task.task_id  // 悬停显示完整ID
+  textSpan.title = task.task_id // 悬停显示完整ID
 
   // 先添加文本（左边）
   tab.appendChild(textSpan)
@@ -517,13 +520,13 @@ function createTaskTab(task) {
     }
 
     // SVG圆环实现
-    const radius = 9  // 圆环半径
-    const circumference = 2 * Math.PI * radius  // 圆周长
-    const progress = (remaining / total)  // 进度（0-1）
-    const offset = circumference * (1 - progress)  // dash-offset
+    const radius = 9 // 圆环半径
+    const circumference = 2 * Math.PI * radius // 圆周长
+    const progress = remaining / total // 进度（0-1）
+    const offset = circumference * (1 - progress) // dash-offset
 
     // 使用activeTaskId判断是否active，而不是task.status
-    const isActive = (task.task_id === activeTaskId)
+    const isActive = task.task_id === activeTaskId
     const strokeColor = isActive ? 'rgba(255, 255, 255, 0.9)' : 'rgba(139, 92, 246, 0.9)'
 
     countdownRing.innerHTML = `
@@ -542,7 +545,7 @@ function createTaskTab(task) {
     `
     countdownRing.title = `剩余${remaining}秒`
 
-    tab.appendChild(countdownRing)  // 在textSpan之后
+    tab.appendChild(countdownRing) // 在textSpan之后
   }
 
   // 点击标签切换任务
@@ -617,7 +620,7 @@ async function switchTask(taskId) {
     // 保存图片列表（深拷贝，避免引用问题）
     // 注意：不能简单浅拷贝，因为图片对象包含 blob URL，需要独立管理
     taskImages[activeTaskId] = selectedImages.map(img => ({
-      ...img,
+      ...img
       // 保留所有字段，包括 blob URL（每个任务独立管理）
     }))
     console.log(`✅ 已保存任务 ${activeTaskId} 的图片列表 (${selectedImages.length} 张)`)
@@ -771,7 +774,7 @@ async function loadTaskDetails(taskId) {
       // 恢复该任务之前保存的图片列表
       if (taskImages[taskId] && taskImages[taskId].length > 0) {
         // 深拷贝图片对象，避免引用问题
-        selectedImages = taskImages[taskId].map(img => ({...img}))
+        selectedImages = taskImages[taskId].map(img => ({ ...img }))
         // 重新渲染图片预览
         const previewContainer = document.getElementById('image-previews')
         if (previewContainer) {
@@ -838,16 +841,30 @@ async function updateDescriptionDisplay(prompt) {
 
     if (data.success && data.task.prompt) {
       // 使用服务器端渲染的 markdown HTML
-      const markdownHtml = await fetch('/api/config').then(r => r.json()).then(cfg => cfg.prompt_html || prompt)
-      descriptionElement.innerHTML = markdownHtml
+      const markdownHtml = await fetch('/api/config')
+        .then(r => r.json())
+        .then(cfg => cfg.prompt_html || prompt)
 
-      // 立即触发 MathJax 渲染
-      if (typeof window.MathJax !== 'undefined' && window.MathJax.typesetPromise) {
-        try {
-          await window.MathJax.typesetPromise([descriptionElement])
-          console.log('✅ MathJax 渲染完成')
-        } catch (mathError) {
-          console.warn('MathJax 渲染失败:', mathError)
+      // 使用 renderMarkdownContent 函数来正确处理代码块和 MathJax
+      if (typeof renderMarkdownContent === 'function') {
+        renderMarkdownContent(descriptionElement, markdownHtml)
+      } else {
+        // 降级方案：直接设置 innerHTML
+        descriptionElement.innerHTML = markdownHtml
+
+        // 手动处理代码块
+        if (typeof processCodeBlocks === 'function') {
+          processCodeBlocks(descriptionElement)
+        }
+
+        // 立即触发 MathJax 渲染
+        if (typeof window.MathJax !== 'undefined' && window.MathJax.typesetPromise) {
+          try {
+            await window.MathJax.typesetPromise([descriptionElement])
+            console.log('✅ MathJax 渲染完成')
+          } catch (mathError) {
+            console.warn('MathJax 渲染失败:', mathError)
+          }
         }
       }
     }
@@ -1082,7 +1099,7 @@ function startTaskCountdown(taskId, timeout) {
   // 初始化倒计时数据
   taskCountdowns[taskId] = {
     remaining: timeout,
-    timeout: timeout,  // 添加timeout字段，用于计算进度百分比
+    timeout: timeout, // 添加timeout字段，用于计算进度百分比
     timer: null
   }
 
@@ -1100,7 +1117,7 @@ function startTaskCountdown(taskId, timeout) {
     if (countdownRing) {
       const remaining = taskCountdowns[taskId].remaining
       const total = taskCountdowns[taskId].timeout || 290
-      const progress = (remaining / total)  // 进度（0-1）
+      const progress = remaining / total // 进度（0-1）
 
       // 更新SVG circle的stroke-dashoffset
       const radius = 9
@@ -1191,7 +1208,7 @@ function formatCountdown(seconds) {
 async function autoSubmitTask(taskId) {
   console.log(`任务 ${taskId} 倒计时结束，自动提交`)
   // 使用固定的默认反馈文本
-  const defaultMessage = '好的，代码先保持现状，然后重新调用 interactive_feedback 工具，调用interactive_feedback后会有一个窗口，我将在窗口中告诉你下一步指令，请先调用interactive_feedback工具'
+  const defaultMessage = '请立即调用 interactive_feedback 工具'
   await submitTaskFeedback(taskId, defaultMessage, [])
 }
 
@@ -1492,6 +1509,6 @@ if (typeof window !== 'undefined') {
     switchTask,
     closeTask,
     initMultiTaskSupport,
-    refreshTasksList  // 导出刷新函数
+    refreshTasksList // 导出刷新函数
   }
 }

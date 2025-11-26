@@ -66,6 +66,7 @@ API端点：
     - 文件上传大小和数量受Flask配置限制
     - 通知系统为可选功能，缺失时自动降级
 """
+
 import argparse
 import base64
 import hashlib
@@ -179,6 +180,7 @@ class WebFeedbackUI:
         - 持续服务模式：创建实例 → 调用run()（持续运行），通过API动态更新内容
         - 多任务模式：与TaskQueue配合，实现任务队列的Web界面管理
     """
+
     def __init__(
         self,
         prompt: str,
@@ -361,12 +363,7 @@ class WebFeedbackUI:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
                 f"script-src 'self' 'nonce-{self.csp_nonce}'; "
-                f"style-src 'self' 'nonce-{self.csp_nonce}' "
-                "'sha256-JLEjeN9e5dGsz5475WyRaoA4eQOdNPxDIeUhclnJDCE=' "  # MathJax inline styles
-                "'sha256-mQyxHEuwZJqpxCw3SLmc4YOySNKXunyu2Oiz1r3/wAE=' "  # MathJax inline styles
-                "'sha256-OCf+kv5Asiwp++8PIevKBYSgnNLNUZvxAp4a7wMLuKA=' "  # MathJax inline styles
-                "'sha256-pYs3hdAJmGSBSoN18N3tD9lPxkQenuhgv/HGUB12p1M=' "  # MathJax inline styles
-                "'sha256-nJYll+6UOZ/Z+0asaVjfopbKH/nqoxUrJmlh3Qxn5H4='; "  # MathJax inline styles (additional)
+                "style-src 'self' 'unsafe-inline'; "  # 允许内联样式（MathJax 和 Pygments 需要，nonce 会导致 unsafe-inline 失效）
                 "img-src 'self' data: blob:; "
                 "font-src 'self' data:; "
                 "connect-src 'self'; "
@@ -524,6 +521,7 @@ class WebFeedbackUI:
             - limiter装饰器需要放在路由装饰器之后
             - 静态资源路由使用send_from_directory安全地提供文件
         """
+
         @self.app.route("/")
         def index():
             """主页面路由处理器
@@ -839,7 +837,9 @@ class WebFeedbackUI:
                 auto_resubmit_timeout = min(auto_resubmit_timeout, 290)
 
                 if not task_id or not prompt:
-                    return jsonify({"success": False, "error": "缺少必要参数：task_id 和 prompt"}), 400
+                    return jsonify(
+                        {"success": False, "error": "缺少必要参数：task_id 和 prompt"}
+                    ), 400
 
                 task_queue = get_task_queue()
                 success = task_queue.add_task(
@@ -854,7 +854,9 @@ class WebFeedbackUI:
                     return jsonify({"success": True, "task_id": task_id})
                 else:
                     logger.error(f"添加任务失败: {task_id}")
-                    return jsonify({"success": False, "error": "任务队列已满或任务ID重复"}), 409
+                    return jsonify(
+                        {"success": False, "error": "任务队列已满或任务ID重复"}
+                    ), 409
 
             except Exception as e:
                 logger.error(f"创建任务失败: {e}")
@@ -1343,7 +1345,9 @@ class WebFeedbackUI:
             task_queue = get_task_queue()
             active_task = task_queue.get_active_task()
             if active_task:
-                logger.info(f"同时将反馈提交到TaskQueue中的激活任务: {active_task.task_id}")
+                logger.info(
+                    f"同时将反馈提交到TaskQueue中的激活任务: {active_task.task_id}"
+                )
                 task_queue.complete_task(active_task.task_id, self.feedback_result)
 
             # 清空内容并等待下一次调用
@@ -1972,8 +1976,13 @@ class WebFeedbackUI:
             # 优先尝试使用 importlib.resources (Python 3.9+)
             try:
                 from importlib import resources
+
                 # 尝试从包中读取资源
-                html_content = resources.files('templates').joinpath('web_ui.html').read_text(encoding='utf-8')
+                html_content = (
+                    resources.files("templates")
+                    .joinpath("web_ui.html")
+                    .read_text(encoding="utf-8")
+                )
             except (ImportError, AttributeError, FileNotFoundError, TypeError):
                 # 降级到传统文件路径方式
                 # 获取当前文件所在目录
@@ -1985,6 +1994,7 @@ class WebFeedbackUI:
                 if not os.path.exists(template_path):
                     # 可能是在打包后的环境中，尝试从包的安装位置查找
                     import sys
+
                     for path in sys.path:
                         candidate_path = os.path.join(path, "templates", "web_ui.html")
                         if os.path.exists(candidate_path):

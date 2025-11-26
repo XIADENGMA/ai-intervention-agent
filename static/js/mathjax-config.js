@@ -89,6 +89,16 @@ window.MathJax = {
     tags: 'ams'
   },
 
+  // CHTML 输出配置
+  chtml: {
+    // 禁用字体预加载，避免 404 错误
+    // MathJax 会在需要时动态生成字体，而不是预加载 WOFF 文件
+    fontURL: null,
+    // 使用内联 CSS 样式而不是外部字体文件
+    // 这样可以避免加载 .woff 字体文件导致的 404 错误
+    // MathJax 会将字体信息嵌入到生成的 SVG/HTML 中
+  },
+
   // 渲染选项配置
   options: {
     // 跳过的 HTML 标签

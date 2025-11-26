@@ -5136,6 +5136,42 @@ code,
   .markdown-content ul ul, .markdown-content ol ol,
   .markdown-content ul ol, .markdown-content ol ul { padding-left: 1rem; }
 
+  /* ===== 任务标签栏（移动端优化） ===== */
+  /** task-tabs-container：减少左右内边距，增加最小高度 */
+  .task-tabs-container {
+    padding: 0 1rem !important;
+    min-height: 48px !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /** task-tabs：调整内边距和间距 */
+  .task-tabs {
+    padding: 10px 0 !important;
+    gap: 6px !important;
+  }
+
+  /** task-tab：增加字体大小，调整内边距和宽度 */
+  .task-tab {
+    font-size: 14px !important;
+    padding: 8px 12px !important;
+    min-width: 100px !important;
+    max-width: 150px !important;
+    gap: 8px !important;
+  }
+
+  /** task-tab-text：增加字体大小 */
+  .task-tab-text {
+    font-size: 14px !important;
+  }
+
+  /** task-tab-close：增大关闭按钮尺寸 */
+  .task-tab-close {
+    width: 16px !important;
+    height: 16px !important;
+    font-size: 13px !important;
+  }
+
   /* ===== 设置面板 ===== */
   /** settings-content：最大宽度90%，宽度90% */
   .settings-content { max-width: 90%; width: 90%; }
@@ -5217,6 +5253,42 @@ code,
   /** 嵌套列表：左内边距1.25rem */
   .markdown-content ul ul, .markdown-content ol ol,
   .markdown-content ul ol, .markdown-content ol ul { padding-left: 1.25rem; }
+
+  /* ===== 任务标签栏（小屏幕优化） ===== */
+  /** task-tabs-container：更少的内边距 */
+  .task-tabs-container {
+    padding: 0 0.75rem !important;
+    min-height: 44px !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  /** task-tabs：调整内边距 */
+  .task-tabs {
+    padding: 8px 0 !important;
+    gap: 5px !important;
+  }
+
+  /** task-tab：略小的字体和尺寸 */
+  .task-tab {
+    font-size: 13px !important;
+    padding: 6px 10px !important;
+    min-width: 90px !important;
+    max-width: 140px !important;
+    gap: 6px !important;
+  }
+
+  /** task-tab-text：略小的字体 */
+  .task-tab-text {
+    font-size: 13px !important;
+  }
+
+  /** task-tab-close：保持触摸友好的尺寸 */
+  .task-tab-close {
+    width: 15px !important;
+    height: 15px !important;
+    font-size: 12px !important;
+  }
 
   /* ===== 设置面板（小屏幕全屏优化） ===== */
   /** settings-panel：无内边距，拉伸对齐 */

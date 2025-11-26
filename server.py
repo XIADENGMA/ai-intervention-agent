@@ -156,7 +156,7 @@ def get_task_queue() -> TaskQueue:
 
 
 try:
-    from notification_manager import notification_manager
+    from notification_manager import NotificationTrigger, notification_manager
     from notification_providers import initialize_notification_system
 
     NOTIFICATION_AVAILABLE = True
@@ -2290,8 +2290,10 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
 
         await asyncio.sleep(1)  # 异步等待，不阻塞事件循环
 
-    logger.warning(f"任务超时: {task_id}")
-    return {"error": "任务超时"}
+    # 任务超时，记录错误日志
+    logger.error(f"任务超时: {task_id}, 等待时间已超过 {timeout} 秒")
+    # 返回固定提示，引导 AI 重新调用工具
+    return {"text": "请立即调用 interactive_feedback 工具"}
 
 
 async def ensure_web_ui_running(config):
@@ -2457,6 +2459,36 @@ def launch_feedback_ui(
                 }
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
+
+            # 【新增】发送通知（立即触发，不阻塞主流程）
+            if NOTIFICATION_AVAILABLE:
+                try:
+                    # 截断消息，避免过长（Bark 有长度限制）
+                    notification_message = cleaned_summary[:100]
+                    if len(cleaned_summary) > 100:
+                        notification_message += "..."
+
+                    # 发送通知（types=None 使用配置的默认类型）
+                    event_id = notification_manager.send_notification(
+                        title="新的反馈请求",
+                        message=notification_message,
+                        trigger=NotificationTrigger.IMMEDIATE,
+                        types=None,  # 自动根据配置选择（包括 Bark）
+                        metadata={"task_id": task_id, "source": "launch_feedback_ui"},
+                    )
+
+                    if event_id:
+                        logger.debug(
+                            f"已为任务 {task_id} 发送通知，事件 ID: {event_id}"
+                        )
+                    else:
+                        logger.debug(f"任务 {task_id} 通知已跳过（通知系统已禁用）")
+
+                except Exception as e:
+                    # 通知失败不影响任务创建，仅记录警告
+                    logger.warning(f"发送任务通知失败: {e}，任务 {task_id} 已正常创建")
+            else:
+                logger.debug("通知系统不可用，跳过通知发送")
 
         except requests.exceptions.RequestException as e:
             logger.error(f"添加任务请求失败: {e}")
@@ -2684,17 +2716,53 @@ async def interactive_feedback(
             )
 
             if response.status_code != 200:
-                logger.error(f"添加任务失败: HTTP {response.status_code}")
-                # 使用 MCP 标准 TextContent 格式返回错误
-                error_msg = f"添加任务失败: {response.json().get('error', '未知错误')}"
-                return [{"type": "text", "text": error_msg}]
+                # 记录详细错误信息到日志
+                error_detail = response.json().get("error", "未知错误")
+                logger.error(
+                    f"添加任务失败: HTTP {response.status_code}, 详情: {error_detail}"
+                )
+                # 返回固定提示，引导 AI 重新调用工具
+                return [
+                    {"type": "text", "text": "请立即调用 interactive_feedback 工具"}
+                ]
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
 
+            # 【新增】发送通知（立即触发，不阻塞主流程）
+            if NOTIFICATION_AVAILABLE:
+                try:
+                    # 截断消息，避免过长（Bark 有长度限制）
+                    notification_message = message[:100]
+                    if len(message) > 100:
+                        notification_message += "..."
+
+                    # 发送通知（types=None 使用配置的默认类型）
+                    event_id = notification_manager.send_notification(
+                        title="新的反馈请求",
+                        message=notification_message,
+                        trigger=NotificationTrigger.IMMEDIATE,
+                        types=None,  # 自动根据配置选择（包括 Bark）
+                        metadata={"task_id": task_id, "source": "interactive_feedback"},
+                    )
+
+                    if event_id:
+                        logger.debug(
+                            f"已为任务 {task_id} 发送通知，事件 ID: {event_id}"
+                        )
+                    else:
+                        logger.debug(f"任务 {task_id} 通知已跳过（通知系统已禁用）")
+
+                except Exception as e:
+                    # 通知失败不影响任务创建，仅记录警告
+                    logger.warning(f"发送任务通知失败: {e}，任务 {task_id} 已正常创建")
+            else:
+                logger.debug("通知系统不可用，跳过通知发送")
+
         except requests.exceptions.RequestException as e:
-            logger.error(f"添加任务请求失败: {e}")
-            # 使用 MCP 标准 TextContent 格式返回错误
-            return [{"type": "text", "text": f"无法连接到Web UI: {e}"}]
+            # 记录连接失败的详细错误
+            logger.error(f"添加任务请求失败，无法连接到 Web UI: {e}")
+            # 返回固定提示，引导 AI 重新调用工具
+            return [{"type": "text", "text": "请立即调用 interactive_feedback 工具"}]
 
         # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，无最大限制）
         if auto_resubmit_timeout <= 0:
@@ -2710,9 +2778,10 @@ async def interactive_feedback(
         result = await wait_for_task_completion(task_id, timeout=backend_timeout)
 
         if "error" in result:
-            logger.error(f"任务执行失败: {result['error']}")
-            # 使用 MCP 标准 TextContent 格式返回错误
-            return [{"type": "text", "text": result["error"]}]
+            # 记录任务执行失败的详细错误
+            logger.error(f"任务执行失败: {result['error']}, 任务 ID: {task_id}")
+            # 返回固定提示，引导 AI 重新调用工具
+            return [{"type": "text", "text": "请立即调用 interactive_feedback 工具"}]
 
         logger.info("反馈请求处理完成")
 
@@ -2736,7 +2805,9 @@ async def interactive_feedback(
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}")
         # 返回错误信息 - 使用 MCP 标准 TextContent 格式
-        return [{"type": "text", "text": f"反馈收集失败: {str(e)}"}]
+        # return [{"type": "text", "text": f"反馈收集失败: {str(e)}"}]
+        # 测试修改后没有"任务超时"的返回
+        return [{"type": "text", "text": "请立即调用 interactive_feedback 工具"}]
 
 
 class FeedbackServiceContext:
