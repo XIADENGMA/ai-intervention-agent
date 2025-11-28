@@ -381,6 +381,21 @@ class WebFeedbackUI:
                 "payment=(), usb=(), magnetometer=(), gyroscope=()"
             )
 
+            # 静态资源缓存优化：为 JS/CSS/字体/音频 设置长期缓存
+            path = request.path
+            if path.startswith("/static/js/") or path.startswith("/static/css/"):
+                # JS/CSS 文件缓存 1 天（86400秒），带版本号时可延长
+                response.headers["Cache-Control"] = "public, max-age=86400"
+            elif path.startswith("/fonts/"):
+                # 字体文件缓存 30 天（2592000秒）
+                response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
+            elif path.startswith("/sounds/"):
+                # 音频文件缓存 7 天（604800秒）
+                response.headers["Cache-Control"] = "public, max-age=604800"
+            elif path.startswith("/icons/") and not path.endswith(".ico"):
+                # 图标文件（非 favicon.ico）缓存 7 天
+                response.headers["Cache-Control"] = "public, max-age=604800"
+
             return response
 
     def setup_markdown(self):
@@ -1753,6 +1768,45 @@ class WebFeedbackUI:
                     {"status": "error", "message": f"获取配置失败: {str(e)}"}
                 ), 500
 
+        @self.app.route("/api/get-feedback-prompts", methods=["GET"])
+        def get_feedback_prompts_api():
+            """获取反馈提示语配置的API端点
+
+            功能说明：
+                从配置文件读取反馈提示语配置，返回给前端。
+
+            返回值：
+                成功：JSON对象 {"status": "success", "config": {...}}
+                    - resubmit_prompt: 错误/超时时返回的提示语
+                    - prompt_suffix: 追加到用户反馈末尾的提示语
+                失败：HTTP 500 + 错误信息
+
+            使用场景：
+                - 前端自动提交时使用配置的默认消息
+                - 保持前后端提示语一致
+            """
+            try:
+                config_mgr = get_config()
+                feedback_config = config_mgr.get_section("feedback")
+
+                return jsonify({
+                    "status": "success",
+                    "config": {
+                        "resubmit_prompt": feedback_config.get(
+                            "resubmit_prompt", "请立即调用 interactive_feedback 工具"
+                        ),
+                        "prompt_suffix": feedback_config.get(
+                            "prompt_suffix", "\n请积极调用 interactive_feedback 工具"
+                        ),
+                    }
+                })
+
+            except Exception as e:
+                logger.error(f"获取反馈提示语配置失败: {e}")
+                return jsonify(
+                    {"status": "error", "message": f"获取配置失败: {str(e)}"}
+                ), 500
+
         # 静态文件路由
         @self.app.route("/fonts/<filename>")
         def serve_fonts(filename):
@@ -2005,17 +2059,20 @@ class WebFeedbackUI:
                 with open(template_path, "r", encoding="utf-8") as f:
                     html_content = f.read()
 
+            # 替换模板变量 {{ csp_nonce }} 为实际的 CSP nonce 值
+            html_content = html_content.replace("{{ csp_nonce }}", self.csp_nonce)
+
             # 替换内联CSS为外部CSS文件引用
             css_link = f'<link rel="stylesheet" href="/static/css/main.css" nonce="{self.csp_nonce}">'
             html_content = self._replace_inline_css(html_content, css_link)
 
-            # 替换内联JS为外部JS文件引用
-            mathjax_script = f'<script src="/static/js/mathjax-config.js" nonce="{self.csp_nonce}"></script>'
+            # 替换内联JS为外部JS文件引用 (defer: 按顺序异步加载，不阻塞DOM解析)
+            # 注意：MathJax 配置已内联在 HTML 中，按需加载优化（1.17MB → 需要时才加载）
             main_script = (
-                f'<script src="/static/js/main.js" nonce="{self.csp_nonce}"></script>'
+                f'<script defer src="/static/js/main.js" nonce="{self.csp_nonce}"></script>'
             )
             html_content = self._replace_inline_js(
-                html_content, mathjax_script, main_script
+                html_content, "", main_script
             )
 
             return html_content

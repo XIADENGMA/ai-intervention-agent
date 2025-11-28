@@ -1,47 +1,166 @@
 let config = null
 
+// 反馈提示语配置（从 API 获取，支持自定义）
+let feedbackPrompts = {
+  resubmit_prompt: '请立即调用 interactive_feedback 工具',  // 默认值
+  prompt_suffix: '\n请积极调用 interactive_feedback 工具'   // 默认值
+}
+
+/**
+ * 加载反馈提示语配置
+ * 从 /api/get-feedback-prompts 获取配置的提示语
+ * 用于自动提交时使用配置的默认消息
+ */
+async function loadFeedbackPrompts() {
+  try {
+    const response = await fetch('/api/get-feedback-prompts')
+    if (response.ok) {
+      const data = await response.json()
+      if (data.status === 'success' && data.config) {
+        feedbackPrompts = {
+          resubmit_prompt: data.config.resubmit_prompt || feedbackPrompts.resubmit_prompt,
+          prompt_suffix: data.config.prompt_suffix || feedbackPrompts.prompt_suffix
+        }
+        console.log('反馈提示语配置已加载')
+      }
+    }
+  } catch (error) {
+    console.warn('加载反馈提示语配置失败，使用默认值:', error)
+  }
+}
+
+/**
+ * 初始化 marked.js 配置
+ * 配置 GFM、表格、代码高亮等功能
+ * 兼容 marked.js v5+ API
+ */
+function initMarkedConfig() {
+  if (typeof marked === 'undefined') {
+    console.warn('marked.js 未加载，将使用服务端渲染的 HTML')
+    return false
+  }
+
+  // 代码高亮函数（使用 Prism.js）
+  function highlightCode(code, lang) {
+    if (typeof Prism !== 'undefined' && lang && Prism.languages[lang]) {
+      try {
+        return Prism.highlight(code, Prism.languages[lang], lang)
+      } catch (e) {
+        console.warn('Prism 高亮失败:', e)
+      }
+    }
+    // 如果没有匹配的语言，返回原始代码（HTML 转义）
+    return code
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+  }
+
+  // 自定义渲染器（marked.js v5+ 使用对象参数）
+  const renderer = {
+    // 自定义代码块渲染（marked.js v5+ 使用对象参数 { text, lang, escaped }）
+    code({ text, lang, escaped }) {
+      const language = lang || 'plaintext'
+      const langClass = `language-${language}`
+      const highlighted = highlightCode(text, language)
+      return `<pre class="${langClass}"><code class="${langClass}">${highlighted}</code></pre>`
+    }
+  }
+
+  // 配置 marked.js（v5+ API）
+  marked.use({
+    gfm: true,           // GitHub Flavored Markdown
+    breaks: true,        // 支持换行符
+    renderer: renderer   // 使用自定义渲染器
+  })
+
+  console.log('marked.js 配置已初始化')
+  return true
+}
+
+// 标记 marked.js 是否已初始化
+let markedInitialized = false
+
 /**
  * 高性能Markdown渲染函数
- * 使用requestAnimationFrame和DocumentFragment优化DOM操作性能
+ * 使用 marked.js + Prism.js 进行前端渲染
  *
  * @param {HTMLElement} element - 目标DOM元素
- * @param {string} htmlContent - 渲染后的HTML内容
- * @description 渲染流程：批量DOM操作 → 代码块处理 → 删除线语法 → MathJax公式
+ * @param {string} content - Markdown 文本或已渲染的 HTML
+ * @param {boolean} isMarkdown - 是否为原始 Markdown 文本（默认 false，兼容旧代码）
+ * @description 渲染流程：marked.js解析 → Prism代码高亮 → 复制按钮 → MathJax公式
  */
-function renderMarkdownContent(element, htmlContent) {
+function renderMarkdownContent(element, content, isMarkdown = false) {
   // 使用requestAnimationFrame优化渲染时机，避免阻塞主线程
   requestAnimationFrame(() => {
-    if (htmlContent) {
-      // 批量DOM操作优化
-      const fragment = document.createDocumentFragment()
-      const tempDiv = document.createElement('div')
-      tempDiv.innerHTML = htmlContent
-
-      // 移动所有子节点到fragment
-      while (tempDiv.firstChild) {
-        fragment.appendChild(tempDiv.firstChild)
-      }
-
-      // 一次性更新DOM
-      element.innerHTML = ''
-      element.appendChild(fragment)
-
-      // 处理代码块，添加复制按钮
-      processCodeBlocks(element)
-
-      // 处理删除线语法
-      processStrikethrough(element)
-
-      // 重新渲染 MathJax 公式
-      if (window.MathJax && window.MathJax.typesetPromise) {
-        window.MathJax.typesetPromise([element]).catch(err => {
-          console.warn('MathJax 渲染失败:', err)
-        })
-      }
-    } else {
+    if (!content) {
       element.textContent = '加载中...'
+      return
+    }
+
+    // 初始化 marked.js（只初始化一次）
+    if (!markedInitialized) {
+      markedInitialized = initMarkedConfig()
+    }
+
+    let htmlContent = content
+
+    // 如果是 Markdown 文本且 marked.js 可用，使用 marked.js 渲染
+    if (isMarkdown && markedInitialized && typeof marked !== 'undefined') {
+      try {
+        htmlContent = marked.parse(content)
+        console.log('✅ 使用 marked.js 渲染 Markdown')
+      } catch (e) {
+        console.warn('marked.js 渲染失败，使用原始内容:', e)
+      }
+    }
+
+    // 批量DOM操作优化
+    const fragment = document.createDocumentFragment()
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = htmlContent
+
+    // 移动所有子节点到fragment
+    while (tempDiv.firstChild) {
+      fragment.appendChild(tempDiv.firstChild)
+    }
+
+    // 一次性更新DOM
+    element.innerHTML = ''
+    element.appendChild(fragment)
+
+    // 如果使用了 Prism.js，重新高亮所有代码块
+    if (typeof Prism !== 'undefined') {
+      Prism.highlightAllUnder(element)
+    }
+
+    // 处理代码块，添加复制按钮
+    processCodeBlocks(element)
+
+    // 处理删除线语法
+    processStrikethrough(element)
+
+    // MathJax 按需加载：只在检测到数学公式时才加载 (1.17MB 优化)
+    if (window.loadMathJaxIfNeeded && typeof window.loadMathJaxIfNeeded === 'function') {
+      window.loadMathJaxIfNeeded(element, content)
+    } else if (window.MathJax && window.MathJax.typesetPromise) {
+      // 兼容旧方式：MathJax 已预加载
+      window.MathJax.typesetPromise([element]).catch(err => {
+        console.warn('MathJax 渲染失败:', err)
+      })
     }
   })
+}
+
+/**
+ * 使用 Markdown 文本直接渲染
+ * 新的推荐方式，接收原始 Markdown 而非服务端渲染的 HTML
+ *
+ * @param {HTMLElement} element - 目标DOM元素
+ * @param {string} markdownText - 原始 Markdown 文本
+ */
+function renderMarkdown(element, markdownText) {
+  renderMarkdownContent(element, markdownText, true)
 }
 
 /**
@@ -379,8 +498,8 @@ async function autoSubmitFeedback() {
       }
     }
 
-    // 构建默认反馈消息（固定文本，引导AI继续调用工具）
-    const defaultMessage = '请立即调用 interactive_feedback 工具'
+    // 构建默认反馈消息（使用配置的提示语，引导AI继续调用工具）
+    const defaultMessage = feedbackPrompts.resubmit_prompt
 
     // 使用FormData提交（与正常提交一致）
     const formData = new FormData()
@@ -472,14 +591,16 @@ async function loadConfig(shouldNotify = true) {
       // 延迟通知到页面更新完成后
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          // 状态一致性检查
+          // 状态一致性检查（使用 classList 而非 style.display，因为显示/隐藏通过 CSS class 控制）
           const contentContainer = document.getElementById('content-container')
           const noContentContainer = document.getElementById('no-content-container')
 
+          // 使用 classList.contains 检查 CSS class 状态
+          // showContentPage() 使用 classList.remove('hidden')/add('visible') 控制显示
           const isShowingContent = contentContainer &&
-                                  contentContainer.style.display !== 'none' &&
+                                  !contentContainer.classList.contains('hidden') &&
                                   noContentContainer &&
-                                  noContentContainer.style.display === 'none'
+                                  noContentContainer.classList.contains('hidden')
 
           if (!isShowingContent) {
             console.warn('⚠️  页面状态不一致，跳过通知（内容页面未显示）')
@@ -524,9 +645,9 @@ async function loadConfig(shouldNotify = true) {
     // 更新 task_id 显示
     updateTaskIdDisplay(config.task_id)
 
-    // 更新描述 - 使用高性能渲染函数
+    // 更新描述 - 使用 marked.js 前端渲染 Markdown
     const descriptionElement = document.getElementById('description')
-    renderMarkdownContent(descriptionElement, config.prompt_html || config.prompt)
+    renderMarkdownContent(descriptionElement, config.prompt, true)  // 第三个参数 true 表示使用 Markdown 渲染
 
     // 加载预定义选项
     if (config.predefined_options && config.predefined_options.length > 0) {
@@ -1066,13 +1187,16 @@ function scheduleNextPoll() {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             // 二次确认当前确实在内容页面（状态一致性检查）
+            // 使用 classList.contains 而非 style.display，因为显示/隐藏通过 CSS class 控制
             const contentContainer = document.getElementById('content-container')
             const noContentContainer = document.getElementById('no-content-container')
 
+            // 使用 classList.contains 检查 CSS class 状态
+            // showContentPage() 使用 classList.remove('hidden')/add('visible') 控制显示
             const isShowingContent = contentContainer &&
-                                    contentContainer.style.display !== 'none' &&
+                                    !contentContainer.classList.contains('hidden') &&
                                     noContentContainer &&
-                                    noContentContainer.style.display === 'none'
+                                    noContentContainer.classList.contains('hidden')
 
             if (!isShowingContent) {
               console.warn('⚠️  页面状态不一致，跳过通知（内容页面未显示）')
@@ -1241,10 +1365,10 @@ function updatePageContent(oldConfig = null) {
   // 更新 task_id 显示
   updateTaskIdDisplay(config.task_id)
 
-  // 更新提示内容 - 使用高性能渲染函数
+  // 更新提示内容 - 使用 marked.js 前端渲染 Markdown
   const descriptionElement = document.getElementById('description')
   if (descriptionElement) {
-    renderMarkdownContent(descriptionElement, config.prompt_html || config.prompt)
+    renderMarkdownContent(descriptionElement, config.prompt, true)  // 使用 Markdown 渲染
   }
 
   // 更新预定义选项
@@ -3629,6 +3753,9 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     console.warn('⚠️ 多任务模块未加载，可能是multi_task.js加载失败')
   }
+
+  // 加载反馈提示语配置（用于自动提交时的默认消息）
+  loadFeedbackPrompts()
 
   loadConfig()
     .then(() => {

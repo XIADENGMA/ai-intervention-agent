@@ -8,8 +8,14 @@
     <link rel="mask-icon" href="/icons/icon.svg" color="#8B5CF6" />
     <link rel="apple-touch-icon" href="/icons/icon.svg" />
 
-    <!-- MathJax 数学公式支持 -->
-    <script>
+    <!-- 资源预加载优化：减少首屏渲染阻塞 -->
+    <link rel="preload" href="/fonts/SFProText-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/MonoLisaNerdFont-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/static/css/prism.css" as="style" />
+
+    <!-- MathJax 数学公式支持 - 按需加载优化（1.17MB → 需要时才加载） -->
+    <script nonce="{{ csp_nonce }}">
+      // MathJax 配置（预设，实际脚本按需加载）
       window.MathJax = {
         tex: {
           inlineMath: [
@@ -34,16 +40,84 @@
           ready: () => {
             console.log('MathJax 已加载完成')
             MathJax.startup.defaultReady()
+            // 加载完成后渲染所有公式
+            if (window._mathJaxPendingElements) {
+              window._mathJaxPendingElements.forEach(el => {
+                MathJax.typesetPromise([el]).catch(err => console.warn('MathJax 渲染失败:', err))
+              })
+              window._mathJaxPendingElements = []
+            }
           }
         }
       }
+
+      // MathJax 懒加载状态
+      window._mathJaxLoading = false
+      window._mathJaxLoaded = false
+      window._mathJaxPendingElements = []
+
+      // 检测内容是否包含数学公式
+      window.hasMathContent = function(text) {
+        if (!text) return false
+        // 检测 LaTeX 数学公式语法
+        const mathPatterns = [
+          /\$[^$]+\$/,           // $...$
+          /\$\$[^$]+\$\$/,       // $$...$$
+          /\\\([^)]+\\\)/,       // \(...\)
+          /\\\[[^\]]+\\\]/       // \[...\]
+        ]
+        return mathPatterns.some(pattern => pattern.test(text))
+      }
+
+      // 按需加载 MathJax
+      window.loadMathJaxIfNeeded = function(element, text) {
+        // 检测是否有数学内容
+        if (!window.hasMathContent(text)) {
+          return // 无数学公式，不加载
+        }
+
+        // 已加载完成，直接渲染
+        if (window._mathJaxLoaded && window.MathJax && window.MathJax.typesetPromise) {
+          MathJax.typesetPromise([element]).catch(err => console.warn('MathJax 渲染失败:', err))
+          return
+        }
+
+        // 记录待渲染元素
+        window._mathJaxPendingElements.push(element)
+
+        // 正在加载中，等待完成
+        if (window._mathJaxLoading) {
+          return
+        }
+
+        // 开始加载
+        window._mathJaxLoading = true
+        console.log('📐 检测到数学公式，开始加载 MathJax (1.17MB)...')
+
+        const script = document.createElement('script')
+        script.id = 'MathJax-script'
+        script.async = true
+        script.src = '/static/js/tex-mml-chtml.js'
+        script.onload = function() {
+          window._mathJaxLoaded = true
+          console.log('✅ MathJax 加载完成')
+        }
+        script.onerror = function() {
+          console.error('❌ MathJax 加载失败')
+          window._mathJaxLoading = false
+        }
+        document.head.appendChild(script)
+      }
     </script>
-    <script
-      id="MathJax-script"
-      async
-      src="/static/js/tex-mml-chtml.js"
-      nonce="{{ csp_nonce }}"
-    ></script>
+
+    <!-- Prism.js 代码高亮 CSS -->
+    <link rel="stylesheet" href="/static/css/prism.css" />
+
+    <!-- marked.js Markdown 渲染 (defer: 按顺序异步加载) -->
+    <script defer src="/static/js/marked.js" nonce="{{ csp_nonce }}"></script>
+
+    <!-- Prism.js 代码高亮 JS (defer: 按顺序异步加载) -->
+    <script defer src="/static/js/prism.js" nonce="{{ csp_nonce }}"></script>
 
     <style>
       /* 自定义字体声明 */
@@ -2960,11 +3034,11 @@
       </div>
     </div>
 
-    <!-- DOM 安全工具：防止 XSS 攻击 -->
-    <script src="/static/js/dom-security.js"></script>
+    <!-- DOM 安全工具：防止 XSS 攻击 (defer: 按顺序异步加载) -->
+    <script defer src="/static/js/dom-security.js"></script>
 
-    <!-- 📋 多任务管理模块 -->
-    <script src="/static/js/multi_task.js"></script>
+    <!-- 📋 多任务管理模块 (defer: 按顺序异步加载，依赖 main.js) -->
+    <script defer src="/static/js/multi_task.js"></script>
 
     <script>
       let config = null

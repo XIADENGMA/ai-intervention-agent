@@ -38,6 +38,8 @@
   },
   // 反馈配置
   "feedback": {
-    "auto_resubmit_timeout": 240        // 自动重新提交超时时间(秒) - 前端倒计时(最大290秒)；后端自动=max(前端+60秒, 300秒)
+    "auto_resubmit_timeout": 240,       // 自动重新提交超时时间(秒) - 前端倒计时(最大290秒)；后端自动=max(前端+60秒, 300秒)
+    "resubmit_prompt": "请立即调用 interactive_feedback 工具",  // 错误/超时时返回的提示语（引导AI重新调用工具）
+    "prompt_suffix": "\n请积极调用 interactive_feedback 工具"   // 追加到用户反馈末尾的提示语（保持会话连续性）
   }
 }

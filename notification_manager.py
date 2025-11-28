@@ -37,6 +37,7 @@ AI Intervention Agent - 通知管理器模块
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
@@ -456,6 +457,10 @@ class NotificationManager:
             self._worker_thread = None
             self._stop_event = threading.Event()
 
+            # 【性能优化】使用线程池异步发送通知，避免阻塞主流程
+            # max_workers=3 足够处理 Web/Sound/Bark 三种通知类型的并行发送
+            self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="NotificationWorker")
+
             # 初始化回调函数字典
             self._callbacks: Dict[str, List[Callable]] = {}
 
@@ -468,6 +473,13 @@ class NotificationManager:
                 logger.debug("通知管理器初始化完成（调试模式）")
             else:
                 logger.info("通知管理器初始化完成")
+
+            # 【关键修复】根据初始配置注册 Bark 提供者
+            # 之前的问题：只有在运行时通过 update_config_without_save 更改 bark_enabled 时
+            # 才会调用 _update_bark_provider，导致启动时即使 bark_enabled=True 也不会注册
+            if self.config.bark_enabled:
+                self._update_bark_provider()
+                logger.info("已根据初始配置注册 Bark 通知提供者")
 
     def register_provider(self, notification_type: NotificationType, provider: Any):
         """注册通知提供者
@@ -675,11 +687,15 @@ class NotificationManager:
 
         【处理流程】
         1. 记录调试日志，标记事件处理开始
-        2. 遍历事件的所有通知类型
-        3. 调用 _send_single_notification 发送到每个提供者
-        4. 统计成功发送的数量
-        5. 触发 notification_sent 回调，传递事件和成功数量
-        6. 如果所有方式失败且启用降级，执行降级处理
+        2. 使用线程池并行发送到所有通知类型
+        3. 统计成功发送的数量
+        4. 触发 notification_sent 回调，传递事件和成功数量
+        5. 如果所有方式失败且启用降级，执行降级处理
+
+        【性能优化】
+        - 使用 ThreadPoolExecutor 并行发送通知到多个渠道
+        - 避免串行发送导致的延迟累加
+        - 每个通知类型在独立线程中执行
 
         【成功判定】
         - 至少一个提供者成功发送即视为部分成功
@@ -705,10 +721,26 @@ class NotificationManager:
         try:
             logger.debug(f"处理通知事件: {event.id}")
 
-            success_count = 0
+            # 【性能优化】使用线程池并行发送通知
+            if not event.types:
+                logger.debug(f"通知事件无指定类型，跳过: {event.id}")
+                return
+
+            futures = {}
             for notification_type in event.types:
-                if self._send_single_notification(notification_type, event):
-                    success_count += 1
+                future = self._executor.submit(
+                    self._send_single_notification, notification_type, event
+                )
+                futures[future] = notification_type
+
+            success_count = 0
+            for future in as_completed(futures, timeout=10):  # 10秒超时
+                notification_type = futures[future]
+                try:
+                    if future.result():
+                        success_count += 1
+                except Exception as e:
+                    logger.error(f"通知发送异常 {notification_type.value}: {e}")
 
             # 触发回调
             self.trigger_callbacks("notification_sent", event, success_count)
@@ -1056,6 +1088,31 @@ class NotificationManager:
             logger.debug("配置已保存到文件")
         except Exception as e:
             logger.error(f"保存配置到文件失败: {e}")
+
+    def shutdown(self):
+        """关闭通知管理器
+
+        【功能说明】
+        优雅地关闭线程池，等待所有正在执行的通知任务完成。
+
+        【调用时机】
+        - 应用关闭时
+        - 重置通知管理器时
+
+        【处理流程】
+        1. 调用线程池的 shutdown 方法
+        2. 等待所有任务完成（wait=True）
+        3. 记录关闭日志
+
+        【线程安全】
+        - shutdown 方法本身是线程安全的
+        - 多次调用是安全的（幂等操作）
+        """
+        try:
+            self._executor.shutdown(wait=True)
+            logger.info("通知管理器线程池已关闭")
+        except Exception as e:
+            logger.error(f"关闭通知管理器线程池失败: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         """获取通知管理器状态

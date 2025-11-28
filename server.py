@@ -96,6 +96,17 @@ from config_manager import get_config
 from enhanced_logging import EnhancedLogger
 from task_queue import TaskQueue
 
+# ===============================
+# 【性能优化】全局缓存
+# ===============================
+# HTTP Session 缓存：避免每次请求都创建新的 session
+_http_session_cache: dict = {}
+_http_session_lock = threading.Lock()
+
+# 配置缓存：避免频繁读取配置文件
+_config_cache: dict = {"config": None, "timestamp": 0, "ttl": 10}  # 10秒 TTL
+_config_cache_lock = threading.Lock()
+
 # 禁用 FastMCP banner 和 Rich 输出，避免污染 stdio
 os.environ["NO_COLOR"] = "1"
 os.environ["TERM"] = "dumb"
@@ -864,6 +875,14 @@ class ServiceManager:
         else:
             logger.info("所有服务进程清理完成")
 
+        # 【修复】关闭通知管理器线程池，防止资源泄漏
+        if NOTIFICATION_AVAILABLE:
+            try:
+                notification_manager.shutdown()
+                logger.info("通知管理器线程池已关闭")
+            except Exception as e:
+                logger.warning(f"关闭通知管理器失败: {e}")
+
     def get_status(self) -> Dict[str, Dict]:
         """
         获取所有服务的运行状态信息
@@ -1021,7 +1040,7 @@ class WebUIConfig:
 
 def get_web_ui_config() -> Tuple[WebUIConfig, int]:
     """
-    从配置管理器加载 Web UI 配置
+    从配置管理器加载 Web UI 配置（带缓存优化）
 
     返回
     ----
@@ -1033,6 +1052,13 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
     ----
     从全局配置文件（config.jsonc）中读取 Web UI 相关的所有配置参数，
     并构造 WebUIConfig 对象和提取前端倒计时时间。
+
+    【性能优化】配置缓存
+    ------------------
+    - 缓存配置对象，避免每次调用都读取配置
+    - 缓存有效期：10 秒（TTL）
+    - 缓存过期后自动刷新
+    - 支持热重载：缓存过期后会读取最新配置
 
     配置来源
     --------
@@ -1073,8 +1099,19 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
     --------
     - auto_resubmit_timeout 是前端倒计时，不是 HTTP 请求超时
     - 配置加载失败会抛出 ValueError，调用者需要捕获处理
-    - 每次调用都会重新读取配置（支持配置热重载）
+    - 【优化】配置缓存 10 秒，减少配置读取开销
     """
+    # 【性能优化】检查缓存是否有效
+    current_time = time.time()
+    with _config_cache_lock:
+        if (
+            _config_cache["config"] is not None
+            and current_time - _config_cache["timestamp"] < _config_cache["ttl"]
+        ):
+            logger.debug("使用缓存的 Web UI 配置")
+            return _config_cache["config"]
+
+    # 缓存过期或不存在，重新加载配置
     try:
         config_mgr = get_config()
         web_ui_config = config_mgr.get_section("web_ui")
@@ -1097,16 +1134,62 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
             max_retries=max_retries,
             retry_delay=retry_delay,
         )
+
+        # 【性能优化】更新缓存
+        result = (config, auto_resubmit_timeout)
+        with _config_cache_lock:
+            _config_cache["config"] = result
+            _config_cache["timestamp"] = current_time
+
         logger.info(
             f"Web UI 配置加载成功: {host}:{port}, 自动重调超时: {auto_resubmit_timeout}秒"
         )
-        return config, auto_resubmit_timeout
+        return result
     except (ValueError, TypeError) as e:
         logger.error(f"配置参数错误: {e}")
         raise ValueError(f"Web UI 配置错误: {e}")
     except Exception as e:
         logger.error(f"配置文件加载失败: {e}")
         raise ValueError(f"Web UI 配置加载失败: {e}")
+
+
+def get_feedback_prompts() -> Tuple[str, str]:
+    """
+    获取反馈提示语配置
+
+    返回
+    ----
+    Tuple[str, str]
+        - resubmit_prompt: 错误/超时时返回的提示语（引导AI重新调用工具）
+        - prompt_suffix: 追加到用户反馈末尾的提示语（保持会话连续性）
+
+    功能
+    ----
+    从配置文件读取自定义的反馈提示语，支持用户自定义这些固定文本。
+
+    默认值
+    ------
+    - resubmit_prompt: "请立即调用 interactive_feedback 工具"
+    - prompt_suffix: "\\n请积极调用 interactive_feedback 工具"
+    """
+    try:
+        config_mgr = get_config()
+        feedback_config = config_mgr.get_section("feedback")
+
+        resubmit_prompt = feedback_config.get(
+            "resubmit_prompt", "请立即调用 interactive_feedback 工具"
+        )
+        prompt_suffix = feedback_config.get(
+            "prompt_suffix", "\n请积极调用 interactive_feedback 工具"
+        )
+
+        return resubmit_prompt, prompt_suffix
+    except Exception as e:
+        logger.warning(f"获取反馈提示语配置失败，使用默认值: {e}")
+        return (
+            "请立即调用 interactive_feedback 工具",
+            "\n请积极调用 interactive_feedback 工具",
+        )
 
 
 def validate_input(
@@ -1190,7 +1273,7 @@ def validate_input(
 
 def create_http_session(config: WebUIConfig) -> requests.Session:
     """
-    创建配置了重试机制和超时设置的 HTTP 会话
+    创建配置了重试机制和超时设置的 HTTP 会话（带缓存复用）
 
     参数
     ----
@@ -1219,6 +1302,12 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
     ----------
     为 http:// 和 https:// 协议挂载相同的重试适配器，确保所有请求都使用重试策略。
 
+    【性能优化】Session 缓存复用
+    -------------------------
+    - 基于配置参数生成缓存键
+    - 复用已创建的 session 对象，避免重复创建
+    - 减少 TCP 握手开销，提升高频请求性能
+
     使用场景
     --------
     - health_check_service() 健康检查请求
@@ -1231,6 +1320,7 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
     - 重试策略可减少因临时网络波动导致的请求失败
     - 指数退避避免对服务器造成过大压力
     - 超时设置防止请求无限挂起
+    - 【优化】Session 复用减少连接建立开销
 
     注意事项
     --------
@@ -1238,21 +1328,34 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
     - POST 请求默认也会重试（非标准行为，但适用于本项目的幂等 API）
     - 重试不适用于连接错误（如服务未启动），仅适用于 HTTP 响应错误
     """
-    session = requests.Session()
+    # 【性能优化】基于配置参数生成缓存键，复用 session
+    cache_key = f"{config.max_retries}_{config.retry_delay}_{config.timeout}"
 
-    retry_strategy = Retry(
-        total=config.max_retries,
-        backoff_factor=config.retry_delay,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "POST"],
-    )
+    with _http_session_lock:
+        if cache_key in _http_session_cache:
+            logger.debug(f"复用已缓存的 HTTP Session: {cache_key}")
+            return _http_session_cache[cache_key]
 
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    session.timeout = config.timeout
+        # 创建新的 session
+        session = requests.Session()
 
-    return session
+        retry_strategy = Retry(
+            total=config.max_retries,
+            backoff_factor=config.retry_delay,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "POST"],
+        )
+
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        session.timeout = config.timeout
+
+        # 缓存 session
+        _http_session_cache[cache_key] = session
+        logger.debug(f"创建并缓存新的 HTTP Session: {cache_key}")
+
+        return session
 
 
 def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -1356,13 +1459,13 @@ def health_check_service(config: WebUIConfig) -> bool:
     ----
     执行两层检查，确保服务完全可用：
     1. **传输层检查**: 调用 is_web_service_running() 验证端口可连接
-    2. **应用层检查**: 发送 HTTP GET 请求到 /api/config，验证服务正常响应
+    2. **应用层检查**: 发送 HTTP GET 请求到 /api/health，验证服务正常响应
 
     检查流程
     --------
     1. 首先检查端口是否可连接（快速失败）
     2. 如果端口不可达，直接返回 False
-    3. 创建 HTTP session 并发送 GET 请求到 /api/config
+    3. 创建 HTTP session 并发送 GET 请求到 /api/health
     4. 检查响应状态码（200 表示健康）
     5. 返回健康状态
 
@@ -1370,7 +1473,7 @@ def health_check_service(config: WebUIConfig) -> bool:
     --------
     - 端口可连接（TCP 层）
     - HTTP 请求成功（状态码 200）
-    - /api/config 端点可访问（Flask 应用正常运行）
+    - /api/health 端点可访问（Flask 应用正常运行）
 
     异常处理
     ----------
@@ -1391,10 +1494,11 @@ def health_check_service(config: WebUIConfig) -> bool:
 
     注意事项
     --------
-    - 仅验证 /api/config 端点，不保证所有功能正常
+    - 仅验证 /api/health 端点，不保证所有功能正常
     - 0.0.0.0 地址会自动转换为 localhost
     - 健康检查失败不会抛出异常，仅返回 False
     - 重试策略可能延长检查时间（最多 3 次重试）
+    - 【统一】与 ensure_web_ui_running() 使用相同端点
     """
     if not is_web_service_running(config.host, config.port):
         return False
@@ -1402,7 +1506,7 @@ def health_check_service(config: WebUIConfig) -> bool:
     try:
         session = create_http_session(config)
         target_host = "localhost" if config.host == "0.0.0.0" else config.host
-        health_url = f"http://{target_host}:{config.port}/api/config"
+        health_url = f"http://{target_host}:{config.port}/api/health"
 
         response = session.get(health_url, timeout=5)
         is_healthy = response.status_code == 200
@@ -1966,6 +2070,16 @@ def parse_structured_response(response_data):
     else:
         logger.debug(f"result不为空，包含 {len(result)} 个元素")
 
+    # 6. 追加提示语后缀到文本内容（保持会话连续性）
+    _, prompt_suffix = get_feedback_prompts()
+    if prompt_suffix:
+        # 找到最后一个 TextContent 并追加后缀
+        for item in reversed(result):
+            if isinstance(item, dict) and item.get("type") == "text":
+                item["text"] = item["text"] + prompt_suffix
+                logger.debug(f"已追加提示语后缀: '{prompt_suffix}'")
+                break
+
     logger.debug("最终返回结果:")
     for i, item in enumerate(result):
         if isinstance(item, dict):
@@ -2181,7 +2295,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
     Dict[str, str]
         任务结果字典：
         - 成功: 返回 task["result"]（包含 user_input、selected_options、images）
-        - 失败: {"error": "错误信息"}
+        - 超时/任务不存在: {"text": resubmit_prompt}（引导 AI 重新调用工具）
 
     功能
     ----
@@ -2225,7 +2339,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
     异常处理
     ----------
     - requests.exceptions.RequestException: 记录警告并继续轮询（网络波动容错）
-    - HTTP 404: 任务不存在，立即返回错误
+    - HTTP 404: 任务不存在，返回 resubmit_prompt 引导重新调用
     - HTTP 非 200: 记录警告并继续轮询（临时错误容错）
 
     性能考虑
@@ -2269,8 +2383,10 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
             response = await asyncio.to_thread(requests.get, api_url, timeout=2)
 
             if response.status_code == 404:
-                logger.warning(f"任务不存在: {task_id}")
-                return {"error": "任务不存在"}
+                # 任务不存在（可能已被清理或前端自动提交），引导 AI 重新调用工具
+                logger.warning(f"任务不存在: {task_id}，引导重新调用")
+                resubmit_prompt, _ = get_feedback_prompts()
+                return {"text": resubmit_prompt}
 
             if response.status_code != 200:
                 logger.warning(f"获取任务状态失败: HTTP {response.status_code}")
@@ -2292,8 +2408,9 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
 
     # 任务超时，记录错误日志
     logger.error(f"任务超时: {task_id}, 等待时间已超过 {timeout} 秒")
-    # 返回固定提示，引导 AI 重新调用工具
-    return {"text": "请立即调用 interactive_feedback 工具"}
+    # 返回配置的提示语，引导 AI 重新调用工具
+    resubmit_prompt, _ = get_feedback_prompts()
+    return {"text": resubmit_prompt}
 
 
 async def ensure_web_ui_running(config):
@@ -2721,10 +2838,9 @@ async def interactive_feedback(
                 logger.error(
                     f"添加任务失败: HTTP {response.status_code}, 详情: {error_detail}"
                 )
-                # 返回固定提示，引导 AI 重新调用工具
-                return [
-                    {"type": "text", "text": "请立即调用 interactive_feedback 工具"}
-                ]
+                # 返回配置的提示语，引导 AI 重新调用工具
+                resubmit_prompt, _ = get_feedback_prompts()
+                return [{"type": "text", "text": resubmit_prompt}]
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
 
@@ -2761,8 +2877,9 @@ async def interactive_feedback(
         except requests.exceptions.RequestException as e:
             # 记录连接失败的详细错误
             logger.error(f"添加任务请求失败，无法连接到 Web UI: {e}")
-            # 返回固定提示，引导 AI 重新调用工具
-            return [{"type": "text", "text": "请立即调用 interactive_feedback 工具"}]
+            # 返回配置的提示语，引导 AI 重新调用工具
+            resubmit_prompt, _ = get_feedback_prompts()
+            return [{"type": "text", "text": resubmit_prompt}]
 
         # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，无最大限制）
         if auto_resubmit_timeout <= 0:
@@ -2780,8 +2897,9 @@ async def interactive_feedback(
         if "error" in result:
             # 记录任务执行失败的详细错误
             logger.error(f"任务执行失败: {result['error']}, 任务 ID: {task_id}")
-            # 返回固定提示，引导 AI 重新调用工具
-            return [{"type": "text", "text": "请立即调用 interactive_feedback 工具"}]
+            # 返回配置的提示语，引导 AI 重新调用工具
+            resubmit_prompt, _ = get_feedback_prompts()
+            return [{"type": "text", "text": resubmit_prompt}]
 
         logger.info("反馈请求处理完成")
 
@@ -2804,10 +2922,9 @@ async def interactive_feedback(
 
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}")
-        # 返回错误信息 - 使用 MCP 标准 TextContent 格式
-        # return [{"type": "text", "text": f"反馈收集失败: {str(e)}"}]
-        # 测试修改后没有"任务超时"的返回
-        return [{"type": "text", "text": "请立即调用 interactive_feedback 工具"}]
+        # 返回配置的提示语，引导 AI 重新调用工具
+        resubmit_prompt, _ = get_feedback_prompts()
+        return [{"type": "text", "text": resubmit_prompt}]
 
 
 class FeedbackServiceContext:

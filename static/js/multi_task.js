@@ -835,22 +835,20 @@ async function updateDescriptionDisplay(prompt) {
   if (!descriptionElement) return
 
   try {
-    // 获取服务器端已渲染的 HTML
-    const response = await fetch(`/api/tasks/${activeTaskId}`)
-    const data = await response.json()
+    // 直接使用传入的 Markdown 文本，通过 marked.js 在前端渲染
+    if (typeof renderMarkdownContent === 'function') {
+      // 使用 renderMarkdownContent 函数，第三个参数 true 表示使用 Markdown 渲染
+      renderMarkdownContent(descriptionElement, prompt, true)
+      console.log('✅ 使用 marked.js 渲染 Markdown')
+    } else {
+      // 降级方案：如果 renderMarkdownContent 不可用，尝试直接使用 marked.js
+      if (typeof marked !== 'undefined') {
+        descriptionElement.innerHTML = marked.parse(prompt)
 
-    if (data.success && data.task.prompt) {
-      // 使用服务器端渲染的 markdown HTML
-      const markdownHtml = await fetch('/api/config')
-        .then(r => r.json())
-        .then(cfg => cfg.prompt_html || prompt)
-
-      // 使用 renderMarkdownContent 函数来正确处理代码块和 MathJax
-      if (typeof renderMarkdownContent === 'function') {
-        renderMarkdownContent(descriptionElement, markdownHtml)
-      } else {
-        // 降级方案：直接设置 innerHTML
-        descriptionElement.innerHTML = markdownHtml
+        // Prism.js 代码高亮
+        if (typeof Prism !== 'undefined') {
+          Prism.highlightAllUnder(descriptionElement)
+        }
 
         // 手动处理代码块
         if (typeof processCodeBlocks === 'function') {
@@ -866,6 +864,9 @@ async function updateDescriptionDisplay(prompt) {
             console.warn('MathJax 渲染失败:', mathError)
           }
         }
+      } else {
+        // 最终降级：直接显示文本
+        descriptionElement.textContent = prompt
       }
     }
   } catch (error) {
@@ -1207,8 +1208,10 @@ function formatCountdown(seconds) {
  */
 async function autoSubmitTask(taskId) {
   console.log(`任务 ${taskId} 倒计时结束，自动提交`)
-  // 使用固定的默认反馈文本
-  const defaultMessage = '请立即调用 interactive_feedback 工具'
+  // 使用配置的提示语（从全局变量 feedbackPrompts 获取，如果不存在则使用默认值）
+  const defaultMessage = (typeof feedbackPrompts !== 'undefined' && feedbackPrompts.resubmit_prompt)
+    ? feedbackPrompts.resubmit_prompt
+    : '请立即调用 interactive_feedback 工具'
   await submitTaskFeedback(taskId, defaultMessage, [])
 }
 

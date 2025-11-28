@@ -31,7 +31,7 @@
 
   - [x] 改造这条工具链，让它在任何对外返回、跨工具传递的地方，都只传 MCP 协议定义的` ImageContent`（本质是一个包含 `type/data/mimeType` 字段的纯 dict），彻底移除 `fastmcp.utilities.types.Image` 这种类对象。
   - [ ] 现在图片似乎不能被正常识别到，需要进一步排查
-    - Cursor 的问题，解决不了
+    - Cursor 的问题，似乎解决不了，但是别的 mcp 可以 ，比如 chrome-devtools
     - 需要参考：https://github.com/jackbba/mcp-feedback-enhanced
     - [ ] 现在上传图片后似乎太大，需要压缩：Large output has been written to: /home/xiadengma/.cursor/projects/home-xiadengma-Code-Python-ai-intervention-agent-vscode/agent-tools/a980209e-75a7-4660-b99d-2ac77e83f683.txt (253.7 KB, 1 lines)
     - 当前返回格式：
@@ -57,8 +57,6 @@
     - [x] \n 请积极调用 interactive_feedback 工具
     - [x] 请立即调用 interactive_feedback 工具
   - [x] 项目标识显示 - 显示当前项目以用于多窗口时的区分 - 便于在多项目同时开发时快速识别当前操作的项目
-- 插件打开时（通过点击侧边栏的插件图标 star），会错误的打开 output 的日志
-- 插件的界面现在不饱满，当前效果从上到下为"空隙 标签栏 分隔 内容区域 分隔 选项区域 空隙 输入区域"，当前效果从左到右为"空隙 内容区域 空隙 滚动条 空隙"
 - [x] 长时间运行会错误的中断
   - TaskGroup 同步的问题
 - [x] web ui 显示代码块渲染不对
@@ -102,12 +100,43 @@
     return [{"type": "text", "text": result["error"]}]
     ```
   - 修改为：请立即调用 interactive_feedback 工具
-- web 的 md 和插件的 md 渲染
-- 插件倒计时结束时没有正确返回
-  - 可以参考：main.js 的
-  ```javascript
-  // 构建默认反馈消息（固定文本，引导AI继续调用工具）
-  const defaultMessage = '请立即调用 interactive_feedback 工具'
-  ```
+- [x] `请立即调用 interactive_feedback 工具`和`\n 请积极调用 interactive_feedback 工具`允许在再配置文件内配置
+- [x] 在 mcp 实际使用中，接收到新任务，浏览器 console 会新增问题：`main.js:1078 ⚠️ 页面状态不一致，跳过通知（内容页面未显示）`，而且实际上我也没有接收到 bark 通知
+
+# WorkFlow
+
+- 使用 uv 在 8080 端口启动测试脚本，并且使用 chrome-devtools mcp 打开<http://0.0.0.0:8080>测试页面，仔细分析并考虑边界情况，检查任务是否完整的完成
 
 # List
+
+## 已完成的优化任务
+
+### Web UI 性能优化
+
+- [x] opt1: MathJax 按需加载优化（1.17MB → 需要时才加载）
+- [x] opt2: JavaScript defer/async 加载优化
+- [x] opt4: 提取 CSS 为独立文件并缓存
+- [x] opt6: HTTP 缓存头优化
+- [x] opt7: 资源预加载优化
+
+### 程序性能优化
+
+- [x] opt-1: HTTP Session 复用优化 (server.py)
+- [x] opt-2: 配置对象缓存优化 (server.py)
+- [x] opt-3: network_security 配置缓存优化 (config_manager.py)
+- [x] opt-4: 任务队列数据结构优化 (task_queue.py) - O(n) → O(1)
+- [x] opt-5: 通知异步发送优化 (notification_manager.py)
+- [x] opt-6: 日志哈希算法优化 (enhanced_logging.py)
+
+### 逻辑错误修复
+
+- [x] fix1: 健康检查端点不一致 (server.py) - 统一使用 `/api/health`
+- [x] fix2: wait_for_task_completion() 返回格式不一致 (server.py)
+- [x] fix3: NotificationManager.shutdown() 未被调用 (server.py)
+- [x] fix4: get_section() 返回可变引用 (config_manager.py)
+
+### 新功能
+
+- [x] marked.js + Prism.js (Monokai) 前端 Markdown 渲染
+- [x] resubmit_prompt 和 prompt_suffix 配置项
+- [x] README 更新

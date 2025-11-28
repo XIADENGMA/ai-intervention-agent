@@ -63,6 +63,7 @@
 - 后台清理：每5秒一次，清理10秒前完成的任务
 - 内存占用：每个任务约1KB（取决于prompt和options大小）
 - 并发性能：适合中低并发场景（<100 QPS）
+- **数据结构优化**：Python 3.7+ dict 保持插入顺序，删除操作 O(1)
 
 ## 依赖项
 
@@ -77,7 +78,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -179,12 +180,16 @@ class TaskQueue:
     ## 数据结构
 
     ### 内部字段
-    - `_tasks`: Dict[str, Task] - 任务字典，key为task_id
-    - `_task_order`: List[str] - 任务ID列表，保持添加顺序
+    - `_tasks`: Dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
     - `_lock`: Lock - 线程锁，保护共享数据
     - `_active_task_id`: Optional[str] - 当前活动任务ID
     - `_stop_cleanup`: Event - 停止清理线程的事件
     - `_cleanup_thread`: Thread - 后台清理线程
+
+    ### 性能优化说明
+    - **移除了冗余的 `_task_order` 列表**：Python 3.7+ dict 已保持插入顺序
+    - **删除操作从 O(n) 优化到 O(1)**：不再需要 list.remove() 操作
+    - **内存占用减少**：不再维护额外的任务ID列表
 
     ## 任务状态管理
 
@@ -216,10 +221,11 @@ class TaskQueue:
       - 最多max_tasks个任务同时存在
       - 完成的任务会在10秒后清理
 
-    - **时间复杂度**：
+    - **时间复杂度（优化后）**：
       - add_task: O(1)
       - get_task: O(1)
       - get_all_tasks: O(n)
+      - remove_task: O(1)（原来是 O(n)，优化后使用 dict.pop()）
       - complete_task: O(n)（需要查找下一个pending任务）
       - cleanup_completed_tasks: O(n)
 
@@ -257,8 +263,9 @@ class TaskQueue:
             线程安全（使用 Lock 保护共享数据）
         """
         self.max_tasks = max_tasks
+        # 【性能优化】移除了 _task_order 列表
+        # Python 3.7+ dict 保持插入顺序，删除操作从 O(n) 优化到 O(1)
         self._tasks: Dict[str, Task] = {}
-        self._task_order: List[str] = []
         self._lock = Lock()
         self._active_task_id: Optional[str] = None
 
@@ -282,7 +289,6 @@ class TaskQueue:
 
         **操作内容**：
         - 清空任务字典 (_tasks)
-        - 清空任务顺序列表 (_task_order)
         - 重置活动任务ID (_active_task_id)
         - 记录清理日志
 
@@ -305,7 +311,6 @@ class TaskQueue:
         with self._lock:
             count = len(self._tasks)
             self._tasks.clear()
-            self._task_order.clear()
             self._active_task_id = None
             if count > 0:
                 logger.info(f"清理了所有残留任务，共 {count} 个")
@@ -361,7 +366,7 @@ class TaskQueue:
             线程安全（使用 Lock 保护）
 
         Side Effects:
-            - 添加任务到 _tasks 和 _task_order
+            - 添加任务到 _tasks（Python 3.7+ 保持插入顺序）
             - 可能设置 _active_task_id（如果是第一个任务）
             - 记录日志
 
@@ -392,8 +397,8 @@ class TaskQueue:
                 auto_resubmit_timeout=auto_resubmit_timeout,
             )
 
+            # 【性能优化】直接添加到字典，Python 3.7+ 保持插入顺序
             self._tasks[task_id] = task
-            self._task_order.append(task_id)
 
             if self._active_task_id is None:
                 self._active_task_id = task_id
@@ -455,7 +460,7 @@ class TaskQueue:
             线程安全（使用 Lock 保护）
 
         Time Complexity:
-            O(n) - 需要遍历 _task_order 并构建列表
+            O(n) - 需要遍历 _tasks 并构建列表
 
         Note:
             - 返回的列表是新创建的，可以安全修改
@@ -463,7 +468,8 @@ class TaskQueue:
             - 如果需要只读视图，考虑使用dataclass的replace()
         """
         with self._lock:
-            return [self._tasks[tid] for tid in self._task_order if tid in self._tasks]
+            # 【性能优化】Python 3.7+ dict 保持插入顺序，直接返回 values
+            return list(self._tasks.values())
 
     def get_active_task(self) -> Optional[Task]:
         """获取当前活动任务
@@ -624,10 +630,11 @@ class TaskQueue:
                 self._active_task_id = None
                 logger.info(f"任务完成并清空激活任务: {task_id}")
 
-                for tid in self._task_order:
-                    if tid in self._tasks and self._tasks[tid].status == "pending":
+                # 【性能优化】使用字典键迭代，保持插入顺序
+                for tid, t in self._tasks.items():
+                    if t.status == "pending":
                         self._active_task_id = tid
-                        self._tasks[tid].status = "active"
+                        t.status = "active"
                         logger.info(f"自动激活下一个任务: {tid}")
                         break
             else:
@@ -661,13 +668,13 @@ class TaskQueue:
             线程安全（使用 Lock 保护）
 
         Side Effects:
-            - 从 _tasks 和 _task_order 删除任务
+            - 从 _tasks 删除任务（Python 3.7+ dict.pop() 是 O(1)）
             - 可能更新 _active_task_id
             - 可能自动激活下一个任务
             - 记录日志
 
         Time Complexity:
-            O(n) - list.remove() 需要O(n)
+            O(1) - 【性能优化】使用 dict.pop() 代替 list.remove()
 
         Note:
             - 适用于手动取消任务
@@ -681,18 +688,15 @@ class TaskQueue:
 
             if self._active_task_id == task_id:
                 self._active_task_id = None
-                for tid in self._task_order:
-                    if (
-                        tid != task_id
-                        and tid in self._tasks
-                        and self._tasks[tid].status in ["pending", "active"]
-                    ):
+                # 【性能优化】使用字典迭代代替列表遍历
+                for tid, t in self._tasks.items():
+                    if tid != task_id and t.status in ["pending", "active"]:
                         self._active_task_id = tid
-                        self._tasks[tid].status = "active"
+                        t.status = "active"
                         break
 
-            del self._tasks[task_id]
-            self._task_order.remove(task_id)
+            # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
+            self._tasks.pop(task_id, None)
 
             logger.info(
                 f"移除任务: {task_id}, 剩余任务数: {len(self._tasks)}/{self.max_tasks}"
@@ -736,9 +740,9 @@ class TaskQueue:
                 tid for tid, task in self._tasks.items() if task.status == "completed"
             ]
 
+            # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
             for tid in completed_task_ids:
-                del self._tasks[tid]
-                self._task_order.remove(tid)
+                self._tasks.pop(tid, None)
 
             count = len(completed_task_ids)
             if count > 0:
@@ -797,11 +801,9 @@ class TaskQueue:
                     if age > age_seconds:
                         tasks_to_remove.append(task_id)
 
+            # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
             for task_id in tasks_to_remove:
-                if task_id in self._tasks:
-                    del self._tasks[task_id]
-                if task_id in self._task_order:
-                    self._task_order.remove(task_id)
+                self._tasks.pop(task_id, None)
 
             if tasks_to_remove:
                 logger.info(

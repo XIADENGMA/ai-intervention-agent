@@ -496,13 +496,13 @@ class ConfigManager:
     2. 配置值的读取和更新（支持嵌套键）
     3. 配置文件的持久化（保留注释和格式）
     4. 线程安全的并发访问控制
-    5. 性能优化（延迟保存、读写锁）
+    5. 性能优化（延迟保存、读写锁、缓存）
 
     【主要特性】
     - **JSONC 支持**：保留用户在配置文件中的注释和格式
     - **跨平台**：自动适配不同操作系统的配置目录
     - **热重载**：支持运行时重新加载配置文件
-    - **网络安全配置独立管理**：network_security 段不加载到内存，特殊方法读取
+    - **网络安全配置独立管理**：network_security 段不加载到内存，特殊方法读取（带缓存）
     - **线程安全**：使用读写锁实现高性能并发访问
     - **延迟保存**：批量配置更新时减少磁盘 I/O
     - **配置验证**：保存后自动验证文件格式和结构
@@ -511,7 +511,7 @@ class ConfigManager:
     - notification: 加载到内存，正常访问
     - web_ui: 加载到内存，正常访问
     - feedback: 加载到内存，正常访问
-    - network_security: **不加载到内存**，使用 get_network_security_config() 特殊读取
+    - network_security: **不加载到内存**，使用 get_network_security_config() 特殊读取（带 30 秒缓存）
 
     【线程安全】
     - 读操作使用读锁，允许多线程并发读取
@@ -522,6 +522,7 @@ class ConfigManager:
     - 延迟保存机制：批量更新后统一保存，减少磁盘 I/O
     - 读写锁：读多写少场景下提升并发性能
     - 值变化检测：跳过未变化的配置更新
+    - **network_security 缓存**：30 秒 TTL，减少文件读取
 
     【使用方式】
     通过模块级全局实例 config_manager 访问，避免手动创建实例。
@@ -576,6 +577,11 @@ class ConfigManager:
         self._save_timer: Optional[threading.Timer] = None  # 延迟保存定时器
         self._save_delay = 3.0  # 延迟保存时间（秒）
         self._last_save_time = 0  # 上次保存时间
+
+        # 【性能优化】network_security 配置缓存
+        self._network_security_cache: Optional[Dict[str, Any]] = None
+        self._network_security_cache_time: float = 0
+        self._network_security_cache_ttl: float = 30.0  # 30 秒缓存有效期
 
         # 加载配置文件
         self._load_config()
@@ -2118,10 +2124,10 @@ class ConfigManager:
             logger.debug("强制配置保存完成")
 
     def get_section(self, section: str) -> Dict[str, Any]:
-        """获取配置段
+        """获取配置段（返回副本，防止外部修改影响内部状态）
 
         【功能说明】
-        获取指定名称的整个配置段字典。
+        获取指定名称的整个配置段字典的深拷贝。
 
         【配置段】
         - notification: 通知系统配置
@@ -2134,8 +2140,12 @@ class ConfigManager:
         - 其他配置段：通过 get() 方法从内存读取
 
         【返回值】
-        - 配置段存在：返回该配置段的字典
+        - 配置段存在：返回该配置段字典的**深拷贝**
         - 配置段不存在：返回空字典 {}
+
+        【安全性】
+        - 【修复】返回深拷贝，外部修改不会影响内部配置状态
+        - 需要修改配置请使用 update_section() 或 set() 方法
 
         【使用场景】
         - 获取某个功能模块的所有配置
@@ -2146,12 +2156,18 @@ class ConfigManager:
             section: 配置段名称（顶层配置键）
 
         Returns:
-            Dict[str, Any]: 配置段字典，如果不存在则返回空字典
+            Dict[str, Any]: 配置段字典的深拷贝，如果不存在则返回空字典
         """
+        import copy
+
         # 特殊处理 network_security 配置段
         if section == "network_security":
-            return self.get_network_security_config()
-        return self.get(section, {})
+            # get_network_security_config 已经返回独立对象，但为一致性仍返回拷贝
+            return copy.deepcopy(self.get_network_security_config())
+
+        # 【修复】返回深拷贝，防止外部修改影响内部状态
+        result = self.get(section, {})
+        return copy.deepcopy(result) if result else {}
 
     def update_section(self, section: str, updates: Dict[str, Any], save: bool = True):
         """更新配置段
@@ -2298,7 +2314,7 @@ class ConfigManager:
             return self._config.copy()
 
     def get_network_security_config(self) -> Dict[str, Any]:
-        """特殊方法：直接从文件读取 network_security 配置
+        """特殊方法：从文件读取 network_security 配置（带缓存优化）
 
         【设计原因】
         network_security 配置包含敏感的网络访问控制信息，独立管理更安全：
@@ -2308,16 +2324,23 @@ class ConfigManager:
         - 明确区分安全配置和业务配置
 
         【功能说明】
-        直接从配置文件读取 network_security 配置段，不经过内存缓存。
+        从配置文件读取 network_security 配置段，带有 30 秒缓存优化。
+
+        【性能优化 - 缓存机制】
+        - 缓存有效期：30 秒（TTL）
+        - 缓存命中：直接返回缓存数据，避免文件 I/O
+        - 缓存过期：重新读取文件并更新缓存
+        - 线程安全：使用锁保护缓存访问
 
         【读取流程】
-        1. 检查配置文件是否存在
-        2. 如果不存在，返回默认的 network_security 配置
-        3. 如果存在：
+        1. 检查缓存是否有效（30 秒内）
+        2. 缓存有效：直接返回缓存数据
+        3. 缓存过期/不存在：
+           - 检查配置文件是否存在
            - 读取文件内容
            - 根据扩展名选择解析器（JSONC 或 JSON）
            - 提取 network_security 配置段
-           - 如果配置段不存在，返回默认配置
+           - 更新缓存
         4. 发生异常时返回默认配置
 
         【默认配置】
@@ -2333,9 +2356,9 @@ class ConfigManager:
         - API 返回网络安全配置
 
         【性能考虑】
-        - 每次调用都重新读取文件
-        - 适用于访问频率不高的场景
-        - 避免了内存缓存的安全风险
+        - 【优化】30 秒缓存减少文件 I/O
+        - 缓存过期后自动刷新
+        - 支持热重载：修改配置文件后 30 秒内生效
 
         【错误处理】
         - 文件不存在：返回默认配置
@@ -2346,11 +2369,28 @@ class ConfigManager:
         Returns:
             Dict[str, Any]: network_security 配置字典，如果读取失败则返回默认配置
         """
+        # 【性能优化】检查缓存是否有效
+        current_time = time.time()
+        with self._lock:
+            if (
+                self._network_security_cache is not None
+                and current_time - self._network_security_cache_time
+                < self._network_security_cache_ttl
+            ):
+                logger.debug("使用缓存的 network_security 配置")
+                return self._network_security_cache
+
+        # 缓存过期或不存在，从文件读取
         try:
             if not self.config_file.exists():
                 # 如果配置文件不存在，返回默认的 network_security 配置
                 default_config = self._get_default_config()
-                return default_config.get("network_security", {})
+                result = default_config.get("network_security", {})
+                # 缓存默认配置
+                with self._lock:
+                    self._network_security_cache = result
+                    self._network_security_cache_time = current_time
+                return result
 
             with open(self.config_file, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -2368,6 +2408,12 @@ class ConfigManager:
                 default_config = self._get_default_config()
                 network_security_config = default_config.get("network_security", {})
                 logger.debug("配置文件中未找到network_security，使用默认配置")
+
+            # 【性能优化】更新缓存
+            with self._lock:
+                self._network_security_cache = network_security_config
+                self._network_security_cache_time = current_time
+                logger.debug("已更新 network_security 配置缓存")
 
             return network_security_config
 
