@@ -40,6 +40,7 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
+.coverage_data/
 .cache
 nosetests.xml
 coverage.xml
@@ -48,6 +49,8 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+junit.xml
+test-results/
 
 # Translations
 *.mo
@@ -109,6 +112,7 @@ celerybeat.pid
 .env.development.local
 .env.test.local
 .env.production.local
+.envrc
 .venv
 .venv*/
 venv/
@@ -209,15 +213,16 @@ pids
 # Node.js / frontend
 node_modules/
 npm-debug.log*
+yarn-debug.log*
 yarn-error.log*
-package.json
-package-lock.json
+pnpm-debug.log*
 
-# Project specific
+# Project specific (AI tools / editors)
+.cursor/
 .cursor/rules/
 .cursorignore
 .claude
 CLAUDE.md
 
-# Configuration files
+# Configuration files (local / secret)
 config.jsonc
