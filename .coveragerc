@@ -1,0 +1,64 @@
+# coverage.py 配置文件
+
+[run]
+# 测试覆盖的源代码
+source = .
+
+# 排除测试文件本身
+omit =
+    tests/*
+    test_*.py
+    test.py
+    */__pycache__/*
+    .venv/*
+    dist/*
+    setup.py
+
+# 启用分支覆盖
+branch = True
+
+# 并行模式（多进程测试时需要）
+parallel = True
+
+[report]
+# 覆盖率精度
+precision = 2
+
+# 显示缺失行
+show_missing = True
+
+# 排除不需要覆盖的代码
+exclude_lines =
+    # 跳过调试代码
+    pragma: no cover
+
+    # 跳过防御性断言
+    raise AssertionError
+    raise NotImplementedError
+
+    # 跳过类型检查块
+    if TYPE_CHECKING:
+    if typing.TYPE_CHECKING:
+
+    # 跳过抽象方法
+    @abstractmethod
+
+    # 跳过 main 入口
+    if __name__ == .__main__.:
+
+# 忽略空文件
+ignore_errors = True
+
+# 最小覆盖率要求（可选，设置后低于此值会失败）
+# fail_under = 80
+
+[html]
+# HTML 报告目录
+directory = htmlcov
+
+# 报告标题
+title = AI Intervention Agent 测试覆盖率报告
+
+[xml]
+# XML 报告输出（用于 CI/CD）
+output = coverage.xml

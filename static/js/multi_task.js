@@ -210,12 +210,16 @@ function updateTasksList(tasks) {
     }
 
     // 为所有新任务启动倒计时（包括pending任务）
+    // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
+    // 这样刷新页面后倒计时不会重置
     tasks
       .filter(t => addedTasks.includes(t.task_id))
       .forEach(task => {
         if (task.status !== 'completed' && !taskCountdowns[task.task_id]) {
-          startTaskCountdown(task.task_id, task.auto_resubmit_timeout || 290)
-          console.log(`已为新任务启动倒计时: ${task.task_id}`)
+          // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout
+          const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 290
+          startTaskCountdown(task.task_id, timeout, task.auto_resubmit_timeout || 290)
+          console.log(`已为新任务启动倒计时: ${task.task_id}, 剩余 ${timeout}s`)
         }
       })
   }
@@ -508,14 +512,15 @@ function createTaskTab(task) {
     countdownRing.className = 'countdown-ring'
     countdownRing.id = `countdown-${task.task_id}`
 
-    // 使用已有的倒计时数据或任务的配置
+    // 使用已有的倒计时数据或服务器返回的剩余时间
     let remaining, total
     if (taskCountdowns[task.task_id]) {
       remaining = taskCountdowns[task.task_id].remaining
       total = taskCountdowns[task.task_id].timeout || 290
     } else {
-      // 倒计时还未启动，使用任务配置的初始值
-      remaining = task.auto_resubmit_timeout || 290
+      // 倒计时还未启动，优先使用服务器返回的 remaining_time
+      // 这样刷新页面后圆环显示正确的剩余时间
+      remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 290
       total = task.auto_resubmit_timeout || 290
     }
 
@@ -791,8 +796,12 @@ async function loadTaskDetails(taskId) {
 
       // 只在倒计时不存在时启动，避免切换标签时重置倒计时
       if (!taskCountdowns[task.task_id]) {
-        startTaskCountdown(task.task_id, task.auto_resubmit_timeout)
-        console.log(`首次启动倒计时: ${taskId}`)
+        // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
+        // 这样刷新页面后倒计时不会重置
+        const remaining = task.remaining_time ?? task.auto_resubmit_timeout
+        const total = task.auto_resubmit_timeout
+        startTaskCountdown(task.task_id, remaining, total)
+        console.log(`首次启动倒计时: ${taskId}, 剩余 ${remaining}s / 总 ${total}s`)
       } else {
         console.log(`倒计时已存在，不重置: ${taskId}`)
       }
@@ -1058,7 +1067,8 @@ async function closeTask(taskId) {
  * 为指定任务启动独立的倒计时计时器，支持自动提交。
  *
  * @param {string} taskId - 任务ID
- * @param {number} timeout - 倒计时秒数
+ * @param {number} remaining - 剩余倒计时秒数（可能是服务器计算的剩余时间）
+ * @param {number} total - 总超时时间（用于计算进度百分比，可选，默认等于 remaining）
  *
  * ## 功能说明
  *
@@ -1070,12 +1080,12 @@ async function closeTask(taskId) {
  * ## 倒计时数据结构
  *
  * - `remaining`: 剩余秒数
- * - `total`: 总秒数
+ * - `timeout`: 总秒数（用于计算进度百分比）
  * - `timer`: 定时器ID
  *
  * ## UI更新
  *
- * - 圆环进度：SVG stroke-dashoffset
+ * - 圆环进度：SVG stroke-dashoffset（基于 remaining/timeout）
  * - 倒计时文本：格式化时间显示
  * - 主倒计时：如果是活动任务则同步更新
  *
@@ -1085,28 +1095,38 @@ async function closeTask(taskId) {
  * - 清除计时器
  * - 记录日志
  *
+ * ## 页面刷新不重置
+ *
+ * - 服务器返回 remaining_time（基于任务创建时间计算）
+ * - 刷新页面后从服务器获取真实剩余时间
+ * - 进度条使用 remaining/timeout 计算，保持视觉一致性
+ *
  * ## 注意事项
  *
  * - 每个任务有独立的倒计时
  * - 计时器ID存储在 `taskCountdowns` 对象中
  * - 任务删除时需要清理计时器（防止内存泄漏）
  */
-function startTaskCountdown(taskId, timeout) {
+function startTaskCountdown(taskId, remaining, total = null) {
+  // 如果没有指定 total，使用 remaining 作为 total（向后兼容）
+  const timeout = total || remaining
   // 停止该任务的旧倒计时
   if (taskCountdowns[taskId] && taskCountdowns[taskId].timer) {
     clearInterval(taskCountdowns[taskId].timer)
   }
 
   // 初始化倒计时数据
+  // remaining: 当前剩余秒数（可能是刷新后从服务器获取的）
+  // timeout: 总超时时间（用于计算进度百分比）
   taskCountdowns[taskId] = {
-    remaining: timeout,
-    timeout: timeout, // 添加timeout字段，用于计算进度百分比
+    remaining: remaining,
+    timeout: timeout, // 总超时时间，用于计算进度百分比
     timer: null
   }
 
   // 如果是活动任务，更新主倒计时显示
   if (taskId === activeTaskId) {
-    updateCountdownDisplay(timeout)
+    updateCountdownDisplay(remaining)
   }
 
   // 启动定时器
@@ -1146,13 +1166,28 @@ function startTaskCountdown(taskId, timeout) {
     // 倒计时结束
     if (taskCountdowns[taskId].remaining <= 0) {
       clearInterval(taskCountdowns[taskId].timer)
+      // 智能自动提交逻辑：
+      // 1. 如果是当前激活的任务 → 立即自动提交
+      // 2. 如果不是激活任务，检查是否有其他活动任务在处理
+      //    - 如果没有活动任务（用户无响应），也自动提交当前任务
+      //    - 如果有活动任务，说明用户正在处理其他任务，暂不自动提交
       if (taskId === activeTaskId) {
+        // 当前激活任务超时，直接自动提交
         autoSubmitTask(taskId)
+      } else {
+        // 非激活任务超时：检查是否真的没有用户活动
+        // 如果当前没有任何激活任务，说明用户完全无响应，也自动提交
+        if (!activeTaskId) {
+          console.log(`非激活任务 ${taskId} 超时，且无活动任务，自动提交`)
+          autoSubmitTask(taskId)
+        } else {
+          console.log(`任务 ${taskId} 超时，但用户正在处理其他任务 ${activeTaskId}，暂不自动提交`)
+        }
       }
     }
   }, 1000)
 
-  console.log(`已启动任务倒计时: ${taskId}, ${timeout}秒`)
+  console.log(`已启动任务倒计时: ${taskId}, 剩余 ${remaining}s / 总 ${timeout}s`)
 }
 
 /**
@@ -1209,9 +1244,10 @@ function formatCountdown(seconds) {
 async function autoSubmitTask(taskId) {
   console.log(`任务 ${taskId} 倒计时结束，自动提交`)
   // 使用配置的提示语（从全局变量 feedbackPrompts 获取，如果不存在则使用默认值）
-  const defaultMessage = (typeof feedbackPrompts !== 'undefined' && feedbackPrompts.resubmit_prompt)
-    ? feedbackPrompts.resubmit_prompt
-    : '请立即调用 interactive_feedback 工具'
+  const defaultMessage =
+    typeof feedbackPrompts !== 'undefined' && feedbackPrompts.resubmit_prompt
+      ? feedbackPrompts.resubmit_prompt
+      : '请立即调用 interactive_feedback 工具'
   await submitTaskFeedback(taskId, defaultMessage, [])
 }
 

@@ -13,10 +13,10 @@
   - 现在只显示基础效果
 - [ ] 更新 README，英文、中文版本
   - 参考：https://github.com/Minidoracat/mcp-feedback-enhanced/blob/main/README.zh-CN.md
-- [ ] 重构网页主题
-  - 适配深色主题、浅色主题
-  - 适配中文、英文
-  - 在`设置`的最下面的`关于`中显示版本信息、github 地址<https://github.com/XIADENGMA/ai-intervention-agent>等
+- [x] 重构网页主题
+  - [x] 适配深色主题、浅色主题 - 使用 CSS 变量实现主题切换
+  - [ ] 适配中文、英文
+  - [ ] 在`设置`的最下面的`关于`中显示版本信息、github 地址<https://github.com/XIADENGMA/ai-intervention-agent>等
 - [ ] 优化 prompt
 - [x] 研究是否可以打包成 vscode 插件
   - [x] 在侧边栏显示（基础功能完成），但是现在切换侧边栏标签页回来会有一段时间空白需要等待
@@ -102,41 +102,29 @@
   - 修改为：请立即调用 interactive_feedback 工具
 - [x] `请立即调用 interactive_feedback 工具`和`\n 请积极调用 interactive_feedback 工具`允许在再配置文件内配置
 - [x] 在 mcp 实际使用中，接收到新任务，浏览器 console 会新增问题：`main.js:1078 ⚠️ 页面状态不一致，跳过通知（内容页面未显示）`，而且实际上我也没有接收到 bark 通知
+- [x] 程序运行中，在 web ui 取消 bark 通知选项（包括修改相关设置），新任务还是会发送 bark 通知
+  - 问题根源：`web_ui.py` 作为子进程运行，与主 MCP 服务器进程有独立的 `notification_manager` 实例
+  - 解决方案：在 `server.py` 发送通知前调用 `notification_manager.refresh_config_from_file()` 重新加载配置
+  - 额外优化：添加线程锁保护、配置缓存、类型验证等
+
+# 已完成的优化项目
+
+- [x] **Bark 通知同步修复** - 跨进程配置同步问题已解决
+- [x] **单元测试套件** - 140+ 个测试用例，覆盖核心模块
+- [x] **测试覆盖率提升**
+  - notification_manager: 63.24%
+  - config_manager: 36.96%
+  - file_validator: 89.82%
+  - task_queue: 81.58%
+- [x] **FileWatcher 优化** - 使用 Event.wait() 支持优雅关闭
+- [x] **配置验证增强** - 边界检查、类型转换、默认值处理
+- [x] **代码质量优化** - 类型提示、日志分级、文档生成
+- [x] **前端增强** - 键盘快捷键、主题切换、响应式改进
+- [x] **静态资源优化** - JS/CSS 压缩和合并
+- [x] **性能优化** - 请求去抖动、图片懒加载
 
 # WorkFlow
 
 - 使用 uv 在 8080 端口启动测试脚本，并且使用 chrome-devtools mcp 打开<http://0.0.0.0:8080>测试页面，仔细分析并考虑边界情况，检查任务是否完整的完成
 
 # List
-
-## 已完成的优化任务
-
-### Web UI 性能优化
-
-- [x] opt1: MathJax 按需加载优化（1.17MB → 需要时才加载）
-- [x] opt2: JavaScript defer/async 加载优化
-- [x] opt4: 提取 CSS 为独立文件并缓存
-- [x] opt6: HTTP 缓存头优化
-- [x] opt7: 资源预加载优化
-
-### 程序性能优化
-
-- [x] opt-1: HTTP Session 复用优化 (server.py)
-- [x] opt-2: 配置对象缓存优化 (server.py)
-- [x] opt-3: network_security 配置缓存优化 (config_manager.py)
-- [x] opt-4: 任务队列数据结构优化 (task_queue.py) - O(n) → O(1)
-- [x] opt-5: 通知异步发送优化 (notification_manager.py)
-- [x] opt-6: 日志哈希算法优化 (enhanced_logging.py)
-
-### 逻辑错误修复
-
-- [x] fix1: 健康检查端点不一致 (server.py) - 统一使用 `/api/health`
-- [x] fix2: wait_for_task_completion() 返回格式不一致 (server.py)
-- [x] fix3: NotificationManager.shutdown() 未被调用 (server.py)
-- [x] fix4: get_section() 返回可变引用 (config_manager.py)
-
-### 新功能
-
-- [x] marked.js + Prism.js (Monokai) 前端 Markdown 渲染
-- [x] resubmit_prompt 和 prompt_suffix 配置项
-- [x] README 更新

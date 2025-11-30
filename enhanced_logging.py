@@ -1121,3 +1121,97 @@ class EnhancedLogger:
 
 
 enhanced_logger = EnhancedLogger(__name__)
+
+
+# ========================================================================
+# 日志级别配置工具
+# ========================================================================
+
+# 日志级别映射
+LOG_LEVEL_MAP = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+# 有效的日志级别名称
+VALID_LOG_LEVELS = tuple(LOG_LEVEL_MAP.keys())
+
+
+def get_log_level_from_config() -> int:
+    """
+    从配置文件读取日志级别
+
+    返回
+    ----
+    int
+        logging 模块的日志级别常量
+
+    处理逻辑
+    --------
+    1. 尝试从 config_manager 读取 web_ui.log_level 配置
+    2. 如果配置无效或读取失败，使用默认级别 WARNING
+    3. 忽略大小写（如 "warning" 等同于 "WARNING"）
+
+    示例
+    ----
+    >>> # config.jsonc: {"web_ui": {"log_level": "DEBUG"}}
+    >>> get_log_level_from_config()
+    10  # logging.DEBUG
+    """
+    try:
+        from config_manager import config_manager
+
+        web_ui_config = config_manager.get("web_ui", {})
+        log_level_str = web_ui_config.get("log_level", "WARNING")
+
+        # 标准化为大写
+        log_level_upper = str(log_level_str).upper()
+
+        if log_level_upper in LOG_LEVEL_MAP:
+            return LOG_LEVEL_MAP[log_level_upper]
+        else:
+            logging.warning(
+                f"无效的日志级别 '{log_level_str}'，"
+                f"有效值: {VALID_LOG_LEVELS}，使用默认值 WARNING"
+            )
+            return logging.WARNING
+
+    except Exception as e:
+        # 配置读取失败时使用默认级别
+        logging.debug(f"读取日志级别配置失败: {e}，使用默认值 WARNING")
+        return logging.WARNING
+
+
+def configure_logging_from_config() -> None:
+    """
+    根据配置文件设置全局日志级别
+
+    功能
+    ----
+    1. 从配置读取日志级别
+    2. 设置 root logger 级别
+    3. 更新所有已存在的 handler 级别
+
+    使用场景
+    --------
+    在应用启动时调用，确保日志级别与配置一致
+
+    示例
+    ----
+    >>> configure_logging_from_config()
+    >>> # 现在所有日志都使用配置中的级别
+    """
+    log_level = get_log_level_from_config()
+
+    # 设置 root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # 更新所有 handler
+    for handler in root_logger.handlers:
+        handler.setLevel(log_level)
+
+    logging.info(f"日志级别已设置为: {logging.getLevelName(log_level)}")

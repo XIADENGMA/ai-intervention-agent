@@ -142,10 +142,42 @@ class Task:
     prompt: str
     predefined_options: Optional[List[str]] = None
     auto_resubmit_timeout: int = 240  # 默认240秒，最大不超过290秒
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=datetime.utcnow)  # 使用 UTC 时间，支持跨时区部署
     status: str = "pending"
     result: Optional[Dict[str, str]] = None
     completed_at: Optional[datetime] = None
+
+    def get_remaining_time(self) -> int:
+        """计算剩余倒计时时间（秒）
+
+        基于任务创建时间和配置的超时时间，计算当前剩余的倒计时秒数。
+        用于服务器端跟踪倒计时状态，解决页面刷新后倒计时重置的问题。
+
+        **计算公式**：
+            elapsed = now - created_at
+            remaining = auto_resubmit_timeout - elapsed
+
+        **返回值范围**：
+            - 最大值：auto_resubmit_timeout（刚创建时）
+            - 最小值：0（倒计时结束或已超时）
+
+        Returns:
+            int: 剩余秒数，范围 [0, auto_resubmit_timeout]
+
+        Note:
+            - 已完成的任务返回 0
+            - 负数会被截断为 0
+            - 使用 UTC 时间，支持跨时区部署
+        """
+        if self.status == "completed":
+            return 0
+
+        now = datetime.utcnow()  # 使用 UTC 时间，与 created_at 保持一致
+        elapsed = (now - self.created_at).total_seconds()
+        remaining = self.auto_resubmit_timeout - elapsed
+
+        # 确保返回值在合理范围内
+        return max(0, int(remaining))
 
 
 class TaskQueue:
@@ -268,6 +300,9 @@ class TaskQueue:
         self._tasks: Dict[str, Task] = {}
         self._lock = Lock()
         self._active_task_id: Optional[str] = None
+
+        # 【新增】任务状态变更回调机制
+        self._status_change_callbacks: list = []
 
         self._stop_cleanup = threading.Event()
         self._cleanup_thread = threading.Thread(
@@ -409,6 +444,10 @@ class TaskQueue:
             logger.info(
                 f"添加任务成功: {task_id}, 当前任务数: {len(self._tasks)}/{self.max_tasks}"
             )
+
+            # 【新增】触发任务状态变更回调
+            self._trigger_status_change(task_id, None, task.status)
+
             return True
 
     def get_task(self, task_id: str) -> Optional[Task]:
@@ -548,15 +587,26 @@ class TaskQueue:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
 
+            old_active_id = self._active_task_id
+            old_active_status = None
+
             if self._active_task_id and self._active_task_id in self._tasks:
                 old_task = self._tasks[self._active_task_id]
                 if old_task.status == "active":
+                    old_active_status = old_task.status
                     old_task.status = "pending"
 
+            new_task_old_status = self._tasks[task_id].status
             self._active_task_id = task_id
             self._tasks[task_id].status = "active"
 
             logger.info(f"切换到任务: {task_id}")
+
+            # 【新增】触发任务状态变更回调
+            if old_active_id and old_active_status:
+                self._trigger_status_change(old_active_id, "active", "pending")
+            self._trigger_status_change(task_id, new_task_old_status, "active")
+
             return True
 
     def complete_task(self, task_id: str, result: Dict[str, str]) -> bool:
@@ -622,9 +672,13 @@ class TaskQueue:
                 return False
 
             task = self._tasks[task_id]
+            old_status = task.status
             task.status = "completed"
             task.result = result
-            task.completed_at = datetime.now()
+            task.completed_at = datetime.utcnow()  # 使用 UTC 时间
+
+            # 【新增】触发任务状态变更回调（当前任务完成）
+            self._trigger_status_change(task_id, old_status, "completed")
 
             if self._active_task_id == task_id:
                 self._active_task_id = None
@@ -636,6 +690,8 @@ class TaskQueue:
                         self._active_task_id = tid
                         t.status = "active"
                         logger.info(f"自动激活下一个任务: {tid}")
+                        # 【新增】触发自动激活任务的回调
+                        self._trigger_status_change(tid, "pending", "active")
                         break
             else:
                 logger.info(f"任务完成: {task_id}")
@@ -686,13 +742,18 @@ class TaskQueue:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
 
+            old_status = self._tasks[task_id].status
+            next_activated_id = None
+
             if self._active_task_id == task_id:
                 self._active_task_id = None
                 # 【性能优化】使用字典迭代代替列表遍历
                 for tid, t in self._tasks.items():
                     if tid != task_id and t.status in ["pending", "active"]:
                         self._active_task_id = tid
+                        old_next_status = t.status
                         t.status = "active"
+                        next_activated_id = tid
                         break
 
             # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
@@ -701,6 +762,12 @@ class TaskQueue:
             logger.info(
                 f"移除任务: {task_id}, 剩余任务数: {len(self._tasks)}/{self.max_tasks}"
             )
+
+            # 【新增】触发任务状态变更回调
+            self._trigger_status_change(task_id, old_status, "removed")
+            if next_activated_id:
+                self._trigger_status_change(next_activated_id, old_next_status, "active")
+
             return True
 
     def clear_completed_tasks(self) -> int:
@@ -792,7 +859,7 @@ class TaskQueue:
             - 可以手动调用来立即清理
         """
         with self._lock:
-            now = datetime.now()
+            now = datetime.utcnow()  # 使用 UTC 时间，与 completed_at 保持一致
             tasks_to_remove = []
 
             for task_id, task in self._tasks.items():
@@ -950,3 +1017,74 @@ class TaskQueue:
                 "completed": completed,
                 "max": self.max_tasks,
             }
+
+    # ========================================================================
+    # 任务状态变更回调机制
+    # ========================================================================
+
+    def register_status_change_callback(self, callback: callable):
+        """
+        注册任务状态变更回调函数
+
+        【功能说明】
+        当任务状态发生变化时（添加、激活、完成、删除），会调用所有注册的回调函数。
+
+        【参数】
+        callback : callable
+            回调函数，接受三个参数：
+            - task_id: str - 任务ID
+            - old_status: str - 旧状态（添加任务时为 None）
+            - new_status: str - 新状态（删除任务时为 "removed"）
+
+            函数签名: def callback(task_id: str, old_status: str, new_status: str) -> None
+
+        【使用场景】
+        - 前端实时更新任务列表
+        - 日志记录任务状态变化
+        - 触发相关业务逻辑
+
+        【示例】
+        >>> def on_status_change(task_id, old_status, new_status):
+        ...     print(f"任务 {task_id}: {old_status} -> {new_status}")
+        >>> queue.register_status_change_callback(on_status_change)
+        """
+        if callback not in self._status_change_callbacks:
+            self._status_change_callbacks.append(callback)
+            logger.debug(f"已注册任务状态变更回调: {callback.__name__}")
+
+    def unregister_status_change_callback(self, callback: callable):
+        """
+        取消注册任务状态变更回调函数
+
+        【参数】
+        callback : callable
+            要取消的回调函数
+        """
+        if callback in self._status_change_callbacks:
+            self._status_change_callbacks.remove(callback)
+            logger.debug(f"已取消任务状态变更回调: {callback.__name__}")
+
+    def _trigger_status_change(self, task_id: str, old_status: Optional[str], new_status: str):
+        """
+        触发任务状态变更回调
+
+        【内部方法】
+        任务状态变化时调用，依次执行所有注册的回调函数。
+
+        【参数】
+        task_id : str
+            任务ID
+        old_status : Optional[str]
+            旧状态（添加任务时为 None）
+        new_status : str
+            新状态（删除任务时为 "removed"）
+
+        【注意】
+        - 回调函数中的异常会被捕获，不会影响其他回调
+        - 回调执行在调用线程中，建议保持回调函数简短
+        """
+        for callback in self._status_change_callbacks:
+            try:
+                callback(task_id, old_status, new_status)
+            except Exception as e:
+                logger.error(f"任务状态变更回调执行失败 ({callback.__name__}): {e}")

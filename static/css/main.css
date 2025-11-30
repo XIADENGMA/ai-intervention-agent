@@ -51,6 +51,165 @@
  */
 
 /* ========================================================================
+   CSS 变量 - 主题系统 (Theme Variables)
+   ======================================================================== */
+
+/**
+ * 主题变量说明：
+ *   使用 CSS 自定义属性（CSS Variables）实现主题切换。
+ *   默认为暗色主题，可通过 data-theme="light" 属性切换到亮色主题。
+ *
+ * 变量分类：
+ *   - 背景色系列：--bg-*
+ *   - 文本色系列：--text-*
+ *   - 边框色系列：--border-*
+ *   - 主题色系列：--primary-*, --accent-*
+ *   - 状态色系列：--success-*, --warning-*, --error-*, --info-*
+ *   - 阴影系列：--shadow-*
+ *
+ * 使用方法：
+ *   background: var(--bg-primary);
+ *   color: var(--text-primary);
+ */
+
+/* 暗色主题（默认）*/
+:root {
+  /* 背景色 */
+  --bg-primary: #1a1a1f;        /* 主背景 */
+  --bg-secondary: #25252d;       /* 次级背景 */
+  --bg-tertiary: #2d2d3c;        /* 三级背景 */
+  --bg-elevated: rgba(45, 45, 60, 0.9);  /* 悬浮/弹窗背景 */
+  --bg-overlay: rgba(0, 0, 0, 0.6);      /* 遮罩层 */
+  --bg-hover: rgba(255, 255, 255, 0.08); /* 悬停背景 */
+  --bg-active: rgba(255, 255, 255, 0.12); /* 激活背景 */
+
+  /* 文本色 */
+  --text-primary: #f5f5f7;       /* 主文本 */
+  --text-secondary: #a1a1aa;     /* 次级文本 */
+  --text-tertiary: #71717a;      /* 三级文本 */
+  --text-muted: #52525b;         /* 弱化文本 */
+  --text-inverse: #1a1a1f;       /* 反色文本（用于亮色按钮） */
+
+  /* 边框色 */
+  --border-primary: rgba(255, 255, 255, 0.15);  /* 主边框 */
+  --border-secondary: rgba(255, 255, 255, 0.08); /* 次级边框 */
+  --border-hover: rgba(255, 255, 255, 0.25);    /* 悬停边框 */
+  --border-focus: rgba(139, 92, 246, 0.5);      /* 焦点边框 */
+
+  /* 主题色（紫色系） */
+  --primary-50: #faf5ff;
+  --primary-100: #f3e8ff;
+  --primary-200: #e9d5ff;
+  --primary-300: #d8b4fe;
+  --primary-400: #c084fc;
+  --primary-500: #a855f7;        /* 主色 */
+  --primary-600: #9333ea;
+  --primary-700: #7c3aed;
+  --primary-800: #6b21a8;
+  --primary-900: #581c87;
+
+  /* 强调色（蓝紫色系） */
+  --accent-50: #eef2ff;
+  --accent-100: #e0e7ff;
+  --accent-200: #c7d2fe;
+  --accent-300: #a5b4fc;
+  --accent-400: #818cf8;
+  --accent-500: #6366f1;         /* 强调色 */
+  --accent-600: #4f46e5;
+  --accent-700: #4338ca;
+  --accent-800: #3730a3;
+  --accent-900: #312e81;
+
+  /* 状态色 */
+  --success-500: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.15);
+  --warning-500: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.15);
+  --error-500: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.15);
+  --info-500: #3b82f6;
+  --info-bg: rgba(59, 130, 246, 0.15);
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.7);
+
+  /* 过渡时间 */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+  --transition-slow: 0.4s ease;
+
+  /* 主题切换过渡 */
+  --theme-transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* 亮色主题 */
+[data-theme="light"] {
+  /* 背景色 */
+  --bg-primary: #f8fafc;         /* 主背景 */
+  --bg-secondary: #f1f5f9;       /* 次级背景 */
+  --bg-tertiary: #e2e8f0;        /* 三级背景 */
+  --bg-elevated: rgba(255, 255, 255, 0.95);  /* 悬浮/弹窗背景 */
+  --bg-overlay: rgba(0, 0, 0, 0.4);          /* 遮罩层 */
+  --bg-hover: rgba(0, 0, 0, 0.04);  /* 悬停背景 */
+  --bg-active: rgba(0, 0, 0, 0.08); /* 激活背景 */
+
+  /* 文本色 */
+  --text-primary: #1e293b;       /* 主文本 */
+  --text-secondary: #475569;     /* 次级文本 */
+  --text-tertiary: #64748b;      /* 三级文本 */
+  --text-muted: #94a3b8;         /* 弱化文本 */
+  --text-inverse: #f8fafc;       /* 反色文本 */
+
+  /* 边框色 */
+  --border-primary: rgba(0, 0, 0, 0.12);    /* 主边框 */
+  --border-secondary: rgba(0, 0, 0, 0.06);  /* 次级边框 */
+  --border-hover: rgba(0, 0, 0, 0.2);       /* 悬停边框 */
+  --border-focus: rgba(139, 92, 246, 0.4);  /* 焦点边框 */
+
+  /* 阴影（亮色主题使用更柔和的阴影） */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.15);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.2);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.25);
+}
+
+/* 自动跟随系统主题 */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    /* 背景色 */
+    --bg-primary: #f8fafc;
+    --bg-secondary: #f1f5f9;
+    --bg-tertiary: #e2e8f0;
+    --bg-elevated: rgba(255, 255, 255, 0.95);
+    --bg-overlay: rgba(0, 0, 0, 0.4);
+    --bg-hover: rgba(0, 0, 0, 0.04);
+    --bg-active: rgba(0, 0, 0, 0.08);
+
+    /* 文本色 */
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-tertiary: #64748b;
+    --text-muted: #94a3b8;
+    --text-inverse: #f8fafc;
+
+    /* 边框色 */
+    --border-primary: rgba(0, 0, 0, 0.12);
+    --border-secondary: rgba(0, 0, 0, 0.06);
+    --border-hover: rgba(0, 0, 0, 0.2);
+    --border-focus: rgba(139, 92, 246, 0.4);
+
+    /* 阴影 */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.15);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.2);
+    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* ========================================================================
    字体声明 (Font Declarations)
    ======================================================================== */
 
@@ -135,8 +294,8 @@
 body {
   font-family: 'SFProText', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
     'Helvetica Neue', 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
-  background: #1a1a1f; /* 深色主题背景 */
-  color: #f5f5f7; /* 高对比度文本 */
+  background: var(--bg-primary); /* 使用主题变量 */
+  color: var(--text-primary); /* 使用主题变量 */
   min-height: 100vh; /* 最小高度为视口高度 */
   padding: 1rem 0; /* 上下内边距 */
   line-height: 1.47059; /* Apple风格行高 */
@@ -144,6 +303,7 @@ body {
   letter-spacing: -0.022em; /* 紧凑字间距 */
   overflow-x: hidden; /* 隐藏横向溢出 */
   box-sizing: border-box; /* 统一盒模型 */
+  transition: var(--theme-transition); /* 主题切换过渡 */
 }
 
 /**
@@ -516,6 +676,87 @@ h1 {
 .settings-btn:focus {
   outline: none; /* 移除默认outline */
   box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); /* 蓝色聚焦边框 */
+}
+
+/* ========================================================================
+   主题切换按钮 (Theme Toggle Button)
+   ======================================================================== */
+
+/**
+ * 主题切换按钮（.theme-toggle-btn）：
+ *
+ * 功能说明：
+ *   用于在暗色和亮色主题之间切换的按钮。
+ *
+ * 视觉设计：
+ *   - 与设置按钮风格一致
+ *   - 使用太阳/月亮图标表示当前主题
+ *   - 平滑的图标切换动画
+ */
+.theme-toggle-btn {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  color: var(--text-primary);
+  padding: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-active);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.theme-toggle-btn:active {
+  transform: translateY(0);
+}
+
+.theme-toggle-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+/* 主题图标 */
+.theme-icon {
+  width: 20px;
+  height: 20px;
+  position: absolute;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* 太阳图标（暗色主题时显示） */
+.theme-icon-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+/* 月亮图标（暗色主题时隐藏） */
+.theme-icon-moon {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.5);
+}
+
+/* 亮色主题时图标状态 */
+.theme-toggle-btn.is-light .theme-icon-sun {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.5);
+}
+
+.theme-toggle-btn.is-light .theme-icon-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
 }
 
 /**

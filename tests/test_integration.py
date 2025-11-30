@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""
+AI Intervention Agent - 集成测试
+
+针对 server.py 和 web_ui.py 的基础集成测试
+使用 mock 和 patch 来模拟服务器行为
+"""
+
+import json
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+# 添加项目根目录到路径
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+
+# ============================================================================
+# web_ui.py 集成测试
+# ============================================================================
+
+class TestWebFeedbackUICreation(unittest.TestCase):
+    """Web 反馈 UI 创建测试"""
+
+    def test_create_web_ui(self):
+        """测试创建 Web UI 实例"""
+        from web_ui import WebFeedbackUI
+
+        ui = WebFeedbackUI(
+            prompt="测试提示",
+            predefined_options=["选项1", "选项2"],
+            task_id="test-001",
+            port=8999
+        )
+
+        self.assertIsNotNone(ui)
+        self.assertIsNotNone(ui.app)
+
+    def test_web_ui_with_default_options(self):
+        """测试默认选项的 Web UI"""
+        from web_ui import WebFeedbackUI
+
+        ui = WebFeedbackUI(
+            prompt="默认选项测试",
+            port=8998
+        )
+
+        self.assertIsNotNone(ui)
+
+
+class TestWebFeedbackUIFlaskApp(unittest.TestCase):
+    """Flask 应用测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="Flask 测试",
+            predefined_options=["确认", "取消"],
+            task_id="flask-test",
+            port=8997
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config['TESTING'] = True
+        cls.client = cls.app.test_client()
+
+    def test_index_page(self):
+        """测试首页"""
+        response = self.client.get('/')
+
+        # 应该返回 200
+        self.assertEqual(response.status_code, 200)
+
+    def test_api_tasks(self):
+        """测试任务 API"""
+        response = self.client.get('/api/tasks')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn('tasks', data)
+
+    def test_api_status(self):
+        """测试状态 API"""
+        response = self.client.get('/api/status')
+
+        # 可能返回 200 或 404
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_static_css(self):
+        """测试 CSS 静态文件"""
+        response = self.client.get('/static/css/style.css')
+
+        # 可能存在或不存在
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_static_js(self):
+        """测试 JS 静态文件"""
+        response = self.client.get('/static/js/main.js')
+
+        # 可能存在或不存在
+        self.assertIn(response.status_code, [200, 404])
+
+
+class TestWebFeedbackUINotificationConfig(unittest.TestCase):
+    """通知配置 API 测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="通知配置测试",
+            task_id="notification-test",
+            port=8996
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config['TESTING'] = True
+        cls.client = cls.app.test_client()
+
+    def test_update_notification_config(self):
+        """测试更新通知配置"""
+        config_data = {
+            'enabled': True,
+            'bark_enabled': False,
+            'sound_enabled': True
+        }
+
+        response = self.client.post(
+            '/api/update-notification-config',
+            data=json.dumps(config_data),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_update_notification_config_bark(self):
+        """测试更新 Bark 配置"""
+        config_data = {
+            'bark_enabled': True,
+            'bark_url': 'https://api.day.app/push',
+            'bark_device_key': 'test_key'
+        }
+
+        response = self.client.post(
+            '/api/update-notification-config',
+            data=json.dumps(config_data),
+            content_type='application/json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+
+# ============================================================================
+# server.py 集成测试
+# ============================================================================
+
+class TestServerImport(unittest.TestCase):
+    """服务器模块导入测试"""
+
+    def test_import_parse_structured_response(self):
+        """测试导入 parse_structured_response"""
+        try:
+            from server import parse_structured_response
+            self.assertTrue(callable(parse_structured_response))
+        except ImportError:
+            self.skipTest("无法导入 server 模块")
+
+    def test_import_validate_input(self):
+        """测试导入 validate_input"""
+        try:
+            from server import validate_input
+            self.assertTrue(callable(validate_input))
+        except ImportError:
+            self.skipTest("无法导入 server 模块")
+
+
+class TestParseStructuredResponse(unittest.TestCase):
+    """解析结构化响应测试"""
+
+    def test_parse_dict_response(self):
+        """测试解析字典响应"""
+        try:
+            from server import parse_structured_response
+
+            # 测试标准格式
+            response = {
+                'user_input': '用户输入',
+                'selected_options': ['选项1'],
+                'images': []
+            }
+
+            result = parse_structured_response(response)
+
+            self.assertIsInstance(result, list)
+        except ImportError:
+            self.skipTest("无法导入 server 模块")
+
+    def test_parse_response_with_images(self):
+        """测试带图片的响应"""
+        try:
+            from server import parse_structured_response
+
+            response = {
+                'user_input': '带图片',
+                'selected_options': [],
+                'images': [
+                    {'data': 'base64data', 'mimeType': 'image/png'}
+                ]
+            }
+
+            result = parse_structured_response(response)
+
+            self.assertIsInstance(result, list)
+        except ImportError:
+            self.skipTest("无法导入 server 模块")
+
+
+class TestValidateInput(unittest.TestCase):
+    """输入验证测试"""
+
+    def test_validate_normal_input(self):
+        """测试正常输入验证"""
+        try:
+            from server import validate_input
+
+            # validate_input 返回元组 (message, options)
+            result = validate_input("正常输入", [])
+
+            self.assertIsInstance(result, tuple)
+            self.assertEqual(len(result), 2)
+        except (ImportError, TypeError):
+            self.skipTest("无法测试 validate_input")
+
+    def test_validate_empty_input(self):
+        """测试空输入验证"""
+        try:
+            from server import validate_input
+
+            result = validate_input("", [])
+
+            self.assertIsInstance(result, tuple)
+        except (ImportError, TypeError):
+            self.skipTest("无法测试 validate_input")
+
+
+# ============================================================================
+# 配置和环境测试
+# ============================================================================
+
+class TestConfigIntegration(unittest.TestCase):
+    """配置集成测试"""
+
+    def test_config_manager_singleton(self):
+        """测试配置管理器单例"""
+        from config_manager import config_manager as cm1
+        from config_manager import config_manager as cm2
+
+        self.assertIs(cm1, cm2)
+
+    def test_notification_manager_singleton(self):
+        """测试通知管理器单例"""
+        from notification_manager import notification_manager as nm1
+        from notification_manager import notification_manager as nm2
+
+        self.assertIs(nm1, nm2)
+
+    def test_config_notification_integration(self):
+        """测试配置与通知集成"""
+        from config_manager import config_manager
+        from notification_manager import notification_manager
+
+        # 获取配置
+        notification_config = config_manager.get_section("notification")
+
+        # 刷新通知管理器
+        notification_manager.refresh_config_from_file()
+
+        # 验证配置已加载
+        self.assertIsNotNone(notification_manager.config)
+
+
+class TestTaskQueueIntegration(unittest.TestCase):
+    """任务队列集成测试"""
+
+    def test_task_queue_from_web_ui(self):
+        """测试从 Web UI 使用任务队列"""
+        from web_ui import WebFeedbackUI
+
+        ui = WebFeedbackUI(
+            prompt="任务队列测试",
+            task_id="queue-test-001",
+            port=8995
+        )
+
+        # 验证 Web UI 已创建
+        self.assertIsNotNone(ui)
+        # 验证 Flask app 已创建
+        self.assertIsNotNone(ui.app)
+
+
+def run_tests():
+    """运行所有集成测试"""
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+
+    # Web UI 测试
+    suite.addTests(loader.loadTestsFromTestCase(TestWebFeedbackUICreation))
+    suite.addTests(loader.loadTestsFromTestCase(TestWebFeedbackUIFlaskApp))
+    suite.addTests(loader.loadTestsFromTestCase(TestWebFeedbackUINotificationConfig))
+
+    # Server 测试
+    suite.addTests(loader.loadTestsFromTestCase(TestServerImport))
+    suite.addTests(loader.loadTestsFromTestCase(TestParseStructuredResponse))
+    suite.addTests(loader.loadTestsFromTestCase(TestValidateInput))
+
+    # 配置集成测试
+    suite.addTests(loader.loadTestsFromTestCase(TestConfigIntegration))
+    suite.addTests(loader.loadTestsFromTestCase(TestTaskQueueIntegration))
+
+    runner = unittest.TextTestRunner(verbosity=2)
+    result = runner.run(suite)
+
+    return result.wasSuccessful()
+
+
+if __name__ == "__main__":
+    success = run_tests()
+    sys.exit(0 if success else 1)

@@ -682,9 +682,11 @@ async function loadConfig(shouldNotify = true) {
     }
 
     // 启动自动重调倒计时
-    if (config.auto_resubmit_timeout && config.auto_resubmit_timeout > 0) {
-      console.log(`[倒计时] 启动自动重调倒计时: ${config.auto_resubmit_timeout}秒`)
-      startCountdown(config.auto_resubmit_timeout)
+    // 优先使用 remaining_time（服务器计算的剩余时间），刷新页面后倒计时不重置
+    const countdownTime = config.remaining_time ?? config.auto_resubmit_timeout
+    if (countdownTime && countdownTime > 0) {
+      console.log(`[倒计时] 启动自动重调倒计时: ${countdownTime}秒`)
+      startCountdown(countdownTime)
     }
   } catch (error) {
     console.error('加载配置失败:', error)
@@ -1420,9 +1422,11 @@ function updatePageContent(oldConfig = null) {
   }
 
   // 重新启动自动重调倒计时
-  if (config.auto_resubmit_timeout && config.auto_resubmit_timeout > 0) {
-    console.log(`[倒计时] 内容更新，重新启动倒计时: ${config.auto_resubmit_timeout}秒`)
-    startCountdown(config.auto_resubmit_timeout)
+  // 优先使用 remaining_time（服务器计算的剩余时间），刷新页面后倒计时不重置
+  const countdownTime = config.remaining_time ?? config.auto_resubmit_timeout
+  if (countdownTime && countdownTime > 0) {
+    console.log(`[倒计时] 内容更新，重新启动倒计时: ${countdownTime}秒`)
+    startCountdown(countdownTime)
   } else {
     // 如果超时时间为0或未设置，停止倒计时
     stopCountdown()
@@ -2199,6 +2203,12 @@ class SettingsManager {
       barkIcon: '',
       barkAction: 'none'
     }
+
+    // 【性能优化】创建去抖动版本的同步方法（500ms 延迟）
+    this.debouncedSyncConfigToBackend = typeof debounce !== 'undefined'
+      ? debounce(this._syncConfigToBackendImpl.bind(this), 500)
+      : this._syncConfigToBackendImpl.bind(this)
+
     this.init()
   }
 
@@ -2293,7 +2303,13 @@ class SettingsManager {
     this.syncConfigToBackend()
   }
 
-  async syncConfigToBackend() {
+  // 【性能优化】公共方法使用去抖动版本
+  syncConfigToBackend() {
+    this.debouncedSyncConfigToBackend()
+  }
+
+  // 实际的同步实现（由去抖动函数调用）
+  async _syncConfigToBackendImpl() {
     try {
       const response = await fetch('/api/update-notification-config', {
         method: 'POST',

@@ -583,8 +583,31 @@ class ConfigManager:
         self._network_security_cache_time: float = 0
         self._network_security_cache_ttl: float = 30.0  # 30 秒缓存有效期
 
+        # 【性能优化】通用 section 缓存层
+        self._section_cache: Dict[str, Dict[str, Any]] = {}  # section 名称 -> 缓存数据
+        self._section_cache_time: Dict[str, float] = {}  # section 名称 -> 缓存时间
+        self._section_cache_ttl: float = 10.0  # section 缓存有效期（秒）
+
+        # 【性能优化】缓存统计
+        self._cache_stats = {
+            "hits": 0,      # 缓存命中次数
+            "misses": 0,    # 缓存未命中次数
+            "invalidations": 0,  # 缓存失效次数
+        }
+
+        # 【新增】文件监听相关属性
+        self._file_watcher_thread: Optional[threading.Thread] = None
+        self._file_watcher_running = False
+        self._file_watcher_stop_event = threading.Event()  # 用于优雅停止
+        self._file_watcher_interval = 2.0  # 检查间隔（秒）
+        self._last_file_mtime: float = 0  # 上次文件修改时间
+        self._config_change_callbacks: list = []  # 配置变更回调函数列表
+
         # 加载配置文件
         self._load_config()
+
+        # 初始化文件修改时间
+        self._update_file_mtime()
 
     def _get_default_config(self) -> Dict[str, Any]:
         """获取默认配置
@@ -2123,7 +2146,7 @@ class ConfigManager:
             self._last_save_time = time.time()
             logger.debug("强制配置保存完成")
 
-    def get_section(self, section: str) -> Dict[str, Any]:
+    def get_section(self, section: str, use_cache: bool = True) -> Dict[str, Any]:
         """获取配置段（返回副本，防止外部修改影响内部状态）
 
         【功能说明】
@@ -2138,6 +2161,10 @@ class ConfigManager:
         【特殊处理】
         - **network_security 配置段**：不在内存中，通过 get_network_security_config() 从文件读取
         - 其他配置段：通过 get() 方法从内存读取
+
+        【性能优化】
+        - 使用 section 缓存层减少深拷贝开销
+        - 缓存有效期默认 10 秒，可通过 use_cache=False 强制刷新
 
         【返回值】
         - 配置段存在：返回该配置段字典的**深拷贝**
@@ -2154,20 +2181,37 @@ class ConfigManager:
 
         Args:
             section: 配置段名称（顶层配置键）
+            use_cache: 是否使用缓存（默认 True）
 
         Returns:
             Dict[str, Any]: 配置段字典的深拷贝，如果不存在则返回空字典
         """
         import copy
+        current_time = time.time()
 
         # 特殊处理 network_security 配置段
         if section == "network_security":
             # get_network_security_config 已经返回独立对象，但为一致性仍返回拷贝
             return copy.deepcopy(self.get_network_security_config())
 
-        # 【修复】返回深拷贝，防止外部修改影响内部状态
+        # 【性能优化】检查 section 缓存
+        if use_cache and section in self._section_cache:
+            cache_time = self._section_cache_time.get(section, 0)
+            if current_time - cache_time < self._section_cache_ttl:
+                self._cache_stats["hits"] += 1
+                logger.debug(f"缓存命中: section={section}")
+                return copy.deepcopy(self._section_cache[section])
+
+        # 缓存未命中或已过期
+        self._cache_stats["misses"] += 1
         result = self.get(section, {})
-        return copy.deepcopy(result) if result else {}
+        result_copy = copy.deepcopy(result) if result else {}
+
+        # 更新缓存
+        self._section_cache[section] = result_copy
+        self._section_cache_time[section] = current_time
+
+        return copy.deepcopy(result_copy)
 
     def update_section(self, section: str, updates: Dict[str, Any], save: bool = True):
         """更新配置段
@@ -2244,6 +2288,9 @@ class ConfigManager:
             if save:
                 self._save_config()
 
+            # 【缓存优化】失效该 section 的缓存
+            self.invalidate_section_cache(section)
+
             logger.debug(f"配置段已更新: {section}")
 
     def reload(self):
@@ -2276,6 +2323,102 @@ class ConfigManager:
         """
         logger.info("重新加载配置文件")
         self._load_config()
+        # 【缓存优化】重新加载后失效所有缓存
+        self.invalidate_all_caches()
+
+    # ========================================================================
+    # 缓存管理方法
+    # ========================================================================
+
+    def invalidate_section_cache(self, section: str):
+        """失效指定 section 的缓存
+
+        【功能说明】
+        使指定配置段的缓存失效，下次访问时会重新从内存中读取。
+
+        Args:
+            section: 配置段名称
+        """
+        if section in self._section_cache:
+            del self._section_cache[section]
+            self._section_cache_time.pop(section, None)
+            self._cache_stats["invalidations"] += 1
+            logger.debug(f"已失效 section 缓存: {section}")
+
+    def invalidate_all_caches(self):
+        """失效所有缓存
+
+        【功能说明】
+        清空所有配置缓存，包括 section 缓存和 network_security 缓存。
+        """
+        # 清空 section 缓存
+        invalidated_count = len(self._section_cache)
+        self._section_cache.clear()
+        self._section_cache_time.clear()
+
+        # 清空 network_security 缓存
+        self._network_security_cache = None
+        self._network_security_cache_time = 0
+
+        self._cache_stats["invalidations"] += invalidated_count + 1
+        logger.debug(f"已失效所有缓存 (共 {invalidated_count + 1} 个)")
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息
+
+        【功能说明】
+        返回缓存的命中率、未命中率等统计信息。
+
+        Returns:
+            Dict: {
+                "hits": 缓存命中次数,
+                "misses": 缓存未命中次数,
+                "invalidations": 缓存失效次数,
+                "hit_rate": 命中率 (0.0-1.0),
+                "section_cache_size": 当前 section 缓存数量,
+                "network_security_cached": network_security 是否已缓存
+            }
+        """
+        total = self._cache_stats["hits"] + self._cache_stats["misses"]
+        hit_rate = self._cache_stats["hits"] / total if total > 0 else 0.0
+
+        return {
+            **self._cache_stats,
+            "hit_rate": round(hit_rate, 4),
+            "section_cache_size": len(self._section_cache),
+            "network_security_cached": self._network_security_cache is not None,
+        }
+
+    def reset_cache_stats(self):
+        """重置缓存统计
+
+        【功能说明】
+        将缓存统计信息归零，用于新一轮统计。
+        """
+        self._cache_stats = {
+            "hits": 0,
+            "misses": 0,
+            "invalidations": 0,
+        }
+        logger.debug("已重置缓存统计")
+
+    def set_cache_ttl(self, section_ttl: float = None, network_security_ttl: float = None):
+        """设置缓存有效期
+
+        【功能说明】
+        动态调整缓存有效期（TTL）。
+
+        Args:
+            section_ttl: section 缓存有效期（秒），None 表示不修改
+            network_security_ttl: network_security 缓存有效期（秒），None 表示不修改
+        """
+        if section_ttl is not None:
+            self._section_cache_ttl = max(0.1, section_ttl)  # 最小 0.1 秒
+            logger.debug(f"section 缓存 TTL 已设置为: {self._section_cache_ttl}s")
+
+        if network_security_ttl is not None:
+            self._network_security_cache_ttl = max(1.0, network_security_ttl)  # 最小 1 秒
+            logger.debug(f"network_security 缓存 TTL 已设置为: {self._network_security_cache_ttl}s")
 
     def get_all(self) -> Dict[str, Any]:
         """获取所有配置
@@ -2422,6 +2565,528 @@ class ConfigManager:
             # 返回默认的 network_security 配置
             default_config = self._get_default_config()
             return default_config.get("network_security", {})
+
+
+    # ========================================================================
+    # 类型安全的配置获取方法
+    # ========================================================================
+
+    def get_typed(
+        self,
+        key: str,
+        default: Any,
+        value_type: type,
+        min_val: Optional[Any] = None,
+        max_val: Optional[Any] = None,
+    ) -> Any:
+        """获取配置值，带类型转换和边界验证
+
+        【功能说明】
+        获取配置值并自动进行类型转换和边界验证。
+        如果转换失败或值超出边界，返回默认值或调整后的值。
+
+        【支持的类型】
+        - int: 整数类型
+        - float: 浮点数类型
+        - bool: 布尔类型（支持字符串 "true"/"false"）
+        - str: 字符串类型
+
+        【边界验证】
+        - min_val: 最小值（包含），仅对 int/float 有效
+        - max_val: 最大值（包含），仅对 int/float 有效
+        - 超出边界的值会被自动调整
+
+        【使用场景】
+        - 获取需要类型安全的配置值
+        - 避免在使用配置值前手动转换和验证
+
+        Args:
+            key: 配置键，支持点号分隔的嵌套路径
+            default: 默认值
+            value_type: 目标类型（int, float, bool, str）
+            min_val: 最小值（可选）
+            max_val: 最大值（可选）
+
+        Returns:
+            Any: 类型转换和边界验证后的配置值
+
+        Example:
+            >>> config.get_typed("web_ui.port", 8080, int, 1, 65535)
+            8081
+            >>> config.get_typed("notification.enabled", True, bool)
+            True
+        """
+        from config_utils import clamp_value
+
+        raw_value = self.get(key, default)
+
+        try:
+            # 布尔类型特殊处理
+            if value_type == bool:
+                if isinstance(raw_value, bool):
+                    return raw_value
+                if isinstance(raw_value, str):
+                    return raw_value.lower() in ("true", "1", "yes", "on")
+                return bool(raw_value)
+
+            # 其他类型转换
+            converted = value_type(raw_value)
+
+            # 边界验证（仅对数值类型）
+            if value_type in (int, float) and (min_val is not None or max_val is not None):
+                if min_val is not None and max_val is not None:
+                    return clamp_value(converted, min_val, max_val, key)
+                elif min_val is not None:
+                    return max(converted, min_val)
+                elif max_val is not None:
+                    return min(converted, max_val)
+
+            return converted
+
+        except (ValueError, TypeError) as e:
+            logger.warning(f"配置 '{key}' 类型转换失败: {e}，使用默认值 {default}")
+            return default
+
+    def get_int(
+        self,
+        key: str,
+        default: int = 0,
+        min_val: Optional[int] = None,
+        max_val: Optional[int] = None,
+    ) -> int:
+        """获取整数配置值
+
+        Args:
+            key: 配置键
+            default: 默认值
+            min_val: 最小值（可选）
+            max_val: 最大值（可选）
+
+        Returns:
+            int: 整数配置值
+        """
+        return self.get_typed(key, default, int, min_val, max_val)
+
+    def get_float(
+        self,
+        key: str,
+        default: float = 0.0,
+        min_val: Optional[float] = None,
+        max_val: Optional[float] = None,
+    ) -> float:
+        """获取浮点数配置值
+
+        Args:
+            key: 配置键
+            default: 默认值
+            min_val: 最小值（可选）
+            max_val: 最大值（可选）
+
+        Returns:
+            float: 浮点数配置值
+        """
+        return self.get_typed(key, default, float, min_val, max_val)
+
+    def get_bool(self, key: str, default: bool = False) -> bool:
+        """获取布尔配置值
+
+        Args:
+            key: 配置键
+            default: 默认值
+
+        Returns:
+            bool: 布尔配置值
+        """
+        return self.get_typed(key, default, bool)
+
+    def get_str(
+        self,
+        key: str,
+        default: str = "",
+        max_length: Optional[int] = None,
+    ) -> str:
+        """获取字符串配置值
+
+        Args:
+            key: 配置键
+            default: 默认值
+            max_length: 最大长度（可选，超出会截断）
+
+        Returns:
+            str: 字符串配置值
+        """
+        from config_utils import truncate_string
+
+        value = self.get_typed(key, default, str)
+        if max_length is not None:
+            return truncate_string(value, max_length, key, default=default)
+        return value
+
+    # ========================================================================
+    # 文件监听功能
+    # ========================================================================
+
+    def _update_file_mtime(self):
+        """更新文件修改时间记录"""
+        try:
+            if self.config_file.exists():
+                self._last_file_mtime = self.config_file.stat().st_mtime
+        except Exception as e:
+            logger.warning(f"获取文件修改时间失败: {e}")
+
+    def start_file_watcher(self, interval: float = 2.0):
+        """
+        启动配置文件监听
+
+        【功能说明】
+        启动一个后台线程，定期检查配置文件是否被修改。
+        当检测到文件变化时，自动重新加载配置并触发回调。
+
+        【参数】
+        interval : float
+            检查间隔时间（秒），默认 2.0 秒
+
+        【使用场景】
+        - 开发调试时希望配置实时生效
+        - 需要支持外部工具修改配置文件
+        - 多进程共享配置文件时
+
+        【注意事项】
+        - 已启动的监听器不会重复启动
+        - 使用守护线程，主程序退出时自动终止
+        - 文件变化检测基于修改时间（mtime）
+        """
+        if self._file_watcher_running:
+            logger.debug("文件监听器已在运行")
+            return
+
+        self._file_watcher_interval = interval
+        self._file_watcher_running = True
+        self._file_watcher_stop_event.clear()  # 清除停止事件
+        self._update_file_mtime()  # 确保有初始修改时间
+
+        self._file_watcher_thread = threading.Thread(
+            target=self._file_watcher_loop,
+            name="ConfigFileWatcher",
+            daemon=True  # 守护线程，主程序退出时自动终止
+        )
+        self._file_watcher_thread.start()
+        logger.info(f"配置文件监听器已启动，检查间隔: {interval} 秒")
+
+    def stop_file_watcher(self):
+        """
+        停止配置文件监听
+
+        【功能说明】
+        停止后台文件监听线程。
+
+        【注意事项】
+        - 会等待当前监听周期完成后再停止
+        - 可以安全地多次调用
+        """
+        if not self._file_watcher_running:
+            logger.debug("文件监听器未运行")
+            return
+
+        self._file_watcher_running = False
+        self._file_watcher_stop_event.set()  # 发送停止信号
+        if self._file_watcher_thread:
+            self._file_watcher_thread.join(timeout=1.0)  # 快速超时
+            self._file_watcher_thread = None
+        logger.info("配置文件监听器已停止")
+
+    def _file_watcher_loop(self):
+        """
+        文件监听循环
+
+        【内部方法】
+        后台线程的主循环，定期检查配置文件修改时间。
+        """
+        logger.debug("文件监听循环已启动")
+        while self._file_watcher_running:
+            try:
+                # 检查文件是否被修改
+                if self.config_file.exists():
+                    current_mtime = self.config_file.stat().st_mtime
+                    if current_mtime > self._last_file_mtime:
+                        logger.info("检测到配置文件变化，自动重新加载")
+                        self._last_file_mtime = current_mtime
+                        self.reload()
+                        # 触发配置变更回调
+                        self._trigger_config_change_callbacks()
+            except Exception as e:
+                logger.warning(f"文件监听检查失败: {e}")
+
+            # 等待下一个检查周期（使用可中断的等待）
+            if self._file_watcher_stop_event.wait(self._file_watcher_interval):
+                break  # 收到停止信号，退出循环
+
+    def register_config_change_callback(self, callback: callable):
+        """
+        注册配置变更回调函数
+
+        【功能说明】
+        当配置文件被修改并重新加载后，会调用所有注册的回调函数。
+
+        【参数】
+        callback : callable
+            回调函数，无参数，无返回值
+            函数签名: def callback() -> None
+
+        【使用场景】
+        - 通知其他模块配置已更新
+        - 触发配置相关的重新初始化
+        - 更新缓存或状态
+
+        【示例】
+        >>> def on_config_change():
+        ...     print("配置已更新")
+        >>> config.register_config_change_callback(on_config_change)
+        """
+        if callback not in self._config_change_callbacks:
+            self._config_change_callbacks.append(callback)
+            logger.debug(f"已注册配置变更回调: {callback.__name__}")
+
+    def unregister_config_change_callback(self, callback: callable):
+        """
+        取消注册配置变更回调函数
+
+        【参数】
+        callback : callable
+            要取消的回调函数
+        """
+        if callback in self._config_change_callbacks:
+            self._config_change_callbacks.remove(callback)
+            logger.debug(f"已取消配置变更回调: {callback.__name__}")
+
+    def _trigger_config_change_callbacks(self):
+        """
+        触发所有配置变更回调
+
+        【内部方法】
+        配置文件重新加载后调用，依次执行所有注册的回调函数。
+        """
+        for callback in self._config_change_callbacks:
+            try:
+                callback()
+            except Exception as e:
+                logger.error(f"配置变更回调执行失败 ({callback.__name__}): {e}")
+
+    @property
+    def is_file_watcher_running(self) -> bool:
+        """检查文件监听器是否在运行"""
+        return self._file_watcher_running
+
+    # ========================================================================
+    # 配置导出/导入功能
+    # ========================================================================
+
+    def export_config(self, include_network_security: bool = False) -> Dict[str, Any]:
+        """
+        导出当前配置
+
+        【功能说明】
+        导出内存中的所有配置为字典格式，可用于备份或迁移。
+
+        【参数】
+        include_network_security : bool
+            是否包含网络安全配置，默认 False（安全考虑）
+
+        【返回】
+        Dict[str, Any]
+            包含所有配置的字典
+
+        【使用场景】
+        - 配置备份
+        - 配置迁移到其他环境
+        - 配置对比
+
+        【示例】
+        >>> config = get_config()
+        >>> backup = config.export_config()
+        >>> with open('config_backup.json', 'w') as f:
+        ...     json.dump(backup, f, indent=2, ensure_ascii=False)
+        """
+        with self._rw_lock.read_lock():
+            export_data = {
+                "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "version": "1.0",
+                "config": self._config.copy()
+            }
+
+            if include_network_security:
+                export_data["network_security"] = self.get_network_security_config()
+
+            return export_data
+
+    def import_config(
+        self,
+        config_data: Dict[str, Any],
+        merge: bool = True,
+        save: bool = True
+    ) -> bool:
+        """
+        导入配置
+
+        【功能说明】
+        从字典导入配置，支持合并或覆盖模式。
+
+        【参数】
+        config_data : Dict[str, Any]
+            要导入的配置数据
+        merge : bool
+            True: 合并模式（保留未指定的配置项）
+            False: 覆盖模式（完全替换现有配置）
+        save : bool
+            是否保存到文件，默认 True
+
+        【返回】
+        bool
+            导入是否成功
+
+        【注意事项】
+        - 导入前会验证配置格式
+        - network_security 配置需要单独处理
+        - 合并模式下，只更新存在的键
+
+        【示例】
+        >>> config = get_config()
+        >>> with open('config_backup.json', 'r') as f:
+        ...     backup = json.load(f)
+        >>> config.import_config(backup['config'], merge=True)
+        """
+        try:
+            # 验证配置数据
+            if not isinstance(config_data, dict):
+                logger.error("导入失败：配置数据必须是字典格式")
+                return False
+
+            # 提取配置（支持两种格式）
+            if "config" in config_data:
+                # 从 export_config 导出的格式
+                actual_config = config_data["config"]
+            else:
+                # 直接的配置字典
+                actual_config = config_data
+
+            with self._rw_lock.write_lock():
+                if merge:
+                    # 合并模式：深度合并配置
+                    self._deep_merge(self._config, actual_config)
+                    logger.info("配置已合并导入")
+                else:
+                    # 覆盖模式：完全替换
+                    self._config = actual_config.copy()
+                    logger.info("配置已覆盖导入")
+
+                if save:
+                    self._pending_changes.update(actual_config)
+                    self._save_config()
+
+            # 触发配置变更回调
+            self._trigger_config_change_callbacks()
+
+            return True
+
+        except Exception as e:
+            logger.error(f"导入配置失败: {e}")
+            return False
+
+    def _deep_merge(self, base: Dict, update: Dict):
+        """
+        深度合并字典
+
+        【内部方法】
+        递归合并 update 到 base 中。
+
+        【参数】
+        base : Dict
+            基础字典（会被修改）
+        update : Dict
+            要合并的更新字典
+        """
+        for key, value in update.items():
+            if (
+                key in base
+                and isinstance(base[key], dict)
+                and isinstance(value, dict)
+            ):
+                self._deep_merge(base[key], value)
+            else:
+                base[key] = value
+
+    def backup_config(self, backup_path: Optional[str] = None) -> str:
+        """
+        备份当前配置到文件
+
+        【功能说明】
+        将当前配置导出并保存到备份文件。
+
+        【参数】
+        backup_path : Optional[str]
+            备份文件路径，默认为 config.jsonc.backup
+
+        【返回】
+        str
+            备份文件的完整路径
+
+        【示例】
+        >>> config = get_config()
+        >>> backup_file = config.backup_config()
+        >>> print(f"配置已备份到: {backup_file}")
+        """
+        import json
+
+        if backup_path is None:
+            backup_path = str(self.config_file) + ".backup"
+
+        export_data = self.export_config(include_network_security=True)
+
+        with open(backup_path, "w", encoding="utf-8") as f:
+            json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"配置已备份到: {backup_path}")
+        return backup_path
+
+    def restore_config(self, backup_path: str) -> bool:
+        """
+        从备份文件恢复配置
+
+        【功能说明】
+        从备份文件导入配置并覆盖当前配置。
+
+        【参数】
+        backup_path : str
+            备份文件路径
+
+        【返回】
+        bool
+            恢复是否成功
+
+        【示例】
+        >>> config = get_config()
+        >>> config.restore_config('config.jsonc.backup')
+        """
+        import json
+
+        try:
+            with open(backup_path, "r", encoding="utf-8") as f:
+                backup_data = json.load(f)
+
+            success = self.import_config(backup_data, merge=False, save=True)
+            if success:
+                logger.info(f"配置已从 {backup_path} 恢复")
+            return success
+
+        except FileNotFoundError:
+            logger.error(f"备份文件不存在: {backup_path}")
+            return False
+        except json.JSONDecodeError as e:
+            logger.error(f"备份文件格式错误: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"恢复配置失败: {e}")
+            return False
 
 
 # 全局配置管理器实例

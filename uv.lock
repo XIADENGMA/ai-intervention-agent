@@ -34,6 +34,8 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "flake8" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
 ]
 
 [package.metadata]
@@ -60,7 +62,11 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "flake8", specifier = ">=7.2.0" }]
+dev = [
+    { name = "flake8", specifier = ">=7.2.0" },
+    { name = "pytest", specifier = ">=8.4.0" },
+    { name = "pytest-cov", specifier = ">=6.2.1" },
+]
 
 [[package]]
 name = "annotated-types"

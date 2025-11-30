@@ -283,6 +283,90 @@
         box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
       }
 
+      /* 头部按钮容器 */
+      .header-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      /* 主题切换按钮样式 */
+      .theme-toggle-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+        color: #f5f5f7;
+        padding: 0.5rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .theme-toggle-btn:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .theme-toggle-btn:active {
+        transform: translateY(0);
+      }
+
+      .theme-toggle-btn:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+      }
+
+      .theme-icon {
+        width: 20px;
+        height: 20px;
+        position: absolute;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+      }
+
+      .theme-icon-sun {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+      }
+
+      .theme-icon-moon {
+        opacity: 0;
+        transform: rotate(-90deg) scale(0.5);
+      }
+
+      .theme-toggle-btn.is-light .theme-icon-sun {
+        opacity: 0;
+        transform: rotate(90deg) scale(0.5);
+      }
+
+      .theme-toggle-btn.is-light .theme-icon-moon {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+      }
+
+      /* 亮色主题适配 */
+      [data-theme="light"] .settings-btn,
+      [data-theme="light"] .theme-toggle-btn {
+        background: rgba(0, 0, 0, 0.05);
+        border-color: rgba(0, 0, 0, 0.1);
+        color: #1e293b;
+      }
+
+      [data-theme="light"] .settings-btn:hover,
+      [data-theme="light"] .theme-toggle-btn:hover {
+        background: rgba(0, 0, 0, 0.1);
+        border-color: rgba(0, 0, 0, 0.15);
+      }
+
       /* 设置面板样式 - 简化版 */
       .settings-panel {
         position: fixed;
@@ -2722,11 +2806,36 @@
           </div>
           AI Intervention Agent
         </h1>
-        <button class="settings-btn" id="settings-btn" title="通知设置">⚙️</button>
+        <div class="header-actions">
+          <button class="theme-toggle-btn" id="theme-toggle-btn" title="切换主题" aria-label="切换主题">
+            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </button>
+          <button
+            class="settings-btn"
+            id="settings-btn"
+            title="通知设置"
+            aria-label="打开通知设置"
+            aria-haspopup="dialog"
+            aria-controls="settings-panel"
+          >⚙️</button>
+        </div>
       </div>
 
       <!-- 任务标签页 -->
-      <div class="task-tabs-container hidden" id="task-tabs-container">
+      <div class="task-tabs-container hidden" id="task-tabs-container" role="tablist" aria-label="任务列表">
         <div class="task-tabs" id="task-tabs">
           <!-- 标签页将由 JS 动态生成 -->
         </div>
@@ -2741,7 +2850,7 @@
           <div class="no-content-progress-bar"></div>
         </div>
         <div class="button-container no-content-buttons" id="no-content-buttons">
-          <button class="btn btn-secondary" id="close-btn">❌ 关闭服务</button>
+          <button class="btn btn-secondary" id="close-btn" aria-label="关闭 Web 服务">❌ 关闭服务</button>
         </div>
         <!-- 无内容页面的状态消息显示区域 -->
         <div class="status-message no-content-status" id="no-content-status-message"></div>
@@ -2824,10 +2933,16 @@
       </div>
 
       <!-- 设置面板 -->
-      <div class="settings-panel hidden" id="settings-panel">
+      <div
+        class="settings-panel hidden"
+        id="settings-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
         <div class="settings-content">
           <div class="settings-header">
-            <h3>⚙️ 设置</h3>
+            <h3 id="settings-title">⚙️ 设置</h3>
             <button
               class="settings-close-btn"
               id="settings-close-btn"
@@ -3033,6 +3148,15 @@
         </div>
       </div>
     </div>
+
+    <!-- 验证工具类：统一验证和缓存功能 -->
+    <script defer src="/static/js/validation-utils.js"></script>
+
+    <!-- 🎨 主题切换模块 (defer: 按顺序异步加载) -->
+    <script defer src="/static/js/theme.js"></script>
+
+    <!-- ⌨️ 键盘快捷键模块 (defer: 按顺序异步加载) -->
+    <script defer src="/static/js/keyboard-shortcuts.js"></script>
 
     <!-- DOM 安全工具：防止 XSS 攻击 (defer: 按顺序异步加载) -->
     <script defer src="/static/js/dom-security.js"></script>
@@ -4548,6 +4672,16 @@
             }
           })
 
+          // 主题切换按钮点击事件
+          const themeBtn = document.getElementById('theme-toggle-btn')
+          if (themeBtn) {
+            themeBtn.addEventListener('click', () => {
+              if (typeof ThemeManager !== 'undefined') {
+                ThemeManager.toggle()
+              }
+            })
+          }
+
           // 设置面板背景点击关闭
           document.addEventListener('click', e => {
             if (e.target.id === 'settings-panel') {
@@ -4713,57 +4847,53 @@
       const MAX_IMAGE_DIMENSION = 1920 // 最大宽度或高度
       const COMPRESS_QUALITY = 0.8 // 压缩质量 (0.1-1.0)
 
-      // 验证图片文件
+      /**
+       * 验证图片文件（使用 ValidationUtils 工具类）
+       * @param {File} file - 要验证的文件对象
+       * @returns {string[]} 错误信息数组
+       */
       function validateImageFile(file) {
-        const errors = []
+        // 使用 ValidationUtils 进行验证（如果可用）
+        if (typeof ValidationUtils !== 'undefined') {
+          const result = ValidationUtils.validateImageFile(file)
+          return result.errors
+        }
 
-        // 基础文件检查
+        // 回退到基础验证
+        const errors = []
         if (!file || !file.type) {
           errors.push('无效的文件对象')
           return errors
         }
-
-        // 文件类型验证
         if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
           errors.push(`不支持的文件格式: ${file.type}`)
         }
-
-        // 文件大小验证
         if (file.size > MAX_IMAGE_SIZE) {
           errors.push(`文件大小超过限制: ${(file.size / 1024 / 1024).toFixed(2)}MB > 10MB`)
         }
-
-        // 文件名验证（防止XSS）
         if (file.name && file.name.length > 255) {
           errors.push('文件名过长')
         }
-
-        // 基本安全检查
-        const suspiciousExtensions = [
-          '.exe',
-          '.bat',
-          '.cmd',
-          '.scr',
-          '.com',
-          '.pif',
-          '.vbs',
-          '.js',
-          '.jar'
-        ]
-        if (suspiciousExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
-          errors.push('检测到可疑文件类型')
-        }
-
         return errors
       }
 
-      // 安全的文件名清理
+      /**
+       * 安全的文件名清理（使用 ValidationUtils 工具类）
+       * @param {string} fileName - 原始文件名
+       * @returns {string} 清理后的安全文件名
+       */
       function sanitizeFileName(fileName) {
+        // 使用 ValidationUtils 进行清理（如果可用）
+        if (typeof ValidationUtils !== 'undefined') {
+          return ValidationUtils.sanitizeFilename(fileName, 100)
+        }
+
+        // 回退到基础清理
         return fileName
-          .replace(/[<>:"/\\|?*]/g, '') // 移除特殊字符
-          .replace(/\s+/g, '_') // 空格替换为下划线
+          .replace(/[<>:"/\\|?*]/g, '')
+          .replace(/\s+/g, '_')
           .trim()
-          .substring(0, 100) // 限制长度
+          .substring(0, 100)
       }
 
       // 注意：已移除 fileToBase64 函数，现在直接使用文件对象上传

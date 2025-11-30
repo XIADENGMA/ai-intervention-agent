@@ -84,7 +84,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 from fastmcp import FastMCP
@@ -93,6 +93,12 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from config_manager import get_config
+from config_utils import (
+    clamp_dataclass_field,
+    get_compat_config,
+    get_typed_config,
+    truncate_string,
+)
 from enhanced_logging import EnhancedLogger
 from task_queue import TaskQueue
 
@@ -1001,6 +1007,17 @@ class WebUIConfig:
     - timeout 是 HTTP 层的超时，不是前端倒计时的 auto_resubmit_timeout
     """
 
+    # 边界常量
+    PORT_MIN = 1
+    PORT_MAX = 65535
+    PORT_PRIVILEGED = 1024  # 特权端口边界
+    TIMEOUT_MIN = 1
+    TIMEOUT_MAX = 300  # 最大 5 分钟
+    MAX_RETRIES_MIN = 0
+    MAX_RETRIES_MAX = 10
+    RETRY_DELAY_MIN = 0.1
+    RETRY_DELAY_MAX = 60.0
+
     host: str
     port: int
     timeout: int = 30
@@ -1014,28 +1031,37 @@ class WebUIConfig:
         功能
         ----
         自动验证所有配置参数的有效性，确保服务启动前发现配置错误。
+        【优化】使用 config_utils.clamp_dataclass_field 简化边界检查。
 
         验证项
         ------
-        1. 端口号范围: 1-65535
-        2. 超时时间正数: > 0
-        3. 重试次数非负: >= 0
+        1. 端口号范围: 1-65535，特权端口 (<1024) 警告
+        2. 超时时间: 1-300 秒，超出范围自动调整
+        3. 重试次数: 0-10 次，超出范围自动调整
+        4. 重试延迟: 0.1-60.0 秒，超出范围自动调整
 
         异常
         ----
         ValueError
-            任何参数不符合要求时抛出，包含错误详情和当前值
-
-        调用时机
-        --------
-        在 __init__ 自动执行后立即调用，无需手动调用
+            端口号不在有效范围内时抛出
         """
-        if not (1 <= self.port <= 65535):
-            raise ValueError(f"端口号必须在 1-65535 范围内，当前值: {self.port}")
-        if self.timeout <= 0:
-            raise ValueError(f"超时时间必须大于 0，当前值: {self.timeout}")
-        if self.max_retries < 0:
-            raise ValueError(f"重试次数不能为负数，当前值: {self.max_retries}")
+        # 端口号验证（严格检查，无效直接抛异常）
+        if not (self.PORT_MIN <= self.port <= self.PORT_MAX):
+            raise ValueError(
+                f"端口号必须在 {self.PORT_MIN}-{self.PORT_MAX} 范围内，当前值: {self.port}"
+            )
+
+        # 特权端口警告
+        if self.port < self.PORT_PRIVILEGED:
+            logger.warning(
+                f"⚠️  端口 {self.port} 是特权端口（<{self.PORT_PRIVILEGED}），"
+                f"可能需要 root/管理员权限才能绑定"
+            )
+
+        # 【重构】使用 clamp_dataclass_field 简化边界检查
+        clamp_dataclass_field(self, "timeout", self.TIMEOUT_MIN, self.TIMEOUT_MAX)
+        clamp_dataclass_field(self, "max_retries", self.MAX_RETRIES_MIN, self.MAX_RETRIES_MAX)
+        clamp_dataclass_field(self, "retry_delay", self.RETRY_DELAY_MIN, self.RETRY_DELAY_MAX)
 
 
 def get_web_ui_config() -> Tuple[WebUIConfig, int]:
@@ -1122,10 +1148,20 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
             "bind_interface", web_ui_config.get("host", "127.0.0.1")
         )
         port = web_ui_config.get("port", 8080)
-        auto_resubmit_timeout = feedback_config.get("auto_resubmit_timeout", 240)
-        max_retries = web_ui_config.get("max_retries", 3)
-        retry_delay = web_ui_config.get("retry_delay", 1.0)
-        http_timeout = web_ui_config.get("timeout", 30)  # HTTP请求超时时间
+
+        # 【重构】使用 get_compat_config 简化向后兼容配置读取
+        auto_resubmit_timeout = get_compat_config(
+            feedback_config, "frontend_countdown", "auto_resubmit_timeout", 240
+        )
+        max_retries = get_compat_config(
+            web_ui_config, "http_max_retries", "max_retries", 3
+        )
+        retry_delay = get_compat_config(
+            web_ui_config, "http_retry_delay", "retry_delay", 1.0
+        )
+        http_timeout = get_compat_config(
+            web_ui_config, "http_request_timeout", "timeout", 30
+        )
 
         config = WebUIConfig(
             host=host,
@@ -1153,9 +1189,213 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
         raise ValueError(f"Web UI 配置加载失败: {e}")
 
 
+# ============================================================================
+# Feedback 配置常量和默认值
+# ============================================================================
+
+# 超时相关常量
+FEEDBACK_TIMEOUT_DEFAULT = 600  # 默认后端最大等待时间（秒）
+FEEDBACK_TIMEOUT_MIN = 60  # 后端最小等待时间（秒）
+FEEDBACK_TIMEOUT_MAX = 3600  # 后端最大等待时间上限（秒，1小时）
+
+AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
+AUTO_RESUBMIT_TIMEOUT_MIN = 30  # 前端最小倒计时（秒）
+AUTO_RESUBMIT_TIMEOUT_MAX = 290  # 前端最大倒计时（秒）
+BACKEND_BUFFER = 60  # 后端缓冲时间（秒，前端+缓冲=后端最小）
+BACKEND_MIN = 300  # 后端最低等待时间（秒）
+
+# 提示语相关常量
+PROMPT_MAX_LENGTH = 500  # 提示语最大长度
+RESUBMIT_PROMPT_DEFAULT = "请立即调用 interactive_feedback 工具"
+PROMPT_SUFFIX_DEFAULT = "\n请积极调用 interactive_feedback 工具"
+
+
+@dataclass
+class FeedbackConfig:
+    """
+    反馈配置数据类
+
+    封装所有 feedback 配置字段，提供类型安全和边界验证。
+
+    属性
+    ----
+    timeout : int
+        后端最大等待时间（秒），范围 [60, 3600]
+    auto_resubmit_timeout : int
+        前端倒计时时间（秒），范围 [30, 290]，0 表示禁用
+    resubmit_prompt : str
+        错误/超时时返回的提示语
+    prompt_suffix : str
+        追加到用户反馈末尾的提示语
+    """
+
+    timeout: int
+    auto_resubmit_timeout: int
+    resubmit_prompt: str
+    prompt_suffix: str
+
+    def __post_init__(self):
+        """
+        验证配置值的边界条件
+
+        【重构】使用 config_utils 辅助函数简化边界检查和字符串截断。
+        注意：auto_resubmit_timeout 为 0 时表示禁用，需要特殊处理。
+        """
+        from config_utils import clamp_value, truncate_string
+
+        # 【重构】使用 clamp_value 简化 timeout 验证
+        self.timeout = clamp_value(
+            self.timeout, FEEDBACK_TIMEOUT_MIN, FEEDBACK_TIMEOUT_MAX, "feedback.timeout"
+        )
+
+        # auto_resubmit_timeout 验证（0 表示禁用，其他值需在范围内）
+        if self.auto_resubmit_timeout != 0:
+            self.auto_resubmit_timeout = clamp_value(
+                self.auto_resubmit_timeout,
+                AUTO_RESUBMIT_TIMEOUT_MIN,
+                AUTO_RESUBMIT_TIMEOUT_MAX,
+                "feedback.auto_resubmit_timeout",
+            )
+
+        # 【重构】使用 truncate_string 简化字符串验证
+        self.resubmit_prompt = truncate_string(
+            self.resubmit_prompt,
+            PROMPT_MAX_LENGTH,
+            "feedback.resubmit_prompt",
+            default=RESUBMIT_PROMPT_DEFAULT,
+        )
+        self.prompt_suffix = truncate_string(
+            self.prompt_suffix,
+            PROMPT_MAX_LENGTH,
+            "feedback.prompt_suffix",
+        )
+
+
+def get_feedback_config() -> FeedbackConfig:
+    """
+    获取并验证完整的 feedback 配置
+
+    返回
+    ----
+    FeedbackConfig
+        验证后的反馈配置对象
+
+    功能
+    ----
+    从配置文件读取 feedback 配置段，并进行类型转换和边界验证。
+
+    配置字段
+    --------
+    - timeout: 后端最大等待时间（秒），默认 600，范围 [60, 3600]
+    - auto_resubmit_timeout: 前端倒计时（秒），默认 240，范围 [30, 290]，0=禁用
+    - resubmit_prompt: 错误/超时提示语，默认 "请立即调用 interactive_feedback 工具"
+    - prompt_suffix: 反馈后缀，默认 "\\n请积极调用 interactive_feedback 工具"
+
+    边界处理
+    --------
+    - 超出范围的值会被自动调整到边界值
+    - 空字符串提示语会使用默认值
+    - 过长的提示语会被截断
+
+    异常处理
+    --------
+    配置加载失败时返回全默认值的 FeedbackConfig 对象
+    """
+    try:
+        config_mgr = get_config()
+        feedback_config = config_mgr.get_section("feedback")
+
+        # 【重构】使用 get_compat_config 简化向后兼容配置读取
+        timeout = int(get_compat_config(
+            feedback_config, "backend_max_wait", "timeout", FEEDBACK_TIMEOUT_DEFAULT
+        ))
+        auto_resubmit_timeout = int(get_compat_config(
+            feedback_config, "frontend_countdown", "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
+        ))
+        resubmit_prompt = str(
+            feedback_config.get("resubmit_prompt", RESUBMIT_PROMPT_DEFAULT)
+        )
+        prompt_suffix = str(
+            feedback_config.get("prompt_suffix", PROMPT_SUFFIX_DEFAULT)
+        )
+
+        return FeedbackConfig(
+            timeout=timeout,
+            auto_resubmit_timeout=auto_resubmit_timeout,
+            resubmit_prompt=resubmit_prompt,
+            prompt_suffix=prompt_suffix,
+        )
+    except (ValueError, TypeError) as e:
+        logger.warning(f"获取反馈配置失败（类型错误），使用默认值: {e}")
+        return FeedbackConfig(
+            timeout=FEEDBACK_TIMEOUT_DEFAULT,
+            auto_resubmit_timeout=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+            resubmit_prompt=RESUBMIT_PROMPT_DEFAULT,
+            prompt_suffix=PROMPT_SUFFIX_DEFAULT,
+        )
+    except Exception as e:
+        logger.warning(f"获取反馈配置失败，使用默认值: {e}")
+        return FeedbackConfig(
+            timeout=FEEDBACK_TIMEOUT_DEFAULT,
+            auto_resubmit_timeout=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+            resubmit_prompt=RESUBMIT_PROMPT_DEFAULT,
+            prompt_suffix=PROMPT_SUFFIX_DEFAULT,
+        )
+
+
+def calculate_backend_timeout(
+    auto_resubmit_timeout: int, max_timeout: int = 0, infinite_wait: bool = False
+) -> int:
+    """
+    统一计算后端等待超时时间
+
+    参数
+    ----
+    auto_resubmit_timeout : int
+        前端倒计时时间（秒），0 或负数表示禁用自动提交
+    max_timeout : int, optional
+        配置的最大超时时间（秒），默认 0 表示使用配置文件值
+    infinite_wait : bool, optional
+        是否启用无限等待模式，默认 False
+
+    返回
+    ----
+    int
+        后端等待超时时间（秒），0 表示无限等待
+
+    计算规则
+    --------
+    1. 无限等待模式 (infinite_wait=True): 返回 0
+    2. 禁用自动提交 (auto_resubmit_timeout <= 0): 返回 max(max_timeout, BACKEND_MIN)
+    3. 正常模式: 返回 min(max(auto_resubmit_timeout + BACKEND_BUFFER, BACKEND_MIN), max_timeout)
+
+    设计说明
+    --------
+    - 后端等待时间 = 前端倒计时 + 缓冲时间（60秒）
+    - 后端最低等待 300 秒，确保有足够时间处理
+    - 使用 feedback.timeout 作为上限，防止无限等待
+    - 统一两个函数（interactive_feedback 和 launch_feedback_ui）的超时计算逻辑
+    """
+    if infinite_wait:
+        return 0
+
+    # 获取配置的最大超时时间
+    if max_timeout <= 0:
+        feedback_config = get_feedback_config()
+        max_timeout = feedback_config.timeout
+
+    if auto_resubmit_timeout <= 0:
+        # 禁用自动提交时，使用配置的最大超时或默认最低值
+        return max(max_timeout, BACKEND_MIN)
+
+    # 正常模式：后端 = min(max(前端 + 缓冲, 最低), 最大)
+    calculated = max(auto_resubmit_timeout + BACKEND_BUFFER, BACKEND_MIN)
+    return min(calculated, max_timeout)
+
+
 def get_feedback_prompts() -> Tuple[str, str]:
     """
-    获取反馈提示语配置
+    获取反馈提示语配置（兼容旧接口）
 
     返回
     ----
@@ -1166,30 +1406,20 @@ def get_feedback_prompts() -> Tuple[str, str]:
     功能
     ----
     从配置文件读取自定义的反馈提示语，支持用户自定义这些固定文本。
+    此函数是 get_feedback_config() 的简化包装，保持向后兼容。
 
     默认值
     ------
     - resubmit_prompt: "请立即调用 interactive_feedback 工具"
     - prompt_suffix: "\\n请积极调用 interactive_feedback 工具"
+
+    验证规则
+    --------
+    - 空字符串使用默认值
+    - 超过 500 字符的提示语会被截断
     """
-    try:
-        config_mgr = get_config()
-        feedback_config = config_mgr.get_section("feedback")
-
-        resubmit_prompt = feedback_config.get(
-            "resubmit_prompt", "请立即调用 interactive_feedback 工具"
-        )
-        prompt_suffix = feedback_config.get(
-            "prompt_suffix", "\n请积极调用 interactive_feedback 工具"
-        )
-
-        return resubmit_prompt, prompt_suffix
-    except Exception as e:
-        logger.warning(f"获取反馈提示语配置失败，使用默认值: {e}")
-        return (
-            "请立即调用 interactive_feedback 工具",
-            "\n请积极调用 interactive_feedback 工具",
-        )
+    config = get_feedback_config()
+    return config.resubmit_prompt, config.prompt_suffix
 
 
 def validate_input(
@@ -1860,13 +2090,15 @@ def update_web_content(
         raise Exception(f"更新 Web 内容失败: {e}")
 
 
-def parse_structured_response(response_data):
+def parse_structured_response(
+    response_data: Optional[Dict[str, Any]]
+) -> list:
     """
     解析 Web UI 反馈数据并转换为 MCP 标准 Content 对象列表
 
     参数
     ----
-    response_data : dict
+    response_data : Optional[Dict[str, Any]]
         从 Web UI /api/feedback 或 /api/tasks/{id} 获取的反馈数据字典
         预期结构:
         {
@@ -2580,6 +2812,11 @@ def launch_feedback_ui(
             # 【新增】发送通知（立即触发，不阻塞主流程）
             if NOTIFICATION_AVAILABLE:
                 try:
+                    # 【关键修复】从配置文件刷新配置，解决跨进程配置不同步问题
+                    # Web UI 以子进程方式运行，配置更新只发生在 Web UI 进程中
+                    # MCP 服务器进程需要在发送通知前同步最新配置
+                    notification_manager.refresh_config_from_file()
+
                     # 截断消息，避免过长（Bark 有长度限制）
                     notification_message = cleaned_summary[:100]
                     if len(cleaned_summary) > 100:
@@ -2611,17 +2848,13 @@ def launch_feedback_ui(
             logger.error(f"添加任务请求失败: {e}")
             return {"error": f"无法连接到Web UI: {e}"}
 
-        # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，timeout=0表示无限等待）
-        if timeout == 0:
-            # 无限等待模式
-            backend_timeout = 0
-        elif auto_resubmit_timeout <= 0:
-            # 禁用自动提交时，使用传入的timeout或默认300秒
-            backend_timeout = max(timeout, 300)
-        else:
-            # 后端 = max(前端 + 60秒, 传入timeout, 300秒)
-            backend_timeout = max(auto_resubmit_timeout + 60, timeout, 300)
-
+        # 【优化】使用统一的超时计算函数
+        # timeout=0 表示无限等待模式
+        backend_timeout = calculate_backend_timeout(
+            auto_resubmit_timeout,
+            max_timeout=max(timeout, 0),  # 传入的 timeout 参数作为参考
+            infinite_wait=(timeout == 0),
+        )
         logger.info(
             f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒, 传入timeout: {timeout}秒)"
         )
@@ -2847,6 +3080,11 @@ async def interactive_feedback(
             # 【新增】发送通知（立即触发，不阻塞主流程）
             if NOTIFICATION_AVAILABLE:
                 try:
+                    # 【关键修复】从配置文件刷新配置，解决跨进程配置不同步问题
+                    # Web UI 以子进程方式运行，配置更新只发生在 Web UI 进程中
+                    # MCP 服务器进程需要在发送通知前同步最新配置
+                    notification_manager.refresh_config_from_file()
+
                     # 截断消息，避免过长（Bark 有长度限制）
                     notification_message = message[:100]
                     if len(message) > 100:
@@ -2881,14 +3119,8 @@ async def interactive_feedback(
             resubmit_prompt, _ = get_feedback_prompts()
             return [{"type": "text", "text": resubmit_prompt}]
 
-        # 计算后端等待时间（规则：后端 > 前端，后端最低300秒，无最大限制）
-        if auto_resubmit_timeout <= 0:
-            # 禁用自动提交时，使用默认300秒
-            backend_timeout = 300
-        else:
-            # 后端 = max(前端 + 60秒, 300秒)
-            backend_timeout = max(auto_resubmit_timeout + 60, 300)
-
+        # 【优化】使用统一的超时计算函数，利用 feedback.timeout 作为上限
+        backend_timeout = calculate_backend_timeout(auto_resubmit_timeout)
         logger.info(
             f"后端等待时间: {backend_timeout}秒 (前端倒计时: {auto_resubmit_timeout}秒)"
         )

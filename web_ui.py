@@ -84,6 +84,7 @@ from ipaddress import (
     IPv4Network,
     IPv6Network,
     ip_address,
+    ip_network,
 )
 from typing import (
     Dict,
@@ -105,6 +106,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from config_manager import get_config
+from config_utils import clamp_value, validate_enum_value
 from enhanced_logging import EnhancedLogger
 from file_validator import validate_uploaded_file
 from server import get_task_queue
@@ -123,6 +125,278 @@ except ImportError:
     NOTIFICATION_AVAILABLE = False
 
 logger = EnhancedLogger(__name__)
+
+# ============================================================================
+# 前端倒计时超时常量（需与 server.py 保持一致）
+# ============================================================================
+AUTO_RESUBMIT_TIMEOUT_MIN = 30  # 前端最小倒计时（秒）
+AUTO_RESUBMIT_TIMEOUT_MAX = 290  # 前端最大倒计时（秒）
+AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
+
+
+def validate_auto_resubmit_timeout(value: int) -> int:
+    """
+    验证并调整 auto_resubmit_timeout 值
+
+    参数
+    ----
+    value : int
+        输入的超时时间值（秒）
+
+    返回
+    ----
+    int
+        验证后的超时时间值（秒）
+
+    验证规则
+    --------
+    - 0 表示禁用自动提交（保持不变）
+    - 负值转换为 0（禁用）
+    - 小于最小值（30秒）调整为最小值
+    - 大于最大值（290秒）调整为最大值
+
+    【重构】使用 config_utils.clamp_value 简化边界检查。
+    """
+    if value <= 0:
+        return 0  # 禁用自动提交
+
+    # 【重构】使用 clamp_value 简化边界检查
+    return clamp_value(
+        value,
+        AUTO_RESUBMIT_TIMEOUT_MIN,
+        AUTO_RESUBMIT_TIMEOUT_MAX,
+        "auto_resubmit_timeout"
+    )
+
+
+# ============================================================================
+# 网络安全配置验证函数
+# ============================================================================
+
+# 有效的 bind_interface 值
+VALID_BIND_INTERFACES = {"0.0.0.0", "127.0.0.1", "localhost", "::1", "::"}
+
+# 默认的允许网络列表（本地回环 + 私有网络）
+DEFAULT_ALLOWED_NETWORKS = [
+    "127.0.0.0/8",      # IPv4 本地回环
+    "::1/128",          # IPv6 本地回环
+    "192.168.0.0/16",   # 私有网络 C 类
+    "10.0.0.0/8",       # 私有网络 A 类
+    "172.16.0.0/12",    # 私有网络 B 类
+]
+
+
+def validate_bind_interface(value: str) -> str:
+    """
+    验证并调整 bind_interface 值
+
+    参数
+    ----
+    value : str
+        绑定接口的值
+
+    返回
+    ----
+    str
+        验证后的绑定接口值
+
+    验证规则
+    --------
+    - 特殊值（0.0.0.0、127.0.0.1、localhost、::1、::）直接通过
+    - 尝试解析为 IP 地址，成功则通过
+    - 验证失败使用默认值 "127.0.0.1"
+    """
+    if not value or not isinstance(value, str):
+        logger.warning("bind_interface 值无效，使用默认值 127.0.0.1")
+        return "127.0.0.1"
+
+    value = value.strip()
+
+    # 特殊值直接通过
+    if value in VALID_BIND_INTERFACES:
+        if value == "0.0.0.0":
+            logger.info(
+                "⚠️  bind_interface 设为 0.0.0.0，将监听所有网络接口。"
+                "请确保已正确配置 allowed_networks 和防火墙规则。"
+            )
+        return value
+
+    # 尝试解析为 IP 地址
+    try:
+        ip_address(value)
+        return value
+    except (AddressValueError, ValueError):
+        logger.warning(
+            f"bind_interface '{value}' 不是有效的 IP 地址，使用默认值 127.0.0.1"
+        )
+        return "127.0.0.1"
+
+
+def validate_network_cidr(network_str: str) -> bool:
+    """
+    验证网络 CIDR 格式是否有效
+
+    参数
+    ----
+    network_str : str
+        网络地址字符串（CIDR 格式或单个 IP）
+
+    返回
+    ----
+    bool
+        True 表示有效，False 表示无效
+    """
+    if not network_str or not isinstance(network_str, str):
+        return False
+
+    try:
+        if "/" in network_str:
+            # CIDR 格式
+            ip_network(network_str, strict=False)
+        else:
+            # 单个 IP
+            ip_address(network_str)
+        return True
+    except (AddressValueError, ValueError):
+        return False
+
+
+def validate_allowed_networks(networks: list) -> list:
+    """
+    验证并清理 allowed_networks 列表
+
+    参数
+    ----
+    networks : list
+        允许的网络列表
+
+    返回
+    ----
+    list
+        验证后的网络列表
+
+    验证规则
+    --------
+    - 过滤无效的 CIDR/IP 格式
+    - 空列表自动添加本地回环地址
+    - 记录无效条目的警告日志
+    """
+    if not isinstance(networks, list):
+        logger.warning("allowed_networks 不是列表，使用默认值")
+        return DEFAULT_ALLOWED_NETWORKS.copy()
+
+    valid_networks = []
+    invalid_networks = []
+
+    for network in networks:
+        if validate_network_cidr(network):
+            valid_networks.append(network)
+        else:
+            invalid_networks.append(network)
+
+    # 记录无效条目
+    if invalid_networks:
+        logger.warning(
+            f"以下网络配置无效，已跳过: {', '.join(invalid_networks)}"
+        )
+
+    # 空列表保护：确保至少包含本地回环
+    if not valid_networks:
+        logger.warning(
+            "allowed_networks 为空或全部无效，自动添加本地回环地址"
+        )
+        valid_networks = ["127.0.0.0/8", "::1/128"]
+
+    return valid_networks
+
+
+def validate_blocked_ips(ips: list) -> list:
+    """
+    验证并清理 blocked_ips 列表
+
+    参数
+    ----
+    ips : list
+        黑名单 IP 列表
+
+    返回
+    ----
+    list
+        验证后的 IP 列表
+
+    验证规则
+    --------
+    - 过滤无效的 IP 格式
+    - 记录无效条目的警告日志
+    """
+    if not isinstance(ips, list):
+        return []
+
+    valid_ips = []
+    invalid_ips = []
+
+    for ip in ips:
+        if isinstance(ip, str):
+            try:
+                ip_address(ip)
+                valid_ips.append(ip)
+            except (AddressValueError, ValueError):
+                invalid_ips.append(ip)
+        else:
+            invalid_ips.append(str(ip))
+
+    if invalid_ips:
+        logger.warning(
+            f"以下黑名单 IP 无效，已跳过: {', '.join(invalid_ips)}"
+        )
+
+    return valid_ips
+
+
+def validate_network_security_config(config: dict) -> dict:
+    """
+    验证并清理完整的 network_security 配置
+
+    参数
+    ----
+    config : dict
+        原始的 network_security 配置字典
+
+    返回
+    ----
+    dict
+        验证后的配置字典
+
+    验证规则
+    --------
+    - bind_interface: 验证为有效 IP 或特殊值
+    - allowed_networks: 验证 CIDR 格式，空列表添加本地回环
+    - blocked_ips: 验证 IP 格式
+    - enable_access_control: 转换为布尔值
+    """
+    if not isinstance(config, dict):
+        config = {}
+
+    validated = {
+        "bind_interface": validate_bind_interface(
+            config.get("bind_interface", "0.0.0.0")
+        ),
+        "allowed_networks": validate_allowed_networks(
+            config.get("allowed_networks", DEFAULT_ALLOWED_NETWORKS)
+        ),
+        "blocked_ips": validate_blocked_ips(
+            config.get("blocked_ips", [])
+        ),
+        # 【命名优化】使用新名称，保持向后兼容
+        "enable_access_control": bool(
+            config.get(
+                "access_control_enabled",  # 新名称
+                config.get("enable_access_control", True)  # 旧名称回退
+            )
+        ),
+    }
+
+    return validated
 
 
 class WebFeedbackUI:
@@ -384,8 +658,11 @@ class WebFeedbackUI:
             # 静态资源缓存优化：为 JS/CSS/字体/音频 设置长期缓存
             path = request.path
             if path.startswith("/static/js/") or path.startswith("/static/css/"):
-                # JS/CSS 文件缓存 1 天（86400秒），带版本号时可延长
-                response.headers["Cache-Control"] = "public, max-age=86400"
+                # JS/CSS 文件：带版本号时使用长期缓存（1年），否则使用短期缓存（1天）
+                if request.args.get('v'):
+                    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                else:
+                    response.headers["Cache-Control"] = "public, max-age=86400"
             elif path.startswith("/fonts/"):
                 # 字体文件缓存 30 天（2592000秒）
                 response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
@@ -598,6 +875,7 @@ class WebFeedbackUI:
 
                 if active_task:
                     # 使用TaskQueue中的激活任务
+                    # 返回剩余时间而非固定超时，解决刷新页面后倒计时重置的问题
                     return jsonify(
                         {
                             "prompt": active_task.prompt,
@@ -605,6 +883,7 @@ class WebFeedbackUI:
                             "predefined_options": active_task.predefined_options,
                             "task_id": active_task.task_id,
                             "auto_resubmit_timeout": active_task.auto_resubmit_timeout,
+                            "remaining_time": active_task.get_remaining_time(),  # 剩余倒计时秒数
                             "persistent": True,
                             "has_content": True,
                             "initial_empty": False,
@@ -629,6 +908,7 @@ class WebFeedbackUI:
                                 "predefined_options": first_task.predefined_options,
                                 "task_id": first_task.task_id,
                                 "auto_resubmit_timeout": first_task.auto_resubmit_timeout,
+                                "remaining_time": first_task.get_remaining_time(),  # 剩余倒计时秒数
                                 "persistent": True,
                                 "has_content": True,
                                 "initial_empty": False,
@@ -651,6 +931,7 @@ class WebFeedbackUI:
                         )
 
                     # 回退到旧的单任务模式
+                    # 单任务模式没有创建时间，remaining_time 等于 auto_resubmit_timeout
                     return jsonify(
                         {
                             "prompt": self.current_prompt,
@@ -660,6 +941,7 @@ class WebFeedbackUI:
                             "predefined_options": self.current_options,
                             "task_id": self.current_task_id,
                             "auto_resubmit_timeout": self.current_auto_resubmit_timeout,
+                            "remaining_time": self.current_auto_resubmit_timeout,  # 单任务模式无创建时间
                             "persistent": True,
                             "has_content": self.has_content,
                             "initial_empty": self.initial_empty,
@@ -787,6 +1069,7 @@ class WebFeedbackUI:
                             "prompt": task.prompt[:100],  # 只返回前100个字符
                             "created_at": task.created_at.isoformat(),
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
+                            "remaining_time": task.get_remaining_time(),  # 剩余倒计时秒数
                         }
                     )
 
@@ -847,9 +1130,22 @@ class WebFeedbackUI:
                 task_id = data.get("task_id")
                 prompt = data.get("prompt")
                 predefined_options = data.get("predefined_options")
-                auto_resubmit_timeout = data.get("auto_resubmit_timeout", 240)
-                # 限制前端倒计时最大不超过290秒
-                auto_resubmit_timeout = min(auto_resubmit_timeout, 290)
+
+                # 从配置文件读取默认 auto_resubmit_timeout
+                config_mgr = get_config()
+                feedback_config = config_mgr.get_section("feedback")
+                # 【命名优化】使用新名称，保持向后兼容
+                default_timeout = feedback_config.get(
+                    "frontend_countdown",  # 新名称
+                    feedback_config.get("auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT)  # 旧名称回退
+                )
+                auto_resubmit_timeout = data.get(
+                    "auto_resubmit_timeout", default_timeout
+                )
+                # 【优化】使用统一的验证函数，同时验证最小值和最大值
+                auto_resubmit_timeout = validate_auto_resubmit_timeout(
+                    int(auto_resubmit_timeout)
+                )
 
                 if not task_id or not prompt:
                     return jsonify(
@@ -939,6 +1235,7 @@ class WebFeedbackUI:
                             "status": task.status,
                             "created_at": task.created_at.isoformat(),
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
+                            "remaining_time": task.get_remaining_time(),  # 剩余倒计时秒数
                             "result": task.result,  # 添加result字段
                         },
                     }
@@ -1427,9 +1724,22 @@ class WebFeedbackUI:
             new_prompt = data.get("prompt", "")
             new_options = data.get("predefined_options", [])
             new_task_id = data.get("task_id")
-            new_auto_resubmit_timeout = data.get("auto_resubmit_timeout", 240)
-            # 限制前端倒计时最大不超过290秒
-            new_auto_resubmit_timeout = min(new_auto_resubmit_timeout, 290)
+
+            # 从配置文件读取默认 auto_resubmit_timeout
+            config_mgr = get_config()
+            feedback_config = config_mgr.get_section("feedback")
+            # 【命名优化】使用新名称，保持向后兼容
+            default_timeout = feedback_config.get(
+                "frontend_countdown",  # 新名称
+                feedback_config.get("auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT)  # 旧名称回退
+            )
+            new_auto_resubmit_timeout = data.get(
+                "auto_resubmit_timeout", default_timeout
+            )
+            # 【优化】使用统一的验证函数，同时验证最小值和最大值
+            new_auto_resubmit_timeout = validate_auto_resubmit_timeout(
+                int(new_auto_resubmit_timeout)
+            )
 
             # 更新内容
             self.current_prompt = new_prompt
@@ -1789,17 +2099,21 @@ class WebFeedbackUI:
                 config_mgr = get_config()
                 feedback_config = config_mgr.get_section("feedback")
 
-                return jsonify({
-                    "status": "success",
-                    "config": {
-                        "resubmit_prompt": feedback_config.get(
-                            "resubmit_prompt", "请立即调用 interactive_feedback 工具"
-                        ),
-                        "prompt_suffix": feedback_config.get(
-                            "prompt_suffix", "\n请积极调用 interactive_feedback 工具"
-                        ),
+                return jsonify(
+                    {
+                        "status": "success",
+                        "config": {
+                            "resubmit_prompt": feedback_config.get(
+                                "resubmit_prompt",
+                                "请立即调用 interactive_feedback 工具",
+                            ),
+                            "prompt_suffix": feedback_config.get(
+                                "prompt_suffix",
+                                "\n请积极调用 interactive_feedback 工具",
+                            ),
+                        },
                     }
-                })
+                )
 
             except Exception as e:
                 logger.error(f"获取反馈提示语配置失败: {e}")
@@ -1894,17 +2208,40 @@ class WebFeedbackUI:
             返回值：
                 CSS文件内容（text/css MIME类型）
 
+            【性能优化】缓存策略：
+                - 普通 CSS 文件：缓存 1 小时
+                - 带版本号的 CSS 文件（?v=xxx）：缓存 1 年
+
+            【性能优化】自动压缩版本选择：
+                - 自动检测并优先使用 .min.css 压缩版本
+                - 如果请求 main.css，优先返回 main.min.css（如存在）
+
             频率限制：
                 - 使用全局默认限制（60次/分钟，10次/秒）
 
             注意事项：
                 - 使用send_from_directory防止路径遍历攻击
                 - CSS文件通过CSP nonce验证安全性
-                - 浏览器会缓存CSS文件，减少重复请求
+                - 使用版本号参数实现缓存失效控制
             """
             current_dir = os.path.dirname(os.path.abspath(__file__))
             css_dir = os.path.join(current_dir, "static", "css")
-            return send_from_directory(css_dir, filename)
+
+            # 【性能优化】自动选择压缩版本
+            actual_filename = self._get_minified_file(css_dir, filename, ".css")
+
+            response = send_from_directory(css_dir, actual_filename)
+
+            # 【性能优化】添加缓存控制头
+            # 如果 URL 带版本号，使用长期缓存；否则使用短期缓存
+            if request.args.get('v'):
+                # 带版本号：缓存 1 年（不可变资源）
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                # 无版本号：缓存 1 小时
+                response.headers["Cache-Control"] = "public, max-age=3600"
+
+            return response
 
         @self.app.route("/static/js/<filename>")
         def serve_js(filename):
@@ -1919,17 +2256,40 @@ class WebFeedbackUI:
             返回值：
                 JavaScript文件内容（application/javascript MIME类型）
 
+            【性能优化】缓存策略：
+                - 普通 JS 文件：缓存 1 小时
+                - 带版本号的 JS 文件（?v=xxx）：缓存 1 年
+
+            【性能优化】自动压缩版本选择：
+                - 自动检测并优先使用 .min.js 压缩版本
+                - 如果请求 main.js，优先返回 main.min.js（如存在）
+
             频率限制：
                 - 使用全局默认限制（60次/分钟，10次/秒）
 
             注意事项：
                 - 使用send_from_directory防止路径遍历攻击
                 - JavaScript文件通过CSP nonce验证安全性
-                - 浏览器会缓存JS文件，减少重复请求
+                - 使用版本号参数实现缓存失效控制
             """
             current_dir = os.path.dirname(os.path.abspath(__file__))
             js_dir = os.path.join(current_dir, "static", "js")
-            return send_from_directory(js_dir, filename)
+
+            # 【性能优化】自动选择压缩版本
+            actual_filename = self._get_minified_file(js_dir, filename, ".js")
+
+            response = send_from_directory(js_dir, actual_filename)
+
+            # 【性能优化】添加缓存控制头
+            # 如果 URL 带版本号，使用长期缓存；否则使用短期缓存
+            if request.args.get('v'):
+                # 带版本号：缓存 1 年（不可变资源）
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                # 无版本号：缓存 1 小时
+                response.headers["Cache-Control"] = "public, max-age=3600"
+
+            return response
 
         @self.app.route("/favicon.ico")
         def favicon():
@@ -2062,17 +2422,32 @@ class WebFeedbackUI:
             # 替换模板变量 {{ csp_nonce }} 为实际的 CSP nonce 值
             html_content = html_content.replace("{{ csp_nonce }}", self.csp_nonce)
 
-            # 替换内联CSS为外部CSS文件引用
-            css_link = f'<link rel="stylesheet" href="/static/css/main.css" nonce="{self.csp_nonce}">'
+            # 获取静态资源版本号（基于文件修改时间，解决浏览器缓存问题）
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            css_version = self._get_file_version(
+                os.path.join(current_dir, "static", "css", "main.css")
+            )
+            js_version = self._get_file_version(
+                os.path.join(current_dir, "static", "js", "main.js")
+            )
+            multi_task_version = self._get_file_version(
+                os.path.join(current_dir, "static", "js", "multi_task.js")
+            )
+
+            # 替换内联CSS为外部CSS文件引用（带版本号）
+            css_link = f'<link rel="stylesheet" href="/static/css/main.css?v={css_version}" nonce="{self.csp_nonce}">'
             html_content = self._replace_inline_css(html_content, css_link)
 
             # 替换内联JS为外部JS文件引用 (defer: 按顺序异步加载，不阻塞DOM解析)
+            # 带版本号解决浏览器缓存问题
             # 注意：MathJax 配置已内联在 HTML 中，按需加载优化（1.17MB → 需要时才加载）
-            main_script = (
-                f'<script defer src="/static/js/main.js" nonce="{self.csp_nonce}"></script>'
-            )
-            html_content = self._replace_inline_js(
-                html_content, "", main_script
+            main_script = f'<script defer src="/static/js/main.js?v={js_version}" nonce="{self.csp_nonce}"></script>'
+            html_content = self._replace_inline_js(html_content, "", main_script)
+
+            # 为 multi_task.js 也添加版本号（在 HTML 模板中引用）
+            html_content = html_content.replace(
+                'src="/static/js/multi_task.js"',
+                f'src="/static/js/multi_task.js?v={multi_task_version}"',
             )
 
             return html_content
@@ -2208,10 +2583,53 @@ class WebFeedbackUI:
         # 替换为外部CSS链接
         return re.sub(style_pattern, css_link, html_content, flags=re.DOTALL)
 
+    def _get_minified_file(
+        self, directory: str, filename: str, extension: str
+    ) -> str:
+        """获取压缩版本的文件名（如存在）
+
+        功能说明：
+            自动检测并优先使用压缩版本的静态资源文件。
+
+        参数说明：
+            directory: 文件所在目录的绝对路径
+            filename: 原始请求的文件名
+            extension: 文件扩展名（如 ".js" 或 ".css"）
+
+        返回值：
+            str: 实际使用的文件名（压缩版本或原始版本）
+
+        处理逻辑：
+            1. 如果请求的已是 .min.* 文件，直接返回
+            2. 检查对应的 .min.* 文件是否存在
+            3. 如存在压缩版本，优先使用压缩版本
+            4. 否则返回原始文件名
+
+        示例：
+            - 请求 main.js，若 main.min.js 存在，则返回 main.min.js
+            - 请求 main.min.js，直接返回 main.min.js
+            - 请求 prism-xxx.js（外部库），直接返回原文件
+        """
+        # 已经是压缩版本，直接返回
+        if f".min{extension}" in filename:
+            return filename
+
+        # 构建压缩版本的文件名
+        base_name = filename.replace(extension, "")
+        minified_name = f"{base_name}.min{extension}"
+        minified_path = os.path.join(directory, minified_name)
+
+        # 检查压缩版本是否存在
+        if os.path.exists(minified_path):
+            return minified_name
+
+        # 压缩版本不存在，返回原始文件名
+        return filename
+
     def _replace_inline_js(
         self, html_content: str, mathjax_script: str, main_script: str
     ) -> str:
-        """替换内联JavaScript为外部JS文件引用
+        r"""替换内联JavaScript为外部JS文件引用
 
         功能说明：
             使用正则表达式匹配HTML中的内联<script>标签，替换为外部JS文件链接。
@@ -2253,55 +2671,87 @@ class WebFeedbackUI:
 
         return html_content
 
+    def _get_file_version(self, file_path: str) -> str:
+        """获取文件版本号（基于修改时间）
+
+        功能说明：
+            根据文件的最后修改时间生成版本号，用于静态资源缓存控制。
+            每次文件更新后，版本号会自动变化，浏览器会获取新版本。
+
+        参数说明：
+            file_path: 文件的完整路径
+
+        返回值：
+            str: 版本号（Unix 时间戳的后 8 位，确保唯一性）
+
+        处理逻辑：
+            1. 获取文件的最后修改时间
+            2. 转换为 Unix 时间戳
+            3. 取后 8 位作为版本号（避免过长）
+
+        异常处理：
+            - 文件不存在：返回默认版本号 "1"
+
+        注意事项：
+            - 版本号会在文件每次修改后自动更新
+            - 用于解决浏览器缓存旧版本 JS/CSS 的问题
+        """
+        try:
+            mtime = os.path.getmtime(file_path)
+            # 使用时间戳的后 8 位作为版本号
+            return str(int(mtime))[-8:]
+        except (OSError, FileNotFoundError):
+            return "1"
+
     def _load_network_security_config(self) -> Dict:
-        """加载网络安全配置
+        """加载并验证网络安全配置
 
         功能说明：
             从配置文件读取网络安全相关配置，用于IP访问控制。
+            【优化】加载时进行预验证，确保配置有效性。
 
         返回值：
-            Dict: 网络安全配置字典，包含以下字段：
-                - bind_interface: 绑定的网络接口（默认"0.0.0.0"）
-                - allowed_networks: 允许访问的网络列表（CIDR格式）
-                - blocked_ips: 黑名单IP列表
-                - enable_access_control: 是否启用访问控制（默认True）
+            Dict: 验证后的网络安全配置字典，包含以下字段：
+                - bind_interface: 绑定的网络接口（验证为有效 IP 或特殊值）
+                - allowed_networks: 允许访问的网络列表（验证 CIDR 格式）
+                - blocked_ips: 黑名单 IP 列表（验证 IP 格式）
+                - enable_access_control: 是否启用访问控制（布尔值）
 
         处理逻辑：
-            1. 调用get_config()获取配置管理器
-            2. 调用get_section("network_security")读取配置
-            3. 若加载失败，返回默认配置
+            1. 调用 get_config() 获取配置管理器
+            2. 调用 get_section("network_security") 读取配置
+            3. 【优化】调用 validate_network_security_config() 验证配置
+            4. 若加载失败，返回默认配置
+
+        验证规则：
+            - bind_interface: 必须是有效 IP 或 0.0.0.0/127.0.0.1/localhost
+            - allowed_networks: 无效的 CIDR 会被过滤，空列表自动添加本地回环
+            - blocked_ips: 无效的 IP 会被过滤
+            - enable_access_control: 转换为布尔值
 
         异常处理：
             - 配置加载失败：记录警告日志，返回默认配置
 
         默认配置：
             - bind_interface: "0.0.0.0"
-            - allowed_networks: 本地回环、内网IP段（127.0.0.0/8、192.168.0.0/16、10.0.0.0/8等）
+            - allowed_networks: 本地回环 + 私有网络段
             - blocked_ips: 空列表
             - enable_access_control: True
 
         注意事项：
-            - 配置来自config.jsonc文件
+            - 配置来自 config.jsonc 文件
             - 默认配置允许本地和内网访问
             - 生产环境建议自定义配置
+            - 绑定 0.0.0.0 时会输出安全警告
         """
         try:
             config_mgr = get_config()
-            return config_mgr.get_section("network_security")
+            raw_config = config_mgr.get_section("network_security")
+            # 【优化】验证配置
+            return validate_network_security_config(raw_config)
         except Exception as e:
             logger.warning(f"无法加载网络安全配置，使用默认配置: {e}")
-            return {
-                "bind_interface": "0.0.0.0",
-                "allowed_networks": [
-                    "127.0.0.0/8",
-                    "::1/128",
-                    "192.168.0.0/16",
-                    "10.0.0.0/8",
-                    "172.16.0.0/12",
-                ],
-                "blocked_ips": [],
-                "enable_access_control": True,
-            }
+            return validate_network_security_config({})
 
     def _is_ip_allowed(self, client_ip: str) -> bool:
         """检查IP是否被允许访问

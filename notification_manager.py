@@ -49,6 +49,7 @@ try:
 except ImportError:
     CONFIG_FILE_AVAILABLE = False
 
+from config_utils import clamp_dataclass_field, validate_enum_value
 from enhanced_logging import EnhancedLogger
 
 try:
@@ -220,6 +221,54 @@ class NotificationConfig:
     bark_icon: str = ""  # Bark 通知图标 URL
     bark_action: str = "none"  # Bark 通知点击动作
 
+    # ==================== 边界常量 ====================
+    SOUND_VOLUME_MIN: float = 0.0
+    SOUND_VOLUME_MAX: float = 1.0
+    BARK_ACTIONS_VALID: tuple = ("none", "url", "copy")
+
+    def __post_init__(self):
+        """
+        数据类初始化后的验证钩子
+
+        验证项
+        ------
+        1. sound_volume: 范围 [0.0, 1.0]
+        2. bark_action: 有效值 none/url/copy
+        3. bark_url: 非空时验证 URL 格式
+
+        【重构】使用 config_utils 辅助函数简化边界检查和枚举验证。
+        """
+        # 【重构】使用 clamp_dataclass_field 简化 sound_volume 边界验证
+        clamp_dataclass_field(
+            self, "sound_volume", self.SOUND_VOLUME_MIN, self.SOUND_VOLUME_MAX
+        )
+
+        # 【重构】使用 validate_enum_value 简化 bark_action 枚举验证
+        validated_action = validate_enum_value(
+            self.bark_action, self.BARK_ACTIONS_VALID, "bark_action", "none"
+        )
+        if validated_action != self.bark_action:
+            object.__setattr__(self, "bark_action", validated_action)
+
+        # bark_url 格式验证（非空时）
+        if self.bark_url:
+            if not self._is_valid_url(self.bark_url):
+                logger.warning(
+                    f"bark_url '{self.bark_url}' 格式无效，应以 http:// 或 https:// 开头"
+                )
+                # 不自动清空，只警告（用户可能故意使用自定义协议）
+
+        # bark_enabled 时检查必要配置
+        if self.bark_enabled and not self.bark_device_key:
+            logger.warning(
+                "bark_enabled=True 但 bark_device_key 为空，Bark 通知将无法发送"
+            )
+
+    @staticmethod
+    def _is_valid_url(url: str) -> bool:
+        """验证 URL 格式是否有效"""
+        return url.startswith("http://") or url.startswith("https://")
+
     @classmethod
     def from_config_file(cls) -> "NotificationConfig":
         """从配置文件创建配置实例
@@ -255,24 +304,35 @@ class NotificationConfig:
         config_mgr = get_config()
         notification_config = config_mgr.get_section("notification")
 
+        # 【优化】sound_volume 从百分比转换为 0-1 范围，并限制边界
+        raw_volume = notification_config.get("sound_volume", 80)
+        # 确保是数字类型
+        try:
+            raw_volume = float(raw_volume)
+        except (ValueError, TypeError):
+            logger.warning(f"sound_volume '{raw_volume}' 类型无效，使用默认值 80")
+            raw_volume = 80
+        # 限制百分比范围 [0, 100]
+        raw_volume = max(0, min(100, raw_volume))
+        normalized_volume = raw_volume / 100.0
+
         return cls(
-            enabled=notification_config.get("enabled", True),
-            debug=notification_config.get("debug", False),
-            web_enabled=notification_config.get("web_enabled", True),
-            web_permission_auto_request=notification_config.get(
+            enabled=bool(notification_config.get("enabled", True)),
+            debug=bool(notification_config.get("debug", False)),
+            web_enabled=bool(notification_config.get("web_enabled", True)),
+            web_permission_auto_request=bool(notification_config.get(
                 "auto_request_permission", True
-            ),
-            sound_enabled=notification_config.get("sound_enabled", True),
-            sound_volume=notification_config.get("sound_volume", 80)
-            / 100.0,  # 转换为0-1范围
-            sound_mute=notification_config.get("sound_mute", False),
-            mobile_optimized=notification_config.get("mobile_optimized", True),
-            mobile_vibrate=notification_config.get("mobile_vibrate", True),
-            bark_enabled=notification_config.get("bark_enabled", False),
-            bark_url=notification_config.get("bark_url", ""),
-            bark_device_key=notification_config.get("bark_device_key", ""),
-            bark_icon=notification_config.get("bark_icon", ""),
-            bark_action=notification_config.get("bark_action", "none"),
+            )),
+            sound_enabled=bool(notification_config.get("sound_enabled", True)),
+            sound_volume=normalized_volume,
+            sound_mute=bool(notification_config.get("sound_mute", False)),
+            mobile_optimized=bool(notification_config.get("mobile_optimized", True)),
+            mobile_vibrate=bool(notification_config.get("mobile_vibrate", True)),
+            bark_enabled=bool(notification_config.get("bark_enabled", False)),
+            bark_url=str(notification_config.get("bark_url", "")),
+            bark_device_key=str(notification_config.get("bark_device_key", "")),
+            bark_icon=str(notification_config.get("bark_icon", "")),
+            bark_action=str(notification_config.get("bark_action", "none")),
         )
 
 
@@ -452,6 +512,14 @@ class NotificationManager:
             # 初始化事件队列和锁
             self._event_queue: List[NotificationEvent] = []
             self._queue_lock = threading.Lock()
+
+            # 【线程安全】配置锁，保护 config 对象的并发读写
+            # 用于 refresh_config_from_file() 和 update_config_without_save()
+            self._config_lock = threading.Lock()
+
+            # 【性能优化】配置缓存：记录配置文件的最后修改时间
+            # 只有文件修改时间变化时才重新读取配置，避免频繁 I/O
+            self._config_file_mtime: float = 0.0
 
             # 初始化工作线程相关（预留扩展）
             self._worker_thread = None
@@ -870,6 +938,175 @@ class NotificationManager:
         """
         return self.config
 
+    def refresh_config_from_file(self, force: bool = False):
+        """从配置文件重新加载配置（跨进程同步）
+
+        【功能说明】
+        从配置文件读取最新配置并更新内存中的配置对象。
+        解决 Web UI 子进程和 MCP 服务器主进程之间配置不同步的问题。
+
+        【参数】
+        force : bool, optional
+            是否强制刷新配置（跳过缓存检查），默认 False
+
+        【设计背景】
+        - Web UI 以子进程方式运行（subprocess.Popen）
+        - Web UI 和 MCP 服务器各自有独立的 notification_manager 实例
+        - 用户在 Web UI 上更改配置时，只更新了 Web UI 进程的配置和配置文件
+        - MCP 服务器进程的内存配置不会自动更新
+        - 此方法用于 MCP 服务器进程在发送通知前同步最新配置
+
+        【处理流程】
+        1. 检查配置文件管理器是否可用
+        2. 从配置文件读取 notification 配置段
+        3. 记录更新前的 bark_enabled 状态
+        4. 更新 self.config 的所有字段（带类型验证）
+        5. 如果 bark_enabled 状态发生变化，动态更新 Bark 提供者
+
+        【配置字段映射】
+        - enabled: 通知总开关
+        - web_enabled: Web 通知开关
+        - web_permission_auto_request: 自动请求权限（对应配置文件中的 auto_request_permission）
+        - sound_enabled: 声音通知开关
+        - sound_volume: 音量（配置文件中是 0-100，内存中是 0.0-1.0）
+        - sound_mute: 静音开关
+        - mobile_optimized: 移动优化开关
+        - mobile_vibrate: 震动开关
+        - bark_enabled: Bark 通知开关
+        - bark_url: Bark 服务器 URL
+        - bark_device_key: Bark 设备密钥
+        - bark_icon: Bark 图标 URL
+        - bark_action: Bark 点击动作
+
+        【Bark 动态更新】
+        - 如果 bark_enabled 从 False 变为 True，自动添加 Bark 提供者
+        - 如果 bark_enabled 从 True 变为 False，自动移除 Bark 提供者
+
+        【使用场景】
+        - server.py 中发送通知前调用，确保使用最新配置
+        - 适用于任何需要跨进程同步配置的场景
+
+        【异常处理】
+        - 配置文件管理器不可用时静默返回（不抛出异常）
+        - 配置读取失败时记录警告日志并返回
+        - 配置值类型错误时使用默认值
+        - 不影响正常通知流程
+
+        【线程安全】
+        - 使用 _config_lock 保护配置更新操作
+        - 确保配置读写的原子性，避免并发不一致
+        - 锁粒度：方法级别，保护整个配置更新过程
+
+        【性能优化】
+        - 使用文件修改时间（mtime）作为缓存键
+        - 只有文件修改时间变化时才重新读取配置
+        - force=True 时跳过缓存检查，强制刷新
+        """
+        if not CONFIG_FILE_AVAILABLE:
+            return
+
+        try:
+            config_mgr = get_config()
+
+            # 【性能优化】检查配置文件是否有更新
+            config_file_path = config_mgr.config_file
+            try:
+                import os
+                current_mtime = os.path.getmtime(config_file_path)
+
+                # 非强制模式下，如果文件未变化则跳过刷新
+                if not force and current_mtime == self._config_file_mtime:
+                    logger.debug("配置文件未变化，跳过刷新")
+                    return
+
+                # 无论是否强制，都更新 mtime 缓存
+                self._config_file_mtime = current_mtime
+            except (OSError, AttributeError):
+                # 如果无法获取文件修改时间，继续刷新配置
+                pass
+
+            notification_config = config_mgr.get_section("notification")
+
+            # 【类型验证】辅助函数：安全获取布尔值
+            def safe_bool(value, default: bool) -> bool:
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, str):
+                    return value.lower() in ("true", "1", "yes")
+                return default
+
+            # 【类型验证】辅助函数：安全获取数值
+            def safe_number(value, default: float, min_val: float = 0, max_val: float = 100) -> float:
+                try:
+                    num = float(value)
+                    return max(min_val, min(max_val, num))
+                except (TypeError, ValueError):
+                    return default
+
+            # 【类型验证】辅助函数：安全获取字符串
+            def safe_str(value, default: str) -> str:
+                if value is None:
+                    return default
+                return str(value)
+
+            # 【线程安全】使用配置锁保护配置更新操作
+            with self._config_lock:
+                # 记录更新前的 bark_enabled 状态
+                bark_was_enabled = self.config.bark_enabled
+
+                # 【类型验证】更新所有配置字段，使用安全类型转换
+                self.config.enabled = safe_bool(
+                    notification_config.get("enabled"), True
+                )
+                self.config.web_enabled = safe_bool(
+                    notification_config.get("web_enabled"), True
+                )
+                self.config.web_permission_auto_request = safe_bool(
+                    notification_config.get("auto_request_permission"), True
+                )
+                self.config.sound_enabled = safe_bool(
+                    notification_config.get("sound_enabled"), True
+                )
+                # 音量从 0-100 转换为 0.0-1.0，带范围验证
+                self.config.sound_volume = safe_number(
+                    notification_config.get("sound_volume"), 80, 0, 100
+                ) / 100.0
+                self.config.sound_mute = safe_bool(
+                    notification_config.get("sound_mute"), False
+                )
+                self.config.mobile_optimized = safe_bool(
+                    notification_config.get("mobile_optimized"), True
+                )
+                self.config.mobile_vibrate = safe_bool(
+                    notification_config.get("mobile_vibrate"), True
+                )
+                self.config.bark_enabled = safe_bool(
+                    notification_config.get("bark_enabled"), False
+                )
+                self.config.bark_url = safe_str(
+                    notification_config.get("bark_url"), ""
+                )
+                self.config.bark_device_key = safe_str(
+                    notification_config.get("bark_device_key"), ""
+                )
+                self.config.bark_icon = safe_str(
+                    notification_config.get("bark_icon"), ""
+                )
+                self.config.bark_action = safe_str(
+                    notification_config.get("bark_action"), "none"
+                )
+
+                logger.debug("已从配置文件刷新通知配置（带类型验证）")
+
+                # 如果 bark_enabled 状态发生变化，动态更新提供者
+                bark_now_enabled = self.config.bark_enabled
+                if bark_was_enabled != bark_now_enabled:
+                    self._update_bark_provider()
+                    logger.info(f"Bark 提供者已根据配置文件更新 (enabled: {bark_now_enabled})")
+
+        except Exception as e:
+            logger.warning(f"从配置文件刷新配置失败: {e}")
+
     def update_config(self, **kwargs):
         """更新配置并保存到文件
 
@@ -941,24 +1178,26 @@ class NotificationManager:
         - 不进行值类型验证，由 Python 类型系统保障
 
         【线程安全】
-        - 当前实现非线程安全
-        - 并发更新可能导致配置不一致
-        - 应由调用方确保同步
+        - 使用 _config_lock 保护配置更新操作
+        - 确保配置读写的原子性，避免并发不一致
+        - 锁粒度：方法级别，保护整个配置更新过程
 
         Args:
             **kwargs: 要更新的配置键值对，键为 NotificationConfig 的字段名
         """
-        bark_was_enabled = self.config.bark_enabled
+        # 【线程安全】使用配置锁保护配置更新操作
+        with self._config_lock:
+            bark_was_enabled = self.config.bark_enabled
 
-        for key, value in kwargs.items():
-            if hasattr(self.config, key):
-                setattr(self.config, key, value)
-                logger.debug(f"配置已更新: {key} = {value}")
+            for key, value in kwargs.items():
+                if hasattr(self.config, key):
+                    setattr(self.config, key, value)
+                    logger.debug(f"配置已更新: {key} = {value}")
 
-        # 如果Bark配置发生变化，动态更新提供者
-        bark_now_enabled = self.config.bark_enabled
-        if bark_was_enabled != bark_now_enabled:
-            self._update_bark_provider()
+            # 如果Bark配置发生变化，动态更新提供者
+            bark_now_enabled = self.config.bark_enabled
+            if bark_was_enabled != bark_now_enabled:
+                self._update_bark_provider()
 
     def _update_bark_provider(self):
         """动态更新 Bark 通知提供者
