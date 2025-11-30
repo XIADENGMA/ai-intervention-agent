@@ -84,7 +84,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 from fastmcp import FastMCP
@@ -96,7 +96,6 @@ from config_manager import get_config
 from config_utils import (
     clamp_dataclass_field,
     get_compat_config,
-    get_typed_config,
     truncate_string,
 )
 from enhanced_logging import EnhancedLogger
@@ -1060,8 +1059,12 @@ class WebUIConfig:
 
         # 【重构】使用 clamp_dataclass_field 简化边界检查
         clamp_dataclass_field(self, "timeout", self.TIMEOUT_MIN, self.TIMEOUT_MAX)
-        clamp_dataclass_field(self, "max_retries", self.MAX_RETRIES_MIN, self.MAX_RETRIES_MAX)
-        clamp_dataclass_field(self, "retry_delay", self.RETRY_DELAY_MIN, self.RETRY_DELAY_MAX)
+        clamp_dataclass_field(
+            self, "max_retries", self.MAX_RETRIES_MIN, self.MAX_RETRIES_MAX
+        )
+        clamp_dataclass_field(
+            self, "retry_delay", self.RETRY_DELAY_MIN, self.RETRY_DELAY_MAX
+        )
 
 
 def get_web_ui_config() -> Tuple[WebUIConfig, int]:
@@ -1241,7 +1244,7 @@ class FeedbackConfig:
         【重构】使用 config_utils 辅助函数简化边界检查和字符串截断。
         注意：auto_resubmit_timeout 为 0 时表示禁用，需要特殊处理。
         """
-        from config_utils import clamp_value, truncate_string
+        from config_utils import clamp_value
 
         # 【重构】使用 clamp_value 简化 timeout 验证
         self.timeout = clamp_value(
@@ -1306,18 +1309,23 @@ def get_feedback_config() -> FeedbackConfig:
         feedback_config = config_mgr.get_section("feedback")
 
         # 【重构】使用 get_compat_config 简化向后兼容配置读取
-        timeout = int(get_compat_config(
-            feedback_config, "backend_max_wait", "timeout", FEEDBACK_TIMEOUT_DEFAULT
-        ))
-        auto_resubmit_timeout = int(get_compat_config(
-            feedback_config, "frontend_countdown", "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
-        ))
+        timeout = int(
+            get_compat_config(
+                feedback_config, "backend_max_wait", "timeout", FEEDBACK_TIMEOUT_DEFAULT
+            )
+        )
+        auto_resubmit_timeout = int(
+            get_compat_config(
+                feedback_config,
+                "frontend_countdown",
+                "auto_resubmit_timeout",
+                AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+            )
+        )
         resubmit_prompt = str(
             feedback_config.get("resubmit_prompt", RESUBMIT_PROMPT_DEFAULT)
         )
-        prompt_suffix = str(
-            feedback_config.get("prompt_suffix", PROMPT_SUFFIX_DEFAULT)
-        )
+        prompt_suffix = str(feedback_config.get("prompt_suffix", PROMPT_SUFFIX_DEFAULT))
 
         return FeedbackConfig(
             timeout=timeout,
@@ -2090,9 +2098,7 @@ def update_web_content(
         raise Exception(f"更新 Web 内容失败: {e}")
 
 
-def parse_structured_response(
-    response_data: Optional[Dict[str, Any]]
-) -> list:
+def parse_structured_response(response_data: Optional[Dict[str, Any]]) -> list:
     """
     解析 Web UI 反馈数据并转换为 MCP 标准 Content 对象列表
 
@@ -2890,11 +2896,6 @@ async def interactive_feedback(
     """
     MCP 工具：请求用户通过 Web UI 提供交互式反馈
 
-    功能概述
-    --------
-    这是 AI Intervention Agent 的核心 MCP 工具函数，允许 AI 助手主动向用户请求反馈、确认或输入。
-    通过 Web 浏览器界面（默认 http://localhost:8081），用户可以输入文本、选择选项和上传图片。
-
     参数
     ----
     message : str, required
@@ -2914,94 +2915,6 @@ async def interactive_feedback(
           包含选项选择和用户输入的文本
         - ImageContent: {"type": "image", "data": str, "mimeType": str}
           用户上传的图片（base64 编码）
-
-    工作流程
-    --------
-    1. **生成任务 ID**: 使用 {project_name}-{timestamp}-{random} 格式
-    2. **加载配置**: 获取 Web UI 配置和前端倒计时时间
-    3. **确保服务运行**: 调用 ensure_web_ui_running() 检查或启动服务
-    4. **创建任务**: 通过 POST /api/tasks 添加任务到队列
-    5. **计算后端超时**: 后端 = max(前端 + 60秒, 300秒)
-    6. **轮询等待**: 调用 wait_for_task_completion() 轮询任务状态
-    7. **解析反馈**: 调用 parse_structured_response() 转换为 MCP 格式
-    8. **返回结果**: 返回 MCP Content 对象列表
-
-    超时策略
-    ----------
-    - **前端倒计时**: auto_resubmit_timeout（默认 240 秒）
-      用户超时未提交时自动提交空反馈
-    - **后端等待**: backend_timeout = max(前端 + 60秒, 300秒)
-      后端轮询超时时间，确保比前端长
-    - **禁用自动提交**: 如果 auto_resubmit_timeout <= 0，使用默认 300 秒
-
-    任务 ID 生成
-    ------------
-    格式: {project_name}-{timestamp}-{random}
-    - project_name: 当前工作目录名称（默认 "task"）
-    - timestamp: 毫秒时间戳的后6位（0-999999）
-    - random: 3位随机数（100-999）
-
-    确保唯一性，避免任务 ID 冲突。
-
-    异常处理
-    ----------
-    不会抛出异常，所有错误都转换为 MCP TextContent 返回：
-    - 添加任务失败: "添加任务失败: {error}"
-    - 连接失败: "无法连接到Web UI: {error}"
-    - 任务执行失败: "{error}"
-    - 工具执行失败: "反馈收集失败: {error}"
-
-    通知系统
-    ----------
-    如果通知系统可用，会触发通知提醒用户：
-    - Immediate 触发: 任务创建时立即通知
-    - Delayed 触发: 延迟一段时间后再次提醒
-    - Repeat 触发: 定期重复提醒直到用户响应
-
-    兼容性
-    --------
-    兼容多种反馈数据格式：
-    - 新格式: {"user_input": str, "selected_options": list, "images": list}
-    - 旧格式: {"interactive_feedback": str}
-    - 简单字符串: 直接转换为 TextContent
-
-    使用场景
-    --------
-    - 请求用户确认代码更改
-    - 询问用户选择实现方案
-    - 收集用户反馈和建议
-    - 请求用户上传文件或图片
-    - 询问用户偏好设置
-
-    性能考虑
-    ----------
-    - 创建任务: < 100ms（HTTP POST 请求）
-    - 轮询间隔: 1 秒（wait_for_task_completion）
-    - 典型响应时间: 取决于用户操作速度
-    - 超时后自动返回: 避免无限等待
-
-    注意事项
-    --------
-    - Web UI 默认绑定 localhost，仅本地访问
-    - 用户需要手动打开浏览器访问反馈界面
-    - 多个任务会并发展示，用户可自由切换
-    - 任务完成后会自动从队列中移除
-    - 图片上传可能导致返回数据较大（几 MB）
-    - 前端支持 Markdown 渲染、代码高亮和 LaTeX 公式
-
-    安全考虑
-    ----------
-    - 输入参数会自动验证和清理（validate_input）
-    - 网络绑定受 network_security 配置控制
-    - 支持 IP 白名单/黑名单
-    - 所有 HTTP 响应包含安全头（CSP、X-Frame-Options 等）
-    - 图片上传大小限制（前端配置）
-
-    调试
-    ----
-    - 所有关键步骤都记录详细日志（info/debug 级别）
-    - 任务 ID 包含在所有日志中，便于追踪
-    - 返回的 Content 对象会记录 debug 日志
 
     示例
     ----
