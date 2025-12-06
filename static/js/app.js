@@ -415,6 +415,12 @@ function showNoContentPage() {
   // 添加无内容模式的CSS类，启用特殊布局
   document.body.classList.add('no-content-mode')
 
+  // 隐藏任务标签栏（无内容时不需要显示）
+  const taskTabsContainer = document.getElementById('task-tabs-container')
+  if (taskTabsContainer) {
+    taskTabsContainer.classList.add('hidden')
+  }
+
   // 显示关闭按钮，让用户可以关闭服务
   if (config) {
     document.getElementById('no-content-buttons').style.display = 'block'
@@ -428,6 +434,9 @@ function showContentPage() {
 
   // 移除无内容模式的CSS类，恢复正常布局
   document.body.classList.remove('no-content-mode')
+
+  // 任务标签栏的显示由 multi_task.js 的 renderTaskTabs() 控制
+  // 这里不需要手动显示，等待 renderTaskTabs() 根据任务数量决定
 
   enableSubmitButton()
 }
@@ -588,7 +597,14 @@ async function submitFeedback() {
       }
     })
 
-    const response = await fetch('/api/submit', {
+    // 获取当前活动任务ID（由 multi_task.js 管理）
+    const currentTaskId = window.activeTaskId
+
+    // 优先使用多任务提交端点（如果有活动任务）
+    const submitUrl = currentTaskId ? `/api/tasks/${currentTaskId}/submit` : '/api/submit'
+    console.log(`使用提交端点: ${submitUrl}`)
+
+    const response = await fetch(submitUrl, {
       method: 'POST',
       body: formData // 不设置 Content-Type，让浏览器自动设置 multipart/form-data
     })
@@ -607,13 +623,31 @@ async function submitFeedback() {
       // 清除所有图片
       clearAllImages()
 
-      // 立即更新本地状态，然后隐藏反馈内容
-      if (config) {
-        config.has_content = false
-        console.log('反馈提交后，本地状态已更新为无内容')
+      // 清理该任务的缓存（如果是多任务模式）
+      if (currentTaskId) {
+        if (typeof taskTextareaContents !== 'undefined') {
+          delete taskTextareaContents[currentTaskId]
+        }
+        if (typeof taskOptionsStates !== 'undefined') {
+          delete taskOptionsStates[currentTaskId]
+        }
+        if (typeof taskImages !== 'undefined') {
+          delete taskImages[currentTaskId]
+        }
       }
-      showNoContentPage()
-      // 不再显示动态状态消息，只保留HTML中的固定文本
+
+      // 立即刷新任务列表（由 multi_task.js 处理页面状态切换）
+      if (typeof refreshTasksList === 'function') {
+        console.log('调用 refreshTasksList 刷新任务列表...')
+        await refreshTasksList()
+      } else {
+        // 兼容旧模式：如果没有多任务支持，显示无内容页面
+        if (config) {
+          config.has_content = false
+          console.log('反馈提交后，本地状态已更新为无内容')
+        }
+        showNoContentPage()
+      }
     } else {
       showStatus(result.message || '提交失败', 'error')
     }
@@ -687,175 +721,40 @@ function refreshPageSafely() {
   }
 }
 
-// 注意：原来的复杂关闭逻辑已被简化为统一的刷新逻辑
+// ==================================================================
+// 内容轮询 - 已停用
+// ==================================================================
+//
+// 说明：
+//   内容轮询功能已完全由 multi_task.js 的任务轮询接管。
+//   此处仅保留空实现，防止被其他代码调用时报错。
+//
+// 历史原因：
+//   原设计中 app.js 负责轮询 /api/config 检测内容变化，
+//   但与 multi_task.js 的 /api/tasks 轮询存在冲突，
+//   导致 textarea 内容被意外清空。
+//
+// 解决方案：
+//   1. 停用 app.js 轮询，由 multi_task.js 统一管理
+//   2. multi_task.js 实现了实时保存机制
+// ==================================================================
 
-// 内容轮询检查 - 带指数退避策略
-let pollingTimeout = null
-let currentPollingInterval = 2000 // 初始间隔2秒
-const basePollingInterval = 2000 // 基础间隔
-const maxPollingInterval = 30000 // 最大间隔30秒
-let consecutiveErrors = 0
-
-function startContentPolling() {
-  if (pollingTimeout) {
-    console.log('轮询已经在运行，跳过启动')
-    return // 避免重复启动
-  }
-
-  console.log('开始启动内容轮询...')
-  scheduleNextPoll()
-}
-
-function scheduleNextPoll() {
-  pollingTimeout = setTimeout(async () => {
-    try {
-      const response = await fetch('/api/config')
-
-      // 检查是否遇到速率限制
-      if (response.status === 429) {
-        console.warn('遇到速率限制，增加轮询间隔')
-        handlePollingError(true)
-        return
-      }
-
-      const newConfig = await response.json()
-
-      // 请求成功，重置错误计数和间隔
-      consecutiveErrors = 0
-      currentPollingInterval = basePollingInterval
-
-      const currentHasContent = config ? config.has_content : false
-      const newHasContent = newConfig.has_content
-
-      console.log('轮询检查 - 当前状态:', currentHasContent, '新状态:', newHasContent)
-      console.log('当前提示:', config ? config.prompt?.substring(0, 30) : 'null')
-      console.log('新提示:', newConfig.prompt?.substring(0, 30))
-
-      // 状态变化检测
-      if (newHasContent && !currentHasContent) {
-        // 从无内容状态变为有内容状态
-        console.log('✅ 检测到新内容，更新页面')
-
-        // 浏览器通知已禁用 - 仅保留页面内视觉提示
-        // 原因：用户体验不佳，改用页面内滑入提示替代
-
-        const oldConfig = config
-        config = newConfig
-        showContentPage()
-        updatePageContent(oldConfig)
-        // 状态提示已移除 - 使用页面内视觉提示替代
-      } else if (!newHasContent && currentHasContent) {
-        // 从有内容状态变为无内容状态
-        console.log('📝 内容已清空，显示无内容页面')
-        config = newConfig
-        showNoContentPage()
-        disableSubmitButton()
-      } else if (newHasContent && currentHasContent) {
-        // 都有内容，检查内容是否更新
-        const promptChanged = newConfig.prompt !== (config ? config.prompt : '')
-        const optionsChanged =
-          JSON.stringify(newConfig.predefined_options) !==
-          JSON.stringify(config ? config.predefined_options : [])
-
-        if (promptChanged || optionsChanged) {
-          console.log('🔄 检测到内容更新，刷新页面')
-
-          // 浏览器通知已禁用 - 仅使用页面内状态提示
-
-          const oldConfig = config
-          config = newConfig
-          updatePageContent(oldConfig)
-          // 状态提示已移除 - 减少视觉干扰
-        }
-      } else {
-        // 都没有内容，更新配置但不改变显示
-        config = newConfig
-      }
-
-      // 安排下一次轮询
-      scheduleNextPoll()
-    } catch (error) {
-      console.error('轮询错误:', error)
-      handlePollingError(false)
-    }
-  }, currentPollingInterval)
-
-  console.log(`内容轮询已安排，间隔${currentPollingInterval}ms`)
-}
-
-function handlePollingError(isRateLimit) {
-  consecutiveErrors++
-
-  if (isRateLimit || consecutiveErrors > 1) {
-    // 指数退避：2s -> 4s -> 8s -> 16s -> 30s (最大)
-    currentPollingInterval = Math.min(
-      basePollingInterval * Math.pow(2, consecutiveErrors),
-      maxPollingInterval
-    )
-    console.log(`轮询遇到错误，增加间隔到${currentPollingInterval}ms`)
-  }
-
-  // 继续轮询
-  scheduleNextPoll()
-}
-
+/**
+ * 停止内容轮询（空实现）
+ *
+ * 保留此函数是因为 closeInterface() 会调用它。
+ * 实际轮询由 multi_task.js 的 stopTasksPolling() 管理。
+ */
 function stopContentPolling() {
-  if (pollingTimeout) {
-    clearTimeout(pollingTimeout)
-    pollingTimeout = null
-  }
-  // 重置轮询状态
-  currentPollingInterval = basePollingInterval
-  consecutiveErrors = 0
+  // 轮询已停用，此函数不执行任何操作
+  console.log('[app.js] stopContentPolling 被调用，但轮询已停用')
 }
 
-// 更新页面内容
-// oldConfig: 可选参数，用于正确保存选中状态（避免配置更新时状态丢失）
-function updatePageContent(oldConfig = null) {
-  if (!config) return
-
-  // 更新提示内容 - 使用高性能渲染函数
-  const descriptionElement = document.getElementById('description')
-  if (descriptionElement) {
-    renderMarkdownContent(descriptionElement, config.prompt_html || config.prompt)
-  }
-
-  // 更新预定义选项
-  const optionsContainer = document.getElementById('options-container')
-  if (optionsContainer) {
-    // 保存当前选中状态 - 使用旧配置的选项列表（如果提供）
-    const selectedStates = []
-    const configForSaving = oldConfig || config
-    if (configForSaving && configForSaving.predefined_options) {
-      configForSaving.predefined_options.forEach((option, index) => {
-        const checkbox = document.getElementById(`option-${index}`)
-        selectedStates[index] = checkbox ? checkbox.checked : false
-      })
-    }
-
-    // 安全清空容器内容
-    DOMSecurity.clearContent(optionsContainer)
-
-    if (config.predefined_options && config.predefined_options.length > 0) {
-      config.predefined_options.forEach((option, index) => {
-        // 使用安全的 DOM 创建方法
-        const optionDiv = DOMSecurity.createCheckboxOption(`option-${index}`, option, option)
-        optionsContainer.appendChild(optionDiv)
-
-        // 恢复选中状态
-        const checkbox = document.getElementById(`option-${index}`)
-        if (checkbox && selectedStates[index]) {
-          checkbox.checked = true
-        }
-      })
-      optionsContainer.style.display = 'block'
-      document.getElementById('separator').style.display = 'block'
-    } else {
-      optionsContainer.style.display = 'none'
-      document.getElementById('separator').style.display = 'none'
-    }
-  }
-}
+// updatePageContent() 已删除
+// 页面内容更新现在完全由 multi_task.js 的以下函数处理：
+//   - loadTaskDetails(): 加载任务详情
+//   - updateDescriptionDisplay(): 更新描述区域
+//   - updateOptionsDisplay(): 更新选项区域
 
 // ========== 图片处理功能 ==========
 

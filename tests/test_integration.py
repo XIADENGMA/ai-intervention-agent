@@ -303,6 +303,98 @@ class TestTaskQueueIntegration(unittest.TestCase):
         self.assertIsNotNone(ui.app)
 
 
+class TestMultiTaskAPI(unittest.TestCase):
+    """多任务 API 测试 - 针对本次修复新增
+
+    测试场景：
+    1. 多任务列表 API 响应格式
+    2. 任务状态过滤
+    3. 任务完成后的列表更新
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.ui = WebFeedbackUI(
+            prompt="多任务 API 测试",
+            task_id="api-test-001",
+            port=8993
+        )
+        cls.client = cls.ui.app.test_client()
+
+    def test_tasks_api_response_format(self):
+        """测试任务列表 API 响应格式"""
+        response = self.client.get('/api/tasks')
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+
+        # 验证响应结构
+        self.assertIn('success', data)
+        self.assertIn('tasks', data)
+        self.assertIn('stats', data)
+
+        # 验证 stats 结构
+        stats = data['stats']
+        self.assertIn('total', stats)
+        self.assertIn('active', stats)
+        self.assertIn('pending', stats)
+        self.assertIn('completed', stats)
+        self.assertIn('max', stats)
+
+    def test_tasks_api_includes_active_task(self):
+        """测试任务列表包含活动任务"""
+        response = self.client.get('/api/tasks')
+        data = response.get_json()
+
+        # 至少有一个任务（初始化时创建的）
+        self.assertGreaterEqual(len(data['tasks']), 1)
+
+        # 检查任务结构
+        task = data['tasks'][0]
+        self.assertIn('task_id', task)
+        self.assertIn('prompt', task)
+        self.assertIn('status', task)
+        self.assertIn('remaining_time', task)
+
+    def test_task_status_values(self):
+        """测试任务状态值"""
+        response = self.client.get('/api/tasks')
+        data = response.get_json()
+
+        valid_statuses = {'pending', 'active', 'completed'}
+
+        for task in data['tasks']:
+            self.assertIn(task['status'], valid_statuses)
+
+    def test_tasks_stats_consistency(self):
+        """测试任务统计一致性"""
+        response = self.client.get('/api/tasks')
+        data = response.get_json()
+
+        stats = data['stats']
+        tasks = data['tasks']
+
+        # 统计总数应该等于任务列表长度
+        self.assertEqual(stats['total'], len(tasks))
+
+        # 分类统计应该加起来等于总数
+        calculated_total = stats['active'] + stats['pending'] + stats['completed']
+        self.assertEqual(calculated_total, stats['total'])
+
+    def test_incomplete_tasks_have_remaining_time(self):
+        """测试未完成任务有剩余时间"""
+        response = self.client.get('/api/tasks')
+        data = response.get_json()
+
+        for task in data['tasks']:
+            if task['status'] != 'completed':
+                self.assertIn('remaining_time', task)
+                self.assertIsInstance(task['remaining_time'], (int, float))
+
+
 def run_tests():
     """运行所有集成测试"""
     loader = unittest.TestLoader()
@@ -321,6 +413,9 @@ def run_tests():
     # 配置集成测试
     suite.addTests(loader.loadTestsFromTestCase(TestConfigIntegration))
     suite.addTests(loader.loadTestsFromTestCase(TestTaskQueueIntegration))
+
+    # 多任务 API 测试
+    suite.addTests(loader.loadTestsFromTestCase(TestMultiTaskAPI))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)

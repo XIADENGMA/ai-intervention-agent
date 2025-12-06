@@ -147,7 +147,7 @@
   - DeprecationWarning：uvx 缓存的旧版本问题，本地已修复为 `datetime.now(timezone.utc)`
   - 生效方式：提交代码到 GitHub 后，运行 `rm -rf ~/.cache/uv/archive-v0/` 清除缓存，重启 Cursor MCP 即可
 
-- [ ] 当前有很多内联脚本，需要以合适的方式独立出来
+- [x] 当前有很多内联脚本，需要以合适的方式独立出来
 
 # 已完成的优化项目
 

@@ -344,6 +344,9 @@ function updateTasksList(tasks) {
     })
   }
 
+  // 检测当前页面状态和任务状态
+  const hasActiveTasks = tasks.length > 0 && tasks.some(t => t.status !== 'completed')
+
   currentTasks = tasks
 
   // 从任务列表中找到active任务，同步activeTaskId
@@ -356,13 +359,40 @@ function updateTasksList(tasks) {
     // 更新圆环颜色
     updateCountdownRingColors(oldActiveTaskId, activeTaskId)
   } else if (!activeTaskId && tasks.length > 0) {
-    // 如果activeTaskId为null，且有任务，自动设置第一个任务为active
-    activeTaskId = tasks[0].task_id
-    console.log(`自动设置第一个任务为active: ${activeTaskId}`)
+    // 如果activeTaskId为null，且有任务，自动设置第一个未完成任务为active
+    // ⚠️ 注意：tasks数组可能包含已完成任务，必须过滤
+    const firstIncompleteTask = tasks.find(t => t.status !== 'completed')
+    if (firstIncompleteTask) {
+      activeTaskId = firstIncompleteTask.task_id
+      console.log(`自动设置第一个未完成任务为active: ${activeTaskId}`)
+    } else {
+      console.log('所有任务已完成，不设置activeTaskId')
+    }
   } else if (tasks.length === 0 && activeTaskId) {
     // 如果任务列表为空，重置activeTaskId
     console.log(`✅ 任务列表已清空，重置 activeTaskId: ${activeTaskId} -> null`)
     activeTaskId = null
+  }
+
+  // 确保页面状态与任务状态一致
+  // - 有未完成任务时，显示内容页面
+  // - 无未完成任务时，显示无内容页面
+  const contentContainer = document.getElementById('content-container')
+  const noContentContainer = document.getElementById('no-content-container')
+  const isShowingNoContent = noContentContainer && noContentContainer.style.display === 'flex'
+
+  if (hasActiveTasks && isShowingNoContent) {
+    // 有任务但显示的是无内容页面，切换到内容页面
+    console.log('🚀 有任务但显示无内容页面，切换到内容页面')
+    if (typeof showContentPage === 'function') {
+      showContentPage()
+    }
+  } else if (!hasActiveTasks && contentContainer && contentContainer.style.display === 'block') {
+    // 无任务但显示的是内容页面，切换到无内容页面
+    console.log('📭 无任务但显示内容页面，切换到无内容页面')
+    if (typeof showNoContentPage === 'function') {
+      showNoContentPage()
+    }
   }
 
   // 更新标签页UI
@@ -1769,4 +1799,7 @@ if (typeof window !== 'undefined') {
     initMultiTaskSupport,
     refreshTasksList // 导出刷新函数
   }
+
+  // 直接导出常用函数到 window，方便 app.js 调用
+  window.refreshTasksList = refreshTasksList
 }

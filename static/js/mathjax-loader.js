@@ -130,4 +130,3 @@ window.loadMathJaxIfNeeded = function (element, text) {
   }
   document.head.appendChild(script)
 }
-

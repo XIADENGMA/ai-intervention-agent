@@ -396,6 +396,112 @@ class TestTaskQueueStatistics(unittest.TestCase):
         self.assertEqual(count["max"], 10)
 
 
+class TestTaskQueueEdgeCases(unittest.TestCase):
+    """测试边界情况 - 针对本次修复新增
+
+    测试场景：
+    1. 所有任务都已完成时的行为
+    2. 任务列表中第一个任务是已完成状态
+    3. 从已完成任务恢复活动任务
+    """
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from task_queue import TaskQueue
+
+        self.queue = TaskQueue(max_tasks=5)
+
+    def tearDown(self):
+        """每个测试后的清理"""
+        self.queue.stop_cleanup()
+
+    def test_all_tasks_completed_no_active(self):
+        """测试所有任务完成后没有活动任务"""
+        self.queue.add_task("task-1", "提示1")
+        self.queue.complete_task("task-1", {"feedback": "完成"})
+
+        active = self.queue.get_active_task()
+
+        self.assertIsNone(active)
+
+    def test_get_all_tasks_returns_completed(self):
+        """测试获取所有任务包含已完成任务"""
+        self.queue.add_task("task-1", "提示1")
+        self.queue.add_task("task-2", "提示2")
+        self.queue.complete_task("task-1", {"feedback": "完成"})
+
+        all_tasks = self.queue.get_all_tasks()
+
+        self.assertEqual(len(all_tasks), 2)
+        completed_tasks = [t for t in all_tasks if t.status == "completed"]
+        self.assertEqual(len(completed_tasks), 1)
+
+    def test_add_task_after_all_completed(self):
+        """测试在所有任务完成后添加新任务"""
+        self.queue.add_task("task-1", "提示1")
+        self.queue.complete_task("task-1", {"feedback": "完成"})
+
+        # 添加新任务
+        result = self.queue.add_task("task-2", "提示2")
+
+        self.assertTrue(result)
+        active = self.queue.get_active_task()
+        self.assertIsNotNone(active)
+        self.assertEqual(active.task_id, "task-2")
+
+    def test_get_incomplete_tasks_only(self):
+        """测试获取未完成任务"""
+        self.queue.add_task("task-1", "提示1")
+        self.queue.add_task("task-2", "提示2")
+        self.queue.add_task("task-3", "提示3")
+        self.queue.complete_task("task-1", {})
+
+        all_tasks = self.queue.get_all_tasks()
+        incomplete_tasks = [t for t in all_tasks if t.status != "completed"]
+
+        self.assertEqual(len(incomplete_tasks), 2)
+        task_ids = [t.task_id for t in incomplete_tasks]
+        self.assertNotIn("task-1", task_ids)
+        self.assertIn("task-2", task_ids)
+        self.assertIn("task-3", task_ids)
+
+    def test_complete_multiple_tasks_activate_next(self):
+        """测试连续完成多个任务后激活下一个"""
+        self.queue.add_task("task-1", "提示1")
+        self.queue.add_task("task-2", "提示2")
+        self.queue.add_task("task-3", "提示3")
+
+        # 完成 task-1，task-2 应该变为 active
+        self.queue.complete_task("task-1", {})
+        task2 = self.queue.get_task("task-2")
+        self.assertEqual(task2.status, "active")
+
+        # 完成 task-2，task-3 应该变为 active
+        self.queue.complete_task("task-2", {})
+        task3 = self.queue.get_task("task-3")
+        self.assertEqual(task3.status, "active")
+
+        # 完成 task-3，没有更多任务
+        self.queue.complete_task("task-3", {})
+        active = self.queue.get_active_task()
+        self.assertIsNone(active)
+
+    def test_task_count_with_mixed_status(self):
+        """测试混合状态任务的统计"""
+        self.queue.add_task("task-1", "提示1")
+        self.queue.add_task("task-2", "提示2")
+        self.queue.add_task("task-3", "提示3")
+        self.queue.complete_task("task-1", {})
+        # task-2 自动变为 active，task-3 保持 pending
+
+        count = self.queue.get_task_count()
+
+        self.assertEqual(count["total"], 3)
+        self.assertEqual(count["completed"], 1)
+        self.assertEqual(count["active"], 1)
+        self.assertEqual(count["pending"], 1)
+
+
 def run_tests():
     """运行所有测试"""
     loader = unittest.TestLoader()
@@ -408,6 +514,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestTaskQueueCleanup))
     suite.addTests(loader.loadTestsFromTestCase(TestTaskQueueThreadSafety))
     suite.addTests(loader.loadTestsFromTestCase(TestTaskQueueStatistics))
+    suite.addTests(loader.loadTestsFromTestCase(TestTaskQueueEdgeCases))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)

@@ -1377,7 +1377,7 @@ h1 {
 .no-content-progress-bar {
   width: 100%; /* 全宽 */
   height: 100%; /* 全高 */
-  background: #5A8DBF; /* 深色模式：深蓝色（与复选框和滑块一致） */
+  background: #5a8dbf; /* 深色模式：深蓝色（与复选框和滑块一致） */
   animation: loading 1.5s linear infinite; /* 加载动画 */
   border-radius: 8px; /* 圆角 */
 }
@@ -2219,7 +2219,7 @@ h1 {
 .setting-label input[type='checkbox'] {
   width: 20px; /* 固定宽度 */
   height: 20px; /* 固定高度 */
-  accent-color: #5A8DBF; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
+  accent-color: #5a8dbf; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
   cursor: pointer; /* 可点击 */
   border-radius: 4px; /* 圆角 */
   transition: all 0.2s ease; /* 过渡动画 */
@@ -2344,7 +2344,7 @@ h1 {
   margin: 0 1rem; /* 左右外边距 */
   height: 6px; /* 高度（窄轨道） */
   /* 使用浏览器原生样式实现左右颜色区分 */
-  accent-color: #5A8DBF; /* 深色模式：深蓝色（与复选框一致） */
+  accent-color: #5a8dbf; /* 深色模式：深蓝色（与复选框一致） */
   border-radius: 3px; /* 圆角 */
   outline: none; /* 移除焦点outline */
   cursor: pointer;
@@ -2392,7 +2392,7 @@ h1 {
   width: 16px; /* 固定宽度 */
   height: 16px; /* 固定高度 */
   margin-top: -5px; /* 垂直居中：(轨道高度6px - 球高度16px) / 2 = -5px */
-  background: linear-gradient(135deg, #5A8DBF, #4A7DAF); /* 渐变背景（深蓝色） */
+  background: linear-gradient(135deg, #5a8dbf, #4a7daf); /* 渐变背景（深蓝色） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
@@ -2438,7 +2438,7 @@ h1 {
 .volume-slider::-moz-range-thumb {
   width: 16px; /* 固定宽度 */
   height: 16px; /* 固定高度 */
-  background: linear-gradient(135deg, #5A8DBF, #4A7DAF); /* 渐变背景（深蓝色） */
+  background: linear-gradient(135deg, #5a8dbf, #4a7daf); /* 渐变背景（深蓝色） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
@@ -2467,12 +2467,12 @@ h1 {
  *   - 文字阴影：0 0 10px rgba(0, 122, 255, 0.3)（发光效果）
  */
 .volume-value {
-  color: #5A8DBF; /* 深蓝色（深色模式，与复选框和滑块一致） */
+  color: #5a8dbf; /* 深蓝色（深色模式，与复选框和滑块一致） */
   font-size: 1rem; /* 字号（16px） */
   font-weight: 700; /* 粗体 */
   min-width: 50px; /* 最小宽度 */
   text-align: right; /* 文字右对齐 */
-  background: linear-gradient(135deg, #5A8DBF, rgba(90, 141, 191, 0.8)); /* 渐变背景（深蓝色） */
+  background: linear-gradient(135deg, #5a8dbf, rgba(90, 141, 191, 0.8)); /* 渐变背景（深蓝色） */
   -webkit-background-clip: text; /* WebKit前缀：背景裁剪到文字 */
   -webkit-text-fill-color: transparent; /* WebKit前缀：文字颜色透明 */
   background-clip: text; /* 标准语法：背景裁剪到文字 */
@@ -3486,7 +3486,7 @@ h1 {
   margin-right: 1rem; /* 右外边距（与标签分离） */
   width: 18px; /* 固定宽度 */
   height: 18px; /* 固定高度 */
-  accent-color: #5A8DBF; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
+  accent-color: #5a8dbf; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
   cursor: pointer; /* 可点击 */
 }
 
@@ -6904,25 +6904,25 @@ code,
 
 /* 浅色主题 - 倒计时圆环（非激活标签） */
 [data-theme='light'] .countdown-ring svg circle {
-  stroke: #D4A27F; /* Kraft 米黄棕色 */
+  stroke: #d4a27f; /* Kraft 米黄棕色 */
   stroke-opacity: 1;
 }
 
 /* 浅色主题 - 倒计时圆环（激活标签） */
 [data-theme='light'] .task-tab.active .countdown-ring svg circle {
-  stroke: #FAFAF7; /* Ivory Light 象牙白 */
+  stroke: #fafaf7; /* Ivory Light 象牙白 */
   stroke-opacity: 1;
 }
 
 /* 浅色主题 - 倒计时数字（非激活标签） */
 [data-theme='light'] .countdown-ring .countdown-number {
-  color: #D4A27F; /* Kraft 米黄棕色，与圆环颜色一致 */
+  color: #d4a27f; /* Kraft 米黄棕色，与圆环颜色一致 */
   font-weight: 600;
 }
 
 /* 浅色主题 - 倒计时数字（激活标签） */
 [data-theme='light'] .task-tab.active .countdown-ring .countdown-number {
-  color: #FAFAF7; /* Ivory Light 象牙白 */
+  color: #fafaf7; /* Ivory Light 象牙白 */
   font-weight: 600;
 }
 
@@ -7162,7 +7162,7 @@ code,
    颜色：#E3DACC（奶油米色）- 与整体浅色主题协调
    ======================================================================== */
 [data-theme='light'] .no-content-progress-bar {
-  background: #E3DACC; /* 奶油米色 - Claude 调色板的温暖色调 */
+  background: #e3dacc; /* 奶油米色 - Claude 调色板的温暖色调 */
 }
 
 /* ========================================================================
@@ -7177,7 +7177,7 @@ code,
          浏览器会自动计算勾勾颜色以确保对比度。
    ======================================================================== */
 [data-theme='light'] .setting-label input[type='checkbox'] {
-  accent-color: #E3DACC; /* 奶油米色 - 与浅色主题协调 */
+  accent-color: #e3dacc; /* 奶油米色 - 与浅色主题协调 */
 }
 
 [data-theme='light'] .setting-label input[type='checkbox']:checked {
@@ -7186,7 +7186,7 @@ code,
 
 /* 浅色主题 - 选项列表复选框（与设置面板复选框保持一致） */
 [data-theme='light'] .option-item input[type='checkbox'] {
-  accent-color: #E3DACC; /* 奶油米色 */
+  accent-color: #e3dacc; /* 奶油米色 */
 }
 
 /* ========================================================================
@@ -7209,34 +7209,32 @@ code,
 
 /* 浅色主题 - 音量滑块轨道（使用原生 accent-color 实现颜色区分） */
 [data-theme='light'] .volume-slider {
-  accent-color: #D4A27F; /* Kraft 色 - 浏览器自动处理已填充/未填充轨道颜色 */
+  accent-color: #d4a27f; /* Kraft 色 - 浏览器自动处理已填充/未填充轨道颜色 */
 }
 
 /* 浅色主题 - 音量滑块滑块（WebKit 浏览器） */
 [data-theme='light'] .volume-slider::-webkit-slider-thumb {
-  background: linear-gradient(135deg, #D4A27F, #C89B70); /* Kraft 渐变 */
-  box-shadow: 0 2px 8px rgba(212, 162, 127, 0.4), /* 主阴影 */
-              0 0 0 2px rgba(0, 0, 0, 0.05); /* 微弱边框阴影 */
+  background: linear-gradient(135deg, #d4a27f, #c89b70); /* Kraft 渐变 */
+  box-shadow: 0 2px 8px rgba(212, 162, 127, 0.4), /* 主阴影 */ 0 0 0 2px rgba(0, 0, 0, 0.05); /* 微弱边框阴影 */
 }
 
 /* 浅色主题 - 音量滑块滑块悬停效果（WebKit） */
 [data-theme='light'] .volume-slider::-webkit-slider-thumb:hover {
-  box-shadow: 0 4px 15px rgba(212, 162, 127, 0.5), /* 增强主阴影 */
-              0 0 0 3px rgba(0, 0, 0, 0.05), /* 加宽边框阴影 */
-              0 0 20px rgba(212, 162, 127, 0.3); /* 外发光效果 */
+  box-shadow: 0 4px 15px rgba(212, 162, 127, 0.5), /* 增强主阴影 */ 0 0 0 3px rgba(0, 0, 0, 0.05),
+    /* 加宽边框阴影 */ 0 0 20px rgba(212, 162, 127, 0.3); /* 外发光效果 */
 }
 
 /* 浅色主题 - 音量滑块滑块（Firefox 浏览器） */
 [data-theme='light'] .volume-slider::-moz-range-thumb {
-  background: linear-gradient(135deg, #D4A27F, #C89B70); /* Kraft 渐变 */
+  background: linear-gradient(135deg, #d4a27f, #c89b70); /* Kraft 渐变 */
   border: none;
   box-shadow: 0 2px 8px rgba(212, 162, 127, 0.4); /* 主阴影 */
 }
 
 /* 浅色主题 - 音量值百分比显示 */
 [data-theme='light'] .volume-value {
-  color: #B0AEA5; /* Mid Gray - 柔和的灰色 */
-  background: linear-gradient(135deg, #B0AEA5, rgba(176, 174, 165, 0.8)); /* 灰色渐变 */
+  color: #b0aea5; /* Mid Gray - 柔和的灰色 */
+  background: linear-gradient(135deg, #b0aea5, rgba(176, 174, 165, 0.8)); /* 灰色渐变 */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -7322,38 +7320,38 @@ code,
 
 /* 深色模式 - 插入代码按钮 - 灰白色（最低优先级辅助功能） */
 #insert-code-btn {
-  background: linear-gradient(135deg, #CACADB, #BABACB) !important; /* 灰白色渐变 */
-  border-color: #CACADB !important;
+  background: linear-gradient(135deg, #cacadb, #babacb) !important; /* 灰白色渐变 */
+  border-color: #cacadb !important;
   color: #1a1a1c !important; /* 深色文字确保对比度，符合 WCAG 标准 */
 }
 
 #insert-code-btn:hover {
-  background: linear-gradient(135deg, #DADAEB, #CACADB) !important; /* 悬停：整体提亮 */
-  border-color: #DADAEB !important;
+  background: linear-gradient(135deg, #dadaeb, #cacadb) !important; /* 悬停：整体提亮 */
+  border-color: #dadaeb !important;
 }
 
 /* 深色模式 - 上传图片按钮 - 灰蓝色（中等优先级辅助功能） */
 #upload-image-btn {
-  background: linear-gradient(135deg, #99B6D3, #89A6C3) !important; /* 灰蓝色渐变 */
-  border-color: #99B6D3 !important;
+  background: linear-gradient(135deg, #99b6d3, #89a6c3) !important; /* 灰蓝色渐变 */
+  border-color: #99b6d3 !important;
   color: #1a1a1c !important; /* 深色文字确保对比度 */
 }
 
 #upload-image-btn:hover {
-  background: linear-gradient(135deg, #A9C6E3, #99B6D3) !important; /* 悬停：整体提亮 */
-  border-color: #A9C6E3 !important;
+  background: linear-gradient(135deg, #a9c6e3, #99b6d3) !important; /* 悬停：整体提亮 */
+  border-color: #a9c6e3 !important;
 }
 
 /* 深色模式 - 发送请求按钮 - 亮蓝色（最高优先级主要操作） */
 #submit-btn {
-  background: linear-gradient(135deg, #61AAF2, #519AE2) !important; /* 亮蓝色渐变，强调主要操作 */
-  border-color: #61AAF2 !important;
+  background: linear-gradient(135deg, #61aaf2, #519ae2) !important; /* 亮蓝色渐变，强调主要操作 */
+  border-color: #61aaf2 !important;
   color: #fff !important; /* 白色文字确保可读性 */
 }
 
 #submit-btn:hover {
-  background: linear-gradient(135deg, #71BAF2, #61AAF2) !important; /* 悬停：整体提亮 */
-  border-color: #71BAF2 !important;
+  background: linear-gradient(135deg, #71baf2, #61aaf2) !important; /* 悬停：整体提亮 */
+  border-color: #71baf2 !important;
 }
 
 /* ========================================================================
@@ -7410,8 +7408,8 @@ code,
 
 /* 浅色主题 - 次级按钮通用样式（Book Cloth 棕红色） */
 [data-theme='light'] .btn-secondary {
-  background: #CC785C; /* Book Cloth - Claude 调色板的温暖棕红色 */
-  border-color: #CC785C;
+  background: #cc785c; /* Book Cloth - Claude 调色板的温暖棕红色 */
+  border-color: #cc785c;
   color: #fff; /* 白色文字 */
 }
 
@@ -7503,45 +7501,45 @@ code,
 }
 
 /* 关键字 (def, return, if, else 等) - Book Cloth 棕红色 */
-[data-theme='light'] .markdown-content pre code span[style*="66D9EF"],
-[data-theme='light'] .code-block-container pre code span[style*="66D9EF"] {
-  color: #CC785C !important; /* Book Cloth */
+[data-theme='light'] .markdown-content pre code span[style*='66D9EF'],
+[data-theme='light'] .code-block-container pre code span[style*='66D9EF'] {
+  color: #cc785c !important; /* Book Cloth */
 }
 
 /* 函数名 - Blue */
-[data-theme='light'] .markdown-content pre code span[style*="A6E22E"],
-[data-theme='light'] .code-block-container pre code span[style*="A6E22E"] {
+[data-theme='light'] .markdown-content pre code span[style*='A6E22E'],
+[data-theme='light'] .code-block-container pre code span[style*='A6E22E'] {
   color: #0066cc !important; /* Blue - 函数名 */
 }
 
 /* 字符串 - Green */
-[data-theme='light'] .markdown-content pre code span[style*="E6DB74"],
-[data-theme='light'] .code-block-container pre code span[style*="E6DB74"] {
+[data-theme='light'] .markdown-content pre code span[style*='E6DB74'],
+[data-theme='light'] .code-block-container pre code span[style*='E6DB74'] {
   color: #2e7d32 !important; /* Green - 字符串 */
 }
 
 /* 数字 - Purple */
-[data-theme='light'] .markdown-content pre code span[style*="AE81FF"],
-[data-theme='light'] .code-block-container pre code span[style*="AE81FF"] {
-  color: #8B5CF6 !important; /* Purple - 数字 */
+[data-theme='light'] .markdown-content pre code span[style*='AE81FF'],
+[data-theme='light'] .code-block-container pre code span[style*='AE81FF'] {
+  color: #8b5cf6 !important; /* Purple - 数字 */
 }
 
 /* 注释 - Cloud Medium 灰色 */
-[data-theme='light'] .markdown-content pre code span[style*="75715E"],
-[data-theme='light'] .code-block-container pre code span[style*="75715E"] {
+[data-theme='light'] .markdown-content pre code span[style*='75715E'],
+[data-theme='light'] .code-block-container pre code span[style*='75715E'] {
   color: #6a737d !important; /* 注释灰色 */
 }
 
 /* 普通文字/标点 - Dark */
-[data-theme='light'] .markdown-content pre code span[style*="F8F8F2"],
-[data-theme='light'] .code-block-container pre code span[style*="F8F8F2"] {
+[data-theme='light'] .markdown-content pre code span[style*='F8F8F2'],
+[data-theme='light'] .code-block-container pre code span[style*='F8F8F2'] {
   color: #24292e !important; /* Dark - 普通文字 */
 }
 
 /* 运算符 - Orange */
-[data-theme='light'] .markdown-content pre code span[style*="F92672"],
-[data-theme='light'] .code-block-container pre code span[style*="F92672"] {
-  color: #D97757 !important; /* Orange - 运算符 */
+[data-theme='light'] .markdown-content pre code span[style*='F92672'],
+[data-theme='light'] .code-block-container pre code span[style*='F92672'] {
+  color: #d97757 !important; /* Orange - 运算符 */
 }
 
 /**
@@ -7564,7 +7562,7 @@ code,
 
 /* 关键字 (class, function, return, if, else, const, let, var, async, await 等) */
 [data-theme='light'] .token.keyword {
-  color: #CC785C !important; /* Book Cloth 棕红色 */
+  color: #cc785c !important; /* Book Cloth 棕红色 */
 }
 
 /* 函数名 */
@@ -7574,7 +7572,7 @@ code,
 
 /* 类名 */
 [data-theme='light'] .token.class-name {
-  color: #8B5CF6 !important; /* Purple */
+  color: #8b5cf6 !important; /* Purple */
 }
 
 /* 字符串 */
@@ -7589,12 +7587,12 @@ code,
 
 /* 数字 */
 [data-theme='light'] .token.number {
-  color: #8B5CF6 !important; /* Purple */
+  color: #8b5cf6 !important; /* Purple */
 }
 
 /* 布尔值 */
 [data-theme='light'] .token.boolean {
-  color: #8B5CF6 !important; /* Purple */
+  color: #8b5cf6 !important; /* Purple */
 }
 
 /* 注释 */
@@ -7609,7 +7607,7 @@ code,
 
 /* 运算符 (=, +, -, *, /, >, <, 等) */
 [data-theme='light'] .token.operator {
-  color: #D97757 !important; /* Orange */
+  color: #d97757 !important; /* Orange */
 }
 
 /* 参数 */
@@ -7624,7 +7622,7 @@ code,
 
 /* 正则表达式 */
 [data-theme='light'] .token.regex {
-  color: #D97757 !important; /* Orange */
+  color: #d97757 !important; /* Orange */
 }
 
 /* 变量 */
@@ -7634,17 +7632,17 @@ code,
 
 /* 常量 */
 [data-theme='light'] .token.constant {
-  color: #8B5CF6 !important; /* Purple */
+  color: #8b5cf6 !important; /* Purple */
 }
 
 /* 符号 */
 [data-theme='light'] .token.symbol {
-  color: #D97757 !important; /* Orange */
+  color: #d97757 !important; /* Orange */
 }
 
 /* 标签 */
 [data-theme='light'] .token.tag {
-  color: #CC785C !important; /* Book Cloth */
+  color: #cc785c !important; /* Book Cloth */
 }
 
 /* 属性名 */
@@ -7659,17 +7657,17 @@ code,
 
 /* 内置对象 */
 [data-theme='light'] .token.builtin {
-  color: #8B5CF6 !important; /* Purple */
+  color: #8b5cf6 !important; /* Purple */
 }
 
 /* 选择器 (CSS) */
 [data-theme='light'] .token.selector {
-  color: #CC785C !important; /* Book Cloth */
+  color: #cc785c !important; /* Book Cloth */
 }
 
 /* 重要标记 */
 [data-theme='light'] .token.important {
-  color: #D97757 !important; /* Orange */
+  color: #d97757 !important; /* Orange */
 }
 
 /* 删除代码块容器悬停效果 - 用户不需要此效果 */
