@@ -427,15 +427,35 @@ class DOMSecurity {
   static createCopyButton(targetText) {
     const button = document.createElement('button')
     button.className = 'copy-button'
-    button.textContent = '📋 复制'
+    // 使用 Claude 官方复制图标 SVG（16x16 小尺寸版本）
+    const copyIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.5 3C11.3284 3 12 3.67157 12 4.5V5.5H13C13.8284 5.5 14.5 6.17157 14.5 7V13C14.5 13.8284 13.8284 14.5 13 14.5H7C6.17157 14.5 5.5 13.8284 5.5 13V11.5H4.5C3.67157 11.5 3 10.8284 3 10V4C3 3.17157 3.67157 2.5 4.5 2.5H10.5V3ZM5.5 10.5V13C5.5 13.5523 5.94772 14 6.5 14H13C13.5523 14 14 13.5523 14 13V7C14 6.44772 13.5523 6 13 6H12V10C12 10.8284 11.3284 11.5 10.5 11.5H5.5ZM3.5 4C3.5 3.44772 3.94772 3 4.5 3H10.5C11.0523 3 11.5 3.44772 11.5 4V10C11.5 10.5523 11.0523 11 10.5 11H4.5C3.94772 11 3.5 10.5523 3.5 10V4Z"/></svg>`
+    // 成功图标（勾选）
+    const checkIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.7803 4.21967C14.0732 4.51256 14.0732 4.98744 13.7803 5.28033L6.78033 12.2803C6.48744 12.5732 6.01256 12.5732 5.71967 12.2803L2.21967 8.78033C1.92678 8.48744 1.92678 8.01256 2.21967 7.71967C2.51256 7.42678 2.98744 7.42678 3.28033 7.71967L6.25 10.6893L12.7197 4.21967C13.0126 3.92678 13.4874 3.92678 13.7803 4.21967Z"/></svg>`
+    // 失败图标（X）
+    const errorIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>`
+
+    button.innerHTML = `${copyIconSvg}复制`
     button.setAttribute('aria-label', '复制代码')
+
+    // 保存原始 HTML 以便恢复
+    const originalHTML = button.innerHTML
 
     button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(targetText)
-        this.updateButtonState(button, '✅ 已复制', 'copied')
+        button.innerHTML = `${checkIconSvg}已复制`
+        button.classList.add('copied')
+        setTimeout(() => {
+          button.innerHTML = originalHTML
+          button.classList.remove('copied')
+        }, 2000)
       } catch (err) {
-        this.updateButtonState(button, '❌ 复制失败', 'error')
+        button.innerHTML = `${errorIconSvg}复制失败`
+        button.classList.add('error')
+        setTimeout(() => {
+          button.innerHTML = originalHTML
+          button.classList.remove('error')
+        }, 2000)
       }
     })
 

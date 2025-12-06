@@ -101,6 +101,7 @@ from flask import (
     request,
     send_from_directory,
 )
+from flask_compress import Compress
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -125,6 +126,76 @@ except ImportError:
     NOTIFICATION_AVAILABLE = False
 
 logger = EnhancedLogger(__name__)
+
+# ============================================================================
+# 版本号和项目信息
+# ============================================================================
+
+# GitHub 仓库地址
+GITHUB_URL = "https://github.com/XIADENGMA/ai-intervention-agent"
+
+
+def get_project_version() -> str:
+    """
+    从 pyproject.toml 读取项目版本号
+
+    返回
+    ----
+    str
+        项目版本号（如 "1.3.0"），读取失败时返回 "unknown"
+
+    实现逻辑
+    --------
+    1. 尝试使用 tomllib（Python 3.11+）解析 pyproject.toml
+    2. 降级到 tomli 库（兼容旧版本 Python）
+    3. 最后尝试正则表达式匹配
+    4. 所有方法失败则返回 "unknown"
+
+    缓存说明
+    --------
+    版本号在首次读取后会被缓存，避免重复读取文件
+    """
+    # 检查是否已缓存
+    if hasattr(get_project_version, "_cached_version"):
+        return get_project_version._cached_version
+
+    version = "unknown"
+
+    try:
+        # 获取 pyproject.toml 路径
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        pyproject_path = os.path.join(current_dir, "pyproject.toml")
+
+        if os.path.exists(pyproject_path):
+            # 尝试使用 tomllib (Python 3.11+)
+            try:
+                import tomllib
+
+                with open(pyproject_path, "rb") as f:
+                    data = tomllib.load(f)
+                    version = data.get("project", {}).get("version", "unknown")
+            except ImportError:
+                # 降级到 tomli 库
+                try:
+                    import tomli
+
+                    with open(pyproject_path, "rb") as f:
+                        data = tomli.load(f)
+                        version = data.get("project", {}).get("version", "unknown")
+                except ImportError:
+                    # 最后尝试正则表达式
+                    with open(pyproject_path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                        match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+                        if match:
+                            version = match.group(1)
+    except Exception as e:
+        logger.warning(f"读取版本号失败: {e}")
+
+    # 缓存版本号
+    get_project_version._cached_version = version
+    return version
+
 
 # ============================================================================
 # 前端倒计时超时常量（需与 server.py 保持一致）
@@ -523,6 +594,35 @@ class WebFeedbackUI:
         self.app = Flask(__name__)
         CORS(self.app)
 
+        # ==================================================================
+        # Gzip 压缩配置
+        # ==================================================================
+        # 启用响应压缩，显著减少传输大小：
+        # - CSS: ~85% 压缩率（232KB → ~35KB）
+        # - JavaScript: ~70% 压缩率
+        # - JSON: ~90% 压缩率（包括 Lottie 动画）
+        #
+        # 配置项：
+        # - COMPRESS_MIMETYPES: 压缩的 MIME 类型
+        # - COMPRESS_LEVEL: 压缩级别（1-9，6 为平衡点）
+        # - COMPRESS_MIN_SIZE: 最小压缩阈值（500 字节以下不压缩）
+        # ==================================================================
+        self.app.config["COMPRESS_MIMETYPES"] = [
+            "text/html",
+            "text/css",
+            "text/xml",
+            "text/javascript",
+            "application/json",
+            "application/javascript",
+            "application/x-javascript",
+            "application/xml",
+            "application/xml+rss",
+            "image/svg+xml",
+        ]
+        self.app.config["COMPRESS_LEVEL"] = 6  # 压缩级别（平衡压缩率和 CPU）
+        self.app.config["COMPRESS_MIN_SIZE"] = 500  # 小于 500 字节不压缩
+        Compress(self.app)
+
         self.csp_nonce = secrets.token_urlsafe(16)
         self.network_security_config = self._load_network_security_config()
 
@@ -655,7 +755,7 @@ class WebFeedbackUI:
                 "payment=(), usb=(), magnetometer=(), gyroscope=()"
             )
 
-            # 静态资源缓存优化：为 JS/CSS/字体/音频 设置长期缓存
+            # 静态资源缓存优化：为 JS/CSS/字体/音频/动画 设置长期缓存
             path = request.path
             if path.startswith("/static/js/") or path.startswith("/static/css/"):
                 # JS/CSS 文件：带版本号时使用长期缓存（1年），否则使用短期缓存（1天）
@@ -663,6 +763,9 @@ class WebFeedbackUI:
                     response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
                 else:
                     response.headers["Cache-Control"] = "public, max-age=86400"
+            elif path.startswith("/static/lottie/"):
+                # Lottie 动画 JSON 文件缓存 30 天（动画文件通常不会频繁更新）
+                response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
             elif path.startswith("/fonts/"):
                 # 字体文件缓存 30 天（2592000秒）
                 response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
@@ -2262,7 +2365,7 @@ class WebFeedbackUI:
 
             【性能优化】自动压缩版本选择：
                 - 自动检测并优先使用 .min.js 压缩版本
-                - 如果请求 main.js，优先返回 main.min.js（如存在）
+                - 如果请求 multi_task.js，优先返回 multi_task.min.js（如存在）
 
             频率限制：
                 - 使用全局默认限制（60次/分钟，10次/秒）
@@ -2370,7 +2473,7 @@ class WebFeedbackUI:
             2. 失败则降级到传统文件路径读取（开发环境）
             3. 若模板不存在，尝试从sys.path查找（打包环境）
             4. 调用_replace_inline_css()替换内联CSS为外部链接
-            5. 调用_replace_inline_js()替换内联JS为外部链接
+            5. 为 multi_task.js 添加版本号
             6. 返回处理后的HTML
 
         返回值：
@@ -2422,13 +2525,16 @@ class WebFeedbackUI:
             # 替换模板变量 {{ csp_nonce }} 为实际的 CSP nonce 值
             html_content = html_content.replace("{{ csp_nonce }}", self.csp_nonce)
 
+            # 替换模板变量 {{ version }} 为项目版本号
+            html_content = html_content.replace("{{ version }}", get_project_version())
+
+            # 替换模板变量 {{ github_url }} 为 GitHub 仓库地址
+            html_content = html_content.replace("{{ github_url }}", GITHUB_URL)
+
             # 获取静态资源版本号（基于文件修改时间，解决浏览器缓存问题）
             current_dir = os.path.dirname(os.path.abspath(__file__))
             css_version = self._get_file_version(
                 os.path.join(current_dir, "static", "css", "main.css")
-            )
-            js_version = self._get_file_version(
-                os.path.join(current_dir, "static", "js", "main.js")
             )
             multi_task_version = self._get_file_version(
                 os.path.join(current_dir, "static", "js", "multi_task.js")
@@ -2437,12 +2543,6 @@ class WebFeedbackUI:
             # 替换内联CSS为外部CSS文件引用（带版本号）
             css_link = f'<link rel="stylesheet" href="/static/css/main.css?v={css_version}" nonce="{self.csp_nonce}">'
             html_content = self._replace_inline_css(html_content, css_link)
-
-            # 替换内联JS为外部JS文件引用 (defer: 按顺序异步加载，不阻塞DOM解析)
-            # 带版本号解决浏览器缓存问题
-            # 注意：MathJax 配置已内联在 HTML 中，按需加载优化（1.17MB → 需要时才加载）
-            main_script = f'<script defer src="/static/js/main.js?v={js_version}" nonce="{self.csp_nonce}"></script>'
-            html_content = self._replace_inline_js(html_content, "", main_script)
 
             # 为 multi_task.js 也添加版本号（在 HTML 模板中引用）
             html_content = html_content.replace(
@@ -2606,8 +2706,8 @@ class WebFeedbackUI:
             4. 否则返回原始文件名
 
         示例：
-            - 请求 main.js，若 main.min.js 存在，则返回 main.min.js
-            - 请求 main.min.js，直接返回 main.min.js
+            - 请求 multi_task.js，若 multi_task.min.js 存在，则返回 multi_task.min.js
+            - 请求 multi_task.min.js，直接返回 multi_task.min.js
             - 请求 prism-xxx.js（外部库），直接返回原文件
         """
         # 已经是压缩版本，直接返回
@@ -2625,51 +2725,6 @@ class WebFeedbackUI:
 
         # 压缩版本不存在，返回原始文件名
         return filename
-
-    def _replace_inline_js(
-        self, html_content: str, mathjax_script: str, main_script: str
-    ) -> str:
-        r"""替换内联JavaScript为外部JS文件引用
-
-        功能说明：
-            使用正则表达式匹配HTML中的内联<script>标签，替换为外部JS文件链接。
-
-        参数说明：
-            html_content: 原始HTML内容（包含内联<script>标签）
-            mathjax_script: MathJax配置脚本外部引用（<script src="/static/js/mathjax-config.js">）
-            main_script: 主要JavaScript代码外部引用（<script src="/static/js/main.js">）
-
-        返回值：
-            str: 替换后的HTML内容（内联<script>标签被外部引用替换）
-
-        处理逻辑：
-            1. 定义MathJax脚本正则：r"<script>\s*window\.MathJax\s*=.*?</script>"
-            2. 替换MathJax配置脚本为外部引用
-            3. 定义主脚本正则：r"<script>\s*let config = null.*?</script>"
-            4. 替换主要JavaScript代码为外部引用
-            5. 返回处理后的HTML
-
-        注意事项：
-            - 两个正则表达式分别匹配不同的<script>标签
-            - 非贪婪匹配（.*?）避免跨标签匹配
-            - DOTALL标志确保匹配多行的<script>内容
-            - 替换后JS需要通过外部文件加载，确保/static/js/路由正确
-            - 顺序很重要：先替换MathJax，再替换main
-        """
-
-        # 替换MathJax配置脚本（第一个<script>标签）
-        mathjax_pattern = r"<script>\s*window\.MathJax\s*=.*?</script>"
-        html_content = re.sub(
-            mathjax_pattern, mathjax_script, html_content, flags=re.DOTALL
-        )
-
-        # 替换主要JavaScript代码（最后一个大的<script>标签）
-        main_js_pattern = r"<script>\s*let config = null.*?</script>"
-        html_content = re.sub(
-            main_js_pattern, main_script, html_content, flags=re.DOTALL
-        )
-
-        return html_content
 
     def _get_file_version(self, file_path: str) -> str:
         """获取文件版本号（基于修改时间）

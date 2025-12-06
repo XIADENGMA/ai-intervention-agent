@@ -9,18 +9,18 @@
 - [x] 统一使用配置文件，移除环境变量依赖
 - [x] 支持 JSONC 格式配置文件（带注释的 JSON）
 - [x] 系统通知修复`import plyer`
-- [ ] 页面显示的 markdown 样式优化
+- [x] 页面显示的 markdown 样式优化
   - 现在只显示基础效果
 - [ ] 更新 README，英文、中文版本
   - 参考：https://github.com/Minidoracat/mcp-feedback-enhanced/blob/main/README.zh-CN.md
 - [x] 重构网页主题
   - [x] 适配深色主题、浅色主题 - 使用 CSS 变量实现主题切换
   - [ ] 适配中文、英文
-  - [ ] 在`设置`的最下面的`关于`中显示版本信息、github 地址<https://github.com/XIADENGMA/ai-intervention-agent>等
+  - [x] 在`设置`的最下面的`关于`中显示版本信息、github 地址<https://github.com/XIADENGMA/ai-intervention-agent>等
 - [ ] 优化 prompt
 - [x] 研究是否可以打包成 vscode 插件
   - [x] 在侧边栏显示（基础功能完成），但是现在切换侧边栏标签页回来会有一段时间空白需要等待
-  - [ ] ~~在底栏显示 MCP 服务状态~~
+  - [x] ~~在底栏显示 MCP 服务状态~~ 当前只显示发送反馈等信息
 - [ ] 复制、粘贴优化，特别是在 ios 平台上
 - [ ] 全平台支持、发布到 uvx pypi 平台
 - [ ] github action（设想）
@@ -106,25 +106,67 @@
   - 问题根源：`web_ui.py` 作为子进程运行，与主 MCP 服务器进程有独立的 `notification_manager` 实例
   - 解决方案：在 `server.py` 发送通知前调用 `notification_manager.refresh_config_from_file()` 重新加载配置
   - 额外优化：添加线程锁保护、配置缓存、类型验证等
+- [x] [12:37:27]info 子 (ai-intervention-agent)/home/xiadengma/.cache/uv/archive-v0/uSqUmOIQfbRzcZdRAyuEF/lib/python3.13/site-packages/task_queue.py:862: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  - 已修复：将 `datetime.utcnow()` 替换为 `datetime.now(timezone.utc)`
+- [x] 页面上深色模式/浅色模式切换按钮无效（包括桌面端和移动端），点击后 console 也无反馈
+  - 问题根源：代码引用了 `ThemeManager.toggle()` 但 `ThemeManager` 对象从未定义
+  - 解决方案：
+    1. 添加 `ThemeManager` 对象（包含 `init`、`getTheme`、`setTheme`、`toggle` 方法）
+    2. 添加 CSS 变量系统（`:root` 深色主题 + `[data-theme="light"]` 浅色主题）
+    3. 更新主要元素使用 CSS 变量（body、container、header、h1 等）
+  - 功能特性：主题保存到 localStorage，跟随系统主题偏好，平滑过渡动画
+- [x] 运行后 cursor 会报错：mCP error -32001: Request timed out
+  - 说明：这是 Cursor 的内置 MCP 请求超时限制，不是代码问题
+  - 原因：`interactive_feedback` 工具设计为长时间等待用户输入，可能超过 Cursor 的超时限制
+  - 现有方案：已实现 `auto_resubmit_timeout` 机制，前端倒计时结束后自动重新提交
+- [x] cursor 的 mcp 调用日志显示：notification_manager - ERROR - 更新 Bark 提供者失败: 通知提供者不可用
+  - 问题根源：`notification_manager.py` 和 `notification_providers.py` 之间存在循环导入
+  - 解决方案：在 `_update_bark_provider()` 方法内使用延迟导入（lazy import），避免模块加载时的循环依赖
+  - 验证结果：27 个通知相关单元测试全部通过，边界情况（幂等性、并发安全、状态切换）测试通过
+- [x] cursor 的 mcp 调用日志显示 FastMCP Banner
+  - 说明：这是 FastMCP 的启动 Banner，输出到 stderr，Cursor 显示为 error，实际是正常信息
+  - 已修复：在 `mcp.run()` 调用中添加 `show_banner=False` 参数禁用 Banner
+  - 生效方式：提交代码到 GitHub 后，清除 uvx 缓存即可
+- [x] cursor 的 mcp 调用日志显示：2025-12-05 13:07:14.937 [info] Found 1 tools, 0 prompts, and 0 resources
+      2025-12-05 13:07:17.745 [error] /home/xiadengma/.cache/uv/archive-v0/uSqUmOIQfbRzcZdRAyuEF/lib/python3.13/site-packages/task_queue.py:862: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+      now = datetime.utcnow() # 使用 UTC 时间，与 completed_at 保持一致
+  - 已修复：本地代码已将 `datetime.utcnow()` 替换为 `datetime.now(timezone.utc)`
+  - 注意：日志路径 `/home/xiadengma/.cache/uv/archive-v0/...` 显示这是 uvx 缓存的旧版本
+  - 生效方式：提交代码到 GitHub 后，清除 uvx 缓存或等待缓存过期即可生效
+- [x] cursor 的 mcp 调用日志显示：2025-12-05 13:11:56.575 [error] Client error for command Received a response for an unknown message ID: {"jsonrpc":"2.0","id":13,"error":{"code":0,"message":"Request cancelled"}}
+  - 说明：这是 Cursor 内部消息，表示请求被取消但服务器仍返回了响应，属于正常行为，不是代码问题
+- [x] cursor 的 mcp 调用日志显示：2025-12-05 13:13:09.025 [error] 2025-12-05 13:13:09,024 - notification_manager - ERROR - 处理通知事件失败: notification_1764911579024_140187607365488 - 1 (of 3) futures unfinished
+  - 已优化：使用 try-except 捕获 TimeoutError，记录警告而非错误，并取消未完成任务
+- [x] cursor 的 mcp 调用日志显示：2025-12-05 13:13:09.036 [error] 2025-12-05 13:13:09,035 - notification_providers - ERROR - Bark 通知发送超时: notification_1764911579024_140187607365488
+  - 说明：Bark 网络超时是正常现象，服务器响应慢或网络问题，不影响核心功能
+- [x] cursor 的 mcp 调用日志显示 MCP 启动过程中的各种消息
+
+  - "No server info found"：Cursor 在 uvx 启动完成前尝试连接，属于正常启动时序，最终会成功连接
+  - "更新 Bark 提供者失败: 通知提供者不可用"：uvx 缓存的旧版本代码问题，本地已修复，提交后清除缓存即可
+  - FastMCP banner：FastMCP 默认输出到 stderr，Cursor 将其显示为 error，实际是正常信息
+  - DeprecationWarning：uvx 缓存的旧版本问题，本地已修复为 `datetime.now(timezone.utc)`
+  - 生效方式：提交代码到 GitHub 后，运行 `rm -rf ~/.cache/uv/archive-v0/` 清除缓存，重启 Cursor MCP 即可
+
+- [ ] 当前有很多内联脚本，需要以合适的方式独立出来
 
 # 已完成的优化项目
 
-- [x] **Bark 通知同步修复** - 跨进程配置同步问题已解决
-- [x] **单元测试套件** - 140+ 个测试用例，覆盖核心模块
-- [x] **测试覆盖率提升**
+- [x] Bark 通知同步修复 - 跨进程配置同步问题已解决
+- [x] 单元测试套件 - 140+ 个测试用例，覆盖核心模块
+- [x] 测试覆盖率提升
   - notification_manager: 63.24%
   - config_manager: 36.96%
   - file_validator: 89.82%
   - task_queue: 81.58%
-- [x] **FileWatcher 优化** - 使用 Event.wait() 支持优雅关闭
-- [x] **配置验证增强** - 边界检查、类型转换、默认值处理
-- [x] **代码质量优化** - 类型提示、日志分级、文档生成
-- [x] **前端增强** - 键盘快捷键、主题切换、响应式改进
-- [x] **静态资源优化** - JS/CSS 压缩和合并
-- [x] **性能优化** - 请求去抖动、图片懒加载
+- [x] FileWatcher 优化 - 使用 Event.wait() 支持优雅关闭
+- [x] 配置验证增强 - 边界检查、类型转换、默认值处理
+- [x] 代码质量优化 - 类型提示、日志分级、文档生成
+- [x] 前端增强 - 键盘快捷键、主题切换、响应式改进
+- [x] 静态资源优化 - JS/CSS 压缩和合并
+- [x] 性能优化 - 请求去抖动、图片懒加载
 
 # WorkFlow
 
-- 使用 uv 在 8080 端口启动测试脚本，并且使用 chrome-devtools mcp 打开<http://0.0.0.0:8080>测试页面，仔细分析并考虑边界情况，检查任务是否完整的完成
+- 使用 uv run python test.py --port 8080 --verbose --thread-timeout 0 在且只在 8080 端口启动测试脚本，并且使用 chrome-devtools mcp 打开<http://0.0.0.0:8080>测试页面（尽量使用文字方法去读取网页内容，而不是截图），仔细分析并考虑边界情况，检查任务是否完整的完成
 
 # List

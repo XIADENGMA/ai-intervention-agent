@@ -51,10 +51,82 @@
  *
  * ## 依赖关系
  *
- * - 依赖 `main.js` 中的 `updatePageContent`、`startCountdown`、`stopCountdown`
  * - 依赖 `dom-security.js` 中的 `DOMSecurityHelper`
- * - 依赖全局变量 `activeTaskId`、`currentTasks`、`taskCountdowns` 等
+ * - 全局变量已在此文件中定义（如未存在则创建）
  */
+
+// ==================== 全局变量定义 ====================
+// 使用 window 对象确保变量在全局作用域中可用
+if (typeof window.currentTasks === 'undefined') {
+  window.currentTasks = [] // 所有任务列表
+}
+if (typeof window.activeTaskId === 'undefined') {
+  window.activeTaskId = null // 当前活动任务ID
+}
+if (typeof window.taskCountdowns === 'undefined') {
+  window.taskCountdowns = {} // 每个任务的独立倒计时
+}
+if (typeof window.tasksPollingTimer === 'undefined') {
+  window.tasksPollingTimer = null // 任务轮询定时器
+}
+if (typeof window.taskTextareaContents === 'undefined') {
+  window.taskTextareaContents = {} // 存储每个任务的 textarea 内容
+}
+if (typeof window.taskOptionsStates === 'undefined') {
+  window.taskOptionsStates = {} // 存储每个任务的选项勾选状态
+}
+if (typeof window.taskImages === 'undefined') {
+  window.taskImages = {} // 存储每个任务的图片列表
+}
+// 新任务通知合并机制 - 防止频繁弹出多个通知
+if (typeof window.pendingNewTaskCount === 'undefined') {
+  window.pendingNewTaskCount = 0 // 待显示的新任务数量
+}
+if (typeof window.newTaskHintTimer === 'undefined') {
+  window.newTaskHintTimer = null // 通知合并定时器
+}
+
+// 创建本地引用以便在函数中使用
+var currentTasks = window.currentTasks
+var activeTaskId = window.activeTaskId
+var taskCountdowns = window.taskCountdowns
+var tasksPollingTimer = window.tasksPollingTimer
+var taskTextareaContents = window.taskTextareaContents
+var taskOptionsStates = window.taskOptionsStates
+var taskImages = window.taskImages
+
+// 倒计时相关全局变量
+if (typeof window.remainingSeconds === 'undefined') {
+  window.remainingSeconds = 0
+}
+if (typeof window.countdownTimer === 'undefined') {
+  window.countdownTimer = null
+}
+var remainingSeconds = window.remainingSeconds
+var countdownTimer = window.countdownTimer
+
+/**
+ * 更新倒计时显示（如果函数未定义则提供默认实现）
+ * @param {number} seconds - 剩余秒数（可选）
+ */
+if (typeof window.updateCountdownDisplay !== 'function') {
+  window.updateCountdownDisplay = function(seconds) {
+    const countdownContainer = document.getElementById('countdown-container')
+    const countdownText = document.getElementById('countdown-text')
+
+    if (!countdownContainer || !countdownText) return
+
+    const displaySeconds = typeof seconds === 'number' ? seconds : window.remainingSeconds
+
+    if (displaySeconds > 0) {
+      countdownText.textContent = `${displaySeconds}秒后自动重新询问`
+      countdownContainer.classList.remove('hidden')
+    } else {
+      countdownContainer.classList.add('hidden')
+    }
+  }
+}
+var updateCountdownDisplay = window.updateCountdownDisplay
 
 // ==================== 任务轮询 ====================
 
@@ -144,8 +216,16 @@ function stopTasksPolling() {
 // ==================== 任务列表更新 ====================
 
 // 防止轮询与手动切换冲突的标志
+// 同时暴露到 window 以便其他模块的内容轮询可以检查
 let isManualSwitching = false
 let manualSwitchingTimer = null
+
+// 将标志同步到 window 对象，供跨模块通信
+Object.defineProperty(window, 'isManualSwitching', {
+  get: () => isManualSwitching,
+  set: (val) => { isManualSwitching = val },
+  configurable: true
+})
 
 /**
  * 更新任务列表
@@ -204,9 +284,25 @@ function updateTasksList(tasks) {
   if (addedTasks.length > 0) {
     console.log(`✨ 检测到 ${addedTasks.length} 个新任务`)
 
-    // 如果当前有活动任务,显示视觉提示
+    // 如果当前有活动任务,使用合并机制显示视觉提示
+    // 避免短时间内频繁弹出多个通知
     if (activeTaskId) {
-      showNewTaskVisualHint(addedTasks.length)
+      // 累加待显示的新任务数量
+      pendingNewTaskCount += addedTasks.length
+
+      // 清除之前的定时器（防抖）
+      if (newTaskHintTimer) {
+        clearTimeout(newTaskHintTimer)
+      }
+
+      // 延迟 500ms 显示，等待可能的后续新任务
+      newTaskHintTimer = setTimeout(() => {
+        if (pendingNewTaskCount > 0) {
+          showNewTaskVisualHint(pendingNewTaskCount)
+          pendingNewTaskCount = 0 // 重置计数
+        }
+        newTaskHintTimer = null
+      }, 500)
     }
 
     // 为所有新任务启动倒计时（包括pending任务）
@@ -634,6 +730,9 @@ async function switchTask(taskId) {
   // 设置手动切换标志，防止轮询干扰
   isManualSwitching = true
 
+  // 分发事件通知其他模块暂停轮询
+  window.dispatchEvent(new CustomEvent('taskSwitchStart', { detail: { taskId } }))
+
   // 立即更新UI，提升响应速度
   const oldActiveTaskId = activeTaskId
   activeTaskId = taskId
@@ -642,19 +741,47 @@ async function switchTask(taskId) {
   // 立即更新圆环颜色，不等待DOM重建
   updateCountdownRingColors(oldActiveTaskId, taskId)
 
-  try {
-    // 并行执行：激活任务 + 加载详情
-    const [activateResponse] = await Promise.all([
-      fetch(`/api/tasks/${taskId}/activate`, { method: 'POST' }),
-      loadTaskDetails(taskId) // 直接加载，不等待激活响应
-    ])
+  // 🚀 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
+  const cachedTask = currentTasks.find(t => t.task_id === taskId)
+  if (cachedTask && cachedTask.prompt) {
+    console.log(`🚀 使用缓存任务信息立即更新内容: ${taskId}`)
 
-    const data = await activateResponse.json()
-    if (!data.success) {
-      console.error('切换任务失败:', data.error)
-    } else {
-      console.log(`已切换到任务: ${taskId}`)
+    // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
+    const taskIdContainer = document.getElementById('task-id-container')
+    const taskIdText = document.getElementById('task-id-text')
+    if (taskIdContainer && taskIdText) {
+      if (cachedTask.task_id && cachedTask.task_id.trim()) {
+        taskIdText.textContent = cachedTask.task_id
+        taskIdContainer.classList.remove('hidden')
+      } else {
+        taskIdContainer.classList.add('hidden')
+      }
     }
+
+    // 更新描述和选项
+    updateDescriptionDisplay(cachedTask.prompt)
+    if (cachedTask.predefined_options) {
+      updateOptionsDisplay(cachedTask.predefined_options)
+    }
+  }
+
+  try {
+    // 后台执行激活请求（不阻塞 UI）
+    fetch(`/api/tasks/${taskId}/activate`, { method: 'POST' })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.success) {
+          console.error('激活任务失败:', data.error)
+        } else {
+          console.log(`✅ 任务已激活: ${taskId}`)
+        }
+      })
+      .catch(err => console.error('激活任务失败:', err))
+
+    // 后台异步加载完整详情（用于获取最新选项等）
+    loadTaskDetails(taskId).catch(err => {
+      console.warn('加载任务详情失败，但UI已从缓存更新:', err)
+    })
   } catch (error) {
     console.error('切换任务失败:', error)
   } finally {
@@ -665,6 +792,8 @@ async function switchTask(taskId) {
     manualSwitchingTimer = setTimeout(() => {
       isManualSwitching = false
       manualSwitchingTimer = null
+      // 分发事件通知其他模块恢复轮询
+      window.dispatchEvent(new CustomEvent('taskSwitchComplete', { detail: { taskId } }))
       console.log('✅ 任务切换锁定已解除，允许轮询恢复')
     }, 200)
   }
@@ -764,7 +893,18 @@ async function loadTaskDetails(taskId) {
       const task = data.task
 
       // 更新页面内容
-      updateTaskIdDisplay(task.task_id)
+      // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
+      const taskIdContainer = document.getElementById('task-id-container')
+      const taskIdText = document.getElementById('task-id-text')
+      if (taskIdContainer && taskIdText) {
+        if (task.task_id && task.task_id.trim()) {
+          taskIdText.textContent = task.task_id
+          taskIdContainer.classList.remove('hidden')
+        } else {
+          taskIdContainer.classList.add('hidden')
+        }
+      }
+
       updateDescriptionDisplay(task.prompt)
       updateOptionsDisplay(task.predefined_options)
 
@@ -844,39 +984,43 @@ async function updateDescriptionDisplay(prompt) {
   if (!descriptionElement) return
 
   try {
-    // 直接使用传入的 Markdown 文本，通过 marked.js 在前端渲染
-    if (typeof renderMarkdownContent === 'function') {
-      // 使用 renderMarkdownContent 函数，第三个参数 true 表示使用 Markdown 渲染
-      renderMarkdownContent(descriptionElement, prompt, true)
-      console.log('✅ 使用 marked.js 渲染 Markdown')
-    } else {
-      // 降级方案：如果 renderMarkdownContent 不可用，尝试直接使用 marked.js
-      if (typeof marked !== 'undefined') {
-        descriptionElement.innerHTML = marked.parse(prompt)
+    // 🚀 同步渲染（立即显示，不使用 requestAnimationFrame）
+    let htmlContent = prompt
 
-        // Prism.js 代码高亮
-        if (typeof Prism !== 'undefined') {
-          Prism.highlightAllUnder(descriptionElement)
-        }
-
-        // 手动处理代码块
-        if (typeof processCodeBlocks === 'function') {
-          processCodeBlocks(descriptionElement)
-        }
-
-        // 立即触发 MathJax 渲染
-        if (typeof window.MathJax !== 'undefined' && window.MathJax.typesetPromise) {
-          try {
-            await window.MathJax.typesetPromise([descriptionElement])
-            console.log('✅ MathJax 渲染完成')
-          } catch (mathError) {
-            console.warn('MathJax 渲染失败:', mathError)
-          }
-        }
-      } else {
-        // 最终降级：直接显示文本
-        descriptionElement.textContent = prompt
+    // 使用 marked.js 解析 Markdown
+    if (typeof marked !== 'undefined') {
+      try {
+        htmlContent = marked.parse(prompt)
+      } catch (e) {
+        console.warn('marked.js 解析失败:', e)
       }
+    }
+
+    // 直接更新 DOM（同步）
+    descriptionElement.innerHTML = htmlContent
+
+    // Prism.js 代码高亮（同步）
+    if (typeof Prism !== 'undefined') {
+      Prism.highlightAllUnder(descriptionElement)
+    }
+
+    // 处理代码块（同步）
+    if (typeof processCodeBlocks === 'function') {
+      processCodeBlocks(descriptionElement)
+    }
+
+    // 处理删除线（同步）
+    if (typeof processStrikethrough === 'function') {
+      processStrikethrough(descriptionElement)
+    }
+
+    console.log('✅ 同步渲染 Markdown 完成')
+
+    // MathJax 异步渲染（不阻塞）
+    if (typeof window.MathJax !== 'undefined' && window.MathJax.typesetPromise) {
+      window.MathJax.typesetPromise([descriptionElement]).catch(err => {
+        console.warn('MathJax 渲染失败:', err)
+      })
     }
   } catch (error) {
     console.error('更新描述失败:', error)
@@ -1326,6 +1470,22 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
         delete taskImages[taskId]
         console.log(`✅ 已清除任务 ${taskId} 保存的图片列表`)
       }
+
+      // 自动切换到下一个未完成的任务
+      // 延迟执行以等待任务列表更新
+      setTimeout(async () => {
+        // 刷新任务列表获取最新状态
+        await refreshTasksList()
+
+        // 查找下一个未完成的任务（排除当前已完成的任务）
+        const nextTask = currentTasks.find(t => t.task_id !== taskId && t.status !== 'completed')
+        if (nextTask) {
+          console.log(`🔄 自动切换到下一个任务: ${nextTask.task_id}`)
+          switchTask(nextTask.task_id)
+        } else {
+          console.log(`✅ 所有任务已完成`)
+        }
+      }, 300)
     } else {
       console.error('提交任务失败:', data.error)
     }
@@ -1366,6 +1526,31 @@ function showNewTaskVisualHint(count) {
   const container = document.getElementById('task-tabs-container')
   if (!container) return
 
+  // 检测当前主题 (light/dark)
+  const html = document.documentElement
+  const currentTheme = html.getAttribute('data-theme')
+  const isLightTheme = currentTheme === 'light'
+
+  // Claude 风格 "Create - 创作" SVG 图标（橙色强调色 #d97757）
+  const createSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none" style="flex-shrink: 0; margin-right: 10px;"><path d="M15.5117 1.99707C15.9213 2.0091 16.3438 2.13396 16.6768 2.46679C17.0278 2.81814 17.1209 3.26428 17.0801 3.68261C17.0404 4.08745 16.8765 4.49344 16.6787 4.85058C16.3934 5.36546 15.9941 5.85569 15.6348 6.20898C15.7682 6.41421 15.8912 6.66414 15.9551 6.9453C16.0804 7.4977 15.9714 8.13389 15.4043 8.70116C14.8566 9.24884 13.974 9.54823 13.1943 9.71679C12.7628 9.81003 12.3303 9.86698 11.9473 9.90233C12.0596 10.2558 12.0902 10.7051 11.8779 11.2012L11.8223 11.3203C11.5396 11.8854 11.0275 12.2035 10.4785 12.3965C9.93492 12.5875 9.29028 12.6792 8.65332 12.75C7.99579 12.8231 7.34376 12.8744 6.70117 12.9775C6.14371 13.067 5.63021 13.1903 5.18652 13.3818L5.00585 13.4658C4.53515 14.2245 4.13745 14.9658 3.80957 15.6465C4.43885 15.2764 5.1935 15 5.99999 15C6.27614 15 6.49999 15.2238 6.49999 15.5C6.49999 15.7761 6.27613 16 5.99999 16C5.35538 16 4.71132 16.2477 4.15039 16.6103C3.58861 16.9736 3.14957 17.427 2.91601 17.7773C2.91191 17.7835 2.90568 17.788 2.90136 17.7939C2.88821 17.8119 2.8746 17.8289 2.85937 17.8447C2.85117 17.8533 2.84268 17.8612 2.83398 17.8691C2.81803 17.8835 2.80174 17.897 2.78417 17.9092C2.774 17.9162 2.76353 17.9225 2.75292 17.9287C2.73854 17.9372 2.72412 17.9451 2.70898 17.9521C2.69079 17.9605 2.6723 17.9675 2.65332 17.9736C2.6417 17.9774 2.63005 17.9805 2.61816 17.9834C2.60263 17.9872 2.5871 17.9899 2.57128 17.9922C2.55312 17.9948 2.53511 17.9974 2.5166 17.998C2.50387 17.9985 2.49127 17.9976 2.47851 17.9971C2.45899 17.9962 2.43952 17.9954 2.41992 17.9922C2.40511 17.9898 2.39062 17.9862 2.37597 17.9824C2.36477 17.9795 2.35294 17.9783 2.34179 17.9746C2.33697 17.973 2.33286 17.9695 2.32812 17.9678C2.31042 17.9612 2.29351 17.953 2.27636 17.9443C2.26332 17.9378 2.25053 17.9314 2.23828 17.9238C2.23339 17.9208 2.22747 17.9192 2.22265 17.916C2.21414 17.9103 2.20726 17.9026 2.19921 17.8965C2.18396 17.8849 2.16896 17.8735 2.15527 17.8603C2.14518 17.8507 2.13609 17.8404 2.12695 17.8301C2.11463 17.8161 2.10244 17.8023 2.09179 17.7871C2.08368 17.7756 2.07736 17.7631 2.07031 17.751C2.06168 17.7362 2.05297 17.7216 2.04589 17.706C2.03868 17.6901 2.03283 17.6738 2.02734 17.6572C2.0228 17.6436 2.01801 17.6302 2.01464 17.6162C2.01117 17.6017 2.009 17.587 2.00683 17.5722C2.00411 17.5538 2.00161 17.5354 2.00097 17.5166C2.00054 17.5039 2.00141 17.4912 2.00195 17.4785C2.00279 17.459 2.00364 17.4395 2.00683 17.4199C2.00902 17.4064 2.01327 17.3933 2.0166 17.3799C2.01973 17.3673 2.02123 17.3543 2.02539 17.3418C2.41772 16.1648 3.18163 14.466 4.30468 12.7012C4.31908 12.5557 4.34007 12.3582 4.36914 12.1201C4.43379 11.5907 4.53836 10.8564 4.69921 10.0381C5.0174 8.41955 5.56814 6.39783 6.50585 4.9912L6.73242 4.66894C7.27701 3.93277 7.93079 3.30953 8.61035 2.85156C9.3797 2.33311 10.2221 2 11.001 2C11.7951 2.00025 12.3531 2.35795 12.7012 2.70605C12.7723 2.77723 12.8348 2.84998 12.8896 2.91796C13.2829 2.66884 13.7917 2.39502 14.3174 2.21191C14.6946 2.08056 15.1094 1.98537 15.5117 1.99707ZM17.04 15.5537C17.1486 15.3 17.4425 15.1818 17.6963 15.29C17.95 15.3986 18.0683 15.6925 17.96 15.9463C17.4827 17.0612 16.692 18 15.5 18C14.6309 17.9999 13.9764 17.5003 13.5 16.7978C13.0236 17.5003 12.3691 18 11.5 18C10.6309 17.9999 9.97639 17.5003 9.49999 16.7978C9.02359 17.5003 8.36911 18 7.49999 18C7.22391 17.9999 7 17.7761 6.99999 17.5C6.99999 17.2239 7.22391 17 7.49999 17C8.07039 17 8.6095 16.5593 9.04003 15.5537L9.07421 15.4873C9.16428 15.3412 9.32494 15.25 9.49999 15.25C9.70008 15.25 9.88121 15.3698 9.95996 15.5537L10.042 15.7353C10.4581 16.6125 10.9652 16.9999 11.5 17C12.0704 17 12.6095 16.5593 13.04 15.5537L13.0742 15.4873C13.1643 15.3412 13.3249 15.25 13.5 15.25C13.7001 15.25 13.8812 15.3698 13.96 15.5537L14.042 15.7353C14.4581 16.6125 14.9652 16.9999 15.5 17C16.0704 17 16.6095 16.5593 17.04 15.5537ZM15.4824 2.99707C15.247 2.99022 14.9608 3.04682 14.6465 3.15624C14.0173 3.37541 13.389 3.76516 13.0498 4.01953C12.9277 4.11112 12.7697 4.14131 12.6221 4.10253C12.4745 4.06357 12.3522 3.9591 12.291 3.81933V3.81835C12.2892 3.81468 12.2861 3.80833 12.2822 3.80078C12.272 3.78092 12.2541 3.7485 12.2295 3.70898C12.1794 3.62874 12.1011 3.52019 11.9941 3.41308C11.7831 3.2021 11.4662 3.00024 11.001 2.99999C10.4904 2.99999 9.84173 3.22729 9.16894 3.68066C8.58685 4.07297 8.01568 4.61599 7.5371 5.26269L7.33789 5.54589C6.51634 6.77827 5.99475 8.63369 5.68066 10.2314C5.63363 10.4707 5.5913 10.7025 5.55371 10.9238C7.03031 9.01824 8.94157 7.19047 11.2812 6.05077C11.5295 5.92989 11.8283 6.03301 11.9492 6.28124C12.0701 6.52949 11.967 6.82829 11.7187 6.94921C9.33153 8.11208 7.38648 10.0746 5.91406 12.1103C6.12313 12.0632 6.33385 12.0238 6.54296 11.9902C7.21709 11.8821 7.92723 11.8243 8.54296 11.7558C9.17886 11.6852 9.72123 11.6025 10.1465 11.4531C10.5662 11.3056 10.8063 11.1158 10.9277 10.873L10.9795 10.7549C11.0776 10.487 11.0316 10.2723 10.9609 10.1123C10.918 10.0155 10.8636 9.93595 10.8203 9.88183C10.7996 9.85598 10.7822 9.83638 10.7715 9.82518L10.7607 9.81542L10.7627 9.8164L10.7646 9.81835C10.6114 9.67972 10.5597 9.46044 10.6338 9.26757C10.7082 9.07475 10.8939 8.94726 11.1006 8.94726C11.5282 8.94719 12.26 8.8956 12.9834 8.73925C13.7297 8.5779 14.3654 8.32602 14.6973 7.99413C15.0087 7.68254 15.0327 7.40213 14.9795 7.16698C14.9332 6.96327 14.8204 6.77099 14.707 6.62792L14.5957 6.50195C14.4933 6.39957 14.4401 6.25769 14.4502 6.11327C14.4605 5.96888 14.5327 5.83599 14.6484 5.74902C14.9558 5.51849 15.4742 4.96086 15.8037 4.3662C15.9675 4.07048 16.0637 3.80137 16.085 3.58593C16.1047 3.38427 16.0578 3.26213 15.9697 3.17382C15.8631 3.06726 15.7102 3.00377 15.4824 2.99707Z" fill="#d97757"/></svg>`
+
+  // 主题适配样式
+  const themeStyles = isLightTheme
+    ? {
+        // 浅色主题：温暖的米白背景 + 深色文字
+        background: 'linear-gradient(135deg, #faf9f5 0%, #f2f1ec 100%)',
+        color: '#131314',
+        border: '1px solid rgba(217, 119, 87, 0.4)',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(217, 119, 87, 0.15)'
+      }
+    : {
+        // 深色主题：与任务标签区域风格一致
+        background: 'rgba(45, 45, 60, 0.95)',
+        color: 'rgba(245, 245, 247, 0.95)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)'
+      }
+
   // 创建提示元素
   const hint = document.createElement('div')
   hint.id = 'new-task-hint'
@@ -1373,18 +1558,22 @@ function showNewTaskVisualHint(count) {
     position: fixed;
     top: 20px;
     right: 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 12px 20px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    background: ${themeStyles.background};
+    color: ${themeStyles.color};
+    padding: 14px 20px;
+    border-radius: 12px;
+    border: ${themeStyles.border};
+    box-shadow: ${themeStyles.boxShadow};
     font-size: 14px;
     font-weight: 500;
+    letter-spacing: 0.02em;
     z-index: 10000;
-    animation: slideInRight 0.3s ease-out, fadeOutUp 0.3s ease-in 2.7s forwards;
+    animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), fadeOutUp 0.3s ease-in 2.7s forwards;
     pointer-events: none;
   `
-  hint.innerHTML = `✨ ${count} 个新任务已添加到标签栏`
+  hint.innerHTML = `${createSvg}<span>${count} 个新任务已到达</span>`
 
   // 添加到页面
   document.body.appendChild(hint)

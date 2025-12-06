@@ -52,12 +52,9 @@ except ImportError:
 from config_utils import clamp_dataclass_field, validate_enum_value
 from enhanced_logging import EnhancedLogger
 
-try:
-    from notification_providers import BarkNotificationProvider
-
-    NOTIFICATION_PROVIDERS_AVAILABLE = True
-except ImportError:
-    NOTIFICATION_PROVIDERS_AVAILABLE = False
+# 注意：BarkNotificationProvider 使用延迟导入，避免循环导入问题
+# notification_manager.py <-> notification_providers.py 存在相互依赖
+# 延迟导入在 _update_bark_provider() 方法中实现
 
 logger = EnhancedLogger(__name__)
 
@@ -802,13 +799,36 @@ class NotificationManager:
                 futures[future] = notification_type
 
             success_count = 0
-            for future in as_completed(futures, timeout=10):  # 10秒超时
-                notification_type = futures[future]
-                try:
-                    if future.result():
-                        success_count += 1
-                except Exception as e:
-                    logger.error(f"通知发送异常 {notification_type.value}: {e}")
+            completed_count = 0
+            total_count = len(futures)
+
+            # 【优化】使用 try-except 捕获超时，避免未完成任务导致错误日志
+            # as_completed 超时时会抛出 TimeoutError: "N (of M) futures unfinished"
+            try:
+                for future in as_completed(futures, timeout=15):  # 15秒超时（Bark 默认10秒）
+                    completed_count += 1
+                    notification_type = futures[future]
+                    try:
+                        if future.result():
+                            success_count += 1
+                    except Exception as e:
+                        logger.warning(f"通知发送异常 {notification_type.value}: {e}")
+            except TimeoutError:
+                # 【优化】超时时记录警告而非错误，因为部分通知可能已成功
+                unfinished_count = total_count - completed_count
+                logger.warning(
+                    f"通知发送部分超时: {event.id} - "
+                    f"{completed_count}/{total_count} 完成，{unfinished_count} 未完成"
+                )
+                # 尝试取消未完成的任务
+                # 注意：cancel() 对已在运行的任务不会生效，只能取消排队中的任务
+                for future, notification_type in futures.items():
+                    if not future.done():
+                        cancelled = future.cancel()
+                        if cancelled:
+                            logger.debug(f"已取消排队任务: {notification_type.value}")
+                        else:
+                            logger.debug(f"任务正在运行，无法取消: {notification_type.value}")
 
             # 触发回调
             self.trigger_callbacks("notification_sent", event, success_count)
@@ -816,6 +836,8 @@ class NotificationManager:
             if success_count == 0 and self.config.fallback_enabled:
                 logger.warning(f"所有通知方式失败，启用降级处理: {event.id}")
                 self._handle_fallback(event)
+            elif success_count > 0:
+                logger.info(f"通知发送完成: {event.id} - 成功 {success_count}/{total_count}")
 
         except Exception as e:
             logger.error(f"处理通知事件失败: {event.id} - {e}")
@@ -1208,7 +1230,7 @@ class NotificationManager:
         【处理流程】
         1. 检查 bark_enabled 配置
         2. 如果启用且未注册：
-           - 检查 BarkNotificationProvider 是否可用
+           - 使用延迟导入加载 BarkNotificationProvider
            - 创建 BarkNotificationProvider 实例
            - 注册到提供者字典
            - 记录添加日志
@@ -1216,15 +1238,20 @@ class NotificationManager:
            - 从提供者字典删除
            - 记录移除日志
 
+        【延迟导入说明】
+        - 使用方法内延迟导入解决循环导入问题
+        - notification_manager.py <-> notification_providers.py 相互依赖
+        - 延迟导入确保在运行时才加载 BarkNotificationProvider
+        - 避免模块加载时的循环依赖导致导入失败
+
         【前提条件】
-        - BarkNotificationProvider 类必须可导入
-        - NOTIFICATION_PROVIDERS_AVAILABLE 为 True
+        - notification_providers 模块必须可导入
         - bark_url 和 bark_device_key 配置正确
 
         【异常处理】
         - 捕获所有异常并记录错误日志
         - 异常不向上传播，避免影响其他配置更新
-        - 导入失败时提示通知提供者不可用
+        - 导入失败时记录详细错误信息
 
         【幂等性】
         - 多次调用相同状态不会重复添加或删除
@@ -1232,14 +1259,17 @@ class NotificationManager:
 
         【调用时机】
         - update_config_without_save 中检测到 bark_enabled 变化时
+        - 初始化时如果 bark_enabled=True 也会调用
         - 不应手动调用，由配置更新自动触发
         """
         try:
             if self.config.bark_enabled:
                 # 启用Bark通知，添加提供者
                 if NotificationType.BARK not in self._providers:
-                    if not NOTIFICATION_PROVIDERS_AVAILABLE:
-                        raise ImportError("通知提供者不可用")
+                    # 【关键修复】使用延迟导入解决循环导入问题
+                    # 在方法内部导入，而非模块级别，避免加载时循环依赖
+                    from notification_providers import BarkNotificationProvider
+
                     bark_provider = BarkNotificationProvider(self.config)
                     self.register_provider(NotificationType.BARK, bark_provider)
                     logger.info("Bark通知提供者已动态添加")
@@ -1248,6 +1278,8 @@ class NotificationManager:
                 if NotificationType.BARK in self._providers:
                     del self._providers[NotificationType.BARK]
                     logger.info("Bark通知提供者已移除")
+        except ImportError as e:
+            logger.error(f"更新Bark提供者失败: 无法导入 BarkNotificationProvider - {e}")
         except Exception as e:
             logger.error(f"更新Bark提供者失败: {e}")
 

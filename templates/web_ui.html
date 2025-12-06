@@ -9,8 +9,20 @@
     <link rel="apple-touch-icon" href="/icons/icon.svg" />
 
     <!-- 资源预加载优化：减少首屏渲染阻塞 -->
-    <link rel="preload" href="/fonts/SFProText-Regular.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/MonoLisaNerdFont-Regular.woff2" as="font" type="font/woff2" crossorigin />
+    <link
+      rel="preload"
+      href="/fonts/SFProText-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/MonoLisaNerdFont-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <link rel="preload" href="/static/css/prism.css" as="style" />
 
     <!-- MathJax 数学公式支持 - 按需加载优化（1.17MB → 需要时才加载） -->
@@ -51,26 +63,65 @@
         }
       }
 
-      // MathJax 懒加载状态
-      window._mathJaxLoading = false
-      window._mathJaxLoaded = false
-      window._mathJaxPendingElements = []
+      // ==================================================================
+      // MathJax 懒加载配置
+      // ==================================================================
+      //
+      // 功能说明：
+      //   MathJax 库较大（约 1.17MB），为优化首屏加载性能，
+      //   仅在检测到数学公式时才动态加载该库。
+      //
+      // 支持的公式语法：
+      //   - 行内公式：$...$, \(...\)
+      //   - 块级公式：$$...$$, \[...\]
+      //
+      // 加载流程：
+      //   1. renderMarkdownContent 调用 loadMathJaxIfNeeded
+      //   2. 检测内容是否包含数学公式
+      //   3. 首次检测到时，动态创建 <script> 加载 tex-mml-chtml.js
+      //   4. 加载完成后，MathJax.startup.ready 回调渲染所有待处理元素
+      //
+      // 状态管理：
+      //   - _mathJaxLoading: 标记是否正在加载（防止重复加载）
+      //   - _mathJaxLoaded: 标记是否加载完成
+      //   - _mathJaxPendingElements: 存储加载期间需要渲染的元素队列
+      // ==================================================================
 
-      // 检测内容是否包含数学公式
-      window.hasMathContent = function(text) {
+      // MathJax 懒加载状态标记
+      window._mathJaxLoading = false // 是否正在加载脚本
+      window._mathJaxLoaded = false // 是否加载完成
+      window._mathJaxPendingElements = [] // 待渲染的元素队列
+
+      /**
+       * 检测内容是否包含数学公式
+       * @param {string} text - 要检测的文本内容
+       * @returns {boolean} 是否包含数学公式
+       */
+      window.hasMathContent = function (text) {
         if (!text) return false
-        // 检测 LaTeX 数学公式语法
+        // 检测 LaTeX 数学公式语法（四种常见格式）
         const mathPatterns = [
-          /\$[^$]+\$/,           // $...$
-          /\$\$[^$]+\$\$/,       // $$...$$
-          /\\\([^)]+\\\)/,       // \(...\)
-          /\\\[[^\]]+\\\]/       // \[...\]
+          /\$[^$]+\$/, // 行内公式：$E=mc^2$
+          /\$\$[^$]+\$\$/, // 块级公式：$$\int_0^\infty$$
+          /\\\([^)]+\\\)/, // 行内公式（LaTeX 风格）：\(E=mc^2\)
+          /\\\[[^\]]+\\\]/ // 块级公式（LaTeX 风格）：\[\int_0^\infty\]
         ]
         return mathPatterns.some(pattern => pattern.test(text))
       }
 
-      // 按需加载 MathJax
-      window.loadMathJaxIfNeeded = function(element, text) {
+      /**
+       * 按需加载 MathJax 并渲染数学公式
+       *
+       * @param {HTMLElement} element - 包含数学内容的 DOM 元素
+       * @param {string} text - 元素的文本内容（用于公式检测）
+       *
+       * 执行逻辑：
+       *   1. 检测是否有数学内容 → 无则直接返回
+       *   2. 若 MathJax 已加载 → 直接调用 typesetPromise 渲染
+       *   3. 若正在加载中 → 将元素加入待渲染队列
+       *   4. 若未加载 → 触发脚本加载，完成后批量渲染队列中的元素
+       */
+      window.loadMathJaxIfNeeded = function (element, text) {
         // 检测是否有数学内容
         if (!window.hasMathContent(text)) {
           return // 无数学公式，不加载
@@ -82,27 +133,28 @@
           return
         }
 
-        // 记录待渲染元素
+        // 记录待渲染元素（脚本加载完成后批量处理）
         window._mathJaxPendingElements.push(element)
 
-        // 正在加载中，等待完成
+        // 正在加载中，等待完成即可
         if (window._mathJaxLoading) {
           return
         }
 
-        // 开始加载
+        // 开始加载 MathJax 脚本
         window._mathJaxLoading = true
         console.log('📐 检测到数学公式，开始加载 MathJax (1.17MB)...')
 
+        // 动态创建 <script> 元素加载 MathJax
         const script = document.createElement('script')
         script.id = 'MathJax-script'
         script.async = true
-        script.src = '/static/js/tex-mml-chtml.js'
-        script.onload = function() {
+        script.src = '/static/js/tex-mml-chtml.js' // 本地托管的 MathJax 脚本
+        script.onload = function () {
           window._mathJaxLoaded = true
           console.log('✅ MathJax 加载完成')
         }
-        script.onerror = function() {
+        script.onerror = function () {
           console.error('❌ MathJax 加载失败')
           window._mathJaxLoading = false
         }
@@ -142,12 +194,42 @@
         box-sizing: border-box;
       }
 
+      /* CSS 变量 - 深色主题（默认） */
+      :root {
+        --bg-primary: #1a1a1f;
+        --bg-secondary: rgba(30, 30, 40, 0.8);
+        --bg-tertiary: rgba(45, 45, 60, 0.9);
+        --bg-hover: rgba(255, 255, 255, 0.1);
+        --text-primary: #f5f5f7;
+        --text-secondary: rgba(245, 245, 247, 0.7);
+        --border-color: rgba(255, 255, 255, 0.15);
+        --shadow-color: rgba(0, 0, 0, 0.2);
+        --accent-color: #8b5cf6;
+        --accent-hover: #a78bfa;
+      }
+
+      /* CSS 变量 - 浅色主题（Anthropic 官方品牌色 - 优化版） */
+      [data-theme='light'] {
+        --bg-primary: #e8e6dc; /* Light Gray - 页面底层 */
+        --bg-secondary: #faf9f5; /* Light - 内容卡片（浮出） */
+        --bg-tertiary: #f2f1ec; /* Header */
+        --bg-input: #e8e6dc; /* Light Gray - 输入区域 */
+        --bg-hover: rgba(217, 119, 87, 0.12); /* Orange 淡化 */
+        --text-primary: #141413; /* Dark */
+        --text-secondary: #5a5955; /* Dark 淡化 */
+        --border-color: rgba(176, 174, 165, 0.3); /* Mid Gray 淡化 */
+        --shadow-color: rgba(20, 20, 19, 0.12); /* Dark 阴影 */
+        --accent-color: #d97757; /* Orange - 主要强调色 */
+        --accent-hover: #c56a4c; /* 深 Orange */
+        --accent-secondary: #6a9bcc; /* Blue - 次要强调色 */
+      }
+
       body {
         font-family: 'SFProText', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
           'Helvetica Neue', 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
-        background: #1a1a1f;
+        background: var(--bg-primary);
         /* 移除复杂背景渐变以提升性能 */
-        color: #f5f5f7;
+        color: var(--text-primary);
         min-height: 100vh;
         padding: 1rem 0;
         line-height: 1.47059;
@@ -156,6 +238,7 @@
         overflow-x: hidden;
         box-sizing: border-box;
         /* 移除背景动画以提升性能 */
+        transition: background-color 0.3s ease, color 0.3s ease;
       }
 
       /* 无内容状态下的特殊样式 */
@@ -174,15 +257,16 @@
       .container {
         max-width: 720px;
         margin: 0 auto;
-        background: rgba(45, 45, 60, 0.9);
+        background: var(--bg-tertiary);
         /* 移除毛玻璃效果以提升性能 */
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        border: 1px solid var(--border-color);
         border-radius: 32px;
         padding: 0;
-        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 8px 16px var(--shadow-color);
         overflow: hidden;
         position: relative;
         /* 移除过渡动画以提升性能 */
+        transition: background-color 0.3s ease, border-color 0.3s ease;
       }
 
       /* 无内容模式下的容器样式 */
@@ -208,14 +292,15 @@
       }
 
       .header {
-        background: rgba(30, 30, 40, 0.8);
+        background: var(--bg-secondary);
         /* 移除毛玻璃效果 */
         padding: 1rem 1.75rem;
-        border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
+        border-bottom: 0.5px solid var(--border-color);
         position: relative;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        transition: background-color 0.3s ease;
       }
 
       .header::after {
@@ -229,7 +314,7 @@
       }
 
       h1 {
-        color: #f5f5f7;
+        color: var(--text-primary);
         margin: 0;
         font-size: 1.375rem;
         font-weight: 600;
@@ -237,6 +322,7 @@
         display: flex;
         align-items: center;
         gap: 0.625rem;
+        transition: color 0.3s ease;
       }
 
       .header-icon {
@@ -283,9 +369,11 @@
         box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
       }
 
-      /* 头部按钮容器 */
+      /* 头部按钮容器 - 确保水平排列 */
       .header-actions {
         display: flex;
+        flex-direction: row; /* 强制水平排列 */
+        flex-wrap: nowrap; /* 禁止换行 */
         gap: 8px;
         align-items: center;
       }
@@ -333,36 +421,39 @@
         transition: transform 0.3s ease, opacity 0.3s ease;
       }
 
+      /* 太阳图标（暗色主题时隐藏） */
       .theme-icon-sun {
-        opacity: 1;
-        transform: rotate(0deg) scale(1);
-      }
-
-      .theme-icon-moon {
         opacity: 0;
         transform: rotate(-90deg) scale(0.5);
       }
 
-      .theme-toggle-btn.is-light .theme-icon-sun {
-        opacity: 0;
-        transform: rotate(90deg) scale(0.5);
-      }
-
-      .theme-toggle-btn.is-light .theme-icon-moon {
+      /* 月亮图标（暗色主题时显示） */
+      .theme-icon-moon {
         opacity: 1;
         transform: rotate(0deg) scale(1);
       }
 
+      /* 亮色主题时图标状态 */
+      .theme-toggle-btn.is-light .theme-icon-sun {
+        opacity: 1;
+        transform: rotate(0deg) scale(1);
+      }
+
+      .theme-toggle-btn.is-light .theme-icon-moon {
+        opacity: 0;
+        transform: rotate(90deg) scale(0.5);
+      }
+
       /* 亮色主题适配 */
-      [data-theme="light"] .settings-btn,
-      [data-theme="light"] .theme-toggle-btn {
+      [data-theme='light'] .settings-btn,
+      [data-theme='light'] .theme-toggle-btn {
         background: rgba(0, 0, 0, 0.05);
         border-color: rgba(0, 0, 0, 0.1);
         color: #1e293b;
       }
 
-      [data-theme="light"] .settings-btn:hover,
-      [data-theme="light"] .theme-toggle-btn:hover {
+      [data-theme='light'] .settings-btn:hover,
+      [data-theme='light'] .theme-toggle-btn:hover {
         background: rgba(0, 0, 0, 0.1);
         border-color: rgba(0, 0, 0, 0.15);
       }
@@ -911,6 +1002,158 @@
         transition: all 0.2s ease;
         background: linear-gradient(135deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.005));
         border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      /* ===== 浅色主题 - 设置面板覆盖 ===== */
+      [data-theme='light'] .settings-panel {
+        background: rgba(0, 0, 0, 0.4);
+      }
+
+      [data-theme='light'] .settings-content {
+        background: #faf9f5 !important;
+        border: 1px solid rgba(0, 0, 0, 0.12) !important;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2), 0 10px 20px rgba(0, 0, 0, 0.1) !important;
+      }
+
+      [data-theme='light'] .settings-content::before {
+        background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.1), transparent) !important;
+      }
+
+      [data-theme='light'] .settings-header {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+        background: #f2f1ec !important;
+      }
+
+      [data-theme='light'] .settings-header::before,
+      [data-theme='light'] .settings-header::after {
+        background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.1), transparent) !important;
+      }
+
+      [data-theme='light'] .settings-header h3,
+      [data-theme='light'] #settings-title {
+        color: #141413 !important;
+      }
+
+      [data-theme='light'] .settings-close-btn {
+        background: rgba(0, 0, 0, 0.08) !important;
+        color: #bf4d43 !important;
+        border-color: rgba(191, 77, 67, 0.3) !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+      }
+
+      [data-theme='light'] .settings-close-btn:hover {
+        background: rgba(191, 77, 67, 0.15) !important;
+        border-color: rgba(191, 77, 67, 0.5) !important;
+      }
+
+      [data-theme='light'] .settings-body {
+        background: #faf9f5 !important;
+      }
+
+      [data-theme='light'] .settings-main-title {
+        color: #141413 !important;
+      }
+
+      [data-theme='light'] .setting-group {
+        background: #ffffff !important;
+        border: 1px solid rgba(0, 0, 0, 0.1) !important;
+      }
+
+      [data-theme='light'] .setting-subgroup {
+        background: #f8f8f5 !important;
+      }
+
+      [data-theme='light'] .setting-subgroup-title {
+        color: #141413 !important;
+        border-bottom-color: rgba(0, 0, 0, 0.1) !important;
+      }
+
+      [data-theme='light'] .setting-item {
+        border-bottom-color: rgba(0, 0, 0, 0.06) !important;
+      }
+
+      [data-theme='light'] .setting-label {
+        color: #141413 !important;
+      }
+
+      [data-theme='light'] .status-row {
+        background: rgba(0, 0, 0, 0.02) !important;
+        border-color: rgba(0, 0, 0, 0.08) !important;
+        color: #141413 !important;
+      }
+
+      /* 浅色主题 - 状态行内部 span 元素颜色覆盖 */
+      [data-theme='light'] .status-row span:first-child {
+        color: rgba(20, 20, 19, 0.85) !important;
+      }
+
+      [data-theme='light'] .status-row span:last-child {
+        color: #141413 !important;
+      }
+
+      /* 浅色主题 - 设置描述文字颜色（预防性修复） */
+      [data-theme='light'] .setting-description {
+        color: rgba(20, 20, 19, 0.65) !important;
+      }
+
+      [data-theme='light'] .setting-item:hover .setting-description {
+        color: rgba(20, 20, 19, 0.75) !important;
+      }
+
+      [data-theme='light'] .setting-label:hover .setting-title {
+        color: rgba(20, 20, 19, 0.9) !important;
+      }
+
+      [data-theme='light'] .setting-input::placeholder {
+        color: rgba(20, 20, 19, 0.5) !important;
+      }
+
+      [data-theme='light'] .section-icon {
+        color: #141413 !important;
+      }
+
+      [data-theme='light'] .settings-content::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.05) !important;
+      }
+
+      [data-theme='light'] .settings-content::-webkit-scrollbar-thumb {
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.1)) !important;
+      }
+
+      [data-theme='light'] .settings-content::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.15)) !important;
+      }
+
+      [data-theme='light'] .setting-input {
+        background: #ffffff !important;
+        border-color: rgba(0, 0, 0, 0.15) !important;
+        color: #141413 !important;
+      }
+
+      [data-theme='light'] .setting-input:focus {
+        border-color: #d97757 !important;
+        box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1) !important;
+      }
+
+      [data-theme='light'] .setting-select {
+        background: #ffffff !important;
+        border-color: rgba(0, 0, 0, 0.15) !important;
+        color: #141413 !important;
+      }
+
+      [data-theme='light'] .volume-slider::-webkit-slider-track {
+        background: rgba(0, 0, 0, 0.1) !important;
+      }
+
+      [data-theme='light'] .volume-slider::-webkit-slider-thumb {
+        background: linear-gradient(135deg, #d97757, #c06647) !important;
+      }
+
+      [data-theme='light'] .volume-value {
+        background: linear-gradient(135deg, #d97757, rgba(217, 119, 87, 0.8)) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
       }
 
       .status-row:last-child {
@@ -2807,20 +3050,48 @@
           AI Intervention Agent
         </h1>
         <div class="header-actions">
-          <button class="theme-toggle-btn" id="theme-toggle-btn" title="切换主题" aria-label="切换主题">
-            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="5"/>
-              <line x1="12" y1="1" x2="12" y2="3"/>
-              <line x1="12" y1="21" x2="12" y2="23"/>
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-              <line x1="1" y1="12" x2="3" y2="12"/>
-              <line x1="21" y1="12" x2="23" y2="12"/>
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          <button
+            class="theme-toggle-btn"
+            id="theme-toggle-btn"
+            title="切换主题"
+            aria-label="切换主题"
+          >
+            <!-- Claude 风格太阳图标（浅色模式）- 精致线条版 -->
+            <svg
+              class="theme-icon theme-icon-sun"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <!-- 太阳中心圆 -->
+              <circle cx="10" cy="10" r="3"/>
+              <!-- 光芒射线 -->
+              <line x1="10" y1="2" x2="10" y2="4"/>
+              <line x1="10" y1="16" x2="10" y2="18"/>
+              <line x1="2" y1="10" x2="4" y2="10"/>
+              <line x1="16" y1="10" x2="18" y2="10"/>
+              <line x1="4.2" y1="4.2" x2="5.8" y2="5.8"/>
+              <line x1="14.2" y1="14.2" x2="15.8" y2="15.8"/>
+              <line x1="4.2" y1="15.8" x2="5.8" y2="14.2"/>
+              <line x1="14.2" y1="5.8" x2="15.8" y2="4.2"/>
             </svg>
-            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            <!-- Claude 风格月亮图标（深色模式）- 精致线条版 -->
+            <svg
+              class="theme-icon theme-icon-moon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <!-- 新月形状 -->
+              <path d="M17.5 10.5C17.5 14.642 14.142 18 10 18C5.858 18 2.5 14.642 2.5 10.5C2.5 6.358 5.858 3 10 3C10.2 3 10.4 3.01 10.6 3.02C8.4 3.9 7 6.1 7 8.7C7 12.1 9.9 15 13.3 15C14.9 15 16.3 14.3 17.3 13.2C17.4 12.3 17.5 11.4 17.5 10.5Z"/>
             </svg>
           </button>
           <button
@@ -2830,12 +3101,34 @@
             aria-label="打开通知设置"
             aria-haspopup="dialog"
             aria-controls="settings-panel"
-          >⚙️</button>
+          >
+            <!-- Claude 风格设置/齿轮图标 - 精致线条版 -->
+            <svg
+              class="btn-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <!-- 齿轮中心圆 -->
+              <circle cx="12" cy="12" r="3"/>
+              <!-- 齿轮外形 -->
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
         </div>
       </div>
 
       <!-- 任务标签页 -->
-      <div class="task-tabs-container hidden" id="task-tabs-container" role="tablist" aria-label="任务列表">
+      <div
+        class="task-tabs-container hidden"
+        id="task-tabs-container"
+        role="tablist"
+        aria-label="任务列表"
+      >
         <div class="task-tabs" id="task-tabs">
           <!-- 标签页将由 JS 动态生成 -->
         </div>
@@ -2843,14 +3136,22 @@
 
       <!-- 无有效内容页面 -->
       <div id="no-content-container" class="no-content-container">
-        <div class="no-content-icon">⏳</div>
+        <div class="no-content-icon" id="hourglass-lottie"></div>
         <h2 class="no-content-title">无有效内容</h2>
         <p class="no-content-description">等待新的反馈请求...</p>
         <div class="no-content-progress">
           <div class="no-content-progress-bar"></div>
         </div>
         <div class="button-container no-content-buttons" id="no-content-buttons">
-          <button class="btn btn-secondary" id="close-btn" aria-label="关闭 Web 服务">❌ 关闭服务</button>
+          <button class="btn btn-secondary" id="close-btn" aria-label="关闭 Web 服务">
+            <!-- Claude 风格关闭图标（X）- 精致线条版 -->
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px; margin-right: 6px;">
+              <!-- 交叉线条 -->
+              <line x1="5" y1="5" x2="15" y2="15"/>
+              <line x1="15" y1="5" x2="5" y2="15"/>
+            </svg>
+            关闭服务
+          </button>
         </div>
         <!-- 无内容页面的状态消息显示区域 -->
         <div class="status-message no-content-status" id="no-content-status-message"></div>
@@ -2862,7 +3163,18 @@
           <!-- Task ID 和倒计时显示区域 -->
           <div class="header-info-container">
             <div class="task-id-container hidden" id="task-id-container">
-              <span class="task-id-label">📋 任务:</span>
+              <span class="task-id-label">
+                <!-- Claude 官方文档图标 -->
+                <svg
+                  class="section-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M3 4.5C3 3.67157 3.67157 3 4.5 3H11C11.1326 3 11.2598 3.05268 11.3536 3.14645L16.8536 8.64645C16.9473 8.74021 17 8.86739 17 9V15.5C17 16.3284 16.3284 17 15.5 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5ZM4.5 4C4.22386 4 4 4.22386 4 4.5V15.5C4 15.7761 4.22386 16 4.5 16H15.5C15.7761 16 16 15.7761 16 15.5V9.20711L11.2929 4.5H11H4.5Z"/>
+                </svg>
+                任务:
+              </span>
               <span class="task-id-text" id="task-id-text"></span>
             </div>
 
@@ -2885,7 +3197,18 @@
             <div class="image-preview-header">
               <span class="image-count-text">已选择 <span id="image-count">0</span> 张图片</span>
               <button class="clear-all-images-btn" id="clear-all-images-btn" title="清除所有图片">
-                🗑️ 清除全部
+                <!-- Claude 官方垃圾箱图标 -->
+                <svg
+                  class="btn-icon"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M7 3C7 2.44772 7.44772 2 8 2H12C12.5523 2 13 2.44772 13 3V4H16C16.2761 4 16.5 4.22386 16.5 4.5C16.5 4.77614 16.2761 5 16 5H15V16C15 16.5523 14.5523 17 14 17H6C5.44772 17 5 16.5523 5 16V5H4C3.72386 5 3.5 4.77614 3.5 4.5C3.5 4.22386 3.72386 4 4 4H7V3ZM8 4H12V3H8V4ZM6 5V16H14V5H6Z"/>
+                  <path d="M8.5 7C8.77614 7 9 7.22386 9 7.5V14.5C9 14.7761 8.77614 15 8.5 15C8.22386 15 8 14.7761 8 14.5V7.5C8 7.22386 8.22386 7 8.5 7Z"/>
+                  <path d="M11.5 7C11.7761 7 12 7.22386 12 7.5V14.5C12 14.7761 11.7761 15 11.5 15C11.2239 15 11 14.7761 11 14.5V7.5C11 7.22386 11.2239 7 11.5 7Z"/>
+                </svg>
+                清除全部
               </button>
             </div>
             <div class="image-previews" id="image-previews">
@@ -2923,9 +3246,54 @@
           </div>
 
           <div class="button-container">
-            <button class="btn btn-secondary" id="insert-code-btn">📋 插入代码</button>
-            <button class="btn btn-secondary" id="upload-image-btn">📷 上传图片</button>
-            <button class="btn btn-primary" id="submit-btn">🚀 发送请求</button>
+            <button class="btn btn-secondary" id="insert-code-btn">
+              <!-- Claude 风格代码图标（线条版） -->
+              <svg
+                class="btn-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="16 18 22 12 16 6"></polyline>
+                <polyline points="8 6 2 12 8 18"></polyline>
+                <line x1="14" y1="4" x2="10" y2="20"></line>
+              </svg>
+              插入代码
+            </button>
+            <button class="btn btn-secondary" id="upload-image-btn">
+              <!-- Claude 风格图片图标（线条版） -->
+              <svg
+                class="btn-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              上传图片
+            </button>
+            <button class="btn btn-primary" id="submit-btn">
+              <!-- Claude 风格发送图标（双箭头） -->
+              <svg
+                class="btn-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M3.29289 3.29289C3.68342 2.90237 4.31658 2.90237 4.70711 3.29289L10.7071 9.29289C11.0976 9.68342 11.0976 10.3166 10.7071 10.7071L4.70711 16.7071C4.31658 17.0976 3.68342 17.0976 3.29289 16.7071C2.90237 16.3166 2.90237 15.6834 3.29289 15.2929L8.58579 10L3.29289 4.70711C2.90237 4.31658 2.90237 3.68342 3.29289 3.29289ZM9.29289 3.29289C9.68342 2.90237 10.3166 2.90237 10.7071 3.29289L16.7071 9.29289C17.0976 9.68342 17.0976 10.3166 16.7071 10.7071L10.7071 16.7071C10.3166 17.0976 9.68342 17.0976 9.29289 16.7071C8.90237 16.3166 8.90237 15.6834 9.29289 15.2929L14.5858 10L9.29289 4.70711C8.90237 4.31658 8.90237 3.68342 9.29289 3.29289Z"/>
+              </svg>
+              发送请求
+            </button>
           </div>
 
           <div class="status-message" id="status-message"></div>
@@ -2942,7 +3310,25 @@
       >
         <div class="settings-content">
           <div class="settings-header">
-            <h3 id="settings-title">⚙️ 设置</h3>
+            <h3 id="settings-title">
+              <!-- Claude 风格设置/齿轮图标 - 精致线条版 -->
+              <svg
+                class="section-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <!-- 齿轮中心圆 -->
+                <circle cx="12" cy="12" r="3"/>
+                <!-- 齿轮外形 -->
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              设置
+            </h3>
             <button
               class="settings-close-btn"
               id="settings-close-btn"
@@ -2952,7 +3338,18 @@
 
           <div class="settings-body">
             <!-- 通知标题 -->
-            <h4 class="settings-main-title">🔔 通知</h4>
+            <h4 class="settings-main-title">
+              <!-- Claude 风格铃铛图标 -->
+              <svg
+                class="section-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M10 2C7.23858 2 5 4.23858 5 7V11.5858L3.29289 13.2929C3.00693 13.5789 2.92134 14.009 3.07612 14.3827C3.2309 14.7564 3.59554 15 4 15H16C16.4045 15 16.7691 14.7564 16.9239 14.3827C17.0787 14.009 16.9931 13.5789 16.7071 13.2929L15 11.5858V7C15 4.23858 12.7614 2 10 2ZM6 7C6 4.79086 7.79086 3 10 3C12.2091 3 14 4.79086 14 7V12C14 12.2652 14.1054 12.5196 14.2929 12.7071L15.5858 14H4.41421L5.70711 12.7071C5.89464 12.5196 6 12.2652 6 12V7ZM8.26756 16C8.61337 17.1825 9.70948 18 11 18C12.2905 18 13.3866 17.1825 13.7324 16H8.26756Z"/>
+              </svg>
+              通知
+            </h4>
 
             <!-- 通知设置 -->
             <div class="setting-group">
@@ -2966,7 +3363,24 @@
 
               <!-- 桌面通知设置 -->
               <div class="setting-subgroup">
-                <h5 class="setting-subgroup-title">🌐 桌面通知</h5>
+                <h5 class="setting-subgroup-title">
+                  <svg
+                    class="section-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="2" y1="12" x2="22" y2="12" />
+                    <path
+                      d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+                    />
+                  </svg>
+                  桌面通知
+                </h5>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="web-notification-enabled" checked />
@@ -2983,7 +3397,21 @@
 
               <!-- 声音通知设置 -->
               <div class="setting-subgroup">
-                <h5 class="setting-subgroup-title">🔊 声音通知</h5>
+                <h5 class="setting-subgroup-title">
+                  <svg
+                    class="section-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                  </svg>
+                  声音通知
+                </h5>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="sound-notification-enabled" checked />
@@ -3014,7 +3442,21 @@
 
               <!-- 移动设备通知设置 -->
               <div class="setting-subgroup">
-                <h5 class="setting-subgroup-title">📱 移动设备</h5>
+                <h5 class="setting-subgroup-title">
+                  <svg
+                    class="section-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                    <line x1="12" y1="18" x2="12.01" y2="18" />
+                  </svg>
+                  移动设备
+                </h5>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="mobile-optimized" checked />
@@ -3031,7 +3473,23 @@
 
               <!-- Bark 通知设置 -->
               <div class="setting-subgroup">
-                <h5 class="setting-subgroup-title">🍎 Bark 通知 (iOS)</h5>
+                <h5 class="setting-subgroup-title">
+                  <svg
+                    class="section-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06z"
+                    />
+                    <path d="M10 2c1 .5 2 2 2 5" />
+                  </svg>
+                  Bark 通知 (iOS)
+                </h5>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="bark-notification-enabled" />
@@ -3086,14 +3544,44 @@
                 </div>
                 <div class="setting-item">
                   <button class="btn btn-secondary" id="test-bark-notification-btn">
-                    🧪 测试 Bark 通知
+                    <svg
+                      class="btn-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path
+                        d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"
+                      />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="9" y1="15" x2="15" y2="15" />
+                    </svg>
+                    测试 Bark 通知
                   </button>
                 </div>
               </div>
 
               <!-- 通知状态信息 -->
               <div class="setting-subgroup">
-                <h5 class="setting-subgroup-title">ℹ️ 状态信息</h5>
+                <h5 class="setting-subgroup-title">
+                  <svg
+                    class="section-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                  状态信息
+                </h5>
                 <div class="status-row">
                   <span>浏览器支持：</span>
                   <span id="browser-support-status">检测中...</span>
@@ -3110,39 +3598,131 @@
 
               <!-- 测试功能 -->
               <div class="setting-subgroup">
-                <h5 class="setting-subgroup-title">🧪 测试功能</h5>
+                <h5 class="setting-subgroup-title">
+                  <svg
+                    class="section-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path
+                      d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"
+                    />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="9" y1="15" x2="15" y2="15" />
+                  </svg>
+                  测试功能
+                </h5>
                 <div class="setting-item">
-                  <button class="btn btn-secondary" id="test-notification-btn">🔔 测试通知</button>
+                  <button class="btn btn-secondary" id="test-notification-btn">
+                    <svg
+                      class="btn-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                    测试通知
+                  </button>
                 </div>
                 <div class="setting-item">
-                  <button class="btn btn-secondary" id="reset-settings-btn">🔄 重置设置</button>
+                  <button class="btn btn-secondary" id="reset-settings-btn">
+                    <svg
+                      class="btn-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <polyline points="1 4 1 10 7 10" />
+                      <polyline points="23 20 23 14 17 14" />
+                      <path
+                        d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"
+                      />
+                    </svg>
+                    重置设置
+                  </button>
                 </div>
               </div>
             </div>
 
             <!-- 常用快捷键 -->
-            <h4 class="settings-main-title shortcuts-section">⌨️ 常用快捷键</h4>
+            <h4 class="settings-main-title shortcuts-section">
+              <svg
+                class="section-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+                <path
+                  d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M6 16h12"
+                />
+              </svg>
+              常用快捷键
+            </h4>
             <div class="setting-group shortcuts-section">
               <div class="status-row">
-                <span>🚀 提交反馈：</span>
+                <span>提交反馈：</span>
                 <span id="shortcut-submit">Ctrl+Enter</span>
               </div>
               <div class="status-row">
-                <span>💻 插入代码：</span>
+                <span>插入代码：</span>
                 <span id="shortcut-code">Alt+C</span>
               </div>
               <div class="status-row">
-                <span>📋 粘贴图片：</span>
+                <span>粘贴图片：</span>
                 <span id="shortcut-paste">Ctrl+V</span>
               </div>
               <div class="status-row">
-                <span>📷 上传图片：</span>
+                <span>上传图片：</span>
                 <span id="shortcut-upload">Ctrl+U</span>
               </div>
               <div class="status-row">
-                <span>🗑️ 清除图片：</span>
+                <span>清除图片：</span>
                 <span id="shortcut-delete">Delete</span>
               </div>
+            </div>
+
+            <!-- 版本信息 -->
+            <div class="version-info">
+              <div class="version-text">
+                <span class="version-name">AI Intervention Agent</span>
+                <span class="version-number">v{{ version }}</span>
+              </div>
+              <a
+                href="{{ github_url }}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="github-link"
+                title="在 GitHub 上查看项目"
+              >
+                <!-- GitHub 图标 - 明确设置尺寸以确保正确渲染 -->
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  class="github-icon"
+                  width="14"
+                  height="14"
+                  style="width: 14px; height: 14px; flex-shrink: 0;"
+                >
+                  <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+                </svg>
+                <span>GitHub</span>
+              </a>
             </div>
           </div>
         </div>
@@ -3150,28 +3730,168 @@
     </div>
 
     <!-- 验证工具类：统一验证和缓存功能 -->
-    <script defer src="/static/js/validation-utils.js"></script>
+    <script defer src="/static/js/validation-utils.js" nonce="{{ csp_nonce }}"></script>
+
+    <!-- 🎬 Lottie 动画库 (defer: 按顺序异步加载) -->
+    <script defer src="/static/js/lottie.min.js" nonce="{{ csp_nonce }}"></script>
 
     <!-- 🎨 主题切换模块 (defer: 按顺序异步加载) -->
-    <script defer src="/static/js/theme.js"></script>
+    <script defer src="/static/js/theme.js" nonce="{{ csp_nonce }}"></script>
 
     <!-- ⌨️ 键盘快捷键模块 (defer: 按顺序异步加载) -->
-    <script defer src="/static/js/keyboard-shortcuts.js"></script>
+    <script defer src="/static/js/keyboard-shortcuts.js" nonce="{{ csp_nonce }}"></script>
 
     <!-- DOM 安全工具：防止 XSS 攻击 (defer: 按顺序异步加载) -->
-    <script defer src="/static/js/dom-security.js"></script>
+    <script defer src="/static/js/dom-security.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- 📋 多任务管理模块 (defer: 按顺序异步加载，依赖 main.js) -->
-    <script defer src="/static/js/multi_task.js"></script>
+    <!-- 📋 多任务管理模块 (defer: 按顺序异步加载，依赖内联脚本中的函数) -->
+    <script defer src="/static/js/multi_task.js" nonce="{{ csp_nonce }}"></script>
 
-    <script>
+    <script nonce="{{ csp_nonce }}">
+      // 主题管理器已在 theme.js 中定义和初始化
+      // 此处不再重复定义，避免 CSP nonce 和重复声明问题
+
       let config = null
 
+      // ==================================================================
+      // Lottie 嫩芽动画配置
+      // ==================================================================
+      //
+      // 功能说明：
+      //   在"无有效内容"页面显示循环播放的嫩芽生长动画，
+      //   向用户传达"等待中/正在生长"的视觉隐喻。
+      //
+      // 动画来源：
+      //   /static/lottie/sprout.json
+      //
+      // 主题适配：
+      //   - 浅色模式：原色（深色线条）
+      //   - 深色模式：通过 CSS filter: invert(1) 反转为白色线条
+      //   - 叶子颜色因 invert 也会变化（可接受的视觉效果）
+      //
+      // 降级处理：
+      //   若 Lottie 库加载失败，显示 🌱 emoji 作为备用
+      // ==================================================================
+
+      // Lottie 动画实例引用（用于后续控制如暂停/销毁）
+      let hourglassAnimation = null
+
+      /**
+       * 初始化嫩芽生长 Lottie 动画
+       *
+       * 生命周期：
+       *   1. 检查容器元素是否存在
+       *   2. 检查 Lottie 库是否已加载
+       *   3. 销毁已有动画（防止内存泄漏）
+       *   4. 创建新动画实例
+       *   5. 监听加载完成事件，应用主题颜色
+       *   6. 监听错误事件，显示降级 emoji
+       */
+      function initHourglassAnimation() {
+        const container = document.getElementById('hourglass-lottie')
+        if (!container) {
+          console.warn('动画容器未找到')
+          return
+        }
+
+        // 检查 Lottie 库是否已通过 <script defer> 加载
+        if (typeof lottie === 'undefined') {
+          console.warn('Lottie 库未加载，显示备用图标')
+          container.textContent = '🌱'
+          return
+        }
+
+        try {
+          // 销毁旧动画实例（防止内存泄漏和重复动画）
+          if (hourglassAnimation) {
+            hourglassAnimation.destroy()
+          }
+
+          // 创建嫩芽生长动画
+          hourglassAnimation = lottie.loadAnimation({
+            container: container,
+            renderer: 'svg', // 使用 SVG 渲染器（高质量缩放）
+            loop: true, // 循环播放
+            autoplay: true, // 自动开始播放
+            path: '/static/lottie/sprout.json', // 动画 JSON 文件路径
+            rendererSettings: {
+              preserveAspectRatio: 'xMidYMid meet' // 保持宽高比，居中显示
+            }
+          })
+
+          // 动画加载完成后，根据当前主题更新线条颜色
+          hourglassAnimation.addEventListener('DOMLoaded', () => {
+            updateLottieAnimationColor()
+          })
+
+          // 动画加载错误处理（网络问题或 JSON 解析失败）
+          hourglassAnimation.addEventListener('error', () => {
+            console.warn('Lottie 动画加载失败，显示备用图标')
+            container.textContent = '🌱'
+          })
+
+          console.log('✅ 嫩芽动画初始化成功')
+        } catch (error) {
+          console.error('Lottie 动画初始化失败:', error)
+          container.textContent = '🌱' // 降级为 emoji
+        }
+      }
+
+      /**
+       * 根据当前主题更新 Lottie 动画的线条颜色
+       *
+       * 实现方式：
+       *   使用 CSS filter: invert(1) 反转颜色，而非修改 SVG 内部属性。
+       *   这种方式更简单可靠，且能在主题切换时即时生效。
+       *
+       * 效果：
+       *   - invert(0) / none：保持原色
+       *   - invert(1)：将所有颜色反转（黑→白，白→黑）
+       */
+      function updateLottieAnimationColor() {
+        const container = document.getElementById('hourglass-lottie')
+        if (!container) return
+
+        // 获取当前主题状态
+        const isLightTheme = document.documentElement.getAttribute('data-theme') === 'light'
+
+        // 应用 CSS filter 实现颜色切换
+        if (isLightTheme) {
+          // 浅色模式：保持原色（深色线条在浅色背景上清晰可见）
+          container.style.filter = 'none'
+        } else {
+          // 深色模式：反转颜色（深色线条变为白色，在深色背景上清晰可见）
+          container.style.filter = 'invert(1)'
+        }
+
+        console.log('✅ Lottie 动画颜色已更新:', isLightTheme ? '浅色模式（原色）' : '深色模式（反转）')
+      }
+
+      // 监听主题变化事件（由 ThemeManager 在 theme.js 中派发）
+      // 用于在用户切换主题时即时更新 Lottie 动画颜色
+      window.addEventListener('theme-changed', (event) => {
+        console.log('主题变更事件:', event.detail)
+        // 延迟 50ms 执行，确保 DOM data-theme 属性已更新
+        setTimeout(updateLottieAnimationColor, 50)
+      })
+
       // 高性能markdown渲染函数
-      function renderMarkdownContent(element, htmlContent) {
+      // isMarkdown: 是否为 Markdown 源文本（需要 marked.js 解析）
+      function renderMarkdownContent(element, content, isMarkdown = false) {
         // 使用requestAnimationFrame优化渲染时机
         requestAnimationFrame(() => {
-          if (htmlContent) {
+          if (content) {
+            let htmlContent = content
+
+            // 如果是 Markdown 文本，先用 marked.js 解析
+            if (isMarkdown && typeof marked !== 'undefined') {
+              try {
+                htmlContent = marked.parse(content)
+              } catch (e) {
+                console.warn('marked.js 解析失败:', e)
+              }
+            }
+
             // 批量DOM操作优化
             const fragment = document.createDocumentFragment()
             const tempDiv = document.createElement('div')
@@ -3192,8 +3912,23 @@
             // 处理删除线语法
             processStrikethrough(element)
 
-            // 重新渲染 MathJax 公式
-            if (window.MathJax && window.MathJax.typesetPromise) {
+            /**
+             * 按需加载并渲染 MathJax 数学公式
+             *
+             * 加载策略：
+             *   1. 首先检测内容中是否包含数学公式（$...$, $$...$$, \(...\), \[...\]）
+             *   2. 如果有数学公式，触发 MathJax 懒加载（约 1.17MB）
+             *   3. MathJax 加载完成后，通过 startup.ready 回调自动渲染待处理元素
+             *
+             * 回退机制：
+             *   如果 loadMathJaxIfNeeded 未定义（理论上不会发生），
+             *   回退到直接检查 MathJax 对象并调用 typesetPromise
+             */
+            const textContent = element.textContent || ''
+            if (window.loadMathJaxIfNeeded) {
+              window.loadMathJaxIfNeeded(element, textContent)
+            } else if (window.MathJax && window.MathJax.typesetPromise) {
+              // 回退：如果 MathJax 已加载但 loadMathJaxIfNeeded 不可用，直接渲染
               window.MathJax.typesetPromise([element]).catch(err => {
                 console.warn('MathJax 渲染失败:', err)
               })
@@ -3256,6 +3991,10 @@
 
       // 复制代码到剪贴板
       async function copyCodeToClipboard(preElement, button) {
+        // Claude 官方风格图标
+        const checkIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.7803 4.21967C14.0732 4.51256 14.0732 4.98744 13.7803 5.28033L6.78033 12.2803C6.48744 12.5732 6.01256 12.5732 5.71967 12.2803L2.21967 8.78033C1.92678 8.48744 1.92678 8.01256 2.21967 7.71967C2.51256 7.42678 2.98744 7.42678 3.28033 7.71967L6.25 10.6893L12.7197 4.21967C13.0126 3.92678 13.4874 3.92678 13.7803 4.21967Z"/></svg>'
+        const errorIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>'
+
         try {
           const codeElement = preElement.querySelector('code')
           const textToCopy = codeElement ? codeElement.textContent : preElement.textContent
@@ -3263,24 +4002,26 @@
           await navigator.clipboard.writeText(textToCopy)
 
           // 更新按钮状态
-          const originalText = button.innerHTML
-          button.innerHTML = '✅ 已复制'
+          const originalHTML = button.innerHTML
+          button.innerHTML = checkIconSvg + '已复制'
           button.classList.add('copied')
 
           // 2秒后恢复原状
           setTimeout(() => {
-            button.innerHTML = originalText
+            button.innerHTML = originalHTML
             button.classList.remove('copied')
           }, 2000)
         } catch (err) {
           console.error('复制失败:', err)
 
           // 显示错误状态
-          const originalText = button.innerHTML
-          button.innerHTML = '❌ 复制失败'
+          const originalHTML = button.innerHTML
+          button.innerHTML = errorIconSvg + '复制失败'
+          button.classList.add('error')
 
           setTimeout(() => {
-            button.innerHTML = originalText
+            button.innerHTML = originalHTML
+            button.classList.remove('error')
           }, 2000)
         }
       }
@@ -3470,12 +4211,21 @@
 
       // 显示状态消息
       function showStatus(message, type) {
-        // 检查当前是否在无内容页面
-        const isNoContentPage =
-          document.getElementById('no-content-container').style.display === 'flex'
+        // 检查当前是否在无内容页面（使用 style.display 检查）
+        const noContentContainer = document.getElementById('no-content-container')
+        const isNoContentPage = noContentContainer && noContentContainer.style.display === 'flex'
+
+        // 🚫 在有内容时，只显示错误消息，跳过成功/信息提示
+        if (!isNoContentPage && type !== 'error') {
+          console.log(`[showStatus] 跳过非错误提示: ${message} (${type})`)
+          return
+        }
+
         const statusElement = isNoContentPage
           ? document.getElementById('no-content-status-message')
           : document.getElementById('status-message')
+
+        if (!statusElement) return
 
         statusElement.textContent = message
         statusElement.className = `status-message status-${type}`
@@ -3549,7 +4299,7 @@
         try {
           const submitBtn = document.getElementById('submit-btn')
           submitBtn.disabled = true
-          submitBtn.textContent = '提交中...'
+          submitBtn.innerHTML = '提交中...'
 
           // 使用 FormData 上传文件，避免 base64 编码
           const formData = new FormData()
@@ -3598,7 +4348,13 @@
         } finally {
           const submitBtn = document.getElementById('submit-btn')
           submitBtn.disabled = false
-          submitBtn.textContent = '🚀 提交反馈'
+          // Claude 风格发送图标（右箭头，简洁风格）
+          submitBtn.innerHTML = `
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" clip-rule="evenodd" d="M3.29289 3.29289C3.68342 2.90237 4.31658 2.90237 4.70711 3.29289L10.7071 9.29289C11.0976 9.68342 11.0976 10.3166 10.7071 10.7071L4.70711 16.7071C4.31658 17.0976 3.68342 17.0976 3.29289 16.7071C2.90237 16.3166 2.90237 15.6834 3.29289 15.2929L8.58579 10L3.29289 4.70711C2.90237 4.31658 2.90237 3.68342 3.29289 3.29289ZM9.29289 3.29289C9.68342 2.90237 10.3166 2.90237 10.7071 3.29289L16.7071 9.29289C17.0976 9.68342 17.0976 10.3166 16.7071 10.7071L10.7071 16.7071C10.3166 17.0976 9.68342 17.0976 9.29289 16.7071C8.90237 16.3166 8.90237 15.6834 9.29289 15.2929L14.5858 10L9.29289 4.70711C8.90237 4.31658 8.90237 3.68342 9.29289 3.29289Z"/>
+            </svg>
+            发送请求
+          `
         }
       }
 
@@ -3705,32 +4461,14 @@
               // 从无内容状态变为有内容状态
               console.log('✅ 检测到新内容，更新页面')
 
-              // 发送新内容通知（非阻塞）
-              try {
-                notificationManager
-                  .sendNotification('AI Intervention Agent', '新的反馈请求已到达，请查看并回复', {
-                    tag: 'new-content',
-                    requireInteraction: true,
-                    onClick: () => {
-                      window.focus()
-                      const textarea = document.getElementById('feedback-text')
-                      if (textarea) {
-                        textarea.focus()
-                      }
-                    }
-                  })
-                  .catch(error => {
-                    console.warn('发送新内容通知失败:', error)
-                  })
-              } catch (error) {
-                console.warn('通知功能不可用:', error)
-              }
+              // 浏览器通知已禁用 - 仅保留页面内视觉提示
+              // 原因：用户体验不佳，改用页面内滑入提示替代
 
               const oldConfig = config
               config = newConfig
               showContentPage()
               updatePageContent(oldConfig)
-              showStatus('收到新的反馈请求！', 'success')
+              // 状态提示已移除 - 使用页面内视觉提示替代
             } else if (!newHasContent && currentHasContent) {
               // 从有内容状态变为无内容状态
               console.log('📝 内容已清空，显示无内容页面')
@@ -3747,28 +4485,12 @@
               if (promptChanged || optionsChanged) {
                 console.log('🔄 检测到内容更新，刷新页面')
 
-                // 发送内容更新通知（非阻塞）
-                try {
-                  notificationManager
-                    .sendNotification(
-                      'AI Intervention Agent',
-                      '反馈请求内容已更新，请查看最新内容',
-                      {
-                        tag: 'content-updated',
-                        requireInteraction: false
-                      }
-                    )
-                    .catch(error => {
-                      console.warn('发送内容更新通知失败:', error)
-                    })
-                } catch (error) {
-                  console.warn('通知功能不可用:', error)
-                }
+                // 浏览器通知已禁用 - 仅使用页面内状态提示
 
                 const oldConfig = config
                 config = newConfig
                 updatePageContent(oldConfig)
-                showStatus('内容已更新！', 'success')
+                // 状态提示已移除 - 减少视觉干扰
               }
             } else {
               // 都没有内容，更新配置但不改变显示
@@ -4476,12 +5198,16 @@
             barkIcon: '',
             barkAction: 'none'
           }
-          this.init()
+          this.initialized = false
+          // 注意：不在构造函数中调用 init()，由 DOMContentLoaded 触发
         }
 
         async init() {
+          if (this.initialized) return
           this.settings = await this.loadSettings()
           this.initEventListeners()
+          this.initialized = true
+          console.log('SettingsManager 初始化完成')
         }
 
         async loadSettings() {
@@ -4622,65 +5348,111 @@
           document.getElementById('bark-action').value = this.settings.barkAction
         }
 
+        /**
+         * 获取状态图标 SVG（Claude 风格线条图标）
+         *
+         * 功能说明：
+         *   生成用于设置面板状态显示的 SVG 图标，替代原有的 emoji。
+         *   采用 Claude 官方设计风格：线条图标、适当的 stroke-width。
+         *
+         * 设计规范：
+         *   - 尺寸：16x16px
+         *   - stroke-width: 2（与其他图标一致）
+         *   - stroke-linecap/linejoin: round（圆润的线条端点）
+         *   - 垂直居中：vertical-align: middle
+         *   - 与文字间距：margin-right: 4px
+         *
+         * 颜色方案：
+         *   - success: #4CAF50（绿色）- 表示正常/已启用
+         *   - error: #F44336（红色）- 表示错误/已禁用
+         *   - warning: #FF9800（橙色）- 表示警告/未配置
+         *   - paused: #9E9E9E（灰色）- 表示暂停状态
+         *
+         * @param {string} type - 图标类型：'success' | 'error' | 'warning' | 'paused'
+         * @returns {string} SVG HTML 字符串，可直接插入到 innerHTML
+         */
+        getStatusIcon(type) {
+          const icons = {
+            // 成功图标（勾号）- 浏览器支持/通知已授权/音频运行中
+            success: `<svg class="status-icon status-icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #4CAF50;"><polyline points="20 6 9 17 4 12"></polyline></svg>`,
+            // 错误图标（叉号）- 不支持/已拒绝/已关闭
+            error: `<svg class="status-icon status-icon-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #F44336;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+            // 警告图标（感叹号三角形）- 未请求权限/未知状态
+            warning: `<svg class="status-icon status-icon-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #FF9800;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`,
+            // 暂停图标（双竖线）- 音频已暂停
+            paused: `<svg class="status-icon status-icon-paused" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #9E9E9E;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`
+          }
+          // 默认返回警告图标，处理未知类型
+          return icons[type] || icons.warning
+        }
+
         updateStatus() {
-          // 更新状态信息
-          const browserSupport = notificationManager.isSupported ? '✅ 支持' : '❌ 不支持'
-          const permission =
-            notificationManager.permission === 'granted'
-              ? '✅ 已授权'
-              : notificationManager.permission === 'denied'
-              ? '❌ 已拒绝'
-              : '⚠️ 未请求'
+          // 更新状态信息（使用 SVG 图标替代 emoji）
+          const browserSupportHtml = notificationManager.isSupported
+            ? this.getStatusIcon('success') + '支持'
+            : this.getStatusIcon('error') + '不支持'
+
+          let permissionHtml
+          if (notificationManager.permission === 'granted') {
+            permissionHtml = this.getStatusIcon('success') + '已授权'
+          } else if (notificationManager.permission === 'denied') {
+            permissionHtml = this.getStatusIcon('error') + '已拒绝'
+          } else {
+            permissionHtml = this.getStatusIcon('warning') + '未请求'
+          }
 
           // 音频状态中文化
-          let audioState = '❌ 不可用'
+          let audioStateHtml = this.getStatusIcon('error') + '不可用'
           if (notificationManager.audioContext) {
             const state = notificationManager.audioContext.state
             switch (state) {
               case 'running':
-                audioState = '✅ 运行中'
+                audioStateHtml = this.getStatusIcon('success') + '运行中'
                 break
               case 'suspended':
-                audioState = '⏸️ 已暂停'
+                audioStateHtml = this.getStatusIcon('paused') + '已暂停'
                 break
               case 'closed':
-                audioState = '❌ 已关闭'
+                audioStateHtml = this.getStatusIcon('error') + '已关闭'
                 break
               default:
-                audioState = `⚠️ ${state}`
+                audioStateHtml = this.getStatusIcon('warning') + state
             }
           }
 
-          document.getElementById('browser-support-status').textContent = browserSupport
-          document.getElementById('notification-permission-status').textContent = permission
-          document.getElementById('audio-status').textContent = audioState
+          document.getElementById('browser-support-status').innerHTML = browserSupportHtml
+          document.getElementById('notification-permission-status').innerHTML = permissionHtml
+          document.getElementById('audio-status').innerHTML = audioStateHtml
         }
 
         initEventListeners() {
-          // 设置按钮点击事件
-          document.addEventListener('click', e => {
-            if (e.target.id === 'settings-btn') {
-              this.showSettings()
-            } else if (e.target.id === 'settings-close-btn') {
-              this.hideSettings()
-            } else if (e.target.id === 'test-notification-btn') {
-              this.testNotification()
-            } else if (e.target.id === 'test-bark-notification-btn') {
-              this.testBarkNotification()
-            } else if (e.target.id === 'reset-settings-btn') {
-              this.resetSettings()
-            }
-          })
+          // 设置按钮点击事件 - 使用直接绑定确保可靠
+          const settingsBtn = document.getElementById('settings-btn')
+          const settingsCloseBtn = document.getElementById('settings-close-btn')
+          const testNotificationBtn = document.getElementById('test-notification-btn')
+          const testBarkNotificationBtn = document.getElementById('test-bark-notification-btn')
+          const resetSettingsBtn = document.getElementById('reset-settings-btn')
 
-          // 主题切换按钮点击事件
-          const themeBtn = document.getElementById('theme-toggle-btn')
-          if (themeBtn) {
-            themeBtn.addEventListener('click', () => {
-              if (typeof ThemeManager !== 'undefined') {
-                ThemeManager.toggle()
-              }
+          if (settingsBtn) {
+            settingsBtn.addEventListener('click', e => {
+              e.stopPropagation()
+              this.showSettings()
             })
           }
+          if (settingsCloseBtn) {
+            settingsCloseBtn.addEventListener('click', () => this.hideSettings())
+          }
+          if (testNotificationBtn) {
+            testNotificationBtn.addEventListener('click', () => this.testNotification())
+          }
+          if (testBarkNotificationBtn) {
+            testBarkNotificationBtn.addEventListener('click', () => this.testBarkNotification())
+          }
+          if (resetSettingsBtn) {
+            resetSettingsBtn.addEventListener('click', () => this.resetSettings())
+          }
+
+          // 主题切换按钮点击事件 - 已由 theme.js 处理，此处删除避免重复绑定
 
           // 设置面板背景点击关闭
           document.addEventListener('click', e => {
@@ -4724,11 +5496,108 @@
           this.updateStatus()
           // 同步当前设置到后端
           this.syncConfigToBackend()
-          document.getElementById('settings-panel').style.display = 'flex'
+          const panel = document.getElementById('settings-panel')
+          if (panel) {
+            // 临时移除 container 的 overflow: hidden，以便设置面板可以覆盖整个屏幕
+            const container = document.querySelector('.container')
+            if (container) {
+              container.style.overflow = 'visible'
+            }
+
+            panel.classList.remove('hidden') // 移除 hidden 类（它使用了 !important）
+            panel.style.display = 'flex'
+
+            // 浅色主题适配
+            this.applySettingsTheme()
+          }
+        }
+
+        applySettingsTheme() {
+          const theme = document.documentElement.getAttribute('data-theme')
+
+          // 动态注入浅色主题样式（解决 CSS 优先级问题）
+          if (!document.getElementById('settings-light-theme-styles')) {
+            const style = document.createElement('style')
+            style.id = 'settings-light-theme-styles'
+            style.textContent = `
+              [data-theme="light"] .settings-panel {
+                background: rgba(0, 0, 0, 0.7) !important;
+              }
+              [data-theme="light"] .settings-content {
+                background: #faf9f5 !important;
+                border: 1px solid rgba(0, 0, 0, 0.12) !important;
+                box-shadow: 0 25px 50px rgba(0, 0, 0, 0.2), 0 10px 20px rgba(0, 0, 0, 0.1) !important;
+              }
+              [data-theme="light"] .settings-body {
+                background: #faf9f5 !important;
+              }
+              [data-theme="light"] .setting-group {
+                background: #ffffff !important;
+                border: 1px solid rgba(0, 0, 0, 0.1) !important;
+              }
+              [data-theme="light"] .setting-subgroup {
+                background: #f8f8f5 !important;
+              }
+              [data-theme="light"] .settings-header {
+                border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+                background: #f2f1ec !important;
+              }
+              [data-theme="light"] .status-row {
+                background: rgba(0, 0, 0, 0.02) !important;
+                border-color: rgba(0, 0, 0, 0.08) !important;
+                color: #141413 !important;
+              }
+              [data-theme="light"] .status-row span:first-child {
+                color: rgba(20, 20, 19, 0.85) !important;
+              }
+              [data-theme="light"] .status-row span:last-child {
+                color: #141413 !important;
+              }
+              [data-theme="light"] .setting-description {
+                color: rgba(20, 20, 19, 0.65) !important;
+              }
+              [data-theme="light"] .setting-item:hover .setting-description {
+                color: rgba(20, 20, 19, 0.75) !important;
+              }
+              [data-theme="light"] .setting-label:hover .setting-title {
+                color: rgba(20, 20, 19, 0.9) !important;
+              }
+              [data-theme="light"] .setting-input::placeholder {
+                color: rgba(20, 20, 19, 0.5) !important;
+              }
+              [data-theme="light"] .setting-label,
+              [data-theme="light"] .setting-subgroup-title,
+              [data-theme="light"] .settings-main-title,
+              [data-theme="light"] #settings-title {
+                color: #141413 !important;
+              }
+              [data-theme="light"] .setting-input {
+                background: #ffffff !important;
+                border-color: rgba(0, 0, 0, 0.15) !important;
+                color: #141413 !important;
+              }
+              [data-theme="light"] .setting-select {
+                background: #ffffff !important;
+                border-color: rgba(0, 0, 0, 0.15) !important;
+                color: #141413 !important;
+              }
+            `
+            document.head.appendChild(style)
+          }
         }
 
         hideSettings() {
-          document.getElementById('settings-panel').style.display = 'none'
+          const panel = document.getElementById('settings-panel')
+          if (panel) {
+            // 恢复 container 的 overflow
+            const container = document.querySelector('.container')
+            if (container) {
+              container.style.overflow = ''
+            }
+
+            panel.classList.add('hidden') // 添加 hidden 类
+            panel.style.display = 'none'
+          }
         }
 
         async testNotification() {
@@ -5530,25 +6399,25 @@
       function getShortcutText(platform) {
         const shortcuts = {
           mac: [
-            '🚀 ⌘+Enter  提交反馈',
-            '💻 ⌥+C      插入代码',
-            '📋 ⌘+V      粘贴图片',
-            '📷 ⌘+U      上传图片',
-            '🗑️ Delete   清除图片'
+            '⌘+Enter  提交反馈',
+            '⌥+C      插入代码',
+            '⌘+V      粘贴图片',
+            '⌘+U      上传图片',
+            'Delete   清除图片'
           ],
           windows: [
-            '🚀 Ctrl+Enter 提交反馈',
-            '💻 Alt+C      插入代码',
-            '📋 Ctrl+V     粘贴图片',
-            '📷 Ctrl+U     上传图片',
-            '🗑️ Delete     清除图片'
+            'Ctrl+Enter 提交反馈',
+            'Alt+C      插入代码',
+            'Ctrl+V     粘贴图片',
+            'Ctrl+U     上传图片',
+            'Delete     清除图片'
           ],
           linux: [
-            '🚀 Ctrl+Enter 提交反馈',
-            '💻 Alt+C      插入代码',
-            '📋 Ctrl+V     粘贴图片',
-            '📷 Ctrl+U     上传图片',
-            '🗑️ Delete     清除图片'
+            'Ctrl+Enter 提交反馈',
+            'Alt+C      插入代码',
+            'Ctrl+V     粘贴图片',
+            'Ctrl+U     上传图片',
+            'Delete     清除图片'
           ]
         }
 
@@ -5681,8 +6550,11 @@
         }
       }
 
-      // 事件监听器
-      document.addEventListener('DOMContentLoaded', () => {
+      // 事件监听器 - 兼容 DOM 已加载完成的情况
+      function initializeApp() {
+        // 初始化 Lottie 沙漏动画
+        initHourglassAnimation()
+
         loadConfig()
           .then(() => {
             // 在配置加载完成后启动轮询
@@ -5721,6 +6593,11 @@
 
         // 初始化快捷键提示
         initializeShortcutTooltip()
+
+        // 初始化设置管理器（必须在 DOM 加载完成后）
+        settingsManager.init().catch(error => {
+          console.warn('设置管理器初始化失败:', error)
+        })
 
         // 初始化通知管理器
         notificationManager
@@ -5811,7 +6688,15 @@
             showStatus('测试通知失败', 'error')
           }
         }
-      })
+      }
+
+      // 兼容 DOM 已加载和未加载两种情况
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeApp)
+      } else {
+        // DOM 已加载完成，立即执行
+        initializeApp()
+      }
     </script>
   </body>
 </html>

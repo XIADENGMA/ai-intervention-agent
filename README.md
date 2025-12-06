@@ -347,7 +347,7 @@ ai-intervention-agent 工具使用细节：
 
 | 组件         | 技术                        | 说明                                     |
 | ------------ | --------------------------- | ---------------------------------------- |
-| **后端**     | Python 3.10+ / Flask        | RESTful API 服务                         |
+| **后端**     | Python 3.11+ / Flask        | RESTful API 服务                         |
 | **前端渲染** | marked.js + Prism.js        | Markdown 渲染 + 代码高亮（Monokai 主题） |
 | **数学公式** | MathJax 3                   | LaTeX 公式渲染（按需加载，节省 1.17MB）  |
 | **通知系统** | Web Notifications / Bark    | 浏览器通知 + iOS 推送                    |

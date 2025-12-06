@@ -3366,7 +3366,7 @@ def main():
             if retry_count > 0:
                 logger.info(f"尝试重新启动 MCP 服务器 (第 {retry_count + 1} 次)")
 
-            mcp.run(transport="stdio")
+            mcp.run(transport="stdio", show_banner=False)
 
             # 如果 mcp.run() 正常退出（不抛异常），跳出循环
             logger.info("MCP 服务器正常退出")

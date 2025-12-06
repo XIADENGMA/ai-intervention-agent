@@ -76,7 +76,7 @@
 import logging
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
@@ -142,7 +142,7 @@ class Task:
     prompt: str
     predefined_options: Optional[List[str]] = None
     auto_resubmit_timeout: int = 240  # 默认240秒，最大不超过290秒
-    created_at: datetime = field(default_factory=datetime.utcnow)  # 使用 UTC 时间，支持跨时区部署
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))  # 使用 UTC 时间，支持跨时区部署
     status: str = "pending"
     result: Optional[Dict[str, str]] = None
     completed_at: Optional[datetime] = None
@@ -172,7 +172,7 @@ class Task:
         if self.status == "completed":
             return 0
 
-        now = datetime.utcnow()  # 使用 UTC 时间，与 created_at 保持一致
+        now = datetime.now(timezone.utc)  # 使用 UTC 时间，与 created_at 保持一致
         elapsed = (now - self.created_at).total_seconds()
         remaining = self.auto_resubmit_timeout - elapsed
 
@@ -675,7 +675,7 @@ class TaskQueue:
             old_status = task.status
             task.status = "completed"
             task.result = result
-            task.completed_at = datetime.utcnow()  # 使用 UTC 时间
+            task.completed_at = datetime.now(timezone.utc)  # 使用 UTC 时间
 
             # 【新增】触发任务状态变更回调（当前任务完成）
             self._trigger_status_change(task_id, old_status, "completed")
@@ -859,7 +859,7 @@ class TaskQueue:
             - 可以手动调用来立即清理
         """
         with self._lock:
-            now = datetime.utcnow()  # 使用 UTC 时间，与 completed_at 保持一致
+            now = datetime.now(timezone.utc)  # 使用 UTC 时间，与 completed_at 保持一致
             tasks_to_remove = []
 
             for task_id, task in self._tasks.items():

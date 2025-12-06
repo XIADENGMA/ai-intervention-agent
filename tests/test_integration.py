@@ -99,7 +99,7 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
 
     def test_static_js(self):
         """测试 JS 静态文件"""
-        response = self.client.get('/static/js/main.js')
+        response = self.client.get('/static/js/multi_task.js')
 
         # 可能存在或不存在
         self.assertIn(response.status_code, [200, 404])

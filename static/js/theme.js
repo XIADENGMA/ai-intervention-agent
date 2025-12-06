@@ -206,7 +206,14 @@ const ThemeManager = (function () {
     `;
 
     button.addEventListener('click', () => {
-      ThemeManager.toggle();
+      // 使用内部 toggle 逻辑，而非 ThemeManager.toggle()
+      const effectiveTheme = currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
+      const newTheme = effectiveTheme === THEMES.DARK ? THEMES.LIGHT : THEMES.DARK;
+
+      currentTheme = newTheme;
+      savePreference(newTheme);
+      applyTheme(newTheme);
+      updateToggleButton();
     });
 
     return button;
@@ -221,6 +228,31 @@ const ThemeManager = (function () {
 
     buttons.forEach(button => {
       button.classList.toggle('is-light', effectiveTheme === THEMES.LIGHT);
+    });
+  }
+
+  /**
+   * 为已存在的按钮绑定点击事件
+   * 注意：使用内部函数而非 ThemeManager 引用，避免 IIFE 作用域问题
+   */
+  function bindExistingButtons() {
+    const buttons = document.querySelectorAll('.theme-toggle-btn');
+    buttons.forEach(button => {
+      // 避免重复绑定
+      if (!button.hasAttribute('data-theme-bound')) {
+        button.addEventListener('click', () => {
+          // 使用内部 toggle 逻辑，而非 ThemeManager.toggle()
+          const effectiveTheme = currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
+          const newTheme = effectiveTheme === THEMES.DARK ? THEMES.LIGHT : THEMES.DARK;
+
+          currentTheme = newTheme;
+          savePreference(newTheme);
+          applyTheme(newTheme);
+          updateToggleButton();
+        });
+        button.setAttribute('data-theme-bound', 'true');
+        console.debug('主题切换按钮已绑定:', button.id || '(无ID)');
+      }
     });
   }
 
@@ -245,6 +277,9 @@ const ThemeManager = (function () {
       // 应用主题
       applyTheme(currentTheme);
       updateToggleButton();
+
+      // 为已存在的按钮绑定点击事件
+      bindExistingButtons();
 
       console.log('主题管理器已初始化:', currentTheme);
     },

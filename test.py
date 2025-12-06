@@ -231,7 +231,7 @@ class TestConfig:
 
     # 超时配置（秒）
     DEFAULT_THREAD_TIMEOUT = 600  # 默认线程等待超时时间
-    SERVICE_STARTUP_WAIT_TIME = 5  # 服务启动等待时间
+    SERVICE_STARTUP_WAIT_TIME = 2  # 服务启动初始等待时间（轮询前）
     HTTP_REQUEST_TIMEOUT = 5  # HTTP 请求超时时间
     PARALLEL_TASK_TIMEOUT = 600  # 并行任务超时时间
     PARALLEL_THREAD_JOIN_TIMEOUT = 650  # 并行任务线程等待超时时间
@@ -1164,30 +1164,59 @@ def _launch_task_in_thread(prompt, options, feedback_timeout, task_id=None):
     return thread, result_container
 
 
-def _wait_for_service_startup(service_url, port, wait_time=None):
-    """等待 Web 服务启动并验证可用性
+def _wait_for_service_startup(service_url, port, wait_time=None, max_wait=None):
+    """等待 Web 服务启动并验证可用性（使用轮询机制）
 
     Args:
         service_url: 服务健康检查URL
         port: 服务端口号
-        wait_time: 等待时间（秒），默认使用 TestConfig.SERVICE_STARTUP_WAIT_TIME
+        wait_time: 初始等待时间（秒），默认使用 TestConfig.SERVICE_STARTUP_WAIT_TIME
+        max_wait: 最大等待时间（秒），默认 15 秒
 
     Returns:
         bool: 服务是否成功启动
+
+    改进说明:
+        使用轮询机制而非单次检查，与 server.py 中的 start_web_service 逻辑一致。
+        每 0.5 秒检查一次服务状态，最多等待 max_wait 秒。
     """
     if wait_time is None:
         wait_time = TestConfig.SERVICE_STARTUP_WAIT_TIME
+    if max_wait is None:
+        max_wait = 15  # 最大等待 15 秒，与 server.py 保持一致
 
     log_info("等待服务启动...", "⏳")
+
+    # 初始等待，给服务一些启动时间
     time.sleep(wait_time)
 
-    if not check_service(service_url):
-        log_error("服务启动失败")
-        return False
+    # 使用轮询机制检查服务状态
+    check_interval = 0.5  # 每 0.5 秒检查一次
+    elapsed = wait_time
+    last_log_time = 0
 
-    log_success("服务启动成功，请在浏览器中提交反馈")
-    log_info(f"浏览器地址: http://localhost:{port}", "🌐")
-    return True
+    while elapsed < max_wait:
+        if check_service(service_url):
+            log_success("服务启动成功，请在浏览器中提交反馈")
+            log_info(f"浏览器地址: http://localhost:{port}", "🌐")
+            return True
+
+        # 每 2 秒记录一次等待状态
+        if elapsed - last_log_time >= 2:
+            log_debug(f"等待服务启动... ({elapsed:.1f}s/{max_wait}s)")
+            last_log_time = elapsed
+
+        time.sleep(check_interval)
+        elapsed += check_interval
+
+    # 最终检查
+    if check_service(service_url):
+        log_success("服务启动成功，请在浏览器中提交反馈")
+        log_info(f"浏览器地址: http://localhost:{port}", "🌐")
+        return True
+
+    log_error(f"服务启动失败（等待超时 {max_wait} 秒）")
+    return False
 
 
 def test_persistent_workflow(timeout=None):
