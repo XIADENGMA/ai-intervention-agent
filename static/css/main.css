@@ -7036,8 +7036,19 @@ code,
   color: var(--text-primary);
 }
 
+/* 浅色主题表格表头 - 使用品牌强调色作为背景 */
 [data-theme='light'] .markdown-content th {
-  background: var(--bg-secondary);
+  background: rgba(217, 119, 87, 0.12); /* Orange 淡化作为背景 */
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* 浅色主题删除线 - 使用深色确保可见 */
+[data-theme='light'] .markdown-content del,
+[data-theme='light'] .markdown-content s,
+[data-theme='light'] .markdown-content .strikethrough {
+  color: var(--text-tertiary); /* Mid Gray - 淡化文字 */
+  text-decoration-color: var(--text-secondary); /* 深色删除线 */
 }
 
 /* 浅色主题 - 代码块容器 (浅色背景) */
@@ -7531,4 +7542,141 @@ code,
 [data-theme='light'] .markdown-content pre code span[style*="F92672"],
 [data-theme='light'] .code-block-container pre code span[style*="F92672"] {
   color: #D97757 !important; /* Orange - 运算符 */
+}
+
+/**
+ * ========================================================================
+ *   浅色主题 Prism.js Token 类颜色覆盖
+ * ========================================================================
+ *
+ * 功能说明：
+ *   覆盖 Prism.js 默认的 Monokai 主题颜色，使其在浅色背景下可读。
+ *
+ * 颜色方案：
+ *   - 关键字：#CC785C (Book Cloth 棕红色)
+ *   - 函数名/类名：#0066cc (Blue)
+ *   - 字符串：#2e7d32 (Green)
+ *   - 数字：#8B5CF6 (Purple)
+ *   - 注释：#6a737d (灰色)
+ *   - 标点符号/运算符：#141413 (Dark)
+ *   - 普通文字：#24292e (Dark)
+ */
+
+/* 关键字 (class, function, return, if, else, const, let, var, async, await 等) */
+[data-theme='light'] .token.keyword {
+  color: #CC785C !important; /* Book Cloth 棕红色 */
+}
+
+/* 函数名 */
+[data-theme='light'] .token.function {
+  color: #0066cc !important; /* Blue */
+}
+
+/* 类名 */
+[data-theme='light'] .token.class-name {
+  color: #8B5CF6 !important; /* Purple */
+}
+
+/* 字符串 */
+[data-theme='light'] .token.string {
+  color: #2e7d32 !important; /* Green */
+}
+
+/* 模板字符串 */
+[data-theme='light'] .token.template-string {
+  color: #2e7d32 !important; /* Green */
+}
+
+/* 数字 */
+[data-theme='light'] .token.number {
+  color: #8B5CF6 !important; /* Purple */
+}
+
+/* 布尔值 */
+[data-theme='light'] .token.boolean {
+  color: #8B5CF6 !important; /* Purple */
+}
+
+/* 注释 */
+[data-theme='light'] .token.comment {
+  color: #6a737d !important; /* 注释灰色 */
+}
+
+/* 标点符号 (括号、花括号、分号、冒号等) */
+[data-theme='light'] .token.punctuation {
+  color: #141413 !important; /* Dark - 深色，确保可见 */
+}
+
+/* 运算符 (=, +, -, *, /, >, <, 等) */
+[data-theme='light'] .token.operator {
+  color: #D97757 !important; /* Orange */
+}
+
+/* 参数 */
+[data-theme='light'] .token.parameter {
+  color: #141413 !important; /* Dark */
+}
+
+/* 属性 */
+[data-theme='light'] .token.property {
+  color: #0066cc !important; /* Blue */
+}
+
+/* 正则表达式 */
+[data-theme='light'] .token.regex {
+  color: #D97757 !important; /* Orange */
+}
+
+/* 变量 */
+[data-theme='light'] .token.variable {
+  color: #141413 !important; /* Dark */
+}
+
+/* 常量 */
+[data-theme='light'] .token.constant {
+  color: #8B5CF6 !important; /* Purple */
+}
+
+/* 符号 */
+[data-theme='light'] .token.symbol {
+  color: #D97757 !important; /* Orange */
+}
+
+/* 标签 */
+[data-theme='light'] .token.tag {
+  color: #CC785C !important; /* Book Cloth */
+}
+
+/* 属性名 */
+[data-theme='light'] .token.attr-name {
+  color: #0066cc !important; /* Blue */
+}
+
+/* 属性值 */
+[data-theme='light'] .token.attr-value {
+  color: #2e7d32 !important; /* Green */
+}
+
+/* 内置对象 */
+[data-theme='light'] .token.builtin {
+  color: #8B5CF6 !important; /* Purple */
+}
+
+/* 选择器 (CSS) */
+[data-theme='light'] .token.selector {
+  color: #CC785C !important; /* Book Cloth */
+}
+
+/* 重要标记 */
+[data-theme='light'] .token.important {
+  color: #D97757 !important; /* Orange */
+}
+
+/* 删除代码块容器悬停效果 - 用户不需要此效果 */
+.code-block-container:hover {
+  box-shadow: none;
+}
+
+[data-theme='light'] .code-block-container:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04); /* 保持原有阴影，不增强 */
 }

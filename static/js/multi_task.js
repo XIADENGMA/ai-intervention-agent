@@ -1067,16 +1067,16 @@ function updateOptionsDisplay(options) {
   const optionsContainer = document.getElementById('options-container')
   if (!optionsContainer) return
 
-  // 优先使用该任务之前保存的勾选状态
-  let selectedStates = []
+  // 优先使用该任务之前保存的勾选状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
+  let selectedStates = {}
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
     selectedStates = taskOptionsStates[activeTaskId]
     console.log(`✅ 已恢复任务 ${activeTaskId} 的选项勾选状态`)
   } else {
     // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
     const existingCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
-    existingCheckboxes.forEach((checkbox, index) => {
-      selectedStates[index] = checkbox.checked
+    existingCheckboxes.forEach((checkbox) => {
+      selectedStates[checkbox.id] = checkbox.checked
     })
   }
 
@@ -1093,8 +1093,9 @@ function updateOptionsDisplay(options) {
       checkbox.id = `option-${index}`
       checkbox.value = option
 
-      // 恢复选中状态（如果之前保存过）
-      if (selectedStates[index]) {
+      // 恢复选中状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
+      const checkboxId = `option-${index}`
+      if (selectedStates[checkboxId] || selectedStates[index]) {
         checkbox.checked = true
       }
 
@@ -1677,7 +1678,36 @@ async function initMultiTaskSupport() {
     }
   }, 30000)
 
-  console.log('多任务支持初始化完成 (包含轮询健康检查)')
+  // 【新增】实时保存 textarea 和选项状态
+  // 监听 input 事件，每次输入都保存，避免轮询导致内容丢失
+  const textarea = document.getElementById('feedback-text')
+  if (textarea) {
+    textarea.addEventListener('input', () => {
+      if (activeTaskId) {
+        taskTextareaContents[activeTaskId] = textarea.value
+      }
+    })
+    console.log('✅ 已启用 textarea 实时保存')
+  }
+
+  // 监听选项变化
+  const optionsContainer = document.getElementById('options-container')
+  if (optionsContainer) {
+    optionsContainer.addEventListener('change', (event) => {
+      if (event.target.type === 'checkbox' && activeTaskId) {
+        // 保存所有选项的勾选状态
+        const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
+        const states = {}
+        checkboxes.forEach(cb => {
+          states[cb.id] = cb.checked
+        })
+        taskOptionsStates[activeTaskId] = states
+      }
+    })
+    console.log('✅ 已启用选项状态实时保存')
+  }
+
+  console.log('多任务支持初始化完成 (包含轮询健康检查和实时保存)')
 }
 
 /**
