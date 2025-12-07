@@ -811,6 +811,7 @@ h1 {
   height: 22px;
   position: absolute;
   transition: transform 0.3s ease, opacity 0.3s ease;
+  pointer-events: none; /* 修复 iOS Chrome 点击问题：让点击事件穿透 SVG 到达父按钮 */
 }
 
 /* 太阳图标（暗色主题时隐藏） */
