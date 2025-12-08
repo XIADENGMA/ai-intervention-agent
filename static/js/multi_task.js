@@ -1351,11 +1351,6 @@ function startTaskCountdown(taskId, remaining, total = null) {
 
   // 启动定时器
   taskCountdowns[taskId].timer = setInterval(() => {
-    // 【安全检查】如果任务已被删除，则直接返回
-    if (!taskCountdowns[taskId]) {
-      return
-    }
-
     // 【优化】使用基于 deadline 的计算方式，而非简单递减
     // 这样即使标签页被切换（导致 JS 定时器不准确），恢复后也能显示正确的剩余时间
     const newRemaining = calculateRemainingFromDeadline()
