@@ -148,6 +148,30 @@
   - 生效方式：提交代码到 GitHub 后，运行 `rm -rf ~/.cache/uv/archive-v0/` 清除缓存，重启 Cursor MCP 即可
 
 - [x] 当前有很多内联脚本，需要以合适的方式独立出来
+- [x] 调用时出现`Error handling CallToolRequest: McpError: MCP error -32001: Request timed out`，导致调用者的调用整个失败，但是服务还是在正常运行【已修复】
+
+  0. 当前是在 mcphub 内管理多个 MCP，其中包括 ai-intervention-agent，以及其他一些 mcp，ai-intervention-agent 的 mcp 地址是`http://0.0.0.0:20004`，通过 streamable HTTP 方式进行调用
+  1. 测试 1：`方式二：开发模式（本地使用）`：进行连续调用测试，测试 3 次（倒计时反馈设置为 240s）发现 2 次成功，1 次失败，修改为超时 200s 后，测试 11 次（倒计时反馈设置为 200s）发现 11 次成功，0 次失败,再修改为超时 240s 后，测试 5 次（倒计时反馈设置为 240s）发现 5 次成功，0 次失败
+  2. 测试 2：`方式一：uvx 直接使用（推荐）`：进行连续调用测试，测试 6 次（倒计时反馈设置为 240s），发现 5 次成功，1 次失败，测试 5 次（倒计时反馈设置为 290s），发现 3 次成功，2 次失败（分别在 230s 和 280s 的时候报错）
+     ```
+     [16:08:11]info 主 (7754)Handling CallToolRequest for tool: {"name":"ai-intervention-agent-interactive_feedback","arguments":{"message":"## BBB 很好！交互功能正常工作 ✅\n\n 现在让我问你一个实际的问题：\n\n**你最常使用哪种编程语言？**\n\n 请选择或输入你的答案：","predefined_options":["Python","JavaScript/TypeScript","Java","C/C++","Go","Rust","其他语言"]}}
+     [16:10:18]info 主 (7754)Global SSE/MCP endpoint access - no user context
+     [16:10:18]info 主 (7754)Handling MCP other request
+     [16:13:11]error 主 (7754)Error handling CallToolRequest: McpError: MCP error -32001: Request timed out
+     ```
+
+  - 我发现` McpError: MCP error -32001: Request timed out`都是在实际时间超过 300s 后才报错，虽然我软件里面设置了，但是由于软件启动是需要时间的，所以第一次启用或中断后重新启用，会存在发送请求到最终结束请求的时间超过我们设定时间的情况。
+  - 还发现会有页面时间不正确的情况，导致没有正确达到超时时间，导致报错。
+    ```
+    [17:00:02]info主 (7754)Handling CallToolRequest for tool: {"name":"ai-intervention-agent-local-interactive_feedback","arguments":{"message":"## 兄弟抱一下，偶尔爷爷也有\n\n**你最常使用哪种编程语言？**\n\n请选择或输入你的答案：","predefined_options":["Python","JavaScript/TypeScript","Java","C/C++","Go","Rust","其他语言"]}}
+    [17:03:00]info主 (7754)Global SSE/MCP endpoint access - no user context
+    [17:03:00]info主 (7754)Handling MCP other request
+    [17:05:02]error主 (7754)Error handling CallToolRequest: McpError: MCP error -32001: Request timed out
+    ```
+    我记录的时候是 17:05:22，但是页面倒计时显示还有 180s，我是在页面启动后，切换到别的页面去使用了，然后等过了一段时间我回来发现超时报错了，导致我以为我设置的超时时间没有生效。当我刷新页面后，它倒计时显示时间为 0，然后变成-1，这时候它才意识到程序已经中断。
+  - 正确的实现可以这样理解：把真正裁决“这次调用是否超时”的逻辑全部放在后端，并且按 MCPHub 固定 300 秒的硬超时上限预留安全余量，例如只允许业务逻辑在 260 秒内运行，然后用单调时间（比如 Python 的 time.monotonic 这类不会受系统时间调整影响的计时源）来记录开始时刻和截止时刻，每次循环都根据“当前单调时间和截止时间的差值”判断是否超时；一旦到点，就由后端主动返回“本次交互已超时”的业务结果并结束调用，避免让请求自然拖到 300 秒被 MCPHub 直接掐断；与此同时，前端只负责展示倒计时和给用户做提示，所显示的剩余时间应根据后端返回的“服务器当前时间 + 截止时间”推算，不自行拍脑袋计时，这样无论切换标签页、刷新页面还是本机时间被改动，前端看到的状态都能与后端真实的超时状态保持一致。
+
+- [x] 还出现了，选中选项直接点击提交，显示没有输入不让提交的问题【已修复】
 
 # 已完成的优化项目
 
@@ -168,5 +192,6 @@
 # WorkFlow
 
 - 使用 uv run python test.py --port 8080 --verbose --thread-timeout 0 在且只在 8080 端口启动测试脚本，并且使用 chrome-devtools mcp 打开<http://0.0.0.0:8080>测试页面（尽量使用文字方法去读取网页内容，而不是截图），仔细分析并考虑边界情况，检查任务是否完整的完成
+- 我是使用 python 脚本生成 min 文件的
 
 # List

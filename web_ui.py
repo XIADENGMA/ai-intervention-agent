@@ -107,7 +107,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from config_manager import get_config
-from config_utils import clamp_value, validate_enum_value
+from config_utils import clamp_value
 from enhanced_logging import EnhancedLogger
 from file_validator import validate_uploaded_file
 from server import get_task_queue
@@ -201,7 +201,7 @@ def get_project_version() -> str:
 # 前端倒计时超时常量（需与 server.py 保持一致）
 # ============================================================================
 AUTO_RESUBMIT_TIMEOUT_MIN = 30  # 前端最小倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MAX = 290  # 前端最大倒计时（秒）
+AUTO_RESUBMIT_TIMEOUT_MAX = 250  # 前端最大倒计时（秒）【优化】从290→250，预留安全余量
 AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
 
 
@@ -236,7 +236,7 @@ def validate_auto_resubmit_timeout(value: int) -> int:
         value,
         AUTO_RESUBMIT_TIMEOUT_MIN,
         AUTO_RESUBMIT_TIMEOUT_MAX,
-        "auto_resubmit_timeout"
+        "auto_resubmit_timeout",
     )
 
 
@@ -249,11 +249,11 @@ VALID_BIND_INTERFACES = {"0.0.0.0", "127.0.0.1", "localhost", "::1", "::"}
 
 # 默认的允许网络列表（本地回环 + 私有网络）
 DEFAULT_ALLOWED_NETWORKS = [
-    "127.0.0.0/8",      # IPv4 本地回环
-    "::1/128",          # IPv6 本地回环
-    "192.168.0.0/16",   # 私有网络 C 类
-    "10.0.0.0/8",       # 私有网络 A 类
-    "172.16.0.0/12",    # 私有网络 B 类
+    "127.0.0.0/8",  # IPv4 本地回环
+    "::1/128",  # IPv6 本地回环
+    "192.168.0.0/16",  # 私有网络 C 类
+    "10.0.0.0/8",  # 私有网络 A 类
+    "172.16.0.0/12",  # 私有网络 B 类
 ]
 
 
@@ -367,15 +367,11 @@ def validate_allowed_networks(networks: list) -> list:
 
     # 记录无效条目
     if invalid_networks:
-        logger.warning(
-            f"以下网络配置无效，已跳过: {', '.join(invalid_networks)}"
-        )
+        logger.warning(f"以下网络配置无效，已跳过: {', '.join(invalid_networks)}")
 
     # 空列表保护：确保至少包含本地回环
     if not valid_networks:
-        logger.warning(
-            "allowed_networks 为空或全部无效，自动添加本地回环地址"
-        )
+        logger.warning("allowed_networks 为空或全部无效，自动添加本地回环地址")
         valid_networks = ["127.0.0.0/8", "::1/128"]
 
     return valid_networks
@@ -417,9 +413,7 @@ def validate_blocked_ips(ips: list) -> list:
             invalid_ips.append(str(ip))
 
     if invalid_ips:
-        logger.warning(
-            f"以下黑名单 IP 无效，已跳过: {', '.join(invalid_ips)}"
-        )
+        logger.warning(f"以下黑名单 IP 无效，已跳过: {', '.join(invalid_ips)}")
 
     return valid_ips
 
@@ -455,14 +449,12 @@ def validate_network_security_config(config: dict) -> dict:
         "allowed_networks": validate_allowed_networks(
             config.get("allowed_networks", DEFAULT_ALLOWED_NETWORKS)
         ),
-        "blocked_ips": validate_blocked_ips(
-            config.get("blocked_ips", [])
-        ),
+        "blocked_ips": validate_blocked_ips(config.get("blocked_ips", [])),
         # 【命名优化】使用新名称，保持向后兼容
         "enable_access_control": bool(
             config.get(
                 "access_control_enabled",  # 新名称
-                config.get("enable_access_control", True)  # 旧名称回退
+                config.get("enable_access_control", True),  # 旧名称回退
             )
         ),
     }
@@ -759,8 +751,10 @@ class WebFeedbackUI:
             path = request.path
             if path.startswith("/static/js/") or path.startswith("/static/css/"):
                 # JS/CSS 文件：带版本号时使用长期缓存（1年），否则使用短期缓存（1天）
-                if request.args.get('v'):
-                    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                if request.args.get("v"):
+                    response.headers["Cache-Control"] = (
+                        "public, max-age=31536000, immutable"
+                    )
                 else:
                     response.headers["Cache-Control"] = "public, max-age=86400"
             elif path.startswith("/static/lottie/"):
@@ -979,6 +973,7 @@ class WebFeedbackUI:
                 if active_task:
                     # 使用TaskQueue中的激活任务
                     # 返回剩余时间而非固定超时，解决刷新页面后倒计时重置的问题
+                    # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
                     return jsonify(
                         {
                             "prompt": active_task.prompt,
@@ -987,6 +982,9 @@ class WebFeedbackUI:
                             "task_id": active_task.task_id,
                             "auto_resubmit_timeout": active_task.auto_resubmit_timeout,
                             "remaining_time": active_task.get_remaining_time(),  # 剩余倒计时秒数
+                            "server_time": time.time(),  # 【新增】服务器当前时间戳（秒）
+                            "deadline": active_task.created_at.timestamp()
+                            + active_task.auto_resubmit_timeout,  # 【新增】截止时间戳（秒）
                             "persistent": True,
                             "has_content": True,
                             "initial_empty": False,
@@ -1004,6 +1002,7 @@ class WebFeedbackUI:
                         task_queue.set_active_task(first_task.task_id)
                         logger.info(f"自动激活第一个pending任务: {first_task.task_id}")
 
+                        # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
                         return jsonify(
                             {
                                 "prompt": first_task.prompt,
@@ -1012,6 +1011,9 @@ class WebFeedbackUI:
                                 "task_id": first_task.task_id,
                                 "auto_resubmit_timeout": first_task.auto_resubmit_timeout,
                                 "remaining_time": first_task.get_remaining_time(),  # 剩余倒计时秒数
+                                "server_time": time.time(),  # 【新增】服务器当前时间戳（秒）
+                                "deadline": first_task.created_at.timestamp()
+                                + first_task.auto_resubmit_timeout,  # 【新增】截止时间戳（秒）
                                 "persistent": True,
                                 "has_content": True,
                                 "initial_empty": False,
@@ -1163,6 +1165,11 @@ class WebFeedbackUI:
 
                 tasks = task_queue.get_all_tasks()
 
+                # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
+                server_time = (
+                    time.time()
+                )  # 获取当前服务器时间戳（只获取一次，保证所有任务的时间一致）
+
                 task_list = []
                 for task in tasks:
                     task_list.append(
@@ -1173,12 +1180,21 @@ class WebFeedbackUI:
                             "created_at": task.created_at.isoformat(),
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
                             "remaining_time": task.get_remaining_time(),  # 剩余倒计时秒数
+                            "deadline": task.created_at.timestamp()
+                            + task.auto_resubmit_timeout,  # 【新增】截止时间戳（秒）
                         }
                     )
 
                 stats = task_queue.get_task_count()
 
-                return jsonify({"success": True, "tasks": task_list, "stats": stats})
+                return jsonify(
+                    {
+                        "success": True,
+                        "tasks": task_list,
+                        "stats": stats,
+                        "server_time": server_time,
+                    }
+                )
             except Exception as e:
                 logger.error(f"获取任务列表失败: {e}")
                 return jsonify({"success": False, "error": str(e)}), 500
@@ -1240,7 +1256,9 @@ class WebFeedbackUI:
                 # 【命名优化】使用新名称，保持向后兼容
                 default_timeout = feedback_config.get(
                     "frontend_countdown",  # 新名称
-                    feedback_config.get("auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT)  # 旧名称回退
+                    feedback_config.get(
+                        "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
+                    ),  # 旧名称回退
                 )
                 auto_resubmit_timeout = data.get(
                     "auto_resubmit_timeout", default_timeout
@@ -1328,9 +1346,11 @@ class WebFeedbackUI:
                 if not task:
                     return jsonify({"success": False, "error": "任务不存在"}), 404
 
+                # 【优化】添加 server_time 和 deadline，让前端可以基于服务器时间计算倒计时
                 return jsonify(
                     {
                         "success": True,
+                        "server_time": time.time(),  # 【新增】服务器当前时间戳（秒）
                         "task": {
                             "task_id": task.task_id,
                             "prompt": task.prompt,
@@ -1339,6 +1359,8 @@ class WebFeedbackUI:
                             "created_at": task.created_at.isoformat(),
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
                             "remaining_time": task.get_remaining_time(),  # 剩余倒计时秒数
+                            "deadline": task.created_at.timestamp()
+                            + task.auto_resubmit_timeout,  # 【新增】截止时间戳（秒）
                             "result": task.result,  # 添加result字段
                         },
                     }
@@ -1834,7 +1856,9 @@ class WebFeedbackUI:
             # 【命名优化】使用新名称，保持向后兼容
             default_timeout = feedback_config.get(
                 "frontend_countdown",  # 新名称
-                feedback_config.get("auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT)  # 旧名称回退
+                feedback_config.get(
+                    "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
+                ),  # 旧名称回退
             )
             new_auto_resubmit_timeout = data.get(
                 "auto_resubmit_timeout", default_timeout
@@ -2337,9 +2361,11 @@ class WebFeedbackUI:
 
             # 【性能优化】添加缓存控制头
             # 如果 URL 带版本号，使用长期缓存；否则使用短期缓存
-            if request.args.get('v'):
+            if request.args.get("v"):
                 # 带版本号：缓存 1 年（不可变资源）
-                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                response.headers["Cache-Control"] = (
+                    "public, max-age=31536000, immutable"
+                )
             else:
                 # 无版本号：缓存 1 小时
                 response.headers["Cache-Control"] = "public, max-age=3600"
@@ -2385,9 +2411,11 @@ class WebFeedbackUI:
 
             # 【性能优化】添加缓存控制头
             # 如果 URL 带版本号，使用长期缓存；否则使用短期缓存
-            if request.args.get('v'):
+            if request.args.get("v"):
                 # 带版本号：缓存 1 年（不可变资源）
-                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                response.headers["Cache-Control"] = (
+                    "public, max-age=31536000, immutable"
+                )
             else:
                 # 无版本号：缓存 1 小时
                 response.headers["Cache-Control"] = "public, max-age=3600"
@@ -2683,9 +2711,7 @@ class WebFeedbackUI:
         # 替换为外部CSS链接
         return re.sub(style_pattern, css_link, html_content, flags=re.DOTALL)
 
-    def _get_minified_file(
-        self, directory: str, filename: str, extension: str
-    ) -> str:
+    def _get_minified_file(self, directory: str, filename: str, extension: str) -> str:
         """获取压缩版本的文件名（如存在）
 
         功能说明：

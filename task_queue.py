@@ -75,10 +75,11 @@
 
 import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -141,8 +142,12 @@ class Task:
     task_id: str
     prompt: str
     predefined_options: Optional[List[str]] = None
-    auto_resubmit_timeout: int = 240  # 默认240秒，最大不超过290秒
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))  # 使用 UTC 时间，支持跨时区部署
+    auto_resubmit_timeout: int = 240  # 默认240秒，最大不超过250秒（优化后）
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )  # 使用 UTC 时间，支持跨时区部署
+    # 【优化】使用单调时间（monotonic）记录创建时刻，不受系统时间调整影响
+    created_at_monotonic: float = field(default_factory=time.monotonic)
     status: str = "pending"
     result: Optional[Dict[str, str]] = None
     completed_at: Optional[datetime] = None
@@ -150,11 +155,12 @@ class Task:
     def get_remaining_time(self) -> int:
         """计算剩余倒计时时间（秒）
 
-        基于任务创建时间和配置的超时时间，计算当前剩余的倒计时秒数。
+        【优化】使用单调时间（monotonic）计算，不受系统时间调整影响。
+        基于任务创建时的 monotonic 时间戳和配置的超时时间，计算当前剩余的倒计时秒数。
         用于服务器端跟踪倒计时状态，解决页面刷新后倒计时重置的问题。
 
         **计算公式**：
-            elapsed = now - created_at
+            elapsed = time.monotonic() - created_at_monotonic
             remaining = auto_resubmit_timeout - elapsed
 
         **返回值范围**：
@@ -167,17 +173,39 @@ class Task:
         Note:
             - 已完成的任务返回 0
             - 负数会被截断为 0
-            - 使用 UTC 时间，支持跨时区部署
+            - 【优化】使用 time.monotonic()，不受系统时间调整影响
         """
         if self.status == "completed":
             return 0
 
-        now = datetime.now(timezone.utc)  # 使用 UTC 时间，与 created_at 保持一致
-        elapsed = (now - self.created_at).total_seconds()
+        # 【优化】使用单调时间计算，不受系统时间调整影响
+        elapsed = time.monotonic() - self.created_at_monotonic
         remaining = self.auto_resubmit_timeout - elapsed
 
         # 确保返回值在合理范围内
         return max(0, int(remaining))
+
+    def get_deadline_monotonic(self) -> float:
+        """获取截止时间的单调时间戳
+
+        【新增】返回任务的截止时间（单调时间戳），用于后端超时判断。
+
+        Returns:
+            float: 截止时间的单调时间戳（created_at_monotonic + auto_resubmit_timeout）
+        """
+        return self.created_at_monotonic + self.auto_resubmit_timeout
+
+    def is_expired(self) -> bool:
+        """检查任务是否已超时
+
+        【新增】使用单调时间判断任务是否已超时。
+
+        Returns:
+            bool: True 表示已超时，False 表示未超时
+        """
+        if self.status == "completed":
+            return False
+        return time.monotonic() > self.get_deadline_monotonic()
 
 
 class TaskQueue:
@@ -766,7 +794,9 @@ class TaskQueue:
             # 【新增】触发任务状态变更回调
             self._trigger_status_change(task_id, old_status, "removed")
             if next_activated_id:
-                self._trigger_status_change(next_activated_id, old_next_status, "active")
+                self._trigger_status_change(
+                    next_activated_id, old_next_status, "active"
+                )
 
             return True
 
@@ -1064,7 +1094,9 @@ class TaskQueue:
             self._status_change_callbacks.remove(callback)
             logger.debug(f"已取消任务状态变更回调: {callback.__name__}")
 
-    def _trigger_status_change(self, task_id: str, old_status: Optional[str], new_status: str):
+    def _trigger_status_change(
+        self, task_id: str, old_status: Optional[str], new_status: str
+    ):
         """
         触发任务状态变更回调
 

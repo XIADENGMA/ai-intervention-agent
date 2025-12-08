@@ -10,7 +10,7 @@ Feedback 配置模块单元测试
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestFeedbackConfigConstants(unittest.TestCase):
@@ -19,17 +19,15 @@ class TestFeedbackConfigConstants(unittest.TestCase):
     def test_constants_imported(self):
         """测试常量导入"""
         from server import (
-            FEEDBACK_TIMEOUT_DEFAULT,
-            FEEDBACK_TIMEOUT_MIN,
-            FEEDBACK_TIMEOUT_MAX,
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-            AUTO_RESUBMIT_TIMEOUT_MIN,
             AUTO_RESUBMIT_TIMEOUT_MAX,
+            AUTO_RESUBMIT_TIMEOUT_MIN,
             BACKEND_BUFFER,
             BACKEND_MIN,
+            FEEDBACK_TIMEOUT_DEFAULT,
+            FEEDBACK_TIMEOUT_MAX,
+            FEEDBACK_TIMEOUT_MIN,
             PROMPT_MAX_LENGTH,
-            RESUBMIT_PROMPT_DEFAULT,
-            PROMPT_SUFFIX_DEFAULT,
         )
 
         # 验证默认值
@@ -40,11 +38,11 @@ class TestFeedbackConfigConstants(unittest.TestCase):
         self.assertEqual(FEEDBACK_TIMEOUT_MIN, 60)
         self.assertEqual(FEEDBACK_TIMEOUT_MAX, 3600)
         self.assertEqual(AUTO_RESUBMIT_TIMEOUT_MIN, 30)
-        self.assertEqual(AUTO_RESUBMIT_TIMEOUT_MAX, 290)
+        self.assertEqual(AUTO_RESUBMIT_TIMEOUT_MAX, 250)  # 【优化】从290改为250
 
         # 验证缓冲和最低值
-        self.assertEqual(BACKEND_BUFFER, 60)
-        self.assertEqual(BACKEND_MIN, 300)
+        self.assertEqual(BACKEND_BUFFER, 40)  # 【优化】从60改为40
+        self.assertEqual(BACKEND_MIN, 260)  # 【优化】从300改为260，预留40秒安全余量
         self.assertEqual(PROMPT_MAX_LENGTH, 500)
 
 
@@ -69,7 +67,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_timeout_below_min(self):
         """测试 timeout 小于最小值"""
-        from server import FeedbackConfig, FEEDBACK_TIMEOUT_MIN
+        from server import FEEDBACK_TIMEOUT_MIN, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=10,  # 小于 60
@@ -82,7 +80,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_timeout_above_max(self):
         """测试 timeout 大于最大值"""
-        from server import FeedbackConfig, FEEDBACK_TIMEOUT_MAX
+        from server import FEEDBACK_TIMEOUT_MAX, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=5000,  # 大于 3600
@@ -108,7 +106,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_auto_resubmit_timeout_below_min(self):
         """测试 auto_resubmit_timeout 小于最小值"""
-        from server import FeedbackConfig, AUTO_RESUBMIT_TIMEOUT_MIN
+        from server import AUTO_RESUBMIT_TIMEOUT_MIN, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
@@ -121,11 +119,11 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_auto_resubmit_timeout_above_max(self):
         """测试 auto_resubmit_timeout 大于最大值"""
-        from server import FeedbackConfig, AUTO_RESUBMIT_TIMEOUT_MAX
+        from server import AUTO_RESUBMIT_TIMEOUT_MAX, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
-            auto_resubmit_timeout=500,  # 大于 290
+            auto_resubmit_timeout=500,  # 大于 250（优化后的最大值）
             resubmit_prompt="测试",
             prompt_suffix="",
         )
@@ -134,7 +132,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_empty_resubmit_prompt(self):
         """测试空 resubmit_prompt"""
-        from server import FeedbackConfig, RESUBMIT_PROMPT_DEFAULT
+        from server import RESUBMIT_PROMPT_DEFAULT, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
@@ -147,7 +145,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_whitespace_only_resubmit_prompt(self):
         """测试仅空白字符的 resubmit_prompt"""
-        from server import FeedbackConfig, RESUBMIT_PROMPT_DEFAULT
+        from server import RESUBMIT_PROMPT_DEFAULT, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
@@ -160,7 +158,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_long_resubmit_prompt_truncation(self):
         """测试过长 resubmit_prompt 截断"""
-        from server import FeedbackConfig, PROMPT_MAX_LENGTH
+        from server import PROMPT_MAX_LENGTH, FeedbackConfig
 
         long_prompt = "A" * 600  # 超过 500
         config = FeedbackConfig(
@@ -174,7 +172,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_long_prompt_suffix_truncation(self):
         """测试过长 prompt_suffix 截断"""
-        from server import FeedbackConfig, PROMPT_MAX_LENGTH
+        from server import PROMPT_MAX_LENGTH, FeedbackConfig
 
         long_suffix = "B" * 600  # 超过 500
         config = FeedbackConfig(
@@ -199,7 +197,7 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 
     def test_disabled_auto_resubmit(self):
         """测试禁用自动提交"""
-        from server import calculate_backend_timeout, BACKEND_MIN
+        from server import BACKEND_MIN, calculate_backend_timeout
 
         # auto_resubmit_timeout = 0
         result = calculate_backend_timeout(0, max_timeout=600)
@@ -211,18 +209,18 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 
     def test_normal_calculation(self):
         """测试正常计算"""
-        from server import calculate_backend_timeout, BACKEND_BUFFER, BACKEND_MIN
+        from server import BACKEND_BUFFER, BACKEND_MIN, calculate_backend_timeout
 
-        # 240 + 60 = 300 = BACKEND_MIN
+        # 240 + 40 = 280 > BACKEND_MIN(260)，使用 280
         result = calculate_backend_timeout(240, max_timeout=600)
         expected = min(max(240 + BACKEND_BUFFER, BACKEND_MIN), 600)
         self.assertEqual(result, expected)
 
     def test_below_backend_min(self):
         """测试计算结果低于最低值"""
-        from server import calculate_backend_timeout, BACKEND_MIN
+        from server import BACKEND_MIN, calculate_backend_timeout
 
-        # 100 + 60 = 160 < 300, 应该使用 300
+        # 100 + 40 = 140 < 260, 应该使用 260（BACKEND_MIN）
         result = calculate_backend_timeout(100, max_timeout=600)
         self.assertGreaterEqual(result, BACKEND_MIN)
 
@@ -230,9 +228,9 @@ class TestCalculateBackendTimeout(unittest.TestCase):
         """测试最大超时限制"""
         from server import calculate_backend_timeout
 
-        # 290 + 60 = 350, max_timeout = 320, 应该返回 320
-        result = calculate_backend_timeout(290, max_timeout=320)
-        self.assertEqual(result, 320)
+        # 250 + 40 = 290 < 320, max_timeout = 320, 应该返回 290
+        result = calculate_backend_timeout(250, max_timeout=320)
+        self.assertEqual(result, 290)
 
 
 class TestGetFeedbackConfig(unittest.TestCase):
@@ -263,9 +261,9 @@ class TestGetFeedbackConfig(unittest.TestCase):
     def test_config_with_defaults(self, mock_get_config):
         """测试使用默认值"""
         from server import (
-            get_feedback_config,
-            FEEDBACK_TIMEOUT_DEFAULT,
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+            FEEDBACK_TIMEOUT_DEFAULT,
+            get_feedback_config,
         )
 
         mock_config_mgr = MagicMock()
@@ -281,9 +279,9 @@ class TestGetFeedbackConfig(unittest.TestCase):
     def test_config_exception(self, mock_get_config):
         """测试配置异常时使用默认值"""
         from server import (
-            get_feedback_config,
-            FEEDBACK_TIMEOUT_DEFAULT,
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+            FEEDBACK_TIMEOUT_DEFAULT,
+            get_feedback_config,
         )
 
         mock_get_config.side_effect = Exception("配置加载失败")
@@ -300,7 +298,7 @@ class TestGetFeedbackPrompts(unittest.TestCase):
     @patch("server.get_feedback_config")
     def test_returns_tuple(self, mock_get_feedback_config):
         """测试返回元组"""
-        from server import get_feedback_prompts, FeedbackConfig
+        from server import FeedbackConfig, get_feedback_prompts
 
         mock_get_feedback_config.return_value = FeedbackConfig(
             timeout=600,
@@ -336,14 +334,14 @@ class TestWebUIValidateAutoResubmitTimeout(unittest.TestCase):
 
     def test_below_min(self):
         """测试小于最小值"""
-        from web_ui import validate_auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MIN
+        from web_ui import AUTO_RESUBMIT_TIMEOUT_MIN, validate_auto_resubmit_timeout
 
         result = validate_auto_resubmit_timeout(10)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MIN)
 
     def test_above_max(self):
         """测试大于最大值"""
-        from web_ui import validate_auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MAX
+        from web_ui import AUTO_RESUBMIT_TIMEOUT_MAX, validate_auto_resubmit_timeout
 
         result = validate_auto_resubmit_timeout(500)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MAX)
@@ -357,14 +355,14 @@ class TestWebUIValidateAutoResubmitTimeout(unittest.TestCase):
 
     def test_boundary_min(self):
         """测试最小边界值"""
-        from web_ui import validate_auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MIN
+        from web_ui import AUTO_RESUBMIT_TIMEOUT_MIN, validate_auto_resubmit_timeout
 
         result = validate_auto_resubmit_timeout(AUTO_RESUBMIT_TIMEOUT_MIN)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MIN)
 
     def test_boundary_max(self):
         """测试最大边界值"""
-        from web_ui import validate_auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MAX
+        from web_ui import AUTO_RESUBMIT_TIMEOUT_MAX, validate_auto_resubmit_timeout
 
         result = validate_auto_resubmit_timeout(AUTO_RESUBMIT_TIMEOUT_MAX)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MAX)
@@ -376,14 +374,22 @@ class TestIntegration(unittest.TestCase):
     def test_server_and_webui_constants_match(self):
         """测试 server.py 和 web_ui.py 的常量一致性"""
         from server import (
-            AUTO_RESUBMIT_TIMEOUT_MIN as SERVER_MIN,
-            AUTO_RESUBMIT_TIMEOUT_MAX as SERVER_MAX,
             AUTO_RESUBMIT_TIMEOUT_DEFAULT as SERVER_DEFAULT,
+        )
+        from server import (
+            AUTO_RESUBMIT_TIMEOUT_MAX as SERVER_MAX,
+        )
+        from server import (
+            AUTO_RESUBMIT_TIMEOUT_MIN as SERVER_MIN,
+        )
+        from web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_DEFAULT as WEBUI_DEFAULT,
+        )
+        from web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_MAX as WEBUI_MAX,
         )
         from web_ui import (
             AUTO_RESUBMIT_TIMEOUT_MIN as WEBUI_MIN,
-            AUTO_RESUBMIT_TIMEOUT_MAX as WEBUI_MAX,
-            AUTO_RESUBMIT_TIMEOUT_DEFAULT as WEBUI_DEFAULT,
         )
 
         self.assertEqual(SERVER_MIN, WEBUI_MIN)
@@ -394,18 +400,15 @@ class TestIntegration(unittest.TestCase):
         """测试超时计算一致性"""
         from server import (
             calculate_backend_timeout,
-            FeedbackConfig,
-            BACKEND_BUFFER,
-            BACKEND_MIN,
         )
 
-        # 测试多种场景
+        # 测试多种场景【优化】更新常量值 BACKEND_BUFFER=40, BACKEND_MIN=260
         test_cases = [
-            (240, 600, 300),  # 正常: max(240+60, 300) = 300, min(300, 600) = 300
-            (100, 600, 300),  # 低于最低: max(100+60, 300) = 300, min(300, 600) = 300
-            (290, 600, 350),  # 接近最大: max(290+60, 300) = 350, min(350, 600) = 350
-            (290, 320, 320),  # 超过限制: max(290+60, 300) = 350, min(350, 320) = 320
-            (0, 600, 600),  # 禁用: max(600, 300) = 600
+            (240, 600, 280),  # 正常: max(240+40, 260) = 280, min(280, 600) = 280
+            (100, 600, 260),  # 低于最低: max(100+40, 260) = 260, min(260, 600) = 260
+            (250, 600, 290),  # 接近最大: max(250+40, 260) = 290, min(290, 600) = 290
+            (250, 280, 280),  # 超过限制: max(250+40, 260) = 290, min(290, 280) = 280
+            (0, 600, 600),  # 禁用: max(600, 260) = 600
         ]
 
         for auto_resubmit, max_timeout, expected in test_cases:

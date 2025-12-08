@@ -1203,9 +1203,9 @@ FEEDBACK_TIMEOUT_MAX = 3600  # 后端最大等待时间上限（秒，1小时）
 
 AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
 AUTO_RESUBMIT_TIMEOUT_MIN = 30  # 前端最小倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MAX = 290  # 前端最大倒计时（秒）
-BACKEND_BUFFER = 60  # 后端缓冲时间（秒，前端+缓冲=后端最小）
-BACKEND_MIN = 300  # 后端最低等待时间（秒）
+AUTO_RESUBMIT_TIMEOUT_MAX = 250  # 前端最大倒计时（秒）【优化】从290→250，预留安全余量
+BACKEND_BUFFER = 40  # 后端缓冲时间（秒，前端+缓冲=后端最小）【优化】从60→40
+BACKEND_MIN = 260  # 后端最低等待时间（秒）【优化】从300→260，预留40秒安全余量避免MCPHub 300秒硬超时
 
 # 提示语相关常量
 PROMPT_MAX_LENGTH = 500  # 提示语最大长度
@@ -2517,7 +2517,7 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
         raise Exception("无限等待模式异常退出")
 
 
-async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str, str]:
+async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str, str]:
     """
     通过轮询 HTTP API 等待任务完成（异步版本）
 
@@ -2526,7 +2526,8 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
     task_id : str
         任务唯一标识符
     timeout : int, optional
-        超时时间（秒），默认 300 秒，最小 300 秒（后端最低等待时间）
+        超时时间（秒），默认 260 秒，最小 260 秒（后端最低等待时间）
+        【优化】从 300 秒改为 260 秒，预留 40 秒安全余量避免 MCPHub 300 秒硬超时
 
     返回
     ----
@@ -2539,18 +2540,20 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
     ----
     轮询 Web UI 的 /api/tasks/{task_id} 端点，检查任务状态直到完成或超时。
     使用异步等待，不阻塞事件循环，允许并发处理其他 MCP 请求。
+    【优化】使用单调时间（time.monotonic()）计算超时，不受系统时间调整影响。
 
     轮询流程
     --------
-    1. 确保超时时间不小于 300 秒（后端最低等待时间）
+    1. 确保超时时间不小于 260 秒（后端最低等待时间）
     2. 获取 Web UI 配置和 API URL
-    3. 循环轮询（每 1 秒一次）：
+    3. 【优化】使用 time.monotonic() 记录开始时刻
+    4. 循环轮询（每 1 秒一次）：
        - 在线程池中发送 GET /api/tasks/{task_id} 请求
        - 检查响应状态码（404=不存在，200=成功）
        - 解析任务状态和结果
        - 如果 status="completed" 且有 result，返回结果
        - 使用 await asyncio.sleep(1) 异步等待，不阻塞事件循环
-    4. 超时返回 {"error": "任务超时"}
+    5. 超时后**主动返回超时结果**，而不是被 MCPHub 掐断
 
     API 响应格式
     ------------
@@ -2570,8 +2573,9 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
 
     超时计算
     ----------
-    - 最小超时: 300 秒（后端最低等待时间）
-    - 实际超时: max(传入timeout, 300)
+    - 最小超时: 260 秒（后端最低等待时间，预留40秒安全余量）
+    - 实际超时: max(传入timeout, 260)
+    - 【优化】使用 time.monotonic() 单调时间，不受系统时间调整影响
     - 超时后立即返回，不等待当前轮询完成
 
     异常处理
@@ -2584,7 +2588,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
     ----------
     - 轮询间隔: 1 秒（平衡响应性和服务器负载）
     - 请求超时: 2 秒（快速失败）
-    - 轮询次数: timeout 秒数（如 300 次）
+    - 轮询次数: timeout 秒数（如 260 次）
     - 异步等待不阻塞事件循环，允许并发处理其他请求
 
     使用场景
@@ -2597,25 +2601,29 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
     --------
     - 任务完成后，Web UI 会从队列中移除任务（可能导致 404）
     - 轮询失败不会立即返回错误，会继续尝试（容错设计）
-    - 超时时间应该大于前端倒计时时间（通常为前端 + 60 秒）
+    - 超时时间应该大于前端倒计时时间（通常为前端 + 40 秒）
     - 返回的 result 字典格式取决于 Web UI 的实现
     - 使用 asyncio.to_thread 在线程池中运行同步 HTTP 请求
+    - 【优化】使用单调时间，避免系统时间调整导致的超时判断错误
     """
-    # 确保超时时间不小于300秒（0表示无限等待，保持不变）
+    # 【优化】确保超时时间不小于 BACKEND_MIN 秒（0表示无限等待，保持不变）
     if timeout > 0:
-        timeout = max(timeout, 300)
+        timeout = max(timeout, BACKEND_MIN)
 
     config, _ = get_web_ui_config()
     target_host = "localhost" if config.host == "0.0.0.0" else config.host
     api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
 
-    start_time = time.time()
+    # 【优化】使用单调时间（monotonic），不受系统时间调整影响
+    start_time_monotonic = time.monotonic()
+    deadline_monotonic = start_time_monotonic + timeout if timeout > 0 else float("inf")
+
     if timeout == 0:
         logger.info(f"等待任务完成: {task_id}, 超时时间: 无限等待")
     else:
-        logger.info(f"等待任务完成: {task_id}, 超时时间: {timeout}秒")
+        logger.info(f"等待任务完成: {task_id}, 超时时间: {timeout}秒（使用单调时间）")
 
-    while timeout == 0 or time.time() - start_time < timeout:
+    while timeout == 0 or time.monotonic() < deadline_monotonic:
         try:
             # 在线程池中执行同步 HTTP 请求，不阻塞事件循环
             response = await asyncio.to_thread(requests.get, api_url, timeout=2)
@@ -2644,8 +2652,11 @@ async def wait_for_task_completion(task_id: str, timeout: int = 300) -> Dict[str
 
         await asyncio.sleep(1)  # 异步等待，不阻塞事件循环
 
-    # 任务超时，记录错误日志
-    logger.error(f"任务超时: {task_id}, 等待时间已超过 {timeout} 秒")
+    # 【优化】后端主动返回超时结果，而不是被 MCPHub 掐断
+    elapsed = time.monotonic() - start_time_monotonic
+    logger.error(
+        f"任务超时: {task_id}, 等待时间已超过 {elapsed:.1f} 秒（使用单调时间判断）"
+    )
     # 返回配置的提示语，引导 AI 重新调用工具
     resubmit_prompt, _ = get_feedback_prompts()
     return {"text": resubmit_prompt}

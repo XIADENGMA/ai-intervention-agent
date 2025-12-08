@@ -85,6 +85,13 @@ if (typeof window.pendingNewTaskCount === 'undefined') {
 if (typeof window.newTaskHintTimer === 'undefined') {
   window.newTaskHintTimer = null // 通知合并定时器
 }
+// 【优化】服务器时间同步机制 - 解决切换标签页后倒计时不准的问题
+if (typeof window.serverTimeOffset === 'undefined') {
+  window.serverTimeOffset = 0 // 服务器时间与本地时间的偏移量（秒）
+}
+if (typeof window.taskDeadlines === 'undefined') {
+  window.taskDeadlines = {} // 存储每个任务的截止时间戳（服务器时间）
+}
 
 // 创建本地引用以便在函数中使用
 var currentTasks = window.currentTasks
@@ -110,7 +117,7 @@ var countdownTimer = window.countdownTimer
  * @param {number} seconds - 剩余秒数（可选）
  */
 if (typeof window.updateCountdownDisplay !== 'function') {
-  window.updateCountdownDisplay = function(seconds) {
+  window.updateCountdownDisplay = function (seconds) {
     const countdownContainer = document.getElementById('countdown-container')
     const countdownText = document.getElementById('countdown-text')
 
@@ -172,6 +179,25 @@ function startTasksPolling() {
       const data = await response.json()
 
       if (data.success) {
+        // 【优化】更新服务器时间偏移量，解决切换标签页后倒计时不准的问题
+        if (data.server_time) {
+          const localTime = Date.now() / 1000
+          window.serverTimeOffset = data.server_time - localTime
+          // 仅在偏移量较大时记录日志（避免日志刷屏）
+          if (Math.abs(window.serverTimeOffset) > 1) {
+            console.log(`服务器时间偏移: ${window.serverTimeOffset.toFixed(2)}s`)
+          }
+        }
+
+        // 【优化】保存每个任务的 deadline
+        if (data.tasks) {
+          data.tasks.forEach(task => {
+            if (task.deadline) {
+              window.taskDeadlines[task.task_id] = task.deadline
+            }
+          })
+        }
+
         updateTasksList(data.tasks)
         updateTasksStats(data.stats)
       }
@@ -223,7 +249,9 @@ let manualSwitchingTimer = null
 // 将标志同步到 window 对象，供跨模块通信
 Object.defineProperty(window, 'isManualSwitching', {
   get: () => isManualSwitching,
-  set: (val) => { isManualSwitching = val },
+  set: val => {
+    isManualSwitching = val
+  },
   configurable: true
 })
 
@@ -313,8 +341,8 @@ function updateTasksList(tasks) {
       .forEach(task => {
         if (task.status !== 'completed' && !taskCountdowns[task.task_id]) {
           // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout
-          const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 290
-          startTaskCountdown(task.task_id, timeout, task.auto_resubmit_timeout || 290)
+          const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 250
+          startTaskCountdown(task.task_id, timeout, task.auto_resubmit_timeout || 250)
           console.log(`已为新任务启动倒计时: ${task.task_id}, 剩余 ${timeout}s`)
         }
       })
@@ -330,6 +358,10 @@ function updateTasksList(tasks) {
         clearInterval(taskCountdowns[taskId].timer)
         delete taskCountdowns[taskId]
         console.log(`✅ 已清理任务 ${taskId} 的倒计时`)
+      }
+      // 【优化】清理任务截止时间缓存，防止内存泄漏
+      if (window.taskDeadlines[taskId] !== undefined) {
+        delete window.taskDeadlines[taskId]
       }
       // 清理任务缓存
       if (taskTextareaContents[taskId] !== undefined) {
@@ -642,12 +674,12 @@ function createTaskTab(task) {
     let remaining, total
     if (taskCountdowns[task.task_id]) {
       remaining = taskCountdowns[task.task_id].remaining
-      total = taskCountdowns[task.task_id].timeout || 290
+      total = taskCountdowns[task.task_id].timeout || 250
     } else {
       // 倒计时还未启动，优先使用服务器返回的 remaining_time
       // 这样刷新页面后圆环显示正确的剩余时间
-      remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 290
-      total = task.auto_resubmit_timeout || 290
+      remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 250
+      total = task.auto_resubmit_timeout || 250
     }
 
     // SVG圆环实现
@@ -1105,7 +1137,7 @@ function updateOptionsDisplay(options) {
   } else {
     // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
     const existingCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
-    existingCheckboxes.forEach((checkbox) => {
+    existingCheckboxes.forEach(checkbox => {
       selectedStates[checkbox.id] = checkbox.checked
     })
   }
@@ -1304,15 +1336,31 @@ function startTaskCountdown(taskId, remaining, total = null) {
     updateCountdownDisplay(remaining)
   }
 
+  // 【优化】基于服务器时间计算剩余时间的辅助函数
+  // 解决切换标签页后 JavaScript 定时器不准确的问题
+  function calculateRemainingFromDeadline() {
+    const deadline = window.taskDeadlines[taskId]
+    if (deadline) {
+      // 使用服务器时间偏移校正本地时间
+      const adjustedNow = Date.now() / 1000 + (window.serverTimeOffset || 0)
+      return Math.max(0, Math.floor(deadline - adjustedNow))
+    }
+    // 没有 deadline 信息，使用递减方式（向后兼容）
+    return taskCountdowns[taskId].remaining - 1
+  }
+
   // 启动定时器
   taskCountdowns[taskId].timer = setInterval(() => {
-    taskCountdowns[taskId].remaining--
+    // 【优化】使用基于 deadline 的计算方式，而非简单递减
+    // 这样即使标签页被切换（导致 JS 定时器不准确），恢复后也能显示正确的剩余时间
+    const newRemaining = calculateRemainingFromDeadline()
+    taskCountdowns[taskId].remaining = newRemaining
 
     // 更新SVG圆环倒计时
     const countdownRing = document.getElementById(`countdown-${taskId}`)
     if (countdownRing) {
       const remaining = taskCountdowns[taskId].remaining
-      const total = taskCountdowns[taskId].timeout || 290
+      const total = taskCountdowns[taskId].timeout || 250 // 【优化】默认从290改为250
       const progress = remaining / total // 进度（0-1）
 
       // 更新SVG circle的stroke-dashoffset
@@ -1723,7 +1771,7 @@ async function initMultiTaskSupport() {
   // 监听选项变化
   const optionsContainer = document.getElementById('options-container')
   if (optionsContainer) {
-    optionsContainer.addEventListener('change', (event) => {
+    optionsContainer.addEventListener('change', event => {
       if (event.target.type === 'checkbox' && activeTaskId) {
         // 保存所有选项的勾选状态
         const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')

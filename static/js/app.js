@@ -144,7 +144,7 @@ function updateLottieAnimationColor() {
 
 // 监听主题变化事件（由 ThemeManager 在 theme.js 中派发）
 // 用于在用户切换主题时即时更新 Lottie 动画颜色
-window.addEventListener('theme-changed', (event) => {
+window.addEventListener('theme-changed', event => {
   console.log('主题变更事件:', event.detail)
   // 延迟 50ms 执行，确保 DOM data-theme 属性已更新
   setTimeout(updateLottieAnimationColor, 50)
@@ -267,8 +267,10 @@ function processCodeBlocks(container) {
 // 复制代码到剪贴板
 async function copyCodeToClipboard(preElement, button) {
   // Claude 官方风格图标
-  const checkIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.7803 4.21967C14.0732 4.51256 14.0732 4.98744 13.7803 5.28033L6.78033 12.2803C6.48744 12.5732 6.01256 12.5732 5.71967 12.2803L2.21967 8.78033C1.92678 8.48744 1.92678 8.01256 2.21967 7.71967C2.51256 7.42678 2.98744 7.42678 3.28033 7.71967L6.25 10.6893L12.7197 4.21967C13.0126 3.92678 13.4874 3.92678 13.7803 4.21967Z"/></svg>'
-  const errorIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>'
+  const checkIconSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.7803 4.21967C14.0732 4.51256 14.0732 4.98744 13.7803 5.28033L6.78033 12.2803C6.48744 12.5732 6.01256 12.5732 5.71967 12.2803L2.21967 8.78033C1.92678 8.48744 1.92678 8.01256 2.21967 7.71967C2.51256 7.42678 2.98744 7.42678 3.28033 7.71967L6.25 10.6893L12.7197 4.21967C13.0126 3.92678 13.4874 3.92678 13.7803 4.21967Z"/></svg>'
+  const errorIconSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>'
 
   try {
     const codeElement = preElement.querySelector('code')
@@ -564,12 +566,15 @@ async function submitFeedback() {
   const feedbackText = document.getElementById('feedback-text').value.trim()
   const selectedOptions = []
 
-  // 获取选中的预定义选项
-  if (config && config.predefined_options) {
-    config.predefined_options.forEach((option, index) => {
-      const checkbox = document.getElementById(`option-${index}`)
-      if (checkbox && checkbox.checked) {
-        selectedOptions.push(option)
+  // 【修复】直接从 DOM 获取选中的预定义选项
+  // 不再依赖 config.predefined_options，因为在多任务模式下切换任务时 config 可能未同步更新
+  const optionsContainer = document.getElementById('options-container')
+  if (optionsContainer) {
+    const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]:checked')
+    checkboxes.forEach(checkbox => {
+      // 使用 checkbox 的 value 属性获取选项文本
+      if (checkbox.value) {
+        selectedOptions.push(checkbox.value)
       }
     })
   }
@@ -1397,13 +1402,11 @@ class SettingsManager {
             enabled: serverConfig.enabled ?? this.defaultSettings.enabled,
             webEnabled: serverConfig.web_enabled ?? this.defaultSettings.webEnabled,
             autoRequestPermission:
-              serverConfig.auto_request_permission ??
-              this.defaultSettings.autoRequestPermission,
+              serverConfig.auto_request_permission ?? this.defaultSettings.autoRequestPermission,
             soundEnabled: serverConfig.sound_enabled ?? this.defaultSettings.soundEnabled,
             soundMute: serverConfig.sound_mute ?? this.defaultSettings.soundMute,
             soundVolume: serverConfig.sound_volume ?? this.defaultSettings.soundVolume,
-            mobileOptimized:
-              serverConfig.mobile_optimized ?? this.defaultSettings.mobileOptimized,
+            mobileOptimized: serverConfig.mobile_optimized ?? this.defaultSettings.mobileOptimized,
             mobileVibrate: serverConfig.mobile_vibrate ?? this.defaultSettings.mobileVibrate,
             barkEnabled: serverConfig.bark_enabled ?? this.defaultSettings.barkEnabled,
             barkUrl: serverConfig.bark_url ?? this.defaultSettings.barkUrl,
@@ -1505,8 +1508,7 @@ class SettingsManager {
     // 更新设置面板中的控件状态
     document.getElementById('notification-enabled').checked = this.settings.enabled
     document.getElementById('web-notification-enabled').checked = this.settings.webEnabled
-    document.getElementById('auto-request-permission').checked =
-      this.settings.autoRequestPermission
+    document.getElementById('auto-request-permission').checked = this.settings.autoRequestPermission
     document.getElementById('sound-notification-enabled').checked = this.settings.soundEnabled
     document.getElementById('sound-mute').checked = this.settings.soundMute
     document.getElementById('sound-volume').value = this.settings.soundVolume
@@ -2135,9 +2137,7 @@ async function addImageToList(file) {
   // 检查是否已经添加过相同文件
   const isDuplicate = selectedImages.some(
     img =>
-      img.name === file.name &&
-      img.size === file.size &&
-      img.lastModified === file.lastModified
+      img.name === file.name && img.size === file.size && img.lastModified === file.lastModified
   )
   if (isDuplicate) {
     showStatus('该图片已经添加过了', 'error')
@@ -2225,10 +2225,7 @@ function renderImagePreview(imageItem, isLoading = false) {
 
     // 使用安全的图片预览创建方法
     const newPreviewElement = DOMSecurity.createImagePreview(imageItem, isLoading)
-    DOMSecurity.replaceContent(
-      previewElement,
-      newPreviewElement.firstChild || newPreviewElement
-    )
+    DOMSecurity.replaceContent(previewElement, newPreviewElement.firstChild || newPreviewElement)
 
     if (!isLoading && imageItem.previewUrl) {
       // 延迟加载图片以优化性能
@@ -2258,11 +2255,7 @@ function sanitizeText(text) {
 function removeImage(imageId) {
   // 找到要删除的图片并安全释放 URL
   const imageToRemove = selectedImages.find(img => img.id == imageId)
-  if (
-    imageToRemove &&
-    imageToRemove.previewUrl &&
-    imageToRemove.previewUrl.startsWith('blob:')
-  ) {
+  if (imageToRemove && imageToRemove.previewUrl && imageToRemove.previewUrl.startsWith('blob:')) {
     revokeObjectURL(imageToRemove.previewUrl)
   }
 
@@ -2546,9 +2539,7 @@ function handleModalKeydown(event) {
 // 移动设备检测
 function isMobileDevice() {
   return (
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent
-    ) ||
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
     (navigator.maxTouchPoints &&
       navigator.maxTouchPoints > 2 &&
       /MacIntel/.test(navigator.platform))
@@ -2639,9 +2630,7 @@ function checkBrowserCompatibility() {
     dragDrop: 'ondragstart' in document.createElement('div'),
     canvas: !!document.createElement('canvas').getContext,
     webWorker: !!window.Worker,
-    requestAnimationFrame: !!(
-      window.requestAnimationFrame || window.webkitRequestAnimationFrame
-    ),
+    requestAnimationFrame: !!(window.requestAnimationFrame || window.webkitRequestAnimationFrame),
     objectURL: !!(window.URL && window.URL.createObjectURL),
     clipboard: !!(navigator.clipboard && navigator.clipboard.read)
   }
@@ -2789,9 +2778,7 @@ function initializeApp() {
     })
 
   // 按钮事件
-  document
-    .getElementById('insert-code-btn')
-    .addEventListener('click', insertCodeFromClipboard)
+  document.getElementById('insert-code-btn').addEventListener('click', insertCodeFromClipboard)
   document.getElementById('submit-btn').addEventListener('click', submitFeedback)
   document.getElementById('close-btn').addEventListener('click', closeInterface)
 
