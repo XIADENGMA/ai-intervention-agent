@@ -82,7 +82,9 @@ class TestMaliciousContentScan(unittest.TestCase):
     def test_javascript_detection(self):
         """测试 JavaScript 代码检测"""
         # PNG 魔数 + JavaScript 代码
-        malicious_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"<script>alert('xss')</script>"
+        malicious_data = (
+            b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"<script>alert('xss')</script>"
+        )
 
         result = self.validator.validate_file(malicious_data, "test.png")
 
@@ -100,7 +102,9 @@ class TestMaliciousContentScan(unittest.TestCase):
     def test_clean_file(self):
         """测试干净文件"""
         # 只有 PNG 魔数和正常数据
-        clean_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"normal image data here" * 100
+        clean_data = (
+            b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"normal image data here" * 100
+        )
 
         result = self.validator.validate_file(clean_data, "test.png")
 
@@ -208,8 +212,7 @@ class TestMimeConsistency(unittest.TestCase):
     def test_consistent_mime(self):
         """测试一致的 MIME 类型"""
         result = self.validator.validate_file(
-            self.png_data, "test.png",
-            declared_mime_type="image/png"
+            self.png_data, "test.png", declared_mime_type="image/png"
         )
 
         self.assertTrue(result["valid"])
@@ -219,8 +222,7 @@ class TestMimeConsistency(unittest.TestCase):
     def test_inconsistent_mime(self):
         """测试不一致的 MIME 类型"""
         result = self.validator.validate_file(
-            self.png_data, "test.png",
-            declared_mime_type="image/jpeg"
+            self.png_data, "test.png", declared_mime_type="image/jpeg"
         )
 
         # 文件仍然有效，但有警告
@@ -254,7 +256,9 @@ class TestConvenienceFunctions(unittest.TestCase):
         from file_validator import is_safe_image_file
 
         # 包含恶意代码
-        malicious_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"<script>alert('xss')</script>"
+        malicious_data = (
+            b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"<script>alert('xss')</script>"
+        )
         result = is_safe_image_file(malicious_data, "test.png")
 
         self.assertFalse(result)

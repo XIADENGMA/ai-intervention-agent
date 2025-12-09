@@ -11,7 +11,6 @@ AI Intervention Agent - 配置管理器单元测试
 """
 
 import json
-import os
 import shutil
 import sys
 import tempfile
@@ -42,12 +41,12 @@ class TestJsoncParser(unittest.TestCase):
         """测试单行注释"""
         from config_manager import parse_jsonc
 
-        content = '''
+        content = """
         {
             "key": "value", // 这是注释
             "number": 42
         }
-        '''
+        """
         result = parse_jsonc(content)
 
         self.assertEqual(result["key"], "value")
@@ -57,13 +56,13 @@ class TestJsoncParser(unittest.TestCase):
         """测试多行注释"""
         from config_manager import parse_jsonc
 
-        content = '''
+        content = """
         {
             /* 这是
             多行注释 */
             "key": "value"
         }
-        '''
+        """
         result = parse_jsonc(content)
 
         self.assertEqual(result["key"], "value")
@@ -96,17 +95,11 @@ class TestConfigManagerBasic(unittest.TestCase):
         """每个测试前的准备"""
         # 创建测试配置文件
         test_config = {
-            "notification": {
-                "enabled": True,
-                "sound_volume": 80
-            },
-            "web_ui": {
-                "host": "127.0.0.1",
-                "port": 8080
-            }
+            "notification": {"enabled": True, "sound_volume": 80},
+            "web_ui": {"host": "127.0.0.1", "port": 8080},
         }
 
-        with open(self.config_file, 'w', encoding='utf-8') as f:
+        with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(test_config, f)
 
     def test_get_simple_key(self):
@@ -175,20 +168,19 @@ class TestConfigManagerThreadSafety(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        test_config = {
-            "notification": {"enabled": True},
-            "counter": 0
-        }
+        test_config = {"notification": {"enabled": True}, "counter": 0}
 
-        with open(self.config_file, 'w', encoding='utf-8') as f:
+        with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(test_config, f)
 
         from config_manager import ConfigManager
+
         self.mgr = ConfigManager(str(self.config_file))
         self.errors = []
 
     def test_concurrent_read(self):
         """测试并发读取"""
+
         def reader():
             try:
                 for _ in range(50):
@@ -209,6 +201,7 @@ class TestConfigManagerThreadSafety(unittest.TestCase):
 
     def test_concurrent_read_write(self):
         """测试并发读写"""
+
         def reader():
             try:
                 for _ in range(30):
@@ -225,9 +218,7 @@ class TestConfigManagerThreadSafety(unittest.TestCase):
             except Exception as e:
                 self.errors.append(e)
 
-        threads = [
-            threading.Thread(target=reader) for _ in range(3)
-        ] + [
+        threads = [threading.Thread(target=reader) for _ in range(3)] + [
             threading.Thread(target=writer) for _ in range(2)
         ]
 
@@ -313,11 +304,11 @@ class TestNetworkSecurityConfig(unittest.TestCase):
             "network_security": {
                 "bind_interface": "0.0.0.0",
                 "allowed_networks": ["127.0.0.0/8"],
-                "enable_access_control": True
-            }
+                "enable_access_control": True,
+            },
         }
 
-        with open(self.config_file, 'w', encoding='utf-8') as f:
+        with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(test_config, f)
 
     def test_network_security_not_in_memory(self):

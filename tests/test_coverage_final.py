@@ -6,11 +6,10 @@ AI Intervention Agent - 最终覆盖率提升测试
 """
 
 import sys
+import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import threading
-import time
+from unittest.mock import Mock
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -24,8 +23,8 @@ class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
         """测试指定类型发送通知"""
         from notification_manager import (
             NotificationManager,
-            NotificationType,
             NotificationTrigger,
+            NotificationType,
         )
 
         manager = NotificationManager()
@@ -92,10 +91,10 @@ class TestNotificationManagerProcessEvent(unittest.TestCase):
     def test_process_event_with_mock_provider(self):
         """测试事件处理与模拟提供者"""
         from notification_manager import (
-            NotificationManager,
             NotificationEvent,
-            NotificationType,
+            NotificationManager,
             NotificationTrigger,
+            NotificationType,
         )
 
         manager = NotificationManager()
@@ -278,8 +277,8 @@ class TestNotificationEventQueue(unittest.TestCase):
     def test_event_queue_add(self):
         """测试向事件队列添加事件"""
         from notification_manager import (
-            NotificationManager,
             NotificationEvent,
+            NotificationManager,
             NotificationTrigger,
         )
 
@@ -307,9 +306,8 @@ class TestConfigManagerFileWatcherAdvanced(unittest.TestCase):
 
     def test_file_watcher_callback_triggered(self):
         """测试文件监听器回调触发"""
+
         from config_manager import get_config
-        import tempfile
-        import os
 
         config = get_config()
 
@@ -364,7 +362,9 @@ class TestConfigUtilsAdvanced(unittest.TestCase):
         from config_utils import validate_enum_value
 
         # 签名: validate_enum_value(value, valid_values, field_name, default)
-        result = validate_enum_value("url", ("none", "url", "copy"), "bark_action", "none")
+        result = validate_enum_value(
+            "url", ("none", "url", "copy"), "bark_action", "none"
+        )
         self.assertEqual(result, "url")
 
     def test_validate_enum_value_invalid(self):

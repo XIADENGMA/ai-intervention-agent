@@ -22,8 +22,6 @@
     - 仅压缩 static/js 和 static/css 目录下的文件
 """
 
-import os
-import sys
 import argparse
 from pathlib import Path
 
@@ -36,11 +34,11 @@ STATIC_CSS_DIR = PROJECT_ROOT / "static" / "css"
 
 # 需要跳过的文件模式
 SKIP_PATTERNS = [
-    ".min.js",      # 已经是压缩文件
-    ".min.css",     # 已经是压缩文件
-    "prism-",       # Prism 组件（已经压缩）
-    "tex-mml-",     # MathJax（已经压缩）
-    "marked.js",    # 外部库
+    ".min.js",  # 已经是压缩文件
+    ".min.css",  # 已经是压缩文件
+    "prism-",  # Prism 组件（已经压缩）
+    "tex-mml-",  # MathJax（已经压缩）
+    "marked.js",  # 外部库
 ]
 
 
@@ -72,6 +70,7 @@ def minify_js(content: str) -> str:
     """压缩 JavaScript 代码"""
     try:
         import rjsmin
+
         return rjsmin.jsmin(content)
     except ImportError:
         print("警告: rjsmin 未安装，跳过 JS 压缩")
@@ -83,6 +82,7 @@ def minify_css(content: str) -> str:
     """压缩 CSS 代码"""
     try:
         import rcssmin
+
         return rcssmin.cssmin(content)
     except ImportError:
         print("警告: rcssmin 未安装，跳过 CSS 压缩")
@@ -95,7 +95,7 @@ def process_directory(
     file_type: str,
     minify_func,
     check_only: bool = False,
-    force: bool = False
+    force: bool = False,
 ):
     """处理目录中的文件"""
     if not directory.exists():

@@ -590,8 +590,8 @@ class ConfigManager:
 
         # 【性能优化】缓存统计
         self._cache_stats = {
-            "hits": 0,      # 缓存命中次数
-            "misses": 0,    # 缓存未命中次数
+            "hits": 0,  # 缓存命中次数
+            "misses": 0,  # 缓存未命中次数
             "invalidations": 0,  # 缓存失效次数
         }
 
@@ -2187,6 +2187,7 @@ class ConfigManager:
             Dict[str, Any]: 配置段字典的深拷贝，如果不存在则返回空字典
         """
         import copy
+
         current_time = time.time()
 
         # 特殊处理 network_security 配置段
@@ -2402,7 +2403,9 @@ class ConfigManager:
         }
         logger.debug("已重置缓存统计")
 
-    def set_cache_ttl(self, section_ttl: float = None, network_security_ttl: float = None):
+    def set_cache_ttl(
+        self, section_ttl: float = None, network_security_ttl: float = None
+    ):
         """设置缓存有效期
 
         【功能说明】
@@ -2417,8 +2420,12 @@ class ConfigManager:
             logger.debug(f"section 缓存 TTL 已设置为: {self._section_cache_ttl}s")
 
         if network_security_ttl is not None:
-            self._network_security_cache_ttl = max(1.0, network_security_ttl)  # 最小 1 秒
-            logger.debug(f"network_security 缓存 TTL 已设置为: {self._network_security_cache_ttl}s")
+            self._network_security_cache_ttl = max(
+                1.0, network_security_ttl
+            )  # 最小 1 秒
+            logger.debug(
+                f"network_security 缓存 TTL 已设置为: {self._network_security_cache_ttl}s"
+            )
 
     def get_all(self) -> Dict[str, Any]:
         """获取所有配置
@@ -2566,7 +2573,6 @@ class ConfigManager:
             default_config = self._get_default_config()
             return default_config.get("network_security", {})
 
-
     # ========================================================================
     # 类型安全的配置获取方法
     # ========================================================================
@@ -2622,7 +2628,7 @@ class ConfigManager:
 
         try:
             # 布尔类型特殊处理
-            if value_type == bool:
+            if value_type is bool:
                 if isinstance(raw_value, bool):
                     return raw_value
                 if isinstance(raw_value, str):
@@ -2633,7 +2639,9 @@ class ConfigManager:
             converted = value_type(raw_value)
 
             # 边界验证（仅对数值类型）
-            if value_type in (int, float) and (min_val is not None or max_val is not None):
+            if value_type in (int, float) and (
+                min_val is not None or max_val is not None
+            ):
                 if min_val is not None and max_val is not None:
                     return clamp_value(converted, min_val, max_val, key)
                 elif min_val is not None:
@@ -2768,7 +2776,7 @@ class ConfigManager:
         self._file_watcher_thread = threading.Thread(
             target=self._file_watcher_loop,
             name="ConfigFileWatcher",
-            daemon=True  # 守护线程，主程序退出时自动终止
+            daemon=True,  # 守护线程，主程序退出时自动终止
         )
         self._file_watcher_thread.start()
         logger.info(f"配置文件监听器已启动，检查间隔: {interval} 秒")
@@ -2911,7 +2919,7 @@ class ConfigManager:
             export_data = {
                 "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "version": "1.0",
-                "config": self._config.copy()
+                "config": self._config.copy(),
             }
 
             if include_network_security:
@@ -2920,10 +2928,7 @@ class ConfigManager:
             return export_data
 
     def import_config(
-        self,
-        config_data: Dict[str, Any],
-        merge: bool = True,
-        save: bool = True
+        self, config_data: Dict[str, Any], merge: bool = True, save: bool = True
     ) -> bool:
         """
         导入配置
@@ -3006,11 +3011,7 @@ class ConfigManager:
             要合并的更新字典
         """
         for key, value in update.items():
-            if (
-                key in base
-                and isinstance(base[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
                 self._deep_merge(base[key], value)
             else:
                 base[key] = value

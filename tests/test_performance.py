@@ -7,10 +7,9 @@ AI Intervention Agent - 性能测试
 
 import sys
 import time
-import threading
 import unittest
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -69,9 +68,9 @@ class TestNotificationManagerPerformance(unittest.TestCase):
     def test_notification_send_performance(self):
         """测试通知发送性能"""
         from notification_manager import (
-            notification_manager,
             NotificationTrigger,
-            NotificationType
+            NotificationType,
+            notification_manager,
         )
 
         # 确保通知启用
@@ -87,7 +86,7 @@ class TestNotificationManagerPerformance(unittest.TestCase):
                     title=f"性能测试 {i}",
                     message=f"测试消息 {i}",
                     trigger=NotificationTrigger.IMMEDIATE,
-                    types=[NotificationType.WEB]
+                    types=[NotificationType.WEB],
                 )
 
             elapsed = time.time() - start_time
@@ -121,6 +120,7 @@ class TestTaskQueuePerformance(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from task_queue import TaskQueue
+
         self.queue = TaskQueue()
 
     def tearDown(self):
@@ -148,8 +148,7 @@ class TestTaskQueuePerformance(unittest.TestCase):
         def add_tasks(start_idx):
             for i in range(10):
                 self.queue.add_task(
-                    f"concurrent-task-{start_idx}-{i}",
-                    f"并发测试任务 {start_idx}-{i}"
+                    f"concurrent-task-{start_idx}-{i}", f"并发测试任务 {start_idx}-{i}"
                 )
             return True
 
@@ -218,13 +217,9 @@ class TestWebUIPerformance(unittest.TestCase):
         """测试类初始化"""
         from web_ui import WebFeedbackUI
 
-        cls.web_ui = WebFeedbackUI(
-            prompt="性能测试",
-            task_id="perf-test",
-            port=8990
-        )
+        cls.web_ui = WebFeedbackUI(prompt="性能测试", task_id="perf-test", port=8990)
         cls.app = cls.web_ui.app
-        cls.app.config['TESTING'] = True
+        cls.app.config["TESTING"] = True
         cls.client = cls.app.test_client()
 
     def test_api_response_time(self):
@@ -233,7 +228,7 @@ class TestWebUIPerformance(unittest.TestCase):
 
         # 执行 100 次 API 调用
         for _ in range(100):
-            self.client.get('/api/tasks')
+            self.client.get("/api/tasks")
 
         elapsed = time.time() - start_time
 
@@ -247,7 +242,7 @@ class TestWebUIPerformance(unittest.TestCase):
 
         def call_api():
             for _ in range(20):
-                response = self.client.get('/api/tasks')
+                response = self.client.get("/api/tasks")
                 if response.status_code == 200:
                     return True
             return True
@@ -290,9 +285,9 @@ class TestServerFunctionPerformance(unittest.TestCase):
         from server import parse_structured_response
 
         response = {
-            'user_input': '测试输入',
-            'selected_options': ['选项1', '选项2'],
-            'images': []
+            "user_input": "测试输入",
+            "selected_options": ["选项1", "选项2"],
+            "images": [],
         }
 
         start_time = time.time()

@@ -259,10 +259,9 @@ class TestGetWebUIConfig(unittest.TestCase):
     @patch("server.get_config")
     def test_load_config_success(self, mock_get_config):
         """测试成功加载配置"""
-        from server import get_web_ui_config, WebUIConfig
-
         # 清除缓存
         import server
+        from server import WebUIConfig, get_web_ui_config
 
         server._config_cache["config"] = None
         server._config_cache["timestamp"] = 0
@@ -289,10 +288,9 @@ class TestGetWebUIConfig(unittest.TestCase):
     @patch("server.get_config")
     def test_load_config_with_defaults(self, mock_get_config):
         """测试使用默认值加载配置"""
-        from server import get_web_ui_config
-
         # 清除缓存
         import server
+        from server import get_web_ui_config
 
         server._config_cache["config"] = None
         server._config_cache["timestamp"] = 0

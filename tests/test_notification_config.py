@@ -10,7 +10,7 @@ Notification 配置模块单元测试
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestNotificationConfigConstants(unittest.TestCase):
@@ -25,10 +25,7 @@ class TestNotificationConfigConstants(unittest.TestCase):
         self.assertEqual(NotificationConfig.SOUND_VOLUME_MAX, 1.0)
 
         # Bark 动作有效值
-        self.assertEqual(
-            NotificationConfig.BARK_ACTIONS_VALID,
-            ("none", "url", "copy")
-        )
+        self.assertEqual(NotificationConfig.BARK_ACTIONS_VALID, ("none", "url", "copy"))
 
 
 class TestSoundVolumeValidation(unittest.TestCase):
@@ -152,7 +149,7 @@ class TestBarkEnabledValidation(unittest.TestCase):
         config = NotificationConfig(
             bark_enabled=True,
             bark_device_key="test_key",
-            bark_url="https://api.day.app/push"
+            bark_url="https://api.day.app/push",
         )
         self.assertTrue(config.bark_enabled)
         self.assertEqual(config.bark_device_key, "test_key")

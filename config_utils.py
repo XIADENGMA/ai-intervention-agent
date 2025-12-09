@@ -15,7 +15,7 @@
 """
 
 import logging
-from typing import Any, Optional, TypeVar, Union
+from typing import Any, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -59,15 +59,11 @@ def clamp_value(
     """
     if value < min_val:
         if log_warning:
-            logger.warning(
-                f"{field_name} ({value}) 小于最小值 {min_val}，已调整"
-            )
+            logger.warning(f"{field_name} ({value}) 小于最小值 {min_val}，已调整")
         return min_val
     elif value > max_val:
         if log_warning:
-            logger.warning(
-                f"{field_name} ({value}) 大于最大值 {max_val}，已调整"
-            )
+            logger.warning(f"{field_name} ({value}) 大于最大值 {max_val}，已调整")
         return max_val
     return value
 
@@ -198,7 +194,7 @@ def get_typed_config(
 
     # 类型转换
     try:
-        if value_type == bool and isinstance(raw_value, str):
+        if value_type is bool and isinstance(raw_value, str):
             # 特殊处理字符串布尔值
             typed_value = raw_value.lower() in ("true", "1", "yes", "on")
         else:

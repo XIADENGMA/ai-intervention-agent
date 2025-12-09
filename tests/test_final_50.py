@@ -27,36 +27,34 @@ class TestWebUIFinalPush(unittest.TestCase):
             prompt="最终冲刺",
             predefined_options=["是", "否"],
             task_id="final-push",
-            port=8970
+            port=8970,
         )
         cls.app = cls.web_ui.app
-        cls.app.config['TESTING'] = True
+        cls.app.config["TESTING"] = True
         cls.client = cls.app.test_client()
 
     def test_index_content_type(self):
         """测试首页内容类型"""
-        response = self.client.get('/')
+        response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('text/html', response.content_type)
+        self.assertIn("text/html", response.content_type)
 
     def test_api_tasks_json(self):
         """测试任务 API 返回 JSON"""
-        response = self.client.get('/api/tasks')
+        response = self.client.get("/api/tasks")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn('application/json', response.content_type)
+        self.assertIn("application/json", response.content_type)
 
     def test_notification_config_update_sound(self):
         """测试更新声音配置"""
         response = self.client.post(
-            '/api/update-notification-config',
-            data=json.dumps({
-                'sound_enabled': True,
-                'sound_volume': 75,
-                'sound_mute': False
-            }),
-            content_type='application/json'
+            "/api/update-notification-config",
+            data=json.dumps(
+                {"sound_enabled": True, "sound_volume": 75, "sound_mute": False}
+            ),
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 200)
@@ -64,12 +62,9 @@ class TestWebUIFinalPush(unittest.TestCase):
     def test_notification_config_update_web(self):
         """测试更新 Web 配置"""
         response = self.client.post(
-            '/api/update-notification-config',
-            data=json.dumps({
-                'web_enabled': True,
-                'web_timeout': 5000
-            }),
-            content_type='application/json'
+            "/api/update-notification-config",
+            data=json.dumps({"web_enabled": True, "web_timeout": 5000}),
+            content_type="application/json",
         )
 
         self.assertEqual(response.status_code, 200)
@@ -83,9 +78,9 @@ class TestServerFinalPush(unittest.TestCase):
         from server import parse_structured_response
 
         response = {
-            'user_input': '',
-            'selected_options': ['选项1', '选项2', '选项3'],
-            'images': []
+            "user_input": "",
+            "selected_options": ["选项1", "选项2", "选项3"],
+            "images": [],
         }
 
         result = parse_structured_response(response)
@@ -140,8 +135,14 @@ class TestNotificationFinalPush(unittest.TestCase):
 
         # 检查所有属性
         attrs = [
-            'enabled', 'web_enabled', 'sound_enabled', 'bark_enabled',
-            'sound_mute', 'sound_volume', 'bark_url', 'bark_device_key'
+            "enabled",
+            "web_enabled",
+            "sound_enabled",
+            "bark_enabled",
+            "sound_mute",
+            "sound_volume",
+            "bark_url",
+            "bark_device_key",
         ]
 
         for attr in attrs:
@@ -155,7 +156,7 @@ class TestNotificationFinalPush(unittest.TestCase):
             NotificationType.WEB,
             NotificationType.SOUND,
             NotificationType.BARK,
-            NotificationType.SYSTEM
+            NotificationType.SYSTEM,
         ]
 
         for t in types:
@@ -174,9 +175,9 @@ class TestTaskQueueFinalPush(unittest.TestCase):
         # 获取统计
         stats = queue.get_task_count()
 
-        self.assertIn('pending', stats)
-        self.assertIn('active', stats)
-        self.assertIn('completed', stats)
+        self.assertIn("pending", stats)
+        self.assertIn("active", stats)
+        self.assertIn("completed", stats)
 
         queue.clear_all_tasks()
 
@@ -195,7 +196,7 @@ class TestTaskQueueFinalPush(unittest.TestCase):
 
         # 验证已清空
         stats = queue.get_task_count()
-        self.assertEqual(stats['pending'] + stats['active'] + stats['completed'], 0)
+        self.assertEqual(stats["pending"] + stats["active"] + stats["completed"], 0)
 
 
 def run_tests():

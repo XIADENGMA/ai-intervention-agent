@@ -1186,10 +1186,10 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
         return result
     except (ValueError, TypeError) as e:
         logger.error(f"配置参数错误: {e}")
-        raise ValueError(f"Web UI 配置错误: {e}")
+        raise ValueError(f"Web UI 配置错误: {e}") from e
     except Exception as e:
         logger.error(f"配置文件加载失败: {e}")
-        raise ValueError(f"Web UI 配置加载失败: {e}")
+        raise ValueError(f"Web UI 配置加载失败: {e}") from e
 
 
 # ============================================================================
@@ -1488,7 +1488,7 @@ def validate_input(
     try:
         cleaned_prompt = prompt.strip()
     except AttributeError:
-        raise ValueError("prompt 必须是字符串类型")
+        raise ValueError("prompt 必须是字符串类型") from None
     if len(cleaned_prompt) > 10000:
         logger.warning(f"prompt 长度过长 ({len(cleaned_prompt)} 字符)，将被截断")
         cleaned_prompt = cleaned_prompt[:10000] + "..."
@@ -1916,10 +1916,10 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
 
     except FileNotFoundError as e:
         logger.error(f"Python 解释器或脚本文件未找到: {e}")
-        raise Exception(f"无法启动 Web 服务，文件未找到: {e}")
+        raise Exception(f"无法启动 Web 服务，文件未找到: {e}") from e
     except PermissionError as e:
         logger.error(f"权限不足，无法启动服务: {e}")
-        raise Exception(f"权限不足，无法启动 Web 服务: {e}")
+        raise Exception(f"权限不足，无法启动 Web 服务: {e}") from e
     except Exception as e:
         logger.error(f"启动服务进程时出错: {e}")
         # 如果启动失败，再次检查服务是否已经在运行
@@ -1927,7 +1927,7 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
             logger.info("服务已经在运行，继续使用现有服务")
             return
         else:
-            raise Exception(f"启动 Web 服务失败: {e}")
+            raise Exception(f"启动 Web 服务失败: {e}") from e
 
     # 等待服务启动并进行健康检查
     max_wait = 15  # 最多等待15秒
@@ -2086,16 +2086,16 @@ def update_web_content(
 
     except requests.exceptions.Timeout:
         logger.error(f"更新内容超时 ({config.timeout}秒)")
-        raise Exception("更新内容超时，请检查网络连接")
+        raise Exception("更新内容超时，请检查网络连接") from None
     except requests.exceptions.ConnectionError:
         logger.error(f"无法连接到 Web 服务: {url}")
-        raise Exception("无法连接到 Web 服务，请确认服务正在运行")
+        raise Exception("无法连接到 Web 服务，请确认服务正在运行") from None
     except requests.exceptions.RequestException as e:
         logger.error(f"更新内容时网络请求失败: {e}")
-        raise Exception(f"更新内容失败: {e}")
+        raise Exception(f"更新内容失败: {e}") from e
     except Exception as e:
         logger.error(f"更新内容时出现未知错误: {e}")
-        raise Exception(f"更新 Web 内容失败: {e}")
+        raise Exception(f"更新 Web 内容失败: {e}") from e
 
 
 def parse_structured_response(response_data: Optional[Dict[str, Any]]) -> list:
@@ -2887,13 +2887,13 @@ def launch_feedback_ui(
 
     except ValueError as e:
         logger.error(f"输入参数错误: {e}")
-        raise Exception(f"参数验证失败: {e}")
+        raise Exception(f"参数验证失败: {e}") from e
     except FileNotFoundError as e:
         logger.error(f"文件未找到: {e}")
-        raise Exception(f"必要文件缺失: {e}")
+        raise Exception(f"必要文件缺失: {e}") from e
     except Exception as e:
         logger.error(f"启动反馈界面失败: {e}")
-        raise Exception(f"反馈界面启动失败: {e}")
+        raise Exception(f"反馈界面启动失败: {e}") from e
 
 
 @mcp.tool()

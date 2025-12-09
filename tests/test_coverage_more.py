@@ -8,7 +8,6 @@ AI Intervention Agent - 进一步覆盖率提升测试
 """
 
 import json
-import os
 import shutil
 import sys
 import tempfile
@@ -16,7 +15,6 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -27,12 +25,14 @@ sys.path.insert(0, str(project_root))
 # notification_manager.py 未覆盖路径测试
 # ============================================================================
 
+
 class TestNotificationManagerSend(unittest.TestCase):
     """通知发送功能测试"""
 
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
 
     def test_send_notification_disabled(self):
@@ -43,10 +43,9 @@ class TestNotificationManagerSend(unittest.TestCase):
 
         try:
             from notification_manager import NotificationTrigger
+
             result = self.manager.send_notification(
-                title="测试",
-                message="消息",
-                trigger=NotificationTrigger.IMMEDIATE
+                title="测试", message="消息", trigger=NotificationTrigger.IMMEDIATE
             )
 
             # 应该返回空字符串
@@ -67,7 +66,7 @@ class TestNotificationManagerSend(unittest.TestCase):
                 title="立即通知",
                 message="测试消息",
                 trigger=NotificationTrigger.IMMEDIATE,
-                types=[NotificationType.WEB]
+                types=[NotificationType.WEB],
             )
 
             # 应该返回事件 ID
@@ -88,7 +87,7 @@ class TestNotificationManagerSend(unittest.TestCase):
                 message="测试消息",
                 trigger=NotificationTrigger.IMMEDIATE,
                 types=[NotificationType.WEB],
-                metadata={"extra": "data", "number": 42}
+                metadata={"extra": "data", "number": 42},
             )
 
             self.assertTrue(result.startswith("notification_"))
@@ -154,7 +153,7 @@ class TestNotificationEventAdvanced(unittest.TestCase):
         from notification_manager import (
             NotificationEvent,
             NotificationTrigger,
-            NotificationType
+            NotificationType,
         )
 
         event = NotificationEvent(
@@ -164,7 +163,7 @@ class TestNotificationEventAdvanced(unittest.TestCase):
             trigger=NotificationTrigger.IMMEDIATE,
             types=[NotificationType.WEB, NotificationType.SOUND],
             metadata={"key": "value"},
-            max_retries=3
+            max_retries=3,
         )
 
         self.assertEqual(event.id, "full-event-123")
@@ -177,16 +176,13 @@ class TestNotificationEventAdvanced(unittest.TestCase):
 
     def test_event_default_values(self):
         """测试事件默认值"""
-        from notification_manager import (
-            NotificationEvent,
-            NotificationTrigger
-        )
+        from notification_manager import NotificationEvent, NotificationTrigger
 
         event = NotificationEvent(
             id="default-event",
             title="标题",
             message="消息",
-            trigger=NotificationTrigger.IMMEDIATE
+            trigger=NotificationTrigger.IMMEDIATE,
         )
 
         # 检查默认值
@@ -197,6 +193,7 @@ class TestNotificationEventAdvanced(unittest.TestCase):
 # ============================================================================
 # config_manager.py 高级功能测试
 # ============================================================================
+
 
 class TestConfigManagerDelayedSave(unittest.TestCase):
     """配置管理器延迟保存测试"""
@@ -216,7 +213,7 @@ class TestConfigManagerDelayedSave(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "delayed_save.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"test": 1}, f)
 
         mgr = ConfigManager(str(config_file))
@@ -228,7 +225,7 @@ class TestConfigManagerDelayedSave(unittest.TestCase):
         mgr.force_save()
 
         # 验证保存成功
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             saved = json.load(f)
 
         self.assertEqual(saved.get("test"), 2)
@@ -252,14 +249,8 @@ class TestConfigManagerNestedConfig(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "nested.json"
-        with open(config_file, 'w') as f:
-            json.dump({
-                "level1": {
-                    "level2": {
-                        "level3": "deep_value"
-                    }
-                }
-            }, f)
+        with open(config_file, "w") as f:
+            json.dump({"level1": {"level2": {"level3": "deep_value"}}}, f)
 
         mgr = ConfigManager(str(config_file))
 
@@ -273,12 +264,8 @@ class TestConfigManagerNestedConfig(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "nested_update.json"
-        with open(config_file, 'w') as f:
-            json.dump({
-                "section": {
-                    "key1": "value1"
-                }
-            }, f)
+        with open(config_file, "w") as f:
+            json.dump({"section": {"key1": "value1"}}, f)
 
         mgr = ConfigManager(str(config_file))
 
@@ -347,11 +334,11 @@ class TestParseJsonc(unittest.TestCase):
         """测试单行注释"""
         from config_manager import parse_jsonc
 
-        content = '''
+        content = """
 {
     // 这是注释
     "key": "value"
-}'''
+}"""
         result = parse_jsonc(content)
 
         self.assertEqual(result["key"], "value")
@@ -360,12 +347,12 @@ class TestParseJsonc(unittest.TestCase):
         """测试多行注释"""
         from config_manager import parse_jsonc
 
-        content = '''
+        content = """
 {
     /* 这是
        多行注释 */
     "key": "value"
-}'''
+}"""
         result = parse_jsonc(content)
 
         self.assertEqual(result["key"], "value")
@@ -374,10 +361,10 @@ class TestParseJsonc(unittest.TestCase):
         """测试字符串中的注释符号"""
         from config_manager import parse_jsonc
 
-        content = '''
+        content = """
 {
     "url": "http://example.com/path"
-}'''
+}"""
         result = parse_jsonc(content)
 
         self.assertEqual(result["url"], "http://example.com/path")
@@ -401,13 +388,16 @@ class TestConfigManagerBoolConversion(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "bool_true.json"
-        with open(config_file, 'w') as f:
-            json.dump({
-                "bool_true": True,
-                "string_true": "true",
-                "string_yes": "yes",
-                "number_one": 1
-            }, f)
+        with open(config_file, "w") as f:
+            json.dump(
+                {
+                    "bool_true": True,
+                    "string_true": "true",
+                    "string_yes": "yes",
+                    "number_one": 1,
+                },
+                f,
+            )
 
         mgr = ConfigManager(str(config_file))
 
@@ -419,12 +409,10 @@ class TestConfigManagerBoolConversion(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "bool_false.json"
-        with open(config_file, 'w') as f:
-            json.dump({
-                "bool_false": False,
-                "string_false": "false",
-                "number_zero": 0
-            }, f)
+        with open(config_file, "w") as f:
+            json.dump(
+                {"bool_false": False, "string_false": "false", "number_zero": 0}, f
+            )
 
         mgr = ConfigManager(str(config_file))
 
@@ -435,12 +423,17 @@ class TestConfigManagerBoolConversion(unittest.TestCase):
 # 边界条件测试
 # ============================================================================
 
+
 class TestBoundaryConditions(unittest.TestCase):
     """边界条件测试"""
 
     def test_empty_notification_title(self):
         """测试空标题通知"""
-        from notification_manager import notification_manager, NotificationTrigger, NotificationType
+        from notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
 
         original_enabled = notification_manager.config.enabled
         notification_manager.config.enabled = True
@@ -450,7 +443,7 @@ class TestBoundaryConditions(unittest.TestCase):
                 title="",
                 message="空标题测试",
                 trigger=NotificationTrigger.IMMEDIATE,
-                types=[NotificationType.WEB]
+                types=[NotificationType.WEB],
             )
 
             # 应该能处理空标题
@@ -460,7 +453,11 @@ class TestBoundaryConditions(unittest.TestCase):
 
     def test_empty_notification_message(self):
         """测试空消息通知"""
-        from notification_manager import notification_manager, NotificationTrigger, NotificationType
+        from notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
 
         original_enabled = notification_manager.config.enabled
         notification_manager.config.enabled = True
@@ -470,7 +467,7 @@ class TestBoundaryConditions(unittest.TestCase):
                 title="空消息测试",
                 message="",
                 trigger=NotificationTrigger.IMMEDIATE,
-                types=[NotificationType.WEB]
+                types=[NotificationType.WEB],
             )
 
             # 应该能处理空消息
@@ -480,7 +477,11 @@ class TestBoundaryConditions(unittest.TestCase):
 
     def test_very_long_notification(self):
         """测试超长通知"""
-        from notification_manager import notification_manager, NotificationTrigger, NotificationType
+        from notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
 
         original_enabled = notification_manager.config.enabled
         notification_manager.config.enabled = True
@@ -493,7 +494,7 @@ class TestBoundaryConditions(unittest.TestCase):
                 title=long_title,
                 message=long_message,
                 trigger=NotificationTrigger.IMMEDIATE,
-                types=[NotificationType.WEB]
+                types=[NotificationType.WEB],
             )
 
             # 应该能处理超长内容

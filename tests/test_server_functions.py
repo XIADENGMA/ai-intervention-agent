@@ -8,8 +8,6 @@ AI Intervention Agent - Server 函数测试
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
-import asyncio
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -77,9 +75,9 @@ class TestParseStructuredResponse(unittest.TestCase):
         from server import parse_structured_response
 
         response = {
-            'user_input': '用户输入内容',
-            'selected_options': ['选项A', '选项B'],
-            'images': []
+            "user_input": "用户输入内容",
+            "selected_options": ["选项A", "选项B"],
+            "images": [],
         }
 
         result = parse_structured_response(response)
@@ -91,11 +89,7 @@ class TestParseStructuredResponse(unittest.TestCase):
         """测试仅有选项的响应"""
         from server import parse_structured_response
 
-        response = {
-            'user_input': '',
-            'selected_options': ['确认'],
-            'images': []
-        }
+        response = {"user_input": "", "selected_options": ["确认"], "images": []}
 
         result = parse_structured_response(response)
 
@@ -106,14 +100,14 @@ class TestParseStructuredResponse(unittest.TestCase):
         from server import parse_structured_response
 
         response = {
-            'user_input': '带图片的反馈',
-            'selected_options': [],
-            'images': [
+            "user_input": "带图片的反馈",
+            "selected_options": [],
+            "images": [
                 {
-                    'data': 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-                    'mimeType': 'image/png'
+                    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+                    "mimeType": "image/png",
                 }
-            ]
+            ],
         }
 
         result = parse_structured_response(response)
@@ -126,11 +120,7 @@ class TestParseStructuredResponse(unittest.TestCase):
         """测试空响应"""
         from server import parse_structured_response
 
-        response = {
-            'user_input': '',
-            'selected_options': [],
-            'images': []
-        }
+        response = {"user_input": "", "selected_options": [], "images": []}
 
         result = parse_structured_response(response)
 
@@ -140,9 +130,7 @@ class TestParseStructuredResponse(unittest.TestCase):
         """测试旧格式响应"""
         from server import parse_structured_response
 
-        response = {
-            'interactive_feedback': '旧格式的反馈内容'
-        }
+        response = {"interactive_feedback": "旧格式的反馈内容"}
 
         result = parse_structured_response(response)
 
@@ -156,6 +144,7 @@ class TestWaitForTaskCompletion(unittest.TestCase):
         """测试函数存在"""
         try:
             from server import wait_for_task_completion
+
             self.assertTrue(callable(wait_for_task_completion))
         except ImportError:
             self.skipTest("无法导入 wait_for_task_completion")
@@ -168,6 +157,7 @@ class TestEnsureWebUIRunning(unittest.TestCase):
         """测试函数存在"""
         try:
             from server import ensure_web_ui_running
+
             self.assertTrue(callable(ensure_web_ui_running))
         except ImportError:
             self.skipTest("无法导入 ensure_web_ui_running")
@@ -180,6 +170,7 @@ class TestLaunchFeedbackUI(unittest.TestCase):
         """测试函数存在"""
         try:
             from server import launch_feedback_ui
+
             self.assertTrue(callable(launch_feedback_ui))
         except ImportError:
             self.skipTest("无法导入 launch_feedback_ui")
@@ -192,6 +183,7 @@ class TestServerConstants(unittest.TestCase):
         """测试最大消息长度常量"""
         try:
             from server import MAX_MESSAGE_LENGTH
+
             self.assertIsInstance(MAX_MESSAGE_LENGTH, int)
             self.assertGreater(MAX_MESSAGE_LENGTH, 0)
         except ImportError:
@@ -201,6 +193,7 @@ class TestServerConstants(unittest.TestCase):
         """测试最大选项长度常量"""
         try:
             from server import MAX_OPTION_LENGTH
+
             self.assertIsInstance(MAX_OPTION_LENGTH, int)
             self.assertGreater(MAX_OPTION_LENGTH, 0)
         except ImportError:
@@ -214,6 +207,7 @@ class TestServerLogger(unittest.TestCase):
         """测试日志器存在"""
         try:
             from server import logger
+
             self.assertIsNotNone(logger)
         except ImportError:
             self.skipTest("无法导入 logger")
@@ -226,6 +220,7 @@ class TestInteractiveFeedbackTool(unittest.TestCase):
         """测试 interactive_feedback 函数存在"""
         try:
             from server import interactive_feedback
+
             # interactive_feedback 可能是被 MCP 装饰器处理的异步函数
             self.assertIsNotNone(interactive_feedback)
         except ImportError:
@@ -248,11 +243,7 @@ class TestContentTypes(unittest.TestCase):
         """测试图片内容创建"""
         from mcp.types import ImageContent
 
-        content = ImageContent(
-            type="image",
-            data="base64data",
-            mimeType="image/png"
-        )
+        content = ImageContent(type="image", data="base64data", mimeType="image/png")
 
         self.assertEqual(content.type, "image")
         self.assertEqual(content.mimeType, "image/png")

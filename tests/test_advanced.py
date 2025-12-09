@@ -10,7 +10,6 @@ AI Intervention Agent - 高级测试用例
 """
 
 import json
-import os
 import shutil
 import sys
 import tempfile
@@ -18,7 +17,6 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -29,12 +27,14 @@ sys.path.insert(0, str(project_root))
 # 边界条件测试
 # ============================================================================
 
+
 class TestNotificationManagerBoundary(unittest.TestCase):
     """通知管理器边界条件测试"""
 
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
 
     def test_refresh_with_missing_config_keys(self):
@@ -63,6 +63,7 @@ class TestNotificationManagerBoundary(unittest.TestCase):
 
         # 不应该崩溃
         from notification_providers import BarkNotificationProvider
+
         provider = BarkNotificationProvider(self.manager.config)
         self.assertIsNotNone(provider)
 
@@ -104,19 +105,9 @@ class TestConfigManagerBoundary(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "nested.json"
-        nested_config = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "level4": {
-                            "value": 42
-                        }
-                    }
-                }
-            }
-        }
+        nested_config = {"level1": {"level2": {"level3": {"level4": {"value": 42}}}}}
 
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump(nested_config, f)
 
         mgr = ConfigManager(str(config_file))
@@ -134,10 +125,10 @@ class TestConfigManagerBoundary(unittest.TestCase):
             "chinese": "中文测试",
             "japanese": "日本語テスト",
             "emoji": "🎉🚀💻",
-            "mixed": "Hello 世界 🌍"
+            "mixed": "Hello 世界 🌍",
         }
 
-        with open(config_file, 'w', encoding='utf-8') as f:
+        with open(config_file, "w", encoding="utf-8") as f:
             json.dump(unicode_config, f, ensure_ascii=False)
 
         mgr = ConfigManager(str(config_file))
@@ -153,15 +144,17 @@ class TestConfigManagerBoundary(unittest.TestCase):
         special_config = {
             "url": "http://example.com/path?param=value&other=123",
             "path": "/home/user/文件夹/file.txt",
-            "regex": "^[a-z]+\\d+$"
+            "regex": "^[a-z]+\\d+$",
         }
 
-        with open(config_file, 'w', encoding='utf-8') as f:
+        with open(config_file, "w", encoding="utf-8") as f:
             json.dump(special_config, f)
 
         mgr = ConfigManager(str(config_file))
 
-        self.assertEqual(mgr.get("url"), "http://example.com/path?param=value&other=123")
+        self.assertEqual(
+            mgr.get("url"), "http://example.com/path?param=value&other=123"
+        )
 
 
 class TestTaskQueueBoundary(unittest.TestCase):
@@ -170,6 +163,7 @@ class TestTaskQueueBoundary(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from task_queue import TaskQueue
+
         self.queue = TaskQueue(max_tasks=5)
 
     def tearDown(self):
@@ -193,7 +187,9 @@ class TestTaskQueueBoundary(unittest.TestCase):
 
     def test_special_characters_in_prompt(self):
         """测试提示中的特殊字符"""
-        special_prompt = "<script>alert('xss')</script>\n\t\"quotes\" 'single' `backtick`"
+        special_prompt = (
+            "<script>alert('xss')</script>\n\t\"quotes\" 'single' `backtick`"
+        )
         result = self.queue.add_task("task-special", special_prompt)
 
         self.assertTrue(result)
@@ -216,6 +212,7 @@ class TestFileValidatorBoundary(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from file_validator import FileValidator
+
         self.validator = FileValidator()
 
     def test_unicode_filename(self):
@@ -258,6 +255,7 @@ class TestFileValidatorBoundary(unittest.TestCase):
 # 异常处理测试
 # ============================================================================
 
+
 class TestConfigManagerExceptions(unittest.TestCase):
     """配置管理器异常处理测试"""
 
@@ -291,7 +289,7 @@ class TestConfigManagerExceptions(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "test_perm.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"test": True}, f)
 
         mgr = ConfigManager(str(config_file))
@@ -307,12 +305,13 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import NotificationConfig
+
         self.config = NotificationConfig()
 
     def test_bark_network_unavailable(self):
         """测试 Bark 网络不可用"""
-        from notification_providers import BarkNotificationProvider
         from notification_manager import NotificationEvent, NotificationTrigger
+        from notification_providers import BarkNotificationProvider
 
         self.config.bark_enabled = True
         self.config.bark_url = "https://invalid-domain-that-does-not-exist.test/push"
@@ -325,7 +324,7 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
             title="测试",
             message="消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={}
+            metadata={},
         )
 
         # 应该返回 False，不应该抛出异常
@@ -334,8 +333,8 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
 
     def test_web_provider_with_none_metadata(self):
         """测试 Web 提供者处理 None metadata"""
-        from notification_providers import WebNotificationProvider
         from notification_manager import NotificationEvent, NotificationTrigger
+        from notification_providers import WebNotificationProvider
 
         provider = WebNotificationProvider(self.config)
 
@@ -344,7 +343,7 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
             title="测试",
             message="消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata=None  # 测试 None
+            metadata=None,  # 测试 None
         )
         # 手动设置 metadata 为 None 来测试
         event.metadata = None
@@ -360,6 +359,7 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
 # ============================================================================
 # 并发压力测试
 # ============================================================================
+
 
 class TestHighConcurrency(unittest.TestCase):
     """高并发测试"""
@@ -419,9 +419,7 @@ class TestHighConcurrency(unittest.TestCase):
             except Exception as e:
                 errors.append(e)
 
-        threads = [
-            threading.Thread(target=reader) for _ in range(5)
-        ] + [
+        threads = [threading.Thread(target=reader) for _ in range(5)] + [
             threading.Thread(target=writer) for _ in range(2)
         ]
 
@@ -443,7 +441,9 @@ class TestHighConcurrency(unittest.TestCase):
         def validator(thread_id):
             try:
                 for i in range(50):
-                    result = validate_uploaded_file(png_data, f"test_{thread_id}_{i}.png")
+                    result = validate_uploaded_file(
+                        png_data, f"test_{thread_id}_{i}.png"
+                    )
                     if not result["valid"]:
                         errors.append(f"Validation failed: {result}")
             except Exception as e:
@@ -464,13 +464,14 @@ class TestHighConcurrency(unittest.TestCase):
 # 集成测试
 # ============================================================================
 
+
 class TestModuleIntegration(unittest.TestCase):
     """模块间集成测试"""
 
     def test_notification_manager_with_config(self):
         """测试通知管理器与配置的集成"""
-        from notification_manager import notification_manager
         from config_manager import get_config
+        from notification_manager import notification_manager
 
         # 从配置管理器获取配置
         config = get_config()

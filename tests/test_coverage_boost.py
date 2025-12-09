@@ -9,11 +9,9 @@ AI Intervention Agent - 覆盖率提升测试
 """
 
 import json
-import os
 import shutil
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -27,6 +25,7 @@ sys.path.insert(0, str(project_root))
 # ============================================================================
 # config_manager.py 覆盖率提升
 # ============================================================================
+
 
 class TestConfigManagerAdvanced(unittest.TestCase):
     """配置管理器高级测试"""
@@ -56,7 +55,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "update_test.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"a": 1, "b": 2}, f)
 
         mgr = ConfigManager(str(config_file))
@@ -72,7 +71,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "force_save_test.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"test": True}, f)
 
         mgr = ConfigManager(str(config_file))
@@ -80,7 +79,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         mgr.force_save()
 
         # 重新加载验证
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             saved = json.load(f)
 
         self.assertEqual(saved.get("test"), False)
@@ -90,14 +89,14 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "reload_test.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"value": 1}, f)
 
         mgr = ConfigManager(str(config_file))
         self.assertEqual(mgr.get("value"), 1)
 
         # 外部修改文件
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"value": 2}, f)
 
         # 重载
@@ -110,7 +109,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "getall_test.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"a": 1, "b": {"c": 2}}, f)
 
         mgr = ConfigManager(str(config_file))
@@ -124,13 +123,15 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "section_test.json"
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump({"notification": {"enabled": True}}, f)
 
         mgr = ConfigManager(str(config_file))
 
         # 更新配置段
-        mgr.update_section("notification", {"enabled": False, "new_key": "value"}, save=False)
+        mgr.update_section(
+            "notification", {"enabled": False, "new_key": "value"}, save=False
+        )
 
         section = mgr.get_section("notification")
         self.assertEqual(section.get("enabled"), False)
@@ -155,13 +156,13 @@ class TestConfigManagerJsoncSave(unittest.TestCase):
         from config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "preserve_test.jsonc"
-        initial_content = '''{
+        initial_content = """{
     // 配置注释
     "key": "value",
     "number": 42
-}'''
+}"""
 
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             f.write(initial_content)
 
         mgr = ConfigManager(str(config_file))
@@ -172,11 +173,12 @@ class TestConfigManagerJsoncSave(unittest.TestCase):
         mgr.force_save()
 
         # 读取保存后的内容
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             saved_content = f.read()
 
         # 验证值已更新
         from config_manager import parse_jsonc
+
         saved_config = parse_jsonc(saved_content)
         self.assertEqual(saved_config.get("number"), 100)
 
@@ -185,12 +187,14 @@ class TestConfigManagerJsoncSave(unittest.TestCase):
 # notification_manager.py 覆盖率提升
 # ============================================================================
 
+
 class TestNotificationManagerSendNotification(unittest.TestCase):
     """通知发送功能测试"""
 
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
 
     def test_get_config(self):
@@ -261,7 +265,7 @@ class TestNotificationEvent(unittest.TestCase):
             title="测试标题",
             message="测试消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={"key": "value"}
+            metadata={"key": "value"},
         )
 
         self.assertEqual(event.id, "test-123")
@@ -271,14 +275,18 @@ class TestNotificationEvent(unittest.TestCase):
 
     def test_event_with_types(self):
         """测试事件指定类型"""
-        from notification_manager import NotificationEvent, NotificationTrigger, NotificationType
+        from notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+            NotificationType,
+        )
 
         event = NotificationEvent(
             id="test-456",
             title="标题",
             message="消息",
             trigger=NotificationTrigger.DELAYED,
-            types=[NotificationType.WEB, NotificationType.SOUND]
+            types=[NotificationType.WEB, NotificationType.SOUND],
         )
 
         self.assertEqual(len(event.types), 2)
@@ -289,13 +297,14 @@ class TestNotificationEvent(unittest.TestCase):
 # notification_providers.py 覆盖率提升
 # ============================================================================
 
+
 class TestCreateNotificationProviders(unittest.TestCase):
     """通知提供者工厂函数测试"""
 
     def test_create_all_providers(self):
         """测试创建所有提供者"""
-        from notification_providers import create_notification_providers
         from notification_manager import NotificationConfig, NotificationType
+        from notification_providers import create_notification_providers
 
         config = NotificationConfig()
         config.web_enabled = True
@@ -310,8 +319,8 @@ class TestCreateNotificationProviders(unittest.TestCase):
 
     def test_create_disabled_providers(self):
         """测试创建禁用的提供者"""
-        from notification_providers import create_notification_providers
         from notification_manager import NotificationConfig, NotificationType
+        from notification_providers import create_notification_providers
 
         config = NotificationConfig()
         config.web_enabled = False
@@ -331,8 +340,8 @@ class TestBarkProviderAdvanced(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import BarkNotificationProvider
         from notification_manager import NotificationConfig
+        from notification_providers import BarkNotificationProvider
 
         self.config = NotificationConfig()
         self.config.bark_enabled = True
@@ -347,7 +356,7 @@ class TestBarkProviderAdvanced(unittest.TestCase):
         """测试元数据序列化"""
         from notification_manager import NotificationEvent, NotificationTrigger
 
-        with patch.object(self.provider.session, 'post') as mock_post:
+        with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_post.return_value = mock_response
@@ -363,8 +372,8 @@ class TestBarkProviderAdvanced(unittest.TestCase):
                     "list": [1, 2, 3],
                     "dict": {"nested": "value"},
                     "bool": True,
-                    "none": None
-                }
+                    "none": None,
+                },
             )
 
             result = self.provider.send(event)
@@ -376,7 +385,7 @@ class TestBarkProviderAdvanced(unittest.TestCase):
         """测试保留键被跳过"""
         from notification_manager import NotificationEvent, NotificationTrigger
 
-        with patch.object(self.provider.session, 'post') as mock_post:
+        with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_post.return_value = mock_response
@@ -389,9 +398,9 @@ class TestBarkProviderAdvanced(unittest.TestCase):
                 trigger=NotificationTrigger.IMMEDIATE,
                 metadata={
                     "title": "覆盖的标题",  # 保留键，应被跳过
-                    "body": "覆盖的内容",    # 保留键，应被跳过
-                    "custom": "允许的值"
-                }
+                    "body": "覆盖的内容",  # 保留键，应被跳过
+                    "custom": "允许的值",
+                },
             )
 
             result = self.provider.send(event)
@@ -400,12 +409,12 @@ class TestBarkProviderAdvanced(unittest.TestCase):
 
             # 检查调用参数
             call_args = mock_post.call_args
-            json_data = call_args.kwargs.get('json', {})
+            json_data = call_args.kwargs.get("json", {})
 
             # 原始标题应该保留
             self.assertEqual(json_data.get("title"), "标题")
 
-    @patch('notification_providers.requests.Session.post')
+    @patch("notification_providers.requests.Session.post")
     def test_all_2xx_success(self, mock_post):
         """测试所有 2xx 状态码都成功"""
         from notification_manager import NotificationEvent, NotificationTrigger
@@ -420,7 +429,7 @@ class TestBarkProviderAdvanced(unittest.TestCase):
                 title="标题",
                 message="消息",
                 trigger=NotificationTrigger.IMMEDIATE,
-                metadata={}
+                metadata={},
             )
 
             result = self.provider.send(event)
@@ -433,8 +442,8 @@ class TestWebProviderAdvanced(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import WebNotificationProvider
         from notification_manager import NotificationConfig
+        from notification_providers import WebNotificationProvider
 
         self.config = NotificationConfig()
         self.config.web_enabled = True
@@ -455,7 +464,7 @@ class TestWebProviderAdvanced(unittest.TestCase):
             title="测试标题",
             message="测试消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={"extra": "data"}
+            metadata={"extra": "data"},
         )
 
         result = self.provider.send(event)
@@ -478,7 +487,7 @@ class TestWebProviderAdvanced(unittest.TestCase):
             title="  带空格的标题  ",
             message="  带空格的消息  ",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={}
+            metadata={},
         )
 
         result = self.provider.send(event)
@@ -495,8 +504,8 @@ class TestSoundProviderAdvanced(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import SoundNotificationProvider
         from notification_manager import NotificationConfig
+        from notification_providers import SoundNotificationProvider
 
         self.config = NotificationConfig()
         self.config.sound_enabled = True
@@ -515,7 +524,7 @@ class TestSoundProviderAdvanced(unittest.TestCase):
             title="测试",
             message="消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={}
+            metadata={},
         )
 
         result = self.provider.send(event)
@@ -527,8 +536,8 @@ class TestSoundProviderAdvanced(unittest.TestCase):
 
     def test_unknown_sound_file_fallback(self):
         """测试未知声音文件回退到默认"""
-        from notification_providers import SoundNotificationProvider
         from notification_manager import NotificationEvent, NotificationTrigger
+        from notification_providers import SoundNotificationProvider
 
         self.config.sound_file = "unknown_sound"
         provider = SoundNotificationProvider(self.config)
@@ -538,7 +547,7 @@ class TestSoundProviderAdvanced(unittest.TestCase):
             title="测试",
             message="消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={}
+            metadata={},
         )
 
         result = provider.send(event)
@@ -560,7 +569,9 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestConfigManagerJsoncSave))
 
     # notification_manager 测试
-    suite.addTests(loader.loadTestsFromTestCase(TestNotificationManagerSendNotification))
+    suite.addTests(
+        loader.loadTestsFromTestCase(TestNotificationManagerSendNotification)
+    )
     suite.addTests(loader.loadTestsFromTestCase(TestNotificationConfig))
     suite.addTests(loader.loadTestsFromTestCase(TestNotificationEvent))
 

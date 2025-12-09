@@ -5,10 +5,6 @@
 """
 
 import unittest
-import tempfile
-import os
-import shutil
-from pathlib import Path
 
 
 class TestConfigManagerTypedGetters(unittest.TestCase):
@@ -222,9 +218,10 @@ class TestReadWriteLockAdvanced(unittest.TestCase):
 
     def test_write_lock_exclusive(self):
         """测试写锁排他性"""
-        from config_manager import ReadWriteLock
         import threading
         import time
+
+        from config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
         results = []
@@ -296,7 +293,9 @@ class TestConfigManagerExportImport(unittest.TestCase):
         self.assertEqual(config.get("notification.debug"), not original_debug)
 
         # 恢复原始值
-        config.import_config({"notification": {"debug": original_debug}}, merge=True, save=False)
+        config.import_config(
+            {"notification": {"debug": original_debug}}, merge=True, save=False
+        )
 
     def test_import_config_invalid_data(self):
         """测试导入无效数据"""
@@ -321,10 +320,10 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
         # 验证合并结果
         self.assertEqual(base["a"]["b"], 10)  # 已更新
-        self.assertEqual(base["a"]["c"], 2)   # 保留
-        self.assertEqual(base["a"]["e"], 5)   # 新增
-        self.assertEqual(base["d"], 3)        # 保留
-        self.assertEqual(base["f"], 6)        # 新增
+        self.assertEqual(base["a"]["c"], 2)  # 保留
+        self.assertEqual(base["a"]["e"], 5)  # 新增
+        self.assertEqual(base["d"], 3)  # 保留
+        self.assertEqual(base["f"], 6)  # 新增
 
 
 if __name__ == "__main__":

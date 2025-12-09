@@ -5,13 +5,7 @@ AI Intervention Agent - 最终覆盖率提升测试
 针对剩余未覆盖代码路径的补充测试
 """
 
-import json
-import os
-import shutil
 import sys
-import tempfile
-import threading
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -25,12 +19,14 @@ sys.path.insert(0, str(project_root))
 # notification_manager.py 剩余路径测试
 # ============================================================================
 
+
 class TestNotificationManagerProvider(unittest.TestCase):
     """提供者管理测试"""
 
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
 
     def test_get_provider(self):
@@ -48,6 +44,7 @@ class TestNotificationManagerQueue(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
 
     def test_get_pending_events(self):
@@ -90,6 +87,7 @@ class TestNotificationConfigAdvanced(unittest.TestCase):
 # ============================================================================
 # config_manager.py 剩余路径测试
 # ============================================================================
+
 
 class TestConfigManagerNetworkSecurity(unittest.TestCase):
     """网络安全配置测试"""
@@ -163,13 +161,14 @@ class TestConfigManagerDefaults(unittest.TestCase):
 # notification_providers.py 剩余路径测试
 # ============================================================================
 
+
 class TestBarkProviderEdgeCases(unittest.TestCase):
     """Bark 提供者边界测试"""
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import BarkNotificationProvider
         from notification_manager import NotificationConfig
+        from notification_providers import BarkNotificationProvider
 
         self.config = NotificationConfig()
         self.config.bark_enabled = True
@@ -182,7 +181,7 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
         """测试发送带特殊字符的通知"""
         from notification_manager import NotificationEvent, NotificationTrigger
 
-        with patch.object(self.provider.session, 'post') as mock_post:
+        with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_post.return_value = mock_response
@@ -192,7 +191,7 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
                 title="标题 <script>alert('xss')</script>",
                 message="消息 & 特殊字符 \"引号\" '单引号'",
                 trigger=NotificationTrigger.IMMEDIATE,
-                metadata={}
+                metadata={},
             )
 
             result = self.provider.send(event)
@@ -203,7 +202,7 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
         """测试发送 Unicode 内容"""
         from notification_manager import NotificationEvent, NotificationTrigger
 
-        with patch.object(self.provider.session, 'post') as mock_post:
+        with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_post.return_value = mock_response
@@ -213,7 +212,7 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
                 title="🎉 庆祝 🎊",
                 message="日本語 한국어 العربية",
                 trigger=NotificationTrigger.IMMEDIATE,
-                metadata={}
+                metadata={},
             )
 
             result = self.provider.send(event)
@@ -224,7 +223,7 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
         """测试发送空元数据"""
         from notification_manager import NotificationEvent, NotificationTrigger
 
-        with patch.object(self.provider.session, 'post') as mock_post:
+        with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_post.return_value = mock_response
@@ -234,7 +233,7 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
                 title="标题",
                 message="消息",
                 trigger=NotificationTrigger.IMMEDIATE,
-                metadata={}
+                metadata={},
             )
 
             result = self.provider.send(event)
@@ -247,8 +246,8 @@ class TestWebProviderEdgeCases(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import WebNotificationProvider
         from notification_manager import NotificationConfig
+        from notification_providers import WebNotificationProvider
 
         self.config = NotificationConfig()
         self.config.web_enabled = True
@@ -264,7 +263,7 @@ class TestWebProviderEdgeCases(unittest.TestCase):
             title="长" * 1000,
             message="消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={}
+            metadata={},
         )
 
         result = self.provider.send(event)
@@ -280,7 +279,7 @@ class TestWebProviderEdgeCases(unittest.TestCase):
             title="标题",
             message="消" * 10000,
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata={}
+            metadata={},
         )
 
         result = self.provider.send(event)
@@ -293,8 +292,8 @@ class TestSoundProviderEdgeCases(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import SoundNotificationProvider
         from notification_manager import NotificationConfig
+        from notification_providers import SoundNotificationProvider
 
         self.config = NotificationConfig()
         self.config.sound_enabled = True

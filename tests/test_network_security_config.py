@@ -11,7 +11,6 @@ Network Security 配置模块单元测试
 """
 
 import unittest
-from unittest.mock import patch, MagicMock
 
 
 class TestValidateBindInterface(unittest.TestCase):
@@ -95,9 +94,7 @@ class TestValidateNetworkCidr(unittest.TestCase):
 
         valid_ips = ["192.168.1.1", "::1", "10.0.0.1"]
         for ip in valid_ips:
-            self.assertTrue(
-                validate_network_cidr(ip), f"有效单 IP {ip} 应该返回 True"
-            )
+            self.assertTrue(validate_network_cidr(ip), f"有效单 IP {ip} 应该返回 True")
 
     def test_invalid_cidr(self):
         """测试无效的 CIDR"""
@@ -105,8 +102,8 @@ class TestValidateNetworkCidr(unittest.TestCase):
 
         invalid_cidrs = [
             "192.168.0.0/33",  # 掩码过大
-            "invalid/24",      # 无效 IP
-            "256.1.1.1/24",    # 无效 IP
+            "invalid/24",  # 无效 IP
+            "256.1.1.1/24",  # 无效 IP
         ]
         for cidr in invalid_cidrs:
             self.assertFalse(
@@ -169,7 +166,7 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_non_list_input(self):
         """测试非列表输入"""
-        from web_ui import validate_allowed_networks, DEFAULT_ALLOWED_NETWORKS
+        from web_ui import DEFAULT_ALLOWED_NETWORKS, validate_allowed_networks
 
         result = validate_allowed_networks("not a list")
 
@@ -177,7 +174,7 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_default_networks(self):
         """测试默认网络"""
-        from web_ui import validate_allowed_networks, DEFAULT_ALLOWED_NETWORKS
+        from web_ui import DEFAULT_ALLOWED_NETWORKS, validate_allowed_networks
 
         result = validate_allowed_networks(None)
 
@@ -401,8 +398,8 @@ class TestIntegration(unittest.TestCase):
     def test_constants_defined(self):
         """测试常量定义"""
         from web_ui import (
-            VALID_BIND_INTERFACES,
             DEFAULT_ALLOWED_NETWORKS,
+            VALID_BIND_INTERFACES,
         )
 
         self.assertIn("0.0.0.0", VALID_BIND_INTERFACES)
@@ -414,9 +411,6 @@ class TestIntegration(unittest.TestCase):
     def test_validation_chain(self):
         """测试验证链"""
         from web_ui import (
-            validate_bind_interface,
-            validate_allowed_networks,
-            validate_blocked_ips,
             validate_network_security_config,
         )
 

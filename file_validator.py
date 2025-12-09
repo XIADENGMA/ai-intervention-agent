@@ -65,7 +65,6 @@
 
 import logging
 import re
-from pathlib import Path
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -404,7 +403,7 @@ class FileValidator:
     """
 
     # 【优化】类级别常量：危险字符集合（所有实例共享）
-    _DANGEROUS_CHARS = frozenset(['<', '>', ':', '"', '|', '?', '*', '\0'])
+    _DANGEROUS_CHARS = frozenset(["<", ">", ":", '"', "|", "?", "*", "\0"])
 
     def __init__(self, max_file_size: int = 10 * 1024 * 1024):  # 10MB
         """
@@ -442,7 +441,7 @@ class FileValidator:
         self.compiled_patterns = []
         for pattern in MALICIOUS_PATTERNS:
             compiled = re.compile(pattern, re.IGNORECASE)
-            pattern_str = pattern.decode('utf-8', errors='ignore')
+            pattern_str = pattern.decode("utf-8", errors="ignore")
             self.compiled_patterns.append((compiled, pattern_str))
 
     def validate_file(
@@ -630,8 +629,8 @@ class FileValidator:
         # 【优化】使用 rsplit 代替 Path，避免创建对象
         # 原逻辑：Path(filename).suffix.lower()
         # 优化后：提取 '.' 后的扩展名，保留 '.' 前缀
-        parts = filename.rsplit('.', 1)
-        file_ext = ('.' + parts[1]).lower() if len(parts) > 1 else ''
+        parts = filename.rsplit(".", 1)
+        file_ext = ("." + parts[1]).lower() if len(parts) > 1 else ""
 
         # 检查危险扩展名
         if file_ext and file_ext in DANGEROUS_EXTENSIONS:
@@ -736,7 +735,9 @@ class FileValidator:
                         if not type_info["additional_check"](file_data):
                             continue
                     except Exception as e:
-                        logger.warning(f"额外检查失败: {type_info.get('description', 'Unknown')} - {e}")
+                        logger.warning(
+                            f"额外检查失败: {type_info.get('description', 'Unknown')} - {e}"
+                        )
                         continue
 
                 detected_type = type_info
@@ -791,7 +792,7 @@ class FileValidator:
         """
         # 检查空文件名或只包含空格/点的文件名
         stripped_name = filename.strip()
-        if not stripped_name or stripped_name == '.' or stripped_name == '..':
+        if not stripped_name or stripped_name == "." or stripped_name == "..":
             result["errors"].append("文件名无效（空或只包含点）")
 
         # 检查路径遍历攻击
@@ -844,7 +845,7 @@ class FileValidator:
 
         # 提取MIME类型的主类型（忽略参数部分）
         # 例如："image/png; charset=utf-8" → "image/png"
-        declared_main_type = declared_mime.split(';')[0].strip().lower()
+        declared_main_type = declared_mime.split(";")[0].strip().lower()
         detected_main_type = detected_type["mime_type"].lower()
 
         if declared_main_type != detected_main_type:

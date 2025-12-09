@@ -21,12 +21,12 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from enhanced_logging import (
-    LogDeduplicator,
-    LogSanitizer,
     AntiInjectionFilter,
     EnhancedLogger,
-    SecureLogFormatter,
     LevelBasedStreamHandler,
+    LogDeduplicator,
+    LogSanitizer,
+    SecureLogFormatter,
 )
 
 
@@ -148,7 +148,7 @@ class TestAntiInjectionFilter(unittest.TestCase):
             lineno=1,
             msg="Normal message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = self.filter.filter(record)
@@ -164,7 +164,7 @@ class TestAntiInjectionFilter(unittest.TestCase):
             lineno=1,
             msg="Normal\n[ERROR] Fake error",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = self.filter.filter(record)
@@ -181,7 +181,7 @@ class TestAntiInjectionFilter(unittest.TestCase):
             lineno=1,
             msg="Normal\r[ERROR] Fake error",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = self.filter.filter(record)
@@ -242,7 +242,7 @@ class TestSecureLogFormatter(unittest.TestCase):
             lineno=1,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = self.formatter.format(record)
@@ -259,7 +259,7 @@ class TestSecureLogFormatter(unittest.TestCase):
             lineno=1,
             msg="Custom format test",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         result = formatter.format(record)

@@ -18,7 +18,11 @@ from unittest.mock import MagicMock, patch
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from notification_manager import NotificationConfig, NotificationEvent, NotificationTrigger
+from notification_manager import (
+    NotificationConfig,
+    NotificationEvent,
+    NotificationTrigger,
+)
 
 
 def create_event(title="测试", message="消息", metadata=None):
@@ -28,7 +32,7 @@ def create_event(title="测试", message="消息", metadata=None):
         title=title,
         message=message,
         trigger=NotificationTrigger.IMMEDIATE,
-        metadata=metadata or {}
+        metadata=metadata or {},
     )
 
 
@@ -210,7 +214,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
 
         self.assertFalse(result)
 
-    @patch('notification_providers.requests.Session.post')
+    @patch("notification_providers.requests.Session.post")
     def test_send_success(self, mock_post):
         """测试成功发送（模拟 HTTP）"""
         mock_response = MagicMock()
@@ -224,7 +228,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertTrue(result)
         mock_post.assert_called_once()
 
-    @patch('notification_providers.requests.Session.post')
+    @patch("notification_providers.requests.Session.post")
     def test_send_http_error(self, mock_post):
         """测试 HTTP 错误"""
         mock_response = MagicMock()
@@ -238,10 +242,11 @@ class TestBarkNotificationProvider(unittest.TestCase):
 
         self.assertFalse(result)
 
-    @patch('notification_providers.requests.Session.post')
+    @patch("notification_providers.requests.Session.post")
     def test_send_timeout(self, mock_post):
         """测试超时"""
         import requests
+
         mock_post.side_effect = requests.exceptions.Timeout()
 
         event = create_event(title="测试标题", message="测试消息")

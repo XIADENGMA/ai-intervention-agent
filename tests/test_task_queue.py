@@ -40,9 +40,7 @@ class TestTaskBasic(unittest.TestCase):
         from task_queue import Task
 
         task = Task(
-            task_id="task-1",
-            prompt="测试提示",
-            predefined_options=["选项1", "选项2"]
+            task_id="task-1", prompt="测试提示", predefined_options=["选项1", "选项2"]
         )
 
         self.assertEqual(task.predefined_options, ["选项1", "选项2"])
@@ -51,11 +49,7 @@ class TestTaskBasic(unittest.TestCase):
         """测试剩余时间计算"""
         from task_queue import Task
 
-        task = Task(
-            task_id="task-1",
-            prompt="测试提示",
-            auto_resubmit_timeout=60
-        )
+        task = Task(task_id="task-1", prompt="测试提示", auto_resubmit_timeout=60)
 
         remaining = task.get_remaining_time()
 
@@ -308,6 +302,7 @@ class TestTaskQueueThreadSafety(unittest.TestCase):
 
     def test_concurrent_add(self):
         """测试并发添加"""
+
         def adder(start):
             try:
                 for i in range(10):

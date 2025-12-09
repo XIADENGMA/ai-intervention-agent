@@ -242,7 +242,9 @@ class TestTruncateString(unittest.TestCase):
         from config_utils import truncate_string
 
         self.assertEqual(truncate_string("", 10, "test", default="default"), "default")
-        self.assertEqual(truncate_string("   ", 10, "test", default="default"), "default")
+        self.assertEqual(
+            truncate_string("   ", 10, "test", default="default"), "default"
+        )
 
     def test_empty_string_without_default(self):
         """测试空字符串无默认值"""
@@ -256,7 +258,9 @@ class TestTruncateString(unittest.TestCase):
         from config_utils import truncate_string
 
         self.assertEqual(truncate_string(None, 10, "test"), "")
-        self.assertEqual(truncate_string(None, 10, "test", default="default"), "default")
+        self.assertEqual(
+            truncate_string(None, 10, "test", default="default"), "default"
+        )
 
 
 class TestIntegration(unittest.TestCase):
@@ -272,18 +276,14 @@ class TestIntegration(unittest.TestCase):
             "sound_volume": "-10",  # 需要限制到 0
         }
 
-        timeout = get_typed_config(
-            config, "http_request_timeout", 30, int, 1, 300
-        )
+        timeout = get_typed_config(config, "http_request_timeout", 30, int, 1, 300)
         action = validate_enum_value(
             config.get("bark_action", "none"),
             ("none", "url", "copy"),
             "bark_action",
             "none",
         )
-        volume = get_typed_config(
-            config, "sound_volume", 80, int, 0, 100
-        )
+        volume = get_typed_config(config, "sound_volume", 80, int, 0, 100)
 
         self.assertEqual(timeout, 300)
         self.assertEqual(action, "none")

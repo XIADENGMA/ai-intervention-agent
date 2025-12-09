@@ -23,12 +23,8 @@
 
 import argparse
 import ast
-import importlib.util
-import os
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -47,7 +43,9 @@ MODULES_TO_DOCUMENT = [
 
 def extract_docstring(node: ast.AST) -> Optional[str]:
     """提取 AST 节点的 docstring"""
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
+    if isinstance(
+        node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)
+    ):
         docstring = ast.get_docstring(node)
         return docstring
     return None
@@ -166,7 +164,9 @@ def generate_markdown(module_info: Dict[str, Any]) -> str:
                     if method["name"].startswith("_") and method["name"] != "__init__":
                         continue  # 跳过私有方法
                     prefix = "async " if method["is_async"] else ""
-                    lines.append(f"##### `{prefix}{method['name']}{method['signature']}`")
+                    lines.append(
+                        f"##### `{prefix}{method['name']}{method['signature']}`"
+                    )
                     lines.append("")
                     if method["docstring"]:
                         # 缩进 docstring
@@ -189,23 +189,25 @@ def generate_index(modules: List[str], output_dir: Path) -> str:
         module_name = Path(module).stem
         lines.append(f"- [{module_name}]({module_name}.md)")
 
-    lines.extend([
-        "",
-        "## 快速导航",
-        "",
-        "### 核心模块",
-        "- **config_manager**: 配置管理",
-        "- **notification_manager**: 通知管理",
-        "- **task_queue**: 任务队列",
-        "",
-        "### 工具模块",
-        "- **config_utils**: 配置工具函数",
-        "- **file_validator**: 文件验证",
-        "- **enhanced_logging**: 日志增强",
-        "",
-        "---",
-        f"*文档自动生成于 {output_dir}*",
-    ])
+    lines.extend(
+        [
+            "",
+            "## 快速导航",
+            "",
+            "### 核心模块",
+            "- **config_manager**: 配置管理",
+            "- **notification_manager**: 通知管理",
+            "- **task_queue**: 任务队列",
+            "",
+            "### 工具模块",
+            "- **config_utils**: 配置工具函数",
+            "- **file_validator**: 文件验证",
+            "- **enhanced_logging**: 日志增强",
+            "",
+            "---",
+            f"*文档自动生成于 {output_dir}*",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -216,12 +218,10 @@ def main():
         "--format",
         choices=["markdown", "html", "text"],
         default="markdown",
-        help="输出格式（默认 markdown）"
+        help="输出格式（默认 markdown）",
     )
     parser.add_argument(
-        "--output",
-        default="docs/api/",
-        help="输出目录（默认 docs/api/）"
+        "--output", default="docs/api/", help="输出目录（默认 docs/api/）"
     )
     args = parser.parse_args()
 

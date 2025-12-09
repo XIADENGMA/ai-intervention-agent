@@ -13,12 +13,10 @@ AI Intervention Agent - 通知管理器单元测试
 import os
 import shutil
 import sys
-import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -50,6 +48,7 @@ class TestNotificationManagerConfigRefresh(unittest.TestCase):
         """每个测试前的准备"""
         # 导入需要在每次测试时重新导入，以确保单例状态正确
         from notification_manager import notification_manager
+
         self.manager = notification_manager
         # 强制刷新配置
         self.manager.refresh_config_from_file(force=True)
@@ -77,8 +76,11 @@ class TestNotificationManagerConfigRefresh(unittest.TestCase):
         self.manager.refresh_config_from_file()
 
         # 验证 mtime 没有变化（使用了缓存）
-        self.assertEqual(self.manager._config_file_mtime, initial_mtime,
-                        "缓存刷新后 mtime 应该保持不变")
+        self.assertEqual(
+            self.manager._config_file_mtime,
+            initial_mtime,
+            "缓存刷新后 mtime 应该保持不变",
+        )
 
     def test_force_refresh(self):
         """测试强制刷新功能"""
@@ -116,6 +118,7 @@ class TestNotificationManagerTypeValidation(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
 
     def tearDown(self):
@@ -127,15 +130,14 @@ class TestNotificationManagerTypeValidation(unittest.TestCase):
     def test_invalid_bool_value(self):
         """测试无效布尔值处理"""
         # 修改配置文件，设置无效布尔值
-        with open(self.config_path, 'r') as f:
+        with open(self.config_path, "r") as f:
             content = f.read()
 
         content = content.replace(
-            '"bark_enabled": false',
-            '"bark_enabled": "not_a_boolean"'
+            '"bark_enabled": false', '"bark_enabled": "not_a_boolean"'
         )
 
-        with open(self.config_path, 'w') as f:
+        with open(self.config_path, "w") as f:
             f.write(content)
 
         # 刷新配置
@@ -159,11 +161,13 @@ class TestNotificationManagerThreadSafety(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
         self.errors = []
 
     def test_concurrent_refresh(self):
         """测试并发刷新"""
+
         def refresh_worker():
             try:
                 for _ in range(10):
@@ -173,10 +177,7 @@ class TestNotificationManagerThreadSafety(unittest.TestCase):
                 self.errors.append(e)
 
         # 启动多个线程并发刷新
-        threads = [
-            threading.Thread(target=refresh_worker)
-            for _ in range(5)
-        ]
+        threads = [threading.Thread(target=refresh_worker) for _ in range(5)]
 
         for t in threads:
             t.start()
@@ -189,6 +190,7 @@ class TestNotificationManagerThreadSafety(unittest.TestCase):
 
     def test_concurrent_read_write(self):
         """测试并发读写"""
+
         def reader():
             try:
                 for _ in range(20):
@@ -207,9 +209,7 @@ class TestNotificationManagerThreadSafety(unittest.TestCase):
                 self.errors.append(e)
 
         # 启动读写线程
-        threads = [
-            threading.Thread(target=reader) for _ in range(3)
-        ] + [
+        threads = [threading.Thread(target=reader) for _ in range(3)] + [
             threading.Thread(target=writer) for _ in range(2)
         ]
 
@@ -246,7 +246,8 @@ class TestNotificationManagerBarkProvider(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager, NotificationType
+        from notification_manager import NotificationType, notification_manager
+
         self.manager = notification_manager
         self.NotificationType = NotificationType
 
@@ -282,6 +283,7 @@ class TestNotificationManagerPerformance(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         from notification_manager import notification_manager
+
         self.manager = notification_manager
 
     def test_cache_performance(self):

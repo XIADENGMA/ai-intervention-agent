@@ -317,9 +317,9 @@ class NotificationConfig:
             enabled=bool(notification_config.get("enabled", True)),
             debug=bool(notification_config.get("debug", False)),
             web_enabled=bool(notification_config.get("web_enabled", True)),
-            web_permission_auto_request=bool(notification_config.get(
-                "auto_request_permission", True
-            )),
+            web_permission_auto_request=bool(
+                notification_config.get("auto_request_permission", True)
+            ),
             sound_enabled=bool(notification_config.get("sound_enabled", True)),
             sound_volume=normalized_volume,
             sound_mute=bool(notification_config.get("sound_mute", False)),
@@ -501,7 +501,7 @@ class NotificationManager:
                 logger.info("使用配置文件初始化通知管理器")
             except Exception as e:
                 logger.error(f"配置文件加载失败: {e}")
-                raise Exception(f"通知管理器初始化失败，无法加载配置文件: {e}")
+                raise Exception(f"通知管理器初始化失败，无法加载配置文件: {e}") from e
 
             # 初始化通知提供者字典
             self._providers: Dict[NotificationType, Any] = {}
@@ -524,7 +524,9 @@ class NotificationManager:
 
             # 【性能优化】使用线程池异步发送通知，避免阻塞主流程
             # max_workers=3 足够处理 Web/Sound/Bark 三种通知类型的并行发送
-            self._executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="NotificationWorker")
+            self._executor = ThreadPoolExecutor(
+                max_workers=3, thread_name_prefix="NotificationWorker"
+            )
 
             # 初始化回调函数字典
             self._callbacks: Dict[str, List[Callable]] = {}
@@ -805,7 +807,9 @@ class NotificationManager:
             # 【优化】使用 try-except 捕获超时，避免未完成任务导致错误日志
             # as_completed 超时时会抛出 TimeoutError: "N (of M) futures unfinished"
             try:
-                for future in as_completed(futures, timeout=15):  # 15秒超时（Bark 默认10秒）
+                for future in as_completed(
+                    futures, timeout=15
+                ):  # 15秒超时（Bark 默认10秒）
                     completed_count += 1
                     notification_type = futures[future]
                     try:
@@ -828,7 +832,9 @@ class NotificationManager:
                         if cancelled:
                             logger.debug(f"已取消排队任务: {notification_type.value}")
                         else:
-                            logger.debug(f"任务正在运行，无法取消: {notification_type.value}")
+                            logger.debug(
+                                f"任务正在运行，无法取消: {notification_type.value}"
+                            )
 
             # 触发回调
             self.trigger_callbacks("notification_sent", event, success_count)
@@ -837,7 +843,9 @@ class NotificationManager:
                 logger.warning(f"所有通知方式失败，启用降级处理: {event.id}")
                 self._handle_fallback(event)
             elif success_count > 0:
-                logger.info(f"通知发送完成: {event.id} - 成功 {success_count}/{total_count}")
+                logger.info(
+                    f"通知发送完成: {event.id} - 成功 {success_count}/{total_count}"
+                )
 
         except Exception as e:
             logger.error(f"处理通知事件失败: {event.id} - {e}")
@@ -1034,6 +1042,7 @@ class NotificationManager:
             config_file_path = config_mgr.config_file
             try:
                 import os
+
                 current_mtime = os.path.getmtime(config_file_path)
 
                 # 非强制模式下，如果文件未变化则跳过刷新
@@ -1058,7 +1067,9 @@ class NotificationManager:
                 return default
 
             # 【类型验证】辅助函数：安全获取数值
-            def safe_number(value, default: float, min_val: float = 0, max_val: float = 100) -> float:
+            def safe_number(
+                value, default: float, min_val: float = 0, max_val: float = 100
+            ) -> float:
                 try:
                     num = float(value)
                     return max(min_val, min(max_val, num))
@@ -1090,9 +1101,10 @@ class NotificationManager:
                     notification_config.get("sound_enabled"), True
                 )
                 # 音量从 0-100 转换为 0.0-1.0，带范围验证
-                self.config.sound_volume = safe_number(
-                    notification_config.get("sound_volume"), 80, 0, 100
-                ) / 100.0
+                self.config.sound_volume = (
+                    safe_number(notification_config.get("sound_volume"), 80, 0, 100)
+                    / 100.0
+                )
                 self.config.sound_mute = safe_bool(
                     notification_config.get("sound_mute"), False
                 )
@@ -1105,9 +1117,7 @@ class NotificationManager:
                 self.config.bark_enabled = safe_bool(
                     notification_config.get("bark_enabled"), False
                 )
-                self.config.bark_url = safe_str(
-                    notification_config.get("bark_url"), ""
-                )
+                self.config.bark_url = safe_str(notification_config.get("bark_url"), "")
                 self.config.bark_device_key = safe_str(
                     notification_config.get("bark_device_key"), ""
                 )
@@ -1124,7 +1134,9 @@ class NotificationManager:
                 bark_now_enabled = self.config.bark_enabled
                 if bark_was_enabled != bark_now_enabled:
                     self._update_bark_provider()
-                    logger.info(f"Bark 提供者已根据配置文件更新 (enabled: {bark_now_enabled})")
+                    logger.info(
+                        f"Bark 提供者已根据配置文件更新 (enabled: {bark_now_enabled})"
+                    )
 
         except Exception as e:
             logger.warning(f"从配置文件刷新配置失败: {e}")

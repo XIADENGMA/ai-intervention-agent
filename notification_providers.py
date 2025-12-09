@@ -500,7 +500,9 @@ class SoundNotificationProvider:
 
             event.metadata["sound_notification_data"] = sound_data
 
-            logger.debug(f"声音通知数据已准备: {event.id} - {sound_file} (音量: {volume})")
+            logger.debug(
+                f"声音通知数据已准备: {event.id} - {sound_file} (音量: {volume})"
+            )
             return True
 
         except Exception as e:
@@ -611,10 +613,12 @@ class BarkNotificationProvider:
         self.session.mount("https://", adapter)
 
         # 【优化】设置默认 headers（避免每次请求重复创建）
-        self.session.headers.update({
-            "Content-Type": "application/json",
-            "User-Agent": "AI-Intervention-Agent",
-        })
+        self.session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "User-Agent": "AI-Intervention-Agent",
+            }
+        )
 
     def send(self, event: NotificationEvent) -> bool:
         """
@@ -698,8 +702,10 @@ class BarkNotificationProvider:
                 return False
 
             # 验证 URL 格式（基本检查）
-            if not (self.config.bark_url.startswith("http://") or
-                    self.config.bark_url.startswith("https://")):
+            if not (
+                self.config.bark_url.startswith("http://")
+                or self.config.bark_url.startswith("https://")
+            ):
                 logger.error(f"Bark URL 格式无效: {self.config.bark_url}")
                 return False
 
@@ -745,7 +751,9 @@ class BarkNotificationProvider:
                         continue
 
                     # 【优化】简化序列化逻辑，依赖 requests 的 json 参数
-                    if isinstance(value, (str, int, float, bool, type(None), list, dict)):
+                    if isinstance(
+                        value, (str, int, float, bool, type(None), list, dict)
+                    ):
                         # 基本类型和容器类型直接添加，由 requests 处理序列化
                         # 如果 requests 序列化失败会抛出异常，被外层 catch
                         bark_data[key] = value
@@ -757,12 +765,14 @@ class BarkNotificationProvider:
             response = self.session.post(
                 self.config.bark_url,
                 json=bark_data,
-                    timeout=10,
-                )
+                timeout=10,
+            )
 
             # 接受所有2xx状态码为成功
             if 200 <= response.status_code < 300:
-                logger.info(f"Bark通知发送成功: {event.id} (状态码: {response.status_code})")
+                logger.info(
+                    f"Bark通知发送成功: {event.id} (状态码: {response.status_code})"
+                )
                 return True
             else:
                 logger.error(
