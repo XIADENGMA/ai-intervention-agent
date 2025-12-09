@@ -17,6 +17,12 @@
   <a href="https://github.com/xiadengma/ai-intervention-agent/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/xiadengma/ai-intervention-agent.svg" alt="License">
   </a>
+  <a href="https://pypi.org/project/ai-intervention-agent/">
+    <img src="https://img.shields.io/pypi/dm/ai-intervention-agent.svg" alt="Downloads">
+  </a>
+  <a href="https://github.com/xiadengma/ai-intervention-agent">
+    <img src="https://img.shields.io/github/stars/xiadengma/ai-intervention-agent.svg?style=social" alt="GitHub Stars">
+  </a>
 </p>
 
 # AI Intervention Agent
@@ -45,11 +51,24 @@
 
 ## 📦 安装
 
-### 🚀 方式一：uvx 直接使用（推荐）
+### 🚀 方式一：PyPI 安装（推荐）
 
-无需安装，直接配置 MCP 以使用最新版本
+```bash
+# 使用 pip 安装
+pip install ai-intervention-agent
 
-### ️ 方式二：开发模式（本地使用）
+# 或使用 uv 安装
+uv add ai-intervention-agent
+
+# 验证安装
+ai-intervention-agent --version
+```
+
+### 🌐 方式二：uvx 直接使用
+
+无需安装，直接配置 MCP 以使用最新版本（自动从 PyPI 获取）
+
+### 🛠️ 方式三：开发模式（本地使用）
 
 适合开发者和本地使用：
 
@@ -86,7 +105,22 @@ ai-intervention-agent 工具使用细节：
 
 在您的 AI 工具配置文件中添加以下配置：
 
-#### 🌟 配置方式一：从 git 下载
+#### 🌟 配置方式一：uvx 使用 PyPI 包（推荐）
+
+```json
+{
+  "mcpServers": {
+    "ai-intervention-agent": {
+      "command": "uvx",
+      "args": ["ai-intervention-agent"],
+      "timeout": 600,
+      "autoApprove": ["interactive_feedback"]
+    }
+  }
+}
+```
+
+#### 🔗 配置方式二：uvx 从 git 下载
 
 ```json
 {
@@ -101,7 +135,7 @@ ai-intervention-agent 工具使用细节：
 }
 ```
 
-#### 🛠️ 配置方式二：开发模式（本地使用）
+#### 🛠️ 配置方式三：开发模式（本地使用）
 
 ```json
 {
