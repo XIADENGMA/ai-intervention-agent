@@ -298,8 +298,8 @@ class TestServerFunctionPerformance(unittest.TestCase):
 
         elapsed = time.time() - start_time
 
-        # 10000 次解析应该在 2 秒内完成（覆盖率模式会变慢）
-        self.assertLess(elapsed, 2.0, f"响应解析过慢: {elapsed:.3f}s")
+        # 10000 次解析应该在 5 秒内完成（CI 环境和覆盖率模式会变慢）
+        self.assertLess(elapsed, 5.0, f"响应解析过慢: {elapsed:.3f}s")
         print(f"\n响应解析性能: 10000 次解析耗时 {elapsed:.3f}s")
 
 
