@@ -333,10 +333,21 @@ class TestMultiTaskAPI(unittest.TestCase):
 
     def test_tasks_api_includes_active_task(self):
         """测试任务列表包含活动任务"""
+        # 先添加一个任务
+        from server import get_task_queue
+
+        task_queue = get_task_queue()
+        task_queue.add_task(
+            task_id="test-task-001",
+            prompt="测试任务",
+            predefined_options=[],
+            auto_resubmit_timeout=60,
+        )
+
         response = self.client.get("/api/tasks")
         data = response.get_json()
 
-        # 至少有一个任务（初始化时创建的）
+        # 至少有一个任务
         self.assertGreaterEqual(len(data["tasks"]), 1)
 
         # 检查任务结构
@@ -345,6 +356,9 @@ class TestMultiTaskAPI(unittest.TestCase):
         self.assertIn("prompt", task)
         self.assertIn("status", task)
         self.assertIn("remaining_time", task)
+
+        # 清理
+        task_queue.remove_task("test-task-001")
 
     def test_task_status_values(self):
         """测试任务状态值"""

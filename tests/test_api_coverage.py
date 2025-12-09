@@ -266,9 +266,11 @@ class TestWebUICloseAPI(unittest.TestCase):
 
     def test_close_endpoint(self):
         """测试关闭端点"""
-        # 注意：这个测试可能会关闭服务器
-        # 在测试环境中，我们只验证端点存在
-        response = self.client.post("/api/close")
+        from unittest.mock import patch
+
+        # Mock shutdown_server 以避免发送 SIGINT 信号
+        with patch.object(self.web_ui, "shutdown_server"):
+            response = self.client.post("/api/close")
 
         # 可能返回 200 或其他状态
         self.assertIn(response.status_code, [200, 400, 404, 500])
