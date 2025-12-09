@@ -1,0 +1,47 @@
+# Dependabot 配置
+# 功能：自动检测依赖更新并创建 PR
+# 检查频率：每周
+
+version: 2
+
+updates:
+  # Python 依赖更新
+  - package-ecosystem: 'pip'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Asia/Shanghai'
+    # PR 标签
+    labels:
+      - 'dependencies'
+      - 'python'
+    # 审查者
+    reviewers:
+      - 'xiadengma'
+    # 提交消息前缀
+    commit-message:
+      prefix: 'chore(deps)'
+    # 限制每次最多创建的 PR 数量
+    open-pull-requests-limit: 5
+    # 忽略特定依赖（可选）
+    # ignore:
+    #   - dependency-name: "some-package"
+
+  # GitHub Actions 版本更新
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Asia/Shanghai'
+    labels:
+      - 'dependencies'
+      - 'github-actions'
+    reviewers:
+      - 'xiadengma'
+    commit-message:
+      prefix: 'chore(ci)'
+    open-pull-requests-limit: 5

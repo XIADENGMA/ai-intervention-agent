@@ -4,6 +4,21 @@
   </a>
 </h1>
 
+<p align="center">
+  <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/test.yml">
+    <img src="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/test.yml/badge.svg" alt="Tests">
+  </a>
+  <a href="https://pypi.org/project/ai-intervention-agent/">
+    <img src="https://img.shields.io/pypi/v/ai-intervention-agent.svg" alt="PyPI">
+  </a>
+  <a href="https://pypi.org/project/ai-intervention-agent/">
+    <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent.svg" alt="Python Versions">
+  </a>
+  <a href="https://github.com/xiadengma/ai-intervention-agent/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/xiadengma/ai-intervention-agent.svg" alt="License">
+  </a>
+</p>
+
 # AI Intervention Agent
 
 让用户能够实时控制 AI 执行过程的 MCP 工具。
