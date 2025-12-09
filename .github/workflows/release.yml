@@ -72,7 +72,7 @@ jobs:
     steps:
       # 1. 下载构建产物
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: dist
           path: dist/
@@ -99,7 +99,7 @@ jobs:
 
       # 2. 下载构建产物
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: dist
           path: dist/
