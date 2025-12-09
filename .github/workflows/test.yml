@@ -57,6 +57,11 @@ jobs:
         run: |
           uv sync --dev
 
+      # 5.1. 准备测试配置文件
+      - name: 准备测试配置文件
+        run: |
+          cp config.jsonc.default config.jsonc
+
       # 6. 代码检查 - Ruff Linting
       - name: 代码检查 (ruff check)
         run: |
