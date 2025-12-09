@@ -39,7 +39,7 @@ jobs:
 
       # 3. 安装 uv
       - name: 安装 uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           version: 'latest'
 
