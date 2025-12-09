@@ -20,7 +20,7 @@ jobs:
     steps:
       # 1. 检出代码
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # 2. 设置 Python 环境
       - name: 设置 Python
@@ -95,7 +95,7 @@ jobs:
     steps:
       # 1. 检出代码（获取 changelog）
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # 2. 下载构建产物
       - name: 下载构建产物
