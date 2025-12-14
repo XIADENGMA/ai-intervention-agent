@@ -2253,7 +2253,9 @@ def parse_structured_response(
         try:
             base64_data = image.get("data")
             if not isinstance(base64_data, str) or not base64_data.strip():
-                logger.warning(f"图片 {index + 1} 的 data 字段无效: {type(base64_data)}")
+                logger.warning(
+                    f"图片 {index + 1} 的 data 字段无效: {type(base64_data)}"
+                )
                 text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: 图片数据无效")
                 continue
 

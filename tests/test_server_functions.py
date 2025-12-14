@@ -72,8 +72,9 @@ class TestParseStructuredResponse(unittest.TestCase):
 
     def test_parse_standard_response(self):
         """测试标准响应格式"""
-        from server import parse_structured_response
         from mcp.types import TextContent
+
+        from server import parse_structured_response
 
         response = {
             "user_input": "用户输入内容",
@@ -99,8 +100,9 @@ class TestParseStructuredResponse(unittest.TestCase):
 
     def test_parse_response_with_images(self):
         """测试带图片的响应"""
-        from server import parse_structured_response
         from mcp.types import ImageContent, TextContent
+
+        from server import parse_structured_response
 
         response = {
             "user_input": "带图片的反馈",

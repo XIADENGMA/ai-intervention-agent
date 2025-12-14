@@ -311,9 +311,10 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
 
     def test_bark_network_unavailable(self):
         """测试 Bark 网络不可用"""
+        import requests
+
         from notification_manager import NotificationEvent, NotificationTrigger
         from notification_providers import BarkNotificationProvider
-        import requests
 
         self.config.bark_enabled = True
         # 使用 mock 避免真实网络请求（确保离线可重复）

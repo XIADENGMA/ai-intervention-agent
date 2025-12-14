@@ -18,7 +18,6 @@ import os
 import tempfile
 from pathlib import Path
 
-
 # 会话级临时目录（pytest 退出时自动清理）
 _TEST_TMP_DIR = tempfile.TemporaryDirectory(prefix="ai-intervention-agent-pytest-")
 _TEST_CONFIG_PATH = Path(_TEST_TMP_DIR.name) / "config.jsonc"

@@ -77,8 +77,8 @@ AI Intervention Agent - 通知提供者实现
 - notification_manager: 通知管理器和事件模型
 """
 
-import time
 import re
+import time
 from typing import Any, Dict
 
 import requests

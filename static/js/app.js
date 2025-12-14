@@ -39,9 +39,7 @@
     const url = new URL(window.location.href)
     if (url.hostname === '0.0.0.0') {
       url.hostname = '127.0.0.1'
-      console.warn(
-        `检测到访问地址为 0.0.0.0，已自动切换为 ${url.origin}（避免浏览器兼容性问题）`
-      )
+      console.warn(`检测到访问地址为 0.0.0.0，已自动切换为 ${url.origin}（避免浏览器兼容性问题）`)
       window.location.replace(url.toString())
     }
   } catch (e) {

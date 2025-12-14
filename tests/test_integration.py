@@ -113,7 +113,8 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         """回归测试：静态资源不应被频率限制误伤（避免 429 导致白屏/MathJax 失效）"""
         # 连续快速请求静态资源，若静态路由未 exempt，可能触发全局 10/s 限流返回 429
         statuses = [
-            self.client.get("/static/js/mathjax-loader.js").status_code for _ in range(20)
+            self.client.get("/static/js/mathjax-loader.js").status_code
+            for _ in range(20)
         ]
         self.assertNotIn(429, statuses)
 
