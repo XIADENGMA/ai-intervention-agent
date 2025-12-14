@@ -1470,31 +1470,6 @@ class NotificationManager:
         except Exception as e:
             logger.error(f"保存配置到文件失败: {e}")
 
-    def shutdown(self):
-        """关闭通知管理器
-
-        【功能说明】
-        优雅地关闭线程池，等待所有正在执行的通知任务完成。
-
-        【调用时机】
-        - 应用关闭时
-        - 重置通知管理器时
-
-        【处理流程】
-        1. 调用线程池的 shutdown 方法
-        2. 等待所有任务完成（wait=True）
-        3. 记录关闭日志
-
-        【线程安全】
-        - shutdown 方法本身是线程安全的
-        - 多次调用是安全的（幂等操作）
-        """
-        try:
-            self._executor.shutdown(wait=True)
-            logger.info("通知管理器线程池已关闭")
-        except Exception as e:
-            logger.error(f"关闭通知管理器线程池失败: {e}")
-
     def get_status(self) -> Dict[str, Any]:
         """获取通知管理器状态
 

@@ -282,7 +282,9 @@ def self_check_image_return_format() -> bool:
 
         converted = _convert_to_content(parsed)
         if not converted or not isinstance(converted[0], ImageContent):
-            print("❌ 自检失败：FastMCP 转换后首个块不是 ImageContent（可能被降级成文本）")
+            print(
+                "❌ 自检失败：FastMCP 转换后首个块不是 ImageContent（可能被降级成文本）"
+            )
             return False
 
         img0 = converted[0]
@@ -294,7 +296,9 @@ def self_check_image_return_format() -> bool:
             print("❌ 自检失败：base64 data 被意外改写")
             return False
 
-        print("✅ 图片返回格式自检通过：ImageContent/TextContent 均可被 FastMCP 正确识别")
+        print(
+            "✅ 图片返回格式自检通过：ImageContent/TextContent 均可被 FastMCP 正确识别"
+        )
         return True
     except Exception as e:
         print(f"❌ 图片返回格式自检异常：{type(e).__name__} - {e}")
