@@ -1212,6 +1212,11 @@ PROMPT_MAX_LENGTH = 500  # 提示语最大长度
 RESUBMIT_PROMPT_DEFAULT = "请立即调用 interactive_feedback 工具"
 PROMPT_SUFFIX_DEFAULT = "\n请积极调用 interactive_feedback 工具"
 
+# 输入校验相关常量（用于 validate_input）
+# 注意：这些常量也会被测试用例引用，保持为模块级常量
+MAX_MESSAGE_LENGTH = 10000  # 用户输入/提示文本最大长度
+MAX_OPTION_LENGTH = 500  # 单个预定义选项最大长度
+
 
 @dataclass
 class FeedbackConfig:
@@ -1453,13 +1458,13 @@ def validate_input(
     ----
     1. **提示文本清理**:
        - 去除首尾空白字符（strip）
-       - 长度限制: 最大 10000 字符，超出部分截断并添加 "..."
+       - 长度限制: 最大 MAX_MESSAGE_LENGTH 字符，超出部分截断并添加 "..."
        - 类型检查: 必须是字符串，否则抛出 ValueError
 
     2. **选项列表清理**:
        - 过滤非字符串选项（记录警告）
        - 去除每个选项的首尾空白
-       - 长度限制: 每个选项最大 500 字符，超出部分截断并添加 "..."
+       - 长度限制: 每个选项最大 MAX_OPTION_LENGTH 字符，超出部分截断并添加 "..."
        - 过滤空选项（strip 后为空）
 
     异常处理
@@ -1489,9 +1494,11 @@ def validate_input(
         cleaned_prompt = prompt.strip()
     except AttributeError:
         raise ValueError("prompt 必须是字符串类型") from None
-    if len(cleaned_prompt) > 10000:
-        logger.warning(f"prompt 长度过长 ({len(cleaned_prompt)} 字符)，将被截断")
-        cleaned_prompt = cleaned_prompt[:10000] + "..."
+    if len(cleaned_prompt) > MAX_MESSAGE_LENGTH:
+        logger.warning(
+            f"prompt 长度过长 ({len(cleaned_prompt)} 字符)，将被截断到 {MAX_MESSAGE_LENGTH}"
+        )
+        cleaned_prompt = cleaned_prompt[:MAX_MESSAGE_LENGTH] + "..."
 
     cleaned_options = []
     if predefined_options:
@@ -1500,11 +1507,11 @@ def validate_input(
                 logger.warning(f"跳过非字符串选项: {option}")
                 continue
             cleaned_option = option.strip()
-            if cleaned_option and len(cleaned_option) <= 500:
+            if cleaned_option and len(cleaned_option) <= MAX_OPTION_LENGTH:
                 cleaned_options.append(cleaned_option)
-            elif len(cleaned_option) > 500:
+            elif len(cleaned_option) > MAX_OPTION_LENGTH:
                 logger.warning(f"选项过长被截断: {cleaned_option[:50]}...")
-                cleaned_options.append(cleaned_option[:500] + "...")
+                cleaned_options.append(cleaned_option[:MAX_OPTION_LENGTH] + "...")
 
     return cleaned_prompt, cleaned_options
 
