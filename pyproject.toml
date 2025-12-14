@@ -75,7 +75,6 @@ include = [
     "/server.py",
     "/web_ui.py",
     "/templates",
-    "/fonts",
     "/icons",
     "/README.md",
     "/LICENSE",

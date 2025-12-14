@@ -176,6 +176,7 @@
   - bark 服务器的问题，发送成功但是没有通知
 - [ ] 添加配套插件：参考：https://github.com/fhyfhy17/panel-feedback
 - [x] 修复图片功能：参考：https://github.com/ChromeDevTools/chrome-devtools-mcp
+- [ ] 我现在可以粘贴图片吗？我上传图片后会有显示吗？
 - [ ] 请你深度思考和深度测试，我想知道我这个项目还有什么缺少的/可以改进的/可以优化的/可以测试的。
 
 # 已完成的优化项目

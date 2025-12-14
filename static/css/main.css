@@ -90,6 +90,13 @@
   --text-muted: #52525b; /* 弱化文本 */
   --text-inverse: #1a1a1f; /* 反色文本（用于亮色按钮） */
 
+  /* 字体（合规：仅使用系统默认字体栈，避免打包第三方字体引发版权风险） */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji",
+    sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+
   /* 边框色 */
   --border-primary: rgba(255, 255, 255, 0.15); /* 主边框 */
   --border-secondary: rgba(255, 255, 255, 0.08); /* 次级边框 */
@@ -254,40 +261,11 @@
    ======================================================================== */
 
 /**
- * 字体说明：
- *   - SFProText: 主要文本字体，Apple SF Pro Text风格
- *   - MonoLisaNerdFont: 等宽字体，用于代码块和技术文本
- *
- * 使用场景：
- *   - SFProText: body、标题、段落、按钮
- *   - MonoLisaNerdFont: 代码块、<code>、.feedback-textarea、.countdown-number
- *
- * font-display: swap说明：
- *   在字体加载期间使用系统默认字体，加载完成后立即切换。
- *   避免FOIT（Flash of Invisible Text）现象，提升首屏性能。
- *
- * 降级字体栈：
- *   - SFProText → -apple-system → BlinkMacSystemFont → Arial → sans-serif
- *   - MonoLisaNerdFont → SF Mono → Monaco → Consolas → Courier New → monospace
+ * 合规说明：
+ *   项目不再打包/分发第三方字体文件，仅使用系统字体栈：
+ *   - 文本：var(--font-sans)
+ *   - 等宽：var(--font-mono)
  */
-
-/* SFProText字体：主要文本字体 */
-@font-face {
-  font-family: 'SFProText';
-  src: url('/fonts/SFProText-Regular.woff2') format('woff2');
-  font-weight: normal; /* 400 */
-  font-style: normal;
-  font-display: swap; /* 使用系统字体作为降级，避免白屏 */
-}
-
-/* MonoLisaNerdFont字体：等宽代码字体 */
-@font-face {
-  font-family: 'MonoLisaNerdFont';
-  src: url('/fonts/MonoLisaNerdFont-Regular.woff2') format('woff2');
-  font-weight: normal; /* 400 */
-  font-style: normal;
-  font-display: swap; /* 使用系统等宽字体作为降级 */
-}
 
 /* ========================================================================
    全局重置和基础样式 (Global Reset & Base Styles)
@@ -317,10 +295,7 @@
  *   - 控制页面最小高度和溢出行为
  *
  * 字体栈说明：
- *   SFProText（自定义）→ -apple-system（macOS/iOS）→ BlinkMacSystemFont（Chromium）
- *   → SF Pro Display/Text（macOS/iOS降级）→ Helvetica Neue（老版macOS）
- *   → Microsoft YaHei（Windows中文）→ PingFang SC（macOS中文）
- *   → Arial（通用）→ sans-serif（系统默认）
+ *   使用系统字体栈 var(--font-sans)，避免自定义字体带来的版权与体积风险。
  *
  * 颜色方案：
  *   - 背景：#1a1a1f（深灰黑色）
@@ -332,8 +307,7 @@
  *   - 隐藏横向溢出（overflow-x: hidden）
  */
 body {
-  font-family: 'SFProText', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
-    'Helvetica Neue', 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg-primary); /* 使用主题变量 */
   color: var(--text-primary); /* 使用主题变量 */
   min-height: 100vh; /* 最小高度为视口高度 */
@@ -3146,12 +3120,12 @@ h1 {
  *
  * 排版设计：
  *   - 颜色：rgba(180, 220, 255, 0.95)（浅蓝色）
- *   - 字体：'MonoLisaNerdFont', monospace（等宽字体）
+ *   - 字体：var(--font-mono)（等宽字体）
  *   - 字号：0.85rem（13.6px）
  */
 .task-id-text {
   color: rgba(180, 220, 255, 0.95); /* 浅蓝色 */
-  font-family: 'MonoLisaNerdFont', monospace; /* 等宽字体 */
+  font-family: var(--font-mono); /* 等宽字体 */
   font-size: 0.85rem; /* 字号（13.6px） */
 }
 
@@ -3220,13 +3194,13 @@ h1 {
  *
  * 排版设计：
  *   - 颜色：rgba(255, 150, 150, 0.95)（浅红色）
- *   - 字体：'MonoLisaNerdFont', monospace（等宽字体）
+ *   - 字体：var(--font-mono)（等宽字体）
  *   - 字号：0.85rem（13.6px）
  *   - 字重：600（半粗体）
  */
 .countdown-text {
   color: rgba(255, 150, 150, 0.95); /* 浅红色 */
-  font-family: 'MonoLisaNerdFont', monospace; /* 等宽字体 */
+  font-family: var(--font-mono); /* 等宽字体 */
   font-size: 0.85rem; /* 字号（13.6px） */
   font-weight: 600; /* 半粗体 */
 }
@@ -3586,7 +3560,7 @@ h1 {
  *
  * 排版设计：
  *   - 字号：1rem（16px）
- *   - 字体：'MonoLisaNerdFont'等宽字体栈
+ *   - 字体：var(--font-mono) 等宽字体栈
  *   - 行高：1.6
  *   - 字间距：-0.022em（紧凑）
  *
@@ -3598,8 +3572,7 @@ h1 {
   min-height: 180px; /* 最小高度 */
   padding: 1.5rem 1.75rem; /* 内边距（上下1.5rem，左右1.75rem） */
   font-size: 1rem; /* 字号（16px） */
-  font-family: 'MonoLisaNerdFont', 'SF Mono', ui-monospace, SFMono-Regular, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace; /* 等宽字体栈 */
+  font-family: var(--font-mono); /* 等宽字体栈 */
   background: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.06) 0%,
@@ -5310,14 +5283,14 @@ h1 {
  *   - 边框：1px solid rgba(255, 255, 255, 0.08)
  *
  * 排版设计：
- *   - 字体：'MonoLisaNerdFont', monospace（等宽字体）
+ *   - 字体：var(--font-mono)（等宽字体）
  *   - 字号：0.875rem（14px）
  */
 .markdown-content code {
   background: rgba(255, 255, 255, 0.12); /* 半透明白色背景 */
   color: #ff453a; /* iOS红色文字 */
   padding: 0.125rem 0.375rem; /* 内边距 */
-  font-family: 'MonoLisaNerdFont', monospace; /* 等宽字体 */
+  font-family: var(--font-mono); /* 等宽字体 */
   font-size: 0.875rem; /* 字号（14px） */
   border-radius: 6px; /* 圆角 */
   border: 1px solid rgba(255, 255, 255, 0.08); /* 边框 */
@@ -5416,7 +5389,7 @@ h1 {
  *   - 无文字装饰
  *
  * 排版设计：
- *   - 字体：等宽字体栈（MonoLisaNerdFont等）
+ *   - 字体：等宽字体栈 var(--font-mono)
  *   - 字号：继承
  *   - 字重：400（正常）
  *   - 字间距：0.025em
@@ -5425,8 +5398,7 @@ h1 {
   background: none; /* 无背景 */
   color: #f5f5f7; /* 浅灰白色文字 */
   padding: 0; /* 内边距 */
-  font-family: 'MonoLisaNerdFont', 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Consolas',
-    monospace; /* 等宽字体 */
+  font-family: var(--font-mono); /* 等宽字体 */
   font-size: inherit; /* 字号继承 */
   font-weight: 400; /* 正常字重 */
   letter-spacing: 0.025em; /* 字间距 */
@@ -6638,8 +6610,7 @@ code,
   font-size: 7px;
   font-weight: 600;
   color: rgba(139, 92, 246, 0.95);
-  font-family: 'MonoLisaNerdFont', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
-    'Courier New', monospace;
+  font-family: var(--font-mono);
   z-index: 2;
   line-height: 1;
   display: flex;
@@ -6703,7 +6674,7 @@ code,
 
 /** 新任务提示样式（#new-task-hint）：由JavaScript动态添加，这里提供默认字体 */
 #new-task-hint {
-  font-family: 'SFProText', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
 }
 
 /* ===== 新任务提示移动端适配（@media max-width: 768px） ===== */

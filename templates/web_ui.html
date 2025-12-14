@@ -27,20 +27,6 @@
     </script>
 
     <!-- 资源预加载优化：减少首屏渲染阻塞 -->
-    <link
-      rel="preload"
-      href="/fonts/SFProText-Regular.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
-    <link
-      rel="preload"
-      href="/fonts/MonoLisaNerdFont-Regular.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
     <link rel="preload" href="/static/css/prism.css" as="style" />
 
     <!-- MathJax 数学公式支持 - 按需加载优化（1.17MB → 需要时才加载） -->
@@ -56,22 +42,7 @@
     <script defer src="/static/js/prism.js" nonce="{{ csp_nonce }}"></script>
 
     <style>
-      /* 自定义字体声明 */
-      @font-face {
-        font-family: 'SFProText';
-        src: url('/fonts/SFProText-Regular.woff2') format('woff2');
-        font-weight: normal;
-        font-style: normal;
-        font-display: swap;
-      }
-
-      @font-face {
-        font-family: 'MonoLisaNerdFont';
-        src: url('/fonts/MonoLisaNerdFont-Regular.woff2') format('woff2');
-        font-weight: normal;
-        font-style: normal;
-        font-display: swap;
-      }
+      /* 合规：不再打包/分发第三方字体，统一使用系统默认字体栈 */
       * {
         margin: 0;
         padding: 0;
@@ -109,8 +80,8 @@
       }
 
       body {
-        font-family: 'SFProText', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
-          'Helvetica Neue', 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+          Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
         background: var(--bg-primary);
         /* 移除复杂背景渐变以提升性能 */
         color: var(--text-primary);
