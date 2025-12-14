@@ -73,6 +73,7 @@ class TestParseStructuredResponse(unittest.TestCase):
     def test_parse_standard_response(self):
         """测试标准响应格式"""
         from server import parse_structured_response
+        from mcp.types import TextContent
 
         response = {
             "user_input": "用户输入内容",
@@ -84,6 +85,7 @@ class TestParseStructuredResponse(unittest.TestCase):
 
         self.assertIsInstance(result, list)
         self.assertGreater(len(result), 0)
+        self.assertTrue(any(isinstance(item, TextContent) for item in result))
 
     def test_parse_response_with_options_only(self):
         """测试仅有选项的响应"""
@@ -98,6 +100,7 @@ class TestParseStructuredResponse(unittest.TestCase):
     def test_parse_response_with_images(self):
         """测试带图片的响应"""
         from server import parse_structured_response
+        from mcp.types import ImageContent, TextContent
 
         response = {
             "user_input": "带图片的反馈",
@@ -115,6 +118,10 @@ class TestParseStructuredResponse(unittest.TestCase):
         self.assertIsInstance(result, list)
         # 应该包含文本和图片内容
         self.assertGreater(len(result), 0)
+        self.assertTrue(any(isinstance(item, ImageContent) for item in result))
+        self.assertTrue(any(isinstance(item, TextContent) for item in result))
+        img = next(item for item in result if isinstance(item, ImageContent))
+        self.assertEqual(img.mimeType, "image/png")
 
     def test_parse_empty_response(self):
         """测试空响应"""

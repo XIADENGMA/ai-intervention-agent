@@ -88,6 +88,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 from fastmcp import FastMCP
+from mcp.types import ContentBlock, ImageContent, TextContent
 from pydantic import Field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -2105,7 +2106,9 @@ def update_web_content(
         raise Exception(f"更新 Web 内容失败: {e}") from e
 
 
-def parse_structured_response(response_data: Optional[Dict[str, Any]]) -> list:
+def parse_structured_response(
+    response_data: Optional[Dict[str, Any]],
+) -> list[ContentBlock]:
     """
     解析 Web UI 反馈数据并转换为 MCP 标准 Content 对象列表
 
@@ -2185,7 +2188,8 @@ def parse_structured_response(response_data: Optional[Dict[str, Any]]) -> list:
     - 图片的 base64 数据可能很大（几百 KB 到几 MB）
     - 返回的列表顺序: ImageContent 在前，TextContent 在后
     - 空内容也会返回列表（包含默认文本），不会返回空列表
-    - 所有 Content 对象都是普通字典（dict），不是特定类实例
+    - 为了让 FastMCP/客户端（如 Cursor）正确识别并渲染图片，这里返回的是
+      `mcp.types.TextContent` / `mcp.types.ImageContent` 模型实例（而非普通 dict）
 
     兼容性
     --------
@@ -2194,8 +2198,12 @@ def parse_structured_response(response_data: Optional[Dict[str, Any]]) -> list:
     - 如果没有 images 字段，跳过图片处理
     """
 
-    result = []
-    text_parts = []
+    result: list[ContentBlock] = []
+    text_parts: list[str] = []
+
+    # 兜底：确保 response_data 是可用字典
+    if not isinstance(response_data, dict):
+        response_data = {}
 
     # 调试信息：记录接收到的原始数据
     logger.debug("parse_structured_response 接收到的数据:")
@@ -2203,8 +2211,17 @@ def parse_structured_response(response_data: Optional[Dict[str, Any]]) -> list:
     logger.debug(f"  - 原始数据内容: {response_data}")
 
     # 1. 直接从新格式中获取用户输入和选择的选项
-    user_input = response_data.get("user_input", "")
-    selected_options = response_data.get("selected_options", [])
+    # 兼容旧格式：interactive_feedback 字段
+    legacy_text = response_data.get("interactive_feedback")
+    user_input = response_data.get("user_input", "") or ""
+    if (not user_input) and isinstance(legacy_text, str) and legacy_text.strip():
+        user_input = legacy_text
+
+    selected_options_raw = response_data.get("selected_options", [])
+    if isinstance(selected_options_raw, list):
+        selected_options = [str(x) for x in selected_options_raw if x is not None]
+    else:
+        selected_options = []
 
     # 调试信息：记录解析后的数据
     logger.debug("解析后的数据:")
@@ -2228,124 +2245,87 @@ def parse_structured_response(response_data: Optional[Dict[str, Any]]) -> list:
         logger.debug("用户输入为空，跳过添加用户输入文本")
 
     # 3. 处理图片附件 - 使用 MCP 标准协议格式
-    for index, image in enumerate(response_data.get("images", [])):
-        if isinstance(image, dict) and image.get("data"):
-            try:
-                # 【MCP标准】直接使用纯 base64 数据，不使用 data URI
-                # 后端已经将图片编码为 base64，直接使用即可
-                base64_data = image["data"]  # 纯 base64 字符串
+    images = response_data.get("images", []) or []
+    for index, image in enumerate(images):
+        if not isinstance(image, dict):
+            continue
 
-                # 【健壮性检查】确保 base64_data 是字符串且非空
-                if not isinstance(base64_data, str) or not base64_data.strip():
-                    logger.warning(
-                        f"图片 {index + 1} 的 data 字段无效: {type(base64_data)}"
-                    )
-                    text_parts.append(
-                        f"=== 图片 {index + 1} ===\n处理失败: 图片数据无效"
-                    )
-                    continue
+        try:
+            base64_data = image.get("data")
+            if not isinstance(base64_data, str) or not base64_data.strip():
+                logger.warning(f"图片 {index + 1} 的 data 字段无效: {type(base64_data)}")
+                text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: 图片数据无效")
+                continue
 
-                # 确定 MIME 类型
-                content_type = image.get("content_type", "image/jpeg")
+            base64_data = base64_data.strip()
 
-                # 创建符合 MCP 标准协议的 ImageContent dict
-                # 格式：{ type: "image", data: "纯base64", mimeType: "..." }
-                image_content = {
-                    "type": "image",
-                    "data": base64_data,  # 纯 base64，不是 data URI
-                    "mimeType": content_type,
-                }
-                result.append(image_content)
+            # 兼容 data URI（data:image/png;base64,...）
+            inferred_mime_type: str | None = None
+            if base64_data.startswith("data:") and ";base64," in base64_data:
+                header, b64 = base64_data.split(",", 1)
+                base64_data = b64.strip()
+                # header 形如: data:image/png;base64
+                if header.startswith("data:"):
+                    inferred_mime_type = header[5:].split(";", 1)[0].strip() or None
 
-                # 添加图片信息到文本中
-                filename = image.get("filename", f"image_{index + 1}")
-                # 【性能优化】使用已有的 size 字段，避免解码计算
-                size = image.get(
-                    "size", len(base64_data) * 3 // 4
-                )  # base64估算：3/4 的编码长度
+            # MIME 类型兼容：content_type / mimeType / mime_type
+            content_type = (
+                image.get("content_type")
+                or image.get("mimeType")
+                or image.get("mime_type")
+                or inferred_mime_type
+                or "image/jpeg"
+            )
 
-                # 计算图片大小显示
-                if size < 1024:
-                    size_str = f"{size} B"
-                elif size < 1024 * 1024:
-                    size_str = f"{size / 1024:.1f} KB"
-                else:
-                    size_str = f"{size / (1024 * 1024):.1f} MB"
-
-                text_parts.append(
-                    f"=== 图片 {index + 1} ===\n文件名: {filename}\n类型: {content_type}\n大小: {size_str}"
+            result.append(
+                ImageContent(
+                    type="image",
+                    data=base64_data,  # 纯 base64（不是 data URI）
+                    mimeType=str(content_type),
                 )
-            except Exception as e:
-                logger.error(f"处理图片 {index + 1} 时出错: {e}")
-                text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {str(e)}")
+            )
 
-    # 4. 添加文本内容 - 使用 MCP 标准协议格式
-    logger.debug("准备添加文本内容:")
-    logger.debug(f"  - text_parts: {text_parts}")
-    logger.debug(f"  - text_parts长度: {len(text_parts)}")
+            # 添加图片信息到文本中
+            filename = image.get("filename", f"image_{index + 1}")
+            size = image.get("size", len(base64_data) * 3 // 4)  # base64估算：3/4
+            if size < 1024:
+                size_str = f"{size} B"
+            elif size < 1024 * 1024:
+                size_str = f"{size / 1024:.1f} KB"
+            else:
+                size_str = f"{size / (1024 * 1024):.1f} MB"
 
+            text_parts.append(
+                f"=== 图片 {index + 1} ===\n文件名: {filename}\n类型: {content_type}\n大小: {size_str}"
+            )
+        except Exception as e:
+            logger.error(f"处理图片 {index + 1} 时出错: {e}")
+            text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {str(e)}")
+
+    # 4. 添加文本内容（无论如何都返回一个 TextContent，避免返回空列表）
     if text_parts:
         combined_text = "\n\n".join(text_parts)
-        # 【MCP标准】文本使用 TextContent 格式：{ type: "text", text: "..." }
-        text_content = {"type": "text", "text": combined_text}
-        result.append(text_content)
-        logger.debug(f"添加合并文本: '{combined_text}'")
     else:
-        logger.debug("text_parts为空，不添加文本内容")
+        combined_text = "用户未提供任何内容"
 
-    # 5. 如果没有任何内容，检查是否真的没有用户输入
-    if not result:
-        logger.debug("result为空，检查是否需要添加默认内容")
-        # 检查是否有用户输入或选择的选项
-        if user_input or selected_options:
-            # 有内容但没有添加到result中，这是一个bug，应该添加文本内容
-            if text_parts:
-                combined_text = "\n\n".join(text_parts)
-                text_content = {"type": "text", "text": combined_text}
-                result.append(text_content)
-                logger.debug(f"补充添加文本内容: '{combined_text}'")
-            else:
-                text_content = {"type": "text", "text": "用户未提供任何内容"}
-                result.append(text_content)
-                logger.debug("添加默认内容: '用户未提供任何内容'")
-        else:
-            text_content = {"type": "text", "text": "用户未提供任何内容"}
-            result.append(text_content)
-            logger.debug("添加默认内容: '用户未提供任何内容'")
-    else:
-        logger.debug(f"result不为空，包含 {len(result)} 个元素")
-
-    # 6. 追加提示语后缀到文本内容（保持会话连续性）
+    # 追加提示语后缀（保持会话连续性）
     _, prompt_suffix = get_feedback_prompts()
     if prompt_suffix:
-        # 找到最后一个 TextContent 并追加后缀
-        for item in reversed(result):
-            if isinstance(item, dict) and item.get("type") == "text":
-                item["text"] = item["text"] + prompt_suffix
-                logger.debug(f"已追加提示语后缀: '{prompt_suffix}'")
-                break
+        combined_text += prompt_suffix
+
+    result.append(TextContent(type="text", text=combined_text))
 
     logger.debug("最终返回结果:")
     for i, item in enumerate(result):
-        if isinstance(item, dict):
-            # 所有内容都是 dict（ImageContent 或 TextContent）
-            content_type = item.get("type", "unknown")
-            if content_type == "text":
-                text_preview = item.get("text", "")[:100]
-                if len(item.get("text", "")) > 100:
-                    text_preview += "..."
-                logger.debug(f"  - [{i}] TextContent: '{text_preview}'")
-            elif content_type == "image":
-                mime_type = item.get("mimeType", "unknown")
-                data_length = len(item.get("data", ""))
-                logger.debug(
-                    f"  - [{i}] ImageContent: mimeType={mime_type}, data_length={data_length}"
-                )
-            else:
-                logger.debug(f"  - [{i}] 未知类型: {content_type}")
+        if isinstance(item, TextContent):
+            preview = item.text[:100] + ("..." if len(item.text) > 100 else "")
+            logger.debug(f"  - [{i}] TextContent: '{preview}'")
+        elif isinstance(item, ImageContent):
+            logger.debug(
+                f"  - [{i}] ImageContent: mimeType={item.mimeType}, data_length={len(item.data)}"
+            )
         else:
-            # 不应该出现非 dict 的情况，记录警告
-            logger.warning(f"  - [{i}] ⚠️ 非标准类型: {type(item)}")
+            logger.debug(f"  - [{i}] 未知类型: {type(item)}")
 
     return result
 
@@ -3004,7 +2984,7 @@ async def interactive_feedback(
                 )
                 # 返回配置的提示语，引导 AI 重新调用工具
                 resubmit_prompt, _ = get_feedback_prompts()
-                return [{"type": "text", "text": resubmit_prompt}]
+                return [TextContent(type="text", text=resubmit_prompt)]
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
 
@@ -3048,7 +3028,7 @@ async def interactive_feedback(
             logger.error(f"添加任务请求失败，无法连接到 Web UI: {e}")
             # 返回配置的提示语，引导 AI 重新调用工具
             resubmit_prompt, _ = get_feedback_prompts()
-            return [{"type": "text", "text": resubmit_prompt}]
+            return [TextContent(type="text", text=resubmit_prompt)]
 
         # 【优化】使用统一的超时计算函数，利用 feedback.timeout 作为上限
         backend_timeout = calculate_backend_timeout(auto_resubmit_timeout)
@@ -3062,7 +3042,7 @@ async def interactive_feedback(
             logger.error(f"任务执行失败: {result['error']}, 任务 ID: {task_id}")
             # 返回配置的提示语，引导 AI 重新调用工具
             resubmit_prompt, _ = get_feedback_prompts()
-            return [{"type": "text", "text": resubmit_prompt}]
+            return [TextContent(type="text", text=resubmit_prompt)]
 
         logger.info("反馈请求处理完成")
 
@@ -3078,16 +3058,16 @@ async def interactive_feedback(
                 else:
                     # 旧格式 - 使用 MCP 标准 TextContent 格式
                     text_content = result.get("interactive_feedback", str(result))
-                    return [{"type": "text", "text": text_content}]
+                    return [TextContent(type="text", text=text_content)]
             else:
                 # 简单字符串结果 - 使用 MCP 标准 TextContent 格式
-                return [{"type": "text", "text": str(result)}]
+                return [TextContent(type="text", text=str(result))]
 
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}")
         # 返回配置的提示语，引导 AI 重新调用工具
         resubmit_prompt, _ = get_feedback_prompts()
-        return [{"type": "text", "text": resubmit_prompt}]
+        return [TextContent(type="text", text=resubmit_prompt)]
 
 
 class FeedbackServiceContext:
