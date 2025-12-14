@@ -2,8 +2,18 @@ include README.md
 include LICENSE
 include server.py
 include web_ui.py
+include config_manager.py
+include config_utils.py
+include enhanced_logging.py
+include file_validator.py
+include notification_manager.py
+include notification_providers.py
+include task_queue.py
+include config.jsonc.default
 include test.py
 recursive-include templates *.html
+recursive-include static *
+recursive-include sounds *
 recursive-include icons *.svg *.ico
 global-exclude __pycache__
 global-exclude *.py[co]
