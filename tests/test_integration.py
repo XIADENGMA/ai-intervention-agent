@@ -72,6 +72,14 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         # 应该返回 200
         self.assertEqual(response.status_code, 200)
 
+    def test_index_contains_zero_host_redirect(self):
+        """回归测试：0.0.0.0 场景应尽早重定向（避免 pending 请求/浏览器兼容问题）"""
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.data.decode("utf-8", errors="ignore")
+        self.assertIn("redirectZeroHostToLoopback", html)
+        self.assertIn("0.0.0.0", html)
+
     def test_api_tasks(self):
         """测试任务 API"""
         response = self.client.get("/api/tasks")

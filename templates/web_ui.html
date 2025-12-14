@@ -8,6 +8,24 @@
     <link rel="mask-icon" href="/icons/icon.svg" color="#8B5CF6" />
     <link rel="apple-touch-icon" href="/icons/icon.svg" />
 
+    <!-- 0.0.0.0 访问兼容性：尽早重定向到 127.0.0.1，避免浏览器/Fetch/通知权限异常 -->
+    <script nonce="{{ csp_nonce }}">
+      ;(function redirectZeroHostToLoopback() {
+        try {
+          const url = new URL(window.location.href)
+          if (url.hostname === '0.0.0.0') {
+            url.hostname = '127.0.0.1'
+            console.warn(
+              `检测到访问地址为 0.0.0.0，已自动切换为 ${url.origin}（避免浏览器兼容性问题）`
+            )
+            window.location.replace(url.toString())
+          }
+        } catch (e) {
+          // 忽略：不影响主流程
+        }
+      })()
+    </script>
+
     <!-- 资源预加载优化：减少首屏渲染阻塞 -->
     <link
       rel="preload"
