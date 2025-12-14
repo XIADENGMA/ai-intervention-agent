@@ -111,7 +111,8 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
 
         # 文件不存在时也应返回 404（而不是被限流拦截成 429）
         missing_statuses = [
-            self.client.get("/static/js/tex-mml-chtml.js").status_code for _ in range(5)
+            self.client.get("/static/js/__definitely_missing__.js").status_code
+            for _ in range(5)
         ]
         self.assertNotIn(429, missing_statuses)
 
