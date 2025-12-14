@@ -826,11 +826,17 @@ class BarkNotificationProvider:
                         # 其他复杂类型转为字符串
                         bark_data[key] = str(value)
 
+            # 【可配置】Bark 请求超时（秒）
+            try:
+                timeout_seconds = max(int(getattr(self.config, "bark_timeout", 10)), 1)
+            except (TypeError, ValueError):
+                timeout_seconds = 10
+
             # 【优化】使用 Session 默认 headers（在 __init__ 中设置）
             response = self.session.post(
                 self.config.bark_url,
                 json=bark_data,
-                timeout=10,
+                timeout=timeout_seconds,
             )
 
             # 接受所有2xx状态码为成功

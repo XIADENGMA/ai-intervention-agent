@@ -229,6 +229,22 @@ class TestBarkNotificationProvider(unittest.TestCase):
         mock_post.assert_called_once()
 
     @patch("notification_providers.requests.Session.post")
+    def test_send_uses_configured_timeout(self, mock_post):
+        """应使用配置中的 bark_timeout 作为 requests 超时参数"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        self.config.bark_timeout = 3
+        event = create_event(title="测试标题", message="测试消息")
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+        _, kwargs = mock_post.call_args
+        self.assertEqual(kwargs.get("timeout"), 3)
+
+    @patch("notification_providers.requests.Session.post")
     def test_payload_no_action_field_when_none(self, mock_post):
         """bark_action=none 时不应发送 action/url/copy 字段（避免服务端 4xx）"""
         mock_response = MagicMock()

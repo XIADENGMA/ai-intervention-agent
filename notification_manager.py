@@ -217,6 +217,7 @@ class NotificationConfig:
     bark_device_key: str = ""  # Bark 设备密钥
     bark_icon: str = ""  # Bark 通知图标 URL
     bark_action: str = "none"  # Bark 通知点击动作
+    bark_timeout: int = 10  # Bark 请求超时（秒）
 
     # ==================== 边界常量 ====================
     SOUND_VOLUME_MIN: float = 0.0
@@ -232,6 +233,7 @@ class NotificationConfig:
         1. sound_volume: 范围 [0.0, 1.0]
         2. bark_action: 有效值 none/url/copy
         3. bark_url: 非空时验证 URL 格式
+        4. retry_count / retry_delay / bark_timeout: 合理范围限制
 
         【重构】使用 config_utils 辅助函数简化边界检查和枚举验证。
         """
@@ -239,6 +241,24 @@ class NotificationConfig:
         clamp_dataclass_field(
             self, "sound_volume", self.SOUND_VOLUME_MIN, self.SOUND_VOLUME_MAX
         )
+
+        # 先将可能的字符串值转为数值，再做范围限制（避免比较时报 TypeError）
+        try:
+            object.__setattr__(self, "retry_count", int(self.retry_count))
+        except (TypeError, ValueError):
+            object.__setattr__(self, "retry_count", 3)
+        try:
+            object.__setattr__(self, "retry_delay", int(self.retry_delay))
+        except (TypeError, ValueError):
+            object.__setattr__(self, "retry_delay", 2)
+        try:
+            object.__setattr__(self, "bark_timeout", int(self.bark_timeout))
+        except (TypeError, ValueError):
+            object.__setattr__(self, "bark_timeout", 10)
+
+        clamp_dataclass_field(self, "retry_count", 0, 10)
+        clamp_dataclass_field(self, "retry_delay", 0, 60)
+        clamp_dataclass_field(self, "bark_timeout", 1, 300)
 
         # 【重构】使用 validate_enum_value 简化 bark_action 枚举验证
         validated_action = validate_enum_value(
@@ -313,6 +333,17 @@ class NotificationConfig:
         raw_volume = max(0, min(100, raw_volume))
         normalized_volume = raw_volume / 100.0
 
+        def safe_int(value: Any, default: int, min_val: int, max_val: int) -> int:
+            try:
+                iv = int(value)
+            except (TypeError, ValueError):
+                return default
+            return max(min_val, min(max_val, iv))
+
+        retry_count = safe_int(notification_config.get("retry_count", 3), 3, 0, 10)
+        retry_delay = safe_int(notification_config.get("retry_delay", 2), 2, 0, 60)
+        bark_timeout = safe_int(notification_config.get("bark_timeout", 10), 10, 1, 300)
+
         return cls(
             enabled=bool(notification_config.get("enabled", True)),
             debug=bool(notification_config.get("debug", False)),
@@ -325,11 +356,14 @@ class NotificationConfig:
             sound_mute=bool(notification_config.get("sound_mute", False)),
             mobile_optimized=bool(notification_config.get("mobile_optimized", True)),
             mobile_vibrate=bool(notification_config.get("mobile_vibrate", True)),
+            retry_count=retry_count,
+            retry_delay=retry_delay,
             bark_enabled=bool(notification_config.get("bark_enabled", False)),
             bark_url=str(notification_config.get("bark_url", "")),
             bark_device_key=str(notification_config.get("bark_device_key", "")),
             bark_icon=str(notification_config.get("bark_icon", "")),
             bark_action=str(notification_config.get("bark_action", "none")),
+            bark_timeout=bark_timeout,
         )
 
 
@@ -533,6 +567,21 @@ class NotificationManager:
             self._delayed_timers: Dict[str, threading.Timer] = {}
             self._delayed_timers_lock = threading.Lock()
             self._shutdown_called: bool = False
+
+            # 【可观测性】基础统计信息（用于调试/监控；不写入磁盘）
+            self._stats_lock = threading.Lock()
+            self._stats: Dict[str, Any] = {
+                "events_total": 0,
+                "events_succeeded": 0,
+                "events_failed": 0,
+                "attempts_total": 0,
+                "retries_scheduled": 0,
+                "last_event_id": None,
+                "last_event_at": None,
+                "providers": {},  # {type: {attempts/success/failure/last_error/...}}
+            }
+            # 记录已“最终完成”的事件，避免重试场景重复计数
+            self._finalized_event_ids: set[str] = set()
 
             # 初始化回调函数字典
             self._callbacks: Dict[str, List[Callable]] = {}
@@ -741,9 +790,23 @@ class NotificationManager:
             max_retries=self.config.retry_count,
         )
 
+        # 【可观测性】记录事件创建（只计一次，不随重试重复）
+        try:
+            with self._stats_lock:
+                self._stats["events_total"] += 1
+                self._stats["last_event_id"] = event_id
+                self._stats["last_event_at"] = time.time()
+        except Exception:
+            # 统计不影响主流程
+            pass
+
         # 添加到队列
         with self._queue_lock:
             self._event_queue.append(event)
+            # 防止队列无限增长（仅保留最近 N 个事件用于调试/状态展示）
+            max_keep = 200
+            if len(self._event_queue) > max_keep:
+                self._event_queue = self._event_queue[-max_keep:]
 
         logger.debug(f"通知事件已创建: {event_id} - {title}")
 
@@ -772,6 +835,46 @@ class NotificationManager:
             timer.start()
 
         return event_id
+
+    def _mark_event_finalized(self, event: NotificationEvent, succeeded: bool) -> None:
+        """标记事件已完成（成功/最终失败），用于统计去重"""
+        try:
+            with self._stats_lock:
+                if event.id in self._finalized_event_ids:
+                    return
+                self._finalized_event_ids.add(event.id)
+                if succeeded:
+                    self._stats["events_succeeded"] += 1
+                else:
+                    self._stats["events_failed"] += 1
+        except Exception:
+            # 统计不影响主流程
+            pass
+
+    def _schedule_retry(self, event: NotificationEvent) -> None:
+        """调度一次事件重试（使用 Timer，避免在当前线程阻塞等待）"""
+        if getattr(self, "_shutdown_called", False):
+            return
+
+        try:
+            delay_seconds = max(int(getattr(self.config, "retry_delay", 2)), 0)
+        except (TypeError, ValueError):
+            delay_seconds = 2
+
+        timer_key = f"{event.id}__retry_{event.retry_count}"
+
+        def _retry_run():
+            try:
+                self._process_event(event)
+            finally:
+                with self._delayed_timers_lock:
+                    self._delayed_timers.pop(timer_key, None)
+
+        timer = threading.Timer(delay_seconds, _retry_run)
+        timer.daemon = True
+        with self._delayed_timers_lock:
+            self._delayed_timers[timer_key] = timer
+        timer.start()
 
     def _process_event(self, event: NotificationEvent):
         """处理通知事件
@@ -819,6 +922,13 @@ class NotificationManager:
 
         try:
             logger.debug(f"处理通知事件: {event.id}")
+
+            # 【可观测性】记录一次“事件尝试”（重试会重复计数）
+            try:
+                with self._stats_lock:
+                    self._stats["attempts_total"] += 1
+            except Exception:
+                pass
 
             # 【性能优化】使用线程池并行发送通知
             if not event.types:
@@ -868,19 +978,58 @@ class NotificationManager:
                                 f"任务正在运行，无法取消: {notification_type.value}"
                             )
 
-            # 触发回调
+            # 触发回调（每次尝试都会触发，便于调试/前端展示）
             self.trigger_callbacks("notification_sent", event, success_count)
 
-            if success_count == 0 and self.config.fallback_enabled:
-                logger.warning(f"所有通知方式失败，启用降级处理: {event.id}")
-                self._handle_fallback(event)
-            elif success_count > 0:
+            if success_count == 0:
+                # 失败：若仍有重试额度，则调度重试并提前返回（不进入降级）
+                if event.retry_count < event.max_retries:
+                    event.retry_count += 1
+                    try:
+                        with self._stats_lock:
+                            self._stats["retries_scheduled"] += 1
+                    except Exception:
+                        pass
+
+                    logger.warning(
+                        f"通知发送失败，将在 {self.config.retry_delay}s 后重试 "
+                        f"({event.retry_count}/{event.max_retries}): {event.id}"
+                    )
+                    self._schedule_retry(event)
+                    self.trigger_callbacks("notification_retry_scheduled", event)
+                    return
+
+                # 无重试额度：最终失败
+                self._mark_event_finalized(event, succeeded=False)
+                if self.config.fallback_enabled:
+                    logger.warning(f"所有通知方式失败，启用降级处理: {event.id}")
+                    self._handle_fallback(event)
+            else:
+                # 只要有任一渠道成功，视为成功（并终止后续重试）
+                self._mark_event_finalized(event, succeeded=True)
                 logger.info(
                     f"通知发送完成: {event.id} - 成功 {success_count}/{total_count}"
                 )
 
         except Exception as e:
             logger.error(f"处理通知事件失败: {event.id} - {e}")
+            # 异常：优先走重试；重试耗尽再降级
+            if event.retry_count < event.max_retries:
+                event.retry_count += 1
+                try:
+                    with self._stats_lock:
+                        self._stats["retries_scheduled"] += 1
+                except Exception:
+                    pass
+                logger.warning(
+                    f"处理通知事件异常，将在 {self.config.retry_delay}s 后重试 "
+                    f"({event.retry_count}/{event.max_retries}): {event.id}"
+                )
+                self._schedule_retry(event)
+                self.trigger_callbacks("notification_retry_scheduled", event)
+                return
+
+            self._mark_event_finalized(event, succeeded=False)
             if self.config.fallback_enabled:
                 self._handle_fallback(event)
 
@@ -928,14 +1077,94 @@ class NotificationManager:
             return False
 
         try:
+            # 【可观测性】记录提供者级别的尝试次数
+            try:
+                with self._stats_lock:
+                    providers = self._stats.setdefault("providers", {})
+                    stats = providers.setdefault(
+                        notification_type.value,
+                        {
+                            "attempts": 0,
+                            "success": 0,
+                            "failure": 0,
+                            "last_success_at": None,
+                            "last_failure_at": None,
+                            "last_error": None,
+                        },
+                    )
+                    stats["attempts"] += 1
+            except Exception:
+                pass
+
             # 调用提供者的发送方法
             if hasattr(provider, "send"):
-                return provider.send(event)
+                ok = bool(provider.send(event))
             else:
                 logger.error(f"通知提供者缺少send方法: {notification_type.value}")
-                return False
+                ok = False
+
+            # 【可观测性】记录结果与最近错误
+            try:
+                with self._stats_lock:
+                    providers = self._stats.setdefault("providers", {})
+                    stats = providers.setdefault(
+                        notification_type.value,
+                        {
+                            "attempts": 0,
+                            "success": 0,
+                            "failure": 0,
+                            "last_success_at": None,
+                            "last_failure_at": None,
+                            "last_error": None,
+                        },
+                    )
+                    now = time.time()
+                    if ok:
+                        stats["success"] += 1
+                        stats["last_success_at"] = now
+                        stats["last_error"] = None
+                    else:
+                        stats["failure"] += 1
+                        stats["last_failure_at"] = now
+                        # Bark 在 debug/test 模式下会写入 event.metadata["bark_error"]
+                        last_error = None
+                        if (
+                            notification_type == NotificationType.BARK
+                            and isinstance(event.metadata, dict)
+                            and event.metadata.get("bark_error") is not None
+                        ):
+                            last_error = event.metadata.get("bark_error")
+                        stats["last_error"] = (
+                            str(last_error)[:800] if last_error is not None else None
+                        )
+            except Exception:
+                pass
+
+            return ok
         except Exception as e:
             logger.error(f"发送通知失败 {notification_type.value}: {e}")
+
+            # 【可观测性】记录异常
+            try:
+                with self._stats_lock:
+                    providers = self._stats.setdefault("providers", {})
+                    stats = providers.setdefault(
+                        notification_type.value,
+                        {
+                            "attempts": 0,
+                            "success": 0,
+                            "failure": 0,
+                            "last_success_at": None,
+                            "last_failure_at": None,
+                            "last_error": None,
+                        },
+                    )
+                    stats["failure"] += 1
+                    stats["last_failure_at"] = time.time()
+                    stats["last_error"] = f"{type(e).__name__}: {e}"[:800]
+            except Exception:
+                pass
+
             return False
 
     def _handle_fallback(self, event: NotificationEvent):
@@ -1226,6 +1455,17 @@ class NotificationManager:
                     notification_config.get("bark_action"), "none"
                 )
 
+                # 重试/超时配置（新增：允许通过配置文件调优可靠性与时延）
+                self.config.retry_count = int(
+                    safe_number(notification_config.get("retry_count"), 3, 0, 10)
+                )
+                self.config.retry_delay = int(
+                    safe_number(notification_config.get("retry_delay"), 2, 0, 60)
+                )
+                self.config.bark_timeout = int(
+                    safe_number(notification_config.get("bark_timeout"), 10, 1, 300)
+                )
+
                 logger.debug("已从配置文件刷新通知配置（带类型验证）")
 
                 # 如果 bark_enabled 状态发生变化，动态更新提供者
@@ -1420,7 +1660,7 @@ class NotificationManager:
         以下字段不会保存到配置文件：
         - debug: 调试模式，通常不持久化
         - web_icon, web_timeout, sound_file: 使用默认值或硬编码
-        - trigger_* 和 retry_*: 触发和重试配置暂不持久化
+        - trigger_*: 触发时机配置暂不持久化
 
         【异常处理】
         - 配置管理器不可用时静默返回
@@ -1457,11 +1697,14 @@ class NotificationManager:
                 "sound_volume": sound_volume_int,
                 "mobile_optimized": self.config.mobile_optimized,
                 "mobile_vibrate": self.config.mobile_vibrate,
+                "retry_count": int(self.config.retry_count),
+                "retry_delay": int(self.config.retry_delay),
                 "bark_enabled": self.config.bark_enabled,
                 "bark_url": self.config.bark_url,
                 "bark_device_key": self.config.bark_device_key,
                 "bark_icon": self.config.bark_icon,
                 "bark_action": self.config.bark_action,
+                "bark_timeout": int(self.config.bark_timeout),
             }
 
             # 更新配置文件
@@ -1518,15 +1761,32 @@ class NotificationManager:
         with self._queue_lock:
             queue_size = len(self._event_queue)
 
+        # 线程安全地获取统计快照
+        try:
+            with self._stats_lock:
+                providers_stats = {
+                    k: dict(v) for k, v in self._stats.get("providers", {}).items()
+                }
+                stats_snapshot = {
+                    k: v for k, v in self._stats.items() if k != "providers"
+                }
+                stats_snapshot["providers"] = providers_stats
+        except Exception:
+            stats_snapshot = {}
+
         return {
             "enabled": self.config.enabled,
-            "providers": list(self._providers.keys()),
+            "providers": [t.value for t in self._providers.keys()],
             "queue_size": queue_size,
             "config": {
                 "web_enabled": self.config.web_enabled,
                 "sound_enabled": self.config.sound_enabled,
                 "bark_enabled": self.config.bark_enabled,
+                "retry_count": self.config.retry_count,
+                "retry_delay": self.config.retry_delay,
+                "bark_timeout": self.config.bark_timeout,
             },
+            "stats": stats_snapshot,
         }
 
 

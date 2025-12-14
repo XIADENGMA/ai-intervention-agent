@@ -23,7 +23,13 @@
     // Bark通知图标URL (可选)
     "bark_icon": "",
     // Bark通知动作 - 有效值: none（无操作）/url（打开链接）/copy（复制）
-    "bark_action": "none"
+    "bark_action": "none",
+    // 发送失败重试次数（不含首次尝试） - 范围 [0, 10]
+    "retry_count": 3,
+    // 重试间隔(秒) - 范围 [0, 60]
+    "retry_delay": 2,
+    // Bark 请求超时(秒) - 范围 [1, 300]
+    "bark_timeout": 10
   },
   // Web界面配置
   "web_ui": {

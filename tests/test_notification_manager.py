@@ -17,6 +17,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -277,6 +278,100 @@ class TestNotificationManagerBarkProvider(unittest.TestCase):
             pass
 
 
+class TestNotificationManagerRetryAndStats(unittest.TestCase):
+    """通知重试与可观测性：最小回归测试"""
+
+    def setUp(self):
+        from notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
+
+        self.NotificationEvent = NotificationEvent
+        self.NotificationTrigger = NotificationTrigger
+        self.NotificationType = NotificationType
+        self.manager = notification_manager
+
+        # 确保可用（有些测试可能调用过 shutdown）
+        self.manager.restart()
+
+        # 备份并替换 provider（避免真实网络）
+        self._orig_providers = dict(self.manager._providers)
+        self._orig_retry_count = self.manager.config.retry_count
+        self._orig_retry_delay = self.manager.config.retry_delay
+        self._orig_fallback_enabled = self.manager.config.fallback_enabled
+
+        self.manager.config.retry_count = 2
+        self.manager.config.retry_delay = 2
+        self.manager.config.fallback_enabled = True
+
+        self.fake_provider = Mock()
+        self.fake_provider.send = Mock(return_value=False)
+        self.manager.register_provider(self.NotificationType.BARK, self.fake_provider)
+
+    def tearDown(self):
+        self.manager._providers = self._orig_providers
+        self.manager.config.retry_count = self._orig_retry_count
+        self.manager.config.retry_delay = self._orig_retry_delay
+        self.manager.config.fallback_enabled = self._orig_fallback_enabled
+
+    def _make_event(self, max_retries: int, retry_count: int = 0):
+        return self.NotificationEvent(
+            id=f"retry-test-{time.time_ns()}",
+            title="标题",
+            message="消息",
+            trigger=self.NotificationTrigger.IMMEDIATE,
+            types=[self.NotificationType.BARK],
+            metadata={},
+            retry_count=retry_count,
+            max_retries=max_retries,
+        )
+
+    def test_process_event_schedules_retry_when_all_failed(self):
+        """所有渠道失败且还有重试额度：应调度重试而非直接降级"""
+        event = self._make_event(max_retries=2, retry_count=0)
+
+        with patch.object(self.manager, "_schedule_retry") as schedule_mock, patch.object(
+            self.manager, "_handle_fallback"
+        ) as fallback_mock:
+            self.manager._process_event(event)
+
+            schedule_mock.assert_called_once()
+            fallback_mock.assert_not_called()
+            self.assertEqual(event.retry_count, 1)
+
+    def test_process_event_calls_fallback_when_retries_exhausted(self):
+        """重试耗尽：应进入降级处理"""
+        event = self._make_event(max_retries=0, retry_count=0)
+
+        with patch.object(self.manager, "_schedule_retry") as schedule_mock, patch.object(
+            self.manager, "_handle_fallback"
+        ) as fallback_mock:
+            self.manager._process_event(event)
+
+            schedule_mock.assert_not_called()
+            fallback_mock.assert_called_once()
+
+    def test_get_status_contains_stats(self):
+        """状态接口应包含 stats（用于可观测性）"""
+        # 让一次通知成功（避免走重试/降级）
+        self.fake_provider.send.return_value = True
+
+        _ = self.manager.send_notification(
+            "标题",
+            "消息",
+            types=[self.NotificationType.BARK],
+        )
+
+        status = self.manager.get_status()
+        self.assertIsInstance(status, dict)
+        self.assertIn("stats", status)
+        self.assertIn("events_total", status["stats"])
+        self.assertGreaterEqual(status["stats"]["events_total"], 1)
+
+
 class TestNotificationManagerPerformance(unittest.TestCase):
     """测试性能"""
 
@@ -323,6 +418,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestNotificationManagerTypeValidation))
     suite.addTests(loader.loadTestsFromTestCase(TestNotificationManagerThreadSafety))
     suite.addTests(loader.loadTestsFromTestCase(TestNotificationManagerBarkProvider))
+    suite.addTests(loader.loadTestsFromTestCase(TestNotificationManagerRetryAndStats))
     suite.addTests(loader.loadTestsFromTestCase(TestNotificationManagerPerformance))
 
     # 运行测试
