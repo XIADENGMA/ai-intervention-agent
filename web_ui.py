@@ -2270,6 +2270,7 @@ class WebFeedbackUI:
 
         # 静态文件路由
         @self.app.route("/fonts/<filename>")
+        @self.limiter.exempt
         def serve_fonts(filename):
             """提供字体文件的静态资源路由
 
@@ -2283,7 +2284,7 @@ class WebFeedbackUI:
                 字体文件的二进制内容（application/font-woff等MIME类型）
 
             频率限制：
-                - 使用全局默认限制（60次/分钟，10次/秒）
+                - 已豁免（静态资源不做限流，避免首屏加载被 429 影响）
 
             注意事项：
                 - 使用send_from_directory防止路径遍历攻击
@@ -2294,6 +2295,7 @@ class WebFeedbackUI:
             return send_from_directory(fonts_dir, filename)
 
         @self.app.route("/icons/<filename>")
+        @self.limiter.exempt
         def serve_icons(filename):
             """提供图标文件的静态资源路由
 
@@ -2307,7 +2309,7 @@ class WebFeedbackUI:
                 图标文件的二进制内容（image/x-icon、image/png等MIME类型）
 
             频率限制：
-                - 使用全局默认限制（60次/分钟，10次/秒）
+                - 已豁免（静态资源不做限流，避免首屏加载被 429 影响）
 
             注意事项：
                 - 使用send_from_directory防止路径遍历攻击
@@ -2318,6 +2320,7 @@ class WebFeedbackUI:
             return send_from_directory(icons_dir, filename)
 
         @self.app.route("/sounds/<filename>")
+        @self.limiter.exempt
         def serve_sounds(filename):
             """提供音频文件的静态资源路由
 
@@ -2331,7 +2334,7 @@ class WebFeedbackUI:
                 音频文件的二进制内容（audio/mpeg、audio/wav等MIME类型）
 
             频率限制：
-                - 使用全局默认限制（60次/分钟，10次/秒）
+                - 已豁免（静态资源不做限流，避免首屏加载被 429 影响）
 
             注意事项：
                 - 使用send_from_directory防止路径遍历攻击
@@ -2343,6 +2346,7 @@ class WebFeedbackUI:
             return send_from_directory(sounds_dir, filename)
 
         @self.app.route("/static/css/<filename>")
+        @self.limiter.exempt
         def serve_css(filename):
             """提供CSS文件的静态资源路由
 
@@ -2364,7 +2368,7 @@ class WebFeedbackUI:
                 - 如果请求 main.css，优先返回 main.min.css（如存在）
 
             频率限制：
-                - 使用全局默认限制（60次/分钟，10次/秒）
+                - 已豁免（静态资源不做限流，避免首屏加载/MathJax 等资源被 429 影响）
 
             注意事项：
                 - 使用send_from_directory防止路径遍历攻击
@@ -2393,6 +2397,7 @@ class WebFeedbackUI:
             return response
 
         @self.app.route("/static/js/<filename>")
+        @self.limiter.exempt
         def serve_js(filename):
             """提供JavaScript文件的静态资源路由
 
@@ -2414,7 +2419,7 @@ class WebFeedbackUI:
                 - 如果请求 multi_task.js，优先返回 multi_task.min.js（如存在）
 
             频率限制：
-                - 使用全局默认限制（60次/分钟，10次/秒）
+                - 已豁免（静态资源不做限流，避免首屏加载/MathJax 等资源被 429 影响）
 
             注意事项：
                 - 使用send_from_directory防止路径遍历攻击
@@ -2443,6 +2448,7 @@ class WebFeedbackUI:
             return response
 
         @self.app.route("/favicon.ico")
+        @self.limiter.exempt
         def favicon():
             """提供网站图标的路由
 
@@ -2460,7 +2466,7 @@ class WebFeedbackUI:
                 5. 禁用缓存（no-cache, no-store, must-revalidate）
 
             频率限制：
-                - 使用全局默认限制（60次/分钟，10次/秒）
+                - 已豁免（静态资源不做限流，避免 favicon 请求被 429 影响）
 
             副作用：
                 - 修改响应头部（Content-Type、Cache-Control等）

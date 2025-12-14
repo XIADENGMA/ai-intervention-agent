@@ -17,6 +17,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -312,9 +313,11 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
         """测试 Bark 网络不可用"""
         from notification_manager import NotificationEvent, NotificationTrigger
         from notification_providers import BarkNotificationProvider
+        import requests
 
         self.config.bark_enabled = True
-        self.config.bark_url = "https://invalid-domain-that-does-not-exist.test/push"
+        # 使用 mock 避免真实网络请求（确保离线可重复）
+        self.config.bark_url = "https://example.invalid/push"
         self.config.bark_device_key = "test"
 
         provider = BarkNotificationProvider(self.config)
@@ -328,7 +331,11 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
         )
 
         # 应该返回 False，不应该抛出异常
-        result = provider.send(event)
+        with patch(
+            "notification_providers.requests.Session.post",
+            side_effect=requests.exceptions.RequestException("network down"),
+        ):
+            result = provider.send(event)
         self.assertFalse(result)
 
     def test_web_provider_with_none_metadata(self):

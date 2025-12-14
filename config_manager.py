@@ -374,6 +374,26 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
     Returns:
         Path: 配置文件的路径对象（可能尚不存在）
     """
+    # 如果调用方显式传入了路径（绝对路径或包含目录层级），应尊重该路径
+    # 典型场景：单测/工具代码使用临时文件路径，不应被环境变量覆盖
+    requested_path = Path(config_filename).expanduser()
+    if requested_path.is_absolute() or requested_path.parent != Path("."):
+        return requested_path
+
+    # 【可测试性/可运维性】允许通过环境变量覆盖配置文件路径
+    # - 典型用途：pytest/CI 使用临时配置，避免读取用户 ~/.config
+    # - 典型用途：容器/部署场景下显式指定配置文件位置
+    override = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
+    if override:
+        override_path = Path(override).expanduser()
+        # 支持传入目录：自动拼接默认文件名
+        if override_path.is_dir():
+            override_path = override_path / config_filename
+        logger.info(
+            f"使用环境变量 AI_INTERVENTION_AGENT_CONFIG_FILE 指定配置文件: {override_path}"
+        )
+        return override_path
+
     # 检测是否为uvx方式运行
     is_uvx_mode = _is_uvx_mode()
 
@@ -3123,6 +3143,22 @@ class ConfigManager:
 
 # 全局配置管理器实例
 config_manager = ConfigManager()
+
+# 【资源生命周期】进程退出时尽量清理后台资源（文件监听/Timer）
+# - 避免测试环境出现“退出卡住/资源未释放”类问题
+# - shutdown() 本身幂等，重复调用安全
+import atexit  # noqa: E402
+
+
+def _shutdown_global_config_manager():
+    try:
+        config_manager.shutdown()
+    except Exception:
+        # 退出阶段不再抛异常
+        pass
+
+
+atexit.register(_shutdown_global_config_manager)
 
 
 def get_config() -> ConfigManager:

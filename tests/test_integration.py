@@ -101,6 +101,20 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         # 可能存在或不存在
         self.assertIn(response.status_code, [200, 404])
 
+    def test_static_assets_not_rate_limited(self):
+        """回归测试：静态资源不应被频率限制误伤（避免 429 导致白屏/MathJax 失效）"""
+        # 连续快速请求静态资源，若静态路由未 exempt，可能触发全局 10/s 限流返回 429
+        statuses = [
+            self.client.get("/static/js/mathjax-loader.js").status_code for _ in range(20)
+        ]
+        self.assertNotIn(429, statuses)
+
+        # 文件不存在时也应返回 404（而不是被限流拦截成 429）
+        missing_statuses = [
+            self.client.get("/static/js/tex-mml-chtml.js").status_code for _ in range(5)
+        ]
+        self.assertNotIn(429, missing_statuses)
+
 
 class TestWebFeedbackUINotificationConfig(unittest.TestCase):
     """通知配置 API 测试"""

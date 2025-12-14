@@ -712,6 +712,11 @@ class NotificationManager:
             logger.debug("通知功能已禁用，跳过发送")
             return ""
 
+        # 【资源生命周期】若已 shutdown，则拒绝继续发送，避免线程池已关闭导致异常
+        if getattr(self, "_shutdown_called", False):
+            logger.debug("通知管理器已关闭，跳过发送")
+            return ""
+
         # 生成事件ID
         event_id = f"notification_{int(time.time() * 1000)}_{id(self)}"
 
@@ -807,6 +812,11 @@ class NotificationManager:
         Args:
             event: 要处理的通知事件对象
         """
+        # shutdown 后可能仍有残留 Timer/线程回调进入，这里直接跳过避免线程池已关闭报错
+        if getattr(self, "_shutdown_called", False):
+            logger.debug(f"通知管理器已关闭，跳过事件处理: {event.id}")
+            return
+
         try:
             logger.debug(f"处理通知事件: {event.id}")
 
@@ -1006,6 +1016,28 @@ class NotificationManager:
             self._executor.shutdown(wait=wait)
         except Exception as e:
             logger.debug(f"关闭通知线程池失败（忽略）: {e}")
+
+    def restart(self):
+        """重启通知管理器（仅在 shutdown 后可用）
+
+        典型用途：
+        - 长驻进程热重启（同一进程内反复启动/停止服务）
+        - 测试场景需要反复启动/关闭通知系统
+
+        行为：
+        - 清除 shutdown 标记
+        - 重建线程池执行器
+
+        注意：
+        - 不强制重置 providers/queue/config（调用方可自行 refresh_config_from_file）
+        """
+        if not getattr(self, "_shutdown_called", False):
+            return
+
+        self._shutdown_called = False
+        self._executor = ThreadPoolExecutor(
+            max_workers=3, thread_name_prefix="NotificationWorker"
+        )
 
     def get_config(self) -> NotificationConfig:
         """获取当前配置
@@ -1525,3 +1557,19 @@ class NotificationManager:
 
 # 全局通知管理器实例
 notification_manager = NotificationManager()
+
+# 【资源生命周期】进程退出时尽量清理后台资源（Timer/线程池）
+# - 避免测试或 REPL 退出时出现线程池阻塞
+# - shutdown() 幂等，重复调用安全
+import atexit  # noqa: E402
+
+
+def _shutdown_global_notification_manager():
+    try:
+        notification_manager.shutdown(wait=False)
+    except Exception:
+        # 退出阶段不再抛异常
+        pass
+
+
+atexit.register(_shutdown_global_notification_manager)
