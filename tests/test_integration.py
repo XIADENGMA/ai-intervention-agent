@@ -6,6 +6,8 @@ AI Intervention Agent - 集成测试
 使用 mock 和 patch 来模拟服务器行为
 """
 
+import base64
+import io
 import json
 import sys
 import unittest
@@ -168,6 +170,89 @@ class TestWebFeedbackUINotificationConfig(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+
+
+# ============================================================================
+# web_ui.py 图片上传集成测试（/api/submit）
+# ============================================================================
+
+
+class TestWebFeedbackUIImageUpload(unittest.TestCase):
+    """图片上传 API 测试（multipart/form-data）"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="图片上传测试", task_id="image-upload-test", port=8995
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+
+        # 最小可用样例数据（不依赖 Pillow）
+        cls._png_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        cls._jpeg_bytes = b"\xff\xd8\xff\xe0" + b"\x00" * 128
+        cls._webp_bytes = b"RIFF" + b"\x00\x00\x00\x00" + b"WEBP" + b"\x00" * 32
+
+    def setUp(self):
+        # 避免跨测试污染
+        self.web_ui.feedback_result = {
+            "user_input": "",
+            "selected_options": [],
+            "images": [],
+        }
+
+    def _submit_image(self, content: bytes, filename: str, mime_type: str):
+        data = {
+            "feedback_text": "图片上传测试",
+            "selected_options": "[]",
+            "image_0": (io.BytesIO(content), filename, mime_type),
+        }
+        return self.client.post(
+            "/api/submit", data=data, content_type="multipart/form-data"
+        )
+
+    def _assert_last_image(self, expected_mime: str):
+        result = self.web_ui.feedback_result
+        self.assertIsInstance(result, dict)
+        images = result.get("images", [])
+        self.assertIsInstance(images, list)
+        self.assertEqual(len(images), 1)
+
+        image0 = images[0]
+        self.assertIsInstance(image0, dict)
+        self.assertIn("data", image0)
+        self.assertTrue(isinstance(image0["data"], str) and image0["data"].strip())
+        self.assertFalse(image0["data"].startswith("data:"))
+
+        # 后端统一保存为 content_type 字段
+        self.assertEqual(image0.get("content_type"), expected_mime)
+
+    def test_submit_png_image(self):
+        resp = self._submit_image(self._png_bytes, "test.png", "image/png")
+        self.assertEqual(resp.status_code, 200)
+        payload = json.loads(resp.data)
+        self.assertEqual(payload.get("status"), "success")
+        self._assert_last_image("image/png")
+
+    def test_submit_jpeg_image(self):
+        resp = self._submit_image(self._jpeg_bytes, "test.jpg", "image/jpeg")
+        self.assertEqual(resp.status_code, 200)
+        payload = json.loads(resp.data)
+        self.assertEqual(payload.get("status"), "success")
+        self._assert_last_image("image/jpeg")
+
+    def test_submit_webp_image(self):
+        resp = self._submit_image(self._webp_bytes, "test.webp", "image/webp")
+        self.assertEqual(resp.status_code, 200)
+        payload = json.loads(resp.data)
+        self.assertEqual(payload.get("status"), "success")
+        self._assert_last_image("image/webp")
 
 
 # ============================================================================

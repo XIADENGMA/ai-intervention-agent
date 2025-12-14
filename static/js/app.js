@@ -2100,6 +2100,8 @@ function compressImage(file) {
       // 使用RAF进行非阻塞绘制
       rafUpdate(() => {
         ctx.drawImage(img, 0, 0, width, height)
+        // drawImage 完成后即可释放 ObjectURL（后续仅使用 canvas 编码）
+        revokeObjectURL(objectURL)
 
         // 根据文件大小调整压缩质量
         let quality = COMPRESS_QUALITY
@@ -2107,30 +2109,76 @@ function compressImage(file) {
           quality = Math.max(0.6, COMPRESS_QUALITY - 0.2)
         }
 
-        // 转换为 Blob
-        canvas.toBlob(
-          blob => {
-            // 清理资源
-            revokeObjectURL(objectURL)
+        // 选择输出格式：
+        // - PNG 保持 PNG（无损/保留透明通道）
+        // - WebP 尽量输出 WebP（若浏览器不支持则回退 JPEG）
+        // - 其他统一输出 JPEG（体积更小、兼容性更好）
+        const mimeCandidates = []
+        if (file.type === 'image/png') {
+          mimeCandidates.push('image/png')
+        } else if (file.type === 'image/webp') {
+          mimeCandidates.push('image/webp', 'image/jpeg')
+        } else {
+          mimeCandidates.push('image/jpeg')
+        }
 
-            if (blob && blob.size < file.size) {
-              const compressedFile = new File([blob], file.name, {
-                type: file.type,
-                lastModified: file.lastModified
-              })
-              console.log(
-                `图片压缩: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
-                  blob.size / 1024
-                ).toFixed(2)}KB (压缩率: ${((1 - blob.size / file.size) * 100).toFixed(1)}%)`
-              )
-              resolve(compressedFile)
-            } else {
-              resolve(file)
-            }
-          },
-          file.type === 'image/png' ? 'image/png' : 'image/jpeg',
-          quality
-        )
+        const getExtensionForMime = mimeType => {
+          if (mimeType === 'image/png') return '.png'
+          if (mimeType === 'image/webp') return '.webp'
+          if (mimeType === 'image/jpeg') return '.jpg'
+          return null
+        }
+
+        const replaceExtension = (filename, newExt) => {
+          if (!filename || !newExt) return filename
+          const safeName = sanitizeFileName(filename)
+          const withoutExt = safeName.replace(/\.[^/.]+$/, '')
+          return `${withoutExt}${newExt}`
+        }
+
+        const tryToBlob = mimeIndex => {
+          const outType = mimeCandidates[mimeIndex]
+          if (!outType) {
+            resolve(file)
+            return
+          }
+
+          canvas.toBlob(
+            blob => {
+              if (!blob) return tryToBlob(mimeIndex + 1)
+
+              // 关键修复：确保“声明的 MIME”与“真实文件内容”一致
+              // 否则后端 validate_uploaded_file 会触发 MIME 不一致错误而拒绝上传
+              // 如果浏览器不支持 outType（例如某些环境不支持 image/webp 编码），可能出现 blob.type 为空
+              if (!blob.type) return tryToBlob(mimeIndex + 1)
+
+              const finalMimeType = blob.type || outType
+              const ext = getExtensionForMime(finalMimeType)
+              const finalName = ext ? replaceExtension(file.name, ext) : file.name
+
+              if (blob.size < file.size) {
+                const compressedFile = new File([blob], finalName, {
+                  type: finalMimeType,
+                  lastModified: file.lastModified
+                })
+                console.log(
+                  `图片压缩: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
+                    blob.size / 1024
+                  ).toFixed(2)}KB (压缩率: ${((1 - blob.size / file.size) * 100).toFixed(1)}%)`
+                )
+                resolve(compressedFile)
+              } else {
+                resolve(file)
+              }
+            },
+            outType,
+            quality
+          )
+        }
+
+        // 转换为 Blob
+        // 优先尝试首选格式；若浏览器不支持（例如 image/webp），则回退到下一个候选
+        tryToBlob(0)
       })
     }
 
