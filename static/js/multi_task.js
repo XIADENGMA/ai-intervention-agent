@@ -137,6 +137,118 @@ var updateCountdownDisplay = window.updateCountdownDisplay
 
 // ==================== 任务轮询 ====================
 
+// 【轮询治理】避免重叠请求/页面不可见浪费/错误风暴
+var TASKS_POLL_BASE_MS = 2000
+var TASKS_POLL_MAX_MS = 30000
+var tasksPollBackoffMs = TASKS_POLL_BASE_MS
+var tasksPollAbortController = null
+var tasksPollVisibilityHandlerInstalled = false
+
+function getNextBackoffMs(currentMs) {
+  // 指数退避 + 轻微抖动，避免多客户端同时打爆服务端
+  const next = Math.min(TASKS_POLL_MAX_MS, Math.round(currentMs * 1.7))
+  const jitter = Math.round(next * 0.1 * Math.random()) // 0-10%
+  return next + jitter
+}
+
+async function fetchAndApplyTasks(reason) {
+  // 页面不可见：不发请求（由 visibilitychange 负责 stop，但这里再兜底）
+  if (typeof document !== 'undefined' && document.hidden) {
+    return false
+  }
+
+  // 手动切换期间：尽量少扰动 UI（不主动拉取）
+  if (isManualSwitching) {
+    return false
+  }
+
+  // AbortController：保证同时最多 1 个 in-flight 的 /api/tasks 请求
+  try {
+    if (tasksPollAbortController && typeof tasksPollAbortController.abort === 'function') {
+      tasksPollAbortController.abort()
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  if (typeof AbortController !== 'undefined') {
+    tasksPollAbortController = new AbortController()
+  } else {
+    tasksPollAbortController = null
+  }
+
+  const fetchOptions = {
+    cache: 'no-store'
+  }
+  if (tasksPollAbortController) {
+    fetchOptions.signal = tasksPollAbortController.signal
+  }
+
+  try {
+    const response = await fetch('/api/tasks', fetchOptions)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    const data = await response.json()
+
+    if (data.success) {
+      // 【优化】更新服务器时间偏移量，解决切换标签页后倒计时不准的问题
+      if (data.server_time) {
+        const localTime = Date.now() / 1000
+        window.serverTimeOffset = data.server_time - localTime
+        // 仅在偏移量较大时记录日志（避免日志刷屏）
+        if (Math.abs(window.serverTimeOffset) > 1) {
+          console.log(`服务器时间偏移: ${window.serverTimeOffset.toFixed(2)}s`)
+        }
+      }
+
+      // 【优化】保存每个任务的 deadline
+      if (data.tasks) {
+        data.tasks.forEach(task => {
+          if (task.deadline) {
+            window.taskDeadlines[task.task_id] = task.deadline
+          }
+        })
+      }
+
+      updateTasksList(data.tasks)
+      updateTasksStats(data.stats)
+      if (reason) {
+        console.debug(`任务列表已更新: ${reason}`)
+      }
+      return true
+    }
+
+    return false
+  } catch (error) {
+    // AbortError：正常的“防重叠”路径，不计为错误
+    if (error && (error.name === 'AbortError' || error.code === 20)) {
+      return false
+    }
+    console.error('获取任务列表失败:', error)
+    return false
+  } finally {
+    // 释放 controller（避免长期持有）
+    tasksPollAbortController = null
+  }
+}
+
+function scheduleNextTasksPoll(delayMs) {
+  if (tasksPollingTimer) {
+    clearTimeout(tasksPollingTimer)
+    tasksPollingTimer = null
+  }
+  tasksPollingTimer = setTimeout(async () => {
+    const ok = await fetchAndApplyTasks('poll')
+    if (ok) {
+      tasksPollBackoffMs = TASKS_POLL_BASE_MS
+    } else {
+      tasksPollBackoffMs = getNextBackoffMs(tasksPollBackoffMs)
+    }
+    scheduleNextTasksPoll(tasksPollBackoffMs)
+  }, Math.max(0, delayMs))
+}
+
 /**
  * 启动任务列表轮询
  *
@@ -169,44 +281,35 @@ var updateCountdownDisplay = window.updateCountdownDisplay
  * - 页面卸载时应调用 `stopTasksPolling` 停止轮询
  */
 function startTasksPolling() {
-  if (tasksPollingTimer) {
-    clearInterval(tasksPollingTimer)
+  // 页面不可见时不启动轮询（恢复由 visibilitychange 触发）
+  if (typeof document !== 'undefined' && document.hidden) {
+    console.log('页面不可见，跳过启动任务轮询')
+    return
   }
 
-  tasksPollingTimer = setInterval(async () => {
-    try {
-      const response = await fetch('/api/tasks')
-      const data = await response.json()
+  // 清理旧的定时器/中止旧请求
+  stopTasksPolling()
 
-      if (data.success) {
-        // 【优化】更新服务器时间偏移量，解决切换标签页后倒计时不准的问题
-        if (data.server_time) {
-          const localTime = Date.now() / 1000
-          window.serverTimeOffset = data.server_time - localTime
-          // 仅在偏移量较大时记录日志（避免日志刷屏）
-          if (Math.abs(window.serverTimeOffset) > 1) {
-            console.log(`服务器时间偏移: ${window.serverTimeOffset.toFixed(2)}s`)
-          }
-        }
+  tasksPollBackoffMs = TASKS_POLL_BASE_MS
+  scheduleNextTasksPoll(0)
 
-        // 【优化】保存每个任务的 deadline
-        if (data.tasks) {
-          data.tasks.forEach(task => {
-            if (task.deadline) {
-              window.taskDeadlines[task.task_id] = task.deadline
-            }
-          })
-        }
-
-        updateTasksList(data.tasks)
-        updateTasksStats(data.stats)
+  // 安装“页面可见性治理”（只安装一次）
+  if (!tasksPollVisibilityHandlerInstalled && typeof document !== 'undefined') {
+    tasksPollVisibilityHandlerInstalled = true
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopTasksPolling()
+      } else {
+        // 恢复时立即拉一次，减少“回到页面后空白/延迟”
+        startTasksPolling()
       }
-    } catch (error) {
-      console.error('轮询任务列表失败:', error)
-    }
-  }, 2000) // 每2秒轮询一次
+    })
+    window.addEventListener('beforeunload', () => {
+      stopTasksPolling()
+    })
+  }
 
-  console.log('任务列表轮询已启动')
+  console.log('任务列表轮询已启动（治理：不可见暂停/指数退避/AbortController）')
 }
 
 /**
@@ -233,9 +336,20 @@ function startTasksPolling() {
  */
 function stopTasksPolling() {
   if (tasksPollingTimer) {
-    clearInterval(tasksPollingTimer)
+    clearTimeout(tasksPollingTimer)
     tasksPollingTimer = null
     console.log('任务列表轮询已停止')
+  }
+
+  // 取消 in-flight 请求，避免页面切走/重启轮询时堆积
+  try {
+    if (tasksPollAbortController && typeof tasksPollAbortController.abort === 'function') {
+      tasksPollAbortController.abort()
+    }
+  } catch (e) {
+    // ignore
+  } finally {
+    tasksPollAbortController = null
   }
 }
 
@@ -1750,6 +1864,10 @@ async function initMultiTaskSupport() {
 
   // 轮询健康检查机制（每30秒检查一次轮询器是否还在运行,如果停止则重新启动）
   setInterval(() => {
+    // 页面不可见：不强行恢复轮询（由 visibilitychange 恢复）
+    if (typeof document !== 'undefined' && document.hidden) {
+      return
+    }
     if (!tasksPollingTimer) {
       console.warn('⚠️ 任务轮询已停止,自动重新启动')
       startTasksPolling()
@@ -1823,17 +1941,15 @@ async function initMultiTaskSupport() {
  * - 可以与轮询并行运行
  */
 async function refreshTasksList() {
-  try {
-    const response = await fetch('/api/tasks')
-    const data = await response.json()
+  const ok = await fetchAndApplyTasks('manual')
+  if (ok) {
+    tasksPollBackoffMs = TASKS_POLL_BASE_MS
+    console.log('任务列表已手动刷新')
+  }
 
-    if (data.success) {
-      updateTasksList(data.tasks)
-      updateTasksStats(data.stats)
-      console.log('任务列表已手动刷新')
-    }
-  } catch (error) {
-    console.error('手动刷新任务列表失败:', error)
+  // 手动刷新后确保轮询处于运行态（页面可见时）
+  if (!tasksPollingTimer && !(typeof document !== 'undefined' && document.hidden)) {
+    startTasksPolling()
   }
 }
 

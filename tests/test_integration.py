@@ -111,6 +111,17 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         # 可能存在或不存在
         self.assertIn(response.status_code, [200, 404])
 
+    def test_multi_task_polling_governance_present(self):
+        """回归测试：任务轮询应具备治理能力（不可见暂停/退避/AbortController 防重叠）"""
+        response = self.client.get("/static/js/multi_task.js")
+        if response.status_code != 200:
+            self.skipTest("multi_task.js 不存在，跳过轮询治理回归测试")
+
+        js = response.data.decode("utf-8", errors="ignore")
+        self.assertIn("AbortController", js)
+        self.assertIn("visibilitychange", js)
+        self.assertIn("no-store", js)
+
     def test_static_assets_not_rate_limited(self):
         """回归测试：静态资源不应被频率限制误伤（避免 429 导致白屏/MathJax 失效）"""
         # 连续快速请求静态资源，若静态路由未 exempt，可能触发全局 10/s 限流返回 429
