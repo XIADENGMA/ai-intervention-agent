@@ -1550,6 +1550,8 @@ class ConfigManager:
 
             # 设置新的延迟保存定时器
             self._save_timer = threading.Timer(self._save_delay, self._delayed_save)
+            # 【可靠性】Timer 默认非守护线程，可能导致测试/进程退出被阻塞
+            self._save_timer.daemon = True
             self._save_timer.start()
             logger.debug(f"已调度配置保存，将在 {self._save_delay} 秒后执行")
 
@@ -2802,6 +2804,35 @@ class ConfigManager:
             self._file_watcher_thread.join(timeout=1.0)  # 快速超时
             self._file_watcher_thread = None
         logger.info("配置文件监听器已停止")
+
+    def shutdown(self):
+        """关闭配置管理器并清理后台资源
+
+        目的：
+        - 避免后台线程/定时器在测试或程序退出时阻塞进程
+        - 为单测与脚本提供显式的资源释放入口
+
+        当前清理项：
+        - 文件监听线程（start_file_watcher）
+        - 延迟保存定时器（_save_timer）
+
+        注意：
+        - 该方法是幂等的，可安全多次调用
+        """
+        # 先停文件监听（内部已幂等）
+        try:
+            self.stop_file_watcher()
+        except Exception as e:
+            logger.debug(f"关闭文件监听器失败（忽略）: {e}")
+
+        # 再取消延迟保存定时器，避免 Timer 线程阻塞退出
+        try:
+            with self._lock:
+                if self._save_timer is not None:
+                    self._save_timer.cancel()
+                    self._save_timer = None
+        except Exception as e:
+            logger.debug(f"取消延迟保存定时器失败（忽略）: {e}")
 
     def _file_watcher_loop(self):
         """

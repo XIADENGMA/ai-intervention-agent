@@ -528,6 +528,12 @@ class NotificationManager:
                 max_workers=3, thread_name_prefix="NotificationWorker"
             )
 
+            # 【可靠性】延迟通知 Timer 管理（用于测试/退出时可控清理）
+            # key: event_id -> threading.Timer
+            self._delayed_timers: Dict[str, threading.Timer] = {}
+            self._delayed_timers_lock = threading.Lock()
+            self._shutdown_called: bool = False
+
             # 初始化回调函数字典
             self._callbacks: Dict[str, List[Callable]] = {}
 
@@ -740,9 +746,25 @@ class NotificationManager:
         if trigger == NotificationTrigger.IMMEDIATE:
             self._process_event(event)
         elif trigger == NotificationTrigger.DELAYED:
-            threading.Timer(
-                self.config.trigger_delay, self._process_event, args=[event]
-            ).start()
+            # 【可靠性】threading.Timer 默认是非守护线程，可能导致测试/进程退出被阻塞
+            # 这里将 Timer 设为守护线程，并纳入统一管理以便 shutdown() 清理
+            if getattr(self, "_shutdown_called", False):
+                logger.debug("通知管理器已关闭，跳过延迟通知调度")
+                return event_id
+
+            def _delayed_run():
+                try:
+                    self._process_event(event)
+                finally:
+                    # 清理 Timer 引用，避免字典增长
+                    with self._delayed_timers_lock:
+                        self._delayed_timers.pop(event.id, None)
+
+            timer = threading.Timer(self.config.trigger_delay, _delayed_run)
+            timer.daemon = True
+            with self._delayed_timers_lock:
+                self._delayed_timers[event.id] = timer
+            timer.start()
 
         return event_id
 
@@ -940,6 +962,50 @@ class NotificationManager:
         """
         logger.info(f"执行降级处理: {event.id}")
         self.trigger_callbacks("notification_fallback", event)
+
+    def shutdown(self, wait: bool = False):
+        """关闭通知管理器并清理后台资源
+
+        目的：
+        - 避免后台 Timer / 线程池在测试或程序退出时阻塞进程
+        - 为单测与脚本提供显式的资源释放入口
+
+        当前清理项：
+        - 延迟通知 Timer（NotificationTrigger.DELAYED）
+        - 线程池执行器（_executor）
+
+        参数：
+        - wait: 是否等待线程池任务完成。测试场景通常用 False 以快速退出。
+
+        注意：
+        - 该方法是幂等的，可安全多次调用
+        """
+        if getattr(self, "_shutdown_called", False):
+            return
+        self._shutdown_called = True
+
+        # 取消所有未触发的延迟通知
+        try:
+            with self._delayed_timers_lock:
+                timers = list(self._delayed_timers.values())
+                self._delayed_timers.clear()
+            for t in timers:
+                try:
+                    t.cancel()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"取消延迟通知 Timer 失败（忽略）: {e}")
+
+        # 关闭线程池
+        try:
+            # cancel_futures 在 Python 3.9+ 可用
+            self._executor.shutdown(wait=wait, cancel_futures=True)
+        except TypeError:
+            # 兼容旧签名（尽管项目要求 3.11+，这里保持稳健）
+            self._executor.shutdown(wait=wait)
+        except Exception as e:
+            logger.debug(f"关闭通知线程池失败（忽略）: {e}")
 
     def get_config(self) -> NotificationConfig:
         """获取当前配置

@@ -6,10 +6,11 @@ AI Intervention Agent - 最终覆盖率提升测试
 """
 
 import sys
+import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -40,7 +41,6 @@ class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
 
         self.assertTrue(event_id.startswith("notification_"))
 
-    @unittest.skip("TODO: 修复延迟通知测试 - 后台线程未正确清理导致测试卡住")
     def test_send_notification_delayed(self):
         """测试延迟触发通知"""
         from notification_manager import (
@@ -50,18 +50,22 @@ class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
 
         manager = NotificationManager()
         manager.config.enabled = True
-        manager.config.trigger_delay = 0.1  # 100ms 延迟
+        manager.config.trigger_delay = 0.05  # 50ms 延迟（更快更稳定）
 
-        # 发送延迟通知
-        event_id = manager.send_notification(
-            title="延迟通知",
-            message="延迟测试",
-            trigger=NotificationTrigger.DELAYED,
-        )
+        # 用 patch 确保不污染单例实例的方法实现
+        processed = threading.Event()
+        with patch.object(manager, "_process_event") as mock_process:
+            mock_process.side_effect = lambda _event: processed.set()
 
-        self.assertTrue(event_id.startswith("notification_"))
-        # 等待延迟触发
-        time.sleep(0.2)
+            # 发送延迟通知
+            event_id = manager.send_notification(
+                title="延迟通知",
+                message="延迟测试",
+                trigger=NotificationTrigger.DELAYED,
+            )
+
+            self.assertTrue(event_id.startswith("notification_"))
+            self.assertTrue(processed.wait(1.0))
 
     def test_send_notification_all_types_enabled(self):
         """测试所有通知类型启用时的发送"""
@@ -305,34 +309,50 @@ class TestNotificationEventQueue(unittest.TestCase):
 class TestConfigManagerFileWatcherAdvanced(unittest.TestCase):
     """文件监听器高级测试"""
 
-    @unittest.skip("TODO: 修复文件监听器测试 - 后台线程未正确清理导致测试卡住")
     def test_file_watcher_callback_triggered(self):
         """测试文件监听器回调触发"""
 
-        from config_manager import get_config
+        import os
+        import tempfile
 
-        config = get_config()
+        from config_manager import ConfigManager
 
-        # 回调标志
-        callback_called = [False]
+        # 使用临时配置文件，避免污染用户真实配置
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "test_config.jsonc"
+            config_path.write_text(
+                '{\n  "notification": { "enabled": true },\n  "web_ui": { "host": "127.0.0.1", "port": 8080 },\n  "network_security": { "bind_interface": "127.0.0.1", "allowed_networks": ["127.0.0.0/8"], "blocked_ips": [], "access_control_enabled": true },\n  "feedback": { "backend_max_wait": 600, "frontend_countdown": 240, "resubmit_prompt": "", "prompt_suffix": "" }\n}\n',
+                encoding="utf-8",
+            )
 
-        def test_callback():
-            callback_called[0] = True
+            config = ConfigManager(str(config_path))
 
-        # 注册回调
-        config.register_config_change_callback(test_callback)
+            callback_event = threading.Event()
 
-        # 启动监听器
-        config.start_file_watcher(interval=0.1)
+            def test_callback():
+                callback_event.set()
 
-        try:
-            # 等待一小段时间
-            time.sleep(0.2)
-        finally:
-            # 停止监听器
-            config.stop_file_watcher()
-            # 取消注册回调
-            config.unregister_config_change_callback(test_callback)
+            # 注册回调并启动监听器
+            config.register_config_change_callback(test_callback)
+            config.start_file_watcher(interval=0.05)
+
+            try:
+                # 修改文件内容并更新时间戳，触发监听器检测
+                time.sleep(0.1)
+                config_path.write_text(
+                    config_path.read_text(encoding="utf-8") + "\n",
+                    encoding="utf-8",
+                )
+                os.utime(config_path, None)
+
+                self.assertTrue(
+                    callback_event.wait(1.0), "文件变更回调未在预期时间内触发"
+                )
+            finally:
+                # 显式清理后台资源，确保测试可重复
+                config.stop_file_watcher()
+                config.shutdown()
+                config.unregister_config_change_callback(test_callback)
 
 
 class TestConfigUtilsAdvanced(unittest.TestCase):
