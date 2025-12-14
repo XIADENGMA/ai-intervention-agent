@@ -78,6 +78,7 @@ AI Intervention Agent - 通知提供者实现
 """
 
 import time
+import re
 from typing import Any, Dict
 
 import requests
@@ -577,7 +578,29 @@ class BarkNotificationProvider:
     """
 
     # 【优化】类级别常量：元数据保留键（所有实例共享，不可变）
-    _RESERVED_KEYS = frozenset({"title", "body", "device_key", "action", "icon"})
+    # 说明：
+    # - 这些键由本提供者负责构建/控制，避免 event.metadata 覆盖导致请求体不一致
+    # - Bark 常见参数是 url/copy（而不是 action），这里也纳入保留键集合
+    _RESERVED_KEYS = frozenset(
+        {"title", "body", "device_key", "icon", "action", "url", "copy"}
+    )
+
+    # 【安全】脱敏规则：避免在日志/调试信息中泄露 APNs device token 等敏感标识
+    _APNS_DEVICE_URL_RE = re.compile(
+        r"(https://api\.push\.apple\.com/3/device/)[0-9a-fA-F]{16,}"
+    )
+    _LONG_HEX_RE = re.compile(r"\b[0-9a-fA-F]{32,}\b")
+    _BRACKET_TOKEN_RE = re.compile(r"\[([A-Za-z0-9]{16,})\]")
+
+    @classmethod
+    def _sanitize_error_text(cls, text: str) -> str:
+        """脱敏错误信息文本（避免泄露敏感 token 等）"""
+        if not text:
+            return text
+        sanitized = cls._APNS_DEVICE_URL_RE.sub(r"\1<redacted>", text)
+        sanitized = cls._LONG_HEX_RE.sub("<redacted_hex>", sanitized)
+        sanitized = cls._BRACKET_TOKEN_RE.sub("[<redacted_key>]", sanitized)
+        return sanitized
 
     def __init__(self, config):
         """
@@ -736,11 +759,53 @@ class BarkNotificationProvider:
             }
 
             # 只在有值时添加可选字段
-            if self.config.bark_action:
-                bark_data["action"] = self.config.bark_action
-
             if self.config.bark_icon:
                 bark_data["icon"] = self.config.bark_icon
+
+            # 点击行为：
+            # - 配置里的 bark_action 是枚举（none/url/copy），不是“动作 URL”
+            # - Bark 常见实现使用 url/copy 字段；发送 action="none/url/copy" 可能触发服务端 4xx
+            bark_action = (self.config.bark_action or "").strip()
+            if bark_action and bark_action != "none":
+                if bark_action in ("url", "copy"):
+                    if bark_action == "url":
+                        # 优先从事件元数据中取 URL（例如 web_ui_url/url/action_url）
+                        url_value = None
+                        if event.metadata:
+                            for key in ("url", "web_ui_url", "action_url", "link"):
+                                value = event.metadata.get(key)
+                                if isinstance(value, str) and value.strip():
+                                    url_value = value.strip()
+                                    break
+
+                        if url_value:
+                            bark_data["url"] = url_value
+                        else:
+                            # 不视为错误：没有 URL 也可以正常推送
+                            logger.debug(
+                                f"Bark 点击行为为 url，但未提供可用链接，已忽略: {event.id}"
+                            )
+                    else:
+                        # copy：默认复制通知正文；如元数据提供 copy/copy_text，则优先使用
+                        copy_value = None
+                        if event.metadata:
+                            for key in ("copy", "copy_text", "copyContent"):
+                                value = event.metadata.get(key)
+                                if isinstance(value, str) and value.strip():
+                                    copy_value = value.strip()
+                                    break
+                        bark_data["copy"] = copy_value or message_stripped
+                else:
+                    # 兼容旧用法：直接将 bark_action 当作 URL（仅当其像 URL）
+                    if bark_action.startswith("http://") or bark_action.startswith(
+                        "https://"
+                    ):
+                        bark_data["url"] = bark_action
+                    else:
+                        # 未知值直接忽略，避免发送无效字段导致请求失败
+                        logger.debug(
+                            f"未知 bark_action='{bark_action}'，已忽略: {event.id}"
+                        )
 
             # 添加元数据时跳过保留键（防止覆盖核心字段）
             if event.metadata:
@@ -775,8 +840,30 @@ class BarkNotificationProvider:
                 )
                 return True
             else:
+                # Bark 往往返回 JSON（code/message）；尽量解析以便排查
+                try:
+                    error_detail = response.json()
+                except Exception:
+                    error_detail = response.text
+                sanitized_detail = self._sanitize_error_text(str(error_detail))
+
+                # 仅在 debug / 测试事件时将错误细节写入 event.metadata，便于上层展示
+                try:
+                    is_debug = bool(getattr(self.config, "debug", False))
+                    is_test_event = bool(
+                        isinstance(event.metadata, dict) and event.metadata.get("test")
+                    )
+                    if is_debug or is_test_event:
+                        event.metadata["bark_error"] = {
+                            "status_code": response.status_code,
+                            "detail": sanitized_detail[:800],
+                        }
+                except Exception:
+                    # 不让调试信息写入影响主流程
+                    pass
+
                 logger.error(
-                    f"Bark通知发送失败: {response.status_code} - {response.text}"
+                    f"Bark通知发送失败: {response.status_code} - {sanitized_detail[:800]}"
                 )
                 return False
 

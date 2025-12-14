@@ -2022,6 +2022,26 @@ class WebFeedbackUI:
                             }
                         )
                     else:
+                        # 尽量返回更可诊断的错误信息（已在提供者层做脱敏）
+                        bark_error = None
+                        try:
+                            if isinstance(test_event.metadata, dict):
+                                bark_error = test_event.metadata.get("bark_error")
+                        except Exception:
+                            bark_error = None
+
+                        if isinstance(bark_error, dict) and bark_error.get("detail"):
+                            detail = str(bark_error.get("detail"))[:300]
+                            status_code = bark_error.get("status_code")
+                            status_hint = (
+                                f"(HTTP {status_code}) " if status_code else ""
+                            )
+                            return jsonify(
+                                {
+                                    "status": "error",
+                                    "message": f"Bark 通知发送失败：{status_hint}{detail}",
+                                }
+                            ), 500
                         return jsonify(
                             {
                                 "status": "error",
@@ -2946,11 +2966,17 @@ class WebFeedbackUI:
             - 服务器关闭后才返回，适用于单次任务模式
         """
         print("\n🌐 Web反馈界面已启动")
-        print(f"📍 请在浏览器中打开: http://{self.host}:{self.port}")
+        # 0.0.0.0 是“监听所有网卡”的服务端绑定地址，但并不适合作为浏览器访问地址。
+        # 部分浏览器/环境访问 http://0.0.0.0:PORT 时可能出现异常（例如权限/请求失败）。
         if self.host == "0.0.0.0":
+            print(f"📍 监听地址: http://{self.host}:{self.port}")
+            print(f"✅ 本机访问（推荐）: http://127.0.0.1:{self.port}")
+            print(f"✅ 本机访问（推荐）: http://localhost:{self.port}")
             print(
                 f"🔗 SSH端口转发命令: ssh -L {self.port}:localhost:{self.port} user@remote_server"
             )
+        else:
+            print(f"📍 请在浏览器中打开: http://{self.host}:{self.port}")
 
         print("🔄 页面将保持打开，可实时更新内容")
         print()

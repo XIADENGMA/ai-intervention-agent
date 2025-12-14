@@ -229,6 +229,65 @@ class TestBarkNotificationProvider(unittest.TestCase):
         mock_post.assert_called_once()
 
     @patch("notification_providers.requests.Session.post")
+    def test_payload_no_action_field_when_none(self, mock_post):
+        """bark_action=none 时不应发送 action/url/copy 字段（避免服务端 4xx）"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        self.config.bark_action = "none"
+        event = create_event(title="测试标题", message="测试消息")
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+        _, kwargs = mock_post.call_args
+        payload = kwargs.get("json", {})
+        self.assertNotIn("action", payload)
+        self.assertNotIn("url", payload)
+        self.assertNotIn("copy", payload)
+
+    @patch("notification_providers.requests.Session.post")
+    def test_payload_url_field_when_action_url(self, mock_post):
+        """bark_action=url 时应使用 Bark 的 url 字段"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        self.config.bark_action = "url"
+        event = create_event(
+            title="测试标题",
+            message="测试消息",
+            metadata={"url": "https://example.com"},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+        _, kwargs = mock_post.call_args
+        payload = kwargs.get("json", {})
+        self.assertEqual(payload.get("url"), "https://example.com")
+        self.assertNotIn("action", payload)
+
+    @patch("notification_providers.requests.Session.post")
+    def test_payload_copy_field_when_action_copy(self, mock_post):
+        """bark_action=copy 时应使用 Bark 的 copy 字段"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        self.config.bark_action = "copy"
+        event = create_event(title="测试标题", message="测试消息")
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+        _, kwargs = mock_post.call_args
+        payload = kwargs.get("json", {})
+        self.assertEqual(payload.get("copy"), "测试消息")
+        self.assertNotIn("action", payload)
+
+    @patch("notification_providers.requests.Session.post")
     def test_send_http_error(self, mock_post):
         """测试 HTTP 错误"""
         mock_response = MagicMock()
