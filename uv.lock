@@ -29,7 +29,6 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "black" },
-    { name = "dbus-python", marker = "sys_platform == 'linux'" },
     { name = "flake8" },
     { name = "isort" },
     { name = "mypy" },
@@ -44,7 +43,6 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "dbus-python", marker = "sys_platform == 'linux'" },
     { name = "flake8" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -58,7 +56,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
-    { name = "dbus-python", marker = "sys_platform == 'linux' and extra == 'dev'" },
     { name = "fastmcp", specifier = ">=2.10.5" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.2.0" },
     { name = "flask", specifier = ">=3.1.0" },
@@ -87,7 +84,6 @@ provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "dbus-python", marker = "sys_platform == 'linux'" },
     { name = "flake8", specifier = ">=7.2.0" },
     { name = "pytest", specifier = ">=8.4.0" },
     { name = "pytest-cov", specifier = ">=6.2.1" },
@@ -558,12 +554,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/cc/2e/8c45ef5b00bd48d7c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/5b/5939e05d87def1612c494429bee705d6b852fad1d21dd2dee1e3ce39997e/cyclopts-3.22.2-py3-none-any.whl", hash = "sha256:6681b0815fa2de2bccc364468fd25b15aa9617cb505c0b16ca62e2b18a57619e", size = 84578, upload-time = "2025-07-09T12:21:44.878Z" },
 ]
-
-[[package]]
-name = "dbus-python"
-version = "1.4.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ff/24/63118050c7dd7be04b1ccd60eab53fef00abe844442e1b6dec92dae505d6/dbus-python-1.4.0.tar.gz", hash = "sha256:991666e498f60dbf3e49b8b7678f5559b8a65034fdf61aae62cdecdb7d89c770", size = 232490, upload-time = "2025-03-13T19:57:54.212Z" }
 
 [[package]]
 name = "deprecated"
