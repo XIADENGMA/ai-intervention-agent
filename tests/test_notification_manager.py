@@ -24,18 +24,62 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
+def _resolve_test_config_path() -> Path:
+    """获取测试用配置文件路径。
+
+    说明：
+    - pytest 会在 `tests/conftest.py` 中注入环境变量 AI_INTERVENTION_AGENT_CONFIG_FILE，
+      用于让测试完全可重复、且不污染用户真实配置目录。
+    - 本文件中的测试不应硬编码依赖仓库根目录的 `config.jsonc`（CI 环境可能不存在该文件）。
+    """
+    override = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
+    if override:
+        p = Path(override).expanduser()
+        if p.is_dir():
+            p = p / "config.jsonc"
+        return p
+    return project_root / "config.jsonc"
+
+
+def _ensure_test_config_file_exists(config_path: Path) -> None:
+    """确保测试配置文件存在（优先从 config.jsonc.default 生成）。"""
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    if config_path.exists():
+        return
+
+    default_cfg = project_root / "config.jsonc.default"
+    if default_cfg.exists():
+        shutil.copy(default_cfg, config_path)
+        return
+
+    # 兜底：写入最小可用配置（JSON 也可被 JSONC 解析器处理）
+    config_path.write_text(
+        """{
+  "notification": {
+    "enabled": true,
+    "bark_enabled": false,
+    "sound_volume": 80
+  }
+}
+""",
+        encoding="utf-8",
+    )
+
+
 class TestNotificationManagerConfigRefresh(unittest.TestCase):
     """测试配置刷新功能"""
 
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        cls.config_path = project_root / "config.jsonc"
-        cls.backup_path = project_root / "config.jsonc.backup_test"
+        cls.config_path = _resolve_test_config_path()
+        cls.backup_path = cls.config_path.with_name(
+            cls.config_path.name + ".backup_test"
+        )
 
-        # 备份原配置
-        if cls.config_path.exists():
-            shutil.copy(cls.config_path, cls.backup_path)
+        # 确保配置文件存在，并备份基线
+        _ensure_test_config_file_exists(cls.config_path)
+        shutil.copy(cls.config_path, cls.backup_path)
 
     @classmethod
     def tearDownClass(cls):
@@ -101,12 +145,14 @@ class TestNotificationManagerTypeValidation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        cls.config_path = project_root / "config.jsonc"
-        cls.backup_path = project_root / "config.jsonc.backup_test"
+        cls.config_path = _resolve_test_config_path()
+        cls.backup_path = cls.config_path.with_name(
+            cls.config_path.name + ".backup_test"
+        )
 
-        # 备份原配置
-        if cls.config_path.exists():
-            shutil.copy(cls.config_path, cls.backup_path)
+        # 确保配置文件存在，并备份基线
+        _ensure_test_config_file_exists(cls.config_path)
+        shutil.copy(cls.config_path, cls.backup_path)
 
     @classmethod
     def tearDownClass(cls):
@@ -230,12 +276,14 @@ class TestNotificationManagerBarkProvider(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        cls.config_path = project_root / "config.jsonc"
-        cls.backup_path = project_root / "config.jsonc.backup_test"
+        cls.config_path = _resolve_test_config_path()
+        cls.backup_path = cls.config_path.with_name(
+            cls.config_path.name + ".backup_test"
+        )
 
-        # 备份原配置
-        if cls.config_path.exists():
-            shutil.copy(cls.config_path, cls.backup_path)
+        # 确保配置文件存在，并备份基线
+        _ensure_test_config_file_exists(cls.config_path)
+        shutil.copy(cls.config_path, cls.backup_path)
 
     @classmethod
     def tearDownClass(cls):
