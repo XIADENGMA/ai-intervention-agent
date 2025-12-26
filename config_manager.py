@@ -1788,6 +1788,10 @@ class ConfigManager:
             # 验证保存的文件是否有效
             self._validate_saved_config()
 
+            # 【关键修复】更新文件修改时间缓存，避免文件监听器把“自己写入”误判为外部变更
+            # 这样可以减少重复 reload/回调，降低噪声与额外 I/O
+            self._update_file_mtime()
+
         except Exception as e:
             logger.error(f"保存配置文件失败: {e}")
             raise
@@ -2014,6 +2018,7 @@ class ConfigManager:
             value: 要设置的新值，可以是任意类型
             save: 是否保存到文件，默认为 True
         """
+        changed = False
         with self._rw_lock.write_lock():
             self._last_access_time = time.time()
 
@@ -2035,7 +2040,25 @@ class ConfigManager:
                 # 直接更新内存中的配置，不保存
                 self._set_config_value(key, value)
 
+            # 【缓存优化】失效相关 section 缓存，避免 get_section() 返回旧值
+            section = key.split(".")[0] if key else ""
+            if section == "network_security":
+                # network_security 有独立缓存层，直接清空所有缓存更稳妥
+                self.invalidate_all_caches()
+            elif section:
+                self.invalidate_section_cache(section)
+            else:
+                self.invalidate_all_caches()
+
+            changed = True
             logger.debug(f"配置已更新: {key} = {value}")
+
+        # 【热更新】配置在内存中更新后，触发回调通知其他模块（在锁外执行，避免死锁）
+        if changed:
+            try:
+                self._trigger_config_change_callbacks()
+            except Exception as e:
+                logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
     def update(self, updates: Dict[str, Any], save: bool = True):
         """批量更新配置 - 使用写锁确保原子操作
@@ -2084,6 +2107,8 @@ class ConfigManager:
             updates: 配置更新字典，键为配置路径，值为新值
             save: 是否保存到文件，默认为 True
         """
+        changed_sections: set[str] = set()
+        changed = False
         with self._rw_lock.write_lock():
             self._last_access_time = time.time()
 
@@ -2114,7 +2139,27 @@ class ConfigManager:
                     self._set_config_value(key, value)
                     logger.debug(f"配置已更新: {key} = {value}")
 
+            # 【缓存优化】失效涉及到的 section 缓存，避免 get_section() 返回旧值
+            for changed_key in actual_changes.keys():
+                section = changed_key.split(".")[0] if changed_key else ""
+                if section:
+                    changed_sections.add(section)
+
+            if "network_security" in changed_sections or not changed_sections:
+                self.invalidate_all_caches()
+            else:
+                for section in changed_sections:
+                    self.invalidate_section_cache(section)
+
+            changed = True
             logger.debug(f"批量更新完成，共更新 {len(actual_changes)} 个配置项")
+
+        # 【热更新】配置在内存中更新后，触发回调通知其他模块（在锁外执行，避免死锁）
+        if changed:
+            try:
+                self._trigger_config_change_callbacks()
+            except Exception as e:
+                logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
     def force_save(self):
         """强制立即保存配置文件（用于关键操作）
@@ -2279,6 +2324,7 @@ class ConfigManager:
             updates: 配置更新字典，键为配置段内的键名，值为新值
             save: 是否保存到文件，默认为 True
         """
+        changed = False
         with self._lock:
             current_section = self.get_section(section)
 
@@ -2314,7 +2360,15 @@ class ConfigManager:
             # 【缓存优化】失效该 section 的缓存
             self.invalidate_section_cache(section)
 
+            changed = True
             logger.debug(f"配置段已更新: {section}")
+
+        # 【热更新】配置段更新后触发回调（在锁外执行，避免死锁）
+        if changed:
+            try:
+                self._trigger_config_change_callbacks()
+            except Exception as e:
+                logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
     def reload(self):
         """重新加载配置文件
@@ -2793,7 +2847,21 @@ class ConfigManager:
         self._file_watcher_interval = interval
         self._file_watcher_running = True
         self._file_watcher_stop_event.clear()  # 清除停止事件
-        self._update_file_mtime()  # 确保有初始修改时间
+        # 【关键修复】不要在启动监听器时直接覆盖 _last_file_mtime
+        # 否则会导致“文件已被外部修改，但因为启动监听器重置了 mtime 基线而丢失一次 reload”
+        try:
+            if self.config_file.exists():
+                current_mtime = self.config_file.stat().st_mtime
+                if self._last_file_mtime and current_mtime > self._last_file_mtime:
+                    logger.info("启动监听器时发现配置文件已变化，先执行一次重新加载")
+                    self._last_file_mtime = current_mtime
+                    self.reload()
+                    self._trigger_config_change_callbacks()
+                elif self._last_file_mtime == 0:
+                    # 极端场景：之前没有记录过 mtime，则初始化基线
+                    self._last_file_mtime = current_mtime
+        except Exception as e:
+            logger.warning(f"启动监听器时同步配置文件状态失败: {e}")
 
         self._file_watcher_thread = threading.Thread(
             target=self._file_watcher_loop,
@@ -3182,4 +3250,13 @@ def get_config() -> ConfigManager:
     Returns:
         ConfigManager: 全局配置管理器实例
     """
+    # 【配置热更新】默认启用文件监听（2 秒轮询，按你的选择 A + C）
+    # 目的：外部编辑 config.jsonc 后无需重启即可生效
+    try:
+        if not config_manager.is_file_watcher_running:
+            config_manager.start_file_watcher(interval=2.0)
+    except Exception:
+        # 配置系统属于基础设施：监听启动失败不应影响主流程
+        pass
+
     return config_manager

@@ -151,6 +151,23 @@ class TestConfigManagerBasic(unittest.TestCase):
         self.assertIsInstance(section, dict)
         self.assertIn("enabled", section)
 
+    def test_get_section_cache_invalidation_on_set(self):
+        """测试 set() 会失效 get_section() 的缓存，避免返回旧值"""
+        from config_manager import ConfigManager
+
+        mgr = ConfigManager(str(self.config_file))
+
+        # 先读取一次，写入缓存
+        section1 = mgr.get_section("notification")
+        self.assertEqual(section1.get("enabled"), True)
+
+        # 修改配置（不保存）
+        mgr.set("notification.enabled", False, save=False)
+
+        # 再次读取应立即反映最新值（如果缓存未失效会返回 True）
+        section2 = mgr.get_section("notification")
+        self.assertEqual(section2.get("enabled"), False)
+
 
 class TestConfigManagerThreadSafety(unittest.TestCase):
     """测试配置管理器线程安全"""

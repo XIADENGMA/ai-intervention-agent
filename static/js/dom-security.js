@@ -373,6 +373,19 @@ class DOMSecurity {
       img.src = imageItem.previewUrl
       img.alt = this.sanitizeAttribute(imageItem.name)
       img.className = 'image-preview-thumbnail'
+      // 点击缩略图放大预览（复用 app.js 的 openImageModal）
+      // 说明：openImageModal() 目前可以接受 blob: URL 或 data URL
+      img.addEventListener('click', () => {
+        try {
+          if (typeof openImageModal === 'function') {
+            const src = imageItem.previewUrl || imageItem.base64 || ''
+            openImageModal(src, imageItem.name || '', imageItem.size || 0)
+          }
+        } catch (e) {
+          // 预览失败不影响主流程
+          console.warn('打开图片预览失败:', e)
+        }
+      })
 
       const removeButton = document.createElement('button')
       removeButton.className = 'image-remove-btn'

@@ -372,7 +372,8 @@ class TestConfigManagerFileWatcher(unittest.TestCase):
 
         config = get_config()
 
-        # 初始状态应该是未运行
+        # get_config() 可能会自动启动监听器；为了测试 start/stop 行为，这里先确保停掉
+        config.stop_file_watcher()
         self.assertFalse(config.is_file_watcher_running)
 
         # 启动监听器

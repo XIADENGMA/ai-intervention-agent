@@ -2060,7 +2060,11 @@ function compressImage(file) {
       return
     }
 
-    // 大文件使用分步压缩
+    // 强制压缩：避免大图直接原样返回到 MCP 调用方（base64 会非常大）
+    const MAX_RETURN_BYTES = 2 * 1024 * 1024 // 2MB
+    const forceCompress = file.size > MAX_RETURN_BYTES
+
+    // 大文件使用更激进的压缩
     const isLargeFile = file.size > 5 * 1024 * 1024 // 5MB
 
     const canvas = document.createElement('canvas')
@@ -2068,6 +2072,10 @@ function compressImage(file) {
       alpha: file.type === 'image/png',
       willReadFrequently: false
     })
+    if (!ctx) {
+      resolve(file)
+      return
+    }
     const img = new Image()
 
     const objectURL = createObjectURL(file)
@@ -2079,7 +2087,7 @@ function compressImage(file) {
 
       // 大图片使用更激进的压缩
       let maxDimension = MAX_IMAGE_DIMENSION
-      if (isLargeFile || originalArea > 4000000) {
+      if (forceCompress || isLargeFile || originalArea > 4000000) {
         // 4MP
         maxDimension = Math.min(MAX_IMAGE_DIMENSION, 1200)
       }
@@ -2090,94 +2098,163 @@ function compressImage(file) {
         height = Math.floor(height * ratio)
       }
 
-      canvas.width = width
-      canvas.height = height
+      let currentWidth = width
+      let currentHeight = height
+
+      canvas.width = currentWidth
+      canvas.height = currentHeight
 
       // 优化的绘制设置
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
 
-      // 使用RAF进行非阻塞绘制
-      rafUpdate(() => {
-        ctx.drawImage(img, 0, 0, width, height)
-        // drawImage 完成后即可释放 ObjectURL（后续仅使用 canvas 编码）
-        revokeObjectURL(objectURL)
+      // 根据文件大小调整初始压缩质量
+      let quality = COMPRESS_QUALITY
+      if (isLargeFile) {
+        quality = Math.max(0.6, COMPRESS_QUALITY - 0.2)
+      }
+      if (forceCompress) {
+        quality = Math.min(quality, 0.75)
+      }
 
-        // 根据文件大小调整压缩质量
-        let quality = COMPRESS_QUALITY
-        if (isLargeFile) {
-          quality = Math.max(0.6, COMPRESS_QUALITY - 0.2)
-        }
-
-        // 选择输出格式：
-        // - PNG 保持 PNG（无损/保留透明通道）
-        // - WebP 尽量输出 WebP（若浏览器不支持则回退 JPEG）
-        // - 其他统一输出 JPEG（体积更小、兼容性更好）
-        const mimeCandidates = []
-        if (file.type === 'image/png') {
+      // 选择输出格式：
+      // - PNG：小图尽量保持 PNG；大图强制转 WebP/JPEG（PNG 通常无法“有损压缩”）
+      // - 其他：优先 WebP（若浏览器不支持则回退 JPEG）
+      const mimeCandidates = []
+      if (file.type === 'image/png') {
+        if (forceCompress || isLargeFile || originalArea > 4000000) {
+          mimeCandidates.push('image/webp', 'image/jpeg')
+        } else {
           mimeCandidates.push('image/png')
-        } else if (file.type === 'image/webp') {
+        }
+      } else if (file.type === 'image/webp') {
+        mimeCandidates.push('image/webp', 'image/jpeg')
+      } else {
+        if (forceCompress) {
           mimeCandidates.push('image/webp', 'image/jpeg')
         } else {
           mimeCandidates.push('image/jpeg')
         }
+      }
 
-        const getExtensionForMime = mimeType => {
-          if (mimeType === 'image/png') return '.png'
-          if (mimeType === 'image/webp') return '.webp'
-          if (mimeType === 'image/jpeg') return '.jpg'
-          return null
+      const getExtensionForMime = mimeType => {
+        if (mimeType === 'image/png') return '.png'
+        if (mimeType === 'image/webp') return '.webp'
+        if (mimeType === 'image/jpeg') return '.jpg'
+        return null
+      }
+
+      const replaceExtension = (filename, newExt) => {
+        if (!filename || !newExt) return filename
+        const safeName = sanitizeFileName(filename)
+        const withoutExt = safeName.replace(/\.[^/.]+$/, '')
+        return `${withoutExt}${newExt}`
+      }
+
+      const logCompression = (blob, finalName) => {
+        try {
+          const ratio = ((1 - blob.size / file.size) * 100).toFixed(1)
+          console.log(
+            `图片压缩: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
+              blob.size / 1024
+            ).toFixed(2)}KB (压缩率: ${ratio}%) 输出: ${finalName}`
+          )
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      let attempt = 0
+      const MAX_ATTEMPTS = 8
+
+      const tryToBlob = mimeIndex => {
+        const outType = mimeCandidates[mimeIndex]
+        if (!outType) {
+          resolve(file)
+          return
         }
 
-        const replaceExtension = (filename, newExt) => {
-          if (!filename || !newExt) return filename
-          const safeName = sanitizeFileName(filename)
-          const withoutExt = safeName.replace(/\.[^/.]+$/, '')
-          return `${withoutExt}${newExt}`
-        }
+        canvas.toBlob(
+          blob => {
+            if (!blob) return tryToBlob(mimeIndex + 1)
 
-        const tryToBlob = mimeIndex => {
-          const outType = mimeCandidates[mimeIndex]
-          if (!outType) {
-            resolve(file)
-            return
-          }
+            // 确保“声明的 MIME”与“真实文件内容”一致（避免后端 MIME 不一致拒绝）
+            if (!blob.type) return tryToBlob(mimeIndex + 1)
 
-          canvas.toBlob(
-            blob => {
-              if (!blob) return tryToBlob(mimeIndex + 1)
+            const finalMimeType = blob.type || outType
+            const ext = getExtensionForMime(finalMimeType)
+            const finalName = ext ? replaceExtension(file.name, ext) : file.name
 
-              // 关键修复：确保“声明的 MIME”与“真实文件内容”一致
-              // 否则后端 validate_uploaded_file 会触发 MIME 不一致错误而拒绝上传
-              // 如果浏览器不支持 outType（例如某些环境不支持 image/webp 编码），可能出现 blob.type 为空
-              if (!blob.type) return tryToBlob(mimeIndex + 1)
+            const compressedFile = new File([blob], finalName, {
+              type: finalMimeType,
+              lastModified: file.lastModified
+            })
 
-              const finalMimeType = blob.type || outType
-              const ext = getExtensionForMime(finalMimeType)
-              const finalName = ext ? replaceExtension(file.name, ext) : file.name
-
+            // 非强制：仅在变小时采用
+            if (!forceCompress) {
               if (blob.size < file.size) {
-                const compressedFile = new File([blob], finalName, {
-                  type: finalMimeType,
-                  lastModified: file.lastModified
-                })
-                console.log(
-                  `图片压缩: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
-                    blob.size / 1024
-                  ).toFixed(2)}KB (压缩率: ${((1 - blob.size / file.size) * 100).toFixed(1)}%)`
-                )
+                logCompression(blob, finalName)
                 resolve(compressedFile)
               } else {
                 resolve(file)
               }
-            },
-            outType,
-            quality
-          )
-        }
+              return
+            }
 
-        // 转换为 Blob
-        // 优先尝试首选格式；若浏览器不支持（例如 image/webp），则回退到下一个候选
+            // 强制：先满足上限；否则继续降质/缩放
+            if (blob.size <= MAX_RETURN_BYTES) {
+              logCompression(blob, finalName)
+              resolve(compressedFile)
+              return
+            }
+
+            attempt++
+            if (attempt >= MAX_ATTEMPTS) {
+              console.warn(
+                `图片压缩：已达到最大尝试次数，但仍超过 ${(MAX_RETURN_BYTES / 1024 / 1024).toFixed(
+                  1
+                )}MB，将返回当前压缩版本`
+              )
+              logCompression(blob, finalName)
+              resolve(compressedFile)
+              return
+            }
+
+            // 优先降低质量（对 webp/jpeg 有效）；质量到底后再缩小尺寸
+            if (quality > 0.55) {
+              quality = Math.max(0.55, quality - 0.1)
+              return tryToBlob(0)
+            }
+
+            const nextWidth = Math.max(320, Math.floor(currentWidth * 0.85))
+            const nextHeight = Math.max(320, Math.floor(currentHeight * 0.85))
+            if (nextWidth === currentWidth && nextHeight === currentHeight) {
+              logCompression(blob, finalName)
+              resolve(compressedFile)
+              return
+            }
+
+            currentWidth = nextWidth
+            currentHeight = nextHeight
+            canvas.width = currentWidth
+            canvas.height = currentHeight
+            ctx.imageSmoothingEnabled = true
+            ctx.imageSmoothingQuality = 'high'
+
+            rafUpdate(() => {
+              ctx.drawImage(img, 0, 0, currentWidth, currentHeight)
+              tryToBlob(0)
+            })
+          },
+          outType,
+          quality
+        )
+      }
+
+      // 首次绘制后即可释放 ObjectURL（后续仅使用已加载的 img + canvas）
+      rafUpdate(() => {
+        ctx.drawImage(img, 0, 0, currentWidth, currentHeight)
+        revokeObjectURL(objectURL)
         tryToBlob(0)
       })
     }
@@ -2295,9 +2372,19 @@ function renderImagePreview(imageItem, isLoading = false) {
       previewContainer.appendChild(previewElement)
     }
 
+    // 将 createImagePreview() 生成的 DOM 安全地“解包”到现有容器中
+    // 注意：.hidden 使用了 !important，且我们复用已有的 previewElement（保持 id/class 不变）
+    const replacePreviewChildren = (container, built) => {
+      const fragment = document.createDocumentFragment()
+      while (built.firstChild) {
+        fragment.appendChild(built.firstChild)
+      }
+      DOMSecurity.replaceContent(container, fragment)
+    }
+
     // 使用安全的图片预览创建方法
     const newPreviewElement = DOMSecurity.createImagePreview(imageItem, isLoading)
-    DOMSecurity.replaceContent(previewElement, newPreviewElement.firstChild || newPreviewElement)
+    replacePreviewChildren(previewElement, newPreviewElement)
 
     if (!isLoading && imageItem.previewUrl) {
       // 延迟加载图片以优化性能
@@ -2305,10 +2392,7 @@ function renderImagePreview(imageItem, isLoading = false) {
       img.onload = () => {
         rafUpdate(() => {
           const updatedPreviewElement = DOMSecurity.createImagePreview(imageItem, false)
-          DOMSecurity.replaceContent(
-            previewElement,
-            updatedPreviewElement.firstChild || updatedPreviewElement
-          )
+          replacePreviewChildren(previewElement, updatedPreviewElement)
         })
       }
       img.src = imageItem.previewUrl
@@ -2385,10 +2469,15 @@ function updateImageCounter() {
 // 更新图片预览区域可见性
 function updateImagePreviewVisibility() {
   const container = document.getElementById('image-preview-container')
+  if (!container) return
+
+  // 注意：.hidden 使用了 display:none !important，不能用 style.display 覆盖
   if (selectedImages.length > 0) {
-    container.style.display = 'block'
+    container.classList.remove('hidden')
+    container.classList.add('visible')
   } else {
-    container.style.display = 'none'
+    container.classList.add('hidden')
+    container.classList.remove('visible')
   }
 }
 
@@ -2530,25 +2619,104 @@ function initializeDragAndDrop() {
 
 // 粘贴功能实现
 function initializePasteFunction() {
+  const textarea = document.getElementById('feedback-text')
+
+  // data:image/*;base64,xxxx → File
+  const dataUriToFile = dataUri => {
+    try {
+      const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUri)
+      if (!match) return null
+
+      const mime = match[1]
+      const base64 = match[2].replace(/\s+/g, '')
+
+      // 安全限制：避免极端大 data uri 卡死页面（阈值约 15MB base64）
+      if (base64.length > 15 * 1024 * 1024) {
+        console.warn('剪贴板图片过大（data uri），已跳过')
+        return null
+      }
+
+      const binaryString = atob(base64)
+      const bytes = new Uint8Array(binaryString.length)
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+      }
+
+      let ext = 'png'
+      if (mime === 'image/jpeg') ext = 'jpg'
+      else if (mime === 'image/webp') ext = 'webp'
+      else if (mime === 'image/png') ext = 'png'
+      const filename = `pasted-image-${Date.now()}.${ext}`
+      return new File([bytes], filename, { type: mime, lastModified: Date.now() })
+    } catch (err) {
+      console.warn('解析剪贴板 data uri 图片失败:', err)
+      return null
+    }
+  }
+
   document.addEventListener('paste', async function (e) {
     const clipboardData = e.clipboardData
     if (!clipboardData) return
 
-    const items = Array.from(clipboardData.items)
-    const imageItems = items.filter(item => item.type.startsWith('image/'))
+    // 避免影响设置面板等其他 input 的正常粘贴：仅在“反馈文本框”聚焦时处理图片粘贴
+    const active = document.activeElement
+    const isInputLike =
+      active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+    if (textarea && isInputLike && active !== textarea) return
 
-    if (imageItems.length > 0) {
-      e.preventDefault() // 阻止默认粘贴行为
+    const filesToAdd = []
 
-      for (const item of imageItems) {
-        const file = item.getAsFile()
-        if (file) {
-          await addImageToList(file)
-        }
+    // 方案 A：优先从 clipboardData.items 获取图片文件（大多数桌面浏览器）
+    const items = Array.from(clipboardData.items || [])
+    for (const item of items) {
+      if (!item) continue
+      if (item.kind !== 'file') continue
+      if (!item.type || !item.type.startsWith('image/')) continue
+
+      const file = item.getAsFile()
+      if (file) filesToAdd.push(file)
+    }
+
+    // 方案 B：部分浏览器只在 clipboardData.files 暴露文件
+    const files = Array.from(clipboardData.files || [])
+    for (const file of files) {
+      if (file && file.type && file.type.startsWith('image/')) {
+        filesToAdd.push(file)
       }
+    }
 
-      updateImagePreviewVisibility()
-      showStatus(`从剪贴板添加了 ${imageItems.length} 张图片`, 'success')
+    // 方案 C：兜底解析 text/html 或 text/plain 中的 data:image;base64（某些移动端/特殊场景）
+    if (filesToAdd.length === 0) {
+      const html = clipboardData.getData('text/html') || ''
+      const text = clipboardData.getData('text/plain') || clipboardData.getData('text') || ''
+      const combined = `${html}\n${text}`
+
+      const dataUriRegex = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/g
+      const matches = combined.match(dataUriRegex) || []
+
+      for (const dataUri of matches.slice(0, MAX_IMAGE_COUNT)) {
+        const file = dataUriToFile(dataUri)
+        if (file) filesToAdd.push(file)
+      }
+    }
+
+    if (filesToAdd.length === 0) return
+
+    // 如果剪贴板同时有文本内容，尽量不阻止默认粘贴（让文本正常进入 textarea）
+    const pastedText = (clipboardData.getData('text/plain') || clipboardData.getData('text') || '').trim()
+    if (!pastedText) {
+      e.preventDefault()
+    }
+
+    let added = 0
+    for (const file of filesToAdd) {
+      const ok = await addImageToList(file)
+      if (ok) added++
+    }
+
+    updateImagePreviewVisibility()
+    if (added > 0) {
+      showStatus(`从剪贴板添加了 ${added} 张图片`, 'success')
     }
   })
 }

@@ -174,9 +174,13 @@
 - [x] 还出现了，选中选项直接点击提交，显示没有输入不让提交的问题【已修复】
 - [x] Bark 通知发送失败，我配置是正确的
   - bark 服务器的问题，发送成功但是没有通知
-- [ ] 添加配套插件：参考：https://github.com/fhyfhy17/panel-feedback
-- [x] 修复图片功能：参考：https://github.com/ChromeDevTools/chrome-devtools-mcp
-- [ ] 我现在可以粘贴图片吗？我上传图片后会有显示吗？
+- [x] 添加配套插件：参考：https://github.com/fhyfhy17/panel-feedback
+- [x] 修复图片功能：参考：https://github.com/ChromeDevTools/chrome-devtools-mcp 的 `take_screenshot`工具
+  1. 首先，上传图片页面上没有正确预览
+  2. 其次，返回图片到 mcp 调用方也不正确
+  3. 过大的图片应该压缩后返回，而不是直接返回原始图片
+- [x] 我现在可以粘贴图片吗？我上传图片后会有显示吗？
+- [x] 配置热更新：当我修改配置文件/在 web ui 上修改配置后，程序应该自动重新加载配置，而不是需要手动重启程序
 - [ ] 请你深度思考和深度测试，我想知道我这个项目还有什么缺少的/可以改进的/可以优化的/可以测试的。
 
 # 已完成的优化项目

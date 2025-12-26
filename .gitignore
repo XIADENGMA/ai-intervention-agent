@@ -226,3 +226,4 @@ CLAUDE.md
 
 # Configuration files (local / secret)
 config.jsonc
+.ace-tool/

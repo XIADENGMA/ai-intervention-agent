@@ -74,6 +74,7 @@ AI Intervention Agent MCP 服务器核心模块
 
 import asyncio
 import atexit
+import base64
 import io
 import os
 import random
@@ -112,6 +113,49 @@ _http_session_lock = threading.Lock()
 # 配置缓存：避免频繁读取配置文件
 _config_cache: dict = {"config": None, "timestamp": 0, "ttl": 10}  # 10秒 TTL
 _config_cache_lock = threading.Lock()
+
+# ===============================
+# 【配置热更新】配置变更回调：清空 server.py 内部缓存
+# ===============================
+# 说明：
+# - 配置文件被外部修改并由 ConfigManager 自动 reload 后，会触发回调
+# - Web UI 子进程在页面内保存配置时，也会触发 ConfigManager 的回调（同进程内）
+# - 这里清空缓存，让后续调用尽快读取到最新配置
+_config_callbacks_registered = False
+_config_callbacks_lock = threading.Lock()
+
+
+def _invalidate_runtime_caches_on_config_change() -> None:
+    """配置变更回调：清空 server.py 的配置缓存与 HTTP Session 缓存"""
+    try:
+        with _config_cache_lock:
+            _config_cache["config"] = None
+            _config_cache["timestamp"] = 0
+    except Exception:
+        pass
+
+    try:
+        with _http_session_lock:
+            _http_session_cache.clear()
+    except Exception:
+        pass
+
+
+def _ensure_config_change_callbacks_registered() -> None:
+    """确保只注册一次配置变更回调（避免重复注册/重复清理缓存）"""
+    global _config_callbacks_registered
+    if _config_callbacks_registered:
+        return
+    with _config_callbacks_lock:
+        if _config_callbacks_registered:
+            return
+        try:
+            cfg = get_config()
+            cfg.register_config_change_callback(_invalidate_runtime_caches_on_config_change)
+        except Exception as e:
+            # 回调注册失败不应影响主流程
+            logger.debug(f"注册配置变更回调失败（忽略）: {e}")
+        _config_callbacks_registered = True
 
 # 禁用 FastMCP banner 和 Rich 输出，避免污染 stdio
 os.environ["NO_COLOR"] = "1"
@@ -1131,6 +1175,9 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
     - 配置加载失败会抛出 ValueError，调用者需要捕获处理
     - 【优化】配置缓存 10 秒，减少配置读取开销
     """
+    # 【配置热更新】尽早注册回调，确保配置变更能立即清空缓存
+    _ensure_config_change_callbacks_registered()
+
     # 【性能优化】检查缓存是否有效
     current_time = time.time()
     with _config_cache_lock:
@@ -2278,6 +2325,48 @@ def parse_structured_response(
                 or inferred_mime_type
                 or "image/jpeg"
             )
+
+            # 规范化 MIME 类型（去参数、统一小写、修正常见别名）
+            # 参考：chrome-devtools-mcp 的 take_screenshot 返回格式（mimeType + 纯 base64）
+            content_type = str(content_type).strip()
+            if ";" in content_type:
+                content_type = content_type.split(";", 1)[0].strip()
+            content_type = content_type.lower()
+            if content_type == "image/jpg":
+                content_type = "image/jpeg"
+
+            # 兜底：避免后端返回 application/octet-stream 等非图片 MIME，导致 MCP 客户端无法渲染
+            if not content_type.startswith("image/"):
+                guessed: str | None = None
+                try:
+                    snippet = base64_data[:256]
+                    # base64 必须 4 字节对齐才能解码
+                    snippet += "=" * ((4 - len(snippet) % 4) % 4)
+                    raw = base64.b64decode(snippet, validate=False)
+
+                    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+                        guessed = "image/png"
+                    elif raw.startswith(b"\xff\xd8\xff"):
+                        guessed = "image/jpeg"
+                    elif raw.startswith(b"GIF87a") or raw.startswith(b"GIF89a"):
+                        guessed = "image/gif"
+                    elif raw.startswith(b"RIFF") and len(raw) >= 12 and raw[8:12] == b"WEBP":
+                        guessed = "image/webp"
+                    elif raw.startswith(b"BM"):
+                        guessed = "image/bmp"
+                    elif raw.startswith(b"II*\x00") or raw.startswith(b"MM\x00*"):
+                        guessed = "image/tiff"
+                    elif raw.startswith(b"\x00\x00\x01\x00"):
+                        guessed = "image/x-icon"
+                    else:
+                        # SVG 可能是文本（UTF-8），做一个轻量兜底判断
+                        raw_lower = raw.lstrip().lower()
+                        if raw_lower.startswith(b"<svg") or b"<svg" in raw_lower[:200]:
+                            guessed = "image/svg+xml"
+                except Exception:
+                    guessed = None
+
+                content_type = guessed or "image/jpeg"
 
             result.append(
                 ImageContent(
