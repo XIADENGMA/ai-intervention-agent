@@ -56,7 +56,7 @@ AI Intervention Agent 智能介入代理测试工具
 - 直接运行：`python test.py`
 
 ### 高级用法
-- 指定端口：`--port 8081`
+- 指定端口：`--port 8080`
 - 指定主机：`--host 127.0.0.1`
 - 指定线程等待超时（秒）：`--thread-timeout 600`
 - 指定反馈超时（秒）：`--timeout 60`
@@ -416,7 +416,7 @@ class TestLogger:
     }
 
     @staticmethod
-    def log(message: str, level: str = "info", emoji: str = None):
+    def log(message: str, level: str = "info", emoji: str | None = None):
         """统一的日志输出函数
 
         Args:
@@ -472,7 +472,7 @@ class TestLogger:
 
     @staticmethod
     def log_exception(
-        message: str, exc: Exception = None, include_traceback: bool = False
+        message: str, exc: Exception | None = None, include_traceback: bool = False
     ):
         """记录异常信息
 
@@ -525,7 +525,7 @@ class TestLogger:
 
 
 # 便捷函数（保持向后兼容）
-def log_info(message: str, emoji: str = None):
+def log_info(message: str, emoji: str | None = None):
     """记录信息级别日志
 
     Args:
@@ -540,7 +540,7 @@ def log_info(message: str, emoji: str = None):
     TestLogger.log(message, "info", emoji)
 
 
-def log_success(message: str, emoji: str = None):
+def log_success(message: str, emoji: str | None = None):
     """记录成功信息
 
     Args:
@@ -555,7 +555,7 @@ def log_success(message: str, emoji: str = None):
     TestLogger.log(message, "success", emoji or "✅")
 
 
-def log_warning(message: str, emoji: str = None):
+def log_warning(message: str, emoji: str | None = None):
     """记录警告信息
 
     Args:
@@ -570,7 +570,7 @@ def log_warning(message: str, emoji: str = None):
     TestLogger.log(message, "warning", emoji)
 
 
-def log_error(message: str, emoji: str = None):
+def log_error(message: str, emoji: str | None = None):
     """记录错误信息
 
     Args:
@@ -585,7 +585,7 @@ def log_error(message: str, emoji: str = None):
     TestLogger.log(message, "error", emoji)
 
 
-def log_debug(message: str, emoji: str = None):
+def log_debug(message: str, emoji: str | None = None):
     """记录调试信息
 
     Args:
@@ -767,13 +767,44 @@ def format_feedback_result(result):
     return formatted_result
 
 
+def format_mcp_return_content(feedback_result):
+    """将 Web UI 的反馈结果转换为“最终 MCP 返回”的 ContentBlock 列表（可 JSON 序列化展示）"""
+    try:
+        from mcp.types import ImageContent, TextContent
+
+        from server import parse_structured_response
+    except Exception:
+        return None
+
+    try:
+        content_blocks = parse_structured_response(feedback_result)
+    except Exception:
+        return None
+
+    formatted = []
+    for block in content_blocks:
+        if isinstance(block, TextContent):
+            formatted.append({"type": "text", "text": block.text})
+        elif isinstance(block, ImageContent):
+            data = block.data
+            if isinstance(data, str) and len(data) > 80:
+                data = data[:80] + "..."
+            formatted.append(
+                {"type": "image", "mimeType": block.mimeType, "data": data}
+            )
+        else:
+            formatted.append({"type": "unknown", "repr": repr(block)})
+
+    return formatted
+
+
 def check_service(url, timeout=None):
     """检查服务是否可用
 
     发送 HTTP GET 请求检查服务健康状态。
 
     Args:
-        url (str): 服务 URL（如 http://localhost:8081/api/health）
+        url (str): 服务 URL（如 http://localhost:8080/api/health）
         timeout (int, optional): 请求超时时间（秒），默认使用 TestConfig.HTTP_REQUEST_TIMEOUT
 
     Returns:
@@ -1267,6 +1298,12 @@ def test_persistent_workflow(timeout=None):
                 formatted_result1, ensure_ascii=False, indent=4
             )
             log_success(f"第一次反馈:\n{formatted_output}")
+
+            # 打印“最终 MCP 返回结果”（interactive_feedback 的返回内容）
+            mcp_content1 = format_mcp_return_content(result1)
+            if mcp_content1 is not None:
+                mcp_output1 = json.dumps(mcp_content1, ensure_ascii=False, indent=4)
+                log_success(f"第一次反馈（MCP 返回）:\n{mcp_output1}")
         else:
             log_warning("第一次反馈超时")
             return False
@@ -1288,6 +1325,12 @@ def test_persistent_workflow(timeout=None):
                 formatted_result2, ensure_ascii=False, indent=4
             )
             print(f"✅ 第二次反馈:\n{formatted_output}")
+
+            # 打印“最终 MCP 返回结果”（interactive_feedback 的返回内容）
+            mcp_content2 = format_mcp_return_content(result2)
+            if mcp_content2 is not None:
+                mcp_output2 = json.dumps(mcp_content2, ensure_ascii=False, indent=4)
+                print(f"✅ 第二次反馈（MCP 返回）:\n{mcp_output2}")
             print("🎉 智能介入测试完成！")
             return True
         else:
@@ -1343,7 +1386,7 @@ def test_web_ui_features():
         config, _ = get_web_ui_config()
         port = config.port
     except Exception:
-        port = 8081  # 默认端口
+        port = 8080  # 默认端口（与 workflow 保持一致）
 
     log_info("Web UI 功能测试 - 等待浏览器交互验证", "🌐")
     log_info("测试内容：", "ℹ️")
@@ -1438,7 +1481,7 @@ def test_multi_task_concurrent():
         config, _ = get_web_ui_config()
         port = config.port
     except Exception:
-        port = 8081  # 默认端口
+        port = 8080  # 默认端口（与 workflow 保持一致）
 
     log_info("多任务并发功能测试 - 等待浏览器交互验证", "🔄")
     log_info("测试内容：", "ℹ️")
@@ -1607,7 +1650,7 @@ def test_parallel_tasks():
             config, _ = get_web_ui_config()
             port = config.port
         except Exception:
-            port = 8081  # 默认端口
+            port = 8080  # 默认端口（与 workflow 保持一致）
         log_info(f"请在浏览器 http://localhost:{port} 验证：", "  ")
         log_info(f"1. 页面顶部显示{tasks_count}个任务标签", "  ")
         log_info("2. 可以点击标签切换任务", "  ")
@@ -1664,7 +1707,7 @@ def parse_arguments():
     ## 注意事项
 
     - 命令行参数优先级高于配置文件
-    - 端口会检查可用性，冲突时自动查找可用端口
+    - 指定 --port 时端口冲突会直接报错退出（避免端口漂移）
     - timeout 和 thread-timeout 是不同的概念
     """
     parser = argparse.ArgumentParser(
@@ -1694,6 +1737,20 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--resubmit-prompt",
+        type=str,
+        default=None,
+        help="设置 feedback.resubmit_prompt（用于超时/错误提示语；默认使用配置文件）",
+    )
+
+    parser.add_argument(
+        "--prompt-suffix",
+        type=str,
+        default=None,
+        help="设置 feedback.prompt_suffix（追加在反馈末尾的提示语；默认使用配置文件）",
+    )
+
+    parser.add_argument(
         "--thread-timeout",
         type=int,
         default=TestConfig.DEFAULT_THREAD_TIMEOUT,
@@ -1719,7 +1776,7 @@ def setup_test_environment(args):
     ## 配置内容
 
     1. **日志级别**：根据 `--verbose` 启用详细日志
-    2. **端口配置**：检查端口可用性，冲突时查找可用端口
+    2. **端口配置**：如果指定了 --port，则必须使用该端口；端口冲突会直接报错（避免“端口漂移”）
     3. **主机配置**：更新主机地址
     4. **超时配置**：更新超时时间
 
@@ -1739,8 +1796,8 @@ def setup_test_environment(args):
 
     ## 注意事项
 
-    - 端口冲突时会自动查找可用端口
-    - 配置更新会持久化到配置文件
+    - 指定 --port 时不会自动切换端口（避免偏离测试 workflow）
+    - 配置更新仅在内存中生效（不修改配置文件）
     - 失败时不会中断程序，仅记录警告
     """
     try:
@@ -1777,17 +1834,35 @@ def setup_test_environment(args):
                 config_mgr.set("web_ui.port", args.port, save=False)  # 不保存到文件
                 config_updated = True
                 print(f"📌 设置端口: {args.port}")
+
+                # 【关键修复】锁定测试端口：避免运行过程中 ConfigManager 因热加载/外部变更
+                # 重新读回 config.jsonc 的端口（例如 8081）导致第二轮/后续轮次跑偏。
+                # 设计：注册配置变更回调，在检测到端口被改回非 args.port 时，立即改回 args.port。
+                _enforce_state = {"active": False}
+
+                def _enforce_test_port() -> None:
+                    if _enforce_state["active"]:
+                        return
+                    _enforce_state["active"] = True
+                    try:
+                        current_port = config_mgr.get("web_ui.port")
+                        if current_port != args.port:
+                            config_mgr.set("web_ui.port", args.port, save=False)
+                    finally:
+                        _enforce_state["active"] = False
+
+                try:
+                    config_mgr.register_config_change_callback(_enforce_test_port)
+                except Exception:
+                    # 回调注册失败不影响主流程（最多导致端口可能被外部配置覆盖）
+                    pass
             else:
-                print(f"⚠️ 端口 {args.port} 已被占用，将尝试自动查找可用端口...")
-                available_port = find_available_port(args.port)
-                if available_port:
-                    config_mgr.set(
-                        "web_ui.port", available_port, save=False
-                    )  # 不保存到文件
-                    config_updated = True
-                    print(f"✅ 找到可用端口: {available_port}")
-                else:
-                    print("❌ 无法找到可用端口，将使用默认配置")
+                # 按 workflow：用户显式指定端口时必须严格使用该端口，不能自动切换
+                print(
+                    f"❌ 端口 {args.port} 已被占用。"
+                    "根据 workflow，本次测试必须使用指定端口，请先释放该端口或调整 --port。"
+                )
+                return False
 
         if args.host is not None:
             config_mgr.set("web_ui.host", args.host, save=False)  # 不保存到文件
@@ -1798,6 +1873,20 @@ def setup_test_environment(args):
             config_mgr.set("feedback.timeout", args.timeout, save=False)  # 不保存到文件
             config_updated = True
             print(f"📌 设置反馈超时: {args.timeout}秒")
+
+        if getattr(args, "resubmit_prompt", None) is not None:
+            config_mgr.set(
+                "feedback.resubmit_prompt", args.resubmit_prompt, save=False
+            )  # 不保存到文件
+            config_updated = True
+            print("📌 设置 resubmit_prompt")
+
+        if getattr(args, "prompt_suffix", None) is not None:
+            config_mgr.set(
+                "feedback.prompt_suffix", args.prompt_suffix, save=False
+            )  # 不保存到文件
+            config_updated = True
+            print("📌 设置 prompt_suffix")
 
         if args.thread_timeout is not None:
             print(f"📌 设置线程等待超时: {args.thread_timeout}秒")
@@ -1869,9 +1958,10 @@ def validate_args(args):
 def get_test_config(args):
     """获取测试配置信息"""
     try:
-        from server import get_web_ui_config
+        from server import get_feedback_prompts, get_web_ui_config
 
         config, auto_resubmit_timeout = get_web_ui_config()
+        resubmit_prompt, prompt_suffix = get_feedback_prompts()
 
         # 获取线程等待超时时间
         thread_timeout_value = (
@@ -1883,6 +1973,8 @@ def get_test_config(args):
         return {
             "server_config": config,
             "auto_resubmit_timeout": auto_resubmit_timeout,
+            "resubmit_prompt": resubmit_prompt,
+            "prompt_suffix": prompt_suffix,
             "thread_timeout": thread_timeout_value,
             "success": True,
         }
@@ -1945,6 +2037,17 @@ def display_test_config(config_info):
         print("   线程等待超时: 无限等待")
     else:
         print(f"   线程等待超时: {thread_timeout}秒")
+
+    # 提示语配置（用于验证 interactive_feedback 的提示语是否生效）
+    resubmit_prompt = config_info.get("resubmit_prompt")
+    prompt_suffix = config_info.get("prompt_suffix")
+    if isinstance(resubmit_prompt, str) and resubmit_prompt:
+        preview = resubmit_prompt if len(resubmit_prompt) <= 80 else resubmit_prompt[:80] + "..."
+        print(f"   resubmit_prompt: {preview}")
+    if isinstance(prompt_suffix, str) and prompt_suffix:
+        preview = prompt_suffix if len(prompt_suffix) <= 80 else prompt_suffix[:80] + "..."
+        # 为了可读性，把换行转义展示
+        print(f"   prompt_suffix: {preview!r}")
     print("=" * 50)
 
 
@@ -2053,8 +2156,8 @@ def main(args=None):
 
     # 显示使用示例
     print("\n💡 使用提示:")
-    print("   指定端口: --port 8081")
-    print("   指定主机: -host 127.0.0.1")
+    print("   指定端口: --port 8080")
+    print("   指定主机: --host 127.0.0.1")
     print("   指定线程等待超时: --thread-timeout 600")
     print("   指定反馈超时: --timeout 60")
     print("   详细日志: --verbose")

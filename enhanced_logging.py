@@ -725,7 +725,8 @@ class LogDeduplicator:
         """
         self.time_window = time_window  # 时间窗口（秒）
         self.max_cache_size = max_cache_size
-        self.cache: Dict[str, Tuple[float, int]] = {}  # {log_hash: (timestamp, count)}
+        # 使用内置 hash(message)（int）作为 key
+        self.cache: Dict[int, Tuple[float, int]] = {}  # {msg_hash: (timestamp, count)}
         self.lock = threading.Lock()
 
     def should_log(self, message: str) -> Tuple[bool, Optional[str]]:
@@ -1027,6 +1028,10 @@ class EnhancedLogger:
                 message += f" ({duplicate_info})"
 
             self.logger.log(effective_level, message, *args, **kwargs)
+
+    def setLevel(self, level: int) -> None:
+        """兼容标准 logging.Logger API：设置底层 logger 的级别。"""
+        self.logger.setLevel(level)
 
     def debug(self, message: str, *args, **kwargs):
         """

@@ -17,6 +17,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import patch
 
 # 添加项目根目录到路径
@@ -184,6 +185,8 @@ class TestTaskQueueBoundary(unittest.TestCase):
 
         self.assertTrue(result)
         task = self.queue.get_task("task-long")
+        self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(len(task.prompt), 100000)
 
     def test_special_characters_in_prompt(self):
@@ -195,6 +198,8 @@ class TestTaskQueueBoundary(unittest.TestCase):
 
         self.assertTrue(result)
         task = self.queue.get_task("task-special")
+        self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.prompt, special_prompt)
 
     def test_many_predefined_options(self):
@@ -204,6 +209,10 @@ class TestTaskQueueBoundary(unittest.TestCase):
 
         self.assertTrue(result)
         task = self.queue.get_task("task-options")
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertIsNotNone(task.predefined_options)
+        assert task.predefined_options is not None
         self.assertEqual(len(task.predefined_options), 1000)
 
 
@@ -351,10 +360,10 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
             title="测试",
             message="消息",
             trigger=NotificationTrigger.IMMEDIATE,
-            metadata=None,  # 测试 None
+            metadata=cast(Any, None),  # 测试 None（绕过类型检查器）
         )
         # 手动设置 metadata 为 None 来测试
-        event.metadata = None
+        event.metadata = cast(Any, None)
 
         # 应该不崩溃
         try:
@@ -503,6 +512,8 @@ class TestModuleIntegration(unittest.TestCase):
 
         # 2. 验证第一个任务是活动的
         active = queue.get_active_task()
+        self.assertIsNotNone(active)
+        assert active is not None
         self.assertEqual(active.task_id, "task-0")
 
         # 3. 完成任务
@@ -510,6 +521,8 @@ class TestModuleIntegration(unittest.TestCase):
 
         # 4. 验证下一个任务自动激活
         active = queue.get_active_task()
+        self.assertIsNotNone(active)
+        assert active is not None
         self.assertEqual(active.task_id, "task-1")
 
         # 5. 清理

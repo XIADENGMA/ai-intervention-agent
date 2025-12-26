@@ -111,6 +111,7 @@ class TestTaskQueueBasic(unittest.TestCase):
         task = self.queue.get_task("task-1")
 
         self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.prompt, "测试提示")
 
     def test_get_nonexistent_task(self):
@@ -167,6 +168,8 @@ class TestTaskQueueActiveTask(unittest.TestCase):
 
         task = self.queue.get_task("task-1")
 
+        self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.status, "active")
 
     def test_second_task_pending(self):
@@ -176,6 +179,8 @@ class TestTaskQueueActiveTask(unittest.TestCase):
 
         task = self.queue.get_task("task-2")
 
+        self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.status, "pending")
 
     def test_set_active_task(self):
@@ -186,8 +191,15 @@ class TestTaskQueueActiveTask(unittest.TestCase):
         result = self.queue.set_active_task("task-2")
 
         self.assertTrue(result)
-        self.assertEqual(self.queue.get_task("task-1").status, "pending")
-        self.assertEqual(self.queue.get_task("task-2").status, "active")
+        task1 = self.queue.get_task("task-1")
+        self.assertIsNotNone(task1)
+        assert task1 is not None
+        self.assertEqual(task1.status, "pending")
+
+        task2 = self.queue.get_task("task-2")
+        self.assertIsNotNone(task2)
+        assert task2 is not None
+        self.assertEqual(task2.status, "active")
 
     def test_get_active_task(self):
         """测试获取活动任务"""
@@ -196,6 +208,7 @@ class TestTaskQueueActiveTask(unittest.TestCase):
         active = self.queue.get_active_task()
 
         self.assertIsNotNone(active)
+        assert active is not None
         self.assertEqual(active.task_id, "task-1")
 
 
@@ -220,6 +233,8 @@ class TestTaskQueueComplete(unittest.TestCase):
 
         self.assertTrue(result)
         task = self.queue.get_task("task-1")
+        self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.status, "completed")
         self.assertEqual(task.result, {"feedback": "完成"})
 
@@ -231,6 +246,8 @@ class TestTaskQueueComplete(unittest.TestCase):
         self.queue.complete_task("task-1", {"feedback": "完成"})
 
         task2 = self.queue.get_task("task-2")
+        self.assertIsNotNone(task2)
+        assert task2 is not None
         self.assertEqual(task2.status, "active")
 
     def test_complete_nonexistent_task(self):
@@ -442,6 +459,7 @@ class TestTaskQueueEdgeCases(unittest.TestCase):
         self.assertTrue(result)
         active = self.queue.get_active_task()
         self.assertIsNotNone(active)
+        assert active is not None
         self.assertEqual(active.task_id, "task-2")
 
     def test_get_incomplete_tasks_only(self):
@@ -469,11 +487,15 @@ class TestTaskQueueEdgeCases(unittest.TestCase):
         # 完成 task-1，task-2 应该变为 active
         self.queue.complete_task("task-1", {})
         task2 = self.queue.get_task("task-2")
+        self.assertIsNotNone(task2)
+        assert task2 is not None
         self.assertEqual(task2.status, "active")
 
         # 完成 task-2，task-3 应该变为 active
         self.queue.complete_task("task-2", {})
         task3 = self.queue.get_task("task-3")
+        self.assertIsNotNone(task3)
+        assert task3 is not None
         self.assertEqual(task3.status, "active")
 
         # 完成 task-3，没有更多任务

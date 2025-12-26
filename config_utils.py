@@ -15,20 +15,43 @@
 """
 
 import logging
-from typing import Any, Optional, TypeVar
+from typing import Any, Optional, TypeVar, cast, overload
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T", int, float)
+# 数值类型别名：用于边界校验（int/float 均支持比较运算）
+Number = int | float
+
+T = TypeVar("T")
+
+
+@overload
+def clamp_value(
+    value: int,
+    min_val: int,
+    max_val: int,
+    field_name: str,
+    log_warning: bool = True,
+) -> int: ...
+
+
+@overload
+def clamp_value(
+    value: float,
+    min_val: float,
+    max_val: float,
+    field_name: str,
+    log_warning: bool = True,
+) -> float: ...
 
 
 def clamp_value(
-    value: T,
-    min_val: T,
-    max_val: T,
+    value: Number,
+    min_val: Number,
+    max_val: Number,
     field_name: str,
     log_warning: bool = True,
-) -> T:
+) -> Number:
     """
     将值限制在指定范围内
 
@@ -61,7 +84,7 @@ def clamp_value(
         if log_warning:
             logger.warning(f"{field_name} ({value}) 小于最小值 {min_val}，已调整")
         return min_val
-    elif value > max_val:
+    if value > max_val:
         if log_warning:
             logger.warning(f"{field_name} ({value}) 大于最大值 {max_val}，已调整")
         return max_val
@@ -71,8 +94,8 @@ def clamp_value(
 def clamp_dataclass_field(
     obj: Any,
     field_name: str,
-    min_val: T,
-    max_val: T,
+    min_val: Number,
+    max_val: Number,
 ) -> None:
     """
     在 dataclass 的 __post_init__ 中限制字段值
@@ -101,7 +124,7 @@ def clamp_dataclass_field(
     ...         clamp_dataclass_field(self, "timeout", 1, 300)
     """
     current_value = getattr(obj, field_name)
-    clamped_value = clamp_value(current_value, min_val, max_val, field_name)
+    clamped_value = clamp_value(cast(Number, current_value), min_val, max_val, field_name)
     if current_value != clamped_value:
         object.__setattr__(obj, field_name, clamped_value)
 
@@ -151,9 +174,9 @@ def get_typed_config(
     config: dict,
     key: str,
     default: T,
-    value_type: type,
-    min_val: Optional[T] = None,
-    max_val: Optional[T] = None,
+    value_type: type[T],
+    min_val: Number | None = None,
+    max_val: Number | None = None,
     old_key: Optional[str] = None,
 ) -> T:
     """
@@ -193,10 +216,11 @@ def get_typed_config(
     raw_value = get_compat_config(config, key, old_key, default)
 
     # 类型转换
+    typed_value: T = default
     try:
         if value_type is bool and isinstance(raw_value, str):
             # 特殊处理字符串布尔值
-            typed_value = raw_value.lower() in ("true", "1", "yes", "on")
+            typed_value = cast(T, raw_value.lower() in ("true", "1", "yes", "on"))
         else:
             typed_value = value_type(raw_value)
     except (ValueError, TypeError):
@@ -208,7 +232,15 @@ def get_typed_config(
     # 边界验证（仅对数值类型）
     if min_val is not None and max_val is not None:
         if isinstance(typed_value, (int, float)):
-            typed_value = clamp_value(typed_value, min_val, max_val, key)
+            typed_value = cast(
+                T,
+                clamp_value(
+                    cast(Number, typed_value),
+                    min_val,
+                    max_val,
+                    key,
+                ),
+            )
 
     return typed_value
 
@@ -254,7 +286,7 @@ def validate_enum_value(
 
 
 def truncate_string(
-    value: str,
+    value: str | None,
     max_length: int,
     field_name: str,
     default: Optional[str] = None,

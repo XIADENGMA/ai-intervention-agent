@@ -23,6 +23,7 @@
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 # 项目根目录
@@ -97,15 +98,20 @@ def process_directory(
     check_only: bool = False,
     force: bool = False,
 ):
-    """处理目录中的文件"""
+    """处理目录中的文件
+
+    Returns:
+        int: 在 check_only 模式下，返回“需要压缩”的文件数量；否则返回 0。
+    """
     if not directory.exists():
         print(f"目录不存在: {directory}")
-        return
+        return 0
 
     suffix = f".{file_type}"
     files_processed = 0
     files_skipped = 0
     total_saved = 0
+    needs_count = 0
 
     for filepath in directory.glob(f"*{suffix}"):
         # 跳过已压缩的文件
@@ -123,6 +129,7 @@ def process_directory(
         if check_only:
             print(f"需要压缩: {filepath.name}")
             files_processed += 1
+            needs_count += 1
             continue
 
         # 读取原始文件
@@ -156,6 +163,7 @@ def process_directory(
     print(f"处理完成: {files_processed} 个文件, 跳过 {files_skipped} 个")
     if total_saved > 0:
         print(f"总共节省: {total_saved:,} bytes ({total_saved / 1024:.1f} KB)")
+    return needs_count
 
 
 def main():
@@ -180,17 +188,27 @@ def main():
     # 处理 JavaScript 文件
     print("📦 处理 JavaScript 文件...")
     print("-" * 40)
-    process_directory(STATIC_JS_DIR, "js", minify_js, args.check, args.force)
+    needs_js = process_directory(STATIC_JS_DIR, "js", minify_js, args.check, args.force)
     print()
 
     # 处理 CSS 文件
     print("🎨 处理 CSS 文件...")
     print("-" * 40)
-    process_directory(STATIC_CSS_DIR, "css", minify_css, args.check, args.force)
+    needs_css = process_directory(STATIC_CSS_DIR, "css", minify_css, args.check, args.force)
     print()
 
     print("=" * 50)
-    print("完成！")
+    if args.check:
+        total = needs_js + needs_css
+        if total > 0:
+            print(
+                f"❌ 检查失败：发现 {total} 个静态资源需要重新生成 .min 文件。"
+                "请运行：python scripts/minify_assets.py"
+            )
+            sys.exit(1)
+        print("✅ 检查通过：所有 .min 文件都是最新的。")
+    else:
+        print("完成！")
 
 
 if __name__ == "__main__":

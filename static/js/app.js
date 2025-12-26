@@ -1691,11 +1691,16 @@ class SettingsManager {
     })
   }
 
-  showSettings() {
-    this.updateUI()
-    this.updateStatus()
-    // 同步当前设置到后端
-    this.syncConfigToBackend()
+  async showSettings() {
+    // 防御性：确保已初始化（极端情况下用户可能在 init() 未完成时快速点击）
+    if (!this.initialized) {
+      try {
+        await this.init()
+      } catch (e) {
+        console.warn('SettingsManager 初始化失败（打开设置面板时）:', e)
+      }
+    }
+
     const panel = document.getElementById('settings-panel')
     if (panel) {
       // 临时移除 container 的 overflow: hidden，以便设置面板可以覆盖整个屏幕
@@ -1710,6 +1715,19 @@ class SettingsManager {
       // 浅色主题适配
       this.applySettingsTheme()
     }
+
+    // ✅ 方案A：每次打开设置面板，都从后端刷新一次配置
+    // 目的：
+    // - 让“外部编辑 config.jsonc”能在不刷新页面的情况下反映到 UI
+    // - 避免打开面板时把旧的本地缓存配置反向写回后端（覆盖外部修改）
+    try {
+      this.settings = await this.loadSettings()
+    } catch (e) {
+      console.warn('打开设置面板时刷新配置失败，继续使用当前设置:', e)
+    }
+
+    this.updateUI()
+    this.updateStatus()
   }
 
   applySettingsTheme() {
@@ -2293,9 +2311,11 @@ async function addImageToList(file) {
     return false
   }
 
+  // 预先生成 ID，确保 catch 分支也能安全引用
+  const imageId = Date.now() + Math.random()
+
   try {
     // 创建加载占位符
-    const imageId = Date.now() + Math.random()
     const timestamp = Date.now()
     const imageItem = {
       id: imageId,
@@ -2334,9 +2354,25 @@ async function addImageToList(file) {
   } catch (error) {
     console.error('图片处理失败:', error)
     showStatus('图片处理失败: ' + error.message, 'error')
+
+    // 释放可能已创建的预览 URL
+    try {
+      const failed = selectedImages.find(img => img.id === imageId)
+      if (failed && failed.previewUrl && failed.previewUrl.startsWith('blob:')) {
+        revokeObjectURL(failed.previewUrl)
+      }
+    } catch (_) {
+      // ignore
+    }
+
     // 从列表中移除失败的图片
     selectedImages = selectedImages.filter(img => img.id !== imageId)
+    const previewElement = document.getElementById(`preview-${imageId}`)
+    if (previewElement) {
+      previewElement.remove()
+    }
     updateImageCounter()
+    updateImagePreviewVisibility()
     return false
   }
 }
@@ -2363,6 +2399,10 @@ function scheduleDOMUpdate(callback) {
 function renderImagePreview(imageItem, isLoading = false) {
   rafUpdate(() => {
     const previewContainer = document.getElementById('image-previews')
+    if (!previewContainer) {
+      console.error('图片预览容器 #image-previews 未找到，无法渲染预览')
+      return
+    }
     let previewElement = document.getElementById(`preview-${imageItem.id}`)
 
     if (!previewElement) {
@@ -2654,15 +2694,23 @@ function initializePasteFunction() {
     }
   }
 
-  document.addEventListener('paste', async function (e) {
+  // ⚠️ 防重复注册：
+  // 某些场景下（例如脚本被重复执行、或初始化函数被重复调用），会导致 paste 监听器被注册多次，
+  // 从而出现“粘贴一次添加两张重复图片”的问题。这里通过“先移除旧 handler，再注册新 handler”保证幂等。
+  try {
+    if (window.__aiInterventionAgentPasteHandler) {
+      document.removeEventListener('paste', window.__aiInterventionAgentPasteHandler)
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  const pasteHandler = async function (e) {
     const clipboardData = e.clipboardData
     if (!clipboardData) return
 
-    // 避免影响设置面板等其他 input 的正常粘贴：仅在“反馈文本框”聚焦时处理图片粘贴
-    const active = document.activeElement
-    const isInputLike =
-      active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
-    if (textarea && isInputLike && active !== textarea) return
+    // 仅在“反馈文本框”聚焦时处理图片粘贴（避免影响其他输入场景）
+    if (!textarea || document.activeElement !== textarea) return
 
     const filesToAdd = []
 
@@ -2678,10 +2726,15 @@ function initializePasteFunction() {
     }
 
     // 方案 B：部分浏览器只在 clipboardData.files 暴露文件
-    const files = Array.from(clipboardData.files || [])
-    for (const file of files) {
-      if (file && file.type && file.type.startsWith('image/')) {
-        filesToAdd.push(file)
+    // 注意：很多浏览器同时在 items 和 files 中暴露同一张图片。
+    // 若我们两边都收集，会导致“一次粘贴出现两张重复图片”。
+    // 因此仅当方案 A 没拿到图片时，才回退到 files。
+    if (filesToAdd.length === 0) {
+      const files = Array.from(clipboardData.files || [])
+      for (const file of files) {
+        if (file && file.type && file.type.startsWith('image/')) {
+          filesToAdd.push(file)
+        }
       }
     }
 
@@ -2718,7 +2771,10 @@ function initializePasteFunction() {
     if (added > 0) {
       showStatus(`从剪贴板添加了 ${added} 张图片`, 'success')
     }
-  })
+  }
+
+  window.__aiInterventionAgentPasteHandler = pasteHandler
+  document.addEventListener('paste', pasteHandler)
 }
 
 // 文件选择功能

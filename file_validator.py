@@ -65,9 +65,31 @@
 
 import logging
 import re
-from typing import Dict, Optional
+from collections.abc import Callable
+from typing import TypedDict, cast
 
 logger = logging.getLogger(__name__)
+
+
+class ImageTypeInfo(TypedDict, total=False):
+    """图片类型信息（用于魔数识别）"""
+
+    extension: str
+    mime_type: str
+    description: str
+    additional_check: Callable[[bytes], bool]
+
+
+class FileValidationResult(TypedDict):
+    """文件验证结果结构（用于类型检查与 IDE 提示）"""
+
+    valid: bool
+    file_type: str | None
+    mime_type: str | None
+    extension: str | None
+    size: int
+    warnings: list[str]
+    errors: list[str]
 
 # ============================================================================
 # 常量定义：图片格式魔数字典
@@ -107,7 +129,7 @@ logger = logging.getLogger(__name__)
 # - SVG 检查前 1024 字节是否包含 <svg 标签
 # - WebP 检查偏移 8-12 字节是否为 "WEBP"
 #
-IMAGE_MAGIC_NUMBERS = {
+IMAGE_MAGIC_NUMBERS: dict[bytes, ImageTypeInfo] = {
     # PNG格式
     b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a": {
         "extension": ".png",
@@ -445,8 +467,11 @@ class FileValidator:
             self.compiled_patterns.append((compiled, pattern_str))
 
     def validate_file(
-        self, file_data: bytes, filename: str, declared_mime_type: str = None
-    ) -> Dict:
+        self,
+        file_data: bytes | None,
+        filename: str,
+        declared_mime_type: str | None = None,
+    ) -> FileValidationResult:
         """
         验证文件安全性（核心方法）
 
@@ -536,7 +561,7 @@ class FileValidator:
                 "errors": ["文件数据为空（None）"],
             }
 
-        result = {
+        result: FileValidationResult = {
             "valid": False,
             "file_type": None,
             "mime_type": None,
@@ -580,7 +605,9 @@ class FileValidator:
 
         return result
 
-    def _validate_basic_properties(self, file_data: bytes, filename: str, result: Dict):
+    def _validate_basic_properties(
+        self, file_data: bytes, filename: str, result: FileValidationResult
+    ) -> None:
         """
         验证基础属性
 
@@ -636,7 +663,9 @@ class FileValidator:
         if file_ext and file_ext in DANGEROUS_EXTENSIONS:
             result["errors"].append(f"危险的文件扩展名: {file_ext}")
 
-    def _validate_magic_number(self, file_data: bytes, result: Dict) -> Optional[Dict]:
+    def _validate_magic_number(
+        self, file_data: bytes, result: FileValidationResult
+    ) -> ImageTypeInfo | None:
         """
         验证文件魔数（识别真实文件类型）
 
@@ -682,25 +711,31 @@ class FileValidator:
         - 第一个匹配的魔数生效（顺序敏感）
         - 无法识别的文件类型会添加错误，但不会中断验证流程
         """
-        detected_type = None
+        detected_type: ImageTypeInfo | None = None
 
         # 【优化】快速路径：优先检查最常见的格式（PNG、JPEG）
         # PNG 魔数检查（约占 40% 图片上传）
         if file_data.startswith(b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a"):
-            detected_type = {
-                "extension": ".png",
-                "mime_type": "image/png",
-                "description": "PNG图片",
-            }
+            detected_type = cast(
+                ImageTypeInfo,
+                {
+                    "extension": ".png",
+                    "mime_type": "image/png",
+                    "description": "PNG图片",
+                },
+            )
 
         # JPEG 魔数检查（约占 50% 图片上传）
         # 所有 JPEG 变体的前 3 字节都是 \xff\xd8\xff
         elif file_data.startswith(b"\xff\xd8\xff"):
-            detected_type = {
-                "extension": ".jpg",
-                "mime_type": "image/jpeg",
-                "description": "JPEG图片",
-            }
+            detected_type = cast(
+                ImageTypeInfo,
+                {
+                    "extension": ".jpg",
+                    "mime_type": "image/jpeg",
+                    "description": "JPEG图片",
+                },
+            )
 
         # 快速路径命中，直接返回
         if detected_type:
@@ -751,7 +786,7 @@ class FileValidator:
 
         return detected_type
 
-    def _validate_filename(self, filename: str, result: Dict):
+    def _validate_filename(self, filename: str, result: FileValidationResult) -> None:
         """
         验证文件名安全性
 
@@ -810,7 +845,10 @@ class FileValidator:
             result["warnings"].append("隐藏文件")
 
     def _validate_mime_consistency(
-        self, declared_mime: str, detected_type: Optional[Dict], result: Dict
+        self,
+        declared_mime: str,
+        detected_type: ImageTypeInfo | None,
+        result: FileValidationResult,
     ):
         """
         验证 MIME 类型一致性
@@ -853,7 +891,7 @@ class FileValidator:
                 f"MIME类型不一致: 声明={declared_mime}, 检测={detected_type['mime_type']}"
             )
 
-    def _scan_malicious_content(self, file_data: bytes, result: Dict):
+    def _scan_malicious_content(self, file_data: bytes, result: FileValidationResult) -> None:
         """
         扫描恶意内容
 
@@ -912,8 +950,8 @@ _default_validator = FileValidator()
 
 
 def validate_uploaded_file(
-    file_data: bytes, filename: str, mime_type: str = None
-) -> Dict:
+    file_data: bytes | None, filename: str, mime_type: str | None = None
+) -> FileValidationResult:
     """
     便捷函数：验证上传的文件
 

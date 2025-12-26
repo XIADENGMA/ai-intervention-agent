@@ -1,107 +1,73 @@
-# GitHub Actions 测试工作流
-# 功能：自动运行测试和代码检查
-# 触发：Push 到 main/develop，或 PR 到 main
-
 name: Tests
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [main]
+    branches:
+      - main
+  workflow_dispatch:
 
-# 并发控制：同一分支只运行最新的工作流
+# 同一分支只保留最新一次运行，避免排队浪费
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    name: Test (Python ${{ matrix.python-version }})
+    name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # 超时限制：10分钟
+    timeout-minutes: 10
 
     strategy:
-      fail-fast: false # 一个版本失败不影响其他版本
+      fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12']
+        python-version: ["3.11", "3.12"]
 
     steps:
-      # 1. 检出代码
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # 2. 设置 Python 环境
-      - name: 设置 Python ${{ matrix.python-version }}
+      - name: 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      # 3. 安装 uv
-      - name: 安装 uv
-        uses: astral-sh/setup-uv@v4
+      - name: 安装 uv（带缓存）
+        uses: astral-sh/setup-uv@v5
         with:
-          version: 'latest'
+          enable-cache: true
+          cache-dependency-glob: |
+            uv.lock
+            pyproject.toml
 
-      # 4. 缓存依赖
-      - name: 缓存 uv 依赖
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
-          restore-keys: |
-            uv-${{ runner.os }}-${{ matrix.python-version }}-
+      - name: 同步依赖（含 dev 组，严格使用 uv.lock）
+        run: uv sync --all-groups --frozen
 
-      # 5. 安装依赖
-      - name: 安装依赖
-        run: |
-          uv sync --dev
+      - name: Ruff（Lint）
+        run: uv run ruff check .
 
-      # 5.1. 准备测试配置文件
-      - name: 准备测试配置文件
-        run: |
-          cp config.jsonc.default config.jsonc
+      - name: Ruff（Format Check）
+        run: uv run ruff format --check .
 
-      # 6. 代码检查 - Ruff Linting
-      - name: 代码检查 (ruff check)
-        run: |
-          uv run ruff check .
+      - name: Ty（Type Check）
+        run: uv run ty check .
 
-      # 7. 代码格式检查 - Ruff Format
-      - name: 格式检查 (ruff format)
-        run: |
-          uv run ruff format --check .
+      - name: Pytest（含覆盖率）
+        run: uv run pytest -q --cov=. --cov-report=xml --cov-report=term-missing --cov-config=.coveragerc
 
-      # 8. 运行测试
-      - name: 运行测试
-        run: |
-          uv run pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing --timeout=10
+      - name: 静态资源压缩检查（.min 文件）
+        run: uv run python scripts/minify_assets.py --check
 
-      # 9. 上传覆盖率报告
-      - name: 上传覆盖率报告
+      - name: 上传覆盖率报告（coverage.xml）
+        if: always() && matrix.python-version == '3.11'
         uses: actions/upload-artifact@v4
-        if: matrix.python-version == '3.11' # 只上传一次
         with:
           name: coverage-report
           path: coverage.xml
-          retention-days: 7
-
-  # 代码检查结果汇总
-  lint-summary:
-    name: Lint Summary
-    runs-on: ubuntu-latest
-    needs: test
-    if: always()
-
-    steps:
-      - name: 检查测试结果
-        run: |
-          if [ "${{ needs.test.result }}" == "failure" ]; then
-            echo "❌ 测试失败"
-            exit 1
-          elif [ "${{ needs.test.result }}" == "cancelled" ]; then
-            echo "⚠️ 测试被取消"
-            exit 1
-          else
-            echo "✅ 所有测试通过"
-          fi
+          if-no-files-found: warn

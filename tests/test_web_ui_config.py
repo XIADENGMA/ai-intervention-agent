@@ -10,7 +10,7 @@ Web UI 配置模块单元测试
 """
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 class TestWebUIConfigConstants(unittest.TestCase):
@@ -266,7 +266,7 @@ class TestGetWebUIConfig(unittest.TestCase):
         server._config_cache["config"] = None
         server._config_cache["timestamp"] = 0
 
-        mock_config_mgr = unittest.mock.MagicMock()
+        mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.side_effect = lambda section: {
             "web_ui": {
                 "port": 8080,
@@ -295,7 +295,7 @@ class TestGetWebUIConfig(unittest.TestCase):
         server._config_cache["config"] = None
         server._config_cache["timestamp"] = 0
 
-        mock_config_mgr = unittest.mock.MagicMock()
+        mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {}  # 空配置
         mock_get_config.return_value = mock_config_mgr
 

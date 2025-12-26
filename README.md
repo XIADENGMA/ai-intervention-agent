@@ -25,6 +25,10 @@
   </a>
 </p>
 
+<p align="center">
+  <a href="./README.en.md">English</a> | 简体中文
+</p>
+
 # AI Intervention Agent
 
 让用户能够实时控制 AI 执行过程的 MCP 工具。
@@ -33,10 +37,19 @@
 
 ## 🌠 界面
 
-<p align="center">
-  <img src=".github/assets/desktop_screenshot.png" alt="桌面浏览器截图" width="40%" style="margin-right: 10px;">
-  <img src=".github/assets/mobile_screenshot.png" alt="移动浏览器截图" width="20%">
-</p>
+### 🌙 深色主题
+
+| 设备   | 有内容页面                                                                               | 无有效内容页面                                                                                  |
+| ------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 桌面端 | <img src=".github/assets/desktop_dark_content.png" alt="桌面端-深色-有内容" width="420"> | <img src=".github/assets/desktop_dark_no_content.png" alt="桌面端-深色-无有效内容" width="420"> |
+| 移动端 | <img src=".github/assets/mobile_dark_content.png" alt="移动端-深色-有内容" width="120">  | <img src=".github/assets/mobile_dark_no_content.png" alt="移动端-深色-无有效内容" width="120">  |
+
+### ☀️ 浅色主题
+
+| 设备   | 有内容页面                                                                                | 无有效内容页面                                                                                   |
+| ------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 桌面端 | <img src=".github/assets/desktop_light_content.png" alt="桌面端-浅色-有内容" width="420"> | <img src=".github/assets/desktop_light_no_content.png" alt="桌面端-浅色-无有效内容" width="420"> |
+| 移动端 | <img src=".github/assets/mobile_light_content.png" alt="移动端-浅色-有内容" width="120">  | <img src=".github/assets/mobile_light_no_content.png" alt="移动端-浅色-无有效内容" width="120">  |
 
 ## ✨ 主要特性
 
@@ -61,7 +74,8 @@ pip install ai-intervention-agent
 uv add ai-intervention-agent
 
 # 验证安装
-ai-intervention-agent --version
+#（ai-intervention-agent 是 MCP 服务入口，通常由 AI 工具拉起；这里推荐用 Python 读取版本号验证安装）
+python -c "import importlib.metadata as m; print(m.version('ai-intervention-agent'))"
 ```
 
 ### 🌐 方式二：uvx 直接使用
@@ -82,7 +96,15 @@ pip install uv && uv sync
 
 # 验证安装
 uv run python test.py
+
+# 代码质量检查（推荐）
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check .
+uv run python scripts/minify_assets.py --check
 ```
+
+> ✅ 本仓库已内置 GitHub Actions 测试流水线：Push/PR 会自动运行 `ruff/ty/pytest/minify_check` 并生成 `coverage.xml`（见 `.github/workflows/test.yml`）。
 
 ## ⚙️ 配置
 
@@ -283,13 +305,15 @@ ai-intervention-agent 工具使用细节：
 
 测试工具 `test.py` 支持以下命令行参数：
 
-| 参数               | 默认值    | 说明                                       |
-| ------------------ | --------- | ------------------------------------------ |
-| `--port`           | `8080`    | 指定测试使用的端口号                       |
-| `--host`           | `0.0.0.0` | 指定测试使用的主机地址                     |
-| `--timeout`        | `30`      | 指定反馈超时时间（秒）                     |
-| `--thread-timeout` | `300`     | 指定线程等待超时时间（秒），0 表示无限等待 |
-| `--verbose`, `-v`  | -         | 显示详细日志信息                           |
+| 参数                | 默认值   | 说明                                                             |
+| ------------------- | -------- | ---------------------------------------------------------------- |
+| `--port`, `-p`      | 配置文件 | 指定测试使用的端口号（显式指定时**严格使用**该端口，不自动漂移） |
+| `--host`            | 配置文件 | 指定测试使用的主机地址                                           |
+| `--timeout`         | 配置文件 | 设置 `feedback.timeout`（秒）                                    |
+| `--resubmit-prompt` | 配置文件 | 设置 `feedback.resubmit_prompt`（用于超时/错误提示语）           |
+| `--prompt-suffix`   | 配置文件 | 设置 `feedback.prompt_suffix`（追加在反馈末尾的提示语）          |
+| `--thread-timeout`  | `600`    | 指定线程等待超时时间（秒），0 表示无限等待                       |
+| `--verbose`, `-v`   | -        | 显示详细日志信息                                                 |
 
 ### 🌍 远程服务器配置
 

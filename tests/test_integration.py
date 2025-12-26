@@ -118,9 +118,21 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
             self.skipTest("multi_task.js 不存在，跳过轮询治理回归测试")
 
         js = response.data.decode("utf-8", errors="ignore")
+        response.close()  # 避免 send_from_directory 返回的文件句柄在测试结束后仍未释放
         self.assertIn("AbortController", js)
         self.assertIn("visibilitychange", js)
         self.assertIn("no-store", js)
+
+    def test_multi_task_mathjax_lazy_load_present(self):
+        """回归测试：任务描述渲染应支持 MathJax 懒加载（避免首次出现公式不渲染）"""
+        response = self.client.get("/static/js/multi_task.js")
+        if response.status_code != 200:
+            self.skipTest("multi_task.js 不存在，跳过 MathJax 懒加载回归测试")
+
+        js = response.data.decode("utf-8", errors="ignore")
+        response.close()  # 避免 send_from_directory 返回的文件句柄在测试结束后仍未释放
+        # 关键点：multi_task.js 在更新描述后应调用 loadMathJaxIfNeeded 触发按需加载与渲染
+        self.assertIn("loadMathJaxIfNeeded", js)
 
     def test_static_assets_not_rate_limited(self):
         """回归测试：静态资源不应被频率限制误伤（避免 429 导致白屏/MathJax 失效）"""
@@ -231,6 +243,7 @@ class TestWebFeedbackUIImageUpload(unittest.TestCase):
     def _assert_last_image(self, expected_mime: str):
         result = self.web_ui.feedback_result
         self.assertIsInstance(result, dict)
+        assert isinstance(result, dict)
         images = result.get("images", [])
         self.assertIsInstance(images, list)
         self.assertEqual(len(images), 1)

@@ -9,6 +9,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -211,7 +212,7 @@ class TestServerValidateInputAdvanced(unittest.TestCase):
 
         # None 应该抛出 ValueError
         with self.assertRaises(ValueError):
-            validate_input(None, [])
+            validate_input(cast(Any, None), [])
 
     def test_validate_with_numeric_option(self):
         """测试数字选项"""

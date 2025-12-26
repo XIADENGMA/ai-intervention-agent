@@ -76,10 +76,11 @@
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ class Task:
         auto_resubmit_timeout (int): 自动重新提交超时时间（秒），默认240，最大290
         created_at (datetime): 任务创建时间，自动生成
         status (str): 任务状态，可选值：pending/active/completed/expired
-        result (Optional[Dict[str, str]]): 任务执行结果，完成时由complete_task设置
+        result (Optional[Dict[str, Any]]): 任务执行结果，完成时由complete_task设置
         completed_at (Optional[datetime]): 任务完成时间，用于延迟删除判断
     """
 
@@ -149,7 +150,7 @@ class Task:
     # 【优化】使用单调时间（monotonic）记录创建时刻，不受系统时间调整影响
     created_at_monotonic: float = field(default_factory=time.monotonic)
     status: str = "pending"
-    result: Optional[Dict[str, str]] = None
+    result: Optional[Dict[str, Any]] = None
     completed_at: Optional[datetime] = None
 
     def get_remaining_time(self) -> int:
@@ -330,7 +331,7 @@ class TaskQueue:
         self._active_task_id: Optional[str] = None
 
         # 【新增】任务状态变更回调机制
-        self._status_change_callbacks: list = []
+        self._status_change_callbacks: list[Callable[[str, Optional[str], str], None]] = []
 
         self._stop_cleanup = threading.Event()
         self._cleanup_thread = threading.Thread(
@@ -637,7 +638,7 @@ class TaskQueue:
 
             return True
 
-    def complete_task(self, task_id: str, result: Dict[str, str]) -> bool:
+    def complete_task(self, task_id: str, result: Dict[str, Any]) -> bool:
         """完成任务并标记为延迟删除 ⭐核心方法
 
         将任务标记为已完成并保存结果，**不立即删除**。
@@ -664,7 +665,7 @@ class TaskQueue:
 
         Args:
             task_id (str): 要完成的任务ID
-            result (Dict[str, str]): 任务执行结果
+            result (Dict[str, Any]): 任务执行结果
                 - 通常包含 'feedback', 'selected_options' 等键
                 - 格式由调用方决定
                 - 示例：{'feedback': '用户输入', 'selected_options': ['选项1']}
@@ -1052,7 +1053,9 @@ class TaskQueue:
     # 任务状态变更回调机制
     # ========================================================================
 
-    def register_status_change_callback(self, callback: callable):
+    def register_status_change_callback(
+        self, callback: Callable[[str, Optional[str], str], None]
+    ):
         """
         注册任务状态变更回调函数
 
@@ -1080,9 +1083,12 @@ class TaskQueue:
         """
         if callback not in self._status_change_callbacks:
             self._status_change_callbacks.append(callback)
-            logger.debug(f"已注册任务状态变更回调: {callback.__name__}")
+            cb_name = getattr(callback, "__name__", None) or repr(callback)
+            logger.debug(f"已注册任务状态变更回调: {cb_name}")
 
-    def unregister_status_change_callback(self, callback: callable):
+    def unregister_status_change_callback(
+        self, callback: Callable[[str, Optional[str], str], None]
+    ):
         """
         取消注册任务状态变更回调函数
 
@@ -1092,7 +1098,8 @@ class TaskQueue:
         """
         if callback in self._status_change_callbacks:
             self._status_change_callbacks.remove(callback)
-            logger.debug(f"已取消任务状态变更回调: {callback.__name__}")
+            cb_name = getattr(callback, "__name__", None) or repr(callback)
+            logger.debug(f"已取消任务状态变更回调: {cb_name}")
 
     def _trigger_status_change(
         self, task_id: str, old_status: Optional[str], new_status: str
@@ -1119,4 +1126,5 @@ class TaskQueue:
             try:
                 callback(task_id, old_status, new_status)
             except Exception as e:
-                logger.error(f"任务状态变更回调执行失败 ({callback.__name__}): {e}")
+                cb_name = getattr(callback, "__name__", None) or repr(callback)
+                logger.error(f"任务状态变更回调执行失败 ({cb_name}): {e}")

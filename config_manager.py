@@ -46,6 +46,7 @@ import shutil
 import sys
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -621,7 +622,7 @@ class ConfigManager:
         self._file_watcher_stop_event = threading.Event()  # 用于优雅停止
         self._file_watcher_interval = 2.0  # 检查间隔（秒）
         self._last_file_mtime: float = 0  # 上次文件修改时间
-        self._config_change_callbacks: list = []  # 配置变更回调函数列表
+        self._config_change_callbacks: list[Callable[[], None]] = []  # 配置变更回调函数列表
 
         # 加载配置文件
         self._load_config()
@@ -2480,7 +2481,7 @@ class ConfigManager:
         logger.debug("已重置缓存统计")
 
     def set_cache_ttl(
-        self, section_ttl: float = None, network_security_ttl: float = None
+        self, section_ttl: float | None = None, network_security_ttl: float | None = None
     ):
         """设置缓存有效期
 
@@ -2948,7 +2949,7 @@ class ConfigManager:
             if self._file_watcher_stop_event.wait(self._file_watcher_interval):
                 break  # 收到停止信号，退出循环
 
-    def register_config_change_callback(self, callback: callable):
+    def register_config_change_callback(self, callback: Callable[[], None]):
         """
         注册配置变更回调函数
 
@@ -2972,9 +2973,10 @@ class ConfigManager:
         """
         if callback not in self._config_change_callbacks:
             self._config_change_callbacks.append(callback)
-            logger.debug(f"已注册配置变更回调: {callback.__name__}")
+            cb_name = getattr(callback, "__name__", None) or repr(callback)
+            logger.debug(f"已注册配置变更回调: {cb_name}")
 
-    def unregister_config_change_callback(self, callback: callable):
+    def unregister_config_change_callback(self, callback: Callable[[], None]):
         """
         取消注册配置变更回调函数
 
@@ -2984,7 +2986,8 @@ class ConfigManager:
         """
         if callback in self._config_change_callbacks:
             self._config_change_callbacks.remove(callback)
-            logger.debug(f"已取消配置变更回调: {callback.__name__}")
+            cb_name = getattr(callback, "__name__", None) or repr(callback)
+            logger.debug(f"已取消配置变更回调: {cb_name}")
 
     def _trigger_config_change_callbacks(self):
         """
@@ -2997,7 +3000,8 @@ class ConfigManager:
             try:
                 callback()
             except Exception as e:
-                logger.error(f"配置变更回调执行失败 ({callback.__name__}): {e}")
+                cb_name = getattr(callback, "__name__", None) or repr(callback)
+                logger.error(f"配置变更回调执行失败 ({cb_name}): {e}")
 
     @property
     def is_file_watcher_running(self) -> bool:

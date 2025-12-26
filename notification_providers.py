@@ -79,9 +79,11 @@ AI Intervention Agent - 通知提供者实现
 
 import re
 import time
+from collections.abc import Callable
 from typing import Any, Dict
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from enhanced_logging import EnhancedLogger
 from notification_manager import NotificationEvent, NotificationType
@@ -631,7 +633,7 @@ class BarkNotificationProvider:
         """
         self.config = config
         self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(max_retries=3)
+        adapter = HTTPAdapter(max_retries=3)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
@@ -961,6 +963,7 @@ class SystemNotificationProvider:
         尝试导入 plyer 库，设置 self.supported 状态。
         """
         self.config = config
+        self._notify: Callable[..., Any] | None = None
         self._check_system_support()
 
     def _check_system_support(self):
@@ -992,13 +995,13 @@ class SystemNotificationProvider:
         - 该方法在 __init__ 中自动调用
         """
         try:
-            import plyer
+            from plyer import notification as plyer_notification
 
-            self.plyer = plyer
+            self._notify = plyer_notification.notify
             self.supported = True
             logger.debug("系统通知支持已启用")
         except ImportError:
-            self.plyer = None
+            self._notify = None
             self.supported = False
             logger.debug("系统通知不支持（缺少plyer库）")
 
@@ -1049,11 +1052,14 @@ class SystemNotificationProvider:
             if not self.supported:
                 logger.debug("系统通知不支持，跳过发送")
                 return False
+            if self._notify is None:
+                logger.debug("系统通知未初始化 notify 句柄，跳过发送")
+                return False
 
             # 使用浮点除法保留小数精度，限制最小值为1.0秒
             timeout_seconds = max(self.config.web_timeout / 1000, 1.0)
 
-            self.plyer.notification.notify(
+            self._notify(
                 title=event.title,
                 message=event.message,
                 app_name="AI Intervention Agent",

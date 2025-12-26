@@ -1140,10 +1140,10 @@ async function loadTaskDetails(taskId) {
  *
  * ## 功能说明
  *
- * - 调用 `renderMarkdownContent` 渲染Markdown
- * - 更新描述容器的HTML内容
+ * - 使用 marked.js 同步渲染 Markdown
+ * - 更新描述容器的 HTML 内容
  * - 处理代码块语法高亮
- * - 处理MathJax数学公式
+ * - 按需加载并渲染 MathJax 数学公式
  *
  * ## 安全性
  *
@@ -1192,8 +1192,13 @@ async function updateDescriptionDisplay(prompt) {
 
     console.log('✅ 同步渲染 Markdown 完成')
 
-    // MathJax 异步渲染（不阻塞）
-    if (typeof window.MathJax !== 'undefined' && window.MathJax.typesetPromise) {
+    // MathJax 数学公式渲染（按需加载，不阻塞）
+    // 注意：不能只在 MathJax 已加载时 typeset，否则“首次出现公式”的内容会一直不渲染
+    const textContent = descriptionElement.textContent || ''
+    if (window.loadMathJaxIfNeeded) {
+      window.loadMathJaxIfNeeded(descriptionElement, textContent)
+    } else if (window.MathJax && window.MathJax.typesetPromise) {
+      // 回退：如果 MathJax 已加载但 loadMathJaxIfNeeded 不可用，直接渲染
       window.MathJax.typesetPromise([descriptionElement]).catch(err => {
         console.warn('MathJax 渲染失败:', err)
       })

@@ -5,6 +5,7 @@
 """
 
 import unittest
+from typing import Any, cast
 
 
 class TestConfigManagerTypedGetters(unittest.TestCase):
@@ -304,7 +305,7 @@ class TestConfigManagerExportImport(unittest.TestCase):
         config = get_config()
 
         # 尝试导入非字典数据
-        result = config.import_config("invalid", merge=True, save=False)
+        result = config.import_config(cast(Any, "invalid"), merge=True, save=False)
         self.assertFalse(result)
 
     def test_deep_merge(self):
@@ -313,8 +314,8 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
         config = get_config()
 
-        base = {"a": {"b": 1, "c": 2}, "d": 3}
-        update = {"a": {"b": 10, "e": 5}, "f": 6}
+        base: dict[str, Any] = {"a": {"b": 1, "c": 2}, "d": 3}
+        update: dict[str, Any] = {"a": {"b": 10, "e": 5}, "f": 6}
 
         config._deep_merge(base, update)
 

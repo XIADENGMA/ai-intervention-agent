@@ -199,6 +199,7 @@ pids
 # uv cache directory (if using custom cache location in project)
 .uv-cache/
 .uv/
+.ruff_cache/
 
 # uv tool installations (global tools cache)
 # Usually in system cache, but might be project-specific

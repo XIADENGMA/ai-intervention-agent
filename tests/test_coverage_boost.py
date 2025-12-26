@@ -15,6 +15,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 # 添加项目根目录到路径
@@ -473,10 +474,12 @@ class TestWebProviderAdvanced(unittest.TestCase):
 
         data = event.metadata.get("web_notification_data")
         self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
         self.assertEqual(data["type"], "notification")
         self.assertIn("config", data)
-        self.assertEqual(data["config"]["icon"], "/icons/custom.svg")
-        self.assertEqual(data["config"]["timeout"], 10000)
+        config = cast(dict[str, Any], data["config"])
+        self.assertEqual(config["icon"], "/icons/custom.svg")
+        self.assertEqual(config["timeout"], 10000)
 
     def test_whitespace_trimming(self):
         """测试空白字符修剪"""
@@ -495,6 +498,8 @@ class TestWebProviderAdvanced(unittest.TestCase):
         self.assertTrue(result)
 
         data = event.metadata.get("web_notification_data")
+        self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
         self.assertEqual(data["title"], "带空格的标题")
         self.assertEqual(data["message"], "带空格的消息")
 
@@ -532,6 +537,8 @@ class TestSoundProviderAdvanced(unittest.TestCase):
         self.assertTrue(result)
 
         data = event.metadata.get("sound_notification_data")
+        self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
         self.assertEqual(data["file"], "deng[噔].mp3")
 
     def test_unknown_sound_file_fallback(self):
@@ -556,6 +563,8 @@ class TestSoundProviderAdvanced(unittest.TestCase):
 
         data = event.metadata.get("sound_notification_data")
         # 应该回退到默认声音文件
+        self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
         self.assertEqual(data["file"], "deng[噔].mp3")
 
 

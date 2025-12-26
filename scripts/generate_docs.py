@@ -51,7 +51,7 @@ def extract_docstring(node: ast.AST) -> Optional[str]:
     return None
 
 
-def get_function_signature(node: ast.FunctionDef) -> str:
+def get_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     """获取函数签名"""
     args = []
     defaults_offset = len(node.args.args) - len(node.args.defaults)
@@ -84,19 +84,22 @@ def parse_module(filepath: Path) -> Dict[str, Any]:
 
     tree = ast.parse(content)
 
-    result = {
+    classes: list[dict[str, Any]] = []
+    functions: list[dict[str, Any]] = []
+    result: dict[str, Any] = {
         "name": filepath.stem,
         "docstring": extract_docstring(tree),
-        "classes": [],
-        "functions": [],
+        "classes": classes,
+        "functions": functions,
     }
 
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.ClassDef):
+            methods: list[dict[str, Any]] = []
             class_info = {
                 "name": node.name,
                 "docstring": extract_docstring(node),
-                "methods": [],
+                "methods": methods,
             }
             for item in node.body:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -106,8 +109,8 @@ def parse_module(filepath: Path) -> Dict[str, Any]:
                         "docstring": extract_docstring(item),
                         "is_async": isinstance(item, ast.AsyncFunctionDef),
                     }
-                    class_info["methods"].append(method_info)
-            result["classes"].append(class_info)
+                    methods.append(method_info)
+            classes.append(class_info)
 
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             func_info = {
@@ -116,7 +119,7 @@ def parse_module(filepath: Path) -> Dict[str, Any]:
                 "docstring": extract_docstring(node),
                 "is_async": isinstance(node, ast.AsyncFunctionDef),
             }
-            result["functions"].append(func_info)
+            functions.append(func_info)
 
     return result
 

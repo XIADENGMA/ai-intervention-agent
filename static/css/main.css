@@ -5331,15 +5331,15 @@ h1 {
     inset 0 1px 0 rgba(255, 255, 255, 0.1); /* 多层阴影 */
   overflow: hidden; /* 隐藏溢出 */
   backdrop-filter: blur(10px); /* 毛玻璃效果 */
-  transition: all 0.3s ease; /* 过渡动画 */
+  transition: none; /* 按需求：移除鼠标悬停动效（禁用过渡动画） */
 }
 
-/** 代码块容器悬停效果：向上平移2px、阴影增强、边框变蓝 */
+/** 代码块容器悬停效果：已禁用（按需求移除鼠标移上去的动态效果） */
 .code-block-container:hover {
-  transform: translateY(-2px); /* 向上平移2px */
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5), 0 6px 12px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15); /* 阴影增强 */
-  border-color: rgba(0, 122, 255, 0.3); /* 边框变蓝 */
+  transform: none;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 /**
@@ -5487,12 +5487,12 @@ code,
   align-items: center;
   gap: 10px;
   z-index: 10;
-  opacity: 0.8;
-  transition: opacity 0.3s ease;
+  opacity: 1;
+  transition: none; /* 按需求：移除 hover 透明度动效 */
 }
 /** 代码容器悬停时工具栏完全不透明 */
 .code-block-container:hover .code-toolbar {
-  opacity: 1;
+  opacity: 1; /* 保持一致，无动态变化 */
 }
 
 /**
@@ -5516,12 +5516,12 @@ code,
   text-transform: uppercase;
   letter-spacing: 0.5px;
   box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
-  transition: all 0.3s ease;
+  transition: none; /* 按需求：移除 hover 动效 */
 }
 .language-label:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
-  border-color: rgba(0, 122, 255, 0.6);
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+  border-color: rgba(0, 122, 255, 0.4);
 }
 
 /**
@@ -5542,7 +5542,7 @@ code,
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.9);
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: none; /* 按需求：移除 hover/active 动效 */
   font-family: inherit;
   font-weight: 500;
   display: flex;
@@ -5555,30 +5555,23 @@ code,
 }
 /** 复制按钮光线扫过效果 */
 .copy-button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  transition: left 0.5s ease;
+  display: none; /* 按需求：移除 hover 动效（光线扫过） */
 }
 .copy-button:hover::before {
-  left: 100%;
+  /* no-op */
 }
 /** 复制按钮悬停效果 */
 .copy-button:hover {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.12));
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.9);
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 /** 复制按钮按下效果 */
 .copy-button:active {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 /** 复制按钮已复制状态 */
 .copy-button.copied {
@@ -7040,7 +7033,8 @@ code,
 }
 
 [data-theme='light'] .code-toolbar {
-  background: rgba(0, 0, 0, 0.04);
+  /* 移除工具栏背景，避免语言标签与复制按钮之间出现“透明黑块”视觉瑕疵 */
+  background: transparent;
   border-color: var(--border-primary);
   color: var(--text-secondary);
 }
@@ -7644,9 +7638,16 @@ code,
 
 /* 删除代码块容器悬停效果 - 用户不需要此效果 */
 .code-block-container:hover {
-  box-shadow: none;
+  /* 按需求：完全移除 hover 动效（保持与默认状态一致） */
+  transform: none;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 [data-theme='light'] .code-block-container:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04); /* 保持原有阴影，不增强 */
+  transform: none;
+  /* 保持与浅色主题默认状态一致（不增强/不减弱） */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04);
+  border-color: var(--border-primary);
 }

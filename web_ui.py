@@ -79,6 +79,7 @@ import sys
 import threading
 import time
 import uuid
+from functools import lru_cache
 from ipaddress import (
     AddressValueError,
     IPv4Network,
@@ -86,11 +87,7 @@ from ipaddress import (
     ip_address,
     ip_network,
 )
-from typing import (
-    Dict,
-    List,
-    Optional,
-)
+from typing import Any, Dict, List, Optional, cast
 
 import markdown
 from flask import (
@@ -111,6 +108,7 @@ from config_utils import clamp_value
 from enhanced_logging import EnhancedLogger
 from file_validator import validate_uploaded_file
 from server import get_task_queue
+from shared_types import FeedbackResult
 
 try:
     from notification_manager import (
@@ -135,6 +133,7 @@ logger = EnhancedLogger(__name__)
 GITHUB_URL = "https://github.com/XIADENGMA/ai-intervention-agent"
 
 
+@lru_cache(maxsize=1)
 def get_project_version() -> str:
     """
     从 pyproject.toml 读取项目版本号
@@ -146,19 +145,14 @@ def get_project_version() -> str:
 
     实现逻辑
     --------
-    1. 尝试使用 tomllib（Python 3.11+）解析 pyproject.toml
-    2. 降级到 tomli 库（兼容旧版本 Python）
-    3. 最后尝试正则表达式匹配
-    4. 所有方法失败则返回 "unknown"
+    1. 使用 tomllib（Python 3.11+）解析 pyproject.toml
+    2. 解析失败则回退到正则表达式匹配
+    3. 所有方法失败则返回 "unknown"
 
     缓存说明
     --------
-    版本号在首次读取后会被缓存，避免重复读取文件
+    使用 lru_cache 缓存首次读取结果，避免重复 I/O。
     """
-    # 检查是否已缓存
-    if hasattr(get_project_version, "_cached_version"):
-        return get_project_version._cached_version
-
     version = "unknown"
 
     try:
@@ -167,33 +161,23 @@ def get_project_version() -> str:
         pyproject_path = os.path.join(current_dir, "pyproject.toml")
 
         if os.path.exists(pyproject_path):
-            # 尝试使用 tomllib (Python 3.11+)
             try:
                 import tomllib
 
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
-                    version = data.get("project", {}).get("version", "unknown")
-            except ImportError:
-                # 降级到 tomli 库
-                try:
-                    import tomli
-
-                    with open(pyproject_path, "rb") as f:
-                        data = tomli.load(f)
-                        version = data.get("project", {}).get("version", "unknown")
-                except ImportError:
-                    # 最后尝试正则表达式
-                    with open(pyproject_path, "r", encoding="utf-8") as f:
-                        content = f.read()
-                        match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
-                        if match:
-                            version = match.group(1)
+                raw_version: Any = data.get("project", {}).get("version", "unknown")
+                version = raw_version if isinstance(raw_version, str) else str(raw_version)
+            except Exception:
+                # 回退到正则表达式
+                with open(pyproject_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+                if match:
+                    version = match.group(1)
     except Exception as e:
         logger.warning(f"读取版本号失败: {e}")
 
-    # 缓存版本号
-    get_project_version._cached_version = version
     return version
 
 
@@ -257,7 +241,7 @@ DEFAULT_ALLOWED_NETWORKS = [
 ]
 
 
-def validate_bind_interface(value: str) -> str:
+def validate_bind_interface(value: Any) -> str:
     """
     验证并调整 bind_interface 值
 
@@ -303,7 +287,7 @@ def validate_bind_interface(value: str) -> str:
         return "127.0.0.1"
 
 
-def validate_network_cidr(network_str: str) -> bool:
+def validate_network_cidr(network_str: Any) -> bool:
     """
     验证网络 CIDR 格式是否有效
 
@@ -332,7 +316,7 @@ def validate_network_cidr(network_str: str) -> bool:
         return False
 
 
-def validate_allowed_networks(networks: list) -> list:
+def validate_allowed_networks(networks: Any) -> list[str]:
     """
     验证并清理 allowed_networks 列表
 
@@ -356,14 +340,15 @@ def validate_allowed_networks(networks: list) -> list:
         logger.warning("allowed_networks 不是列表，使用默认值")
         return DEFAULT_ALLOWED_NETWORKS.copy()
 
-    valid_networks = []
-    invalid_networks = []
+    valid_networks: list[str] = []
+    invalid_networks: list[str] = []
 
     for network in networks:
         if validate_network_cidr(network):
-            valid_networks.append(network)
+            # validate_network_cidr 已确保 network 为 str
+            valid_networks.append(str(network))
         else:
-            invalid_networks.append(network)
+            invalid_networks.append(str(network))
 
     # 记录无效条目
     if invalid_networks:
@@ -377,7 +362,7 @@ def validate_allowed_networks(networks: list) -> list:
     return valid_networks
 
 
-def validate_blocked_ips(ips: list) -> list:
+def validate_blocked_ips(ips: Any) -> list[str]:
     """
     验证并清理 blocked_ips 列表
 
@@ -399,8 +384,8 @@ def validate_blocked_ips(ips: list) -> list:
     if not isinstance(ips, list):
         return []
 
-    valid_ips = []
-    invalid_ips = []
+    valid_ips: list[str] = []
+    invalid_ips: list[str] = []
 
     for ip in ips:
         if isinstance(ip, str):
@@ -418,7 +403,7 @@ def validate_blocked_ips(ips: list) -> list:
     return valid_ips
 
 
-def validate_network_security_config(config: dict) -> dict:
+def validate_network_security_config(config: Any) -> dict[str, Any]:
     """
     验证并清理完整的 network_security 配置
 
@@ -576,7 +561,7 @@ class WebFeedbackUI:
         self.auto_resubmit_timeout = auto_resubmit_timeout
         self.host = host
         self.port = port
-        self.feedback_result = None
+        self.feedback_result: FeedbackResult | None = None
         self.current_prompt = prompt if prompt else ""
         self.current_options = predefined_options or []
         self.current_task_id = task_id
@@ -1785,7 +1770,11 @@ class WebFeedbackUI:
                 logger.info(
                     f"同时将反馈提交到TaskQueue中的激活任务: {active_task.task_id}"
                 )
-                task_queue.complete_task(active_task.task_id, self.feedback_result)
+                if self.feedback_result is not None:
+                    task_queue.complete_task(
+                        active_task.task_id,
+                        cast(dict[str, Any], self.feedback_result),
+                    )
 
             # 清空内容并等待下一次调用
             self.current_prompt = ""
@@ -1845,7 +1834,8 @@ class WebFeedbackUI:
                 - 仅适用于单任务模式，多任务模式请使用TaskQueue API
                 - 更新后前端需重新渲染内容
             """
-            data = request.json
+            raw = request.get_json(silent=True)
+            data: dict[str, Any] = raw if isinstance(raw, dict) else {}
             new_prompt = data.get("prompt", "")
             new_options = data.get("predefined_options", [])
             new_task_id = data.get("task_id")
@@ -2934,14 +2924,14 @@ class WebFeedbackUI:
             logger.warning(f"无效的IP地址 {client_ip}: {e}")
             return False
 
-    def run(self) -> Dict[str, str]:
+    def run(self) -> FeedbackResult:
         """启动Flask Web服务器并等待用户反馈
 
         功能说明：
             启动Flask开发服务器，监听指定的host和port，等待用户提交反馈。
 
         返回值：
-            Dict[str, str]: 用户反馈结果，包含以下字段：
+            FeedbackResult: 用户反馈结果，包含以下字段：
                 - user_input: 用户输入文本
                 - selected_options: 选中的选项数组
                 - images: 图片数组（Base64编码）
@@ -2994,11 +2984,12 @@ class WebFeedbackUI:
         except KeyboardInterrupt:
             pass
 
-        return self.feedback_result or {
+        empty_result: FeedbackResult = {
             "user_input": "",
             "selected_options": [],
             "images": [],
         }
+        return self.feedback_result or empty_result
 
 
 def web_feedback_ui(
@@ -3009,7 +3000,7 @@ def web_feedback_ui(
     output_file: Optional[str] = None,
     host: str = "0.0.0.0",
     port: int = 8080,
-) -> Optional[Dict[str, str]]:
+) -> Optional[FeedbackResult]:
     """启动Web版反馈界面的便捷函数
 
     功能说明：
@@ -3025,7 +3016,7 @@ def web_feedback_ui(
         port: 绑定端口（默认8080）
 
     返回值：
-        Optional[Dict[str, str]]: 用户反馈结果字典，包含：
+        Optional[FeedbackResult]: 用户反馈结果字典，包含：
             - user_input: 用户输入文本
             - selected_options: 选中的选项数组
             - images: 图片数组（Base64编码）

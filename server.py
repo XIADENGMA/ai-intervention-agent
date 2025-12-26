@@ -182,11 +182,10 @@ _root_logger.propagate = False
 # 禁用 Rich Console 输出
 try:
     import rich.console as rich_console_module
-    from rich.console import Console
 
     _devnull = io.StringIO()
 
-    class SilentConsole(Console):
+    class SilentConsole(rich_console_module.Console):
         def __init__(self, *args, **kwargs):
             super().__init__(
                 file=_devnull,
@@ -198,7 +197,8 @@ try:
                 **kwargs,
             )
 
-    rich_console_module.Console = SilentConsole
+    # 使用 setattr 避免类型检查器将该赋值视为“覆盖/遮蔽”类定义
+    setattr(rich_console_module, "Console", SilentConsole)  # noqa: B010
 except ImportError:
     pass
 
@@ -1617,7 +1617,7 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
 
     注意事项
     --------
-    - session.timeout 是默认超时，单个请求可以覆盖
+    - requests 的超时应通过每次请求的 timeout 参数控制（避免给 Session 动态挂载属性）
     - POST 请求默认也会重试（非标准行为，但适用于本项目的幂等 API）
     - 重试不适用于连接错误（如服务未启动），仅适用于 HTTP 响应错误
     """
@@ -1642,7 +1642,6 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
-        session.timeout = config.timeout
 
         # 缓存 session
         _http_session_cache[cache_key] = session
@@ -2421,7 +2420,7 @@ def parse_structured_response(
     return result
 
 
-def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]:
+def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, Any]:
     """
     ⚠️ **废弃函数**: 旧架构中等待用户提交反馈（单一内容区轮询）
 
@@ -2595,7 +2594,7 @@ def wait_for_feedback(config: WebUIConfig, timeout: int = 300) -> Dict[str, str]
         raise Exception("无限等待模式异常退出")
 
 
-async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str, str]:
+async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str, Any]:
     """
     通过轮询 HTTP API 等待任务完成（异步版本）
 
@@ -2800,7 +2799,7 @@ def launch_feedback_ui(
     predefined_options: Optional[list[str]] = None,
     task_id: Optional[str] = None,
     timeout: int = 300,
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """
     ⚠️ **废弃函数**: 启动反馈界面（旧版 API，请使用 interactive_feedback() MCP 工具代替）
 
@@ -3320,7 +3319,7 @@ class FeedbackServiceContext:
         predefined_options: Optional[list[str]] = None,
         task_id: Optional[str] = None,
         timeout: int = 300,
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """
         在上下文中启动反馈界面
 

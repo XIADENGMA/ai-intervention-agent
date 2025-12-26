@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-intervention-agent"
-version = "1.4.3"
+version = "1.4.4"
 description = "AI Intervention Agent: MCP server enabling real-time user intervention in AI-assisted development workflows."
 readme = "README.md"
 license = "MIT"
@@ -50,12 +50,18 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
+    "pytest>=8.4.0",
+    "pytest-cov>=6.2.1",
+    "pytest-timeout>=2.3.0",
     "black>=23.0.0",
     "isort>=5.12.0",
-    "flake8>=6.0.0",
+    "flake8>=7.2.0",
     "mypy>=1.0.0",
+    "ruff>=0.8.0",
+    "ty",
+    "rcssmin>=1.1.2",
+    "rjsmin>=1.2.5",
+    "dbus-python; platform_system == 'Linux'",
 ]
 
 [project.urls]
@@ -135,6 +141,8 @@ dev = [
     "rcssmin>=1.1.2",
     "rjsmin>=1.2.5",
     "ruff>=0.8.0",
+    "ty",
+    "dbus-python; platform_system == 'Linux'",
 ]
 
 [tool.ruff]
@@ -171,3 +179,11 @@ ignore = [
 quote-style = "double"
 # 缩进使用空格
 indent-style = "space"
+
+[tool.ty.environment]
+# 与项目 requires-python 保持一致
+python-version = "3.11"
+
+[tool.ty.terminal]
+# 更精简的输出，便于在 CI/终端阅读
+output-format = "concise"

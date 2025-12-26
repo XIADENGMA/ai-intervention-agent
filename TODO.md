@@ -11,7 +11,7 @@
 - [x] 系统通知修复`import plyer`
 - [x] 页面显示的 markdown 样式优化
   - 现在只显示基础效果
-- [ ] 更新 README，英文、中文版本
+- [x] 更新 README，英文、中文版本
   - 参考：https://github.com/Minidoracat/mcp-feedback-enhanced/blob/main/README.zh-CN.md
 - [x] 重构网页主题
   - [x] 适配深色主题、浅色主题 - 使用 CSS 变量实现主题切换
@@ -23,10 +23,10 @@
   - [x] ~~在底栏显示 MCP 服务状态~~ 当前只显示发送反馈等信息
 - [ ] 复制、粘贴优化，特别是在 ios 平台上
 - [ ] 全平台支持、发布到 uvx pypi 平台
-- [ ] github action（设想）
-  - 自动发布
-    - 自动化测试
-    - 自动化 pr
+- [x] github action（设想）
+  - [x] 自动发布（release.yml：构建 + 发布 PyPI + 创建 GitHub Release）
+    - [x] 自动化测试（test.yml：ruff/ty/pytest/minify_check/coverage）
+    - [x] 自动化 pr（dependabot.yml：依赖自动更新 PR）
 - [x] 修复 uvx 模式图片反馈问题：`Error calling tool 'interactive_feedback': Unable to serialize unknown type: <class 'fastmcp.utilities.types.Image'>`
 
   - [x] 改造这条工具链，让它在任何对外返回、跨工具传递的地方，都只传 MCP 协议定义的` ImageContent`（本质是一个包含 `type/data/mimeType` 字段的纯 dict），彻底移除 `fastmcp.utilities.types.Image` 这种类对象。
@@ -182,6 +182,10 @@
 - [x] 我现在可以粘贴图片吗？我上传图片后会有显示吗？
 - [x] 配置热更新：当我修改配置文件/在 web ui 上修改配置后，程序应该自动重新加载配置，而不是需要手动重启程序
 - [ ] 请你深度思考和深度测试，我想知道我这个项目还有什么缺少的/可以改进的/可以优化的/可以测试的。
+- [x] 检查配置热更新功能是否正确：比如我修改/home/xiadengma/.config/ai-intervention-agent/config.jsonc 的反馈配置那部分，不重启程序，程序返回会更新吗？如果我修改 bark_enabled，那么 web ui 里面设置页面会更新吗？我允许你修改 8080 端口为 8082 或其他来测试，除了 8081。
+- 请使用 uv、ruff、ty 和 pyproject.toml 更新我的项目；以及 test.py 设置--port 8080，那么里面全部都使用 8080 端口。
+- 仔细分析后修复问题：使用 uv run python test.py --port 8080 --verbose --thread-timeout 0，第一次反馈虽然是在 8080 端口，但是`🔄 更新页面内容...`后的下面反馈现在是根据 config.jsonc 来的
+- 界面截图：包括桌面端和移动端，包括深色模式和浅色模式，包括无有效内容页面、有内容页面（uv run python test.py --port 8080 --verbose --thread-timeout 0 的第一个页面）
 
 # 已完成的优化项目
 

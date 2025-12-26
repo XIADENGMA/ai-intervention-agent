@@ -326,8 +326,8 @@ class DOMSecurity {
    * ```
    * div.image-preview-item
    *   ├─ img.image-preview-thumbnail (缩略图)
-   *   ├─ button.image-remove-btn (删除按钮)
-   *   └─ div.image-info (文件信息)
+   *   ├─ button.image-preview-remove (删除按钮)
+   *   └─ div.image-preview-info (文件信息)
    * ```
    *
    * ### 安全性
@@ -388,13 +388,13 @@ class DOMSecurity {
       })
 
       const removeButton = document.createElement('button')
-      removeButton.className = 'image-remove-btn'
+      removeButton.className = 'image-preview-remove'
       removeButton.textContent = '×'
       removeButton.setAttribute('aria-label', '删除图片')
       removeButton.onclick = () => removeImage(imageItem.id)
 
       const info = document.createElement('div')
-      info.className = 'image-info'
+      info.className = 'image-preview-info'
       info.textContent = `${imageItem.name} (${(imageItem.size / 1024).toFixed(1)}KB)`
 
       previewElement.appendChild(img)

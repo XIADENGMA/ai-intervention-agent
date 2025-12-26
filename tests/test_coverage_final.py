@@ -50,7 +50,7 @@ class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
 
         manager = NotificationManager()
         manager.config.enabled = True
-        manager.config.trigger_delay = 0.05  # 50ms 延迟（更快更稳定）
+        manager.config.trigger_delay = 0  # 0 秒延迟（更快更稳定）
 
         # 用 patch 确保不污染单例实例的方法实现
         processed = threading.Event()
@@ -362,21 +362,21 @@ class TestConfigUtilsAdvanced(unittest.TestCase):
         """测试 clamp_value 正常情况"""
         from config_utils import clamp_value
 
-        result = clamp_value(50, 0, 100, 0)
+        result = clamp_value(50, 0, 100, "test_field")
         self.assertEqual(result, 50)
 
     def test_clamp_value_below_min(self):
         """测试 clamp_value 低于最小值"""
         from config_utils import clamp_value
 
-        result = clamp_value(-10, 0, 100, 0)
+        result = clamp_value(-10, 0, 100, "test_field")
         self.assertEqual(result, 0)
 
     def test_clamp_value_above_max(self):
         """测试 clamp_value 高于最大值"""
         from config_utils import clamp_value
 
-        result = clamp_value(150, 0, 100, 0)
+        result = clamp_value(150, 0, 100, "test_field")
         self.assertEqual(result, 100)
 
     def test_validate_enum_value_valid(self):
@@ -427,6 +427,7 @@ class TestTaskQueueAdvanced(unittest.TestCase):
         # 获取任务
         task = queue.get_task("test-task-1")
         self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task.prompt, "测试任务")
 
         # 删除任务
