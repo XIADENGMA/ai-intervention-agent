@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
 
       - name: 安装 uv（带缓存）
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: |
