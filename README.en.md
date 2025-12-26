@@ -188,7 +188,7 @@ uv run python scripts/minify_assets.py --check
 
 ## Release (PyPI + GitHub Release)
 
-- The workflow `.github/workflows/release.yml` triggers on tags like `v1.4.4`.
+- The workflow `.github/workflows/release.yml` triggers on tags like `v1.4.5`.
 - It builds `sdist` + `wheel` via `uv build`, validates with `twine check`, publishes to PyPI via **Trusted Publisher**, and creates a GitHub Release.
 
 To publish:
