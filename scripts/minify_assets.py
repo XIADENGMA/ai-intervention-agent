@@ -194,7 +194,9 @@ def main():
     # 处理 CSS 文件
     print("🎨 处理 CSS 文件...")
     print("-" * 40)
-    needs_css = process_directory(STATIC_CSS_DIR, "css", minify_css, args.check, args.force)
+    needs_css = process_directory(
+        STATIC_CSS_DIR, "css", minify_css, args.check, args.force
+    )
     print()
 
     print("=" * 50)

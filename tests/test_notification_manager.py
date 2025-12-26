@@ -333,9 +333,10 @@ class TestNotificationManagerRetryAndStats(unittest.TestCase):
         """所有渠道失败且还有重试额度：应调度重试而非直接降级"""
         event = self._make_event(max_retries=2, retry_count=0)
 
-        with patch.object(self.manager, "_schedule_retry") as schedule_mock, patch.object(
-            self.manager, "_handle_fallback"
-        ) as fallback_mock:
+        with (
+            patch.object(self.manager, "_schedule_retry") as schedule_mock,
+            patch.object(self.manager, "_handle_fallback") as fallback_mock,
+        ):
             self.manager._process_event(event)
 
             schedule_mock.assert_called_once()
@@ -346,9 +347,10 @@ class TestNotificationManagerRetryAndStats(unittest.TestCase):
         """重试耗尽：应进入降级处理"""
         event = self._make_event(max_retries=0, retry_count=0)
 
-        with patch.object(self.manager, "_schedule_retry") as schedule_mock, patch.object(
-            self.manager, "_handle_fallback"
-        ) as fallback_mock:
+        with (
+            patch.object(self.manager, "_schedule_retry") as schedule_mock,
+            patch.object(self.manager, "_handle_fallback") as fallback_mock,
+        ):
             self.manager._process_event(event)
 
             schedule_mock.assert_not_called()

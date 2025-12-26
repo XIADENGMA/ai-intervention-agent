@@ -331,7 +331,9 @@ class TaskQueue:
         self._active_task_id: Optional[str] = None
 
         # 【新增】任务状态变更回调机制
-        self._status_change_callbacks: list[Callable[[str, Optional[str], str], None]] = []
+        self._status_change_callbacks: list[
+            Callable[[str, Optional[str], str], None]
+        ] = []
 
         self._stop_cleanup = threading.Event()
         self._cleanup_thread = threading.Thread(

@@ -151,11 +151,14 @@ def _ensure_config_change_callbacks_registered() -> None:
             return
         try:
             cfg = get_config()
-            cfg.register_config_change_callback(_invalidate_runtime_caches_on_config_change)
+            cfg.register_config_change_callback(
+                _invalidate_runtime_caches_on_config_change
+            )
         except Exception as e:
             # 回调注册失败不应影响主流程
             logger.debug(f"注册配置变更回调失败（忽略）: {e}")
         _config_callbacks_registered = True
+
 
 # 禁用 FastMCP banner 和 Rich 输出，避免污染 stdio
 os.environ["NO_COLOR"] = "1"
@@ -2349,7 +2352,11 @@ def parse_structured_response(
                         guessed = "image/jpeg"
                     elif raw.startswith(b"GIF87a") or raw.startswith(b"GIF89a"):
                         guessed = "image/gif"
-                    elif raw.startswith(b"RIFF") and len(raw) >= 12 and raw[8:12] == b"WEBP":
+                    elif (
+                        raw.startswith(b"RIFF")
+                        and len(raw) >= 12
+                        and raw[8:12] == b"WEBP"
+                    ):
                         guessed = "image/webp"
                     elif raw.startswith(b"BM"):
                         guessed = "image/bmp"

@@ -2042,10 +2042,16 @@ def display_test_config(config_info):
     resubmit_prompt = config_info.get("resubmit_prompt")
     prompt_suffix = config_info.get("prompt_suffix")
     if isinstance(resubmit_prompt, str) and resubmit_prompt:
-        preview = resubmit_prompt if len(resubmit_prompt) <= 80 else resubmit_prompt[:80] + "..."
+        preview = (
+            resubmit_prompt
+            if len(resubmit_prompt) <= 80
+            else resubmit_prompt[:80] + "..."
+        )
         print(f"   resubmit_prompt: {preview}")
     if isinstance(prompt_suffix, str) and prompt_suffix:
-        preview = prompt_suffix if len(prompt_suffix) <= 80 else prompt_suffix[:80] + "..."
+        preview = (
+            prompt_suffix if len(prompt_suffix) <= 80 else prompt_suffix[:80] + "..."
+        )
         # 为了可读性，把换行转义展示
         print(f"   prompt_suffix: {preview!r}")
     print("=" * 50)

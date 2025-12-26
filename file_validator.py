@@ -91,6 +91,7 @@ class FileValidationResult(TypedDict):
     warnings: list[str]
     errors: list[str]
 
+
 # ============================================================================
 # 常量定义：图片格式魔数字典
 # ============================================================================
@@ -891,7 +892,9 @@ class FileValidator:
                 f"MIME类型不一致: 声明={declared_mime}, 检测={detected_type['mime_type']}"
             )
 
-    def _scan_malicious_content(self, file_data: bytes, result: FileValidationResult) -> None:
+    def _scan_malicious_content(
+        self, file_data: bytes, result: FileValidationResult
+    ) -> None:
         """
         扫描恶意内容
 

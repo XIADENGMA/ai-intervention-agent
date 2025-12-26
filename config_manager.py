@@ -622,7 +622,9 @@ class ConfigManager:
         self._file_watcher_stop_event = threading.Event()  # 用于优雅停止
         self._file_watcher_interval = 2.0  # 检查间隔（秒）
         self._last_file_mtime: float = 0  # 上次文件修改时间
-        self._config_change_callbacks: list[Callable[[], None]] = []  # 配置变更回调函数列表
+        self._config_change_callbacks: list[
+            Callable[[], None]
+        ] = []  # 配置变更回调函数列表
 
         # 加载配置文件
         self._load_config()
@@ -2481,7 +2483,9 @@ class ConfigManager:
         logger.debug("已重置缓存统计")
 
     def set_cache_ttl(
-        self, section_ttl: float | None = None, network_security_ttl: float | None = None
+        self,
+        section_ttl: float | None = None,
+        network_security_ttl: float | None = None,
     ):
         """设置缓存有效期
 

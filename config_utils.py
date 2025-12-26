@@ -124,7 +124,9 @@ def clamp_dataclass_field(
     ...         clamp_dataclass_field(self, "timeout", 1, 300)
     """
     current_value = getattr(obj, field_name)
-    clamped_value = clamp_value(cast(Number, current_value), min_val, max_val, field_name)
+    clamped_value = clamp_value(
+        cast(Number, current_value), min_val, max_val, field_name
+    )
     if current_value != clamped_value:
         object.__setattr__(obj, field_name, clamped_value)
 

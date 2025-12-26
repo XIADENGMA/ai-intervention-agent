@@ -167,7 +167,9 @@ def get_project_version() -> str:
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
                 raw_version: Any = data.get("project", {}).get("version", "unknown")
-                version = raw_version if isinstance(raw_version, str) else str(raw_version)
+                version = (
+                    raw_version if isinstance(raw_version, str) else str(raw_version)
+                )
             except Exception:
                 # 回退到正则表达式
                 with open(pyproject_path, "r", encoding="utf-8") as f:
