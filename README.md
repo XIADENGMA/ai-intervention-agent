@@ -39,17 +39,35 @@
 
 ### 🌙 深色主题
 
-| 设备   | 有内容页面                                                                               | 无有效内容页面                                                                                  |
-| ------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 桌面端 | <img src=".github/assets/desktop_dark_content.png" alt="桌面端-深色-有内容" width="420"> | <img src=".github/assets/desktop_dark_no_content.png" alt="桌面端-深色-无有效内容" width="420"> |
-| 移动端 | <img src=".github/assets/mobile_dark_content.png" alt="移动端-深色-有内容" width="120">  | <img src=".github/assets/mobile_dark_no_content.png" alt="移动端-深色-无有效内容" width="120">  |
+#### 桌面端
+
+<p align="center">
+  <img src=".github/assets/desktop_dark_content.png" alt="桌面端-深色-有内容" width="420">
+  <img src=".github/assets/desktop_dark_no_content.png" alt="桌面端-深色-无有效内容" width="420">
+</p>
+
+#### 移动端
+
+<p align="center">
+  <img src=".github/assets/mobile_dark_content.png" alt="移动端-深色-有内容" width="220">
+  <img src=".github/assets/mobile_dark_no_content.png" alt="移动端-深色-无有效内容" width="220">
+</p>
 
 ### ☀️ 浅色主题
 
-| 设备   | 有内容页面                                                                                | 无有效内容页面                                                                                   |
-| ------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 桌面端 | <img src=".github/assets/desktop_light_content.png" alt="桌面端-浅色-有内容" width="420"> | <img src=".github/assets/desktop_light_no_content.png" alt="桌面端-浅色-无有效内容" width="420"> |
-| 移动端 | <img src=".github/assets/mobile_light_content.png" alt="移动端-浅色-有内容" width="120">  | <img src=".github/assets/mobile_light_no_content.png" alt="移动端-浅色-无有效内容" width="120">  |
+#### 桌面端
+
+<p align="center">
+  <img src=".github/assets/desktop_light_content.png" alt="桌面端-浅色-有内容" width="420">
+  <img src=".github/assets/desktop_light_no_content.png" alt="桌面端-浅色-无有效内容" width="420">
+</p>
+
+#### 移动端
+
+<p align="center">
+  <img src=".github/assets/mobile_light_content.png" alt="移动端-浅色-有内容" width="220">
+  <img src=".github/assets/mobile_light_no_content.png" alt="移动端-浅色-无有效内容" width="220">
+</p>
 
 ## ✨ 主要特性
 

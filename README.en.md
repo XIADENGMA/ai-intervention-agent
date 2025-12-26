@@ -41,17 +41,35 @@ Works with `Cursor`, `VS Code`, `Claude Code`, `Augment`, `Windsurf`, `Trae`, an
 
 ### Dark theme
 
-| Device | Content page | No-content page |
-| --- | --- | --- |
-| Desktop | <img src=".github/assets/desktop_dark_content.png" alt="Desktop - dark - content" width="420"> | <img src=".github/assets/desktop_dark_no_content.png" alt="Desktop - dark - no content" width="420"> |
-| Mobile | <img src=".github/assets/mobile_dark_content.png" alt="Mobile - dark - content" width="220"> | <img src=".github/assets/mobile_dark_no_content.png" alt="Mobile - dark - no content" width="220"> |
+#### Desktop
+
+<p align="center">
+  <img src=".github/assets/desktop_dark_content.png" alt="Desktop - dark - content" width="420">
+  <img src=".github/assets/desktop_dark_no_content.png" alt="Desktop - dark - no content" width="420">
+</p>
+
+#### Mobile
+
+<p align="center">
+  <img src=".github/assets/mobile_dark_content.png" alt="Mobile - dark - content" width="220">
+  <img src=".github/assets/mobile_dark_no_content.png" alt="Mobile - dark - no content" width="220">
+</p>
 
 ### Light theme
 
-| Device | Content page | No-content page |
-| --- | --- | --- |
-| Desktop | <img src=".github/assets/desktop_light_content.png" alt="Desktop - light - content" width="420"> | <img src=".github/assets/desktop_light_no_content.png" alt="Desktop - light - no content" width="420"> |
-| Mobile | <img src=".github/assets/mobile_light_content.png" alt="Mobile - light - content" width="220"> | <img src=".github/assets/mobile_light_no_content.png" alt="Mobile - light - no content" width="220"> |
+#### Desktop
+
+<p align="center">
+  <img src=".github/assets/desktop_light_content.png" alt="Desktop - light - content" width="420">
+  <img src=".github/assets/desktop_light_no_content.png" alt="Desktop - light - no content" width="420">
+</p>
+
+#### Mobile
+
+<p align="center">
+  <img src=".github/assets/mobile_light_content.png" alt="Mobile - light - content" width="220">
+  <img src=".github/assets/mobile_light_no_content.png" alt="Mobile - light - no content" width="220">
+</p>
 
 ## Key Features
 
