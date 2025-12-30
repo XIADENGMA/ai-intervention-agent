@@ -19,6 +19,8 @@ This VSCode extension embeds the AI Intervention Agent interaction panel into VS
 
 ## Installation
 
+> Open VSX page: `https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
+
 ### Option 1: Install a VSIX
 
 1. Build or download a `.vsix`

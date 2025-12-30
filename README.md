@@ -100,6 +100,8 @@ python -c "import importlib.metadata as m; print(m.version('ai-intervention-agen
 
 无需安装，直接配置 MCP 以使用最新版本（自动从 PyPI 获取）
 
+> 配置示例见下方：[🔧 MCP 配置](#-mcp-配置)
+
 ### 🛠️ 方式三：开发模式（本地使用）
 
 适合开发者和本地使用：
@@ -129,6 +131,9 @@ uv run python scripts/minify_assets.py --check
 本仓库已采用 monorepo 结构，VSCode 插件源码位于 `packages/vscode/`。
 
 - **说明**：PyPI 包 `ai-intervention-agent` 不包含 VSCode 插件源码/产物；VSCode 插件仅作为同仓库的配套能力。
+
+- **安装（Open VSX）**：`https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
+- **下载 VSIX（GitHub Release）**：`https://github.com/XIADENGMA/ai-intervention-agent/releases/latest`
 
 ### 本地开发
 

@@ -99,6 +99,8 @@ python -c "import importlib.metadata as m; print(m.version('ai-intervention-agen
 
 Configure your AI tool to launch the MCP server via `uvx`.
 
+> See examples below: [MCP Configuration Examples](#mcp-configuration-examples)
+
 ### Option 3: Development mode (local repo)
 
 ```bash
@@ -124,6 +126,9 @@ uv run python scripts/minify_assets.py --check
 This repository is organized as a monorepo. The VSCode extension lives in `packages/vscode/`.
 
 **Note**: The PyPI package `ai-intervention-agent` does not ship the VSCode extension source/artifacts. The extension is provided as a companion project in the same repository.
+
+- **Install (Open VSX)**: `https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
+- **Download VSIX (GitHub Release)**: `https://github.com/XIADENGMA/ai-intervention-agent/releases/latest`
 
 ### Local development
 

@@ -19,6 +19,8 @@
 
 ## 安装
 
+> Open VSX 扩展页：`https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
+
 ### 方式一：安装 VSIX（推荐离线/内网环境）
 
 1. 生成或下载 `.vsix`
