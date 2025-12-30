@@ -2,7 +2,7 @@
   "name": "ai-intervention-agent",
   "displayName": "AI Intervention Agent",
   "description": "VSCode extension for AI Intervention Agent with multi-tab support and countdown display",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.74.0"
