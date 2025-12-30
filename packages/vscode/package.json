@@ -69,7 +69,7 @@
     "lint": "eslint .",
     "package": "node ../../scripts/package_vscode_vsix.mjs",
     "pretest": "npm run lint",
-    "test": "vscode-test"
+    "test": "vscode-test --config .vscode-test.mjs"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",

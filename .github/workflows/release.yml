@@ -168,4 +168,8 @@ jobs:
       - name: 发布到 Open VSX（从 VSIX 发布）
         env:
           OVSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
-        run: npx --yes ovsx publish -p "$OVSX_TOKEN" vsix/*.vsix
+        run: |
+          # 最佳实践：namespace（publisher）在 open-vsx.org 手动创建一次；
+          # CI 仅负责校验权限并发布 VSIX。
+          npx --yes ovsx verify-pat xiadengma -p "$OVSX_TOKEN"
+          npx --yes ovsx publish -p "$OVSX_TOKEN" vsix/*.vsix

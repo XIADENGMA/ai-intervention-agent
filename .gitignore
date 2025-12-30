@@ -220,7 +220,6 @@ pnpm-debug.log*
 packages/**/out/
 packages/**/dist/
 packages/**/.vscode-test/
-packages/**/.vscode-test.*
 *.vsix
 
 # Project specific (AI tools / editors)
