@@ -1,0 +1,82 @@
+{
+  "name": "ai-intervention-agent",
+  "displayName": "AI Intervention Agent",
+  "description": "VSCode extension for AI Intervention Agent with multi-tab support and countdown display",
+  "version": "1.4.6",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "publisher": "xiadengma",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/XIADENGMA/ai-intervention-agent.git"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:aiInterventionAgent.feedbackView",
+    "onCommand:ai-intervention-agent.openPanel",
+    "onCommand:ai-intervention-agent.openSettings"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiInterventionAgent",
+          "title": "Intervention",
+          "icon": "$(sparkle-filled)"
+        }
+      ]
+    },
+    "views": {
+      "aiInterventionAgent": [
+        {
+          "type": "webview",
+          "id": "aiInterventionAgent.feedbackView",
+          "name": ""
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "ai-intervention-agent.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "ai-intervention-agent.openPanel",
+        "title": "AI Intervention Agent: 打开面板"
+      },
+      {
+        "command": "ai-intervention-agent.openSettings",
+        "title": "AI Intervention Agent: 打开配置（serverUrl）"
+      }
+    ],
+    "configuration": {
+      "title": "AI Intervention Agent",
+      "properties": {
+        "ai-intervention-agent.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8081",
+          "description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8081）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "package": "node ../../scripts/package_vscode_vsix.mjs",
+    "pretest": "npm run lint",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "eslint": "^9.34.0",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}

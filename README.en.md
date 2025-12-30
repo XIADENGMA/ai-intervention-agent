@@ -119,6 +119,34 @@ uv run python scripts/minify_assets.py --check
 
 > This repo includes GitHub Actions workflows for tests and release (see `.github/workflows/`).
 
+## VSCode Extension (Monorepo)
+
+This repository is organized as a monorepo. The VSCode extension lives in `packages/vscode/`.
+
+**Note**: The PyPI package `ai-intervention-agent` does not ship the VSCode extension source/artifacts. The extension is provided as a companion project in the same repository.
+
+### Local development
+
+```bash
+# Install Node dependencies at repo root (npm workspaces)
+npm install
+
+# VSCode extension: lint / test
+npm run vscode:lint
+npm run vscode:test
+```
+
+### Build a VSIX (.vsix)
+
+```bash
+# Generates a .vsix file under packages/vscode/
+npm run vscode:package
+```
+
+### Settings (VSCode)
+
+- `ai-intervention-agent.serverUrl`: AI Intervention Agent server URL (default: `http://localhost:8081`)
+
 ## MCP Configuration Examples
 
 ### Use PyPI package via uvx (recommended)

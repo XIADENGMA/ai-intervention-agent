@@ -1,0 +1,35 @@
+name: VSCode Extension (Lint/Test)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  vscode:
+    name: VSCode extension checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装依赖（npm workspaces）
+        run: npm ci
+
+      - name: VSCode 插件：Lint
+        run: npm run vscode:lint
+
+      - name: 安装 xvfb（用于 VSCode 测试）
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: VSCode 插件：Test
+        run: xvfb-run -a npm run vscode:test
+

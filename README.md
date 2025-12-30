@@ -124,6 +124,34 @@ uv run python scripts/minify_assets.py --check
 
 > ✅ 本仓库已内置 GitHub Actions 测试流水线：Push/PR 会自动运行 `ruff/ty/pytest/minify_check` 并生成 `coverage.xml`（见 `.github/workflows/test.yml`）。
 
+## 🧩 VSCode 插件（Monorepo）
+
+本仓库已采用 monorepo 结构，VSCode 插件源码位于 `packages/vscode/`。
+
+- **说明**：PyPI 包 `ai-intervention-agent` 不包含 VSCode 插件源码/产物；VSCode 插件仅作为同仓库的配套能力。
+
+### 本地开发
+
+```bash
+# 在仓库根目录安装 Node 依赖（npm workspaces）
+npm install
+
+# VSCode 插件：Lint / Test
+npm run vscode:lint
+npm run vscode:test
+```
+
+### 生成 VSIX（.vsix）
+
+```bash
+# 生成 .vsix（输出文件在 packages/vscode/ 目录下）
+npm run vscode:package
+```
+
+### 配置（VSCode 设置）
+
+- `ai-intervention-agent.serverUrl`：AI Intervention Agent 服务端地址（默认 `http://localhost:8081`）
+
 ## ⚙️ 配置
 
 ### 📝 提示词配置

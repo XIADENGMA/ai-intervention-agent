@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-intervention-agent"
-version = "1.4.5"
+version = "1.4.6"
 description = "AI Intervention Agent: MCP server enabling real-time user intervention in AI-assisted development workflows."
 readme = "README.md"
 license = "MIT"
@@ -74,6 +74,10 @@ ai-intervention-agent = "server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
+exclude = [
+    "/packages/vscode",
+    "/packages/vscode/**",
+]
 
 [tool.hatch.build.targets.sdist]
 include = [

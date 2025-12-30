@@ -1,0 +1,114 @@
+<svg width="200" height="200" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="masterBg" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" style="stop-color:#E8ECF5;" /> 
+      <stop offset="100%" style="stop-color:#DEE4F1;" />
+    </linearGradient>
+
+    <radialGradient id="aiFluidCore" cx="50%" cy="50%" r="70%" fx="52%" fy="48%">
+      <stop offset="0%" style="stop-color:#A855F7; stop-opacity:1"/>
+      <stop offset="30%" style="stop-color:#8B5CF6; stop-opacity:0.95"/>
+      <stop offset="60%" style="stop-color:#6366F1; stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#312E81; stop-opacity:0.85"/>
+    </radialGradient>
+
+    <filter id="aiCoreGlowEffect">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+      <feFlood flood-color="#A5B4FC" flood-opacity="0.6" result="glowColor"/>
+      <feComposite in="glowColor" in2="blur" operator="in" result="softGlow_colored"/>
+      <feMerge>
+        <feMergeNode in="softGlow_colored"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <linearGradient id="interventionControl" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FDE047;"/>
+      <stop offset="30%" style="stop-color:#FACC15;"/>
+      <stop offset="70%" style="stop-color:#EAB308;"/>
+      <stop offset="100%" style="stop-color:#CA8A04;"/>
+    </linearGradient>
+    
+    <filter id="interventionShadow" x="-50%" y="-50%" width="200%" height="200%">
+        <feDropShadow dx="0.5" dy="1.5" stdDeviation="1" flood-color="#000000" flood-opacity="0.18" /> 
+    </filter>
+
+    <filter id="masterIconShadow" x="-20%" y="-15%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="3.5" result="offsetblur"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.1"/></feComponentTransfer> 
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <radialGradient id="dataParticleGradient" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" style="stop-color:#C4B5FD; stop-opacity:0.8;" />
+        <stop offset="100%" style="stop-color:#8B5CF6; stop-opacity:0;" />
+    </radialGradient>
+  </defs>
+
+  <g filter="url(#masterIconShadow)">
+    <rect x="10" y="10" width="100" height="100" rx="22.5" ry="22.5" fill="url(#masterBg)"/>
+    <rect x="10.5" y="10.5" width="99" height="99" rx="22" ry="22" fill="none" stroke="rgba(0,0,0,0.04)" stroke-width="0.75"/>
+  </g>
+
+  <g transform="translate(60,60) scale(0.95)">
+    <g filter="url(#aiCoreGlowEffect)">
+      <path id="aiShape"
+            d="M 0 -35 
+               Q 30 -35, 30 0 
+               Q 30 35, 0 35
+               Q -30 35, -30 0
+               Q -30 -35, 0 -35 Z
+               M 0 -25
+               Q 20 -25, 20 0
+               Q 20 25, 0 25
+               Q -20 25, -20 0
+               Q -20 -25, 0 -25 Z" 
+            fill-rule="evenodd" 
+            fill="url(#aiFluidCore)"
+            transform="rotate(15)"
+            />
+        <circle cx="0" cy="0" r="38" fill="none" stroke="#A78BFA" stroke-width="1.2" opacity="0.4" stroke-dasharray="2 4">
+            <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="15s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="0" cy="0" r="42" fill="none" stroke="#C4B5FD" stroke-width="1" opacity="0.3" stroke-dasharray="5 5">
+            <animateTransform attributeName="transform" type="rotate" from="360 0 0" to="0 0 0" dur="20s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="0" cy="0" r="34" fill="none" stroke="#EDE9FE" stroke-width="0.7" opacity="0.5" stroke-dasharray="1 3">
+             <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="-360 0 0" dur="10s" repeatCount="indefinite"/>
+        </circle>
+    </g>
+
+    <g id="dataParticles" opacity="0.7">
+        <circle cx="-15" cy="-30" r="1.2" fill="url(#dataParticleGradient)" />
+        <circle cx="20" cy="-25" r="1.5" fill="url(#dataParticleGradient)" />
+        <circle cx="28" cy="10" r="1" fill="url(#dataParticleGradient)" />
+        <circle cx="5" cy="32" r="1.8" fill="url(#dataParticleGradient)" />
+        <circle cx="-25" cy="20" r="1.3" fill="url(#dataParticleGradient)" />
+        <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="60s" repeatCount="indefinite"/>
+    </g>
+    
+    <g filter="url(#interventionShadow)" transform="translate(0, -1)">
+      <path d="M -15 -22 
+               L -7 -22 
+               C -5.5 -22, -4.5 -21, -4.5 -19.5 
+               L -4.5 19.5
+               C -4.5 21, -5.5 22, -7 22
+               L -15 22
+               C -16.5 22, -17.5 21, -17.5 19.5
+               L -17.5 -19.5
+               C -17.5 -21, -16.5 -22, -15 -22 Z"
+            fill="url(#interventionControl)" stroke="#A16207" stroke-width="0.6"/>
+      <path d="M 4.5 -22 
+               L 12.5 -22 
+               C 14 -22, 15 -21, 15 -19.5 
+               L 15 19.5
+               C 15 21, 14 22, 12.5 22
+               L 4.5 22
+               C 3 22, 2 21, 2 19.5
+               L 2 -19.5
+               C 2 -21, 3 -22, 4.5 -22 Z"
+            fill="url(#interventionControl)" stroke="#A16207" stroke-width="0.6"/>
+    </g>
+  </g>
+</svg>

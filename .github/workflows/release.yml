@@ -57,11 +57,31 @@ jobs:
       - name: 校验产物（twine check）
         run: uv tool run twine check dist/*
 
+      - name: 设置 Node.js（用于构建 VSCode 插件 VSIX）
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装 Node 依赖（npm workspaces）
+        run: npm ci
+
+      - name: 构建 VSCode 插件 VSIX
+        run: npm run vscode:package
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: 上传 VSCode 插件产物（VSIX）
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: packages/vscode/*.vsix
           if-no-files-found: error
           retention-days: 7
 
@@ -109,10 +129,43 @@ jobs:
           name: dist
           path: dist/
 
+      - name: 下载 VSCode 插件产物（VSIX）
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix/
+
       - name: 创建 GitHub Release（附带产物）
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/*
+            vsix/*.vsix
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  open-vsx:
+    name: Publish VSCode Extension to Open VSX
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: 下载 VSCode 插件产物（VSIX）
+        uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix/
+
+      - name: 设置 Node.js（用于发布 Open VSX）
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 发布到 Open VSX（从 VSIX 发布）
+        env:
+          OVSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+        run: npx --yes ovsx publish -p "$OVSX_TOKEN" vsix/*.vsix
