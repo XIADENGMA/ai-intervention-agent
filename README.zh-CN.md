@@ -69,8 +69,7 @@ uv add ai-intervention-agent
 }
 ```
 
-> [!NOTE]
-> `interactive_feedback` 是一个**长时间等待**的工具。有些客户端存在硬超时限制，因此 Web UI 提供倒计时 + 自动提交（自动重调）以尽量保持会话不断开。
+> [!NOTE] > `interactive_feedback` 是一个**长时间等待**的工具。有些客户端存在硬超时限制，因此 Web UI 提供倒计时 + 自动提交（自动重调）以尽量保持会话不断开。
 
 <details>
 <summary>提示词（可复制）</summary>
@@ -143,26 +142,26 @@ ai-intervention-agent 工具使用细节：
 
 ## VS Code 插件（可选）
 
-| 项目 | 说明 |
-| --- | --- |
-| 用途 | 把交互面板放进 VS Code 侧边栏，避免频繁切换浏览器。 |
-| 安装（Open VSX） | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent) |
-| 下载 VSIX（GitHub Release） | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest) |
-| 设置 | `ai-intervention-agent.serverUrl`（填写你的 Web UI 地址，例如 `http://localhost:8080`；端口可在 [`config.jsonc.default`](config.jsonc.default) 的 `web_ui.port` 中修改） |
+| 项目                        | 说明                                                                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 用途                        | 把交互面板放进 VS Code 侧边栏，避免频繁切换浏览器。                                                                                                                      |
+| 安装（Open VSX）            | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                               |
+| 下载 VSIX（GitHub Release） | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                    |
+| 设置                        | `ai-intervention-agent.serverUrl`（填写你的 Web UI 地址，例如 `http://localhost:8080`；端口可在 [`config.jsonc.default`](config.jsonc.default) 的 `web_ui.port` 中修改） |
 
 ## 配置说明
 
-| 项目 | 说明 |
-| --- | --- |
-| 配置文档（English） | [docs/configuration.md](docs/configuration.md) |
-| 配置文档（简体中文） | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md) |
-| 默认模板 | [`config.jsonc.default`](config.jsonc.default)（首次运行会自动复制为 `config.jsonc`） |
+| 项目                 | 说明                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| 配置文档（English）  | [docs/configuration.md](docs/configuration.md)                                        |
+| 配置文档（简体中文） | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)                            |
+| 默认模板             | [`config.jsonc.default`](config.jsonc.default)（首次运行会自动复制为 `config.jsonc`） |
 
-| 操作系统 | 配置目录位置 |
-| --- | --- |
-| Linux | `~/.config/ai-intervention-agent/` |
-| macOS | `~/Library/Application Support/ai-intervention-agent/` |
-| Windows | `%APPDATA%/ai-intervention-agent/` |
+| 操作系统 | 配置目录位置                                           |
+| -------- | ------------------------------------------------------ |
+| Linux    | `~/.config/ai-intervention-agent/`                     |
+| macOS    | `~/Library/Application Support/ai-intervention-agent/` |
+| Windows  | `%APPDATA%/ai-intervention-agent/`                     |
 
 ## 架构
 

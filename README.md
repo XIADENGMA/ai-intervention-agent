@@ -69,8 +69,7 @@ uv add ai-intervention-agent
 }
 ```
 
-> [!NOTE]
-> `interactive_feedback` is a **long-running tool**. Some clients have a hard request timeout, so the Web UI provides a countdown + auto re-submit option to keep sessions alive.
+> [!NOTE] > `interactive_feedback` is a **long-running tool**. Some clients have a hard request timeout, so the Web UI provides a countdown + auto re-submit option to keep sessions alive.
 
 <details>
 <summary>Prompt snippet (copy/paste)</summary>
@@ -141,26 +140,26 @@ ai-intervention-agent usage details:
 
 ## VS Code extension (optional)
 
-| Item | Value |
-| --- | --- |
-| Purpose | Embed the interaction panel into VS Code’s sidebar to avoid switching to a browser. |
-| Install (Open VSX) | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent) |
-| Download VSIX (GitHub Release) | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest) |
-| Setting | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.jsonc.default`](config.jsonc.default)) |
+| Item                           | Value                                                                                                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Purpose                        | Embed the interaction panel into VS Code’s sidebar to avoid switching to a browser.                                                                                            |
+| Install (Open VSX)             | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                                     |
+| Download VSIX (GitHub Release) | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                          |
+| Setting                        | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.jsonc.default`](config.jsonc.default)) |
 
 ## Configuration
 
-| Item | Value |
-| --- | --- |
-| Docs (English) | [docs/configuration.md](docs/configuration.md) |
-| Docs (简体中文) | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md) |
+| Item             | Value                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| Docs (English)   | [docs/configuration.md](docs/configuration.md)                                                    |
+| Docs (简体中文)  | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)                                        |
 | Default template | [`config.jsonc.default`](config.jsonc.default) (on first run it will be copied to `config.jsonc`) |
 
-| OS | User config directory |
-| --- | --- |
-| Linux | `~/.config/ai-intervention-agent/` |
-| macOS | `~/Library/Application Support/ai-intervention-agent/` |
-| Windows | `%APPDATA%/ai-intervention-agent/` |
+| OS      | User config directory                                  |
+| ------- | ------------------------------------------------------ |
+| Linux   | `~/.config/ai-intervention-agent/`                     |
+| macOS   | `~/Library/Application Support/ai-intervention-agent/` |
+| Windows | `%APPDATA%/ai-intervention-agent/`                     |
 
 ## Architecture
 
@@ -224,4 +223,3 @@ flowchart TD
 ## License
 
 MIT License
-
