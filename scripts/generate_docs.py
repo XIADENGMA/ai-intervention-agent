@@ -124,7 +124,9 @@ def parse_module(filepath: Path) -> Dict[str, Any]:
     return result
 
 
-def generate_markdown(module_info: Dict[str, Any]) -> str:
+def generate_markdown(
+    module_info: Dict[str, Any], *, lang: str = "zh-CN", include_docstrings: bool = True
+) -> str:
     """生成 Markdown 格式文档"""
     lines = []
 
@@ -132,36 +134,44 @@ def generate_markdown(module_info: Dict[str, Any]) -> str:
     lines.append(f"# {module_info['name']}")
     lines.append("")
 
+    if lang == "en":
+        # English docs are signature-focused. Link to the Chinese version for full docstrings.
+        lines.append(
+            f"> For the Chinese version with full docstrings, see: "
+            f"[`docs/api.zh-CN/{module_info['name']}.md`](../api.zh-CN/{module_info['name']}.md)"
+        )
+        lines.append("")
+
     # 模块文档
-    if module_info["docstring"]:
+    if include_docstrings and module_info["docstring"]:
         lines.append(module_info["docstring"])
         lines.append("")
 
     # 函数
     if module_info["functions"]:
-        lines.append("## 函数")
+        lines.append("## Functions" if lang == "en" else "## 函数")
         lines.append("")
         for func in module_info["functions"]:
             prefix = "async " if func["is_async"] else ""
             lines.append(f"### `{prefix}{func['name']}{func['signature']}`")
             lines.append("")
-            if func["docstring"]:
+            if include_docstrings and func["docstring"]:
                 lines.append(func["docstring"])
                 lines.append("")
 
     # 类
     if module_info["classes"]:
-        lines.append("## 类")
+        lines.append("## Classes" if lang == "en" else "## 类")
         lines.append("")
         for cls in module_info["classes"]:
             lines.append(f"### `class {cls['name']}`")
             lines.append("")
-            if cls["docstring"]:
+            if include_docstrings and cls["docstring"]:
                 lines.append(cls["docstring"])
                 lines.append("")
 
             if cls["methods"]:
-                lines.append("#### 方法")
+                lines.append("#### Methods" if lang == "en" else "#### 方法")
                 lines.append("")
                 for method in cls["methods"]:
                     if method["name"].startswith("_") and method["name"] != "__init__":
@@ -171,46 +181,68 @@ def generate_markdown(module_info: Dict[str, Any]) -> str:
                         f"##### `{prefix}{method['name']}{method['signature']}`"
                     )
                     lines.append("")
-                    if method["docstring"]:
-                        # 缩进 docstring
+                    if include_docstrings and method["docstring"]:
                         lines.append(method["docstring"])
                         lines.append("")
 
     return "\n".join(lines)
 
 
-def generate_index(modules: List[str], output_dir: Path) -> str:
+def generate_index(modules: List[str], *, lang: str, output_dir_display: str) -> str:
     """生成文档索引"""
-    lines = [
-        "# AI Intervention Agent API 文档",
-        "",
-        "## 模块列表",
-        "",
-    ]
+    if lang == "en":
+        lines = [
+            "# AI Intervention Agent API Docs",
+            "",
+            "English API reference (signatures-focused).",
+            "",
+            "- Chinese version: [`docs/api.zh-CN/index.md`](../api.zh-CN/index.md)",
+            "",
+            "## Modules",
+            "",
+        ]
+    else:
+        lines = [
+            "# AI Intervention Agent API 文档",
+            "",
+            "- English version: [`docs/api/index.md`](../api/index.md)",
+            "",
+            "## 模块列表",
+            "",
+        ]
 
     for module in modules:
         module_name = Path(module).stem
         lines.append(f"- [{module_name}]({module_name}.md)")
 
-    lines.extend(
-        [
-            "",
-            "## 快速导航",
-            "",
-            "### 核心模块",
-            "- **config_manager**: 配置管理",
-            "- **notification_manager**: 通知管理",
-            "- **task_queue**: 任务队列",
-            "",
-            "### 工具模块",
-            "- **config_utils**: 配置工具函数",
-            "- **file_validator**: 文件验证",
-            "- **enhanced_logging**: 日志增强",
-            "",
-            "---",
-            f"*文档自动生成于 {output_dir}*",
-        ]
-    )
+    if lang == "en":
+        lines.extend(
+            [
+                "",
+                "---",
+                f"*Auto-generated under `{output_dir_display}`*",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "## 快速导航",
+                "",
+                "### 核心模块",
+                "- **config_manager**: 配置管理",
+                "- **notification_manager**: 通知管理",
+                "- **task_queue**: 任务队列",
+                "",
+                "### 工具模块",
+                "- **config_utils**: 配置工具函数",
+                "- **file_validator**: 文件验证",
+                "- **enhanced_logging**: 日志增强",
+                "",
+                "---",
+                f"*文档自动生成于 `{output_dir_display}`*",
+            ]
+        )
 
     return "\n".join(lines)
 
@@ -218,15 +250,26 @@ def generate_index(modules: List[str], output_dir: Path) -> str:
 def main():
     parser = argparse.ArgumentParser(description="代码文档生成脚本")
     parser.add_argument(
+        "--lang",
+        choices=["en", "zh-CN"],
+        default="zh-CN",
+        help="输出语言（默认 zh-CN）",
+    )
+    parser.add_argument(
         "--format",
         choices=["markdown", "html", "text"],
         default="markdown",
         help="输出格式（默认 markdown）",
     )
     parser.add_argument(
-        "--output", default="docs/api/", help="输出目录（默认 docs/api/）"
+        "--output",
+        default=None,
+        help="输出目录（默认：en=docs/api/，zh-CN=docs/api.zh-CN/）",
     )
     args = parser.parse_args()
+
+    if not args.output:
+        args.output = "docs/api/" if args.lang == "en" else "docs/api.zh-CN/"
 
     output_dir = PROJECT_ROOT / args.output
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -252,7 +295,11 @@ def main():
             module_info = parse_module(filepath)
 
             if args.format == "markdown":
-                content = generate_markdown(module_info)
+                content = generate_markdown(
+                    module_info,
+                    lang=args.lang,
+                    include_docstrings=(args.lang != "en"),
+                )
                 output_file = output_dir / f"{module_info['name']}.md"
                 output_file.write_text(content, encoding="utf-8")
                 print(f"   ✅ 生成: {output_file.name}")
@@ -263,7 +310,9 @@ def main():
 
     # 生成索引
     if generated_modules:
-        index_content = generate_index(generated_modules, output_dir)
+        index_content = generate_index(
+            generated_modules, lang=args.lang, output_dir_display=args.output
+        )
         index_file = output_dir / "index.md"
         index_file.write_text(index_content, encoding="utf-8")
         print(f"\n📑 索引: {index_file}")

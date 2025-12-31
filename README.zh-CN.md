@@ -212,7 +212,8 @@ flowchart TD
 
 ## 文档
 
-- **API 文档索引**：[`docs/api/index.md`](docs/api/index.md)
+- **API 文档索引（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
+- **API Docs (English)**：[`docs/api/index.md`](docs/api/index.md)
 - **DeepWiki**：[deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
 
 ## 同类产品

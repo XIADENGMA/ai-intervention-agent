@@ -211,6 +211,7 @@ flowchart TD
 ## Documentation
 
 - **API docs index**: [`docs/api/index.md`](docs/api/index.md)
+- **API docs (简体中文)**: [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **DeepWiki**: [deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
 
 ## Related projects
