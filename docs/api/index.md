@@ -23,4 +23,4 @@
 - **enhanced_logging**: 日志增强
 
 ---
-*文档自动生成于 /home/xiadengma/Code/Python/ai-intervention-agent/docs/api*
+*文档自动生成于 `docs/api/`*
