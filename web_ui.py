@@ -227,6 +227,71 @@ def validate_auto_resubmit_timeout(value: int) -> int:
 
 
 # ============================================================================
+# feedback 配置热更新：同步已存在任务的倒计时
+# ============================================================================
+
+_FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = False
+_LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
+_CURRENT_WEB_UI_INSTANCE: "WebFeedbackUI | None" = None
+
+
+def _get_default_auto_resubmit_timeout_from_config() -> int:
+    """从配置文件读取默认 auto_resubmit_timeout（保持向后兼容）"""
+    config_mgr = get_config()
+    feedback_config = config_mgr.get_section("feedback")
+    raw_timeout = feedback_config.get(
+        "frontend_countdown",  # 新名称
+        feedback_config.get("auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT),  # 旧名称
+    )
+    try:
+        return validate_auto_resubmit_timeout(int(raw_timeout))
+    except Exception:
+        return AUTO_RESUBMIT_TIMEOUT_DEFAULT
+
+
+def _sync_existing_tasks_timeout_from_config() -> None:
+    """配置变更回调：将新的默认倒计时同步到所有未完成任务"""
+    global _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT
+    try:
+        new_timeout = _get_default_auto_resubmit_timeout_from_config()
+        if _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT == new_timeout:
+            return
+        _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT = new_timeout
+
+        task_queue = get_task_queue()
+        updated = task_queue.update_auto_resubmit_timeout_for_all(new_timeout)
+        if updated > 0:
+            logger.info(
+                f"配置变更：已将 {updated} 个未完成任务的 auto_resubmit_timeout 同步为 {new_timeout} 秒"
+            )
+
+        # 单任务模式兜底：如果当前实例没有显式指定 timeout，则跟随配置更新
+        global _CURRENT_WEB_UI_INSTANCE
+        if _CURRENT_WEB_UI_INSTANCE is not None and not getattr(
+            _CURRENT_WEB_UI_INSTANCE, "_single_task_timeout_explicit", True
+        ):
+            _CURRENT_WEB_UI_INSTANCE.current_auto_resubmit_timeout = new_timeout
+    except Exception as e:
+        logger.warning(f"配置变更回调执行失败（同步任务倒计时）：{e}")
+
+
+def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
+    """确保仅注册一次配置热更新回调（避免重复注册）"""
+    global _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED
+    if _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED:
+        return
+    try:
+        config_mgr = get_config()
+        config_mgr.register_config_change_callback(_sync_existing_tasks_timeout_from_config)
+        _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = True
+        # 启动时先同步一次，保证“已经在队列里的任务”也与当前配置一致
+        _sync_existing_tasks_timeout_from_config()
+        logger.debug("已注册 feedback.auto_resubmit_timeout 热更新回调（同步已存在任务倒计时）")
+    except Exception as e:
+        logger.warning(f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}")
+
+
+# ============================================================================
 # 网络安全配置验证函数
 # ============================================================================
 
@@ -568,10 +633,19 @@ class WebFeedbackUI:
         self.current_options = predefined_options or []
         self.current_task_id = task_id
         self.current_auto_resubmit_timeout = auto_resubmit_timeout
+        # 单任务模式下：current_auto_resubmit_timeout 是否为“显式指定”（/api/update 传入）
+        # - False：认为来自配置默认值，应随配置热更新
+        # - True：认为调用方显式指定，不随全局配置变化
+        self._single_task_timeout_explicit = False
         self.has_content = bool(prompt)
         self.initial_empty = not bool(prompt)
         self.app = Flask(__name__)
         CORS(self.app)
+        # 【热更新】注册配置变更回调：让运行中的任务倒计时也能跟随配置更新
+        _ensure_feedback_timeout_hot_reload_callback_registered()
+        # 记录当前实例（用于单任务模式热更新兜底）
+        global _CURRENT_WEB_UI_INSTANCE
+        _CURRENT_WEB_UI_INSTANCE = self
 
         # ==================================================================
         # Gzip 压缩配置
@@ -1024,6 +1098,15 @@ class WebFeedbackUI:
 
                     # 回退到旧的单任务模式
                     # 单任务模式没有创建时间，remaining_time 等于 auto_resubmit_timeout
+                    # 【热更新增强】若未显式指定 timeout，则使用配置文件的默认值（运行中修改可立即生效）
+                    effective_timeout = self.current_auto_resubmit_timeout
+                    if not getattr(self, "_single_task_timeout_explicit", True):
+                        try:
+                            effective_timeout = _get_default_auto_resubmit_timeout_from_config()
+                            # 保持实例状态同步，便于其他逻辑复用
+                            self.current_auto_resubmit_timeout = effective_timeout
+                        except Exception:
+                            effective_timeout = self.current_auto_resubmit_timeout
                     return jsonify(
                         {
                             "prompt": self.current_prompt,
@@ -1032,8 +1115,8 @@ class WebFeedbackUI:
                             else "",
                             "predefined_options": self.current_options,
                             "task_id": self.current_task_id,
-                            "auto_resubmit_timeout": self.current_auto_resubmit_timeout,
-                            "remaining_time": self.current_auto_resubmit_timeout,  # 单任务模式无创建时间
+                            "auto_resubmit_timeout": effective_timeout,
+                            "remaining_time": effective_timeout,  # 单任务模式无创建时间
                             "persistent": True,
                             "has_content": self.has_content,
                             "initial_empty": self.initial_empty,
@@ -1865,6 +1948,8 @@ class WebFeedbackUI:
             self.current_options = new_options if new_options is not None else []
             self.current_task_id = new_task_id
             self.current_auto_resubmit_timeout = new_auto_resubmit_timeout
+            # 记录是否显式指定（用于配置热更新：显式指定则不随全局配置变动）
+            self._single_task_timeout_explicit = "auto_resubmit_timeout" in data
             self.has_content = bool(new_prompt)
             # 重置反馈结果
             self.feedback_result = None
@@ -2238,18 +2323,30 @@ class WebFeedbackUI:
                 config_mgr = get_config()
                 feedback_config = config_mgr.get_section("feedback")
 
+                # 与 server.py 的验证策略保持一致：空字符串回退默认值、过长截断
+                from config_utils import truncate_string
+
                 return jsonify(
                     {
                         "status": "success",
                         "config": {
-                            "resubmit_prompt": feedback_config.get(
-                                "resubmit_prompt",
-                                "请立即调用 interactive_feedback 工具",
+                            "resubmit_prompt": truncate_string(
+                                cast(str | None, feedback_config.get("resubmit_prompt")),
+                                500,
+                                "feedback.resubmit_prompt",
+                                default="请立即调用 interactive_feedback 工具",
                             ),
-                            "prompt_suffix": feedback_config.get(
-                                "prompt_suffix",
-                                "\n请积极调用 interactive_feedback 工具",
+                            "prompt_suffix": truncate_string(
+                                cast(str | None, feedback_config.get("prompt_suffix")),
+                                500,
+                                "feedback.prompt_suffix",
+                                default="\n请积极调用 interactive_feedback 工具",
                             ),
+                        },
+                        # 额外返回元信息：用于前端提示“当前实际使用的配置文件路径”
+                        "meta": {
+                            "config_file": str(config_mgr.config_file.absolute()),
+                            "override_env": "AI_INTERVENTION_AGENT_CONFIG_FILE",
                         },
                     }
                 )

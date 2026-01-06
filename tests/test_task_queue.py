@@ -148,6 +148,46 @@ class TestTaskQueueBasic(unittest.TestCase):
         self.assertEqual(count, 2)
         self.assertEqual(len(self.queue.get_all_tasks()), 0)
 
+    def test_update_auto_resubmit_timeout_for_all(self):
+        """配置热更新：更新所有未完成任务的倒计时"""
+        # 添加两个任务（一个 active，一个 pending）
+        self.queue.add_task("task-1", "提示1", auto_resubmit_timeout=240)
+        self.queue.add_task("task-2", "提示2", auto_resubmit_timeout=240)
+
+        updated = self.queue.update_auto_resubmit_timeout_for_all(120)
+        self.assertEqual(updated, 2)
+
+        t1 = self.queue.get_task("task-1")
+        t2 = self.queue.get_task("task-2")
+        self.assertIsNotNone(t1)
+        self.assertIsNotNone(t2)
+        assert t1 is not None
+        assert t2 is not None
+        self.assertEqual(t1.auto_resubmit_timeout, 120)
+        self.assertEqual(t2.auto_resubmit_timeout, 120)
+
+    def test_update_auto_resubmit_timeout_skip_completed(self):
+        """配置热更新：不更新已完成任务"""
+        self.queue.add_task("task-1", "提示1", auto_resubmit_timeout=240)
+        self.queue.add_task("task-2", "提示2", auto_resubmit_timeout=240)
+
+        # 完成 task-1（task-2 会自动激活）
+        self.queue.complete_task("task-1", {"feedback": "done"})
+
+        updated = self.queue.update_auto_resubmit_timeout_for_all(100)
+        # 只应更新未完成的 task-2
+        self.assertEqual(updated, 1)
+
+        t1 = self.queue.get_task("task-1")
+        t2 = self.queue.get_task("task-2")
+        self.assertIsNotNone(t1)
+        self.assertIsNotNone(t2)
+        assert t1 is not None
+        assert t2 is not None
+        self.assertEqual(t1.status, "completed")
+        self.assertNotEqual(t1.auto_resubmit_timeout, 100)
+        self.assertEqual(t2.auto_resubmit_timeout, 100)
+
 
 class TestTaskQueueActiveTask(unittest.TestCase):
     """测试活动任务管理"""

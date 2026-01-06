@@ -92,6 +92,13 @@ if (typeof window.serverTimeOffset === 'undefined') {
 if (typeof window.taskDeadlines === 'undefined') {
   window.taskDeadlines = {} // 存储每个任务的截止时间戳（服务器时间）
 }
+// feedback 提示语（从服务端配置热更新获取）
+if (typeof window.feedbackPrompts === 'undefined') {
+  window.feedbackPrompts = {
+    resubmit_prompt: '请立即调用 interactive_feedback 工具',
+    prompt_suffix: '\n请积极调用 interactive_feedback 工具'
+  }
+}
 
 // 创建本地引用以便在函数中使用
 var currentTasks = window.currentTasks
@@ -101,6 +108,37 @@ var tasksPollingTimer = window.tasksPollingTimer
 var taskTextareaContents = window.taskTextareaContents
 var taskOptionsStates = window.taskOptionsStates
 var taskImages = window.taskImages
+var feedbackPrompts = window.feedbackPrompts
+
+/**
+ * 从服务端获取最新的反馈提示语配置（支持运行中热更新）
+ * - 使用 /api/get-feedback-prompts
+ * - 成功：更新 window.feedbackPrompts
+ * - 失败：保留本地默认值
+ */
+async function fetchFeedbackPromptsFresh() {
+  try {
+    const resp = await fetch('/api/get-feedback-prompts', { cache: 'no-store' })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    const data = await resp.json()
+    if (data && data.status === 'success' && data.config) {
+      window.feedbackPrompts = data.config
+      feedbackPrompts = window.feedbackPrompts
+
+      // 同步“当前实际使用的配置文件路径”到设置面板（如果存在对应DOM）
+      if (data.meta && data.meta.config_file) {
+        const el = document.getElementById('config-file-path')
+        if (el) {
+          el.value = data.meta.config_file
+        }
+      }
+      return window.feedbackPrompts
+    }
+  } catch (e) {
+    console.warn('获取反馈提示语配置失败，使用本地默认值:', e)
+  }
+  return window.feedbackPrompts
+}
 
 // 倒计时相关全局变量
 if (typeof window.remainingSeconds === 'undefined') {
@@ -207,6 +245,30 @@ async function fetchAndApplyTasks(reason) {
         data.tasks.forEach(task => {
           if (task.deadline) {
             window.taskDeadlines[task.task_id] = task.deadline
+          }
+          // 【热更新】当后端同步更新 auto_resubmit_timeout 时，前端倒计时也要实时跟随
+          // - deadline 已在上面更新，remaining 计算会随之变化
+          // - 这里额外同步 total(timeout) 以保证圆环进度正确
+          if (taskCountdowns && taskCountdowns[task.task_id] && task.status !== 'completed') {
+            if (typeof task.auto_resubmit_timeout === 'number') {
+              // <=0 语义：禁用自动提交（清理倒计时）
+              if (task.auto_resubmit_timeout <= 0) {
+                try {
+                  if (taskCountdowns[task.task_id].timer) {
+                    clearInterval(taskCountdowns[task.task_id].timer)
+                  }
+                } catch (e) {
+                  // ignore
+                }
+                delete taskCountdowns[task.task_id]
+                delete window.taskDeadlines[task.task_id]
+              } else {
+                taskCountdowns[task.task_id].timeout = task.auto_resubmit_timeout
+              }
+            }
+            if (typeof task.remaining_time === 'number' && taskCountdowns[task.task_id]) {
+              taskCountdowns[task.task_id].remaining = task.remaining_time
+            }
           }
         })
       }
@@ -494,6 +556,31 @@ function updateTasksList(tasks) {
   const hasActiveTasks = tasks.length > 0 && tasks.some(t => t.status !== 'completed')
 
   currentTasks = tasks
+
+  // 【热更新兜底】确保所有未完成任务都有倒计时
+  // 场景：配置变更将 auto_resubmit_timeout 从 0（禁用）切回 >0（启用）
+  tasks.forEach(task => {
+    if (task.status === 'completed') return
+    const total = typeof task.auto_resubmit_timeout === 'number' ? task.auto_resubmit_timeout : 250
+    if (total <= 0) {
+      // 禁用：确保不启动倒计时
+      if (taskCountdowns[task.task_id]) {
+        try {
+          if (taskCountdowns[task.task_id].timer) {
+            clearInterval(taskCountdowns[task.task_id].timer)
+          }
+        } catch (e) {
+          // ignore
+        }
+        delete taskCountdowns[task.task_id]
+      }
+      return
+    }
+    if (!taskCountdowns[task.task_id]) {
+      const remaining = task.remaining_time ?? total
+      startTaskCountdown(task.task_id, remaining, total)
+    }
+  })
 
   // 从任务列表中找到active任务，同步activeTaskId
   const activeTask = tasks.find(t => t.status === 'active')
@@ -1585,11 +1672,10 @@ function formatCountdown(seconds) {
  */
 async function autoSubmitTask(taskId) {
   console.log(`任务 ${taskId} 倒计时结束，自动提交`)
-  // 使用配置的提示语（从全局变量 feedbackPrompts 获取，如果不存在则使用默认值）
+  // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
+  const prompts = await fetchFeedbackPromptsFresh()
   const defaultMessage =
-    typeof feedbackPrompts !== 'undefined' && feedbackPrompts.resubmit_prompt
-      ? feedbackPrompts.resubmit_prompt
-      : '请立即调用 interactive_feedback 工具'
+    prompts && prompts.resubmit_prompt ? prompts.resubmit_prompt : '请立即调用 interactive_feedback 工具'
   await submitTaskFeedback(taskId, defaultMessage, [])
 }
 
@@ -1861,6 +1947,9 @@ function showNewTaskNotification(count) {
 async function initMultiTaskSupport() {
   console.log('初始化多任务支持...')
 
+  // 启动时预加载一次提示语（也会填充设置面板里的 config file）
+  await fetchFeedbackPromptsFresh()
+
   // 立即获取一次任务列表（不等待轮询）
   await refreshTasksList()
 
@@ -1971,4 +2060,15 @@ if (typeof window !== 'undefined') {
 
   // 直接导出常用函数到 window，方便 app.js 调用
   window.refreshTasksList = refreshTasksList
+}
+
+// ==================== 轻量初始化（无需进入多任务模式也生效） ====================
+// 目的：
+// - 让「设置 → 配置」里的“当前配置文件路径”能在页面打开后自动填充
+// - 让 feedbackPrompts 在任何模式下都能拿到最新配置（支持热更新）
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('DOMContentLoaded', () => {
+    // 不阻塞首屏：异步拉取即可
+    fetchFeedbackPromptsFresh()
+  })
 }

@@ -3547,6 +3547,44 @@
               </div>
             </div>
 
+            <!-- 配置文件信息（用于明确“当前实际读取的 config.jsonc 是哪一份”） -->
+            <h4 class="settings-main-title shortcuts-section">
+              <svg
+                class="section-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20 7H4" />
+                <path d="M20 12H4" />
+                <path d="M20 17H4" />
+              </svg>
+              配置
+            </h4>
+            <div class="setting-group">
+              <div class="setting-item">
+                <label class="setting-label has-input">
+                  <span class="setting-title">当前配置文件路径</span>
+                  <input
+                    type="text"
+                    id="config-file-path"
+                    class="setting-input"
+                    value="加载中..."
+                    readonly
+                  />
+                </label>
+                <div style="margin-top: 0.5rem; color: rgba(245, 245, 247, 0.7); font-size: 0.85rem">
+                  开发模式默认优先使用工作目录的 <code>./config.jsonc</code>。如需强制指向
+                  <code>~/.config/ai-intervention-agent/config.jsonc</code>，请在启动前设置环境变量：
+                  <code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.jsonc</code>。
+                </div>
+              </div>
+            </div>
+
             <!-- 常用快捷键 -->
             <h4 class="settings-main-title shortcuts-section">
               <svg

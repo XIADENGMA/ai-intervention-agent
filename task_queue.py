@@ -541,6 +541,37 @@ class TaskQueue:
             # 【性能优化】Python 3.7+ dict 保持插入顺序，直接返回 values
             return list(self._tasks.values())
 
+    def update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int:
+        """更新所有未完成任务的 auto_resubmit_timeout
+
+        用于配置热更新场景：当用户在运行中修改 feedback.auto_resubmit_timeout
+        （或 frontend_countdown）时，希望**已经在倒计时中的任务**也能立即生效。
+
+        更新策略：
+        - 仅更新 status != "completed" 的任务（pending/active/expired）
+        - 直接修改任务对象的 auto_resubmit_timeout 字段
+        - 不修改 created_at/created_at_monotonic（倒计时基准保持任务创建时刻）
+
+        注意：
+        - 如果将超时时间调小到小于已过去时间，任务可能会立刻显示 remaining_time=0
+        - auto_resubmit_timeout=0 在语义上表示“禁用自动提交”，上层需要配合前端逻辑避免误触发
+
+        Args:
+            auto_resubmit_timeout: 新的前端倒计时（秒）
+
+        Returns:
+            int: 实际更新的任务数量
+        """
+        updated = 0
+        with self._lock:
+            for task in self._tasks.values():
+                if task.status == "completed":
+                    continue
+                if task.auto_resubmit_timeout != auto_resubmit_timeout:
+                    task.auto_resubmit_timeout = auto_resubmit_timeout
+                    updated += 1
+        return updated
+
     def get_active_task(self) -> Optional[Task]:
         """获取当前活动任务
 

@@ -35,6 +35,11 @@ AI Intervention Agent 使用 **JSONC**（带注释的 JSON）作为配置文件�
 4. 用户配置目录 `config.json`（向后兼容）
 5. 都不存在时，会在用户配置目录创建 `config.jsonc`
 
+> 提示（避免“改了 ~/.config 但不生效”的误解）
+> Web UI 的「设置 → 配置」会显示**当前进程实际读取的配置文件路径**。
+> 如果你希望在开发模式下也使用 `~/.config/ai-intervention-agent/config.jsonc`，请用环境变量强制指定：
+> `AI_INTERVENTION_AGENT_CONFIG_FILE=~/.config/ai-intervention-agent/config.jsonc`
+
 ### 跨平台用户配置目录
 
 - Linux：`~/.config/ai-intervention-agent/`
@@ -136,4 +141,3 @@ AI Intervention Agent 使用 **JSONC**（带注释的 JSON）作为配置文件�
   }
 }
 ```
-
