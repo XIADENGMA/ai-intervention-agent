@@ -70,6 +70,7 @@ API端点：
 import argparse
 import base64
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -234,7 +235,9 @@ def validate_auto_resubmit_timeout(value: int) -> int:
 
 _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = False
 _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
-_CURRENT_WEB_UI_INSTANCE: "WebFeedbackUI | None" = None
+# 运行中的 WebFeedbackUI 实例（用于单任务模式兜底热更新）
+# 注意：测试里会用 SimpleNamespace 之类的轻量对象模拟，因此这里用 Any 放宽类型约束。
+_CURRENT_WEB_UI_INSTANCE: Any | None = None
 
 
 def _get_default_auto_resubmit_timeout_from_config() -> int:
@@ -243,7 +246,9 @@ def _get_default_auto_resubmit_timeout_from_config() -> int:
     feedback_config = config_mgr.get_section("feedback")
     raw_timeout = feedback_config.get(
         "frontend_countdown",  # 新名称
-        feedback_config.get("auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT),  # 旧名称
+        feedback_config.get(
+            "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
+        ),  # 旧名称
     )
     try:
         return validate_auto_resubmit_timeout(int(raw_timeout))
@@ -284,13 +289,19 @@ def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
         return
     try:
         config_mgr = get_config()
-        config_mgr.register_config_change_callback(_sync_existing_tasks_timeout_from_config)
+        config_mgr.register_config_change_callback(
+            _sync_existing_tasks_timeout_from_config
+        )
         _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = True
         # 启动时先同步一次，保证“已经在队列里的任务”也与当前配置一致
         _sync_existing_tasks_timeout_from_config()
-        logger.debug("已注册 feedback.auto_resubmit_timeout 热更新回调（同步已存在任务倒计时）")
+        logger.debug(
+            "已注册 feedback.auto_resubmit_timeout 热更新回调（同步已存在任务倒计时）"
+        )
     except Exception as e:
-        logger.warning(f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}")
+        logger.warning(
+            f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}"
+        )
 
 
 # ============================================================================
@@ -332,6 +343,27 @@ def validate_bind_interface(value: Any) -> str:
     """
     if not value or not isinstance(value, str):
         logger.warning("bind_interface 值无效，使用默认值 127.0.0.1")
+        return "127.0.0.1"
+
+    value = value.strip()
+
+    # 特殊值直接通过
+    if value in VALID_BIND_INTERFACES:
+        if value == "0.0.0.0":
+            logger.info(
+                "⚠️  bind_interface 设为 0.0.0.0，将监听所有网络接口。"
+                "请确保已正确配置 allowed_networks 和防火墙规则。"
+            )
+        return value
+
+    # 尝试解析为 IP 地址
+    try:
+        ip_address(value)
+        return value
+    except (AddressValueError, ValueError):
+        logger.warning(
+            f"bind_interface '{value}' 不是有效的 IP 地址，使用默认值 127.0.0.1"
+        )
         return "127.0.0.1"
 
 
@@ -390,7 +422,10 @@ def _is_probably_virtual_interface(ifname: str) -> bool:
         return True
 
     # 隧道/VPN（很多实现不会以 tun0 开头，例如 uif-tun / utun0 / tailscale0）
-    if any(token in name for token in ("tun", "tap", "wg", "tailscale", "zerotier", "vpn", "ppp")):
+    if any(
+        token in name
+        for token in ("tun", "tap", "wg", "tailscale", "zerotier", "vpn", "ppp")
+    ):
         return True
 
     return False
@@ -498,27 +533,6 @@ def detect_best_publish_ipv4(bind_interface: str) -> Optional[str]:
         return candidates[0]
 
     return None
-
-    value = value.strip()
-
-    # 特殊值直接通过
-    if value in VALID_BIND_INTERFACES:
-        if value == "0.0.0.0":
-            logger.info(
-                "⚠️  bind_interface 设为 0.0.0.0，将监听所有网络接口。"
-                "请确保已正确配置 allowed_networks 和防火墙规则。"
-            )
-        return value
-
-    # 尝试解析为 IP 地址
-    try:
-        ip_address(value)
-        return value
-    except (AddressValueError, ValueError):
-        logger.warning(
-            f"bind_interface '{value}' 不是有效的 IP 地址，使用默认值 127.0.0.1"
-        )
-        return "127.0.0.1"
 
 
 def validate_network_cidr(network_str: Any) -> bool:
@@ -1274,7 +1288,9 @@ class WebFeedbackUI:
                     effective_timeout = self.current_auto_resubmit_timeout
                     if not getattr(self, "_single_task_timeout_explicit", True):
                         try:
-                            effective_timeout = _get_default_auto_resubmit_timeout_from_config()
+                            effective_timeout = (
+                                _get_default_auto_resubmit_timeout_from_config()
+                            )
                             # 保持实例状态同步，便于其他逻辑复用
                             self.current_auto_resubmit_timeout = effective_timeout
                         except Exception:
@@ -2503,7 +2519,9 @@ class WebFeedbackUI:
                         "status": "success",
                         "config": {
                             "resubmit_prompt": truncate_string(
-                                cast(str | None, feedback_config.get("resubmit_prompt")),
+                                cast(
+                                    str | None, feedback_config.get("resubmit_prompt")
+                                ),
                                 500,
                                 "feedback.resubmit_prompt",
                                 default="请立即调用 interactive_feedback 工具",
@@ -3237,7 +3255,9 @@ class WebFeedbackUI:
             print("⚠️  mDNS 功能不可用：缺少依赖 zeroconf（请更新依赖/重新安装）。")
             return
 
-        hostname = normalize_mdns_hostname(mdns_config.get("hostname", MDNS_DEFAULT_HOSTNAME))
+        hostname = normalize_mdns_hostname(
+            mdns_config.get("hostname", MDNS_DEFAULT_HOSTNAME)
+        )
         service_name_raw = mdns_config.get("service_name", "AI Intervention Agent")
         service_name = (
             service_name_raw.strip()
@@ -3274,10 +3294,18 @@ class WebFeedbackUI:
         try:
             # 兼容 zeroconf 不同版本的参数命名（allow_name_change / allow_rename）
             # - 实例名冲突时可自动改名，但不会改变 server/hostname
+            kwargs: dict[str, Any] = {}
             try:
-                zc.register_service(info, allow_name_change=True)
-            except TypeError:
-                zc.register_service(info, allow_rename=True)
+                params = inspect.signature(zc.register_service).parameters
+                if "allow_name_change" in params:
+                    kwargs["allow_name_change"] = True
+                elif "allow_rename" in params:
+                    kwargs["allow_rename"] = True
+            except Exception:
+                # 签名解析失败则降级为无参数调用
+                kwargs = {}
+
+            zc.register_service(info, **kwargs)
         except NonUniqueNameException:
             config_path = None
             try:
@@ -3289,7 +3317,9 @@ class WebFeedbackUI:
                 f"mDNS 发布失败：主机名冲突（{hostname}）。请修改配置中的 mdns.hostname 后重试"
             )
             print(f"❌ mDNS 发布失败：主机名 {hostname} 可能已被局域网中其他设备占用。")
-            print("👉 请修改配置中的 mdns.hostname（例如 ai-你的机器名.local），然后重启服务。")
+            print(
+                "👉 请修改配置中的 mdns.hostname（例如 ai-你的机器名.local），然后重启服务。"
+            )
             if config_path:
                 print(f"   配置文件: {config_path}")
             try:
