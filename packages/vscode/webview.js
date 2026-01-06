@@ -178,10 +178,46 @@ class WebviewProvider {
       case 'showInfo':
         vscode.window.setStatusBarMessage(`$(info) ${message.message}`, 3000)
         break
+      case 'requestClipboardText':
+        this._handleRequestClipboardText(message)
+        break
       default:
         // 忽略未知消息类型
         break
     }
+  }
+
+  _handleRequestClipboardText(message) {
+    const requestId = message && message.requestId ? String(message.requestId) : ''
+    Promise.resolve()
+      .then(() => vscode.env.clipboard.readText())
+      .then(text => {
+        const clip = text ? String(text) : ''
+        if (!clip.trim()) {
+          this._sendMessage({
+            type: 'clipboardText',
+            success: false,
+            requestId,
+            error: '剪贴板为空，请先复制一段代码。'
+          })
+          return
+        }
+
+        this._sendMessage({
+          type: 'clipboardText',
+          success: true,
+          requestId,
+          text: clip
+        })
+      })
+      .catch(e => {
+        this._sendMessage({
+          type: 'clipboardText',
+          success: false,
+          requestId,
+          error: e && e.message ? String(e.message) : String(e)
+        })
+      })
   }
 
   _sendMessage(message) {
@@ -792,6 +828,7 @@ class WebviewProvider {
             z-index: 10;
         }
 
+        .insert-code-btn,
         .upload-btn,
         .submit-btn-embedded {
             width: 28px;
@@ -809,10 +846,12 @@ class WebviewProvider {
             cursor: pointer;
         }
 
+        .insert-code-btn,
         .upload-btn {
             background: rgba(255, 255, 255, 0.08);
         }
 
+        .insert-code-btn:hover:not(:disabled),
         .upload-btn:hover:not(:disabled) {
             background: rgba(255, 255, 255, 0.15);
         }
@@ -821,6 +860,7 @@ class WebviewProvider {
             background: var(--vscode-button-hoverBackground);
         }
 
+        .insert-code-btn:disabled,
         .upload-btn:disabled,
         .submit-btn-embedded:disabled {
             opacity: 0.5;
@@ -1419,6 +1459,13 @@ class WebviewProvider {
 
                         <!-- Button group (upload + submit) -->
                         <div class="input-buttons">
+                            <button class="insert-code-btn" id="insertCodeBtn" title="插入代码（从剪贴板）" aria-label="插入代码">
+                                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                    <polyline points="16 18 22 12 16 6"></polyline>
+                                    <polyline points="8 6 2 12 8 18"></polyline>
+                                    <line x1="14" y1="4" x2="10" y2="20"></line>
+                                </svg>
+                            </button>
                             <button class="upload-btn" id="uploadBtn" title="上传图片" aria-label="上传图片">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
                                     <path fill-rule="evenodd" clip-rule="evenodd" d="M3 4.5C3 3.67157 3.67157 3 4.5 3H15.5C16.3284 3 17 3.67157 17 4.5V15.5C17 16.3284 16.3284 17 15.5 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5ZM4.5 4C4.22386 4 4 4.22386 4 4.5V12.2929L6.64645 9.64645C6.84171 9.45118 7.15829 9.45118 7.35355 9.64645L10 12.2929L13.1464 9.14645C13.3417 8.95118 13.6583 8.95118 13.8536 9.14645L16 11.2929V4.5C16 4.22386 15.7761 4 15.5 4H4.5ZM16 12.7071L13.5 10.2071L10.3536 13.3536C10.1583 13.5488 9.84171 13.5488 9.64645 13.3536L7 10.7071L4 13.7071V15.5C4 15.7761 4.22386 16 4.5 16H15.5C15.7761 16 16 15.7761 16 15.5V12.7071ZM7 7.5C7 6.94772 7.44772 6.5 8 6.5C8.55228 6.5 9 6.94772 9 7.5C9 8.05228 8.55228 8.5 8 8.5C7.44772 8.5 7 8.05228 7 7.5Z" fill="currentColor" />
@@ -1836,6 +1883,12 @@ class WebviewProvider {
                         submitBtn.addEventListener('click', submitFeedback);
                     }
 
+                    /* 插入代码按钮点击事件（从剪贴板插入，和 Web 版一致） */
+                    const insertCodeBtn = document.getElementById('insertCodeBtn');
+                    if (insertCodeBtn) {
+                        insertCodeBtn.addEventListener('click', requestInsertCodeFromClipboard);
+                    }
+
                     /* 图片上传按钮点击事件 */
                     const uploadBtn = document.getElementById('uploadBtn');
                     const imageInput = document.getElementById('imageInput');
@@ -1951,6 +2004,112 @@ class WebviewProvider {
                     log('事件监听器已设置');
                 } catch (error) {
                     logError('设置事件监听器失败: ' + error.message);
+                }
+            }
+
+            // ========== 插入代码（从剪贴板） ==========
+            let clipboardRequestId = null;
+
+            function normalizeFenceLanguage(language) {
+                try {
+                    const lang = (language || '').toString().trim();
+                    if (!lang) return '';
+                    if (lang === 'plaintext' || lang === 'text') return '';
+                    // 仅保留安全字符，避免污染 markdown fence
+                    return lang.replace(/[^\w+-]/g, '');
+                } catch (e) {
+                    return '';
+                }
+            }
+
+            function insertCodeBlockIntoFeedbackTextarea(text, language) {
+                const textarea = document.getElementById('feedbackText');
+                if (!textarea) return false;
+
+                const code = (text || '').toString();
+                if (!code.trim()) return false;
+
+                const cursorPos = (typeof textarea.selectionStart === 'number') ? textarea.selectionStart : 0;
+                const currentText = textarea.value || '';
+                const before = currentText.substring(0, cursorPos);
+                const after = currentText.substring(cursorPos);
+
+                const TICK = String.fromCharCode(96);
+                const FENCE = TICK + TICK + TICK;
+                const lang = normalizeFenceLanguage(language);
+                const fenceHead = lang ? (FENCE + lang) : FENCE;
+
+                let codeBlock = '\n' + fenceHead + '\n' + code + '\n' + FENCE;
+                if (cursorPos === 0) {
+                    codeBlock = fenceHead + '\n' + code + '\n' + FENCE;
+                }
+
+                textarea.value = before + codeBlock + after;
+
+                const newCursor = before.length + codeBlock.length;
+                try {
+                    textarea.setSelectionRange(newCursor, newCursor);
+                    textarea.focus();
+                } catch (e) {
+                    // ignore
+                }
+
+                // 程序写入不会触发 input 事件：手动同步到任务缓存
+                if (activeTaskId && typeof taskTextareaContents !== 'undefined') {
+                    taskTextareaContents[activeTaskId] = textarea.value || '';
+                }
+                return true;
+            }
+
+            function setInsertCodeBtnDisabled(disabled) {
+                const btn = document.getElementById('insertCodeBtn');
+                if (btn) btn.disabled = !!disabled;
+            }
+
+            function requestInsertCodeFromClipboard() {
+                // 防止短时间重复点击
+                if (clipboardRequestId) return;
+                clipboardRequestId = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+                setInsertCodeBtnDisabled(true);
+                vscode.postMessage({ type: 'requestClipboardText', requestId: clipboardRequestId });
+
+                // 兜底：避免异常情况下按钮永久禁用
+                setTimeout(() => {
+                    if (clipboardRequestId) {
+                        clipboardRequestId = null;
+                        setInsertCodeBtnDisabled(false);
+                    }
+                }, 2000);
+            }
+
+            function handleClipboardTextMessage(message) {
+                try {
+                    const ok = !!(message && message.success);
+                    const text = message && message.text ? String(message.text) : '';
+
+                    const reqId = message && message.requestId ? String(message.requestId) : '';
+                    if (clipboardRequestId && (!reqId || reqId === clipboardRequestId)) {
+                        clipboardRequestId = null;
+                        setInsertCodeBtnDisabled(false);
+                    }
+
+                    if (!ok || !text.trim()) {
+                        const err = message && message.error ? String(message.error) : '剪贴板为空，请先复制一段代码。';
+                        vscode.postMessage({ type: 'showInfo', message: err });
+                        return;
+                    }
+
+                    const inserted = insertCodeBlockIntoFeedbackTextarea(text, '');
+                    if (!inserted) {
+                        vscode.postMessage({ type: 'showInfo', message: '插入失败：未检测到有效代码' });
+                        return;
+                    }
+
+                    vscode.postMessage({ type: 'showInfo', message: '已插入剪贴板内容' });
+                } catch (e) {
+                    vscode.postMessage({ type: 'showInfo', message: '插入代码失败：' + (e && e.message ? e.message : String(e)) });
+                    clipboardRequestId = null;
+                    setInsertCodeBtnDisabled(false);
                 }
             }
 
@@ -4118,6 +4277,9 @@ class WebviewProvider {
                 switch (message.type) {
                     case 'refresh':
                         requestImmediateRefresh();
+                        break;
+                    case 'clipboardText':
+                        handleClipboardTextMessage(message);
                         break;
                 }
             });

@@ -550,38 +550,123 @@ function showStatus(message, type) {
 
 // 插入代码功能 - 与GUI版本逻辑完全一致
 async function insertCodeFromClipboard() {
+  // iOS/Safari/HTTP 等环境可能无法使用 navigator.clipboard.readText()
+  // 因此这里采用“优先读取剪贴板 -> 失败则弹出粘贴输入框”的策略
   try {
-    const text = await navigator.clipboard.readText()
-    if (text) {
-      const textarea = document.getElementById('feedback-text')
-      const cursorPos = textarea.selectionStart
-      const currentText = textarea.value
-      const textBefore = currentText.substring(0, cursorPos)
-      const textAfter = currentText.substring(cursorPos)
-
-      // 构建要插入的代码块，在```前面总是添加换行
-      let codeBlock = `\n\`\`\`\n${text}\n\`\`\``
-
-      // 如果是在文本开头插入，则不需要前面的换行
-      if (cursorPos === 0) {
-        codeBlock = `\`\`\`\n${text}\n\`\`\``
-      }
-
-      // 插入代码块
-      textarea.value = textBefore + codeBlock + textAfter
-
-      // 将光标移动到代码块末尾（与GUI版本一致）
-      const newCursorPos = textBefore.length + codeBlock.length
-      textarea.setSelectionRange(newCursorPos, newCursorPos)
-      textarea.focus()
-
-      showStatus('代码已插入', 'success')
-    } else {
-      showStatus('剪贴板为空', 'error')
+    if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+      openCodePasteModal()
+      return
     }
+
+    const text = await navigator.clipboard.readText()
+    if (!text) {
+      showStatus('剪贴板为空', 'error')
+      return
+    }
+
+    insertCodeBlockIntoFeedbackTextarea(text)
+    showStatus('代码已插入', 'success')
   } catch (error) {
     console.error('读取剪贴板失败:', error)
+    openCodePasteModal(error)
+  }
+}
+
+function insertCodeBlockIntoFeedbackTextarea(text) {
+  const textarea = document.getElementById('feedback-text')
+  if (!textarea) return
+
+  const cursorPos = textarea.selectionStart || 0
+  const currentText = textarea.value || ''
+  const textBefore = currentText.substring(0, cursorPos)
+  const textAfter = currentText.substring(cursorPos)
+
+  // 构建要插入的代码块，在```前面总是添加换行
+  let codeBlock = `\n\`\`\`\n${text}\n\`\`\``
+
+  // 如果是在文本开头插入，则不需要前面的换行
+  if (cursorPos === 0) {
+    codeBlock = `\`\`\`\n${text}\n\`\`\``
+  }
+
+  // 插入代码块
+  textarea.value = textBefore + codeBlock + textAfter
+
+  // 将光标移动到代码块末尾（与GUI版本一致）
+  const newCursorPos = textBefore.length + codeBlock.length
+  textarea.setSelectionRange(newCursorPos, newCursorPos)
+  textarea.focus()
+}
+
+function getClipboardFailureHint(error) {
+  // 针对常见失败原因给出更明确的提示（尤其是 iOS/HTTP/权限）
+  try {
+    if (!window.isSecureContext) {
+      return '当前页面为 HTTP（非安全上下文），浏览器可能禁止读取剪贴板。请在下方手动粘贴代码。'
+    }
+
+    const name = error && error.name ? String(error.name) : ''
+    if (name === 'NotAllowedError') {
+      return '浏览器拒绝读取剪贴板（可能需要权限或仅允许 HTTPS）。请在下方手动粘贴代码。'
+    }
+    if (name === 'NotFoundError') {
+      return '未读取到剪贴板内容。请在下方手动粘贴代码。'
+    }
+  } catch (e) {
+    // ignore
+  }
+  return '由于浏览器安全限制无法自动读取剪贴板，请在下方手动粘贴代码。'
+}
+
+function openCodePasteModal(error) {
+  const panel = document.getElementById('code-paste-panel')
+  const textarea = document.getElementById('code-paste-textarea')
+  const hint = document.getElementById('code-paste-hint')
+
+  if (!panel || !textarea) {
     showStatus('无法读取剪贴板，请手动粘贴代码', 'error')
+    return
+  }
+
+  if (hint) {
+    hint.textContent = getClipboardFailureHint(error)
+  }
+
+  textarea.value = ''
+  panel.classList.remove('hidden')
+  panel.classList.add('show')
+
+  // iOS 上需要在用户手势链路内尽快 focus，才能弹出键盘与“粘贴”菜单
+  setTimeout(() => {
+    try {
+      textarea.focus()
+    } catch (e) {
+      // ignore
+    }
+  }, 0)
+
+  // ESC 关闭（对齐图片模态框行为）
+  document.addEventListener('keydown', handleCodePasteModalKeydown)
+}
+
+function closeCodePasteModal() {
+  const panel = document.getElementById('code-paste-panel')
+  const textarea = document.getElementById('code-paste-textarea')
+  if (!panel) return
+
+  panel.classList.remove('show')
+  panel.classList.add('hidden')
+
+  if (textarea) {
+    textarea.value = ''
+  }
+
+  document.removeEventListener('keydown', handleCodePasteModalKeydown)
+}
+
+function handleCodePasteModalKeydown(event) {
+  if (event.key === 'Escape') {
+    closeCodePasteModal()
   }
 }
 
@@ -3077,6 +3162,38 @@ function initializeApp() {
   document.getElementById('insert-code-btn').addEventListener('click', insertCodeFromClipboard)
   document.getElementById('submit-btn').addEventListener('click', submitFeedback)
   document.getElementById('close-btn').addEventListener('click', closeInterface)
+
+  // 代码粘贴模态框按钮事件
+  const codePasteCloseBtn = document.getElementById('code-paste-close-btn')
+  const codePasteCancelBtn = document.getElementById('code-paste-cancel-btn')
+  const codePasteInsertBtn = document.getElementById('code-paste-insert-btn')
+  const codePastePanel = document.getElementById('code-paste-panel')
+
+  if (codePasteCloseBtn) {
+    codePasteCloseBtn.addEventListener('click', closeCodePasteModal)
+  }
+  if (codePasteCancelBtn) {
+    codePasteCancelBtn.addEventListener('click', closeCodePasteModal)
+  }
+  if (codePasteInsertBtn) {
+    codePasteInsertBtn.addEventListener('click', () => {
+      const textarea = document.getElementById('code-paste-textarea')
+      const text = textarea ? (textarea.value || '') : ''
+      if (!text.trim()) {
+        showStatus('请输入要插入的代码', 'error')
+        return
+      }
+      insertCodeBlockIntoFeedbackTextarea(text)
+      closeCodePasteModal()
+    })
+  }
+  if (codePastePanel) {
+    codePastePanel.addEventListener('click', function (e) {
+      if (e.target === codePastePanel) {
+        closeCodePasteModal()
+      }
+    })
+  }
 
   // 键盘快捷键 - 支持跨平台
   document.addEventListener('keydown', event => {

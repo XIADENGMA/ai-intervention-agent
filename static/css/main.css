@@ -4760,6 +4760,49 @@ h1 {
   }
 }
 
+/* ========================================================================
+   代码粘贴模态框样式 (Code Paste Modal)
+   ======================================================================== */
+
+/**
+ * 代码粘贴输入框（.code-paste-textarea）：
+ * - 用于在无法读取剪贴板的环境（iOS/HTTP/权限限制）下手动粘贴代码
+ * - 采用等宽字体，提升代码可读性
+ */
+.code-paste-textarea {
+  width: 100%;
+  min-height: 220px;
+  max-height: 55vh;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f5f5f7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+    'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+
+.code-paste-textarea:focus {
+  border-color: rgba(10, 132, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.45);
+}
+
+/**
+ * 代码粘贴操作按钮容器（.code-paste-actions）：
+ * - 右对齐，移动端自动换行
+ */
+.code-paste-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 /* 触摸设备优化 - 已移除所有hover动效，无需特殊处理 */
 
 /* ========================================================================

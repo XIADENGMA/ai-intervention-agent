@@ -3115,6 +3115,61 @@
             </div>
           </div>
 
+          <!-- 代码粘贴模态框（iOS/HTTP 等场景无法读取剪贴板时的降级方案） -->
+          <div
+            class="settings-panel hidden"
+            id="code-paste-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="code-paste-title"
+          >
+            <div class="settings-content" style="max-width: 720px">
+              <div class="settings-header">
+                <h3 id="code-paste-title" class="settings-title">
+                  <svg
+                    class="section-icon"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <polyline points="16 18 22 12 16 6"></polyline>
+                    <polyline points="8 6 2 12 8 18"></polyline>
+                    <line x1="14" y1="4" x2="10" y2="20"></line>
+                  </svg>
+                  插入代码
+                </h3>
+                <button class="settings-close-btn" id="code-paste-close-btn" type="button" aria-label="关闭"></button>
+              </div>
+              <div class="settings-body">
+                <div class="setting-group">
+                  <div
+                    id="code-paste-hint"
+                    style="margin-bottom: 0.75rem; color: rgba(245, 245, 247, 0.8); font-size: 0.9rem"
+                  >
+                    由于浏览器安全限制无法自动读取剪贴板，请在下方粘贴代码（iOS 可长按→粘贴），然后点击“插入”。
+                  </div>
+                  <textarea
+                    id="code-paste-textarea"
+                    class="code-paste-textarea"
+                    placeholder="在此粘贴代码…"
+                    spellcheck="false"
+                    autocapitalize="off"
+                    autocomplete="off"
+                    autocorrect="off"
+                  ></textarea>
+                  <div class="code-paste-actions">
+                    <button class="btn btn-secondary" id="code-paste-cancel-btn" type="button">取消</button>
+                    <button class="btn btn-primary" id="code-paste-insert-btn" type="button">插入</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 隐藏的文件上传input -->
           <input type="file" id="file-upload-input" multiple accept="image/*" class="hidden" />
 
