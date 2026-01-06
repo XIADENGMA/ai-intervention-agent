@@ -114,6 +114,33 @@ AI Intervention Agent 使用 **JSONC**（带注释的 JSON）作为配置文件�
 
 - Web UI 实际 host 优先使用 `network_security.bind_interface`（若存在），否则使用 `web_ui.host`。
 
+### `mdns`（mDNS / 局域网服务发现）
+
+用于通过 `ai.local` 访问，并让局域网工具发现服务（DNS-SD / `_http._tcp.local`）。
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `enabled` | boolean / null | `null` | `true` 强制启用；`false` 强制禁用；`null`/不写则自动 |
+| `hostname` | string | `ai.local` | mDNS 主机名（浏览器可直接访问 `http://ai.local:8080`） |
+| `service_name` | string | `AI Intervention Agent` | DNS-SD 服务实例名（用于服务发现列表展示） |
+
+**默认启用策略**：
+
+- 当实际监听地址（`bind_interface`）不是 `127.0.0.1` / `localhost` / `::1` 时，自动启用。
+
+**IP 自动探测策略**：
+
+- 会优先选择“看起来是物理网卡”的 IPv4 地址，并尽量避开常见容器网卡与 VPN/隧道接口（如 `docker0`、`br-*`、`*tun*`、`tailscale*` 等）。
+- 若你希望固定发布某个 IP，可将 `network_security.bind_interface` 设为该具体 IP（而不是 `0.0.0.0`）。
+
+**冲突策略**：
+
+- 若 `hostname` 发生冲突，会在启动时**报错并提示修改配置**，但不会阻断 Web UI 启动（仍可用 IP/localhost 访问）。
+
+**安全说明**：
+
+- mDNS 仅用于“发现/解析”，不会绕过 `allowed_networks` / `access_control_enabled` 等访问控制。
+
 ### `feedback`（反馈/超时）
 
 控制等待时间与自动重调提示语。

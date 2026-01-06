@@ -109,6 +109,33 @@ Controls which interfaces the Web UI binds to and which networks can access it.
 
 - Web UI host is effectively `network_security.bind_interface` (if present), otherwise `web_ui.host`.
 
+### `mdns`
+
+Used for `ai.local` access and LAN service discovery (DNS-SD / `_http._tcp.local`).
+
+| Key | Type | Default | Notes |
+| --- | ---- | ------- | ----- |
+| `enabled` | boolean / null | `null` | `true` forces enable; `false` forces disable; `null`/missing = auto |
+| `hostname` | string | `ai.local` | mDNS hostname (browser can access `http://ai.local:8080`) |
+| `service_name` | string | `AI Intervention Agent` | DNS-SD instance name (shows up in service browsers) |
+
+**Default enable rule**:
+
+- Auto-enabled when the effective bind interface is not `127.0.0.1` / `localhost` / `::1`.
+
+**IP auto-detection**:
+
+- Prefers IPv4 addresses that look like physical interfaces and tries to avoid common container/VPN tunnel interfaces (e.g. `docker0`, `br-*`, `*tun*`, `tailscale*`).
+- If you want to publish a specific IP, set `network_security.bind_interface` to that IP (instead of `0.0.0.0`).
+
+**Conflict behavior**:
+
+- If `hostname` conflicts, the server prints an error and suggests changing config, but **still starts** (you can still access via IP/localhost).
+
+**Security note**:
+
+- mDNS only helps with discovery/resolution; it does not bypass allow/deny access control.
+
 ### `feedback`
 
 Controls timeouts and auto re-submit prompts.

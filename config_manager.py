@@ -652,6 +652,11 @@ class ConfigManager:
           * debug: 调试模式
           * max_retries, retry_delay: 重试策略
 
+        - **mdns**: mDNS / DNS-SD 配置（局域网服务发现）
+          * enabled: 是否启用（true/false/None=自动）
+          * hostname: mDNS 主机名（默认 ai.local）
+          * service_name: 服务实例名（用于服务发现列表展示）
+
         - **network_security**: 网络安全配置（特殊处理，不加载到内存）
           * bind_interface: 绑定网络接口
           * allowed_networks: IP 白名单（CIDR 格式）
@@ -696,6 +701,16 @@ class ConfigManager:
                 "debug": False,
                 "max_retries": 3,
                 "retry_delay": 1.0,
+            },
+            "mdns": {
+                # 是否启用 mDNS
+                # - True/False: 强制启用/禁用
+                # - None: 自动（当 bind_interface 不是 127.0.0.1/localhost/::1 时启用）
+                "enabled": None,
+                # mDNS 主机名（默认 ai.local）
+                "hostname": "ai.local",
+                # DNS-SD 服务实例名（用于服务发现列表展示）
+                "service_name": "AI Intervention Agent",
             },
             "network_security": {
                 "bind_interface": "0.0.0.0",  # 允许所有接口访问

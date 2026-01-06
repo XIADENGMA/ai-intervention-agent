@@ -1,6 +1,6 @@
 {
   "name": "ai-intervention-agent-root",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "description": "<h1 align=\"center\">   <a href=\"\">     <img src=\"icons/icon.svg\" width=\"150\" height=\"150\" alt=\"banner\" /><br>   </a> </h1>",
   "main": "index.js",
   "private": true,

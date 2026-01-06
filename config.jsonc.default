@@ -63,6 +63,19 @@
     // 访问控制开关
     "access_control_enabled": true
   },
+  // mDNS 配置（用于通过 ai.local 访问 & 局域网服务发现）
+  "mdns": {
+    // 是否启用 mDNS
+    // - true: 强制启用
+    // - false: 强制禁用
+    // - null/不填写: 自动（当 network_security.bind_interface 不是 127.0.0.1/localhost/::1 时启用）
+    "enabled": null,
+    // mDNS 主机名（默认 ai.local）
+    // 说明：浏览器可直接访问 http://ai.local:8080
+    "hostname": "ai.local",
+    // DNS-SD 服务实例名（用于服务发现列表展示，例如 avahi-browse / dns-sd）
+    "service_name": "AI Intervention Agent"
+  },
   // 反馈配置
   // 超时计算规则：后端等待 = min(max(前端倒计时 + 60秒, 300秒), backend_max_wait)
   "feedback": {

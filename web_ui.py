@@ -75,6 +75,7 @@ import os
 import re
 import secrets
 import signal
+import socket
 import sys
 import threading
 import time
@@ -90,6 +91,7 @@ from ipaddress import (
 from typing import Any, Dict, List, Optional, cast
 
 import markdown
+import psutil
 from flask import (
     Flask,
     abort,
@@ -331,6 +333,171 @@ def validate_bind_interface(value: Any) -> str:
     if not value or not isinstance(value, str):
         logger.warning("bind_interface 值无效，使用默认值 127.0.0.1")
         return "127.0.0.1"
+
+
+# ============================================================================
+# mDNS / DNS-SD（Zeroconf）辅助函数
+# ============================================================================
+
+MDNS_DEFAULT_HOSTNAME = "ai.local"
+MDNS_SERVICE_TYPE_HTTP = "_http._tcp.local."
+
+
+def normalize_mdns_hostname(value: Any) -> str:
+    """规范化 mDNS 主机名
+
+    规则：
+    - 非字符串 / 空字符串：回退到默认 ai.local
+    - 末尾的 '.' 会被移除（zeroconf 内部会要求 FQDN）
+    - 不包含 '.' 的短名：自动追加 '.local'
+    """
+    if not isinstance(value, str):
+        return MDNS_DEFAULT_HOSTNAME
+
+    hostname = value.strip()
+    if not hostname:
+        return MDNS_DEFAULT_HOSTNAME
+
+    if hostname.endswith("."):
+        hostname = hostname[:-1]
+
+    if "." not in hostname:
+        hostname = f"{hostname}.local"
+
+    return hostname
+
+
+def _is_probably_virtual_interface(ifname: str) -> bool:
+    """启发式过滤虚拟网卡（避免优先选到 docker0 / veth 等）"""
+    name = (ifname or "").lower()
+    if name == "lo":
+        return True
+
+    # 常见虚拟/容器网卡前缀
+    if name.startswith(
+        (
+            "docker",
+            "br-",
+            "veth",
+            "virbr",
+            "vmnet",
+            "cni",
+            "flannel",
+            "lxcbr",
+            "podman",
+        )
+    ):
+        return True
+
+    # 隧道/VPN（很多实现不会以 tun0 开头，例如 uif-tun / utun0 / tailscale0）
+    if any(token in name for token in ("tun", "tap", "wg", "tailscale", "zerotier", "vpn", "ppp")):
+        return True
+
+    return False
+
+
+def _get_default_route_ipv4() -> Optional[str]:
+    """通过路由选择的方式获取“默认出口”IPv4（不实际发包）"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            # 该 connect 不会真的发送数据包，但会触发路由选择
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        ip_obj = ip_address(ip)
+        if ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_unspecified:
+            return None
+        if ip_obj.version != 4:
+            return None
+        return ip
+    except OSError:
+        return None
+
+
+def _list_non_loopback_ipv4(prefer_physical: bool = True) -> List[str]:
+    """枚举本机非回环 IPv4 地址（优先物理网卡）"""
+    try:
+        addrs = psutil.net_if_addrs()
+        stats = psutil.net_if_stats()
+    except Exception:
+        return []
+
+    result: List[str] = []
+
+    for ifname, snics in addrs.items():
+        if prefer_physical and _is_probably_virtual_interface(ifname):
+            continue
+
+        stat = stats.get(ifname)
+        if stat is not None and not stat.isup:
+            continue
+
+        for snic in snics:
+            if snic.family != socket.AF_INET:
+                continue
+
+            ip = snic.address
+            try:
+                ip_obj = ip_address(ip)
+            except (AddressValueError, ValueError):
+                continue
+
+            if ip_obj.version != 4:
+                continue
+            if ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_unspecified:
+                continue
+
+            result.append(ip)
+
+    # 去重并保序
+    seen = set()
+    uniq: List[str] = []
+    for ip in result:
+        if ip in seen:
+            continue
+        seen.add(ip)
+        uniq.append(ip)
+
+    # RFC1918 私有地址优先
+    uniq.sort(key=lambda x: 0 if ip_address(x).is_private else 1)
+    return uniq
+
+
+def detect_best_publish_ipv4(bind_interface: str) -> Optional[str]:
+    """自动探测适合对外发布的 IPv4 地址
+
+    优先级：
+    1) 若 bind_interface 是一个具体 IPv4（非 0.0.0.0/回环），直接使用它
+    2) 通过默认路由推断（优先）
+    3) 枚举物理网卡地址（过滤常见虚拟网卡）
+    4) 枚举所有非回环地址（兜底）
+    """
+    try:
+        bind_ip = ip_address(bind_interface)
+        if (
+            bind_ip.version == 4
+            and not bind_ip.is_loopback
+            and not bind_ip.is_unspecified
+            and not bind_ip.is_link_local
+        ):
+            return bind_interface
+    except (AddressValueError, ValueError):
+        pass
+
+    candidates = _list_non_loopback_ipv4(prefer_physical=True)
+    route_ip = _get_default_route_ipv4()
+    if route_ip and route_ip in candidates:
+        return route_ip
+    if candidates:
+        return candidates[0]
+
+    if route_ip:
+        return route_ip
+
+    candidates = _list_non_loopback_ipv4(prefer_physical=False)
+    if candidates:
+        return candidates[0]
+
+    return None
 
     value = value.strip()
 
@@ -628,6 +795,11 @@ class WebFeedbackUI:
         self.auto_resubmit_timeout = auto_resubmit_timeout
         self.host = host
         self.port = port
+        # mDNS / DNS-SD 状态（仅在 run() 真正启动服务时启用）
+        self._mdns_zeroconf: Any | None = None
+        self._mdns_service_info: Any | None = None
+        self._mdns_hostname: str | None = None
+        self._mdns_publish_ip: str | None = None
         self.feedback_result: FeedbackResult | None = None
         self.current_prompt = prompt if prompt else ""
         self.current_options = predefined_options or []
@@ -3023,6 +3195,145 @@ class WebFeedbackUI:
             logger.warning(f"无效的IP地址 {client_ip}: {e}")
             return False
 
+    def _get_mdns_config(self) -> dict[str, Any]:
+        """读取 mdns 配置段（失败则返回空字典）"""
+        try:
+            cfg = get_config().get_section("mdns")
+            return cfg if isinstance(cfg, dict) else {}
+        except Exception as e:
+            logger.warning(f"无法加载 mdns 配置，已降级为不发布 mDNS: {e}")
+            return {}
+
+    def _should_enable_mdns(self, mdns_config: dict[str, Any]) -> bool:
+        """判断当前是否应启用 mDNS（默认策略：bind_interface 不是 127.0.0.1）"""
+        enabled_raw = mdns_config.get("enabled", None)
+        if isinstance(enabled_raw, bool):
+            return enabled_raw
+
+        # 自动模式：只要 bind_interface 不是本地回环，就启用
+        return self.host not in {"127.0.0.1", "localhost", "::1"}
+
+    def _start_mdns_if_needed(self) -> None:
+        """启动 mDNS 发布（失败则降级，不影响 Web UI 启动）"""
+        if self._mdns_zeroconf is not None:
+            return
+
+        mdns_config = self._get_mdns_config()
+        if not self._should_enable_mdns(mdns_config):
+            return
+
+        # 若服务只监听本地回环，发布 mDNS 没意义（外部无法访问），直接跳过
+        if self.host in {"127.0.0.1", "localhost", "::1"}:
+            logger.warning(
+                "mDNS 已配置启用，但 bind_interface 为本地回环地址，外部设备无法访问，已跳过发布"
+            )
+            return
+
+        try:
+            # 延迟导入，避免测试/极简环境下无 zeroconf 依赖直接崩溃
+            from zeroconf import NonUniqueNameException, ServiceInfo, Zeroconf
+        except Exception as e:
+            logger.error(f"mDNS 功能不可用：无法导入 zeroconf 依赖: {e}")
+            print("⚠️  mDNS 功能不可用：缺少依赖 zeroconf（请更新依赖/重新安装）。")
+            return
+
+        hostname = normalize_mdns_hostname(mdns_config.get("hostname", MDNS_DEFAULT_HOSTNAME))
+        service_name_raw = mdns_config.get("service_name", "AI Intervention Agent")
+        service_name = (
+            service_name_raw.strip()
+            if isinstance(service_name_raw, str) and service_name_raw.strip()
+            else "AI Intervention Agent"
+        )
+
+        publish_ip = detect_best_publish_ipv4(self.host)
+        if not publish_ip:
+            logger.error("mDNS 发布失败：无法探测可发布的内网 IPv4 地址")
+            print(
+                "⚠️  mDNS 发布失败：无法探测可发布的内网 IP（已降级为仅通过 IP/localhost 访问）。"
+            )
+            return
+
+        server_fqdn = f"{hostname}."
+        service_fqdn = f"{service_name}.{MDNS_SERVICE_TYPE_HTTP}"
+        properties = {
+            "path": "/",
+            "hostname": hostname,
+            "publish_ip": publish_ip,
+        }
+
+        info = ServiceInfo(
+            MDNS_SERVICE_TYPE_HTTP,
+            service_fqdn,
+            addresses=[socket.inet_aton(publish_ip)],
+            port=self.port,
+            properties=properties,
+            server=server_fqdn,
+        )
+
+        zc = Zeroconf()
+        try:
+            # 兼容 zeroconf 不同版本的参数命名（allow_name_change / allow_rename）
+            # - 实例名冲突时可自动改名，但不会改变 server/hostname
+            try:
+                zc.register_service(info, allow_name_change=True)
+            except TypeError:
+                zc.register_service(info, allow_rename=True)
+        except NonUniqueNameException:
+            config_path = None
+            try:
+                config_path = str(get_config().config_file)
+            except Exception:
+                config_path = None
+
+            logger.error(
+                f"mDNS 发布失败：主机名冲突（{hostname}）。请修改配置中的 mdns.hostname 后重试"
+            )
+            print(f"❌ mDNS 发布失败：主机名 {hostname} 可能已被局域网中其他设备占用。")
+            print("👉 请修改配置中的 mdns.hostname（例如 ai-你的机器名.local），然后重启服务。")
+            if config_path:
+                print(f"   配置文件: {config_path}")
+            try:
+                zc.close()
+            except Exception:
+                pass
+            return
+        except Exception as e:
+            logger.warning(f"mDNS 发布失败（已降级，不影响 Web UI）：{e}")
+            print(f"⚠️  mDNS 发布失败：{e}（已降级为仅通过 IP/localhost 访问）。")
+            try:
+                zc.close()
+            except Exception:
+                pass
+            return
+
+        self._mdns_zeroconf = zc
+        self._mdns_service_info = info
+        self._mdns_hostname = hostname
+        self._mdns_publish_ip = publish_ip
+
+        print(f"✨ mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
+
+    def _stop_mdns(self) -> None:
+        """停止 mDNS 发布（尽力而为）"""
+        if self._mdns_zeroconf is None:
+            return
+
+        try:
+            if self._mdns_service_info is not None:
+                self._mdns_zeroconf.unregister_service(self._mdns_service_info)
+        except Exception as e:
+            logger.debug(f"注销 mDNS 服务失败（忽略）：{e}")
+
+        try:
+            self._mdns_zeroconf.close()
+        except Exception as e:
+            logger.debug(f"关闭 mDNS Zeroconf 失败（忽略）：{e}")
+
+        self._mdns_zeroconf = None
+        self._mdns_service_info = None
+        self._mdns_hostname = None
+        self._mdns_publish_ip = None
+
     def run(self) -> FeedbackResult:
         """启动Flask Web服务器并等待用户反馈
 
@@ -3073,15 +3384,21 @@ class WebFeedbackUI:
         else:
             print(f"📍 请在浏览器中打开: http://{self.host}:{self.port}")
 
+        # mDNS 发布（默认：bind_interface 不是 127.0.0.1 时启用）
+        self._start_mdns_if_needed()
+
         print("🔄 页面将保持打开，可实时更新内容")
         print()
 
         try:
-            self.app.run(
-                host=self.host, port=self.port, debug=False, use_reloader=False
-            )
-        except KeyboardInterrupt:
-            pass
+            try:
+                self.app.run(
+                    host=self.host, port=self.port, debug=False, use_reloader=False
+                )
+            except KeyboardInterrupt:
+                pass
+        finally:
+            self._stop_mdns()
 
         empty_result: FeedbackResult = {
             "user_input": "",
