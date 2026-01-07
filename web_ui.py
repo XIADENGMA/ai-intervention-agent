@@ -2726,6 +2726,38 @@ class WebFeedbackUI:
 
             return response
 
+        @self.app.route("/static/lottie/<filename>")
+        @self.limiter.exempt
+        def serve_lottie(filename):
+            """提供 Lottie 动画 JSON 文件的静态资源路由
+
+            功能说明：
+                安全地提供 static/lottie 目录下的 Lottie 动画 JSON 文件。
+                主要用于“无有效内容”页面的嫩芽/沙漏等动画资源加载。
+
+            参数说明：
+                filename: 动画 JSON 文件名（URL 路径参数）
+
+            返回值：
+                JSON 文件内容（application/json MIME 类型）
+
+            频率限制：
+                - 已豁免（静态资源不做限流，避免首屏加载时因 429 退化到 emoji）
+
+            注意事项：
+                - 仅允许 .json 文件，避免意外暴露其他类型文件
+                - 使用 send_from_directory 防止路径遍历攻击
+                - 缓存策略由 after_request 统一设置（/static/lottie/ 默认 30 天）
+            """
+            if not filename or not str(filename).lower().endswith(".json"):
+                abort(404)
+
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            lottie_dir = os.path.join(current_dir, "static", "lottie")
+            return send_from_directory(
+                lottie_dir, filename, mimetype="application/json"
+            )
+
         @self.app.route("/favicon.ico")
         @self.limiter.exempt
         def favicon():

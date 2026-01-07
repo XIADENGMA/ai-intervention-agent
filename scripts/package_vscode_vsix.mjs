@@ -41,6 +41,8 @@ const includeList = [
   "package.json",
   "extension.js",
   "webview.js",
+  "logger.js",
+  "webview-ui.js",
   "README.md",
   "README.en.md",
   "LICENSE",

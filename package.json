@@ -1,6 +1,6 @@
 {
   "name": "ai-intervention-agent-root",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "description": "<h1 align=\"center\">   <a href=\"\">     <img src=\"icons/icon.svg\" width=\"150\" height=\"150\" alt=\"banner\" /><br>   </a> </h1>",
   "main": "index.js",
   "private": true,
@@ -11,6 +11,7 @@
     "vscode:lint": "npm -w ai-intervention-agent run lint",
     "vscode:package": "node scripts/package_vscode_vsix.mjs",
     "vscode:test": "npm -w ai-intervention-agent test",
+    "vscode:check": "npm run vscode:lint && npm run vscode:test && npm run vscode:package",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

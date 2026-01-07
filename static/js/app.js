@@ -76,6 +76,57 @@ let config = null
 let hourglassAnimation = null
 
 /**
+ * 渲染“嫩芽”动画的 SVG/CSS 降级版本（替代 emoji 🌱）
+ *
+ * 设计目标：
+ * - 不依赖外部资源（JSON/网络/库）
+ * - 纯 SVG + CSS 动画，可在 Lottie 加载失败时仍提供动态反馈
+ * - 颜色由容器的 filter/invert 统一控制（对齐 updateLottieAnimationColor）
+ */
+function renderSproutFallback(container) {
+  if (!container) return
+  try {
+    // 清空容器（避免和 Lottie 的 SVG 叠加）
+    container.textContent = ''
+    container.innerHTML = `
+      <svg
+        width="48"
+        height="48"
+        viewBox="0 0 48 48"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+        style="display:block; width:48px; height:48px;"
+      >
+        <style>
+          @keyframes sproutGrow {
+            0%   { transform: translateY(6px) scale(0.86); opacity: 0.65; }
+            50%  { transform: translateY(0px) scale(1);    opacity: 1; }
+            100% { transform: translateY(6px) scale(0.86); opacity: 0.65; }
+          }
+          @keyframes leafWiggle {
+            0%,100% { transform: rotate(-6deg); }
+            50%     { transform: rotate(6deg); }
+          }
+          .sprout-root { transform-origin: 24px 42px; animation: sproutGrow 1.6s ease-in-out infinite; }
+          .leaf-left  { transform-origin: 18px 18px; animation: leafWiggle 1.6s ease-in-out infinite; }
+          .leaf-right { transform-origin: 30px 18px; animation: leafWiggle 1.6s ease-in-out infinite reverse; }
+        </style>
+        <g class="sprout-root">
+          <path d="M24 42V20" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+          <path class="leaf-left" d="M24 22C19 22 15 19 14 15C18 15 22 17 24 20" stroke="#111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path class="leaf-right" d="M24 22C29 22 33 19 34 15C30 15 26 17 24 20" stroke="#111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M18 44C20 40 28 40 30 44" stroke="#111" stroke-width="3" stroke-linecap="round"/>
+        </g>
+      </svg>
+    `
+  } catch (e) {
+    // 最后兜底：极端情况下（SVG/CSS 注入失败），仍回退到 emoji
+    container.textContent = '🌱'
+  }
+}
+
+/**
  * 初始化嫩芽生长 Lottie 动画
  *
  * 生命周期：
@@ -96,7 +147,7 @@ function initHourglassAnimation() {
   // 检查 Lottie 库是否已通过 <script defer> 加载
   if (typeof lottie === 'undefined') {
     console.warn('Lottie 库未加载，显示备用图标')
-    container.textContent = '🌱'
+    renderSproutFallback(container)
     return
   }
 
@@ -126,13 +177,13 @@ function initHourglassAnimation() {
     // 动画加载错误处理（网络问题或 JSON 解析失败）
     hourglassAnimation.addEventListener('error', () => {
       console.warn('Lottie 动画加载失败，显示备用图标')
-      container.textContent = '🌱'
+      renderSproutFallback(container)
     })
 
     console.log('✅ 嫩芽动画初始化成功')
   } catch (error) {
     console.error('Lottie 动画初始化失败:', error)
-    container.textContent = '🌱' // 降级为 emoji
+    renderSproutFallback(container) // 降级为 SVG/CSS 动画
   }
 }
 
@@ -2575,6 +2626,22 @@ function clearAllImages() {
 
 // 页面卸载时的清理
 function cleanupOnUnload() {
+  // 清理 Lottie 动画实例（避免在页面卸载过程中仍占用定时器/RAF）
+  try {
+    if (hourglassAnimation) {
+      hourglassAnimation.destroy()
+      hourglassAnimation = null
+    }
+  } catch (e) {
+    // ignore
+  }
+  try {
+    const container = document.getElementById('hourglass-lottie')
+    if (container) container.textContent = ''
+  } catch (e) {
+    // ignore
+  }
+
   cleanupAllObjectURLs()
   clearAllImages()
 }

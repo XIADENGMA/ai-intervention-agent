@@ -5,6 +5,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# 同一分支只保留最新一次运行，避免排队浪费
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   vscode:
     name: VSCode extension checks
@@ -24,6 +29,12 @@ jobs:
       - name: 安装依赖（npm workspaces）
         run: npm ci
 
+      - name: 缓存 VSCode Test 下载（.vscode-test）
+        uses: actions/cache@v4
+        with:
+          path: packages/vscode/.vscode-test
+          key: vscode-test-${{ runner.os }}-1.107.1
+
       - name: VSCode 插件：Lint
         run: npm run vscode:lint
 
@@ -32,4 +43,14 @@ jobs:
 
       - name: VSCode 插件：Test
         run: xvfb-run -a npm run vscode:test
+
+      - name: VSCode 插件：Package VSIX
+        run: npm run vscode:package
+
+      - name: 上传 VSIX 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-intervention-agent-vsix
+          path: packages/vscode/*.vsix
+          if-no-files-found: error
 

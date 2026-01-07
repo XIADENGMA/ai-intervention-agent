@@ -2,7 +2,7 @@
   "name": "ai-intervention-agent",
   "displayName": "AI Intervention Agent",
   "description": "VSCode extension for AI Intervention Agent with multi-tab support and countdown display",
-  "version": "1.4.9",
+  "version": "1.4.10",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.74.0"
@@ -61,6 +61,12 @@
           "type": "string",
           "default": "http://localhost:8081",
           "description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8081）"
+        },
+        "ai-intervention-agent.logLevel": {
+          "type": "string",
+          "enum": ["error", "warn", "info", "debug"],
+          "default": "info",
+          "description": "插件日志级别（Output 面板 → AI Intervention Agent）"
         }
       }
     }
@@ -69,7 +75,8 @@
     "lint": "eslint .",
     "package": "node ../../scripts/package_vscode_vsix.mjs",
     "pretest": "npm run lint",
-    "test": "vscode-test --config .vscode-test.mjs"
+    "test": "vscode-test --config .vscode-test.mjs",
+    "check": "npm test && npm run package"
   },
   "devDependencies": {
     "@types/vscode": "^1.74.0",

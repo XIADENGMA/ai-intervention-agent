@@ -163,4 +163,3 @@ Controls timeouts and auto re-submit prompts.
   }
 }
 ```
-

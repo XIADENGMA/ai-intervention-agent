@@ -1,5 +1,6 @@
 const vscode = require('vscode')
 const { WebviewProvider } = require('./webview')
+const { createLogger } = require('./logger')
 
 /**
  * AI Intervention Agent VSCode Extension
@@ -12,6 +13,8 @@ try {
 } catch {
   // ignore
 }
+// 用于排查“VSIX 是否确实更新”的构建标识（版本号不变时尤为重要）
+const BUILD_ID = '2026-01-07-webview-ui-external-logs'
 
 function normalizeServerUrl(input) {
   try {
@@ -33,25 +36,67 @@ function getConfiguredServerUrl() {
 }
 
 function activate(context) {
-  // 创建输出频道（不自动显示，避免点击侧边栏图标时错误打开 Output 面板）
-  const outputChannel = vscode.window.createOutputChannel('AI Intervention Agent')
+  // 创建输出频道（不自动显示）
+  // 优先使用 LogOutputChannel（若 VSCode 版本不支持则回退为普通 OutputChannel）
+  let outputChannel
+  try {
+    outputChannel = vscode.window.createOutputChannel('AI Intervention Agent', { log: true })
+  } catch {
+    outputChannel = vscode.window.createOutputChannel('AI Intervention Agent')
+  }
+
+  const logger = createLogger(outputChannel, {
+    component: 'ext',
+    getLevel: () => {
+      try {
+        const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
+        return cfg.get('logLevel', 'info')
+      } catch {
+        return 'info'
+      }
+    }
+  })
   let serverUrl = getConfiguredServerUrl()
 
-  // 简洁的启动日志
-  const timestamp = new Date().toLocaleTimeString('zh-CN')
-  outputChannel.appendLine(`[${timestamp}] AI Intervention Agent v${EXT_VERSION} 已启动`)
-  outputChannel.appendLine(`[${timestamp}] 服务器: ${serverUrl}`)
+  // 启动日志（精简、分级）
+  logger.info(`AI Intervention Agent v${EXT_VERSION} 已启动`)
+  logger.info(`build: ${BUILD_ID}`)
+  logger.info(`服务器: ${serverUrl}`)
 
   // 状态栏：显示连接状态 & 任务数（点击打开面板）
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
   statusBar.command = 'ai-intervention-agent.openPanel'
   statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
   statusBar.text = '$(sparkle-filled) --'
-  statusBar.show()
+  // 默认隐藏：后续根据“视图可见/有待处理任务”动态 show/hide，避免常驻占用状态栏
+  statusBar.hide()
+  let statusBarShown = false
+
+  const setStatusBarShown = shouldShow => {
+    const next = !!shouldShow
+    if (next === statusBarShown) return
+    statusBarShown = next
+    if (next) {
+      statusBar.show()
+    } else {
+      statusBar.hide()
+    }
+  }
 
   let lastConnected = null
   let lastActive = null
   let lastPending = null
+
+  const updateStatusBarVisibility = (connected, active, pending) => {
+    const a = typeof active === 'number' ? active : 0
+    const p = typeof pending === 'number' ? pending : 0
+    const total = a + p
+
+    // 展示策略：
+    // - 视图可见时：始终展示（便于点击打开面板/快速确认状态）
+    // - 视图不可见时：仅在“已连接且存在待处理任务”时展示（作为提醒/入口）
+    setStatusBarShown(isViewVisible || (connected === true && total > 0))
+  }
 
   const updateStatusBar = async () => {
     // Node 18+ 有全局 fetch；若不存在则降级为“未知”
@@ -104,6 +149,7 @@ function activate(context) {
           statusBar.tooltip = `AI Intervention Agent（未连接）\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
         }
       }
+      updateStatusBarVisibility(connected, active, pending)
       return connected
     } catch {
       // 离线/超时/连接失败
@@ -114,6 +160,7 @@ function activate(context) {
         statusBar.text = '$(sparkle-filled) 离线'
         statusBar.tooltip = `AI Intervention Agent（未连接）\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
       }
+      updateStatusBarVisibility(false, 0, 0)
       return false
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
@@ -169,6 +216,7 @@ function activate(context) {
   // 注册webview provider（支持多标签页和缓存）
   const provider = new WebviewProvider(context.extensionUri, outputChannel, serverUrl, visible => {
     isViewVisible = !!visible
+    updateStatusBarVisibility(lastConnected, lastActive, lastPending)
     scheduleStatusPoll(isViewVisible ? 0 : computeNextDelayMs())
   })
   context.subscriptions.push(
@@ -188,8 +236,7 @@ function activate(context) {
       if (!next || next === serverUrl) return
 
       serverUrl = next
-      const ts = new Date().toLocaleTimeString('zh-CN')
-      outputChannel.appendLine(`[${ts}] 配置已更新：serverUrl = ${serverUrl}`)
+      logger.info(`配置已更新：serverUrl = ${serverUrl}`)
 
       // 强制刷新状态栏
       lastConnected = null

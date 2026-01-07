@@ -111,6 +111,32 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         # 可能存在或不存在
         self.assertIn(response.status_code, [200, 404])
 
+    def test_static_lottie(self):
+        """回归测试：Lottie 动画 JSON 静态路由应可访问（避免退化到 emoji）"""
+        response = self.client.get("/static/lottie/sprout.json")
+        # 仓库内应提供该资源；若此处 404，会导致前端动画加载失败并触发降级逻辑
+        self.assertEqual(response.status_code, 200)
+
+        # 响应应为 JSON（不同 WSGI/Flask 版本可能会表现为 application/json 或 octet-stream）
+        mimetype = getattr(response, "mimetype", "") or ""
+        self.assertIn(mimetype, ["application/json", "application/octet-stream"])
+
+        # 内容应是 JSON（至少以 { 或 [ 开头）
+        body = response.data.decode("utf-8", errors="ignore").lstrip()
+        self.assertTrue(body.startswith("{") or body.startswith("["))
+
+    def test_app_js_has_sprout_fallback(self):
+        """回归测试：app.js 应包含 SVG/CSS 的嫩芽降级逻辑（不再只有 emoji 🌱）"""
+        response = self.client.get("/static/js/app.js")
+        if response.status_code != 200:
+            self.skipTest("app.js 不存在，跳过嫩芽降级逻辑回归测试")
+
+        js = response.data.decode("utf-8", errors="ignore")
+        response.close()  # 避免 send_from_directory 返回的文件句柄在测试结束后仍未释放
+        self.assertIn("renderSproutFallback", js)
+        self.assertIn("sproutGrow", js)
+        self.assertIn("/static/lottie/sprout.json", js)
+
     def test_multi_task_polling_governance_present(self):
         """回归测试：任务轮询应具备治理能力（不可见暂停/退避/AbortController 防重叠）"""
         response = self.client.get("/static/js/multi_task.js")
