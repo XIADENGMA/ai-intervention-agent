@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple, overload
 
 import requests
 from fastmcp import FastMCP
@@ -798,6 +798,14 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
         logger.debug(f"创建并缓存新的 HTTP Session: {cache_key}")
 
         return session
+
+
+@overload
+def _make_resubmit_response(as_mcp: Literal[True] = ...) -> list: ...
+
+
+@overload
+def _make_resubmit_response(as_mcp: Literal[False]) -> dict: ...
 
 
 def _make_resubmit_response(as_mcp: bool = True) -> list | dict:
