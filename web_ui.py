@@ -1,71 +1,4 @@
-"""
-Web UI for AI Intervention Agent MCP - Web反馈界面模块
-
-功能说明：
-    提供基于Flask的Web反馈界面，用于人工干预代理系统的用户交互。
-    支持实时内容轮询、多任务并发管理、文件上传、Markdown渲染等功能。
-
-核心特性：
-    - **多任务支持**：支持任务队列管理、任务切换、状态追踪
-    - **实时更新**：通过API轮询实现内容实时更新，无需刷新页面
-    - **安全机制**：CSP内容安全策略、IP访问控制、请求频率限制、文件验证
-    - **文件上传**：支持图片上传、验证、Base64编码、安全文件名处理
-    - **Markdown渲染**：支持代码高亮、表格、脚注、LaTeX数学公式
-    - **通知系统**：Web通知、Bark推送、声音提示、移动端优化
-    - **远程访问**：支持SSH端口转发、0.0.0.0绑定、跨域CORS
-
-架构设计：
-    - Flask作为Web框架，提供RESTful API
-    - Flask-CORS处理跨域请求
-    - Flask-Limiter实现请求频率限制
-    - markdown库进行Markdown到HTML转换
-    - TaskQueue进行任务队列管理
-    - NotificationManager进行通知管理
-
-API端点：
-    - GET  /                             - 主页面（HTML模板）
-    - GET  /api/config                   - 获取当前任务配置
-    - GET  /api/health                   - 健康检查
-    - GET  /api/tasks                    - 获取所有任务列表
-    - POST /api/tasks                    - 创建新任务
-    - GET  /api/tasks/<id>               - 获取单个任务详情
-    - POST /api/tasks/<id>/activate      - 激活指定任务
-    - POST /api/tasks/<id>/submit        - 提交任务反馈
-    - POST /api/submit                   - 提交反馈（通用端点）
-    - POST /api/update                   - 更新页面内容
-    - GET  /api/feedback                 - 获取反馈结果
-    - POST /api/close                    - 关闭服务器
-    - POST /api/test-bark                - 测试Bark通知
-    - POST /api/update-notification-config - 更新通知配置
-    - GET  /api/get-notification-config  - 获取通知配置
-    - 静态资源路由：/static/css/*, /static/js/*, /fonts/*, /icons/*, /sounds/*
-
-安全机制：
-    - CSP（Content Security Policy）：防止XSS攻击
-    - IP访问控制：基于白名单/黑名单的网络访问控制
-    - 请求频率限制：防止DoS攻击（60次/分钟，10次/秒）
-    - 文件验证：上传文件的MIME类型、大小、内容验证
-    - 安全头部：X-Frame-Options、X-Content-Type-Options、X-XSS-Protection等
-
-使用场景：
-    - SSH远程环境下的人工干预交互
-    - MCP（Model Context Protocol）服务的用户反馈收集
-    - AI代理与人类协作的界面层
-
-依赖模块：
-    - config_manager: 配置管理
-    - enhanced_logging: 增强日志系统
-    - file_validator: 文件验证器
-    - server: 任务队列获取
-    - notification_manager: 通知管理（可选）
-    - notification_providers: 通知提供者（可选）
-
-注意事项：
-    - 默认监听所有网络接口（0.0.0.0），确保防火墙正确配置
-    - 生产环境建议启用IP访问控制
-    - 文件上传大小和数量受Flask配置限制
-    - 通知系统为可选功能，缺失时自动降级
-"""
+"""Web 反馈界面 - Flask Web UI，支持多任务、文件上传、通知、安全机制。"""
 
 import argparse
 import base64
@@ -138,24 +71,7 @@ GITHUB_URL = "https://github.com/XIADENGMA/ai-intervention-agent"
 
 @lru_cache(maxsize=1)
 def get_project_version() -> str:
-    """
-    从 pyproject.toml 读取项目版本号
-
-    返回
-    ----
-    str
-        项目版本号（如 "1.3.0"），读取失败时返回 "unknown"
-
-    实现逻辑
-    --------
-    1. 使用 tomllib（Python 3.11+）解析 pyproject.toml
-    2. 解析失败则回退到正则表达式匹配
-    3. 所有方法失败则返回 "unknown"
-
-    缓存说明
-    --------
-    使用 lru_cache 缓存首次读取结果，避免重复 I/O。
-    """
+    """从 pyproject.toml 读取版本号，缓存结果"""
     version = "unknown"
 
     try:
@@ -195,8 +111,7 @@ AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
 
 
 def validate_auto_resubmit_timeout(value: int) -> int:
-    """
-    验证并调整 auto_resubmit_timeout 值
+    """验证并限制 auto_resubmit_timeout 范围
 
     参数
     ----
@@ -322,25 +237,7 @@ DEFAULT_ALLOWED_NETWORKS = [
 
 
 def validate_bind_interface(value: Any) -> str:
-    """
-    验证并调整 bind_interface 值
-
-    参数
-    ----
-    value : str
-        绑定接口的值
-
-    返回
-    ----
-    str
-        验证后的绑定接口值
-
-    验证规则
-    --------
-    - 特殊值（0.0.0.0、127.0.0.1、localhost、::1、::）直接通过
-    - 尝试解析为 IP 地址，成功则通过
-    - 验证失败使用默认值 "127.0.0.1"
-    """
+    """验证绑定接口，无效时返回 127.0.0.1"""
     if not value or not isinstance(value, str):
         logger.warning("bind_interface 值无效，使用默认值 127.0.0.1")
         return "127.0.0.1"
@@ -536,19 +433,7 @@ def detect_best_publish_ipv4(bind_interface: str) -> Optional[str]:
 
 
 def validate_network_cidr(network_str: Any) -> bool:
-    """
-    验证网络 CIDR 格式是否有效
-
-    参数
-    ----
-    network_str : str
-        网络地址字符串（CIDR 格式或单个 IP）
-
-    返回
-    ----
-    bool
-        True 表示有效，False 表示无效
-    """
+    """验证 CIDR 或 IP 格式是否有效"""
     if not network_str or not isinstance(network_str, str):
         return False
 
@@ -565,23 +450,7 @@ def validate_network_cidr(network_str: Any) -> bool:
 
 
 def validate_allowed_networks(networks: Any) -> list[str]:
-    """
-    验证并清理 allowed_networks 列表
-
-    参数
-    ----
-    networks : list
-        允许的网络列表
-
-    返回
-    ----
-    list
-        验证后的网络列表
-
-    验证规则
-    --------
-    - 过滤无效的 CIDR/IP 格式
-    - 空列表自动添加本地回环地址
+    """验证并过滤 allowed_networks，空列表时添加回环地址
     - 记录无效条目的警告日志
     """
     if not isinstance(networks, list):
@@ -652,26 +521,7 @@ def validate_blocked_ips(ips: Any) -> list[str]:
 
 
 def validate_network_security_config(config: Any) -> dict[str, Any]:
-    """
-    验证并清理完整的 network_security 配置
-
-    参数
-    ----
-    config : dict
-        原始的 network_security 配置字典
-
-    返回
-    ----
-    dict
-        验证后的配置字典
-
-    验证规则
-    --------
-    - bind_interface: 验证为有效 IP 或特殊值
-    - allowed_networks: 验证 CIDR 格式，空列表添加本地回环
-    - blocked_ips: 验证 IP 格式
-    - enable_access_control: 转换为布尔值
-    """
+    """验证并清理 network_security 配置"""
     if not isinstance(config, dict):
         config = {}
 
@@ -696,60 +546,7 @@ def validate_network_security_config(config: Any) -> dict[str, Any]:
 
 
 class WebFeedbackUI:
-    """Web反馈界面核心类
-
-    功能说明：
-        封装Flask应用和相关配置，提供完整的Web反馈交互界面。
-        管理任务内容、用户反馈、安全策略、路由注册等。
-
-    核心职责：
-        - Flask应用初始化和配置
-        - HTTP安全头部设置（CSP、XSS保护、点击劫持防护）
-        - Markdown渲染器配置
-        - RESTful API路由注册
-        - 静态资源服务
-        - IP访问控制
-        - 请求频率限制
-        - 用户反馈收集和存储
-
-    属性说明：
-        prompt (str): 当前提示文本（Markdown格式）
-        predefined_options (List[str]): 预定义选项列表
-        task_id (Optional[str]): 当前任务ID
-        auto_resubmit_timeout (int): 自动重新提交超时时间（秒，最大290秒）
-        host (str): 服务器绑定地址（默认0.0.0.0）
-        port (int): 服务器监听端口（默认8080）
-        feedback_result (Optional[Dict]): 用户反馈结果存储
-        current_prompt (str): 当前显示的提示文本
-        current_options (List[str]): 当前显示的选项列表
-        current_task_id (Optional[str]): 当前任务ID
-        current_auto_resubmit_timeout (int): 当前超时时间
-        has_content (bool): 是否有有效内容
-        initial_empty (bool): 初始是否为空
-        app (Flask): Flask应用实例
-        csp_nonce (str): CSP随机数（用于内联脚本/样式）
-        network_security_config (Dict): 网络安全配置
-        limiter (Limiter): 请求频率限制器
-        md (Markdown): Markdown渲染器实例
-
-    生命周期：
-        1. __init__：初始化配置、创建Flask应用、设置安全策略
-        2. setup_security_headers：配置HTTP安全头部
-        3. setup_markdown：配置Markdown渲染器
-        4. setup_routes：注册所有API路由
-        5. run：启动Flask服务器，等待用户反馈
-        6. shutdown_server：优雅关闭服务器
-
-    线程安全：
-        - Flask应用内部使用Werkzeug线程本地存储，路由处理器线程安全
-        - feedback_result在单线程写入（提交反馈时），多线程读取（轮询时）需注意竞态条件
-        - TaskQueue内部使用threading.Lock保证线程安全
-
-    使用场景：
-        - 单次反馈收集：创建实例 → 调用run() → 获取feedback_result
-        - 持续服务模式：创建实例 → 调用run()（持续运行），通过API动态更新内容
-        - 多任务模式：与TaskQueue配合，实现任务队列的Web界面管理
-    """
+    """Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管理。"""
 
     def __init__(
         self,
@@ -760,49 +557,7 @@ class WebFeedbackUI:
         host: str = "0.0.0.0",
         port: int = 8080,
     ):
-        """初始化Web反馈界面实例
-
-        功能说明：
-            创建Flask应用实例，配置安全策略，初始化任务内容，注册路由。
-
-        参数说明：
-            prompt: 提示文本（支持Markdown格式，将被渲染为HTML）
-            predefined_options: 预定义选项列表（显示为复选框，可多选）
-            task_id: 任务唯一标识符（用于任务队列管理和日志追踪）
-            auto_resubmit_timeout: 自动重新提交超时时间（秒），最大不超过290秒，0表示禁用
-            host: 服务器绑定地址
-                   - "0.0.0.0": 监听所有网络接口（允许远程访问）
-                   - "127.0.0.1": 仅本地访问
-                   - 特定IP: 绑定到指定网络接口
-            port: 服务器监听端口（默认8080，需确保端口未被占用）
-
-        初始化步骤：
-            1. 存储任务配置（prompt、options、task_id、timeout）
-            2. 初始化反馈结果存储（feedback_result）
-            3. 创建Flask应用实例，启用CORS跨域支持
-            4. 生成CSP随机数（用于内联脚本的安全策略）
-            5. 加载网络安全配置（IP访问控制规则）
-            6. 配置请求频率限制器（60次/分钟，10次/秒）
-            7. 调用setup_security_headers()配置HTTP安全头部
-            8. 调用setup_markdown()配置Markdown渲染器
-            9. 调用setup_routes()注册所有API路由
-
-        副作用：
-            - 创建Flask应用实例（self.app）
-            - 启用全局CORS策略
-            - 配置全局请求频率限制
-            - 注册before_request和after_request钩子
-            - 注册所有API路由和静态资源路由
-
-        异常处理：
-            - 配置加载失败时使用默认安全配置
-            - Markdown扩展加载失败时使用基础渲染
-
-        注意事项：
-            - auto_resubmit_timeout最大值为290秒，超过将被截断
-            - host="0.0.0.0"时务必配置防火墙和IP访问控制
-            - CSP随机数在每次初始化时重新生成，确保安全性
-        """
+        """初始化 Flask 应用、安全策略、路由"""
         self.prompt = prompt
         self.predefined_options = predefined_options or []
         self.task_id = task_id

@@ -1,77 +1,4 @@
-"""
-任务队列管理模块
-
-提供线程安全的任务队列管理功能，支持多任务并发处理、状态管理、自动清理等核心功能。
-
-## 核心功能
-
-1. **任务管理**
-   - 添加/查询/删除任务
-   - 任务状态管理（pending/active/completed/expired）
-   - 活动任务切换
-   - 最大并发数限制
-
-2. **线程安全**
-   - 使用 threading.Lock 保护共享数据
-   - 所有公共方法都是线程安全的
-   - 支持多线程并发访问
-
-3. **自动清理**
-   - 后台清理线程定期清理过期任务
-   - 延迟删除机制（避免前端轮询404）
-   - 可配置的清理间隔和保留时间
-
-4. **状态管理**
-   - pending: 等待处理的任务
-   - active: 当前正在处理的任务（同时只有一个）
-   - completed: 已完成的任务（延迟10秒删除）
-   - expired: 已过期的任务
-
-## 使用场景
-
-- Web应用的异步任务队列
-- 用户交互反馈收集
-- AI对话会话管理
-- 多任务并发处理
-
-## 设计考虑
-
-### 为什么延迟删除？
-当任务完成时，前端可能正在轮询任务状态。如果立即删除任务，
-前端会收到404错误，导致不必要的错误处理。通过延迟10秒删除，
-前端有足够时间获取任务结果并停止轮询。
-
-### 为什么后台清理线程？
-使用独立的守护线程定期清理过期任务，避免任务堆积和内存泄漏，
-同时不影响主线程的性能。
-
-### 线程安全策略
-所有修改共享数据的操作都使用 with self._lock 保护，
-确保并发访问时的数据一致性。
-
-## 注意事项
-
-- 任务ID必须唯一
-- 同一时间只有一个活动任务
-- 完成的任务会在10秒后自动删除
-- 队列满时无法添加新任务
-- 所有方法都是线程安全的
-
-## 性能特性
-
-- Lock 粒度：方法级别（较粗粒度，但简单可靠）
-- 后台清理：每5秒一次，清理10秒前完成的任务
-- 内存占用：每个任务约1KB（取决于prompt和options大小）
-- 并发性能：适合中低并发场景（<100 QPS）
-- **数据结构优化**：Python 3.7+ dict 保持插入顺序，删除操作 O(1)
-
-## 依赖项
-
-- Python 3.7+
-- threading (标准库)
-- dataclasses (标准库)
-- datetime (标准库)
-"""
+"""任务队列管理 - 线程安全、状态管理、自动清理、延迟删除。"""
 
 import logging
 import threading
@@ -87,58 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Task:
-    """任务数据结构
-
-    不可变的任务数据容器，使用dataclass自动生成__init__、__repr__等方法。
-
-    ## 状态转换流程
-
-    ```
-    pending (等待) → active (激活) → completed (完成) → [延迟10秒删除]
-                      ↓
-                   expired (过期，未使用)
-    ```
-
-    ## 字段说明
-
-    ### 必填字段
-    - `task_id`: 任务唯一标识符（建议使用UUID或时间戳）
-    - `prompt`: 任务提示信息（显示给用户的问题或说明）
-
-    ### 可选字段
-    - `predefined_options`: 预定义选项列表（如["同意", "拒绝"]）
-    - `auto_resubmit_timeout`: 自动重新提交超时（240-290秒）
-    - `created_at`: 任务创建时间（自动生成）
-    - `status`: 任务状态（自动管理）
-    - `result`: 任务执行结果（完成时设置）
-    - `completed_at`: 任务完成时间（用于延迟删除判断）
-
-    ## 超时配置说明
-
-    `auto_resubmit_timeout` 字段控制前端倒计时：
-    - 默认值：240秒（4分钟）
-    - 最大值：290秒（强制限制）
-    - 用途：前端自动重新提交前的等待时间
-    - 注意：后端超时应大于此值（后端=max(前端+60, 300)秒）
-
-    ## 注意事项
-
-    - task_id 必须全局唯一
-    - 一旦创建，task_id 和 prompt 不应修改
-    - status 和 completed_at 由 TaskQueue 自动管理
-    - auto_resubmit_timeout 会被自动限制在290秒以内
-    - dataclass 不保证线程安全，需要外部同步
-
-    Attributes:
-        task_id (str): 任务唯一标识符，建议使用UUID
-        prompt (str): 任务提示信息，显示给用户的问题
-        predefined_options (Optional[List[str]]): 预定义选项列表，None表示无选项
-        auto_resubmit_timeout (int): 自动重新提交超时时间（秒），默认240，最大290
-        created_at (datetime): 任务创建时间，自动生成
-        status (str): 任务状态，可选值：pending/active/completed/expired
-        result (Optional[Dict[str, Any]]): 任务执行结果，完成时由complete_task设置
-        completed_at (Optional[datetime]): 任务完成时间，用于延迟删除判断
-    """
+    """任务数据结构：task_id, prompt, options, status, result"""
 
     task_id: str
     prompt: str
@@ -154,28 +30,7 @@ class Task:
     completed_at: Optional[datetime] = None
 
     def get_remaining_time(self) -> int:
-        """计算剩余倒计时时间（秒）
-
-        【优化】使用单调时间（monotonic）计算，不受系统时间调整影响。
-        基于任务创建时的 monotonic 时间戳和配置的超时时间，计算当前剩余的倒计时秒数。
-        用于服务器端跟踪倒计时状态，解决页面刷新后倒计时重置的问题。
-
-        **计算公式**：
-            elapsed = time.monotonic() - created_at_monotonic
-            remaining = auto_resubmit_timeout - elapsed
-
-        **返回值范围**：
-            - 最大值：auto_resubmit_timeout（刚创建时）
-            - 最小值：0（倒计时结束或已超时）
-
-        Returns:
-            int: 剩余秒数，范围 [0, auto_resubmit_timeout]
-
-        Note:
-            - 已完成的任务返回 0
-            - 负数会被截断为 0
-            - 【优化】使用 time.monotonic()，不受系统时间调整影响
-        """
+        """计算剩余倒计时（使用单调时间）"""
         if self.status == "completed":
             return 0
 
@@ -187,13 +42,7 @@ class Task:
         return max(0, int(remaining))
 
     def get_deadline_monotonic(self) -> float:
-        """获取截止时间的单调时间戳
-
-        【新增】返回任务的截止时间（单调时间戳），用于后端超时判断。
-
-        Returns:
-            float: 截止时间的单调时间戳（created_at_monotonic + auto_resubmit_timeout）
-        """
+        """获取截止时间的单调时间戳"""
         return self.created_at_monotonic + self.auto_resubmit_timeout
 
     def is_expired(self) -> bool:
@@ -348,31 +197,6 @@ class TaskQueue:
 
         删除所有任务并重置队列状态，用于服务启动时清理残留任务。
 
-        **使用场景**：
-        - 服务启动时清理上次运行的残留任务
-        - 测试时重置队列状态
-        - 发生异常需要重置时
-
-        **操作内容**：
-        - 清空任务字典 (_tasks)
-        - 重置活动任务ID (_active_task_id)
-        - 记录清理日志
-
-        Returns:
-            int: 清理的任务数量（包括pending/active/completed所有状态）
-
-        Thread Safety:
-            线程安全（使用 Lock 保护）
-
-        Side Effects:
-            - 清空所有内部数据结构
-            - 记录日志
-            - 所有任务引用将失效
-
-        Note:
-            - 此方法会立即删除所有任务，包括completed状态的任务
-            - 不会等待后台清理线程的延迟删除机制
-            - 调用后队列恢复到初始状态
         """
         with self._lock:
             count = len(self._tasks)
@@ -389,59 +213,7 @@ class TaskQueue:
         predefined_options: Optional[List[str]] = None,
         auto_resubmit_timeout: int = 240,
     ) -> bool:
-        """添加新任务到队列
-
-        创建新任务并添加到队列中。如果当前没有活动任务，新任务自动成为活动任务。
-
-        **状态设置逻辑**：
-        - 如果是第一个任务（无活动任务）→ 状态为 `active`
-        - 如果已有活动任务 → 状态为 `pending`
-
-        **失败条件**：
-        1. 队列已满（达到 max_tasks 限制）
-        2. task_id 已存在（重复添加）
-
-        **超时限制**：
-        - auto_resubmit_timeout 会被自动限制在290秒以内
-        - 这是前端倒计时的最大值
-        - 后端超时应该更长（见 server.py 中的计算逻辑）
-
-        Args:
-            task_id (str): 任务唯一标识符
-                - 必须全局唯一
-                - 建议使用UUID或时间戳
-                - 示例：f"task-{uuid.uuid4()}"
-            prompt (str): 任务提示信息
-                - 显示给用户的问题或说明
-                - 不应包含HTML标签（前端会转义）
-            predefined_options (Optional[List[str]]): 预定义选项列表
-                - None表示无选项（纯文本输入）
-                - 空列表也表示无选项
-                - 示例：["同意", "拒绝", "需要更多信息"]
-            auto_resubmit_timeout (int): 自动重新提交超时（秒）
-                - 默认值：240秒（4分钟）
-                - 最大值：290秒（自动限制）
-                - 前端倒计时时间
-
-        Returns:
-            bool: 添加是否成功
-                - True: 成功添加
-                - False: 失败（队列满或ID重复）
-
-        Thread Safety:
-            线程安全（使用 Lock 保护）
-
-        Side Effects:
-            - 添加任务到 _tasks（Python 3.7+ 保持插入顺序）
-            - 可能设置 _active_task_id（如果是第一个任务）
-            - 记录日志
-
-        Note:
-            - 不验证 prompt 和 predefined_options 的内容
-            - 超时值会被自动调整，无需手动限制
-            - 任务添加后立即可查询
-            - 建议在添加前检查队列是否已满（get_task_count）
-        """
+        """添加任务，无活动任务时自动激活"""
         with self._lock:
             # 限制前端倒计时最大不超过290秒
             auto_resubmit_timeout = min(auto_resubmit_timeout, 290)
@@ -507,36 +279,7 @@ class TaskQueue:
             return self._tasks.get(task_id)
 
     def get_all_tasks(self) -> List[Task]:
-        """获取所有任务（按添加顺序）
-
-        返回队列中所有任务的列表，按照添加顺序排列。
-
-        **包含的状态**：
-        - pending: 等待处理的任务
-        - active: 当前活动任务
-        - completed: 已完成但未删除的任务（10秒内）
-
-        **排序规则**：
-        - 按照 add_task 的调用顺序
-        - 不是按状态或创建时间排序
-
-        Returns:
-            List[Task]: 任务对象列表（可能为空）
-                - 按添加顺序排列
-                - 不包含已删除的任务
-                - 返回的是新列表，修改不影响队列
-
-        Thread Safety:
-            线程安全（使用 Lock 保护）
-
-        Time Complexity:
-            O(n) - 需要遍历 _tasks 并构建列表
-
-        Note:
-            - 返回的列表是新创建的，可以安全修改
-            - 但修改列表中的Task对象会影响队列状态
-            - 如果需要只读视图，考虑使用dataclass的replace()
-        """
+        """获取所有任务列表"""
         with self._lock:
             # 【性能优化】Python 3.7+ dict 保持插入顺序，直接返回 values
             return list(self._tasks.values())
@@ -573,77 +316,14 @@ class TaskQueue:
         return updated
 
     def get_active_task(self) -> Optional[Task]:
-        """获取当前活动任务
-
-        返回当前正在处理的活动任务（status='active'）。
-
-        **活动任务规则**：
-        - 同一时间只有一个活动任务
-        - 第一个添加的任务自动成为活动任务
-        - 活动任务完成后，自动激活下一个pending任务
-        - 可通过 set_active_task 手动切换
-
-        Returns:
-            Optional[Task]: 活动任务对象，不存在则返回 None
-                - Task对象（status='active'）
-                - None表示队列为空或所有任务都已完成
-
-        Thread Safety:
-            线程安全（使用 Lock 保护）
-
-        Time Complexity:
-            O(1) - 直接通过 _active_task_id 查询
-
-        Note:
-            - 返回的Task对象与get_task返回的是同一个对象
-            - 通常用于前端轮询当前需要处理的任务
-            - 活动任务完成后会自动切换到下一个
-        """
+        """获取当前活动任务"""
         with self._lock:
             if self._active_task_id:
                 return self._tasks.get(self._active_task_id)
             return None
 
     def set_active_task(self, task_id: str) -> bool:
-        """设置活动任务（手动切换）
-
-        将指定任务设置为活动任务，原活动任务变为pending状态。
-
-        **状态变化**：
-        - 原活动任务: `active` → `pending`
-        - 新活动任务: `pending` → `active`
-
-        **使用场景**：
-        - 用户手动切换到另一个任务
-        - 前端任务列表点击切换
-        - 优先处理某个任务
-
-        **失败条件**：
-        - 指定的task_id不存在
-
-        Args:
-            task_id (str): 要激活的任务ID
-                - 必须是已存在的任务
-                - 可以是任何状态的任务（通常是pending）
-
-        Returns:
-            bool: 是否成功切换
-                - True: 成功切换
-                - False: 任务不存在
-
-        Thread Safety:
-            线程安全（使用 Lock 保护）
-
-        Side Effects:
-            - 更新 _active_task_id
-            - 修改旧任务和新任务的status
-            - 记录切换日志
-
-        Note:
-            - 可以将completed状态的任务重新激活（不推荐）
-            - 旧活动任务只有在status='active'时才会变为pending
-            - 不会影响任务在 _task_order 中的顺序
-        """
+        """手动切换活动任务"""
         with self._lock:
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")

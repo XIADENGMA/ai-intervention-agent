@@ -1,71 +1,72 @@
-# AI Intervention Agent（VSCode 插件）
+# AI Intervention Agent (VSCode Extension)
 
-[English](https://github.com/XIADENGMA/ai-intervention-agent/blob/main/packages/vscode/README.en.md) | 简体中文
+English | [简体中文](https://github.com/XIADENGMA/ai-intervention-agent/blob/main/packages/vscode/README.zh-CN.md)
 
-该 VSCode 插件用于在 VSCode 侧边栏内嵌 AI Intervention Agent 的交互面板，便于在编辑器内完成 `interactive_feedback` 等交互流程。
+This VSCode extension embeds the AI Intervention Agent interaction panel into VSCode’s sidebar, so you can handle workflows like `interactive_feedback` directly inside the editor.
 
-## 功能特性
+## Features
 
-- **侧边栏集成**：在 VSCode Activity Bar 中提供面板入口
-- **多任务/多标签**：支持多个 task 的切换与展示
-- **倒计时展示**：可视化圆环进度
-- **主题自适应**：跟随 VSCode 明暗主题
-- **稳定性**：内置重试与错误处理
+- **Sidebar integration**: A dedicated view entry in the Activity Bar
+- **Multi-task / multi-tab**: Switch between multiple tasks easily
+- **Countdown display**: Visual ring progress UI
+- **Theme adaptive**: Matches VSCode light/dark themes
+- **Resilient networking**: Retry and error handling built-in
 
-## 环境要求
+## Requirements
 
 - VSCode `>= 1.74.0`
-- 本地可访问的 AI Intervention Agent 服务端（默认 `http://localhost:8081`）
+- A reachable AI Intervention Agent server (default: `http://localhost:8081`)
 
-## 安装
+## Installation
 
-> Open VSX 扩展页：`https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
+> Open VSX page: `https://open-vsx.org/extension/xiadengma/ai-intervention-agent`
 
-### 方式一：安装 VSIX（推荐离线/内网环境）
+### Option 1: Install a VSIX
 
-1. 生成或下载 `.vsix`
-2. VSCode → `Ctrl+Shift+P` → 选择 **Extensions: Install from VSIX...**
+1. Build or download a `.vsix`
+2. In VSCode, open Command Palette → **Extensions: Install from VSIX...**
 
-### 方式二：从源码调试/开发（monorepo）
+### Option 2: Develop from source (monorepo)
 
-1. 打开主仓库根目录（本仓库）
-2. 安装依赖：
+1. Open the repository root (this repo)
+2. Install dependencies:
 
 ```bash
 npm install
 ```
 
-3. 在 VSCode 中按 `F5` 启动 Extension Development Host 调试
+3. Press `F5` in VSCode to launch an Extension Development Host
 
-## 配置
+## Settings
 
-- `ai-intervention-agent.serverUrl`：服务端地址（默认 `http://localhost:8081`）
+- `ai-intervention-agent.serverUrl`: server URL (default: `http://localhost:8081`)
 
-## 生成 VSIX（.vsix）
+## Build a VSIX (.vsix)
 
-在仓库根目录执行：
+From the repository root:
 
 ```bash
 npm run vscode:package
 ```
 
-生成的 `.vsix` 文件会出现在 `packages/vscode/` 目录下。
+The generated `.vsix` file will appear under `packages/vscode/`.
 
-## 开发与测试
+## Development & Tests
 
-在仓库根目录执行：
+From the repository root:
 
 ```bash
 npm run vscode:lint
 npm run vscode:test
 ```
 
-## 排错
+## Troubleshooting
 
-- **看不到请求**：
-  - 确认服务端可访问（默认端口 8081 或按你的 `serverUrl` 设置）
-  - VSCode → Help → Toggle Developer Tools 查看控制台错误
+- **No requests shown**:
+  - Make sure the server is reachable (default port 8081, or your configured `serverUrl`)
+  - Check VSCode Developer Tools console logs
 
-## 项目地址
+## Repository
 
-- 主仓库：[`XIADENGMA/ai-intervention-agent`](https://github.com/XIADENGMA/ai-intervention-agent)
+- [`XIADENGMA/ai-intervention-agent`](https://github.com/XIADENGMA/ai-intervention-agent)
+
