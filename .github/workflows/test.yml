@@ -66,7 +66,7 @@ jobs:
 
       - name: 上传覆盖率报告（coverage.xml）
         if: always() && matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-report
           path: coverage.xml
