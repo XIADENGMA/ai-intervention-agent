@@ -1,6 +1,7 @@
 """任务队列管理 - 线程安全、状态管理、自动清理、延迟删除。"""
 
 import logging
+import json
 import threading
 import time
 from collections.abc import Callable
@@ -10,6 +11,23 @@ from threading import Lock
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _append_debug_trace(payload: dict[str, Any]) -> None:
+    try:
+        entry = {
+            "hypothesisId": payload.get("hypothesisId", ""),
+            "location": payload.get("location", "task_queue.py"),
+            "message": payload.get("message", ""),
+            "data": payload.get("data", {}),
+            "timestamp": int(payload.get("timestamp") or time.time() * 1000),
+        }
+        # region agent log
+        with open("/opt/cursor/logs/debug.log", "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # endregion
+    except Exception:
+        pass
 
 
 @dataclass
@@ -418,6 +436,7 @@ class TaskQueue:
             task.status = "completed"
             task.result = result
             task.completed_at = datetime.now(timezone.utc)  # 使用 UTC 时间
+            next_active_id = None
 
             # 【新增】触发任务状态变更回调（当前任务完成）
             self._trigger_status_change(task_id, old_status, "completed")
@@ -431,12 +450,30 @@ class TaskQueue:
                     if t.status == "pending":
                         self._active_task_id = tid
                         t.status = "active"
+                        next_active_id = tid
                         logger.info(f"自动激活下一个任务: {tid}")
                         # 【新增】触发自动激活任务的回调
                         self._trigger_status_change(tid, "pending", "active")
                         break
             else:
                 logger.info(f"任务完成: {task_id}")
+
+            # region agent log
+            _append_debug_trace(
+                {
+                    "hypothesisId": "B",
+                    "location": "task_queue.py:418",
+                    "message": "task marked completed",
+                    "data": {
+                        "taskId": task_id,
+                        "oldStatus": old_status,
+                        "nextActiveTaskId": next_active_id,
+                        "hasUserInput": bool(result.get("user_input")),
+                    },
+                    "timestamp": int(time.time() * 1000),
+                }
+            )
+            # endregion
 
             logger.info(f"任务 {task_id} 已标记为完成（将在 10 秒后自动清理）")
 
