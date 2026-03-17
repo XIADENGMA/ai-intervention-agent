@@ -49,6 +49,7 @@ suite('Extension Test Suite', () => {
     assert.ok(/async function autoSubmit\(\)[\s\S]*fetchFeedbackPrompts\(/.test(webviewUi))
     assert.ok(webviewUi.includes('collectImageFilesFromClipboard'))
     assert.ok(webviewUi.includes('applyHostThemeState'))
+    assert.ok(webviewUi.includes("formData.append('task_id', taskIdToSubmit)"))
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
     assert.ok(extPkg.includes('ai-intervention-agent.logLevel'))

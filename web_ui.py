@@ -680,8 +680,9 @@ class WebFeedbackUI:
                 在每个请求处理前验证客户端IP地址是否在允许的网络范围内。
 
             验证逻辑：
-                1. 从HTTP_X_FORWARDED_FOR或REMOTE_ADDR获取客户端IP
-                2. 处理代理转发的多IP情况（取第一个IP）
+                1. 默认使用REMOTE_ADDR作为客户端IP
+                2. 仅在请求来自本机反向代理时信任HTTP_X_FORWARDED_FOR
+                3. 处理代理转发的多IP情况（取第一个IP）
                 3. 调用_is_ip_allowed()进行白名单/黑名单验证
                 4. 拒绝不合法的IP访问（返回403）
 
@@ -690,14 +691,9 @@ class WebFeedbackUI:
                 - 调用abort(403)中断请求处理
 
             注意事项：
-                - 代理环境下需检查HTTP_X_FORWARDED_FOR头部
-                - IP伪造风险：确保代理服务器可信任
+                - 仅信任来自本机反向代理的 X-Forwarded-For，避免客户端直接伪造
             """
-            client_ip = request.environ.get(
-                "HTTP_X_FORWARDED_FOR", request.environ.get("REMOTE_ADDR", "")
-            )
-            if client_ip and "," in client_ip:
-                client_ip = client_ip.split(",")[0].strip()
+            client_ip = self._get_request_client_ip(request.environ)
 
             if not self._is_ip_allowed(client_ip):
                 logger.warning(f"拒绝来自 {client_ip} 的访问请求")
@@ -1651,6 +1647,7 @@ class WebFeedbackUI:
             # 检查是否有文件上传（优先检查 request.files）
             if request.files:
                 # 处理文件上传请求（multipart/form-data）
+                requested_task_id = request.form.get("task_id", "").strip()
                 feedback_text = request.form.get("feedback_text", "").strip()
                 selected_options_str = request.form.get("selected_options", "[]")
                 try:
@@ -1736,6 +1733,7 @@ class WebFeedbackUI:
                 images = uploaded_images
             elif request.form:
                 # 处理表单数据（没有文件）
+                requested_task_id = request.form.get("task_id", "").strip()
                 feedback_text = request.form.get("feedback_text", "").strip()
                 selected_options_str = request.form.get("selected_options", "[]")
                 try:
@@ -1756,7 +1754,10 @@ class WebFeedbackUI:
                 # 兼容原有的JSON请求格式
                 try:
                     data = request.get_json() or {}
-                    feedback_text = data.get("feedback_text", "").strip()
+                    requested_task_id = str(data.get("task_id", "")).strip()
+                    feedback_text = str(
+                        data.get("feedback_text", data.get("user_input", ""))
+                    ).strip()
                     selected_options = data.get("selected_options", [])
                     images = data.get("images", [])
 
@@ -1769,10 +1770,25 @@ class WebFeedbackUI:
                     logger.debug(f"  - 图片数量: {len(images)}")
                 except Exception:
                     # 如果无法解析JSON，使用默认值
+                    requested_task_id = ""
                     feedback_text = ""
                     selected_options = []
                     images = []
                     logger.debug("JSON解析失败，使用默认值")
+
+            task_queue = get_task_queue()
+            target_task_id = requested_task_id
+            if requested_task_id:
+                target_task = task_queue.get_task(requested_task_id)
+                if not target_task:
+                    logger.warning(f"提交反馈时任务不存在: {requested_task_id}")
+                    return (
+                        jsonify({"status": "error", "message": "任务不存在"}),
+                        404,
+                    )
+            else:
+                active_task = task_queue.get_active_task()
+                target_task_id = active_task.task_id if active_task else ""
 
             # 构建新的返回格式
             self.feedback_result = {
@@ -1791,16 +1807,12 @@ class WebFeedbackUI:
             )
             logger.debug(f"  - images数量: {len(self.feedback_result['images'])}")
 
-            # 如果有激活的任务，也提交到 TaskQueue
-            task_queue = get_task_queue()
-            active_task = task_queue.get_active_task()
-            if active_task:
-                logger.info(
-                    f"同时将反馈提交到TaskQueue中的激活任务: {active_task.task_id}"
-                )
+            # 如果显式指定了任务，优先提交给该任务；否则提交到当前激活任务
+            if target_task_id:
+                logger.info(f"同时将反馈提交到TaskQueue中的目标任务: {target_task_id}")
                 if self.feedback_result is not None:
                     task_queue.complete_task(
-                        active_task.task_id,
+                        target_task_id,
                         cast(dict[str, Any], self.feedback_result),
                     )
 
@@ -2999,6 +3011,35 @@ class WebFeedbackUI:
         except AddressValueError as e:
             logger.warning(f"无效的IP地址 {client_ip}: {e}")
             return False
+
+    @staticmethod
+    def _parse_forwarded_for(forwarded_for: str) -> str:
+        """从 X-Forwarded-For 中提取首个客户端 IP。"""
+        if not forwarded_for:
+            return ""
+        return forwarded_for.split(",")[0].strip()
+
+    @staticmethod
+    def _should_trust_forwarded_for(remote_addr: str) -> bool:
+        """仅信任来自本机反向代理的 X-Forwarded-For。"""
+        if not remote_addr:
+            return False
+        try:
+            return ip_address(remote_addr).is_loopback
+        except AddressValueError:
+            return False
+
+    def _get_request_client_ip(self, environ: Dict[str, Any]) -> str:
+        """获取用于访问控制的客户端 IP。"""
+        remote_addr = str(environ.get("REMOTE_ADDR", "")).strip()
+        forwarded_for = str(environ.get("HTTP_X_FORWARDED_FOR", "")).strip()
+
+        if self._should_trust_forwarded_for(remote_addr):
+            forwarded_ip = self._parse_forwarded_for(forwarded_for)
+            if forwarded_ip:
+                return forwarded_ip
+
+        return remote_addr
 
     def _get_mdns_config(self) -> dict[str, Any]:
         """读取 mdns 配置段（失败则返回空字典）"""

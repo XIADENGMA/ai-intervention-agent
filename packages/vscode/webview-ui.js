@@ -2415,6 +2415,10 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
             // 优先使用多任务提交端点（更明确，不依赖“当前激活任务”隐式状态）
             const taskIdToSubmit = taskIdOverride || (currentConfig && currentConfig.task_id) || activeTaskId;
+            if (taskIdToSubmit) {
+                // 即使回退到 /api/submit，也让后端知道本次提交面向哪个任务。
+                formData.append('task_id', taskIdToSubmit);
+            }
             const submitPath = taskIdToSubmit
                 ? ('/api/tasks/' + encodeURIComponent(taskIdToSubmit) + '/submit')
                 : '/api/submit';
