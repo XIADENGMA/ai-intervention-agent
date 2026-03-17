@@ -15,6 +15,11 @@ const SERVER_URL = (__cfgEl && __cfgEl.getAttribute('data-server-url')) ? __cfgE
 const CSP_NONCE = (__cfgEl && __cfgEl.getAttribute('data-csp-nonce')) ? __cfgEl.getAttribute('data-csp-nonce') : '';
 const LOTTIE_LIB_URL = (__cfgEl && __cfgEl.getAttribute('data-lottie-lib-url')) ? __cfgEl.getAttribute('data-lottie-lib-url') : '';
 const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-content-lottie-json-url')) ? __cfgEl.getAttribute('data-no-content-lottie-json-url') : '';
+    const WEBVIEW_HELPERS =
+        (typeof window !== 'undefined' && window.AIIAWebviewHelpers)
+            ? window.AIIAWebviewHelpers
+            : null;
+    let themeObserver = null;
     // 无有效内容页面：Lottie 动画（对齐原项目：sprout.json；失败则降级为 🌱）
     let noContentHourglassAnimation = null;
 
@@ -66,6 +71,41 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         const container = document.getElementById('hourglass-lottie');
         if (!container) return;
         container.style.filter = isDarkBackground() ? 'invert(1)' : 'none';
+    }
+
+    function isMacLikePlatform() {
+        try {
+            if (WEBVIEW_HELPERS && typeof WEBVIEW_HELPERS.detectMacLikePlatform === 'function') {
+                return !!WEBVIEW_HELPERS.detectMacLikePlatform(navigator);
+            }
+        } catch (e) {
+            // ignore
+        }
+        return !!(navigator && navigator.platform && navigator.platform.includes('Mac'));
+    }
+
+    function applyHostThemeState() {
+        try {
+            if (WEBVIEW_HELPERS && typeof WEBVIEW_HELPERS.applyThemeKindToDocument === 'function') {
+                WEBVIEW_HELPERS.applyThemeKindToDocument(document);
+            }
+        } catch (e) {
+            // ignore
+        }
+        updateNoContentHourglassColor();
+    }
+
+    function installHostThemeObserver() {
+        applyHostThemeState();
+        if (themeObserver || typeof MutationObserver === 'undefined' || !document.body) return;
+
+        themeObserver = new MutationObserver(() => {
+            applyHostThemeState();
+        });
+        themeObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['class']
+        });
     }
 
     function destroyNoContentHourglassAnimation() {
@@ -211,6 +251,10 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     // 【对齐服务端】server_time/deadline/remaining_time 支持（用于倒计时不漂移）
     let serverTimeOffset = 0;     // 服务器时间 - 本地时间（秒）
     let taskDeadlines = {};       // task_id -> deadline（秒级时间戳）
+    let feedbackPrompts = {
+        resubmit_prompt: '请立即调用 interactive_feedback 工具',
+        prompt_suffix: '\n请积极调用 interactive_feedback 工具'
+    };
     // 【对齐原始实现】多任务输入状态：每个任务独立保存输入/选项/图片，避免切换任务时“串任务”
     let taskTextareaContents = {}; // task_id -> string
     let taskOptionsStates = {};    // task_id -> { [index:number]: boolean } | boolean[]
@@ -270,6 +314,39 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     function logError(message) {
         console.error('[Webview]', message);
         vscode.postMessage({ type: 'error', message: String(message) });
+    }
+
+    async function fetchFeedbackPrompts(fetchOptions) {
+        let controller = null;
+        let timeoutId = null;
+        try {
+            const options = fetchOptions ? { ...fetchOptions } : { cache: 'no-store' };
+            if (!options.cache) options.cache = 'no-store';
+
+            if (typeof AbortController !== 'undefined') {
+                controller = new AbortController();
+                options.signal = controller.signal;
+                timeoutId = setTimeout(() => {
+                    try { controller.abort(); } catch (e) { /* ignore */ }
+                }, POLL_CONFIG_TIMEOUT_MS);
+            }
+
+            const response = await fetch(SERVER_URL + '/api/get-feedback-prompts', options);
+            if (!response.ok) return feedbackPrompts;
+
+            const payload = await response.json();
+            if (payload && payload.status === 'success' && payload.config) {
+                feedbackPrompts = {
+                    resubmit_prompt: payload.config.resubmit_prompt || feedbackPrompts.resubmit_prompt,
+                    prompt_suffix: payload.config.prompt_suffix || feedbackPrompts.prompt_suffix
+                };
+            }
+        } catch (e) {
+            log('获取反馈提示语失败，使用缓存值: ' + (e && e.message ? e.message : String(e)));
+        } finally {
+            if (timeoutId) clearTimeout(timeoutId);
+        }
+        return feedbackPrompts;
     }
 
     // 插入剪贴板代码：在光标处插入 fenced code block（对齐“插入代码”按钮预期）
@@ -376,6 +453,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
     /* 初始化函数 */
     async function init() {
+        installHostThemeObserver();
         setupEventListeners();
         // 默认先标记为未连接，避免长时间停留在“连接中...”的误导状态
         updateServerStatus(false);
@@ -458,7 +536,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 });
                 // 【体验对齐】Ctrl/Cmd + Enter 提交
                 textarea.addEventListener('keydown', (e) => {
-                    const isMac = !!(navigator && navigator.platform && navigator.platform.includes('Mac'));
+                    const isMac = isMacLikePlatform();
                     const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
                     if (ctrlOrCmd && e.key === 'Enter') {
                         e.preventDefault();
@@ -2217,8 +2295,16 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         }
         stopCountdown();
 
-        // 构建默认反馈消息（固定文本，引导AI继续调用工具）
-        const defaultMessage = '请立即调用 interactive_feedback 工具';
+        // 自动提交前实时拉取一次配置，确保 resubmit_prompt 热更新能立刻生效
+        let defaultMessage = '请立即调用 interactive_feedback 工具';
+        try {
+            const prompts = await fetchFeedbackPrompts();
+            if (prompts && prompts.resubmit_prompt) {
+                defaultMessage = String(prompts.resubmit_prompt);
+            }
+        } catch (e) {
+            // ignore，保留默认文案兜底
+        }
 
         await submitWithData(defaultMessage, [], taskId);
 
@@ -2743,22 +2829,36 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     }
 
     function handlePaste(e) {
-        const items = e.clipboardData?.items;
-        if (!items) return;
+        const clipboardData = e && e.clipboardData;
+        if (!clipboardData) return;
 
-        const imageFiles = [];
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            if (item && item.type && item.type.startsWith('image/')) {
-                const file = item.getAsFile();
-                if (file) {
-                    imageFiles.push(file);
+        let imageFiles = [];
+        try {
+            if (WEBVIEW_HELPERS && typeof WEBVIEW_HELPERS.collectImageFilesFromClipboard === 'function') {
+                imageFiles = WEBVIEW_HELPERS.collectImageFilesFromClipboard(clipboardData);
+            }
+        } catch (err) {
+            imageFiles = [];
+        }
+
+        if (!imageFiles.length) {
+            const items = clipboardData.items || [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item && item.type && item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) {
+                        imageFiles.push(file);
+                    }
                 }
             }
         }
 
         if (imageFiles.length > 0) {
-            e.preventDefault(); // 阻止默认粘贴行为
+            const pastedText = (clipboardData.getData('text/plain') || clipboardData.getData('text') || '').trim();
+            if (!pastedText) {
+                e.preventDefault(); // 纯图片粘贴时阻止默认行为，避免 textarea 出现占位文本
+            }
             processImages(imageFiles);
             log('从剪贴板粘贴了 ' + imageFiles.length + ' 张图片');
         }
@@ -2858,6 +2958,14 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         stopPolling();
         stopCountdown();
         clearAllTabCountdowns();
+        if (themeObserver) {
+            try {
+                themeObserver.disconnect();
+            } catch (e) {
+                // ignore
+            }
+            themeObserver = null;
+        }
     });
 
     function reportFatalError(prefix, err) {

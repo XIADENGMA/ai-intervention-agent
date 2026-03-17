@@ -121,3 +121,24 @@ class TestGetFeedbackPromptsAPIValidation(unittest.TestCase):
         self.assertEqual(
             data["config"]["prompt_suffix"], "\n请积极调用 interactive_feedback 工具"
         )
+
+    @patch("web_ui.get_config")
+    def test_custom_strings_passthrough(self, mock_get_config):
+        """resubmit_prompt/prompt_suffix 非空时应原样返回给前端"""
+        from pathlib import Path
+
+        mock_cfg = MagicMock()
+        mock_cfg.get_section.return_value = {
+            "resubmit_prompt": "请重新调用自定义工具",
+            "prompt_suffix": "\n继续等待用户输入",
+        }
+        mock_cfg.config_file = Path("/tmp/custom-config.jsonc")
+        mock_get_config.return_value = mock_cfg
+
+        resp = self.client.get("/api/get-feedback-prompts")
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["config"]["resubmit_prompt"], "请重新调用自定义工具")
+        self.assertEqual(data["config"]["prompt_suffix"], "\n继续等待用户输入")
