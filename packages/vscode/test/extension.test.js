@@ -20,10 +20,12 @@ suite('Extension Test Suite', () => {
     assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
 
     const webviewJsPath = path.join(ext.extensionPath, 'webview.js')
+    const webviewHelpersPath = path.join(ext.extensionPath, 'webview-helpers.js')
     const webviewUiPath = path.join(ext.extensionPath, 'webview-ui.js')
     const extPkgPath = path.join(ext.extensionPath, 'package.json')
 
     assert.ok(fs.existsSync(webviewJsPath), 'Missing webview.js in extension')
+    assert.ok(fs.existsSync(webviewHelpersPath), 'Missing webview-helpers.js in extension')
     assert.ok(fs.existsSync(webviewUiPath), 'Missing webview-ui.js in extension')
     assert.ok(fs.existsSync(extPkgPath), 'Missing package.json in extension')
 
@@ -33,6 +35,7 @@ suite('Extension Test Suite', () => {
 
     // 新功能回归点：插入代码按钮（剪贴板链路）
     assert.ok(webviewJs.includes('id="insertCodeBtn"'))
+    assert.ok(webviewJs.includes('webview-helpers.js'))
     assert.ok(webviewUi.includes('requestClipboardText'))
     assert.ok(webviewUi.includes('clipboardText'))
 
@@ -43,9 +46,82 @@ suite('Extension Test Suite', () => {
     // 边界回归点：自动提交与 429 应有护栏（避免重试风暴/并发提交）
     assert.ok(webviewUi.includes('autoSubmitAttempted'))
     assert.ok(webviewUi.includes('submitBackoffUntilMs'))
+    assert.ok(/async function autoSubmit\(\)[\s\S]*fetchFeedbackPrompts\(/.test(webviewUi))
+    assert.ok(webviewUi.includes('collectImageFilesFromClipboard'))
+    assert.ok(webviewUi.includes('applyHostThemeState'))
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
     assert.ok(extPkg.includes('ai-intervention-agent.logLevel'))
+  })
+
+  test('Webview helpers 应覆盖 macOS / 剪贴板 / 主题同步兼容逻辑', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
+
+    const helpersPath = path.join(ext.extensionPath, 'webview-helpers.js')
+    const helpers = require(helpersPath)
+
+    assert.strictEqual(helpers.detectMacLikePlatform({ platform: 'MacIntel' }), true)
+    assert.strictEqual(
+      helpers.detectMacLikePlatform({ userAgentData: { platform: 'macOS' } }),
+      true
+    )
+    assert.strictEqual(helpers.detectMacLikePlatform({ platform: 'Linux x86_64' }), false)
+
+    const clipboardFromFilesOnly = {
+      items: [],
+      files: [
+        { name: 'clip.png', type: 'image/png', size: 12, lastModified: 1 },
+        { name: 'note.txt', type: 'text/plain', size: 3, lastModified: 2 }
+      ]
+    }
+    const filesOnly = helpers.collectImageFilesFromClipboard(clipboardFromFilesOnly)
+    assert.strictEqual(filesOnly.length, 1)
+    assert.strictEqual(filesOnly[0].name, 'clip.png')
+
+    const sharedImage = { name: 'dup.png', type: 'image/png', size: 99, lastModified: 9 }
+    const clipboardWithDuplicateSources = {
+      items: [
+        {
+          kind: 'file',
+          type: 'image/png',
+          getAsFile: () => sharedImage
+        }
+      ],
+      files: [sharedImage]
+    }
+    const deduped = helpers.collectImageFilesFromClipboard(clipboardWithDuplicateSources)
+    assert.strictEqual(deduped.length, 1)
+    assert.strictEqual(deduped[0].name, 'dup.png')
+
+    const appliedAttrs = {}
+    const html = {
+      style: {},
+      setAttribute: (key, value) => {
+        appliedAttrs[key] = value
+      },
+      getAttribute: key => appliedAttrs[key]
+    }
+    const lightClasses = new Set(['vscode-light'])
+    const fakeDocument = {
+      body: {
+        classList: {
+          contains: value => lightClasses.has(value)
+        }
+      },
+      documentElement: html,
+      defaultView: {
+        getComputedStyle: () => ({
+          colorScheme: 'light',
+          backgroundColor: 'rgb(250, 250, 250)'
+        })
+      }
+    }
+
+    const themeKind = helpers.applyThemeKindToDocument(fakeDocument)
+    assert.strictEqual(themeKind, 'light')
+    assert.strictEqual(appliedAttrs['data-vscode-theme-kind'], 'light')
+    assert.strictEqual(html.style.colorScheme, 'light')
   })
 
   test('Logger 应避免在 LogOutputChannel 上重复前缀', () => {
