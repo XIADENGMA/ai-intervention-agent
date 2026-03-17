@@ -341,6 +341,7 @@ class WebviewProvider {
     const markedJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'marked.min.js'))
     const prismJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'prism.min.js'))
     const prismCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'prism.min.css'))
+    const webviewHelpersUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview-helpers.js'))
     const webviewUiUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview-ui.js'))
     const extensionVersion = EXT_VERSION || '0.0.0'
     const githubUrl = EXT_GITHUB_URL || ''
@@ -671,10 +672,12 @@ class WebviewProvider {
         }
 
         /* VSCode 浅色主题：参考原项目的浅色进度条配色 */
+        html[data-vscode-theme-kind="light"] .no-content-progress,
         body.vscode-light .no-content-progress {
             box-shadow: none;
             background: rgba(0, 0, 0, 0.05);
         }
+        html[data-vscode-theme-kind="light"] .no-content-progress-bar,
         body.vscode-light .no-content-progress-bar {
             background: #e3dacc; /* 奶油米色 */
         }
@@ -1323,9 +1326,9 @@ class WebviewProvider {
             width: 100%;
             padding: 8px 10px;
             border-radius: 8px;
-            border: 1px solid rgba(127, 127, 127, 0.22);
-            background: rgba(0, 0, 0, 0.12);
-            color: var(--vscode-foreground);
+            border: 1px solid var(--vscode-input-border, rgba(127, 127, 127, 0.22));
+            background: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
             outline: none;
         }
 
@@ -1371,12 +1374,12 @@ class WebviewProvider {
         }
 
         .settings-action.secondary {
-            background: rgba(255, 255, 255, 0.06);
-            color: var(--vscode-foreground);
+            background: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.06));
+            color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
         }
 
         .settings-action.secondary:hover {
-            background: rgba(255, 255, 255, 0.10);
+            background: var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.10));
         }
 
         .settings-hint {
@@ -1391,7 +1394,8 @@ class WebviewProvider {
             padding: 2px 8px;
             border-radius: 999px;
             border: 1px solid rgba(127, 127, 127, 0.25);
-            background: rgba(255, 255, 255, 0.04);
+            background: var(--vscode-badge-background, rgba(255, 255, 255, 0.04));
+            color: var(--vscode-badge-foreground, var(--vscode-foreground));
             user-select: none;
         }
 
@@ -1445,8 +1449,8 @@ class WebviewProvider {
             padding: 2px 6px;
             border-radius: 6px;
             border: 1px solid rgba(127, 127, 127, 0.25);
-            background: rgba(0, 0, 0, 0.12);
-            color: var(--vscode-foreground);
+            background: var(--vscode-badge-background, rgba(0, 0, 0, 0.12));
+            color: var(--vscode-badge-foreground, var(--vscode-foreground));
             opacity: 0.85;
         }
 
@@ -1462,8 +1466,8 @@ class WebviewProvider {
             line-height: 0;
             border-radius: 6px;
             border: 1px solid rgba(127, 127, 127, 0.25);
-            background: rgba(0, 0, 0, 0.18);
-            color: var(--vscode-foreground);
+            background: var(--vscode-button-secondaryBackground, rgba(0, 0, 0, 0.18));
+            color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
         }
 
         .code-toolbar .copy-button svg {
@@ -1473,7 +1477,7 @@ class WebviewProvider {
         }
 
         .code-toolbar .copy-button:hover {
-            background: rgba(0, 0, 0, 0.28);
+            background: var(--vscode-button-secondaryHoverBackground, rgba(0, 0, 0, 0.28));
         }
 
         .code-toolbar .copy-button.copied {
@@ -1678,6 +1682,7 @@ class WebviewProvider {
     <!-- marked.js for Markdown rendering -->
     <script nonce="${nonce}" src="${markedJsUri}"></script>
 
+        <script nonce="${nonce}" src="${webviewHelpersUri}"></script>
         <script nonce="${nonce}" src="${webviewUiUri}"></script>
 </body>
 </html>`
