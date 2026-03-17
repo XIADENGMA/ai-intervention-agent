@@ -248,7 +248,7 @@ def validate_bind_interface(value: Any) -> str:
     if value in VALID_BIND_INTERFACES:
         if value == "0.0.0.0":
             logger.info(
-                    "bind_interface 设为 0.0.0.0，将监听所有网络接口。"
+                "bind_interface 设为 0.0.0.0，将监听所有网络接口。"
                 "请确保已正确配置 allowed_networks 和防火墙规则。"
             )
         return value
@@ -2159,7 +2159,9 @@ class WebFeedbackUI:
 
                     def normalize_sound_volume(raw_value: Any) -> int:
                         try:
-                            return int(clamp_value(float(raw_value), 0, 100, "sound_volume"))
+                            return int(
+                                clamp_value(float(raw_value), 0, 100, "sound_volume")
+                            )
                         except (TypeError, ValueError):
                             return int(notification_config.get("sound_volume", 80))
 
@@ -2262,7 +2264,13 @@ class WebFeedbackUI:
 
                     manager_updates: Dict[str, Any] = {}
                     changed_keys: list[str] = []
-                    for request_keys, manager_key, config_key, manager_cast, config_cast in field_specs:
+                    for (
+                        request_keys,
+                        manager_key,
+                        config_key,
+                        manager_cast,
+                        config_cast,
+                    ) in field_specs:
                         found, raw_value = first_present(*request_keys)
                         if not found:
                             continue

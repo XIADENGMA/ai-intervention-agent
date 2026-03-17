@@ -1001,9 +1001,7 @@ def update_web_content(
         response = session.post(url, json=data, timeout=config.timeout)
 
         if response.status_code == 200:
-            logger.info(
-                f"内容已更新: {cleaned_summary[:50]}... (task_id: {task_id})"
-            )
+            logger.info(f"内容已更新: {cleaned_summary[:50]}... (task_id: {task_id})")
 
             # 验证更新是否成功
             try:
