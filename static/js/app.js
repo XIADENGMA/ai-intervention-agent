@@ -69,14 +69,14 @@ let config = null
 //   - 叶子颜色因 invert 也会变化（可接受的视觉效果）
 //
 // 降级处理：
-//   若 Lottie 库加载失败，显示 🌱 emoji 作为备用
+//   若 Lottie 库加载失败，显示内置 SVG/CSS 备用图标
 // ==================================================================
 
 // Lottie 动画实例引用（用于后续控制如暂停/销毁）
 let hourglassAnimation = null
 
 /**
- * 渲染“嫩芽”动画的 SVG/CSS 降级版本（替代 emoji 🌱）
+ * 渲染“嫩芽”动画的 SVG/CSS 降级版本
  *
  * 设计目标：
  * - 不依赖外部资源（JSON/网络/库）
@@ -121,8 +121,8 @@ function renderSproutFallback(container) {
       </svg>
     `
   } catch (e) {
-    // 最后兜底：极端情况下（SVG/CSS 注入失败），仍回退到 emoji
-    container.textContent = '🌱'
+    // 最后兜底：极端情况下显示文本提示，避免再退化为 emoji
+    container.textContent = '等待中'
   }
 }
 
@@ -135,7 +135,7 @@ function renderSproutFallback(container) {
  *   3. 销毁已有动画（防止内存泄漏）
  *   4. 创建新动画实例
  *   5. 监听加载完成事件，应用主题颜色
- *   6. 监听错误事件，显示降级 emoji
+ *   6. 监听错误事件，显示降级图标
  */
 function initHourglassAnimation() {
   const container = document.getElementById('hourglass-lottie')
@@ -180,7 +180,7 @@ function initHourglassAnimation() {
       renderSproutFallback(container)
     })
 
-    console.log('✅ 嫩芽动画初始化成功')
+    console.log('嫩芽动画初始化成功')
   } catch (error) {
     console.error('Lottie 动画初始化失败:', error)
     renderSproutFallback(container) // 降级为 SVG/CSS 动画
@@ -214,7 +214,7 @@ function updateLottieAnimationColor() {
     container.style.filter = 'invert(1)'
   }
 
-  console.log('✅ Lottie 动画颜色已更新:', isLightTheme ? '浅色模式（原色）' : '深色模式（反转）')
+  console.log('Lottie 动画颜色已更新:', isLightTheme ? '浅色模式（原色）' : '深色模式（反转）')
 }
 
 // 监听主题变化事件（由 ThemeManager 在 theme.js 中派发）
@@ -974,6 +974,11 @@ class NotificationManager {
     this.permission = this.isSupported ? Notification.permission : 'denied'
     this.audioContext = null
     this.audioBuffers = new Map()
+    this.serviceWorkerRegistration = null
+    this.initPromise = null
+    this.permissionRequestPromise = null
+    this.autoPermissionListenersBound = false
+    this.boundPermissionRequestHandler = null
     this.config = {
       enabled: true,
       webEnabled: true,
@@ -986,52 +991,177 @@ class NotificationManager {
       mobileOptimized: true,
       mobileVibrate: true
     }
-    this.init()
   }
 
   async init() {
-    console.log('初始化通知管理器...')
-
-    // 检查浏览器支持
-    if (!this.isSupported) {
-      console.warn('浏览器不支持Web Notification API')
-      return
+    if (this.initPromise) {
+      return this.initPromise
     }
 
-    // 自动请求通知权限
-    if (this.config.autoRequestPermission && this.permission === 'default') {
-      await this.requestPermission()
-    }
+    this.initPromise = (async () => {
+      console.log('初始化通知管理器...')
+      this.syncPermissionState()
 
-    // 初始化音频系统
-    await this.initAudio()
+      if (!this.isSupported) {
+        console.warn('浏览器不支持 Web Notification API')
+      } else {
+        await this.registerServiceWorker()
+        this.bindAutoPermissionRequest()
+      }
 
-    console.log('通知管理器初始化完成')
+      await this.initAudio()
+      console.log('通知管理器初始化完成')
+    })()
+
+    return this.initPromise
   }
 
-  async requestPermission() {
-    if (!this.isSupported) {
-      console.warn('浏览器不支持Web Notification API')
-      return false
+  syncPermissionState() {
+    this.permission = this.isSupported ? Notification.permission : 'denied'
+    return this.permission
+  }
+
+  supportsServiceWorkerNotifications() {
+    return (
+      typeof navigator !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      window.isSecureContext
+    )
+  }
+
+  async registerServiceWorker() {
+    if (!this.supportsServiceWorkerNotifications()) {
+      if (!window.isSecureContext) {
+        console.warn('当前不是安全上下文，无法注册通知 service worker')
+      }
+      return null
+    }
+
+    if (this.serviceWorkerRegistration) {
+      return this.serviceWorkerRegistration
     }
 
     try {
-      // 兼容旧版本浏览器的权限请求方式
-      if (Notification.requestPermission.length === 0) {
-        // 新版本 - 返回Promise
-        this.permission = await Notification.requestPermission()
-      } else {
-        // 旧版本 - 使用回调
-        this.permission = await new Promise(resolve => {
-          Notification.requestPermission(resolve)
-        })
+      await navigator.serviceWorker.register('/notification-service-worker.js')
+      this.serviceWorkerRegistration = await navigator.serviceWorker.ready
+      console.log('通知 service worker 已注册')
+      return this.serviceWorkerRegistration
+    } catch (error) {
+      console.warn('通知 service worker 注册失败:', error)
+      return null
+    }
+  }
+
+  bindAutoPermissionRequest() {
+    if (!this.isSupported) return
+
+    if (!this.config.autoRequestPermission || this.syncPermissionState() !== 'default') {
+      this.removeAutoPermissionRequestListeners()
+      return
+    }
+
+    if (this.autoPermissionListenersBound) {
+      return
+    }
+
+    this.boundPermissionRequestHandler = () => {
+      if (!this.config.autoRequestPermission) {
+        this.removeAutoPermissionRequestListeners()
+        return
       }
 
-      console.log(`通知权限状态: ${this.permission}`)
-      return this.permission === 'granted'
+      if (this.syncPermissionState() !== 'default') {
+        this.removeAutoPermissionRequestListeners()
+        return
+      }
+
+      this.requestPermission({ requireUserGesture: false }).finally(() => {
+        if (this.syncPermissionState() !== 'default') {
+          this.removeAutoPermissionRequestListeners()
+        }
+      })
+    }
+
+    ;['click', 'keydown', 'touchstart'].forEach(eventName => {
+      document.addEventListener(eventName, this.boundPermissionRequestHandler, {
+        once: true,
+        passive: true
+      })
+    })
+
+    this.autoPermissionListenersBound = true
+  }
+
+  removeAutoPermissionRequestListeners() {
+    if (!this.autoPermissionListenersBound || !this.boundPermissionRequestHandler) {
+      return
+    }
+
+    ;['click', 'keydown', 'touchstart'].forEach(eventName => {
+      document.removeEventListener(eventName, this.boundPermissionRequestHandler)
+    })
+
+    this.autoPermissionListenersBound = false
+    this.boundPermissionRequestHandler = null
+  }
+
+  async requestPermission({ requireUserGesture = true } = {}) {
+    if (!this.isSupported) {
+      console.warn('浏览器不支持 Web Notification API')
+      return false
+    }
+
+    this.syncPermissionState()
+    if (this.permission === 'granted') {
+      return true
+    }
+
+    if (this.permission === 'denied') {
+      return false
+    }
+
+    if (
+      requireUserGesture &&
+      navigator.userActivation &&
+      navigator.userActivation.isActive === false
+    ) {
+      console.warn('通知权限请求需要用户操作，已延迟到下一次交互')
+      this.bindAutoPermissionRequest()
+      return false
+    }
+
+    if (this.permissionRequestPromise) {
+      return this.permissionRequestPromise
+    }
+
+    try {
+      this.permissionRequestPromise = (async () => {
+        if (Notification.requestPermission.length === 0) {
+          this.permission = await Notification.requestPermission()
+        } else {
+          this.permission = await new Promise(resolve => {
+            Notification.requestPermission(resolve)
+          })
+        }
+
+        console.log(`通知权限状态: ${this.permission}`)
+        window.dispatchEvent(
+          new CustomEvent('notification-permission-changed', {
+            detail: { permission: this.permission }
+          })
+        )
+        return this.permission === 'granted'
+      })()
+
+      return await this.permissionRequestPromise
     } catch (error) {
       console.error('请求通知权限失败:', error)
       return false
+    } finally {
+      this.permissionRequestPromise = null
+      if (this.permission !== 'default') {
+        this.removeAutoPermissionRequestListeners()
+      }
     }
   }
 
@@ -1077,41 +1207,106 @@ class NotificationManager {
 
   async showNotification(title, message, options = {}) {
     if (!this.config.enabled || !this.config.webEnabled) {
-      console.log('Web通知已禁用')
+      console.log('Web 通知已禁用')
       return null
     }
 
     if (!this.isSupported) {
       console.warn('浏览器不支持通知，使用降级方案')
-      this.showFallbackNotification(title, message)
+      this.showFallbackNotification(title, message, { ...options, reason: 'unsupported' })
       return null
     }
 
+    this.syncPermissionState()
     if (this.permission !== 'granted') {
-      console.warn('没有通知权限')
+      console.warn('当前没有系统通知权限')
       if (this.config.autoRequestPermission) {
-        await this.requestPermission()
-        if (this.permission !== 'granted') {
-          this.showFallbackNotification(title, message)
+        const granted = await this.requestPermission({
+          requireUserGesture: !(navigator.userActivation && navigator.userActivation.isActive)
+        })
+        if (!granted) {
+          this.showFallbackNotification(title, message, {
+            ...options,
+            reason: this.permission === 'denied' ? 'permission_denied' : 'permission_default'
+          })
           return null
         }
       } else {
-        this.showFallbackNotification(title, message)
+        this.showFallbackNotification(title, message, {
+          ...options,
+          reason: 'permission_disabled'
+        })
         return null
       }
     }
 
     try {
+      const {
+        onClick,
+        url,
+        data: extraData,
+        icon,
+        badge,
+        tag,
+        requireInteraction,
+        silent,
+        ...restOptions
+      } = options
+
       const notificationOptions = {
         body: message,
-        icon: options.icon || this.config.icon,
-        badge: options.badge || this.config.icon,
-        tag: options.tag || 'ai-intervention-agent',
-        requireInteraction: options.requireInteraction || false,
-        silent: options.silent || false,
-        ...options
+        icon: icon || this.config.icon,
+        badge: badge || this.config.icon,
+        tag: tag || 'ai-intervention-agent',
+        requireInteraction: requireInteraction || false,
+        silent: silent || false,
+        data: {
+          url: url || window.location.href,
+          ...extraData
+        },
+        ...restOptions
       }
 
+      const notification = await this.showSystemNotification(
+        title,
+        notificationOptions,
+        { ...restOptions, onClick }
+      )
+
+      if (!notification) {
+        this.showFallbackNotification(title, message, {
+          ...options,
+          reason: 'system_notification_failed'
+        })
+        return null
+      }
+
+      console.log('系统通知已显示:', title)
+      return notification
+    } catch (error) {
+      console.error('显示通知失败:', error)
+      this.showFallbackNotification(title, message, {
+        ...options,
+        reason: 'show_notification_exception'
+      })
+      return null
+    }
+  }
+
+  async showSystemNotification(title, notificationOptions, options = {}) {
+    const registration = await this.registerServiceWorker()
+    if (registration && typeof registration.showNotification === 'function') {
+      try {
+        await registration.showNotification(title, notificationOptions)
+        return {
+          close() {}
+        }
+      } catch (error) {
+        console.warn('通过 service worker 显示通知失败，回退到页面 Notification:', error)
+      }
+    }
+
+    try {
       const notification = new Notification(title, notificationOptions)
 
       // 设置超时自动关闭
@@ -1135,10 +1330,9 @@ class NotificationManager {
         navigator.vibrate([200, 100, 200])
       }
 
-      console.log('通知已显示:', title)
       return notification
     } catch (error) {
-      console.error('显示通知失败:', error)
+      console.error('页面 Notification 创建失败:', error)
       return null
     }
   }
@@ -1336,7 +1530,7 @@ class NotificationManager {
     }
 
     // 4. 尝试使用控制台样式输出
-    console.log(`%c🔔 ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
+    console.log(`%c[通知] ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
     console.log(`%c${message}`, 'color: #666; font-size: 12px;')
 
     // 5. 记录降级事件用于统计
@@ -1354,7 +1548,7 @@ class NotificationManager {
     const maxFlashes = 6
 
     const flashInterval = setInterval(() => {
-      document.title = flashCount % 2 === 0 ? `🔔 ${message}` : originalTitle
+      document.title = flashCount % 2 === 0 ? `[通知] ${message}` : originalTitle
       flashCount++
 
       if (flashCount >= maxFlashes) {
@@ -1366,6 +1560,8 @@ class NotificationManager {
 
   updateConfig(newConfig) {
     this.config = { ...this.config, ...newConfig }
+    this.syncPermissionState()
+    this.bindAutoPermissionRequest()
     console.log('通知配置已更新:', this.config)
   }
 
@@ -1373,6 +1569,7 @@ class NotificationManager {
     return {
       supported: this.isSupported,
       permission: this.permission,
+      serviceWorkerRegistered: Boolean(this.serviceWorkerRegistration),
       audioContext: this.audioContext ? this.audioContext.state : 'unavailable',
       config: this.config
     }
@@ -1652,7 +1849,8 @@ class SettingsManager {
     console.log(`设置已更新: ${key} = ${value}`)
   }
 
-  applySettings() {
+  applySettings(options = {}) {
+    const { syncBackend = true } = options
     // 更新前端通知管理器配置
     if (notificationManager) {
       notificationManager.updateConfig({
@@ -1673,7 +1871,9 @@ class SettingsManager {
     }
 
     // 同步配置到后端
-    this.syncConfigToBackend()
+    if (syncBackend) {
+      this.syncConfigToBackend()
+    }
   }
 
   async syncConfigToBackend() {
@@ -1866,6 +2066,10 @@ class SettingsManager {
         this.updateSetting('barkAction', e.target.value)
       }
     })
+
+    window.addEventListener('notification-permission-changed', () => {
+      this.updateStatus()
+    })
   }
 
   async showSettings() {
@@ -1893,7 +2097,7 @@ class SettingsManager {
       this.applySettingsTheme()
     }
 
-    // ✅ 方案A：每次打开设置面板，都从后端刷新一次配置
+    // 每次打开设置面板都从后端刷新一次配置
     // 目的：
     // - 让“外部编辑 config.jsonc”能在不刷新页面的情况下反映到 UI
     // - 避免打开面板时把旧的本地缓存配置反向写回后端（覆盖外部修改）
@@ -2887,7 +3091,7 @@ function initializePasteFunction() {
     }
   }
 
-  // ⚠️ 防重复注册：
+  // 防重复注册：
   // 某些场景下（例如脚本被重复执行、或初始化函数被重复调用），会导致 paste 监听器被注册多次，
   // 从而出现“粘贴一次添加两张重复图片”的问题。这里通过“先移除旧 handler，再注册新 handler”保证幂等。
   try {
@@ -3216,7 +3420,7 @@ function initializeApp() {
   loadConfig()
     .then(() => {
       // 配置加载完成
-      console.log('✅ 配置加载完成')
+      console.log('配置加载完成')
       console.log('当前配置:', {
         has_content: config.has_content,
         persistent: config.persistent,
@@ -3233,10 +3437,10 @@ function initializeApp() {
       }
     })
     .catch(error => {
-      console.error('❌ 配置加载失败:', error)
+      console.error('配置加载失败:', error)
       // 即使配置加载失败，也尝试初始化多任务支持
       setTimeout(() => {
-        console.log('🔄 配置加载失败，延迟初始化多任务支持...')
+        console.log('配置加载失败，延迟初始化多任务支持...')
         // startContentPolling() // 已停用
 
         // 初始化多任务支持（内含任务轮询）
@@ -3255,21 +3459,18 @@ function initializeApp() {
   // 初始化快捷键提示
   initializeShortcutTooltip()
 
-  // 初始化设置管理器（必须在 DOM 加载完成后）
-  settingsManager.init().catch(error => {
-    console.warn('设置管理器初始化失败:', error)
-  })
-
-  // 初始化通知管理器
-  notificationManager
+  // 初始化设置管理器并在其配置就绪后再启动通知管理器
+  settingsManager
     .init()
     .then(() => {
+      settingsManager.applySettings({ syncBackend: false })
+      return notificationManager.init()
+    })
+    .then(() => {
       console.log('通知管理器初始化完成')
-      // 应用设置管理器的配置
-      settingsManager.applySettings()
     })
     .catch(error => {
-      console.warn('通知管理器初始化失败:', error)
+      console.warn('设置或通知管理器初始化失败:', error)
     })
 
   // 按钮事件

@@ -27,7 +27,6 @@
  *
  * 存储机制：
  *   - localStorage: 本地快速存取
- *   - config.jsonc: 服务端持久化（可选）
  *
  * ========================================================================
  */
@@ -157,27 +156,6 @@ const ThemeManager = (function () {
   }
 
   /**
-   * 同步主题偏好到服务端配置
-   * @param {string} theme - 主题模式
-   */
-  async function syncToServer(theme) {
-    try {
-      const response = await fetch('/api/update-notification-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme_preference: theme })
-      });
-
-      if (!response.ok) {
-        console.warn('同步主题到服务端失败:', response.status);
-      }
-    } catch (e) {
-      // 静默失败，不影响用户体验
-      console.debug('同步主题到服务端失败:', e);
-    }
-  }
-
-  /**
    * 创建主题切换按钮
    * @returns {HTMLElement}
    */
@@ -261,11 +239,10 @@ const ThemeManager = (function () {
     /**
      * 初始化主题管理器
      * @param {Object} options - 配置选项
-     * @param {boolean} options.syncToServer - 是否同步到服务端
      * @param {string} options.defaultTheme - 默认主题
      */
     init: function (options = {}) {
-      const { syncToServer: doSync = false, defaultTheme = THEMES.AUTO } = options;
+      const { defaultTheme = THEMES.AUTO } = options;
 
       // 监听系统偏好
       listenSystemPreference();

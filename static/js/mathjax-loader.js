@@ -122,10 +122,10 @@ window.loadMathJaxIfNeeded = function (element, text) {
   script.src = '/static/js/tex-mml-chtml.js' // 本地托管的 MathJax 脚本
   script.onload = function () {
     window._mathJaxLoaded = true
-    console.log('✅ MathJax 加载完成')
+    console.log('MathJax 加载完成')
   }
   script.onerror = function () {
-    console.error('❌ MathJax 加载失败')
+    console.error('MathJax 加载失败')
     window._mathJaxLoading = false
   }
   document.head.appendChild(script)

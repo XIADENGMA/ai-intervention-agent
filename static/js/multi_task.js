@@ -85,6 +85,9 @@ if (typeof window.pendingNewTaskCount === 'undefined') {
 if (typeof window.newTaskHintTimer === 'undefined') {
   window.newTaskHintTimer = null // 通知合并定时器
 }
+if (typeof window.hasLoadedTaskSnapshot === 'undefined') {
+  window.hasLoadedTaskSnapshot = false // 首次任务快照仅用于建立基线，不触发系统通知
+}
 // 【优化】服务器时间同步机制 - 解决切换标签页后倒计时不准的问题
 if (typeof window.serverTimeOffset === 'undefined') {
   window.serverTimeOffset = 0 // 服务器时间与本地时间的偏移量（秒）
@@ -108,6 +111,9 @@ var tasksPollingTimer = window.tasksPollingTimer
 var taskTextareaContents = window.taskTextareaContents
 var taskOptionsStates = window.taskOptionsStates
 var taskImages = window.taskImages
+var pendingNewTaskCount = window.pendingNewTaskCount
+var newTaskHintTimer = window.newTaskHintTimer
+var hasLoadedTaskSnapshot = window.hasLoadedTaskSnapshot
 var feedbackPrompts = window.feedbackPrompts
 
 /**
@@ -482,31 +488,36 @@ Object.defineProperty(window, 'isManualSwitching', {
 function updateTasksList(tasks) {
   const oldTaskIds = currentTasks.map(t => t.task_id)
   const newTaskIds = tasks.map(t => t.task_id)
+  const isInitialTaskSnapshot = !hasLoadedTaskSnapshot
 
   // 检测新任务
   const addedTasks = newTaskIds.filter(id => !oldTaskIds.includes(id))
   if (addedTasks.length > 0) {
-    console.log(`✨ 检测到 ${addedTasks.length} 个新任务`)
+    console.log(`检测到 ${addedTasks.length} 个新任务`)
 
-    // 如果当前有活动任务,使用合并机制显示视觉提示
-    // 避免短时间内频繁弹出多个通知
-    if (activeTaskId) {
-      // 累加待显示的新任务数量
-      pendingNewTaskCount += addedTasks.length
+    if (!isInitialTaskSnapshot) {
+      // 如果当前有活动任务，使用合并机制避免短时间内频繁弹出多个通知
+      if (activeTaskId) {
+        pendingNewTaskCount += addedTasks.length
+        window.pendingNewTaskCount = pendingNewTaskCount
 
-      // 清除之前的定时器（防抖）
-      if (newTaskHintTimer) {
-        clearTimeout(newTaskHintTimer)
-      }
-
-      // 延迟 500ms 显示，等待可能的后续新任务
-      newTaskHintTimer = setTimeout(() => {
-        if (pendingNewTaskCount > 0) {
-          showNewTaskVisualHint(pendingNewTaskCount)
-          pendingNewTaskCount = 0 // 重置计数
+        if (newTaskHintTimer) {
+          clearTimeout(newTaskHintTimer)
         }
-        newTaskHintTimer = null
-      }, 500)
+
+        newTaskHintTimer = setTimeout(() => {
+          if (pendingNewTaskCount > 0) {
+            showNewTaskNotification(pendingNewTaskCount)
+            pendingNewTaskCount = 0
+            window.pendingNewTaskCount = 0
+          }
+          newTaskHintTimer = null
+          window.newTaskHintTimer = null
+        }, 500)
+        window.newTaskHintTimer = newTaskHintTimer
+      } else {
+        showNewTaskNotification(addedTasks.length)
+      }
     }
 
     // 为所有新任务启动倒计时（包括pending任务）
@@ -527,13 +538,13 @@ function updateTasksList(tasks) {
   // 检测已删除的任务并清理倒计时
   const removedTasks = oldTaskIds.filter(id => !newTaskIds.includes(id))
   if (removedTasks.length > 0) {
-    console.log(`🗑️ 检测到 ${removedTasks.length} 个已删除任务`)
+    console.log(`检测到 ${removedTasks.length} 个已删除任务`)
     removedTasks.forEach(taskId => {
       // 清理倒计时
       if (taskCountdowns[taskId]) {
         clearInterval(taskCountdowns[taskId].timer)
         delete taskCountdowns[taskId]
-        console.log(`✅ 已清理任务 ${taskId} 的倒计时`)
+        console.log(`已清理任务 ${taskId} 的倒计时`)
       }
       // 【优化】清理任务截止时间缓存，防止内存泄漏
       if (window.taskDeadlines[taskId] !== undefined) {
@@ -556,6 +567,8 @@ function updateTasksList(tasks) {
   const hasActiveTasks = tasks.length > 0 && tasks.some(t => t.status !== 'completed')
 
   currentTasks = tasks
+  hasLoadedTaskSnapshot = true
+  window.hasLoadedTaskSnapshot = true
 
   // 【热更新兜底】确保所有未完成任务都有倒计时
   // 场景：配置变更将 auto_resubmit_timeout 从 0（禁用）切回 >0（启用）
@@ -593,7 +606,7 @@ function updateTasksList(tasks) {
     updateCountdownRingColors(oldActiveTaskId, activeTaskId)
   } else if (!activeTaskId && tasks.length > 0) {
     // 如果activeTaskId为null，且有任务，自动设置第一个未完成任务为active
-    // ⚠️ 注意：tasks数组可能包含已完成任务，必须过滤
+    // 注意：tasks数组可能包含已完成任务，必须过滤
     const firstIncompleteTask = tasks.find(t => t.status !== 'completed')
     if (firstIncompleteTask) {
       activeTaskId = firstIncompleteTask.task_id
@@ -603,7 +616,7 @@ function updateTasksList(tasks) {
     }
   } else if (tasks.length === 0 && activeTaskId) {
     // 如果任务列表为空，重置activeTaskId
-    console.log(`✅ 任务列表已清空，重置 activeTaskId: ${activeTaskId} -> null`)
+    console.log(`任务列表已清空，重置 activeTaskId: ${activeTaskId} -> null`)
     activeTaskId = null
   }
 
@@ -616,7 +629,7 @@ function updateTasksList(tasks) {
 
   if (hasActiveTasks && isShowingNoContent) {
     // 有任务但显示的是无内容页面，切换到内容页面
-    console.log('🚀 有任务但显示无内容页面，切换到内容页面')
+    console.log('有任务但当前显示无内容页面，切换到内容页面')
     if (typeof showContentPage === 'function') {
       showContentPage()
     }
@@ -745,10 +758,10 @@ function renderTaskTabs() {
       const retryContainer = document.getElementById('task-tabs-container')
       const retryTabsContainer = document.getElementById('task-tabs')
       if (retryContainer && retryTabsContainer) {
-        console.log('✅ 重试成功，开始渲染标签栏')
+        console.log('重试成功，开始渲染标签栏')
         renderTaskTabs()
       } else {
-        console.error('❌ 重试失败，标签栏容器仍然未找到')
+        console.error('重试失败，标签栏容器仍然未找到')
       }
     }, 100)
     return
@@ -966,7 +979,7 @@ async function switchTask(taskId) {
     const textarea = document.getElementById('feedback-text')
     if (textarea) {
       taskTextareaContents[activeTaskId] = textarea.value
-      console.log(`✅ 已保存任务 ${activeTaskId} 的 textarea 内容`)
+      console.log(`已保存任务 ${activeTaskId} 的 textarea 内容`)
     }
 
     // 保存选项勾选状态
@@ -978,7 +991,7 @@ async function switchTask(taskId) {
         optionsStates[index] = checkbox.checked
       })
       taskOptionsStates[activeTaskId] = optionsStates
-      console.log(`✅ 已保存任务 ${activeTaskId} 的选项勾选状态`)
+      console.log(`已保存任务 ${activeTaskId} 的选项勾选状态`)
     }
 
     // 保存图片列表（深拷贝，避免引用问题）
@@ -987,7 +1000,7 @@ async function switchTask(taskId) {
       ...img
       // 保留所有字段，包括 blob URL（每个任务独立管理）
     }))
-    console.log(`✅ 已保存任务 ${activeTaskId} 的图片列表 (${selectedImages.length} 张)`)
+    console.log(`已保存任务 ${activeTaskId} 的图片列表 (${selectedImages.length} 张)`)
   }
 
   // 设置手动切换标志，防止轮询干扰
@@ -1004,10 +1017,10 @@ async function switchTask(taskId) {
   // 立即更新圆环颜色，不等待DOM重建
   updateCountdownRingColors(oldActiveTaskId, taskId)
 
-  // 🚀 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
+  // 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
   const cachedTask = currentTasks.find(t => t.task_id === taskId)
   if (cachedTask && cachedTask.prompt) {
-    console.log(`🚀 使用缓存任务信息立即更新内容: ${taskId}`)
+    console.log(`使用缓存任务信息立即更新内容: ${taskId}`)
 
     // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
     const taskIdContainer = document.getElementById('task-id-container')
@@ -1036,7 +1049,7 @@ async function switchTask(taskId) {
         if (!data.success) {
           console.error('激活任务失败:', data.error)
         } else {
-          console.log(`✅ 任务已激活: ${taskId}`)
+          console.log(`任务已激活: ${taskId}`)
         }
       })
       .catch(err => console.error('激活任务失败:', err))
@@ -1057,7 +1070,7 @@ async function switchTask(taskId) {
       manualSwitchingTimer = null
       // 分发事件通知其他模块恢复轮询
       window.dispatchEvent(new CustomEvent('taskSwitchComplete', { detail: { taskId } }))
-      console.log('✅ 任务切换锁定已解除，允许轮询恢复')
+      console.log('任务切换锁定已解除，允许轮询恢复')
     }, 200)
   }
 }
@@ -1148,7 +1161,7 @@ async function loadTaskDetails(taskId) {
 
     // 检查任务是否仍然是当前活动任务
     if (taskId !== activeTaskId) {
-      console.log(`⏭️ 跳过过期的任务详情: ${taskId}（当前活动: ${activeTaskId}）`)
+      console.log(`跳过过期的任务详情: ${taskId}（当前活动: ${activeTaskId}）`)
       return
     }
 
@@ -1175,7 +1188,7 @@ async function loadTaskDetails(taskId) {
       const textarea = document.getElementById('feedback-text')
       if (textarea && taskTextareaContents[taskId] !== undefined) {
         textarea.value = taskTextareaContents[taskId]
-        console.log(`✅ 已恢复任务 ${taskId} 的 textarea 内容`)
+        console.log(`已恢复任务 ${taskId} 的 textarea 内容`)
       }
       // 如果之前没有保存过内容，保持当前值（避免在用户正在输入时被轮询调用清空）
 
@@ -1193,7 +1206,7 @@ async function loadTaskDetails(taskId) {
           updateImageCounter()
           updateImagePreviewVisibility()
         }
-        console.log(`✅ 已恢复任务 ${taskId} 的图片列表 (${selectedImages.length} 张)`)
+        console.log(`已恢复任务 ${taskId} 的图片列表 (${selectedImages.length} 张)`)
       }
       // 如果之前没有保存过图片，保持当前值（避免在用户正在添加图片时被轮询调用清空）
 
@@ -1247,7 +1260,7 @@ async function updateDescriptionDisplay(prompt) {
   if (!descriptionElement) return
 
   try {
-    // 🚀 同步渲染（立即显示，不使用 requestAnimationFrame）
+    // 同步渲染（立即显示，不使用 requestAnimationFrame）
     let htmlContent = prompt
 
     // 使用 marked.js 解析 Markdown
@@ -1277,7 +1290,7 @@ async function updateDescriptionDisplay(prompt) {
       processStrikethrough(descriptionElement)
     }
 
-    console.log('✅ 同步渲染 Markdown 完成')
+    console.log('同步渲染 Markdown 完成')
 
     // MathJax 数学公式渲染（按需加载，不阻塞）
     // 注意：不能只在 MathJax 已加载时 typeset，否则“首次出现公式”的内容会一直不渲染
@@ -1339,7 +1352,7 @@ function updateOptionsDisplay(options) {
   let selectedStates = {}
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
     selectedStates = taskOptionsStates[activeTaskId]
-    console.log(`✅ 已恢复任务 ${activeTaskId} 的选项勾选状态`)
+    console.log(`已恢复任务 ${activeTaskId} 的选项勾选状态`)
   } else {
     // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
     const existingCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
@@ -1444,15 +1457,15 @@ async function closeTask(taskId) {
     // 清除该任务保存的所有状态
     if (taskTextareaContents[taskId] !== undefined) {
       delete taskTextareaContents[taskId]
-      console.log(`✅ [关闭任务] 已清除任务 ${taskId} 保存的 textarea 内容`)
+      console.log(`[关闭任务] 已清除任务 ${taskId} 保存的 textarea 内容`)
     }
     if (taskOptionsStates[taskId] !== undefined) {
       delete taskOptionsStates[taskId]
-      console.log(`✅ [关闭任务] 已清除任务 ${taskId} 保存的选项勾选状态`)
+      console.log(`[关闭任务] 已清除任务 ${taskId} 保存的选项勾选状态`)
     }
     if (taskImages[taskId] !== undefined) {
       delete taskImages[taskId]
-      console.log(`✅ [关闭任务] 已清除任务 ${taskId} 保存的图片列表`)
+      console.log(`[关闭任务] 已清除任务 ${taskId} 保存的图片列表`)
     }
 
     // 从列表中移除
@@ -1744,15 +1757,15 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       // 清除该任务保存的所有状态
       if (taskTextareaContents[taskId] !== undefined) {
         delete taskTextareaContents[taskId]
-        console.log(`✅ 已清除任务 ${taskId} 保存的 textarea 内容`)
+        console.log(`已清除任务 ${taskId} 保存的 textarea 内容`)
       }
       if (taskOptionsStates[taskId] !== undefined) {
         delete taskOptionsStates[taskId]
-        console.log(`✅ 已清除任务 ${taskId} 保存的选项勾选状态`)
+        console.log(`已清除任务 ${taskId} 保存的选项勾选状态`)
       }
       if (taskImages[taskId] !== undefined) {
         delete taskImages[taskId]
-        console.log(`✅ 已清除任务 ${taskId} 保存的图片列表`)
+        console.log(`已清除任务 ${taskId} 保存的图片列表`)
       }
 
       // 自动切换到下一个未完成的任务
@@ -1767,7 +1780,7 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
           console.log(`🔄 自动切换到下一个任务: ${nextTask.task_id}`)
           switchTask(nextTask.task_id)
         } else {
-          console.log(`✅ 所有任务已完成`)
+          console.log(`所有任务已完成`)
         }
       }, 300)
     } else {
@@ -1898,10 +1911,8 @@ function showNewTaskVisualHint(count) {
  * - 未来可能会移除
  */
 function showNewTaskNotification(count) {
-  // 使用新的视觉提示代替旧的通知
   showNewTaskVisualHint(count)
 
-  // 可选: 显示浏览器通知（如果有通知管理器）
   if (typeof notificationManager !== 'undefined') {
     notificationManager
       .sendNotification('AI Intervention Agent', `收到 ${count} 个新任务`, {
@@ -1963,7 +1974,7 @@ async function initMultiTaskSupport() {
       return
     }
     if (!tasksPollingTimer) {
-      console.warn('⚠️ 任务轮询已停止,自动重新启动')
+      console.warn('任务轮询已停止，自动重新启动')
       startTasksPolling()
     }
   }, 30000)
@@ -1977,7 +1988,7 @@ async function initMultiTaskSupport() {
         taskTextareaContents[activeTaskId] = textarea.value
       }
     })
-    console.log('✅ 已启用 textarea 实时保存')
+    console.log('已启用 textarea 实时保存')
   }
 
   // 监听选项变化
@@ -1994,7 +2005,7 @@ async function initMultiTaskSupport() {
         taskOptionsStates[activeTaskId] = states
       }
     })
-    console.log('✅ 已启用选项状态实时保存')
+    console.log('已启用选项状态实时保存')
   }
 
   console.log('多任务支持初始化完成 (包含轮询健康检查和实时保存)')

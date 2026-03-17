@@ -334,7 +334,7 @@ const KeyboardShortcuts = (function () {
 
       const helpText = `
 ╔══════════════════════════════════════╗
-║       ⌨️ 键盘快捷键帮助             ║
+║         键盘快捷键帮助             ║
 ╠══════════════════════════════════════╣
 ║  ${mod}+Enter    提交反馈              ║
 ║  ${mod}+,        打开设置              ║
@@ -351,7 +351,7 @@ const KeyboardShortcuts = (function () {
       // 显示提示通知
       if (typeof notificationManager !== 'undefined') {
         notificationManager.sendNotification(
-          '⌨️ 快捷键',
+          '快捷键',
           `${mod}+Enter 提交 | T 切换主题 | Esc 关闭弹窗`,
           { tag: 'keyboard-help', requireInteraction: false }
         );
