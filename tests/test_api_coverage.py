@@ -180,6 +180,15 @@ class TestWebUITaskSubmitAPI(unittest.TestCase):
         cls.app.config["TESTING"] = True
         cls.client = cls.app.test_client()
 
+    def setUp(self):
+        from server import get_task_queue
+
+        self.task_queue = get_task_queue()
+        self.task_queue.clear_all_tasks()
+
+    def tearDown(self):
+        self.task_queue.clear_all_tasks()
+
     def test_submit_nonexistent_task(self):
         """测试提交不存在的任务"""
         response = self.client.post(
@@ -189,6 +198,57 @@ class TestWebUITaskSubmitAPI(unittest.TestCase):
         )
 
         self.assertIn(response.status_code, [404, 400])
+
+    def test_generic_submit_respects_explicit_task_id(self):
+        """通用提交端点应优先完成显式 task_id，而不是当前 active 任务"""
+        self.task_queue.add_task("active-task", "激活任务")
+        self.task_queue.add_task("pending-task", "等待任务")
+
+        response = self.client.post(
+            "/api/submit",
+            data={
+                "task_id": "pending-task",
+                "feedback_text": "定向提交",
+                "selected_options": "[]",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        active_task = self.task_queue.get_task("active-task")
+        pending_task = self.task_queue.get_task("pending-task")
+        self.assertIsNotNone(active_task)
+        self.assertIsNotNone(pending_task)
+        assert active_task is not None
+        assert pending_task is not None
+
+        self.assertEqual(active_task.status, "active")
+        self.assertEqual(pending_task.status, "completed")
+        self.assertEqual(
+            pending_task.result,
+            {"user_input": "定向提交", "selected_options": [], "images": []},
+        )
+
+    def test_generic_submit_missing_explicit_task_id_returns_404(self):
+        """通用提交端点在 task_id 不存在时不应误写 active 任务"""
+        self.task_queue.add_task("active-task", "激活任务")
+
+        response = self.client.post(
+            "/api/submit",
+            data={
+                "task_id": "missing-task",
+                "feedback_text": "不应串任务",
+                "selected_options": "[]",
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+        active_task = self.task_queue.get_task("active-task")
+        self.assertIsNotNone(active_task)
+        assert active_task is not None
+        self.assertEqual(active_task.status, "active")
+        self.assertIsNone(active_task.result)
 
 
 class TestWebUIUpdateAPI(unittest.TestCase):

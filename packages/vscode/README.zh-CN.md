@@ -15,7 +15,7 @@
 ## 环境要求
 
 - VSCode `>= 1.74.0`
-- 本地可访问的 AI Intervention Agent 服务端（默认 `http://localhost:8081`）
+- 本地可访问的 AI Intervention Agent 服务端（默认 `http://localhost:8080`）
 
 ## 安装
 
@@ -39,7 +39,7 @@ npm install
 
 ## 配置
 
-- `ai-intervention-agent.serverUrl`：服务端地址（默认 `http://localhost:8081`）
+- `ai-intervention-agent.serverUrl`：服务端地址（默认 `http://localhost:8080`）
 
 ## 生成 VSIX（.vsix）
 
@@ -63,7 +63,7 @@ npm run vscode:test
 ## 排错
 
 - **看不到请求**：
-  - 确认服务端可访问（默认端口 8081 或按你的 `serverUrl` 设置）
+  - 确认服务端可访问（默认端口 8080 或按你的 `serverUrl` 设置）
   - VSCode → Help → Toggle Developer Tools 查看控制台错误
 
 ## 项目地址

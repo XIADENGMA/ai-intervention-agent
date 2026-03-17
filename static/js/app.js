@@ -603,42 +603,77 @@ function showStatus(message, type) {
 async function insertCodeFromClipboard() {
   // iOS/Safari/HTTP 等环境可能无法使用 navigator.clipboard.readText()
   // 因此这里采用“优先读取剪贴板 -> 失败则弹出粘贴输入框”的策略
+  let finished = false
+  let fallbackTimer = null
+
+  const finish = () => {
+    finished = true
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer)
+      fallbackTimer = null
+    }
+  }
+
+  fallbackTimer = setTimeout(() => {
+    if (finished) return
+    finish()
+    openCodePasteModal(new Error('ClipboardReadTimeout'))
+  }, 1500)
+
   try {
     if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+      finish()
       openCodePasteModal()
       return
     }
 
     const text = await navigator.clipboard.readText()
-    if (!text) {
-      showStatus('剪贴板为空', 'error')
+    if (finished) return
+    finish()
+
+    if (!text || !text.trim()) {
+      openCodePasteModal(new Error('ClipboardEmpty'))
       return
     }
 
     insertCodeBlockIntoFeedbackTextarea(text)
     showStatus('代码已插入', 'success')
   } catch (error) {
+    if (finished) return
+    finish()
     console.error('读取剪贴板失败:', error)
     openCodePasteModal(error)
   }
+}
+
+function buildMarkdownCodeFence(text, lang = '') {
+  const normalizedText = String(text || '').replace(/\r\n?/g, '\n')
+  if (!normalizedText.trim()) return null
+
+  const backtickRuns = normalizedText.match(/`+/g) || []
+  const longestRun = backtickRuns.reduce((max, run) => Math.max(max, run.length), 0)
+  const fence = '`'.repeat(Math.max(3, longestRun + 1))
+  const fenceHead = lang ? `${fence}${lang}` : fence
+  const codeBody = normalizedText.endsWith('\n') ? normalizedText : `${normalizedText}\n`
+
+  return `${fenceHead}\n${codeBody}${fence}`
 }
 
 function insertCodeBlockIntoFeedbackTextarea(text) {
   const textarea = document.getElementById('feedback-text')
   if (!textarea) return
 
+  const codeBlockBody = buildMarkdownCodeFence(text)
+  if (!codeBlockBody) return
+
   const cursorPos = textarea.selectionStart || 0
   const currentText = textarea.value || ''
   const textBefore = currentText.substring(0, cursorPos)
   const textAfter = currentText.substring(cursorPos)
-
-  // 构建要插入的代码块，在```前面总是添加换行
-  let codeBlock = `\n\`\`\`\n${text}\n\`\`\``
-
-  // 如果是在文本开头插入，则不需要前面的换行
-  if (cursorPos === 0) {
-    codeBlock = `\`\`\`\n${text}\n\`\`\``
-  }
+  const needsLeadingNewline = cursorPos > 0 && !textBefore.endsWith('\n')
+  const needsTrailingNewline = textAfter.length > 0 && !textAfter.startsWith('\n')
+  const codeBlock =
+    `${needsLeadingNewline ? '\n' : ''}${codeBlockBody}${needsTrailingNewline ? '\n' : ''}`
 
   // 插入代码块
   textarea.value = textBefore + codeBlock + textAfter
@@ -662,6 +697,12 @@ function getClipboardFailureHint(error) {
     }
     if (name === 'NotFoundError') {
       return '未读取到剪贴板内容。请在下方手动粘贴代码。'
+    }
+    if (name === 'Error' && error && error.message === 'ClipboardReadTimeout') {
+      return '浏览器没有及时返回剪贴板内容。请在下方手动粘贴代码。'
+    }
+    if (name === 'Error' && error && error.message === 'ClipboardEmpty') {
+      return '未检测到可插入的剪贴板文本。请在下方手动粘贴代码。'
     }
   } catch (e) {
     // ignore
@@ -2908,8 +2949,14 @@ function initializePasteFunction() {
     if (filesToAdd.length === 0) return
 
     // 如果剪贴板同时有文本内容，尽量不阻止默认粘贴（让文本正常进入 textarea）
-    const pastedText = (clipboardData.getData('text/plain') || clipboardData.getData('text') || '').trim()
-    if (!pastedText) {
+    const rawPastedText = clipboardData.getData('text/plain') || clipboardData.getData('text') || ''
+    const pastedText = rawPastedText.trim()
+    const dataUriText = pastedText.replace(/\s+/g, '')
+    const dataUriOnly =
+      matches.length > 0 &&
+      /^data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+$/i.test(dataUriText)
+
+    if (!pastedText || dataUriOnly) {
       e.preventDefault()
     }
 
