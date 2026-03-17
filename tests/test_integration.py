@@ -111,6 +111,12 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         # 可能存在或不存在
         self.assertIn(response.status_code, [200, 404])
 
+    def test_notification_service_worker_route(self):
+        """回归测试：通知 service worker 应可从根路径访问并声明站点级作用域"""
+        response = self.client.get("/notification-service-worker.js")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("Service-Worker-Allowed"), "/")
+
     def test_static_lottie(self):
         """回归测试：Lottie 动画 JSON 静态路由应可访问（避免退化到 emoji）"""
         response = self.client.get("/static/lottie/sprout.json")
@@ -136,6 +142,9 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         self.assertIn("renderSproutFallback", js)
         self.assertIn("sproutGrow", js)
         self.assertIn("/static/lottie/sprout.json", js)
+        self.assertIn("/notification-service-worker.js", js)
+        self.assertIn("bindAutoPermissionRequest", js)
+        self.assertIn("showSystemNotification", js)
 
     def test_app_js_has_code_insert_and_paste_guards(self):
         """回归测试：app.js 应保留代码插入与 data URI 粘贴护栏"""
@@ -244,6 +253,46 @@ class TestWebFeedbackUINotificationConfig(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+
+    def test_update_notification_config_partial_merge(self):
+        """回归测试：部分更新不应把未提交的通知配置重置为默认值"""
+        enable_bark = {
+            "barkEnabled": True,
+            "barkUrl": "https://api.day.app/push",
+            "barkDeviceKey": "test_key",
+        }
+        response = self.client.post(
+            "/api/update-notification-config",
+            data=json.dumps(enable_bark),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        partial_update = {"webEnabled": False}
+        response = self.client.post(
+            "/api/update-notification-config",
+            data=json.dumps(partial_update),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.get("/api/get-notification-config")
+        self.assertEqual(response.status_code, 200)
+        config = json.loads(response.data)["config"]
+        self.assertFalse(config["web_enabled"])
+        self.assertTrue(config["bark_enabled"])
+        self.assertEqual(config["bark_device_key"], "test_key")
+
+    def test_update_notification_config_ignores_unknown_fields(self):
+        """回归测试：非通知字段不应触发默认值覆盖"""
+        response = self.client.post(
+            "/api/update-notification-config",
+            data=json.dumps({"theme_preference": "light"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        result = json.loads(response.data)
+        self.assertEqual(result["status"], "success")
 
 
 # ============================================================================

@@ -352,7 +352,7 @@ class TaskQueue:
             return True
 
     def complete_task(self, task_id: str, result: Dict[str, Any]) -> bool:
-        """完成任务并标记为延迟删除 ⭐核心方法
+        """完成任务并标记为延迟删除（核心方法）
 
         将任务标记为已完成并保存结果，**不立即删除**。
 
@@ -561,7 +561,7 @@ class TaskQueue:
             return count
 
     def cleanup_completed_tasks(self, age_seconds: int = 10) -> int:
-        """清理超过指定时间的已完成任务 ⭐后台清理核心方法
+        """清理超过指定时间的已完成任务（后台清理核心方法）
 
         删除完成时间超过 age_seconds 的任务。
 
@@ -623,7 +623,7 @@ class TaskQueue:
             return len(tasks_to_remove)
 
     def _cleanup_loop(self):
-        """后台清理循环 ⭐守护线程入口
+        """后台清理循环（守护线程入口）
 
         后台线程的主循环，定期清理过期的已完成任务。
 

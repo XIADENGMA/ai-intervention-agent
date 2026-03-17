@@ -149,7 +149,7 @@ def process_directory(
             saved_percent = (saved / original_size * 100) if original_size > 0 else 0
             total_saved += saved
 
-            print(f"✅ {filepath.name} -> {minified_path.name}")
+            print(f"已生成 {filepath.name} -> {minified_path.name}")
             print(f"   原始大小: {original_size:,} bytes")
             print(f"   压缩后:  {minified_size:,} bytes")
             print(f"   节省:    {saved:,} bytes ({saved_percent:.1f}%)")
@@ -158,7 +158,7 @@ def process_directory(
             files_processed += 1
 
         except Exception as e:
-            print(f"❌ 处理失败 {filepath.name}: {e}")
+            print(f"处理失败 {filepath.name}: {e}")
 
     print(f"处理完成: {files_processed} 个文件, 跳过 {files_skipped} 个")
     if total_saved > 0:
@@ -204,11 +204,11 @@ def main():
         total = needs_js + needs_css
         if total > 0:
             print(
-                f"❌ 检查失败：发现 {total} 个静态资源需要重新生成 .min 文件。"
+                f"检查失败：发现 {total} 个静态资源需要重新生成 .min 文件。"
                 "请运行：python scripts/minify_assets.py"
             )
             sys.exit(1)
-        print("✅ 检查通过：所有 .min 文件都是最新的。")
+        print("检查通过：所有 .min 文件都是最新的。")
     else:
         print("完成！")
 
