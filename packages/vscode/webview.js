@@ -32,7 +32,7 @@ function getNonce(length = 32) {
  * - 实现与本地服务器的轮询通信机制
  */
 class WebviewProvider {
-  constructor(extensionUri, outputChannel, serverUrl = 'http://localhost:8081', onVisibilityChanged) {
+  constructor(extensionUri, outputChannel, serverUrl = 'http://localhost:8080', onVisibilityChanged) {
     this._extensionUri = extensionUri
     this._outputChannel = outputChannel
     this._logger = createLogger(outputChannel, {
@@ -334,7 +334,7 @@ class WebviewProvider {
   }
 
   _getHtmlContent(webview) {
-    const serverUrl = this._serverUrl || 'http://localhost:8081'
+    const serverUrl = this._serverUrl || 'http://localhost:8080'
     const cspSource = webview.cspSource
     // 重要：不要把 marked/prism 以“内联脚本”拼进 HTML（其内容包含反引号等字符，部分 Webview 注入实现会因此失败）
     // 改为外链加载（同样使用 nonce，CSP 更安全且更稳定）
@@ -726,6 +726,9 @@ class WebviewProvider {
             font-family: var(--vscode-editor-font-family);
             font-size: 0.88em;
             border: 1px solid rgba(127, 127, 127, 0.15);
+            white-space: break-spaces;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         /* Markdown代码块样式 - 深色背景的多行代码展示 */
@@ -736,12 +739,17 @@ class WebviewProvider {
             overflow-x: auto;
             margin-bottom: 14px;
             border: 1px solid rgba(127, 127, 127, 0.18);
+            max-width: 100%;
         }
 
         .markdown-content pre code {
             background: none;
             padding: 0;
             border: none;
+            display: block;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .markdown-content ul,
@@ -1572,19 +1580,19 @@ class WebviewProvider {
 
                         <!-- Button group (upload + submit) -->
                         <div class="input-buttons">
-                            <button class="insert-code-btn" id="insertCodeBtn" title="插入代码（从剪贴板）" aria-label="插入代码">
+                            <button type="button" class="insert-code-btn" id="insertCodeBtn" title="插入代码（从剪贴板）" aria-label="插入代码">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                                     <polyline points="16 18 22 12 16 6"></polyline>
                                     <polyline points="8 6 2 12 8 18"></polyline>
                                     <line x1="14" y1="4" x2="10" y2="20"></line>
                                 </svg>
                             </button>
-                            <button class="upload-btn" id="uploadBtn" title="上传图片" aria-label="上传图片">
+                            <button type="button" class="upload-btn" id="uploadBtn" title="上传图片" aria-label="上传图片">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
                                     <path fill-rule="evenodd" clip-rule="evenodd" d="M3 4.5C3 3.67157 3.67157 3 4.5 3H15.5C16.3284 3 17 3.67157 17 4.5V15.5C17 16.3284 16.3284 17 15.5 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5ZM4.5 4C4.22386 4 4 4.22386 4 4.5V12.2929L6.64645 9.64645C6.84171 9.45118 7.15829 9.45118 7.35355 9.64645L10 12.2929L13.1464 9.14645C13.3417 8.95118 13.6583 8.95118 13.8536 9.14645L16 11.2929V4.5C16 4.22386 15.7761 4 15.5 4H4.5ZM16 12.7071L13.5 10.2071L10.3536 13.3536C10.1583 13.5488 9.84171 13.5488 9.64645 13.3536L7 10.7071L4 13.7071V15.5C4 15.7761 4.22386 16 4.5 16H15.5C15.7761 16 16 15.7761 16 15.5V12.7071ZM7 7.5C7 6.94772 7.44772 6.5 8 6.5C8.55228 6.5 9 6.94772 9 7.5C9 8.05228 8.55228 8.5 8 8.5C7.44772 8.5 7 8.05228 7 7.5Z" fill="currentColor" />
                                 </svg>
                             </button>
-                            <button class="submit-btn-embedded" id="submitBtn" title="提交反馈" aria-label="提交反馈">
+                            <button type="button" class="submit-btn-embedded" id="submitBtn" title="提交反馈" aria-label="提交反馈">
                                 <svg class="btn-icon submit-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
                                     <path d="M19.26 9.77C19.91 9.08 20.92 8.91 21.73 9.32L21.89 9.40L21.94 9.43L22.19 9.63C22.20 9.64 22.22 9.65 22.23 9.66L44.63 30.46C45.05 30.86 45.30 31.42 45.30 32.00C45.30 32.44 45.16 32.86 44.91 33.21C44.90 33.23 44.89 33.24 44.88 33.26L44.66 33.50C44.65 33.52 44.64 33.53 44.63 33.54L22.23 54.34C21.38 55.13 20.05 55.08 19.26 54.23C18.47 53.38 18.52 52.05 19.37 51.26L40.12 32.00L19.37 12.74C19.36 12.73 19.35 12.72 19.34 12.70L19.12 12.46C19.11 12.45 19.10 12.43 19.09 12.42C18.52 11.62 18.57 10.52 19.26 9.77Z" fill="currentColor" />
                                 </svg>

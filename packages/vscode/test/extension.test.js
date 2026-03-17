@@ -49,9 +49,17 @@ suite('Extension Test Suite', () => {
     assert.ok(/async function autoSubmit\(\)[\s\S]*fetchFeedbackPrompts\(/.test(webviewUi))
     assert.ok(webviewUi.includes('collectImageFilesFromClipboard'))
     assert.ok(webviewUi.includes('applyHostThemeState'))
+    assert.ok(webviewUi.includes("formData.append('task_id', taskIdToSubmit)"))
+    assert.ok(webviewUi.includes('buildMarkdownCodeFence'))
+    assert.ok(webviewUi.includes('const codeBlockBody = buildMarkdownCodeFence(code, lang)'))
+    assert.ok(!webviewUi.includes('const trimmed = raw.trim();'))
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
     assert.ok(extPkg.includes('ai-intervention-agent.logLevel'))
+    assert.ok(extPkg.includes('http://localhost:8080'))
+    assert.ok(webviewJs.includes('http://localhost:8080'))
+    assert.ok(webviewJs.includes('overflow-wrap: anywhere;'))
+    assert.ok(webviewJs.includes('white-space: pre-wrap;'))
   })
 
   test('Webview helpers 应覆盖 macOS / 剪贴板 / 主题同步兼容逻辑', () => {

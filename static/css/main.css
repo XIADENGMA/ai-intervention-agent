@@ -5337,6 +5337,9 @@ h1 {
   font-size: 0.875rem; /* 字号（14px） */
   border-radius: 6px; /* 圆角 */
   border: 1px solid rgba(255, 255, 255, 0.08); /* 边框 */
+  white-space: break-spaces; /* 保留空格并允许必要换行 */
+  overflow-wrap: anywhere; /* 长 token 允许断行，避免横向溢出 */
+  word-break: break-word; /* 兼容旧浏览器 */
 }
 
 /**
@@ -5416,6 +5419,7 @@ h1 {
   font-size: 0.9rem; /* 字号（14.4px） */
   line-height: 1.6; /* 行高 */
   position: relative; /* 相对定位 */
+  max-width: 100%; /* 避免代码块撑破父容器 */
 }
 
 /**
@@ -5447,6 +5451,10 @@ h1 {
   letter-spacing: 0.025em; /* 字间距 */
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); /* 文字阴影 */
   text-decoration: none !important; /* 无文字装饰 */
+  display: block; /* 确保 white-space / wrapping 对整块代码生效 */
+  white-space: pre-wrap; /* 保留缩进与换行，同时允许长行折行 */
+  overflow-wrap: anywhere; /* 超长 token 可断行 */
+  word-break: break-word; /* 兼容旧浏览器 */
 }
 
 /** 强制覆盖代码高亮背景：确保语法高亮插件不覆盖背景 */

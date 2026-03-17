@@ -6,7 +6,7 @@ const { createLogger } = require('./logger')
  * AI Intervention Agent VSCode Extension
  * iframe模式 - 极简版本，仅显示服务器Web UI
  */
-const DEFAULT_SERVER_URL = 'http://localhost:8081'
+const DEFAULT_SERVER_URL = 'http://localhost:8080'
 let EXT_VERSION = '0.3.4'
 try {
   EXT_VERSION = require('./package.json').version || EXT_VERSION
@@ -21,7 +21,7 @@ function normalizeServerUrl(input) {
     const raw = (input ?? '').toString().trim()
     if (!raw) return DEFAULT_SERVER_URL
 
-    // 允许用户省略协议（例如 localhost:8081）
+    // 允许用户省略协议（例如 localhost:8080）
     const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `http://${raw}`
     const u = new URL(withScheme)
     return u.origin

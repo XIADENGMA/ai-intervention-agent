@@ -59,8 +59,8 @@
       "properties": {
         "ai-intervention-agent.serverUrl": {
           "type": "string",
-          "default": "http://localhost:8081",
-          "description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8081）"
+          "default": "http://localhost:8080",
+          "description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8080）"
         },
         "ai-intervention-agent.logLevel": {
           "type": "string",

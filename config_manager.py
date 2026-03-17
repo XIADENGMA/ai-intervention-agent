@@ -79,63 +79,64 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
     Raises:
         json.JSONDecodeError: JSON 语法错误时抛出
     """
-    lines = content.split("\n")
-    cleaned_lines = []
-    in_multiline_comment = False
+    cleaned_chars = []
+    in_string = False
+    escape_next = False
+    in_single_line_comment = False
+    in_multi_line_comment = False
 
-    for line in lines:
-        if in_multiline_comment:
-            # 查找多行注释结束
-            if "*/" in line:
-                line = line[line.find("*/") + 2 :]
-                in_multiline_comment = False
+    i = 0
+    while i < len(content):
+        char = content[i]
+        next_char = content[i + 1] if i + 1 < len(content) else ""
+
+        if in_single_line_comment:
+            if char == "\n":
+                in_single_line_comment = False
+                cleaned_chars.append(char)
+            i += 1
+            continue
+
+        if in_multi_line_comment:
+            if char == "*" and next_char == "/":
+                in_multi_line_comment = False
+                i += 2
             else:
-                continue
+                i += 1
+            continue
 
-        # 处理多行注释开始
-        if "/*" in line:
-            before_comment = line[: line.find("/*")]
-            after_comment = line[line.find("/*") :]
-            if "*/" in after_comment:
-                # 单行内的多行注释
-                line = before_comment + after_comment[after_comment.find("*/") + 2 :]
-            else:
-                # 多行注释开始
-                line = before_comment
-                in_multiline_comment = True
-
-        # 移除单行注释 //（但要注意字符串内的 //）
-        in_string = False
-        escape_next = False
-        comment_pos = -1
-
-        for i, char in enumerate(line):
+        if in_string:
+            cleaned_chars.append(char)
             if escape_next:
                 escape_next = False
-                continue
-            if char == "\\":
+            elif char == "\\":
                 escape_next = True
-                continue
-            if char == '"':
-                in_string = not in_string
-                continue
-            if (
-                not in_string
-                and char == "/"
-                and i + 1 < len(line)
-                and line[i + 1] == "/"
-            ):
-                comment_pos = i
-                break
+            elif char == '"':
+                in_string = False
+            i += 1
+            continue
 
-        if comment_pos >= 0:
-            line = line[:comment_pos]
+        if char == '"':
+            in_string = True
+            cleaned_chars.append(char)
+            i += 1
+            continue
 
-        cleaned_lines.append(line)
+        if char == "/" and next_char == "/":
+            in_single_line_comment = True
+            i += 2
+            continue
 
-    cleaned_content = "\n".join(cleaned_lines)
+        if char == "/" and next_char == "*":
+            in_multi_line_comment = True
+            i += 2
+            continue
 
-    # 解析 JSON
+        cleaned_chars.append(char)
+        i += 1
+
+    cleaned_content = "".join(cleaned_chars)
+
     return json.loads(cleaned_content)
 
 
@@ -1689,10 +1690,34 @@ class ConfigManager:
             with open(backup_path, "r", encoding="utf-8") as f:
                 backup_data = json.load(f)
 
-            success = self.import_config(backup_data, merge=False, save=True)
-            if success:
-                logger.info(f"配置已从 {backup_path} 恢复")
-            return success
+            if not isinstance(backup_data, dict):
+                logger.error("恢复配置失败: 备份文件内容必须是字典")
+                return False
+
+            if "config" in backup_data:
+                actual_config = backup_data.get("config", {})
+                if not isinstance(actual_config, dict):
+                    logger.error("恢复配置失败: 备份中的 config 必须是字典")
+                    return False
+                restored_config = dict(actual_config)
+                network_security = backup_data.get("network_security")
+                if isinstance(network_security, dict):
+                    restored_config["network_security"] = network_security
+            else:
+                restored_config = dict(backup_data)
+
+            self.config_file.parent.mkdir(parents=True, exist_ok=True)
+            content = json.dumps(restored_config, indent=2, ensure_ascii=False)
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            self._original_content = content
+            self._update_file_mtime()
+            self._load_config()
+            self.invalidate_all_caches()
+            self._trigger_config_change_callbacks()
+            logger.info(f"配置已从 {backup_path} 恢复")
+            return True
 
         except FileNotFoundError:
             logger.error(f"备份文件不存在: {backup_path}")

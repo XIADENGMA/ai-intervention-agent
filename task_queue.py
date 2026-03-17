@@ -418,7 +418,6 @@ class TaskQueue:
             task.status = "completed"
             task.result = result
             task.completed_at = datetime.now(timezone.utc)  # 使用 UTC 时间
-
             # 【新增】触发任务状态变更回调（当前任务完成）
             self._trigger_status_change(task_id, old_status, "completed")
 
