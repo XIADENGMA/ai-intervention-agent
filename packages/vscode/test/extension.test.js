@@ -53,6 +53,8 @@ suite('Extension Test Suite', () => {
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
     assert.ok(extPkg.includes('ai-intervention-agent.logLevel'))
+    assert.ok(extPkg.includes('http://localhost:8080'))
+    assert.ok(webviewJs.includes('http://localhost:8080'))
   })
 
   test('Webview helpers 应覆盖 macOS / 剪贴板 / 主题同步兼容逻辑', () => {

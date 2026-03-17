@@ -855,7 +855,7 @@ Returns:
 
 Example:
     >>> config.get_typed("web_ui.port", 8080, int, 1, 65535)
-    8081
+    8080
     >>> config.get_typed("notification.enabled", True, bool)
     True
 

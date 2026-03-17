@@ -32,7 +32,7 @@ function getNonce(length = 32) {
  * - 实现与本地服务器的轮询通信机制
  */
 class WebviewProvider {
-  constructor(extensionUri, outputChannel, serverUrl = 'http://localhost:8081', onVisibilityChanged) {
+  constructor(extensionUri, outputChannel, serverUrl = 'http://localhost:8080', onVisibilityChanged) {
     this._extensionUri = extensionUri
     this._outputChannel = outputChannel
     this._logger = createLogger(outputChannel, {
@@ -334,7 +334,7 @@ class WebviewProvider {
   }
 
   _getHtmlContent(webview) {
-    const serverUrl = this._serverUrl || 'http://localhost:8081'
+    const serverUrl = this._serverUrl || 'http://localhost:8080'
     const cspSource = webview.cspSource
     // 重要：不要把 marked/prism 以“内联脚本”拼进 HTML（其内容包含反引号等字符，部分 Webview 注入实现会因此失败）
     // 改为外链加载（同样使用 nonce，CSP 更安全且更稳定）
