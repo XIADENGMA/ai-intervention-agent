@@ -157,9 +157,9 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
 
         css = response.data.decode("utf-8", errors="ignore")
         response.close()
-        self.assertIn("overflow-wrap: anywhere", css)
-        self.assertIn("white-space: pre-wrap", css)
-        self.assertIn("white-space: break-spaces", css)
+        self.assertIn("overflow-wrap:anywhere", css.replace(" ", ""))
+        self.assertIn("white-space:pre-wrap", css.replace(" ", ""))
+        self.assertIn("white-space:break-spaces", css.replace(" ", ""))
 
     def test_multi_task_polling_governance_present(self):
         """回归测试：任务轮询应具备治理能力（不可见暂停/退避/AbortController 防重叠）"""
