@@ -61,24 +61,6 @@ except ImportError:
 
 logger = EnhancedLogger(__name__)
 
-
-def _append_debug_trace(payload: dict[str, Any]) -> None:
-    """Append a compact NDJSON debug trace entry."""
-    try:
-        entry = {
-            "hypothesisId": payload.get("hypothesisId", ""),
-            "location": payload.get("location", "web_ui.py"),
-            "message": payload.get("message", ""),
-            "data": payload.get("data", {}),
-            "timestamp": int(payload.get("timestamp") or time.time() * 1000),
-        }
-        # region agent log
-        with open("/opt/cursor/logs/debug.log", "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        # endregion
-    except Exception:
-        pass
-
 # ============================================================================
 # 版本号和项目信息
 # ============================================================================
@@ -944,14 +926,6 @@ class WebFeedbackUI:
             """
             return render_template_string(self.get_html_template())
 
-        @self.app.route("/api/debug-trace", methods=["POST"])
-        @self.limiter.limit("600 per minute")
-        def debug_trace():
-            raw = request.get_json(silent=True)
-            payload = raw if isinstance(raw, dict) else {}
-            _append_debug_trace(payload)
-            return jsonify({"success": True})
-
         @self.app.route("/api/config")
         @self.limiter.limit("300 per minute")  # 允许更频繁的轮询，支持测试场景
         def get_api_config():
@@ -1518,28 +1492,6 @@ class WebFeedbackUI:
                 selected_options = json.loads(
                     request.form.get("selected_options", "[]")
                 )
-                auto_prompt = (
-                    cast(str | None, get_config().get_section("feedback").get("resubmit_prompt"))
-                    or "请立即调用 interactive_feedback 工具"
-                )
-                # region agent log
-                _append_debug_trace(
-                    {
-                        "hypothesisId": "B",
-                        "location": "web_ui.py:1517",
-                        "message": "task submit route hit",
-                        "data": {
-                            "taskId": task_id,
-                            "textLength": len(feedback_text),
-                            "selectedCount": len(selected_options)
-                            if isinstance(selected_options, list)
-                            else -1,
-                            "isAutoPrompt": feedback_text == auto_prompt,
-                        },
-                        "timestamp": int(time.time() * 1000),
-                    }
-                )
-                # endregion
 
                 # 处理图片（与 /api/submit 保持一致）
                 images = []

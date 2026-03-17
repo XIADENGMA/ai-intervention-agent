@@ -271,26 +271,6 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     let submitBackoffUntilMs = 0;
     let submitBackoffTimer = null;
 
-    // #region agent log
-    function debugTrace(hypothesisId, location, message, data) {
-        try {
-            fetch(SERVER_URL + '/api/debug-trace', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    hypothesisId: hypothesisId,
-                    location: location,
-                    message: message,
-                    data: data || {},
-                    timestamp: Date.now()
-                })
-            }).catch(() => {});
-        } catch (e) {
-            // ignore
-        }
-    }
-    // #endregion
-
     // 【轮询治理】避免重叠请求/页面不可见浪费/错误风暴
     const POLL_BASE_MS = 2000;
     const POLL_MAX_MS = 30000;
@@ -442,13 +422,6 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     function requestInsertCodeFromClipboard() {
         // 防止短时间重复点击
         if (clipboardRequestId) return;
-        // #region agent log
-        debugTrace('A', 'webview-ui.js:422', 'insert-code request started', {
-            activeTaskId: activeTaskId || '',
-            activeElementId: document.activeElement && document.activeElement.id ? document.activeElement.id : '',
-            textareaLength: (document.getElementById('feedbackText') && document.getElementById('feedbackText').value || '').length
-        });
-        // #endregion
         clipboardRequestId = String(Date.now()) + '-' + Math.random().toString(16).slice(2);
         setInsertCodeBtnDisabled(true);
         vscode.postMessage({ type: 'requestClipboardText', requestId: clipboardRequestId });
@@ -480,15 +453,6 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             }
 
             const inserted = insertCodeBlockIntoFeedbackTextarea(text, '');
-            // #region agent log
-            debugTrace('A', 'webview-ui.js:455', 'insert-code clipboard handled', {
-                requestIdMatched: !clipboardRequestId,
-                inserted: !!inserted,
-                activeTaskId: activeTaskId || '',
-                activeElementId: document.activeElement && document.activeElement.id ? document.activeElement.id : '',
-                textareaTail: (document.getElementById('feedbackText') && document.getElementById('feedbackText').value || '').slice(-80)
-            });
-            // #endregion
             if (!inserted) {
                 vscode.postMessage({ type: 'showInfo', message: '插入失败：未检测到有效代码' });
                 return;
@@ -1508,14 +1472,6 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
     /* 显示无有效内容页面 - 隐藏任务内容，显示等待界面 */
     function showNoContent() {
-        // #region agent log
-        debugTrace('D', 'webview-ui.js:1474', 'webview entered no-content state', {
-            activeTaskId: activeTaskId || '',
-            currentConfigTaskId: currentConfig && currentConfig.task_id ? currentConfig.task_id : '',
-            textareaLength: (document.getElementById('feedbackText') && document.getElementById('feedbackText').value || '').length,
-            taskCount: Array.isArray(allTasks) ? allTasks.length : -1
-        });
-        // #endregion
         // 立即隐藏标签栏（无内容页只保留右上角设置按钮，不显示 tabs）
         hideTabs();
         document.getElementById('loadingState').classList.add('hidden');
@@ -2453,16 +2409,6 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         }
 
         submitInFlight = true;
-        // #region agent log
-        debugTrace('C', 'webview-ui.js:2411', 'webview submitWithData entered', {
-            taskIdOverride: taskIdOverride || '',
-            resolvedTaskId: (taskIdOverride || (currentConfig && currentConfig.task_id) || activeTaskId || ''),
-            textLength: (text || '').toString().length,
-            optionCount: Array.isArray(options) ? options.length : -1,
-            imageCount: Array.isArray(uploadedImages) ? uploadedImages.length : -1,
-            activeElementId: document.activeElement && document.activeElement.id ? document.activeElement.id : ''
-        });
-        // #endregion
         try {
             stopCountdown();
 

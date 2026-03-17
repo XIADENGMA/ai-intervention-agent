@@ -52,18 +52,6 @@
 
 let config = null
 
-function debugTrace(hypothesisId, location, message, data = {}) {
-  try {
-    fetch('/api/debug-trace', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hypothesisId, location, message, data, timestamp: Date.now() })
-    }).catch(() => {})
-  } catch (e) {
-    // ignore
-  }
-}
-
 // ==================================================================
 // Lottie 嫩芽动画配置
 // ==================================================================
@@ -633,13 +621,6 @@ async function insertCodeFromClipboard() {
   }, 1500)
 
   try {
-    // #region agent log
-    debugTrace('A', 'app.js:615', 'web insert-code started', {
-      activeTaskId: window.activeTaskId || '',
-      activeElementId: document.activeElement && document.activeElement.id ? document.activeElement.id : '',
-      textareaLength: (document.getElementById('feedback-text') && document.getElementById('feedback-text').value || '').length
-    })
-    // #endregion
     if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
       finish()
       openCodePasteModal()
@@ -785,14 +766,6 @@ function handleCodePasteModalKeydown(event) {
 async function submitFeedback() {
   const feedbackText = document.getElementById('feedback-text').value.trim()
   const selectedOptions = []
-  // #region agent log
-  debugTrace('C', 'app.js:749', 'web submitFeedback entered', {
-    activeTaskId: window.activeTaskId || '',
-    activeElementId: document.activeElement && document.activeElement.id ? document.activeElement.id : '',
-    textLength: feedbackText.length,
-    imageCount: Array.isArray(selectedImages) ? selectedImages.length : -1
-  })
-  // #endregion
 
   // 【修复】直接从 DOM 获取选中的预定义选项
   // 不再依赖 config.predefined_options，因为在多任务模式下切换任务时 config 可能未同步更新
