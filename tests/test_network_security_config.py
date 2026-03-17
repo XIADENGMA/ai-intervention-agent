@@ -392,6 +392,53 @@ class TestIsIpAllowed(unittest.TestCase):
         self.assertTrue(ui._is_ip_allowed("127.0.0.1"))
 
 
+class TestRequestClientIpResolution(unittest.TestCase):
+    """测试请求来源 IP 解析与 before_request 访问控制"""
+
+    def setUp(self):
+        from web_ui import WebFeedbackUI
+
+        self.ui = WebFeedbackUI(
+            prompt="test",
+            predefined_options=[],
+            task_id="test-1",
+        )
+        self.ui.app.config["TESTING"] = True
+        self.client = self.ui.app.test_client()
+
+    def test_spoofed_forwarded_for_from_remote_client_is_ignored(self):
+        """远端客户端不能用 X-Forwarded-For 冒充白名单来源"""
+        self.ui.network_security_config["allowed_networks"] = ["127.0.0.0/8"]
+        self.ui.network_security_config["blocked_ips"] = []
+        self.ui.network_security_config["enable_access_control"] = True
+
+        response = self.client.get(
+            "/api/health",
+            environ_overrides={
+                "REMOTE_ADDR": "8.8.8.8",
+                "HTTP_X_FORWARDED_FOR": "127.0.0.1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_loopback_proxy_forwarded_for_is_respected(self):
+        """仅本机反向代理转发的 X-Forwarded-For 才会被信任"""
+        self.ui.network_security_config["allowed_networks"] = ["192.168.0.0/16"]
+        self.ui.network_security_config["blocked_ips"] = []
+        self.ui.network_security_config["enable_access_control"] = True
+
+        response = self.client.get(
+            "/api/health",
+            environ_overrides={
+                "REMOTE_ADDR": "127.0.0.1",
+                "HTTP_X_FORWARDED_FOR": "192.168.1.20, 127.0.0.1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+
 class TestIntegration(unittest.TestCase):
     """集成测试"""
 

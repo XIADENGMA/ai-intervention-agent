@@ -326,6 +326,58 @@ class TestConfigManagerExportImport(unittest.TestCase):
         self.assertEqual(base["d"], 3)  # 保留
         self.assertEqual(base["f"], 6)  # 新增
 
+    def test_restore_config_restores_network_security(self):
+        """restore_config 应恢复备份中的 network_security"""
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from config_manager import ConfigManager
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "test_config.jsonc"
+            backup_path = Path(temp_dir) / "backup.json"
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "web_ui": {"port": 8080},
+                        "network_security": {
+                            "allowed_networks": ["127.0.0.0/8"],
+                            "blocked_ips": [],
+                            "access_control_enabled": True,
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            manager = ConfigManager(str(config_path))
+            manager.backup_config(str(backup_path))
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "web_ui": {"port": 9000},
+                        "network_security": {
+                            "allowed_networks": ["10.0.0.0/8"],
+                            "blocked_ips": ["8.8.8.8"],
+                            "access_control_enabled": False,
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertTrue(manager.restore_config(str(backup_path)))
+            restored = manager.get_network_security_config()
+
+            self.assertEqual(restored["allowed_networks"], ["127.0.0.0/8"])
+            self.assertEqual(restored["blocked_ips"], [])
+            self.assertTrue(restored["access_control_enabled"])
+
 
 if __name__ == "__main__":
     unittest.main()

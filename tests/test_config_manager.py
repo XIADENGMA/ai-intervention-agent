@@ -76,6 +76,15 @@ class TestJsoncParser(unittest.TestCase):
 
         self.assertEqual(result["url"], "http://example.com // not a comment")
 
+    def test_parse_block_comment_markers_in_string(self):
+        """测试字符串中的 /* */ 不应被当成注释"""
+        from config_manager import parse_jsonc
+
+        content = '{"message": "keep /* literal */ text"}'
+        result = parse_jsonc(content)
+
+        self.assertEqual(result["message"], "keep /* literal */ text")
+
 
 class TestConfigManagerBasic(unittest.TestCase):
     """测试配置管理器基本功能"""

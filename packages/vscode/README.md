@@ -15,7 +15,7 @@ This VSCode extension embeds the AI Intervention Agent interaction panel into VS
 ## Requirements
 
 - VSCode `>= 1.74.0`
-- A reachable AI Intervention Agent server (default: `http://localhost:8081`)
+- A reachable AI Intervention Agent server (default: `http://localhost:8080`)
 
 ## Installation
 
@@ -39,7 +39,7 @@ npm install
 
 ## Settings
 
-- `ai-intervention-agent.serverUrl`: server URL (default: `http://localhost:8081`)
+- `ai-intervention-agent.serverUrl`: server URL (default: `http://localhost:8080`)
 
 ## Build a VSIX (.vsix)
 
@@ -63,7 +63,7 @@ npm run vscode:test
 ## Troubleshooting
 
 - **No requests shown**:
-  - Make sure the server is reachable (default port 8081, or your configured `serverUrl`)
+  - Make sure the server is reachable (default port 8080, or your configured `serverUrl`)
   - Check VSCode Developer Tools console logs
 
 ## Repository

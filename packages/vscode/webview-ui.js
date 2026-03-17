@@ -349,19 +349,33 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         return feedbackPrompts;
     }
 
+    function buildMarkdownCodeFence(code, lang) {
+        try {
+            const normalized = String(code || '').replace(/\r\n?/g, '\n');
+            if (!normalized.trim()) return null;
+
+            // 注意：此文件的 HTML 由外层模板字符串拼接，避免把反引号字符写进 HTML 源码（可能触发 Webview 注入失败）
+            const BACKTICK = String.fromCharCode(96);
+            const runs = normalized.match(/`+/g) || [];
+            const longestRun = runs.reduce((max, run) => Math.max(max, run.length), 0);
+            const fence = BACKTICK.repeat(Math.max(3, longestRun + 1));
+            const fenceHead = lang ? (fence + String(lang)) : fence;
+            const codeBody = normalized.endsWith('\n') ? normalized : (normalized + '\n');
+
+            return fenceHead + '\n' + codeBody + fence;
+        } catch (e) {
+            return null;
+        }
+    }
+
     // 插入剪贴板代码：在光标处插入 fenced code block（对齐“插入代码”按钮预期）
     function insertCodeBlockIntoFeedbackTextarea(code, lang) {
         try {
             const textarea = document.getElementById('feedbackText');
             if (!textarea) return false;
 
-            const raw = String(code || '');
-            const trimmed = raw.trim();
-            if (!trimmed) return false;
-
-            // 注意：此文件的 HTML 由外层模板字符串拼接，避免把反引号字符写进 HTML 源码（可能触发 Webview 注入失败）
-            const FENCE = String.fromCharCode(96, 96, 96);
-            const fenceHead = lang ? (FENCE + String(lang)) : FENCE;
+            const codeBlockBody = buildMarkdownCodeFence(code, lang);
+            if (!codeBlockBody) return false;
 
             let cursorPos = 0;
             try {
@@ -373,11 +387,12 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             const value = textarea.value || '';
             const before = value.slice(0, cursorPos);
             const after = value.slice(cursorPos);
-
-            let codeBlock = '\n' + fenceHead + '\n' + trimmed + '\n' + FENCE + '\n';
-            if (cursorPos === 0) {
-                codeBlock = fenceHead + '\n' + trimmed + '\n' + FENCE + '\n';
-            }
+            const needsLeadingNewline = cursorPos > 0 && !before.endsWith('\n');
+            const needsTrailingNewline = after.length > 0 && !after.startsWith('\n');
+            const codeBlock =
+                (needsLeadingNewline ? '\n' : '') +
+                codeBlockBody +
+                (needsTrailingNewline ? '\n' : '');
 
             textarea.value = before + codeBlock + after;
 
@@ -2415,6 +2430,10 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
             // 优先使用多任务提交端点（更明确，不依赖“当前激活任务”隐式状态）
             const taskIdToSubmit = taskIdOverride || (currentConfig && currentConfig.task_id) || activeTaskId;
+            if (taskIdToSubmit) {
+                // 即使回退到 /api/submit，也让后端知道本次提交面向哪个任务。
+                formData.append('task_id', taskIdToSubmit);
+            }
             const submitPath = taskIdToSubmit
                 ? ('/api/tasks/' + encodeURIComponent(taskIdToSubmit) + '/submit')
                 : '/api/submit';
