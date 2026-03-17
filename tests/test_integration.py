@@ -137,6 +137,30 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         self.assertIn("sproutGrow", js)
         self.assertIn("/static/lottie/sprout.json", js)
 
+    def test_app_js_has_code_insert_and_paste_guards(self):
+        """回归测试：app.js 应保留代码插入与 data URI 粘贴护栏"""
+        response = self.client.get("/static/js/app.js")
+        if response.status_code != 200:
+            self.skipTest("app.js 不存在，跳过代码插入/粘贴护栏回归测试")
+
+        js = response.data.decode("utf-8", errors="ignore")
+        response.close()
+        self.assertIn("buildMarkdownCodeFence", js)
+        self.assertIn("needsTrailingNewline", js)
+        self.assertIn("dataUriOnly", js)
+
+    def test_main_css_has_markdown_code_wrapping_rules(self):
+        """回归测试：Markdown 代码内容应具备换行能力，避免网页端溢出"""
+        response = self.client.get("/static/css/main.css")
+        if response.status_code != 200:
+            self.skipTest("main.css 不存在，跳过 Markdown 代码换行回归测试")
+
+        css = response.data.decode("utf-8", errors="ignore")
+        response.close()
+        self.assertIn("overflow-wrap: anywhere", css)
+        self.assertIn("white-space: pre-wrap", css)
+        self.assertIn("white-space: break-spaces", css)
+
     def test_multi_task_polling_governance_present(self):
         """回归测试：任务轮询应具备治理能力（不可见暂停/退避/AbortController 防重叠）"""
         response = self.client.get("/static/js/multi_task.js")

@@ -726,6 +726,9 @@ class WebviewProvider {
             font-family: var(--vscode-editor-font-family);
             font-size: 0.88em;
             border: 1px solid rgba(127, 127, 127, 0.15);
+            white-space: break-spaces;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         /* Markdown代码块样式 - 深色背景的多行代码展示 */
@@ -736,12 +739,17 @@ class WebviewProvider {
             overflow-x: auto;
             margin-bottom: 14px;
             border: 1px solid rgba(127, 127, 127, 0.18);
+            max-width: 100%;
         }
 
         .markdown-content pre code {
             background: none;
             padding: 0;
             border: none;
+            display: block;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .markdown-content ul,
