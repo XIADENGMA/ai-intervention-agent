@@ -1145,6 +1145,11 @@ class NotificationManager {
         }
 
         console.log(`通知权限状态: ${this.permission}`)
+        window.dispatchEvent(
+          new CustomEvent('notification-permission-changed', {
+            detail: { permission: this.permission }
+          })
+        )
         return this.permission === 'granted'
       })()
 
@@ -2060,6 +2065,10 @@ class SettingsManager {
       } else if (e.target.id === 'bark-action') {
         this.updateSetting('barkAction', e.target.value)
       }
+    })
+
+    window.addEventListener('notification-permission-changed', () => {
+      this.updateStatus()
     })
   }
 
