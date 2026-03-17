@@ -148,6 +148,7 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         self.assertIn("buildMarkdownCodeFence", js)
         self.assertIn("needsTrailingNewline", js)
         self.assertIn("dataUriOnly", js)
+        self.assertIn("ClipboardReadTimeout", js)
 
     def test_main_css_has_markdown_code_wrapping_rules(self):
         """回归测试：Markdown 代码内容应具备换行能力，避免网页端溢出"""

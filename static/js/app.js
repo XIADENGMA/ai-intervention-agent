@@ -615,6 +615,23 @@ function showStatus(message, type) {
 async function insertCodeFromClipboard() {
   // iOS/Safari/HTTP 等环境可能无法使用 navigator.clipboard.readText()
   // 因此这里采用“优先读取剪贴板 -> 失败则弹出粘贴输入框”的策略
+  let finished = false
+  let fallbackTimer = null
+
+  const finish = () => {
+    finished = true
+    if (fallbackTimer) {
+      clearTimeout(fallbackTimer)
+      fallbackTimer = null
+    }
+  }
+
+  fallbackTimer = setTimeout(() => {
+    if (finished) return
+    finish()
+    openCodePasteModal(new Error('ClipboardReadTimeout'))
+  }, 1500)
+
   try {
     // #region agent log
     debugTrace('A', 'app.js:615', 'web insert-code started', {
@@ -624,19 +641,25 @@ async function insertCodeFromClipboard() {
     })
     // #endregion
     if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+      finish()
       openCodePasteModal()
       return
     }
 
     const text = await navigator.clipboard.readText()
-    if (!text) {
-      showStatus('剪贴板为空', 'error')
+    if (finished) return
+    finish()
+
+    if (!text || !text.trim()) {
+      openCodePasteModal(new Error('ClipboardEmpty'))
       return
     }
 
     insertCodeBlockIntoFeedbackTextarea(text)
     showStatus('代码已插入', 'success')
   } catch (error) {
+    if (finished) return
+    finish()
     console.error('读取剪贴板失败:', error)
     openCodePasteModal(error)
   }
@@ -693,6 +716,12 @@ function getClipboardFailureHint(error) {
     }
     if (name === 'NotFoundError') {
       return '未读取到剪贴板内容。请在下方手动粘贴代码。'
+    }
+    if (name === 'Error' && error && error.message === 'ClipboardReadTimeout') {
+      return '浏览器没有及时返回剪贴板内容。请在下方手动粘贴代码。'
+    }
+    if (name === 'Error' && error && error.message === 'ClipboardEmpty') {
+      return '未检测到可插入的剪贴板文本。请在下方手动粘贴代码。'
     }
   } catch (e) {
     // ignore
