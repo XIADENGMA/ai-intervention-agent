@@ -248,7 +248,7 @@ def validate_bind_interface(value: Any) -> str:
     if value in VALID_BIND_INTERFACES:
         if value == "0.0.0.0":
             logger.info(
-                "⚠️  bind_interface 设为 0.0.0.0，将监听所有网络接口。"
+                    "bind_interface 设为 0.0.0.0，将监听所有网络接口。"
                 "请确保已正确配置 allowed_networks 和防火墙规则。"
             )
         return value
@@ -731,6 +731,7 @@ class WebFeedbackUI:
                 "img-src 'self' data: blob:; "
                 "font-src 'self' data:; "
                 "connect-src 'self'; "
+                "worker-src 'self'; "
                 "frame-ancestors 'none'; "
                 "base-uri 'self'; "
                 "object-src 'none'"
@@ -1635,14 +1636,14 @@ class WebFeedbackUI:
                 - 验证失败的文件不会中断整个提交流程
             """
             # 调试信息：记录请求类型和内容（使用INFO级别确保输出）
-            logger.info(f"🔍 收到提交请求 - Content-Type: {request.content_type}")
-            logger.info(f"🔍 request.files: {dict(request.files)}")
-            logger.info(f"🔍 request.form: {dict(request.form)}")
+            logger.info(f"收到提交请求 - Content-Type: {request.content_type}")
+            logger.info(f"request.files: {dict(request.files)}")
+            logger.info(f"request.form: {dict(request.form)}")
             try:
                 json_data = request.get_json()
-                logger.info(f"🔍 request.json: {json_data}")
+                logger.info(f"request.json: {json_data}")
             except Exception as e:
-                logger.info(f"🔍 无法解析JSON数据: {e}")
+                logger.info(f"无法解析JSON数据: {e}")
 
             # 检查是否有文件上传（优先检查 request.files）
             if request.files:
@@ -2145,50 +2146,140 @@ class WebFeedbackUI:
             try:
                 # 获取前端设置
                 data = request.json or {}
+                if not isinstance(data, dict):
+                    data = {}
 
                 # 尝试导入配置管理器和通知系统
                 try:
                     if not NOTIFICATION_AVAILABLE:
                         raise ImportError("通知系统不可用")
 
-                    # 更新通知管理器配置（不保存到文件，避免双重保存）
-                    notification_manager.update_config_without_save(
-                        enabled=data.get("enabled", True),
-                        web_enabled=data.get("webEnabled", True),
-                        web_permission_auto_request=data.get(
-                            "autoRequestPermission", True
-                        ),
-                        sound_enabled=data.get("soundEnabled", True),
-                        sound_mute=data.get("soundMute", False),
-                        sound_volume=data.get("soundVolume", 80) / 100,
-                        mobile_optimized=data.get("mobileOptimized", True),
-                        mobile_vibrate=data.get("mobileVibrate", True),
-                        bark_enabled=data.get("barkEnabled", False),
-                        bark_url=data.get("barkUrl", ""),
-                        bark_device_key=data.get("barkDeviceKey", ""),
-                        bark_icon=data.get("barkIcon", ""),
-                        bark_action=data.get("barkAction", "none"),
-                    )
-
-                    # 更新配置文件（统一保存，避免重复）
                     config_mgr = get_config()
-                    notification_config = {
-                        "enabled": data.get("enabled", True),
-                        "web_enabled": data.get("webEnabled", True),
-                        "auto_request_permission": data.get(
-                            "autoRequestPermission", True
+                    notification_config = dict(config_mgr.get_section("notification"))
+
+                    def normalize_sound_volume(raw_value: Any) -> int:
+                        try:
+                            return int(clamp_value(float(raw_value), 0, 100, "sound_volume"))
+                        except (TypeError, ValueError):
+                            return int(notification_config.get("sound_volume", 80))
+
+                    def normalize_string(raw_value: Any) -> str:
+                        return "" if raw_value is None else str(raw_value)
+
+                    def first_present(*keys: str) -> tuple[bool, Any]:
+                        for key in keys:
+                            if key in data:
+                                return True, data.get(key)
+                        return False, None
+
+                    field_specs = [
+                        (("enabled",), "enabled", "enabled", lambda v: v, lambda v: v),
+                        (
+                            ("webEnabled", "web_enabled"),
+                            "web_enabled",
+                            "web_enabled",
+                            lambda v: v,
+                            lambda v: v,
                         ),
-                        "sound_enabled": data.get("soundEnabled", True),
-                        "sound_mute": data.get("soundMute", False),
-                        "sound_volume": data.get("soundVolume", 80),
-                        "mobile_optimized": data.get("mobileOptimized", True),
-                        "mobile_vibrate": data.get("mobileVibrate", True),
-                        "bark_enabled": data.get("barkEnabled", False),
-                        "bark_url": data.get("barkUrl", ""),
-                        "bark_device_key": data.get("barkDeviceKey", ""),
-                        "bark_icon": data.get("barkIcon", ""),
-                        "bark_action": data.get("barkAction", "none"),
-                    }
+                        (
+                            ("autoRequestPermission", "auto_request_permission"),
+                            "web_permission_auto_request",
+                            "auto_request_permission",
+                            lambda v: v,
+                            lambda v: v,
+                        ),
+                        (
+                            ("soundEnabled", "sound_enabled"),
+                            "sound_enabled",
+                            "sound_enabled",
+                            lambda v: v,
+                            lambda v: v,
+                        ),
+                        (
+                            ("soundMute", "sound_mute"),
+                            "sound_mute",
+                            "sound_mute",
+                            lambda v: v,
+                            lambda v: v,
+                        ),
+                        (
+                            ("soundVolume", "sound_volume"),
+                            "sound_volume",
+                            "sound_volume",
+                            lambda v: normalize_sound_volume(v) / 100.0,
+                            normalize_sound_volume,
+                        ),
+                        (
+                            ("mobileOptimized", "mobile_optimized"),
+                            "mobile_optimized",
+                            "mobile_optimized",
+                            lambda v: v,
+                            lambda v: v,
+                        ),
+                        (
+                            ("mobileVibrate", "mobile_vibrate"),
+                            "mobile_vibrate",
+                            "mobile_vibrate",
+                            lambda v: v,
+                            lambda v: v,
+                        ),
+                        (
+                            ("barkEnabled", "bark_enabled"),
+                            "bark_enabled",
+                            "bark_enabled",
+                            lambda v: v,
+                            lambda v: v,
+                        ),
+                        (
+                            ("barkUrl", "bark_url"),
+                            "bark_url",
+                            "bark_url",
+                            normalize_string,
+                            normalize_string,
+                        ),
+                        (
+                            ("barkDeviceKey", "bark_device_key"),
+                            "bark_device_key",
+                            "bark_device_key",
+                            normalize_string,
+                            normalize_string,
+                        ),
+                        (
+                            ("barkIcon", "bark_icon"),
+                            "bark_icon",
+                            "bark_icon",
+                            normalize_string,
+                            normalize_string,
+                        ),
+                        (
+                            ("barkAction", "bark_action"),
+                            "bark_action",
+                            "bark_action",
+                            normalize_string,
+                            normalize_string,
+                        ),
+                    ]
+
+                    manager_updates: Dict[str, Any] = {}
+                    changed_keys: list[str] = []
+                    for request_keys, manager_key, config_key, manager_cast, config_cast in field_specs:
+                        found, raw_value = first_present(*request_keys)
+                        if not found:
+                            continue
+                        manager_updates[manager_key] = manager_cast(raw_value)
+                        notification_config[config_key] = config_cast(raw_value)
+                        changed_keys.append(config_key)
+
+                    if not changed_keys:
+                        logger.info("通知配置更新请求未包含可识别字段，已忽略")
+                        return jsonify(
+                            {
+                                "status": "success",
+                                "message": "未检测到需要更新的通知配置字段",
+                            }
+                        )
+
+                    notification_manager.update_config_without_save(**manager_updates)
                     config_mgr.update_section("notification", notification_config)
 
                     logger.info("通知配置已更新到配置文件和内存")
@@ -2493,6 +2584,17 @@ class WebFeedbackUI:
 
             return response
 
+        @self.app.route("/notification-service-worker.js")
+        @self.limiter.exempt
+        def serve_notification_service_worker():
+            """提供通知 service worker，并允许其控制整个站点作用域。"""
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            js_dir = os.path.join(current_dir, "static", "js")
+            response = send_from_directory(js_dir, "notification-service-worker.js")
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Service-Worker-Allowed"] = "/"
+            return response
+
         @self.app.route("/static/lottie/<filename>")
         @self.limiter.exempt
         def serve_lottie(filename):
@@ -2782,9 +2884,9 @@ class WebFeedbackUI:
         self.current_task_id = new_task_id
         self.has_content = bool(new_prompt)
         if new_prompt:
-            logger.info(f"📝 内容已更新: {new_prompt[:50]}... (task_id: {new_task_id})")
+            logger.info(f"内容已更新: {new_prompt[:50]}... (task_id: {new_task_id})")
         else:
-            logger.info("📝 内容已清空，显示无有效内容页面")
+            logger.info("内容已清空，显示无有效内容页面")
 
     def _replace_inline_css(self, html_content: str, css_link: str) -> str:
         """替换内联CSS为外部CSS文件引用
@@ -3080,7 +3182,7 @@ class WebFeedbackUI:
             from zeroconf import NonUniqueNameException, ServiceInfo, Zeroconf
         except Exception as e:
             logger.error(f"mDNS 功能不可用：无法导入 zeroconf 依赖: {e}")
-            print("⚠️  mDNS 功能不可用：缺少依赖 zeroconf（请更新依赖/重新安装）。")
+            print("mDNS 功能不可用：缺少依赖 zeroconf（请更新依赖/重新安装）。")
             return
 
         hostname = normalize_mdns_hostname(
@@ -3097,7 +3199,7 @@ class WebFeedbackUI:
         if not publish_ip:
             logger.error("mDNS 发布失败：无法探测可发布的内网 IPv4 地址")
             print(
-                "⚠️  mDNS 发布失败：无法探测可发布的内网 IP（已降级为仅通过 IP/localhost 访问）。"
+                "mDNS 发布失败：无法探测可发布的内网 IP（已降级为仅通过 IP/localhost 访问）。"
             )
             return
 
@@ -3144,9 +3246,9 @@ class WebFeedbackUI:
             logger.error(
                 f"mDNS 发布失败：主机名冲突（{hostname}）。请修改配置中的 mdns.hostname 后重试"
             )
-            print(f"❌ mDNS 发布失败：主机名 {hostname} 可能已被局域网中其他设备占用。")
+            print(f"mDNS 发布失败：主机名 {hostname} 可能已被局域网中其他设备占用。")
             print(
-                "👉 请修改配置中的 mdns.hostname（例如 ai-你的机器名.local），然后重启服务。"
+                "请修改配置中的 mdns.hostname（例如 ai-你的机器名.local），然后重启服务。"
             )
             if config_path:
                 print(f"   配置文件: {config_path}")
@@ -3157,7 +3259,7 @@ class WebFeedbackUI:
             return
         except Exception as e:
             logger.warning(f"mDNS 发布失败（已降级，不影响 Web UI）：{e}")
-            print(f"⚠️  mDNS 发布失败：{e}（已降级为仅通过 IP/localhost 访问）。")
+            print(f"mDNS 发布失败：{e}（已降级为仅通过 IP/localhost 访问）。")
             try:
                 zc.close()
             except Exception:
@@ -3169,7 +3271,7 @@ class WebFeedbackUI:
         self._mdns_hostname = hostname
         self._mdns_publish_ip = publish_ip
 
-        print(f"✨ mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
+        print(f"mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
 
     def _stop_mdns(self) -> None:
         """停止 mDNS 发布（尽力而为）"""
@@ -3229,18 +3331,18 @@ class WebFeedbackUI:
             - 若self.feedback_result为None，返回空反馈字典
             - 服务器关闭后才返回，适用于单次任务模式
         """
-        print("\n🌐 Web反馈界面已启动")
+        print("\nWeb反馈界面已启动")
         # 0.0.0.0 是“监听所有网卡”的服务端绑定地址，但并不适合作为浏览器访问地址。
         # 部分浏览器/环境访问 http://0.0.0.0:PORT 时可能出现异常（例如权限/请求失败）。
         if self.host == "0.0.0.0":
-            print(f"📍 监听地址: http://{self.host}:{self.port}")
-            print(f"✅ 本机访问（推荐）: http://127.0.0.1:{self.port}")
-            print(f"✅ 本机访问（推荐）: http://localhost:{self.port}")
+            print(f"监听地址: http://{self.host}:{self.port}")
+            print(f"本机访问（推荐）: http://127.0.0.1:{self.port}")
+            print(f"本机访问（推荐）: http://localhost:{self.port}")
             print(
-                f"🔗 SSH端口转发命令: ssh -L {self.port}:localhost:{self.port} user@remote_server"
+                f"SSH端口转发命令: ssh -L {self.port}:localhost:{self.port} user@remote_server"
             )
         else:
-            print(f"📍 请在浏览器中打开: http://{self.host}:{self.port}")
+            print(f"请在浏览器中打开: http://{self.host}:{self.port}")
 
         # mDNS 发布（默认：bind_interface 不是 127.0.0.1 时启用）
         self._start_mdns_if_needed()

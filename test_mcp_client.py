@@ -269,39 +269,39 @@ def self_check_image_return_format() -> bool:
 
         parsed = parse_structured_response(response)
         if not isinstance(parsed, list):
-            print("❌ 自检失败：parse_structured_response 未返回 list")
+            print("自检失败：parse_structured_response 未返回 list")
             return False
 
         if not any(isinstance(x, ImageContent) for x in parsed):
-            print("❌ 自检失败：返回结果中没有 ImageContent（可能仍在返回 dict）")
+            print("自检失败：返回结果中没有 ImageContent（可能仍在返回 dict）")
             return False
 
         if not any(isinstance(x, TextContent) for x in parsed):
-            print("❌ 自检失败：返回结果中没有 TextContent")
+            print("自检失败：返回结果中没有 TextContent")
             return False
 
         converted = _convert_to_content(parsed)
         if not converted or not isinstance(converted[0], ImageContent):
             print(
-                "❌ 自检失败：FastMCP 转换后首个块不是 ImageContent（可能被降级成文本）"
+                "自检失败：FastMCP 转换后首个块不是 ImageContent（可能被降级成文本）"
             )
             return False
 
         img0 = converted[0]
         if img0.mimeType != "image/png":
-            print(f"❌ 自检失败：mimeType 不正确：{img0.mimeType!r}")
+            print(f"自检失败：mimeType 不正确：{img0.mimeType!r}")
             return False
 
         if img0.data != "Zg==":
-            print("❌ 自检失败：base64 data 被意外改写")
+            print("自检失败：base64 data 被意外改写")
             return False
 
         print(
-            "✅ 图片返回格式自检通过：ImageContent/TextContent 均可被 FastMCP 正确识别"
+            "图片返回格式自检通过：ImageContent/TextContent 均可被 FastMCP 正确识别"
         )
         return True
     except Exception as e:
-        print(f"❌ 图片返回格式自检异常：{type(e).__name__} - {e}")
+        print(f"图片返回格式自检异常：{type(e).__name__} - {e}")
         return False
 
 

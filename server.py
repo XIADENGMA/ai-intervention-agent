@@ -456,7 +456,7 @@ class WebUIConfig:
         # 特权端口警告
         if self.port < self.PORT_PRIVILEGED:
             logger.warning(
-                f"⚠️  端口 {self.port} 是特权端口（<{self.PORT_PRIVILEGED}），"
+                f"端口 {self.port} 是特权端口（<{self.PORT_PRIVILEGED}），"
                 f"可能需要 root/管理员权限才能绑定"
             )
 
@@ -1002,7 +1002,7 @@ def update_web_content(
 
         if response.status_code == 200:
             logger.info(
-                f"📝 内容已更新: {cleaned_summary[:50]}... (task_id: {task_id})"
+                f"内容已更新: {cleaned_summary[:50]}... (task_id: {task_id})"
             )
 
             # 验证更新是否成功
@@ -1387,7 +1387,7 @@ def launch_feedback_ui(
     task_id: Optional[str] = None,
     timeout: int = 300,
 ) -> Dict[str, Any]:
-    """⚠️ 废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具"""
+    """废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具"""
     # 确保超时时间不小于300秒（0表示无限等待，保持不变）
     if timeout > 0:
         timeout = max(timeout, 300)
