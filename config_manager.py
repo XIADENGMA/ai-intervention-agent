@@ -2,7 +2,7 @@
 """
 配置管理模块：JSONC/JSON 配置文件的跨平台加载、读写、热重载。
 
-核心特性：读写锁并发、延迟保存优化、network_security 独立管理、文件变更监听。
+核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。
 通过 get_config() 获取全局 ConfigManager 实例。
 """
 
@@ -18,7 +18,7 @@ import time
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 try:
     from platformdirs import user_config_dir
@@ -171,7 +171,7 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
 
     cleaned_content = "".join(cleaned_chars)
 
-    return json.loads(cleaned_content)
+    return cast(Dict[str, Any], json.loads(cleaned_content))
 
 
 def _is_uvx_mode() -> bool:
@@ -313,7 +313,7 @@ class ConfigManager:
     """
     配置管理器：JSONC/JSON 配置文件的加载、读写、持久化、热重载。
 
-    核心特性：读写锁并发控制、延迟保存优化、network_security 独立管理（带缓存）、
+    核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理（带缓存）、
     文件变更监听、配置导入导出。通过模块级 config_manager 全局实例访问。
     """
 
@@ -323,10 +323,9 @@ class ConfigManager:
         self.config_file = find_config_file(config_file)
 
         # 初始化配置字典
-        self._config = {}
+        self._config: Dict[str, Any] = {}
 
         # 初始化锁机制
-        self._rw_lock = ReadWriteLock()  # 读写锁，用于配置读写
         self._lock = threading.RLock()  # 可重入锁，用于延迟保存定时器
 
         # 初始化文件内容和访问时间
@@ -334,7 +333,7 @@ class ConfigManager:
         self._last_access_time = time.time()  # 跟踪最后访问时间
 
         # 性能优化：配置写入缓冲机制
-        self._pending_changes = {}  # 待写入的配置变更
+        self._pending_changes: Dict[str, Any] = {}  # 待写入的配置变更
         self._save_timer: Optional[threading.Timer] = None  # 延迟保存定时器
         self._save_delay = 3.0  # 延迟保存时间（秒）
         self._last_save_time = 0  # 上次保存时间
@@ -423,9 +422,16 @@ class ConfigManager:
                     "172.16.0.0/12",  # 私有网络 172.16.x.x - 172.31.x.x
                 ],
                 "blocked_ips": [],  # IP黑名单
-                "enable_access_control": True,  # 是否启用访问控制
+                # 新名称（推荐）：与文档与模板 config.jsonc.default 对齐
+                "access_control_enabled": True,  # 是否启用访问控制
             },
-            "feedback": {"timeout": 600},
+            "feedback": {
+                # 新名称（推荐）：与文档与模板 config.jsonc.default 对齐
+                "backend_max_wait": 600,
+                "frontend_countdown": 240,
+                "resubmit_prompt": "请立即调用 interactive_feedback 工具",
+                "prompt_suffix": "\n请积极调用 interactive_feedback 工具",
+            },
         }
 
     @staticmethod
@@ -478,7 +484,7 @@ class ConfigManager:
                 self._config = self._merge_config(default_config, self._config)
 
             except Exception as e:
-                logger.error(f"加载配置文件失败: {e}")
+                logger.error(f"加载配置文件失败: {e}", exc_info=True)
                 self._config = self._exclude_network_security(
                     self._get_default_config()
                 )
@@ -927,7 +933,7 @@ class ConfigManager:
                 logger.info(f"已创建默认JSON配置文件: {self.config_file}")
 
         except Exception as e:
-            logger.error(f"创建默认配置文件失败: {e}")
+            logger.error(f"创建默认配置文件失败: {e}", exc_info=True)
             # 如果创建配置文件失败，回退到普通JSON文件
             try:
                 default_config = self._exclude_network_security(
@@ -939,7 +945,7 @@ class ConfigManager:
                 self._original_content = content
                 logger.info(f"回退创建JSON配置文件成功: {self.config_file}")
             except Exception as fallback_error:
-                logger.error(f"回退创建配置文件也失败: {fallback_error}")
+                logger.error(f"回退创建配置文件也失败: {fallback_error}", exc_info=True)
                 raise
 
     def _schedule_save(self):
@@ -975,7 +981,7 @@ class ConfigManager:
                 self._last_save_time = time.time()
                 logger.debug("延迟配置保存完成")
         except Exception as e:
-            logger.error(f"延迟保存配置失败: {e}")
+            logger.error(f"延迟保存配置失败: {e}", exc_info=True)
 
     def _set_config_value(self, key: str, value: Any):
         """内部方法：设置配置值（不触发保存，自动创建中间路径）"""
@@ -1030,7 +1036,7 @@ class ConfigManager:
             self._update_file_mtime()
 
         except Exception as e:
-            logger.error(f"保存配置文件失败: {e}")
+            logger.error(f"保存配置文件失败: {e}", exc_info=True)
             raise
 
     def _validate_saved_config(self):
@@ -1050,7 +1056,7 @@ class ConfigManager:
 
             logger.debug("配置文件验证通过")
         except Exception as e:
-            logger.error(f"配置文件验证失败: {e}")
+            logger.error(f"配置文件验证失败: {e}", exc_info=True)
             raise
 
     def _validate_config_structure(self, parsed_config: Dict[str, Any], content: str):
@@ -1088,7 +1094,8 @@ class ConfigManager:
 
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置值（支持点号分隔的嵌套键如 'notification.sound_volume'，线程安全）"""
-        with self._rw_lock.read_lock():
+        # 说明：为避免多锁交错导致的竞态/死锁，这里统一使用 _lock 保护共享状态
+        with self._lock:
             self._last_access_time = time.time()
             keys = key.split(".")
             value = self._config
@@ -1102,7 +1109,7 @@ class ConfigManager:
     def set(self, key: str, value: Any, save: bool = True):
         """设置配置值（支持嵌套键，自动创建中间路径，值变化检测，可选延迟保存）"""
         changed = False
-        with self._rw_lock.write_lock():
+        with self._lock:
             self._last_access_time = time.time()
 
             # 性能优化：检查当前值是否与新值相同
@@ -1151,7 +1158,7 @@ class ConfigManager:
         """批量更新配置（仅处理变化项，合并为一次延迟保存，原子操作）"""
         changed_sections: set[str] = set()
         changed = False
-        with self._rw_lock.write_lock():
+        with self._lock:
             self._last_access_time = time.time()
 
             # 性能优化：过滤出真正有变化的配置项
@@ -1233,31 +1240,32 @@ class ConfigManager:
         """获取配置段的深拷贝（带缓存优化，network_security 特殊处理）"""
         import copy
 
-        current_time = time.time()
+        with self._lock:
+            current_time = time.time()
 
-        # 特殊处理 network_security 配置段
-        if section == "network_security":
-            # get_network_security_config 已经返回独立对象，但为一致性仍返回拷贝
-            return copy.deepcopy(self.get_network_security_config())
+            # 特殊处理 network_security 配置段
+            if section == "network_security":
+                # get_network_security_config 已经返回独立对象，但为一致性仍返回拷贝
+                return copy.deepcopy(self.get_network_security_config())
 
-        # 【性能优化】检查 section 缓存
-        if use_cache and section in self._section_cache:
-            cache_time = self._section_cache_time.get(section, 0)
-            if current_time - cache_time < self._section_cache_ttl:
-                self._cache_stats["hits"] += 1
-                logger.debug(f"缓存命中: section={section}")
-                return copy.deepcopy(self._section_cache[section])
+            # 【性能优化】检查 section 缓存
+            if use_cache and section in self._section_cache:
+                cache_time = self._section_cache_time.get(section, 0)
+                if current_time - cache_time < self._section_cache_ttl:
+                    self._cache_stats["hits"] += 1
+                    logger.debug(f"缓存命中: section={section}")
+                    return copy.deepcopy(self._section_cache[section])
 
-        # 缓存未命中或已过期
-        self._cache_stats["misses"] += 1
-        result = self.get(section, {})
-        result_copy = copy.deepcopy(result) if result else {}
+            # 缓存未命中或已过期
+            self._cache_stats["misses"] += 1
+            result = self.get(section, {})
+            result_copy = copy.deepcopy(result) if result else {}
 
-        # 更新缓存
-        self._section_cache[section] = result_copy
-        self._section_cache_time[section] = current_time
+            # 更新缓存
+            self._section_cache[section] = result_copy
+            self._section_cache_time[section] = current_time
 
-        return copy.deepcopy(result_copy)
+            return copy.deepcopy(result_copy)
 
     def update_section(self, section: str, updates: Dict[str, Any], save: bool = True):
         """更新配置段（检测变化，触发回调，可选延迟保存）"""
@@ -1323,46 +1331,50 @@ class ConfigManager:
 
     def invalidate_section_cache(self, section: str):
         """失效指定配置段的缓存"""
-        if section in self._section_cache:
-            del self._section_cache[section]
-            self._section_cache_time.pop(section, None)
-            self._cache_stats["invalidations"] += 1
-            logger.debug(f"已失效 section 缓存: {section}")
+        with self._lock:
+            if section in self._section_cache:
+                del self._section_cache[section]
+                self._section_cache_time.pop(section, None)
+                self._cache_stats["invalidations"] += 1
+                logger.debug(f"已失效 section 缓存: {section}")
 
     def invalidate_all_caches(self):
         """清空所有配置缓存"""
-        # 清空 section 缓存
-        invalidated_count = len(self._section_cache)
-        self._section_cache.clear()
-        self._section_cache_time.clear()
+        with self._lock:
+            # 清空 section 缓存
+            invalidated_count = len(self._section_cache)
+            self._section_cache.clear()
+            self._section_cache_time.clear()
 
-        # 清空 network_security 缓存
-        self._network_security_cache = None
-        self._network_security_cache_time = 0
+            # 清空 network_security 缓存
+            self._network_security_cache = None
+            self._network_security_cache_time = 0
 
-        self._cache_stats["invalidations"] += invalidated_count + 1
-        logger.debug(f"已失效所有缓存 (共 {invalidated_count + 1} 个)")
+            self._cache_stats["invalidations"] += invalidated_count + 1
+            logger.debug(f"已失效所有缓存 (共 {invalidated_count + 1} 个)")
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """获取缓存统计（命中/未命中/失效次数、命中率等）"""
-        total = self._cache_stats["hits"] + self._cache_stats["misses"]
-        hit_rate = self._cache_stats["hits"] / total if total > 0 else 0.0
+        with self._lock:
+            total = self._cache_stats["hits"] + self._cache_stats["misses"]
+            hit_rate = self._cache_stats["hits"] / total if total > 0 else 0.0
 
-        return {
-            **self._cache_stats,
-            "hit_rate": round(hit_rate, 4),
-            "section_cache_size": len(self._section_cache),
-            "network_security_cached": self._network_security_cache is not None,
-        }
+            return {
+                **self._cache_stats,
+                "hit_rate": round(hit_rate, 4),
+                "section_cache_size": len(self._section_cache),
+                "network_security_cached": self._network_security_cache is not None,
+            }
 
     def reset_cache_stats(self):
         """重置缓存统计信息"""
-        self._cache_stats = {
-            "hits": 0,
-            "misses": 0,
-            "invalidations": 0,
-        }
-        logger.debug("已重置缓存统计")
+        with self._lock:
+            self._cache_stats = {
+                "hits": 0,
+                "misses": 0,
+                "invalidations": 0,
+            }
+            logger.debug("已重置缓存统计")
 
     def set_cache_ttl(
         self,
@@ -1370,17 +1382,18 @@ class ConfigManager:
         network_security_ttl: float | None = None,
     ):
         """设置缓存有效期（TTL）"""
-        if section_ttl is not None:
-            self._section_cache_ttl = max(0.1, section_ttl)  # 最小 0.1 秒
-            logger.debug(f"section 缓存 TTL 已设置为: {self._section_cache_ttl}s")
+        with self._lock:
+            if section_ttl is not None:
+                self._section_cache_ttl = max(0.1, section_ttl)  # 最小 0.1 秒
+                logger.debug(f"section 缓存 TTL 已设置为: {self._section_cache_ttl}s")
 
-        if network_security_ttl is not None:
-            self._network_security_cache_ttl = max(
-                1.0, network_security_ttl
-            )  # 最小 1 秒
-            logger.debug(
-                f"network_security 缓存 TTL 已设置为: {self._network_security_cache_ttl}s"
-            )
+            if network_security_ttl is not None:
+                self._network_security_cache_ttl = max(
+                    1.0, network_security_ttl
+                )  # 最小 1 秒
+                logger.debug(
+                    f"network_security 缓存 TTL 已设置为: {self._network_security_cache_ttl}s"
+                )
 
     def get_all(self) -> Dict[str, Any]:
         """获取所有配置的副本（不含 network_security）"""
@@ -1405,7 +1418,9 @@ class ConfigManager:
             if not self.config_file.exists():
                 # 如果配置文件不存在，返回默认的 network_security 配置
                 default_config = self._get_default_config()
-                result = default_config.get("network_security", {})
+                result = cast(
+                    Dict[str, Any], default_config.get("network_security", {})
+                )
                 # 缓存默认配置
                 with self._lock:
                     self._network_security_cache = result
@@ -1419,14 +1434,18 @@ class ConfigManager:
             if self.config_file.suffix.lower() == ".jsonc":
                 full_config = parse_jsonc(content)
             else:
-                full_config = json.loads(content)
+                full_config = cast(Dict[str, Any], json.loads(content))
 
-            network_security_config = full_config.get("network_security", {})
+            network_security_config = cast(
+                Dict[str, Any], full_config.get("network_security", {})
+            )
 
             # 如果文件中没有network_security配置，返回默认配置
             if not network_security_config:
                 default_config = self._get_default_config()
-                network_security_config = default_config.get("network_security", {})
+                network_security_config = cast(
+                    Dict[str, Any], default_config.get("network_security", {})
+                )
                 logger.debug("配置文件中未找到network_security，使用默认配置")
 
             # 【性能优化】更新缓存
@@ -1438,10 +1457,10 @@ class ConfigManager:
             return network_security_config
 
         except Exception as e:
-            logger.error(f"读取 network_security 配置失败: {e}")
+            logger.error(f"读取 network_security 配置失败: {e}", exc_info=True)
             # 返回默认的 network_security 配置
             default_config = self._get_default_config()
-            return default_config.get("network_security", {})
+            return cast(Dict[str, Any], default_config.get("network_security", {}))
 
     # ========================================================================
     # 类型安全的配置获取方法
@@ -1497,7 +1516,7 @@ class ConfigManager:
         max_val: Optional[int] = None,
     ) -> int:
         """获取整数配置值"""
-        return self.get_typed(key, default, int, min_val, max_val)
+        return cast(int, self.get_typed(key, default, int, min_val, max_val))
 
     def get_float(
         self,
@@ -1507,11 +1526,11 @@ class ConfigManager:
         max_val: Optional[float] = None,
     ) -> float:
         """获取浮点数配置值"""
-        return self.get_typed(key, default, float, min_val, max_val)
+        return cast(float, self.get_typed(key, default, float, min_val, max_val))
 
     def get_bool(self, key: str, default: bool = False) -> bool:
         """获取布尔配置值"""
-        return self.get_typed(key, default, bool)
+        return cast(bool, self.get_typed(key, default, bool))
 
     def get_str(
         self,
@@ -1522,7 +1541,7 @@ class ConfigManager:
         """获取字符串配置值（可选截断）"""
         from config_utils import truncate_string
 
-        value = self.get_typed(key, default, str)
+        value = cast(str, self.get_typed(key, default, str))
         if max_length is not None:
             return truncate_string(value, max_length, key, default=default)
         return value
@@ -1535,19 +1554,22 @@ class ConfigManager:
         """更新文件修改时间缓存"""
         try:
             if self.config_file.exists():
-                self._last_file_mtime = self.config_file.stat().st_mtime
+                mtime = self.config_file.stat().st_mtime
+                with self._lock:
+                    self._last_file_mtime = mtime
         except Exception as e:
             logger.warning(f"获取文件修改时间失败: {e}")
 
     def start_file_watcher(self, interval: float = 2.0):
         """启动配置文件监听（后台守护线程，检测文件变化自动重载）"""
-        if self._file_watcher_running:
-            logger.debug("文件监听器已在运行")
-            return
+        with self._lock:
+            if self._file_watcher_running:
+                logger.debug("文件监听器已在运行")
+                return
 
-        self._file_watcher_interval = interval
-        self._file_watcher_running = True
-        self._file_watcher_stop_event.clear()  # 清除停止事件
+            self._file_watcher_interval = interval
+            self._file_watcher_running = True
+            self._file_watcher_stop_event.clear()  # 清除停止事件
         # 【关键修复】不要在启动监听器时直接覆盖 _last_file_mtime
         # 否则会导致“文件已被外部修改，但因为启动监听器重置了 mtime 基线而丢失一次 reload”
         try:
@@ -1555,34 +1577,42 @@ class ConfigManager:
                 current_mtime = self.config_file.stat().st_mtime
                 if self._last_file_mtime and current_mtime > self._last_file_mtime:
                     logger.info("启动监听器时发现配置文件已变化，先执行一次重新加载")
-                    self._last_file_mtime = current_mtime
+                    with self._lock:
+                        self._last_file_mtime = current_mtime
                     self.reload()
                     self._trigger_config_change_callbacks()
                 elif self._last_file_mtime == 0:
                     # 极端场景：之前没有记录过 mtime，则初始化基线
-                    self._last_file_mtime = current_mtime
+                    with self._lock:
+                        self._last_file_mtime = current_mtime
         except Exception as e:
             logger.warning(f"启动监听器时同步配置文件状态失败: {e}")
 
-        self._file_watcher_thread = threading.Thread(
+        thread = threading.Thread(
             target=self._file_watcher_loop,
             name="ConfigFileWatcher",
             daemon=True,  # 守护线程，主程序退出时自动终止
         )
-        self._file_watcher_thread.start()
+        with self._lock:
+            self._file_watcher_thread = thread
+        thread.start()
         logger.info(f"配置文件监听器已启动，检查间隔: {interval} 秒")
 
     def stop_file_watcher(self):
         """停止配置文件监听"""
-        if not self._file_watcher_running:
-            logger.debug("文件监听器未运行")
-            return
+        thread: Optional[threading.Thread]
+        with self._lock:
+            if not self._file_watcher_running:
+                logger.debug("文件监听器未运行")
+                return
 
-        self._file_watcher_running = False
-        self._file_watcher_stop_event.set()  # 发送停止信号
-        if self._file_watcher_thread:
-            self._file_watcher_thread.join(timeout=1.0)  # 快速超时
+            self._file_watcher_running = False
+            self._file_watcher_stop_event.set()  # 发送停止信号
+            thread = self._file_watcher_thread
             self._file_watcher_thread = None
+
+        if thread:
+            thread.join(timeout=1.0)  # 快速超时
         logger.info("配置文件监听器已停止")
 
     def shutdown(self):
@@ -1612,7 +1642,8 @@ class ConfigManager:
                     current_mtime = self.config_file.stat().st_mtime
                     if current_mtime > self._last_file_mtime:
                         logger.info("检测到配置文件变化，自动重新加载")
-                        self._last_file_mtime = current_mtime
+                        with self._lock:
+                            self._last_file_mtime = current_mtime
                         self.reload()
                         # 触发配置变更回调
                         self._trigger_config_change_callbacks()
@@ -1625,26 +1656,31 @@ class ConfigManager:
 
     def register_config_change_callback(self, callback: Callable[[], None]):
         """注册配置变更回调函数"""
-        if callback not in self._config_change_callbacks:
-            self._config_change_callbacks.append(callback)
-            cb_name = getattr(callback, "__name__", None) or repr(callback)
-            logger.debug(f"已注册配置变更回调: {cb_name}")
+        with self._lock:
+            if callback not in self._config_change_callbacks:
+                self._config_change_callbacks.append(callback)
+                cb_name = getattr(callback, "__name__", None) or repr(callback)
+                logger.debug(f"已注册配置变更回调: {cb_name}")
 
     def unregister_config_change_callback(self, callback: Callable[[], None]):
         """取消注册配置变更回调函数"""
-        if callback in self._config_change_callbacks:
-            self._config_change_callbacks.remove(callback)
-            cb_name = getattr(callback, "__name__", None) or repr(callback)
-            logger.debug(f"已取消配置变更回调: {cb_name}")
+        with self._lock:
+            if callback in self._config_change_callbacks:
+                self._config_change_callbacks.remove(callback)
+                cb_name = getattr(callback, "__name__", None) or repr(callback)
+                logger.debug(f"已取消配置变更回调: {cb_name}")
 
     def _trigger_config_change_callbacks(self):
         """触发所有配置变更回调"""
-        for callback in self._config_change_callbacks:
+        with self._lock:
+            callbacks = list(self._config_change_callbacks)
+
+        for callback in callbacks:
             try:
                 callback()
             except Exception as e:
                 cb_name = getattr(callback, "__name__", None) or repr(callback)
-                logger.error(f"配置变更回调执行失败 ({cb_name}): {e}")
+                logger.error(f"配置变更回调执行失败 ({cb_name}): {e}", exc_info=True)
 
     @property
     def is_file_watcher_running(self) -> bool:
@@ -1657,7 +1693,7 @@ class ConfigManager:
 
     def export_config(self, include_network_security: bool = False) -> Dict[str, Any]:
         """导出当前配置（可选包含 network_security）"""
-        with self._rw_lock.read_lock():
+        with self._lock:
             export_data = {
                 "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "version": "1.0",
@@ -1687,7 +1723,7 @@ class ConfigManager:
                 # 直接的配置字典
                 actual_config = config_data
 
-            with self._rw_lock.write_lock():
+            with self._lock:
                 if merge:
                     # 合并模式：深度合并配置
                     self._deep_merge(self._config, actual_config)
@@ -1707,7 +1743,7 @@ class ConfigManager:
             return True
 
         except Exception as e:
-            logger.error(f"导入配置失败: {e}")
+            logger.error(f"导入配置失败: {e}", exc_info=True)
             return False
 
     def _deep_merge(self, base: Dict, update: Dict):
@@ -1762,7 +1798,8 @@ class ConfigManager:
             with open(self.config_file, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            self._original_content = content
+            with self._lock:
+                self._original_content = content
             self._update_file_mtime()
             self._load_config()
             self.invalidate_all_caches()
@@ -1774,10 +1811,10 @@ class ConfigManager:
             logger.error(f"备份文件不存在: {backup_path}")
             return False
         except json.JSONDecodeError as e:
-            logger.error(f"备份文件格式错误: {e}")
+            logger.error(f"备份文件格式错误: {e}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"恢复配置失败: {e}")
+            logger.error(f"恢复配置失败: {e}", exc_info=True)
             return False
 
 

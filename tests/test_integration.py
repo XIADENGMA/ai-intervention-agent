@@ -12,6 +12,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -327,6 +328,13 @@ class TestWebFeedbackUINotificationConfig(unittest.TestCase):
 
 class TestWebFeedbackUIImageUpload(unittest.TestCase):
     """图片上传 API 测试（multipart/form-data）"""
+
+    web_ui: Any
+    app: Any
+    client: Any
+    _png_bytes: bytes
+    _jpeg_bytes: bytes
+    _webp_bytes: bytes
 
     @classmethod
     def setUpClass(cls):

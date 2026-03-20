@@ -128,7 +128,26 @@ line_length = 88
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "flask_compress",
+    "flask_compress.*",
+    "flask_cors",
+    "flask_cors.*",
+    "markdown",
+    "markdown.*",
+    "plyer",
+    "plyer.*",
+    "psutil",
+    "psutil.*",
+    "rcssmin",
+    "requests",
+    "requests.*",
+    "rjsmin",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -41,13 +41,13 @@ class MCPClient:
     def __init__(self, host: str, port: int, timeout: int = 60):
         self.base_url = f"http://{host}:{port}"
         self.timeout = timeout
-        self.active_tasks = []
+        self.active_tasks: List[str] = []
 
     def check_server(self) -> bool:
         """检查服务器是否可用"""
         try:
             response = requests.get(f"{self.base_url}/api/health", timeout=5)
-            return response.status_code == 200
+            return bool(response.status_code == 200)
         except Exception:
             return False
 

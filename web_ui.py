@@ -17,8 +17,6 @@ import uuid
 from functools import lru_cache
 from ipaddress import (
     AddressValueError,
-    IPv4Network,
-    IPv6Network,
     ip_address,
     ip_network,
 )
@@ -125,15 +123,15 @@ def validate_auto_resubmit_timeout(value: int) -> int:
 
     验证规则
     --------
-    - 0 表示禁用自动提交（保持不变）
+    - 0 表示禁用自动重调（保持不变）
     - 负值转换为 0（禁用）
     - 小于最小值（30秒）调整为最小值
-    - 大于最大值（290秒）调整为最大值
+    - 大于最大值（250秒）调整为最大值
 
     【重构】使用 config_utils.clamp_value 简化边界检查。
     """
     if value <= 0:
-        return 0  # 禁用自动提交
+        return 0  # 禁用自动重调
 
     # 【重构】使用 clamp_value 简化边界检查
     return clamp_value(
@@ -236,7 +234,7 @@ DEFAULT_ALLOWED_NETWORKS = [
 ]
 
 
-def validate_bind_interface(value: Any) -> str:
+def validate_bind_interface(value: object) -> str:
     """验证绑定接口，无效时返回 127.0.0.1"""
     if not value or not isinstance(value, str):
         logger.warning("bind_interface 值无效，使用默认值 127.0.0.1")
@@ -334,7 +332,7 @@ def _get_default_route_ipv4() -> Optional[str]:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             # 该 connect 不会真的发送数据包，但会触发路由选择
             s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
+            ip = str(s.getsockname()[0])
         ip_obj = ip_address(ip)
         if ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_unspecified:
             return None
@@ -855,7 +853,7 @@ class WebFeedbackUI:
         """
         if not text:
             return ""
-        return self.md.convert(text)
+        return str(self.md.convert(text))
 
     def setup_routes(self):
         """注册所有API路由和静态资源路由
@@ -1222,12 +1220,12 @@ class WebFeedbackUI:
                 - task_id: 任务唯一标识符（必填）
                 - prompt: 提示文本（必填，Markdown格式）
                 - predefined_options: 预定义选项列表（可选）
-                - auto_resubmit_timeout: 超时时间（可选，默认240秒，最大290秒）
+                - auto_resubmit_timeout: 超时时间（可选，默认240秒，最大250秒）
 
             处理逻辑：
                 1. 解析JSON请求体
                 2. 验证必填字段（task_id、prompt）
-                3. 限制auto_resubmit_timeout最大值为290秒
+                3. 限制auto_resubmit_timeout最大值为250秒
                 4. 调用TaskQueue.add_task()添加任务
                 5. 返回成功或失败响应
 
@@ -1248,7 +1246,7 @@ class WebFeedbackUI:
                 - 其他异常：返回HTTP 500
 
             注意事项：
-                - auto_resubmit_timeout自动截断为290秒
+                - auto_resubmit_timeout 自动截断为 250 秒
                 - 任务ID需全局唯一，重复添加会失败
                 - 任务创建后状态为pending，需手动或自动激活
             """
@@ -1842,11 +1840,11 @@ class WebFeedbackUI:
                 - prompt: 新的提示文本（Markdown格式）
                 - predefined_options: 新的预定义选项列表
                 - task_id: 新的任务ID
-                - auto_resubmit_timeout: 新的超时时间（默认240秒，最大290秒）
+                - auto_resubmit_timeout: 新的超时时间（默认240秒，最大250秒）
 
             处理逻辑：
                 1. 解析JSON请求体
-                2. 限制auto_resubmit_timeout最大值为290秒
+                2. 限制auto_resubmit_timeout最大值为250秒
                 3. 更新self.current_prompt等属性
                 4. 更新self.has_content标志
                 5. 重置self.feedback_result（清空上次反馈）
@@ -1872,7 +1870,7 @@ class WebFeedbackUI:
                 - 更新self.has_content标志
 
             注意事项：
-                - auto_resubmit_timeout自动截断为290秒
+                - auto_resubmit_timeout 自动截断为 250 秒
                 - 仅适用于单任务模式，多任务模式请使用TaskQueue API
                 - 更新后前端需重新渲染内容
             """
@@ -3232,17 +3230,14 @@ class WebFeedbackUI:
                 try:
                     if "/" in network_str:
                         # 网络段
-                        if client_addr.version == 4:
-                            network = IPv4Network(network_str, strict=False)
-                        else:
-                            network = IPv6Network(network_str, strict=False)
+                        network = ip_network(network_str, strict=False)
                         if client_addr in network:
                             return True
                     else:
                         # 单个IP
                         if str(client_addr) == network_str:
                             return True
-                except (AddressValueError, ValueError) as e:
+                except (AddressValueError, ValueError, TypeError) as e:
                     logger.warning(f"无效的网络配置 {network_str}: {e}")
                     continue
 
@@ -3511,7 +3506,7 @@ def web_feedback_ui(
     prompt: str,
     predefined_options: Optional[List[str]] = None,
     task_id: Optional[str] = None,
-    auto_resubmit_timeout: int = 290,
+    auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     output_file: Optional[str] = None,
     host: str = "0.0.0.0",
     port: int = 8080,
@@ -3525,7 +3520,7 @@ def web_feedback_ui(
         prompt: 提示文本（Markdown 格式）
         predefined_options: 预定义选项列表（可选）
         task_id: 任务 ID（可选）
-        auto_resubmit_timeout: 自动重调倒计时（秒，默认 290 秒）
+        auto_resubmit_timeout: 自动重调倒计时（秒，默认 240 秒；最大 250 秒；0 表示禁用）
         output_file: 输出文件路径（可选；若指定则将结果保存为 JSON 文件）
         host: 绑定主机地址（默认"0.0.0.0"）
         port: 绑定端口（默认8080）
@@ -3556,6 +3551,7 @@ def web_feedback_ui(
         - output_file路径的父目录会被自动创建
         - JSON文件使用ensure_ascii=False保留中文字符
     """
+    auto_resubmit_timeout = validate_auto_resubmit_timeout(int(auto_resubmit_timeout))
     ui = WebFeedbackUI(
         prompt, predefined_options, task_id, auto_resubmit_timeout, host, port
     )
@@ -3585,7 +3581,7 @@ if __name__ == "__main__":
         --prompt: 向用户展示的提示/问题（支持 Markdown，默认"我已经实现了您请求的更改。"）
         --predefined-options: 预定义选项列表（用 ||| 分隔）
         --task-id: 任务 ID（可选；主要用于调试/脚本集成）
-        --auto-resubmit-timeout: 自动重调倒计时（秒，默认 290 秒；0 表示禁用）
+        --auto-resubmit-timeout: 自动重调倒计时（秒，默认 240 秒；最大 250 秒；0 表示禁用）
         --output-file: 将反馈结果保存为 JSON 文件的路径
         --host: Web UI 监听地址（默认 "0.0.0.0"）
         --port: Web UI 监听端口（默认 8080）
@@ -3625,8 +3621,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--auto-resubmit-timeout",
         type=int,
-        default=290,
-        help="自动重调倒计时（秒；0 表示禁用）",
+        default=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+        help="自动重调倒计时（秒；0 表示禁用；最大 250 秒）",
     )
     parser.add_argument("--output-file", help="将反馈结果保存为 JSON 文件的路径")
     parser.add_argument("--host", default="0.0.0.0", help="Web UI 监听地址")

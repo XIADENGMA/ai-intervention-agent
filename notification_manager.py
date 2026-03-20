@@ -7,6 +7,7 @@
 import logging
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -217,12 +218,19 @@ class NotificationManager:
 
     def __init__(self):
         """初始化配置、提供者字典、事件队列、线程池和回调"""
-        if not getattr(self, "_initialized", False):
+        # __new__ 只保证“创建单例对象”线程安全；这里还需要保证“只初始化一次”
+        if getattr(self, "_initialized", False):
+            return
+
+        with self.__class__._lock:
+            if getattr(self, "_initialized", False):
+                return
+
             try:
-                self.config = NotificationConfig.from_config_file()
+                self.config: NotificationConfig = NotificationConfig.from_config_file()
                 logger.info("使用配置文件初始化通知管理器")
             except Exception as e:
-                logger.error(f"配置文件加载失败: {e}")
+                logger.error(f"配置文件加载失败: {e}", exc_info=True)
                 raise Exception(f"通知管理器初始化失败，无法加载配置文件: {e}") from e
 
             # 初始化通知提供者字典
@@ -245,7 +253,7 @@ class NotificationManager:
             self._stop_event = threading.Event()
 
             # 【性能优化】使用线程池异步发送通知，避免阻塞主流程
-            # max_workers=3 足够处理 Web/Sound/Bark 三种通知类型的并行发送
+            # max_workers=3 足够覆盖常见场景（通常同时启用的渠道不超过 3 个）
             self._executor = ThreadPoolExecutor(
                 max_workers=3, thread_name_prefix="NotificationWorker"
             )
@@ -272,6 +280,7 @@ class NotificationManager:
             self._finalized_event_ids: set[str] = set()
 
             # 初始化回调函数字典
+            self._callbacks_lock = threading.Lock()
             self._callbacks: Dict[str, List[Callable]] = {}
 
             # 标记已初始化
@@ -298,19 +307,22 @@ class NotificationManager:
 
     def add_callback(self, event_name: str, callback: Callable):
         """添加事件回调（如 notification_sent, notification_fallback）"""
-        if event_name not in self._callbacks:
-            self._callbacks[event_name] = []
-        self._callbacks[event_name].append(callback)
+        with self._callbacks_lock:
+            if event_name not in self._callbacks:
+                self._callbacks[event_name] = []
+            self._callbacks[event_name].append(callback)
         logger.debug(f"已添加回调: {event_name}")
 
     def trigger_callbacks(self, event_name: str, *args, **kwargs):
         """触发指定事件的所有回调，异常不中断后续回调"""
-        if event_name in self._callbacks:
-            for callback in self._callbacks[event_name]:
-                try:
-                    callback(*args, **kwargs)
-                except Exception as e:
-                    logger.error(f"回调执行失败 {event_name}: {e}")
+        with self._callbacks_lock:
+            callbacks = list(self._callbacks.get(event_name, []))
+
+        for callback in callbacks:
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"回调执行失败 {event_name}: {e}", exc_info=True)
 
     def send_notification(
         self,
@@ -332,7 +344,7 @@ class NotificationManager:
             return ""
 
         # 生成事件ID
-        event_id = f"notification_{int(time.time() * 1000)}_{id(self)}"
+        event_id = f"notification_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
 
         # 默认通知类型
         if types is None:
@@ -553,7 +565,7 @@ class NotificationManager:
                 )
 
         except Exception as e:
-            logger.error(f"处理通知事件失败: {event.id} - {e}")
+            logger.error(f"处理通知事件失败: {event.id} - {e}", exc_info=True)
             # 异常：优先走重试；重试耗尽再降级
             if event.retry_count < event.max_retries:
                 event.retry_count += 1
@@ -688,7 +700,7 @@ class NotificationManager:
 
             return ok
         except Exception as e:
-            logger.error(f"发送通知失败 {notification_type.value}: {e}")
+            logger.error(f"发送通知失败 {notification_type.value}: {e}", exc_info=True)
 
             # 【可观测性】记录异常
             try:
@@ -952,9 +964,12 @@ class NotificationManager:
                     del self._providers[NotificationType.BARK]
                     logger.info("Bark通知提供者已移除")
         except ImportError as e:
-            logger.error(f"更新Bark提供者失败: 无法导入 BarkNotificationProvider - {e}")
+            logger.error(
+                f"更新Bark提供者失败: 无法导入 BarkNotificationProvider - {e}",
+                exc_info=True,
+            )
         except Exception as e:
-            logger.error(f"更新Bark提供者失败: {e}")
+            logger.error(f"更新Bark提供者失败: {e}", exc_info=True)
 
     def _save_config_to_file(self):
         """持久化配置到文件（sound_volume 0-1 转 0-100）"""
@@ -1000,7 +1015,7 @@ class NotificationManager:
             config_mgr.update_section("notification", notification_config)
             logger.debug("配置已保存到文件")
         except Exception as e:
-            logger.error(f"保存配置到文件失败: {e}")
+            logger.error(f"保存配置到文件失败: {e}", exc_info=True)
 
     def get_status(self) -> Dict[str, Any]:
         """返回管理器状态：enabled/providers/queue_size/config/stats"""

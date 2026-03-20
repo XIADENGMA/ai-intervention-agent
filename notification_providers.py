@@ -140,7 +140,7 @@ class SoundNotificationProvider(BaseNotificationProvider):
             return True
 
         except Exception as e:
-            logger.error(f"准备声音通知失败: {e}")
+            logger.error(f"准备声音通知失败: {e}", exc_info=True)
             return False
 
 
@@ -351,13 +351,13 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 return False
 
         except requests.exceptions.Timeout:
-            logger.error(f"Bark通知发送超时: {event.id}")
+            logger.error(f"Bark通知发送超时: {event.id}", exc_info=True)
             return False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Bark通知发送网络错误: {e}")
+            logger.error(f"Bark通知发送网络错误: {e}", exc_info=True)
             return False
         except Exception as e:
-            logger.error(f"Bark通知发送失败: {e}")
+            logger.error(f"Bark通知发送失败: {e}", exc_info=True)
             return False
 
 
@@ -416,13 +416,15 @@ class SystemNotificationProvider(BaseNotificationProvider):
             return True
 
         except Exception as e:
-            logger.error(f"系统通知发送失败: {e}")
+            logger.error(f"系统通知发送失败: {e}", exc_info=True)
             return False
 
 
-def create_notification_providers(config) -> Dict[NotificationType, Any]:
+def create_notification_providers(
+    config,
+) -> Dict[NotificationType, BaseNotificationProvider]:
     """工厂函数 - 根据配置启用状态创建提供者实例"""
-    providers = {}
+    providers: Dict[NotificationType, BaseNotificationProvider] = {}
 
     if config.web_enabled:
         providers[NotificationType.WEB] = WebNotificationProvider(config)
@@ -442,7 +444,7 @@ def create_notification_providers(config) -> Dict[NotificationType, Any]:
             providers[NotificationType.SYSTEM] = system_provider
             logger.debug("系统通知提供者已创建")
     except Exception as e:
-        logger.debug(f"系统通知提供者创建失败: {e}")
+        logger.debug(f"系统通知提供者创建失败: {e}", exc_info=True)
 
     logger.info(f"已创建 {len(providers)} 个通知提供者")
     return providers

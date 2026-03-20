@@ -143,13 +143,19 @@ Controls timeouts and auto re-submit prompts.
 | Key | Type | Default | Notes |
 | --- | ---- | ------- | ----- |
 | `backend_max_wait` | number | `600` | Backend maximum wait (seconds), range `[60, 3600]` |
-| `frontend_countdown` | number | `240` | Frontend auto-submit countdown (seconds), range `[30, 290]`; `0` disables |
+| `frontend_countdown` | number | `240` | Frontend auto-submit countdown (seconds), range `[30, 250]`; `0` disables |
 | `resubmit_prompt` | string | `"请立即调用 interactive_feedback 工具"` | Returned on error/timeout to encourage re-calling the tool |
 | `prompt_suffix` | string | `"\\n请积极调用 interactive_feedback 工具"` | Appended to the user feedback text |
 
 **Timeout rule**:
 
-`backend_wait = min(max(frontend_countdown + 60, 300), backend_max_wait)`
+If `frontend_countdown <= 0`:
+
+`backend_wait = max(backend_max_wait, 260)`
+
+Otherwise:
+
+`backend_wait = min(max(frontend_countdown + 40, 260), backend_max_wait)`
 
 ## Minimal example
 

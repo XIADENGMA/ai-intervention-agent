@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, Tuple, overload
+from typing import Any, Dict, Literal, Optional, Tuple, cast, overload
 
 import requests
 from fastmcp import FastMCP
@@ -39,7 +39,11 @@ _http_session_cache: dict = {}
 _http_session_lock = threading.Lock()
 
 # 配置缓存：避免频繁读取配置文件
-_config_cache: dict = {"config": None, "timestamp": 0, "ttl": 10}  # 10秒 TTL
+_config_cache: Dict[str, Any] = {
+    "config": None,
+    "timestamp": 0.0,
+    "ttl": 10.0,
+}  # 10秒 TTL
 _config_cache_lock = threading.Lock()
 
 # ===============================
@@ -133,7 +137,7 @@ try:
 except ImportError:
     pass
 
-mcp = FastMCP("AI Intervention Agent MCP")
+mcp: FastMCP = FastMCP("AI Intervention Agent MCP")
 logger = EnhancedLogger(__name__)
 _global_task_queue = TaskQueue(max_tasks=10)
 
@@ -187,7 +191,7 @@ class ServiceManager:
     def _register_cleanup(self):
         """注册 atexit 清理函数和 SIGINT/SIGTERM 信号处理器"""
         if not self._cleanup_registered:
-            atexit.register(self.cleanup_all)
+            atexit.register(self.cleanup_all, shutdown_notification_manager=True)
             try:
                 if hasattr(signal, "SIGINT"):
                     signal.signal(signal.SIGINT, self._signal_handler)
@@ -204,7 +208,7 @@ class ServiceManager:
         del frame
         logger.info(f"收到信号 {signum}，正在清理服务...")
         try:
-            self.cleanup_all()
+            self.cleanup_all(shutdown_notification_manager=True)
         except Exception as e:
             logger.error(f"清理服务时出错: {e}")
 
@@ -253,7 +257,8 @@ class ServiceManager:
 
     def terminate_process(self, name: str, timeout: float = 5.0) -> bool:
         """终止服务进程：优雅关闭 -> 强制终止 -> 资源清理 -> 端口释放"""
-        process_info = self._processes.get(name)
+        with self._lock:
+            process_info = self._processes.get(name)
         if not process_info:
             return True
 
@@ -357,17 +362,16 @@ class ServiceManager:
             time.sleep(0.5)
         logger.warning(f"端口 {host}:{port} 在 {timeout}秒内未释放")
 
-    def cleanup_all(self):
+    def cleanup_all(self, shutdown_notification_manager: bool = True):
         """清理所有已注册的服务进程（幂等操作，容错设计）"""
-        if not self._processes:
-            logger.debug("没有需要清理的进程")
-            return
-
-        logger.info("开始清理所有服务进程...")
-        cleanup_errors = []
-
         with self._lock:
             processes_to_cleanup = list(self._processes.items())
+
+        if not processes_to_cleanup:
+            logger.debug("没有需要清理的进程")
+        else:
+            logger.info("开始清理所有服务进程...")
+        cleanup_errors = []
 
         for name, _ in processes_to_cleanup:
             try:
@@ -398,8 +402,8 @@ class ServiceManager:
         else:
             logger.info("所有服务进程清理完成")
 
-        # 【修复】关闭通知管理器线程池，防止资源泄漏
-        if NOTIFICATION_AVAILABLE:
+        # 仅在“确定要退出进程”的清理路径里关闭通知线程池；重启场景需保留可用性
+        if shutdown_notification_manager and NOTIFICATION_AVAILABLE:
             try:
                 notification_manager.shutdown()
                 logger.info("通知管理器线程池已关闭")
@@ -488,7 +492,7 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
             and current_time - _config_cache["timestamp"] < _config_cache["ttl"]
         ):
             logger.debug("使用缓存的 Web UI 配置")
-            return _config_cache["config"]
+            return cast(Tuple[WebUIConfig, int], _config_cache["config"])
 
     # 缓存过期或不存在，重新加载配置
     try:
@@ -497,23 +501,27 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
         feedback_config = config_mgr.get_section("feedback")
         network_security_config = config_mgr.get_section("network_security")
 
-        host = network_security_config.get(
-            "bind_interface", web_ui_config.get("host", "127.0.0.1")
+        host = str(
+            network_security_config.get(
+                "bind_interface", web_ui_config.get("host", "127.0.0.1")
+            )
         )
-        port = web_ui_config.get("port", 8080)
+        port = int(web_ui_config.get("port", 8080))
 
         # 【重构】使用 get_compat_config 简化向后兼容配置读取
-        auto_resubmit_timeout = get_compat_config(
-            feedback_config, "frontend_countdown", "auto_resubmit_timeout", 240
+        auto_resubmit_timeout = int(
+            get_compat_config(
+                feedback_config, "frontend_countdown", "auto_resubmit_timeout", 240
+            )
         )
-        max_retries = get_compat_config(
-            web_ui_config, "http_max_retries", "max_retries", 3
+        max_retries = int(
+            get_compat_config(web_ui_config, "http_max_retries", "max_retries", 3)
         )
-        retry_delay = get_compat_config(
-            web_ui_config, "http_retry_delay", "retry_delay", 1.0
+        retry_delay = float(
+            get_compat_config(web_ui_config, "http_retry_delay", "retry_delay", 1.0)
         )
-        http_timeout = get_compat_config(
-            web_ui_config, "http_request_timeout", "timeout", 30
+        http_timeout = int(
+            get_compat_config(web_ui_config, "http_request_timeout", "timeout", 30)
         )
 
         config = WebUIConfig(
@@ -525,7 +533,7 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
         )
 
         # 【性能优化】更新缓存
-        result = (config, auto_resubmit_timeout)
+        result: Tuple[WebUIConfig, int] = (config, auto_resubmit_timeout)
         with _config_cache_lock:
             _config_cache["config"] = result
             _config_cache["timestamp"] = current_time
@@ -843,10 +851,10 @@ def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
             return is_running
 
     except socket.gaierror as e:
-        logger.error(f"主机名解析失败 {host}: {e}")
+        logger.error(f"主机名解析失败 {host}: {e}", exc_info=True)
         return False
     except Exception as e:
-        logger.error(f"检查服务状态时出错: {e}")
+        logger.error(f"检查服务状态时出错: {e}", exc_info=True)
         return False
 
 
@@ -861,7 +869,7 @@ def health_check_service(config: WebUIConfig) -> bool:
         health_url = f"http://{target_host}:{config.port}/api/health"
 
         response = session.get(health_url, timeout=5)
-        is_healthy = response.status_code == 200
+        is_healthy = bool(response.status_code == 200)
 
         if is_healthy:
             logger.debug("服务健康检查通过")
@@ -871,10 +879,10 @@ def health_check_service(config: WebUIConfig) -> bool:
         return is_healthy
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"健康检查请求失败: {e}")
+        logger.error(f"健康检查请求失败: {e}", exc_info=True)
         return False
     except Exception as e:
-        logger.error(f"健康检查时出现未知错误: {e}")
+        logger.error(f"健康检查时出现未知错误: {e}", exc_info=True)
         return False
 
 
@@ -894,7 +902,7 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
             initialize_notification_system(notification_manager.get_config())
             logger.info("通知系统初始化完成")
         except Exception as e:
-            logger.warning(f"通知系统初始化失败: {e}")
+            logger.warning(f"通知系统初始化失败: {e}", exc_info=True)
 
     # 验证 web_ui.py 文件是否存在
     if not os.path.exists(web_ui_path):
@@ -936,13 +944,13 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
         service_manager.register_process(service_name, process, config)
 
     except FileNotFoundError as e:
-        logger.error(f"Python 解释器或脚本文件未找到: {e}")
+        logger.error(f"Python 解释器或脚本文件未找到: {e}", exc_info=True)
         raise Exception(f"无法启动 Web 服务，文件未找到: {e}") from e
     except PermissionError as e:
-        logger.error(f"权限不足，无法启动服务: {e}")
+        logger.error(f"权限不足，无法启动服务: {e}", exc_info=True)
         raise Exception(f"权限不足，无法启动 Web 服务: {e}") from e
     except Exception as e:
-        logger.error(f"启动服务进程时出错: {e}")
+        logger.error(f"启动服务进程时出错: {e}", exc_info=True)
         # 如果启动失败，再次检查服务是否已经在运行
         if health_check_service(config):
             logger.info("服务已经在运行，继续使用现有服务")
@@ -1024,18 +1032,18 @@ def update_web_content(
             raise Exception(f"更新内容失败，状态码: {response.status_code}")
 
     except requests.exceptions.Timeout:
-        logger.error(f"更新内容超时 ({config.timeout}秒)")
+        logger.error(f"更新内容超时 ({config.timeout}秒)", exc_info=True)
         raise Exception("更新内容超时，请检查网络连接或稍后重试") from None
     except requests.exceptions.ConnectionError:
-        logger.error(f"无法连接到 Web 服务: {url}")
+        logger.error(f"无法连接到 Web 服务: {url}", exc_info=True)
         raise Exception(
             "无法连接到 Web UI 服务，请确认服务正在运行，并检查地址/端口（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl 设置）。"
         ) from None
     except requests.exceptions.RequestException as e:
-        logger.error(f"更新内容时网络请求失败: {e}")
+        logger.error(f"更新内容时网络请求失败: {e}", exc_info=True)
         raise Exception(f"更新内容失败: {e}") from e
     except Exception as e:
-        logger.error(f"更新内容时出现未知错误: {e}")
+        logger.error(f"更新内容时出现未知错误: {e}", exc_info=True)
         raise Exception(f"更新 Web 内容失败: {e}") from e
 
 
@@ -1347,7 +1355,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
 
                 if task.get("status") == "completed" and task.get("result"):
                     logger.info(f"任务完成: {task_id}")
-                    return task["result"]
+                    return cast(Dict[str, Any], task["result"])
 
         except requests.exceptions.RequestException as e:
             logger.warning(f"轮询任务状态失败: {e}")
@@ -1373,8 +1381,9 @@ async def ensure_web_ui_running(config):
         if response.status_code == 200:
             logger.debug("Web UI 已经在运行")
             return
-    except Exception:
-        pass
+    except Exception as e:
+        # 健康检查失败可能表示服务尚未启动；保持静默降级，但保留可诊断日志。
+        logger.debug(f"Web UI 健康检查失败，将尝试启动: {e}", exc_info=True)
 
     logger.info("Web UI 未运行，正在启动...")
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1470,12 +1479,15 @@ def launch_feedback_ui(
 
                 except Exception as e:
                     # 通知失败不影响任务创建，仅记录警告
-                    logger.warning(f"发送任务通知失败: {e}，任务 {task_id} 已正常创建")
+                    logger.warning(
+                        f"发送任务通知失败: {e}，任务 {task_id} 已正常创建",
+                        exc_info=True,
+                    )
             else:
                 logger.debug("通知系统不可用，跳过通知发送")
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"添加任务请求失败: {e}")
+            logger.error(f"添加任务请求失败: {e}", exc_info=True)
             return {
                 "error": f"无法连接到 Web UI：{e}。请确认 Web UI 服务已启动，并检查地址/端口配置（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl）。"
             }
@@ -1501,13 +1513,13 @@ def launch_feedback_ui(
         return result
 
     except ValueError as e:
-        logger.error(f"输入参数错误: {e}")
+        logger.error(f"输入参数错误: {e}", exc_info=True)
         raise Exception(f"参数验证失败: {e}") from e
     except FileNotFoundError as e:
-        logger.error(f"文件未找到: {e}")
+        logger.error(f"文件未找到: {e}", exc_info=True)
         raise Exception(f"必要文件缺失: {e}") from e
     except Exception as e:
-        logger.error(f"启动反馈界面失败: {e}")
+        logger.error(f"启动反馈界面失败: {e}", exc_info=True)
         raise Exception(f"反馈界面启动失败: {e}") from e
 
 
@@ -1644,13 +1656,16 @@ async def interactive_feedback(
 
                 except Exception as e:
                     # 通知失败不影响任务创建，仅记录警告
-                    logger.warning(f"发送任务通知失败: {e}，任务 {task_id} 已正常创建")
+                    logger.warning(
+                        f"发送任务通知失败: {e}，任务 {task_id} 已正常创建",
+                        exc_info=True,
+                    )
             else:
                 logger.debug("通知系统不可用，跳过通知发送")
 
         except requests.exceptions.RequestException as e:
             # 记录连接失败的详细错误
-            logger.error(f"添加任务请求失败，无法连接到 Web UI: {e}")
+            logger.error(f"添加任务请求失败，无法连接到 Web UI: {e}", exc_info=True)
             # 返回配置的提示语，引导 AI 重新调用工具
             return _make_resubmit_response()
 
@@ -1687,7 +1702,7 @@ async def interactive_feedback(
                 return [TextContent(type="text", text=str(result))]
 
     except Exception as e:
-        logger.error(f"interactive_feedback 工具执行失败: {e}")
+        logger.error(f"interactive_feedback 工具执行失败: {e}", exc_info=True)
         # 返回配置的提示语，引导 AI 重新调用工具
         return _make_resubmit_response()
 
@@ -1711,7 +1726,7 @@ class FeedbackServiceContext:
             )
             return self
         except Exception as e:
-            logger.error(f"初始化反馈服务上下文失败: {e}")
+            logger.error(f"初始化反馈服务上下文失败: {e}", exc_info=True)
             raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -1736,7 +1751,8 @@ class FeedbackServiceContext:
         """
         del exc_tb
         try:
-            self.service_manager.cleanup_all()
+            # 上下文退出不等同于进程退出：仅清理子进程/端口等资源，保留通知线程池可用性
+            self.service_manager.cleanup_all(shutdown_notification_manager=False)
             if exc_type is KeyboardInterrupt:
                 logger.info("收到中断信号，服务已清理")
             elif exc_type is not None:
@@ -1744,7 +1760,7 @@ class FeedbackServiceContext:
             else:
                 logger.info("正常退出，服务已清理")
         except Exception as e:
-            logger.error(f"清理服务时出错: {e}")
+            logger.error(f"清理服务时出错: {e}", exc_info=True)
 
     def launch_feedback_ui(
         self,
@@ -1785,7 +1801,7 @@ class FeedbackServiceContext:
         return launch_feedback_ui(summary, predefined_options, task_id, timeout)
 
 
-def cleanup_services():
+def cleanup_services(shutdown_notification_manager: bool = True):
     """
     清理所有启动的服务进程
 
@@ -1810,10 +1826,12 @@ def cleanup_services():
     """
     try:
         service_manager = ServiceManager()
-        service_manager.cleanup_all()
+        service_manager.cleanup_all(
+            shutdown_notification_manager=shutdown_notification_manager
+        )
         logger.info("服务清理完成")
     except Exception as e:
-        logger.error(f"服务清理失败: {e}")
+        logger.error(f"服务清理失败: {e}", exc_info=True)
 
 
 def main():
@@ -1905,13 +1923,14 @@ def main():
                 exc_info=True,
             )
 
-            # 清理服务进程
-            cleanup_services()
-
             if retry_count < max_retries:
+                # 仅清理子进程/端口等资源，保留通知线程池，便于同进程重启
+                cleanup_services(shutdown_notification_manager=False)
                 logger.warning("将在 1 秒后尝试重启服务器...")
                 time.sleep(1)
             else:
+                # 达到最大重试次数：准备退出进程，做全量清理
+                cleanup_services(shutdown_notification_manager=True)
                 logger.error(f"达到最大重试次数 ({max_retries})，服务退出")
                 sys.exit(1)
 

@@ -101,7 +101,7 @@ def get_typed_config(
             # 特殊处理字符串布尔值
             typed_value = cast(T, raw_value.lower() in ("true", "1", "yes", "on"))
         else:
-            typed_value = value_type(raw_value)
+            typed_value = cast(T, cast(Any, value_type)(raw_value))
     except (ValueError, TypeError):
         logger.warning(
             f"配置 {key} 值 '{raw_value}' 类型转换失败，使用默认值 {default}"

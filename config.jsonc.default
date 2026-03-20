@@ -83,12 +83,14 @@
     "service_name": "AI Intervention Agent"
   },
   // 反馈配置
-  // 超时计算规则：后端等待 = min(max(前端倒计时 + 60秒, 300秒), backend_max_wait)
+  // 超时计算规则：
+  // - frontend_countdown <= 0：后端等待 = max(backend_max_wait, 260秒)
+  // - 否则：后端等待 = min(max(前端倒计时 + 40秒, 260秒), backend_max_wait)
   "feedback": {
     // 后端最大等待时间(秒) - 范围 [60, 3600]
     // 作用：限制后端轮询的最大时间，防止无限等待
     "backend_max_wait": 600,
-    // 前端自动提交倒计时(秒) - 范围 [30, 290]，0=禁用自动提交
+    // 前端自动重调倒计时(秒) - 范围 [30, 250]，0=禁用自动重调
     // 参考 Cursor 5分钟会话超时，建议设置为 4 分钟 (240秒)
     "frontend_countdown": 240,
     // 错误/超时时返回的提示语（引导AI重新调用工具）

@@ -19,7 +19,7 @@ class Task:
     task_id: str
     prompt: str
     predefined_options: Optional[List[str]] = None
-    auto_resubmit_timeout: int = 240  # 默认 240 秒；add_task 会限制到 290 秒以内
+    auto_resubmit_timeout: int = 240  # 默认 240 秒；add_task 会限制到 250 秒以内
     created_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )  # 使用 UTC 时间，支持跨时区部署
@@ -215,8 +215,8 @@ class TaskQueue:
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         with self._lock:
-            # 限制前端倒计时最大不超过290秒
-            auto_resubmit_timeout = min(auto_resubmit_timeout, 290)
+            # 限制前端倒计时最大不超过250秒（与 server.py / web_ui.py 保持一致）
+            auto_resubmit_timeout = min(auto_resubmit_timeout, 250)
 
             if len(self._tasks) >= self.max_tasks:
                 logger.warning(
@@ -287,8 +287,8 @@ class TaskQueue:
     def update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int:
         """更新所有未完成任务的 auto_resubmit_timeout
 
-        用于配置热更新场景：当用户在运行中修改 feedback.auto_resubmit_timeout
-        （或 frontend_countdown）时，希望**已经在倒计时中的任务**也能立即生效。
+        用于配置热更新场景：当用户在运行中修改 feedback.frontend_countdown
+        （或旧名称 auto_resubmit_timeout）时，希望**已经在倒计时中的任务**也能立即生效。
 
         更新策略：
         - 仅更新 status != "completed" 的任务（pending/active/expired）
@@ -297,7 +297,7 @@ class TaskQueue:
 
         注意：
         - 如果将超时时间调小到小于已过去时间，任务可能会立刻显示 remaining_time=0
-        - auto_resubmit_timeout=0 在语义上表示“禁用自动提交”，上层需要配合前端逻辑避免误触发
+        - auto_resubmit_timeout=0 在语义上表示“禁用自动重调”，上层需要配合前端逻辑避免误触发
 
         参数:
             auto_resubmit_timeout: 新的前端倒计时（秒）

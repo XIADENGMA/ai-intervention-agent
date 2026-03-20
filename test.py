@@ -145,11 +145,13 @@ import signal
 import sys
 import threading
 import time
+from typing import Any
 
 # 添加当前目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # 初始化增强日志系统
+test_logger: Any
 try:
     from enhanced_logging import EnhancedLogger
 

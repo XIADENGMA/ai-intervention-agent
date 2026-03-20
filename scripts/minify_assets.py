@@ -72,7 +72,7 @@ def minify_js(content: str) -> str:
     try:
         import rjsmin
 
-        return rjsmin.jsmin(content)
+        return str(rjsmin.jsmin(content))
     except ImportError:
         print("警告: rjsmin 未安装，跳过 JS 压缩")
         print("安装命令: pip install rjsmin")
@@ -84,7 +84,7 @@ def minify_css(content: str) -> str:
     try:
         import rcssmin
 
-        return rcssmin.cssmin(content)
+        return str(rcssmin.cssmin(content))
     except ImportError:
         print("警告: rcssmin 未安装，跳过 CSS 压缩")
         print("安装命令: pip install rcssmin")
