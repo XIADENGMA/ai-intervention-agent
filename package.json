@@ -27,7 +27,7 @@
   },
   "homepage": "https://github.com/XIADENGMA/ai-intervention-agent#readme",
   "devDependencies": {
-    "marked": "^17.0.1",
+    "marked": "^17.0.4",
     "prismjs": "^1.30.0"
   }
 }
