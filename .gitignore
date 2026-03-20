@@ -235,3 +235,14 @@ config.jsonc
 
 # Personal notes / todo
 TODO.md
+
+# Removed project management and coverage settings
+.specify/
+specs/
+.coveragerc
+
+# Ignored minified static assets
+static/css/*.min.css
+static/js/*.min.js
+!static/js/prism-components/
+!static/js/lottie.min.js

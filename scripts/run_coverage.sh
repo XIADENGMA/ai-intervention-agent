@@ -10,7 +10,7 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-echo "🧪 运行测试并收集覆盖率..."
+echo "运行测试并收集覆盖率..."
 echo ""
 
 # 默认选项
@@ -38,15 +38,14 @@ done
 uv run pytest tests/ \
     --cov=. \
     --cov-report=term-missing \
-    --cov-config=.coveragerc \
     -v
 
 # 生成 HTML 报告
 if [ "$HTML_REPORT" = true ]; then
     echo ""
-    echo "📊 生成 HTML 覆盖率报告..."
+    echo "生成 HTML 覆盖率报告..."
     uv run coverage html
-    echo "✅ HTML 报告已生成: htmlcov/index.html"
+    echo "HTML 报告已生成: htmlcov/index.html"
 
     # 自动打开报告
     if [ "$OPEN_REPORT" = true ]; then
@@ -61,10 +60,10 @@ fi
 # 生成 XML 报告
 if [ "$XML_REPORT" = true ]; then
     echo ""
-    echo "📊 生成 XML 覆盖率报告..."
+    echo "生成 XML 覆盖率报告..."
     uv run coverage xml
-    echo "✅ XML 报告已生成: coverage.xml"
+    echo "XML 报告已生成: coverage.xml"
 fi
 
 echo ""
-echo "🎉 测试完成！"
+echo "测试完成！"

@@ -51,6 +51,9 @@ jobs:
       - name: Pytest
         run: uv run pytest -q
 
+      - name: 生成静态资源压缩文件
+        run: uv run python scripts/minify_assets.py --force
+
       - name: 构建（uv build）
         run: uv build --sdist --wheel --out-dir dist --clear
 

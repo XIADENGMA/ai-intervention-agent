@@ -45,3 +45,20 @@ updates:
     commit-message:
       prefix: 'chore(ci)'
     open-pull-requests-limit: 5
+
+  # Node.js/npm 依赖更新 (负责根目录及 packages/vscode 插件)
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Asia/Shanghai'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    reviewers:
+      - 'xiadengma'
+    commit-message:
+      prefix: 'chore(deps-npm)'
+    open-pull-requests-limit: 5
