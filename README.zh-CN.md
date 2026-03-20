@@ -69,7 +69,7 @@ uv add ai-intervention-agent
 }
 ```
 
-> [!NOTE] > `interactive_feedback` 是一个**长时间等待**的工具。有些客户端存在硬超时限制，因此 Web UI 提供倒计时 + 自动提交（自动重调）以尽量保持会话不断开。
+> [!NOTE] > `interactive_feedback` 是一个**长时间运行**的工具。有些客户端存在硬超时限制，因此 Web UI 提供倒计时 + 自动重调（到时自动提交）以尽量保持会话不断开。
 
 <details>
 <summary>提示词（可复制）</summary>
@@ -134,10 +134,10 @@ ai-intervention-agent 工具使用细节：
 ## 主要特性
 
 - **实时介入**：AI 在关键节点暂停，等待你的指示
-- **Web 界面**：Markdown / 代码高亮 / 数学公式渲染
+- **Web UI**：Markdown / 代码高亮 / 数学公式渲染
 - **多任务**：多任务标签页切换，每个任务独立倒计时
 - **自动重调**：倒计时到点自动提交，减少会话超时中断
-- **通知**：Web / 声音 / 系统通知 / Bark
+- **通知**：Web UI / 声音 / 系统通知 / Bark
 - **远程友好**：适配 SSH 端口转发等远程开发场景
 
 ## VS Code 插件（可选）
@@ -148,6 +148,7 @@ ai-intervention-agent 工具使用细节：
 | 安装（Open VSX）            | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                               |
 | 下载 VSIX（GitHub Release） | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                    |
 | 设置                        | `ai-intervention-agent.serverUrl`（填写你的 Web UI 地址，例如 `http://localhost:8080`；端口可在 [`config.jsonc.default`](config.jsonc.default) 的 `web_ui.port` 中修改） |
+| 其他设置                    | `ai-intervention-agent.logLevel`（Output → AI Intervention Agent）<br/>`ai-intervention-agent.enableAppleScript`（仅 macOS；默认关闭）                                     |
 
 ## 配置说明
 

@@ -1013,20 +1013,24 @@ def update_web_content(
 
         elif response.status_code == 400:
             logger.error(f"更新请求参数错误: {response.text}")
-            raise Exception(f"更新内容失败，请求参数错误: {response.text}")
+            raise Exception(f"更新内容失败：请求参数不合法: {response.text}")
         elif response.status_code == 404:
             logger.error("更新 API 端点不存在，可能服务未正确启动")
-            raise Exception("更新 API 不可用，请检查服务状态")
+            raise Exception(
+                "更新接口不可用（/api/update 未找到）。请确认 Web UI 服务已启动且版本匹配。"
+            )
         else:
             logger.error(f"更新内容失败，HTTP 状态码: {response.status_code}")
             raise Exception(f"更新内容失败，状态码: {response.status_code}")
 
     except requests.exceptions.Timeout:
         logger.error(f"更新内容超时 ({config.timeout}秒)")
-        raise Exception("更新内容超时，请检查网络连接") from None
+        raise Exception("更新内容超时，请检查网络连接或稍后重试") from None
     except requests.exceptions.ConnectionError:
         logger.error(f"无法连接到 Web 服务: {url}")
-        raise Exception("无法连接到 Web 服务，请确认服务正在运行") from None
+        raise Exception(
+            "无法连接到 Web UI 服务，请确认服务正在运行，并检查地址/端口（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl 设置）。"
+        ) from None
     except requests.exceptions.RequestException as e:
         logger.error(f"更新内容时网络请求失败: {e}")
         raise Exception(f"更新内容失败: {e}") from e
@@ -1450,7 +1454,7 @@ def launch_feedback_ui(
 
                     # 发送通知（types=None 使用配置的默认类型）
                     event_id = notification_manager.send_notification(
-                        title="新的反馈请求",
+                        title="新的交互反馈请求",
                         message=notification_message,
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=None,  # 自动根据配置选择（包括 Bark）
@@ -1472,7 +1476,9 @@ def launch_feedback_ui(
 
         except requests.exceptions.RequestException as e:
             logger.error(f"添加任务请求失败: {e}")
-            return {"error": f"无法连接到Web UI: {e}"}
+            return {
+                "error": f"无法连接到 Web UI：{e}。请确认 Web UI 服务已启动，并检查地址/端口配置（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl）。"
+            }
 
         # 【优化】使用统一的超时计算函数
         # timeout=0 表示无限等待模式
@@ -1514,7 +1520,7 @@ async def interactive_feedback(
     ),
 ) -> list:
     """
-    MCP 工具：请求用户通过 Web UI 提供交互式反馈
+    MCP 工具：请求用户通过 Web UI 提供交互反馈
 
     参数
     ----

@@ -146,6 +146,7 @@ ai-intervention-agent usage details:
 | Install (Open VSX)             | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                                     |
 | Download VSIX (GitHub Release) | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                          |
 | Setting                        | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.jsonc.default`](config.jsonc.default)) |
+| Other settings                 | `ai-intervention-agent.logLevel` (Output → AI Intervention Agent)<br/>`ai-intervention-agent.enableAppleScript` (macOS only; disabled by default)                              |
 
 ## Configuration
 

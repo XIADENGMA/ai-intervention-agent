@@ -2996,13 +2996,13 @@
       <!-- 无有效内容页面 -->
       <div id="no-content-container" class="no-content-container">
         <div class="no-content-icon" id="hourglass-lottie"></div>
-        <h2 class="no-content-title">无有效内容</h2>
-        <p class="no-content-description">等待新的反馈请求...</p>
+        <h2 class="no-content-title">暂无交互反馈请求</h2>
+        <p class="no-content-description">等待新的交互反馈请求…</p>
         <div class="no-content-progress">
           <div class="no-content-progress-bar"></div>
         </div>
         <div class="button-container no-content-buttons" id="no-content-buttons">
-          <button class="btn btn-secondary" id="close-btn" aria-label="关闭 Web 服务">
+          <button class="btn btn-secondary" id="close-btn" aria-label="关闭 Web UI">
             <!-- Claude 风格关闭图标（X）- 精致线条版 -->
             <svg
               class="btn-icon"
@@ -3019,7 +3019,7 @@
               <line x1="5" y1="5" x2="15" y2="15" />
               <line x1="15" y1="5" x2="5" y2="15" />
             </svg>
-            关闭服务
+            关闭 Web UI
           </button>
         </div>
         <!-- 无内容页面的状态消息显示区域 -->
@@ -3046,18 +3046,18 @@
                     d="M3 4.5C3 3.67157 3.67157 3 4.5 3H11C11.1326 3 11.2598 3.05268 11.3536 3.14645L16.8536 8.64645C16.9473 8.74021 17 8.86739 17 9V15.5C17 16.3284 16.3284 17 15.5 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5ZM4.5 4C4.22386 4 4 4.22386 4 4.5V15.5C4 15.7761 4.22386 16 4.5 16H15.5C15.7761 16 16 15.7761 16 15.5V9.20711L11.2929 4.5H11H4.5Z"
                   />
                 </svg>
-                任务:
+                任务：
               </span>
               <span class="task-id-text" id="task-id-text"></span>
             </div>
 
             <div class="countdown-container hidden" id="countdown-container">
               <span class="countdown-label">⏰</span>
-              <span class="countdown-text" id="countdown-text">0秒后自动重新询问</span>
+              <span class="countdown-text" id="countdown-text">0 秒后自动重调</span>
             </div>
           </div>
 
-          <div class="description markdown-content" id="description">加载中...</div>
+          <div class="description markdown-content" id="description">加载中…</div>
 
           <div class="options-container hidden" id="options-container">
             <!-- 预定义选项将在这里动态加载 -->
@@ -3177,7 +3177,7 @@
             <textarea
               class="feedback-textarea"
               id="feedback-text"
-              placeholder="请在此输入您的反馈内容……"
+              placeholder="请输入反馈内容…"
             ></textarea>
           </div>
 
@@ -3232,7 +3232,7 @@
                   d="M3.29289 3.29289C3.68342 2.90237 4.31658 2.90237 4.70711 3.29289L10.7071 9.29289C11.0976 9.68342 11.0976 10.3166 10.7071 10.7071L4.70711 16.7071C4.31658 17.0976 3.68342 17.0976 3.29289 16.7071C2.90237 16.3166 2.90237 15.6834 3.29289 15.2929L8.58579 10L3.29289 4.70711C2.90237 4.31658 2.90237 3.68342 3.29289 3.29289ZM9.29289 3.29289C9.68342 2.90237 10.3166 2.90237 10.7071 3.29289L16.7071 9.29289C17.0976 9.68342 17.0976 10.3166 16.7071 10.7071L10.7071 16.7071C10.3166 17.0976 9.68342 17.0976 9.29289 16.7071C8.90237 16.3166 8.90237 15.6834 9.29289 15.2929L14.5858 10L9.29289 4.70711C8.90237 4.31658 8.90237 3.68342 9.29289 3.29289Z"
                 />
               </svg>
-              发送请求
+              提交反馈
             </button>
           </div>
 
@@ -3325,18 +3325,18 @@
                       d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
                     />
                   </svg>
-                  桌面通知
+                  桌面通知（浏览器）
                 </h5>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="web-notification-enabled" checked />
-                    <span class="setting-title">桌面通知</span>
+                    <span class="setting-title">启用桌面通知</span>
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="auto-request-permission" checked />
-                    <span class="setting-title">自动请求通知权限</span>
+                    <span class="setting-title">自动请求浏览器通知权限</span>
                   </label>
                 </div>
               </div>
@@ -3434,7 +3434,7 @@
                     />
                     <path d="M10 2c1 .5 2 2 2 5" />
                   </svg>
-                  Bark 通知 (iOS)
+                  Bark 通知（iOS）
                 </h5>
                 <div class="setting-item">
                   <label class="setting-label">
@@ -3461,14 +3461,14 @@
                       type="text"
                       id="bark-device-key"
                       class="setting-input"
-                      placeholder="请输入您的 Bark Device Key"
+                      placeholder="请输入 Bark Device Key"
                       value=""
                     />
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label has-input">
-                    <span class="setting-title">图标 URL (可选)</span>
+                    <span class="setting-title">图标 URL（可选）</span>
                     <input
                       type="url"
                       id="bark-icon"
@@ -3529,20 +3529,20 @@
                   状态信息
                 </h5>
                 <div class="status-row">
-                  <span>浏览器支持：</span>
-                  <span id="browser-support-status">检测中...</span>
+                  <span>浏览器通知支持：</span>
+                  <span id="browser-support-status">检测中…</span>
                 </div>
                 <div class="status-row">
                   <span>安全上下文：</span>
-                  <span id="notification-secure-context-status">检测中...</span>
+                  <span id="notification-secure-context-status">检测中…</span>
                 </div>
                 <div class="status-row">
                   <span>通知权限：</span>
-                  <span id="notification-permission-status">检测中...</span>
+                  <span id="notification-permission-status">检测中…</span>
                 </div>
                 <div class="status-row">
                   <span>音频状态：</span>
-                  <span id="audio-status">检测中...</span>
+                  <span id="audio-status">检测中…</span>
                 </div>
               </div>
 
@@ -3580,7 +3580,7 @@
                       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                     </svg>
-                    测试通知
+                    测试桌面通知
                   </button>
                 </div>
                 <div class="setting-item">
@@ -3632,7 +3632,7 @@
                     type="text"
                     id="config-file-path"
                     class="setting-input"
-                    value="加载中..."
+                    value="加载中…"
                     readonly
                   />
                 </label>

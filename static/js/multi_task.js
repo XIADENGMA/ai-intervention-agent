@@ -170,7 +170,7 @@ if (typeof window.updateCountdownDisplay !== 'function') {
     const displaySeconds = typeof seconds === 'number' ? seconds : window.remainingSeconds
 
     if (displaySeconds > 0) {
-      countdownText.textContent = `${displaySeconds}秒后自动重新询问`
+      countdownText.textContent = `${displaySeconds} 秒后自动重调`
       countdownContainer.classList.remove('hidden')
     } else {
       countdownContainer.classList.add('hidden')
@@ -470,7 +470,7 @@ Object.defineProperty(window, 'isManualSwitching', {
  * - `status`: 任务状态（pending/active/completed）
  * - `prompt`: 任务提示信息
  * - `predefined_options`: 预定义选项数组
- * - `auto_resubmit_timeout`: 自动提交超时（秒）
+ * - `auto_resubmit_timeout`: 自动重调倒计时（秒）
  *
  * ## 并发控制
  *
@@ -1870,7 +1870,7 @@ function showNewTaskVisualHint(count) {
     animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), fadeOutUp 0.3s ease-in 2.7s forwards;
     pointer-events: none;
   `
-  hint.innerHTML = `${createSvg}<span>${count} 个新任务已到达</span>`
+  hint.innerHTML = `${createSvg}<span>收到 ${count} 个新的交互反馈请求</span>`
 
   // 添加到页面
   document.body.appendChild(hint)

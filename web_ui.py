@@ -1986,7 +1986,7 @@ class WebFeedbackUI:
                 6. 发送通知并返回结果
 
             返回值：
-                成功：JSON对象 {"status": "success", "message": "Bark 测试通知发送成功！请检查您的设备"}
+                成功：JSON对象 {"status": "success", "message": "Bark 测试通知发送成功！请检查设备"}
                 失败：HTTP 400/500 + 错误信息
                     - 400: Device Key为空
                     - 500: 通知系统不可用或发送失败
@@ -2039,7 +2039,7 @@ class WebFeedbackUI:
                     test_event = NotificationEvent(
                         id=f"test_bark_{int(time.time())}",
                         title="AI Intervention Agent 测试",
-                        message="这是一个 Bark 通知测试，如果您收到此消息，说明配置正确！",
+                        message="这是一个 Bark 通知测试，如果收到此消息，说明配置正确。",
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=[NotificationType.BARK],
                         metadata={"test": True},
@@ -2052,7 +2052,7 @@ class WebFeedbackUI:
                         return jsonify(
                             {
                                 "status": "success",
-                                "message": "Bark 测试通知发送成功！请检查您的设备",
+                                "message": "Bark 测试通知发送成功！请检查设备",
                             }
                         )
                     else:
@@ -3516,17 +3516,17 @@ def web_feedback_ui(
     host: str = "0.0.0.0",
     port: int = 8080,
 ) -> Optional[FeedbackResult]:
-    """启动Web版反馈界面的便捷函数
+    """启动 Web UI（交互反馈界面）的便捷函数
 
     功能说明：
-        创建WebFeedbackUI实例并启动服务器，收集用户反馈。可选地将结果保存到文件。
+        创建 WebFeedbackUI 实例并启动服务，收集用户反馈。可选地将结果保存到文件。
 
     参数说明：
-        prompt: 提示文本（Markdown格式）
+        prompt: 提示文本（Markdown 格式）
         predefined_options: 预定义选项列表（可选）
-        task_id: 任务ID（可选）
-        auto_resubmit_timeout: 自动重新提交超时时间（秒，默认290秒）
-        output_file: 输出文件路径（可选，若指定则将结果保存为JSON文件）
+        task_id: 任务 ID（可选）
+        auto_resubmit_timeout: 自动重调倒计时（秒，默认 290 秒）
+        output_file: 输出文件路径（可选；若指定则将结果保存为 JSON 文件）
         host: 绑定主机地址（默认"0.0.0.0"）
         port: 绑定端口（默认8080）
 
@@ -3576,19 +3576,19 @@ def web_feedback_ui(
 
 
 if __name__ == "__main__":
-    """主程序入口：命令行启动Web反馈界面
+    """主程序入口：命令行启动 Web UI（交互反馈界面）
 
     功能说明：
-        解析命令行参数，启动Web反馈界面，打印反馈结果。
+        解析命令行参数，启动 Web UI，并在用户提交后输出反馈结果。
 
     命令行参数：
-        --prompt: 向用户显示的提示信息（默认"我已经实现了您请求的更改。"）
-        --predefined-options: 预定义选项列表，用|||分隔
-        --task-id: 任务标识符
-        --auto-resubmit-timeout: 自动重新提交超时时间（秒，默认290秒，0表示禁用）
-        --output-file: 将反馈结果保存为JSON文件的路径
-        --host: Web服务器监听地址（默认"0.0.0.0"）
-        --port: Web服务器监听端口（默认8080）
+        --prompt: 向用户展示的提示/问题（支持 Markdown，默认"我已经实现了您请求的更改。"）
+        --predefined-options: 预定义选项列表（用 ||| 分隔）
+        --task-id: 任务 ID（可选；主要用于调试/脚本集成）
+        --auto-resubmit-timeout: 自动重调倒计时（秒，默认 290 秒；0 表示禁用）
+        --output-file: 将反馈结果保存为 JSON 文件的路径
+        --host: Web UI 监听地址（默认 "0.0.0.0"）
+        --port: Web UI 监听端口（默认 8080）
 
     执行流程：
         1. 创建ArgumentParser解析命令行参数
@@ -3608,23 +3608,29 @@ if __name__ == "__main__":
         - 服务器会阻塞直到用户提交反馈
         - 可通过Ctrl+C中断服务器
     """
-    parser = argparse.ArgumentParser(description="运行Web版反馈界面")
+    parser = argparse.ArgumentParser(description="运行 Web UI（交互反馈界面）")
     parser.add_argument(
-        "--prompt", default="我已经实现了您请求的更改。", help="向用户显示的提示信息"
+        "--prompt",
+        default="我已经实现了您请求的更改。",
+        help="向用户展示的提示/问题（支持 Markdown）",
     )
     parser.add_argument(
-        "--predefined-options", default="", help="预定义选项列表，用|||分隔"
+        "--predefined-options",
+        default="",
+        help="预定义选项列表（用 ||| 分隔；为空表示无选项）",
     )
-    parser.add_argument("--task-id", default=None, help="任务标识符")
+    parser.add_argument(
+        "--task-id", default=None, help="任务 ID（可选；主要用于调试/脚本集成）"
+    )
     parser.add_argument(
         "--auto-resubmit-timeout",
         type=int,
         default=290,
-        help="自动重新提交超时时间(秒)，0表示禁用",
+        help="自动重调倒计时（秒；0 表示禁用）",
     )
-    parser.add_argument("--output-file", help="将反馈结果保存为JSON文件的路径")
-    parser.add_argument("--host", default="0.0.0.0", help="Web服务器监听地址")
-    parser.add_argument("--port", type=int, default=8080, help="Web服务器监听端口")
+    parser.add_argument("--output-file", help="将反馈结果保存为 JSON 文件的路径")
+    parser.add_argument("--host", default="0.0.0.0", help="Web UI 监听地址")
+    parser.add_argument("--port", type=int, default=8080, help="Web UI 监听端口")
     args = parser.parse_args()
 
     predefined_options = (

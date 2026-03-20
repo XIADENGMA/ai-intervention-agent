@@ -1,7 +1,7 @@
 {
   "name": "ai-intervention-agent",
   "displayName": "AI Intervention Agent",
-  "description": "VSCode extension for AI Intervention Agent with multi-tab support and countdown display",
+  "description": "VS Code extension that embeds AI Intervention Agent in the sidebar to handle interactive_feedback workflows with multi-task tabs and countdown timers.",
   "version": "1.4.14",
   "icon": "icon.png",
   "engines": {
@@ -28,7 +28,7 @@
       "activitybar": [
         {
           "id": "aiInterventionAgent",
-          "title": "Intervention",
+          "title": "干预",
           "icon": "$(sparkle-filled)"
         }
       ]
@@ -45,7 +45,7 @@
     "commands": [
       {
         "command": "ai-intervention-agent.helloWorld",
-        "title": "Hello World"
+        "title": "AI Intervention Agent: 示例命令（调试）"
       },
       {
         "command": "ai-intervention-agent.openPanel",

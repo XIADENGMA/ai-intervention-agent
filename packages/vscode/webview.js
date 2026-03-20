@@ -1603,7 +1603,7 @@ class WebviewProvider {
             <!-- Loading state -->
             <div class="loading hidden" id="loadingState">
                 <div class="spinner"></div>
-                <div>正在连接服务器...</div>
+                <div>正在连接服务器…</div>
             </div>
 
             <!-- No content state -->
@@ -1615,10 +1615,10 @@ class WebviewProvider {
                     </svg>
                 </button>
                 <div class="no-content-icon" id="hourglass-lottie" aria-hidden="true">🌱</div>
-                <div class="title">无有效内容</div>
+                <div class="title">暂无交互反馈请求</div>
                 <div class="status-indicator-standalone">
                     <div class="breathing-light" id="statusLightStandalone" title="服务器连接状态"></div>
-                    <span id="statusTextStandalone">连接中...</span>
+                    <span id="statusTextStandalone">连接中…</span>
                 </div>
                 <div class="no-content-progress" id="noContentProgress">
                     <div class="no-content-progress-bar"></div>
@@ -1650,7 +1650,7 @@ class WebviewProvider {
                         <textarea
                             class="feedback-textarea"
                             id="feedbackText"
-                            placeholder="在此输入您的反馈（支持粘贴图片）..."
+                            placeholder="请输入反馈内容（支持粘贴图片）…"
                         ></textarea>
 
                         <!-- Hidden file input -->
@@ -1700,7 +1700,7 @@ class WebviewProvider {
                     <input type="checkbox" id="notifyEnabled">
                 </label>
                 <label class="settings-toggle">
-                    <span>Web 通知</span>
+                    <span>Web UI 通知</span>
                     <input type="checkbox" id="notifyWebEnabled">
                 </label>
                 <label class="settings-toggle">
@@ -1708,7 +1708,7 @@ class WebviewProvider {
                     <input type="checkbox" id="notifyMacOSNativeEnabled">
                 </label>
                 <label class="settings-toggle">
-                    <span>自动请求权限</span>
+                    <span>自动请求浏览器通知权限</span>
                     <input type="checkbox" id="notifyAutoRequestPermission">
                 </label>
                 <label class="settings-toggle">
@@ -1755,7 +1755,7 @@ class WebviewProvider {
                     </div>
                 </div>
                 <div class="settings-footer" id="settingsFooter">
-                    <span class="settings-footer-item">VSCode 插件 v${extensionVersion}</span>
+                    <span class="settings-footer-item">VS Code 插件 v${extensionVersion}</span>
                     <span class="settings-footer-sep">·</span>
                     <span class="settings-footer-item">GitHub:</span>
                     <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer">${githubUrlDisplay}</a>

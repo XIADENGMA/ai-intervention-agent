@@ -240,7 +240,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     let selectedOptions = [];
     let uploadedImages = [];
     let countdownTimer = null;
-    // 防止超时自动提交进入“失败重试风暴”（例如任务 remaining=0 且提交失败时反复触发）：每任务只允许自动提交一次
+    // 防止超时自动重调进入“失败重试风暴”（例如任务 remaining=0 且提交失败时反复触发）：每任务只允许自动重调一次
     let autoSubmitAttempted = {}; // task_id -> lastAttemptAt(ms)
     let pollingTimer = null;
     let remainingSeconds = 0;
@@ -1130,7 +1130,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
             tab.appendChild(taskId);
 
-            /* 为设置了自动提交超时的任务添加倒计时圆环显示 */
+            /* 为设置了自动重调超时的任务添加倒计时圆环显示 */
             if (task.auto_resubmit_timeout > 0) {
                 const countdown = document.createElement('div');
                 countdown.className = 'task-tab-countdown';
@@ -1200,14 +1200,14 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 logError('激活任务失败: HTTP ' + response.status);
                 vscode.postMessage({
                     type: 'showInfo',
-                    message: '切换任务失败: ' + taskId
+                    message: '切换任务失败：' + taskId
                 });
             }
         } catch (error) {
             logError('激活任务失败: ' + error.message);
             vscode.postMessage({
                 type: 'showInfo',
-                message: '切换任务失败: ' + error.message
+                message: '切换任务失败：' + error.message
             });
         }
     }
@@ -1465,7 +1465,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             lastRenderedOptions = '';
         }
 
-        /* 启动自动提交倒计时 - 超时后自动提交空反馈 */
+        /* 启动自动重调倒计时 - 超时后自动提交空反馈 */
         if (config.auto_resubmit_timeout && config.auto_resubmit_timeout > 0) {
             // 关键修复：只在任务变化或倒计时未运行时启动，避免被轮询无限重置
             if (config.task_id !== lastCountdownTaskId || !countdownTimer) {
@@ -1698,7 +1698,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             if (changed && settingsDirty && !settingsRemoteChangedWhileDirty) {
                 settingsRemoteChangedWhileDirty = true;
                 if (!silent && overlayOpen) {
-                    setSettingsHint('检测到配置已更新（你有未保存修改），为避免覆盖未自动同步', true);
+                    setSettingsHint('检测到配置已更新（当前有未保存修改），为避免覆盖，本次未自动同步', true);
                 }
             }
 
@@ -1812,7 +1812,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
     async function openSettings() {
         openSettingsOverlay();
-        setSettingsHint('加载中...', false);
+        setSettingsHint('加载中…', false);
 
         try {
             // 强制拉一次最新配置并渲染（打开面板时以服务端为准）
@@ -1846,7 +1846,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             }
 
             if (!silent) {
-                setSettingsHint('同步中...', false);
+                setSettingsHint('同步中…', false);
             }
 
             // 取消上一次自动保存请求（保留最新输入）
@@ -1918,7 +1918,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 return;
             }
 
-            setSettingsHint('已请求发送原生通知...', false, 1200);
+            setSettingsHint('已请求发送原生通知…', false, 1200);
             postNotificationEvent({
                 title: 'AI Intervention Agent 测试',
                 message: '这是一条 macOS 原生通知测试',
@@ -1938,7 +1938,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             const updates = collectSettingsForm();
             const merged = Object.assign({}, notificationSettings || {}, updates);
 
-            setSettingsHint('测试中...', false);
+            setSettingsHint('测试中…', false);
             const resp = await fetch(SERVER_URL + '/api/test-bark', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -2371,7 +2371,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         countdownTimer = setInterval(tick, 1000);
     }
 
-    /* 停止自动提交倒计时 - 用户提交反馈或切换任务时调用 */
+    /* 停止自动重调倒计时 - 用户提交反馈或切换任务时调用 */
     function stopCountdown() {
         if (countdownTimer) {
             clearInterval(countdownTimer);
@@ -2380,11 +2380,11 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         lastCountdownTaskId = null;  // 重置任务ID，允许下次重新启动
     }
 
-    // 自动提交（倒计时结束时触发）
+    // 自动重调（倒计时结束时触发）
     async function autoSubmit() {
         const taskId = lastCountdownTaskId;
-        log('倒计时结束，自动提交');
-        // 防止同一任务在“超时且提交失败”场景下反复触发自动提交（会导致 429 并阻塞手动提交）
+        log('倒计时结束，自动重调');
+        // 防止同一任务在“超时且提交失败”场景下反复触发自动重调（会导致 429 并阻塞手动提交）
         if (taskId && autoSubmitAttempted[taskId]) {
             stopCountdown();
             return;
@@ -2394,7 +2394,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         }
         stopCountdown();
 
-        // 自动提交前实时拉取一次配置，确保 resubmit_prompt 热更新能立刻生效
+        // 自动重调前实时拉取一次配置，确保 resubmit_prompt 热更新能立刻生效
         let defaultMessage = '请立即调用 interactive_feedback 工具';
         try {
             const prompts = await fetchFeedbackPrompts();
@@ -2448,7 +2448,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             if (submitBackoffUntilMs && now < submitBackoffUntilMs) {
                 const leftSec = Math.max(1, Math.ceil((submitBackoffUntilMs - now) / 1000));
                 submitBtn.disabled = true;
-                submitBtn.title = '提交过于频繁，请等待 ' + leftSec + 's';
+                submitBtn.title = '提交过于频繁，请等待 ' + leftSec + ' 秒';
 
                 submitBackoffTimer = setTimeout(() => {
                     submitBackoffTimer = null;
@@ -2485,7 +2485,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             if (submitBackoffUntilMs && now0 < submitBackoffUntilMs) {
                 const leftSec = Math.max(1, Math.ceil((submitBackoffUntilMs - now0) / 1000));
                 applySubmitBackoffUi();
-                vscode.postMessage({ type: 'showInfo', message: '提交过于频繁，请等待 ' + leftSec + 's 后再试' });
+                vscode.postMessage({ type: 'showInfo', message: '提交过于频繁，请等待 ' + leftSec + ' 秒后再试' });
                 return;
             }
         } catch (e) {
@@ -2612,8 +2612,8 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     applySubmitBackoffUi();
 
                     const hint = retryAfter
-                        ? ('，建议等待 ' + retryAfter + 's 后再试')
-                        : ('，建议等待 ' + cooldownSec + 's 后再试');
+                        ? ('，建议等待 ' + retryAfter + ' 秒后再试')
+                        : ('，建议等待 ' + cooldownSec + ' 秒后再试');
                     const msg = '提交过于频繁（HTTP 429）' + hint;
                     try {
                         vscode.postMessage({ type: 'log', level: 'warn', message: msg });
@@ -2633,15 +2633,15 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     return;
                 }
 
-                const msg = '提交失败: HTTP ' + response.status;
+                const msg = '提交失败（HTTP ' + response.status + '）';
                 logError(msg);
                 vscode.postMessage({ type: 'showInfo', message: msg });
             }
         } catch (error) {
-            logError('提交失败: ' + error.message);
+            logError('提交失败：' + error.message);
             vscode.postMessage({
                 type: 'showInfo',
-                message: '提交失败: ' + error.message
+                message: '提交失败：' + error.message
             });
         } finally {
             submitInFlight = false;

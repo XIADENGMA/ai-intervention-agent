@@ -284,7 +284,7 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
         })
       }
     } else {
-      element.textContent = '加载中...'
+      element.textContent = '加载中…'
     }
   })
 }
@@ -789,7 +789,7 @@ async function submitFeedback() {
   try {
     const submitBtn = document.getElementById('submit-btn')
     submitBtn.disabled = true
-    submitBtn.innerHTML = '提交中...'
+    submitBtn.innerHTML = '提交中…'
 
     // 使用 FormData 上传文件，避免 base64 编码
     const formData = new FormData()
@@ -868,7 +868,7 @@ async function submitFeedback() {
       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
         <path fill-rule="evenodd" clip-rule="evenodd" d="M3.29289 3.29289C3.68342 2.90237 4.31658 2.90237 4.70711 3.29289L10.7071 9.29289C11.0976 9.68342 11.0976 10.3166 10.7071 10.7071L4.70711 16.7071C4.31658 17.0976 3.68342 17.0976 3.29289 16.7071C2.90237 16.3166 2.90237 15.6834 3.29289 15.2929L8.58579 10L3.29289 4.70711C2.90237 4.31658 2.90237 3.68342 3.29289 3.29289ZM9.29289 3.29289C9.68342 2.90237 10.3166 2.90237 10.7071 3.29289L16.7071 9.29289C17.0976 9.68342 17.0976 10.3166 16.7071 10.7071L10.7071 16.7071C10.3166 17.0976 9.68342 17.0976 9.29289 16.7071C8.90237 16.3166 8.90237 15.6834 9.29289 15.2929L14.5858 10L9.29289 4.70711C8.90237 4.31658 8.90237 3.68342 9.29289 3.29289Z"/>
       </svg>
-      发送请求
+      提交反馈
     `
   }
 }
@@ -876,7 +876,7 @@ async function submitFeedback() {
 // 关闭界面 - 简化版本，统一刷新逻辑
 async function closeInterface() {
   try {
-    showStatus('正在关闭服务...', 'info')
+    showStatus('正在关闭 Web UI…', 'info')
 
     // 停止轮询
     stopContentPolling()
@@ -890,13 +890,13 @@ async function closeInterface() {
 
     const result = await response.json()
     if (response.ok) {
-      showStatus('服务已关闭，正在刷新页面...', 'success')
+      showStatus('Web UI 已关闭，正在刷新页面…', 'success')
     } else {
-      showStatus('关闭失败，正在刷新页面...', 'error')
+      showStatus('关闭失败，正在刷新页面…', 'error')
     }
   } catch (error) {
     console.error('关闭界面失败:', error)
-    showStatus('关闭界面失败，正在刷新页面...', 'error')
+    showStatus('关闭界面失败，正在刷新页面…', 'error')
   }
 
   // 无论成功还是失败，都在2秒后刷新页面
@@ -2448,7 +2448,7 @@ class SettingsManager {
       }
 
       // 显示发送中状态
-      showStatus('正在发送 Bark 测试通知...', 'info')
+      showStatus('正在发送 Bark 测试通知…', 'info')
 
       // 通过后端API发送Bark通知，避免CORS问题
       const response = await fetch('/api/test-bark', {
@@ -3146,7 +3146,7 @@ async function handleFileUpload(files) {
 
   // 显示批量处理进度
   if (fileArray.length > 1) {
-    showStatus(`正在处理 ${fileArray.length} 个文件...`, 'info')
+    showStatus(`正在处理 ${fileArray.length} 个文件…`, 'info')
   }
 
   // 分批处理文件，避免内存溢出
@@ -3557,12 +3557,12 @@ function checkBrowserCompatibility() {
 
   // 关键功能检查
   if (!features.fileAPI) {
-    showStatus('您的浏览器不支持文件API，部分功能可能无法使用', 'warning')
+    showStatus('当前浏览器不支持文件 API，部分功能可能无法使用', 'warning')
     return false
   }
 
   if (!features.canvas) {
-    showStatus('您的浏览器不支持Canvas，图片压缩功能将被禁用', 'warning')
+    showStatus('当前浏览器不支持 Canvas，图片压缩功能将被禁用', 'warning')
   }
 
   return true
