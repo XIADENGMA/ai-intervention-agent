@@ -5,9 +5,11 @@
 """
 
 import re
+import sys
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from importlib.util import find_spec
 from typing import Any, Dict
 
 import requests
@@ -372,6 +374,14 @@ class SystemNotificationProvider(BaseNotificationProvider):
     def _check_system_support(self):
         """尝试导入 plyer 设置 supported 状态"""
         try:
+            # macOS 下 plyer 依赖 pyobjus；若缺失，plyer 在导入阶段会向 stderr 打印 traceback，
+            # 但系统通知本身也无法使用。这里提前探测并跳过导入，避免在 test.py 等场景产生噪声。
+            if sys.platform == "darwin" and find_spec("pyobjus") is None:
+                self._notify = None
+                self.supported = False
+                logger.debug("系统通知不支持（macOS 缺少可选依赖 pyobjus）")
+                return
+
             from plyer import notification as plyer_notification
 
             self._notify = plyer_notification.notify
