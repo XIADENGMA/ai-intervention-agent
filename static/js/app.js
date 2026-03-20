@@ -1002,6 +1002,28 @@ class NotificationManager {
 
     this.initPromise = (async () => {
       console.log('初始化通知管理器...')
+      try {
+        const hostname =
+          window.location && typeof window.location.hostname === 'string'
+            ? window.location.hostname
+            : ''
+        const origin =
+          window.location && typeof window.location.origin === 'string'
+            ? window.location.origin
+            : ''
+        const secureContext =
+          typeof window.isSecureContext === 'boolean' ? window.isSecureContext : null
+        console.log(
+          '[通知环境] hostname:',
+          hostname,
+          'isSecureContext:',
+          secureContext,
+          'origin:',
+          origin
+        )
+      } catch (e) {
+        // ignore
+      }
       this.syncPermissionState()
 
       if (!this.isSupported) {
@@ -1027,13 +1049,13 @@ class NotificationManager {
     return (
       typeof navigator !== 'undefined' &&
       'serviceWorker' in navigator &&
-      window.isSecureContext
+      Boolean(window.isSecureContext)
     )
   }
 
   async registerServiceWorker() {
     if (!this.supportsServiceWorkerNotifications()) {
-      if (!window.isSecureContext) {
+      if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
         console.warn('当前不是安全上下文，无法注册通知 service worker')
       }
       return null
@@ -1056,6 +1078,12 @@ class NotificationManager {
 
   bindAutoPermissionRequest() {
     if (!this.isSupported) return
+
+    // 非安全上下文下无法弹出权限请求，避免绑定无意义的自动触发
+    if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
+      this.removeAutoPermissionRequestListeners()
+      return
+    }
 
     if (!this.config.autoRequestPermission || this.syncPermissionState() !== 'default') {
       this.removeAutoPermissionRequestListeners()
@@ -1119,6 +1147,11 @@ class NotificationManager {
     }
 
     if (this.permission === 'denied') {
+      return false
+    }
+
+    if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
+      console.warn('当前不是安全上下文，浏览器不会弹出通知权限请求')
       return false
     }
 
@@ -1216,6 +1249,22 @@ class NotificationManager {
     if (!this.isSupported) {
       console.warn('浏览器不支持通知，使用降级方案')
       this.showFallbackNotification(title, message, { ...options, reason: 'unsupported' })
+      return null
+    }
+
+    if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
+      const origin =
+        window.location && typeof window.location.origin === 'string'
+          ? window.location.origin
+          : ''
+      const host =
+        window.location && typeof window.location.host === 'string' ? window.location.host : ''
+      const where = origin || host || '当前页面'
+      this.showFallbackNotification(
+        '浏览器原生通知不可用',
+        `当前访问地址（${where}）不是安全上下文。请使用 HTTPS 或 localhost/127.0.0.1 访问后重试。`,
+        { ...options, reason: 'insecure_context' }
+      )
       return null
     }
 
@@ -1651,6 +1700,7 @@ class NotificationManager {
   showFallbackNotification(title, message, options = {}) {
     // 增强的降级方案：使用多种方式确保用户能收到通知
     console.log(`降级通知: ${title} - ${message}`)
+    const reason = options && typeof options === 'object' ? options.reason || 'unknown' : 'unknown'
 
     // 1. 尝试使用页面状态消息
     if (typeof showStatus === 'function') {
@@ -1661,7 +1711,7 @@ class NotificationManager {
     this.flashTitle(title)
 
     // 3. 尝试使用页面内弹窗（如果没有其他方式）
-    if (!this.isSupported || this.permission === 'denied') {
+    if (!this.isSupported || this.permission === 'denied' || reason === 'insecure_context') {
       this.showInPageNotification(title, message, options)
     }
 
@@ -1673,7 +1723,7 @@ class NotificationManager {
     this.recordFallbackEvent('notification', {
       title,
       message,
-      reason: options.reason || 'unknown'
+      reason
     })
   }
 
@@ -2101,15 +2151,44 @@ class SettingsManager {
 
   updateStatus() {
     // 更新状态信息（使用 SVG 图标替代 emoji）
+    const secureContext =
+      typeof window !== 'undefined' && typeof window.isSecureContext === 'boolean'
+        ? window.isSecureContext
+        : null
+    const origin =
+      typeof window !== 'undefined' &&
+      window.location &&
+      typeof window.location.origin === 'string'
+        ? window.location.origin
+        : ''
+
     const browserSupportHtml = notificationManager.isSupported
-      ? this.getStatusIcon('success') + '支持'
+      ? secureContext === false
+        ? this.getStatusIcon('warning') + '支持（受限）'
+        : this.getStatusIcon('success') + '支持'
       : this.getStatusIcon('error') + '不支持'
 
+    let secureContextHtml
+    if (secureContext === true) {
+      secureContextHtml =
+        this.getStatusIcon('success') + (origin ? `安全（${origin}）` : '安全')
+    } else if (secureContext === false) {
+      secureContextHtml =
+        this.getStatusIcon('warning') +
+        (origin
+          ? `非安全（${origin}，浏览器原生通知不可用）`
+          : '非安全（浏览器原生通知不可用）')
+    } else {
+      secureContextHtml = this.getStatusIcon('warning') + '未知'
+    }
+
     let permissionHtml
-    if (notificationManager.permission === 'granted') {
+    if (secureContext === false) {
+      permissionHtml = this.getStatusIcon('warning') + '受限（非安全上下文）'
+    } else if (notificationManager.permission === 'granted') {
       permissionHtml = this.getStatusIcon('success') + '已授权'
     } else if (notificationManager.permission === 'denied') {
-      permissionHtml = this.getStatusIcon('error') + '已拒绝'
+      permissionHtml = this.getStatusIcon('error') + '已拒绝（请在浏览器网站设置中允许）'
     } else {
       permissionHtml = this.getStatusIcon('warning') + '未请求'
     }
@@ -2136,6 +2215,10 @@ class SettingsManager {
     document.getElementById('browser-support-status').innerHTML = browserSupportHtml
     document.getElementById('notification-permission-status').innerHTML = permissionHtml
     document.getElementById('audio-status').innerHTML = audioStateHtml
+    const secureEl = document.getElementById('notification-secure-context-status')
+    if (secureEl) {
+      secureEl.innerHTML = secureContextHtml
+    }
   }
 
   initEventListeners() {
