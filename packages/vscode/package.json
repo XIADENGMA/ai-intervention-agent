@@ -79,7 +79,7 @@
     "check": "npm test && npm run package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.74.0",
+    "@types/vscode": "^1.110.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "eslint": "^9.34.0",
