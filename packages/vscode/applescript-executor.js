@@ -1,0 +1,189 @@
+const { exec } = require('child_process')
+
+const DEFAULT_TIMEOUT_MS = 8000
+const DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024
+const DEFAULT_OSASCRIPT_PATH = '/usr/bin/osascript'
+
+function isMacOS(platform = process.platform) {
+  return platform === 'darwin'
+}
+
+function sanitizeForLog(input, maxLen = 160) {
+  const text = (input ?? '').toString()
+  const singleLine = text.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!singleLine) return ''
+  if (singleLine.length <= maxLen) return singleLine
+  return `${singleLine.slice(0, maxLen)}…`
+}
+
+/**
+ * 将任意输入安全转换为 AppleScript 字符串字面量（带双引号）。
+ * 适用场景：需要把用户输入拼进 AppleScript 脚本时，避免破坏语法结构。
+ */
+function toAppleScriptStringLiteral(value) {
+  const raw = (value ?? '').toString()
+  const escaped = raw
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t')
+  return `"${escaped}"`
+}
+
+class AppleScriptExecutor {
+  constructor(opts = {}) {
+    this._logger = opts.logger || null
+    this._exec = typeof opts.execImpl === 'function' ? opts.execImpl : exec
+    this._timeoutMs = Number.isFinite(Number(opts.timeoutMs)) ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS
+    this._maxBufferBytes = Number.isFinite(Number(opts.maxBufferBytes))
+      ? Number(opts.maxBufferBytes)
+      : DEFAULT_MAX_BUFFER_BYTES
+    this._platform = typeof opts.platform === 'string' ? opts.platform : process.platform
+    this._osascriptPath = opts.osascriptPath ? String(opts.osascriptPath) : DEFAULT_OSASCRIPT_PATH
+  }
+
+  static isSupportedPlatform(platform = process.platform) {
+    return isMacOS(platform)
+  }
+
+  /**
+   * 执行 AppleScript，并返回 stdout（utf8）。
+   *
+   * 为降低命令注入风险：脚本内容通过 stdin 传入，不拼接到命令行参数里。
+   *
+   * @param {string} script AppleScript 源码
+   * @returns {Promise<string>} stdout
+   */
+  runAppleScript(script) {
+    const platform = this._platform || process.platform
+    if (!isMacOS(platform)) {
+      const err = new Error('Platform not supported')
+      err.code = 'PLATFORM_NOT_SUPPORTED'
+      return Promise.reject(err)
+    }
+
+    const body = (script ?? '').toString()
+    if (!body.trim()) {
+      const err = new Error('AppleScript 不能为空')
+      err.code = 'APPLE_SCRIPT_EMPTY'
+      return Promise.reject(err)
+    }
+
+    const timeoutMs = this._timeoutMs
+    const maxBufferBytes = this._maxBufferBytes
+    const cmd = `${this._osascriptPath} -`
+
+    try {
+      if (this._logger && typeof this._logger.debug === 'function') {
+        this._logger.debug(
+          `runAppleScript:start platform=${platform} timeoutMs=${timeoutMs} scriptLen=${body.length}`
+        )
+      }
+    } catch {
+      // ignore
+    }
+
+    return new Promise((resolve, reject) => {
+      let child
+      try {
+        child = this._exec(
+          cmd,
+          {
+            timeout: timeoutMs,
+            maxBuffer: maxBufferBytes,
+            encoding: 'utf8',
+            windowsHide: true
+          },
+          (error, stdout, stderr) => {
+            const errText = (stderr ?? '').toString().trim()
+            const outText = (stdout ?? '').toString()
+
+            if (error) {
+              const isTimeout = !!error.killed || error.signal === 'SIGTERM' || error.signal === 'SIGKILL'
+              const msg = errText || (error && error.message ? String(error.message) : 'AppleScript 执行失败')
+              const err = new Error(msg)
+              err.code = isTimeout ? 'APPLE_SCRIPT_TIMEOUT' : 'APPLE_SCRIPT_FAILED'
+              err.cause = error
+
+              try {
+                if (this._logger && typeof this._logger.warn === 'function') {
+                  this._logger.warn(
+                    `runAppleScript:fail code=${err.code} msg=${sanitizeForLog(msg)}`
+                  )
+                }
+              } catch {
+                // ignore
+              }
+
+              reject(err)
+              return
+            }
+
+            if (errText) {
+              const err = new Error(errText)
+              err.code = 'APPLE_SCRIPT_STDERR'
+
+              try {
+                if (this._logger && typeof this._logger.warn === 'function') {
+                  this._logger.warn(
+                    `runAppleScript:stderr msg=${sanitizeForLog(errText)}`
+                  )
+                }
+              } catch {
+                // ignore
+              }
+
+              reject(err)
+              return
+            }
+
+            try {
+              if (this._logger && typeof this._logger.debug === 'function') {
+                this._logger.debug(`runAppleScript:ok stdoutLen=${outText.length}`)
+              }
+            } catch {
+              // ignore
+            }
+
+            resolve(outText)
+          }
+        )
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e))
+        err.code = 'APPLE_SCRIPT_SPAWN_FAILED'
+
+        try {
+          if (this._logger && typeof this._logger.error === 'function') {
+            this._logger.error(`runAppleScript:spawn_failed ${sanitizeForLog(err.message)}`)
+          }
+        } catch {
+          // ignore
+        }
+
+        reject(err)
+        return
+      }
+
+      // 把脚本写入 stdin
+      try {
+        if (child && child.stdin) {
+          child.stdin.on('error', () => {
+            // ignore EPIPE 等
+          })
+          child.stdin.end(body, 'utf8')
+        }
+      } catch {
+        // ignore（回调里会收到失败信息）
+      }
+    })
+  }
+}
+
+module.exports = {
+  AppleScriptExecutor,
+  isMacOS,
+  sanitizeForLog,
+  toAppleScriptStringLiteral
+}
+

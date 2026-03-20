@@ -38,6 +38,11 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewJs.includes('webview-helpers.js'))
     assert.ok(webviewUi.includes('requestClipboardText'))
     assert.ok(webviewUi.includes('clipboardText'))
+    assert.ok(webviewJs.includes('id="notifyMacOSNativeEnabled"'))
+    assert.ok(webviewJs.includes('id="settingsTestNativeBtn"'))
+    // 阶段 C：统一 NotificationEvent 分发（Webview → Extension）
+    assert.ok(webviewUi.includes("type: 'notify'"))
+    assert.ok(webviewUi.includes('macos_native'))
 
     // 安全回归点：script-src 应使用 nonce（不应放开 unsafe-inline）
     assert.ok(webviewJs.includes("script-src 'nonce-${nonce}'"))
@@ -56,6 +61,7 @@ suite('Extension Test Suite', () => {
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
     assert.ok(extPkg.includes('ai-intervention-agent.logLevel'))
+    assert.ok(extPkg.includes('ai-intervention-agent.enableAppleScript'))
     assert.ok(extPkg.includes('http://localhost:8080'))
     assert.ok(webviewJs.includes('http://localhost:8080'))
     assert.ok(webviewJs.includes('overflow-wrap: anywhere;'))
@@ -175,5 +181,50 @@ suite('Extension Test Suite', () => {
 
     assert.strictEqual(lines.length, 1)
     assert.ok(/\[INFO\]\s+\[t\]\s+hello/.test(lines[0]))
+  })
+
+  test('AppleScript 配置应默认关闭且变更后立即生效', async () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
+
+    await ext.activate()
+
+    const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
+    const original = cfg.get('enableAppleScript')
+
+    try {
+      await cfg.update('enableAppleScript', false, vscode.ConfigurationTarget.Global)
+
+      await assert.rejects(
+        vscode.commands.executeCommand('ai-intervention-agent.runAppleScript', 'return "ok"'),
+        e => {
+          const msg = e && e.message ? String(e.message) : String(e)
+          assert.ok(msg.includes('enableAppleScript'))
+          return true
+        }
+      )
+
+      await cfg.update('enableAppleScript', true, vscode.ConfigurationTarget.Global)
+
+      if (process.platform === 'darwin') {
+        const out = await vscode.commands.executeCommand(
+          'ai-intervention-agent.runAppleScript',
+          'return "ok"'
+        )
+        assert.strictEqual(String(out).trim(), 'ok')
+      } else {
+        await assert.rejects(
+          vscode.commands.executeCommand('ai-intervention-agent.runAppleScript', 'return "ok"'),
+          e => {
+            const msg = e && e.message ? String(e.message) : String(e)
+            assert.ok(msg.includes('Platform not supported'))
+            return true
+          }
+        )
+      }
+    } finally {
+      const restore = typeof original === 'boolean' ? original : false
+      await cfg.update('enableAppleScript', restore, vscode.ConfigurationTarget.Global)
+    }
   })
 })

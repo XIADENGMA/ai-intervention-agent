@@ -29,6 +29,40 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# =========================
+# 日志脱敏（避免泄露密钥/Token）
+# =========================
+
+
+def _is_sensitive_config_key(key: str) -> bool:
+    lowered = (key or "").lower()
+    # 只做最小必要的脱敏：Bark device_key 等敏感标识一律不应出现在日志
+    return any(
+        token in lowered
+        for token in (
+            "device_key",
+            "devicekey",
+            "token",
+            "secret",
+            "password",
+            "passwd",
+            "api_key",
+            "apikey",
+            "private_key",
+        )
+    )
+
+
+def _sanitize_config_value_for_log(key: str, value: Any) -> str:
+    if _is_sensitive_config_key(key):
+        return "<redacted>"
+    try:
+        text = str(value)
+    except Exception:
+        return "<unprintable>"
+    # 避免日志过长
+    return text if len(text) <= 200 else (text[:200] + "...")
+
 
 class ReadWriteLock:
     """
@@ -343,18 +377,24 @@ class ConfigManager:
         return {
             "notification": {
                 "enabled": True,
+                "debug": False,
                 "web_enabled": True,
                 "auto_request_permission": True,
+                "system_enabled": False,
+                "macos_native_enabled": False,
                 "sound_enabled": True,
                 "sound_mute": False,
                 "sound_volume": 80,
                 "mobile_optimized": True,
                 "mobile_vibrate": True,
+                "retry_count": 3,
+                "retry_delay": 2,
                 "bark_enabled": False,
                 "bark_url": "https://api.day.app/push",
                 "bark_device_key": "",
                 "bark_icon": "",
                 "bark_action": "none",
+                "bark_timeout": 10,
             },
             "web_ui": {
                 "host": "127.0.0.1",  # 默认仅本地访问，提升安全性
@@ -1068,7 +1108,9 @@ class ConfigManager:
             # 性能优化：检查当前值是否与新值相同
             current_value = self.get(key)
             if current_value == value:
-                logger.debug(f"配置值未变化，跳过更新: {key} = {value}")
+                logger.debug(
+                    f"配置值未变化，跳过更新: {key} = {_sanitize_config_value_for_log(key, value)}"
+                )
                 return
 
             # 性能优化：使用缓冲机制
@@ -1094,7 +1136,9 @@ class ConfigManager:
                 self.invalidate_all_caches()
 
             changed = True
-            logger.debug(f"配置已更新: {key} = {value}")
+            logger.debug(
+                f"配置已更新: {key} = {_sanitize_config_value_for_log(key, value)}"
+            )
 
         # 【热更新】配置在内存中更新后，触发回调通知其他模块（在锁外执行，避免死锁）
         if changed:
@@ -1128,14 +1172,18 @@ class ConfigManager:
                 # 立即更新内存中的配置
                 for key, value in actual_changes.items():
                     self._set_config_value(key, value)
-                    logger.debug(f"配置已更新: {key} = {value}")
+                    logger.debug(
+                        f"配置已更新: {key} = {_sanitize_config_value_for_log(key, value)}"
+                    )
                 # 调度延迟保存（只调度一次）
                 self._save_config()
             else:
                 # 直接更新内存中的配置，不保存
                 for key, value in actual_changes.items():
                     self._set_config_value(key, value)
-                    logger.debug(f"配置已更新: {key} = {value}")
+                    logger.debug(
+                        f"配置已更新: {key} = {_sanitize_config_value_for_log(key, value)}"
+                    )
 
             # 【缓存优化】失效涉及到的 section 缓存，避免 get_section() 返回旧值
             for changed_key in actual_changes.keys():
@@ -1223,8 +1271,11 @@ class ConfigManager:
                 current_value = current_section.get(key)
                 if current_value != new_value:
                     has_changes = True
+                    full_key = f"{section}.{key}"
                     logger.debug(
-                        f"配置项 '{section}.{key}' 发生变化: {current_value} -> {new_value}"
+                        f"配置项 '{full_key}' 发生变化: "
+                        f"{_sanitize_config_value_for_log(full_key, current_value)} -> "
+                        f"{_sanitize_config_value_for_log(full_key, new_value)}"
                     )
 
             if not has_changes:

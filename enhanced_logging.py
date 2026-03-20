@@ -52,12 +52,16 @@ class LevelBasedStreamHandler:
 
     def __init__(self):
         """创建双 Handler 并配置脱敏和防注入"""
-        self.stdout_handler = logging.StreamHandler(sys.stderr)
+        # pytest 等环境可能会替换/关闭 sys.stderr（capture 结束后），导致后台线程日志触发
+        # "ValueError: I/O operation on closed file"。这里优先使用 sys.__stderr__（真实 stderr）
+        # 以避免测试结束后的异步日志污染输出。
+        stream = sys.__stderr__ if getattr(sys, "__stderr__", None) else sys.stderr
+        self.stdout_handler = logging.StreamHandler(stream)
         self.stdout_handler.setLevel(logging.DEBUG)
         self.stdout_handler.addFilter(self._stdout_filter)
 
         # WARNING和ERROR使用stderr
-        self.stderr_handler = logging.StreamHandler(sys.stderr)
+        self.stderr_handler = logging.StreamHandler(stream)
         self.stderr_handler.setLevel(logging.WARNING)
 
         # 设置安全格式化器

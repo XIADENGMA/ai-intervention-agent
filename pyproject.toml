@@ -88,6 +88,7 @@ include = [
     "/config_utils.py",
     "/enhanced_logging.py",
     "/file_validator.py",
+    "/notification_models.py",
     "/notification_manager.py",
     "/notification_providers.py",
     "/task_queue.py",

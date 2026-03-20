@@ -283,6 +283,20 @@ class TestWebFeedbackUINotificationConfig(unittest.TestCase):
         self.assertTrue(config["bark_enabled"])
         self.assertEqual(config["bark_device_key"], "test_key")
 
+    def test_update_notification_config_macos_native_enabled(self):
+        """测试更新 macOS 原生通知开关（VSCode 插件侧使用）"""
+        response = self.client.post(
+            "/api/update-notification-config",
+            data=json.dumps({"macosNativeEnabled": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.get("/api/get-notification-config")
+        self.assertEqual(response.status_code, 200)
+        config = json.loads(response.data)["config"]
+        self.assertTrue(bool(config.get("macos_native_enabled")))
+
     def test_update_notification_config_ignores_unknown_fields(self):
         """回归测试：非通知字段不应触发默认值覆盖"""
         response = self.client.post(
@@ -293,6 +307,17 @@ class TestWebFeedbackUINotificationConfig(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         result = json.loads(response.data)
         self.assertEqual(result["status"], "success")
+
+    def test_notify_new_tasks_endpoint(self):
+        """阶段 B：新任务通知触发端点应存在且可降级"""
+        response = self.client.post(
+            "/api/notify-new-tasks",
+            data=json.dumps({"count": 1, "taskIds": ["task-1"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.data)
+        self.assertIn(payload.get("status"), ("success", "skipped"))
 
 
 # ============================================================================

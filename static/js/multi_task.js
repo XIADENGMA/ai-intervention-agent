@@ -1888,40 +1888,51 @@ function showNewTaskVisualHint(count) {
 /**
  * 显示新任务通知
  *
- * 保留的函数，用于向后兼容。浏览器通知功能已禁用。
+ * 保留的函数，用于向后兼容。阶段 B 起统一通过前端“通知中心”入口派发事件。
  *
  * @param {number} count - 新任务数量（未使用）
+ * @param {string[]=} taskIds - 可选：新任务 ID 列表（用于更精准的通知文案/去重）
  *
  * ## 功能说明
  *
- * - 此函数当前为空实现
- * - 保留是为了避免破坏现有调用
- * - 浏览器通知功能已移除
+ * - 优先调用 `notificationManager.dispatchEvent()`（由 `static/js/app.js` 提供）
+ * - 桌面端使用视觉提示（Visual Hint）
+ * - 移动端在配置允许时优先触发 Bark（由后端端点执行，避免前端直连 Bark）
  *
  * ## 历史说明
  *
- * - 原用途：显示浏览器桌面通知
- * - 移除原因：用户体验不佳、权限要求
- * - 替代方案：使用视觉提示（showNewTaskVisualHint）
+ * - 原用途：显示浏览器桌面通知（Web Notification API）
+ * - 现方案：收敛为统一事件派发，由通知中心根据环境/配置做路由与降级
  *
  * ## 注意事项
  *
- * - 不执行任何操作
- * - 可以安全调用
- * - 未来可能会移除
+ * - 任何通知失败不应影响轮询主流程
+ * - `notificationManager` 不存在时会自动降级为仅显示视觉提示
  */
-function showNewTaskNotification(count) {
-  showNewTaskVisualHint(count)
+function showNewTaskNotification(count, taskIds) {
+  try {
+    if (
+      typeof notificationManager !== 'undefined' &&
+      notificationManager &&
+      typeof notificationManager.dispatchEvent === 'function'
+    ) {
+      notificationManager.dispatchEvent({
+        type: 'new_tasks',
+        count: typeof count === 'number' ? count : Number(count),
+        taskIds: Array.isArray(taskIds) ? taskIds : [],
+        dedupeKey: 'bark:new_tasks'
+      })
+      return
+    }
+  } catch (e) {
+    // ignore
+  }
 
-  if (typeof notificationManager !== 'undefined') {
-    notificationManager
-      .sendNotification('AI Intervention Agent', `收到 ${count} 个新任务`, {
-        tag: 'new-tasks',
-        requireInteraction: false
-      })
-      .catch(error => {
-        console.warn('发送新任务通知失败:', error)
-      })
+  // 降级：仅展示视觉提示
+  try {
+    showNewTaskVisualHint(count)
+  } catch (e) {
+    // ignore
   }
 }
 

@@ -886,6 +886,7 @@ class WebFeedbackUI:
 
             **通知API**：
                 - POST /api/test-bark                - 测试Bark通知
+                - POST /api/notify-new-tasks         - 新任务通知触发（移动端 Bark）
                 - POST /api/update-notification-config - 更新通知配置
                 - GET  /api/get-notification-config  - 获取通知配置
 
@@ -2094,6 +2095,111 @@ class WebFeedbackUI:
                     {"status": "error", "message": f"测试失败: {str(e)}"}
                 ), 500
 
+        @self.app.route("/api/notify-new-tasks", methods=["POST"])
+        def notify_new_tasks():
+            """新任务通知触发端点（阶段 B）
+
+            目标：
+                - Web 侧统一“新任务事件”触发入口（给移动端 Bark 使用）
+                - 通过后端通知系统发送 Bark，避免前端直连 Bark 服务
+                - 任何失败均应优雅降级，不影响前端轮询主流程
+
+            请求体（JSON）：
+                - count: 新任务数量（可选，优先使用；非数字时回退为 taskIds 长度）
+                - taskIds: 新任务 ID 列表（可选，用于更精准文案/去重）
+
+            返回值：
+                - {"status":"success","event_id":"..."}  已触发发送
+                - {"status":"skipped","message":"..."}   配置不允许/数据无效/通知系统不可用
+                - {"status":"error","message":"..."}     发生异常（已捕获）
+            """
+            try:
+                data = request.json or {}
+
+                raw_task_ids = data.get("taskIds", data.get("task_ids", []))
+                task_ids: list[str] = []
+                if isinstance(raw_task_ids, list):
+                    for item in raw_task_ids[:50]:
+                        if item is None:
+                            continue
+                        s = str(item)
+                        if not s:
+                            continue
+                        task_ids.append(s[:200])
+
+                raw_count = data.get("count")
+                count = 0
+                if isinstance(raw_count, (int, float)):
+                    try:
+                        count = int(raw_count)
+                    except Exception:
+                        count = 0
+                if count <= 0:
+                    count = len(task_ids)
+
+                if count <= 0:
+                    return jsonify({"status": "skipped", "message": "count=0，已忽略"})
+
+                if not NOTIFICATION_AVAILABLE:
+                    return jsonify(
+                        {"status": "skipped", "message": "通知系统不可用，已降级"}
+                    )
+
+                # 尝试刷新配置（避免配置文件在其他进程更新后不同步）
+                try:
+                    notification_manager.refresh_config_from_file()
+                except Exception:
+                    pass
+
+                cfg = getattr(notification_manager, "config", None)
+                if not cfg or not getattr(cfg, "enabled", True):
+                    return jsonify(
+                        {"status": "skipped", "message": "通知总开关未开启，已忽略"}
+                    )
+
+                if not getattr(cfg, "bark_enabled", False):
+                    return jsonify(
+                        {"status": "skipped", "message": "Bark 未启用，已忽略"}
+                    )
+
+                if not getattr(cfg, "bark_device_key", ""):
+                    return jsonify(
+                        {"status": "skipped", "message": "bark_device_key 为空，已忽略"}
+                    )
+
+                title = "AI Intervention Agent"
+                message = (
+                    f"新任务已添加: {task_ids[0]}"
+                    if count == 1 and task_ids
+                    else f"收到 {count} 个新任务"
+                )
+
+                event_id = notification_manager.send_notification(
+                    title=title,
+                    message=message,
+                    trigger=NotificationTrigger.IMMEDIATE,
+                    types=[NotificationType.BARK],
+                    metadata={
+                        "source": "web_ui",
+                        "event": "new_tasks",
+                        "count": count,
+                        "task_ids": task_ids,
+                    },
+                    priority="normal",
+                )
+
+                if not event_id:
+                    return jsonify(
+                        {"status": "skipped", "message": "通知未触发（可能已禁用）"}
+                    )
+
+                return jsonify({"status": "success", "event_id": event_id})
+            except Exception as e:
+                logger.error(f"触发新任务通知失败: {e}")
+                return jsonify(
+                    {"status": "error", "message": f"触发失败: {str(e)}"}
+                ), 500
+
         @self.app.route("/api/update-notification-config", methods=["POST"])
         def update_notification_config():
             """更新通知配置的API端点
@@ -2105,6 +2211,7 @@ class WebFeedbackUI:
                 - enabled: 通知总开关
                 - webEnabled: Web通知开关
                 - autoRequestPermission: 自动请求权限
+                - macosNativeEnabled: macOS 原生通知开关（由 VSCode 插件侧触发）
                 - soundEnabled: 声音提示开关
                 - soundMute: 静音开关
                 - soundVolume: 音量（0-100）
@@ -2187,6 +2294,13 @@ class WebFeedbackUI:
                             ("autoRequestPermission", "auto_request_permission"),
                             "web_permission_auto_request",
                             "auto_request_permission",
+                            lambda v: v,
+                            lambda v: v,
+                        ),
+                        (
+                            ("macosNativeEnabled", "macos_native_enabled"),
+                            "macos_native_enabled",
+                            "macos_native_enabled",
                             lambda v: v,
                             lambda v: v,
                         ),
@@ -2322,6 +2436,7 @@ class WebFeedbackUI:
                     - enabled: 通知总开关
                     - web_enabled: Web通知开关
                     - auto_request_permission: 自动请求权限
+                    - macos_native_enabled: macOS 原生通知开关（由 VSCode 插件侧触发）
                     - sound_enabled: 声音提示开关
                     - sound_mute: 静音开关
                     - sound_volume: 音量（0-100）

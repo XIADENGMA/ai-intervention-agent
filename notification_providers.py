@@ -6,6 +6,7 @@
 
 import re
 import time
+from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any, Dict
 
@@ -13,16 +14,30 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from enhanced_logging import EnhancedLogger
-from notification_manager import NotificationEvent, NotificationType
+from notification_models import NotificationEvent, NotificationType
 
 logger = EnhancedLogger(__name__)
 
 
-class WebNotificationProvider:
-    """Web 浏览器通知 - 准备通知数据到 event.metadata 供前端轮询展示。"""
+class BaseNotificationProvider(ABC):
+    """通知 Provider 抽象基类（阶段 A：统一接口与可观测性基线）。"""
+
+    notification_type: NotificationType
 
     def __init__(self, config):
         self.config = config
+
+    @abstractmethod
+    def send(self, event: NotificationEvent) -> bool:
+        """发送/准备通知。失败返回 False，异常应在内部捕获并降级为 False。"""
+
+
+class WebNotificationProvider(BaseNotificationProvider):
+    """Web 浏览器通知 - 准备通知数据到 event.metadata 供前端轮询展示。"""
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.notification_type = NotificationType.WEB
         self.web_clients: Dict[str, Any] = {}
 
     def register_client(self, client_id: str, client_info: Dict[str, Any]):
@@ -81,11 +96,12 @@ class WebNotificationProvider:
             return False
 
 
-class SoundNotificationProvider:
+class SoundNotificationProvider(BaseNotificationProvider):
     """声音通知 - 准备音频数据到 event.metadata 供前端播放。"""
 
     def __init__(self, config):
-        self.config = config
+        super().__init__(config)
+        self.notification_type = NotificationType.SOUND
         self.sound_files = {"default": "deng[噔].mp3", "deng": "deng[噔].mp3"}
 
     def send(self, event: NotificationEvent) -> bool:
@@ -126,7 +142,7 @@ class SoundNotificationProvider:
             return False
 
 
-class BarkNotificationProvider:
+class BarkNotificationProvider(BaseNotificationProvider):
     """Bark iOS 推送 - 通过 HTTP POST 发送通知到 Bark 服务器。"""
 
     # 【优化】类级别常量：元数据保留键（所有实例共享，不可变）
@@ -156,7 +172,8 @@ class BarkNotificationProvider:
 
     def __init__(self, config):
         """初始化 Session 连接池（3次重试）"""
-        self.config = config
+        super().__init__(config)
+        self.notification_type = NotificationType.BARK
         self.session = requests.Session()
         adapter = HTTPAdapter(max_retries=3)
         self.session.mount("http://", adapter)
@@ -342,12 +359,13 @@ class BarkNotificationProvider:
             return False
 
 
-class SystemNotificationProvider:
+class SystemNotificationProvider(BaseNotificationProvider):
     """系统通知 - 通过 plyer 库发送跨平台桌面通知（可选依赖）。"""
 
     def __init__(self, config):
         """检查 plyer 库是否可用"""
-        self.config = config
+        super().__init__(config)
+        self.notification_type = NotificationType.SYSTEM
         self._notify: Callable[..., Any] | None = None
         self._check_system_support()
 

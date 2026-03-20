@@ -1,6 +1,7 @@
 const vscode = require('vscode')
 const { WebviewProvider } = require('./webview')
 const { createLogger } = require('./logger')
+const { AppleScriptExecutor, toAppleScriptStringLiteral } = require('./applescript-executor')
 
 /**
  * AI Intervention Agent VSCode Extension
@@ -57,6 +58,59 @@ function activate(context) {
     }
   })
   let serverUrl = getConfiguredServerUrl()
+
+  const appleScriptLogger = logger.child('applescript')
+  const appleScriptExecutor = new AppleScriptExecutor({ logger: appleScriptLogger })
+
+  const isAppleScriptEnabled = () => {
+    try {
+      const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
+      return !!cfg.get('enableAppleScript', false)
+    } catch {
+      return false
+    }
+  }
+
+  const runAppleScriptGuarded = async script => {
+    if (!isAppleScriptEnabled()) {
+      const msg =
+        'AppleScript 执行未启用：请在设置中打开 ai-intervention-agent.enableAppleScript'
+      const err = new Error(msg)
+      err.code = 'APPLE_SCRIPT_DISABLED'
+      try {
+        appleScriptLogger.warn(msg)
+      } catch {
+        // ignore
+      }
+      vscode.window.showErrorMessage(msg)
+      throw err
+    }
+
+    try {
+      const out = await appleScriptExecutor.runAppleScript(script)
+      return out
+    } catch (e) {
+      const code = e && e.code ? String(e.code) : ''
+      const raw = e && e.message ? String(e.message) : String(e)
+      const msg =
+        code === 'PLATFORM_NOT_SUPPORTED'
+          ? 'Platform not supported'
+          : code === 'APPLE_SCRIPT_TIMEOUT'
+            ? 'AppleScript 执行超时'
+            : raw
+              ? `AppleScript 执行失败：${raw}`
+              : 'AppleScript 执行失败'
+      try {
+        appleScriptLogger.warn(
+          `执行失败 code=${code || 'unknown'} msg=${raw || ''}`.trim()
+        )
+      } catch {
+        // ignore
+      }
+      vscode.window.showErrorMessage(msg)
+      throw e
+    }
+  }
 
   // 启动日志（精简、分级）
   logger.info(`AI Intervention Agent v${EXT_VERSION} 已启动`)
@@ -289,9 +343,28 @@ function activate(context) {
     }
   })
 
+  // 命令：执行 AppleScript（仅用于受控调用；默认需要 enableAppleScript 开关）
+  const runAppleScriptDisposable = vscode.commands.registerCommand(
+    'ai-intervention-agent.runAppleScript',
+    async function (script) {
+      return await runAppleScriptGuarded(script)
+    }
+  )
+
+  // 命令：测试 macOS 通知（AppleScript）
+  const testAppleScriptNotificationDisposable = vscode.commands.registerCommand(
+    'ai-intervention-agent.testAppleScriptNotification',
+    async function () {
+      const script = `display notification ${toAppleScriptStringLiteral('Hello')} with title ${toAppleScriptStringLiteral('AI Agent')}`
+      return await runAppleScriptGuarded(script)
+    }
+  )
+
   context.subscriptions.push(disposable)
   context.subscriptions.push(openPanelDisposable)
   context.subscriptions.push(openSettingsDisposable)
+  context.subscriptions.push(runAppleScriptDisposable)
+  context.subscriptions.push(testAppleScriptNotificationDisposable)
   context.subscriptions.push(outputChannel)
   context.subscriptions.push(statusBar)
   context.subscriptions.push({

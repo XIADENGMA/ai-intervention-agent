@@ -8,8 +8,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 try:
@@ -21,31 +20,18 @@ except ImportError:
 
 from config_utils import clamp_dataclass_field, validate_enum_value
 from enhanced_logging import EnhancedLogger
+from notification_models import (
+    NotificationEvent,
+    NotificationPriority,
+    NotificationTrigger,
+    NotificationType,
+)
 
-# 注意：BarkNotificationProvider 使用延迟导入，避免循环导入问题
-# notification_manager.py <-> notification_providers.py 存在相互依赖
-# 延迟导入在 _update_bark_provider() 方法中实现
+# 说明：
+# - 通知事件/枚举已抽到 notification_models.py，避免 manager/provider 循环依赖
+# - BarkProvider 仍采用延迟导入：仅在需要时加载，降低启动时开销与依赖耦合
 
 logger = EnhancedLogger(__name__)
-
-
-class NotificationType(Enum):
-    """通知类型枚举：WEB(浏览器)、SOUND(声音)、BARK(iOS推送)、SYSTEM(系统)"""
-
-    WEB = "web"
-    SOUND = "sound"
-    BARK = "bark"
-    SYSTEM = "system"
-
-
-class NotificationTrigger(Enum):
-    """通知触发时机：立即/延迟/重复/反馈收到/错误"""
-
-    IMMEDIATE = "immediate"
-    DELAYED = "delayed"
-    REPEAT = "repeat"
-    FEEDBACK_RECEIVED = "feedback_received"
-    ERROR = "error"
 
 
 @dataclass
@@ -90,6 +76,13 @@ class NotificationConfig:
     bark_icon: str = ""  # Bark 通知图标 URL
     bark_action: str = "none"  # Bark 通知点击动作
     bark_timeout: int = 10  # Bark 请求超时（秒）
+
+    # ==================== 系统/平台原生通知 ====================
+    # 说明：
+    # - SystemProvider(plyer) 属于可选依赖，默认关闭，启用后在支持的平台尝试发送桌面通知
+    # - macos_native_enabled 当前主要由 VSCode 插件侧使用；Python 核心侧保留字段用于配置一致性
+    system_enabled: bool = False  # 启用 plyer 系统通知（可选）
+    macos_native_enabled: bool = False  # macOS 原生通知开关（插件侧）
 
     # ==================== 边界常量 ====================
     SOUND_VOLUME_MIN: float = 0.0
@@ -200,22 +193,11 @@ class NotificationConfig:
             bark_icon=str(notification_config.get("bark_icon", "")),
             bark_action=str(notification_config.get("bark_action", "none")),
             bark_timeout=bark_timeout,
+            system_enabled=bool(notification_config.get("system_enabled", False)),
+            macos_native_enabled=bool(
+                notification_config.get("macos_native_enabled", False)
+            ),
         )
-
-
-@dataclass
-class NotificationEvent:
-    """通知事件 - 封装一次通知的标题/消息/类型/触发时机/重试信息。"""
-
-    id: str
-    title: str
-    message: str
-    trigger: NotificationTrigger
-    types: List[NotificationType] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    timestamp: float = field(default_factory=time.time)
-    retry_count: int = 0
-    max_retries: int = 3
 
 
 class NotificationManager:
@@ -337,6 +319,7 @@ class NotificationManager:
         trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE,
         types: Optional[List[NotificationType]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        priority: NotificationPriority | str = NotificationPriority.NORMAL,
     ) -> str:
         """发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。"""
         if not self.config.enabled:
@@ -360,6 +343,18 @@ class NotificationManager:
                 types.append(NotificationType.SOUND)
             if self.config.bark_enabled:
                 types.append(NotificationType.BARK)
+            if self.config.system_enabled:
+                types.append(NotificationType.SYSTEM)
+
+        # 兼容：priority 支持传入字符串（例如 "high"）
+        event_priority = NotificationPriority.NORMAL
+        if isinstance(priority, NotificationPriority):
+            event_priority = priority
+        elif isinstance(priority, str):
+            try:
+                event_priority = NotificationPriority(priority)
+            except Exception:
+                event_priority = NotificationPriority.NORMAL
 
         # 创建通知事件
         event = NotificationEvent(
@@ -370,6 +365,7 @@ class NotificationManager:
             types=types,
             metadata=metadata or {},
             max_retries=self.config.retry_count,
+            priority=event_priority,
         )
 
         # 【可观测性】记录事件创建（只计一次，不随重试重复）
@@ -585,6 +581,30 @@ class NotificationManager:
         provider = self._providers.get(notification_type)
         if not provider:
             logger.debug(f"未找到通知提供者: {notification_type.value}")
+            # 【可观测性】即便 provider 缺失，也记录一次失败（避免“静默丢失”）
+            try:
+                with self._stats_lock:
+                    providers = self._stats.setdefault("providers", {})
+                    stats = providers.setdefault(
+                        notification_type.value,
+                        {
+                            "attempts": 0,
+                            "success": 0,
+                            "failure": 0,
+                            "last_success_at": None,
+                            "last_failure_at": None,
+                            "last_error": None,
+                            "last_latency_ms": None,
+                            "latency_ms_total": 0,
+                            "latency_ms_count": 0,
+                        },
+                    )
+                    stats["attempts"] += 1
+                    stats["failure"] += 1
+                    stats["last_failure_at"] = time.time()
+                    stats["last_error"] = "provider_not_registered"
+            except Exception:
+                pass
             return False
 
         try:
@@ -601,18 +621,23 @@ class NotificationManager:
                             "last_success_at": None,
                             "last_failure_at": None,
                             "last_error": None,
+                            "last_latency_ms": None,
+                            "latency_ms_total": 0,
+                            "latency_ms_count": 0,
                         },
                     )
                     stats["attempts"] += 1
             except Exception:
                 pass
 
+            started_at = time.time()
             # 调用提供者的发送方法
             if hasattr(provider, "send"):
                 ok = bool(provider.send(event))
             else:
                 logger.error(f"通知提供者缺少send方法: {notification_type.value}")
                 ok = False
+            latency_ms = max(int((time.time() - started_at) * 1000), 0)
 
             # 【可观测性】记录结果与最近错误
             try:
@@ -627,9 +652,19 @@ class NotificationManager:
                             "last_success_at": None,
                             "last_failure_at": None,
                             "last_error": None,
+                            "last_latency_ms": None,
+                            "latency_ms_total": 0,
+                            "latency_ms_count": 0,
                         },
                     )
                     now = time.time()
+                    stats["last_latency_ms"] = latency_ms
+                    stats["latency_ms_total"] = int(
+                        stats.get("latency_ms_total", 0) or 0
+                    ) + int(latency_ms)
+                    stats["latency_ms_count"] = (
+                        int(stats.get("latency_ms_count", 0) or 0) + 1
+                    )
                     if ok:
                         stats["success"] += 1
                         stats["last_success_at"] = now
@@ -668,6 +703,9 @@ class NotificationManager:
                             "last_success_at": None,
                             "last_failure_at": None,
                             "last_error": None,
+                            "last_latency_ms": None,
+                            "latency_ms_total": 0,
+                            "latency_ms_count": 0,
                         },
                     )
                     stats["failure"] += 1
@@ -787,6 +825,7 @@ class NotificationManager:
                 self.config.enabled = safe_bool(
                     notification_config.get("enabled"), True
                 )
+                self.config.debug = safe_bool(notification_config.get("debug"), False)
                 self.config.web_enabled = safe_bool(
                     notification_config.get("web_enabled"), True
                 )
@@ -835,6 +874,20 @@ class NotificationManager:
                     safe_number(notification_config.get("bark_timeout"), 10, 1, 300)
                 )
 
+                # 系统/平台原生通知（可选）
+                self.config.system_enabled = safe_bool(
+                    notification_config.get("system_enabled"), False
+                )
+                self.config.macos_native_enabled = safe_bool(
+                    notification_config.get("macos_native_enabled"), False
+                )
+
+                # 触发一次配置自校验（边界收敛/枚举修正）
+                try:
+                    self.config.__post_init__()
+                except Exception:
+                    pass
+
                 logger.debug("已从配置文件刷新通知配置（带类型验证）")
 
                 # 如果 bark_enabled 状态发生变化，动态更新提供者
@@ -858,11 +911,22 @@ class NotificationManager:
         # 【线程安全】使用配置锁保护配置更新操作
         with self._config_lock:
             bark_was_enabled = self.config.bark_enabled
+            sensitive_keys = {"bark_device_key"}
 
             for key, value in kwargs.items():
                 if hasattr(self.config, key):
                     setattr(self.config, key, value)
-                    logger.debug(f"配置已更新: {key} = {value}")
+                    if key in sensitive_keys:
+                        logger.debug(f"配置已更新: {key} = <redacted>")
+                    else:
+                        logger.debug(f"配置已更新: {key} = {value}")
+
+            # 触发一次配置自校验（边界收敛/枚举修正），避免“热更新后状态失真”
+            try:
+                self.config.__post_init__()
+            except Exception:
+                # 配置校验失败不应影响主流程
+                pass
 
             # 如果Bark配置发生变化，动态更新提供者
             bark_now_enabled = self.config.bark_enabled
@@ -912,8 +976,11 @@ class NotificationManager:
             # 构建配置字典
             notification_config = {
                 "enabled": self.config.enabled,
+                "debug": self.config.debug,
                 "web_enabled": self.config.web_enabled,
                 "auto_request_permission": self.config.web_permission_auto_request,
+                "system_enabled": self.config.system_enabled,
+                "macos_native_enabled": self.config.macos_native_enabled,
                 "sound_enabled": self.config.sound_enabled,
                 "sound_mute": self.config.sound_mute,
                 "sound_volume": sound_volume_int,
@@ -951,6 +1018,39 @@ class NotificationManager:
                     k: v for k, v in self._stats.items() if k != "providers"
                 }
                 stats_snapshot["providers"] = providers_stats
+                # 计算派生指标（阶段 A：delivery_success_rate 等）
+                try:
+                    succeeded = int(stats_snapshot.get("events_succeeded", 0) or 0)
+                    failed = int(stats_snapshot.get("events_failed", 0) or 0)
+                    total = int(stats_snapshot.get("events_total", 0) or 0)
+                    finalized = succeeded + failed
+                    in_flight = max(total - finalized, 0)
+
+                    stats_snapshot["events_finalized"] = finalized
+                    stats_snapshot["events_in_flight"] = in_flight
+                    stats_snapshot["delivery_success_rate"] = (
+                        round(succeeded / finalized, 4) if finalized > 0 else None
+                    )
+                except Exception:
+                    pass
+
+                # 提供者级别 success_rate（不影响主流程）
+                try:
+                    for _, st in providers_stats.items():
+                        attempts = int(st.get("attempts", 0) or 0)
+                        success = int(st.get("success", 0) or 0)
+                        st["success_rate"] = (
+                            round(success / attempts, 4) if attempts > 0 else None
+                        )
+                        latency_cnt = int(st.get("latency_ms_count", 0) or 0)
+                        latency_total = int(st.get("latency_ms_total", 0) or 0)
+                        st["avg_latency_ms"] = (
+                            round(latency_total / latency_cnt, 2)
+                            if latency_cnt > 0
+                            else None
+                        )
+                except Exception:
+                    pass
         except Exception:
             stats_snapshot = {}
 
@@ -962,6 +1062,8 @@ class NotificationManager:
                 "web_enabled": self.config.web_enabled,
                 "sound_enabled": self.config.sound_enabled,
                 "bark_enabled": self.config.bark_enabled,
+                "system_enabled": self.config.system_enabled,
+                "macos_native_enabled": self.config.macos_native_enabled,
                 "retry_count": self.config.retry_count,
                 "retry_delay": self.config.retry_delay,
                 "bark_timeout": self.config.bark_timeout,

@@ -2,6 +2,13 @@ const vscode = require('vscode')
 const fs = require('fs')
 const path = require('path')
 const { createLogger } = require('./logger')
+const { AppleScriptExecutor } = require('./applescript-executor')
+const { NotificationCenter } = require('./notification-center')
+const { NotificationType } = require('./notification-models')
+const {
+  VSCodeApiNotificationProvider,
+  AppleScriptNotificationProvider
+} = require('./notification-providers')
 
 // 扩展元信息（用于在 Webview 中显示版本号 / GitHub）
 const EXT_GITHUB_URL = 'https://github.com/XIADENGMA/ai-intervention-agent'
@@ -46,6 +53,21 @@ class WebviewProvider {
         }
       }
     })
+    this._appleScriptLogger = this._logger.child('applescript')
+    this._appleScriptExecutor = new AppleScriptExecutor({ logger: this._appleScriptLogger })
+    this._notificationLogger = this._logger.child('notify')
+    this._notificationCenter = new NotificationCenter({ logger: this._notificationLogger })
+    this._notificationCenter.registerProvider(
+      NotificationType.VSCODE,
+      new VSCodeApiNotificationProvider({ logger: this._notificationLogger.child('vscode') })
+    )
+    this._notificationCenter.registerProvider(
+      NotificationType.MACOS_NATIVE,
+      new AppleScriptNotificationProvider({
+        logger: this._appleScriptLogger,
+        executor: this._appleScriptExecutor
+      })
+    )
     this._serverUrl = serverUrl
     this._onVisibilityChanged = typeof onVisibilityChanged === 'function' ? onVisibilityChanged : null
     this._view = null
@@ -282,16 +304,72 @@ class WebviewProvider {
           // ignore
         }
         break
+      case 'notify':
+        this._handleNotify(message)
+        break
       case 'showInfo':
-        vscode.window.setStatusBarMessage(`$(info) ${message.message}`, 3000)
+        this._dispatchNotificationEvent({
+          title: 'AI Intervention Agent',
+          message: message && message.message ? String(message.message) : '',
+          trigger: 'immediate',
+          types: [NotificationType.VSCODE],
+          metadata: { presentation: 'statusBar', severity: 'info', timeoutMs: 3000 },
+          source: 'webview',
+          dedupeKey:
+            message && message.message
+              ? `status:${String(message.message).slice(0, 200)}`
+              : ''
+        })
         break
       case 'requestClipboardText':
         this._handleRequestClipboardText(message)
+        break
+      case 'showMacOSNativeNotification':
+        this._handleShowMacOSNativeNotification(message)
         break
       default:
         // 忽略未知消息类型
         break
     }
+  }
+
+  _dispatchNotificationEvent(event) {
+    try {
+      if (!this._notificationCenter || typeof this._notificationCenter.dispatch !== 'function') return
+      Promise.resolve()
+        .then(() => this._notificationCenter.dispatch(event))
+        .catch(() => {})
+    } catch {
+      // ignore
+    }
+  }
+
+  _handleNotify(message) {
+    const event = message && message.event ? message.event : null
+    if (!event) return
+    this._dispatchNotificationEvent(event)
+  }
+
+  _handleShowMacOSNativeNotification(message) {
+    const title =
+      message && typeof message.title === 'string' && message.title
+        ? String(message.title)
+        : 'AI Intervention Agent'
+    const body =
+      message && typeof message.message === 'string' && message.message
+        ? String(message.message)
+        : ''
+    const isTest = !!(message && message.isTest)
+    if (!body.trim()) return
+
+    this._dispatchNotificationEvent({
+      title,
+      message: body,
+      trigger: 'immediate',
+      types: [NotificationType.MACOS_NATIVE],
+      metadata: { isTest: !!isTest },
+      source: 'webview'
+    })
   }
 
   _handleRequestClipboardText(message) {
@@ -1626,6 +1704,10 @@ class WebviewProvider {
                     <input type="checkbox" id="notifyWebEnabled">
                 </label>
                 <label class="settings-toggle">
+                    <span>macOS 原生通知</span>
+                    <input type="checkbox" id="notifyMacOSNativeEnabled">
+                </label>
+                <label class="settings-toggle">
                     <span>自动请求权限</span>
                     <input type="checkbox" id="notifyAutoRequestPermission">
                 </label>
@@ -1666,6 +1748,7 @@ class WebviewProvider {
                 </label>
 
                 <div class="settings-actions">
+                    <button class="settings-action secondary" id="settingsTestNativeBtn">测试原生通知</button>
                     <button class="settings-action secondary" id="settingsTestBarkBtn">测试 Bark</button>
                     <div class="settings-actions-right">
                         <span class="settings-auto-save" title="修改后会自动同步到服务端">自动保存</span>

@@ -979,6 +979,8 @@ class NotificationManager {
     this.permissionRequestPromise = null
     this.autoPermissionListenersBound = false
     this.boundPermissionRequestHandler = null
+    // 事件去重：避免短时间内重复触发（尤其是移动端 Bark）
+    this._eventDeduper = new Map()
     this.config = {
       enabled: true,
       webEnabled: true,
@@ -1510,6 +1512,140 @@ class NotificationManager {
     }
 
     return results
+  }
+
+  _shouldDedupe(key, windowMs) {
+    try {
+      const k = String(key || '')
+      if (!k) return false
+      const now = Date.now()
+      const last = this._eventDeduper.get(k)
+      if (typeof last === 'number' && now - last < windowMs) {
+        return true
+      }
+      this._eventDeduper.set(k, now)
+      return false
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * 统一的“前端通知中心入口”
+   * - 由各业务模块（如 multi_task.js）派发事件
+   * - 根据设备环境与配置做路由/降级
+   */
+  async dispatchEvent(event) {
+    try {
+      const evt = event && typeof event === 'object' ? event : {}
+      const type = String(evt.type || evt.kind || '').trim()
+
+      if (type === 'new_tasks' || type === 'newTasks') {
+        return await this.notifyNewTasks(evt)
+      }
+
+      // 默认回退：若提供 title/message，则复用原 sendNotification 行为
+      if (typeof evt.title === 'string' && typeof evt.message === 'string') {
+        return await this.sendNotification(evt.title, evt.message, evt.options || {})
+      }
+
+      return null
+    } catch (error) {
+      console.warn('dispatchEvent 处理失败（已降级）:', error)
+      return null
+    }
+  }
+
+  /**
+   * 新任务通知（阶段 B：桌面端走 Visual Hint；移动端按配置优先 Bark）
+   */
+  async notifyNewTasks(event = {}) {
+    const countRaw = event && typeof event === 'object' ? event.count : null
+    const taskIdsRaw = event && typeof event === 'object' ? event.taskIds : null
+
+    const taskIds = Array.isArray(taskIdsRaw) ? taskIdsRaw.filter(Boolean) : []
+    const count =
+      typeof countRaw === 'number' && Number.isFinite(countRaw)
+        ? Math.max(0, Math.floor(countRaw))
+        : taskIds.length
+
+    if (!count || count <= 0) return null
+    if (this.config && this.config.enabled === false) return null
+
+    const title = typeof event.title === 'string' && event.title ? event.title : 'AI Intervention Agent'
+    const message =
+      count === 1 && taskIds.length === 1
+        ? `新任务已添加: ${taskIds[0]}`
+        : `收到 ${count} 个新任务`
+
+    // 1) 桌面端：Visual Hint（不依赖系统通知权限）
+    try {
+      if (typeof window.showNewTaskVisualHint === 'function') {
+        window.showNewTaskVisualHint(count)
+      } else {
+        // 兜底：页面内通知（非系统通知）
+        this.showInPageNotification(title, message, { timeout: 3000 })
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // 2) 声音提示：仍沿用现有配置（不使用系统通知）
+    try {
+      await this.playSound('default')
+    } catch (e) {
+      // ignore
+    }
+
+    // 3) 移动端：按配置优先 Bark（通过后端触发，避免前端直连 Bark）
+    try {
+      if (
+        this.config &&
+        this.config.enabled !== false &&
+        this.config.mobileOptimized &&
+        isMobileDevice() &&
+        this.config.barkEnabled
+      ) {
+        const dedupeKey = String(event.dedupeKey || 'bark:new_tasks')
+        if (!this._shouldDedupe(dedupeKey, 3000)) {
+          await this._triggerBarkNewTasks({ count, taskIds })
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return { title, message, count, taskIds }
+  }
+
+  async _triggerBarkNewTasks(payload) {
+    try {
+      const body = {
+        count: payload && payload.count ? payload.count : 0,
+        taskIds: payload && Array.isArray(payload.taskIds) ? payload.taskIds : []
+      }
+
+      const resp = await fetch('/api/notify-new-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        console.warn('触发 Bark 新任务通知失败（HTTP）:', resp.status, data && data.message)
+        return false
+      }
+
+      // status: success / skipped / error（不抛异常，避免影响主流程）
+      if (data && data.status === 'success') {
+        return true
+      }
+      return false
+    } catch (error) {
+      console.warn('触发 Bark 新任务通知失败（已降级）:', error)
+      return false
+    }
   }
 
   showFallbackNotification(title, message, options = {}) {

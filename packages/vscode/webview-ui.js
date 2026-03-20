@@ -316,6 +316,27 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         vscode.postMessage({ type: 'error', message: String(message) });
     }
 
+    // 统一通知事件派发：Webview → Extension（阶段 C）
+    function postNotificationEvent(event) {
+        try {
+            vscode.postMessage({ type: 'notify', event: event || {} });
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    function postStatusInfo(message, options) {
+        postNotificationEvent({
+            title: 'AI Intervention Agent',
+            message: String(message || ''),
+            trigger: 'immediate',
+            types: ['vscode'],
+            metadata: Object.assign({ presentation: 'statusBar', severity: 'info', timeoutMs: 3000 }, options || {}),
+            source: 'webview-ui',
+            dedupeKey: message ? ('status:' + String(message).slice(0, 200)) : ''
+        });
+    }
+
     async function fetchFeedbackPrompts(fetchOptions) {
         let controller = null;
         let timeoutId = null;
@@ -489,6 +510,11 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             });
         startPolling();
 
+        // 通知设置：启动时拉取一次（用于“新任务原生通知”等逻辑，不依赖打开设置面板）
+        Promise.resolve()
+            .then(() => refreshNotificationSettingsFromServer({ force: true, silent: true, allowWhenClosed: true }))
+            .catch(() => { /* ignore */ });
+
         // Watchdog：兜底防止任何情况下长期停在 loading
         setTimeout(() => {
             try {
@@ -587,9 +613,11 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             const settingsOverlay = document.getElementById('settingsOverlay');
             const settingsPanel = document.getElementById('settingsPanel');
             const settingsClose = document.getElementById('settingsClose');
+            const settingsTestNativeBtn = document.getElementById('settingsTestNativeBtn');
             const settingsTestBarkBtn = document.getElementById('settingsTestBarkBtn');
 
             if (settingsClose) settingsClose.addEventListener('click', closeSettingsOverlay);
+            if (settingsTestNativeBtn) settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification);
             if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark);
 
             if (settingsOverlay) {
@@ -1039,9 +1067,8 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
         /* 当检测到新任务时显示通知提示 */
         if (newTasks.length > 0 && lastTaskIds.size > 0) {
-            newTasks.forEach(task => {
-                showNewTaskNotification(task.task_id);
-            });
+            const ids = newTasks.map(task => task.task_id).filter(Boolean);
+            showNewTaskNotification(ids);
         }
 
         lastTaskIds = currentTaskIds;
@@ -1460,13 +1487,36 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     }
 
     /* 显示新任务通知 - 在VS Code状态栏显示新任务提示 */
-    function showNewTaskNotification(taskId) {
-        log('检测到新任务: ' + taskId);
+    function showNewTaskNotification(taskIds) {
+        const ids = Array.isArray(taskIds) ? taskIds.filter(Boolean) : [taskIds].filter(Boolean);
+        if (!ids || ids.length === 0) return;
 
-        /* 发送消息到VS Code显示状态栏通知 */
-        vscode.postMessage({
-            type: 'showInfo',
-            message: '新任务已添加: ' + taskId
+        const settings = notificationSettings || { enabled: true, macosNativeEnabled: false };
+        if (settings && settings.enabled === false) return;
+
+        const msg = ids.length === 1 ? ('新任务已添加: ' + ids[0]) : ('收到 ' + ids.length + ' 个新任务');
+        log('检测到新任务: ' + msg);
+
+        // 阶段 C：统一 NotificationEvent 分发（VSCode API / AppleScript provider）
+        const types = ['vscode'];
+        if (settings && settings.macosNativeEnabled) {
+            types.push('macos_native');
+        }
+        postNotificationEvent({
+            title: 'AI Intervention Agent',
+            message: msg,
+            trigger: 'immediate',
+            types,
+            metadata: {
+                presentation: 'statusBar',
+                severity: 'info',
+                timeoutMs: 3000,
+                isTest: false,
+                kind: 'new_tasks',
+                taskIds: ids
+            },
+            source: 'webview-ui',
+            dedupeKey: 'new_tasks:' + ids.join('|')
         });
     }
 
@@ -1594,9 +1644,10 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         settingsRemoteChangedWhileDirty = false;
     }
 
-    async function refreshNotificationSettingsFromServer({ force = false, silent = false } = {}) {
-        // 只在设置面板打开时刷新
-        if (!isSettingsOverlayOpen()) return false;
+    async function refreshNotificationSettingsFromServer({ force = false, silent = false, allowWhenClosed = false } = {}) {
+        const overlayOpen = isSettingsOverlayOpen();
+        // 默认只在设置面板打开时刷新；allowWhenClosed=true 用于面板关闭时的“逻辑配置加载”（不渲染表单）
+        if (!overlayOpen && !allowWhenClosed) return false;
 
         let controller = null;
         let timeoutId = null;
@@ -1617,7 +1668,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             const resp = await fetch(SERVER_URL + '/api/get-notification-config', fetchOptions);
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok || !data || data.status !== 'success') {
-                if (!silent) {
+                if (!silent && overlayOpen) {
                     const msg = (data && data.message) ? data.message : ('加载失败（HTTP ' + resp.status + '）');
                     setSettingsHint(msg, true);
                 }
@@ -1633,10 +1684,12 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 lastNotificationSettingsHash = nextHash;
                 settingsDirty = false;
                 settingsRemoteChangedWhileDirty = false;
-                populateSettingsForm(notificationSettings);
-                if (!silent) {
-                    // 更清晰：表示“已从服务端同步”，并自动淡出
-                    setSettingsHint('已同步', false, 1200);
+                if (overlayOpen) {
+                    populateSettingsForm(notificationSettings);
+                    if (!silent) {
+                        // 更清晰：表示“已从服务端同步”，并自动淡出
+                        setSettingsHint('已同步', false, 1200);
+                    }
                 }
                 return true;
             }
@@ -1644,14 +1697,14 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             // 有未保存编辑：不覆盖，但提示一次
             if (changed && settingsDirty && !settingsRemoteChangedWhileDirty) {
                 settingsRemoteChangedWhileDirty = true;
-                if (!silent) {
+                if (!silent && overlayOpen) {
                     setSettingsHint('检测到配置已更新（你有未保存修改），为避免覆盖未自动同步', true);
                 }
             }
 
             return true;
         } catch (e) {
-            if (!silent) {
+            if (!silent && overlayOpen) {
                 const msg = (e && e.name === 'AbortError') ? '请求超时' : (e && e.message ? e.message : String(e));
                 setSettingsHint('加载失败：' + msg, true);
             }
@@ -1667,6 +1720,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             enabled: c.enabled !== false,
             webEnabled: c.web_enabled !== false,
             autoRequestPermission: c.auto_request_permission !== false,
+            macosNativeEnabled: !!c.macos_native_enabled,
             soundEnabled: c.sound_enabled !== false,
             soundMute: !!c.sound_mute,
             soundVolume: (typeof c.sound_volume === 'number') ? c.sound_volume : 80,
@@ -1694,6 +1748,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
         setChecked('notifyEnabled', settings.enabled);
         setChecked('notifyWebEnabled', settings.webEnabled);
+        setChecked('notifyMacOSNativeEnabled', settings.macosNativeEnabled);
         setChecked('notifyAutoRequestPermission', settings.autoRequestPermission);
         setChecked('notifySoundEnabled', settings.soundEnabled);
         setChecked('notifySoundMute', settings.soundMute);
@@ -1728,6 +1783,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         return {
             enabled: getChecked('notifyEnabled'),
             webEnabled: getChecked('notifyWebEnabled'),
+            macosNativeEnabled: getChecked('notifyMacOSNativeEnabled'),
             autoRequestPermission: getChecked('notifyAutoRequestPermission'),
             soundEnabled: getChecked('notifySoundEnabled'),
             soundMute: getChecked('notifySoundMute'),
@@ -1849,6 +1905,34 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         }
     }
 
+    function testMacOSNativeNotification() {
+        try {
+            const updates = collectSettingsForm();
+            const merged = Object.assign({}, notificationSettings || {}, updates);
+            if (merged && merged.enabled === false) {
+                setSettingsHint('通知已关闭：请先开启“启用通知”', true);
+                return;
+            }
+            if (!merged || !merged.macosNativeEnabled) {
+                setSettingsHint('请先开启“macOS 原生通知”', true);
+                return;
+            }
+
+            setSettingsHint('已请求发送原生通知...', false, 1200);
+            postNotificationEvent({
+                title: 'AI Intervention Agent 测试',
+                message: '这是一条 macOS 原生通知测试',
+                trigger: 'immediate',
+                types: ['macos_native'],
+                metadata: { isTest: true },
+                source: 'webview-ui',
+                dedupeKey: 'test:macos_native'
+            });
+        } catch (e) {
+            setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true);
+        }
+    }
+
     async function testBark() {
         try {
             const updates = collectSettingsForm();
@@ -1875,7 +1959,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             }
 
             setSettingsHint(data.message || '测试通知已发送，请检查设备', false);
-            vscode.postMessage({ type: 'showInfo', message: data.message || 'Bark 测试通知已发送' });
+            postStatusInfo(data.message || 'Bark 测试通知已发送');
         } catch (e) {
             setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true);
         }
