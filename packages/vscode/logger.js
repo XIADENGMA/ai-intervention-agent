@@ -81,7 +81,7 @@ function createLogger(outputChannel, opts = {}) {
         direct.call(outputChannel, text)
         return
       } catch {
-        // ignore and fallback
+        // 忽略并回退：统一走 appendLine
       }
     }
 

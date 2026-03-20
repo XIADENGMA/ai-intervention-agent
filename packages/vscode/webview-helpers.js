@@ -124,7 +124,7 @@
           return luminance < 128 ? 'dark' : 'light'
         }
       } catch (_) {
-        // ignore
+        // 忽略：某些宿主环境可能不支持 getComputedStyle / colorScheme
       }
     }
 

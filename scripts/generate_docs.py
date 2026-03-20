@@ -135,7 +135,7 @@ def generate_markdown(
     lines.append("")
 
     if lang == "en":
-        # English docs are signature-focused. Link to the Chinese version for full docstrings.
+        # 英文文档聚焦签名；完整说明请看中文版本。
         lines.append(
             f"> For the Chinese version with full docstrings, see: "
             f"[`docs/api.zh-CN/{module_info['name']}.md`](../api.zh-CN/{module_info['name']}.md)"

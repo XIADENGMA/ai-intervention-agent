@@ -209,7 +209,7 @@ class TestConfig:
     - 端口范围应符合操作系统限制
     - 并行任务数不宜过多（避免资源耗尽）
 
-    Attributes:
+    属性:
         DEFAULT_THREAD_TIMEOUT (int): 默认线程等待超时（600秒=10分钟）
         SERVICE_STARTUP_WAIT_TIME (int): 服务启动等待时间（5秒）
         HTTP_REQUEST_TIMEOUT (int): HTTP请求超时（5秒）
@@ -286,8 +286,8 @@ class SignalHandlerManager:
     - 适用于简单的注册状态管理
     - 不负责实际的信号处理逻辑
 
-    Attributes:
-        _instance (SignalHandlerManager | None): 单例实例（类属性）
+    属性:
+        _instance (SignalHandlerManager 或 None): 单例实例（类属性）
         _cleanup_registered (bool): 信号处理器是否已注册（类属性）
     """
 
@@ -299,7 +299,7 @@ class SignalHandlerManager:
 
         确保全局只有一个 SignalHandlerManager 实例。
 
-        Returns:
+        返回:
             SignalHandlerManager: 全局唯一的实例
 
         ## 实现说明
@@ -321,7 +321,7 @@ class SignalHandlerManager:
     def is_registered(cls):
         """检查信号处理器是否已注册
 
-        Returns:
+        返回:
             bool: True 表示已注册，False 表示未注册
 
         ## 使用场景
@@ -396,7 +396,7 @@ class TestLogger:
         - 增强日志可用：仅消息（避免重复 emoji）
         - 标准日志：emoji + 消息（保持一致性）
 
-    Attributes:
+    属性:
         DEFAULT_EMOJIS (dict): 默认的 emoji 映射表
     """
 
@@ -419,7 +419,7 @@ class TestLogger:
     def log(message: str, level: str = "info", emoji: str | None = None):
         """统一的日志输出函数
 
-        Args:
+        参数:
             message (str): 日志消息内容
             level (str, optional): 日志级别，默认为 "info"。
                 支持: info/success/warning/error/debug/config/network/timing/start/stop/cleanup/bye
@@ -478,7 +478,7 @@ class TestLogger:
 
         专门用于记录异常和错误，支持自动提取异常类型和堆栈跟踪。
 
-        Args:
+        参数:
             message (str): 错误描述消息
             exc (Exception, optional): 异常对象，为 None 时仅记录 message
             include_traceback (bool, optional): 是否包含完整的堆栈跟踪，默认 False
@@ -528,7 +528,7 @@ class TestLogger:
 def log_info(message: str, emoji: str | None = None):
     """记录信息级别日志
 
-    Args:
+    参数:
         message (str): 日志消息
         emoji (str, optional): 自定义 emoji，默认 ℹ️
 
@@ -543,7 +543,7 @@ def log_info(message: str, emoji: str | None = None):
 def log_success(message: str, emoji: str | None = None):
     """记录成功信息
 
-    Args:
+    参数:
         message (str): 成功消息
         emoji (str, optional): 自定义 emoji，默认 ✅
 
@@ -558,7 +558,7 @@ def log_success(message: str, emoji: str | None = None):
 def log_warning(message: str, emoji: str | None = None):
     """记录警告信息
 
-    Args:
+    参数:
         message (str): 警告消息
         emoji (str, optional): 自定义 emoji，默认 ⚠️
 
@@ -573,7 +573,7 @@ def log_warning(message: str, emoji: str | None = None):
 def log_error(message: str, emoji: str | None = None):
     """记录错误信息
 
-    Args:
+    参数:
         message (str): 错误消息
         emoji (str, optional): 自定义 emoji，默认 ❌
 
@@ -588,7 +588,7 @@ def log_error(message: str, emoji: str | None = None):
 def log_debug(message: str, emoji: str | None = None):
     """记录调试信息
 
-    Args:
+    参数:
         message (str): 调试消息
         emoji (str, optional): 自定义 emoji，默认 🔍
 
@@ -646,7 +646,7 @@ def setup_signal_handlers():
     def signal_handler(signum, frame):
         """信号处理器
 
-        Args:
+        参数:
             signum (int): 信号编号（SIGINT=2, SIGTERM=15）
             frame: 堆栈帧对象（未使用）
         """
@@ -718,11 +718,11 @@ def format_feedback_result(result):
 
     保留 API 返回的所有字段，仅对 images 字段的 data 内容进行截断。
 
-    Args:
+    参数:
         result: 反馈结果对象（通常是字典）
 
-    Returns:
-        dict | str: 格式化后的结果
+    返回:
+        dict 或 str: 格式化后的结果
 
     ## 处理逻辑
 
@@ -803,11 +803,11 @@ def check_service(url, timeout=None):
 
     发送 HTTP GET 请求检查服务健康状态。
 
-    Args:
+    参数:
         url (str): 服务 URL（如 http://localhost:8080/api/health）
         timeout (int, optional): 请求超时时间（秒），默认使用 TestConfig.HTTP_REQUEST_TIMEOUT
 
-    Returns:
+    返回:
         bool: True 表示服务可用（HTTP 200），False 表示不可用或异常
 
     ## 检查逻辑
@@ -851,7 +851,7 @@ def test_config_validation():
 
     验证配置加载和输入验证逻辑的正确性。
 
-    Returns:
+    返回:
         bool: 测试是否通过
 
     ## 测试内容
@@ -901,7 +901,7 @@ def test_service_health():
 
     验证服务的端口检查和健康检查功能。
 
-    Returns:
+    返回:
         bool: 测试是否通过
 
     ## 测试内容
@@ -953,10 +953,10 @@ def _calculate_feedback_timeout(timeout):
 
     根据线程等待超时时间计算合理的反馈超时值。
 
-    Args:
+    参数:
         timeout (int): 线程等待超时时间（秒），0 表示无限等待
 
-    Returns:
+    返回:
         int: 反馈超时时间（秒）
 
     ## 计算规则
@@ -1000,7 +1000,7 @@ def _create_first_task_content():
 
     返回欢迎消息和初始选项。
 
-    Returns:
+    返回:
         tuple[str, list[str]]: (prompt, options) 元组
 
     ## 内容说明
@@ -1030,7 +1030,7 @@ def _create_second_task_content():
 
     返回包含高级 Markdown 特性的测试内容。
 
-    Returns:
+    返回:
         tuple[str, list[str]]: (prompt, options) 元组
 
     ## 内容特性
@@ -1162,13 +1162,13 @@ def _launch_task_in_thread(prompt, options, feedback_timeout, task_id=None):
 
     ⚠️ 注意：task_id 参数已废弃，系统会自动生成唯一ID
 
-    Args:
+    参数:
         prompt: 任务提示内容
         options: 用户选项列表
         feedback_timeout: 反馈超时时间（秒）
         task_id: （已废弃）任务ID，此参数将被忽略
 
-    Returns:
+    返回:
         tuple: (thread, result_container) 元组
             - thread: 线程对象
             - result_container: 字典，包含 'result' 键用于存储结果
@@ -1198,13 +1198,13 @@ def _launch_task_in_thread(prompt, options, feedback_timeout, task_id=None):
 def _wait_for_service_startup(service_url, port, wait_time=None, max_wait=None):
     """等待 Web 服务启动并验证可用性（使用轮询机制）
 
-    Args:
+    参数:
         service_url: 服务健康检查URL
         port: 服务端口号
         wait_time: 初始等待时间（秒），默认使用 TestConfig.SERVICE_STARTUP_WAIT_TIME
         max_wait: 最大等待时间（秒），默认 15 秒
 
-    Returns:
+    返回:
         bool: 服务是否成功启动
 
     改进说明:
@@ -1253,10 +1253,10 @@ def _wait_for_service_startup(service_url, port, wait_time=None, max_wait=None):
 def test_persistent_workflow(timeout=None):
     """测试智能介入工作流程
 
-    Args:
+    参数:
         timeout: 线程等待超时时间（秒），0表示无限等待，None使用默认值
 
-    Returns:
+    返回:
         bool: 测试是否通过
     """
     if timeout is None:
@@ -1354,7 +1354,7 @@ def test_web_ui_features():
 
     验证 Web UI 的关键功能：task_id 显示和倒计时。
 
-    Returns:
+    返回:
         bool: 测试是否通过
 
     ## 测试内容
@@ -1449,7 +1449,7 @@ def test_multi_task_concurrent():
 
     验证多任务 UI 和 API 的正确性。
 
-    Returns:
+    返回:
         bool: 测试是否通过
 
     ## 测试内容
@@ -1547,7 +1547,7 @@ def test_parallel_tasks():
 
     创建多个并发任务，验证任务管理和 UI 切换功能。
 
-    Returns:
+    返回:
         bool: 测试是否通过
 
     ## 测试内容
@@ -1686,7 +1686,7 @@ def parse_arguments():
 
     解析测试工具的命令行参数，支持自定义端口、主机、超时等配置。
 
-    Returns:
+    返回:
         argparse.Namespace: 解析后的参数对象
 
     ## 支持的参数
@@ -1767,10 +1767,10 @@ def setup_test_environment(args):
 
     根据命令行参数配置日志级别、端口、主机、超时等。
 
-    Args:
+    参数:
         args (argparse.Namespace): 命令行参数对象
 
-    Returns:
+    返回:
         bool: 配置设置是否成功
 
     ## 配置内容
@@ -1904,10 +1904,10 @@ def setup_test_environment(args):
 def check_port_availability(port):
     """检查端口是否可用
 
-    Args:
+    参数:
         port: 端口号
 
-    Returns:
+    返回:
         bool: 端口是否可用（未被占用）
     """
     try:
@@ -1999,7 +1999,7 @@ def display_test_config(config_info):
 
     在控制台打印当前的测试配置详情。
 
-    Args:
+    参数:
         config_info (dict): 配置信息字典，包含以下键：
             - server_config: 服务器配置对象（或 None）
             - thread_timeout: 线程等待超时时间（秒）
@@ -2062,10 +2062,10 @@ def main(args=None):
 
     AI Intervention Agent 测试工具的入口函数。
 
-    Args:
+    参数:
         args (argparse.Namespace, optional): 命令行参数对象
 
-    Returns:
+    返回:
         bool: 所有测试是否都通过
 
     ## 测试流程

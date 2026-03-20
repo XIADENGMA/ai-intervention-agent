@@ -153,7 +153,7 @@ ai-intervention-agent 工具使用细节：
 
 | 项目                 | 说明                                                                                  |
 | -------------------- | ------------------------------------------------------------------------------------- |
-| 配置文档（English）  | [docs/configuration.md](docs/configuration.md)                                        |
+| 配置文档（英文）     | [docs/configuration.md](docs/configuration.md)                                        |
 | 配置文档（简体中文） | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)                            |
 | 默认模板             | [`config.jsonc.default`](config.jsonc.default)（首次运行会自动复制为 `config.jsonc`） |
 
@@ -211,8 +211,8 @@ flowchart TD
 
 ## 文档
 
-- **API 文档索引（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
-- **API Docs (English)**：[`docs/api/index.md`](docs/api/index.md)
+- **API 文档（英文）**：[`docs/api/index.md`](docs/api/index.md)
+- **API 文档（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **DeepWiki**：[deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
 
 ## 同类产品
@@ -224,4 +224,4 @@ flowchart TD
 
 ## 开源协议
 
-MIT License
+MIT 许可证

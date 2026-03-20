@@ -81,7 +81,7 @@ class AppleScriptExecutor {
         )
       }
     } catch {
-      // ignore
+      // 忽略：日志系统异常不应影响执行
     }
 
     return new Promise((resolve, reject) => {
@@ -113,7 +113,7 @@ class AppleScriptExecutor {
                   )
                 }
               } catch {
-                // ignore
+                // 忽略：日志系统异常不应影响执行
               }
 
               reject(err)
@@ -131,7 +131,7 @@ class AppleScriptExecutor {
                   )
                 }
               } catch {
-                // ignore
+                // 忽略：日志系统异常不应影响执行
               }
 
               reject(err)
@@ -143,7 +143,7 @@ class AppleScriptExecutor {
                 this._logger.debug(`runAppleScript:ok stdoutLen=${outText.length}`)
               }
             } catch {
-              // ignore
+              // 忽略：日志系统异常不应影响执行
             }
 
             resolve(outText)
@@ -158,7 +158,7 @@ class AppleScriptExecutor {
             this._logger.error(`runAppleScript:spawn_failed ${sanitizeForLog(err.message)}`)
           }
         } catch {
-          // ignore
+          // 忽略：日志系统异常不应影响执行
         }
 
         reject(err)
@@ -169,12 +169,12 @@ class AppleScriptExecutor {
       try {
         if (child && child.stdin) {
           child.stdin.on('error', () => {
-            // ignore EPIPE 等
+            // 忽略：stdin 已关闭时可能触发 EPIPE 等错误
           })
           child.stdin.end(body, 'utf8')
         }
       } catch {
-        // ignore（回调里会收到失败信息）
+        // 忽略：失败信息会在回调中返回
       }
     })
   }

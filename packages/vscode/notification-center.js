@@ -63,7 +63,7 @@ class NotificationCenter {
               this._logger.debug(`provider_not_registered: ${type}`)
             }
           } catch {
-            // ignore
+            // 忽略：日志系统异常不应影响通知流程
           }
           return
         }
@@ -79,7 +79,7 @@ class NotificationCenter {
               this._logger.warn(`provider_failed: ${type} ${msg ? `(${msg})` : ''}`.trim())
             }
           } catch {
-            // ignore
+            // 忽略：日志系统异常不应影响通知流程
           }
         }
       })

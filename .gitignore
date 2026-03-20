@@ -1,12 +1,12 @@
-# Byte-compiled / optimized / DLL files
+# Python 字节码/优化产物/DLL 文件
 __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions
+# C 扩展
 *.so
 
-# Distribution / packaging
+# 发布/打包产物
 .Python
 build/
 develop-eggs/
@@ -26,15 +26,15 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
+# PyInstaller（打包工具）
 *.manifest
 *.spec
 
-# Installer logs
+# 安装器日志
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Unit test / coverage reports
+# 单元测试/覆盖率报告
 htmlcov/
 .tox/
 .nox/
@@ -52,31 +52,31 @@ cover/
 junit.xml
 test-results/
 
-# Translations
+# 翻译文件
 *.mo
 *.pot
 
-# Django stuff:
+# Django 相关：
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
-# Flask stuff:
+# Flask 相关：
 instance/
 .webassets-cache
 
-# Scrapy stuff:
+# Scrapy 相关：
 .scrapy
 
-# Sphinx documentation
+# Sphinx 文档
 docs/_build/
 
-# PyBuilder
+# PyBuilder（构建工具）
 .pybuilder/
 target/
 
-# Jupyter Notebook
+# Jupyter Notebook（笔记本）
 .ipynb_checkpoints
 
 # IPython
@@ -96,17 +96,17 @@ ipython_config.py
 # pdm.lock
 .pdm.toml
 
-# PEP 582
+# PEP 582（__pypackages__）
 __pypackages__/
 
-# Celery stuff
+# Celery 相关
 celerybeat-schedule
 celerybeat.pid
 
-# SageMath parsed files
+# SageMath 解析产物
 *.sage.py
 
-# Environments
+# 环境变量文件
 .env
 .env.local
 .env.development.local
@@ -121,14 +121,14 @@ ENV/
 env.bak/
 venv.bak/
 
-# Spyder project settings
+# Spyder 项目设置
 .spyderproject
 .spyproject
 
-# Rope project settings
+# Rope 项目设置
 .ropeproject
 
-# mkdocs documentation
+# mkdocs 文档
 /site
 
 # mypy
@@ -136,16 +136,16 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
-# Pyre type checker
+# Pyre 类型检查器
 .pyre/
 
-# pytype static type analyzer
+# pytype 静态类型分析器
 .pytype/
 
-# Cython debug symbols
+# Cython 调试符号
 cython_debug/
 
-# IDEs
+# IDE 配置
 .idea/
 .vscode/
 *.code-workspace
@@ -167,7 +167,7 @@ auto-save-list
 tramp
 .\#*
 
-# OS generated files
+# 操作系统生成文件
 .DS_Store
 .DS_Store?
 ._*
@@ -176,42 +176,42 @@ tramp
 ehthumbs.db
 Thumbs.db
 
-# Temporary files
+# 临时文件
 *.tmp
 *.temp
 *.bak
 *.backup
 
-# Logs
+# 日志
 *.log
 logs/
 
-# Runtime data
+# 运行时数据
 pids
 *.pid
 *.seed
 *.pid.lock
 
-# uv specific files and directories
-# uv.lock - uncomment if you want to ignore lock file (not recommended for most projects)
+# uv 相关文件与目录
+# uv.lock：如需忽略锁文件可取消注释（多数项目不建议）
 # uv.lock
 
-# uv cache directory (if using custom cache location in project)
+# uv 缓存目录（如果在项目内使用自定义缓存位置）
 .uv-cache/
 .uv/
 .ruff_cache/
 
-# uv tool installations (global tools cache)
-# Usually in system cache, but might be project-specific
+# uv 工具安装缓存（全局工具缓存）
+# 通常在系统缓存目录，但也可能放在项目内
 .uv-tools/
 
-# uv virtual environments (if created in project directory)
+# uv 虚拟环境（如果创建在项目目录内）
 .venv-uv/
 
-# uv temporary files
+# uv 临时文件
 .uv-tmp/
 
-# Node.js / frontend
+# Node.js / 前端
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -222,26 +222,26 @@ packages/**/dist/
 packages/**/.vscode-test/
 *.vsix
 
-# Project specific (AI tools / editors)
+# 项目相关（AI 工具/编辑器）
 .cursor/
 .cursor/rules/
 .cursorignore
 .claude
 CLAUDE.md
 
-# Configuration files (local / secret)
+# 配置文件（本地/敏感）
 config.jsonc
 .ace-tool/
 
-# Personal notes / todo
+# 个人笔记 / 待办
 TODO.md
 
-# Removed project management and coverage settings
+# 已移除的项目管理与覆盖率配置
 .specify/
 specs/
 .coveragerc
 
-# Ignored minified static assets
+# 忽略压缩后的静态资源
 static/css/*.min.css
 static/js/*.min.js
 !static/js/prism-components/

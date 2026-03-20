@@ -2,10 +2,9 @@ const assert = require('assert')
 const fs = require('fs')
 const path = require('path')
 
-// You can import and use all API from the 'vscode' module
-// as well as import your extension to test it
+// 可直接使用 'vscode' 模块的所有 API。
+// 如需测试扩展入口，可在此处引入 extension（当前测试不需要）。
 const vscode = require('vscode')
-// const myExtension = require('../extension');
 
 suite('Extension Test Suite', () => {
   vscode.window.showInformationMessage('Start all tests.')

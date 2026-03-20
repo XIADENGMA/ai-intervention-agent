@@ -104,9 +104,9 @@ class LogSanitizer:
                 r'private[_-]?key["\']?\s*[:=]\s*["\']?[A-Za-z0-9._-]{16,}["\']?'
             ),
             # 知名API密钥格式（精确匹配）
-            re.compile(r"\bsk-[A-Za-z0-9]{32,}\b"),  # OpenAI API key
-            re.compile(r"\bxoxb-[A-Za-z0-9-]{50,}\b"),  # Slack Bot Token
-            re.compile(r"\bghp_[A-Za-z0-9]{36}\b"),  # GitHub Personal Access Token
+            re.compile(r"\bsk-[A-Za-z0-9]{32,}\b"),  # OpenAI API 密钥
+            re.compile(r"\bxoxb-[A-Za-z0-9-]{50,}\b"),  # Slack Bot 令牌
+            re.compile(r"\bghp_[A-Za-z0-9]{36}\b"),  # GitHub 个人访问令牌（PAT）
         ]
 
     def sanitize(self, message: str) -> str:

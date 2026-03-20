@@ -35,10 +35,10 @@
     <!-- Prism.js 代码高亮 CSS -->
     <link rel="stylesheet" href="/static/css/prism.css" />
 
-    <!-- marked.js Markdown 渲染 (defer: 按顺序异步加载) -->
+    <!-- marked.js Markdown 渲染（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/marked.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- Prism.js 代码高亮 JS (defer: 按顺序异步加载) -->
+    <!-- Prism.js 代码高亮 JS（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/prism.js" nonce="{{ csp_nonce }}"></script>
 
     <style>
@@ -3029,7 +3029,7 @@
       <!-- 正常内容页面 -->
       <div id="content-container" class="content">
         <div class="feedback-group">
-          <!-- Task ID 和倒计时显示区域 -->
+          <!-- 任务 ID 和倒计时显示区域 -->
           <div class="header-info-container">
             <div class="task-id-container hidden" id="task-id-container">
               <span class="task-id-label">
@@ -3722,22 +3722,22 @@
     <!-- 验证工具类：统一验证和缓存功能 -->
     <script defer src="/static/js/validation-utils.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- 🎬 Lottie 动画库 (defer: 按顺序异步加载) -->
+    <!-- 🎬 Lottie 动画库（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/lottie.min.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- 🎨 主题切换模块 (defer: 按顺序异步加载) -->
+    <!-- 🎨 主题切换模块（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/theme.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- ⌨️ 键盘快捷键模块 (defer: 按顺序异步加载) -->
+    <!-- ⌨️ 键盘快捷键模块（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/keyboard-shortcuts.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- DOM 安全工具：防止 XSS 攻击 (defer: 按顺序异步加载) -->
+    <!-- DOM 安全工具：防止 XSS 攻击（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/dom-security.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- 📋 多任务管理模块 (defer: 按顺序异步加载，依赖内联脚本中的函数) -->
+    <!-- 📋 多任务管理模块（defer 属性：按顺序异步加载，依赖内联脚本中的函数） -->
     <script defer src="/static/js/multi_task.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- 主应用脚本 (依赖: mathjax-loader, multi_task, theme, dom-security 等) -->
+    <!-- 主应用脚本（依赖: mathjax-loader, multi_task, theme, dom-security 等） -->
     <script defer src="/static/js/app.js" nonce="{{ csp_nonce }}"></script>
   </body>
 </html>

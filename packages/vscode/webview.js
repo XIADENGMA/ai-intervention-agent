@@ -16,7 +16,7 @@ let EXT_VERSION = '0.0.0'
 try {
   EXT_VERSION = require('./package.json').version || EXT_VERSION
 } catch {
-  // ignore
+  // 忽略：打包/测试环境下可能读取不到版本号
 }
 
 // 生成 CSP nonce（避免使用 'unsafe-inline' 导致的脚本注入风险）
@@ -136,7 +136,7 @@ class WebviewProvider {
         this._logger.info(String(message))
       }
     } catch {
-      // ignore
+      // 忽略：日志系统异常不应影响主流程
     }
   }
 
@@ -193,7 +193,7 @@ class WebviewProvider {
         this._logger.warn(`Webview HTML 包含 ${tickCount} 个反引号字符：可能导致注入失败（建议继续外链化/运行时生成）`)
       }
     } catch {
-      // ignore
+      // 忽略：诊断日志失败不应影响 Webview 初始化
     }
 
     // 诊断：若 Webview 脚本未执行/未上报 ready，会导致面板永远停在“连接中...”
@@ -223,7 +223,7 @@ class WebviewProvider {
         this._logger.debug('Webview 已就绪')
       }
     } catch {
-      // ignore
+      // 忽略：日志系统异常不应影响主流程
     }
   }
 
@@ -255,7 +255,7 @@ class WebviewProvider {
             this._logger.debug(text)
           }
         } catch {
-          // ignore
+          // 忽略：日志系统异常不应影响主流程
         }
         break
       case 'error':
@@ -266,7 +266,7 @@ class WebviewProvider {
             this._log(`[错误] ${message.message}`)
           }
         } catch {
-          // ignore
+          // 忽略：日志系统异常不应影响主流程
         }
         break
       case 'ready':
@@ -301,7 +301,7 @@ class WebviewProvider {
             }
           }
         } catch {
-          // ignore
+          // 忽略：状态日志失败不应影响主流程
         }
         break
       case 'notify':
@@ -340,7 +340,7 @@ class WebviewProvider {
         .then(() => this._notificationCenter.dispatch(event))
         .catch(() => {})
     } catch {
-      // ignore
+      // 忽略：通知分发失败不应影响主流程
     }
   }
 

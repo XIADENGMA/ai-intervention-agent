@@ -79,7 +79,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 return !!WEBVIEW_HELPERS.detectMacLikePlatform(navigator);
             }
         } catch (e) {
-            // ignore
+            // 忽略
         }
         return !!(navigator && navigator.platform && navigator.platform.includes('Mac'));
     }
@@ -90,7 +90,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 WEBVIEW_HELPERS.applyThemeKindToDocument(document);
             }
         } catch (e) {
-            // ignore
+            // 忽略
         }
         updateNoContentHourglassColor();
     }
@@ -114,7 +114,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 noContentHourglassAnimation.destroy();
             }
         } catch (e) {
-            // ignore
+            // 忽略
         } finally {
             noContentHourglassAnimation = null;
         }
@@ -228,7 +228,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 });
             })
             .catch(() => {
-                // ignore
+                // 忽略
             })
             .finally(() => {
                 noContentLottieInitInFlight = false;
@@ -307,7 +307,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         try {
             vscode.postMessage({ type: 'log', level: 'debug', message: String(message) });
         } catch (e) {
-            // ignore
+            // 忽略：Webview 通信异常不应影响渲染
         }
     }
 
@@ -321,7 +321,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         try {
             vscode.postMessage({ type: 'notify', event: event || {} });
         } catch (e) {
-            // ignore
+            // 忽略：Webview 通信异常不应影响渲染
         }
     }
 
@@ -348,7 +348,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 controller = new AbortController();
                 options.signal = controller.signal;
                 timeoutId = setTimeout(() => {
-                    try { controller.abort(); } catch (e) { /* ignore */ }
+                    try { controller.abort(); } catch (e) { /* 忽略 */ }
                 }, POLL_CONFIG_TIMEOUT_MS);
             }
 
@@ -422,7 +422,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 textarea.setSelectionRange(newCursor, newCursor);
                 textarea.focus();
             } catch (e) {
-                // ignore
+                // 忽略
             }
 
             // 程序写入不会触发 input 事件：手动同步到任务缓存
@@ -513,7 +513,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         // 通知设置：启动时拉取一次（用于“新任务原生通知”等逻辑，不依赖打开设置面板）
         Promise.resolve()
             .then(() => refreshNotificationSettingsFromServer({ force: true, silent: true, allowWhenClosed: true }))
-            .catch(() => { /* ignore */ });
+            .catch(() => { /* 忽略 */ });
 
         // Watchdog：兜底防止任何情况下长期停在 loading
         setTimeout(() => {
@@ -530,7 +530,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     showNoContent();
                 }
             } catch (e) {
-                // ignore
+                // 忽略
             }
         }, 3000);
         vscode.postMessage({ type: 'ready' });
@@ -690,7 +690,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 controller = new AbortController();
                 fetchOptions.signal = controller.signal;
                 timeoutId = setTimeout(() => {
-                    try { controller.abort(); } catch (e) { /* ignore */ }
+                    try { controller.abort(); } catch (e) { /* 忽略 */ }
                 }, SERVER_STATUS_TIMEOUT_MS);
             }
 
@@ -793,7 +793,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 pollAbortController.abort();
             }
         } catch (e) {
-            // ignore
+            // 忽略
         } finally {
             pollAbortController = null;
         }
@@ -822,7 +822,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     pollAbortController.abort();
                 }
             } catch (e) {
-                // ignore
+                // 忽略
             }
 
             if (typeof AbortController !== 'undefined') {
@@ -839,7 +839,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             /* 第一步：获取所有任务列表 */
             if (pollAbortController) {
                 tasksTimeoutId = setTimeout(() => {
-                    try { pollAbortController.abort(); } catch (e) { /* ignore */ }
+                    try { pollAbortController.abort(); } catch (e) { /* 忽略 */ }
                 }, POLL_TASKS_TIMEOUT_MS);
             }
             const tasksResponse = await fetch(SERVER_URL + '/api/tasks', fetchOptions);
@@ -890,7 +890,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 // 获取活跃任务的详细内容并更新UI（服务端会自动激活第一个 pending 任务）
                 if (pollAbortController) {
                     configTimeoutId = setTimeout(() => {
-                        try { pollAbortController.abort(); } catch (e) { /* ignore */ }
+                        try { pollAbortController.abort(); } catch (e) { /* 忽略 */ }
                     }, POLL_CONFIG_TIMEOUT_MS);
                 }
                 const okConfig = await pollConfig(fetchOptions);
@@ -981,7 +981,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 return Math.max(0, Math.floor(task.auto_resubmit_timeout));
             }
         } catch (e) {
-            // ignore
+            // 忽略
         }
         return 0;
     }
@@ -1012,7 +1012,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 })).filter(x => x.data);
             }
         } catch (e) {
-            // ignore
+            // 忽略
         }
     }
 
@@ -1031,7 +1031,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             })).filter(x => x.data);
             renderUploadedImages();
         } catch (e) {
-            // ignore
+            // 忽略
         }
     }
 
@@ -1043,7 +1043,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 data: img && img.data ? String(img.data) : ''
             })).filter(x => x.data);
         } catch (e) {
-            // ignore
+            // 忽略
         }
     }
 
@@ -1095,7 +1095,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 try {
                     clearInterval(tabCountdownTimers[existingId]);
                 } catch (e) {
-                    // ignore
+                    // 忽略
                 }
                 delete tabCountdownTimers[existingId];
                 delete tabCountdownRemaining[existingId];
@@ -1369,17 +1369,17 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     Prism.highlightAllUnder(markdownContent);
                 }
             } catch (e) {
-                // ignore
+                // 忽略
             }
             try {
                 processCodeBlocks(markdownContent);
             } catch (e) {
-                // ignore
+                // 忽略
             }
             try {
                 loadMathJaxIfNeeded(markdownContent, markdownContent.textContent || '');
             } catch (e) {
-                // ignore
+                // 忽略
             }
             lastRenderedPrompt = promptKey;
         }
@@ -1564,7 +1564,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     if (!overlay || overlay.classList.contains('hidden')) return;
                     setSettingsHint('', false);
                 } catch (e) {
-                    // ignore
+                    // 忽略
                 }
             }, autoClearMs);
         }
@@ -1619,7 +1619,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 settingsAutoSaveAbortController.abort();
             }
         } catch (e) {
-            // ignore
+            // 忽略
         } finally {
             settingsAutoSaveAbortController = null;
             settingsAutoSaveInFlight = false;
@@ -1661,7 +1661,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 controller = new AbortController();
                 fetchOptions.signal = controller.signal;
                 timeoutId = setTimeout(() => {
-                    try { controller.abort(); } catch (e) { /* ignore */ }
+                    try { controller.abort(); } catch (e) { /* 忽略 */ }
                 }, SETTINGS_AUTO_REFRESH_TIMEOUT_MS);
             }
 
@@ -1855,7 +1855,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     settingsAutoSaveAbortController.abort();
                 }
             } catch (e) {
-                // ignore
+                // 忽略
             }
 
             const fetchOptions = {
@@ -1868,7 +1868,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 settingsAutoSaveAbortController = new AbortController();
                 fetchOptions.signal = settingsAutoSaveAbortController.signal;
                 timeoutId = setTimeout(() => {
-                    try { settingsAutoSaveAbortController.abort(); } catch (e) { /* ignore */ }
+                    try { settingsAutoSaveAbortController.abort(); } catch (e) { /* 忽略 */ }
                 }, SETTINGS_AUTO_SAVE_TIMEOUT_MS);
             } else {
                 settingsAutoSaveAbortController = null;
@@ -2247,7 +2247,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 try {
                     MathJax.startup.defaultReady();
                 } catch (e) {
-                    // ignore
+                    // 忽略
                 }
                 // 加载完成后渲染队列中的元素
                 if (window._mathJaxPendingElements && window.MathJax && window.MathJax.typesetPromise) {
@@ -2308,7 +2308,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             try {
                 script.setAttribute('nonce', CSP_NONCE);
             } catch (e) {
-                // ignore
+                // 忽略
             }
         }
         script.onload = function() {
@@ -2402,7 +2402,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 defaultMessage = String(prompts.resubmit_prompt);
             }
         } catch (e) {
-            // ignore，保留默认文案兜底
+            // 忽略：保留默认文案兜底
         }
 
         await submitWithData(defaultMessage, [], taskId);
@@ -2461,7 +2461,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                         b.title = '提交反馈';
                         b.innerHTML = submitBtnDefaultHtml || SUBMIT_BTN_FALLBACK_HTML;
                     } catch (e) {
-                        // ignore
+                        // 忽略
                     }
                 }, Math.max(0, submitBackoffUntilMs - now));
             } else {
@@ -2469,7 +2469,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 submitBtn.title = '提交反馈';
             }
         } catch (e) {
-            // ignore
+            // 忽略
         }
     }
 
@@ -2489,7 +2489,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 return;
             }
         } catch (e) {
-            // ignore
+            // 忽略
         }
 
         submitInFlight = true;
@@ -2537,7 +2537,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                         ' images=' + imgLen
                 });
             } catch (e) {
-                // ignore
+                // 忽略
             }
 
             let response = await fetch(SERVER_URL + submitPath, {
@@ -2562,7 +2562,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                         message: '[submit] ok taskId=' + (taskIdToSubmit || '') + ' path=' + submitPath
                     });
                 } catch (e) {
-                    // ignore
+                    // 忽略
                 }
 
                 /* 提交成功后清空表单和上传的图片 */
@@ -2618,7 +2618,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     try {
                         vscode.postMessage({ type: 'log', level: 'warn', message: msg });
                     } catch (e) {
-                        // ignore
+                        // 忽略
                     }
                     vscode.postMessage({ type: 'showInfo', message: msg });
                     try {
@@ -2628,7 +2628,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                             message: '[submit] 429 taskId=' + (taskIdToSubmit || '') + ' retryAfter=' + cooldownSec + 's'
                         });
                     } catch (e) {
-                        // ignore
+                        // 忽略
                     }
                     return;
                 }
@@ -2748,10 +2748,10 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     image: bmp,
                     width: bmp.width,
                     height: bmp.height,
-                    cleanup: () => { try { bmp.close(); } catch (e) { /* ignore */ } }
+                    cleanup: () => { try { bmp.close(); } catch (e) { /* 忽略 */ } }
                 };
             } catch (e) {
-                // fallback
+                // 回退
             }
         }
 
@@ -2919,7 +2919,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             const data = await readAsDataURL(blob);
             return { name: finalName, data };
         } finally {
-            try { decoded.cleanup && decoded.cleanup(); } catch (e) { /* ignore */ }
+            try { decoded.cleanup && decoded.cleanup(); } catch (e) { /* 忽略 */ }
         }
     }
 
@@ -3065,7 +3065,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             try {
                 themeObserver.disconnect();
             } catch (e) {
-                // ignore
+                // 忽略
             }
             themeObserver = null;
         }
@@ -3077,18 +3077,18 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             console.error('[Webview]', msg);
             vscode.postMessage({ type: 'error', message: msg });
         } catch (e) {
-            // ignore
+            // 忽略
         }
     }
 
     // 兜底捕获（避免脚本异常导致 UI 停在 loading 而无提示）
     window.addEventListener('error', (e) => {
         reportFatalError('未捕获异常: ', (e && e.error) ? e.error : e);
-        try { hideTabs(); showNoContent(); } catch (e2) { /* ignore */ }
+        try { hideTabs(); showNoContent(); } catch (e2) { /* 忽略 */ }
     });
     window.addEventListener('unhandledrejection', (e) => {
         reportFatalError('未处理 Promise 拒绝: ', (e && e.reason) ? e.reason : e);
-        try { hideTabs(); showNoContent(); } catch (e2) { /* ignore */ }
+        try { hideTabs(); showNoContent(); } catch (e2) { /* 忽略 */ }
     });
 
     // 启动
@@ -3096,6 +3096,6 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
         init();
     } catch (e) {
         reportFatalError('初始化失败: ', e);
-        try { hideTabs(); showNoContent(); } catch (e2) { /* ignore */ }
+        try { hideTabs(); showNoContent(); } catch (e2) { /* 忽略 */ }
     }
 })();

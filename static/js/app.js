@@ -705,7 +705,7 @@ function getClipboardFailureHint(error) {
       return '未检测到可插入的剪贴板文本。请在下方手动粘贴代码。'
     }
   } catch (e) {
-    // ignore
+    // 忽略：解析失败时走兜底提示文案
   }
   return '由于浏览器安全限制无法自动读取剪贴板，请在下方手动粘贴代码。'
 }
@@ -733,7 +733,7 @@ function openCodePasteModal(error) {
     try {
       textarea.focus()
     } catch (e) {
-      // ignore
+      // 忽略：部分浏览器/设备上 focus 可能失败
     }
   }, 0)
 
@@ -1022,7 +1022,7 @@ class NotificationManager {
           origin
         )
       } catch (e) {
-        // ignore
+        // 忽略：诊断日志失败不应影响通知初始化
       }
       this.syncPermissionState()
 
@@ -1636,14 +1636,14 @@ class NotificationManager {
         this.showInPageNotification(title, message, { timeout: 3000 })
       }
     } catch (e) {
-      // ignore
+      // 忽略：视觉提示失败不应影响主流程
     }
 
     // 2) 声音提示：仍沿用现有配置（不使用系统通知）
     try {
       await this.playSound('default')
     } catch (e) {
-      // ignore
+      // 忽略：声音播放失败不应影响主流程
     }
 
     // 3) 移动端：按配置优先 Bark（通过后端触发，避免前端直连 Bark）
@@ -1661,7 +1661,7 @@ class NotificationManager {
         }
       }
     } catch (e) {
-      // ignore
+      // 忽略：Bark 触发失败不应影响主流程
     }
 
     return { title, message, count, taskIds }
@@ -2778,7 +2778,7 @@ function compressImage(file) {
             ).toFixed(2)}KB (压缩率: ${ratio}%) 输出: ${finalName}`
           )
         } catch (_) {
-          // ignore
+          // 忽略：日志仅用于观测压缩效果
         }
       }
 
@@ -2962,7 +2962,7 @@ async function addImageToList(file) {
         revokeObjectURL(failed.previewUrl)
       }
     } catch (_) {
-      // ignore
+      // 忽略：失败时继续走清理与回退流程
     }
 
     // 从列表中移除失败的图片
@@ -3097,13 +3097,13 @@ function cleanupOnUnload() {
       hourglassAnimation = null
     }
   } catch (e) {
-    // ignore
+    // 忽略：卸载过程中销毁动画失败不应影响后续清理
   }
   try {
     const container = document.getElementById('hourglass-lottie')
     if (container) container.textContent = ''
   } catch (e) {
-    // ignore
+    // 忽略：卸载过程中 DOM 可能已不可用
   }
 
   cleanupAllObjectURLs()
@@ -3318,7 +3318,7 @@ function initializePasteFunction() {
       document.removeEventListener('paste', window.__aiInterventionAgentPasteHandler)
     }
   } catch (_) {
-    // ignore
+    // 忽略：移除旧 handler 失败不应阻塞注册新 handler
   }
 
   const pasteHandler = async function (e) {

@@ -4,15 +4,15 @@ const { createLogger } = require('./logger')
 const { AppleScriptExecutor, toAppleScriptStringLiteral } = require('./applescript-executor')
 
 /**
- * AI Intervention Agent VSCode Extension
- * iframe模式 - 极简版本，仅显示服务器Web UI
+ * AI Intervention Agent VSCode 扩展
+ * iframe 模式 - 极简版本，仅显示服务器 Web UI
  */
 const DEFAULT_SERVER_URL = 'http://localhost:8080'
 let EXT_VERSION = '0.3.4'
 try {
   EXT_VERSION = require('./package.json').version || EXT_VERSION
 } catch {
-  // ignore
+  // 忽略：打包/测试环境下可能读取不到版本号
 }
 // 用于排查“VSIX 是否确实更新”的构建标识（版本号不变时尤为重要）
 const BUILD_ID = '2026-01-07-webview-ui-external-logs'
@@ -80,7 +80,7 @@ function activate(context) {
       try {
         appleScriptLogger.warn(msg)
       } catch {
-        // ignore
+        // 忽略：日志系统异常不应影响主流程
       }
       vscode.window.showErrorMessage(msg)
       throw err
@@ -105,7 +105,7 @@ function activate(context) {
           `执行失败 code=${code || 'unknown'} msg=${raw || ''}`.trim()
         )
       } catch {
-        // ignore
+        // 忽略：日志系统异常不应影响主流程
       }
       vscode.window.showErrorMessage(msg)
       throw e
@@ -166,7 +166,7 @@ function activate(context) {
           try {
             controller.abort()
           } catch {
-            // ignore
+            // 忽略：极少数环境 AbortController 可能不可用/不可中止
           }
         }, 1500)
       : null
@@ -330,7 +330,7 @@ function activate(context) {
     try {
       await vscode.commands.executeCommand('aiInterventionAgent.feedbackView.focus')
     } catch {
-      // ignore
+      // 忽略：不同宿主/版本下该 view id 可能不可用
     }
   })
 

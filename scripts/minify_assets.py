@@ -100,7 +100,7 @@ def process_directory(
 ):
     """处理目录中的文件
 
-    Returns:
+    返回:
         int: 在 check_only 模式下，返回“需要压缩”的文件数量；否则返回 0。
     """
     if not directory.exists():

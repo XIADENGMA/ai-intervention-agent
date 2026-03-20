@@ -170,10 +170,10 @@ debug: 调试模式开关
 - 配置管理器不可用时抛出异常并记录错误日志
 - 不处理配置文件读取失败的异常，交由调用方处理
 
-Returns:
+返回:
     NotificationConfig: 从配置文件加载的配置实例
 
-Raises:
+异常:
     Exception: 配置文件管理器不可用时抛出异常
 
 ### `class NotificationEvent`
@@ -304,7 +304,7 @@ max_retries: 最大重试次数
 - 当 config.debug 为 True 时，设置日志级别为 DEBUG
 - 输出详细的初始化和运行日志
 
-Raises:
+异常:
     Exception: 配置文件加载失败时抛出异常
 
 ##### `register_provider(self, notification_type: NotificationType, provider: Any)`
@@ -329,7 +329,7 @@ Raises:
 - 当前实现非线程安全，应在初始化阶段注册
 - 运行时注册应由调用方确保同步
 
-Args:
+参数:
     notification_type: 通知类型枚举值
     provider: 通知提供者实例，需实现 send 方法
 
@@ -361,7 +361,7 @@ Args:
 - 应在初始化阶段添加回调
 - 运行时添加应由调用方确保同步
 
-Args:
+参数:
     event_name: 事件名称字符串
     callback: 回调函数，接受 (*args, **kwargs)
 
@@ -393,7 +393,7 @@ Args:
 - 回调应快速返回，避免阻塞
 - 耗时操作应在回调内启动新线程
 
-Args:
+参数:
     event_name: 事件名称字符串
     *args: 传递给回调函数的位置参数
     **kwargs: 传递给回调函数的关键字参数
@@ -433,14 +433,14 @@ notification_{毫秒时间戳}_{对象ID}
 - 事件队列操作受锁保护
 - 可从多线程安全调用
 
-Args:
+参数:
     title: 通知标题，建议不超过 50 字符
     message: 通知消息内容，支持多行文本
     trigger: 触发时机枚举，默认为立即触发
     types: 通知类型列表，None 时使用配置的默认类型
     metadata: 元数据字典，传递额外参数给通知提供者
 
-Returns:
+返回:
     str: 事件 ID，用于追踪通知。如果通知被禁用则返回空字符串
 
 ##### `shutdown(self, wait: bool = False)`
@@ -499,7 +499,7 @@ Returns:
 - 读取配置字段值也是线程安全的（Python 读取是原子操作）
 - 直接修改字段不是线程安全的，请使用 update_config
 
-Returns:
+返回:
     NotificationConfig: 当前通知配置对象
 
 ##### `refresh_config_from_file(self, force: bool = False)`
@@ -601,7 +601,7 @@ force : bool, optional
 - 并发更新可能导致配置丢失
 - 应由调用方确保同步
 
-Args:
+参数:
     **kwargs: 要更新的配置键值对，键为 NotificationConfig 的字段名
 
 ##### `update_config_without_save(self)`
@@ -641,7 +641,7 @@ Args:
 - 确保配置读写的原子性，避免并发不一致
 - 锁粒度：方法级别，保护整个配置更新过程
 
-Args:
+参数:
     **kwargs: 要更新的配置键值对，键为 NotificationConfig 的字段名
 
 ##### `get_status(self) -> Dict[str, Any]`
@@ -682,7 +682,7 @@ Args:
 - 队列大小查询受锁保护
 - 其他字段读取是线程安全的
 
-Returns:
+返回:
     Dict[str, Any]: 状态信息字典，包含以下键：
         - enabled (bool): 通知是否启用
         - providers (List[NotificationType]): 已注册的通知提供者列表

@@ -69,13 +69,13 @@
 - 逐字符扫描，适用于中小型配置文件
 - 对于大型文件可能性能不佳
 
-Args:
+参数:
     content: JSONC 格式的字符串内容
 
-Returns:
+返回:
     Dict[str, Any]: 解析后的字典对象
 
-Raises:
+异常:
     json.JSONDecodeError: JSON 解析失败时抛出
 
 ### `_is_uvx_mode() -> bool`
@@ -107,7 +107,7 @@ Raises:
 - 开发模式允许开发者在项目目录调试配置
 - 避免 uvx 模式下意外使用临时目录的配置
 
-Returns:
+返回:
     bool: True 表示 uvx 模式，False 表示开发模式
 
 ### `find_config_file(config_filename: str = 'config.jsonc') -> Path`
@@ -155,10 +155,10 @@ Returns:
 - 记录警告日志但不抛出异常
 - 确保应用能在各种环境下启动
 
-Args:
+参数:
     config_filename: 配置文件名，默认为 "config.jsonc"
 
-Returns:
+返回:
     Path: 配置文件的路径对象（可能尚不存在）
 
 ### `_get_user_config_dir_fallback() -> Path`
@@ -194,7 +194,7 @@ Returns:
 - 确保在没有第三方库时也能正常工作
 - 使用 Path.home() 获取用户主目录，跨平台兼容
 
-Returns:
+返回:
     Path: 用户配置目录路径（不包含配置文件名）
 
 ### `_shutdown_global_config_manager()`
@@ -218,7 +218,7 @@ Returns:
 - config_manager 实例本身线程安全
 - 可从多线程安全调用此函数
 
-Returns:
+返回:
     ConfigManager: 全局配置管理器实例
 
 ## 类
@@ -386,7 +386,7 @@ Yields:
 【默认配置】
 如果配置文件不存在，自动创建带注释的默认配置文件
 
-Args:
+参数:
     config_file: 配置文件名，默认为 "config.jsonc"
 
 ##### `get(self, key: str, default: Any = None) -> Any`
@@ -424,11 +424,11 @@ Args:
 - 中间路径不是字典：返回 default 参数值
 - 不抛出异常，确保调用安全
 
-Args:
+参数:
     key: 配置键，支持点号分隔的嵌套路径
     default: 键不存在时的默认返回值，默认为 None
 
-Returns:
+返回:
     Any: 配置值，如果键不存在则返回 default
 
 ##### `set(self, key: str, value: Any, save: bool = True)`
@@ -477,7 +477,7 @@ Returns:
 - **network_security 配置**：不在 _config 中，更新会被忽略
 - 应通过修改配置文件并调用 reload() 更新
 
-Args:
+参数:
     key: 配置键，支持点号分隔的嵌套路径
     value: 要设置的新值，可以是任意类型
     save: 是否保存到文件，默认为 True
@@ -526,7 +526,7 @@ Args:
 - set()：单个配置项更新
 - update()：多个配置项批量更新，性能更优
 
-Args:
+参数:
     updates: 配置更新字典，键为配置路径，值为新值
     save: 是否保存到文件，默认为 True
 
@@ -597,11 +597,11 @@ Args:
 - 配置页面展示某个配置段
 - 批量读取配置项
 
-Args:
+参数:
     section: 配置段名称（顶层配置键）
     use_cache: 是否使用缓存（默认 True）
 
-Returns:
+返回:
     Dict[str, Any]: 配置段字典的深拷贝，如果不存在则返回空字典
 
 ##### `update_section(self, section: str, updates: Dict[str, Any], save: bool = True)`
@@ -643,7 +643,7 @@ Returns:
 - update()：支持跨配置段的更新，键需要完整路径
 - update_section()：限定在单个配置段内，键无需前缀
 
-Args:
+参数:
     section: 配置段名称（顶层配置键）
     updates: 配置更新字典，键为配置段内的键名，值为新值
     save: 是否保存到文件，默认为 True
@@ -684,7 +684,7 @@ Args:
 【功能说明】
 使指定配置段的缓存失效，下次访问时会重新从内存中读取。
 
-Args:
+参数:
     section: 配置段名称
 
 ##### `invalidate_all_caches(self)`
@@ -701,7 +701,7 @@ Args:
 【功能说明】
 返回缓存的命中率、未命中率等统计信息。
 
-Returns:
+返回:
     Dict: {
         "hits": 缓存命中次数,
         "misses": 缓存未命中次数,
@@ -725,7 +725,7 @@ Returns:
 【功能说明】
 动态调整缓存有效期（TTL）。
 
-Args:
+参数:
     section_ttl: section 缓存有效期（秒），None 表示不修改
     network_security_ttl: network_security 缓存有效期（秒），None 表示不修改
 
@@ -760,7 +760,7 @@ Args:
 - 使用 get_network_security_config() 单独获取
 - 不会包含在返回值中
 
-Returns:
+返回:
     Dict[str, Any]: 所有配置的副本（不含 network_security）
 
 ##### `get_network_security_config(self) -> Dict[str, Any]`
@@ -817,7 +817,7 @@ network_security 配置包含敏感的网络访问控制信息，独立管理更
 - 配置段缺失：返回默认配置
 - 不抛出异常，确保应用能正常启动
 
-Returns:
+返回:
     Dict[str, Any]: network_security 配置字典，如果读取失败则返回默认配置
 
 ##### `get_typed(self, key: str, default: Any, value_type: type, min_val: Optional[Any] = None, max_val: Optional[Any] = None) -> Any`
@@ -843,17 +843,17 @@ Returns:
 - 获取需要类型安全的配置值
 - 避免在使用配置值前手动转换和验证
 
-Args:
+参数:
     key: 配置键，支持点号分隔的嵌套路径
     default: 默认值
     value_type: 目标类型（int, float, bool, str）
     min_val: 最小值（可选）
     max_val: 最大值（可选）
 
-Returns:
+返回:
     Any: 类型转换和边界验证后的配置值
 
-Example:
+示例:
     >>> config.get_typed("web_ui.port", 8080, int, 1, 65535)
     8080
     >>> config.get_typed("notification.enabled", True, bool)
@@ -863,49 +863,49 @@ Example:
 
 获取整数配置值
 
-Args:
+参数:
     key: 配置键
     default: 默认值
     min_val: 最小值（可选）
     max_val: 最大值（可选）
 
-Returns:
+返回:
     int: 整数配置值
 
 ##### `get_float(self, key: str, default: float = 0.0, min_val: Optional[float] = None, max_val: Optional[float] = None) -> float`
 
 获取浮点数配置值
 
-Args:
+参数:
     key: 配置键
     default: 默认值
     min_val: 最小值（可选）
     max_val: 最大值（可选）
 
-Returns:
+返回:
     float: 浮点数配置值
 
 ##### `get_bool(self, key: str, default: bool = False) -> bool`
 
 获取布尔配置值
 
-Args:
+参数:
     key: 配置键
     default: 默认值
 
-Returns:
+返回:
     bool: 布尔配置值
 
 ##### `get_str(self, key: str, default: str = '', max_length: Optional[int] = None) -> str`
 
 获取字符串配置值
 
-Args:
+参数:
     key: 配置键
     default: 默认值
     max_length: 最大长度（可选，超出会截断）
 
-Returns:
+返回:
     str: 字符串配置值
 
 ##### `start_file_watcher(self, interval: float = 2.0)`

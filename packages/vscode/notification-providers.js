@@ -22,8 +22,8 @@ class VSCodeApiNotificationProvider {
     if (!message) return false
 
     const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
-    const presentation = toNonEmptyString(md.presentation, 'statusBar') // statusBar | toast
-    const severity = toNonEmptyString(md.severity, 'info') // info | warn | error
+    const presentation = toNonEmptyString(md.presentation, 'statusBar') // 展示方式：statusBar | toast
+    const severity = toNonEmptyString(md.severity, 'info') // 严重级别：info | warn | error
     const timeoutMsRaw = md && md.timeoutMs
     const timeoutMs =
       typeof timeoutMsRaw === 'number' && Number.isFinite(timeoutMsRaw) ? Math.max(0, Math.floor(timeoutMsRaw)) : 3000
@@ -51,7 +51,7 @@ class VSCodeApiNotificationProvider {
           this._logger.warn(`VSCode 状态栏提示失败: ${e && e.message ? e.message : String(e)}`)
         }
       } catch {
-        // ignore
+        // 忽略：日志系统异常不应影响通知流程
       }
       return false
     }
@@ -92,7 +92,7 @@ class AppleScriptNotificationProvider {
           this._logger.debug('忽略原生通知：非 macOS 平台')
         }
       } catch {
-        // ignore
+        // 忽略：日志系统异常不应影响通知流程
       }
       return false
     }
@@ -107,7 +107,7 @@ class AppleScriptNotificationProvider {
           this._logger.warn(tip)
         }
       } catch {
-        // ignore
+        // 忽略：日志系统异常不应影响通知流程
       }
       return false
     }
@@ -140,7 +140,7 @@ class AppleScriptNotificationProvider {
           this._logger.warn(`原生通知失败 code=${code || 'unknown'} msg=${raw || ''}`.trim())
         }
       } catch {
-        // ignore
+        // 忽略：日志系统异常不应影响通知流程
       }
       return false
     }

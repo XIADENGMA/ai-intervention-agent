@@ -19,7 +19,7 @@ class Task:
     task_id: str
     prompt: str
     predefined_options: Optional[List[str]] = None
-    auto_resubmit_timeout: int = 240  # 默认240秒，最大不超过250秒（优化后）
+    auto_resubmit_timeout: int = 240  # 默认 240 秒；add_task 会限制到 290 秒以内
     created_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )  # 使用 UTC 时间，支持跨时区部署
@@ -50,7 +50,7 @@ class Task:
 
         【新增】使用单调时间判断任务是否已超时。
 
-        Returns:
+        返回:
             bool: True 表示已超时，False 表示未超时
         """
         if self.status == "completed":
@@ -147,7 +147,7 @@ class TaskQueue:
     - completed 任务会在10秒后自动删除
     - 不要在锁内执行耗时操作
 
-    Attributes:
+    属性:
         max_tasks (int): 最大并发任务数
     """
 
@@ -156,20 +156,20 @@ class TaskQueue:
 
         创建任务队列实例并启动后台清理线程。
 
-        Args:
+        参数:
             max_tasks (int): 最大并发任务数，默认10
                 - 建议值：5-20（根据实际需求）
                 - 过大：内存占用增加
                 - 过小：容易达到上限
 
-        Raises:
+        异常:
             无：所有异常都会被捕获并记录日志
 
-        Side Effects:
+        副作用:
             - 启动守护线程 TaskQueueCleanup
             - 记录初始化日志
 
-        Thread Safety:
+        线程安全:
             线程安全（使用 Lock 保护共享数据）
         """
         self.max_tasks = max_tasks
@@ -261,18 +261,18 @@ class TaskQueue:
         **注意**：返回的是任务对象引用，修改其属性可能影响队列状态
         （虽然不推荐直接修改，应使用提供的方法）
 
-        Args:
+        参数:
             task_id (str): 任务唯一标识符
 
-        Returns:
+        返回:
             Optional[Task]: 任务对象，不存在则返回 None
                 - Task对象包含所有任务信息
                 - None表示任务不存在或已被删除
 
-        Thread Safety:
+        线程安全:
             线程安全（使用 Lock 保护）
 
-        Time Complexity:
+        时间复杂度:
             O(1) - 字典查询
         """
         with self._lock:
@@ -299,10 +299,10 @@ class TaskQueue:
         - 如果将超时时间调小到小于已过去时间，任务可能会立刻显示 remaining_time=0
         - auto_resubmit_timeout=0 在语义上表示“禁用自动提交”，上层需要配合前端逻辑避免误触发
 
-        Args:
+        参数:
             auto_resubmit_timeout: 新的前端倒计时（秒）
 
-        Returns:
+        返回:
             int: 实际更新的任务数量
         """
         updated = 0
@@ -372,26 +372,25 @@ class TaskQueue:
 
         如果完成的任务是活动任务，会自动激活下一个pending任务：
         1. 清空 _active_task_id
-        2. 遍历 _task_order
-        3. 找到第一个 status='pending' 的任务
-        4. 将其设置为 active
+        2. 遍历任务字典（按插入顺序）
+        3. 找到第一个 status='pending' 的任务并将其设置为 active
 
-        Args:
+        参数:
             task_id (str): 要完成的任务ID
             result (Dict[str, Any]): 任务执行结果
                 - 通常包含 'feedback', 'selected_options' 等键
                 - 格式由调用方决定
                 - 示例：{'feedback': '用户输入', 'selected_options': ['选项1']}
 
-        Returns:
+        返回:
             bool: 是否成功完成
                 - True: 成功标记为完成
                 - False: 任务不存在
 
-        Thread Safety:
+        线程安全:
             线程安全（使用 Lock 保护）
 
-        Side Effects:
+        副作用:
             - 设置 task.status = 'completed'
             - 设置 task.result
             - 设置 task.completed_at
@@ -399,10 +398,10 @@ class TaskQueue:
             - 可能自动激活下一个任务
             - 记录日志
 
-        Time Complexity:
-            O(n) - 需要遍历 _task_order 查找下一个pending任务
+        时间复杂度:
+            O(n) - 最坏情况下需要遍历任务字典以查找下一个 pending 任务
 
-        Note:
+        说明:
             - 任务完成后10秒内仍可查询
             - 前端应在收到完成状态后停止轮询
             - 自动激活逻辑只查找pending状态的任务
@@ -453,27 +452,28 @@ class TaskQueue:
         **自动激活逻辑**：
         如果删除的是活动任务，会自动激活下一个pending/active任务
 
-        Args:
+        参数:
             task_id (str): 要移除的任务ID
 
-        Returns:
+        返回:
             bool: 是否成功移除
                 - True: 成功移除
                 - False: 任务不存在
 
-        Thread Safety:
+        线程安全:
             线程安全（使用 Lock 保护）
 
-        Side Effects:
+        副作用:
             - 从 _tasks 删除任务（Python 3.7+ dict.pop() 是 O(1)）
             - 可能更新 _active_task_id
             - 可能自动激活下一个任务
             - 记录日志
 
-        Time Complexity:
-            O(1) - 【性能优化】使用 dict.pop() 代替 list.remove()
+        时间复杂度:
+            - 若删除的不是活动任务：O(1)（dict.pop()）
+            - 若删除的是活动任务：最坏 O(n)（需要遍历查找下一个任务）
 
-        Note:
+        说明:
             - 适用于手动取消任务
             - 不推荐用于正常完成的任务（应使用complete_task）
             - 删除后任务立即不可查询
@@ -527,20 +527,20 @@ class TaskQueue:
         - `clear_completed_tasks`: 清理所有completed任务（不限时间）
         - `cleanup_completed_tasks`: 只清理超过指定时间的completed任务
 
-        Returns:
+        返回:
             int: 清理的任务数量（>=0）
 
-        Thread Safety:
+        线程安全:
             线程安全（使用 Lock 保护）
 
-        Side Effects:
+        副作用:
             - 删除所有completed任务
             - 记录日志（如果有清理）
 
-        Time Complexity:
+        时间复杂度:
             O(n) - 需要遍历所有任务
 
-        Note:
+        说明:
             - 不检查completed_at时间
             - 适用于需要立即清理的场景
             - 后台清理线程使用的是cleanup_completed_tasks
@@ -576,27 +576,27 @@ class TaskQueue:
         3. 计算任务完成时长
         4. 如果超过age_seconds则删除
 
-        Args:
+        参数:
             age_seconds (int): 任务完成后保留的秒数
                 - 默认值：10秒
                 - 建议值：5-30秒
                 - 过小：前端可能遇到404
                 - 过大：内存占用增加
 
-        Returns:
+        返回:
             int: 清理的任务数量（>=0）
 
-        Thread Safety:
+        线程安全:
             线程安全（使用 Lock 保护）
 
-        Side Effects:
+        副作用:
             - 删除过期的completed任务
             - 记录日志（如果有清理）
 
-        Time Complexity:
+        时间复杂度:
             O(n) - 需要遍历所有任务并计算时间差
 
-        Note:
+        说明:
             - completed_at为None的任务不会被清理
             - 后台线程默认使用 age_seconds=10
             - 可以手动调用来立即清理
@@ -643,16 +643,16 @@ class TaskQueue:
         - _stop_cleanup.set() 设置停止事件
         - wait(timeout=5) 返回True时退出
 
-        Thread Safety:
+        线程安全:
             cleanup_completed_tasks 内部使用Lock保护
 
-        Side Effects:
+        副作用:
             - 定期删除过期任务
             - 记录启动和停止日志
             - 记录清理日志（debug级别）
             - 记录异常日志（error级别）
 
-        Note:
+        说明:
             - 不应直接调用此方法（由__init__自动启动）
             - 线程名称：TaskQueueCleanup
             - 异常不会中断循环
@@ -685,15 +685,15 @@ class TaskQueue:
         - 线程可能仍在运行（极少见）
         - 由于是守护线程，应用退出时会强制停止
 
-        Thread Safety:
+        线程安全:
             线程安全（使用Event同步）
 
-        Side Effects:
+        副作用:
             - 设置停止事件
             - 阻塞最多2秒等待线程
             - 记录日志
 
-        Note:
+        说明:
             - 必须在应用关闭时调用
             - 不调用可能导致日志未正确flush
             - 守护线程会在主线程退出时强制停止
@@ -726,7 +726,7 @@ class TaskQueue:
         - 统计任务处理进度
         - 调试和日志
 
-        Returns:
+        返回:
             Dict[str, int]: 任务统计字典
                 键值对：
                 - 'total': int - 总任务数
@@ -735,13 +735,13 @@ class TaskQueue:
                 - 'completed': int - 已完成任务数
                 - 'max': int - 最大容量
 
-        Thread Safety:
+        线程安全:
             线程安全（使用 Lock 保护）
 
-        Time Complexity:
+        时间复杂度:
             O(n) - 需要遍历所有任务计数
 
-        Note:
+        说明:
             - 返回的是新字典，可以安全修改
             - active数量应该是0或1（单活动任务模式）
             - total = pending + active + completed

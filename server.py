@@ -141,7 +141,7 @@ _global_task_queue = TaskQueue(max_tasks=10)
 def get_task_queue() -> TaskQueue:
     """获取全局任务队列实例
 
-    Returns:
+    返回:
         TaskQueue: 全局任务队列实例
     """
     return _global_task_queue
@@ -1507,10 +1507,10 @@ def launch_feedback_ui(
 
 @mcp.tool()
 async def interactive_feedback(
-    message: str = Field(description="The specific question for the user"),
+    message: str = Field(description="向用户展示的具体问题/提示（支持 Markdown）"),
     predefined_options: Optional[list] = Field(
         default=None,
-        description="Predefined options for the user to choose from (optional)",
+        description="可选的预定义选项列表，供用户单选/多选",
     ),
 ) -> list:
     """
@@ -1518,10 +1518,10 @@ async def interactive_feedback(
 
     参数
     ----
-    message : str, required
+    message : str, 必填
         向用户显示的问题或消息（Markdown 格式支持）
         最大长度: 10000 字符（超出部分自动截断）
-    predefined_options : Optional[list], optional
+    predefined_options : Optional[list], 可选
         预定义选项列表，用户可多选或单选
         - 每个选项最大长度: 500 字符
         - 非字符串选项会被自动过滤

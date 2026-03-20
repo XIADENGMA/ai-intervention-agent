@@ -110,7 +110,7 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
     """
     解析 JSONC（带注释的 JSON）为字典，支持 // 单行注释和 /* */ 多行注释。
 
-    Raises:
+    异常:
         json.JSONDecodeError: JSON 语法错误时抛出
     """
     cleaned_chars = []

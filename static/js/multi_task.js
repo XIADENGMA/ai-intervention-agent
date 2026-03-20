@@ -212,7 +212,7 @@ async function fetchAndApplyTasks(reason) {
       tasksPollAbortController.abort()
     }
   } catch (e) {
-    // ignore
+    // 忽略：部分浏览器/环境下 abort 可能抛异常
   }
 
   if (typeof AbortController !== 'undefined') {
@@ -264,7 +264,7 @@ async function fetchAndApplyTasks(reason) {
                     clearInterval(taskCountdowns[task.task_id].timer)
                   }
                 } catch (e) {
-                  // ignore
+                  // 忽略：定时器可能已被清理
                 }
                 delete taskCountdowns[task.task_id]
                 delete window.taskDeadlines[task.task_id]
@@ -415,7 +415,7 @@ function stopTasksPolling() {
       tasksPollAbortController.abort()
     }
   } catch (e) {
-    // ignore
+    // 忽略：部分浏览器/环境下 abort 可能抛异常
   } finally {
     tasksPollAbortController = null
   }
@@ -583,7 +583,7 @@ function updateTasksList(tasks) {
             clearInterval(taskCountdowns[task.task_id].timer)
           }
         } catch (e) {
-          // ignore
+          // 忽略：定时器可能已被清理
         }
         delete taskCountdowns[task.task_id]
       }
@@ -1925,14 +1925,14 @@ function showNewTaskNotification(count, taskIds) {
       return
     }
   } catch (e) {
-    // ignore
+    // 忽略：通知中心异常不应影响轮询主流程
   }
 
   // 降级：仅展示视觉提示
   try {
     showNewTaskVisualHint(count)
   } catch (e) {
-    // ignore
+    // 忽略：视觉提示失败不应影响轮询主流程
   }
 }
 
