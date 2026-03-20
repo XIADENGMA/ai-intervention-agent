@@ -2896,6 +2896,12 @@ class WebFeedbackUI:
             multi_task_version = self._get_file_version(
                 os.path.join(current_dir, "static", "js", "multi_task.js")
             )
+            theme_version = self._get_file_version(
+                os.path.join(current_dir, "static", "js", "theme.js")
+            )
+            app_version = self._get_file_version(
+                os.path.join(current_dir, "static", "js", "app.js")
+            )
 
             # 替换内联CSS为外部CSS文件引用（带版本号）
             css_link = f'<link rel="stylesheet" href="/static/css/main.css?v={css_version}" nonce="{self.csp_nonce}">'
@@ -2905,6 +2911,16 @@ class WebFeedbackUI:
             html_content = html_content.replace(
                 'src="/static/js/multi_task.js"',
                 f'src="/static/js/multi_task.js?v={multi_task_version}"',
+            )
+
+            # 为主题与主应用脚本添加版本号（避免浏览器缓存导致修复不生效，尤其是 ai.local 真机访问）
+            html_content = html_content.replace(
+                'src="/static/js/theme.js"',
+                f'src="/static/js/theme.js?v={theme_version}"',
+            )
+            html_content = html_content.replace(
+                'src="/static/js/app.js"',
+                f'src="/static/js/app.js?v={app_version}"',
             )
 
             return html_content

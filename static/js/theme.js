@@ -97,10 +97,17 @@ const ThemeManager = (function () {
     const effectiveTheme = theme === THEMES.AUTO ? systemPreference : theme;
 
     // 设置 data-theme 属性
-    if (effectiveTheme === THEMES.DARK) {
-      html.removeAttribute('data-theme');
-    } else {
+    //
+    // 关键修复：
+    // 不能用“移除 data-theme”来表示深色主题。
+    // 因为 main.css 里存在 `@media (prefers-color-scheme: light) { :root:not([data-theme]) { ... } }`
+    // 当系统偏好为浅色时，移除 data-theme 会让页面变量回到浅色，导致“仅局部变暗（如 .container）”的错位效果。
+    //
+    // 因此这里始终显式写入 `dark` / `light`，确保用户手动切换能覆盖系统偏好。
+    if (effectiveTheme === THEMES.DARK || effectiveTheme === THEMES.LIGHT) {
       html.setAttribute('data-theme', effectiveTheme);
+    } else {
+      html.removeAttribute('data-theme');
     }
 
     // 更新 meta 标签（用于移动端状态栏颜色）
