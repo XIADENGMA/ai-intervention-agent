@@ -69,7 +69,28 @@ uv add ai-intervention-agent
 }
 ```
 
-> [!NOTE] > `interactive_feedback` 是一个**长时间运行**的工具。有些客户端存在硬超时限制，因此 Web UI 提供倒计时 + 自动重调（到时自动提交）以尽量保持会话不断开。
+> [!NOTE]
+> `interactive_feedback` 是一个**长时间运行**的工具。有些客户端存在硬超时限制，因此 Web UI 提供倒计时 + 自动重调（到点自动提交）以尽量保持会话不断开。
+>
+> - 默认：`feedback.frontend_countdown=240` 秒
+> - 最大：`250` 秒（用于规避常见 300 秒硬超时）
+
+3.（可选）自定义配置：
+
+- 首次运行会在用户配置目录创建 `config.jsonc`（详见 [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)）。
+- 示例（JSONC）：
+
+```jsonc
+{
+  "web_ui": {
+    "port": 8080
+  },
+  "feedback": {
+    "frontend_countdown": 240,
+    "backend_max_wait": 600
+  }
+}
+```
 
 <details>
 <summary>提示词（可复制）</summary>
@@ -140,6 +161,15 @@ ai-intervention-agent 工具使用细节：
 - **通知**：Web UI / 声音 / 系统通知 / Bark
 - **远程友好**：适配 SSH 端口转发等远程开发场景
 
+## 工作原理
+
+1. AI 客户端调用 MCP 工具 `interactive_feedback`。
+2. MCP 服务进程确保 Web UI 子进程可用，然后通过 HTTP 创建任务（`POST /api/tasks`）。
+3. 浏览器（或 VS Code Webview）通过轮询 Web UI API 渲染任务列表与倒计时。
+4. 你提交反馈后，Web UI 会在任务队列中完成对应任务。
+5. MCP 服务进程轮询任务完成（`GET /api/tasks/{task_id}`），并将反馈（文本 + 图片）返回给 AI 客户端。
+6. （可选）MCP 服务进程会按配置触发通知（Bark / 系统通知 / 声音 / Web 提示）。
+
 ## VS Code 插件（可选）
 
 | 项目                        | 说明                                                                                                                                                                     |
@@ -172,42 +202,56 @@ flowchart TD
     AI_CLIENT["AI CLI / IDE<br/>(Cursor, VS Code, Claude Code, ...)"]
   end
 
-  subgraph MCP_PROC["MCP 服务进程"]
-    MCP_SRV["ai-intervention-agent<br/>(server.py)"]
+  subgraph MCP_PROC["MCP 服务进程（Python）"]
+    MCP_SRV["ai-intervention-agent<br/>(server.py / FastMCP)"]
     MCP_TOOL["MCP 工具<br/>interactive_feedback"]
-    CFG_MGR["配置管理<br/>(config_manager.py)"]
+    SVC_MGR["服务管理<br/>(ServiceManager)"]
+    CFG_MGR_MCP["配置管理<br/>(config_manager.py)"]
     NOTIF_MGR["通知管理<br/>(notification_manager.py)"]
+    NOTIF_PROVIDERS["Providers<br/>(notification_providers.py)"]
+    MCP_SRV --> MCP_TOOL
+    MCP_SRV --> CFG_MGR_MCP
+    MCP_SRV --> NOTIF_MGR
+    NOTIF_MGR --> NOTIF_PROVIDERS
   end
 
-  subgraph WEB_PROC["Web UI 进程"]
+  subgraph WEB_PROC["Web UI 进程（Python / Flask）"]
     WEB_SRV["Web UI 服务<br/>(web_ui.py / Flask)"]
+    WEB_CFG_MGR["配置管理<br/>(config_manager.py)"]
     HTTP_API["HTTP API<br/>(/api/*)"]
     TASK_Q["任务队列<br/>(task_queue.py)"]
+    WEB_FRONTEND["前端<br/>(static/js/app.js + multi_task.js)"]
     WEB_SRV --> HTTP_API
     WEB_SRV --> TASK_Q
+    WEB_SRV --> WEB_CFG_MGR
+    WEB_FRONTEND <-->|轮询 /api/tasks| HTTP_API
+    WEB_FRONTEND -->|提交反馈| WEB_SRV
   end
 
   subgraph USER_UI["用户界面"]
-    BROWSER["浏览器"]
+    BROWSER["浏览器<br/>(桌面/移动端)"]
     VSCODE["VS Code 插件<br/>(Webview)"]
+    USER["用户"]
   end
 
   CFG_FILE["config.jsonc<br/>(用户配置目录)"]
 
   AI_CLIENT -->|MCP 调用| MCP_TOOL
-  MCP_SRV -->|对外提供| MCP_TOOL
+  MCP_TOOL -->|启动/检查 Web UI| SVC_MGR
+  SVC_MGR -->|spawn/monitor| WEB_SRV
 
-  MCP_TOOL -->|确保 Web UI 运行| WEB_SRV
-  MCP_TOOL <-->|创建任务 / 轮询结果| HTTP_API
+  USER -->|输入/点击| WEB_FRONTEND
+  BROWSER -->|加载界面| WEB_FRONTEND
+  VSCODE -->|加载界面| WEB_FRONTEND
 
-  BROWSER <-->|HTTP| HTTP_API
-  VSCODE <-->|HTTP| HTTP_API
+  MCP_TOOL -->|HTTP POST /api/tasks| HTTP_API
+  MCP_TOOL -->|HTTP GET /api/tasks/{task_id}| HTTP_API
 
-  CFG_MGR <-->|读写| CFG_FILE
-  WEB_SRV <-->|读取| CFG_FILE
+  WEB_CFG_MGR <-->|读写 + watcher| CFG_FILE
+  CFG_MGR_MCP <-->|读写 + watcher| CFG_FILE
 
-  MCP_SRV --> NOTIF_MGR
-  NOTIF_MGR -->|Web / 声音 / 系统通知 / Bark| USER["用户"]
+  MCP_TOOL -->|触发通知| NOTIF_MGR
+  NOTIF_PROVIDERS -->|系统通知 / 声音 / Bark / Web 提示| USER
 ```
 
 ## 文档

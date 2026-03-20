@@ -69,7 +69,28 @@ uv add ai-intervention-agent
 }
 ```
 
-> [!NOTE] > `interactive_feedback` is a **long-running tool**. Some clients have a hard request timeout, so the Web UI provides a countdown + auto re-submit option to keep sessions alive.
+> [!NOTE]
+> `interactive_feedback` is a **long-running tool**. Some clients have a hard request timeout, so the Web UI provides a countdown + auto re-submit option to keep sessions alive.
+>
+> - Default: `feedback.frontend_countdown=240` seconds
+> - Max: `250` seconds (to stay under common 300s hard timeouts)
+
+3. (Optional) Customize your config:
+
+- On first run, `config.jsonc` will be created under your OS user config directory (see [docs/configuration.md](docs/configuration.md)).
+- Example (JSONC):
+
+```jsonc
+{
+  "web_ui": {
+    "port": 8080
+  },
+  "feedback": {
+    "frontend_countdown": 240,
+    "backend_max_wait": 600
+  }
+}
+```
 
 <details>
 <summary>Prompt snippet (copy/paste)</summary>
@@ -138,6 +159,15 @@ ai-intervention-agent usage details:
 - **Notifications**: web / sound / system / Bark
 - **SSH-friendly**: great with port forwarding
 
+## How it works
+
+1. Your AI client calls the MCP tool `interactive_feedback`.
+2. The MCP server ensures the Web UI process is running, then creates a task via HTTP (`POST /api/tasks`).
+3. The browser (or VS Code Webview) renders tasks by polling the Web UI API.
+4. When you submit feedback, the Web UI completes the task in the task queue.
+5. The MCP server polls for completion (`GET /api/tasks/{task_id}`) and returns your feedback (text + images) back to the AI client.
+6. Optionally, the MCP server triggers notifications (Bark / system / sound / web hints) based on your config.
+
 ## VS Code extension (optional)
 
 | Item                           | Value                                                                                                                                                                          |
@@ -170,42 +200,56 @@ flowchart TD
     AI_CLIENT["AI CLI / IDE<br/>(Cursor, VS Code, Claude Code, ...)"]
   end
 
-  subgraph MCP_PROC["MCP server process"]
-    MCP_SRV["ai-intervention-agent<br/>(server.py)"]
+  subgraph MCP_PROC["MCP server process (Python)"]
+    MCP_SRV["ai-intervention-agent<br/>(server.py / FastMCP)"]
     MCP_TOOL["MCP tool<br/>interactive_feedback"]
-    CFG_MGR["Config manager<br/>(config_manager.py)"]
+    SVC_MGR["Service manager<br/>(ServiceManager)"]
+    CFG_MGR_MCP["Config manager<br/>(config_manager.py)"]
     NOTIF_MGR["Notification manager<br/>(notification_manager.py)"]
+    NOTIF_PROVIDERS["Providers<br/>(notification_providers.py)"]
+    MCP_SRV --> MCP_TOOL
+    MCP_SRV --> CFG_MGR_MCP
+    MCP_SRV --> NOTIF_MGR
+    NOTIF_MGR --> NOTIF_PROVIDERS
   end
 
-  subgraph WEB_PROC["Web UI process"]
+  subgraph WEB_PROC["Web UI process (Python / Flask)"]
     WEB_SRV["Web UI service<br/>(web_ui.py / Flask)"]
+    WEB_CFG_MGR["Config manager<br/>(config_manager.py)"]
     HTTP_API["HTTP API<br/>(/api/*)"]
     TASK_Q["Task queue<br/>(task_queue.py)"]
+    WEB_FRONTEND["Frontend<br/>(static/js/app.js + multi_task.js)"]
     WEB_SRV --> HTTP_API
     WEB_SRV --> TASK_Q
+    WEB_SRV --> WEB_CFG_MGR
+    WEB_FRONTEND <-->|poll /api/tasks| HTTP_API
+    WEB_FRONTEND -->|submit feedback| WEB_SRV
   end
 
   subgraph USER_UI["User interfaces"]
-    BROWSER["Browser"]
+    BROWSER["Browser<br/>(desktop/mobile)"]
     VSCODE["VS Code extension<br/>(Webview)"]
+    USER["User"]
   end
 
   CFG_FILE["config.jsonc<br/>(user config directory)"]
 
   AI_CLIENT -->|MCP call| MCP_TOOL
-  MCP_SRV -->|exposes| MCP_TOOL
+  MCP_TOOL -->|start/check Web UI| SVC_MGR
+  SVC_MGR -->|spawn/monitor| WEB_SRV
 
-  MCP_TOOL -->|ensure Web UI running| WEB_SRV
-  MCP_TOOL <-->|create task / poll result| HTTP_API
+  USER -->|input / click| WEB_FRONTEND
+  BROWSER -->|load UI| WEB_FRONTEND
+  VSCODE -->|load UI| WEB_FRONTEND
 
-  BROWSER <-->|HTTP| HTTP_API
-  VSCODE <-->|HTTP| HTTP_API
+  MCP_TOOL -->|HTTP POST /api/tasks| HTTP_API
+  MCP_TOOL -->|HTTP GET /api/tasks/{task_id}| HTTP_API
 
-  CFG_MGR <-->|read/write| CFG_FILE
-  WEB_SRV <-->|read| CFG_FILE
+  WEB_CFG_MGR <-->|read/write + watcher| CFG_FILE
+  CFG_MGR_MCP <-->|read/write + watcher| CFG_FILE
 
-  MCP_SRV --> NOTIF_MGR
-  NOTIF_MGR -->|web / sound / system / Bark| USER["User"]
+  MCP_TOOL -->|trigger notifications| NOTIF_MGR
+  NOTIF_PROVIDERS -->|system / sound / Bark / web hints| USER
 ```
 
 ## Documentation
