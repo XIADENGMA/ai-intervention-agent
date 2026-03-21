@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple, cast, overload
 
 import requests
@@ -139,7 +140,11 @@ except ImportError:
 
 mcp: FastMCP = FastMCP("AI Intervention Agent MCP")
 logger = EnhancedLogger(__name__)
-_global_task_queue = TaskQueue(max_tasks=10)
+
+# TaskQueue 主要由 Web UI 进程使用（web_ui.py 会导入 server.get_task_queue）。
+# 为避免在 MCP 服务器进程里无意义地启动后台清理线程，这里采用懒加载 + 线程安全初始化。
+_global_task_queue: TaskQueue | None = None
+_global_task_queue_lock = threading.Lock()
 
 
 def get_task_queue() -> TaskQueue:
@@ -148,7 +153,25 @@ def get_task_queue() -> TaskQueue:
     返回:
         TaskQueue: 全局任务队列实例
     """
+    global _global_task_queue
+    if _global_task_queue is None:
+        with _global_task_queue_lock:
+            if _global_task_queue is None:
+                _global_task_queue = TaskQueue(max_tasks=10)
     return _global_task_queue
+
+
+def _shutdown_global_task_queue() -> None:
+    """进程退出时尽量停止 TaskQueue 后台线程（幂等）。"""
+    try:
+        if _global_task_queue is not None:
+            _global_task_queue.stop_cleanup()
+    except Exception:
+        # 退出阶段不再抛异常
+        pass
+
+
+atexit.register(_shutdown_global_task_queue)
 
 
 try:
@@ -210,7 +233,7 @@ class ServiceManager:
         try:
             self.cleanup_all(shutdown_notification_manager=True)
         except Exception as e:
-            logger.error(f"清理服务时出错: {e}")
+            logger.error(f"清理服务时出错: {e}", exc_info=True)
 
         import threading
 
@@ -284,11 +307,11 @@ class ServiceManager:
             return success
 
         except Exception as e:
-            logger.error(f"终止进程 {name} 时出错: {e}")
+            logger.error(f"终止进程 {name} 时出错: {e}", exc_info=True)
             try:
                 self._cleanup_process_resources(name, process_info)
             except Exception as cleanup_error:
-                logger.error(f"清理进程资源时出错: {cleanup_error}")
+                logger.error(f"清理进程资源时出错: {cleanup_error}", exc_info=True)
             return False
         finally:
             self.unregister_process(name)
@@ -306,7 +329,7 @@ class ServiceManager:
             logger.warning(f"服务进程 {name} 关闭超时")
             return False
         except Exception as e:
-            logger.error(f"关闭进程 {name} 失败: {e}")
+            logger.error(f"关闭进程 {name} 失败: {e}", exc_info=True)
             return False
 
     def _force_shutdown(self, process: subprocess.Popen, name: str) -> bool:
@@ -321,7 +344,7 @@ class ServiceManager:
             logger.error(f"强制终止进程 {name} 仍然超时")
             return False
         except Exception as e:
-            logger.error(f"强制终止进程 {name} 失败: {e}")
+            logger.error(f"强制终止进程 {name} 失败: {e}", exc_info=True)
             return False
 
     def _cleanup_process_resources(self, name: str, process_info: dict):
@@ -350,7 +373,7 @@ class ServiceManager:
             logger.debug(f"进程 {name} 的资源已清理")
 
         except Exception as e:
-            logger.error(f"清理进程 {name} 资源时出错: {e}")
+            logger.error(f"清理进程 {name} 资源时出错: {e}", exc_info=True)
 
     def _wait_for_port_release(self, host: str, port: int, timeout: float = 10.0):
         """等待端口被释放（每 0.5 秒检查一次，最长 timeout 秒）"""
@@ -381,7 +404,7 @@ class ServiceManager:
                     cleanup_errors.append(f"进程 {name} 清理失败")
             except Exception as e:
                 error_msg = f"清理进程 {name} 时出错: {e}"
-                logger.error(error_msg)
+                logger.error(error_msg, exc_info=True)
                 cleanup_errors.append(error_msg)
 
         with self._lock:
@@ -393,7 +416,7 @@ class ServiceManager:
                         del self._processes[name]
                         logger.debug(f"强制移除进程记录: {name}")
                     except Exception as e:
-                        logger.error(f"强制移除进程记录失败 {name}: {e}")
+                        logger.error(f"强制移除进程记录失败 {name}: {e}", exc_info=True)
 
         if cleanup_errors:
             logger.warning(f"服务进程清理完成，但有 {len(cleanup_errors)} 个错误:")
@@ -543,10 +566,10 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
         )
         return result
     except (ValueError, TypeError) as e:
-        logger.error(f"配置参数错误: {e}")
+        logger.error(f"配置参数错误: {e}", exc_info=True)
         raise ValueError(f"Web UI 配置错误: {e}") from e
     except Exception as e:
-        logger.error(f"配置文件加载失败: {e}")
+        logger.error(f"配置文件加载失败: {e}", exc_info=True)
         raise ValueError(f"Web UI 配置加载失败: {e}") from e
 
 
@@ -886,14 +909,9 @@ def health_check_service(config: WebUIConfig) -> bool:
         return False
 
 
-def start_web_service(config: WebUIConfig, script_dir: str) -> None:
+def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
     """启动 Flask Web UI 子进程，含健康检查"""
-    task_queue = get_task_queue()
-    cleared_count = task_queue.clear_all_tasks()
-    if cleared_count > 0:
-        logger.info(f"服务启动时清理了 {cleared_count} 个残留任务")
-
-    web_ui_path = os.path.join(script_dir, "web_ui.py")
+    web_ui_path = script_dir / "web_ui.py"
     service_manager = ServiceManager()
     service_name = f"web_ui_{config.host}_{config.port}"
 
@@ -905,19 +923,21 @@ def start_web_service(config: WebUIConfig, script_dir: str) -> None:
             logger.warning(f"通知系统初始化失败: {e}", exc_info=True)
 
     # 验证 web_ui.py 文件是否存在
-    if not os.path.exists(web_ui_path):
+    if not web_ui_path.exists():
         raise FileNotFoundError(f"Web UI 脚本不存在: {web_ui_path}")
 
     # 检查服务是否已经在运行
     if service_manager.is_process_running(service_name) or health_check_service(config):
-        logger.info(f"Web 服务已在运行: http://{config.host}:{config.port}")
+        logger.info(
+            f"Web 服务已在运行: http://{get_target_host(config.host)}:{config.port}"
+        )
         return
 
     # 启动Web服务，初始为空内容
     args = [
         sys.executable,
         "-u",
-        web_ui_path,
+        str(web_ui_path),
         "--prompt",
         "",  # 启动时为空，符合"无有效内容"状态
         "--predefined-options",
@@ -1197,7 +1217,7 @@ def parse_structured_response(
             if text_desc:
                 text_parts.append(text_desc)
         except Exception as e:
-            logger.error(f"处理图片 {index + 1} 时出错: {e}")
+            logger.error(f"处理图片 {index + 1} 时出错: {e}", exc_info=True)
             text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {str(e)}")
 
     # 4. 添加文本内容（无论如何都返回一个 TextContent，避免返回空列表）
@@ -1375,8 +1395,12 @@ async def ensure_web_ui_running(config):
     """检查并自动启动 Web UI 服务（异步）"""
     try:
         # 在线程池中执行同步 HTTP 请求
+        # 注意：当 config.host 为 0.0.0.0 时，客户端应连接 localhost
+        target_host = get_target_host(config.host)
         response = await asyncio.to_thread(
-            requests.get, f"http://{config.host}:{config.port}/api/health", timeout=2
+            requests.get,
+            f"http://{target_host}:{config.port}/api/health",
+            timeout=2,
         )
         if response.status_code == 200:
             logger.debug("Web UI 已经在运行")
@@ -1386,7 +1410,7 @@ async def ensure_web_ui_running(config):
         logger.debug(f"Web UI 健康检查失败，将尝试启动: {e}", exc_info=True)
 
     logger.info("Web UI 未运行，正在启动...")
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    script_dir = Path(__file__).resolve().parent
     # 在线程池中执行服务启动（因为 start_web_service 可能是同步的）
     await asyncio.to_thread(start_web_service, config, script_dir)
     await asyncio.sleep(2)  # 异步等待，不阻塞事件循环
@@ -1405,8 +1429,7 @@ def launch_feedback_ui(
     try:
         # 自动生成唯一 task_id（使用时间戳+随机数确保唯一性）
         # task_id 参数将被忽略，始终使用自动生成
-        cwd = os.getcwd()
-        project_name = os.path.basename(cwd) or "task"
+        project_name = Path.cwd().name or "task"
         timestamp = int(time.time() * 1000) % 1000000
         random_suffix = random.randint(100, 999)
         task_id = f"{project_name}-{timestamp}-{random_suffix}"
@@ -1581,8 +1604,7 @@ async def interactive_feedback(
         predefined_options_list = predefined_options
 
         # 自动生成唯一 task_id（使用时间戳+随机数确保唯一性）
-        cwd = os.getcwd()
-        project_name = os.path.basename(cwd) or "task"
+        project_name = Path.cwd().name or "task"
         # 使用毫秒时间戳和随机数的组合，几乎不可能冲突
         timestamp = int(time.time() * 1000) % 1000000  # 取后6位毫秒时间戳
         random_suffix = random.randint(100, 999)
@@ -1720,7 +1742,7 @@ class FeedbackServiceContext:
         """加载配置并返回 self"""
         try:
             self.config, self.auto_resubmit_timeout = get_web_ui_config()
-            self.script_dir = os.path.dirname(os.path.abspath(__file__))
+            self.script_dir = Path(__file__).resolve().parent
             logger.info(
                 f"反馈服务上下文已初始化，自动重调超时: {self.auto_resubmit_timeout}秒"
             )

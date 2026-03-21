@@ -176,10 +176,20 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
 
 def _is_uvx_mode() -> bool:
     """
-    检测是否为 uvx 运行模式（影响配置文件位置选择）。
+    检测是否应使用“用户配置目录”（uvx/安装模式）而非“开发模式”。
 
-    检测特征：执行路径含 uvx、UVX_PROJECT 环境变量、项目目录无开发文件。
-    uvx 模式使用用户配置目录；开发模式优先使用当前目录配置。
+    说明
+    ----
+    - **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
+      - uvx 运行（推荐给普通用户）
+      - 通过 pip/uv 安装后运行（避免在任意项目目录意外生成 config.jsonc）
+    - **开发模式（False）**：优先使用当前目录配置（从仓库运行时更方便调试）。
+
+    判定规则
+    ----
+    1) 若检测到 uvx 运行特征（sys.executable 含 uvx 或 UVX_PROJECT 环境变量），返回 True
+    2) 若当前代码看起来位于本仓库源码树内，且当前工作目录位于该源码树内，返回 False
+    3) 其他情况（默认）：返回 True
     """
     executable_path = sys.executable
     if "uvx" in executable_path or ".local/share/uvx" in executable_path:
@@ -189,12 +199,20 @@ def _is_uvx_mode() -> bool:
     if os.getenv("UVX_PROJECT"):
         return True
 
-    current_dir = Path.cwd()
-    dev_files = ["pyproject.toml", "setup.py", "setup.cfg", ".git"]
-
-    for path in [current_dir] + list(current_dir.parents):
-        if any((path / dev_file).exists() for dev_file in dev_files):
-            return False
+    # 仅当“代码本身位于仓库源码树”且 cwd 位于该源码树内时，才视为开发模式。
+    # 避免在普通用户的任意 git 仓库/项目目录中误判为开发模式，导致配置文件被创建在当前目录。
+    try:
+        module_dir = Path(__file__).resolve().parent
+        is_repo_checkout = (module_dir / "pyproject.toml").exists() and (
+            module_dir / "server.py"
+        ).exists()
+        if is_repo_checkout:
+            cwd = Path.cwd().resolve()
+            if cwd == module_dir or module_dir in cwd.parents:
+                return False
+    except Exception:
+        # 任何判定异常都降级为用户模式（更安全/更符合文档预期）
+        pass
 
     return True
 
@@ -231,7 +249,7 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
     is_uvx_mode = _is_uvx_mode()
 
     if is_uvx_mode:
-        logger.info("检测到uvx运行模式，使用用户配置目录")
+        logger.info("检测到用户模式（uvx/安装），使用用户配置目录")
     else:
         logger.info("检测到开发模式，优先使用当前目录配置")
 

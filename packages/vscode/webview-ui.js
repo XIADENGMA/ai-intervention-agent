@@ -7,7 +7,6 @@
     try {
         vscode = acquireVsCodeApi();
     } catch (e) {
-        console.error('[Webview] 初始化失败:', e);
         vscode = { postMessage: function() {} };
     }
 const __cfgEl = document.getElementById('aiia-config');
@@ -312,8 +311,90 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     }
 
     function logError(message) {
-        console.error('[Webview]', message);
-        vscode.postMessage({ type: 'error', message: String(message) });
+        const text = String(message || '');
+        try {
+            vscode.postMessage({ type: 'log', level: 'error', message: text });
+        } catch (e) {
+            // 忽略
+        }
+        try {
+            vscode.postMessage({ type: 'error', message: text });
+        } catch (e) {
+            // 忽略
+        }
+        try {
+            showToast(text, { kind: 'error', timeoutMs: 2600, dedupeKey: 'err:' + text.slice(0, 120) });
+        } catch (e) {
+            // 忽略
+        }
+    }
+
+    // Webview 内 Toast：非侵入式反馈（避免用户误以为无响应）
+    let lastToastKey = '';
+    let lastToastAtMs = 0;
+    function showToast(message, options) {
+        const host = document.getElementById('toastHost');
+        if (!host) return;
+        const text = String(message || '').trim();
+        if (!text) return;
+
+        const kindRaw = options && options.kind ? String(options.kind) : 'info';
+        const kind = (kindRaw === 'success' || kindRaw === 'warn' || kindRaw === 'error') ? kindRaw : 'info';
+        const timeoutMsRaw = options && typeof options.timeoutMs === 'number' ? options.timeoutMs : 1800;
+        const timeoutMs = Math.max(800, Math.min(8000, Math.floor(timeoutMsRaw)));
+        const dedupeKey = options && options.dedupeKey ? String(options.dedupeKey) : (kind + ':' + text);
+
+        const now = Date.now();
+        if (dedupeKey && dedupeKey === lastToastKey && now - lastToastAtMs < 700) {
+            return;
+        }
+        lastToastKey = dedupeKey;
+        lastToastAtMs = now;
+
+        const el = document.createElement('div');
+        el.className = 'toast ' + kind;
+        el.textContent = text;
+        el.setAttribute('role', 'status');
+        el.setAttribute('aria-live', 'polite');
+
+        let removed = false;
+        const remove = () => {
+            if (removed) return;
+            removed = true;
+            try { el.classList.remove('show'); } catch (e) { /* 忽略 */ }
+            setTimeout(() => {
+                try {
+                    if (el.parentNode) el.parentNode.removeChild(el);
+                } catch (e) {
+                    // 忽略
+                }
+            }, 180);
+        };
+
+        el.addEventListener('click', () => remove());
+        host.appendChild(el);
+        requestAnimationFrame(() => {
+            try { el.classList.add('show'); } catch (e) { /* 忽略 */ }
+        });
+        setTimeout(remove, timeoutMs);
+    }
+
+    // 文本框：自动高度（Auto-resize），并保留用户手动拖拽的最小高度
+    let textareaManualHeight = null;
+    function autoResizeFeedbackTextarea(textarea) {
+        if (!textarea) return;
+        try {
+            const minH = 80;
+            const maxH = 360;
+            textarea.style.height = 'auto';
+            const raw = Math.max(minH, Math.min(maxH, textarea.scrollHeight || minH));
+            const next = (textareaManualHeight && Number.isFinite(textareaManualHeight))
+                ? Math.max(raw, textareaManualHeight)
+                : raw;
+            textarea.style.height = next + 'px';
+        } catch (e) {
+            // 忽略
+        }
     }
 
     // 统一通知事件派发：Webview → Extension（阶段 C）
@@ -429,6 +510,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             if (activeTaskId && typeof taskTextareaContents !== 'undefined') {
                 taskTextareaContents[activeTaskId] = textarea.value || '';
             }
+            autoResizeFeedbackTextarea(textarea);
             return true;
         } catch (e) {
             return false;
@@ -574,16 +656,22 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     if (activeTaskId) {
                         taskTextareaContents[activeTaskId] = textarea.value || '';
                     }
+                    autoResizeFeedbackTextarea(textarea);
                 });
                 // 【体验对齐】Ctrl/Cmd + Enter 提交
                 textarea.addEventListener('keydown', (e) => {
                     const isMac = isMacLikePlatform();
                     const ctrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
-                    if (ctrlOrCmd && e.key === 'Enter') {
+                    const key = e && e.key ? String(e.key) : '';
+                    const isEnter = key === 'Enter' || key === 'NumpadEnter';
+                    if (e && e.isComposing) return;
+                    if (ctrlOrCmd && isEnter) {
                         e.preventDefault();
                         submitFeedback();
                     }
                 });
+                // 首次加载：根据内容自动撑开
+                autoResizeFeedbackTextarea(textarea);
             }
 
             // 【对齐原始实现】实时保存选项勾选状态（事件委托，避免重建DOM后丢监听）
@@ -653,6 +741,12 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     startHeight = textarea.offsetHeight;
                     e.preventDefault();
                 });
+                // 双击：重置手动高度（回到 Auto-resize）
+                resizeHandle.addEventListener('dblclick', (e) => {
+                    textareaManualHeight = null;
+                    autoResizeFeedbackTextarea(textarea);
+                    e.preventDefault();
+                });
             }
 
             document.addEventListener('mousemove', (e) => {
@@ -662,6 +756,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 const deltaY = startY - e.clientY;
                 const newHeight = Math.max(80, Math.min(300, startHeight + deltaY));
                 textarea.style.height = newHeight + 'px';
+                textareaManualHeight = newHeight;
             });
 
             document.addEventListener('mouseup', () => {
@@ -717,6 +812,16 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
     /* 更新UI中的服务器连接状态指示器 - 同步更新标签栏和无内容页面的状态灯 */
     function updateServerStatus(connected) {
+        // 状态变化时给出轻量提示（避免无声重试/用户误以为无响应）
+        if (typeof updateServerStatus._last === 'boolean' && updateServerStatus._last !== !!connected) {
+            showToast(connected ? '已连接' : '连接断开，正在重试…', {
+                kind: connected ? 'success' : 'warn',
+                timeoutMs: 1600,
+                dedupeKey: connected ? 'net:up' : 'net:down'
+            });
+        }
+        updateServerStatus._last = !!connected;
+
         /* 更新标签栏的连接状态呼吸灯 */
         const light = document.getElementById('statusLight');
         if (light) {
@@ -1022,6 +1127,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             const textarea = document.getElementById('feedbackText');
             if (textarea) {
                 textarea.value = taskTextareaContents[taskId] || '';
+                autoResizeFeedbackTextarea(textarea);
             }
 
             // 恢复图片（使用 dataURL，不依赖 blob:，避免 CSP 额外放行）
@@ -1073,9 +1179,36 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
         lastTaskIds = currentTaskIds;
 
-        /* 任务列表未变化时仅更新倒计时，避免不必要的DOM重建 */
+        /* 任务列表未变化时仅更新倒计时 + active 状态，避免不必要的DOM重建 */
         if (currentHash === lastTasksHash) {
             updateTabCountdowns();
+            // 只有当“本地已选择 activeTaskId”（例如用户点了标签）时，才覆盖 tab 的 active 样式；
+            // 否则保持后端上报的 active 状态，避免初始渲染时把 active 清空。
+            if (activeTaskId) {
+                try {
+                    const tabs = container.querySelectorAll('.task-tab');
+                    tabs.forEach(tab => {
+                        const id = tab && tab.dataset ? tab.dataset.taskId : '';
+                        const shouldActive = !!(id && id === activeTaskId);
+                        tab.classList.toggle('active', shouldActive);
+                        const dot = tab.querySelector('.task-tab-status');
+                        if (dot) {
+                            if (shouldActive) {
+                                dot.classList.remove('pending', 'active', 'completed');
+                                dot.classList.add('active');
+                            } else if (dot.classList.contains('active')) {
+                                // UI 切换后：旧 active 点回退为 pending（直到后端同步完成）
+                                dot.classList.remove('active');
+                                if (!dot.classList.contains('pending')) {
+                                    dot.classList.add('pending');
+                                }
+                            }
+                        }
+                    });
+                } catch (e) {
+                    // 忽略
+                }
+            }
             return;
         }
 
@@ -1119,9 +1252,15 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             tab.className = 'task-tab';
             tab.dataset.taskId = task.task_id;
 
-            if (task.status === 'active') {
+            const isUiActive = !!(activeTaskId && task.task_id && task.task_id === activeTaskId);
+            if (isUiActive || task.status === 'active') {
                 tab.classList.add('active');
             }
+
+            const statusDot = document.createElement('div');
+            statusDot.className = 'task-tab-status';
+            statusDot.classList.add((isUiActive || task.status === 'active') ? 'active' : (task.status || 'pending'));
+            tab.appendChild(statusDot);
 
             const taskId = document.createElement('div');
             taskId.className = 'task-tab-id';
@@ -1186,6 +1325,33 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             }
 
             log('切换到任务: ' + taskId);
+            // 先做本地 UI 立即切换（无网络延迟），再与服务端同步 active_task
+            activeTaskId = taskId;
+            restoreLocalStateForTask(taskId);
+            showToast('切换到任务: ' + taskId, { kind: 'info', timeoutMs: 1200, dedupeKey: 'switch:' + taskId });
+            // 立即更新 tabs 的选中态（无需等待下一轮轮询）
+            try {
+                const tabs = document.querySelectorAll('#tasksTabsContainer .task-tab');
+                tabs.forEach(tab => {
+                    const id = tab && tab.dataset ? tab.dataset.taskId : '';
+                    const isActive = !!(id && id === taskId);
+                    tab.classList.toggle('active', isActive);
+                    const dot = tab.querySelector('.task-tab-status');
+                    if (dot) {
+                        if (isActive) {
+                            dot.classList.remove('pending', 'active', 'completed');
+                            dot.classList.add('active');
+                        } else if (dot.classList.contains('active')) {
+                            dot.classList.remove('active');
+                            if (!dot.classList.contains('pending')) {
+                                dot.classList.add('pending');
+                            }
+                        }
+                    }
+                });
+            } catch (e) {
+                // 忽略
+            }
 
             const response = await fetch(SERVER_URL + '/api/tasks/' + encodeURIComponent(taskId) + '/activate', {
                 method: 'POST'
@@ -1193,15 +1359,40 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
 
             if (response.ok) {
                 log('任务已激活: ' + taskId);
-                activeTaskId = taskId;
-                /* 延迟200ms后刷新数据以确保UI更新 */
-                setTimeout(() => requestImmediateRefresh(), 200);
+                requestImmediateRefresh();
             } else {
                 logError('激活任务失败: HTTP ' + response.status);
                 vscode.postMessage({
                     type: 'showInfo',
                     message: '切换任务失败：' + taskId
                 });
+                // 回滚 UI
+                if (prevTaskId) {
+                    activeTaskId = prevTaskId;
+                    restoreLocalStateForTask(prevTaskId);
+                    try {
+                        const tabs = document.querySelectorAll('#tasksTabsContainer .task-tab');
+                        tabs.forEach(tab => {
+                            const id = tab && tab.dataset ? tab.dataset.taskId : '';
+                            const isActive = !!(id && id === prevTaskId);
+                            tab.classList.toggle('active', isActive);
+                            const dot = tab.querySelector('.task-tab-status');
+                            if (dot) {
+                                if (isActive) {
+                                    dot.classList.remove('pending', 'active', 'completed');
+                                    dot.classList.add('active');
+                                } else if (dot.classList.contains('active')) {
+                                    dot.classList.remove('active');
+                                    if (!dot.classList.contains('pending')) {
+                                        dot.classList.add('pending');
+                                    }
+                                }
+                            }
+                        });
+                    } catch (e) {
+                        // 忽略
+                    }
+                }
             }
         } catch (error) {
             logError('激活任务失败: ' + error.message);
@@ -1209,6 +1400,38 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 type: 'showInfo',
                 message: '切换任务失败：' + error.message
             });
+            // 回滚 UI（尽力而为）
+            try {
+                const prevTaskId = (currentConfig && currentConfig.task_id) ? currentConfig.task_id : null;
+                if (prevTaskId) {
+                    activeTaskId = prevTaskId;
+                    restoreLocalStateForTask(prevTaskId);
+                    try {
+                        const tabs = document.querySelectorAll('#tasksTabsContainer .task-tab');
+                        tabs.forEach(tab => {
+                            const id = tab && tab.dataset ? tab.dataset.taskId : '';
+                            const isActive = !!(id && id === prevTaskId);
+                            tab.classList.toggle('active', isActive);
+                            const dot = tab.querySelector('.task-tab-status');
+                            if (dot) {
+                                if (isActive) {
+                                    dot.classList.remove('pending', 'active', 'completed');
+                                    dot.classList.add('active');
+                                } else if (dot.classList.contains('active')) {
+                                    dot.classList.remove('active');
+                                    if (!dot.classList.contains('pending')) {
+                                        dot.classList.add('pending');
+                                    }
+                                }
+                            }
+                        });
+                    } catch (e) {
+                        // 忽略
+                    }
+                }
+            } catch (e) {
+                // 忽略
+            }
         }
     }
 
@@ -1981,11 +2204,11 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 return marked.parse(text);
             } else {
                 // marked.js 未加载时的降级处理
-                console.warn('[Webview] marked.js 未加载，使用纯文本显示');
+                log('marked.js 未加载，使用纯文本显示');
                 return '<pre>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
             }
         } catch (e) {
-            console.error('[Webview] Markdown 渲染失败:', e);
+            log('Markdown 渲染失败，已降级为纯文本: ' + (e && e.message ? e.message : String(e)));
             return '<pre>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
         }
     }
@@ -2480,12 +2703,14 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
             const now0 = Date.now();
             if (submitInFlight) {
                 vscode.postMessage({ type: 'showInfo', message: '正在提交，请稍候…' });
+                showToast('正在提交…', { kind: 'info', timeoutMs: 1200, dedupeKey: 'submit:inflight' });
                 return;
             }
             if (submitBackoffUntilMs && now0 < submitBackoffUntilMs) {
                 const leftSec = Math.max(1, Math.ceil((submitBackoffUntilMs - now0) / 1000));
                 applySubmitBackoffUi();
                 vscode.postMessage({ type: 'showInfo', message: '提交过于频繁，请等待 ' + leftSec + ' 秒后再试' });
+                showToast('提交过于频繁，请等待 ' + leftSec + ' 秒', { kind: 'warn', timeoutMs: 1600, dedupeKey: 'submit:backoff' });
                 return;
             }
         } catch (e) {
@@ -2566,7 +2791,15 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                 }
 
                 /* 提交成功后清空表单和上传的图片 */
-                document.getElementById('feedbackText').value = '';
+                try {
+                    const textarea = document.getElementById('feedbackText');
+                    if (textarea) {
+                        textarea.value = '';
+                        autoResizeFeedbackTextarea(textarea);
+                    }
+                } catch (e) {
+                    // 忽略
+                }
                 uploadedImages = [];
                 renderUploadedImages();
 
@@ -2597,6 +2830,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                     type: 'showInfo',
                     message: '反馈已提交'
                 });
+                showToast('反馈已提交', { kind: 'success', timeoutMs: 1400, dedupeKey: 'submit:ok' });
 
                 // 重新轮询（使用pollAllData以更新任务列表）
                 setTimeout(() => requestImmediateRefresh(), 200);
@@ -2621,6 +2855,7 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
                         // 忽略
                     }
                     vscode.postMessage({ type: 'showInfo', message: msg });
+                    showToast(msg, { kind: 'warn', timeoutMs: 1800, dedupeKey: 'submit:429' });
                     try {
                         vscode.postMessage({
                             type: 'log',
@@ -3074,8 +3309,22 @@ const NO_CONTENT_LOTTIE_JSON_URL = (__cfgEl && __cfgEl.getAttribute('data-no-con
     function reportFatalError(prefix, err) {
         try {
             const msg = prefix + (err && err.message ? err.message : String(err));
-            console.error('[Webview]', msg);
-            vscode.postMessage({ type: 'error', message: msg });
+            try { vscode.postMessage({ type: 'log', level: 'error', message: msg }); } catch (e) { /* 忽略 */ }
+            try { vscode.postMessage({ type: 'error', message: msg }); } catch (e) { /* 忽略 */ }
+            try {
+                postNotificationEvent({
+                    title: 'AI Intervention Agent',
+                    message: msg,
+                    trigger: 'immediate',
+                    types: ['vscode'],
+                    metadata: { presentation: 'toast', severity: 'error', timeoutMs: 6000 },
+                    source: 'webview-ui',
+                    dedupeKey: 'fatal:' + String(prefix || '').slice(0, 30)
+                });
+            } catch (e) {
+                // 忽略
+            }
+            try { showToast(msg, { kind: 'error', timeoutMs: 3500, dedupeKey: 'fatal:' + String(prefix || '').slice(0, 30) }); } catch (e) { /* 忽略 */ }
         } catch (e) {
             // 忽略
         }

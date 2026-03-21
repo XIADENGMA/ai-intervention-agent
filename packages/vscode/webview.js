@@ -417,6 +417,9 @@ class WebviewProvider {
     // 重要：不要把 marked/prism 以“内联脚本”拼进 HTML（其内容包含反引号等字符，部分 Webview 注入实现会因此失败）
     // 改为外链加载（同样使用 nonce，CSP 更安全且更稳定）
     const markedJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'marked.min.js'))
+    const prismBootstrapUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'prism-bootstrap.js')
+    )
     const prismJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'prism.min.js'))
     const prismCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'prism.min.css'))
     const webviewHelpersUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview-helpers.js'))
@@ -482,6 +485,7 @@ class WebviewProvider {
             flex-direction: column;
             height: 100%;
             background: var(--vscode-sideBar-background);
+            position: relative;
         }
 
 
@@ -489,7 +493,7 @@ class WebviewProvider {
         .tabs-container {
             display: flex;
             align-items: center;
-            background: rgba(255, 255, 255, 0.02); /* 半透明背景 */
+            background: var(--vscode-sideBarSectionHeader-background, var(--vscode-sideBar-background));
             border-bottom: 1px solid var(--vscode-panel-border);
             overflow-x: auto;
             overflow-y: hidden;
@@ -535,8 +539,8 @@ class WebviewProvider {
 
         .settings-btn:hover {
             opacity: 1;
-            background: rgba(255, 255, 255, 0.06);
-            border-color: rgba(127, 127, 127, 0.25);
+            background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+            border-color: var(--vscode-panel-border);
         }
 
         /* 标签栏滚动条继承全局细滚动条样式 */
@@ -550,9 +554,9 @@ class WebviewProvider {
             align-items: center;
             gap: 6px;
             padding: 5px 10px;
-            background: rgba(255, 255, 255, 0.025);
-            color: var(--vscode-tab-inactiveForeground);
-            border: 1px solid rgba(127, 127, 127, 0.15);
+            background: transparent;
+            color: var(--vscode-list-inactiveSelectionForeground, var(--vscode-tab-inactiveForeground));
+            border: 1px solid var(--vscode-panel-border);
             border-radius: 6px;
             cursor: pointer;
             white-space: nowrap;
@@ -567,15 +571,14 @@ class WebviewProvider {
         }
 
         .task-tab:hover:not(.active) {
-            background: rgba(255, 255, 255, 0.06);
-            border-color: rgba(127, 127, 127, 0.25);
+            background: var(--vscode-list-hoverBackground);
+            border-color: var(--vscode-panel-border);
         }
 
         .task-tab.active {
-            background: rgba(14, 99, 156, 0.1);
-            color: var(--vscode-tab-activeForeground);
-            border-color: rgba(14, 99, 156, 0.4);
-            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
+            background: var(--vscode-list-activeSelectionBackground);
+            color: var(--vscode-list-activeSelectionForeground);
+            border-color: var(--vscode-focusBorder);
         }
 
         .task-tab-id {
@@ -586,8 +589,8 @@ class WebviewProvider {
         }
 
         .task-tab-status {
-            width: 4px;
-            height: 4px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
             flex-shrink: 0;
         }
@@ -606,8 +609,8 @@ class WebviewProvider {
 
         .task-tab-countdown {
             position: relative;
-            width: 16px;
-            height: 16px;
+            width: 18px;
+            height: 18px;
             flex-shrink: 0;
             display: inline-flex;
             align-items: center;
@@ -636,7 +639,7 @@ class WebviewProvider {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 5.5px;
+            font-size: 6.2px;
             font-weight: 600;
             color: var(--vscode-editor-foreground);
             z-index: 2;
@@ -743,7 +746,7 @@ class WebviewProvider {
         .no-content-progress-bar {
             width: 100%;
             height: 100%;
-            background: #5a8dbf; /* 参考原项目：深色模式的深蓝色 */
+            background: var(--vscode-progressBar-background);
             animation: loading 1.5s linear infinite;
             border-radius: 8px;
             will-change: transform;
@@ -757,7 +760,7 @@ class WebviewProvider {
         }
         html[data-vscode-theme-kind="light"] .no-content-progress-bar,
         body.vscode-light .no-content-progress-bar {
-            background: #e3dacc; /* 奶油米色 */
+            background: var(--vscode-progressBar-background);
         }
 
         @keyframes loading {
@@ -776,10 +779,10 @@ class WebviewProvider {
         .markdown-content {
             line-height: 1.7;
             margin: 0 0 8px 0 !important;
-            background: rgba(255, 255, 255, 0.035);
+            background: var(--vscode-editorWidget-background);
             padding: 14px 12px;
             border-radius: 6px;
-            border: 1px solid rgba(127, 127, 127, 0.15);
+            border: 1px solid var(--vscode-panel-border);
             contain: layout style;
         }
 
@@ -797,13 +800,13 @@ class WebviewProvider {
 
         /* Markdown行内代码样式 - 红色高亮显示代码片段 */
         .markdown-content code {
-            background: rgba(255, 255, 255, 0.08);
+            background: var(--vscode-input-background);
             color: var(--vscode-textPreformat-foreground);
             padding: 3px 7px;
             border-radius: 4px;
             font-family: var(--vscode-editor-font-family);
             font-size: 0.88em;
-            border: 1px solid rgba(127, 127, 127, 0.15);
+            border: 1px solid var(--vscode-panel-border);
             white-space: break-spaces;
             overflow-wrap: anywhere;
             word-break: break-word;
@@ -811,12 +814,12 @@ class WebviewProvider {
 
         /* Markdown代码块样式 - 深色背景的多行代码展示 */
         .markdown-content pre {
-            background: rgba(255, 255, 255, 0.06);
+            background: var(--vscode-editor-background);
             padding: 14px 16px;
             border-radius: 6px;
             overflow-x: auto;
             margin-bottom: 14px;
-            border: 1px solid rgba(127, 127, 127, 0.18);
+            border: 1px solid var(--vscode-panel-border);
             max-width: 100%;
         }
 
@@ -825,9 +828,9 @@ class WebviewProvider {
             padding: 0;
             border: none;
             display: block;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            word-break: break-word;
+            white-space: pre;
+            overflow-wrap: normal;
+            word-break: normal;
         }
 
         .markdown-content ul,
@@ -860,7 +863,7 @@ class WebviewProvider {
             margin: 12px 0;
             padding: 8px 12px;
             border-left: 3px solid var(--vscode-textBlockQuote-border, #666);
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--vscode-textBlockQuote-background, var(--vscode-editorWidget-background));
             color: var(--vscode-textBlockQuote-foreground, inherit);
         }
 
@@ -895,6 +898,26 @@ class WebviewProvider {
 
         .markdown-content em {
             font-style: italic;
+        }
+
+        /* Markdown 表格：避免宽表导致容器溢出 */
+        .markdown-content table {
+            display: block;
+            max-width: 100%;
+            overflow-x: auto;
+            border-collapse: collapse;
+        }
+
+        .markdown-content th,
+        .markdown-content td {
+            border: 1px solid var(--vscode-panel-border);
+            padding: 6px 8px;
+            vertical-align: top;
+        }
+
+        .markdown-content th {
+            background: var(--vscode-sideBarSectionHeader-background, var(--vscode-editorWidget-background));
+            font-weight: 600;
         }
 
         /* 反馈表单容器 - 包含输入框、选项和按钮的主要交互区域 */
@@ -995,7 +1018,7 @@ class WebviewProvider {
             padding-bottom: 48px;
             background: transparent; /* 输入框边框内背景透明 */
             color: var(--vscode-input-foreground);
-            border: 1px solid rgba(127, 127, 127, 0.15);
+            border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
             border-radius: 6px;
             font-family: var(--vscode-font-family);
             font-size: 13px;
@@ -1015,7 +1038,7 @@ class WebviewProvider {
         }
 
         .feedback-textarea:hover:not(:focus) {
-            border-color: rgba(127, 127, 127, 0.25);
+            border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
             background: transparent;
         }
 
@@ -1049,12 +1072,12 @@ class WebviewProvider {
 
         .insert-code-btn,
         .upload-btn {
-            background: rgba(255, 255, 255, 0.08);
+            background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
         }
 
         .insert-code-btn:hover:not(:disabled),
         .upload-btn:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.15);
+            background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
         }
 
         .submit-btn-embedded:hover:not(:disabled) {
@@ -1580,6 +1603,53 @@ class WebviewProvider {
             display: none !important;
         }
 
+        /* Webview 内 Toast（非侵入式反馈，避免用户误以为无响应） */
+        .toast-host {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 0 8px;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        .toast {
+            pointer-events: auto;
+            max-width: 100%;
+            padding: 7px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--vscode-notifications-border, var(--vscode-panel-border));
+            background: var(--vscode-notifications-background, var(--vscode-editorWidget-background));
+            color: var(--vscode-notifications-foreground, var(--vscode-foreground));
+            font-size: 12px;
+            line-height: 1.35;
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+
+        .toast.show {
+            opacity: 0.95;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            border-color: var(--vscode-testing-iconPassed);
+        }
+
+        .toast.warn {
+            border-color: var(--vscode-inputValidation-warningBorder, var(--vscode-problemsWarningIcon-foreground));
+        }
+
+        .toast.error {
+            border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-problemsErrorIcon-foreground));
+        }
+
     </style>
 </head>
 <body>
@@ -1682,6 +1752,9 @@ class WebviewProvider {
         </div>
     </div>
 
+        <!-- Toast host (in-webview, non-intrusive) -->
+        <div class="toast-host" id="toastHost" aria-live="polite" aria-atomic="true"></div>
+
     <!-- Settings overlay (notification config) -->
     <div class="settings-overlay hidden" id="settingsOverlay">
         <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true">
@@ -1765,9 +1838,8 @@ class WebviewProvider {
         </div>
     </div>
 
-    <!-- Prism.js for code highlighting (from original project) -->
-    <!-- Prism.js for code highlighting -->
-    <script nonce="${nonce}">window.Prism = window.Prism || {}; Prism.manual = true;</script>
+    <!-- Prism.js for code highlighting (no inline scripts; CSP-safe) -->
+    <script nonce="${nonce}" src="${prismBootstrapUri}"></script>
     <script nonce="${nonce}" src="${prismJsUri}"></script>
 
     <!-- marked.js for Markdown rendering -->

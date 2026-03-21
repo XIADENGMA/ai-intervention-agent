@@ -125,7 +125,7 @@ AI Intervention Agent 智能介入代理测试工具
 
 ## 依赖项
 
-- Python 3.7+
+- Python 3.11+
 - requests (HTTP请求)
 - server.py (AI介入代理服务)
 - enhanced_logging (可选，增强日志)
@@ -140,15 +140,15 @@ AI Intervention Agent 智能介入代理测试工具
 import argparse
 import atexit
 import json
-import os
 import signal
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 # 添加当前目录到Python路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # 初始化增强日志系统
 test_logger: Any
@@ -1019,7 +1019,7 @@ def _create_first_task_content():
         # 你好，我是AI Intervention Agent
 **一个让用户能够实时控制 AI 执行过程的 MCP 工具。**
 
-支持`Cursor`、`Vscode`、`Claude Code`、`Augment`、`Windsurf`、`Trae`等 AI 工具。"""
+支持`Cursor`、`VS Code`、`Claude Code`、`Augment`、`Windsurf`、`Trae`等 AI 工具。"""
     options = [
         "🔄 继续了解",
         "✅ 立刻开始",

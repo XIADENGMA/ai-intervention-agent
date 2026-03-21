@@ -20,6 +20,7 @@ from ipaddress import (
     ip_address,
     ip_network,
 )
+from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 import markdown
@@ -74,10 +75,10 @@ def get_project_version() -> str:
 
     try:
         # 获取 pyproject.toml 路径
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        pyproject_path = os.path.join(current_dir, "pyproject.toml")
+        current_dir = Path(__file__).resolve().parent
+        pyproject_path = current_dir / "pyproject.toml"
 
-        if os.path.exists(pyproject_path):
+        if pyproject_path.exists():
             try:
                 import tomllib
 
@@ -1205,7 +1206,7 @@ class WebFeedbackUI:
                     }
                 )
             except Exception as e:
-                logger.error(f"获取任务列表失败: {e}")
+                logger.error(f"获取任务列表失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route("/api/tasks", methods=["POST"])
@@ -1300,7 +1301,7 @@ class WebFeedbackUI:
                     ), 409
 
             except Exception as e:
-                logger.error(f"创建任务失败: {e}")
+                logger.error(f"创建任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route("/api/tasks/<task_id>", methods=["GET"])
@@ -1375,7 +1376,7 @@ class WebFeedbackUI:
                     }
                 )
             except Exception as e:
-                logger.error(f"获取任务失败: {e}")
+                logger.error(f"获取任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])
@@ -1423,7 +1424,7 @@ class WebFeedbackUI:
 
                 return jsonify({"success": True, "active_task_id": task_id})
             except Exception as e:
-                logger.error(f"激活任务失败: {e}")
+                logger.error(f"激活任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route("/api/tasks/<task_id>/submit", methods=["POST"])
@@ -1531,7 +1532,9 @@ class WebFeedbackUI:
                                     }
                                 )
                             except Exception as img_error:
-                                logger.error(f"处理图片失败: {img_error}")
+                                logger.error(
+                                    f"处理图片失败: {img_error}", exc_info=True
+                                )
 
                 # 构建结果
                 result = {
@@ -1548,7 +1551,7 @@ class WebFeedbackUI:
                 logger.info(f"任务 {task_id} 反馈已提交")
                 return jsonify({"success": True, "message": "反馈已提交"})
             except Exception as e:
-                logger.error(f"提交任务失败: {e}")
+                logger.error(f"提交任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.route("/api/submit", methods=["POST"])
@@ -1694,9 +1697,10 @@ class WebFeedbackUI:
                                 # 安全文件名处理：生成安全的文件名
                                 # 生成UUID作为安全文件名，避免路径遍历攻击
                                 safe_filename = f"{uuid.uuid4().hex}{validation_result.get('extension', '.bin')}"
-                                original_filename = os.path.basename(
-                                    file.filename
-                                )  # 移除路径信息
+                                # 移除路径信息（兼容上传方可能混用 / 与 \\）
+                                original_filename = Path(
+                                    file.filename.replace("\\", "/")
+                                ).name
 
                                 # 转换为base64（用于MCP传输）
                                 base64_data = base64.b64encode(file_content).decode(
@@ -1727,7 +1731,10 @@ class WebFeedbackUI:
                                     f"  - 处理图片: {file.filename} ({len(file_content)} bytes) - 类型: {validation_result['file_type']}"
                                 )
                             except Exception as e:
-                                logger.error(f"处理文件 {file.filename} 时出错: {e}")
+                                logger.error(
+                                    f"处理文件 {file.filename} 时出错: {e}",
+                                    exc_info=True,
+                                )
                                 continue
 
                 images = uploaded_images
@@ -2082,13 +2089,13 @@ class WebFeedbackUI:
                         ), 500
 
                 except ImportError as e:
-                    logger.error(f"导入通知系统失败: {e}")
+                    logger.error(f"导入通知系统失败: {e}", exc_info=True)
                     return jsonify(
                         {"status": "error", "message": "通知系统不可用"}
                     ), 500
 
             except Exception as e:
-                logger.error(f"Bark 测试通知失败: {e}")
+                logger.error(f"Bark 测试通知失败: {e}", exc_info=True)
                 return jsonify(
                     {"status": "error", "message": f"测试失败: {str(e)}"}
                 ), 500
@@ -2193,7 +2200,7 @@ class WebFeedbackUI:
 
                 return jsonify({"status": "success", "event_id": event_id})
             except Exception as e:
-                logger.error(f"触发新任务通知失败: {e}")
+                logger.error(f"触发新任务通知失败: {e}", exc_info=True)
                 return jsonify(
                     {"status": "error", "message": f"触发失败: {str(e)}"}
                 ), 500
@@ -2406,13 +2413,13 @@ class WebFeedbackUI:
                     return jsonify({"status": "success", "message": "通知配置已更新"})
 
                 except ImportError as e:
-                    logger.error(f"导入配置系统失败: {e}")
+                    logger.error(f"导入配置系统失败: {e}", exc_info=True)
                     return jsonify(
                         {"status": "error", "message": "配置系统不可用"}
                     ), 500
 
             except Exception as e:
-                logger.error(f"更新通知配置失败: {e}")
+                logger.error(f"更新通知配置失败: {e}", exc_info=True)
                 return jsonify(
                     {"status": "error", "message": f"更新失败: {str(e)}"}
                 ), 500
@@ -2464,7 +2471,7 @@ class WebFeedbackUI:
                 return jsonify({"status": "success", "config": notification_config})
 
             except Exception as e:
-                logger.error(f"获取通知配置失败: {e}")
+                logger.error(f"获取通知配置失败: {e}", exc_info=True)
                 return jsonify(
                     {"status": "error", "message": f"获取配置失败: {str(e)}"}
                 ), 500
@@ -2521,7 +2528,7 @@ class WebFeedbackUI:
                 )
 
             except Exception as e:
-                logger.error(f"获取反馈提示语配置失败: {e}")
+                logger.error(f"获取反馈提示语配置失败: {e}", exc_info=True)
                 return jsonify(
                     {"status": "error", "message": f"获取配置失败: {str(e)}"}
                 ), 500
@@ -2548,9 +2555,9 @@ class WebFeedbackUI:
                 - 使用send_from_directory防止路径遍历攻击
                 - 文件名自动清理，不支持../ 等危险路径
             """
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            fonts_dir = os.path.join(current_dir, "fonts")
-            return send_from_directory(fonts_dir, filename)
+            current_dir = Path(__file__).resolve().parent
+            fonts_dir = current_dir / "fonts"
+            return send_from_directory(str(fonts_dir), filename)
 
         @self.app.route("/icons/<filename>")
         @self.limiter.exempt
@@ -2573,9 +2580,9 @@ class WebFeedbackUI:
                 - 使用send_from_directory防止路径遍历攻击
                 - 文件名自动清理，不支持../ 等危险路径
             """
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            icons_dir = os.path.join(current_dir, "icons")
-            return send_from_directory(icons_dir, filename)
+            current_dir = Path(__file__).resolve().parent
+            icons_dir = current_dir / "icons"
+            return send_from_directory(str(icons_dir), filename)
 
         @self.app.route("/sounds/<filename>")
         @self.limiter.exempt
@@ -2599,9 +2606,9 @@ class WebFeedbackUI:
                 - 文件名自动清理，不支持../ 等危险路径
                 - 音频文件较大，注意带宽占用
             """
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            sounds_dir = os.path.join(current_dir, "sounds")
-            return send_from_directory(sounds_dir, filename)
+            current_dir = Path(__file__).resolve().parent
+            sounds_dir = current_dir / "sounds"
+            return send_from_directory(str(sounds_dir), filename)
 
         @self.app.route("/static/css/<filename>")
         @self.limiter.exempt
@@ -2633,13 +2640,13 @@ class WebFeedbackUI:
                 - CSS文件通过CSP nonce验证安全性
                 - 使用版本号参数实现缓存失效控制
             """
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            css_dir = os.path.join(current_dir, "static", "css")
+            current_dir = Path(__file__).resolve().parent
+            css_dir = current_dir / "static" / "css"
 
             # 【性能优化】自动选择压缩版本
             actual_filename = self._get_minified_file(css_dir, filename, ".css")
 
-            response = send_from_directory(css_dir, actual_filename)
+            response = send_from_directory(str(css_dir), actual_filename)
 
             # 【性能优化】添加缓存控制头
             # 如果 URL 带版本号，使用长期缓存；否则使用短期缓存
@@ -2684,13 +2691,13 @@ class WebFeedbackUI:
                 - JavaScript文件通过CSP nonce验证安全性
                 - 使用版本号参数实现缓存失效控制
             """
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            js_dir = os.path.join(current_dir, "static", "js")
+            current_dir = Path(__file__).resolve().parent
+            js_dir = current_dir / "static" / "js"
 
             # 【性能优化】自动选择压缩版本
             actual_filename = self._get_minified_file(js_dir, filename, ".js")
 
-            response = send_from_directory(js_dir, actual_filename)
+            response = send_from_directory(str(js_dir), actual_filename)
 
             # 【性能优化】添加缓存控制头
             # 如果 URL 带版本号，使用长期缓存；否则使用短期缓存
@@ -2709,9 +2716,11 @@ class WebFeedbackUI:
         @self.limiter.exempt
         def serve_notification_service_worker():
             """提供通知 service worker，并允许其控制整个站点作用域。"""
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            js_dir = os.path.join(current_dir, "static", "js")
-            response = send_from_directory(js_dir, "notification-service-worker.js")
+            current_dir = Path(__file__).resolve().parent
+            js_dir = current_dir / "static" / "js"
+            response = send_from_directory(
+                str(js_dir), "notification-service-worker.js"
+            )
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Service-Worker-Allowed"] = "/"
             return response
@@ -2742,10 +2751,10 @@ class WebFeedbackUI:
             if not filename or not str(filename).lower().endswith(".json"):
                 abort(404)
 
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            lottie_dir = os.path.join(current_dir, "static", "lottie")
+            current_dir = Path(__file__).resolve().parent
+            lottie_dir = current_dir / "static" / "lottie"
             return send_from_directory(
-                lottie_dir, filename, mimetype="application/json"
+                str(lottie_dir), filename, mimetype="application/json"
             )
 
         @self.app.route("/favicon.ico")
@@ -2777,15 +2786,15 @@ class WebFeedbackUI:
                 - 浏览器每次访问页面都会请求favicon
                 - 文件不存在时Flask返回404
             """
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            icons_dir = os.path.join(current_dir, "icons")
-            icon_path = os.path.join(icons_dir, "icon.ico")
+            current_dir = Path(__file__).resolve().parent
+            icons_dir = current_dir / "icons"
+            icon_path = icons_dir / "icon.ico"
             logger.debug(f"Favicon请求 - 图标目录: {icons_dir}")
             logger.debug(f"Favicon请求 - 图标文件: {icon_path}")
-            logger.debug(f"Favicon请求 - 文件存在: {os.path.exists(icon_path)}")
+            logger.debug(f"Favicon请求 - 文件存在: {icon_path.exists()}")
 
             # 设置正确的MIME类型和缓存控制
-            response = send_from_directory(icons_dir, "icon.ico")
+            response = send_from_directory(str(icons_dir), "icon.ico")
             response.headers["Content-Type"] = "image/x-icon"
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
@@ -2858,18 +2867,18 @@ class WebFeedbackUI:
             except (ImportError, AttributeError, FileNotFoundError, TypeError):
                 # 降级到传统文件路径方式
                 # 获取当前文件所在目录
-                current_dir = os.path.dirname(os.path.abspath(__file__))
+                current_dir = Path(__file__).resolve().parent
                 # 构建模板文件路径
-                template_path = os.path.join(current_dir, "templates", "web_ui.html")
+                template_path = current_dir / "templates" / "web_ui.html"
 
                 # 如果模板文件不存在，尝试从父目录查找
-                if not os.path.exists(template_path):
+                if not template_path.exists():
                     # 可能是在打包后的环境中，尝试从包的安装位置查找
                     import sys
 
                     for path in sys.path:
-                        candidate_path = os.path.join(path, "templates", "web_ui.html")
-                        if os.path.exists(candidate_path):
+                        candidate_path = Path(path) / "templates" / "web_ui.html"
+                        if candidate_path.exists():
                             template_path = candidate_path
                             break
 
@@ -2887,18 +2896,18 @@ class WebFeedbackUI:
             html_content = html_content.replace("{{ github_url }}", GITHUB_URL)
 
             # 获取静态资源版本号（基于文件修改时间，解决浏览器缓存问题）
-            current_dir = os.path.dirname(os.path.abspath(__file__))
+            current_dir = Path(__file__).resolve().parent
             css_version = self._get_file_version(
-                os.path.join(current_dir, "static", "css", "main.css")
+                current_dir / "static" / "css" / "main.css"
             )
             multi_task_version = self._get_file_version(
-                os.path.join(current_dir, "static", "js", "multi_task.js")
+                current_dir / "static" / "js" / "multi_task.js"
             )
             theme_version = self._get_file_version(
-                os.path.join(current_dir, "static", "js", "theme.js")
+                current_dir / "static" / "js" / "theme.js"
             )
             app_version = self._get_file_version(
-                os.path.join(current_dir, "static", "js", "app.js")
+                current_dir / "static" / "js" / "app.js"
             )
 
             # 替换内联CSS为外部CSS文件引用（带版本号）
@@ -3054,7 +3063,9 @@ class WebFeedbackUI:
         # 替换为外部CSS链接
         return re.sub(style_pattern, css_link, html_content, flags=re.DOTALL)
 
-    def _get_minified_file(self, directory: str, filename: str, extension: str) -> str:
+    def _get_minified_file(
+        self, directory: str | Path, filename: str, extension: str
+    ) -> str:
         """获取压缩版本的文件名（如存在）
 
         功能说明：
@@ -3086,16 +3097,17 @@ class WebFeedbackUI:
         # 构建压缩版本的文件名
         base_name = filename.replace(extension, "")
         minified_name = f"{base_name}.min{extension}"
-        minified_path = os.path.join(directory, minified_name)
+        dir_path = Path(directory)
+        minified_path = dir_path / minified_name
 
         # 检查压缩版本是否存在
-        if os.path.exists(minified_path):
+        if minified_path.exists():
             return minified_name
 
         # 压缩版本不存在，返回原始文件名
         return filename
 
-    def _get_file_version(self, file_path: str) -> str:
+    def _get_file_version(self, file_path: str | Path) -> str:
         """获取文件版本号（基于修改时间）
 
         功能说明：
@@ -3121,10 +3133,10 @@ class WebFeedbackUI:
             - 用于解决浏览器缓存旧版本 JS/CSS 的问题
         """
         try:
-            mtime = os.path.getmtime(file_path)
+            mtime = Path(file_path).stat().st_mtime
             # 使用时间戳的后 8 位作为版本号
             return str(int(mtime))[-8:]
-        except (OSError, FileNotFoundError):
+        except OSError:
             return "1"
 
     def _load_network_security_config(self) -> Dict:
@@ -3315,7 +3327,9 @@ class WebFeedbackUI:
             # 延迟导入，避免测试/极简环境下无 zeroconf 依赖直接崩溃
             from zeroconf import NonUniqueNameException, ServiceInfo, Zeroconf
         except Exception as e:
-            logger.error(f"mDNS 功能不可用：无法导入 zeroconf 依赖: {e}")
+            logger.error(
+                f"mDNS 功能不可用：无法导入 zeroconf 依赖: {e}", exc_info=True
+            )
             print("mDNS 功能不可用：缺少依赖 zeroconf（请更新依赖/重新安装）。")
             return
 
@@ -3559,12 +3573,10 @@ def web_feedback_ui(
 
     if output_file and result:
         # 确保目录存在
-        os.makedirs(
-            os.path.dirname(output_file) if os.path.dirname(output_file) else ".",
-            exist_ok=True,
-        )
+        output_path = Path(str(output_file)).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         # 保存结果到输出文件
-        with open(output_file, "w", encoding="utf-8") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         return None
 

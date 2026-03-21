@@ -787,9 +787,7 @@ class NotificationManager:
             # 【性能优化】检查配置文件是否有更新
             config_file_path = config_mgr.config_file
             try:
-                import os
-
-                current_mtime = os.path.getmtime(config_file_path)
+                current_mtime = config_file_path.stat().st_mtime
 
                 # 非强制模式下，如果文件未变化则跳过刷新
                 if not force and current_mtime == self._config_file_mtime:
@@ -798,7 +796,7 @@ class NotificationManager:
 
                 # 无论是否强制，都更新 mtime 缓存
                 self._config_file_mtime = current_mtime
-            except (OSError, AttributeError):
+            except OSError:
                 # 如果无法获取文件修改时间，继续刷新配置
                 pass
 

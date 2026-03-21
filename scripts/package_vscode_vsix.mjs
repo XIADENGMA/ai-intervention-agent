@@ -57,6 +57,7 @@ const includeList = [
   "lottie",
   "lottie.min.js",
   "marked.min.js",
+  "prism-bootstrap.js",
   "prism.min.css",
   "prism.min.js",
   "使用说明.md",

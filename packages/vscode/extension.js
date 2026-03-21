@@ -147,9 +147,8 @@ function activate(context) {
     const total = a + p
 
     // 展示策略：
-    // - 视图可见时：始终展示（便于点击打开面板/快速确认状态）
-    // - 视图不可见时：仅在“已连接且存在待处理任务”时展示（作为提醒/入口）
-    setStatusBarShown(isViewVisible || (connected === true && total > 0))
+    // - 仅在“有待处理任务”或“连接异常（离线）”时展示，避免常驻干扰视线
+    setStatusBarShown(total > 0 || connected === false)
   }
 
   const updateStatusBar = async () => {
