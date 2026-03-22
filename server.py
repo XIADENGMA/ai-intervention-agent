@@ -1527,9 +1527,24 @@ def launch_feedback_ui(
             )
 
             if response.status_code != 200:
-                logger.error(f"添加任务失败: HTTP {response.status_code}")
+                error_detail = "未知错误"
+                try:
+                    payload = response.json()
+                    if isinstance(payload, dict):
+                        error_detail = str(payload.get("error", error_detail))
+                    else:
+                        error_detail = str(payload)
+                except ValueError:
+                    try:
+                        if response.text:
+                            error_detail = response.text[:200]
+                    except Exception:
+                        pass
+                logger.error(
+                    f"添加任务失败: HTTP {response.status_code}, 详情: {error_detail}"
+                )
                 return {
-                    "error": f"添加任务失败: {response.json().get('error', '未知错误')}"
+                    "error": f"添加任务失败: {error_detail}",
                 }
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
@@ -1701,7 +1716,24 @@ async def interactive_feedback(
 
             if response.status_code != 200:
                 # 记录详细错误信息到日志
-                error_detail = response.json().get("error", "未知错误")
+                error_detail = "未知错误"
+                try:
+                    payload = response.json()
+                    if isinstance(payload, dict):
+                        error_detail = str(payload.get("error", error_detail))
+                    else:
+                        error_detail = str(payload)
+                except ValueError as e:
+                    logger.warning(
+                        f"添加任务失败响应不是有效 JSON: {e}",
+                        exc_info=True,
+                    )
+                    try:
+                        if response.text:
+                            error_detail = response.text[:200]
+                    except Exception:
+                        # response.text 读取失败不应影响主流程
+                        pass
                 logger.error(
                     f"添加任务失败: HTTP {response.status_code}, 详情: {error_detail}"
                 )

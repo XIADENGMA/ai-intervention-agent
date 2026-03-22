@@ -39,7 +39,7 @@ bool: True 表示已超时，False 表示未超时
 
 - 所有公共方法使用 `threading.Lock` 保护
 - 支持多线程并发访问
-- 内部数据结构（\_tasks, \_task_order）始终保持一致
+- 内部数据结构（\_tasks 等）始终保持一致
 
 ### 2. 单活动任务模式
 
