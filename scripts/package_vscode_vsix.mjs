@@ -49,6 +49,7 @@ const includeList = [
   "notification-center.js",
   "notification-providers.js",
   "README.md",
+  "README.zh-CN.md",
   "README.en.md",
   "LICENSE",
   "activity-icon.svg",

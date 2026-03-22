@@ -23,6 +23,27 @@
     "onCommand:ai-intervention-agent.testAppleScriptNotification"
   ],
   "main": "./extension.js",
+  "files": [
+    "LICENSE",
+    "activity-icon.svg",
+    "icon.png",
+    "icon.svg",
+    "extension.js",
+    "applescript-executor.js",
+    "webview.js",
+    "webview-ui.js",
+    "webview-helpers.js",
+    "logger.js",
+    "notification-*.js",
+    "lottie/**",
+    "lottie.min.js",
+    "marked.min.js",
+    "prism-bootstrap.js",
+    "prism.min.css",
+    "prism.min.js",
+    "README.md",
+    "README.zh-CN.md"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
