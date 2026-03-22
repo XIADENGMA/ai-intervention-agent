@@ -20,6 +20,32 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _read_text_or_none(path: Path, *, label: str) -> str | None:
+    try:
+        return _read_text(path)
+    except FileNotFoundError:
+        print(f"{label}: 文件不存在：{path}", file=sys.stderr)
+    except OSError as e:
+        print(f"{label}: 读取失败：{e}", file=sys.stderr)
+    return None
+
+
+def _load_json_object(text: str, *, label: str) -> dict[str, object] | None:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        print(
+            f"{label}: JSON 解析失败（{e.msg} at line {e.lineno} col {e.colno}）",
+            file=sys.stderr,
+        )
+        return None
+
+    if not isinstance(data, dict):
+        print(f"{label}: expected JSON object", file=sys.stderr)
+        return None
+    return data
+
+
 def _write_text_atomic(path: Path, content: str) -> None:
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(content, encoding="utf-8")
@@ -257,11 +283,18 @@ def main(argv: list[str]) -> int:
             return 2
 
         if args.check or args.from_pyproject:
-            pyproject_ver = _extract_pyproject_version(
-                _read_text(root / "pyproject.toml")
+            pyproject_text = _read_text_or_none(
+                root / "pyproject.toml", label="pyproject.toml"
             )
+            if pyproject_text is None:
+                return 1
+
+            pyproject_ver = _extract_pyproject_version(pyproject_text)
             if not pyproject_ver:
-                print("无法从 pyproject.toml 读取 [project].version", file=sys.stderr)
+                print(
+                    'pyproject.toml: 无法解析 [project].version（期望存在 version = "..."）',
+                    file=sys.stderr,
+                )
                 return 1
             raw_version = pyproject_ver.strip()
         else:
@@ -301,65 +334,184 @@ def main(argv: list[str]) -> int:
 
     if args.check:
         # 语义检查：只关注版本值是否一致，避免因 JSON 格式化差异导致误报
-        checks: list[tuple[str, str | None]] = []
-
-        pyproject_ver = _extract_pyproject_version(_read_text(root / "pyproject.toml"))
-        checks.append(("pyproject.toml", pyproject_ver))
-
-        uv_lock_ver = _extract_uv_lock_version(_read_text(root / "uv.lock"))
-        checks.append(("uv.lock", uv_lock_ver))
-
-        root_pkg = json.loads(_read_text(root / "package.json"))
-        checks.append(
-            (
-                "package.json",
-                str(root_pkg.get("version", ""))
-                if isinstance(root_pkg, dict)
-                else None,
-            )
-        )
-
-        vscode_pkg = json.loads(
-            _read_text(root / "packages" / "vscode" / "package.json")
-        )
-        checks.append(
-            (
-                "packages/vscode/package.json",
-                str(vscode_pkg.get("version", ""))
-                if isinstance(vscode_pkg, dict)
-                else None,
-            )
-        )
-
-        plock = json.loads(_read_text(root / "package-lock.json"))
-        if not isinstance(plock, dict):
-            print("package-lock.json: expected JSON object", file=sys.stderr)
-            return 1
-        checks.append(("package-lock.json", str(plock.get("version", ""))))
-        pkgs = plock.get("packages") if isinstance(plock.get("packages"), dict) else {}
-        checks.append(
-            (
-                'package-lock.json:packages[""]',
-                str((pkgs or {}).get("", {}).get("version", "")),
-            )
-        )
-        checks.append(
-            (
-                'package-lock.json:packages["packages/vscode"]',
-                str((pkgs or {}).get("packages/vscode", {}).get("version", "")),
-            )
-        )
-
-        bug_ver = _extract_bug_template_example_version(
-            _read_text(root / ".github" / "ISSUE_TEMPLATE" / "bug_report.md")
-        )
-        checks.append((".github/ISSUE_TEMPLATE/bug_report.md", bug_ver))
-
         bad = False
-        for label, cur in checks:
-            if cur != new_version:
+
+        pyproject_text = _read_text_or_none(
+            root / "pyproject.toml", label="pyproject.toml"
+        )
+        if pyproject_text is None:
+            bad = True
+        else:
+            cur = _extract_pyproject_version(pyproject_text)
+            if cur is None:
                 bad = True
-                print(f"版本不一致：{label}", file=sys.stderr)
+                print(
+                    'pyproject.toml: 无法解析 [project].version（期望存在 version = "..."）',
+                    file=sys.stderr,
+                )
+            elif cur != new_version:
+                bad = True
+                print(
+                    f"版本不一致：pyproject.toml（当前: {cur}，期望: {new_version}）",
+                    file=sys.stderr,
+                )
+
+        uv_lock_text = _read_text_or_none(root / "uv.lock", label="uv.lock")
+        if uv_lock_text is None:
+            bad = True
+        else:
+            cur = _extract_uv_lock_version(uv_lock_text)
+            if cur is None:
+                bad = True
+                print(
+                    'uv.lock: 无法解析 name="ai-intervention-agent" 的 version 字段',
+                    file=sys.stderr,
+                )
+            elif cur != new_version:
+                bad = True
+                print(
+                    f"版本不一致：uv.lock（当前: {cur}，期望: {new_version}）",
+                    file=sys.stderr,
+                )
+
+        root_pkg_text = _read_text_or_none(root / "package.json", label="package.json")
+        if root_pkg_text is None:
+            bad = True
+        else:
+            root_pkg = _load_json_object(root_pkg_text, label="package.json")
+            if root_pkg is None:
+                bad = True
+            else:
+                cur_v = root_pkg.get("version")
+                if not isinstance(cur_v, str):
+                    bad = True
+                    print("package.json: 缺少字符串字段 version", file=sys.stderr)
+                elif cur_v != new_version:
+                    bad = True
+                    print(
+                        f"版本不一致：package.json（当前: {cur_v}，期望: {new_version}）",
+                        file=sys.stderr,
+                    )
+
+        vscode_pkg_text = _read_text_or_none(
+            root / "packages" / "vscode" / "package.json",
+            label="packages/vscode/package.json",
+        )
+        if vscode_pkg_text is None:
+            bad = True
+        else:
+            vscode_pkg = _load_json_object(
+                vscode_pkg_text, label="packages/vscode/package.json"
+            )
+            if vscode_pkg is None:
+                bad = True
+            else:
+                cur_v = vscode_pkg.get("version")
+                if not isinstance(cur_v, str):
+                    bad = True
+                    print(
+                        "packages/vscode/package.json: 缺少字符串字段 version",
+                        file=sys.stderr,
+                    )
+                elif cur_v != new_version:
+                    bad = True
+                    print(
+                        f"版本不一致：packages/vscode/package.json（当前: {cur_v}，期望: {new_version}）",
+                        file=sys.stderr,
+                    )
+
+        plock_text = _read_text_or_none(
+            root / "package-lock.json", label="package-lock.json"
+        )
+        if plock_text is None:
+            bad = True
+        else:
+            plock = _load_json_object(plock_text, label="package-lock.json")
+            if plock is None:
+                bad = True
+            else:
+                cur_v = plock.get("version")
+                if not isinstance(cur_v, str):
+                    bad = True
+                    print("package-lock.json: 缺少字符串字段 version", file=sys.stderr)
+                elif cur_v != new_version:
+                    bad = True
+                    print(
+                        f"版本不一致：package-lock.json（当前: {cur_v}，期望: {new_version}）",
+                        file=sys.stderr,
+                    )
+
+                packages = plock.get("packages")
+                if not isinstance(packages, dict):
+                    bad = True
+                    print("package-lock.json: 缺少对象字段 packages", file=sys.stderr)
+                else:
+                    root_pkg = packages.get("")
+                    if not isinstance(root_pkg, dict):
+                        bad = True
+                        print(
+                            'package-lock.json: packages[""] 缺失或类型错误',
+                            file=sys.stderr,
+                        )
+                    else:
+                        rv = root_pkg.get("version")
+                        if not isinstance(rv, str):
+                            bad = True
+                            print(
+                                'package-lock.json: packages[""].version 缺失或类型错误',
+                                file=sys.stderr,
+                            )
+                        elif rv != new_version:
+                            bad = True
+                            print(
+                                f'版本不一致：package-lock.json:packages[""]（当前: {rv}，期望: {new_version}）',
+                                file=sys.stderr,
+                            )
+
+                    vs_pkg = packages.get("packages/vscode")
+                    if not isinstance(vs_pkg, dict):
+                        bad = True
+                        print(
+                            'package-lock.json: packages["packages/vscode"] 缺失或类型错误',
+                            file=sys.stderr,
+                        )
+                    else:
+                        vv = vs_pkg.get("version")
+                        if not isinstance(vv, str):
+                            bad = True
+                            print(
+                                'package-lock.json: packages["packages/vscode"].version 缺失或类型错误',
+                                file=sys.stderr,
+                            )
+                        elif vv != new_version:
+                            bad = True
+                            print(
+                                '版本不一致：package-lock.json:packages["packages/vscode"]'
+                                f"（当前: {vv}，期望: {new_version}）",
+                                file=sys.stderr,
+                            )
+
+        bug_template_path = root / ".github" / "ISSUE_TEMPLATE" / "bug_report.md"
+        bug_text = _read_text_or_none(
+            bug_template_path, label=".github/ISSUE_TEMPLATE/bug_report.md"
+        )
+        if bug_text is None:
+            bad = True
+        else:
+            cur = _extract_bug_template_example_version(bug_text)
+            if cur is None:
+                bad = True
+                print(
+                    ".github/ISSUE_TEMPLATE/bug_report.md: 无法解析示例版本（期望包含 [e.g. X.Y.Z]）",
+                    file=sys.stderr,
+                )
+            elif cur != new_version:
+                bad = True
+                print(
+                    f"版本不一致：.github/ISSUE_TEMPLATE/bug_report.md（当前: {cur}，期望: {new_version}）",
+                    file=sys.stderr,
+                )
+
         if bad:
             return 1
 
@@ -370,10 +522,23 @@ def main(argv: list[str]) -> int:
     pending_writes: list[tuple[Path, str]] = []
     for path, transformer in targets:
         if not path.exists():
-            raise FileNotFoundError(str(path))
+            print(f"文件不存在：{path.relative_to(root)}", file=sys.stderr)
+            return 1
 
-        raw = _read_text(path)
-        updated = transformer(raw)
+        try:
+            raw = _read_text(path)
+        except OSError as e:
+            print(f"读取失败：{path.relative_to(root)}: {e}", file=sys.stderr)
+            return 1
+
+        try:
+            updated = transformer(raw)
+        except Exception as e:  # noqa: BLE001 - CLI 工具：给出友好错误后退出
+            print(
+                f"更新失败：{path.relative_to(root)}: {type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
+            return 1
         if updated != raw:
             pending_writes.append((path, updated))
 
