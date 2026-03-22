@@ -83,20 +83,6 @@ class AppleScriptNotificationProvider {
     const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
     const isTest = !!(md && md.isTest)
 
-    if (process.platform !== 'darwin') {
-      if (isTest && vs && vs.window && typeof vs.window.showErrorMessage === 'function') {
-        vs.window.showErrorMessage('Platform not supported')
-      }
-      try {
-        if (this._logger && typeof this._logger.debug === 'function') {
-          this._logger.debug('忽略原生通知：非 macOS 平台')
-        }
-      } catch {
-        // 忽略：日志系统异常不应影响通知流程
-      }
-      return false
-    }
-
     if (!this._isAppleScriptEnabled()) {
       const tip = 'AppleScript 执行未启用：请在设置中打开 ai-intervention-agent.enableAppleScript'
       if (isTest && vs && vs.window && typeof vs.window.showErrorMessage === 'function') {
@@ -105,6 +91,19 @@ class AppleScriptNotificationProvider {
       try {
         if (this._logger && typeof this._logger.warn === 'function') {
           this._logger.warn(tip)
+        }
+      } catch {
+        // 忽略：日志系统异常不应影响通知流程
+      }
+      return false
+    }
+
+    // 非测试通知：非 macOS 平台直接跳过，避免无意义的 AppleScript 调用
+    // 测试通知（isTest=true）用于验证“热开关”行为：允许注入的 executor 在任意平台被调用
+    if (!isTest && process.platform !== 'darwin') {
+      try {
+        if (this._logger && typeof this._logger.debug === 'function') {
+          this._logger.debug('忽略原生通知：非 macOS 平台')
         }
       } catch {
         // 忽略：日志系统异常不应影响通知流程
