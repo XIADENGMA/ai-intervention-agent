@@ -253,8 +253,8 @@ flowchart TD
   BROWSER -->|加载界面| WEB_FRONTEND
   VSCODE -->|渲染界面| VSCODE_WEBVIEW
 
-  MCP_TOOL -->|HTTP POST /api/tasks| HTTP_API
-  MCP_TOOL -->|HTTP GET /api/tasks/{task_id}| HTTP_API
+  MCP_TOOL -->|"HTTP POST /api/tasks"| HTTP_API
+  MCP_TOOL -->|"HTTP GET /api/tasks/{task_id}"| HTTP_API
 
   WEB_CFG_MGR <-->|读写 + watcher| CFG_FILE
   CFG_MGR_MCP <-->|读写 + watcher| CFG_FILE
