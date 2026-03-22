@@ -65,10 +65,7 @@ jobs:
 
       - name: 版本一致性检查（bump_version.py --check）
         if: matrix.python-version == '3.11'
-        run: |
-          set -euo pipefail
-          VERSION="$(uv run python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")"
-          uv run python scripts/bump_version.py "$VERSION" --check
+        run: uv run python scripts/bump_version.py --check
 
       - name: Ruff（Lint）
         run: uv run ruff check .

@@ -205,10 +205,17 @@ def main(argv: list[str]) -> int:
         description="一键同步项目版本号（Python + Node + VSCode 扩展）。建议使用：uv run python scripts/bump_version.py X.Y.Z",
     )
     parser.add_argument(
-        "version", help="新版本号（SemVer），例如 1.4.18 或 1.4.18-rc.1"
+        "version",
+        nargs="?",
+        help="目标版本号（SemVer），例如 1.4.18 或 1.4.18-rc.1。不提供时：--check 会自动使用 pyproject.toml 的版本。",
     )
     parser.add_argument(
         "--check", action="store_true", help="仅检查是否已是该版本（不写文件）"
+    )
+    parser.add_argument(
+        "--from-pyproject",
+        action="store_true",
+        help="从 pyproject.toml 读取版本号作为目标版本（主要用于 --check；不建议用于实际 bump）。",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="打印将修改的文件列表（不写文件）"
@@ -225,12 +232,49 @@ def main(argv: list[str]) -> int:
     )
     args = parser.parse_args(argv)
 
-    new_version = args.version.strip()
+    root = _repo_root()
+
+    if args.dry_run:
+        print("将同步版本号的文件：")
+        print("- pyproject.toml")
+        print("- uv.lock")
+        print("- package.json")
+        print("- package-lock.json")
+        print("- packages/vscode/package.json")
+        print("- .github/ISSUE_TEMPLATE/bug_report.md")
+        return 0
+
+    # 版本号来源：
+    # - 正常 bump：必须显式传入 version
+    # - --check：允许不传，默认取 pyproject.toml 的版本作为“单一真值”
+    raw_version = (args.version or "").strip()
+    if not raw_version:
+        if args.from_pyproject and not args.check:
+            print(
+                "--from-pyproject 仅用于 --check（请显式传入要 bump 的新版本号）",
+                file=sys.stderr,
+            )
+            return 2
+
+        if args.check or args.from_pyproject:
+            pyproject_ver = _extract_pyproject_version(
+                _read_text(root / "pyproject.toml")
+            )
+            if not pyproject_ver:
+                print("无法从 pyproject.toml 读取 [project].version", file=sys.stderr)
+                return 1
+            raw_version = pyproject_ver.strip()
+        else:
+            print(
+                "缺少版本号：请提供 X.Y.Z（例如 1.4.18），或使用 --check",
+                file=sys.stderr,
+            )
+            return 2
+
+    new_version = raw_version
     if not _SEMVER_RE.match(new_version):
         print(f"版本号格式不合法：{new_version}", file=sys.stderr)
         return 2
-
-    root = _repo_root()
 
     targets: list[tuple[Path, Callable[[str], str]]] = [
         (root / "pyproject.toml", lambda t: _update_pyproject_version(t, new_version)),
@@ -254,12 +298,6 @@ def main(argv: list[str]) -> int:
             lambda t: _update_bug_template(t, new_version),
         ),
     ]
-
-    if args.dry_run:
-        print("将同步版本号的文件：")
-        for p, _ in targets:
-            print(f"- {p.relative_to(root)}")
-        return 0
 
     if args.check:
         # 语义检查：只关注版本值是否一致，避免因 JSON 格式化差异导致误报
