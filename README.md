@@ -225,7 +225,7 @@ flowchart TD
     WEB_FRONTEND <-->|poll /api/tasks| HTTP_API
     WEB_FRONTEND -->|submit feedback| HTTP_API
   end
-  
+
   subgraph VSCODE_PROC["VS Code extension (Node)"]
     VSCODE_EXT["Extension host<br/>(packages/vscode/extension.js)"]
     VSCODE_WEBVIEW["Webview frontend<br/>(webview.js + webview-ui.js)"]
