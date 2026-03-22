@@ -151,6 +151,21 @@ class NotificationConfig:
         config_mgr = get_config()
         notification_config = config_mgr.get_section("notification")
 
+        # 【健壮性】与 refresh_config_from_file() 对齐：避免 bool("false") == True 这类误判
+        def safe_bool(value: Any, default: bool) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                v = value.strip().lower()
+                if v in ("true", "1", "yes", "y", "on"):
+                    return True
+                if v in ("false", "0", "no", "n", "off"):
+                    return False
+                return default
+            return default
+
         # 【优化】sound_volume 从百分比转换为 0-1 范围，并限制边界
         raw_volume = notification_config.get("sound_volume", 80)
         # 确保是数字类型
@@ -175,28 +190,30 @@ class NotificationConfig:
         bark_timeout = safe_int(notification_config.get("bark_timeout", 10), 10, 1, 300)
 
         return cls(
-            enabled=bool(notification_config.get("enabled", True)),
-            debug=bool(notification_config.get("debug", False)),
-            web_enabled=bool(notification_config.get("web_enabled", True)),
-            web_permission_auto_request=bool(
-                notification_config.get("auto_request_permission", True)
+            enabled=safe_bool(notification_config.get("enabled"), True),
+            debug=safe_bool(notification_config.get("debug"), False),
+            web_enabled=safe_bool(notification_config.get("web_enabled"), True),
+            web_permission_auto_request=safe_bool(
+                notification_config.get("auto_request_permission"), True
             ),
-            sound_enabled=bool(notification_config.get("sound_enabled", True)),
+            sound_enabled=safe_bool(notification_config.get("sound_enabled"), True),
             sound_volume=normalized_volume,
-            sound_mute=bool(notification_config.get("sound_mute", False)),
-            mobile_optimized=bool(notification_config.get("mobile_optimized", True)),
-            mobile_vibrate=bool(notification_config.get("mobile_vibrate", True)),
+            sound_mute=safe_bool(notification_config.get("sound_mute"), False),
+            mobile_optimized=safe_bool(
+                notification_config.get("mobile_optimized"), True
+            ),
+            mobile_vibrate=safe_bool(notification_config.get("mobile_vibrate"), True),
             retry_count=retry_count,
             retry_delay=retry_delay,
-            bark_enabled=bool(notification_config.get("bark_enabled", False)),
+            bark_enabled=safe_bool(notification_config.get("bark_enabled"), False),
             bark_url=str(notification_config.get("bark_url", "")),
             bark_device_key=str(notification_config.get("bark_device_key", "")),
             bark_icon=str(notification_config.get("bark_icon", "")),
             bark_action=str(notification_config.get("bark_action", "none")),
             bark_timeout=bark_timeout,
-            system_enabled=bool(notification_config.get("system_enabled", False)),
-            macos_native_enabled=bool(
-                notification_config.get("macos_native_enabled", False)
+            system_enabled=safe_bool(notification_config.get("system_enabled"), False),
+            macos_native_enabled=safe_bool(
+                notification_config.get("macos_native_enabled"), False
             ),
         )
 

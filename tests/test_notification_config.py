@@ -210,6 +210,42 @@ class TestFromConfigFile(unittest.TestCase):
 
     @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
     @patch("notification_manager.get_config")
+    def test_bool_string_values(self, mock_get_config):
+        """测试布尔值字符串输入（避免 bool('false') == True 的误判）"""
+        from notification_manager import NotificationConfig
+
+        mock_config_mgr = MagicMock()
+        mock_config_mgr.get_section.return_value = {
+            "enabled": "false",
+            "debug": "true",
+            "web_enabled": "0",
+            "auto_request_permission": "no",
+            "sound_enabled": "yes",
+            "sound_mute": "1",
+            "mobile_optimized": "off",
+            "mobile_vibrate": "on",
+            "bark_enabled": "false",
+            "system_enabled": "true",
+            "macos_native_enabled": "0",
+        }
+        mock_get_config.return_value = mock_config_mgr
+
+        config = NotificationConfig.from_config_file()
+
+        self.assertFalse(config.enabled)
+        self.assertTrue(config.debug)
+        self.assertFalse(config.web_enabled)
+        self.assertFalse(config.web_permission_auto_request)
+        self.assertTrue(config.sound_enabled)
+        self.assertTrue(config.sound_mute)
+        self.assertFalse(config.mobile_optimized)
+        self.assertTrue(config.mobile_vibrate)
+        self.assertFalse(config.bark_enabled)
+        self.assertTrue(config.system_enabled)
+        self.assertFalse(config.macos_native_enabled)
+
+    @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
+    @patch("notification_manager.get_config")
     def test_volume_boundary_conversion(self, mock_get_config):
         """测试音量边界转换"""
         from notification_manager import NotificationConfig
