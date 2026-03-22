@@ -2,7 +2,7 @@
   "name": "ai-intervention-agent",
   "displayName": "AI Intervention Agent",
   "description": "VS Code extension that embeds AI Intervention Agent in the sidebar to handle interactive_feedback workflows with multi-task tabs and countdown timers.",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.110.0"
