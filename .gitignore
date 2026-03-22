@@ -234,7 +234,7 @@ config.jsonc
 .ace-tool/
 
 # 个人笔记 / 待办
-# TODO.md
+TODO.md
 
 # 已移除的项目管理与覆盖率配置
 .specify/
