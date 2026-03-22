@@ -70,7 +70,7 @@ jobs:
       - name: 设置 Node.js（用于构建 VSCode 插件 VSIX）
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: "package-lock.json"
 
@@ -183,7 +183,7 @@ jobs:
       - name: 设置 Node.js（用于发布 Open VSX）
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: 发布到 Open VSX（从 VSIX 发布）
         env:
