@@ -33,7 +33,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/vscode/.vscode-test
-          key: vscode-test-${{ runner.os }}-1.107.1
+          key: vscode-test-${{ runner.os }}-1.110.0
 
       - name: VSCode 插件：Lint
         run: npm run vscode:lint
