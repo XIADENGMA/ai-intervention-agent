@@ -1418,13 +1418,27 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
                 await asyncio.sleep(1)  # 异步等待，不阻塞事件循环
                 continue
 
-            task_data = response.json()
+            try:
+                task_data = response.json()
+            except ValueError as e:
+                # 服务端可能在异常情况下返回 HTML/纯文本；这里降级为“继续轮询”
+                logger.warning(f"任务状态响应不是有效 JSON: {e}", exc_info=True)
+                await asyncio.sleep(1)
+                continue
+
+            if not isinstance(task_data, dict):
+                logger.warning(
+                    f"任务状态响应类型异常: {type(task_data)}，已忽略并继续轮询"
+                )
+                await asyncio.sleep(1)
+                continue
+
             if task_data.get("success") and task_data.get("task"):
                 task = task_data["task"]
-
-                if task.get("status") == "completed" and task.get("result"):
-                    logger.info(f"任务完成: {task_id}")
-                    return cast(Dict[str, Any], task["result"])
+                if isinstance(task, dict):
+                    if task.get("status") == "completed" and task.get("result"):
+                        logger.info(f"任务完成: {task_id}")
+                        return cast(Dict[str, Any], task["result"])
 
         except requests.exceptions.RequestException as e:
             logger.warning(f"轮询任务状态失败: {e}", exc_info=True)

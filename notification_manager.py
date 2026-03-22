@@ -235,6 +235,7 @@ class NotificationManager:
 
             # 初始化通知提供者字典
             self._providers: Dict[NotificationType, Any] = {}
+            self._providers_lock = threading.Lock()
 
             # 初始化事件队列和锁
             self._event_queue: List[NotificationEvent] = []
@@ -302,7 +303,8 @@ class NotificationManager:
 
     def register_provider(self, notification_type: NotificationType, provider: Any):
         """注册通知提供者（需实现 send(event) -> bool）"""
-        self._providers[notification_type] = provider
+        with self._providers_lock:
+            self._providers[notification_type] = provider
         logger.debug(f"已注册通知提供者: {notification_type.value}")
 
     def add_callback(self, event_name: str, callback: Callable):
@@ -593,7 +595,8 @@ class NotificationManager:
         self, notification_type: NotificationType, event: NotificationEvent
     ) -> bool:
         """调用指定类型提供者发送通知，返回成功与否"""
-        provider = self._providers.get(notification_type)
+        with self._providers_lock:
+            provider = self._providers.get(notification_type)
         if not provider:
             logger.debug(f"未找到通知提供者: {notification_type.value}")
             # 【可观测性】即便 provider 缺失，也记录一次失败（避免“静默丢失”）
@@ -951,7 +954,9 @@ class NotificationManager:
         try:
             if self.config.bark_enabled:
                 # 启用Bark通知，添加提供者
-                if NotificationType.BARK not in self._providers:
+                with self._providers_lock:
+                    bark_registered = NotificationType.BARK in self._providers
+                if not bark_registered:
                     # 【关键修复】使用延迟导入解决循环导入问题
                     # 在方法内部导入，而非模块级别，避免加载时循环依赖
                     from notification_providers import BarkNotificationProvider
@@ -961,9 +966,10 @@ class NotificationManager:
                     logger.info("Bark通知提供者已动态添加")
             else:
                 # 禁用Bark通知，移除提供者
-                if NotificationType.BARK in self._providers:
-                    del self._providers[NotificationType.BARK]
-                    logger.info("Bark通知提供者已移除")
+                with self._providers_lock:
+                    if NotificationType.BARK in self._providers:
+                        del self._providers[NotificationType.BARK]
+                        logger.info("Bark通知提供者已移除")
         except ImportError as e:
             logger.error(
                 f"更新Bark提供者失败: 无法导入 BarkNotificationProvider - {e}",
@@ -1070,9 +1076,12 @@ class NotificationManager:
         except Exception:
             stats_snapshot = {}
 
+        with self._providers_lock:
+            providers = [t.value for t in self._providers.keys()]
+
         return {
             "enabled": self.config.enabled,
-            "providers": [t.value for t in self._providers.keys()],
+            "providers": providers,
             "queue_size": queue_size,
             "config": {
                 "web_enabled": self.config.web_enabled,

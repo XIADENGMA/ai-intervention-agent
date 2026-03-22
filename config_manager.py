@@ -238,7 +238,9 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
     if override:
         override_path = Path(override).expanduser()
         # 支持传入目录：自动拼接默认文件名
-        if override_path.is_dir():
+        # - 目录存在时：override_path.is_dir() == True
+        # - 目录不存在但用户用尾部分隔符显式标注为目录：override.endswith(("/", "\\"))
+        if override_path.is_dir() or override.endswith(("/", "\\")):
             override_path = override_path / config_filename
         logger.info(
             f"使用环境变量 AI_INTERVENTION_AGENT_CONFIG_FILE 指定配置文件: {override_path}"

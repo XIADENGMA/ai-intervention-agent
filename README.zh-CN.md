@@ -220,17 +220,25 @@ flowchart TD
     WEB_CFG_MGR["配置管理<br/>(config_manager.py)"]
     HTTP_API["HTTP API<br/>(/api/*)"]
     TASK_Q["任务队列<br/>(task_queue.py)"]
-    WEB_FRONTEND["前端<br/>(static/js/app.js + multi_task.js)"]
+    WEB_FRONTEND["浏览器前端<br/>(static/js/app.js + multi_task.js)"]
     WEB_SRV --> HTTP_API
     WEB_SRV --> TASK_Q
     WEB_SRV --> WEB_CFG_MGR
     WEB_FRONTEND <-->|轮询 /api/tasks| HTTP_API
-    WEB_FRONTEND -->|提交反馈| WEB_SRV
+    WEB_FRONTEND -->|提交反馈| HTTP_API
+  end
+  
+  subgraph VSCODE_PROC["VS Code 插件（Node）"]
+    VSCODE_EXT["扩展宿主<br/>(packages/vscode/extension.js)"]
+    VSCODE_WEBVIEW["Webview 前端<br/>(webview.js + webview-ui.js)"]
+    VSCODE_EXT --> VSCODE_WEBVIEW
+    VSCODE_WEBVIEW <-->|轮询 /api/tasks| HTTP_API
+    VSCODE_WEBVIEW -->|提交反馈| HTTP_API
   end
 
   subgraph USER_UI["用户界面"]
     BROWSER["浏览器<br/>(桌面/移动端)"]
-    VSCODE["VS Code 插件<br/>(Webview)"]
+    VSCODE["VS Code<br/>(侧边栏面板)"]
     USER["用户"]
   end
 
@@ -241,8 +249,9 @@ flowchart TD
   SVC_MGR -->|spawn/monitor| WEB_SRV
 
   USER -->|输入/点击| WEB_FRONTEND
+  USER -->|输入/点击| VSCODE_WEBVIEW
   BROWSER -->|加载界面| WEB_FRONTEND
-  VSCODE -->|加载界面| WEB_FRONTEND
+  VSCODE -->|渲染界面| VSCODE_WEBVIEW
 
   MCP_TOOL -->|HTTP POST /api/tasks| HTTP_API
   MCP_TOOL -->|HTTP GET /api/tasks/{task_id}| HTTP_API
@@ -258,6 +267,8 @@ flowchart TD
 
 - **API 文档（英文）**：[`docs/api/index.md`](docs/api/index.md)
 - **API 文档（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
+- **MCP 工具说明（英文）**：[`docs/mcp_tools.md`](docs/mcp_tools.md)
+- **MCP 工具说明（简体中文）**：[`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)
 - **DeepWiki**：[deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
 
 ## 同类产品

@@ -11,6 +11,7 @@ AI Intervention Agent - 配置管理器单元测试
 """
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -231,6 +232,43 @@ class TestConfigManagerBasic(unittest.TestCase):
         # reload 后应回滚到 baseline（而不是应用损坏配置）
         mgr.reload()
         self.assertEqual(mgr.get("web_ui.port"), 18081)
+
+
+class TestFindConfigFileOverride(unittest.TestCase):
+    """测试 find_config_file() 的环境变量覆盖逻辑"""
+
+    def test_override_dir_trailing_slash_appends_filename_even_if_missing(self):
+        """环境变量指向目录（以 / 结尾）时应拼接 config.jsonc，即使目录尚不存在"""
+        from config_manager import find_config_file
+
+        old = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                missing_dir = Path(tmp) / "not-exist-yet"
+                os.environ["AI_INTERVENTION_AGENT_CONFIG_FILE"] = str(missing_dir) + "/"
+                resolved = find_config_file("config.jsonc")
+                self.assertEqual(resolved, missing_dir / "config.jsonc")
+        finally:
+            if old is None:
+                os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
+            else:
+                os.environ["AI_INTERVENTION_AGENT_CONFIG_FILE"] = old
+
+    def test_override_existing_dir_appends_filename(self):
+        """环境变量指向已存在目录时应拼接 config.jsonc"""
+        from config_manager import find_config_file
+
+        old = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                os.environ["AI_INTERVENTION_AGENT_CONFIG_FILE"] = tmp
+                resolved = find_config_file("config.jsonc")
+                self.assertEqual(resolved, Path(tmp) / "config.jsonc")
+        finally:
+            if old is None:
+                os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
+            else:
+                os.environ["AI_INTERVENTION_AGENT_CONFIG_FILE"] = old
 
 
 class TestConfigManagerThreadSafety(unittest.TestCase):

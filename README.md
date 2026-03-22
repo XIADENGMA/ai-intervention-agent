@@ -218,17 +218,25 @@ flowchart TD
     WEB_CFG_MGR["Config manager<br/>(config_manager.py)"]
     HTTP_API["HTTP API<br/>(/api/*)"]
     TASK_Q["Task queue<br/>(task_queue.py)"]
-    WEB_FRONTEND["Frontend<br/>(static/js/app.js + multi_task.js)"]
+    WEB_FRONTEND["Browser frontend<br/>(static/js/app.js + multi_task.js)"]
     WEB_SRV --> HTTP_API
     WEB_SRV --> TASK_Q
     WEB_SRV --> WEB_CFG_MGR
     WEB_FRONTEND <-->|poll /api/tasks| HTTP_API
-    WEB_FRONTEND -->|submit feedback| WEB_SRV
+    WEB_FRONTEND -->|submit feedback| HTTP_API
+  end
+  
+  subgraph VSCODE_PROC["VS Code extension (Node)"]
+    VSCODE_EXT["Extension host<br/>(packages/vscode/extension.js)"]
+    VSCODE_WEBVIEW["Webview frontend<br/>(webview.js + webview-ui.js)"]
+    VSCODE_EXT --> VSCODE_WEBVIEW
+    VSCODE_WEBVIEW <-->|poll /api/tasks| HTTP_API
+    VSCODE_WEBVIEW -->|submit feedback| HTTP_API
   end
 
   subgraph USER_UI["User interfaces"]
     BROWSER["Browser<br/>(desktop/mobile)"]
-    VSCODE["VS Code extension<br/>(Webview)"]
+    VSCODE["VS Code<br/>(sidebar panel)"]
     USER["User"]
   end
 
@@ -239,8 +247,9 @@ flowchart TD
   SVC_MGR -->|spawn/monitor| WEB_SRV
 
   USER -->|input / click| WEB_FRONTEND
+  USER -->|input / click| VSCODE_WEBVIEW
   BROWSER -->|load UI| WEB_FRONTEND
-  VSCODE -->|load UI| WEB_FRONTEND
+  VSCODE -->|render UI| VSCODE_WEBVIEW
 
   MCP_TOOL -->|HTTP POST /api/tasks| HTTP_API
   MCP_TOOL -->|HTTP GET /api/tasks/{task_id}| HTTP_API
@@ -256,6 +265,8 @@ flowchart TD
 
 - **API docs index**: [`docs/api/index.md`](docs/api/index.md)
 - **API docs (简体中文)**: [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
+- **MCP tool reference**: [`docs/mcp_tools.md`](docs/mcp_tools.md)
+- **MCP 工具说明**: [`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)
 - **DeepWiki**: [deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
 
 ## Related projects
