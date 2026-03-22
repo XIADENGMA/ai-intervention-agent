@@ -7,7 +7,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 
@@ -441,19 +441,22 @@ def main(argv: list[str]) -> int:
                         file=sys.stderr,
                     )
 
-                packages = plock.get("packages")
-                if not isinstance(packages, dict):
+                packages_obj = plock.get("packages")
+                if not isinstance(packages_obj, dict):
                     bad = True
                     print("package-lock.json: 缺少对象字段 packages", file=sys.stderr)
                 else:
-                    root_pkg = packages.get("")
-                    if not isinstance(root_pkg, dict):
+                    packages = cast(dict[str, object], packages_obj)
+
+                    root_pkg_obj = packages.get("")
+                    if not isinstance(root_pkg_obj, dict):
                         bad = True
                         print(
                             'package-lock.json: packages[""] 缺失或类型错误',
                             file=sys.stderr,
                         )
                     else:
+                        root_pkg = cast(dict[str, object], root_pkg_obj)
                         rv = root_pkg.get("version")
                         if not isinstance(rv, str):
                             bad = True
@@ -468,14 +471,15 @@ def main(argv: list[str]) -> int:
                                 file=sys.stderr,
                             )
 
-                    vs_pkg = packages.get("packages/vscode")
-                    if not isinstance(vs_pkg, dict):
+                    vs_pkg_obj = packages.get("packages/vscode")
+                    if not isinstance(vs_pkg_obj, dict):
                         bad = True
                         print(
                             'package-lock.json: packages["packages/vscode"] 缺失或类型错误',
                             file=sys.stderr,
                         )
                     else:
+                        vs_pkg = cast(dict[str, object], vs_pkg_obj)
                         vv = vs_pkg.get("version")
                         if not isinstance(vv, str):
                             bad = True
