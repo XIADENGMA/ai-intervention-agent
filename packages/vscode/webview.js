@@ -828,9 +828,9 @@ class WebviewProvider {
             padding: 0;
             border: none;
             display: block;
-            white-space: pre;
-            overflow-wrap: normal;
-            word-break: normal;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .markdown-content ul,

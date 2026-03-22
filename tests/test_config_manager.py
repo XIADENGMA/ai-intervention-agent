@@ -177,6 +177,61 @@ class TestConfigManagerBasic(unittest.TestCase):
         section2 = mgr.get_section("notification")
         self.assertEqual(section2.get("enabled"), False)
 
+    def test_reload_invalid_json_keeps_previous_config(self):
+        """配置文件损坏/编辑中间态：reload 不应把内存配置回退到默认值"""
+        from config_manager import ConfigManager
+
+        # 写入一个非默认端口，便于验证是否发生“回退到默认值（8080）”
+        test_config = {
+            "notification": {"enabled": True, "sound_volume": 80},
+            "web_ui": {"host": "127.0.0.1", "port": 18080},
+        }
+        with open(self.config_file, "w", encoding="utf-8") as f:
+            json.dump(test_config, f)
+
+        mgr = ConfigManager(str(self.config_file))
+        self.assertEqual(mgr.get("web_ui.port"), 18080)
+
+        # 将文件写成非法 JSON（模拟编辑中间态/损坏）
+        with open(self.config_file, "w", encoding="utf-8") as f:
+            f.write("{invalid json")
+
+        # reload 不应抛异常，同时应保留上一次成功加载的配置
+        mgr.reload()
+        self.assertEqual(mgr.get("web_ui.port"), 18080)
+
+    def test_reload_duplicate_allowed_networks_keeps_previous_config(self):
+        """重复数组定义（allowed_networks）应被识别，reload 后应保留上次成功配置"""
+        from config_manager import ConfigManager
+
+        # 先写入一份“正确配置”，建立基线
+        baseline_config = {
+            "notification": {"enabled": True},
+            "web_ui": {"host": "127.0.0.1", "port": 18081},
+        }
+        with open(self.config_file, "w", encoding="utf-8") as f:
+            json.dump(baseline_config, f)
+
+        mgr = ConfigManager(str(self.config_file))
+        self.assertEqual(mgr.get("web_ui.port"), 18081)
+
+        # 写入可解析但包含重复 allowed_networks 定义的 JSONC（json.loads 会保留最后一个键）
+        duplicated = """
+        {
+          "web_ui": { "host": "127.0.0.1", "port": 18082 },
+          "network_security": {
+            "allowed_networks": ["127.0.0.0/8"],
+            "allowed_networks": ["10.0.0.0/8"]
+          }
+        }
+        """.strip()
+        with open(self.config_file, "w", encoding="utf-8") as f:
+            f.write(duplicated)
+
+        # reload 后应回滚到 baseline（而不是应用损坏配置）
+        mgr.reload()
+        self.assertEqual(mgr.get("web_ui.port"), 18081)
+
 
 class TestConfigManagerThreadSafety(unittest.TestCase):
     """测试配置管理器线程安全"""

@@ -13,24 +13,43 @@
 
 ### `parse_jsonc(content: str) -> Dict[str, Any]`
 
-解析 JSONC（带注释的 JSON）为字典，支持 // 单行注释和 /* */ 多行注释。
+解析 JSONC（带注释的 JSON）为字典，支持 // 单行注释和 /\* \*/ 多行注释。
 
 异常:
-    json.JSONDecodeError: JSON 语法错误时抛出
+json.JSONDecodeError: JSON 语法错误时抛出
 
 ### `_is_uvx_mode() -> bool`
 
-检测是否为 uvx 运行模式（影响配置文件位置选择）。
+检测是否应使用“用户配置目录”（用户模式：uvx/安装后运行）而非“开发模式”（从仓库运行）。
 
-检测特征：执行路径含 uvx、UVX_PROJECT 环境变量、项目目录无开发文件。
-uvx 模式使用用户配置目录；开发模式优先使用当前目录配置。
+判定规则（简化）：
+
+- 用户模式（True）：
+  - `sys.executable` 路径包含 `uvx`
+  - 或存在 `UVX_PROJECT` 环境变量
+  - 或无法确认“当前工作目录属于同一份源码仓库”时默认走用户模式（避免在任意仓库/项目目录意外生成 `config.jsonc`）
+- 开发模式（False）：
+  - 代码文件位于仓库源码树内
+  - 且当前工作目录也位于同一源码树内（便于在仓库根目录调试）
 
 ### `find_config_file(config_filename: str = 'config.jsonc') -> Path`
 
 查找配置文件路径，支持环境变量覆盖、uvx 模式和开发模式。
 
-查找优先级（开发模式）：当前目录 > 用户配置目录 > 创建新配置。
-uvx 模式仅使用用户配置目录。支持 .jsonc/.json 两种格式。
+查找顺序（高 → 低）：
+
+1. 环境变量强制指定：`AI_INTERVENTION_AGENT_CONFIG_FILE`
+   - 指向文件：直接使用该路径
+   - 指向目录（或以 `/`、`\` 结尾）：自动拼接 `config_filename`
+2. 用户模式（uvx/安装模式）：只使用用户配置目录
+   - `config.jsonc` → `config.json`
+   - 都不存在则复制模板创建 `config.jsonc`
+3. 开发模式（从仓库运行）：优先使用当前目录，再回落用户配置目录
+   - 当前目录 `./config.jsonc` → `./config.json`
+   - 用户配置目录 `config.jsonc` → `config.json`
+   - 都不存在则在用户配置目录创建 `config.jsonc`
+
+支持 `.jsonc`/`.json` 两种格式。
 跨平台配置目录：Linux ~/.config、macOS ~/Library/Application Support、Windows %APPDATA%。
 
 ### `_get_user_config_dir_fallback() -> Path`

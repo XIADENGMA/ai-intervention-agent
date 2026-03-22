@@ -511,7 +511,10 @@ class NotificationManager:
                         if future.result():
                             success_count += 1
                     except Exception as e:
-                        logger.warning(f"通知发送异常 {notification_type.value}: {e}")
+                        logger.warning(
+                            f"通知发送异常 {notification_type.value}: {e}",
+                            exc_info=True,
+                        )
             except TimeoutError:
                 # 【优化】超时时记录警告而非错误，因为部分通知可能已成功
                 unfinished_count = total_count - completed_count
@@ -909,7 +912,7 @@ class NotificationManager:
                     )
 
         except Exception as e:
-            logger.warning(f"从配置文件刷新配置失败: {e}")
+            logger.warning(f"从配置文件刷新配置失败: {e}", exc_info=True)
 
     def update_config(self, **kwargs):
         """更新配置并持久化到文件"""

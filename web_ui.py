@@ -96,7 +96,7 @@ def get_project_version() -> str:
                 if match:
                     version = match.group(1)
     except Exception as e:
-        logger.warning(f"读取版本号失败: {e}")
+        logger.warning(f"读取版本号失败: {e}", exc_info=True)
 
     return version
 
@@ -193,7 +193,7 @@ def _sync_existing_tasks_timeout_from_config() -> None:
         ):
             _CURRENT_WEB_UI_INSTANCE.current_auto_resubmit_timeout = new_timeout
     except Exception as e:
-        logger.warning(f"配置变更回调执行失败（同步任务倒计时）：{e}")
+        logger.warning(f"配置变更回调执行失败（同步任务倒计时）：{e}", exc_info=True)
 
 
 def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
@@ -214,7 +214,8 @@ def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
         )
     except Exception as e:
         logger.warning(
-            f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}"
+            f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}",
+            exc_info=True,
         )
 
 
@@ -3186,7 +3187,7 @@ class WebFeedbackUI:
             # 【优化】验证配置
             return validate_network_security_config(raw_config)
         except Exception as e:
-            logger.warning(f"无法加载网络安全配置，使用默认配置: {e}")
+            logger.warning(f"无法加载网络安全配置，使用默认配置: {e}", exc_info=True)
             return validate_network_security_config({})
 
     def _is_ip_allowed(self, client_ip: str) -> bool:
@@ -3295,7 +3296,9 @@ class WebFeedbackUI:
             cfg = get_config().get_section("mdns")
             return cfg if isinstance(cfg, dict) else {}
         except Exception as e:
-            logger.warning(f"无法加载 mdns 配置，已降级为不发布 mDNS: {e}")
+            logger.warning(
+                f"无法加载 mdns 配置，已降级为不发布 mDNS: {e}", exc_info=True
+            )
             return {}
 
     def _should_enable_mdns(self, mdns_config: dict[str, Any]) -> bool:
@@ -3327,9 +3330,7 @@ class WebFeedbackUI:
             # 延迟导入，避免测试/极简环境下无 zeroconf 依赖直接崩溃
             from zeroconf import NonUniqueNameException, ServiceInfo, Zeroconf
         except Exception as e:
-            logger.error(
-                f"mDNS 功能不可用：无法导入 zeroconf 依赖: {e}", exc_info=True
-            )
+            logger.error(f"mDNS 功能不可用：无法导入 zeroconf 依赖: {e}", exc_info=True)
             print("mDNS 功能不可用：缺少依赖 zeroconf（请更新依赖/重新安装）。")
             return
 
@@ -3406,7 +3407,9 @@ class WebFeedbackUI:
                 pass
             return
         except Exception as e:
-            logger.warning(f"mDNS 发布失败（已降级，不影响 Web UI）：{e}")
+            logger.warning(
+                f"mDNS 发布失败（已降级，不影响 Web UI）：{e}", exc_info=True
+            )
             print(f"mDNS 发布失败：{e}（已降级为仅通过 IP/localhost 访问）。")
             try:
                 zc.close()

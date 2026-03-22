@@ -9,6 +9,7 @@ config_utils 模块单元测试
     - validate_enum_value() 枚举值验证
 """
 
+import threading
 import unittest
 from dataclasses import dataclass
 
@@ -556,6 +557,34 @@ class TestTaskQueueStatusCallback(unittest.TestCase):
         # 清理
         queue.unregister_status_change_callback(bad_callback)
         queue.stop_cleanup()
+
+    def test_callback_can_reenter_queue_without_deadlock(self):
+        """回调中重入调用 TaskQueue 方法不应导致死锁"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue(max_tasks=5)
+        done = threading.Event()
+
+        def reentering_callback(task_id, old_status, new_status):
+            # 回调里重入调用队列方法（历史上若在锁内触发回调会死锁）
+            _ = queue.get_task(task_id)
+            done.set()
+
+        queue.register_status_change_callback(reentering_callback)
+
+        t = threading.Thread(
+            target=lambda: queue.add_task("task-1", "Test prompt"),
+            daemon=True,
+        )
+        t.start()
+        t.join(timeout=1.0)
+
+        try:
+            self.assertFalse(t.is_alive(), "add_task 被回调重入导致死锁")
+            self.assertTrue(done.wait(timeout=1.0), "回调未被触发或未完成")
+        finally:
+            queue.unregister_status_change_callback(reentering_callback)
+            queue.stop_cleanup()
 
 
 if __name__ == "__main__":

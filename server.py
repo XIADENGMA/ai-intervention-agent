@@ -35,8 +35,9 @@ from task_queue import TaskQueue
 # ===============================
 # 【性能优化】全局缓存
 # ===============================
-# HTTP Session 缓存：避免每次请求都创建新的 session
-_http_session_cache: dict = {}
+# HTTP Session 缓存（线程本地）：避免跨线程共享 requests.Session（更稳妥）
+_http_session_local = threading.local()
+_http_session_generation: int = 0
 _http_session_lock = threading.Lock()
 
 # 配置缓存：避免频繁读取配置文件
@@ -60,6 +61,7 @@ _config_callbacks_lock = threading.Lock()
 
 def _invalidate_runtime_caches_on_config_change() -> None:
     """配置变更回调：清空 server.py 的配置缓存与 HTTP Session 缓存"""
+    global _http_session_generation
     try:
         with _config_cache_lock:
             _config_cache["config"] = None
@@ -69,7 +71,8 @@ def _invalidate_runtime_caches_on_config_change() -> None:
 
     try:
         with _http_session_lock:
-            _http_session_cache.clear()
+            # 线程本地缓存无法直接“全线程清理”，这里使用 generation 递增触发各线程惰性清理
+            _http_session_generation += 1
     except Exception:
         pass
 
@@ -158,6 +161,7 @@ def get_task_queue() -> TaskQueue:
         with _global_task_queue_lock:
             if _global_task_queue is None:
                 _global_task_queue = TaskQueue(max_tasks=10)
+    assert _global_task_queue is not None
     return _global_task_queue
 
 
@@ -181,7 +185,7 @@ try:
     NOTIFICATION_AVAILABLE = True
     logger.info("通知系统已导入")
 except ImportError as e:
-    logger.warning(f"通知系统不可用: {e}")
+    logger.warning(f"通知系统不可用: {e}", exc_info=True)
     NOTIFICATION_AVAILABLE = False
 
 
@@ -431,7 +435,7 @@ class ServiceManager:
                 notification_manager.shutdown()
                 logger.info("通知管理器线程池已关闭")
             except Exception as e:
-                logger.warning(f"关闭通知管理器失败: {e}")
+                logger.warning(f"关闭通知管理器失败: {e}", exc_info=True)
 
     def get_status(self) -> Dict[str, Dict]:
         """获取所有服务的运行状态（pid, running, start_time, config）"""
@@ -672,7 +676,7 @@ def get_feedback_config() -> FeedbackConfig:
             prompt_suffix=prompt_suffix,
         )
     except (ValueError, TypeError) as e:
-        logger.warning(f"获取反馈配置失败（类型错误），使用默认值: {e}")
+        logger.warning(f"获取反馈配置失败（类型错误），使用默认值: {e}", exc_info=True)
         return FeedbackConfig(
             timeout=FEEDBACK_TIMEOUT_DEFAULT,
             auto_resubmit_timeout=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
@@ -680,7 +684,7 @@ def get_feedback_config() -> FeedbackConfig:
             prompt_suffix=PROMPT_SUFFIX_DEFAULT,
         )
     except Exception as e:
-        logger.warning(f"获取反馈配置失败，使用默认值: {e}")
+        logger.warning(f"获取反馈配置失败，使用默认值: {e}", exc_info=True)
         return FeedbackConfig(
             timeout=FEEDBACK_TIMEOUT_DEFAULT,
             auto_resubmit_timeout=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
@@ -805,30 +809,53 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
     # 【性能优化】基于配置参数生成缓存键，复用 session
     cache_key = f"{config.max_retries}_{config.retry_delay}_{config.timeout}"
 
+    # 线程本地缓存：每个线程维护自己的 session，避免跨线程共享对象导致非预期竞态
+    cache: dict[str, requests.Session] | None = getattr(
+        _http_session_local, "cache", None
+    )
+    if cache is None:
+        cache = {}
+        _http_session_local.cache = cache
+
+    local_generation: int | None = getattr(_http_session_local, "generation", None)
     with _http_session_lock:
-        if cache_key in _http_session_cache:
-            logger.debug(f"复用已缓存的 HTTP Session: {cache_key}")
-            return _http_session_cache[cache_key]
+        global_generation = _http_session_generation
 
-        # 创建新的 session
-        session = requests.Session()
+    # generation 不一致：配置发生变化或缓存策略调整，关闭并清空本线程的 session 缓存
+    if local_generation != global_generation:
+        try:
+            for s in cache.values():
+                try:
+                    s.close()
+                except Exception:
+                    pass
+        finally:
+            cache.clear()
+            _http_session_local.generation = global_generation
 
-        retry_strategy = Retry(
-            total=config.max_retries,
-            backoff_factor=config.retry_delay,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "POST"],
-        )
+    if cache_key in cache:
+        logger.debug(f"复用已缓存的 HTTP Session（线程本地）: {cache_key}")
+        return cache[cache_key]
 
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
+    # 创建新的 session（仅在当前线程使用）
+    session = requests.Session()
 
-        # 缓存 session
-        _http_session_cache[cache_key] = session
-        logger.debug(f"创建并缓存新的 HTTP Session: {cache_key}")
+    retry_strategy = Retry(
+        total=config.max_retries,
+        backoff_factor=config.retry_delay,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "POST"],
+    )
 
-        return session
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    # 缓存 session（线程本地）
+    cache[cache_key] = session
+    logger.debug(f"创建并缓存新的 HTTP Session（线程本地）: {cache_key}")
+
+    return session
 
 
 @overload
@@ -848,8 +875,9 @@ def _make_resubmit_response(as_mcp: bool = True) -> list | dict:
 
 
 def get_target_host(host: str) -> str:
-    """将 0.0.0.0 转换为 localhost"""
-    return "localhost" if host == "0.0.0.0" else host
+    """将不可直连的监听地址转换为客户端可访问地址（如 localhost）"""
+    # - 0.0.0.0 / :: 是“监听所有接口”的地址，不应作为客户端连接目标
+    return "localhost" if host in {"0.0.0.0", "::"} else host
 
 
 def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -861,20 +889,29 @@ def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
 
         target_host = get_target_host(host)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(timeout)
-            result = sock.connect_ex((target_host, port))
-            is_running = result == 0
+        # 同时兼容 IPv4/IPv6/hostname（例如 ::1 / localhost）
+        try:
+            addrinfos = socket.getaddrinfo(
+                target_host,
+                port,
+                type=socket.SOCK_STREAM,
+            )
+        except socket.gaierror as e:
+            logger.error(f"主机名解析失败 {host}: {e}", exc_info=True)
+            return False
 
-            if is_running:
-                logger.debug(f"Web 服务运行中: {target_host}:{port}")
-            else:
-                logger.debug(f"Web 服务未运行: {target_host}:{port}")
+        for family, socktype, proto, _canonname, sockaddr in addrinfos:
+            try:
+                with socket.socket(family, socktype, proto) as sock:
+                    sock.settimeout(timeout)
+                    if sock.connect_ex(sockaddr) == 0:
+                        logger.debug(f"Web 服务运行中: {target_host}:{port}")
+                        return True
+            except OSError:
+                # 尝试下一个地址（例如 IPv6 失败后回落 IPv4）
+                continue
 
-            return is_running
-
-    except socket.gaierror as e:
-        logger.error(f"主机名解析失败 {host}: {e}", exc_info=True)
+        logger.debug(f"Web 服务未运行: {target_host}:{port}")
         return False
     except Exception as e:
         logger.error(f"检查服务状态时出错: {e}", exc_info=True)
@@ -979,26 +1016,38 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
             raise Exception(f"启动 Web 服务失败: {e}") from e
 
     # 等待服务启动并进行健康检查
+    # 【资源管理】如果最终启动失败，需主动终止刚启动的子进程，避免残留后台进程占用端口
     max_wait = 15  # 最多等待15秒
     check_interval = 0.5  # 每0.5秒检查一次
 
-    for attempt in range(int(max_wait / check_interval)):
+    try:
+        for attempt in range(int(max_wait / check_interval)):
+            if health_check_service(config):
+                logger.info(f"🌐 Web服务已启动: http://{config.host}:{config.port}")
+                return
+
+            if attempt % 4 == 0:  # 每2秒记录一次等待状态
+                logger.debug(f"等待服务启动... ({attempt * check_interval:.1f}s)")
+
+            time.sleep(check_interval)
+
+        # 最终检查
         if health_check_service(config):
-            logger.info(f"🌐 Web服务已启动: http://{config.host}:{config.port}")
+            logger.info(f"🌐 Web 服务启动成功: http://{config.host}:{config.port}")
             return
 
-        if attempt % 4 == 0:  # 每2秒记录一次等待状态
-            logger.debug(f"等待服务启动... ({attempt * check_interval:.1f}s)")
-
-        time.sleep(check_interval)
-
-    # 最终检查
-    if health_check_service(config):
-        logger.info(f"🌐 Web 服务启动成功: http://{config.host}:{config.port}")
-    else:
         raise Exception(
             f"Web 服务启动超时 ({max_wait}秒)，请检查端口 {config.port} 是否被占用"
         )
+    except Exception:
+        # 启动阶段失败：尽力清理本次启动的子进程与端口占用
+        try:
+            service_manager.terminate_process(service_name)
+        except Exception as cleanup_error:
+            logger.error(
+                f"启动失败后清理 Web 服务进程失败: {cleanup_error}", exc_info=True
+            )
+        raise
 
 
 def update_web_content(
@@ -1378,7 +1427,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
                     return cast(Dict[str, Any], task["result"])
 
         except requests.exceptions.RequestException as e:
-            logger.warning(f"轮询任务状态失败: {e}")
+            logger.warning(f"轮询任务状态失败: {e}", exc_info=True)
 
         await asyncio.sleep(1)  # 异步等待，不阻塞事件循环
 

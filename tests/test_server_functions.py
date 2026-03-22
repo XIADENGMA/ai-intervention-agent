@@ -172,6 +172,28 @@ class TestEnsureWebUIRunning(unittest.TestCase):
             self.skipTest("无法导入 ensure_web_ui_running")
 
 
+class TestGetTargetHost(unittest.TestCase):
+    """get_target_host() 行为测试"""
+
+    def test_ipv4_any_to_localhost(self):
+        """0.0.0.0 作为监听地址时，客户端应连接 localhost"""
+        from server import get_target_host
+
+        self.assertEqual(get_target_host("0.0.0.0"), "localhost")
+
+    def test_ipv6_any_to_localhost(self):
+        """:: 作为监听地址时，客户端应连接 localhost"""
+        from server import get_target_host
+
+        self.assertEqual(get_target_host("::"), "localhost")
+
+    def test_normal_host_unchanged(self):
+        """普通地址应保持不变"""
+        from server import get_target_host
+
+        self.assertEqual(get_target_host("127.0.0.1"), "127.0.0.1")
+
+
 class TestLaunchFeedbackUI(unittest.TestCase):
     """启动反馈 UI 函数测试"""
 

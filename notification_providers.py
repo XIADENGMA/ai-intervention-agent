@@ -94,7 +94,7 @@ class WebNotificationProvider(BaseNotificationProvider):
             return True
 
         except Exception as e:
-            logger.error(f"准备Web通知失败: {e}")
+            logger.error(f"准备Web通知失败: {e}", exc_info=True)
             return False
 
 

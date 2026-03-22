@@ -298,7 +298,7 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
         return user_config_file
 
     except Exception as e:
-        logger.warning(f"获取用户配置目录失败: {e}，使用当前目录")
+        logger.warning(f"获取用户配置目录失败: {e}，使用当前目录", exc_info=True)
         return Path(config_filename)
 
 
@@ -463,13 +463,14 @@ class ConfigManager:
     def _load_config(self):
         """从磁盘加载配置文件，排除 network_security，合并默认配置"""
         with self._lock:
+            # 【可靠性】加载失败时回滚到上一次成功配置，避免“编辑中间态/损坏文件”导致回退到默认值
+            had_previous_config = bool(self._config)
+            previous_config = self._config.copy()
+            previous_original_content = self._original_content
             try:
                 if self.config_file.exists():
                     with open(self.config_file, "r", encoding="utf-8") as f:
                         content = f.read()
-
-                    # 保存原始内容（用于保留注释）
-                    self._original_content = content
 
                     # 根据文件扩展名选择解析方式
                     if self.config_file.suffix.lower() == ".jsonc":
@@ -478,6 +479,12 @@ class ConfigManager:
                     else:
                         full_config = json.loads(content)
                         logger.info(f"JSON 配置文件已加载: {self.config_file}")
+
+                    # 【健壮性】加载时也做结构校验（重复数组定义/类型错误），避免静默吞掉损坏配置
+                    self._validate_config_structure(full_config, content)
+
+                    # 保存原始内容（用于保留注释）——仅在解析与结构校验成功后更新
+                    self._original_content = content
 
                     # 完全排除 network_security，不加载到内存中
                     self._config = {}
@@ -492,6 +499,7 @@ class ConfigManager:
                     self._config = self._exclude_network_security(
                         self._get_default_config()
                     )
+                    self._original_content = None
                     self._create_default_config_file()
                     logger.info(f"创建默认配置文件: {self.config_file}")
 
@@ -503,9 +511,17 @@ class ConfigManager:
 
             except Exception as e:
                 logger.error(f"加载配置文件失败: {e}", exc_info=True)
-                self._config = self._exclude_network_security(
-                    self._get_default_config()
-                )
+                if had_previous_config:
+                    self._config = previous_config
+                    self._original_content = previous_original_content
+                    logger.warning(
+                        "加载配置失败，已保留上一次成功加载的内存配置（避免回退到默认值）"
+                    )
+                else:
+                    self._config = self._exclude_network_security(
+                        self._get_default_config()
+                    )
+                    self._original_content = None
 
     def _merge_config(
         self, default: Dict[str, Any], current: Dict[str, Any]
@@ -1080,12 +1096,31 @@ class ConfigManager:
     def _validate_config_structure(self, parsed_config: Dict[str, Any], content: str):
         """验证配置结构完整性（检测重复数组定义、network_security 格式等）"""
         # 检查是否存在重复的数组定义（格式损坏的典型标志）
-        lines = content.split("\n")
-        array_definitions = {}
+        lines = content.splitlines()
+        array_definitions: dict[str, int] = {}
+        in_block_comment = False
 
         for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            # JSONC 注释处理：忽略整行 // 注释与块注释区域，避免误报“重复定义”
+            if in_block_comment:
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+
+            if stripped.startswith("/*"):
+                if "*/" not in stripped:
+                    in_block_comment = True
+                continue
+
+            if stripped.startswith("//"):
+                continue
+
             # 查找数组定义行
-            if '"allowed_networks"' in line and "[" in line:
+            if '"allowed_networks"' in stripped and "[" in stripped:
                 if "allowed_networks" in array_definitions:
                     logger.error(
                         f"检测到重复的数组定义 'allowed_networks' 在第{i + 1}行"
@@ -1454,6 +1489,9 @@ class ConfigManager:
             else:
                 full_config = cast(Dict[str, Any], json.loads(content))
 
+            # 【健壮性】读取 network_security 时同样做结构校验（可捕获重复数组定义等）
+            self._validate_config_structure(full_config, content)
+
             network_security_config = cast(
                 Dict[str, Any], full_config.get("network_security", {})
             )
@@ -1476,6 +1514,15 @@ class ConfigManager:
 
         except Exception as e:
             logger.error(f"读取 network_security 配置失败: {e}", exc_info=True)
+            # 【可靠性】优先返回上一次成功的缓存（即使已过期），避免瞬时损坏导致策略回退
+            with self._lock:
+                if self._network_security_cache is not None:
+                    logger.warning(
+                        "读取 network_security 配置失败，返回缓存的上一次成功配置",
+                        exc_info=True,
+                    )
+                    return self._network_security_cache
+
             # 返回默认的 network_security 配置
             default_config = self._get_default_config()
             return cast(Dict[str, Any], default_config.get("network_security", {}))
@@ -1576,7 +1623,7 @@ class ConfigManager:
                 with self._lock:
                     self._last_file_mtime = mtime
         except Exception as e:
-            logger.warning(f"获取文件修改时间失败: {e}")
+            logger.warning(f"获取文件修改时间失败: {e}", exc_info=True)
 
     def start_file_watcher(self, interval: float = 2.0):
         """启动配置文件监听（后台守护线程，检测文件变化自动重载）"""
@@ -1604,7 +1651,7 @@ class ConfigManager:
                     with self._lock:
                         self._last_file_mtime = current_mtime
         except Exception as e:
-            logger.warning(f"启动监听器时同步配置文件状态失败: {e}")
+            logger.warning(f"启动监听器时同步配置文件状态失败: {e}", exc_info=True)
 
         thread = threading.Thread(
             target=self._file_watcher_loop,
@@ -1666,7 +1713,7 @@ class ConfigManager:
                         # 触发配置变更回调
                         self._trigger_config_change_callbacks()
             except Exception as e:
-                logger.warning(f"文件监听检查失败: {e}")
+                logger.warning(f"文件监听检查失败: {e}", exc_info=True)
 
             # 等待下一个检查周期（使用可中断的等待）
             if self._file_watcher_stop_event.wait(self._file_watcher_interval):

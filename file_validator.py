@@ -372,7 +372,8 @@ class FileValidator:
                             continue
                     except Exception as e:
                         logger.warning(
-                            f"额外检查失败: {type_info.get('description', 'Unknown')} - {e}"
+                            f"额外检查失败: {type_info.get('description', 'Unknown')} - {e}",
+                            exc_info=True,
                         )
                         continue
 
