@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "ai-intervention-agent"
-version = "1.4.16"
+version = "1.4.17"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
