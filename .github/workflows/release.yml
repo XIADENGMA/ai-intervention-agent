@@ -42,6 +42,12 @@ jobs:
       - name: 同步依赖（含 dev 组，严格使用 uv.lock）
         run: uv sync --all-groups --frozen
 
+      - name: 版本一致性检查（bump_version.py --check）
+        run: |
+          set -euo pipefail
+          VERSION="$(uv run python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")"
+          uv run python scripts/bump_version.py "$VERSION" --check
+
       # 发布前的质量门禁（与 test.yml 对齐）
       - name: Ruff（Lint）
         run: uv run ruff check .
