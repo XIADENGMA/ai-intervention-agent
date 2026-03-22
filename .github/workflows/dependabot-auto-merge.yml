@@ -16,11 +16,87 @@ jobs:
     timeout-minutes: 5
     if: github.actor == 'dependabot[bot]'
     steps:
-      - name: Dependabot metadata
+      - name: 解析 Dependabot 升级类型（无 JS action，避免 Node20 依赖）
         id: metadata
-        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
-        with:
-          github-token: "${{ secrets.GITHUB_TOKEN }}"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          
+          pr_url = os.environ.get("PR_URL", "").strip()
+          if not pr_url:
+            print("Missing PR_URL", file=sys.stderr)
+            update_type = "unknown"
+          else:
+            try:
+              out = subprocess.check_output(
+                ["gh", "pr", "view", pr_url, "--json", "title,body"],
+                text=True,
+              )
+              data = json.loads(out)
+              text = f"{data.get('title','')}\n{data.get('body','')}"
+            except Exception as e:
+              print(f"Failed to load PR via gh: {e}", file=sys.stderr)
+              text = ""
+          
+            # 捕获常见格式：from X to Y（支持 v 前缀与预发布）
+            pairs = re.findall(
+              r"from\\s+v?([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?)\\s+to\\s+v?([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?)",
+              text,
+              flags=re.IGNORECASE,
+            )
+          
+            def parse_semver(v: str):
+              v = v.strip()
+              if v.startswith("v"):
+                v = v[1:]
+              base = re.split(r"[-+]", v, 1)[0]
+              parts = base.split(".")
+              if len(parts) < 2:
+                return None
+              try:
+                major = int(parts[0])
+                minor = int(parts[1])
+                patch = int(parts[2]) if len(parts) >= 3 else 0
+              except ValueError:
+                return None
+              return (major, minor, patch)
+          
+            # 默认保守：未知类型不自动合并
+            severity = None  # 0 patch, 1 minor, 2 major
+            for a, b in pairs:
+              pa = parse_semver(a)
+              pb = parse_semver(b)
+              if not pa or not pb:
+                severity = 2 if severity is None else max(severity, 2)
+                continue
+              if pb[0] != pa[0]:
+                severity = 2 if severity is None else max(severity, 2)
+              elif pb[1] != pa[1]:
+                severity = 1 if severity is None else max(severity, 1)
+              elif pb[2] != pa[2]:
+                severity = 0 if severity is None else max(severity, 0)
+          
+            if severity is None:
+              update_type = "unknown"
+            else:
+              update_type = [
+                "version-update:semver-patch",
+                "version-update:semver-minor",
+                "version-update:semver-major",
+              ][severity]
+          
+          print(f"update-type={update_type}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+            f.write(f"update-type={update_type}\\n")
+          PY
 
       - name: Enable auto-merge for Dependabot PRs safely
         # 仅针对常规的 Patch (Z) 和 Minor (Y) 版本依赖升版执行自动合并
