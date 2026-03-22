@@ -6,6 +6,10 @@ permissions:
   contents: write
   pull-requests: write
 
+env:
+  # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   dependabot:
     runs-on: ubuntu-latest
