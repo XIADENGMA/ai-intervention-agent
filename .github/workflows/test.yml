@@ -5,9 +5,19 @@ on:
     branches:
       - main
       - develop
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "LICENSE"
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "LICENSE"
   workflow_dispatch:
 
 # 同一分支只保留最新一次运行，避免排队浪费
@@ -35,15 +45,15 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: 设置 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: 安装 uv（带缓存）
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -70,7 +80,7 @@ jobs:
 
       - name: 上传覆盖率报告（coverage.xml）
         if: always() && matrix.python-version == '3.11'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: coverage-report
           path: coverage.xml

@@ -2,7 +2,26 @@ name: VSCode Extension (Lint/Test)
 
 on:
   push:
+    branches:
+      - main
+      - develop
+    tags:
+      - "v*.*.*"
+    paths:
+      - "packages/vscode/**"
+      - "scripts/package_vscode_vsix.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/vscode.yml"
   pull_request:
+    branches:
+      - main
+    paths:
+      - "packages/vscode/**"
+      - "scripts/package_vscode_vsix.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/vscode.yml"
   workflow_dispatch:
 
 # 同一分支只保留最新一次运行，避免排队浪费
@@ -14,6 +33,9 @@ env:
   # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+permissions:
+  contents: read
+
 jobs:
   vscode:
     name: VSCode extension checks
@@ -22,19 +44,20 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: 设置 Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: "package-lock.json"
 
       - name: 安装依赖（npm workspaces）
         run: npm ci
 
       - name: 缓存 VSCode Test 下载（.vscode-test）
-        uses: actions/cache@v4
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: packages/vscode/.vscode-test
           key: vscode-test-${{ runner.os }}-1.110.0
@@ -52,7 +75,7 @@ jobs:
         run: npm run vscode:package
 
       - name: 上传 VSIX 产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ai-intervention-agent-vsix
           path: packages/vscode/*.vsix

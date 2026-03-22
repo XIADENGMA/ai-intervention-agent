@@ -24,15 +24,15 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: 设置 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.11"
 
       - name: 安装 uv（带缓存）
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -65,10 +65,11 @@ jobs:
         run: uv tool run twine check dist/*
 
       - name: 设置 Node.js（用于构建 VSCode 插件 VSIX）
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "20"
           cache: "npm"
+          cache-dependency-path: "package-lock.json"
 
       - name: 安装 Node 依赖（npm workspaces）
         run: npm ci
@@ -77,7 +78,7 @@ jobs:
         run: npm run vscode:package
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: dist
           path: dist/
@@ -85,7 +86,7 @@ jobs:
           retention-days: 7
 
       - name: 上传 VSCode 插件产物（VSIX）
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: vsix
           path: packages/vscode/*.vsix
@@ -110,13 +111,13 @@ jobs:
 
     steps:
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
 
       - name: 发布到 PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
 
   github-release:
     name: Create GitHub Release
@@ -131,26 +132,35 @@ jobs:
 
     steps:
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist/
 
       - name: 下载 VSCode 插件产物（VSIX）
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: vsix
           path: vsix/
 
       - name: 创建 GitHub Release（附带产物）
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*
-            vsix/*.vsix
-          generate_release_notes: true
-          draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+
+          prerelease_flag=""
+          if [[ "$tag" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
+
+          # 如果 Release 不存在则创建；存在则仅上传/覆盖产物（避免 tag 重跑导致失败）
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* vsix/*.vsix --clobber
+          else
+            gh release create "$tag" dist/* vsix/*.vsix --title "$tag" --generate-notes $prerelease_flag
+          fi
 
   open-vsx:
     name: Publish VSCode Extension to Open VSX
@@ -162,13 +172,13 @@ jobs:
 
     steps:
       - name: 下载 VSCode 插件产物（VSIX）
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: vsix
           path: vsix/
 
       - name: 设置 Node.js（用于发布 Open VSX）
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: "20"
 
