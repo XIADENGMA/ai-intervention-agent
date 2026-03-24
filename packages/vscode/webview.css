@@ -22,6 +22,14 @@
             height: 100%;
         }
 
+        /* 通过 attribute 驱动 color-scheme（避免 JS 写 inline style 触发 CSP） */
+        html[data-vscode-theme-kind="dark"] {
+            color-scheme: dark;
+        }
+        html[data-vscode-theme-kind="light"] {
+            color-scheme: light;
+        }
+
         body {
             font-family: var(--vscode-font-family);
             font-size: var(--vscode-font-size);

@@ -55,9 +55,10 @@ suite('AppleScript Executor', () => {
     const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
     const { AppleScriptExecutor } = require(executorPath)
 
-    const captured = { cmd: '', script: '' }
-    const fakeExec = (cmd, _opts, cb) => {
-      captured.cmd = cmd
+    const captured = { file: '', args: null, script: '' }
+    const fakeExec = (file, args, _opts, cb) => {
+      captured.file = String(file || '')
+      captured.args = args
       const child = {
         stdin: {
           on: () => {},
@@ -76,7 +77,8 @@ suite('AppleScript Executor', () => {
       assert.ok(String(err.message).includes('Some AppleScript error'))
       return true
     })
-    assert.ok(captured.cmd.includes('/usr/bin/osascript'))
+    assert.ok(captured.file.includes('/usr/bin/osascript'))
+    assert.ok(Array.isArray(captured.args) && captured.args.includes('-'))
     assert.ok(captured.script.includes('return "ok"'))
   })
 
@@ -85,7 +87,7 @@ suite('AppleScript Executor', () => {
     const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
     const { AppleScriptExecutor } = require(executorPath)
 
-    const fakeExec = (_cmd, _opts, cb) => {
+    const fakeExec = (_file, _args, _opts, cb) => {
       const child = { stdin: { on: () => {}, end: () => {} } }
       process.nextTick(() => cb(null, 'ok\n', ''))
       return child
@@ -101,7 +103,7 @@ suite('AppleScript Executor', () => {
     const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
     const { AppleScriptExecutor } = require(executorPath)
 
-    const fakeExec = (_cmd, _opts, cb) => {
+    const fakeExec = (_file, _args, _opts, cb) => {
       const child = { stdin: { on: () => {}, end: () => {} } }
       const err = new Error('Command timed out')
       err.killed = true

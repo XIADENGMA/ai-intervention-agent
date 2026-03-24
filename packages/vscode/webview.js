@@ -99,6 +99,42 @@ class WebviewProvider {
     }
   }
 
+  dispose() {
+    // 注意：该 provider 会被 VSCode 在停用时释放；这里做显式兜底，避免定时器/引用残留
+    try {
+      this._webviewReady = false
+      if (this._webviewReadyTimer) {
+        clearTimeout(this._webviewReadyTimer)
+        this._webviewReadyTimer = null
+      }
+    } catch {
+      // 忽略
+    }
+
+    try {
+      for (const d of this._disposables) {
+        try {
+          d.dispose()
+        } catch {
+          // 忽略
+        }
+      }
+    } finally {
+      this._disposables = []
+    }
+
+    try {
+      if (this._onVisibilityChanged) {
+        this._onVisibilityChanged(false)
+      }
+    } catch {
+      // 忽略
+    }
+
+    this._view = null
+    this._lastServerStatus = null
+  }
+
   resolveWebviewView(webviewView) {
     // 精简日志：只在首次初始化时输出
     this._view = webviewView

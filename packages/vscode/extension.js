@@ -29,6 +29,9 @@ function normalizeServerUrl(input) {
     // 允许用户省略协议（例如 localhost:8080）
     const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `http://${raw}`
     const u = new URL(withScheme)
+    const protocol = String(u.protocol || '').toLowerCase()
+    // 仅允许 http/https，避免 data/javascript/file 等协议带来的安全边界混淆
+    if (protocol !== 'http:' && protocol !== 'https:') return DEFAULT_SERVER_URL
     return u.origin
   } catch {
     return DEFAULT_SERVER_URL
@@ -388,6 +391,8 @@ function activate(context) {
   let statusPollTimer = null
   let statusPollBackoffMs = STATUS_POLL_FAST_MS
   let statusPollInFlight = false
+  // 兜底：用于解决 deactivate 与 in-flight 轮询回调的竞态（防止停用后“复活”定时器）
+  let statusPollDisposed = false
   let isViewVisible = true
   let isWindowFocused = vscode.window.state.focused
   let lastWebviewStatsAtMs = 0
@@ -409,6 +414,7 @@ function activate(context) {
   }
 
   const scheduleStatusPoll = delayMs => {
+    if (statusPollDisposed) return
     if (statusPollTimer) {
       clearTimeout(statusPollTimer)
       statusPollTimer = null
@@ -417,6 +423,7 @@ function activate(context) {
   }
 
   const runStatusPoll = async () => {
+    if (statusPollDisposed) return
     // Webview 可见且 stats 新鲜：不再重复 /api/tasks 请求
     if (isWebviewStatsFresh()) {
       scheduleStatusPoll(computeNextDelayMs())
@@ -436,7 +443,9 @@ function activate(context) {
       }
     } finally {
       statusPollInFlight = false
-      scheduleStatusPoll(computeNextDelayMs())
+      if (!statusPollDisposed) {
+        scheduleStatusPoll(computeNextDelayMs())
+      }
     }
   }
 
@@ -711,9 +720,18 @@ function activate(context) {
   // 兜底清理：避免极端情况下 timer 常驻
   const cleanup = () => {
     try {
+      statusPollDisposed = true
       if (statusPollTimer) {
         clearTimeout(statusPollTimer)
         statusPollTimer = null
+      }
+      // 显式释放 provider（避免持有 Webview/Disposable 引用导致 GC 推迟）
+      try {
+        if (provider && typeof provider.dispose === 'function') {
+          provider.dispose()
+        }
+      } catch {
+        // 忽略
       }
     } catch {
       // 忽略

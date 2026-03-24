@@ -1,4 +1,4 @@
-const { exec } = require('child_process')
+const { execFile } = require('child_process')
 
 const DEFAULT_TIMEOUT_MS = 8000
 const DEFAULT_MAX_BUFFER_BYTES = 1024 * 1024
@@ -37,7 +37,7 @@ function toAppleScriptStringLiteral(value) {
 class AppleScriptExecutor {
   constructor(opts = {}) {
     this._logger = opts.logger || null
-    this._exec = typeof opts.execImpl === 'function' ? opts.execImpl : exec
+    this._execFile = typeof opts.execImpl === 'function' ? opts.execImpl : execFile
     this._timeoutMs = Number.isFinite(Number(opts.timeoutMs))
       ? Number(opts.timeoutMs)
       : DEFAULT_TIMEOUT_MS
@@ -78,7 +78,8 @@ class AppleScriptExecutor {
 
     const timeoutMs = this._timeoutMs
     const maxBufferBytes = this._maxBufferBytes
-    const cmd = `${this._osascriptPath} -`
+    const osascriptPath = this._osascriptPath
+    const osascriptArgs = ['-']
     const envExtra =
       runOptions && runOptions.env && typeof runOptions.env === 'object' ? runOptions.env : null
     const env = envExtra ? { ...process.env, ...envExtra } : process.env
@@ -108,8 +109,9 @@ class AppleScriptExecutor {
     return new Promise((resolve, reject) => {
       let child
       try {
-        child = this._exec(
-          cmd,
+        child = this._execFile(
+          osascriptPath,
+          osascriptArgs,
           {
             timeout: timeoutMs,
             maxBuffer: maxBufferBytes,

@@ -58,6 +58,8 @@
   const SERVER_STATUS_TIMEOUT_MS = 1500
   const POLL_TASKS_TIMEOUT_MS = 6000
   const POLL_CONFIG_TIMEOUT_MS = 6000
+  // 提交可能包含图片上传，允许更长超时；但必须兜底，避免无响应导致 UI 永久卡住
+  const SUBMIT_TIMEOUT_MS = 20000
 
   function parseRgbColor(color) {
     try {
@@ -776,6 +778,9 @@
   let pollAbortController = null
   let pollingInFlight = false
   let pollingVisibilityHandlerInstalled = false
+  // 轮询代际：用于解决 stopPolling 与 in-flight 回调的竞态（防止 stop 后“复活”）
+  let pollingEnabled = false
+  let pollingToken = 0
   let lastTasksHash = ''
   let lastTaskIds = new Set()
   // 新任务通知边界：仅跳过“首次快照”（避免扩展启动时把历史任务当作新任务）
@@ -1446,18 +1451,28 @@
   function startPolling() {
     stopPolling()
     installPollingVisibilityHandler()
+    pollingEnabled = true
+    pollingToken = pollingToken + 1
+    const token = pollingToken
     pollBackoffMs = POLL_BASE_MS
-    scheduleNextPoll(0)
+    scheduleNextPoll(0, token)
   }
 
-  function scheduleNextPoll(delayMs) {
+  function scheduleNextPoll(delayMs, token) {
+    const t = typeof token === 'number' && Number.isFinite(token) ? token : pollingToken
+    if (!pollingEnabled) return
+    if (t !== pollingToken) return
     if (pollingTimer) {
       clearTimeout(pollingTimer)
       pollingTimer = null
     }
     pollingTimer = setTimeout(
       async () => {
+        if (!pollingEnabled) return
+        if (t !== pollingToken) return
         const ok = await pollAllData('poll')
+        if (!pollingEnabled) return
+        if (t !== pollingToken) return
         const suggested =
           typeof pollSuggestedDelayMs === 'number' && Number.isFinite(pollSuggestedDelayMs)
             ? Math.max(0, Math.floor(pollSuggestedDelayMs))
@@ -1468,13 +1483,15 @@
         } else {
           pollBackoffMs = getNextBackoffMs(pollBackoffMs)
         }
-        scheduleNextPoll(pollBackoffMs)
+        scheduleNextPoll(pollBackoffMs, t)
       },
       Math.max(0, delayMs)
     )
   }
 
   function stopPolling() {
+    pollingEnabled = false
+    pollingToken = pollingToken + 1
     if (pollingTimer) {
       clearTimeout(pollingTimer)
       pollingTimer = null
@@ -1691,7 +1708,11 @@
       return
     }
     pollBackoffMs = POLL_BASE_MS
-    scheduleNextPoll(0)
+    if (!pollingEnabled) {
+      startPolling()
+      return
+    }
+    scheduleNextPoll(0, pollingToken)
   }
 
   function getAdjustedNowSeconds() {
@@ -3074,6 +3095,8 @@
     }
 
     submitInFlight = true
+    let submitController = null
+    let submitTimeoutId = null
     try {
       stopCountdown()
 
@@ -3128,17 +3151,32 @@
         // 忽略
       }
 
-      let response = await fetch(SERVER_URL + submitPath, {
+      const requestOptions = {
         method: 'POST',
         body: formData
-      })
+      }
+      // 兜底超时：避免服务端无响应导致 UI 永久“正在提交…”
+      if (typeof AbortController !== 'undefined') {
+        try {
+          submitController = new AbortController()
+          requestOptions.signal = submitController.signal
+          submitTimeoutId = setTimeout(() => {
+            try {
+              submitController.abort()
+            } catch (e) {
+              /* 忽略 */
+            }
+          }, SUBMIT_TIMEOUT_MS)
+        } catch (e) {
+          submitController = null
+        }
+      }
+
+      let response = await fetch(SERVER_URL + submitPath, requestOptions)
 
       // 向后兼容：如果指定任务端点不存在/任务不存在，回退到通用端点
       if (!response.ok && response.status === 404 && taskIdToSubmit) {
-        response = await fetch(SERVER_URL + '/api/submit', {
-          method: 'POST',
-          body: formData
-        })
+        response = await fetch(SERVER_URL + '/api/submit', requestOptions)
       }
 
       if (response.ok) {
@@ -3233,8 +3271,18 @@
         logError(msg)
       }
     } catch (error) {
-      logError('提交失败：' + error.message)
+      const isAbort = !!(error && (error.name === 'AbortError' || String(error.name || '') === 'AbortError'))
+      if (isAbort) {
+        logError('提交超时：请检查服务端是否可用')
+      } else {
+        const msg = error && error.message ? String(error.message) : String(error)
+        logError('提交失败：' + msg)
+      }
     } finally {
+      if (submitTimeoutId) {
+        clearTimeout(submitTimeoutId)
+        submitTimeoutId = null
+      }
       submitInFlight = false
       // 安全恢复提交按钮状态
       const submitBtn = document.getElementById('submitBtn')

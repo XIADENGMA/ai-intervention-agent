@@ -146,9 +146,6 @@
     if (typeof html.setAttribute === 'function') {
       html.setAttribute('data-vscode-theme-kind', themeKind)
     }
-    if (html.style) {
-      html.style.colorScheme = themeKind
-    }
     return themeKind
   }
 

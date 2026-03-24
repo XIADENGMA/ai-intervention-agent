@@ -110,9 +110,17 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('collectImageFilesFromClipboard'))
     assert.ok(webviewUi.includes('applyHostThemeState'))
     assert.ok(webviewUi.includes("formData.append('task_id', taskIdToSubmit)"))
+    // 高优先稳定性回归点：提交必须有超时兜底（避免服务端无响应导致 UI 永久卡住）
+    assert.ok(webviewUi.includes('SUBMIT_TIMEOUT_MS'))
+    assert.ok(webviewUi.includes('提交超时：请检查服务端是否可用'))
     assert.ok(webviewUi.includes('buildMarkdownCodeFence'))
     assert.ok(webviewUi.includes('const codeBlockBody = buildMarkdownCodeFence(code, lang)'))
     assert.ok(!webviewUi.includes('const trimmed = raw.trim();'))
+    // 高优先稳定性回归点：stopPolling 后不得“复活”轮询定时器
+    assert.ok(webviewUi.includes('pollingToken'))
+    assert.ok(webviewUi.includes('t !== pollingToken'))
+    // 高优先稳定性回归点：扩展停用后不得继续调度 status poll 定时器
+    assert.ok(extensionJs.includes('statusPollDisposed'))
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
     assert.ok(extPkgText.includes('ai-intervention-agent.logLevel'))
@@ -121,6 +129,9 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewJs.includes('http://localhost:8080'))
     assert.ok(webviewCss.includes('overflow-wrap: anywhere;'))
     assert.ok(webviewCss.includes('white-space: pre-wrap;'))
+    // CSP 收紧回归点：color-scheme 应由 CSS 驱动（不依赖 JS 写 inline style）
+    assert.ok(webviewCss.includes('color-scheme: dark'))
+    assert.ok(webviewCss.includes('color-scheme: light'))
 
     // 资源回归点：无内容页 Lottie 资源应存在且路径一致（避免回退为 emoji）
     const hourglassJsonPath = path.join(ext.extensionPath, 'lottie', 'hourglass.json')
@@ -230,7 +241,8 @@ suite('Extension Test Suite', () => {
     const themeKind = helpers.applyThemeKindToDocument(fakeDocument)
     assert.strictEqual(themeKind, 'light')
     assert.strictEqual(appliedAttrs['data-vscode-theme-kind'], 'light')
-    assert.strictEqual(html.style.colorScheme, 'light')
+    // CSP 收紧后不应通过 JS 写入 inline style；color-scheme 由 webview.css 根据 attribute 驱动
+    assert.strictEqual(html.style.colorScheme, undefined)
   })
 
   test('Logger 应避免在 LogOutputChannel 上重复前缀', () => {
