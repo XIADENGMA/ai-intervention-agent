@@ -613,7 +613,7 @@ class WebviewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl}; style-src ${cspSource}; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
-    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-mathjax-script-url="${mathjaxScriptUri}">
+    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}">
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
     <link rel="stylesheet" href="${webviewCssUri}">
@@ -806,10 +806,7 @@ class WebviewProvider {
 
     <!-- Prism.js for code highlighting (no inline scripts; CSP-safe) -->
     <script nonce="${nonce}" src="${prismBootstrapUri}"></script>
-    <script nonce="${nonce}" src="${prismJsUri}"></script>
-
-    <!-- marked.js for Markdown rendering -->
-    <script nonce="${nonce}" src="${markedJsUri}"></script>
+    <!-- prism.min.js / marked.min.js 由 webview-ui.js 按需懒加载（首屏更快） -->
 
         <script nonce="${nonce}" src="${webviewHelpersUri}"></script>
         <script nonce="${nonce}" src="${webviewUiUri}"></script>

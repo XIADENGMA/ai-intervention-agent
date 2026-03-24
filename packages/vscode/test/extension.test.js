@@ -61,6 +61,16 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewJs.includes('data-mathjax-script-url'))
     assert.ok(webviewJs.includes('tex-mml-svg.js'))
 
+    // 启动性能回归点：marked/prism 应由 webview-ui 按需懒加载（不应在 HTML 中强制同步加载）
+    assert.ok(webviewJs.includes('data-marked-js-url'))
+    assert.ok(webviewJs.includes('data-prism-js-url'))
+    assert.ok(webviewUi.includes('data-marked-js-url'))
+    assert.ok(webviewUi.includes('data-prism-js-url'))
+    assert.ok(webviewUi.includes('ensureMarkedLoaded'))
+    assert.ok(webviewUi.includes('ensurePrismLoaded'))
+    assert.ok(!webviewJs.includes('script nonce="${nonce}" src="${markedJsUri}"'))
+    assert.ok(!webviewJs.includes('script nonce="${nonce}" src="${prismJsUri}"'))
+
     // 安全回归点：script-src 应使用 nonce-only（不应再额外放开 ${cspSource} 或 unsafe-inline）
     assert.ok(webviewJs.includes("script-src 'nonce-${nonce}';"))
     assert.ok(!webviewJs.includes("script-src 'nonce-${nonce}' ${cspSource};"))

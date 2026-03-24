@@ -34,6 +34,12 @@
     __cfgEl && __cfgEl.getAttribute('data-mathjax-script-url')
       ? __cfgEl.getAttribute('data-mathjax-script-url')
       : ''
+  const MARKED_JS_URL =
+    __cfgEl && __cfgEl.getAttribute('data-marked-js-url')
+      ? __cfgEl.getAttribute('data-marked-js-url')
+      : ''
+  const PRISM_JS_URL =
+    __cfgEl && __cfgEl.getAttribute('data-prism-js-url') ? __cfgEl.getAttribute('data-prism-js-url') : ''
   const WEBVIEW_HELPERS =
     typeof window !== 'undefined' && window.AIIAWebviewHelpers ? window.AIIAWebviewHelpers : null
   let themeObserver = null
@@ -175,6 +181,208 @@
       }
     })
     return lottieLoadPromise
+  }
+
+  // 懒加载 marked / Prism：仅在需要渲染 Markdown/高亮代码时加载，降低首屏解析与内存占用
+  let markedLoadPromise = null
+  let prismLoadPromise = null
+  let markedOptionsConfigured = false
+
+  function configureMarkedOnce() {
+    if (markedOptionsConfigured) return
+    if (typeof marked === 'undefined' || !marked || typeof marked.setOptions !== 'function') return
+    try {
+      marked.setOptions({
+        breaks: true, // 支持 GFM 换行
+        gfm: true, // 启用 GitHub Flavored Markdown
+        headerIds: false, // 禁用标题ID（避免冲突）
+        mangle: false // 禁用邮件地址混淆
+      })
+      markedOptionsConfigured = true
+    } catch (e) {
+      // 忽略：配置失败不应影响主流程
+    }
+  }
+
+  function ensureMarkedLoaded() {
+    try {
+      if (typeof marked !== 'undefined' && marked && typeof marked.parse === 'function') {
+        configureMarkedOnce()
+        return Promise.resolve(true)
+      }
+    } catch (e) {
+      // 忽略
+    }
+
+    if (!MARKED_JS_URL) {
+      return Promise.resolve(false)
+    }
+    if (markedLoadPromise) return markedLoadPromise
+
+    markedLoadPromise = new Promise(resolve => {
+      try {
+        const existing = document.getElementById('aiia-marked-script')
+        if (existing) {
+          const start = Date.now()
+          const tick = () => {
+            try {
+              if (typeof marked !== 'undefined' && marked && typeof marked.parse === 'function') {
+                configureMarkedOnce()
+                resolve(true)
+                return
+              }
+            } catch (e) {
+              // 忽略
+            }
+            if (Date.now() - start > 5000) {
+              resolve(false)
+              return
+            }
+            setTimeout(tick, 50)
+          }
+          tick()
+          return
+        }
+
+        const s = document.createElement('script')
+        s.id = 'aiia-marked-script'
+        s.src = MARKED_JS_URL
+        s.defer = true
+        // 关键：带 nonce，才能通过 CSP（script-src 'nonce-...'）
+        if (CSP_NONCE) {
+          try {
+            s.setAttribute('nonce', CSP_NONCE)
+          } catch (e) {
+            // 忽略
+          }
+        }
+        s.onload = () => {
+          try {
+            if (typeof marked !== 'undefined' && marked && typeof marked.parse === 'function') {
+              configureMarkedOnce()
+              resolve(true)
+              return
+            }
+          } catch (e) {
+            // 忽略
+          }
+          resolve(false)
+        }
+        s.onerror = () => resolve(false)
+        document.head.appendChild(s)
+      } catch (e) {
+        resolve(false)
+      }
+    })
+
+    return markedLoadPromise
+  }
+
+  function ensurePrismLoaded() {
+    try {
+      if (typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function') {
+        return Promise.resolve(true)
+      }
+    } catch (e) {
+      // 忽略
+    }
+
+    if (!PRISM_JS_URL) {
+      return Promise.resolve(false)
+    }
+    if (prismLoadPromise) return prismLoadPromise
+
+    prismLoadPromise = new Promise(resolve => {
+      try {
+        // 保底：确保禁用自动高亮（与 prism-bootstrap.js 对齐）
+        try {
+          if (typeof globalThis !== 'undefined') {
+            globalThis.Prism = globalThis.Prism || {}
+            globalThis.Prism.manual = true
+          } else if (typeof window !== 'undefined') {
+            window.Prism = window.Prism || {}
+            window.Prism.manual = true
+          }
+        } catch (e) {
+          // 忽略
+        }
+
+        const existing = document.getElementById('aiia-prism-script')
+        if (existing) {
+          const start = Date.now()
+          const tick = () => {
+            try {
+              if (typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function') {
+                resolve(true)
+                return
+              }
+            } catch (e) {
+              // 忽略
+            }
+            if (Date.now() - start > 5000) {
+              resolve(false)
+              return
+            }
+            setTimeout(tick, 50)
+          }
+          tick()
+          return
+        }
+
+        const s = document.createElement('script')
+        s.id = 'aiia-prism-script'
+        s.src = PRISM_JS_URL
+        s.defer = true
+        // 关键：带 nonce，才能通过 CSP（script-src 'nonce-...'）
+        if (CSP_NONCE) {
+          try {
+            s.setAttribute('nonce', CSP_NONCE)
+          } catch (e) {
+            // 忽略
+          }
+        }
+        s.onload = () => {
+          try {
+            resolve(typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function')
+          } catch (e) {
+            resolve(false)
+          }
+        }
+        s.onerror = () => resolve(false)
+        document.head.appendChild(s)
+      } catch (e) {
+        resolve(false)
+      }
+    })
+
+    return prismLoadPromise
+  }
+
+  function scheduleLowPriorityWork(fn, timeoutMs) {
+    try {
+      const work = () => {
+        try {
+          fn()
+        } catch (e) {
+          // 忽略
+        }
+      }
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(work, {
+          timeout: typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) ? timeoutMs : 600
+        })
+      } else if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => setTimeout(work, 0))
+      } else {
+        setTimeout(work, 0)
+      }
+    } catch (e) {
+      try {
+        setTimeout(() => fn(), 0)
+      } catch (_) {
+        // 忽略
+      }
+    }
   }
 
   function loadNoContentLottieData() {
@@ -1855,6 +2063,50 @@
   /* 缓存上次渲染的内容，用于DOM更新优化 */
   let lastRenderedPrompt = ''
   let lastRenderedOptions = ''
+  let markdownRenderSeq = 0
+
+  function schedulePromptEnhancements(markdownContent, promptKey, renderSeq) {
+    // 分层渲染：先展示文本，再把高开销增强（高亮/复制按钮/MathJax）放到首帧之后
+    scheduleLowPriorityWork(() => {
+      if (renderSeq !== markdownRenderSeq) return
+
+      try {
+        processCodeBlocks(markdownContent)
+      } catch (e) {
+        // 忽略
+      }
+
+      // MathJax：用原始文本做公式检测，避免读取 textContent 触发大 DOM 遍历
+      try {
+        loadMathJaxIfNeeded(markdownContent, promptKey)
+      } catch (e) {
+        // 忽略
+      }
+
+      let hasCode = false
+      try {
+        // 只在存在代码块时才加载/执行 Prism（避免无意义的解析开销）
+        hasCode = !!markdownContent.querySelector('pre code')
+      } catch (e) {
+        hasCode = false
+      }
+      if (!hasCode) return
+
+      ensurePrismLoaded().then(ok => {
+        if (!ok) return
+        scheduleLowPriorityWork(() => {
+          if (renderSeq !== markdownRenderSeq) return
+          try {
+            if (typeof Prism !== 'undefined' && Prism.highlightAllUnder) {
+              Prism.highlightAllUnder(markdownContent)
+            }
+          } catch (e) {
+            // 忽略
+          }
+        }, 800)
+      })
+    }, 500)
+  }
 
   /* 根据配置更新UI - 渲染Markdown内容、选项列表和倒计时（优化：只更新变化的部分） */
   function updateUI(config) {
@@ -1873,28 +2125,28 @@
     const markdownContent = document.getElementById('markdownContent')
     const promptKey = config.prompt_html || config.prompt || ''
     if (promptKey !== lastRenderedPrompt) {
+      const renderSeq = ++markdownRenderSeq
+
       if (config.prompt_html && typeof config.prompt_html === 'string') {
         markdownContent.innerHTML = sanitizePromptHtml(config.prompt_html)
+        schedulePromptEnhancements(markdownContent, promptKey, renderSeq)
       } else {
+        // 首次快速渲染：若 marked 未加载，会走纯文本降级；marked 加载完成后再升级重渲染
         markdownContent.innerHTML = sanitizePromptHtml(renderSimpleMarkdown(config.prompt))
-      }
-      // 代码高亮 + 复制按钮（对齐原始项目）
-      try {
-        if (typeof Prism !== 'undefined' && Prism.highlightAllUnder) {
-          Prism.highlightAllUnder(markdownContent)
+        schedulePromptEnhancements(markdownContent, promptKey, renderSeq)
+
+        if (typeof marked === 'undefined') {
+          ensureMarkedLoaded().then(ok => {
+            if (!ok) return
+            if (renderSeq !== markdownRenderSeq) return
+            try {
+              markdownContent.innerHTML = sanitizePromptHtml(renderSimpleMarkdown(config.prompt))
+            } catch (e) {
+              return
+            }
+            schedulePromptEnhancements(markdownContent, promptKey, renderSeq)
+          })
         }
-      } catch (e) {
-        // 忽略
-      }
-      try {
-        processCodeBlocks(markdownContent)
-      } catch (e) {
-        // 忽略
-      }
-      try {
-        loadMathJaxIfNeeded(markdownContent, markdownContent.textContent || '')
-      } catch (e) {
-        // 忽略
       }
       lastRenderedPrompt = promptKey
     }
@@ -2533,20 +2785,16 @@
     if (!text) return ''
 
     try {
-      // 配置 marked 选项
       if (typeof marked !== 'undefined') {
-        marked.setOptions({
-          breaks: true, // 支持 GFM 换行
-          gfm: true, // 启用 GitHub Flavored Markdown
-          headerIds: false, // 禁用标题ID（避免冲突）
-          mangle: false // 禁用邮件地址混淆
-        })
-        return marked.parse(text)
-      } else {
-        // marked.js 未加载时的降级处理
-        log('marked.js 未加载，使用纯文本显示')
-        return '<pre>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
+        configureMarkedOnce()
+        if (marked && typeof marked.parse === 'function') {
+          return marked.parse(text)
+        }
       }
+
+      // marked.js 未加载时的降级处理
+      log('marked.js 未加载，使用纯文本显示')
+      return '<pre>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
     } catch (e) {
       log('Markdown 渲染失败，已降级为纯文本: ' + (e && e.message ? e.message : String(e)))
       return '<pre>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
