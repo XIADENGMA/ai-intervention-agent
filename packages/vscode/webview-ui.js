@@ -1621,6 +1621,27 @@
         }
 
         // 获取活跃任务的详细内容并更新UI（服务端会自动激活第一个 pending 任务）
+        // 为 /api/config 创建独立 AbortController，避免 /api/tasks 的超时/abort 影响后续请求
+        if (typeof AbortController !== 'undefined') {
+          try {
+            pollAbortController = new AbortController()
+            fetchOptions.signal = pollAbortController.signal
+          } catch (e) {
+            pollAbortController = null
+            try {
+              delete fetchOptions.signal
+            } catch (e2) {
+              // 忽略
+            }
+          }
+        } else {
+          pollAbortController = null
+          try {
+            delete fetchOptions.signal
+          } catch (e) {
+            // 忽略
+          }
+        }
         if (pollAbortController) {
           configTimeoutId = setTimeout(() => {
             try {
@@ -2198,15 +2219,140 @@
   }
 
   /* 获取当前活跃任务的详细配置 - 包括提示信息、选项和倒计时设置 */
+  function pickFallbackTaskId() {
+    try {
+      if (activeTaskId) return String(activeTaskId)
+    } catch (e) {
+      // 忽略
+    }
+    try {
+      if (Array.isArray(allTasks) && allTasks.length > 0) {
+        const inc = allTasks.find(t => t && t.task_id && t.status !== 'completed')
+        if (inc && inc.task_id) return String(inc.task_id)
+      }
+    } catch (e) {
+      // 忽略
+    }
+    return ''
+  }
+
+  // 配置端点偶发超时/异常时，用任务详情兜底（避免 UI 卡在“无有效内容”）
+  async function fetchTaskDetailAsConfig(taskId) {
+    const id = taskId ? String(taskId) : ''
+    if (!id) return null
+
+    let timeoutId = null
+    try {
+      const options = { cache: 'no-store' }
+
+      // 为兜底请求使用独立 AbortController（避免复用已 aborted 的 signal）
+      if (typeof AbortController !== 'undefined') {
+        try {
+          const controller = new AbortController()
+          options.signal = controller.signal
+          timeoutId = setTimeout(() => {
+            try {
+              controller.abort()
+            } catch (e) {
+              /* 忽略 */
+            }
+          }, POLL_CONFIG_TIMEOUT_MS)
+        } catch (e) {
+          // 忽略
+        }
+      }
+
+      const resp = await fetch(SERVER_URL + '/api/tasks/' + encodeURIComponent(id), options)
+      if (!resp.ok) return null
+
+      const data = await resp.json()
+      if (!data || !data.success || !data.task) return null
+
+      const t = data.task || {}
+      const prompt = t.prompt ? String(t.prompt) : ''
+      const predefined = Array.isArray(t.predefined_options) ? t.predefined_options : []
+      return {
+        prompt,
+        prompt_html: '',
+        predefined_options: predefined,
+        task_id: t.task_id ? String(t.task_id) : id,
+        auto_resubmit_timeout:
+          typeof t.auto_resubmit_timeout === 'number' && Number.isFinite(t.auto_resubmit_timeout)
+            ? Math.max(0, Math.floor(t.auto_resubmit_timeout))
+            : 0,
+        remaining_time:
+          typeof t.remaining_time === 'number' && Number.isFinite(t.remaining_time)
+            ? Math.max(0, Math.floor(t.remaining_time))
+            : undefined,
+        server_time:
+          typeof data.server_time === 'number' && Number.isFinite(data.server_time)
+            ? data.server_time
+            : undefined,
+        deadline:
+          typeof t.deadline === 'number' && Number.isFinite(t.deadline) ? t.deadline : undefined,
+        persistent: true,
+        has_content: !!prompt,
+        initial_empty: false
+      }
+    } catch (e) {
+      return null
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }
+
   async function pollConfig(fetchOptions) {
+    const tryFallback = async reason => {
+      const id = pickFallbackTaskId()
+      if (!id) return false
+      const fallback = await fetchTaskDetailAsConfig(id)
+      if (!fallback || !fallback.has_content) return false
+      try {
+        if (typeof fallback.server_time === 'number') {
+          const localTime = Date.now() / 1000
+          serverTimeOffset = fallback.server_time - localTime
+        }
+      } catch (e) {
+        // 忽略
+      }
+      try {
+        if (fallback.task_id && typeof fallback.deadline === 'number') {
+          taskDeadlines[fallback.task_id] = fallback.deadline
+        }
+      } catch (e) {
+        // 忽略
+      }
+      try {
+        if (fallback.task_id) {
+          activeTaskId = fallback.task_id
+        }
+      } catch (e) {
+        // 忽略
+      }
+      try {
+        showToast('配置加载失败，已使用任务详情兜底' + (reason ? '（' + reason + '）' : ''), {
+          kind: 'warn',
+          timeoutMs: 1600,
+          dedupeKey: 'config:fallback'
+        })
+      } catch (e) {
+        // 忽略
+      }
+      updateUI(fallback)
+      return true
+    }
+
     try {
       const options = fetchOptions ? { ...fetchOptions } : { cache: 'no-store' }
       if (!options.cache) options.cache = 'no-store'
       const response = await fetch(SERVER_URL + '/api/config', options)
 
       if (!response.ok) {
-        updateServerStatus(false)
-        showNoContent()
+        const okFallback = await tryFallback('HTTP ' + response.status)
+        if (okFallback) return true
+        if (!(currentConfig && currentConfig.has_content)) {
+          showNoContent()
+        }
         return false
       }
 
@@ -2227,18 +2373,39 @@
       if (config.has_content && (config.prompt || config.prompt_html)) {
         updateUI(config)
       } else {
+        // tasks 列表不为空但 config 无内容时，尝试用任务详情兜底（避免“有任务但显示无内容”）
+        const hasIncomplete =
+          Array.isArray(allTasks) && allTasks.some(t => t && t.task_id && t.status !== 'completed')
+        if (hasIncomplete) {
+          const okFallback = await tryFallback('no_content')
+          if (okFallback) return true
+        }
         showNoContent()
       }
       return true
     } catch (error) {
       if (error && (error.name === 'AbortError' || error.code === 20)) {
-        updateServerStatus(false)
-        showNoContent()
+        // 页面隐藏/切走时 abort 属于正常行为：不强制切换 UI，避免闪烁
+        try {
+          if (typeof document !== 'undefined' && document.hidden) {
+            return false
+          }
+        } catch (e) {
+          // 忽略
+        }
+        const okFallback = await tryFallback('timeout')
+        if (okFallback) return true
+        if (!(currentConfig && currentConfig.has_content)) {
+          showNoContent()
+        }
         return false
       }
+      const okFallback = await tryFallback('')
+      if (okFallback) return true
       logError('获取配置失败: ' + (error && error.message ? error.message : String(error)))
-      updateServerStatus(false)
-      showNoContent()
+      if (!(currentConfig && currentConfig.has_content)) {
+        showNoContent()
+      }
       return false
     }
   }

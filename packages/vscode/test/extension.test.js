@@ -66,6 +66,8 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('vscode.getState'))
     assert.ok(webviewUi.includes('vscode.setState'))
     assert.ok(extensionJs.includes('retainContextWhenHidden: false'))
+    // 边界回归点：0.0.0.0/:: 仅适合作为监听地址，扩展侧应映射为 localhost（避免客户端无法访问）
+    assert.ok(extensionJs.includes("host === '0.0.0.0' || host === '::'"))
     // 稳定性/解耦：MathJax 应优先走 VSIX 内置资源（由 meta 注入 URL）
     assert.ok(webviewJs.includes('data-mathjax-script-url'))
     assert.ok(webviewJs.includes('tex-mml-svg.js'))
@@ -119,6 +121,8 @@ suite('Extension Test Suite', () => {
     // 高优先稳定性回归点：stopPolling 后不得“复活”轮询定时器
     assert.ok(webviewUi.includes('pollingToken'))
     assert.ok(webviewUi.includes('t !== pollingToken'))
+    // 稳定性回归点：/api/config 失败时应回退到 /api/tasks/<id>，避免 UI 卡在“无有效内容”
+    assert.ok(webviewUi.includes('fetchTaskDetailAsConfig'))
     // 高优先稳定性回归点：扩展停用后不得继续调度 status poll 定时器
     assert.ok(extensionJs.includes('statusPollDisposed'))
 

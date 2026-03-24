@@ -32,6 +32,12 @@ function normalizeServerUrl(input) {
     const protocol = String(u.protocol || '').toLowerCase()
     // 仅允许 http/https，避免 data/javascript/file 等协议带来的安全边界混淆
     if (protocol !== 'http:' && protocol !== 'https:') return DEFAULT_SERVER_URL
+    // 0.0.0.0 / :: 适合作为监听地址，但并不是可靠的客户端访问地址：统一映射为 localhost
+    const host = String(u.hostname || '').toLowerCase()
+    if (host === '0.0.0.0' || host === '::') {
+      const port = u.port ? `:${u.port}` : ''
+      return `${protocol}//localhost${port}`
+    }
     return u.origin
   } catch {
     return DEFAULT_SERVER_URL
