@@ -215,15 +215,11 @@ def _run(cmd: list[str]) -> None:
 
 
 def _maybe_run_ci_gate(*, include_vscode: bool) -> None:
-    # 与 TODO.md / docs/workflow* 对齐：尽量保持“命令即文档”
-    _run(["uv", "sync", "--all-groups"])
-    _run(["uv", "run", "ruff", "format", "."])
-    _run(["uv", "run", "ruff", "check", "."])
-    _run(["uv", "run", "ty", "check", "."])
-    _run(["uv", "run", "pytest", "-q"])
-    _run(["uv", "run", "python", "scripts/minify_assets.py", "--check"])
+    # 与 docs/workflow* 对齐：尽量保持“命令即文档”（单一入口，减少漂移）
+    cmd = ["uv", "run", "python", "scripts/ci_gate.py"]
     if include_vscode:
-        _run(["npm", "run", "vscode:check"])
+        cmd.append("--with-vscode")
+    _run(cmd)
 
 
 def main(argv: list[str]) -> int:

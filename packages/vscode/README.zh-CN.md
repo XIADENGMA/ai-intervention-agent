@@ -41,12 +41,14 @@ npm install
 
 - `ai-intervention-agent.serverUrl`：服务端地址（默认 `http://localhost:8080`）
 - `ai-intervention-agent.logLevel`：日志级别（默认 `info`；查看位置：Output → AI Intervention Agent）
-- `ai-intervention-agent.enableAppleScript`：允许在 macOS 上执行 AppleScript（默认关闭；用于触发 macOS 原生通知等）
+- `ai-intervention-agent.enableAppleScript`：允许在 macOS 上通过 `osascript` 执行**任意** AppleScript（默认关闭；仅影响命令 **AI Intervention Agent: 执行 AppleScript**）。macOS 原生通知**不依赖**此开关。
 
-## macOS 原生通知（可选）
+## macOS 原生通知
 
-1. 在 VS Code 设置中开启 `ai-intervention-agent.enableAppleScript`
-2. 打开命令面板（`Ctrl+Shift+P`），运行 **AI Intervention Agent: 测试 macOS 原生通知**
+- macOS 原生通知通过 `osascript display notification` 发送。
+- 通知的“归属/图标/应用名”属于**尽力而为**：扩展会尝试将通知归属到宿主编辑器（VS Code / Cursor 等）。若系统环境不支持该归属机制，通知可能回退为默认的 AppleScript 发送方显示。
+- 你可以直接在命令面板运行 **AI Intervention Agent: 测试 macOS 原生通知** 验证效果。
+- 如需开关：侧边栏面板 → **通知设置** → **macOS 原生通知**（默认开启）
 
 ## 生成 VSIX（.vsix）
 
@@ -72,6 +74,8 @@ npm run vscode:test
 - **看不到请求**：
   - 确认服务端可访问（默认端口 8080 或按你的 `serverUrl` 设置）
   - VS Code → Help → Toggle Developer Tools 查看控制台错误
+- **复制诊断信息（用于提 issue/排障）**：
+  - 命令面板运行 **AI Intervention Agent: 复制诊断信息**，将剪贴板内容贴到 issue/反馈中
 
 ## 项目地址
 

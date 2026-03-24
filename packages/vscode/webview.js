@@ -39,7 +39,12 @@ function getNonce(length = 32) {
  * - 实现与本地服务器的轮询通信机制
  */
 class WebviewProvider {
-  constructor(extensionUri, outputChannel, serverUrl = 'http://localhost:8080', onVisibilityChanged) {
+  constructor(
+    extensionUri,
+    outputChannel,
+    serverUrl = 'http://localhost:8080',
+    onVisibilityChanged
+  ) {
     this._extensionUri = extensionUri
     this._outputChannel = outputChannel
     this._logger = createLogger(outputChannel, {
@@ -69,7 +74,8 @@ class WebviewProvider {
       })
     )
     this._serverUrl = serverUrl
-    this._onVisibilityChanged = typeof onVisibilityChanged === 'function' ? onVisibilityChanged : null
+    this._onVisibilityChanged =
+      typeof onVisibilityChanged === 'function' ? onVisibilityChanged : null
     this._view = null
     this._disposables = []
     this._lastServerStatus = null
@@ -77,6 +83,9 @@ class WebviewProvider {
     this._hasEverConnected = false
     this._webviewReady = false
     this._webviewReadyTimer = null
+    // macOS 原生通知“点击打开面板”兜底：
+    // AppleScript 原生通知没有点击回调；这里通过“通知触发时若宿主未聚焦则 arm，一旦宿主重新聚焦则自动打开面板”来近似实现。
+    this._revealPanelUntilMs = 0
 
     // 缓存 marked.js 内容（只读取一次）
     this._markedJsCache = this._loadMarkedJs()
@@ -152,7 +161,19 @@ class WebviewProvider {
 
     /* 监听视图可见性变化 - 当视图变为可见时刷新数据 */
     webviewView.onDidChangeVisibility(() => {
-      this._log(`[事件] Webview 可见性变化: ${webviewView.visible ? '可见' : '隐藏'}`)
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'webview.visibility',
+            { visible: !!webviewView.visible },
+            { level: 'debug' }
+          )
+        } else {
+          this._log(`[事件] Webview 可见性变化: ${webviewView.visible ? '可见' : '隐藏'}`)
+        }
+      } catch {
+        this._log(`[事件] Webview 可见性变化: ${webviewView.visible ? '可见' : '隐藏'}`)
+      }
       if (this._onVisibilityChanged) {
         this._onVisibilityChanged(!!webviewView.visible)
       }
@@ -163,7 +184,15 @@ class WebviewProvider {
 
     /* 监听视图销毁事件 - 释放所有资源和事件监听器 */
     webviewView.onDidDispose(() => {
-      this._log('[事件] Webview 已销毁')
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event('webview.disposed', {}, { level: 'info' })
+        } else {
+          this._log('[事件] Webview 已销毁')
+        }
+      } catch {
+        this._log('[事件] Webview 已销毁')
+      }
       if (this._onVisibilityChanged) {
         this._onVisibilityChanged(false)
       }
@@ -190,7 +219,9 @@ class WebviewProvider {
       }
       const tickCount = (html.match(/`/g) || []).length
       if (tickCount > 0 && this._logger && typeof this._logger.warn === 'function') {
-        this._logger.warn(`Webview HTML 包含 ${tickCount} 个反引号字符：可能导致注入失败（建议继续外链化/运行时生成）`)
+        this._logger.warn(
+          `Webview HTML 包含 ${tickCount} 个反引号字符：可能导致注入失败（建议继续外链化/运行时生成）`
+        )
       }
     } catch {
       // 忽略：诊断日志失败不应影响 Webview 初始化
@@ -204,7 +235,19 @@ class WebviewProvider {
     }
     this._webviewReadyTimer = setTimeout(() => {
       if (!this._webviewReady && this._logger && typeof this._logger.warn === 'function') {
-        this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+        try {
+          if (typeof this._logger.event === 'function') {
+            this._logger.event(
+              'webview.ready_timeout',
+              { timeoutMs: 2500, webviewReady: false },
+              { level: 'warn', message: 'Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）' }
+            )
+          } else {
+            this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+          }
+        } catch {
+          this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+        }
       }
     }, 2500)
 
@@ -247,7 +290,11 @@ class WebviewProvider {
 
           if (level === 'error' && this._logger && typeof this._logger.error === 'function') {
             this._logger.error(text)
-          } else if ((level === 'warn' || level === 'warning') && this._logger && typeof this._logger.warn === 'function') {
+          } else if (
+            (level === 'warn' || level === 'warning') &&
+            this._logger &&
+            typeof this._logger.warn === 'function'
+          ) {
             this._logger.warn(text)
           } else if (level === 'info' && this._logger && typeof this._logger.info === 'function') {
             this._logger.info(text)
@@ -275,13 +322,22 @@ class WebviewProvider {
           clearTimeout(this._webviewReadyTimer)
           this._webviewReadyTimer = null
         }
-        this._log('Webview 脚本 ready')
+        try {
+          if (this._logger && typeof this._logger.event === 'function') {
+            this._logger.event('webview.ready', { ready: true }, { level: 'info' })
+          } else {
+            this._log('Webview 脚本 ready')
+          }
+        } catch {
+          this._log('Webview 脚本 ready')
+        }
         break
       case 'serverStatus':
         // 只在状态变化时记录，避免刷屏
         try {
           const connected = !!(message && message.connected)
           if (connected !== this._lastServerStatus) {
+            const prev = this._lastServerStatus
             this._lastServerStatus = connected
             // 日志降噪策略：
             // - 首次“连接断开”多为初始化瞬态：仅 debug
@@ -289,15 +345,37 @@ class WebviewProvider {
             // - 曾连接过后再断开：warn（重要）
             if (connected) {
               this._hasEverConnected = true
-              this._log('[事件] Webview 服务器状态: 已连接')
+              if (this._logger && typeof this._logger.event === 'function') {
+                this._logger.event(
+                  'webview.server_status',
+                  { connected: true, prev: prev === null ? 'null' : prev },
+                  { level: prev === false ? 'info' : 'debug' }
+                )
+              } else {
+                this._log('[事件] Webview 服务器状态: 已连接')
+              }
             } else if (this._hasEverConnected) {
-              if (this._logger && typeof this._logger.warn === 'function') {
+              if (this._logger && typeof this._logger.event === 'function') {
+                this._logger.event(
+                  'webview.server_status',
+                  { connected: false, prev: prev === null ? 'null' : prev },
+                  { level: 'warn' }
+                )
+              } else if (this._logger && typeof this._logger.warn === 'function') {
                 this._logger.warn('[事件] Webview 服务器状态: 连接断开')
               } else {
                 this._log('[事件] Webview 服务器状态: 连接断开')
               }
             } else if (this._logger && typeof this._logger.debug === 'function') {
-              this._logger.debug('[事件] Webview 服务器状态: 连接断开')
+              if (typeof this._logger.event === 'function') {
+                this._logger.event(
+                  'webview.server_status',
+                  { connected: false, prev: prev === null ? 'null' : prev },
+                  { level: 'debug' }
+                )
+              } else {
+                this._logger.debug('[事件] Webview 服务器状态: 连接断开')
+              }
             }
           }
         } catch {
@@ -316,9 +394,7 @@ class WebviewProvider {
           metadata: { presentation: 'statusBar', severity: 'info', timeoutMs: 3000 },
           source: 'webview',
           dedupeKey:
-            message && message.message
-              ? `status:${String(message.message).slice(0, 200)}`
-              : ''
+            message && message.message ? `status:${String(message.message).slice(0, 200)}` : ''
         })
         break
       case 'requestClipboardText':
@@ -335,12 +411,92 @@ class WebviewProvider {
 
   _dispatchNotificationEvent(event) {
     try {
-      if (!this._notificationCenter || typeof this._notificationCenter.dispatch !== 'function') return
+      if (!this._notificationCenter || typeof this._notificationCenter.dispatch !== 'function')
+        return
+      try {
+        this._armRevealPanelOnNextFocus(event)
+      } catch {
+        // 忽略
+      }
       Promise.resolve()
         .then(() => this._notificationCenter.dispatch(event))
-        .catch(() => {})
+        .then(result => {
+          try {
+            if (!this._notificationLogger || typeof this._notificationLogger.event !== 'function')
+              return
+            const evt = result && result.event ? result.event : event
+            const types = evt && Array.isArray(evt.types) ? evt.types.map(t => String(t)) : []
+            const delivered = result && result.delivered ? result.delivered : {}
+            const skipped = !!(result && result.skipped)
+            const reason = result && result.reason ? String(result.reason) : ''
+            const eventId = evt && evt.id ? String(evt.id) : ''
+            this._notificationLogger.event(
+              'notify.dispatch',
+              {
+                eventId,
+                types,
+                skipped,
+                reason,
+                delivered
+              },
+              { level: 'debug' }
+            )
+          } catch {
+            // 忽略：日志系统异常不应影响通知流程
+          }
+        })
+        .catch(e => {
+          try {
+            if (!this._notificationLogger || typeof this._notificationLogger.event !== 'function')
+              return
+            const msg = e && e.message ? String(e.message) : String(e)
+            this._notificationLogger.event('notify.dispatch_failed', { error: msg }, { level: 'warn' })
+          } catch {
+            // 忽略
+          }
+        })
     } catch {
       // 忽略：通知分发失败不应影响主流程
+    }
+  }
+
+  _armRevealPanelOnNextFocus(event) {
+    try {
+      const evt = event && typeof event === 'object' ? event : {}
+      const types = evt && Array.isArray(evt.types) ? evt.types.map(t => String(t)) : []
+      if (!types.includes(NotificationType.MACOS_NATIVE)) return
+
+      const md = evt && evt.metadata && typeof evt.metadata === 'object' ? evt.metadata : {}
+      const isTest = !!(md && md.isTest)
+      const kind = md && md.kind ? String(md.kind) : ''
+      if (isTest) return
+      if (kind !== 'new_tasks') return
+
+      // 仅在宿主当前未聚焦时 arm：避免用户正在编辑时“回到窗口”被强制打开面板
+      const focused = !!(
+        vscode &&
+        vscode.window &&
+        vscode.window.state &&
+        vscode.window.state.focused
+      )
+      if (focused) return
+
+      this._revealPanelUntilMs = Date.now() + 30000
+    } catch {
+      // 忽略
+    }
+  }
+
+  async onWindowFocusChanged(focused) {
+    try {
+      if (!focused) return
+      const until = typeof this._revealPanelUntilMs === 'number' ? this._revealPanelUntilMs : 0
+      if (!until || Date.now() > until) return
+      // 消费一次
+      this._revealPanelUntilMs = 0
+      await vscode.commands.executeCommand('ai-intervention-agent.openPanel')
+    } catch {
+      // 忽略
     }
   }
 
@@ -416,18 +572,28 @@ class WebviewProvider {
     const cspSource = webview.cspSource
     // 重要：不要把 marked/prism 以“内联脚本”拼进 HTML（其内容包含反引号等字符，部分 Webview 注入实现会因此失败）
     // 改为外链加载（同样使用 nonce，CSP 更安全且更稳定）
-    const markedJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'marked.min.js'))
+    const markedJsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'marked.min.js')
+    )
     const prismBootstrapUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'prism-bootstrap.js')
     )
     const prismJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'prism.min.js'))
-    const prismCssUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'prism.min.css'))
-    const webviewHelpersUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview-helpers.js'))
-    const webviewUiUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'webview-ui.js'))
+    const prismCssUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'prism.min.css')
+    )
+    const webviewHelpersUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'webview-helpers.js')
+    )
+    const webviewUiUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'webview-ui.js')
+    )
     const extensionVersion = EXT_VERSION || '0.0.0'
     const githubUrl = EXT_GITHUB_URL || ''
     const githubUrlDisplay = githubUrl ? githubUrl.replace(/^https?:\/\//i, '') : ''
-    const lottieJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'lottie.min.js'))
+    const lottieJsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'lottie.min.js')
+    )
     const noContentLottieJsonUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json')
     )

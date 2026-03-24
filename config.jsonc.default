@@ -11,7 +11,7 @@
     // 桌面系统通知（plyer，可选依赖；默认关闭以避免意外弹窗）
     "system_enabled": false,
     // macOS 原生通知（主要由 VSCode/Cursor 插件侧触发；后端保留字段用于配置一致性）
-    "macos_native_enabled": false,
+    "macos_native_enabled": true,
     // 声音通知
     "sound_enabled": true,
     "sound_mute": false,

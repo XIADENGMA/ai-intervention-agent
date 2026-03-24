@@ -10,7 +10,10 @@ function isMacOS(platform = process.platform) {
 
 function sanitizeForLog(input, maxLen = 160) {
   const text = (input ?? '').toString()
-  const singleLine = text.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const singleLine = text
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   if (!singleLine) return ''
   if (singleLine.length <= maxLen) return singleLine
   return `${singleLine.slice(0, maxLen)}…`
@@ -35,7 +38,9 @@ class AppleScriptExecutor {
   constructor(opts = {}) {
     this._logger = opts.logger || null
     this._exec = typeof opts.execImpl === 'function' ? opts.execImpl : exec
-    this._timeoutMs = Number.isFinite(Number(opts.timeoutMs)) ? Number(opts.timeoutMs) : DEFAULT_TIMEOUT_MS
+    this._timeoutMs = Number.isFinite(Number(opts.timeoutMs))
+      ? Number(opts.timeoutMs)
+      : DEFAULT_TIMEOUT_MS
     this._maxBufferBytes = Number.isFinite(Number(opts.maxBufferBytes))
       ? Number(opts.maxBufferBytes)
       : DEFAULT_MAX_BUFFER_BYTES
@@ -53,9 +58,10 @@ class AppleScriptExecutor {
    * 为降低命令注入风险：脚本内容通过 stdin 传入，不拼接到命令行参数里。
    *
    * @param {string} script AppleScript 源码
+   * @param {object} [runOptions] 可选执行参数（目前仅支持 env 注入）
    * @returns {Promise<string>} stdout
    */
-  runAppleScript(script) {
+  runAppleScript(script, runOptions = {}) {
     const platform = this._platform || process.platform
     if (!isMacOS(platform)) {
       const err = new Error('Platform not supported')
@@ -73,9 +79,24 @@ class AppleScriptExecutor {
     const timeoutMs = this._timeoutMs
     const maxBufferBytes = this._maxBufferBytes
     const cmd = `${this._osascriptPath} -`
+    const envExtra =
+      runOptions && runOptions.env && typeof runOptions.env === 'object' ? runOptions.env : null
+    const env = envExtra ? { ...process.env, ...envExtra } : process.env
+    const startedAt = Date.now()
 
     try {
-      if (this._logger && typeof this._logger.debug === 'function') {
+      if (this._logger && typeof this._logger.event === 'function') {
+        this._logger.event(
+          'applescript.run.start',
+          {
+            platform,
+            timeoutMs,
+            maxBufferBytes,
+            scriptLen: body.length
+          },
+          { level: 'debug' }
+        )
+      } else if (this._logger && typeof this._logger.debug === 'function') {
         this._logger.debug(
           `runAppleScript:start platform=${platform} timeoutMs=${timeoutMs} scriptLen=${body.length}`
         )
@@ -93,21 +114,36 @@ class AppleScriptExecutor {
             timeout: timeoutMs,
             maxBuffer: maxBufferBytes,
             encoding: 'utf8',
-            windowsHide: true
+            windowsHide: true,
+            env
           },
           (error, stdout, stderr) => {
             const errText = (stderr ?? '').toString().trim()
             const outText = (stdout ?? '').toString()
+            const durationMs = Date.now() - startedAt
 
             if (error) {
-              const isTimeout = !!error.killed || error.signal === 'SIGTERM' || error.signal === 'SIGKILL'
-              const msg = errText || (error && error.message ? String(error.message) : 'AppleScript 执行失败')
+              const isTimeout =
+                !!error.killed || error.signal === 'SIGTERM' || error.signal === 'SIGKILL'
+              const msg =
+                errText || (error && error.message ? String(error.message) : 'AppleScript 执行失败')
               const err = new Error(msg)
               err.code = isTimeout ? 'APPLE_SCRIPT_TIMEOUT' : 'APPLE_SCRIPT_FAILED'
               err.cause = error
 
               try {
-                if (this._logger && typeof this._logger.warn === 'function') {
+                if (this._logger && typeof this._logger.event === 'function') {
+                  this._logger.event(
+                    'applescript.run.fail',
+                    {
+                      code: err.code,
+                      durationMs,
+                      msg: sanitizeForLog(msg),
+                      stderrLen: errText ? errText.length : 0
+                    },
+                    { level: 'warn' }
+                  )
+                } else if (this._logger && typeof this._logger.warn === 'function') {
                   this._logger.warn(
                     `runAppleScript:fail code=${err.code} msg=${sanitizeForLog(msg)}`
                   )
@@ -125,10 +161,18 @@ class AppleScriptExecutor {
               err.code = 'APPLE_SCRIPT_STDERR'
 
               try {
-                if (this._logger && typeof this._logger.warn === 'function') {
-                  this._logger.warn(
-                    `runAppleScript:stderr msg=${sanitizeForLog(errText)}`
+                if (this._logger && typeof this._logger.event === 'function') {
+                  this._logger.event(
+                    'applescript.run.stderr',
+                    {
+                      code: err.code,
+                      durationMs,
+                      msg: sanitizeForLog(errText)
+                    },
+                    { level: 'warn' }
                   )
+                } else if (this._logger && typeof this._logger.warn === 'function') {
+                  this._logger.warn(`runAppleScript:stderr msg=${sanitizeForLog(errText)}`)
                 }
               } catch {
                 // 忽略：日志系统异常不应影响执行
@@ -139,7 +183,13 @@ class AppleScriptExecutor {
             }
 
             try {
-              if (this._logger && typeof this._logger.debug === 'function') {
+              if (this._logger && typeof this._logger.event === 'function') {
+                this._logger.event(
+                  'applescript.run.ok',
+                  { durationMs, stdoutLen: outText.length, scriptLen: body.length },
+                  { level: 'debug' }
+                )
+              } else if (this._logger && typeof this._logger.debug === 'function') {
                 this._logger.debug(`runAppleScript:ok stdoutLen=${outText.length}`)
               }
             } catch {
@@ -152,9 +202,16 @@ class AppleScriptExecutor {
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e))
         err.code = 'APPLE_SCRIPT_SPAWN_FAILED'
+        const durationMs = Date.now() - startedAt
 
         try {
-          if (this._logger && typeof this._logger.error === 'function') {
+          if (this._logger && typeof this._logger.event === 'function') {
+            this._logger.event(
+              'applescript.run.spawn_failed',
+              { code: err.code, durationMs, msg: sanitizeForLog(err.message) },
+              { level: 'error' }
+            )
+          } else if (this._logger && typeof this._logger.error === 'function') {
             this._logger.error(`runAppleScript:spawn_failed ${sanitizeForLog(err.message)}`)
           }
         } catch {
@@ -186,4 +243,3 @@ module.exports = {
   sanitizeForLog,
   toAppleScriptStringLiteral
 }
-

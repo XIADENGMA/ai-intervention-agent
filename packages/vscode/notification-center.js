@@ -59,7 +59,9 @@ class NotificationCenter {
         if (!provider || typeof provider.send !== 'function') {
           delivered[type] = false
           try {
-            if (this._logger && typeof this._logger.debug === 'function') {
+            if (this._logger && typeof this._logger.event === 'function') {
+              this._logger.event('notify.provider_not_registered', { type }, { level: 'debug' })
+            } else if (this._logger && typeof this._logger.debug === 'function') {
               this._logger.debug(`provider_not_registered: ${type}`)
             }
           } catch {
@@ -74,8 +76,10 @@ class NotificationCenter {
         } catch (e) {
           delivered[type] = false
           try {
-            if (this._logger && typeof this._logger.warn === 'function') {
-              const msg = e && e.message ? String(e.message) : String(e)
+            const msg = e && e.message ? String(e.message) : String(e)
+            if (this._logger && typeof this._logger.event === 'function') {
+              this._logger.event('notify.provider_failed', { type, error: msg }, { level: 'warn' })
+            } else if (this._logger && typeof this._logger.warn === 'function') {
               this._logger.warn(`provider_failed: ${type} ${msg ? `(${msg})` : ''}`.trim())
             }
           } catch {

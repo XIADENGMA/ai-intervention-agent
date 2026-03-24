@@ -41,12 +41,14 @@ npm install
 
 - `ai-intervention-agent.serverUrl`: server URL (default: `http://localhost:8080`)
 - `ai-intervention-agent.logLevel`: extension log level (default: `info`; view: Output → AI Intervention Agent)
-- `ai-intervention-agent.enableAppleScript`: allow running AppleScript via `osascript` on macOS (default: `false`; used for macOS native notifications, window management, etc.)
+- `ai-intervention-agent.enableAppleScript`: allow running **arbitrary** AppleScript via `osascript` on macOS (default: `false`; only affects the command **AI Intervention Agent: 执行 AppleScript**). macOS native notifications do **not** depend on this.
 
-## macOS native notifications (optional)
+## macOS native notifications
 
-1. Enable `ai-intervention-agent.enableAppleScript` in VS Code settings
-2. Open Command Palette and run **AI Intervention Agent: 测试 macOS 原生通知**
+- Native notifications are delivered via `osascript display notification` on macOS.
+- Sender attribution (app icon/name) is **best-effort**. The extension tries to attribute notifications to the host editor app (e.g. VS Code / Cursor). If the attribution mechanism is unavailable on your system, notifications may fall back to the default AppleScript sender.
+- You can test it via Command Palette: **AI Intervention Agent: 测试 macOS 原生通知**
+- You can enable/disable it in the sidebar panel → **通知设置** → **macOS 原生通知** (default: enabled)
 
 ## Build a VSIX (.vsix)
 
@@ -72,8 +74,9 @@ npm run vscode:test
 - **No requests shown**:
   - Make sure the server is reachable (default port 8080, or your configured `serverUrl`)
   - Check VS Code Developer Tools console logs
+- **Copy diagnostics for bug reports**:
+  - Run Command Palette: **AI Intervention Agent: 复制诊断信息**, then paste the clipboard text into your issue / report
 
 ## Repository
 
 - [`XIADENGMA/ai-intervention-agent`](https://github.com/XIADENGMA/ai-intervention-agent)
-

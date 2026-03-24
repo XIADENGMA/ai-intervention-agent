@@ -17,6 +17,7 @@ import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
+from ipaddress import AddressValueError, ip_address, ip_network
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
@@ -400,7 +401,7 @@ class ConfigManager:
                 "web_enabled": True,
                 "auto_request_permission": True,
                 "system_enabled": False,
-                "macos_native_enabled": False,
+                "macos_native_enabled": True,
                 "sound_enabled": True,
                 "sound_mute": False,
                 "sound_volume": 80,
@@ -409,7 +410,7 @@ class ConfigManager:
                 "retry_count": 3,
                 "retry_delay": 2,
                 "bark_enabled": False,
-                "bark_url": "https://api.day.app/push",
+                "bark_url": "",
                 "bark_device_key": "",
                 "bark_icon": "",
                 "bark_action": "none",
@@ -419,8 +420,10 @@ class ConfigManager:
                 "host": "127.0.0.1",  # 默认仅本地访问，提升安全性
                 "port": 8080,
                 "debug": False,
-                "max_retries": 3,
-                "retry_delay": 1.0,
+                # 新名称（推荐）：与文档与模板 config.jsonc.default 对齐
+                "http_request_timeout": 30,
+                "http_max_retries": 3,
+                "http_retry_delay": 1.0,
             },
             "mdns": {
                 # 是否启用 mDNS
@@ -1121,7 +1124,7 @@ class ConfigManager:
             if stripped.startswith("//"):
                 continue
 
-            # 查找数组定义行
+            # 查找数组定义行（目前聚焦 network_security 的关键数组）
             if '"allowed_networks"' in stripped and "[" in stripped:
                 if "allowed_networks" in array_definitions:
                     logger.error(
@@ -1129,10 +1132,17 @@ class ConfigManager:
                     )
                     raise ValueError(f"配置文件格式损坏：重复的数组定义在第{i + 1}行")
                 array_definitions["allowed_networks"] = i + 1
+            if '"blocked_ips"' in stripped and "[" in stripped:
+                if "blocked_ips" in array_definitions:
+                    logger.error(f"检测到重复的数组定义 'blocked_ips' 在第{i + 1}行")
+                    raise ValueError(f"配置文件格式损坏：重复的数组定义在第{i + 1}行")
+                array_definitions["blocked_ips"] = i + 1
 
         # 验证network_security配置（如果存在）应该格式正确
         if "network_security" in parsed_config:
             ns_config = parsed_config["network_security"]
+            if not isinstance(ns_config, dict):
+                raise ValueError("network_security 配置段必须是 object")
             if "allowed_networks" in ns_config:
                 allowed_networks = ns_config["allowed_networks"]
                 if not isinstance(allowed_networks, list):
@@ -1163,6 +1173,19 @@ class ConfigManager:
 
     def set(self, key: str, value: Any, save: bool = True):
         """设置配置值（支持嵌套键，自动创建中间路径，值变化检测，可选延迟保存）"""
+        # network_security 特殊处理：必须走专用更新/落盘路径，避免写入内存但无法持久化
+        if key == "network_security":
+            if not isinstance(value, dict):
+                raise ValueError("network_security 必须是 object（dict）")
+            self.set_network_security_config(cast(Dict[str, Any], value), save=save)
+            return
+        if key.startswith("network_security."):
+            field = key[len("network_security.") :]
+            if not field or "." in field:
+                raise ValueError("仅支持设置一级字段：network_security.<field>")
+            self.update_network_security_config({field: value}, save=save)
+            return
+
         changed = False
         with self._lock:
             self._last_access_time = time.time()
@@ -1211,6 +1234,28 @@ class ConfigManager:
 
     def update(self, updates: Dict[str, Any], save: bool = True):
         """批量更新配置（仅处理变化项，合并为一次延迟保存，原子操作）"""
+        # network_security 特殊处理：先剥离并走专用更新/落盘路径，避免进入 _config/_pending_changes
+        network_security_updates: Dict[str, Any] = {}
+        non_ns_updates: Dict[str, Any] = {}
+        for k, v in (updates or {}).items():
+            if k == "network_security" and isinstance(v, dict):
+                # 视为整段覆盖（仍会被验证与归一化）
+                network_security_updates.update(cast(Dict[str, Any], v))
+            elif isinstance(k, str) and k.startswith("network_security."):
+                field = k[len("network_security.") :]
+                if field and "." not in field:
+                    network_security_updates[field] = v
+                else:
+                    raise ValueError("仅支持更新一级字段：network_security.<field>")
+            else:
+                non_ns_updates[k] = v
+
+        if network_security_updates:
+            self.update_network_security_config(network_security_updates, save=save)
+            # 若仅更新 network_security，则无需走通用 update 流程
+            if not non_ns_updates:
+                return
+
         changed_sections: set[str] = set()
         changed = False
         with self._lock:
@@ -1218,7 +1263,7 @@ class ConfigManager:
 
             # 性能优化：过滤出真正有变化的配置项
             actual_changes = {}
-            for key, value in updates.items():
+            for key, value in non_ns_updates.items():
                 current_value = self.get(key)
                 if current_value != value:
                     actual_changes[key] = value
@@ -1324,6 +1369,12 @@ class ConfigManager:
 
     def update_section(self, section: str, updates: Dict[str, Any], save: bool = True):
         """更新配置段（检测变化，触发回调，可选延迟保存）"""
+        if section == "network_security":
+            if not isinstance(updates, dict):
+                raise ValueError("network_security 更新必须是 dict")
+            self.update_network_security_config(updates, save=save)
+            return
+
         changed = False
         with self._lock:
             current_section = self.get_section(section)
@@ -1453,7 +1504,318 @@ class ConfigManager:
     def get_all(self) -> Dict[str, Any]:
         """获取所有配置的副本（不含 network_security）"""
         with self._lock:
-            return self._config.copy()
+            data = self._config.copy()
+            # 兜底：避免任何路径把 network_security 写回内存配置
+            return self._exclude_network_security(data)
+
+    @staticmethod
+    def _coerce_bool(value: Any, default: bool = True) -> bool:
+        """将常见输入转换为 bool（用于配置兼容性）"""
+        try:
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return default
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                s = value.strip().lower()
+                if s in ("true", "1", "yes", "y", "on"):
+                    return True
+                if s in ("false", "0", "no", "n", "off"):
+                    return False
+                return default
+            return bool(value)
+        except Exception:
+            return default
+
+    def _validate_network_security_config(self, raw: Any) -> Dict[str, Any]:
+        """强校验并归一化 network_security（与文档/模板对齐，兼容旧字段）"""
+        default_ns = cast(
+            Dict[str, Any], self._get_default_config().get("network_security", {})
+        )
+
+        if not isinstance(raw, dict):
+            raw = {}
+
+        # bind_interface：非法时回退到更安全的本机
+        bind_raw = raw.get(
+            "bind_interface", default_ns.get("bind_interface", "0.0.0.0")
+        )
+        bind = "127.0.0.1"
+        try:
+            if isinstance(bind_raw, str):
+                s = bind_raw.strip()
+                if s in ("0.0.0.0", "127.0.0.1", "localhost", "::1", "::"):
+                    bind = s
+                else:
+                    # 任意合法 IP
+                    bind = str(ip_address(s))
+            else:
+                bind = str(
+                    ip_address(str(bind_raw).strip())
+                )  # 非 str 也尝试转字符串解析
+        except Exception:
+            logger.warning(
+                f"network_security.bind_interface 无效，回退为 127.0.0.1: {bind_raw}"
+            )
+            bind = "127.0.0.1"
+
+        def _dedupe_keep_order(items: list[str]) -> list[str]:
+            seen: set[str] = set()
+            out: list[str] = []
+            for x in items:
+                if x in seen:
+                    continue
+                seen.add(x)
+                out.append(x)
+            return out
+
+        # allowed_networks：支持 CIDR 与单个 IP；空列表回退到本地回环
+        allowed_raw = raw.get(
+            "allowed_networks", default_ns.get("allowed_networks", [])
+        )
+        allowed_list: list[str] = []
+        if isinstance(allowed_raw, list):
+            for item in allowed_raw:
+                if not isinstance(item, str):
+                    continue
+                t = item.strip()
+                if not t:
+                    continue
+                try:
+                    if "/" in t:
+                        allowed_list.append(str(ip_network(t, strict=False)))
+                    else:
+                        allowed_list.append(str(ip_address(t)))
+                except Exception:
+                    logger.warning(f"allowed_networks 无效条目已忽略: {t}")
+        else:
+            logger.warning("allowed_networks 不是列表，使用默认值")
+            allowed_list = []
+
+        allowed_list = _dedupe_keep_order(allowed_list)
+        if not allowed_list:
+            # 至少包含回环，避免误配后直接裸奔（或全部拒绝导致不可用）
+            allowed_list = ["127.0.0.0/8", "::1/128"]
+
+        # blocked_ips：仅接受单个 IP（不接受 CIDR），非法条目丢弃
+        blocked_raw = raw.get("blocked_ips", default_ns.get("blocked_ips", []))
+        blocked_list: list[str] = []
+        if isinstance(blocked_raw, list):
+            for item in blocked_raw:
+                if not isinstance(item, str):
+                    continue
+                t = item.strip()
+                if not t:
+                    continue
+                try:
+                    blocked_list.append(str(ip_address(t)))
+                except AddressValueError:
+                    logger.warning(f"blocked_ips 无效条目已忽略: {t}")
+                except Exception:
+                    logger.warning(f"blocked_ips 无效条目已忽略: {t}")
+        else:
+            logger.warning("blocked_ips 不是列表，使用默认值")
+            blocked_list = []
+
+        blocked_list = _dedupe_keep_order(blocked_list)
+
+        access_enabled = self._coerce_bool(
+            raw.get(
+                "access_control_enabled",
+                raw.get(
+                    "enable_access_control",
+                    default_ns.get("access_control_enabled", True),
+                ),
+            ),
+            default=True,
+        )
+
+        return {
+            "bind_interface": bind,
+            "allowed_networks": allowed_list,
+            "blocked_ips": blocked_list,
+            "access_control_enabled": access_enabled,
+        }
+
+    def _save_network_security_config_immediate(self, validated_ns: Dict[str, Any]):
+        """将 network_security 写回配置文件（不走通用保存逻辑，避免被排除）"""
+        # 确保配置文件存在
+        try:
+            if not self.config_file.exists():
+                self._create_default_config_file()
+        except Exception:
+            # 创建失败则继续尝试写入（后续会抛出）
+            pass
+
+        # 读取当前文件内容（以磁盘为准），避免基于陈旧 _original_content 打补丁
+        content = ""
+        try:
+            if self.config_file.exists():
+                content = self.config_file.read_text(encoding="utf-8")
+        except Exception as e:
+            raise RuntimeError(f"读取配置文件失败: {e}") from e
+
+        # JSON：直接整体写回
+        if self.config_file.suffix.lower() != ".jsonc":
+            try:
+                full = json.loads(content) if content.strip() else {}
+                if not isinstance(full, dict):
+                    full = {}
+            except Exception:
+                full = {}
+            full["network_security"] = validated_ns
+            new_content = json.dumps(full, indent=2, ensure_ascii=False)
+            try:
+                self.config_file.write_text(new_content, encoding="utf-8")
+            except Exception as e:
+                raise RuntimeError(f"写入配置文件失败: {e}") from e
+            with self._lock:
+                self._original_content = new_content
+            self._update_file_mtime()
+            return
+
+        # JSONC：尽量保留注释/格式，仅更新 network_security 段
+        base_content = content
+        if not base_content and self._original_content:
+            base_content = self._original_content
+        if not base_content:
+            # 兜底：无原始内容时，退化为纯 JSON 写回（会丢注释）
+            full = {"network_security": validated_ns}
+            new_content = json.dumps(full, indent=2, ensure_ascii=False)
+            try:
+                self.config_file.write_text(new_content, encoding="utf-8")
+            except Exception as e:
+                raise RuntimeError(f"写入配置文件失败: {e}") from e
+            with self._lock:
+                self._original_content = new_content
+            self._update_file_mtime()
+            return
+
+        lines = base_content.split("\n")
+        result_lines = lines.copy()
+        ns_range = self._find_network_security_range(lines)
+
+        if ns_range[0] == -1:
+            # 极端兜底：找不到段落时，退化为纯 JSON 写回（会丢注释）
+            try:
+                full_cfg = parse_jsonc(base_content)
+                if not isinstance(full_cfg, dict):
+                    full_cfg = {}
+            except Exception:
+                full_cfg = {}
+            full_cfg["network_security"] = validated_ns
+            new_content = json.dumps(full_cfg, indent=2, ensure_ascii=False)
+            try:
+                self.config_file.write_text(new_content, encoding="utf-8")
+            except Exception as e:
+                raise RuntimeError(f"写入配置文件失败: {e}") from e
+            with self._lock:
+                self._original_content = new_content
+            self._update_file_mtime()
+            return
+
+        self._jsonc_process_config_section_only_in_range(
+            validated_ns, result_lines, ns_range
+        )
+        new_content = "\n".join(result_lines)
+        try:
+            self.config_file.write_text(new_content, encoding="utf-8")
+        except Exception as e:
+            raise RuntimeError(f"写入配置文件失败: {e}") from e
+        with self._lock:
+            self._original_content = new_content
+        self._update_file_mtime()
+
+    def _jsonc_process_config_section_only_in_range(
+        self, config_dict: Dict[str, Any], result_lines: list, ns_range: tuple
+    ):
+        """仅在 network_security 段范围内递归更新 key/value（避免误改其他段同名键）"""
+        start_line, end_line = ns_range
+        for key, value in config_dict.items():
+            if isinstance(value, dict):
+                self._jsonc_process_config_section_only_in_range(
+                    value, result_lines, ns_range
+                )
+                continue
+
+            for i, line in enumerate(result_lines):
+                if i < start_line or i > end_line:
+                    continue
+                if (
+                    f'"{key}"' in line
+                    and not line.strip().startswith("//")
+                    and ":" in line
+                    and line.strip().find(f'"{key}"') < line.strip().find(":")
+                ):
+                    current_value = self._extract_current_value(result_lines, i, key)
+                    if current_value != value:
+                        if isinstance(value, list):
+                            a_start, a_end = self._jsonc_find_array_range(
+                                result_lines, i, key
+                            )
+                            new_array_lines = self._jsonc_update_array_block(
+                                result_lines, a_start, a_end, key, value
+                            )
+                            result_lines[a_start : a_end + 1] = new_array_lines
+                        else:
+                            result_lines[i] = self._jsonc_update_simple_value(
+                                line, key, value
+                            )
+                    break
+
+    def set_network_security_config(
+        self, config: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True
+    ):
+        """设置并持久化 network_security（强校验 + 单一路径写回）"""
+        validated = self._validate_network_security_config(config)
+        if save:
+            self._save_network_security_config_immediate(validated)
+        with self._lock:
+            self._network_security_cache = validated
+            self._network_security_cache_time = time.time()
+        self.invalidate_all_caches()
+        if trigger_callbacks:
+            try:
+                self._trigger_config_change_callbacks()
+            except Exception as e:
+                logger.debug(f"触发配置变更回调失败（忽略）: {e}")
+
+    def update_network_security_config(
+        self, updates: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True
+    ):
+        """增量更新并持久化 network_security（只允许白名单字段）"""
+        if not isinstance(updates, dict):
+            raise ValueError("network_security 更新必须是 dict")
+
+        # 当前配置（已归一化）
+        current = self.get_network_security_config()
+        merged = dict(current)
+
+        # 仅允许更新白名单字段（兼容旧名）
+        for k, v in updates.items():
+            if k in ("bind_interface", "allowed_networks", "blocked_ips"):
+                merged[k] = v
+            elif k in ("access_control_enabled", "enable_access_control"):
+                merged["access_control_enabled"] = v
+            else:
+                logger.warning(f"忽略未知的 network_security 字段: {k}")
+
+        validated = self._validate_network_security_config(merged)
+        if save:
+            self._save_network_security_config_immediate(validated)
+
+        with self._lock:
+            self._network_security_cache = validated
+            self._network_security_cache_time = time.time()
+
+        self.invalidate_all_caches()
+        if trigger_callbacks:
+            try:
+                self._trigger_config_change_callbacks()
+            except Exception as e:
+                logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
     def get_network_security_config(self) -> Dict[str, Any]:
         """从文件读取 network_security 配置（带 30 秒缓存，失败返回默认配置）"""
@@ -1473,9 +1835,10 @@ class ConfigManager:
             if not self.config_file.exists():
                 # 如果配置文件不存在，返回默认的 network_security 配置
                 default_config = self._get_default_config()
-                result = cast(
+                raw_result = cast(
                     Dict[str, Any], default_config.get("network_security", {})
                 )
+                result = self._validate_network_security_config(raw_result)
                 # 缓存默认配置
                 with self._lock:
                     self._network_security_cache = result
@@ -1506,13 +1869,16 @@ class ConfigManager:
                 )
                 logger.debug("配置文件中未找到network_security，使用默认配置")
 
+            # 强校验 + 归一化（与文档/模板对齐，兼容旧字段）
+            validated = self._validate_network_security_config(network_security_config)
+
             # 【性能优化】更新缓存
             with self._lock:
-                self._network_security_cache = network_security_config
+                self._network_security_cache = validated
                 self._network_security_cache_time = current_time
                 logger.debug("已更新 network_security 配置缓存")
 
-            return network_security_config
+            return validated
 
         except Exception as e:
             logger.error(f"读取 network_security 配置失败: {e}", exc_info=True)
@@ -1527,7 +1893,10 @@ class ConfigManager:
 
             # 返回默认的 network_security 配置
             default_config = self._get_default_config()
-            return cast(Dict[str, Any], default_config.get("network_security", {}))
+            raw_default = cast(
+                Dict[str, Any], default_config.get("network_security", {})
+            )
+            return self._validate_network_security_config(raw_default)
 
     # ========================================================================
     # 类型安全的配置获取方法
@@ -1764,7 +2133,7 @@ class ConfigManager:
             export_data = {
                 "exported_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "version": "1.0",
-                "config": self._config.copy(),
+                "config": self._exclude_network_security(self._config.copy()),
             }
 
             if include_network_security:
@@ -1782,29 +2151,66 @@ class ConfigManager:
                 logger.error("导入失败：配置数据必须是字典格式")
                 return False
 
-            # 提取配置（支持两种格式）
+            # 提取配置（支持两种格式），并将 network_security 单独处理（通用保存逻辑会排除该段）
+            actual_config: Dict[str, Any]
+            network_security: Optional[Dict[str, Any]] = None
+
             if "config" in config_data:
-                # 从 export_config 导出的格式
-                actual_config = config_data["config"]
+                # 从 export_config 导出的格式：{config: {...}, network_security?: {...}}
+                actual_config = config_data.get("config")  # type: ignore[assignment]
+                network_security_raw = config_data.get("network_security")
+                if isinstance(network_security_raw, dict):
+                    network_security = cast(Dict[str, Any], network_security_raw)
             else:
-                # 直接的配置字典
+                # 直接的配置字典：{..., network_security?: {...}}
                 actual_config = config_data
+                network_security_raw = actual_config.get("network_security")
+                if isinstance(network_security_raw, dict):
+                    network_security = cast(Dict[str, Any], network_security_raw)
+
+            if not isinstance(actual_config, dict):
+                logger.error("导入失败：配置数据必须是字典格式（config 字段）")
+                return False
+
+            # 兼容：若 network_security 仅存在于 config 内部，也应被识别并单独持久化
+            if network_security is None:
+                ns_in_config = actual_config.get("network_security")
+                if isinstance(ns_in_config, dict):
+                    network_security = cast(Dict[str, Any], ns_in_config)
 
             with self._lock:
                 if merge:
                     # 合并模式：深度合并配置
-                    self._deep_merge(self._config, actual_config)
+                    # 兜底：避免把 network_security 合并进内存配置
+                    tmp = dict(actual_config)
+                    tmp.pop("network_security", None)
+                    self._deep_merge(self._config, tmp)
                     logger.info("配置已合并导入")
                 else:
                     # 覆盖模式：完全替换
-                    self._config = actual_config.copy()
+                    tmp = dict(actual_config)
+                    tmp.pop("network_security", None)
+                    self._config = tmp.copy()
                     logger.info("配置已覆盖导入")
 
                 if save:
-                    self._pending_changes.update(actual_config)
+                    # 仅保存非 network_security 段（JSONC 保存会排除 network_security）
+                    tmp = dict(actual_config)
+                    tmp.pop("network_security", None)
+                    self._pending_changes.update(tmp)
                     self._save_config()
 
-            # 触发配置变更回调
+            # 单独持久化 network_security（如果存在）
+            if network_security is not None:
+                try:
+                    self.set_network_security_config(
+                        network_security, save=save, trigger_callbacks=False
+                    )
+                except Exception as e:
+                    logger.error(f"导入 network_security 失败: {e}", exc_info=True)
+                    return False
+
+            # 触发配置变更回调（统一触发一次）
             self._trigger_config_change_callbacks()
 
             return True

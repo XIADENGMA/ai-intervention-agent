@@ -83,7 +83,7 @@ class NotificationConfig:
     # - SystemProvider(plyer) 属于可选依赖，默认关闭，启用后在支持的平台尝试发送桌面通知
     # - macos_native_enabled 当前主要由 VSCode 插件侧使用；Python 核心侧保留字段用于配置一致性
     system_enabled: bool = False  # 启用 plyer 系统通知（可选）
-    macos_native_enabled: bool = False  # macOS 原生通知开关（插件侧）
+    macos_native_enabled: bool = True  # macOS 原生通知开关（插件侧）
 
     # ==================== 边界常量 ====================
     SOUND_VOLUME_MIN: float = 0.0
@@ -213,7 +213,7 @@ class NotificationConfig:
             bark_timeout=bark_timeout,
             system_enabled=safe_bool(notification_config.get("system_enabled"), False),
             macos_native_enabled=safe_bool(
-                notification_config.get("macos_native_enabled"), False
+                notification_config.get("macos_native_enabled"), True
             ),
         )
 
@@ -912,7 +912,7 @@ class NotificationManager:
                     notification_config.get("system_enabled"), False
                 )
                 self.config.macos_native_enabled = safe_bool(
-                    notification_config.get("macos_native_enabled"), False
+                    notification_config.get("macos_native_enabled"), True
                 )
 
                 # 触发一次配置自校验（边界收敛/枚举修正）

@@ -26,7 +26,9 @@ class VSCodeApiNotificationProvider {
     const severity = toNonEmptyString(md.severity, 'info') // 严重级别：info | warn | error
     const timeoutMsRaw = md && md.timeoutMs
     const timeoutMs =
-      typeof timeoutMsRaw === 'number' && Number.isFinite(timeoutMsRaw) ? Math.max(0, Math.floor(timeoutMsRaw)) : 3000
+      typeof timeoutMsRaw === 'number' && Number.isFinite(timeoutMsRaw)
+        ? Math.max(0, Math.floor(timeoutMsRaw))
+        : 3000
 
     if (presentation === 'toast') {
       const text = `${title}: ${message}`
@@ -63,15 +65,62 @@ class AppleScriptNotificationProvider {
     this._logger = options && options.logger ? options.logger : null
     this._executor = options && options.executor ? options.executor : null
     this._vscode = options && options.vscodeApi ? options.vscodeApi : vscode
+    this._hostBundleId = ''
+    this._hostBundleIdResolved = false
+    this._hostBundleIdResolvePromise = null
   }
 
-  _isAppleScriptEnabled() {
+  _looksLikeBundleId(value) {
     try {
-      const cfg = this._vscode.workspace.getConfiguration('ai-intervention-agent')
-      return !!cfg.get('enableAppleScript', false)
+      const s = (value ?? '').toString().trim()
+      if (!s) return false
+      // 仅允许常见 bundle id 字符，避免把异常输出写入环境变量
+      return /^[A-Za-z0-9.-]+$/.test(s)
     } catch {
       return false
     }
+  }
+
+  async _resolveHostBundleId() {
+    if (this._hostBundleIdResolved) return this._hostBundleId
+    if (this._hostBundleIdResolvePromise) return this._hostBundleIdResolvePromise
+
+    // 仅在 macOS 尝试：其它平台无意义（且可能在测试环境中没有对应应用）
+    if (process.platform !== 'darwin') {
+      this._hostBundleIdResolved = true
+      this._hostBundleId = ''
+      return ''
+    }
+
+    const vs = this._vscode
+    const appName =
+      vs && vs.env && typeof vs.env.appName === 'string' && vs.env.appName.trim()
+        ? String(vs.env.appName).trim()
+        : ''
+    if (!appName || !this._executor || typeof this._executor.runAppleScript !== 'function') {
+      this._hostBundleIdResolved = true
+      this._hostBundleId = ''
+      return ''
+    }
+
+    const script = `id of application ${toAppleScriptStringLiteral(appName)}`
+    this._hostBundleIdResolvePromise = Promise.resolve()
+      .then(() => this._executor.runAppleScript(script))
+      .then(out => {
+        const id = (out ?? '').toString().trim()
+        this._hostBundleId = this._looksLikeBundleId(id) ? id : ''
+        this._hostBundleIdResolved = true
+        return this._hostBundleId
+      })
+      .catch(() => {
+        this._hostBundleId = ''
+        this._hostBundleIdResolved = true
+        return ''
+      })
+      .finally(() => {
+        this._hostBundleIdResolvePromise = null
+      })
+    return this._hostBundleIdResolvePromise
   }
 
   async send(event) {
@@ -83,26 +132,17 @@ class AppleScriptNotificationProvider {
     const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
     const isTest = !!(md && md.isTest)
 
-    if (!this._isAppleScriptEnabled()) {
-      const tip = 'AppleScript 执行未启用：请在设置中打开 ai-intervention-agent.enableAppleScript'
-      if (isTest && vs && vs.window && typeof vs.window.showErrorMessage === 'function') {
-        vs.window.showErrorMessage(tip)
-      }
-      try {
-        if (this._logger && typeof this._logger.warn === 'function') {
-          this._logger.warn(tip)
-        }
-      } catch {
-        // 忽略：日志系统异常不应影响通知流程
-      }
-      return false
-    }
-
     // 非测试通知：非 macOS 平台直接跳过，避免无意义的 AppleScript 调用
-    // 测试通知（isTest=true）用于验证“热开关”行为：允许注入的 executor 在任意平台被调用
+    // 测试通知（isTest=true）：用于 UI/单测校验，可允许注入的 executor 在任意平台被调用
     if (!isTest && process.platform !== 'darwin') {
       try {
-        if (this._logger && typeof this._logger.debug === 'function') {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'notify.macos_native.skipped',
+            { reason: 'non_macos', platform: process.platform },
+            { level: 'debug' }
+          )
+        } else if (this._logger && typeof this._logger.debug === 'function') {
           this._logger.debug('忽略原生通知：非 macOS 平台')
         }
       } catch {
@@ -120,7 +160,20 @@ class AppleScriptNotificationProvider {
 
     const script = `display notification ${toAppleScriptStringLiteral(message)} with title ${toAppleScriptStringLiteral(title)}`
     try {
-      await this._executor.runAppleScript(script)
+      // 尝试将通知“归属”到宿主应用（VS Code / Cursor），以改善通知点击行为（避免打开脚本编辑器）
+      // 说明：AppleScript 本身不支持通知点击回调；这里的目标仅是让点击激活宿主应用或至少不再打开脚本编辑器。
+      // 通过为 osascript 进程注入 __CFBundleIdentifier，可能让系统把通知归属到指定 bundle id。
+      let runOptions = undefined
+      try {
+        const bundleId = await this._resolveHostBundleId()
+        if (bundleId) {
+          runOptions = { env: { __CFBundleIdentifier: bundleId } }
+        }
+      } catch {
+        runOptions = undefined
+      }
+
+      await this._executor.runAppleScript(script, runOptions)
       return true
     } catch (e) {
       const code = e && e.code ? String(e.code) : ''
@@ -135,7 +188,13 @@ class AppleScriptNotificationProvider {
         vs.window.showErrorMessage(msg)
       }
       try {
-        if (this._logger && typeof this._logger.warn === 'function') {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'notify.macos_native.fail',
+            { code: code || 'unknown', error: raw || '' },
+            { level: 'warn' }
+          )
+        } else if (this._logger && typeof this._logger.warn === 'function') {
           this._logger.warn(`原生通知失败 code=${code || 'unknown'} msg=${raw || ''}`.trim())
         }
       } catch {
@@ -150,4 +209,3 @@ module.exports = {
   VSCodeApiNotificationProvider,
   AppleScriptNotificationProvider
 }
-

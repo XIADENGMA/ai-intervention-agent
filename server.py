@@ -1074,31 +1074,79 @@ def update_web_content(
     session = create_http_session(config)
 
     try:
-        logger.debug(f"更新 Web 内容: {url} (task_id: {task_id})")
+        logger.debug(
+            f"更新 Web 内容: {url} (task_id: {task_id}, prompt_len: {len(cleaned_summary)}, options: {len(cleaned_options or [])})"
+        )
         response = session.post(url, json=data, timeout=config.timeout)
 
         if response.status_code == 200:
-            logger.info(f"内容已更新: {cleaned_summary[:50]}... (task_id: {task_id})")
-
-            # 验证更新是否成功
+            # 200 也必须满足接口契约：返回 JSON 且 status=success
             try:
                 result = response.json()
-                if result.get("status") != "success":
-                    logger.warning(f"更新响应状态异常: {result}")
             except ValueError:
-                logger.warning("更新响应不是有效的 JSON 格式")
+                logger.error("更新响应不是有效的 JSON 格式（200）")
+                raise Exception("更新内容失败：响应不是有效的 JSON") from None
+
+            if not isinstance(result, dict):
+                logger.error(f"更新响应类型异常（200）: {type(result)}")
+                raise Exception("更新内容失败：响应格式异常") from None
+
+            if result.get("status") != "success":
+                err = result.get("error") or "unknown_error"
+                msg = result.get("message") or ""
+                logger.error(
+                    f"更新响应 status!=success（200）: error={err} msg_len={len(str(msg))} task_id={task_id}"
+                )
+                raise Exception(
+                    f"更新内容失败：{err}{(': ' + str(msg)) if msg else ''}"
+                ) from None
+
+            logger.info(
+                f"内容已更新 (task_id: {task_id}, prompt_len: {len(cleaned_summary)}, options: {len(cleaned_options or [])})"
+            )
 
         elif response.status_code == 400:
-            logger.error(f"更新请求参数错误: {response.text}")
-            raise Exception(f"更新内容失败：请求参数不合法: {response.text}")
+            # 尽量解析结构化错误
+            err_text = (response.text or "").strip()
+            try:
+                result = response.json()
+                if isinstance(result, dict):
+                    err = result.get("error") or "bad_request"
+                    msg = result.get("message") or ""
+                    raise Exception(
+                        f"更新内容失败：请求参数不合法（{err}）{(': ' + str(msg)) if msg else ''}"
+                    ) from None
+            except ValueError:
+                pass
+            logger.error(f"更新请求参数错误: {err_text[:500]}")
+            raise Exception(f"更新内容失败：请求参数不合法: {err_text[:500]}") from None
+        elif response.status_code == 429:
+            retry_after = response.headers.get("Retry-After", "").strip()
+            err_text = (response.text or "").strip()
+            logger.warning(
+                f"更新请求被限流（429） task_id={task_id} retry_after={retry_after or '-'}"
+            )
+            hint = f"（Retry-After={retry_after}）" if retry_after else ""
+            raise Exception(
+                f"更新内容失败：请求被限流，请稍后重试{hint}{(': ' + err_text[:200]) if err_text else ''}"
+            ) from None
         elif response.status_code == 404:
             logger.error("更新 API 端点不存在，可能服务未正确启动")
             raise Exception(
                 "更新接口不可用（/api/update 未找到）。请确认 Web UI 服务已启动且版本匹配。"
             )
+        elif 500 <= response.status_code <= 599:
+            err_text = (response.text or "").strip()
+            logger.error(f"更新内容失败（服务端错误）HTTP {response.status_code}")
+            raise Exception(
+                f"更新内容失败：服务端错误（HTTP {response.status_code}）{(': ' + err_text[:200]) if err_text else ''}"
+            ) from None
         else:
+            err_text = (response.text or "").strip()
             logger.error(f"更新内容失败，HTTP 状态码: {response.status_code}")
-            raise Exception(f"更新内容失败，状态码: {response.status_code}")
+            raise Exception(
+                f"更新内容失败，状态码: {response.status_code}{(': ' + err_text[:200]) if err_text else ''}"
+            ) from None
 
     except requests.exceptions.Timeout:
         logger.error(f"更新内容超时 ({config.timeout}秒)", exc_info=True)

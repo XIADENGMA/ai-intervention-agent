@@ -5,18 +5,17 @@ This document describes the recommended development and release workflow for thi
 ### Web UI / real-machine verification
 
 - `uv run python test.py --port 8080 --verbose --thread-timeout 0`
-- Open: `http://0.0.0.0:8080` (LAN: `http://ai.local:8080`)
+- Open (local): `http://127.0.0.1:8080` (LAN: `http://ai.local:8080` or `http://<LAN-IP>:8080`)
 - VSCode extension (optional): set `ai-intervention-agent.serverUrl` to your server URL (e.g. `http://ai.local:8080`)
 
 ### Pre-commit (Local CI Gate)
 
-- `uv sync --all-groups`
-- `uv run ruff format .`
-- `uv run ruff check .`
-- `uv run ty check .`
-- `uv run pytest -q`
-- `uv run python scripts/minify_assets.py --check` (if it fails: `uv run python scripts/minify_assets.py`)
+- One-command gate (recommended): `uv run python scripts/ci_gate.py`
+  - Default is **local mode**: auto-formats (`ruff format`) and runs ruff/ty/pytest/minify
+  - CI mode (check-only): `uv run python scripts/ci_gate.py --ci --with-coverage`
+  - Include VSCode checks: `uv run python scripts/ci_gate.py --with-vscode`
 - VSCode extension: `npm run vscode:check` (Linux/headless: `xvfb-run -a npm run vscode:check`)
+  - If you use `fnm` and `node` is unavailable in non-interactive shells: `fnm exec --using v24.14.0 -- npm run vscode:check`
 
 ### Release (tag triggers GitHub Actions)
 

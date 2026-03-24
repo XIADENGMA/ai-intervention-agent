@@ -60,27 +60,12 @@ jobs:
             uv.lock
             pyproject.toml
 
-      - name: 同步依赖（含 dev 组，严格使用 uv.lock）
-        run: uv sync --all-groups --frozen
-
       - name: 版本一致性检查（bump_version.py --check）
         if: matrix.python-version == '3.11'
         run: uv run python scripts/bump_version.py --check
 
-      - name: Ruff（Lint）
-        run: uv run ruff check .
-
-      - name: Ruff（Format Check）
-        run: uv run ruff format --check .
-
-      - name: Ty（Type Check）
-        run: uv run ty check .
-
-      - name: Pytest（含覆盖率）
-        run: uv run pytest -q --cov=. --cov-report=xml --cov-report=term-missing
-
-      - name: 生成静态资源压缩文件（.min 文件）
-        run: uv run python scripts/minify_assets.py --force
+      - name: Python CI Gate（ruff/ty/pytest/coverage/minify）
+        run: uv run python scripts/ci_gate.py --ci --with-coverage
 
       - name: 上传覆盖率报告（coverage.xml）
         if: always() && matrix.python-version == '3.11'

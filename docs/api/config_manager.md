@@ -62,6 +62,10 @@
 
 ##### `get_network_security_config(self) -> Dict[str, Any]`
 
+##### `set_network_security_config(self, config: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True)`
+
+##### `update_network_security_config(self, updates: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True)`
+
 ##### `get_typed(self, key: str, default: Any, value_type: type, min_val: Optional[Any] = None, max_val: Optional[Any] = None) -> Any`
 
 ##### `get_int(self, key: str, default: int = 0, min_val: Optional[int] = None, max_val: Optional[int] = None) -> int`

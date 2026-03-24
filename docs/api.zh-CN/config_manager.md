@@ -153,6 +153,24 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 从文件读取 network_security 配置（带 30 秒缓存，失败返回默认配置）
 
+##### `set_network_security_config(self, config: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True)`
+
+设置并持久化 `network_security`（强校验 + 归一化）。
+
+说明：
+- 会通过 **network_security 专用写回路径**更新配置文件的 `network_security` 段（尽量保留 JSONC 注释/格式，必要时回退为重写 JSON）。
+- 默认会触发配置变更回调；在 `import_config()` 等批量导入场景可用 `trigger_callbacks=False` 避免重复触发。
+
+##### `update_network_security_config(self, updates: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True)`
+
+增量更新并持久化 `network_security`（只允许白名单字段）。
+
+白名单字段：
+- `bind_interface`
+- `allowed_networks`
+- `blocked_ips`
+- `access_control_enabled`（兼容旧名 `enable_access_control`）
+
 ##### `get_typed(self, key: str, default: Any, value_type: type, min_val: Optional[Any] = None, max_val: Optional[Any] = None) -> Any`
 
 获取配置值，带类型转换和边界验证

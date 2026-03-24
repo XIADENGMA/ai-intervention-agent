@@ -36,22 +36,13 @@ suite('Notification Providers (VSCode)', () => {
     assert.strictEqual(lastTimeout, 1234)
   })
 
-  test('AppleScriptNotificationProvider 应遵守 enableAppleScript 热开关', async () => {
+  test('AppleScriptNotificationProvider 不应依赖 enableAppleScript（原生通知默认开启）', async () => {
     const ext = getExtension()
     const providersPath = path.join(ext.extensionPath, 'notification-providers.js')
     const { AppleScriptNotificationProvider } = require(providersPath)
 
-    let enabled = false
     let shownError = ''
     const stubVscode = {
-      workspace: {
-        getConfiguration: () => ({
-          get: (key, def) => {
-            if (key === 'enableAppleScript') return enabled
-            return def
-          }
-        })
-      },
       window: {
         showErrorMessage: msg => {
           shownError = String(msg)
@@ -69,26 +60,14 @@ suite('Notification Providers (VSCode)', () => {
 
     const provider = new AppleScriptNotificationProvider({ executor, vscodeApi: stubVscode })
 
-    // 未启用：不应调用 executor；isTest=true 时应返回提示
-    const r1 = await provider.send({
+    // isTest=true：允许在任意平台注入 executor 做行为验证
+    const ok = await provider.send({
       title: 't',
       message: 'm',
       metadata: { isTest: true }
     })
-    assert.strictEqual(r1, false)
-    assert.strictEqual(called, 0)
-    assert.ok(shownError.includes('enableAppleScript'))
-
-    // 热开关开启后：应立即生效并触发 executor
-    enabled = true
-    shownError = ''
-    const r2 = await provider.send({
-      title: 't',
-      message: 'm',
-      metadata: { isTest: true }
-    })
-    assert.strictEqual(r2, true)
+    assert.strictEqual(ok, true)
     assert.strictEqual(called, 1)
+    assert.strictEqual(shownError, '')
   })
 })
-

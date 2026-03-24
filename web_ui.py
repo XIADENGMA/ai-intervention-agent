@@ -1882,55 +1882,182 @@ class WebFeedbackUI:
                 - 仅适用于单任务模式，多任务模式请使用TaskQueue API
                 - 更新后前端需重新渲染内容
             """
-            raw = request.get_json(silent=True)
-            data: dict[str, Any] = raw if isinstance(raw, dict) else {}
-            new_prompt = data.get("prompt", "")
-            new_options = data.get("predefined_options", [])
-            new_task_id = data.get("task_id")
+            # ==============================
+            # 输入验证（接口一致性/健壮性）
+            # ==============================
+            try:
+                raw = request.get_json(silent=False)
+            except Exception:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "error": "invalid_json",
+                            "message": "请求体必须是 JSON（object）",
+                        }
+                    ),
+                    400,
+                )
 
-            # 从配置文件读取默认 auto_resubmit_timeout
-            config_mgr = get_config()
-            feedback_config = config_mgr.get_section("feedback")
-            # 【命名优化】使用新名称，保持向后兼容
-            default_timeout = feedback_config.get(
-                "frontend_countdown",  # 新名称
-                feedback_config.get(
-                    "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
-                ),  # 旧名称回退
-            )
-            new_auto_resubmit_timeout = data.get(
-                "auto_resubmit_timeout", default_timeout
-            )
-            # 【优化】使用统一的验证函数，同时验证最小值和最大值
-            new_auto_resubmit_timeout = validate_auto_resubmit_timeout(
-                int(new_auto_resubmit_timeout)
-            )
+            if not isinstance(raw, dict):
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "error": "invalid_body",
+                            "message": "请求体必须是 JSON object",
+                        }
+                    ),
+                    400,
+                )
 
-            # 更新内容
-            self.current_prompt = new_prompt
-            self.current_options = new_options if new_options is not None else []
-            self.current_task_id = new_task_id
-            self.current_auto_resubmit_timeout = new_auto_resubmit_timeout
-            # 记录是否显式指定（用于配置热更新：显式指定则不随全局配置变动）
-            self._single_task_timeout_explicit = "auto_resubmit_timeout" in data
-            self.has_content = bool(new_prompt)
-            # 重置反馈结果
-            self.feedback_result = None
+            data: dict[str, Any] = raw
 
-            return jsonify(
-                {
-                    "status": "success",
-                    "message": "内容已更新",
-                    "prompt": self.current_prompt,
-                    "prompt_html": self.render_markdown(self.current_prompt)
-                    if self.has_content
-                    else "",
-                    "predefined_options": self.current_options,
-                    "task_id": self.current_task_id,
-                    "auto_resubmit_timeout": self.current_auto_resubmit_timeout,
-                    "has_content": self.has_content,
-                }
-            )
+            # prompt（允许空字符串用于清空，但必须是字符串类型）
+            if "prompt" not in data:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "error": "missing_field",
+                            "message": "缺少字段：prompt",
+                        }
+                    ),
+                    400,
+                )
+            new_prompt_raw = data.get("prompt")
+            if not isinstance(new_prompt_raw, str):
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "error": "invalid_field_type",
+                            "message": "字段 prompt 必须是字符串",
+                        }
+                    ),
+                    400,
+                )
+            new_prompt = new_prompt_raw
+
+            # 限制 prompt 长度，避免大输入导致内存/渲染压力
+            try:
+                if len(new_prompt) > 10000:
+                    logger.warning(
+                        f"/api/update prompt 过长：{len(new_prompt)}，将截断到 10000"
+                    )
+                    new_prompt = new_prompt[:10000] + "..."
+            except Exception:
+                # 极端情况下 len() 异常：降级为空字符串
+                new_prompt = ""
+
+            # predefined_options（必须为 list；元素以 str 为主，非 str 直接忽略）
+            new_options_raw = data.get("predefined_options", [])
+            if new_options_raw is None:
+                new_options_raw = []
+            if not isinstance(new_options_raw, list):
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "error": "invalid_field_type",
+                            "message": "字段 predefined_options 必须是数组",
+                        }
+                    ),
+                    400,
+                )
+
+            new_options: list[str] = []
+            for opt in new_options_raw:
+                if not isinstance(opt, str):
+                    continue
+                t = opt.strip()
+                if not t:
+                    continue
+                if len(t) > 500:
+                    new_options.append(t[:500] + "...")
+                else:
+                    new_options.append(t)
+
+            # task_id（可选；非字符串时转字符串；空串视为 None）
+            new_task_id_raw = data.get("task_id")
+            if new_task_id_raw is None:
+                new_task_id = None
+            elif isinstance(new_task_id_raw, str):
+                t = new_task_id_raw.strip()
+                new_task_id = t if t else None
+            else:
+                t = str(new_task_id_raw).strip()
+                new_task_id = t if t else None
+
+            # auto_resubmit_timeout（可选；显式传入但无法解析 → 400；否则使用配置默认值）
+            default_timeout = _get_default_auto_resubmit_timeout_from_config()
+            timeout_explicit = "auto_resubmit_timeout" in data
+            if timeout_explicit:
+                raw_timeout = data.get("auto_resubmit_timeout")
+                try:
+                    timeout_int = int(raw_timeout)
+                except Exception:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "error": "invalid_field_value",
+                                "message": "字段 auto_resubmit_timeout 必须是整数（秒）",
+                            }
+                        ),
+                        400,
+                    )
+            else:
+                timeout_int = default_timeout
+
+            new_auto_resubmit_timeout = validate_auto_resubmit_timeout(timeout_int)
+
+            try:
+                # 更新内容
+                self.current_prompt = new_prompt
+                self.current_options = new_options
+                self.current_task_id = new_task_id
+                self.current_auto_resubmit_timeout = new_auto_resubmit_timeout
+                # 记录是否显式指定（用于配置热更新：显式指定则不随全局配置变动）
+                self._single_task_timeout_explicit = timeout_explicit
+                self.has_content = bool(new_prompt.strip())
+                # 重置反馈结果
+                self.feedback_result = None
+
+                prompt_html = ""
+                if self.has_content:
+                    try:
+                        prompt_html = self.render_markdown(self.current_prompt)
+                    except Exception as e:
+                        logger.warning(
+                            f"/api/update prompt 渲染失败: {e}", exc_info=True
+                        )
+                        prompt_html = ""
+
+                return jsonify(
+                    {
+                        "status": "success",
+                        "message": "内容已更新",
+                        "prompt": self.current_prompt,
+                        "prompt_html": prompt_html,
+                        "predefined_options": self.current_options,
+                        "task_id": self.current_task_id,
+                        "auto_resubmit_timeout": self.current_auto_resubmit_timeout,
+                        "has_content": self.has_content,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"/api/update 处理失败: {e}", exc_info=True)
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "error": "internal_error",
+                            "message": "服务器内部错误",
+                        }
+                    ),
+                    500,
+                )
 
         @self.app.route("/api/feedback", methods=["GET"])
         def get_feedback():

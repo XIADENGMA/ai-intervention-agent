@@ -5,18 +5,17 @@
 ### Web UI/交互真机验证
 
 - `uv run python test.py --port 8080 --verbose --thread-timeout 0`
-- 打开：`http://0.0.0.0:8080`（局域网：`http://ai.local:8080`）
+- 打开（本机）：`http://127.0.0.1:8080`（局域网：`http://ai.local:8080` 或 `http://<局域网IP>:8080`）
 - VSCode 插件（可选）：在 VSCode 设置里配置 `ai-intervention-agent.serverUrl` 为你的服务端地址（例如 `http://ai.local:8080`）
 
 ### 提交前（本地 CI Gate）
 
-- `uv sync --all-groups`
-- `uv run ruff format .`
-- `uv run ruff check .`
-- `uv run ty check .`
-- `uv run pytest -q`
-- `uv run python scripts/minify_assets.py --check`（若失败：`uv run python scripts/minify_assets.py`）
+- 一键运行（推荐）：`uv run python scripts/ci_gate.py`
+  - 默认是“本地模式”：会自动格式化（`ruff format`），并运行 ruff/ty/pytest/minify
+  - CI 模式（只检查不改动文件）：`uv run python scripts/ci_gate.py --ci --with-coverage`
+  - 若希望一并跑 VSCode 插件门禁：`uv run python scripts/ci_gate.py --with-vscode`
 - VSCode 插件：`npm run vscode:check`（Linux/headless：`xvfb-run -a npm run vscode:check`）
+  - 若 Node 由 `fnm` 管理且在非交互 shell 下 `node` 不可用，可用：`fnm exec --using v24.14.0 -- npm run vscode:check`
 
 ### 发布（tag 触发 GitHub Actions Release）
 

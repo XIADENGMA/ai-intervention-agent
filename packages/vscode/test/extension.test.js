@@ -147,18 +147,22 @@ suite('Extension Test Suite', () => {
     const { createLogger } = require(loggerPath)
 
     const calls = []
+    const lines = []
     const fakeLogChannel = {
       info: msg => calls.push(['info', msg]),
       warn: msg => calls.push(['warn', msg]),
       error: msg => calls.push(['error', msg]),
-      debug: msg => calls.push(['debug', msg])
+      debug: msg => calls.push(['debug', msg]),
+      appendLine: line => lines.push(String(line))
     }
 
     const logger = createLogger(fakeLogChannel, { component: 't', getLevel: () => 'debug' })
     logger.info('hello')
 
-    assert.strictEqual(calls.length, 1)
-    assert.deepStrictEqual(calls[0], ['info', '[t] hello'])
+    // 方案 A：应优先走 appendLine，避免 LogOutputChannel 的二次过滤（且不应调用 info/warn/error/debug）
+    assert.strictEqual(calls.length, 0)
+    assert.strictEqual(lines.length, 1)
+    assert.ok(/\[INFO\]\s+\[t\]\s+hello/.test(lines[0]))
   })
 
   test('Logger 在普通 OutputChannel 上应保持可读格式', () => {
