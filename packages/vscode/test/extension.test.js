@@ -53,6 +53,8 @@ suite('Extension Test Suite', () => {
     // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
     assert.ok(webviewUi.includes("type: 'tasksStats'"))
     assert.ok(webviewJs.includes("case 'tasksStats':"))
+    // 性能回归点：空闲态应自动降低轮询频率，减少无意义请求
+    assert.ok(webviewUi.includes('POLL_IDLE_MS'))
     // 内存优先：Webview 状态应使用 getState/setState 持久化
     assert.ok(webviewUi.includes('vscode.getState'))
     assert.ok(webviewUi.includes('vscode.setState'))

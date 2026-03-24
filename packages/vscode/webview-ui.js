@@ -603,7 +603,10 @@
   // 【轮询治理】避免重叠请求/页面不可见浪费/错误风暴
   const POLL_BASE_MS = 2000
   const POLL_MAX_MS = 30000
+  // 空闲态（无任务/无内容）降频：减少无意义请求与功耗
+  const POLL_IDLE_MS = 8000
   let pollBackoffMs = POLL_BASE_MS
+  let pollSuggestedDelayMs = null
   let pollAbortController = null
   let pollingInFlight = false
   let pollingVisibilityHandlerInstalled = false
@@ -1313,7 +1316,16 @@
     pollingTimer = setTimeout(
       async () => {
         const ok = await pollAllData('poll')
-        pollBackoffMs = ok ? POLL_BASE_MS : getNextBackoffMs(pollBackoffMs)
+        const suggested =
+          typeof pollSuggestedDelayMs === 'number' && Number.isFinite(pollSuggestedDelayMs)
+            ? Math.max(0, Math.floor(pollSuggestedDelayMs))
+            : null
+        pollSuggestedDelayMs = null
+        if (ok) {
+          pollBackoffMs = suggested !== null ? Math.min(POLL_MAX_MS, suggested) : POLL_BASE_MS
+        } else {
+          pollBackoffMs = getNextBackoffMs(pollBackoffMs)
+        }
         scheduleNextPoll(pollBackoffMs)
       },
       Math.max(0, delayMs)
@@ -1483,6 +1495,14 @@
       }
       hideTabs()
       showNoContent()
+
+      // 空闲态降频（加少量抖动，避免多客户端齐刷刷打点）
+      try {
+        const jitter = Math.round(POLL_IDLE_MS * 0.15 * Math.random())
+        pollSuggestedDelayMs = POLL_IDLE_MS + jitter
+      } catch (e) {
+        pollSuggestedDelayMs = POLL_IDLE_MS
+      }
 
       // success=true 且 tasks=[] 属于正常“无任务”状态，不需要退避
       return !!(tasksData && tasksData.success)
