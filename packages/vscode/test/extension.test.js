@@ -61,8 +61,9 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewJs.includes('data-mathjax-script-url'))
     assert.ok(webviewJs.includes('tex-mml-svg.js'))
 
-    // 安全回归点：script-src 应使用 nonce（不应放开 unsafe-inline）
-    assert.ok(webviewJs.includes("script-src 'nonce-${nonce}'"))
+    // 安全回归点：script-src 应使用 nonce-only（不应再额外放开 ${cspSource} 或 unsafe-inline）
+    assert.ok(webviewJs.includes("script-src 'nonce-${nonce}';"))
+    assert.ok(!webviewJs.includes("script-src 'nonce-${nonce}' ${cspSource};"))
     assert.ok(!webviewJs.includes("script-src 'nonce-${nonce}' 'unsafe-inline'"))
 
     // 安全回归点：style-src 不应放开 unsafe-inline（CSS 应通过外链引入）
