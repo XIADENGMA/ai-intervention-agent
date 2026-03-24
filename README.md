@@ -228,7 +228,7 @@ flowchart TD
 
   subgraph VSCODE_PROC["VS Code extension (Node)"]
     VSCODE_EXT["Extension host<br/>(packages/vscode/extension.js)"]
-    VSCODE_WEBVIEW["Webview frontend<br/>(webview.js + webview-ui.js)"]
+    VSCODE_WEBVIEW["Webview frontend<br/>(webview.js + webview-ui.js<br/>+ webview-notify-core.js + webview-settings-ui.js)"]
     VSCODE_EXT --> VSCODE_WEBVIEW
     VSCODE_WEBVIEW <-->|poll /api/tasks| HTTP_API
     VSCODE_WEBVIEW -->|submit feedback| HTTP_API

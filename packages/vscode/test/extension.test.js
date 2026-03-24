@@ -141,6 +141,12 @@ suite('Extension Test Suite', () => {
 
     // manifest 回归点：Activity Bar 容器 icon 应使用文件路径（不应使用 $(codicon)）
     const extPkgJson = JSON.parse(extPkgText)
+    // manifest 一致性：commands 与 activationEvents 应保持匹配（避免命令触发时未激活扩展）
+    assert.ok(
+      Array.isArray(extPkgJson.activationEvents) &&
+        extPkgJson.activationEvents.includes('onCommand:ai-intervention-agent.helloWorld'),
+      'activationEvents should include helloWorld command'
+    )
     assert.ok(Array.isArray(extPkgJson.files), 'package.json should include files[]')
     assert.ok(extPkgJson.files.includes('webview.css'), 'package.json files[] should include webview.css')
     assert.ok(
