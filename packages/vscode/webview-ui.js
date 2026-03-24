@@ -30,6 +30,10 @@
     __cfgEl && __cfgEl.getAttribute('data-no-content-lottie-json-url')
       ? __cfgEl.getAttribute('data-no-content-lottie-json-url')
       : ''
+  const MATHJAX_SCRIPT_URL =
+    __cfgEl && __cfgEl.getAttribute('data-mathjax-script-url')
+      ? __cfgEl.getAttribute('data-mathjax-script-url')
+      : ''
   const WEBVIEW_HELPERS =
     typeof window !== 'undefined' && window.AIIAWebviewHelpers ? window.AIIAWebviewHelpers : null
   let themeObserver = null
@@ -2904,8 +2908,11 @@
     const script = document.createElement('script')
     script.id = 'MathJax-script'
     script.async = true
-    // 从后端静态资源加载（对齐原始项目路径）
-    script.src = SERVER_URL + '/static/js/tex-mml-chtml.js'
+    // 优先从 VSIX 内置资源加载（更稳定，不依赖后端静态资源是否齐全）
+    // 兜底：若未注入本地资源 URL，则回退到后端静态资源路径（与原始实现兼容）
+    script.src =
+      (MATHJAX_SCRIPT_URL ? String(MATHJAX_SCRIPT_URL) : '') ||
+      (SERVER_URL ? SERVER_URL + '/static/js/tex-mml-chtml.js' : '')
     // 关键：带 nonce 才能通过 CSP
     if (CSP_NONCE) {
       try {

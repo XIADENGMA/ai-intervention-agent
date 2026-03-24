@@ -38,6 +38,7 @@
     "logger.js",
     "notification-*.js",
     "lottie/**",
+    "mathjax/**",
     "lottie.min.js",
     "marked.min.js",
     "prism-bootstrap.js",

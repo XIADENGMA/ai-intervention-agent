@@ -585,6 +585,9 @@ class WebviewProvider {
     const webviewCssUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview.css')
     )
+    const mathjaxScriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'mathjax', 'tex-mml-svg.js')
+    )
     const webviewHelpersUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview-helpers.js')
     )
@@ -610,7 +613,7 @@ class WebviewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl}; style-src ${cspSource}; script-src 'nonce-${nonce}' ${cspSource}; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
-    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}">
+    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-mathjax-script-url="${mathjaxScriptUri}">
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
     <link rel="stylesheet" href="${webviewCssUri}">

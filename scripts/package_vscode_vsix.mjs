@@ -57,6 +57,7 @@ const includeList = [
   "icon.png",
   "icon.svg",
   "lottie",
+  "mathjax",
   "lottie.min.js",
   "marked.min.js",
   "prism-bootstrap.js",

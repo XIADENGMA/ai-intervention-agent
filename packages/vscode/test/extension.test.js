@@ -23,6 +23,7 @@ suite('Extension Test Suite', () => {
     const webviewUiPath = path.join(ext.extensionPath, 'webview-ui.js')
     const webviewCssPath = path.join(ext.extensionPath, 'webview.css')
     const extensionJsPath = path.join(ext.extensionPath, 'extension.js')
+    const mathjaxScriptPath = path.join(ext.extensionPath, 'mathjax', 'tex-mml-svg.js')
     const extPkgPath = path.join(ext.extensionPath, 'package.json')
 
     assert.ok(fs.existsSync(webviewJsPath), 'Missing webview.js in extension')
@@ -30,6 +31,7 @@ suite('Extension Test Suite', () => {
     assert.ok(fs.existsSync(webviewUiPath), 'Missing webview-ui.js in extension')
     assert.ok(fs.existsSync(webviewCssPath), 'Missing webview.css in extension')
     assert.ok(fs.existsSync(extensionJsPath), 'Missing extension.js in extension')
+    assert.ok(fs.existsSync(mathjaxScriptPath), 'Missing mathjax/tex-mml-svg.js in extension')
     assert.ok(fs.existsSync(extPkgPath), 'Missing package.json in extension')
 
     const webviewJs = fs.readFileSync(webviewJsPath, 'utf8')
@@ -55,6 +57,9 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('vscode.getState'))
     assert.ok(webviewUi.includes('vscode.setState'))
     assert.ok(extensionJs.includes('retainContextWhenHidden: false'))
+    // 稳定性/解耦：MathJax 应优先走 VSIX 内置资源（由 meta 注入 URL）
+    assert.ok(webviewJs.includes('data-mathjax-script-url'))
+    assert.ok(webviewJs.includes('tex-mml-svg.js'))
 
     // 安全回归点：script-src 应使用 nonce（不应放开 unsafe-inline）
     assert.ok(webviewJs.includes("script-src 'nonce-${nonce}'"))
@@ -116,6 +121,7 @@ suite('Extension Test Suite', () => {
     if (fs.existsSync(packagingScriptPath)) {
       const packagingScript = fs.readFileSync(packagingScriptPath, 'utf8')
       assert.ok(packagingScript.includes('"webview.css"'))
+      assert.ok(packagingScript.includes('"mathjax"'))
     }
   })
 
