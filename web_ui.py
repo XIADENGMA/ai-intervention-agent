@@ -1252,38 +1252,130 @@ class WebFeedbackUI:
                 - 任务ID需全局唯一，重复添加会失败
                 - 任务创建后状态为pending，需手动或自动激活
             """
+            # ==============================
+            # 输入验证（健壮性/向后兼容）
+            # ==============================
             try:
-                data = request.get_json()
-                if not data:
-                    return jsonify({"success": False, "error": "缺少请求数据"}), 400
-
-                task_id = data.get("task_id")
-                prompt = data.get("prompt")
-                predefined_options = data.get("predefined_options")
-
-                # 从配置文件读取默认 auto_resubmit_timeout
-                config_mgr = get_config()
-                feedback_config = config_mgr.get_section("feedback")
-                # 【命名优化】使用新名称，保持向后兼容
-                default_timeout = feedback_config.get(
-                    "frontend_countdown",  # 新名称
-                    feedback_config.get(
-                        "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
-                    ),  # 旧名称回退
-                )
-                auto_resubmit_timeout = data.get(
-                    "auto_resubmit_timeout", default_timeout
-                )
-                # 【优化】使用统一的验证函数，同时验证最小值和最大值
-                auto_resubmit_timeout = validate_auto_resubmit_timeout(
-                    int(auto_resubmit_timeout)
+                raw = request.get_json(silent=False)
+            except Exception:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "请求体必须是 JSON（object）",
+                        }
+                    ),
+                    400,
                 )
 
-                if not task_id or not prompt:
-                    return jsonify(
-                        {"success": False, "error": "缺少必要参数：task_id 和 prompt"}
-                    ), 400
+            if not isinstance(raw, dict):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "请求体必须是 JSON object",
+                        }
+                    ),
+                    400,
+                )
 
+            data: dict[str, Any] = raw
+
+            # 向后兼容：旧字段别名
+            task_id_raw = data.get("task_id", data.get("id"))
+            prompt_raw = data.get("prompt", data.get("message"))
+            options_raw = data.get("predefined_options", data.get("options"))
+            timeout_raw = data.get("auto_resubmit_timeout", data.get("timeout"))
+
+            if not isinstance(task_id_raw, str) or not task_id_raw.strip():
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "缺少必要参数：task_id（或 id）",
+                        }
+                    ),
+                    400,
+                )
+            if not isinstance(prompt_raw, str) or not prompt_raw:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "缺少必要参数：prompt（或 message）",
+                        }
+                    ),
+                    400,
+                )
+
+            task_id = task_id_raw.strip()
+            prompt = prompt_raw
+
+            predefined_options: Optional[list[str]] = None
+            if options_raw is None:
+                predefined_options = None
+            elif not isinstance(options_raw, list):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "predefined_options（或 options）必须是数组",
+                        }
+                    ),
+                    400,
+                )
+            else:
+                cleaned: list[str] = []
+                for opt in options_raw:
+                    if not isinstance(opt, str):
+                        return (
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "error": "predefined_options（或 options）元素必须是字符串",
+                                }
+                            ),
+                            400,
+                        )
+                    s = opt.strip()
+                    if s:
+                        cleaned.append(s)
+                predefined_options = cleaned
+
+            default_timeout = _get_default_auto_resubmit_timeout_from_config()
+            timeout_explicit = "auto_resubmit_timeout" in data or "timeout" in data
+            if timeout_explicit:
+                if timeout_raw is None or isinstance(timeout_raw, bool):
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "auto_resubmit_timeout（或 timeout）必须是整数",
+                            }
+                        ),
+                        400,
+                    )
+                try:
+                    timeout_int = int(timeout_raw)
+                except Exception:
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "auto_resubmit_timeout（或 timeout）必须是整数",
+                            }
+                        ),
+                        400,
+                    )
+            else:
+                timeout_int = default_timeout
+
+            auto_resubmit_timeout = validate_auto_resubmit_timeout(timeout_int)
+
+            # ==============================
+            # 创建任务（内部错误返回 500）
+            # ==============================
+            try:
                 task_queue = get_task_queue()
                 success = task_queue.add_task(
                     task_id=task_id,
@@ -1291,19 +1383,19 @@ class WebFeedbackUI:
                     predefined_options=predefined_options,
                     auto_resubmit_timeout=auto_resubmit_timeout,
                 )
-
-                if success:
-                    logger.info(f"任务已通过API添加到队列: {task_id}")
-                    return jsonify({"success": True, "task_id": task_id})
-                else:
-                    logger.error(f"添加任务失败: {task_id}")
-                    return jsonify(
-                        {"success": False, "error": "任务队列已满或任务ID重复"}
-                    ), 409
-
             except Exception as e:
                 logger.error(f"创建任务失败: {e}", exc_info=True)
-                return jsonify({"success": False, "error": str(e)}), 500
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
+            if success:
+                logger.info(f"任务已通过API添加到队列: {task_id}")
+                return jsonify({"success": True, "task_id": task_id})
+
+            logger.error(f"添加任务失败: {task_id}")
+            return (
+                jsonify({"success": False, "error": "任务队列已满或任务ID重复"}),
+                409,
+            )
 
         @self.app.route("/api/tasks/<task_id>", methods=["GET"])
         @self.limiter.limit("300 per minute")
@@ -2405,6 +2497,14 @@ class WebFeedbackUI:
                         except (TypeError, ValueError):
                             return int(notification_config.get("sound_volume", 80))
 
+                    def normalize_web_timeout(raw_value: Any) -> int:
+                        try:
+                            return int(
+                                clamp_value(float(raw_value), 1, 600000, "web_timeout")
+                            )
+                        except (TypeError, ValueError):
+                            return int(notification_config.get("web_timeout", 5000))
+
                     def normalize_string(raw_value: Any) -> str:
                         return "" if raw_value is None else str(raw_value)
 
@@ -2422,6 +2522,20 @@ class WebFeedbackUI:
                             "web_enabled",
                             lambda v: v,
                             lambda v: v,
+                        ),
+                        (
+                            ("webIcon", "web_icon"),
+                            "web_icon",
+                            "web_icon",
+                            normalize_string,
+                            normalize_string,
+                        ),
+                        (
+                            ("webTimeout", "web_timeout"),
+                            "web_timeout",
+                            "web_timeout",
+                            normalize_web_timeout,
+                            normalize_web_timeout,
                         ),
                         (
                             ("autoRequestPermission", "auto_request_permission"),
@@ -2443,6 +2557,13 @@ class WebFeedbackUI:
                             "sound_enabled",
                             lambda v: v,
                             lambda v: v,
+                        ),
+                        (
+                            ("soundFile", "sound_file"),
+                            "sound_file",
+                            "sound_file",
+                            normalize_string,
+                            normalize_string,
                         ),
                         (
                             ("soundMute", "sound_mute"),

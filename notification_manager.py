@@ -188,15 +188,21 @@ class NotificationConfig:
         retry_count = safe_int(notification_config.get("retry_count", 3), 3, 0, 10)
         retry_delay = safe_int(notification_config.get("retry_delay", 2), 2, 0, 60)
         bark_timeout = safe_int(notification_config.get("bark_timeout", 10), 10, 1, 300)
+        web_timeout = safe_int(
+            notification_config.get("web_timeout", 5000), 5000, 1, 600000
+        )
 
         return cls(
             enabled=safe_bool(notification_config.get("enabled"), True),
             debug=safe_bool(notification_config.get("debug"), False),
             web_enabled=safe_bool(notification_config.get("web_enabled"), True),
+            web_icon=str(notification_config.get("web_icon", "default")),
+            web_timeout=web_timeout,
             web_permission_auto_request=safe_bool(
                 notification_config.get("auto_request_permission"), True
             ),
             sound_enabled=safe_bool(notification_config.get("sound_enabled"), True),
+            sound_file=str(notification_config.get("sound_file", "default")),
             sound_volume=normalized_volume,
             sound_mute=safe_bool(notification_config.get("sound_mute"), False),
             mobile_optimized=safe_bool(
@@ -862,11 +868,20 @@ class NotificationManager:
                 self.config.web_enabled = safe_bool(
                     notification_config.get("web_enabled"), True
                 )
+                self.config.web_icon = safe_str(
+                    notification_config.get("web_icon"), "default"
+                )
+                self.config.web_timeout = int(
+                    safe_number(notification_config.get("web_timeout"), 5000, 1, 600000)
+                )
                 self.config.web_permission_auto_request = safe_bool(
                     notification_config.get("auto_request_permission"), True
                 )
                 self.config.sound_enabled = safe_bool(
                     notification_config.get("sound_enabled"), True
+                )
+                self.config.sound_file = safe_str(
+                    notification_config.get("sound_file"), "default"
                 )
                 # 音量从 0-100 转换为 0.0-1.0，带范围验证
                 self.config.sound_volume = (
@@ -1017,11 +1032,14 @@ class NotificationManager:
                 "enabled": self.config.enabled,
                 "debug": self.config.debug,
                 "web_enabled": self.config.web_enabled,
+                "web_icon": self.config.web_icon,
+                "web_timeout": int(self.config.web_timeout),
                 "auto_request_permission": self.config.web_permission_auto_request,
                 "system_enabled": self.config.system_enabled,
                 "macos_native_enabled": self.config.macos_native_enabled,
                 "sound_enabled": self.config.sound_enabled,
                 "sound_mute": self.config.sound_mute,
+                "sound_file": self.config.sound_file,
                 "sound_volume": sound_volume_int,
                 "mobile_optimized": self.config.mobile_optimized,
                 "mobile_vibrate": self.config.mobile_vibrate,

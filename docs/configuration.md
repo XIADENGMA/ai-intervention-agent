@@ -35,10 +35,13 @@ Priority order:
 4. User config directory `config.json` (backward compatible)
 5. If none exist, it will create `config.jsonc` in the user config directory.
 
-> Tip (avoid “I edited ~/.config but nothing changed”):
+> Tip (avoid “I edited the config but nothing changed”):
 > The Web UI “Settings → Config” shows the **actual config file path** used by the current process.
-> If you want to force dev mode to use your global config, set:
-> `AI_INTERVENTION_AGENT_CONFIG_FILE=~/.config/ai-intervention-agent/config.jsonc`
+> If you want to force dev mode to use a specific config file, set `AI_INTERVENTION_AGENT_CONFIG_FILE` to that path, for example:
+>
+> - Linux: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/.config/ai-intervention-agent/config.jsonc`
+> - macOS: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/Library/Application Support/ai-intervention-agent/config.jsonc`
+> - Windows: `AI_INTERVENTION_AGENT_CONFIG_FILE=%APPDATA%/ai-intervention-agent/config.jsonc`
 
 ### User config directory (by OS)
 
@@ -72,10 +75,13 @@ Controls web/sound/system/Bark notifications.
 | `enabled`                 | boolean | `true`   | Global switch                                                               |
 | `web_enabled`             | boolean | `true`   | Browser notifications                                                       |
 | `auto_request_permission` | boolean | `true`   | Auto request permission on page load                                        |
+| `web_icon`                | string  | `"default"` | `"default"` or a custom icon URL                                         |
+| `web_timeout`             | number  | `5000`   | Milliseconds, range `[1, 600000]`                                           |
 | `system_enabled`          | boolean | `false`  | Desktop notifications via `plyer` (optional dependency)                     |
 | `macos_native_enabled`    | boolean | `true`   | macOS native notifications (primarily used by the VS Code/Cursor extension) |
 | `sound_enabled`           | boolean | `true`   | Sound notifications                                                         |
 | `sound_mute`              | boolean | `false`  | Mute sound                                                                  |
+| `sound_file`              | string  | `"default"` | Sound file key/name used by the frontend (e.g. `"default"`, `"deng"`)   |
 | `sound_volume`            | number  | `80`     | Range `[0, 100]`                                                            |
 | `mobile_optimized`        | boolean | `true`   | Mobile UI tweaks                                                            |
 | `mobile_vibrate`          | boolean | `true`   | Vibration on mobile (requires user gesture in browsers)                     |

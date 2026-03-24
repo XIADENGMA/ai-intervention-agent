@@ -1389,13 +1389,13 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
     {
         "success": true,
         "task": {
-            "id": str,
+            "task_id": str,
             "prompt": str,
-            "options": list,
+            "predefined_options": list,
             "status": "pending" | "active" | "completed",
             "result": dict,  # 包含 user_input、selected_options、images
-            "created_at": float,
-            "completed_at": float
+            "created_at": str,  # ISO 8601
+            "auto_resubmit_timeout": int
         }
     }
 
