@@ -475,7 +475,8 @@ function activate(context) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('aiInterventionAgent.feedbackView', provider, {
       webviewOptions: {
-        retainContextWhenHidden: true // 保持webview状态，避免重新加载
+        // 内存优先：隐藏时允许释放 Webview；关键 UI 状态由 Webview 侧 setState/getState 持久化
+        retainContextWhenHidden: false
       }
     })
   )

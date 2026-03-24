@@ -22,17 +22,20 @@ suite('Extension Test Suite', () => {
     const webviewHelpersPath = path.join(ext.extensionPath, 'webview-helpers.js')
     const webviewUiPath = path.join(ext.extensionPath, 'webview-ui.js')
     const webviewCssPath = path.join(ext.extensionPath, 'webview.css')
+    const extensionJsPath = path.join(ext.extensionPath, 'extension.js')
     const extPkgPath = path.join(ext.extensionPath, 'package.json')
 
     assert.ok(fs.existsSync(webviewJsPath), 'Missing webview.js in extension')
     assert.ok(fs.existsSync(webviewHelpersPath), 'Missing webview-helpers.js in extension')
     assert.ok(fs.existsSync(webviewUiPath), 'Missing webview-ui.js in extension')
     assert.ok(fs.existsSync(webviewCssPath), 'Missing webview.css in extension')
+    assert.ok(fs.existsSync(extensionJsPath), 'Missing extension.js in extension')
     assert.ok(fs.existsSync(extPkgPath), 'Missing package.json in extension')
 
     const webviewJs = fs.readFileSync(webviewJsPath, 'utf8')
     const webviewUi = fs.readFileSync(webviewUiPath, 'utf8')
     const webviewCss = fs.readFileSync(webviewCssPath, 'utf8')
+    const extensionJs = fs.readFileSync(extensionJsPath, 'utf8')
     const extPkgText = fs.readFileSync(extPkgPath, 'utf8')
 
     // 新功能回归点：插入代码按钮（剪贴板链路）
@@ -48,6 +51,10 @@ suite('Extension Test Suite', () => {
     // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
     assert.ok(webviewUi.includes("type: 'tasksStats'"))
     assert.ok(webviewJs.includes("case 'tasksStats':"))
+    // 内存优先：Webview 状态应使用 getState/setState 持久化
+    assert.ok(webviewUi.includes('vscode.getState'))
+    assert.ok(webviewUi.includes('vscode.setState'))
+    assert.ok(extensionJs.includes('retainContextWhenHidden: false'))
 
     // 安全回归点：script-src 应使用 nonce（不应放开 unsafe-inline）
     assert.ok(webviewJs.includes("script-src 'nonce-${nonce}'"))

@@ -7,7 +7,13 @@
   try {
     vscode = acquireVsCodeApi()
   } catch (e) {
-    vscode = { postMessage: function () {} }
+    vscode = {
+      postMessage: function () {},
+      getState: function () {
+        return null
+      },
+      setState: function () {}
+    }
   }
   const __cfgEl = document.getElementById('aiia-config')
   const SERVER_URL =
@@ -252,6 +258,7 @@
   let currentConfig = null
   let selectedOptions = []
   let uploadedImages = []
+  let textareaManualRows = null // 文本框手动 rows（用于拖拽调整高度）
   let countdownTimer = null
   // 防止超时自动重调进入“失败重试风暴”（例如任务 remaining=0 且提交失败时反复触发）：每任务只允许自动重调一次
   let autoSubmitAttempted = {} // task_id -> lastAttemptAt(ms)
@@ -272,6 +279,101 @@
   let taskTextareaContents = {} // task_id -> string
   let taskOptionsStates = {} // task_id -> { [index:number]: boolean } | boolean[]
   let taskImages = {} // task_id -> Array<{name: string, data: string}>
+
+  // Webview 状态持久化（配合 retainContextWhenHidden=false，降低隐藏时内存常驻）
+  const UI_STATE_VERSION = 1
+  const UI_STATE_SAVE_DEBOUNCE_MS = 250
+  const UI_STATE_TEXT_LIMIT_CHARS = 200000
+  let uiStateSaveTimer = null
+
+  function safeGetUiState() {
+    try {
+      if (vscode && typeof vscode.getState === 'function') {
+        return vscode.getState()
+      }
+    } catch (e) {
+      // 忽略
+    }
+    return null
+  }
+
+  function safeSetUiState(nextState) {
+    try {
+      if (vscode && typeof vscode.setState === 'function') {
+        vscode.setState(nextState)
+      }
+    } catch (e) {
+      // 忽略：状态持久化失败不应影响主流程
+    }
+  }
+
+  function trimTextareaContents(contents) {
+    try {
+      const src = contents && typeof contents === 'object' ? contents : {}
+      const out = {}
+      let budget = UI_STATE_TEXT_LIMIT_CHARS
+      for (const taskId of Object.keys(src)) {
+        if (budget <= 0) break
+        const text = src[taskId]
+        if (typeof text !== 'string' || !text) continue
+        if (text.length <= budget) {
+          out[taskId] = text
+          budget -= text.length
+        } else {
+          out[taskId] = text.slice(0, Math.max(0, budget))
+          budget = 0
+        }
+      }
+      return out
+    } catch (e) {
+      return {}
+    }
+  }
+
+  function restorePersistedUiState() {
+    const s = safeGetUiState()
+    if (!s || s.v !== UI_STATE_VERSION) return
+
+    try {
+      if (s.taskTextareaContents && typeof s.taskTextareaContents === 'object') {
+        taskTextareaContents = { ...s.taskTextareaContents }
+      }
+      if (s.taskOptionsStates && typeof s.taskOptionsStates === 'object') {
+        taskOptionsStates = { ...s.taskOptionsStates }
+      }
+      if (typeof s.activeTaskId === 'string') {
+        activeTaskId = s.activeTaskId || null
+      }
+      if (typeof s.textareaManualRows === 'number' && Number.isFinite(s.textareaManualRows)) {
+        textareaManualRows = Math.max(2, Math.floor(s.textareaManualRows))
+      }
+    } catch (e) {
+      // 忽略：持久化状态异常不应影响主流程
+    }
+  }
+
+  function schedulePersistUiState() {
+    if (!vscode || typeof vscode.setState !== 'function') return
+    if (uiStateSaveTimer) return
+    uiStateSaveTimer = setTimeout(() => {
+      uiStateSaveTimer = null
+      safeSetUiState({
+        v: UI_STATE_VERSION,
+        activeTaskId: activeTaskId || '',
+        taskTextareaContents: trimTextareaContents(taskTextareaContents),
+        taskOptionsStates: taskOptionsStates || {},
+        // 图片不做持久化：体积过大且易触发存储上限
+        textareaManualRows:
+          typeof textareaManualRows === 'number' && Number.isFinite(textareaManualRows)
+            ? Math.max(2, Math.floor(textareaManualRows))
+            : null,
+        savedAt: Date.now()
+      })
+    }, UI_STATE_SAVE_DEBOUNCE_MS)
+  }
+
+  // 启动时恢复一次（后续 poll/render 会自动清理不存在的 taskId 缓存）
+  restorePersistedUiState()
 
   // 提交按钮：默认图标缓存 + Loading 图标（用于提交中切换）
   let submitBtnDefaultHtml = null
@@ -413,7 +515,6 @@
   // 这里改为 rows 属性驱动高度（配合 CSS height:auto）。
   const FEEDBACK_TEXTAREA_MIN_HEIGHT_PX = 80
   const FEEDBACK_TEXTAREA_MAX_HEIGHT_PX = 300
-  let textareaManualRows = null
 
   function clampInt(n, min, max) {
     const x = Number.isFinite(n) ? Math.floor(n) : NaN
@@ -594,6 +695,7 @@
         taskTextareaContents[activeTaskId] = textarea.value || ''
       }
       autoResizeFeedbackTextarea(textarea)
+      schedulePersistUiState()
       return true
     } catch (e) {
       return false
@@ -748,6 +850,7 @@
             taskTextareaContents[activeTaskId] = textarea.value || ''
           }
           autoResizeFeedbackTextarea(textarea)
+          schedulePersistUiState()
         })
         // 【体验对齐】Ctrl/Cmd + Enter 提交
         textarea.addEventListener('keydown', e => {
@@ -776,6 +879,7 @@
             states[index] = !!cb.checked
           })
           taskOptionsStates[activeTaskId] = states
+          schedulePersistUiState()
         })
       }
 
@@ -844,6 +948,7 @@
         resizeHandle.addEventListener('dblclick', e => {
           textareaManualRows = null
           autoResizeFeedbackTextarea(textarea)
+          schedulePersistUiState()
           e.preventDefault()
         })
       }
@@ -862,6 +967,9 @@
 
       document.addEventListener('mouseup', () => {
         isResizing = false
+        if (textarea) {
+          schedulePersistUiState()
+        }
       })
 
       log('事件监听器已设置')
@@ -1155,6 +1263,7 @@
       taskTextareaContents = {}
       taskOptionsStates = {}
       taskImages = {}
+      schedulePersistUiState()
       lastTasksHash = ''
       lastTaskIds = new Set()
       if (tasksData && tasksData.success) {
@@ -1374,8 +1483,10 @@
     const activeTasks = allTasks.filter(task => task.status !== 'completed')
     const activeTaskIdSet = new Set(activeTasks.map(t => t.task_id))
     // 清理不再存在/已完成任务的倒计时定时器，避免内存泄漏
+    let removedAnyTaskCache = false
     Object.keys(tabCountdownTimers).forEach(existingId => {
       if (!activeTaskIdSet.has(existingId)) {
+        removedAnyTaskCache = true
         try {
           clearInterval(tabCountdownTimers[existingId])
         } catch (e) {
@@ -1397,6 +1508,9 @@
         }
       }
     })
+    if (removedAnyTaskCache) {
+      schedulePersistUiState()
+    }
 
     activeTasks.forEach(task => {
       const tab = document.createElement('div')
