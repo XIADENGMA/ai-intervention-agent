@@ -381,14 +381,22 @@ function activate(context) {
   const STATUS_POLL_FAST_MS = 3000
   const STATUS_POLL_SLOW_MS = 15000
   const STATUS_POLL_MAX_MS = 60000
+  const WEBVIEW_STATS_FRESH_MS = 5000
   let statusPollTimer = null
   let statusPollBackoffMs = STATUS_POLL_FAST_MS
   let statusPollInFlight = false
   let isViewVisible = true
   let isWindowFocused = vscode.window.state.focused
+  let lastWebviewStatsAtMs = 0
 
-  const computeBaseDelayMs = () =>
-    isViewVisible && isWindowFocused ? STATUS_POLL_FAST_MS : STATUS_POLL_SLOW_MS
+  const isWebviewStatsFresh = () =>
+    isViewVisible && lastWebviewStatsAtMs > 0 && Date.now() - lastWebviewStatsAtMs < WEBVIEW_STATS_FRESH_MS
+
+  const computeBaseDelayMs = () => {
+    // Webview 可见且持续上报 stats：状态栏可复用 Webview 轮询结果，扩展侧降频探测
+    if (isWebviewStatsFresh()) return STATUS_POLL_SLOW_MS
+    return isViewVisible && isWindowFocused ? STATUS_POLL_FAST_MS : STATUS_POLL_SLOW_MS
+  }
   const computeNextDelayMs = () => {
     const base = computeBaseDelayMs()
     if (lastConnected === false) {
@@ -406,6 +414,11 @@ function activate(context) {
   }
 
   const runStatusPoll = async () => {
+    // Webview 可见且 stats 新鲜：不再重复 /api/tasks 请求
+    if (isWebviewStatsFresh()) {
+      scheduleStatusPoll(computeNextDelayMs())
+      return
+    }
     if (statusPollInFlight) {
       scheduleStatusPoll(computeNextDelayMs())
       return
@@ -425,11 +438,40 @@ function activate(context) {
   }
 
   // 注册webview provider（支持多标签页和缓存）
-  const provider = new WebviewProvider(context.extensionUri, outputChannel, serverUrl, visible => {
-    isViewVisible = !!visible
-    updateStatusBarVisibility(lastConnected, lastActive, lastPending)
-    scheduleStatusPoll(isViewVisible ? 0 : computeNextDelayMs())
-  })
+  const provider = new WebviewProvider(
+    context.extensionUri,
+    outputChannel,
+    serverUrl,
+    visible => {
+      isViewVisible = !!visible
+      updateStatusBarVisibility(lastConnected, lastActive, lastPending)
+      scheduleStatusPoll(isViewVisible ? 0 : computeNextDelayMs())
+    },
+    ({ connected, active, pending } = {}) => {
+      // Webview 轮询的 /api/tasks 已包含 stats：这里直接复用来更新状态栏
+      lastWebviewStatsAtMs = Date.now()
+      const c = connected === true
+      const a = typeof active === 'number' && Number.isFinite(active) ? Math.max(0, Math.floor(active)) : 0
+      const p = typeof pending === 'number' && Number.isFinite(pending) ? Math.max(0, Math.floor(pending)) : 0
+
+      const changed = c !== lastConnected || a !== lastActive || p !== lastPending
+      if (changed) {
+        lastConnected = c
+        lastActive = a
+        lastPending = p
+        applyStatusBarPresentation({ connected: c, active: a, pending: p })
+      } else if (statusBarShown) {
+        applyStatusBarPresentation({ connected: c, active: a, pending: p })
+      }
+
+      // 与扩展侧退避保持一致：Webview 上报离线时也适当退避
+      if (c) {
+        statusPollBackoffMs = STATUS_POLL_FAST_MS
+      } else {
+        statusPollBackoffMs = Math.min(STATUS_POLL_MAX_MS, Math.round(statusPollBackoffMs * 1.7))
+      }
+    }
+  )
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('aiInterventionAgent.feedbackView', provider, {
       webviewOptions: {

@@ -1099,6 +1099,26 @@
         })
       }
 
+      // 同步 stats 给 Extension：状态栏可直接复用，避免 Webview 可见时重复 /api/tasks 轮询
+      try {
+        const stats = tasksData && tasksData.stats ? tasksData.stats : null
+        if (stats) {
+          const active = typeof stats.active === 'number' ? stats.active : 0
+          const pending = typeof stats.pending === 'number' ? stats.pending : 0
+          const total =
+            typeof stats.total === 'number' && Number.isFinite(stats.total) ? stats.total : active + pending
+          vscode.postMessage({
+            type: 'tasksStats',
+            connected: !!(tasksData && tasksData.success),
+            active,
+            pending,
+            total
+          })
+        }
+      } catch (e) {
+        // 忽略：消息派发失败不应影响轮询主流程
+      }
+
       if (tasksData && tasksData.success && tasksData.tasks && tasksData.tasks.length > 0) {
         allTasks = tasksData.tasks
         renderTaskTabs()

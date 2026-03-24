@@ -45,6 +45,9 @@ suite('Extension Test Suite', () => {
     // 阶段 C：统一 NotificationEvent 分发（Webview → Extension）
     assert.ok(webviewUi.includes("type: 'notify'"))
     assert.ok(webviewUi.includes('macos_native'))
+    // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
+    assert.ok(webviewUi.includes("type: 'tasksStats'"))
+    assert.ok(webviewJs.includes("case 'tasksStats':"))
 
     // 安全回归点：script-src 应使用 nonce（不应放开 unsafe-inline）
     assert.ok(webviewJs.includes("script-src 'nonce-${nonce}'"))
@@ -54,6 +57,11 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewJs.includes('style-src ${cspSource};'))
     assert.ok(!webviewJs.includes("style-src ${cspSource} 'unsafe-inline'"))
     assert.ok(webviewJs.includes('webview.css'))
+
+    // CSP 细化回归点：应显式禁止 base-uri/object/frame
+    assert.ok(webviewJs.includes("base-uri 'none'"))
+    assert.ok(webviewJs.includes("object-src 'none'"))
+    assert.ok(webviewJs.includes("frame-src 'none'"))
 
     // 边界回归点：自动提交与 429 应有护栏（避免重试风暴/并发提交）
     assert.ok(webviewUi.includes('autoSubmitAttempted'))

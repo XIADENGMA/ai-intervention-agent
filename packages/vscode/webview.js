@@ -41,7 +41,8 @@ class WebviewProvider {
     extensionUri,
     outputChannel,
     serverUrl = 'http://localhost:8080',
-    onVisibilityChanged
+    onVisibilityChanged,
+    onTasksStatsChanged
   ) {
     this._extensionUri = extensionUri
     this._outputChannel = outputChannel
@@ -74,6 +75,8 @@ class WebviewProvider {
     this._serverUrl = serverUrl
     this._onVisibilityChanged =
       typeof onVisibilityChanged === 'function' ? onVisibilityChanged : null
+    this._onTasksStatsChanged =
+      typeof onTasksStatsChanged === 'function' ? onTasksStatsChanged : null
     this._view = null
     this._disposables = []
     this._lastServerStatus = null
@@ -304,6 +307,29 @@ class WebviewProvider {
           }
         } catch {
           this._log('Webview 脚本 ready')
+        }
+        break
+      case 'tasksStats':
+        try {
+          const connected = !!(message && message.connected)
+          const active =
+            message && typeof message.active === 'number' && Number.isFinite(message.active)
+              ? Math.max(0, Math.floor(message.active))
+              : 0
+          const pending =
+            message && typeof message.pending === 'number' && Number.isFinite(message.pending)
+              ? Math.max(0, Math.floor(message.pending))
+              : 0
+          const total =
+            message && typeof message.total === 'number' && Number.isFinite(message.total)
+              ? Math.max(0, Math.floor(message.total))
+              : active + pending
+
+          if (this._onTasksStatsChanged) {
+            this._onTasksStatsChanged({ connected, active, pending, total })
+          }
+        } catch {
+          // 忽略：消息处理失败不应影响主流程
         }
         break
       case 'serverStatus':
@@ -583,7 +609,7 @@ class WebviewProvider {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src ${serverUrl} ${cspSource}; style-src ${cspSource}; script-src 'nonce-${nonce}' ${cspSource}; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource};">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl}; style-src ${cspSource}; script-src 'nonce-${nonce}' ${cspSource}; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
     <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}">
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
