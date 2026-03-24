@@ -102,6 +102,10 @@ if (typeof window.feedbackPrompts === 'undefined') {
     prompt_suffix: '\n请积极调用 interactive_feedback 工具'
   }
 }
+// 自动提交退避：避免“超时 + 提交失败/429”导致的重复提交风暴
+if (typeof window.autoSubmitAttempted === 'undefined') {
+  window.autoSubmitAttempted = {} // task_id -> lastAttemptAt(ms)
+}
 
 // 创建本地引用以便在函数中使用
 var currentTasks = window.currentTasks
@@ -115,6 +119,7 @@ var pendingNewTaskCount = window.pendingNewTaskCount
 var newTaskHintTimer = window.newTaskHintTimer
 var hasLoadedTaskSnapshot = window.hasLoadedTaskSnapshot
 var feedbackPrompts = window.feedbackPrompts
+var autoSubmitAttempted = window.autoSubmitAttempted
 
 /**
  * 从服务端获取最新的反馈提示语配置（支持运行中热更新）
@@ -560,6 +565,10 @@ function updateTasksList(tasks) {
       if (taskImages[taskId] !== undefined) {
         delete taskImages[taskId]
       }
+      // 清理自动提交尝试记录（避免长时间使用导致对象膨胀）
+      if (autoSubmitAttempted && autoSubmitAttempted[taskId] !== undefined) {
+        delete autoSubmitAttempted[taskId]
+      }
     })
   }
 
@@ -589,9 +598,19 @@ function updateTasksList(tasks) {
       }
       return
     }
-    if (!taskCountdowns[task.task_id]) {
+    const existingCountdown = taskCountdowns[task.task_id]
+    // 关键：如果任务已变为 active，但其倒计时 timer 之前因“pending 超时被暂停”而停止，需要兜底恢复
+    // 否则会出现：任务 remaining_time=0 且 status=active，但自动提交不会再次触发，导致 0s 任务堆积
+    const shouldEnsure =
+      !existingCountdown || (task.status === 'active' && !existingCountdown.timer)
+    if (shouldEnsure) {
       const remaining = task.remaining_time ?? total
-      startTaskCountdown(task.task_id, remaining, total)
+      // active 任务已超时：直接触发自动提交（内部带退避/去重），避免依赖“重启倒计时再 tick”造成抖动/重复
+      if (task.status === 'active' && typeof remaining === 'number' && remaining <= 0) {
+        autoSubmitTask(task.task_id)
+      } else {
+        startTaskCountdown(task.task_id, remaining, total)
+      }
     }
   })
 
@@ -1607,7 +1626,13 @@ function startTaskCountdown(taskId, remaining, total = null) {
 
     // 倒计时结束
     if (taskCountdowns[taskId].remaining <= 0) {
-      clearInterval(taskCountdowns[taskId].timer)
+      try {
+        clearInterval(taskCountdowns[taskId].timer)
+      } catch (e) {
+        // 忽略：定时器可能已被清理
+      }
+      // 关键：标记该任务的 timer 已停止，便于后续在任务变为 active 时重启倒计时/触发自动提交
+      taskCountdowns[taskId].timer = null
       // 智能自动提交逻辑：
       // 1. 如果是当前激活的任务 → 立即自动提交
       // 2. 如果不是激活任务，检查是否有其他活动任务在处理
@@ -1684,6 +1709,20 @@ function formatCountdown(seconds) {
  * - 异步操作
  */
 async function autoSubmitTask(taskId) {
+  // 自动提交治理：同一 task 做最小退避（可重试但不过载），避免超时+提交失败/429 时刷爆服务端
+  try {
+    const now = Date.now()
+    const last = autoSubmitAttempted && autoSubmitAttempted[taskId]
+    const RETRY_INTERVAL_MS = 30 * 1000
+    if (typeof last === 'number' && last > 0 && now - last < RETRY_INTERVAL_MS) {
+      return
+    }
+    if (autoSubmitAttempted) {
+      autoSubmitAttempted[taskId] = now
+    }
+  } catch (e) {
+    // 忽略：退避记录失败不应阻塞自动提交
+  }
   console.log(`任务 ${taskId} 倒计时结束，自动提交`)
   // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
   const prompts = await fetchFeedbackPromptsFresh()

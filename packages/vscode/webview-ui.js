@@ -640,7 +640,7 @@
   let uploadedImages = []
   let textareaManualRows = null // 文本框手动 rows（用于拖拽调整高度）
   let countdownTimer = null
-  // 防止超时自动重调进入“失败重试风暴”（例如任务 remaining=0 且提交失败时反复触发）：每任务只允许自动重调一次
+  // 防止超时自动重调进入“失败重试风暴”（例如 remaining=0 且提交失败/429）：对同一任务做最小退避（可重试但不过载）
   let autoSubmitAttempted = {} // task_id -> lastAttemptAt(ms)
   let pollingTimer = null
   let remainingSeconds = 0
@@ -3146,15 +3146,30 @@
   async function autoSubmit() {
     const taskId = lastCountdownTaskId
     log('倒计时结束，自动重调')
-    // 防止同一任务在“超时且提交失败”场景下反复触发自动重调（会导致 429 并阻塞手动提交）
-    if (taskId && autoSubmitAttempted[taskId]) {
-      stopCountdown()
-      return
-    }
-    if (taskId) {
-      autoSubmitAttempted[taskId] = Date.now()
-    }
     stopCountdown()
+
+    // 自动重调需要“可重试但不过载”：对同一任务做最小退避，避免超时+提交失败时刷爆服务端（429）并影响手动提交
+    const now = Date.now()
+    const RETRY_INTERVAL_MS = 30 * 1000
+    if (taskId) {
+      const last = autoSubmitAttempted[taskId]
+      if (typeof last === 'number' && last > 0 && now - last < RETRY_INTERVAL_MS) {
+        return
+      }
+    }
+
+    // 若正在提交/处于冷却期，不标记 attempt，交给下一轮轮询再触发
+    try {
+      if (submitInFlight || (submitBackoffUntilMs && now < submitBackoffUntilMs)) {
+        return
+      }
+    } catch (e) {
+      // 忽略
+    }
+
+    if (taskId) {
+      autoSubmitAttempted[taskId] = now
+    }
 
     // 自动重调前实时拉取一次配置，确保 resubmit_prompt 热更新能立刻生效
     let defaultMessage = '请立即调用 interactive_feedback 工具'
@@ -3167,7 +3182,15 @@
       // 忽略：保留默认文案兜底
     }
 
-    await submitWithData(defaultMessage, [], taskId)
+    const ok = await submitWithData(defaultMessage, [], taskId)
+    // 未实际发起提交（例如并发提交/冷却期）则撤销本次 attempt，允许下一轮尽快再试
+    if (ok === null && taskId) {
+      try {
+        delete autoSubmitAttempted[taskId]
+      } catch (e) {
+        // 忽略
+      }
+    }
 
     // 提交后立即重新轮询，更新任务状态
     setTimeout(() => requestImmediateRefresh(), 500)
@@ -3245,7 +3268,7 @@
       const now0 = Date.now()
       if (submitInFlight) {
         showToast('正在提交…', { kind: 'info', timeoutMs: 1200, dedupeKey: 'submit:inflight' })
-        return
+        return null
       }
       if (submitBackoffUntilMs && now0 < submitBackoffUntilMs) {
         const leftSec = Math.max(1, Math.ceil((submitBackoffUntilMs - now0) / 1000))
@@ -3255,7 +3278,7 @@
           timeoutMs: 1600,
           dedupeKey: 'submit:backoff'
         })
-        return
+        return null
       }
     } catch (e) {
       // 忽略
@@ -3398,6 +3421,7 @@
 
         // 重新轮询（使用pollAllData以更新任务列表）
         setTimeout(() => requestImmediateRefresh(), 200)
+        return true
       } else {
         // 429：给出更明确的提示，并进入冷却期（避免用户反复点击造成更严重的限流）
         if (response.status === 429) {
@@ -3431,12 +3455,13 @@
           } catch (e) {
             // 忽略
           }
-          return
+          return false
         }
 
         const msg = '提交失败（HTTP ' + response.status + '）'
         logError(msg)
       }
+      return false
     } catch (error) {
       const isAbort = !!(error && (error.name === 'AbortError' || String(error.name || '') === 'AbortError'))
       if (isAbort) {
@@ -3445,6 +3470,7 @@
         const msg = error && error.message ? String(error.message) : String(error)
         logError('提交失败：' + msg)
       }
+      return false
     } finally {
       if (submitTimeoutId) {
         clearTimeout(submitTimeoutId)
