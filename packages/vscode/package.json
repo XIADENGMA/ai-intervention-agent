@@ -32,6 +32,7 @@
     "extension.js",
     "applescript-executor.js",
     "webview.js",
+    "webview.css",
     "webview-ui.js",
     "webview-helpers.js",
     "logger.js",
@@ -51,7 +52,7 @@
         {
           "id": "aiInterventionAgent",
           "title": "干预",
-          "icon": "$(sparkle-filled)"
+          "icon": "activity-icon.svg"
         }
       ]
     },

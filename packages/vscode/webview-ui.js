@@ -27,7 +27,7 @@
   const WEBVIEW_HELPERS =
     typeof window !== 'undefined' && window.AIIAWebviewHelpers ? window.AIIAWebviewHelpers : null
   let themeObserver = null
-  // 无有效内容页面：Lottie 动画（对齐原项目：sprout.json；失败则降级为 🌱）
+  // 无有效内容页面：Lottie 动画（默认使用 hourglass.json；失败则降级为 ⏳）
   let noContentHourglassAnimation = null
 
   // 网络请求超时（避免本地端口“半开/卡住”导致一直停在“正在连接服务器...”）
@@ -80,7 +80,8 @@
   function updateNoContentHourglassColor() {
     const container = document.getElementById('hourglass-lottie')
     if (!container) return
-    container.style.filter = isDarkBackground() ? 'invert(1)' : 'none'
+    // CSP 收紧后禁止动态写入 inline style，这里改为 class 驱动
+    container.classList.toggle('aiia-invert', isDarkBackground())
   }
 
   function isMacLikePlatform() {
@@ -197,7 +198,7 @@
     if (noContentLottieInitInFlight) return
 
     // 先给一个轻量占位，避免空白
-    container.textContent = '🌱'
+    container.textContent = '⏳'
     noContentLottieInitInFlight = true
 
     Promise.all([ensureLottieLoaded(), loadNoContentLottieData()])
@@ -205,7 +206,7 @@
         if (!okLib || !data) {
           if (!lottieInitWarned) {
             lottieInitWarned = true
-            logError('Lottie 动画未加载（已降级为 🌱）')
+            logError('Lottie 动画未加载（已降级为 ⏳）')
           }
           return
         }
@@ -231,10 +232,10 @@
         })
 
         noContentHourglassAnimation.addEventListener('error', () => {
-          container.textContent = '🌱'
+          container.textContent = '⏳'
           if (!lottieInitWarned) {
             lottieInitWarned = true
-            logError('Lottie 动画加载失败（已降级为 🌱）')
+            logError('Lottie 动画加载失败（已降级为 ⏳）')
           }
           destroyNoContentHourglassAnimation()
         })
@@ -407,19 +408,68 @@
   }
 
   // 文本框：自动高度（Auto-resize），并保留用户手动拖拽的最小高度
-  let textareaManualHeight = null
+  //
+  // 注意：Webview CSP 收紧后（移除 style-src 'unsafe-inline'），JS 不能再写 textarea.style.height。
+  // 这里改为 rows 属性驱动高度（配合 CSS height:auto）。
+  const FEEDBACK_TEXTAREA_MIN_HEIGHT_PX = 80
+  const FEEDBACK_TEXTAREA_MAX_HEIGHT_PX = 300
+  let textareaManualRows = null
+
+  function clampInt(n, min, max) {
+    const x = Number.isFinite(n) ? Math.floor(n) : NaN
+    if (!Number.isFinite(x)) return min
+    return Math.max(min, Math.min(max, x))
+  }
+
+  function getTextareaMetrics(textarea) {
+    try {
+      const cs = window.getComputedStyle(textarea)
+      let lineHeight = parseFloat(cs.lineHeight)
+      if (!Number.isFinite(lineHeight) || lineHeight <= 0) {
+        const fs = parseFloat(cs.fontSize)
+        lineHeight = Number.isFinite(fs) && fs > 0 ? fs * 1.65 : 20
+      }
+
+      const paddingTop = parseFloat(cs.paddingTop) || 0
+      const paddingBottom = parseFloat(cs.paddingBottom) || 0
+      const borderTop = parseFloat(cs.borderTopWidth) || 0
+      const borderBottom = parseFloat(cs.borderBottomWidth) || 0
+      const verticalExtras = paddingTop + paddingBottom + borderTop + borderBottom
+      return { lineHeight, verticalExtras }
+    } catch (e) {
+      return { lineHeight: 20, verticalExtras: 0 }
+    }
+  }
+
+  function getTextareaRowsBounds(textarea) {
+    const { lineHeight, verticalExtras } = getTextareaMetrics(textarea)
+    const safeLineHeight = Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : 20
+    const minRows = Math.max(
+      2,
+      Math.ceil((FEEDBACK_TEXTAREA_MIN_HEIGHT_PX - verticalExtras) / safeLineHeight)
+    )
+    const maxRows = Math.max(
+      minRows,
+      Math.floor((FEEDBACK_TEXTAREA_MAX_HEIGHT_PX - verticalExtras) / safeLineHeight)
+    )
+    return { lineHeight: safeLineHeight, verticalExtras, minRows, maxRows }
+  }
+
   function autoResizeFeedbackTextarea(textarea) {
     if (!textarea) return
     try {
-      const minH = 80
-      const maxH = 360
-      textarea.style.height = 'auto'
-      const raw = Math.max(minH, Math.min(maxH, textarea.scrollHeight || minH))
-      const next =
-        textareaManualHeight && Number.isFinite(textareaManualHeight)
-          ? Math.max(raw, textareaManualHeight)
-          : raw
-      textarea.style.height = next + 'px'
+      const { lineHeight, verticalExtras, minRows, maxRows } = getTextareaRowsBounds(textarea)
+
+      // 为了让 scrollHeight 更接近“内容真实高度”，先收敛到最小 rows 再计算
+      textarea.rows = minRows
+      const contentHeight = textarea.scrollHeight || minRows * lineHeight + verticalExtras
+      const neededRows = Math.ceil((contentHeight - verticalExtras) / lineHeight)
+
+      let nextRows = clampInt(neededRows, minRows, maxRows)
+      if (textareaManualRows && Number.isFinite(textareaManualRows)) {
+        nextRows = Math.max(nextRows, textareaManualRows)
+      }
+      textarea.rows = nextRows
     } catch (e) {
       // 忽略
     }
@@ -774,18 +824,25 @@
       const resizeHandle = document.getElementById('resizeHandle')
       let isResizing = false
       let startY = 0
-      let startHeight = 0
+      let startRows = 0
+      let resizeLineHeight = 20
+      let resizeMinRows = 2
+      let resizeMaxRows = 20
 
       if (resizeHandle && textarea) {
         resizeHandle.addEventListener('mousedown', e => {
           isResizing = true
           startY = e.clientY
-          startHeight = textarea.offsetHeight
+          const bounds = getTextareaRowsBounds(textarea)
+          resizeLineHeight = bounds.lineHeight
+          resizeMinRows = bounds.minRows
+          resizeMaxRows = bounds.maxRows
+          startRows = textarea.rows || bounds.minRows
           e.preventDefault()
         })
         // 双击：重置手动高度（回到 Auto-resize）
         resizeHandle.addEventListener('dblclick', e => {
-          textareaManualHeight = null
+          textareaManualRows = null
           autoResizeFeedbackTextarea(textarea)
           e.preventDefault()
         })
@@ -794,11 +851,13 @@
       document.addEventListener('mousemove', e => {
         if (!isResizing || !textarea) return
 
-        /* 计算拖动距离 - 向上拖动时增加文本框高度 */
+        /* 计算拖动距离 - 向上拖动时增加文本框高度（rows 驱动） */
         const deltaY = startY - e.clientY
-        const newHeight = Math.max(80, Math.min(300, startHeight + deltaY))
-        textarea.style.height = newHeight + 'px'
-        textareaManualHeight = newHeight
+        const perRow = resizeLineHeight || 20
+        const deltaRows = Math.round(deltaY / perRow)
+        const nextRows = clampInt(startRows + deltaRows, resizeMinRows, resizeMaxRows)
+        textarea.rows = nextRows
+        textareaManualRows = nextRows
       })
 
       document.addEventListener('mouseup', () => {
@@ -1894,8 +1953,9 @@
     const hint = document.getElementById('settingsHint')
     if (!hint) return
     hint.textContent = message ? String(message) : ''
-    hint.style.color = isError ? 'var(--vscode-errorForeground)' : 'var(--vscode-foreground)'
-    hint.style.opacity = message ? '0.9' : '0.85'
+    // CSP 收紧后禁止动态写入 inline style，这里改为 class 驱动
+    hint.classList.toggle('aiia-error', !!isError)
+    hint.classList.toggle('aiia-has-message', !!message)
 
     // 自动清理：避免“已加载”这类状态常驻造成困惑
     if (settingsHintClearTimer) {

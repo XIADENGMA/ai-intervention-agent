@@ -42,6 +42,7 @@ const includeList = [
   "extension.js",
   "applescript-executor.js",
   "webview.js",
+  "webview.css",
   "webview-helpers.js",
   "logger.js",
   "webview-ui.js",

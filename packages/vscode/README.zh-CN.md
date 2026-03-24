@@ -14,7 +14,7 @@
 
 ## 环境要求
 
-- VS Code `>= 1.74.0`
+- VS Code `>= 1.105.0`
 - 本地可访问的 AI Intervention Agent 服务端（默认 `http://localhost:8080`）
 
 ## 安装

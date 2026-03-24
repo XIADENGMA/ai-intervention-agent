@@ -14,7 +14,7 @@ This VS Code extension embeds the AI Intervention Agent interaction panel into V
 
 ## Requirements
 
-- VS Code `>= 1.74.0`
+- VS Code `>= 1.105.0`
 - A reachable AI Intervention Agent server (default: `http://localhost:8080`)
 
 ## Installation

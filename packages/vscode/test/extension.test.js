@@ -21,16 +21,19 @@ suite('Extension Test Suite', () => {
     const webviewJsPath = path.join(ext.extensionPath, 'webview.js')
     const webviewHelpersPath = path.join(ext.extensionPath, 'webview-helpers.js')
     const webviewUiPath = path.join(ext.extensionPath, 'webview-ui.js')
+    const webviewCssPath = path.join(ext.extensionPath, 'webview.css')
     const extPkgPath = path.join(ext.extensionPath, 'package.json')
 
     assert.ok(fs.existsSync(webviewJsPath), 'Missing webview.js in extension')
     assert.ok(fs.existsSync(webviewHelpersPath), 'Missing webview-helpers.js in extension')
     assert.ok(fs.existsSync(webviewUiPath), 'Missing webview-ui.js in extension')
+    assert.ok(fs.existsSync(webviewCssPath), 'Missing webview.css in extension')
     assert.ok(fs.existsSync(extPkgPath), 'Missing package.json in extension')
 
     const webviewJs = fs.readFileSync(webviewJsPath, 'utf8')
     const webviewUi = fs.readFileSync(webviewUiPath, 'utf8')
-    const extPkg = fs.readFileSync(extPkgPath, 'utf8')
+    const webviewCss = fs.readFileSync(webviewCssPath, 'utf8')
+    const extPkgText = fs.readFileSync(extPkgPath, 'utf8')
 
     // 新功能回归点：插入代码按钮（剪贴板链路）
     assert.ok(webviewJs.includes('id="insertCodeBtn"'))
@@ -47,6 +50,11 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewJs.includes("script-src 'nonce-${nonce}'"))
     assert.ok(!webviewJs.includes("script-src 'nonce-${nonce}' 'unsafe-inline'"))
 
+    // 安全回归点：style-src 不应放开 unsafe-inline（CSS 应通过外链引入）
+    assert.ok(webviewJs.includes('style-src ${cspSource};'))
+    assert.ok(!webviewJs.includes("style-src ${cspSource} 'unsafe-inline'"))
+    assert.ok(webviewJs.includes('webview.css'))
+
     // 边界回归点：自动提交与 429 应有护栏（避免重试风暴/并发提交）
     assert.ok(webviewUi.includes('autoSubmitAttempted'))
     assert.ok(webviewUi.includes('submitBackoffUntilMs'))
@@ -59,12 +67,41 @@ suite('Extension Test Suite', () => {
     assert.ok(!webviewUi.includes('const trimmed = raw.trim();'))
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
-    assert.ok(extPkg.includes('ai-intervention-agent.logLevel'))
-    assert.ok(extPkg.includes('ai-intervention-agent.enableAppleScript'))
-    assert.ok(extPkg.includes('http://localhost:8080'))
+    assert.ok(extPkgText.includes('ai-intervention-agent.logLevel'))
+    assert.ok(extPkgText.includes('ai-intervention-agent.enableAppleScript'))
+    assert.ok(extPkgText.includes('http://localhost:8080'))
     assert.ok(webviewJs.includes('http://localhost:8080'))
-    assert.ok(webviewJs.includes('overflow-wrap: anywhere;'))
-    assert.ok(webviewJs.includes('white-space: pre-wrap;'))
+    assert.ok(webviewCss.includes('overflow-wrap: anywhere;'))
+    assert.ok(webviewCss.includes('white-space: pre-wrap;'))
+
+    // 资源回归点：无内容页 Lottie 资源应存在且路径一致（避免回退为 emoji）
+    const hourglassJsonPath = path.join(ext.extensionPath, 'lottie', 'hourglass.json')
+    assert.ok(fs.existsSync(hourglassJsonPath), 'Missing lottie/hourglass.json in extension')
+    assert.ok(webviewJs.includes('hourglass.json'))
+    assert.ok(!webviewJs.includes('sprout.json'))
+
+    // manifest 回归点：Activity Bar 容器 icon 应使用文件路径（不应使用 $(codicon)）
+    const extPkgJson = JSON.parse(extPkgText)
+    assert.ok(Array.isArray(extPkgJson.files), 'package.json should include files[]')
+    assert.ok(extPkgJson.files.includes('webview.css'), 'package.json files[] should include webview.css')
+
+    const containers =
+      extPkgJson &&
+      extPkgJson.contributes &&
+      extPkgJson.contributes.viewsContainers &&
+      extPkgJson.contributes.viewsContainers.activitybar
+        ? extPkgJson.contributes.viewsContainers.activitybar
+        : []
+    assert.ok(Array.isArray(containers) && containers.length > 0)
+    assert.strictEqual(containers[0].icon, 'activity-icon.svg')
+
+    // 打包脚本回归点：最小文件集合必须包含 webview.css（否则 VSIX 缺资源）
+    const repoRoot = path.resolve(ext.extensionPath, '..', '..')
+    const packagingScriptPath = path.join(repoRoot, 'scripts', 'package_vscode_vsix.mjs')
+    if (fs.existsSync(packagingScriptPath)) {
+      const packagingScript = fs.readFileSync(packagingScriptPath, 'utf8')
+      assert.ok(packagingScript.includes('"webview.css"'))
+    }
   })
 
   test('Webview helpers 应覆盖 macOS / 剪贴板 / 主题同步兼容逻辑', () => {
