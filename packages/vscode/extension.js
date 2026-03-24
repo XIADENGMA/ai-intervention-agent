@@ -18,6 +18,9 @@ try {
 // 用于排查“VSIX 是否确实更新”的构建标识（版本号不变时尤为重要）
 const BUILD_ID = '2026-01-07-webview-ui-external-logs'
 
+// deactivate() 清理钩子（activate 内赋值）
+let deactivateHook = null
+
 function normalizeServerUrl(input) {
   try {
     const raw = (input ?? '').toString().trim()
@@ -704,14 +707,33 @@ function activate(context) {
   context.subscriptions.push(copyDiagnosticsDisposable)
   context.subscriptions.push(outputChannel)
   context.subscriptions.push(statusBar)
-  context.subscriptions.push({
-    dispose: () => {
-      if (statusPollTimer) clearTimeout(statusPollTimer)
+
+  // 兜底清理：避免极端情况下 timer 常驻
+  const cleanup = () => {
+    try {
+      if (statusPollTimer) {
+        clearTimeout(statusPollTimer)
+        statusPollTimer = null
+      }
+    } catch {
+      // 忽略
     }
-  })
+  }
+  deactivateHook = cleanup
+  context.subscriptions.push({ dispose: cleanup })
 }
 
-function deactivate() {}
+function deactivate() {
+  try {
+    if (deactivateHook && typeof deactivateHook === 'function') {
+      deactivateHook()
+    }
+  } catch {
+    // 忽略
+  } finally {
+    deactivateHook = null
+  }
+}
 
 module.exports = {
   activate,
