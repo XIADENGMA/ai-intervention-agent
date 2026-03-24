@@ -594,6 +594,12 @@ class WebviewProvider {
     const webviewUiUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview-ui.js')
     )
+    const webviewNotifyCoreUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'webview-notify-core.js')
+    )
+    const webviewSettingsUiUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'webview-settings-ui.js')
+    )
     const extensionVersion = EXT_VERSION || '0.0.0'
     const githubUrl = EXT_GITHUB_URL || ''
     const githubUrlDisplay = githubUrl ? githubUrl.replace(/^https?:\/\//i, '') : ''
@@ -613,7 +619,7 @@ class WebviewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl}; style-src ${cspSource}; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
-    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}">
+    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
     <link rel="stylesheet" href="${webviewCssUri}">

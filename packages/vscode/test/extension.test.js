@@ -21,6 +21,8 @@ suite('Extension Test Suite', () => {
     const webviewJsPath = path.join(ext.extensionPath, 'webview.js')
     const webviewHelpersPath = path.join(ext.extensionPath, 'webview-helpers.js')
     const webviewUiPath = path.join(ext.extensionPath, 'webview-ui.js')
+    const webviewNotifyCorePath = path.join(ext.extensionPath, 'webview-notify-core.js')
+    const webviewSettingsUiPath = path.join(ext.extensionPath, 'webview-settings-ui.js')
     const webviewCssPath = path.join(ext.extensionPath, 'webview.css')
     const extensionJsPath = path.join(ext.extensionPath, 'extension.js')
     const mathjaxScriptPath = path.join(ext.extensionPath, 'mathjax', 'tex-mml-svg.js')
@@ -29,6 +31,8 @@ suite('Extension Test Suite', () => {
     assert.ok(fs.existsSync(webviewJsPath), 'Missing webview.js in extension')
     assert.ok(fs.existsSync(webviewHelpersPath), 'Missing webview-helpers.js in extension')
     assert.ok(fs.existsSync(webviewUiPath), 'Missing webview-ui.js in extension')
+    assert.ok(fs.existsSync(webviewNotifyCorePath), 'Missing webview-notify-core.js in extension')
+    assert.ok(fs.existsSync(webviewSettingsUiPath), 'Missing webview-settings-ui.js in extension')
     assert.ok(fs.existsSync(webviewCssPath), 'Missing webview.css in extension')
     assert.ok(fs.existsSync(extensionJsPath), 'Missing extension.js in extension')
     assert.ok(fs.existsSync(mathjaxScriptPath), 'Missing mathjax/tex-mml-svg.js in extension')
@@ -36,6 +40,8 @@ suite('Extension Test Suite', () => {
 
     const webviewJs = fs.readFileSync(webviewJsPath, 'utf8')
     const webviewUi = fs.readFileSync(webviewUiPath, 'utf8')
+    const notifyCore = fs.readFileSync(webviewNotifyCorePath, 'utf8')
+    const settingsUi = fs.readFileSync(webviewSettingsUiPath, 'utf8')
     const webviewCss = fs.readFileSync(webviewCssPath, 'utf8')
     const extensionJs = fs.readFileSync(extensionJsPath, 'utf8')
     const extPkgText = fs.readFileSync(extPkgPath, 'utf8')
@@ -49,7 +55,8 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewJs.includes('id="settingsTestNativeBtn"'))
     // 阶段 C：统一 NotificationEvent 分发（Webview → Extension）
     assert.ok(webviewUi.includes("type: 'notify'"))
-    assert.ok(webviewUi.includes('macos_native'))
+    assert.ok(notifyCore.includes('macos_native'))
+    assert.ok(settingsUi.includes('test:macos_native'))
     // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
     assert.ok(webviewUi.includes("type: 'tasksStats'"))
     assert.ok(webviewJs.includes("case 'tasksStats':"))
@@ -72,6 +79,14 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('ensurePrismLoaded'))
     assert.ok(!webviewJs.includes('script nonce="${nonce}" src="${markedJsUri}"'))
     assert.ok(!webviewJs.includes('script nonce="${nonce}" src="${prismJsUri}"'))
+
+    // 启动性能回归点：通知配置/设置面板应按需懒加载（避免首屏解析负担）
+    assert.ok(webviewJs.includes('data-notify-core-js-url'))
+    assert.ok(webviewJs.includes('data-settings-ui-js-url'))
+    assert.ok(webviewUi.includes('data-notify-core-js-url'))
+    assert.ok(webviewUi.includes('data-settings-ui-js-url'))
+    assert.ok(webviewUi.includes('ensureNotifyCoreLoaded'))
+    assert.ok(webviewUi.includes('ensureSettingsUiLoaded'))
 
     // 安全回归点：script-src 应使用 nonce-only（不应再额外放开 ${cspSource} 或 unsafe-inline）
     assert.ok(webviewJs.includes("script-src 'nonce-${nonce}';"))
@@ -117,6 +132,14 @@ suite('Extension Test Suite', () => {
     const extPkgJson = JSON.parse(extPkgText)
     assert.ok(Array.isArray(extPkgJson.files), 'package.json should include files[]')
     assert.ok(extPkgJson.files.includes('webview.css'), 'package.json files[] should include webview.css')
+    assert.ok(
+      extPkgJson.files.includes('webview-notify-core.js'),
+      'package.json files[] should include webview-notify-core.js'
+    )
+    assert.ok(
+      extPkgJson.files.includes('webview-settings-ui.js'),
+      'package.json files[] should include webview-settings-ui.js'
+    )
 
     const containers =
       extPkgJson &&
@@ -135,6 +158,8 @@ suite('Extension Test Suite', () => {
       const packagingScript = fs.readFileSync(packagingScriptPath, 'utf8')
       assert.ok(packagingScript.includes('"webview.css"'))
       assert.ok(packagingScript.includes('"mathjax"'))
+      assert.ok(packagingScript.includes('"webview-notify-core.js"'))
+      assert.ok(packagingScript.includes('"webview-settings-ui.js"'))
     }
   })
 

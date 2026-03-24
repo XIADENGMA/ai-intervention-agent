@@ -46,6 +46,8 @@ const includeList = [
   "webview-helpers.js",
   "logger.js",
   "webview-ui.js",
+  "webview-notify-core.js",
+  "webview-settings-ui.js",
   "notification-models.js",
   "notification-center.js",
   "notification-providers.js",

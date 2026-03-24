@@ -40,6 +40,14 @@
       : ''
   const PRISM_JS_URL =
     __cfgEl && __cfgEl.getAttribute('data-prism-js-url') ? __cfgEl.getAttribute('data-prism-js-url') : ''
+  const NOTIFY_CORE_JS_URL =
+    __cfgEl && __cfgEl.getAttribute('data-notify-core-js-url')
+      ? __cfgEl.getAttribute('data-notify-core-js-url')
+      : ''
+  const SETTINGS_UI_JS_URL =
+    __cfgEl && __cfgEl.getAttribute('data-settings-ui-js-url')
+      ? __cfgEl.getAttribute('data-settings-ui-js-url')
+      : ''
   const WEBVIEW_HELPERS =
     typeof window !== 'undefined' && window.AIIAWebviewHelpers ? window.AIIAWebviewHelpers : null
   let themeObserver = null
@@ -356,6 +364,164 @@
     })
 
     return prismLoadPromise
+  }
+
+  // 按需加载：通知配置核心 & 设置面板 UI（进一步降低首屏解析成本）
+  let notifyCoreLoadPromise = null
+  let settingsUiLoadPromise = null
+
+  function getNotifyCoreModule() {
+    try {
+      if (typeof globalThis !== 'undefined' && globalThis && globalThis.AIIAWebviewNotifyCore) {
+        return globalThis.AIIAWebviewNotifyCore
+      }
+    } catch (e) {
+      // 忽略
+    }
+    try {
+      if (typeof window !== 'undefined' && window && window.AIIAWebviewNotifyCore) {
+        return window.AIIAWebviewNotifyCore
+      }
+    } catch (e) {
+      // 忽略
+    }
+    return null
+  }
+
+  function getSettingsUiModule() {
+    try {
+      if (typeof globalThis !== 'undefined' && globalThis && globalThis.AIIAWebviewSettingsUi) {
+        return globalThis.AIIAWebviewSettingsUi
+      }
+    } catch (e) {
+      // 忽略
+    }
+    try {
+      if (typeof window !== 'undefined' && window && window.AIIAWebviewSettingsUi) {
+        return window.AIIAWebviewSettingsUi
+      }
+    } catch (e) {
+      // 忽略
+    }
+    return null
+  }
+
+  function ensureNotifyCoreLoaded() {
+    try {
+      const existing = getNotifyCoreModule()
+      if (existing && typeof existing.showNewTaskNotification === 'function') {
+        return Promise.resolve(true)
+      }
+    } catch (e) {
+      // 忽略
+    }
+
+    if (!NOTIFY_CORE_JS_URL) return Promise.resolve(false)
+    if (notifyCoreLoadPromise) return notifyCoreLoadPromise
+
+    notifyCoreLoadPromise = new Promise(resolve => {
+      try {
+        const existingScript = document.getElementById('aiia-notify-core-script')
+        if (existingScript) {
+          const start = Date.now()
+          const tick = () => {
+            const mod = getNotifyCoreModule()
+            if (mod && typeof mod.showNewTaskNotification === 'function') {
+              resolve(true)
+              return
+            }
+            if (Date.now() - start > 5000) {
+              resolve(false)
+              return
+            }
+            setTimeout(tick, 50)
+          }
+          tick()
+          return
+        }
+
+        const s = document.createElement('script')
+        s.id = 'aiia-notify-core-script'
+        s.src = NOTIFY_CORE_JS_URL
+        s.defer = true
+        if (CSP_NONCE) {
+          try {
+            s.setAttribute('nonce', CSP_NONCE)
+          } catch (e) {
+            // 忽略
+          }
+        }
+        s.onload = () => {
+          const mod = getNotifyCoreModule()
+          resolve(!!(mod && typeof mod.showNewTaskNotification === 'function'))
+        }
+        s.onerror = () => resolve(false)
+        document.head.appendChild(s)
+      } catch (e) {
+        resolve(false)
+      }
+    })
+
+    return notifyCoreLoadPromise
+  }
+
+  function ensureSettingsUiLoaded() {
+    try {
+      const existing = getSettingsUiModule()
+      if (existing && typeof existing.openSettings === 'function') {
+        return Promise.resolve(true)
+      }
+    } catch (e) {
+      // 忽略
+    }
+
+    if (!SETTINGS_UI_JS_URL) return Promise.resolve(false)
+    if (settingsUiLoadPromise) return settingsUiLoadPromise
+
+    settingsUiLoadPromise = new Promise(resolve => {
+      try {
+        const existingScript = document.getElementById('aiia-settings-ui-script')
+        if (existingScript) {
+          const start = Date.now()
+          const tick = () => {
+            const mod = getSettingsUiModule()
+            if (mod && typeof mod.openSettings === 'function') {
+              resolve(true)
+              return
+            }
+            if (Date.now() - start > 5000) {
+              resolve(false)
+              return
+            }
+            setTimeout(tick, 50)
+          }
+          tick()
+          return
+        }
+
+        const s = document.createElement('script')
+        s.id = 'aiia-settings-ui-script'
+        s.src = SETTINGS_UI_JS_URL
+        s.defer = true
+        if (CSP_NONCE) {
+          try {
+            s.setAttribute('nonce', CSP_NONCE)
+          } catch (e) {
+            // 忽略
+          }
+        }
+        s.onload = () => {
+          const mod = getSettingsUiModule()
+          resolve(!!(mod && typeof mod.openSettings === 'function'))
+        }
+        s.onerror = () => resolve(false)
+        document.head.appendChild(s)
+      } catch (e) {
+        resolve(false)
+      }
+    })
+
+    return settingsUiLoadPromise
   }
 
   function scheduleLowPriorityWork(fn, timeoutMs) {
@@ -996,14 +1162,21 @@
       })
     startPolling()
 
-    // 通知设置：启动时拉取一次（用于“新任务原生通知”等逻辑，不依赖打开设置面板）
-    Promise.resolve()
-      .then(() =>
-        refreshNotificationSettingsFromServer({ force: true, silent: true, allowWhenClosed: true })
-      )
-      .catch(() => {
-        /* 忽略 */
-      })
+    // 通知配置：低优先级预取（首屏不阻塞；避免把设置面板逻辑打进关键路径）
+    scheduleLowPriorityWork(() => {
+      Promise.resolve()
+        .then(() => ensureNotifyCoreLoaded())
+        .then(ok => {
+          if (!ok) return
+          const mod = getNotifyCoreModule()
+          if (mod && typeof mod.refreshNotificationSettingsFromServer === 'function') {
+            return mod.refreshNotificationSettingsFromServer({ force: true, silent: true })
+          }
+        })
+        .catch(() => {
+          /* 忽略 */
+        })
+    }, 1200)
 
     // Watchdog：兜底防止任何情况下长期停在 loading
     setTimeout(() => {
@@ -1101,42 +1274,11 @@
       /* 设置面板（通知配置） */
       const settingsBtn = document.getElementById('settingsBtn')
       if (settingsBtn) {
-        settingsBtn.addEventListener('click', openSettings)
+        settingsBtn.addEventListener('click', openSettingsLazy)
       }
       const settingsBtnNoContent = document.getElementById('settingsBtnNoContent')
       if (settingsBtnNoContent) {
-        settingsBtnNoContent.addEventListener('click', openSettings)
-      }
-
-      const settingsOverlay = document.getElementById('settingsOverlay')
-      const settingsPanel = document.getElementById('settingsPanel')
-      const settingsClose = document.getElementById('settingsClose')
-      const settingsTestNativeBtn = document.getElementById('settingsTestNativeBtn')
-      const settingsTestBarkBtn = document.getElementById('settingsTestBarkBtn')
-
-      if (settingsClose) settingsClose.addEventListener('click', closeSettingsOverlay)
-      if (settingsTestNativeBtn)
-        settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
-      if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
-
-      if (settingsOverlay) {
-        settingsOverlay.addEventListener('click', e => {
-          if (e.target === settingsOverlay) {
-            closeSettingsOverlay()
-          }
-        })
-      }
-      if (settingsPanel) {
-        settingsPanel.addEventListener('click', e => e.stopPropagation())
-        // 设置面板：用户编辑时标记 dirty（避免热更新覆盖用户未保存输入）
-        const maybeMarkDirty = e => {
-          const t = e && e.target
-          const id = t && t.id ? String(t.id) : ''
-          if (!id || !id.startsWith('notify')) return
-          markSettingsDirty()
-        }
-        settingsPanel.addEventListener('input', maybeMarkDirty)
-        settingsPanel.addEventListener('change', maybeMarkDirty)
+        settingsBtnNoContent.addEventListener('click', openSettingsLazy)
       }
 
       /* 文本框高度调整句柄 - 支持向上拖动扩展文本框高度 */
@@ -1665,7 +1807,7 @@
     /* 当检测到新任务时显示通知提示 */
     if (newTasks.length > 0 && hasInitializedTaskIdTracking) {
       const ids = newTasks.map(task => task.task_id).filter(Boolean)
-      showNewTaskNotification(ids)
+      notifyNewTasks(ids)
     }
 
     lastTaskIds = currentTaskIds
@@ -2285,53 +2427,60 @@
     log('UI已更新')
   }
 
-  /* 显示新任务通知 - 在VS Code状态栏显示新任务提示 */
-  function showNewTaskNotification(taskIds) {
+  // 设置面板：按需加载（避免把通知配置/自动保存逻辑打进首屏解析）
+  function openSettingsLazy() {
+    Promise.resolve()
+      .then(() => Promise.all([ensureNotifyCoreLoaded(), ensureSettingsUiLoaded()]))
+      .then(result => {
+        const okUi = Array.isArray(result) ? !!result[1] : false
+        if (!okUi) {
+          throw new Error('设置模块加载失败')
+        }
+        const ui = getSettingsUiModule()
+        if (!ui || typeof ui.openSettings !== 'function') {
+          throw new Error('设置模块不可用')
+        }
+        return ui.openSettings()
+      })
+      .catch(e => {
+        const msg = e && e.message ? String(e.message) : String(e)
+        try {
+          showToast('打开设置失败：' + msg, {
+            kind: 'error',
+            timeoutMs: 2600,
+            dedupeKey: 'settings:open:' + msg.slice(0, 80)
+          })
+        } catch (e2) {
+          // 忽略
+        }
+      })
+  }
+
+  // 新任务通知：委托给 notify-core（按需加载）
+  function notifyNewTasks(taskIds) {
     const ids = Array.isArray(taskIds) ? taskIds.filter(Boolean) : [taskIds].filter(Boolean)
     if (!ids || ids.length === 0) return
 
-    const msg = ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
-    log('检测到新任务: ' + msg)
-
-    // 关键修复：新任务通知触发时，通知配置可能尚未成功拉取（init() 的一次性加载可能因为服务端未就绪而失败）
-    // 这里在发送前做一次“静默刷新”（允许面板关闭时刷新），确保 types 能包含 macos_native。
     Promise.resolve()
-      .then(() =>
-        refreshNotificationSettingsFromServer({ force: false, silent: true, allowWhenClosed: true })
-      )
-      .catch(() => false)
-      .then(() => {
-        const settings = notificationSettings || { enabled: true, macosNativeEnabled: true }
-        if (settings && settings.enabled === false) return
-
-        // 阶段 C：统一 NotificationEvent 分发（VSCode API / AppleScript provider）
-        const types = ['vscode']
-        if (settings && settings.macosNativeEnabled) {
-          types.push('macos_native')
+      .then(() => ensureNotifyCoreLoaded())
+      .then(ok => {
+        const mod = getNotifyCoreModule()
+        if (ok && mod && typeof mod.showNewTaskNotification === 'function') {
+          return mod.showNewTaskNotification(ids)
         }
-        log(
-          '新任务通知 types=' +
-            JSON.stringify(types) +
-            ' macosNativeEnabled=' +
-            (settings && settings.macosNativeEnabled ? 'true' : 'false')
-        )
-
-        postNotificationEvent({
-          title: 'AI Intervention Agent',
-          message: msg,
-          trigger: 'immediate',
-          types,
-          metadata: {
-            presentation: 'statusBar',
-            severity: 'info',
-            timeoutMs: 3000,
-            isTest: false,
-            kind: 'new_tasks',
-            taskIds: ids
-          },
-          source: 'webview-ui',
-          dedupeKey: 'new_tasks:' + ids.join('|')
-        })
+        // notify-core 不可用时至少给出 VSCode statusBar 提示（不影响主流程）
+        const msg =
+          ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
+        postStatusInfo(msg)
+      })
+      .catch(() => {
+        try {
+          const msg =
+            ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
+          postStatusInfo(msg)
+        } catch (e) {
+          // 忽略
+        }
       })
   }
 
@@ -2345,460 +2494,7 @@
     initNoContentHourglassAnimation()
     stopCountdown()
   }
-
-  // 通知设置（对齐原始项目 settings.js / app.js 的后端接口）
-  let notificationSettings = null
-
-  // 通知设置热更新：当配置文件 / Web UI 修改后，设置面板自动同步（无需重启）
-  const SETTINGS_AUTO_REFRESH_MS = 2000
-  const SETTINGS_AUTO_REFRESH_TIMEOUT_MS = 2500
-  let settingsAutoRefreshTimer = null
-  let settingsDirty = false
-  let settingsRemoteChangedWhileDirty = false
-  let isPopulatingSettingsForm = false
-  let lastNotificationSettingsHash = ''
-  let settingsHintClearTimer = null
-
-  function setSettingsHint(message, isError, autoClearMs) {
-    const hint = document.getElementById('settingsHint')
-    if (!hint) return
-    hint.textContent = message ? String(message) : ''
-    // CSP 收紧后禁止动态写入 inline style，这里改为 class 驱动
-    hint.classList.toggle('aiia-error', !!isError)
-    hint.classList.toggle('aiia-has-message', !!message)
-
-    // 自动清理：避免“已加载”这类状态常驻造成困惑
-    if (settingsHintClearTimer) {
-      clearTimeout(settingsHintClearTimer)
-      settingsHintClearTimer = null
-    }
-    if (!isError && message && autoClearMs && autoClearMs > 0) {
-      settingsHintClearTimer = setTimeout(() => {
-        try {
-          const overlay = document.getElementById('settingsOverlay')
-          // 面板已关闭则不需要再显示任何提示
-          if (!overlay || overlay.classList.contains('hidden')) return
-          setSettingsHint('', false)
-        } catch (e) {
-          // 忽略
-        }
-      }, autoClearMs)
-    }
-  }
-
-  function isSettingsOverlayOpen() {
-    const overlay = document.getElementById('settingsOverlay')
-    return !!(overlay && !overlay.classList.contains('hidden'))
-  }
-
-  function computeNotificationSettingsHash(settings) {
-    try {
-      return JSON.stringify(settings || {})
-    } catch (e) {
-      return String(Date.now())
-    }
-  }
-
-  function markSettingsDirty() {
-    if (isPopulatingSettingsForm) return
-    settingsDirty = true
-    scheduleSettingsAutoSave()
-  }
-
-  // 设置自动保存：对齐原项目（修改即同步，无需手动点“保存”）
-  const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 500
-  const SETTINGS_AUTO_SAVE_TIMEOUT_MS = 3500
-  let settingsAutoSaveTimer = null
-  let settingsAutoSaveAbortController = null
-  let settingsAutoSaveInFlight = false
-  let settingsAutoSavePending = false
-
-  function scheduleSettingsAutoSave() {
-    if (!isSettingsOverlayOpen()) return
-    if (settingsAutoSaveTimer) {
-      clearTimeout(settingsAutoSaveTimer)
-      settingsAutoSaveTimer = null
-    }
-    settingsAutoSaveTimer = setTimeout(() => {
-      saveSettings({ silent: true })
-    }, SETTINGS_AUTO_SAVE_DEBOUNCE_MS)
-  }
-
-  function stopSettingsAutoSave() {
-    if (settingsAutoSaveTimer) {
-      clearTimeout(settingsAutoSaveTimer)
-      settingsAutoSaveTimer = null
-    }
-    settingsAutoSavePending = false
-    try {
-      if (
-        settingsAutoSaveAbortController &&
-        typeof settingsAutoSaveAbortController.abort === 'function'
-      ) {
-        settingsAutoSaveAbortController.abort()
-      }
-    } catch (e) {
-      // 忽略
-    } finally {
-      settingsAutoSaveAbortController = null
-      settingsAutoSaveInFlight = false
-    }
-  }
-
-  function startSettingsAutoRefresh() {
-    if (settingsAutoRefreshTimer) return
-    settingsAutoRefreshTimer = setInterval(() => {
-      // 静默刷新：失败不打扰用户；成功时仅在“未编辑”状态下自动同步表单
-      refreshNotificationSettingsFromServer({ force: false, silent: true })
-    }, SETTINGS_AUTO_REFRESH_MS)
-  }
-
-  function stopSettingsAutoRefresh() {
-    if (settingsAutoRefreshTimer) {
-      clearInterval(settingsAutoRefreshTimer)
-      settingsAutoRefreshTimer = null
-    }
-    stopSettingsAutoSave()
-    settingsDirty = false
-    settingsRemoteChangedWhileDirty = false
-  }
-
-  async function refreshNotificationSettingsFromServer({
-    force = false,
-    silent = false,
-    allowWhenClosed = false
-  } = {}) {
-    const overlayOpen = isSettingsOverlayOpen()
-    // 默认只在设置面板打开时刷新；allowWhenClosed=true 用于面板关闭时的“逻辑配置加载”（不渲染表单）
-    if (!overlayOpen && !allowWhenClosed) return false
-
-    let controller = null
-    let timeoutId = null
-    try {
-      const fetchOptions = {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        cache: 'no-store'
-      }
-      if (typeof AbortController !== 'undefined') {
-        controller = new AbortController()
-        fetchOptions.signal = controller.signal
-        timeoutId = setTimeout(() => {
-          try {
-            controller.abort()
-          } catch (e) {
-            /* 忽略 */
-          }
-        }, SETTINGS_AUTO_REFRESH_TIMEOUT_MS)
-      }
-
-      const resp = await fetch(SERVER_URL + '/api/get-notification-config', fetchOptions)
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data || data.status !== 'success') {
-        if (!silent && overlayOpen) {
-          const msg = data && data.message ? data.message : '加载失败（HTTP ' + resp.status + '）'
-          setSettingsHint(msg, true)
-        }
-        return false
-      }
-
-      const next = normalizeNotificationConfig(data.config || {})
-      const nextHash = computeNotificationSettingsHash(next)
-      const changed = nextHash !== lastNotificationSettingsHash
-
-      if (force || (!settingsDirty && changed)) {
-        notificationSettings = next
-        lastNotificationSettingsHash = nextHash
-        settingsDirty = false
-        settingsRemoteChangedWhileDirty = false
-        if (overlayOpen) {
-          populateSettingsForm(notificationSettings)
-          if (!silent) {
-            // 更清晰：表示“已从服务端同步”，并自动淡出
-            setSettingsHint('已同步', false, 1200)
-          }
-        }
-        return true
-      }
-
-      // 有未保存编辑：不覆盖，但提示一次
-      if (changed && settingsDirty && !settingsRemoteChangedWhileDirty) {
-        settingsRemoteChangedWhileDirty = true
-        if (!silent && overlayOpen) {
-          setSettingsHint('检测到配置已更新（当前有未保存修改），为避免覆盖，本次未自动同步', true)
-        }
-      }
-
-      return true
-    } catch (e) {
-      if (!silent && overlayOpen) {
-        const msg =
-          e && e.name === 'AbortError' ? '请求超时' : e && e.message ? e.message : String(e)
-        setSettingsHint('加载失败：' + msg, true)
-      }
-      return false
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId)
-    }
-  }
-
-  function normalizeNotificationConfig(cfg) {
-    const c = cfg || {}
-    return {
-      enabled: c.enabled !== false,
-      webEnabled: c.web_enabled !== false,
-      autoRequestPermission: c.auto_request_permission !== false,
-      macosNativeEnabled: !!c.macos_native_enabled,
-      soundEnabled: c.sound_enabled !== false,
-      soundMute: !!c.sound_mute,
-      soundVolume: typeof c.sound_volume === 'number' ? c.sound_volume : 80,
-      mobileOptimized: c.mobile_optimized !== false,
-      mobileVibrate: c.mobile_vibrate !== false,
-      barkEnabled: !!c.bark_enabled,
-      barkUrl: c.bark_url || 'https://api.day.app/push',
-      barkDeviceKey: c.bark_device_key || '',
-      barkIcon: c.bark_icon || '',
-      barkAction: c.bark_action || 'none'
-    }
-  }
-
-  function populateSettingsForm(settings) {
-    isPopulatingSettingsForm = true
-    try {
-      const setChecked = (id, value) => {
-        const el = document.getElementById(id)
-        if (el) el.checked = !!value
-      }
-      const setValue = (id, value) => {
-        const el = document.getElementById(id)
-        if (el) el.value = value === undefined || value === null ? '' : String(value)
-      }
-
-      setChecked('notifyEnabled', settings.enabled)
-      setChecked('notifyWebEnabled', settings.webEnabled)
-      setChecked('notifyMacOSNativeEnabled', settings.macosNativeEnabled)
-      setChecked('notifyAutoRequestPermission', settings.autoRequestPermission)
-      setChecked('notifySoundEnabled', settings.soundEnabled)
-      setChecked('notifySoundMute', settings.soundMute)
-      setValue('notifySoundVolume', settings.soundVolume)
-
-      setChecked('notifyBarkEnabled', settings.barkEnabled)
-      setValue('notifyBarkUrl', settings.barkUrl)
-      setValue('notifyBarkDeviceKey', settings.barkDeviceKey)
-      setValue('notifyBarkIcon', settings.barkIcon)
-      setValue('notifyBarkAction', settings.barkAction)
-    } finally {
-      isPopulatingSettingsForm = false
-    }
-  }
-
-  function collectSettingsForm() {
-    const getChecked = id => {
-      const el = document.getElementById(id)
-      return !!(el && el.checked)
-    }
-    const getValue = id => {
-      const el = document.getElementById(id)
-      return el ? String(el.value || '') : ''
-    }
-    const getNumber = (id, fallback) => {
-      const raw = getValue(id)
-      const n = parseInt(raw, 10)
-      if (Number.isNaN(n)) return fallback
-      return Math.max(0, Math.min(100, n))
-    }
-
-    return {
-      enabled: getChecked('notifyEnabled'),
-      webEnabled: getChecked('notifyWebEnabled'),
-      macosNativeEnabled: getChecked('notifyMacOSNativeEnabled'),
-      autoRequestPermission: getChecked('notifyAutoRequestPermission'),
-      soundEnabled: getChecked('notifySoundEnabled'),
-      soundMute: getChecked('notifySoundMute'),
-      soundVolume: getNumber('notifySoundVolume', 80),
-
-      barkEnabled: getChecked('notifyBarkEnabled'),
-      barkUrl: getValue('notifyBarkUrl') || 'https://api.day.app/push',
-      barkDeviceKey: getValue('notifyBarkDeviceKey'),
-      barkIcon: getValue('notifyBarkIcon'),
-      barkAction: getValue('notifyBarkAction') || 'none'
-    }
-  }
-
-  function openSettingsOverlay() {
-    const overlay = document.getElementById('settingsOverlay')
-    if (overlay) overlay.classList.remove('hidden')
-    startSettingsAutoRefresh()
-  }
-
-  function closeSettingsOverlay() {
-    const overlay = document.getElementById('settingsOverlay')
-    if (overlay) overlay.classList.add('hidden')
-    stopSettingsAutoRefresh()
-    setSettingsHint('', false)
-  }
-
-  async function openSettings() {
-    openSettingsOverlay()
-    setSettingsHint('加载中…', false)
-
-    try {
-      // 强制拉一次最新配置并渲染（打开面板时以服务端为准）
-      await refreshNotificationSettingsFromServer({ force: true, silent: false })
-    } catch (e) {
-      setSettingsHint('加载失败：' + (e && e.message ? e.message : String(e)), true)
-    }
-  }
-
-  async function saveSettings({ silent = false } = {}) {
-    if (!isSettingsOverlayOpen()) return
-    if (settingsAutoSaveInFlight) {
-      // 有请求在飞：标记 pending，等当前请求结束后再同步最新值
-      settingsAutoSavePending = true
-      return
-    }
-    settingsAutoSaveInFlight = true
-
-    let timeoutId = null
-    try {
-      const updates = collectSettingsForm()
-      const payload = Object.assign({}, notificationSettings || {}, updates)
-      const payloadHash = computeNotificationSettingsHash(payload)
-
-      // 没变化：直接清理 dirty
-      if (payloadHash === lastNotificationSettingsHash) {
-        settingsDirty = false
-        settingsRemoteChangedWhileDirty = false
-        if (!silent) setSettingsHint('无需同步（未变更）', false, 1200)
-        return
-      }
-
-      if (!silent) {
-        setSettingsHint('同步中…', false)
-      }
-
-      // 取消上一次自动保存请求（保留最新输入）
-      try {
-        if (
-          settingsAutoSaveAbortController &&
-          typeof settingsAutoSaveAbortController.abort === 'function'
-        ) {
-          settingsAutoSaveAbortController.abort()
-        }
-      } catch (e) {
-        // 忽略
-      }
-
-      const fetchOptions = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(payload),
-        cache: 'no-store'
-      }
-      if (typeof AbortController !== 'undefined') {
-        settingsAutoSaveAbortController = new AbortController()
-        fetchOptions.signal = settingsAutoSaveAbortController.signal
-        timeoutId = setTimeout(() => {
-          try {
-            settingsAutoSaveAbortController.abort()
-          } catch (e) {
-            /* 忽略 */
-          }
-        }, SETTINGS_AUTO_SAVE_TIMEOUT_MS)
-      } else {
-        settingsAutoSaveAbortController = null
-      }
-
-      const resp = await fetch(SERVER_URL + '/api/update-notification-config', fetchOptions)
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data || data.status !== 'success') {
-        const msg = data && data.message ? data.message : '同步失败（HTTP ' + resp.status + '）'
-        setSettingsHint(msg, true)
-        return
-      }
-
-      notificationSettings = payload
-      lastNotificationSettingsHash = payloadHash
-      settingsDirty = false
-      settingsRemoteChangedWhileDirty = false
-
-      // 同步成功：短暂提示后自动隐藏（避免常驻）
-      setSettingsHint('已同步', false, 1200)
-    } catch (e) {
-      const msg = e && e.name === 'AbortError' ? '请求超时' : e && e.message ? e.message : String(e)
-      setSettingsHint('同步失败：' + msg, true)
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId)
-      settingsAutoSaveInFlight = false
-      if (settingsAutoSavePending) {
-        settingsAutoSavePending = false
-        // 若期间仍有未同步修改，则再触发一次（debounce 复用，避免风暴）
-        if (settingsDirty && isSettingsOverlayOpen()) {
-          scheduleSettingsAutoSave()
-        }
-      }
-    }
-  }
-
-  function testMacOSNativeNotification() {
-    try {
-      const updates = collectSettingsForm()
-      const merged = Object.assign({}, notificationSettings || {}, updates)
-      if (merged && merged.enabled === false) {
-        setSettingsHint('通知已关闭：请先开启“启用通知”', true)
-        return
-      }
-      if (!merged || !merged.macosNativeEnabled) {
-        setSettingsHint('请先开启“macOS 原生通知”', true)
-        return
-      }
-
-      setSettingsHint('已请求发送原生通知…', false, 1200)
-      postNotificationEvent({
-        title: 'AI Intervention Agent 测试',
-        message: '这是一条 macOS 原生通知测试',
-        trigger: 'immediate',
-        types: ['macos_native'],
-        metadata: { isTest: true },
-        source: 'webview-ui',
-        dedupeKey: 'test:macos_native'
-      })
-    } catch (e) {
-      setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true)
-    }
-  }
-
-  async function testBark() {
-    try {
-      const updates = collectSettingsForm()
-      const merged = Object.assign({}, notificationSettings || {}, updates)
-
-      setSettingsHint('测试中…', false)
-      const resp = await fetch(SERVER_URL + '/api/test-bark', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({
-          bark_url: merged.barkUrl || 'https://api.day.app/push',
-          bark_device_key: merged.barkDeviceKey || '',
-          bark_icon: merged.barkIcon || '',
-          bark_action: merged.barkAction || 'none'
-        }),
-        cache: 'no-store'
-      })
-
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data || data.status !== 'success') {
-        const msg = data && data.message ? data.message : '测试失败（HTTP ' + resp.status + '）'
-        setSettingsHint(msg, true)
-        return
-      }
-
-      setSettingsHint(data.message || '测试通知已发送，请检查设备', false)
-      postStatusInfo(data.message || 'Bark 测试通知已发送')
-    } catch (e) {
-      setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true)
-    }
-  }
+  // 通知设置/面板 UI 已拆分为按需加载模块（webview-notify-core.js / webview-settings-ui.js）
 
   /* 使用 marked.js 进行 Markdown 渲染 */
   function renderSimpleMarkdown(text) {
@@ -3974,6 +3670,14 @@
         // 忽略
       }
       themeObserver = null
+    }
+    try {
+      const settingsUi = getSettingsUiModule()
+      if (settingsUi && typeof settingsUi.dispose === 'function') {
+        settingsUi.dispose()
+      }
+    } catch (e) {
+      // 忽略
     }
   })
 
