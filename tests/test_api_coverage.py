@@ -199,6 +199,20 @@ class TestWebUITaskSubmitAPI(unittest.TestCase):
 
         self.assertIn(response.status_code, [404, 400])
 
+    def test_task_submit_invalid_selected_options_returns_400(self):
+        """/api/tasks/<id>/submit：selected_options 非法时不应 500"""
+        self.task_queue.add_task("bad-options-task", "提示")
+
+        response = self.client.post(
+            "/api/tasks/bad-options-task/submit",
+            data={
+                "feedback_text": "测试",
+                "selected_options": "{not-json",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+
     def test_generic_submit_respects_explicit_task_id(self):
         """通用提交端点应优先完成显式 task_id，而不是当前 active 任务"""
         self.task_queue.add_task("active-task", "激活任务")

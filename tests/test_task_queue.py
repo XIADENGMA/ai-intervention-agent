@@ -241,6 +241,26 @@ class TestTaskQueueActiveTask(unittest.TestCase):
         assert task2 is not None
         self.assertEqual(task2.status, "active")
 
+    def test_set_active_task_reject_completed(self):
+        """已完成任务不应被再次激活（避免状态机错乱与清理失效）"""
+        self.queue.add_task("task-1", "提示1")
+        self.queue.add_task("task-2", "提示2")
+
+        # 完成 task-1 后，task-2 会自动激活
+        self.queue.complete_task("task-1", {"feedback": "done"})
+
+        result = self.queue.set_active_task("task-1")
+        self.assertFalse(result)
+
+        task1 = self.queue.get_task("task-1")
+        task2 = self.queue.get_task("task-2")
+        self.assertIsNotNone(task1)
+        self.assertIsNotNone(task2)
+        assert task1 is not None
+        assert task2 is not None
+        self.assertEqual(task1.status, "completed")
+        self.assertEqual(task2.status, "active")
+
     def test_get_active_task(self):
         """测试获取活动任务"""
         self.queue.add_task("task-1", "提示1")

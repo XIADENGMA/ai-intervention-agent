@@ -211,7 +211,11 @@ int: 实际更新的任务数量
 
 ##### `set_active_task(self, task_id: str) -> bool`
 
-手动切换活动任务
+手动切换活动任务（仅允许激活未完成任务）。
+
+- 允许状态：`pending` / `active`
+- 拒绝状态：`completed`（返回 `False`，避免已完成任务被重新激活导致状态机错乱与清理失效）
+- 任务不存在也返回 `False`
 
 ##### `complete_task(self, task_id: str, result: Dict[str, Any]) -> bool`
 

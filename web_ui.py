@@ -1250,7 +1250,8 @@ class WebFeedbackUI:
             注意事项：
                 - auto_resubmit_timeout 自动截断为 250 秒
                 - 任务ID需全局唯一，重复添加会失败
-                - 任务创建后状态为pending，需手动或自动激活
+                - 任务创建后状态为 `active`（当队列中无活动任务）或 `pending`（当已有活动任务）
+                - 可通过 `/api/tasks/<id>/activate` 主动切换激活任务
             """
             # ==============================
             # 输入验证（健壮性/向后兼容）
@@ -1583,9 +1584,47 @@ class WebFeedbackUI:
 
                 # 获取反馈内容
                 feedback_text = request.form.get("feedback_text", "")
-                selected_options = json.loads(
-                    request.form.get("selected_options", "[]")
-                )
+                selected_options_raw = request.form.get("selected_options", "[]")
+                try:
+                    selected_options = json.loads(selected_options_raw)
+                except Exception:
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "selected_options 必须是 JSON 数组字符串",
+                            }
+                        ),
+                        400,
+                    )
+
+                if not isinstance(selected_options, list):
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "selected_options 必须是 JSON 数组",
+                            }
+                        ),
+                        400,
+                    )
+
+                cleaned_selected_options: list[str] = []
+                for opt in selected_options:
+                    if not isinstance(opt, str):
+                        return (
+                            jsonify(
+                                {
+                                    "success": False,
+                                    "error": "selected_options 数组元素必须是字符串",
+                                }
+                            ),
+                            400,
+                        )
+                    s = opt.strip()
+                    if s:
+                        cleaned_selected_options.append(s)
+                selected_options = cleaned_selected_options
 
                 # 处理图片（与 /api/submit 保持一致）
                 images = []

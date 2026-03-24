@@ -335,6 +335,11 @@ class TaskQueue:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
 
+            new_task = self._tasks[task_id]
+            if new_task.status == "completed":
+                logger.warning(f"任务已完成，无法激活: {task_id}")
+                return False
+
             old_active_id = self._active_task_id
             old_active_status = None
 
@@ -344,9 +349,9 @@ class TaskQueue:
                     old_active_status = old_task.status
                     old_task.status = "pending"
 
-            new_task_old_status = self._tasks[task_id].status
+            new_task_old_status = new_task.status
             self._active_task_id = task_id
-            self._tasks[task_id].status = "active"
+            new_task.status = "active"
 
             logger.info(f"切换到任务: {task_id}")
 

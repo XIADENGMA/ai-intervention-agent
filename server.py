@@ -1726,8 +1726,9 @@ async def interactive_feedback(
         )
     """
     try:
-        # 使用类型提示，移除运行时检查以避免IDE警告
-        predefined_options_list = predefined_options
+        # 输入清理：截断过长内容，过滤非法选项（对齐工具契约/避免后端 400）
+        cleaned_message, cleaned_options = validate_input(message, predefined_options)
+        predefined_options_list = cleaned_options
 
         # 自动生成唯一 task_id（使用时间戳+随机数确保唯一性）
         project_name = Path.cwd().name or "task"
@@ -1736,7 +1737,9 @@ async def interactive_feedback(
         random_suffix = random.randint(100, 999)
         task_id = f"{project_name}-{timestamp}-{random_suffix}"
 
-        logger.info(f"收到反馈请求: {message[:50]}... (自动生成task_id: {task_id})")
+        logger.info(
+            f"收到反馈请求: {cleaned_message[:50]}... (自动生成task_id: {task_id})"
+        )
 
         # 获取配置
         config, auto_resubmit_timeout = get_web_ui_config()
@@ -1755,7 +1758,7 @@ async def interactive_feedback(
                 api_url,
                 json={
                     "task_id": task_id,
-                    "prompt": message,
+                    "prompt": cleaned_message,
                     "predefined_options": predefined_options_list,
                     "auto_resubmit_timeout": auto_resubmit_timeout,
                 },
@@ -1799,8 +1802,8 @@ async def interactive_feedback(
                     notification_manager.refresh_config_from_file()
 
                     # 截断消息，避免过长（Bark 有长度限制）
-                    notification_message = message[:100]
-                    if len(message) > 100:
+                    notification_message = cleaned_message[:100]
+                    if len(cleaned_message) > 100:
                         notification_message += "..."
 
                     # 发送通知（types=None 使用配置的默认类型）
