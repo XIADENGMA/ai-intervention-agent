@@ -1,10 +1,61 @@
 const vscode = require('vscode')
+const path = require('path')
+const { execFile } = require('child_process')
 const { toAppleScriptStringLiteral, sanitizeForLog } = require('./applescript-executor')
 
 function toNonEmptyString(value, fallback = '') {
   const s = value == null ? '' : String(value)
   const t = s.trim()
   return t ? t : fallback
+}
+
+function execFileAsync(file, args, options) {
+  return new Promise((resolve, reject) => {
+    try {
+      execFile(
+        file,
+        Array.isArray(args) ? args : [],
+        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}),
+        (error, stdout, stderr) => {
+          if (error) {
+            const errText = (stderr ?? '').toString().trim()
+            const msg = errText || (error && error.message ? String(error.message) : 'execFile failed')
+            const err = new Error(msg)
+            err.code = 'EXEC_FAILED'
+            err.cause = error
+            err.details = { file: String(file || ''), args: Array.isArray(args) ? args.map(String) : [] }
+            reject(err)
+            return
+          }
+          resolve((stdout ?? '').toString())
+        }
+      )
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e))
+      err.code = 'EXEC_SPAWN_FAILED'
+      reject(err)
+    }
+  })
+}
+
+function findMacAppBundlePathFromAppRoot(appRoot) {
+  try {
+    let p = (appRoot ?? '').toString().trim()
+    if (!p) return ''
+    // 常见形态：
+    // - VS Code: /Applications/Visual Studio Code.app/Contents/Resources/app
+    // - Cursor:  /Applications/Cursor.app/Contents/Resources/app
+    for (let i = 0; i < 12; i++) {
+      if (!p) break
+      if (p.toLowerCase().endsWith('.app')) return p
+      const parent = path.dirname(p)
+      if (!parent || parent === p) break
+      p = parent
+    }
+    return ''
+  } catch {
+    return ''
+  }
 }
 
 class VSCodeApiNotificationProvider {
@@ -126,10 +177,75 @@ class AppleScriptNotificationProvider {
     }
 
     const vs = this._vscode
+    const appRoot =
+      vs && vs.env && typeof vs.env.appRoot === 'string' && vs.env.appRoot.trim()
+        ? String(vs.env.appRoot).trim()
+        : ''
     const appName =
       vs && vs.env && typeof vs.env.appName === 'string' && vs.env.appName.trim()
         ? String(vs.env.appName).trim()
         : ''
+
+    // 优先从 appRoot 的 Info.plist 推导 bundleId：比 “id of application <appName>” 更稳
+    // （Cursor/某些宿主的 appName 可能不是 AppleScript 可识别的应用名）
+    if (appRoot) {
+      const appBundlePath = findMacAppBundlePathFromAppRoot(appRoot)
+      if (appBundlePath) {
+        const infoPlistPath = path.join(appBundlePath, 'Contents', 'Info.plist')
+        this._hostBundleIdResolvePromise = Promise.resolve()
+          .then(() =>
+            execFileAsync(
+              '/usr/bin/plutil',
+              ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', infoPlistPath],
+              { timeout: 1500, maxBuffer: 64 * 1024 }
+            )
+          )
+          .then(out => {
+            const id = (out ?? '').toString().trim().replace(/^"+|"+$/g, '')
+            this._hostBundleId = this._looksLikeBundleId(id) ? id : ''
+            this._hostBundleIdResolved = true
+            try {
+              if (this._logger && typeof this._logger.event === 'function') {
+                this._logger.event(
+                  'notify.macos_native.bundle_id.resolved',
+                  { from: 'appRoot', appRoot, bundleId: this._hostBundleId || '', ok: !!this._hostBundleId },
+                  { level: 'debug' }
+                )
+              }
+            } catch {
+              // 忽略
+            }
+            return this._hostBundleId
+          })
+          .catch(e => {
+            this._hostBundleId = ''
+            this._hostBundleIdResolved = true
+            try {
+              const msg = e && e.message ? String(e.message) : String(e)
+              if (this._logger && typeof this._logger.event === 'function') {
+                this._logger.event(
+                  'notify.macos_native.bundle_id.fail',
+                  {
+                    from: 'appRoot',
+                    appRoot,
+                    code: e && e.code ? String(e.code) : 'unknown',
+                    msg: sanitizeForLog(msg)
+                  },
+                  { level: 'debug' }
+                )
+              }
+            } catch {
+              // 忽略
+            }
+            return ''
+          })
+          .finally(() => {
+            this._hostBundleIdResolvePromise = null
+          })
+        return this._hostBundleIdResolvePromise
+      }
+    }
+
     if (!appName || !this._executor || typeof this._executor.runAppleScript !== 'function') {
       try {
         if (this._logger && typeof this._logger.event === 'function') {
@@ -178,7 +294,7 @@ class AppleScriptNotificationProvider {
           if (this._logger && typeof this._logger.event === 'function') {
             this._logger.event(
               'notify.macos_native.bundle_id.fail',
-              { appName, code: info.code, msg: sanitizeForLog(info.message), stderr: info.stderrPreview },
+              { from: 'applescript', appName, code: info.code, msg: sanitizeForLog(info.message), stderr: info.stderrPreview },
               { level: 'debug' }
             )
           }
@@ -244,6 +360,7 @@ class AppleScriptNotificationProvider {
       // 通过为 osascript 进程注入 __CFBundleIdentifier，可能让系统把通知归属到指定 bundle id。
       let bundleId = ''
       let runOptions = undefined
+      let usedFallbackWithoutBundle = false
       try {
         bundleId = await this._resolveHostBundleId()
         if (bundleId) {
@@ -253,6 +370,8 @@ class AppleScriptNotificationProvider {
         bundleId = ''
         runOptions = undefined
       }
+      const injectedEnvKeys =
+        runOptions && runOptions.env && runOptions.env.__CFBundleIdentifier ? ['__CFBundleIdentifier'] : []
 
       // 诊断信息：每次发送前清空（仅保留最后一次失败）
       this._lastDiagnostic = null
@@ -282,6 +401,17 @@ class AppleScriptNotificationProvider {
 
           try {
             await this._executor.runAppleScript(script)
+            usedFallbackWithoutBundle = true
+            this._lastDiagnostic = {
+              ...diagBase,
+              ok: true,
+              code: 'OK',
+              bundleId,
+              injectedEnvKeys: first.injectedEnvKeys,
+              usedFallbackWithoutBundle: true,
+              primary: first,
+              fallback: { ok: true }
+            }
             return true
           } catch (e2) {
             const fallback = this._extractAppleScriptError(e2)
@@ -294,6 +424,16 @@ class AppleScriptNotificationProvider {
         }
         throw e
       }
+      this._lastDiagnostic = {
+        ...diagBase,
+        ok: true,
+        code: 'OK',
+        bundleId,
+        injectedEnvKeys,
+        usedFallbackWithoutBundle: !!usedFallbackWithoutBundle,
+        primary: null,
+        fallback: null
+      }
       return true
     } catch (e) {
       const info = this._extractAppleScriptError(e)
@@ -303,6 +443,7 @@ class AppleScriptNotificationProvider {
         this._hostBundleIdResolved && this._hostBundleId ? String(this._hostBundleId) : ''
       this._lastDiagnostic = {
         ...diagBase,
+        ok: false,
         code,
         message: raw,
         stderr: info.stderr,

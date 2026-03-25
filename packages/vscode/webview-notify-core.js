@@ -49,7 +49,8 @@
       enabled: c.enabled !== false,
       webEnabled: c.web_enabled !== false,
       autoRequestPermission: c.auto_request_permission !== false,
-      macosNativeEnabled: !!c.macos_native_enabled,
+      // 后端默认 true（config.jsonc.default）；这里对齐“未显式关闭即开启”
+      macosNativeEnabled: c.macos_native_enabled !== false,
       soundEnabled: c.sound_enabled !== false,
       soundMute: !!c.sound_mute,
       soundVolume: typeof c.sound_volume === 'number' ? c.sound_volume : 80,

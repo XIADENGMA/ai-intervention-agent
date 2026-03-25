@@ -88,16 +88,17 @@ class WebviewProvider {
     this._appleScriptExecutor = new AppleScriptExecutor({ logger: this._appleScriptLogger })
     this._notificationLogger = this._logger.child('notify')
     this._notificationCenter = new NotificationCenter({ logger: this._notificationLogger })
-    this._notificationCenter.registerProvider(
-      NotificationType.VSCODE,
-      new VSCodeApiNotificationProvider({ logger: this._notificationLogger.child('vscode') })
-    )
+    this._vscodeNotificationProvider = new VSCodeApiNotificationProvider({
+      logger: this._notificationLogger.child('vscode')
+    })
+    this._macosNativeNotificationProvider = new AppleScriptNotificationProvider({
+      logger: this._appleScriptLogger,
+      executor: this._appleScriptExecutor
+    })
+    this._notificationCenter.registerProvider(NotificationType.VSCODE, this._vscodeNotificationProvider)
     this._notificationCenter.registerProvider(
       NotificationType.MACOS_NATIVE,
-      new AppleScriptNotificationProvider({
-        logger: this._appleScriptLogger,
-        executor: this._appleScriptExecutor
-      })
+      this._macosNativeNotificationProvider
     )
     this._serverUrl = serverUrl
     this._onVisibilityChanged =
@@ -466,6 +467,12 @@ class WebviewProvider {
       case 'showMacOSNativeNotification':
         this._handleShowMacOSNativeNotification(message)
         break
+      case 'testMacOSNativeNotification':
+        this._handleTestMacOSNativeNotification(message)
+        break
+      case 'writeClipboardText':
+        this._handleWriteClipboardText(message)
+        break
       default:
         // 忽略未知消息类型
         break
@@ -589,6 +596,124 @@ class WebviewProvider {
       metadata: { isTest: !!isTest },
       source: 'webview'
     })
+  }
+
+  _handleTestMacOSNativeNotification(message) {
+    const requestId = message && message.requestId ? String(message.requestId) : ''
+    const title =
+      message && typeof message.title === 'string' && message.title
+        ? String(message.title)
+        : 'AI Intervention Agent 测试'
+    const body =
+      message && typeof message.message === 'string' && message.message
+        ? String(message.message)
+        : '这是一条 macOS 原生通知测试'
+
+    if (!requestId) return
+    if (!body.trim()) {
+      this._sendMessage({
+        type: 'testMacOSNativeNotificationResult',
+        requestId,
+        ok: false,
+        error: 'message 不能为空'
+      })
+      return
+    }
+
+    const platform = process.platform
+    const env = vscode && vscode.env ? vscode.env : null
+    const appName = env && typeof env.appName === 'string' ? String(env.appName) : ''
+
+    const event = {
+      title,
+      message: body,
+      trigger: 'immediate',
+      types: [NotificationType.MACOS_NATIVE],
+      metadata: { isTest: true, diagnostic: true },
+      source: 'webview'
+    }
+
+    Promise.resolve()
+      .then(() => this._notificationCenter.dispatch(event))
+      .then(result => {
+        const delivered = result && result.delivered ? result.delivered : {}
+        const ok = !!(delivered && delivered[NotificationType.MACOS_NATIVE])
+        let diagnostic = null
+        try {
+          diagnostic =
+            this._macosNativeNotificationProvider &&
+            typeof this._macosNativeNotificationProvider.getLastDiagnostic === 'function'
+              ? this._macosNativeNotificationProvider.getLastDiagnostic()
+              : null
+        } catch {
+          diagnostic = null
+        }
+
+        const hints = []
+        try {
+          if (platform !== 'darwin') {
+            hints.push('当前平台不是 macOS：macos_native 通知会被跳过')
+          } else if (ok) {
+            // 成功但用户可能“看不到”：多数是系统通知开关/Focus 或发送方归属导致
+            const bundleId = diagnostic && diagnostic.bundleId ? String(diagnostic.bundleId) : ''
+            const injected =
+              diagnostic &&
+              diagnostic.injectedEnvKeys &&
+              Array.isArray(diagnostic.injectedEnvKeys) &&
+              diagnostic.injectedEnvKeys.includes('__CFBundleIdentifier')
+            if (bundleId && injected) {
+              hints.push(
+                `已尝试将通知归属到宿主应用（bundleId=${bundleId}）。若未看到：请检查 系统设置 → 通知 中对应应用是否允许通知，以及 Focus/勿扰模式。`
+              )
+            } else {
+              hints.push(
+                '已执行发送逻辑但你仍未看到通知：请检查 系统设置 → 通知（可能显示为“脚本编辑器/Script Editor”）以及 Focus/勿扰模式。'
+              )
+            }
+          } else {
+            hints.push('发送失败：请展开 diagnostic 查看 code/stderr/exitCode，并按提示排查系统权限/环境。')
+          }
+        } catch {
+          // 忽略
+        }
+
+        this._sendMessage({
+          type: 'testMacOSNativeNotificationResult',
+          requestId,
+          ok,
+          delivered,
+          platform,
+          appName,
+          diagnostic,
+          hints
+        })
+      })
+      .catch(e => {
+        const msg = e && e.message ? String(e.message) : String(e)
+        this._sendMessage({
+          type: 'testMacOSNativeNotificationResult',
+          requestId,
+          ok: false,
+          error: msg,
+          platform,
+          appName
+        })
+      })
+  }
+
+  _handleWriteClipboardText(message) {
+    const requestId = message && message.requestId ? String(message.requestId) : ''
+    const textRaw = message && typeof message.text === 'string' ? String(message.text) : ''
+    const text = textRaw.length > 50000 ? textRaw.slice(0, 50000) : textRaw
+    Promise.resolve()
+      .then(() => vscode.env.clipboard.writeText(text))
+      .then(() => {
+        this._sendMessage({ type: 'writeClipboardTextResult', requestId, ok: true })
+      })
+      .catch(e => {
+        const msg = e && e.message ? String(e.message) : String(e)
+        this._sendMessage({ type: 'writeClipboardTextResult', requestId, ok: false, error: msg })
+      })
   }
 
   _handleRequestClipboardText(message) {
@@ -880,6 +1005,7 @@ class WebviewProvider {
 
                 <div class="settings-actions">
                     <button class="settings-action secondary" id="settingsTestNativeBtn">测试原生通知</button>
+                    <button class="settings-action secondary" id="settingsCopyNativeDiagBtn">复制诊断</button>
                     <button class="settings-action secondary" id="settingsTestBarkBtn">测试 Bark</button>
                     <div class="settings-actions-right">
                         <span class="settings-auto-save" title="修改后会自动同步到服务端">自动保存</span>
