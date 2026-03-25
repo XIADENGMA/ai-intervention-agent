@@ -2,10 +2,20 @@
   // 设置面板 UI：仅在用户打开“通知设置”时按需加载，避免阻塞首屏
   let vscode = null
   try {
-    // eslint-disable-next-line no-undef
-    vscode = acquireVsCodeApi()
+    vscode =
+      typeof globalThis !== 'undefined' && globalThis && globalThis.__AIIA_VSCODE_API
+        ? globalThis.__AIIA_VSCODE_API
+        : null
   } catch (e) {
     vscode = null
+  }
+  if (!vscode) {
+    try {
+      // eslint-disable-next-line no-undef
+      vscode = acquireVsCodeApi()
+    } catch (e) {
+      vscode = null
+    }
   }
 
   const cfgEl = typeof document !== 'undefined' ? document.getElementById('aiia-config') : null
@@ -16,10 +26,12 @@
     try {
       if (vscode && typeof vscode.postMessage === 'function') {
         vscode.postMessage(message)
+        return true
       }
     } catch (e) {
       // 忽略：设置面板异常不应影响主 UI
     }
+    return false
   }
 
   function postNotificationEvent(event) {
@@ -469,12 +481,26 @@
       }, 12000)
       pendingNativeTests.set(requestId, timer)
 
-      postMessage({
+      const posted = postMessage({
         type: 'testMacOSNativeNotification',
         requestId,
         title: 'AI Intervention Agent 测试',
         message: '这是一条 macOS 原生通知测试'
       })
+      if (!posted) {
+        try {
+          pendingNativeTests.delete(requestId)
+        } catch (e) {
+          // 忽略
+        }
+        try {
+          clearTimeout(timer)
+        } catch (e) {
+          // 忽略
+        }
+        setSettingsHint('发送失败：VS Code Webview API 不可用（请尝试关闭/重新打开面板或重载窗口）', true)
+        return
+      }
     } catch (e) {
       setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true)
     }
@@ -539,7 +565,11 @@
     const requestId = `clip_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`
     pendingClipboardWrites.set(requestId, { purpose: 'native_diag' })
     setSettingsHint('复制诊断中…', false, 1200)
-    postMessage({ type: 'writeClipboardText', requestId, text: lastNativeDiagnosticText })
+    const posted = postMessage({ type: 'writeClipboardText', requestId, text: lastNativeDiagnosticText })
+    if (!posted) {
+      pendingClipboardWrites.delete(requestId)
+      setSettingsHint('复制失败：VS Code Webview API 不可用', true)
+    }
   }
 
   function handleWriteClipboardTextResult(message) {

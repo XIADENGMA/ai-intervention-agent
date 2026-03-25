@@ -2,10 +2,20 @@
   // 通知配置核心：负责从服务端拉取/规范化/缓存，并提供新任务通知派发（按需懒加载）
   let vscode = null
   try {
-    // eslint-disable-next-line no-undef
-    vscode = acquireVsCodeApi()
+    vscode =
+      typeof globalThis !== 'undefined' && globalThis && globalThis.__AIIA_VSCODE_API
+        ? globalThis.__AIIA_VSCODE_API
+        : null
   } catch (e) {
     vscode = null
+  }
+  if (!vscode) {
+    try {
+      // eslint-disable-next-line no-undef
+      vscode = acquireVsCodeApi()
+    } catch (e) {
+      vscode = null
+    }
   }
 
   const cfgEl = typeof document !== 'undefined' ? document.getElementById('aiia-config') : null

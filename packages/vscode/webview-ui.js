@@ -15,6 +15,14 @@
       setState: function () {}
     }
   }
+  // 兼容性：部分宿主对 acquireVsCodeApi 的调用次数更敏感，这里把已获取的 api 缓存到全局，供懒加载模块复用
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis) {
+      globalThis.__AIIA_VSCODE_API = vscode
+    }
+  } catch (e) {
+    // 忽略
+  }
   const __cfgEl = document.getElementById('aiia-config')
   const SERVER_URL =
     __cfgEl && __cfgEl.getAttribute('data-server-url')
