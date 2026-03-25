@@ -453,12 +453,19 @@
         .toString(16)
         .slice(2)}`
       const timer = setTimeout(() => {
-        try {
-          pendingNativeTests.delete(requestId)
-        } catch (e) {
-          // 忽略
-        }
-        setSettingsHint('测试超时：未收到扩展侧响应（请确认面板已打开且扩展正常运行）', true)
+        // 软超时：不丢弃 requestId，允许“晚到结果”覆盖当前提示（避免两次 osascript 尝试累计 > 12s 时误判）
+        setSettingsHint(
+          '测试耗时较长：仍在等待扩展侧响应…（可能系统阻塞/首次执行较慢；如稍后收到结果会自动更新）',
+          true
+        )
+        // 兜底清理：避免极端情况下 Map 常驻
+        setTimeout(() => {
+          try {
+            if (pendingNativeTests.has(requestId)) pendingNativeTests.delete(requestId)
+          } catch (e) {
+            // 忽略
+          }
+        }, 60000)
       }, 12000)
       pendingNativeTests.set(requestId, timer)
 
@@ -522,6 +529,10 @@
 
   function copyLastNativeDiagnostic() {
     if (!lastNativeDiagnosticText) {
+      if (pendingNativeTests && pendingNativeTests.size > 0) {
+        setSettingsHint('测试仍在进行中：请等待结果回传后再复制诊断', true)
+        return
+      }
       setSettingsHint('暂无诊断信息：请先点击“测试原生通知”', true)
       return
     }
