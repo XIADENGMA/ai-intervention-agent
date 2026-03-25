@@ -137,11 +137,22 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewCss.includes('color-scheme: dark'))
     assert.ok(webviewCss.includes('color-scheme: light'))
 
-    // 资源回归点：无内容页 Lottie 资源应存在且路径一致（避免回退为 emoji）
+    // 资源回归点：无内容页 Lottie 资源应存在且路径一致（避免回退为 emoji；应降级为 SVG）
     const hourglassJsonPath = path.join(ext.extensionPath, 'lottie', 'hourglass.json')
+    const lottieLibPath = path.join(ext.extensionPath, 'lottie.min.js')
     assert.ok(fs.existsSync(hourglassJsonPath), 'Missing lottie/hourglass.json in extension')
+    assert.ok(fs.existsSync(lottieLibPath), 'Missing lottie.min.js in extension')
     assert.ok(webviewJs.includes('hourglass.json'))
     assert.ok(!webviewJs.includes('sprout.json'))
+    assert.ok(!webviewUi.includes('⏳'), 'webview-ui.js should not fall back to emoji')
+    // Lottie JSON 通过 fetch 加载：connect-src 必须允许 Webview 自身/本地资源，否则会永远 data missing → 退化状态
+    assert.ok(
+      webviewJs.includes("connect-src ${serverUrl} ${cspSource} 'self'"),
+      "CSP connect-src should include ${cspSource} and 'self'"
+    )
+    // manifest 注入回归点：Lottie lib URL 必须通过 meta 下发（CSP-safe 懒加载）
+    assert.ok(webviewJs.includes('data-lottie-lib-url'))
+    assert.ok(webviewUi.includes('data-lottie-lib-url'))
 
     // manifest 回归点：Activity Bar 容器 icon 应使用文件路径（不应使用 $(codicon)）
     const extPkgJson = JSON.parse(extPkgText)

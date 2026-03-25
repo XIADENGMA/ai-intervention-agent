@@ -55,7 +55,7 @@
       "activitybar": [
         {
           "id": "aiInterventionAgent",
-          "title": "干预",
+          "title": "AI Intervention Agent",
           "icon": "activity-icon.svg"
         }
       ]

@@ -60,6 +60,12 @@ npm run vscode:package
 
 The generated `.vsix` file will appear under `packages/vscode/`.
 
+> Note: The `.vsix` file is a build artifact (gitignored). If you run `vscode:package` / `vscode:check` repeatedly and want to clean up old files:
+>
+> ```bash
+> rm -f packages/vscode/*.vsix
+> ```
+
 ## Development & Tests
 
 From the repository root:

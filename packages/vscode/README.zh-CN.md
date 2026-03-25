@@ -60,6 +60,12 @@ npm run vscode:package
 
 生成的 `.vsix` 文件会出现在 `packages/vscode/` 目录下。
 
+> 说明：`.vsix` 属于构建产物（已在仓库 `.gitignore` 中忽略）。如果你频繁运行 `vscode:package` / `vscode:check`，想清理本地残留文件，可执行：
+>
+> ```bash
+> rm -f packages/vscode/*.vsix
+> ```
+
 ## 开发与测试
 
 在仓库根目录执行：

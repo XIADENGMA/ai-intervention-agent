@@ -51,7 +51,7 @@
   const WEBVIEW_HELPERS =
     typeof window !== 'undefined' && window.AIIAWebviewHelpers ? window.AIIAWebviewHelpers : null
   let themeObserver = null
-  // 无有效内容页面：Lottie 动画（默认使用 hourglass.json；失败则降级为 ⏳）
+  // 无有效内容页面：Lottie 动画（默认使用 hourglass.json；失败则降级为 Lucide 风格 SVG）
   let noContentHourglassAnimation = null
 
   // 网络请求超时（避免本地端口“半开/卡住”导致一直停在“正在连接服务器...”）
@@ -107,7 +107,9 @@
     const container = document.getElementById('hourglass-lottie')
     if (!container) return
     // CSP 收紧后禁止动态写入 inline style，这里改为 class 驱动
-    container.classList.toggle('aiia-invert', isDarkBackground())
+    // 仅对 Lottie 渲染结果做 invert（fallback SVG 使用 currentColor，不需要 invert）
+    const shouldInvert = isDarkBackground() && !!noContentHourglassAnimation
+    container.classList.toggle('aiia-invert', shouldInvert)
   }
 
   function isMacLikePlatform() {
@@ -146,6 +148,7 @@
   }
 
   function destroyNoContentHourglassAnimation() {
+    clearNoContentLottieTimers()
     try {
       if (noContentHourglassAnimation) {
         noContentHourglassAnimation.destroy()
@@ -163,33 +166,280 @@
   let noContentLottieInitInFlight = false
   let lottieInitWarned = false
 
+  // 无内容页 Lottie 降级/恢复：重试与超时控制
+  const NO_CONTENT_LOTTIE_TIMEOUT_MS = 10000
+  const NO_CONTENT_LOTTIE_RETRY_MIN_MS = 600
+  const NO_CONTENT_LOTTIE_RETRY_MAX_MS = 12000
+  let noContentLottieRetryTimer = null
+  let noContentLottieDomLoadedTimer = null
+  let noContentLottieRetryAttempt = 0
+
+  const LUCIDE_BASE_SVG_ATTRS =
+    'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+
+  const LUCIDE_SVG_ICONS = {
+    // https://lucide.dev/icons/hourglass
+    hourglass: `<svg ${LUCIDE_BASE_SVG_ATTRS}>
+  <path d="M5 22h14" />
+  <path d="M5 2h14" />
+  <path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+  <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+  <path d="M7.8 20.5H16.2L14 16.5H10Z" fill="currentColor" stroke="none" />
+</svg>`,
+
+    // https://lucide.dev/icons/loader
+    loader: `<svg ${LUCIDE_BASE_SVG_ATTRS}>
+  <path d="M12 2v4" />
+  <path d="m16.2 7.8 2.9-2.9" />
+  <path d="M18 12h4" />
+  <path d="m16.2 16.2 2.9 2.9" />
+  <path d="M12 18v4" />
+  <path d="m4.9 19.1 2.9-2.9" />
+  <path d="M2 12h4" />
+  <path d="m4.9 4.9 2.9 2.9" />
+</svg>`,
+
+    // https://lucide.dev/icons/loader-circle
+    'loader-circle': `<svg ${LUCIDE_BASE_SVG_ATTRS}>
+  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+</svg>`,
+
+    // https://lucide.dev/icons/rotate-cw
+    'rotate-cw': `<svg ${LUCIDE_BASE_SVG_ATTRS}>
+  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+  <path d="M21 3v5h-5" />
+</svg>`
+  }
+
+  // 默认降级图标：与扩展 Activity Bar 图标（activity-icon.svg）一致的沙漏风格
+  const NO_CONTENT_FALLBACK_ICON_VARIANT = 'hourglass'
+  const NO_CONTENT_FALLBACK_ICON_SPIN = true
+
+  function clearNoContentLottieTimers() {
+    try {
+      if (noContentLottieRetryTimer) clearTimeout(noContentLottieRetryTimer)
+    } catch (_) {
+      // 忽略
+    } finally {
+      noContentLottieRetryTimer = null
+    }
+    try {
+      if (noContentLottieDomLoadedTimer) clearTimeout(noContentLottieDomLoadedTimer)
+    } catch (_) {
+      // 忽略
+    } finally {
+      noContentLottieDomLoadedTimer = null
+    }
+  }
+
+  function isNoContentVisible() {
+    try {
+      const el = document.getElementById('noContentState')
+      return !!el && !el.classList.contains('hidden')
+    } catch (_) {
+      return false
+    }
+  }
+
+  function renderNoContentFallbackIcon(container, options) {
+    if (!container) return
+    const opts = options && typeof options === 'object' ? options : {}
+    const variantRaw = opts.variant ? String(opts.variant) : ''
+    const variant = variantRaw && LUCIDE_SVG_ICONS[variantRaw] ? variantRaw : NO_CONTENT_FALLBACK_ICON_VARIANT
+    const svg = LUCIDE_SVG_ICONS[variant] || ''
+    if (!svg) return
+
+    // 避免重复重绘
+    try {
+      const cur = container.getAttribute('data-aiia-fallback-icon') || ''
+      if (cur === variant && container.querySelector('.aiia-fallback-icon')) {
+        return
+      }
+    } catch (_) {
+      // 忽略
+    }
+
+    try {
+      container.textContent = ''
+    } catch (_) {
+      // 忽略
+    }
+
+    let wrapper = null
+    try {
+      const canSpin =
+        variant === 'loader' || variant === 'loader-circle' || variant === 'rotate-cw' || variantRaw === 'spin'
+      const shouldSpin = !!(opts && typeof opts === 'object' && opts.spin === true) || (canSpin && NO_CONTENT_FALLBACK_ICON_SPIN)
+      wrapper = document.createElement('span')
+      wrapper.className = 'aiia-fallback-icon' + (shouldSpin ? ' aiia-spin' : '')
+      wrapper.innerHTML = svg
+    } catch (_) {
+      wrapper = null
+    }
+
+    try {
+      if (wrapper) {
+        container.appendChild(wrapper)
+        container.setAttribute('data-aiia-fallback-icon', variant)
+      } else {
+        // 最后兜底：避免再回退 emoji
+        container.textContent = '等待中'
+      }
+    } catch (_) {
+      // 忽略
+    }
+  }
+
+  function scheduleNoContentLottieRetry(reason) {
+    if (!isNoContentVisible()) return
+    if (noContentHourglassAnimation) return
+    clearNoContentLottieTimers()
+
+    const a = Math.max(0, Math.min(20, Math.floor(noContentLottieRetryAttempt)))
+    const base = NO_CONTENT_LOTTIE_RETRY_MIN_MS * Math.pow(1.7, a)
+    const cap = NO_CONTENT_LOTTIE_RETRY_MAX_MS
+    const delay = Math.max(
+      NO_CONTENT_LOTTIE_RETRY_MIN_MS,
+      Math.min(cap, Math.round(base + base * 0.15 * Math.random()))
+    )
+    noContentLottieRetryAttempt = a + 1
+
+    try {
+      noContentLottieRetryTimer = setTimeout(() => {
+        try {
+          initNoContentHourglassAnimation()
+        } catch (_) {
+          // 忽略
+        }
+      }, delay)
+    } catch (_) {
+      // 忽略
+    }
+    if (reason) {
+      try {
+        log(`no-content lottie retry scheduled in ${delay}ms: ${String(reason)}`)
+      } catch (_) {
+        // 忽略
+      }
+    }
+  }
+
+  let noContentRecoveryHandlersInstalled = false
+  let noContentStateObserver = null
+  function installNoContentLottieRecoveryHandlers() {
+    if (noContentRecoveryHandlersInstalled) return
+    noContentRecoveryHandlersInstalled = true
+
+    // 网络恢复：立即触发一次重试（避免“恢复后仍停留在降级状态”）
+    try {
+      window.addEventListener('online', () => {
+        if (!isNoContentVisible()) return
+        if (noContentHourglassAnimation) return
+        scheduleNoContentLottieRetry('online')
+      })
+    } catch (_) {
+      // 忽略
+    }
+
+    // 页面重新可见：触发一次重试（与轮询可见性策略一致）
+    try {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return
+        if (!isNoContentVisible()) return
+        if (noContentHourglassAnimation) return
+        scheduleNoContentLottieRetry('visibilitychange')
+      })
+    } catch (_) {
+      // 忽略
+    }
+
+    // noContentState 可见性变化：自动启停（MutationObserver）
+    try {
+      const el = document.getElementById('noContentState')
+      if (el && typeof MutationObserver !== 'undefined') {
+        noContentStateObserver = new MutationObserver(() => {
+          if (isNoContentVisible()) {
+            if (!noContentHourglassAnimation) {
+              // 立即尝试一次（失败会走 schedule）
+              initNoContentHourglassAnimation()
+            }
+          } else {
+            destroyNoContentHourglassAnimation()
+            noContentLottieRetryAttempt = 0
+          }
+        })
+        noContentStateObserver.observe(el, { attributes: true, attributeFilter: ['class'] })
+      }
+    } catch (_) {
+      // 忽略
+    }
+  }
+
   function ensureLottieLoaded() {
-    if (typeof lottie !== 'undefined' && lottie && typeof lottie.loadAnimation === 'function') {
-      return Promise.resolve(true)
+    const isReady = () => {
+      try {
+        return typeof lottie !== 'undefined' && lottie && typeof lottie.loadAnimation === 'function'
+      } catch (_) {
+        return false
+      }
     }
-    if (!LOTTIE_LIB_URL) {
-      return Promise.resolve(false)
-    }
+    if (isReady()) return Promise.resolve(true)
+    if (!LOTTIE_LIB_URL) return Promise.resolve(false)
     if (lottieLoadPromise) return lottieLoadPromise
 
     lottieLoadPromise = new Promise(resolve => {
-      try {
-        const s = document.createElement('script')
-        s.src = LOTTIE_LIB_URL
-        s.defer = true
-        // 关键：带 nonce，才能通过 CSP（script-src 'nonce-...'）
-        s.setAttribute('nonce', CSP_NONCE)
-        s.onload = () => {
-          resolve(
-            typeof lottie !== 'undefined' && lottie && typeof lottie.loadAnimation === 'function'
-          )
-        }
-        s.onerror = () => resolve(false)
-        document.head.appendChild(s)
-      } catch (e) {
-        resolve(false)
+      let done = false
+      const finish = ok => {
+        if (done) return
+        done = true
+        resolve(!!ok)
       }
+
+      const start = Date.now()
+      const tick = () => {
+        if (done) return
+        if (isReady()) {
+          finish(true)
+          return
+        }
+        if (Date.now() - start > NO_CONTENT_LOTTIE_TIMEOUT_MS) {
+          finish(false)
+          return
+        }
+        setTimeout(tick, 50)
+      }
+
+      try {
+        const SCRIPT_ID = 'aiia-lottie-script'
+        const existing = document.getElementById(SCRIPT_ID)
+        if (!existing) {
+          const s = document.createElement('script')
+          s.id = SCRIPT_ID
+          s.src = LOTTIE_LIB_URL
+          s.defer = true
+          // 关键：带 nonce，才能通过 CSP（script-src 'nonce-...'）
+          if (CSP_NONCE) {
+            try {
+              s.setAttribute('nonce', CSP_NONCE)
+            } catch (_) {
+              // 忽略
+            }
+          }
+          s.onerror = () => finish(false)
+          document.head.appendChild(s)
+        }
+      } catch (_) {
+        finish(false)
+        return
+      }
+
+      tick()
+    }).then(ok => {
+      // 关键：失败不应永久缓存，否则网络恢复后会“一直处于降级状态”
+      if (!ok) lottieLoadPromise = null
+      return ok
     })
+
     return lottieLoadPromise
   }
 
@@ -556,8 +806,7 @@
   function loadNoContentLottieData() {
     if (noContentLottieDataPromise) return noContentLottieDataPromise
     if (!NO_CONTENT_LOTTIE_JSON_URL) {
-      noContentLottieDataPromise = Promise.resolve(null)
-      return noContentLottieDataPromise
+      return Promise.resolve(null)
     }
     noContentLottieDataPromise = (async () => {
       try {
@@ -565,10 +814,14 @@
         if (!resp.ok) return null
         const data = await resp.json()
         return data && typeof data === 'object' ? data : null
-      } catch (e) {
+      } catch (_) {
         return null
       }
-    })()
+    })().then(data => {
+      // 关键：失败不应永久缓存，否则资源恢复后会“一直处于降级状态”
+      if (!data) noContentLottieDataPromise = null
+      return data
+    })
     return noContentLottieDataPromise
   }
 
@@ -583,8 +836,8 @@
     }
     if (noContentLottieInitInFlight) return
 
-    // 先给一个轻量占位，避免空白
-    container.textContent = '⏳'
+    // 先给一个轻量 SVG 占位，避免空白（也避免再回退为 emoji）
+    renderNoContentFallbackIcon(container)
     noContentLottieInitInFlight = true
 
     Promise.all([ensureLottieLoaded(), loadNoContentLottieData()])
@@ -592,8 +845,9 @@
         if (!okLib || !data) {
           if (!lottieInitWarned) {
             lottieInitWarned = true
-            logError('Lottie 动画未加载（已降级为 ⏳）')
+            logError('Lottie 动画未加载（已降级为 SVG）')
           }
+          scheduleNoContentLottieRetry(!okLib ? 'lottie lib not ready' : 'lottie data missing')
           return
         }
 
@@ -603,31 +857,84 @@
           return
         }
 
-        container.textContent = ''
-        noContentHourglassAnimation = lottie.loadAnimation({
-          container: container,
-          renderer: 'svg',
-          loop: true,
-          autoplay: true,
-          animationData: data,
-          rendererSettings: { preserveAspectRatio: 'xMidYMid meet' }
-        })
+        // 清理降级 SVG 占位
+        try {
+          container.textContent = ''
+        } catch (_) {
+          // 忽略
+        }
+
+        try {
+          if (noContentLottieDomLoadedTimer) clearTimeout(noContentLottieDomLoadedTimer)
+        } catch (_) {
+          // 忽略
+        } finally {
+          noContentLottieDomLoadedTimer = null
+        }
+
+        try {
+          noContentHourglassAnimation = lottie.loadAnimation({
+            container: container,
+            renderer: 'svg',
+            loop: true,
+            autoplay: true,
+            animationData: data,
+            rendererSettings: { preserveAspectRatio: 'xMidYMid meet' }
+          })
+        } catch (e) {
+          renderNoContentFallbackIcon(container)
+          destroyNoContentHourglassAnimation()
+          scheduleNoContentLottieRetry('lottie.loadAnimation throw')
+          return
+        }
+
+        // 加载超时兜底：10s 仍未 DOMLoaded，则视为失败并进入重试
+        try {
+          noContentLottieDomLoadedTimer = setTimeout(() => {
+            try {
+              renderNoContentFallbackIcon(container)
+              if (!lottieInitWarned) {
+                lottieInitWarned = true
+                logError('Lottie 动画加载超时（已降级为 SVG）')
+              }
+            } catch (_) {
+              // 忽略
+            }
+            destroyNoContentHourglassAnimation()
+            scheduleNoContentLottieRetry('DOMLoaded timeout')
+          }, NO_CONTENT_LOTTIE_TIMEOUT_MS)
+        } catch (_) {
+          // 忽略
+        }
 
         noContentHourglassAnimation.addEventListener('DOMLoaded', () => {
+          try {
+            if (noContentLottieDomLoadedTimer) clearTimeout(noContentLottieDomLoadedTimer)
+          } catch (_) {
+            // 忽略
+          } finally {
+            noContentLottieDomLoadedTimer = null
+          }
+          noContentLottieRetryAttempt = 0
           updateNoContentHourglassColor()
         })
 
         noContentHourglassAnimation.addEventListener('error', () => {
-          container.textContent = '⏳'
+          try {
+            renderNoContentFallbackIcon(container)
+          } catch (_) {
+            // 忽略
+          }
           if (!lottieInitWarned) {
             lottieInitWarned = true
-            logError('Lottie 动画加载失败（已降级为 ⏳）')
+            logError('Lottie 动画加载失败（已降级为 SVG）')
           }
           destroyNoContentHourglassAnimation()
+          scheduleNoContentLottieRetry('lottie error event')
         })
       })
       .catch(() => {
-        // 忽略
+        scheduleNoContentLottieRetry('init promise rejected')
       })
       .finally(() => {
         noContentLottieInitInFlight = false
@@ -2470,6 +2777,7 @@
     document.getElementById('noContentState').classList.add('hidden')
     document.getElementById('feedbackForm').classList.remove('hidden')
     destroyNoContentHourglassAnimation()
+    noContentLottieRetryAttempt = 0
 
     /* 优化：只在 prompt 变化时重新渲染 Markdown */
     const markdownContent = document.getElementById('markdownContent')
@@ -2679,6 +2987,11 @@
     document.getElementById('loadingState').classList.add('hidden')
     document.getElementById('feedbackForm').classList.add('hidden')
     document.getElementById('noContentState').classList.remove('hidden')
+    // 无内容页：重置降级/重试状态（避免上一次失败影响本次展示）
+    clearNoContentLottieTimers()
+    noContentLottieRetryAttempt = 0
+    lottieInitWarned = false
+    installNoContentLottieRecoveryHandlers()
     initNoContentHourglassAnimation()
     stopCountdown()
   }

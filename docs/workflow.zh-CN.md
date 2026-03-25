@@ -16,6 +16,7 @@
   - 若希望一并跑 VSCode 插件门禁：`uv run python scripts/ci_gate.py --with-vscode`
 - VSCode 插件：`npm run vscode:check`（Linux/headless：`xvfb-run -a npm run vscode:check`）
   - 若 Node 由 `fnm` 管理且在非交互 shell 下 `node` 不可用，可用：`fnm exec --using v24.14.0 -- npm run vscode:check`
+  - 说明：`vscode:check` 包含打包步骤，会在 `packages/vscode/` 目录生成 `.vsix`（已 gitignore）。如需清理：`rm -f packages/vscode/*.vsix`
 
 ### 发布（tag 触发 GitHub Actions Release）
 

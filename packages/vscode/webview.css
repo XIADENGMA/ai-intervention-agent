@@ -292,6 +292,24 @@
             height: 100%;
         }
 
+        /* Lottie 降级 SVG：默认与 emoji 视觉尺寸对齐（避免 120px 容器下线条过粗） */
+        .no-content-icon .aiia-fallback-icon {
+            width: 64px;
+            height: 64px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes aiia-fallback-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .no-content-icon .aiia-fallback-icon.aiia-spin {
+            animation: aiia-fallback-spin 1s linear infinite;
+        }
+
         .no-content .title {
             font-size: 20px;
             font-weight: 600;
