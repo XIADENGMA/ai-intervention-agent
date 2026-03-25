@@ -809,12 +809,109 @@ function activate(context) {
     }
   )
 
+  // 命令：诊断 Webview（无内容页 Lottie/SVG 状态）
+  const diagnoseWebviewNoContentDisposable = vscode.commands.registerCommand(
+    'ai-intervention-agent.diagnoseWebviewNoContent',
+    async function () {
+      // 尽量“一键”：先确保面板被打开（否则 Webview 尚未实例化）
+      try {
+        await vscode.commands.executeCommand('ai-intervention-agent.openPanel')
+      } catch {
+        // 忽略：打开失败也尝试继续（可能用户已打开）
+      }
+
+      const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+      let diag = null
+      let lastErr = null
+      for (let i = 0; i < 6; i++) {
+        try {
+          diag = await provider.requestNoContentDiagnostics({ timeoutMs: 3000 })
+          break
+        } catch (e) {
+          lastErr = e
+          const code = e && e.code ? String(e.code) : ''
+          // Webview 还没 ready：短暂等待后再试
+          if (code === 'WEBVIEW_NOT_READY' || code === 'WEBVIEW_DIAG_TIMEOUT') {
+            await sleep(250)
+            continue
+          }
+          break
+        }
+      }
+
+      if (!diag) {
+        const code = lastErr && lastErr.code ? String(lastErr.code) : ''
+        const msg = lastErr && lastErr.message ? String(lastErr.message) : String(lastErr || '')
+        try {
+          await vscode.window.showErrorMessage(`Webview 诊断失败：${code ? code + ' - ' : ''}${msg}`)
+        } catch {
+          // 忽略
+        }
+        return null
+      }
+
+      const now = new Date()
+      let logLevel = 'info'
+      try {
+        const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
+        logLevel = cfg.get('logLevel', 'info')
+      } catch {
+        // 忽略
+      }
+
+      const out = []
+      out.push('# AI Intervention Agent Webview Diagnostics')
+      out.push('')
+      out.push(`timestamp=${now.toISOString()}`)
+      out.push('')
+      out.push('## Environment')
+      out.push(`appName=${vscode && vscode.env && vscode.env.appName ? String(vscode.env.appName) : ''}`)
+      out.push(`vscodeVersion=${vscode && vscode.version ? String(vscode.version) : ''}`)
+      out.push(`platform=${process.platform}`)
+      out.push(`arch=${process.arch}`)
+      out.push(`node=${process.versions && process.versions.node ? String(process.versions.node) : ''}`)
+      out.push('')
+      out.push('## Extension')
+      out.push(`extVersion=${EXT_VERSION}`)
+      out.push(`buildId=${BUILD_ID}`)
+      out.push(`serverUrl=${serverUrl}`)
+      out.push(`logLevel=${logLevel}`)
+      out.push('')
+      out.push('## Webview (NoContent Lottie/SVG)')
+      out.push('```json')
+      try {
+        out.push(JSON.stringify(diag, null, 2))
+      } catch {
+        out.push(String(diag))
+      }
+      out.push('```')
+
+      const text = out.join('\n')
+
+      try {
+        const doc = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' })
+        await vscode.window.showTextDocument(doc, { preview: false })
+      } catch {
+        // 最坏情况：至少复制到剪贴板
+        try {
+          await vscode.env.clipboard.writeText(text)
+          vscode.window.showInformationMessage('已复制 Webview 诊断到剪贴板')
+        } catch {
+          // 忽略
+        }
+      }
+      return text
+    }
+  )
+
   context.subscriptions.push(disposable)
   context.subscriptions.push(openPanelDisposable)
   context.subscriptions.push(openSettingsDisposable)
   context.subscriptions.push(runAppleScriptDisposable)
   context.subscriptions.push(testAppleScriptNotificationDisposable)
   context.subscriptions.push(copyDiagnosticsDisposable)
+  context.subscriptions.push(diagnoseWebviewNoContentDisposable)
   context.subscriptions.push(outputChannel)
   context.subscriptions.push(statusBar)
 

@@ -1,4 +1,5 @@
 const vscode = require('vscode')
+const fs = require('fs')
 const { createLogger } = require('./logger')
 const { AppleScriptExecutor } = require('./applescript-executor')
 const { NotificationCenter } = require('./notification-center')
@@ -25,6 +26,32 @@ function getNonce(length = 32) {
     text += possible.charAt(Math.floor(Math.random() * possible.length))
   }
   return text
+}
+
+function safeReadTextFile(uri) {
+  try {
+    if (!uri || !uri.fsPath) return ''
+    return fs.readFileSync(uri.fsPath, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+// 防止把 JSON/字符串直接注入 <script> 时出现 </script> 提前闭合等问题
+function safeJsonForInlineScript(value) {
+  try {
+    return JSON.stringify(value).replace(/</g, '\\u003c')
+  } catch {
+    return 'null'
+  }
+}
+
+function safeStringForInlineScript(value) {
+  try {
+    return JSON.stringify(String(value ?? '')).replace(/</g, '\\u003c')
+  } catch {
+    return '""'
+  }
 }
 
 /**
@@ -84,6 +111,7 @@ class WebviewProvider {
     this._hasEverConnected = false
     this._webviewReady = false
     this._webviewReadyTimer = null
+    this._pendingNoContentDiagnostics = new Map() // requestId -> {resolve,reject,timer}
     // macOS 原生通知“点击打开面板”兜底：
     // AppleScript 原生通知没有点击回调；这里通过“通知触发时若宿主未聚焦则 arm，一旦宿主重新聚焦则自动打开面板”来近似实现。
     this._revealPanelUntilMs = 0
@@ -133,6 +161,86 @@ class WebviewProvider {
 
     this._view = null
     this._lastServerStatus = null
+    try {
+      for (const [, v] of this._pendingNoContentDiagnostics) {
+        try {
+          if (v && v.timer) clearTimeout(v.timer)
+        } catch {
+          // 忽略
+        }
+        try {
+          if (v && typeof v.reject === 'function') {
+            const err = new Error('Webview disposed')
+            err.code = 'WEBVIEW_DISPOSED'
+            v.reject(err)
+          }
+        } catch {
+          // 忽略
+        }
+      }
+    } catch {
+      // 忽略
+    } finally {
+      try {
+        this._pendingNoContentDiagnostics.clear()
+      } catch {
+        // 忽略
+      }
+    }
+  }
+
+  requestNoContentDiagnostics(options) {
+    const opts = options && typeof options === 'object' ? options : {}
+    const timeoutMsRaw = typeof opts.timeoutMs === 'number' ? opts.timeoutMs : 2500
+    const timeoutMs = Math.max(600, Math.min(15000, Math.floor(timeoutMsRaw)))
+
+    if (!this._view || !this._view.webview) {
+      const err = new Error('Webview not ready: open the panel first')
+      err.code = 'WEBVIEW_NOT_READY'
+      return Promise.reject(err)
+    }
+
+    const requestId = `diag_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        try {
+          this._pendingNoContentDiagnostics.delete(requestId)
+        } catch {
+          // 忽略
+        }
+        const err = new Error('Webview diagnostic timeout')
+        err.code = 'WEBVIEW_DIAG_TIMEOUT'
+        reject(err)
+      }, timeoutMs)
+
+      try {
+        this._pendingNoContentDiagnostics.set(requestId, { resolve, reject, timer })
+      } catch {
+        clearTimeout(timer)
+        const err = new Error('Failed to track diagnostic request')
+        err.code = 'WEBVIEW_DIAG_TRACK_FAILED'
+        reject(err)
+        return
+      }
+
+      try {
+        this._sendMessage({ type: 'diagnoseNoContent', requestId })
+      } catch (e) {
+        try {
+          clearTimeout(timer)
+        } catch {
+          // 忽略
+        }
+        try {
+          this._pendingNoContentDiagnostics.delete(requestId)
+        } catch {
+          // 忽略
+        }
+        const err = new Error(e && e.message ? String(e.message) : String(e))
+        err.code = 'WEBVIEW_DIAG_SEND_FAILED'
+        reject(err)
+      }
+    })
   }
 
   resolveWebviewView(webviewView) {
@@ -439,6 +547,28 @@ class WebviewProvider {
       case 'showMacOSNativeNotification':
         this._handleShowMacOSNativeNotification(message)
         break
+      case 'diagnoseNoContentResult':
+        try {
+          const requestId =
+            message && message.requestId ? String(message.requestId) : ''
+          if (!requestId) break
+          const pending = this._pendingNoContentDiagnostics.get(requestId)
+          if (!pending) break
+          try {
+            if (pending.timer) clearTimeout(pending.timer)
+          } catch {
+            // 忽略
+          }
+          this._pendingNoContentDiagnostics.delete(requestId)
+          try {
+            pending.resolve(message && message.result ? message.result : null)
+          } catch {
+            // 忽略
+          }
+        } catch {
+          // 忽略
+        }
+        break
       default:
         // 忽略未知消息类型
         break
@@ -630,6 +760,9 @@ class WebviewProvider {
     const webviewUiUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview-ui.js')
     )
+    const activityIconUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg')
+    )
     const webviewNotifyCoreUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview-notify-core.js')
     )
@@ -643,11 +776,30 @@ class WebviewProvider {
       vscode.Uri.joinPath(this._extensionUri, 'lottie.min.js')
     )
     const noContentLottieJsonUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'lottie', 'hourglass.json')
+      vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json')
     )
     const nonce = getNonce()
 
     // 精简日志：移除 HTML 生成相关冗余日志
+
+    // 稳定性：在 Cursor/VSCode 的不同 Webview 协议/CSP 组合下，fetch 本地资源可能仍被 connect-src 拦截。
+    // 这里把“无内容页”所需的本地资源（SVG/JSON）直接内联注入，Webview 侧优先使用内联数据，避免永久降级。
+    const activityIconSvgText = safeReadTextFile(
+      vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg')
+    )
+    let noContentHourglassLottieData = null
+    try {
+      const hourglassJsonText = safeReadTextFile(
+        vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json')
+      )
+      noContentHourglassLottieData = hourglassJsonText ? JSON.parse(hourglassJsonText) : null
+    } catch {
+      noContentHourglassLottieData = null
+    }
+    const inlineNoContentFallbackSvgLiteral = safeStringForInlineScript(activityIconSvgText)
+    const inlineNoContentLottieDataLiteral = noContentHourglassLottieData
+      ? safeJsonForInlineScript(noContentHourglassLottieData)
+      : 'null'
 
     return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -655,7 +807,8 @@ class WebviewProvider {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl} ${cspSource} 'self'; style-src ${cspSource}; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
-    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
+    <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-no-content-fallback-svg-url="${activityIconUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
+    <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};</script>
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
     <link rel="stylesheet" href="${webviewCssUri}">

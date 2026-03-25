@@ -143,13 +143,13 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewCss.includes('color-scheme: dark'))
     assert.ok(webviewCss.includes('color-scheme: light'))
 
-    // 资源回归点：无内容页 Lottie 资源应存在且路径一致（避免回退为 emoji；应降级为 SVG）
-    const hourglassJsonPath = path.join(ext.extensionPath, 'lottie', 'hourglass.json')
+    // 资源回归点：无内容页 Lottie 资源应存在且路径一致（嫩芽动画：sprout.json；失败应降级为 SVG）
+    const sproutJsonPath = path.join(ext.extensionPath, 'lottie', 'sprout.json')
     const lottieLibPath = path.join(ext.extensionPath, 'lottie.min.js')
-    assert.ok(fs.existsSync(hourglassJsonPath), 'Missing lottie/hourglass.json in extension')
+    assert.ok(fs.existsSync(sproutJsonPath), 'Missing lottie/sprout.json in extension')
     assert.ok(fs.existsSync(lottieLibPath), 'Missing lottie.min.js in extension')
-    assert.ok(webviewJs.includes('hourglass.json'))
-    assert.ok(!webviewJs.includes('sprout.json'))
+    assert.ok(webviewJs.includes('sprout.json'))
+    assert.ok(!webviewJs.includes('hourglass.json'))
     assert.ok(!webviewUi.includes('⏳'), 'webview-ui.js should not fall back to emoji')
     // Lottie JSON 通过 fetch 加载：connect-src 必须允许 Webview 自身/本地资源，否则会永远 data missing → 退化状态
     assert.ok(
@@ -159,6 +159,14 @@ suite('Extension Test Suite', () => {
     // manifest 注入回归点：Lottie lib URL 必须通过 meta 下发（CSP-safe 懒加载）
     assert.ok(webviewJs.includes('data-lottie-lib-url'))
     assert.ok(webviewUi.includes('data-lottie-lib-url'))
+    // manifest 注入回归点：无内容页 SVG 降级应优先使用 activity-icon.svg（通过 meta 下发 URL）
+    assert.ok(webviewJs.includes('data-no-content-fallback-svg-url'))
+    assert.ok(webviewUi.includes('data-no-content-fallback-svg-url'))
+    // 稳定性回归点：无内容页本地资源（SVG/Lottie JSON）应支持内联注入，避免 fetch 被 CSP/协议差异拦截
+    assert.ok(webviewJs.includes('__AIIA_NO_CONTENT_FALLBACK_SVG'))
+    assert.ok(webviewJs.includes('__AIIA_NO_CONTENT_LOTTIE_DATA'))
+    assert.ok(webviewUi.includes('__AIIA_NO_CONTENT_FALLBACK_SVG'))
+    assert.ok(webviewUi.includes('__AIIA_NO_CONTENT_LOTTIE_DATA'))
     // Lottie 降级/恢复关键回归点：应具备 SVG 降级 + 自动重试/恢复机制
     assert.ok(webviewUi.includes('renderNoContentFallbackIcon'))
     assert.ok(webviewUi.includes('scheduleNoContentLottieRetry'))

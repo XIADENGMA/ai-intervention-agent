@@ -22,6 +22,7 @@
     "onCommand:ai-intervention-agent.openSettings",
     "onCommand:ai-intervention-agent.runAppleScript",
     "onCommand:ai-intervention-agent.testAppleScriptNotification",
+    "onCommand:ai-intervention-agent.diagnoseWebviewNoContent",
     "onCommand:ai-intervention-agent.copyDiagnostics"
   ],
   "main": "./extension.js",
@@ -89,6 +90,10 @@
       {
         "command": "ai-intervention-agent.testAppleScriptNotification",
         "title": "AI Intervention Agent: 测试 macOS 原生通知"
+      },
+      {
+        "command": "ai-intervention-agent.diagnoseWebviewNoContent",
+        "title": "AI Intervention Agent: 诊断 Webview（Lottie/SVG）"
       },
       {
         "command": "ai-intervention-agent.copyDiagnostics",

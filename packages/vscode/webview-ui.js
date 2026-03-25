@@ -30,6 +30,20 @@
     __cfgEl && __cfgEl.getAttribute('data-no-content-lottie-json-url')
       ? __cfgEl.getAttribute('data-no-content-lottie-json-url')
       : ''
+  const NO_CONTENT_FALLBACK_SVG_URL =
+    __cfgEl && __cfgEl.getAttribute('data-no-content-fallback-svg-url')
+      ? __cfgEl.getAttribute('data-no-content-fallback-svg-url')
+      : ''
+  const INLINE_NO_CONTENT_FALLBACK_SVG =
+    typeof window !== 'undefined' && typeof window.__AIIA_NO_CONTENT_FALLBACK_SVG === 'string'
+      ? window.__AIIA_NO_CONTENT_FALLBACK_SVG
+      : ''
+  const INLINE_NO_CONTENT_LOTTIE_DATA =
+    typeof window !== 'undefined' &&
+    window.__AIIA_NO_CONTENT_LOTTIE_DATA &&
+    typeof window.__AIIA_NO_CONTENT_LOTTIE_DATA === 'object'
+      ? window.__AIIA_NO_CONTENT_LOTTIE_DATA
+      : null
   const MATHJAX_SCRIPT_URL =
     __cfgEl && __cfgEl.getAttribute('data-mathjax-script-url')
       ? __cfgEl.getAttribute('data-mathjax-script-url')
@@ -165,6 +179,7 @@
   let noContentLottieDataPromise = null
   let noContentLottieInitInFlight = false
   let lottieInitWarned = false
+  let noContentLottieInlineLogged = false
 
   // 无内容页 Lottie 降级/恢复：重试与超时控制
   const NO_CONTENT_LOTTIE_TIMEOUT_MS = 10000
@@ -215,6 +230,75 @@
   const NO_CONTENT_FALLBACK_ICON_VARIANT = 'hourglass'
   const NO_CONTENT_FALLBACK_ICON_SPIN = true
 
+  // 优先使用扩展自身的 activity-icon.svg 作为“无内容页”降级图标（避免多处重复维护 SVG）
+  let noContentFallbackSvgMarkup = INLINE_NO_CONTENT_FALLBACK_SVG
+    ? String(INLINE_NO_CONTENT_FALLBACK_SVG)
+    : ''
+  let noContentFallbackSvgLoadPromise = null
+  let noContentFallbackSvgLoadLogged = false
+  let noContentFallbackSvgFailLogged = false
+  let noContentFallbackSvgAppliedLogged = false
+  function loadNoContentFallbackSvgMarkup() {
+    if (noContentFallbackSvgMarkup) return Promise.resolve(noContentFallbackSvgMarkup)
+    if (noContentFallbackSvgLoadPromise) return noContentFallbackSvgLoadPromise
+    if (!NO_CONTENT_FALLBACK_SVG_URL || typeof fetch !== 'function') return Promise.resolve('')
+
+    try {
+      if (!noContentFallbackSvgLoadLogged) {
+        noContentFallbackSvgLoadLogged = true
+        log('no-content fallback svg: fetching activity-icon.svg')
+      }
+    } catch (_) {
+      // 忽略
+    }
+
+    noContentFallbackSvgLoadPromise = Promise.resolve()
+      .then(() => fetch(NO_CONTENT_FALLBACK_SVG_URL, { cache: 'force-cache' }))
+      .then(resp => (resp && resp.ok ? resp.text() : ''))
+      .then(text => {
+        const raw = (text ?? '').toString().trim()
+        if (!raw || !raw.startsWith('<svg')) return ''
+        // 基础净化：移除 script，避免意外注入（理论上 activity-icon.svg 不会包含）
+        const cleaned = raw.replace(/<script[\s\S]*?<\/script>/gi, '')
+        noContentFallbackSvgMarkup = cleaned
+        try {
+          log(`no-content fallback svg: loaded activity-icon.svg (${cleaned.length} chars)`)
+        } catch (_) {
+          // 忽略
+        }
+        return cleaned
+      })
+      .catch(() => '')
+      .then(markup => {
+        // 失败不应永久缓存：允许后续重试
+        if (!markup) {
+          noContentFallbackSvgLoadPromise = null
+          try {
+            if (!noContentFallbackSvgFailLogged) {
+              noContentFallbackSvgFailLogged = true
+              log('no-content fallback svg: failed to load activity-icon.svg (will retry)')
+            }
+          } catch (_) {
+            // 忽略
+          }
+        }
+        return markup
+      })
+
+    return noContentFallbackSvgLoadPromise
+  }
+
+  // 后台预取：尽量让首次降级就能直接使用 activity-icon.svg（减少闪烁）
+  try {
+    if (NO_CONTENT_FALLBACK_SVG_URL) {
+      loadNoContentFallbackSvgMarkup().catch(() => {
+        /* 忽略 */
+      })
+    }
+  } catch (_) {
+    // 忽略
+  }
+
   function clearNoContentLottieTimers() {
     try {
       if (noContentLottieRetryTimer) clearTimeout(noContentLottieRetryTimer)
@@ -249,6 +333,19 @@
     const svg = LUCIDE_SVG_ICONS[variant] || ''
     if (!svg) return
 
+    const preferActivityIcon = variant === 'hourglass' && !!NO_CONTENT_FALLBACK_SVG_URL
+    const svgMarkup = preferActivityIcon && noContentFallbackSvgMarkup ? noContentFallbackSvgMarkup : svg
+    if (preferActivityIcon && noContentFallbackSvgMarkup) {
+      try {
+        if (!noContentFallbackSvgAppliedLogged) {
+          noContentFallbackSvgAppliedLogged = true
+          log('no-content fallback icon: using activity-icon.svg')
+        }
+      } catch (_) {
+        // 忽略
+      }
+    }
+
     // 避免重复重绘
     try {
       const cur = container.getAttribute('data-aiia-fallback-icon') || ''
@@ -272,7 +369,7 @@
       const shouldSpin = !!(opts && typeof opts === 'object' && opts.spin === true) || (canSpin && NO_CONTENT_FALLBACK_ICON_SPIN)
       wrapper = document.createElement('span')
       wrapper.className = 'aiia-fallback-icon' + (shouldSpin ? ' aiia-spin' : '')
-      wrapper.innerHTML = svg
+      wrapper.innerHTML = svgMarkup
     } catch (_) {
       wrapper = null
     }
@@ -281,6 +378,41 @@
       if (wrapper) {
         container.appendChild(wrapper)
         container.setAttribute('data-aiia-fallback-icon', variant)
+
+        // 若启用 activity-icon.svg 作为降级图标但尚未加载，则异步替换（不阻塞首屏）
+        if (preferActivityIcon && !noContentFallbackSvgMarkup) {
+          loadNoContentFallbackSvgMarkup()
+            .then(markup => {
+              if (!markup) return
+              try {
+                if (!wrapper.isConnected) return
+              } catch (_) {
+                // 忽略
+              }
+              try {
+                const cur = container.getAttribute('data-aiia-fallback-icon') || ''
+                if (cur !== variant) return
+              } catch (_) {
+                // 忽略
+              }
+              try {
+                wrapper.innerHTML = markup
+              } catch (_) {
+                // 忽略
+              }
+              try {
+                if (!noContentFallbackSvgAppliedLogged) {
+                  noContentFallbackSvgAppliedLogged = true
+                  log('no-content fallback icon: replaced with activity-icon.svg')
+                }
+              } catch (_) {
+                // 忽略
+              }
+            })
+            .catch(() => {
+              /* 忽略 */
+            })
+        }
       } else {
         // 最后兜底：避免再回退 emoji
         container.textContent = '等待中'
@@ -804,6 +936,17 @@
   }
 
   function loadNoContentLottieData() {
+    if (INLINE_NO_CONTENT_LOTTIE_DATA) {
+      try {
+        if (!noContentLottieInlineLogged) {
+          noContentLottieInlineLogged = true
+          log('no-content lottie data: using inline sprout.json')
+        }
+      } catch (_) {
+        // 忽略
+      }
+      return Promise.resolve(INLINE_NO_CONTENT_LOTTIE_DATA)
+    }
     if (noContentLottieDataPromise) return noContentLottieDataPromise
     if (!NO_CONTENT_LOTTIE_JSON_URL) {
       return Promise.resolve(null)
@@ -4199,6 +4342,124 @@
     return new Blob([u8arr], { type: mime })
   }
 
+  function collectNoContentDiagnostics() {
+    const diag = {}
+    try {
+      diag.ts = new Date().toISOString()
+    } catch (_) {
+      diag.ts = ''
+    }
+    try {
+      diag.locationHref = typeof location !== 'undefined' && location && location.href ? String(location.href) : ''
+    } catch (_) {
+      diag.locationHref = ''
+    }
+    try {
+      diag.serverUrl = SERVER_URL || ''
+    } catch (_) {
+      diag.serverUrl = ''
+    }
+
+    try {
+      diag.noContentVisible = isNoContentVisible()
+    } catch (_) {
+      diag.noContentVisible = null
+    }
+
+    try {
+      diag.inlineLottie = !!(typeof window !== 'undefined' && window.__AIIA_NO_CONTENT_LOTTIE_DATA)
+    } catch (_) {
+      diag.inlineLottie = false
+    }
+    try {
+      diag.inlineSvg = !!(typeof window !== 'undefined' && window.__AIIA_NO_CONTENT_FALLBACK_SVG)
+    } catch (_) {
+      diag.inlineSvg = false
+    }
+    try {
+      diag.inlineSvgLen =
+        typeof window !== 'undefined' && window.__AIIA_NO_CONTENT_FALLBACK_SVG
+          ? String(window.__AIIA_NO_CONTENT_FALLBACK_SVG).length
+          : 0
+    } catch (_) {
+      diag.inlineSvgLen = 0
+    }
+    try {
+      const d = typeof window !== 'undefined' ? window.__AIIA_NO_CONTENT_LOTTIE_DATA : null
+      diag.inlineLottieName = d && typeof d === 'object' && d.nm ? String(d.nm) : ''
+      diag.inlineLottieVersion = d && typeof d === 'object' && d.v ? String(d.v) : ''
+    } catch (_) {
+      diag.inlineLottieName = ''
+      diag.inlineLottieVersion = ''
+    }
+
+    try {
+      diag.lottieLibReady = typeof lottie !== 'undefined' && !!lottie && typeof lottie.loadAnimation === 'function'
+    } catch (_) {
+      diag.lottieLibReady = false
+    }
+
+    try {
+      const el = document.getElementById('hourglass-lottie')
+      diag.hourglassContainerFound = !!el
+      diag.hourglassFallbackVariant = el ? String(el.getAttribute('data-aiia-fallback-icon') || '') : ''
+      diag.hourglassHtmlPreview = el ? String(el.innerHTML || '').slice(0, 280) : ''
+    } catch (_) {
+      diag.hourglassContainerFound = false
+      diag.hourglassFallbackVariant = ''
+      diag.hourglassHtmlPreview = ''
+    }
+
+    try {
+      diag.hasHourglassAnimationInstance = !!noContentHourglassAnimation
+    } catch (_) {
+      diag.hasHourglassAnimationInstance = false
+    }
+    try {
+      diag.noContentLottieInitInFlight = !!noContentLottieInitInFlight
+    } catch (_) {
+      diag.noContentLottieInitInFlight = false
+    }
+    try {
+      diag.noContentLottieRetryAttempt = noContentLottieRetryAttempt
+    } catch (_) {
+      diag.noContentLottieRetryAttempt = null
+    }
+    try {
+      diag.lottieInitWarned = !!lottieInitWarned
+    } catch (_) {
+      diag.lottieInitWarned = false
+    }
+
+    try {
+      diag.cfg = {
+        lottieLibUrl: LOTTIE_LIB_URL || '',
+        lottieJsonUrl: NO_CONTENT_LOTTIE_JSON_URL || '',
+        fallbackSvgUrl: NO_CONTENT_FALLBACK_SVG_URL || '',
+        nonceLen: CSP_NONCE ? String(CSP_NONCE).length : 0
+      }
+    } catch (_) {
+      diag.cfg = {}
+    }
+
+    return diag
+  }
+
+  function handleDiagnoseNoContentMessage(message) {
+    const requestId = message && message.requestId ? String(message.requestId) : ''
+    let result = null
+    try {
+      result = collectNoContentDiagnostics()
+    } catch (_) {
+      result = null
+    }
+    try {
+      vscode.postMessage({ type: 'diagnoseNoContentResult', requestId, result })
+    } catch (_) {
+      // 忽略
+    }
+  }
+
   // 监听消息
   window.addEventListener('message', event => {
     const message = event.data
@@ -4208,6 +4469,9 @@
         break
       case 'clipboardText':
         handleClipboardTextMessage(message)
+        break
+      case 'diagnoseNoContent':
+        handleDiagnoseNoContentMessage(message)
         break
     }
   })
