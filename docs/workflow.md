@@ -16,7 +16,7 @@ This document describes the recommended development and release workflow for thi
   - Include VSCode checks: `uv run python scripts/ci_gate.py --with-vscode`
 - VSCode extension: `npm run vscode:check` (Linux/headless: `xvfb-run -a npm run vscode:check`)
   - If you use `fnm` and `node` is unavailable in non-interactive shells: `fnm exec --using v24.14.0 -- npm run vscode:check`
-  - Note: `vscode:check` includes packaging and will generate a `.vsix` under `packages/vscode/` (gitignored). Cleanup if needed: `rm -f packages/vscode/*.vsix`
+  - Note: `vscode:check` includes packaging and will generate a `.vsix` under `packages/vscode/` (gitignored). **You must clean up after finishing tests**: `rm -f packages/vscode/*.vsix`
 
 ### Release (tag triggers GitHub Actions)
 
