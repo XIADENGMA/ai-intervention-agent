@@ -82,6 +82,12 @@ class AppleScriptExecutor {
     const osascriptArgs = ['-']
     const envExtra =
       runOptions && runOptions.env && typeof runOptions.env === 'object' ? runOptions.env : null
+    const injectedEnvKeys = envExtra
+      ? Object.keys(envExtra)
+          .filter(Boolean)
+          .map(k => String(k))
+          .sort()
+      : []
     const env = envExtra ? { ...process.env, ...envExtra } : process.env
     const startedAt = Date.now()
 
@@ -93,7 +99,8 @@ class AppleScriptExecutor {
             platform,
             timeoutMs,
             maxBufferBytes,
-            scriptLen: body.length
+            scriptLen: body.length,
+            injectedEnvKeys
           },
           { level: 'debug' }
         )
@@ -125,13 +132,33 @@ class AppleScriptExecutor {
             const durationMs = Date.now() - startedAt
 
             if (error) {
+              const exitCode = typeof error.code === 'number' && Number.isFinite(error.code) ? error.code : null
+              const signal = error && error.signal ? String(error.signal) : ''
               const isTimeout =
-                !!error.killed || error.signal === 'SIGTERM' || error.signal === 'SIGKILL'
+                error.code === 'ETIMEDOUT' ||
+                !!error.killed ||
+                signal === 'SIGTERM' ||
+                signal === 'SIGKILL'
               const msg =
                 errText || (error && error.message ? String(error.message) : 'AppleScript 执行失败')
               const err = new Error(msg)
               err.code = isTimeout ? 'APPLE_SCRIPT_TIMEOUT' : 'APPLE_SCRIPT_FAILED'
               err.cause = error
+              err.details = {
+                osascriptPath,
+                osascriptArgs,
+                timeoutMs,
+                maxBufferBytes,
+                injectedEnvKeys,
+                durationMs,
+                exitCode,
+                signal,
+                killed: !!error.killed,
+                stderr: errText,
+                stderrLen: errText ? errText.length : 0,
+                stdoutPreview: sanitizeForLog(outText, 240),
+                stdoutLen: outText.length
+              }
 
               try {
                 if (this._logger && typeof this._logger.event === 'function') {
@@ -141,7 +168,10 @@ class AppleScriptExecutor {
                       code: err.code,
                       durationMs,
                       msg: sanitizeForLog(msg),
-                      stderrLen: errText ? errText.length : 0
+                      stderrLen: errText ? errText.length : 0,
+                      exitCode,
+                      signal,
+                      injectedEnvKeys
                     },
                     { level: 'warn' }
                   )
@@ -161,6 +191,18 @@ class AppleScriptExecutor {
             if (errText) {
               const err = new Error(errText)
               err.code = 'APPLE_SCRIPT_STDERR'
+              err.details = {
+                osascriptPath,
+                osascriptArgs,
+                timeoutMs,
+                maxBufferBytes,
+                injectedEnvKeys,
+                durationMs,
+                stderr: errText,
+                stderrLen: errText.length,
+                stdoutPreview: sanitizeForLog(outText, 240),
+                stdoutLen: outText.length
+              }
 
               try {
                 if (this._logger && typeof this._logger.event === 'function') {
@@ -169,7 +211,8 @@ class AppleScriptExecutor {
                     {
                       code: err.code,
                       durationMs,
-                      msg: sanitizeForLog(errText)
+                      msg: sanitizeForLog(errText),
+                      injectedEnvKeys
                     },
                     { level: 'warn' }
                   )
@@ -205,12 +248,20 @@ class AppleScriptExecutor {
         const err = e instanceof Error ? e : new Error(String(e))
         err.code = 'APPLE_SCRIPT_SPAWN_FAILED'
         const durationMs = Date.now() - startedAt
+        err.details = {
+          osascriptPath,
+          osascriptArgs,
+          timeoutMs,
+          maxBufferBytes,
+          injectedEnvKeys,
+          durationMs
+        }
 
         try {
           if (this._logger && typeof this._logger.event === 'function') {
             this._logger.event(
               'applescript.run.spawn_failed',
-              { code: err.code, durationMs, msg: sanitizeForLog(err.message) },
+              { code: err.code, durationMs, msg: sanitizeForLog(err.message), injectedEnvKeys },
               { level: 'error' }
             )
           } else if (this._logger && typeof this._logger.error === 'function') {

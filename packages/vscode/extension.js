@@ -595,15 +595,110 @@ function activate(context) {
     'ai-intervention-agent.testAppleScriptNotification',
     async function () {
       // 原生通知应“安装即用”：这里不依赖 enableAppleScript（该开关仅用于执行任意 AppleScript 命令）
+      const title = 'AI Intervention Agent 测试'
+      const message = '这是一条 macOS 原生通知测试'
       const ok = await appleScriptNotificationProvider.send({
-        title: 'AI Intervention Agent 测试',
-        message: '这是一条 macOS 原生通知测试',
-        metadata: { isTest: true }
+        title,
+        message,
+        // 详细诊断模式：失败时不在 provider 内弹窗，由此处统一展示 code/stderr 等细节
+        metadata: { isTest: true, diagnostic: true }
       })
-      if (!ok) {
-        // provider 已在 isTest 模式下尽量提示错误；这里补一句兜底
+      if (ok) {
         try {
-          vscode.window.showErrorMessage('原生通知发送失败：请检查系统通知权限/勿扰模式')
+          vscode.window.showInformationMessage(
+            '已发送测试通知：若未看到，请检查系统设置 → 通知（以及 Focus/勿扰模式）。'
+          )
+        } catch {
+          // 忽略
+        }
+        return true
+      }
+
+      if (!ok) {
+        try {
+          const diag =
+            appleScriptNotificationProvider &&
+            typeof appleScriptNotificationProvider.getLastDiagnostic === 'function'
+              ? appleScriptNotificationProvider.getLastDiagnostic()
+              : null
+
+          const lines = []
+          lines.push('原生通知发送失败（详细诊断）')
+          lines.push('')
+
+          if (diag && typeof diag === 'object') {
+            if (diag.code) lines.push(`code=${String(diag.code)}`)
+            if (diag.exitCode !== null && diag.exitCode !== undefined) lines.push(`exitCode=${String(diag.exitCode)}`)
+            if (diag.signal) lines.push(`signal=${String(diag.signal)}`)
+            if (diag.bundleId) lines.push(`bundleId=${String(diag.bundleId)}`)
+            if (diag.injectedEnvKeys && Array.isArray(diag.injectedEnvKeys) && diag.injectedEnvKeys.length > 0) {
+              lines.push(`injectedEnvKeys=${diag.injectedEnvKeys.map(String).join(',')}`)
+            }
+            if (diag.stderrPreview) lines.push(`stderr=${String(diag.stderrPreview)}`)
+            if (diag.message) lines.push(`message=${String(diag.message)}`)
+
+            if (diag.primary && typeof diag.primary === 'object') {
+              lines.push('')
+              lines.push('[primary attempt]')
+              if (diag.primary.code) lines.push(`code=${String(diag.primary.code)}`)
+              if (diag.primary.exitCode !== null && diag.primary.exitCode !== undefined)
+                lines.push(`exitCode=${String(diag.primary.exitCode)}`)
+              if (diag.primary.signal) lines.push(`signal=${String(diag.primary.signal)}`)
+              if (diag.primary.stderrPreview) lines.push(`stderr=${String(diag.primary.stderrPreview)}`)
+              if (diag.primary.message) lines.push(`message=${String(diag.primary.message)}`)
+            }
+            if (diag.fallback && typeof diag.fallback === 'object') {
+              lines.push('')
+              lines.push('[fallback attempt]')
+              if (diag.fallback.code) lines.push(`code=${String(diag.fallback.code)}`)
+              if (diag.fallback.exitCode !== null && diag.fallback.exitCode !== undefined)
+                lines.push(`exitCode=${String(diag.fallback.exitCode)}`)
+              if (diag.fallback.signal) lines.push(`signal=${String(diag.fallback.signal)}`)
+              if (diag.fallback.stderrPreview) lines.push(`stderr=${String(diag.fallback.stderrPreview)}`)
+              if (diag.fallback.message) lines.push(`message=${String(diag.fallback.message)}`)
+            }
+
+            // 经验性归因（尽量明确给出“失败原因”方向，便于用户排查权限/环境）
+            try {
+              const stderrText = diag.stderr ? String(diag.stderr) : diag.stderrPreview ? String(diag.stderrPreview) : ''
+              const msgText = diag.message ? String(diag.message) : ''
+              const combined = (stderrText + '\n' + msgText).toLowerCase()
+              const hints = []
+              if (diag.code === 'APPLE_SCRIPT_TIMEOUT') {
+                hints.push('脚本执行超时：系统繁忙或 osascript 被阻塞（可先重启宿主/关闭 Focus 再试）')
+              }
+              if (combined.includes('-1743') || combined.includes('not authorized') || combined.includes('automation')) {
+                hints.push('可能缺少“自动化(Automation)”权限：系统设置 → 隐私与安全性 → 自动化，允许宿主应用控制相关组件')
+              }
+              if (combined.includes('-10814') || combined.includes("can’t get application") || combined.includes("can't get application")) {
+                hints.push('可能未找到目标应用/BundleID 解析失败：请确认宿主应用名称（VS Code/Cursor）可被 AppleScript 识别')
+              }
+              if (hints.length > 0) {
+                lines.push('')
+                lines.push('可能原因：')
+                for (const h of hints) lines.push('- ' + h)
+              }
+            } catch {
+              // 忽略
+            }
+          } else {
+            lines.push('未获取到诊断信息：请在 Output 面板查看 AI Intervention Agent 日志。')
+          }
+
+          lines.push('')
+          lines.push('排查建议：系统设置 → 通知（宿主应用/脚本相关条目）与 Focus/勿扰；并检查 Output 面板日志。')
+
+          const msg = lines.join('\n')
+          const actionCopy = '复制诊断'
+          const picked = await vscode.window.showErrorMessage(msg, actionCopy)
+          if (picked === actionCopy) {
+            try {
+              await vscode.env.clipboard.writeText(msg)
+              vscode.window.showInformationMessage('已复制诊断信息到剪贴板')
+            } catch {
+              // 忽略
+            }
+          }
         } catch {
           // 忽略
         }
