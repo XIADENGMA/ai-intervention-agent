@@ -66,12 +66,6 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('vscode.getState'))
     assert.ok(webviewUi.includes('vscode.setState'))
     assert.ok(extensionJs.includes('retainContextWhenHidden: false'))
-    // macOS 原生通知诊断回归点：测试命令应开启 diagnostic 模式，并提供“复制诊断”
-    assert.ok(
-      /metadata:\s*\{\s*isTest:\s*true,\s*diagnostic:\s*true\s*\}/.test(extensionJs),
-      'testAppleScriptNotification should enable diagnostic mode'
-    )
-    assert.ok(extensionJs.includes('复制诊断'), 'testAppleScriptNotification should offer copy diagnostics')
     // 边界回归点：0.0.0.0/:: 仅适合作为监听地址，扩展侧应映射为 localhost（避免客户端无法访问）
     assert.ok(extensionJs.includes("host === '0.0.0.0' || host === '::'"))
     // 稳定性/解耦：MathJax 应优先走 VSIX 内置资源（由 meta 注入 URL）
@@ -134,7 +128,6 @@ suite('Extension Test Suite', () => {
 
     // 配置回归点：应提供 logLevel 配置项（便于排查问题）
     assert.ok(extPkgText.includes('ai-intervention-agent.logLevel'))
-    assert.ok(extPkgText.includes('ai-intervention-agent.enableAppleScript'))
     assert.ok(extPkgText.includes('http://localhost:8080'))
     assert.ok(webviewJs.includes('http://localhost:8080'))
     assert.ok(webviewCss.includes('overflow-wrap: anywhere;'))
@@ -195,8 +188,9 @@ suite('Extension Test Suite', () => {
     // manifest 一致性：commands 与 activationEvents 应保持匹配（避免命令触发时未激活扩展）
     assert.ok(
       Array.isArray(extPkgJson.activationEvents) &&
-        extPkgJson.activationEvents.includes('onCommand:ai-intervention-agent.helloWorld'),
-      'activationEvents should include helloWorld command'
+        extPkgJson.activationEvents.includes('onCommand:ai-intervention-agent.openPanel') &&
+        extPkgJson.activationEvents.includes('onCommand:ai-intervention-agent.openSettings'),
+      'activationEvents should include openPanel/openSettings commands'
     )
     assert.ok(Array.isArray(extPkgJson.files), 'package.json should include files[]')
     assert.ok(extPkgJson.files.includes('webview.css'), 'package.json files[] should include webview.css')
@@ -349,50 +343,5 @@ suite('Extension Test Suite', () => {
 
     assert.strictEqual(lines.length, 1)
     assert.ok(/\[INFO\]\s+\[t\]\s+hello/.test(lines[0]))
-  })
-
-  test('AppleScript 配置应默认关闭且变更后立即生效', async () => {
-    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
-    assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
-
-    await ext.activate()
-
-    const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-    const original = cfg.get('enableAppleScript')
-
-    try {
-      await cfg.update('enableAppleScript', false, vscode.ConfigurationTarget.Global)
-
-      await assert.rejects(
-        vscode.commands.executeCommand('ai-intervention-agent.runAppleScript', 'return "ok"'),
-        e => {
-          const msg = e && e.message ? String(e.message) : String(e)
-          assert.ok(msg.includes('enableAppleScript'))
-          return true
-        }
-      )
-
-      await cfg.update('enableAppleScript', true, vscode.ConfigurationTarget.Global)
-
-      if (process.platform === 'darwin') {
-        const out = await vscode.commands.executeCommand(
-          'ai-intervention-agent.runAppleScript',
-          'return "ok"'
-        )
-        assert.strictEqual(String(out).trim(), 'ok')
-      } else {
-        await assert.rejects(
-          vscode.commands.executeCommand('ai-intervention-agent.runAppleScript', 'return "ok"'),
-          e => {
-            const msg = e && e.message ? String(e.message) : String(e)
-            assert.ok(msg.includes('Platform not supported'))
-            return true
-          }
-        )
-      }
-    } finally {
-      const restore = typeof original === 'boolean' ? original : false
-      await cfg.update('enableAppleScript', restore, vscode.ConfigurationTarget.Global)
-    }
   })
 })

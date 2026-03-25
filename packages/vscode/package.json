@@ -17,13 +17,8 @@
   ],
   "activationEvents": [
     "onView:aiInterventionAgent.feedbackView",
-    "onCommand:ai-intervention-agent.helloWorld",
     "onCommand:ai-intervention-agent.openPanel",
-    "onCommand:ai-intervention-agent.openSettings",
-    "onCommand:ai-intervention-agent.runAppleScript",
-    "onCommand:ai-intervention-agent.testAppleScriptNotification",
-    "onCommand:ai-intervention-agent.diagnoseWebviewNoContent",
-    "onCommand:ai-intervention-agent.copyDiagnostics"
+    "onCommand:ai-intervention-agent.openSettings"
   ],
   "main": "./extension.js",
   "files": [
@@ -72,32 +67,12 @@
     },
     "commands": [
       {
-        "command": "ai-intervention-agent.helloWorld",
-        "title": "AI Intervention Agent: 示例命令（调试）"
-      },
-      {
         "command": "ai-intervention-agent.openPanel",
         "title": "AI Intervention Agent: 打开面板"
       },
       {
         "command": "ai-intervention-agent.openSettings",
         "title": "AI Intervention Agent: 打开配置（serverUrl）"
-      },
-      {
-        "command": "ai-intervention-agent.runAppleScript",
-        "title": "AI Intervention Agent: 执行 AppleScript（macOS）"
-      },
-      {
-        "command": "ai-intervention-agent.testAppleScriptNotification",
-        "title": "AI Intervention Agent: 测试 macOS 原生通知"
-      },
-      {
-        "command": "ai-intervention-agent.diagnoseWebviewNoContent",
-        "title": "AI Intervention Agent: 诊断 Webview（Lottie/SVG）"
-      },
-      {
-        "command": "ai-intervention-agent.copyDiagnostics",
-        "title": "AI Intervention Agent: 复制诊断信息"
       }
     ],
     "configuration": {
@@ -118,11 +93,6 @@
           ],
           "default": "info",
           "description": "插件日志级别（Output 面板 → AI Intervention Agent）"
-        },
-        "ai-intervention-agent.enableAppleScript": {
-          "type": "boolean",
-          "default": false,
-          "description": "允许插件在 macOS 上通过 osascript 执行“任意” AppleScript（仅影响命令：AI Intervention Agent: 执行 AppleScript；出于安全考虑默认关闭）。macOS 原生通知不依赖此开关。"
         }
       }
     }

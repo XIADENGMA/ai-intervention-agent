@@ -111,7 +111,6 @@ class WebviewProvider {
     this._hasEverConnected = false
     this._webviewReady = false
     this._webviewReadyTimer = null
-    this._pendingNoContentDiagnostics = new Map() // requestId -> {resolve,reject,timer}
     // macOS 原生通知“点击打开面板”兜底：
     // AppleScript 原生通知没有点击回调；这里通过“通知触发时若宿主未聚焦则 arm，一旦宿主重新聚焦则自动打开面板”来近似实现。
     this._revealPanelUntilMs = 0
@@ -161,86 +160,6 @@ class WebviewProvider {
 
     this._view = null
     this._lastServerStatus = null
-    try {
-      for (const [, v] of this._pendingNoContentDiagnostics) {
-        try {
-          if (v && v.timer) clearTimeout(v.timer)
-        } catch {
-          // 忽略
-        }
-        try {
-          if (v && typeof v.reject === 'function') {
-            const err = new Error('Webview disposed')
-            err.code = 'WEBVIEW_DISPOSED'
-            v.reject(err)
-          }
-        } catch {
-          // 忽略
-        }
-      }
-    } catch {
-      // 忽略
-    } finally {
-      try {
-        this._pendingNoContentDiagnostics.clear()
-      } catch {
-        // 忽略
-      }
-    }
-  }
-
-  requestNoContentDiagnostics(options) {
-    const opts = options && typeof options === 'object' ? options : {}
-    const timeoutMsRaw = typeof opts.timeoutMs === 'number' ? opts.timeoutMs : 2500
-    const timeoutMs = Math.max(600, Math.min(15000, Math.floor(timeoutMsRaw)))
-
-    if (!this._view || !this._view.webview) {
-      const err = new Error('Webview not ready: open the panel first')
-      err.code = 'WEBVIEW_NOT_READY'
-      return Promise.reject(err)
-    }
-
-    const requestId = `diag_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        try {
-          this._pendingNoContentDiagnostics.delete(requestId)
-        } catch {
-          // 忽略
-        }
-        const err = new Error('Webview diagnostic timeout')
-        err.code = 'WEBVIEW_DIAG_TIMEOUT'
-        reject(err)
-      }, timeoutMs)
-
-      try {
-        this._pendingNoContentDiagnostics.set(requestId, { resolve, reject, timer })
-      } catch {
-        clearTimeout(timer)
-        const err = new Error('Failed to track diagnostic request')
-        err.code = 'WEBVIEW_DIAG_TRACK_FAILED'
-        reject(err)
-        return
-      }
-
-      try {
-        this._sendMessage({ type: 'diagnoseNoContent', requestId })
-      } catch (e) {
-        try {
-          clearTimeout(timer)
-        } catch {
-          // 忽略
-        }
-        try {
-          this._pendingNoContentDiagnostics.delete(requestId)
-        } catch {
-          // 忽略
-        }
-        const err = new Error(e && e.message ? String(e.message) : String(e))
-        err.code = 'WEBVIEW_DIAG_SEND_FAILED'
-        reject(err)
-      }
-    })
   }
 
   resolveWebviewView(webviewView) {
@@ -546,28 +465,6 @@ class WebviewProvider {
         break
       case 'showMacOSNativeNotification':
         this._handleShowMacOSNativeNotification(message)
-        break
-      case 'diagnoseNoContentResult':
-        try {
-          const requestId =
-            message && message.requestId ? String(message.requestId) : ''
-          if (!requestId) break
-          const pending = this._pendingNoContentDiagnostics.get(requestId)
-          if (!pending) break
-          try {
-            if (pending.timer) clearTimeout(pending.timer)
-          } catch {
-            // 忽略
-          }
-          this._pendingNoContentDiagnostics.delete(requestId)
-          try {
-            pending.resolve(message && message.result ? message.result : null)
-          } catch {
-            // 忽略
-          }
-        } catch {
-          // 忽略
-        }
         break
       default:
         // 忽略未知消息类型

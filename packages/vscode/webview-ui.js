@@ -65,7 +65,7 @@
   const WEBVIEW_HELPERS =
     typeof window !== 'undefined' && window.AIIAWebviewHelpers ? window.AIIAWebviewHelpers : null
   let themeObserver = null
-  // 无有效内容页面：Lottie 动画（默认使用 hourglass.json；失败则降级为 Lucide 风格 SVG）
+  // 无有效内容页面：Lottie 动画（默认使用 sprout.json；失败则降级为 Lucide 风格 SVG）
   let noContentHourglassAnimation = null
 
   // 网络请求超时（避免本地端口“半开/卡住”导致一直停在“正在连接服务器...”）
@@ -4342,124 +4342,6 @@
     return new Blob([u8arr], { type: mime })
   }
 
-  function collectNoContentDiagnostics() {
-    const diag = {}
-    try {
-      diag.ts = new Date().toISOString()
-    } catch (_) {
-      diag.ts = ''
-    }
-    try {
-      diag.locationHref = typeof location !== 'undefined' && location && location.href ? String(location.href) : ''
-    } catch (_) {
-      diag.locationHref = ''
-    }
-    try {
-      diag.serverUrl = SERVER_URL || ''
-    } catch (_) {
-      diag.serverUrl = ''
-    }
-
-    try {
-      diag.noContentVisible = isNoContentVisible()
-    } catch (_) {
-      diag.noContentVisible = null
-    }
-
-    try {
-      diag.inlineLottie = !!(typeof window !== 'undefined' && window.__AIIA_NO_CONTENT_LOTTIE_DATA)
-    } catch (_) {
-      diag.inlineLottie = false
-    }
-    try {
-      diag.inlineSvg = !!(typeof window !== 'undefined' && window.__AIIA_NO_CONTENT_FALLBACK_SVG)
-    } catch (_) {
-      diag.inlineSvg = false
-    }
-    try {
-      diag.inlineSvgLen =
-        typeof window !== 'undefined' && window.__AIIA_NO_CONTENT_FALLBACK_SVG
-          ? String(window.__AIIA_NO_CONTENT_FALLBACK_SVG).length
-          : 0
-    } catch (_) {
-      diag.inlineSvgLen = 0
-    }
-    try {
-      const d = typeof window !== 'undefined' ? window.__AIIA_NO_CONTENT_LOTTIE_DATA : null
-      diag.inlineLottieName = d && typeof d === 'object' && d.nm ? String(d.nm) : ''
-      diag.inlineLottieVersion = d && typeof d === 'object' && d.v ? String(d.v) : ''
-    } catch (_) {
-      diag.inlineLottieName = ''
-      diag.inlineLottieVersion = ''
-    }
-
-    try {
-      diag.lottieLibReady = typeof lottie !== 'undefined' && !!lottie && typeof lottie.loadAnimation === 'function'
-    } catch (_) {
-      diag.lottieLibReady = false
-    }
-
-    try {
-      const el = document.getElementById('hourglass-lottie')
-      diag.hourglassContainerFound = !!el
-      diag.hourglassFallbackVariant = el ? String(el.getAttribute('data-aiia-fallback-icon') || '') : ''
-      diag.hourglassHtmlPreview = el ? String(el.innerHTML || '').slice(0, 280) : ''
-    } catch (_) {
-      diag.hourglassContainerFound = false
-      diag.hourglassFallbackVariant = ''
-      diag.hourglassHtmlPreview = ''
-    }
-
-    try {
-      diag.hasHourglassAnimationInstance = !!noContentHourglassAnimation
-    } catch (_) {
-      diag.hasHourglassAnimationInstance = false
-    }
-    try {
-      diag.noContentLottieInitInFlight = !!noContentLottieInitInFlight
-    } catch (_) {
-      diag.noContentLottieInitInFlight = false
-    }
-    try {
-      diag.noContentLottieRetryAttempt = noContentLottieRetryAttempt
-    } catch (_) {
-      diag.noContentLottieRetryAttempt = null
-    }
-    try {
-      diag.lottieInitWarned = !!lottieInitWarned
-    } catch (_) {
-      diag.lottieInitWarned = false
-    }
-
-    try {
-      diag.cfg = {
-        lottieLibUrl: LOTTIE_LIB_URL || '',
-        lottieJsonUrl: NO_CONTENT_LOTTIE_JSON_URL || '',
-        fallbackSvgUrl: NO_CONTENT_FALLBACK_SVG_URL || '',
-        nonceLen: CSP_NONCE ? String(CSP_NONCE).length : 0
-      }
-    } catch (_) {
-      diag.cfg = {}
-    }
-
-    return diag
-  }
-
-  function handleDiagnoseNoContentMessage(message) {
-    const requestId = message && message.requestId ? String(message.requestId) : ''
-    let result = null
-    try {
-      result = collectNoContentDiagnostics()
-    } catch (_) {
-      result = null
-    }
-    try {
-      vscode.postMessage({ type: 'diagnoseNoContentResult', requestId, result })
-    } catch (_) {
-      // 忽略
-    }
-  }
-
   // 监听消息
   window.addEventListener('message', event => {
     const message = event.data
@@ -4469,9 +4351,6 @@
         break
       case 'clipboardText':
         handleClipboardTextMessage(message)
-        break
-      case 'diagnoseNoContent':
-        handleDiagnoseNoContentMessage(message)
         break
     }
   })
