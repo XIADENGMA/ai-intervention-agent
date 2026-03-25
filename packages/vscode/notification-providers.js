@@ -120,6 +120,8 @@ class AppleScriptNotificationProvider {
     this._hostBundleIdResolved = false
     this._hostBundleIdResolvePromise = null
     this._lastDiagnostic = null
+    // 防止“注入 __CFBundleIdentifier”在特定宿主/系统下反复卡住：失败后短时间内禁用注入，优先保证通知可用/快速返回
+    this._bundleInjectionDisabledUntilMs = 0
   }
 
   getLastDiagnostic() {
@@ -318,6 +320,8 @@ class AppleScriptNotificationProvider {
     const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
     const isTest = !!(md && md.isTest)
     const diagnosticMode = !!(md && (md.diagnostic || md.diagnostics || md.debug))
+    // 测试/排查专用：允许调用方显式跳过 bundleId 注入（避免某些宿主/系统下首包卡住）
+    const skipBundleInjection = !!(md && (md.skipBundleInjection || md.fastTest || md.fast))
 
     // 非测试通知：非 macOS 平台直接跳过，避免无意义的 AppleScript 调用
     // 测试通知（isTest=true）：用于 UI/单测校验，可允许注入的 executor 在任意平台被调用
@@ -362,9 +366,17 @@ class AppleScriptNotificationProvider {
       let runOptions = undefined
       let usedFallbackWithoutBundle = false
       try {
-        bundleId = await this._resolveHostBundleId()
-        if (bundleId) {
-          runOptions = { env: { __CFBundleIdentifier: bundleId } }
+        if (!skipBundleInjection) {
+          bundleId = await this._resolveHostBundleId()
+          const now = Date.now()
+          const disabledUntil =
+            typeof this._bundleInjectionDisabledUntilMs === 'number' &&
+            Number.isFinite(this._bundleInjectionDisabledUntilMs)
+              ? this._bundleInjectionDisabledUntilMs
+              : 0
+          if (bundleId && now >= disabledUntil) {
+            runOptions = { env: { __CFBundleIdentifier: bundleId } }
+          }
         }
       } catch {
         bundleId = ''
@@ -372,6 +384,7 @@ class AppleScriptNotificationProvider {
       }
       const injectedEnvKeys =
         runOptions && runOptions.env && runOptions.env.__CFBundleIdentifier ? ['__CFBundleIdentifier'] : []
+      const injectionAttempted = injectedEnvKeys.length > 0
 
       // 诊断信息：每次发送前清空（仅保留最后一次失败）
       this._lastDiagnostic = null
@@ -381,7 +394,13 @@ class AppleScriptNotificationProvider {
         await this._executor.runAppleScript(script, runOptions)
       } catch (e) {
         const first = this._extractAppleScriptError(e)
-        if (bundleId) {
+        if (injectionAttempted) {
+          // 注入失败：短时间内禁用注入，避免每次通知都先卡一轮 timeout
+          try {
+            this._bundleInjectionDisabledUntilMs = Date.now() + 10 * 60 * 1000
+          } catch {
+            // 忽略
+          }
           try {
             if (this._logger && typeof this._logger.event === 'function') {
               this._logger.event(

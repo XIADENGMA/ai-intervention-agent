@@ -629,7 +629,7 @@ class WebviewProvider {
       message: body,
       trigger: 'immediate',
       types: [NotificationType.MACOS_NATIVE],
-      metadata: { isTest: true, diagnostic: true },
+      metadata: { isTest: true, diagnostic: true, skipBundleInjection: true },
       source: 'webview'
     }
 
