@@ -70,4 +70,112 @@ suite('Notification Providers (VSCode)', () => {
     assert.strictEqual(called, 1)
     assert.strictEqual(shownError, '')
   })
+
+  test('AppleScriptNotificationProvider 注入 bundleId 失败时应回退为不注入重试', async () => {
+    const ext = getExtension()
+    const providersPath = path.join(ext.extensionPath, 'notification-providers.js')
+    const { AppleScriptNotificationProvider } = require(providersPath)
+
+    let shownError = ''
+    const stubVscode = {
+      window: {
+        showErrorMessage: msg => {
+          shownError = String(msg)
+        }
+      },
+      env: { appName: 'Visual Studio Code' }
+    }
+
+    const calls = []
+    const executor = {
+      runAppleScript: async (script, opts) => {
+        calls.push({
+          script: String(script || ''),
+          hasInjectedBundleId: !!(opts && opts.env && opts.env.__CFBundleIdentifier),
+          injectedBundleId:
+            opts && opts.env && opts.env.__CFBundleIdentifier ? String(opts.env.__CFBundleIdentifier) : ''
+        })
+        if (opts && opts.env && opts.env.__CFBundleIdentifier) {
+          const err = new Error('fail injected')
+          err.code = 'APPLE_SCRIPT_FAILED'
+          err.details = {
+            stderr: 'injected fail',
+            exitCode: 1,
+            signal: '',
+            injectedEnvKeys: ['__CFBundleIdentifier'],
+            durationMs: 1
+          }
+          throw err
+        }
+        return ''
+      }
+    }
+
+    const provider = new AppleScriptNotificationProvider({ executor, vscodeApi: stubVscode })
+    // 用 monkey patch 保证跨平台也能覆盖注入逻辑
+    provider._resolveHostBundleId = async () => 'com.example.host'
+
+    const ok = await provider.send({
+      title: 't',
+      message: 'm',
+      metadata: { isTest: true, diagnostic: true }
+    })
+    assert.strictEqual(ok, true)
+    assert.strictEqual(shownError, '')
+    assert.strictEqual(calls.length, 2)
+    assert.strictEqual(calls[0].hasInjectedBundleId, true)
+    assert.strictEqual(calls[0].injectedBundleId, 'com.example.host')
+    assert.strictEqual(calls[1].hasInjectedBundleId, false)
+  })
+
+  test('AppleScriptNotificationProvider 失败应保存诊断信息，且 diagnostic 模式不弹窗', async () => {
+    const ext = getExtension()
+    const providersPath = path.join(ext.extensionPath, 'notification-providers.js')
+    const { AppleScriptNotificationProvider } = require(providersPath)
+
+    let shownError = ''
+    const stubVscode = {
+      window: {
+        showErrorMessage: msg => {
+          shownError = String(msg)
+        }
+      },
+      env: { appName: 'Visual Studio Code' }
+    }
+
+    const executor = {
+      runAppleScript: async (_script, opts) => {
+        const isInjected = !!(opts && opts.env && opts.env.__CFBundleIdentifier)
+        const err = new Error(isInjected ? 'fail primary' : 'fail fallback')
+        err.code = 'APPLE_SCRIPT_FAILED'
+        err.details = {
+          stderr: isInjected ? 'stderr_primary' : 'stderr_fallback',
+          exitCode: 1,
+          signal: '',
+          injectedEnvKeys: isInjected ? ['__CFBundleIdentifier'] : [],
+          durationMs: 2
+        }
+        throw err
+      }
+    }
+
+    const provider = new AppleScriptNotificationProvider({ executor, vscodeApi: stubVscode })
+    provider._resolveHostBundleId = async () => 'com.example.host'
+
+    const ok = await provider.send({
+      title: 't',
+      message: 'm',
+      metadata: { isTest: true, diagnostic: true }
+    })
+    assert.strictEqual(ok, false)
+    // diagnostic 模式：UI 错误提示应由 extension.js 统一展示，这里不应弹窗
+    assert.strictEqual(shownError, '')
+
+    const diag = provider.getLastDiagnostic()
+    assert.ok(diag && typeof diag === 'object', 'should store last diagnostic')
+    assert.ok(diag.primary && typeof diag.primary === 'object', 'should keep primary attempt info')
+    assert.ok(diag.fallback && typeof diag.fallback === 'object', 'should keep fallback attempt info')
+    assert.ok(String(diag.primary.stderrPreview || '').includes('stderr_primary'))
+    assert.ok(String(diag.fallback.stderrPreview || '').includes('stderr_fallback'))
+  })
 })

@@ -118,5 +118,36 @@ suite('AppleScript Executor', () => {
       return true
     })
   })
+
+  test('失败时应携带 details（exitCode / injectedEnvKeys / stderr 等）', async () => {
+    const ext = getExtension()
+    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
+    const { AppleScriptExecutor } = require(executorPath)
+
+    const fakeExec = (_file, _args, _opts, cb) => {
+      const child = { stdin: { on: () => {}, end: () => {} } }
+      const err = new Error('boom')
+      err.code = 2
+      process.nextTick(() => cb(err, '', 'stderr text'))
+      return child
+    }
+
+    const executor = new AppleScriptExecutor({ platform: 'darwin', execImpl: fakeExec })
+    await assert.rejects(
+      executor.runAppleScript('return "ok"', {
+        env: { __CFBundleIdentifier: 'com.example.host', FOO: '1' }
+      }),
+      err => {
+        assert.strictEqual(err.code, 'APPLE_SCRIPT_FAILED')
+        assert.ok(err.details && typeof err.details === 'object', 'should attach err.details')
+        assert.strictEqual(err.details.exitCode, 2)
+        assert.ok(Array.isArray(err.details.injectedEnvKeys))
+        assert.ok(err.details.injectedEnvKeys.includes('__CFBundleIdentifier'))
+        assert.ok(err.details.injectedEnvKeys.includes('FOO'))
+        assert.ok(String(err.details.stderr || '').includes('stderr text'))
+        return true
+      }
+    )
+  })
 })
 

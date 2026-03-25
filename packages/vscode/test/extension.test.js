@@ -66,6 +66,12 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('vscode.getState'))
     assert.ok(webviewUi.includes('vscode.setState'))
     assert.ok(extensionJs.includes('retainContextWhenHidden: false'))
+    // macOS 原生通知诊断回归点：测试命令应开启 diagnostic 模式，并提供“复制诊断”
+    assert.ok(
+      /metadata:\s*\{\s*isTest:\s*true,\s*diagnostic:\s*true\s*\}/.test(extensionJs),
+      'testAppleScriptNotification should enable diagnostic mode'
+    )
+    assert.ok(extensionJs.includes('复制诊断'), 'testAppleScriptNotification should offer copy diagnostics')
     // 边界回归点：0.0.0.0/:: 仅适合作为监听地址，扩展侧应映射为 localhost（避免客户端无法访问）
     assert.ok(extensionJs.includes("host === '0.0.0.0' || host === '::'"))
     // 稳定性/解耦：MathJax 应优先走 VSIX 内置资源（由 meta 注入 URL）
@@ -153,6 +159,28 @@ suite('Extension Test Suite', () => {
     // manifest 注入回归点：Lottie lib URL 必须通过 meta 下发（CSP-safe 懒加载）
     assert.ok(webviewJs.includes('data-lottie-lib-url'))
     assert.ok(webviewUi.includes('data-lottie-lib-url'))
+    // Lottie 降级/恢复关键回归点：应具备 SVG 降级 + 自动重试/恢复机制
+    assert.ok(webviewUi.includes('renderNoContentFallbackIcon'))
+    assert.ok(webviewUi.includes('scheduleNoContentLottieRetry'))
+    assert.ok(webviewUi.includes('installNoContentLottieRecoveryHandlers'))
+    assert.ok(
+      webviewUi.includes("NO_CONTENT_FALLBACK_ICON_VARIANT = 'hourglass'"),
+      'no-content fallback icon should default to hourglass'
+    )
+    assert.ok(
+      webviewUi.includes('if (!ok) lottieLoadPromise = null'),
+      'ensureLottieLoaded should reset cached promise on failure'
+    )
+    assert.ok(
+      webviewUi.includes('if (!data) noContentLottieDataPromise = null'),
+      'loadNoContentLottieData should reset cached promise on failure'
+    )
+    assert.ok(webviewUi.includes('DOMLoaded timeout'), 'should have DOMLoaded timeout fallback')
+    assert.ok(webviewUi.includes("addEventListener('online'"), 'should retry on online event')
+    assert.ok(webviewUi.includes("addEventListener('visibilitychange'"), 'should retry on visibilitychange')
+    assert.ok(webviewUi.includes('MutationObserver'), 'should observe no-content visibility changes')
+    assert.ok(webviewCss.includes('.aiia-fallback-icon'), 'webview.css should include fallback icon styling')
+    assert.ok(webviewCss.includes('aiia-fallback-spin'), 'webview.css should include fallback spin keyframes')
 
     // manifest 回归点：Activity Bar 容器 icon 应使用文件路径（不应使用 $(codicon)）
     const extPkgJson = JSON.parse(extPkgText)
