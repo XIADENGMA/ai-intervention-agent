@@ -125,4 +125,3 @@ class NotificationCenter {
 }
 
 module.exports = { NotificationCenter }
-

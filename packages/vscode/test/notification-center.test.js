@@ -89,4 +89,3 @@ suite('Notification Center (VSCode)', () => {
     assert.strictEqual(called, 1)
   })
 })
-

@@ -150,4 +150,3 @@ suite('AppleScript Executor', () => {
     )
   })
 })
-

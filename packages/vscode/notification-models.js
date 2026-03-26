@@ -108,4 +108,3 @@ module.exports = {
   NotificationPriority,
   normalizeNotificationEvent
 }
-

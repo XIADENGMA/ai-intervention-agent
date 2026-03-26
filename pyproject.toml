@@ -50,6 +50,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pre-commit>=4.0.0",
     "pytest>=8.4.0",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.0",
@@ -123,6 +124,7 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.0.0",
     "pytest>=8.4.0",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.0",

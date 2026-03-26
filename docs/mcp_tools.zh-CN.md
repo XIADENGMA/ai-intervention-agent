@@ -56,4 +56,3 @@ interactive_feedback(
   predefined_options=["Rebase", "Merge", "暂不处理"]
 )
 ```
-

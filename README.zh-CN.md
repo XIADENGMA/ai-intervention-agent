@@ -227,7 +227,7 @@ flowchart TD
     WEB_FRONTEND <-->|轮询 /api/tasks| HTTP_API
     WEB_FRONTEND -->|提交反馈| HTTP_API
   end
-  
+
   subgraph VSCODE_PROC["VS Code 插件（Node）"]
     VSCODE_EXT["扩展宿主<br/>(packages/vscode/extension.js)"]
     VSCODE_WEBVIEW["Webview 前端<br/>(webview.js + webview-ui.js<br/>+ webview-notify-core.js + webview-settings-ui.js)"]

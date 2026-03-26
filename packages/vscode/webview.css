@@ -1253,4 +1253,3 @@
         .toast.error {
             border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-problemsErrorIcon-foreground));
         }
-

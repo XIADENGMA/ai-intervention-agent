@@ -29,7 +29,7 @@ jobs:
           import re
           import subprocess
           import sys
-          
+
           pr_url = os.environ.get("PR_URL", "").strip()
           if not pr_url:
             print("Missing PR_URL", file=sys.stderr)
@@ -45,14 +45,14 @@ jobs:
             except Exception as e:
               print(f"Failed to load PR via gh: {e}", file=sys.stderr)
               text = ""
-          
+
             # 捕获常见格式：from X to Y（支持 v 前缀与预发布）
             pairs = re.findall(
               r"from\\s+v?([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?)\\s+to\\s+v?([0-9]+(?:\\.[0-9]+){1,2}(?:[-+][0-9A-Za-z.-]+)?)",
               text,
               flags=re.IGNORECASE,
             )
-          
+
             def parse_semver(v: str):
               v = v.strip()
               if v.startswith("v"):
@@ -68,7 +68,7 @@ jobs:
               except ValueError:
                 return None
               return (major, minor, patch)
-          
+
             # 默认保守：未知类型不自动合并
             severity = None  # 0 patch, 1 minor, 2 major
             for a, b in pairs:
@@ -83,7 +83,7 @@ jobs:
                 severity = 1 if severity is None else max(severity, 1)
               elif pb[2] != pa[2]:
                 severity = 0 if severity is None else max(severity, 0)
-          
+
             if severity is None:
               update_type = "unknown"
             else:
@@ -92,7 +92,7 @@ jobs:
                 "version-update:semver-minor",
                 "version-update:semver-major",
               ][severity]
-          
+
           print(f"update-type={update_type}")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
             f.write(f"update-type={update_type}\\n")

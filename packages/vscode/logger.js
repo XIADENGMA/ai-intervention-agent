@@ -430,4 +430,3 @@ function createLogger(outputChannel, opts = {}) {
 module.exports = {
   createLogger
 }
-

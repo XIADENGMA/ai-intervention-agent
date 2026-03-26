@@ -80,4 +80,3 @@ jobs:
           name: ai-intervention-agent-vsix
           path: packages/vscode/*.vsix
           if-no-files-found: error
-
