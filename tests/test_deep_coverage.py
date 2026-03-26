@@ -316,9 +316,7 @@ class TestConfigManagerNetworkSecurityAdvanced(unittest.TestCase):
         self.assertIn("bind_interface", security)
         self.assertIn("allowed_networks", security)
         # 支持新旧两种配置名称
-        self.assertTrue(
-            "enable_access_control" in security or "access_control_enabled" in security
-        )
+        self.assertTrue("access_control_enabled" in security)
 
     def test_network_security_allowed_networks(self):
         """测试允许的网络列表"""

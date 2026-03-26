@@ -235,14 +235,14 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
             "bind_interface": "192.168.1.1",
             "allowed_networks": ["192.168.0.0/16", "10.0.0.0/8"],
             "blocked_ips": ["192.168.1.100"],
-            "enable_access_control": True,
+            "access_control_enabled": True,
         }
         result = validate_network_security_config(config)
 
         self.assertEqual(result["bind_interface"], "192.168.1.1")
         self.assertEqual(len(result["allowed_networks"]), 2)
         self.assertEqual(len(result["blocked_ips"]), 1)
-        self.assertTrue(result["enable_access_control"])
+        self.assertTrue(result["access_control_enabled"])
 
     def test_empty_config(self):
         """测试空配置"""
@@ -254,7 +254,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
         self.assertIn(result["bind_interface"], ["0.0.0.0", "127.0.0.1"])
         self.assertTrue(len(result["allowed_networks"]) > 0)
         self.assertEqual(result["blocked_ips"], [])
-        self.assertTrue(result["enable_access_control"])
+        self.assertTrue(result["access_control_enabled"])
 
     def test_partial_config(self):
         """测试部分配置"""
@@ -267,23 +267,23 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
         # 其他字段使用默认值
         self.assertTrue(len(result["allowed_networks"]) > 0)
 
-    def test_enable_access_control_conversion(self):
-        """测试 enable_access_control 布尔转换"""
+    def test_access_control_enabled_conversion(self):
+        """测试 access_control_enabled 布尔转换"""
         from web_ui import validate_network_security_config
 
         # 真值
-        config = {"enable_access_control": "true"}
+        config = {"access_control_enabled": "true"}
         result = validate_network_security_config(config)
-        self.assertTrue(result["enable_access_control"])
+        self.assertTrue(result["access_control_enabled"])
 
         # 假值
-        config = {"enable_access_control": False}
+        config = {"access_control_enabled": False}
         result = validate_network_security_config(config)
-        self.assertFalse(result["enable_access_control"])
+        self.assertFalse(result["access_control_enabled"])
 
-        config = {"enable_access_control": 0}
+        config = {"access_control_enabled": 0}
         result = validate_network_security_config(config)
-        self.assertFalse(result["enable_access_control"])
+        self.assertFalse(result["access_control_enabled"])
 
     def test_non_dict_input(self):
         """测试非字典输入"""
@@ -317,12 +317,12 @@ class TestLoadNetworkSecurityConfig(unittest.TestCase):
         self.assertIn("bind_interface", config)
         self.assertIn("allowed_networks", config)
         self.assertIn("blocked_ips", config)
-        self.assertIn("enable_access_control", config)
+        self.assertIn("access_control_enabled", config)
 
         # 验证配置有效性
         self.assertIsInstance(config["allowed_networks"], list)
         self.assertIsInstance(config["blocked_ips"], list)
-        self.assertIsInstance(config["enable_access_control"], bool)
+        self.assertIsInstance(config["access_control_enabled"], bool)
 
 
 class TestIsIpAllowed(unittest.TestCase):
@@ -339,7 +339,7 @@ class TestIsIpAllowed(unittest.TestCase):
         )
 
         # 禁用访问控制
-        ui.network_security_config["enable_access_control"] = False
+        ui.network_security_config["access_control_enabled"] = False
 
         # 任何 IP 都应该被允许
         self.assertTrue(ui._is_ip_allowed("1.2.3.4"))
@@ -357,7 +357,7 @@ class TestIsIpAllowed(unittest.TestCase):
 
         # 添加到黑名单
         ui.network_security_config["blocked_ips"] = ["192.168.1.100"]
-        ui.network_security_config["enable_access_control"] = True
+        ui.network_security_config["access_control_enabled"] = True
 
         # 黑名单 IP 应该被拒绝
         self.assertFalse(ui._is_ip_allowed("192.168.1.100"))
@@ -373,7 +373,7 @@ class TestIsIpAllowed(unittest.TestCase):
         )
 
         ui.network_security_config["allowed_networks"] = ["127.0.0.0/8"]
-        ui.network_security_config["enable_access_control"] = True
+        ui.network_security_config["access_control_enabled"] = True
 
         # 在允许网络中的 IP 应该被允许
         self.assertTrue(ui._is_ip_allowed("127.0.0.1"))
@@ -410,7 +410,7 @@ class TestRequestClientIpResolution(unittest.TestCase):
         """远端客户端不能用 X-Forwarded-For 冒充白名单来源"""
         self.ui.network_security_config["allowed_networks"] = ["127.0.0.0/8"]
         self.ui.network_security_config["blocked_ips"] = []
-        self.ui.network_security_config["enable_access_control"] = True
+        self.ui.network_security_config["access_control_enabled"] = True
 
         response = self.client.get(
             "/api/health",
@@ -426,7 +426,7 @@ class TestRequestClientIpResolution(unittest.TestCase):
         """仅本机反向代理转发的 X-Forwarded-For 才会被信任"""
         self.ui.network_security_config["allowed_networks"] = ["192.168.0.0/16"]
         self.ui.network_security_config["blocked_ips"] = []
-        self.ui.network_security_config["enable_access_control"] = True
+        self.ui.network_security_config["access_control_enabled"] = True
 
         response = self.client.get(
             "/api/health",
@@ -466,7 +466,7 @@ class TestIntegration(unittest.TestCase):
             "bind_interface": "invalid_ip",
             "allowed_networks": ["192.168.0.0/16", "invalid"],
             "blocked_ips": ["10.0.0.1", "invalid"],
-            "enable_access_control": True,
+            "access_control_enabled": True,
         }
 
         result = validate_network_security_config(raw_config)

@@ -458,7 +458,7 @@ class TestNetworkSecurityConfig(unittest.TestCase):
             "network_security": {
                 "bind_interface": "0.0.0.0",
                 "allowed_networks": ["127.0.0.0/8"],
-                "enable_access_control": True,
+                "access_control_enabled": True,
             },
         }
 

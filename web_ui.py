@@ -590,11 +590,10 @@ def validate_network_security_config(config: Any) -> dict[str, Any]:
             config.get("allowed_networks", DEFAULT_ALLOWED_NETWORKS)
         ),
         "blocked_ips": validate_blocked_ips(config.get("blocked_ips", [])),
-        # 【命名优化】使用新名称，保持向后兼容
-        "enable_access_control": bool(
+        "access_control_enabled": bool(
             config.get(
-                "access_control_enabled",  # 新名称
-                config.get("enable_access_control", True),  # 旧名称回退
+                "access_control_enabled",
+                config.get("enable_access_control", True),
             )
         ),
     }
@@ -678,7 +677,7 @@ class WebFeedbackUI:
 
         self.csp_nonce = secrets.token_urlsafe(16)
         self.network_security_config = self._load_network_security_config()
-        # 【热更新】network_security（allowed_networks/blocked_ips/enable_access_control）也应随配置文件变化生效
+        # 【热更新】network_security（allowed_networks/blocked_ips/access_control_enabled）也应随配置文件变化生效
         _ensure_network_security_hot_reload_callback_registered()
 
         self.limiter = Limiter(
@@ -3529,7 +3528,7 @@ class WebFeedbackUI:
                 - bind_interface: 绑定的网络接口（验证为有效 IP 或特殊值）
                 - allowed_networks: 允许访问的网络列表（验证 CIDR 格式）
                 - blocked_ips: 黑名单 IP 列表（验证 IP 格式）
-                - enable_access_control: 是否启用访问控制（布尔值）
+                - access_control_enabled: 是否启用访问控制（布尔值）
 
         处理逻辑：
             1. 调用 get_config() 获取配置管理器
@@ -3541,7 +3540,7 @@ class WebFeedbackUI:
             - bind_interface: 必须是有效 IP 或 0.0.0.0/127.0.0.1/localhost
             - allowed_networks: 无效的 CIDR 会被过滤，空列表自动添加本地回环
             - blocked_ips: 无效的 IP 会被过滤
-            - enable_access_control: 转换为布尔值
+            - access_control_enabled: 转换为布尔值
 
         异常处理：
             - 配置加载失败：记录警告日志，返回默认配置
@@ -3550,7 +3549,7 @@ class WebFeedbackUI:
             - bind_interface: "0.0.0.0"
             - allowed_networks: 本地回环 + 私有网络段
             - blocked_ips: 空列表
-            - enable_access_control: True
+            - access_control_enabled: True
 
         注意事项：
             - 配置来自 config.jsonc 文件
@@ -3580,7 +3579,7 @@ class WebFeedbackUI:
             bool: True表示允许访问，False表示拒绝访问
 
         验证逻辑：
-            1. 若enable_access_control=False，直接返回True（禁用访问控制）
+            1. 若access_control_enabled=False，直接返回True（禁用访问控制）
             2. 解析client_ip为ip_address对象
             3. 检查黑名单：若IP在blocked_ips中，返回False
             4. 检查白名单：遍历allowed_networks
@@ -3605,11 +3604,17 @@ class WebFeedbackUI:
             if isinstance(self.network_security_config, dict)
             else {}
         )
-        if not cfg.get("enable_access_control", True):
+        if not cfg.get("access_control_enabled", True):
             return True
 
         try:
             client_addr = ip_address(client_ip)
+
+            # IPv4-mapped IPv6 地址透传：当服务器绑定 :: (dual-stack) 时，
+            # IPv4 客户端可能以 ::ffff:x.x.x.x 形式出现，需要提取底层 IPv4
+            # 以便与 IPv4 CIDR 规则（如 192.168.0.0/16）正确匹配
+            if hasattr(client_addr, "ipv4_mapped") and client_addr.ipv4_mapped:
+                client_addr = client_addr.ipv4_mapped
 
             # 检查黑名单
             blocked_ips = cfg.get("blocked_ips", [])

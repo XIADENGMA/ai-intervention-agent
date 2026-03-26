@@ -855,12 +855,19 @@ class NotificationManager:
 
             notification_config = config_mgr.get_section("notification")
 
-            # 【类型验证】辅助函数：安全获取布尔值
-            def safe_bool(value, default: bool) -> bool:
+            # 【类型验证】辅助函数：安全获取布尔值（与 from_config_file 对齐）
+            def safe_bool(value: Any, default: bool) -> bool:
                 if isinstance(value, bool):
                     return value
+                if isinstance(value, (int, float)):
+                    return bool(value)
                 if isinstance(value, str):
-                    return value.lower() in ("true", "1", "yes")
+                    v = value.strip().lower()
+                    if v in ("true", "1", "yes", "y", "on"):
+                        return True
+                    if v in ("false", "0", "no", "n", "off"):
+                        return False
+                    return default
                 return default
 
             # 【类型验证】辅助函数：安全获取数值
