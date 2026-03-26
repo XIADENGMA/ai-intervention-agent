@@ -69,7 +69,8 @@ class WebviewProvider {
     outputChannel,
     serverUrl = 'http://localhost:8080',
     onVisibilityChanged,
-    onTasksStatsChanged
+    onTasksStatsChanged,
+    onNewTaskIdsFromWebview
   ) {
     this._extensionUri = extensionUri
     this._outputChannel = outputChannel
@@ -109,6 +110,8 @@ class WebviewProvider {
       typeof onVisibilityChanged === 'function' ? onVisibilityChanged : null
     this._onTasksStatsChanged =
       typeof onTasksStatsChanged === 'function' ? onTasksStatsChanged : null
+    this._onNewTaskIdsFromWebview =
+      typeof onNewTaskIdsFromWebview === 'function' ? onNewTaskIdsFromWebview : null
     this._view = null
     this._disposables = []
     this._lastServerStatus = null
@@ -638,6 +641,15 @@ class WebviewProvider {
     const event = message && message.event ? message.event : null
     if (!event) return
     this._dispatchNotificationEvent(event)
+    // Webview 检测到新任务后，同步 task ID 到扩展侧防止双重通知
+    try {
+      const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
+      if (md.kind === 'new_tasks' && Array.isArray(md.taskIds) && this._onNewTaskIdsFromWebview) {
+        this._onNewTaskIdsFromWebview(md.taskIds)
+      }
+    } catch {
+      // 同步失败不应影响通知流程
+    }
   }
 
   _handleShowMacOSNativeNotification(message) {
@@ -749,7 +761,13 @@ class WebviewProvider {
       try {
         const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
         const timeoutId = controller
-          ? setTimeout(() => { try { controller.abort() } catch { /* noop */ } }, 2500)
+          ? setTimeout(() => {
+              try {
+                controller.abort()
+              } catch {
+                /* noop */
+              }
+            }, 2500)
           : null
         const resp = await fetch(`${this._serverUrl}/api/get-notification-config`, {
           cache: 'no-store',
@@ -784,34 +802,73 @@ class WebviewProvider {
       const ids = items.map(t => (t && t.id) || '').filter(Boolean)
       if (ids.length === 0) return
 
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'ext.dispatch_entry',
+            {
+              ids,
+              hasCenter: !!this._notificationCenter,
+              serverUrl: this._serverUrl ? 'set' : 'empty'
+            },
+            { level: 'info' }
+          )
+        }
+      } catch {
+        /* noop */
+      }
+
       const config = await this._fetchNotificationConfig()
       const settings = config || { enabled: true, macosNativeEnabled: true }
+
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'ext.dispatch_config',
+            {
+              enabled: settings.enabled,
+              macosNative: settings.macosNativeEnabled,
+              configCached: !!config
+            },
+            { level: 'info' }
+          )
+        }
+      } catch {
+        /* noop */
+      }
 
       if (settings.enabled === false) {
         try {
           if (this._logger && typeof this._logger.debug === 'function') {
             this._logger.debug('ext.new_task_notify: skipped (enabled=false)')
           }
-        } catch { /* noop */ }
+        } catch {
+          /* noop */
+        }
         return
       }
 
       const SUMMARY_MAX_LEN = 120
       const firstPrompt = (items[0] && items[0].prompt) || ''
       const cleaned = firstPrompt
-        ? firstPrompt.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+        ? firstPrompt
+            .replace(/[\r\n]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
         : ''
       const truncated = cleaned.length > SUMMARY_MAX_LEN
       const summary = truncated ? cleaned.slice(0, SUMMARY_MAX_LEN) + '\u2026' : cleaned
       let msg
       if (summary) {
-        msg = ids.length === 1
-          ? summary
-          : summary + '\uff08\u5171 ' + ids.length + ' \u4e2a\u4efb\u52a1\uff09'
+        msg =
+          ids.length === 1
+            ? summary
+            : summary + '\uff08\u5171 ' + ids.length + ' \u4e2a\u4efb\u52a1\uff09'
       } else {
-        msg = ids.length === 1
-          ? '\u65b0\u4efb\u52a1\u5df2\u6dfb\u52a0: ' + ids[0]
-          : '\u6536\u5230 ' + ids.length + ' \u4e2a\u65b0\u4efb\u52a1'
+        msg =
+          ids.length === 1
+            ? '\u65b0\u4efb\u52a1\u5df2\u6dfb\u52a0: ' + ids[0]
+            : '\u6536\u5230 ' + ids.length + ' \u4e2a\u65b0\u4efb\u52a1'
       }
 
       const types = [NotificationType.VSCODE]
@@ -823,11 +880,17 @@ class WebviewProvider {
         if (this._logger && typeof this._logger.event === 'function') {
           this._logger.event(
             'ext.new_task_notify',
-            { count: ids.length, types: types.join(','), macosNative: !!settings.macosNativeEnabled },
+            {
+              count: ids.length,
+              types: types.join(','),
+              macosNative: !!settings.macosNativeEnabled
+            },
             { level: 'info' }
           )
         }
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
 
       this._dispatchNotificationEvent({
         title: 'AI \u4ea4\u4e92\u53cd\u9988',
@@ -849,9 +912,13 @@ class WebviewProvider {
     } catch (e) {
       try {
         if (this._logger && typeof this._logger.warn === 'function') {
-          this._logger.warn('ext.new_task_notify failed: ' + (e && e.message ? e.message : String(e)))
+          this._logger.warn(
+            'ext.new_task_notify failed: ' + (e && e.message ? e.message : String(e))
+          )
         }
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
     }
   }
 

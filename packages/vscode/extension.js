@@ -311,12 +311,22 @@ function activate(context) {
           }
           if (newTaskData.length > 0 && extTaskTrackingInitialized) {
             if (provider && typeof provider.dispatchNewTaskNotification === 'function') {
+              logger.event(
+                'ext.dispatch_new_task',
+                { ids: newTaskData.map(t => t.id), viewVisible: isViewVisible },
+                { level: 'info' }
+              )
               provider.dispatchNewTaskNotification(newTaskData)
             }
           }
           extKnownTaskIds = currentIds
           if (!extTaskTrackingInitialized && connected) {
             extTaskTrackingInitialized = true
+            logger.event(
+              'ext.tracking_initialized',
+              { knownCount: currentIds.size },
+              { level: 'info' }
+            )
           }
         } catch {
           // 新任务检测失败不应影响状态栏轮询
@@ -410,11 +420,6 @@ function activate(context) {
 
   const runStatusPoll = async () => {
     if (statusPollDisposed) return
-    // Webview 可见且 stats 新鲜：不再重复 /api/tasks 请求
-    if (isWebviewStatsFresh()) {
-      scheduleStatusPoll(computeNextDelayMs())
-      return
-    }
     if (statusPollInFlight) {
       scheduleStatusPoll(computeNextDelayMs())
       return
@@ -443,17 +448,8 @@ function activate(context) {
     visible => {
       isViewVisible = !!visible
       updateStatusBarVisibility(lastConnected, lastActive, lastPending)
-      // Webview 可见性切换时重置扩展侧任务追踪：
-      // Webview 可见期间扩展不轮询，extKnownTaskIds 会变得过时；
-      // 下次扩展恢复轮询时先做一次快照（不触发通知），避免误判旧任务为新任务
-      if (!visible) {
-        extTaskTrackingInitialized = false
-        // Webview 隐藏后尽快恢复扩展侧轮询：等 stats 过期后立即做快照 + 开始检测
-        const freshRemaining = Math.max(0, WEBVIEW_STATS_FRESH_MS - (Date.now() - lastWebviewStatsAtMs))
-        scheduleStatusPoll(freshRemaining + 500)
-      } else {
-        scheduleStatusPoll(0)
-      }
+      // 可见性变化只影响轮询频率，不影响任务追踪状态
+      scheduleStatusPoll(0)
     },
     ({ connected, active, pending } = {}) => {
       // Webview 轮询的 /api/tasks 已包含 stats：这里直接复用来更新状态栏
@@ -481,6 +477,14 @@ function activate(context) {
         statusPollBackoffMs = STATUS_POLL_FAST_MS
       } else {
         statusPollBackoffMs = Math.min(STATUS_POLL_MAX_MS, Math.round(statusPollBackoffMs * 1.7))
+      }
+    },
+    taskIds => {
+      // Webview 侧检测到新任务并发送了通知后，同步 task ID 到扩展侧，
+      // 确保扩展下次轮询不会重复检测同一批任务而发出双重通知
+      if (!Array.isArray(taskIds)) return
+      for (const id of taskIds) {
+        if (id) extKnownTaskIds.add(String(id))
       }
     }
   )
