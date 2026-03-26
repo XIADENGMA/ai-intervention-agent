@@ -1,99 +1,81 @@
-# exceptions — 统一异常定义
+# exceptions
 
-项目级别的异常层次结构。所有业务异常均继承 `AIAgentError` 基类，支持结构化错误码与附加详情。
+项目统一异常定义。
 
-## 异常层次
+所有业务异常均继承 AIAgentError 基类，支持结构化错误码与附加详情，
+便于日志分析、错误追踪和前端展示。
 
-```
-Exception
-└── AIAgentError                 # 项目基础异常
-    ├── ConfigError              # 配置相关
-    │   ├── ConfigFileNotFoundError
-    │   └── ConfigValidationError
-    ├── ServiceConnectionError   # 服务连接
-    │   ├── ServiceUnavailableError
-    │   └── ServiceTimeoutError
-    ├── TaskError                # 任务相关
-    │   ├── TaskNotFoundError
-    │   └── TaskTimeoutError
-    ├── NotificationError        # 通知相关
-    └── ValidationError          # 输入验证
-```
+## 函数
 
-## AIAgentError
+### `make_error_response(message: str, status_code: int = 400) -> tuple[dict[str, Any], int]`
 
-```python
-class AIAgentError(Exception):
-    def __init__(
-        self,
-        message: str,
-        *,
-        code: str | None = None,
-        details: dict[str, Any] | None = None,
-    ) -> None: ...
-```
+构建标准化的 Flask API 错误响应。
 
-### 属性
+返回值可直接作为 Flask 路由的 return 值（jsonify 由调用方负责）。
 
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `code` | `str \| None` | 机器可读的错误码（如 `"service_unavailable"`） |
-| `details` | `dict[str, Any]` | 附加结构化信息，默认为空字典 |
+用法::
 
-### 用法示例
+    from exceptions import make_error_response
+    from flask import jsonify
+    return jsonify(make_error_response("任务不存在", 404, code="not_found")[0]), 404
+    # 或更简洁：
+    body, status = make_error_response("任务不存在", 404, code="not_found")
+    return jsonify(body), status
 
-```python
-from exceptions import ServiceTimeoutError
+## 类
 
-raise ServiceTimeoutError(
-    "Web UI 启动超时",
-    code="timeout",
-    details={"elapsed_ms": 5000, "url": "http://localhost:8080"},
-)
-```
+### `class AIAgentError`
 
-## 工具函数
+项目基础异常。
 
-### make_error_response
+属性:
+    code: 机器可读的错误码（如 "service_unavailable"），可选
+    details: 附加结构化信息，便于调试或前端展示
 
-```python
-def make_error_response(
-    message: str,
-    status_code: int = 400,
-    *,
-    code: str | None = None,
-) -> tuple[dict[str, Any], int]:
-```
+#### 方法
 
-构建标准化的 Flask API 错误响应体。返回 `(body_dict, status_code)` 元组，调用方需自行 `jsonify`。
+##### `__init__(self, message: str) -> None`
 
-**标准响应格式：**
+### `class ConfigError`
 
-```json
-{
-  "success": false,
-  "error": "错误描述",
-  "code": "error_code"
-}
-```
+配置加载、解析或校验失败。
 
-### 用法
+### `class ConfigFileNotFoundError`
 
-```python
-from exceptions import make_error_response
-from flask import jsonify
+配置文件不存在。
 
-body, status = make_error_response("任务不存在", 404, code="not_found")
-return jsonify(body), status
-```
+### `class ConfigValidationError`
 
-## Flask 全局错误处理器
+配置值不满足约束条件。
 
-`web_ui.py` 中注册了 `@app.errorhandler(AIAgentError)`，自动将未捕获的 `AIAgentError` 转为 JSON 响应：
+### `class ServiceConnectionError`
 
-| `exc.code` | HTTP 状态码 |
-|-------------|-------------|
-| `"not_found"` | 404 |
-| `"validation"` | 400 |
-| `"timeout"` | 504 |
-| 其他 / `None` | 500 |
+与 Web UI / 外部服务通信失败（连接、超时、HTTP 非 2xx 等）。
+
+### `class ServiceUnavailableError`
+
+服务未启动或无法到达。
+
+### `class ServiceTimeoutError`
+
+请求超时。
+
+### `class TaskError`
+
+任务创建、执行或等待失败。
+
+### `class TaskNotFoundError`
+
+指定任务不存在。
+
+### `class TaskTimeoutError`
+
+等待任务完成超时。
+
+### `class NotificationError`
+
+通知发送或配置错误。
+
+### `class ValidationError`
+
+输入参数不合法。

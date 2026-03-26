@@ -20,7 +20,7 @@
 
 #### 方法
 
-##### `setup_logger(self, name: str, level = logging.WARNING)`
+##### `setup_logger(self, name: str, level: int = logging.WARNING) -> logging.Logger`
 
 返回已配置的 logger，首次调用时初始化
 
@@ -34,7 +34,7 @@
 
 创建双 Handler 并配置脱敏和防注入
 
-##### `attach_to_logger(self, logger)`
+##### `attach_to_logger(self, logger: logging.Logger) -> None`
 
 将双 Handler 附加到 logger
 
@@ -60,7 +60,7 @@
 
 ##### `__init__(self)`
 
-##### `format(self, record)`
+##### `format(self, record: logging.LogRecord) -> str`
 
 格式化后脱敏
 
@@ -70,7 +70,7 @@
 
 #### 方法
 
-##### `filter(self, record)`
+##### `filter(self, record: logging.LogRecord) -> bool`
 
 转义 msg 和 args 中的危险字符，始终返回 True
 
@@ -98,7 +98,7 @@
 
 初始化 logger、去重器和级别映射
 
-##### `log(self, level: int, message: str)`
+##### `log(self, level: int, message: str) -> None`
 
 记录日志，带去重和级别映射
 
@@ -106,10 +106,10 @@
 
 兼容标准 logging.Logger API：设置底层 logger 的级别。
 
-##### `debug(self, message: str)`
+##### `debug(self, message: str) -> None`
 
-##### `info(self, message: str)`
+##### `info(self, message: str) -> None`
 
-##### `warning(self, message: str)`
+##### `warning(self, message: str) -> None`
 
-##### `error(self, message: str)`
+##### `error(self, message: str) -> None`

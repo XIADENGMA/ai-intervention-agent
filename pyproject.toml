@@ -90,6 +90,7 @@ include = [
     "/shared_types.py",
     "/task_queue.py",
     "/exceptions.py",
+    "/server_config.py",
     "/config_modules",
     "/web_ui_routes",
     "/config.jsonc.default",

@@ -30,15 +30,15 @@
 
 初始化配置、提供者字典、事件队列、线程池和回调
 
-##### `register_provider(self, notification_type: NotificationType, provider: Any)`
+##### `register_provider(self, notification_type: NotificationType, provider: Any) -> None`
 
 注册通知提供者（需实现 send(event) -> bool）
 
-##### `add_callback(self, event_name: str, callback: Callable)`
+##### `add_callback(self, event_name: str, callback: Callable) -> None`
 
 添加事件回调（如 notification_sent, notification_fallback）
 
-##### `trigger_callbacks(self, event_name: str)`
+##### `trigger_callbacks(self, event_name: str) -> None`
 
 触发指定事件的所有回调，异常不中断后续回调
 
@@ -46,11 +46,11 @@
 
 发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。
 
-##### `shutdown(self, wait: bool = False)`
+##### `shutdown(self, wait: bool = False) -> None`
 
 关闭管理器，取消延迟 Timer 并关闭线程池（幂等）
 
-##### `restart(self)`
+##### `restart(self) -> None`
 
 shutdown 后重建线程池
 
@@ -58,15 +58,15 @@ shutdown 后重建线程池
 
 返回当前配置对象引用
 
-##### `refresh_config_from_file(self, force: bool = False)`
+##### `refresh_config_from_file(self, force: bool = False) -> None`
 
 从配置文件刷新配置（mtime 缓存优化，force=True 强制刷新）
 
-##### `update_config(self)`
+##### `update_config(self) -> None`
 
 更新配置并持久化到文件
 
-##### `update_config_without_save(self)`
+##### `update_config_without_save(self) -> None`
 
 仅内存更新配置，不写文件。bark_enabled 变化时自动更新提供者。
 

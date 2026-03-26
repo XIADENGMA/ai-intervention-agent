@@ -7,7 +7,9 @@
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
 - [exceptions](exceptions.md)
+- [shared_types](shared_types.md)
 - [notification_manager](notification_manager.md)
+- [notification_models](notification_models.md)
 - [notification_providers](notification_providers.md)
 - [task_queue](task_queue.md)
 - [file_validator](file_validator.md)
@@ -23,6 +25,8 @@
 
 ### 工具模块
 - **config_utils**: 配置工具函数
+- **shared_types**: 共享 TypedDict 类型定义
+- **notification_models**: 通知数据模型
 - **file_validator**: 文件验证
 - **enhanced_logging**: 日志增强
 

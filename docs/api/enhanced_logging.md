@@ -14,7 +14,7 @@
 
 #### Methods
 
-##### `setup_logger(self, name: str, level = logging.WARNING)`
+##### `setup_logger(self, name: str, level: int = logging.WARNING) -> logging.Logger`
 
 ### `class LevelBasedStreamHandler`
 
@@ -22,7 +22,7 @@
 
 ##### `__init__(self)`
 
-##### `attach_to_logger(self, logger)`
+##### `attach_to_logger(self, logger: logging.Logger) -> None`
 
 ### `class LogSanitizer`
 
@@ -38,13 +38,13 @@
 
 ##### `__init__(self)`
 
-##### `format(self, record)`
+##### `format(self, record: logging.LogRecord) -> str`
 
 ### `class AntiInjectionFilter`
 
 #### Methods
 
-##### `filter(self, record)`
+##### `filter(self, record: logging.LogRecord) -> bool`
 
 ### `class LogDeduplicator`
 
@@ -60,14 +60,14 @@
 
 ##### `__init__(self, name: str)`
 
-##### `log(self, level: int, message: str)`
+##### `log(self, level: int, message: str) -> None`
 
 ##### `setLevel(self, level: int) -> None`
 
-##### `debug(self, message: str)`
+##### `debug(self, message: str) -> None`
 
-##### `info(self, message: str)`
+##### `info(self, message: str) -> None`
 
-##### `warning(self, message: str)`
+##### `warning(self, message: str) -> None`
 
-##### `error(self, message: str)`
+##### `error(self, message: str) -> None`

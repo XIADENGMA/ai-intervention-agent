@@ -16,7 +16,7 @@
 
 在 dataclass __post_init__ 中限制字段值（支持 frozen=True）
 
-### `get_compat_config(config: dict, new_key: str, old_key: Optional[str] = None, default: Any = None) -> Any`
+### `get_compat_config(config: Mapping[str, Any], new_key: str, old_key: Optional[str] = None, default: Any = None) -> Any`
 
 获取配置值，优先级：new_key > old_key > default
 

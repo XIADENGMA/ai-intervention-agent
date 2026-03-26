@@ -20,13 +20,15 @@
 
 ##### `__init__(self, max_tasks: int = 10)`
 
-##### `clear_all_tasks(self)`
+##### `clear_all_tasks(self) -> int`
 
 ##### `add_task(self, task_id: str, prompt: str, predefined_options: Optional[List[str]] = None, auto_resubmit_timeout: int = 240) -> bool`
 
 ##### `get_task(self, task_id: str) -> Optional[Task]`
 
 ##### `get_all_tasks(self) -> List[Task]`
+
+##### `update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int`
 
 ##### `get_active_task(self) -> Optional[Task]`
 
@@ -40,10 +42,10 @@
 
 ##### `cleanup_completed_tasks(self, age_seconds: int = 10) -> int`
 
-##### `stop_cleanup(self)`
+##### `stop_cleanup(self) -> None`
 
 ##### `get_task_count(self) -> Dict[str, int]`
 
-##### `register_status_change_callback(self, callback: Callable[[str, Optional[str], str], None])`
+##### `register_status_change_callback(self, callback: Callable[[str, Optional[str], str], None]) -> None`
 
-##### `unregister_status_change_callback(self, callback: Callable[[str, Optional[str], str], None])`
+##### `unregister_status_change_callback(self, callback: Callable[[str, Optional[str], str], None]) -> None`

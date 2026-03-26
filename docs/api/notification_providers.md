@@ -4,7 +4,7 @@
 
 ## Functions
 
-### `create_notification_providers(config) -> Dict[NotificationType, Any]`
+### `create_notification_providers(config) -> Dict[NotificationType, BaseNotificationProvider]`
 
 ### `initialize_notification_system(config)`
 

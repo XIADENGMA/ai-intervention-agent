@@ -12,7 +12,7 @@
 
 ### `clamp_dataclass_field(obj: Any, field_name: str, min_val: Number, max_val: Number) -> None`
 
-### `get_compat_config(config: dict, new_key: str, old_key: Optional[str] = None, default: Any = None) -> Any`
+### `get_compat_config(config: Mapping[str, Any], new_key: str, old_key: Optional[str] = None, default: Any = None) -> Any`
 
 ### `get_typed_config(config: dict, key: str, default: T, value_type: type[T], min_val: Number | None = None, max_val: Number | None = None, old_key: Optional[str] = None) -> T`
 

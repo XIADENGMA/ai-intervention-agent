@@ -2,7 +2,6 @@
 
 import asyncio
 import atexit
-import base64
 import io
 import os
 import signal
@@ -11,30 +10,53 @@ import subprocess
 import sys
 import threading
 import time
-import uuid
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Tuple, cast, overload
+from typing import Any, Dict, Optional, Tuple, cast
 
 import requests
 from fastmcp import FastMCP
-from mcp.types import ContentBlock, ImageContent, TextContent
+from mcp.types import TextContent
 from pydantic import Field
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from config_manager import get_config
-from config_utils import (
-    clamp_dataclass_field,
-    get_compat_config,
-    truncate_string,
-)
+from config_utils import get_compat_config
 from enhanced_logging import EnhancedLogger
 from exceptions import (
     ServiceConnectionError,
     ServiceTimeoutError,
     ServiceUnavailableError,
     ValidationError,
+)
+from server_config import (  # noqa: F401 — 向后兼容：外部模块和测试通过 `from server import X` 访问
+    AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+    AUTO_RESUBMIT_TIMEOUT_MAX,
+    AUTO_RESUBMIT_TIMEOUT_MIN,
+    BACKEND_BUFFER,
+    BACKEND_MIN,
+    FEEDBACK_TIMEOUT_DEFAULT,
+    FEEDBACK_TIMEOUT_MAX,
+    FEEDBACK_TIMEOUT_MIN,
+    MAX_MESSAGE_LENGTH,
+    MAX_OPTION_LENGTH,
+    PROMPT_MAX_LENGTH,
+    PROMPT_SUFFIX_DEFAULT,
+    RESUBMIT_PROMPT_DEFAULT,
+    FeedbackConfig,
+    WebUIConfig,
+    _append_prompt_suffix,
+    _format_file_size,
+    _generate_task_id,
+    _guess_mime_type_from_data,
+    _make_resubmit_response,
+    _process_image,
+    calculate_backend_timeout,
+    get_feedback_config,
+    get_feedback_prompts,
+    get_target_host,
+    parse_structured_response,
+    validate_input,
 )
 from task_queue import TaskQueue
 
@@ -461,52 +483,6 @@ class ServiceManager:
         return status
 
 
-@dataclass
-class WebUIConfig:
-    """Web UI 服务配置：host, port, timeout, max_retries, retry_delay"""
-
-    # 边界常量
-    PORT_MIN = 1
-    PORT_MAX = 65535
-    PORT_PRIVILEGED = 1024  # 特权端口边界
-    TIMEOUT_MIN = 1
-    TIMEOUT_MAX = 300  # 最大 5 分钟
-    MAX_RETRIES_MIN = 0
-    MAX_RETRIES_MAX = 10
-    RETRY_DELAY_MIN = 0.1
-    RETRY_DELAY_MAX = 60.0
-
-    host: str
-    port: int
-    timeout: int = 30
-    max_retries: int = 3
-    retry_delay: float = 1.0
-
-    def __post_init__(self):
-        """验证端口、超时、重试等参数"""
-        # 端口号验证（严格检查，无效直接抛异常）
-        if not (self.PORT_MIN <= self.port <= self.PORT_MAX):
-            raise ValueError(
-                f"端口号必须在 {self.PORT_MIN}-{self.PORT_MAX} 范围内，当前值: {self.port}"
-            )
-
-        # 特权端口警告
-        if self.port < self.PORT_PRIVILEGED:
-            logger.warning(
-                f"端口 {self.port} 是特权端口（<{self.PORT_PRIVILEGED}），"
-                f"可能需要 root/管理员权限才能绑定"
-            )
-
-        # 【重构】使用 clamp_dataclass_field 简化边界检查
-        clamp_dataclass_field(self, "timeout", self.TIMEOUT_MIN, self.TIMEOUT_MAX)
-        clamp_dataclass_field(
-            self, "max_retries", self.MAX_RETRIES_MIN, self.MAX_RETRIES_MAX
-        )
-        clamp_dataclass_field(
-            self, "retry_delay", self.RETRY_DELAY_MIN, self.RETRY_DELAY_MAX
-        )
-
-
 def get_web_ui_config() -> Tuple[WebUIConfig, int]:
     """加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)
     --------
@@ -581,195 +557,6 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
     except Exception as e:
         logger.error(f"配置文件加载失败: {e}", exc_info=True)
         raise ValueError(f"Web UI 配置加载失败: {e}") from e
-
-
-# ============================================================================
-# Feedback 配置常量和默认值
-# ============================================================================
-
-# 超时相关常量
-FEEDBACK_TIMEOUT_DEFAULT = 600  # 默认后端最大等待时间（秒）
-FEEDBACK_TIMEOUT_MIN = 60  # 后端最小等待时间（秒）
-FEEDBACK_TIMEOUT_MAX = 3600  # 后端最大等待时间上限（秒，1小时）
-
-AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MIN = 30  # 前端最小倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MAX = 250  # 前端最大倒计时（秒）【优化】从290→250，预留安全余量
-BACKEND_BUFFER = 40  # 后端缓冲时间（秒，前端+缓冲=后端最小）【优化】从60→40
-BACKEND_MIN = 260  # 后端最低等待时间（秒）【优化】从300→260，预留40秒安全余量避免MCPHub 300秒硬超时
-
-# 提示语相关常量
-PROMPT_MAX_LENGTH = 500  # 提示语最大长度
-RESUBMIT_PROMPT_DEFAULT = "请立即调用 interactive_feedback 工具"
-PROMPT_SUFFIX_DEFAULT = "\n请积极调用 interactive_feedback 工具"
-
-# 输入校验相关常量（用于 validate_input）
-# 注意：这些常量也会被测试用例引用，保持为模块级常量
-MAX_MESSAGE_LENGTH = 10000  # 用户输入/提示文本最大长度
-MAX_OPTION_LENGTH = 500  # 单个预定义选项最大长度
-
-
-@dataclass
-class FeedbackConfig:
-    """反馈配置：timeout、auto_resubmit_timeout、提示语等"""
-
-    timeout: int
-    auto_resubmit_timeout: int
-    resubmit_prompt: str
-    prompt_suffix: str
-
-    def __post_init__(self):
-        """验证配置值边界"""
-        from config_utils import clamp_value
-
-        # 【重构】使用 clamp_value 简化 timeout 验证
-        self.timeout = clamp_value(
-            self.timeout, FEEDBACK_TIMEOUT_MIN, FEEDBACK_TIMEOUT_MAX, "feedback.timeout"
-        )
-
-        # auto_resubmit_timeout 验证（0 表示禁用，其他值需在范围内）
-        if self.auto_resubmit_timeout != 0:
-            self.auto_resubmit_timeout = clamp_value(
-                self.auto_resubmit_timeout,
-                AUTO_RESUBMIT_TIMEOUT_MIN,
-                AUTO_RESUBMIT_TIMEOUT_MAX,
-                "feedback.auto_resubmit_timeout",
-            )
-
-        # 【重构】使用 truncate_string 简化字符串验证
-        self.resubmit_prompt = truncate_string(
-            self.resubmit_prompt,
-            PROMPT_MAX_LENGTH,
-            "feedback.resubmit_prompt",
-            default=RESUBMIT_PROMPT_DEFAULT,
-        )
-        self.prompt_suffix = truncate_string(
-            self.prompt_suffix,
-            PROMPT_MAX_LENGTH,
-            "feedback.prompt_suffix",
-        )
-
-
-def get_feedback_config() -> FeedbackConfig:
-    """从配置文件加载反馈配置"""
-    try:
-        config_mgr = get_config()
-        feedback_config = config_mgr.get_section("feedback")
-
-        # 【重构】使用 get_compat_config 简化向后兼容配置读取
-        timeout = int(
-            get_compat_config(
-                feedback_config, "backend_max_wait", "timeout", FEEDBACK_TIMEOUT_DEFAULT
-            )
-        )
-        auto_resubmit_timeout = int(
-            get_compat_config(
-                feedback_config,
-                "frontend_countdown",
-                "auto_resubmit_timeout",
-                AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-            )
-        )
-        resubmit_prompt = str(
-            feedback_config.get("resubmit_prompt", RESUBMIT_PROMPT_DEFAULT)
-        )
-        prompt_suffix = str(feedback_config.get("prompt_suffix", PROMPT_SUFFIX_DEFAULT))
-
-        return FeedbackConfig(
-            timeout=timeout,
-            auto_resubmit_timeout=auto_resubmit_timeout,
-            resubmit_prompt=resubmit_prompt,
-            prompt_suffix=prompt_suffix,
-        )
-    except (ValueError, TypeError) as e:
-        logger.warning(f"获取反馈配置失败（类型错误），使用默认值: {e}", exc_info=True)
-        return FeedbackConfig(
-            timeout=FEEDBACK_TIMEOUT_DEFAULT,
-            auto_resubmit_timeout=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-            resubmit_prompt=RESUBMIT_PROMPT_DEFAULT,
-            prompt_suffix=PROMPT_SUFFIX_DEFAULT,
-        )
-    except Exception as e:
-        logger.warning(f"获取反馈配置失败，使用默认值: {e}", exc_info=True)
-        return FeedbackConfig(
-            timeout=FEEDBACK_TIMEOUT_DEFAULT,
-            auto_resubmit_timeout=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-            resubmit_prompt=RESUBMIT_PROMPT_DEFAULT,
-            prompt_suffix=PROMPT_SUFFIX_DEFAULT,
-        )
-
-
-def calculate_backend_timeout(
-    auto_resubmit_timeout: int, max_timeout: int = 0, infinite_wait: bool = False
-) -> int:
-    """计算后端等待超时：前端倒计时 + 缓冲，0 表示无限等待"""
-    if infinite_wait:
-        return 0
-
-    # 获取配置的最大超时时间
-    if max_timeout <= 0:
-        feedback_config = get_feedback_config()
-        max_timeout = feedback_config.timeout
-
-    if auto_resubmit_timeout <= 0:
-        # 禁用自动提交时，使用配置的最大超时或默认最低值
-        return max(max_timeout, BACKEND_MIN)
-
-    # 正常模式：后端 = min(max(前端 + 缓冲, 最低), 最大)
-    calculated = max(auto_resubmit_timeout + BACKEND_BUFFER, BACKEND_MIN)
-    return min(calculated, max_timeout)
-
-
-def get_feedback_prompts() -> Tuple[str, str]:
-    """获取 (resubmit_prompt, prompt_suffix)"""
-    config = get_feedback_config()
-    return config.resubmit_prompt, config.prompt_suffix
-
-
-def _append_prompt_suffix(text: str) -> str:
-    """为用户反馈类文本追加 prompt_suffix（若已存在则不重复追加）"""
-    _, prompt_suffix = get_feedback_prompts()
-    if not prompt_suffix:
-        return text
-    return text if text.endswith(prompt_suffix) else (text + prompt_suffix)
-
-
-def _generate_task_id() -> str:
-    """生成全局唯一任务 ID（避免极端并发下碰撞）"""
-    # 使用 UUIDv4：跨线程/跨进程都具备足够的唯一性
-    # 保留前缀，方便前端展示与日志检索
-    project_name = Path.cwd().name or "task"
-    return f"{project_name}-{uuid.uuid4()}"
-
-
-def validate_input(
-    prompt: str, predefined_options: Optional[list] = None
-) -> Tuple[str, list]:
-    """验证清理输入：截断过长内容，过滤非法选项"""
-    try:
-        cleaned_prompt = prompt.strip()
-    except AttributeError:
-        raise ValueError("prompt 必须是字符串类型") from None
-    if len(cleaned_prompt) > MAX_MESSAGE_LENGTH:
-        logger.warning(
-            f"prompt 长度过长 ({len(cleaned_prompt)} 字符)，将被截断到 {MAX_MESSAGE_LENGTH}"
-        )
-        cleaned_prompt = cleaned_prompt[:MAX_MESSAGE_LENGTH] + "..."
-
-    cleaned_options = []
-    if predefined_options:
-        for option in predefined_options:
-            if not isinstance(option, str):
-                logger.warning(f"跳过非字符串选项: {option}")
-                continue
-            cleaned_option = option.strip()
-            if cleaned_option and len(cleaned_option) <= MAX_OPTION_LENGTH:
-                cleaned_options.append(cleaned_option)
-            elif len(cleaned_option) > MAX_OPTION_LENGTH:
-                logger.warning(f"选项过长被截断: {cleaned_option[:50]}...")
-                cleaned_options.append(cleaned_option[:MAX_OPTION_LENGTH] + "...")
-
-    return cleaned_prompt, cleaned_options
 
 
 def create_http_session(config: WebUIConfig) -> requests.Session:
@@ -878,28 +665,6 @@ def create_http_session(config: WebUIConfig) -> requests.Session:
     logger.debug(f"创建并缓存新的 HTTP Session（线程本地）: {cache_key}")
 
     return session
-
-
-@overload
-def _make_resubmit_response(as_mcp: Literal[True] = ...) -> list: ...
-
-
-@overload
-def _make_resubmit_response(as_mcp: Literal[False]) -> dict: ...
-
-
-def _make_resubmit_response(as_mcp: bool = True) -> list | dict:
-    """创建错误/超时的重新提交响应"""
-    resubmit_prompt, _ = get_feedback_prompts()
-    if as_mcp:
-        return [TextContent(type="text", text=resubmit_prompt)]
-    return {"text": resubmit_prompt}
-
-
-def get_target_host(host: str) -> str:
-    """将不可直连的监听地址转换为客户端可访问地址（如 localhost）"""
-    # - 0.0.0.0 / :: 是“监听所有接口”的地址，不应作为客户端连接目标
-    return "localhost" if host in {"0.0.0.0", "::"} else host
 
 
 def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -1210,185 +975,6 @@ def update_web_content(
     except Exception as e:
         logger.error(f"更新内容时出现未知错误: {e}", exc_info=True)
         raise ServiceConnectionError(f"更新 Web 内容失败: {e}", code="unknown") from e
-
-
-def _format_file_size(size: int) -> str:
-    """格式化文件大小为人类可读格式"""
-    if size < 1024:
-        return f"{size} B"
-    if size < 1024 * 1024:
-        return f"{size / 1024:.1f} KB"
-    return f"{size / (1024 * 1024):.1f} MB"
-
-
-def _guess_mime_type_from_data(base64_data: str) -> Optional[str]:
-    """通过文件魔数猜测 MIME 类型"""
-    try:
-        snippet = base64_data[:256]
-        snippet += "=" * ((4 - len(snippet) % 4) % 4)
-        raw = base64.b64decode(snippet, validate=False)
-
-        # 常见图片格式魔数
-        mime_signatures = [
-            (b"\x89PNG\r\n\x1a\n", "image/png"),
-            (b"\xff\xd8\xff", "image/jpeg"),
-            (b"GIF87a", "image/gif"),
-            (b"GIF89a", "image/gif"),
-            (b"BM", "image/bmp"),
-            (b"II*\x00", "image/tiff"),
-            (b"MM\x00*", "image/tiff"),
-            (b"\x00\x00\x01\x00", "image/x-icon"),
-        ]
-
-        for signature, mime_type in mime_signatures:
-            if raw.startswith(signature):
-                return mime_type
-
-        # WEBP 特殊处理
-        if raw.startswith(b"RIFF") and len(raw) >= 12 and raw[8:12] == b"WEBP":
-            return "image/webp"
-
-        # SVG 检测
-        raw_lower = raw.lstrip().lower()
-        if raw_lower.startswith(b"<svg") or b"<svg" in raw_lower[:200]:
-            return "image/svg+xml"
-
-    except Exception:
-        pass
-    return None
-
-
-def _process_image(
-    image: dict, index: int
-) -> Tuple[Optional[ImageContent], Optional[str]]:
-    """处理单张图片，返回 (ImageContent, 文本描述)
-    Tuple[Optional[ImageContent], Optional[str]]
-        - ImageContent: 成功时返回图片内容对象，失败时返回 None
-        - str: 图片的文本描述（包含文件名、类型、大小）
-    """
-    base64_data = image.get("data")
-    if not isinstance(base64_data, str) or not base64_data.strip():
-        logger.warning(f"图片 {index + 1} 的 data 字段无效: {type(base64_data)}")
-        return None, f"=== 图片 {index + 1} ===\n处理失败: 图片数据无效"
-
-    base64_data = base64_data.strip()
-
-    # 解析 data URI
-    inferred_mime_type: Optional[str] = None
-    if base64_data.startswith("data:") and ";base64," in base64_data:
-        header, b64 = base64_data.split(",", 1)
-        base64_data = b64.strip()
-        if header.startswith("data:"):
-            inferred_mime_type = header[5:].split(";", 1)[0].strip() or None
-
-    # 获取 MIME 类型（多字段兼容）
-    content_type = (
-        image.get("content_type")
-        or image.get("mimeType")
-        or image.get("mime_type")
-        or inferred_mime_type
-        or "image/jpeg"
-    )
-
-    # 规范化 MIME 类型
-    content_type = str(content_type).strip()
-    if ";" in content_type:
-        content_type = content_type.split(";", 1)[0].strip()
-    content_type = content_type.lower()
-    if content_type == "image/jpg":
-        content_type = "image/jpeg"
-
-    # 非图片 MIME 时尝试猜测
-    if not content_type.startswith("image/"):
-        guessed = _guess_mime_type_from_data(base64_data)
-        content_type = guessed or "image/jpeg"
-
-    # 构建文本描述
-    filename = image.get("filename", f"image_{index + 1}")
-    size = image.get("size", len(base64_data) * 3 // 4)
-    text_desc = f"=== 图片 {index + 1} ===\n文件名: {filename}\n类型: {content_type}\n大小: {_format_file_size(size)}"
-
-    return (
-        ImageContent(type="image", data=base64_data, mimeType=str(content_type)),
-        text_desc,
-    )
-
-
-def parse_structured_response(
-    response_data: Optional[Dict[str, Any]],
-) -> list[ContentBlock]:
-    """解析反馈数据为 MCP Content 列表"""
-    result: list[ContentBlock] = []
-    text_parts: list[str] = []
-
-    if not isinstance(response_data, dict):
-        response_data = {}
-
-    logger.debug(f"parse_structured_response 接收数据: {type(response_data)}")
-
-    # 1. 提取用户输入（兼容旧格式）
-    legacy_text = response_data.get("interactive_feedback")
-    user_input = response_data.get("user_input", "") or ""
-    if not user_input and isinstance(legacy_text, str) and legacy_text.strip():
-        user_input = legacy_text
-
-    # 2. 提取选项
-    selected_options_raw = response_data.get("selected_options", [])
-    selected_options = (
-        [str(x) for x in selected_options_raw if x is not None]
-        if isinstance(selected_options_raw, list)
-        else []
-    )
-
-    logger.debug(
-        f"解析结果: user_input={len(user_input)}字符, options={len(selected_options)}个"
-    )
-
-    # 3. 构建文本内容
-    if selected_options:
-        text_parts.append(f"选择的选项: {', '.join(selected_options)}")
-    if user_input:
-        text_parts.append(f"用户输入: {user_input}")
-
-    # 4. 处理图片
-    images = response_data.get("images", []) or []
-    for index, image in enumerate(images):
-        if not isinstance(image, dict):
-            continue
-        try:
-            img_content, text_desc = _process_image(image, index)
-            if img_content:
-                result.append(img_content)
-            if text_desc:
-                text_parts.append(text_desc)
-        except Exception as e:
-            logger.error(f"处理图片 {index + 1} 时出错: {e}", exc_info=True)
-            text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {str(e)}")
-
-    # 4. 添加文本内容（无论如何都返回一个 TextContent，避免返回空列表）
-    if text_parts:
-        combined_text = "\n\n".join(text_parts)
-    else:
-        combined_text = "用户未提供任何内容"
-
-    # 追加提示语后缀（保持会话连续性，避免重复追加）
-    combined_text = _append_prompt_suffix(combined_text)
-
-    result.append(TextContent(type="text", text=combined_text))
-
-    logger.debug("最终返回结果:")
-    for i, item in enumerate(result):
-        if isinstance(item, TextContent):
-            preview = item.text[:100] + ("..." if len(item.text) > 100 else "")
-            logger.debug(f"  - [{i}] TextContent: '{preview}'")
-        elif isinstance(item, ImageContent):
-            logger.debug(
-                f"  - [{i}] ImageContent: mimeType={item.mimeType}, data_length={len(item.data)}"
-            )
-        else:
-            logger.debug(f"  - [{i}] 未知类型: {type(item)}")
-
-    return result
 
 
 async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str, Any]:

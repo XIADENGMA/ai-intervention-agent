@@ -236,7 +236,7 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 class TestGetFeedbackConfig(unittest.TestCase):
     """测试 get_feedback_config() 函数"""
 
-    @patch("server.get_config")
+    @patch("server_config.get_config")
     def test_normal_config(self, mock_get_config):
         """测试正常配置获取"""
         from server import get_feedback_config
@@ -257,7 +257,7 @@ class TestGetFeedbackConfig(unittest.TestCase):
         self.assertEqual(config.resubmit_prompt, "测试提示")
         self.assertEqual(config.prompt_suffix, "\n测试后缀")
 
-    @patch("server.get_config")
+    @patch("server_config.get_config")
     def test_config_with_defaults(self, mock_get_config):
         """测试使用默认值"""
         from server import (
@@ -275,7 +275,7 @@ class TestGetFeedbackConfig(unittest.TestCase):
         self.assertEqual(config.timeout, FEEDBACK_TIMEOUT_DEFAULT)
         self.assertEqual(config.auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_DEFAULT)
 
-    @patch("server.get_config")
+    @patch("server_config.get_config")
     def test_config_exception(self, mock_get_config):
         """测试配置异常时使用默认值"""
         from server import (
@@ -295,7 +295,7 @@ class TestGetFeedbackConfig(unittest.TestCase):
 class TestGetFeedbackPrompts(unittest.TestCase):
     """测试 get_feedback_prompts() 函数（向后兼容）"""
 
-    @patch("server.get_feedback_config")
+    @patch("server_config.get_feedback_config")
     def test_returns_tuple(self, mock_get_feedback_config):
         """测试返回元组"""
         from server import FeedbackConfig, get_feedback_prompts
