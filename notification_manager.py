@@ -326,9 +326,23 @@ class NotificationManager:
 
     def register_provider(self, notification_type: NotificationType, provider: Any):
         """注册通知提供者（需实现 send(event) -> bool）"""
+        old_provider: Any | None = None
         with self._providers_lock:
+            old_provider = self._providers.get(notification_type)
             self._providers[notification_type] = provider
+        if old_provider is not None and old_provider is not provider:
+            self._safe_close_provider(old_provider)
         logger.debug(f"已注册通知提供者: {notification_type.value}")
+
+    @staticmethod
+    def _safe_close_provider(provider: Any) -> None:
+        """尽力关闭 provider 资源（如 requests.Session），失败不抛异常。"""
+        try:
+            close = getattr(provider, "close", None)
+            if callable(close):
+                close()
+        except Exception as e:
+            logger.debug(f"关闭通知提供者资源失败（忽略）: {e}")
 
     def add_callback(self, event_name: str, callback: Callable):
         """添加事件回调（如 notification_sent, notification_fallback）"""
@@ -791,6 +805,16 @@ class NotificationManager:
         except Exception as e:
             logger.debug(f"关闭通知线程池失败（忽略）: {e}")
 
+        # 关闭并清空 providers（释放可能的网络连接池等资源）
+        try:
+            with self._providers_lock:
+                providers = list(self._providers.values())
+                self._providers.clear()
+            for p in providers:
+                self._safe_close_provider(p)
+        except Exception as e:
+            logger.debug(f"关闭通知提供者失败（忽略）: {e}")
+
     def restart(self):
         """shutdown 后重建线程池"""
         if not getattr(self, "_shutdown_called", False):
@@ -998,10 +1022,12 @@ class NotificationManager:
                     logger.info("Bark通知提供者已动态添加")
             else:
                 # 禁用Bark通知，移除提供者
+                removed: Any | None = None
                 with self._providers_lock:
-                    if NotificationType.BARK in self._providers:
-                        del self._providers[NotificationType.BARK]
-                        logger.info("Bark通知提供者已移除")
+                    removed = self._providers.pop(NotificationType.BARK, None)
+                if removed is not None:
+                    self._safe_close_provider(removed)
+                    logger.info("Bark通知提供者已移除")
         except ImportError as e:
             logger.error(
                 f"更新Bark提供者失败: 无法导入 BarkNotificationProvider - {e}",

@@ -28,6 +28,10 @@
 
 发送/准备通知。失败返回 False，异常应在内部捕获并降级为 False。
 
+##### `close(self) -> None`
+
+释放资源（可选）。默认无操作。
+
 ### `class WebNotificationProvider`
 
 Web 浏览器通知 - 准备通知数据到 event.metadata 供前端轮询展示。
@@ -69,6 +73,10 @@ Bark iOS 推送 - 通过 HTTP POST 发送通知到 Bark 服务器。
 ##### `__init__(self, config)`
 
 初始化 Session 连接池（3次重试）
+
+##### `close(self) -> None`
+
+关闭 HTTP Session，释放连接池资源（幂等）。
 
 ##### `send(self, event: NotificationEvent) -> bool`
 

@@ -54,7 +54,6 @@ const includeList = [
   'vendor',
   'README.md',
   'README.zh-CN.md',
-  'README.en.md',
   'LICENSE',
   'activity-icon.svg',
   'icon.png',
@@ -65,15 +64,24 @@ const includeList = [
   'marked.min.js',
   'prism-bootstrap.js',
   'prism.min.css',
-  'prism.min.js',
-  '使用说明.md'
+  'prism.min.js'
 ]
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-intervention-agent-vscode-'))
 try {
+  // 若已有同名产物，先清理，避免误用旧文件或因文件锁导致打包失败
+  try {
+    if (fs.existsSync(outVsix)) fs.rmSync(outVsix, { force: true })
+  } catch {
+    // 忽略：清理失败不应阻断后续尝试（vsce 可能会覆盖）
+  }
+
   for (const rel of includeList) {
     const src = path.join(vscodeDir, rel)
-    if (!fs.existsSync(src)) continue
+    if (!fs.existsSync(src)) {
+      console.error(`VSIX 打包缺少必要文件/目录：${rel}（${src}）`)
+      process.exit(1)
+    }
     copyRecursive(src, path.join(tmpDir, rel))
   }
 

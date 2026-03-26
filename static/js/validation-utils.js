@@ -16,13 +16,7 @@ class ValidationUtils {
   // ========================================
 
   /** 支持的图片MIME类型 */
-  static SUPPORTED_IMAGE_TYPES = [
-    'image/jpeg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'image/bmp'
-  ]
+  static SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp']
 
   /** 最小文件大小（100字节） */
   static MIN_FILE_SIZE = 100
@@ -35,8 +29,18 @@ class ValidationUtils {
 
   /** 可疑文件扩展名（安全黑名单） */
   static SUSPICIOUS_EXTENSIONS = [
-    '.exe', '.bat', '.cmd', '.scr', '.com', '.pif',
-    '.vbs', '.js', '.jar', '.msi', '.dll', '.ps1'
+    '.exe',
+    '.bat',
+    '.cmd',
+    '.scr',
+    '.com',
+    '.pif',
+    '.vbs',
+    '.js',
+    '.jar',
+    '.msi',
+    '.dll',
+    '.ps1'
   ]
 
   /** 文件名中禁止的字符 */
@@ -187,12 +191,7 @@ class ValidationUtils {
    * @returns {Object} { valid: boolean, errors: string[], sanitized: string }
    */
   static validateTextInput(text, options = {}) {
-    const {
-      minLength = 0,
-      maxLength = 10000,
-      allowEmpty = true,
-      sanitize = true
-    } = options
+    const { minLength = 0, maxLength = 10000, allowEmpty = true, sanitize = true } = options
 
     const errors = []
     let sanitized = text || ''
@@ -267,7 +266,7 @@ class ValidationUtils {
     return filename
       .replace(this.FORBIDDEN_FILENAME_CHARS, '')
       .replace(/\s+/g, '_')
-      .replace(/\.{2,}/g, '.')  // 移除连续点
+      .replace(/\.{2,}/g, '.') // 移除连续点
       .trim()
       .substring(0, maxLength)
   }
@@ -346,7 +345,7 @@ class ValidationUtils {
 class APICache {
   constructor(defaultTTL = 30000) {
     this.cache = new Map()
-    this.defaultTTL = defaultTTL  // 默认缓存时间（毫秒）
+    this.defaultTTL = defaultTTL // 默认缓存时间（毫秒）
   }
 
   /**
@@ -455,13 +454,15 @@ class APICache {
 }
 
 // 创建全局缓存实例
-const apiCache = new APICache(30000)  // 30秒默认缓存
+const apiCache = new APICache(30000) // 30秒默认缓存
 
 // 定期清理过期缓存（每5分钟）
-setInterval(() => {
-  apiCache.cleanup()
-}, 5 * 60 * 1000)
-
+setInterval(
+  () => {
+    apiCache.cleanup()
+  },
+  5 * 60 * 1000
+)
 
 // ========================================
 // 性能优化工具：去抖动与节流
@@ -487,7 +488,7 @@ function debounce(func, wait = 300, immediate = false) {
   let timeout = null
   let result = null
 
-  const debounced = function(...args) {
+  const debounced = function (...args) {
     const context = this
     const callNow = immediate && !timeout
 
@@ -512,7 +513,7 @@ function debounce(func, wait = 300, immediate = false) {
   }
 
   // 取消去抖动
-  debounced.cancel = function() {
+  debounced.cancel = function () {
     if (timeout) {
       clearTimeout(timeout)
       timeout = null
@@ -520,7 +521,7 @@ function debounce(func, wait = 300, immediate = false) {
   }
 
   // 立即执行
-  debounced.flush = function(...args) {
+  debounced.flush = function (...args) {
     debounced.cancel()
     return func.apply(this, args)
   }
@@ -551,7 +552,7 @@ function throttle(func, wait = 200, options = {}) {
   let previous = 0
   const { leading = true, trailing = true } = options
 
-  const throttled = function(...args) {
+  const throttled = function (...args) {
     const context = this
     const now = Date.now()
 
@@ -581,7 +582,7 @@ function throttle(func, wait = 200, options = {}) {
   }
 
   // 取消节流
-  throttled.cancel = function() {
+  throttled.cancel = function () {
     if (timeout) {
       clearTimeout(timeout)
       timeout = null
@@ -650,7 +651,6 @@ class RequestDeduplicator {
 // 创建全局请求去重器实例
 const requestDeduplicator = new RequestDeduplicator()
 
-
 // ========================================
 // 性能优化工具：图片懒加载
 // ========================================
@@ -674,8 +674,8 @@ class LazyLoader {
    * 配置选项
    */
   static defaultOptions = {
-    rootMargin: '50px 0px',    // 提前 50px 开始加载
-    threshold: 0.01,            // 1% 可见即触发
+    rootMargin: '50px 0px', // 提前 50px 开始加载
+    threshold: 0.01, // 1% 可见即触发
     loadingClass: 'lazy-loading',
     loadedClass: 'lazy-loaded',
     errorClass: 'lazy-error'
@@ -698,17 +698,20 @@ class LazyLoader {
     }
 
     // 创建观察器
-    const observer = new IntersectionObserver((entries, obs) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          this.loadImage(entry.target, config)
-          obs.unobserve(entry.target)
-        }
-      })
-    }, {
-      rootMargin: config.rootMargin,
-      threshold: config.threshold
-    })
+    const observer = new IntersectionObserver(
+      (entries, obs) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            this.loadImage(entry.target, config)
+            obs.unobserve(entry.target)
+          }
+        })
+      },
+      {
+        rootMargin: config.rootMargin,
+        threshold: config.threshold
+      }
+    )
 
     // 观察所有懒加载图片
     document.querySelectorAll(selector).forEach(img => {
@@ -769,9 +772,7 @@ class LazyLoader {
    * @param {HTMLImageElement|string} target - 图片元素或选择器
    */
   static load(target) {
-    const img = typeof target === 'string'
-      ? document.querySelector(target)
-      : target
+    const img = typeof target === 'string' ? document.querySelector(target) : target
 
     if (img) {
       this.loadImage(img)
@@ -800,7 +801,6 @@ class LazyLoader {
   }
 }
 
-
 // ========================================
 // 性能优化工具：虚拟滚动（长列表优化）
 // ========================================
@@ -824,7 +824,10 @@ class VirtualScroller {
     this.itemHeight = options.itemHeight || 50
     this.buffer = options.buffer || 5
     this.items = []
-    this.renderItem = options.renderItem || (item => `<div>${item}</div>`)
+    // 默认渲染：对 item 做最小 XSS 清理后再拼接 HTML（避免误用导致注入）
+    this.renderItem =
+      options.renderItem ||
+      (item => `<div>${ValidationUtils.sanitizeText(String(item ?? ''))}</div>`)
 
     this.init()
   }
@@ -842,9 +845,10 @@ class VirtualScroller {
     this.container.appendChild(this.wrapper)
 
     // 绑定滚动事件（使用节流）
-    this.container.addEventListener('scroll',
+    this.container.addEventListener(
+      'scroll',
       typeof throttle !== 'undefined'
-        ? throttle(() => this.render(), 16)  // ~60fps
+        ? throttle(() => this.render(), 16) // ~60fps
         : () => this.render()
     )
   }
@@ -897,7 +901,6 @@ class VirtualScroller {
     this.container.removeChild(this.wrapper)
   }
 }
-
 
 // 导出（兼容不同的模块系统）
 if (typeof module !== 'undefined' && module.exports) {

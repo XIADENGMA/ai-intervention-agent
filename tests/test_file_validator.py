@@ -91,6 +91,18 @@ class TestMaliciousContentScan(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertTrue(any("可疑内容模式" in e for e in result["errors"]))
 
+    def test_malicious_payload_after_64kb_detected(self):
+        """恶意内容在 64KB 之后也应被检测到（防绕过）"""
+        png_header = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a"
+        payload = b"<script>alert('xss')</script>"
+        # 让 payload 落在首个 64KB 窗口之外
+        data = png_header + (b"A" * (70 * 1024)) + payload
+
+        result = self.validator.validate_file(data, "test.png")
+
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("<script" in e for e in result["errors"]))
+
     def test_php_detection(self):
         """测试 PHP 代码检测"""
         malicious_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"<?php system('ls'); ?>"

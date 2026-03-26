@@ -251,11 +251,17 @@ suite('Extension Test Suite', () => {
     const packagingScriptPath = path.join(repoRoot, 'scripts', 'package_vscode_vsix.mjs')
     if (fs.existsSync(packagingScriptPath)) {
       const packagingScript = fs.readFileSync(packagingScriptPath, 'utf8')
-      assert.ok(packagingScript.includes('"webview.css"'))
-      assert.ok(packagingScript.includes('"mathjax"'))
-      assert.ok(packagingScript.includes('"webview-notify-core.js"'))
-      assert.ok(packagingScript.includes('"webview-settings-ui.js"'))
-      assert.ok(packagingScript.includes('"vendor"'))
+      const includesPath = name =>
+        packagingScript.includes(`'${name}'`) || packagingScript.includes(`"${name}"`)
+      for (const name of [
+        'webview.css',
+        'mathjax',
+        'webview-notify-core.js',
+        'webview-settings-ui.js',
+        'vendor'
+      ]) {
+        assert.ok(includesPath(name), `packaging script should include ${name}`)
+      }
     }
   })
 

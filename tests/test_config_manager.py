@@ -151,6 +151,41 @@ class TestConfigManagerBasic(unittest.TestCase):
         value = mgr.get("notification.enabled")
         self.assertEqual(value, False)
 
+    def test_jsonc_save_does_not_cross_update_same_named_keys(self):
+        """JSONC 保留注释保存：同名键（如 enabled）不应跨 section 误更新，且 URL 不应被截断"""
+        from config_manager import ConfigManager, parse_jsonc
+
+        jsonc_content = """
+        {
+          // 通知配置（用于验证同名键 enabled 不被误改）
+          "notification": {
+            "enabled": true,
+            "bark_url": "https://example.com/api//not_comment" // URL 中的 // 不是注释
+          },
+          // mDNS 配置（同样包含 enabled）
+          "mdns": {
+            "enabled": null
+          }
+        }
+        """.strip()
+        self.config_file.write_text(jsonc_content, encoding="utf-8")
+
+        mgr = ConfigManager(str(self.config_file))
+
+        # 仅更新 mdns.enabled，notification.enabled 必须保持原值 true
+        mgr.set("mdns.enabled", False, save=True)
+        mgr.force_save()
+
+        saved = self.config_file.read_text(encoding="utf-8")
+        self.assertIn('"bark_url": "https://example.com/api//not_comment"', saved)
+
+        parsed = parse_jsonc(saved)
+        self.assertEqual(parsed["notification"]["enabled"], True)
+        self.assertEqual(parsed["mdns"]["enabled"], False)
+        self.assertEqual(
+            parsed["notification"]["bark_url"], "https://example.com/api//not_comment"
+        )
+
     def test_get_section(self):
         """测试获取配置段"""
         from config_manager import ConfigManager

@@ -10,6 +10,16 @@
 
 ## Classes
 
+### `class BaseNotificationProvider`
+
+#### Methods
+
+##### `__init__(self, config)`
+
+##### `send(self, event: NotificationEvent) -> bool`
+
+##### `close(self) -> None`
+
 ### `class WebNotificationProvider`
 
 #### Methods
@@ -35,6 +45,8 @@
 #### Methods
 
 ##### `__init__(self, config)`
+
+##### `close(self) -> None`
 
 ##### `send(self, event: NotificationEvent) -> bool`
 

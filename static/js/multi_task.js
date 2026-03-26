@@ -107,6 +107,39 @@ if (typeof window.autoSubmitAttempted === 'undefined') {
   window.autoSubmitAttempted = {} // task_id -> lastAttemptAt(ms)
 }
 
+// ==================== marked.js 安全配置 ====================
+// 多任务模块可能会在 app.js 之前触发 Markdown 渲染，因此需要在此处提前完成安全配置：
+// - 禁用 Markdown 原生 HTML 渲染（避免 <style>/<iframe> 等注入造成 UI 污染）
+// - 关闭 mangle/headerIds，减少不必要的 DOM 变化
+if (typeof window.__aiiaMarkedSecurityConfigured === 'undefined') {
+  window.__aiiaMarkedSecurityConfigured = false
+}
+
+function configureMarkedSecurityOnce() {
+  if (window.__aiiaMarkedSecurityConfigured) return
+  if (typeof marked === 'undefined' || !marked) return
+
+  try {
+    if (typeof marked.use === 'function') {
+      marked.use({
+        renderer: {
+          html() {
+            return ''
+          }
+        }
+      })
+    }
+    if (typeof marked.setOptions === 'function') {
+      marked.setOptions({ mangle: false, headerIds: false })
+    }
+    window.__aiiaMarkedSecurityConfigured = true
+  } catch (e) {
+    // 忽略：配置失败不应影响主流程
+  }
+}
+
+configureMarkedSecurityOnce()
+
 // 创建本地引用以便在函数中使用
 var currentTasks = window.currentTasks
 var activeTaskId = window.activeTaskId
@@ -311,15 +344,18 @@ function scheduleNextTasksPoll(delayMs) {
     clearTimeout(tasksPollingTimer)
     tasksPollingTimer = null
   }
-  tasksPollingTimer = setTimeout(async () => {
-    const ok = await fetchAndApplyTasks('poll')
-    if (ok) {
-      tasksPollBackoffMs = TASKS_POLL_BASE_MS
-    } else {
-      tasksPollBackoffMs = getNextBackoffMs(tasksPollBackoffMs)
-    }
-    scheduleNextTasksPoll(tasksPollBackoffMs)
-  }, Math.max(0, delayMs))
+  tasksPollingTimer = setTimeout(
+    async () => {
+      const ok = await fetchAndApplyTasks('poll')
+      if (ok) {
+        tasksPollBackoffMs = TASKS_POLL_BASE_MS
+      } else {
+        tasksPollBackoffMs = getNextBackoffMs(tasksPollBackoffMs)
+      }
+      scheduleNextTasksPoll(tasksPollBackoffMs)
+    },
+    Math.max(0, delayMs)
+  )
 }
 
 /**
@@ -1266,8 +1302,8 @@ async function loadTaskDetails(taskId) {
  *
  * ## 安全性
  *
- * - Markdown渲染经过sanitize处理
- * - 防止XSS攻击
+ * - 禁用 marked 原生 HTML 渲染（见 configureMarkedSecurityOnce）
+ * - 结合 Web UI 的 CSP（script-src nonce），降低脚本注入风险
  *
  * ## 注意事项
  *
@@ -1727,7 +1763,9 @@ async function autoSubmitTask(taskId) {
   // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
   const prompts = await fetchFeedbackPromptsFresh()
   const defaultMessage =
-    prompts && prompts.resubmit_prompt ? prompts.resubmit_prompt : '请立即调用 interactive_feedback 工具'
+    prompts && prompts.resubmit_prompt
+      ? prompts.resubmit_prompt
+      : '请立即调用 interactive_feedback 工具'
   await submitTaskFeedback(taskId, defaultMessage, [])
 }
 

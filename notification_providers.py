@@ -33,6 +33,10 @@ class BaseNotificationProvider(ABC):
     def send(self, event: NotificationEvent) -> bool:
         """发送/准备通知。失败返回 False，异常应在内部捕获并降级为 False。"""
 
+    def close(self) -> None:
+        """释放资源（可选）。默认无操作。"""
+        return
+
 
 class WebNotificationProvider(BaseNotificationProvider):
     """Web 浏览器通知 - 准备通知数据到 event.metadata 供前端轮询展示。"""
@@ -188,6 +192,13 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 "User-Agent": "AI-Intervention-Agent",
             }
         )
+
+    def close(self) -> None:
+        """关闭 HTTP Session，释放连接池资源（幂等）。"""
+        try:
+            self.session.close()
+        except Exception:
+            pass
 
     def send(self, event: NotificationEvent) -> bool:
         """HTTP POST 发送通知到 Bark，返回成功与否"""

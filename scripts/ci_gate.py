@@ -5,7 +5,7 @@
 设计目标：
 - 把“门禁命令”收敛到单一入口，减少 docs / CI / 脚本之间的漂移
 - 默认适合本地开发：会自动格式化（ruff format）
-- 可通过参数切换为 CI 模式：只做检查、不改动文件
+- 可通过参数切换为 CI 模式：只做检查（不自动格式化源码），但可能生成 gitignore 的构建产物（如 .min；若启用 --with-vscode 还会产生 .vsix）
 """
 
 from __future__ import annotations
@@ -30,7 +30,22 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=_repo_root(), check=True)
 
 
-def main(argv: list[str]) -> int:
+def _cleanup_vscode_vsix() -> int:
+    """清理 VSCode 插件打包产物（避免 .vsix 污染 CI/工作区）"""
+    vs_dir = _repo_root() / "packages" / "vscode"
+    if not vs_dir.exists():
+        return 0
+    removed = 0
+    for p in vs_dir.glob("*.vsix"):
+        try:
+            p.unlink()
+            removed += 1
+        except FileNotFoundError:
+            pass
+    return removed
+
+
+def _main_impl(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Python CI Gate：uv/ruff/ty/pytest/minify 一键执行",
     )
@@ -80,6 +95,9 @@ def main(argv: list[str]) -> int:
     _run(["uv", "run", "python", "scripts/minify_assets.py"])
 
     if args.with_vscode:
+        # 运行前先清理一次，避免误用上次残留产物
+        _cleanup_vscode_vsix()
+
         # 优先使用系统 npm；若不可用且存在 fnm，则尝试 fnm exec
         cmd: list[str]
         if _has_cmd("npm"):
@@ -109,9 +127,28 @@ def main(argv: list[str]) -> int:
                     "检测到无 DISPLAY 的 headless 环境，但未安装 xvfb-run。请先安装 xvfb，或手动使用 xvfb-run 执行 vscode:check。"
                 )
 
-        _run(cmd)
+        try:
+            _run(cmd)
+        finally:
+            # 无论成功失败都尽量清理，避免污染后续步骤/缓存
+            _cleanup_vscode_vsix()
 
     return 0
+
+
+def main(argv: list[str]) -> int:
+    """入口包装：将常见失败转换为清晰的退出码（避免大段 traceback 噪声）。"""
+    try:
+        return _main_impl(argv)
+    except subprocess.CalledProcessError as e:
+        print(
+            f"命令执行失败：{e.cmd}（exit_code={e.returncode}）",
+            file=sys.stderr,
+        )
+        return int(e.returncode or 1)
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

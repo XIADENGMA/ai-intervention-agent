@@ -116,6 +116,9 @@ class WebviewProvider {
     this._hasEverConnected = false
     this._webviewReady = false
     this._webviewReadyTimer = null
+    // Webview 未就绪时的消息缓冲：避免 postMessage 发生在脚本尚未完成初始化时导致消息丢失
+    this._pendingMessages = []
+    this._pendingMessageLimit = 50
     // macOS 原生通知“点击打开面板”兜底：
     // AppleScript 原生通知没有点击回调；这里通过“通知触发时若宿主未聚焦则 arm，一旦宿主重新聚焦则自动打开面板”来近似实现。
     this._revealPanelUntilMs = 0
@@ -139,6 +142,11 @@ class WebviewProvider {
         clearTimeout(this._webviewReadyTimer)
         this._webviewReadyTimer = null
       }
+    } catch {
+      // 忽略
+    }
+    try {
+      this._pendingMessages = []
     } catch {
       // 忽略
     }
@@ -321,8 +329,46 @@ class WebviewProvider {
   updateServerUrl(serverUrl) {
     this._serverUrl = serverUrl
     if (this._view && this._view.webview) {
+      // serverUrl 变化会触发重建 HTML：需要重新进入“未就绪”状态，并重置 ready watchdog
+      try {
+        this._webviewReady = false
+        if (this._webviewReadyTimer) {
+          clearTimeout(this._webviewReadyTimer)
+          this._webviewReadyTimer = null
+        }
+        // 重建页面后历史缓冲消息已无意义，直接清空，避免把旧消息误投递到新页面
+        this._pendingMessages = []
+      } catch {
+        // 忽略
+      }
+
       // 重新生成 HTML，确保 CSP 与 SERVER_URL 常量同步更新
       this._view.webview.html = this._getHtmlContent(this._view.webview)
+
+      // 诊断：若 Webview 脚本未执行/未上报 ready，会导致面板停在“连接中...”
+      this._webviewReadyTimer = setTimeout(() => {
+        if (!this._webviewReady && this._logger && typeof this._logger.warn === 'function') {
+          try {
+            if (typeof this._logger.event === 'function') {
+              this._logger.event(
+                'webview.ready_timeout',
+                { timeoutMs: 2500, webviewReady: false, reason: 'serverUrl_changed' },
+                {
+                  level: 'warn',
+                  message: 'Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）'
+                }
+              )
+            } else {
+              this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+            }
+          } catch {
+            this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+          }
+        }
+      }, 2500)
+
+      // 变化后尽快触发一次刷新（会被缓冲到 ready 后发送）
+      this._sendMessage({ type: 'refresh' })
     }
   }
 
@@ -369,6 +415,12 @@ class WebviewProvider {
         if (this._webviewReadyTimer) {
           clearTimeout(this._webviewReadyTimer)
           this._webviewReadyTimer = null
+        }
+        // 统一在 ready 后冲刷缓冲队列，避免 refresh/clipboard 等消息在初始化窗口期丢失
+        try {
+          this._flushPendingMessages()
+        } catch {
+          // 忽略
         }
         try {
           if (this._logger && typeof this._logger.event === 'function') {
@@ -637,8 +689,45 @@ class WebviewProvider {
   }
 
   _sendMessage(message) {
-    if (this._view) {
-      this._view.webview.postMessage(message)
+    if (!this._view || !this._view.webview) return
+
+    // Webview 未 ready：缓冲消息，等 ready 再统一发送（避免消息丢失）
+    if (!this._webviewReady) {
+      try {
+        this._pendingMessages.push(message)
+        if (this._pendingMessages.length > this._pendingMessageLimit) {
+          this._pendingMessages.splice(0, this._pendingMessages.length - this._pendingMessageLimit)
+        }
+      } catch {
+        // 忽略：缓冲失败不应影响主流程
+      }
+      return
+    }
+
+    this._postMessage(message)
+  }
+
+  _postMessage(message) {
+    try {
+      if (
+        this._view &&
+        this._view.webview &&
+        typeof this._view.webview.postMessage === 'function'
+      ) {
+        this._view.webview.postMessage(message)
+      }
+    } catch {
+      // 忽略：Webview 通信失败不应影响主流程
+    }
+  }
+
+  _flushPendingMessages() {
+    if (!this._webviewReady) return
+    if (!this._pendingMessages || this._pendingMessages.length === 0) return
+    const batch = this._pendingMessages.slice(0)
+    this._pendingMessages = []
+    for (const msg of batch) {
+      this._postMessage(msg)
     }
   }
 

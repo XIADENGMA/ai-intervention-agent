@@ -5,13 +5,13 @@ import atexit
 import base64
 import io
 import os
-import random
 import signal
 import socket
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple, cast, overload
@@ -720,6 +720,22 @@ def get_feedback_prompts() -> Tuple[str, str]:
     return config.resubmit_prompt, config.prompt_suffix
 
 
+def _append_prompt_suffix(text: str) -> str:
+    """为用户反馈类文本追加 prompt_suffix（若已存在则不重复追加）"""
+    _, prompt_suffix = get_feedback_prompts()
+    if not prompt_suffix:
+        return text
+    return text if text.endswith(prompt_suffix) else (text + prompt_suffix)
+
+
+def _generate_task_id() -> str:
+    """生成全局唯一任务 ID（避免极端并发下碰撞）"""
+    # 使用 UUIDv4：跨线程/跨进程都具备足够的唯一性
+    # 保留前缀，方便前端展示与日志检索
+    project_name = Path.cwd().name or "task"
+    return f"{project_name}-{uuid.uuid4()}"
+
+
 def validate_input(
     prompt: str, predefined_options: Optional[list] = None
 ) -> Tuple[str, list]:
@@ -1323,10 +1339,8 @@ def parse_structured_response(
     else:
         combined_text = "用户未提供任何内容"
 
-    # 追加提示语后缀（保持会话连续性）
-    _, prompt_suffix = get_feedback_prompts()
-    if prompt_suffix:
-        combined_text += prompt_suffix
+    # 追加提示语后缀（保持会话连续性，避免重复追加）
+    combined_text = _append_prompt_suffix(combined_text)
 
     result.append(TextContent(type="text", text=combined_text))
 
@@ -1538,12 +1552,8 @@ def launch_feedback_ui(
     if timeout > 0:
         timeout = max(timeout, 300)
     try:
-        # 自动生成唯一 task_id（使用时间戳+随机数确保唯一性）
-        # task_id 参数将被忽略，始终使用自动生成
-        project_name = Path.cwd().name or "task"
-        timestamp = int(time.time() * 1000) % 1000000
-        random_suffix = random.randint(100, 999)
-        task_id = f"{project_name}-{timestamp}-{random_suffix}"
+        # 自动生成唯一 task_id（task_id 参数将被忽略，始终使用自动生成）
+        task_id = _generate_task_id()
 
         # 验证输入参数
         cleaned_summary, cleaned_options = validate_input(summary, predefined_options)
@@ -1730,12 +1740,8 @@ async def interactive_feedback(
         cleaned_message, cleaned_options = validate_input(message, predefined_options)
         predefined_options_list = cleaned_options
 
-        # 自动生成唯一 task_id（使用时间戳+随机数确保唯一性）
-        project_name = Path.cwd().name or "task"
-        # 使用毫秒时间戳和随机数的组合，几乎不可能冲突
-        timestamp = int(time.time() * 1000) % 1000000  # 取后6位毫秒时间戳
-        random_suffix = random.randint(100, 999)
-        task_id = f"{project_name}-{timestamp}-{random_suffix}"
+        # 自动生成唯一 task_id（避免极端并发下碰撞）
+        task_id = _generate_task_id()
 
         logger.info(
             f"收到反馈请求: {cleaned_message[:50]}... (自动生成task_id: {task_id})"
@@ -1852,22 +1858,35 @@ async def interactive_feedback(
 
         logger.info("反馈请求处理完成")
 
-        # 检查是否有结构化的反馈数据（包含图片）
-        if isinstance(result, dict) and "images" in result:
-            return parse_structured_response(result)
-        else:
-            # 兼容旧格式：只有文本反馈
-            if isinstance(result, dict):
-                # 检查是否是新格式
-                if "user_input" in result or "selected_options" in result:
-                    return parse_structured_response(result)
-                else:
-                    # 旧格式 - 使用 MCP 标准 TextContent 格式
-                    text_content = result.get("interactive_feedback", str(result))
-                    return [TextContent(type="text", text=text_content)]
-            else:
-                # 简单字符串结果 - 使用 MCP 标准 TextContent 格式
-                return [TextContent(type="text", text=str(result))]
+        # 解析返回：兼容新旧格式 + 兜底处理 {"text": "..."} 降级返回
+        if isinstance(result, dict):
+            # wait_for_task_completion 的降级返回（超时/404）：{"text": "..."}
+            if set(result.keys()) == {"text"} and isinstance(result.get("text"), str):
+                return [TextContent(type="text", text=str(result["text"]))]
+
+            # 新格式（结构化 JSON，可能含 images）
+            if (
+                "images" in result
+                or "user_input" in result
+                or "selected_options" in result
+            ):
+                return parse_structured_response(result)
+
+            # 旧格式：只有文本反馈
+            legacy = result.get("interactive_feedback")
+            if isinstance(legacy, str) and legacy.strip():
+                return [TextContent(type="text", text=_append_prompt_suffix(legacy))]
+
+            # 最后兜底：尽量取 text 字段，否则转字符串
+            fallback = (
+                result.get("text")
+                if isinstance(result.get("text"), str)
+                else str(result)
+            )
+            return [TextContent(type="text", text=_append_prompt_suffix(str(fallback)))]
+
+        # 简单字符串结果
+        return [TextContent(type="text", text=_append_prompt_suffix(str(result)))]
 
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}", exc_info=True)

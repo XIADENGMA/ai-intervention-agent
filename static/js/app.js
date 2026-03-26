@@ -53,6 +53,51 @@
 let config = null
 
 // ==================================================================
+// marked.js 安全配置（禁用原生 HTML 渲染）
+// ==================================================================
+//
+// 背景：
+// - marked 默认允许 Markdown 中的原生 HTML（如 <style> / <iframe> / <script> 等）
+// - 即使有 CSP，原生 HTML 注入仍可能造成 UI 欺骗/样式污染（防御纵深不足）
+// - 这里选择“直接禁用 HTML token 的渲染”，让原生 HTML 在渲染结果中被丢弃
+//
+// 影响：
+// - Markdown 内嵌的原生 HTML 不再生效（常规 Markdown 语法不受影响）
+//
+if (typeof window.__aiiaMarkedSecurityConfigured === 'undefined') {
+  window.__aiiaMarkedSecurityConfigured = false
+}
+
+function configureMarkedSecurity() {
+  if (window.__aiiaMarkedSecurityConfigured) return
+  if (typeof marked === 'undefined' || !marked) return
+
+  try {
+    if (typeof marked.use === 'function') {
+      marked.use({
+        renderer: {
+          // token: { type: 'html', text: '...' }
+          html() {
+            return ''
+          }
+        }
+      })
+    }
+
+    if (typeof marked.setOptions === 'function') {
+      // 可复现/可预测输出：禁用 email 混淆与标题 id 生成（避免不必要的 DOM 变化）
+      marked.setOptions({ mangle: false, headerIds: false })
+    }
+
+    window.__aiiaMarkedSecurityConfigured = true
+  } catch (e) {
+    console.warn('marked 安全配置失败（忽略）:', e)
+  }
+}
+
+configureMarkedSecurity()
+
+// ==================================================================
 // Lottie 嫩芽动画配置
 // ==================================================================
 //
@@ -672,8 +717,7 @@ function insertCodeBlockIntoFeedbackTextarea(text) {
   const textAfter = currentText.substring(cursorPos)
   const needsLeadingNewline = cursorPos > 0 && !textBefore.endsWith('\n')
   const needsTrailingNewline = textAfter.length > 0 && !textAfter.startsWith('\n')
-  const codeBlock =
-    `${needsLeadingNewline ? '\n' : ''}${codeBlockBody}${needsTrailingNewline ? '\n' : ''}`
+  const codeBlock = `${needsLeadingNewline ? '\n' : ''}${codeBlockBody}${needsTrailingNewline ? '\n' : ''}`
 
   // 插入代码块
   textarea.value = textBefore + codeBlock + textAfter
@@ -1111,7 +1155,6 @@ class NotificationManager {
         }
       })
     }
-
     ;['click', 'keydown', 'touchstart'].forEach(eventName => {
       document.addEventListener(eventName, this.boundPermissionRequestHandler, {
         once: true,
@@ -1254,9 +1297,7 @@ class NotificationManager {
 
     if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
       const origin =
-        window.location && typeof window.location.origin === 'string'
-          ? window.location.origin
-          : ''
+        window.location && typeof window.location.origin === 'string' ? window.location.origin : ''
       const host =
         window.location && typeof window.location.host === 'string' ? window.location.host : ''
       const where = origin || host || '当前页面'
@@ -1318,11 +1359,10 @@ class NotificationManager {
         ...restOptions
       }
 
-      const notification = await this.showSystemNotification(
-        title,
-        notificationOptions,
-        { ...restOptions, onClick }
-      )
+      const notification = await this.showSystemNotification(title, notificationOptions, {
+        ...restOptions,
+        onClick
+      })
 
       if (!notification) {
         this.showFallbackNotification(title, message, {
@@ -1621,11 +1661,10 @@ class NotificationManager {
     if (!count || count <= 0) return null
     if (this.config && this.config.enabled === false) return null
 
-    const title = typeof event.title === 'string' && event.title ? event.title : 'AI Intervention Agent'
+    const title =
+      typeof event.title === 'string' && event.title ? event.title : 'AI Intervention Agent'
     const message =
-      count === 1 && taskIds.length === 1
-        ? `新任务已添加: ${taskIds[0]}`
-        : `收到 ${count} 个新任务`
+      count === 1 && taskIds.length === 1 ? `新任务已添加: ${taskIds[0]}` : `收到 ${count} 个新任务`
 
     // 1) 桌面端：Visual Hint（不依赖系统通知权限）
     try {
@@ -2156,9 +2195,7 @@ class SettingsManager {
         ? window.isSecureContext
         : null
     const origin =
-      typeof window !== 'undefined' &&
-      window.location &&
-      typeof window.location.origin === 'string'
+      typeof window !== 'undefined' && window.location && typeof window.location.origin === 'string'
         ? window.location.origin
         : ''
 
@@ -2170,14 +2207,11 @@ class SettingsManager {
 
     let secureContextHtml
     if (secureContext === true) {
-      secureContextHtml =
-        this.getStatusIcon('success') + (origin ? `安全（${origin}）` : '安全')
+      secureContextHtml = this.getStatusIcon('success') + (origin ? `安全（${origin}）` : '安全')
     } else if (secureContext === false) {
       secureContextHtml =
         this.getStatusIcon('warning') +
-        (origin
-          ? `非安全（${origin}，浏览器原生通知不可用）`
-          : '非安全（浏览器原生通知不可用）')
+        (origin ? `非安全（${origin}，浏览器原生通知不可用）` : '非安全（浏览器原生通知不可用）')
     } else {
       secureContextHtml = this.getStatusIcon('warning') + '未知'
     }
@@ -2599,12 +2633,15 @@ function createObjectURL(file) {
     urlCreationTime.set(url, Date.now())
 
     // 设置自动清理定时器（30分钟后自动清理）
-    setTimeout(() => {
-      if (objectURLs.has(url)) {
-        console.warn(`自动清理过期的URL对象: ${url}`)
-        revokeObjectURL(url)
-      }
-    }, 30 * 60 * 1000) // 30分钟
+    setTimeout(
+      () => {
+        if (objectURLs.has(url)) {
+          console.warn(`自动清理过期的URL对象: ${url}`)
+          revokeObjectURL(url)
+        }
+      },
+      30 * 60 * 1000
+    ) // 30分钟
 
     return url
   } catch (error) {
@@ -2651,22 +2688,25 @@ function cleanupAllObjectURLs() {
 
 // 定期清理过期的URL对象（每5分钟检查一次）
 function startPeriodicCleanup() {
-  setInterval(() => {
-    const now = Date.now()
-    const expiredUrls = []
+  setInterval(
+    () => {
+      const now = Date.now()
+      const expiredUrls = []
 
-    urlCreationTime.forEach((creationTime, url) => {
-      // 清理超过20分钟的URL对象
-      if (now - creationTime > 20 * 60 * 1000) {
-        expiredUrls.push(url)
+      urlCreationTime.forEach((creationTime, url) => {
+        // 清理超过20分钟的URL对象
+        if (now - creationTime > 20 * 60 * 1000) {
+          expiredUrls.push(url)
+        }
+      })
+
+      if (expiredUrls.length > 0) {
+        console.log(`定期清理 ${expiredUrls.length} 个过期URL对象`)
+        expiredUrls.forEach(url => revokeObjectURL(url))
       }
-    })
-
-    if (expiredUrls.length > 0) {
-      console.log(`定期清理 ${expiredUrls.length} 个过期URL对象`)
-      expiredUrls.forEach(url => revokeObjectURL(url))
-    }
-  }, 5 * 60 * 1000) // 每5分钟检查一次
+    },
+    5 * 60 * 1000
+  ) // 每5分钟检查一次
 }
 
 // 优化的图片压缩函数
@@ -3712,7 +3752,7 @@ function initializeApp() {
   if (codePasteInsertBtn) {
     codePasteInsertBtn.addEventListener('click', () => {
       const textarea = document.getElementById('code-paste-textarea')
-      const text = textarea ? (textarea.value || '') : ''
+      const text = textarea ? textarea.value || '' : ''
       if (!text.trim()) {
         showStatus('请输入要插入的代码', 'error')
         return

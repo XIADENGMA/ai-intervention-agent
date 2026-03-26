@@ -586,13 +586,37 @@ class ConfigManager:
                     return array_content
             else:
                 # 简单值
-                pattern = rf'"{re.escape(key)}"\s*:\s*([^,\n\r]+)'
-                match = re.search(pattern, line)
-                if match:
-                    value_str = match.group(1).strip()
-                    # 移除行尾注释
-                    if "//" in value_str:
-                        value_str = value_str.split("//")[0].strip()
+                key_pattern = rf'"{re.escape(key)}"\s*:\s*'
+                key_match = re.search(key_pattern, line)
+                if key_match:
+                    value_start = key_match.end()
+                    remaining = line[value_start:]
+
+                    value_end = 0
+                    in_string = False
+                    escape_next = False
+
+                    for i, char in enumerate(remaining):
+                        if escape_next:
+                            escape_next = False
+                            continue
+                        if char == "\\":
+                            escape_next = True
+                            continue
+                        if char == '"':
+                            in_string = not in_string
+                            continue
+                        if not in_string:
+                            # 逗号结束，或遇到注释起始（// 或 /*）
+                            if char in ",\n\r" or remaining[i:].lstrip().startswith(
+                                ("//", "/*")
+                            ):
+                                value_end = i
+                                break
+                    else:
+                        value_end = len(remaining)
+
+                    value_str = remaining[:value_end].strip()
                     try:
                         return json.loads(value_str)
                     except (json.JSONDecodeError, ValueError):
@@ -815,6 +839,416 @@ class ConfigManager:
         suffix = remaining[value_end:]
         return f"{line[:value_start]}{new_value}{suffix}"
 
+    # ========================================================================
+    # JSONC 定位/更新（基于“对象范围”，避免同名键误匹配）
+    # ========================================================================
+
+    @staticmethod
+    def _jsonc_find_object_end_line(
+        lines: list[str], start_line: int, end_limit: int | None = None
+    ) -> int:
+        """
+        从 start_line 开始，找到与该对象匹配的右大括号所在行号。
+
+        约束：
+        - 忽略字符串与注释中的括号
+        - 允许 key 行与 '{' 同行或换行
+        """
+        if end_limit is None:
+            end_limit = len(lines) - 1
+
+        brace_count = 0
+        found_open = False
+        in_string = False
+        escape_next = False
+        in_single_line_comment = False
+        in_multi_line_comment = False
+
+        for i in range(start_line, min(end_limit, len(lines) - 1) + 1):
+            line = lines[i]
+            in_single_line_comment = False
+            j = 0
+            while j < len(line):
+                ch = line[j]
+                next_two = line[j : j + 2]
+
+                if in_single_line_comment:
+                    break
+
+                if in_multi_line_comment:
+                    if next_two == "*/":
+                        in_multi_line_comment = False
+                        j += 2
+                        continue
+                    j += 1
+                    continue
+
+                if in_string:
+                    if escape_next:
+                        escape_next = False
+                        j += 1
+                        continue
+                    if ch == "\\":
+                        escape_next = True
+                        j += 1
+                        continue
+                    if ch == '"':
+                        in_string = False
+                    j += 1
+                    continue
+
+                # not in string/comment
+                if next_two == "//":
+                    in_single_line_comment = True
+                    break
+                if next_two == "/*":
+                    in_multi_line_comment = True
+                    j += 2
+                    continue
+                if ch == '"':
+                    in_string = True
+                    j += 1
+                    continue
+
+                if ch == "{":
+                    brace_count += 1
+                    found_open = True
+                elif ch == "}":
+                    if found_open and brace_count > 0:
+                        brace_count -= 1
+                        if brace_count == 0:
+                            return i
+
+                j += 1
+
+        return min(end_limit, len(lines) - 1)
+
+    @staticmethod
+    def _jsonc_find_key_line_in_object_range(
+        lines: list[str], obj_range: tuple[int, int], key: str
+    ) -> int:
+        """
+        在给定对象范围内查找 key 的定义行（仅匹配该对象的第一层属性，避免落到嵌套对象）。
+        """
+        start_line, end_line = obj_range
+        if start_line < 0 or end_line < 0 or start_line > end_line:
+            return -1
+
+        key_pattern = re.compile(rf'\s*"{re.escape(key)}"\s*:')
+
+        brace_depth = 0
+        started = False
+        in_string = False
+        escape_next = False
+        in_single_line_comment = False
+        in_multi_line_comment = False
+
+        for i in range(start_line, min(end_line, len(lines) - 1) + 1):
+            line = lines[i]
+
+            # 仅在“对象第一层（brace_depth==1）”尝试匹配 key
+            if started and brace_depth == 1 and not in_multi_line_comment:
+                stripped = line.lstrip()
+                if (
+                    stripped
+                    and not stripped.startswith("//")
+                    and key_pattern.search(line)
+                ):
+                    return i
+
+            in_single_line_comment = False
+            j = 0
+            while j < len(line):
+                ch = line[j]
+                next_two = line[j : j + 2]
+
+                if in_single_line_comment:
+                    break
+
+                if in_multi_line_comment:
+                    if next_two == "*/":
+                        in_multi_line_comment = False
+                        j += 2
+                        continue
+                    j += 1
+                    continue
+
+                if in_string:
+                    if escape_next:
+                        escape_next = False
+                        j += 1
+                        continue
+                    if ch == "\\":
+                        escape_next = True
+                        j += 1
+                        continue
+                    if ch == '"':
+                        in_string = False
+                    j += 1
+                    continue
+
+                # not in string/comment
+                if next_two == "//":
+                    in_single_line_comment = True
+                    break
+                if next_two == "/*":
+                    in_multi_line_comment = True
+                    j += 2
+                    continue
+                if ch == '"':
+                    in_string = True
+                    j += 1
+                    continue
+
+                if ch == "{":
+                    brace_depth += 1
+                    started = True
+                elif ch == "}":
+                    if started and brace_depth > 0:
+                        brace_depth -= 1
+
+                j += 1
+
+        return -1
+
+    def _jsonc_find_object_range(
+        self,
+        lines: list[str],
+        key: str,
+        parent_object_range: tuple[int, int] | None = None,
+    ) -> tuple[int, int]:
+        """
+        查找 JSONC 中某个 object 字段（"key": { ... }）的行范围 (start_line, end_line)。
+
+        - parent_object_range=None：在文件顶层对象（depth==1）中查找
+        - parent_object_range!=None：在父对象第一层属性中查找
+        """
+        if not lines:
+            return (-1, -1)
+
+        # 1) 在父对象范围内查找（用于递归）
+        if parent_object_range is not None:
+            key_line = self._jsonc_find_key_line_in_object_range(
+                lines, parent_object_range, key
+            )
+            if key_line == -1:
+                return (-1, -1)
+            end_line = self._jsonc_find_object_end_line(
+                lines, key_line, end_limit=parent_object_range[1]
+            )
+            return (key_line, end_line)
+
+        # 2) 在文件顶层对象中查找（depth==1）
+        key_pattern = re.compile(rf'\s*"{re.escape(key)}"\s*:')
+        brace_depth = 0
+        started = False
+        in_string = False
+        escape_next = False
+        in_single_line_comment = False
+        in_multi_line_comment = False
+
+        for i, line in enumerate(lines):
+            # 顶层对象第一层属性：brace_depth==1
+            if started and brace_depth == 1 and not in_multi_line_comment:
+                stripped = line.lstrip()
+                if (
+                    stripped
+                    and not stripped.startswith("//")
+                    and key_pattern.search(line)
+                ):
+                    end_line = self._jsonc_find_object_end_line(lines, i)
+                    return (i, end_line)
+
+            in_single_line_comment = False
+            j = 0
+            while j < len(line):
+                ch = line[j]
+                next_two = line[j : j + 2]
+
+                if in_single_line_comment:
+                    break
+
+                if in_multi_line_comment:
+                    if next_two == "*/":
+                        in_multi_line_comment = False
+                        j += 2
+                        continue
+                    j += 1
+                    continue
+
+                if in_string:
+                    if escape_next:
+                        escape_next = False
+                        j += 1
+                        continue
+                    if ch == "\\":
+                        escape_next = True
+                        j += 1
+                        continue
+                    if ch == '"':
+                        in_string = False
+                    j += 1
+                    continue
+
+                # not in string/comment
+                if next_two == "//":
+                    in_single_line_comment = True
+                    break
+                if next_two == "/*":
+                    in_multi_line_comment = True
+                    j += 2
+                    continue
+                if ch == '"':
+                    in_string = True
+                    j += 1
+                    continue
+
+                if ch == "{":
+                    brace_depth += 1
+                    started = True
+                elif ch == "}":
+                    if started and brace_depth > 0:
+                        brace_depth -= 1
+
+                j += 1
+
+        return (-1, -1)
+
+    @staticmethod
+    def _jsonc_find_top_level_key_line(lines: list[str], key: str) -> int:
+        """在文件顶层对象（depth==1）查找 key 的定义行（避免落到嵌套对象）。"""
+        if not lines:
+            return -1
+
+        key_pattern = re.compile(rf'\s*"{re.escape(key)}"\s*:')
+        brace_depth = 0
+        started = False
+        in_string = False
+        escape_next = False
+        in_single_line_comment = False
+        in_multi_line_comment = False
+
+        for i, line in enumerate(lines):
+            if started and brace_depth == 1 and not in_multi_line_comment:
+                stripped = line.lstrip()
+                if (
+                    stripped
+                    and not stripped.startswith("//")
+                    and key_pattern.search(line)
+                ):
+                    return i
+
+            in_single_line_comment = False
+            j = 0
+            while j < len(line):
+                ch = line[j]
+                next_two = line[j : j + 2]
+
+                if in_single_line_comment:
+                    break
+
+                if in_multi_line_comment:
+                    if next_two == "*/":
+                        in_multi_line_comment = False
+                        j += 2
+                        continue
+                    j += 1
+                    continue
+
+                if in_string:
+                    if escape_next:
+                        escape_next = False
+                        j += 1
+                        continue
+                    if ch == "\\":
+                        escape_next = True
+                        j += 1
+                        continue
+                    if ch == '"':
+                        in_string = False
+                    j += 1
+                    continue
+
+                # not in string/comment
+                if next_two == "//":
+                    in_single_line_comment = True
+                    break
+                if next_two == "/*":
+                    in_multi_line_comment = True
+                    j += 2
+                    continue
+                if ch == '"':
+                    in_string = True
+                    j += 1
+                    continue
+
+                if ch == "{":
+                    brace_depth += 1
+                    started = True
+                elif ch == "}":
+                    if started and brace_depth > 0:
+                        brace_depth -= 1
+
+                j += 1
+
+        return -1
+
+    def _jsonc_update_dict_in_object_range(
+        self,
+        config_dict: Dict[str, Any],
+        result_lines: list[str],
+        object_start_line: int,
+        object_end_line: int,
+    ) -> None:
+        """
+        在给定对象范围内更新 config_dict 的键值（递归支持嵌套对象）。
+
+        说明：
+        - 仅更新文件中已存在的键（不做插入），避免破坏原有格式/注释结构
+        - 数组使用块更新，简单值使用行内替换（保留行尾注释/逗号）
+        """
+        if object_start_line < 0 or object_end_line < 0:
+            return
+
+        for key, value in (config_dict or {}).items():
+            # 每轮都重算 end_line：数组块替换可能改变行数，避免 range 过期导致漏更
+            current_end_line = self._jsonc_find_object_end_line(
+                result_lines, object_start_line, end_limit=len(result_lines) - 1
+            )
+            obj_range = (object_start_line, current_end_line)
+
+            if isinstance(value, dict):
+                child_range = self._jsonc_find_object_range(
+                    result_lines, key, parent_object_range=obj_range
+                )
+                if child_range[0] != -1:
+                    self._jsonc_update_dict_in_object_range(
+                        cast(Dict[str, Any], value),
+                        result_lines,
+                        child_range[0],
+                        child_range[1],
+                    )
+                continue
+
+            line_index = self._jsonc_find_key_line_in_object_range(
+                result_lines, obj_range, key
+            )
+            if line_index == -1:
+                continue
+
+            if isinstance(value, list):
+                start_line, end_line = self._jsonc_find_array_range(
+                    result_lines, line_index, key
+                )
+                new_array_lines = self._jsonc_update_array_block(
+                    result_lines, start_line, end_line, key, value
+                )
+                result_lines[start_line : end_line + 1] = new_array_lines
+            else:
+                result_lines[line_index] = self._jsonc_update_simple_value(
+                    result_lines[line_index], key, value
+                )
+
     def _jsonc_process_config_section(
         self,
         config_dict: Dict[str, Any],
@@ -822,53 +1256,34 @@ class ConfigManager:
         network_security_range: tuple,
         section_name: str = "",
     ):
-        """递归处理配置段，更新变化的值"""
-        for key, value in config_dict.items():
-            current_key = f"{section_name}.{key}" if section_name else key
+        """
+        兼容保留：旧实现曾按 key 字符串全局匹配，存在同名键误更新风险（例如 enabled/debug）。
 
-            if isinstance(value, dict):
-                self._jsonc_process_config_section(
-                    value, result_lines, network_security_range, current_key
-                )
-            else:
-                for i, line in enumerate(result_lines):
-                    if (
-                        network_security_range[0] != -1
-                        and network_security_range[0] <= i <= network_security_range[1]
-                    ):
-                        continue
+        新实现按“顶层 section 对象范围”更新，避免跨 section 写错配置。
+        """
+        del section_name
+        if not isinstance(config_dict, dict):
+            return
 
-                    if (
-                        f'"{key}"' in line
-                        and not line.strip().startswith("//")
-                        and ":" in line
-                        and line.strip().find(f'"{key}"') < line.strip().find(":")
-                    ):
-                        current_value = self._extract_current_value(
-                            result_lines, i, key
-                        )
-                        if current_value != value:
-                            if isinstance(value, list):
-                                start_line, end_line = self._jsonc_find_array_range(
-                                    result_lines, i, key
-                                )
-                                logger.debug(
-                                    f"找到数组 '{key}' 范围: {start_line}-{end_line}"
-                                )
+        # 只处理顶层 section（notification/web_ui/mdns/feedback...）
+        for top_key, top_value in config_dict.items():
+            if top_key == "network_security":
+                continue
+            if not isinstance(top_value, dict):
+                continue
 
-                                new_array_lines = self._jsonc_update_array_block(
-                                    result_lines, start_line, end_line, key, value
-                                )
+            obj_range = self._jsonc_find_object_range(
+                cast(list[str], result_lines), str(top_key), parent_object_range=None
+            )
+            if obj_range[0] == -1:
+                continue
 
-                                result_lines[start_line : end_line + 1] = (
-                                    new_array_lines
-                                )
-                                logger.debug(f"数组 '{key}' 替换完成")
-                            else:
-                                result_lines[i] = self._jsonc_update_simple_value(
-                                    line, key, value
-                                )
-                        break
+            self._jsonc_update_dict_in_object_range(
+                cast(Dict[str, Any], top_value),
+                cast(list[str], result_lines),
+                obj_range[0],
+                obj_range[1],
+            )
 
     def _find_network_security_range(self, lines: list) -> tuple:
         """查找 network_security 配置段的行范围，未找到返回 (-1, -1)"""
@@ -931,12 +1346,45 @@ class ConfigManager:
         lines = self._original_content.split("\n")
         result_lines = lines.copy()
 
-        network_security_range = self._find_network_security_range(lines)
+        # 按顶层对象范围更新，避免同名键跨段误更新
+        for top_key, top_value in config_to_save.items():
+            if top_key == "network_security":
+                continue
+            if isinstance(top_value, dict):
+                obj_range = self._jsonc_find_object_range(result_lines, str(top_key))
+                if obj_range[0] == -1:
+                    continue
 
-        # 使用提取的类方法处理配置更新
-        self._jsonc_process_config_section(
-            config_to_save, result_lines, network_security_range
-        )
+                self._jsonc_update_dict_in_object_range(
+                    cast(Dict[str, Any], top_value),
+                    result_lines,
+                    obj_range[0],
+                    obj_range[1],
+                )
+            else:
+                # 顶层简单值/数组（例如 {"number": 42}），应能被保存逻辑更新
+                line_index = self._jsonc_find_top_level_key_line(
+                    result_lines, str(top_key)
+                )
+                if line_index == -1:
+                    continue
+
+                if isinstance(top_value, list):
+                    start_line, end_line = self._jsonc_find_array_range(
+                        result_lines, line_index, str(top_key)
+                    )
+                    new_array_lines = self._jsonc_update_array_block(
+                        result_lines,
+                        start_line,
+                        end_line,
+                        str(top_key),
+                        cast(list, top_value),
+                    )
+                    result_lines[start_line : end_line + 1] = new_array_lines
+                else:
+                    result_lines[line_index] = self._jsonc_update_simple_value(
+                        result_lines[line_index], str(top_key), top_value
+                    )
 
         return "\n".join(result_lines)
 
@@ -1734,39 +2182,13 @@ class ConfigManager:
     def _jsonc_process_config_section_only_in_range(
         self, config_dict: Dict[str, Any], result_lines: list, ns_range: tuple
     ):
-        """仅在 network_security 段范围内递归更新 key/value（避免误改其他段同名键）"""
+        """仅在指定对象范围内递归更新 key/value（用于 network_security 段写回）"""
         start_line, end_line = ns_range
-        for key, value in config_dict.items():
-            if isinstance(value, dict):
-                self._jsonc_process_config_section_only_in_range(
-                    value, result_lines, ns_range
-                )
-                continue
-
-            for i, line in enumerate(result_lines):
-                if i < start_line or i > end_line:
-                    continue
-                if (
-                    f'"{key}"' in line
-                    and not line.strip().startswith("//")
-                    and ":" in line
-                    and line.strip().find(f'"{key}"') < line.strip().find(":")
-                ):
-                    current_value = self._extract_current_value(result_lines, i, key)
-                    if current_value != value:
-                        if isinstance(value, list):
-                            a_start, a_end = self._jsonc_find_array_range(
-                                result_lines, i, key
-                            )
-                            new_array_lines = self._jsonc_update_array_block(
-                                result_lines, a_start, a_end, key, value
-                            )
-                            result_lines[a_start : a_end + 1] = new_array_lines
-                        else:
-                            result_lines[i] = self._jsonc_update_simple_value(
-                                line, key, value
-                            )
-                    break
+        if start_line < 0 or end_line < 0:
+            return
+        self._jsonc_update_dict_in_object_range(
+            config_dict, cast(list[str], result_lines), start_line, end_line
+        )
 
     def set_network_security_config(
         self, config: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True

@@ -432,16 +432,35 @@ class FileValidator:
     def _scan_malicious_content(
         self, file_data: bytes, result: FileValidationResult
     ) -> None:
-        """扫描前 64KB 检测恶意代码特征"""
-        # 只扫描文件的前64KB，避免性能问题
-        scan_data = file_data[: 64 * 1024]
+        """
+        扫描恶意代码特征（头/尾/中间采样窗口）。
 
-        # 遍历所有模式，报告所有匹配
+        安全性考量：
+        - 仅扫描前 64KB 容易被“后置拼接 payload”绕过
+        - 全量扫描在 10MB 上限下可行，但为了避免最坏情况的正则开销，这里采用多窗口采样
+        """
+        window_size = 64 * 1024
+        size = len(file_data)
+
+        # 采样窗口：小文件全量；大文件取头/尾/中间（尽量覆盖拼接/后置）
+        scan_windows: list[bytes] = []
+        if size <= window_size:
+            scan_windows.append(file_data)
+        else:
+            scan_windows.append(file_data[:window_size])
+            scan_windows.append(file_data[-window_size:])
+            if size > window_size * 2:
+                mid = size // 2
+                start = max(0, mid - window_size // 2)
+                scan_windows.append(file_data[start : start + window_size])
+
+        # 遍历所有模式，报告所有匹配（按窗口逐一匹配）
         for compiled, pattern_str in self.compiled_patterns:
-            if compiled.search(scan_data):
-                # 【优化】使用预先 decoded 的 pattern_str，避免重复 decode
-                result["errors"].append(f"检测到可疑内容模式: {pattern_str}")
-                # 不短路，继续检查其他模式
+            for chunk in scan_windows:
+                if compiled.search(chunk):
+                    # 【优化】使用预先 decoded 的 pattern_str，避免重复 decode
+                    result["errors"].append(f"检测到可疑内容模式: {pattern_str}")
+                    break
 
 
 # 【优化】模块级单例：预创建默认 FileValidator 实例，避免重复初始化

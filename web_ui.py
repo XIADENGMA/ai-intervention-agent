@@ -152,6 +152,8 @@ _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
 # 运行中的 WebFeedbackUI 实例（用于单任务模式兜底热更新）
 # 注意：测试里会用 SimpleNamespace 之类的轻量对象模拟，因此这里用 Any 放宽类型约束。
 _CURRENT_WEB_UI_INSTANCE: Any | None = None
+_NETWORK_SECURITY_CALLBACK_REGISTERED = False
+_NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
 
 
 def _get_default_auto_resubmit_timeout_from_config() -> int:
@@ -188,12 +190,67 @@ def _sync_existing_tasks_timeout_from_config() -> None:
 
         # 单任务模式兜底：如果当前实例没有显式指定 timeout，则跟随配置更新
         global _CURRENT_WEB_UI_INSTANCE
-        if _CURRENT_WEB_UI_INSTANCE is not None and not getattr(
-            _CURRENT_WEB_UI_INSTANCE, "_single_task_timeout_explicit", True
+        inst = _CURRENT_WEB_UI_INSTANCE
+        if inst is not None and not getattr(
+            inst, "_single_task_timeout_explicit", True
         ):
-            _CURRENT_WEB_UI_INSTANCE.current_auto_resubmit_timeout = new_timeout
+            try:
+                lock = getattr(inst, "_state_lock", None)
+                if lock is not None:
+                    with lock:
+                        inst.current_auto_resubmit_timeout = new_timeout
+                else:
+                    inst.current_auto_resubmit_timeout = new_timeout
+            except Exception:
+                # 测试场景可能注入了无锁的 mock 实例；这里兜底不抛异常
+                inst.current_auto_resubmit_timeout = new_timeout
     except Exception as e:
         logger.warning(f"配置变更回调执行失败（同步任务倒计时）：{e}", exc_info=True)
+
+
+def _sync_network_security_from_config() -> None:
+    """配置变更回调：同步运行中 Web UI 的 network_security 配置。"""
+    global _CURRENT_WEB_UI_INSTANCE
+    inst = _CURRENT_WEB_UI_INSTANCE
+    if inst is None:
+        return
+    try:
+        loader = getattr(inst, "_load_network_security_config", None)
+        if not callable(loader):
+            return
+        new_cfg = loader()
+        if not isinstance(new_cfg, dict):
+            return
+        lock = getattr(inst, "_state_lock", None)
+        if lock is not None:
+            with lock:
+                inst.network_security_config = new_cfg
+        else:
+            inst.network_security_config = new_cfg
+    except Exception as e:
+        logger.warning(f"配置变更回调执行失败（同步网络安全配置）：{e}", exc_info=True)
+
+
+def _ensure_network_security_hot_reload_callback_registered() -> None:
+    """确保仅注册一次 network_security 配置热更新回调（避免重复注册）"""
+    global _NETWORK_SECURITY_CALLBACK_REGISTERED
+    if _NETWORK_SECURITY_CALLBACK_REGISTERED:
+        return
+    with _NETWORK_SECURITY_CALLBACK_LOCK:
+        if _NETWORK_SECURITY_CALLBACK_REGISTERED:
+            return
+        try:
+            cfg = get_config()
+            cfg.register_config_change_callback(_sync_network_security_from_config)
+            _NETWORK_SECURITY_CALLBACK_REGISTERED = True
+            # 启动时先同步一次（若当前实例已存在）
+            _sync_network_security_from_config()
+            logger.debug("已注册 network_security 热更新回调（同步访问控制配置）")
+        except Exception as e:
+            logger.warning(
+                f"注册 network_security 配置热更新回调失败（将仅在启动时生效）：{e}",
+                exc_info=True,
+            )
 
 
 def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
@@ -580,6 +637,8 @@ class WebFeedbackUI:
         self._single_task_timeout_explicit = False
         self.has_content = bool(prompt)
         self.initial_empty = not bool(prompt)
+        # WebFeedbackUI 会被轮询与提交并发访问（Flask 默认 threaded），用锁保护共享状态
+        self._state_lock = threading.RLock()
         self.app = Flask(__name__)
         CORS(self.app)
         # 【热更新】注册配置变更回调：让运行中的任务倒计时也能跟随配置更新
@@ -619,6 +678,8 @@ class WebFeedbackUI:
 
         self.csp_nonce = secrets.token_urlsafe(16)
         self.network_security_config = self._load_network_security_config()
+        # 【热更新】network_security（allowed_networks/blocked_ips/enable_access_control）也应随配置文件变化生效
+        _ensure_network_security_hot_reload_callback_registered()
 
         self.limiter = Limiter(
             key_func=get_remote_address,
@@ -1038,29 +1099,49 @@ class WebFeedbackUI:
                     # 回退到旧的单任务模式
                     # 单任务模式没有创建时间，remaining_time 等于 auto_resubmit_timeout
                     # 【热更新增强】若未显式指定 timeout，则使用配置文件的默认值（运行中修改可立即生效）
-                    effective_timeout = self.current_auto_resubmit_timeout
-                    if not getattr(self, "_single_task_timeout_explicit", True):
+                    timeout_explicit = bool(
+                        getattr(self, "_single_task_timeout_explicit", True)
+                    )
+                    with self._state_lock:
+                        effective_timeout = int(self.current_auto_resubmit_timeout)
+                        prompt_snapshot = str(self.current_prompt)
+                        options_snapshot = list(self.current_options)
+                        task_id_snapshot = self.current_task_id
+                        has_content_snapshot = bool(self.has_content)
+                        initial_empty_snapshot = bool(self.initial_empty)
+
+                    if not timeout_explicit:
                         try:
                             effective_timeout = (
                                 _get_default_auto_resubmit_timeout_from_config()
                             )
+                        except Exception:
+                            # 配置读取失败不影响主流程，沿用当前值
+                            pass
+                        with self._state_lock:
                             # 保持实例状态同步，便于其他逻辑复用
                             self.current_auto_resubmit_timeout = effective_timeout
-                        except Exception:
-                            effective_timeout = self.current_auto_resubmit_timeout
+
+                    prompt_html = ""
+                    if has_content_snapshot:
+                        try:
+                            prompt_html = self.render_markdown(prompt_snapshot)
+                        except Exception as e:
+                            logger.warning(
+                                f"/api/config prompt 渲染失败: {e}", exc_info=True
+                            )
+                            prompt_html = ""
                     return jsonify(
                         {
-                            "prompt": self.current_prompt,
-                            "prompt_html": self.render_markdown(self.current_prompt)
-                            if self.has_content
-                            else "",
-                            "predefined_options": self.current_options,
-                            "task_id": self.current_task_id,
+                            "prompt": prompt_snapshot,
+                            "prompt_html": prompt_html,
+                            "predefined_options": options_snapshot,
+                            "task_id": task_id_snapshot,
                             "auto_resubmit_timeout": effective_timeout,
                             "remaining_time": effective_timeout,  # 单任务模式无创建时间
                             "persistent": True,
-                            "has_content": self.has_content,
-                            "initial_empty": self.initial_empty,
+                            "has_content": has_content_snapshot,
+                            "initial_empty": initial_empty_snapshot,
                         }
                     )
             except Exception as e:
@@ -1929,36 +2010,37 @@ class WebFeedbackUI:
                 active_task = task_queue.get_active_task()
                 target_task_id = active_task.task_id if active_task else ""
 
-            # 构建新的返回格式
-            self.feedback_result = {
+            # 构建新的返回格式（使用局部变量，避免并发读取/清空导致不一致）
+            feedback_result: FeedbackResult = {
                 "user_input": feedback_text,
                 "selected_options": selected_options,
                 "images": images,
             }
 
+            with self._state_lock:
+                self.feedback_result = feedback_result
+
             # 调试信息：记录最终存储的数据
             logger.debug("最终存储的反馈结果:")
             logger.debug(
-                f"  - user_input: '{self.feedback_result['user_input']}' (长度: {len(self.feedback_result['user_input'])})"
+                f"  - user_input: '{feedback_result['user_input']}' (长度: {len(feedback_result['user_input'])})"
             )
-            logger.debug(
-                f"  - selected_options: {self.feedback_result['selected_options']}"
-            )
-            logger.debug(f"  - images数量: {len(self.feedback_result['images'])}")
+            logger.debug(f"  - selected_options: {feedback_result['selected_options']}")
+            logger.debug(f"  - images数量: {len(feedback_result['images'])}")
 
             # 如果显式指定了任务，优先提交给该任务；否则提交到当前激活任务
             if target_task_id:
                 logger.info(f"同时将反馈提交到TaskQueue中的目标任务: {target_task_id}")
-                if self.feedback_result is not None:
-                    task_queue.complete_task(
-                        target_task_id,
-                        cast(dict[str, Any], self.feedback_result),
-                    )
+                task_queue.complete_task(
+                    target_task_id,
+                    cast(dict[str, Any], feedback_result),
+                )
 
             # 清空内容并等待下一次调用
-            self.current_prompt = ""
-            self.current_options = []
-            self.has_content = False
+            with self._state_lock:
+                self.current_prompt = ""
+                self.current_options = []
+                self.has_content = False
             return jsonify(
                 {
                     "status": "success",
@@ -2144,21 +2226,28 @@ class WebFeedbackUI:
             new_auto_resubmit_timeout = validate_auto_resubmit_timeout(timeout_int)
 
             try:
-                # 更新内容
-                self.current_prompt = new_prompt
-                self.current_options = new_options
-                self.current_task_id = new_task_id
-                self.current_auto_resubmit_timeout = new_auto_resubmit_timeout
-                # 记录是否显式指定（用于配置热更新：显式指定则不随全局配置变动）
-                self._single_task_timeout_explicit = timeout_explicit
-                self.has_content = bool(new_prompt.strip())
-                # 重置反馈结果
-                self.feedback_result = None
+                # 更新内容（锁保护：与 /api/config 轮询并发时保持一致）
+                with self._state_lock:
+                    self.current_prompt = new_prompt
+                    self.current_options = new_options
+                    self.current_task_id = new_task_id
+                    self.current_auto_resubmit_timeout = new_auto_resubmit_timeout
+                    # 记录是否显式指定（用于配置热更新：显式指定则不随全局配置变动）
+                    self._single_task_timeout_explicit = timeout_explicit
+                    self.has_content = bool(new_prompt.strip())
+                    # 重置反馈结果
+                    self.feedback_result = None
+
+                    prompt_snapshot = str(self.current_prompt)
+                    options_snapshot = list(self.current_options)
+                    task_id_snapshot = self.current_task_id
+                    timeout_snapshot = int(self.current_auto_resubmit_timeout)
+                    has_content_snapshot = bool(self.has_content)
 
                 prompt_html = ""
-                if self.has_content:
+                if has_content_snapshot:
                     try:
-                        prompt_html = self.render_markdown(self.current_prompt)
+                        prompt_html = self.render_markdown(prompt_snapshot)
                     except Exception as e:
                         logger.warning(
                             f"/api/update prompt 渲染失败: {e}", exc_info=True
@@ -2169,12 +2258,12 @@ class WebFeedbackUI:
                     {
                         "status": "success",
                         "message": "内容已更新",
-                        "prompt": self.current_prompt,
+                        "prompt": prompt_snapshot,
                         "prompt_html": prompt_html,
-                        "predefined_options": self.current_options,
-                        "task_id": self.current_task_id,
-                        "auto_resubmit_timeout": self.current_auto_resubmit_timeout,
-                        "has_content": self.has_content,
+                        "predefined_options": options_snapshot,
+                        "task_id": task_id_snapshot,
+                        "auto_resubmit_timeout": timeout_snapshot,
+                        "has_content": has_content_snapshot,
                     }
                 )
             except Exception as e:
@@ -2220,13 +2309,13 @@ class WebFeedbackUI:
                 - 反馈结果是一次性的，读取后即清空
                 - 适用于轮询场景，waiting状态表示还未提交
             """
-            if self.feedback_result:
-                # 返回反馈结果并清空
+            with self._state_lock:
                 result = self.feedback_result
+                # 返回反馈后清空，保证“只消费一次”
                 self.feedback_result = None
+            if result:
                 return jsonify({"status": "success", "feedback": result})
-            else:
-                return jsonify({"status": "waiting", "feedback": None})
+            return jsonify({"status": "waiting", "feedback": None})
 
         @self.app.route("/api/test-bark", methods=["POST"])
         def test_bark_notification():
@@ -3313,10 +3402,11 @@ class WebFeedbackUI:
             - 适用于单任务模式，多任务模式请使用TaskQueue API
             - 前端需通过/api/config轮询获取更新后的内容
         """
-        self.current_prompt = new_prompt
-        self.current_options = new_options if new_options is not None else []
-        self.current_task_id = new_task_id
-        self.has_content = bool(new_prompt)
+        with self._state_lock:
+            self.current_prompt = new_prompt
+            self.current_options = new_options if new_options is not None else []
+            self.current_task_id = new_task_id
+            self.has_content = bool(new_prompt)
         if new_prompt:
             logger.info(f"内容已更新: {new_prompt[:50]}... (task_id: {new_task_id})")
         else:
@@ -3509,23 +3599,27 @@ class WebFeedbackUI:
             - 黑名单优先级高于白名单
             - 无效的IP地址或网络配置会被跳过
         """
-        if not self.network_security_config.get("enable_access_control", True):
+        # 快照配置，避免热更新时读到不一致视图
+        cfg = (
+            self.network_security_config
+            if isinstance(self.network_security_config, dict)
+            else {}
+        )
+        if not cfg.get("enable_access_control", True):
             return True
 
         try:
             client_addr = ip_address(client_ip)
 
             # 检查黑名单
-            blocked_ips = self.network_security_config.get("blocked_ips", [])
+            blocked_ips = cfg.get("blocked_ips", [])
             for blocked_ip in blocked_ips:
                 if str(client_addr) == blocked_ip:
                     logger.warning(f"IP {client_ip} 在黑名单中，拒绝访问")
                     return False
 
             # 检查白名单网络
-            allowed_networks = self.network_security_config.get(
-                "allowed_networks", ["127.0.0.0/8", "::1/128"]
-            )
+            allowed_networks = cfg.get("allowed_networks", ["127.0.0.0/8", "::1/128"])
             for network_str in allowed_networks:
                 try:
                     if "/" in network_str:

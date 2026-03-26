@@ -7,7 +7,7 @@ const { createLogger } = require('./logger')
  * iframe 模式 - 极简版本，仅显示服务器 Web UI
  */
 const DEFAULT_SERVER_URL = 'http://localhost:8080'
-let EXT_VERSION = '0.3.4'
+let EXT_VERSION = '0.0.0'
 try {
   EXT_VERSION = require('./package.json').version || EXT_VERSION
 } catch {
@@ -132,8 +132,7 @@ function activate(context) {
 
   const buildStatusBarTooltip = ({ connected, active, pending } = {}) => {
     try {
-      const statusText =
-        connected === true ? '已连接' : connected === false ? '未连接' : '未知'
+      const statusText = connected === true ? '已连接' : connected === false ? '未连接' : '未知'
       const a = typeof active === 'number' && Number.isFinite(active) ? active : 0
       const p = typeof pending === 'number' && Number.isFinite(pending) ? pending : 0
       const total = a + p
@@ -251,7 +250,8 @@ function activate(context) {
         data && data.stats && typeof data.stats.pending === 'number' ? data.stats.pending : 0
       const connected = !!(data && data.success)
       const durationMs = Date.now() - startedAt
-      const changed = connected !== prevConnected || active !== prevActive || pending !== prevPending
+      const changed =
+        connected !== prevConnected || active !== prevActive || pending !== prevPending
       lastPollAtMs = Date.now()
       lastPollDurationMs = durationMs
       lastPollHttpStatus = resp.status
@@ -348,7 +348,9 @@ function activate(context) {
   let lastWebviewStatsAtMs = 0
 
   const isWebviewStatsFresh = () =>
-    isViewVisible && lastWebviewStatsAtMs > 0 && Date.now() - lastWebviewStatsAtMs < WEBVIEW_STATS_FRESH_MS
+    isViewVisible &&
+    lastWebviewStatsAtMs > 0 &&
+    Date.now() - lastWebviewStatsAtMs < WEBVIEW_STATS_FRESH_MS
 
   const computeBaseDelayMs = () => {
     // Webview 可见且持续上报 stats：状态栏可复用 Webview 轮询结果，扩展侧降频探测
@@ -413,8 +415,12 @@ function activate(context) {
       // Webview 轮询的 /api/tasks 已包含 stats：这里直接复用来更新状态栏
       lastWebviewStatsAtMs = Date.now()
       const c = connected === true
-      const a = typeof active === 'number' && Number.isFinite(active) ? Math.max(0, Math.floor(active)) : 0
-      const p = typeof pending === 'number' && Number.isFinite(pending) ? Math.max(0, Math.floor(pending)) : 0
+      const a =
+        typeof active === 'number' && Number.isFinite(active) ? Math.max(0, Math.floor(active)) : 0
+      const p =
+        typeof pending === 'number' && Number.isFinite(pending)
+          ? Math.max(0, Math.floor(pending))
+          : 0
 
       const changed = c !== lastConnected || a !== lastActive || p !== lastPending
       if (changed) {
@@ -453,11 +459,7 @@ function activate(context) {
 
       const prev = serverUrl
       serverUrl = next
-      logger.event(
-        'config.update',
-        { key: 'serverUrl', prev, next: serverUrl },
-        { level: 'info' }
-      )
+      logger.event('config.update', { key: 'serverUrl', prev, next: serverUrl }, { level: 'info' })
 
       // 强制刷新状态栏
       lastConnected = null

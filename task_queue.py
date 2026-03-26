@@ -34,6 +34,10 @@ class Task:
         if self.status == "completed":
             return 0
 
+        # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”
+        if self.auto_resubmit_timeout <= 0:
+            return 0
+
         # 【优化】使用单调时间计算，不受系统时间调整影响
         elapsed = time.monotonic() - self.created_at_monotonic
         remaining = self.auto_resubmit_timeout - elapsed
@@ -43,6 +47,9 @@ class Task:
 
     def get_deadline_monotonic(self) -> float:
         """获取截止时间的单调时间戳"""
+        # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”，不应过期
+        if self.auto_resubmit_timeout <= 0:
+            return float("inf")
         return self.created_at_monotonic + self.auto_resubmit_timeout
 
     def is_expired(self) -> bool:
@@ -54,6 +61,9 @@ class Task:
             bool: True 表示已超时，False 表示未超时
         """
         if self.status == "completed":
+            return False
+        # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”，不应过期
+        if self.auto_resubmit_timeout <= 0:
             return False
         return time.monotonic() > self.get_deadline_monotonic()
 
@@ -217,8 +227,11 @@ class TaskQueue:
         """添加任务，无活动任务时自动激活"""
         new_status: str | None = None
         with self._lock:
-            # 限制前端倒计时最大不超过250秒（与 server.py / web_ui.py 保持一致）
-            auto_resubmit_timeout = min(auto_resubmit_timeout, 250)
+            # 倒计时边界对齐：0=禁用；否则限制到 [30, 250]（与 server.py/web_ui.py 对齐）
+            if auto_resubmit_timeout <= 0:
+                auto_resubmit_timeout = 0
+            else:
+                auto_resubmit_timeout = max(30, min(auto_resubmit_timeout, 250))
 
             if len(self._tasks) >= self.max_tasks:
                 logger.warning(
@@ -310,6 +323,12 @@ class TaskQueue:
         返回:
             int: 实际更新的任务数量
         """
+        # 倒计时边界对齐：0=禁用；否则限制到 [30, 250]（与 server.py/web_ui.py 对齐）
+        if auto_resubmit_timeout <= 0:
+            auto_resubmit_timeout = 0
+        else:
+            auto_resubmit_timeout = max(30, min(auto_resubmit_timeout, 250))
+
         updated = 0
         with self._lock:
             for task in self._tasks.values():

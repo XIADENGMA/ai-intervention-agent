@@ -12,11 +12,13 @@
 
 - 一键运行（推荐）：`uv run python scripts/ci_gate.py`
   - 默认是“本地模式”：会自动格式化（`ruff format`），并运行 ruff/ty/pytest/minify
-  - CI 模式（只检查不改动文件）：`uv run python scripts/ci_gate.py --ci --with-coverage`
+  - CI 模式（只检查；不自动格式化源码，但会生成 gitignore 的构建产物如 `.min`）：`uv run python scripts/ci_gate.py --ci --with-coverage`
   - 若希望一并跑 VSCode 插件门禁：`uv run python scripts/ci_gate.py --with-vscode`
 - VSCode 插件：`npm run vscode:check`（Linux/headless：`xvfb-run -a npm run vscode:check`）
   - 若 Node 由 `fnm` 管理且在非交互 shell 下 `node` 不可用，可用：`fnm exec --using v24.14.0 -- npm run vscode:check`
-  - 说明：`vscode:check` 包含打包步骤，会在 `packages/vscode/` 目录生成 `.vsix`（已 gitignore）。**完成测试后必须清理**：`rm -f packages/vscode/*.vsix`
+  - 说明：`vscode:check` 包含打包步骤，会在 `packages/vscode/` 目录生成 `.vsix`（已 gitignore）
+    - 若通过 `uv run python scripts/ci_gate.py --with-vscode` 执行：脚本会在运行前/后自动清理 `.vsix`（避免 CI 污染）
+    - 若手动执行 `npm run vscode:check`：完成测试后请清理：`rm -f packages/vscode/*.vsix`
 
 ### 发布（tag 触发 GitHub Actions Release）
 

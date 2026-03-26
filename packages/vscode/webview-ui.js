@@ -61,7 +61,9 @@
       ? __cfgEl.getAttribute('data-marked-js-url')
       : ''
   const PRISM_JS_URL =
-    __cfgEl && __cfgEl.getAttribute('data-prism-js-url') ? __cfgEl.getAttribute('data-prism-js-url') : ''
+    __cfgEl && __cfgEl.getAttribute('data-prism-js-url')
+      ? __cfgEl.getAttribute('data-prism-js-url')
+      : ''
   const NOTIFY_CORE_JS_URL =
     __cfgEl && __cfgEl.getAttribute('data-notify-core-js-url')
       ? __cfgEl.getAttribute('data-notify-core-js-url')
@@ -337,12 +339,14 @@
     if (!container) return
     const opts = options && typeof options === 'object' ? options : {}
     const variantRaw = opts.variant ? String(opts.variant) : ''
-    const variant = variantRaw && LUCIDE_SVG_ICONS[variantRaw] ? variantRaw : NO_CONTENT_FALLBACK_ICON_VARIANT
+    const variant =
+      variantRaw && LUCIDE_SVG_ICONS[variantRaw] ? variantRaw : NO_CONTENT_FALLBACK_ICON_VARIANT
     const svg = LUCIDE_SVG_ICONS[variant] || ''
     if (!svg) return
 
     const preferActivityIcon = variant === 'hourglass' && !!NO_CONTENT_FALLBACK_SVG_URL
-    const svgMarkup = preferActivityIcon && noContentFallbackSvgMarkup ? noContentFallbackSvgMarkup : svg
+    const svgMarkup =
+      preferActivityIcon && noContentFallbackSvgMarkup ? noContentFallbackSvgMarkup : svg
     if (preferActivityIcon && noContentFallbackSvgMarkup) {
       try {
         if (!noContentFallbackSvgAppliedLogged) {
@@ -373,8 +377,13 @@
     let wrapper = null
     try {
       const canSpin =
-        variant === 'loader' || variant === 'loader-circle' || variant === 'rotate-cw' || variantRaw === 'spin'
-      const shouldSpin = !!(opts && typeof opts === 'object' && opts.spin === true) || (canSpin && NO_CONTENT_FALLBACK_ICON_SPIN)
+        variant === 'loader' ||
+        variant === 'loader-circle' ||
+        variant === 'rotate-cw' ||
+        variantRaw === 'spin'
+      const shouldSpin =
+        !!(opts && typeof opts === 'object' && opts.spin === true) ||
+        (canSpin && NO_CONTENT_FALLBACK_ICON_SPIN)
       wrapper = document.createElement('span')
       wrapper.className = 'aiia-fallback-icon' + (shouldSpin ? ' aiia-spin' : '')
       wrapper.innerHTML = svgMarkup
@@ -596,7 +605,13 @@
         breaks: true, // 支持 GFM 换行
         gfm: true, // 启用 GitHub Flavored Markdown
         headerIds: false, // 禁用标题ID（避免冲突）
-        mangle: false // 禁用邮件地址混淆
+        mangle: false, // 禁用邮件地址混淆
+        // 防御纵深：禁用 Markdown 中的原生 HTML 渲染（避免 style/iframe 等注入造成 UI 污染）
+        renderer: {
+          html() {
+            return ''
+          }
+        }
       })
       markedOptionsConfigured = true
     } catch (e) {
@@ -712,7 +727,11 @@
           const start = Date.now()
           const tick = () => {
             try {
-              if (typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function') {
+              if (
+                typeof Prism !== 'undefined' &&
+                Prism &&
+                typeof Prism.highlightAllUnder === 'function'
+              ) {
                 resolve(true)
                 return
               }
@@ -743,7 +762,9 @@
         }
         s.onload = () => {
           try {
-            resolve(typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function')
+            resolve(
+              typeof Prism !== 'undefined' && Prism && typeof Prism.highlightAllUnder === 'function'
+            )
           } catch (e) {
             resolve(false)
           }
@@ -2055,7 +2076,9 @@
           const active = typeof stats.active === 'number' ? stats.active : 0
           const pending = typeof stats.pending === 'number' ? stats.pending : 0
           const total =
-            typeof stats.total === 'number' && Number.isFinite(stats.total) ? stats.total : active + pending
+            typeof stats.total === 'number' && Number.isFinite(stats.total)
+              ? stats.total
+              : active + pending
           vscode.postMessage({
             type: 'tasksStats',
             connected: !!(tasksData && tasksData.success),
@@ -2510,18 +2533,41 @@
         // 忽略
       }
 
-      const response = await fetch(
-        SERVER_URL + '/api/tasks/' + encodeURIComponent(taskId) + '/activate',
-        {
-          method: 'POST'
+      // 激活任务：增加超时兜底，避免网络半开导致 UI 长时间卡住
+      let response = null
+      let activateController = null
+      let activateTimeoutId = null
+      try {
+        const activateOptions = { method: 'POST' }
+        if (typeof AbortController !== 'undefined') {
+          try {
+            activateController = new AbortController()
+            activateOptions.signal = activateController.signal
+            activateTimeoutId = setTimeout(() => {
+              try {
+                activateController.abort()
+              } catch (e) {
+                /* 忽略 */
+              }
+            }, 4000)
+          } catch (e) {
+            activateController = null
+          }
         }
-      )
+        response = await fetch(
+          SERVER_URL + '/api/tasks/' + encodeURIComponent(taskId) + '/activate',
+          activateOptions
+        )
+      } finally {
+        if (activateTimeoutId) clearTimeout(activateTimeoutId)
+      }
 
-      if (response.ok) {
+      if (response && response.ok) {
         log('任务已激活: ' + taskId)
         requestImmediateRefresh()
       } else {
-        logError('激活任务失败: HTTP ' + response.status)
+        const status = response && typeof response.status === 'number' ? response.status : 0
+        logError('激活任务失败: HTTP ' + status)
         vscode.postMessage({
           type: 'showInfo',
           message: '切换任务失败：' + taskId
@@ -2555,10 +2601,16 @@
         }
       }
     } catch (error) {
-      logError('激活任务失败: ' + error.message)
+      const isAbort = !!(
+        error &&
+        (error.name === 'AbortError' || String(error.name || '') === 'AbortError')
+      )
+      const errMsg =
+        error && error.message ? String(error.message) : isAbort ? '请求超时' : String(error)
+      logError(isAbort ? '激活任务超时：请检查服务端是否可用' : '激活任务失败: ' + errMsg)
       vscode.postMessage({
         type: 'showInfo',
-        message: '切换任务失败：' + error.message
+        message: '切换任务失败：' + errMsg
       })
       // 回滚 UI（尽力而为）
       try {
@@ -3927,7 +3979,10 @@
       }
       return false
     } catch (error) {
-      const isAbort = !!(error && (error.name === 'AbortError' || String(error.name || '') === 'AbortError'))
+      const isAbort = !!(
+        error &&
+        (error.name === 'AbortError' || String(error.name || '') === 'AbortError')
+      )
       if (isAbort) {
         logError('提交超时：请检查服务端是否可用')
       } else {
@@ -4308,6 +4363,7 @@
 
   function renderUploadedImages() {
     const container = document.getElementById('uploadedImages')
+    if (!container) return
     container.innerHTML = ''
 
     uploadedImages.forEach((image, index) => {
@@ -4339,9 +4395,17 @@
   }
 
   function dataURLtoBlob(dataURL) {
-    const arr = dataURL.split(',')
-    const mime = arr[0].match(/:(.*?);/)[1]
-    const bstr = atob(arr[1])
+    const arr = String(dataURL || '').split(',')
+    const header = arr[0] || ''
+    const match = header.match(/:(.*?);/)
+    const mime = match && match[1] ? match[1] : 'application/octet-stream'
+    const body = arr[1] || ''
+    let bstr = ''
+    try {
+      bstr = atob(body)
+    } catch (e) {
+      return new Blob([], { type: mime })
+    }
     let n = bstr.length
     const u8arr = new Uint8Array(n)
     while (n--) {

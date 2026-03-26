@@ -12,11 +12,13 @@ This document describes the recommended development and release workflow for thi
 
 - One-command gate (recommended): `uv run python scripts/ci_gate.py`
   - Default is **local mode**: auto-formats (`ruff format`) and runs ruff/ty/pytest/minify
-  - CI mode (check-only): `uv run python scripts/ci_gate.py --ci --with-coverage`
+  - CI mode (check-only; no auto-format, but may generate gitignored build artifacts like `.min`): `uv run python scripts/ci_gate.py --ci --with-coverage`
   - Include VSCode checks: `uv run python scripts/ci_gate.py --with-vscode`
 - VSCode extension: `npm run vscode:check` (Linux/headless: `xvfb-run -a npm run vscode:check`)
   - If you use `fnm` and `node` is unavailable in non-interactive shells: `fnm exec --using v24.14.0 -- npm run vscode:check`
-  - Note: `vscode:check` includes packaging and will generate a `.vsix` under `packages/vscode/` (gitignored). **You must clean up after finishing tests**: `rm -f packages/vscode/*.vsix`
+  - Note: `vscode:check` includes packaging and will generate a `.vsix` under `packages/vscode/` (gitignored)
+    - If you run it via `uv run python scripts/ci_gate.py --with-vscode`: the script will automatically clean `.vsix` before/after running (avoid CI/workspace pollution)
+    - If you run `npm run vscode:check` manually: please clean it after finishing tests: `rm -f packages/vscode/*.vsix`
 
 ### Release (tag triggers GitHub Actions)
 

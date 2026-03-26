@@ -10,6 +10,7 @@ AI Intervention Agent - 任务队列单元测试
 5. 活动任务切换
 """
 
+import math
 import sys
 import threading
 import time
@@ -67,6 +68,14 @@ class TestTaskBasic(unittest.TestCase):
 
         self.assertEqual(remaining, 0)
 
+    def test_timeout_zero_not_expired(self):
+        """auto_resubmit_timeout=0 表示禁用，不应被判定为过期"""
+        from task_queue import Task
+
+        task = Task(task_id="task-1", prompt="测试提示", auto_resubmit_timeout=0)
+        self.assertFalse(task.is_expired())
+        self.assertTrue(math.isinf(task.get_deadline_monotonic()))
+
 
 class TestTaskQueueBasic(unittest.TestCase):
     """测试任务队列基本功能"""
@@ -87,6 +96,14 @@ class TestTaskQueueBasic(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertIsNotNone(self.queue.get_task("task-1"))
+
+    def test_add_task_clamps_timeout_min(self):
+        """倒计时边界：auto_resubmit_timeout<30 时应被钳制到 30（0 例外）"""
+        self.queue.add_task("task-1", "测试提示", auto_resubmit_timeout=1)
+        task = self.queue.get_task("task-1")
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.auto_resubmit_timeout, 30)
 
     def test_add_duplicate_task(self):
         """测试添加重复任务"""
