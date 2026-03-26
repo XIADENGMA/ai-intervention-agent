@@ -642,6 +642,9 @@ class WebFeedbackUI(
         self.initial_empty = not bool(prompt)
         # WebFeedbackUI 会被轮询与提交并发访问（Flask 默认 threaded），用锁保护共享状态
         self._state_lock = threading.RLock()
+        # HTML 模板缓存：避免每次请求都从磁盘读取+字符串替换
+        self._template_cache: str | None = None
+        self._template_cache_mtimes: dict[str, float] = {}
         self.app = Flask(__name__)
         CORS(self.app)
         # 【热更新】注册配置变更回调：让运行中的任务倒计时也能跟随配置更新
@@ -1259,54 +1262,58 @@ class WebFeedbackUI(
 
         os.kill(os.getpid(), signal.SIGINT)
 
+    def _collect_template_mtimes(self) -> dict[str, float]:
+        """收集模板及其依赖静态资源的 mtime，用于缓存失效判断。"""
+        current_dir = Path(__file__).resolve().parent
+        tracked: list[Path] = [
+            current_dir / "templates" / "web_ui.html",
+            current_dir / "static" / "css" / "main.css",
+            current_dir / "static" / "js" / "multi_task.js",
+            current_dir / "static" / "js" / "theme.js",
+            current_dir / "static" / "js" / "app.js",
+        ]
+        result: dict[str, float] = {}
+        for p in tracked:
+            try:
+                result[str(p)] = p.stat().st_mtime
+            except OSError:
+                result[str(p)] = 0.0
+        return result
+
     def get_html_template(self) -> str:
-        """读取并处理HTML模板文件
+        """读取并处理HTML模板文件（带 mtime 失效缓存）。
 
-        功能说明：
-            读取web_ui.html模板文件，替换内联CSS/JS为外部文件引用，返回处理后的HTML。
-
-        处理逻辑：
-            1. 尝试使用importlib.resources读取模板（Python 3.9+，适用于打包环境）
-            2. 失败则降级到传统文件路径读取（开发环境）
-            3. 若模板不存在，尝试从sys.path查找（打包环境）
-            4. 调用_replace_inline_css()替换内联CSS为外部链接
-            5. 为 multi_task.js 添加版本号
-            6. 返回处理后的HTML
+        缓存策略：
+            首次请求从磁盘读取模板并完成所有字符串替换，结果缓存到内存。
+            后续请求先比对模板文件和静态资源的 mtime：
+            - 若无变化，直接返回缓存内容（零 I/O、零字符串操作）
+            - 若文件有更新，重新生成并更新缓存
 
         返回值：
             str: 处理后的HTML模板内容（包含CSP随机数、外部CSS/JS引用）
-
-        异常处理：
-            - FileNotFoundError: 返回基本错误页面
-            - 其他异常: 返回包含错误信息的页面
-
-        注意事项：
-            - 优先使用importlib.resources，兼容打包后的环境
-            - 模板路径：templates/web_ui.html
-            - 内联CSS/JS替换确保CSP安全策略生效
-            - 错误页面是fallback，正常情况不应触发
         """
+        current_mtimes = self._collect_template_mtimes()
+        if (
+            self._template_cache is not None
+            and current_mtimes == self._template_cache_mtimes
+        ):
+            return self._template_cache
+
         try:
             # 优先尝试使用 importlib.resources (Python 3.9+)
             try:
                 from importlib import resources
 
-                # 尝试从包中读取资源
                 html_content = (
                     resources.files("templates")
                     .joinpath("web_ui.html")
                     .read_text(encoding="utf-8")
                 )
             except (ImportError, AttributeError, FileNotFoundError, TypeError):
-                # 降级到传统文件路径方式
-                # 获取当前文件所在目录
                 current_dir = Path(__file__).resolve().parent
-                # 构建模板文件路径
                 template_path = current_dir / "templates" / "web_ui.html"
 
-                # 如果模板文件不存在，尝试从父目录查找
                 if not template_path.exists():
-                    # 可能是在打包后的环境中，尝试从包的安装位置查找
                     import sys
 
                     for path in sys.path:
@@ -1315,20 +1322,13 @@ class WebFeedbackUI(
                             template_path = candidate_path
                             break
 
-                # 读取模板文件
                 with open(template_path, "r", encoding="utf-8") as f:
                     html_content = f.read()
 
-            # 替换模板变量 {{ csp_nonce }} 为实际的 CSP nonce 值
             html_content = html_content.replace("{{ csp_nonce }}", self.csp_nonce)
-
-            # 替换模板变量 {{ version }} 为项目版本号
             html_content = html_content.replace("{{ version }}", get_project_version())
-
-            # 替换模板变量 {{ github_url }} 为 GitHub 仓库地址
             html_content = html_content.replace("{{ github_url }}", GITHUB_URL)
 
-            # 获取静态资源版本号（基于文件修改时间，解决浏览器缓存问题）
             current_dir = Path(__file__).resolve().parent
             css_version = self._get_file_version(
                 current_dir / "static" / "css" / "main.css"
@@ -1343,17 +1343,13 @@ class WebFeedbackUI(
                 current_dir / "static" / "js" / "app.js"
             )
 
-            # 替换内联CSS为外部CSS文件引用（带版本号）
             css_link = f'<link rel="stylesheet" href="/static/css/main.css?v={css_version}" nonce="{self.csp_nonce}">'
             html_content = self._replace_inline_css(html_content, css_link)
 
-            # 为 multi_task.js 也添加版本号（在 HTML 模板中引用）
             html_content = html_content.replace(
                 'src="/static/js/multi_task.js"',
                 f'src="/static/js/multi_task.js?v={multi_task_version}"',
             )
-
-            # 为主题与主应用脚本添加版本号（避免浏览器缓存导致修复不生效，尤其是 ai.local 真机访问）
             html_content = html_content.replace(
                 'src="/static/js/theme.js"',
                 f'src="/static/js/theme.js?v={theme_version}"',
@@ -1363,6 +1359,8 @@ class WebFeedbackUI(
                 f'src="/static/js/app.js?v={app_version}"',
             )
 
+            self._template_cache = html_content
+            self._template_cache_mtimes = current_mtimes
             return html_content
         except FileNotFoundError:
             # 如果模板文件不存在，返回一个基本的错误页面
