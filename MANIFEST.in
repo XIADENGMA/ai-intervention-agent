@@ -7,10 +7,11 @@ include config_utils.py
 include enhanced_logging.py
 include file_validator.py
 include notification_manager.py
+include notification_models.py
 include notification_providers.py
+include shared_types.py
 include task_queue.py
 include config.jsonc.default
-include test.py
 recursive-include templates *.html
 recursive-include static *
 recursive-include sounds *
