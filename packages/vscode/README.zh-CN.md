@@ -44,8 +44,8 @@ npm install
 
 ## macOS 原生通知
 
-- macOS 原生通知通过 `osascript display notification` 发送。
-- 通知的“归属/图标/应用名”属于**尽力而为**：扩展会尝试将通知归属到宿主编辑器（VS Code / Cursor 等）。若系统环境不支持该归属机制，通知可能回退为默认的 AppleScript 发送方显示。
+- macOS 原生通知优先通过内置的 `terminal-notifier` 发送，失败时回退为 `osascript display notification`。
+- 通知的“归属/图标/应用名”属于**尽力而为**：扩展会尝试将通知归属到宿主编辑器（VS Code / Cursor 等）。若系统环境不支持该归属机制，通知可能回退为默认发送方显示。
 - 如需开关：侧边栏面板 → **通知设置** → **macOS 原生通知**（默认开启）
 
 ## 生成 VSIX（.vsix）

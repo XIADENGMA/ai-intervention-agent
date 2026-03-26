@@ -36,6 +36,7 @@
     "webview-helpers.js",
     "logger.js",
     "notification-*.js",
+    "vendor/terminal-notifier/**",
     "lottie/**",
     "mathjax/**",
     "lottie.min.js",

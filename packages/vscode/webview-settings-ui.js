@@ -20,7 +20,9 @@
 
   const cfgEl = typeof document !== 'undefined' ? document.getElementById('aiia-config') : null
   const SERVER_URL =
-    cfgEl && cfgEl.getAttribute('data-server-url') ? String(cfgEl.getAttribute('data-server-url')) : ''
+    cfgEl && cfgEl.getAttribute('data-server-url')
+      ? String(cfgEl.getAttribute('data-server-url'))
+      : ''
 
   function postMessage(message) {
     try {
@@ -56,7 +58,9 @@
   function getNotifyCore() {
     try {
       // eslint-disable-next-line no-undef
-      return globalThis && globalThis.AIIAWebviewNotifyCore ? globalThis.AIIAWebviewNotifyCore : null
+      return globalThis && globalThis.AIIAWebviewNotifyCore
+        ? globalThis.AIIAWebviewNotifyCore
+        : null
     } catch (e) {
       try {
         // eslint-disable-next-line no-undef
@@ -93,9 +97,6 @@
   let settingsAutoSavePending = false
 
   let uiInitialized = false
-  let lastNativeDiagnosticText = ''
-  const pendingNativeTests = new Map() // requestId -> timer
-  const pendingClipboardWrites = new Map() // requestId -> {purpose}
 
   function setSettingsHint(message, isError, autoClearMs) {
     const hint = document.getElementById('settingsHint')
@@ -455,133 +456,32 @@
         return
       }
       if (!updates || !updates.macosNativeEnabled) {
-        // 允许测试：用于排查“开关保存/后端配置同步/扩展侧执行”哪一段出了问题
         setSettingsHint('提示：当前未开启“macOS 原生通知”，仍将执行一次测试用于排查…', true, 2000)
       } else {
-        setSettingsHint('测试中…', false)
+        setSettingsHint('已触发测试通知：请留意系统通知', false, 2000)
       }
 
-      const requestId = `native_test_${Date.now().toString(36)}_${Math.random()
-        .toString(16)
-        .slice(2)}`
-      const timer = setTimeout(() => {
-        // 软超时：不丢弃 requestId，允许“晚到结果”覆盖当前提示（避免两次 osascript 尝试累计 > 12s 时误判）
-        setSettingsHint(
-          '测试耗时较长：仍在等待扩展侧响应…（可能系统阻塞/首次执行较慢；如稍后收到结果会自动更新）',
-          true
-        )
-        // 兜底清理：避免极端情况下 Map 常驻
-        setTimeout(() => {
-          try {
-            if (pendingNativeTests.has(requestId)) pendingNativeTests.delete(requestId)
-          } catch (e) {
-            // 忽略
-          }
-        }, 60000)
-      }, 12000)
-      pendingNativeTests.set(requestId, timer)
-
       const posted = postMessage({
-        type: 'testMacOSNativeNotification',
-        requestId,
-        title: 'AI Intervention Agent 测试',
-        message: '这是一条 macOS 原生通知测试'
+        type: 'notify',
+        event: {
+          title: 'AI Intervention Agent 测试',
+          message: '这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。',
+          trigger: 'immediate',
+          types: ['macos_native'],
+          metadata: { isTest: true, diagnostic: true, kind: 'test_macos_native' },
+          source: 'webview-settings-ui',
+          dedupeKey: 'test:macos_native'
+        }
       })
       if (!posted) {
-        try {
-          pendingNativeTests.delete(requestId)
-        } catch (e) {
-          // 忽略
-        }
-        try {
-          clearTimeout(timer)
-        } catch (e) {
-          // 忽略
-        }
-        setSettingsHint('发送失败：VS Code Webview API 不可用（请尝试关闭/重新打开面板或重载窗口）', true)
+        setSettingsHint(
+          '发送失败：VS Code Webview API 不可用（请尝试关闭/重新打开面板或重载窗口）',
+          true
+        )
         return
       }
     } catch (e) {
       setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true)
-    }
-  }
-
-  function formatNativeTestResultText(message) {
-    const ok = !!(message && message.ok)
-    const platform = message && message.platform ? String(message.platform) : ''
-    const appName = message && message.appName ? String(message.appName) : ''
-    const diag = message && message.diagnostic && typeof message.diagnostic === 'object' ? message.diagnostic : null
-    const delivered = message && message.delivered && typeof message.delivered === 'object' ? message.delivered : null
-    const code = diag && diag.code ? String(diag.code) : ''
-    const bundleId = diag && diag.bundleId ? String(diag.bundleId) : ''
-    const stderrPreview = diag && diag.stderrPreview ? String(diag.stderrPreview) : ''
-    const exitCode =
-      diag && (diag.exitCode === 0 || typeof diag.exitCode === 'number') ? String(diag.exitCode) : ''
-    const hints = message && Array.isArray(message.hints) ? message.hints.map(String).filter(Boolean) : []
-
-    const lines = []
-    lines.push(ok ? '✅ macOS 原生通知：发送成功（扩展侧）' : '❌ macOS 原生通知：发送失败（扩展侧）')
-    if (platform) lines.push(`platform=${platform}`)
-    if (appName) lines.push(`appName=${appName}`)
-    if (delivered && delivered.macos_native !== undefined) {
-      lines.push(`delivered.macos_native=${String(!!delivered.macos_native)}`)
-    }
-    if (code) lines.push(`code=${code}`)
-    if (exitCode) lines.push(`exitCode=${exitCode}`)
-    if (bundleId) lines.push(`bundleId=${bundleId}`)
-    if (stderrPreview) lines.push(`stderr=${stderrPreview}`)
-    if (hints.length > 0) {
-      lines.push('提示：')
-      for (const h of hints) lines.push('- ' + h)
-    }
-    return lines.join('\n')
-  }
-
-  function handleTestMacOSNativeNotificationResult(message) {
-    const requestId = message && message.requestId ? String(message.requestId) : ''
-    if (!requestId || !pendingNativeTests.has(requestId)) return
-    const timer = pendingNativeTests.get(requestId)
-    pendingNativeTests.delete(requestId)
-    try {
-      if (timer) clearTimeout(timer)
-    } catch (e) {
-      // 忽略
-    }
-
-    const text = formatNativeTestResultText(message)
-    lastNativeDiagnosticText = text
-    setSettingsHint(text, !message || !message.ok)
-  }
-
-  function copyLastNativeDiagnostic() {
-    if (!lastNativeDiagnosticText) {
-      if (pendingNativeTests && pendingNativeTests.size > 0) {
-        setSettingsHint('测试仍在进行中：请等待结果回传后再复制诊断', true)
-        return
-      }
-      setSettingsHint('暂无诊断信息：请先点击“测试原生通知”', true)
-      return
-    }
-    const requestId = `clip_${Date.now().toString(36)}_${Math.random().toString(16).slice(2)}`
-    pendingClipboardWrites.set(requestId, { purpose: 'native_diag' })
-    setSettingsHint('复制诊断中…', false, 1200)
-    const posted = postMessage({ type: 'writeClipboardText', requestId, text: lastNativeDiagnosticText })
-    if (!posted) {
-      pendingClipboardWrites.delete(requestId)
-      setSettingsHint('复制失败：VS Code Webview API 不可用', true)
-    }
-  }
-
-  function handleWriteClipboardTextResult(message) {
-    const requestId = message && message.requestId ? String(message.requestId) : ''
-    if (!requestId || !pendingClipboardWrites.has(requestId)) return
-    pendingClipboardWrites.delete(requestId)
-    const ok = !!(message && message.ok)
-    if (ok) {
-      setSettingsHint('已复制诊断信息到剪贴板', false, 1200)
-    } else {
-      const err = message && message.error ? String(message.error) : 'unknown'
-      setSettingsHint('复制失败：' + err, true)
     }
   }
 
@@ -629,14 +529,11 @@
       const settingsPanel = document.getElementById('settingsPanel')
       const settingsClose = document.getElementById('settingsClose')
       const settingsTestNativeBtn = document.getElementById('settingsTestNativeBtn')
-      const settingsCopyNativeDiagBtn = document.getElementById('settingsCopyNativeDiagBtn')
       const settingsTestBarkBtn = document.getElementById('settingsTestBarkBtn')
 
       if (settingsClose) settingsClose.addEventListener('click', closeSettingsOverlay)
       if (settingsTestNativeBtn)
         settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
-      if (settingsCopyNativeDiagBtn)
-        settingsCopyNativeDiagBtn.addEventListener('click', copyLastNativeDiagnostic)
       if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
 
       if (settingsOverlay) {
@@ -657,21 +554,6 @@
         }
         settingsPanel.addEventListener('input', maybeMarkDirty)
         settingsPanel.addEventListener('change', maybeMarkDirty)
-      }
-
-      // 监听扩展侧回传：原生通知测试结果 / 写入剪贴板结果
-      try {
-        window.addEventListener('message', event => {
-          const msg = event && event.data ? event.data : null
-          if (!msg || !msg.type) return
-          if (msg.type === 'testMacOSNativeNotificationResult') {
-            handleTestMacOSNativeNotificationResult(msg)
-          } else if (msg.type === 'writeClipboardTextResult') {
-            handleWriteClipboardTextResult(msg)
-          }
-        })
-      } catch (e) {
-        // 忽略
       }
     } catch (e) {
       // 忽略
@@ -713,4 +595,3 @@
     }
   }
 })()
-

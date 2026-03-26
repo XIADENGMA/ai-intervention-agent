@@ -53,13 +53,11 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('clipboardText'))
     assert.ok(webviewJs.includes('id="notifyMacOSNativeEnabled"'))
     assert.ok(webviewJs.includes('id="settingsTestNativeBtn"'))
-    assert.ok(webviewJs.includes('id="settingsCopyNativeDiagBtn"'))
     // 阶段 C：统一 NotificationEvent 分发（Webview → Extension）
     assert.ok(webviewUi.includes("type: 'notify'"))
     assert.ok(notifyCore.includes('macos_native'))
-    // 设置面板：原生通知测试应走“带回传的诊断 RPC”，并支持一键复制诊断
-    assert.ok(settingsUi.includes('testMacOSNativeNotification'))
-    assert.ok(settingsUi.includes('settingsCopyNativeDiagBtn'))
+    // 设置面板：原生通知测试应为“手动触发”，不依赖复杂诊断链路
+    assert.ok(settingsUi.includes("kind: 'test_macos_native'"))
     // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
     assert.ok(webviewUi.includes("type: 'tasksStats'"))
     assert.ok(webviewJs.includes("case 'tasksStats':"))
@@ -181,10 +179,22 @@ suite('Extension Test Suite', () => {
     )
     assert.ok(webviewUi.includes('DOMLoaded timeout'), 'should have DOMLoaded timeout fallback')
     assert.ok(webviewUi.includes("addEventListener('online'"), 'should retry on online event')
-    assert.ok(webviewUi.includes("addEventListener('visibilitychange'"), 'should retry on visibilitychange')
-    assert.ok(webviewUi.includes('MutationObserver'), 'should observe no-content visibility changes')
-    assert.ok(webviewCss.includes('.aiia-fallback-icon'), 'webview.css should include fallback icon styling')
-    assert.ok(webviewCss.includes('aiia-fallback-spin'), 'webview.css should include fallback spin keyframes')
+    assert.ok(
+      webviewUi.includes("addEventListener('visibilitychange'"),
+      'should retry on visibilitychange'
+    )
+    assert.ok(
+      webviewUi.includes('MutationObserver'),
+      'should observe no-content visibility changes'
+    )
+    assert.ok(
+      webviewCss.includes('.aiia-fallback-icon'),
+      'webview.css should include fallback icon styling'
+    )
+    assert.ok(
+      webviewCss.includes('aiia-fallback-spin'),
+      'webview.css should include fallback spin keyframes'
+    )
 
     // manifest 回归点：Activity Bar 容器 icon 应使用文件路径（不应使用 $(codicon)）
     const extPkgJson = JSON.parse(extPkgText)
@@ -196,7 +206,10 @@ suite('Extension Test Suite', () => {
       'activationEvents should include openPanel/openSettings commands'
     )
     assert.ok(Array.isArray(extPkgJson.files), 'package.json should include files[]')
-    assert.ok(extPkgJson.files.includes('webview.css'), 'package.json files[] should include webview.css')
+    assert.ok(
+      extPkgJson.files.includes('webview.css'),
+      'package.json files[] should include webview.css'
+    )
     assert.ok(
       extPkgJson.files.includes('webview-notify-core.js'),
       'package.json files[] should include webview-notify-core.js'
@@ -204,6 +217,23 @@ suite('Extension Test Suite', () => {
     assert.ok(
       extPkgJson.files.includes('webview-settings-ui.js'),
       'package.json files[] should include webview-settings-ui.js'
+    )
+    assert.ok(
+      extPkgJson.files.includes('vendor/terminal-notifier/**'),
+      'package.json files[] should include vendor/terminal-notifier/**'
+    )
+    const terminalNotifierBin = path.join(
+      ext.extensionPath,
+      'vendor',
+      'terminal-notifier',
+      'terminal-notifier.app',
+      'Contents',
+      'MacOS',
+      'terminal-notifier'
+    )
+    assert.ok(
+      fs.existsSync(terminalNotifierBin),
+      'terminal-notifier binary should exist in extension'
     )
 
     const containers =
@@ -225,6 +255,7 @@ suite('Extension Test Suite', () => {
       assert.ok(packagingScript.includes('"mathjax"'))
       assert.ok(packagingScript.includes('"webview-notify-core.js"'))
       assert.ok(packagingScript.includes('"webview-settings-ui.js"'))
+      assert.ok(packagingScript.includes('"vendor"'))
     }
   })
 

@@ -44,8 +44,8 @@ npm install
 
 ## macOS native notifications
 
-- Native notifications are delivered via `osascript display notification` on macOS.
-- Sender attribution (app icon/name) is **best-effort**. The extension tries to attribute notifications to the host editor app (e.g. VS Code / Cursor). If the attribution mechanism is unavailable on your system, notifications may fall back to the default AppleScript sender.
+- Native notifications are delivered via a bundled `terminal-notifier` app on macOS (preferred), with a fallback to `osascript display notification`.
+- Sender attribution (app icon/name) is **best-effort**. The extension tries to attribute notifications to the host editor app (e.g. VS Code / Cursor). If the attribution mechanism is unavailable on your system, notifications may fall back to the default sender.
 - You can enable/disable it in the sidebar panel → **通知设置** → **macOS 原生通知** (default: enabled)
 
 ## Build a VSIX (.vsix)
