@@ -15,7 +15,7 @@ import shutil
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from ipaddress import AddressValueError, ip_address, ip_network
 from pathlib import Path
@@ -79,7 +79,7 @@ class ReadWriteLock:
         self._readers = 0
 
     @contextmanager
-    def read_lock(self):
+    def read_lock(self) -> Generator[None, None, None]:
         """获取读锁（多读者并发，仅在写者持有锁时阻塞）"""
         self._read_ready.acquire()
         try:
@@ -99,7 +99,7 @@ class ReadWriteLock:
                 self._read_ready.release()
 
     @contextmanager
-    def write_lock(self):
+    def write_lock(self) -> Generator[None, None, None]:
         """获取写锁（独占访问，等待所有读者退出）"""
         self._read_ready.acquire()
         try:
@@ -1625,7 +1625,7 @@ class ConfigManager:
             except (KeyError, TypeError):
                 return default
 
-    def set(self, key: str, value: Any, save: bool = True):
+    def set(self, key: str, value: Any, save: bool = True) -> None:
         """设置配置值（支持嵌套键，自动创建中间路径，值变化检测，可选延迟保存）"""
         # network_security 特殊处理：必须走专用更新/落盘路径，避免写入内存但无法持久化
         if key == "network_security":
@@ -1686,7 +1686,7 @@ class ConfigManager:
             except Exception as e:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
-    def update(self, updates: Dict[str, Any], save: bool = True):
+    def update(self, updates: Dict[str, Any], save: bool = True) -> None:
         """批量更新配置（仅处理变化项，合并为一次延迟保存，原子操作）"""
         # network_security 特殊处理：先剥离并走专用更新/落盘路径，避免进入 _config/_pending_changes
         network_security_updates: Dict[str, Any] = {}
@@ -1768,7 +1768,7 @@ class ConfigManager:
             except Exception as e:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
-    def force_save(self):
+    def force_save(self) -> None:
         """强制立即保存配置文件（取消延迟保存，应用所有待保存变更）"""
         with self._lock:
             # 取消延迟保存定时器
@@ -1821,7 +1821,9 @@ class ConfigManager:
 
             return copy.deepcopy(result_copy)
 
-    def update_section(self, section: str, updates: Dict[str, Any], save: bool = True):
+    def update_section(
+        self, section: str, updates: Dict[str, Any], save: bool = True
+    ) -> None:
         """更新配置段（检测变化，触发回调，可选延迟保存）"""
         if section == "network_security":
             if not isinstance(updates, dict):
@@ -1878,7 +1880,7 @@ class ConfigManager:
             except Exception as e:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
-    def reload(self):
+    def reload(self) -> None:
         """从磁盘重新加载配置文件（覆盖内存配置，失效缓存）"""
         logger.info("重新加载配置文件")
         self._load_config()
@@ -1889,7 +1891,7 @@ class ConfigManager:
     # 缓存管理方法
     # ========================================================================
 
-    def invalidate_section_cache(self, section: str):
+    def invalidate_section_cache(self, section: str) -> None:
         """失效指定配置段的缓存"""
         with self._lock:
             if section in self._section_cache:
@@ -1898,7 +1900,7 @@ class ConfigManager:
                 self._cache_stats["invalidations"] += 1
                 logger.debug(f"已失效 section 缓存: {section}")
 
-    def invalidate_all_caches(self):
+    def invalidate_all_caches(self) -> None:
         """清空所有配置缓存"""
         with self._lock:
             # 清空 section 缓存
@@ -1926,7 +1928,7 @@ class ConfigManager:
                 "network_security_cached": self._network_security_cache is not None,
             }
 
-    def reset_cache_stats(self):
+    def reset_cache_stats(self) -> None:
         """重置缓存统计信息"""
         with self._lock:
             self._cache_stats = {
@@ -1940,7 +1942,7 @@ class ConfigManager:
         self,
         section_ttl: float | None = None,
         network_security_ttl: float | None = None,
-    ):
+    ) -> None:
         """设置缓存有效期（TTL）"""
         with self._lock:
             if section_ttl is not None:
@@ -2195,7 +2197,7 @@ class ConfigManager:
 
     def set_network_security_config(
         self, config: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True
-    ):
+    ) -> None:
         """设置并持久化 network_security（强校验 + 单一路径写回）"""
         validated = self._validate_network_security_config(config)
         if save:
@@ -2212,7 +2214,7 @@ class ConfigManager:
 
     def update_network_security_config(
         self, updates: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True
-    ):
+    ) -> None:
         """增量更新并持久化 network_security（只允许白名单字段）"""
         if not isinstance(updates, dict):
             raise ValueError("network_security 更新必须是 dict")
@@ -2424,7 +2426,7 @@ class ConfigManager:
         except Exception as e:
             logger.warning(f"获取文件修改时间失败: {e}", exc_info=True)
 
-    def start_file_watcher(self, interval: float = 2.0):
+    def start_file_watcher(self, interval: float = 2.0) -> None:
         """启动配置文件监听（后台守护线程，检测文件变化自动重载）"""
         with self._lock:
             if self._file_watcher_running:
@@ -2462,7 +2464,7 @@ class ConfigManager:
         thread.start()
         logger.info(f"配置文件监听器已启动，检查间隔: {interval} 秒")
 
-    def stop_file_watcher(self):
+    def stop_file_watcher(self) -> None:
         """停止配置文件监听"""
         thread: Optional[threading.Thread]
         with self._lock:
@@ -2479,7 +2481,7 @@ class ConfigManager:
             thread.join(timeout=1.0)  # 快速超时
         logger.info("配置文件监听器已停止")
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """关闭配置管理器：停止文件监听、取消延迟保存定时器（幂等）"""
         # 先停文件监听（内部已幂等）
         try:
@@ -2518,7 +2520,7 @@ class ConfigManager:
             if self._file_watcher_stop_event.wait(self._file_watcher_interval):
                 break  # 收到停止信号，退出循环
 
-    def register_config_change_callback(self, callback: Callable[[], None]):
+    def register_config_change_callback(self, callback: Callable[[], None]) -> None:
         """注册配置变更回调函数"""
         with self._lock:
             if callback not in self._config_change_callbacks:
@@ -2526,7 +2528,7 @@ class ConfigManager:
                 cb_name = getattr(callback, "__name__", None) or repr(callback)
                 logger.debug(f"已注册配置变更回调: {cb_name}")
 
-    def unregister_config_change_callback(self, callback: Callable[[], None]):
+    def unregister_config_change_callback(self, callback: Callable[[], None]) -> None:
         """取消注册配置变更回调函数"""
         with self._lock:
             if callback in self._config_change_callbacks:
