@@ -53,7 +53,7 @@ AI Intervention Agent 智能介入代理测试工具
 ## 使用方法
 
 ### 基本用法
-- 直接运行：`python test.py`
+- 直接运行：`python scripts/manual_test.py`
 
 ### 高级用法
 - 指定端口：`--port 8080`
@@ -1701,7 +1701,7 @@ def parse_arguments():
 
     ## 使用说明
 
-    - 使用默认配置：`python test.py`
+    - 使用默认配置：`python scripts/manual_test.py`
     - 指定端口：`--port 9000`
     - 指定主机和超时：`--host 127.0.0.1 --timeout 600`
     - 启用详细日志：`--verbose`
@@ -2084,7 +2084,7 @@ def main(args=None):
 
     ## 使用说明
 
-    - 命令行运行：`python test.py`
+    - 命令行运行：`python scripts/manual_test.py`
     - 程序内调用：导入并调用 main 函数
 
     ## 注意事项

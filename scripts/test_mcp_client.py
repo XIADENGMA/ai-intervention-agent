@@ -9,7 +9,7 @@ AI Intervention Agent - MCP 客户端测试脚本
 4. 确认反馈包含配置的 resubmit_prompt
 
 使用方法:
-    python test_mcp_client.py --port 8080 --timeout 60
+    python scripts/test_mcp_client.py --port 8080 --timeout 60
 
 测试依赖：
     - Web UI 服务器运行中
