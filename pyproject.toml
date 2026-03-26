@@ -45,7 +45,6 @@ dependencies = [
     "pygments>=2.18.0",
     "requests>=2.32.0",
     "urllib3>=2.3.0",
-    "watchdog>=6.0.0",
     "zeroconf>=0.146.0",
 ]
 
