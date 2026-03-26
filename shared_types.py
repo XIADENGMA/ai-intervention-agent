@@ -9,7 +9,7 @@
 - 这些类型仅用于类型检查/IDE 提示，不影响运行时行为
 """
 
-from typing import TypedDict
+from typing import Optional, TypedDict
 
 
 class FeedbackImage(TypedDict, total=False):
@@ -32,3 +32,72 @@ class FeedbackResult(TypedDict):
     user_input: str
     selected_options: list[str]
     images: list[FeedbackImage]
+
+
+# ---------------------------------------------------------------------------
+# 配置段 TypedDict（与 config_manager._get_default_config 对齐）
+# ---------------------------------------------------------------------------
+
+
+class NotificationConfig(TypedDict, total=False):
+    """notification 配置段。"""
+
+    enabled: bool
+    debug: bool
+    web_enabled: bool
+    auto_request_permission: bool
+    web_icon: str
+    web_timeout: int
+    system_enabled: bool
+    macos_native_enabled: bool
+    sound_enabled: bool
+    sound_mute: bool
+    sound_file: str
+    sound_volume: int
+    mobile_optimized: bool
+    mobile_vibrate: bool
+    retry_count: int
+    retry_delay: int
+    bark_enabled: bool
+    bark_url: str
+    bark_device_key: str
+    bark_icon: str
+    bark_action: str
+    bark_timeout: int
+
+
+class WebUISectionConfig(TypedDict, total=False):
+    """web_ui 配置段（config.jsonc 中的 web_ui 字段）。"""
+
+    host: str
+    port: int
+    debug: bool
+    http_request_timeout: int
+    http_max_retries: int
+    http_retry_delay: float
+
+
+class MdnsConfig(TypedDict, total=False):
+    """mdns 配置段。"""
+
+    enabled: Optional[bool]
+    hostname: str
+    service_name: str
+
+
+class NetworkSecurityConfig(TypedDict, total=False):
+    """network_security 配置段。"""
+
+    bind_interface: str
+    allowed_networks: list[str]
+    blocked_ips: list[str]
+    access_control_enabled: bool
+
+
+class FeedbackConfig(TypedDict, total=False):
+    """feedback 配置段。"""
+
+    backend_max_wait: int
+    frontend_countdown: int
+    resubmit_prompt: str
+    prompt_suffix: str

@@ -17,7 +17,16 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, cast, overload
+
+if TYPE_CHECKING:
+    from shared_types import (
+        FeedbackConfig,
+        MdnsConfig,
+        NetworkSecurityConfig,
+        NotificationConfig,
+        WebUISectionConfig,
+    )
 
 try:
     from platformdirs import user_config_dir
@@ -974,6 +983,29 @@ class ConfigManager(
             self._save_config_immediate()
             self._last_save_time = time.time()
             logger.debug("强制配置保存完成")
+
+    @overload
+    def get_section(
+        self, section: Literal["notification"], use_cache: bool = ...
+    ) -> "NotificationConfig": ...
+    @overload
+    def get_section(
+        self, section: Literal["web_ui"], use_cache: bool = ...
+    ) -> "WebUISectionConfig": ...
+    @overload
+    def get_section(
+        self, section: Literal["mdns"], use_cache: bool = ...
+    ) -> "MdnsConfig": ...
+    @overload
+    def get_section(
+        self, section: Literal["network_security"], use_cache: bool = ...
+    ) -> "NetworkSecurityConfig": ...
+    @overload
+    def get_section(
+        self, section: Literal["feedback"], use_cache: bool = ...
+    ) -> "FeedbackConfig": ...
+    @overload
+    def get_section(self, section: str, use_cache: bool = ...) -> Dict[str, Any]: ...
 
     def get_section(self, section: str, use_cache: bool = True) -> Dict[str, Any]:
         """获取配置段的深拷贝（带缓存优化，network_security 特殊处理）"""

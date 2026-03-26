@@ -4,6 +4,7 @@
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any, Optional, TypeVar, cast, overload
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ def clamp_dataclass_field(
 
 
 def get_compat_config(
-    config: dict,
+    config: Mapping[str, Any],
     new_key: str,
     old_key: Optional[str] = None,
     default: Any = None,

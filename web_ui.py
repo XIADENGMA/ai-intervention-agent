@@ -18,7 +18,7 @@ from ipaddress import (
     ip_network,
 )
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import markdown
 import psutil
@@ -1731,11 +1731,11 @@ class WebFeedbackUI(
 
         return remote_addr
 
-    def _get_mdns_config(self) -> dict[str, Any]:
+    def _get_mdns_config(self) -> Dict[str, Any]:
         """读取 mdns 配置段（失败则返回空字典）"""
         try:
             cfg = get_config().get_section("mdns")
-            return cfg if isinstance(cfg, dict) else {}
+            return cast(Dict[str, Any], cfg) if isinstance(cfg, dict) else {}
         except Exception as e:
             logger.warning(
                 f"无法加载 mdns 配置，已降级为不发布 mDNS: {e}", exc_info=True
