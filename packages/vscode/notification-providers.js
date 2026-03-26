@@ -1,7 +1,7 @@
 const vscode = require('vscode')
 const fs = require('fs')
 const path = require('path')
-const { execFile } = require('child_process')
+const { execFile, execFileSync } = require('child_process')
 const { toAppleScriptStringLiteral, sanitizeForLog } = require('./applescript-executor')
 
 function toNonEmptyString(value, fallback = '') {
@@ -138,6 +138,90 @@ function ensureExecutable(filePath) {
     return true
   } catch {
     return false
+  }
+}
+
+// ── terminal-notifier 稳定路径管理 ──
+// macOS 按「应用路径 + bundle ID」来识别通知源。如果扩展升级/开发目录变化导致
+// terminal-notifier.app 路径变化，macOS 会注册为新的通知源，产生重复条目。
+// 将 terminal-notifier.app 安装到固定的 Application Support 路径来规避此问题。
+
+function getStableAppSupportDir() {
+  const home = process.env.HOME || ''
+  if (!home) return ''
+  return path.join(home, 'Library', 'Application Support', 'AI Intervention Agent')
+}
+
+function getStableTerminalNotifierPaths() {
+  const dir = getStableAppSupportDir()
+  if (!dir) return { dir: '', app: '', bin: '' }
+  const app = path.join(dir, 'terminal-notifier.app')
+  const bin = path.join(app, 'Contents', 'MacOS', 'terminal-notifier')
+  return { dir, app, bin }
+}
+
+function readBundleVersionFromXmlPlist(infoPlistPath) {
+  try {
+    if (!infoPlistPath || !fs.existsSync(infoPlistPath)) return ''
+    const content = fs.readFileSync(infoPlistPath, 'utf8')
+    const match = content.match(/<key>CFBundleVersion<\/key>\s*<string>([^<]*)<\/string>/)
+    return match ? match[1].trim() : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 将 vendor 目录中的 terminal-notifier.app 安装到 ~/Library/Application Support/AI Intervention Agent/
+ * 确保 macOS 始终从同一路径加载，避免重复的通知中心注册条目。
+ *
+ * @returns {{ bin: string, installed: boolean, error: string }}
+ */
+function ensureStableTerminalNotifier() {
+  const fail = (error) => ({ bin: '', installed: false, error: error || '' })
+
+  if (process.platform !== 'darwin') return fail('non-darwin')
+
+  const stable = getStableTerminalNotifierPaths()
+  if (!stable.dir) return fail('no-home')
+
+  const srcAppPath = path.join(
+    __dirname, 'vendor', 'terminal-notifier', 'terminal-notifier.app'
+  )
+  if (!fs.existsSync(srcAppPath)) return fail('src-not-found')
+
+  try {
+    const srcInfoPlist = path.join(srcAppPath, 'Contents', 'Info.plist')
+    const destInfoPlist = path.join(stable.app, 'Contents', 'Info.plist')
+
+    const srcVersion = readBundleVersionFromXmlPlist(srcInfoPlist)
+    const destVersion = readBundleVersionFromXmlPlist(destInfoPlist)
+
+    // 已安装且版本一致——直接使用
+    if (destVersion && srcVersion && destVersion === srcVersion && fs.existsSync(stable.bin)) {
+      ensureExecutable(stable.bin)
+      return { bin: stable.bin, installed: false, error: '' }
+    }
+
+    // 首次安装或版本不一致——执行复制
+    fs.mkdirSync(stable.dir, { recursive: true })
+
+    if (fs.existsSync(stable.app)) {
+      execFileSync('/bin/rm', ['-rf', stable.app], { timeout: 5000 })
+    }
+    execFileSync('/bin/cp', ['-R', srcAppPath, stable.app], { timeout: 10000 })
+
+    if (!ensureExecutable(stable.bin)) return fail('chmod-failed')
+    if (!fs.existsSync(stable.bin)) return fail('bin-missing-after-copy')
+
+    return { bin: stable.bin, installed: true, error: '' }
+  } catch (e) {
+    // 复制失败但已有旧版本——仍可用
+    if (fs.existsSync(stable.bin)) {
+      ensureExecutable(stable.bin)
+      return { bin: stable.bin, installed: false, error: 'copy-failed-using-existing' }
+    }
+    return fail(e && e.message ? String(e.message) : 'unknown')
   }
 }
 
@@ -704,11 +788,52 @@ class MacOSNativeNotificationProvider {
 
   _getTerminalNotifierBin() {
     if (this._terminalNotifierBin) return this._terminalNotifierBin
+
+    // 优先使用 Application Support 下的稳定副本，防止 macOS 因路径变化注册多个通知源
+    const stable = ensureStableTerminalNotifier()
+    if (stable.bin) {
+      this._terminalNotifierBin = stable.bin
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'notify.terminal_notifier.resolved',
+            {
+              from: 'stable',
+              path: stable.bin,
+              installed: stable.installed,
+              error: stable.error || ''
+            },
+            { level: 'debug' }
+          )
+        }
+      } catch {
+        // 忽略
+      }
+      return stable.bin
+    }
+
+    // 稳定路径不可用——回退到扩展 vendor 目录中的原始路径
     const p = resolveBundledTerminalNotifierBinPath()
     if (ensureExecutable(p)) {
       this._terminalNotifierBin = p
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'notify.terminal_notifier.resolved',
+            {
+              from: 'vendor-fallback',
+              path: p,
+              stableError: stable.error || ''
+            },
+            { level: 'debug' }
+          )
+        }
+      } catch {
+        // 忽略
+      }
       return p
     }
+
     this._terminalNotifierBin = ''
     return ''
   }
