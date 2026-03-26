@@ -295,7 +295,7 @@ function activate(context) {
       if (statusBarShown) {
         applyStatusBarPresentation({ connected, active, pending })
       }
-      updateStatusBarVisibility(connected, active, pending)
+      updateStatusBarVisibility()
 
       // 扩展侧新任务检测：从 /api/tasks 响应中提取任务 ID，对比已知集合
       if (connected && data && Array.isArray(data.tasks)) {
@@ -367,7 +367,7 @@ function activate(context) {
         { level }
       )
 
-      updateStatusBarVisibility(false, 0, 0)
+      updateStatusBarVisibility()
       return false
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
@@ -447,7 +447,7 @@ function activate(context) {
     serverUrl,
     visible => {
       isViewVisible = !!visible
-      updateStatusBarVisibility(lastConnected, lastActive, lastPending)
+      updateStatusBarVisibility()
       // 可见性变化只影响轮询频率，不影响任务追踪状态
       scheduleStatusPoll(0)
     },
