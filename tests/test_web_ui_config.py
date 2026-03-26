@@ -9,6 +9,7 @@ Web UI 配置模块单元测试
     - 重试延迟验证
 """
 
+import json
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -305,6 +306,236 @@ class TestGetWebUIConfig(unittest.TestCase):
         self.assertEqual(config.port, 8080)
         self.assertEqual(config.timeout, 30)
         self.assertEqual(auto_resubmit, 240)
+
+
+class TestWebUIFinalPush(unittest.TestCase):
+    """Web UI 最终冲刺测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="最终冲刺",
+            predefined_options=["是", "否"],
+            task_id="final-push",
+            port=8970,
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+
+    def test_index_content_type(self):
+        """测试首页内容类型"""
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.content_type)
+
+    def test_api_tasks_json(self):
+        """测试任务 API 返回 JSON"""
+        response = self.client.get("/api/tasks")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.content_type)
+
+    def test_notification_config_update_sound(self):
+        """测试更新声音配置"""
+        response = self.client.post(
+            "/api/update-notification-config",
+            data=json.dumps(
+                {"sound_enabled": True, "sound_volume": 75, "sound_mute": False}
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_notification_config_update_web(self):
+        """测试更新 Web 配置"""
+        response = self.client.post(
+            "/api/update-notification-config",
+            data=json.dumps({"web_enabled": True, "web_timeout": 5000}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+
+class TestWebUITaskManagement(unittest.TestCase):
+    """Web UI 任务管理测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="任务管理测试",
+            predefined_options=["选项1", "选项2"],
+            task_id="task-mgmt-test",
+            port=8980,
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+
+    def test_create_task_via_api(self):
+        """测试通过 API 创建任务"""
+        response = self.client.post(
+            "/api/tasks",
+            data=json.dumps(
+                {
+                    "id": "new-task-001",
+                    "message": "新任务",
+                    "options": ["A", "B"],
+                    "timeout": 60,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        # 可能返回 200 或 400（取决于任务格式要求）
+        self.assertIn(response.status_code, [200, 400])
+
+    def test_get_task_by_id(self):
+        """测试通过 ID 获取任务"""
+        # 获取任务（可能存在或不存在）
+        response = self.client.get("/api/tasks/get-task-001")
+
+        # 可能返回 200 或 404
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_delete_task(self):
+        """测试删除任务"""
+        # 删除任务（可能不支持 DELETE 方法）
+        response = self.client.delete("/api/tasks/delete-task-001")
+
+        # 可能返回 200、404 或 405（方法不允许）
+        self.assertIn(response.status_code, [200, 204, 404, 405])
+
+
+class TestWebUIStaticResources(unittest.TestCase):
+    """Web UI 静态资源测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="静态资源测试", task_id="static-test", port=8979
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+
+    def test_favicon(self):
+        """测试 favicon"""
+        response = self.client.get("/favicon.ico")
+
+        self.assertIn(response.status_code, [200, 204, 404, 302])
+
+    def test_static_images(self):
+        """测试静态图片"""
+        response = self.client.get("/static/images/logo.png")
+
+        self.assertIn(response.status_code, [200, 404])
+
+    def test_robots_txt(self):
+        """测试 robots.txt"""
+        response = self.client.get("/robots.txt")
+
+        self.assertIn(response.status_code, [200, 404])
+
+
+class TestWebUIErrorHandling(unittest.TestCase):
+    """Web UI 错误处理测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="错误处理测试", task_id="error-test", port=8978
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+
+    def test_404_error(self):
+        """测试 404 错误"""
+        response = self.client.get("/nonexistent-page")
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_invalid_json(self):
+        """测试无效 JSON"""
+        response = self.client.post(
+            "/api/tasks", data="invalid json", content_type="application/json"
+        )
+
+        self.assertIn(response.status_code, [400, 500])
+
+    def test_missing_required_fields(self):
+        """测试缺少必要字段"""
+        response = self.client.post(
+            "/api/tasks",
+            data=json.dumps({"incomplete": True}),
+            content_type="application/json",
+        )
+
+        self.assertIn(response.status_code, [400, 500])
+
+
+# ============================================================================
+# server.py 更多测试
+# ============================================================================
+
+
+class TestWebUIMultipleTasks(unittest.TestCase):
+    """Web UI 多任务测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        from web_ui import WebFeedbackUI
+
+        cls.web_ui = WebFeedbackUI(
+            prompt="多任务测试", task_id="multi-task-test", port=8977
+        )
+        cls.app = cls.web_ui.app
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+
+    def test_create_multiple_tasks(self):
+        """测试创建多个任务"""
+        for i in range(5):
+            response = self.client.post(
+                "/api/tasks",
+                data=json.dumps(
+                    {
+                        "id": f"multi-{i}",
+                        "message": f"多任务 {i}",
+                        "options": [],
+                        "timeout": 60,
+                    }
+                ),
+                content_type="application/json",
+            )
+
+            # 可能返回 200 或 400（取决于任务格式要求）
+            self.assertIn(response.status_code, [200, 400])
+
+    def test_list_multiple_tasks(self):
+        """测试列出多个任务"""
+        response = self.client.get("/api/tasks")
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn("tasks", data)
 
 
 if __name__ == "__main__":

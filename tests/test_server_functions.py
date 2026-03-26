@@ -8,6 +8,7 @@ AI Intervention Agent - Server 函数测试
 import sys
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -278,6 +279,111 @@ class TestContentTypes(unittest.TestCase):
 
         self.assertEqual(content.type, "image")
         self.assertEqual(content.mimeType, "image/png")
+
+
+class TestServerFinalPush(unittest.TestCase):
+    """Server 最终冲刺测试"""
+
+    def test_parse_response_only_options(self):
+        """测试仅选项的响应"""
+        from server import parse_structured_response
+
+        response = {
+            "user_input": "",
+            "selected_options": ["选项1", "选项2", "选项3"],
+            "images": [],
+        }
+
+        result = parse_structured_response(response)
+
+        self.assertIsInstance(result, list)
+        self.assertGreater(len(result), 0)
+
+    def test_validate_input_unicode(self):
+        """测试 Unicode 输入验证"""
+        from server import validate_input
+
+        message = "中文 日本語 한국어 العربية"
+        options = ["选项 🎉", "オプション 💡"]
+
+        result_msg, result_opts = validate_input(message, options)
+
+        self.assertIn("中文", result_msg)
+
+
+class TestServerParseResponseAdvanced(unittest.TestCase):
+    """服务器响应解析高级测试"""
+
+    def test_parse_with_newlines(self):
+        """测试带换行的响应"""
+        from server import parse_structured_response
+
+        response = {
+            "user_input": "第一行\n第二行\n第三行",
+            "selected_options": [],
+            "images": [],
+        }
+
+        result = parse_structured_response(response)
+
+        self.assertIsInstance(result, list)
+
+    def test_parse_with_tabs(self):
+        """测试带制表符的响应"""
+        from server import parse_structured_response
+
+        response = {"user_input": "列1\t列2\t列3", "selected_options": [], "images": []}
+
+        result = parse_structured_response(response)
+
+        self.assertIsInstance(result, list)
+
+    def test_parse_mixed_content(self):
+        """测试混合内容响应"""
+        from server import parse_structured_response
+
+        response = {
+            "user_input": "Text with 中文 and émojis 🎉",
+            "selected_options": ["Option 选项"],
+            "images": [],
+        }
+
+        result = parse_structured_response(response)
+
+        self.assertIsInstance(result, list)
+
+
+class TestServerValidateInputAdvanced(unittest.TestCase):
+    """服务器输入验证高级测试"""
+
+    def test_validate_with_empty_options(self):
+        """测试空选项列表"""
+        from server import validate_input
+
+        message, options = validate_input("消息", [])
+
+        self.assertEqual(options, [])
+
+    def test_validate_with_none_message(self):
+        """测试 None 消息"""
+        from server import validate_input
+
+        # None 应该抛出 ValueError
+        with self.assertRaises(ValueError):
+            validate_input(cast(Any, None), [])
+
+    def test_validate_with_numeric_option(self):
+        """测试数字选项"""
+        from server import validate_input
+
+        message, options = validate_input("消息", [123, 456])
+
+        self.assertIsInstance(options, list)
+
+
+# ============================================================================
+# 更多边界测试
+# ============================================================================
 
 
 def run_tests():

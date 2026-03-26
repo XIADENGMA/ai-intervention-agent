@@ -587,5 +587,62 @@ class TestTaskQueueStatusCallback(unittest.TestCase):
             queue.stop_cleanup()
 
 
+class TestConfigUtilsAdvanced(unittest.TestCase):
+    """配置工具高级测试"""
+
+    def test_clamp_value_normal(self):
+        """测试 clamp_value 正常情况"""
+        from config_utils import clamp_value
+
+        result = clamp_value(50, 0, 100, "test_field")
+        self.assertEqual(result, 50)
+
+    def test_clamp_value_below_min(self):
+        """测试 clamp_value 低于最小值"""
+        from config_utils import clamp_value
+
+        result = clamp_value(-10, 0, 100, "test_field")
+        self.assertEqual(result, 0)
+
+    def test_clamp_value_above_max(self):
+        """测试 clamp_value 高于最大值"""
+        from config_utils import clamp_value
+
+        result = clamp_value(150, 0, 100, "test_field")
+        self.assertEqual(result, 100)
+
+    def test_validate_enum_value_valid(self):
+        """测试 validate_enum_value 有效值"""
+        from config_utils import validate_enum_value
+
+        # 签名: validate_enum_value(value, valid_values, field_name, default)
+        result = validate_enum_value(
+            "url", ("none", "url", "copy"), "bark_action", "none"
+        )
+        self.assertEqual(result, "url")
+
+    def test_validate_enum_value_invalid(self):
+        """测试 validate_enum_value 无效值"""
+        from config_utils import validate_enum_value
+
+        # 签名: validate_enum_value(value, valid_values, field_name, default)
+        result = validate_enum_value("invalid", ("a", "b", "c"), "test_field", "a")
+        self.assertEqual(result, "a")
+
+    def test_truncate_string_normal(self):
+        """测试 truncate_string 正常情况"""
+        from config_utils import truncate_string
+
+        result = truncate_string("hello", 100, "default")
+        self.assertEqual(result, "hello")
+
+    def test_truncate_string_long(self):
+        """测试 truncate_string 截断长字符串"""
+        from config_utils import truncate_string
+
+        result = truncate_string("a" * 200, 100, "default")
+        self.assertEqual(len(result), 100)
+
+
 if __name__ == "__main__":
     unittest.main()

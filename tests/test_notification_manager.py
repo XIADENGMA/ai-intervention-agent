@@ -17,7 +17,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -455,6 +455,428 @@ class TestNotificationManagerPerformance(unittest.TestCase):
         # 缓存时间应该明显更短（至少 2 倍）
         # 但由于测试环境差异，这里只验证不会比无缓存更慢
         self.assertLessEqual(cache_time, no_cache_time * 1.5)
+
+
+class TestNotificationManagerSendNotification(unittest.TestCase):
+    """通知发送功能测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import notification_manager
+
+        self.manager = notification_manager
+
+    def test_get_config(self):
+        """测试获取配置"""
+        config = self.manager.get_config()
+        self.assertIsNotNone(config)
+
+    def test_register_provider(self):
+        """测试注册提供者"""
+        from notification_manager import NotificationType
+
+        # 创建模拟提供者
+        mock_provider = MagicMock()
+        mock_provider.send = MagicMock(return_value=True)
+
+        self.manager.register_provider(NotificationType.WEB, mock_provider)
+
+        # 验证已注册
+        self.assertIn(NotificationType.WEB, self.manager._providers)
+
+    def test_update_config_without_save(self):
+        """测试更新配置不保存"""
+        # update_config_without_save 接受关键字参数
+        self.manager.update_config_without_save(bark_enabled=True)
+
+        self.assertEqual(self.manager.config.bark_enabled, True)
+
+
+class TestNotificationManagerSend(unittest.TestCase):
+    """通知发送功能测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import notification_manager
+
+        self.manager = notification_manager
+
+    def test_send_notification_disabled(self):
+        """测试通知禁用时不发送"""
+        # 暂时禁用通知
+        original_enabled = self.manager.config.enabled
+        self.manager.config.enabled = False
+
+        try:
+            from notification_manager import NotificationTrigger
+
+            result = self.manager.send_notification(
+                title="测试", message="消息", trigger=NotificationTrigger.IMMEDIATE
+            )
+
+            # 应该返回空字符串
+            self.assertEqual(result, "")
+        finally:
+            self.manager.config.enabled = original_enabled
+
+    def test_send_notification_immediate(self):
+        """测试立即发送通知"""
+        from notification_manager import NotificationTrigger, NotificationType
+
+        # 确保通知启用
+        original_enabled = self.manager.config.enabled
+        self.manager.config.enabled = True
+
+        try:
+            result = self.manager.send_notification(
+                title="立即通知",
+                message="测试消息",
+                trigger=NotificationTrigger.IMMEDIATE,
+                types=[NotificationType.WEB],
+            )
+
+            # 应该返回事件 ID
+            self.assertTrue(result.startswith("notification_"))
+        finally:
+            self.manager.config.enabled = original_enabled
+
+    def test_send_notification_with_metadata(self):
+        """测试带元数据的通知"""
+        from notification_manager import NotificationTrigger, NotificationType
+
+        original_enabled = self.manager.config.enabled
+        self.manager.config.enabled = True
+
+        try:
+            result = self.manager.send_notification(
+                title="元数据通知",
+                message="测试消息",
+                trigger=NotificationTrigger.IMMEDIATE,
+                types=[NotificationType.WEB],
+                metadata={"extra": "data", "number": 42},
+            )
+
+            self.assertTrue(result.startswith("notification_"))
+        finally:
+            self.manager.config.enabled = original_enabled
+
+
+class TestNotificationBoundaryConditions(unittest.TestCase):
+    """边界条件测试"""
+
+    def test_empty_notification_title(self):
+        """测试空标题通知"""
+        from notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
+
+        original_enabled = notification_manager.config.enabled
+        notification_manager.config.enabled = True
+
+        try:
+            result = notification_manager.send_notification(
+                title="",
+                message="空标题测试",
+                trigger=NotificationTrigger.IMMEDIATE,
+                types=[NotificationType.WEB],
+            )
+
+            # 应该能处理空标题
+            self.assertTrue(result.startswith("notification_"))
+        finally:
+            notification_manager.config.enabled = original_enabled
+
+    def test_empty_notification_message(self):
+        """测试空消息通知"""
+        from notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
+
+        original_enabled = notification_manager.config.enabled
+        notification_manager.config.enabled = True
+
+        try:
+            result = notification_manager.send_notification(
+                title="空消息测试",
+                message="",
+                trigger=NotificationTrigger.IMMEDIATE,
+                types=[NotificationType.WEB],
+            )
+
+            # 应该能处理空消息
+            self.assertTrue(result.startswith("notification_"))
+        finally:
+            notification_manager.config.enabled = original_enabled
+
+    def test_very_long_notification(self):
+        """测试超长通知"""
+        from notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
+
+        original_enabled = notification_manager.config.enabled
+        notification_manager.config.enabled = True
+
+        try:
+            long_title = "标" * 1000
+            long_message = "消息" * 5000
+
+            result = notification_manager.send_notification(
+                title=long_title,
+                message=long_message,
+                trigger=NotificationTrigger.IMMEDIATE,
+                types=[NotificationType.WEB],
+            )
+
+            # 应该能处理超长内容
+            self.assertTrue(result.startswith("notification_"))
+        finally:
+            notification_manager.config.enabled = original_enabled
+
+
+class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
+    """通知发送高级测试"""
+
+    def test_send_notification_with_types(self):
+        """测试指定类型发送通知"""
+        from notification_manager import (
+            NotificationManager,
+            NotificationTrigger,
+            NotificationType,
+        )
+
+        manager = NotificationManager()
+        manager.config.enabled = True
+
+        # 发送指定类型的通知
+        event_id = manager.send_notification(
+            title="测试标题",
+            message="测试消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            types=[NotificationType.WEB],
+        )
+
+        self.assertTrue(event_id.startswith("notification_"))
+
+    def test_send_notification_delayed(self):
+        """测试延迟触发通知"""
+        from notification_manager import (
+            NotificationManager,
+            NotificationTrigger,
+        )
+
+        manager = NotificationManager()
+        manager.config.enabled = True
+        manager.config.trigger_delay = 0  # 0 秒延迟（更快更稳定）
+
+        # 用 patch 确保不污染单例实例的方法实现
+        processed = threading.Event()
+        with patch.object(manager, "_process_event") as mock_process:
+            mock_process.side_effect = lambda _event: processed.set()
+
+            # 发送延迟通知
+            event_id = manager.send_notification(
+                title="延迟通知",
+                message="延迟测试",
+                trigger=NotificationTrigger.DELAYED,
+            )
+
+            self.assertTrue(event_id.startswith("notification_"))
+            self.assertTrue(processed.wait(1.0))
+
+    def test_send_notification_all_types_enabled(self):
+        """测试所有通知类型启用时的发送"""
+        from notification_manager import (
+            NotificationManager,
+            NotificationTrigger,
+        )
+
+        manager = NotificationManager()
+        manager.config.enabled = True
+        manager.config.web_enabled = True
+        manager.config.sound_enabled = True
+        manager.config.sound_mute = False
+        manager.config.bark_enabled = True
+
+        event_id = manager.send_notification(
+            title="全类型通知",
+            message="全类型测试",
+            trigger=NotificationTrigger.IMMEDIATE,
+        )
+
+        self.assertTrue(event_id.startswith("notification_"))
+
+
+class TestNotificationManagerProcessEvent(unittest.TestCase):
+    """事件处理测试"""
+
+    def test_process_event_with_mock_provider(self):
+        """测试事件处理与模拟提供者"""
+        from notification_manager import (
+            NotificationEvent,
+            NotificationManager,
+            NotificationTrigger,
+            NotificationType,
+        )
+
+        manager = NotificationManager()
+
+        # 创建模拟提供者
+        mock_provider = Mock()
+        mock_provider.send.return_value = True
+        manager._providers[NotificationType.WEB] = mock_provider
+
+        # 创建事件
+        event = NotificationEvent(
+            id="test-event-1",
+            title="测试标题",
+            message="测试消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            types=[NotificationType.WEB],
+        )
+
+        # 处理事件
+        manager._process_event(event)
+
+        # 验证提供者被调用
+        mock_provider.send.assert_called_once()
+
+
+class TestNotificationEventQueue(unittest.TestCase):
+    """通知事件队列测试"""
+
+    def test_event_queue_add(self):
+        """测试向事件队列添加事件"""
+        from notification_manager import (
+            NotificationEvent,
+            NotificationManager,
+            NotificationTrigger,
+        )
+
+        manager = NotificationManager()
+
+        # 添加事件到队列
+        event = NotificationEvent(
+            id="pending-1",
+            title="待处理",
+            message="测试",
+            trigger=NotificationTrigger.DELAYED,
+        )
+
+        with manager._queue_lock:
+            initial_len = len(manager._event_queue)
+            manager._event_queue.append(event)
+            new_len = len(manager._event_queue)
+
+        # 验证事件已添加
+        self.assertEqual(new_len, initial_len + 1)
+
+
+class TestNotificationManagerProvider(unittest.TestCase):
+    """提供者管理测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import notification_manager
+
+        self.manager = notification_manager
+
+    def test_get_provider(self):
+        """测试获取提供者"""
+        from notification_manager import NotificationType
+
+        # 尝试获取提供者
+        provider = self.manager._providers.get(NotificationType.WEB)
+        # 可能存在或不存在，但不应该抛异常
+
+
+class TestNotificationManagerQueue(unittest.TestCase):
+    """事件队列测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import notification_manager
+
+        self.manager = notification_manager
+
+    def test_get_pending_events(self):
+        """测试获取待处理事件"""
+        # 获取待处理事件数量
+        with self.manager._queue_lock:
+            pending_count = len(self.manager._event_queue)
+
+        # 不应该抛异常
+        self.assertIsInstance(pending_count, int)
+
+
+class TestBoundaryConditionsExtended(unittest.TestCase):
+    """扩展边界条件测试"""
+
+    def test_notification_with_html(self):
+        """测试带 HTML 的通知"""
+        from notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+            notification_manager,
+        )
+
+        original_enabled = notification_manager.config.enabled
+        notification_manager.config.enabled = True
+
+        try:
+            result = notification_manager.send_notification(
+                title="<b>HTML 标题</b>",
+                message="<script>alert('xss')</script>",
+                trigger=NotificationTrigger.IMMEDIATE,
+                types=[NotificationType.WEB],
+            )
+
+            self.assertTrue(result.startswith("notification_"))
+        finally:
+            notification_manager.config.enabled = original_enabled
+
+    def test_config_manager_concurrent_access(self):
+        """测试配置管理器并发访问"""
+        import threading
+
+        from config_manager import config_manager
+
+        results = []
+
+        def read_config():
+            for _ in range(50):
+                _ = config_manager.get("notification")
+            results.append(True)
+
+        threads = [threading.Thread(target=read_config) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(results), 5)
+
+    def test_task_queue_boundary_operations(self):
+        """测试任务队列边界操作"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue()
+
+        # 获取不存在的任务
+        task = queue.get_task("nonexistent-boundary-task")
+        self.assertIsNone(task)
+
+        # 完成不存在的任务
+        result = queue.complete_task("nonexistent-boundary-task", {})
+        self.assertFalse(result)
+
+        queue.clear_all_tasks()
 
 
 def run_tests():

@@ -596,6 +596,91 @@ class TestTaskQueueEdgeCases(unittest.TestCase):
         self.assertEqual(count["pending"], 1)
 
 
+class TestTaskQueueAdvanced(unittest.TestCase):
+    """任务队列高级测试"""
+
+    def test_task_queue_add_get_remove(self):
+        """测试任务队列基本操作"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue()
+
+        # 添加任务
+        queue.add_task("test-task-1", "测试任务", ["选项A", "选项B"])
+
+        # 获取任务
+        task = queue.get_task("test-task-1")
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.prompt, "测试任务")
+
+        # 删除任务
+        queue.remove_task("test-task-1")
+        task = queue.get_task("test-task-1")
+        self.assertIsNone(task)
+
+    def test_task_queue_complete(self):
+        """测试任务完成流程"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue()
+
+        # 添加并完成任务
+        queue.add_task("complete-task", "完成测试", [])
+        result = queue.complete_task("complete-task", {"response": "done"})
+        self.assertTrue(result)
+
+    def test_task_queue_statistics(self):
+        """测试任务队列统计"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue()
+
+        # 添加多个任务
+        queue.add_task("stat-1", "统计1", [])
+        queue.add_task("stat-2", "统计2", [])
+
+        # 获取统计
+        stats = queue.get_task_count()
+        self.assertIsInstance(stats, dict)
+
+
+class TestTaskQueueFinalPush(unittest.TestCase):
+    """Task Queue 最终冲刺测试"""
+
+    def test_task_queue_stats(self):
+        """测试任务队列统计"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue()
+
+        # 获取统计
+        stats = queue.get_task_count()
+
+        self.assertIn("pending", stats)
+        self.assertIn("active", stats)
+        self.assertIn("completed", stats)
+
+        queue.clear_all_tasks()
+
+    def test_task_queue_clear(self):
+        """测试清空任务队列"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue()
+
+        # 添加任务
+        queue.add_task("clear-test-1", "测试1")
+        queue.add_task("clear-test-2", "测试2")
+
+        # 清空
+        queue.clear_all_tasks()
+
+        # 验证已清空
+        stats = queue.get_task_count()
+        self.assertEqual(stats["pending"] + stats["active"] + stats["completed"], 0)
+
+
 def run_tests():
     """运行所有测试"""
     loader = unittest.TestLoader()

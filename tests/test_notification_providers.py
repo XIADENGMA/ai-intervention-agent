@@ -18,6 +18,8 @@ from unittest.mock import MagicMock, patch
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from typing import Any, cast
+
 from notification_manager import (
     NotificationConfig,
     NotificationEvent,
@@ -357,6 +359,436 @@ class TestSystemNotificationProvider(unittest.TestCase):
             result = self.provider.send(event)
 
             self.assertFalse(result)
+
+
+class TestCreateNotificationProviders(unittest.TestCase):
+    """通知提供者工厂函数测试"""
+
+    def test_create_all_providers(self):
+        """测试创建所有提供者"""
+        from notification_manager import NotificationConfig, NotificationType
+        from notification_providers import create_notification_providers
+
+        config = NotificationConfig()
+        config.web_enabled = True
+        config.sound_enabled = True
+        config.bark_enabled = True
+
+        providers = create_notification_providers(config)
+
+        self.assertIn(NotificationType.WEB, providers)
+        self.assertIn(NotificationType.SOUND, providers)
+        self.assertIn(NotificationType.BARK, providers)
+
+    def test_create_disabled_providers(self):
+        """测试创建禁用的提供者"""
+        from notification_manager import NotificationConfig, NotificationType
+        from notification_providers import create_notification_providers
+
+        config = NotificationConfig()
+        config.web_enabled = False
+        config.sound_enabled = False
+        config.bark_enabled = False
+
+        providers = create_notification_providers(config)
+
+        # 禁用的提供者不应该被创建
+        self.assertNotIn(NotificationType.WEB, providers)
+        self.assertNotIn(NotificationType.SOUND, providers)
+        self.assertNotIn(NotificationType.BARK, providers)
+
+
+class TestBarkProviderAdvanced(unittest.TestCase):
+    """Bark 提供者高级测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import NotificationConfig
+        from notification_providers import BarkNotificationProvider
+
+        self.config = NotificationConfig()
+        self.config.bark_enabled = True
+        self.config.bark_url = "https://api.day.app/push"
+        self.config.bark_device_key = "test_device_key"
+        self.config.bark_icon = "https://icon.url/icon.png"
+        self.config.bark_action = "https://action.url"
+
+        self.provider = BarkNotificationProvider(self.config)
+
+    def test_metadata_serialization(self):
+        """测试元数据序列化"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        with patch.object(self.provider.session, "post") as mock_post:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_post.return_value = mock_response
+
+            event = NotificationEvent(
+                id="test-meta",
+                title="标题",
+                message="消息",
+                trigger=NotificationTrigger.IMMEDIATE,
+                metadata={
+                    "string": "value",
+                    "number": 42,
+                    "list": [1, 2, 3],
+                    "dict": {"nested": "value"},
+                    "bool": True,
+                    "none": None,
+                },
+            )
+
+            result = self.provider.send(event)
+
+            self.assertTrue(result)
+            mock_post.assert_called_once()
+
+    def test_reserved_keys_skipped(self):
+        """测试保留键被跳过"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        with patch.object(self.provider.session, "post") as mock_post:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_post.return_value = mock_response
+
+            # 尝试在元数据中覆盖保留键
+            event = NotificationEvent(
+                id="test-reserved",
+                title="标题",
+                message="消息",
+                trigger=NotificationTrigger.IMMEDIATE,
+                metadata={
+                    "title": "覆盖的标题",  # 保留键，应被跳过
+                    "body": "覆盖的内容",  # 保留键，应被跳过
+                    "custom": "允许的值",
+                },
+            )
+
+            result = self.provider.send(event)
+
+            self.assertTrue(result)
+
+            # 检查调用参数
+            call_args = mock_post.call_args
+            json_data = call_args.kwargs.get("json", {})
+
+            # 原始标题应该保留
+            self.assertEqual(json_data.get("title"), "标题")
+
+    @patch("notification_providers.requests.Session.post")
+    def test_all_2xx_success(self, mock_post):
+        """测试所有 2xx 状态码都成功"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        for status_code in [200, 201, 202, 204]:
+            mock_response = MagicMock()
+            mock_response.status_code = status_code
+            mock_post.return_value = mock_response
+
+            event = NotificationEvent(
+                id=f"test-{status_code}",
+                title="标题",
+                message="消息",
+                trigger=NotificationTrigger.IMMEDIATE,
+                metadata={},
+            )
+
+            result = self.provider.send(event)
+
+            self.assertTrue(result, f"状态码 {status_code} 应该成功")
+
+
+class TestWebProviderAdvanced(unittest.TestCase):
+    """Web 提供者高级测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import NotificationConfig
+        from notification_providers import WebNotificationProvider
+
+        self.config = NotificationConfig()
+        self.config.web_enabled = True
+        self.config.web_icon = "/icons/custom.svg"
+        self.config.web_timeout = 10000
+        self.config.web_permission_auto_request = True
+        self.config.mobile_optimized = True
+        self.config.mobile_vibrate = True
+
+        self.provider = WebNotificationProvider(self.config)
+
+    def test_notification_data_structure(self):
+        """测试通知数据结构"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        event = NotificationEvent(
+            id="test-structure",
+            title="测试标题",
+            message="测试消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={"extra": "data"},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+
+        data = event.metadata.get("web_notification_data")
+        self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
+        self.assertEqual(data["type"], "notification")
+        self.assertIn("config", data)
+        config = cast(dict[str, Any], data["config"])
+        self.assertEqual(config["icon"], "/icons/custom.svg")
+        self.assertEqual(config["timeout"], 10000)
+
+    def test_whitespace_trimming(self):
+        """测试空白字符修剪"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        event = NotificationEvent(
+            id="test-trim",
+            title="  带空格的标题  ",
+            message="  带空格的消息  ",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+
+        data = event.metadata.get("web_notification_data")
+        self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
+        self.assertEqual(data["title"], "带空格的标题")
+        self.assertEqual(data["message"], "带空格的消息")
+
+
+class TestSoundProviderAdvanced(unittest.TestCase):
+    """声音提供者高级测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import NotificationConfig
+        from notification_providers import SoundNotificationProvider
+
+        self.config = NotificationConfig()
+        self.config.sound_enabled = True
+        self.config.sound_mute = False
+        self.config.sound_volume = 0.5
+        self.config.sound_file = "deng"
+
+        self.provider = SoundNotificationProvider(self.config)
+
+    def test_sound_file_mapping(self):
+        """测试声音文件映射"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        event = NotificationEvent(
+            id="test-sound",
+            title="测试",
+            message="消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+
+        data = event.metadata.get("sound_notification_data")
+        self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
+        self.assertEqual(data["file"], "deng[噔].mp3")
+
+    def test_unknown_sound_file_fallback(self):
+        """测试未知声音文件回退到默认"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+        from notification_providers import SoundNotificationProvider
+
+        self.config.sound_file = "unknown_sound"
+        provider = SoundNotificationProvider(self.config)
+
+        event = NotificationEvent(
+            id="test-fallback",
+            title="测试",
+            message="消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={},
+        )
+
+        result = provider.send(event)
+
+        self.assertTrue(result)
+
+        data = event.metadata.get("sound_notification_data")
+        # 应该回退到默认声音文件
+        self.assertIsNotNone(data)
+        data = cast(dict[str, Any], data)
+        self.assertEqual(data["file"], "deng[噔].mp3")
+
+
+class TestBarkProviderEdgeCases(unittest.TestCase):
+    """Bark 提供者边界测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import NotificationConfig
+        from notification_providers import BarkNotificationProvider
+
+        self.config = NotificationConfig()
+        self.config.bark_enabled = True
+        self.config.bark_url = "https://api.day.app/push"
+        self.config.bark_device_key = "test_key"
+
+        self.provider = BarkNotificationProvider(self.config)
+
+    def test_send_with_special_characters(self):
+        """测试发送带特殊字符的通知"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        with patch.object(self.provider.session, "post") as mock_post:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_post.return_value = mock_response
+
+            event = NotificationEvent(
+                id="test-special",
+                title="标题 <script>alert('xss')</script>",
+                message="消息 & 特殊字符 \"引号\" '单引号'",
+                trigger=NotificationTrigger.IMMEDIATE,
+                metadata={},
+            )
+
+            result = self.provider.send(event)
+
+            self.assertTrue(result)
+
+    def test_send_with_unicode(self):
+        """测试发送 Unicode 内容"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        with patch.object(self.provider.session, "post") as mock_post:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_post.return_value = mock_response
+
+            event = NotificationEvent(
+                id="test-unicode",
+                title="🎉 庆祝 🎊",
+                message="日本語 한국어 العربية",
+                trigger=NotificationTrigger.IMMEDIATE,
+                metadata={},
+            )
+
+            result = self.provider.send(event)
+
+            self.assertTrue(result)
+
+    def test_send_with_empty_metadata(self):
+        """测试发送空元数据"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        with patch.object(self.provider.session, "post") as mock_post:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_post.return_value = mock_response
+
+            event = NotificationEvent(
+                id="test-empty-meta",
+                title="标题",
+                message="消息",
+                trigger=NotificationTrigger.IMMEDIATE,
+                metadata={},
+            )
+
+            result = self.provider.send(event)
+
+            self.assertTrue(result)
+
+
+class TestWebProviderEdgeCases(unittest.TestCase):
+    """Web 提供者边界测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import NotificationConfig
+        from notification_providers import WebNotificationProvider
+
+        self.config = NotificationConfig()
+        self.config.web_enabled = True
+
+        self.provider = WebNotificationProvider(self.config)
+
+    def test_send_with_long_title(self):
+        """测试发送超长标题"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        event = NotificationEvent(
+            id="test-long-title",
+            title="长" * 1000,
+            message="消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+
+    def test_send_with_long_message(self):
+        """测试发送超长消息"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+
+        event = NotificationEvent(
+            id="test-long-message",
+            title="标题",
+            message="消" * 10000,
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+
+
+class TestSoundProviderEdgeCases(unittest.TestCase):
+    """声音提供者边界测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import NotificationConfig
+        from notification_providers import SoundNotificationProvider
+
+        self.config = NotificationConfig()
+        self.config.sound_enabled = True
+        self.config.sound_mute = False
+        self.config.sound_volume = 0.5
+
+        self.provider = SoundNotificationProvider(self.config)
+
+    def test_volume_zero(self):
+        """测试音量为 0"""
+        from notification_providers import SoundNotificationProvider
+
+        self.config.sound_volume = 0.0
+        provider = SoundNotificationProvider(self.config)
+
+        # 音量为 0 时不应该抛异常
+        self.assertIsNotNone(provider)
+
+    def test_volume_max(self):
+        """测试音量为最大"""
+        from notification_providers import SoundNotificationProvider
+
+        self.config.sound_volume = 1.0
+        provider = SoundNotificationProvider(self.config)
+
+        # 音量为最大时不应该抛异常
+        self.assertIsNotNone(provider)
 
 
 def run_tests():
