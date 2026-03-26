@@ -203,7 +203,7 @@ class TaskQueue:
 
         logger.info(f"任务队列初始化完成，最大任务数: {max_tasks}，后台清理线程已启动")
 
-    def clear_all_tasks(self):
+    def clear_all_tasks(self) -> int:
         """清理所有任务（重置队列）
 
         删除所有任务并重置队列状态，用于服务启动时清理残留任务。
@@ -707,7 +707,7 @@ class TaskQueue:
                 logger.error(f"后台清理线程异常: {e}", exc_info=True)
         logger.info("后台清理线程已停止")
 
-    def stop_cleanup(self):
+    def stop_cleanup(self) -> None:
         """停止后台清理线程
 
         优雅地停止后台清理线程，应在应用关闭时调用。
@@ -805,7 +805,7 @@ class TaskQueue:
 
     def register_status_change_callback(
         self, callback: Callable[[str, Optional[str], str], None]
-    ):
+    ) -> None:
         """
         注册任务状态变更回调函数
 
@@ -839,7 +839,7 @@ class TaskQueue:
 
     def unregister_status_change_callback(
         self, callback: Callable[[str, Optional[str], str], None]
-    ):
+    ) -> None:
         """
         取消注册任务状态变更回调函数
 

@@ -248,7 +248,7 @@ class ServiceManager:
 
     def register_process(
         self, name: str, process: subprocess.Popen, config: "WebUIConfig"
-    ):
+    ) -> None:
         """注册服务进程到管理器（线程安全）"""
         with self._lock:
             self._processes[name] = {
@@ -258,7 +258,7 @@ class ServiceManager:
             }
             logger.info(f"已注册服务进程: {name} (PID: {process.pid})")
 
-    def unregister_process(self, name: str):
+    def unregister_process(self, name: str) -> None:
         """从管理器注销服务进程（仅移除记录，不终止进程）"""
         with self._lock:
             if name in self._processes:
@@ -389,7 +389,7 @@ class ServiceManager:
             time.sleep(0.5)
         logger.warning(f"端口 {host}:{port} 在 {timeout}秒内未释放")
 
-    def cleanup_all(self, shutdown_notification_manager: bool = True):
+    def cleanup_all(self, shutdown_notification_manager: bool = True) -> None:
         """清理所有已注册的服务进程（幂等操作，容错设计）"""
         with self._lock:
             processes_to_cleanup = list(self._processes.items())
@@ -1516,7 +1516,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
     return _make_resubmit_response(as_mcp=False)
 
 
-async def ensure_web_ui_running(config):
+async def ensure_web_ui_running(config: WebUIConfig) -> None:
     """检查并自动启动 Web UI 服务（异步）"""
     try:
         # 在线程池中执行同步 HTTP 请求
@@ -1988,7 +1988,7 @@ class FeedbackServiceContext:
         return launch_feedback_ui(summary, predefined_options, task_id, timeout)
 
 
-def cleanup_services(shutdown_notification_manager: bool = True):
+def cleanup_services(shutdown_notification_manager: bool = True) -> None:
     """
     清理所有启动的服务进程
 
@@ -2021,7 +2021,7 @@ def cleanup_services(shutdown_notification_manager: bool = True):
         logger.error(f"服务清理失败: {e}", exc_info=True)
 
 
-def main():
+def main() -> None:
     """
     MCP 服务器主入口函数
 
