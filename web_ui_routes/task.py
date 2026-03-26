@@ -105,7 +105,7 @@ class TaskRoutesMixin:
                 )
             except Exception as e:
                 logger.error(f"获取任务列表失败: {e}", exc_info=True)
-                return jsonify({"success": False, "error": str(e)}), 500
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
         @self.app.route("/api/tasks", methods=["POST"])  # type: ignore[attr-defined]
         @self.limiter.limit("60 per minute")  # type: ignore[attr-defined]
@@ -329,7 +329,7 @@ class TaskRoutesMixin:
                 )
             except Exception as e:
                 logger.error(f"获取任务失败: {e}", exc_info=True)
-                return jsonify({"success": False, "error": str(e)}), 500
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
         @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])  # type: ignore[attr-defined]
         @self.limiter.limit("60 per minute")  # type: ignore[attr-defined]
@@ -360,7 +360,7 @@ class TaskRoutesMixin:
                 return jsonify({"success": True, "active_task_id": task_id})
             except Exception as e:
                 logger.error(f"激活任务失败: {e}", exc_info=True)
-                return jsonify({"success": False, "error": str(e)}), 500
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
         @self.app.route("/api/tasks/<task_id>/submit", methods=["POST"])  # type: ignore[attr-defined]
         @self.limiter.limit("60 per minute")  # type: ignore[attr-defined]
@@ -487,4 +487,4 @@ class TaskRoutesMixin:
                 return jsonify({"success": True, "message": "反馈已提交"})
             except Exception as e:
                 logger.error(f"提交任务失败: {e}", exc_info=True)
-                return jsonify({"success": False, "error": str(e)}), 500
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500

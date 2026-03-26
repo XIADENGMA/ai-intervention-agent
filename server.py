@@ -30,6 +30,12 @@ from config_utils import (
     truncate_string,
 )
 from enhanced_logging import EnhancedLogger
+from exceptions import (
+    ServiceConnectionError,
+    ServiceTimeoutError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from task_queue import TaskQueue
 
 # ===============================
@@ -1018,18 +1024,23 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
 
     except FileNotFoundError as e:
         logger.error(f"Python 解释器或脚本文件未找到: {e}", exc_info=True)
-        raise Exception(f"无法启动 Web 服务，文件未找到: {e}") from e
+        raise ServiceUnavailableError(
+            f"无法启动 Web 服务，文件未找到: {e}", code="file_not_found"
+        ) from e
     except PermissionError as e:
         logger.error(f"权限不足，无法启动服务: {e}", exc_info=True)
-        raise Exception(f"权限不足，无法启动 Web 服务: {e}") from e
+        raise ServiceUnavailableError(
+            f"权限不足，无法启动 Web 服务: {e}", code="permission_denied"
+        ) from e
     except Exception as e:
         logger.error(f"启动服务进程时出错: {e}", exc_info=True)
-        # 如果启动失败，再次检查服务是否已经在运行
         if health_check_service(config):
             logger.info("服务已经在运行，继续使用现有服务")
             return
         else:
-            raise Exception(f"启动 Web 服务失败: {e}") from e
+            raise ServiceUnavailableError(
+                f"启动 Web 服务失败: {e}", code="start_failed"
+            ) from e
 
     # 等待服务启动并进行健康检查
     # 【资源管理】如果最终启动失败，需主动终止刚启动的子进程，避免残留后台进程占用端口
@@ -1052,8 +1063,9 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
             logger.info(f"🌐 Web 服务启动成功: http://{config.host}:{config.port}")
             return
 
-        raise Exception(
-            f"Web 服务启动超时 ({max_wait}秒)，请检查端口 {config.port} 是否被占用"
+        raise ServiceTimeoutError(
+            f"Web 服务启动超时 ({max_wait}秒)，请检查端口 {config.port} 是否被占用",
+            code="start_timeout",
         )
     except Exception:
         # 启动阶段失败：尽力清理本次启动的子进程与端口占用
@@ -1096,16 +1108,19 @@ def update_web_content(
         response = session.post(url, json=data, timeout=config.timeout)
 
         if response.status_code == 200:
-            # 200 也必须满足接口契约：返回 JSON 且 status=success
             try:
                 result = response.json()
             except ValueError:
                 logger.error("更新响应不是有效的 JSON 格式（200）")
-                raise Exception("更新内容失败：响应不是有效的 JSON") from None
+                raise ServiceConnectionError(
+                    "更新内容失败：响应不是有效的 JSON", code="invalid_json"
+                ) from None
 
             if not isinstance(result, dict):
                 logger.error(f"更新响应类型异常（200）: {type(result)}")
-                raise Exception("更新内容失败：响应格式异常") from None
+                raise ServiceConnectionError(
+                    "更新内容失败：响应格式异常", code="invalid_response"
+                ) from None
 
             if result.get("status") != "success":
                 err = result.get("error") or "unknown_error"
@@ -1113,8 +1128,9 @@ def update_web_content(
                 logger.error(
                     f"更新响应 status!=success（200）: error={err} msg_len={len(str(msg))} task_id={task_id}"
                 )
-                raise Exception(
-                    f"更新内容失败：{err}{(': ' + str(msg)) if msg else ''}"
+                raise ServiceConnectionError(
+                    f"更新内容失败：{err}{(': ' + str(msg)) if msg else ''}",
+                    code="update_rejected",
                 ) from None
 
             logger.info(
@@ -1122,20 +1138,22 @@ def update_web_content(
             )
 
         elif response.status_code == 400:
-            # 尽量解析结构化错误
             err_text = (response.text or "").strip()
             try:
                 result = response.json()
                 if isinstance(result, dict):
                     err = result.get("error") or "bad_request"
                     msg = result.get("message") or ""
-                    raise Exception(
-                        f"更新内容失败：请求参数不合法（{err}）{(': ' + str(msg)) if msg else ''}"
+                    raise ValidationError(
+                        f"更新内容失败：请求参数不合法（{err}）{(': ' + str(msg)) if msg else ''}",
+                        code="bad_request",
                     ) from None
             except ValueError:
                 pass
             logger.error(f"更新请求参数错误: {err_text[:500]}")
-            raise Exception(f"更新内容失败：请求参数不合法: {err_text[:500]}") from None
+            raise ValidationError(
+                f"更新内容失败：请求参数不合法: {err_text[:500]}", code="bad_request"
+            ) from None
         elif response.status_code == 429:
             retry_after = response.headers.get("Retry-After", "").strip()
             err_text = (response.text or "").strip()
@@ -1143,41 +1161,55 @@ def update_web_content(
                 f"更新请求被限流（429） task_id={task_id} retry_after={retry_after or '-'}"
             )
             hint = f"（Retry-After={retry_after}）" if retry_after else ""
-            raise Exception(
-                f"更新内容失败：请求被限流，请稍后重试{hint}{(': ' + err_text[:200]) if err_text else ''}"
+            raise ServiceConnectionError(
+                f"更新内容失败：请求被限流，请稍后重试{hint}{(': ' + err_text[:200]) if err_text else ''}",
+                code="rate_limited",
             ) from None
         elif response.status_code == 404:
             logger.error("更新 API 端点不存在，可能服务未正确启动")
-            raise Exception(
-                "更新接口不可用（/api/update 未找到）。请确认 Web UI 服务已启动且版本匹配。"
+            raise ServiceUnavailableError(
+                "更新接口不可用（/api/update 未找到）。请确认 Web UI 服务已启动且版本匹配。",
+                code="endpoint_not_found",
             )
         elif 500 <= response.status_code <= 599:
             err_text = (response.text or "").strip()
             logger.error(f"更新内容失败（服务端错误）HTTP {response.status_code}")
-            raise Exception(
-                f"更新内容失败：服务端错误（HTTP {response.status_code}）{(': ' + err_text[:200]) if err_text else ''}"
+            raise ServiceConnectionError(
+                f"更新内容失败：服务端错误（HTTP {response.status_code}）{(': ' + err_text[:200]) if err_text else ''}",
+                code="server_error",
             ) from None
         else:
             err_text = (response.text or "").strip()
             logger.error(f"更新内容失败，HTTP 状态码: {response.status_code}")
-            raise Exception(
-                f"更新内容失败，状态码: {response.status_code}{(': ' + err_text[:200]) if err_text else ''}"
+            raise ServiceConnectionError(
+                f"更新内容失败，状态码: {response.status_code}{(': ' + err_text[:200]) if err_text else ''}",
+                code="unexpected_status",
             ) from None
 
     except requests.exceptions.Timeout:
         logger.error(f"更新内容超时 ({config.timeout}秒)", exc_info=True)
-        raise Exception("更新内容超时，请检查网络连接或稍后重试") from None
+        raise ServiceTimeoutError(
+            "更新内容超时，请检查网络连接或稍后重试", code="timeout"
+        ) from None
     except requests.exceptions.ConnectionError:
         logger.error(f"无法连接到 Web 服务: {url}", exc_info=True)
-        raise Exception(
-            "无法连接到 Web UI 服务，请确认服务正在运行，并检查地址/端口（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl 设置）。"
+        raise ServiceUnavailableError(
+            "无法连接到 Web UI 服务，请确认服务正在运行，并检查地址/端口（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl 设置）。",
+            code="connection_refused",
         ) from None
     except requests.exceptions.RequestException as e:
         logger.error(f"更新内容时网络请求失败: {e}", exc_info=True)
-        raise Exception(f"更新内容失败: {e}") from e
+        raise ServiceConnectionError(f"更新内容失败: {e}", code="request_failed") from e
+    except (
+        ServiceConnectionError,
+        ServiceTimeoutError,
+        ServiceUnavailableError,
+        ValidationError,
+    ):
+        raise
     except Exception as e:
         logger.error(f"更新内容时出现未知错误: {e}", exc_info=True)
-        raise Exception(f"更新 Web 内容失败: {e}") from e
+        raise ServiceConnectionError(f"更新 Web 内容失败: {e}", code="unknown") from e
 
 
 def _format_file_size(size: int) -> str:
@@ -1673,13 +1705,24 @@ def launch_feedback_ui(
 
     except ValueError as e:
         logger.error(f"输入参数错误: {e}", exc_info=True)
-        raise Exception(f"参数验证失败: {e}") from e
+        raise ValidationError(f"参数验证失败: {e}", code="invalid_params") from e
     except FileNotFoundError as e:
         logger.error(f"文件未找到: {e}", exc_info=True)
-        raise Exception(f"必要文件缺失: {e}") from e
+        raise ServiceUnavailableError(
+            f"必要文件缺失: {e}", code="file_not_found"
+        ) from e
+    except (
+        ServiceConnectionError,
+        ServiceTimeoutError,
+        ServiceUnavailableError,
+        ValidationError,
+    ):
+        raise
     except Exception as e:
         logger.error(f"启动反馈界面失败: {e}", exc_info=True)
-        raise Exception(f"反馈界面启动失败: {e}") from e
+        raise ServiceUnavailableError(
+            f"反馈界面启动失败: {e}", code="start_failed"
+        ) from e
 
 
 @mcp.tool()

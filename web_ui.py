@@ -1216,6 +1216,24 @@ class WebFeedbackUI(
         self._setup_notification_routes()
         self._setup_static_routes()
 
+        # 全局异常处理：将 AIAgentError 统一转为标准 JSON 错误响应
+        from exceptions import AIAgentError
+
+        @self.app.errorhandler(AIAgentError)
+        def handle_agent_error(exc: AIAgentError) -> ResponseReturnValue:
+            status = 500
+            if exc.code == "not_found":
+                status = 404
+            elif exc.code == "validation":
+                status = 400
+            elif exc.code == "timeout":
+                status = 504
+            body: dict[str, Any] = {"success": False, "error": str(exc)}
+            if exc.code:
+                body["code"] = exc.code
+            logger.warning(f"AIAgentError ({exc.code}): {exc}", exc_info=True)
+            return jsonify(body), status
+
     def shutdown_server(self) -> None:
         """优雅关闭Flask服务器
 

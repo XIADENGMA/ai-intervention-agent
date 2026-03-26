@@ -190,7 +190,7 @@ class FeedbackRoutesMixin:
                 if not target_task:
                     logger.warning(f"提交反馈时任务不存在: {requested_task_id}")
                     return (
-                        jsonify({"status": "error", "message": "任务不存在"}),
+                        jsonify({"success": False, "error": "任务不存在"}),
                         404,
                     )
             else:

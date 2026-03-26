@@ -129,9 +129,7 @@ class NotificationRoutesMixin:
 
             except Exception as e:
                 logger.error(f"Bark 测试通知失败: {e}", exc_info=True)
-                return jsonify(
-                    {"status": "error", "message": f"测试失败: {str(e)}"}
-                ), 500
+                return jsonify({"status": "error", "message": "测试失败"}), 500
 
         @self.app.route("/api/notify-new-tasks", methods=["POST"])  # type: ignore[attr-defined]
         def notify_new_tasks() -> ResponseReturnValue:
@@ -233,9 +231,7 @@ class NotificationRoutesMixin:
                 return jsonify({"status": "success", "event_id": event_id})
             except Exception as e:
                 logger.error(f"触发新任务通知失败: {e}", exc_info=True)
-                return jsonify(
-                    {"status": "error", "message": f"触发失败: {str(e)}"}
-                ), 500
+                return jsonify({"status": "error", "message": "触发失败"}), 500
 
         @self.app.route("/api/update-notification-config", methods=["POST"])  # type: ignore[attr-defined]
         def update_notification_config() -> ResponseReturnValue:
@@ -440,9 +436,7 @@ class NotificationRoutesMixin:
 
             except Exception as e:
                 logger.error(f"更新通知配置失败: {e}", exc_info=True)
-                return jsonify(
-                    {"status": "error", "message": f"更新失败: {str(e)}"}
-                ), 500
+                return jsonify({"status": "error", "message": "更新失败"}), 500
 
         @self.app.route("/api/get-notification-config", methods=["GET"])  # type: ignore[attr-defined]
         def get_notification_config() -> ResponseReturnValue:
@@ -463,9 +457,7 @@ class NotificationRoutesMixin:
 
             except Exception as e:
                 logger.error(f"获取通知配置失败: {e}", exc_info=True)
-                return jsonify(
-                    {"status": "error", "message": f"获取配置失败: {str(e)}"}
-                ), 500
+                return jsonify({"status": "error", "message": "获取配置失败"}), 500
 
         @self.app.route("/api/get-feedback-prompts", methods=["GET"])  # type: ignore[attr-defined]
         def get_feedback_prompts_api() -> ResponseReturnValue:
@@ -514,6 +506,4 @@ class NotificationRoutesMixin:
 
             except Exception as e:
                 logger.error(f"获取反馈提示语配置失败: {e}", exc_info=True)
-                return jsonify(
-                    {"status": "error", "message": f"获取配置失败: {str(e)}"}
-                ), 500
+                return jsonify({"status": "error", "message": "获取配置失败"}), 500
