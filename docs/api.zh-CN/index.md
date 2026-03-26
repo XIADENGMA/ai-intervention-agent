@@ -6,6 +6,7 @@
 
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
+- [exceptions](exceptions.md)
 - [notification_manager](notification_manager.md)
 - [notification_providers](notification_providers.md)
 - [task_queue](task_queue.md)
@@ -16,6 +17,7 @@
 
 ### 核心模块
 - **config_manager**: 配置管理
+- **exceptions**: 统一异常定义与错误响应
 - **notification_manager**: 通知管理
 - **task_queue**: 任务队列
 

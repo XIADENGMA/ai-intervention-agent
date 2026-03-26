@@ -8,6 +8,7 @@ English API reference (signatures-focused).
 
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
+- [exceptions](exceptions.md)
 - [notification_manager](notification_manager.md)
 - [notification_providers](notification_providers.md)
 - [task_queue](task_queue.md)

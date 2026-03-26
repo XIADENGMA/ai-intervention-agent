@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 import json
-import logging
 import time
 from ipaddress import AddressValueError, ip_address, ip_network
 from typing import Any, Dict, cast
 
-logger = logging.getLogger(__name__)
+from enhanced_logging import EnhancedLogger
+
+logger = EnhancedLogger(__name__)
 
 
 class NetworkSecurityMixin:

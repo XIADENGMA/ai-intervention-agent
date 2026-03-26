@@ -1865,6 +1865,7 @@ class WebFeedbackUI(
         self._mdns_hostname = hostname
         self._mdns_publish_ip = publish_ip
 
+        logger.info(f"mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
         print(f"mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
 
     def _stop_mdns(self) -> None:

@@ -7,14 +7,15 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from typing import TYPE_CHECKING, Any, Dict, cast
+
+from enhanced_logging import EnhancedLogger
 
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
+logger = EnhancedLogger(__name__)
 
 
 class JsoncEngineMixin:
