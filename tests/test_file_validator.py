@@ -12,11 +12,6 @@ AI Intervention Agent - 文件验证器单元测试
 
 import sys
 import unittest
-from pathlib import Path
-
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
 
 
 class TestMagicNumberValidation(unittest.TestCase):

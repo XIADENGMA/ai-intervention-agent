@@ -11,14 +11,8 @@ AI Intervention Agent - 通知提供者单元测试
 
 import sys
 import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from typing import Any, cast
+from unittest.mock import MagicMock, patch
 
 from notification_manager import (
     NotificationConfig,

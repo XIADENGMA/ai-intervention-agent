@@ -11,13 +11,7 @@ import io
 import json
 import sys
 import unittest
-from pathlib import Path
 from typing import Any
-
-# 添加项目根目录到路径
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 
 # ============================================================================
 # web_ui.py 集成测试
