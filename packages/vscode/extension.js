@@ -14,7 +14,7 @@ try {
   // 忽略：打包/测试环境下可能读取不到版本号
 }
 // 用于排查“VSIX 是否确实更新”的构建标识（版本号不变时尤为重要）
-const BUILD_ID = '2026-01-07-webview-ui-external-logs'
+const BUILD_ID = '2026-03-26-independent-ext-polling'
 
 // deactivate() 清理钩子（activate 内赋值）
 let deactivateHook = null

@@ -335,9 +335,10 @@ class WebviewProvider {
 
   updateServerUrl(serverUrl) {
     this._serverUrl = serverUrl
-    // serverUrl 变更后旧通知配置已无效，强制清除缓存
+    // serverUrl 变更后旧通知配置已无效，强制清除缓存（包括进行中的请求）
     this._notificationConfig = null
     this._notificationConfigFetchedAt = 0
+    this._notificationConfigFetchPromise = null
     if (this._view && this._view.webview) {
       // serverUrl 变化会触发重建 HTML：需要重新进入“未就绪”状态，并重置 ready watchdog
       try {

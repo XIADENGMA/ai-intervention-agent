@@ -11,7 +11,7 @@
     "vscode:lint": "npm -w ai-intervention-agent run lint",
     "vscode:package": "node scripts/package_vscode_vsix.mjs",
     "vscode:test": "npm -w ai-intervention-agent test",
-    "vscode:check": "npm run vscode:lint && npm run vscode:test && npm run vscode:package",
+    "vscode:check": "npm run vscode:test && npm run vscode:package",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {

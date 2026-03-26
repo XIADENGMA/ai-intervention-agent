@@ -909,6 +909,8 @@ class MacOSNativeNotificationProvider {
         return true
       } catch (e) {
         const msg = e && e.message ? String(e.message) : String(e)
+        // 执行失败时清空缓存，下次 send() 重新 resolve（应对二进制被删除等场景）
+        this._terminalNotifierBin = ''
         attempts.push({
           backend: 'terminal-notifier',
           mode: bundleId ? 'activate+execute' : 'plain',
