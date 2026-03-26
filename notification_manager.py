@@ -324,7 +324,9 @@ class NotificationManager:
                 self._update_bark_provider()
                 logger.info("已根据初始配置注册 Bark 通知提供者")
 
-    def register_provider(self, notification_type: NotificationType, provider: Any):
+    def register_provider(
+        self, notification_type: NotificationType, provider: Any
+    ) -> None:
         """注册通知提供者（需实现 send(event) -> bool）"""
         old_provider: Any | None = None
         with self._providers_lock:
@@ -344,7 +346,7 @@ class NotificationManager:
         except Exception as e:
             logger.debug(f"关闭通知提供者资源失败（忽略）: {e}")
 
-    def add_callback(self, event_name: str, callback: Callable):
+    def add_callback(self, event_name: str, callback: Callable) -> None:
         """添加事件回调（如 notification_sent, notification_fallback）"""
         with self._callbacks_lock:
             if event_name not in self._callbacks:
@@ -352,7 +354,7 @@ class NotificationManager:
             self._callbacks[event_name].append(callback)
         logger.debug(f"已添加回调: {event_name}")
 
-    def trigger_callbacks(self, event_name: str, *args, **kwargs):
+    def trigger_callbacks(self, event_name: str, *args: Any, **kwargs: Any) -> None:
         """触发指定事件的所有回调，异常不中断后续回调"""
         with self._callbacks_lock:
             callbacks = list(self._callbacks.get(event_name, []))
@@ -776,7 +778,7 @@ class NotificationManager:
         logger.info(f"执行降级处理: {event.id}")
         self.trigger_callbacks("notification_fallback", event)
 
-    def shutdown(self, wait: bool = False):
+    def shutdown(self, wait: bool = False) -> None:
         """关闭管理器，取消延迟 Timer 并关闭线程池（幂等）"""
         if getattr(self, "_shutdown_called", False):
             return
@@ -815,7 +817,7 @@ class NotificationManager:
         except Exception as e:
             logger.debug(f"关闭通知提供者失败（忽略）: {e}")
 
-    def restart(self):
+    def restart(self) -> None:
         """shutdown 后重建线程池"""
         if not getattr(self, "_shutdown_called", False):
             return
@@ -829,7 +831,7 @@ class NotificationManager:
         """返回当前配置对象引用"""
         return self.config
 
-    def refresh_config_from_file(self, force: bool = False):
+    def refresh_config_from_file(self, force: bool = False) -> None:
         """从配置文件刷新配置（mtime 缓存优化，force=True 强制刷新）"""
         if not CONFIG_FILE_AVAILABLE:
             return
@@ -980,12 +982,12 @@ class NotificationManager:
         except Exception as e:
             logger.warning(f"从配置文件刷新配置失败: {e}", exc_info=True)
 
-    def update_config(self, **kwargs):
+    def update_config(self, **kwargs: Any) -> None:
         """更新配置并持久化到文件"""
         self.update_config_without_save(**kwargs)
         self._save_config_to_file()
 
-    def update_config_without_save(self, **kwargs):
+    def update_config_without_save(self, **kwargs: Any) -> None:
         """仅内存更新配置，不写文件。bark_enabled 变化时自动更新提供者。"""
         # 【线程安全】使用配置锁保护配置更新操作
         with self._config_lock:

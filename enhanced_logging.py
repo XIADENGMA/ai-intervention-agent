@@ -25,7 +25,7 @@ class SingletonLogManager:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def setup_logger(self, name: str, level=logging.WARNING):
+    def setup_logger(self, name: str, level: int = logging.WARNING) -> logging.Logger:
         """返回已配置的 logger，首次调用时初始化"""
         # 始终加锁检查，避免快速路径的竞态条件
         # 原逻辑的快速路径可能导致返回未完全初始化的 logger
@@ -80,7 +80,7 @@ class LevelBasedStreamHandler:
         """只允许 DEBUG/INFO 通过"""
         return record.levelno <= logging.INFO
 
-    def attach_to_logger(self, logger):
+    def attach_to_logger(self, logger: logging.Logger) -> None:
         """将双 Handler 附加到 logger"""
         logger.addHandler(self.stdout_handler)
         logger.addHandler(self.stderr_handler)
@@ -124,7 +124,7 @@ class SecureLogFormatter(logging.Formatter):
         super().__init__(*args, **kwargs)
         self.sanitizer = LogSanitizer()
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         """格式化后脱敏"""
         # 先进行标准格式化
         formatted = super().format(record)
@@ -135,7 +135,7 @@ class SecureLogFormatter(logging.Formatter):
 class AntiInjectionFilter(logging.Filter):
     """防注入过滤器 - 转义换行符/回车符/空字节防止日志伪造。"""
 
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         """转义 msg 和 args 中的危险字符，始终返回 True"""
         # 转义record.msg中的危险字符（换行符、回车符、空字节）
         if hasattr(record, "msg") and isinstance(record.msg, str):
@@ -146,7 +146,7 @@ class AntiInjectionFilter(logging.Filter):
             )
 
         # 转义 record.args 中的危险字符
-        if hasattr(record, "args"):
+        if hasattr(record, "args") and isinstance(record.args, tuple):
             escaped_args = []
             for arg in record.args:
                 if isinstance(arg, str):
@@ -249,7 +249,7 @@ class EnhancedLogger:
                 return level
         return default_level
 
-    def log(self, level: int, message: str, *args, **kwargs):
+    def log(self, level: int, message: str, *args: Any, **kwargs: Any) -> None:
         """记录日志，带去重和级别映射"""
         effective_level = self._get_effective_level(message, level)
         should_log, duplicate_info = self.deduplicator.should_log(message)
@@ -264,16 +264,16 @@ class EnhancedLogger:
         """兼容标准 logging.Logger API：设置底层 logger 的级别。"""
         self.logger.setLevel(level)
 
-    def debug(self, message: str, *args, **kwargs):
+    def debug(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.log(logging.DEBUG, message, *args, **kwargs)
 
-    def info(self, message: str, *args, **kwargs):
+    def info(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.log(logging.INFO, message, *args, **kwargs)
 
-    def warning(self, message: str, *args, **kwargs):
+    def warning(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.log(logging.WARNING, message, *args, **kwargs)
 
-    def error(self, message: str, *args, **kwargs):
+    def error(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.log(logging.ERROR, message, *args, **kwargs)
 
 
