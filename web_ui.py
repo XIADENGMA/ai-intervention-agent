@@ -27,12 +27,14 @@ import markdown
 import psutil
 from flask import (
     Flask,
+    Response,
     abort,
     jsonify,
     render_template_string,
     request,
     send_from_directory,
 )
+from flask.typing import ResponseReturnValue
 from flask_compress import Compress
 from flask_cors import CORS
 from flask_limiter import Limiter
@@ -692,7 +694,7 @@ class WebFeedbackUI:
         self.setup_markdown()
         self.setup_routes()
 
-    def setup_security_headers(self):
+    def setup_security_headers(self) -> None:
         """设置HTTP安全头部和访问控制
 
         功能说明：
@@ -733,7 +735,7 @@ class WebFeedbackUI:
         """
 
         @self.app.before_request
-        def check_ip_access():
+        def check_ip_access() -> ResponseReturnValue | None:
             """检查IP访问权限（before_request钩子）
 
             功能说明：
@@ -760,7 +762,7 @@ class WebFeedbackUI:
                 abort(403)
 
         @self.app.after_request
-        def add_security_headers(response):
+        def add_security_headers(response: Response) -> Response:
             """添加HTTP安全头部（after_request钩子）
 
             功能说明：
@@ -831,7 +833,7 @@ class WebFeedbackUI:
 
             return response
 
-    def setup_markdown(self):
+    def setup_markdown(self) -> None:
         """设置Markdown渲染器和扩展
 
         功能说明：
@@ -917,7 +919,7 @@ class WebFeedbackUI:
             return ""
         return str(self.md.convert(text))
 
-    def setup_routes(self):
+    def setup_routes(self) -> None:
         """注册所有API路由和静态资源路由
 
         功能说明：
@@ -972,7 +974,7 @@ class WebFeedbackUI:
         """
 
         @self.app.route("/")
-        def index():
+        def index() -> ResponseReturnValue:
             """主页面路由处理器
 
             功能说明：
@@ -990,7 +992,7 @@ class WebFeedbackUI:
 
         @self.app.route("/api/config")
         @self.limiter.limit("300 per minute")  # 允许更频繁的轮询，支持测试场景
-        def get_api_config():
+        def get_api_config() -> ResponseReturnValue:
             """获取当前任务配置的API端点
 
             功能说明：
@@ -1160,7 +1162,7 @@ class WebFeedbackUI:
                 ), 500
 
         @self.app.route("/api/close", methods=["POST"])
-        def close_interface():
+        def close_interface() -> ResponseReturnValue:
             """关闭服务器的API端点
 
             功能说明：
@@ -1187,7 +1189,7 @@ class WebFeedbackUI:
             return jsonify({"status": "success", "message": "服务即将关闭"})
 
         @self.app.route("/api/health", methods=["GET"])
-        def health_check():
+        def health_check() -> ResponseReturnValue:
             """健康检查端点
 
             功能说明：
@@ -1208,7 +1210,7 @@ class WebFeedbackUI:
 
         @self.app.route("/api/tasks", methods=["GET"])
         @self.limiter.limit("300 per minute")
-        def get_tasks():
+        def get_tasks() -> ResponseReturnValue:
             """获取所有任务列表的API端点
 
             功能说明：
@@ -1292,7 +1294,7 @@ class WebFeedbackUI:
 
         @self.app.route("/api/tasks", methods=["POST"])
         @self.limiter.limit("60 per minute")
-        def create_task():
+        def create_task() -> ResponseReturnValue:
             """创建新任务的API端点
 
             功能说明：
@@ -1480,7 +1482,7 @@ class WebFeedbackUI:
 
         @self.app.route("/api/tasks/<task_id>", methods=["GET"])
         @self.limiter.limit("300 per minute")
-        def get_task(task_id):
+        def get_task(task_id) -> ResponseReturnValue:
             """获取单个任务详情的API端点
 
             功能说明：
@@ -1555,7 +1557,7 @@ class WebFeedbackUI:
 
         @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])
         @self.limiter.limit("60 per minute")
-        def activate_task(task_id):
+        def activate_task(task_id) -> ResponseReturnValue:
             """激活指定任务的API端点
 
             功能说明：
@@ -1603,7 +1605,7 @@ class WebFeedbackUI:
 
         @self.app.route("/api/tasks/<task_id>/submit", methods=["POST"])
         @self.limiter.limit("60 per minute")
-        def submit_task_feedback(task_id):
+        def submit_task_feedback(task_id) -> ResponseReturnValue:
             """提交指定任务反馈的API端点
 
             功能说明：
@@ -1768,7 +1770,7 @@ class WebFeedbackUI:
 
         @self.app.route("/api/submit", methods=["POST"])
         @self.limiter.limit("60 per minute")  # 放宽提交频率限制，支持测试场景
-        def submit_feedback():
+        def submit_feedback() -> ResponseReturnValue:
             """提交反馈的通用API端点（兼容多种请求格式）
 
             功能说明：
@@ -2050,7 +2052,7 @@ class WebFeedbackUI:
             )
 
         @self.app.route("/api/update", methods=["POST"])
-        def update_content():
+        def update_content() -> ResponseReturnValue:
             """更新页面内容的API端点（单任务模式）
 
             功能说明：
@@ -2279,7 +2281,7 @@ class WebFeedbackUI:
                 )
 
         @self.app.route("/api/feedback", methods=["GET"])
-        def get_feedback():
+        def get_feedback() -> ResponseReturnValue:
             """获取用户反馈结果的API端点（单任务模式）
 
             功能说明：
@@ -2317,7 +2319,7 @@ class WebFeedbackUI:
             return jsonify({"status": "waiting", "feedback": None})
 
         @self.app.route("/api/test-bark", methods=["POST"])
-        def test_bark_notification():
+        def test_bark_notification() -> ResponseReturnValue:
             """测试Bark通知的API端点
 
             功能说明：
@@ -2448,7 +2450,7 @@ class WebFeedbackUI:
                 ), 500
 
         @self.app.route("/api/notify-new-tasks", methods=["POST"])
-        def notify_new_tasks():
+        def notify_new_tasks() -> ResponseReturnValue:
             """新任务通知触发端点（阶段 B）
 
             目标：
@@ -2553,7 +2555,7 @@ class WebFeedbackUI:
                 ), 500
 
         @self.app.route("/api/update-notification-config", methods=["POST"])
-        def update_notification_config():
+        def update_notification_config() -> ResponseReturnValue:
             """更新通知配置的API端点
 
             功能说明：
@@ -2801,7 +2803,7 @@ class WebFeedbackUI:
                 ), 500
 
         @self.app.route("/api/get-notification-config", methods=["GET"])
-        def get_notification_config():
+        def get_notification_config() -> ResponseReturnValue:
             """获取当前通知配置的API端点
 
             功能说明：
@@ -2853,7 +2855,7 @@ class WebFeedbackUI:
                 ), 500
 
         @self.app.route("/api/get-feedback-prompts", methods=["GET"])
-        def get_feedback_prompts_api():
+        def get_feedback_prompts_api() -> ResponseReturnValue:
             """获取反馈提示语配置的API端点
 
             功能说明：
@@ -2912,7 +2914,7 @@ class WebFeedbackUI:
         # 静态文件路由
         @self.app.route("/fonts/<filename>")
         @self.limiter.exempt
-        def serve_fonts(filename):
+        def serve_fonts(filename) -> ResponseReturnValue:
             """提供字体文件的静态资源路由
 
             功能说明：
@@ -2937,7 +2939,7 @@ class WebFeedbackUI:
 
         @self.app.route("/icons/<filename>")
         @self.limiter.exempt
-        def serve_icons(filename):
+        def serve_icons(filename) -> ResponseReturnValue:
             """提供图标文件的静态资源路由
 
             功能说明：
@@ -2962,7 +2964,7 @@ class WebFeedbackUI:
 
         @self.app.route("/sounds/<filename>")
         @self.limiter.exempt
-        def serve_sounds(filename):
+        def serve_sounds(filename) -> ResponseReturnValue:
             """提供音频文件的静态资源路由
 
             功能说明：
@@ -2988,7 +2990,7 @@ class WebFeedbackUI:
 
         @self.app.route("/static/css/<filename>")
         @self.limiter.exempt
-        def serve_css(filename):
+        def serve_css(filename) -> ResponseReturnValue:
             """提供CSS文件的静态资源路由
 
             功能说明：
@@ -3039,7 +3041,7 @@ class WebFeedbackUI:
 
         @self.app.route("/static/js/<filename>")
         @self.limiter.exempt
-        def serve_js(filename):
+        def serve_js(filename) -> ResponseReturnValue:
             """提供JavaScript文件的静态资源路由
 
             功能说明：
@@ -3090,7 +3092,7 @@ class WebFeedbackUI:
 
         @self.app.route("/notification-service-worker.js")
         @self.limiter.exempt
-        def serve_notification_service_worker():
+        def serve_notification_service_worker() -> ResponseReturnValue:
             """提供通知 service worker，并允许其控制整个站点作用域。"""
             current_dir = Path(__file__).resolve().parent
             js_dir = current_dir / "static" / "js"
@@ -3103,7 +3105,7 @@ class WebFeedbackUI:
 
         @self.app.route("/static/lottie/<filename>")
         @self.limiter.exempt
-        def serve_lottie(filename):
+        def serve_lottie(filename) -> ResponseReturnValue:
             """提供 Lottie 动画 JSON 文件的静态资源路由
 
             功能说明：
@@ -3135,7 +3137,7 @@ class WebFeedbackUI:
 
         @self.app.route("/favicon.ico")
         @self.limiter.exempt
-        def favicon():
+        def favicon() -> ResponseReturnValue:
             """提供网站图标的路由
 
             功能说明：
@@ -3177,7 +3179,7 @@ class WebFeedbackUI:
             response.headers["Expires"] = "0"
             return response
 
-    def shutdown_server(self):
+    def shutdown_server(self) -> None:
         """优雅关闭Flask服务器
 
         功能说明：
@@ -3202,7 +3204,7 @@ class WebFeedbackUI:
 
         os.kill(os.getpid(), signal.SIGINT)
 
-    def get_html_template(self):
+    def get_html_template(self) -> str:
         """读取并处理HTML模板文件
 
         功能说明：
@@ -3373,7 +3375,7 @@ class WebFeedbackUI:
         new_prompt: str,
         new_options: Optional[List[str]] = None,
         new_task_id: Optional[str] = None,
-    ):
+    ) -> None:
         """更新页面内容（单任务模式，实例方法）
 
         功能说明：
