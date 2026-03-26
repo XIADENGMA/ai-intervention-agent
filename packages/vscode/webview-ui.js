@@ -2327,10 +2327,12 @@
     const currentTaskIds = new Set(allTasks.map(t => t.task_id))
     const newTasks = allTasks.filter(t => !lastTaskIds.has(t.task_id))
 
-    /* 当检测到新任务时显示通知提示 */
+    /* 当检测到新任务时显示通知提示（传递 prompt 用于 macOS 原生通知内容） */
     if (newTasks.length > 0 && hasInitializedTaskIdTracking) {
-      const ids = newTasks.map(task => task.task_id).filter(Boolean)
-      notifyNewTasks(ids)
+      const taskData = newTasks
+        .filter(t => t && t.task_id)
+        .map(t => ({ id: t.task_id, prompt: t.prompt || '' }))
+      notifyNewTasks(taskData)
     }
 
     lastTaskIds = currentTaskIds
@@ -3156,18 +3158,25 @@
   }
 
   // 新任务通知：委托给 notify-core（按需加载）
-  function notifyNewTasks(taskIds) {
-    const ids = Array.isArray(taskIds) ? taskIds.filter(Boolean) : [taskIds].filter(Boolean)
-    if (!ids || ids.length === 0) return
+  // taskData: Array<{ id, prompt }> 或 Array<string>（向后兼容）
+  function notifyNewTasks(taskData) {
+    const items = Array.isArray(taskData) ? taskData.filter(Boolean) : [taskData].filter(Boolean)
+    if (!items || items.length === 0) return
+
+    // 兼容：若传入纯字符串数组，转换为 { id, prompt } 格式
+    const normalized = items.map(item =>
+      typeof item === 'string' ? { id: item, prompt: '' } : item
+    )
+    const ids = normalized.map(t => t.id || t).filter(Boolean)
+    if (ids.length === 0) return
 
     Promise.resolve()
       .then(() => ensureNotifyCoreLoaded())
       .then(ok => {
         const mod = getNotifyCoreModule()
         if (ok && mod && typeof mod.showNewTaskNotification === 'function') {
-          return mod.showNewTaskNotification(ids)
+          return mod.showNewTaskNotification(normalized)
         }
-        // notify-core 不可用时至少给出 VSCode statusBar 提示（不影响主流程）
         const msg =
           ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
         postStatusInfo(msg)

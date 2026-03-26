@@ -511,7 +511,7 @@ class AppleScriptNotificationProvider {
     }
 
     // 增加少量 delay：在部分系统/宿主下有助于稳定交付通知（不会引入额外权限）
-    const script = `display notification ${toAppleScriptStringLiteral(message)} with title ${toAppleScriptStringLiteral(title)}\ndelay 0.05`
+    const script = `display notification ${toAppleScriptStringLiteral(message)} with title ${toAppleScriptStringLiteral(title)} sound name "Glass"\ndelay 0.05`
     // 是否在通知发送成功后尝试激活宿主 IDE 窗口（使点击通知可跳转到对应窗口）
     const shouldActivateHost = !skipBundleInjection && !!(md && md.activateOnClick !== false)
     const diagBase = {
@@ -752,7 +752,7 @@ class MacOSNativeNotificationProvider {
     }
 
     if (process.platform === 'darwin' && tnBin) {
-      const baseArgs = ['-title', title, '-message', message]
+      const baseArgs = ['-title', title, '-message', message, '-sound', 'default']
       if (diagnosticMode && isTest) baseArgs.push('-ignoreDnD')
       const args = [...baseArgs]
       // 点击激活宿主：

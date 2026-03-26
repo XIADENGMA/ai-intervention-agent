@@ -151,12 +151,42 @@
     }
   }
 
-  async function showNewTaskNotification(taskIds) {
-    try {
-      const ids = Array.isArray(taskIds) ? taskIds.filter(Boolean) : [taskIds].filter(Boolean)
-      if (!ids || ids.length === 0) return
+  var NOTIFY_SUMMARY_MAX_LEN = 120
 
-      const msg = ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
+  function truncateSummary(text, maxLen) {
+    if (!text || typeof text !== 'string') return ''
+    var s = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+    if (s.length <= maxLen) return s
+    return s.slice(0, maxLen) + '…'
+  }
+
+  // taskData: Array<{ id, prompt }> 或 Array<string>（向后兼容纯 ID 数组）
+  async function showNewTaskNotification(taskData) {
+    try {
+      var items = Array.isArray(taskData) ? taskData.filter(Boolean) : [taskData].filter(Boolean)
+      if (!items || items.length === 0) return
+
+      // 兼容：纯字符串数组 → { id, prompt } 格式
+      var normalized = items.map(function (item) {
+        return typeof item === 'string' ? { id: item, prompt: '' } : item
+      })
+      var ids = normalized.map(function (t) { return t.id || '' }).filter(Boolean)
+      if (ids.length === 0) return
+
+      // 构建通知内容：优先使用第一个任务的 prompt 摘要
+      var firstPrompt = (normalized[0] && normalized[0].prompt) || ''
+      var summary = truncateSummary(firstPrompt, NOTIFY_SUMMARY_MAX_LEN)
+      var msg
+      if (summary) {
+        msg = ids.length === 1
+          ? summary
+          : summary + '（共 ' + ids.length + ' 个任务）'
+      } else {
+        msg = ids.length === 1
+          ? '新任务已添加: ' + ids[0]
+          : '收到 ' + ids.length + ' 个新任务'
+      }
+
       logDebug('[notify-core] 检测到新任务: ' + msg)
 
       // 新任务触发时做一次静默刷新：确保 types 能覆盖 macos_native（若用户启用）
@@ -166,19 +196,19 @@
         /* 忽略 */
       }
 
-      const settings = notificationSettings || { enabled: true, macosNativeEnabled: true }
+      var settings = notificationSettings || { enabled: true, macosNativeEnabled: true }
       if (settings && settings.enabled === false) return
 
-      const types = ['vscode']
+      var types = ['vscode']
       if (settings && settings.macosNativeEnabled) {
         types.push('macos_native')
       }
 
       postNotificationEvent({
-        title: 'AI Intervention Agent',
+        title: 'AI 交互反馈',
         message: msg,
         trigger: 'immediate',
-        types,
+        types: types,
         metadata: {
           presentation: 'statusBar',
           severity: 'info',
