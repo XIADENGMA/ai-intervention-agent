@@ -11,6 +11,7 @@ include notification_models.py
 include notification_providers.py
 include shared_types.py
 include task_queue.py
+include exceptions.py
 include config.jsonc.default
 recursive-include config_modules *.py
 recursive-include web_ui_routes *.py
