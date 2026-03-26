@@ -59,14 +59,13 @@ class TestConfigManagerFileWatcher(unittest.TestCase):
     """测试文件监听功能"""
 
     def test_update_file_mtime(self):
-        """测试更新文件修改时间"""
+        """测试更新文件修改时间：调用后应与磁盘 mtime 一致"""
         from config_manager import get_config
 
         config = get_config()
-        old_mtime = config._last_file_mtime
         config._update_file_mtime()
-        # 修改时间应该被更新
-        self.assertGreaterEqual(config._last_file_mtime, old_mtime)
+        expected = config.config_file.stat().st_mtime
+        self.assertEqual(config._last_file_mtime, expected)
 
     def test_file_watcher_start_stop(self):
         """测试启动和停止文件监听器"""
