@@ -197,12 +197,16 @@
       }
 
       var settings = notificationSettings || { enabled: true, macosNativeEnabled: true }
-      if (settings && settings.enabled === false) return
+      if (settings && settings.enabled === false) {
+        logDebug('[notify-core] 通知已禁用 (enabled=false)，跳过')
+        return
+      }
 
       var types = ['vscode']
       if (settings && settings.macosNativeEnabled) {
         types.push('macos_native')
       }
+      logDebug('[notify-core] 派发通知 types=' + types.join(',') + ' macosNativeEnabled=' + !!(settings && settings.macosNativeEnabled))
 
       postNotificationEvent({
         title: 'AI 交互反馈',

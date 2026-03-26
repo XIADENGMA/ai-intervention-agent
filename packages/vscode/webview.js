@@ -1003,6 +1003,7 @@ class WebviewProvider {
 
         <script nonce="${nonce}" src="${webviewHelpersUri}"></script>
         <script nonce="${nonce}" src="${webviewUiUri}"></script>
+        <script nonce="${nonce}" src="${webviewNotifyCoreUri}"></script>
 </body>
 </html>`
   }

@@ -3157,19 +3157,32 @@
       })
   }
 
-  // 新任务通知：委托给 notify-core（按需加载）
+  // 新任务通知：委托给 notify-core（HTML 直接加载 + 按需回退）
   // taskData: Array<{ id, prompt }> 或 Array<string>（向后兼容）
   function notifyNewTasks(taskData) {
     const items = Array.isArray(taskData) ? taskData.filter(Boolean) : [taskData].filter(Boolean)
     if (!items || items.length === 0) return
 
-    // 兼容：若传入纯字符串数组，转换为 { id, prompt } 格式
     const normalized = items.map(item =>
       typeof item === 'string' ? { id: item, prompt: '' } : item
     )
     const ids = normalized.map(t => t.id || t).filter(Boolean)
     if (ids.length === 0) return
 
+    // 快速路径：notify-core 已通过 HTML <script> 同步加载
+    const preloaded = getNotifyCoreModule()
+    if (preloaded && typeof preloaded.showNewTaskNotification === 'function') {
+      log('[notifyNewTasks] notify-core 已预加载，直接派发 (' + ids.length + ' 个任务)')
+      Promise.resolve()
+        .then(() => preloaded.showNewTaskNotification(normalized))
+        .catch(() => {
+          postStatusInfo(ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务')
+        })
+      return
+    }
+
+    // 回退路径：动态加载 notify-core（不应再走到这里，仅做兜底）
+    log('[notifyNewTasks] notify-core 未预加载，尝试动态加载')
     Promise.resolve()
       .then(() => ensureNotifyCoreLoaded())
       .then(ok => {
@@ -3177,6 +3190,7 @@
         if (ok && mod && typeof mod.showNewTaskNotification === 'function') {
           return mod.showNewTaskNotification(normalized)
         }
+        log('[notifyNewTasks] notify-core 加载失败，回退到 vscode 状态栏通知')
         const msg =
           ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
         postStatusInfo(msg)
