@@ -13,8 +13,19 @@ try {
 } catch {
   // 忽略：打包/测试环境下可能读取不到版本号
 }
-// 用于排查“VSIX 是否确实更新”的构建标识（版本号不变时尤为重要）
-const BUILD_ID = '2026-03-26-independent-ext-polling'
+// 构建标识：打包时 package_vscode_vsix.mjs 将 __BUILD_SHA__ 替换为 git short SHA；
+// 开发环境 placeholder 未被替换时回退到运行时 git rev-parse。
+const BUILD_ID = (() => {
+  const stamp = '__BUILD_SHA__'
+  if (!stamp.startsWith('__')) return stamp
+  try {
+    return require('child_process')
+      .execSync('git rev-parse --short HEAD', {
+        encoding: 'utf8', timeout: 2000, cwd: __dirname,
+        stdio: ['ignore', 'pipe', 'ignore']
+      }).trim()
+  } catch { return 'dev' }
+})()
 
 // deactivate() 清理钩子（activate 内赋值）
 let deactivateHook = null

@@ -85,6 +85,21 @@ try {
     copyRecursive(src, path.join(tmpDir, rel))
   }
 
+  // 注入 git short SHA 作为 BUILD_ID（替换 extension.js 中的 __BUILD_SHA__ 占位符）
+  try {
+    const sha = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: repoRoot, encoding: 'utf8', timeout: 5000
+    }).stdout.trim()
+    if (sha) {
+      const extJs = path.join(tmpDir, 'extension.js')
+      const content = fs.readFileSync(extJs, 'utf8')
+      fs.writeFileSync(extJs, content.replace('__BUILD_SHA__', sha), 'utf8')
+      console.log(`BUILD_ID 注入：${sha}`)
+    }
+  } catch {
+    console.warn('无法注入 BUILD_ID（git rev-parse 失败），使用开发回退')
+  }
+
   const args = ['package', '--no-dependencies', '--no-rewrite-relative-links', '--out', outVsix]
 
   const r = spawnSync('npx', ['--yes', '@vscode/vsce', ...args], {
