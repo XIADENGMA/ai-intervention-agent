@@ -122,6 +122,10 @@ class WebviewProvider {
     // macOS 原生通知“点击打开面板”兜底：
     // AppleScript 原生通知没有点击回调；这里通过“通知触发时若宿主未聚焦则 arm，一旦宿主重新聚焦则自动打开面板”来近似实现。
     this._revealPanelUntilMs = 0
+    // 扩展侧通知配置缓存：Webview 不可见时由扩展独立轮询检测新任务并发送通知
+    this._notificationConfig = null
+    this._notificationConfigFetchedAt = 0
+    this._notificationConfigFetchPromise = null
   }
 
   _log(message) {
@@ -328,6 +332,9 @@ class WebviewProvider {
 
   updateServerUrl(serverUrl) {
     this._serverUrl = serverUrl
+    // serverUrl 变更后旧通知配置已无效，强制清除缓存
+    this._notificationConfig = null
+    this._notificationConfigFetchedAt = 0
     if (this._view && this._view.webview) {
       // serverUrl 变化会触发重建 HTML：需要重新进入“未就绪”状态，并重置 ready watchdog
       try {
@@ -728,6 +735,123 @@ class WebviewProvider {
     this._pendingMessages = []
     for (const msg of batch) {
       this._postMessage(msg)
+    }
+  }
+
+  async _fetchNotificationConfig(force) {
+    const now = Date.now()
+    if (!force && this._notificationConfig && now - this._notificationConfigFetchedAt < 30000) {
+      return this._notificationConfig
+    }
+    if (this._notificationConfigFetchPromise) return this._notificationConfigFetchPromise
+
+    this._notificationConfigFetchPromise = (async () => {
+      try {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+        const timeoutId = controller
+          ? setTimeout(() => { try { controller.abort() } catch { /* noop */ } }, 2500)
+          : null
+        const resp = await fetch(`${this._serverUrl}/api/get-notification-config`, {
+          cache: 'no-store',
+          signal: controller ? controller.signal : undefined,
+          headers: { Accept: 'application/json' }
+        })
+        if (timeoutId) clearTimeout(timeoutId)
+        if (!resp.ok) return this._notificationConfig
+        const data = await resp.json()
+        if (data && data.status === 'success' && data.config) {
+          this._notificationConfig = {
+            enabled: data.config.enabled !== false,
+            macosNativeEnabled: data.config.macos_native_enabled !== false
+          }
+          this._notificationConfigFetchedAt = Date.now()
+        }
+        return this._notificationConfig
+      } catch {
+        return this._notificationConfig
+      } finally {
+        this._notificationConfigFetchPromise = null
+      }
+    })()
+    return this._notificationConfigFetchPromise
+  }
+
+  async dispatchNewTaskNotification(taskData) {
+    try {
+      const items = Array.isArray(taskData) ? taskData.filter(Boolean) : []
+      if (items.length === 0) return
+
+      const ids = items.map(t => (t && t.id) || '').filter(Boolean)
+      if (ids.length === 0) return
+
+      const config = await this._fetchNotificationConfig()
+      const settings = config || { enabled: true, macosNativeEnabled: true }
+
+      if (settings.enabled === false) {
+        try {
+          if (this._logger && typeof this._logger.debug === 'function') {
+            this._logger.debug('ext.new_task_notify: skipped (enabled=false)')
+          }
+        } catch { /* noop */ }
+        return
+      }
+
+      const SUMMARY_MAX_LEN = 120
+      const firstPrompt = (items[0] && items[0].prompt) || ''
+      const cleaned = firstPrompt
+        ? firstPrompt.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+        : ''
+      const truncated = cleaned.length > SUMMARY_MAX_LEN
+      const summary = truncated ? cleaned.slice(0, SUMMARY_MAX_LEN) + '\u2026' : cleaned
+      let msg
+      if (summary) {
+        msg = ids.length === 1
+          ? summary
+          : summary + '\uff08\u5171 ' + ids.length + ' \u4e2a\u4efb\u52a1\uff09'
+      } else {
+        msg = ids.length === 1
+          ? '\u65b0\u4efb\u52a1\u5df2\u6dfb\u52a0: ' + ids[0]
+          : '\u6536\u5230 ' + ids.length + ' \u4e2a\u65b0\u4efb\u52a1'
+      }
+
+      const types = [NotificationType.VSCODE]
+      if (settings.macosNativeEnabled) {
+        types.push(NotificationType.MACOS_NATIVE)
+      }
+
+      try {
+        if (this._logger && typeof this._logger.event === 'function') {
+          this._logger.event(
+            'ext.new_task_notify',
+            { count: ids.length, types: types.join(','), macosNative: !!settings.macosNativeEnabled },
+            { level: 'info' }
+          )
+        }
+      } catch { /* noop */ }
+
+      this._dispatchNotificationEvent({
+        title: 'AI \u4ea4\u4e92\u53cd\u9988',
+        message: msg,
+        trigger: 'immediate',
+        types: types,
+        metadata: {
+          presentation: 'statusBar',
+          severity: 'info',
+          timeoutMs: 3000,
+          isTest: false,
+          kind: 'new_tasks',
+          taskIds: ids,
+          source: 'extension'
+        },
+        source: 'extension',
+        dedupeKey: 'new_tasks:' + ids.join('|')
+      })
+    } catch (e) {
+      try {
+        if (this._logger && typeof this._logger.warn === 'function') {
+          this._logger.warn('ext.new_task_notify failed: ' + (e && e.message ? e.message : String(e)))
+        }
+      } catch { /* noop */ }
     }
   }
 

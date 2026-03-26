@@ -125,6 +125,10 @@ function activate(context) {
   let lastPollErrorName = ''
   let lastPollError = ''
 
+  // 扩展侧新任务检测：Webview 不可见时由扩展独立轮询触发通知
+  let extKnownTaskIds = new Set()
+  let extTaskTrackingInitialized = false
+
   const formatTotalCount = n => {
     const num = typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0
     return num > 99 ? '99+' : String(num)
@@ -292,6 +296,33 @@ function activate(context) {
         applyStatusBarPresentation({ connected, active, pending })
       }
       updateStatusBarVisibility(connected, active, pending)
+
+      // 扩展侧新任务检测：从 /api/tasks 响应中提取任务 ID，对比已知集合
+      if (connected && data && Array.isArray(data.tasks)) {
+        try {
+          const currentIds = new Set()
+          const newTaskData = []
+          for (const t of data.tasks) {
+            if (!t || !t.task_id) continue
+            currentIds.add(t.task_id)
+            if (extTaskTrackingInitialized && !extKnownTaskIds.has(t.task_id)) {
+              newTaskData.push({ id: t.task_id, prompt: t.prompt || '' })
+            }
+          }
+          if (newTaskData.length > 0 && extTaskTrackingInitialized) {
+            if (provider && typeof provider.dispatchNewTaskNotification === 'function') {
+              provider.dispatchNewTaskNotification(newTaskData)
+            }
+          }
+          extKnownTaskIds = currentIds
+          if (!extTaskTrackingInitialized && connected) {
+            extTaskTrackingInitialized = true
+          }
+        } catch {
+          // 新任务检测失败不应影响状态栏轮询
+        }
+      }
+
       return connected
     } catch (e) {
       const durationMs = Date.now() - startedAt
@@ -355,7 +386,10 @@ function activate(context) {
   const computeBaseDelayMs = () => {
     // Webview 可见且持续上报 stats：状态栏可复用 Webview 轮询结果，扩展侧降频探测
     if (isWebviewStatsFresh()) return STATUS_POLL_SLOW_MS
-    return isViewVisible && isWindowFocused ? STATUS_POLL_FAST_MS : STATUS_POLL_SLOW_MS
+    if (isViewVisible && isWindowFocused) return STATUS_POLL_FAST_MS
+    // 窗口聚焦但 Webview 不可见：扩展需独立检测新任务，适度加快以保证通知及时性
+    if (isWindowFocused) return STATUS_POLL_FAST_MS * 2
+    return STATUS_POLL_SLOW_MS
   }
   const computeNextDelayMs = () => {
     const base = computeBaseDelayMs()
@@ -409,7 +443,17 @@ function activate(context) {
     visible => {
       isViewVisible = !!visible
       updateStatusBarVisibility(lastConnected, lastActive, lastPending)
-      scheduleStatusPoll(isViewVisible ? 0 : computeNextDelayMs())
+      // Webview 可见性切换时重置扩展侧任务追踪：
+      // Webview 可见期间扩展不轮询，extKnownTaskIds 会变得过时；
+      // 下次扩展恢复轮询时先做一次快照（不触发通知），避免误判旧任务为新任务
+      if (!visible) {
+        extTaskTrackingInitialized = false
+        // Webview 隐藏后尽快恢复扩展侧轮询：等 stats 过期后立即做快照 + 开始检测
+        const freshRemaining = Math.max(0, WEBVIEW_STATS_FRESH_MS - (Date.now() - lastWebviewStatsAtMs))
+        scheduleStatusPoll(freshRemaining + 500)
+      } else {
+        scheduleStatusPoll(0)
+      }
     },
     ({ connected, active, pending } = {}) => {
       // Webview 轮询的 /api/tasks 已包含 stats：这里直接复用来更新状态栏
@@ -466,6 +510,8 @@ function activate(context) {
       lastActive = null
       lastPending = null
       statusPollBackoffMs = STATUS_POLL_FAST_MS
+      extKnownTaskIds = new Set()
+      extTaskTrackingInitialized = false
       statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
       scheduleStatusPoll(0)
 
