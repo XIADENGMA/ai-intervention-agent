@@ -662,6 +662,104 @@ class TestMultiTaskAPI(unittest.TestCase):
                 self.assertIsInstance(task["remaining_time"], (int, float))
 
 
+class TestCrossModuleIntegration(unittest.TestCase):
+    """跨模块集成测试"""
+
+    def test_config_notification_sync(self):
+        """测试配置与通知同步"""
+        from notification_manager import notification_manager
+
+        # 刷新配置
+        notification_manager.refresh_config_from_file(force=True)
+
+        # 获取通知配置
+        config = notification_manager.get_config()
+
+        # 验证配置一致性
+        self.assertIsNotNone(config)
+
+    def test_web_ui_task_queue_integration(self):
+        """测试 Web UI 与任务队列集成"""
+        from web_ui import WebFeedbackUI
+
+        ui = WebFeedbackUI(prompt="集成测试", task_id="integration-001", port=8983)
+
+        # 验证 Flask app 已创建
+        self.assertIsNotNone(ui.app)
+
+    def test_notification_provider_config(self):
+        """测试通知提供者配置"""
+        from notification_manager import NotificationConfig
+
+        config = NotificationConfig.from_config_file()
+
+        self.assertIsInstance(config, NotificationConfig)
+
+
+class TestModuleIntegration(unittest.TestCase):
+    """模块间集成测试"""
+
+    def test_notification_manager_with_config(self):
+        """测试通知管理器与配置的集成"""
+        from config_manager import get_config
+        from notification_manager import notification_manager
+
+        # 从配置管理器获取配置
+        config = get_config()
+        notification_section = config.get_section("notification")
+
+        # 刷新通知管理器配置
+        notification_manager.refresh_config_from_file(force=True)
+
+        # 配置应该一致
+        self.assertIsNotNone(notification_manager.config)
+
+    def test_task_queue_with_complete_workflow(self):
+        """测试任务队列完整工作流"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue(max_tasks=10)
+
+        # 1. 添加多个任务
+        for i in range(5):
+            queue.add_task(f"task-{i}", f"提示{i}")
+
+        # 2. 验证第一个任务是活动的
+        active = queue.get_active_task()
+        self.assertIsNotNone(active)
+        assert active is not None
+        self.assertEqual(active.task_id, "task-0")
+
+        # 3. 完成任务
+        queue.complete_task("task-0", {"feedback": "完成"})
+
+        # 4. 验证下一个任务自动激活
+        active = queue.get_active_task()
+        self.assertIsNotNone(active)
+        assert active is not None
+        self.assertEqual(active.task_id, "task-1")
+
+        # 5. 清理
+        queue.stop_cleanup()
+
+    def test_file_validator_with_real_file(self):
+        """测试文件验证器处理真实文件数据"""
+        from file_validator import validate_uploaded_file
+
+        # 创建一个最小的有效 PNG 文件
+        # PNG 最小头部 + IHDR + IEND
+        png_header = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a"
+        ihdr_chunk = b"\x00\x00\x00\x0d\x49\x48\x44\x52" + b"\x00" * 17
+        iend_chunk = b"\x00\x00\x00\x00\x49\x45\x4e\x44\xae\x42\x60\x82"
+
+        valid_png = png_header + ihdr_chunk + iend_chunk
+
+        result = validate_uploaded_file(valid_png, "real.png")
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["mime_type"], "image/png")
+
+
 def run_tests():
     """运行所有集成测试"""
     loader = unittest.TestLoader()

@@ -879,6 +879,46 @@ class TestBoundaryConditionsExtended(unittest.TestCase):
         queue.clear_all_tasks()
 
 
+class TestNotificationManagerBoundary(unittest.TestCase):
+    """通知管理器边界条件测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import notification_manager
+
+        self.manager = notification_manager
+
+    def test_refresh_with_missing_config_keys(self):
+        """测试配置缺少某些键时的刷新"""
+        # 强制刷新应该不会崩溃
+        self.manager.refresh_config_from_file(force=True)
+
+        # 配置应该有有效的默认值
+        self.assertIsNotNone(self.manager.config)
+
+    def test_config_extreme_sound_volume(self):
+        """测试极端音量值"""
+        # 测试负数
+        self.manager.config.sound_volume = -100
+        self.assertIsInstance(self.manager.config.sound_volume, (int, float))
+
+        # 测试超大值
+        self.manager.config.sound_volume = 1000000
+        self.assertIsInstance(self.manager.config.sound_volume, (int, float))
+
+    def test_empty_bark_url(self):
+        """测试空的 Bark URL"""
+        self.manager.config.bark_enabled = True
+        self.manager.config.bark_url = ""
+        self.manager.config.bark_device_key = "test"
+
+        # 不应该崩溃
+        from notification_providers import BarkNotificationProvider
+
+        provider = BarkNotificationProvider(self.manager.config)
+        self.assertIsNotNone(provider)
+
+
 def run_tests():
     """运行所有测试"""
     # 创建测试套件

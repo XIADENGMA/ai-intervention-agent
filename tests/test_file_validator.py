@@ -306,6 +306,56 @@ class TestEdgeCases(unittest.TestCase):
         self.assertFalse(result["valid"])
 
 
+class TestFileValidatorBoundary(unittest.TestCase):
+    """文件验证器边界条件测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from file_validator import FileValidator
+
+        self.validator = FileValidator()
+
+    def test_unicode_filename(self):
+        """测试 Unicode 文件名"""
+        png_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"\x00" * 100
+
+        result = self.validator.validate_file(png_data, "测试文件_日本語_🎉.png")
+
+        self.assertTrue(result["valid"])
+
+    def test_very_small_file(self):
+        """测试极小文件"""
+        # 只有魔数，没有其他数据
+        minimal_png = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a"
+
+        result = self.validator.validate_file(minimal_png, "tiny.png")
+
+        self.assertTrue(result["valid"])
+
+    def test_filename_with_multiple_dots(self):
+        """测试多点文件名"""
+        png_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"\x00" * 100
+
+        result = self.validator.validate_file(png_data, "file.name.with.many.dots.png")
+
+        self.assertTrue(result["valid"])
+
+    def test_bmp_format(self):
+        """测试 BMP 格式检测"""
+        # BMP 魔数
+        bmp_data = b"\x42\x4d" + b"\x00" * 100
+
+        result = self.validator.validate_file(bmp_data, "test.bmp")
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["mime_type"], "image/bmp")
+
+
+# ============================================================================
+# 异常处理测试
+# ============================================================================
+
+
 def run_tests():
     """运行所有测试"""
     loader = unittest.TestLoader()

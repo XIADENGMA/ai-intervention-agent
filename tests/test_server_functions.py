@@ -386,6 +386,81 @@ class TestServerValidateInputAdvanced(unittest.TestCase):
 # ============================================================================
 
 
+class TestServerAsyncFunctions(unittest.TestCase):
+    """服务器异步函数测试"""
+
+    def test_get_feedback_prompts(self):
+        """测试获取反馈提示"""
+        from server import get_feedback_prompts
+
+        resubmit, suffix = get_feedback_prompts()
+
+        self.assertIsInstance(resubmit, str)
+        self.assertIsInstance(suffix, str)
+        self.assertIn("interactive_feedback", resubmit)
+
+    def test_parse_structured_response_with_multiple_options(self):
+        """测试解析多选项响应"""
+        from server import parse_structured_response
+
+        response = {
+            "user_input": "测试多选项",
+            "selected_options": ["选项1", "选项2", "选项3"],
+            "images": [],
+        }
+
+        result = parse_structured_response(response)
+
+        self.assertIsInstance(result, list)
+        # 检查选项是否包含在结果中
+        result_text = str(result)
+        self.assertIn("选项", result_text)
+
+    def test_parse_structured_response_empty_input(self):
+        """测试解析空输入响应"""
+        from server import parse_structured_response
+
+        response = {"user_input": "", "selected_options": [], "images": []}
+
+        result = parse_structured_response(response)
+
+        self.assertIsInstance(result, list)
+
+    def test_validate_input_with_special_chars(self):
+        """测试带特殊字符的输入验证"""
+        from server import validate_input
+
+        message = "测试 <script>alert('xss')</script> & 特殊字符"
+        options = ["选项 <b>粗体</b>", "选项 &amp;"]
+
+        result_msg, result_opts = validate_input(message, options)
+
+        self.assertIsInstance(result_msg, str)
+        self.assertIsInstance(result_opts, list)
+
+
+class TestServerWebUIManagement(unittest.TestCase):
+    """Web UI 管理测试"""
+
+    def test_ensure_web_ui_running_callable(self):
+        """测试确保 Web UI 运行函数可调用"""
+        from server import ensure_web_ui_running
+
+        # 函数应该存在
+        self.assertIsNotNone(ensure_web_ui_running)
+
+    def test_wait_for_task_completion_callable(self):
+        """测试等待任务完成函数可调用"""
+        from server import wait_for_task_completion
+
+        self.assertIsNotNone(wait_for_task_completion)
+
+
+# ============================================================================
+# web_ui.py 深度测试
+# ============================================================================
+
+
 def run_tests():
     """运行所有服务器函数测试"""
     loader = unittest.TestLoader()

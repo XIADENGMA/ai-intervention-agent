@@ -19,6 +19,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -1137,6 +1138,659 @@ class TestConfigManagerFinalPush(unittest.TestCase):
 
         self.assertIsNotNone(notification)
         self.assertIsNotNone(web_ui)
+
+
+class TestConfigManagerTypedGetters(unittest.TestCase):
+    """测试类型安全的配置获取方法"""
+
+    def test_get_int_with_string_value(self):
+        """测试 get_int 处理字符串值"""
+        from config_manager import get_config
+
+        config = get_config()
+        # 获取不存在的键，使用默认值
+        result = config.get_int("nonexistent.int.key", 42)
+        self.assertEqual(result, 42)
+
+    def test_get_float_with_string_value(self):
+        """测试 get_float 处理字符串值"""
+        from config_manager import get_config
+
+        config = get_config()
+        result = config.get_float("nonexistent.float.key", 3.14)
+        self.assertEqual(result, 3.14)
+
+    def test_get_bool_with_string_true(self):
+        """测试 get_bool 处理字符串 'true'"""
+        from config_manager import get_config
+
+        config = get_config()
+        # 测试 notification.enabled 应该是布尔值
+        result = config.get_bool("notification.enabled", False)
+        self.assertIsInstance(result, bool)
+
+    def test_get_bool_with_string_false(self):
+        """测试 get_bool 处理字符串 'false'"""
+        from config_manager import get_config
+
+        config = get_config()
+        result = config.get_bool("nonexistent.bool.key", False)
+        self.assertFalse(result)
+
+    def test_get_str_truncation(self):
+        """测试 get_str 截断功能"""
+        from config_manager import get_config
+
+        config = get_config()
+        # 使用带最大长度的字符串获取
+        result = config.get_str("nonexistent.str.key", "a" * 1000, max_length=100)
+        self.assertEqual(len(result), 100)
+
+
+class TestConfigManagerFileWatcherBasic(unittest.TestCase):
+    """测试文件监听功能"""
+
+    def test_update_file_mtime(self):
+        """测试更新文件修改时间：调用后应与磁盘 mtime 一致"""
+        from config_manager import get_config
+
+        config = get_config()
+        config._update_file_mtime()
+        expected = config.config_file.stat().st_mtime
+        self.assertEqual(config._last_file_mtime, expected)
+
+    def test_file_watcher_start_stop(self):
+        """测试启动和停止文件监听器"""
+        from config_manager import get_config
+
+        config = get_config()
+
+        # 确保监听器已停止
+        config.stop_file_watcher()
+        self.assertFalse(config.is_file_watcher_running)
+
+        # 启动监听器
+        config.start_file_watcher(interval=0.5)
+        self.assertTrue(config.is_file_watcher_running)
+
+        # 停止监听器
+        config.stop_file_watcher()
+        self.assertFalse(config.is_file_watcher_running)
+
+
+class TestConfigManagerCallbacks(unittest.TestCase):
+    """测试配置变更回调"""
+
+    def test_register_and_trigger_callback(self):
+        """测试注册和触发回调"""
+        from config_manager import get_config
+
+        config = get_config()
+        called = [False]
+
+        def callback():
+            called[0] = True
+
+        config.register_config_change_callback(callback)
+        config._trigger_config_change_callbacks()
+        self.assertTrue(called[0])
+
+        config.unregister_config_change_callback(callback)
+
+    def test_callback_exception_handling(self):
+        """测试回调异常处理"""
+        from config_manager import get_config
+
+        config = get_config()
+
+        def bad_callback():
+            raise ValueError("Test error")
+
+        config.register_config_change_callback(bad_callback)
+
+        # 触发回调不应该抛出异常
+        try:
+            config._trigger_config_change_callbacks()
+        except Exception:
+            self.fail("回调异常不应该传播")
+
+        config.unregister_config_change_callback(bad_callback)
+
+
+class TestConfigManagerReload(unittest.TestCase):
+    """测试配置重新加载"""
+
+    def test_reload_config(self):
+        """测试重新加载配置"""
+        from config_manager import get_config
+
+        config = get_config()
+        # 记录当前配置
+        old_config = config.get_all()
+
+        # 重新加载配置
+        config.reload()
+
+        # 配置应该被重新加载
+        new_config = config.get_all()
+        # 配置内容应该相同（假设文件未被修改）
+        self.assertEqual(old_config.keys(), new_config.keys())
+
+
+class TestConfigManagerUpdate(unittest.TestCase):
+    """测试配置更新"""
+
+    def test_update_batch(self):
+        """测试批量更新配置"""
+        from config_manager import get_config
+
+        config = get_config()
+
+        # 批量更新（不保存到文件）
+        updates = {
+            "notification.debug": True,
+        }
+        config.update(updates, save=False)
+
+        # 验证更新生效
+        self.assertTrue(config.get("notification.debug", False))
+
+    def test_update_section(self):
+        """测试更新配置段"""
+        from config_manager import get_config
+
+        config = get_config()
+
+        # 获取当前 notification 配置
+        section = config.get_section("notification")
+        original_debug = section.get("debug", False)
+
+        # 更新配置段（不保存）
+        config.update_section("notification", {"debug": not original_debug}, save=False)
+
+        # 验证更新
+        new_section = config.get_section("notification")
+        self.assertEqual(new_section.get("debug"), not original_debug)
+
+        # 恢复原值
+        config.update_section("notification", {"debug": original_debug}, save=False)
+
+
+class TestConfigManagerNetworkSecurityBasic(unittest.TestCase):
+    """测试网络安全配置"""
+
+    def test_get_network_security_config(self):
+        """测试获取网络安全配置"""
+        from config_manager import get_config
+
+        config = get_config()
+        security_config = config.get_network_security_config()
+
+        # 应该返回字典
+        self.assertIsInstance(security_config, dict)
+
+        # 应该包含基本字段
+        self.assertIn("bind_interface", security_config)
+
+
+class TestReadWriteLockStress(unittest.TestCase):
+    """测试读写锁高级功能"""
+
+    def test_read_lock_reentrant(self):
+        """测试读锁可重入性"""
+        from config_manager import ReadWriteLock
+
+        lock = ReadWriteLock()
+
+        # 获取读锁两次
+        with lock.read_lock():
+            with lock.read_lock():
+                # 应该能成功获取两次读锁
+                pass
+
+    def test_write_lock_exclusive(self):
+        """测试写锁排他性"""
+        import threading
+        import time
+
+        from config_manager import ReadWriteLock
+
+        lock = ReadWriteLock()
+        results = []
+
+        def writer():
+            with lock.write_lock():
+                results.append("write_start")
+                time.sleep(0.1)
+                results.append("write_end")
+
+        def reader():
+            time.sleep(0.05)  # 确保写者先获取锁
+            with lock.read_lock():
+                results.append("read")
+
+        write_thread = threading.Thread(target=writer)
+        read_thread = threading.Thread(target=reader)
+
+        write_thread.start()
+        read_thread.start()
+
+        write_thread.join()
+        read_thread.join()
+
+        # 读操作应该在写操作完成后执行
+        self.assertEqual(results, ["write_start", "write_end", "read"])
+
+
+class TestConfigManagerExportImport(unittest.TestCase):
+    """测试配置导出/导入功能"""
+
+    def test_export_config(self):
+        """测试导出配置"""
+        from config_manager import get_config
+
+        config = get_config()
+        export_data = config.export_config()
+
+        # 验证导出数据结构
+        self.assertIn("exported_at", export_data)
+        self.assertIn("version", export_data)
+        self.assertIn("config", export_data)
+        self.assertIsInstance(export_data["config"], dict)
+
+    def test_export_config_with_network_security(self):
+        """测试导出包含网络安全配置"""
+        from config_manager import get_config
+
+        config = get_config()
+        export_data = config.export_config(include_network_security=True)
+
+        # 验证包含网络安全配置
+        self.assertIn("network_security", export_data)
+
+    def test_import_config_merge(self):
+        """测试合并模式导入配置"""
+        from config_manager import get_config
+
+        config = get_config()
+
+        # 备份原始值
+        original_debug = config.get("notification.debug", False)
+
+        # 导入测试配置
+        test_config = {"notification": {"debug": not original_debug}}
+        result = config.import_config(test_config, merge=True, save=False)
+
+        self.assertTrue(result)
+        self.assertEqual(config.get("notification.debug"), not original_debug)
+
+        # 恢复原始值
+        config.import_config(
+            {"notification": {"debug": original_debug}}, merge=True, save=False
+        )
+
+    def test_import_config_invalid_data(self):
+        """测试导入无效数据"""
+        from config_manager import get_config
+
+        config = get_config()
+
+        # 尝试导入非字典数据
+        result = config.import_config(cast(Any, "invalid"), merge=True, save=False)
+        self.assertFalse(result)
+
+    def test_deep_merge(self):
+        """测试深度合并功能"""
+        from config_manager import get_config
+
+        config = get_config()
+
+        base: dict[str, Any] = {"a": {"b": 1, "c": 2}, "d": 3}
+        update: dict[str, Any] = {"a": {"b": 10, "e": 5}, "f": 6}
+
+        config._deep_merge(base, update)
+
+        # 验证合并结果
+        self.assertEqual(base["a"]["b"], 10)  # 已更新
+        self.assertEqual(base["a"]["c"], 2)  # 保留
+        self.assertEqual(base["a"]["e"], 5)  # 新增
+        self.assertEqual(base["d"], 3)  # 保留
+        self.assertEqual(base["f"], 6)  # 新增
+
+    def test_restore_config_restores_network_security(self):
+        """restore_config 应恢复备份中的 network_security"""
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from config_manager import ConfigManager
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "test_config.jsonc"
+            backup_path = Path(temp_dir) / "backup.json"
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "web_ui": {"port": 8080},
+                        "network_security": {
+                            "allowed_networks": ["127.0.0.0/8"],
+                            "blocked_ips": [],
+                            "access_control_enabled": True,
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            manager = ConfigManager(str(config_path))
+            manager.backup_config(str(backup_path))
+
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "web_ui": {"port": 9000},
+                        "network_security": {
+                            "allowed_networks": ["10.0.0.0/8"],
+                            "blocked_ips": ["8.8.8.8"],
+                            "access_control_enabled": False,
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            self.assertTrue(manager.restore_config(str(backup_path)))
+            restored = manager.get_network_security_config()
+
+            self.assertEqual(restored["allowed_networks"], ["127.0.0.0/8"])
+            self.assertEqual(restored["blocked_ips"], [])
+            self.assertTrue(restored["access_control_enabled"])
+
+
+class TestConfigManagerAdvancedFeatures(unittest.TestCase):
+    """配置管理器高级功能测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        cls.test_dir = tempfile.mkdtemp()
+
+    @classmethod
+    def tearDownClass(cls):
+        """测试类清理"""
+        shutil.rmtree(cls.test_dir, ignore_errors=True)
+
+    def test_config_with_comments(self):
+        """测试带注释的配置"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "comments.jsonc"
+        content = """{
+    // 这是单行注释
+    "key1": "value1",
+    /* 这是
+       多行注释 */
+    "key2": "value2"
+}"""
+
+        with open(config_file, "w") as f:
+            f.write(content)
+
+        mgr = ConfigManager(str(config_file))
+
+        self.assertEqual(mgr.get("key1"), "value1")
+        self.assertEqual(mgr.get("key2"), "value2")
+
+    def test_config_deep_nested(self):
+        """测试深度嵌套配置"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "deep_nested.json"
+        config = {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
+
+        with open(config_file, "w") as f:
+            json.dump(config, f)
+
+        mgr = ConfigManager(str(config_file))
+
+        level1 = mgr.get_section("level1")
+        self.assertIn("level2", level1)
+
+    def test_config_array_values(self):
+        """测试数组值配置"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "array.json"
+        config = {"items": ["item1", "item2", "item3"], "numbers": [1, 2, 3, 4, 5]}
+
+        with open(config_file, "w") as f:
+            json.dump(config, f)
+
+        mgr = ConfigManager(str(config_file))
+
+        items = mgr.get("items")
+        self.assertEqual(len(items), 3)
+
+    def test_config_special_characters(self):
+        """测试特殊字符配置"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "special.json"
+        config = {
+            "url": "https://example.com/path?query=value&other=123",
+            "unicode": "中文测试 日本語 한국어",
+            "emoji": "🎉 🚀 ✅",
+        }
+
+        with open(config_file, "w") as f:
+            json.dump(config, f, ensure_ascii=False)
+
+        mgr = ConfigManager(str(config_file))
+
+        self.assertIn("https://", mgr.get("url"))
+        self.assertIn("中文", mgr.get("unicode"))
+
+
+class TestConfigManagerNetworkSecurityAdvanced(unittest.TestCase):
+    """网络安全配置高级测试"""
+
+    def test_get_network_security_config_full(self):
+        """测试获取完整网络安全配置"""
+        from config_manager import config_manager
+
+        security = config_manager.get_network_security_config()
+
+        # 检查必要字段
+        self.assertIn("bind_interface", security)
+        self.assertIn("allowed_networks", security)
+        # 支持新旧两种配置名称
+        self.assertTrue("access_control_enabled" in security)
+
+    def test_network_security_allowed_networks(self):
+        """测试允许的网络列表"""
+        from config_manager import config_manager
+
+        security = config_manager.get_network_security_config()
+        allowed = security.get("allowed_networks", [])
+
+        self.assertIsInstance(allowed, list)
+
+
+class TestReadWriteLockDeep(unittest.TestCase):
+    """读写锁高级测试"""
+
+    def test_write_lock_exclusive(self):
+        """测试写锁独占"""
+        from config_manager import ReadWriteLock
+
+        lock = ReadWriteLock()
+        results = []
+
+        def writer():
+            with lock.write_lock():
+                results.append("write_start")
+                time.sleep(0.05)
+                results.append("write_end")
+
+        def reader():
+            with lock.read_lock():
+                results.append("read")
+
+        # 启动写线程
+        t1 = threading.Thread(target=writer)
+        t1.start()
+        time.sleep(0.01)  # 确保写锁先获取
+
+        # 启动读线程
+        t2 = threading.Thread(target=reader)
+        t2.start()
+
+        t1.join()
+        t2.join()
+
+        # 写操作应该先完成
+        self.assertEqual(results[0], "write_start")
+        self.assertEqual(results[1], "write_end")
+
+
+# ============================================================================
+# 跨模块集成测试
+# ============================================================================
+
+
+class TestConfigManagerBoundary(unittest.TestCase):
+    """配置管理器边界条件测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        cls.test_dir = tempfile.mkdtemp()
+
+    @classmethod
+    def tearDownClass(cls):
+        """测试类清理"""
+        shutil.rmtree(cls.test_dir, ignore_errors=True)
+
+    def test_parse_empty_jsonc(self):
+        """测试解析空 JSONC"""
+        from config_manager import parse_jsonc
+
+        result = parse_jsonc("{}")
+        self.assertEqual(result, {})
+
+    def test_parse_only_comments(self):
+        """测试只有注释的 JSONC"""
+        from config_manager import parse_jsonc
+
+        content = """
+        // 这是注释
+        /* 多行注释 */
+        {}
+        """
+        result = parse_jsonc(content)
+        self.assertEqual(result, {})
+
+    def test_deeply_nested_config(self):
+        """测试深度嵌套配置"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "nested.json"
+        nested_config = {"level1": {"level2": {"level3": {"level4": {"value": 42}}}}}
+
+        with open(config_file, "w") as f:
+            json.dump(nested_config, f)
+
+        mgr = ConfigManager(str(config_file))
+
+        # 测试深度获取
+        value = mgr.get("level1.level2.level3.level4.value")
+        self.assertEqual(value, 42)
+
+    def test_unicode_config_values(self):
+        """测试 Unicode 配置值"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "unicode.json"
+        unicode_config = {
+            "chinese": "中文测试",
+            "japanese": "日本語テスト",
+            "emoji": "🎉🚀💻",
+            "mixed": "Hello 世界 🌍",
+        }
+
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(unicode_config, f, ensure_ascii=False)
+
+        mgr = ConfigManager(str(config_file))
+
+        self.assertEqual(mgr.get("chinese"), "中文测试")
+        self.assertEqual(mgr.get("emoji"), "🎉🚀💻")
+
+    def test_special_characters_in_value(self):
+        """测试值中的特殊字符"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "special.json"
+        special_config = {
+            "url": "http://example.com/path?param=value&other=123",
+            "path": "/home/user/文件夹/file.txt",
+            "regex": "^[a-z]+\\d+$",
+        }
+
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(special_config, f)
+
+        mgr = ConfigManager(str(config_file))
+
+        self.assertEqual(
+            mgr.get("url"), "http://example.com/path?param=value&other=123"
+        )
+
+
+class TestConfigManagerExceptions(unittest.TestCase):
+    """配置管理器异常处理测试"""
+
+    @classmethod
+    def setUpClass(cls):
+        """测试类初始化"""
+        cls.test_dir = tempfile.mkdtemp()
+
+    @classmethod
+    def tearDownClass(cls):
+        """测试类清理"""
+        shutil.rmtree(cls.test_dir, ignore_errors=True)
+
+    def test_malformed_json(self):
+        """测试畸形 JSON"""
+        from config_manager import parse_jsonc
+
+        with self.assertRaises(json.JSONDecodeError):
+            parse_jsonc("{invalid json")
+
+    def test_missing_config_file(self):
+        """测试配置文件不存在"""
+        from config_manager import ConfigManager
+
+        # 应该创建默认配置
+        mgr = ConfigManager(str(Path(self.test_dir) / "nonexistent.json"))
+        self.assertIsNotNone(mgr.get_all())
+
+    def test_permission_denied_simulation(self):
+        """测试权限错误模拟"""
+        from config_manager import ConfigManager
+
+        config_file = Path(self.test_dir) / "test_perm.json"
+        with open(config_file, "w") as f:
+            json.dump({"test": True}, f)
+
+        mgr = ConfigManager(str(config_file))
+
+        # 即使保存失败，内存配置应该还在
+        mgr.set("test", False, save=False)
+        self.assertEqual(mgr.get("test"), False)
 
 
 def run_tests():

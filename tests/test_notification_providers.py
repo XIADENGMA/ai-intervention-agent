@@ -791,6 +791,75 @@ class TestSoundProviderEdgeCases(unittest.TestCase):
         self.assertIsNotNone(provider)
 
 
+class TestNotificationProvidersExceptions(unittest.TestCase):
+    """通知提供者异常处理测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from notification_manager import NotificationConfig
+
+        self.config = NotificationConfig()
+
+    def test_bark_network_unavailable(self):
+        """测试 Bark 网络不可用"""
+        import requests
+
+        from notification_manager import NotificationEvent, NotificationTrigger
+        from notification_providers import BarkNotificationProvider
+
+        self.config.bark_enabled = True
+        # 使用 mock 避免真实网络请求（确保离线可重复）
+        self.config.bark_url = "https://example.invalid/push"
+        self.config.bark_device_key = "test"
+
+        provider = BarkNotificationProvider(self.config)
+
+        event = NotificationEvent(
+            id="test-1",
+            title="测试",
+            message="消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={},
+        )
+
+        # 应该返回 False，不应该抛出异常
+        with patch(
+            "notification_providers.requests.Session.post",
+            side_effect=requests.exceptions.RequestException("network down"),
+        ):
+            result = provider.send(event)
+        self.assertFalse(result)
+
+    def test_web_provider_with_none_metadata(self):
+        """测试 Web 提供者处理 None metadata"""
+        from notification_manager import NotificationEvent, NotificationTrigger
+        from notification_providers import WebNotificationProvider
+
+        provider = WebNotificationProvider(self.config)
+
+        event = NotificationEvent(
+            id="test-1",
+            title="测试",
+            message="消息",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata=cast(Any, None),  # 测试 None（绕过类型检查器）
+        )
+        # 手动设置 metadata 为 None 来测试
+        event.metadata = cast(Any, None)
+
+        # 应该不崩溃
+        try:
+            result = provider.send(event)
+            # 可能返回 True 或 False
+        except Exception as e:
+            self.fail(f"不应该抛出异常: {e}")
+
+
+# ============================================================================
+# 并发压力测试
+# ============================================================================
+
+
 def run_tests():
     """运行所有测试"""
     loader = unittest.TestLoader()

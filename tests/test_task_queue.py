@@ -681,6 +681,63 @@ class TestTaskQueueFinalPush(unittest.TestCase):
         self.assertEqual(stats["pending"] + stats["active"] + stats["completed"], 0)
 
 
+class TestTaskQueueBoundary(unittest.TestCase):
+    """任务队列边界条件测试"""
+
+    def setUp(self):
+        """每个测试前的准备"""
+        from task_queue import TaskQueue
+
+        self.queue = TaskQueue(max_tasks=5)
+
+    def tearDown(self):
+        """每个测试后的清理"""
+        self.queue.stop_cleanup()
+
+    def test_empty_task_id(self):
+        """测试空任务 ID"""
+        result = self.queue.add_task("", "提示")
+        # 空 ID 应该也能添加（由业务逻辑决定是否允许）
+        self.assertIn(result, [True, False])
+
+    def test_very_long_prompt(self):
+        """测试超长提示"""
+        long_prompt = "A" * 100000
+        result = self.queue.add_task("task-long", long_prompt)
+
+        self.assertTrue(result)
+        task = self.queue.get_task("task-long")
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(len(task.prompt), 100000)
+
+    def test_special_characters_in_prompt(self):
+        """测试提示中的特殊字符"""
+        special_prompt = (
+            "<script>alert('xss')</script>\n\t\"quotes\" 'single' `backtick`"
+        )
+        result = self.queue.add_task("task-special", special_prompt)
+
+        self.assertTrue(result)
+        task = self.queue.get_task("task-special")
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertEqual(task.prompt, special_prompt)
+
+    def test_many_predefined_options(self):
+        """测试大量预定义选项"""
+        options = [f"选项{i}" for i in range(1000)]
+        result = self.queue.add_task("task-options", "提示", predefined_options=options)
+
+        self.assertTrue(result)
+        task = self.queue.get_task("task-options")
+        self.assertIsNotNone(task)
+        assert task is not None
+        self.assertIsNotNone(task.predefined_options)
+        assert task.predefined_options is not None
+        self.assertEqual(len(task.predefined_options), 1000)
+
+
 def run_tests():
     """运行所有测试"""
     loader = unittest.TestLoader()

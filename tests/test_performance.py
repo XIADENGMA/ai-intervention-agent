@@ -6,6 +6,7 @@ AI Intervention Agent - 性能测试
 """
 
 import sys
+import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -301,6 +302,110 @@ class TestServerFunctionPerformance(unittest.TestCase):
         # 10000 次解析应该在 5 秒内完成（CI 环境和覆盖率模式会变慢）
         self.assertLess(elapsed, 5.0, f"响应解析过慢: {elapsed:.3f}s")
         print(f"\n响应解析性能: 10000 次解析耗时 {elapsed:.3f}s")
+
+
+class TestHighConcurrency(unittest.TestCase):
+    """高并发测试"""
+
+    def test_task_queue_high_concurrency(self):
+        """测试任务队列高并发"""
+        from task_queue import TaskQueue
+
+        queue = TaskQueue(max_tasks=1000)
+        errors = []
+
+        def worker(thread_id):
+            try:
+                for i in range(100):
+                    task_id = f"task-{thread_id}-{i}"
+                    queue.add_task(task_id, f"提示{thread_id}-{i}")
+                    time.sleep(0.001)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        queue.stop_cleanup()
+
+        self.assertEqual(len(errors), 0)
+        # 应该成功添加 1000 个任务
+        count = queue.get_task_count()
+        self.assertEqual(count["total"], 1000)
+
+    def test_config_manager_concurrent_access(self):
+        """测试配置管理器并发访问"""
+        from notification_manager import notification_manager
+
+        errors = []
+        iterations = 50
+
+        def reader():
+            try:
+                for _ in range(iterations):
+                    _ = notification_manager.config.bark_enabled
+                    _ = notification_manager.config.sound_volume
+                    time.sleep(0.001)
+            except Exception as e:
+                errors.append(e)
+
+        def writer():
+            try:
+                for _ in range(iterations):
+                    notification_manager.refresh_config_from_file(force=True)
+                    time.sleep(0.001)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=reader) for _ in range(5)] + [
+            threading.Thread(target=writer) for _ in range(2)
+        ]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0)
+
+    def test_file_validator_concurrent_validation(self):
+        """测试文件验证器并发验证"""
+        from file_validator import validate_uploaded_file
+
+        png_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"\x00" * 100
+        errors = []
+
+        def validator(thread_id):
+            try:
+                for i in range(50):
+                    result = validate_uploaded_file(
+                        png_data, f"test_{thread_id}_{i}.png"
+                    )
+                    if not result["valid"]:
+                        errors.append(f"Validation failed: {result}")
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=validator, args=(i,)) for i in range(10)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(errors), 0)
+
+
+# ============================================================================
+# 集成测试
+# ============================================================================
 
 
 def run_tests():
