@@ -12,6 +12,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
+from exceptions import NotificationError
+
 try:
     from config_manager import get_config
 
@@ -146,7 +148,7 @@ class NotificationConfig:
         """从配置文件 notification 段加载配置，sound_volume 自动转换 0-100 到 0.0-1.0"""
         if not CONFIG_FILE_AVAILABLE:
             logger.error("配置文件管理器不可用，无法初始化通知配置")
-            raise Exception("配置文件管理器不可用")
+            raise NotificationError("配置文件管理器不可用", code="config_unavailable")
 
         config_mgr = get_config()
         notification_config = config_mgr.get_section("notification")
@@ -254,7 +256,10 @@ class NotificationManager:
                 logger.info("使用配置文件初始化通知管理器")
             except Exception as e:
                 logger.error(f"配置文件加载失败: {e}", exc_info=True)
-                raise Exception(f"通知管理器初始化失败，无法加载配置文件: {e}") from e
+                raise NotificationError(
+                    f"通知管理器初始化失败，无法加载配置文件: {e}",
+                    code="init_failed",
+                ) from e
 
             # 初始化通知提供者字典
             self._providers: Dict[NotificationType, Any] = {}
