@@ -12,6 +12,7 @@ include notification_providers.py
 include shared_types.py
 include task_queue.py
 include config.jsonc.default
+recursive-include web_ui_routes *.py
 recursive-include templates *.html
 recursive-include static *
 recursive-include sounds *

@@ -97,7 +97,7 @@ class TestGetFeedbackPromptsAPIValidation(unittest.TestCase):
         self.app.config["TESTING"] = True
         self.client = self.app.test_client()
 
-    @patch("web_ui.get_config")
+    @patch("web_ui_routes.notification.get_config")
     def test_empty_strings_fallback_to_defaults(self, mock_get_config):
         """resubmit_prompt/prompt_suffix 为空字符串时回退默认值（与 server.py 一致）"""
         from pathlib import Path
@@ -122,7 +122,7 @@ class TestGetFeedbackPromptsAPIValidation(unittest.TestCase):
             data["config"]["prompt_suffix"], "\n请积极调用 interactive_feedback 工具"
         )
 
-    @patch("web_ui.get_config")
+    @patch("web_ui_routes.notification.get_config")
     def test_custom_strings_passthrough(self, mock_get_config):
         """resubmit_prompt/prompt_suffix 非空时应原样返回给前端"""
         from pathlib import Path
