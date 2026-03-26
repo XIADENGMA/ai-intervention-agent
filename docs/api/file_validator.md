@@ -14,8 +14,6 @@
 
 ### `class FileValidationResult`
 
-### `class FileValidationError`
-
 ### `class FileValidator`
 
 #### Methods

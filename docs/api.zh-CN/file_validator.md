@@ -22,10 +22,6 @@
 
 文件验证结果结构（用于类型检查与 IDE 提示）
 
-### `class FileValidationError`
-
-文件验证异常
-
 ### `class FileValidator`
 
 文件验证器 - 魔数验证、恶意内容扫描、文件名安全检查。

@@ -164,7 +164,6 @@ MALICIOUS_PATTERNS = [
     # PHP代码模式
     rb"<\?php",
     rb"<\?=",
-    rb"eval\s*\(",
     rb"system\s*\(",
     rb"exec\s*\(",
     # Shell命令模式
@@ -178,12 +177,6 @@ MALICIOUS_PATTERNS = [
     rb"insert\s+into",
     rb"delete\s+from",
 ]
-
-
-class FileValidationError(Exception):
-    """文件验证异常"""
-
-    pass
 
 
 class FileValidator:

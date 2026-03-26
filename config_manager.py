@@ -68,6 +68,9 @@ def _sanitize_config_value_for_log(key: str, value: Any) -> str:
 class ReadWriteLock:
     """
     读写锁：多读者并发、写者独占，基于 Condition + RLock 实现。
+
+    注意：本类目前未被 ConfigManager 使用（ConfigManager 使用 threading.RLock），
+    作为独立工具类保留，供需要读写分离锁场景的调用方使用。
     """
 
     def __init__(self):
