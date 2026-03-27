@@ -9,9 +9,13 @@ from __future__ import annotations
 import json
 import time
 from ipaddress import AddressValueError, ip_address, ip_network
-from typing import Any, Dict, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, cast
 
 from enhanced_logging import EnhancedLogger
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from threading import RLock
 
 logger = EnhancedLogger(__name__)
 
@@ -19,11 +23,33 @@ logger = EnhancedLogger(__name__)
 class NetworkSecurityMixin:
     """network_security 配置段的校验/读写/缓存管理。"""
 
+    if TYPE_CHECKING:
+        _lock: RLock
+        config_file: Path
+        _original_content: str | None
+        _network_security_cache: Optional[Dict[str, Any]]
+        _network_security_cache_time: float
+        _network_security_cache_ttl: float
+
+        def _get_default_config(self) -> Dict[str, Any]: ...
+        @staticmethod
+        def _coerce_bool(value: Any, default: bool = True) -> bool: ...
+        def _create_default_config_file(self) -> None: ...
+        def _is_toml_file(self) -> bool: ...
+        def _save_network_security_toml(self, ns_config: Dict[str, Any]) -> str: ...
+        def _update_file_mtime(self) -> None: ...
+        def invalidate_all_caches(self) -> None: ...
+        def _trigger_config_change_callbacks(self) -> None: ...
+        def _parse_config_content(self, content: str) -> Dict[str, Any]: ...
+        def _validate_config_structure(
+            self, parsed_config: Dict[str, Any], content: str
+        ) -> None: ...
+
     def _validate_network_security_config(self, raw: Any) -> Dict[str, Any]:
         """强校验并归一化 network_security（与文档/模板对齐，兼容旧字段）"""
         default_ns = cast(
             Dict[str, Any],
-            self._get_default_config().get("network_security", {}),  # type: ignore[attr-defined]
+            self._get_default_config().get("network_security", {}),
         )
 
         if not isinstance(raw, dict):
@@ -105,7 +131,7 @@ class NetworkSecurityMixin:
 
         blocked_list = _dedupe_keep_order(blocked_list)
 
-        access_enabled = self._coerce_bool(  # type: ignore[attr-defined]
+        access_enabled = self._coerce_bool(
             raw.get(
                 "access_control_enabled",
                 raw.get(
@@ -126,23 +152,23 @@ class NetworkSecurityMixin:
     def _save_network_security_config_immediate(self, validated_ns: Dict[str, Any]):
         """将 network_security 写回配置文件（不走通用保存逻辑，避免被排除）"""
         try:
-            if not self.config_file.exists():  # type: ignore[attr-defined]
-                self._create_default_config_file()  # type: ignore[attr-defined]
+            if not self.config_file.exists():
+                self._create_default_config_file()
         except Exception:
             pass
 
         content = ""
         try:
-            if self.config_file.exists():  # type: ignore[attr-defined]
-                content = self.config_file.read_text(encoding="utf-8")  # type: ignore[attr-defined]
+            if self.config_file.exists():
+                content = self.config_file.read_text(encoding="utf-8")
         except Exception as e:
             raise RuntimeError(f"读取配置文件失败: {e}") from e
 
         # TOML 格式
-        if self._is_toml_file():  # type: ignore[attr-defined]
-            base = content or (self._original_content or "")  # type: ignore[attr-defined]
+        if self._is_toml_file():
+            base = content or (self._original_content or "")
             if base:
-                new_content = self._save_network_security_toml(validated_ns)  # type: ignore[attr-defined]
+                new_content = self._save_network_security_toml(validated_ns)
             else:
                 import tomlkit as _tk
 
@@ -150,12 +176,12 @@ class NetworkSecurityMixin:
                 doc["network_security"] = validated_ns
                 new_content = _tk.dumps(doc)
             try:
-                self.config_file.write_text(new_content, encoding="utf-8")  # type: ignore[attr-defined]
+                self.config_file.write_text(new_content, encoding="utf-8")
             except Exception as e:
                 raise RuntimeError(f"写入配置文件失败: {e}") from e
-            with self._lock:  # type: ignore[attr-defined]
-                self._original_content = new_content  # type: ignore[attr-defined]
-            self._update_file_mtime()  # type: ignore[attr-defined]
+            with self._lock:
+                self._original_content = new_content
+            self._update_file_mtime()
             return
 
         # JSON 格式（降级兼容）
@@ -168,12 +194,12 @@ class NetworkSecurityMixin:
         full["network_security"] = validated_ns
         new_content = json.dumps(full, indent=2, ensure_ascii=False)
         try:
-            self.config_file.write_text(new_content, encoding="utf-8")  # type: ignore[attr-defined]
+            self.config_file.write_text(new_content, encoding="utf-8")
         except Exception as e:
             raise RuntimeError(f"写入配置文件失败: {e}") from e
-        with self._lock:  # type: ignore[attr-defined]
-            self._original_content = new_content  # type: ignore[attr-defined]
-        self._update_file_mtime()  # type: ignore[attr-defined]
+        with self._lock:
+            self._original_content = new_content
+        self._update_file_mtime()
 
     def set_network_security_config(
         self, config: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True
@@ -182,13 +208,13 @@ class NetworkSecurityMixin:
         validated = self._validate_network_security_config(config)
         if save:
             self._save_network_security_config_immediate(validated)
-        with self._lock:  # type: ignore[attr-defined]
-            self._network_security_cache = validated  # type: ignore[attr-defined]
-            self._network_security_cache_time = time.time()  # type: ignore[attr-defined]
-        self.invalidate_all_caches()  # type: ignore[attr-defined]
+        with self._lock:
+            self._network_security_cache = validated
+            self._network_security_cache_time = time.time()
+        self.invalidate_all_caches()
         if trigger_callbacks:
             try:
-                self._trigger_config_change_callbacks()  # type: ignore[attr-defined]
+                self._trigger_config_change_callbacks()
             except Exception as e:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
@@ -214,54 +240,54 @@ class NetworkSecurityMixin:
         if save:
             self._save_network_security_config_immediate(validated)
 
-        with self._lock:  # type: ignore[attr-defined]
-            self._network_security_cache = validated  # type: ignore[attr-defined]
-            self._network_security_cache_time = time.time()  # type: ignore[attr-defined]
+        with self._lock:
+            self._network_security_cache = validated
+            self._network_security_cache_time = time.time()
 
-        self.invalidate_all_caches()  # type: ignore[attr-defined]
+        self.invalidate_all_caches()
         if trigger_callbacks:
             try:
-                self._trigger_config_change_callbacks()  # type: ignore[attr-defined]
+                self._trigger_config_change_callbacks()
             except Exception as e:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
     def get_network_security_config(self) -> Dict[str, Any]:
         """从文件读取 network_security 配置（带 30 秒缓存，失败返回默认配置）"""
         current_time = time.time()
-        with self._lock:  # type: ignore[attr-defined]
+        with self._lock:
             if (
-                self._network_security_cache is not None  # type: ignore[attr-defined]
-                and current_time - self._network_security_cache_time  # type: ignore[attr-defined]
-                < self._network_security_cache_ttl  # type: ignore[attr-defined]
+                self._network_security_cache is not None
+                and current_time - self._network_security_cache_time
+                < self._network_security_cache_ttl
             ):
                 logger.debug("使用缓存的 network_security 配置")
-                return self._network_security_cache  # type: ignore[attr-defined]
+                return self._network_security_cache
 
         try:
-            if not self.config_file.exists():  # type: ignore[attr-defined]
-                default_config = self._get_default_config()  # type: ignore[attr-defined]
+            if not self.config_file.exists():
+                default_config = self._get_default_config()
                 raw_result = cast(
                     Dict[str, Any], default_config.get("network_security", {})
                 )
                 result = self._validate_network_security_config(raw_result)
-                with self._lock:  # type: ignore[attr-defined]
-                    self._network_security_cache = result  # type: ignore[attr-defined]
-                    self._network_security_cache_time = current_time  # type: ignore[attr-defined]
+                with self._lock:
+                    self._network_security_cache = result
+                    self._network_security_cache_time = current_time
                 return result
 
-            with open(self.config_file, "r", encoding="utf-8") as f:  # type: ignore[attr-defined]
+            with open(self.config_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            full_config = self._parse_config_content(content)  # type: ignore[attr-defined]
+            full_config = self._parse_config_content(content)
 
-            self._validate_config_structure(full_config, content)  # type: ignore[attr-defined]
+            self._validate_config_structure(full_config, content)
 
             network_security_config = cast(
                 Dict[str, Any], full_config.get("network_security", {})
             )
 
             if not network_security_config:
-                default_config = self._get_default_config()  # type: ignore[attr-defined]
+                default_config = self._get_default_config()
                 network_security_config = cast(
                     Dict[str, Any], default_config.get("network_security", {})
                 )
@@ -269,24 +295,24 @@ class NetworkSecurityMixin:
 
             validated = self._validate_network_security_config(network_security_config)
 
-            with self._lock:  # type: ignore[attr-defined]
-                self._network_security_cache = validated  # type: ignore[attr-defined]
-                self._network_security_cache_time = current_time  # type: ignore[attr-defined]
+            with self._lock:
+                self._network_security_cache = validated
+                self._network_security_cache_time = current_time
                 logger.debug("已更新 network_security 配置缓存")
 
             return validated
 
         except Exception as e:
             logger.error(f"读取 network_security 配置失败: {e}", exc_info=True)
-            with self._lock:  # type: ignore[attr-defined]
-                if self._network_security_cache is not None:  # type: ignore[attr-defined]
+            with self._lock:
+                if self._network_security_cache is not None:
                     logger.warning(
                         "读取 network_security 配置失败，返回缓存的上一次成功配置",
                         exc_info=True,
                     )
-                    return self._network_security_cache  # type: ignore[attr-defined]
+                    return self._network_security_cache
 
-            default_config = self._get_default_config()  # type: ignore[attr-defined]
+            default_config = self._get_default_config()
             raw_default = cast(
                 Dict[str, Any], default_config.get("network_security", {})
             )

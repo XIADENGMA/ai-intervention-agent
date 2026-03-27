@@ -7,7 +7,7 @@ import hashlib
 import json
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
@@ -17,21 +17,40 @@ from file_validator import validate_uploaded_file
 from server import get_task_queue
 from shared_types import FeedbackResult
 
+if TYPE_CHECKING:
+    import threading
+
+    from flask import Flask
+    from flask_limiter import Limiter
+
 logger = EnhancedLogger(__name__)
 
 
 class FeedbackRoutesMixin:
     """提供 3 个反馈相关 API 路由，由 WebFeedbackUI 通过 MRO 继承。"""
 
+    if TYPE_CHECKING:
+        app: Flask
+        limiter: Limiter
+        _state_lock: threading.RLock
+        feedback_result: Optional[FeedbackResult]
+        current_prompt: str
+        current_options: list[str]
+        current_task_id: Optional[str]
+        current_auto_resubmit_timeout: int
+        _single_task_timeout_explicit: bool
+        has_content: bool
+
+        def render_markdown(self, text: str) -> str: ...
+
     def _setup_feedback_routes(self) -> None:  # noqa: C901
-        # 延迟导入避免循环依赖
         from web_ui import (
             _get_default_auto_resubmit_timeout_from_config,
             validate_auto_resubmit_timeout,
         )
 
-        @self.app.route("/api/submit", methods=["POST"])  # type: ignore[attr-defined]
-        @self.limiter.limit("60 per minute")  # type: ignore[attr-defined]
+        @self.app.route("/api/submit", methods=["POST"])
+        @self.limiter.limit("60 per minute")
         def submit_feedback() -> ResponseReturnValue:
             """提交反馈的通用API端点（兼容多种请求格式）
 
@@ -203,8 +222,8 @@ class FeedbackRoutesMixin:
                 "images": images,  # type: ignore[typeddict-item]  # 运行时总是正确类型
             }
 
-            with self._state_lock:  # type: ignore[attr-defined]
-                self.feedback_result = feedback_result  # type: ignore[attr-defined]
+            with self._state_lock:
+                self.feedback_result = feedback_result
 
             logger.debug("最终存储的反馈结果:")
             logger.debug(
@@ -220,10 +239,10 @@ class FeedbackRoutesMixin:
                     cast(dict[str, Any], feedback_result),
                 )
 
-            with self._state_lock:  # type: ignore[attr-defined]
-                self.current_prompt = ""  # type: ignore[attr-defined]
-                self.current_options = []  # type: ignore[attr-defined]
-                self.has_content = False  # type: ignore[attr-defined]
+            with self._state_lock:
+                self.current_prompt = ""
+                self.current_options = []
+                self.has_content = False
             return jsonify(
                 {
                     "status": "success",
@@ -233,7 +252,7 @@ class FeedbackRoutesMixin:
                 }
             )
 
-        @self.app.route("/api/update", methods=["POST"])  # type: ignore[attr-defined]
+        @self.app.route("/api/update", methods=["POST"])
         def update_content() -> ResponseReturnValue:
             """更新页面内容的API端点（单任务模式）
 
@@ -371,25 +390,25 @@ class FeedbackRoutesMixin:
             new_auto_resubmit_timeout = validate_auto_resubmit_timeout(timeout_int)
 
             try:
-                with self._state_lock:  # type: ignore[attr-defined]
-                    self.current_prompt = new_prompt  # type: ignore[attr-defined]
-                    self.current_options = new_options  # type: ignore[attr-defined]
-                    self.current_task_id = new_task_id  # type: ignore[attr-defined]
-                    self.current_auto_resubmit_timeout = new_auto_resubmit_timeout  # type: ignore[attr-defined]
-                    self._single_task_timeout_explicit = timeout_explicit  # type: ignore[attr-defined]
-                    self.has_content = bool(new_prompt.strip())  # type: ignore[attr-defined]
-                    self.feedback_result = None  # type: ignore[attr-defined]
+                with self._state_lock:
+                    self.current_prompt = new_prompt
+                    self.current_options = new_options
+                    self.current_task_id = new_task_id
+                    self.current_auto_resubmit_timeout = new_auto_resubmit_timeout
+                    self._single_task_timeout_explicit = timeout_explicit
+                    self.has_content = bool(new_prompt.strip())
+                    self.feedback_result = None
 
-                    prompt_snapshot = str(self.current_prompt)  # type: ignore[attr-defined]
-                    options_snapshot = list(self.current_options)  # type: ignore[attr-defined]
-                    task_id_snapshot = self.current_task_id  # type: ignore[attr-defined]
-                    timeout_snapshot = int(self.current_auto_resubmit_timeout)  # type: ignore[attr-defined]
-                    has_content_snapshot = bool(self.has_content)  # type: ignore[attr-defined]
+                    prompt_snapshot = str(self.current_prompt)
+                    options_snapshot = list(self.current_options)
+                    task_id_snapshot = self.current_task_id
+                    timeout_snapshot = int(self.current_auto_resubmit_timeout)
+                    has_content_snapshot = bool(self.has_content)
 
                 prompt_html = ""
                 if has_content_snapshot:
                     try:
-                        prompt_html = self.render_markdown(prompt_snapshot)  # type: ignore[attr-defined]
+                        prompt_html = self.render_markdown(prompt_snapshot)
                     except Exception as e:
                         logger.warning(
                             f"/api/update prompt 渲染失败: {e}", exc_info=True
@@ -421,7 +440,7 @@ class FeedbackRoutesMixin:
                     500,
                 )
 
-        @self.app.route("/api/feedback", methods=["GET"])  # type: ignore[attr-defined]
+        @self.app.route("/api/feedback", methods=["GET"])
         def get_feedback() -> ResponseReturnValue:
             """获取用户反馈结果的API端点（单任务模式）
 
@@ -432,9 +451,9 @@ class FeedbackRoutesMixin:
                 有反馈：JSON对象 {"status": "success", "feedback": {...}}
                 无反馈：JSON对象 {"status": "waiting", "feedback": null}
             """
-            with self._state_lock:  # type: ignore[attr-defined]
-                result = self.feedback_result  # type: ignore[attr-defined]
-                self.feedback_result = None  # type: ignore[attr-defined]
+            with self._state_lock:
+                result = self.feedback_result
+                self.feedback_result = None
             if result:
                 return jsonify({"status": "success", "feedback": result})
             return jsonify({"status": "waiting", "feedback": None})

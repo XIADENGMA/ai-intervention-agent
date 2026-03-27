@@ -24,6 +24,12 @@ logger = EnhancedLogger(__name__)
 class TomlEngineMixin:
     """TOML 格式配置文件的解析/保存方法集合。"""
 
+    if TYPE_CHECKING:
+        _original_content: str | None
+
+        @staticmethod
+        def _exclude_network_security(config: Dict[str, Any]) -> Dict[str, Any]: ...
+
     # ------------------------------------------------------------------
     # TOML 解析
     # ------------------------------------------------------------------
@@ -45,13 +51,11 @@ class TomlEngineMixin:
 
     def _save_toml_with_comments(self, config: Dict[str, Any]) -> str:
         """保存 TOML 配置并保留原有注释和格式，排除 network_security"""
-        config_to_save = self._exclude_network_security(config.copy())  # type: ignore[attr-defined]
-
-        if not self._original_content:  # type: ignore[attr-defined]
+        config_to_save = self._exclude_network_security(config.copy())
+        if not self._original_content:
             return tomlkit.dumps(tomlkit.item(config_to_save))
 
-        doc = self._parse_toml_document(self._original_content)  # type: ignore[attr-defined]
-
+        doc = self._parse_toml_document(self._original_content)
         for section_key, section_value in config_to_save.items():
             if section_key == "network_security":
                 continue
@@ -88,12 +92,11 @@ class TomlEngineMixin:
 
     def _save_network_security_toml(self, ns_config: Dict[str, Any]) -> str:
         """仅更新 TOML 文件中的 network_security 段并返回完整内容"""
-        if not self._original_content:  # type: ignore[attr-defined]
+        if not self._original_content:
             logger.warning("无原始内容，无法保留格式保存 network_security")
             return ""
 
-        doc = self._parse_toml_document(self._original_content)  # type: ignore[attr-defined]
-
+        doc = self._parse_toml_document(self._original_content)
         if "network_security" in doc and isinstance(doc["network_security"], Table):
             self._update_toml_table(doc["network_security"], ns_config)
         else:

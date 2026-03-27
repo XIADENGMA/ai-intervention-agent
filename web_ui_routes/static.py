@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from flask import abort, request, send_from_directory
@@ -10,7 +11,8 @@ from flask.typing import ResponseReturnValue
 from enhanced_logging import EnhancedLogger
 
 if TYPE_CHECKING:
-    pass
+    from flask import Flask
+    from flask_limiter import Limiter
 
 logger = EnhancedLogger(__name__)
 
@@ -18,9 +20,18 @@ logger = EnhancedLogger(__name__)
 class StaticRoutesMixin:
     """提供 8 个静态资源路由，由 WebFeedbackUI 通过 MRO 继承。"""
 
+    if TYPE_CHECKING:
+        app: Flask
+        limiter: Limiter
+        _project_root: Path
+
+        def _get_minified_file(
+            self, directory: str | Path, filename: str, extension: str
+        ) -> str: ...
+
     def _setup_static_routes(self) -> None:  # noqa: C901  — 路由注册集中在此方法
-        @self.app.route("/fonts/<filename>")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/fonts/<filename>")
+        @self.limiter.exempt
         def serve_fonts(filename: str) -> ResponseReturnValue:
             """提供字体文件的静态资源路由
 
@@ -40,11 +51,11 @@ class StaticRoutesMixin:
                 - 使用send_from_directory防止路径遍历攻击
                 - 文件名自动清理，不支持../ 等危险路径
             """
-            fonts_dir = self._project_root / "fonts"  # type: ignore[attr-defined]
+            fonts_dir = self._project_root / "fonts"
             return send_from_directory(str(fonts_dir), filename)
 
-        @self.app.route("/icons/<filename>")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/icons/<filename>")
+        @self.limiter.exempt
         def serve_icons(filename: str) -> ResponseReturnValue:
             """提供图标文件的静态资源路由
 
@@ -64,11 +75,11 @@ class StaticRoutesMixin:
                 - 使用send_from_directory防止路径遍历攻击
                 - 文件名自动清理，不支持../ 等危险路径
             """
-            icons_dir = self._project_root / "icons"  # type: ignore[attr-defined]
+            icons_dir = self._project_root / "icons"
             return send_from_directory(str(icons_dir), filename)
 
-        @self.app.route("/sounds/<filename>")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/sounds/<filename>")
+        @self.limiter.exempt
         def serve_sounds(filename: str) -> ResponseReturnValue:
             """提供音频文件的静态资源路由
 
@@ -89,11 +100,11 @@ class StaticRoutesMixin:
                 - 文件名自动清理，不支持../ 等危险路径
                 - 音频文件较大，注意带宽占用
             """
-            sounds_dir = self._project_root / "sounds"  # type: ignore[attr-defined]
+            sounds_dir = self._project_root / "sounds"
             return send_from_directory(str(sounds_dir), filename)
 
-        @self.app.route("/static/css/<filename>")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/static/css/<filename>")
+        @self.limiter.exempt
         def serve_css(filename: str) -> ResponseReturnValue:
             """提供CSS文件的静态资源路由
 
@@ -122,9 +133,9 @@ class StaticRoutesMixin:
                 - CSS文件通过CSP nonce验证安全性
                 - 使用版本号参数实现缓存失效控制
             """
-            css_dir = self._project_root / "static" / "css"  # type: ignore[attr-defined]
+            css_dir = self._project_root / "static" / "css"
 
-            actual_filename = self._get_minified_file(css_dir, filename, ".css")  # type: ignore[attr-defined]
+            actual_filename = self._get_minified_file(css_dir, filename, ".css")
 
             response = send_from_directory(str(css_dir), actual_filename)
 
@@ -137,8 +148,8 @@ class StaticRoutesMixin:
 
             return response
 
-        @self.app.route("/static/js/<filename>")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/static/js/<filename>")
+        @self.limiter.exempt
         def serve_js(filename: str) -> ResponseReturnValue:
             """提供JavaScript文件的静态资源路由
 
@@ -167,9 +178,9 @@ class StaticRoutesMixin:
                 - JavaScript文件通过CSP nonce验证安全性
                 - 使用版本号参数实现缓存失效控制
             """
-            js_dir = self._project_root / "static" / "js"  # type: ignore[attr-defined]
+            js_dir = self._project_root / "static" / "js"
 
-            actual_filename = self._get_minified_file(js_dir, filename, ".js")  # type: ignore[attr-defined]
+            actual_filename = self._get_minified_file(js_dir, filename, ".js")
 
             response = send_from_directory(str(js_dir), actual_filename)
 
@@ -182,11 +193,11 @@ class StaticRoutesMixin:
 
             return response
 
-        @self.app.route("/notification-service-worker.js")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/notification-service-worker.js")
+        @self.limiter.exempt
         def serve_notification_service_worker() -> ResponseReturnValue:
             """提供通知 service worker，并允许其控制整个站点作用域。"""
-            js_dir = self._project_root / "static" / "js"  # type: ignore[attr-defined]
+            js_dir = self._project_root / "static" / "js"
             response = send_from_directory(
                 str(js_dir), "notification-service-worker.js"
             )
@@ -194,8 +205,8 @@ class StaticRoutesMixin:
             response.headers["Service-Worker-Allowed"] = "/"
             return response
 
-        @self.app.route("/static/lottie/<filename>")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/static/lottie/<filename>")
+        @self.limiter.exempt
         def serve_lottie(filename: str) -> ResponseReturnValue:
             """提供 Lottie 动画 JSON 文件的静态资源路由
 
@@ -220,13 +231,13 @@ class StaticRoutesMixin:
             if not filename or not str(filename).lower().endswith(".json"):
                 abort(404)
 
-            lottie_dir = self._project_root / "static" / "lottie"  # type: ignore[attr-defined]
+            lottie_dir = self._project_root / "static" / "lottie"
             return send_from_directory(
                 str(lottie_dir), filename, mimetype="application/json"
             )
 
-        @self.app.route("/favicon.ico")  # type: ignore[attr-defined]
-        @self.limiter.exempt  # type: ignore[attr-defined]
+        @self.app.route("/favicon.ico")
+        @self.limiter.exempt
         def favicon() -> ResponseReturnValue:
             """提供网站图标的路由
 
@@ -254,7 +265,7 @@ class StaticRoutesMixin:
                 - 浏览器每次访问页面都会请求favicon
                 - 文件不存在时Flask返回404
             """
-            icons_dir = self._project_root / "icons"  # type: ignore[attr-defined]
+            icons_dir = self._project_root / "icons"
             icon_path = icons_dir / "icon.ico"
             logger.debug(f"Favicon请求 - 图标目录: {icons_dir}")
             logger.debug(f"Favicon请求 - 图标文件: {icon_path}")

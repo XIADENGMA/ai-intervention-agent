@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import time
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
@@ -14,21 +14,28 @@ from enhanced_logging import EnhancedLogger
 from file_validator import validate_uploaded_file
 from server import get_task_queue
 
+if TYPE_CHECKING:
+    from flask import Flask
+    from flask_limiter import Limiter
+
 logger = EnhancedLogger(__name__)
 
 
 class TaskRoutesMixin:
     """提供 5 个任务管理 API 路由，由 WebFeedbackUI 通过 MRO 继承。"""
 
+    if TYPE_CHECKING:
+        app: Flask
+        limiter: Limiter
+
     def _setup_task_routes(self) -> None:  # noqa: C901
-        # 需要从 web_ui 模块导入（延迟导入避免循环依赖）
         from web_ui import (
             _get_default_auto_resubmit_timeout_from_config,
             validate_auto_resubmit_timeout,
         )
 
-        @self.app.route("/api/tasks", methods=["GET"])  # type: ignore[attr-defined]
-        @self.limiter.limit("300 per minute")  # type: ignore[attr-defined]
+        @self.app.route("/api/tasks", methods=["GET"])
+        @self.limiter.limit("300 per minute")
         def get_tasks() -> ResponseReturnValue:
             """获取所有任务列表的API端点
 
@@ -107,8 +114,8 @@ class TaskRoutesMixin:
                 logger.error(f"获取任务列表失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
-        @self.app.route("/api/tasks", methods=["POST"])  # type: ignore[attr-defined]
-        @self.limiter.limit("60 per minute")  # type: ignore[attr-defined]
+        @self.app.route("/api/tasks", methods=["POST"])
+        @self.limiter.limit("60 per minute")
         def create_task() -> ResponseReturnValue:
             """创建新任务的API端点
 
@@ -280,8 +287,8 @@ class TaskRoutesMixin:
                 409,
             )
 
-        @self.app.route("/api/tasks/<task_id>", methods=["GET"])  # type: ignore[attr-defined]
-        @self.limiter.limit("300 per minute")  # type: ignore[attr-defined]
+        @self.app.route("/api/tasks/<task_id>", methods=["GET"])
+        @self.limiter.limit("300 per minute")
         def get_task(task_id: str) -> ResponseReturnValue:
             """获取单个任务详情的API端点
 
@@ -331,8 +338,8 @@ class TaskRoutesMixin:
                 logger.error(f"获取任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
-        @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])  # type: ignore[attr-defined]
-        @self.limiter.limit("60 per minute")  # type: ignore[attr-defined]
+        @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])
+        @self.limiter.limit("60 per minute")
         def activate_task(task_id: str) -> ResponseReturnValue:
             """激活指定任务的API端点
 
@@ -362,8 +369,8 @@ class TaskRoutesMixin:
                 logger.error(f"激活任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
-        @self.app.route("/api/tasks/<task_id>/submit", methods=["POST"])  # type: ignore[attr-defined]
-        @self.limiter.limit("60 per minute")  # type: ignore[attr-defined]
+        @self.app.route("/api/tasks/<task_id>/submit", methods=["POST"])
+        @self.limiter.limit("60 per minute")
         def submit_task_feedback(task_id: str) -> ResponseReturnValue:
             """提交指定任务反馈的API端点
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
@@ -25,14 +25,20 @@ try:
 except ImportError:
     NOTIFICATION_AVAILABLE = False
 
+if TYPE_CHECKING:
+    from flask import Flask
+
 logger = EnhancedLogger(__name__)
 
 
 class NotificationRoutesMixin:
     """提供 5 个通知相关 API 路由，由 WebFeedbackUI 通过 MRO 继承。"""
 
+    if TYPE_CHECKING:
+        app: Flask
+
     def _setup_notification_routes(self) -> None:  # noqa: C901
-        @self.app.route("/api/test-bark", methods=["POST"])  # type: ignore[attr-defined]
+        @self.app.route("/api/test-bark", methods=["POST"])
         def test_bark_notification() -> ResponseReturnValue:
             """测试Bark通知的API端点
 
@@ -131,7 +137,7 @@ class NotificationRoutesMixin:
                 logger.error(f"Bark 测试通知失败: {e}", exc_info=True)
                 return jsonify({"status": "error", "message": "测试失败"}), 500
 
-        @self.app.route("/api/notify-new-tasks", methods=["POST"])  # type: ignore[attr-defined]
+        @self.app.route("/api/notify-new-tasks", methods=["POST"])
         def notify_new_tasks() -> ResponseReturnValue:
             """新任务通知触发端点（阶段 B）
 
@@ -233,7 +239,7 @@ class NotificationRoutesMixin:
                 logger.error(f"触发新任务通知失败: {e}", exc_info=True)
                 return jsonify({"status": "error", "message": "触发失败"}), 500
 
-        @self.app.route("/api/update-notification-config", methods=["POST"])  # type: ignore[attr-defined]
+        @self.app.route("/api/update-notification-config", methods=["POST"])
         def update_notification_config() -> ResponseReturnValue:
             """更新通知配置的API端点
 
@@ -438,7 +444,7 @@ class NotificationRoutesMixin:
                 logger.error(f"更新通知配置失败: {e}", exc_info=True)
                 return jsonify({"status": "error", "message": "更新失败"}), 500
 
-        @self.app.route("/api/get-notification-config", methods=["GET"])  # type: ignore[attr-defined]
+        @self.app.route("/api/get-notification-config", methods=["GET"])
         def get_notification_config() -> ResponseReturnValue:
             """获取当前通知配置的API端点
 
@@ -459,7 +465,7 @@ class NotificationRoutesMixin:
                 logger.error(f"获取通知配置失败: {e}", exc_info=True)
                 return jsonify({"status": "error", "message": "获取配置失败"}), 500
 
-        @self.app.route("/api/get-feedback-prompts", methods=["GET"])  # type: ignore[attr-defined]
+        @self.app.route("/api/get-feedback-prompts", methods=["GET"])
         def get_feedback_prompts_api() -> ResponseReturnValue:
             """获取反馈提示语配置的API端点
 
