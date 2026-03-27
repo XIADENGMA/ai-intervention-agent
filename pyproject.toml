@@ -47,6 +47,7 @@ dependencies = [
     "pygments>=2.18.0",
     "tomlkit>=0.14.0",
     "zeroconf>=0.146.0",
+    "loguru>=0.7.3",
 ]
 
 [project.optional-dependencies]

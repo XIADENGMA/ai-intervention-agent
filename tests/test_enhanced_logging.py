@@ -5,9 +5,10 @@ AI Intervention Agent - Enhanced Logging 模块单元测试
 测试覆盖：
 1. 日志去重器
 2. 脱敏处理器
-3. 防注入过滤器
-4. 增强日志记录器
-5. 安全日志格式化器
+3. Loguru patcher（防注入 + 脱敏）
+4. InterceptHandler（stdlib → Loguru 桥接）
+5. 增强日志记录器
+6. 日志级别配置工具
 """
 
 import logging
@@ -15,12 +16,12 @@ import time
 import unittest
 
 from enhanced_logging import (
-    AntiInjectionFilter,
     EnhancedLogger,
-    LevelBasedStreamHandler,
+    InterceptHandler,
     LogDeduplicator,
     LogSanitizer,
-    SecureLogFormatter,
+    SingletonLogManager,
+    _sanitize_and_escape,
 )
 
 
@@ -53,9 +54,7 @@ class TestLogDeduplicator(unittest.TestCase):
         """测试重复消息应该被去重"""
         dedup = LogDeduplicator(time_window=1.0)
 
-        # 第一次
         result1, _ = dedup.should_log("duplicate_test")
-        # 第二次
         result2, _ = dedup.should_log("duplicate_test")
 
         self.assertTrue(result1)
@@ -73,12 +72,11 @@ class TestLogDeduplicator(unittest.TestCase):
 
     def test_window_expiry(self):
         """测试时间窗口过期"""
-        dedup = LogDeduplicator(time_window=0.01)  # 减少时间窗口
+        dedup = LogDeduplicator(time_window=0.01)
 
         result1, _ = dedup.should_log("expiry_test")
         self.assertTrue(result1)
 
-        # 等待窗口过期（减少等待时间）
         time.sleep(0.02)
 
         result2, _ = dedup.should_log("expiry_test")
@@ -88,11 +86,9 @@ class TestLogDeduplicator(unittest.TestCase):
         """测试缓存清理"""
         dedup = LogDeduplicator(time_window=0.05, max_cache_size=5)
 
-        # 填满缓存
         for i in range(10):
             dedup.should_log(f"msg_{i}")
 
-        # 缓存应该被清理，不会无限增长
         self.assertLessEqual(len(dedup.cache), 10)
 
 
@@ -100,7 +96,6 @@ class TestLogSanitizer(unittest.TestCase):
     """日志脱敏器测试"""
 
     def setUp(self):
-        """每个测试前准备"""
         self.sanitizer = LogSanitizer()
 
     def test_sanitize_password(self):
@@ -115,7 +110,6 @@ class TestLogSanitizer(unittest.TestCase):
         text = "api_key=sk-abcdef123456"
         result = self.sanitizer.sanitize(text)
 
-        # API key 应该被脱敏
         self.assertIsInstance(result, str)
 
     def test_sanitize_normal_text(self):
@@ -126,109 +120,50 @@ class TestLogSanitizer(unittest.TestCase):
         self.assertEqual(result, text)
 
 
-class TestAntiInjectionFilter(unittest.TestCase):
-    """防注入过滤器测试"""
+class TestSanitizeAndEscapePatcher(unittest.TestCase):
+    """Loguru patcher 防注入+脱敏测试"""
 
-    def setUp(self):
-        """每个测试前准备"""
-        self.filter = AntiInjectionFilter()
+    def _make_record(self, message):
+        return {"message": message}
 
-    def test_filter_normal_record(self):
-        """测试正常记录通过"""
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="Normal message",
-            args=(),
-            exc_info=None,
-        )
+    def test_newline_escaped(self):
+        record = self._make_record("line1\nline2")
+        _sanitize_and_escape(record)
+        self.assertNotIn("\n", record["message"])
+        self.assertIn("\\n", record["message"])
 
-        result = self.filter.filter(record)
+    def test_carriage_return_escaped(self):
+        record = self._make_record("line1\rline2")
+        _sanitize_and_escape(record)
+        self.assertNotIn("\r", record["message"])
+        self.assertIn("\\r", record["message"])
 
-        self.assertTrue(result)
+    def test_null_byte_escaped(self):
+        record = self._make_record("has\x00null")
+        _sanitize_and_escape(record)
+        self.assertNotIn("\x00", record["message"])
+        self.assertIn("\\x00", record["message"])
 
-    def test_filter_injection_attempt(self):
-        """测试注入尝试被处理"""
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="Normal\n[ERROR] Fake error",
-            args=(),
-            exc_info=None,
-        )
+    def test_password_sanitized(self):
+        record = self._make_record("password=super_secret_value")
+        _sanitize_and_escape(record)
+        self.assertIn("***REDACTED***", record["message"])
 
-        result = self.filter.filter(record)
-
-        # 过滤器应该处理注入尝试
-        self.assertTrue(result)
-
-    def test_filter_carriage_return(self):
-        """测试回车符被处理"""
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="Normal\r[ERROR] Fake error",
-            args=(),
-            exc_info=None,
-        )
-
-        result = self.filter.filter(record)
-
-        self.assertTrue(result)
+    def test_normal_text_unchanged(self):
+        record = self._make_record("Normal log message")
+        _sanitize_and_escape(record)
+        self.assertEqual(record["message"], "Normal log message")
 
 
-class TestEnhancedLogger(unittest.TestCase):
-    """增强日志记录器测试"""
+class TestInterceptHandler(unittest.TestCase):
+    """InterceptHandler stdlib → Loguru 桥接测试"""
 
-    def setUp(self):
-        """每个测试前准备"""
-        self.logger = EnhancedLogger("test_enhanced")
+    def test_handler_creation(self):
+        handler = InterceptHandler()
+        self.assertIsInstance(handler, logging.Handler)
 
-    def test_logger_creation(self):
-        """测试日志器创建"""
-        self.assertIsNotNone(self.logger)
-
-    def test_debug_log(self):
-        """测试 debug 级别日志"""
-        # 不应该抛出异常
-        self.logger.debug("Debug message")
-
-    def test_info_log(self):
-        """测试 info 级别日志"""
-        self.logger.info("Info message")
-
-    def test_warning_log(self):
-        """测试 warning 级别日志"""
-        self.logger.warning("Warning message")
-
-    def test_error_log(self):
-        """测试 error 级别日志"""
-        self.logger.error("Error message")
-
-    def test_log_with_args(self):
-        """测试带参数的日志"""
-        self.logger.info("Message with args: %s %d", "test", 42)
-
-    def test_log_with_kwargs(self):
-        """测试带关键字参数的日志"""
-        self.logger.info("Message with kwargs", extra={"key": "value"})
-
-
-class TestSecureLogFormatter(unittest.TestCase):
-    """安全日志格式化器测试"""
-
-    def setUp(self):
-        """每个测试前准备"""
-        self.formatter = SecureLogFormatter()
-
-    def test_format_record(self):
-        """测试格式化记录"""
+    def test_emit_does_not_raise(self):
+        handler = InterceptHandler()
         record = logging.LogRecord(
             name="test",
             level=logging.INFO,
@@ -238,121 +173,35 @@ class TestSecureLogFormatter(unittest.TestCase):
             args=(),
             exc_info=None,
         )
-
-        result = self.formatter.format(record)
-
-        self.assertIn("Test message", result)
-
-    def test_format_with_custom_format(self):
-        """测试自定义格式"""
-        formatter = SecureLogFormatter(fmt="%(levelname)s: %(message)s")
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="Custom format test",
-            args=(),
-            exc_info=None,
-        )
-
-        result = formatter.format(record)
-
-        self.assertIn("INFO", result)
-        self.assertIn("Custom format test", result)
+        handler.emit(record)
 
 
-class TestLevelBasedStreamHandler(unittest.TestCase):
-    """基于级别的流处理器测试"""
-
-    def test_handler_creation(self):
-        """测试处理器创建"""
-        handler = LevelBasedStreamHandler()
-        self.assertIsNotNone(handler)
-
-    def test_handler_is_not_none(self):
-        """测试处理器对象有效"""
-        handler = LevelBasedStreamHandler()
-        self.assertIsNotNone(handler)
-
-
-# ============================================================================
-# 覆盖率补充测试
-# ============================================================================
-
-
-class TestAntiInjectionFilterArgs(unittest.TestCase):
-    """AntiInjectionFilter 对 args 的转义"""
+class TestEnhancedLogger(unittest.TestCase):
+    """增强日志记录器测试"""
 
     def setUp(self):
-        self.filter = AntiInjectionFilter()
+        self.logger = EnhancedLogger("test_enhanced")
 
-    def test_string_args_escaped(self):
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="",
-            lineno=1,
-            msg="val: %s",
-            args=("line1\nline2\rline3\x00end",),
-            exc_info=None,
-        )
-        self.filter.filter(record)
-        self.assertIn("\\n", record.args[0])  # type: ignore[index]
-        self.assertIn("\\r", record.args[0])  # type: ignore[index]
-        self.assertIn("\\x00", record.args[0])  # type: ignore[index]
+    def test_logger_creation(self):
+        self.assertIsNotNone(self.logger)
 
-    def test_non_string_args_preserved(self):
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="",
-            lineno=1,
-            msg="val: %d %s",
-            args=(42, "ok\n"),
-            exc_info=None,
-        )
-        self.filter.filter(record)
-        self.assertEqual(record.args[0], 42)  # type: ignore[index]
-        self.assertEqual(record.args[1], "ok\\n")  # type: ignore[index]
+    def test_debug_log(self):
+        self.logger.debug("Debug message")
 
-    def test_null_byte_in_msg(self):
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="",
-            lineno=1,
-            msg="has\x00null",
-            args=(),
-            exc_info=None,
-        )
-        self.filter.filter(record)
-        self.assertIn("\\x00", record.msg)
+    def test_info_log(self):
+        self.logger.info("Info message")
 
-    def test_non_tuple_args_ignored(self):
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="",
-            lineno=1,
-            msg="test",
-            args=None,
-            exc_info=None,
-        )
-        self.assertTrue(self.filter.filter(record))
+    def test_warning_log(self):
+        self.logger.warning("Warning message")
 
-    def test_non_string_msg_ignored(self):
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="",
-            lineno=1,
-            msg="test",
-            args=(),
-            exc_info=None,
-        )
-        record.msg = 12345  # type: ignore[assignment]
-        self.assertTrue(self.filter.filter(record))
+    def test_error_log(self):
+        self.logger.error("Error message")
+
+    def test_log_with_args(self):
+        self.logger.info("Message with args: %s %d", "test", 42)
+
+    def test_log_with_kwargs(self):
+        self.logger.info("Message with kwargs", extra={"key": "value"})
 
 
 class TestLogDeduplicatorCleanup(unittest.TestCase):
@@ -439,13 +288,8 @@ class TestConfigureLoggingFromConfig(unittest.TestCase):
         configure_logging_from_config()
 
 
-# ──────────────────────────────────────────────────────────
-# 覆盖率补充
-# ──────────────────────────────────────────────────────────
-
-
 class TestLogDuplicateInfoAppend(unittest.TestCase):
-    """line 259: 去重器返回 duplicate_info 时追加到消息"""
+    """去重器返回 duplicate_info 时追加到消息"""
 
     def test_duplicate_info_appended(self):
         from unittest.mock import patch as _patch
@@ -463,10 +307,9 @@ class TestLogDuplicateInfoAppend(unittest.TestCase):
 
 
 class TestGetLogLevelEdgePaths(unittest.TestCase):
-    """lines 314-323: 无效级别 + 配置读取异常"""
+    """无效级别 + 配置读取异常"""
 
     def test_invalid_level_warning_path(self):
-        """lines 314-318: 无效的 log_level 字符串"""
         from unittest.mock import MagicMock
         from unittest.mock import patch as _patch
 
@@ -479,7 +322,6 @@ class TestGetLogLevelEdgePaths(unittest.TestCase):
             self.assertEqual(level, logging.WARNING)
 
     def test_config_read_exception_path(self):
-        """lines 320-323: config_manager.get 抛异常"""
         from unittest.mock import MagicMock
         from unittest.mock import patch as _patch
 
@@ -493,12 +335,9 @@ class TestGetLogLevelEdgePaths(unittest.TestCase):
 
 
 class TestSingletonLogManagerDCL(unittest.TestCase):
-    """branch 24->26: SingletonLogManager.__new__ DCL 内层分支"""
+    """SingletonLogManager.__new__ DCL 内层分支"""
 
     def test_new_dcl_inner_branch(self):
-        """另一线程在锁等待期间完成创建"""
-        from enhanced_logging import SingletonLogManager
-
         old_instance = SingletonLogManager._instance
         old_lock = SingletonLogManager._lock
         try:
