@@ -8,14 +8,14 @@
 
 import base64
 import uuid
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Tuple, overload
+from typing import Any, ClassVar, Dict, Literal, Optional, Tuple, overload
 
 from mcp.types import ContentBlock, ImageContent, TextContent
+from pydantic import BaseModel, field_validator
 
 from config_manager import get_config
-from config_utils import clamp_dataclass_field, get_compat_config, truncate_string
+from config_utils import clamp_value, get_compat_config, truncate_string
 from enhanced_logging import EnhancedLogger
 
 logger = EnhancedLogger(__name__)
@@ -48,19 +48,18 @@ MAX_OPTION_LENGTH = 500  # 单个预定义选项最大长度
 # ============================================================================
 
 
-@dataclass
-class WebUIConfig:
+class WebUIConfig(BaseModel):
     """Web UI 服务配置：host, port, timeout, max_retries, retry_delay"""
 
-    PORT_MIN = 1
-    PORT_MAX = 65535
-    PORT_PRIVILEGED = 1024
-    TIMEOUT_MIN = 1
-    TIMEOUT_MAX = 300
-    MAX_RETRIES_MIN = 0
-    MAX_RETRIES_MAX = 10
-    RETRY_DELAY_MIN = 0.1
-    RETRY_DELAY_MAX = 60.0
+    PORT_MIN: ClassVar[int] = 1
+    PORT_MAX: ClassVar[int] = 65535
+    PORT_PRIVILEGED: ClassVar[int] = 1024
+    TIMEOUT_MIN: ClassVar[int] = 1
+    TIMEOUT_MAX: ClassVar[int] = 300
+    MAX_RETRIES_MIN: ClassVar[int] = 0
+    MAX_RETRIES_MAX: ClassVar[int] = 10
+    RETRY_DELAY_MIN: ClassVar[float] = 0.1
+    RETRY_DELAY_MAX: ClassVar[float] = 60.0
 
     host: str
     port: int
@@ -68,30 +67,37 @@ class WebUIConfig:
     max_retries: int = 3
     retry_delay: float = 1.0
 
-    def __post_init__(self) -> None:
-        """验证端口、超时、重试等参数"""
-        if not (self.PORT_MIN <= self.port <= self.PORT_MAX):
+    @field_validator("port")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        if not (cls.PORT_MIN <= v <= cls.PORT_MAX):
             raise ValueError(
-                f"端口号必须在 {self.PORT_MIN}-{self.PORT_MAX} 范围内，当前值: {self.port}"
+                f"端口号必须在 {cls.PORT_MIN}-{cls.PORT_MAX} 范围内，当前值: {v}"
             )
-
-        if self.port < self.PORT_PRIVILEGED:
+        if v < cls.PORT_PRIVILEGED:
             logger.warning(
-                f"端口 {self.port} 是特权端口（<{self.PORT_PRIVILEGED}），"
+                f"端口 {v} 是特权端口（<{cls.PORT_PRIVILEGED}），"
                 f"可能需要 root/管理员权限才能绑定"
             )
+        return v
 
-        clamp_dataclass_field(self, "timeout", self.TIMEOUT_MIN, self.TIMEOUT_MAX)
-        clamp_dataclass_field(
-            self, "max_retries", self.MAX_RETRIES_MIN, self.MAX_RETRIES_MAX
-        )
-        clamp_dataclass_field(
-            self, "retry_delay", self.RETRY_DELAY_MIN, self.RETRY_DELAY_MAX
-        )
+    @field_validator("timeout")
+    @classmethod
+    def clamp_timeout(cls, v: int) -> int:
+        return clamp_value(v, cls.TIMEOUT_MIN, cls.TIMEOUT_MAX, "timeout")
+
+    @field_validator("max_retries")
+    @classmethod
+    def clamp_max_retries(cls, v: int) -> int:
+        return clamp_value(v, cls.MAX_RETRIES_MIN, cls.MAX_RETRIES_MAX, "max_retries")
+
+    @field_validator("retry_delay")
+    @classmethod
+    def clamp_retry_delay(cls, v: float) -> float:
+        return clamp_value(v, cls.RETRY_DELAY_MIN, cls.RETRY_DELAY_MAX, "retry_delay")
 
 
-@dataclass
-class FeedbackConfig:
+class FeedbackConfig(BaseModel):
     """反馈配置：timeout、auto_resubmit_timeout、提示语等"""
 
     timeout: int
@@ -99,30 +105,40 @@ class FeedbackConfig:
     resubmit_prompt: str
     prompt_suffix: str
 
-    def __post_init__(self) -> None:
-        """验证配置值边界"""
-        from config_utils import clamp_value
-
-        self.timeout = clamp_value(
-            self.timeout, FEEDBACK_TIMEOUT_MIN, FEEDBACK_TIMEOUT_MAX, "feedback.timeout"
+    @field_validator("timeout")
+    @classmethod
+    def clamp_timeout(cls, v: int) -> int:
+        return clamp_value(
+            v, FEEDBACK_TIMEOUT_MIN, FEEDBACK_TIMEOUT_MAX, "feedback.timeout"
         )
 
-        if self.auto_resubmit_timeout != 0:
-            self.auto_resubmit_timeout = clamp_value(
-                self.auto_resubmit_timeout,
-                AUTO_RESUBMIT_TIMEOUT_MIN,
-                AUTO_RESUBMIT_TIMEOUT_MAX,
-                "feedback.auto_resubmit_timeout",
-            )
+    @field_validator("auto_resubmit_timeout")
+    @classmethod
+    def clamp_auto_resubmit(cls, v: int) -> int:
+        if v == 0:
+            return v
+        return clamp_value(
+            v,
+            AUTO_RESUBMIT_TIMEOUT_MIN,
+            AUTO_RESUBMIT_TIMEOUT_MAX,
+            "feedback.auto_resubmit_timeout",
+        )
 
-        self.resubmit_prompt = truncate_string(
-            self.resubmit_prompt,
+    @field_validator("resubmit_prompt")
+    @classmethod
+    def truncate_resubmit(cls, v: str) -> str:
+        return truncate_string(
+            v,
             PROMPT_MAX_LENGTH,
             "feedback.resubmit_prompt",
             default=RESUBMIT_PROMPT_DEFAULT,
         )
-        self.prompt_suffix = truncate_string(
-            self.prompt_suffix,
+
+    @field_validator("prompt_suffix")
+    @classmethod
+    def truncate_suffix(cls, v: str) -> str:
+        return truncate_string(
+            v,
             PROMPT_MAX_LENGTH,
             "feedback.prompt_suffix",
         )
