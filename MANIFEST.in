@@ -1,6 +1,8 @@
 include README.md
 include LICENSE
 include server.py
+include server_feedback.py
+include service_manager.py
 include web_ui.py
 include config_manager.py
 include config_utils.py

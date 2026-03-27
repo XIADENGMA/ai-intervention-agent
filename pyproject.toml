@@ -78,6 +78,8 @@ exclude = ["/packages/vscode", "/packages/vscode/**"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/server.py",
+    "/server_feedback.py",
+    "/service_manager.py",
     "/web_ui.py",
     "/config_manager.py",
     "/config_utils.py",

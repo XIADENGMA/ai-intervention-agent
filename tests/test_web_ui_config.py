@@ -263,15 +263,14 @@ class TestWebUIConfigCombined(unittest.TestCase):
 class TestGetWebUIConfig(unittest.TestCase):
     """测试 get_web_ui_config() 函数"""
 
-    @patch("server.get_config")
+    @patch("service_manager.get_config")
     def test_load_config_success(self, mock_get_config):
         """测试成功加载配置"""
-        # 清除缓存
-        import server
+        import service_manager
         from server import WebUIConfig, get_web_ui_config
 
-        server._config_cache["config"] = None
-        server._config_cache["timestamp"] = 0
+        service_manager._config_cache["config"] = None
+        service_manager._config_cache["timestamp"] = 0
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.side_effect = lambda section: {
@@ -292,15 +291,14 @@ class TestGetWebUIConfig(unittest.TestCase):
         self.assertEqual(config.port, 8080)
         self.assertEqual(auto_resubmit, 240)
 
-    @patch("server.get_config")
+    @patch("service_manager.get_config")
     def test_load_config_with_defaults(self, mock_get_config):
         """测试使用默认值加载配置"""
-        # 清除缓存
-        import server
+        import service_manager
         from server import get_web_ui_config
 
-        server._config_cache["config"] = None
-        server._config_cache["timestamp"] = 0
+        service_manager._config_cache["config"] = None
+        service_manager._config_cache["timestamp"] = 0
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {}  # 空配置
