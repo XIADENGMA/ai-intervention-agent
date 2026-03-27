@@ -230,7 +230,11 @@ packages/**/.vscode-test/
 CLAUDE.md
 
 # 配置文件（本地/敏感）
+config.toml
 config.jsonc
+config.json
+config.jsonc.bak
+config.json.bak
 .ace-tool/
 
 # 个人笔记 / 待办

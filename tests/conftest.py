@@ -24,7 +24,7 @@ import pytest
 
 # 会话级临时目录（pytest 退出时自动清理）
 _TEST_TMP_DIR = tempfile.TemporaryDirectory(prefix="ai-intervention-agent-pytest-")
-_TEST_CONFIG_PATH = Path(_TEST_TMP_DIR.name) / "config.jsonc"
+_TEST_CONFIG_PATH = Path(_TEST_TMP_DIR.name) / "config.toml"
 
 # 仅当外部未显式指定时才注入，方便本地/CI 自定义
 _CONFIG_ENV = "AI_INTERVENTION_AGENT_CONFIG_FILE"
@@ -36,7 +36,11 @@ def _project_root() -> Path:
 
 
 def _default_config_template() -> Path:
-    return _project_root() / "config.jsonc.default"
+    root = _project_root()
+    toml_tpl = root / "config.toml.default"
+    if toml_tpl.exists():
+        return toml_tpl
+    return root / "config.jsonc.default"
 
 
 def _active_config_path() -> Path:

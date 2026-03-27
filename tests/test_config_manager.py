@@ -1905,7 +1905,7 @@ class TestFindConfigFile(unittest.TestCase):
                 os.environ, {"AI_INTERVENTION_AGENT_CONFIG_FILE": td + "/"}
             ):
                 result = find_config_file()
-                self.assertEqual(result, Path(td) / "config.jsonc")
+                self.assertEqual(result, Path(td) / "config.toml")
 
 
 # ──────────────────────────────────────────────────────────
@@ -2560,48 +2560,45 @@ class TestFindConfigFileDev(unittest.TestCase):
     """_is_uvx_mode() == False 时的 find_config_file 路径"""
 
     def test_dev_mode_current_dir_exists(self):
+        """开发模式下，当前目录存在 config.toml 时直接返回"""
         with tempfile.TemporaryDirectory() as td:
-            cfg = Path(td) / "config.jsonc"
-            cfg.write_text("{}")
+            cfg = Path(td) / "config.toml"
+            cfg.write_text("[notification]\nenabled = true\n")
             with (
                 patch("config_manager._is_uvx_mode", return_value=False),
-                patch("config_manager.Path") as MockPath,
                 patch.dict(os.environ, {}, clear=False),
+                patch("config_manager.Path") as MockPath,
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
 
-                real_path = Path("config.jsonc")
                 mock_instance = MagicMock()
                 mock_instance.is_absolute.return_value = False
                 mock_instance.parent = Path(".")
                 mock_instance.expanduser.return_value = mock_instance
 
-                current_mock = MagicMock()
-                current_mock.exists.return_value = True
-                current_mock.absolute.return_value = cfg
+                toml_mock = MagicMock()
+                toml_mock.exists.return_value = True
+                toml_mock.absolute.return_value = cfg
 
                 call_count = 0
 
-                def path_side_effect(arg="config.jsonc"):
+                def path_side_effect(arg="config.toml"):
                     nonlocal call_count
-                    if arg == "config.jsonc":
+                    if arg == "config.toml":
                         call_count += 1
                         if call_count == 1:
                             return mock_instance
-                        return current_mock
-                    if arg == "config.json":
-                        m = MagicMock()
-                        m.exists.return_value = False
-                        return m
+                        return toml_mock
                     return Path(arg)
 
                 MockPath.side_effect = path_side_effect
                 MockPath.__truediv__ = Path.__truediv__
 
-                result = find_config_file("config.jsonc")
-                self.assertEqual(result, current_mock)
+                result = find_config_file("config.toml")
+                self.assertEqual(result, toml_mock)
 
     def test_dev_mode_json_fallback(self):
+        """开发模式下，config.toml/jsonc 不存在但 config.json 存在时回退"""
         with (
             patch("config_manager._is_uvx_mode", return_value=False),
             patch.dict(os.environ, {}, clear=False),
@@ -2616,21 +2613,24 @@ class TestFindConfigFileDev(unittest.TestCase):
                     mock_instance.parent = Path(".")
                     mock_instance.expanduser.return_value = mock_instance
 
+                    toml_mock = MagicMock()
+                    toml_mock.exists.return_value = False
                     jsonc_mock = MagicMock()
                     jsonc_mock.exists.return_value = False
-
                     json_mock = MagicMock()
                     json_mock.exists.return_value = True
                     json_mock.absolute.return_value = json_file
 
                     call_count = 0
 
-                    def path_side_effect(arg="config.jsonc"):
+                    def path_side_effect(arg="config.toml"):
                         nonlocal call_count
-                        if arg == "config.jsonc":
+                        if arg == "config.toml":
                             call_count += 1
                             if call_count == 1:
                                 return mock_instance
+                            return toml_mock
+                        if arg == "config.jsonc":
                             return jsonc_mock
                         if arg == "config.json":
                             return json_mock
@@ -2638,7 +2638,7 @@ class TestFindConfigFileDev(unittest.TestCase):
 
                     MockPath.side_effect = path_side_effect
 
-                    result = find_config_file("config.jsonc")
+                    result = find_config_file("config.toml")
                     self.assertEqual(result, json_mock)
 
 

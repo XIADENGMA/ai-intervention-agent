@@ -25,7 +25,7 @@ notification 配置段。
 
 ### `class WebUISectionConfig`
 
-web_ui 配置段（config.jsonc 中的 web_ui 字段）。
+web_ui 配置段（config.toml 中的 web_ui 字段）。
 
 ### `class MdnsConfig`
 

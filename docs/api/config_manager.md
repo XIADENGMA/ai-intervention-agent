@@ -12,7 +12,7 @@
 
 ### `_is_uvx_mode() -> bool`
 
-### `find_config_file(config_filename: str = 'config.jsonc') -> Path`
+### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 ### `_get_user_config_dir_fallback() -> Path`
 
@@ -36,7 +36,7 @@
 
 #### Methods
 
-##### `__init__(self, config_file: str = 'config.jsonc')`
+##### `__init__(self, config_file: str = 'config.toml')`
 
 ##### `get(self, key: str, default: Any = None) -> Any`
 

@@ -138,7 +138,28 @@ class NetworkSecurityMixin:
         except Exception as e:
             raise RuntimeError(f"读取配置文件失败: {e}") from e
 
-        if self.config_file.suffix.lower() != ".jsonc":  # type: ignore[attr-defined]
+        # TOML 格式
+        if self._is_toml_file():  # type: ignore[attr-defined]
+            base = content or (self._original_content or "")  # type: ignore[attr-defined]
+            if base:
+                new_content = self._save_network_security_toml(validated_ns)  # type: ignore[attr-defined]
+            else:
+                import tomlkit as _tk
+
+                doc = _tk.document()
+                doc["network_security"] = validated_ns
+                new_content = _tk.dumps(doc)
+            try:
+                self.config_file.write_text(new_content, encoding="utf-8")  # type: ignore[attr-defined]
+            except Exception as e:
+                raise RuntimeError(f"写入配置文件失败: {e}") from e
+            with self._lock:  # type: ignore[attr-defined]
+                self._original_content = new_content  # type: ignore[attr-defined]
+            self._update_file_mtime()  # type: ignore[attr-defined]
+            return
+
+        # JSON 格式（非 JSONC）
+        if not self._is_jsonc_file():  # type: ignore[attr-defined]
             try:
                 full = json.loads(content) if content.strip() else {}
                 if not isinstance(full, dict):
@@ -156,6 +177,7 @@ class NetworkSecurityMixin:
             self._update_file_mtime()  # type: ignore[attr-defined]
             return
 
+        # JSONC 格式（向后兼容）
         base_content = content
         if not base_content and self._original_content:  # type: ignore[attr-defined]
             base_content = self._original_content  # type: ignore[attr-defined]
@@ -284,12 +306,7 @@ class NetworkSecurityMixin:
             with open(self.config_file, "r", encoding="utf-8") as f:  # type: ignore[attr-defined]
                 content = f.read()
 
-            from config_manager import parse_jsonc
-
-            if self.config_file.suffix.lower() == ".jsonc":  # type: ignore[attr-defined]
-                full_config = parse_jsonc(content)
-            else:
-                full_config = cast(Dict[str, Any], json.loads(content))
+            full_config = self._parse_config_content(content)  # type: ignore[attr-defined]
 
             self._validate_config_structure(full_config, content)  # type: ignore[attr-defined]
 

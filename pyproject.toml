@@ -44,6 +44,7 @@ dependencies = [
     "psutil>=6.1.0",
     "pygments>=2.18.0",
     "requests>=2.32.0",
+    "tomlkit>=0.14.0",
     "urllib3>=2.3.0",
     "zeroconf>=0.146.0",
 ]
@@ -90,6 +91,7 @@ include = [
     "/server_config.py",
     "/config_modules",
     "/web_ui_routes",
+    "/config.toml.default",
     "/config.jsonc.default",
     "/templates",
     "/static",

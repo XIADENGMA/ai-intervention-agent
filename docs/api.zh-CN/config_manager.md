@@ -26,7 +26,7 @@
 ----
 - **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
   - uvx 运行（推荐给普通用户）
-  - 通过 pip/uv 安装后运行（避免在任意项目目录意外生成 config.jsonc）
+  - 通过 pip/uv 安装后运行（避免在任意项目目录意外生成 config.toml）
 - **开发模式（False）**：优先使用当前目录配置（从仓库运行时更方便调试）。
 
 判定规则
@@ -35,7 +35,7 @@
 2) 若当前代码看起来位于本仓库源码树内，且当前工作目录位于该源码树内，返回 False
 3) 其他情况（默认）：返回 True
 
-### `find_config_file(config_filename: str = 'config.jsonc') -> Path`
+### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 查找配置文件路径，支持环境变量覆盖、uvx 模式和开发模式。
 
@@ -93,7 +93,7 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 #### 方法
 
-##### `__init__(self, config_file: str = 'config.jsonc')`
+##### `__init__(self, config_file: str = 'config.toml')`
 
 初始化配置管理器：查找配置文件、初始化锁和缓存、加载配置、启动文件监听
 

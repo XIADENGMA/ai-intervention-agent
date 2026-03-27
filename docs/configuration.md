@@ -1,13 +1,13 @@
 ## Configuration
 
-AI Intervention Agent uses a **JSONC** config file (JSON with comments) to configure notifications, Web UI, security, and timeouts.
+AI Intervention Agent uses a **TOML** config file to configure notifications, Web UI, security, and timeouts.
 
-Default template: `config.jsonc.default`.
+Default template: `config.toml.default`.
 
 ### Config file name
 
-- Recommended: `config.jsonc`
-- Backward compatible: `config.json`
+- Recommended: `config.toml`
+- Backward compatible: `config.jsonc`, `config.json` (auto-migrated to TOML on first load)
 
 ### Config file location & lookup order
 
@@ -17,31 +17,39 @@ The lookup strategy depends on how you run the MCP server.
 
 You can force a config path via environment variable:
 
-- `AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.jsonc`
-- `AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/dir/` (it will append `config.jsonc`)
+- `AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml`
+- `AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/dir/` (it will append `config.toml`)
 
 #### uvx mode (recommended for end users)
 
 - Uses **only** the user config directory.
-- If the file does not exist, it will create it by copying the packaged `config.jsonc.default`.
+- If the file does not exist, it will create it by copying the packaged `config.toml.default`.
 
 #### Dev mode (running from the repo)
 
 Priority order:
 
-1. `./config.jsonc`
-2. `./config.json` (backward compatible)
-3. User config directory `config.jsonc`
-4. User config directory `config.json` (backward compatible)
-5. If none exist, it will create `config.jsonc` in the user config directory.
+1. `./config.toml`
+2. `./config.jsonc` (backward compatible, auto-migrated)
+3. `./config.json` (backward compatible, auto-migrated)
+4. User config directory (same priority order)
+5. If none exist, it will create `config.toml` in the user config directory.
 
-> Tip (avoid “I edited the config but nothing changed”):
-> The Web UI “Settings → Config” shows the **actual config file path** used by the current process.
+> Tip (avoid "I edited the config but nothing changed"):
+> The Web UI "Settings → Config" shows the **actual config file path** used by the current process.
 > If you want to force dev mode to use a specific config file, set `AI_INTERVENTION_AGENT_CONFIG_FILE` to that path, for example:
 >
-> - Linux: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/.config/ai-intervention-agent/config.jsonc`
-> - macOS: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/Library/Application Support/ai-intervention-agent/config.jsonc`
-> - Windows: `AI_INTERVENTION_AGENT_CONFIG_FILE=%APPDATA%/ai-intervention-agent/config.jsonc`
+> - Linux: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/.config/ai-intervention-agent/config.toml`
+> - macOS: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/Library/Application Support/ai-intervention-agent/config.toml`
+> - Windows: `AI_INTERVENTION_AGENT_CONFIG_FILE=%APPDATA%/ai-intervention-agent/config.toml`
+
+### Auto-migration
+
+If a `config.jsonc` or `config.json` file is found via auto-discovery (not explicitly specified), it will be automatically migrated to `config.toml`:
+
+- Original file is renamed to `config.jsonc.bak` / `config.json.bak`
+- Comments are preserved using the TOML template structure
+- `mdns.enabled: null` is converted to `mdns.enabled = "auto"`
 
 ### User config directory (by OS)
 
@@ -126,11 +134,11 @@ Controls which interfaces the Web UI binds to and which networks can access it.
 
 Used for `ai.local` access and LAN service discovery (DNS-SD / `_http._tcp.local`).
 
-| Key            | Type           | Default                 | Notes                                                               |
-| -------------- | -------------- | ----------------------- | ------------------------------------------------------------------- |
-| `enabled`      | boolean / null | `null`                  | `true` forces enable; `false` forces disable; `null`/missing = auto |
-| `hostname`     | string         | `ai.local`              | mDNS hostname (browser can access `http://ai.local:8080`)           |
-| `service_name` | string         | `AI Intervention Agent` | DNS-SD instance name (shows up in service browsers)                 |
+| Key            | Type             | Default                 | Notes                                                                   |
+| -------------- | ---------------- | ----------------------- | ----------------------------------------------------------------------- |
+| `enabled`      | boolean / string | `"auto"`                | `true` forces enable; `false` forces disable; `"auto"` = auto-detect   |
+| `hostname`     | string           | `ai.local`              | mDNS hostname (browser can access `http://ai.local:8080`)               |
+| `service_name` | string           | `AI Intervention Agent` | DNS-SD instance name (shows up in service browsers)                     |
 
 **Default enable rule**:
 
@@ -172,13 +180,10 @@ Otherwise:
 
 ## Minimal example
 
-```jsonc
-{
-  "web_ui": {
-    "port": 8080
-  },
-  "feedback": {
-    "frontend_countdown": 240
-  }
-}
+```toml
+[web_ui]
+port = 8080
+
+[feedback]
+frontend_countdown = 240
 ```

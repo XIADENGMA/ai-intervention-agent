@@ -1,0 +1,119 @@
+# AI Intervention Agent 配置文件
+# 文档：docs/api.zh-CN/config_manager.md
+
+# ──────────────────────────────────────────────
+# 通知配置
+# ──────────────────────────────────────────────
+[notification]
+# 总开关
+enabled = true
+# 调试模式（仅影响通知模块日志详细程度）
+debug = false
+# Web浏览器通知
+web_enabled = true
+auto_request_permission = true
+# Web 通知图标（"default" 或自定义 URL）
+web_icon = "default"
+# Web 通知显示时长（毫秒）- 范围 [1, 600000]
+web_timeout = 5000
+# 桌面系统通知（plyer，可选依赖；默认关闭以避免意外弹窗）
+system_enabled = false
+# macOS 原生通知（主要由 VSCode/Cursor 插件侧触发；后端保留字段用于配置一致性）
+macos_native_enabled = true
+# 声音通知
+sound_enabled = true
+sound_mute = false
+# 声音文件（默认：default；可选：deng 等，取决于 sounds 资源）
+sound_file = "default"
+# 声音音量 - 范围 [0, 100]，超出范围自动调整到边界值
+sound_volume = 80
+# 移动端优化
+mobile_optimized = true
+mobile_vibrate = true
+# Bark 推送通知配置
+bark_enabled = false
+# Bark服务器URL - 必须以 http:// 或 https:// 开头
+bark_url = ""
+# Bark设备密钥 - bark_enabled=true 时必填
+bark_device_key = ""
+# Bark通知图标URL (可选)
+bark_icon = ""
+# Bark通知动作 - 有效值: none（无操作）/url（打开链接）/copy（复制）
+bark_action = "none"
+# 发送失败重试次数（不含首次尝试） - 范围 [0, 10]
+retry_count = 3
+# 重试间隔(秒) - 范围 [0, 60]
+retry_delay = 2
+# Bark 请求超时(秒) - 范围 [1, 300]
+bark_timeout = 10
+
+# ──────────────────────────────────────────────
+# Web界面配置
+# ──────────────────────────────────────────────
+[web_ui]
+# Web服务监听地址 (由 network_security.bind_interface 覆盖)
+host = "127.0.0.1"
+# Web服务端口 - 范围 [1, 65535]，端口 <1024 需要管理员权限
+port = 8080
+# 调试模式
+debug = false
+# HTTP请求超时(秒) - 范围 [1, 300]
+http_request_timeout = 30
+# HTTP最大重试次数 - 范围 [0, 10]
+http_max_retries = 3
+# HTTP重试延迟(秒) - 范围 [0.1, 60.0]
+http_retry_delay = 1.0
+
+# ──────────────────────────────────────────────
+# 网络安全配置
+# ──────────────────────────────────────────────
+[network_security]
+# 绑定网络接口 (127.0.0.1=仅本地, 0.0.0.0=所有接口)
+bind_interface = "0.0.0.0"
+# 允许访问的网络段
+allowed_networks = [
+    "127.0.0.0/8",       # 本地回环地址
+    "::1/128",           # IPv6本地回环地址
+    "192.168.0.0/16",    # 私有网络 192.168.x.x
+    "10.0.0.0/8",        # 私有网络 10.x.x.x
+    "172.16.0.0/12",     # 私有网络 172.16.x.x - 172.31.x.x
+]
+# IP黑名单
+blocked_ips = []
+# 访问控制开关
+access_control_enabled = true
+
+# ──────────────────────────────────────────────
+# mDNS 配置（用于通过 ai.local 访问 & 局域网服务发现）
+# ──────────────────────────────────────────────
+[mdns]
+# 是否启用 mDNS
+# - true: 强制启用
+# - false: 强制禁用
+# - "auto": 自动（当 network_security.bind_interface 不是 127.0.0.1/localhost/::1 时启用）
+enabled = "auto"
+# mDNS 主机名（默认 ai.local）
+# 说明：浏览器可直接访问 http://ai.local:8080
+hostname = "ai.local"
+# DNS-SD 服务实例名（用于服务发现列表展示，例如 avahi-browse / dns-sd）
+service_name = "AI Intervention Agent"
+
+# ──────────────────────────────────────────────
+# 反馈配置
+# 超时计算规则：
+# - frontend_countdown <= 0：后端等待 = max(backend_max_wait, 260秒)
+# - 否则：后端等待 = min(max(前端倒计时 + 40秒, 260秒), backend_max_wait)
+# ──────────────────────────────────────────────
+[feedback]
+# 后端最大等待时间(秒) - 范围 [60, 3600]
+# 作用：限制后端轮询的最大时间，防止无限等待
+backend_max_wait = 600
+# 前端自动重调倒计时(秒) - 范围 [30, 250]，0=禁用自动重调
+# 参考 Cursor 5分钟会话超时，建议设置为 4 分钟 (240秒)
+frontend_countdown = 240
+# 错误/超时时返回的提示语（引导AI重新调用工具）
+# 空字符串将使用默认值，最大长度 500 字符
+resubmit_prompt = "请立即调用 interactive_feedback 工具"
+# 追加到用户反馈末尾的提示语（保持会话连续性）
+# 可为空字符串表示不追加，最大长度 500 字符
+prompt_suffix = "\n请积极调用 interactive_feedback 工具"

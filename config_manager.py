@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-配置管理模块：JSONC/JSON 配置文件的跨平台加载、读写、热重载。
+配置管理模块：TOML/JSONC/JSON 配置文件的跨平台加载、读写、热重载。
 
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。
+支持 TOML（推荐）和 JSONC/JSON（向后兼容）两种格式，旧 JSONC 文件自动迁移为 TOML。
 通过 get_config() 获取全局 ConfigManager 实例。
 """
 
@@ -18,6 +19,8 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, cast, overload
+
+import tomlkit
 
 if TYPE_CHECKING:
     from shared_types import (
@@ -40,6 +43,7 @@ from config_modules import (
     IOOperationsMixin,
     JsoncEngineMixin,
     NetworkSecurityMixin,
+    TomlEngineMixin,
 )
 
 logger = logging.getLogger(__name__)
@@ -235,29 +239,22 @@ def _is_uvx_mode() -> bool:
     return True
 
 
-def find_config_file(config_filename: str = "config.jsonc") -> Path:
+def find_config_file(config_filename: str = "config.toml") -> Path:
     """
     查找配置文件路径，支持环境变量覆盖、uvx 模式和开发模式。
 
     查找优先级（开发模式）：当前目录 > 用户配置目录 > 创建新配置。
-    uvx 模式仅使用用户配置目录。支持 .jsonc/.json 两种格式。
+    格式优先级：TOML > JSONC > JSON（向后兼容）。
+    uvx 模式仅使用用户配置目录。
     跨平台配置目录：Linux ~/.config、macOS ~/Library/Application Support、Windows %APPDATA%。
     """
-    # 如果调用方显式传入了路径（绝对路径或包含目录层级），应尊重该路径
-    # 典型场景：单测/工具代码使用临时文件路径，不应被环境变量覆盖
     requested_path = Path(config_filename).expanduser()
     if requested_path.is_absolute() or requested_path.parent != Path("."):
         return requested_path
 
-    # 【可测试性/可运维性】允许通过环境变量覆盖配置文件路径
-    # - 典型用途：pytest/CI 使用临时配置，避免读取用户 ~/.config
-    # - 典型用途：容器/部署场景下显式指定配置文件位置
     override = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
     if override:
         override_path = Path(override).expanduser()
-        # 支持传入目录：自动拼接默认文件名
-        # - 目录存在时：override_path.is_dir() == True
-        # - 目录不存在但用户用尾部分隔符显式标注为目录：override.endswith(("/", "\\"))
         if override_path.is_dir() or override.endswith(("/", "\\")):
             override_path = override_path / config_filename
         logger.info(
@@ -265,7 +262,6 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
         )
         return override_path
 
-    # 检测是否为uvx方式运行
     is_uvx_mode = _is_uvx_mode()
 
     if is_uvx_mode:
@@ -273,47 +269,34 @@ def find_config_file(config_filename: str = "config.jsonc") -> Path:
     else:
         logger.info("检测到开发模式，优先使用当前目录配置")
 
+    # 向后兼容的候选文件名列表（TOML 优先）
+    _COMPAT_NAMES = ("config.toml", "config.jsonc", "config.json")
+
     if not is_uvx_mode:
-        # 开发模式：1. 检查当前工作目录
-        current_dir_config = Path(config_filename)
-        if current_dir_config.exists():
-            logger.info(f"使用当前目录的配置文件: {current_dir_config.absolute()}")
-            return current_dir_config
+        # 开发模式：检查当前工作目录
+        for name in _COMPAT_NAMES:
+            candidate = Path(name)
+            if candidate.exists():
+                logger.info(f"使用当前目录的配置文件: {candidate.absolute()}")
+                return candidate
 
-        # 向后兼容：检查当前目录的.json文件
-        if config_filename == "config.jsonc":
-            current_dir_json = Path("config.json")
-            if current_dir_json.exists():
-                logger.info(
-                    f"使用当前目录的JSON配置文件: {current_dir_json.absolute()}"
-                )
-                return current_dir_json
-
-    # 2. 检查用户配置目录（使用跨平台标准位置）
     try:
-        # 尝试使用 platformdirs 库获取标准配置目录
         try:
             if not PLATFORMDIRS_AVAILABLE:
                 raise ImportError("platformdirs not available")
             user_config_dir_path = Path(user_config_dir("ai-intervention-agent"))
         except ImportError:
-            # 如果没有 platformdirs，回退到手动判断
             user_config_dir_path = _get_user_config_dir_fallback()
 
+        # 按优先级搜索用户配置目录
+        for name in _COMPAT_NAMES:
+            candidate = user_config_dir_path / name
+            if candidate.exists():
+                logger.info(f"使用用户配置目录的配置文件: {candidate}")
+                return candidate
+
+        # 都不存在，返回 TOML 路径（用于创建默认配置）
         user_config_file = user_config_dir_path / config_filename
-
-        if user_config_file.exists():
-            logger.info(f"使用用户配置目录的配置文件: {user_config_file}")
-            return user_config_file
-
-        # 向后兼容：检查用户配置目录的.json文件
-        if config_filename == "config.jsonc":
-            user_json_file = user_config_dir_path / "config.json"
-            if user_json_file.exists():
-                logger.info(f"使用用户配置目录的JSON配置文件: {user_json_file}")
-                return user_json_file
-
-        # 3. 如果都不存在，返回用户配置目录路径（用于创建默认配置）
         logger.info(f"配置文件不存在，将在用户配置目录创建: {user_config_file}")
         return user_config_file
 
@@ -348,27 +331,33 @@ def _get_user_config_dir_fallback() -> Path:
 
 
 class ConfigManager(
+    TomlEngineMixin,
     JsoncEngineMixin,
     NetworkSecurityMixin,
     FileWatcherMixin,
     IOOperationsMixin,
 ):
     """
-    配置管理器：JSONC/JSON 配置文件的加载、读写、持久化、热重载。
+    配置管理器：TOML/JSONC/JSON 配置文件的加载、读写、持久化、热重载。
 
     核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理（带缓存）、
     文件变更监听、配置导入导出。通过模块级 config_manager 全局实例访问。
 
+    支持格式：TOML（推荐）、JSONC、JSON（向后兼容）。旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
+
     路由通过 Mixin 拆分（各 Mixin 定义在 config_modules/ 下）：
-    - JsoncEngineMixin: JSONC 格式解析/定位/更新
+    - TomlEngineMixin: TOML 格式解析/保存（保留注释）
+    - JsoncEngineMixin: JSONC 格式解析/定位/更新（向后兼容）
     - NetworkSecurityMixin: network_security 段校验/读写
     - FileWatcherMixin: 文件监听/回调/shutdown
     - IOOperationsMixin: 配置导出/导入/备份/恢复
     """
 
-    def __init__(self, config_file: str = "config.jsonc"):
+    def __init__(self, config_file: str = "config.toml"):
         """初始化配置管理器：查找配置文件、初始化锁和缓存、加载配置、启动文件监听"""
-        # 使用新的配置文件查找逻辑
+        # 判断是否为显式路径（绝对/含目录层级）——仅自动发现的旧文件才做 JSONC→TOML 迁移
+        req = Path(config_file).expanduser()
+        self._explicit_path = req.is_absolute() or req.parent != Path(".")
         self.config_file = find_config_file(config_file)
 
         # 初始化配置字典
@@ -451,7 +440,6 @@ class ConfigManager(
                 "host": "127.0.0.1",  # 默认仅本地访问，提升安全性
                 "port": 8080,
                 "debug": False,
-                # 新名称（推荐）：与文档与模板 config.jsonc.default 对齐
                 "http_request_timeout": 30,
                 "http_max_retries": 3,
                 "http_retry_delay": 1.0,
@@ -459,8 +447,8 @@ class ConfigManager(
             "mdns": {
                 # 是否启用 mDNS
                 # - True/False: 强制启用/禁用
-                # - None: 自动（当 bind_interface 不是 127.0.0.1/localhost/::1 时启用）
-                "enabled": None,
+                # - "auto": 自动（当 bind_interface 不是 127.0.0.1/localhost/::1 时启用）
+                "enabled": "auto",
                 # mDNS 主机名（默认 ai.local）
                 "hostname": "ai.local",
                 # DNS-SD 服务实例名（用于服务发现列表展示）
@@ -476,11 +464,9 @@ class ConfigManager(
                     "172.16.0.0/12",  # 私有网络 172.16.x.x - 172.31.x.x
                 ],
                 "blocked_ips": [],  # IP黑名单
-                # 新名称（推荐）：与文档与模板 config.jsonc.default 对齐
                 "access_control_enabled": True,  # 是否启用访问控制
             },
             "feedback": {
-                # 新名称（推荐）：与文档与模板 config.jsonc.default 对齐
                 "backend_max_wait": 600,
                 "frontend_countdown": 240,
                 "resubmit_prompt": "请立即调用 interactive_feedback 工具",
@@ -496,6 +482,65 @@ class ConfigManager(
             logger.debug("已从配置中排除 network_security")
         return config
 
+    def _is_toml_file(self) -> bool:
+        """判断当前配置文件是否为 TOML 格式"""
+        return self.config_file.suffix.lower() == ".toml"
+
+    def _is_jsonc_file(self) -> bool:
+        """判断当前配置文件是否为 JSONC 格式"""
+        return self.config_file.suffix.lower() == ".jsonc"
+
+    def _parse_config_content(self, content: str) -> Dict[str, Any]:
+        """根据当前文件格式解析配置内容"""
+        if self._is_toml_file():
+            return self._parse_toml(content)
+        elif self._is_jsonc_file():
+            return parse_jsonc(content)
+        else:
+            return cast(Dict[str, Any], json.loads(content))
+
+    def _migrate_jsonc_to_toml(self) -> bool:
+        """将旧的 JSONC/JSON 配置文件迁移为 TOML 格式"""
+        old_file = self.config_file
+        new_file = old_file.with_suffix(".toml")
+        try:
+            with open(old_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            if old_file.suffix.lower() == ".jsonc":
+                config_data = parse_jsonc(content)
+            else:
+                config_data = json.loads(content)
+            mdns = config_data.get("mdns", {})
+            if isinstance(mdns, dict) and mdns.get("enabled") is None:
+                mdns["enabled"] = "auto"
+            template_file = Path(__file__).parent / "config.toml.default"
+            if template_file.exists():
+                with open(template_file, "r", encoding="utf-8") as f:
+                    doc = tomlkit.parse(f.read())
+                for sk, sv in config_data.items():
+                    if isinstance(sv, dict) and sk in doc:
+                        section = doc[sk]
+                        if isinstance(section, dict):
+                            for k, v in sv.items():
+                                section[k] = v
+                    elif sk not in doc:
+                        doc[sk] = sv
+                toml_content = tomlkit.dumps(doc)
+            else:
+                toml_content = tomlkit.dumps(tomlkit.item(config_data))
+            with open(new_file, "w", encoding="utf-8") as f:
+                f.write(toml_content)
+            backup = old_file.with_suffix(old_file.suffix + ".bak")
+            old_file.rename(backup)
+            logger.info(
+                f"配置已迁移: {old_file.name} -> {new_file.name} (备份: {backup.name})"
+            )
+            self.config_file = new_file
+            return True
+        except Exception as e:
+            logger.error(f"JSONC->TOML 迁移失败: {e}", exc_info=True)
+            return False
+
     def _load_config(self):
         """从磁盘加载配置文件，排除 network_security，合并默认配置"""
         with self._lock:
@@ -504,17 +549,21 @@ class ConfigManager(
             previous_config = self._config.copy()
             previous_original_content = self._original_content
             try:
+                # 自动迁移旧 JSONC/JSON 格式（仅自动发现的文件，显式路径不迁移）
+                if (
+                    self.config_file.exists()
+                    and not self._is_toml_file()
+                    and not self._explicit_path
+                ):
+                    self._migrate_jsonc_to_toml()
+
                 if self.config_file.exists():
                     with open(self.config_file, "r", encoding="utf-8") as f:
                         content = f.read()
 
-                    # 根据文件扩展名选择解析方式
-                    if self.config_file.suffix.lower() == ".jsonc":
-                        full_config = parse_jsonc(content)
-                        logger.info(f"JSONC 配置文件已加载: {self.config_file}")
-                    else:
-                        full_config = json.loads(content)
-                        logger.info(f"JSON 配置文件已加载: {self.config_file}")
+                    full_config = self._parse_config_content(content)
+                    fmt = self.config_file.suffix.lstrip(".")
+                    logger.info(f"{fmt.upper()} 配置文件已加载: {self.config_file}")
 
                     # 【健壮性】加载时也做结构校验（重复数组定义/类型错误），避免静默吞掉损坏配置
                     self._validate_config_structure(full_config, content)
@@ -583,45 +632,41 @@ class ConfigManager(
         self._exclude_network_security(result)
         return result
 
-    # JSONC 引擎方法通过 JsoncEngineMixin 提供（config_modules/jsonc_engine.py）
-
     def _create_default_config_file(self):
-        """创建带注释的默认配置文件（优先使用模板，回退到默认配置字典）"""
+        """创建带注释的默认配置文件（优先使用 TOML 模板，向后兼容 JSONC 模板）"""
         try:
-            # 确保配置文件目录存在
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # 尝试使用模板文件
-            template_file = Path(__file__).parent / "config.jsonc.default"
-            if template_file.exists():
-                # 使用模板文件创建配置
-                shutil.copy2(template_file, self.config_file)
+            # 优先使用 TOML 模板
+            toml_template = Path(__file__).parent / "config.toml.default"
+            jsonc_template = Path(__file__).parent / "config.jsonc.default"
 
-                # 读取模板文件内容用于保留注释
-                with open(template_file, "r", encoding="utf-8") as f:
+            if self._is_toml_file() and toml_template.exists():
+                shutil.copy2(toml_template, self.config_file)
+                with open(toml_template, "r", encoding="utf-8") as f:
                     self._original_content = f.read()
-
-                logger.info(f"已从模板文件创建默认配置文件: {self.config_file}")
+                logger.info(f"已从 TOML 模板创建默认配置文件: {self.config_file}")
+            elif self._is_jsonc_file() and jsonc_template.exists():
+                shutil.copy2(jsonc_template, self.config_file)
+                with open(jsonc_template, "r", encoding="utf-8") as f:
+                    self._original_content = f.read()
+                logger.info(f"已从 JSONC 模板创建默认配置文件: {self.config_file}")
             else:
-                # 回退到使用默认配置字典创建JSON文件
-                logger.warning(
-                    f"模板文件不存在: {template_file}，使用默认配置创建JSON文件"
-                )
+                logger.warning("模板文件不存在，使用默认配置创建文件")
                 default_config = self._exclude_network_security(
                     self._get_default_config()
                 )
-                content = json.dumps(default_config, indent=2, ensure_ascii=False)
-
+                if self._is_toml_file():
+                    content = tomlkit.dumps(tomlkit.item(default_config))
+                else:
+                    content = json.dumps(default_config, indent=2, ensure_ascii=False)
                 with open(self.config_file, "w", encoding="utf-8") as f:
                     f.write(content)
-
-                # 保存原始内容
                 self._original_content = content
-                logger.info(f"已创建默认JSON配置文件: {self.config_file}")
+                logger.info(f"已创建默认配置文件: {self.config_file}")
 
         except Exception as e:
             logger.error(f"创建默认配置文件失败: {e}", exc_info=True)
-            # 如果创建配置文件失败，回退到普通JSON文件
             try:
                 default_config = self._exclude_network_security(
                     self._get_default_config()
@@ -630,7 +675,7 @@ class ConfigManager(
                 with open(self.config_file, "w", encoding="utf-8") as f:
                     f.write(content)
                 self._original_content = content
-                logger.info(f"回退创建JSON配置文件成功: {self.config_file}")
+                logger.info(f"回退创建 JSON 配置文件成功: {self.config_file}")
             except Exception as fallback_error:
                 logger.error(f"回退创建配置文件也失败: {fallback_error}", exc_info=True)
                 raise
@@ -689,31 +734,31 @@ class ConfigManager(
         self._schedule_save()
 
     def _save_config_immediate(self):
-        """立即将配置写入文件（JSONC 保留注释，JSON 标准格式），保存后验证"""
+        """立即将配置写入文件（TOML/JSONC 保留注释，JSON 标准格式），保存后验证"""
         try:
-            # 确保配置文件目录存在
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
             with open(self.config_file, "w", encoding="utf-8") as f:
-                if (
-                    self.config_file.suffix.lower() == ".jsonc"
-                    and self._original_content
-                ):
-                    # 对于 JSONC 文件，尝试保留注释
+                if self._is_toml_file() and self._original_content:
+                    content = self._save_toml_with_comments(self._config)
+                    f.write(content)
+                    self._original_content = content
+                    logger.debug(f"TOML 配置文件已保存（保留注释）: {self.config_file}")
+                elif self._is_jsonc_file() and self._original_content:
                     content = self._save_jsonc_with_comments(self._config)
                     f.write(content)
-                    # 更新原始内容，确保下次更新基于最新内容
                     self._original_content = content
                     logger.debug(
                         f"JSONC 配置文件已保存（保留注释）: {self.config_file}"
                     )
                 else:
-                    # 对于 JSON 文件或没有原始内容的情况，使用标准 JSON 格式
-                    content = json.dumps(self._config, indent=2, ensure_ascii=False)
+                    if self._is_toml_file():
+                        content = tomlkit.dumps(tomlkit.item(self._config))
+                    else:
+                        content = json.dumps(self._config, indent=2, ensure_ascii=False)
                     f.write(content)
-                    # 更新原始内容
                     self._original_content = content
-                    logger.debug(f"JSON 配置文件已保存: {self.config_file}")
+                    logger.debug(f"配置文件已保存: {self.config_file}")
 
             # 验证保存的文件是否有效
             self._validate_saved_config()
@@ -732,11 +777,7 @@ class ConfigManager(
             with open(self.config_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # 尝试解析配置文件
-            if self.config_file.suffix.lower() == ".jsonc":
-                parsed_config = parse_jsonc(content)
-            else:
-                parsed_config = json.loads(content)
+            parsed_config = self._parse_config_content(content)
 
             # 额外验证：检查是否存在重复的数组元素（格式损坏的标志）
             self._validate_config_structure(parsed_config, content)
