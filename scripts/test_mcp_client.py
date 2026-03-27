@@ -32,7 +32,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
-import requests
+import httpx
 
 
 class MCPClient:
@@ -46,7 +46,7 @@ class MCPClient:
     def check_server(self) -> bool:
         """检查服务器是否可用"""
         try:
-            response = requests.get(f"{self.base_url}/api/health", timeout=5)
+            response = httpx.get(f"{self.base_url}/api/health", timeout=5)
             return bool(response.status_code == 200)
         except Exception:
             return False
@@ -54,7 +54,7 @@ class MCPClient:
     def get_config(self) -> Dict[str, Any]:
         """获取服务器配置"""
         try:
-            response = requests.get(f"{self.base_url}/api/config", timeout=5)
+            response = httpx.get(f"{self.base_url}/api/config", timeout=5)
             return response.json() if response.status_code == 200 else {}
         except Exception:
             return {}
@@ -76,7 +76,7 @@ class MCPClient:
         }
 
         try:
-            response = requests.post(
+            response = httpx.post(
                 f"{self.base_url}/api/tasks", json=task_data, timeout=10
             )
             if response.status_code == 200:
@@ -92,9 +92,7 @@ class MCPClient:
 
         while time.time() - start_time < self.timeout:
             try:
-                response = requests.get(
-                    f"{self.base_url}/api/tasks/{task_id}", timeout=5
-                )
+                response = httpx.get(f"{self.base_url}/api/tasks/{task_id}", timeout=5)
 
                 if response.status_code == 200:
                     task_data = response.json().get("task", {})
@@ -119,7 +117,7 @@ class MCPClient:
     def cleanup(self, task_id: str) -> None:
         """清理任务"""
         try:
-            requests.delete(f"{self.base_url}/api/tasks/{task_id}", timeout=5)
+            httpx.request("DELETE", f"{self.base_url}/api/tasks/{task_id}", timeout=5)
         except Exception:
             pass
         if task_id in self.active_tasks:

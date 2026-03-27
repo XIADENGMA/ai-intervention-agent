@@ -126,7 +126,7 @@ AI Intervention Agent 智能介入代理测试工具
 ## 依赖项
 
 - Python 3.11+
-- requests (HTTP请求)
+- httpx (HTTP请求)
 - server.py (AI介入代理服务)
 - enhanced_logging (可选，增强日志)
 - config_manager (配置管理)
@@ -839,9 +839,9 @@ def check_service(url, timeout=None):
     if timeout is None:
         timeout = TestConfig.HTTP_REQUEST_TIMEOUT
     try:
-        import requests
+        import httpx
 
-        response = requests.get(url, timeout=timeout)
+        response = httpx.get(url, timeout=timeout)
         return response.status_code == 200
     except Exception as e:
         log_debug(f"服务检查失败 ({url}): {type(e).__name__} - {str(e)}")

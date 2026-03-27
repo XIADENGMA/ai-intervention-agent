@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, PropertyMock, patch
 
-import requests
+import httpx
 from mcp.types import TextContent
 
 import server
@@ -531,14 +531,15 @@ class TestInvalidateRuntimeCaches(unittest.TestCase):
             self.assertIsNone(server._config_cache["config"])
             self.assertEqual(server._config_cache["timestamp"], 0)
 
-    def test_increments_session_generation(self):
-        with server._http_session_lock:
-            old = server._http_session_generation
+    def test_resets_httpx_clients(self):
+        server._sync_client = MagicMock()
+        server._sync_client.is_closed = False
+        server._async_client = MagicMock()
 
         server._invalidate_runtime_caches_on_config_change()
 
-        with server._http_session_lock:
-            self.assertEqual(server._http_session_generation, old + 1)
+        self.assertIsNone(server._sync_client)
+        self.assertIsNone(server._async_client)
 
 
 class TestEnsureConfigCallbacksRegistered(unittest.TestCase):
@@ -876,10 +877,20 @@ class TestGetWebUIConfig(unittest.TestCase):
 #  create_http_session
 # ═══════════════════════════════════════════════════════════════════════════
 class TestCreateHttpSession(unittest.TestCase):
+    def setUp(self):
+        server._sync_client = None
+        server._async_client = None
+
+    def tearDown(self):
+        if server._sync_client and not server._sync_client.is_closed:
+            server._sync_client.close()
+        server._sync_client = None
+        server._async_client = None
+
     def test_creates_session(self):
         cfg = _make_config()
         session = server.create_http_session(cfg)
-        self.assertIsInstance(session, requests.Session)
+        self.assertIsInstance(session, httpx.Client)
 
     def test_cache_reuse(self):
         cfg = _make_config()
@@ -887,18 +898,10 @@ class TestCreateHttpSession(unittest.TestCase):
         s2 = server.create_http_session(cfg)
         self.assertIs(s1, s2)
 
-    def test_different_config_different_session(self):
-        cfg1 = _make_config(max_retries=3)
-        cfg2 = _make_config(max_retries=5)
-        s1 = server.create_http_session(cfg1)
-        s2 = server.create_http_session(cfg2)
-        self.assertIsNot(s1, s2)
-
-    def test_generation_change_clears_cache(self):
+    def test_closed_client_recreated(self):
         cfg = _make_config()
         s1 = server.create_http_session(cfg)
-        with server._http_session_lock:
-            server._http_session_generation += 1
+        s1.close()
         s2 = server.create_http_session(cfg)
         self.assertIsNot(s1, s2)
 
@@ -994,7 +997,7 @@ class TestHealthCheckService(unittest.TestCase):
     @patch("server.is_web_service_running", return_value=True)
     def test_request_exception(self, _, mock_session_fn):
         mock_session = MagicMock()
-        mock_session.get.side_effect = requests.exceptions.ConnectionError("fail")
+        mock_session.get.side_effect = httpx.ConnectError("fail")
         mock_session_fn.return_value = mock_session
 
         self.assertFalse(server.health_check_service(_make_config()))
@@ -1152,7 +1155,7 @@ class TestUpdateWebContent(unittest.TestCase):
     @patch("server.create_http_session")
     def test_timeout_exception(self, mock_create):
         mock_create.return_value = self._setup_session(
-            side_effect=requests.exceptions.Timeout("timed out")
+            side_effect=httpx.TimeoutException("timed out")
         )
 
         from exceptions import ServiceTimeoutError
@@ -1163,7 +1166,7 @@ class TestUpdateWebContent(unittest.TestCase):
     @patch("server.create_http_session")
     def test_connection_error(self, mock_create):
         mock_create.return_value = self._setup_session(
-            side_effect=requests.exceptions.ConnectionError("refused")
+            side_effect=httpx.ConnectError("refused")
         )
 
         from exceptions import ServiceUnavailableError
@@ -1174,7 +1177,7 @@ class TestUpdateWebContent(unittest.TestCase):
     @patch("server.create_http_session")
     def test_request_exception(self, mock_create):
         mock_create.return_value = self._setup_session(
-            side_effect=requests.exceptions.RequestException("generic")
+            side_effect=httpx.HTTPError("generic")
         )
 
         from exceptions import ServiceConnectionError
@@ -1187,8 +1190,20 @@ class TestUpdateWebContent(unittest.TestCase):
 #  wait_for_task_completion (async)
 # ═══════════════════════════════════════════════════════════════════════════
 class TestWaitForTaskCompletionExtended(unittest.TestCase):
+    def _mock_async_client(self, get_side_effect=None, get_return_value=None):
+        """构建 mock AsyncClient，get 方法返回 awaitable"""
+        from unittest.mock import AsyncMock
+
+        mock_client = MagicMock()
+        if get_side_effect is not None:
+            mock_client.get = AsyncMock(side_effect=get_side_effect)
+        else:
+            mock_client.get = AsyncMock(return_value=get_return_value)
+        return mock_client
+
     @patch("server.get_web_ui_config")
-    def test_task_completed(self, mock_get_cfg):
+    @patch("server.get_async_client")
+    def test_task_completed(self, mock_get_client, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
 
         mock_resp = MagicMock()
@@ -1201,23 +1216,29 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
             },
         }
 
-        with patch("server.requests.get", return_value=mock_resp):
-            result = asyncio.run(server.wait_for_task_completion("t1", timeout=5))
-            self.assertEqual(result["user_input"], "done")
+        mock_get_client.return_value = self._mock_async_client(
+            get_return_value=mock_resp
+        )
+        result = asyncio.run(server.wait_for_task_completion("t1", timeout=5))
+        self.assertEqual(result["user_input"], "done")
 
     @patch("server.get_web_ui_config")
-    def test_task_404_returns_resubmit(self, mock_get_cfg):
+    @patch("server.get_async_client")
+    def test_task_404_returns_resubmit(self, mock_get_client, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
 
         mock_resp = MagicMock()
         mock_resp.status_code = 404
 
-        with patch("server.requests.get", return_value=mock_resp):
-            result = asyncio.run(server.wait_for_task_completion("t-gone", timeout=5))
-            self.assertIn("text", result)
+        mock_get_client.return_value = self._mock_async_client(
+            get_return_value=mock_resp
+        )
+        result = asyncio.run(server.wait_for_task_completion("t-gone", timeout=5))
+        self.assertIn("text", result)
 
     @patch("server.get_web_ui_config")
-    def test_timeout_returns_resubmit(self, mock_get_cfg):
+    @patch("server.get_async_client")
+    def test_timeout_returns_resubmit(self, mock_get_client, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
 
         mock_resp = MagicMock()
@@ -1227,22 +1248,25 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
             "task": {"status": "pending", "result": None},
         }
 
-        with patch("server.requests.get", return_value=mock_resp):
-            with patch("server.BACKEND_MIN", 1):
-                result = asyncio.run(
-                    server.wait_for_task_completion("t-slow", timeout=2)
-                )
-                self.assertIn("text", result)
+        mock_get_client.return_value = self._mock_async_client(
+            get_return_value=mock_resp
+        )
+        with patch("server.BACKEND_MIN", 1):
+            result = asyncio.run(server.wait_for_task_completion("t-slow", timeout=2))
+            self.assertIn("text", result)
 
     @patch("server.get_web_ui_config")
-    def test_request_exception_continues(self, mock_get_cfg):
+    @patch("server.get_async_client")
+    def test_request_exception_continues(self, mock_get_client, mock_get_cfg):
+        from unittest.mock import AsyncMock
+
         mock_get_cfg.return_value = (_make_config(), 120)
         call_count = {"n": 0}
 
-        def mock_get(*args, **kwargs):
+        async def mock_get(*args, **kwargs):
             call_count["n"] += 1
             if call_count["n"] <= 1:
-                raise requests.exceptions.ConnectionError("fail")
+                raise httpx.ConnectError("fail")
             resp = MagicMock()
             resp.status_code = 200
             resp.json.return_value = {
@@ -1254,16 +1278,21 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
             }
             return resp
 
-        with patch("server.requests.get", side_effect=mock_get):
-            result = asyncio.run(server.wait_for_task_completion("t-flaky", timeout=10))
-            self.assertEqual(result.get("user_input"), "recovered")
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_get_client.return_value = mock_client
+        result = asyncio.run(server.wait_for_task_completion("t-flaky", timeout=10))
+        self.assertEqual(result.get("user_input"), "recovered")
 
     @patch("server.get_web_ui_config")
-    def test_non_200_continues(self, mock_get_cfg):
+    @patch("server.get_async_client")
+    def test_non_200_continues(self, mock_get_client, mock_get_cfg):
+        from unittest.mock import AsyncMock
+
         mock_get_cfg.return_value = (_make_config(), 120)
         call_count = {"n": 0}
 
-        def mock_get(*args, **kwargs):
+        async def mock_get(*args, **kwargs):
             call_count["n"] += 1
             resp = MagicMock()
             if call_count["n"] <= 1:
@@ -1279,16 +1308,21 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
                 }
             return resp
 
-        with patch("server.requests.get", side_effect=mock_get):
-            result = asyncio.run(server.wait_for_task_completion("t-retry", timeout=10))
-            self.assertEqual(result.get("user_input"), "ok")
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_get_client.return_value = mock_client
+        result = asyncio.run(server.wait_for_task_completion("t-retry", timeout=10))
+        self.assertEqual(result.get("user_input"), "ok")
 
     @patch("server.get_web_ui_config")
-    def test_invalid_json_continues(self, mock_get_cfg):
+    @patch("server.get_async_client")
+    def test_invalid_json_continues(self, mock_get_client, mock_get_cfg):
+        from unittest.mock import AsyncMock
+
         mock_get_cfg.return_value = (_make_config(), 120)
         call_count = {"n": 0}
 
-        def mock_get(*args, **kwargs):
+        async def mock_get(*args, **kwargs):
             call_count["n"] += 1
             resp = MagicMock()
             resp.status_code = 200
@@ -1301,16 +1335,21 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
                 }
             return resp
 
-        with patch("server.requests.get", side_effect=mock_get):
-            result = asyncio.run(server.wait_for_task_completion("t-json", timeout=10))
-            self.assertEqual(result.get("user_input"), "ok")
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_get_client.return_value = mock_client
+        result = asyncio.run(server.wait_for_task_completion("t-json", timeout=10))
+        self.assertEqual(result.get("user_input"), "ok")
 
     @patch("server.get_web_ui_config")
-    def test_non_dict_response_continues(self, mock_get_cfg):
+    @patch("server.get_async_client")
+    def test_non_dict_response_continues(self, mock_get_client, mock_get_cfg):
+        from unittest.mock import AsyncMock
+
         mock_get_cfg.return_value = (_make_config(), 120)
         call_count = {"n": 0}
 
-        def mock_get(*args, **kwargs):
+        async def mock_get(*args, **kwargs):
             call_count["n"] += 1
             resp = MagicMock()
             resp.status_code = 200
@@ -1323,9 +1362,11 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
                 }
             return resp
 
-        with patch("server.requests.get", side_effect=mock_get):
-            result = asyncio.run(server.wait_for_task_completion("t-type", timeout=10))
-            self.assertEqual(result.get("user_input"), "ok")
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(side_effect=mock_get)
+        mock_get_client.return_value = mock_client
+        result = asyncio.run(server.wait_for_task_completion("t-type", timeout=10))
+        self.assertEqual(result.get("user_input"), "ok")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1564,16 +1605,22 @@ class TestServiceManagerDeep(unittest.TestCase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  create_http_session — generation 切换时 close 异常
+#  create_http_session — 旧客户端关闭后重建
 # ═══════════════════════════════════════════════════════════════════════════
 class TestCreateHttpSessionDeep(unittest.TestCase):
-    def test_generation_change_close_exception(self):
-        """generation 变更时旧 session close() 抛出异常不影响新 session 创建"""
+    def setUp(self):
+        server._sync_client = None
+
+    def tearDown(self):
+        if server._sync_client and not server._sync_client.is_closed:
+            server._sync_client.close()
+        server._sync_client = None
+
+    def test_closed_client_recreated(self):
+        """旧 client is_closed 后自动重建新 client"""
         cfg = _make_config()
         s1 = server.create_http_session(cfg)
-        s1.close = MagicMock(side_effect=OSError("close fail"))  # type: ignore[method-assign]
-        with server._http_session_lock:
-            server._http_session_generation += 1
+        s1.close()
         s2 = server.create_http_session(cfg)
         self.assertIsNot(s1, s2)
 
@@ -1802,25 +1849,32 @@ class TestStartWebService(unittest.TestCase):
 #  ensure_web_ui_running (async)
 # ═══════════════════════════════════════════════════════════════════════════
 class TestEnsureWebUIRunningExtended(unittest.TestCase):
-    def test_already_running(self):
+    @patch("server.get_async_client")
+    def test_already_running(self, mock_get_client):
+        from unittest.mock import AsyncMock
+
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.get", return_value=mock_resp):
-            asyncio.run(server.ensure_web_ui_running(_make_config()))
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_get_client.return_value = mock_client
+
+        asyncio.run(server.ensure_web_ui_running(_make_config()))
 
     @patch("server.start_web_service")
-    def test_health_fail_starts_service(self, mock_start):
+    @patch("server.get_async_client")
+    def test_health_fail_starts_service(self, mock_get_client, mock_start):
+        from unittest.mock import AsyncMock
+
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("fail"))
+        mock_get_client.return_value = mock_client
+
         async def _noop_sleep(_: float) -> None:
             pass
 
-        with (
-            patch(
-                "server.requests.get",
-                side_effect=requests.exceptions.ConnectionError("fail"),
-            ),
-            patch("server.asyncio.sleep", side_effect=_noop_sleep),
-        ):
+        with patch("server.asyncio.sleep", side_effect=_noop_sleep):
             asyncio.run(server.ensure_web_ui_running(_make_config()))
         mock_start.assert_called_once()
 
@@ -1844,7 +1898,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
             {"user_input": "done", "selected_options": []},
         ]
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "done")
 
@@ -1863,7 +1917,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.return_value = None
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
@@ -1882,7 +1936,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.return_value = None
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
@@ -1901,7 +1955,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.return_value = None
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
@@ -1914,8 +1968,8 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_arun.return_value = None
 
         with patch(
-            "server.requests.post",
-            side_effect=requests.exceptions.ConnectionError("refused"),
+            "server.httpx.Client.post",
+            side_effect=httpx.ConnectError("refused"),
         ):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
@@ -1935,7 +1989,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.side_effect = [None, {"user_input": "ok"}]
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "ok")
         mock_nm.send_notification.assert_called_once()
@@ -1955,7 +2009,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.side_effect = [None, {"user_input": "ok"}]
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "ok")
 
@@ -1971,7 +2025,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.side_effect = [None, {"error": "timeout"}]
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
@@ -2008,7 +2062,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.side_effect = [None, {"user_input": "ok"}]
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello", timeout=10)
         self.assertEqual(result["user_input"], "ok")
 
@@ -2027,7 +2081,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.return_value = None
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
@@ -2049,7 +2103,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_arun.side_effect = [None, {"user_input": "ok"}]
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with patch("server.httpx.Client.post", return_value=mock_resp):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "ok")
 
@@ -2064,6 +2118,17 @@ class TestInteractiveFeedback(unittest.TestCase):
     def _run(self, message: str, predefined_options=None):
         """调用底层 async 函数，显式传 predefined_options 避免 FieldInfo 默认值"""
         return asyncio.run(_interactive_feedback_fn(message, predefined_options))
+
+    def _patch_async_post(self, *, return_value=None, side_effect=None):
+        """返回 context manager：patch get_async_client 并配置 async post"""
+        from unittest.mock import AsyncMock
+
+        mock_client = MagicMock()
+        if side_effect is not None:
+            mock_client.post = AsyncMock(side_effect=side_effect)
+        else:
+            mock_client.post = AsyncMock(return_value=return_value)
+        return patch("server.get_async_client", return_value=mock_client)
 
     @patch("server.wait_for_task_completion")
     @patch("server.ensure_web_ui_running")
@@ -2083,7 +2148,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
         self.assertTrue(any(isinstance(c, TextContent) for c in result))
@@ -2102,7 +2167,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
         self.assertTrue(len(result) > 0)
@@ -2123,7 +2188,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result[0], TextContent)
         self.assertIn("old response", result[0].text)
@@ -2142,7 +2207,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result[0], TextContent)
 
@@ -2160,7 +2225,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result[0], TextContent)
 
@@ -2178,7 +2243,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp.json.return_value = {"error": "server down"}
         mock_resp.text = "server error"
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2198,7 +2263,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp.json.side_effect = ValueError("bad json")
         mock_resp.text = "Internal Error"
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2210,10 +2275,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_cfg.return_value = (_make_config(), 120)
         mock_ensure.return_value = None
 
-        with patch(
-            "server.requests.post",
-            side_effect=requests.exceptions.ConnectionError("refused"),
-        ):
+        with self._patch_async_post(side_effect=httpx.ConnectError("refused")):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2236,7 +2298,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2258,7 +2320,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2277,7 +2339,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2303,7 +2365,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp.json.return_value = "string payload"
         mock_resp.text = '"string payload"'
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2325,7 +2387,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2348,7 +2410,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2368,7 +2430,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("A" * 200)
         self.assertIsInstance(result, list)
 
@@ -2388,7 +2450,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp.json.side_effect = ValueError("bad json")
         type(mock_resp).text = PropertyMock(side_effect=RuntimeError("text fail"))
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
@@ -2408,7 +2470,7 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("server.requests.post", return_value=mock_resp):
+        with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
         self.assertTrue(len(result) > 0)

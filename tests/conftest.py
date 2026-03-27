@@ -158,17 +158,12 @@ def _isolate_config_and_notification_singletons():
 
 @pytest.fixture(autouse=True)
 def _disable_real_network_requests(monkeypatch: pytest.MonkeyPatch):
-    """全局禁用真实网络请求：任何未 mock 的 requests 调用都应失败。"""
-    try:
-        import requests
+    """全局禁用真实网络请求：任何未 mock 的 httpx 调用都应失败。"""
+    import httpx
 
-        def _blocked_request(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def]
-            raise RuntimeError(f"测试环境禁止真实网络请求: {method} {url}")
+    def _blocked_send(self, request, *args, **kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError(f"测试环境禁止真实网络请求: {request.method} {request.url}")
 
-        monkeypatch.setattr(
-            requests.sessions.Session, "request", _blocked_request, raising=True
-        )
-    except Exception:
-        # requests 不可用时忽略（极少数情况下）
-        pass
+    monkeypatch.setattr(httpx.Client, "send", _blocked_send, raising=True)
+    monkeypatch.setattr(httpx.AsyncClient, "send", _blocked_send, raising=True)
     yield

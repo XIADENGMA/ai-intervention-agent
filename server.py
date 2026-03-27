@@ -13,12 +13,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, cast
 
-import requests
+import httpx
 from fastmcp import FastMCP
 from mcp.types import TextContent
 from pydantic import Field
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 from config_manager import get_config
 from config_utils import get_compat_config
@@ -63,10 +61,9 @@ from task_queue import TaskQueue
 # ===============================
 # 【性能优化】全局缓存
 # ===============================
-# HTTP Session 缓存（线程本地）：避免跨线程共享 requests.Session（更稳妥）
-_http_session_local = threading.local()
-_http_session_generation: int = 0
-_http_session_lock = threading.Lock()
+# httpx 异步客户端（模块级单例，支持连接池复用）
+_async_client: httpx.AsyncClient | None = None
+_sync_client: httpx.Client | None = None
 
 # 配置缓存：避免频繁读取配置文件
 _config_cache: Dict[str, Any] = {
@@ -88,8 +85,8 @@ _config_callbacks_lock = threading.Lock()
 
 
 def _invalidate_runtime_caches_on_config_change() -> None:
-    """配置变更回调：清空 server.py 的配置缓存与 HTTP Session 缓存"""
-    global _http_session_generation
+    """配置变更回调：清空 server.py 的配置缓存，并关闭 httpx 客户端以便下次重建"""
+    global _async_client, _sync_client
     try:
         with _config_cache_lock:
             _config_cache["config"] = None
@@ -98,9 +95,10 @@ def _invalidate_runtime_caches_on_config_change() -> None:
         pass
 
     try:
-        with _http_session_lock:
-            # 线程本地缓存无法直接“全线程清理”，这里使用 generation 递增触发各线程惰性清理
-            _http_session_generation += 1
+        if _sync_client is not None and not _sync_client.is_closed:
+            _sync_client.close()
+        _sync_client = None
+        _async_client = None
     except Exception:
         pass
 
@@ -559,112 +557,33 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
         raise ValueError(f"Web UI 配置加载失败: {e}") from e
 
 
-def create_http_session(config: WebUIConfig) -> requests.Session:
-    """
-    创建配置了重试机制和超时设置的 HTTP 会话（带缓存复用）
+def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
+    """获取（或创建）模块级异步 HTTP 客户端，支持连接池复用和自动重试。"""
+    global _async_client
+    if _async_client is None or _async_client.is_closed:
+        transport = httpx.AsyncHTTPTransport(retries=config.max_retries)
+        _async_client = httpx.AsyncClient(
+            transport=transport,
+            timeout=httpx.Timeout(config.timeout, connect=5.0),
+        )
+    return _async_client
 
-    参数
-    ----
-    config : WebUIConfig
-        Web UI 配置对象（包含 max_retries、retry_delay、timeout）
 
-    返回
-    ----
-    requests.Session
-        配置好的 requests 会话对象，支持自动重试和超时控制
+def get_sync_client(config: WebUIConfig) -> httpx.Client:
+    """获取（或创建）模块级同步 HTTP 客户端，用于同步代码路径。"""
+    global _sync_client
+    if _sync_client is None or _sync_client.is_closed:
+        transport = httpx.HTTPTransport(retries=config.max_retries)
+        _sync_client = httpx.Client(
+            transport=transport,
+            timeout=httpx.Timeout(config.timeout, connect=5.0),
+        )
+    return _sync_client
 
-    功能
-    ----
-    使用 urllib3.util.retry.Retry 配置智能重试策略：
-    1. **重试次数**: config.max_retries（默认 3 次）
-    2. **退避策略**: 指数退避（backoff_factor），基础延迟为 config.retry_delay
-       - 第 1 次重试: retry_delay * 2^0 秒
-       - 第 2 次重试: retry_delay * 2^1 秒
-       - 第 3 次重试: retry_delay * 2^2 秒
-    3. **重试条件**: HTTP 状态码为 429（Too Many Requests）、500（服务器错误）、
-       502（Bad Gateway）、503（服务不可用）、504（网关超时）
-    4. **允许方法**: HEAD、GET、POST（幂等和非幂等请求）
-    5. **超时设置**: config.timeout（默认 30 秒）
 
-    挂载适配器
-    ----------
-    为 http:// 和 https:// 协议挂载相同的重试适配器，确保所有请求都使用重试策略。
-
-    【性能优化】Session 缓存复用
-    -------------------------
-    - 基于配置参数生成缓存键
-    - 复用已创建的 session 对象，避免重复创建
-    - 减少 TCP 握手开销，提升高频请求性能
-
-    使用场景
-    --------
-    - health_check_service() 健康检查请求
-    - update_web_content() 更新内容请求
-    - wait_for_task_completion() 轮询任务完成
-
-    性能考虑
-    ----------
-    - 重试策略可减少因临时网络波动导致的请求失败
-    - 指数退避避免对服务器造成过大压力
-    - 超时设置防止请求无限挂起
-    - 【优化】Session 复用减少连接建立开销
-
-    注意事项
-    --------
-    - requests 的超时应通过每次请求的 timeout 参数控制（避免给 Session 动态挂载属性）
-    - POST 请求默认也会重试（非标准行为，但适用于本项目的幂等 API）
-    - 重试不适用于连接错误（如服务未启动），仅适用于 HTTP 响应错误
-    """
-    # 【性能优化】基于配置参数生成缓存键，复用 session
-    cache_key = f"{config.max_retries}_{config.retry_delay}_{config.timeout}"
-
-    # 线程本地缓存：每个线程维护自己的 session，避免跨线程共享对象导致非预期竞态
-    cache: dict[str, requests.Session] | None = getattr(
-        _http_session_local, "cache", None
-    )
-    if cache is None:
-        cache = {}
-        _http_session_local.cache = cache
-
-    local_generation: int | None = getattr(_http_session_local, "generation", None)
-    with _http_session_lock:
-        global_generation = _http_session_generation
-
-    # generation 不一致：配置发生变化或缓存策略调整，关闭并清空本线程的 session 缓存
-    if local_generation != global_generation:
-        try:
-            for s in cache.values():
-                try:
-                    s.close()
-                except Exception:
-                    pass
-        finally:
-            cache.clear()
-            _http_session_local.generation = global_generation
-
-    if cache_key in cache:
-        logger.debug(f"复用已缓存的 HTTP Session（线程本地）: {cache_key}")
-        return cache[cache_key]
-
-    # 创建新的 session（仅在当前线程使用）
-    session = requests.Session()
-
-    retry_strategy = Retry(
-        total=config.max_retries,
-        backoff_factor=config.retry_delay,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "POST"],
-    )
-
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-
-    # 缓存 session（线程本地）
-    cache[cache_key] = session
-    logger.debug(f"创建并缓存新的 HTTP Session（线程本地）: {cache_key}")
-
-    return session
+def create_http_session(config: WebUIConfig) -> httpx.Client:
+    """向后兼容：返回同步 httpx.Client（替代旧 requests.Session）。"""
+    return get_sync_client(config)
 
 
 def is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -725,7 +644,7 @@ def health_check_service(config: WebUIConfig) -> bool:
 
         return is_healthy
 
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         logger.error(f"健康检查请求失败: {e}", exc_info=True)
         return False
     except Exception as e:
@@ -951,18 +870,18 @@ def update_web_content(
                 code="unexpected_status",
             ) from None
 
-    except requests.exceptions.Timeout:
+    except httpx.TimeoutException:
         logger.error(f"更新内容超时 ({config.timeout}秒)", exc_info=True)
         raise ServiceTimeoutError(
             "更新内容超时，请检查网络连接或稍后重试", code="timeout"
         ) from None
-    except requests.exceptions.ConnectionError:
+    except httpx.ConnectError:
         logger.error(f"无法连接到 Web 服务: {url}", exc_info=True)
         raise ServiceUnavailableError(
             "无法连接到 Web UI 服务，请确认服务正在运行，并检查地址/端口（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl 设置）。",
             code="connection_refused",
         ) from None
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         logger.error(f"更新内容时网络请求失败: {e}", exc_info=True)
         raise ServiceConnectionError(f"更新内容失败: {e}", code="request_failed") from e
     except (
@@ -1040,7 +959,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
 
     异常处理
     ----------
-    - requests.exceptions.RequestException: 记录警告并继续轮询（网络波动容错）
+    - httpx.HTTPError: 记录警告并继续轮询（网络波动容错）
     - HTTP 404: 任务不存在，返回 resubmit_prompt 引导重新调用
     - HTTP 非 200: 记录警告并继续轮询（临时错误容错）
 
@@ -1063,7 +982,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
     - 轮询失败不会立即返回错误，会继续尝试（容错设计）
     - 超时时间应该大于前端倒计时时间（通常为前端 + 40 秒）
     - 返回的 result 字典格式取决于 Web UI 的实现
-    - 使用 asyncio.to_thread 在线程池中运行同步 HTTP 请求
+    - 使用 httpx.AsyncClient 原生异步 HTTP 请求
     - 【优化】使用单调时间，避免系统时间调整导致的超时判断错误
     """
     # 【优化】确保超时时间不小于 BACKEND_MIN 秒（0表示无限等待，保持不变）
@@ -1085,8 +1004,9 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
 
     while timeout == 0 or time.monotonic() < deadline_monotonic:
         try:
-            # 在线程池中执行同步 HTTP 请求，不阻塞事件循环
-            response = await asyncio.to_thread(requests.get, api_url, timeout=2)
+            config_tuple = get_web_ui_config()
+            client = get_async_client(config_tuple[0])
+            response = await client.get(api_url, timeout=2)
 
             if response.status_code == 404:
                 # 任务不存在（可能已被清理或前端自动提交），引导 AI 重新调用工具
@@ -1120,7 +1040,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
                         logger.info(f"任务完成: {task_id}")
                         return cast(Dict[str, Any], task["result"])
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.warning(f"轮询任务状态失败: {e}", exc_info=True)
 
         await asyncio.sleep(1)  # 异步等待，不阻塞事件循环
@@ -1137,11 +1057,9 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
 async def ensure_web_ui_running(config: WebUIConfig) -> None:
     """检查并自动启动 Web UI 服务（异步）"""
     try:
-        # 在线程池中执行同步 HTTP 请求
-        # 注意：当 config.host 为 0.0.0.0 时，客户端应连接 localhost
         target_host = get_target_host(config.host)
-        response = await asyncio.to_thread(
-            requests.get,
+        client = get_async_client(config)
+        response = await client.get(
             f"http://{target_host}:{config.port}/api/health",
             timeout=2,
         )
@@ -1149,14 +1067,12 @@ async def ensure_web_ui_running(config: WebUIConfig) -> None:
             logger.debug("Web UI 已经在运行")
             return
     except Exception as e:
-        # 健康检查失败可能表示服务尚未启动；保持静默降级，但保留可诊断日志。
         logger.debug(f"Web UI 健康检查失败，将尝试启动: {e}", exc_info=True)
 
     logger.info("Web UI 未运行，正在启动...")
     script_dir = Path(__file__).resolve().parent
-    # 在线程池中执行服务启动（因为 start_web_service 可能是同步的）
     await asyncio.to_thread(start_web_service, config, script_dir)
-    await asyncio.sleep(2)  # 异步等待，不阻塞事件循环
+    await asyncio.sleep(2)
 
 
 def launch_feedback_ui(
@@ -1191,7 +1107,8 @@ def launch_feedback_ui(
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
         try:
-            response = requests.post(
+            client = get_sync_client(config)
+            response = client.post(
                 api_url,
                 json={
                     "task_id": task_id,
@@ -1263,7 +1180,7 @@ def launch_feedback_ui(
             else:
                 logger.debug("通知系统不可用，跳过通知发送")
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"添加任务请求失败: {e}", exc_info=True)
             return {
                 "error": f"无法连接到 Web UI：{e}。请确认 Web UI 服务已启动，并检查地址/端口配置（如 web_ui.host/web_ui.port 或 VS Code 的 serverUrl）。"
@@ -1387,9 +1304,8 @@ async def interactive_feedback(
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
         try:
-            # 在线程池中执行同步 HTTP 请求，不阻塞事件循环
-            response = await asyncio.to_thread(
-                requests.post,
+            client = get_async_client(config)
+            response = await client.post(
                 api_url,
                 json={
                     "task_id": task_id,
@@ -1466,8 +1382,7 @@ async def interactive_feedback(
             else:
                 logger.debug("通知系统不可用，跳过通知发送")
 
-        except requests.exceptions.RequestException as e:
-            # 记录连接失败的详细错误
+        except httpx.HTTPError as e:
             logger.error(f"添加任务请求失败，无法连接到 Web UI: {e}", exc_info=True)
             # 返回配置的提示语，引导 AI 重新调用工具
             return _make_resubmit_response()

@@ -209,7 +209,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
 
         self.assertFalse(result)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_send_success(self, mock_post):
         """测试成功发送（模拟 HTTP）"""
         mock_response = MagicMock()
@@ -223,9 +223,9 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertTrue(result)
         mock_post.assert_called_once()
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_send_uses_configured_timeout(self, mock_post):
-        """应使用配置中的 bark_timeout 作为 requests 超时参数"""
+        """应使用配置中的 bark_timeout 作为 httpx 超时参数"""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_post.return_value = mock_response
@@ -239,7 +239,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         _, kwargs = mock_post.call_args
         self.assertEqual(kwargs.get("timeout"), 3)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_payload_no_action_field_when_none(self, mock_post):
         """bark_action=none 时不应发送 action/url/copy 字段（避免服务端 4xx）"""
         mock_response = MagicMock()
@@ -258,7 +258,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertNotIn("url", payload)
         self.assertNotIn("copy", payload)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_payload_url_field_when_action_url(self, mock_post):
         """bark_action=url 时应使用 Bark 的 url 字段"""
         mock_response = MagicMock()
@@ -280,7 +280,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertEqual(payload.get("url"), "https://example.com")
         self.assertNotIn("action", payload)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_payload_copy_field_when_action_copy(self, mock_post):
         """bark_action=copy 时应使用 Bark 的 copy 字段"""
         mock_response = MagicMock()
@@ -298,7 +298,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertEqual(payload.get("copy"), "测试消息")
         self.assertNotIn("action", payload)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_send_http_error(self, mock_post):
         """测试 HTTP 错误"""
         mock_response = MagicMock()
@@ -312,12 +312,12 @@ class TestBarkNotificationProvider(unittest.TestCase):
 
         self.assertFalse(result)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_send_timeout(self, mock_post):
         """测试超时"""
-        import requests
+        import httpx
 
-        mock_post.side_effect = requests.exceptions.Timeout()
+        mock_post.side_effect = httpx.TimeoutException("connection timed out")
 
         event = create_event(title="测试标题", message="测试消息")
 
@@ -470,7 +470,7 @@ class TestBarkProviderAdvanced(unittest.TestCase):
             # 原始标题应该保留
             self.assertEqual(json_data.get("title"), "标题")
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_all_2xx_success(self, mock_post):
         """测试所有 2xx 状态码都成功"""
         from notification_manager import NotificationEvent, NotificationTrigger
@@ -795,13 +795,12 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
 
     def test_bark_network_unavailable(self):
         """测试 Bark 网络不可用"""
-        import requests
+        import httpx
 
         from notification_manager import NotificationEvent, NotificationTrigger
         from notification_providers import BarkNotificationProvider
 
         self.config.bark_enabled = True
-        # 使用 mock 避免真实网络请求（确保离线可重复）
         self.config.bark_url = "https://example.invalid/push"
         self.config.bark_device_key = "test"
 
@@ -815,10 +814,9 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
             metadata={},
         )
 
-        # 应该返回 False，不应该抛出异常
         with patch(
-            "notification_providers.requests.Session.post",
-            side_effect=requests.exceptions.RequestException("network down"),
+            "notification_providers.httpx.Client.post",
+            side_effect=httpx.HTTPError("network down"),
         ):
             result = provider.send(event)
         self.assertFalse(result)
@@ -936,7 +934,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         event = create_event(title="T", message="M")
         self.assertFalse(provider.send(event))
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_action_url_no_url_in_metadata(self, mock_post):
         """bark_action=url 但 metadata 无 URL → 正常发送不带 url 字段"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -946,7 +944,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertNotIn("url", payload)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_action_copy_with_metadata(self, mock_post):
         """bark_action=copy + metadata 有 copy_text → 使用 metadata 值"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -958,7 +956,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload["copy"], "custom copy")
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_action_unknown_as_url(self, mock_post):
         """bark_action 是一个 URL → 当作 url 字段"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -968,7 +966,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload.get("url"), "https://custom.action/")
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_action_unknown_non_url(self, mock_post):
         """bark_action 是未知非 URL 值 → 忽略"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -979,7 +977,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertNotIn("url", payload)
         self.assertNotIn("action", payload)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_metadata_complex_type_stringified(self, mock_post):
         """非基本类型的 metadata 值应被 str() 转换"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -994,7 +992,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload["obj"], "custom_str")
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_bark_timeout_invalid_fallback(self, mock_post):
         """bark_timeout 无效时回退到默认 10s"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -1004,7 +1002,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertTrue(provider.send(event))
         self.assertEqual(mock_post.call_args.kwargs["timeout"], 10)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_http_error_json_parse_fails(self, mock_post):
         """HTTP 错误 + response.json() 抛异常 → 使用 response.text"""
         resp = MagicMock(status_code=500, text="raw error")
@@ -1014,7 +1012,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         event = create_event(title="T", message="M")
         self.assertFalse(provider.send(event))
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_http_error_debug_mode(self, mock_post):
         """debug=True 时 bark_error 写入 metadata"""
         resp = MagicMock(status_code=400, text="bad request")
@@ -1026,7 +1024,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertFalse(provider.send(event))
         self.assertIn("bark_error", event.metadata)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_http_error_test_event(self, mock_post):
         """test=True 的事件也写 bark_error"""
         resp = MagicMock(status_code=400, text="bad")
@@ -1037,7 +1035,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertFalse(provider.send(event))
         self.assertIn("bark_error", event.metadata)
 
-    @patch("notification_providers.requests.Session.post")
+    @patch("notification_providers.httpx.Client.post")
     def test_generic_exception(self, mock_post):
         """send 内部 generic Exception → False"""
         mock_post.side_effect = RuntimeError("unexpected")

@@ -12,8 +12,7 @@ from collections.abc import Callable
 from importlib.util import find_spec
 from typing import Any, Dict
 
-import requests
-from requests.adapters import HTTPAdapter
+import httpx
 
 from enhanced_logging import EnhancedLogger
 from notification_models import NotificationEvent, NotificationType
@@ -180,17 +179,13 @@ class BarkNotificationProvider(BaseNotificationProvider):
         """初始化 Session 连接池（3次重试）"""
         super().__init__(config)
         self.notification_type = NotificationType.BARK
-        self.session = requests.Session()
-        adapter = HTTPAdapter(max_retries=3)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
-
-        # 【优化】设置默认 headers（避免每次请求重复创建）
-        self.session.headers.update(
-            {
+        transport = httpx.HTTPTransport(retries=3)
+        self.session = httpx.Client(
+            transport=transport,
+            headers={
                 "Content-Type": "application/json",
                 "User-Agent": "AI-Intervention-Agent",
-            }
+            },
         )
 
     def close(self) -> None:
@@ -303,12 +298,9 @@ class BarkNotificationProvider(BaseNotificationProvider):
                         logger.warning(f"跳过元数据中的保留键: {key}")
                         continue
 
-                    # 【优化】简化序列化逻辑，依赖 requests 的 json 参数
                     if isinstance(
                         value, (str, int, float, bool, type(None), list, dict)
                     ):
-                        # 基本类型和容器类型直接添加，由 requests 处理序列化
-                        # 如果 requests 序列化失败会抛出异常，被外层 catch
                         bark_data[key] = value
                     else:
                         # 其他复杂类型转为字符串
@@ -320,7 +312,7 @@ class BarkNotificationProvider(BaseNotificationProvider):
             except (TypeError, ValueError):
                 timeout_seconds = 10
 
-            # 【优化】使用 Session 默认 headers（在 __init__ 中设置）
+            # 默认 headers 已在 __init__ 中设置
             response = self.session.post(
                 self.config.bark_url,
                 json=bark_data,
@@ -361,10 +353,10 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 )
                 return False
 
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.error(f"Bark通知发送超时: {event.id}", exc_info=True)
             return False
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"Bark通知发送网络错误: {e}", exc_info=True)
             return False
         except Exception as e:
