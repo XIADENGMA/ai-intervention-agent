@@ -6,12 +6,10 @@
 
 from config_modules.file_watcher import FileWatcherMixin
 from config_modules.io_operations import IOOperationsMixin
-from config_modules.jsonc_engine import JsoncEngineMixin
 from config_modules.network_security import NetworkSecurityMixin
 from config_modules.toml_engine import TomlEngineMixin
 
 __all__ = [
-    "JsoncEngineMixin",
     "TomlEngineMixin",
     "NetworkSecurityMixin",
     "FileWatcherMixin",

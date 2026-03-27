@@ -158,69 +158,15 @@ class NetworkSecurityMixin:
             self._update_file_mtime()  # type: ignore[attr-defined]
             return
 
-        # JSON 格式（非 JSONC）
-        if not self._is_jsonc_file():  # type: ignore[attr-defined]
-            try:
-                full = json.loads(content) if content.strip() else {}
-                if not isinstance(full, dict):
-                    full = {}
-            except Exception:
+        # JSON 格式（降级兼容）
+        try:
+            full = json.loads(content) if content.strip() else {}
+            if not isinstance(full, dict):
                 full = {}
-            full["network_security"] = validated_ns
-            new_content = json.dumps(full, indent=2, ensure_ascii=False)
-            try:
-                self.config_file.write_text(new_content, encoding="utf-8")  # type: ignore[attr-defined]
-            except Exception as e:
-                raise RuntimeError(f"写入配置文件失败: {e}") from e
-            with self._lock:  # type: ignore[attr-defined]
-                self._original_content = new_content  # type: ignore[attr-defined]
-            self._update_file_mtime()  # type: ignore[attr-defined]
-            return
-
-        # JSONC 格式（向后兼容）
-        base_content = content
-        if not base_content and self._original_content:  # type: ignore[attr-defined]
-            base_content = self._original_content  # type: ignore[attr-defined]
-        if not base_content:
-            full = {"network_security": validated_ns}
-            new_content = json.dumps(full, indent=2, ensure_ascii=False)
-            try:
-                self.config_file.write_text(new_content, encoding="utf-8")  # type: ignore[attr-defined]
-            except Exception as e:
-                raise RuntimeError(f"写入配置文件失败: {e}") from e
-            with self._lock:  # type: ignore[attr-defined]
-                self._original_content = new_content  # type: ignore[attr-defined]
-            self._update_file_mtime()  # type: ignore[attr-defined]
-            return
-
-        lines = base_content.split("\n")
-        result_lines = lines.copy()
-        ns_range = self._find_network_security_range(lines)  # type: ignore[attr-defined]
-
-        if ns_range[0] == -1:
-            from config_manager import parse_jsonc
-
-            try:
-                full_cfg = parse_jsonc(base_content)
-                if not isinstance(full_cfg, dict):
-                    full_cfg = {}
-            except Exception:
-                full_cfg = {}
-            full_cfg["network_security"] = validated_ns
-            new_content = json.dumps(full_cfg, indent=2, ensure_ascii=False)
-            try:
-                self.config_file.write_text(new_content, encoding="utf-8")  # type: ignore[attr-defined]
-            except Exception as e:
-                raise RuntimeError(f"写入配置文件失败: {e}") from e
-            with self._lock:  # type: ignore[attr-defined]
-                self._original_content = new_content  # type: ignore[attr-defined]
-            self._update_file_mtime()  # type: ignore[attr-defined]
-            return
-
-        self._jsonc_process_config_section_only_in_range(  # type: ignore[attr-defined]
-            validated_ns, result_lines, ns_range
-        )
-        new_content = "\n".join(result_lines)
+        except Exception:
+            full = {}
+        full["network_security"] = validated_ns
+        new_content = json.dumps(full, indent=2, ensure_ascii=False)
         try:
             self.config_file.write_text(new_content, encoding="utf-8")  # type: ignore[attr-defined]
         except Exception as e:

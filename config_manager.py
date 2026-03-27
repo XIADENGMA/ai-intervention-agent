@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-配置管理模块：TOML/JSONC/JSON 配置文件的跨平台加载、读写、热重载。
+配置管理模块：TOML 配置文件的跨平台加载、读写、热重载。
 
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。
-支持 TOML（推荐）和 JSONC/JSON（向后兼容）两种格式，旧 JSONC 文件自动迁移为 TOML。
+旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
+旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
 通过 get_config() 获取全局 ConfigManager 实例。
 """
 
@@ -41,7 +42,6 @@ except ImportError:
 from config_modules import (
     FileWatcherMixin,
     IOOperationsMixin,
-    JsoncEngineMixin,
     NetworkSecurityMixin,
     TomlEngineMixin,
 )
@@ -332,22 +332,20 @@ def _get_user_config_dir_fallback() -> Path:
 
 class ConfigManager(
     TomlEngineMixin,
-    JsoncEngineMixin,
     NetworkSecurityMixin,
     FileWatcherMixin,
     IOOperationsMixin,
 ):
     """
-    配置管理器：TOML/JSONC/JSON 配置文件的加载、读写、持久化、热重载。
+    配置管理器：TOML 配置文件的加载、读写、持久化、热重载。
 
     核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理（带缓存）、
     文件变更监听、配置导入导出。通过模块级 config_manager 全局实例访问。
 
-    支持格式：TOML（推荐）、JSONC、JSON（向后兼容）。旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
+    支持格式：TOML（主格式）。旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
 
     路由通过 Mixin 拆分（各 Mixin 定义在 config_modules/ 下）：
     - TomlEngineMixin: TOML 格式解析/保存（保留注释）
-    - JsoncEngineMixin: JSONC 格式解析/定位/更新（向后兼容）
     - NetworkSecurityMixin: network_security 段校验/读写
     - FileWatcherMixin: 文件监听/回调/shutdown
     - IOOperationsMixin: 配置导出/导入/备份/恢复
@@ -486,18 +484,11 @@ class ConfigManager(
         """判断当前配置文件是否为 TOML 格式"""
         return self.config_file.suffix.lower() == ".toml"
 
-    def _is_jsonc_file(self) -> bool:
-        """判断当前配置文件是否为 JSONC 格式"""
-        return self.config_file.suffix.lower() == ".jsonc"
-
     def _parse_config_content(self, content: str) -> Dict[str, Any]:
-        """根据当前文件格式解析配置内容"""
+        """根据当前文件格式解析配置内容（TOML 或降级到 JSON）"""
         if self._is_toml_file():
             return self._parse_toml(content)
-        elif self._is_jsonc_file():
-            return parse_jsonc(content)
-        else:
-            return cast(Dict[str, Any], json.loads(content))
+        return cast(Dict[str, Any], json.loads(content))
 
     def _migrate_jsonc_to_toml(self) -> bool:
         """将旧的 JSONC/JSON 配置文件迁移为 TOML 格式"""
@@ -633,24 +624,17 @@ class ConfigManager(
         return result
 
     def _create_default_config_file(self):
-        """创建带注释的默认配置文件（优先使用 TOML 模板，向后兼容 JSONC 模板）"""
+        """创建带注释的默认配置文件（使用 TOML 模板）"""
         try:
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # 优先使用 TOML 模板
             toml_template = Path(__file__).parent / "config.toml.default"
-            jsonc_template = Path(__file__).parent / "config.jsonc.default"
 
             if self._is_toml_file() and toml_template.exists():
                 shutil.copy2(toml_template, self.config_file)
                 with open(toml_template, "r", encoding="utf-8") as f:
                     self._original_content = f.read()
                 logger.info(f"已从 TOML 模板创建默认配置文件: {self.config_file}")
-            elif self._is_jsonc_file() and jsonc_template.exists():
-                shutil.copy2(jsonc_template, self.config_file)
-                with open(jsonc_template, "r", encoding="utf-8") as f:
-                    self._original_content = f.read()
-                logger.info(f"已从 JSONC 模板创建默认配置文件: {self.config_file}")
             else:
                 logger.warning("模板文件不存在，使用默认配置创建文件")
                 default_config = self._exclude_network_security(
@@ -734,7 +718,7 @@ class ConfigManager(
         self._schedule_save()
 
     def _save_config_immediate(self):
-        """立即将配置写入文件（TOML/JSONC 保留注释，JSON 标准格式），保存后验证"""
+        """立即将配置写入文件（TOML 保留注释，JSON 标准格式），保存后验证"""
         try:
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -744,18 +728,13 @@ class ConfigManager(
                     f.write(content)
                     self._original_content = content
                     logger.debug(f"TOML 配置文件已保存（保留注释）: {self.config_file}")
-                elif self._is_jsonc_file() and self._original_content:
-                    content = self._save_jsonc_with_comments(self._config)
+                elif self._is_toml_file():
+                    content = tomlkit.dumps(tomlkit.item(self._config))
                     f.write(content)
                     self._original_content = content
-                    logger.debug(
-                        f"JSONC 配置文件已保存（保留注释）: {self.config_file}"
-                    )
+                    logger.debug(f"TOML 配置文件已保存: {self.config_file}")
                 else:
-                    if self._is_toml_file():
-                        content = tomlkit.dumps(tomlkit.item(self._config))
-                    else:
-                        content = json.dumps(self._config, indent=2, ensure_ascii=False)
+                    content = json.dumps(self._config, indent=2, ensure_ascii=False)
                     f.write(content)
                     self._original_content = content
                     logger.debug(f"配置文件已保存: {self.config_file}")
@@ -788,44 +767,29 @@ class ConfigManager(
             raise
 
     def _validate_config_structure(self, parsed_config: Dict[str, Any], content: str):
-        """验证配置结构完整性（检测重复数组定义、network_security 格式等）"""
-        # 检查是否存在重复的数组定义（格式损坏的典型标志）
-        lines = content.splitlines()
-        array_definitions: dict[str, int] = {}
-        in_block_comment = False
+        """验证配置结构完整性（network_security 格式等）
 
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if not stripped:
-                continue
-
-            # JSONC 注释处理：忽略整行 // 注释与块注释区域，避免误报“重复定义”
-            if in_block_comment:
-                if "*/" in stripped:
-                    in_block_comment = False
-                continue
-
-            if stripped.startswith("/*"):
-                if "*/" not in stripped:
-                    in_block_comment = True
-                continue
-
-            if stripped.startswith("//"):
-                continue
-
-            # 查找数组定义行（目前聚焦 network_security 的关键数组）
-            if '"allowed_networks"' in stripped and "[" in stripped:
-                if "allowed_networks" in array_definitions:
-                    logger.error(
-                        f"检测到重复的数组定义 'allowed_networks' 在第{i + 1}行"
-                    )
-                    raise ValueError(f"配置文件格式损坏：重复的数组定义在第{i + 1}行")
-                array_definitions["allowed_networks"] = i + 1
-            if '"blocked_ips"' in stripped and "[" in stripped:
-                if "blocked_ips" in array_definitions:
-                    logger.error(f"检测到重复的数组定义 'blocked_ips' 在第{i + 1}行")
-                    raise ValueError(f"配置文件格式损坏：重复的数组定义在第{i + 1}行")
-                array_definitions["blocked_ips"] = i + 1
+        TOML 解析器会自动拒绝重复键，此处仅对 JSON 降级格式做额外校验。
+        """
+        if not self._is_toml_file():
+            lines_list = content.splitlines()
+            array_definitions: dict[str, int] = {}
+            for i, line in enumerate(lines_list):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if '"allowed_networks"' in stripped and "[" in stripped:
+                    if "allowed_networks" in array_definitions:
+                        raise ValueError(
+                            f"配置文件格式损坏：重复的数组定义在第{i + 1}行"
+                        )
+                    array_definitions["allowed_networks"] = i + 1
+                if '"blocked_ips"' in stripped and "[" in stripped:
+                    if "blocked_ips" in array_definitions:
+                        raise ValueError(
+                            f"配置文件格式损坏：重复的数组定义在第{i + 1}行"
+                        )
+                    array_definitions["blocked_ips"] = i + 1
 
         # 验证network_security配置（如果存在）应该格式正确
         if "network_security" in parsed_config:
@@ -1356,7 +1320,7 @@ atexit.register(_shutdown_global_config_manager)
 def get_config() -> ConfigManager:
     """获取全局配置管理器实例（自动启动文件监听）"""
     # 【配置热更新】默认启用文件监听（2 秒轮询，按你的选择 A + C）
-    # 目的：外部编辑 config.jsonc 后无需重启即可生效
+    # 目的：外部编辑 config.toml 后无需重启即可生效
     try:
         if not config_manager.is_file_watcher_running:
             config_manager.start_file_watcher(interval=2.0)

@@ -28,29 +28,29 @@ def _resolve_test_config_path() -> Path:
     说明：
     - pytest 会在 `tests/conftest.py` 中注入环境变量 AI_INTERVENTION_AGENT_CONFIG_FILE，
       用于让测试完全可重复、且不污染用户真实配置目录。
-    - 本文件中的测试不应硬编码依赖仓库根目录的 `config.jsonc`（CI 环境可能不存在该文件）。
+    - 本文件中的测试不应硬编码依赖仓库根目录的 `config.toml`（CI 环境可能不存在该文件）。
     """
     override = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
     if override:
         p = Path(override).expanduser()
         if p.is_dir():
-            p = p / "config.jsonc"
+            p = p / "config.toml"
         return p
-    return project_root / "config.jsonc"
+    return project_root / "config.toml"
 
 
 def _ensure_test_config_file_exists(config_path: Path) -> None:
-    """确保测试配置文件存在（优先从 config.jsonc.default 生成）。"""
+    """确保测试配置文件存在（优先从 config.toml.default 生成）。"""
     config_path.parent.mkdir(parents=True, exist_ok=True)
     if config_path.exists():
         return
 
-    default_cfg = project_root / "config.jsonc.default"
+    default_cfg = project_root / "config.toml.default"
     if default_cfg.exists():
         shutil.copy(default_cfg, config_path)
         return
 
-    # 兜底：写入最小可用配置（JSON 也可被 JSONC 解析器处理）
+    # 兜底：写入最小可用配置
     config_path.write_text(
         """{
   "notification": {

@@ -91,7 +91,7 @@ class TestConfigManagerBasic(unittest.TestCase):
     def setUpClass(cls):
         """测试类初始化"""
         cls.test_dir = tempfile.mkdtemp()
-        cls.config_file = Path(cls.test_dir) / "test_config.jsonc"
+        cls.config_file = Path(cls.test_dir) / "test_config.toml"
 
     @classmethod
     def tearDownClass(cls):
@@ -148,39 +148,37 @@ class TestConfigManagerBasic(unittest.TestCase):
         value = mgr.get("notification.enabled")
         self.assertEqual(value, False)
 
-    def test_jsonc_save_does_not_cross_update_same_named_keys(self):
-        """JSONC 保留注释保存：同名键（如 enabled）不应跨 section 误更新，且 URL 不应被截断"""
-        from config_manager import ConfigManager, parse_jsonc
+    def test_toml_save_does_not_cross_update_same_named_keys(self):
+        """TOML 保留注释保存：同名键（如 enabled）不应跨 section 误更新"""
+        from config_manager import ConfigManager
 
-        jsonc_content = """
-        {
-          // 通知配置（用于验证同名键 enabled 不被误改）
-          "notification": {
-            "enabled": true,
-            "bark_url": "https://example.com/api//not_comment" // URL 中的 // 不是注释
-          },
-          // mDNS 配置（同样包含 enabled）
-          "mdns": {
-            "enabled": null
-          }
-        }
-        """.strip()
-        self.config_file.write_text(jsonc_content, encoding="utf-8")
+        toml_content = """\
+# 通知配置
+[notification]
+enabled = true
+bark_url = "https://example.com/api/push"
 
-        mgr = ConfigManager(str(self.config_file))
+# mDNS 配置
+[mdns]
+enabled = "auto"
+"""
+        toml_file = self.config_file.with_suffix(".toml")
+        toml_file.write_text(toml_content, encoding="utf-8")
 
-        # 仅更新 mdns.enabled，notification.enabled 必须保持原值 true
+        mgr = ConfigManager(str(toml_file))
+
         mgr.set("mdns.enabled", False, save=True)
         mgr.force_save()
 
-        saved = self.config_file.read_text(encoding="utf-8")
-        self.assertIn('"bark_url": "https://example.com/api//not_comment"', saved)
+        saved = toml_file.read_text(encoding="utf-8")
+        import tomlkit
 
-        parsed = parse_jsonc(saved)
-        self.assertEqual(parsed["notification"]["enabled"], True)
-        self.assertEqual(parsed["mdns"]["enabled"], False)
+        parsed = tomlkit.parse(saved)
+        self.assertEqual(parsed["notification"]["enabled"], True)  # type: ignore[index]
+        self.assertEqual(parsed["mdns"]["enabled"], False)  # type: ignore[index]
         self.assertEqual(
-            parsed["notification"]["bark_url"], "https://example.com/api//not_comment"
+            parsed["notification"]["bark_url"],  # type: ignore[index]
+            "https://example.com/api/push",
         )
 
     def test_get_section(self):
@@ -210,58 +208,57 @@ class TestConfigManagerBasic(unittest.TestCase):
         section2 = mgr.get_section("notification")
         self.assertEqual(section2.get("enabled"), False)
 
-    def test_reload_invalid_json_keeps_previous_config(self):
+    def test_reload_invalid_toml_keeps_previous_config(self):
         """配置文件损坏/编辑中间态：reload 不应把内存配置回退到默认值"""
         from config_manager import ConfigManager
 
-        # 写入一个非默认端口，便于验证是否发生“回退到默认值（8080）”
-        test_config = {
-            "notification": {"enabled": True, "sound_volume": 80},
-            "web_ui": {"host": "127.0.0.1", "port": 18080},
-        }
-        with open(self.config_file, "w", encoding="utf-8") as f:
-            json.dump(test_config, f)
+        test_content = """\
+[notification]
+enabled = true
+sound_volume = 80
+
+[web_ui]
+host = "127.0.0.1"
+port = 18080
+"""
+        self.config_file.write_text(test_content, encoding="utf-8")
 
         mgr = ConfigManager(str(self.config_file))
         self.assertEqual(mgr.get("web_ui.port"), 18080)
 
-        # 将文件写成非法 JSON（模拟编辑中间态/损坏）
-        with open(self.config_file, "w", encoding="utf-8") as f:
-            f.write("{invalid json")
+        self.config_file.write_text("[[invalid toml", encoding="utf-8")
 
-        # reload 不应抛异常，同时应保留上一次成功加载的配置
         mgr.reload()
         self.assertEqual(mgr.get("web_ui.port"), 18080)
 
-    def test_reload_duplicate_allowed_networks_keeps_previous_config(self):
-        """重复数组定义（allowed_networks）应被识别，reload 后应保留上次成功配置"""
+    def test_reload_duplicate_keys_toml_keeps_previous_config(self):
+        """TOML 解析器会拒绝重复键，reload 后应保留上次成功配置"""
         from config_manager import ConfigManager
 
-        # 先写入一份“正确配置”，建立基线
-        baseline_config = {
-            "notification": {"enabled": True},
-            "web_ui": {"host": "127.0.0.1", "port": 18081},
-        }
-        with open(self.config_file, "w", encoding="utf-8") as f:
-            json.dump(baseline_config, f)
+        baseline = """\
+[notification]
+enabled = true
+
+[web_ui]
+host = "127.0.0.1"
+port = 18081
+"""
+        self.config_file.write_text(baseline, encoding="utf-8")
 
         mgr = ConfigManager(str(self.config_file))
         self.assertEqual(mgr.get("web_ui.port"), 18081)
 
-        # 写入可解析但包含重复 allowed_networks 定义的 JSONC（json.loads 会保留最后一个键）
-        duplicated = """
-        {
-          "web_ui": { "host": "127.0.0.1", "port": 18082 },
-          "network_security": {
-            "allowed_networks": ["127.0.0.0/8"],
-            "allowed_networks": ["10.0.0.0/8"]
-          }
-        }
-        """.strip()
-        with open(self.config_file, "w", encoding="utf-8") as f:
-            f.write(duplicated)
+        # TOML 格式不允许重复表头 → 解析器会报错
+        duplicated = """\
+[web_ui]
+host = "127.0.0.1"
+port = 18082
 
-        # reload 后应回滚到 baseline（而不是应用损坏配置）
+[web_ui]
+port = 18083
+"""
+        self.config_file.write_text(duplicated, encoding="utf-8")
+
         mgr.reload()
         self.assertEqual(mgr.get("web_ui.port"), 18081)
 
@@ -270,7 +267,7 @@ class TestFindConfigFileOverride(unittest.TestCase):
     """测试 find_config_file() 的环境变量覆盖逻辑"""
 
     def test_override_dir_trailing_slash_appends_filename_even_if_missing(self):
-        """环境变量指向目录（以 / 结尾）时应拼接 config.jsonc，即使目录尚不存在"""
+        """环境变量指向目录（以 / 结尾）时应拼接 config.toml，即使目录尚不存在"""
         from config_manager import find_config_file
 
         old = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
@@ -278,8 +275,8 @@ class TestFindConfigFileOverride(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 missing_dir = Path(tmp) / "not-exist-yet"
                 os.environ["AI_INTERVENTION_AGENT_CONFIG_FILE"] = str(missing_dir) + "/"
-                resolved = find_config_file("config.jsonc")
-                self.assertEqual(resolved, missing_dir / "config.jsonc")
+                resolved = find_config_file("config.toml")
+                self.assertEqual(resolved, missing_dir / "config.toml")
         finally:
             if old is None:
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -287,15 +284,15 @@ class TestFindConfigFileOverride(unittest.TestCase):
                 os.environ["AI_INTERVENTION_AGENT_CONFIG_FILE"] = old
 
     def test_override_existing_dir_appends_filename(self):
-        """环境变量指向已存在目录时应拼接 config.jsonc"""
+        """环境变量指向已存在目录时应拼接 config.toml"""
         from config_manager import find_config_file
 
         old = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 os.environ["AI_INTERVENTION_AGENT_CONFIG_FILE"] = tmp
-                resolved = find_config_file("config.jsonc")
-                self.assertEqual(resolved, Path(tmp) / "config.jsonc")
+                resolved = find_config_file("config.toml")
+                self.assertEqual(resolved, Path(tmp) / "config.toml")
         finally:
             if old is None:
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -310,7 +307,7 @@ class TestConfigManagerThreadSafety(unittest.TestCase):
     def setUpClass(cls):
         """测试类初始化"""
         cls.test_dir = tempfile.mkdtemp()
-        cls.config_file = Path(cls.test_dir) / "test_config.jsonc"
+        cls.config_file = Path(cls.test_dir) / "test_config.toml"
 
     @classmethod
     def tearDownClass(cls):
@@ -441,7 +438,7 @@ class TestNetworkSecurityConfig(unittest.TestCase):
     def setUpClass(cls):
         """测试类初始化"""
         cls.test_dir = tempfile.mkdtemp()
-        cls.config_file = Path(cls.test_dir) / "test_config.jsonc"
+        cls.config_file = Path(cls.test_dir) / "test_config.toml"
 
     @classmethod
     def tearDownClass(cls):
@@ -610,15 +607,17 @@ class TestConfigManagerJsoncSave(unittest.TestCase):
         shutil.rmtree(cls.test_dir, ignore_errors=True)
 
     def test_save_preserves_content(self):
-        """测试保存保留内容"""
+        """测试 TOML 保存保留内容"""
+        import tomlkit
+
         from config_manager import ConfigManager
 
-        config_file = Path(self.test_dir) / "preserve_test.jsonc"
-        initial_content = """{
-    // 配置注释
-    "key": "value",
-    "number": 42
-}"""
+        config_file = Path(self.test_dir) / "preserve_test.toml"
+        initial_content = """\
+# 配置注释
+key = "value"
+number = 42
+"""
 
         with open(config_file, "w") as f:
             f.write(initial_content)
@@ -626,18 +625,13 @@ class TestConfigManagerJsoncSave(unittest.TestCase):
         mgr = ConfigManager(str(config_file))
         mgr.set("number", 100, save=True)
 
-        # 等待延迟保存
-        time.sleep(0.01)  # 减少等待时间
+        time.sleep(0.01)
         mgr.force_save()
 
-        # 读取保存后的内容
         with open(config_file, "r") as f:
             saved_content = f.read()
 
-        # 验证值已更新
-        from config_manager import parse_jsonc
-
-        saved_config = parse_jsonc(saved_content)
+        saved_config = tomlkit.parse(saved_content).unwrap()  # type: ignore[union-attr]
         self.assertEqual(saved_config.get("number"), 100)
 
 
@@ -1003,7 +997,7 @@ class TestConfigManagerFileWatcherAdvanced(unittest.TestCase):
 
         # 使用临时配置文件，避免污染用户真实配置
         with tempfile.TemporaryDirectory() as tmpdir:
-            config_path = Path(tmpdir) / "test_config.jsonc"
+            config_path = Path(tmpdir) / "test_config.toml"
             config_path.write_text(
                 '{\n  "notification": { "enabled": true },\n  "web_ui": { "host": "127.0.0.1", "port": 8080 },\n  "network_security": { "bind_interface": "127.0.0.1", "allowed_networks": ["127.0.0.0/8"], "blocked_ips": [], "access_control_enabled": true },\n  "feedback": { "backend_max_wait": 600, "frontend_countdown": 240, "resubmit_prompt": "", "prompt_suffix": "" }\n}\n',
                 encoding="utf-8",
@@ -1455,28 +1449,25 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
     def test_restore_config_restores_network_security(self):
         """restore_config 应恢复备份中的 network_security"""
-        import json
         import tempfile
         from pathlib import Path
 
         from config_manager import ConfigManager
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = Path(temp_dir) / "test_config.jsonc"
+            config_path = Path(temp_dir) / "test_config.toml"
             backup_path = Path(temp_dir) / "backup.json"
 
             config_path.write_text(
-                json.dumps(
-                    {
-                        "web_ui": {"port": 8080},
-                        "network_security": {
-                            "allowed_networks": ["127.0.0.0/8"],
-                            "blocked_ips": [],
-                            "access_control_enabled": True,
-                        },
-                    },
-                    ensure_ascii=False,
-                ),
+                """\
+[web_ui]
+port = 8080
+
+[network_security]
+allowed_networks = ["127.0.0.0/8"]
+blocked_ips = []
+access_control_enabled = true
+""",
                 encoding="utf-8",
             )
 
@@ -1484,17 +1475,15 @@ class TestConfigManagerExportImport(unittest.TestCase):
             manager.backup_config(str(backup_path))
 
             config_path.write_text(
-                json.dumps(
-                    {
-                        "web_ui": {"port": 9000},
-                        "network_security": {
-                            "allowed_networks": ["10.0.0.0/8"],
-                            "blocked_ips": ["8.8.8.8"],
-                            "access_control_enabled": False,
-                        },
-                    },
-                    ensure_ascii=False,
-                ),
+                """\
+[web_ui]
+port = 9000
+
+[network_security]
+allowed_networks = ["10.0.0.0/8"]
+blocked_ips = ["8.8.8.8"]
+access_control_enabled = false
+""",
                 encoding="utf-8",
             )
 
@@ -1520,17 +1509,16 @@ class TestConfigManagerAdvancedFeatures(unittest.TestCase):
         shutil.rmtree(cls.test_dir, ignore_errors=True)
 
     def test_config_with_comments(self):
-        """测试带注释的配置"""
+        """测试带注释的 TOML 配置"""
         from config_manager import ConfigManager
 
-        config_file = Path(self.test_dir) / "comments.jsonc"
-        content = """{
-    // 这是单行注释
-    "key1": "value1",
-    /* 这是
-       多行注释 */
-    "key2": "value2"
-}"""
+        config_file = Path(self.test_dir) / "comments.toml"
+        content = """\
+# 这是 TOML 注释
+key1 = "value1"
+# 第二个键
+key2 = "value2"
+"""
 
         with open(config_file, "w") as f:
             f.write(content)
@@ -1882,16 +1870,16 @@ class TestIsUvxMode(unittest.TestCase):
 
 class TestFindConfigFile(unittest.TestCase):
     def test_absolute_path_returned_directly(self):
-        result = find_config_file("/tmp/my_config.jsonc")
-        self.assertEqual(result, Path("/tmp/my_config.jsonc"))
+        result = find_config_file("/tmp/my_config.toml")
+        self.assertEqual(result, Path("/tmp/my_config.toml"))
 
     def test_relative_path_with_directory(self):
-        result = find_config_file("subdir/config.jsonc")
-        self.assertEqual(result, Path("subdir/config.jsonc"))
+        result = find_config_file("subdir/config.toml")
+        self.assertEqual(result, Path("subdir/config.toml"))
 
     def test_env_override(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg = Path(td) / "test.jsonc"
+            cfg = Path(td) / "test.toml"
             cfg.write_text("{}")
             with patch.dict(
                 os.environ, {"AI_INTERVENTION_AGENT_CONFIG_FILE": str(cfg)}
@@ -2066,11 +2054,17 @@ class TestValidateConfigStructure(unittest.TestCase):
     def _mgr(self) -> ConfigManager:
         return ConfigManager()
 
+    def _json_mgr(self) -> ConfigManager:
+        """返回配置文件为 .json 格式的 ConfigManager，使 JSON 重复检测生效"""
+        mgr = ConfigManager()
+        mgr.config_file = Path("/tmp/test.json")
+        return mgr
+
     def test_duplicate_blocked_ips(self):
         content = '{\n"blocked_ips": [],\n"blocked_ips": []\n}'
         parsed = json.loads(content)
         with self.assertRaises(ValueError):
-            self._mgr()._validate_config_structure(parsed, content)
+            self._json_mgr()._validate_config_structure(parsed, content)
 
     def test_network_security_not_dict(self):
         content = '{"network_security": "bad"}'
@@ -2090,15 +2084,17 @@ class TestValidateConfigStructure(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._mgr()._validate_config_structure(parsed, content)
 
-    def test_block_comment_skipped(self):
-        content = '/* "allowed_networks": [] */\n{"key": "value"}'
-        parsed = {"key": "value"}
+    def test_toml_skips_duplicate_check(self):
+        """TOML 模式下跳过 JSON 重复数组检测（TOML 解析器自身会拒绝重复键）"""
+        content = '{\n"blocked_ips": [],\n"blocked_ips": []\n}'
+        parsed = json.loads(content)
         self._mgr()._validate_config_structure(parsed, content)
 
-    def test_inline_block_comment(self):
-        content = '/* comment */\n{"key": "value"}'
+    def test_json_comment_line_skipped(self):
+        """JSON 模式：# 注释行被正确跳过"""
+        content = '# "allowed_networks": []\n{"key": "value"}'
         parsed = {"key": "value"}
-        self._mgr()._validate_config_structure(parsed, content)
+        self._json_mgr()._validate_config_structure(parsed, content)
 
 
 # ──────────────────────────────────────────────────────────
@@ -2357,7 +2353,7 @@ class TestDelayedSave(unittest.TestCase):
 class TestCreateDefaultConfigFile(unittest.TestCase):
     def test_no_template_fallback(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg = Path(td) / "config.jsonc"
+            cfg = Path(td) / "config.json"
             mgr = ConfigManager.__new__(ConfigManager)
             mgr.config_file = cfg
             mgr._config = {}
@@ -2375,7 +2371,7 @@ class TestCreateDefaultConfigFile(unittest.TestCase):
                         self._real = Path(*a, **kw)
 
                     def __truediv__(self, other):
-                        if other == "config.jsonc.default":
+                        if other == "config.toml.default":
                             return template_mock
                         return self._real / other
 
@@ -2401,14 +2397,14 @@ class TestCreateDefaultConfigFile(unittest.TestCase):
 class TestLoadConfigExceptions(unittest.TestCase):
     def test_load_config_first_load_failure_uses_defaults(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg = Path(td) / "config.jsonc"
+            cfg = Path(td) / "config.json"
             cfg.write_text("{invalid json")
             mgr = ConfigManager(str(cfg))
             self.assertIn("notification", mgr._config)
 
     def test_load_config_reload_failure_keeps_previous(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg = Path(td) / "config.jsonc"
+            cfg = Path(td) / "config.json"
             cfg.write_text('{"notification": {"debug": true}}')
             mgr = ConfigManager(str(cfg))
             self.assertTrue(mgr.get("notification.debug"))
@@ -2762,7 +2758,7 @@ class TestCreateDefaultConfigFallbackFailure(unittest.TestCase):
         import shutil
 
         with tempfile.TemporaryDirectory() as td:
-            cfg = Path(td) / "config.jsonc"
+            cfg = Path(td) / "config.json"
             mgr = ConfigManager.__new__(ConfigManager)
             mgr.config_file = cfg
             mgr._config = {}
@@ -2784,7 +2780,7 @@ class TestCreateDefaultConfigFallbackFailure(unittest.TestCase):
 
     def test_total_failure_raises(self):
         mgr = ConfigManager.__new__(ConfigManager)
-        mgr.config_file = Path("/nonexistent/deeply/nested/config.jsonc")
+        mgr.config_file = Path("/nonexistent/deeply/nested/config.json")
         mgr._config = {}
         mgr._original_content = None
         mgr._lock = __import__("threading").RLock()

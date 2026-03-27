@@ -950,10 +950,10 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
             content = json.loads(cfg_path.read_text())
             self.assertIn("network_security", content)
 
-    def test_jsonc_no_content_fallback(self):
-        """JSONC 文件但无 base_content 和 original_content → JSON dump"""
+    def test_json_no_content_fallback(self):
+        """JSON 文件但无 base_content 和 original_content → JSON dump"""
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
+            cfg_path = Path(td) / "config.json"
             cfg_path.write_text("")
             mgr = ConfigManager(str(cfg_path))
             mgr._original_content = None
@@ -967,10 +967,10 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
             content = json.loads(cfg_path.read_text())
             self.assertIn("network_security", content)
 
-    def test_jsonc_no_ns_range(self):
-        """JSONC 有内容但找不到 network_security 范围 → parse + dump"""
+    def test_json_no_ns_range(self):
+        """JSON 有内容但找不到 network_security 段 → parse + dump"""
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
+            cfg_path = Path(td) / "config.json"
             cfg_path.write_text('{\n  "notification": {}\n}')
             mgr = ConfigManager(str(cfg_path))
             ns = {
@@ -985,7 +985,7 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
 
     def test_config_file_not_exist_creates_default(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "subdir" / "config.jsonc"
+            cfg_path = Path(td) / "subdir" / "config.toml"
             mgr = ConfigManager.__new__(ConfigManager)
             mgr.config_file = cfg_path
             mgr._config = {}
@@ -1043,7 +1043,7 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
 class TestGetNetworkSecurityConfig(unittest.TestCase):
     def test_file_not_exist_returns_default(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "nonexistent.jsonc"
+            cfg_path = Path(td) / "nonexistent.toml"
             mgr = ConfigManager(str(cfg_path))
             mgr.invalidate_all_caches()
             result = mgr.get_network_security_config()
@@ -1069,7 +1069,7 @@ class TestGetNetworkSecurityConfig(unittest.TestCase):
 
     def test_no_ns_in_file_uses_default(self):
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
+            cfg_path = Path(td) / "config.json"
             cfg_path.write_text('{\n  "notification": {}\n}')
             mgr = ConfigManager(str(cfg_path))
             mgr.invalidate_all_caches()
@@ -1215,10 +1215,10 @@ class TestSaveImmediateExceptionPaths(unittest.TestCase):
             self.assertIn("network_security", content)
             self.assertIsInstance(content, dict)
 
-    def test_jsonc_empty_content_with_original(self):
-        """line 161: JSONC 文件内容为空但 _original_content 非空时使用 original"""
+    def test_json_empty_content_with_original(self):
+        """JSON 文件内容为空但 _original_content 非空时使用 original"""
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
+            cfg_path = Path(td) / "config.json"
             cfg_path.write_text("")
             mgr = self._make_mgr(cfg_path)
             mgr._original_content = '{\n  "notification": {}\n}'
@@ -1226,10 +1226,10 @@ class TestSaveImmediateExceptionPaths(unittest.TestCase):
             content = cfg_path.read_text()
             self.assertIn("network_security", content)
 
-    def test_jsonc_no_base_content_write_exception(self):
-        """lines 167-168: JSONC 无 base_content 时写入失败"""
+    def test_json_no_base_content_write_exception(self):
+        """JSON 无 base_content 时写入失败"""
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
+            cfg_path = Path(td) / "config.json"
             cfg_path.write_text("")
             mgr = self._make_mgr(cfg_path)
             mgr._original_content = None
@@ -1240,65 +1240,16 @@ class TestSaveImmediateExceptionPaths(unittest.TestCase):
                     mgr._save_network_security_config_immediate(self._NS)
                 self.assertIn("写入配置文件失败", str(ctx.exception))
 
-    def test_jsonc_parse_returns_non_dict(self):
-        """line 183-184: parse_jsonc 返回非 dict 时重置"""
+    def test_json_fallback_write_exception(self):
+        """JSON 降级路径写入失败"""
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
+            cfg_path = Path(td) / "config.json"
             cfg_path.write_text('{\n  "notification": {}\n}')
             mgr = self._make_mgr(cfg_path)
             with patch.object(
-                mgr, "_find_network_security_range", return_value=(-1, -1)
-            ):
-                with patch("config_manager.parse_jsonc", return_value=[1, 2, 3]):
-                    mgr._save_network_security_config_immediate(self._NS)
-            content = json.loads(cfg_path.read_text())
-            self.assertIn("network_security", content)
-
-    def test_jsonc_parse_failure_when_no_ns_range(self):
-        """lines 185-186: parse_jsonc 失败时 full_cfg 重置为空 dict"""
-        with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
-            cfg_path.write_text('{\n  "notification": {}\n}')
-            mgr = self._make_mgr(cfg_path)
-            with patch.object(
-                mgr, "_find_network_security_range", return_value=(-1, -1)
-            ):
-                with patch(
-                    "config_manager.parse_jsonc", side_effect=ValueError("bad jsonc")
-                ):
-                    mgr._save_network_security_config_immediate(self._NS)
-            content = cfg_path.read_text()
-            self.assertIn("network_security", content)
-
-    def test_jsonc_ns_range_not_found_write_exception(self):
-        """lines 191-192: ns_range 未找到 + 写入失败"""
-        with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
-            cfg_path.write_text('{\n  "notification": {}\n}')
-            mgr = self._make_mgr(cfg_path)
-            with patch.object(
-                mgr, "_find_network_security_range", return_value=(-1, -1)
-            ):
-                with patch.object(
-                    type(cfg_path),
-                    "write_text",
-                    side_effect=PermissionError("denied"),
-                ):
-                    with self.assertRaises(RuntimeError) as ctx:
-                        mgr._save_network_security_config_immediate(self._NS)
-                    self.assertIn("写入配置文件失败", str(ctx.exception))
-
-    def test_jsonc_range_found_write_exception(self):
-        """lines 204-205: JSONC 正常路径写入失败"""
-        with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
-            original = (
-                '{\n  "network_security": {\n    "bind_interface": "127.0.0.1"\n  }\n}'
-            )
-            cfg_path.write_text(original)
-            mgr = self._make_mgr(cfg_path)
-            with patch.object(
-                type(cfg_path), "write_text", side_effect=PermissionError("denied")
+                type(cfg_path),
+                "write_text",
+                side_effect=PermissionError("denied"),
             ):
                 with self.assertRaises(RuntimeError) as ctx:
                     mgr._save_network_security_config_immediate(self._NS)
@@ -1339,7 +1290,7 @@ class TestGetConfigFileNotExistBranch(unittest.TestCase):
     def test_file_deleted_after_init(self):
         """init 后删除文件，get 走 file-not-exist 分支"""
         with tempfile.TemporaryDirectory() as td:
-            cfg_path = Path(td) / "config.jsonc"
+            cfg_path = Path(td) / "config.json"
             cfg_path.write_text('{"network_security":{}}')
             mgr = ConfigManager(str(cfg_path))
             mgr._network_security_cache = None

@@ -540,7 +540,7 @@ class TestGetFeedbackPrompts(_RouteTestBase):
             "prompt_suffix": "\n追加",
         }
         mock_cfg.config_file = MagicMock()
-        mock_cfg.config_file.absolute.return_value = "/tmp/config.jsonc"
+        mock_cfg.config_file.absolute.return_value = "/tmp/config.toml"
         mock_get_cfg.return_value = mock_cfg
 
         resp = self._client.get("/api/get-feedback-prompts")

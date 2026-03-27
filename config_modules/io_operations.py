@@ -143,7 +143,12 @@ class IOOperationsMixin:
                 restored_config = dict(backup_data)
 
             self.config_file.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[attr-defined]
-            content = json.dumps(restored_config, indent=2, ensure_ascii=False)
+            if self._is_toml_file():  # type: ignore[attr-defined]
+                import tomlkit as _tk
+
+                content = _tk.dumps(_tk.item(restored_config))
+            else:
+                content = json.dumps(restored_config, indent=2, ensure_ascii=False)
             with open(self.config_file, "w", encoding="utf-8") as f:  # type: ignore[attr-defined]
                 f.write(content)
 

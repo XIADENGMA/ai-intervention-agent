@@ -107,7 +107,7 @@ class TestGetFeedbackPromptsAPIValidation(unittest.TestCase):
             "resubmit_prompt": "   ",
             "prompt_suffix": "",
         }
-        mock_cfg.config_file = Path("/tmp/config.jsonc")
+        mock_cfg.config_file = Path("/tmp/config.toml")
         mock_get_config.return_value = mock_cfg
 
         resp = self.client.get("/api/get-feedback-prompts")
@@ -132,7 +132,7 @@ class TestGetFeedbackPromptsAPIValidation(unittest.TestCase):
             "resubmit_prompt": "请重新调用自定义工具",
             "prompt_suffix": "\n继续等待用户输入",
         }
-        mock_cfg.config_file = Path("/tmp/custom-config.jsonc")
+        mock_cfg.config_file = Path("/tmp/custom-config.toml")
         mock_get_config.return_value = mock_cfg
 
         resp = self.client.get("/api/get-feedback-prompts")

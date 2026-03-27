@@ -2179,7 +2179,7 @@ class TestMdnsLifecycle(unittest.TestCase):
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
             patch("web_ui.get_config") as mock_cfg,
         ):
-            mock_cfg.return_value.config_file = "/tmp/config.jsonc"
+            mock_cfg.return_value.config_file = "/tmp/config.toml"
             self.ui._start_mdns_if_needed()
             self.assertIsNone(self.ui._mdns_zeroconf)
 
@@ -3230,7 +3230,7 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
             patch("web_ui.get_config") as mock_cfg,
         ):
-            mock_cfg.return_value.config_file = "/tmp/c.jsonc"
+            mock_cfg.return_value.config_file = "/tmp/c.toml"
             self.ui._start_mdns_if_needed()
             self.assertIsNone(self.ui._mdns_zeroconf)
 
