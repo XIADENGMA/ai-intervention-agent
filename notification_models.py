@@ -2,9 +2,10 @@
 """通知领域模型：枚举与事件结构（避免 manager/provider 循环依赖）。"""
 
 import time
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class NotificationType(Enum):
@@ -35,17 +36,26 @@ class NotificationPriority(Enum):
     URGENT = "urgent"
 
 
-@dataclass
-class NotificationEvent:
+class NotificationEvent(BaseModel):
     """通知事件 - 封装一次通知的标题/消息/类型/触发时机/重试信息。"""
+
+    model_config = ConfigDict(validate_assignment=True)
 
     id: str
     title: str
     message: str
     trigger: NotificationTrigger
-    types: List[NotificationType] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    timestamp: float = field(default_factory=time.time)
+    types: List[NotificationType] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: float = Field(default_factory=time.time)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def coerce_none_metadata(cls, v: Any) -> Dict[str, Any]:
+        if v is None:
+            return {}
+        return v
+
     retry_count: int = 0
     max_retries: int = 3
     priority: NotificationPriority = NotificationPriority.NORMAL

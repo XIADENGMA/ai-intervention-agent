@@ -806,7 +806,7 @@ class TestTaskQueuePartialBranches(unittest.TestCase):
         tq = self._make_tq()
         tq.add_task("t1", "prompt1")
         tq.add_task("t2", "prompt2")
-        tq.complete_task("t1", "done")
+        tq.complete_task("t1", {"feedback": "done"})
 
         result = tq.set_active_task("t2")
         self.assertTrue(result)

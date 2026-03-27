@@ -1750,10 +1750,10 @@ class TestUpdateConfig(unittest.TestCase):
         mgr.update_config_without_save(bark_device_key="secret_key")
         self.assertEqual(mgr.config.bark_device_key, "secret_key")
 
-    def test_post_init_exception_ignored(self):
+    def test_validate_assignment_on_update(self):
         mgr = _make_manager()
-        with patch.object(mgr.config, "__post_init__", side_effect=RuntimeError("bad")):
-            mgr.update_config_without_save(debug=True)
+        mgr.update_config_without_save(debug=True)
+        self.assertTrue(mgr.config.debug)
 
 
 # ──────────────────────────────────────────────────────────
@@ -1827,9 +1827,10 @@ class TestSaveConfigToFile(unittest.TestCase):
         ):
             mgr._save_config_to_file()
 
-    def test_volume_above_1(self):
+    def test_volume_clamped_on_assignment(self):
         mgr = _make_manager()
         mgr.config.sound_volume = 50.0
+        self.assertEqual(mgr.config.sound_volume, 1.0)
         mock_cfg = MagicMock()
         with (
             patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
@@ -1837,7 +1838,7 @@ class TestSaveConfigToFile(unittest.TestCase):
         ):
             mgr._save_config_to_file()
             call_args = mock_cfg.update_section.call_args[0][1]
-            self.assertEqual(call_args["sound_volume"], 50)
+            self.assertEqual(call_args["sound_volume"], 100)
 
 
 # ──────────────────────────────────────────────────────────
@@ -2203,8 +2204,8 @@ class TestRefreshSafeBoolBranches(unittest.TestCase):
             self.assertFalse(mgr.config.sound_enabled)
             self.assertFalse(mgr.config.bark_enabled)
 
-    def test_post_init_exception_in_refresh(self):
-        """refresh 时 __post_init__ 异常被静默"""
+    def test_validate_assignment_in_refresh(self):
+        """refresh 时 Pydantic validate_assignment 自动校验字段"""
         mgr = _make_manager()
         mock_cfg = MagicMock()
         mock_file = MagicMock()
@@ -2215,9 +2216,9 @@ class TestRefreshSafeBoolBranches(unittest.TestCase):
         with (
             patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
             patch("notification_manager.get_config", return_value=mock_cfg),
-            patch.object(mgr.config, "__post_init__", side_effect=RuntimeError("bad")),
         ):
             mgr.refresh_config_from_file(force=True)
+            self.assertLessEqual(mgr.config.sound_volume, 1.0)
 
 
 # ──────────────────────────────────────────────────────────

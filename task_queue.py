@@ -4,27 +4,26 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, ConfigDict, Field
+
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class Task:
+class Task(BaseModel):
     """任务数据结构：task_id, prompt, options, status, result"""
+
+    model_config = ConfigDict(validate_assignment=True)
 
     task_id: str
     prompt: str
     predefined_options: Optional[List[str]] = None
-    auto_resubmit_timeout: int = 240  # 默认 240 秒；add_task 会限制到 250 秒以内
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )  # 使用 UTC 时间，支持跨时区部署
-    # 【优化】使用单调时间（monotonic）记录创建时刻，不受系统时间调整影响
-    created_at_monotonic: float = field(default_factory=time.monotonic)
+    auto_resubmit_timeout: int = 240
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at_monotonic: float = Field(default_factory=time.monotonic)
     status: str = "pending"
     result: Optional[Dict[str, Any]] = None
     completed_at: Optional[datetime] = None

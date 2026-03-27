@@ -9,8 +9,9 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, ClassVar, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from exceptions import NotificationError
 
@@ -21,7 +22,7 @@ try:
 except ImportError:
     CONFIG_FILE_AVAILABLE = False
 
-from config_utils import clamp_dataclass_field, validate_enum_value
+from config_utils import clamp_value, validate_enum_value
 from enhanced_logging import EnhancedLogger
 from notification_models import (
     NotificationEvent,
@@ -37,106 +38,111 @@ from notification_models import (
 logger = EnhancedLogger(__name__)
 
 
-@dataclass
-class NotificationConfig:
+class NotificationConfig(BaseModel):
     """通知配置类 - 全局开关/Web/声音/触发时机/重试/移动优化/Bark 等配置。"""
 
+    model_config = ConfigDict(validate_assignment=True)
+
     # ==================== 全局开关 ====================
-    enabled: bool = True  # 通知总开关
-    debug: bool = False  # 调试模式
+    enabled: bool = True
+    debug: bool = False
 
     # ==================== Web 通知配置 ====================
-    web_enabled: bool = True  # 启用 Web 浏览器通知
-    web_permission_auto_request: bool = True  # 自动请求通知权限
-    web_icon: str = "default"  # 通知图标（"default" 或自定义 URL）
-    web_timeout: int = 5000  # 通知显示时长（毫秒）
+    web_enabled: bool = True
+    web_permission_auto_request: bool = True
+    web_icon: str = "default"
+    web_timeout: int = 5000
 
     # ==================== 声音通知配置 ====================
-    sound_enabled: bool = True  # 启用声音通知
-    sound_volume: float = 0.8  # 音量大小（0.0 - 1.0）
-    sound_file: str = "default"  # 音频文件名或路径
-    sound_mute: bool = False  # 静音模式（禁用所有声音）
+    sound_enabled: bool = True
+    sound_volume: float = 0.8
+    sound_file: str = "default"
+    sound_mute: bool = False
 
     # ==================== 触发时机配置 ====================
-    trigger_immediate: bool = True  # 支持立即触发
-    trigger_delay: int = 30  # 延迟通知的等待时间（秒）
-    trigger_repeat: bool = False  # 启用重复提醒
-    trigger_repeat_interval: int = 60  # 重复提醒的间隔时间（秒）
+    trigger_immediate: bool = True
+    trigger_delay: int = 30
+    trigger_repeat: bool = False
+    trigger_repeat_interval: int = 60
 
     # ==================== 错误处理配置 ====================
-    retry_count: int = 3  # 发送失败时的最大重试次数
-    retry_delay: int = 2  # 重试之间的等待时间（秒）
-    fallback_enabled: bool = True  # 启用降级策略（所有方式失败时）
+    retry_count: int = 3
+    retry_delay: int = 2
+    fallback_enabled: bool = True
 
     # ==================== 移动设备优化 ====================
-    mobile_optimized: bool = True  # 启用移动设备优化
-    mobile_vibrate: bool = True  # 移动设备震动反馈
+    mobile_optimized: bool = True
+    mobile_vibrate: bool = True
 
     # ==================== Bark 通知配置（可选）====================
-    bark_enabled: bool = False  # 启用 Bark 推送通知
-    bark_url: str = ""  # Bark 服务器 URL
-    bark_device_key: str = ""  # Bark 设备密钥
-    bark_icon: str = ""  # Bark 通知图标 URL
-    bark_action: str = "none"  # Bark 通知点击动作
-    bark_timeout: int = 10  # Bark 请求超时（秒）
+    bark_enabled: bool = False
+    bark_url: str = ""
+    bark_device_key: str = ""
+    bark_icon: str = ""
+    bark_action: str = "none"
+    bark_timeout: int = 10
 
     # ==================== 系统/平台原生通知 ====================
-    # 说明：
-    # - SystemProvider(plyer) 属于可选依赖，默认关闭，启用后在支持的平台尝试发送桌面通知
-    # - macos_native_enabled 当前主要由 VSCode 插件侧使用；Python 核心侧保留字段用于配置一致性
-    system_enabled: bool = False  # 启用 plyer 系统通知（可选）
-    macos_native_enabled: bool = True  # macOS 原生通知开关（插件侧）
+    system_enabled: bool = False
+    macos_native_enabled: bool = True
 
     # ==================== 边界常量 ====================
-    SOUND_VOLUME_MIN: float = 0.0
-    SOUND_VOLUME_MAX: float = 1.0
-    BARK_ACTIONS_VALID: tuple = ("none", "url", "copy")
+    SOUND_VOLUME_MIN: ClassVar[float] = 0.0
+    SOUND_VOLUME_MAX: ClassVar[float] = 1.0
+    BARK_ACTIONS_VALID: ClassVar[tuple[str, ...]] = ("none", "url", "copy")
 
-    def __post_init__(self):
-        """验证并修正配置值边界"""
-        # 【重构】使用 clamp_dataclass_field 简化 sound_volume 边界验证
-        clamp_dataclass_field(
-            self, "sound_volume", self.SOUND_VOLUME_MIN, self.SOUND_VOLUME_MAX
+    @field_validator("sound_volume")
+    @classmethod
+    def clamp_sound_volume(cls, v: float) -> float:
+        return clamp_value(
+            v, cls.SOUND_VOLUME_MIN, cls.SOUND_VOLUME_MAX, "sound_volume"
         )
 
-        # 先将可能的字符串值转为数值，再做范围限制（避免比较时报 TypeError）
+    @field_validator("retry_count", mode="before")
+    @classmethod
+    def coerce_retry_count(cls, v: Any) -> int:
         try:
-            object.__setattr__(self, "retry_count", int(self.retry_count))
+            return max(0, min(10, int(v)))
         except (TypeError, ValueError):
-            object.__setattr__(self, "retry_count", 3)
+            return 3
+
+    @field_validator("retry_delay", mode="before")
+    @classmethod
+    def coerce_retry_delay(cls, v: Any) -> int:
         try:
-            object.__setattr__(self, "retry_delay", int(self.retry_delay))
+            return max(0, min(60, int(v)))
         except (TypeError, ValueError):
-            object.__setattr__(self, "retry_delay", 2)
+            return 2
+
+    @field_validator("bark_timeout", mode="before")
+    @classmethod
+    def coerce_bark_timeout(cls, v: Any) -> int:
         try:
-            object.__setattr__(self, "bark_timeout", int(self.bark_timeout))
+            return max(1, min(300, int(v)))
         except (TypeError, ValueError):
-            object.__setattr__(self, "bark_timeout", 10)
+            return 10
 
-        clamp_dataclass_field(self, "retry_count", 0, 10)
-        clamp_dataclass_field(self, "retry_delay", 0, 60)
-        clamp_dataclass_field(self, "bark_timeout", 1, 300)
+    @field_validator("bark_action")
+    @classmethod
+    def validate_bark_action(cls, v: str) -> str:
+        v = v.strip()
+        if v in cls.BARK_ACTIONS_VALID:
+            return v
+        if v.startswith(("http://", "https://")):
+            return v
+        return validate_enum_value(v, cls.BARK_ACTIONS_VALID, "bark_action", "none")
 
-        # 【重构】使用 validate_enum_value 简化 bark_action 枚举验证
-        validated_action = validate_enum_value(
-            self.bark_action, self.BARK_ACTIONS_VALID, "bark_action", "none"
-        )
-        if validated_action != self.bark_action:
-            object.__setattr__(self, "bark_action", validated_action)
-
-        # bark_url 格式验证（非空时）
-        if self.bark_url:
-            if not self._is_valid_url(self.bark_url):
-                logger.warning(
-                    f"bark_url '{self.bark_url}' 格式无效，应以 http:// 或 https:// 开头"
-                )
-                # 不自动清空，只警告（用户可能故意使用自定义协议）
-
-        # bark_enabled 时检查必要配置
+    @model_validator(mode="after")
+    def warn_bark_config(self) -> "NotificationConfig":
+        if self.bark_url and not self._is_valid_url(self.bark_url):
+            logger.warning(
+                f"bark_url '{self.bark_url}' 格式无效，应以 http:// 或 https:// 开头"
+            )
         if self.bark_enabled and not self.bark_device_key:
             logger.warning(
                 "bark_enabled=True 但 bark_device_key 为空，Bark 通知将无法发送"
             )
+        return self
 
     @staticmethod
     def _is_valid_url(url: str) -> bool:
@@ -968,12 +974,6 @@ class NotificationManager:
                     notification_config.get("macos_native_enabled"), True
                 )
 
-                # 触发一次配置自校验（边界收敛/枚举修正）
-                try:
-                    self.config.__post_init__()
-                except Exception:
-                    pass
-
                 logger.debug("已从配置文件刷新通知配置（带类型验证）")
 
                 # 如果 bark_enabled 状态发生变化，动态更新提供者
@@ -1006,13 +1006,6 @@ class NotificationManager:
                         logger.debug(f"配置已更新: {key} = <redacted>")
                     else:
                         logger.debug(f"配置已更新: {key} = {value}")
-
-            # 触发一次配置自校验（边界收敛/枚举修正），避免“热更新后状态失真”
-            try:
-                self.config.__post_init__()
-            except Exception:
-                # 配置校验失败不应影响主流程
-                pass
 
             # 如果Bark配置发生变化，动态更新提供者
             bark_now_enabled = self.config.bark_enabled
