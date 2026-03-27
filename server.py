@@ -1555,6 +1555,15 @@ def cleanup_services(shutdown_notification_manager: bool = True) -> None:
     - 通过 ServiceManager 单例模式访问进程注册表
     - 清理失败不会抛出异常，仅记录错误日志
     """
+    global _sync_client, _async_client
+    try:
+        if _sync_client is not None and not _sync_client.is_closed:
+            _sync_client.close()
+    except Exception:
+        pass
+    _sync_client = None
+    _async_client = None
+
     try:
         service_manager = ServiceManager()
         service_manager.cleanup_all(

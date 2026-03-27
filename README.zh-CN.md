@@ -77,19 +77,16 @@ uv add ai-intervention-agent
 
 3.（可选）自定义配置：
 
-- 首次运行会在用户配置目录创建 `config.jsonc`（详见 [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)）。
-- 示例（JSONC）：
+- 首次运行会在用户配置目录创建 `config.toml`（详见 [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)）。
+- 示例：
 
-```jsonc
-{
-  "web_ui": {
-    "port": 8080
-  },
-  "feedback": {
-    "frontend_countdown": 240,
-    "backend_max_wait": 600
-  }
-}
+```toml
+[web_ui]
+port = 8080
+
+[feedback]
+frontend_countdown = 240
+backend_max_wait = 600
 ```
 
 <details>
@@ -177,7 +174,7 @@ ai-intervention-agent 工具使用细节：
 | 用途                        | 把交互面板放进 VS Code 侧边栏，避免频繁切换浏览器。                                                                                                                      |
 | 安装（Open VSX）            | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                               |
 | 下载 VSIX（GitHub Release） | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                    |
-| 设置                        | `ai-intervention-agent.serverUrl`（填写你的 Web UI 地址，例如 `http://localhost:8080`；端口可在 [`config.jsonc.default`](config.jsonc.default) 的 `web_ui.port` 中修改） |
+| 设置                        | `ai-intervention-agent.serverUrl`（填写你的 Web UI 地址，例如 `http://localhost:8080`；端口可在 [`config.toml.default`](config.toml.default) 的 `web_ui.port` 中修改） |
 | 其他设置                    | `ai-intervention-agent.logLevel`（Output → AI Intervention Agent）<br/>`ai-intervention-agent.enableAppleScript`（仅 macOS；用于“执行 AppleScript”命令；默认关闭；不影响 macOS 原生通知：原生通知默认开启，可在侧边栏「通知设置」中关闭） |
 
 ## 配置说明
@@ -186,7 +183,7 @@ ai-intervention-agent 工具使用细节：
 | -------------------- | ------------------------------------------------------------------------------------- |
 | 配置文档（英文）     | [docs/configuration.md](docs/configuration.md)                                        |
 | 配置文档（简体中文） | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)                            |
-| 默认模板             | [`config.jsonc.default`](config.jsonc.default)（首次运行会自动复制为 `config.jsonc`） |
+| 默认模板             | [`config.toml.default`](config.toml.default)（首次运行会自动复制为 `config.toml`） |
 
 | 操作系统 | 配置目录位置                                           |
 | -------- | ------------------------------------------------------ |
@@ -242,7 +239,7 @@ flowchart TD
     USER["用户"]
   end
 
-  CFG_FILE["config.jsonc<br/>(用户配置目录)"]
+  CFG_FILE["config.toml<br/>(用户配置目录)"]
 
   AI_CLIENT -->|MCP 调用| MCP_TOOL
   MCP_TOOL -->|启动/检查 Web UI| SVC_MGR

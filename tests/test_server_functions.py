@@ -1626,6 +1626,59 @@ class TestCreateHttpSessionDeep(unittest.TestCase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  get_async_client
+# ═══════════════════════════════════════════════════════════════════════════
+class TestGetAsyncClient(unittest.TestCase):
+    def setUp(self):
+        server._async_client = None
+
+    def tearDown(self):
+        server._async_client = None
+
+    def test_creates_async_client(self):
+        cfg = _make_config()
+        client = server.get_async_client(cfg)
+        self.assertIsInstance(client, httpx.AsyncClient)
+
+    def test_cache_reuse(self):
+        cfg = _make_config()
+        c1 = server.get_async_client(cfg)
+        c2 = server.get_async_client(cfg)
+        self.assertIs(c1, c2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  cleanup_services — httpx 客户端关闭
+# ═══════════════════════════════════════════════════════════════════════════
+class TestCleanupServicesHttpx(unittest.TestCase):
+    @patch("server.ServiceManager")
+    def test_closes_sync_client(self, mock_sm_cls):
+        mock_sm_cls.return_value.cleanup_all.return_value = None
+        mock_client = MagicMock()
+        mock_client.is_closed = False
+        server._sync_client = mock_client
+        server._async_client = MagicMock()
+
+        server.cleanup_services()
+
+        mock_client.close.assert_called_once()
+        self.assertIsNone(server._sync_client)
+        self.assertIsNone(server._async_client)
+
+    @patch("server.ServiceManager")
+    def test_close_exception_swallowed(self, mock_sm_cls):
+        mock_sm_cls.return_value.cleanup_all.return_value = None
+        mock_client = MagicMock()
+        mock_client.is_closed = False
+        mock_client.close.side_effect = OSError("close fail")
+        server._sync_client = mock_client
+
+        server.cleanup_services()
+
+        self.assertIsNone(server._sync_client)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  is_web_service_running — 外层异常
 # ═══════════════════════════════════════════════════════════════════════════
 class TestIsWebServiceRunningDeep(unittest.TestCase):

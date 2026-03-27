@@ -77,19 +77,16 @@ uv add ai-intervention-agent
 
 3. (Optional) Customize your config:
 
-- On first run, `config.jsonc` will be created under your OS user config directory (see [docs/configuration.md](docs/configuration.md)).
-- Example (JSONC):
+- On first run, `config.toml` will be created under your OS user config directory (see [docs/configuration.md](docs/configuration.md)).
+- Example:
 
-```jsonc
-{
-  "web_ui": {
-    "port": 8080
-  },
-  "feedback": {
-    "frontend_countdown": 240,
-    "backend_max_wait": 600
-  }
-}
+```toml
+[web_ui]
+port = 8080
+
+[feedback]
+frontend_countdown = 240
+backend_max_wait = 600
 ```
 
 <details>
@@ -175,7 +172,7 @@ ai-intervention-agent usage details:
 | Purpose                        | Embed the interaction panel into VS Code’s sidebar to avoid switching to a browser.                                                                                            |
 | Install (Open VSX)             | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                                     |
 | Download VSIX (GitHub Release) | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                          |
-| Setting                        | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.jsonc.default`](config.jsonc.default)) |
+| Setting                        | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.toml.default`](config.toml.default)) |
 | Other settings                 | `ai-intervention-agent.logLevel` (Output → AI Intervention Agent)<br/>`ai-intervention-agent.enableAppleScript` (macOS only; for the “Run AppleScript” command; default: `false`. macOS native notifications are controlled separately and are enabled by default.) |
 
 ## Configuration
@@ -184,7 +181,7 @@ ai-intervention-agent usage details:
 | ---------------- | ------------------------------------------------------------------------------------------------- |
 | Docs (English)   | [docs/configuration.md](docs/configuration.md)                                                    |
 | Docs (简体中文)  | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)                                        |
-| Default template | [`config.jsonc.default`](config.jsonc.default) (on first run it will be copied to `config.jsonc`) |
+| Default template | [`config.toml.default`](config.toml.default) (on first run it will be copied to `config.toml`) |
 
 | OS      | User config directory                                  |
 | ------- | ------------------------------------------------------ |
@@ -240,7 +237,7 @@ flowchart TD
     USER["User"]
   end
 
-  CFG_FILE["config.jsonc<br/>(user config directory)"]
+  CFG_FILE["config.toml<br/>(user config directory)"]
 
   AI_CLIENT -->|MCP call| MCP_TOOL
   MCP_TOOL -->|start/check Web UI| SVC_MGR
