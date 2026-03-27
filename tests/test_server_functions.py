@@ -2057,7 +2057,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════
 #  interactive_feedback (async MCP tool)
 # ═══════════════════════════════════════════════════════════════════════════
-_interactive_feedback_fn = server.interactive_feedback.fn
+_interactive_feedback_fn = server.interactive_feedback
 
 
 class TestInteractiveFeedback(unittest.TestCase):
