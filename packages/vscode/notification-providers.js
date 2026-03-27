@@ -149,7 +149,7 @@ function ensureExecutable(filePath) {
 function getStableAppSupportDir() {
   const home = process.env.HOME || ''
   if (!home) return ''
-  return path.join(home, 'Library', 'Application Support', 'AI Intervention Agent')
+  return path.join(home, 'Library', 'Application Support', 'ai-intervention-agent')
 }
 
 function getStableTerminalNotifierPaths() {
@@ -158,6 +158,26 @@ function getStableTerminalNotifierPaths() {
   const app = path.join(dir, 'terminal-notifier.app')
   const bin = path.join(app, 'Contents', 'MacOS', 'terminal-notifier')
   return { dir, app, bin }
+}
+
+function _migrateLegacyAppSupportDir(newDir) {
+  const home = process.env.HOME || ''
+  if (!home) return
+  const legacyDir = path.join(home, 'Library', 'Application Support', 'AI Intervention Agent')
+  try {
+    if (legacyDir === newDir) return
+    if (!fs.existsSync(legacyDir)) return
+    const legacyApp = path.join(legacyDir, 'terminal-notifier.app')
+    if (!fs.existsSync(legacyApp)) return
+    if (!fs.existsSync(newDir)) fs.mkdirSync(newDir, { recursive: true })
+    const destApp = path.join(newDir, 'terminal-notifier.app')
+    if (!fs.existsSync(destApp)) {
+      fs.cpSync(legacyApp, destApp, { recursive: true })
+    }
+    fs.rmSync(legacyDir, { recursive: true, force: true })
+  } catch {
+    // 迁移失败不阻塞正常流程
+  }
 }
 
 function readBundleVersionFromXmlPlist(infoPlistPath) {
@@ -172,7 +192,7 @@ function readBundleVersionFromXmlPlist(infoPlistPath) {
 }
 
 /**
- * 将 vendor 目录中的 terminal-notifier.app 安装到 ~/Library/Application Support/AI Intervention Agent/
+ * 将 vendor 目录中的 terminal-notifier.app 安装到 ~/Library/Application Support/ai-intervention-agent/
  * 确保 macOS 始终从同一路径加载，避免重复的通知中心注册条目。
  *
  * @returns {{ bin: string, installed: boolean, error: string }}
@@ -184,6 +204,8 @@ function ensureStableTerminalNotifier() {
 
   const stable = getStableTerminalNotifierPaths()
   if (!stable.dir) return fail('no-home')
+
+  _migrateLegacyAppSupportDir(stable.dir)
 
   const srcAppPath = path.join(
     __dirname, 'vendor', 'terminal-notifier', 'terminal-notifier.app'
