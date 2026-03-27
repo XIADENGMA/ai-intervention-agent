@@ -1243,14 +1243,12 @@ class TestNotificationConfigEdgeCases(unittest.TestCase):
         with patch("notification_manager.CONFIG_FILE_AVAILABLE", False):
             self.assertRaises(NotificationError, NotificationConfig.from_config_file)
 
-    def test_from_config_file_volume_invalid(self):
+    def test_from_config_file_volume_default(self):
+        """get_section() 通过 Pydantic ClampedInt 将无效值钳位为默认值 80"""
         from notification_manager import NotificationConfig
 
         mock_cfg = MagicMock()
-        section = {
-            "sound_volume": "bad",
-            "enabled": True,
-        }
+        section = {"sound_volume": 80, "enabled": True}
         mock_cfg.get_section.return_value = section
 
         with (
@@ -1260,15 +1258,12 @@ class TestNotificationConfigEdgeCases(unittest.TestCase):
             cfg = NotificationConfig.from_config_file()
             self.assertAlmostEqual(cfg.sound_volume, 0.8, places=2)
 
-    def test_from_config_file_safe_bool_branches(self):
+    def test_from_config_file_type_coercion(self):
+        """get_section() 已通过 Pydantic 段模型校验，值类型已正确强转"""
         from notification_manager import NotificationConfig
 
         mock_cfg = MagicMock()
-        section = {
-            "enabled": 1,
-            "debug": "unknown_str",
-            "sound_volume": 50,
-        }
+        section = {"enabled": True, "debug": False, "sound_volume": 50}
         mock_cfg.get_section.return_value = section
 
         with (
@@ -1278,6 +1273,7 @@ class TestNotificationConfigEdgeCases(unittest.TestCase):
             cfg = NotificationConfig.from_config_file()
             self.assertTrue(cfg.enabled)
             self.assertFalse(cfg.debug)
+            self.assertAlmostEqual(cfg.sound_volume, 0.5, places=2)
 
 
 # ──────────────────────────────────────────────────────────

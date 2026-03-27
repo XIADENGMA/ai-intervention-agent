@@ -19,18 +19,11 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, cast, overload
+from typing import Any, Dict, Optional, cast
 
 import tomlkit
 
-if TYPE_CHECKING:
-    from shared_types import (
-        FeedbackConfig,
-        MdnsConfig,
-        NetworkSecurityConfig,
-        NotificationConfig,
-        WebUISectionConfig,
-    )
+from shared_types import SECTION_MODELS
 
 try:
     from platformdirs import user_config_dir
@@ -408,69 +401,8 @@ class ConfigManager(
         self._update_file_mtime()
 
     def _get_default_config(self) -> Dict[str, Any]:
-        """返回默认配置字典（notification、web_ui、mdns、network_security、feedback）"""
-        return {
-            "notification": {
-                "enabled": True,
-                "debug": False,
-                "web_enabled": True,
-                "auto_request_permission": True,
-                "web_icon": "default",
-                "web_timeout": 5000,
-                "system_enabled": False,
-                "macos_native_enabled": True,
-                "sound_enabled": True,
-                "sound_mute": False,
-                "sound_file": "default",
-                "sound_volume": 80,
-                "mobile_optimized": True,
-                "mobile_vibrate": True,
-                "retry_count": 3,
-                "retry_delay": 2,
-                "bark_enabled": False,
-                "bark_url": "",
-                "bark_device_key": "",
-                "bark_icon": "",
-                "bark_action": "none",
-                "bark_timeout": 10,
-            },
-            "web_ui": {
-                "host": "127.0.0.1",  # 默认仅本地访问，提升安全性
-                "port": 8080,
-                "debug": False,
-                "http_request_timeout": 30,
-                "http_max_retries": 3,
-                "http_retry_delay": 1.0,
-            },
-            "mdns": {
-                # 是否启用 mDNS
-                # - True/False: 强制启用/禁用
-                # - "auto": 自动（当 bind_interface 不是 127.0.0.1/localhost/::1 时启用）
-                "enabled": "auto",
-                # mDNS 主机名（默认 ai.local）
-                "hostname": "ai.local",
-                # DNS-SD 服务实例名（用于服务发现列表展示）
-                "service_name": "AI Intervention Agent",
-            },
-            "network_security": {
-                "bind_interface": "0.0.0.0",  # 允许所有接口访问
-                "allowed_networks": [
-                    "127.0.0.0/8",  # 本地回环地址
-                    "::1/128",  # IPv6本地回环地址
-                    "192.168.0.0/16",  # 私有网络 192.168.x.x
-                    "10.0.0.0/8",  # 私有网络 10.x.x.x
-                    "172.16.0.0/12",  # 私有网络 172.16.x.x - 172.31.x.x
-                ],
-                "blocked_ips": [],  # IP黑名单
-                "access_control_enabled": True,  # 是否启用访问控制
-            },
-            "feedback": {
-                "backend_max_wait": 600,
-                "frontend_countdown": 240,
-                "resubmit_prompt": "请立即调用 interactive_feedback 工具",
-                "prompt_suffix": "\n请积极调用 interactive_feedback 工具",
-            },
-        }
+        """返回默认配置字典（由 Pydantic 段模型的默认值生成，单一真相源）"""
+        return {name: model().model_dump() for name, model in SECTION_MODELS.items()}
 
     @staticmethod
     def _exclude_network_security(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -989,42 +921,16 @@ class ConfigManager(
             self._last_save_time = time.time()
             logger.debug("强制配置保存完成")
 
-    @overload
-    def get_section(
-        self, section: Literal["notification"], use_cache: bool = ...
-    ) -> "NotificationConfig": ...
-    @overload
-    def get_section(
-        self, section: Literal["web_ui"], use_cache: bool = ...
-    ) -> "WebUISectionConfig": ...
-    @overload
-    def get_section(
-        self, section: Literal["mdns"], use_cache: bool = ...
-    ) -> "MdnsConfig": ...
-    @overload
-    def get_section(
-        self, section: Literal["network_security"], use_cache: bool = ...
-    ) -> "NetworkSecurityConfig": ...
-    @overload
-    def get_section(
-        self, section: Literal["feedback"], use_cache: bool = ...
-    ) -> "FeedbackConfig": ...
-    @overload
-    def get_section(self, section: str, use_cache: bool = ...) -> Dict[str, Any]: ...
-
     def get_section(self, section: str, use_cache: bool = True) -> Dict[str, Any]:
-        """获取配置段的深拷贝（带缓存优化，network_security 特殊处理）"""
+        """获取配置段的深拷贝（带 Pydantic 校验、缓存优化，network_security 特殊处理）"""
         import copy
 
         with self._lock:
             current_time = time.time()
 
-            # 特殊处理 network_security 配置段
             if section == "network_security":
-                # get_network_security_config 已经返回独立对象，但为一致性仍返回拷贝
                 return copy.deepcopy(self.get_network_security_config())
 
-            # 【性能优化】检查 section 缓存
             if use_cache and section in self._section_cache:
                 cache_time = self._section_cache_time.get(section, 0)
                 if current_time - cache_time < self._section_cache_ttl:
@@ -1032,16 +938,28 @@ class ConfigManager(
                     logger.debug(f"缓存命中: section={section}")
                     return copy.deepcopy(self._section_cache[section])
 
-            # 缓存未命中或已过期
             self._cache_stats["misses"] += 1
-            result = self.get(section, {})
-            result_copy = copy.deepcopy(result) if result else {}
+            raw = self.get(section, {})
+            result = self._validate_section(section, raw)
 
-            # 更新缓存
-            self._section_cache[section] = result_copy
+            self._section_cache[section] = result
             self._section_cache_time[section] = current_time
 
-            return copy.deepcopy(result_copy)
+            return copy.deepcopy(result)
+
+    @staticmethod
+    def _validate_section(section: str, raw: Any) -> Dict[str, Any]:
+        """通过 Pydantic 模型校验配置段（类型强转 + 钳位），失败时降级返回原始数据"""
+        if not isinstance(raw, dict):
+            raw = {}
+        model_cls = SECTION_MODELS.get(section)
+        if model_cls is None:
+            return dict(raw)
+        try:
+            return model_cls.model_validate(raw).model_dump()
+        except Exception as e:
+            logger.warning(f"配置段 '{section}' Pydantic 校验失败，使用原始值: {e}")
+            return dict(raw)
 
     def update_section(
         self, section: str, updates: Dict[str, Any], save: bool = True

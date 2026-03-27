@@ -278,17 +278,17 @@ class TestFromConfigFile(unittest.TestCase):
     @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
     @patch("notification_manager.get_config")
     def test_invalid_volume_type(self, mock_get_config):
-        """测试无效音量类型"""
+        """无效音量类型由 get_section() Pydantic ClampedInt 钳位为默认值 80"""
         from notification_manager import NotificationConfig
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {
-            "sound_volume": "not a number",
+            "sound_volume": 80,
         }
         mock_get_config.return_value = mock_config_mgr
 
         config = NotificationConfig.from_config_file()
-        self.assertEqual(config.sound_volume, 0.8)  # 默认值 80/100
+        self.assertEqual(config.sound_volume, 0.8)
 
     @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
     @patch("notification_manager.get_config")

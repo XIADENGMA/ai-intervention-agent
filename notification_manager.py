@@ -151,84 +151,41 @@ class NotificationConfig(BaseModel):
 
     @classmethod
     def from_config_file(cls) -> "NotificationConfig":
-        """从配置文件 notification 段加载配置，sound_volume 自动转换 0-100 到 0.0-1.0"""
+        """从配置文件 notification 段加载配置，sound_volume 自动转换 0-100 到 0.0-1.0
+
+        注意：get_section() 已通过 Pydantic 段模型（NotificationSectionConfig）完成
+        类型强转（SafeBool/ClampedInt）和范围钳位，此处无需再做手工转换。
+        """
         if not CONFIG_FILE_AVAILABLE:
             logger.error("配置文件管理器不可用，无法初始化通知配置")
             raise NotificationError("配置文件管理器不可用", code="config_unavailable")
 
         config_mgr = get_config()
-        notification_config = config_mgr.get_section("notification")
-
-        # 【健壮性】与 refresh_config_from_file() 对齐：避免 bool("false") == True 这类误判
-        def safe_bool(value: Any, default: bool) -> bool:
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, (int, float)):
-                return bool(value)
-            if isinstance(value, str):
-                v = value.strip().lower()
-                if v in ("true", "1", "yes", "y", "on"):
-                    return True
-                if v in ("false", "0", "no", "n", "off"):
-                    return False
-                return default
-            return default
-
-        # 【优化】sound_volume 从百分比转换为 0-1 范围，并限制边界
-        raw_volume = notification_config.get("sound_volume", 80)
-        # 确保是数字类型
-        try:
-            raw_volume = float(raw_volume)
-        except (ValueError, TypeError):
-            logger.warning(f"sound_volume '{raw_volume}' 类型无效，使用默认值 80")
-            raw_volume = 80
-        # 限制百分比范围 [0, 100]
-        raw_volume = max(0, min(100, raw_volume))
-        normalized_volume = raw_volume / 100.0
-
-        def safe_int(value: Any, default: int, min_val: int, max_val: int) -> int:
-            try:
-                iv = int(value)
-            except (TypeError, ValueError):
-                return default
-            return max(min_val, min(max_val, iv))
-
-        retry_count = safe_int(notification_config.get("retry_count", 3), 3, 0, 10)
-        retry_delay = safe_int(notification_config.get("retry_delay", 2), 2, 0, 60)
-        bark_timeout = safe_int(notification_config.get("bark_timeout", 10), 10, 1, 300)
-        web_timeout = safe_int(
-            notification_config.get("web_timeout", 5000), 5000, 1, 600000
-        )
+        cfg = config_mgr.get_section("notification")
 
         return cls(
-            enabled=safe_bool(notification_config.get("enabled"), True),
-            debug=safe_bool(notification_config.get("debug"), False),
-            web_enabled=safe_bool(notification_config.get("web_enabled"), True),
-            web_icon=str(notification_config.get("web_icon", "default")),
-            web_timeout=web_timeout,
-            web_permission_auto_request=safe_bool(
-                notification_config.get("auto_request_permission"), True
-            ),
-            sound_enabled=safe_bool(notification_config.get("sound_enabled"), True),
-            sound_file=str(notification_config.get("sound_file", "default")),
-            sound_volume=normalized_volume,
-            sound_mute=safe_bool(notification_config.get("sound_mute"), False),
-            mobile_optimized=safe_bool(
-                notification_config.get("mobile_optimized"), True
-            ),
-            mobile_vibrate=safe_bool(notification_config.get("mobile_vibrate"), True),
-            retry_count=retry_count,
-            retry_delay=retry_delay,
-            bark_enabled=safe_bool(notification_config.get("bark_enabled"), False),
-            bark_url=str(notification_config.get("bark_url", "")),
-            bark_device_key=str(notification_config.get("bark_device_key", "")),
-            bark_icon=str(notification_config.get("bark_icon", "")),
-            bark_action=str(notification_config.get("bark_action", "none")),
-            bark_timeout=bark_timeout,
-            system_enabled=safe_bool(notification_config.get("system_enabled"), False),
-            macos_native_enabled=safe_bool(
-                notification_config.get("macos_native_enabled"), True
-            ),
+            enabled=cfg.get("enabled", True),
+            debug=cfg.get("debug", False),
+            web_enabled=cfg.get("web_enabled", True),
+            web_icon=cfg.get("web_icon", "default"),
+            web_timeout=cfg.get("web_timeout", 5000),
+            web_permission_auto_request=cfg.get("auto_request_permission", True),
+            sound_enabled=cfg.get("sound_enabled", True),
+            sound_file=cfg.get("sound_file", "default"),
+            sound_volume=cfg.get("sound_volume", 80) / 100.0,
+            sound_mute=cfg.get("sound_mute", False),
+            mobile_optimized=cfg.get("mobile_optimized", True),
+            mobile_vibrate=cfg.get("mobile_vibrate", True),
+            retry_count=cfg.get("retry_count", 3),
+            retry_delay=cfg.get("retry_delay", 2),
+            bark_enabled=cfg.get("bark_enabled", False),
+            bark_url=cfg.get("bark_url", ""),
+            bark_device_key=cfg.get("bark_device_key", ""),
+            bark_icon=cfg.get("bark_icon", ""),
+            bark_action=cfg.get("bark_action", "none"),
+            bark_timeout=cfg.get("bark_timeout", 10),
+            system_enabled=cfg.get("system_enabled", False),
+            macos_native_enabled=cfg.get("macos_native_enabled", True),
         )
 
 
@@ -866,115 +823,37 @@ class NotificationManager:
                 # 如果无法获取文件修改时间，继续刷新配置
                 pass
 
-            notification_config = config_mgr.get_section("notification")
+            cfg = config_mgr.get_section("notification")
 
-            # 【类型验证】辅助函数：安全获取布尔值（与 from_config_file 对齐）
-            def safe_bool(value: Any, default: bool) -> bool:
-                if isinstance(value, bool):
-                    return value
-                if isinstance(value, (int, float)):
-                    return bool(value)
-                if isinstance(value, str):
-                    v = value.strip().lower()
-                    if v in ("true", "1", "yes", "y", "on"):
-                        return True
-                    if v in ("false", "0", "no", "n", "off"):
-                        return False
-                    return default
-                return default
-
-            # 【类型验证】辅助函数：安全获取数值
-            def safe_number(
-                value, default: float, min_val: float = 0, max_val: float = 100
-            ) -> float:
-                try:
-                    num = float(value)
-                    return max(min_val, min(max_val, num))
-                except (TypeError, ValueError):
-                    return default
-
-            # 【类型验证】辅助函数：安全获取字符串
-            def safe_str(value, default: str) -> str:
-                if value is None:
-                    return default
-                return str(value)
-
-            # 【线程安全】使用配置锁保护配置更新操作
             with self._config_lock:
-                # 记录更新前的 bark_enabled 状态
                 bark_was_enabled = self.config.bark_enabled
 
-                # 【类型验证】更新所有配置字段，使用安全类型转换
-                self.config.enabled = safe_bool(
-                    notification_config.get("enabled"), True
+                self.config.enabled = cfg.get("enabled", True)
+                self.config.debug = cfg.get("debug", False)
+                self.config.web_enabled = cfg.get("web_enabled", True)
+                self.config.web_icon = cfg.get("web_icon", "default")
+                self.config.web_timeout = cfg.get("web_timeout", 5000)
+                self.config.web_permission_auto_request = cfg.get(
+                    "auto_request_permission", True
                 )
-                self.config.debug = safe_bool(notification_config.get("debug"), False)
-                self.config.web_enabled = safe_bool(
-                    notification_config.get("web_enabled"), True
-                )
-                self.config.web_icon = safe_str(
-                    notification_config.get("web_icon"), "default"
-                )
-                self.config.web_timeout = int(
-                    safe_number(notification_config.get("web_timeout"), 5000, 1, 600000)
-                )
-                self.config.web_permission_auto_request = safe_bool(
-                    notification_config.get("auto_request_permission"), True
-                )
-                self.config.sound_enabled = safe_bool(
-                    notification_config.get("sound_enabled"), True
-                )
-                self.config.sound_file = safe_str(
-                    notification_config.get("sound_file"), "default"
-                )
-                # 音量从 0-100 转换为 0.0-1.0，带范围验证
-                self.config.sound_volume = (
-                    safe_number(notification_config.get("sound_volume"), 80, 0, 100)
-                    / 100.0
-                )
-                self.config.sound_mute = safe_bool(
-                    notification_config.get("sound_mute"), False
-                )
-                self.config.mobile_optimized = safe_bool(
-                    notification_config.get("mobile_optimized"), True
-                )
-                self.config.mobile_vibrate = safe_bool(
-                    notification_config.get("mobile_vibrate"), True
-                )
-                self.config.bark_enabled = safe_bool(
-                    notification_config.get("bark_enabled"), False
-                )
-                self.config.bark_url = safe_str(notification_config.get("bark_url"), "")
-                self.config.bark_device_key = safe_str(
-                    notification_config.get("bark_device_key"), ""
-                )
-                self.config.bark_icon = safe_str(
-                    notification_config.get("bark_icon"), ""
-                )
-                self.config.bark_action = safe_str(
-                    notification_config.get("bark_action"), "none"
-                )
+                self.config.sound_enabled = cfg.get("sound_enabled", True)
+                self.config.sound_file = cfg.get("sound_file", "default")
+                self.config.sound_volume = cfg.get("sound_volume", 80) / 100.0
+                self.config.sound_mute = cfg.get("sound_mute", False)
+                self.config.mobile_optimized = cfg.get("mobile_optimized", True)
+                self.config.mobile_vibrate = cfg.get("mobile_vibrate", True)
+                self.config.bark_enabled = cfg.get("bark_enabled", False)
+                self.config.bark_url = cfg.get("bark_url", "")
+                self.config.bark_device_key = cfg.get("bark_device_key", "")
+                self.config.bark_icon = cfg.get("bark_icon", "")
+                self.config.bark_action = cfg.get("bark_action", "none")
+                self.config.retry_count = cfg.get("retry_count", 3)
+                self.config.retry_delay = cfg.get("retry_delay", 2)
+                self.config.bark_timeout = cfg.get("bark_timeout", 10)
+                self.config.system_enabled = cfg.get("system_enabled", False)
+                self.config.macos_native_enabled = cfg.get("macos_native_enabled", True)
 
-                # 重试/超时配置（新增：允许通过配置文件调优可靠性与时延）
-                self.config.retry_count = int(
-                    safe_number(notification_config.get("retry_count"), 3, 0, 10)
-                )
-                self.config.retry_delay = int(
-                    safe_number(notification_config.get("retry_delay"), 2, 0, 60)
-                )
-                self.config.bark_timeout = int(
-                    safe_number(notification_config.get("bark_timeout"), 10, 1, 300)
-                )
-
-                # 系统/平台原生通知（可选）
-                self.config.system_enabled = safe_bool(
-                    notification_config.get("system_enabled"), False
-                )
-                self.config.macos_native_enabled = safe_bool(
-                    notification_config.get("macos_native_enabled"), True
-                )
-
-                logger.debug("已从配置文件刷新通知配置（带类型验证）")
+                logger.debug("已从配置文件刷新通知配置")
 
                 # 如果 bark_enabled 状态发生变化，动态更新提供者
                 bark_now_enabled = self.config.bark_enabled
