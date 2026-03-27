@@ -3010,5 +3010,154 @@ class TestFileWatcherEdgeCases(unittest.TestCase):
         self.assertFalse(mgr.is_file_watcher_running)
 
 
+class TestMigrateJsoncToToml(unittest.TestCase):
+    """_migrate_jsonc_to_toml() 自动迁移逻辑"""
+
+    def test_migrate_jsonc_file(self):
+        """JSONC 文件应被迁移为 TOML，旧文件变 .bak"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text(
+                '{\n  "server": {"host": "127.0.0.1", "port": 8080}\n}',
+                encoding="utf-8",
+            )
+            mgr = ConfigManager(str(jsonc_path))
+            result = mgr._migrate_jsonc_to_toml()
+            self.assertTrue(result)
+            self.assertTrue(mgr.config_file.suffix == ".toml")
+            self.assertTrue(mgr.config_file.exists())
+            self.assertTrue(Path(td, "config.jsonc.bak").exists())
+            import tomlkit
+
+            content = mgr.config_file.read_text(encoding="utf-8")
+            parsed = tomlkit.parse(content)
+            self.assertEqual(parsed["server"]["host"], "127.0.0.1")  # type: ignore[index]
+
+    def test_migrate_json_file(self):
+        """JSON 文件应被迁移为 TOML"""
+        with tempfile.TemporaryDirectory() as td:
+            json_path = Path(td) / "config.json"
+            json_path.write_text('{"server": {"host": "0.0.0.0"}}', encoding="utf-8")
+            mgr = ConfigManager(str(json_path))
+            result = mgr._migrate_jsonc_to_toml()
+            self.assertTrue(result)
+            self.assertTrue(mgr.config_file.suffix == ".toml")
+
+    def test_migrate_converts_mdns_null_to_auto(self):
+        """mdns.enabled=null 应被转换为 'auto'"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text('{"mdns": {"enabled": null}}', encoding="utf-8")
+            mgr = ConfigManager(str(jsonc_path))
+            result = mgr._migrate_jsonc_to_toml()
+            self.assertTrue(result)
+            import tomlkit
+
+            content = mgr.config_file.read_text(encoding="utf-8")
+            parsed = tomlkit.parse(content)
+            self.assertEqual(parsed["mdns"]["enabled"], "auto")  # type: ignore[index]
+
+    def test_migrate_preserves_mdns_true(self):
+        """mdns.enabled=true 不应被改为 'auto'"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text('{"mdns": {"enabled": true}}', encoding="utf-8")
+            mgr = ConfigManager(str(jsonc_path))
+            result = mgr._migrate_jsonc_to_toml()
+            self.assertTrue(result)
+            import tomlkit
+
+            content = mgr.config_file.read_text(encoding="utf-8")
+            parsed = tomlkit.parse(content)
+            self.assertTrue(parsed["mdns"]["enabled"])  # type: ignore[index]
+
+    def test_migrate_failure_returns_false(self):
+        """迁移失败（如文件读取异常）应返回 False"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text('{"server": {"host": "x"}}', encoding="utf-8")
+            mgr = ConfigManager(str(jsonc_path))
+            with patch("builtins.open", side_effect=PermissionError("no read")):
+                result = mgr._migrate_jsonc_to_toml()
+            self.assertFalse(result)
+
+    def test_migrate_without_template(self):
+        """当 config.toml.default 模板不存在时的回退路径"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text('{"server": {"host": "test"}}', encoding="utf-8")
+            mgr = ConfigManager(str(jsonc_path))
+            real_path = Path
+            orig_truediv = Path.__truediv__
+
+            def fake_truediv(self, other):
+                result = orig_truediv(self, other)
+                if str(other) == "config.toml.default":
+                    mock_p = MagicMock()
+                    mock_p.exists.return_value = False
+                    return mock_p
+                return result
+
+            with patch.object(Path, "__truediv__", fake_truediv):
+                result = mgr._migrate_jsonc_to_toml()
+            self.assertTrue(result)
+            self.assertTrue(mgr.config_file.suffix == ".toml")
+            import tomlkit
+
+            content = mgr.config_file.read_text(encoding="utf-8")
+            parsed = tomlkit.parse(content)
+            self.assertEqual(parsed["server"]["host"], "test")  # type: ignore[index]
+
+    def test_migrate_adds_new_section_to_template(self):
+        """迁移数据中有模板没有的 section 时应追加"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text(
+                '{"custom_section": {"key": "value"}, "server": {"host": "x"}}',
+                encoding="utf-8",
+            )
+            mgr = ConfigManager(str(jsonc_path))
+            result = mgr._migrate_jsonc_to_toml()
+            self.assertTrue(result)
+            import tomlkit
+
+            content = mgr.config_file.read_text(encoding="utf-8")
+            parsed = tomlkit.parse(content)
+            self.assertEqual(parsed["custom_section"]["key"], "value")  # type: ignore[index]
+
+    def test_load_config_triggers_migration(self):
+        """_load_config 应在非 TOML 且非显式路径时触发自动迁移"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text('{"server": {"host": "migrated"}}', encoding="utf-8")
+            mgr = ConfigManager.__new__(ConfigManager)
+            mgr._lock = __import__("threading").RLock()
+            mgr._config = {}
+            mgr._original_content = ""
+            mgr._callbacks = {}
+            mgr._section_cache = {}
+            mgr._save_timer = None
+            mgr._pending_changes = False
+            mgr._file_watcher_running = False
+            mgr._file_watcher_thread = None
+            mgr._last_file_mtime = 0.0
+            mgr.config_file = jsonc_path
+            mgr._explicit_path = False
+            mgr._load_config()
+            self.assertTrue(mgr.config_file.suffix == ".toml")
+            self.assertEqual(mgr.get("server.host"), "migrated")
+
+    def test_load_config_skips_migration_for_explicit_path(self):
+        """显式路径（_explicit_path=True）时不应触发迁移"""
+        with tempfile.TemporaryDirectory() as td:
+            jsonc_path = Path(td) / "config.jsonc"
+            jsonc_path.write_text(
+                '{"server": {"host": "stay_jsonc"}}', encoding="utf-8"
+            )
+            mgr = ConfigManager(str(jsonc_path))
+            self.assertTrue(mgr.config_file.suffix == ".jsonc")
+            self.assertEqual(mgr.get("server.host"), "stay_jsonc")
+
+
 if __name__ == "__main__":
     unittest.main()
