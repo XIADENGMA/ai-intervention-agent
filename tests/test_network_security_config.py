@@ -477,5 +477,298 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(len(result["blocked_ips"]), 1)  # 过滤了无效 IP
 
 
+# ============================================================================
+# config_modules/network_security.py Mixin 方法测试
+# ============================================================================
+
+
+class TestValidateNetworkSecurityConfigMixin(unittest.TestCase):
+    """测试 NetworkSecurityMixin._validate_network_security_config()"""
+
+    def _get_manager(self):
+        from config_manager import ConfigManager
+
+        return ConfigManager()
+
+    def test_bind_interface_special_values(self):
+        """所有特殊 bind_interface 值应直接通过"""
+        mgr = self._get_manager()
+        for addr in ("0.0.0.0", "127.0.0.1", "localhost", "::1", "::"):
+            result = mgr._validate_network_security_config({"bind_interface": addr})
+            self.assertEqual(result["bind_interface"], addr)
+
+    def test_bind_interface_valid_ip(self):
+        """合法 IP 地址应通过验证"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"bind_interface": "192.168.1.100"}
+        )
+        self.assertEqual(result["bind_interface"], "192.168.1.100")
+
+    def test_bind_interface_invalid_fallback(self):
+        """无效 bind_interface 应回退到 127.0.0.1"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({"bind_interface": "not-an-ip"})
+        self.assertEqual(result["bind_interface"], "127.0.0.1")
+
+    def test_bind_interface_non_string(self):
+        """非字符串 bind_interface（如整数）应尝试转换"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({"bind_interface": 12345})
+        self.assertEqual(result["bind_interface"], "127.0.0.1")
+
+    def test_bind_interface_empty_dict(self):
+        """空 dict 应使用默认 bind_interface"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({})
+        self.assertIn(result["bind_interface"], ("0.0.0.0", "127.0.0.1"))
+
+    def test_bind_interface_non_dict_raw(self):
+        """非 dict 的 raw 参数应被处理为空 dict，使用默认配置的 bind_interface"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config("not a dict")
+        self.assertIn(result["bind_interface"], ("0.0.0.0", "127.0.0.1"))
+
+    def test_allowed_networks_cidr(self):
+        """CIDR 格式的 allowed_networks 应正确解析"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": ["192.168.0.0/16", "10.0.0.0/8"]}
+        )
+        self.assertIn("192.168.0.0/16", result["allowed_networks"])
+        self.assertIn("10.0.0.0/8", result["allowed_networks"])
+
+    def test_allowed_networks_single_ip(self):
+        """单个 IP 地址的 allowed_networks 应正确解析"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": ["192.168.1.1"]}
+        )
+        self.assertIn("192.168.1.1", result["allowed_networks"])
+
+    def test_allowed_networks_invalid_entries_filtered(self):
+        """无效条目应被过滤，有效条目保留"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": ["192.168.1.0/24", "not-valid", "10.0.0.1"]}
+        )
+        self.assertIn("192.168.1.0/24", result["allowed_networks"])
+        self.assertIn("10.0.0.1", result["allowed_networks"])
+        self.assertNotIn("not-valid", result["allowed_networks"])
+
+    def test_allowed_networks_deduplication(self):
+        """重复条目应被去重"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": ["192.168.1.0/24", "192.168.1.0/24", "10.0.0.1"]}
+        )
+        cidr_count = result["allowed_networks"].count("192.168.1.0/24")
+        self.assertEqual(cidr_count, 1)
+
+    def test_allowed_networks_empty_fallback(self):
+        """空列表应回退到默认值"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({"allowed_networks": []})
+        self.assertIn("127.0.0.0/8", result["allowed_networks"])
+        self.assertIn("::1/128", result["allowed_networks"])
+
+    def test_allowed_networks_non_list_fallback(self):
+        """非列表类型应使用默认值"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": "not-a-list"}
+        )
+        self.assertIn("127.0.0.0/8", result["allowed_networks"])
+
+    def test_allowed_networks_non_string_items_skipped(self):
+        """非字符串条目应被跳过"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": [123, None, "10.0.0.0/8"]}
+        )
+        self.assertIn("10.0.0.0/8", result["allowed_networks"])
+
+    def test_allowed_networks_empty_strings_skipped(self):
+        """空字符串应被跳过"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": ["", "  ", "10.0.0.0/8"]}
+        )
+        self.assertIn("10.0.0.0/8", result["allowed_networks"])
+
+    def test_blocked_ips_valid(self):
+        """有效 blocked_ips 应正确解析"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"blocked_ips": ["192.168.1.100", "10.0.0.5"]}
+        )
+        self.assertIn("192.168.1.100", result["blocked_ips"])
+        self.assertIn("10.0.0.5", result["blocked_ips"])
+
+    def test_blocked_ips_invalid_filtered(self):
+        """无效 blocked_ips 应被过滤"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"blocked_ips": ["192.168.1.100", "not-valid-ip", "10.0.0.5"]}
+        )
+        self.assertIn("192.168.1.100", result["blocked_ips"])
+        self.assertNotIn("not-valid-ip", result["blocked_ips"])
+
+    def test_blocked_ips_non_list_fallback(self):
+        """非列表 blocked_ips 应使用默认值（空列表）"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({"blocked_ips": "not-a-list"})
+        self.assertEqual(result["blocked_ips"], [])
+
+    def test_blocked_ips_deduplication(self):
+        """重复 blocked_ips 应去重"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"blocked_ips": ["10.0.0.1", "10.0.0.1", "10.0.0.2"]}
+        )
+        count = result["blocked_ips"].count("10.0.0.1")
+        self.assertEqual(count, 1)
+
+    def test_access_control_enabled_default_true(self):
+        """未提供 access_control_enabled 时应默认为 True"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({})
+        self.assertTrue(result["access_control_enabled"])
+
+    def test_access_control_enabled_legacy_key(self):
+        """旧字段名 enable_access_control 应被兼容"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({"enable_access_control": False})
+        self.assertFalse(result["access_control_enabled"])
+
+    def test_ipv6_allowed_networks(self):
+        """IPv6 地址和 CIDR 应正确处理"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"allowed_networks": ["::1", "fe80::/10", "2001:db8::/32"]}
+        )
+        self.assertTrue(len(result["allowed_networks"]) >= 3)
+
+    def test_ipv6_blocked_ips(self):
+        """IPv6 blocked_ips 应正确处理"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {"blocked_ips": ["::1", "fe80::1"]}
+        )
+        self.assertTrue(len(result["blocked_ips"]) >= 2)
+
+    def test_full_config_all_fields(self):
+        """完整配置（所有字段）应全部正确验证"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config(
+            {
+                "bind_interface": "0.0.0.0",
+                "allowed_networks": ["192.168.0.0/16", "10.0.0.0/8"],
+                "blocked_ips": ["192.168.1.100"],
+                "access_control_enabled": True,
+            }
+        )
+        self.assertEqual(result["bind_interface"], "0.0.0.0")
+        self.assertEqual(len(result["allowed_networks"]), 2)
+        self.assertEqual(len(result["blocked_ips"]), 1)
+        self.assertTrue(result["access_control_enabled"])
+
+    def test_output_structure(self):
+        """输出字典应包含且仅包含 4 个预期字段"""
+        mgr = self._get_manager()
+        result = mgr._validate_network_security_config({})
+        self.assertEqual(
+            set(result.keys()),
+            {
+                "bind_interface",
+                "allowed_networks",
+                "blocked_ips",
+                "access_control_enabled",
+            },
+        )
+
+
+class TestUpdateNetworkSecurityMixin(unittest.TestCase):
+    """测试 set/update_network_security_config Mixin 方法"""
+
+    def _get_manager(self):
+        from config_manager import ConfigManager
+
+        return ConfigManager()
+
+    def test_set_network_security_persists_to_file(self):
+        """save=True 时应写入文件并可重新读取"""
+        mgr = self._get_manager()
+        config = {
+            "bind_interface": "0.0.0.0",
+            "allowed_networks": ["192.168.0.0/16"],
+            "blocked_ips": [],
+            "access_control_enabled": True,
+        }
+        mgr.set_network_security_config(config, save=True, trigger_callbacks=False)
+        result = mgr.get_network_security_config()
+        self.assertEqual(result["bind_interface"], "0.0.0.0")
+        self.assertIn("192.168.0.0/16", result["allowed_networks"])
+
+    def test_update_network_security_incremental(self):
+        """增量更新只修改指定字段"""
+        mgr = self._get_manager()
+        mgr.set_network_security_config(
+            {
+                "bind_interface": "127.0.0.1",
+                "allowed_networks": ["192.168.0.0/16"],
+                "blocked_ips": ["10.0.0.1"],
+                "access_control_enabled": True,
+            },
+            save=True,
+            trigger_callbacks=False,
+        )
+        mgr.update_network_security_config(
+            {"blocked_ips": ["10.0.0.2"]},
+            save=True,
+            trigger_callbacks=False,
+        )
+        result = mgr.get_network_security_config()
+        self.assertIn("10.0.0.2", result["blocked_ips"])
+
+    def test_update_network_security_unknown_fields_ignored(self):
+        """未知字段应被忽略"""
+        mgr = self._get_manager()
+        mgr.update_network_security_config(
+            {"unknown_field": "value", "blocked_ips": ["10.0.0.1"]},
+            save=True,
+            trigger_callbacks=False,
+        )
+        result = mgr.get_network_security_config()
+        self.assertNotIn("unknown_field", result)
+
+    def test_update_network_security_invalid_type(self):
+        """非 dict 更新应抛出 ValueError"""
+        mgr = self._get_manager()
+        with self.assertRaises(ValueError):
+            mgr.update_network_security_config("not a dict", save=False)
+
+    def test_update_legacy_enable_access_control_key(self):
+        """旧字段名 enable_access_control 应映射到 access_control_enabled"""
+        mgr = self._get_manager()
+        mgr.set_network_security_config(
+            {
+                "bind_interface": "127.0.0.1",
+                "allowed_networks": ["127.0.0.0/8"],
+                "blocked_ips": [],
+                "access_control_enabled": True,
+            },
+            save=True,
+            trigger_callbacks=False,
+        )
+        mgr.update_network_security_config(
+            {"enable_access_control": False},
+            save=True,
+            trigger_callbacks=False,
+        )
+        result = mgr.get_network_security_config()
+        self.assertFalse(result["access_control_enabled"])
+
+
 if __name__ == "__main__":
     unittest.main()

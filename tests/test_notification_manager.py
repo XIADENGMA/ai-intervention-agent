@@ -917,6 +917,188 @@ class TestNotificationManagerBoundary(unittest.TestCase):
         self.assertIsNotNone(provider)
 
 
+# ──────────────────────────────────────────────────────────
+# 覆盖率补充
+# ──────────────────────────────────────────────────────────
+
+
+class TestNotificationManagerInitEdge(unittest.TestCase):
+    """覆盖 __init__ 中的异常路径和条件分支"""
+
+    def test_from_config_exception_raises_notification_error(self):
+        """lines 257-259: NotificationConfig.from_config_file 抛异常"""
+        from notification_manager import NotificationError, NotificationManager
+
+        old_instance = NotificationManager._instance
+        try:
+            NotificationManager._instance = None
+            with patch(
+                "notification_manager.NotificationConfig.from_config_file",
+                side_effect=RuntimeError("config broken"),
+            ):
+                with self.assertRaises(NotificationError) as ctx:
+                    NotificationManager()
+                self.assertIn("初始化失败", str(ctx.exception))
+        finally:
+            NotificationManager._instance = old_instance
+
+    def test_debug_mode_init(self):
+        """lines 320-321: config.debug=True 时的初始化"""
+        from notification_manager import NotificationManager
+
+        old_instance = NotificationManager._instance
+        try:
+            NotificationManager._instance = None
+            mock_config = MagicMock()
+            mock_config.debug = True
+            mock_config.bark_enabled = False
+            mock_config.delayed_notification_seconds = 5.0
+            mock_config.max_retries = 3
+            with patch(
+                "notification_manager.NotificationConfig.from_config_file",
+                return_value=mock_config,
+            ):
+                mgr = NotificationManager()
+                self.assertTrue(mgr.config.debug)
+        finally:
+            NotificationManager._instance = old_instance
+
+    def test_bark_enabled_init(self):
+        """lines 329-330: bark_enabled=True 时注册 provider"""
+        from notification_manager import NotificationManager
+
+        old_instance = NotificationManager._instance
+        try:
+            NotificationManager._instance = None
+            mock_config = MagicMock()
+            mock_config.debug = False
+            mock_config.bark_enabled = True
+            mock_config.delayed_notification_seconds = 5.0
+            mock_config.max_retries = 3
+            with patch(
+                "notification_manager.NotificationConfig.from_config_file",
+                return_value=mock_config,
+            ):
+                mgr = NotificationManager()
+                self.assertTrue(mgr.config.bark_enabled)
+        finally:
+            NotificationManager._instance = old_instance
+
+
+class TestNotificationManagerDCLBranches(unittest.TestCase):
+    """覆盖 __new__ / __init__ 双重检查锁定模式的内层分支"""
+
+    def test_new_dcl_inner_branch_already_created(self):
+        """239->242: __new__ 中另一个线程抢先创建了 _instance"""
+        from notification_manager import NotificationManager
+
+        old_instance = NotificationManager._instance
+        old_lock = NotificationManager._lock
+        try:
+            NotificationManager._instance = None
+            sentinel = object.__new__(NotificationManager)
+            sentinel._initialized = True
+
+            class _RaceLock:
+                """模拟竞态：进入 __enter__ 时另一线程已完成 __new__"""
+
+                def __enter__(self_lock):
+                    NotificationManager._instance = sentinel
+                    return self_lock
+
+                def __exit__(self_lock, *args):
+                    pass
+
+            NotificationManager._lock = _RaceLock()
+            inst = NotificationManager.__new__(NotificationManager)
+            self.assertIs(inst, sentinel)
+        finally:
+            NotificationManager._instance = old_instance
+            NotificationManager._lock = old_lock
+
+    def test_init_dcl_inner_branch_already_initialized(self):
+        """line 252: __init__ 中另一个线程抢先完成了初始化"""
+        from notification_manager import NotificationManager
+
+        old_instance = NotificationManager._instance
+        old_lock = NotificationManager._lock
+        try:
+            NotificationManager._instance = None
+            mock_config = MagicMock()
+            mock_config.debug = False
+            mock_config.bark_enabled = False
+            mock_config.delayed_notification_seconds = 5.0
+            mock_config.max_retries = 3
+            with patch(
+                "notification_manager.NotificationConfig.from_config_file",
+                return_value=mock_config,
+            ):
+                mgr = NotificationManager()
+
+            class _RaceLock:
+                """模拟竞态：进入 __enter__ 时另一线程已完成 __init__"""
+
+                def __enter__(self_lock):
+                    mgr._initialized = True
+                    return self_lock
+
+                def __exit__(self_lock, *args):
+                    pass
+
+            mgr._initialized = False
+            NotificationManager._lock = _RaceLock()
+            mgr.__init__()
+            self.assertTrue(mgr._initialized)
+        finally:
+            NotificationManager._instance = old_instance
+            NotificationManager._lock = old_lock
+
+    def test_send_with_non_immediate_non_delayed_trigger(self):
+        """452->473: trigger 不是 IMMEDIATE 也不是 DELAYED 时直通返回"""
+        from notification_manager import notification_manager
+        from notification_models import NotificationTrigger
+
+        with patch.object(notification_manager, "_process_event"):
+            event_id = notification_manager.send_notification(
+                title="passthrough",
+                message="msg",
+                trigger=NotificationTrigger.REPEAT,
+            )
+            self.assertIsInstance(event_id, str)
+            self.assertTrue(len(event_id) > 0)
+
+
+class TestNotificationManagerDelayedShutdown(unittest.TestCase):
+    """lines 456-457: DELAYED 触发时检测到 _shutdown_called 跳过调度"""
+
+    def test_delayed_notify_skipped_mid_flight(self):
+        """模拟：进入 send_notification 时未 shutdown，到 DELAYED 分支时已 shutdown"""
+        from notification_manager import notification_manager
+        from notification_models import NotificationTrigger
+
+        class _DelayedTrue:
+            """首次 bool 为 False（通过入口检查），第二次为 True（触发跳过）"""
+
+            def __init__(self):
+                self._calls = 0
+
+            def __bool__(self):
+                self._calls += 1
+                return self._calls > 1
+
+        notification_manager._shutdown_called = _DelayedTrue()  # type: ignore[assignment]
+        try:
+            event_id = notification_manager.send_notification(
+                title="delayed-test",
+                message="msg",
+                trigger=NotificationTrigger.DELAYED,
+            )
+            self.assertIsInstance(event_id, str)
+            self.assertTrue(len(event_id) > 0)
+        finally:
+            notification_manager._shutdown_called = False
+
+
 def run_tests():
     """运行所有测试"""
     # 创建测试套件

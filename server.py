@@ -83,7 +83,7 @@ _config_cache_lock = threading.Lock()
 # - 配置文件被外部修改并由 ConfigManager 自动 reload 后，会触发回调
 # - Web UI 子进程在页面内保存配置时，也会触发 ConfigManager 的回调（同进程内）
 # - 这里清空缓存，让后续调用尽快读取到最新配置
-_config_callbacks_registered = False
+_config_callbacks_registered: bool = False
 _config_callbacks_lock = threading.Lock()
 
 

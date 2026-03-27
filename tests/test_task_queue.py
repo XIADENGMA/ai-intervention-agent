@@ -733,6 +733,131 @@ class TestTaskQueueBoundary(unittest.TestCase):
         self.assertEqual(len(task.predefined_options), 1000)
 
 
+# ──────────────────────────────────────────────────────────
+# 覆盖率补充
+# ──────────────────────────────────────────────────────────
+
+
+class TestCleanupThreadException(unittest.TestCase):
+    """lines 705-707: 后台清理线程的异常和正常清理分支"""
+
+    def test_cleanup_loop_exception_path(self):
+        """706-707: _cleanup_loop 中 cleanup_completed_tasks 抛异常被捕获"""
+        from unittest.mock import patch as _patch
+
+        from task_queue import TaskQueue
+
+        tq = TaskQueue()
+        call_count = 0
+
+        def mock_cleanup(age_seconds=10):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("cleanup err")
+            return 0
+
+        original_wait = tq._stop_cleanup.wait
+
+        wait_calls = 0
+
+        def mock_wait(timeout=5):
+            nonlocal wait_calls
+            wait_calls += 1
+            if wait_calls <= 2:
+                return False
+            return True
+
+        with _patch.object(tq, "cleanup_completed_tasks", side_effect=mock_cleanup):
+            with _patch.object(tq._stop_cleanup, "wait", side_effect=mock_wait):
+                tq._cleanup_loop()
+
+        self.assertGreaterEqual(call_count, 1)
+
+    def test_cleanup_loop_cleaned_positive(self):
+        """line 705: cleaned > 0 时记录日志"""
+        from unittest.mock import patch as _patch
+
+        from task_queue import TaskQueue
+
+        tq = TaskQueue()
+        wait_calls = 0
+
+        def mock_wait(timeout=5):
+            nonlocal wait_calls
+            wait_calls += 1
+            return wait_calls > 1
+
+        with _patch.object(tq, "cleanup_completed_tasks", return_value=3):
+            with _patch.object(tq._stop_cleanup, "wait", side_effect=mock_wait):
+                tq._cleanup_loop()
+
+
+class TestTaskQueuePartialBranches(unittest.TestCase):
+    """覆盖 task_queue.py 的部分分支"""
+
+    def _make_tq(self, max_tasks: int = 10):
+        from task_queue import TaskQueue
+
+        return TaskQueue(max_tasks=max_tasks)
+
+    def test_set_active_no_previous_active(self):
+        """365->371 / 377->379: 无旧活跃任务时直接激活新任务"""
+        tq = self._make_tq()
+        tq.add_task("t1", "prompt1")
+        tq.add_task("t2", "prompt2")
+        tq.complete_task("t1", "done")
+
+        result = tq.set_active_task("t2")
+        self.assertTrue(result)
+        self.assertEqual(tq.get_active_task().task_id, "t2")
+
+    def test_set_active_old_task_not_active_status(self):
+        """367->371: 旧活跃任务状态不是 active（已被外部修改）"""
+        tq = self._make_tq()
+        tq.add_task("t1", "prompt1")
+        tq.add_task("t2", "prompt2")
+
+        with tq._lock:
+            tq._tasks["t1"].status = "pending"
+
+        result = tq.set_active_task("t2")
+        self.assertTrue(result)
+
+    def test_remove_non_active_task(self):
+        """526->538: 移除非活跃任务不触发自动激活"""
+        tq = self._make_tq()
+        tq.add_task("t1", "prompt1")
+        tq.add_task("t2", "prompt2")
+
+        active_before = tq.get_active_task()
+        result = tq.remove_task("t2")
+        self.assertTrue(result)
+        active_after = tq.get_active_task()
+        self.assertEqual(active_before.task_id, active_after.task_id)
+
+    def test_set_active_with_stale_active_id(self):
+        """365->371: _active_task_id 指向已不存在的任务时跳过旧任务处理"""
+        tq = self._make_tq()
+        tq.add_task("t1", "prompt1")
+        tq.add_task("t2", "prompt2")
+
+        with tq._lock:
+            tq._active_task_id = "ghost_task"
+
+        result = tq.set_active_task("t2")
+        self.assertTrue(result)
+        self.assertEqual(tq.get_active_task().task_id, "t2")
+
+    def test_stop_cleanup_thread_already_stopped(self):
+        """742->exit: 清理线程已停止时跳过 join"""
+        tq = self._make_tq()
+        tq._stop_cleanup.set()
+        tq._cleanup_thread.join(timeout=3)
+
+        tq.stop_cleanup()
+
+
 def run_tests():
     """运行所有测试"""
     loader = unittest.TestLoader()

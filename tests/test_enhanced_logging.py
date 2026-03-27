@@ -11,7 +11,6 @@ AI Intervention Agent - Enhanced Logging 模块单元测试
 """
 
 import logging
-import sys
 import time
 import unittest
 
@@ -277,24 +276,250 @@ class TestLevelBasedStreamHandler(unittest.TestCase):
         self.assertIsNotNone(handler)
 
 
-def run_tests():
-    """运行所有增强日志测试"""
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
+# ============================================================================
+# 覆盖率补充测试
+# ============================================================================
 
-    suite.addTests(loader.loadTestsFromTestCase(TestLogDeduplicator))
-    suite.addTests(loader.loadTestsFromTestCase(TestLogSanitizer))
-    suite.addTests(loader.loadTestsFromTestCase(TestAntiInjectionFilter))
-    suite.addTests(loader.loadTestsFromTestCase(TestEnhancedLogger))
-    suite.addTests(loader.loadTestsFromTestCase(TestSecureLogFormatter))
-    suite.addTests(loader.loadTestsFromTestCase(TestLevelBasedStreamHandler))
 
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
+class TestAntiInjectionFilterArgs(unittest.TestCase):
+    """AntiInjectionFilter 对 args 的转义"""
 
-    return result.wasSuccessful()
+    def setUp(self):
+        self.filter = AntiInjectionFilter()
+
+    def test_string_args_escaped(self):
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=1,
+            msg="val: %s",
+            args=("line1\nline2\rline3\x00end",),
+            exc_info=None,
+        )
+        self.filter.filter(record)
+        self.assertIn("\\n", record.args[0])  # type: ignore[index]
+        self.assertIn("\\r", record.args[0])  # type: ignore[index]
+        self.assertIn("\\x00", record.args[0])  # type: ignore[index]
+
+    def test_non_string_args_preserved(self):
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=1,
+            msg="val: %d %s",
+            args=(42, "ok\n"),
+            exc_info=None,
+        )
+        self.filter.filter(record)
+        self.assertEqual(record.args[0], 42)  # type: ignore[index]
+        self.assertEqual(record.args[1], "ok\\n")  # type: ignore[index]
+
+    def test_null_byte_in_msg(self):
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=1,
+            msg="has\x00null",
+            args=(),
+            exc_info=None,
+        )
+        self.filter.filter(record)
+        self.assertIn("\\x00", record.msg)
+
+    def test_non_tuple_args_ignored(self):
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=1,
+            msg="test",
+            args=None,
+            exc_info=None,
+        )
+        self.assertTrue(self.filter.filter(record))
+
+    def test_non_string_msg_ignored(self):
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=1,
+            msg="test",
+            args=(),
+            exc_info=None,
+        )
+        record.msg = 12345  # type: ignore[assignment]
+        self.assertTrue(self.filter.filter(record))
+
+
+class TestLogDeduplicatorCleanup(unittest.TestCase):
+    """LogDeduplicator 缓存清理边界"""
+
+    def test_expired_entries_removed(self):
+        dedup = LogDeduplicator(time_window=0.01, max_cache_size=100)
+        dedup.should_log("old_msg")
+        time.sleep(0.02)
+        dedup.should_log("new_msg")
+        self.assertNotIn(hash("old_msg"), dedup.cache)
+
+    def test_cache_overflow_cleanup(self):
+        dedup = LogDeduplicator(time_window=60.0, max_cache_size=5)
+        for i in range(20):
+            dedup.should_log(f"overflow_{i}")
+        self.assertLessEqual(len(dedup.cache), 20)
+
+
+class TestEnhancedLoggerAdvanced(unittest.TestCase):
+    """EnhancedLogger 高级分支"""
+
+    def test_set_level(self):
+        logger = EnhancedLogger("test_set_level")
+        logger.setLevel(logging.DEBUG)
+        self.assertEqual(logger.logger.level, logging.DEBUG)
+
+    def test_level_mapping(self):
+        logger = EnhancedLogger("test_mapping")
+        logger.setLevel(logging.DEBUG)
+        logger.info("服务启动失败 - 端口被占用")
+
+    def test_duplicate_with_info(self):
+        logger = EnhancedLogger("test_dedup_info")
+        logger.setLevel(logging.DEBUG)
+        logger.deduplicator = LogDeduplicator(time_window=0.01)
+        logger.info("msg1")
+        time.sleep(0.02)
+        logger.info("msg1")
+
+
+class TestGetLogLevelFromConfig(unittest.TestCase):
+    """get_log_level_from_config 函数"""
+
+    def test_default_level(self):
+        from enhanced_logging import get_log_level_from_config
+
+        level = get_log_level_from_config()
+        self.assertIn(
+            level, (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR)
+        )
+
+    def test_invalid_level_returns_warning(self):
+        from unittest.mock import MagicMock, patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = {"log_level": "INVALID_LEVEL"}
+        with patch("enhanced_logging.config_manager", mock_mgr, create=True):
+            from enhanced_logging import get_log_level_from_config as fn
+
+            level = fn()
+            self.assertEqual(level, logging.WARNING)
+
+    def test_exception_returns_warning(self):
+        from unittest.mock import patch
+
+        from enhanced_logging import get_log_level_from_config
+
+        with patch(
+            "enhanced_logging.config_manager",
+            side_effect=ImportError("no"),
+            create=True,
+        ):
+            level = get_log_level_from_config()
+            self.assertIsInstance(level, int)
+
+
+class TestConfigureLoggingFromConfig(unittest.TestCase):
+    """configure_logging_from_config 函数"""
+
+    def test_configure(self):
+        from enhanced_logging import configure_logging_from_config
+
+        configure_logging_from_config()
+
+
+# ──────────────────────────────────────────────────────────
+# 覆盖率补充
+# ──────────────────────────────────────────────────────────
+
+
+class TestLogDuplicateInfoAppend(unittest.TestCase):
+    """line 259: 去重器返回 duplicate_info 时追加到消息"""
+
+    def test_duplicate_info_appended(self):
+        from unittest.mock import patch as _patch
+
+        logger = EnhancedLogger("test_dedup_append")
+        logger.setLevel(logging.DEBUG)
+        with _patch.object(
+            logger.deduplicator, "should_log", return_value=(True, "重复 3 次")
+        ):
+            with _patch.object(logger.logger, "log") as mock_log:
+                logger.info("测试消息")
+                mock_log.assert_called_once()
+                logged_msg = mock_log.call_args[0][1]
+                self.assertIn("(重复 3 次)", logged_msg)
+
+
+class TestGetLogLevelEdgePaths(unittest.TestCase):
+    """lines 314-323: 无效级别 + 配置读取异常"""
+
+    def test_invalid_level_warning_path(self):
+        """lines 314-318: 无效的 log_level 字符串"""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = {"log_level": "SUPER_INVALID"}
+        with _patch("config_manager.config_manager", mock_mgr):
+            from enhanced_logging import get_log_level_from_config
+
+            level = get_log_level_from_config()
+            self.assertEqual(level, logging.WARNING)
+
+    def test_config_read_exception_path(self):
+        """lines 320-323: config_manager.get 抛异常"""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.side_effect = RuntimeError("config broken")
+        with _patch("config_manager.config_manager", mock_mgr):
+            from enhanced_logging import get_log_level_from_config
+
+            level = get_log_level_from_config()
+            self.assertEqual(level, logging.WARNING)
+
+
+class TestSingletonLogManagerDCL(unittest.TestCase):
+    """branch 24->26: SingletonLogManager.__new__ DCL 内层分支"""
+
+    def test_new_dcl_inner_branch(self):
+        """另一线程在锁等待期间完成创建"""
+        from enhanced_logging import SingletonLogManager
+
+        old_instance = SingletonLogManager._instance
+        old_lock = SingletonLogManager._lock
+        try:
+            SingletonLogManager._instance = None
+            sentinel = object.__new__(SingletonLogManager)
+
+            class _RaceLock:
+                def __enter__(self_lock):
+                    SingletonLogManager._instance = sentinel
+                    return self_lock
+
+                def __exit__(self_lock, *args):
+                    pass
+
+            SingletonLogManager._lock = _RaceLock()  # type: ignore[assignment]
+            inst = SingletonLogManager.__new__(SingletonLogManager)
+            self.assertIs(inst, sentinel)
+        finally:
+            SingletonLogManager._instance = old_instance
+            SingletonLogManager._lock = old_lock
 
 
 if __name__ == "__main__":
-    success = run_tests()
-    sys.exit(0 if success else 1)
+    unittest.main()

@@ -18,4 +18,5 @@ English API reference (signatures-focused).
 - [enhanced_logging](enhanced_logging.md)
 
 ---
-*Auto-generated under `docs/api/`*
+
+_Auto-generated under `docs/api/`_

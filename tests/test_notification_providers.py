@@ -9,7 +9,6 @@ AI Intervention Agent - 通知提供者单元测试
 4. SystemNotificationProvider - 系统通知
 """
 
-import sys
 import unittest
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -850,26 +849,283 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
 
 
 # ============================================================================
-# 并发压力测试
+# 覆盖率补充测试
 # ============================================================================
 
 
-def run_tests():
-    """运行所有测试"""
-    loader = unittest.TestLoader()
-    suite = unittest.TestSuite()
+class TestBaseProviderClose(unittest.TestCase):
+    """BaseNotificationProvider.close 默认实现"""
 
-    suite.addTests(loader.loadTestsFromTestCase(TestWebNotificationProvider))
-    suite.addTests(loader.loadTestsFromTestCase(TestSoundNotificationProvider))
-    suite.addTests(loader.loadTestsFromTestCase(TestBarkNotificationProvider))
-    suite.addTests(loader.loadTestsFromTestCase(TestSystemNotificationProvider))
+    def test_close_noop(self):
+        from notification_providers import WebNotificationProvider
 
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
+        config = NotificationConfig()
+        config.web_enabled = True
+        provider = WebNotificationProvider(config)
+        provider.close()
 
-    return result.wasSuccessful()
+
+class TestBarkProviderClose(unittest.TestCase):
+    """BarkNotificationProvider.close 和异常处理"""
+
+    def test_close(self):
+        from notification_providers import BarkNotificationProvider
+
+        config = NotificationConfig()
+        config.bark_enabled = True
+        config.bark_url = "https://example.com/push"
+        config.bark_device_key = "key"
+        provider = BarkNotificationProvider(config)
+        provider.close()
+
+    def test_close_after_session_error(self):
+        from notification_providers import BarkNotificationProvider
+
+        config = NotificationConfig()
+        config.bark_enabled = True
+        config.bark_url = "https://example.com/push"
+        config.bark_device_key = "key"
+        provider = BarkNotificationProvider(config)
+        provider.session.close()
+        provider.close()
+
+
+class TestBarkSanitizeErrorText(unittest.TestCase):
+    """_sanitize_error_text 方法"""
+
+    def test_empty_text(self):
+        from notification_providers import BarkNotificationProvider
+
+        self.assertEqual(BarkNotificationProvider._sanitize_error_text(""), "")
+
+    def test_apns_url_redacted(self):
+        from notification_providers import BarkNotificationProvider
+
+        text = "Failed: https://api.push.apple.com/3/device/abcdef1234567890abcdef"
+        result = BarkNotificationProvider._sanitize_error_text(text)
+        self.assertNotIn("abcdef1234567890abcdef", result)
+        self.assertIn("<redacted>", result)
+
+    def test_long_hex_redacted(self):
+        from notification_providers import BarkNotificationProvider
+
+        text = "Token: " + "a1" * 20
+        result = BarkNotificationProvider._sanitize_error_text(text)
+        self.assertIn("<redacted_hex>", result)
+
+
+class TestBarkSendEdgeCases(unittest.TestCase):
+    """Bark send 边缘分支"""
+
+    def _make_provider(self, **overrides):
+        from notification_providers import BarkNotificationProvider
+
+        config = NotificationConfig()
+        config.bark_enabled = True
+        config.bark_url = "https://api.day.app/push"
+        config.bark_device_key = "test_key"
+        config.bark_icon = ""
+        config.bark_action = "none"
+        for k, v in overrides.items():
+            setattr(config, k, v)
+        return BarkNotificationProvider(config)
+
+    def test_empty_device_key_whitespace(self):
+        """device_key 全空白 → False"""
+        provider = self._make_provider(bark_device_key="   ")
+        event = create_event(title="T", message="M")
+        self.assertFalse(provider.send(event))
+
+    @patch("notification_providers.requests.Session.post")
+    def test_action_url_no_url_in_metadata(self, mock_post):
+        """bark_action=url 但 metadata 无 URL → 正常发送不带 url 字段"""
+        mock_post.return_value = MagicMock(status_code=200)
+        provider = self._make_provider(bark_action="url")
+        event = create_event(title="T", message="M", metadata={})
+        self.assertTrue(provider.send(event))
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertNotIn("url", payload)
+
+    @patch("notification_providers.requests.Session.post")
+    def test_action_copy_with_metadata(self, mock_post):
+        """bark_action=copy + metadata 有 copy_text → 使用 metadata 值"""
+        mock_post.return_value = MagicMock(status_code=200)
+        provider = self._make_provider(bark_action="copy")
+        event = create_event(
+            title="T", message="M", metadata={"copy_text": "custom copy"}
+        )
+        self.assertTrue(provider.send(event))
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["copy"], "custom copy")
+
+    @patch("notification_providers.requests.Session.post")
+    def test_action_unknown_as_url(self, mock_post):
+        """bark_action 是一个 URL → 当作 url 字段"""
+        mock_post.return_value = MagicMock(status_code=200)
+        provider = self._make_provider(bark_action="https://custom.action/")
+        event = create_event(title="T", message="M")
+        self.assertTrue(provider.send(event))
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload.get("url"), "https://custom.action/")
+
+    @patch("notification_providers.requests.Session.post")
+    def test_action_unknown_non_url(self, mock_post):
+        """bark_action 是未知非 URL 值 → 忽略"""
+        mock_post.return_value = MagicMock(status_code=200)
+        provider = self._make_provider(bark_action="some_random_value")
+        event = create_event(title="T", message="M")
+        self.assertTrue(provider.send(event))
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertNotIn("url", payload)
+        self.assertNotIn("action", payload)
+
+    @patch("notification_providers.requests.Session.post")
+    def test_metadata_complex_type_stringified(self, mock_post):
+        """非基本类型的 metadata 值应被 str() 转换"""
+        mock_post.return_value = MagicMock(status_code=200)
+        provider = self._make_provider()
+
+        class Custom:
+            def __str__(self):
+                return "custom_str"
+
+        event = create_event(title="T", message="M", metadata={"obj": Custom()})
+        self.assertTrue(provider.send(event))
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["obj"], "custom_str")
+
+    @patch("notification_providers.requests.Session.post")
+    def test_bark_timeout_invalid_fallback(self, mock_post):
+        """bark_timeout 无效时回退到默认 10s"""
+        mock_post.return_value = MagicMock(status_code=200)
+        provider = self._make_provider()
+        provider.config.bark_timeout = "not_a_number"
+        event = create_event(title="T", message="M")
+        self.assertTrue(provider.send(event))
+        self.assertEqual(mock_post.call_args.kwargs["timeout"], 10)
+
+    @patch("notification_providers.requests.Session.post")
+    def test_http_error_json_parse_fails(self, mock_post):
+        """HTTP 错误 + response.json() 抛异常 → 使用 response.text"""
+        resp = MagicMock(status_code=500, text="raw error")
+        resp.json.side_effect = ValueError("no json")
+        mock_post.return_value = resp
+        provider = self._make_provider()
+        event = create_event(title="T", message="M")
+        self.assertFalse(provider.send(event))
+
+    @patch("notification_providers.requests.Session.post")
+    def test_http_error_debug_mode(self, mock_post):
+        """debug=True 时 bark_error 写入 metadata"""
+        resp = MagicMock(status_code=400, text="bad request")
+        resp.json.return_value = {"code": 400, "message": "bad"}
+        mock_post.return_value = resp
+        provider = self._make_provider()
+        provider.config.debug = True
+        event = create_event(title="T", message="M")
+        self.assertFalse(provider.send(event))
+        self.assertIn("bark_error", event.metadata)
+
+    @patch("notification_providers.requests.Session.post")
+    def test_http_error_test_event(self, mock_post):
+        """test=True 的事件也写 bark_error"""
+        resp = MagicMock(status_code=400, text="bad")
+        resp.json.return_value = {"code": 400, "message": "bad"}
+        mock_post.return_value = resp
+        provider = self._make_provider()
+        event = create_event(title="T", message="M", metadata={"test": True})
+        self.assertFalse(provider.send(event))
+        self.assertIn("bark_error", event.metadata)
+
+    @patch("notification_providers.requests.Session.post")
+    def test_generic_exception(self, mock_post):
+        """send 内部 generic Exception → False"""
+        mock_post.side_effect = RuntimeError("unexpected")
+        provider = self._make_provider()
+        event = create_event(title="T", message="M")
+        self.assertFalse(provider.send(event))
+
+
+class TestSoundProviderException(unittest.TestCase):
+    """SoundNotificationProvider.send 异常处理"""
+
+    def test_send_exception_in_sound_files(self):
+        from notification_providers import SoundNotificationProvider
+
+        config = NotificationConfig()
+        config.sound_enabled = True
+        config.sound_mute = False
+        config.sound_volume = 0.5
+        config.sound_file = "default"
+        provider = SoundNotificationProvider(config)
+        provider.sound_files = None  # type: ignore[assignment]
+        event = create_event()
+        self.assertFalse(provider.send(event))
+
+
+class TestSystemProviderSend(unittest.TestCase):
+    """SystemNotificationProvider.send 各路径"""
+
+    def test_send_supported_success(self):
+        from notification_providers import SystemNotificationProvider
+
+        config = NotificationConfig()
+        config.web_timeout = 5000
+        provider = SystemNotificationProvider(config)
+        provider.supported = True
+        provider._notify = MagicMock()
+        event = create_event()
+        self.assertTrue(provider.send(event))
+        provider._notify.assert_called_once()
+
+    def test_send_supported_exception(self):
+        from notification_providers import SystemNotificationProvider
+
+        config = NotificationConfig()
+        config.web_timeout = 5000
+        provider = SystemNotificationProvider(config)
+        provider.supported = True
+        provider._notify = MagicMock(side_effect=RuntimeError("fail"))
+        event = create_event()
+        self.assertFalse(provider.send(event))
+
+    def test_send_notify_none(self):
+        from notification_providers import SystemNotificationProvider
+
+        config = NotificationConfig()
+        config.web_timeout = 5000
+        provider = SystemNotificationProvider(config)
+        provider.supported = True
+        provider._notify = None
+        event = create_event()
+        self.assertFalse(provider.send(event))
+
+
+class TestInitializeNotificationSystem(unittest.TestCase):
+    """initialize_notification_system 函数"""
+
+    def test_initializes(self):
+        from notification_providers import initialize_notification_system
+
+        config = NotificationConfig()
+        config.web_enabled = True
+        config.sound_enabled = False
+        config.bark_enabled = False
+        result = initialize_notification_system(config)
+        self.assertIsNotNone(result)
+
+
+class TestWebProviderUnregisterNonexistent(unittest.TestCase):
+    """unregister_client 对不存在的客户端"""
+
+    def test_unregister_nonexistent(self):
+        from notification_providers import WebNotificationProvider
+
+        config = NotificationConfig()
+        config.web_enabled = True
+        provider = WebNotificationProvider(config)
+        provider.unregister_client("does-not-exist")
 
 
 if __name__ == "__main__":
-    success = run_tests()
-    sys.exit(0 if success else 1)
+    unittest.main()

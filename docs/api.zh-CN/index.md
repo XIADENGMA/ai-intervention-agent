@@ -18,12 +18,14 @@
 ## 快速导航
 
 ### 核心模块
+
 - **config_manager**: 配置管理
 - **exceptions**: 统一异常定义与错误响应
 - **notification_manager**: 通知管理
 - **task_queue**: 任务队列
 
 ### 工具模块
+
 - **config_utils**: 配置工具函数
 - **shared_types**: 共享 TypedDict 类型定义
 - **notification_models**: 通知数据模型
@@ -31,4 +33,5 @@
 - **enhanced_logging**: 日志增强
 
 ---
-*文档自动生成于 `docs/api.zh-CN/`*
+
+_文档自动生成于 `docs/api.zh-CN/`_

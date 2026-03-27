@@ -644,5 +644,64 @@ class TestConfigUtilsAdvanced(unittest.TestCase):
         self.assertEqual(len(result), 100)
 
 
+# ──────────────────────────────────────────────────────────
+# 覆盖率补充：partial branch 路径
+# ──────────────────────────────────────────────────────────
+
+
+class TestClampValueSilent(unittest.TestCase):
+    """branch 51->53: log_warning=False + value > max"""
+
+    def test_clamp_above_max_no_warning(self):
+        from config_utils import clamp_value
+
+        result = clamp_value(200, 0, 100, "field", log_warning=False)
+        self.assertEqual(result, 100)
+
+    def test_clamp_below_min_no_warning(self):
+        from config_utils import clamp_value
+
+        result = clamp_value(-5, 0, 100, "field", log_warning=False)
+        self.assertEqual(result, 0)
+
+
+class TestGetTypedConfigNonNumeric(unittest.TestCase):
+    """branch 114->125: typed_value 非数值类型时跳过 clamp"""
+
+    def test_string_type_skips_clamp(self):
+        from config_utils import get_typed_config
+
+        result = get_typed_config(
+            {"key": "hello"}, "key", "default", str, min_val=0, max_val=100
+        )
+        self.assertEqual(result, "hello")
+
+    def test_bool_type_skips_clamp(self):
+        from config_utils import get_typed_config
+
+        result = get_typed_config(
+            {"key": "true"}, "key", False, bool, min_val=0, max_val=1
+        )
+        self.assertTrue(result)
+
+
+class TestTruncateStringSilent(unittest.TestCase):
+    """branches 154->156 / 161->163: log_warning=False"""
+
+    def test_empty_string_no_warning(self):
+        from config_utils import truncate_string
+
+        result = truncate_string(
+            "", 100, "field", default="fallback", log_warning=False
+        )
+        self.assertEqual(result, "fallback")
+
+    def test_long_string_no_warning(self):
+        from config_utils import truncate_string
+
+        result = truncate_string("a" * 200, 50, "field", log_warning=False)
+        self.assertEqual(len(result), 50)
+
+
 if __name__ == "__main__":
     unittest.main()

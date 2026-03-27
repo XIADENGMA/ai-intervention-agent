@@ -71,10 +71,7 @@ ai-intervention-agent = "server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
-exclude = [
-    "/packages/vscode",
-    "/packages/vscode/**",
-]
+exclude = ["/packages/vscode", "/packages/vscode/**"]
 
 [tool.hatch.build.targets.sdist]
 include = [
