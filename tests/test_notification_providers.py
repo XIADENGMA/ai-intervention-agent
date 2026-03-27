@@ -1127,5 +1127,244 @@ class TestWebProviderUnregisterNonexistent(unittest.TestCase):
         provider.unregister_client("does-not-exist")
 
 
+# ---------------------------------------------------------------------------
+# 边界路径补充（原 test_notification_providers_extended.py）
+# ---------------------------------------------------------------------------
+from notification_models import NotificationType
+from notification_providers import (
+    BarkNotificationProvider,
+    create_notification_providers,
+)
+
+
+def _make_ext_config(**overrides) -> MagicMock:
+    defaults = {
+        "web_enabled": False,
+        "sound_enabled": False,
+        "bark_enabled": True,
+        "bark_url": "https://api.day.app/push",
+        "bark_device_key": "test_key",
+        "bark_icon": "",
+        "bark_action": "none",
+        "bark_timeout": 10,
+        "web_timeout": 5000,
+        "web_icon": "",
+        "web_permission_auto_request": True,
+        "mobile_optimized": False,
+        "mobile_vibrate": True,
+        "sound_volume": 0.8,
+        "sound_file": "default",
+        "sound_mute": False,
+        "debug": False,
+    }
+    defaults.update(overrides)
+    cfg = MagicMock()
+    for k, v in defaults.items():
+        setattr(cfg, k, v)
+    return cfg  # type: ignore[return-value]
+
+
+def _make_ext_event(**overrides) -> NotificationEvent:
+    defaults = {
+        "id": "test-event-001",
+        "title": "测试标题",
+        "message": "测试消息",
+        "trigger": NotificationTrigger.IMMEDIATE,
+        "types": [NotificationType.BARK],
+        "metadata": {},
+    }
+    defaults.update(overrides)
+    return NotificationEvent(**defaults)  # type: ignore[arg-type]
+
+
+class TestBarkCloseException(unittest.TestCase):
+    def test_close_session_error_swallowed(self):
+        cfg = _make_ext_config()
+        provider = BarkNotificationProvider(cfg)
+        provider.session.close = MagicMock(side_effect=RuntimeError("close error"))  # type: ignore[assignment]
+        provider.close()
+
+    def test_close_success(self):
+        cfg = _make_ext_config()
+        provider = BarkNotificationProvider(cfg)
+        provider.close()
+
+
+class TestBarkUrlActionNoLink(unittest.TestCase):
+    def test_url_action_no_link_in_metadata(self):
+        cfg = _make_ext_config(bark_action="url")
+        provider = BarkNotificationProvider(cfg)
+        event = _make_ext_event(metadata={"custom_key": "no_url_here"})
+        with patch.object(provider.session, "post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_post.return_value = mock_resp
+            result = provider.send(event)
+        self.assertTrue(result)
+
+
+class TestBarkCopyAction(unittest.TestCase):
+    def test_copy_action_from_metadata(self):
+        cfg = _make_ext_config(bark_action="copy")
+        provider = BarkNotificationProvider(cfg)
+        event = _make_ext_event(metadata={"copy_text": "要复制的内容"})
+        with patch.object(provider.session, "post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_post.return_value = mock_resp
+            result = provider.send(event)
+        self.assertTrue(result)
+        bark_data = mock_post.call_args.kwargs.get("json") or mock_post.call_args[
+            1
+        ].get("json")
+        self.assertEqual(bark_data["copy"], "要复制的内容")
+
+    def test_copy_action_fallback_to_message(self):
+        cfg = _make_ext_config(bark_action="copy")
+        provider = BarkNotificationProvider(cfg)
+        event = _make_ext_event(metadata={})
+        with patch.object(provider.session, "post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_post.return_value = mock_resp
+            result = provider.send(event)
+        self.assertTrue(result)
+        bark_data = mock_post.call_args.kwargs.get("json") or mock_post.call_args[
+            1
+        ].get("json")
+        self.assertEqual(bark_data["copy"], "测试消息")
+
+
+class TestBarkDebugMetadataWriteException(unittest.TestCase):
+    def test_metadata_write_error_swallowed(self):
+        cfg = _make_ext_config(debug=True)
+        provider = BarkNotificationProvider(cfg)
+        event = _make_ext_event()
+
+        class FrozenDict(dict):
+            def __setitem__(self, key, value):
+                if key == "bark_error":
+                    raise TypeError("immutable")
+                super().__setitem__(key, value)
+
+        event.metadata = FrozenDict()  # type: ignore[assignment]
+        with patch.object(provider.session, "post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 400
+            mock_resp.json.return_value = {"code": 400, "message": "bad"}
+            mock_resp.text = "bad request"
+            mock_post.return_value = mock_resp
+            result = provider.send(event)
+        self.assertFalse(result)
+
+
+class TestSystemProviderCreationException(unittest.TestCase):
+    def test_system_provider_exception_swallowed(self):
+        cfg = _make_ext_config(
+            web_enabled=True, sound_enabled=False, bark_enabled=False
+        )
+        with patch(
+            "notification_providers.SystemNotificationProvider",
+            side_effect=RuntimeError("init failed"),
+        ):
+            providers = create_notification_providers(cfg)
+        self.assertIn(NotificationType.WEB, providers)
+        self.assertNotIn(NotificationType.SYSTEM, providers)
+
+
+class TestSystemProviderPlyerImportSuccess(unittest.TestCase):
+    def test_plyer_available(self):
+        from notification_providers import SystemNotificationProvider
+
+        cfg = _make_ext_config()
+        mock_module = MagicMock()
+        mock_module.notify = MagicMock()
+        with patch("notification_providers.find_spec", return_value=MagicMock()):
+            with patch.dict(
+                "sys.modules", {"plyer": MagicMock(), "plyer.notification": mock_module}
+            ):
+                provider = SystemNotificationProvider(cfg)
+                self.assertTrue(provider.supported)
+                self.assertIsNotNone(provider._notify)
+
+
+class TestSystemProviderPlyerImportError(unittest.TestCase):
+    def test_plyer_import_error_caught(self):
+        from notification_providers import SystemNotificationProvider
+
+        cfg = _make_ext_config()
+        with patch("notification_providers.find_spec", return_value=MagicMock()):
+            import builtins
+
+            original_import = builtins.__import__
+
+            def mock_import(name, *args, **kwargs):
+                if name == "plyer" or name.startswith("plyer."):
+                    raise ImportError("no plyer")
+                return original_import(name, *args, **kwargs)
+
+            with patch("builtins.__import__", side_effect=mock_import):
+                provider = SystemNotificationProvider(cfg)
+                self.assertFalse(provider.supported)
+                self.assertIsNone(provider._notify)
+
+
+class TestCreateProvidersSystemSupported(unittest.TestCase):
+    def test_system_provider_added_when_supported(self):
+        cfg = _make_ext_config(
+            web_enabled=False, sound_enabled=False, bark_enabled=False
+        )
+        mock_provider = MagicMock()
+        mock_provider.supported = True
+        with patch(
+            "notification_providers.SystemNotificationProvider",
+            return_value=mock_provider,
+        ):
+            providers = create_notification_providers(cfg)
+        self.assertIn(NotificationType.SYSTEM, providers)
+
+
+class TestBarkCopyActionWithMetadata(unittest.TestCase):
+    def test_copy_action_with_copy_metadata(self):
+        cfg = _make_ext_config(bark_action="copy")
+        provider = BarkNotificationProvider(cfg)
+        event = NotificationEvent(
+            id="test-copy",
+            title="标题",
+            message="内容",
+            trigger=NotificationTrigger.IMMEDIATE,
+            metadata={"copy": "  自定义复制内容  "},
+        )
+        with patch.object(provider.session, "post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"code": 200}
+            mock_post.return_value = mock_resp
+            result = provider.send(event)
+        self.assertTrue(result)
+        call_json = mock_post.call_args[1].get("json") or mock_post.call_args[0][0]
+        if isinstance(call_json, dict):
+            self.assertEqual(call_json.get("copy"), "自定义复制内容")
+
+
+class TestBarkCopyActionNoMetadata(unittest.TestCase):
+    def test_copy_action_empty_metadata_uses_message(self):
+        cfg = _make_ext_config(bark_action="copy")
+        provider = BarkNotificationProvider(cfg)
+        event = _make_ext_event(
+            id="bark-copy-no-meta", message="fallback body", metadata={}
+        )
+        with patch.object(provider.session, "post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {"code": 200}
+            mock_post.return_value = mock_resp
+            result = provider.send(event)
+        self.assertTrue(result)
+        call_json = mock_post.call_args[1].get("json") or mock_post.call_args[0][0]
+        if isinstance(call_json, dict):
+            self.assertEqual(call_json.get("copy"), "fallback body")
+
+
 if __name__ == "__main__":
     unittest.main()

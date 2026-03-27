@@ -692,5 +692,206 @@ class TestJsoncProcessConfigSectionOnlyInRange(unittest.TestCase):
         self.assertEqual(lines, original)
 
 
+# ---------------------------------------------------------------------------
+# 边界路径补充（原 test_jsonc_engine_extended.py）
+# ---------------------------------------------------------------------------
+
+
+class TestExtractCurrentValueEdgePaths(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = _Engine()
+
+    def test_multiline_array_non_string_element_skipped(self):
+        lines = _lines('{\n  "arr": [\n    123,\n    "valid"\n  ]\n}')
+        result = self.engine._extract_current_value(lines, 1, "arr")
+        self.assertEqual(result, ["valid"])
+
+    def test_multiline_array_json_decode_failure(self):
+        lines = _lines('{\n  "arr": [\n    "ok",\n    "bad\\xvalue"\n  ]\n}')
+        result = self.engine._extract_current_value(lines, 1, "arr")
+        self.assertIsInstance(result, list)
+        self.assertIn("ok", result)
+
+    def test_simple_value_json_decode_fallback(self):
+        lines = _lines('{\n  "note": undefined\n}')
+        result = self.engine._extract_current_value(lines, 1, "note")
+        self.assertEqual(result, "undefined")
+
+    def test_inline_array_regex_no_match_returns_none(self):
+        lines = _lines('{\n  "data": "has[open"\n}')
+        result = self.engine._extract_current_value(lines, 1, "data")
+        self.assertIsNone(result)
+
+
+class TestFindArrayRangeSimpleEscape(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = _Engine()
+
+    def test_backslash_in_string_element(self):
+        lines = _lines('{\n  "paths": [\n    "C:\\\\Users",\n    "D:\\\\Data"\n  ]\n}')
+        start, end = self.engine._find_array_range_simple(lines, 1, "paths")
+        self.assertEqual(start, 1)
+        self.assertEqual(end, 4)
+
+
+class TestJsoncFindArrayRangeEscape(unittest.TestCase):
+    def test_backslash_in_string(self):
+        lines = _lines('{\n  "paths": [\n    "C:\\\\Users\\\\test",\n    "ok"\n  ]\n}')
+        start, end = JsoncEngineMixin._jsonc_find_array_range(lines, 1, "paths")
+        self.assertEqual(start, 1)
+        self.assertEqual(end, 4)
+
+
+class TestJsoncUpdateArrayBlockEdge(unittest.TestCase):
+    def test_element_comment_json_decode_failure(self):
+        lines = _lines('{\n  "arr": [\n    "bad"extra // 注释\n  ]\n}')
+        result = JsoncEngineMixin._jsonc_update_array_block(lines, 1, 3, "arr", ["new"])
+        joined = "\n".join(result)
+        self.assertIn('"new"', joined)
+
+    def test_multiline_prefix_no_match(self):
+        lines = _lines('{\n  "arr": "not an array start [\n  ]\n}')
+        result = JsoncEngineMixin._jsonc_update_array_block(lines, 1, 2, "arr", ["val"])
+        self.assertIsInstance(result, list)
+
+
+class TestFindObjectEndLineSingleLineComment(unittest.TestCase):
+    def test_brace_after_single_line_comment_start(self):
+        lines = _lines('{\n  "a": 1 // comment with }\n}')
+        result = JsoncEngineMixin._jsonc_find_object_end_line(lines, 0)
+        self.assertEqual(result, 2)
+
+
+class TestFindKeyLineInObjectRangeEscapeAndComment(unittest.TestCase):
+    def test_escaped_quote_in_string_value(self):
+        lines = _lines('{\n  "msg": "he said \\"hello\\"",\n  "target": 42\n}')
+        result = JsoncEngineMixin._jsonc_find_key_line_in_object_range(
+            lines, (0, 3), "target"
+        )
+        self.assertEqual(result, 2)
+
+    def test_comment_brace_not_counted(self):
+        lines = _lines(
+            '{\n  "outer": {\n    "x": 1 // 注释含 }\n  },\n  "target": 42\n}'
+        )
+        result = JsoncEngineMixin._jsonc_find_key_line_in_object_range(
+            lines, (0, 5), "target"
+        )
+        self.assertEqual(result, 4)
+
+    def test_multiline_comment_in_object(self):
+        lines = _lines(
+            '{\n  /*\n  "hidden": {\n  */\n  "visible": {\n    "x": 1\n  }\n}'
+        )
+        result = JsoncEngineMixin._jsonc_find_key_line_in_object_range(
+            lines, (0, 7), "visible"
+        )
+        self.assertEqual(result, 4)
+
+
+class TestFindObjectRangeParserPaths(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = _Engine()
+
+    def test_multiline_comment_before_section(self):
+        lines = _lines(
+            '{\n  /*\n   * 多行注释 {\n   */\n  "target": {\n    "v": 1\n  }\n}'
+        )
+        result = self.engine._jsonc_find_object_range(lines, "target")
+        self.assertEqual(result, (4, 6))
+
+    def test_escaped_string_before_section(self):
+        lines = _lines(
+            '{\n  "path": "C:\\\\Users\\\\test",\n  "section": {\n    "k": 1\n  }\n}'
+        )
+        result = self.engine._jsonc_find_object_range(lines, "section")
+        self.assertEqual(result, (2, 4))
+
+    def test_single_line_comment_between_keys(self):
+        lines = _lines('{\n  "a": 1, // 注释 {\n  "section": {\n    "k": 1\n  }\n}')
+        result = self.engine._jsonc_find_object_range(lines, "section")
+        self.assertEqual(result, (2, 4))
+
+
+class TestFindTopLevelKeyLineParserPaths(unittest.TestCase):
+    def test_multiline_comment_contains_key(self):
+        lines = _lines('{\n  /*\n  "hidden": 999\n  */\n  "visible": 1\n}')
+        result = JsoncEngineMixin._jsonc_find_top_level_key_line(lines, "hidden")
+        self.assertEqual(result, -1)
+        result2 = JsoncEngineMixin._jsonc_find_top_level_key_line(lines, "visible")
+        self.assertEqual(result2, 4)
+
+    def test_escaped_char_in_string_value(self):
+        lines = _lines('{\n  "path": "C:\\\\Users\\\\foo",\n  "target": 42\n}')
+        result = JsoncEngineMixin._jsonc_find_top_level_key_line(lines, "target")
+        self.assertEqual(result, 2)
+
+    def test_comment_brace_not_counted_top_level(self):
+        lines = _lines(
+            '{\n  "outer": {\n    "x": 1 // 注释含 }\n  },\n  "target": 42\n}'
+        )
+        result = JsoncEngineMixin._jsonc_find_top_level_key_line(lines, "target")
+        self.assertEqual(result, 4)
+
+
+class TestProcessConfigSectionNotFound(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = _Engine()
+
+    def test_section_not_found_in_file(self):
+        lines = _lines('{\n  "web_ui": {\n    "port": 3000\n  }\n}')
+        original = list(lines)
+        self.engine._jsonc_process_config_section(
+            {"missing_section": {"key": "val"}}, lines, (-1, -1)
+        )
+        self.assertEqual(lines, original)
+
+
+class TestFindNetworkSecurityRangeEscape(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = _Engine()
+
+    def test_escape_in_value(self):
+        lines = _lines(
+            '{\n  "network_security": {\n    "label": "path\\\\value"\n  }\n}'
+        )
+        result = self.engine._find_network_security_range(lines)
+        self.assertEqual(result, (1, 3))
+
+
+class TestSaveJsoncWithCommentsNetworkSecuritySkip(unittest.TestCase):
+    def test_network_security_skipped_in_output(self):
+        engine = _Engine()
+        content = (
+            "{\n"
+            '  "network_security": {\n'
+            '    "bind_interface": "0.0.0.0"\n'
+            "  },\n"
+            '  "port": 3000\n'
+            "}"
+        )
+        engine._original_content = content
+        engine._exclude_network_security = lambda c: c
+        result = engine._save_jsonc_with_comments(
+            {"network_security": {"bind_interface": "1.2.3.4"}, "port": 9090}
+        )
+        self.assertIn("9090", result)
+        self.assertNotIn("1.2.3.4", result)
+        self.assertIn("0.0.0.0", result)
+
+
+class TestUpdateDictChildNotFound(unittest.TestCase):
+    def setUp(self) -> None:
+        self.engine = _Engine()
+
+    def test_nested_dict_child_not_found(self):
+        lines = _lines('{\n  "section": {\n    "port": 3000\n  }\n}')
+        original_joined = "\n".join(lines)
+        self.engine._jsonc_update_dict_in_object_range(
+            {"nonexistent_child": {"key": "val"}}, lines, 1, 3
+        )
+        self.assertEqual("\n".join(lines), original_joined)
+
+
 if __name__ == "__main__":
     unittest.main()
