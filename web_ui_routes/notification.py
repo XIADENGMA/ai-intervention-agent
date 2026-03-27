@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, cast
+from typing import Any, Dict
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
@@ -483,15 +483,13 @@ class NotificationRoutesMixin:
                         "status": "success",
                         "config": {
                             "resubmit_prompt": truncate_string(
-                                cast(
-                                    str | None, feedback_config.get("resubmit_prompt")
-                                ),
+                                feedback_config.get("resubmit_prompt"),
                                 500,
                                 "feedback.resubmit_prompt",
                                 default="请立即调用 interactive_feedback 工具",
                             ),
                             "prompt_suffix": truncate_string(
-                                cast(str | None, feedback_config.get("prompt_suffix")),
+                                feedback_config.get("prompt_suffix"),
                                 500,
                                 "feedback.prompt_suffix",
                                 default="\n请积极调用 interactive_feedback 工具",

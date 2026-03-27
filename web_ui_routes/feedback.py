@@ -305,14 +305,11 @@ class FeedbackRoutesMixin:
                 )
             new_prompt = new_prompt_raw
 
-            try:
-                if len(new_prompt) > 10000:
-                    logger.warning(
-                        f"/api/update prompt 过长：{len(new_prompt)}，将截断到 10000"
-                    )
-                    new_prompt = new_prompt[:10000] + "..."
-            except Exception:
-                new_prompt = ""
+            if len(new_prompt) > 10000:
+                logger.warning(
+                    f"/api/update prompt 过长：{len(new_prompt)}，将截断到 10000"
+                )
+                new_prompt = new_prompt[:10000] + "..."
 
             new_options_raw = data.get("predefined_options", [])
             if new_options_raw is None:
