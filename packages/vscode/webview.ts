@@ -138,7 +138,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._appleScriptLogger = this._logger.child('applescript')
     this._appleScriptExecutor = new AppleScriptExecutor({ logger: this._appleScriptLogger })
     this._notificationLogger = this._logger.child('notify')
-    this._notificationCenter = new NotificationCenter({ logger: this._notificationLogger })
+    this._notificationCenter = new NotificationCenter({ logger: this._notificationLogger, dedupeWindowMs: 10000 })
     this._vscodeNotificationProvider = new VSCodeApiNotificationProvider({
       logger: this._notificationLogger.child('vscode')
     })
@@ -654,6 +654,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   _handleNotify(message: WebviewMessage): void {
     const event = message && message.event ? message.event as Record<string, unknown> : null
     if (!event) return
+    try {
+      if (this._logger && typeof this._logger.debug === 'function') {
+        const dk = event.dedupeKey ? String(event.dedupeKey) : ''
+        const src = event.source ? String(event.source) : 'webview'
+        this._logger.debug(`_handleNotify: source=${src} dedupeKey=${dk}`)
+      }
+    } catch { /* noop */ }
     this._dispatchNotificationEvent(event)
     try {
       const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata as Record<string, unknown> : {}

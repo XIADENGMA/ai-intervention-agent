@@ -314,12 +314,20 @@ function activate(context: vscode.ExtensionContext): void {
           }
           if (newTaskData.length > 0 && extTaskTrackingInitialized) {
             if (provider && typeof (provider as unknown as Record<string, unknown>).dispatchNewTaskNotification === 'function') {
-              logger.event(
-                'ext.dispatch_new_task',
-                { ids: newTaskData.map(t => t.id), viewVisible: isViewVisible },
-                { level: 'info' }
-              )
-              ;(provider as unknown as { dispatchNewTaskNotification: (tasks: TaskData[]) => void }).dispatchNewTaskNotification(newTaskData)
+              if (isViewVisible) {
+                logger.event(
+                  'ext.skip_dispatch_webview_visible',
+                  { ids: newTaskData.map(t => t.id) },
+                  { level: 'debug' }
+                )
+              } else {
+                logger.event(
+                  'ext.dispatch_new_task',
+                  { ids: newTaskData.map(t => t.id), viewVisible: false },
+                  { level: 'info' }
+                )
+                ;(provider as unknown as { dispatchNewTaskNotification: (tasks: TaskData[]) => void }).dispatchNewTaskNotification(newTaskData)
+              }
             }
           }
           extKnownTaskIds = currentIds

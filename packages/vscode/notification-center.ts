@@ -98,6 +98,11 @@ export class NotificationCenter {
 
     const dedupeKey = event && event.dedupeKey ? String(event.dedupeKey) : ''
     if (dedupeKey && this._shouldDedupe(dedupeKey)) {
+      try {
+        if (this._logger && typeof this._logger.debug === 'function') {
+          this._logger.debug(`deduped: key=${dedupeKey} window=${this._dedupeWindowMs}ms`)
+        }
+      } catch { /* noop */ }
       return { event, delivered: {}, skipped: true, reason: 'deduped' }
     }
 
