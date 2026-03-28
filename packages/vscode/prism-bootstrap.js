@@ -1,4 +1,4 @@
-/* eslint-disable */
+
 ;(function () {
   try {
     // 必须在 prism.min.js 加载前设置，才能禁用自动高亮（由 webview-ui.js 手动触发 highlightAllUnder）

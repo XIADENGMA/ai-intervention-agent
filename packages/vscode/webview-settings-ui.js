@@ -11,7 +11,7 @@
   }
   if (!vscode) {
     try {
-      // eslint-disable-next-line no-undef
+
       vscode = acquireVsCodeApi()
     } catch (e) {
       vscode = null
@@ -68,13 +68,13 @@
 
   function getNotifyCore() {
     try {
-      // eslint-disable-next-line no-undef
+
       return globalThis && globalThis.AIIAWebviewNotifyCore
         ? globalThis.AIIAWebviewNotifyCore
         : null
     } catch (e) {
       try {
-        // eslint-disable-next-line no-undef
+
         return window && window.AIIAWebviewNotifyCore ? window.AIIAWebviewNotifyCore : null
       } catch (_) {
         return null
@@ -652,11 +652,11 @@
   }
 
   try {
-    // eslint-disable-next-line no-undef
+
     globalThis.AIIAWebviewSettingsUi = api
   } catch (e) {
     try {
-      // eslint-disable-next-line no-undef
+
       window.AIIAWebviewSettingsUi = api
     } catch (_) {
       // 忽略

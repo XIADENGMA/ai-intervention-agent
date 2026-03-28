@@ -11,7 +11,7 @@
   }
   if (!vscode) {
     try {
-      // eslint-disable-next-line no-undef
+
       vscode = acquireVsCodeApi()
     } catch (e) {
       vscode = null
@@ -234,11 +234,11 @@
   }
 
   try {
-    // eslint-disable-next-line no-undef
+
     globalThis.AIIAWebviewNotifyCore = api
   } catch (e) {
     try {
-      // eslint-disable-next-line no-undef
+
       window.AIIAWebviewNotifyCore = api
     } catch (_) {
       // 忽略

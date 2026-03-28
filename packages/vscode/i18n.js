@@ -4,7 +4,6 @@
   var DEFAULT_LANG = 'en'
   var currentLang = DEFAULT_LANG
   var locales = {}
-  var fallbackLocale = null
 
   function detectLang() {
     try {
