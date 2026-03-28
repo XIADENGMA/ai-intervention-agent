@@ -250,20 +250,18 @@ var _sseReconnectDelay = 1000
 function _connectSSE() {
   if (typeof EventSource === 'undefined') return
   if (_sseSource) {
-    try {
-      _sseSource.close()
-    } catch (_) {
-      /* noop */
-    }
+    try { _sseSource.close() } catch (_) { /* noop */ }
+    _sseSource = null
   }
 
-  _sseSource = new EventSource('/api/events')
+  var source = new EventSource('/api/events')
+  _sseSource = source
 
-  _sseSource.onopen = function () {
+  source.onopen = function () {
+    if (_sseSource !== source) return
     _sseConnected = true
     _sseReconnectDelay = 1000
     console.log('SSE 已连接，轮询降级为保底模式（30s）')
-    // 连接成功后切换到保底轮询间隔
     tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS
     if (tasksPollingTimer) {
       clearTimeout(tasksPollingTimer)
@@ -271,9 +269,9 @@ function _connectSSE() {
     }
   }
 
-  // 防抖：complete_task 会连续触发 2 个事件（completed + auto-activate），合并为一次拉取
   var _sseDebounceTimer = null
-  _sseSource.addEventListener('task_changed', function (e) {
+  source.addEventListener('task_changed', function (e) {
+    if (_sseSource !== source) return
     try {
       var detail = JSON.parse(e.data)
       console.debug('SSE task_changed:', detail.task_id, detail.old_status, '→', detail.new_status)
@@ -287,27 +285,21 @@ function _connectSSE() {
     }, 80)
   })
 
-  _sseSource.onerror = function () {
+  source.onerror = function () {
+    if (_sseSource !== source) return
     _sseConnected = false
-    try {
-      _sseSource.close()
-    } catch (_) {
-      /* noop */
-    }
+    try { source.close() } catch (_) { /* noop */ }
     _sseSource = null
     console.warn('SSE 断开，回退到短间隔轮询，' + _sseReconnectDelay / 1000 + 's 后重连')
-    // 恢复短间隔轮询
     tasksPollBackoffMs = TASKS_POLL_BASE_MS
     if (tasksPollingTimer) {
       clearTimeout(tasksPollingTimer)
       scheduleNextTasksPoll(0)
     }
-    // 指数退避重连
     if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer)
     _sseReconnectTimer = setTimeout(function () {
-      if (typeof document !== 'undefined' && !document.hidden) {
-        _connectSSE()
-      }
+      if (typeof document !== 'undefined' && document.hidden) return
+      _connectSSE()
     }, _sseReconnectDelay)
     _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2)
   }

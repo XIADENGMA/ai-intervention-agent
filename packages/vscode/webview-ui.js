@@ -1256,10 +1256,10 @@
   let submitBackoffUntilMs = 0
   let submitBackoffTimer = null
 
-  // 【轮询治理】避免重叠请求/页面不可见浪费/错误风暴
+  // 【SSE + 轮询混合模式】SSE 优先实时推送，轮询作为保底
   const POLL_BASE_MS = 2000
   const POLL_MAX_MS = 30000
-  // 空闲态（无任务/无内容）降频：减少无意义请求与功耗
+  const POLL_SSE_FALLBACK_MS = 30000
   const POLL_IDLE_MS = 8000
   let pollBackoffMs = POLL_BASE_MS
   let pollSuggestedDelayMs = null
@@ -1269,6 +1269,14 @@
   // 轮询代际：用于解决 stopPolling 与 in-flight 回调的竞态（防止 stop 后“复活”）
   let pollingEnabled = false
   let pollingToken = 0
+
+  // SSE 连接状态
+  let _sseSource = null
+  let _sseConnected = false
+  let _sseReconnectTimer = null
+  let _sseReconnectDelay = 1000
+  let _sseDebounceTimer = null
+
   let lastTasksHash = ''
   let lastTaskIds = new Set()
   // 新任务通知边界：仅跳过“首次快照”（避免扩展启动时把历史任务当作新任务）
@@ -1277,10 +1285,81 @@
   let lastCountdownTaskId = null // 跟踪当前主倒计时对应的任务ID
 
   function getNextBackoffMs(currentMs) {
-    // 指数退避 + 轻微抖动，避免多客户端同时打爆服务端
     const next = Math.min(POLL_MAX_MS, Math.round(currentMs * 1.7))
-    const jitter = Math.round(next * 0.1 * Math.random()) // 0-10%
+    const jitter = Math.round(next * 0.1 * Math.random())
     return next + jitter
+  }
+
+  function _connectSSE() {
+    if (typeof EventSource === 'undefined') return
+    if (_sseSource) {
+      try { _sseSource.close() } catch (_) { /* noop */ }
+      _sseSource = null
+    }
+
+    const source = new EventSource(SERVER_URL + '/api/events')
+    _sseSource = source
+
+    source.onopen = function () {
+      if (_sseSource !== source) return
+      _sseConnected = true
+      _sseReconnectDelay = 1000
+      log('SSE 已连接，轮询降级为保底模式（30s）')
+      pollBackoffMs = POLL_SSE_FALLBACK_MS
+      if (pollingTimer) {
+        clearTimeout(pollingTimer)
+        scheduleNextPoll(POLL_SSE_FALLBACK_MS, pollingToken)
+      }
+    }
+
+    source.addEventListener('task_changed', function (e) {
+      if (_sseSource !== source) return
+      try {
+        const detail = JSON.parse(e.data)
+        log('SSE task_changed: ' + detail.task_id + ' ' + detail.old_status + ' → ' + detail.new_status)
+      } catch (_) { /* noop */ }
+      if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+      _sseDebounceTimer = setTimeout(function () {
+        _sseDebounceTimer = null
+        pollAllData('sse')
+      }, 80)
+    })
+
+    source.onerror = function () {
+      if (_sseSource !== source) return
+      _sseConnected = false
+      try { source.close() } catch (_) { /* noop */ }
+      _sseSource = null
+      log('SSE 断开，回退到短间隔轮询，' + _sseReconnectDelay / 1000 + 's 后重连')
+      pollBackoffMs = POLL_BASE_MS
+      if (pollingTimer) {
+        clearTimeout(pollingTimer)
+        scheduleNextPoll(0, pollingToken)
+      }
+      if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer)
+      _sseReconnectTimer = setTimeout(function () {
+        if (!pollingEnabled) return
+        if (typeof document !== 'undefined' && document.hidden) return
+        _connectSSE()
+      }, _sseReconnectDelay)
+      _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2)
+    }
+  }
+
+  function _disconnectSSE() {
+    if (_sseReconnectTimer) {
+      clearTimeout(_sseReconnectTimer)
+      _sseReconnectTimer = null
+    }
+    if (_sseDebounceTimer) {
+      clearTimeout(_sseDebounceTimer)
+      _sseDebounceTimer = null
+    }
+    if (_sseSource) {
+      try { _sseSource.close() } catch (_) { /* noop */ }
+      _sseSource = null
+    }
+    _sseConnected = false
   }
 
   function installPollingVisibilityHandler() {
@@ -1985,7 +2064,7 @@
     vscode.postMessage({ type: 'serverStatus', connected })
   }
 
-  /* 启动轮询（治理：不可见暂停/指数退避/AbortController） */
+  /* 启动 SSE + 轮询混合模式 */
   function startPolling() {
     stopPolling()
     installPollingVisibilityHandler()
@@ -1993,6 +2072,7 @@
     pollingToken = pollingToken + 1
     const token = pollingToken
     pollBackoffMs = POLL_BASE_MS
+    _connectSSE()
     scheduleNextPoll(0, token)
   }
 
@@ -2017,7 +2097,8 @@
             : null
         pollSuggestedDelayMs = null
         if (ok) {
-          pollBackoffMs = suggested !== null ? Math.min(POLL_MAX_MS, suggested) : POLL_BASE_MS
+          const base = _sseConnected ? POLL_SSE_FALLBACK_MS : POLL_BASE_MS
+          pollBackoffMs = suggested !== null ? Math.min(POLL_MAX_MS, suggested) : base
         } else {
           pollBackoffMs = getNextBackoffMs(pollBackoffMs)
         }
@@ -2030,11 +2111,11 @@
   function stopPolling() {
     pollingEnabled = false
     pollingToken = pollingToken + 1
+    _disconnectSSE()
     if (pollingTimer) {
       clearTimeout(pollingTimer)
       pollingTimer = null
     }
-    // 取消 in-flight 请求，避免页面切走/重启轮询时堆积
     try {
       if (pollAbortController && typeof pollAbortController.abort === 'function') {
         pollAbortController.abort()
