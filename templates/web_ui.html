@@ -1011,6 +1011,25 @@
         background-clip: text !important;
       }
 
+      [data-theme='light'] .setting-title {
+        color: #141413 !important;
+      }
+
+      [data-theme='light'] .settings-main-title {
+        border-bottom-color: rgba(0, 0, 0, 0.1) !important;
+      }
+
+      [data-theme='light'] .setting-group::before {
+        background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.08), transparent) !important;
+      }
+
+      [data-theme='light'] .setting-group-title {
+        color: #141413 !important;
+        -webkit-text-fill-color: #141413 !important;
+        background: none !important;
+        border-bottom-color: rgba(0, 0, 0, 0.1) !important;
+      }
+
       .status-row:last-child {
         margin-bottom: 0;
       }
@@ -3148,7 +3167,7 @@
                 <div class="setting-group">
                   <div
                     id="code-paste-hint"
-                    style="margin-bottom: 0.75rem; color: rgba(245, 245, 247, 0.8); font-size: 0.9rem"
+                    style="margin-bottom: 0.75rem; color: var(--text-secondary); font-size: 0.9rem"
                   >
                     由于浏览器安全限制无法自动读取剪贴板，请在下方粘贴代码（iOS 可长按→粘贴），然后点击“插入”。
                   </div>
@@ -3636,7 +3655,7 @@
                     readonly
                   />
                 </label>
-                <div style="margin-top: 0.5rem; color: rgba(245, 245, 247, 0.7); font-size: 0.85rem">
+                <div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.85rem">
                   开发模式默认优先使用工作目录的 <code>./config.jsonc</code>。如需强制指向
                   <code>~/.config/ai-intervention-agent/config.jsonc</code>，请在启动前设置环境变量：
                   <code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.jsonc</code>。
