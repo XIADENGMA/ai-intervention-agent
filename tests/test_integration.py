@@ -105,12 +105,14 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
 
         # 可能存在或不存在
         self.assertIn(response.status_code, [200, 404])
+        response.close()
 
     def test_notification_service_worker_route(self):
         """回归测试：通知 service worker 应可从根路径访问并声明站点级作用域"""
         response = self.client.get("/notification-service-worker.js")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("Service-Worker-Allowed"), "/")
+        response.close()
 
     def test_static_lottie(self):
         """回归测试：Lottie 动画 JSON 静态路由应可访问（避免退化到 emoji）"""
@@ -124,6 +126,7 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
 
         # 内容应是 JSON（至少以 { 或 [ 开头）
         body = response.data.decode("utf-8", errors="ignore").lstrip()
+        response.close()
         self.assertTrue(body.startswith("{") or body.startswith("["))
 
     def test_app_js_has_sprout_fallback(self):
@@ -201,18 +204,18 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
 
     def test_static_assets_not_rate_limited(self):
         """回归测试：静态资源不应被频率限制误伤（避免 429 导致白屏/MathJax 失效）"""
-        # 连续快速请求静态资源，若静态路由未 exempt，可能触发全局 10/s 限流返回 429
-        statuses = [
-            self.client.get("/static/js/mathjax-loader.js").status_code
-            for _ in range(20)
-        ]
+        statuses = []
+        for _ in range(20):
+            resp = self.client.get("/static/js/mathjax-loader.js")
+            statuses.append(resp.status_code)
+            resp.close()
         self.assertNotIn(429, statuses)
 
-        # 文件不存在时也应返回 404（而不是被限流拦截成 429）
-        missing_statuses = [
-            self.client.get("/static/js/__definitely_missing__.js").status_code
-            for _ in range(5)
-        ]
+        missing_statuses = []
+        for _ in range(5):
+            resp = self.client.get("/static/js/__definitely_missing__.js")
+            missing_statuses.append(resp.status_code)
+            resp.close()
         self.assertNotIn(429, missing_statuses)
 
 

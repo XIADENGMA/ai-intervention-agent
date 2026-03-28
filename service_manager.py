@@ -616,6 +616,14 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
         raise ServiceUnavailableError(
             f"启动 Web 服务失败: {e}", code="start_failed"
         ) from e
+    finally:
+        # Popen 成功时子进程已通过 dup2 持有独立 fd，父进程可安全关闭；
+        # Popen 失败时也需要释放文件句柄，避免 ResourceWarning。
+        if log_file is not None:
+            try:
+                log_file.close()
+            except OSError:
+                pass
 
     max_wait = 15
     check_start = time.monotonic()

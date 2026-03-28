@@ -504,6 +504,25 @@ def run_tests():
 _SERVER_DIR = Path(server.__file__ or ".").resolve().parent
 
 
+def _mock_arun_closing(*return_values):
+    """构建 asyncio.run 的 mock side_effect，在返回前关闭传入的协程。
+
+    避免 mock asyncio.run 后真实协程未被 await/close 导致 RuntimeWarning。
+    若 return_values 中某项是 BaseException 子类实例，则抛出而非返回。
+    """
+    it = iter(return_values)
+
+    def _side_effect(coro, *_a, **_kw):
+        if hasattr(coro, "close"):
+            coro.close()
+        val = next(it)
+        if isinstance(val, BaseException):
+            raise val
+        return val
+
+    return _side_effect
+
+
 def _make_config(
     host: str = "127.0.0.1",
     port: int = 8080,
@@ -692,6 +711,7 @@ class TestServiceManager(unittest.TestCase):
         mock_proc.poll.side_effect = OSError("gone")
         sm.register_process("error", mock_proc, _make_config())
         self.assertFalse(sm.is_process_running("error"))
+        sm.unregister_process("error")
 
     @patch("service_manager.is_web_service_running", return_value=False)
     def test_terminate_already_exited(self, _):
@@ -1966,10 +1986,9 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
 
-        mock_arun.side_effect = [
-            None,
-            {"user_input": "done", "selected_options": []},
-        ]
+        mock_arun.side_effect = _mock_arun_closing(
+            None, {"user_input": "done", "selected_options": []}
+        )
 
         with patch("service_manager.get_sync_client", return_value=mock_client):
             result = server.launch_feedback_ui("hello")
@@ -1988,7 +2007,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp.json.return_value = {"error": "server down"}
         mock_resp.text = '{"error": "server down"}'
 
-        mock_arun.return_value = None
+        mock_arun.side_effect = _mock_arun_closing(None)
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2009,7 +2028,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp.json.return_value = "string payload"
         mock_resp.text = '"string payload"'
 
-        mock_arun.return_value = None
+        mock_arun.side_effect = _mock_arun_closing(None)
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2030,7 +2049,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp.json.side_effect = ValueError("bad json")
         mock_resp.text = "Internal Error"
 
-        mock_arun.return_value = None
+        mock_arun.side_effect = _mock_arun_closing(None)
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2044,7 +2063,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
     @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_api_connection_error(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
-        mock_arun.return_value = None
+        mock_arun.side_effect = _mock_arun_closing(None)
 
         mock_client = MagicMock()
         mock_client.post.side_effect = httpx.ConnectError("refused")
@@ -2065,7 +2084,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        mock_arun.side_effect = [None, {"user_input": "ok"}]
+        mock_arun.side_effect = _mock_arun_closing(None, {"user_input": "ok"})
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2087,7 +2106,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        mock_arun.side_effect = [None, {"user_input": "ok"}]
+        mock_arun.side_effect = _mock_arun_closing(None, {"user_input": "ok"})
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2105,7 +2124,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        mock_arun.side_effect = [None, {"error": "timeout"}]
+        mock_arun.side_effect = _mock_arun_closing(None, {"error": "timeout"})
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2117,19 +2136,23 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         with self.assertRaises(ValidationError):
             server.launch_feedback_ui(123)  # type: ignore[arg-type]
 
-    @patch("server_feedback.asyncio.run", side_effect=FileNotFoundError("web_ui.py"))
+    @patch("server_feedback.asyncio.run")
     @patch("service_manager.get_web_ui_config")
     @patch("server_config._generate_task_id", return_value="test-task-9")
     def test_file_not_found(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
+        mock_arun.side_effect = _mock_arun_closing(
+            FileNotFoundError("web_ui.py"),
+        )
         with self.assertRaises(ServiceUnavailableError):
             server.launch_feedback_ui("hello")
 
-    @patch("server_feedback.asyncio.run", side_effect=RuntimeError("unexpected"))
+    @patch("server_feedback.asyncio.run")
     @patch("service_manager.get_web_ui_config")
     @patch("server_config._generate_task_id", return_value="test-task-10")
     def test_generic_exception(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
+        mock_arun.side_effect = _mock_arun_closing(RuntimeError("unexpected"))
         with self.assertRaises(ServiceUnavailableError):
             server.launch_feedback_ui("hello")
 
@@ -2144,7 +2167,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        mock_arun.side_effect = [None, {"user_input": "ok"}]
+        mock_arun.side_effect = _mock_arun_closing(None, {"user_input": "ok"})
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2165,7 +2188,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp.json.side_effect = ValueError("bad json")
         type(mock_resp).text = PropertyMock(side_effect=RuntimeError("text fail"))
 
-        mock_arun.return_value = None
+        mock_arun.side_effect = _mock_arun_closing(None)
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
@@ -2189,7 +2212,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        mock_arun.side_effect = [None, {"user_input": "ok"}]
+        mock_arun.side_effect = _mock_arun_closing(None, {"user_input": "ok"})
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp

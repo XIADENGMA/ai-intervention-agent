@@ -1576,6 +1576,7 @@ class TestStaticRoutesEdge(_RouteTestBase):
             self.assertEqual(resp.headers["Service-Worker-Allowed"], "/")
             cache = resp.headers.get("Cache-Control", "")
             self.assertIn("no-cache", cache)
+        resp.close()
 
     def test_css_with_version_param_long_cache(self):
         """line 132: CSS ?v=xxx 时启用 1 年缓存"""
@@ -1584,6 +1585,7 @@ class TestStaticRoutesEdge(_RouteTestBase):
             cache = resp.headers.get("Cache-Control", "")
             self.assertIn("max-age=31536000", cache)
             self.assertIn("immutable", cache)
+        resp.close()
 
     def test_favicon_with_mock_icon(self):
         """lines 264-268: favicon 路由返回正确响应头"""

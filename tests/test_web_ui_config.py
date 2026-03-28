@@ -1738,6 +1738,7 @@ class TestStaticCacheHeaders(unittest.TestCase):
         if resp.status_code == 200:
             cache = resp.headers.get("Cache-Control", "")
             self.assertIn("immutable", cache)
+        resp.close()
 
 
 # ──────────────────────────────────────────────────────────
@@ -2489,6 +2490,7 @@ class TestStaticCacheHeadersExtended(unittest.TestCase):
         if resp.status_code == 200:
             cache = resp.headers.get("Cache-Control", "")
             self.assertIn("86400", cache)
+        resp.close()
 
     def test_lottie_cache(self):
         """Lottie 文件缓存 30 天"""
@@ -2496,6 +2498,7 @@ class TestStaticCacheHeadersExtended(unittest.TestCase):
         if resp.status_code == 200:
             cache = resp.headers.get("Cache-Control", "")
             self.assertIn("2592000", cache)
+        resp.close()
 
 
 # ──────────────────────────────────────────────────────────
