@@ -328,11 +328,11 @@
     setSettingsHint(t('settings.hint.loading'), false)
 
     try {
-      // 强制拉一次最新配置并渲染（打开面板时以服务端为准）
       await refreshNotificationSettingsFromServer({ force: true, silent: false })
     } catch (e) {
       setSettingsHint(t('settings.hint.loadFailedReason', { reason: (e && e.message ? e.message : String(e)) }), true)
     }
+    loadFeedbackConfig()
   }
 
   async function saveSettings({ silent = false } = {}) {
@@ -527,6 +527,30 @@
         settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
       if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
 
+      const resetFeedbackBtn = document.getElementById('settingsResetFeedbackBtn')
+      if (resetFeedbackBtn) resetFeedbackBtn.addEventListener('click', resetFeedbackConfig)
+
+      let fbSaveTimer = null
+      const debounceSaveFeedback = (updates) => {
+        if (fbSaveTimer) clearTimeout(fbSaveTimer)
+        fbSaveTimer = setTimeout(() => saveFeedbackConfig(updates), 800)
+      }
+      const fbCountdown = document.getElementById('feedbackCountdown')
+      const fbPrompt = document.getElementById('feedbackResubmitPrompt')
+      const fbSuffix = document.getElementById('feedbackPromptSuffix')
+      if (fbCountdown) {
+        fbCountdown.addEventListener('change', () => {
+          const v = parseInt(fbCountdown.value, 10)
+          if (!isNaN(v) && v >= 0 && v <= 250) debounceSaveFeedback({ frontend_countdown: v })
+        })
+      }
+      if (fbPrompt) {
+        fbPrompt.addEventListener('input', () => debounceSaveFeedback({ resubmit_prompt: fbPrompt.value }))
+      }
+      if (fbSuffix) {
+        fbSuffix.addEventListener('input', () => debounceSaveFeedback({ prompt_suffix: fbSuffix.value }))
+      }
+
       if (settingsOverlay) {
         settingsOverlay.addEventListener('click', e => {
           if (e.target === settingsOverlay) {
@@ -549,6 +573,54 @@
     } catch (e) {
       // 忽略
     }
+  }
+
+  async function loadFeedbackConfig() {
+    if (!SERVER_URL) return
+    try {
+      const resp = await fetch(SERVER_URL + '/api/get-feedback-prompts', { cache: 'no-store' })
+      if (!resp.ok) return
+      const data = await resp.json()
+      if (data && data.status === 'success' && data.config) {
+        const c = data.config
+        const el = (id, v) => { const e = document.getElementById(id); if (e) e.value = v == null ? '' : String(v) }
+        el('feedbackCountdown', c.frontend_countdown ?? 240)
+        el('feedbackResubmitPrompt', c.resubmit_prompt ?? '')
+        el('feedbackPromptSuffix', c.prompt_suffix ?? '')
+      }
+    } catch (e) {
+      // 静默失败
+    }
+  }
+
+  async function saveFeedbackConfig(updates) {
+    if (!SERVER_URL) return
+    try {
+      const resp = await fetch(SERVER_URL + '/api/update-feedback-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+        cache: 'no-store'
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (resp.ok && data.status === 'success') {
+        setSettingsHint(t('settings.feedback.saved'), false, 1200)
+      } else {
+        setSettingsHint(data.message || t('settings.feedback.saveFailed'), true)
+      }
+    } catch (e) {
+      setSettingsHint(t('settings.feedback.saveFailed'), true)
+    }
+  }
+
+  async function resetFeedbackConfig() {
+    await saveFeedbackConfig({
+      frontend_countdown: 240,
+      resubmit_prompt: '\u8bf7\u7acb\u5373\u8c03\u7528 interactive_feedback \u5de5\u5177',
+      prompt_suffix: '\n\u8bf7\u79ef\u6781\u8c03\u7528 interactive_feedback \u5de5\u5177'
+    })
+    await loadFeedbackConfig()
+    setSettingsHint(t('settings.feedback.resetDone'), false, 1200)
   }
 
   function dispose() {

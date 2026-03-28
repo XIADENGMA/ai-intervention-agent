@@ -1209,6 +1209,26 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     <input type="text" id="notifyBarkAction" placeholder="${tl('settings.bark.actionPlaceholder')}">
                 </label>
 
+                <div class="settings-divider"></div>
+
+                <div class="settings-section-title">${tl('settings.feedback.title')}</div>
+                <label class="settings-field">
+                    <span class="settings-label">${tl('settings.feedback.countdown')}</span>
+                    <input type="number" id="feedbackCountdown" min="0" max="250" step="10" value="240" style="max-width:100px">
+                    <span class="settings-field-hint">${tl('settings.feedback.countdownHint')}</span>
+                </label>
+                <label class="settings-field">
+                    <span class="settings-label">${tl('settings.feedback.resubmitPrompt')}</span>
+                    <textarea id="feedbackResubmitPrompt" rows="2" maxlength="500" placeholder="${tl('settings.feedback.resubmitPromptPlaceholder')}"></textarea>
+                </label>
+                <label class="settings-field">
+                    <span class="settings-label">${tl('settings.feedback.promptSuffix')}</span>
+                    <textarea id="feedbackPromptSuffix" rows="2" maxlength="500" placeholder="${tl('settings.feedback.promptSuffixPlaceholder')}"></textarea>
+                </label>
+                <button class="settings-action secondary" id="settingsResetFeedbackBtn">${tl('settings.feedback.reset')}</button>
+
+                <div class="settings-divider"></div>
+
                 <div class="settings-actions">
                     <button class="settings-action secondary" id="settingsTestNativeBtn">${tl('settings.testNative')}</button>
                     <button class="settings-action secondary" id="settingsTestBarkBtn">${tl('settings.testBark')}</button>

@@ -8,6 +8,19 @@
     "autoSaveTooltip": "Changes are automatically synced to the server",
     "testNative": "Test Native",
     "testBark": "Test Bark",
+    "feedback": {
+      "title": "Feedback",
+      "countdown": "Auto-reschedule (seconds)",
+      "countdownHint": "Auto-resubmit when countdown expires. 30-250, 0 to disable.",
+      "resubmitPrompt": "Resubmit prompt",
+      "resubmitPromptPlaceholder": "Content auto-submitted on countdown expiry",
+      "promptSuffix": "Feedback suffix",
+      "promptSuffixPlaceholder": "Appended to every submission",
+      "reset": "Reset defaults",
+      "saved": "Feedback config saved",
+      "resetDone": "Feedback config reset",
+      "saveFailed": "Save feedback config failed"
+    },
     "bark": {
       "enabled": "Bark Notification",
       "url": "Bark URL",
