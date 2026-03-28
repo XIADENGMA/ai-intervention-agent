@@ -275,9 +275,10 @@ class TestGuessMimeTypeFromData(unittest.TestCase):
         data = self._encode(b"RIFF" + b"\x00" * 4 + b"WEBP" + b"\x00" * 100)
         self.assertEqual(_guess_mime_type_from_data(data), "image/webp")
 
-    def test_svg(self):
+    def test_svg_no_longer_detected(self):
+        """SVG 检测已移除（安全策略：与 file_validator.py 对齐）"""
         data = self._encode(b"<svg xmlns='...'>" + b"\x00" * 100)
-        self.assertEqual(_guess_mime_type_from_data(data), "image/svg+xml")
+        self.assertIsNone(_guess_mime_type_from_data(data))
 
     def test_unknown(self):
         data = self._encode(b"unknown binary data here " * 10)

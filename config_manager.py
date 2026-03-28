@@ -186,6 +186,11 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
 
     cleaned_content = "".join(cleaned_chars)
 
+    # JSONC 允许尾部逗号，但 json.loads 不接受，需预处理移除
+    import re
+
+    cleaned_content = re.sub(r",\s*([}\]])", r"\1", cleaned_content)
+
     return cast(Dict[str, Any], json.loads(cleaned_content))
 
 
@@ -359,17 +364,17 @@ class ConfigManager(
 
         # 初始化文件内容和访问时间
         self._original_content: Optional[str] = None  # 保存原始文件内容（用于保留注释）
-        self._last_access_time = time.time()  # 跟踪最后访问时间
+        self._last_access_time = time.monotonic()  # 跟踪最后访问时间
 
         # 性能优化：配置写入缓冲机制
         self._pending_changes: Dict[str, Any] = {}  # 待写入的配置变更
         self._save_timer: Optional[threading.Timer] = None  # 延迟保存定时器
         self._save_delay = 3.0  # 延迟保存时间（秒）
-        self._last_save_time = 0  # 上次保存时间
+        self._last_save_time: float = 0  # 上次保存时间（monotonic）
 
         # 【性能优化】network_security 配置缓存
         self._network_security_cache: Optional[Dict[str, Any]] = None
-        self._network_security_cache_time: float = 0
+        self._network_security_cache_time: float = 0  # monotonic
         self._network_security_cache_ttl: float = 30.0  # 30 秒缓存有效期
 
         # 【性能优化】通用 section 缓存层
@@ -626,7 +631,7 @@ class ConfigManager(
 
                 # 执行实际保存
                 self._save_config_immediate()
-                self._last_save_time = time.time()
+                self._last_save_time = time.monotonic()
                 logger.debug("延迟配置保存完成")
         except Exception as e:
             logger.error(f"延迟保存配置失败: {e}", exc_info=True)
@@ -763,7 +768,7 @@ class ConfigManager(
         """获取配置值（支持点号分隔的嵌套键如 'notification.sound_volume'，线程安全）"""
         # 说明：为避免多锁交错导致的竞态/死锁，这里统一使用 _lock 保护共享状态
         with self._lock:
-            self._last_access_time = time.time()
+            self._last_access_time = time.monotonic()
             keys = key.split(".")
             value = self._config
             try:
@@ -790,7 +795,7 @@ class ConfigManager(
 
         changed = False
         with self._lock:
-            self._last_access_time = time.time()
+            self._last_access_time = time.monotonic()
 
             # 性能优化：检查当前值是否与新值相同
             current_value = self.get(key)
@@ -861,7 +866,7 @@ class ConfigManager(
         changed_sections: set[str] = set()
         changed = False
         with self._lock:
-            self._last_access_time = time.time()
+            self._last_access_time = time.monotonic()
 
             # 性能优化：过滤出真正有变化的配置项
             actual_changes = {}
@@ -935,7 +940,7 @@ class ConfigManager(
 
             # 立即保存
             self._save_config_immediate()
-            self._last_save_time = time.time()
+            self._last_save_time = time.monotonic()
             logger.debug("强制配置保存完成")
 
     def get_section(self, section: str, use_cache: bool = True) -> Dict[str, Any]:
@@ -943,7 +948,7 @@ class ConfigManager(
         import copy
 
         with self._lock:
-            current_time = time.time()
+            current_time = time.monotonic()
 
             if section == "network_security":
                 return copy.deepcopy(self.get_network_security_config())
@@ -1115,10 +1120,11 @@ class ConfigManager(
                 )
 
     def get_all(self) -> Dict[str, Any]:
-        """获取所有配置的副本（不含 network_security）"""
+        """获取所有配置的深拷贝（不含 network_security），防止外部修改内部状态"""
+        import copy
+
         with self._lock:
-            data = self._config.copy()
-            # 兜底：避免任何路径把 network_security 写回内存配置
+            data = copy.deepcopy(self._config)
             return self._exclude_network_security(data)
 
     @staticmethod

@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from ipaddress import AddressValueError, ip_address, ip_network
 from typing import TYPE_CHECKING, Any, Dict, Optional, cast
@@ -149,8 +151,38 @@ class NetworkSecurityMixin:
             "access_control_enabled": access_enabled,
         }
 
+    def _atomic_write_config(self, new_content: str) -> None:
+        """原子写入配置文件（tempfile + os.replace），与 _save_config_immediate 保持一致"""
+        self.config_file.parent.mkdir(parents=True, exist_ok=True)
+
+        orig_mode = None
+        if hasattr(os, "fchmod"):
+            try:
+                orig_mode = os.stat(str(self.config_file)).st_mode
+            except OSError:
+                pass
+
+        fd, tmp_path = tempfile.mkstemp(
+            suffix=".tmp",
+            dir=str(self.config_file.parent),
+        )
+        try:
+            if orig_mode is not None:
+                os.fchmod(fd, orig_mode)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(new_content)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, str(self.config_file))
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
     def _save_network_security_config_immediate(self, validated_ns: Dict[str, Any]):
-        """将 network_security 写回配置文件（不走通用保存逻辑，避免被排除）"""
+        """将 network_security 原子写回配置文件（不走通用保存逻辑，避免被排除）"""
         try:
             if not self.config_file.exists():
                 self._create_default_config_file()
@@ -176,7 +208,7 @@ class NetworkSecurityMixin:
                 doc["network_security"] = validated_ns
                 new_content = _tk.dumps(doc)
             try:
-                self.config_file.write_text(new_content, encoding="utf-8")
+                self._atomic_write_config(new_content)
             except Exception as e:
                 raise RuntimeError(f"写入配置文件失败: {e}") from e
             with self._lock:
@@ -194,7 +226,7 @@ class NetworkSecurityMixin:
         full["network_security"] = validated_ns
         new_content = json.dumps(full, indent=2, ensure_ascii=False)
         try:
-            self.config_file.write_text(new_content, encoding="utf-8")
+            self._atomic_write_config(new_content)
         except Exception as e:
             raise RuntimeError(f"写入配置文件失败: {e}") from e
         with self._lock:
@@ -210,7 +242,7 @@ class NetworkSecurityMixin:
             self._save_network_security_config_immediate(validated)
         with self._lock:
             self._network_security_cache = validated
-            self._network_security_cache_time = time.time()
+            self._network_security_cache_time = time.monotonic()
         self.invalidate_all_caches()
         if trigger_callbacks:
             try:
@@ -242,7 +274,7 @@ class NetworkSecurityMixin:
 
         with self._lock:
             self._network_security_cache = validated
-            self._network_security_cache_time = time.time()
+            self._network_security_cache_time = time.monotonic()
 
         self.invalidate_all_caches()
         if trigger_callbacks:
@@ -253,7 +285,7 @@ class NetworkSecurityMixin:
 
     def get_network_security_config(self) -> Dict[str, Any]:
         """从文件读取 network_security 配置（带 30 秒缓存，失败返回默认配置）"""
-        current_time = time.time()
+        current_time = time.monotonic()
         with self._lock:
             if (
                 self._network_security_cache is not None

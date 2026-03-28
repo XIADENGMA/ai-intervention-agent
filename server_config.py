@@ -350,9 +350,7 @@ def _guess_mime_type_from_data(base64_data: str) -> Optional[str]:
         if raw.startswith(b"RIFF") and len(raw) >= 12 and raw[8:12] == b"WEBP":
             return "image/webp"
 
-        raw_lower = raw.lstrip().lower()
-        if raw_lower.startswith(b"<svg") or b"<svg" in raw_lower[:200]:
-            return "image/svg+xml"
+        # SVG 检测已移除：与 file_validator.py 安全策略对齐，SVG 可嵌入脚本
 
     except Exception:
         pass

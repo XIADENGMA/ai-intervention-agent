@@ -1025,14 +1025,11 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
                 "access_control_enabled": True,
             }
 
-            import os
-
-            os.chmod(str(cfg_path), 0o444)
-            try:
+            with patch.object(
+                mgr, "_atomic_write_config", side_effect=OSError("denied")
+            ):
                 with self.assertRaises(RuntimeError):
                     mgr._save_network_security_config_immediate(ns)
-            finally:
-                os.chmod(str(cfg_path), 0o644)
 
 
 # ──────────────────────────────────────────────────────────
@@ -1227,28 +1224,28 @@ class TestSaveImmediateExceptionPaths(unittest.TestCase):
             self.assertIn("network_security", content)
 
     def test_json_no_base_content_write_exception(self):
-        """JSON 无 base_content 时写入失败"""
+        """JSON 无 base_content 时原子写入失败"""
         with tempfile.TemporaryDirectory() as td:
             cfg_path = Path(td) / "config.json"
             cfg_path.write_text("")
             mgr = self._make_mgr(cfg_path)
             mgr._original_content = None
             with patch.object(
-                type(cfg_path), "write_text", side_effect=PermissionError("denied")
+                mgr, "_atomic_write_config", side_effect=PermissionError("denied")
             ):
                 with self.assertRaises(RuntimeError) as ctx:
                     mgr._save_network_security_config_immediate(self._NS)
                 self.assertIn("写入配置文件失败", str(ctx.exception))
 
     def test_json_fallback_write_exception(self):
-        """JSON 降级路径写入失败"""
+        """JSON 降级路径原子写入失败"""
         with tempfile.TemporaryDirectory() as td:
             cfg_path = Path(td) / "config.json"
             cfg_path.write_text('{\n  "notification": {}\n}')
             mgr = self._make_mgr(cfg_path)
             with patch.object(
-                type(cfg_path),
-                "write_text",
+                mgr,
+                "_atomic_write_config",
                 side_effect=PermissionError("denied"),
             ):
                 with self.assertRaises(RuntimeError) as ctx:

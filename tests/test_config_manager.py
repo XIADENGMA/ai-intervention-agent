@@ -496,14 +496,14 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         shutil.rmtree(cls.test_dir, ignore_errors=True)
 
     def test_jsonc_with_trailing_comma(self):
-        """测试带尾随逗号的 JSONC"""
+        """测试带尾随逗号的 JSONC — parse_jsonc 应正确处理"""
         from config_manager import parse_jsonc
 
-        # JSONC 应该能处理尾随逗号（虽然标准 JSON 不允许）
-        content = '{"key": "value",}'
-        # 这可能会抛出异常，因为 parse_jsonc 只移除注释
-        with self.assertRaises(json.JSONDecodeError):
-            parse_jsonc(content)
+        result = parse_jsonc('{"key": "value",}')
+        self.assertEqual(result, {"key": "value"})
+
+        result2 = parse_jsonc('{"arr": [1, 2, 3,]}')
+        self.assertEqual(result2, {"arr": [1, 2, 3]})
 
     def test_update_method(self):
         """测试批量更新方法"""
