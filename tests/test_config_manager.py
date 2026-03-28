@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
+from exceptions import ConfigValidationError
+
 
 class TestJsoncParser(unittest.TestCase):
     """测试 JSONC 解析器"""
@@ -1974,7 +1976,7 @@ class TestUpdateNetworkSecurity(unittest.TestCase):
 
     def test_update_network_security_invalid_dotted(self):
         mgr = self._mgr()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             mgr.update({"network_security.nested.field": "val"}, save=False)
 
     def test_update_network_security_only(self):
@@ -2001,7 +2003,7 @@ class TestSetNetworkSecurityRouting(unittest.TestCase):
 
     def test_set_network_security_non_dict_raises(self):
         mgr = ConfigManager()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             mgr.set("network_security", "bad", save=False)
 
     def test_set_network_security_dotted(self):
@@ -2010,12 +2012,12 @@ class TestSetNetworkSecurityRouting(unittest.TestCase):
 
     def test_set_network_security_dotted_invalid(self):
         mgr = ConfigManager()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             mgr.set("network_security.a.b", "val", save=False)
 
     def test_set_network_security_dotted_empty_field(self):
         mgr = ConfigManager()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             mgr.set("network_security.", "val", save=False)
 
     def test_set_empty_key_invalidates_all(self):
@@ -2036,7 +2038,7 @@ class TestUpdateSectionNetworkSecurity(unittest.TestCase):
 
     def test_update_section_network_security_non_dict(self):
         mgr = ConfigManager()
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             mgr.update_section("network_security", "not dict", save=False)  # type: ignore[arg-type]
 
     def test_update_section_no_changes(self):
@@ -2063,25 +2065,25 @@ class TestValidateConfigStructure(unittest.TestCase):
     def test_duplicate_blocked_ips(self):
         content = '{\n"blocked_ips": [],\n"blocked_ips": []\n}'
         parsed = json.loads(content)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             self._json_mgr()._validate_config_structure(parsed, content)
 
     def test_network_security_not_dict(self):
         content = '{"network_security": "bad"}'
         parsed = json.loads(content)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             self._mgr()._validate_config_structure(parsed, content)
 
     def test_allowed_networks_not_list(self):
         content = '{"network_security": {"allowed_networks": "bad"}}'
         parsed = json.loads(content)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             self._mgr()._validate_config_structure(parsed, content)
 
     def test_allowed_networks_invalid_element(self):
         content = '{"network_security": {"allowed_networks": [123]}}'
         parsed = json.loads(content)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(ConfigValidationError):
             self._mgr()._validate_config_structure(parsed, content)
 
     def test_toml_skips_duplicate_check(self):

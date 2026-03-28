@@ -44,6 +44,11 @@ from config_utils import clamp_value
 from enhanced_logging import EnhancedLogger
 from i18n import msg
 from server import get_task_queue
+from server_config import (
+    AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+    AUTO_RESUBMIT_TIMEOUT_MAX,
+    AUTO_RESUBMIT_TIMEOUT_MIN,
+)
 from shared_types import FeedbackResult
 from web_ui_routes import (
     FeedbackRoutesMixin,
@@ -96,11 +101,8 @@ def get_project_version() -> str:
 
 
 # ============================================================================
-# 前端倒计时超时常量（需与 server.py 保持一致）
+# 前端倒计时超时常量（单一真相源：server_config.py，顶部已导入）
 # ============================================================================
-AUTO_RESUBMIT_TIMEOUT_MIN = 30  # 前端最小倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MAX = 250  # 前端最大倒计时（秒）【优化】从290→250，预留安全余量
-AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
 
 
 def validate_auto_resubmit_timeout(value: int) -> int:
@@ -148,6 +150,7 @@ _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
 _CURRENT_WEB_UI_INSTANCE: Any | None = None
 _NETWORK_SECURITY_CALLBACK_REGISTERED = False
 _NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
+_FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.Lock()
 
 
 def _get_default_auto_resubmit_timeout_from_config() -> int:
@@ -248,26 +251,32 @@ def _ensure_network_security_hot_reload_callback_registered() -> None:
 
 
 def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
-    """确保仅注册一次配置热更新回调（避免重复注册）"""
+    """确保仅注册一次配置热更新回调（避免重复注册）
+
+    使用双重检查锁定（DCL）保证多线程安全，与
+    _ensure_network_security_hot_reload_callback_registered 保持一致。
+    """
     global _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED
     if _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED:
         return
-    try:
-        config_mgr = get_config()
-        config_mgr.register_config_change_callback(
-            _sync_existing_tasks_timeout_from_config
-        )
-        _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = True
-        # 启动时先同步一次，保证“已经在队列里的任务”也与当前配置一致
-        _sync_existing_tasks_timeout_from_config()
-        logger.debug(
-            "已注册 feedback.auto_resubmit_timeout 热更新回调（同步已存在任务倒计时）"
-        )
-    except Exception as e:
-        logger.warning(
-            f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}",
-            exc_info=True,
-        )
+    with _FEEDBACK_TIMEOUT_CALLBACK_LOCK:
+        if _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED:
+            return
+        try:
+            config_mgr = get_config()
+            config_mgr.register_config_change_callback(
+                _sync_existing_tasks_timeout_from_config
+            )
+            _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = True
+            _sync_existing_tasks_timeout_from_config()
+            logger.debug(
+                "已注册 feedback.auto_resubmit_timeout 热更新回调（同步已存在任务倒计时）"
+            )
+        except Exception as e:
+            logger.warning(
+                f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}",
+                exc_info=True,
+            )
 
 
 # ============================================================================
@@ -532,22 +541,22 @@ def validate_allowed_networks(networks: Any) -> list[str]:
 
 def validate_blocked_ips(ips: Any) -> list[str]:
     """
-    验证并清理 blocked_ips 列表
+    验证并清理 blocked_ips 列表（支持单个 IP 和 CIDR 表示法）
 
     参数
     ----
     ips : list
-        黑名单 IP 列表
+        黑名单 IP / CIDR 列表
 
     返回
     ----
     list
-        验证后的 IP 列表
+        验证后的 IP / CIDR 列表
 
     验证规则
     --------
-    - 过滤无效的 IP 格式
-    - 记录无效条目的警告日志
+    - 支持单个 IP（如 ``10.0.0.1``）和 CIDR（如 ``10.0.0.0/24``）
+    - 过滤无效格式，记录警告日志
     """
     if not isinstance(ips, list):
         return []
@@ -558,7 +567,10 @@ def validate_blocked_ips(ips: Any) -> list[str]:
     for ip in ips:
         if isinstance(ip, str):
             try:
-                ip_address(ip)
+                if "/" in ip:
+                    ip_network(ip, strict=False)
+                else:
+                    ip_address(ip)
                 valid_ips.append(ip)
             except (AddressValueError, ValueError):
                 invalid_ips.append(ip)
@@ -566,7 +578,7 @@ def validate_blocked_ips(ips: Any) -> list[str]:
             invalid_ips.append(str(ip))
 
     if invalid_ips:
-        logger.warning(f"以下黑名单 IP 无效，已跳过: {', '.join(invalid_ips)}")
+        logger.warning(f"以下黑名单条目无效，已跳过: {', '.join(invalid_ips)}")
 
     return valid_ips
 
@@ -1724,12 +1736,21 @@ class WebFeedbackUI(
             if hasattr(client_addr, "ipv4_mapped") and client_addr.ipv4_mapped:
                 client_addr = client_addr.ipv4_mapped
 
-            # 检查黑名单
+            # 检查黑名单（支持单个 IP 和 CIDR）
             blocked_ips = cfg.get("blocked_ips", [])
-            for blocked_ip in blocked_ips:
-                if str(client_addr) == blocked_ip:
-                    logger.warning(f"IP {client_ip} 在黑名单中，拒绝访问")
-                    return False
+            for blocked_entry in blocked_ips:
+                try:
+                    if "/" in blocked_entry:
+                        if client_addr in ip_network(blocked_entry, strict=False):
+                            logger.warning(
+                                f"IP {client_ip} 在黑名单网段 {blocked_entry} 中，拒绝访问"
+                            )
+                            return False
+                    elif str(client_addr) == blocked_entry:
+                        logger.warning(f"IP {client_ip} 在黑名单中，拒绝访问")
+                        return False
+                except (AddressValueError, ValueError, TypeError):
+                    continue
 
             # 检查白名单网络
             allowed_networks = cfg.get("allowed_networks", ["127.0.0.0/8", "::1/128"])

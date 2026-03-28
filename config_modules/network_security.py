@@ -122,10 +122,11 @@ class NetworkSecurityMixin:
                 if not t:
                     continue
                 try:
-                    blocked_list.append(str(ip_address(t)))
-                except AddressValueError:
-                    logger.warning(f"blocked_ips 无效条目已忽略: {t}")
-                except Exception:
+                    if "/" in t:
+                        blocked_list.append(str(ip_network(t, strict=False)))
+                    else:
+                        blocked_list.append(str(ip_address(t)))
+                except (AddressValueError, Exception):
                     logger.warning(f"blocked_ips 无效条目已忽略: {t}")
         else:
             logger.warning("blocked_ips 不是列表，使用默认值")

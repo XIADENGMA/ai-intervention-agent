@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from server_config import AUTO_RESUBMIT_TIMEOUT_MAX, AUTO_RESUBMIT_TIMEOUT_MIN
+
 logger = logging.getLogger(__name__)
 
 
@@ -231,11 +233,13 @@ class TaskQueue:
         """添加任务，无活动任务时自动激活"""
         new_status: str | None = None
         with self._lock:
-            # 倒计时边界对齐：0=禁用；否则限制到 [30, 250]（与 server.py/web_ui.py 对齐）
             if auto_resubmit_timeout <= 0:
                 auto_resubmit_timeout = 0
             else:
-                auto_resubmit_timeout = max(30, min(auto_resubmit_timeout, 250))
+                auto_resubmit_timeout = max(
+                    AUTO_RESUBMIT_TIMEOUT_MIN,
+                    min(auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MAX),
+                )
 
             if len(self._tasks) >= self.max_tasks:
                 logger.warning(
@@ -328,11 +332,13 @@ class TaskQueue:
         返回:
             int: 实际更新的任务数量
         """
-        # 倒计时边界对齐：0=禁用；否则限制到 [30, 250]（与 server.py/web_ui.py 对齐）
         if auto_resubmit_timeout <= 0:
             auto_resubmit_timeout = 0
         else:
-            auto_resubmit_timeout = max(30, min(auto_resubmit_timeout, 250))
+            auto_resubmit_timeout = max(
+                AUTO_RESUBMIT_TIMEOUT_MIN,
+                min(auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MAX),
+            )
 
         updated = 0
         with self._lock:

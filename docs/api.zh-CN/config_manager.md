@@ -1,6 +1,6 @@
 # config_manager
 
-配置管理模块：JSONC/JSON 配置文件的跨平台加载、读写、热重载。
+配置管理模块：TOML 配置文件的跨平台加载、读写、热重载（旧 JSONC/JSON 文件自动迁移）。
 
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。
 通过 get_config() 获取全局 ConfigManager 实例。
@@ -80,13 +80,13 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 ### `class ConfigManager`
 
-配置管理器：JSONC/JSON 配置文件的加载、读写、持久化、热重载。
+配置管理器：TOML 配置文件的加载、读写、持久化、热重载。
 
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理（带缓存）、
 文件变更监听、配置导入导出。通过模块级 config_manager 全局实例访问。
 
 路由通过 Mixin 拆分（各 Mixin 定义在 config_modules/ 下）：
-- JsoncEngineMixin: JSONC 格式解析/定位/更新
+- TomlEngineMixin: TOML 格式解析/保存（保留注释）
 - NetworkSecurityMixin: network_security 段校验/读写
 - FileWatcherMixin: 文件监听/回调/shutdown
 - IOOperationsMixin: 配置导出/导入/备份/恢复

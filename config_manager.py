@@ -23,6 +23,7 @@ from typing import Any, Dict, Optional, cast
 
 import tomlkit
 
+from exceptions import ConfigValidationError
 from shared_types import SECTION_MODELS
 
 try:
@@ -734,13 +735,13 @@ class ConfigManager(
                     continue
                 if '"allowed_networks"' in stripped and "[" in stripped:
                     if "allowed_networks" in array_definitions:
-                        raise ValueError(
+                        raise ConfigValidationError(
                             f"配置文件格式损坏：重复的数组定义在第{i + 1}行"
                         )
                     array_definitions["allowed_networks"] = i + 1
                 if '"blocked_ips"' in stripped and "[" in stripped:
                     if "blocked_ips" in array_definitions:
-                        raise ValueError(
+                        raise ConfigValidationError(
                             f"配置文件格式损坏：重复的数组定义在第{i + 1}行"
                         )
                     array_definitions["blocked_ips"] = i + 1
@@ -749,16 +750,18 @@ class ConfigManager(
         if "network_security" in parsed_config:
             ns_config = parsed_config["network_security"]
             if not isinstance(ns_config, dict):
-                raise ValueError("network_security 配置段必须是 object")
+                raise ConfigValidationError("network_security 配置段必须是 object")
             if "allowed_networks" in ns_config:
                 allowed_networks = ns_config["allowed_networks"]
                 if not isinstance(allowed_networks, list):
-                    raise ValueError("network_security.allowed_networks 应该是数组类型")
+                    raise ConfigValidationError(
+                        "network_security.allowed_networks 应该是数组类型"
+                    )
 
                 # 检查数组元素是否有效
                 for network in allowed_networks:
                     if not isinstance(network, str):
-                        raise ValueError(
+                        raise ConfigValidationError(
                             f"network_security.allowed_networks 包含无效元素: {network}"
                         )
 
@@ -783,13 +786,15 @@ class ConfigManager(
         # network_security 特殊处理：必须走专用更新/落盘路径，避免写入内存但无法持久化
         if key == "network_security":
             if not isinstance(value, dict):
-                raise ValueError("network_security 必须是 object（dict）")
+                raise ConfigValidationError("network_security 必须是 object（dict）")
             self.set_network_security_config(cast(Dict[str, Any], value), save=save)
             return
         if key.startswith("network_security."):
             field = key[len("network_security.") :]
             if not field or "." in field:
-                raise ValueError("仅支持设置一级字段：network_security.<field>")
+                raise ConfigValidationError(
+                    "仅支持设置一级字段：network_security.<field>"
+                )
             self.update_network_security_config({field: value}, save=save)
             return
 
@@ -853,7 +858,9 @@ class ConfigManager(
                 if field and "." not in field:
                     network_security_updates[field] = v
                 else:
-                    raise ValueError("仅支持更新一级字段：network_security.<field>")
+                    raise ConfigValidationError(
+                        "仅支持更新一级字段：network_security.<field>"
+                    )
             else:
                 non_ns_updates[k] = v
 
@@ -989,7 +996,7 @@ class ConfigManager(
         """更新配置段（检测变化，触发回调，可选延迟保存）"""
         if section == "network_security":
             if not isinstance(updates, dict):
-                raise ValueError("network_security 更新必须是 dict")
+                raise ConfigValidationError("network_security 更新必须是 dict")
             self.update_network_security_config(updates, save=save)
             return
 
