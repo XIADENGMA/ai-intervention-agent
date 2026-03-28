@@ -6,9 +6,7 @@ export default [
     ignores: [
       '**/node_modules/**',
       '**/.vscode-test/**',
-      '**/out/**',
       '**/dist/**',
-      '**/result/**',
       '**/*.vsix',
       'marked.min.js',
       'prism.min.js',
