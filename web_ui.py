@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, cast
 
 import markdown
 import psutil
+from flasgger import Swagger
 from flask import (
     Flask,
     Response,
@@ -648,6 +649,39 @@ class WebFeedbackUI(
         self._template_cache_mtimes: dict[str, float] = {}
         self.app = Flask(__name__)
         CORS(self.app)
+
+        # OpenAPI / Swagger 文档（访问 /apidocs 查看交互式 API 文档）
+        self.app.config["SWAGGER"] = {
+            "title": "AI Intervention Agent API",
+            "version": get_project_version(),
+            "description": "AI 交互反馈代理的 RESTful API，支持多任务管理、反馈提交、通知配置等功能。",
+            "termsOfService": "",
+            "specs_route": "/apidocs/",
+        }
+        Swagger(
+            self.app,
+            template={
+                "info": {
+                    "title": "AI Intervention Agent API",
+                    "version": get_project_version(),
+                    "description": "AI 交互反馈代理的 RESTful API",
+                    "contact": {"url": GITHUB_URL},
+                    "license": {"name": "MIT"},
+                },
+                "basePath": "/",
+                "schemes": ["http"],
+                "tags": [
+                    {
+                        "name": "Tasks",
+                        "description": "任务管理（创建、查询、激活、提交）",
+                    },
+                    {"name": "Feedback", "description": "反馈提交与查询"},
+                    {"name": "Notification", "description": "通知配置与测试"},
+                    {"name": "System", "description": "系统状态与配置"},
+                ],
+            },
+        )
+
         # 【热更新】注册配置变更回调：让运行中的任务倒计时也能跟随配置更新
         _ensure_feedback_timeout_hot_reload_callback_registered()
         # 记录当前实例（用于单任务模式热更新兜底）
@@ -997,41 +1031,40 @@ class WebFeedbackUI(
             return render_template_string(self.get_html_template())
 
         @self.app.route("/api/config")
-        @self.limiter.limit("300 per minute")  # 允许更频繁的轮询，支持测试场景
+        @self.limiter.limit("300 per minute")
         def get_api_config() -> ResponseReturnValue:
-            """获取当前任务配置的API端点
-
-            功能说明：
-                返回当前激活任务的配置信息，支持前端内容轮询和动态更新。
-
-            处理逻辑：
-                1. 尝试从TaskQueue获取激活任务（active_task）
-                2. 若无激活任务，自动激活第一个pending任务
-                3. 若所有任务都已完成，返回空内容状态
-                4. 回退到单任务模式（使用self.current_prompt等属性）
-
-            返回值：
-                JSON对象，包含以下字段：
-                    - prompt: 提示文本（Markdown原文）
-                    - prompt_html: 渲染后的HTML
-                    - predefined_options: 预定义选项列表
-                    - task_id: 任务ID
-                    - auto_resubmit_timeout: 超时时间（秒）
-                    - persistent: 是否持久化（True表示页面保持打开）
-                    - has_content: 是否有有效内容
-                    - initial_empty: 初始是否为空
-
-            频率限制：
-                - 300次/分钟（支持高频轮询）
-
-            异常处理：
-                - 获取任务失败时返回安全的默认响应（HTTP 500）
-                - 记录详细错误日志（包含堆栈信息）
-
-            注意事项：
-                - 此端点是前端轮询的核心，性能影响大
-                - 自动激活pending任务确保任务队列不会卡住
-                - completed任务会在10秒后自动清理
+            """获取当前激活任务的配置信息
+            ---
+            tags:
+              - System
+            responses:
+              200:
+                description: 当前任务配置
+                schema:
+                  type: object
+                  properties:
+                    prompt:
+                      type: string
+                      description: 提示文本（Markdown 原文）
+                    prompt_html:
+                      type: string
+                      description: 渲染后的 HTML
+                    predefined_options:
+                      type: array
+                      items:
+                        type: string
+                      description: 预定义选项列表
+                    task_id:
+                      type: string
+                    auto_resubmit_timeout:
+                      type: number
+                      description: 超时时间（秒）
+                    has_content:
+                      type: boolean
+                    initial_empty:
+                      type: boolean
+              500:
+                description: 服务器内部错误
             """
             try:
                 # 优先从 TaskQueue 获取激活任务
@@ -1169,27 +1202,21 @@ class WebFeedbackUI(
 
         @self.app.route("/api/close", methods=["POST"])
         def close_interface() -> ResponseReturnValue:
-            """关闭服务器的API端点
-
-            功能说明：
-                优雅关闭Flask服务器，适用于单次任务完成后的自动关闭场景。
-
-            处理逻辑：
-                1. 启动一个0.5秒延时的定时器
-                2. 定时器触发时调用shutdown_server()发送SIGINT信号
-                3. 立即返回成功响应（响应发送后才关闭）
-
-            返回值：
-                JSON对象：{"status": "success", "message": msg("server.shuttingDown")}
-
-            副作用：
-                - 0.5秒后服务器进程收到SIGINT信号并关闭
-                - 所有未完成的请求可能被中断
-
-            注意事项：
-                - 延时0.5秒确保响应成功发送
-                - 关闭是全局的，影响所有客户端连接
-                - 多任务模式下应避免使用此端点
+            """优雅关闭 Flask 服务器
+            ---
+            tags:
+              - System
+            responses:
+              200:
+                description: 关闭指令已接受
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: success
+                    message:
+                      type: string
             """
             threading.Timer(0.5, self.shutdown_server).start()
             return jsonify({"status": "success", "message": msg("server.shuttingDown")})
@@ -1197,20 +1224,18 @@ class WebFeedbackUI(
         @self.app.route("/api/health", methods=["GET"])
         def health_check() -> ResponseReturnValue:
             """健康检查端点
-
-            功能说明：
-                提供简单的健康检查，用于监控和负载均衡探测。
-
-            返回值：
-                JSON对象：{"status": "ok"}
-
-            频率限制：
-                - 使用全局默认限制（60次/分钟，10次/秒）
-
-            使用场景：
-                - Kubernetes/Docker健康探针
-                - 负载均衡器健康检查
-                - 外部监控系统
+            ---
+            tags:
+              - System
+            responses:
+              200:
+                description: 服务正常运行
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: ok
             """
             return jsonify({"status": "ok"})
 

@@ -48,6 +48,7 @@ dependencies = [
     "tomlkit>=0.14.0",
     "zeroconf>=0.146.0",
     "loguru>=0.7.3",
+    "flasgger>=0.9.7",
 ]
 
 [project.optional-dependencies]

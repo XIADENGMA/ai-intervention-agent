@@ -41,20 +41,47 @@ class NotificationRoutesMixin:
     def _setup_notification_routes(self) -> None:  # noqa: C901
         @self.app.route("/api/test-bark", methods=["POST"])
         def test_bark_notification() -> ResponseReturnValue:
-            """测试Bark通知的API端点
-
-            功能说明：
-                使用临时配置发送Bark测试通知，验证Bark服务器连接和Device Key是否正确。
-
-            请求体（JSON）：
-                - bark_url: Bark服务器地址（默认"https://api.day.app/push"）
-                - bark_device_key: Bark设备密钥（必填）
-                - bark_icon: 通知图标URL（可选）
-                - bark_action: 点击动作（默认"none"）
-
-            返回值：
-                成功：JSON对象 {"status": "success", "message": msg("notify.testSuccess")}
-                失败：HTTP 400/500 + 错误信息
+            """测试 Bark 推送通知
+            ---
+            tags:
+              - Notification
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                required: true
+                schema:
+                  type: object
+                  required:
+                    - bark_device_key
+                  properties:
+                    bark_url:
+                      type: string
+                      default: "https://api.day.app/push"
+                    bark_device_key:
+                      type: string
+                      description: Bark 设备密钥
+                    bark_icon:
+                      type: string
+                    bark_action:
+                      type: string
+                      default: "none"
+            responses:
+              200:
+                description: 测试通知发送成功
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: success
+                    message:
+                      type: string
+              400:
+                description: 设备密钥为空
+              500:
+                description: 发送失败或通知系统不可用
             """
             try:
                 data = request.json or {}
@@ -145,21 +172,41 @@ class NotificationRoutesMixin:
 
         @self.app.route("/api/notify-new-tasks", methods=["POST"])
         def notify_new_tasks() -> ResponseReturnValue:
-            """新任务通知触发端点（阶段 B）
-
-            目标：
-                - Web 侧统一"新任务事件"触发入口（给移动端 Bark 使用）
-                - 通过后端通知系统发送 Bark，避免前端直连 Bark 服务
-                - 任何失败均应优雅降级，不影响前端轮询主流程
-
-            请求体（JSON）：
-                - count: 新任务数量（可选）
-                - taskIds: 新任务 ID 列表（可选）
-
-            返回值：
-                - {"status":"success","event_id":"..."}  已触发发送
-                - {"status":"skipped","message":"..."}   配置不允许/数据无效/通知系统不可用
-                - {"status":"error","message":"..."}     发生异常（已捕获）
+            """触发新任务 Bark 推送通知
+            ---
+            tags:
+              - Notification
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                schema:
+                  type: object
+                  properties:
+                    count:
+                      type: integer
+                      description: 新任务数量
+                    taskIds:
+                      type: array
+                      items:
+                        type: string
+                      description: 新任务 ID 列表
+            responses:
+              200:
+                description: 通知已触发或已跳过（优雅降级）
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [success, skipped]
+                    event_id:
+                      type: string
+                    message:
+                      type: string
+              500:
+                description: 触发失败
             """
             try:
                 data = request.json or {}
@@ -251,14 +298,53 @@ class NotificationRoutesMixin:
 
         @self.app.route("/api/update-notification-config", methods=["POST"])
         def update_notification_config() -> ResponseReturnValue:
-            """更新通知配置的API端点
-
-            功能说明：
-                接收前端通知设置，更新通知管理器和配置文件。
-
-            返回值：
-                成功：JSON对象 {"status": "success", "message": msg("notify.configUpdated")}
-                失败：HTTP 500 + 错误信息
+            """更新通知配置
+            ---
+            tags:
+              - Notification
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                schema:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    webEnabled:
+                      type: boolean
+                    soundEnabled:
+                      type: boolean
+                    soundVolume:
+                      type: integer
+                      minimum: 0
+                      maximum: 100
+                    barkEnabled:
+                      type: boolean
+                    barkUrl:
+                      type: string
+                    barkDeviceKey:
+                      type: string
+                    barkIcon:
+                      type: string
+                    barkAction:
+                      type: string
+                    macosNativeEnabled:
+                      type: boolean
+            responses:
+              200:
+                description: 配置已更新
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: success
+                    message:
+                      type: string
+              500:
+                description: 更新失败
             """
             try:
                 data = request.json or {}
@@ -460,14 +546,24 @@ class NotificationRoutesMixin:
 
         @self.app.route("/api/get-notification-config", methods=["GET"])
         def get_notification_config() -> ResponseReturnValue:
-            """获取当前通知配置的API端点
-
-            功能说明：
-                从配置文件读取通知相关配置，返回给前端。
-
-            返回值：
-                成功：JSON对象 {"status": "success", "config": {...}}
-                失败：HTTP 500 + 错误信息
+            """获取当前通知配置
+            ---
+            tags:
+              - Notification
+            responses:
+              200:
+                description: 通知配置
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: success
+                    config:
+                      type: object
+                      description: 完整通知配置项
+              500:
+                description: 读取配置失败
             """
             try:
                 config_mgr = get_config()
@@ -483,16 +579,37 @@ class NotificationRoutesMixin:
 
         @self.app.route("/api/get-feedback-prompts", methods=["GET"])
         def get_feedback_prompts_api() -> ResponseReturnValue:
-            """获取反馈提示语配置的API端点
-
-            功能说明：
-                从配置文件读取反馈提示语配置，返回给前端。
-
-            返回值：
-                成功：JSON对象 {"status": "success", "config": {...}}
-                    - resubmit_prompt: 错误/超时时返回的提示语
-                    - prompt_suffix: 追加到用户反馈末尾的提示语
-                失败：HTTP 500 + 错误信息
+            """获取反馈提示语配置
+            ---
+            tags:
+              - Feedback
+            responses:
+              200:
+                description: 反馈提示语配置
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: success
+                    config:
+                      type: object
+                      properties:
+                        resubmit_prompt:
+                          type: string
+                          description: 错误/超时时的提示语
+                        prompt_suffix:
+                          type: string
+                          description: 追加到反馈末尾的提示语
+                    meta:
+                      type: object
+                      properties:
+                        config_file:
+                          type: string
+                        override_env:
+                          type: string
+              500:
+                description: 读取配置失败
             """
             try:
                 config_mgr = get_config()

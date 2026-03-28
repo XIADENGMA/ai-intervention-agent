@@ -100,10 +100,15 @@ class TaskRoutesMixin:
 
         @self.app.route("/api/events")
         def sse_events() -> Response:
-            """SSE 事件流端点：实时推送任务变更通知。
-
-            客户端通过 EventSource 连接此端点，收到 task_changed 事件后
-            主动拉取 /api/tasks 获取最新数据。心跳间隔 25 秒。
+            """SSE 事件流：实时推送任务变更通知
+            ---
+            tags:
+              - Tasks
+            produces:
+              - text/event-stream
+            responses:
+              200:
+                description: SSE 事件流（task_changed 事件 + 25s 心跳）
             """
             global _sse_callback_registered  # noqa: PLW0603
             if not _sse_callback_registered:
@@ -143,44 +148,53 @@ class TaskRoutesMixin:
         @self.app.route("/api/tasks", methods=["GET"])
         @self.limiter.limit("300 per minute")
         def get_tasks() -> ResponseReturnValue:
-            """获取所有任务列表的API端点
-
-            功能说明：
-                返回任务队列中的所有任务（包含状态、创建时间等），并自动清理过期的已完成任务。
-
-            处理逻辑：
-                1. 调用TaskQueue.cleanup_completed_tasks(age_seconds=10)清理10秒前完成的任务
-                2. 获取所有任务列表
-                3. 遍历任务列表，构建简化的任务信息（仅前100字符prompt）
-                4. 获取任务统计信息（总数、pending、active、completed）
-                5. 返回JSON响应
-
-            返回值：
-                JSON对象，包含以下字段：
-                    - success: 是否成功（Boolean）
-                    - tasks: 任务列表（Array）
-                        - task_id: 任务ID
-                        - status: 任务状态（pending/active/completed）
-                        - prompt: 提示文本（前100字符）
-                        - created_at: 创建时间（ISO 8601格式）
-                        - auto_resubmit_timeout: 超时时间（秒）
-                    - stats: 任务统计信息（Object）
-                        - total: 总任务数
-                        - pending: 等待中任务数
-                        - active: 激活中任务数
-                        - completed: 已完成任务数
-
-            频率限制：
-                - 300次/分钟（支持高频轮询）
-
-            异常处理：
-                - 获取失败时返回HTTP 500和错误信息
-                - 记录详细错误日志
-
-            注意事项：
-                - 自动清理10秒前的completed任务，避免列表过长
-                - prompt仅返回前100字符，避免响应体过大
-                - 此端点用于前端多任务标签页的轮询更新
+            """获取所有任务列表
+            ---
+            tags:
+              - Tasks
+            responses:
+              200:
+                description: 任务列表与统计信息
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    tasks:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          task_id:
+                            type: string
+                          status:
+                            type: string
+                            enum: [pending, active, completed]
+                          prompt:
+                            type: string
+                            description: 提示文本（前 100 字符）
+                          created_at:
+                            type: string
+                            format: date-time
+                          auto_resubmit_timeout:
+                            type: number
+                          remaining_time:
+                            type: number
+                    stats:
+                      type: object
+                      properties:
+                        total:
+                          type: integer
+                        pending:
+                          type: integer
+                        active:
+                          type: integer
+                        completed:
+                          type: integer
+                    server_time:
+                      type: number
+              500:
+                description: 服务器内部错误
             """
             try:
                 task_queue = get_task_queue()
@@ -223,37 +237,53 @@ class TaskRoutesMixin:
         @self.app.route("/api/tasks", methods=["POST"])
         @self.limiter.limit("60 per minute")
         def create_task() -> ResponseReturnValue:
-            """创建新任务的API端点
-
-            功能说明：
-                接收JSON请求，创建新的任务并添加到任务队列。
-
-            请求体（JSON）：
-                - task_id: 任务唯一标识符（必填）
-                - prompt: 提示文本（必填，Markdown格式）
-                - predefined_options: 预定义选项列表（可选）
-                - auto_resubmit_timeout: 超时时间（可选，默认240秒，最大250秒）
-
-            处理逻辑：
-                1. 解析JSON请求体
-                2. 验证必填字段（task_id、prompt）
-                3. 限制auto_resubmit_timeout最大值为250秒
-                4. 调用TaskQueue.add_task()添加任务
-                5. 返回成功或失败响应
-
-            返回值：
-                成功：JSON对象 {"success": true, "task_id": "<task_id>"}
-                失败：HTTP 400/409/500 + 错误信息
-                    - 400: 缺少请求数据或必要参数
-                    - 409: 任务队列已满或任务ID重复
-                    - 500: 其他异常
-
-            频率限制：
-                - 60次/分钟（防止任务创建滥用）
-
-            注意事项：
-                - auto_resubmit_timeout 自动截断为 250 秒
-                - 任务ID需全局唯一，重复添加会失败
+            """创建新任务
+            ---
+            tags:
+              - Tasks
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                required: true
+                schema:
+                  type: object
+                  required:
+                    - task_id
+                    - prompt
+                  properties:
+                    task_id:
+                      type: string
+                      description: 任务唯一标识符
+                    prompt:
+                      type: string
+                      description: 提示文本（Markdown 格式）
+                    predefined_options:
+                      type: array
+                      items:
+                        type: string
+                      description: 预定义选项列表
+                    auto_resubmit_timeout:
+                      type: number
+                      description: 超时时间（秒，最大 250）
+                      default: 240
+            responses:
+              200:
+                description: 任务创建成功
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    task_id:
+                      type: string
+              400:
+                description: 请求参数错误
+              409:
+                description: 任务 ID 重复或队列已满
+              500:
+                description: 服务器内部错误
             """
             try:
                 raw = request.get_json(silent=False)
@@ -396,21 +426,49 @@ class TaskRoutesMixin:
         @self.app.route("/api/tasks/<task_id>", methods=["GET"])
         @self.limiter.limit("300 per minute")
         def get_task(task_id: str) -> ResponseReturnValue:
-            """获取单个任务详情的API端点
-
-            功能说明：
-                返回指定任务的完整信息，包括prompt全文、选项、状态、结果等。
-
-            参数说明：
-                task_id: 任务ID（URL路径参数）
-
-            返回值：
-                成功：JSON对象 {"success": true, "task": {...}}
-                失败：HTTP 404 + 错误信息（任务不存在）
-                      HTTP 500 + 错误信息（其他异常）
-
-            频率限制：
-                - 300次/分钟（支持高频轮询）
+            """获取单个任务详情
+            ---
+            tags:
+              - Tasks
+            parameters:
+              - name: task_id
+                in: path
+                type: string
+                required: true
+                description: 任务 ID
+            responses:
+              200:
+                description: 任务详情
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    task:
+                      type: object
+                      properties:
+                        task_id:
+                          type: string
+                        prompt:
+                          type: string
+                        status:
+                          type: string
+                          enum: [pending, active, completed]
+                        predefined_options:
+                          type: array
+                          items:
+                            type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        remaining_time:
+                          type: number
+                        result:
+                          type: object
+              404:
+                description: 任务不存在
+              500:
+                description: 服务器内部错误
             """
             try:
                 task_queue = get_task_queue()
@@ -447,16 +505,27 @@ class TaskRoutesMixin:
         @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])
         @self.limiter.limit("60 per minute")
         def activate_task(task_id: str) -> ResponseReturnValue:
-            """激活指定任务的API端点
-
-            功能说明：
-                将指定任务设置为激活状态（active_task），用于任务切换。
-
-            参数说明：
-                task_id: 任务ID（URL路径参数）
-
-            返回值：
-                成功：JSON对象 {"success": true, "active_task_id": "<task_id>"}
+            """激活指定任务
+            ---
+            tags:
+              - Tasks
+            parameters:
+              - name: task_id
+                in: path
+                type: string
+                required: true
+            responses:
+              200:
+                description: 任务已激活
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    active_task_id:
+                      type: string
+              404:
+                description: 任务不存在
                 失败：HTTP 400 + 错误信息（切换失败）
                       HTTP 500 + 错误信息（其他异常）
 
@@ -478,26 +547,43 @@ class TaskRoutesMixin:
         @self.app.route("/api/tasks/<task_id>/submit", methods=["POST"])
         @self.limiter.limit("60 per minute")
         def submit_task_feedback(task_id: str) -> ResponseReturnValue:
-            """提交指定任务反馈的API端点
-
-            功能说明：
-                接收表单数据（支持文件上传），将反馈内容提交到指定任务并标记为完成。
-
-            参数说明：
-                task_id: 任务ID（URL路径参数）
-
-            请求体（multipart/form-data）：
-                - feedback_text: 用户输入文本
-                - selected_options: 选中的选项（JSON数组字符串）
-                - image_*: 图片文件（可多个，键名以image_开头）
-
-            返回值：
-                成功：JSON对象 {"success": true, "message": msg("feedback.submitted")}
-                失败：HTTP 404 + 错误信息（任务不存在）
-                      HTTP 500 + 错误信息（其他异常）
-
-            频率限制：
-                - 60次/分钟（防止恶意提交）
+            """提交指定任务的反馈
+            ---
+            tags:
+              - Tasks
+            consumes:
+              - multipart/form-data
+            parameters:
+              - name: task_id
+                in: path
+                type: string
+                required: true
+              - name: feedback_text
+                in: formData
+                type: string
+                description: 用户反馈文本
+              - name: selected_options
+                in: formData
+                type: string
+                description: 已选选项（JSON 数组字符串）
+              - name: images
+                in: formData
+                type: file
+                description: 上传的图片文件
+            responses:
+              200:
+                description: 反馈提交成功
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    message:
+                      type: string
+              404:
+                description: 任务不存在
+              500:
+                description: 服务器内部错误
             """
             try:
                 task_queue = get_task_queue()

@@ -53,27 +53,45 @@ class FeedbackRoutesMixin:
         @self.app.route("/api/submit", methods=["POST"])
         @self.limiter.limit("60 per minute")
         def submit_feedback() -> ResponseReturnValue:
-            """提交反馈的通用API端点（兼容多种请求格式）
-
-            功能说明：
-                接收用户反馈（文本、选项、图片），支持多种请求格式
-                （multipart/form-data、application/x-www-form-urlencoded、application/json）。
-                同时更新self.feedback_result和TaskQueue中的激活任务。
-
-            支持的请求格式：
-                1. multipart/form-data（带文件上传）
-                2. application/x-www-form-urlencoded（无文件）
-                3. application/json（传统格式，向后兼容）
-
-            返回值：
-                JSON对象：
-                    - status: "success"
-                    - message: msg("feedback.submitted")
-                    - persistent: true
-                    - clear_content: true
-
-            频率限制：
-                - 60次/分钟（支持测试场景）
+            """提交用户反馈（文本 / 选项 / 图片）
+            ---
+            tags:
+              - Feedback
+            consumes:
+              - multipart/form-data
+              - application/json
+            parameters:
+              - in: formData
+                name: task_id
+                type: string
+                description: 目标任务 ID
+              - in: formData
+                name: feedback_text
+                type: string
+                description: 反馈文本
+              - in: formData
+                name: selected_options
+                type: string
+                description: 已选选项（JSON 数组字符串）
+              - in: formData
+                name: images
+                type: file
+                description: 上传的图片文件
+            responses:
+              200:
+                description: 提交成功
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: success
+                    message:
+                      type: string
+                    persistent:
+                      type: boolean
+                    clear_content:
+                      type: boolean
             """
             logger.info(f"收到提交请求 - Content-Type: {request.content_type}")
             logger.info(f"request.files: {dict(request.files)}")
@@ -255,16 +273,40 @@ class FeedbackRoutesMixin:
 
         @self.app.route("/api/update", methods=["POST"])
         def update_content() -> ResponseReturnValue:
-            """更新页面内容的API端点（单任务模式）
-
-            功能说明：
-                接收新的任务内容，动态更新页面显示（不刷新页面）。用于单任务模式下的内容更新。
-
-            请求体（JSON）：
-                - prompt: 新的提示文本（Markdown格式）
-                - predefined_options: 新的预定义选项列表
-                - task_id: 新的任务ID
-                - auto_resubmit_timeout: 新的超时时间（默认240秒，最大250秒）
+            """更新页面内容（单任务模式）
+            ---
+            tags:
+              - Feedback
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                required: true
+                schema:
+                  type: object
+                  properties:
+                    prompt:
+                      type: string
+                      description: 新的提示文本（Markdown 格式）
+                    predefined_options:
+                      type: array
+                      items:
+                        type: string
+                    task_id:
+                      type: string
+                    auto_resubmit_timeout:
+                      type: number
+                      description: 超时时间（秒，最大 250）
+            responses:
+              200:
+                description: 更新成功
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      example: success
 
             返回值：
                 JSON对象：
@@ -443,14 +485,22 @@ class FeedbackRoutesMixin:
 
         @self.app.route("/api/feedback", methods=["GET"])
         def get_feedback() -> ResponseReturnValue:
-            """获取用户反馈结果的API端点（单任务模式）
-
-            功能说明：
-                返回当前存储的反馈结果，并清空存储。用于单任务模式下的反馈查询。
-
-            返回值：
-                有反馈：JSON对象 {"status": "success", "feedback": {...}}
-                无反馈：JSON对象 {"status": "waiting", "feedback": null}
+            """获取用户反馈结果（单任务模式）
+            ---
+            tags:
+              - Feedback
+            responses:
+              200:
+                description: 反馈结果（读后清除）
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [success, waiting]
+                    feedback:
+                      type: object
+                      description: 反馈内容，无反馈时为 null
             """
             with self._state_lock:
                 result = self.feedback_result
