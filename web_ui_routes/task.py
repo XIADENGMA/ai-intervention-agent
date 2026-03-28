@@ -1,13 +1,15 @@
-"""任务管理路由 Mixin — 任务列表、创建、详情、激活、提交反馈。"""
+"""任务管理路由 Mixin — 任务列表、创建、详情、激活、提交反馈、SSE 事件流。"""
 
 from __future__ import annotations
 
 import base64
 import json
+import queue
+import threading
 import time
 from typing import TYPE_CHECKING, Any, Optional
 
-from flask import jsonify, request
+from flask import Response, jsonify, request
 from flask.typing import ResponseReturnValue
 
 from enhanced_logging import EnhancedLogger
@@ -22,6 +24,56 @@ if TYPE_CHECKING:
 logger = EnhancedLogger(__name__)
 
 
+class _SSEBus:
+    """线程安全的 SSE 事件总线：TaskQueue 回调 → 所有已连接的 EventSource 客户端"""
+
+    def __init__(self) -> None:
+        self._subscribers: set[queue.Queue] = set()
+        self._lock = threading.Lock()
+
+    def subscribe(self) -> queue.Queue:
+        q: queue.Queue = queue.Queue(maxsize=64)
+        with self._lock:
+            self._subscribers.add(q)
+        return q
+
+    def unsubscribe(self, q: queue.Queue) -> None:
+        with self._lock:
+            self._subscribers.discard(q)
+
+    def emit(self, event_type: str, data: dict | None = None) -> None:
+        payload = {"type": event_type, "data": data or {}}
+        with self._lock:
+            dead: list[queue.Queue] = []
+            for q in self._subscribers:
+                try:
+                    q.put_nowait(payload)
+                except queue.Full:
+                    dead.append(q)
+            for q in dead:
+                self._subscribers.discard(q)
+
+    @property
+    def subscriber_count(self) -> int:
+        with self._lock:
+            return len(self._subscribers)
+
+
+_sse_bus = _SSEBus()
+
+
+def _on_task_status_change(
+    task_id: str, old_status: Optional[str], new_status: str
+) -> None:
+    _sse_bus.emit(
+        "task_changed",
+        {"task_id": task_id, "old_status": old_status, "new_status": new_status},
+    )
+
+
+_sse_callback_registered = False
+
+
 class TaskRoutesMixin:
     """提供 5 个任务管理 API 路由，由 WebFeedbackUI 通过 MRO 继承。"""
 
@@ -34,6 +86,59 @@ class TaskRoutesMixin:
             _get_default_auto_resubmit_timeout_from_config,
             validate_auto_resubmit_timeout,
         )
+
+        global _sse_callback_registered  # noqa: PLW0603
+        if not _sse_callback_registered:
+            try:
+                tq = get_task_queue()
+                if tq is not None:
+                    tq.register_status_change_callback(_on_task_status_change)
+                    _sse_callback_registered = True
+                    logger.info("SSE 事件总线已注册到 TaskQueue")
+            except Exception:
+                pass
+
+        @self.app.route("/api/events")
+        def sse_events() -> Response:
+            """SSE 事件流端点：实时推送任务变更通知。
+
+            客户端通过 EventSource 连接此端点，收到 task_changed 事件后
+            主动拉取 /api/tasks 获取最新数据。心跳间隔 25 秒。
+            """
+            global _sse_callback_registered  # noqa: PLW0603
+            if not _sse_callback_registered:
+                try:
+                    tq = get_task_queue()
+                    if tq is not None:
+                        tq.register_status_change_callback(_on_task_status_change)
+                        _sse_callback_registered = True
+                except Exception:
+                    pass
+
+            q = _sse_bus.subscribe()
+
+            def generate():
+                try:
+                    while True:
+                        try:
+                            event = q.get(timeout=25)
+                            yield f"event: {event['type']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
+                        except queue.Empty:
+                            yield ": heartbeat\n\n"
+                except GeneratorExit:
+                    pass
+                finally:
+                    _sse_bus.unsubscribe(q)
+
+            return Response(
+                generate(),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                    "Connection": "keep-alive",
+                },
+            )
 
         @self.app.route("/api/tasks", methods=["GET"])
         @self.limiter.limit("300 per minute")

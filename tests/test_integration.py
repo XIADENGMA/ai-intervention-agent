@@ -127,22 +127,27 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         self.assertTrue(body.startswith("{") or body.startswith("["))
 
     def test_app_js_has_sprout_fallback(self):
-        """回归测试：app.js 应包含 SVG/CSS 的嫩芽降级逻辑（不再只有 emoji 🌱）"""
+        """回归测试：嫩芽降级逻辑（app.js 保留 SVG/CSS，通知相关已拆分到 notification-manager.js）"""
         response = self.client.get("/static/js/app.js")
         if response.status_code != 200:
             self.skipTest("app.js 不存在，跳过嫩芽降级逻辑回归测试")
 
         js = response.data.decode("utf-8", errors="ignore")
-        response.close()  # 避免 send_from_directory 返回的文件句柄在测试结束后仍未释放
+        response.close()
         self.assertIn("renderSproutFallback", js)
         self.assertIn("sproutGrow", js)
         self.assertIn("/static/lottie/sprout.json", js)
-        self.assertIn("/notification-service-worker.js", js)
-        self.assertIn("bindAutoPermissionRequest", js)
-        self.assertIn("showSystemNotification", js)
+
+        nm_resp = self.client.get("/static/js/notification-manager.js")
+        if nm_resp.status_code == 200:
+            nm_js = nm_resp.data.decode("utf-8", errors="ignore")
+            nm_resp.close()
+            self.assertIn("/notification-service-worker.js", nm_js)
+            self.assertIn("bindAutoPermissionRequest", nm_js)
+            self.assertIn("showSystemNotification", nm_js)
 
     def test_app_js_has_code_insert_and_paste_guards(self):
-        """回归测试：app.js 应保留代码插入与 data URI 粘贴护栏"""
+        """回归测试：代码插入护栏在 app.js，粘贴 data URI 护栏已拆分到 image-upload.js"""
         response = self.client.get("/static/js/app.js")
         if response.status_code != 200:
             self.skipTest("app.js 不存在，跳过代码插入/粘贴护栏回归测试")
@@ -151,8 +156,13 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         response.close()
         self.assertIn("buildMarkdownCodeFence", js)
         self.assertIn("needsTrailingNewline", js)
-        self.assertIn("dataUriOnly", js)
         self.assertIn("ClipboardReadTimeout", js)
+
+        img_resp = self.client.get("/static/js/image-upload.js")
+        if img_resp.status_code == 200:
+            img_js = img_resp.data.decode("utf-8", errors="ignore")
+            img_resp.close()
+            self.assertIn("dataUriOnly", img_js)
 
     def test_main_css_has_markdown_code_wrapping_rules(self):
         """回归测试：Markdown 代码内容应具备换行能力，避免网页端溢出"""

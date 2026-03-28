@@ -3781,7 +3781,12 @@
       });
     </script>
 
-    <!-- 主应用脚本（依赖: mathjax-loader, multi_task, theme, dom-security 等） -->
+    <!-- 拆分模块（在 app.js 之前加载） -->
+    <script defer src="/static/js/notification-manager.js" nonce="{{ csp_nonce }}"></script>
+    <script defer src="/static/js/settings-manager.js" nonce="{{ csp_nonce }}"></script>
+    <script defer src="/static/js/image-upload.js" nonce="{{ csp_nonce }}"></script>
+
+    <!-- 主应用脚本（依赖: 上述所有模块） -->
     <script defer src="/static/js/app.js" nonce="{{ csp_nonce }}"></script>
   </body>
 </html>

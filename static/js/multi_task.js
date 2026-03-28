@@ -97,7 +97,9 @@ function _t(key, params) {
     if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
       return window.AIIA_I18N.t(key, params)
     }
-  } catch (_e) { /* noop */ }
+  } catch (_e) {
+    /* noop */
+  }
   return key
 }
 
@@ -226,19 +228,110 @@ if (typeof window.updateCountdownDisplay !== 'function') {
 }
 var updateCountdownDisplay = window.updateCountdownDisplay
 
-// ==================== 任务轮询 ====================
+// ==================== SSE + 轮询混合模式 ====================
+//
+// 策略：优先使用 SSE（/api/events）实时推送，收到 task_changed 事件后
+// 立即拉取 /api/tasks 获取最新数据。SSE 不可用时自动降级为短间隔轮询。
+// SSE 连接期间仍保留一个低频保底轮询（30s），防止事件丢失。
 
-// 【轮询治理】避免重叠请求/页面不可见浪费/错误风暴
 var TASKS_POLL_BASE_MS = 2000
 var TASKS_POLL_MAX_MS = 30000
+var TASKS_POLL_SSE_FALLBACK_MS = 30000
 var tasksPollBackoffMs = TASKS_POLL_BASE_MS
 var tasksPollAbortController = null
 var tasksPollVisibilityHandlerInstalled = false
 
+// SSE 连接状态
+var _sseSource = null
+var _sseConnected = false
+var _sseReconnectTimer = null
+var _sseReconnectDelay = 1000
+
+function _connectSSE() {
+  if (typeof EventSource === 'undefined') return
+  if (_sseSource) {
+    try {
+      _sseSource.close()
+    } catch (_) {
+      /* noop */
+    }
+  }
+
+  _sseSource = new EventSource('/api/events')
+
+  _sseSource.onopen = function () {
+    _sseConnected = true
+    _sseReconnectDelay = 1000
+    console.log('SSE 已连接，轮询降级为保底模式（30s）')
+    // 连接成功后切换到保底轮询间隔
+    tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS
+    if (tasksPollingTimer) {
+      clearTimeout(tasksPollingTimer)
+      scheduleNextTasksPoll(TASKS_POLL_SSE_FALLBACK_MS)
+    }
+  }
+
+  // 防抖：complete_task 会连续触发 2 个事件（completed + auto-activate），合并为一次拉取
+  var _sseDebounceTimer = null
+  _sseSource.addEventListener('task_changed', function (e) {
+    try {
+      var detail = JSON.parse(e.data)
+      console.debug('SSE task_changed:', detail.task_id, detail.old_status, '→', detail.new_status)
+    } catch (_) {
+      /* noop */
+    }
+    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+    _sseDebounceTimer = setTimeout(function () {
+      _sseDebounceTimer = null
+      fetchAndApplyTasks('sse')
+    }, 80)
+  })
+
+  _sseSource.onerror = function () {
+    _sseConnected = false
+    try {
+      _sseSource.close()
+    } catch (_) {
+      /* noop */
+    }
+    _sseSource = null
+    console.warn('SSE 断开，回退到短间隔轮询，' + _sseReconnectDelay / 1000 + 's 后重连')
+    // 恢复短间隔轮询
+    tasksPollBackoffMs = TASKS_POLL_BASE_MS
+    if (tasksPollingTimer) {
+      clearTimeout(tasksPollingTimer)
+      scheduleNextTasksPoll(0)
+    }
+    // 指数退避重连
+    if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer)
+    _sseReconnectTimer = setTimeout(function () {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        _connectSSE()
+      }
+    }, _sseReconnectDelay)
+    _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2)
+  }
+}
+
+function _disconnectSSE() {
+  if (_sseReconnectTimer) {
+    clearTimeout(_sseReconnectTimer)
+    _sseReconnectTimer = null
+  }
+  if (_sseSource) {
+    try {
+      _sseSource.close()
+    } catch (_) {
+      /* noop */
+    }
+    _sseSource = null
+  }
+  _sseConnected = false
+}
+
 function getNextBackoffMs(currentMs) {
-  // 指数退避 + 轻微抖动，避免多客户端同时打爆服务端
-  const next = Math.min(TASKS_POLL_MAX_MS, Math.round(currentMs * 1.7))
-  const jitter = Math.round(next * 0.1 * Math.random()) // 0-10%
+  var next = Math.min(TASKS_POLL_MAX_MS, Math.round(currentMs * 1.7))
+  var jitter = Math.round(next * 0.1 * Math.random())
   return next + jitter
 }
 
@@ -399,35 +492,33 @@ function scheduleNextTasksPoll(delayMs) {
  * - 页面卸载时应调用 `stopTasksPolling` 停止轮询
  */
 function startTasksPolling() {
-  // 页面不可见时不启动轮询（恢复由 visibilitychange 触发）
   if (typeof document !== 'undefined' && document.hidden) {
-    console.log('页面不可见，跳过启动任务轮询')
+    console.log('页面不可见，跳过启动任务更新')
     return
   }
 
-  // 清理旧的定时器/中止旧请求
   stopTasksPolling()
 
-  tasksPollBackoffMs = TASKS_POLL_BASE_MS
+  _connectSSE()
+
+  tasksPollBackoffMs = _sseConnected ? TASKS_POLL_SSE_FALLBACK_MS : TASKS_POLL_BASE_MS
   scheduleNextTasksPoll(0)
 
-  // 安装“页面可见性治理”（只安装一次）
   if (!tasksPollVisibilityHandlerInstalled && typeof document !== 'undefined') {
     tasksPollVisibilityHandlerInstalled = true
-    document.addEventListener('visibilitychange', () => {
+    document.addEventListener('visibilitychange', function () {
       if (document.hidden) {
         stopTasksPolling()
       } else {
-        // 恢复时立即拉一次，减少“回到页面后空白/延迟”
         startTasksPolling()
       }
     })
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', function () {
       stopTasksPolling()
     })
   }
 
-  console.log('任务列表轮询已启动（治理：不可见暂停/指数退避/AbortController）')
+  console.log('任务更新已启动（SSE 优先 + 轮询保底）')
 }
 
 /**
@@ -456,19 +547,19 @@ function stopTasksPolling() {
   if (tasksPollingTimer) {
     clearTimeout(tasksPollingTimer)
     tasksPollingTimer = null
-    console.log('任务列表轮询已停止')
   }
 
-  // 取消 in-flight 请求，避免页面切走/重启轮询时堆积
   try {
     if (tasksPollAbortController && typeof tasksPollAbortController.abort === 'function') {
       tasksPollAbortController.abort()
     }
   } catch (e) {
-    // 忽略：部分浏览器/环境下 abort 可能抛异常
+    // noop
   } finally {
     tasksPollAbortController = null
   }
+
+  _disconnectSSE()
 }
 
 // ==================== 任务列表更新 ====================
@@ -1960,7 +2051,7 @@ function showNewTaskVisualHint(count) {
     animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), fadeOutUp 0.3s ease-in 2.7s forwards;
     pointer-events: none;
   `
-  hint.innerHTML = `${createSvg}<span>${_t('page.noContent.newTasks', { count: count }) || ('Received ' + count + ' new feedback requests')}</span>`
+  hint.innerHTML = `${createSvg}<span>${_t('page.noContent.newTasks', { count: count }) || 'Received ' + count + ' new feedback requests'}</span>`
 
   // 添加到页面
   document.body.appendChild(hint)
@@ -2068,15 +2159,15 @@ async function initMultiTaskSupport() {
   // 启动定时轮询
   startTasksPolling()
 
-  // 轮询健康检查机制（每30秒检查一次轮询器是否还在运行,如果停止则重新启动）
-  setInterval(() => {
-    // 页面不可见：不强行恢复轮询（由 visibilitychange 恢复）
-    if (typeof document !== 'undefined' && document.hidden) {
-      return
-    }
+  // 健康检查：每 30s 确保轮询/SSE 仍在运行
+  setInterval(function () {
+    if (typeof document !== 'undefined' && document.hidden) return
     if (!tasksPollingTimer) {
-      console.warn('任务轮询已停止，自动重新启动')
+      console.warn('任务更新已停止，自动重新启动')
       startTasksPolling()
+    }
+    if (!_sseConnected && !_sseReconnectTimer) {
+      _connectSSE()
     }
   }, 30000)
 
@@ -2167,7 +2258,10 @@ if (typeof window !== 'undefined') {
     switchTask,
     closeTask,
     initMultiTaskSupport,
-    refreshTasksList // 导出刷新函数
+    refreshTasksList,
+    get sseConnected() {
+      return _sseConnected
+    }
   }
 
   // 直接导出常用函数到 window，方便 app.js 调用
