@@ -618,19 +618,34 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
         ) from e
 
     max_wait = 15
-    check_interval = 0.5
+    check_start = time.monotonic()
 
     try:
-        for attempt in range(int(max_wait / check_interval)):
+        for attempt in range(200):
             if health_check_service(config):
-                logger.info(f"🌐 Web服务已启动: http://{config.host}:{config.port}")
+                elapsed = time.monotonic() - check_start
+                logger.info(
+                    f"🌐 Web服务已启动: http://{config.host}:{config.port}"
+                    f"（{elapsed:.1f}s）"
+                )
                 return
-            if attempt % 4 == 0:
-                logger.debug(f"等待服务启动... ({attempt * check_interval:.1f}s)")
-            time.sleep(check_interval)
+
+            elapsed = time.monotonic() - check_start
+            if elapsed >= max_wait:
+                break
+
+            # 前 3s 快速检测（200ms），之后放慢（500ms）
+            interval = 0.2 if elapsed < 3.0 else 0.5
+            if attempt % 5 == 0:
+                logger.debug(f"等待服务启动... ({elapsed:.1f}s)")
+            time.sleep(interval)
 
         if health_check_service(config):
-            logger.info(f"🌐 Web 服务启动成功: http://{config.host}:{config.port}")
+            elapsed = time.monotonic() - check_start
+            logger.info(
+                f"🌐 Web 服务启动成功: http://{config.host}:{config.port}"
+                f"（{elapsed:.1f}s）"
+            )
             return
 
         raise ServiceTimeoutError(
@@ -798,7 +813,6 @@ async def ensure_web_ui_running(config: WebUIConfig) -> None:
     logger.info("Web UI 未运行，正在启动...")
     script_dir = Path(__file__).resolve().parent
     await asyncio.to_thread(start_web_service, config, script_dir)
-    await asyncio.sleep(2)
 
 
 def cleanup_http_clients() -> None:

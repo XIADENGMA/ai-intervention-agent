@@ -57,6 +57,8 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
     else:
         logger.info(f"等待任务完成: {task_id}, 超时时间: {timeout}秒（使用单调时间）")
 
+    _POLL_INTERVAL_S = 0.5
+
     while timeout == 0 or time.monotonic() < deadline_monotonic:
         try:
             config_tuple = service_manager.get_web_ui_config()
@@ -71,21 +73,21 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
 
             if response.status_code != 200:
                 logger.warning(f"获取任务状态失败: HTTP {response.status_code}")
-                await asyncio.sleep(1)
+                await asyncio.sleep(_POLL_INTERVAL_S)
                 continue
 
             try:
                 task_data = response.json()
             except ValueError as e:
                 logger.warning(f"任务状态响应不是有效 JSON: {e}", exc_info=True)
-                await asyncio.sleep(1)
+                await asyncio.sleep(_POLL_INTERVAL_S)
                 continue
 
             if not isinstance(task_data, dict):
                 logger.warning(
                     f"任务状态响应类型异常: {type(task_data)}，已忽略并继续轮询"
                 )
-                await asyncio.sleep(1)
+                await asyncio.sleep(_POLL_INTERVAL_S)
                 continue
 
             if task_data.get("success") and task_data.get("task"):
@@ -98,7 +100,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
         except httpx.HTTPError as e:
             logger.warning(f"轮询任务状态失败: {e}", exc_info=True)
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(_POLL_INTERVAL_S)
 
     elapsed = time.monotonic() - start_time_monotonic
     logger.error(
