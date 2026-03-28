@@ -616,11 +616,25 @@ class NotificationRoutesMixin:
                 feedback_config = config_mgr.get_section("feedback")
 
                 from config_utils import truncate_string
+                from server_config import AUTO_RESUBMIT_TIMEOUT_DEFAULT
+
+                raw_countdown = feedback_config.get(
+                    "frontend_countdown",
+                    feedback_config.get(
+                        "auto_resubmit_timeout",
+                        AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+                    ),
+                )
+                try:
+                    frontend_countdown = int(raw_countdown)
+                except (TypeError, ValueError):
+                    frontend_countdown = AUTO_RESUBMIT_TIMEOUT_DEFAULT
 
                 return jsonify(
                     {
                         "status": "success",
                         "config": {
+                            "frontend_countdown": frontend_countdown,
                             "resubmit_prompt": truncate_string(
                                 feedback_config.get("resubmit_prompt"),
                                 500,
@@ -646,3 +660,110 @@ class NotificationRoutesMixin:
                 return jsonify(
                     {"status": "error", "message": msg("notify.getFailed")}
                 ), 500
+
+        @self.app.route("/api/update-feedback-config", methods=["POST"])
+        @self.limiter.limit("30 per minute")
+        def update_feedback_config() -> ResponseReturnValue:
+            """更新反馈配置（倒计时、提示语）
+            ---
+            tags:
+              - Feedback
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                schema:
+                  type: object
+                  properties:
+                    frontend_countdown:
+                      type: integer
+                      minimum: 0
+                      maximum: 250
+                    resubmit_prompt:
+                      type: string
+                      maxLength: 500
+                    prompt_suffix:
+                      type: string
+                      maxLength: 500
+            responses:
+              200:
+                description: 配置已更新
+              400:
+                description: 参数无效
+              500:
+                description: 更新失败
+            """
+            try:
+                data = request.json or {}
+                if not isinstance(data, dict):
+                    data = {}
+
+                config_mgr = get_config()
+                feedback_config = dict(config_mgr.get_section("feedback"))
+
+                from config_utils import truncate_string
+                from server_config import (
+                    AUTO_RESUBMIT_TIMEOUT_MAX,
+                    AUTO_RESUBMIT_TIMEOUT_MIN,
+                    PROMPT_SUFFIX_DEFAULT,
+                    RESUBMIT_PROMPT_DEFAULT,
+                )
+
+                changed_keys: list[str] = []
+
+                if "frontend_countdown" in data:
+                    raw = data["frontend_countdown"]
+                    try:
+                        val = int(raw)
+                    except (TypeError, ValueError):
+                        return jsonify(
+                            {
+                                "status": "error",
+                                "message": "frontend_countdown 必须为整数",
+                            }
+                        ), 400
+                    if val == 0:
+                        feedback_config["frontend_countdown"] = 0
+                    else:
+                        feedback_config["frontend_countdown"] = int(
+                            clamp_value(
+                                val,
+                                AUTO_RESUBMIT_TIMEOUT_MIN,
+                                AUTO_RESUBMIT_TIMEOUT_MAX,
+                                "frontend_countdown",
+                            )
+                        )
+                    changed_keys.append("frontend_countdown")
+
+                if "resubmit_prompt" in data:
+                    feedback_config["resubmit_prompt"] = truncate_string(
+                        data["resubmit_prompt"],
+                        500,
+                        "feedback.resubmit_prompt",
+                        default=RESUBMIT_PROMPT_DEFAULT,
+                    )
+                    changed_keys.append("resubmit_prompt")
+
+                if "prompt_suffix" in data:
+                    feedback_config["prompt_suffix"] = truncate_string(
+                        data["prompt_suffix"],
+                        500,
+                        "feedback.prompt_suffix",
+                        default=PROMPT_SUFFIX_DEFAULT,
+                    )
+                    changed_keys.append("prompt_suffix")
+
+                if not changed_keys:
+                    return jsonify(
+                        {"status": "success", "message": "无可识别的更新字段"}
+                    )
+
+                config_mgr.update_section("feedback", feedback_config)
+                logger.info(f"反馈配置已更新: {changed_keys}")
+
+                return jsonify({"status": "success", "message": "反馈配置已更新"})
+
+            except Exception as e:
+                logger.error(f"更新反馈配置失败: {e}", exc_info=True)
+                return jsonify({"status": "error", "message": f"更新失败: {e}"}), 500

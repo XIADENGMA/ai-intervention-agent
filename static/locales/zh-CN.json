@@ -53,7 +53,20 @@
     "shortcutInsertCode": "插入代码：",
     "shortcutPasteImage": "粘贴图片：",
     "shortcutUploadImage": "上传图片：",
-    "shortcutClearImage": "清除图片："
+    "shortcutClearImage": "清除图片：",
+    "feedbackTitle": "反馈",
+    "autoResubmitTimeout": "自动重调倒计时（秒）",
+    "autoResubmitTimeoutHint": "倒计时结束后自动重新提交反馈请求。范围 30-250，设为 0 则禁用。",
+    "resubmitPrompt": "重调提示语",
+    "resubmitPromptHint": "倒计时结束后自动提交的提示内容（最多 500 字符）",
+    "promptSuffix": "反馈后缀",
+    "promptSuffixHint": "追加到用户每次反馈末尾的提示语（最多 500 字符）",
+    "resetFeedbackConfig": "重置反馈配置",
+    "savingFeedback": "保存中…",
+    "feedbackConfigSaved": "反馈配置已保存",
+    "feedbackConfigReset": "反馈配置已重置为默认值",
+    "feedbackConfigSaveFailed": "反馈配置保存失败",
+    "disabledHint": "（已禁用）"
   },
   "status": {
     "loadFailed": "加载配置失败",

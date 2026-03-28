@@ -34,6 +34,7 @@ class SettingsManager {
   async init() {
     if (this.initialized) return
     this.settings = await this.loadSettings()
+    this.feedbackConfig = await this.loadFeedbackConfig()
     this.initEventListeners()
     this.initialized = true
     console.log('SettingsManager 初始化完成')
@@ -317,6 +318,40 @@ class SettingsManager {
       resetSettingsBtn.addEventListener('click', () => this.resetSettings())
     }
 
+    const resetFeedbackBtn = document.getElementById('reset-feedback-config-btn')
+    if (resetFeedbackBtn) {
+      resetFeedbackBtn.addEventListener('click', () => this.resetFeedbackConfig())
+    }
+
+    const feedbackCountdown = document.getElementById('feedback-countdown')
+    const feedbackPrompt = document.getElementById('feedback-resubmit-prompt')
+    const feedbackSuffix = document.getElementById('feedback-prompt-suffix')
+
+    let feedbackSaveTimer = null
+    const debounceSaveFeedback = (updates) => {
+      if (feedbackSaveTimer) clearTimeout(feedbackSaveTimer)
+      feedbackSaveTimer = setTimeout(() => this.saveFeedbackConfig(updates), 800)
+    }
+
+    if (feedbackCountdown) {
+      feedbackCountdown.addEventListener('change', () => {
+        const val = parseInt(feedbackCountdown.value, 10)
+        if (!isNaN(val) && val >= 0 && val <= 250) {
+          debounceSaveFeedback({ frontend_countdown: val })
+        }
+      })
+    }
+    if (feedbackPrompt) {
+      feedbackPrompt.addEventListener('input', () => {
+        debounceSaveFeedback({ resubmit_prompt: feedbackPrompt.value })
+      })
+    }
+    if (feedbackSuffix) {
+      feedbackSuffix.addEventListener('input', () => {
+        debounceSaveFeedback({ prompt_suffix: feedbackSuffix.value })
+      })
+    }
+
     // 主题切换按钮点击事件 - 已由 theme.js 处理，此处删除避免重复绑定
 
     // 语言切换
@@ -415,8 +450,14 @@ class SettingsManager {
     } catch (e) {
       console.warn('打开设置面板时刷新配置失败，继续使用当前设置:', e)
     }
+    try {
+      this.feedbackConfig = await this.loadFeedbackConfig()
+    } catch (e) {
+      console.warn('打开设置面板时刷新反馈配置失败:', e)
+    }
 
     this.updateUI()
+    this.updateFeedbackUI()
     this.updateStatus()
   }
 
@@ -587,6 +628,66 @@ class SettingsManager {
       console.error('Bark 测试通知失败:', error)
       showStatus(t('status.barkTestFailed', { reason: error.message }), 'error')
     }
+  }
+
+  async loadFeedbackConfig() {
+    try {
+      const resp = await fetch('/api/get-feedback-prompts', { cache: 'no-store' })
+      if (resp.ok) {
+        const data = await resp.json()
+        if (data.status === 'success' && data.config) {
+          return {
+            frontend_countdown: data.config.frontend_countdown ?? 240,
+            resubmit_prompt: data.config.resubmit_prompt ?? '',
+            prompt_suffix: data.config.prompt_suffix ?? ''
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('加载反馈配置失败:', e)
+    }
+    return { frontend_countdown: 240, resubmit_prompt: '', prompt_suffix: '' }
+  }
+
+  updateFeedbackUI() {
+    const fc = this.feedbackConfig || {}
+    const countdownEl = document.getElementById('feedback-countdown')
+    const promptEl = document.getElementById('feedback-resubmit-prompt')
+    const suffixEl = document.getElementById('feedback-prompt-suffix')
+    if (countdownEl) countdownEl.value = fc.frontend_countdown ?? 240
+    if (promptEl) promptEl.value = fc.resubmit_prompt ?? ''
+    if (suffixEl) suffixEl.value = fc.prompt_suffix ?? ''
+  }
+
+  async saveFeedbackConfig(updates) {
+    try {
+      const resp = await fetch('/api/update-feedback-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      })
+      const data = await resp.json()
+      if (resp.ok && data.status === 'success') {
+        Object.assign(this.feedbackConfig, updates)
+        showStatus(t('settings.feedbackConfigSaved'), 'success')
+      } else {
+        showStatus(data.message || t('settings.feedbackConfigSaveFailed'), 'error')
+      }
+    } catch (e) {
+      console.error('保存反馈配置失败:', e)
+      showStatus(t('settings.feedbackConfigSaveFailed'), 'error')
+    }
+  }
+
+  async resetFeedbackConfig() {
+    await this.saveFeedbackConfig({
+      frontend_countdown: 240,
+      resubmit_prompt: '请立即调用 interactive_feedback 工具',
+      prompt_suffix: '\n请积极调用 interactive_feedback 工具'
+    })
+    this.feedbackConfig = await this.loadFeedbackConfig()
+    this.updateFeedbackUI()
+    showStatus(t('settings.feedbackConfigReset'), 'success')
   }
 }
 

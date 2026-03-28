@@ -53,7 +53,20 @@
     "shortcutInsertCode": "Insert code:",
     "shortcutPasteImage": "Paste image:",
     "shortcutUploadImage": "Upload image:",
-    "shortcutClearImage": "Clear images:"
+    "shortcutClearImage": "Clear images:",
+    "feedbackTitle": "Feedback",
+    "autoResubmitTimeout": "Auto-reschedule countdown (seconds)",
+    "autoResubmitTimeoutHint": "Automatically resubmit feedback request when countdown expires. Range 30-250, set to 0 to disable.",
+    "resubmitPrompt": "Resubmit prompt",
+    "resubmitPromptHint": "Content auto-submitted when countdown expires (max 500 chars)",
+    "promptSuffix": "Feedback suffix",
+    "promptSuffixHint": "Appended to every user feedback submission (max 500 chars)",
+    "resetFeedbackConfig": "Reset feedback config",
+    "savingFeedback": "Saving…",
+    "feedbackConfigSaved": "Feedback config saved",
+    "feedbackConfigReset": "Feedback config reset to defaults",
+    "feedbackConfigSaveFailed": "Failed to save feedback config",
+    "disabledHint": "(disabled)"
   },
   "status": {
     "loadFailed": "Failed to load config",
