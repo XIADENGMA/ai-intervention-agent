@@ -1,6 +1,6 @@
-const vscode = require('vscode')
-const { WebviewProvider } = require('./webview')
-const { createLogger } = require('./logger')
+import * as vscode from 'vscode'
+import { WebviewProvider } from './webview'
+import { createLogger } from './logger'
 
 /**
  * AI Intervention Agent VSCode 扩展
@@ -13,9 +13,8 @@ try {
 } catch {
   // 忽略：打包/测试环境下可能读取不到版本号
 }
-// 构建标识：打包时 package_vscode_vsix.mjs 将 __BUILD_SHA__ 替换为 git short SHA；
-// 开发环境 placeholder 未被替换时回退到运行时 git rev-parse。
-const BUILD_ID = (() => {
+
+const BUILD_ID: string = (() => {
   const stamp = '__BUILD_SHA__'
   if (!stamp.startsWith('__')) return stamp
   try {
@@ -27,21 +26,17 @@ const BUILD_ID = (() => {
   } catch { return 'dev' }
 })()
 
-// deactivate() 清理钩子（activate 内赋值）
-let deactivateHook = null
+let deactivateHook: (() => void) | null = null
 
-function normalizeServerUrl(input) {
+function normalizeServerUrl(input: unknown): string {
   try {
     const raw = (input ?? '').toString().trim()
     if (!raw) return DEFAULT_SERVER_URL
 
-    // 允许用户省略协议（例如 localhost:8080）
     const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `http://${raw}`
     const u = new URL(withScheme)
     const protocol = String(u.protocol || '').toLowerCase()
-    // 仅允许 http/https，避免 data/javascript/file 等协议带来的安全边界混淆
     if (protocol !== 'http:' && protocol !== 'https:') return DEFAULT_SERVER_URL
-    // 0.0.0.0 / :: 适合作为监听地址，但并不是可靠的客户端访问地址：统一映射为 localhost
     const host = String(u.hostname || '').toLowerCase()
     if (host === '0.0.0.0' || host === '::') {
       const port = u.port ? `:${u.port}` : ''
@@ -53,15 +48,24 @@ function normalizeServerUrl(input) {
   }
 }
 
-function getConfiguredServerUrl() {
+function getConfiguredServerUrl(): string {
   const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-  return normalizeServerUrl(cfg.get('serverUrl', DEFAULT_SERVER_URL))
+  return normalizeServerUrl(cfg.get<string>('serverUrl', DEFAULT_SERVER_URL))
 }
 
-function activate(context) {
-  // 创建输出频道（不自动显示）
-  // 优先使用 LogOutputChannel（若 VSCode 版本不支持则回退为普通 OutputChannel）
-  let outputChannel
+interface StatusBarState {
+  connected?: boolean | null
+  active?: number
+  pending?: number
+}
+
+interface TaskData {
+  id: string
+  prompt: string
+}
+
+function activate(context: vscode.ExtensionContext): void {
+  let outputChannel: vscode.OutputChannel
   try {
     outputChannel = vscode.window.createOutputChannel('AI Intervention Agent', { log: true })
   } catch {
@@ -73,7 +77,7 @@ function activate(context) {
     getLevel: () => {
       try {
         const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-        return cfg.get('logLevel', 'info')
+        return cfg.get<string>('logLevel', 'info') ?? 'info'
       } catch {
         return 'info'
       }
@@ -81,10 +85,9 @@ function activate(context) {
   })
   let serverUrl = getConfiguredServerUrl()
 
-  // 启动日志（结构化：便于 grep/定位）
   try {
     const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-    const logLevel = cfg.get('logLevel', 'info')
+    const logLevel = cfg.get<string>('logLevel', 'info')
     logger.event(
       'ext.activate',
       {
@@ -107,16 +110,14 @@ function activate(context) {
     )
   }
 
-  // 状态栏：显示连接状态 & 任务数（点击打开面板）
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
   statusBar.command = 'ai-intervention-agent.openPanel'
   statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
   statusBar.text = '$(sparkle-filled) --'
-  // 默认隐藏：后续根据“视图可见/有待处理任务”动态 show/hide，避免常驻占用状态栏
   statusBar.hide()
   let statusBarShown = false
 
-  const setStatusBarShown = shouldShow => {
+  const setStatusBarShown = (shouldShow: boolean): void => {
     const next = !!shouldShow
     if (next === statusBarShown) return
     statusBarShown = next
@@ -127,32 +128,31 @@ function activate(context) {
     }
   }
 
-  let lastConnected = null
-  let lastActive = null
-  let lastPending = null
+  let lastConnected: boolean | null = null
+  let lastActive: number | null = null
+  let lastPending: number | null = null
   let lastPollAtMs = 0
-  let lastPollDurationMs = null
-  let lastPollHttpStatus = null
+  let lastPollDurationMs: number | null = null
+  let lastPollHttpStatus: number | null = null
   let lastPollErrorName = ''
   let lastPollError = ''
 
-  // 扩展侧新任务检测：Webview 不可见时由扩展独立轮询触发通知
-  let extKnownTaskIds = new Set()
+  let extKnownTaskIds = new Set<string>()
   let extTaskTrackingInitialized = false
 
-  const formatTotalCount = n => {
+  const formatTotalCount = (n: unknown): string => {
     const num = typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0
     return num > 99 ? '99+' : String(num)
   }
 
-  const buildStatusBarTooltip = ({ connected, active, pending } = {}) => {
+  const buildStatusBarTooltip = ({ connected, active, pending }: StatusBarState = {}): string => {
     try {
       const statusText = connected === true ? '已连接' : connected === false ? '未连接' : '未知'
       const a = typeof active === 'number' && Number.isFinite(active) ? active : 0
       const p = typeof pending === 'number' && Number.isFinite(pending) ? pending : 0
       const total = a + p
 
-      const lines = []
+      const lines: string[] = []
       lines.push(`AI Intervention Agent（${statusText}）`)
       if (connected === true) {
         lines.push(`任务：Active ${a}  Pending ${p}  Total ${total}`)
@@ -160,7 +160,6 @@ function activate(context) {
         lines.push('任务：--')
       }
 
-      // 仅在离线/不可用时补充原因，避免 tooltip 过长
       if (connected === false || connected === null) {
         lines.push(`serverUrl: ${serverUrl}`)
       }
@@ -175,7 +174,7 @@ function activate(context) {
     }
   }
 
-  const applyStatusBarPresentation = ({ connected, active, pending } = {}) => {
+  const applyStatusBarPresentation = ({ connected, active, pending }: StatusBarState = {}): void => {
     try {
       const a = typeof active === 'number' && Number.isFinite(active) ? active : 0
       const p = typeof pending === 'number' && Number.isFinite(pending) ? pending : 0
@@ -208,16 +207,13 @@ function activate(context) {
     }
   }
 
-  const updateStatusBarVisibility = () => {
-    // 用户诉求：状态栏常驻显示（即使 0 也显示）
+  const updateStatusBarVisibility = (): void => {
     setStatusBarShown(true)
   }
 
-  // 常驻显示：初始化后立刻展示（避免“插件已启动但状态栏无任何反馈”）
   updateStatusBarVisibility()
 
-  const updateStatusBar = async () => {
-    // Node 18+ 有全局 fetch；若不存在则降级为“未知”
+  const updateStatusBar = async (): Promise<boolean | null> => {
     if (typeof fetch !== 'function') {
       lastPollAtMs = Date.now()
       lastPollDurationMs = null
@@ -225,7 +221,6 @@ function activate(context) {
       lastPollErrorName = 'NoFetch'
       lastPollError = '当前运行环境无 fetch，无法探测服务端状态'
       applyStatusBarPresentation({ connected: null, active: 0, pending: 0 })
-      // 该问题会导致功能不可用：显示状态栏提示用户
       setStatusBarShown(true)
       return null
     }
@@ -249,20 +244,20 @@ function activate(context) {
 
     try {
       const resp = await fetch(`${serverUrl}/api/tasks`, {
-        cache: 'no-store',
         signal: controller ? controller.signal : undefined,
-        headers: { Accept: 'application/json' }
-      })
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }
+      } as RequestInit)
 
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`)
       }
 
-      const data = await resp.json()
+      const data = await resp.json() as Record<string, unknown>
+      const stats = data && data.stats && typeof data.stats === 'object' ? data.stats as Record<string, unknown> : {}
       const active =
-        data && data.stats && typeof data.stats.active === 'number' ? data.stats.active : 0
+        stats && typeof stats.active === 'number' ? stats.active : 0
       const pending =
-        data && data.stats && typeof data.stats.pending === 'number' ? data.stats.pending : 0
+        stats && typeof stats.pending === 'number' ? stats.pending : 0
       const connected = !!(data && data.success)
       const durationMs = Date.now() - startedAt
       const changed =
@@ -273,7 +268,6 @@ function activate(context) {
       lastPollErrorName = ''
       lastPollError = ''
 
-      // 只在变化时更新，避免频繁重绘
       if (changed) {
         lastConnected = connected
         lastActive = active
@@ -281,7 +275,6 @@ function activate(context) {
 
         applyStatusBarPresentation({ connected, active, pending })
 
-        // 结构化日志：只在状态变化时记录，避免刷屏
         const level =
           connected === false && prevConnected === true
             ? 'warn'
@@ -302,32 +295,31 @@ function activate(context) {
           { level }
         )
       }
-      // tooltip 的“最后探测时间/耗时”属于诊断信息：当状态栏可见时，即使数值未变也刷新一次
       if (statusBarShown) {
         applyStatusBarPresentation({ connected, active, pending })
       }
       updateStatusBarVisibility()
 
-      // 扩展侧新任务检测：从 /api/tasks 响应中提取任务 ID，对比已知集合
       if (connected && data && Array.isArray(data.tasks)) {
         try {
-          const currentIds = new Set()
-          const newTaskData = []
-          for (const t of data.tasks) {
+          const currentIds = new Set<string>()
+          const newTaskData: TaskData[] = []
+          for (const t of data.tasks as Array<Record<string, unknown>>) {
             if (!t || !t.task_id) continue
-            currentIds.add(t.task_id)
-            if (extTaskTrackingInitialized && !extKnownTaskIds.has(t.task_id)) {
-              newTaskData.push({ id: t.task_id, prompt: t.prompt || '' })
+            const taskId = String(t.task_id)
+            currentIds.add(taskId)
+            if (extTaskTrackingInitialized && !extKnownTaskIds.has(taskId)) {
+              newTaskData.push({ id: taskId, prompt: String(t.prompt || '') })
             }
           }
           if (newTaskData.length > 0 && extTaskTrackingInitialized) {
-            if (provider && typeof provider.dispatchNewTaskNotification === 'function') {
+            if (provider && typeof (provider as unknown as Record<string, unknown>).dispatchNewTaskNotification === 'function') {
               logger.event(
                 'ext.dispatch_new_task',
                 { ids: newTaskData.map(t => t.id), viewVisible: isViewVisible },
                 { level: 'info' }
               )
-              provider.dispatchNewTaskNotification(newTaskData)
+              ;(provider as unknown as { dispatchNewTaskNotification: (tasks: TaskData[]) => void }).dispatchNewTaskNotification(newTaskData)
             }
           }
           extKnownTaskIds = currentIds
@@ -345,17 +337,16 @@ function activate(context) {
       }
 
       return connected
-    } catch (e) {
+    } catch (e: unknown) {
       const durationMs = Date.now() - startedAt
-      const errName = e && e.name ? String(e.name) : ''
-      const errMsg = e && e.message ? String(e.message) : String(e)
+      const errName = e instanceof Error ? e.name : ''
+      const errMsg = e instanceof Error ? e.message : String(e)
       lastPollAtMs = Date.now()
       lastPollDurationMs = durationMs
       lastPollHttpStatus = null
       lastPollErrorName = errName
       lastPollError = errMsg
 
-      // 离线/超时/连接失败
       if (lastConnected !== false) {
         lastConnected = false
         lastActive = null
@@ -363,7 +354,6 @@ function activate(context) {
       }
       applyStatusBarPresentation({ connected: false, active: 0, pending: 0 })
 
-      // 仅在首次从“非离线”切到离线时打 warn，其余 debug
       const level = prevConnected === true ? 'warn' : prevConnected === false ? 'debug' : 'debug'
       logger.event(
         'server.poll',
@@ -385,34 +375,30 @@ function activate(context) {
     }
   }
 
-  // 状态栏轮询自适应（可见=快，不可见/离线=慢 + 退避）
   const STATUS_POLL_FAST_MS = 3000
   const STATUS_POLL_SLOW_MS = 15000
   const STATUS_POLL_MAX_MS = 60000
   const WEBVIEW_STATS_FRESH_MS = 5000
-  let statusPollTimer = null
+  let statusPollTimer: ReturnType<typeof setTimeout> | null = null
   let statusPollBackoffMs = STATUS_POLL_FAST_MS
   let statusPollInFlight = false
-  // 兜底：用于解决 deactivate 与 in-flight 轮询回调的竞态（防止停用后“复活”定时器）
   let statusPollDisposed = false
   let isViewVisible = true
   let isWindowFocused = vscode.window.state.focused
   let lastWebviewStatsAtMs = 0
 
-  const isWebviewStatsFresh = () =>
+  const isWebviewStatsFresh = (): boolean =>
     isViewVisible &&
     lastWebviewStatsAtMs > 0 &&
     Date.now() - lastWebviewStatsAtMs < WEBVIEW_STATS_FRESH_MS
 
-  const computeBaseDelayMs = () => {
-    // Webview 可见且持续上报 stats：状态栏可复用 Webview 轮询结果，扩展侧降频探测
+  const computeBaseDelayMs = (): number => {
     if (isWebviewStatsFresh()) return STATUS_POLL_SLOW_MS
     if (isViewVisible && isWindowFocused) return STATUS_POLL_FAST_MS
-    // 窗口聚焦但 Webview 不可见：扩展需独立检测新任务，适度加快以保证通知及时性
     if (isWindowFocused) return STATUS_POLL_FAST_MS * 2
     return STATUS_POLL_SLOW_MS
   }
-  const computeNextDelayMs = () => {
+  const computeNextDelayMs = (): number => {
     const base = computeBaseDelayMs()
     if (lastConnected === false) {
       return Math.min(STATUS_POLL_MAX_MS, Math.max(base, statusPollBackoffMs))
@@ -420,7 +406,7 @@ function activate(context) {
     return base
   }
 
-  const scheduleStatusPoll = delayMs => {
+  const scheduleStatusPoll = (delayMs: number): void => {
     if (statusPollDisposed) return
     if (statusPollTimer) {
       clearTimeout(statusPollTimer)
@@ -429,7 +415,7 @@ function activate(context) {
     statusPollTimer = setTimeout(runStatusPoll, Math.max(0, delayMs))
   }
 
-  const runStatusPoll = async () => {
+  const runStatusPoll = async (): Promise<void> => {
     if (statusPollDisposed) return
     if (statusPollInFlight) {
       scheduleStatusPoll(computeNextDelayMs())
@@ -451,19 +437,16 @@ function activate(context) {
     }
   }
 
-  // 注册webview provider（支持多标签页和缓存）
   const provider = new WebviewProvider(
     context.extensionUri,
     outputChannel,
     serverUrl,
-    visible => {
+    (visible: boolean) => {
       isViewVisible = !!visible
       updateStatusBarVisibility()
-      // 可见性变化只影响轮询频率，不影响任务追踪状态
       scheduleStatusPoll(0)
     },
-    ({ connected, active, pending } = {}) => {
-      // Webview 轮询的 /api/tasks 已包含 stats：这里直接复用来更新状态栏
+    ({ connected, active, pending }: StatusBarState = {}) => {
       lastWebviewStatsAtMs = Date.now()
       const c = connected === true
       const a =
@@ -483,16 +466,13 @@ function activate(context) {
         applyStatusBarPresentation({ connected: c, active: a, pending: p })
       }
 
-      // 与扩展侧退避保持一致：Webview 上报离线时也适当退避
       if (c) {
         statusPollBackoffMs = STATUS_POLL_FAST_MS
       } else {
         statusPollBackoffMs = Math.min(STATUS_POLL_MAX_MS, Math.round(statusPollBackoffMs * 1.7))
       }
     },
-    taskIds => {
-      // Webview 侧检测到新任务并发送了通知后，同步 task ID 到扩展侧，
-      // 确保扩展下次轮询不会重复检测同一批任务而发出双重通知
+    (taskIds: string[]) => {
       if (!Array.isArray(taskIds)) return
       for (const id of taskIds) {
         if (id) extKnownTaskIds.add(String(id))
@@ -502,13 +482,11 @@ function activate(context) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('aiInterventionAgent.feedbackView', provider, {
       webviewOptions: {
-        // 内存优先：隐藏时允许释放 Webview；关键 UI 状态由 Webview 侧 setState/getState 持久化
         retainContextWhenHidden: false
       }
     })
   )
 
-  // 监听配置变更：serverUrl 更新后同步刷新状态栏与 Webview（需要重建 HTML 以更新 CSP 与 SERVER_URL 常量）
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
       if (!e.affectsConfiguration('ai-intervention-agent.serverUrl')) return
@@ -520,31 +498,28 @@ function activate(context) {
       serverUrl = next
       logger.event('config.update', { key: 'serverUrl', prev, next: serverUrl }, { level: 'info' })
 
-      // 强制刷新状态栏
       lastConnected = null
       lastActive = null
       lastPending = null
       statusPollBackoffMs = STATUS_POLL_FAST_MS
-      extKnownTaskIds = new Set()
+      extKnownTaskIds = new Set<string>()
       extTaskTrackingInitialized = false
       statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
       scheduleStatusPoll(0)
 
-      // 刷新 Webview（更新 CSP / SERVER_URL）
-      if (provider && typeof provider.updateServerUrl === 'function') {
-        provider.updateServerUrl(serverUrl)
+      if (provider && typeof (provider as unknown as { updateServerUrl?: (url: string) => void }).updateServerUrl === 'function') {
+        (provider as unknown as { updateServerUrl: (url: string) => void }).updateServerUrl(serverUrl)
       }
     })
   )
 
-  // VSCode 窗口焦点变化：不聚焦时降低轮询频率
   context.subscriptions.push(
     vscode.window.onDidChangeWindowState(state => {
       isWindowFocused = !!state.focused
       scheduleStatusPoll(isWindowFocused && isViewVisible ? 0 : computeNextDelayMs())
       try {
-        if (provider && typeof provider.onWindowFocusChanged === 'function') {
-          provider.onWindowFocusChanged(isWindowFocused)
+        if (provider && typeof (provider as unknown as { onWindowFocusChanged?: (focused: boolean) => void }).onWindowFocusChanged === 'function') {
+          (provider as unknown as { onWindowFocusChanged: (focused: boolean) => void }).onWindowFocusChanged(isWindowFocused)
         }
       } catch {
         // 忽略：不同宿主/版本下 focus 事件不应影响主流程
@@ -552,15 +527,12 @@ function activate(context) {
     })
   )
 
-  // 启动轮询
   scheduleStatusPoll(0)
 
-  // 命令：打开面板（活动栏容器）
   const openPanelDisposable = vscode.commands.registerCommand(
     'ai-intervention-agent.openPanel',
     async function () {
       await vscode.commands.executeCommand('workbench.view.extension.aiInterventionAgent')
-      // 尝试聚焦具体 view（失败则忽略）
       try {
         await vscode.commands.executeCommand('aiInterventionAgent.feedbackView.focus')
       } catch {
@@ -569,7 +541,6 @@ function activate(context) {
     }
   )
 
-  // 命令：打开配置（定位到 serverUrl）
   const openSettingsDisposable = vscode.commands.registerCommand(
     'ai-intervention-agent.openSettings',
     async function () {
@@ -589,18 +560,16 @@ function activate(context) {
   context.subscriptions.push(outputChannel)
   context.subscriptions.push(statusBar)
 
-  // 兜底清理：避免极端情况下 timer 常驻
-  const cleanup = () => {
+  const cleanup = (): void => {
     try {
       statusPollDisposed = true
       if (statusPollTimer) {
         clearTimeout(statusPollTimer)
         statusPollTimer = null
       }
-      // 显式释放 provider（避免持有 Webview/Disposable 引用导致 GC 推迟）
       try {
-        if (provider && typeof provider.dispose === 'function') {
-          provider.dispose()
+        if (provider && typeof (provider as unknown as { dispose?: () => void }).dispose === 'function') {
+          (provider as unknown as { dispose: () => void }).dispose()
         }
       } catch {
         // 忽略
@@ -613,7 +582,7 @@ function activate(context) {
   context.subscriptions.push({ dispose: cleanup })
 }
 
-function deactivate() {
+function deactivate(): void {
   try {
     if (deactivateHook && typeof deactivateHook === 'function') {
       deactivateHook()

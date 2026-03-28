@@ -1,23 +1,116 @@
-const vscode = require('vscode')
-const fs = require('fs')
-const path = require('path')
-const { execFile, execFileSync } = require('child_process')
-const { toAppleScriptStringLiteral, sanitizeForLog } = require('./applescript-executor')
+import * as vscode from 'vscode'
+import * as fs from 'fs'
+import * as path from 'path'
+import { execFile, execFileSync } from 'child_process'
+import { toAppleScriptStringLiteral, sanitizeForLog } from './applescript-executor'
+import type { Logger } from './logger'
 
-function toNonEmptyString(value, fallback = '') {
+// ── 类型定义 ──
+
+interface ExecError extends Error {
+  code?: string | number | null
+  cause?: unknown
+  signal?: string
+  details?: Record<string, unknown>
+}
+
+interface ExecResult {
+  stdout: string
+  stderr: string
+  durationMs: number
+}
+
+interface StablePaths {
+  dir: string
+  app: string
+  bin: string
+}
+
+interface StableResult {
+  bin: string
+  installed: boolean
+  error: string
+}
+
+interface VsCodeApi {
+  window?: {
+    showErrorMessage?: (msg: string, ...items: string[]) => Thenable<string | undefined>
+    showWarningMessage?: (msg: string, ...items: string[]) => Thenable<string | undefined>
+    showInformationMessage?: (msg: string, ...items: string[]) => Thenable<string | undefined>
+    setStatusBarMessage?: (text: string, hideAfterTimeout: number) => vscode.Disposable
+  }
+  env?: {
+    appRoot?: string
+    appName?: string
+  }
+}
+
+interface AppleScriptErrorInfo {
+  code: string
+  message: string
+  exitCode: number | null
+  signal: string
+  durationMs: number | null
+  stderr: string
+  stderrPreview: string
+  injectedEnvKeys: string[]
+}
+
+interface DiagnosticBase {
+  at: number
+  isTest: boolean
+  diagnosticMode: boolean
+  titleLen: number
+  messageLen: number
+}
+
+interface NotificationEvent {
+  title?: string
+  message?: string
+  metadata?: Record<string, unknown>
+}
+
+interface RunOptions {
+  env?: Record<string, string>
+}
+
+interface AppleScriptExecutorLike {
+  runAppleScript: (script: string, options?: RunOptions) => Promise<string>
+}
+
+interface ProviderOptions {
+  logger?: Logger | null
+  executor?: AppleScriptExecutorLike | null
+  vscodeApi?: VsCodeApi
+}
+
+// ── 工具函数 ──
+
+function toNonEmptyString(value: unknown, fallback = ''): string {
   const s = value == null ? '' : String(value)
   const t = s.trim()
   return t ? t : fallback
 }
 
-function execFileAsyncWithOutput(file, args, options) {
+function makeExecError(message: string, code: string, extra?: Partial<ExecError>): ExecError {
+  const err: ExecError = new Error(message)
+  err.code = code
+  if (extra) Object.assign(err, extra)
+  return err
+}
+
+function execFileAsyncWithOutput(
+  file: string,
+  args: string[],
+  options?: Record<string, unknown>
+): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now()
     try {
       execFile(
         file,
         Array.isArray(args) ? args : [],
-        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}),
+        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}) as { encoding: 'utf8' },
         (error, stdout, stderr) => {
           const durationMs = Date.now() - startedAt
           const outText = (stdout ?? '').toString()
@@ -25,72 +118,73 @@ function execFileAsyncWithOutput(file, args, options) {
           if (error) {
             const exitCode =
               typeof error.code === 'number' && Number.isFinite(error.code) ? error.code : null
-            const signal = error && error.signal ? String(error.signal) : ''
+            const signal = error && (error as unknown as Record<string, unknown>).signal ? String((error as unknown as Record<string, unknown>).signal) : ''
             const msg =
               errText.trim() || (error && error.message ? String(error.message) : 'execFile failed')
-            const err = new Error(msg)
-            err.code = 'EXEC_FAILED'
-            err.cause = error
-            err.details = {
-              file: String(file || ''),
-              args: Array.isArray(args) ? args.map(String) : [],
-              exitCode,
-              signal,
-              durationMs,
-              stderr: errText.trim(),
-              stderrPreview: sanitizeForLog(errText, 400),
-              stdoutPreview: sanitizeForLog(outText, 240),
-              stdoutLen: outText.length
-            }
-            reject(err)
+            reject(makeExecError(msg, 'EXEC_FAILED', {
+              cause: error,
+              details: {
+                file: String(file || ''),
+                args: Array.isArray(args) ? args.map(String) : [],
+                exitCode,
+                signal,
+                durationMs,
+                stderr: errText.trim(),
+                stderrPreview: sanitizeForLog(errText, 400),
+                stdoutPreview: sanitizeForLog(outText, 240),
+                stdoutLen: outText.length
+              }
+            }))
             return
           }
           resolve({ stdout: outText, stderr: errText, durationMs })
         }
       )
-    } catch (e) {
+    } catch (e: unknown) {
       const err = e instanceof Error ? e : new Error(String(e))
-      err.code = 'EXEC_SPAWN_FAILED'
-      err.details = { file: String(file || ''), args: Array.isArray(args) ? args.map(String) : [] }
-      reject(err)
+      reject(makeExecError(err.message, 'EXEC_SPAWN_FAILED', {
+        details: { file: String(file || ''), args: Array.isArray(args) ? args.map(String) : [] }
+      }))
     }
   })
 }
 
-function execFileAsync(file, args, options) {
+function execFileAsync(
+  file: string,
+  args: string[],
+  options?: Record<string, unknown>
+): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
       execFile(
         file,
         Array.isArray(args) ? args : [],
-        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}),
+        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}) as { encoding: 'utf8' },
         (error, stdout, stderr) => {
           if (error) {
             const errText = (stderr ?? '').toString().trim()
             const msg =
               errText || (error && error.message ? String(error.message) : 'execFile failed')
-            const err = new Error(msg)
-            err.code = 'EXEC_FAILED'
-            err.cause = error
-            err.details = {
-              file: String(file || ''),
-              args: Array.isArray(args) ? args.map(String) : []
-            }
-            reject(err)
+            reject(makeExecError(msg, 'EXEC_FAILED', {
+              cause: error,
+              details: {
+                file: String(file || ''),
+                args: Array.isArray(args) ? args.map(String) : []
+              }
+            }))
             return
           }
           resolve((stdout ?? '').toString())
         }
       )
-    } catch (e) {
+    } catch (e: unknown) {
       const err = e instanceof Error ? e : new Error(String(e))
-      err.code = 'EXEC_SPAWN_FAILED'
-      reject(err)
+      reject(makeExecError(err.message, 'EXEC_SPAWN_FAILED'))
     }
   })
 }
 
-function findMacAppBundlePathFromAppRoot(appRoot) {
+function findMacAppBundlePathFromAppRoot(appRoot: string): string {
   try {
     let p = (appRoot ?? '').toString().trim()
     if (!p) return ''
@@ -110,7 +204,7 @@ function findMacAppBundlePathFromAppRoot(appRoot) {
   }
 }
 
-function resolveBundledTerminalNotifierBinPath() {
+function resolveBundledTerminalNotifierBinPath(): string {
   try {
     return path.join(
       __dirname,
@@ -126,7 +220,7 @@ function resolveBundledTerminalNotifierBinPath() {
   }
 }
 
-function ensureExecutable(filePath) {
+function ensureExecutable(filePath: string): boolean {
   try {
     if (!filePath) return false
     if (!fs.existsSync(filePath)) return false
@@ -146,13 +240,13 @@ function ensureExecutable(filePath) {
 // terminal-notifier.app 路径变化，macOS 会注册为新的通知源，产生重复条目。
 // 将 terminal-notifier.app 安装到固定的 Application Support 路径来规避此问题。
 
-function getStableAppSupportDir() {
+function getStableAppSupportDir(): string {
   const home = process.env.HOME || ''
   if (!home) return ''
   return path.join(home, 'Library', 'Application Support', 'ai-intervention-agent')
 }
 
-function getStableTerminalNotifierPaths() {
+function getStableTerminalNotifierPaths(): StablePaths {
   const dir = getStableAppSupportDir()
   if (!dir) return { dir: '', app: '', bin: '' }
   const app = path.join(dir, 'terminal-notifier.app')
@@ -160,7 +254,7 @@ function getStableTerminalNotifierPaths() {
   return { dir, app, bin }
 }
 
-function _migrateLegacyAppSupportDir(newDir) {
+function _migrateLegacyAppSupportDir(newDir: string): void {
   const home = process.env.HOME || ''
   if (!home) return
   const legacyDir = path.join(home, 'Library', 'Application Support', 'AI Intervention Agent')
@@ -180,7 +274,7 @@ function _migrateLegacyAppSupportDir(newDir) {
   }
 }
 
-function readBundleVersionFromXmlPlist(infoPlistPath) {
+function readBundleVersionFromXmlPlist(infoPlistPath: string): string {
   try {
     if (!infoPlistPath || !fs.existsSync(infoPlistPath)) return ''
     const content = fs.readFileSync(infoPlistPath, 'utf8')
@@ -194,11 +288,9 @@ function readBundleVersionFromXmlPlist(infoPlistPath) {
 /**
  * 将 vendor 目录中的 terminal-notifier.app 安装到 ~/Library/Application Support/ai-intervention-agent/
  * 确保 macOS 始终从同一路径加载，避免重复的通知中心注册条目。
- *
- * @returns {{ bin: string, installed: boolean, error: string }}
  */
-function ensureStableTerminalNotifier() {
-  const fail = (error) => ({ bin: '', installed: false, error: error || '' })
+function ensureStableTerminalNotifier(): StableResult {
+  const fail = (error: string): StableResult => ({ bin: '', installed: false, error: error || '' })
 
   if (process.platform !== 'darwin') return fail('non-darwin')
 
@@ -219,13 +311,11 @@ function ensureStableTerminalNotifier() {
     const srcVersion = readBundleVersionFromXmlPlist(srcInfoPlist)
     const destVersion = readBundleVersionFromXmlPlist(destInfoPlist)
 
-    // 已安装且版本一致——直接使用
     if (destVersion && srcVersion && destVersion === srcVersion && fs.existsSync(stable.bin)) {
       ensureExecutable(stable.bin)
       return { bin: stable.bin, installed: false, error: '' }
     }
 
-    // 首次安装或版本不一致——执行复制
     fs.mkdirSync(stable.dir, { recursive: true })
 
     if (fs.existsSync(stable.app)) {
@@ -237,23 +327,27 @@ function ensureStableTerminalNotifier() {
     if (!fs.existsSync(stable.bin)) return fail('bin-missing-after-copy')
 
     return { bin: stable.bin, installed: true, error: '' }
-  } catch (e) {
-    // 复制失败但已有旧版本——仍可用
+  } catch (e: unknown) {
     if (fs.existsSync(stable.bin)) {
       ensureExecutable(stable.bin)
       return { bin: stable.bin, installed: false, error: 'copy-failed-using-existing' }
     }
-    return fail(e && e.message ? String(e.message) : 'unknown')
+    return fail(e instanceof Error ? e.message : 'unknown')
   }
 }
 
-class VSCodeApiNotificationProvider {
-  constructor(options = {}) {
+// ── Provider 类 ──
+
+export class VSCodeApiNotificationProvider {
+  private _logger: Logger | null
+  private _vscode: VsCodeApi
+
+  constructor(options: ProviderOptions = {}) {
     this._logger = options && options.logger ? options.logger : null
     this._vscode = options && options.vscodeApi ? options.vscodeApi : vscode
   }
 
-  async send(event) {
+  async send(event: NotificationEvent): Promise<boolean> {
     const vs = this._vscode
     if (!vs || !vs.window) return false
 
@@ -261,10 +355,10 @@ class VSCodeApiNotificationProvider {
     const message = toNonEmptyString(event && event.message, '')
     if (!message) return false
 
-    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
-    const presentation = toNonEmptyString(md.presentation, 'statusBar') // 展示方式：statusBar | toast
-    const severity = toNonEmptyString(md.severity, 'info') // 严重级别：info | warn | error
-    const timeoutMsRaw = md && md.timeoutMs
+    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {} as Record<string, unknown>
+    const presentation = toNonEmptyString((md as Record<string, unknown>).presentation, 'statusBar')
+    const severity = toNonEmptyString((md as Record<string, unknown>).severity, 'info')
+    const timeoutMsRaw = (md as Record<string, unknown>).timeoutMs
     const timeoutMs =
       typeof timeoutMsRaw === 'number' && Number.isFinite(timeoutMsRaw)
         ? Math.max(0, Math.floor(timeoutMsRaw))
@@ -282,15 +376,15 @@ class VSCodeApiNotificationProvider {
       return true
     }
 
-    // 默认：状态栏提示（对齐旧实现）
     const icon = severity === 'error' ? '$(error)' : severity === 'warn' ? '$(warning)' : '$(info)'
     try {
-      vs.window.setStatusBarMessage(`${icon} ${message}`, timeoutMs)
+      vs.window.setStatusBarMessage!(`${icon} ${message}`, timeoutMs)
       return true
-    } catch (e) {
+    } catch (e: unknown) {
       try {
         if (this._logger && typeof this._logger.warn === 'function') {
-          this._logger.warn(`VSCode 状态栏提示失败: ${e && e.message ? e.message : String(e)}`)
+          const msg = e instanceof Error ? e.message : String(e)
+          this._logger.warn(`VSCode 状态栏提示失败: ${msg}`)
         }
       } catch {
         // 忽略：日志系统异常不应影响通知流程
@@ -300,8 +394,19 @@ class VSCodeApiNotificationProvider {
   }
 }
 
-class AppleScriptNotificationProvider {
-  constructor(options = {}) {
+export class AppleScriptNotificationProvider {
+  private _logger: Logger | null
+  private _executor: AppleScriptExecutorLike | null
+  private _vscode: VsCodeApi
+  private _hostBundleId: string
+  private _hostBundleIdResolved: boolean
+  private _hostBundleIdResolvePromise: Promise<string> | null
+  private _lastDiagnostic: Record<string, unknown> | null
+  private _bundleInjectionDisabledUntilMs: number
+  private _hostAppBundlePath: string
+  private _hostAppBundlePathResolved: boolean
+
+  constructor(options: ProviderOptions = {}) {
     this._logger = options && options.logger ? options.logger : null
     this._executor = options && options.executor ? options.executor : null
     this._vscode = options && options.vscodeApi ? options.vscodeApi : vscode
@@ -309,33 +414,32 @@ class AppleScriptNotificationProvider {
     this._hostBundleIdResolved = false
     this._hostBundleIdResolvePromise = null
     this._lastDiagnostic = null
-    // 防止“注入 __CFBundleIdentifier”在特定宿主/系统下反复卡住：失败后短时间内禁用注入，优先保证通知可用/快速返回
     this._bundleInjectionDisabledUntilMs = 0
-    // 缓存宿主 .app 路径，用于 AppleScript activate 命令
     this._hostAppBundlePath = ''
     this._hostAppBundlePathResolved = false
   }
 
-  getLastDiagnostic() {
+  getLastDiagnostic(): Record<string, unknown> | null {
     return this._lastDiagnostic
   }
 
-  _extractAppleScriptError(e) {
-    const code = e && e.code ? String(e.code) : 'unknown'
-    const message = e && e.message ? String(e.message) : String(e)
-    const details = e && e.details && typeof e.details === 'object' ? e.details : {}
+  _extractAppleScriptError(e: unknown): AppleScriptErrorInfo {
+    const err = e as ExecError | null
+    const code = err && err.code ? String(err.code) : 'unknown'
+    const message = err && err.message ? String(err.message) : String(e)
+    const details = err && err.details && typeof err.details === 'object' ? err.details : {} as Record<string, unknown>
     const exitCode =
       details && typeof details.exitCode === 'number' && Number.isFinite(details.exitCode)
-        ? details.exitCode
+        ? details.exitCode as number
         : null
     const signal = details && details.signal ? String(details.signal) : ''
     const stderr = details && details.stderr ? String(details.stderr) : ''
     const durationMs =
       details && typeof details.durationMs === 'number' && Number.isFinite(details.durationMs)
-        ? details.durationMs
+        ? details.durationMs as number
         : null
     const injectedEnvKeys =
-      details && Array.isArray(details.injectedEnvKeys) ? details.injectedEnvKeys.map(String) : []
+      details && Array.isArray(details.injectedEnvKeys) ? (details.injectedEnvKeys as unknown[]).map(String) : []
     return {
       code,
       message,
@@ -348,11 +452,10 @@ class AppleScriptNotificationProvider {
     }
   }
 
-  _looksLikeBundleId(value) {
+  _looksLikeBundleId(value: unknown): boolean {
     try {
       const s = (value ?? '').toString().trim()
       if (!s) return false
-      // 仅允许常见 bundle id 字符，避免把异常输出写入环境变量
       return /^[A-Za-z0-9.-]+$/.test(s)
     } catch {
       return false
@@ -363,7 +466,7 @@ class AppleScriptNotificationProvider {
    * 解析宿主 .app 路径（如 /Applications/Visual Studio Code.app）
    * 用于 AppleScript `activate` 激活窗口
    */
-  _resolveHostAppBundlePath() {
+  _resolveHostAppBundlePath(): string {
     if (this._hostAppBundlePathResolved) return this._hostAppBundlePath
     try {
       const vs = this._vscode
@@ -383,26 +486,18 @@ class AppleScriptNotificationProvider {
 
   /**
    * 发送通知后，尝试通过 AppleScript 激活宿主 IDE 窗口。
-   * 这是一个 best-effort 操作，不会阻塞或影响通知发送结果。
-   * 使用 bundleId 通过 `tell application id "..."` 来激活，比使用应用名更可靠。
-   * @param {string} bundleId 宿主 Bundle ID
+   * best-effort 操作，不阻塞也不影响通知发送结果。
    */
-  _fireActivateHost(bundleId) {
+  _fireActivateHost(bundleId: string): void {
     if (!bundleId || !this._executor || typeof this._executor.runAppleScript !== 'function') return
     try {
-      // 使用 "tell application id" 比 "tell application name" 更可靠
-      // Cursor 等非标 IDE 的 appName 可能无法被 AppleScript 识别
-      // reopen：恢复最小化到 Dock 的窗口
-      // activate：置顶到最前
       const activateScript = [
         `tell application id ${toAppleScriptStringLiteral(bundleId)}`,
         '  reopen',
         '  activate',
         'end tell'
       ].join('\n')
-      // fire-and-forget：不等待结果，不影响通知发送
       this._executor.runAppleScript(activateScript).catch(() => {
-        // 激活失败不影响通知功能
         try {
           if (this._logger && typeof this._logger.event === 'function') {
             this._logger.event(
@@ -420,11 +515,10 @@ class AppleScriptNotificationProvider {
     }
   }
 
-  async _resolveHostBundleId() {
+  async _resolveHostBundleId(): Promise<string> {
     if (this._hostBundleIdResolved) return this._hostBundleId
     if (this._hostBundleIdResolvePromise) return this._hostBundleIdResolvePromise
 
-    // 仅在 macOS 尝试：其它平台无意义（且可能在测试环境中没有对应应用）
     if (process.platform !== 'darwin') {
       this._hostBundleIdResolved = true
       this._hostBundleId = ''
@@ -441,8 +535,6 @@ class AppleScriptNotificationProvider {
         ? String(vs.env.appName).trim()
         : ''
 
-    // 优先从 appRoot 的 Info.plist 推导 bundleId：比 “id of application <appName>” 更稳
-    // （Cursor/某些宿主的 appName 可能不是 AppleScript 可识别的应用名）
     if (appRoot) {
       const appBundlePath = findMacAppBundlePathFromAppRoot(appRoot)
       if (appBundlePath) {
@@ -480,18 +572,18 @@ class AppleScriptNotificationProvider {
             }
             return this._hostBundleId
           })
-          .catch(e => {
+          .catch((e: unknown) => {
             this._hostBundleId = ''
             this._hostBundleIdResolved = true
             try {
-              const msg = e && e.message ? String(e.message) : String(e)
+              const msg = e instanceof Error ? e.message : String(e)
               if (this._logger && typeof this._logger.event === 'function') {
                 this._logger.event(
                   'notify.macos_native.bundle_id.fail',
                   {
                     from: 'appRoot',
                     appRoot,
-                    code: e && e.code ? String(e.code) : 'unknown',
+                    code: (e as ExecError)?.code ? String((e as ExecError).code) : 'unknown',
                     msg: sanitizeForLog(msg)
                   },
                   { level: 'debug' }
@@ -531,7 +623,7 @@ class AppleScriptNotificationProvider {
 
     const script = `id of application ${toAppleScriptStringLiteral(appName)}`
     this._hostBundleIdResolvePromise = Promise.resolve()
-      .then(() => this._executor.runAppleScript(script))
+      .then(() => this._executor!.runAppleScript(script))
       .then(out => {
         const id = (out ?? '').toString().trim()
         this._hostBundleId = this._looksLikeBundleId(id) ? id : ''
@@ -549,7 +641,7 @@ class AppleScriptNotificationProvider {
         }
         return this._hostBundleId
       })
-      .catch(e => {
+      .catch((e: unknown) => {
         this._hostBundleId = ''
         this._hostBundleIdResolved = true
         try {
@@ -578,20 +670,17 @@ class AppleScriptNotificationProvider {
     return this._hostBundleIdResolvePromise
   }
 
-  async send(event) {
+  async send(event: NotificationEvent): Promise<boolean> {
     const vs = this._vscode
     const title = toNonEmptyString(event && event.title, 'AI Intervention Agent')
     const message = toNonEmptyString(event && event.message, '')
     if (!message) return false
 
-    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
-    const isTest = !!(md && md.isTest)
-    const diagnosticMode = !!(md && (md.diagnostic || md.diagnostics || md.debug))
-    // 测试/排查专用：允许调用方显式跳过 bundleId 注入（避免某些宿主/系统下首包卡住）
-    const skipBundleInjection = !!(md && (md.skipBundleInjection || md.fastTest || md.fast))
+    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {} as Record<string, unknown>
+    const isTest = !!(md && (md as Record<string, unknown>).isTest)
+    const diagnosticMode = !!((md as Record<string, unknown>).diagnostic || (md as Record<string, unknown>).diagnostics || (md as Record<string, unknown>).debug)
+    const skipBundleInjection = !!((md as Record<string, unknown>).skipBundleInjection || (md as Record<string, unknown>).fastTest || (md as Record<string, unknown>).fast)
 
-    // 非测试通知：非 macOS 平台直接跳过，避免无意义的 AppleScript 调用
-    // 测试通知（isTest=true）：用于 UI/单测校验，可允许注入的 executor 在任意平台被调用
     if (!isTest && process.platform !== 'darwin') {
       try {
         if (this._logger && typeof this._logger.event === 'function') {
@@ -616,11 +705,9 @@ class AppleScriptNotificationProvider {
       return false
     }
 
-    // 增加少量 delay：在部分系统/宿主下有助于稳定交付通知（不会引入额外权限）
     const script = `display notification ${toAppleScriptStringLiteral(message)} with title ${toAppleScriptStringLiteral(title)} sound name "Glass"\ndelay 0.05`
-    // 是否在通知发送成功后尝试激活宿主 IDE 窗口（使点击通知可跳转到对应窗口）
-    const shouldActivateHost = !skipBundleInjection && !!(md && md.activateOnClick !== false)
-    const diagBase = {
+    const shouldActivateHost = !skipBundleInjection && !!((md as Record<string, unknown>).activateOnClick !== false)
+    const diagBase: DiagnosticBase = {
       at: Date.now(),
       isTest,
       diagnosticMode,
@@ -628,11 +715,8 @@ class AppleScriptNotificationProvider {
       messageLen: message.length
     }
     try {
-      // 尝试将通知“归属”到宿主应用（VS Code / Cursor），以改善通知点击行为（避免打开脚本编辑器）
-      // 说明：AppleScript 本身不支持通知点击回调；这里的目标仅是让点击激活宿主应用或至少不再打开脚本编辑器。
-      // 通过为 osascript 进程注入 __CFBundleIdentifier，可能让系统把通知归属到指定 bundle id。
       let bundleId = ''
-      let runOptions = undefined
+      let runOptions: RunOptions | undefined = undefined
       let usedFallbackWithoutBundle = false
       try {
         if (!skipBundleInjection) {
@@ -657,16 +741,13 @@ class AppleScriptNotificationProvider {
           : []
       const injectionAttempted = injectedEnvKeys.length > 0
 
-      // 诊断信息：每次发送前清空（仅保留最后一次失败）
       this._lastDiagnostic = null
 
-      // 优先尝试注入 bundleId；若该路径失败，则回退为“不注入直接执行”
       try {
         await this._executor.runAppleScript(script, runOptions)
-      } catch (e) {
+      } catch (e: unknown) {
         const first = this._extractAppleScriptError(e)
         if (injectionAttempted) {
-          // 注入失败：短时间内禁用注入，避免每次通知都先卡一轮 timeout
           try {
             this._bundleInjectionDisabledUntilMs = Date.now() + 10 * 60 * 1000
           } catch {
@@ -703,18 +784,19 @@ class AppleScriptNotificationProvider {
               fallback: { ok: true }
             }
             return true
-          } catch (e2) {
+          } catch (e2: unknown) {
             const fallback = this._extractAppleScriptError(e2)
-            const err = new Error(fallback.message || first.message || 'AppleScript 执行失败')
-            err.code = fallback.code || first.code || 'APPLE_SCRIPT_FAILED'
-            err.primary = first
-            err.fallback = fallback
-            throw err
+            const errObj = makeExecError(
+              fallback.message || first.message || 'AppleScript 执行失败',
+              fallback.code || first.code || 'APPLE_SCRIPT_FAILED'
+            );
+            (errObj as unknown as Record<string, unknown>).primary = first;
+            (errObj as unknown as Record<string, unknown>).fallback = fallback
+            throw errObj
           }
         }
         throw e
       }
-      // 通知发送成功后，尝试 fire-and-forget 激活宿主 IDE（不阻塞返回）
       if (shouldActivateHost && bundleId) {
         this._fireActivateHost(bundleId)
       }
@@ -730,7 +812,7 @@ class AppleScriptNotificationProvider {
         fallback: null
       }
       return true
-    } catch (e) {
+    } catch (e: unknown) {
       const info = this._extractAppleScriptError(e)
       const code = info.code
       const raw = info.message
@@ -747,8 +829,8 @@ class AppleScriptNotificationProvider {
         signal: info.signal,
         bundleId,
         injectedEnvKeys: info.injectedEnvKeys,
-        primary: e && e.primary ? e.primary : null,
-        fallback: e && e.fallback ? e.fallback : null
+        primary: (e as Record<string, unknown>)?.primary ?? null,
+        fallback: (e as Record<string, unknown>)?.fallback ?? null
       }
       const msg =
         code === 'APPLE_SCRIPT_TIMEOUT'
@@ -790,8 +872,15 @@ class AppleScriptNotificationProvider {
   }
 }
 
-class MacOSNativeNotificationProvider {
-  constructor(options = {}) {
+export class MacOSNativeNotificationProvider {
+  private _logger: Logger | null
+  private _executor: AppleScriptExecutorLike | null
+  private _vscode: VsCodeApi
+  private _appleScriptProvider: AppleScriptNotificationProvider
+  private _terminalNotifierBin: string
+  private _lastDiagnostic: Record<string, unknown> | null
+
+  constructor(options: ProviderOptions = {}) {
     this._logger = options && options.logger ? options.logger : null
     this._executor = options && options.executor ? options.executor : null
     this._vscode = options && options.vscodeApi ? options.vscodeApi : vscode
@@ -804,14 +893,13 @@ class MacOSNativeNotificationProvider {
     this._lastDiagnostic = null
   }
 
-  getLastDiagnostic() {
+  getLastDiagnostic(): Record<string, unknown> | null {
     return this._lastDiagnostic
   }
 
-  _getTerminalNotifierBin() {
+  _getTerminalNotifierBin(): string {
     if (this._terminalNotifierBin) return this._terminalNotifierBin
 
-    // 优先使用 Application Support 下的稳定副本，防止 macOS 因路径变化注册多个通知源
     const stable = ensureStableTerminalNotifier()
     if (stable.bin) {
       this._terminalNotifierBin = stable.bin
@@ -834,7 +922,6 @@ class MacOSNativeNotificationProvider {
       return stable.bin
     }
 
-    // 稳定路径不可用——回退到扩展 vendor 目录中的原始路径
     const p = resolveBundledTerminalNotifierBinPath()
     if (ensureExecutable(p)) {
       this._terminalNotifierBin = p
@@ -860,20 +947,19 @@ class MacOSNativeNotificationProvider {
     return ''
   }
 
-  async send(event) {
+  async send(event: NotificationEvent): Promise<boolean> {
     const vs = this._vscode
     const title = toNonEmptyString(event && event.title, 'AI Intervention Agent')
     const message = toNonEmptyString(event && event.message, '')
     if (!message) return false
 
-    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
-    const isTest = !!(md && md.isTest)
-    const diagnosticMode = !!(md && (md.diagnostic || md.diagnostics || md.debug))
+    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {} as Record<string, unknown>
+    const isTest = !!(md && (md as Record<string, unknown>).isTest)
+    const diagnosticMode = !!((md as Record<string, unknown>).diagnostic || (md as Record<string, unknown>).diagnostics || (md as Record<string, unknown>).debug)
 
-    // 非测试通知：非 macOS 平台直接跳过
     if (!isTest && process.platform !== 'darwin') return false
 
-    const diagBase = {
+    const diagBase: DiagnosticBase = {
       at: Date.now(),
       isTest,
       diagnosticMode,
@@ -881,9 +967,8 @@ class MacOSNativeNotificationProvider {
       messageLen: message.length
     }
 
-    // 仅在 macOS 尝试 terminal-notifier；其它平台直接走 AppleScriptProvider（其自身会处理 platform gate）
     const tnBin = process.platform === 'darwin' ? this._getTerminalNotifierBin() : ''
-    const attempts = []
+    const attempts: Record<string, unknown>[] = []
 
     let bundleId = ''
     if (process.platform === 'darwin') {
@@ -902,13 +987,8 @@ class MacOSNativeNotificationProvider {
       const baseArgs = ['-title', title, '-message', message, '-sound', 'default']
       if (diagnosticMode && isTest) baseArgs.push('-ignoreDnD')
       const args = [...baseArgs]
-      // 点击激活宿主：
-      // - `-activate`：处理窗口非最小化时的快速切换（由 terminal-notifier 原生处理，更快）
-      // - `-execute`：处理窗口最小化到 Dock 的情况（通过 osascript reopen+activate 恢复窗口）
-      // 两者同时指定时互相补充，确保无论窗口状态如何都能正确激活
       if (bundleId) {
         args.push('-activate', bundleId)
-        // 构造点击时执行的 osascript 命令：reopen 恢复最小化窗口 + activate 置顶
         const escapedBundleId = bundleId.replace(/"/g, '\\"')
         const executeCmd = `osascript -e "tell application id \\"${escapedBundleId}\\"" -e "reopen" -e "activate" -e "end tell"`
         args.push('-execute', executeCmd)
@@ -929,25 +1009,24 @@ class MacOSNativeNotificationProvider {
           durationMs: r.durationMs
         }
         return true
-      } catch (e) {
-        const msg = e && e.message ? String(e.message) : String(e)
-        // 执行失败时清空缓存，下次 send() 重新 resolve（应对二进制被删除等场景）
+      } catch (e: unknown) {
+        const err = e as ExecError
+        const msg = err && err.message ? String(err.message) : String(e)
         this._terminalNotifierBin = ''
+        const details = err && err.details && typeof err.details === 'object' ? err.details : {} as Record<string, unknown>
         attempts.push({
           backend: 'terminal-notifier',
           mode: bundleId ? 'activate+execute' : 'plain',
           ok: false,
           bin: tnBin,
           bundleId,
-          code: e && e.code ? String(e.code) : 'unknown',
+          code: err && err.code ? String(err.code) : 'unknown',
           message: msg,
-          stderrPreview:
-            e && e.details && e.details.stderrPreview ? String(e.details.stderrPreview) : ''
+          stderrPreview: details.stderrPreview ? String(details.stderrPreview) : ''
         })
       }
     }
 
-    // 最后回退：AppleScript（保留原有诊断）
     try {
       const ok = await this._appleScriptProvider.send(event)
       const appleDiag =
@@ -963,7 +1042,6 @@ class MacOSNativeNotificationProvider {
         appleScript: appleDiag
       }
 
-      // 把 AppleScript 的关键字段抬平，便于设置面板展示（保持兼容）
       if (appleDiag && typeof appleDiag === 'object') {
         if (appleDiag.code) this._lastDiagnostic.code = String(appleDiag.code)
         if (appleDiag.bundleId) this._lastDiagnostic.bundleId = String(appleDiag.bundleId)
@@ -976,8 +1054,8 @@ class MacOSNativeNotificationProvider {
           this._lastDiagnostic.injectedEnvKeys = appleDiag.injectedEnvKeys
       }
       return !!ok
-    } catch (e) {
-      const msg = e && e.message ? String(e.message) : String(e)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
       this._lastDiagnostic = {
         ...diagBase,
         backend: 'applescript',

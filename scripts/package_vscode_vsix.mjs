@@ -37,20 +37,17 @@ if (!extName || !extVersion) {
 const outVsix = path.join(vscodeDir, `${extName}-${extVersion}.vsix`)
 
 // 只复制打包所需的最小文件集合，避免 monorepo 下 vsce 误打包整个仓库。
+// TS 迁移后：Node.js 模块由 tsc 编译到 dist/，Webview 端 JS + 静态资源从源目录复制。
 const includeList = [
   'package.json',
-  'extension.js',
-  'applescript-executor.js',
-  'webview.js',
-  'webview.css',
-  'webview-helpers.js',
-  'logger.js',
+  'dist',
   'webview-ui.js',
+  'webview-helpers.js',
   'webview-notify-core.js',
   'webview-settings-ui.js',
-  'notification-models.js',
-  'notification-center.js',
-  'notification-providers.js',
+  'i18n.js',
+  'prism-bootstrap.js',
+  'webview.css',
   'vendor',
   'README.md',
   'README.zh-CN.md',
@@ -62,9 +59,11 @@ const includeList = [
   'mathjax',
   'lottie.min.js',
   'marked.min.js',
-  'prism-bootstrap.js',
   'prism.min.css',
-  'prism.min.js'
+  'prism.min.js',
+  'locales',
+  'package.nls.json',
+  'package.nls.zh-CN.json'
 ]
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-intervention-agent-vscode-'))
@@ -91,10 +90,12 @@ try {
       cwd: repoRoot, encoding: 'utf8', timeout: 5000
     }).stdout.trim()
     if (sha) {
-      const extJs = path.join(tmpDir, 'extension.js')
-      const content = fs.readFileSync(extJs, 'utf8')
-      fs.writeFileSync(extJs, content.replace('__BUILD_SHA__', sha), 'utf8')
-      console.log(`BUILD_ID 注入：${sha}`)
+      const extJs = path.join(tmpDir, 'dist', 'extension.js')
+      if (fs.existsSync(extJs)) {
+        const content = fs.readFileSync(extJs, 'utf8')
+        fs.writeFileSync(extJs, content.replace('__BUILD_SHA__', sha), 'utf8')
+        console.log(`BUILD_ID 注入：${sha}`)
+      }
     }
   } catch {
     console.warn('无法注入 BUILD_ID（git rev-parse 失败），使用开发回退')

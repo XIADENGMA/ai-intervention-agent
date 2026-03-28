@@ -16,7 +16,7 @@ export default [
     ]
   },
   {
-    files: ['**/*.js'],
+    files: ['**/*.js', '**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.commonjs,

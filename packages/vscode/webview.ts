@@ -1,15 +1,15 @@
-const vscode = require('vscode')
-const fs = require('fs')
-const { createLogger } = require('./logger')
-const { AppleScriptExecutor } = require('./applescript-executor')
-const { NotificationCenter } = require('./notification-center')
-const { NotificationType } = require('./notification-models')
-const {
+import * as vscode from 'vscode'
+import * as fs from 'fs'
+import { createLogger } from './logger'
+import type { Logger } from './logger'
+import { AppleScriptExecutor } from './applescript-executor'
+import { NotificationCenter } from './notification-center'
+import { NotificationType } from './notification-models'
+import {
   VSCodeApiNotificationProvider,
   MacOSNativeNotificationProvider
-} = require('./notification-providers')
+} from './notification-providers'
 
-// 扩展元信息（用于在 Webview 中显示版本号 / GitHub）
 const EXT_GITHUB_URL = 'https://github.com/XIADENGMA/ai-intervention-agent'
 let EXT_VERSION = '0.0.0'
 try {
@@ -18,8 +18,7 @@ try {
   // 忽略：打包/测试环境下可能读取不到版本号
 }
 
-// 生成 CSP nonce（避免使用 'unsafe-inline' 导致的脚本注入风险）
-function getNonce(length = 32) {
+function getNonce(length = 32): string {
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   let text = ''
   for (let i = 0; i < length; i++) {
@@ -28,7 +27,7 @@ function getNonce(length = 32) {
   return text
 }
 
-function safeReadTextFile(uri) {
+function safeReadTextFile(uri: vscode.Uri): string {
   try {
     if (!uri || !uri.fsPath) return ''
     return fs.readFileSync(uri.fsPath, 'utf8')
@@ -37,8 +36,7 @@ function safeReadTextFile(uri) {
   }
 }
 
-// 防止把 JSON/字符串直接注入 <script> 时出现 </script> 提前闭合等问题
-function safeJsonForInlineScript(value) {
+function safeJsonForInlineScript(value: unknown): string {
   try {
     return JSON.stringify(value).replace(/</g, '\\u003c')
   } catch {
@@ -46,13 +44,39 @@ function safeJsonForInlineScript(value) {
   }
 }
 
-function safeStringForInlineScript(value) {
+function safeStringForInlineScript(value: unknown): string {
   try {
     return JSON.stringify(String(value ?? '')).replace(/</g, '\\u003c')
   } catch {
     return '""'
   }
 }
+
+interface WebviewMessage {
+  type: string
+  [key: string]: unknown
+}
+
+interface TaskStatsState {
+  connected: boolean
+  active: number
+  pending: number
+  total?: number
+}
+
+interface NotificationConfig {
+  enabled: boolean
+  macosNativeEnabled: boolean
+}
+
+interface TaskData {
+  id: string
+  prompt: string
+}
+
+type VisibilityCallback = (visible: boolean) => void
+type TaskStatsCallback = (stats: TaskStatsState) => void
+type TaskIdsCallback = (ids: string[]) => void
 
 /**
  * AI交互代理的Webview视图提供器
@@ -63,14 +87,40 @@ function safeStringForInlineScript(value) {
  * - 支持多任务标签页切换和倒计时显示
  * - 实现与本地服务器的轮询通信机制
  */
-class WebviewProvider {
+export class WebviewProvider implements vscode.WebviewViewProvider {
+  private _extensionUri: vscode.Uri
+  private _outputChannel: vscode.OutputChannel
+  private _logger: Logger
+  private _appleScriptLogger: Logger
+  private _appleScriptExecutor: AppleScriptExecutor
+  private _notificationLogger: Logger
+  private _notificationCenter: NotificationCenter
+  private _vscodeNotificationProvider: VSCodeApiNotificationProvider
+  private _macosNativeNotificationProvider: MacOSNativeNotificationProvider
+  private _serverUrl: string
+  private _onVisibilityChanged: VisibilityCallback | null
+  private _onTasksStatsChanged: TaskStatsCallback | null
+  private _onNewTaskIdsFromWebview: TaskIdsCallback | null
+  private _view: vscode.WebviewView | null
+  private _disposables: vscode.Disposable[]
+  private _lastServerStatus: boolean | null
+  private _hasEverConnected: boolean
+  private _webviewReady: boolean
+  private _webviewReadyTimer: ReturnType<typeof setTimeout> | null
+  private _pendingMessages: WebviewMessage[]
+  private _pendingMessageLimit: number
+  private _revealPanelUntilMs: number
+  private _notificationConfig: NotificationConfig | null
+  private _notificationConfigFetchedAt: number
+  private _notificationConfigFetchPromise: Promise<NotificationConfig | null> | null
+
   constructor(
-    extensionUri,
-    outputChannel,
+    extensionUri: vscode.Uri,
+    outputChannel: vscode.OutputChannel,
     serverUrl = 'http://localhost:8080',
-    onVisibilityChanged,
-    onTasksStatsChanged,
-    onNewTaskIdsFromWebview
+    onVisibilityChanged?: VisibilityCallback,
+    onTasksStatsChanged?: TaskStatsCallback,
+    onNewTaskIdsFromWebview?: TaskIdsCallback
   ) {
     this._extensionUri = extensionUri
     this._outputChannel = outputChannel
@@ -79,7 +129,7 @@ class WebviewProvider {
       getLevel: () => {
         try {
           const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-          return cfg.get('logLevel', 'info')
+          return cfg.get<string>('logLevel', 'info') ?? 'info'
         } catch {
           return 'info'
         }
@@ -115,23 +165,18 @@ class WebviewProvider {
     this._view = null
     this._disposables = []
     this._lastServerStatus = null
-    // 仅用于日志降噪：首次“未连接”通常是初始化瞬态，不必在 info 下刷屏
     this._hasEverConnected = false
     this._webviewReady = false
     this._webviewReadyTimer = null
-    // Webview 未就绪时的消息缓冲：避免 postMessage 发生在脚本尚未完成初始化时导致消息丢失
     this._pendingMessages = []
     this._pendingMessageLimit = 50
-    // macOS 原生通知“点击打开面板”兜底：
-    // AppleScript 原生通知没有点击回调；这里通过“通知触发时若宿主未聚焦则 arm，一旦宿主重新聚焦则自动打开面板”来近似实现。
     this._revealPanelUntilMs = 0
-    // 扩展侧通知配置缓存：Webview 不可见时由扩展独立轮询检测新任务并发送通知
     this._notificationConfig = null
     this._notificationConfigFetchedAt = 0
     this._notificationConfigFetchPromise = null
   }
 
-  _log(message) {
+  _log(message: string): void {
     try {
       if (this._logger && typeof this._logger.info === 'function') {
         this._logger.info(String(message))
@@ -141,8 +186,7 @@ class WebviewProvider {
     }
   }
 
-  dispose() {
-    // 注意：该 provider 会被 VSCode 在停用时释放；这里做显式兜底，避免定时器/引用残留
+  dispose(): void {
     try {
       this._webviewReady = false
       if (this._webviewReadyTimer) {
@@ -182,17 +226,14 @@ class WebviewProvider {
     this._lastServerStatus = null
   }
 
-  resolveWebviewView(webviewView) {
-    // 精简日志：只在首次初始化时输出
+  resolveWebviewView(webviewView: vscode.WebviewView): void {
     this._view = webviewView
 
     webviewView.webview.options = {
       enableScripts: true,
       localResourceRoots: [this._extensionUri]
     }
-    // 精简日志：移除冗余输出
 
-    /* 监听视图可见性变化 - 当视图变为可见时刷新数据 */
     webviewView.onDidChangeVisibility(() => {
       try {
         if (this._logger && typeof this._logger.event === 'function') {
@@ -215,7 +256,6 @@ class WebviewProvider {
       }
     })
 
-    /* 监听视图销毁事件 - 释放所有资源和事件监听器 */
     webviewView.onDidDispose(() => {
       try {
         if (this._logger && typeof this._logger.event === 'function') {
@@ -230,7 +270,6 @@ class WebviewProvider {
         this._onVisibilityChanged(false)
       }
 
-      // 清理 ready watchdog（避免 view 被销毁后仍触发日志/回调）
       try {
         this._webviewReady = false
         if (this._webviewReadyTimer) {
@@ -241,7 +280,6 @@ class WebviewProvider {
         // 忽略
       }
 
-      // 释放所有 subscriptions
       try {
         for (const d of this._disposables) {
           try {
@@ -254,24 +292,18 @@ class WebviewProvider {
         this._disposables = []
       }
 
-      // 断开引用，避免 retainContextWhenHidden 或重建视图时的潜在泄漏
       this._view = null
       this._lastServerStatus = null
     })
 
-    // 首次解析时同步一次可见性状态
     if (this._onVisibilityChanged) {
       this._onVisibilityChanged(!!webviewView.visible)
     }
 
-    /* 生成并设置webview的HTML内容 */
     const html = this._getHtmlContent(webviewView.webview)
-    // 精简日志：移除 HTML 长度输出
 
     webviewView.webview.html = html
-    // 精简日志：移除 HTML 设置输出
 
-    // 诊断：统计 HTML 中的 script 标签数量/反引号数量（反引号可能导致部分 Webview 注入失败）
     try {
       const scriptCount = (html.match(/<script\b/gi) || []).length
       if (this._logger && typeof this._logger.debug === 'function') {
@@ -287,7 +319,6 @@ class WebviewProvider {
       // 忽略：诊断日志失败不应影响 Webview 初始化
     }
 
-    // 诊断：若 Webview 脚本未执行/未上报 ready，会导致面板永远停在“连接中...”
     this._webviewReady = false
     if (this._webviewReadyTimer) {
       clearTimeout(this._webviewReadyTimer)
@@ -314,16 +345,14 @@ class WebviewProvider {
       }
     }, 2500)
 
-    /* 监听来自webview的消息 - 处理日志、错误、状态更新等消息 */
     webviewView.webview.onDidReceiveMessage(
-      message => {
+      (message: WebviewMessage) => {
         this._handleMessage(message)
       },
       null,
       this._disposables
     )
 
-    // 默认 info 下不刷此日志：以 “Webview 脚本 ready” 作为真正可用的信号
     try {
       if (this._logger && typeof this._logger.debug === 'function') {
         this._logger.debug('Webview 已就绪')
@@ -333,30 +362,25 @@ class WebviewProvider {
     }
   }
 
-  updateServerUrl(serverUrl) {
+  updateServerUrl(serverUrl: string): void {
     this._serverUrl = serverUrl
-    // serverUrl 变更后旧通知配置已无效，强制清除缓存（包括进行中的请求）
     this._notificationConfig = null
     this._notificationConfigFetchedAt = 0
     this._notificationConfigFetchPromise = null
     if (this._view && this._view.webview) {
-      // serverUrl 变化会触发重建 HTML：需要重新进入“未就绪”状态，并重置 ready watchdog
       try {
         this._webviewReady = false
         if (this._webviewReadyTimer) {
           clearTimeout(this._webviewReadyTimer)
           this._webviewReadyTimer = null
         }
-        // 重建页面后历史缓冲消息已无意义，直接清空，避免把旧消息误投递到新页面
         this._pendingMessages = []
       } catch {
         // 忽略
       }
 
-      // 重新生成 HTML，确保 CSP 与 SERVER_URL 常量同步更新
       this._view.webview.html = this._getHtmlContent(this._view.webview)
 
-      // 诊断：若 Webview 脚本未执行/未上报 ready，会导致面板停在“连接中...”
       this._webviewReadyTimer = setTimeout(() => {
         if (!this._webviewReady && this._logger && typeof this._logger.warn === 'function') {
           try {
@@ -378,15 +402,13 @@ class WebviewProvider {
         }
       }, 2500)
 
-      // 变化后尽快触发一次刷新（会被缓冲到 ready 后发送）
       this._sendMessage({ type: 'refresh' })
     }
   }
 
-  _handleMessage(message) {
+  _handleMessage(message: WebviewMessage): void {
     switch (message.type) {
       case 'log':
-        // Webview 侧按需上报关键日志（默认 debug；允许携带 level=info/warn/error）
         try {
           const levelRaw = message && message.level ? String(message.level) : 'debug'
           const level = levelRaw.toLowerCase()
@@ -427,7 +449,6 @@ class WebviewProvider {
           clearTimeout(this._webviewReadyTimer)
           this._webviewReadyTimer = null
         }
-        // 统一在 ready 后冲刷缓冲队列，避免 refresh/clipboard 等消息在初始化窗口期丢失
         try {
           this._flushPendingMessages()
         } catch {
@@ -467,16 +488,11 @@ class WebviewProvider {
         }
         break
       case 'serverStatus':
-        // 只在状态变化时记录，避免刷屏
         try {
           const connected = !!(message && message.connected)
           if (connected !== this._lastServerStatus) {
             const prev = this._lastServerStatus
             this._lastServerStatus = connected
-            // 日志降噪策略：
-            // - 首次“连接断开”多为初始化瞬态：仅 debug
-            // - 首次“已连接”：info
-            // - 曾连接过后再断开：warn（重要）
             if (connected) {
               this._hasEverConnected = true
               if (this._logger && typeof this._logger.event === 'function') {
@@ -538,12 +554,11 @@ class WebviewProvider {
         this._handleShowMacOSNativeNotification(message)
         break
       default:
-        // 忽略未知消息类型
         break
     }
   }
 
-  _dispatchNotificationEvent(event) {
+  _dispatchNotificationEvent(event: Record<string, unknown>): void {
     try {
       if (!this._notificationCenter || typeof this._notificationCenter.dispatch !== 'function')
         return
@@ -554,12 +569,12 @@ class WebviewProvider {
       }
       Promise.resolve()
         .then(() => this._notificationCenter.dispatch(event))
-        .then(result => {
+        .then((result) => {
           try {
             if (!this._notificationLogger || typeof this._notificationLogger.event !== 'function')
               return
-            const evt = result && result.event ? result.event : event
-            const types = evt && Array.isArray(evt.types) ? evt.types.map(t => String(t)) : []
+            const evt = result && result.event ? result.event as unknown as Record<string, unknown> : event
+            const types = evt && Array.isArray(evt.types) ? (evt.types as unknown[]).map(t => String(t)) : []
             const delivered = result && result.delivered ? result.delivered : {}
             const skipped = !!(result && result.skipped)
             const reason = result && result.reason ? String(result.reason) : ''
@@ -579,11 +594,11 @@ class WebviewProvider {
             // 忽略：日志系统异常不应影响通知流程
           }
         })
-        .catch(e => {
+        .catch((e: unknown) => {
           try {
             if (!this._notificationLogger || typeof this._notificationLogger.event !== 'function')
               return
-            const msg = e && e.message ? String(e.message) : String(e)
+            const msg = e instanceof Error ? e.message : String(e)
             this._notificationLogger.event(
               'notify.dispatch_failed',
               { error: msg },
@@ -598,19 +613,18 @@ class WebviewProvider {
     }
   }
 
-  _armRevealPanelOnNextFocus(event) {
+  _armRevealPanelOnNextFocus(event: Record<string, unknown>): void {
     try {
-      const evt = event && typeof event === 'object' ? event : {}
-      const types = evt && Array.isArray(evt.types) ? evt.types.map(t => String(t)) : []
+      const evt = event && typeof event === 'object' ? event : {} as Record<string, unknown>
+      const types = evt && Array.isArray(evt.types) ? (evt.types as unknown[]).map(t => String(t)) : []
       if (!types.includes(NotificationType.MACOS_NATIVE)) return
 
-      const md = evt && evt.metadata && typeof evt.metadata === 'object' ? evt.metadata : {}
+      const md = evt && evt.metadata && typeof evt.metadata === 'object' ? evt.metadata as Record<string, unknown> : {}
       const isTest = !!(md && md.isTest)
       const kind = md && md.kind ? String(md.kind) : ''
       if (isTest) return
       if (kind !== 'new_tasks') return
 
-      // 仅在宿主当前未聚焦时 arm：避免用户正在编辑时“回到窗口”被强制打开面板
       const focused = !!(
         vscode &&
         vscode.window &&
@@ -625,12 +639,11 @@ class WebviewProvider {
     }
   }
 
-  async onWindowFocusChanged(focused) {
+  async onWindowFocusChanged(focused: boolean): Promise<void> {
     try {
       if (!focused) return
       const until = typeof this._revealPanelUntilMs === 'number' ? this._revealPanelUntilMs : 0
       if (!until || Date.now() > until) return
-      // 消费一次
       this._revealPanelUntilMs = 0
       await vscode.commands.executeCommand('ai-intervention-agent.openPanel')
     } catch {
@@ -638,22 +651,21 @@ class WebviewProvider {
     }
   }
 
-  _handleNotify(message) {
-    const event = message && message.event ? message.event : null
+  _handleNotify(message: WebviewMessage): void {
+    const event = message && message.event ? message.event as Record<string, unknown> : null
     if (!event) return
     this._dispatchNotificationEvent(event)
-    // Webview 检测到新任务后，同步 task ID 到扩展侧防止双重通知
     try {
-      const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {}
+      const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata as Record<string, unknown> : {}
       if (md.kind === 'new_tasks' && Array.isArray(md.taskIds) && this._onNewTaskIdsFromWebview) {
-        this._onNewTaskIdsFromWebview(md.taskIds)
+        this._onNewTaskIdsFromWebview(md.taskIds as string[])
       }
     } catch {
       // 同步失败不应影响通知流程
     }
   }
 
-  _handleShowMacOSNativeNotification(message) {
+  _handleShowMacOSNativeNotification(message: WebviewMessage): void {
     const title =
       message && typeof message.title === 'string' && message.title
         ? String(message.title)
@@ -675,7 +687,7 @@ class WebviewProvider {
     })
   }
 
-  _handleRequestClipboardText(message) {
+  _handleRequestClipboardText(message: WebviewMessage): void {
     const requestId = message && message.requestId ? String(message.requestId) : ''
     Promise.resolve()
       .then(() => vscode.env.clipboard.readText())
@@ -698,20 +710,19 @@ class WebviewProvider {
           text: clip
         })
       })
-      .catch(e => {
+      .catch((e: unknown) => {
         this._sendMessage({
           type: 'clipboardText',
           success: false,
           requestId,
-          error: e && e.message ? String(e.message) : String(e)
+          error: e instanceof Error ? e.message : String(e)
         })
       })
   }
 
-  _sendMessage(message) {
+  _sendMessage(message: WebviewMessage): void {
     if (!this._view || !this._view.webview) return
 
-    // Webview 未 ready：缓冲消息，等 ready 再统一发送（避免消息丢失）
     if (!this._webviewReady) {
       try {
         this._pendingMessages.push(message)
@@ -727,7 +738,7 @@ class WebviewProvider {
     this._postMessage(message)
   }
 
-  _postMessage(message) {
+  _postMessage(message: WebviewMessage): void {
     try {
       if (
         this._view &&
@@ -741,7 +752,7 @@ class WebviewProvider {
     }
   }
 
-  _flushPendingMessages() {
+  _flushPendingMessages(): void {
     if (!this._webviewReady) return
     if (!this._pendingMessages || this._pendingMessages.length === 0) return
     const batch = this._pendingMessages.slice(0)
@@ -751,14 +762,14 @@ class WebviewProvider {
     }
   }
 
-  async _fetchNotificationConfig(force) {
+  async _fetchNotificationConfig(force?: boolean): Promise<NotificationConfig | null> {
     const now = Date.now()
     if (!force && this._notificationConfig && now - this._notificationConfigFetchedAt < 30000) {
       return this._notificationConfig
     }
     if (this._notificationConfigFetchPromise) return this._notificationConfigFetchPromise
 
-    this._notificationConfigFetchPromise = (async () => {
+    this._notificationConfigFetchPromise = (async (): Promise<NotificationConfig | null> => {
       try {
         const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
         const timeoutId = controller
@@ -771,17 +782,17 @@ class WebviewProvider {
             }, 2500)
           : null
         const resp = await fetch(`${this._serverUrl}/api/get-notification-config`, {
-          cache: 'no-store',
           signal: controller ? controller.signal : undefined,
-          headers: { Accept: 'application/json' }
-        })
+          headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }
+        } as RequestInit)
         if (timeoutId) clearTimeout(timeoutId)
         if (!resp.ok) return this._notificationConfig
-        const data = await resp.json()
-        if (data && data.status === 'success' && data.config) {
+        const data = await resp.json() as Record<string, unknown>
+        const config = data.config as Record<string, unknown> | undefined
+        if (data && data.status === 'success' && config) {
           this._notificationConfig = {
-            enabled: data.config.enabled !== false,
-            macosNativeEnabled: data.config.macos_native_enabled !== false
+            enabled: config.enabled !== false,
+            macosNativeEnabled: config.macos_native_enabled !== false
           }
           this._notificationConfigFetchedAt = Date.now()
         }
@@ -795,7 +806,7 @@ class WebviewProvider {
     return this._notificationConfigFetchPromise
   }
 
-  async dispatchNewTaskNotification(taskData) {
+  async dispatchNewTaskNotification(taskData: TaskData[]): Promise<void> {
     try {
       const items = Array.isArray(taskData) ? taskData.filter(Boolean) : []
       if (items.length === 0) return
@@ -859,7 +870,7 @@ class WebviewProvider {
         : ''
       const truncated = cleaned.length > SUMMARY_MAX_LEN
       const summary = truncated ? cleaned.slice(0, SUMMARY_MAX_LEN) + '\u2026' : cleaned
-      let msg
+      let msg: string
       if (summary) {
         msg =
           ids.length === 1
@@ -872,7 +883,7 @@ class WebviewProvider {
             : '\u6536\u5230 ' + ids.length + ' \u4e2a\u65b0\u4efb\u52a1'
       }
 
-      const types = [NotificationType.VSCODE]
+      const types: string[] = [NotificationType.VSCODE]
       if (settings.macosNativeEnabled) {
         types.push(NotificationType.MACOS_NATIVE)
       }
@@ -910,11 +921,11 @@ class WebviewProvider {
         source: 'extension',
         dedupeKey: 'new_tasks:' + ids.join('|')
       })
-    } catch (e) {
+    } catch (e: unknown) {
       try {
         if (this._logger && typeof this._logger.warn === 'function') {
           this._logger.warn(
-            'ext.new_task_notify failed: ' + (e && e.message ? e.message : String(e))
+            'ext.new_task_notify failed: ' + (e instanceof Error ? e.message : String(e))
           )
         }
       } catch {
@@ -923,11 +934,9 @@ class WebviewProvider {
     }
   }
 
-  _getHtmlContent(webview) {
+  _getHtmlContent(webview: vscode.Webview): string {
     const serverUrl = this._serverUrl || 'http://localhost:8080'
     const cspSource = webview.cspSource
-    // 重要：不要把 marked/prism 以“内联脚本”拼进 HTML（其内容包含反引号等字符，部分 Webview 注入实现会因此失败）
-    // 改为外链加载（同样使用 nonce，CSP 更安全且更稳定）
     const markedJsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'marked.min.js')
     )
@@ -973,14 +982,10 @@ class WebviewProvider {
     )
     const nonce = getNonce()
 
-    // 精简日志：移除 HTML 生成相关冗余日志
-
-    // 稳定性：在 Cursor/VSCode 的不同 Webview 协议/CSP 组合下，fetch 本地资源可能仍被 connect-src 拦截。
-    // 这里把“无内容页”所需的本地资源（SVG/JSON）直接内联注入，Webview 侧优先使用内联数据，避免永久降级。
     const activityIconSvgText = safeReadTextFile(
       vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg')
     )
-    let noContentHourglassLottieData = null
+    let noContentHourglassLottieData: unknown = null
     try {
       const hourglassJsonText = safeReadTextFile(
         vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json')
@@ -994,7 +999,6 @@ class WebviewProvider {
       ? safeJsonForInlineScript(noContentHourglassLottieData)
       : 'null'
 
-    // i18n：检测语言并加载对应的 locale 文件
     let i18nLang = 'en'
     try {
       const vsLang = vscode.env.language || ''
@@ -1002,12 +1006,12 @@ class WebviewProvider {
     } catch {
       i18nLang = 'en'
     }
-    let i18nLocaleData = null
+    let i18nLocaleData: Record<string, unknown> | null = null
     try {
       const localeText = safeReadTextFile(
         vscode.Uri.joinPath(this._extensionUri, 'locales', i18nLang + '.json')
       )
-      i18nLocaleData = localeText ? JSON.parse(localeText) : null
+      i18nLocaleData = localeText ? JSON.parse(localeText) as Record<string, unknown> : null
     } catch {
       i18nLocaleData = null
     }
@@ -1016,7 +1020,7 @@ class WebviewProvider {
         const fallbackText = safeReadTextFile(
           vscode.Uri.joinPath(this._extensionUri, 'locales', 'en.json')
         )
-        i18nLocaleData = fallbackText ? JSON.parse(fallbackText) : null
+        i18nLocaleData = fallbackText ? JSON.parse(fallbackText) as Record<string, unknown> : null
         if (i18nLocaleData) i18nLang = 'en'
       } catch {
         i18nLocaleData = null
@@ -1026,14 +1030,13 @@ class WebviewProvider {
       ? safeJsonForInlineScript(i18nLocaleData)
       : 'null'
     const inlineI18nLangLiteral = safeStringForInlineScript(i18nLang)
-    // 模板渲染辅助：从 locale 数据中解析翻译键
-    const tl = (key) => {
+    const tl = (key: string): string => {
       if (!i18nLocaleData) return key
       const parts = String(key).split('.')
-      let node = i18nLocaleData
+      let node: unknown = i18nLocaleData
       for (const p of parts) {
         if (!node || typeof node !== 'object') return key
-        node = node[p]
+        node = (node as Record<string, unknown>)[p]
       }
       return typeof node === 'string' ? node : key
     }
@@ -1083,7 +1086,7 @@ class WebviewProvider {
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
-                <div class="no-content-icon" id="hourglass-lottie" aria-hidden="true">🌱</div>
+                <div class="no-content-icon" id="hourglass-lottie" aria-hidden="true">\ud83c\udf31</div>
                 <div class="title">${tl('ui.noContent.title')}</div>
                 <div class="status-indicator-standalone">
                     <div class="breathing-light" id="statusLightStandalone" title="${tl('ui.status.serverStatus')}"></div>
@@ -1208,7 +1211,7 @@ class WebviewProvider {
                 </div>
                 <div class="settings-footer" id="settingsFooter">
                     <span class="settings-footer-item">${tl('settings.footer.version').replace('{{version}}', extensionVersion)}</span>
-                    <span class="settings-footer-sep">·</span>
+                    <span class="settings-footer-sep">\u00b7</span>
                     <span class="settings-footer-item">${tl('settings.footer.github')}</span>
                     <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer">${githubUrlDisplay}</a>
                 </div>

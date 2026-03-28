@@ -1,4 +1,6 @@
-const LEVELS = {
+type LogLevel = 'error' | 'warn' | 'info' | 'debug'
+
+const LEVELS: Record<LogLevel, number> = {
   error: 0,
   warn: 1,
   info: 2,
@@ -8,22 +10,60 @@ const LEVELS = {
 // =========================
 // 控噪策略（Phase 2）
 // =========================
-// 去重窗口（相同 message 在窗口内仅记录一次）
 const DEDUPE_WINDOW_DEBUG_INFO_MS = 2500
 const DEDUPE_WINDOW_WARN_MS = 5000
 const DEDUPE_MAX_KEYS = 2000
 
-// debug 突发限流：当短时间内 debug 日志过多时抑制，并定期输出 suppressed 统计
 const DEBUG_BURST_WINDOW_MS = 1500
 const DEBUG_BURST_MAX = 30
 const DEBUG_BURST_REPORT_MS = 4000
 
-// 诊断信息：保留最近 N 行日志（内存环形缓冲的简化实现）
 const RECENT_MAX_LINES = 500
 
-const CHANNEL_STATE = new WeakMap()
+interface DebugBurstBucket {
+  windowStartMs: number
+  count: number
+  suppressed: number
+  lastReportMs: number
+}
 
-function getChannelState(outputChannel) {
+interface ChannelState {
+  dedupe: Map<string, number>
+  debugBurst: Map<string, DebugBurstBucket>
+  recentLines: string[]
+}
+
+interface OutputChannelLike {
+  appendLine?: (line: string) => void
+  append?: (text: string) => void
+  error?: (msg: string) => void
+  warn?: (msg: string) => void
+  info?: (msg: string) => void
+  debug?: (msg: string) => void
+}
+
+export interface LoggerOptions {
+  getLevel?: () => string
+  component?: string
+}
+
+export interface Logger {
+  debug: (msg: unknown) => void
+  info: (msg: unknown) => void
+  warn: (msg: unknown) => void
+  error: (msg: unknown) => void
+  getRecentLines: (limit?: number) => string[]
+  event: (
+    eventName: string,
+    fields?: Record<string, unknown>,
+    options?: { level?: string; message?: string }
+  ) => void
+  child: (name: string) => Logger
+}
+
+const CHANNEL_STATE = new WeakMap<object, ChannelState>()
+
+function getChannelState(outputChannel: OutputChannelLike | null): ChannelState | null {
   try {
     if (!outputChannel) return null
     const t = typeof outputChannel
@@ -31,9 +71,9 @@ function getChannelState(outputChannel) {
     let state = CHANNEL_STATE.get(outputChannel)
     if (!state) {
       state = {
-        dedupe: new Map(), // key -> lastTs
-        debugBurst: new Map(), // component -> bucket
-        recentLines: [] // 最近日志（用于导出诊断信息）
+        dedupe: new Map(),
+        debugBurst: new Map(),
+        recentLines: []
       }
       CHANNEL_STATE.set(outputChannel, state)
     }
@@ -43,7 +83,7 @@ function getChannelState(outputChannel) {
   }
 }
 
-function recordRecentLine(state, line) {
+function recordRecentLine(state: ChannelState | null, line: string): void {
   try {
     if (!state || !Array.isArray(state.recentLines)) return
     const text = (line ?? '').toString()
@@ -57,22 +97,21 @@ function recordRecentLine(state, line) {
   }
 }
 
-function normalizeLevel(input, fallback = 'info') {
-  const raw = (input ?? '').toString().trim().toLowerCase()
-  if (raw && Object.prototype.hasOwnProperty.call(LEVELS, raw)) return raw
+function normalizeLevel(input: unknown, fallback: LogLevel = 'info'): LogLevel {
+  const raw = ((input ?? '') as string).toString().trim().toLowerCase()
+  if (raw && Object.prototype.hasOwnProperty.call(LEVELS, raw)) return raw as LogLevel
   return fallback
 }
 
-function pad2(n) {
+function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-function pad3(n) {
+function pad3(n: number): string {
   return String(n).padStart(3, '0')
 }
 
-function formatTimestamp(date = new Date()) {
-  // 本地时间：更符合“看日志排查”的直觉（避免时区困扰）
+function formatTimestamp(date = new Date()): string {
   const y = date.getFullYear()
   const m = pad2(date.getMonth() + 1)
   const d = pad2(date.getDate())
@@ -83,11 +122,10 @@ function formatTimestamp(date = new Date()) {
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}.${ms}`
 }
 
-function safeString(value) {
+function safeString(value: unknown): string {
   try {
     if (value === null || value === undefined) return ''
     if (value instanceof Error) {
-      // 默认精简：仅输出 name + message；需要堆栈时请在调用侧显式传入 e.stack
       const name = value.name ? String(value.name) : 'Error'
       const msg = value.message ? String(value.message) : ''
       return msg ? `${name}: ${msg}` : name
@@ -103,15 +141,14 @@ function safeString(value) {
   }
 }
 
-function isPlainObject(value) {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
-function escapeControlChars(input) {
+function escapeControlChars(input: unknown): string {
   try {
-    const text = (input ?? '').toString()
+    const text = ((input ?? '') as string).toString()
     if (!text) return ''
-    // 防止“多行日志伪造/注入”：把控制字符转义为可见形式
     return text
       .replace(/\r/g, '\\r')
       .replace(/\n/g, '\\n')
@@ -122,18 +159,19 @@ function escapeControlChars(input) {
   }
 }
 
-function redactSensitive(input) {
+function redactSensitive(input: unknown): string {
   try {
-    let text = (input ?? '').toString()
+    let text = ((input ?? '') as string).toString()
     if (!text) return ''
 
-    // 常见密钥格式（尽量精确，避免过度脱敏）
     text = text.replace(/\bsk-[A-Za-z0-9]{32,}\b/g, '***REDACTED***')
     text = text.replace(/\bghp_[A-Za-z0-9]{36}\b/g, '***REDACTED***')
     text = text.replace(/\bxoxb-[A-Za-z0-9-]{50,}\b/g, '***REDACTED***')
 
-    // 明确字段（JSON/日志片段）
-    text = text.replace(/("?(?:password|passwd|bark_device_key)"?\s*[:=]\s*")([^"]+)(")/gi, '$1***REDACTED***$3')
+    text = text.replace(
+      /("?(?:password|passwd|bark_device_key)"?\s*[:=]\s*")([^"]+)(")/gi,
+      '$1***REDACTED***$3'
+    )
 
     return text
   } catch {
@@ -141,9 +179,9 @@ function redactSensitive(input) {
   }
 }
 
-function truncate(input, maxLen = 2000) {
+function truncate(input: unknown, maxLen = 2000): string {
   try {
-    const text = (input ?? '').toString()
+    const text = ((input ?? '') as string).toString()
     if (!text) return ''
     if (text.length <= maxLen) return text
     return `${text.slice(0, Math.max(0, maxLen))}…`
@@ -152,35 +190,33 @@ function truncate(input, maxLen = 2000) {
   }
 }
 
-function sanitizeMessage(input) {
-  const raw = (input ?? '').toString()
+function sanitizeMessage(input: unknown): string {
+  const raw = ((input ?? '') as string).toString()
   if (!raw) return ''
   return truncate(redactSensitive(escapeControlChars(raw)))
 }
 
-function isBareToken(value) {
+function isBareToken(value: unknown): boolean {
   try {
-    const s = (value ?? '').toString()
+    const s = ((value ?? '') as string).toString()
     if (!s) return false
-    // 允许常见 token 字符（便于 grep 和肉眼扫描）
     return /^[A-Za-z0-9_.:/-]+$/.test(s)
   } catch {
     return false
   }
 }
 
-function normalizeFieldKey(key) {
+function normalizeFieldKey(key: unknown): string {
   try {
     const raw = String(key ?? '').trim()
     if (!raw) return ''
-    // key=value 格式：key 不允许空格/等号等分隔符；其它字符用 _ 替代
     return raw.replace(/[^A-Za-z0-9_.:-]/g, '_')
   } catch {
     return ''
   }
 }
 
-function formatFieldValue(value) {
+function formatFieldValue(value: unknown): string {
   try {
     if (value === undefined) return ''
     if (value === null) return 'null'
@@ -190,7 +226,6 @@ function formatFieldValue(value) {
       return isBareToken(value) ? value : JSON.stringify(value)
     }
 
-    // object / array
     const json = JSON.stringify(value)
     return isBareToken(json) ? json : json
   } catch {
@@ -203,10 +238,10 @@ function formatFieldValue(value) {
   }
 }
 
-function formatKeyValueFields(fields) {
+function formatKeyValueFields(fields: unknown): string {
   const obj = isPlainObject(fields) ? fields : {}
   const keys = Object.keys(obj).sort()
-  const parts = []
+  const parts: string[] = []
   for (const k of keys) {
     if (k === 'event') continue
     const key = normalizeFieldKey(k)
@@ -220,7 +255,11 @@ function formatKeyValueFields(fields) {
   return parts.join(' ')
 }
 
-function formatEventMessage(eventName, fields, message) {
+function formatEventMessage(
+  eventName: string,
+  fields: Record<string, unknown> | undefined,
+  message: unknown
+): string {
   const evt = formatFieldValue(eventName)
   const parts = [`event=${evt || 'unknown'}`]
   const msg = message == null ? '' : String(message)
@@ -228,18 +267,23 @@ function formatEventMessage(eventName, fields, message) {
   const kv = formatKeyValueFields(merged)
   if (kv) parts.push(kv)
   if (msg && !Object.prototype.hasOwnProperty.call(merged, 'msg')) {
-    // message 一律作为 msg= 字段（避免自由文本破坏结构化 grep）
     const msgToken = formatFieldValue(msg)
     if (msgToken) parts.push(`msg=${msgToken}`)
   }
   return parts.join(' ')
 }
 
-function formatLine({ ts, level, component, message }) {
+interface FormatLineArgs {
+  ts: string
+  level: string
+  component: string
+  message: string
+}
+
+function formatLine({ ts, level, component, message }: FormatLineArgs): string {
   const lvl = String(level || '').toUpperCase() || 'INFO'
   const comp = component ? String(component) : 'vscode'
   const msg = message ? String(message) : ''
-  // 单行、结构化、可 grep：固定顺序 [ts] [LEVEL] [component] message
   return `[${ts}] [${lvl}] [${comp}] ${msg}`
 }
 
@@ -252,18 +296,18 @@ function formatLine({ ts, level, component, message }) {
  * - 高效：先判级别再格式化，避免不必要的字符串拼接
  * - 清晰：统一格式，包含时间/级别/模块
  */
-function createLogger(outputChannel, opts = {}) {
+export function createLogger(outputChannel: OutputChannelLike, opts: LoggerOptions = {}): Logger {
   const getLevel =
     typeof opts.getLevel === 'function' ? opts.getLevel : () => 'info'
   const component = opts.component ? String(opts.component) : 'vscode'
   const state = getChannelState(outputChannel)
 
-  function shouldLog(level) {
+  function shouldLog(level: LogLevel): boolean {
     const current = LEVELS[normalizeLevel(getLevel())]
     return LEVELS[level] <= current
   }
 
-  function emitLine(line, fallbackLevel) {
+  function emitLine(line: string, fallbackLevel: LogLevel): void {
     recordRecentLine(state, line)
     try {
       if (typeof outputChannel.appendLine === 'function') {
@@ -278,7 +322,6 @@ function createLogger(outputChannel, opts = {}) {
       // 忽略：写入失败不应影响主流程
     }
 
-    // 极端兼容：某些 fake channel 可能只实现了 info/warn/error/debug
     try {
       const direct =
         fallbackLevel === 'error'
@@ -296,7 +339,7 @@ function createLogger(outputChannel, opts = {}) {
     }
   }
 
-  function maybeReportDebugSuppressed(bucket, now) {
+  function maybeReportDebugSuppressed(bucket: DebugBurstBucket, now: number): void {
     try {
       if (!bucket || !bucket.suppressed) return
       const last = typeof bucket.lastReportMs === 'number' ? bucket.lastReportMs : 0
@@ -327,7 +370,7 @@ function createLogger(outputChannel, opts = {}) {
     }
   }
 
-  function write(level, message) {
+  function write(level: LogLevel, message: unknown): void {
     if (!shouldLog(level)) return
     if (!outputChannel) return
 
@@ -337,7 +380,6 @@ function createLogger(outputChannel, opts = {}) {
 
     const now = Date.now()
 
-    // 去重：相同消息在窗口内只记录一次（避免刷屏）
     const dedupeWindowMs =
       level === 'warn'
         ? DEDUPE_WINDOW_WARN_MS
@@ -352,7 +394,6 @@ function createLogger(outputChannel, opts = {}) {
       }
     }
 
-    // debug 突发限流：高频 debug 刷屏时抑制（并输出 suppressed 统计）
     if (level === 'debug' && state) {
       let bucket = state.debugBurst.get(component)
       if (!bucket) {
@@ -376,7 +417,6 @@ function createLogger(outputChannel, opts = {}) {
       state.debugBurst.set(component, bucket)
     }
 
-    // 提交去重状态（仅对“将要写入”的日志生效，避免被限流的日志污染去重表）
     if (dedupeWindowMs > 0 && state) {
       state.dedupe.set(dedupeKey, now)
       if (state.dedupe.size > DEDUPE_MAX_KEYS) {
@@ -387,16 +427,15 @@ function createLogger(outputChannel, opts = {}) {
     const ts = formatTimestamp()
     const line = formatLine({ ts, level, component, message: msg })
 
-    // 方案 A：统一使用 appendLine 写入，绕开 LogOutputChannel 的 logLevel 二次过滤
     emitLine(line, level)
   }
 
   return {
-    debug: msg => write('debug', msg),
-    info: msg => write('info', msg),
-    warn: msg => write('warn', msg),
-    error: msg => write('error', msg),
-    getRecentLines: (limit = 200) => {
+    debug: (msg: unknown) => write('debug', msg),
+    info: (msg: unknown) => write('info', msg),
+    warn: (msg: unknown) => write('warn', msg),
+    error: (msg: unknown) => write('error', msg),
+    getRecentLines: (limit = 200): string[] => {
       try {
         const nRaw = Number(limit)
         const n = Number.isFinite(nRaw) ? Math.max(0, Math.floor(nRaw)) : 200
@@ -408,7 +447,11 @@ function createLogger(outputChannel, opts = {}) {
         return []
       }
     },
-    event: (eventName, fields, options = {}) => {
+    event: (
+      eventName: string,
+      fields?: Record<string, unknown>,
+      options: { level?: string; message?: string } = {}
+    ): void => {
       try {
         const optsObj = isPlainObject(options) ? options : {}
         const lvl = normalizeLevel(optsObj.level, 'info')
@@ -419,7 +462,7 @@ function createLogger(outputChannel, opts = {}) {
         // 忽略：日志本身不应影响主流程
       }
     },
-    child: name =>
+    child: (name: string): Logger =>
       createLogger(outputChannel, {
         getLevel,
         component: `${component}:${String(name)}`
