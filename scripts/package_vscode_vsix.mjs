@@ -75,6 +75,21 @@ try {
     // 忽略：清理失败不应阻断后续尝试（vsce 可能会覆盖）
   }
 
+  // dist/ 不存在时自动编译（Release CI 中可能跳过了显式 compile 步骤）
+  const distDir = path.join(vscodeDir, 'dist')
+  if (!fs.existsSync(distDir)) {
+    console.log('dist/ 不存在，自动运行 tsc 编译...')
+    const compileResult = spawnSync('npx', ['tsc', '-p', '.'], {
+      cwd: vscodeDir,
+      stdio: 'inherit',
+      timeout: 60000
+    })
+    if (compileResult.status !== 0) {
+      console.error('TypeScript 编译失败，终止打包')
+      process.exit(compileResult.status ?? 1)
+    }
+  }
+
   for (const rel of includeList) {
     const src = path.join(vscodeDir, rel)
     if (!fs.existsSync(src)) {
