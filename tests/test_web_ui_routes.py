@@ -61,7 +61,7 @@ class TestBarkTestEndpoint(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 500)
         data = resp.get_json()
-        self.assertIn("不可用", data["message"])
+        self.assertIn("unavailable", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.BarkNotificationProvider")
@@ -78,7 +78,7 @@ class TestBarkTestEndpoint(_RouteTestBase):
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertEqual(data["status"], "success")
-        self.assertIn("成功", data["message"])
+        self.assertIn("sent", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.BarkNotificationProvider")
@@ -95,7 +95,7 @@ class TestBarkTestEndpoint(_RouteTestBase):
         resp = self._client.post("/api/test-bark", json={"bark_device_key": "key1"})
         self.assertEqual(resp.status_code, 500)
         data = resp.get_json()
-        self.assertIn("检查配置", data["message"])
+        self.assertIn("check configuration", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.BarkNotificationProvider")
@@ -146,7 +146,7 @@ class TestBarkTestEndpoint(_RouteTestBase):
         resp = self._client.post("/api/test-bark", json={"bark_device_key": "key3"})
         self.assertEqual(resp.status_code, 500)
         data = resp.get_json()
-        self.assertEqual(data["message"], "测试失败")
+        self.assertEqual(data["message"], "Test failed")
 
     def test_bark_no_json_body(self):
         resp = self._client.post(
@@ -220,7 +220,7 @@ class TestNotifyNewTasks(_RouteTestBase):
         )
         data = resp.get_json()
         self.assertEqual(data["status"], "skipped")
-        self.assertIn("不可用", data["message"])
+        self.assertIn("unavailable", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.notification_manager")
@@ -234,7 +234,7 @@ class TestNotifyNewTasks(_RouteTestBase):
         )
         data = resp.get_json()
         self.assertEqual(data["status"], "skipped")
-        self.assertIn("总开关", data["message"])
+        self.assertIn("master switch", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.notification_manager")
@@ -248,7 +248,7 @@ class TestNotifyNewTasks(_RouteTestBase):
             "/api/notify-new-tasks", json={"count": 1, "taskIds": ["t1"]}
         )
         data = resp.get_json()
-        self.assertIn("Bark 未启用", data["message"])
+        self.assertIn("Bark is disabled", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.notification_manager")
@@ -393,7 +393,7 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 500)
         data = resp.get_json()
-        self.assertIn("不可用", data["message"])
+        self.assertIn("unavailable", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.notification_manager")
@@ -408,7 +408,7 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         )
         data = resp.get_json()
         self.assertEqual(data["status"], "success")
-        self.assertIn("未检测到", data["message"])
+        self.assertIn("No notification config fields", data["message"])
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.notification_manager")
@@ -445,7 +445,7 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         )
         data = resp.get_json()
         self.assertEqual(data["status"], "success")
-        self.assertIn("已更新", data["message"])
+        self.assertIn("updated", data["message"])
         mock_nm.update_config_without_save.assert_called_once()
         mock_cfg.update_section.assert_called_once()
 
@@ -526,7 +526,7 @@ class TestGetNotificationConfig(_RouteTestBase):
         resp = self._client.get("/api/get-notification-config")
         self.assertEqual(resp.status_code, 500)
         data = resp.get_json()
-        self.assertIn("获取配置失败", data["message"])
+        self.assertIn("Failed to get config", data["message"])
 
 
 class TestGetFeedbackPrompts(_RouteTestBase):

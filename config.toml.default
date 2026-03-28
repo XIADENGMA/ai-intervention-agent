@@ -1,124 +1,124 @@
-# AI Intervention Agent 配置文件
-# 文档：docs/api.zh-CN/config_manager.md
+# AI Intervention Agent 配置文件 / Configuration File
+# 文档 / Docs：docs/api.zh-CN/config_manager.md | docs/api/config_manager.md
 
 # ──────────────────────────────────────────────
-# 通知配置
+# 通知配置 / Notification Settings
 # ──────────────────────────────────────────────
 [notification]
-# 总开关
+# 总开关 / Master switch
 enabled = true
-# 调试模式（仅影响通知模块日志详细程度）
+# 调试模式（仅影响通知模块日志详细程度）/ Debug mode (only affects notification module log verbosity)
 debug = false
-# Web浏览器通知
+# Web浏览器通知 / Web browser notifications
 web_enabled = true
 auto_request_permission = true
-# Web 通知图标（"default" 或自定义 URL）
+# Web 通知图标 / Web notification icon ("default" or custom URL)
 web_icon = "default"
-# Web 通知显示时长（毫秒）- 范围 [1, 600000]
+# Web 通知显示时长（毫秒）/ Web notification display duration (ms) - range [1, 600000]
 web_timeout = 5000
-# 桌面系统通知（plyer，可选依赖；默认关闭以避免意外弹窗）
+# 桌面系统通知 / Desktop system notification (plyer, optional; off by default to avoid unexpected popups)
 system_enabled = false
-# macOS 原生通知（主要由 VSCode/Cursor 插件侧触发；后端保留字段用于配置一致性）
+# macOS 原生通知 / macOS native notification (primarily triggered by VS Code/Cursor plugin; backend field for config consistency)
 macos_native_enabled = true
-# 声音通知
+# 声音通知 / Sound notification
 sound_enabled = true
 sound_mute = false
-# 声音文件（默认：default；可选：deng 等，取决于 sounds 资源）
+# 声音文件 / Sound file (default: "default"; options: "deng" etc., depends on sounds resources)
 sound_file = "default"
-# 声音音量 - 范围 [0, 100]，超出范围自动调整到边界值
+# 声音音量 / Sound volume - range [0, 100], out-of-range values auto-clamped
 sound_volume = 80
-# 移动端优化
+# 移动端优化 / Mobile optimization
 mobile_optimized = true
 mobile_vibrate = true
-# Bark 推送通知配置
+# Bark 推送通知配置 / Bark push notification settings
 bark_enabled = false
-# Bark服务器URL - 必须以 http:// 或 https:// 开头
+# Bark 服务器 URL / Bark server URL - must start with http:// or https://
 bark_url = ""
-# Bark设备密钥 - bark_enabled=true 时必填
+# Bark 设备密钥 / Bark device key - required when bark_enabled=true
 bark_device_key = ""
-# Bark通知图标URL (可选)
+# Bark 通知图标 URL / Bark notification icon URL (optional)
 bark_icon = ""
-# Bark通知动作 - 有效值: none（无操作）/url（打开链接）/copy（复制）
+# Bark 通知动作 / Bark click action - valid: none / url (open link) / copy
 bark_action = "none"
-# 发送失败重试次数（不含首次尝试） - 范围 [0, 10]
+# 发送失败重试次数 / Retry count on send failure (excluding first attempt) - range [0, 10]
 retry_count = 3
-# 重试间隔(秒) - 范围 [0, 60]
+# 重试间隔(秒) / Retry interval (seconds) - range [0, 60]
 retry_delay = 2
-# Bark 请求超时(秒) - 范围 [1, 300]
+# Bark 请求超时(秒) / Bark request timeout (seconds) - range [1, 300]
 bark_timeout = 10
 
 # ──────────────────────────────────────────────
-# Web界面配置
+# Web 界面配置 / Web UI Settings
 # ──────────────────────────────────────────────
 [web_ui]
 # 界面语言 / UI Language
-# - "auto": 自动检测（浏览器 navigator.language / VS Code vscode.env.language）
+# - "auto": 自动检测 / Auto-detect (browser navigator.language / VS Code vscode.env.language)
 # - "en": English
-# - "zh-CN": 简体中文
+# - "zh-CN": 简体中文 / Simplified Chinese
 language = "auto"
-# Web服务监听地址 (由 network_security.bind_interface 覆盖)
+# Web 服务监听地址 / Web server listen address (overridden by network_security.bind_interface)
 host = "127.0.0.1"
-# Web服务端口 - 范围 [1, 65535]，端口 <1024 需要管理员权限
+# Web 服务端口 / Web server port - range [1, 65535], ports <1024 require admin privileges
 port = 8080
-# 调试模式
+# 调试模式 / Debug mode
 debug = false
-# HTTP请求超时(秒) - 范围 [1, 300]
+# HTTP 请求超时(秒) / HTTP request timeout (seconds) - range [1, 300]
 http_request_timeout = 30
-# HTTP最大重试次数 - 范围 [0, 10]
+# HTTP 最大重试次数 / HTTP max retries - range [0, 10]
 http_max_retries = 3
-# HTTP重试延迟(秒) - 范围 [0.1, 60.0]
+# HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0.1, 60.0]
 http_retry_delay = 1.0
 
 # ──────────────────────────────────────────────
-# 网络安全配置
+# 网络安全配置 / Network Security Settings
 # ──────────────────────────────────────────────
 [network_security]
-# 绑定网络接口 (127.0.0.1=仅本地, 0.0.0.0=所有接口)
+# 绑定网络接口 / Bind network interface (127.0.0.1=local only, 0.0.0.0=all interfaces)
 bind_interface = "0.0.0.0"
-# 允许访问的网络段
+# 允许访问的网络段 / Allowed network segments
 allowed_networks = [
-    "127.0.0.0/8",       # 本地回环地址
-    "::1/128",           # IPv6本地回环地址
-    "192.168.0.0/16",    # 私有网络 192.168.x.x
-    "10.0.0.0/8",        # 私有网络 10.x.x.x
-    "172.16.0.0/12",     # 私有网络 172.16.x.x - 172.31.x.x
+    "127.0.0.0/8",       # Loopback / 本地回环
+    "::1/128",           # IPv6 loopback / IPv6 本地回环
+    "192.168.0.0/16",    # Private / 私有网络
+    "10.0.0.0/8",        # Private / 私有网络
+    "172.16.0.0/12",     # Private / 私有网络
 ]
-# IP黑名单
+# IP 黑名单 / IP blacklist
 blocked_ips = []
-# 访问控制开关
+# 访问控制开关 / Access control switch
 access_control_enabled = true
 
 # ──────────────────────────────────────────────
-# mDNS 配置（用于通过 ai.local 访问 & 局域网服务发现）
+# mDNS 配置 / mDNS Settings (for ai.local access & LAN service discovery)
 # ──────────────────────────────────────────────
 [mdns]
-# 是否启用 mDNS
-# - true: 强制启用
-# - false: 强制禁用
-# - "auto": 自动（当 network_security.bind_interface 不是 127.0.0.1/localhost/::1 时启用）
+# 是否启用 mDNS / Enable mDNS
+# - true: 强制启用 / Force enable
+# - false: 强制禁用 / Force disable
+# - "auto": 自动 / Auto (enabled when bind_interface is not 127.0.0.1/localhost/::1)
 enabled = "auto"
-# mDNS 主机名（默认 ai.local）
-# 说明：浏览器可直接访问 http://ai.local:8080
+# mDNS 主机名 / mDNS hostname (default: ai.local)
+# 浏览器可直接访问 / Browser can access directly: http://ai.local:8080
 hostname = "ai.local"
-# DNS-SD 服务实例名（用于服务发现列表展示，例如 avahi-browse / dns-sd）
+# DNS-SD 服务实例名 / DNS-SD service instance name (for service discovery, e.g. avahi-browse / dns-sd)
 service_name = "AI Intervention Agent"
 
 # ──────────────────────────────────────────────
-# 反馈配置
-# 超时计算规则：
-# - frontend_countdown <= 0：后端等待 = max(backend_max_wait, 260秒)
-# - 否则：后端等待 = min(max(前端倒计时 + 40秒, 260秒), backend_max_wait)
+# 反馈配置 / Feedback Settings
+# 超时计算规则 / Timeout calculation:
+# - frontend_countdown <= 0: backend_wait = max(backend_max_wait, 260s)
+# - otherwise: backend_wait = min(max(frontend_countdown + 40s, 260s), backend_max_wait)
 # ──────────────────────────────────────────────
 [feedback]
-# 后端最大等待时间(秒) - 范围 [60, 3600]
-# 作用：限制后端轮询的最大时间，防止无限等待
+# 后端最大等待时间(秒) / Backend max wait time (seconds) - range [60, 3600]
+# 限制后端轮询最大时间 / Limits max backend polling time to prevent indefinite wait
 backend_max_wait = 600
-# 前端自动重调倒计时(秒) - 范围 [30, 250]，0=禁用自动重调
-# 参考 Cursor 5分钟会话超时，建议设置为 4 分钟 (240秒)
+# 前端自动重调倒计时(秒) / Frontend auto-reschedule countdown (seconds) - range [30, 250], 0=disabled
+# 参考 Cursor 5分钟超时 / Based on Cursor 5-min session timeout, recommend 4 min (240s)
 frontend_countdown = 240
-# 错误/超时时返回的提示语（引导AI重新调用工具）
-# 空字符串将使用默认值，最大长度 500 字符
+# 错误/超时时的提示语 / Prompt on error/timeout (guides AI to re-invoke the tool)
+# 空字符串使用默认值 / Empty string uses default, max 500 chars
 resubmit_prompt = "请立即调用 interactive_feedback 工具"
-# 追加到用户反馈末尾的提示语（保持会话连续性）
-# 可为空字符串表示不追加，最大长度 500 字符
+# 追加到反馈末尾的提示语 / Suffix appended to user feedback (maintains session continuity)
+# 可为空字符串 / Can be empty, max 500 chars
 prompt_suffix = "\n请积极调用 interactive_feedback 工具"

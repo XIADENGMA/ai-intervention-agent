@@ -39,6 +39,7 @@ from flask_limiter.util import get_remote_address
 from config_manager import get_config
 from config_utils import clamp_value
 from enhanced_logging import EnhancedLogger
+from i18n import msg
 from server import get_task_queue
 from shared_types import FeedbackResult
 from web_ui_routes import (
@@ -1179,7 +1180,7 @@ class WebFeedbackUI(
                 3. 立即返回成功响应（响应发送后才关闭）
 
             返回值：
-                JSON对象：{"status": "success", "message": "服务即将关闭"}
+                JSON对象：{"status": "success", "message": msg("server.shuttingDown")}
 
             副作用：
                 - 0.5秒后服务器进程收到SIGINT信号并关闭
@@ -1191,7 +1192,7 @@ class WebFeedbackUI(
                 - 多任务模式下应避免使用此端点
             """
             threading.Timer(0.5, self.shutdown_server).start()
-            return jsonify({"status": "success", "message": "服务即将关闭"})
+            return jsonify({"status": "success", "message": msg("server.shuttingDown")})
 
         @self.app.route("/api/health", methods=["GET"])
         def health_check() -> ResponseReturnValue:

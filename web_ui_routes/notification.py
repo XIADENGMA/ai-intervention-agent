@@ -11,6 +11,7 @@ from flask.typing import ResponseReturnValue
 from config_manager import get_config
 from config_utils import clamp_value
 from enhanced_logging import EnhancedLogger
+from i18n import msg
 
 try:
     from notification_manager import (
@@ -52,7 +53,7 @@ class NotificationRoutesMixin:
                 - bark_action: 点击动作（默认"none"）
 
             返回值：
-                成功：JSON对象 {"status": "success", "message": "Bark 测试通知发送成功！请检查设备"}
+                成功：JSON对象 {"status": "success", "message": msg("notify.testSuccess")}
                 失败：HTTP 400/500 + 错误信息
             """
             try:
@@ -64,12 +65,12 @@ class NotificationRoutesMixin:
 
                 if not bark_device_key:
                     return jsonify(
-                        {"status": "error", "message": "Device Key 不能为空"}
+                        {"status": "error", "message": msg("notify.deviceKeyEmpty")}
                     ), 400
 
                 try:
                     if not NOTIFICATION_AVAILABLE:
-                        raise ImportError("通知系统不可用")
+                        raise ImportError(msg("notify.systemUnavailable"))
 
                     class TempConfig:
                         def __init__(self) -> None:
@@ -97,7 +98,7 @@ class NotificationRoutesMixin:
                         return jsonify(
                             {
                                 "status": "success",
-                                "message": "Bark 测试通知发送成功！请检查设备",
+                                "message": msg("notify.testSuccess"),
                             }
                         )
                     else:
@@ -117,25 +118,30 @@ class NotificationRoutesMixin:
                             return jsonify(
                                 {
                                     "status": "error",
-                                    "message": f"Bark 通知发送失败：{status_hint}{detail}",
+                                    "message": msg(
+                                        "notify.sendFailedDetail",
+                                        detail=f"{status_hint}{detail}",
+                                    ),
                                 }
                             ), 500
                         return jsonify(
                             {
                                 "status": "error",
-                                "message": "Bark 通知发送失败，请检查配置",
+                                "message": msg("notify.sendFailedConfig"),
                             }
                         ), 500
 
                 except ImportError as e:
                     logger.error(f"导入通知系统失败: {e}", exc_info=True)
                     return jsonify(
-                        {"status": "error", "message": "通知系统不可用"}
+                        {"status": "error", "message": msg("notify.systemUnavailable")}
                     ), 500
 
             except Exception as e:
                 logger.error(f"Bark 测试通知失败: {e}", exc_info=True)
-                return jsonify({"status": "error", "message": "测试失败"}), 500
+                return jsonify(
+                    {"status": "error", "message": msg("notify.testFailed")}
+                ), 500
 
         @self.app.route("/api/notify-new-tasks", methods=["POST"])
         def notify_new_tasks() -> ResponseReturnValue:
@@ -180,11 +186,13 @@ class NotificationRoutesMixin:
                     count = len(task_ids)
 
                 if count <= 0:
-                    return jsonify({"status": "skipped", "message": "count=0，已忽略"})
+                    return jsonify(
+                        {"status": "skipped", "message": msg("notify.countZero")}
+                    )
 
                 if not NOTIFICATION_AVAILABLE:
                     return jsonify(
-                        {"status": "skipped", "message": "通知系统不可用，已降级"}
+                        {"status": "skipped", "message": msg("notify.systemDegraded")}
                     )
 
                 try:
@@ -195,17 +203,17 @@ class NotificationRoutesMixin:
                 cfg = getattr(notification_manager, "config", None)
                 if not cfg or not getattr(cfg, "enabled", True):
                     return jsonify(
-                        {"status": "skipped", "message": "通知总开关未开启，已忽略"}
+                        {"status": "skipped", "message": msg("notify.globalOff")}
                     )
 
                 if not getattr(cfg, "bark_enabled", False):
                     return jsonify(
-                        {"status": "skipped", "message": "Bark 未启用，已忽略"}
+                        {"status": "skipped", "message": msg("notify.barkDisabled")}
                     )
 
                 if not getattr(cfg, "bark_device_key", ""):
                     return jsonify(
-                        {"status": "skipped", "message": "bark_device_key 为空，已忽略"}
+                        {"status": "skipped", "message": msg("notify.barkKeyEmpty")}
                     )
 
                 title = "AI Intervention Agent"
@@ -231,13 +239,15 @@ class NotificationRoutesMixin:
 
                 if not event_id:
                     return jsonify(
-                        {"status": "skipped", "message": "通知未触发（可能已禁用）"}
+                        {"status": "skipped", "message": msg("notify.notTriggered")}
                     )
 
                 return jsonify({"status": "success", "event_id": event_id})
             except Exception as e:
                 logger.error(f"触发新任务通知失败: {e}", exc_info=True)
-                return jsonify({"status": "error", "message": "触发失败"}), 500
+                return jsonify(
+                    {"status": "error", "message": msg("notify.triggerFailed")}
+                ), 500
 
         @self.app.route("/api/update-notification-config", methods=["POST"])
         def update_notification_config() -> ResponseReturnValue:
@@ -247,7 +257,7 @@ class NotificationRoutesMixin:
                 接收前端通知设置，更新通知管理器和配置文件。
 
             返回值：
-                成功：JSON对象 {"status": "success", "message": "通知配置已更新"}
+                成功：JSON对象 {"status": "success", "message": msg("notify.configUpdated")}
                 失败：HTTP 500 + 错误信息
             """
             try:
@@ -257,7 +267,7 @@ class NotificationRoutesMixin:
 
                 try:
                     if not NOTIFICATION_AVAILABLE:
-                        raise ImportError("通知系统不可用")
+                        raise ImportError(msg("notify.systemUnavailable"))
 
                     config_mgr = get_config()
                     notification_config = dict(config_mgr.get_section("notification"))
@@ -424,7 +434,7 @@ class NotificationRoutesMixin:
                         return jsonify(
                             {
                                 "status": "success",
-                                "message": "未检测到需要更新的通知配置字段",
+                                "message": msg("notify.noUpdateFields"),
                             }
                         )
 
@@ -432,17 +442,21 @@ class NotificationRoutesMixin:
                     config_mgr.update_section("notification", notification_config)
 
                     logger.info("通知配置已更新到配置文件和内存")
-                    return jsonify({"status": "success", "message": "通知配置已更新"})
+                    return jsonify(
+                        {"status": "success", "message": msg("notify.configUpdated")}
+                    )
 
                 except ImportError as e:
                     logger.error(f"导入配置系统失败: {e}", exc_info=True)
                     return jsonify(
-                        {"status": "error", "message": "配置系统不可用"}
+                        {"status": "error", "message": msg("notify.configUnavailable")}
                     ), 500
 
             except Exception as e:
                 logger.error(f"更新通知配置失败: {e}", exc_info=True)
-                return jsonify({"status": "error", "message": "更新失败"}), 500
+                return jsonify(
+                    {"status": "error", "message": msg("notify.updateFailed")}
+                ), 500
 
         @self.app.route("/api/get-notification-config", methods=["GET"])
         def get_notification_config() -> ResponseReturnValue:
@@ -463,7 +477,9 @@ class NotificationRoutesMixin:
 
             except Exception as e:
                 logger.error(f"获取通知配置失败: {e}", exc_info=True)
-                return jsonify({"status": "error", "message": "获取配置失败"}), 500
+                return jsonify(
+                    {"status": "error", "message": msg("notify.getFailed")}
+                ), 500
 
         @self.app.route("/api/get-feedback-prompts", methods=["GET"])
         def get_feedback_prompts_api() -> ResponseReturnValue:
@@ -510,4 +526,6 @@ class NotificationRoutesMixin:
 
             except Exception as e:
                 logger.error(f"获取反馈提示语配置失败: {e}", exc_info=True)
-                return jsonify({"status": "error", "message": "获取配置失败"}), 500
+                return jsonify(
+                    {"status": "error", "message": msg("notify.getFailed")}
+                ), 500

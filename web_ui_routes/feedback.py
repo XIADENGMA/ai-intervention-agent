@@ -14,6 +14,7 @@ from flask.typing import ResponseReturnValue
 
 from enhanced_logging import EnhancedLogger
 from file_validator import validate_uploaded_file
+from i18n import msg
 from server import get_task_queue
 from shared_types import FeedbackResult
 
@@ -67,7 +68,7 @@ class FeedbackRoutesMixin:
             返回值：
                 JSON对象：
                     - status: "success"
-                    - message: "反馈已提交"
+                    - message: msg("feedback.submitted")
                     - persistent: true
                     - clear_content: true
 
@@ -246,7 +247,7 @@ class FeedbackRoutesMixin:
             return jsonify(
                 {
                     "status": "success",
-                    "message": "反馈已提交",
+                    "message": msg("feedback.submitted"),
                     "persistent": True,
                     "clear_content": True,
                 }
@@ -268,7 +269,7 @@ class FeedbackRoutesMixin:
             返回值：
                 JSON对象：
                     - status: "success"
-                    - message: "内容已更新"
+                    - message: msg("feedback.contentUpdated")
                     - prompt / prompt_html / predefined_options / task_id / auto_resubmit_timeout / has_content
             """
             try:
@@ -279,7 +280,7 @@ class FeedbackRoutesMixin:
                         {
                             "status": "error",
                             "error": "invalid_json",
-                            "message": "请求体必须是 JSON（object）",
+                            "message": msg("feedback.bodyMustBeJson"),
                         }
                     ),
                     400,
@@ -291,7 +292,7 @@ class FeedbackRoutesMixin:
                         {
                             "status": "error",
                             "error": "invalid_body",
-                            "message": "请求体必须是 JSON object",
+                            "message": msg("feedback.bodyMustBeObject"),
                         }
                     ),
                     400,
@@ -305,7 +306,7 @@ class FeedbackRoutesMixin:
                         {
                             "status": "error",
                             "error": "missing_field",
-                            "message": "缺少字段：prompt",
+                            "message": msg("feedback.missingPrompt"),
                         }
                     ),
                     400,
@@ -317,7 +318,7 @@ class FeedbackRoutesMixin:
                         {
                             "status": "error",
                             "error": "invalid_field_type",
-                            "message": "字段 prompt 必须是字符串",
+                            "message": msg("feedback.promptMustBeString"),
                         }
                     ),
                     400,
@@ -339,7 +340,7 @@ class FeedbackRoutesMixin:
                         {
                             "status": "error",
                             "error": "invalid_field_type",
-                            "message": "字段 predefined_options 必须是数组",
+                            "message": msg("feedback.optionsMustBeArray"),
                         }
                     ),
                     400,
@@ -379,7 +380,7 @@ class FeedbackRoutesMixin:
                             {
                                 "status": "error",
                                 "error": "invalid_field_value",
-                                "message": "字段 auto_resubmit_timeout 必须是整数（秒）",
+                                "message": msg("feedback.timeoutMustBeInt"),
                             }
                         ),
                         400,
@@ -418,7 +419,7 @@ class FeedbackRoutesMixin:
                 return jsonify(
                     {
                         "status": "success",
-                        "message": "内容已更新",
+                        "message": msg("feedback.contentUpdated"),
                         "prompt": prompt_snapshot,
                         "prompt_html": prompt_html,
                         "predefined_options": options_snapshot,
@@ -434,7 +435,7 @@ class FeedbackRoutesMixin:
                         {
                             "status": "error",
                             "error": "internal_error",
-                            "message": "服务器内部错误",
+                            "message": msg("feedback.serverError"),
                         }
                     ),
                     500,

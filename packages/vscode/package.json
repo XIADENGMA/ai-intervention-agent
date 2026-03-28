@@ -1,7 +1,7 @@
 {
   "name": "ai-intervention-agent",
-  "displayName": "AI Intervention Agent",
-  "description": "VS Code extension that embeds AI Intervention Agent in the sidebar to handle interactive_feedback workflows with multi-task tabs and countdown timers.",
+  "displayName": "%displayName%",
+  "description": "%description%",
   "version": "1.5.9",
   "icon": "icon.png",
   "engines": {
@@ -44,6 +44,10 @@
     "prism-bootstrap.js",
     "prism.min.css",
     "prism.min.js",
+    "i18n.js",
+    "locales/**",
+    "package.nls.json",
+    "package.nls.zh-CN.json",
     "README.md",
     "README.zh-CN.md"
   ],
@@ -52,7 +56,7 @@
       "activitybar": [
         {
           "id": "aiInterventionAgent",
-          "title": "AI Intervention Agent",
+          "title": "%viewContainer.title%",
           "icon": "activity-icon.svg"
         }
       ]
@@ -69,11 +73,11 @@
     "commands": [
       {
         "command": "ai-intervention-agent.openPanel",
-        "title": "AI Intervention Agent: 打开面板"
+        "title": "%command.openPanel%"
       },
       {
         "command": "ai-intervention-agent.openSettings",
-        "title": "AI Intervention Agent: 打开配置（serverUrl）"
+        "title": "%command.openSettings%"
       }
     ],
     "configuration": {
@@ -82,7 +86,7 @@
         "ai-intervention-agent.serverUrl": {
           "type": "string",
           "default": "http://localhost:8080",
-          "description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8080）"
+          "description": "%config.serverUrl.description%"
         },
         "ai-intervention-agent.logLevel": {
           "type": "string",
@@ -93,7 +97,7 @@
             "debug"
           ],
           "default": "info",
-          "description": "插件日志级别（Output 面板 → AI Intervention Agent）"
+          "description": "%config.logLevel.description%"
         }
       }
     }

@@ -2151,6 +2151,14 @@ class SettingsManager {
     document.getElementById('mobile-optimized').checked = this.settings.mobileOptimized
     document.getElementById('mobile-vibrate').checked = this.settings.mobileVibrate
 
+    // 语言选择器
+    const langSelect = document.getElementById('language-select')
+    if (langSelect) {
+      const currentLang = window.AIIA_I18N ? window.AIIA_I18N.getLang() : 'auto'
+      const cfgLang = '{{ language }}'
+      langSelect.value = cfgLang !== 'auto' ? cfgLang : (currentLang || 'auto')
+    }
+
     // 更新 Bark 设置
     document.getElementById('bark-notification-enabled').checked = this.settings.barkEnabled
     document.getElementById('bark-url').value = this.settings.barkUrl
@@ -2292,6 +2300,22 @@ class SettingsManager {
     }
 
     // 主题切换按钮点击事件 - 已由 theme.js 处理，此处删除避免重复绑定
+
+    // 语言切换
+    const langSelect = document.getElementById('language-select')
+    if (langSelect) {
+      langSelect.addEventListener('change', () => {
+        const newLang = langSelect.value
+        if (window.AIIA_I18N) {
+          if (newLang === 'auto') {
+            window.AIIA_I18N.setLang(window.AIIA_I18N.detectLang())
+          } else {
+            window.AIIA_I18N.setLang(newLang)
+          }
+          window.AIIA_I18N.translateDOM()
+        }
+      })
+    }
 
     // 设置面板背景点击关闭
     document.addEventListener('click', e => {

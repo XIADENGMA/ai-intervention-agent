@@ -12,6 +12,7 @@ from flask.typing import ResponseReturnValue
 
 from enhanced_logging import EnhancedLogger
 from file_validator import validate_uploaded_file
+from i18n import msg
 from server import get_task_queue
 
 if TYPE_CHECKING:
@@ -386,7 +387,7 @@ class TaskRoutesMixin:
                 - image_*: 图片文件（可多个，键名以image_开头）
 
             返回值：
-                成功：JSON对象 {"success": true, "message": "反馈已提交"}
+                成功：JSON对象 {"success": true, "message": msg("feedback.submitted")}
                 失败：HTTP 404 + 错误信息（任务不存在）
                       HTTP 500 + 错误信息（其他异常）
 
@@ -491,7 +492,7 @@ class TaskRoutesMixin:
                 task_queue.complete_task(task_id, result)
 
                 logger.info(f"任务 {task_id} 反馈已提交")
-                return jsonify({"success": True, "message": "反馈已提交"})
+                return jsonify({"success": True, "message": msg("feedback.submitted")})
             except Exception as e:
                 logger.error(f"提交任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500

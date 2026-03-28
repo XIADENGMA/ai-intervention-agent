@@ -45,6 +45,8 @@
     "notifyPermission": "Notification permission:",
     "audioStatus": "Audio status:",
     "detecting": "Detecting…",
+    "language": "Interface language",
+    "langAuto": "Auto-detect",
     "configPath": "Current config file path",
     "shortcutSubmit": "Submit feedback:",
     "shortcutInsertCode": "Insert code:",

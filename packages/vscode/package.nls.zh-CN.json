@@ -1,0 +1,9 @@
+{
+  "displayName": "AI Intervention Agent",
+  "description": "在 VS Code 侧边栏集成 AI Intervention Agent，支持 interactive_feedback 交互流程、多任务标签页和倒计时。",
+  "viewContainer.title": "AI Intervention Agent",
+  "command.openPanel": "AI Intervention Agent: 打开面板",
+  "command.openSettings": "AI Intervention Agent: 打开配置（serverUrl）",
+  "config.serverUrl.description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8080）",
+  "config.logLevel.description": "插件日志级别（Output 面板 → AI Intervention Agent）"
+}

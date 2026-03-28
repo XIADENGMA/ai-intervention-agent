@@ -45,6 +45,8 @@
     "notifyPermission": "通知权限：",
     "audioStatus": "音频状态：",
     "detecting": "检测中…",
+    "language": "界面语言",
+    "langAuto": "自动检测",
     "configPath": "当前配置文件路径",
     "shortcutSubmit": "提交反馈：",
     "shortcutInsertCode": "插入代码：",

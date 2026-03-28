@@ -163,6 +163,7 @@ class WebUISectionConfig(BaseModel):
 
     host: SafeStr = "127.0.0.1"
     port: Annotated[int, BeforeValidator(_clamp_int(1, 65535, 8080))] = 8080
+    language: SafeStr = "auto"
     debug: SafeBool = False
     http_request_timeout: Annotated[int, BeforeValidator(_clamp_int(1, 600, 30))] = 30
     http_max_retries: Annotated[int, BeforeValidator(_clamp_int(0, 20, 3))] = 3
