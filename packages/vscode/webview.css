@@ -1059,8 +1059,22 @@ body.vscode-light .no-content-progress-bar {
   outline: none;
 }
 
+.settings-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--vscode-input-border, rgba(127, 127, 127, 0.22));
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  outline: none;
+  font-size: 12px;
+  cursor: pointer;
+  appearance: auto;
+}
+
 .settings-field input[type='text']:focus,
 .settings-field input[type='number']:focus,
+.settings-field select:focus,
 .settings-field textarea:focus {
   border-color: var(--vscode-focusBorder);
 }
@@ -1085,6 +1099,11 @@ body.vscode-light .no-content-progress-bar {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 2px 0;
+}
+
+.settings-field input[readonly] {
+  opacity: 0.7;
+  cursor: default;
 }
 
 .settings-field-hint {

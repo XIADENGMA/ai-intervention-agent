@@ -30,7 +30,15 @@
       "icon": "Bark Icon",
       "iconPlaceholder": "Optional",
       "action": "Bark Action",
-      "actionPlaceholder": "none / URL etc."
+      "actionNone": "None",
+      "actionUrl": "Open URL",
+      "actionCopy": "Copy content"
+    },
+    "config": {
+      "title": "Configuration",
+      "path": "Config file path",
+      "pathPlaceholder": "Loading…",
+      "pathHint": "Actual config.toml path used by the backend service"
     },
     "hint": {
       "loading": "Loading…",

@@ -1206,7 +1206,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 </label>
                 <label class="settings-field">
                     <span class="settings-label">${tl('settings.bark.action')}</span>
-                    <input type="text" id="notifyBarkAction" placeholder="${tl('settings.bark.actionPlaceholder')}">
+                    <select id="notifyBarkAction">
+                        <option value="none">${tl('settings.bark.actionNone')}</option>
+                        <option value="url">${tl('settings.bark.actionUrl')}</option>
+                        <option value="copy">${tl('settings.bark.actionCopy')}</option>
+                    </select>
                 </label>
 
                 <div class="settings-divider"></div>
@@ -1226,6 +1230,15 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     <textarea id="feedbackPromptSuffix" rows="2" maxlength="500" placeholder="${tl('settings.feedback.promptSuffixPlaceholder')}"></textarea>
                 </label>
                 <button class="settings-action secondary" id="settingsResetFeedbackBtn">${tl('settings.feedback.reset')}</button>
+
+                <div class="settings-divider"></div>
+
+                <div class="settings-section-title">${tl('settings.config.title')}</div>
+                <label class="settings-field">
+                    <span class="settings-label">${tl('settings.config.path')}</span>
+                    <input type="text" id="settingsConfigPath" readonly placeholder="${tl('settings.config.pathPlaceholder')}">
+                    <span class="settings-field-hint">${tl('settings.config.pathHint')}</span>
+                </label>
 
                 <div class="settings-divider"></div>
 

@@ -581,12 +581,17 @@
       const resp = await fetch(SERVER_URL + '/api/get-feedback-prompts', { cache: 'no-store' })
       if (!resp.ok) return
       const data = await resp.json()
-      if (data && data.status === 'success' && data.config) {
-        const c = data.config
+      if (data && data.status === 'success') {
         const el = (id, v) => { const e = document.getElementById(id); if (e) e.value = v == null ? '' : String(v) }
-        el('feedbackCountdown', c.frontend_countdown ?? 240)
-        el('feedbackResubmitPrompt', c.resubmit_prompt ?? '')
-        el('feedbackPromptSuffix', c.prompt_suffix ?? '')
+        if (data.config) {
+          const c = data.config
+          el('feedbackCountdown', c.frontend_countdown ?? 240)
+          el('feedbackResubmitPrompt', c.resubmit_prompt ?? '')
+          el('feedbackPromptSuffix', c.prompt_suffix ?? '')
+        }
+        if (data.meta && data.meta.config_file) {
+          el('settingsConfigPath', data.meta.config_file)
+        }
       }
     } catch (e) {
       // 静默失败

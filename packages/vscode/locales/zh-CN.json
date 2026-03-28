@@ -30,7 +30,15 @@
       "icon": "Bark Icon",
       "iconPlaceholder": "可选",
       "action": "Bark Action",
-      "actionPlaceholder": "none / URL 等"
+      "actionNone": "无操作",
+      "actionUrl": "打开链接",
+      "actionCopy": "复制内容"
+    },
+    "config": {
+      "title": "配置",
+      "path": "当前配置文件路径",
+      "pathPlaceholder": "加载中…",
+      "pathHint": "后端服务实际读取的 config.toml 路径"
     },
     "hint": {
       "loading": "加载中…",
