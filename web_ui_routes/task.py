@@ -24,14 +24,22 @@ logger = EnhancedLogger(__name__)
 
 
 class _SSEBus:
-    """线程安全的 SSE 事件总线：TaskQueue 回调 → 所有已连接的 EventSource 客户端"""
+    """线程安全的 SSE 事件总线：TaskQueue 回调 → 所有已连接的 EventSource 客户端
+
+    清理策略：
+    - emit 时：队列满（Full）的立即移除
+    - emit 时：队列积压超过 3/4 容量的也移除（消费者大概率已断开）
+    """
+
+    _QUEUE_MAXSIZE = 64
+    _BACKPRESSURE_THRESHOLD = _QUEUE_MAXSIZE * 3 // 4
 
     def __init__(self) -> None:
         self._subscribers: set[queue.Queue] = set()
         self._lock = threading.Lock()
 
     def subscribe(self) -> queue.Queue:
-        q: queue.Queue = queue.Queue(maxsize=64)
+        q: queue.Queue = queue.Queue(maxsize=self._QUEUE_MAXSIZE)
         with self._lock:
             self._subscribers.add(q)
         return q
@@ -48,6 +56,9 @@ class _SSEBus:
                 try:
                     q.put_nowait(payload)
                 except queue.Full:
+                    dead.append(q)
+                    continue
+                if q.qsize() >= self._BACKPRESSURE_THRESHOLD:
                     dead.append(q)
             for q in dead:
                 self._subscribers.discard(q)

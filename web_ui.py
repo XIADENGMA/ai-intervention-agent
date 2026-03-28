@@ -122,7 +122,7 @@ _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
 _CURRENT_WEB_UI_INSTANCE: Any | None = None
 _NETWORK_SECURITY_CALLBACK_REGISTERED = False
 _NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
-_FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.Lock()
+_FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.RLock()
 
 
 class WebFeedbackUI(
@@ -350,17 +350,18 @@ class WebFeedbackUI(
 
         处理流程：
             1. 检查文本是否为空
-            2. 调用self.md.convert()进行Markdown到HTML转换
-            3. 应用所有启用的扩展（代码高亮、表格、脚注等）
-            4. 返回渲染后的HTML
+            2. 重置 Markdown 实例状态（避免脚注编号、TOC 跨渲染泄漏）
+            3. 调用self.md.convert()进行Markdown到HTML转换
+            4. 应用所有启用的扩展（代码高亮、表格、脚注等）
+            5. 返回渲染后的HTML
 
         注意事项：
             - 空文本返回空字符串（避免None错误）
             - HTML未进行额外的XSS过滤，依赖Markdown库的安全性
-            - Markdown实例状态会累积，重复调用可能有副作用（目录编号等）
         """
         if not text:
             return ""
+        self.md.reset()
         return str(self.md.convert(text))
 
     def setup_routes(self) -> None:
@@ -645,11 +646,13 @@ class WebFeedbackUI(
             exc: TemplateNotFound,
         ) -> ResponseReturnValue:
             logger.error("Jinja2 模板缺失: %s", exc)
+            from markupsafe import escape
+
             return (
                 '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
                 "<title>模板文件未找到</title></head><body>"
                 "<h1>模板文件未找到</h1>"
-                f"<p>无法找到 {str(exc)} 文件，请确保模板文件存在。</p>"
+                f"<p>无法找到 {escape(str(exc))} 文件，请确保模板文件存在。</p>"
                 "</body></html>",
                 500,
             )

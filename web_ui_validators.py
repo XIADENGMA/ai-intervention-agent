@@ -101,8 +101,16 @@ def validate_network_cidr(network_str: Any) -> bool:
         return False
 
 
+def _normalize_ip_str(addr_str: str) -> str:
+    """将 IP 地址字符串规范化（处理 IPv4-mapped IPv6 → IPv4、非标准缩写 → 标准形式）。"""
+    addr = ip_address(addr_str)
+    if hasattr(addr, "ipv4_mapped") and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    return str(addr)
+
+
 def validate_allowed_networks(networks: Any) -> list[str]:
-    """验证并过滤 allowed_networks，空列表时添加回环地址。"""
+    """验证并过滤 allowed_networks（存储规范化形式），空列表时添加回环地址。"""
     if not isinstance(networks, list):
         logger.warning("allowed_networks 不是列表，使用默认值")
         return DEFAULT_ALLOWED_NETWORKS.copy()
@@ -111,9 +119,15 @@ def validate_allowed_networks(networks: Any) -> list[str]:
     invalid_networks: list[str] = []
 
     for network in networks:
-        if validate_network_cidr(network):
-            valid_networks.append(str(network))
-        else:
+        if not network or not isinstance(network, str):
+            invalid_networks.append(str(network))
+            continue
+        try:
+            if "/" in network:
+                valid_networks.append(str(ip_network(network, strict=False)))
+            else:
+                valid_networks.append(_normalize_ip_str(network))
+        except (AddressValueError, ValueError):
             invalid_networks.append(str(network))
 
     if invalid_networks:
@@ -127,7 +141,7 @@ def validate_allowed_networks(networks: Any) -> list[str]:
 
 
 def validate_blocked_ips(ips: Any) -> list[str]:
-    """验证并清理 blocked_ips 列表（支持单个 IP 和 CIDR）。"""
+    """验证并清理 blocked_ips 列表（支持单个 IP 和 CIDR，存储规范化后的形式）。"""
     if not isinstance(ips, list):
         return []
 
@@ -138,10 +152,9 @@ def validate_blocked_ips(ips: Any) -> list[str]:
         if isinstance(ip, str):
             try:
                 if "/" in ip:
-                    ip_network(ip, strict=False)
+                    valid_ips.append(str(ip_network(ip, strict=False)))
                 else:
-                    ip_address(ip)
-                valid_ips.append(ip)
+                    valid_ips.append(_normalize_ip_str(ip))
             except (AddressValueError, ValueError):
                 invalid_ips.append(ip)
         else:

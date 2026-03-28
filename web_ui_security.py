@@ -122,6 +122,14 @@ class SecurityMixin:
     # IP 访问控制
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _normalize_addr(addr_str: str):
+        """规范化 IP 地址，将 IPv4-mapped IPv6 转换为纯 IPv4。"""
+        addr = ip_address(addr_str)
+        if hasattr(addr, "ipv4_mapped") and addr.ipv4_mapped:
+            addr = addr.ipv4_mapped
+        return addr
+
     def _is_ip_allowed(self, client_ip: str) -> bool:
         """根据白名单/黑名单验证客户端 IP 是否允许访问。"""
         cfg = (
@@ -133,10 +141,7 @@ class SecurityMixin:
             return True
 
         try:
-            client_addr = ip_address(client_ip)
-
-            if hasattr(client_addr, "ipv4_mapped") and client_addr.ipv4_mapped:
-                client_addr = client_addr.ipv4_mapped
+            client_addr = self._normalize_addr(client_ip)
 
             blocked_ips = cfg.get("blocked_ips", [])
             for blocked_entry in blocked_ips:
@@ -147,9 +152,10 @@ class SecurityMixin:
                                 f"IP {client_ip} 在黑名单网段 {blocked_entry} 中，拒绝访问"
                             )
                             return False
-                    elif str(client_addr) == blocked_entry:
-                        logger.warning(f"IP {client_ip} 在黑名单中，拒绝访问")
-                        return False
+                    else:
+                        if client_addr == self._normalize_addr(blocked_entry):
+                            logger.warning(f"IP {client_ip} 在黑名单中，拒绝访问")
+                            return False
                 except (AddressValueError, ValueError, TypeError):
                     continue
 
@@ -157,11 +163,10 @@ class SecurityMixin:
             for network_str in allowed_networks:
                 try:
                     if "/" in network_str:
-                        network = ip_network(network_str, strict=False)
-                        if client_addr in network:
+                        if client_addr in ip_network(network_str, strict=False):
                             return True
                     else:
-                        if str(client_addr) == network_str:
+                        if client_addr == self._normalize_addr(network_str):
                             return True
                 except (AddressValueError, ValueError, TypeError) as e:
                     logger.warning(f"无效的网络配置 {network_str}: {e}")
