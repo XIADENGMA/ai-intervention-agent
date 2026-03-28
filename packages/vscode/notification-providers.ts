@@ -1009,6 +1009,7 @@ export class MacOSNativeNotificationProvider {
         const err = e as ExecError
         const msg = err && err.message ? String(err.message) : String(e)
         this._terminalNotifierBin = ''
+        this._terminalNotifierBinPromise = null
         const details = err && err.details && typeof err.details === 'object' ? err.details : {} as Record<string, unknown>
         attempts.push({
           backend: 'terminal-notifier',
