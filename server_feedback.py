@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
@@ -41,71 +43,125 @@ except ImportError as e:
 
 
 async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str, Any]:
-    """通过轮询 HTTP API 等待任务完成（异步版本）"""
+    """SSE 事件驱动 + HTTP 轮询保底等待任务完成。
+
+    双通道并行：SSE 提供 <50ms 实时检测，HTTP 轮询（每 2s）作为 SSE 断连的安全网。
+    任一通道检测到完成即终止另一通道。
+    """
     if timeout > 0:
         timeout = max(timeout, server_config.BACKEND_MIN)
 
     config, _ = service_manager.get_web_ui_config()
     target_host = server_config.get_target_host(config.host)
     api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
+    sse_url = f"http://{target_host}:{config.port}/api/events"
 
     start_time_monotonic = time.monotonic()
-    deadline_monotonic = start_time_monotonic + timeout if timeout > 0 else float("inf")
+    effective_timeout: float | None = float(timeout) if timeout > 0 else None
 
-    if timeout == 0:
-        logger.info(f"等待任务完成: {task_id}, 超时时间: 无限等待")
-    else:
-        logger.info(f"等待任务完成: {task_id}, 超时时间: {timeout}秒（使用单调时间）")
-
-    _POLL_INTERVAL_S = 0.5
-
-    while timeout == 0 or time.monotonic() < deadline_monotonic:
-        try:
-            config_tuple = service_manager.get_web_ui_config()
-            client = service_manager.get_async_client(config_tuple[0])
-            response = await client.get(api_url, timeout=2)
-
-            if response.status_code == 404:
-                logger.warning(f"任务不存在: {task_id}，引导重新调用")
-                return cast(
-                    Dict[str, Any], server_config._make_resubmit_response(as_mcp=False)
-                )
-
-            if response.status_code != 200:
-                logger.warning(f"获取任务状态失败: HTTP {response.status_code}")
-                await asyncio.sleep(_POLL_INTERVAL_S)
-                continue
-
-            try:
-                task_data = response.json()
-            except ValueError as e:
-                logger.warning(f"任务状态响应不是有效 JSON: {e}", exc_info=True)
-                await asyncio.sleep(_POLL_INTERVAL_S)
-                continue
-
-            if not isinstance(task_data, dict):
-                logger.warning(
-                    f"任务状态响应类型异常: {type(task_data)}，已忽略并继续轮询"
-                )
-                await asyncio.sleep(_POLL_INTERVAL_S)
-                continue
-
-            if task_data.get("success") and task_data.get("task"):
-                task = task_data["task"]
-                if isinstance(task, dict):
-                    if task.get("status") == "completed" and task.get("result"):
-                        logger.info(f"任务完成: {task_id}")
-                        return cast(Dict[str, Any], task["result"])
-
-        except httpx.HTTPError as e:
-            logger.warning(f"轮询任务状态失败: {e}", exc_info=True)
-
-        await asyncio.sleep(_POLL_INTERVAL_S)
-
-    elapsed = time.monotonic() - start_time_monotonic
-    logger.error(
-        f"任务超时: {task_id}, 等待时间已超过 {elapsed:.1f} 秒（使用单调时间判断）"
+    logger.info(
+        f"等待任务完成: {task_id}, "
+        f"超时: {'无限等待' if timeout == 0 else f'{timeout}秒'}（SSE + 轮询）"
     )
+
+    completion = asyncio.Event()
+    result_box: list[Any] = [None]
+
+    async def _fetch_result() -> Dict[str, Any] | None:
+        """获取已完成任务的结果，404 返回重调提示。"""
+        try:
+            cfg = service_manager.get_web_ui_config()[0]
+            client = service_manager.get_async_client(cfg)
+            resp = await client.get(api_url, timeout=2)
+            if resp.status_code == 404:
+                return server_config._make_resubmit_response(as_mcp=False)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("success") and data.get("task"):
+                    task = data["task"]
+                    if (
+                        isinstance(task, dict)
+                        and task.get("status") == "completed"
+                        and task.get("result")
+                    ):
+                        return task["result"]
+        except Exception as e:
+            logger.debug(f"获取任务结果失败: {e}")
+        return None
+
+    async def _sse_listener() -> None:
+        """SSE 实时通道：收到 task_changed(completed) 即通知完成。"""
+        try:
+            async with httpx.AsyncClient() as sc:
+                async with sc.stream(
+                    "GET", sse_url, timeout=httpx.Timeout(None, connect=5.0)
+                ) as resp:
+                    logger.debug(f"SSE 连接已建立: {task_id}")
+                    async for line in resp.aiter_lines():
+                        if completion.is_set():
+                            return
+                        stripped = line.strip()
+                        if not stripped.startswith("data: "):
+                            continue
+                        try:
+                            ev = json.loads(stripped[6:])
+                        except (json.JSONDecodeError, ValueError):
+                            continue
+                        if (
+                            ev.get("task_id") == task_id
+                            and ev.get("new_status") == "completed"
+                        ):
+                            logger.info(f"SSE 检测到任务完成: {task_id}")
+                            r = await _fetch_result()
+                            if r is not None:
+                                result_box[0] = r
+                            completion.set()
+                            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug(f"SSE 监听失败（依赖轮询保底）: {e}")
+
+    async def _poll_fallback() -> None:
+        """HTTP 轮询保底：每 2s 检查一次，SSE 断开时仍能检测完成。"""
+        _INTERVAL = 2.0
+        while not completion.is_set():
+            r = await _fetch_result()
+            if r is not None:
+                result_box[0] = r
+                completion.set()
+                return
+            try:
+                await asyncio.wait_for(completion.wait(), timeout=_INTERVAL)
+                return
+            except asyncio.TimeoutError:
+                pass
+
+    sse_task = asyncio.create_task(_sse_listener())
+    poll_task = asyncio.create_task(_poll_fallback())
+
+    try:
+        await asyncio.wait_for(completion.wait(), timeout=effective_timeout)
+    except asyncio.TimeoutError:
+        elapsed = time.monotonic() - start_time_monotonic
+        logger.error(f"任务超时: {task_id}, 等待 {elapsed:.1f}s")
+        return cast(Dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
+    finally:
+        sse_task.cancel()
+        poll_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sse_task
+        with contextlib.suppress(asyncio.CancelledError):
+            await poll_task
+
+    if result_box[0] is not None:
+        logger.info(f"任务完成: {task_id}")
+        return cast(Dict[str, Any], result_box[0])
+
+    r = await _fetch_result()
+    if r is not None:
+        return cast(Dict[str, Any], r)
+
     return cast(Dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
 
 
