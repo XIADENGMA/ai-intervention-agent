@@ -47,9 +47,21 @@ def _load_json_object(text: str, *, label: str) -> dict[str, object] | None:
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(content, encoding="utf-8")
-    os.replace(tmp, path)
+    import tempfile
+
+    fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _replace_first(

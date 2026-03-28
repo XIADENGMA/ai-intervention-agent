@@ -93,6 +93,7 @@ include = [
     "/task_queue.py",
     "/exceptions.py",
     "/server_config.py",
+    "/i18n.py",
     "/config_modules",
     "/web_ui_routes",
     "/config.toml.default",
@@ -113,10 +114,16 @@ disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
 module = [
+    "flasgger",
+    "flasgger.*",
     "flask_compress",
     "flask_compress.*",
     "flask_cors",
     "flask_cors.*",
+    "flask_limiter",
+    "flask_limiter.*",
+    "loguru",
+    "loguru.*",
     "markdown",
     "markdown.*",
     "plyer",
@@ -138,6 +145,7 @@ dev = [
     "rjsmin>=1.2.5",
     "ruff>=0.8.0",
     "ty",
+    # NOTE: 与 [project.optional-dependencies].dev 保持同步
 ]
 
 [tool.ruff]

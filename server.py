@@ -86,13 +86,21 @@ try:
 
     class SilentConsole(rich_console_module.Console):
         def __init__(self, *args, **kwargs):
+            for k in (
+                "file",
+                "force_terminal",
+                "force_jupyter",
+                "force_interactive",
+                "quiet",
+            ):
+                kwargs.pop(k, None)
             super().__init__(
+                *args,
                 file=_devnull,
                 force_terminal=False,
                 force_jupyter=False,
                 force_interactive=False,
                 quiet=True,
-                *args,
                 **kwargs,
             )
 

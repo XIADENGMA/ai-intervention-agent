@@ -469,5 +469,4 @@ def validate_uploaded_file(
 
 def is_safe_image_file(file_data: bytes, filename: str) -> bool:
     """便捷函数：返回文件是否通过验证"""
-    result = validate_uploaded_file(file_data, filename)
-    return result["valid"] and len(result["errors"]) == 0
+    return validate_uploaded_file(file_data, filename)["valid"]
