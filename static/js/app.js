@@ -47,6 +47,34 @@
   }
 })()
 
+// ==================================================================
+// 全局错误兜底：捕获未处理的 JS 异常和 Promise 拒绝
+// ==================================================================
+window.addEventListener('error', function (event) {
+  console.error('[全局错误]', event.error || event.message)
+})
+window.addEventListener('unhandledrejection', function (event) {
+  console.error('[未处理的 Promise 拒绝]', event.reason)
+})
+
+// ==================================================================
+// 带超时的 fetch 包装（防止网络异常时无限等待）
+// ==================================================================
+function fetchWithTimeout(url, options, timeoutMs) {
+  if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
+    return fetch(url, options)
+  }
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    var merged = Object.assign({}, options || {})
+    merged.signal = AbortSignal.timeout(timeoutMs)
+    return fetch(url, merged)
+  }
+  var controller = new AbortController()
+  var timer = setTimeout(function () { controller.abort() }, timeoutMs)
+  var merged = Object.assign({}, options || {}, { signal: controller.signal })
+  return fetch(url, merged).finally(function () { clearTimeout(timer) })
+}
+
 // 主题管理器已在 theme.js 中定义和初始化
 // 此处不再重复定义，避免 CSP nonce 和重复声明问题
 
@@ -487,7 +515,7 @@ function processStrikethrough(container) {
 // 加载配置
 async function loadConfig() {
   try {
-    const response = await fetch('/api/config')
+    const response = await fetchWithTimeout('/api/config', undefined, 10000)
     config = await response.json()
 
     // 检查是否有有效内容
@@ -896,10 +924,10 @@ async function submitFeedback() {
     const submitUrl = currentTaskId ? `/api/tasks/${currentTaskId}/submit` : '/api/submit'
     console.log(`使用提交端点: ${submitUrl}`)
 
-    const response = await fetch(submitUrl, {
+    const response = await fetchWithTimeout(submitUrl, {
       method: 'POST',
-      body: formData // 不设置 Content-Type，让浏览器自动设置 multipart/form-data
-    })
+      body: formData
+    }, 30000)
 
     const result = await response.json()
 
@@ -967,12 +995,12 @@ async function closeInterface() {
     // 停止轮询
     stopContentPolling()
 
-    const response = await fetch('/api/close', {
+    const response = await fetchWithTimeout('/api/close', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       }
-    })
+    }, 10000)
 
     const result = await response.json()
     if (response.ok) {

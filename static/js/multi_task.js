@@ -173,7 +173,7 @@ var autoSubmitAttempted = window.autoSubmitAttempted
  */
 async function fetchFeedbackPromptsFresh() {
   try {
-    const resp = await fetch('/api/get-feedback-prompts', { cache: 'no-store' })
+    const resp = await fetchWithTimeout('/api/get-feedback-prompts', { cache: 'no-store' }, 10000)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json()
     if (data && data.status === 'success' && data.config) {
@@ -1194,7 +1194,7 @@ async function switchTask(taskId) {
 
   try {
     // 后台执行激活请求（不阻塞 UI）
-    fetch(`/api/tasks/${taskId}/activate`, { method: 'POST' })
+    fetchWithTimeout(`/api/tasks/${taskId}/activate`, { method: 'POST' }, 10000)
       .then(res => res.json())
       .then(data => {
         if (!data.success) {
@@ -1307,7 +1307,7 @@ function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
  */
 async function loadTaskDetails(taskId) {
   try {
-    const response = await fetch(`/api/tasks/${taskId}`)
+    const response = await fetchWithTimeout(`/api/tasks/${taskId}`, undefined, 10000)
     const data = await response.json()
 
     // 检查任务是否仍然是当前活动任务
@@ -1599,7 +1599,7 @@ async function closeTask(taskId) {
   }
 
   try {
-    const response = await fetch(`/api/tasks/${taskId}/close`, { method: 'POST' })
+    const response = await fetchWithTimeout(`/api/tasks/${taskId}/close`, { method: 'POST' }, 10000)
     const data = await response.json()
 
     if (!response.ok || !data.success) {
@@ -1926,10 +1926,10 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       }
     })
 
-    const response = await fetch(`/api/tasks/${taskId}/submit`, {
+    const response = await fetchWithTimeout(`/api/tasks/${taskId}/submit`, {
       method: 'POST',
       body: formData
-    })
+    }, 30000)
 
     const data = await response.json()
 
