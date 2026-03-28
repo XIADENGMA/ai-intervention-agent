@@ -1316,62 +1316,112 @@
   }
 
   // Webview 内 Toast：非侵入式反馈（避免用户误以为无响应）
-  let lastToastKey = ''
-  let lastToastAtMs = 0
+  var toastDedupeMap = new Map()
+  var TOAST_DEDUPE_WINDOW_MS = 700
+  var TOAST_MAX_VISIBLE = 5
+  var TOAST_EXIT_DURATION_MS = 200
+
   function showToast(message, options) {
-    const host = document.getElementById('toastHost')
+    var host = document.getElementById('toastHost')
     if (!host) return
-    const text = String(message || '').trim()
+    var text = String(message || '').trim()
     if (!text) return
 
-    const kindRaw = options && options.kind ? String(options.kind) : 'info'
-    const kind =
+    var kindRaw = options && options.kind ? String(options.kind) : 'info'
+    var kind =
       kindRaw === 'success' || kindRaw === 'warn' || kindRaw === 'error' ? kindRaw : 'info'
-    const timeoutMsRaw = options && typeof options.timeoutMs === 'number' ? options.timeoutMs : 1800
-    const timeoutMs = Math.max(800, Math.min(8000, Math.floor(timeoutMsRaw)))
-    const dedupeKey = options && options.dedupeKey ? String(options.dedupeKey) : kind + ':' + text
+    var timeoutMsRaw = options && typeof options.timeoutMs === 'number' ? options.timeoutMs : 1800
+    var timeoutMs = Math.max(800, Math.min(8000, Math.floor(timeoutMsRaw)))
+    var dedupeKey = options && options.dedupeKey ? String(options.dedupeKey) : kind + ':' + text
 
-    const now = Date.now()
-    if (dedupeKey && dedupeKey === lastToastKey && now - lastToastAtMs < 700) {
-      return
+    var now = Date.now()
+    if (dedupeKey) {
+      var lastTime = toastDedupeMap.get(dedupeKey)
+      if (lastTime && now - lastTime < TOAST_DEDUPE_WINDOW_MS) {
+        return
+      }
+      toastDedupeMap.set(dedupeKey, now)
+      if (toastDedupeMap.size > 50) {
+        toastDedupeMap.forEach(function (v, k) {
+          if (now - v > TOAST_DEDUPE_WINDOW_MS * 2) toastDedupeMap.delete(k)
+        })
+      }
     }
-    lastToastKey = dedupeKey
-    lastToastAtMs = now
 
-    const el = document.createElement('div')
+    var existing = host.querySelectorAll('.toast:not(.toast-removing)')
+    if (existing.length >= TOAST_MAX_VISIBLE) {
+      try {
+        var oldest = existing[0]
+        if (oldest && oldest._toastRemove) oldest._toastRemove()
+      } catch (e) {
+        // 忽略
+      }
+    }
+
+    var el = document.createElement('div')
     el.className = 'toast ' + kind
     el.textContent = text
     el.setAttribute('role', 'status')
     el.setAttribute('aria-live', 'polite')
 
-    let removed = false
-    const remove = () => {
+    var removed = false
+    var remainingMs = timeoutMs
+    var timerStartedAt = 0
+    var autoRemoveTimer = null
+
+    var remove = function () {
       if (removed) return
       removed = true
+      if (autoRemoveTimer) {
+        clearTimeout(autoRemoveTimer)
+        autoRemoveTimer = null
+      }
       try {
         el.classList.remove('show')
+        el.classList.add('toast-removing')
       } catch (e) {
-        /* 忽略 */
+        // 忽略
       }
-      setTimeout(() => {
+      setTimeout(function () {
         try {
           if (el.parentNode) el.parentNode.removeChild(el)
         } catch (e) {
           // 忽略
         }
-      }, 180)
+      }, TOAST_EXIT_DURATION_MS)
     }
 
-    el.addEventListener('click', () => remove())
+    var startTimer = function () {
+      if (removed || remainingMs <= 0) {
+        if (!removed) remove()
+        return
+      }
+      timerStartedAt = Date.now()
+      autoRemoveTimer = setTimeout(remove, remainingMs)
+    }
+
+    var pauseTimer = function () {
+      if (removed || !autoRemoveTimer) return
+      clearTimeout(autoRemoveTimer)
+      autoRemoveTimer = null
+      var elapsed = Date.now() - timerStartedAt
+      remainingMs = Math.max(0, remainingMs - elapsed)
+    }
+
+    el._toastRemove = remove
+    el.addEventListener('click', function () { remove() })
+    el.addEventListener('mouseenter', pauseTimer)
+    el.addEventListener('mouseleave', startTimer)
+
     host.appendChild(el)
-    requestAnimationFrame(() => {
+    requestAnimationFrame(function () {
       try {
         el.classList.add('show')
       } catch (e) {
-        /* 忽略 */
+        // 忽略
       }
     })
-    setTimeout(remove, timeoutMs)
+    startTimer()
   }
 
   // 文本框：自动高度（Auto-resize），并保留用户手动拖拽的最小高度

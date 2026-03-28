@@ -1234,12 +1234,25 @@
             line-height: 1.35;
             opacity: 0;
             transform: translateY(6px);
-            transition: opacity 0.15s ease, transform 0.15s ease;
+            cursor: pointer;
+            user-select: none;
+            transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.15s ease;
         }
 
         .toast.show {
             opacity: 0.95;
             transform: translateY(0);
+        }
+
+        .toast.show:hover {
+            opacity: 1;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+        }
+
+        .toast.toast-removing {
+            opacity: 0;
+            transform: translateY(-4px);
+            pointer-events: none;
         }
 
         .toast.success {
