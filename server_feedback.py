@@ -160,7 +160,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
 
     r = await _fetch_result()
     if r is not None:
-        return cast(Dict[str, Any], r)
+        return r
 
     return cast(Dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
 

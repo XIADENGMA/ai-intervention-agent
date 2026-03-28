@@ -33,6 +33,7 @@ class FileWatcherMixin:
         _config_change_callbacks: list[Callable[[], None]]
 
         def reload(self) -> None: ...
+        def force_save(self) -> None: ...
 
     def _update_file_mtime(self):
         """更新文件修改时间缓存"""

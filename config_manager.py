@@ -680,9 +680,9 @@ class ConfigManager(
                 dir=str(self.config_file.parent),
             )
             try:
-                if orig_mode is not None:
-                    os.fchmod(fd, orig_mode)
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    if orig_mode is not None:
+                        os.fchmod(f.fileno(), orig_mode)
                     f.write(content)
                     f.flush()
                     os.fsync(f.fileno())

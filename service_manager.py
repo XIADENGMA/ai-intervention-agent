@@ -51,7 +51,7 @@ _config_callbacks_registered: bool = False
 _config_callbacks_lock = threading.Lock()
 
 
-def _close_async_client_best_effort(client: httpx.AsyncClient) -> None:
+def _close_async_client_best_effort(client: httpx.AsyncClient | None) -> None:
     """在同步上下文中尽力关闭异步 HTTP 客户端的连接池。"""
     if client is None or client.is_closed:
         return
@@ -121,6 +121,7 @@ def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
                 )
+    assert _async_client is not None
     return _async_client
 
 
@@ -135,6 +136,7 @@ def get_sync_client(config: WebUIConfig) -> httpx.Client:
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
                 )
+    assert _sync_client is not None
     return _sync_client
 
 
