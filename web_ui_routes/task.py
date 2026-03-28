@@ -99,8 +99,8 @@ def _ensure_sse_callback_registered() -> None:
                 tq.register_status_change_callback(_on_task_status_change)
                 _sse_callback_registered = True
                 logger.info("SSE 事件总线已注册到 TaskQueue")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"SSE 回调注册失败，将退化为轮询模式: {exc}", exc_info=True)
 
 
 class TaskRoutesMixin:
@@ -492,10 +492,13 @@ class TaskRoutesMixin:
                 if not task:
                     return jsonify({"success": False, "error": "任务不存在"}), 404
 
+                server_time = time.time()
+                remaining = task.get_remaining_time()
+
                 return jsonify(
                     {
                         "success": True,
-                        "server_time": time.time(),
+                        "server_time": server_time,
                         "task": {
                             "task_id": task.task_id,
                             "prompt": task.prompt,
@@ -503,9 +506,8 @@ class TaskRoutesMixin:
                             "status": task.status,
                             "created_at": task.created_at.isoformat(),
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
-                            "remaining_time": task.get_remaining_time(),
-                            "deadline": task.created_at.timestamp()
-                            + task.auto_resubmit_timeout,
+                            "remaining_time": remaining,
+                            "deadline": server_time + remaining,
                             "result": task.result,
                         },
                     }
@@ -554,6 +556,44 @@ class TaskRoutesMixin:
                 return jsonify({"success": True, "active_task_id": task_id})
             except Exception as e:
                 logger.error(f"激活任务失败: {e}", exc_info=True)
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
+        @self.app.route("/api/tasks/<task_id>/close", methods=["POST"])
+        @self.limiter.limit("30 per minute")
+        def close_task(task_id: str) -> ResponseReturnValue:
+            """关闭（移除）指定任务
+            ---
+            tags:
+              - Tasks
+            parameters:
+              - name: task_id
+                in: path
+                type: string
+                required: true
+            responses:
+              200:
+                description: 任务已移除
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+              404:
+                description: 任务不存在
+              500:
+                description: 服务器内部错误
+            """
+            try:
+                task_queue = get_task_queue()
+                removed = task_queue.remove_task(task_id)
+
+                if not removed:
+                    return jsonify({"success": False, "error": "任务不存在"}), 404
+
+                logger.info(f"任务 {task_id} 已被用户关闭")
+                return jsonify({"success": True})
+            except Exception as e:
+                logger.error(f"关闭任务失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
         @self.app.route("/api/tasks/<task_id>/submit", methods=["POST"])

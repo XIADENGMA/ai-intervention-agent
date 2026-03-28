@@ -117,10 +117,10 @@ def get_project_version() -> str:
 # 模块级状态（配置热更新回调使用，web_ui_config_sync 通过 lazy import 访问）
 # ============================================================================
 
-_FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = False
+_FEEDBACK_TIMEOUT_CALLBACK_REGISTERED: bool = False
 _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
 _CURRENT_WEB_UI_INSTANCE: Any | None = None
-_NETWORK_SECURITY_CALLBACK_REGISTERED = False
+_NETWORK_SECURITY_CALLBACK_REGISTERED: bool = False
 _NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
 _FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.RLock()
 

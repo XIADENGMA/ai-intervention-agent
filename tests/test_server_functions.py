@@ -584,6 +584,7 @@ class TestEnsureConfigCallbacksRegistered(unittest.TestCase):
             service_manager._config_callbacks_registered = original
 
     def test_exception_does_not_crash(self):
+        """注册失败时不崩溃，但标志位保持 False 以允许下次重试。"""
         original = service_manager._config_callbacks_registered
         service_manager._config_callbacks_registered = False
         try:
@@ -592,7 +593,7 @@ class TestEnsureConfigCallbacksRegistered(unittest.TestCase):
                 side_effect=RuntimeError("no config"),
             ):
                 service_manager._ensure_config_change_callbacks_registered()
-                self.assertTrue(service_manager._config_callbacks_registered)
+                self.assertFalse(service_manager._config_callbacks_registered)
         finally:
             service_manager._config_callbacks_registered = original
 

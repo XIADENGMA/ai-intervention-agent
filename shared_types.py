@@ -59,6 +59,21 @@ def _clamp_int(min_val: int, max_val: int, default: int):
     return _validator
 
 
+def _clamp_int_allow_zero(min_val: int, max_val: int, default: int):
+    """生成一个 BeforeValidator：0 或负值 → 0（禁用），其余钳位到 [min_val, max_val]"""
+
+    def _validator(v: Any) -> int:
+        try:
+            iv = int(float(v)) if not isinstance(v, bool) else int(v)
+        except (TypeError, ValueError):
+            return default
+        if iv <= 0:
+            return 0
+        return max(min_val, min(max_val, iv))
+
+    return _validator
+
+
 def _clamp_float(min_val: float, max_val: float, default: float):
     """生成一个 BeforeValidator：将浮点值钳位到 [min_val, max_val]，失败返回 default"""
 
@@ -203,7 +218,9 @@ class FeedbackSectionConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     backend_max_wait: Annotated[int, BeforeValidator(_clamp_int(10, 7200, 600))] = 600
-    frontend_countdown: Annotated[int, BeforeValidator(_clamp_int(10, 3600, 240))] = 240
+    frontend_countdown: Annotated[
+        int, BeforeValidator(_clamp_int_allow_zero(10, 3600, 240))
+    ] = 240
     resubmit_prompt: SafeStr = "请立即调用 interactive_feedback 工具"
     prompt_suffix: SafeStr = "\n请积极调用 interactive_feedback 工具"
 

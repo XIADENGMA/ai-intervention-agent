@@ -132,7 +132,8 @@ class ValidationUtils {
       errors.push(`文件名过长 (${filename.length} > ${this.MAX_FILENAME_LENGTH})`)
     }
 
-    // 危险字符检查
+    // 危险字符检查（重置 lastIndex 以防 /g 标志累积状态）
+    this.FORBIDDEN_FILENAME_CHARS.lastIndex = 0
     if (this.FORBIDDEN_FILENAME_CHARS.test(filename)) {
       errors.push('文件名包含非法字符')
     }

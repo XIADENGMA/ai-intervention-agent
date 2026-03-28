@@ -459,27 +459,28 @@ function processStrikethrough(container) {
     textNodes.push(node)
   }
 
-  // 处理每个文本节点
+  // 处理每个文本节点（使用 DOM API 避免 innerHTML 注入风险）
   textNodes.forEach(textNode => {
     const text = textNode.textContent
-    // 匹配 ~~删除线~~ 语法，但不匹配代码块中的
     const strikethroughRegex = /~~([^~\n]+?)~~/g
 
-    if (strikethroughRegex.test(text)) {
-      const newHTML = text.replace(strikethroughRegex, '<del>$1</del>')
+    if (!strikethroughRegex.test(text)) return
 
-      // 创建临时容器来解析 HTML
-      const tempDiv = document.createElement('div')
-      tempDiv.innerHTML = newHTML
+    const parts = text.split(/~~([^~\n]+?)~~/)
+    if (parts.length <= 1) return
 
-      // 替换文本节点
-      const fragment = document.createDocumentFragment()
-      while (tempDiv.firstChild) {
-        fragment.appendChild(tempDiv.firstChild)
+    const fragment = document.createDocumentFragment()
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) {
+        if (parts[i]) fragment.appendChild(document.createTextNode(parts[i]))
+      } else {
+        const del = document.createElement('del')
+        del.textContent = parts[i]
+        fragment.appendChild(del)
       }
-
-      textNode.parentNode.replaceChild(fragment, textNode)
     }
+
+    textNode.parentNode.replaceChild(fragment, textNode)
   })
 }
 

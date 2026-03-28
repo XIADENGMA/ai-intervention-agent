@@ -865,6 +865,7 @@ function initializePasteFunction() {
     if (!textarea || document.activeElement !== textarea) return
 
     const filesToAdd = []
+    let matches = []
 
     // 方案 A：优先从 clipboardData.items 获取图片文件（大多数桌面浏览器）
     const items = Array.from(clipboardData.items || [])
@@ -897,7 +898,7 @@ function initializePasteFunction() {
       const combined = `${html}\n${text}`
 
       const dataUriRegex = /data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/g
-      const matches = combined.match(dataUriRegex) || []
+      matches = combined.match(dataUriRegex) || []
 
       for (const dataUri of matches.slice(0, MAX_IMAGE_COUNT)) {
         const file = dataUriToFile(dataUri)

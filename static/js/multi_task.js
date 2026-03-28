@@ -1599,40 +1599,53 @@ async function closeTask(taskId) {
   }
 
   try {
-    // 停止该任务的倒计时
+    const response = await fetch(`/api/tasks/${taskId}/close`, { method: 'POST' })
+    const data = await response.json()
+
+    if (!response.ok || !data.success) {
+      console.error('服务端关闭任务失败:', data.error)
+      if (typeof showStatus === 'function') {
+        showStatus(data.error || _t('status.closeFailed'), 'error')
+      }
+      return
+    }
+
+    // 服务端已移除，清理前端状态
     if (taskCountdowns[taskId]) {
       clearInterval(taskCountdowns[taskId].timer)
       delete taskCountdowns[taskId]
     }
-
-    // 清除该任务保存的所有状态
-    if (taskTextareaContents[taskId] !== undefined) {
-      delete taskTextareaContents[taskId]
-      console.log(`[关闭任务] 已清除任务 ${taskId} 保存的 textarea 内容`)
+    if (window.taskDeadlines[taskId] !== undefined) {
+      delete window.taskDeadlines[taskId]
     }
-    if (taskOptionsStates[taskId] !== undefined) {
-      delete taskOptionsStates[taskId]
-      console.log(`[关闭任务] 已清除任务 ${taskId} 保存的选项勾选状态`)
-    }
-    if (taskImages[taskId] !== undefined) {
-      delete taskImages[taskId]
-      console.log(`[关闭任务] 已清除任务 ${taskId} 保存的图片列表`)
+    delete taskTextareaContents[taskId]
+    delete taskOptionsStates[taskId]
+    delete taskImages[taskId]
+    if (autoSubmitAttempted) {
+      delete autoSubmitAttempted[taskId]
     }
 
-    // 从列表中移除
     currentTasks = currentTasks.filter(t => t.task_id !== taskId)
-
-    // 重新渲染标签页
     renderTaskTabs()
 
-    // 如果关闭的是活动任务，切换到下一个任务
-    if (activeTaskId === taskId && currentTasks.length > 0) {
-      switchTask(currentTasks[0].task_id)
+    if (activeTaskId === taskId) {
+      const nextTask = currentTasks.find(t => t.status !== 'completed')
+      if (nextTask) {
+        switchTask(nextTask.task_id)
+      } else {
+        activeTaskId = null
+        if (typeof showNoContentPage === 'function') {
+          showNoContentPage()
+        }
+      }
     }
 
     console.log(`已关闭任务: ${taskId}`)
   } catch (error) {
     console.error('关闭任务失败:', error)
+    if (typeof showStatus === 'function') {
+      showStatus(_t('status.networkError'), 'error')
+    }
   }
 }
 

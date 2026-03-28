@@ -100,9 +100,9 @@ def _ensure_config_change_callbacks_registered() -> None:
             cfg.register_config_change_callback(
                 _invalidate_runtime_caches_on_config_change
             )
+            _config_callbacks_registered = True
         except Exception as e:
-            logger.debug(f"注册配置变更回调失败（忽略）: {e}")
-        _config_callbacks_registered = True
+            logger.debug(f"注册配置变更回调失败（下次调用时重试）: {e}")
 
 
 # ---------------------------------------------------------------------------

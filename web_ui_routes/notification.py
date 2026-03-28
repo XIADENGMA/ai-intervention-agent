@@ -37,6 +37,7 @@ class NotificationRoutesMixin:
 
     if TYPE_CHECKING:
         app: Flask
+        limiter: Any
 
     def _setup_notification_routes(self) -> None:  # noqa: C901
         @self.app.route("/api/test-bark", methods=["POST"])
@@ -766,4 +767,6 @@ class NotificationRoutesMixin:
 
             except Exception as e:
                 logger.error(f"更新反馈配置失败: {e}", exc_info=True)
-                return jsonify({"status": "error", "message": f"更新失败: {e}"}), 500
+                return jsonify(
+                    {"status": "error", "message": msg("notify.updateFailed")}
+                ), 500
