@@ -92,6 +92,15 @@ if (typeof window.hasLoadedTaskSnapshot === 'undefined') {
 if (typeof window.serverTimeOffset === 'undefined') {
   window.serverTimeOffset = 0 // 服务器时间与本地时间的偏移量（秒）
 }
+function _t(key, params) {
+  try {
+    if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
+      return window.AIIA_I18N.t(key, params)
+    }
+  } catch (_e) { /* noop */ }
+  return key
+}
+
 if (typeof window.taskDeadlines === 'undefined') {
   window.taskDeadlines = {} // 存储每个任务的截止时间戳（服务器时间）
 }
@@ -208,7 +217,7 @@ if (typeof window.updateCountdownDisplay !== 'function') {
     const displaySeconds = typeof seconds === 'number' ? seconds : window.remainingSeconds
 
     if (displaySeconds > 0) {
-      countdownText.textContent = `${displaySeconds} 秒后自动重调`
+      countdownText.textContent = _t('page.countdown', { seconds: displaySeconds })
       countdownContainer.classList.remove('hidden')
     } else {
       countdownContainer.classList.add('hidden')
@@ -975,7 +984,7 @@ function createTaskTab(task) {
       </svg>
       <span class="countdown-number">${remaining}</span>
     `
-    countdownRing.title = `剩余${remaining}秒`
+    countdownRing.title = _t('page.countdown', { seconds: remaining })
 
     tab.appendChild(countdownRing) // 在textSpan之后
   }
@@ -1652,7 +1661,7 @@ function startTaskCountdown(taskId, remaining, total = null) {
         numberSpan.textContent = remaining
       }
 
-      countdownRing.title = `剩余${remaining}秒`
+      countdownRing.title = _t('page.countdown', { seconds: remaining })
     }
 
     // 如果是活动任务，也更新主倒计时
@@ -1947,7 +1956,7 @@ function showNewTaskVisualHint(count) {
     animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), fadeOutUp 0.3s ease-in 2.7s forwards;
     pointer-events: none;
   `
-  hint.innerHTML = `${createSvg}<span>收到 ${count} 个新的交互反馈请求</span>`
+  hint.innerHTML = `${createSvg}<span>${_t('page.noContent.newTasks', { count: count }) || ('Received ' + count + ' new feedback requests')}</span>`
 
   // 添加到页面
   document.body.appendChild(hint)

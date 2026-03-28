@@ -1329,6 +1329,12 @@ class WebFeedbackUI(
             html_content = html_content.replace("{{ version }}", get_project_version())
             html_content = html_content.replace("{{ github_url }}", GITHUB_URL)
 
+            try:
+                ui_lang = get_config().get_section("web_ui").get("language", "auto")
+            except Exception:
+                ui_lang = "auto"
+            html_content = html_content.replace("{{ language }}", ui_lang)
+
             current_dir = Path(__file__).resolve().parent
             css_version = self._get_file_version(
                 current_dir / "static" / "css" / "main.css"

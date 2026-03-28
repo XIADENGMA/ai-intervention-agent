@@ -467,9 +467,12 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
             get_compat_config(web_ui_config, "http_request_timeout", "timeout", 30)
         )
 
+        language = str(web_ui_config.get("language", "auto"))
+
         config = WebUIConfig(
             host=host,
             port=port,
+            language=language,
             timeout=http_timeout,
             max_retries=max_retries,
             retry_delay=retry_delay,

@@ -23,6 +23,15 @@
   } catch (e) {
     // 忽略
   }
+  function t(key, params) {
+    try {
+      var i18n = (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N)
+      if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
+    } catch (_e) { /* noop */ }
+    return key
+  }
+
   const __cfgEl = document.getElementById('aiia-config')
   const SERVER_URL =
     __cfgEl && __cfgEl.getAttribute('data-server-url')
@@ -432,7 +441,7 @@
         }
       } else {
         // 最后兜底：避免再回退 emoji
-        container.textContent = '等待中'
+        container.textContent = t('ui.noContent.waiting')
       }
     } catch (_) {
       // 忽略
@@ -1651,22 +1660,22 @@
 
       if (!ok || !text.trim()) {
         const err =
-          message && message.error ? String(message.error) : '剪贴板为空，请先复制一段代码。'
+          message && message.error ? String(message.error) : t('ui.clipboard.empty')
         vscode.postMessage({ type: 'showInfo', message: err })
         return
       }
 
       const inserted = insertCodeBlockIntoFeedbackTextarea(text, '')
       if (!inserted) {
-        vscode.postMessage({ type: 'showInfo', message: '插入失败：未检测到有效代码' })
+        vscode.postMessage({ type: 'showInfo', message: t('ui.clipboard.noCode') })
         return
       }
 
-      vscode.postMessage({ type: 'showInfo', message: '已插入剪贴板内容' })
+      vscode.postMessage({ type: 'showInfo', message: t('ui.clipboard.inserted') })
     } catch (e) {
       vscode.postMessage({
         type: 'showInfo',
-        message: '插入代码失败：' + (e && e.message ? e.message : String(e))
+        message: t('ui.clipboard.insertFailed', { reason: (e && e.message ? e.message : String(e)) })
       })
       clipboardRequestId = null
       setInsertCodeBtnDisabled(false)
@@ -1905,7 +1914,7 @@
     } catch (error) {
       const msg =
         error && error.name === 'AbortError'
-          ? '请求超时'
+          ? t('settings.hint.timeout')
           : error && error.message
             ? error.message
             : String(error)
@@ -1923,7 +1932,7 @@
   function updateServerStatus(connected) {
     // 状态变化时给出轻量提示（避免无声重试/用户误以为无响应）
     if (typeof updateServerStatus._last === 'boolean' && updateServerStatus._last !== !!connected) {
-      showToast(connected ? '已连接' : '连接断开，正在重试…', {
+      showToast(connected ? t('ui.status.connected') : t('ui.status.disconnectedRetrying'), {
         kind: connected ? 'success' : 'warn',
         timeoutMs: 1600,
         dedupeKey: connected ? 'net:up' : 'net:down'
@@ -1937,10 +1946,10 @@
       light.classList.remove('connected', 'disconnected')
       if (connected) {
         light.classList.add('connected')
-        light.title = '服务器已连接'
+        light.title = t('ui.status.serverConnected')
       } else {
         light.classList.add('disconnected')
-        light.title = '服务器连接断开'
+        light.title = t('ui.status.serverDisconnected')
       }
     }
 
@@ -1953,15 +1962,15 @@
       lightStandalone.classList.remove('connected', 'disconnected')
       if (connected) {
         lightStandalone.classList.add('connected')
-        lightStandalone.title = '服务器已连接'
+        lightStandalone.title = t('ui.status.serverConnected')
       } else {
         lightStandalone.classList.add('disconnected')
-        lightStandalone.title = '服务器连接断开'
+        lightStandalone.title = t('ui.status.serverDisconnected')
       }
     }
 
     if (textStandalone) {
-      textStandalone.textContent = connected ? '已连接' : '连接断开'
+      textStandalone.textContent = connected ? t('ui.status.connected') : t('ui.status.disconnected')
     }
 
     /* 只在服务器已连接时显示加载进度条 */
@@ -2520,7 +2529,7 @@
           remaining +
           '</span>'
 
-        countdown.title = '剩余' + remaining + '秒'
+        countdown.title = t('ui.countdown.remaining', { seconds: remaining })
         tab.appendChild(countdown)
 
         /* 避免重复启动定时器 - 只在倒计时未运行时启动 */
@@ -2556,7 +2565,7 @@
       // 先做本地 UI 立即切换（无网络延迟），再与服务端同步 active_task
       activeTaskId = taskId
       restoreLocalStateForTask(taskId)
-      showToast('切换到任务: ' + taskId, {
+      showToast(t('ui.task.switchedTo', { id: taskId }), {
         kind: 'info',
         timeoutMs: 1200,
         dedupeKey: 'switch:' + taskId
@@ -2622,7 +2631,7 @@
         logError('激活任务失败: HTTP ' + status)
         vscode.postMessage({
           type: 'showInfo',
-          message: '切换任务失败：' + taskId
+          message: t('ui.task.switchFailed', { reason: taskId })
         })
         // 回滚 UI
         if (prevTaskId) {
@@ -2658,11 +2667,11 @@
         (error.name === 'AbortError' || String(error.name || '') === 'AbortError')
       )
       const errMsg =
-        error && error.message ? String(error.message) : isAbort ? '请求超时' : String(error)
+        error && error.message ? String(error.message) : isAbort ? t('settings.hint.timeout') : String(error)
       logError(isAbort ? '激活任务超时：请检查服务端是否可用' : '激活任务失败: ' + errMsg)
       vscode.postMessage({
         type: 'showInfo',
-        message: '切换任务失败：' + errMsg
+        message: t('ui.task.switchFailed', { reason: errMsg })
       })
       // 回滚 UI（尽力而为）
       try {
@@ -2734,7 +2743,7 @@
       numberSpan.textContent = computedRemaining // 只显示数字，无"s"
 
       if (countdownRing) {
-        countdownRing.title = '剩余' + computedRemaining + '秒'
+        countdownRing.title = t('ui.countdown.remaining', { seconds: computedRemaining })
       }
 
       /* 缓存剩余时间用于任务切换时保持倒计时连续性 */
@@ -2893,7 +2902,7 @@
       }
       if (reason !== 'no_content') {
         try {
-          showToast('配置加载失败，已使用任务详情兜底' + (reason ? '（' + reason + '）' : ''), {
+          showToast(reason ? t('ui.toast.configFallbackReason', { reason: reason }) : t('ui.toast.configFallback'), {
             kind: 'warn',
             timeoutMs: 1600,
             dedupeKey: 'config:fallback'
@@ -3187,18 +3196,18 @@
       .then(result => {
         const okUi = Array.isArray(result) ? !!result[1] : false
         if (!okUi) {
-          throw new Error('设置模块加载失败')
+          throw new Error(t('ui.settingsPanel.loadFailed'))
         }
         const ui = getSettingsUiModule()
         if (!ui || typeof ui.openSettings !== 'function') {
-          throw new Error('设置模块不可用')
+          throw new Error(t('ui.settingsPanel.unavailable'))
         }
         return ui.openSettings()
       })
       .catch(e => {
         const msg = e && e.message ? String(e.message) : String(e)
         try {
-          showToast('打开设置失败：' + msg, {
+          showToast(t('ui.settingsPanel.openFailed', { reason: msg }), {
             kind: 'error',
             timeoutMs: 2600,
             dedupeKey: 'settings:open:' + msg.slice(0, 80)
@@ -3228,7 +3237,7 @@
       Promise.resolve()
         .then(() => preloaded.showNewTaskNotification(normalized))
         .catch(() => {
-          postStatusInfo(ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务')
+          postStatusInfo(ids.length === 1 ? t('ui.notification.newTask', { id: ids[0] }) : t('ui.notification.newTasks', { count: ids.length }))
         })
       return
     }
@@ -3244,13 +3253,13 @@
         }
         log('[notifyNewTasks] notify-core 加载失败，回退到 vscode 状态栏通知')
         const msg =
-          ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
+          ids.length === 1 ? t('ui.notification.newTask', { id: ids[0] }) : t('ui.notification.newTasks', { count: ids.length })
         postStatusInfo(msg)
       })
       .catch(() => {
         try {
           const msg =
-            ids.length === 1 ? '新任务已添加: ' + ids[0] : '收到 ' + ids.length + ' 个新任务'
+            ids.length === 1 ? t('ui.notification.newTask', { id: ids[0] }) : t('ui.notification.newTasks', { count: ids.length })
           postStatusInfo(msg)
         } catch (e) {
           // 忽略
@@ -3491,8 +3500,8 @@
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'copy-button'
-    button.setAttribute('aria-label', '复制')
-    button.title = '复制'
+    button.setAttribute('aria-label', t('ui.copy.label'))
+    button.title = t('ui.copy.label')
 
     // Claude 设计风格：复制图标（currentColor）
     const COPY_ICON_SVG =
@@ -3511,18 +3520,18 @@
         await navigator.clipboard.writeText(String(targetText || ''))
         button.classList.add('copied')
         button.classList.remove('error')
-        button.title = '已复制'
+        button.title = t('ui.copy.success')
         setTimeout(() => {
           button.classList.remove('copied')
-          button.title = '复制'
+          button.title = t('ui.copy.label')
         }, 2000)
       } catch (err) {
         button.classList.add('error')
         button.classList.remove('copied')
-        button.title = '复制失败'
+        button.title = t('ui.copy.failed')
         setTimeout(() => {
           button.classList.remove('error')
-          button.title = '复制'
+          button.title = t('ui.copy.label')
         }, 2000)
       }
     })
@@ -3824,7 +3833,7 @@
       if (submitBackoffUntilMs && now < submitBackoffUntilMs) {
         const leftSec = Math.max(1, Math.ceil((submitBackoffUntilMs - now) / 1000))
         submitBtn.disabled = true
-        submitBtn.title = '提交过于频繁，请等待 ' + leftSec + ' 秒'
+        submitBtn.title = t('ui.submit.rateLimited', { seconds: leftSec })
 
         submitBackoffTimer = setTimeout(
           () => {
@@ -3835,7 +3844,7 @@
               if (!b) return
               if (submitInFlight) return
               b.disabled = false
-              b.title = '提交反馈'
+              b.title = t('ui.submit.label')
               b.innerHTML = submitBtnDefaultHtml || SUBMIT_BTN_FALLBACK_HTML
             } catch (e) {
               // 忽略
@@ -3845,7 +3854,7 @@
         )
       } else {
         // 无冷却：恢复默认 title（不强制 enabled，交由调用侧控制）
-        submitBtn.title = '提交反馈'
+        submitBtn.title = t('ui.submit.label')
       }
     } catch (e) {
       // 忽略
@@ -3858,13 +3867,13 @@
     try {
       const now0 = Date.now()
       if (submitInFlight) {
-        showToast('正在提交…', { kind: 'info', timeoutMs: 1200, dedupeKey: 'submit:inflight' })
+        showToast(t('ui.submit.submitting'), { kind: 'info', timeoutMs: 1200, dedupeKey: 'submit:inflight' })
         return null
       }
       if (submitBackoffUntilMs && now0 < submitBackoffUntilMs) {
         const leftSec = Math.max(1, Math.ceil((submitBackoffUntilMs - now0) / 1000))
         applySubmitBackoffUi()
-        showToast('提交过于频繁，请等待 ' + leftSec + ' 秒', {
+        showToast(t('ui.submit.rateLimited', { seconds: leftSec }), {
           kind: 'warn',
           timeoutMs: 1600,
           dedupeKey: 'submit:backoff'
@@ -4008,7 +4017,7 @@
         }
 
         // 显示成功提示
-        showToast('反馈已提交', { kind: 'success', timeoutMs: 1400, dedupeKey: 'submit:ok' })
+        showToast(t('ui.submit.success'), { kind: 'success', timeoutMs: 1400, dedupeKey: 'submit:ok' })
 
         // 重新轮询（使用pollAllData以更新任务列表）
         setTimeout(() => requestImmediateRefresh(), 200)
@@ -4027,9 +4036,9 @@
           applySubmitBackoffUi()
 
           const hint = retryAfter
-            ? '，建议等待 ' + retryAfter + ' 秒后再试'
-            : '，建议等待 ' + cooldownSec + ' 秒后再试'
-          const msg = '提交过于频繁（HTTP 429）' + hint
+            ? t('ui.submit.rateLimitHint', { seconds: retryAfter })
+            : t('ui.submit.rateLimitHint', { seconds: cooldownSec })
+          const msg = t('ui.submit.rateLimited429', { hint: hint })
           try {
             vscode.postMessage({ type: 'log', level: 'warn', message: msg })
           } catch (e) {
@@ -4049,7 +4058,7 @@
           return false
         }
 
-        const msg = '提交失败（HTTP ' + response.status + '）'
+        const msg = t('ui.submit.failed', { status: response.status })
         logError(msg)
       }
       return false
@@ -4137,7 +4146,7 @@
       try {
         const reader = new FileReader()
         reader.onload = () => resolve(String(reader.result || ''))
-        reader.onerror = () => reject(new Error('读取图片失败'))
+        reader.onerror = () => reject(new Error(t('ui.image.readFailed')))
         reader.readAsDataURL(blob)
       } catch (e) {
         reject(e)
@@ -4149,7 +4158,7 @@
     return new Promise((resolve, reject) => {
       const img = new Image()
       img.onload = () => resolve(img)
-      img.onerror = () => reject(new Error('图片解码失败'))
+      img.onerror = () => reject(new Error(t('ui.image.decodeFailed')))
       img.src = dataUrl
     })
   }
@@ -4200,13 +4209,13 @@
 
   async function compressImageToDataURL(file) {
     if (!file || !file.type) {
-      throw new Error('无效的图片文件')
+      throw new Error(t('ui.image.invalid'))
     }
     if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-      throw new Error('不支持的图片格式：' + String(file.type))
+      throw new Error(t('ui.image.unsupportedFormat', { type: String(file.type) }))
     }
     if (typeof file.size === 'number' && file.size > MAX_IMAGE_SIZE) {
-      throw new Error('图片过大：' + (file.size / 1024 / 1024).toFixed(2) + 'MB > 10MB')
+      throw new Error(t('ui.image.tooLarge', { size: (file.size / 1024 / 1024).toFixed(2) }))
     }
 
     // 文件名兜底（剪贴板图片可能没有名字）

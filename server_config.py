@@ -61,11 +61,26 @@ class WebUIConfig(BaseModel):
     RETRY_DELAY_MIN: ClassVar[float] = 0.1
     RETRY_DELAY_MAX: ClassVar[float] = 60.0
 
+    SUPPORTED_LANGS: ClassVar[tuple] = ("auto", "en", "zh-CN")
+
     host: str
     port: int
+    language: str = "auto"
     timeout: int = 30
     max_retries: int = 3
     retry_delay: float = 1.0
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        if v not in cls.SUPPORTED_LANGS:
+            logger.warning(
+                "不支持的语言 '%s'，回退到 'auto'。支持的值: %s",
+                v,
+                ", ".join(cls.SUPPORTED_LANGS),
+            )
+            return "auto"
+        return v
 
     @field_validator("port")
     @classmethod

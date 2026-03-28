@@ -55,6 +55,17 @@
     })
   }
 
+  function t(key, params) {
+    try {
+      var i18n = (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N)
+      if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
+    } catch (e) {
+      // 忽略
+    }
+    return key
+  }
+
   function getNotifyCore() {
     try {
       // eslint-disable-next-line no-undef
@@ -246,7 +257,7 @@
     const core = getNotifyCore()
     if (!core || typeof core.refreshNotificationSettingsFromServer !== 'function') {
       if (!silent && overlayOpen) {
-        setSettingsHint('加载失败：通知核心模块未就绪', true)
+        setSettingsHint(t('settings.hint.coreNotReady'), true)
       }
       return false
     }
@@ -259,8 +270,8 @@
     }
     if (!result || !result.ok) {
       if (!silent && overlayOpen) {
-        const msg = result && result.message ? String(result.message) : '加载失败'
-        setSettingsHint('加载失败：' + msg, true)
+        const msg = result && result.message ? String(result.message) : t('settings.hint.loadFailed')
+        setSettingsHint(t('settings.hint.loadFailedReason', { reason: msg }), true)
       }
       return false
     }
@@ -282,17 +293,16 @@
         populateSettingsForm(next)
         if (!silent) {
           // 更清晰：表示“已从服务端同步”，并自动淡出
-          setSettingsHint('已同步', false, 1200)
+          setSettingsHint(t('settings.hint.synced'), false, 1200)
         }
       }
       return true
     }
 
-    // 有未保存编辑：不覆盖，但提示一次
     if (changed && settingsDirty && !settingsRemoteChangedWhileDirty) {
       settingsRemoteChangedWhileDirty = true
       if (!silent && overlayOpen) {
-        setSettingsHint('检测到配置已更新（当前有未保存修改），为避免覆盖，本次未自动同步', true)
+        setSettingsHint(t('settings.hint.remoteChanged'), true)
       }
     }
 
@@ -315,20 +325,20 @@
   async function openSettings() {
     initUiOnce()
     openSettingsOverlay()
-    setSettingsHint('加载中…', false)
+    setSettingsHint(t('settings.hint.loading'), false)
 
     try {
       // 强制拉一次最新配置并渲染（打开面板时以服务端为准）
       await refreshNotificationSettingsFromServer({ force: true, silent: false })
     } catch (e) {
-      setSettingsHint('加载失败：' + (e && e.message ? e.message : String(e)), true)
+      setSettingsHint(t('settings.hint.loadFailedReason', { reason: (e && e.message ? e.message : String(e)) }), true)
     }
   }
 
   async function saveSettings({ silent = false } = {}) {
     if (!isSettingsOverlayOpen()) return
     if (!SERVER_URL) {
-      if (!silent) setSettingsHint('同步失败：serverUrl 为空', true)
+      if (!silent) setSettingsHint(t('settings.hint.syncFailedNoUrl'), true)
       return
     }
     if (settingsAutoSaveInFlight) {
@@ -352,12 +362,12 @@
       if (mergedHash === lastNotificationSettingsHash) {
         settingsDirty = false
         settingsRemoteChangedWhileDirty = false
-        if (!silent) setSettingsHint('无需同步（未变更）', false, 1200)
+        if (!silent) setSettingsHint(t('settings.hint.noChange'), false, 1200)
         return
       }
 
       if (!silent) {
-        setSettingsHint('同步中…', false)
+        setSettingsHint(t('settings.hint.syncing'), false)
       }
 
       try {
@@ -394,7 +404,7 @@
       const resp = await fetch(SERVER_URL + '/api/update-notification-config', fetchOptions)
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok || !data || data.status !== 'success') {
-        const msg = data && data.message ? data.message : '同步失败（HTTP ' + resp.status + '）'
+        const msg = data && data.message ? data.message : t('settings.hint.syncFailedHttp', { status: resp.status })
         setSettingsHint(msg, true)
         return
       }
@@ -412,10 +422,10 @@
       settingsRemoteChangedWhileDirty = false
 
       // 同步成功：短暂提示后自动隐藏（避免常驻）
-      setSettingsHint('已同步', false, 1200)
+      setSettingsHint(t('settings.hint.synced'), false, 1200)
     } catch (e) {
-      const msg = e && e.name === 'AbortError' ? '请求超时' : e && e.message ? e.message : String(e)
-      setSettingsHint('同步失败：' + msg, true)
+      const msg = e && e.name === 'AbortError' ? t('settings.hint.timeout') : e && e.message ? e.message : String(e)
+      setSettingsHint(t('settings.hint.syncFailed', { reason: msg }), true)
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
       settingsAutoSaveInFlight = false
@@ -433,20 +443,20 @@
     try {
       const updates = collectSettingsForm()
       if (updates && updates.enabled === false) {
-        setSettingsHint('通知已关闭：请先开启“启用通知”', true)
+        setSettingsHint(t('settings.hint.notifyDisabled'), true)
         return
       }
       if (!updates || !updates.macosNativeEnabled) {
-        setSettingsHint('提示：当前未开启“macOS 原生通知”，仍将执行一次测试用于排查…', true, 2000)
+        setSettingsHint(t('settings.hint.macosNotEnabled'), true, 2000)
       } else {
-        setSettingsHint('已触发测试通知：请留意系统通知', false, 2000)
+        setSettingsHint(t('settings.hint.macosTestTriggered'), false, 2000)
       }
 
       const posted = postMessage({
         type: 'notify',
         event: {
-          title: 'AI Intervention Agent 测试',
-          message: '这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。',
+          title: t('settings.test.macosTitle'),
+          message: t('settings.test.macosMessage'),
           trigger: 'immediate',
           types: ['macos_native'],
           metadata: { isTest: true, diagnostic: true, kind: 'test_macos_native' },
@@ -456,25 +466,25 @@
       })
       if (!posted) {
         setSettingsHint(
-          '发送失败：VS Code Webview API 不可用（请尝试关闭/重新打开面板或重载窗口）',
+          t('settings.hint.postFailed'),
           true
         )
         return
       }
     } catch (e) {
-      setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true)
+      setSettingsHint(t('settings.hint.testFailed', { reason: (e && e.message ? e.message : String(e)) }), true)
     }
   }
 
   async function testBark() {
     try {
       if (!SERVER_URL) {
-        setSettingsHint('测试失败：serverUrl 为空', true)
+        setSettingsHint(t('settings.hint.testFailedNoUrl'), true)
         return
       }
 
       const updates = collectSettingsForm()
-      setSettingsHint('测试中…', false)
+      setSettingsHint(t('settings.hint.testing'), false)
       const resp = await fetch(SERVER_URL + '/api/test-bark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -489,15 +499,15 @@
 
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok || !data || data.status !== 'success') {
-        const msg = data && data.message ? data.message : '测试失败（HTTP ' + resp.status + '）'
+        const msg = data && data.message ? data.message : t('settings.hint.testFailedHttp', { status: resp.status })
         setSettingsHint(msg, true)
         return
       }
 
-      setSettingsHint(data.message || '测试通知已发送，请检查设备', false)
-      postStatusInfo(data.message || 'Bark 测试通知已发送')
+      setSettingsHint(data.message || t('settings.hint.barkTestSent'), false)
+      postStatusInfo(data.message || t('settings.hint.barkTestSent'))
     } catch (e) {
-      setSettingsHint('测试失败：' + (e && e.message ? e.message : String(e)), true)
+      setSettingsHint(t('settings.hint.testFailed', { reason: (e && e.message ? e.message : String(e)) }), true)
     }
   }
 

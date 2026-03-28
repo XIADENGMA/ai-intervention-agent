@@ -2927,7 +2927,7 @@
           <button
             class="theme-toggle-btn"
             id="theme-toggle-btn"
-            title="切换主题"
+            data-i18n-title="page.themeToggle" title="切换主题"
             aria-label="切换主题"
           >
             <!-- Claude 风格太阳图标（浅色模式）- 精致线条版 -->
@@ -2973,7 +2973,7 @@
           <button
             class="settings-btn"
             id="settings-btn"
-            title="通知设置"
+            data-i18n-title="page.settingsBtn" title="通知设置"
             aria-label="打开通知设置"
             aria-haspopup="dialog"
             aria-controls="settings-panel"
@@ -3005,7 +3005,7 @@
         class="task-tabs-container hidden"
         id="task-tabs-container"
         role="tablist"
-        aria-label="任务列表"
+        aria-label="任务列表" data-i18n-title="page.taskList"
       >
         <div class="task-tabs" id="task-tabs">
           <!-- 标签页将由 JS 动态生成 -->
@@ -3015,13 +3015,13 @@
       <!-- 无有效内容页面 -->
       <div id="no-content-container" class="no-content-container">
         <div class="no-content-icon" id="hourglass-lottie"></div>
-        <h2 class="no-content-title">暂无交互反馈请求</h2>
-        <p class="no-content-description">等待新的交互反馈请求…</p>
+        <h2 class="no-content-title" data-i18n="page.noContent.title">暂无交互反馈请求</h2>
+        <p class="no-content-description" data-i18n="page.noContent.description">等待新的交互反馈请求…</p>
         <div class="no-content-progress">
           <div class="no-content-progress-bar"></div>
         </div>
         <div class="button-container no-content-buttons" id="no-content-buttons">
-          <button class="btn btn-secondary" id="close-btn" aria-label="关闭 Web UI">
+          <button class="btn btn-secondary" id="close-btn" aria-label="关闭 Web UI" data-i18n-title="page.closeWebUI">
             <!-- Claude 风格关闭图标（X）- 精致线条版 -->
             <svg
               class="btn-icon"
@@ -3072,11 +3072,11 @@
 
             <div class="countdown-container hidden" id="countdown-container">
               <span class="countdown-label">⏰</span>
-              <span class="countdown-text" id="countdown-text">0 秒后自动重调</span>
+              <span class="countdown-text" id="countdown-text" data-i18n="page.countdown">0 秒后自动重调</span>
             </div>
           </div>
 
-          <div class="description markdown-content" id="description">加载中…</div>
+          <div class="description markdown-content" id="description" data-i18n="page.loading">加载中…</div>
 
           <div class="options-container hidden" id="options-container">
             <!-- 预定义选项将在这里动态加载 -->
@@ -3088,7 +3088,7 @@
           <div class="image-preview-container hidden" id="image-preview-container">
             <div class="image-preview-header">
               <span class="image-count-text">已选择 <span id="image-count">0</span> 张图片</span>
-              <button class="clear-all-images-btn" id="clear-all-images-btn" title="清除所有图片">
+              <button class="clear-all-images-btn" id="clear-all-images-btn" data-i18n-title="page.clearAllImages" title="清除所有图片">
                 <!-- Claude 官方垃圾箱图标 -->
                 <svg
                   class="btn-icon"
@@ -3120,8 +3120,8 @@
           <div class="drag-overlay hidden" id="drag-overlay">
             <div class="drag-overlay-content">
               <div class="drag-icon">📁</div>
-              <div class="drag-text">拖放图片到这里</div>
-              <div class="drag-subtext">支持 JPG、PNG、GIF、WEBP 格式</div>
+              <div class="drag-text" data-i18n="page.dragDrop">拖放图片到这里</div>
+              <div class="drag-subtext" data-i18n="page.dragFormat">支持 JPG、PNG、GIF、WEBP 格式</div>
             </div>
           </div>
 
@@ -3161,7 +3161,7 @@
                   </svg>
                   插入代码
                 </h3>
-                <button class="settings-close-btn" id="code-paste-close-btn" type="button" aria-label="关闭"></button>
+                <button class="settings-close-btn" id="code-paste-close-btn" type="button" aria-label="关闭" data-i18n-title="page.closeCodePaste"></button>
               </div>
               <div class="settings-body">
                 <div class="setting-group">
@@ -3174,15 +3174,15 @@
                   <textarea
                     id="code-paste-textarea"
                     class="code-paste-textarea"
-                    placeholder="在此粘贴代码…"
+                    data-i18n-placeholder="page.codePastePlaceholder" placeholder="在此粘贴代码…"
                     spellcheck="false"
                     autocapitalize="off"
                     autocomplete="off"
                     autocorrect="off"
                   ></textarea>
                   <div class="code-paste-actions">
-                    <button class="btn btn-secondary" id="code-paste-cancel-btn" type="button">取消</button>
-                    <button class="btn btn-primary" id="code-paste-insert-btn" type="button">插入</button>
+                    <button class="btn btn-secondary" id="code-paste-cancel-btn" type="button" data-i18n="page.cancel">取消</button>
+                    <button class="btn btn-primary" id="code-paste-insert-btn" type="button" data-i18n="page.insert">插入</button>
                   </div>
                 </div>
               </div>
@@ -3196,7 +3196,7 @@
             <textarea
               class="feedback-textarea"
               id="feedback-text"
-              placeholder="请输入反馈内容…"
+              data-i18n-placeholder="page.feedbackPlaceholder" placeholder="请输入反馈内容…"
             ></textarea>
           </div>
 
@@ -3293,7 +3293,7 @@
             <button
               class="settings-close-btn"
               id="settings-close-btn"
-              aria-label="关闭设置"
+              aria-label="关闭设置" data-i18n-title="page.closeSettings"
             ></button>
           </div>
 
@@ -3322,7 +3322,7 @@
               <div class="setting-item">
                 <label class="setting-label">
                   <input type="checkbox" id="notification-enabled" checked />
-                  <span class="setting-title">启用通知功能</span>
+                  <span class="setting-title" data-i18n="settings.enableNotify">启用通知功能</span>
                 </label>
               </div>
 
@@ -3349,13 +3349,13 @@
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="web-notification-enabled" checked />
-                    <span class="setting-title">启用桌面通知</span>
+                    <span class="setting-title" data-i18n="settings.desktopNotify">启用桌面通知</span>
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="auto-request-permission" checked />
-                    <span class="setting-title">自动请求浏览器通知权限</span>
+                    <span class="setting-title" data-i18n="settings.autoPermission">自动请求浏览器通知权限</span>
                   </label>
                 </div>
               </div>
@@ -3380,18 +3380,18 @@
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="sound-notification-enabled" checked />
-                    <span class="setting-title">声音通知</span>
+                    <span class="setting-title" data-i18n="settings.soundNotify">声音通知</span>
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="sound-mute" />
-                    <span class="setting-title">静音模式</span>
+                    <span class="setting-title" data-i18n="settings.muteMode">静音模式</span>
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">
-                    <span class="setting-title">音量调节</span>
+                    <span class="setting-title" data-i18n="settings.volumeControl">音量调节</span>
                     <input
                       type="range"
                       id="sound-volume"
@@ -3425,13 +3425,13 @@
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="mobile-optimized" checked />
-                    <span class="setting-title">移动设备优化</span>
+                    <span class="setting-title" data-i18n="settings.mobileOptimize">移动设备优化</span>
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="mobile-vibrate" checked />
-                    <span class="setting-title">震动提醒</span>
+                    <span class="setting-title" data-i18n="settings.vibration">震动提醒</span>
                   </label>
                 </div>
               </div>
@@ -3458,7 +3458,7 @@
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="bark-notification-enabled" />
-                    <span class="setting-title">启用 Bark 通知</span>
+                    <span class="setting-title" data-i18n="settings.enableBark">启用 Bark 通知</span>
                   </label>
                 </div>
                 <div class="setting-item">
@@ -3480,14 +3480,14 @@
                       type="text"
                       id="bark-device-key"
                       class="setting-input"
-                      placeholder="请输入 Bark Device Key"
+                      data-i18n-placeholder="settings.barkDeviceKeyPlaceholder" placeholder="请输入 Bark Device Key"
                       value=""
                     />
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label has-input">
-                    <span class="setting-title">图标 URL（可选）</span>
+                    <span class="setting-title" data-i18n="settings.barkIconUrl">图标 URL（可选）</span>
                     <input
                       type="url"
                       id="bark-icon"
@@ -3499,11 +3499,11 @@
                 </div>
                 <div class="setting-item">
                   <label class="setting-label has-input">
-                    <span class="setting-title">点击行为</span>
+                    <span class="setting-title" data-i18n="settings.barkAction">点击行为</span>
                     <select id="bark-action" class="setting-select">
-                      <option value="none">无操作</option>
-                      <option value="url">打开链接</option>
-                      <option value="copy">复制内容</option>
+                      <option value="none" data-i18n="settings.barkActionNone">无操作</option>
+                      <option value="url" data-i18n="settings.barkActionUrl">打开链接</option>
+                      <option value="copy" data-i18n="settings.barkActionCopy">复制内容</option>
                     </select>
                   </label>
                 </div>
@@ -3548,20 +3548,20 @@
                   状态信息
                 </h5>
                 <div class="status-row">
-                  <span>浏览器通知支持：</span>
-                  <span id="browser-support-status">检测中…</span>
+                  <span data-i18n="settings.browserSupport">浏览器通知支持：</span>
+                  <span id="browser-support-status" data-i18n="settings.detecting">检测中…</span>
                 </div>
                 <div class="status-row">
-                  <span>安全上下文：</span>
-                  <span id="notification-secure-context-status">检测中…</span>
+                  <span data-i18n="settings.secureContext">安全上下文：</span>
+                  <span id="notification-secure-context-status" data-i18n="settings.detecting">检测中…</span>
                 </div>
                 <div class="status-row">
-                  <span>通知权限：</span>
-                  <span id="notification-permission-status">检测中…</span>
+                  <span data-i18n="settings.notifyPermission">通知权限：</span>
+                  <span id="notification-permission-status" data-i18n="settings.detecting">检测中…</span>
                 </div>
                 <div class="status-row">
-                  <span>音频状态：</span>
-                  <span id="audio-status">检测中…</span>
+                  <span data-i18n="settings.audioStatus">音频状态：</span>
+                  <span id="audio-status" data-i18n="settings.detecting">检测中…</span>
                 </div>
               </div>
 
@@ -3646,7 +3646,7 @@
             <div class="setting-group">
               <div class="setting-item">
                 <label class="setting-label has-input">
-                  <span class="setting-title">当前配置文件路径</span>
+                  <span class="setting-title" data-i18n="settings.configPath">当前配置文件路径</span>
                   <input
                     type="text"
                     id="config-file-path"
@@ -3683,23 +3683,23 @@
             </h4>
             <div class="setting-group shortcuts-section">
               <div class="status-row">
-                <span>提交反馈：</span>
+                <span data-i18n="settings.shortcutSubmit">提交反馈：</span>
                 <span id="shortcut-submit">Ctrl+Enter</span>
               </div>
               <div class="status-row">
-                <span>插入代码：</span>
+                <span data-i18n="settings.shortcutInsertCode">插入代码：</span>
                 <span id="shortcut-code">Alt+C</span>
               </div>
               <div class="status-row">
-                <span>粘贴图片：</span>
+                <span data-i18n="settings.shortcutPasteImage">粘贴图片：</span>
                 <span id="shortcut-paste">Ctrl+V</span>
               </div>
               <div class="status-row">
-                <span>上传图片：</span>
+                <span data-i18n="settings.shortcutUploadImage">上传图片：</span>
                 <span id="shortcut-upload">Ctrl+U</span>
               </div>
               <div class="status-row">
-                <span>清除图片：</span>
+                <span data-i18n="settings.shortcutClearImage">清除图片：</span>
                 <span id="shortcut-delete">Delete</span>
               </div>
             </div>
@@ -3715,7 +3715,7 @@
                 target="_blank"
                 rel="noopener noreferrer"
                 class="github-link"
-                title="在 GitHub 上查看项目"
+                data-i18n-title="page.githubTitle" title="在 GitHub 上查看项目"
               >
                 <!-- GitHub 图标 - 明确设置尺寸以确保正确渲染 -->
                 <svg
@@ -3755,6 +3755,20 @@
 
     <!-- 📋 多任务管理模块（defer 属性：按顺序异步加载，依赖内联脚本中的函数） -->
     <script defer src="/static/js/multi_task.js" nonce="{{ csp_nonce }}"></script>
+
+    <!-- i18n 国际化模块（必须在 app.js 之前加载） -->
+    <script defer src="/static/js/i18n.js" nonce="{{ csp_nonce }}"></script>
+    <script defer nonce="{{ csp_nonce }}">
+      document.addEventListener('DOMContentLoaded', function() {
+        if (window.AIIA_I18N) {
+          var cfgLang = '{{ language }}';
+          window.AIIA_I18N.init({
+            localeBaseUrl: '/static/locales',
+            lang: cfgLang !== 'auto' ? cfgLang : undefined
+          }).catch(function() {});
+        }
+      });
+    </script>
 
     <!-- 主应用脚本（依赖: mathjax-loader, multi_task, theme, dom-security 等） -->
     <script defer src="/static/js/app.js" nonce="{{ csp_nonce }}"></script>

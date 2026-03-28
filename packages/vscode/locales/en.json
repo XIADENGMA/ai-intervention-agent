@@ -1,0 +1,132 @@
+{
+  "settings": {
+    "title": "Notification Settings",
+    "close": "Close",
+    "enabled": "Enable Notifications",
+    "macosNative": "macOS Native Notification",
+    "autoSave": "Auto-save",
+    "autoSaveTooltip": "Changes are automatically synced to the server",
+    "testNative": "Test Native",
+    "testBark": "Test Bark",
+    "bark": {
+      "enabled": "Bark Notification",
+      "url": "Bark URL",
+      "urlPlaceholder": "https://api.day.app/push",
+      "deviceKey": "Bark Device Key",
+      "deviceKeyPlaceholder": "Required (for testing)",
+      "icon": "Bark Icon",
+      "iconPlaceholder": "Optional",
+      "action": "Bark Action",
+      "actionPlaceholder": "none / URL etc."
+    },
+    "hint": {
+      "loading": "Loading…",
+      "synced": "Synced",
+      "syncing": "Syncing…",
+      "syncFailed": "Sync failed: {{reason}}",
+      "syncFailedNoUrl": "Sync failed: serverUrl is empty",
+      "syncFailedHttp": "Sync failed (HTTP {{status}})",
+      "noChange": "No changes to sync",
+      "loadFailed": "Load failed",
+      "loadFailedReason": "Load failed: {{reason}}",
+      "coreNotReady": "Load failed: notification core module not ready",
+      "remoteChanged": "Config updated remotely (unsaved local changes); skipped auto-sync to prevent overwrite",
+      "notifyDisabled": "Notifications are off: enable \"Enable Notifications\" first",
+      "macosNotEnabled": "Note: macOS Native Notification is off; running a diagnostic test anyway…",
+      "macosTestTriggered": "Test notification sent: check your system notifications",
+      "postFailed": "Send failed: VS Code Webview API unavailable (try reopening the panel or reloading the window)",
+      "testFailed": "Test failed: {{reason}}",
+      "testFailedNoUrl": "Test failed: serverUrl is empty",
+      "testFailedHttp": "Test failed (HTTP {{status}})",
+      "testing": "Testing…",
+      "timeout": "Request timeout",
+      "barkTestSent": "Bark test notification sent, please check your device"
+    },
+    "test": {
+      "macosTitle": "AI Intervention Agent Test",
+      "macosMessage": "This is a macOS native notification test. If you see this, the config is correct."
+    },
+    "footer": {
+      "version": "VS Code Plugin v{{version}}",
+      "github": "GitHub:"
+    }
+  },
+  "ui": {
+    "settingsBtn": "Notification Settings",
+    "connecting": "Connecting to server…",
+    "noContent": {
+      "title": "No feedback requests",
+      "connecting": "Connecting…",
+      "waiting": "Waiting"
+    },
+    "form": {
+      "optionsLabel": "Options (multi-select)",
+      "placeholder": "Enter feedback (paste images supported)…",
+      "insertCode": "Insert code (from clipboard)",
+      "uploadImage": "Upload image",
+      "submit": "Submit feedback"
+    },
+    "toast": {
+      "configFallback": "Config load failed, using task detail fallback",
+      "configFallbackReason": "Config load failed, using task detail fallback ({{reason}})",
+      "submitSuccess": "Feedback submitted",
+      "submitEmpty": "Please enter feedback or select an option",
+      "rateLimited": "Server is busy, please wait a moment"
+    },
+    "status": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "disconnectedRetrying": "Disconnected, retrying…",
+      "serverConnected": "Server connected",
+      "serverDisconnected": "Server disconnected",
+      "serverStatus": "Server connection status"
+    },
+    "countdown": {
+      "remaining": "{{seconds}}s remaining"
+    },
+    "task": {
+      "switchedTo": "Switched to task: {{id}}",
+      "switchFailed": "Switch task failed: {{reason}}"
+    },
+    "clipboard": {
+      "empty": "Clipboard is empty, please copy some code first.",
+      "noCode": "Insert failed: no valid code detected",
+      "inserted": "Clipboard content inserted",
+      "insertFailed": "Insert code failed: {{reason}}"
+    },
+    "settingsPanel": {
+      "loadFailed": "Settings module failed to load",
+      "unavailable": "Settings module unavailable",
+      "openFailed": "Failed to open settings: {{reason}}"
+    },
+    "copy": {
+      "label": "Copy",
+      "success": "Copied",
+      "failed": "Copy failed"
+    },
+    "submit": {
+      "label": "Submit feedback",
+      "submitting": "Submitting…",
+      "rateLimited": "Submitting too frequently, please wait {{seconds}}s",
+      "rateLimited429": "Too many requests (HTTP 429){{hint}}",
+      "rateLimitHint": ", please retry after {{seconds}}s",
+      "failed": "Submit failed (HTTP {{status}})",
+      "success": "Feedback submitted"
+    },
+    "image": {
+      "readFailed": "Failed to read image",
+      "decodeFailed": "Failed to decode image",
+      "invalid": "Invalid image file",
+      "unsupportedFormat": "Unsupported image format: {{type}}",
+      "tooLarge": "Image too large: {{size}}MB > 10MB"
+    },
+    "notification": {
+      "testTitle": "AI Intervention Agent Test",
+      "testBody": "This is a macOS native notification test. If you see this, the config is correct.",
+      "newTask": "New task added: {{id}}",
+      "newTasks": "Received {{count}} new tasks",
+      "feedback": "AI Interaction Feedback",
+      "barkTestSent": "Bark test notification sent"
+    }
+  }
+}

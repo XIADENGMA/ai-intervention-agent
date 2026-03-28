@@ -1,0 +1,132 @@
+{
+  "settings": {
+    "title": "通知设置",
+    "close": "关闭",
+    "enabled": "启用通知",
+    "macosNative": "macOS 原生通知",
+    "autoSave": "自动保存",
+    "autoSaveTooltip": "修改后会自动同步到服务端",
+    "testNative": "测试原生通知",
+    "testBark": "测试 Bark",
+    "bark": {
+      "enabled": "Bark 通知",
+      "url": "Bark URL",
+      "urlPlaceholder": "https://api.day.app/push",
+      "deviceKey": "Bark Device Key",
+      "deviceKeyPlaceholder": "必填（测试需要）",
+      "icon": "Bark Icon",
+      "iconPlaceholder": "可选",
+      "action": "Bark Action",
+      "actionPlaceholder": "none / URL 等"
+    },
+    "hint": {
+      "loading": "加载中…",
+      "synced": "已同步",
+      "syncing": "同步中…",
+      "syncFailed": "同步失败：{{reason}}",
+      "syncFailedNoUrl": "同步失败：serverUrl 为空",
+      "syncFailedHttp": "同步失败（HTTP {{status}}）",
+      "noChange": "无需同步（未变更）",
+      "loadFailed": "加载失败",
+      "loadFailedReason": "加载失败：{{reason}}",
+      "coreNotReady": "加载失败：通知核心模块未就绪",
+      "remoteChanged": "检测到配置已更新（当前有未保存修改），为避免覆盖，本次未自动同步",
+      "notifyDisabled": "通知已关闭：请先开启「启用通知」",
+      "macosNotEnabled": "提示：当前未开启「macOS 原生通知」，仍将执行一次测试用于排查…",
+      "macosTestTriggered": "已触发测试通知：请留意系统通知",
+      "postFailed": "发送失败：VS Code Webview API 不可用（请尝试关闭/重新打开面板或重载窗口）",
+      "testFailed": "测试失败：{{reason}}",
+      "testFailedNoUrl": "测试失败：serverUrl 为空",
+      "testFailedHttp": "测试失败（HTTP {{status}}）",
+      "testing": "测试中…",
+      "timeout": "请求超时",
+      "barkTestSent": "测试通知已发送，请检查设备"
+    },
+    "test": {
+      "macosTitle": "AI Intervention Agent 测试",
+      "macosMessage": "这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。"
+    },
+    "footer": {
+      "version": "VS Code 插件 v{{version}}",
+      "github": "GitHub:"
+    }
+  },
+  "ui": {
+    "settingsBtn": "通知设置",
+    "connecting": "正在连接服务器…",
+    "noContent": {
+      "title": "暂无交互反馈请求",
+      "connecting": "连接中…",
+      "waiting": "等待中"
+    },
+    "form": {
+      "optionsLabel": "选项（可多选）",
+      "placeholder": "请输入反馈内容（支持粘贴图片）…",
+      "insertCode": "插入代码（从剪贴板）",
+      "uploadImage": "上传图片",
+      "submit": "提交反馈"
+    },
+    "toast": {
+      "configFallback": "配置加载失败，已使用任务详情兜底",
+      "configFallbackReason": "配置加载失败，已使用任务详情兜底（{{reason}}）",
+      "submitSuccess": "反馈已提交",
+      "submitEmpty": "请输入反馈内容或选择选项",
+      "rateLimited": "服务器繁忙，请稍后再试"
+    },
+    "status": {
+      "connected": "已连接",
+      "disconnected": "未连接",
+      "disconnectedRetrying": "连接断开，正在重试…",
+      "serverConnected": "服务器已连接",
+      "serverDisconnected": "服务器连接断开",
+      "serverStatus": "服务器连接状态"
+    },
+    "countdown": {
+      "remaining": "剩余{{seconds}}秒"
+    },
+    "task": {
+      "switchedTo": "切换到任务: {{id}}",
+      "switchFailed": "切换任务失败：{{reason}}"
+    },
+    "clipboard": {
+      "empty": "剪贴板为空，请先复制一段代码。",
+      "noCode": "插入失败：未检测到有效代码",
+      "inserted": "已插入剪贴板内容",
+      "insertFailed": "插入代码失败：{{reason}}"
+    },
+    "settingsPanel": {
+      "loadFailed": "设置模块加载失败",
+      "unavailable": "设置模块不可用",
+      "openFailed": "打开设置失败：{{reason}}"
+    },
+    "copy": {
+      "label": "复制",
+      "success": "已复制",
+      "failed": "复制失败"
+    },
+    "submit": {
+      "label": "提交反馈",
+      "submitting": "正在提交…",
+      "rateLimited": "提交过于频繁，请等待 {{seconds}} 秒",
+      "rateLimited429": "提交过于频繁（HTTP 429）{{hint}}",
+      "rateLimitHint": "，建议等待 {{seconds}} 秒后再试",
+      "failed": "提交失败（HTTP {{status}}）",
+      "success": "反馈已提交"
+    },
+    "image": {
+      "readFailed": "读取图片失败",
+      "decodeFailed": "图片解码失败",
+      "invalid": "无效的图片文件",
+      "unsupportedFormat": "不支持的图片格式：{{type}}",
+      "tooLarge": "图片过大：{{size}}MB > 10MB"
+    },
+    "notification": {
+      "testTitle": "AI Intervention Agent 测试",
+      "testBody": "这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。",
+      "newTask": "新任务已添加: {{id}}",
+      "newTasks": "收到 {{count}} 个新任务",
+      "feedback": "AI 交互反馈",
+      "barkTestSent": "Bark 测试通知已发送"
+    }
+  }
+}

@@ -959,6 +959,9 @@ class WebviewProvider {
     const webviewSettingsUiUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview-settings-ui.js')
     )
+    const i18nJsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'i18n.js')
+    )
     const extensionVersion = EXT_VERSION || '0.0.0'
     const githubUrl = EXT_GITHUB_URL || ''
     const githubUrlDisplay = githubUrl ? githubUrl.replace(/^https?:\/\//i, '') : ''
@@ -991,14 +994,59 @@ class WebviewProvider {
       ? safeJsonForInlineScript(noContentHourglassLottieData)
       : 'null'
 
+    // i18n：检测语言并加载对应的 locale 文件
+    let i18nLang = 'en'
+    try {
+      const vsLang = vscode.env.language || ''
+      i18nLang = vsLang.toLowerCase().indexOf('zh') === 0 ? 'zh-CN' : 'en'
+    } catch {
+      i18nLang = 'en'
+    }
+    let i18nLocaleData = null
+    try {
+      const localeText = safeReadTextFile(
+        vscode.Uri.joinPath(this._extensionUri, 'locales', i18nLang + '.json')
+      )
+      i18nLocaleData = localeText ? JSON.parse(localeText) : null
+    } catch {
+      i18nLocaleData = null
+    }
+    if (!i18nLocaleData) {
+      try {
+        const fallbackText = safeReadTextFile(
+          vscode.Uri.joinPath(this._extensionUri, 'locales', 'en.json')
+        )
+        i18nLocaleData = fallbackText ? JSON.parse(fallbackText) : null
+        if (i18nLocaleData) i18nLang = 'en'
+      } catch {
+        i18nLocaleData = null
+      }
+    }
+    const inlineI18nLocaleLiteral = i18nLocaleData
+      ? safeJsonForInlineScript(i18nLocaleData)
+      : 'null'
+    const inlineI18nLangLiteral = safeStringForInlineScript(i18nLang)
+    // 模板渲染辅助：从 locale 数据中解析翻译键
+    const tl = (key) => {
+      if (!i18nLocaleData) return key
+      const parts = String(key).split('.')
+      let node = i18nLocaleData
+      for (const p of parts) {
+        if (!node || typeof node !== 'object') return key
+        node = node[p]
+      }
+      return typeof node === 'string' ? node : key
+    }
+    const htmlLang = i18nLang === 'zh-CN' ? 'zh-CN' : 'en'
+
     return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl} ${cspSource} 'self'; style-src ${cspSource}; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
     <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-no-content-fallback-svg-url="${activityIconUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
-    <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};</script>
+    <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};window.__AIIA_I18N_LANG=${inlineI18nLangLiteral};window.__AIIA_I18N_LOCALE=${inlineI18nLocaleLiteral};</script>
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
     <link rel="stylesheet" href="${webviewCssUri}">
@@ -1008,10 +1056,10 @@ class WebviewProvider {
         <!-- Task tabs with status indicator -->
         <div class="tabs-container hidden" id="tasksTabsContainer">
             <div class="status-indicator">
-                <div class="breathing-light" id="statusLight" title="服务器连接状态"></div>
+                <div class="breathing-light" id="statusLight" title="${tl('ui.status.serverStatus')}"></div>
             </div>
             <!-- Task tabs will be dynamically generated here -->
-            <button class="settings-btn" id="settingsBtn" title="通知设置" aria-label="通知设置">
+            <button class="settings-btn" id="settingsBtn" title="${tl('ui.settingsBtn')}" aria-label="${tl('ui.settingsBtn')}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1024,22 +1072,22 @@ class WebviewProvider {
             <!-- Loading state -->
             <div class="loading hidden" id="loadingState">
                 <div class="spinner"></div>
-                <div>正在连接服务器…</div>
+                <div>${tl('ui.connecting')}</div>
             </div>
 
             <!-- No content state -->
             <div class="no-content" id="noContentState">
-                <button class="settings-btn no-content-settings-btn" id="settingsBtnNoContent" title="通知设置" aria-label="通知设置">
+                <button class="settings-btn no-content-settings-btn" id="settingsBtnNoContent" title="${tl('ui.settingsBtn')}" aria-label="${tl('ui.settingsBtn')}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
                 <div class="no-content-icon" id="hourglass-lottie" aria-hidden="true">🌱</div>
-                <div class="title">暂无交互反馈请求</div>
+                <div class="title">${tl('ui.noContent.title')}</div>
                 <div class="status-indicator-standalone">
-                    <div class="breathing-light" id="statusLightStandalone" title="服务器连接状态"></div>
-                    <span id="statusTextStandalone">连接中…</span>
+                    <div class="breathing-light" id="statusLightStandalone" title="${tl('ui.status.serverStatus')}"></div>
+                    <span id="statusTextStandalone">${tl('ui.noContent.connecting')}</span>
                 </div>
                 <div class="no-content-progress" id="noContentProgress">
                     <div class="no-content-progress-bar"></div>
@@ -1055,7 +1103,7 @@ class WebviewProvider {
 
                     <!-- Predefined options -->
                     <div class="form-section hidden" id="optionsSection">
-                        <div class="form-label">选项（可多选）</div>
+                        <div class="form-label">${tl('ui.form.optionsLabel')}</div>
                         <div class="options-container" id="optionsContainer"></div>
                     </div>
 
@@ -1071,7 +1119,7 @@ class WebviewProvider {
                         <textarea
                             class="feedback-textarea"
                             id="feedbackText"
-                            placeholder="请输入反馈内容（支持粘贴图片）…"
+                            placeholder="${tl('ui.form.placeholder')}"
                         ></textarea>
 
                         <!-- Hidden file input -->
@@ -1079,19 +1127,19 @@ class WebviewProvider {
 
                         <!-- Button group (upload + submit) -->
                         <div class="input-buttons">
-                            <button type="button" class="insert-code-btn" id="insertCodeBtn" title="插入代码（从剪贴板）" aria-label="插入代码">
+                            <button type="button" class="insert-code-btn" id="insertCodeBtn" title="${tl('ui.form.insertCode')}" aria-label="${tl('ui.form.insertCode')}">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                                     <polyline points="16 18 22 12 16 6"></polyline>
                                     <polyline points="8 6 2 12 8 18"></polyline>
                                     <line x1="14" y1="4" x2="10" y2="20"></line>
                                 </svg>
                             </button>
-                            <button type="button" class="upload-btn" id="uploadBtn" title="上传图片" aria-label="上传图片">
+                            <button type="button" class="upload-btn" id="uploadBtn" title="${tl('ui.form.uploadImage')}" aria-label="${tl('ui.form.uploadImage')}">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
                                     <path fill-rule="evenodd" clip-rule="evenodd" d="M3 4.5C3 3.67157 3.67157 3 4.5 3H15.5C16.3284 3 17 3.67157 17 4.5V15.5C17 16.3284 16.3284 17 15.5 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5ZM4.5 4C4.22386 4 4 4.22386 4 4.5V12.2929L6.64645 9.64645C6.84171 9.45118 7.15829 9.45118 7.35355 9.64645L10 12.2929L13.1464 9.14645C13.3417 8.95118 13.6583 8.95118 13.8536 9.14645L16 11.2929V4.5C16 4.22386 15.7761 4 15.5 4H4.5ZM16 12.7071L13.5 10.2071L10.3536 13.3536C10.1583 13.5488 9.84171 13.5488 9.64645 13.3536L7 10.7071L4 13.7071V15.5C4 15.7761 4.22386 16 4.5 16H15.5C15.7761 16 16 15.7761 16 15.5V12.7071ZM7 7.5C7 6.94772 7.44772 6.5 8 6.5C8.55228 6.5 9 6.94772 9 7.5C9 8.05228 8.55228 8.5 8 8.5C7.44772 8.5 7 8.05228 7 7.5Z" fill="currentColor" />
                                 </svg>
                             </button>
-                            <button type="button" class="submit-btn-embedded" id="submitBtn" title="提交反馈" aria-label="提交反馈">
+                            <button type="button" class="submit-btn-embedded" id="submitBtn" title="${tl('ui.form.submit')}" aria-label="${tl('ui.form.submit')}">
                                 <svg class="btn-icon submit-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
                                     <path d="M19.26 9.77C19.91 9.08 20.92 8.91 21.73 9.32L21.89 9.40L21.94 9.43L22.19 9.63C22.20 9.64 22.22 9.65 22.23 9.66L44.63 30.46C45.05 30.86 45.30 31.42 45.30 32.00C45.30 32.44 45.16 32.86 44.91 33.21C44.90 33.23 44.89 33.24 44.88 33.26L44.66 33.50C44.65 33.52 44.64 33.53 44.63 33.54L22.23 54.34C21.38 55.13 20.05 55.08 19.26 54.23C18.47 53.38 18.52 52.05 19.37 51.26L40.12 32.00L19.37 12.74C19.36 12.73 19.35 12.72 19.34 12.70L19.12 12.46C19.11 12.45 19.10 12.43 19.09 12.42C18.52 11.62 18.57 10.52 19.26 9.77Z" fill="currentColor" />
                                 </svg>
@@ -1110,8 +1158,8 @@ class WebviewProvider {
     <div class="settings-overlay hidden" id="settingsOverlay">
         <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true">
             <div class="settings-header">
-                <div class="settings-title">通知设置</div>
-                <button class="settings-close" id="settingsClose" title="关闭" aria-label="关闭">
+                <div class="settings-title">${tl('settings.title')}</div>
+                <button class="settings-close" id="settingsClose" title="${tl('settings.close')}" aria-label="${tl('settings.close')}">
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                         <path d="M5 5L15 15"></path>
                         <path d="M15 5L5 15"></path>
@@ -1120,48 +1168,48 @@ class WebviewProvider {
             </div>
             <div class="settings-body">
                 <label class="settings-toggle">
-                    <span>启用通知</span>
+                    <span>${tl('settings.enabled')}</span>
                     <input type="checkbox" id="notifyEnabled">
                 </label>
                 <label class="settings-toggle">
-                    <span>macOS 原生通知</span>
+                    <span>${tl('settings.macosNative')}</span>
                     <input type="checkbox" id="notifyMacOSNativeEnabled">
                 </label>
 
                 <div class="settings-divider"></div>
 
                 <label class="settings-toggle">
-                    <span>Bark 通知</span>
+                    <span>${tl('settings.bark.enabled')}</span>
                     <input type="checkbox" id="notifyBarkEnabled">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">Bark URL</span>
-                    <input type="text" id="notifyBarkUrl" placeholder="https://api.day.app/push">
+                    <span class="settings-label">${tl('settings.bark.url')}</span>
+                    <input type="text" id="notifyBarkUrl" placeholder="${tl('settings.bark.urlPlaceholder')}">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">Bark Device Key</span>
-                    <input type="text" id="notifyBarkDeviceKey" placeholder="必填（测试需要）">
+                    <span class="settings-label">${tl('settings.bark.deviceKey')}</span>
+                    <input type="text" id="notifyBarkDeviceKey" placeholder="${tl('settings.bark.deviceKeyPlaceholder')}">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">Bark Icon</span>
-                    <input type="text" id="notifyBarkIcon" placeholder="可选">
+                    <span class="settings-label">${tl('settings.bark.icon')}</span>
+                    <input type="text" id="notifyBarkIcon" placeholder="${tl('settings.bark.iconPlaceholder')}">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">Bark Action</span>
-                    <input type="text" id="notifyBarkAction" placeholder="none / URL 等">
+                    <span class="settings-label">${tl('settings.bark.action')}</span>
+                    <input type="text" id="notifyBarkAction" placeholder="${tl('settings.bark.actionPlaceholder')}">
                 </label>
 
                 <div class="settings-actions">
-                    <button class="settings-action secondary" id="settingsTestNativeBtn">测试原生通知</button>
-                    <button class="settings-action secondary" id="settingsTestBarkBtn">测试 Bark</button>
+                    <button class="settings-action secondary" id="settingsTestNativeBtn">${tl('settings.testNative')}</button>
+                    <button class="settings-action secondary" id="settingsTestBarkBtn">${tl('settings.testBark')}</button>
                     <div class="settings-actions-right">
-                        <span class="settings-auto-save" title="修改后会自动同步到服务端">自动保存</span>
+                        <span class="settings-auto-save" title="${tl('settings.autoSaveTooltip')}">${tl('settings.autoSave')}</span>
                     </div>
                 </div>
                 <div class="settings-footer" id="settingsFooter">
-                    <span class="settings-footer-item">VS Code 插件 v${extensionVersion}</span>
+                    <span class="settings-footer-item">${tl('settings.footer.version').replace('{{version}}', extensionVersion)}</span>
                     <span class="settings-footer-sep">·</span>
-                    <span class="settings-footer-item">GitHub:</span>
+                    <span class="settings-footer-item">${tl('settings.footer.github')}</span>
                     <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer">${githubUrlDisplay}</a>
                 </div>
                 <div class="settings-hint" id="settingsHint"></div>
@@ -1173,6 +1221,7 @@ class WebviewProvider {
     <script nonce="${nonce}" src="${prismBootstrapUri}"></script>
     <!-- prism.min.js / marked.min.js 由 webview-ui.js 按需懒加载（首屏更快） -->
 
+        <script nonce="${nonce}" src="${i18nJsUri}"></script>
         <script nonce="${nonce}" src="${webviewHelpersUri}"></script>
         <script nonce="${nonce}" src="${webviewUiUri}"></script>
         <script nonce="${nonce}" src="${webviewNotifyCoreUri}"></script>

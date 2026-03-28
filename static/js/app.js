@@ -52,6 +52,15 @@
 
 let config = null
 
+function t(key, params) {
+  try {
+    if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
+      return window.AIIA_I18N.t(key, params)
+    }
+  } catch (_e) { /* noop */ }
+  return key
+}
+
 // ==================================================================
 // marked.js 安全配置（禁用原生 HTML 渲染）
 // ==================================================================
@@ -167,7 +176,7 @@ function renderSproutFallback(container) {
     `
   } catch (e) {
     // 最后兜底：极端情况下显示文本提示，避免再退化为 emoji
-    container.textContent = '等待中'
+    container.textContent = t('status.waiting')
   }
 }
 
@@ -329,7 +338,7 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
         })
       }
     } else {
-      element.textContent = '加载中…'
+      element.textContent = t('page.loading')
     }
   })
 }
@@ -400,7 +409,7 @@ async function copyCodeToClipboard(preElement, button) {
 
     // 更新按钮状态
     const originalHTML = button.innerHTML
-    button.innerHTML = checkIconSvg + '已复制'
+    button.innerHTML = checkIconSvg + t('status.copied')
     button.classList.add('copied')
 
     // 2秒后恢复原状
@@ -413,7 +422,7 @@ async function copyCodeToClipboard(preElement, button) {
 
     // 显示错误状态
     const originalHTML = button.innerHTML
-    button.innerHTML = errorIconSvg + '复制失败'
+    button.innerHTML = errorIconSvg + t('status.copyFailed')
     button.classList.add('error')
 
     setTimeout(() => {
@@ -524,7 +533,7 @@ async function loadConfig() {
     }
   } catch (error) {
     console.error('加载配置失败:', error)
-    showStatus('加载配置失败', 'error')
+    showStatus(t('status.loadFailed'), 'error')
     throw error // 重新抛出错误，让调用者知道加载失败
   }
 }
@@ -682,7 +691,7 @@ async function insertCodeFromClipboard() {
     }
 
     insertCodeBlockIntoFeedbackTextarea(text)
-    showStatus('代码已插入', 'success')
+    showStatus(t('status.codeInserted'), 'success')
   } catch (error) {
     if (finished) return
     finish()
@@ -732,26 +741,26 @@ function getClipboardFailureHint(error) {
   // 针对常见失败原因给出更明确的提示（尤其是 iOS/HTTP/权限）
   try {
     if (!window.isSecureContext) {
-      return '当前页面为 HTTP（非安全上下文），浏览器可能禁止读取剪贴板。请在下方手动粘贴代码。'
+      return t('status.clipboardHttp')
     }
 
     const name = error && error.name ? String(error.name) : ''
     if (name === 'NotAllowedError') {
-      return '浏览器拒绝读取剪贴板（可能需要权限或仅允许 HTTPS）。请在下方手动粘贴代码。'
+      return t('status.clipboardDenied')
     }
     if (name === 'NotFoundError') {
-      return '未读取到剪贴板内容。请在下方手动粘贴代码。'
+      return t('status.clipboardEmpty')
     }
     if (name === 'Error' && error && error.message === 'ClipboardReadTimeout') {
-      return '浏览器没有及时返回剪贴板内容。请在下方手动粘贴代码。'
+      return t('status.clipboardTimeout')
     }
     if (name === 'Error' && error && error.message === 'ClipboardEmpty') {
-      return '未检测到可插入的剪贴板文本。请在下方手动粘贴代码。'
+      return t('status.clipboardNoText')
     }
   } catch (e) {
     // 忽略：解析失败时走兜底提示文案
   }
-  return '由于浏览器安全限制无法自动读取剪贴板，请在下方手动粘贴代码。'
+  return t('status.clipboardDefault')
 }
 
 function openCodePasteModal(error) {
@@ -760,7 +769,7 @@ function openCodePasteModal(error) {
   const hint = document.getElementById('code-paste-hint')
 
   if (!panel || !textarea) {
-    showStatus('无法读取剪贴板，请手动粘贴代码', 'error')
+    showStatus(t('status.clipboardFailed'), 'error')
     return
   }
 
@@ -826,14 +835,14 @@ async function submitFeedback() {
 
   if (!feedbackText && selectedOptions.length === 0 && selectedImages.length === 0) {
     // 如果没有任何输入，显示错误信息
-    showStatus('请输入反馈内容、选择预定义选项或上传图片', 'error')
+    showStatus(t('status.submitEmpty'), 'error')
     return
   }
 
   try {
     const submitBtn = document.getElementById('submit-btn')
     submitBtn.disabled = true
-    submitBtn.innerHTML = '提交中…'
+    submitBtn.innerHTML = t('status.submitting')
 
     // 使用 FormData 上传文件，避免 base64 编码
     const formData = new FormData()
@@ -899,11 +908,11 @@ async function submitFeedback() {
         showNoContentPage()
       }
     } else {
-      showStatus(result.message || '提交失败', 'error')
+      showStatus(result.message || t('status.submitFailed'), 'error')
     }
   } catch (error) {
     console.error('提交失败:', error)
-    showStatus('网络错误，请重试', 'error')
+    showStatus(t('status.networkError'), 'error')
   } finally {
     const submitBtn = document.getElementById('submit-btn')
     submitBtn.disabled = false
@@ -920,7 +929,7 @@ async function submitFeedback() {
 // 关闭界面 - 简化版本，统一刷新逻辑
 async function closeInterface() {
   try {
-    showStatus('正在关闭 Web UI…', 'info')
+    showStatus(t('status.closingWebUI'), 'info')
 
     // 停止轮询
     stopContentPolling()
@@ -934,13 +943,13 @@ async function closeInterface() {
 
     const result = await response.json()
     if (response.ok) {
-      showStatus('Web UI 已关闭，正在刷新页面…', 'success')
+      showStatus(t('status.closedRefreshing'), 'success')
     } else {
-      showStatus('关闭失败，正在刷新页面…', 'error')
+      showStatus(t('status.closeFailed'), 'error')
     }
   } catch (error) {
     console.error('关闭界面失败:', error)
-    showStatus('关闭界面失败，正在刷新页面…', 'error')
+    showStatus(t('status.closeUIFailed'), 'error')
   }
 
   // 无论成功还是失败，都在2秒后刷新页面
@@ -1773,7 +1782,7 @@ class NotificationManager {
     const maxFlashes = 6
 
     const flashInterval = setInterval(() => {
-      document.title = flashCount % 2 === 0 ? `[通知] ${message}` : originalTitle
+      document.title = flashCount % 2 === 0 ? t('notify.titleFlash', { message: message }) : originalTitle
       flashCount++
 
       if (flashCount >= maxFlashes) {
@@ -2201,45 +2210,45 @@ class SettingsManager {
 
     const browserSupportHtml = notificationManager.isSupported
       ? secureContext === false
-        ? this.getStatusIcon('warning') + '支持（受限）'
-        : this.getStatusIcon('success') + '支持'
-      : this.getStatusIcon('error') + '不支持'
+        ? this.getStatusIcon('warning') + t('env.supportedLimited')
+        : this.getStatusIcon('success') + t('env.supported')
+      : this.getStatusIcon('error') + t('env.notSupported')
 
     let secureContextHtml
     if (secureContext === true) {
-      secureContextHtml = this.getStatusIcon('success') + (origin ? `安全（${origin}）` : '安全')
+      secureContextHtml = this.getStatusIcon('success') + (origin ? t('env.secureOrigin', { origin: origin }) : t('env.secure'))
     } else if (secureContext === false) {
       secureContextHtml =
         this.getStatusIcon('warning') +
-        (origin ? `非安全（${origin}，浏览器原生通知不可用）` : '非安全（浏览器原生通知不可用）')
+        (origin ? t('env.insecureOrigin', { origin: origin }) : t('env.insecure'))
     } else {
-      secureContextHtml = this.getStatusIcon('warning') + '未知'
+      secureContextHtml = this.getStatusIcon('warning') + t('env.unknown')
     }
 
     let permissionHtml
     if (secureContext === false) {
-      permissionHtml = this.getStatusIcon('warning') + '受限（非安全上下文）'
+      permissionHtml = this.getStatusIcon('warning') + t('env.permLimited')
     } else if (notificationManager.permission === 'granted') {
-      permissionHtml = this.getStatusIcon('success') + '已授权'
+      permissionHtml = this.getStatusIcon('success') + t('env.permGranted')
     } else if (notificationManager.permission === 'denied') {
-      permissionHtml = this.getStatusIcon('error') + '已拒绝（请在浏览器网站设置中允许）'
+      permissionHtml = this.getStatusIcon('error') + t('env.permDenied')
     } else {
-      permissionHtml = this.getStatusIcon('warning') + '未请求'
+      permissionHtml = this.getStatusIcon('warning') + t('env.permNotRequested')
     }
 
     // 音频状态中文化
-    let audioStateHtml = this.getStatusIcon('error') + '不可用'
+    let audioStateHtml = this.getStatusIcon('error') + t('env.audioUnavailable')
     if (notificationManager.audioContext) {
       const state = notificationManager.audioContext.state
       switch (state) {
         case 'running':
-          audioStateHtml = this.getStatusIcon('success') + '运行中'
+          audioStateHtml = this.getStatusIcon('success') + t('env.audioRunning')
           break
         case 'suspended':
-          audioStateHtml = this.getStatusIcon('paused') + '已暂停'
+          audioStateHtml = this.getStatusIcon('paused') + t('env.audioPaused')
           break
         case 'closed':
-          audioStateHtml = this.getStatusIcon('error') + '已关闭'
+          audioStateHtml = this.getStatusIcon('error') + t('env.audioClosed')
           break
         default:
           audioStateHtml = this.getStatusIcon('warning') + state
@@ -2468,34 +2477,34 @@ class SettingsManager {
   async testNotification() {
     try {
       await notificationManager.sendNotification(
-        '设置测试',
-        '这是一个测试通知，用于验证当前设置是否正常工作',
+        t('notify.testTitle'),
+        t('notify.testBody'),
         {
           tag: 'settings-test',
           requireInteraction: false
         }
       )
-      showStatus('测试通知已发送', 'success')
+      showStatus(t('status.testSent'), 'success')
     } catch (error) {
       console.error('测试通知失败:', error)
-      showStatus('测试通知失败: ' + error.message, 'error')
+      showStatus(t('status.testFailed') + ': ' + error.message, 'error')
     }
   }
 
   async testBarkNotification() {
     try {
       if (!this.settings.barkEnabled) {
-        showStatus('请先启用 Bark 通知', 'warning')
+        showStatus(t('status.enableBarkFirst'), 'warning')
         return
       }
 
       if (!this.settings.barkUrl || !this.settings.barkDeviceKey) {
-        showStatus('请先配置 Bark URL 和 Device Key', 'warning')
+        showStatus(t('status.configureBark'), 'warning')
         return
       }
 
       // 显示发送中状态
-      showStatus('正在发送 Bark 测试通知…', 'info')
+      showStatus(t('status.sendingBark'), 'info')
 
       // 通过后端API发送Bark通知，避免CORS问题
       const response = await fetch('/api/test-bark', {
@@ -2517,12 +2526,12 @@ class SettingsManager {
         showStatus(result.message, 'success')
         console.log('Bark 通知发送成功:', result)
       } else {
-        showStatus(result.message || 'Bark 通知发送失败', 'error')
+        showStatus(result.message || t('status.barkFailed'), 'error')
         console.error('Bark 通知发送失败:', result)
       }
     } catch (error) {
       console.error('Bark 测试通知失败:', error)
-      showStatus('Bark 测试通知失败: ' + error.message, 'error')
+      showStatus(t('status.barkTestFailed', { reason: error.message }), 'error')
     }
   }
 }
@@ -2943,7 +2952,7 @@ function compressImage(file) {
 async function addImageToList(file) {
   // 验证图片数量
   if (selectedImages.length >= MAX_IMAGE_COUNT) {
-    showStatus(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片`, 'error')
+    showStatus(t('status.maxImages', { count: MAX_IMAGE_COUNT }), 'error')
     return false
   }
 
@@ -2960,7 +2969,7 @@ async function addImageToList(file) {
       img.name === file.name && img.size === file.size && img.lastModified === file.lastModified
   )
   if (isDuplicate) {
-    showStatus('该图片已经添加过了', 'error')
+    showStatus(t('status.imageDuplicate'), 'error')
     return false
   }
 
@@ -3006,7 +3015,7 @@ async function addImageToList(file) {
     return true
   } catch (error) {
     console.error('图片处理失败:', error)
-    showStatus('图片处理失败: ' + error.message, 'error')
+    showStatus(t('status.imageError', { reason: error.message }), 'error')
 
     // 释放可能已创建的预览 URL
     try {
@@ -3199,7 +3208,7 @@ async function handleFileUpload(files) {
 
   // 显示批量处理进度
   if (fileArray.length > 1) {
-    showStatus(`正在处理 ${fileArray.length} 个文件…`, 'info')
+    showStatus(t('status.processing', { count: fileArray.length }), 'info')
   }
 
   // 分批处理文件，避免内存溢出
@@ -3214,7 +3223,7 @@ async function handleFileUpload(files) {
 
         // 更新进度
         if (fileArray.length > 1) {
-          showStatus(`处理进度: ${processed}/${fileArray.length}`, 'info')
+          showStatus(t('status.processProgress', { done: processed, total: fileArray.length }), 'info')
         }
 
         return success
@@ -3317,7 +3326,7 @@ function initializeDragAndDrop() {
       // 验证文件数量限制
       const totalFiles = selectedImages.length + e.dataTransfer.files.length
       if (totalFiles > MAX_IMAGE_COUNT) {
-        showStatus(`最多只能上传 ${MAX_IMAGE_COUNT} 张图片`, 'error')
+        showStatus(t('status.maxImages', { count: MAX_IMAGE_COUNT }), 'error')
         return
       }
 
@@ -3444,7 +3453,7 @@ function initializePasteFunction() {
 
     updateImagePreviewVisibility()
     if (added > 0) {
-      showStatus(`从剪贴板添加了 ${added} 张图片`, 'success')
+      showStatus(t('status.clipboardAdded', { count: added }), 'success')
     }
   }
 
@@ -3610,12 +3619,12 @@ function checkBrowserCompatibility() {
 
   // 关键功能检查
   if (!features.fileAPI) {
-    showStatus('当前浏览器不支持文件 API，部分功能可能无法使用', 'warning')
+    showStatus(t('status.noFileAPI'), 'warning')
     return false
   }
 
   if (!features.canvas) {
-    showStatus('当前浏览器不支持 Canvas，图片压缩功能将被禁用', 'warning')
+    showStatus(t('status.noCanvas'), 'warning')
   }
 
   return true
@@ -3680,7 +3689,7 @@ function initializeImageFeatures() {
     console.log('图片功能初始化完成')
   } catch (error) {
     console.error('图片功能初始化失败:', error)
-    showStatus('图片功能初始化失败，请刷新页面重试', 'error')
+    showStatus(t('status.imageInitFailed'), 'error')
   }
 }
 
@@ -3767,7 +3776,7 @@ function initializeApp() {
       const textarea = document.getElementById('code-paste-textarea')
       const text = textarea ? textarea.value || '' : ''
       if (!text.trim()) {
-        showStatus('请输入要插入的代码', 'error')
+        showStatus(t('status.enterCode'), 'error')
         return
       }
       insertCodeBlockIntoFeedbackTextarea(text)
@@ -3846,10 +3855,10 @@ function initializeApp() {
           requireInteraction: false
         }
       )
-      showStatus('测试通知已发送', 'success')
+      showStatus(t('status.testNotifySent'), 'success')
     } catch (error) {
       console.error('测试通知失败:', error)
-      showStatus('测试通知失败', 'error')
+      showStatus(t('status.testNotifyFailed'), 'error')
     }
   }
 }
