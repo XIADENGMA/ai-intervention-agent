@@ -148,6 +148,11 @@ dev = [
     # NOTE: 与 [project.optional-dependencies].dev 保持同步
 ]
 
+[tool.pytest.ini_options]
+filterwarnings = [
+    "error",
+]
+
 [tool.ruff]
 # 目标 Python 版本
 target-version = "py311"
