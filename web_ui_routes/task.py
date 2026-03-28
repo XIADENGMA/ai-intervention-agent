@@ -87,7 +87,7 @@ _sse_callback_lock = threading.Lock()
 
 def _ensure_sse_callback_registered() -> None:
     """线程安全地注册 SSE 回调（双检查锁定，至多注册一次）。"""
-    global _sse_callback_registered  # noqa: PLW0603
+    global _sse_callback_registered
     if _sse_callback_registered:
         return
     with _sse_callback_lock:
@@ -110,7 +110,7 @@ class TaskRoutesMixin:
         app: Flask
         limiter: Limiter
 
-    def _setup_task_routes(self) -> None:  # noqa: C901
+    def _setup_task_routes(self) -> None:
         from web_ui import (
             _get_default_auto_resubmit_timeout_from_config,
             validate_auto_resubmit_timeout,
@@ -192,6 +192,9 @@ class TaskRoutesMixin:
                             type: number
                           remaining_time:
                             type: number
+                        deadline:
+                            type: number
+                            description: 截止时间戳 (server_time + remaining_time)
                     stats:
                       type: object
                       properties:
@@ -456,6 +459,8 @@ class TaskRoutesMixin:
                   properties:
                     success:
                       type: boolean
+                    server_time:
+                      type: number
                     task:
                       type: object
                       properties:
@@ -473,8 +478,13 @@ class TaskRoutesMixin:
                         created_at:
                           type: string
                           format: date-time
+                        auto_resubmit_timeout:
+                          type: number
                         remaining_time:
                           type: number
+                        deadline:
+                          type: number
+                          description: 截止时间戳 (server_time + remaining_time)
                         result:
                           type: object
               404:
@@ -538,13 +548,12 @@ class TaskRoutesMixin:
                       type: boolean
                     active_task_id:
                       type: string
+              400:
+                description: 切换任务失败
               404:
                 description: 任务不存在
-                失败：HTTP 400 + 错误信息（切换失败）
-                      HTTP 500 + 错误信息（其他异常）
-
-            频率限制：
-                - 60次/分钟（防止频繁切换）
+              500:
+                description: 服务器内部错误
             """
             try:
                 task_queue = get_task_queue()
@@ -632,6 +641,8 @@ class TaskRoutesMixin:
                       type: boolean
                     message:
                       type: string
+              400:
+                description: 请求参数错误（选项格式不正确）
               404:
                 description: 任务不存在
               500:

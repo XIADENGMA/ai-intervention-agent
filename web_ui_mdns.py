@@ -50,12 +50,12 @@ class MdnsMixin:
 
     def _should_enable_mdns(self, mdns_config: dict[str, Any]) -> bool:
         """判断当前是否应启用 mDNS（默认策略：bind_interface 不是 127.0.0.1）"""
-        enabled_raw = mdns_config.get("enabled", None)
+        enabled_raw = mdns_config.get("enabled")
         if isinstance(enabled_raw, bool):
             return enabled_raw
         return self.host not in {"127.0.0.1", "localhost", "::1"}
 
-    def _start_mdns_if_needed(self) -> None:  # noqa: C901
+    def _start_mdns_if_needed(self) -> None:
         """启动 mDNS 发布（失败则降级，不影响 Web UI 启动）"""
         if self._mdns_zeroconf is not None:
             return

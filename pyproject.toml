@@ -154,9 +154,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-filterwarnings = [
-    "error",
-]
+filterwarnings = ["error"]
 
 [tool.ruff]
 # 目标 Python 版本
@@ -165,20 +163,31 @@ target-version = "py311"
 line-length = 88
 
 [tool.ruff.lint]
-# 启用的规则
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade — 自动检测可升级的 Python 语法
+    "SIM",  # flake8-simplify — 简化代码模式
+    "PIE",  # flake8-pie — 各种微小优化
+    "PERF", # perflint — 性能反模式检测
+    "RUF",  # Ruff 自有规则
 ]
-# 忽略的规则
 ignore = [
-    "E501", # 行长度由 formatter 处理
-    "B008", # Field() 在默认参数中调用 - fastmcp 框架用法
-    "B026", # star-arg 解包 - 框架兼容性需要
+    "E501",    # 行长度由 formatter 处理
+    "B008",    # Field() 在默认参数中调用 — fastmcp 框架用法
+    "B026",    # star-arg 解包 — 框架兼容性需要
+    "RUF001",  # 中文项目：字符串中的全角字符非歧义
+    "RUF002",  # 中文项目：文档字符串中的全角字符非歧义
+    "RUF003",  # 中文项目：注释中的全角字符非歧义
+    "RUF012",  # Pydantic/dataclass 模型中的可变类属性有意为之
+    "RUF059",  # 解包时用 _ 忽略不需要的变量是惯用写法
+    "SIM105",  # try/except/pass 保持显式异常处理的可读性
+    "SIM117",  # 嵌套 with 语句在 mock 测试中保持可读性
+    "PERF401", # for+append 在格式化字符串场景下比 extend 更清晰
 ]
 
 [tool.ruff.lint.per-file-ignores]

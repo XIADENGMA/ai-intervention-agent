@@ -148,7 +148,7 @@ class NotificationConfig(BaseModel):
     @staticmethod
     def _is_valid_url(url: str) -> bool:
         """验证 URL 格式是否有效"""
-        return url.startswith("http://") or url.startswith("https://")
+        return url.startswith(("http://", "https://"))
 
     @classmethod
     def from_config_file(cls) -> "NotificationConfig":
@@ -936,7 +936,7 @@ class NotificationManager:
             config_mgr = get_config()
 
             # 内部 sound_volume 始终为 0.0-1.0，保存到文件时转为 0-100 整数
-            sound_volume_int = int(round(self.config.sound_volume * 100))
+            sound_volume_int = round(self.config.sound_volume * 100)
 
             # 构建配置字典
             notification_config = {
@@ -1004,7 +1004,7 @@ class NotificationManager:
 
                 # 提供者级别 success_rate（不影响主流程）
                 try:
-                    for _, st in providers_stats.items():
+                    for st in providers_stats.values():
                         attempts = int(st.get("attempts", 0) or 0)
                         success = int(st.get("success", 0) or 0)
                         st["success_rate"] = (
@@ -1023,7 +1023,7 @@ class NotificationManager:
             stats_snapshot = {}
 
         with self._providers_lock:
-            providers = [t.value for t in self._providers.keys()]
+            providers = [t.value for t in self._providers]
 
         return {
             "enabled": self.config.enabled,

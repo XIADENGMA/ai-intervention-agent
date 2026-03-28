@@ -152,7 +152,7 @@ class IOOperationsMixin:
     def restore_config(self, backup_path: str) -> bool:
         """从备份文件恢复配置"""
         try:
-            with open(backup_path, "r", encoding="utf-8") as f:
+            with open(backup_path, encoding="utf-8") as f:
                 backup_data = json.load(f)
 
             if not isinstance(backup_data, dict):

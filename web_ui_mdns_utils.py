@@ -78,13 +78,12 @@ def _is_probably_virtual_interface(ifname: str) -> bool:
     ):
         return True
 
-    if any(
-        token in name
-        for token in ("tun", "tap", "wg", "tailscale", "zerotier", "vpn", "ppp")
-    ):
-        return True
-
-    return False
+    return bool(
+        any(
+            token in name
+            for token in ("tun", "tap", "wg", "tailscale", "zerotier", "vpn", "ppp")
+        )
+    )
 
 
 def _get_default_route_ipv4() -> str | None:

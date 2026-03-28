@@ -1025,11 +1025,13 @@ class TestSaveNetworkSecurityImmediate(unittest.TestCase):
                 "access_control_enabled": True,
             }
 
-            with patch.object(
-                mgr, "_atomic_write_config", side_effect=OSError("denied")
+            with (
+                patch.object(
+                    mgr, "_atomic_write_config", side_effect=OSError("denied")
+                ),
+                self.assertRaises(RuntimeError),
             ):
-                with self.assertRaises(RuntimeError):
-                    mgr._save_network_security_config_immediate(ns)
+                mgr._save_network_security_config_immediate(ns)
 
 
 # ──────────────────────────────────────────────────────────
@@ -1083,7 +1085,7 @@ class TestGetNetworkSecurityConfig(unittest.TestCase):
         }
         mgr._network_security_cache_time = 0
 
-        with patch("builtins.open", side_effect=IOError("disk error")):
+        with patch("builtins.open", side_effect=OSError("disk error")):
             result = mgr.get_network_security_config()
             self.assertEqual(result["bind_interface"], "1.2.3.4")
 
@@ -1092,7 +1094,7 @@ class TestGetNetworkSecurityConfig(unittest.TestCase):
         mgr._network_security_cache = None
         mgr._network_security_cache_time = 0
 
-        with patch("builtins.open", side_effect=IOError("disk error")):
+        with patch("builtins.open", side_effect=OSError("disk error")):
             result = mgr.get_network_security_config()
             self.assertIn("bind_interface", result)
 

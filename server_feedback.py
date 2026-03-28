@@ -92,31 +92,33 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     async def _sse_listener() -> None:
         """SSE 实时通道：收到 task_changed(completed) 即通知完成。"""
         try:
-            async with httpx.AsyncClient() as sc:
-                async with sc.stream(
+            async with (
+                httpx.AsyncClient() as sc,
+                sc.stream(
                     "GET", sse_url, timeout=httpx.Timeout(None, connect=5.0)
-                ) as resp:
-                    logger.debug(f"SSE 连接已建立: {task_id}")
-                    async for line in resp.aiter_lines():
-                        if completion.is_set():
-                            return
-                        stripped = line.strip()
-                        if not stripped.startswith("data: "):
-                            continue
-                        try:
-                            ev = json.loads(stripped[6:])
-                        except (json.JSONDecodeError, ValueError):
-                            continue
-                        if (
-                            ev.get("task_id") == task_id
-                            and ev.get("new_status") == "completed"
-                        ):
-                            logger.info(f"SSE 检测到任务完成: {task_id}")
-                            r = await _fetch_result()
-                            if r is not None:
-                                result_box[0] = r
-                            completion.set()
-                            return
+                ) as resp,
+            ):
+                logger.debug(f"SSE 连接已建立: {task_id}")
+                async for line in resp.aiter_lines():
+                    if completion.is_set():
+                        return
+                    stripped = line.strip()
+                    if not stripped.startswith("data: "):
+                        continue
+                    try:
+                        ev = json.loads(stripped[6:])
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+                    if (
+                        ev.get("task_id") == task_id
+                        and ev.get("new_status") == "completed"
+                    ):
+                        logger.info(f"SSE 检测到任务完成: {task_id}")
+                        r = await _fetch_result()
+                        if r is not None:
+                            result_box[0] = r
+                        completion.set()
+                        return
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -134,7 +136,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             try:
                 await asyncio.wait_for(completion.wait(), timeout=_INTERVAL)
                 return
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     sse_task = asyncio.create_task(_sse_listener())
@@ -142,7 +144,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
 
     try:
         await asyncio.wait_for(completion.wait(), timeout=effective_timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         elapsed = time.monotonic() - start_time_monotonic
         logger.error(f"任务超时: {task_id}, 等待 {elapsed:.1f}s")
         return cast(dict[str, Any], server_config._make_resubmit_response(as_mcp=False))

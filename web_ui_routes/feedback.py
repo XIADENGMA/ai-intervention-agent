@@ -40,7 +40,7 @@ class FeedbackRoutesMixin:
 
         def render_markdown(self, text: str) -> str: ...
 
-    def _setup_feedback_routes(self) -> None:  # noqa: C901
+    def _setup_feedback_routes(self) -> None:
         from web_ui import (
             _get_default_auto_resubmit_timeout_from_config,
             validate_auto_resubmit_timeout,
@@ -243,12 +243,27 @@ class FeedbackRoutesMixin:
                     status:
                       type: string
                       example: success
-
-            返回值：
-                JSON对象：
-                    - status: "success"
-                    - message: msg("feedback.contentUpdated")
-                    - prompt / prompt_html / predefined_options / task_id / auto_resubmit_timeout / has_content
+                    message:
+                      type: string
+                    prompt:
+                      type: string
+                    prompt_html:
+                      type: string
+                      description: Markdown 渲染后的 HTML
+                    predefined_options:
+                      type: array
+                      items:
+                        type: string
+                    task_id:
+                      type: string
+                    auto_resubmit_timeout:
+                      type: number
+                    has_content:
+                      type: boolean
+              400:
+                description: 请求参数错误
+              500:
+                description: 服务器内部错误
             """
             try:
                 raw = request.get_json(silent=False)

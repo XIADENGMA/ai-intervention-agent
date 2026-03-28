@@ -175,7 +175,7 @@ class SettingsManager {
     if (langSelect) {
       const currentLang = window.AIIA_I18N ? window.AIIA_I18N.getLang() : 'auto'
       const cfgLang = window.AIIA_CONFIG_LANG || 'auto'
-      langSelect.value = cfgLang !== 'auto' ? cfgLang : (currentLang || 'auto')
+      langSelect.value = cfgLang !== 'auto' ? cfgLang : currentLang || 'auto'
     }
 
     // 更新 Bark 设置
@@ -243,7 +243,9 @@ class SettingsManager {
 
     let secureContextHtml
     if (secureContext === true) {
-      secureContextHtml = this.getStatusIcon('success') + (origin ? t('env.secureOrigin', { origin: origin }) : t('env.secure'))
+      secureContextHtml =
+        this.getStatusIcon('success') +
+        (origin ? t('env.secureOrigin', { origin: origin }) : t('env.secure'))
     } else if (secureContext === false) {
       secureContextHtml =
         this.getStatusIcon('warning') +
@@ -328,7 +330,7 @@ class SettingsManager {
     const feedbackSuffix = document.getElementById('feedback-prompt-suffix')
 
     let feedbackSaveTimer = null
-    const debounceSaveFeedback = (updates) => {
+    const debounceSaveFeedback = updates => {
       if (feedbackSaveTimer) clearTimeout(feedbackSaveTimer)
       feedbackSaveTimer = setTimeout(() => this.saveFeedbackConfig(updates), 800)
     }
@@ -434,10 +436,14 @@ class SettingsManager {
 
       this.applySettingsTheme()
 
-      this._settingsEscHandler = (e) => { if (e.key === 'Escape') this.hideSettings() }
+      this._settingsEscHandler = e => {
+        if (e.key === 'Escape') this.hideSettings()
+      }
       document.addEventListener('keydown', this._settingsEscHandler)
 
-      const firstFocusable = panel.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      const firstFocusable = panel.querySelector(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
       if (firstFocusable) setTimeout(() => firstFocusable.focus(), 50)
     }
 
@@ -571,14 +577,10 @@ class SettingsManager {
 
   async testNotification() {
     try {
-      await notificationManager.sendNotification(
-        t('notify.testTitle'),
-        t('notify.testBody'),
-        {
-          tag: 'settings-test',
-          requireInteraction: false
-        }
-      )
+      await notificationManager.sendNotification(t('notify.testTitle'), t('notify.testBody'), {
+        tag: 'settings-test',
+        requireInteraction: false
+      })
       showStatus(t('status.testSent'), 'success')
     } catch (error) {
       console.error('测试通知失败:', error)

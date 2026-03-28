@@ -764,9 +764,7 @@ class TestCleanupThreadException(unittest.TestCase):
         def mock_wait(timeout=5):
             nonlocal wait_calls
             wait_calls += 1
-            if wait_calls <= 2:
-                return False
-            return True
+            return not wait_calls <= 2
 
         with _patch.object(tq, "cleanup_completed_tasks", side_effect=mock_cleanup):
             with _patch.object(tq._stop_cleanup, "wait", side_effect=mock_wait):

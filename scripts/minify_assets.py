@@ -45,10 +45,7 @@ SKIP_PATTERNS = [
 
 def should_skip(filename: str) -> bool:
     """检查是否应该跳过该文件"""
-    for pattern in SKIP_PATTERNS:
-        if pattern in filename:
-            return True
-    return False
+    return any(pattern in filename for pattern in SKIP_PATTERNS)
 
 
 def get_minified_name(filepath: Path) -> Path:

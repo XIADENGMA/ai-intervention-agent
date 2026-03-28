@@ -296,14 +296,16 @@ class TestLogDuplicateInfoAppend(unittest.TestCase):
 
         logger = EnhancedLogger("test_dedup_append")
         logger.setLevel(logging.DEBUG)
-        with _patch.object(
-            logger.deduplicator, "should_log", return_value=(True, "重复 3 次")
+        with (
+            _patch.object(
+                logger.deduplicator, "should_log", return_value=(True, "重复 3 次")
+            ),
+            _patch.object(logger.logger, "log") as mock_log,
         ):
-            with _patch.object(logger.logger, "log") as mock_log:
-                logger.info("测试消息")
-                mock_log.assert_called_once()
-                logged_msg = mock_log.call_args[0][1]
-                self.assertIn("(重复 3 次)", logged_msg)
+            logger.info("测试消息")
+            mock_log.assert_called_once()
+            logged_msg = mock_log.call_args[0][1]
+            self.assertIn("(重复 3 次)", logged_msg)
 
 
 class TestGetLogLevelEdgePaths(unittest.TestCase):

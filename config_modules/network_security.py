@@ -308,7 +308,7 @@ class NetworkSecurityMixin:
                     self._network_security_cache_time = current_time
                 return result
 
-            with open(self.config_file, "r", encoding="utf-8") as f:
+            with open(self.config_file, encoding="utf-8") as f:
                 content = f.read()
 
             full_config = self._parse_config_content(content)

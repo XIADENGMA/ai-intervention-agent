@@ -10,8 +10,8 @@ from config_modules.network_security import NetworkSecurityMixin
 from config_modules.toml_engine import TomlEngineMixin
 
 __all__ = [
-    "TomlEngineMixin",
-    "NetworkSecurityMixin",
     "FileWatcherMixin",
     "IOOperationsMixin",
+    "NetworkSecurityMixin",
+    "TomlEngineMixin",
 ]

@@ -512,7 +512,7 @@ class TestLogger:
         """
         error_msg = message
         if exc:
-            error_msg = f"{message}: {type(exc).__name__} - {str(exc)}"
+            error_msg = f"{message}: {type(exc).__name__} - {exc!s}"
 
         TestLogger.log(error_msg, "error")
 
@@ -753,7 +753,7 @@ def format_feedback_result(result):
     formatted_result = result.copy()
 
     # 仅处理图片数据，限制 data 字段长度
-    if "images" in formatted_result and formatted_result["images"]:
+    if formatted_result.get("images"):
         formatted_images = []
         for img in formatted_result["images"]:
             if isinstance(img, dict):
@@ -844,7 +844,7 @@ def check_service(url, timeout=None):
         response = httpx.get(url, timeout=timeout)
         return response.status_code == 200
     except Exception as e:
-        log_debug(f"服务检查失败 ({url}): {type(e).__name__} - {str(e)}")
+        log_debug(f"服务检查失败 ({url}): {type(e).__name__} - {e!s}")
         return False
 
 

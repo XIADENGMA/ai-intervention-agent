@@ -175,7 +175,7 @@ class TestNotificationManagerTypeValidation(unittest.TestCase):
     def test_invalid_bool_value(self):
         """测试无效布尔值处理"""
         # 修改配置文件，设置无效布尔值
-        with open(self.config_path, "r") as f:
+        with open(self.config_path) as f:
             content = f.read()
 
         content = content.replace(
@@ -2272,8 +2272,7 @@ class TestProcessEventInnerFutureException(unittest.TestCase):
         mgr._executor.submit.return_value = bad_future
 
         def mock_as_completed(fs, timeout=None):
-            for f in fs:
-                yield f
+            yield from fs
 
         with patch("notification_manager.as_completed", side_effect=mock_as_completed):
             event = _make_event(types=[NotificationType.WEB], max_retries=0)

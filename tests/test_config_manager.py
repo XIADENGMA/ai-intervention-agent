@@ -536,7 +536,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
         mgr.force_save()
 
         # 重新加载验证
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             saved = json.load(f)
 
         self.assertEqual(saved.get("test"), False)
@@ -630,7 +630,7 @@ number = 42
         time.sleep(0.01)
         mgr.force_save()
 
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             saved_content = f.read()
 
         saved_config = tomlkit.parse(saved_content).unwrap()  # type: ignore[union-attr]
@@ -672,7 +672,7 @@ class TestConfigManagerDelayedSave(unittest.TestCase):
         mgr.force_save()
 
         # 验证保存成功
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             saved = json.load(f)
 
         self.assertEqual(saved.get("test"), 2)
@@ -1335,10 +1335,9 @@ class TestReadWriteLockStress(unittest.TestCase):
         lock = ReadWriteLock()
 
         # 获取读锁两次
-        with lock.read_lock():
-            with lock.read_lock():
-                # 应该能成功获取两次读锁
-                pass
+        with lock.read_lock(), lock.read_lock():
+            # 应该能成功获取两次读锁
+            pass
 
     def test_write_lock_exclusive(self):
         """测试写锁排他性"""
@@ -1890,12 +1889,12 @@ class TestFindConfigFile(unittest.TestCase):
                 self.assertEqual(result, cfg)
 
     def test_env_override_directory(self):
-        with tempfile.TemporaryDirectory() as td:
-            with patch.dict(
-                os.environ, {"AI_INTERVENTION_AGENT_CONFIG_FILE": td + "/"}
-            ):
-                result = find_config_file()
-                self.assertEqual(result, Path(td) / "config.toml")
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.dict(os.environ, {"AI_INTERVENTION_AGENT_CONFIG_FILE": td + "/"}),
+        ):
+            result = find_config_file()
+            self.assertEqual(result, Path(td) / "config.toml")
 
 
 # ──────────────────────────────────────────────────────────
@@ -2744,7 +2743,7 @@ class TestValidateSavedConfigException(unittest.TestCase):
     def test_validation_failure_raises(self):
         mgr = ConfigManager()
         with (
-            patch("builtins.open", side_effect=IOError("can't read")),
+            patch("builtins.open", side_effect=OSError("can't read")),
             self.assertRaises(IOError),
         ):
             mgr._validate_saved_config()

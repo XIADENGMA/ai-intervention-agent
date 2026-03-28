@@ -447,12 +447,9 @@ def parse_structured_response(
                 text_parts.append(text_desc)
         except Exception as e:
             logger.error(f"处理图片 {index + 1} 时出错: {e}", exc_info=True)
-            text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {str(e)}")
+            text_parts.append(f"=== 图片 {index + 1} ===\n处理失败: {e!s}")
 
-    if text_parts:
-        combined_text = "\n\n".join(text_parts)
-    else:
-        combined_text = "用户未提供任何内容"
+    combined_text = "\n\n".join(text_parts) if text_parts else "用户未提供任何内容"
 
     combined_text = _append_prompt_suffix(combined_text)
 

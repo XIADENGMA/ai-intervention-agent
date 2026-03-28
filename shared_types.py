@@ -9,10 +9,9 @@
 - 配置段模型以 `SectionConfig` 后缀命名，与 notification_manager.NotificationConfig 等运行时模型区分
 """
 
-from typing import Any, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
-from typing_extensions import Annotated
 
 # ---------------------------------------------------------------------------
 # 可复用的 Pydantic 前置校验器（替代 safe_bool / safe_int / safe_str）

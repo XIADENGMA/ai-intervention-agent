@@ -29,7 +29,7 @@ class StaticRoutesMixin:
             self, directory: str | Path, filename: str, extension: str
         ) -> str: ...
 
-    def _setup_static_routes(self) -> None:  # noqa: C901  — 路由注册集中在此方法
+    def _setup_static_routes(self) -> None:
         @self.app.route("/fonts/<filename>")
         @self.limiter.exempt
         def serve_fonts(filename: str) -> ResponseReturnValue:

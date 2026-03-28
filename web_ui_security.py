@@ -71,20 +71,18 @@ class SecurityMixin:
             )
 
             path = request.path
-            if path.startswith("/static/js/") or path.startswith("/static/css/"):
+            if path.startswith(("/static/js/", "/static/css/")):
                 if request.args.get("v"):
                     response.headers["Cache-Control"] = (
                         "public, max-age=31536000, immutable"
                     )
                 else:
                     response.headers["Cache-Control"] = "public, max-age=86400"
-            elif path.startswith("/static/lottie/"):
+            elif path.startswith(("/static/lottie/", "/fonts/")):
                 response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
-            elif path.startswith("/fonts/"):
-                response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
-            elif path.startswith("/sounds/"):
-                response.headers["Cache-Control"] = "public, max-age=604800"
-            elif path.startswith("/icons/") and not path.endswith(".ico"):
+            elif path.startswith("/sounds/") or (
+                path.startswith("/icons/") and not path.endswith(".ico")
+            ):
                 response.headers["Cache-Control"] = "public, max-age=604800"
 
             return response

@@ -39,7 +39,7 @@ class NotificationRoutesMixin:
         app: Flask
         limiter: Any
 
-    def _setup_notification_routes(self) -> None:  # noqa: C901
+    def _setup_notification_routes(self) -> None:
         @self.app.route("/api/test-bark", methods=["POST"])
         def test_bark_notification() -> ResponseReturnValue:
             """测试 Bark 推送通知
@@ -596,6 +596,9 @@ class NotificationRoutesMixin:
                     config:
                       type: object
                       properties:
+                        frontend_countdown:
+                          type: integer
+                          description: 前端倒计时时间（秒）
                         resubmit_prompt:
                           type: string
                           description: 错误/超时时的提示语

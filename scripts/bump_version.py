@@ -6,8 +6,9 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, cast
+from typing import cast
 
 _SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 
@@ -545,7 +546,7 @@ def main(argv: list[str]) -> int:
 
         try:
             updated = transformer(raw)
-        except Exception as e:  # noqa: BLE001 - CLI 工具：给出友好错误后退出
+        except Exception as e:
             print(
                 f"更新失败：{path.relative_to(root)}: {type(e).__name__}: {e}",
                 file=sys.stderr,

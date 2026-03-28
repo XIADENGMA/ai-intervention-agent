@@ -83,7 +83,7 @@ def get_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
 
 def parse_module(filepath: Path) -> dict[str, Any]:
     """解析 Python 模块"""
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         content = f.read()
 
     tree = ast.parse(content)

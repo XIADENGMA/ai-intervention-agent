@@ -267,7 +267,7 @@ class FileValidator:
 
         except Exception as e:
             logger.error(f"文件验证过程中出错: {e}", exc_info=True)
-            result["errors"].append(f"验证过程异常: {str(e)}")
+            result["errors"].append(f"验证过程异常: {e!s}")
             result["valid"] = False
 
         return result

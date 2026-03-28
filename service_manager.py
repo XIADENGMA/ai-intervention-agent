@@ -2,6 +2,7 @@
 
 import asyncio
 import atexit
+import contextlib
 import signal
 import socket
 import subprocess
@@ -57,7 +58,7 @@ def _close_async_client_best_effort(client: httpx.AsyncClient | None) -> None:
         return
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(client.aclose())
+        _task = loop.create_task(client.aclose())  # noqa: RUF006 — fire-and-forget cleanup
     except RuntimeError:
         try:
             asyncio.run(client.aclose())
@@ -585,51 +586,44 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
     ]
 
     log_path = _get_web_ui_log_path(script_dir)
-    log_file = None
-    try:
-        log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
-        logger.info(f"Web UI 子进程日志将写入: {log_path}")
-    except OSError as e:
-        logger.warning(f"无法打开日志文件 {log_path}: {e}，子进程日志将被丢弃")
+    with contextlib.ExitStack() as log_cleanup:
+        log_file = None
+        try:
+            log_file = log_cleanup.enter_context(open(log_path, "a", encoding="utf-8"))
+            logger.info(f"Web UI 子进程日志将写入: {log_path}")
+        except OSError as e:
+            logger.warning(f"无法打开日志文件 {log_path}: {e}，子进程日志将被丢弃")
 
-    try:
-        logger.info(f"启动 Web 服务进程: {' '.join(args)}")
-        process = subprocess.Popen(
-            args,
-            stdout=subprocess.DEVNULL,
-            stderr=log_file if log_file is not None else subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            close_fds=True,
-        )
-        logger.info(f"Web 服务进程已启动，PID: {process.pid}")
-        service_manager.register_process(service_name, process, config)
+        try:
+            logger.info(f"启动 Web 服务进程: {' '.join(args)}")
+            process = subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=log_file if log_file is not None else subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+            )
+            logger.info(f"Web 服务进程已启动，PID: {process.pid}")
+            service_manager.register_process(service_name, process, config)
 
-    except FileNotFoundError as e:
-        logger.error(f"Python 解释器或脚本文件未找到: {e}", exc_info=True)
-        raise ServiceUnavailableError(
-            f"无法启动 Web 服务，文件未找到: {e}", code="file_not_found"
-        ) from e
-    except PermissionError as e:
-        logger.error(f"权限不足，无法启动服务: {e}", exc_info=True)
-        raise ServiceUnavailableError(
-            f"权限不足，无法启动 Web 服务: {e}", code="permission_denied"
-        ) from e
-    except Exception as e:
-        logger.error(f"启动服务进程时出错: {e}", exc_info=True)
-        if health_check_service(config):
-            logger.info("服务已经在运行，继续使用现有服务")
-            return
-        raise ServiceUnavailableError(
-            f"启动 Web 服务失败: {e}", code="start_failed"
-        ) from e
-    finally:
-        # Popen 成功时子进程已通过 dup2 持有独立 fd，父进程可安全关闭；
-        # Popen 失败时也需要释放文件句柄，避免 ResourceWarning。
-        if log_file is not None:
-            try:
-                log_file.close()
-            except OSError:
-                pass
+        except FileNotFoundError as e:
+            logger.error(f"Python 解释器或脚本文件未找到: {e}", exc_info=True)
+            raise ServiceUnavailableError(
+                f"无法启动 Web 服务，文件未找到: {e}", code="file_not_found"
+            ) from e
+        except PermissionError as e:
+            logger.error(f"权限不足，无法启动服务: {e}", exc_info=True)
+            raise ServiceUnavailableError(
+                f"权限不足，无法启动 Web 服务: {e}", code="permission_denied"
+            ) from e
+        except Exception as e:
+            logger.error(f"启动服务进程时出错: {e}", exc_info=True)
+            if health_check_service(config):
+                logger.info("服务已经在运行，继续使用现有服务")
+                return
+            raise ServiceUnavailableError(
+                f"启动 Web 服务失败: {e}", code="start_failed"
+            ) from e
 
     max_wait = 15
     check_start = time.monotonic()

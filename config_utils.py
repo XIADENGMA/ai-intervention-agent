@@ -110,17 +110,20 @@ def get_typed_config(
         typed_value = default
 
     # 边界验证（仅对数值类型）
-    if min_val is not None and max_val is not None:
-        if isinstance(typed_value, (int, float)):
-            typed_value = cast(
-                T,
-                clamp_value(
-                    cast(Number, typed_value),
-                    min_val,
-                    max_val,
-                    key,
-                ),
-            )
+    if (
+        min_val is not None
+        and max_val is not None
+        and isinstance(typed_value, (int, float))
+    ):
+        typed_value = cast(
+            T,
+            clamp_value(
+                cast(Number, typed_value),
+                min_val,
+                max_val,
+                key,
+            ),
+        )
 
     return typed_value
 

@@ -432,7 +432,7 @@ class ConfigManager(
         old_file = self.config_file
         new_file = old_file.with_suffix(".toml")
         try:
-            with open(old_file, "r", encoding="utf-8") as f:
+            with open(old_file, encoding="utf-8") as f:
                 content = f.read()
             if old_file.suffix.lower() == ".jsonc":
                 config_data = parse_jsonc(content)
@@ -443,7 +443,7 @@ class ConfigManager(
                 mdns["enabled"] = "auto"
             template_file = Path(__file__).parent / "config.toml.default"
             if template_file.exists():
-                with open(template_file, "r", encoding="utf-8") as f:
+                with open(template_file, encoding="utf-8") as f:
                     doc = tomlkit.parse(f.read())
                 for sk, sv in config_data.items():
                     if isinstance(sv, dict) and sk in doc:
@@ -486,7 +486,7 @@ class ConfigManager(
                     self._migrate_jsonc_to_toml()
 
                 if self.config_file.exists():
-                    with open(self.config_file, "r", encoding="utf-8") as f:
+                    with open(self.config_file, encoding="utf-8") as f:
                         content = f.read()
 
                     full_config = self._parse_config_content(content)
@@ -569,7 +569,7 @@ class ConfigManager(
 
             if self._is_toml_file() and toml_template.exists():
                 shutil.copy2(toml_template, self.config_file)
-                with open(toml_template, "r", encoding="utf-8") as f:
+                with open(toml_template, encoding="utf-8") as f:
                     self._original_content = f.read()
                 logger.info(f"已从 TOML 模板创建默认配置文件: {self.config_file}")
             else:
@@ -707,7 +707,7 @@ class ConfigManager(
     def _validate_saved_config(self):
         """验证保存的配置文件格式和结构是否正确"""
         try:
-            with open(self.config_file, "r", encoding="utf-8") as f:
+            with open(self.config_file, encoding="utf-8") as f:
                 content = f.read()
 
             parsed_config = self._parse_config_content(content)
@@ -910,7 +910,7 @@ class ConfigManager(
                     )
 
             # 【缓存优化】失效涉及到的 section 缓存，避免 get_section() 返回旧值
-            for changed_key in actual_changes.keys():
+            for changed_key in actual_changes:
                 section = changed_key.split(".")[0] if changed_key else ""
                 if section:
                     changed_sections.add(section)

@@ -127,7 +127,7 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         # 内容应是 JSON（至少以 { 或 [ 开头）
         body = response.data.decode("utf-8", errors="ignore").lstrip()
         response.close()
-        self.assertTrue(body.startswith("{") or body.startswith("["))
+        self.assertTrue(body.startswith(("{", "[")))
 
     def test_app_js_has_sprout_fallback(self):
         """回归测试：嫩芽降级逻辑（app.js 保留 SVG/CSS，通知相关已拆分到 notification-manager.js）"""

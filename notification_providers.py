@@ -291,9 +291,7 @@ class BarkNotificationProvider(BaseNotificationProvider):
                         bark_data["copy"] = copy_value or message_stripped
                 else:
                     # 兼容旧用法：直接将 bark_action 当作 URL（仅当其像 URL）
-                    if bark_action.startswith("http://") or bark_action.startswith(
-                        "https://"
-                    ):
+                    if bark_action.startswith(("http://", "https://")):
                         bark_data["url"] = bark_action
                     else:
                         # 未知值直接忽略，避免发送无效字段导致请求失败

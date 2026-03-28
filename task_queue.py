@@ -7,7 +7,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from threading import Lock
@@ -38,7 +38,7 @@ class Task(BaseModel):
     prompt: str
     predefined_options: list[str] | None = None
     auto_resubmit_timeout: int = 240
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_at_monotonic: float = Field(default_factory=time.monotonic)
     status: str = TaskStatus.PENDING
     result: dict[str, Any] | None = None
@@ -472,7 +472,7 @@ class TaskQueue:
             old_status = task.status
             task.status = TaskStatus.COMPLETED
             task.result = result
-            task.completed_at = datetime.now(timezone.utc)
+            task.completed_at = datetime.now(UTC)
             status_events.append((task_id, old_status, TaskStatus.COMPLETED))
 
             if self._active_task_id == task_id:
@@ -671,7 +671,7 @@ class TaskQueue:
             - 可以手动调用来立即清理
         """
         with self._lock:
-            now = datetime.now(timezone.utc)  # 使用 UTC 时间，与 completed_at 保持一致
+            now = datetime.now(UTC)  # 使用 UTC 时间，与 completed_at 保持一致
             tasks_to_remove = []
 
             for task_id, task in self._tasks.items():
@@ -948,7 +948,7 @@ class TaskQueue:
                 "version": 1,
                 "active_task_id": active_id,
                 "tasks": snapshot,
-                "saved_at": datetime.now(timezone.utc).isoformat(),
+                "saved_at": datetime.now(UTC).isoformat(),
             }
 
             fd, tmp_path = tempfile.mkstemp(
@@ -994,9 +994,9 @@ class TaskQueue:
             saved_at = (
                 datetime.fromisoformat(saved_at_str)
                 if saved_at_str
-                else datetime.now(timezone.utc)
+                else datetime.now(UTC)
             )
-            elapsed_since_save = (datetime.now(timezone.utc) - saved_at).total_seconds()
+            elapsed_since_save = (datetime.now(UTC) - saved_at).total_seconds()
 
             restored = 0
             for item in data.get("tasks", []):
@@ -1011,9 +1011,7 @@ class TaskQueue:
                     continue
 
                 created_at = datetime.fromisoformat(item["created_at"])
-                age_since_creation = (
-                    datetime.now(timezone.utc) - created_at
-                ).total_seconds()
+                age_since_creation = (datetime.now(UTC) - created_at).total_seconds()
 
                 task = Task(
                     task_id=task_id,

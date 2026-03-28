@@ -11,8 +11,8 @@ from web_ui_routes.static import StaticRoutesMixin
 from web_ui_routes.task import TaskRoutesMixin
 
 __all__ = [
-    "TaskRoutesMixin",
     "FeedbackRoutesMixin",
     "NotificationRoutesMixin",
     "StaticRoutesMixin",
+    "TaskRoutesMixin",
 ]

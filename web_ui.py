@@ -1,5 +1,27 @@
 """Web 反馈界面 - Flask Web UI，支持多任务、文件上传、通知、安全机制。"""
 
+__all__ = [
+    "AUTO_RESUBMIT_TIMEOUT_MAX",
+    "AUTO_RESUBMIT_TIMEOUT_MIN",
+    "DEFAULT_ALLOWED_NETWORKS",
+    "MDNS_DEFAULT_HOSTNAME",
+    "MDNS_SERVICE_TYPE_HTTP",
+    "VALID_BIND_INTERFACES",
+    "WebFeedbackUI",
+    "_get_default_route_ipv4",
+    "_is_probably_virtual_interface",
+    "_list_non_loopback_ipv4",
+    "_sync_existing_tasks_timeout_from_config",
+    "_sync_network_security_from_config",
+    "detect_best_publish_ipv4",
+    "normalize_mdns_hostname",
+    "validate_allowed_networks",
+    "validate_bind_interface",
+    "validate_blocked_ips",
+    "validate_network_cidr",
+    "validate_network_security_config",
+]
+
 import argparse
 import json
 import os
@@ -31,26 +53,26 @@ from i18n import msg
 from server import get_task_queue
 from server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-    AUTO_RESUBMIT_TIMEOUT_MAX,  # noqa: F401 — 向后兼容
-    AUTO_RESUBMIT_TIMEOUT_MIN,  # noqa: F401 — 向后兼容
+    AUTO_RESUBMIT_TIMEOUT_MAX,
+    AUTO_RESUBMIT_TIMEOUT_MIN,
 )
 from shared_types import FeedbackResult
 from web_ui_config_sync import (
     _ensure_feedback_timeout_hot_reload_callback_registered,
     _ensure_network_security_hot_reload_callback_registered,
     _get_default_auto_resubmit_timeout_from_config,
-    _sync_existing_tasks_timeout_from_config,  # noqa: F401 — 向后兼容
-    _sync_network_security_from_config,  # noqa: F401 — 向后兼容
+    _sync_existing_tasks_timeout_from_config,
+    _sync_network_security_from_config,
 )
 from web_ui_mdns import MdnsMixin
 from web_ui_mdns_utils import (
-    MDNS_DEFAULT_HOSTNAME,  # noqa: F401
-    MDNS_SERVICE_TYPE_HTTP,  # noqa: F401
-    _get_default_route_ipv4,  # noqa: F401
-    _is_probably_virtual_interface,  # noqa: F401
-    _list_non_loopback_ipv4,  # noqa: F401
-    detect_best_publish_ipv4,  # noqa: F401
-    normalize_mdns_hostname,  # noqa: F401
+    MDNS_DEFAULT_HOSTNAME,
+    MDNS_SERVICE_TYPE_HTTP,
+    _get_default_route_ipv4,
+    _is_probably_virtual_interface,
+    _list_non_loopback_ipv4,
+    detect_best_publish_ipv4,
+    normalize_mdns_hostname,
 )
 from web_ui_routes import (
     FeedbackRoutesMixin,
@@ -60,14 +82,14 @@ from web_ui_routes import (
 )
 from web_ui_security import SecurityMixin
 from web_ui_validators import (
-    DEFAULT_ALLOWED_NETWORKS,  # noqa: F401
-    VALID_BIND_INTERFACES,  # noqa: F401
-    validate_allowed_networks,  # noqa: F401
+    DEFAULT_ALLOWED_NETWORKS,
+    VALID_BIND_INTERFACES,
+    validate_allowed_networks,
     validate_auto_resubmit_timeout,
-    validate_bind_interface,  # noqa: F401
-    validate_blocked_ips,  # noqa: F401
-    validate_network_cidr,  # noqa: F401
-    validate_network_security_config,  # noqa: F401 — 向后兼容
+    validate_bind_interface,
+    validate_blocked_ips,
+    validate_network_cidr,
+    validate_network_security_config,
 )
 
 logger = EnhancedLogger(__name__)
@@ -102,7 +124,7 @@ def get_project_version() -> str:
                 )
             except Exception:
                 # 回退到正则表达式
-                with open(pyproject_path, "r", encoding="utf-8") as f:
+                with open(pyproject_path, encoding="utf-8") as f:
                     content = f.read()
                 match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
                 if match:

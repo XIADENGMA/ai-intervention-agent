@@ -42,7 +42,7 @@ def _sync_existing_tasks_timeout_from_config() -> None:
         new_timeout = _wu._get_default_auto_resubmit_timeout_from_config()
 
         with _wu._FEEDBACK_TIMEOUT_CALLBACK_LOCK:
-            if _wu._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT == new_timeout:
+            if new_timeout == _wu._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT:
                 return
             _wu._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT = new_timeout
 
