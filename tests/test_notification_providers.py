@@ -978,8 +978,8 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertNotIn("action", payload)
 
     @patch("notification_providers.httpx.Client.post")
-    def test_metadata_complex_type_stringified(self, mock_post):
-        """非基本类型的 metadata 值应被 str() 转换"""
+    def test_metadata_complex_type_skipped(self, mock_post):
+        """白名单内键的非基本类型值应被静默跳过，非白名单键也应被跳过"""
         mock_post.return_value = MagicMock(status_code=200)
         provider = self._make_provider()
 
@@ -987,10 +987,15 @@ class TestBarkSendEdgeCases(unittest.TestCase):
             def __str__(self):
                 return "custom_str"
 
-        event = create_event(title="T", message="M", metadata={"obj": Custom()})
+        event = create_event(
+            title="T",
+            message="M",
+            metadata={"group": Custom(), "obj": "should_be_filtered"},
+        )
         self.assertTrue(provider.send(event))
         payload = mock_post.call_args.kwargs["json"]
-        self.assertEqual(payload["obj"], "custom_str")
+        self.assertNotIn("group", payload)
+        self.assertNotIn("obj", payload)
 
     @patch("notification_providers.httpx.Client.post")
     def test_bark_timeout_invalid_fallback(self, mock_post):

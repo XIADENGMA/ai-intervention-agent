@@ -656,7 +656,7 @@ class TestSubmitFeedbackForm(_RouteTestBase):
 class TestSubmitFeedbackMultipart(_RouteTestBase):
     _port = 19022
 
-    @patch("web_ui_routes.feedback.validate_uploaded_file")
+    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
     @patch("web_ui_routes.feedback.get_task_queue")
     def test_multipart_with_valid_image(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
@@ -681,7 +681,7 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.feedback.validate_uploaded_file")
+    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
     @patch("web_ui_routes.feedback.get_task_queue")
     def test_multipart_with_invalid_file(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
@@ -706,7 +706,7 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.feedback.validate_uploaded_file")
+    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
     @patch("web_ui_routes.feedback.get_task_queue")
     def test_multipart_with_validation_warnings(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
@@ -731,7 +731,9 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.feedback.validate_uploaded_file", side_effect=RuntimeError)
+    @patch(
+        "web_ui_routes._upload_helpers.validate_uploaded_file", side_effect=RuntimeError
+    )
     @patch("web_ui_routes.feedback.get_task_queue")
     def test_multipart_file_processing_exception(self, mock_get_tq, _):
         mock_tq = MagicMock()
@@ -1345,7 +1347,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    @patch("web_ui_routes.task.validate_uploaded_file")
+    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
     @patch("web_ui_routes.task.get_task_queue")
     def test_image_upload_success(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
@@ -1371,7 +1373,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         call_args = mock_tq.complete_task.call_args[0]
         self.assertIn("images", call_args[1])
 
-    @patch("web_ui_routes.task.validate_uploaded_file")
+    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
     @patch("web_ui_routes.task.get_task_queue")
     def test_image_validation_fail_skipped(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
@@ -1397,7 +1399,9 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         call_args = mock_tq.complete_task.call_args[0]
         self.assertNotIn("images", call_args[1])
 
-    @patch("web_ui_routes.task.validate_uploaded_file", side_effect=RuntimeError)
+    @patch(
+        "web_ui_routes._upload_helpers.validate_uploaded_file", side_effect=RuntimeError
+    )
     @patch("web_ui_routes.task.get_task_queue")
     def test_image_processing_exception(self, mock_get_tq, _):
         mock_tq = MagicMock()

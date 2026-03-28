@@ -186,7 +186,8 @@ Thumbs.db
 *.log
 logs/
 
-# 运行时数据
+# 运行时数据（任务持久化、状态文件）
+data/
 pids
 *.pid
 *.seed

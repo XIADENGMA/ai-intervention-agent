@@ -269,7 +269,8 @@ class NotificationManager:
                 "providers": {},  # {type: {attempts/success/failure/last_error/...}}
             }
             # 记录已“最终完成”的事件，避免重试场景重复计数
-            self._finalized_event_ids: set[str] = set()
+            self._finalized_event_ids: dict[str, None] = {}
+            self._finalized_max_size: int = 500
 
             # 初始化回调函数字典
             self._callbacks_lock = threading.Lock()
@@ -441,13 +442,16 @@ class NotificationManager:
             with self._stats_lock:
                 if event.id in self._finalized_event_ids:
                     return
-                self._finalized_event_ids.add(event.id)
+                self._finalized_event_ids[event.id] = None
+                # 容量淘汰：超出上限时删除最早插入的条目
+                while len(self._finalized_event_ids) > self._finalized_max_size:
+                    oldest_key = next(iter(self._finalized_event_ids))
+                    del self._finalized_event_ids[oldest_key]
                 if succeeded:
                     self._stats["events_succeeded"] += 1
                 else:
                     self._stats["events_failed"] += 1
         except Exception:
-            # 统计不影响主流程
             pass
 
     def _schedule_retry(self, event: NotificationEvent) -> None:
@@ -930,14 +934,8 @@ class NotificationManager:
         try:
             config_mgr = get_config()
 
-            # 处理 sound_volume 的范围转换
-            sound_volume_value = self.config.sound_volume
-            if sound_volume_value <= 1.0:
-                # 如果是0-1范围，转换为0-100范围
-                sound_volume_int = int(sound_volume_value * 100)
-            else:
-                # 如果已经是0-100范围，直接使用
-                sound_volume_int = int(sound_volume_value)
+            # 内部 sound_volume 始终为 0.0-1.0，保存到文件时转为 0-100 整数
+            sound_volume_int = int(round(self.config.sound_volume * 100))
 
             # 构建配置字典
             notification_config = {

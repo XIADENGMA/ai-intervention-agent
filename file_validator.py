@@ -105,13 +105,8 @@ IMAGE_MAGIC_NUMBERS: dict[bytes, ImageTypeInfo] = {
         "mime_type": "image/x-icon",
         "description": "ICO图标",
     },
-    # SVG格式 (XML开头)
-    b"\x3c\x3f\x78\x6d\x6c": {
-        "extension": ".svg",
-        "mime_type": "image/svg+xml",
-        "description": "SVG矢量图",
-        "additional_check": lambda data: b"<svg" in data[:1024].lower(),
-    },
+    # SVG 已移除：SVG 本质是 XML，可嵌入 JavaScript（onload/foreignObject/animate 等），
+    # 恶意模式检测难以穷举，直接禁止上传以消除 XSS 风险。
 }
 
 # 危险文件扩展名黑名单：可执行文件、脚本、打包文件
@@ -151,6 +146,10 @@ DANGEROUS_EXTENSIONS = {
     ".dmg",
     ".pkg",
     ".app",
+    ".svg",
+    ".htm",
+    ".html",
+    ".xhtml",
 }
 
 # 恶意内容正则模式：JavaScript/PHP/Shell/SQL 注入特征
@@ -262,7 +261,7 @@ class FileValidator:
             result["valid"] = len(result["errors"]) == 0
 
             if result["valid"]:
-                logger.info(f"文件验证通过: {filename} ({result['file_type']})")
+                logger.debug(f"文件验证通过: {filename} ({result['file_type']})")
             else:
                 logger.warning(f"文件验证失败: {filename}, 错误: {result['errors']}")
 

@@ -42,12 +42,27 @@ except ImportError:
 # ---------------------------------------------------------------------------
 _async_client: httpx.AsyncClient | None = None
 _sync_client: httpx.Client | None = None
+_http_client_lock = threading.Lock()
 
 _config_cache: Dict[str, Any] = {"config": None, "timestamp": 0.0, "ttl": 10.0}
 _config_cache_lock = threading.Lock()
 
 _config_callbacks_registered: bool = False
 _config_callbacks_lock = threading.Lock()
+
+
+def _close_async_client_best_effort(client: httpx.AsyncClient) -> None:
+    """在同步上下文中尽力关闭异步 HTTP 客户端的连接池。"""
+    if client is None or client.is_closed:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(client.aclose())
+    except RuntimeError:
+        try:
+            asyncio.run(client.aclose())
+        except Exception:
+            logger.debug("无法关闭异步 HTTP 客户端（无可用事件循环），将由 GC 回收")
 
 
 def _invalidate_runtime_caches_on_config_change() -> None:
@@ -61,10 +76,13 @@ def _invalidate_runtime_caches_on_config_change() -> None:
         pass
 
     try:
-        if _sync_client is not None and not _sync_client.is_closed:
-            _sync_client.close()
-        _sync_client = None
-        _async_client = None
+        with _http_client_lock:
+            if _sync_client is not None and not _sync_client.is_closed:
+                _sync_client.close()
+            _sync_client = None
+            old_async = _async_client
+            _async_client = None
+        _close_async_client_best_effort(old_async)
     except Exception:
         pass
 
@@ -96,11 +114,13 @@ def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
     """获取（或创建）模块级异步 HTTP 客户端，支持连接池复用和自动重试。"""
     global _async_client
     if _async_client is None or _async_client.is_closed:
-        transport = httpx.AsyncHTTPTransport(retries=config.max_retries)
-        _async_client = httpx.AsyncClient(
-            transport=transport,
-            timeout=httpx.Timeout(config.timeout, connect=5.0),
-        )
+        with _http_client_lock:
+            if _async_client is None or _async_client.is_closed:
+                transport = httpx.AsyncHTTPTransport(retries=config.max_retries)
+                _async_client = httpx.AsyncClient(
+                    transport=transport,
+                    timeout=httpx.Timeout(config.timeout, connect=5.0),
+                )
     return _async_client
 
 
@@ -108,11 +128,13 @@ def get_sync_client(config: WebUIConfig) -> httpx.Client:
     """获取（或创建）模块级同步 HTTP 客户端。"""
     global _sync_client
     if _sync_client is None or _sync_client.is_closed:
-        transport = httpx.HTTPTransport(retries=config.max_retries)
-        _sync_client = httpx.Client(
-            transport=transport,
-            timeout=httpx.Timeout(config.timeout, connect=5.0),
-        )
+        with _http_client_lock:
+            if _sync_client is None or _sync_client.is_closed:
+                transport = httpx.HTTPTransport(retries=config.max_retries)
+                _sync_client = httpx.Client(
+                    transport=transport,
+                    timeout=httpx.Timeout(config.timeout, connect=5.0),
+                )
     return _sync_client
 
 
@@ -350,8 +372,8 @@ class ServiceManager:
             logger.error(f"清理进程 {name} 资源时出错: {e}", exc_info=True)
 
     def _wait_for_port_release(self, host: str, port: int, timeout: float = 10.0):
-        start_time = time.time()
-        while time.time() - start_time < timeout:
+        start_time = time.monotonic()
+        while time.monotonic() - start_time < timeout:
             if not is_web_service_running(host, port, timeout=1.0):
                 logger.debug(f"端口 {host}:{port} 已释放")
                 return
@@ -404,6 +426,12 @@ class ServiceManager:
             except Exception as e:
                 logger.warning(f"关闭通知管理器失败: {e}", exc_info=True)
 
+        try:
+            cleanup_http_clients()
+            logger.debug("HTTP 客户端已清理")
+        except Exception as e:
+            logger.debug(f"清理 HTTP 客户端时出错（忽略）: {e}")
+
     def get_status(self) -> Dict[str, Dict]:
         status = {}
         with self._lock:
@@ -430,7 +458,7 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
     """加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)"""
     _ensure_config_change_callbacks_registered()
 
-    current_time = time.time()
+    current_time = time.monotonic()
     with _config_cache_lock:
         if (
             _config_cache["config"] is not None
@@ -500,6 +528,20 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
 # ---------------------------------------------------------------------------
 
 
+def _get_web_ui_log_path(script_dir: Path) -> Path:
+    """获取 Web UI 子进程日志文件路径，自动创建 logs 目录并截断过大文件。"""
+    log_dir = script_dir / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_path = log_dir / "web_ui.log"
+    # 超过 5MB 时截断为空，简易日志轮转
+    try:
+        if log_path.exists() and log_path.stat().st_size > 5 * 1024 * 1024:
+            log_path.write_text("")
+    except OSError:
+        pass
+    return log_path
+
+
 def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
     """启动 Flask Web UI 子进程，含健康检查"""
     web_ui_path = script_dir / "web_ui.py"
@@ -536,12 +578,20 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
         str(config.port),
     ]
 
+    log_path = _get_web_ui_log_path(script_dir)
+    log_file = None
+    try:
+        log_file = open(log_path, "a", encoding="utf-8")  # noqa: SIM115
+        logger.info(f"Web UI 子进程日志将写入: {log_path}")
+    except OSError as e:
+        logger.warning(f"无法打开日志文件 {log_path}: {e}，子进程日志将被丢弃")
+
     try:
         logger.info(f"启动 Web 服务进程: {' '.join(args)}")
         process = subprocess.Popen(
             args,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=log_file if log_file is not None else subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             close_fds=True,
         )
@@ -754,10 +804,13 @@ async def ensure_web_ui_running(config: WebUIConfig) -> None:
 def cleanup_http_clients() -> None:
     """清理 HTTP 客户端（供 server.cleanup_services 调用）"""
     global _sync_client, _async_client
-    try:
-        if _sync_client is not None and not _sync_client.is_closed:
-            _sync_client.close()
-    except Exception:
-        pass
-    _sync_client = None
-    _async_client = None
+    with _http_client_lock:
+        try:
+            if _sync_client is not None and not _sync_client.is_closed:
+                _sync_client.close()
+        except Exception:
+            pass
+        _sync_client = None
+        old_async = _async_client
+        _async_client = None
+    _close_async_client_best_effort(old_async)

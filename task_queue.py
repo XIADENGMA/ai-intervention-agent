@@ -1,10 +1,14 @@
-"""任务队列管理 - 线程安全、状态管理、自动清理、延迟删除。"""
+"""任务队列管理 - 线程安全、状态管理、自动清理、延迟删除、持久化。"""
 
+import json
 import logging
+import os
+import tempfile
 import threading
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
@@ -160,39 +164,33 @@ class TaskQueue:
         max_tasks (int): 最大并发任务数
     """
 
-    def __init__(self, max_tasks: int = 10):
+    def __init__(self, max_tasks: int = 10, persist_path: Optional[str] = None):
         """初始化任务队列
 
         创建任务队列实例并启动后台清理线程。
 
         参数:
             max_tasks (int): 最大并发任务数，默认10
-                - 建议值：5-20（根据实际需求）
-                - 过大：内存占用增加
-                - 过小：容易达到上限
-
-        异常:
-            无：所有异常都会被捕获并记录日志
-
-        副作用:
-            - 启动守护线程 TaskQueueCleanup
-            - 记录初始化日志
-
-        线程安全:
-            线程安全（使用 Lock 保护共享数据）
+            persist_path (str|None): 持久化文件路径。设置后任务状态变更自动写入磁盘，
+                重启时自动恢复未完成任务。传 None 禁用持久化（纯内存模式）。
         """
         self.max_tasks = max_tasks
-        # 【性能优化】移除了 _task_order 列表
-        # Python 3.7+ dict 保持插入顺序，删除操作从 O(n) 优化到 O(1)
         self._tasks: Dict[str, Task] = {}
         self._lock = Lock()
         self._active_task_id: Optional[str] = None
 
-        # 【新增】任务状态变更回调机制
         self._status_change_callbacks: list[
             Callable[[str, Optional[str], str], None]
         ] = []
         self._callbacks_lock = Lock()
+
+        # 持久化配置
+        self._persist_path: Optional[Path] = (
+            Path(persist_path) if persist_path else None
+        )
+        if self._persist_path:
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            self._restore()
 
         self._stop_cleanup = threading.Event()
         self._cleanup_thread = threading.Thread(
@@ -200,7 +198,11 @@ class TaskQueue:
         )
         self._cleanup_thread.start()
 
-        logger.info(f"任务队列初始化完成，最大任务数: {max_tasks}，后台清理线程已启动")
+        logger.info(
+            f"任务队列初始化完成，最大任务数: {max_tasks}，"
+            f"持久化: {'启用 → ' + str(self._persist_path) if self._persist_path else '禁用'}，"
+            f"后台清理线程已启动"
+        )
 
     def clear_all_tasks(self) -> int:
         """清理所有任务（重置队列）
@@ -214,7 +216,10 @@ class TaskQueue:
             self._active_task_id = None
             if count > 0:
                 logger.info(f"清理了所有残留任务，共 {count} 个")
-            return count
+
+        if count > 0:
+            self._persist()
+        return count
 
     def add_task(
         self,
@@ -267,6 +272,7 @@ class TaskQueue:
 
         if new_status is not None:
             self._trigger_status_change(task_id, None, new_status)
+            self._persist()
 
         return True
 
@@ -381,6 +387,8 @@ class TaskQueue:
         for ev_task_id, ev_old_status, ev_new_status in status_events:
             self._trigger_status_change(ev_task_id, ev_old_status, ev_new_status)
 
+        if status_events:
+            self._persist()
         return True
 
     def complete_task(self, task_id: str, result: Dict[str, Any]) -> bool:
@@ -473,6 +481,7 @@ class TaskQueue:
         for ev_task_id, ev_old_status, ev_new_status in status_events:
             self._trigger_status_change(ev_task_id, ev_old_status, ev_new_status)
 
+        self._persist()
         return True
 
     def remove_task(self, task_id: str) -> bool:
@@ -548,6 +557,7 @@ class TaskQueue:
         for ev_task_id, ev_old_status, ev_new_status in status_events:
             self._trigger_status_change(ev_task_id, ev_old_status, ev_new_status)
 
+        self._persist()
         return True
 
     def clear_completed_tasks(self) -> int:
@@ -884,3 +894,133 @@ class TaskQueue:
                 logger.error(
                     f"任务状态变更回调执行失败 ({cb_name}): {e}", exc_info=True
                 )
+
+    # ========================================================================
+    # 持久化（JSON 原子写入）
+    # ========================================================================
+
+    def _persist(self) -> None:
+        """将当前任务快照写入磁盘（原子操作：tmpfile → os.replace）。
+
+        仅在 persist_path 已设置时执行。已完成的任务不写入持久化文件。
+        调用方应在锁外调用此方法。
+        """
+        if not self._persist_path:
+            return
+        try:
+            with self._lock:
+                snapshot = []
+                for task in self._tasks.values():
+                    if task.status == "completed":
+                        continue
+                    snapshot.append(
+                        {
+                            "task_id": task.task_id,
+                            "prompt": task.prompt,
+                            "predefined_options": task.predefined_options,
+                            "auto_resubmit_timeout": task.auto_resubmit_timeout,
+                            "created_at": task.created_at.isoformat(),
+                            "status": task.status,
+                        }
+                    )
+                active_id = self._active_task_id
+
+            data = {
+                "version": 1,
+                "active_task_id": active_id,
+                "tasks": snapshot,
+                "saved_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self._persist_path.parent),
+                prefix=".tasks_",
+                suffix=".tmp",
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                os.replace(tmp_path, str(self._persist_path))
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+
+            logger.debug(f"任务快照已持久化: {len(snapshot)} 个任务")
+        except Exception as e:
+            logger.warning(f"任务持久化失败（不影响运行）: {e}", exc_info=True)
+
+    def _restore(self) -> None:
+        """从磁盘恢复未完成的任务。仅在初始化时调用一次。
+
+        恢复逻辑：
+        - 跳过已完成的任务
+        - 重建 created_at_monotonic 以保证剩余时间计算正确
+        - 已超时的任务标记为 pending 但保留（让前端处理自动提交）
+        """
+        if not self._persist_path or not self._persist_path.exists():
+            return
+        try:
+            raw = self._persist_path.read_text(encoding="utf-8")
+            if not raw.strip():
+                return
+            data = json.loads(raw)
+            if not isinstance(data, dict) or data.get("version") != 1:
+                logger.warning("持久化文件版本不匹配，忽略")
+                return
+
+            saved_at_str = data.get("saved_at")
+            saved_at = (
+                datetime.fromisoformat(saved_at_str)
+                if saved_at_str
+                else datetime.now(timezone.utc)
+            )
+            elapsed_since_save = (datetime.now(timezone.utc) - saved_at).total_seconds()
+
+            restored = 0
+            for item in data.get("tasks", []):
+                if not isinstance(item, dict):
+                    continue
+                task_id = item.get("task_id")
+                prompt = item.get("prompt")
+                if not task_id or not prompt:
+                    continue
+                status = item.get("status", "pending")
+                if status == "completed":
+                    continue
+
+                created_at = datetime.fromisoformat(item["created_at"])
+                age_since_creation = (
+                    datetime.now(timezone.utc) - created_at
+                ).total_seconds()
+
+                task = Task(
+                    task_id=task_id,
+                    prompt=prompt,
+                    predefined_options=item.get("predefined_options"),
+                    auto_resubmit_timeout=item.get("auto_resubmit_timeout", 240),
+                    created_at=created_at,
+                    created_at_monotonic=time.monotonic() - age_since_creation,
+                    status="pending",
+                )
+                self._tasks[task_id] = task
+                restored += 1
+
+            active_id = data.get("active_task_id")
+            if active_id and active_id in self._tasks:
+                self._active_task_id = active_id
+                self._tasks[active_id].status = "active"
+            elif self._tasks:
+                first_id = next(iter(self._tasks))
+                self._active_task_id = first_id
+                self._tasks[first_id].status = "active"
+
+            if restored > 0:
+                logger.info(
+                    f"从持久化文件恢复了 {restored} 个未完成任务"
+                    f"（文件保存于 {elapsed_since_save:.0f}s 前）"
+                )
+        except Exception as e:
+            logger.warning(f"任务恢复失败（将使用空队列）: {e}", exc_info=True)

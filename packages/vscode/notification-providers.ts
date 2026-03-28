@@ -878,6 +878,7 @@ export class MacOSNativeNotificationProvider {
   private _vscode: VsCodeApi
   private _appleScriptProvider: AppleScriptNotificationProvider
   private _terminalNotifierBin: string
+  private _terminalNotifierBinPromise: Promise<string> | null
   private _lastDiagnostic: Record<string, unknown> | null
 
   constructor(options: ProviderOptions = {}) {
@@ -890,16 +891,23 @@ export class MacOSNativeNotificationProvider {
       vscodeApi: this._vscode
     })
     this._terminalNotifierBin = ''
+    this._terminalNotifierBinPromise = null
     this._lastDiagnostic = null
+    // 在 macOS 上延迟预加载 terminal-notifier，避免阻塞扩展激活
+    if (process.platform === 'darwin') {
+      this._warmupTerminalNotifier()
+    }
   }
 
-  getLastDiagnostic(): Record<string, unknown> | null {
-    return this._lastDiagnostic
+  private _warmupTerminalNotifier(): void {
+    this._terminalNotifierBinPromise = new Promise<string>(resolve => {
+      setTimeout(() => {
+        resolve(this._resolveTerminalNotifierBinSync())
+      }, 0)
+    })
   }
 
-  _getTerminalNotifierBin(): string {
-    if (this._terminalNotifierBin) return this._terminalNotifierBin
-
+  private _resolveTerminalNotifierBinSync(): string {
     const stable = ensureStableTerminalNotifier()
     if (stable.bin) {
       this._terminalNotifierBin = stable.bin
@@ -907,21 +915,13 @@ export class MacOSNativeNotificationProvider {
         if (this._logger && typeof this._logger.event === 'function') {
           this._logger.event(
             'notify.terminal_notifier.resolved',
-            {
-              from: 'stable',
-              path: stable.bin,
-              installed: stable.installed,
-              error: stable.error || ''
-            },
+            { from: 'stable', path: stable.bin, installed: stable.installed, error: stable.error || '' },
             { level: 'debug' }
           )
         }
-      } catch {
-        // 忽略
-      }
+      } catch { /* noop */ }
       return stable.bin
     }
-
     const p = resolveBundledTerminalNotifierBinPath()
     if (ensureExecutable(p)) {
       this._terminalNotifierBin = p
@@ -929,22 +929,27 @@ export class MacOSNativeNotificationProvider {
         if (this._logger && typeof this._logger.event === 'function') {
           this._logger.event(
             'notify.terminal_notifier.resolved',
-            {
-              from: 'vendor-fallback',
-              path: p,
-              stableError: stable.error || ''
-            },
+            { from: 'vendor-fallback', path: p, stableError: stable.error || '' },
             { level: 'debug' }
           )
         }
-      } catch {
-        // 忽略
-      }
+      } catch { /* noop */ }
       return p
     }
-
     this._terminalNotifierBin = ''
     return ''
+  }
+
+  getLastDiagnostic(): Record<string, unknown> | null {
+    return this._lastDiagnostic
+  }
+
+  async _getTerminalNotifierBin(): Promise<string> {
+    if (this._terminalNotifierBin) return this._terminalNotifierBin
+    if (this._terminalNotifierBinPromise) {
+      return this._terminalNotifierBinPromise
+    }
+    return this._resolveTerminalNotifierBinSync()
   }
 
   async send(event: NotificationEvent): Promise<boolean> {
@@ -967,7 +972,7 @@ export class MacOSNativeNotificationProvider {
       messageLen: message.length
     }
 
-    const tnBin = process.platform === 'darwin' ? this._getTerminalNotifierBin() : ''
+    const tnBin = process.platform === 'darwin' ? await this._getTerminalNotifierBin() : ''
     const attempts: Record<string, unknown>[] = []
 
     let bundleId = ''

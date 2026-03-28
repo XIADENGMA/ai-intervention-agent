@@ -1164,7 +1164,8 @@ def _make_manager():
         "last_event_at": None,
         "providers": {},
     }
-    mgr._finalized_event_ids = set()
+    mgr._finalized_event_ids = {}
+    mgr._finalized_max_size = 500
     mgr._callbacks_lock = threading.Lock()
     mgr._callbacks = {}
     mgr._initialized = True

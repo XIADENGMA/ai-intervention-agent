@@ -31,6 +31,7 @@ logger = EnhancedLogger(__name__)
 
 try:
     from notification_manager import NotificationTrigger, notification_manager
+    from notification_models import NotificationType
 
     NOTIFICATION_AVAILABLE = True
     logger.info("通知系统已导入")
@@ -188,12 +189,17 @@ def launch_feedback_ui(
                     if len(cleaned_summary) > 100:
                         notification_message += "..."
 
-                    # 发送通知（types=None 使用配置的默认类型）
+                    # MCP 侧仅发送系统级通知，Bark 由前端统一处理（避免跨进程双重推送）
+                    mcp_types = [
+                        t
+                        for t in [NotificationType.SYSTEM, NotificationType.SOUND]
+                        if t != NotificationType.BARK
+                    ]
                     event_id = notification_manager.send_notification(
                         title="新的交互反馈请求",
                         message=notification_message,
                         trigger=NotificationTrigger.IMMEDIATE,
-                        types=None,  # 自动根据配置选择（包括 Bark）
+                        types=mcp_types,
                         metadata={"task_id": task_id, "source": "launch_feedback_ui"},
                     )
 
@@ -351,12 +357,17 @@ async def interactive_feedback(
                     if len(cleaned_message) > 100:
                         notification_message += "..."
 
-                    # 发送通知（types=None 使用配置的默认类型）
+                    # MCP 侧仅发送系统级通知，Bark 由前端统一处理（避免跨进程双重推送）
+                    mcp_types = [
+                        t
+                        for t in [NotificationType.SYSTEM, NotificationType.SOUND]
+                        if t != NotificationType.BARK
+                    ]
                     event_id = notification_manager.send_notification(
                         title="新的反馈请求",
                         message=notification_message,
                         trigger=NotificationTrigger.IMMEDIATE,
-                        types=None,  # 自动根据配置选择（包括 Bark）
+                        types=mcp_types,
                         metadata={"task_id": task_id, "source": "interactive_feedback"},
                     )
 

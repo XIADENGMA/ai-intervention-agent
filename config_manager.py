@@ -4,7 +4,6 @@
 
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。
 旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
-旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
 通过 get_config() 获取全局 ConfigManager 实例。
 """
 
@@ -14,6 +13,7 @@ import os
 import platform
 import shutil
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Generator
@@ -650,32 +650,49 @@ class ConfigManager(
         self._schedule_save()
 
     def _save_config_immediate(self):
-        """立即将配置写入文件（TOML 保留注释，JSON 标准格式），保存后验证"""
+        """原子写入配置文件（tempfile + os.replace），防止崩溃导致文件截断/损坏"""
         try:
             self.config_file.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                if self._is_toml_file() and self._original_content:
-                    content = self._save_toml_with_comments(self._config)
-                    f.write(content)
-                    self._original_content = content
-                    logger.debug(f"TOML 配置文件已保存（保留注释）: {self.config_file}")
-                elif self._is_toml_file():
-                    content = tomlkit.dumps(tomlkit.item(self._config))
-                    f.write(content)
-                    self._original_content = content
-                    logger.debug(f"TOML 配置文件已保存: {self.config_file}")
-                else:
-                    content = json.dumps(self._config, indent=2, ensure_ascii=False)
-                    f.write(content)
-                    self._original_content = content
-                    logger.debug(f"配置文件已保存: {self.config_file}")
+            if self._is_toml_file() and self._original_content:
+                content = self._save_toml_with_comments(self._config)
+            elif self._is_toml_file():
+                content = tomlkit.dumps(tomlkit.item(self._config))
+            else:
+                content = json.dumps(self._config, indent=2, ensure_ascii=False)
 
-            # 验证保存的文件是否有效
+            # 保留原文件权限（mkstemp 默认 0o600，可能不同于原文件）
+            orig_mode = None
+            if hasattr(os, "fchmod"):
+                try:
+                    orig_mode = os.stat(str(self.config_file)).st_mode
+                except OSError:
+                    pass
+
+            fd, tmp_path = tempfile.mkstemp(
+                suffix=".tmp",
+                dir=str(self.config_file.parent),
+            )
+            try:
+                if orig_mode is not None:
+                    os.fchmod(fd, orig_mode)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(content)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, str(self.config_file))
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+
+            self._original_content = content
+            logger.debug(f"配置文件已原子写入: {self.config_file}")
+
             self._validate_saved_config()
-
-            # 【关键修复】更新文件修改时间缓存，避免文件监听器把“自己写入”误判为外部变更
-            # 这样可以减少重复 reload/回调，降低噪声与额外 I/O
+            # 更新 mtime 缓存，避免文件监听器将本次写入误判为外部变更
             self._update_file_mtime()
 
         except Exception as e:

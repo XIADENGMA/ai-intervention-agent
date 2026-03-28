@@ -117,8 +117,9 @@ from server_feedback import (
 
 interactive_feedback = mcp.tool()(_interactive_feedback_impl)
 
-# TaskQueue 主要由 Web UI 进程使用（web_ui.py 会导入 server.get_task_queue）。
-# 为避免在 MCP 服务器进程里无意义地启动后台清理线程，这里采用懒加载 + 线程安全初始化。
+# TaskQueue 仅由 Web UI 子进程使用（web_ui.py / web_ui_routes 会调用 get_task_queue()）。
+# MCP 服务器主进程中此函数从未被调用，因此不会创建 TaskQueue 实例或后台清理线程。
+# 采用懒加载 + 双重检查锁定，确保线程安全且无不必要的资源消耗。
 _global_task_queue: TaskQueue | None = None
 _global_task_queue_lock = threading.Lock()
 
@@ -133,7 +134,12 @@ def get_task_queue() -> TaskQueue:
     if _global_task_queue is None:
         with _global_task_queue_lock:
             if _global_task_queue is None:
-                _global_task_queue = TaskQueue(max_tasks=10)
+                from pathlib import Path
+
+                persist_path = str(
+                    Path(__file__).resolve().parent / "data" / "tasks.json"
+                )
+                _global_task_queue = TaskQueue(max_tasks=10, persist_path=persist_path)
     assert _global_task_queue is not None
     return _global_task_queue
 

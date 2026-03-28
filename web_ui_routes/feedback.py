@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
-import uuid
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
 
 from enhanced_logging import EnhancedLogger
-from file_validator import validate_uploaded_file
 from i18n import msg
 from server import get_task_queue
 from shared_types import FeedbackResult
+from web_ui_routes._upload_helpers import extract_uploaded_images
 
 if TYPE_CHECKING:
     import threading
@@ -94,13 +90,15 @@ class FeedbackRoutesMixin:
                       type: boolean
             """
             logger.info(f"收到提交请求 - Content-Type: {request.content_type}")
-            logger.info(f"request.files: {dict(request.files)}")
-            logger.info(f"request.form: {dict(request.form)}")
+            logger.debug(f"request.files keys: {list(request.files.keys())}")
+            logger.debug(f"request.form keys: {list(request.form.keys())}")
             try:
                 json_data = request.get_json()
-                logger.info(f"request.json: {json_data}")
+                logger.debug(
+                    f"request.json keys: {list(json_data.keys()) if isinstance(json_data, dict) else type(json_data)}"
+                )
             except Exception as e:
-                logger.info(f"无法解析JSON数据: {e}")
+                logger.debug(f"无法解析JSON数据: {e}")
 
             if request.files:
                 requested_task_id = request.form.get("task_id", "").strip()
@@ -112,75 +110,13 @@ class FeedbackRoutesMixin:
                     selected_options = []
 
                 logger.debug("接收到的反馈数据:")
-                logger.debug(
-                    f"  - 文字内容: '{feedback_text}' (长度: {len(feedback_text)})"
-                )
-                logger.debug(f"  - 选项数据: {selected_options_str}")
-                logger.debug(f"  - 解析后选项: {selected_options}")
+                logger.debug(f"  - 文字内容长度: {len(feedback_text)}")
+                logger.debug(f"  - 选项数量: {len(selected_options)}")
                 logger.debug(f"  - 文件数量: {len(request.files)}")
 
-                uploaded_images: list[dict[str, Any]] = []
-                for key in request.files:
-                    if key.startswith("image_"):
-                        file = request.files[key]
-                        if file and file.filename:
-                            try:
-                                file_content = file.read()
-
-                                validation_result = validate_uploaded_file(
-                                    file_content, file.filename, file.content_type
-                                )
-
-                                if not validation_result["valid"]:
-                                    error_msg = f"文件验证失败: {file.filename} - {'; '.join(validation_result['errors'])}"
-                                    logger.warning(error_msg)
-                                    continue
-
-                                if validation_result["warnings"]:
-                                    logger.info(
-                                        f"文件验证警告: {file.filename} - {'; '.join(validation_result['warnings'])}"
-                                    )
-
-                                safe_filename = f"{uuid.uuid4().hex}{validation_result.get('extension', '.bin')}"
-                                original_filename = Path(
-                                    file.filename.replace("\\", "/")
-                                ).name
-
-                                base64_data = base64.b64encode(file_content).decode(
-                                    "utf-8"
-                                )
-
-                                uploaded_images.append(
-                                    {
-                                        "filename": original_filename,
-                                        "safe_filename": safe_filename,
-                                        "content_type": validation_result["mime_type"]
-                                        or file.content_type
-                                        or "application/octet-stream",
-                                        "data": base64_data,
-                                        "size": len(file_content),
-                                        "validated_type": validation_result[
-                                            "file_type"
-                                        ],
-                                        "validation_warnings": validation_result[
-                                            "warnings"
-                                        ],
-                                        "file_hash": hashlib.sha256(
-                                            file_content
-                                        ).hexdigest()[:16],
-                                    }
-                                )
-                                logger.debug(
-                                    f"  - 处理图片: {file.filename} ({len(file_content)} bytes) - 类型: {validation_result['file_type']}"
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"处理文件 {file.filename} 时出错: {e}",
-                                    exc_info=True,
-                                )
-                                continue
-
-                images: list[Any] = uploaded_images
+                images: list[Any] = extract_uploaded_images(
+                    request, include_metadata=True
+                )
             elif request.form:
                 requested_task_id = request.form.get("task_id", "").strip()
                 feedback_text = request.form.get("feedback_text", "").strip()

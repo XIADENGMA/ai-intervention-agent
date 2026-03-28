@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional, cast
 
@@ -176,8 +178,23 @@ class IOOperationsMixin:
                 content = _tk.dumps(_tk.item(restored_config))
             else:
                 content = json.dumps(restored_config, indent=2, ensure_ascii=False)
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                f.write(content)
+
+            # 原子写入：tempfile → fsync → os.replace
+            fd, tmp_path = tempfile.mkstemp(
+                suffix=".tmp", dir=str(self.config_file.parent)
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(content)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_path, str(self.config_file))
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
             with self._lock:
                 self._original_content = content

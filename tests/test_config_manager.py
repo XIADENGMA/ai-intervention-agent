@@ -2979,13 +2979,13 @@ class TestFileWatcherEdgeCases(unittest.TestCase):
         mgr.stop_file_watcher()
 
     def test_shutdown_cancel_timer_exception(self):
-        """lines 96-97: shutdown 取消 save_timer 时异常"""
+        """shutdown 先 force_save（取消定时器）再自身取消，异常不影响流程"""
         mgr = ConfigManager()
         mock_timer = MagicMock()
         mock_timer.cancel.side_effect = RuntimeError("cancel fail")
         mgr._save_timer = mock_timer
         mgr.shutdown()
-        mock_timer.cancel.assert_called_once()
+        assert mock_timer.cancel.call_count >= 1
 
     def test_update_file_mtime_file_not_exist(self):
         """branch 24->exit: 文件不存在时 _update_file_mtime 跳过"""

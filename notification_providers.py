@@ -150,12 +150,23 @@ class SoundNotificationProvider(BaseNotificationProvider):
 class BarkNotificationProvider(BaseNotificationProvider):
     """Bark iOS 推送 - 通过 HTTP POST 发送通知到 Bark 服务器。"""
 
-    # 【优化】类级别常量：元数据保留键（所有实例共享，不可变）
-    # 说明：
-    # - 这些键由本提供者负责构建/控制，避免 event.metadata 覆盖导致请求体不一致
-    # - Bark 常见参数是 url/copy（而不是 action），这里也纳入保留键集合
     _RESERVED_KEYS = frozenset(
         {"title", "body", "device_key", "icon", "action", "url", "copy"}
+    )
+
+    # 允许转发到 Bark 服务器的元数据键白名单（防止内部数据泄漏到第三方）
+    _ALLOWED_METADATA_KEYS = frozenset(
+        {
+            "group",
+            "level",
+            "badge",
+            "autoCopy",
+            "isArchive",
+            "sound",
+            "event",
+            "count",
+            "source",
+        }
     )
 
     # 【安全】脱敏规则：避免在日志/调试信息中泄露 APNs device token 等敏感标识
@@ -290,21 +301,15 @@ class BarkNotificationProvider(BaseNotificationProvider):
                             f"未知 bark_action='{bark_action}'，已忽略: {event.id}"
                         )
 
-            # 添加元数据时跳过保留键（防止覆盖核心字段）
+            # 白名单机制：仅转发允许的元数据键，防止内部数据泄漏到第三方 Bark 服务
             if event.metadata:
                 for key, value in event.metadata.items():
-                    # 跳过保留键，防止元数据覆盖核心配置
                     if key in self._RESERVED_KEYS:
-                        logger.warning(f"跳过元数据中的保留键: {key}")
                         continue
-
-                    if isinstance(
-                        value, (str, int, float, bool, type(None), list, dict)
-                    ):
+                    if key not in self._ALLOWED_METADATA_KEYS:
+                        continue
+                    if isinstance(value, (str, int, float, bool, type(None))):
                         bark_data[key] = value
-                    else:
-                        # 其他复杂类型转为字符串
-                        bark_data[key] = str(value)
 
             # 【可配置】Bark 请求超时（秒）
             try:
@@ -405,8 +410,7 @@ class SystemNotificationProvider(BaseNotificationProvider):
                 logger.debug("系统通知未初始化 notify 句柄，跳过发送")
                 return False
 
-            # 使用浮点除法保留小数精度，限制最小值为1.0秒
-            timeout_seconds = max(self.config.web_timeout / 1000, 1.0)
+            timeout_seconds = 10.0
 
             self._notify(
                 title=event.title,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import queue
 import threading
@@ -13,9 +12,9 @@ from flask import Response, jsonify, request
 from flask.typing import ResponseReturnValue
 
 from enhanced_logging import EnhancedLogger
-from file_validator import validate_uploaded_file
 from i18n import msg
 from server import get_task_queue
+from web_ui_routes._upload_helpers import extract_uploaded_images
 
 if TYPE_CHECKING:
     from flask import Flask
@@ -635,42 +634,7 @@ class TaskRoutesMixin:
                         cleaned_selected_options.append(s)
                 selected_options = cleaned_selected_options
 
-                images = []
-                for key in request.files:
-                    if key.startswith("image_"):
-                        file = request.files[key]
-                        if file and file.filename:
-                            try:
-                                file_content = file.read()
-
-                                validation_result = validate_uploaded_file(
-                                    file_content, file.filename, file.content_type
-                                )
-
-                                if not validation_result["valid"]:
-                                    logger.warning(
-                                        f"文件验证失败: {file.filename} - {'; '.join(validation_result['errors'])}"
-                                    )
-                                    continue
-
-                                image_data = base64.b64encode(file_content).decode(
-                                    "utf-8"
-                                )
-
-                                images.append(
-                                    {
-                                        "filename": file.filename,
-                                        "data": image_data,
-                                        "content_type": validation_result["mime_type"]
-                                        or file.content_type
-                                        or "image/jpeg",
-                                        "size": len(file_content),
-                                    }
-                                )
-                            except Exception as img_error:
-                                logger.error(
-                                    f"处理图片失败: {img_error}", exc_info=True
-                                )
+                images = extract_uploaded_images(request)
 
                 result = {
                     "user_input": feedback_text,

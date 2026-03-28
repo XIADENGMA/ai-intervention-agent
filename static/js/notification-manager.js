@@ -37,6 +37,9 @@ class NotificationManager {
     this.boundPermissionRequestHandler = null
     // 事件去重：避免短时间内重复触发（尤其是移动端 Bark）
     this._eventDeduper = new Map()
+    this._dedupeMaxKeys = 200
+    this._dedupeTtlMs = 5 * 60 * 1000
+    this._dedupeNextPruneAtMs = 0
     this.config = {
       enabled: true,
       webEnabled: true,
@@ -615,11 +618,33 @@ class NotificationManager {
     return results
   }
 
+  _pruneDeduper(now) {
+    try {
+      const cutoff = now - this._dedupeTtlMs
+      for (const [k, ts] of this._eventDeduper.entries()) {
+        if (typeof ts !== 'number' || ts < cutoff) {
+          this._eventDeduper.delete(k)
+        }
+      }
+      while (this._eventDeduper.size > this._dedupeMaxKeys) {
+        const firstKey = this._eventDeduper.keys().next().value
+        if (firstKey === undefined) break
+        this._eventDeduper.delete(firstKey)
+      }
+    } catch (e) {
+      // noop
+    }
+    this._dedupeNextPruneAtMs = now + 60000
+  }
+
   _shouldDedupe(key, windowMs) {
     try {
       const k = String(key || '')
       if (!k) return false
       const now = Date.now()
+      if (now >= this._dedupeNextPruneAtMs || this._eventDeduper.size > this._dedupeMaxKeys) {
+        this._pruneDeduper(now)
+      }
       const last = this._eventDeduper.get(k)
       if (typeof last === 'number' && now - last < windowMs) {
         return true

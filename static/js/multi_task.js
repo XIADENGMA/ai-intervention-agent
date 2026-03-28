@@ -1949,21 +1949,20 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
         console.log(`已清除任务 ${taskId} 保存的图片列表`)
       }
 
-      // 自动切换到下一个未完成的任务
-      // 延迟执行以等待任务列表更新
-      setTimeout(async () => {
-        // 刷新任务列表获取最新状态
-        await refreshTasksList()
-
-        // 查找下一个未完成的任务（排除当前已完成的任务）
-        const nextTask = currentTasks.find(t => t.task_id !== taskId && t.status !== 'completed')
-        if (nextTask) {
-          console.log(`🔄 自动切换到下一个任务: ${nextTask.task_id}`)
-          switchTask(nextTask.task_id)
-        } else {
-          console.log(`所有任务已完成`)
-        }
-      }, 300)
+      // SSE 会在 complete_task 后 ~80ms 内自动触发 fetchAndApplyTasks，
+      // 如果 SSE 不可用则回退轮询也会处理。这里仅做一次兜底刷新。
+      if (!_sseConnected) {
+        setTimeout(async () => {
+          await refreshTasksList()
+          const nextTask = currentTasks.find(t => t.task_id !== taskId && t.status !== 'completed')
+          if (nextTask) {
+            console.log(`自动切换到下一个任务: ${nextTask.task_id}`)
+            switchTask(nextTask.task_id)
+          } else {
+            console.log(`所有任务已完成`)
+          }
+        }, 200)
+      }
     } else {
       console.error('提交任务失败:', data.error)
     }

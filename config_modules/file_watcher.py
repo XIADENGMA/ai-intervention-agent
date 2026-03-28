@@ -98,7 +98,14 @@ class FileWatcherMixin:
         logger.info("配置文件监听器已停止")
 
     def shutdown(self) -> None:
-        """关闭配置管理器：停止文件监听、取消延迟保存定时器（幂等）"""
+        """关闭配置管理器：刷新待保存变更、停止文件监听、取消定时器（幂等）"""
+        # 先强制保存未落盘的配置变更，避免进程退出丢失数据
+        try:
+            if hasattr(self, "force_save") and callable(self.force_save):
+                self.force_save()
+        except Exception as e:
+            logger.debug(f"shutdown 时强制保存失败（忽略）: {e}")
+
         try:
             self.stop_file_watcher()
         except Exception as e:

@@ -27,6 +27,8 @@ from flask import (
     Flask,
     Response,
     abort,
+    g,
+    has_request_context,
     jsonify,
     render_template_string,
     request,
@@ -648,7 +650,18 @@ class WebFeedbackUI(
         self._template_cache: str | None = None
         self._template_cache_mtimes: dict[str, float] = {}
         self.app = Flask(__name__)
-        CORS(self.app)
+        _cors_origins: list[str | re.Pattern[str]] = [
+            f"http://localhost:{port}",
+            f"http://127.0.0.1:{port}",
+            re.compile(r"^vscode-webview://"),
+        ]
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            _cors_origins.append(f"http://{host}:{port}")
+        CORS(
+            self.app,
+            origins=_cors_origins,
+            supports_credentials=False,
+        )
 
         # OpenAPI / Swagger 文档（访问 /apidocs 查看交互式 API 文档）
         self.app.config["SWAGGER"] = {
@@ -717,7 +730,8 @@ class WebFeedbackUI(
         self.app.config["COMPRESS_MIN_SIZE"] = 500  # 小于 500 字节不压缩
         Compress(self.app)
 
-        self.csp_nonce = secrets.token_urlsafe(16)
+        self._CSP_NONCE_PLACEHOLDER = "__CSP_NONCE__"
+
         self.network_security_config = self._load_network_security_config()
         # 【热更新】network_security（allowed_networks/blocked_ips/access_control_enabled）也应随配置文件变化生效
         _ensure_network_security_hot_reload_callback_registered()
@@ -775,31 +789,24 @@ class WebFeedbackUI(
         """
 
         @self.app.before_request
-        def check_ip_access() -> ResponseReturnValue | None:
-            """检查IP访问权限（before_request钩子）
-
-            功能说明：
-                在每个请求处理前验证客户端IP地址是否在允许的网络范围内。
+        def check_ip_and_generate_nonce() -> ResponseReturnValue | None:
+            """IP 访问控制 + 每请求生成 CSP nonce
 
             验证逻辑：
                 1. 默认使用REMOTE_ADDR作为客户端IP
                 2. 仅在请求来自本机反向代理时信任HTTP_X_FORWARDED_FOR
                 3. 处理代理转发的多IP情况（取第一个IP）
-                3. 调用_is_ip_allowed()进行白名单/黑名单验证
-                4. 拒绝不合法的IP访问（返回403）
-
-            副作用：
-                - 记录被拒绝的IP地址到日志
-                - 调用abort(403)中断请求处理
-
-            注意事项：
-                - 仅信任来自本机反向代理的 X-Forwarded-For，避免客户端直接伪造
+                4. 调用_is_ip_allowed()进行白名单/黑名单验证
+                5. 拒绝不合法的IP访问（返回403）
+                6. 生成本次请求的 CSP nonce 并存入 flask.g
             """
             client_ip = self._get_request_client_ip(request.environ)
 
             if not self._is_ip_allowed(client_ip):
                 logger.warning(f"拒绝来自 {client_ip} 的访问请求")
                 abort(403)
+
+            g.csp_nonce = secrets.token_urlsafe(16)
 
         @self.app.after_request
         def add_security_headers(response: Response) -> Response:
@@ -826,10 +833,11 @@ class WebFeedbackUI(
                 - 此钩子对所有路由生效，包括静态资源
                 - CSP策略严格，修改时需谨慎测试
             """
+            nonce = getattr(g, "csp_nonce", "")
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                f"script-src 'self' 'nonce-{self.csp_nonce}'; "
-                "style-src 'self' 'unsafe-inline'; "  # 允许内联样式（MathJax 和 Pygments 需要，nonce 会导致 unsafe-inline 失效）
+                f"script-src 'self' 'nonce-{nonce}'; "
+                "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: blob:; "
                 "font-src 'self' data:; "
                 "connect-src 'self'; "
@@ -1288,6 +1296,15 @@ class WebFeedbackUI(
 
         os.kill(os.getpid(), signal.SIGINT)
 
+    def _get_csp_nonce(self) -> str:
+        """获取当前请求的 CSP nonce；非请求上下文时生成临时随机值。"""
+        try:
+            if has_request_context():
+                return getattr(g, "csp_nonce", secrets.token_urlsafe(16))
+        except RuntimeError:
+            pass
+        return secrets.token_urlsafe(16)
+
     def _collect_template_mtimes(self) -> dict[str, float]:
         """收集模板及其依赖静态资源的 mtime，用于缓存失效判断。"""
         current_dir = Path(__file__).resolve().parent
@@ -1323,7 +1340,8 @@ class WebFeedbackUI(
             self._template_cache is not None
             and current_mtimes == self._template_cache_mtimes
         ):
-            return self._template_cache
+            nonce = self._get_csp_nonce()
+            return self._template_cache.replace(self._CSP_NONCE_PLACEHOLDER, nonce)
 
         try:
             # 优先尝试使用 importlib.resources (Python 3.9+)
@@ -1351,7 +1369,9 @@ class WebFeedbackUI(
                 with open(template_path, "r", encoding="utf-8") as f:
                     html_content = f.read()
 
-            html_content = html_content.replace("{{ csp_nonce }}", self.csp_nonce)
+            html_content = html_content.replace(
+                "{{ csp_nonce }}", self._CSP_NONCE_PLACEHOLDER
+            )
             html_content = html_content.replace("{{ version }}", get_project_version())
             html_content = html_content.replace("{{ github_url }}", GITHUB_URL)
 
@@ -1375,7 +1395,7 @@ class WebFeedbackUI(
                 current_dir / "static" / "js" / "app.js"
             )
 
-            css_link = f'<link rel="stylesheet" href="/static/css/main.css?v={css_version}" nonce="{self.csp_nonce}">'
+            css_link = f'<link rel="stylesheet" href="/static/css/main.css?v={css_version}" nonce="{self._CSP_NONCE_PLACEHOLDER}">'
             html_content = self._replace_inline_css(html_content, css_link)
 
             html_content = html_content.replace(
@@ -1393,7 +1413,8 @@ class WebFeedbackUI(
 
             self._template_cache = html_content
             self._template_cache_mtimes = current_mtimes
-            return html_content
+            nonce = self._get_csp_nonce()
+            return html_content.replace(self._CSP_NONCE_PLACEHOLDER, nonce)
         except FileNotFoundError:
             # 如果模板文件不存在，返回一个基本的错误页面
             return """
