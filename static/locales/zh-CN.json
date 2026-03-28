@@ -48,6 +48,7 @@
     "language": "界面语言",
     "langAuto": "自动检测",
     "configPath": "当前配置文件路径",
+    "configHint": "开发模式默认优先使用工作目录的 <code>./config.toml</code>。如需强制指向 <code>~/.config/ai-intervention-agent/config.toml</code>，请在启动前设置环境变量：<code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml</code>。",
     "shortcutSubmit": "提交反馈：",
     "shortcutInsertCode": "插入代码：",
     "shortcutPasteImage": "粘贴图片：",

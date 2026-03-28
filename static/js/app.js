@@ -626,13 +626,13 @@ function enableSubmitButton() {
 
 // 显示状态消息
 function showStatus(message, type) {
-  // 检查当前是否在无内容页面（使用 style.display 检查）
   const noContentContainer = document.getElementById('no-content-container')
   const isNoContentPage = noContentContainer && noContentContainer.style.display === 'flex'
 
-  // 🚫 在有内容时，只显示错误消息，跳过成功/信息提示
   if (!isNoContentPage && type !== 'error') {
-    console.log(`[showStatus] 跳过非错误提示: ${message} (${type})`)
+    if (type === 'success') {
+      _showToast(message)
+    }
     return
   }
 
@@ -646,11 +646,40 @@ function showStatus(message, type) {
   statusElement.className = `status-message status-${type}`
   statusElement.style.display = 'block'
 
-  if (type === 'success') {
+  const autoDismissMs = type === 'success' ? 3000 : type === 'error' ? 10000 : 0
+  if (autoDismissMs > 0) {
     setTimeout(() => {
       statusElement.style.display = 'none'
-    }, 3000)
+    }, autoDismissMs)
   }
+}
+
+function _showToast(message) {
+  let toast = document.getElementById('_aiia-toast')
+  if (!toast) {
+    toast = document.createElement('div')
+    toast.id = '_aiia-toast'
+    toast.setAttribute('role', 'status')
+    toast.setAttribute('aria-live', 'polite')
+    Object.assign(toast.style, {
+      position: 'fixed', top: '1rem', left: '50%', transform: 'translateX(-50%) translateY(-120%)',
+      padding: '0.6rem 1.2rem', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '500',
+      color: 'var(--text-primary)', background: 'var(--bg-tertiary)',
+      boxShadow: '0 4px 16px var(--shadow-color)', border: '1px solid var(--border-color)',
+      zIndex: '9999', transition: 'transform 0.3s ease, opacity 0.3s ease', opacity: '0',
+      pointerEvents: 'none', whiteSpace: 'nowrap'
+    })
+    document.body.appendChild(toast)
+  }
+  toast.textContent = message
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateX(-50%) translateY(0)'
+    toast.style.opacity = '1'
+  })
+  setTimeout(() => {
+    toast.style.transform = 'translateX(-50%) translateY(-120%)'
+    toast.style.opacity = '0'
+  }, 1800)
 }
 
 // 插入代码功能 - 与GUI版本逻辑完全一致

@@ -83,6 +83,14 @@
       var attrVal = t(attrKey)
       if (attrVal !== attrKey) attrEl.title = attrVal
     }
+    var htmlEls = (root || document).querySelectorAll('[data-i18n-html]')
+    for (var h = 0; h < htmlEls.length; h++) {
+      var hEl = htmlEls[h]
+      var hKey = hEl.getAttribute('data-i18n-html')
+      if (!hKey) continue
+      var hVal = t(hKey)
+      if (hVal !== hKey) hEl.innerHTML = hVal
+    }
     var placeholders = (root || document).querySelectorAll('[data-i18n-placeholder]')
     for (var k = 0; k < placeholders.length; k++) {
       var phEl = placeholders[k]

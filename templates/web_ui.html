@@ -3626,7 +3626,7 @@
               </div>
             </div>
 
-            <!-- 配置文件信息（用于明确“当前实际读取的 config.jsonc 是哪一份”） -->
+            <!-- 配置文件信息（用于明确“当前实际读取的 config.toml 是哪一份”） -->
             <h4 class="settings-main-title shortcuts-section">
               <svg
                 class="section-icon"
@@ -3666,10 +3666,10 @@
                     readonly
                   />
                 </label>
-                <div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.85rem">
-                  开发模式默认优先使用工作目录的 <code>./config.jsonc</code>。如需强制指向
-                  <code>~/.config/ai-intervention-agent/config.jsonc</code>，请在启动前设置环境变量：
-                  <code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.jsonc</code>。
+                <div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.85rem" data-i18n-html="settings.configHint">
+                  开发模式默认优先使用工作目录的 <code>./config.toml</code>。如需强制指向
+                  <code>~/.config/ai-intervention-agent/config.toml</code>，请在启动前设置环境变量：
+                  <code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml</code>。
                 </div>
               </div>
             </div>

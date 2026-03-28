@@ -48,6 +48,7 @@
     "language": "Interface language",
     "langAuto": "Auto-detect",
     "configPath": "Current config file path",
+    "configHint": "In dev mode, the working directory's <code>./config.toml</code> is used by default. To override, set the environment variable before launch: <code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml</code>.",
     "shortcutSubmit": "Submit feedback:",
     "shortcutInsertCode": "Insert code:",
     "shortcutPasteImage": "Paste image:",

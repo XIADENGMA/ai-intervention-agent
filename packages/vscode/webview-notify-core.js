@@ -59,7 +59,7 @@
       enabled: c.enabled !== false,
       webEnabled: c.web_enabled !== false,
       autoRequestPermission: c.auto_request_permission !== false,
-      // 后端默认 true（config.jsonc.default）；这里对齐“未显式关闭即开启”
+      // 后端默认 true（config.toml.default）；这里对齐“未显式关闭即开启”
       macosNativeEnabled: c.macos_native_enabled !== false,
       soundEnabled: c.sound_enabled !== false,
       soundMute: !!c.sound_mute,
