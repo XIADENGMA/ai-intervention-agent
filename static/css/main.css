@@ -306,10 +306,27 @@
  *   - 移除背景动画（静态背景）
  *   - 隐藏横向溢出（overflow-x: hidden）
  */
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 10000;
+  padding: 0.75rem 1.5rem;
+  background: var(--primary-500);
+  color: #fff;
+  border-radius: 0 0 8px 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.skip-to-content:focus {
+  left: 0;
+}
+
 body {
   font-family: var(--font-sans);
-  background: var(--bg-primary); /* 使用主题变量 */
-  color: var(--text-primary); /* 使用主题变量 */
+  background: var(--bg-primary);
+  color: var(--text-primary);
   min-height: 100vh; /* 最小高度为视口高度 */
   padding: 1rem 0; /* 上下内边距 */
   line-height: 1.47059; /* Apple风格行高 */
@@ -809,6 +826,16 @@ h1 {
 .theme-toggle-btn.is-light .theme-icon-moon {
   opacity: 0;
   transform: rotate(90deg) scale(0.5);
+}
+
+.theme-toggle-btn.is-auto .theme-icon-sun {
+  opacity: 0.5;
+  transform: rotate(0deg) scale(0.8);
+}
+
+.theme-toggle-btn.is-auto .theme-icon-moon {
+  opacity: 0.5;
+  transform: rotate(0deg) scale(0.8);
 }
 
 /**

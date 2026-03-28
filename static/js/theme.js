@@ -169,10 +169,7 @@ const ThemeManager = (function () {
   function createToggleButton() {
     const button = document.createElement('button');
     button.className = 'theme-toggle-btn';
-    button.setAttribute('aria-label', '切换主题');
-    button.setAttribute('title', '切换主题');
 
-    // 图标 SVG
     button.innerHTML = `
       <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="5"/>
@@ -190,18 +187,17 @@ const ThemeManager = (function () {
       </svg>
     `;
 
-    button.addEventListener('click', () => {
-      // 使用内部 toggle 逻辑，而非 ThemeManager.toggle()
-      const effectiveTheme = currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
-      const newTheme = effectiveTheme === THEMES.DARK ? THEMES.LIGHT : THEMES.DARK;
-
-      currentTheme = newTheme;
-      savePreference(newTheme);
-      applyTheme(newTheme);
-      updateToggleButton();
-    });
+    button.addEventListener('click', toggleThemeInternal);
 
     return button;
+  }
+
+  function toggleThemeInternal() {
+    const cycle = { [THEMES.AUTO]: THEMES.LIGHT, [THEMES.LIGHT]: THEMES.DARK, [THEMES.DARK]: THEMES.AUTO };
+    currentTheme = cycle[currentTheme] || THEMES.AUTO;
+    savePreference(currentTheme);
+    applyTheme(currentTheme);
+    updateToggleButton();
   }
 
   /**
@@ -210,9 +206,19 @@ const ThemeManager = (function () {
   function updateToggleButton() {
     const effectiveTheme = currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
     const buttons = document.querySelectorAll('.theme-toggle-btn');
+    const t = (key) => window.AIIA_I18N ? window.AIIA_I18N.t(key) : key;
+    const labels = {
+      [THEMES.AUTO]: t('theme.auto'),
+      [THEMES.LIGHT]: t('theme.light'),
+      [THEMES.DARK]: t('theme.dark')
+    };
+    const label = labels[currentTheme] || labels[THEMES.AUTO];
 
     buttons.forEach(button => {
       button.classList.toggle('is-light', effectiveTheme === THEMES.LIGHT);
+      button.classList.toggle('is-auto', currentTheme === THEMES.AUTO);
+      button.setAttribute('aria-label', label);
+      button.setAttribute('title', label);
     });
   }
 
@@ -223,20 +229,9 @@ const ThemeManager = (function () {
   function bindExistingButtons() {
     const buttons = document.querySelectorAll('.theme-toggle-btn');
     buttons.forEach(button => {
-      // 避免重复绑定
       if (!button.hasAttribute('data-theme-bound')) {
-        button.addEventListener('click', () => {
-          // 使用内部 toggle 逻辑，而非 ThemeManager.toggle()
-          const effectiveTheme = currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
-          const newTheme = effectiveTheme === THEMES.DARK ? THEMES.LIGHT : THEMES.DARK;
-
-          currentTheme = newTheme;
-          savePreference(newTheme);
-          applyTheme(newTheme);
-          updateToggleButton();
-        });
+        button.addEventListener('click', toggleThemeInternal);
         button.setAttribute('data-theme-bound', 'true');
-        console.debug('主题切换按钮已绑定:', button.id || '(无ID)');
       }
     });
   }
@@ -285,12 +280,11 @@ const ThemeManager = (function () {
     },
 
     /**
-     * 切换主题（dark ↔ light）
+     * 切换主题（auto → light → dark → auto 三态循环）
      */
     toggle: function () {
-      const effectiveTheme = currentTheme === THEMES.AUTO ? systemPreference : currentTheme;
-      const newTheme = effectiveTheme === THEMES.DARK ? THEMES.LIGHT : THEMES.DARK;
-
+      const cycle = { [THEMES.AUTO]: THEMES.LIGHT, [THEMES.LIGHT]: THEMES.DARK, [THEMES.DARK]: THEMES.AUTO };
+      const newTheme = cycle[currentTheme] || THEMES.AUTO;
       this.setTheme(newTheme);
     },
 

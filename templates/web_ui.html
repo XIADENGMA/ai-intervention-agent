@@ -2839,7 +2839,8 @@
     </style>
   </head>
   <body>
-    <div class="container">
+    <a href="#feedback-text" class="skip-to-content" data-i18n="page.skipToContent">Skip to content</a>
+    <div class="container" role="main">
       <div class="header">
         <h1>
           <div class="header-icon">
@@ -3042,7 +3043,7 @@
           </button>
         </div>
         <!-- 无内容页面的状态消息显示区域 -->
-        <div class="status-message no-content-status" id="no-content-status-message"></div>
+        <div class="status-message no-content-status" id="no-content-status-message" role="status" aria-live="polite"></div>
       </div>
 
       <!-- 正常内容页面 -->
@@ -3255,7 +3256,7 @@
             </button>
           </div>
 
-          <div class="status-message" id="status-message"></div>
+          <div class="status-message" id="status-message" role="status" aria-live="polite"></div>
         </div>
       </div>
 

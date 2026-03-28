@@ -118,5 +118,11 @@
     "testTitle": "设置测试",
     "testBody": "这是一个测试通知，用于验证当前设置是否正常工作",
     "titleFlash": "[通知] {{message}}"
+  },
+  "page.skipToContent": "\u8df3\u8f6c\u5230\u5185\u5bb9",
+  "theme": {
+    "auto": "主题：自动（跟随系统）",
+    "light": "主题：浅色",
+    "dark": "主题：深色"
   }
 }

@@ -118,5 +118,11 @@
     "testTitle": "Settings Test",
     "testBody": "This is a test notification to verify your current settings are working correctly",
     "titleFlash": "[Notification] {{message}}"
+  },
+  "page.skipToContent": "Skip to content",
+  "theme": {
+    "auto": "Theme: Auto (follow system)",
+    "light": "Theme: Light",
+    "dark": "Theme: Dark"
   }
 }

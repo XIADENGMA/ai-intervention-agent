@@ -807,6 +807,9 @@ function closeCodePasteModal() {
   }
 
   document.removeEventListener('keydown', handleCodePasteModalKeydown)
+
+  const feedbackTextarea = document.getElementById('feedback-text')
+  if (feedbackTextarea) feedbackTextarea.focus()
 }
 
 function handleCodePasteModalKeydown(event) {
@@ -2376,11 +2379,16 @@ class SettingsManager {
         container.style.overflow = 'visible'
       }
 
-      panel.classList.remove('hidden') // 移除 hidden 类（它使用了 !important）
+      panel.classList.remove('hidden')
       panel.style.display = 'flex'
 
-      // 浅色主题适配
       this.applySettingsTheme()
+
+      this._settingsEscHandler = (e) => { if (e.key === 'Escape') this.hideSettings() }
+      document.addEventListener('keydown', this._settingsEscHandler)
+
+      const firstFocusable = panel.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+      if (firstFocusable) setTimeout(() => firstFocusable.focus(), 50)
     }
 
     // 每次打开设置面板都从后端刷新一次配置
@@ -2487,15 +2495,22 @@ class SettingsManager {
   hideSettings() {
     const panel = document.getElementById('settings-panel')
     if (panel) {
-      // 恢复 container 的 overflow
       const container = document.querySelector('.container')
       if (container) {
         container.style.overflow = ''
       }
 
-      panel.classList.add('hidden') // 添加 hidden 类
+      panel.classList.add('hidden')
       panel.style.display = 'none'
     }
+
+    if (this._settingsEscHandler) {
+      document.removeEventListener('keydown', this._settingsEscHandler)
+      this._settingsEscHandler = null
+    }
+
+    const settingsBtn = document.getElementById('settings-btn')
+    if (settingsBtn) settingsBtn.focus()
   }
 
   async testNotification() {

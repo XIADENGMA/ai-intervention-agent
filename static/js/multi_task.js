@@ -863,11 +863,12 @@ function renderTaskTabs() {
       tabsContainer.appendChild(tab)
     })
   } else {
-    // 仅更新active状态（极快）
     existingTabs.forEach(tab => {
       const taskId = tab.dataset.taskId
       const isActive = taskId === activeTaskId
       tab.classList.toggle('active', isActive)
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false')
+      tab.setAttribute('tabindex', isActive ? '0' : '-1')
     })
   }
 }
@@ -913,6 +914,9 @@ function renderTaskTabs() {
 function createTaskTab(task) {
   const tab = document.createElement('div')
   tab.className = 'task-tab'
+  tab.setAttribute('role', 'tab')
+  tab.setAttribute('aria-selected', task.status === 'active' ? 'true' : 'false')
+  tab.setAttribute('tabindex', task.status === 'active' ? '0' : '-1')
   if (task.status === 'active') {
     tab.classList.add('active')
   }
