@@ -144,12 +144,7 @@
 
       const s = settings || {}
       setChecked('notifyEnabled', s.enabled)
-      setChecked('notifyWebEnabled', s.webEnabled)
       setChecked('notifyMacOSNativeEnabled', s.macosNativeEnabled)
-      setChecked('notifyAutoRequestPermission', s.autoRequestPermission)
-      setChecked('notifySoundEnabled', s.soundEnabled)
-      setChecked('notifySoundMute', s.soundMute)
-      setValue('notifySoundVolume', s.soundVolume)
 
       setChecked('notifyBarkEnabled', s.barkEnabled)
       setValue('notifyBarkUrl', s.barkUrl)
@@ -170,21 +165,10 @@
       const el = document.getElementById(id)
       return el ? String(el.value || '') : ''
     }
-    const getNumber = (id, fallback) => {
-      const raw = getValue(id)
-      const n = parseInt(raw, 10)
-      if (Number.isNaN(n)) return fallback
-      return Math.max(0, Math.min(100, n))
-    }
 
     return {
       enabled: getChecked('notifyEnabled'),
-      webEnabled: getChecked('notifyWebEnabled'),
       macosNativeEnabled: getChecked('notifyMacOSNativeEnabled'),
-      autoRequestPermission: getChecked('notifyAutoRequestPermission'),
-      soundEnabled: getChecked('notifySoundEnabled'),
-      soundMute: getChecked('notifySoundMute'),
-      soundVolume: getNumber('notifySoundVolume', 80),
 
       barkEnabled: getChecked('notifyBarkEnabled'),
       barkUrl: getValue('notifyBarkUrl') || 'https://api.day.app/push',
@@ -362,11 +346,10 @@
         core && typeof core.getCachedNotificationSettings === 'function'
           ? core.getCachedNotificationSettings() || {}
           : {}
-      const payload = Object.assign({}, base, updates)
-      const payloadHash = computeHash(payload)
+      const mergedFull = Object.assign({}, base, updates)
+      const mergedHash = computeHash(mergedFull)
 
-      // 没变化：直接清理 dirty
-      if (payloadHash === lastNotificationSettingsHash) {
+      if (mergedHash === lastNotificationSettingsHash) {
         settingsDirty = false
         settingsRemoteChangedWhileDirty = false
         if (!silent) setSettingsHint('无需同步（未变更）', false, 1200)
@@ -377,7 +360,6 @@
         setSettingsHint('同步中…', false)
       }
 
-      // 取消上一次自动保存请求（保留最新输入）
       try {
         if (
           settingsAutoSaveAbortController &&
@@ -392,7 +374,7 @@
       const fetchOptions = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(updates),
         cache: 'no-store'
       }
       if (typeof AbortController !== 'undefined') {
@@ -417,16 +399,15 @@
         return
       }
 
-      // 写回 notify-core 缓存：让新任务通知立即使用最新配置
       try {
         if (core && typeof core.setCachedNotificationSettings === 'function') {
-          core.setCachedNotificationSettings(payload)
+          core.setCachedNotificationSettings(mergedFull)
         }
       } catch (e) {
         // 忽略
       }
 
-      lastNotificationSettingsHash = payloadHash
+      lastNotificationSettingsHash = mergedHash
       settingsDirty = false
       settingsRemoteChangedWhileDirty = false
 

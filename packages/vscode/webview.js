@@ -1124,28 +1124,8 @@ class WebviewProvider {
                     <input type="checkbox" id="notifyEnabled">
                 </label>
                 <label class="settings-toggle">
-                    <span>Web UI 通知</span>
-                    <input type="checkbox" id="notifyWebEnabled">
-                </label>
-                <label class="settings-toggle">
                     <span>macOS 原生通知</span>
                     <input type="checkbox" id="notifyMacOSNativeEnabled">
-                </label>
-                <label class="settings-toggle">
-                    <span>自动请求浏览器通知权限</span>
-                    <input type="checkbox" id="notifyAutoRequestPermission">
-                </label>
-                <label class="settings-toggle">
-                    <span>声音提示</span>
-                    <input type="checkbox" id="notifySoundEnabled">
-                </label>
-                <label class="settings-toggle">
-                    <span>静音</span>
-                    <input type="checkbox" id="notifySoundMute">
-                </label>
-                <label class="settings-field">
-                    <span class="settings-label">音量（0-100）</span>
-                    <input type="number" min="0" max="100" id="notifySoundVolume" placeholder="80">
                 </label>
 
                 <div class="settings-divider"></div>
