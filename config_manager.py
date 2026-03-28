@@ -819,8 +819,10 @@ class ConfigManager(
                 # 调度延迟保存
                 self._save_config()
             else:
-                # 直接更新内存中的配置，不保存
+                # 直接更新内存中的配置，不保存到文件
                 self._set_config_value(key, value)
+                # 清除 pending 中的同 key 旧值，防止 _delayed_save 回写覆盖
+                self._pending_changes.pop(key, None)
 
             # 【缓存优化】失效相关 section 缓存，避免 get_section() 返回旧值
             section = key.split(".")[0] if key else ""
@@ -899,9 +901,11 @@ class ConfigManager(
                 # 调度延迟保存（只调度一次）
                 self._save_config()
             else:
-                # 直接更新内存中的配置，不保存
+                # 直接更新内存中的配置，不保存到文件
                 for key, value in actual_changes.items():
                     self._set_config_value(key, value)
+                    # 清除 pending 中的同 key 旧值，防止 _delayed_save 回写覆盖
+                    self._pending_changes.pop(key, None)
                     logger.debug(
                         f"配置已更新: {key} = {_sanitize_config_value_for_log(key, value)}"
                     )

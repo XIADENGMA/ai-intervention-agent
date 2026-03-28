@@ -190,14 +190,14 @@ class SecurityMixin:
             return ""
         return forwarded_for.split(",")[0].strip()
 
-    @staticmethod
-    def _should_trust_forwarded_for(remote_addr: str) -> bool:
+    @classmethod
+    def _should_trust_forwarded_for(cls, remote_addr: str) -> bool:
         """仅信任来自本机反向代理的 X-Forwarded-For。"""
         if not remote_addr:
             return False
         try:
-            return ip_address(remote_addr).is_loopback
-        except AddressValueError:
+            return cls._normalize_addr(remote_addr).is_loopback
+        except (AddressValueError, ValueError):
             return False
 
     def _get_request_client_ip(self, environ: Dict[str, Any]) -> str:

@@ -311,6 +311,7 @@ class WebFeedbackUI(
             - 内联样式会增加HTML体积，但避免CSP问题
             - 扩展顺序可能影响渲染结果
         """
+        self._md_lock = threading.Lock()
         self.md = markdown.Markdown(
             extensions=[
                 "fenced_code",
@@ -361,8 +362,9 @@ class WebFeedbackUI(
         """
         if not text:
             return ""
-        self.md.reset()
-        return str(self.md.convert(text))
+        with self._md_lock:
+            self.md.reset()
+            return str(self.md.convert(text))
 
     def setup_routes(self) -> None:
         """注册所有API路由和静态资源路由
