@@ -2841,14 +2841,16 @@
       } catch (e) {
         // 忽略
       }
-      try {
-        showToast('配置加载失败，已使用任务详情兜底' + (reason ? '（' + reason + '）' : ''), {
-          kind: 'warn',
-          timeoutMs: 1600,
-          dedupeKey: 'config:fallback'
-        })
-      } catch (e) {
-        // 忽略
+      if (reason !== 'no_content') {
+        try {
+          showToast('配置加载失败，已使用任务详情兜底' + (reason ? '（' + reason + '）' : ''), {
+            kind: 'warn',
+            timeoutMs: 1600,
+            dedupeKey: 'config:fallback'
+          })
+        } catch (e) {
+          // 忽略
+        }
       }
       updateUI(fallback)
       return true
