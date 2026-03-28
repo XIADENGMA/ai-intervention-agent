@@ -207,7 +207,7 @@ function findMacAppBundlePathFromAppRoot(appRoot: string): string {
 function resolveBundledTerminalNotifierBinPath(): string {
   try {
     return path.join(
-      __dirname,
+      __dirname, '..',
       'vendor',
       'terminal-notifier',
       'terminal-notifier.app',
@@ -300,7 +300,7 @@ function ensureStableTerminalNotifier(): StableResult {
   _migrateLegacyAppSupportDir(stable.dir)
 
   const srcAppPath = path.join(
-    __dirname, 'vendor', 'terminal-notifier', 'terminal-notifier.app'
+    __dirname, '..', 'vendor', 'terminal-notifier', 'terminal-notifier.app'
   )
   if (!fs.existsSync(srcAppPath)) return fail('src-not-found')
 
