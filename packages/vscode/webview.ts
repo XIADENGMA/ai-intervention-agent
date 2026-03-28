@@ -1250,10 +1250,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     </div>
                 </div>
                 <div class="settings-footer" id="settingsFooter">
-                    <span class="settings-footer-item">${tl('settings.footer.version').replace('{{version}}', extensionVersion)}</span>
-                    <span class="settings-footer-sep">\u00b7</span>
-                    <span class="settings-footer-item">${tl('settings.footer.github')}</span>
-                    <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer">${githubUrlDisplay}</a>
+                    <span class="settings-footer-version">${tl('settings.footer.version').replace('{{version}}', extensionVersion)}</span>
+                    <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer">${tl('settings.footer.github')}</a>
                 </div>
                 <div class="settings-hint" id="settingsHint"></div>
             </div>

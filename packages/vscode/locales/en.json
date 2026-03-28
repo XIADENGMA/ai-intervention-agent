@@ -68,8 +68,8 @@
       "macosMessage": "This is a macOS native notification test. If you see this, the config is correct."
     },
     "footer": {
-      "version": "VS Code Plugin v{{version}}",
-      "github": "GitHub:"
+      "version": "v{{version}}",
+      "github": "GitHub"
     }
   },
   "ui": {

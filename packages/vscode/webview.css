@@ -1191,17 +1191,21 @@ body.vscode-light .no-content-progress-bar {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  opacity: 0.75;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 16px;
   padding-top: 2px;
 }
 
-.settings-footer-sep {
-  opacity: 0.5;
+.settings-footer-version::after {
+  content: '\00b7';
+  margin-left: 6px;
+  opacity: 0.6;
 }
 
 .settings-footer-link {
   color: var(--vscode-textLink-foreground);
   text-decoration: none;
+  padding: 2px 0;
 }
 
 .settings-footer-link:hover {

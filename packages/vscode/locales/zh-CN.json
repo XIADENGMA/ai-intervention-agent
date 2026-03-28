@@ -68,8 +68,8 @@
       "macosMessage": "这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。"
     },
     "footer": {
-      "version": "VS Code 插件 v{{version}}",
-      "github": "GitHub:"
+      "version": "v{{version}}",
+      "github": "GitHub"
     }
   },
   "ui": {
