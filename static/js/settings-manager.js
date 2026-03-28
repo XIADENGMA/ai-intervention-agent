@@ -174,7 +174,7 @@ class SettingsManager {
     const langSelect = document.getElementById('language-select')
     if (langSelect) {
       const currentLang = window.AIIA_I18N ? window.AIIA_I18N.getLang() : 'auto'
-      const cfgLang = '{{ language }}'
+      const cfgLang = window.AIIA_CONFIG_LANG || 'auto'
       langSelect.value = cfgLang !== 'auto' ? cfgLang : (currentLang || 'auto')
     }
 

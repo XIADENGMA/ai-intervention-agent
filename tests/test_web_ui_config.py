@@ -1588,10 +1588,6 @@ class TestMdnsHelpers(unittest.TestCase):
         self.assertFalse(self.ui._should_enable_mdns({}))
         self.ui.host = "0.0.0.0"
 
-    def test_collect_template_mtimes_oserror(self):
-        result = self.ui._collect_template_mtimes()
-        self.assertIsInstance(result, dict)
-
     def test_load_network_security_exception(self):
         with patch("web_ui.get_config", side_effect=RuntimeError("fail")):
             result = self.ui._load_network_security_config()
@@ -1693,11 +1689,6 @@ class TestTemplateFallback(unittest.TestCase):
         from web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="template test", port=18905)
-
-    def test_template_mtime_oserror(self):
-        result = self.web_ui._collect_template_mtimes()
-        for key in result:
-            self.assertIsInstance(result[key], float)
 
     def test_update_content_empty(self):
         self.web_ui.update_content("")
@@ -2043,54 +2034,55 @@ class TestGetRequestClientIp(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────
-# get_html_template 异常路径
+# _get_template_context 模板上下文
 # ──────────────────────────────────────────────────────────
 
 
-class TestGetHtmlTemplate(unittest.TestCase):
+class TestGetTemplateContext(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="template test 2", port=18909)
 
-    def test_file_not_found_fallback(self):
-        """模板文件不存在时返回错误页面"""
-        self.web_ui._template_cache = None
-        self.web_ui._template_cache_mtimes = {}
+    def test_context_keys(self):
+        """_get_template_context 返回 Jinja2 所需的全部变量"""
+        with self.web_ui.app.test_request_context("/"):
+            from flask import g
 
-        def raise_fnf(*a, **kw):
-            raise FileNotFoundError("no template")
+            g.csp_nonce = "test-nonce"
+            ctx = self.web_ui._get_template_context()
+        required_keys = {
+            "csp_nonce",
+            "version",
+            "github_url",
+            "language",
+            "css_version",
+            "multi_task_version",
+            "theme_version",
+            "app_version",
+        }
+        self.assertTrue(required_keys.issubset(ctx.keys()))
+        for v in ctx.values():
+            self.assertIsInstance(v, str)
 
+    def test_context_nonce_from_g(self):
+        """上下文中 csp_nonce 取自 flask.g"""
+        with self.web_ui.app.test_request_context("/"):
+            from flask import g
+
+            g.csp_nonce = "unique-nonce-123"
+            ctx = self.web_ui._get_template_context()
+        self.assertEqual(ctx["csp_nonce"], "unique-nonce-123")
+
+    def test_context_language_fallback(self):
+        """配置读取失败时 language 回退为 auto"""
         with (
-            patch("web_ui.importlib_resources_files", side_effect=raise_fnf)
-            if hasattr(__import__("web_ui"), "importlib_resources_files")
-            else patch("importlib.resources.files", side_effect=raise_fnf),
-            patch("builtins.open", side_effect=FileNotFoundError("no file")),
+            self.web_ui.app.test_request_context("/"),
+            patch("web_ui.get_config", side_effect=RuntimeError("fail")),
         ):
-            result = self.web_ui.get_html_template()
-            self.assertIn("模板文件未找到", result)
-
-    def test_generic_exception_fallback(self):
-        """读取模板时发生其他异常"""
-        self.web_ui._template_cache = None
-        self.web_ui._template_cache_mtimes = {}
-
-        with patch(
-            "importlib.resources.files", side_effect=RuntimeError("broken read")
-        ):
-            result = self.web_ui.get_html_template()
-            if "模板加载错误" in result:
-                self.assertIn("模板加载错误", result)
-
-    def test_cache_hit(self):
-        """缓存命中直接返回"""
-        mtimes = self.web_ui._collect_template_mtimes()
-        self.web_ui._template_cache = "<html>cached</html>"
-        self.web_ui._template_cache_mtimes = mtimes
-        result = self.web_ui.get_html_template()
-        self.assertEqual(result, "<html>cached</html>")
-        self.web_ui._template_cache = None
+            ctx = self.web_ui._get_template_context()
+        self.assertEqual(ctx["language"], "auto")
 
 
 # ──────────────────────────────────────────────────────────
@@ -2809,26 +2801,17 @@ class TestIpDeniedAbort403(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────
-# _collect_template_mtimes OSError 分支
+# _get_file_version OSError 分支
 # ──────────────────────────────────────────────────────────
 
 
-class TestCollectTemplateMtimesOSError(unittest.TestCase):
-    def test_oserror_returns_zero(self):
-        from pathlib import Path as RealPath
-
+class TestGetFileVersionOSError(unittest.TestCase):
+    def test_oserror_returns_default(self):
         from web_ui import WebFeedbackUI
 
-        ui = WebFeedbackUI(prompt="mtime err", port=18924)
-        orig_stat = RealPath.stat
-
-        def broken_stat(self, *args, **kwargs):
-            raise OSError("file gone")
-
-        with patch.object(RealPath, "stat", broken_stat):
-            result = ui._collect_template_mtimes()
-            for v in result.values():
-                self.assertEqual(v, 0.0)
+        ui = WebFeedbackUI(prompt="ver err", port=18924)
+        result = ui._get_file_version("/nonexistent/path/file.css")
+        self.assertEqual(result, "1")
 
 
 # ──────────────────────────────────────────────────────────
@@ -3049,134 +3032,55 @@ class TestIsIpAllowedBlockedMulti(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────
-# get_html_template importlib fallback + sys.path 搜索
+# render_template 路由渲染（取代旧 get_html_template 测试）
 # ──────────────────────────────────────────────────────────
 
 
-class TestGetHtmlTemplateImportlibFallback(unittest.TestCase):
-    def test_importlib_fails_local_file_read(self):
-        """importlib.resources 失败时从本地路径读取"""
+class TestIndexRenderTemplate(unittest.TestCase):
+    """验证首页通过 Jinja2 render_template 正确渲染。"""
+
+    @classmethod
+    def setUpClass(cls):
         from web_ui import WebFeedbackUI
 
-        ui = WebFeedbackUI(prompt="tmpl fb", port=18933)
-        ui._template_cache = None
-        ui._template_cache_mtimes = {}
+        cls.web_ui = WebFeedbackUI(prompt="render tpl", port=18933)
+        cls.web_ui.app.config["TESTING"] = True
+        cls.client = cls.web_ui.app.test_client()
 
-        fake_html = "<html>{{ csp_nonce }}{{ version }}{{ github_url }}<style>body{}</style></html>"
+    def test_index_renders_html(self):
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        html = resp.data.decode()
+        self.assertIn("AI Intervention Agent", html)
+        self.assertIn("main.css", html)
+        resp.close()
 
-        def importlib_fail(*a, **kw):
-            raise ImportError("no resources")
+    def test_index_contains_csp_nonce(self):
+        resp = self.client.get("/")
+        html = resp.data.decode()
+        self.assertNotIn("{{ csp_nonce }}", html)
+        self.assertIn("nonce=", html)
+        resp.close()
 
-        with (
-            patch("importlib.resources.files", side_effect=importlib_fail),
-            patch(
-                "builtins.open",
-                MagicMock(
-                    return_value=MagicMock(
-                        __enter__=MagicMock(
-                            return_value=MagicMock(
-                                read=MagicMock(return_value=fake_html)
-                            )
-                        ),
-                        __exit__=MagicMock(return_value=False),
-                    )
-                ),
-            ),
-            patch("web_ui.Path") as MockPath,
+    def test_index_version_rendered(self):
+        resp = self.client.get("/")
+        html = resp.data.decode()
+        self.assertNotIn("{{ version }}", html)
+        resp.close()
+
+    def test_template_not_found_returns_500(self):
+        """模板文件缺失时 errorhandler 返回 500 降级页面"""
+        with patch(
+            "web_ui.render_template",
+            side_effect=__import__("jinja2").TemplateNotFound("web_ui.html"),
         ):
-            mock_parent = MagicMock()
-            mock_template = MagicMock()
-            mock_template.exists.return_value = True
-            mock_parent.__truediv__ = MagicMock(return_value=mock_template)
-
-            mock_resolve = MagicMock()
-            mock_resolve.parent = mock_parent
-            MockPath.return_value.resolve.return_value = mock_resolve
-
-            # _get_file_version 和 _collect_template_mtimes 需要工作
-            MockPath.side_effect = None
-
-            result = ui.get_html_template()
-            self.assertIsInstance(result, str)
-
-        ui._template_cache = None
-
-    def test_template_found_via_sys_path_fallback(self):
-        """lines 1317-1323: importlib 与本地路径均失败，通过 sys.path 搜索模板"""
-        import os
-        import tempfile
-
-        from web_ui import WebFeedbackUI
-
-        ui = WebFeedbackUI(prompt="syspath test", port=18936)
-        ui._template_cache = None
-        ui._template_cache_mtimes = {}
-
-        fake_html = (
-            "<html>{{ csp_nonce }}{{ version }}{{ github_url }}"
-            "<style>body{}</style></html>"
-        )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpl_dir = os.path.join(tmpdir, "templates")
-            os.makedirs(tmpl_dir)
-            with open(os.path.join(tmpl_dir, "web_ui.html"), "w") as f:
-                f.write(fake_html)
-
-            _orig_path_exists = Path.exists
-
-            def _exists_hook(self):
-                s = str(self)
-                if s.endswith(os.path.join("templates", "web_ui.html")):
-                    if tmpdir in s:
-                        return True
-                    return False
-                return _orig_path_exists(self)
-
-            with (
-                patch("importlib.resources.files", side_effect=ImportError("no")),
-                patch.object(Path, "exists", _exists_hook),
-                patch("web_ui.sys.path", ["/nonexistent_abc", tmpdir]),
-            ):
-                result = ui.get_html_template()
-                self.assertIsInstance(result, str)
-                self.assertNotIn("{{ csp_nonce }}", result)
-
-        ui._template_cache = None
-
-    def test_sys_path_exhausted_falls_to_error_page(self):
-        """branch 1319->1325: sys.path 全部不匹配，回退到错误页"""
-        import builtins
-
-        from web_ui import WebFeedbackUI
-
-        ui = WebFeedbackUI(prompt="no match test", port=18937)
-        ui._template_cache = None
-        ui._template_cache_mtimes = {}
-
-        _orig_exists = Path.exists
-        _orig_open = builtins.open
-
-        def _no_template(self):
-            if str(self).endswith("web_ui.html"):
-                return False
-            return _orig_exists(self)
-
-        def _mock_open(path, *args, **kwargs):
-            if isinstance(path, (str, Path)) and str(path).endswith("web_ui.html"):
-                raise FileNotFoundError("mocked: no template")
-            return _orig_open(path, *args, **kwargs)
-
-        with (
-            patch("importlib.resources.files", side_effect=ImportError("no")),
-            patch.object(Path, "exists", _no_template),
-            patch("web_ui.sys.path", ["/no_match_a", "/no_match_b"]),
-            patch("builtins.open", side_effect=_mock_open),
-        ):
-            result = ui.get_html_template()
-            self.assertIn("模板文件未找到", result)
-
-        ui._template_cache = None
+            resp = self.client.get("/")
+            self.assertEqual(resp.status_code, 500)
+            self.assertIn(
+                b"\xe6\xa8\xa1\xe6\x9d\xbf\xe6\x96\x87\xe4\xbb\xb6\xe6\x9c\xaa\xe6\x89\xbe\xe5\x88\xb0",
+                resp.data,
+            )
+            resp.close()
 
 
 # ──────────────────────────────────────────────────────────

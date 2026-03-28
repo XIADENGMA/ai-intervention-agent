@@ -30,7 +30,7 @@ from flask import (
     g,
     has_request_context,
     jsonify,
-    render_template_string,
+    render_template,
     request,
 )
 from flask.typing import ResponseReturnValue
@@ -658,9 +658,6 @@ class WebFeedbackUI(
         self.initial_empty = not bool(prompt)
         # WebFeedbackUI 会被轮询与提交并发访问（Flask 默认 threaded），用锁保护共享状态
         self._state_lock = threading.RLock()
-        # HTML 模板缓存：避免每次请求都从磁盘读取+字符串替换
-        self._template_cache: str | None = None
-        self._template_cache_mtimes: dict[str, float] = {}
         self.app = Flask(__name__)
         _cors_origins: list[str | re.Pattern[str]] = [
             f"http://localhost:{port}",
@@ -741,8 +738,6 @@ class WebFeedbackUI(
         self.app.config["COMPRESS_LEVEL"] = 6  # 压缩级别（平衡压缩率和 CPU）
         self.app.config["COMPRESS_MIN_SIZE"] = 500  # 小于 500 字节不压缩
         Compress(self.app)
-
-        self._CSP_NONCE_PLACEHOLDER = "__CSP_NONCE__"
 
         self.network_security_config = self._load_network_security_config()
         # 【热更新】network_security（allowed_networks/blocked_ips/access_control_enabled）也应随配置文件变化生效
@@ -1035,20 +1030,8 @@ class WebFeedbackUI(
 
         @self.app.route("/")
         def index() -> ResponseReturnValue:
-            """主页面路由处理器
-
-            功能说明：
-                返回Web反馈界面的HTML模板页面。
-
-            返回值：
-                str: 渲染后的HTML页面（包含CSP随机数、外部CSS/JS引用）
-
-            注意事项：
-                - HTML模板通过get_html_template()读取和处理
-                - 模板中的内联CSS/JS已替换为外部文件引用
-                - CSP随机数在模板中用于安全策略
-            """
-            return render_template_string(self.get_html_template())
+            """主页面路由：通过 Jinja2 原生渲染 web_ui.html 模板。"""
+            return render_template("web_ui.html", **self._get_template_context())
 
         @self.app.route("/api/config")
         @self.limiter.limit("300 per minute")
@@ -1265,6 +1248,23 @@ class WebFeedbackUI(
         self._setup_notification_routes()
         self._setup_static_routes()
 
+        # 模板缺失降级：返回简洁 HTML 错误页（无外部依赖）
+        from jinja2 import TemplateNotFound
+
+        @self.app.errorhandler(TemplateNotFound)
+        def handle_template_not_found(
+            exc: TemplateNotFound,
+        ) -> ResponseReturnValue:
+            logger.error("Jinja2 模板缺失: %s", exc)
+            return (
+                '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
+                "<title>模板文件未找到</title></head><body>"
+                "<h1>模板文件未找到</h1>"
+                f"<p>无法找到 {str(exc)} 文件，请确保模板文件存在。</p>"
+                "</body></html>",
+                500,
+            )
+
         # 全局异常处理：将 AIAgentError 统一转为标准 JSON 错误响应
         from exceptions import AIAgentError
 
@@ -1317,176 +1317,31 @@ class WebFeedbackUI(
             pass
         return secrets.token_urlsafe(16)
 
-    def _collect_template_mtimes(self) -> dict[str, float]:
-        """收集模板及其依赖静态资源的 mtime，用于缓存失效判断。"""
-        current_dir = Path(__file__).resolve().parent
-        tracked: list[Path] = [
-            current_dir / "templates" / "web_ui.html",
-            current_dir / "static" / "css" / "main.css",
-            current_dir / "static" / "js" / "multi_task.js",
-            current_dir / "static" / "js" / "theme.js",
-            current_dir / "static" / "js" / "app.js",
-        ]
-        result: dict[str, float] = {}
-        for p in tracked:
-            try:
-                result[str(p)] = p.stat().st_mtime
-            except OSError:
-                result[str(p)] = 0.0
-        return result
+    def _get_template_context(self) -> dict[str, str]:
+        """构建 Jinja2 模板渲染上下文。
 
-    def get_html_template(self) -> str:
-        """读取并处理HTML模板文件（带 mtime 失效缓存）。
-
-        缓存策略：
-            首次请求从磁盘读取模板并完成所有字符串替换，结果缓存到内存。
-            后续请求先比对模板文件和静态资源的 mtime：
-            - 若无变化，直接返回缓存内容（零 I/O、零字符串操作）
-            - 若文件有更新，重新生成并更新缓存
-
-        返回值：
-            str: 处理后的HTML模板内容（包含CSP随机数、外部CSS/JS引用）
+        返回 render_template('web_ui.html', **ctx) 所需的全部变量：
+        csp_nonce / version / github_url / language / css_version /
+        multi_task_version / theme_version / app_version。
         """
-        current_mtimes = self._collect_template_mtimes()
-        if (
-            self._template_cache is not None
-            and current_mtimes == self._template_cache_mtimes
-        ):
-            nonce = self._get_csp_nonce()
-            return self._template_cache.replace(self._CSP_NONCE_PLACEHOLDER, nonce)
-
         try:
-            # 优先尝试使用 importlib.resources (Python 3.9+)
-            try:
-                from importlib import resources
+            ui_lang = get_config().get_section("web_ui").get("language", "auto")
+        except Exception:
+            ui_lang = "auto"
 
-                html_content = (
-                    resources.files("templates")
-                    .joinpath("web_ui.html")
-                    .read_text(encoding="utf-8")
-                )
-            except (ImportError, AttributeError, FileNotFoundError, TypeError):
-                current_dir = Path(__file__).resolve().parent
-                template_path = current_dir / "templates" / "web_ui.html"
-
-                if not template_path.exists():
-                    import sys
-
-                    for path in sys.path:
-                        candidate_path = Path(path) / "templates" / "web_ui.html"
-                        if candidate_path.exists():
-                            template_path = candidate_path
-                            break
-
-                with open(template_path, "r", encoding="utf-8") as f:
-                    html_content = f.read()
-
-            html_content = html_content.replace(
-                "{{ csp_nonce }}", self._CSP_NONCE_PLACEHOLDER
-            )
-            html_content = html_content.replace("{{ version }}", get_project_version())
-            html_content = html_content.replace("{{ github_url }}", GITHUB_URL)
-
-            try:
-                ui_lang = get_config().get_section("web_ui").get("language", "auto")
-            except Exception:
-                ui_lang = "auto"
-            html_content = html_content.replace("{{ language }}", ui_lang)
-
-            current_dir = Path(__file__).resolve().parent
-            css_version = self._get_file_version(
-                current_dir / "static" / "css" / "main.css"
-            )
-            multi_task_version = self._get_file_version(
-                current_dir / "static" / "js" / "multi_task.js"
-            )
-            theme_version = self._get_file_version(
-                current_dir / "static" / "js" / "theme.js"
-            )
-            app_version = self._get_file_version(
-                current_dir / "static" / "js" / "app.js"
-            )
-
-            css_link = f'<link rel="stylesheet" href="/static/css/main.css?v={css_version}" nonce="{self._CSP_NONCE_PLACEHOLDER}">'
-            html_content = self._replace_inline_css(html_content, css_link)
-
-            html_content = html_content.replace(
-                'src="/static/js/multi_task.js"',
-                f'src="/static/js/multi_task.js?v={multi_task_version}"',
-            )
-            html_content = html_content.replace(
-                'src="/static/js/theme.js"',
-                f'src="/static/js/theme.js?v={theme_version}"',
-            )
-            html_content = html_content.replace(
-                'src="/static/js/app.js"',
-                f'src="/static/js/app.js?v={app_version}"',
-            )
-
-            self._template_cache = html_content
-            self._template_cache_mtimes = current_mtimes
-            nonce = self._get_csp_nonce()
-            return html_content.replace(self._CSP_NONCE_PLACEHOLDER, nonce)
-        except FileNotFoundError:
-            # 如果模板文件不存在，返回一个基本的错误页面
-            return """
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>模板文件未找到</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 50px;
-            background: #f5f5f5;
+        static_dir = Path(__file__).resolve().parent / "static"
+        return {
+            "csp_nonce": self._get_csp_nonce(),
+            "version": get_project_version(),
+            "github_url": GITHUB_URL,
+            "language": ui_lang,
+            "css_version": self._get_file_version(static_dir / "css" / "main.css"),
+            "multi_task_version": self._get_file_version(
+                static_dir / "js" / "multi_task.js"
+            ),
+            "theme_version": self._get_file_version(static_dir / "js" / "theme.js"),
+            "app_version": self._get_file_version(static_dir / "js" / "app.js"),
         }
-        .error {
-            color: #d32f2f;
-            font-size: 18px;
-            margin: 20px 0;
-        }
-    </style>
-</head>
-<body>
-    <h1>模板文件未找到</h1>
-    <div class="error">无法找到 templates/web_ui.html 文件</div>
-    <p>请确保模板文件存在于正确的位置。</p>
-</body>
-</html>
-            """
-        except Exception as e:
-            # 其他读取错误
-            return f"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>模板加载错误</title>
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 50px;
-            background: #f5f5f5;
-        }}
-        .error {{
-            color: #d32f2f;
-            font-size: 18px;
-            margin: 20px 0;
-        }}
-    </style>
-</head>
-<body>
-    <h1>模板加载错误</h1>
-    <div class="error">加载模板文件时发生错误: {str(e)}</div>
-    <p>请检查模板文件是否正确。</p>
-</body>
-</html>
-            """
 
     def update_content(
         self,
@@ -1530,35 +1385,6 @@ class WebFeedbackUI(
             logger.info(f"内容已更新: {new_prompt[:50]}... (task_id: {new_task_id})")
         else:
             logger.info("内容已清空，显示无有效内容页面")
-
-    def _replace_inline_css(self, html_content: str, css_link: str) -> str:
-        """替换内联CSS为外部CSS文件引用
-
-        功能说明：
-            使用正则表达式匹配HTML中的<style>标签，替换为外部CSS文件链接。
-
-        参数说明：
-            html_content: 原始HTML内容（包含内联<style>标签）
-            css_link: 外部CSS文件链接标签（如<link rel="stylesheet" href="...">）
-
-        返回值：
-            str: 替换后的HTML内容（<style>标签被css_link替换）
-
-        处理逻辑：
-            1. 定义正则表达式：r"<style>.*?</style>"（非贪婪匹配）
-            2. 使用re.sub()替换所有匹配的<style>标签
-            3. 使用re.DOTALL标志，使.匹配换行符
-
-        注意事项：
-            - 非贪婪匹配（.*?）避免跨标签匹配
-            - DOTALL标志确保匹配多行的<style>内容
-            - 替换后CSS需要通过外部文件加载，确保/static/css/路由正确
-        """
-
-        # 匹配<style>标签及其内容
-        style_pattern = r"<style>.*?</style>"
-        # 替换为外部CSS链接
-        return re.sub(style_pattern, css_link, html_content, flags=re.DOTALL)
 
     def _get_minified_file(
         self, directory: str | Path, filename: str, extension: str
