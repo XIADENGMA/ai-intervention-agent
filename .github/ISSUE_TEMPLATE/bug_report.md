@@ -25,7 +25,7 @@ If applicable, add screenshots to help explain your problem.
 **Environment (please complete the following information):**
  - OS (VS Code Runner/Local): [e.g. Windows, macOS]
  - VS Code Version: [e.g. 1.80.0]
- - Plugin Version / Backend version: [e.g. 1.5.11]
+ - Plugin Version / Backend version: [e.g. 1.5.12]
  - Python Version: [e.g. 3.11]
 
 **Additional context**
