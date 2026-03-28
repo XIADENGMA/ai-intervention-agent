@@ -18,23 +18,23 @@ suite('Extension Test Suite', () => {
     const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
     assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
 
-    const webviewJsPath = path.join(ext.extensionPath, 'webview.js')
+    const webviewJsPath = path.join(ext.extensionPath, 'dist', 'webview.js')
     const webviewHelpersPath = path.join(ext.extensionPath, 'webview-helpers.js')
     const webviewUiPath = path.join(ext.extensionPath, 'webview-ui.js')
     const webviewNotifyCorePath = path.join(ext.extensionPath, 'webview-notify-core.js')
     const webviewSettingsUiPath = path.join(ext.extensionPath, 'webview-settings-ui.js')
     const webviewCssPath = path.join(ext.extensionPath, 'webview.css')
-    const extensionJsPath = path.join(ext.extensionPath, 'extension.js')
+    const extensionJsPath = path.join(ext.extensionPath, 'dist', 'extension.js')
     const mathjaxScriptPath = path.join(ext.extensionPath, 'mathjax', 'tex-mml-svg.js')
     const extPkgPath = path.join(ext.extensionPath, 'package.json')
 
-    assert.ok(fs.existsSync(webviewJsPath), 'Missing webview.js in extension')
+    assert.ok(fs.existsSync(webviewJsPath), 'Missing dist/webview.js in extension')
     assert.ok(fs.existsSync(webviewHelpersPath), 'Missing webview-helpers.js in extension')
     assert.ok(fs.existsSync(webviewUiPath), 'Missing webview-ui.js in extension')
     assert.ok(fs.existsSync(webviewNotifyCorePath), 'Missing webview-notify-core.js in extension')
     assert.ok(fs.existsSync(webviewSettingsUiPath), 'Missing webview-settings-ui.js in extension')
     assert.ok(fs.existsSync(webviewCssPath), 'Missing webview.css in extension')
-    assert.ok(fs.existsSync(extensionJsPath), 'Missing extension.js in extension')
+    assert.ok(fs.existsSync(extensionJsPath), 'Missing dist/extension.js in extension')
     assert.ok(fs.existsSync(mathjaxScriptPath), 'Missing mathjax/tex-mml-svg.js in extension')
     assert.ok(fs.existsSync(extPkgPath), 'Missing package.json in extension')
 
@@ -222,19 +222,22 @@ suite('Extension Test Suite', () => {
       extPkgJson.files.includes('vendor/terminal-notifier/**'),
       'package.json files[] should include vendor/terminal-notifier/**'
     )
-    const terminalNotifierBin = path.join(
-      ext.extensionPath,
-      'vendor',
-      'terminal-notifier',
-      'terminal-notifier.app',
-      'Contents',
-      'MacOS',
-      'terminal-notifier'
-    )
-    assert.ok(
-      fs.existsSync(terminalNotifierBin),
-      'terminal-notifier binary should exist in extension'
-    )
+    // terminal-notifier 仅在 macOS 环境打包，Linux CI 跳过
+    if (process.platform === 'darwin') {
+      const terminalNotifierBin = path.join(
+        ext.extensionPath,
+        'vendor',
+        'terminal-notifier',
+        'terminal-notifier.app',
+        'Contents',
+        'MacOS',
+        'terminal-notifier'
+      )
+      assert.ok(
+        fs.existsSync(terminalNotifierBin),
+        'terminal-notifier binary should exist in extension'
+      )
+    }
 
     const containers =
       extPkgJson &&
@@ -340,8 +343,8 @@ suite('Extension Test Suite', () => {
     const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
     assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
 
-    const loggerPath = path.join(ext.extensionPath, 'logger.js')
-    assert.ok(fs.existsSync(loggerPath), 'Missing logger.js in extension')
+    const loggerPath = path.join(ext.extensionPath, 'dist', 'logger.js')
+    assert.ok(fs.existsSync(loggerPath), 'Missing dist/logger.js in extension')
 
     const { createLogger } = require(loggerPath)
 
@@ -368,8 +371,8 @@ suite('Extension Test Suite', () => {
     const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
     assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
 
-    const loggerPath = path.join(ext.extensionPath, 'logger.js')
-    assert.ok(fs.existsSync(loggerPath), 'Missing logger.js in extension')
+    const loggerPath = path.join(ext.extensionPath, 'dist', 'logger.js')
+    assert.ok(fs.existsSync(loggerPath), 'Missing dist/logger.js in extension')
 
     const { createLogger } = require(loggerPath)
 

@@ -9,16 +9,24 @@ function getExtension() {
   return ext
 }
 
+/** 获取编译产物中的 applescript-executor.js 路径 */
+function getExecutorPath() {
+  const ext = getExtension()
+  return path.join(ext.extensionPath, 'dist', 'applescript-executor.js')
+}
+
 suite('AppleScript Executor', () => {
-  test('applescript-executor.js 应随扩展发布', () => {
-    const ext = getExtension()
-    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
-    assert.ok(fs.existsSync(executorPath), 'Missing applescript-executor.js in extension')
+  test('applescript-executor.js 应随扩展发布（仅 macOS）', () => {
+    if (process.platform !== 'darwin') {
+      // Linux/Windows CI 不打包 AppleScript 运行时，跳过
+      return
+    }
+    const executorPath = getExecutorPath()
+    assert.ok(fs.existsSync(executorPath), `Missing applescript-executor.js: ${executorPath}`)
   })
 
   test('toAppleScriptStringLiteral 应正确转义引号/反斜杠/换行', () => {
-    const ext = getExtension()
-    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
+    const executorPath = getExecutorPath()
     const { toAppleScriptStringLiteral } = require(executorPath)
 
     const lit = toAppleScriptStringLiteral('a"b\\c\nd\t')
@@ -30,8 +38,7 @@ suite('AppleScript Executor', () => {
   })
 
   test('非 macOS 平台应返回 Platform not supported，且不触发执行', async () => {
-    const ext = getExtension()
-    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
+    const executorPath = getExecutorPath()
     const { AppleScriptExecutor } = require(executorPath)
 
     let execCalled = false
@@ -51,8 +58,7 @@ suite('AppleScript Executor', () => {
   })
 
   test('stderr 非空时应作为错误抛出', async () => {
-    const ext = getExtension()
-    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
+    const executorPath = getExecutorPath()
     const { AppleScriptExecutor } = require(executorPath)
 
     const captured = { file: '', args: null, script: '' }
@@ -83,8 +89,7 @@ suite('AppleScript Executor', () => {
   })
 
   test('成功时应返回 stdout', async () => {
-    const ext = getExtension()
-    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
+    const executorPath = getExecutorPath()
     const { AppleScriptExecutor } = require(executorPath)
 
     const fakeExec = (_file, _args, _opts, cb) => {
@@ -99,8 +104,7 @@ suite('AppleScript Executor', () => {
   })
 
   test('超时应映射为 APPLE_SCRIPT_TIMEOUT', async () => {
-    const ext = getExtension()
-    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
+    const executorPath = getExecutorPath()
     const { AppleScriptExecutor } = require(executorPath)
 
     const fakeExec = (_file, _args, _opts, cb) => {
@@ -120,8 +124,7 @@ suite('AppleScript Executor', () => {
   })
 
   test('失败时应携带 details（exitCode / injectedEnvKeys / stderr 等）', async () => {
-    const ext = getExtension()
-    const executorPath = path.join(ext.extensionPath, 'applescript-executor.js')
+    const executorPath = getExecutorPath()
     const { AppleScriptExecutor } = require(executorPath)
 
     const fakeExec = (_file, _args, _opts, cb) => {

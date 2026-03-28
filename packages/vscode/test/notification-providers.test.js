@@ -8,11 +8,14 @@ function getExtension() {
   return ext
 }
 
+/** 获取编译产物中的模块路径 */
+function distPath(filename) {
+  return path.join(getExtension().extensionPath, 'dist', filename)
+}
+
 suite('Notification Providers (VSCode)', () => {
   test('VSCodeApiNotificationProvider 默认走状态栏提示', async () => {
-    const ext = getExtension()
-    const providersPath = path.join(ext.extensionPath, 'notification-providers.js')
-    const { VSCodeApiNotificationProvider } = require(providersPath)
+    const { VSCodeApiNotificationProvider } = require(distPath('notification-providers.js'))
 
     let lastText = ''
     let lastTimeout = null
@@ -37,9 +40,7 @@ suite('Notification Providers (VSCode)', () => {
   })
 
   test('AppleScriptNotificationProvider 不应依赖 enableAppleScript（原生通知默认开启）', async () => {
-    const ext = getExtension()
-    const providersPath = path.join(ext.extensionPath, 'notification-providers.js')
-    const { AppleScriptNotificationProvider } = require(providersPath)
+    const { AppleScriptNotificationProvider } = require(distPath('notification-providers.js'))
 
     let shownError = ''
     const stubVscode = {
@@ -72,9 +73,7 @@ suite('Notification Providers (VSCode)', () => {
   })
 
   test('AppleScriptNotificationProvider 注入 bundleId 失败时应回退为不注入重试', async () => {
-    const ext = getExtension()
-    const providersPath = path.join(ext.extensionPath, 'notification-providers.js')
-    const { AppleScriptNotificationProvider } = require(providersPath)
+    const { AppleScriptNotificationProvider } = require(distPath('notification-providers.js'))
 
     let shownError = ''
     const stubVscode = {
@@ -129,9 +128,7 @@ suite('Notification Providers (VSCode)', () => {
   })
 
   test('AppleScriptNotificationProvider 失败应保存诊断信息，且 diagnostic 模式不弹窗', async () => {
-    const ext = getExtension()
-    const providersPath = path.join(ext.extensionPath, 'notification-providers.js')
-    const { AppleScriptNotificationProvider } = require(providersPath)
+    const { AppleScriptNotificationProvider } = require(distPath('notification-providers.js'))
 
     let shownError = ''
     const stubVscode = {

@@ -9,22 +9,24 @@ function getExtension() {
   return ext
 }
 
+/** 获取编译产物中的模块路径 */
+function distPath(filename) {
+  return path.join(getExtension().extensionPath, 'dist', filename)
+}
+
 suite('Notification Center (VSCode)', () => {
   test('通知中心相关文件应随扩展发布', () => {
     const ext = getExtension()
     const files = ['notification-models.js', 'notification-center.js', 'notification-providers.js']
     for (const f of files) {
-      const p = path.join(ext.extensionPath, f)
-      assert.ok(fs.existsSync(p), `Missing ${f} in extension`)
+      const p = path.join(ext.extensionPath, 'dist', f)
+      assert.ok(fs.existsSync(p), `Missing dist/${f} in extension`)
     }
   })
 
   test('NotificationCenter 应并行分发且失败隔离', async () => {
-    const ext = getExtension()
-    const modelsPath = path.join(ext.extensionPath, 'notification-models.js')
-    const centerPath = path.join(ext.extensionPath, 'notification-center.js')
-    const { NotificationType } = require(modelsPath)
-    const { NotificationCenter } = require(centerPath)
+    const { NotificationType } = require(distPath('notification-models.js'))
+    const { NotificationCenter } = require(distPath('notification-center.js'))
 
     const center = new NotificationCenter({ dedupeWindowMs: 0 })
 
@@ -57,11 +59,8 @@ suite('Notification Center (VSCode)', () => {
   })
 
   test('NotificationCenter dedupeKey 命中时应跳过分发', async () => {
-    const ext = getExtension()
-    const modelsPath = path.join(ext.extensionPath, 'notification-models.js')
-    const centerPath = path.join(ext.extensionPath, 'notification-center.js')
-    const { NotificationType } = require(modelsPath)
-    const { NotificationCenter } = require(centerPath)
+    const { NotificationType } = require(distPath('notification-models.js'))
+    const { NotificationCenter } = require(distPath('notification-center.js'))
 
     const center = new NotificationCenter({ dedupeWindowMs: 60000 })
 
