@@ -654,7 +654,7 @@ function updateTasksList(tasks) {
           }
           newTaskHintTimer = null
           window.newTaskHintTimer = null
-        }, 500)
+        }, 150)
         window.newTaskHintTimer = newTaskHintTimer
       } else {
         showNewTaskNotification(addedTasks.length)

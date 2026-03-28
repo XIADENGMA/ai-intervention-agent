@@ -189,12 +189,8 @@
 
       logDebug('[notify-core] 检测到新任务: ' + msg)
 
-      // 新任务触发时做一次静默刷新：确保 types 能覆盖 macos_native（若用户启用）
-      try {
-        await refreshNotificationSettingsFromServer({ force: false, silent: true })
-      } catch (e) {
-        /* 忽略 */
-      }
+      // 后台刷新设置（不阻塞通知派发），使用缓存立即决策
+      refreshNotificationSettingsFromServer({ force: false, silent: true }).catch(function () {})
 
       var settings = notificationSettings || { enabled: true, macosNativeEnabled: true }
       if (settings && settings.enabled === false) {
