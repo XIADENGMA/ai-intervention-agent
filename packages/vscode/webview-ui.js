@@ -2590,10 +2590,11 @@
         const progress = remaining / task.auto_resubmit_timeout
         const offset = circumference * (1 - progress)
 
+        var safeTaskId = escapeHtml(task.task_id)
         countdown.innerHTML =
           '<svg width="22" height="22" viewBox="0 0 22 22">' +
           '<circle id="tab-countdown-progress-' +
-          task.task_id +
+          safeTaskId +
           '" ' +
           'cx="11" cy="11" r="' +
           radius +
@@ -2605,7 +2606,7 @@
           offset +
           '" /></svg>' +
           '<span class="task-tab-countdown-number" id="tab-countdown-text-' +
-          task.task_id +
+          safeTaskId +
           '">' +
           remaining +
           '</span>'

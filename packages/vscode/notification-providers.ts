@@ -377,20 +377,11 @@ export class VSCodeApiNotificationProvider {
     }
 
     const icon = severity === 'error' ? '$(error)' : severity === 'warn' ? '$(warning)' : '$(info)'
-    try {
-      vs.window.setStatusBarMessage!(`${icon} ${message}`, timeoutMs)
+    if (typeof vs.window.setStatusBarMessage === 'function') {
+      vs.window.setStatusBarMessage(`${icon} ${message}`, timeoutMs)
       return true
-    } catch (e: unknown) {
-      try {
-        if (this._logger && typeof this._logger.warn === 'function') {
-          const msg = e instanceof Error ? e.message : String(e)
-          this._logger.warn(`VSCode 状态栏提示失败: ${msg}`)
-        }
-      } catch {
-        // 忽略：日志系统异常不应影响通知流程
-      }
-      return false
     }
+    return false
   }
 }
 
