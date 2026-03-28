@@ -1,4 +1,6 @@
 import * as vscode from 'vscode'
+import * as http from 'http'
+import * as https from 'https'
 import { WebviewProvider } from './webview'
 import { createLogger } from './logger'
 
@@ -385,6 +387,7 @@ function activate(context: vscode.ExtensionContext): void {
 
   const STATUS_POLL_FAST_MS = 3000
   const STATUS_POLL_SLOW_MS = 15000
+  const STATUS_POLL_SSE_FALLBACK_MS = 60000
   const STATUS_POLL_MAX_MS = 60000
   const WEBVIEW_STATS_FRESH_MS = 5000
   let statusPollTimer: ReturnType<typeof setTimeout> | null = null
@@ -395,12 +398,94 @@ function activate(context: vscode.ExtensionContext): void {
   let isWindowFocused = vscode.window.state.focused
   let lastWebviewStatsAtMs = 0
 
+  // SSE 连接状态
+  let _sseReq: http.ClientRequest | null = null
+  let _sseConnected = false
+  let _sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let _sseReconnectDelay = 1000
+  let _sseDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  const _connectSSE = (): void => {
+    if (statusPollDisposed) return
+    _disconnectSSE()
+
+    const sseUrl = `${serverUrl}/api/events`
+    const parsed = (() => { try { return new URL(sseUrl) } catch { return null } })()
+    if (!parsed) return
+
+    const httpMod = parsed.protocol === 'https:' ? https : http
+    const req = httpMod.get(sseUrl, { headers: { Accept: 'text/event-stream' } }, (res) => {
+      if (_sseReq !== req) { res.resume(); return }
+      if (res.statusCode !== 200) {
+        res.resume()
+        _handleSSEError()
+        return
+      }
+
+      _sseConnected = true
+      _sseReconnectDelay = 1000
+      logger.event('sse.connected', {}, { level: 'debug' })
+
+      let buffer = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk: string) => {
+        if (_sseReq !== req) return
+        buffer += chunk
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const ev = JSON.parse(line.slice(6))
+            if (ev && ev.new_status) {
+              logger.event('sse.task_changed', { taskId: ev.task_id, status: ev.new_status }, { level: 'debug' })
+              if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+              _sseDebounceTimer = setTimeout(() => {
+                _sseDebounceTimer = null
+                scheduleStatusPoll(0)
+              }, 80)
+            }
+          } catch { /* noop */ }
+        }
+      })
+      res.on('end', () => { if (_sseReq === req) _handleSSEError() })
+      res.on('error', () => { if (_sseReq === req) _handleSSEError() })
+    })
+
+    req.on('error', () => { if (_sseReq === req) _handleSSEError() })
+    _sseReq = req
+  }
+
+  const _handleSSEError = (): void => {
+    _sseConnected = false
+    if (_sseReq) {
+      try { _sseReq.destroy() } catch { /* noop */ }
+      _sseReq = null
+    }
+    if (statusPollDisposed) return
+    logger.event('sse.disconnected', { reconnectIn: _sseReconnectDelay }, { level: 'debug' })
+    if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer)
+    _sseReconnectTimer = setTimeout(() => {
+      _sseReconnectTimer = null
+      if (!statusPollDisposed) _connectSSE()
+    }, _sseReconnectDelay)
+    _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2)
+  }
+
+  const _disconnectSSE = (): void => {
+    if (_sseReconnectTimer) { clearTimeout(_sseReconnectTimer); _sseReconnectTimer = null }
+    if (_sseDebounceTimer) { clearTimeout(_sseDebounceTimer); _sseDebounceTimer = null }
+    if (_sseReq) { try { _sseReq.destroy() } catch { /* noop */ }; _sseReq = null }
+    _sseConnected = false
+  }
+
   const isWebviewStatsFresh = (): boolean =>
     isViewVisible &&
     lastWebviewStatsAtMs > 0 &&
     Date.now() - lastWebviewStatsAtMs < WEBVIEW_STATS_FRESH_MS
 
   const computeBaseDelayMs = (): number => {
+    if (_sseConnected) return STATUS_POLL_SSE_FALLBACK_MS
     if (isWebviewStatsFresh()) return STATUS_POLL_SLOW_MS
     if (isViewVisible && isWindowFocused) return STATUS_POLL_FAST_MS
     if (isWindowFocused) return STATUS_POLL_FAST_MS * 2
@@ -434,6 +519,7 @@ function activate(context: vscode.ExtensionContext): void {
       const connected = await updateStatusBar()
       if (connected === true) {
         statusPollBackoffMs = STATUS_POLL_FAST_MS
+        if (!_sseConnected && !_sseReq) _connectSSE()
       } else if (connected === false) {
         statusPollBackoffMs = Math.min(STATUS_POLL_MAX_MS, Math.round(statusPollBackoffMs * 1.7))
       }
@@ -513,6 +599,7 @@ function activate(context: vscode.ExtensionContext): void {
       extKnownTaskIds = new Set<string>()
       extTaskTrackingInitialized = false
       statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
+      _connectSSE()
       scheduleStatusPoll(0)
 
       if (provider && typeof (provider as unknown as { updateServerUrl?: (url: string) => void }).updateServerUrl === 'function') {
@@ -535,6 +622,7 @@ function activate(context: vscode.ExtensionContext): void {
     })
   )
 
+  _connectSSE()
   scheduleStatusPoll(0)
 
   const openPanelDisposable = vscode.commands.registerCommand(
@@ -571,6 +659,7 @@ function activate(context: vscode.ExtensionContext): void {
   const cleanup = (): void => {
     try {
       statusPollDisposed = true
+      _disconnectSSE()
       if (statusPollTimer) {
         clearTimeout(statusPollTimer)
         statusPollTimer = null
