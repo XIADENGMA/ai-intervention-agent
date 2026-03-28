@@ -2,7 +2,7 @@
   "name": "ai-intervention-agent",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "1.5.9",
+  "version": "1.5.10",
   "icon": "icon.png",
   "engines": {
     "vscode": "^1.105.0"
