@@ -45,16 +45,9 @@ Works with `Cursor`, `VS Code`, `Claude Code`, `Augment`, `Windsurf`, `Trae`, an
 
 ## Quick start
 
-1. Install:
+### Option 1: Using `uvx` (Recommended)
 
-```bash
-pip install ai-intervention-agent
-
-# or
-uv add ai-intervention-agent
-```
-
-2. Configure your AI tool to launch the MCP server via `uvx`:
+Configure your AI tool to launch the MCP server directly via `uvx` (this automatically installs and runs the latest version):
 
 ```json
 {
@@ -62,6 +55,29 @@ uv add ai-intervention-agent
     "ai-intervention-agent": {
       "command": "uvx",
       "args": ["ai-intervention-agent"],
+      "timeout": 600,
+      "autoApprove": ["interactive_feedback"]
+    }
+  }
+}
+```
+
+### Option 2: Using `pip`
+
+1. First, install the package manually (please remember to manually `pip install --upgrade ai-intervention-agent` periodically to get updates):
+
+```bash
+pip install ai-intervention-agent
+```
+
+2. Configure your AI tool to launch the installed MCP server:
+
+```json
+{
+  "mcpServers": {
+    "ai-intervention-agent": {
+      "command": "ai-intervention-agent",
+      "args": [],
       "timeout": 600,
       "autoApprove": ["interactive_feedback"]
     }

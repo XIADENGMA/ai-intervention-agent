@@ -45,16 +45,9 @@
 
 ## 快速开始
 
-1. 安装：
+### 方式一：使用 `uvx` 启动（推荐）
 
-```bash
-pip install ai-intervention-agent
-
-# 或
-uv add ai-intervention-agent
-```
-
-2. 在你的 AI 工具中配置 MCP（推荐用 `uvx` 启动）：
+在你的 AI 工具中直接通过 `uvx` 启动 MCP 服务（该方式会自动安装并运行最新版本）：
 
 ```json
 {
@@ -62,6 +55,29 @@ uv add ai-intervention-agent
     "ai-intervention-agent": {
       "command": "uvx",
       "args": ["ai-intervention-agent"],
+      "timeout": 600,
+      "autoApprove": ["interactive_feedback"]
+    }
+  }
+}
+```
+
+### 方式二：使用 `pip` 启动
+
+1. 首先手动安装该包（请记得定期执行 `pip install --upgrade ai-intervention-agent` 获取更新）：
+
+```bash
+pip install ai-intervention-agent
+```
+
+2. 在你的 AI 工具中配置已安装的 MCP 服务：
+
+```json
+{
+  "mcpServers": {
+    "ai-intervention-agent": {
+      "command": "ai-intervention-agent",
+      "args": [],
       "timeout": 600,
       "autoApprove": ["interactive_feedback"]
     }
