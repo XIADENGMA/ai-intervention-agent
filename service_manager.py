@@ -113,31 +113,35 @@ def _ensure_config_change_callbacks_registered() -> None:
 def get_async_client(config: WebUIConfig) -> httpx.AsyncClient:
     """获取（或创建）模块级异步 HTTP 客户端，支持连接池复用和自动重试。"""
     global _async_client
-    if _async_client is None or _async_client.is_closed:
+    client = _async_client
+    if client is None or client.is_closed:
         with _http_client_lock:
-            if _async_client is None or _async_client.is_closed:
+            client = _async_client
+            if client is None or client.is_closed:
                 transport = httpx.AsyncHTTPTransport(retries=config.max_retries)
-                _async_client = httpx.AsyncClient(
+                client = httpx.AsyncClient(
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
                 )
-    assert _async_client is not None
-    return _async_client
+                _async_client = client
+    return client
 
 
 def get_sync_client(config: WebUIConfig) -> httpx.Client:
     """获取（或创建）模块级同步 HTTP 客户端。"""
     global _sync_client
-    if _sync_client is None or _sync_client.is_closed:
+    client = _sync_client
+    if client is None or client.is_closed:
         with _http_client_lock:
-            if _sync_client is None or _sync_client.is_closed:
+            client = _sync_client
+            if client is None or client.is_closed:
                 transport = httpx.HTTPTransport(retries=config.max_retries)
-                _sync_client = httpx.Client(
+                client = httpx.Client(
                     transport=transport,
                     timeout=httpx.Timeout(config.timeout, connect=5.0),
                 )
-    assert _sync_client is not None
-    return _sync_client
+                _sync_client = client
+    return client
 
 
 def create_http_session(config: WebUIConfig) -> httpx.Client:

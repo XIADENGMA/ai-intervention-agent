@@ -82,6 +82,25 @@ def _on_task_status_change(
 
 
 _sse_callback_registered = False
+_sse_callback_lock = threading.Lock()
+
+
+def _ensure_sse_callback_registered() -> None:
+    """线程安全地注册 SSE 回调（双检查锁定，至多注册一次）。"""
+    global _sse_callback_registered  # noqa: PLW0603
+    if _sse_callback_registered:
+        return
+    with _sse_callback_lock:
+        if _sse_callback_registered:
+            return
+        try:
+            tq = get_task_queue()
+            if tq is not None:
+                tq.register_status_change_callback(_on_task_status_change)
+                _sse_callback_registered = True
+                logger.info("SSE 事件总线已注册到 TaskQueue")
+        except Exception:
+            pass
 
 
 class TaskRoutesMixin:
@@ -97,16 +116,7 @@ class TaskRoutesMixin:
             validate_auto_resubmit_timeout,
         )
 
-        global _sse_callback_registered  # noqa: PLW0603
-        if not _sse_callback_registered:
-            try:
-                tq = get_task_queue()
-                if tq is not None:
-                    tq.register_status_change_callback(_on_task_status_change)
-                    _sse_callback_registered = True
-                    logger.info("SSE 事件总线已注册到 TaskQueue")
-            except Exception:
-                pass
+        _ensure_sse_callback_registered()
 
         @self.app.route("/api/events")
         def sse_events() -> Response:
@@ -120,15 +130,7 @@ class TaskRoutesMixin:
               200:
                 description: SSE 事件流（task_changed 事件 + 25s 心跳）
             """
-            global _sse_callback_registered  # noqa: PLW0603
-            if not _sse_callback_registered:
-                try:
-                    tq = get_task_queue()
-                    if tq is not None:
-                        tq.register_status_change_callback(_on_task_status_change)
-                        _sse_callback_registered = True
-                except Exception:
-                    pass
+            _ensure_sse_callback_registered()
 
             q = _sse_bus.subscribe()
 
@@ -217,6 +219,7 @@ class TaskRoutesMixin:
 
                 task_list = []
                 for task in tasks:
+                    remaining = task.get_remaining_time()
                     task_list.append(
                         {
                             "task_id": task.task_id,
@@ -224,9 +227,8 @@ class TaskRoutesMixin:
                             "prompt": task.prompt[:100],
                             "created_at": task.created_at.isoformat(),
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
-                            "remaining_time": task.get_remaining_time(),
-                            "deadline": task.created_at.timestamp()
-                            + task.auto_resubmit_timeout,
+                            "remaining_time": remaining,
+                            "deadline": server_time + remaining,
                         }
                     )
 
