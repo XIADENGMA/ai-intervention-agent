@@ -1574,7 +1574,7 @@
       const fenceHead = lang ? fence + String(lang) : fence
       const codeBody = normalized.endsWith('\n') ? normalized : normalized + '\n'
 
-      return fenceHead + '\n' + codeBody + fence
+      return fenceHead + '\n' + codeBody + fence + '\n'
     } catch (e) {
       return null
     }

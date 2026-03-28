@@ -710,7 +710,7 @@ function buildMarkdownCodeFence(text, lang = '') {
   const fenceHead = lang ? `${fence}${lang}` : fence
   const codeBody = normalizedText.endsWith('\n') ? normalizedText : `${normalizedText}\n`
 
-  return `${fenceHead}\n${codeBody}${fence}`
+  return `${fenceHead}\n${codeBody}${fence}\n`
 }
 
 function insertCodeBlockIntoFeedbackTextarea(text) {
