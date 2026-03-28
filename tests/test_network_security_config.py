@@ -697,10 +697,20 @@ class TestValidateNetworkSecurityConfigMixin(unittest.TestCase):
 class TestUpdateNetworkSecurityMixin(unittest.TestCase):
     """测试 set/update_network_security_config Mixin 方法"""
 
+    def setUp(self):
+        """每个测试使用独立的临时配置文件，避免污染系统配置"""
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._cfg_path = Path(self._tmpdir.name) / "config.toml"
+        # 写入最小有效 TOML 以避免 ConfigManager 创建默认文件逻辑带来的竞态
+        self._cfg_path.write_text("")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
     def _get_manager(self):
         from config_manager import ConfigManager
 
-        return ConfigManager()
+        return ConfigManager(str(self._cfg_path))
 
     def test_set_network_security_persists_to_file(self):
         """save=True 时应写入文件并可重新读取"""
