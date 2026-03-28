@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import secrets
 from ipaddress import AddressValueError, ip_address, ip_network
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from flask import Response, abort, g, request
 from flask.typing import ResponseReturnValue
@@ -28,7 +28,7 @@ class SecurityMixin:
 
     if TYPE_CHECKING:
         app: Flask
-        network_security_config: Dict[str, Any]
+        network_security_config: dict[str, Any]
         host: str
 
     # ------------------------------------------------------------------
@@ -108,7 +108,7 @@ class SecurityMixin:
     # 网络安全配置
     # ------------------------------------------------------------------
 
-    def _load_network_security_config(self) -> Dict:
+    def _load_network_security_config(self) -> dict:
         """加载并验证 network_security 配置，失败时返回默认值。"""
         try:
             config_mgr = get_config()
@@ -200,7 +200,7 @@ class SecurityMixin:
         except (AddressValueError, ValueError):
             return False
 
-    def _get_request_client_ip(self, environ: Dict[str, Any]) -> str:
+    def _get_request_client_ip(self, environ: dict[str, Any]) -> str:
         """获取用于访问控制的客户端 IP。"""
         remote_addr = str(environ.get("REMOTE_ADDR", "")).strip()
         forwarded_for = str(environ.get("HTTP_X_FORWARDED_FOR", "")).strip()

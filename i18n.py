@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +120,7 @@ def detect_request_lang() -> str:
 
 def get_locale_message(
     key: str,
-    lang: Optional[str] = None,
+    lang: str | None = None,
     **kwargs: str,
 ) -> str:
     """获取本地化消息字符串。

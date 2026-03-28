@@ -11,7 +11,7 @@ import os
 import tempfile
 import time
 from ipaddress import AddressValueError, ip_address, ip_network
-from typing import TYPE_CHECKING, Any, Dict, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from enhanced_logging import EnhancedLogger
 
@@ -29,28 +29,28 @@ class NetworkSecurityMixin:
         _lock: RLock
         config_file: Path
         _original_content: str | None
-        _network_security_cache: Optional[Dict[str, Any]]
+        _network_security_cache: dict[str, Any] | None
         _network_security_cache_time: float
         _network_security_cache_ttl: float
 
-        def _get_default_config(self) -> Dict[str, Any]: ...
+        def _get_default_config(self) -> dict[str, Any]: ...
         @staticmethod
         def _coerce_bool(value: Any, default: bool = True) -> bool: ...
         def _create_default_config_file(self) -> None: ...
         def _is_toml_file(self) -> bool: ...
-        def _save_network_security_toml(self, ns_config: Dict[str, Any]) -> str: ...
+        def _save_network_security_toml(self, ns_config: dict[str, Any]) -> str: ...
         def _update_file_mtime(self) -> None: ...
         def invalidate_all_caches(self) -> None: ...
         def _trigger_config_change_callbacks(self) -> None: ...
-        def _parse_config_content(self, content: str) -> Dict[str, Any]: ...
+        def _parse_config_content(self, content: str) -> dict[str, Any]: ...
         def _validate_config_structure(
-            self, parsed_config: Dict[str, Any], content: str
+            self, parsed_config: dict[str, Any], content: str
         ) -> None: ...
 
-    def _validate_network_security_config(self, raw: Any) -> Dict[str, Any]:
+    def _validate_network_security_config(self, raw: Any) -> dict[str, Any]:
         """强校验并归一化 network_security（与文档/模板对齐，兼容旧字段）"""
         default_ns = cast(
-            Dict[str, Any],
+            dict[str, Any],
             self._get_default_config().get("network_security", {}),
         )
 
@@ -182,7 +182,7 @@ class NetworkSecurityMixin:
                 pass
             raise
 
-    def _save_network_security_config_immediate(self, validated_ns: Dict[str, Any]):
+    def _save_network_security_config_immediate(self, validated_ns: dict[str, Any]):
         """将 network_security 原子写回配置文件（不走通用保存逻辑，避免被排除）"""
         try:
             if not self.config_file.exists():
@@ -235,7 +235,7 @@ class NetworkSecurityMixin:
         self._update_file_mtime()
 
     def set_network_security_config(
-        self, config: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True
+        self, config: dict[str, Any], save: bool = True, trigger_callbacks: bool = True
     ) -> None:
         """设置并持久化 network_security（强校验 + 单一路径写回）"""
         validated = self._validate_network_security_config(config)
@@ -252,7 +252,7 @@ class NetworkSecurityMixin:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
     def update_network_security_config(
-        self, updates: Dict[str, Any], save: bool = True, trigger_callbacks: bool = True
+        self, updates: dict[str, Any], save: bool = True, trigger_callbacks: bool = True
     ) -> None:
         """增量更新并持久化 network_security（只允许白名单字段）"""
         if not isinstance(updates, dict):
@@ -284,7 +284,7 @@ class NetworkSecurityMixin:
             except Exception as e:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
-    def get_network_security_config(self) -> Dict[str, Any]:
+    def get_network_security_config(self) -> dict[str, Any]:
         """从文件读取 network_security 配置（带 30 秒缓存，失败返回默认配置）"""
         current_time = time.monotonic()
         with self._lock:
@@ -300,7 +300,7 @@ class NetworkSecurityMixin:
             if not self.config_file.exists():
                 default_config = self._get_default_config()
                 raw_result = cast(
-                    Dict[str, Any], default_config.get("network_security", {})
+                    dict[str, Any], default_config.get("network_security", {})
                 )
                 result = self._validate_network_security_config(raw_result)
                 with self._lock:
@@ -316,13 +316,13 @@ class NetworkSecurityMixin:
             self._validate_config_structure(full_config, content)
 
             network_security_config = cast(
-                Dict[str, Any], full_config.get("network_security", {})
+                dict[str, Any], full_config.get("network_security", {})
             )
 
             if not network_security_config:
                 default_config = self._get_default_config()
                 network_security_config = cast(
-                    Dict[str, Any], default_config.get("network_security", {})
+                    dict[str, Any], default_config.get("network_security", {})
                 )
                 logger.debug("配置文件中未找到network_security，使用默认配置")
 
@@ -347,6 +347,6 @@ class NetworkSecurityMixin:
 
             default_config = self._get_default_config()
             raw_default = cast(
-                Dict[str, Any], default_config.get("network_security", {})
+                dict[str, Any], default_config.get("network_security", {})
             )
             return self._validate_network_security_config(raw_default)

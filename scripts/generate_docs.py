@@ -24,7 +24,7 @@
 import argparse
 import ast
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -45,7 +45,7 @@ MODULES_TO_DOCUMENT = [
 ]
 
 
-def extract_docstring(node: ast.AST) -> Optional[str]:
+def extract_docstring(node: ast.AST) -> str | None:
     """提取 AST 节点的 docstring"""
     if isinstance(
         node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)
@@ -81,7 +81,7 @@ def get_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     return f"({', '.join(args)}){return_type}"
 
 
-def parse_module(filepath: Path) -> Dict[str, Any]:
+def parse_module(filepath: Path) -> dict[str, Any]:
     """解析 Python 模块"""
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
@@ -129,7 +129,7 @@ def parse_module(filepath: Path) -> Dict[str, Any]:
 
 
 def generate_markdown(
-    module_info: Dict[str, Any], *, lang: str = "zh-CN", include_docstrings: bool = True
+    module_info: dict[str, Any], *, lang: str = "zh-CN", include_docstrings: bool = True
 ) -> str:
     """生成 Markdown 格式文档"""
     lines = []
@@ -192,7 +192,7 @@ def generate_markdown(
     return "\n".join(lines)
 
 
-def generate_index(modules: List[str], *, lang: str, output_dir_display: str) -> str:
+def generate_index(modules: list[str], *, lang: str, output_dir_display: str) -> str:
     """生成文档索引"""
     if lang == "en":
         lines = [

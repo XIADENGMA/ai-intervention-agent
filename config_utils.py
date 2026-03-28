@@ -5,7 +5,7 @@
 
 import logging
 from collections.abc import Mapping
-from typing import Any, Optional, TypeVar, cast, overload
+from typing import Any, TypeVar, cast, overload
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def clamp_dataclass_field(
 def get_compat_config(
     config: Mapping[str, Any],
     new_key: str,
-    old_key: Optional[str] = None,
+    old_key: str | None = None,
     default: Any = None,
 ) -> Any:
     """获取配置值，优先级：new_key > old_key > default"""
@@ -90,7 +90,7 @@ def get_typed_config(
     value_type: type[T],
     min_val: Number | None = None,
     max_val: Number | None = None,
-    old_key: Optional[str] = None,
+    old_key: str | None = None,
 ) -> T:
     """获取配置值并进行类型转换和边界验证"""
     raw_value = get_compat_config(config, key, old_key, default)
@@ -144,7 +144,7 @@ def truncate_string(
     value: str | None,
     max_length: int,
     field_name: str,
-    default: Optional[str] = None,
+    default: str | None = None,
     log_warning: bool = True,
 ) -> str:
     """截断字符串到指定长度，空值时使用默认值"""

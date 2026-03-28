@@ -9,7 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, cast
 
 import httpx
 
@@ -44,7 +44,7 @@ _async_client: httpx.AsyncClient | None = None
 _sync_client: httpx.Client | None = None
 _http_client_lock = threading.Lock()
 
-_config_cache: Dict[str, Any] = {"config": None, "timestamp": 0.0, "ttl": 10.0}
+_config_cache: dict[str, Any] = {"config": None, "timestamp": 0.0, "ttl": 10.0}
 _config_cache_lock = threading.Lock()
 
 _config_callbacks_registered: bool = False
@@ -237,7 +237,7 @@ class ServiceManager:
         if not getattr(self, "_initialized", False):
             with self._lock:
                 if not getattr(self, "_initialized", False):
-                    self._processes: Dict[str, Dict] = {}
+                    self._processes: dict[str, dict] = {}
                     self._cleanup_registered = False
                     self._should_exit = False
                     self._initialized = True
@@ -287,7 +287,7 @@ class ServiceManager:
                 del self._processes[name]
                 logger.debug(f"已注销服务进程: {name}")
 
-    def get_process(self, name: str) -> Optional[subprocess.Popen]:
+    def get_process(self, name: str) -> subprocess.Popen | None:
         with self._lock:
             process_info = self._processes.get(name)
             return process_info["process"] if process_info else None
@@ -438,7 +438,7 @@ class ServiceManager:
         except Exception as e:
             logger.debug(f"清理 HTTP 客户端时出错（忽略）: {e}")
 
-    def get_status(self) -> Dict[str, Dict]:
+    def get_status(self) -> dict[str, dict]:
         status = {}
         with self._lock:
             for name, info in self._processes.items():
@@ -460,7 +460,7 @@ class ServiceManager:
 # ---------------------------------------------------------------------------
 
 
-def get_web_ui_config() -> Tuple[WebUIConfig, int]:
+def get_web_ui_config() -> tuple[WebUIConfig, int]:
     """加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)"""
     _ensure_config_change_callbacks_registered()
 
@@ -471,7 +471,7 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
             and current_time - _config_cache["timestamp"] < _config_cache["ttl"]
         ):
             logger.debug("使用缓存的 Web UI 配置")
-            return cast(Tuple[WebUIConfig, int], _config_cache["config"])
+            return cast(tuple[WebUIConfig, int], _config_cache["config"])
 
     try:
         config_mgr = get_config()
@@ -512,7 +512,7 @@ def get_web_ui_config() -> Tuple[WebUIConfig, int]:
             retry_delay=retry_delay,
         )
 
-        result: Tuple[WebUIConfig, int] = (config, auto_resubmit_timeout)
+        result: tuple[WebUIConfig, int] = (config, auto_resubmit_timeout)
         with _config_cache_lock:
             _config_cache["config"] = result
             _config_cache["timestamp"] = current_time
@@ -678,8 +678,8 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
 
 def update_web_content(
     summary: str,
-    predefined_options: Optional[list[str]],
-    task_id: Optional[str],
+    predefined_options: list[str] | None,
+    task_id: str | None,
     auto_resubmit_timeout: int,
     config: WebUIConfig,
 ) -> None:

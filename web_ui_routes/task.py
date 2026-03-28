@@ -6,7 +6,7 @@ import json
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from flask import Response, jsonify, request
 from flask.typing import ResponseReturnValue
@@ -73,7 +73,7 @@ _sse_bus = _SSEBus()
 
 
 def _on_task_status_change(
-    task_id: str, old_status: Optional[str], new_status: str
+    task_id: str, old_status: str | None, new_status: str
 ) -> None:
     _sse_bus.emit(
         "task_changed",
@@ -352,7 +352,7 @@ class TaskRoutesMixin:
             task_id = task_id_raw.strip()
             prompt = prompt_raw
 
-            predefined_options: Optional[list[str]] = None
+            predefined_options: list[str] | None = None
             if options_raw is None:
                 predefined_options = None
             elif not isinstance(options_raw, list):

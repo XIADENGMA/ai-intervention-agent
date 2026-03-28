@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
@@ -500,7 +500,7 @@ class NotificationRoutesMixin:
                         ),
                     ]
 
-                    manager_updates: Dict[str, Any] = {}
+                    manager_updates: dict[str, Any] = {}
                     changed_keys: list[str] = []
                     for (
                         request_keys,

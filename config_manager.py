@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -19,7 +20,7 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 import tomlkit
 
@@ -122,7 +123,7 @@ class ReadWriteLock:
             self._read_ready.release()
 
 
-def parse_jsonc(content: str) -> Dict[str, Any]:
+def parse_jsonc(content: str) -> dict[str, Any]:
     """
     解析 JSONC（带注释的 JSON）为字典，支持 // 单行注释和 /* */ 多行注释。
 
@@ -188,11 +189,9 @@ def parse_jsonc(content: str) -> Dict[str, Any]:
     cleaned_content = "".join(cleaned_chars)
 
     # JSONC 允许尾部逗号，但 json.loads 不接受，需预处理移除
-    import re
-
     cleaned_content = re.sub(r",\s*([}\]])", r"\1", cleaned_content)
 
-    return cast(Dict[str, Any], json.loads(cleaned_content))
+    return cast(dict[str, Any], json.loads(cleaned_content))
 
 
 def _is_uvx_mode() -> bool:
@@ -358,29 +357,29 @@ class ConfigManager(
         self.config_file = find_config_file(config_file)
 
         # 初始化配置字典
-        self._config: Dict[str, Any] = {}
+        self._config: dict[str, Any] = {}
 
         # 初始化锁机制
         self._lock = threading.RLock()  # 可重入锁，用于延迟保存定时器
 
         # 初始化文件内容和访问时间
-        self._original_content: Optional[str] = None  # 保存原始文件内容（用于保留注释）
+        self._original_content: str | None = None  # 保存原始文件内容（用于保留注释）
         self._last_access_time = time.monotonic()  # 跟踪最后访问时间
 
         # 性能优化：配置写入缓冲机制
-        self._pending_changes: Dict[str, Any] = {}  # 待写入的配置变更
-        self._save_timer: Optional[threading.Timer] = None  # 延迟保存定时器
+        self._pending_changes: dict[str, Any] = {}  # 待写入的配置变更
+        self._save_timer: threading.Timer | None = None  # 延迟保存定时器
         self._save_delay = 3.0  # 延迟保存时间（秒）
         self._last_save_time: float = 0  # 上次保存时间（monotonic）
 
         # 【性能优化】network_security 配置缓存
-        self._network_security_cache: Optional[Dict[str, Any]] = None
+        self._network_security_cache: dict[str, Any] | None = None
         self._network_security_cache_time: float = 0  # monotonic
         self._network_security_cache_ttl: float = 30.0  # 30 秒缓存有效期
 
         # 【性能优化】通用 section 缓存层
-        self._section_cache: Dict[str, Dict[str, Any]] = {}  # section 名称 -> 缓存数据
-        self._section_cache_time: Dict[str, float] = {}  # section 名称 -> 缓存时间
+        self._section_cache: dict[str, dict[str, Any]] = {}
+        self._section_cache_time: dict[str, float] = {}
         self._section_cache_ttl: float = 10.0  # section 缓存有效期（秒）
 
         # 【性能优化】缓存统计
@@ -391,7 +390,7 @@ class ConfigManager(
         }
 
         # 【新增】文件监听相关属性
-        self._file_watcher_thread: Optional[threading.Thread] = None
+        self._file_watcher_thread: threading.Thread | None = None
         self._file_watcher_running = False
         self._file_watcher_stop_event = threading.Event()  # 用于优雅停止
         self._file_watcher_interval = 2.0  # 检查间隔（秒）
@@ -406,12 +405,12 @@ class ConfigManager(
         # 初始化文件修改时间
         self._update_file_mtime()
 
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """返回默认配置字典（由 Pydantic 段模型的默认值生成，单一真相源）"""
         return {name: model().model_dump() for name, model in SECTION_MODELS.items()}
 
     @staticmethod
-    def _exclude_network_security(config: Dict[str, Any]) -> Dict[str, Any]:
+    def _exclude_network_security(config: dict[str, Any]) -> dict[str, Any]:
         """从配置字典中排除 network_security（返回新字典或原地修改）"""
         if "network_security" in config:
             del config["network_security"]
@@ -422,11 +421,11 @@ class ConfigManager(
         """判断当前配置文件是否为 TOML 格式"""
         return self.config_file.suffix.lower() == ".toml"
 
-    def _parse_config_content(self, content: str) -> Dict[str, Any]:
+    def _parse_config_content(self, content: str) -> dict[str, Any]:
         """根据当前文件格式解析配置内容（TOML 或降级到 JSON）"""
         if self._is_toml_file():
             return self._parse_toml(content)
-        return cast(Dict[str, Any], json.loads(content))
+        return cast(dict[str, Any], json.loads(content))
 
     def _migrate_jsonc_to_toml(self) -> bool:
         """将旧的 JSONC/JSON 配置文件迁移为 TOML 格式"""
@@ -538,8 +537,8 @@ class ConfigManager(
                     self._original_content = None
 
     def _merge_config(
-        self, default: Dict[str, Any], current: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, default: dict[str, Any], current: dict[str, Any]
+    ) -> dict[str, Any]:
         """递归合并配置：补充缺失的默认键，保持用户值优先，排除 network_security"""
         result = current.copy()  # 以当前配置为基础
 
@@ -721,7 +720,7 @@ class ConfigManager(
             logger.error(f"配置文件验证失败: {e}", exc_info=True)
             raise
 
-    def _validate_config_structure(self, parsed_config: Dict[str, Any], content: str):
+    def _validate_config_structure(self, parsed_config: dict[str, Any], content: str):
         """验证配置结构完整性（network_security 格式等）
 
         TOML 解析器会自动拒绝重复键，此处仅对 JSON 降级格式做额外校验。
@@ -787,7 +786,7 @@ class ConfigManager(
         if key == "network_security":
             if not isinstance(value, dict):
                 raise ConfigValidationError("network_security 必须是 object（dict）")
-            self.set_network_security_config(cast(Dict[str, Any], value), save=save)
+            self.set_network_security_config(cast(dict[str, Any], value), save=save)
             return
         if key.startswith("network_security."):
             field = key[len("network_security.") :]
@@ -846,15 +845,15 @@ class ConfigManager(
             except Exception as e:
                 logger.debug(f"触发配置变更回调失败（忽略）: {e}")
 
-    def update(self, updates: Dict[str, Any], save: bool = True) -> None:
+    def update(self, updates: dict[str, Any], save: bool = True) -> None:
         """批量更新配置（仅处理变化项，合并为一次延迟保存，原子操作）"""
         # network_security 特殊处理：先剥离并走专用更新/落盘路径，避免进入 _config/_pending_changes
-        network_security_updates: Dict[str, Any] = {}
-        non_ns_updates: Dict[str, Any] = {}
+        network_security_updates: dict[str, Any] = {}
+        non_ns_updates: dict[str, Any] = {}
         for k, v in (updates or {}).items():
             if k == "network_security" and isinstance(v, dict):
                 # 视为整段覆盖（仍会被验证与归一化）
-                network_security_updates.update(cast(Dict[str, Any], v))
+                network_security_updates.update(cast(dict[str, Any], v))
             elif isinstance(k, str) and k.startswith("network_security."):
                 field = k[len("network_security.") :]
                 if field and "." not in field:
@@ -954,7 +953,7 @@ class ConfigManager(
             self._last_save_time = time.monotonic()
             logger.debug("强制配置保存完成")
 
-    def get_section(self, section: str, use_cache: bool = True) -> Dict[str, Any]:
+    def get_section(self, section: str, use_cache: bool = True) -> dict[str, Any]:
         """获取配置段的深拷贝（带 Pydantic 校验、缓存优化，network_security 特殊处理）"""
         import copy
 
@@ -981,7 +980,7 @@ class ConfigManager(
             return copy.deepcopy(result)
 
     @staticmethod
-    def _validate_section(section: str, raw: Any) -> Dict[str, Any]:
+    def _validate_section(section: str, raw: Any) -> dict[str, Any]:
         """通过 Pydantic 模型校验配置段（类型强转 + 钳位），失败时降级返回原始数据"""
         if not isinstance(raw, dict):
             raw = {}
@@ -995,7 +994,7 @@ class ConfigManager(
             return dict(raw)
 
     def update_section(
-        self, section: str, updates: Dict[str, Any], save: bool = True
+        self, section: str, updates: dict[str, Any], save: bool = True
     ) -> None:
         """更新配置段（检测变化，触发回调，可选延迟保存）"""
         if section == "network_security":
@@ -1088,7 +1087,7 @@ class ConfigManager(
             self._cache_stats["invalidations"] += invalidated_count + 1
             logger.debug(f"已失效所有缓存 (共 {invalidated_count + 1} 个)")
 
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """获取缓存统计（命中/未命中/失效次数、命中率等）"""
         with self._lock:
             total = self._cache_stats["hits"] + self._cache_stats["misses"]
@@ -1130,7 +1129,7 @@ class ConfigManager(
                     f"network_security 缓存 TTL 已设置为: {self._network_security_cache_ttl}s"
                 )
 
-    def get_all(self) -> Dict[str, Any]:
+    def get_all(self) -> dict[str, Any]:
         """获取所有配置的深拷贝（不含 network_security），防止外部修改内部状态"""
         import copy
 
@@ -1170,8 +1169,8 @@ class ConfigManager(
         key: str,
         default: Any,
         value_type: type,
-        min_val: Optional[Any] = None,
-        max_val: Optional[Any] = None,
+        min_val: Any | None = None,
+        max_val: Any | None = None,
     ) -> Any:
         """获取配置值，带类型转换和边界验证"""
         from config_utils import clamp_value
@@ -1211,8 +1210,8 @@ class ConfigManager(
         self,
         key: str,
         default: int = 0,
-        min_val: Optional[int] = None,
-        max_val: Optional[int] = None,
+        min_val: int | None = None,
+        max_val: int | None = None,
     ) -> int:
         """获取整数配置值"""
         return cast(int, self.get_typed(key, default, int, min_val, max_val))
@@ -1221,8 +1220,8 @@ class ConfigManager(
         self,
         key: str,
         default: float = 0.0,
-        min_val: Optional[float] = None,
-        max_val: Optional[float] = None,
+        min_val: float | None = None,
+        max_val: float | None = None,
     ) -> float:
         """获取浮点数配置值"""
         return cast(float, self.get_typed(key, default, float, min_val, max_val))
@@ -1235,7 +1234,7 @@ class ConfigManager(
         self,
         key: str,
         default: str = "",
-        max_length: Optional[int] = None,
+        max_length: int | None = None,
     ) -> str:
         """获取字符串配置值（可选截断）"""
         from config_utils import truncate_string

@@ -12,7 +12,7 @@ import contextlib
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 import httpx
 from mcp.types import TextContent
@@ -42,7 +42,7 @@ except ImportError as e:
     NOTIFICATION_AVAILABLE = False
 
 
-async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str, Any]:
+async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]:
     """SSE 事件驱动 + HTTP 轮询保底等待任务完成。
 
     双通道并行：SSE 提供 <50ms 实时检测，HTTP 轮询（每 2s）作为 SSE 断连的安全网。
@@ -67,7 +67,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
     completion = asyncio.Event()
     result_box: list[Any] = [None]
 
-    async def _fetch_result() -> Dict[str, Any] | None:
+    async def _fetch_result() -> dict[str, Any] | None:
         """获取已完成任务的结果，404 返回重调提示。"""
         try:
             cfg = service_manager.get_web_ui_config()[0]
@@ -145,7 +145,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
     except asyncio.TimeoutError:
         elapsed = time.monotonic() - start_time_monotonic
         logger.error(f"任务超时: {task_id}, 等待 {elapsed:.1f}s")
-        return cast(Dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
+        return cast(dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
     finally:
         sse_task.cancel()
         poll_task.cancel()
@@ -156,21 +156,21 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> Dict[str
 
     if result_box[0] is not None:
         logger.info(f"任务完成: {task_id}")
-        return cast(Dict[str, Any], result_box[0])
+        return cast(dict[str, Any], result_box[0])
 
     r = await _fetch_result()
     if r is not None:
         return r
 
-    return cast(Dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
+    return cast(dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
 
 
 def launch_feedback_ui(
     summary: str,
-    predefined_options: Optional[list[str]] = None,
-    task_id: Optional[str] = None,
+    predefined_options: list[str] | None = None,
+    task_id: str | None = None,
     timeout: int = 300,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具"""
     # 确保超时时间不小于300秒（0表示无限等待，保持不变）
     if timeout > 0:
@@ -327,7 +327,7 @@ def launch_feedback_ui(
 
 async def interactive_feedback(
     message: str = Field(description="向用户展示的具体问题/提示（支持 Markdown）"),
-    predefined_options: Optional[list] = Field(
+    predefined_options: list | None = Field(
         default=None,
         description="可选的预定义选项列表，供用户单选/多选",
     ),
@@ -558,9 +558,9 @@ class FeedbackServiceContext:
     def launch_feedback_ui(
         self,
         summary: str,
-        predefined_options: Optional[list[str]] = None,
-        task_id: Optional[str] = None,
+        predefined_options: list[str] | None = None,
+        task_id: str | None = None,
         timeout: int = 300,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """在上下文中启动反馈界面（委托给全局 launch_feedback_ui）"""
         return launch_feedback_ui(summary, predefined_options, task_id, timeout)

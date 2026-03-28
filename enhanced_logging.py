@@ -5,7 +5,7 @@ import re
 import sys
 import threading
 import time
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any
 
 from loguru import logger as _loguru_logger
 
@@ -55,10 +55,10 @@ class LogDeduplicator:
         """初始化时间窗口和缓存"""
         self.time_window = time_window
         self.max_cache_size = max_cache_size
-        self.cache: Dict[int, Tuple[float, int]] = {}
+        self.cache: dict[int, tuple[float, int]] = {}
         self.lock = threading.Lock()
 
-    def should_log(self, message: str) -> Tuple[bool, Optional[str]]:
+    def should_log(self, message: str) -> tuple[bool, str | None]:
         """检查是否应记录，返回 (should_log, duplicate_info)"""
         with self.lock:
             current_time = time.time()
@@ -98,7 +98,7 @@ class LogDeduplicator:
 # ========================================================================
 
 
-def _sanitize_and_escape(record: Dict[str, Any]) -> None:
+def _sanitize_and_escape(record: dict[str, Any]) -> None:
     """Loguru patcher: 防注入转义 + 敏感信息脱敏"""
     msg = record["message"]
     msg = msg.replace("\x00", "\\x00").replace("\n", "\\n").replace("\r", "\\r")
@@ -143,9 +143,9 @@ class InterceptHandler(logging.Handler):
 class SingletonLogManager:
     """单例日志管理器 - 配置 stdlib logger 路由到 Loguru，线程安全。"""
 
-    _instance: Optional["SingletonLogManager"] = None
+    _instance: "SingletonLogManager | None" = None
     _lock = threading.Lock()
-    _initialized_loggers: Set[str] = set()
+    _initialized_loggers: set[str] = set()
 
     def __new__(cls) -> "SingletonLogManager":
         """双重检查锁创建单例"""

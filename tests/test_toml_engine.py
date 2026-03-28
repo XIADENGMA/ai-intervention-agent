@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import unittest
-from typing import Any, Dict
+from typing import Any
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
@@ -25,7 +25,7 @@ class _Engine(TomlEngineMixin):
     _original_content: str = ""
 
     @staticmethod
-    def _exclude_network_security(config: Dict[str, Any]) -> Dict[str, Any]:
+    def _exclude_network_security(config: dict[str, Any]) -> dict[str, Any]:
         return {k: v for k, v in config.items() if k != "network_security"}
 
 

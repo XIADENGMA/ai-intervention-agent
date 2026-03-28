@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import inspect
 import socket
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from config_manager import get_config
 from enhanced_logging import EnhancedLogger
@@ -37,7 +37,7 @@ class MdnsMixin:
         _mdns_hostname: str | None
         _mdns_publish_ip: str | None
 
-    def _get_mdns_config(self) -> Dict[str, Any]:
+    def _get_mdns_config(self) -> dict[str, Any]:
         """读取 mdns 配置段（失败则返回空字典）"""
         try:
             cfg = get_config().get_section("mdns")

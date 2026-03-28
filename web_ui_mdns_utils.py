@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import socket
 from ipaddress import AddressValueError, ip_address
-from typing import Any, List, Optional
+from typing import Any
 
 import psutil
 
@@ -87,7 +87,7 @@ def _is_probably_virtual_interface(ifname: str) -> bool:
     return False
 
 
-def _get_default_route_ipv4() -> Optional[str]:
+def _get_default_route_ipv4() -> str | None:
     """通过路由选择的方式获取"默认出口"IPv4（不实际发包）"""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -103,7 +103,7 @@ def _get_default_route_ipv4() -> Optional[str]:
         return None
 
 
-def _list_non_loopback_ipv4(prefer_physical: bool = True) -> List[str]:
+def _list_non_loopback_ipv4(prefer_physical: bool = True) -> list[str]:
     """枚举本机非回环 IPv4 地址（优先物理网卡）"""
     try:
         addrs = psutil.net_if_addrs()
@@ -111,7 +111,7 @@ def _list_non_loopback_ipv4(prefer_physical: bool = True) -> List[str]:
     except Exception:
         return []
 
-    result: List[str] = []
+    result: list[str] = []
 
     for ifname, snics in addrs.items():
         if prefer_physical and _is_probably_virtual_interface(ifname):
@@ -139,7 +139,7 @@ def _list_non_loopback_ipv4(prefer_physical: bool = True) -> List[str]:
             result.append(ip)
 
     seen: set[str] = set()
-    uniq: List[str] = []
+    uniq: list[str] = []
     for ip in result:
         if ip in seen:
             continue
@@ -150,7 +150,7 @@ def _list_non_loopback_ipv4(prefer_physical: bool = True) -> List[str]:
     return uniq
 
 
-def detect_best_publish_ipv4(bind_interface: str) -> Optional[str]:
+def detect_best_publish_ipv4(bind_interface: str) -> str | None:
     """自动探测适合对外发布的 IPv4 地址。
 
     优先级：

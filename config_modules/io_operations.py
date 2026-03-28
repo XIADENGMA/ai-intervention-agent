@@ -10,7 +10,7 @@ import json
 import os
 import tempfile
 import time
-from typing import TYPE_CHECKING, Any, Dict, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from enhanced_logging import EnhancedLogger
 
@@ -26,20 +26,20 @@ class IOOperationsMixin:
 
     if TYPE_CHECKING:
         _lock: RLock
-        _config: Dict[str, Any]
-        _pending_changes: Dict[str, Any]
+        _config: dict[str, Any]
+        _pending_changes: dict[str, Any]
         config_file: Path
         _original_content: str | None
 
-        def get_network_security_config(self) -> Dict[str, Any]: ...
+        def get_network_security_config(self) -> dict[str, Any]: ...
         def set_network_security_config(
             self,
-            config: Dict[str, Any],
+            config: dict[str, Any],
             save: bool = True,
             trigger_callbacks: bool = True,
         ) -> None: ...
         @staticmethod
-        def _exclude_network_security(config: Dict[str, Any]) -> Dict[str, Any]: ...
+        def _exclude_network_security(config: dict[str, Any]) -> dict[str, Any]: ...
         def _save_config(self) -> None: ...
         def _trigger_config_change_callbacks(self) -> None: ...
         def _is_toml_file(self) -> bool: ...
@@ -47,7 +47,7 @@ class IOOperationsMixin:
         def _load_config(self) -> None: ...
         def invalidate_all_caches(self) -> None: ...
 
-    def export_config(self, include_network_security: bool = False) -> Dict[str, Any]:
+    def export_config(self, include_network_security: bool = False) -> dict[str, Any]:
         """导出当前配置（可选包含 network_security）"""
         with self._lock:
             export_data = {
@@ -62,7 +62,7 @@ class IOOperationsMixin:
             return export_data
 
     def import_config(
-        self, config_data: Dict[str, Any], merge: bool = True, save: bool = True
+        self, config_data: dict[str, Any], merge: bool = True, save: bool = True
     ) -> bool:
         """导入配置（支持合并或覆盖模式）"""
         try:
@@ -71,18 +71,18 @@ class IOOperationsMixin:
                 return False
 
             actual_config: Any
-            network_security: Optional[Dict[str, Any]] = None
+            network_security: dict[str, Any] | None = None
 
             if "config" in config_data:
                 actual_config = config_data.get("config")
                 network_security_raw = config_data.get("network_security")
                 if isinstance(network_security_raw, dict):
-                    network_security = cast(Dict[str, Any], network_security_raw)
+                    network_security = cast(dict[str, Any], network_security_raw)
             else:
                 actual_config = config_data
                 network_security_raw = actual_config.get("network_security")
                 if isinstance(network_security_raw, dict):
-                    network_security = cast(Dict[str, Any], network_security_raw)
+                    network_security = cast(dict[str, Any], network_security_raw)
 
             if not isinstance(actual_config, dict):
                 logger.error("导入失败：配置数据必须是字典格式（config 字段）")
@@ -91,7 +91,7 @@ class IOOperationsMixin:
             if network_security is None:
                 ns_in_config = actual_config.get("network_security")
                 if isinstance(ns_in_config, dict):
-                    network_security = cast(Dict[str, Any], ns_in_config)
+                    network_security = cast(dict[str, Any], ns_in_config)
 
             with self._lock:
                 if merge:
@@ -128,7 +128,7 @@ class IOOperationsMixin:
             logger.error(f"导入配置失败: {e}", exc_info=True)
             return False
 
-    def _deep_merge(self, base: Dict, update: Dict):
+    def _deep_merge(self, base: dict, update: dict):
         """递归合并 update 到 base"""
         for key, value in update.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
@@ -136,7 +136,7 @@ class IOOperationsMixin:
             else:
                 base[key] = value
 
-    def backup_config(self, backup_path: Optional[str] = None) -> str:
+    def backup_config(self, backup_path: str | None = None) -> str:
         """备份当前配置到文件"""
         if backup_path is None:
             backup_path = str(self.config_file) + ".backup"

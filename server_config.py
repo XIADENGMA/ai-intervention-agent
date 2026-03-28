@@ -9,7 +9,7 @@
 import base64
 import uuid
 from pathlib import Path
-from typing import Any, ClassVar, Dict, Literal, Optional, Tuple, overload
+from typing import Any, ClassVar, Literal, overload
 
 from mcp.types import ContentBlock, ImageContent, TextContent
 from pydantic import BaseModel, field_validator
@@ -230,7 +230,7 @@ def calculate_backend_timeout(
     return min(calculated, max_timeout)
 
 
-def get_feedback_prompts() -> Tuple[str, str]:
+def get_feedback_prompts() -> tuple[str, str]:
     """获取 (resubmit_prompt, prompt_suffix)"""
     config = get_feedback_config()
     return config.resubmit_prompt, config.prompt_suffix
@@ -266,8 +266,8 @@ def _make_resubmit_response(as_mcp: bool = True) -> list | dict:
 
 
 def validate_input(
-    prompt: str, predefined_options: Optional[list] = None
-) -> Tuple[str, list]:
+    prompt: str, predefined_options: list | None = None
+) -> tuple[str, list]:
     """验证清理输入：截断过长内容，过滤非法选项"""
     try:
         cleaned_prompt = prompt.strip()
@@ -325,7 +325,7 @@ def _format_file_size(size: int) -> str:
     return f"{size / (1024 * 1024):.1f} MB"
 
 
-def _guess_mime_type_from_data(base64_data: str) -> Optional[str]:
+def _guess_mime_type_from_data(base64_data: str) -> str | None:
     """通过文件魔数猜测 MIME 类型"""
     try:
         snippet = base64_data[:256]
@@ -357,9 +357,7 @@ def _guess_mime_type_from_data(base64_data: str) -> Optional[str]:
     return None
 
 
-def _process_image(
-    image: dict, index: int
-) -> Tuple[Optional[ImageContent], Optional[str]]:
+def _process_image(image: dict, index: int) -> tuple[ImageContent | None, str | None]:
     """处理单张图片，返回 (ImageContent, 文本描述)"""
     base64_data = image.get("data")
     if not isinstance(base64_data, str) or not base64_data.strip():
@@ -368,7 +366,7 @@ def _process_image(
 
     base64_data = base64_data.strip()
 
-    inferred_mime_type: Optional[str] = None
+    inferred_mime_type: str | None = None
     if base64_data.startswith("data:") and ";base64," in base64_data:
         header, b64 = base64_data.split(",", 1)
         base64_data = b64.strip()
@@ -405,7 +403,7 @@ def _process_image(
 
 
 def parse_structured_response(
-    response_data: Optional[Dict[str, Any]],
+    response_data: dict[str, Any] | None,
 ) -> list[ContentBlock]:
     """解析反馈数据为 MCP Content 列表"""
     result: list[ContentBlock] = []

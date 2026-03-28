@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from enhanced_logging import EnhancedLogger
 
@@ -28,8 +28,8 @@ class FileWatcherMixin:
         _file_watcher_running: bool
         _file_watcher_interval: float
         _file_watcher_stop_event: threading.Event
-        _file_watcher_thread: Optional[threading.Thread]
-        _save_timer: Optional[threading.Timer]
+        _file_watcher_thread: threading.Thread | None
+        _save_timer: threading.Timer | None
         _config_change_callbacks: list[Callable[[], None]]
 
         def reload(self) -> None: ...
@@ -83,7 +83,7 @@ class FileWatcherMixin:
 
     def stop_file_watcher(self) -> None:
         """停止配置文件监听"""
-        thread: Optional[threading.Thread]
+        thread: threading.Thread | None
         with self._lock:
             if not self._file_watcher_running:
                 logger.debug("文件监听器未运行")

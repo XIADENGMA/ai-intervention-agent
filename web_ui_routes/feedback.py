@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
@@ -30,10 +30,10 @@ class FeedbackRoutesMixin:
         app: Flask
         limiter: Limiter
         _state_lock: threading.RLock
-        feedback_result: Optional[FeedbackResult]
+        feedback_result: FeedbackResult | None
         current_prompt: str
         current_options: list[str]
-        current_task_id: Optional[str]
+        current_task_id: str | None
         current_auto_resubmit_timeout: int
         _single_task_timeout_explicit: bool
         has_content: bool

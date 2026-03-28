@@ -10,7 +10,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from importlib.util import find_spec
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 
@@ -43,9 +43,9 @@ class WebNotificationProvider(BaseNotificationProvider):
     def __init__(self, config):
         super().__init__(config)
         self.notification_type = NotificationType.WEB
-        self.web_clients: Dict[str, Any] = {}
+        self.web_clients: dict[str, Any] = {}
 
-    def register_client(self, client_id: str, client_info: Dict[str, Any]):
+    def register_client(self, client_id: str, client_info: dict[str, Any]):
         """注册 Web 客户端"""
         self.web_clients[client_id] = {"info": client_info, "last_seen": time.time()}
         logger.debug(f"Web客户端已注册: {client_id}")
@@ -429,9 +429,9 @@ class SystemNotificationProvider(BaseNotificationProvider):
 
 def create_notification_providers(
     config,
-) -> Dict[NotificationType, BaseNotificationProvider]:
+) -> dict[NotificationType, BaseNotificationProvider]:
     """工厂函数 - 根据配置启用状态创建提供者实例"""
-    providers: Dict[NotificationType, BaseNotificationProvider] = {}
+    providers: dict[NotificationType, BaseNotificationProvider] = {}
 
     if config.web_enabled:
         providers[NotificationType.WEB] = WebNotificationProvider(config)

@@ -8,8 +8,9 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Callable, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -225,11 +226,11 @@ class NotificationManager:
                 ) from e
 
             # 初始化通知提供者字典
-            self._providers: Dict[NotificationType, Any] = {}
+            self._providers: dict[NotificationType, Any] = {}
             self._providers_lock = threading.Lock()
 
             # 初始化事件队列和锁
-            self._event_queue: List[NotificationEvent] = []
+            self._event_queue: list[NotificationEvent] = []
             self._queue_lock = threading.Lock()
 
             # 【线程安全】配置锁，保护 config 对象的并发读写
@@ -252,13 +253,13 @@ class NotificationManager:
 
             # 【可靠性】延迟通知 Timer 管理（用于测试/退出时可控清理）
             # key: event_id -> threading.Timer
-            self._delayed_timers: Dict[str, threading.Timer] = {}
+            self._delayed_timers: dict[str, threading.Timer] = {}
             self._delayed_timers_lock = threading.Lock()
             self._shutdown_called: bool = False
 
             # 【可观测性】基础统计信息（用于调试/监控；不写入磁盘）
             self._stats_lock = threading.Lock()
-            self._stats: Dict[str, Any] = {
+            self._stats: dict[str, Any] = {
                 "events_total": 0,
                 "events_succeeded": 0,
                 "events_failed": 0,
@@ -274,7 +275,7 @@ class NotificationManager:
 
             # 初始化回调函数字典
             self._callbacks_lock = threading.Lock()
-            self._callbacks: Dict[str, List[Callable]] = {}
+            self._callbacks: dict[str, list[Callable]] = {}
 
             # 标记已初始化
             self._initialized = True
@@ -339,8 +340,8 @@ class NotificationManager:
         title: str,
         message: str,
         trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE,
-        types: Optional[List[NotificationType]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        types: list[NotificationType] | None = None,
+        metadata: dict[str, Any] | None = None,
         priority: NotificationPriority | str = NotificationPriority.NORMAL,
     ) -> str:
         """发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。"""
@@ -969,7 +970,7 @@ class NotificationManager:
         except Exception as e:
             logger.error(f"保存配置到文件失败: {e}", exc_info=True)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """返回管理器状态：enabled/providers/queue_size/config/stats"""
         # 线程安全地获取队列大小
         with self._queue_lock:

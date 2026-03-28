@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 import tomlkit
 from tomlkit.items import Table
@@ -28,14 +28,14 @@ class TomlEngineMixin:
         _original_content: str | None
 
         @staticmethod
-        def _exclude_network_security(config: Dict[str, Any]) -> Dict[str, Any]: ...
+        def _exclude_network_security(config: dict[str, Any]) -> dict[str, Any]: ...
 
     # ------------------------------------------------------------------
     # TOML 解析
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _parse_toml(content: str) -> Dict[str, Any]:
+    def _parse_toml(content: str) -> dict[str, Any]:
         """解析 TOML 内容为普通 dict（丢弃 tomlkit 元数据）"""
         doc = tomlkit.parse(content)
         return doc.unwrap()  # type: ignore[return-value]
@@ -49,7 +49,7 @@ class TomlEngineMixin:
     # TOML 保存（保留注释格式）
     # ------------------------------------------------------------------
 
-    def _save_toml_with_comments(self, config: Dict[str, Any]) -> str:
+    def _save_toml_with_comments(self, config: dict[str, Any]) -> str:
         """保存 TOML 配置并保留原有注释和格式，排除 network_security"""
         config_to_save = self._exclude_network_security(config.copy())
         if not self._original_content:
@@ -74,7 +74,7 @@ class TomlEngineMixin:
         return tomlkit.dumps(doc)
 
     @staticmethod
-    def _update_toml_table(table: Table, values: Dict[str, Any]) -> None:
+    def _update_toml_table(table: Table, values: dict[str, Any]) -> None:
         """递归更新 tomlkit Table，仅更新已存在的键（保留格式/注释）"""
         for key, value in values.items():
             if key in table:
@@ -90,7 +90,7 @@ class TomlEngineMixin:
     # network_security 段操作
     # ------------------------------------------------------------------
 
-    def _save_network_security_toml(self, ns_config: Dict[str, Any]) -> str:
+    def _save_network_security_toml(self, ns_config: dict[str, Any]) -> str:
         """仅更新 TOML 文件中的 network_security 段并返回完整内容"""
         if not self._original_content:
             logger.warning("无原始内容，无法保留格式保存 network_security")

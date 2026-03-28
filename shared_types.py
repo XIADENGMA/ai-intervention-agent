@@ -9,7 +9,7 @@
 - 配置段模型以 `SectionConfig` 后缀命名，与 notification_manager.NotificationConfig 等运行时模型区分
 """
 
-from typing import Any, List, TypedDict, Union
+from typing import Any, TypedDict
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict
 from typing_extensions import Annotated
@@ -190,7 +190,7 @@ class MdnsSectionConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    enabled: Union[SafeBool, str] = "auto"
+    enabled: SafeBool | str = "auto"
     hostname: SafeStr = "ai.local"
     service_name: SafeStr = "AI Intervention Agent"
 
@@ -201,14 +201,14 @@ class NetworkSecuritySectionConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     bind_interface: SafeStr = "0.0.0.0"
-    allowed_networks: List[str] = [
+    allowed_networks: list[str] = [
         "127.0.0.0/8",
         "::1/128",
         "192.168.0.0/16",
         "10.0.0.0/8",
         "172.16.0.0/12",
     ]
-    blocked_ips: List[str] = []
+    blocked_ips: list[str] = []
     access_control_enabled: SafeBool = True
 
 

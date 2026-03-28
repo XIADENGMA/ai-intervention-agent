@@ -3,7 +3,7 @@
 
 import time
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -45,13 +45,13 @@ class NotificationEvent(BaseModel):
     title: str
     message: str
     trigger: NotificationTrigger
-    types: List[NotificationType] = Field(default_factory=list)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    types: list[NotificationType] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     timestamp: float = Field(default_factory=time.time)
 
     @field_validator("metadata", mode="before")
     @classmethod
-    def coerce_none_metadata(cls, v: Any) -> Dict[str, Any]:
+    def coerce_none_metadata(cls, v: Any) -> dict[str, Any]:
         if v is None:
             return {}
         return v
@@ -59,5 +59,5 @@ class NotificationEvent(BaseModel):
     retry_count: int = 0
     max_retries: int = 3
     priority: NotificationPriority = NotificationPriority.NORMAL
-    source: Optional[str] = None
-    dedupe_key: Optional[str] = None
+    source: str | None = None
+    dedupe_key: str | None = None

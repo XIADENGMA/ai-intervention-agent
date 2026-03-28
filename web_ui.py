@@ -10,7 +10,7 @@ import threading
 import time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 import markdown
 from flasgger import Swagger
@@ -148,8 +148,8 @@ class WebFeedbackUI(
     def __init__(
         self,
         prompt: str,
-        predefined_options: Optional[List[str]] = None,
-        task_id: Optional[str] = None,
+        predefined_options: list[str] | None = None,
+        task_id: str | None = None,
         auto_resubmit_timeout: int = 240,
         host: str = "0.0.0.0",
         port: int = 8080,
@@ -731,8 +731,8 @@ class WebFeedbackUI(
     def update_content(
         self,
         new_prompt: str,
-        new_options: Optional[List[str]] = None,
-        new_task_id: Optional[str] = None,
+        new_options: list[str] | None = None,
+        new_task_id: str | None = None,
     ) -> None:
         """更新页面内容（单任务模式，实例方法）
 
@@ -923,13 +923,13 @@ class WebFeedbackUI(
 
 def web_feedback_ui(
     prompt: str,
-    predefined_options: Optional[List[str]] = None,
-    task_id: Optional[str] = None,
+    predefined_options: list[str] | None = None,
+    task_id: str | None = None,
     auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-    output_file: Optional[str] = None,
+    output_file: str | None = None,
     host: str = "0.0.0.0",
     port: int = 8080,
-) -> Optional[FeedbackResult]:
+) -> FeedbackResult | None:
     """启动 Web UI（交互反馈界面）的便捷函数
 
     功能说明：
@@ -945,7 +945,7 @@ def web_feedback_ui(
         port: 绑定端口（默认8080）
 
     返回值：
-        Optional[FeedbackResult]: 用户反馈结果字典，包含：
+        FeedbackResult | None: 用户反馈结果字典，包含：
             - user_input: 用户输入文本
             - selected_options: 选中的选项数组
             - images: 图片数组（Base64编码）

@@ -8,15 +8,25 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
+from enum import StrEnum
 from pathlib import Path
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from server_config import AUTO_RESUBMIT_TIMEOUT_MAX, AUTO_RESUBMIT_TIMEOUT_MIN
 
 logger = logging.getLogger(__name__)
+
+
+class TaskStatus(StrEnum):
+    """任务状态枚举（StrEnum 使其与纯字符串完全兼容）"""
+
+    PENDING = "pending"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    REMOVED = "removed"
 
 
 class Task(BaseModel):
@@ -26,17 +36,17 @@ class Task(BaseModel):
 
     task_id: str
     prompt: str
-    predefined_options: Optional[List[str]] = None
+    predefined_options: list[str] | None = None
     auto_resubmit_timeout: int = 240
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at_monotonic: float = Field(default_factory=time.monotonic)
-    status: str = "pending"
-    result: Optional[Dict[str, Any]] = None
-    completed_at: Optional[datetime] = None
+    status: str = TaskStatus.PENDING
+    result: dict[str, Any] | None = None
+    completed_at: datetime | None = None
 
     def get_remaining_time(self) -> int:
         """计算剩余倒计时（使用单调时间）"""
-        if self.status == "completed":
+        if self.status == TaskStatus.COMPLETED:
             return 0
 
         # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”
@@ -65,7 +75,7 @@ class Task(BaseModel):
         返回:
             bool: True 表示已超时，False 表示未超时
         """
-        if self.status == "completed":
+        if self.status == TaskStatus.COMPLETED:
             return False
         # 约定：auto_resubmit_timeout <= 0 表示“禁用自动重调/倒计时”，不应过期
         if self.auto_resubmit_timeout <= 0:
@@ -105,9 +115,9 @@ class TaskQueue:
     ## 数据结构
 
     ### 内部字段
-    - `_tasks`: Dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
+    - `_tasks`: dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
     - `_lock`: Lock - 线程锁，保护共享数据
-    - `_active_task_id`: Optional[str] - 当前活动任务ID
+    - `_active_task_id`: str | None - 当前活动任务ID
     - `_stop_cleanup`: Event - 停止清理线程的事件
     - `_cleanup_thread`: Thread - 后台清理线程
 
@@ -166,7 +176,7 @@ class TaskQueue:
         max_tasks (int): 最大并发任务数
     """
 
-    def __init__(self, max_tasks: int = 10, persist_path: Optional[str] = None):
+    def __init__(self, max_tasks: int = 10, persist_path: str | None = None):
         """初始化任务队列
 
         创建任务队列实例并启动后台清理线程。
@@ -177,19 +187,14 @@ class TaskQueue:
                 重启时自动恢复未完成任务。传 None 禁用持久化（纯内存模式）。
         """
         self.max_tasks = max_tasks
-        self._tasks: Dict[str, Task] = {}
+        self._tasks: dict[str, Task] = {}
         self._lock = Lock()
-        self._active_task_id: Optional[str] = None
+        self._active_task_id: str | None = None
 
-        self._status_change_callbacks: list[
-            Callable[[str, Optional[str], str], None]
-        ] = []
+        self._status_change_callbacks: list[Callable[[str, str | None, str], None]] = []
         self._callbacks_lock = Lock()
 
-        # 持久化配置
-        self._persist_path: Optional[Path] = (
-            Path(persist_path) if persist_path else None
-        )
+        self._persist_path: Path | None = Path(persist_path) if persist_path else None
         if self._persist_path:
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._restore()
@@ -227,7 +232,7 @@ class TaskQueue:
         self,
         task_id: str,
         prompt: str,
-        predefined_options: Optional[List[str]] = None,
+        predefined_options: list[str] | None = None,
         auto_resubmit_timeout: int = 240,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
@@ -263,9 +268,9 @@ class TaskQueue:
 
             if self._active_task_id is None:
                 self._active_task_id = task_id
-                task.status = "active"
+                task.status = TaskStatus.ACTIVE
             else:
-                task.status = "pending"
+                task.status = TaskStatus.PENDING
 
             logger.info(
                 f"添加任务成功: {task_id}, 当前任务数: {len(self._tasks)}/{self.max_tasks}"
@@ -280,7 +285,7 @@ class TaskQueue:
 
         return True
 
-    def get_task(self, task_id: str) -> Optional[Task]:
+    def get_task(self, task_id: str) -> Task | None:
         """获取指定任务
 
         通过任务ID查询任务对象，返回任务的当前状态快照。
@@ -294,7 +299,7 @@ class TaskQueue:
             task_id (str): 任务唯一标识符
 
         返回:
-            Optional[Task]: 任务对象，不存在则返回 None
+            Task | None: 任务对象，不存在则返回 None
                 - Task对象包含所有任务信息
                 - None表示任务不存在或已被删除
 
@@ -307,7 +312,7 @@ class TaskQueue:
         with self._lock:
             return self._tasks.get(task_id)
 
-    def get_all_tasks(self) -> List[Task]:
+    def get_all_tasks(self) -> list[Task]:
         """获取所有任务列表"""
         with self._lock:
             # 【性能优化】Python 3.7+ dict 保持插入顺序，直接返回 values
@@ -345,14 +350,14 @@ class TaskQueue:
         updated = 0
         with self._lock:
             for task in self._tasks.values():
-                if task.status == "completed":
+                if task.status == TaskStatus.COMPLETED:
                     continue
                 if task.auto_resubmit_timeout != auto_resubmit_timeout:
                     task.auto_resubmit_timeout = auto_resubmit_timeout
                     updated += 1
         return updated
 
-    def get_active_task(self) -> Optional[Task]:
+    def get_active_task(self) -> Task | None:
         """获取当前活动任务"""
         with self._lock:
             if self._active_task_id:
@@ -361,14 +366,14 @@ class TaskQueue:
 
     def set_active_task(self, task_id: str) -> bool:
         """手动切换活动任务"""
-        status_events: list[tuple[str, Optional[str], str]] = []
+        status_events: list[tuple[str, str | None, str]] = []
         with self._lock:
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
 
             new_task = self._tasks[task_id]
-            if new_task.status == "completed":
+            if new_task.status == TaskStatus.COMPLETED:
                 logger.warning(f"任务已完成，无法激活: {task_id}")
                 return False
 
@@ -377,19 +382,21 @@ class TaskQueue:
 
             if self._active_task_id and self._active_task_id in self._tasks:
                 old_task = self._tasks[self._active_task_id]
-                if old_task.status == "active":
+                if old_task.status == TaskStatus.ACTIVE:
                     old_active_status = old_task.status
-                    old_task.status = "pending"
+                    old_task.status = TaskStatus.PENDING
 
             new_task_old_status = new_task.status
             self._active_task_id = task_id
-            new_task.status = "active"
+            new_task.status = TaskStatus.ACTIVE
 
             logger.info(f"切换到任务: {task_id}")
 
             if old_active_id and old_active_status:
-                status_events.append((old_active_id, "active", "pending"))
-            status_events.append((task_id, new_task_old_status, "active"))
+                status_events.append(
+                    (old_active_id, TaskStatus.ACTIVE, TaskStatus.PENDING)
+                )
+            status_events.append((task_id, new_task_old_status, TaskStatus.ACTIVE))
 
         # 回调在锁外触发，避免回调重入导致死锁
         for ev_task_id, ev_old_status, ev_new_status in status_events:
@@ -399,7 +406,7 @@ class TaskQueue:
             self._persist()
         return True
 
-    def complete_task(self, task_id: str, result: Dict[str, Any]) -> bool:
+    def complete_task(self, task_id: str, result: dict[str, Any]) -> bool:
         """完成任务并标记为延迟删除（核心方法）
 
         将任务标记为已完成并保存结果，**不立即删除**。
@@ -425,7 +432,7 @@ class TaskQueue:
 
         参数:
             task_id (str): 要完成的任务ID
-            result (Dict[str, Any]): 任务执行结果
+            result (dict[str, Any]): 任务执行结果
                 - 通常包含 'feedback', 'selected_options' 等键
                 - 格式由调用方决定
                 - 示例：{'feedback': '用户输入', 'selected_options': ['选项1']}
@@ -455,7 +462,7 @@ class TaskQueue:
             - 自动激活逻辑只查找pending状态的任务
             - 如果没有pending任务，_active_task_id 保持为 None
         """
-        status_events: list[tuple[str, Optional[str], str]] = []
+        status_events: list[tuple[str, str | None, str]] = []
         with self._lock:
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
@@ -463,22 +470,23 @@ class TaskQueue:
 
             task = self._tasks[task_id]
             old_status = task.status
-            task.status = "completed"
+            task.status = TaskStatus.COMPLETED
             task.result = result
-            task.completed_at = datetime.now(timezone.utc)  # 使用 UTC 时间
-            status_events.append((task_id, old_status, "completed"))
+            task.completed_at = datetime.now(timezone.utc)
+            status_events.append((task_id, old_status, TaskStatus.COMPLETED))
 
             if self._active_task_id == task_id:
                 self._active_task_id = None
                 logger.info(f"任务完成并清空激活任务: {task_id}")
 
-                # 【性能优化】使用字典键迭代，保持插入顺序
                 for tid, t in self._tasks.items():
-                    if t.status == "pending":
+                    if t.status == TaskStatus.PENDING:
                         self._active_task_id = tid
-                        t.status = "active"
+                        t.status = TaskStatus.ACTIVE
                         logger.info(f"自动激活下一个任务: {tid}")
-                        status_events.append((tid, "pending", "active"))
+                        status_events.append(
+                            (tid, TaskStatus.PENDING, TaskStatus.ACTIVE)
+                        )
                         break
             else:
                 logger.info(f"任务完成: {task_id}")
@@ -530,7 +538,7 @@ class TaskQueue:
             - 不推荐用于正常完成的任务（应使用complete_task）
             - 删除后任务立即不可查询
         """
-        status_events: list[tuple[str, Optional[str], str]] = []
+        status_events: list[tuple[str, str | None, str]] = []
         with self._lock:
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
@@ -543,23 +551,27 @@ class TaskQueue:
                 self._active_task_id = None
                 # 【性能优化】使用字典迭代代替列表遍历
                 for tid, t in self._tasks.items():
-                    if tid != task_id and t.status in ["pending", "active"]:
+                    if tid != task_id and t.status in (
+                        TaskStatus.PENDING,
+                        TaskStatus.ACTIVE,
+                    ):
                         self._active_task_id = tid
                         old_next_status = t.status
-                        t.status = "active"
+                        t.status = TaskStatus.ACTIVE
                         next_activated_id = tid
                         break
 
-            # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
             self._tasks.pop(task_id, None)
 
             logger.info(
                 f"移除任务: {task_id}, 剩余任务数: {len(self._tasks)}/{self.max_tasks}"
             )
 
-            status_events.append((task_id, old_status, "removed"))
+            status_events.append((task_id, old_status, TaskStatus.REMOVED))
             if next_activated_id:
-                status_events.append((next_activated_id, old_next_status, "active"))
+                status_events.append(
+                    (next_activated_id, old_next_status, TaskStatus.ACTIVE)
+                )
 
         # 回调在锁外触发，避免回调重入导致死锁
         for ev_task_id, ev_old_status, ev_new_status in status_events:
@@ -602,7 +614,9 @@ class TaskQueue:
         """
         with self._lock:
             completed_task_ids = [
-                tid for tid, task in self._tasks.items() if task.status == "completed"
+                tid
+                for tid, task in self._tasks.items()
+                if task.status == TaskStatus.COMPLETED
             ]
 
             # 【性能优化】使用 dict.pop() 代替 del + list.remove()，O(1) 操作
@@ -661,7 +675,7 @@ class TaskQueue:
             tasks_to_remove = []
 
             for task_id, task in self._tasks.items():
-                if task.status == "completed" and task.completed_at:
+                if task.status == TaskStatus.COMPLETED and task.completed_at:
                     age = (now - task.completed_at).total_seconds()
                     if age > age_seconds:
                         tasks_to_remove.append(task_id)
@@ -763,7 +777,7 @@ class TaskQueue:
             else:
                 logger.info("后台清理线程已成功停止")
 
-    def get_task_count(self) -> Dict[str, int]:
+    def get_task_count(self) -> dict[str, int]:
         """获取任务统计信息
 
         返回各状态任务的数量统计。
@@ -782,7 +796,7 @@ class TaskQueue:
         - 调试和日志
 
         返回:
-            Dict[str, int]: 任务统计字典
+            dict[str, int]: 任务统计字典
                 键值对：
                 - 'total': int - 总任务数
                 - 'pending': int - 等待任务数
@@ -803,25 +817,22 @@ class TaskQueue:
             - completed任务会在10秒后被清理
         """
         with self._lock:
-            total = len(self._tasks)
-            pending = sum(1 for t in self._tasks.values() if t.status == "pending")
-            active = sum(1 for t in self._tasks.values() if t.status == "active")
-            completed = sum(1 for t in self._tasks.values() if t.status == "completed")
-
-            return {
-                "total": total,
-                "pending": pending,
-                "active": active,
-                "completed": completed,
-                "max": self.max_tasks,
+            counts: dict[str, int] = {
+                TaskStatus.PENDING: 0,
+                TaskStatus.ACTIVE: 0,
+                TaskStatus.COMPLETED: 0,
             }
+            for t in self._tasks.values():
+                if t.status in counts:
+                    counts[t.status] += 1
+            return {"total": len(self._tasks), **counts, "max": self.max_tasks}
 
     # ========================================================================
     # 任务状态变更回调机制
     # ========================================================================
 
     def register_status_change_callback(
-        self, callback: Callable[[str, Optional[str], str], None]
+        self, callback: Callable[[str, str | None, str], None]
     ) -> None:
         """
         注册任务状态变更回调函数
@@ -855,7 +866,7 @@ class TaskQueue:
                 logger.debug(f"已注册任务状态变更回调: {cb_name}")
 
     def unregister_status_change_callback(
-        self, callback: Callable[[str, Optional[str], str], None]
+        self, callback: Callable[[str, str | None, str], None]
     ) -> None:
         """
         取消注册任务状态变更回调函数
@@ -871,7 +882,7 @@ class TaskQueue:
                 logger.debug(f"已取消任务状态变更回调: {cb_name}")
 
     def _trigger_status_change(
-        self, task_id: str, old_status: Optional[str], new_status: str
+        self, task_id: str, old_status: str | None, new_status: str
     ):
         """
         触发任务状态变更回调
@@ -882,7 +893,7 @@ class TaskQueue:
         【参数】
         task_id : str
             任务ID
-        old_status : Optional[str]
+        old_status : str | None
             旧状态（添加任务时为 None）
         new_status : str
             新状态（删除任务时为 "removed"）
@@ -919,7 +930,7 @@ class TaskQueue:
             with self._lock:
                 snapshot = []
                 for task in self._tasks.values():
-                    if task.status == "completed":
+                    if task.status == TaskStatus.COMPLETED:
                         continue
                     snapshot.append(
                         {
@@ -995,8 +1006,8 @@ class TaskQueue:
                 prompt = item.get("prompt")
                 if not task_id or not prompt:
                     continue
-                status = item.get("status", "pending")
-                if status == "completed":
+                status = item.get("status", TaskStatus.PENDING)
+                if status == TaskStatus.COMPLETED:
                     continue
 
                 created_at = datetime.fromisoformat(item["created_at"])
@@ -1011,7 +1022,7 @@ class TaskQueue:
                     auto_resubmit_timeout=item.get("auto_resubmit_timeout", 240),
                     created_at=created_at,
                     created_at_monotonic=time.monotonic() - age_since_creation,
-                    status="pending",
+                    status=TaskStatus.PENDING,
                 )
                 self._tasks[task_id] = task
                 restored += 1
@@ -1019,11 +1030,11 @@ class TaskQueue:
             active_id = data.get("active_task_id")
             if active_id and active_id in self._tasks:
                 self._active_task_id = active_id
-                self._tasks[active_id].status = "active"
+                self._tasks[active_id].status = TaskStatus.ACTIVE
             elif self._tasks:
                 first_id = next(iter(self._tasks))
                 self._active_task_id = first_id
-                self._tasks[first_id].status = "active"
+                self._tasks[first_id].status = TaskStatus.ACTIVE
 
             if restored > 0:
                 logger.info(

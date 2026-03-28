@@ -30,7 +30,7 @@ AI Intervention Agent - MCP 客户端测试脚本
 import argparse
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -41,7 +41,7 @@ class MCPClient:
     def __init__(self, host: str, port: int, timeout: int = 60):
         self.base_url = f"http://{host}:{port}"
         self.timeout = timeout
-        self.active_tasks: List[str] = []
+        self.active_tasks: list[str] = []
 
     def check_server(self) -> bool:
         """检查服务器是否可用"""
@@ -51,7 +51,7 @@ class MCPClient:
         except Exception:
             return False
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """获取服务器配置"""
         try:
             response = httpx.get(f"{self.base_url}/api/config", timeout=5)
@@ -60,8 +60,8 @@ class MCPClient:
             return {}
 
     def create_task(
-        self, message: str, predefined_options: Optional[List[str]] = None
-    ) -> Optional[str]:
+        self, message: str, predefined_options: list[str] | None = None
+    ) -> str | None:
         """创建任务，返回任务 ID"""
         import random
 
@@ -86,7 +86,7 @@ class MCPClient:
             pass
         return None
 
-    def wait_for_completion(self, task_id: str) -> Dict[str, Any]:
+    def wait_for_completion(self, task_id: str) -> dict[str, Any]:
         """等待任务完成，返回反馈结果"""
         start_time = time.time()
 
@@ -141,7 +141,7 @@ class TestRunner:
         self,
         name: str,
         message: str,
-        predefined_options: Optional[List[str]] = None,
+        predefined_options: list[str] | None = None,
         expected_prompt: str = "请立即调用 interactive_feedback 工具",
     ) -> bool:
         """
