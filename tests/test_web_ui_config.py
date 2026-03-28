@@ -1083,7 +1083,7 @@ class TestGetDefaultRouteIPv4(unittest.TestCase):
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui.socket.socket", return_value=mock_sock):
+        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
             result = _get_default_route_ipv4()
             self.assertEqual(result, "192.168.1.100")
 
@@ -1095,7 +1095,7 @@ class TestGetDefaultRouteIPv4(unittest.TestCase):
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui.socket.socket", return_value=mock_sock):
+        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
@@ -1107,7 +1107,7 @@ class TestGetDefaultRouteIPv4(unittest.TestCase):
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui.socket.socket", return_value=mock_sock):
+        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
@@ -1119,7 +1119,7 @@ class TestGetDefaultRouteIPv4(unittest.TestCase):
         mock_sock.__exit__ = MagicMock(return_value=False)
         mock_sock.connect.side_effect = OSError("no route")
 
-        with patch("web_ui.socket.socket", return_value=mock_sock):
+        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
@@ -1141,8 +1141,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(True), "lo0": self._stat(True)}
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertIn("192.168.1.50", result)
@@ -1158,8 +1158,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"docker0": self._stat(True), "en0": self._stat(True)}
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=True)
             self.assertNotIn("172.17.0.1", result)
@@ -1172,8 +1172,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(False)}
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -1185,8 +1185,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(True)}
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -1194,7 +1194,9 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
     def test_psutil_exception(self):
         from web_ui import _list_non_loopback_ipv4
 
-        with patch("web_ui.psutil.net_if_addrs", side_effect=RuntimeError("fail")):
+        with patch(
+            "web_ui_mdns_utils.psutil.net_if_addrs", side_effect=RuntimeError("fail")
+        ):
             result = _list_non_loopback_ipv4()
             self.assertEqual(result, [])
 
@@ -1208,8 +1210,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(True), "en1": self._stat(True)}
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, ["192.168.1.1", "8.8.8.8"])
@@ -1226,8 +1228,10 @@ class TestDetectBestPublishIPv4(unittest.TestCase):
         from web_ui import detect_best_publish_ipv4
 
         with (
-            patch("web_ui._list_non_loopback_ipv4", return_value=["10.0.0.1"]),
-            patch("web_ui._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch(
+                "web_ui_mdns_utils._list_non_loopback_ipv4", return_value=["10.0.0.1"]
+            ),
+            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
         ):
             result = detect_best_publish_ipv4("127.0.0.1")
             self.assertEqual(result, "10.0.0.1")
@@ -1237,10 +1241,10 @@ class TestDetectBestPublishIPv4(unittest.TestCase):
 
         with (
             patch(
-                "web_ui._list_non_loopback_ipv4",
+                "web_ui_mdns_utils._list_non_loopback_ipv4",
                 return_value=["192.168.1.1", "10.0.0.1"],
             ),
-            patch("web_ui._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "10.0.0.1")
@@ -1249,8 +1253,13 @@ class TestDetectBestPublishIPv4(unittest.TestCase):
         from web_ui import detect_best_publish_ipv4
 
         with (
-            patch("web_ui._list_non_loopback_ipv4", return_value=["192.168.1.1"]),
-            patch("web_ui._get_default_route_ipv4", return_value="10.0.0.99"),
+            patch(
+                "web_ui_mdns_utils._list_non_loopback_ipv4",
+                return_value=["192.168.1.1"],
+            ),
+            patch(
+                "web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.99"
+            ),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "192.168.1.1")
@@ -1267,8 +1276,8 @@ class TestDetectBestPublishIPv4(unittest.TestCase):
             return []
 
         with (
-            patch("web_ui._list_non_loopback_ipv4", side_effect=mock_list),
-            patch("web_ui._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns_utils._list_non_loopback_ipv4", side_effect=mock_list),
+            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "10.0.0.1")
@@ -1277,8 +1286,8 @@ class TestDetectBestPublishIPv4(unittest.TestCase):
         from web_ui import detect_best_publish_ipv4
 
         with (
-            patch("web_ui._list_non_loopback_ipv4", return_value=[]),
-            patch("web_ui._get_default_route_ipv4", return_value=None),
+            patch("web_ui_mdns_utils._list_non_loopback_ipv4", return_value=[]),
+            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value=None),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertIsNone(result)
@@ -1573,7 +1582,7 @@ class TestMdnsHelpers(unittest.TestCase):
         cls.ui = WebFeedbackUI(prompt="mdns test", port=18902)
 
     def test_get_mdns_config_exception(self):
-        with patch("web_ui.get_config", side_effect=RuntimeError("fail")):
+        with patch("web_ui_mdns.get_config", side_effect=RuntimeError("fail")):
             result = self.ui._get_mdns_config()
             self.assertEqual(result, {})
 
@@ -1589,7 +1598,7 @@ class TestMdnsHelpers(unittest.TestCase):
         self.ui.host = "0.0.0.0"
 
     def test_load_network_security_exception(self):
-        with patch("web_ui.get_config", side_effect=RuntimeError("fail")):
+        with patch("web_ui_security.get_config", side_effect=RuntimeError("fail")):
             result = self.ui._load_network_security_config()
             self.assertIn("bind_interface", result)
 
@@ -2147,7 +2156,7 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value=None),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value=None),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
         ):
             self.ui._start_mdns_if_needed()
@@ -2166,9 +2175,9 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
-            patch("web_ui.get_config") as mock_cfg,
+            patch("web_ui_mdns.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.config_file = "/tmp/config.toml"
             self.ui._start_mdns_if_needed()
@@ -2184,7 +2193,7 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
         ):
             self.ui._start_mdns_if_needed()
@@ -2199,7 +2208,7 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
         ):
             self.ui._start_mdns_if_needed()
@@ -2504,8 +2513,10 @@ class TestDetectBestPublishIPv4Edge(unittest.TestCase):
         from web_ui import detect_best_publish_ipv4
 
         with (
-            patch("web_ui._list_non_loopback_ipv4", return_value=["10.0.0.1"]),
-            patch("web_ui._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch(
+                "web_ui_mdns_utils._list_non_loopback_ipv4", return_value=["10.0.0.1"]
+            ),
+            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
         ):
             result = detect_best_publish_ipv4("not_an_ip")
             self.assertEqual(result, "10.0.0.1")
@@ -2523,8 +2534,8 @@ class TestDetectBestPublishIPv4Edge(unittest.TestCase):
             return ["172.17.0.1"]
 
         with (
-            patch("web_ui._list_non_loopback_ipv4", side_effect=mock_list),
-            patch("web_ui._get_default_route_ipv4", return_value=None),
+            patch("web_ui_mdns_utils._list_non_loopback_ipv4", side_effect=mock_list),
+            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value=None),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "172.17.0.1")
@@ -2545,7 +2556,7 @@ class TestGetDefaultRouteIPv4Edge(unittest.TestCase):
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui.socket.socket", return_value=mock_sock):
+        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
@@ -2558,7 +2569,7 @@ class TestGetDefaultRouteIPv4Edge(unittest.TestCase):
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui.socket.socket", return_value=mock_sock):
+        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
@@ -2583,8 +2594,8 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
         stats = {"en0": self._stat(True)}
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -2597,8 +2608,8 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
         stats = {"en0": self._stat(True)}
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -2614,9 +2625,9 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
         mock_ip.version = 6
 
         with (
-            patch("web_ui.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui.psutil.net_if_stats", return_value=stats),
-            patch("web_ui.ip_address", return_value=mock_ip),
+            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
+            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("web_ui_mdns_utils.ip_address", return_value=mock_ip),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -2883,7 +2894,7 @@ class TestShouldTrustForwardedForEdge(unittest.TestCase):
 
         from web_ui import WebFeedbackUI
 
-        with patch("web_ui.ip_address", side_effect=AddressValueError("bad")):
+        with patch("web_ui_security.ip_address", side_effect=AddressValueError("bad")):
             self.assertFalse(WebFeedbackUI._should_trust_forwarded_for("127.0.0.1"))
 
 
@@ -2899,7 +2910,7 @@ class TestGetMdnsConfigCast(unittest.TestCase):
         ui = WebFeedbackUI(prompt="mdns cfg", port=18926)
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = "not_a_dict"
-        with patch("web_ui.get_config", return_value=mock_cfg):
+        with patch("web_ui_mdns.get_config", return_value=mock_cfg):
             result = ui._get_mdns_config()
             self.assertEqual(result, {})
 
@@ -2909,7 +2920,7 @@ class TestGetMdnsConfigCast(unittest.TestCase):
         ui = WebFeedbackUI(prompt="mdns cfg 2", port=18927)
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"enabled": True}
-        with patch("web_ui.get_config", return_value=mock_cfg):
+        with patch("web_ui_mdns.get_config", return_value=mock_cfg):
             result = ui._get_mdns_config()
             self.assertEqual(result, {"enabled": True})
 
@@ -2932,7 +2943,9 @@ class TestIsIpAllowedAddressValueError(unittest.TestCase):
             "allowed_networks": ["10.0.0.0/8"],
             "blocked_ips": [],
         }
-        with patch("web_ui.ip_address", side_effect=AddressValueError("bad addr")):
+        with patch(
+            "web_ui_security.ip_address", side_effect=AddressValueError("bad addr")
+        ):
             result = ui._is_ip_allowed("anything")
             self.assertFalse(result)
 
@@ -3111,9 +3124,9 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui.get_config", side_effect=RuntimeError("no config")),
+            patch("web_ui_mdns.get_config", side_effect=RuntimeError("no config")),
         ):
             self.ui._start_mdns_if_needed()
             self.assertIsNone(self.ui._mdns_zeroconf)
@@ -3131,9 +3144,9 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui.get_config") as mock_cfg,
+            patch("web_ui_mdns.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.config_file = "/tmp/c.toml"
             self.ui._start_mdns_if_needed()
@@ -3151,7 +3164,7 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
         ):
             self.ui._start_mdns_if_needed()
@@ -3189,9 +3202,9 @@ class TestMdnsRegisterSignatureCompat(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui.inspect.signature", return_value=mock_sig),
+            patch("web_ui_mdns.inspect.signature", return_value=mock_sig),
         ):
             self.ui._start_mdns_if_needed()
             if self.ui._mdns_zeroconf is not None:
@@ -3212,9 +3225,9 @@ class TestMdnsRegisterSignatureCompat(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui.inspect.signature", return_value=mock_sig),
+            patch("web_ui_mdns.inspect.signature", return_value=mock_sig),
         ):
             self.ui._start_mdns_if_needed()
             if self.ui._mdns_zeroconf is not None:
@@ -3234,9 +3247,11 @@ class TestMdnsRegisterSignatureCompat(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui.inspect.signature", side_effect=RuntimeError("sig fail")),
+            patch(
+                "web_ui_mdns.inspect.signature", side_effect=RuntimeError("sig fail")
+            ),
         ):
             self.ui._start_mdns_if_needed()
             mock_zc_inst.register_service.assert_called_once()

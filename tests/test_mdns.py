@@ -26,8 +26,10 @@ class TestMdnsHelpers(unittest.TestCase):
         from web_ui import detect_best_publish_ipv4
 
         with (
-            patch("web_ui._list_non_loopback_ipv4", return_value=[]),
-            patch("web_ui._get_default_route_ipv4", return_value="192.168.0.10"),
+            patch("web_ui_mdns_utils._list_non_loopback_ipv4", return_value=[]),
+            patch(
+                "web_ui_mdns_utils._get_default_route_ipv4", return_value="192.168.0.10"
+            ),
         ):
             self.assertEqual(detect_best_publish_ipv4("0.0.0.0"), "192.168.0.10")
 
@@ -35,8 +37,10 @@ class TestMdnsHelpers(unittest.TestCase):
         from web_ui import detect_best_publish_ipv4
 
         with (
-            patch("web_ui._get_default_route_ipv4", return_value=None),
-            patch("web_ui._list_non_loopback_ipv4", return_value=["10.0.0.5"]),
+            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value=None),
+            patch(
+                "web_ui_mdns_utils._list_non_loopback_ipv4", return_value=["10.0.0.5"]
+            ),
         ):
             self.assertEqual(detect_best_publish_ipv4("0.0.0.0"), "10.0.0.5")
 

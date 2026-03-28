@@ -1,37 +1,23 @@
 """Web 反馈界面 - Flask Web UI，支持多任务、文件上传、通知、安全机制。"""
 
 import argparse
-import inspect
 import json
 import os
 import re
-import secrets
 import signal
-import socket
 import sys
 import threading
 import time
 from functools import lru_cache
-from ipaddress import (
-    AddressValueError,
-    ip_address,
-    ip_network,
-)
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 import markdown
-import psutil
 from flasgger import Swagger
 from flask import (
     Flask,
-    Response,
-    abort,
-    g,
-    has_request_context,
     jsonify,
     render_template,
-    request,
 )
 from flask.typing import ResponseReturnValue
 from flask_compress import Compress
@@ -40,21 +26,48 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 from config_manager import get_config
-from config_utils import clamp_value
 from enhanced_logging import EnhancedLogger
 from i18n import msg
 from server import get_task_queue
 from server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-    AUTO_RESUBMIT_TIMEOUT_MAX,
-    AUTO_RESUBMIT_TIMEOUT_MIN,
+    AUTO_RESUBMIT_TIMEOUT_MAX,  # noqa: F401 — 向后兼容
+    AUTO_RESUBMIT_TIMEOUT_MIN,  # noqa: F401 — 向后兼容
 )
 from shared_types import FeedbackResult
+from web_ui_config_sync import (
+    _ensure_feedback_timeout_hot_reload_callback_registered,
+    _ensure_network_security_hot_reload_callback_registered,
+    _get_default_auto_resubmit_timeout_from_config,
+    _sync_existing_tasks_timeout_from_config,  # noqa: F401 — 向后兼容
+    _sync_network_security_from_config,  # noqa: F401 — 向后兼容
+)
+from web_ui_mdns import MdnsMixin
+from web_ui_mdns_utils import (
+    MDNS_DEFAULT_HOSTNAME,  # noqa: F401
+    MDNS_SERVICE_TYPE_HTTP,  # noqa: F401
+    _get_default_route_ipv4,  # noqa: F401
+    _is_probably_virtual_interface,  # noqa: F401
+    _list_non_loopback_ipv4,  # noqa: F401
+    detect_best_publish_ipv4,  # noqa: F401
+    normalize_mdns_hostname,  # noqa: F401
+)
 from web_ui_routes import (
     FeedbackRoutesMixin,
     NotificationRoutesMixin,
     StaticRoutesMixin,
     TaskRoutesMixin,
+)
+from web_ui_security import SecurityMixin
+from web_ui_validators import (
+    DEFAULT_ALLOWED_NETWORKS,  # noqa: F401
+    VALID_BIND_INTERFACES,  # noqa: F401
+    validate_allowed_networks,  # noqa: F401
+    validate_auto_resubmit_timeout,
+    validate_bind_interface,  # noqa: F401
+    validate_blocked_ips,  # noqa: F401
+    validate_network_cidr,  # noqa: F401
+    validate_network_security_config,  # noqa: F401 — 向后兼容
 )
 
 logger = EnhancedLogger(__name__)
@@ -101,513 +114,20 @@ def get_project_version() -> str:
 
 
 # ============================================================================
-# 前端倒计时超时常量（单一真相源：server_config.py，顶部已导入）
-# ============================================================================
-
-
-def validate_auto_resubmit_timeout(value: int) -> int:
-    """验证并限制 auto_resubmit_timeout 范围
-
-    参数
-    ----
-    value : int
-        输入的超时时间值（秒）
-
-    返回
-    ----
-    int
-        验证后的超时时间值（秒）
-
-    验证规则
-    --------
-    - 0 表示禁用自动重调（保持不变）
-    - 负值转换为 0（禁用）
-    - 小于最小值（30秒）调整为最小值
-    - 大于最大值（250秒）调整为最大值
-
-    【重构】使用 config_utils.clamp_value 简化边界检查。
-    """
-    if value <= 0:
-        return 0  # 禁用自动重调
-
-    # 【重构】使用 clamp_value 简化边界检查
-    return clamp_value(
-        value,
-        AUTO_RESUBMIT_TIMEOUT_MIN,
-        AUTO_RESUBMIT_TIMEOUT_MAX,
-        "auto_resubmit_timeout",
-    )
-
-
-# ============================================================================
-# feedback 配置热更新：同步已存在任务的倒计时
+# 模块级状态（配置热更新回调使用，web_ui_config_sync 通过 lazy import 访问）
 # ============================================================================
 
 _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = False
 _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
-# 运行中的 WebFeedbackUI 实例（用于单任务模式兜底热更新）
-# 注意：测试里会用 SimpleNamespace 之类的轻量对象模拟，因此这里用 Any 放宽类型约束。
 _CURRENT_WEB_UI_INSTANCE: Any | None = None
 _NETWORK_SECURITY_CALLBACK_REGISTERED = False
 _NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
 _FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.Lock()
 
 
-def _get_default_auto_resubmit_timeout_from_config() -> int:
-    """从配置文件读取默认 auto_resubmit_timeout（保持向后兼容）"""
-    config_mgr = get_config()
-    feedback_config = config_mgr.get_section("feedback")
-    raw_timeout = feedback_config.get(
-        "frontend_countdown",  # 新名称
-        feedback_config.get(
-            "auto_resubmit_timeout", AUTO_RESUBMIT_TIMEOUT_DEFAULT
-        ),  # 旧名称
-    )
-    try:
-        return validate_auto_resubmit_timeout(int(raw_timeout))
-    except Exception:
-        return AUTO_RESUBMIT_TIMEOUT_DEFAULT
-
-
-def _sync_existing_tasks_timeout_from_config() -> None:
-    """配置变更回调：将新的默认倒计时同步到所有未完成任务"""
-    global _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT
-    try:
-        new_timeout = _get_default_auto_resubmit_timeout_from_config()
-        if _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT == new_timeout:
-            return
-        _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT = new_timeout
-
-        task_queue = get_task_queue()
-        updated = task_queue.update_auto_resubmit_timeout_for_all(new_timeout)
-        if updated > 0:
-            logger.info(
-                f"配置变更：已将 {updated} 个未完成任务的 auto_resubmit_timeout 同步为 {new_timeout} 秒"
-            )
-
-        # 单任务模式兜底：如果当前实例没有显式指定 timeout，则跟随配置更新
-        global _CURRENT_WEB_UI_INSTANCE
-        inst = _CURRENT_WEB_UI_INSTANCE
-        if inst is not None and not getattr(
-            inst, "_single_task_timeout_explicit", True
-        ):
-            try:
-                lock = getattr(inst, "_state_lock", None)
-                if lock is not None:
-                    with lock:
-                        inst.current_auto_resubmit_timeout = new_timeout
-                else:
-                    inst.current_auto_resubmit_timeout = new_timeout
-            except Exception:
-                # 测试场景可能注入了无锁的 mock 实例；这里兜底不抛异常
-                inst.current_auto_resubmit_timeout = new_timeout
-    except Exception as e:
-        logger.warning(f"配置变更回调执行失败（同步任务倒计时）：{e}", exc_info=True)
-
-
-def _sync_network_security_from_config() -> None:
-    """配置变更回调：同步运行中 Web UI 的 network_security 配置。"""
-    global _CURRENT_WEB_UI_INSTANCE
-    inst = _CURRENT_WEB_UI_INSTANCE
-    if inst is None:
-        return
-    try:
-        loader = getattr(inst, "_load_network_security_config", None)
-        if not callable(loader):
-            return
-        new_cfg = loader()
-        if not isinstance(new_cfg, dict):
-            return
-        lock = getattr(inst, "_state_lock", None)
-        if lock is not None:
-            with lock:
-                inst.network_security_config = new_cfg
-        else:
-            inst.network_security_config = new_cfg
-    except Exception as e:
-        logger.warning(f"配置变更回调执行失败（同步网络安全配置）：{e}", exc_info=True)
-
-
-def _ensure_network_security_hot_reload_callback_registered() -> None:
-    """确保仅注册一次 network_security 配置热更新回调（避免重复注册）"""
-    global _NETWORK_SECURITY_CALLBACK_REGISTERED
-    if _NETWORK_SECURITY_CALLBACK_REGISTERED:
-        return
-    with _NETWORK_SECURITY_CALLBACK_LOCK:
-        if _NETWORK_SECURITY_CALLBACK_REGISTERED:
-            return
-        try:
-            cfg = get_config()
-            cfg.register_config_change_callback(_sync_network_security_from_config)
-            _NETWORK_SECURITY_CALLBACK_REGISTERED = True
-            # 启动时先同步一次（若当前实例已存在）
-            _sync_network_security_from_config()
-            logger.debug("已注册 network_security 热更新回调（同步访问控制配置）")
-        except Exception as e:
-            logger.warning(
-                f"注册 network_security 配置热更新回调失败（将仅在启动时生效）：{e}",
-                exc_info=True,
-            )
-
-
-def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
-    """确保仅注册一次配置热更新回调（避免重复注册）
-
-    使用双重检查锁定（DCL）保证多线程安全，与
-    _ensure_network_security_hot_reload_callback_registered 保持一致。
-    """
-    global _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED
-    if _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED:
-        return
-    with _FEEDBACK_TIMEOUT_CALLBACK_LOCK:
-        if _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED:
-            return
-        try:
-            config_mgr = get_config()
-            config_mgr.register_config_change_callback(
-                _sync_existing_tasks_timeout_from_config
-            )
-            _FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = True
-            _sync_existing_tasks_timeout_from_config()
-            logger.debug(
-                "已注册 feedback.auto_resubmit_timeout 热更新回调（同步已存在任务倒计时）"
-            )
-        except Exception as e:
-            logger.warning(
-                f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}",
-                exc_info=True,
-            )
-
-
-# ============================================================================
-# 网络安全配置验证函数
-# ============================================================================
-
-# 有效的 bind_interface 值
-VALID_BIND_INTERFACES = {"0.0.0.0", "127.0.0.1", "localhost", "::1", "::"}
-
-# 默认的允许网络列表（本地回环 + 私有网络）
-DEFAULT_ALLOWED_NETWORKS = [
-    "127.0.0.0/8",  # IPv4 本地回环
-    "::1/128",  # IPv6 本地回环
-    "192.168.0.0/16",  # 私有网络 C 类
-    "10.0.0.0/8",  # 私有网络 A 类
-    "172.16.0.0/12",  # 私有网络 B 类
-]
-
-
-def validate_bind_interface(value: object) -> str:
-    """验证绑定接口，无效时返回 127.0.0.1"""
-    if not value or not isinstance(value, str):
-        logger.warning("bind_interface 值无效，使用默认值 127.0.0.1")
-        return "127.0.0.1"
-
-    value = value.strip()
-
-    # 特殊值直接通过
-    if value in VALID_BIND_INTERFACES:
-        if value == "0.0.0.0":
-            logger.info(
-                "bind_interface 设为 0.0.0.0，将监听所有网络接口。"
-                "请确保已正确配置 allowed_networks 和防火墙规则。"
-            )
-        return value
-
-    # 尝试解析为 IP 地址
-    try:
-        ip_address(value)
-        return value
-    except (AddressValueError, ValueError):
-        logger.warning(
-            f"bind_interface '{value}' 不是有效的 IP 地址，使用默认值 127.0.0.1"
-        )
-        return "127.0.0.1"
-
-
-# ============================================================================
-# mDNS / DNS-SD（Zeroconf）辅助函数
-# ============================================================================
-
-MDNS_DEFAULT_HOSTNAME = "ai.local"
-MDNS_SERVICE_TYPE_HTTP = "_http._tcp.local."
-
-
-def normalize_mdns_hostname(value: Any) -> str:
-    """规范化 mDNS 主机名
-
-    规则：
-    - 非字符串 / 空字符串：回退到默认 ai.local
-    - 末尾的 '.' 会被移除（zeroconf 内部会要求 FQDN）
-    - 不包含 '.' 的短名：自动追加 '.local'
-    """
-    if not isinstance(value, str):
-        return MDNS_DEFAULT_HOSTNAME
-
-    hostname = value.strip()
-    if not hostname:
-        return MDNS_DEFAULT_HOSTNAME
-
-    if hostname.endswith("."):
-        hostname = hostname[:-1]
-
-    if "." not in hostname:
-        hostname = f"{hostname}.local"
-
-    return hostname
-
-
-def _is_probably_virtual_interface(ifname: str) -> bool:
-    """启发式过滤虚拟网卡（避免优先选到 docker0 / veth 等）"""
-    name = (ifname or "").lower()
-    if name == "lo":
-        return True
-
-    # 常见虚拟/容器网卡前缀
-    if name.startswith(
-        (
-            "docker",
-            "br-",
-            "veth",
-            "virbr",
-            "vmnet",
-            "cni",
-            "flannel",
-            "lxcbr",
-            "podman",
-        )
-    ):
-        return True
-
-    # 隧道/VPN（很多实现不会以 tun0 开头，例如 uif-tun / utun0 / tailscale0）
-    if any(
-        token in name
-        for token in ("tun", "tap", "wg", "tailscale", "zerotier", "vpn", "ppp")
-    ):
-        return True
-
-    return False
-
-
-def _get_default_route_ipv4() -> Optional[str]:
-    """通过路由选择的方式获取“默认出口”IPv4（不实际发包）"""
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            # 该 connect 不会真的发送数据包，但会触发路由选择
-            s.connect(("8.8.8.8", 80))
-            ip = str(s.getsockname()[0])
-        ip_obj = ip_address(ip)
-        if ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_unspecified:
-            return None
-        if ip_obj.version != 4:
-            return None
-        return ip
-    except OSError:
-        return None
-
-
-def _list_non_loopback_ipv4(prefer_physical: bool = True) -> List[str]:
-    """枚举本机非回环 IPv4 地址（优先物理网卡）"""
-    try:
-        addrs = psutil.net_if_addrs()
-        stats = psutil.net_if_stats()
-    except Exception:
-        return []
-
-    result: List[str] = []
-
-    for ifname, snics in addrs.items():
-        if prefer_physical and _is_probably_virtual_interface(ifname):
-            continue
-
-        stat = stats.get(ifname)
-        if stat is not None and not stat.isup:
-            continue
-
-        for snic in snics:
-            if snic.family != socket.AF_INET:
-                continue
-
-            ip = snic.address
-            try:
-                ip_obj = ip_address(ip)
-            except (AddressValueError, ValueError):
-                continue
-
-            if ip_obj.version != 4:
-                continue
-            if ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_unspecified:
-                continue
-
-            result.append(ip)
-
-    # 去重并保序
-    seen = set()
-    uniq: List[str] = []
-    for ip in result:
-        if ip in seen:
-            continue
-        seen.add(ip)
-        uniq.append(ip)
-
-    # RFC1918 私有地址优先
-    uniq.sort(key=lambda x: 0 if ip_address(x).is_private else 1)
-    return uniq
-
-
-def detect_best_publish_ipv4(bind_interface: str) -> Optional[str]:
-    """自动探测适合对外发布的 IPv4 地址
-
-    优先级：
-    1) 若 bind_interface 是一个具体 IPv4（非 0.0.0.0/回环），直接使用它
-    2) 通过默认路由推断（优先）
-    3) 枚举物理网卡地址（过滤常见虚拟网卡）
-    4) 枚举所有非回环地址（兜底）
-    """
-    try:
-        bind_ip = ip_address(bind_interface)
-        if (
-            bind_ip.version == 4
-            and not bind_ip.is_loopback
-            and not bind_ip.is_unspecified
-            and not bind_ip.is_link_local
-        ):
-            return bind_interface
-    except (AddressValueError, ValueError):
-        pass
-
-    candidates = _list_non_loopback_ipv4(prefer_physical=True)
-    route_ip = _get_default_route_ipv4()
-    if route_ip and route_ip in candidates:
-        return route_ip
-    if candidates:
-        return candidates[0]
-
-    if route_ip:
-        return route_ip
-
-    candidates = _list_non_loopback_ipv4(prefer_physical=False)
-    if candidates:
-        return candidates[0]
-
-    return None
-
-
-def validate_network_cidr(network_str: Any) -> bool:
-    """验证 CIDR 或 IP 格式是否有效"""
-    if not network_str or not isinstance(network_str, str):
-        return False
-
-    try:
-        if "/" in network_str:
-            # CIDR 格式
-            ip_network(network_str, strict=False)
-        else:
-            # 单个 IP
-            ip_address(network_str)
-        return True
-    except (AddressValueError, ValueError):
-        return False
-
-
-def validate_allowed_networks(networks: Any) -> list[str]:
-    """验证并过滤 allowed_networks，空列表时添加回环地址
-    - 记录无效条目的警告日志
-    """
-    if not isinstance(networks, list):
-        logger.warning("allowed_networks 不是列表，使用默认值")
-        return DEFAULT_ALLOWED_NETWORKS.copy()
-
-    valid_networks: list[str] = []
-    invalid_networks: list[str] = []
-
-    for network in networks:
-        if validate_network_cidr(network):
-            # validate_network_cidr 已确保 network 为 str
-            valid_networks.append(str(network))
-        else:
-            invalid_networks.append(str(network))
-
-    # 记录无效条目
-    if invalid_networks:
-        logger.warning(f"以下网络配置无效，已跳过: {', '.join(invalid_networks)}")
-
-    # 空列表保护：确保至少包含本地回环
-    if not valid_networks:
-        logger.warning("allowed_networks 为空或全部无效，自动添加本地回环地址")
-        valid_networks = ["127.0.0.0/8", "::1/128"]
-
-    return valid_networks
-
-
-def validate_blocked_ips(ips: Any) -> list[str]:
-    """
-    验证并清理 blocked_ips 列表（支持单个 IP 和 CIDR 表示法）
-
-    参数
-    ----
-    ips : list
-        黑名单 IP / CIDR 列表
-
-    返回
-    ----
-    list
-        验证后的 IP / CIDR 列表
-
-    验证规则
-    --------
-    - 支持单个 IP（如 ``10.0.0.1``）和 CIDR（如 ``10.0.0.0/24``）
-    - 过滤无效格式，记录警告日志
-    """
-    if not isinstance(ips, list):
-        return []
-
-    valid_ips: list[str] = []
-    invalid_ips: list[str] = []
-
-    for ip in ips:
-        if isinstance(ip, str):
-            try:
-                if "/" in ip:
-                    ip_network(ip, strict=False)
-                else:
-                    ip_address(ip)
-                valid_ips.append(ip)
-            except (AddressValueError, ValueError):
-                invalid_ips.append(ip)
-        else:
-            invalid_ips.append(str(ip))
-
-    if invalid_ips:
-        logger.warning(f"以下黑名单条目无效，已跳过: {', '.join(invalid_ips)}")
-
-    return valid_ips
-
-
-def validate_network_security_config(config: Any) -> dict[str, Any]:
-    """验证并清理 network_security 配置"""
-    if not isinstance(config, dict):
-        config = {}
-
-    validated = {
-        "bind_interface": validate_bind_interface(
-            config.get("bind_interface", "0.0.0.0")
-        ),
-        "allowed_networks": validate_allowed_networks(
-            config.get("allowed_networks", DEFAULT_ALLOWED_NETWORKS)
-        ),
-        "blocked_ips": validate_blocked_ips(config.get("blocked_ips", [])),
-        "access_control_enabled": bool(
-            config.get(
-                "access_control_enabled",
-                config.get("enable_access_control", True),
-            )
-        ),
-    }
-
-    return validated
-
-
 class WebFeedbackUI(
+    SecurityMixin,
+    MdnsMixin,
     TaskRoutesMixin,
     FeedbackRoutesMixin,
     NotificationRoutesMixin,
@@ -615,7 +135,9 @@ class WebFeedbackUI(
 ):
     """Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管理。
 
-    路由通过 Mixin 组织：
+    功能通过 Mixin 组织：
+    - SecurityMixin          — IP 访问控制、CSP、安全头（web_ui_security.py）
+    - MdnsMixin              — mDNS/Zeroconf 服务发布（web_ui_mdns.py）
     - TaskRoutesMixin        — 任务 CRUD（5 个路由）
     - FeedbackRoutesMixin    — 反馈提交/查询（3 个路由）
     - NotificationRoutesMixin — 通知配置/触发（5 个路由）
@@ -754,139 +276,6 @@ class WebFeedbackUI(
         self.setup_security_headers()
         self.setup_markdown()
         self.setup_routes()
-
-    def setup_security_headers(self) -> None:
-        """设置HTTP安全头部和访问控制
-
-        功能说明：
-            注册Flask的before_request和after_request钩子，实现IP访问控制和HTTP安全头部注入。
-
-        安全策略：
-            - **IP访问控制**：基于白名单/黑名单验证客户端IP地址
-            - **CSP**：Content Security Policy，防止XSS攻击
-            - **X-Frame-Options**：防止点击劫持（Clickjacking）
-            - **X-Content-Type-Options**：防止MIME类型嗅探
-            - **X-XSS-Protection**：启用浏览器XSS过滤
-            - **Referrer-Policy**：控制Referer头部信息泄露
-            - **Permissions-Policy**：禁用敏感浏览器API（地理位置、麦克风、摄像头等）
-
-        CSP策略详情：
-            - default-src 'self'：默认只允许同源资源
-            - script-src 'self' 'nonce-{随机数}'：脚本需要CSP随机数
-            - style-src 'self' 'nonce-{随机数}' + MathJax内联样式哈希：样式支持随机数和白名单哈希
-            - img-src 'self' data: blob:：图片支持同源、Data URL、Blob URL
-            - font-src 'self' data:：字体支持同源和Data URL
-            - connect-src 'self'：AJAX请求仅限同源
-            - frame-ancestors 'none'：禁止被iframe嵌入
-            - base-uri 'self'：<base>标签仅限同源
-            - object-src 'none'：禁止<object>、<embed>、<applet>
-
-        执行时机：
-            - before_request：在每个请求处理前检查IP访问权限
-            - after_request：在每个响应返回前注入安全头部
-
-        副作用：
-            - 修改所有HTTP响应头部（添加安全策略）
-            - 拒绝不在白名单中的IP访问（返回403 Forbidden）
-
-        注意事项：
-            - MathJax内联样式需要添加SHA-256哈希到CSP白名单
-            - CSP随机数在__init__中生成，需传递给HTML模板
-            - IP访问控制依赖network_security_config配置
-        """
-
-        @self.app.before_request
-        def check_ip_and_generate_nonce() -> ResponseReturnValue | None:
-            """IP 访问控制 + 每请求生成 CSP nonce
-
-            验证逻辑：
-                1. 默认使用REMOTE_ADDR作为客户端IP
-                2. 仅在请求来自本机反向代理时信任HTTP_X_FORWARDED_FOR
-                3. 处理代理转发的多IP情况（取第一个IP）
-                4. 调用_is_ip_allowed()进行白名单/黑名单验证
-                5. 拒绝不合法的IP访问（返回403）
-                6. 生成本次请求的 CSP nonce 并存入 flask.g
-            """
-            client_ip = self._get_request_client_ip(request.environ)
-
-            if not self._is_ip_allowed(client_ip):
-                logger.warning(f"拒绝来自 {client_ip} 的访问请求")
-                abort(403)
-
-            g.csp_nonce = secrets.token_urlsafe(16)
-
-        @self.app.after_request
-        def add_security_headers(response: Response) -> Response:
-            """添加HTTP安全头部（after_request钩子）
-
-            功能说明：
-                在每个响应返回前注入安全相关的HTTP头部。
-
-            注入的头部：
-                - Content-Security-Policy：详见setup_security_headers文档
-                - X-Frame-Options: DENY：完全禁止被iframe嵌入
-                - X-Content-Type-Options: nosniff：禁止MIME类型嗅探
-                - X-XSS-Protection: 1; mode=block：启用XSS过滤并阻止页面加载
-                - Referrer-Policy: strict-origin-when-cross-origin：跨域时仅发送origin
-                - Permissions-Policy：禁用geolocation、microphone、camera、payment、usb、magnetometer、gyroscope
-
-            参数说明：
-                response: Flask响应对象
-
-            返回值：
-                Flask响应对象（添加了安全头部）
-
-            注意事项：
-                - 此钩子对所有路由生效，包括静态资源
-                - CSP策略严格，修改时需谨慎测试
-            """
-            nonce = getattr(g, "csp_nonce", "")
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self'; "
-                f"script-src 'self' 'nonce-{nonce}'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data: blob:; "
-                "font-src 'self' data:; "
-                "connect-src 'self'; "
-                "worker-src 'self'; "
-                "frame-ancestors 'none'; "
-                "base-uri 'self'; "
-                "object-src 'none'"
-            )
-
-            response.headers["X-Frame-Options"] = "DENY"
-            response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-XSS-Protection"] = "1; mode=block"
-            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-            response.headers["Permissions-Policy"] = (
-                "geolocation=(), microphone=(), camera=(), "
-                "payment=(), usb=(), magnetometer=(), gyroscope=()"
-            )
-
-            # 静态资源缓存优化：为 JS/CSS/字体/音频/动画 设置长期缓存
-            path = request.path
-            if path.startswith("/static/js/") or path.startswith("/static/css/"):
-                # JS/CSS 文件：带版本号时使用长期缓存（1年），否则使用短期缓存（1天）
-                if request.args.get("v"):
-                    response.headers["Cache-Control"] = (
-                        "public, max-age=31536000, immutable"
-                    )
-                else:
-                    response.headers["Cache-Control"] = "public, max-age=86400"
-            elif path.startswith("/static/lottie/"):
-                # Lottie 动画 JSON 文件缓存 30 天（动画文件通常不会频繁更新）
-                response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
-            elif path.startswith("/fonts/"):
-                # 字体文件缓存 30 天（2592000秒）
-                response.headers["Cache-Control"] = "public, max-age=2592000, immutable"
-            elif path.startswith("/sounds/"):
-                # 音频文件缓存 7 天（604800秒）
-                response.headers["Cache-Control"] = "public, max-age=604800"
-            elif path.startswith("/icons/") and not path.endswith(".ico"):
-                # 图标文件（非 favicon.ico）缓存 7 天
-                response.headers["Cache-Control"] = "public, max-age=604800"
-
-            return response
 
     def setup_markdown(self) -> None:
         """设置Markdown渲染器和扩展
@@ -1308,15 +697,6 @@ class WebFeedbackUI(
 
         os.kill(os.getpid(), signal.SIGINT)
 
-    def _get_csp_nonce(self) -> str:
-        """获取当前请求的 CSP nonce；非请求上下文时生成临时随机值。"""
-        try:
-            if has_request_context():
-                return getattr(g, "csp_nonce", secrets.token_urlsafe(16))
-        except RuntimeError:
-            pass
-        return secrets.token_urlsafe(16)
-
     def _get_template_context(self) -> dict[str, str]:
         """构建 Jinja2 模板渲染上下文。
 
@@ -1461,331 +841,6 @@ class WebFeedbackUI(
             return str(int(mtime))[-8:]
         except OSError:
             return "1"
-
-    def _load_network_security_config(self) -> Dict:
-        """加载并验证网络安全配置
-
-        功能说明：
-            从配置文件读取网络安全相关配置，用于IP访问控制。
-            【优化】加载时进行预验证，确保配置有效性。
-
-        返回值：
-            Dict: 验证后的网络安全配置字典，包含以下字段：
-                - bind_interface: 绑定的网络接口（验证为有效 IP 或特殊值）
-                - allowed_networks: 允许访问的网络列表（验证 CIDR 格式）
-                - blocked_ips: 黑名单 IP 列表（验证 IP 格式）
-                - access_control_enabled: 是否启用访问控制（布尔值）
-
-        处理逻辑：
-            1. 调用 get_config() 获取配置管理器
-            2. 调用 get_section("network_security") 读取配置
-            3. 【优化】调用 validate_network_security_config() 验证配置
-            4. 若加载失败，返回默认配置
-
-        验证规则：
-            - bind_interface: 必须是有效 IP 或 0.0.0.0/127.0.0.1/localhost
-            - allowed_networks: 无效的 CIDR 会被过滤，空列表自动添加本地回环
-            - blocked_ips: 无效的 IP 会被过滤
-            - access_control_enabled: 转换为布尔值
-
-        异常处理：
-            - 配置加载失败：记录警告日志，返回默认配置
-
-        默认配置：
-            - bind_interface: "0.0.0.0"
-            - allowed_networks: 本地回环 + 私有网络段
-            - blocked_ips: 空列表
-            - access_control_enabled: True
-
-        注意事项：
-            - 配置来自 config.jsonc 文件
-            - 默认配置允许本地和内网访问
-            - 生产环境建议自定义配置
-            - 绑定 0.0.0.0 时会输出安全警告
-        """
-        try:
-            config_mgr = get_config()
-            raw_config = config_mgr.get_section("network_security")
-            # 【优化】验证配置
-            return validate_network_security_config(raw_config)
-        except Exception as e:
-            logger.warning(f"无法加载网络安全配置，使用默认配置: {e}", exc_info=True)
-            return validate_network_security_config({})
-
-    def _is_ip_allowed(self, client_ip: str) -> bool:
-        """检查IP是否被允许访问
-
-        功能说明：
-            根据网络安全配置验证客户端IP地址是否在允许的网络范围内。
-
-        参数说明：
-            client_ip: 客户端IP地址（字符串格式，支持IPv4和IPv6）
-
-        返回值：
-            bool: True表示允许访问，False表示拒绝访问
-
-        验证逻辑：
-            1. 若access_control_enabled=False，直接返回True（禁用访问控制）
-            2. 解析client_ip为ip_address对象
-            3. 检查黑名单：若IP在blocked_ips中，返回False
-            4. 检查白名单：遍历allowed_networks
-               - 若是CIDR格式（包含/），解析为IPv4Network/IPv6Network
-               - 若IP在网络范围内，返回True
-               - 若是单个IP，比较是否相等
-            5. 若不在任何白名单中，返回False
-
-        异常处理：
-            - AddressValueError: 无效的IP地址，记录警告并返回False
-            - ValueError: 无效的网络配置，记录警告并跳过该配置
-
-        注意事项：
-            - 支持IPv4和IPv6地址
-            - 支持CIDR网络段和单个IP白名单
-            - 黑名单优先级高于白名单
-            - 无效的IP地址或网络配置会被跳过
-        """
-        # 快照配置，避免热更新时读到不一致视图
-        cfg = (
-            self.network_security_config
-            if isinstance(self.network_security_config, dict)
-            else {}
-        )
-        if not cfg.get("access_control_enabled", True):
-            return True
-
-        try:
-            client_addr = ip_address(client_ip)
-
-            # IPv4-mapped IPv6 地址透传：当服务器绑定 :: (dual-stack) 时，
-            # IPv4 客户端可能以 ::ffff:x.x.x.x 形式出现，需要提取底层 IPv4
-            # 以便与 IPv4 CIDR 规则（如 192.168.0.0/16）正确匹配
-            if hasattr(client_addr, "ipv4_mapped") and client_addr.ipv4_mapped:
-                client_addr = client_addr.ipv4_mapped
-
-            # 检查黑名单（支持单个 IP 和 CIDR）
-            blocked_ips = cfg.get("blocked_ips", [])
-            for blocked_entry in blocked_ips:
-                try:
-                    if "/" in blocked_entry:
-                        if client_addr in ip_network(blocked_entry, strict=False):
-                            logger.warning(
-                                f"IP {client_ip} 在黑名单网段 {blocked_entry} 中，拒绝访问"
-                            )
-                            return False
-                    elif str(client_addr) == blocked_entry:
-                        logger.warning(f"IP {client_ip} 在黑名单中，拒绝访问")
-                        return False
-                except (AddressValueError, ValueError, TypeError):
-                    continue
-
-            # 检查白名单网络
-            allowed_networks = cfg.get("allowed_networks", ["127.0.0.0/8", "::1/128"])
-            for network_str in allowed_networks:
-                try:
-                    if "/" in network_str:
-                        # 网络段
-                        network = ip_network(network_str, strict=False)
-                        if client_addr in network:
-                            return True
-                    else:
-                        # 单个IP
-                        if str(client_addr) == network_str:
-                            return True
-                except (AddressValueError, ValueError, TypeError) as e:
-                    logger.warning(f"无效的网络配置 {network_str}: {e}")
-                    continue
-
-            logger.warning(f"IP {client_ip} 不在允许的网络范围内，拒绝访问")
-            return False
-
-        except AddressValueError as e:
-            logger.warning(f"无效的IP地址 {client_ip}: {e}")
-            return False
-
-    @staticmethod
-    def _parse_forwarded_for(forwarded_for: str) -> str:
-        """从 X-Forwarded-For 中提取首个客户端 IP。"""
-        if not forwarded_for:
-            return ""
-        return forwarded_for.split(",")[0].strip()
-
-    @staticmethod
-    def _should_trust_forwarded_for(remote_addr: str) -> bool:
-        """仅信任来自本机反向代理的 X-Forwarded-For。"""
-        if not remote_addr:
-            return False
-        try:
-            return ip_address(remote_addr).is_loopback
-        except AddressValueError:
-            return False
-
-    def _get_request_client_ip(self, environ: Dict[str, Any]) -> str:
-        """获取用于访问控制的客户端 IP。"""
-        remote_addr = str(environ.get("REMOTE_ADDR", "")).strip()
-        forwarded_for = str(environ.get("HTTP_X_FORWARDED_FOR", "")).strip()
-
-        if self._should_trust_forwarded_for(remote_addr):
-            forwarded_ip = self._parse_forwarded_for(forwarded_for)
-            if forwarded_ip:
-                return forwarded_ip
-
-        return remote_addr
-
-    def _get_mdns_config(self) -> Dict[str, Any]:
-        """读取 mdns 配置段（失败则返回空字典）"""
-        try:
-            cfg = get_config().get_section("mdns")
-            return cfg if isinstance(cfg, dict) else {}
-        except Exception as e:
-            logger.warning(
-                f"无法加载 mdns 配置，已降级为不发布 mDNS: {e}", exc_info=True
-            )
-            return {}
-
-    def _should_enable_mdns(self, mdns_config: dict[str, Any]) -> bool:
-        """判断当前是否应启用 mDNS（默认策略：bind_interface 不是 127.0.0.1）"""
-        enabled_raw = mdns_config.get("enabled", None)
-        if isinstance(enabled_raw, bool):
-            return enabled_raw
-
-        # 自动模式：只要 bind_interface 不是本地回环，就启用
-        return self.host not in {"127.0.0.1", "localhost", "::1"}
-
-    def _start_mdns_if_needed(self) -> None:
-        """启动 mDNS 发布（失败则降级，不影响 Web UI 启动）"""
-        if self._mdns_zeroconf is not None:
-            return
-
-        mdns_config = self._get_mdns_config()
-        if not self._should_enable_mdns(mdns_config):
-            return
-
-        # 若服务只监听本地回环，发布 mDNS 没意义（外部无法访问），直接跳过
-        if self.host in {"127.0.0.1", "localhost", "::1"}:
-            logger.warning(
-                "mDNS 已配置启用，但 bind_interface 为本地回环地址，外部设备无法访问，已跳过发布"
-            )
-            return
-
-        try:
-            # 延迟导入，避免测试/极简环境下无 zeroconf 依赖直接崩溃
-            from zeroconf import NonUniqueNameException, ServiceInfo, Zeroconf
-        except Exception as e:
-            logger.error(f"mDNS 功能不可用：无法导入 zeroconf 依赖: {e}", exc_info=True)
-            print("mDNS 功能不可用：缺少依赖 zeroconf（请更新依赖/重新安装）。")
-            return
-
-        hostname = normalize_mdns_hostname(
-            mdns_config.get("hostname", MDNS_DEFAULT_HOSTNAME)
-        )
-        service_name_raw = mdns_config.get("service_name", "AI Intervention Agent")
-        service_name = (
-            service_name_raw.strip()
-            if isinstance(service_name_raw, str) and service_name_raw.strip()
-            else "AI Intervention Agent"
-        )
-
-        publish_ip = detect_best_publish_ipv4(self.host)
-        if not publish_ip:
-            logger.error("mDNS 发布失败：无法探测可发布的内网 IPv4 地址")
-            print(
-                "mDNS 发布失败：无法探测可发布的内网 IP（已降级为仅通过 IP/localhost 访问）。"
-            )
-            return
-
-        server_fqdn = f"{hostname}."
-        service_fqdn = f"{service_name}.{MDNS_SERVICE_TYPE_HTTP}"
-        properties = {
-            "path": "/",
-            "hostname": hostname,
-            "publish_ip": publish_ip,
-        }
-
-        info = ServiceInfo(
-            MDNS_SERVICE_TYPE_HTTP,
-            service_fqdn,
-            addresses=[socket.inet_aton(publish_ip)],
-            port=self.port,
-            properties=properties,
-            server=server_fqdn,
-        )
-
-        zc = Zeroconf()
-        try:
-            # 兼容 zeroconf 不同版本的参数命名（allow_name_change / allow_rename）
-            # - 实例名冲突时可自动改名，但不会改变 server/hostname
-            kwargs: dict[str, Any] = {}
-            try:
-                params = inspect.signature(zc.register_service).parameters
-                if "allow_name_change" in params:
-                    kwargs["allow_name_change"] = True
-                elif "allow_rename" in params:
-                    kwargs["allow_rename"] = True
-            except Exception:
-                # 签名解析失败则降级为无参数调用
-                kwargs = {}
-
-            zc.register_service(info, **kwargs)
-        except NonUniqueNameException:
-            config_path = None
-            try:
-                config_path = str(get_config().config_file)
-            except Exception:
-                config_path = None
-
-            logger.error(
-                f"mDNS 发布失败：主机名冲突（{hostname}）。请修改配置中的 mdns.hostname 后重试"
-            )
-            print(f"mDNS 发布失败：主机名 {hostname} 可能已被局域网中其他设备占用。")
-            print(
-                "请修改配置中的 mdns.hostname（例如 ai-你的机器名.local），然后重启服务。"
-            )
-            if config_path:
-                print(f"   配置文件: {config_path}")
-            try:
-                zc.close()
-            except Exception:
-                pass
-            return
-        except Exception as e:
-            logger.warning(
-                f"mDNS 发布失败（已降级，不影响 Web UI）：{e}", exc_info=True
-            )
-            print(f"mDNS 发布失败：{e}（已降级为仅通过 IP/localhost 访问）。")
-            try:
-                zc.close()
-            except Exception:
-                pass
-            return
-
-        self._mdns_zeroconf = zc
-        self._mdns_service_info = info
-        self._mdns_hostname = hostname
-        self._mdns_publish_ip = publish_ip
-
-        logger.info(f"mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
-        print(f"mDNS 已发布: http://{hostname}:{self.port} (IP: {publish_ip})")
-
-    def _stop_mdns(self) -> None:
-        """停止 mDNS 发布（尽力而为）"""
-        if self._mdns_zeroconf is None:
-            return
-
-        try:
-            if self._mdns_service_info is not None:
-                self._mdns_zeroconf.unregister_service(self._mdns_service_info)
-        except Exception as e:
-            logger.debug(f"注销 mDNS 服务失败（忽略）：{e}")
-
-        try:
-            self._mdns_zeroconf.close()
-        except Exception as e:
-            logger.debug(f"关闭 mDNS Zeroconf 失败（忽略）：{e}")
-
-        self._mdns_zeroconf = None
-        self._mdns_service_info = None
-        self._mdns_hostname = None
-        self._mdns_publish_ip = None
 
     def run(self) -> FeedbackResult:
         """启动Flask Web服务器并等待用户反馈
