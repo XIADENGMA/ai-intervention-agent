@@ -14,6 +14,14 @@ This document describes the recommended development and release workflow for thi
   - Default is **local mode**: auto-formats (`ruff format`) and runs ruff/ty/pytest/minify
   - CI mode (check-only; no auto-format, but may generate gitignored build artifacts like `.min`): `uv run python scripts/ci_gate.py --ci --with-coverage`
   - Include VSCode checks: `uv run python scripts/ci_gate.py --with-vscode`
+- Individual tool commands (for targeted fixing):
+  - Lint: `uv run ruff check .` (auto-fix: `uv run ruff check --fix .`)
+  - Format: `uv run ruff format .` (check-only: `uv run ruff format --check .`)
+  - Type check: `uv run ty check .`
+  - Test: `uv run pytest -q`
+  - Minify: `uv run python scripts/minify_assets.py`
+  - Locale check: `uv run python scripts/check_locales.py`
+  - Version check: `uv run python scripts/bump_version.py --check --from-pyproject`
 - VSCode extension: `npm run vscode:check` (Linux/headless: `xvfb-run -a npm run vscode:check`)
   - If you use `fnm` and `node` is unavailable in non-interactive shells: `fnm exec --using v24.14.0 -- npm run vscode:check`
   - Note: `vscode:check` includes packaging and will generate a `.vsix` under `packages/vscode/` (gitignored)

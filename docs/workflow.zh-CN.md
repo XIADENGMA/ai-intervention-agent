@@ -14,6 +14,14 @@
   - 默认是“本地模式”：会自动格式化（`ruff format`），并运行 ruff/ty/pytest/minify
   - CI 模式（只检查；不自动格式化源码，但会生成 gitignore 的构建产物如 `.min`）：`uv run python scripts/ci_gate.py --ci --with-coverage`
   - 若希望一并跑 VSCode 插件门禁：`uv run python scripts/ci_gate.py --with-vscode`
+- 单独运行各工具（定向修复时使用）：
+  - Lint 检查：`uv run ruff check .`（自动修复：`uv run ruff check --fix .`）
+  - 格式化：`uv run ruff format .`（仅检查：`uv run ruff format --check .`）
+  - 类型检查：`uv run ty check .`
+  - 测试：`uv run pytest -q`
+  - 静态资源压缩：`uv run python scripts/minify_assets.py`
+  - Locale 一致性检查：`uv run python scripts/check_locales.py`
+  - 版本号一致性检查：`uv run python scripts/bump_version.py --check --from-pyproject`
 - VSCode 插件：`npm run vscode:check`（Linux/headless：`xvfb-run -a npm run vscode:check`）
   - 若 Node 由 `fnm` 管理且在非交互 shell 下 `node` 不可用，可用：`fnm exec --using v24.14.0 -- npm run vscode:check`
   - 说明：`vscode:check` 包含打包步骤，会在 `packages/vscode/` 目录生成 `.vsix`（已 gitignore）
