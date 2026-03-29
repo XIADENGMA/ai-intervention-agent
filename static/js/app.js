@@ -272,13 +272,17 @@ function initHourglassAnimation() {
     settled = true
     clearTimeout(timer)
     if (ok) {
-      if (container.querySelector('svg:not([class*="lottie"])')) {
+      const hasFallbackSvg = !!container.querySelector('svg:not([class*="lottie"])')
+      if (hasFallbackSvg) {
         container.style.opacity = '0'
         container.style.transition = 'opacity .25s ease'
-        _createLottieAnimation(container)
-        requestAnimationFrame(() => { container.style.opacity = '1' })
-      } else {
-        _createLottieAnimation(container)
+      }
+      _createLottieAnimation(container)
+      if (hasFallbackSvg && hourglassAnimation) {
+        hourglassAnimation.addEventListener('DOMLoaded', () => {
+          requestAnimationFrame(() => { container.style.opacity = '1' })
+        })
+        setTimeout(() => { container.style.opacity = '1' }, 2000)
       }
     } else {
       if (!container.innerHTML.trim()) renderSproutFallback(container)

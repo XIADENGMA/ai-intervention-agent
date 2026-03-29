@@ -1002,13 +1002,48 @@ function renderTaskTabs() {
     existingTaskIds.some((id, i) => id !== incompleteTaskIds[i])
 
   if (needsRebuild) {
-    // 任务列表变化，完全重建
-    tabsContainer.innerHTML = ''
-    // 只显示未完成的任务（pending 和 active）
-    incompleteTasks.forEach(task => {
-      const tab = createTaskTab(task)
-      tabsContainer.appendChild(tab)
-    })
+    const removedIds = existingTaskIds.filter(id => !incompleteTaskIds.includes(id))
+    const addedIds = incompleteTaskIds.filter(id => !existingTaskIds.includes(id))
+    const isIncremental = removedIds.length + addedIds.length <= 2 && existingTaskIds.length > 0
+
+    if (isIncremental) {
+      removedIds.forEach(id => {
+        const el = tabsContainer.querySelector(`[data-task-id="${id}"]`)
+        if (el) {
+          el.classList.add('task-tab-exit')
+          el.addEventListener('animationend', () => el.remove(), { once: true })
+          setTimeout(() => { if (el.parentNode) el.remove() }, 300)
+        }
+      })
+      addedIds.forEach(id => {
+        const task = incompleteTasks.find(t => t.task_id === id)
+        if (task) {
+          const tab = createTaskTab(task)
+          tab.classList.add('task-tab-enter')
+          tab.addEventListener('animationend', () => tab.classList.remove('task-tab-enter'), { once: true })
+          tabsContainer.appendChild(tab)
+        }
+      })
+      tabsContainer.querySelectorAll('.task-tab:not(.task-tab-exit)').forEach(tab => {
+        const taskId = tab.dataset.taskId
+        const isActive = taskId === activeTaskId
+        tab.classList.toggle('active', isActive)
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false')
+        tab.setAttribute('tabindex', isActive ? '0' : '-1')
+      })
+    } else {
+      tabsContainer.innerHTML = ''
+      incompleteTasks.forEach((task, i) => {
+        const tab = createTaskTab(task)
+        tab.classList.add('task-tab-enter')
+        tab.style.animationDelay = (i * 60) + 'ms'
+        tab.addEventListener('animationend', () => {
+          tab.classList.remove('task-tab-enter')
+          tab.style.animationDelay = ''
+        }, { once: true })
+        tabsContainer.appendChild(tab)
+      })
+    }
   } else {
     existingTabs.forEach(tab => {
       const taskId = tab.dataset.taskId

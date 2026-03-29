@@ -307,7 +307,14 @@
           </div>
 
           <div class="description markdown-content" id="description" data-i18n="page.loading">
-            加载中…
+            <!-- 骨架屏占位（首次加载时显示，数据到达后自动移除） -->
+            <div id="content-skeleton" class="skeleton-container" aria-hidden="true">
+              <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
+              <div class="skeleton-pulse skeleton-line skeleton-line-long"></div>
+              <div class="skeleton-pulse skeleton-line skeleton-line-medium"></div>
+              <div class="skeleton-pulse skeleton-line skeleton-line-full"></div>
+              <div class="skeleton-pulse skeleton-block"></div>
+            </div>
           </div>
 
           <div class="options-container hidden" id="options-container">
