@@ -647,9 +647,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       case 'requestClipboardText':
         this._handleRequestClipboardText(message)
         break
-      case 'showMacOSNativeNotification':
-        this._handleShowMacOSNativeNotification(message)
-        break
       case 'langDetected':
         try {
           const lang = message && typeof (message as Record<string, unknown>).language === 'string'
@@ -795,28 +792,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     } catch {
       // 同步失败不应影响通知流程
     }
-  }
-
-  _handleShowMacOSNativeNotification(message: WebviewMessage): void {
-    const title =
-      message && typeof message.title === 'string' && message.title
-        ? String(message.title)
-        : 'AI Intervention Agent'
-    const body =
-      message && typeof message.message === 'string' && message.message
-        ? String(message.message)
-        : ''
-    const isTest = !!(message && message.isTest)
-    if (!body.trim()) return
-
-    this._dispatchNotificationEvent({
-      title,
-      message: body,
-      trigger: 'immediate',
-      types: [NotificationType.MACOS_NATIVE],
-      metadata: { isTest: !!isTest },
-      source: 'webview'
-    })
   }
 
   _handleRequestClipboardText(message: WebviewMessage): void {
