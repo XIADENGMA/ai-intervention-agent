@@ -38,9 +38,14 @@ permissions:
 
 jobs:
   vscode:
-    name: VSCode extension checks
-    runs-on: ubuntu-latest
+    name: VSCode (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
       - name: 检出代码
@@ -65,11 +70,17 @@ jobs:
       - name: VSCode 插件：Lint
         run: npm run vscode:lint
 
-      - name: 安装 xvfb（用于 VSCode 测试）
+      - name: 安装 xvfb（Linux 无头环境需要）
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
-      - name: VSCode 插件：Test
+      - name: VSCode 插件：Test（Linux）
+        if: runner.os == 'Linux'
         run: xvfb-run -a npm run vscode:test
+
+      - name: VSCode 插件：Test（macOS）
+        if: runner.os == 'macOS'
+        run: npm run vscode:test
 
       - name: VSCode 插件：Package VSIX
         run: npm run vscode:package
@@ -77,6 +88,6 @@ jobs:
       - name: 上传 VSIX 产物
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: ai-intervention-agent-vsix
+          name: ai-intervention-agent-vsix-${{ matrix.os }}
           path: packages/vscode/*.vsix
           if-no-files-found: error

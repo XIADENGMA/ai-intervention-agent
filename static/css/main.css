@@ -828,15 +828,11 @@ h1 {
   transform: rotate(90deg) scale(0.5);
 }
 
-.theme-toggle-btn.is-auto .theme-icon-sun {
-  opacity: 0.5;
-  transform: rotate(0deg) scale(0.8);
-}
-
-.theme-toggle-btn.is-auto .theme-icon-moon {
-  opacity: 0.5;
-  transform: rotate(0deg) scale(0.8);
-}
+/*
+ * auto 模式不再单独设定图标透明度。
+ * 图标显隐完全由 is-light class（基于 effectiveTheme）决定，
+ * 避免 is-auto 和 is-light 同时存在时的 CSS 优先级冲突。
+ */
 
 /**
  * 设置面板容器（.settings-panel）：
