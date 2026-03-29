@@ -359,15 +359,33 @@ class SettingsManager {
     // 语言切换
     const langSelect = document.getElementById('language-select')
     if (langSelect) {
-      langSelect.addEventListener('change', () => {
+      langSelect.addEventListener('change', async () => {
         const newLang = langSelect.value
         if (window.AIIA_I18N) {
-          if (newLang === 'auto') {
-            window.AIIA_I18N.setLang(window.AIIA_I18N.detectLang())
-          } else {
-            window.AIIA_I18N.setLang(newLang)
+          const targetLang =
+            newLang === 'auto'
+              ? window.AIIA_I18N.detectLang()
+              : window.AIIA_I18N.normalizeLang(newLang)
+
+          if (!window.AIIA_I18N.getAvailableLangs().includes(targetLang)) {
+            await window.AIIA_I18N.loadLocale(targetLang, '/static/locales/' + targetLang + '.json')
           }
+          if (targetLang !== 'en' && !window.AIIA_I18N.getAvailableLangs().includes('en')) {
+            await window.AIIA_I18N.loadLocale('en', '/static/locales/en.json')
+          }
+
+          window.AIIA_I18N.setLang(targetLang)
           window.AIIA_I18N.translateDOM()
+        }
+
+        try {
+          await fetch('/api/update-language', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ language: newLang })
+          })
+        } catch (e) {
+          console.warn('语言偏好持久化失败:', e)
         }
       })
     }

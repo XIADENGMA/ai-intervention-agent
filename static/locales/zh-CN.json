@@ -7,7 +7,6 @@
     },
     "countdown": "{{seconds}} 秒后自动重调",
     "loading": "加载中…",
-    "imageCount": "已选择 {{count}} 张图片",
     "dragDrop": "拖放图片到这里",
     "dragFormat": "支持 JPG、PNG、GIF、WEBP 格式",
     "cancel": "取消",
@@ -16,7 +15,6 @@
     "feedbackPlaceholder": "请输入反馈内容…",
     "themeToggle": "切换主题",
     "settingsBtn": "通知设置",
-    "openSettings": "打开通知设置",
     "taskList": "任务列表",
     "closeWebUI": "关闭 Web UI",
     "clearAllImages": "清除所有图片",
@@ -48,7 +46,7 @@
     "language": "界面语言",
     "langAuto": "自动检测",
     "configPath": "当前配置文件路径",
-    "configHint": "开发模式默认优先使用工作目录的 <code>./config.toml</code>。如需强制指向 <code>~/.config/ai-intervention-agent/config.toml</code>，请在启动前设置环境变量：<code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml</code>。",
+    "configHint": "后端服务当前实际使用的配置文件路径。",
     "shortcutSubmit": "提交反馈：",
     "shortcutInsertCode": "插入代码：",
     "shortcutPasteImage": "粘贴图片：",
@@ -62,11 +60,9 @@
     "promptSuffix": "反馈后缀",
     "promptSuffixHint": "追加到用户每次反馈末尾的提示语（最多 500 字符）",
     "resetFeedbackConfig": "重置反馈配置",
-    "savingFeedback": "保存中…",
     "feedbackConfigSaved": "反馈配置已保存",
     "feedbackConfigReset": "反馈配置已重置为默认值",
-    "feedbackConfigSaveFailed": "反馈配置保存失败",
-    "disabledHint": "（已禁用）"
+    "feedbackConfigSaveFailed": "反馈配置保存失败"
   },
   "status": {
     "loadFailed": "加载配置失败",
@@ -128,7 +124,6 @@
     "audioUnavailable": "不可用"
   },
   "notify": {
-    "title": "AI 交互反馈",
     "testTitle": "设置测试",
     "testBody": "这是一个测试通知，用于验证当前设置是否正常工作",
     "titleFlash": "[通知] {{message}}"

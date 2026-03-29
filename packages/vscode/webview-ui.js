@@ -23,6 +23,40 @@
   } catch (e) {
     // 忽略
   }
+  // 防御性 i18n 初始化：确保 locale 数据已注册（解决某些 webview 环境下自动注册失败的问题）
+  ;(function ensureI18nReady() {
+    try {
+      var i18n = (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N)
+      if (!i18n || typeof i18n.registerLocale !== 'function') return
+
+      // 检测是否已有 locale 注册
+      var langs = typeof i18n.getAvailableLangs === 'function' ? i18n.getAvailableLangs() : []
+      var needsInit = langs.length === 0
+
+      // 注册所有预注入的 locale（__AIIA_I18N_ALL_LOCALES 包含 en + zh-CN）
+      var allLocales = (typeof window !== 'undefined' && window.__AIIA_I18N_ALL_LOCALES) || null
+      if (allLocales && typeof allLocales === 'object') {
+        var keys = Object.keys(allLocales)
+        for (var ai = 0; ai < keys.length; ai++) {
+          if (allLocales[keys[ai]] && typeof allLocales[keys[ai]] === 'object') {
+            i18n.registerLocale(keys[ai], allLocales[keys[ai]])
+          }
+        }
+      }
+
+      // 如果之前没有 locale，再补注册单语言 fallback
+      if (needsInit) {
+        var loc = (typeof window !== 'undefined' && window.__AIIA_I18N_LOCALE) || null
+        var lang = (typeof window !== 'undefined' && window.__AIIA_I18N_LANG) || ''
+        if (loc && typeof loc === 'object' && lang) {
+          i18n.registerLocale(String(lang), loc)
+          if (typeof i18n.setLang === 'function') i18n.setLang(String(lang))
+        }
+      }
+    } catch (e) { /* 忽略 */ }
+  })()
+
   function t(key, params) {
     try {
       var i18n = (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
@@ -30,6 +64,61 @@
       if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
     } catch (_e) { /* noop */ }
     return key
+  }
+
+  // 服务器 TOML 配置驱动的语言切换：首次从 /api/config 收到 language 字段后检测并切换
+  let _serverLangApplied = false
+
+  function getI18n() {
+    try {
+      return (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N) || null
+    } catch (e) { return null }
+  }
+
+  function applyServerLanguage(lang) {
+    if (!lang || lang === 'auto' || _serverLangApplied) return
+    var i18n = getI18n()
+    if (!i18n || typeof i18n.setLang !== 'function' || typeof i18n.getLang !== 'function') return
+    var normalized = typeof i18n.normalizeLang === 'function' ? i18n.normalizeLang(lang) : lang
+    if (normalized === i18n.getLang()) { _serverLangApplied = true; return }
+    i18n.setLang(normalized)
+    _serverLangApplied = true
+    retranslateStaticElements()
+  }
+
+  function retranslateStaticElements() {
+    var items = [
+      { sel: '#statusLight', attr: 'title', key: 'ui.status.serverStatus' },
+      { sel: '#settingsBtn', attr: 'title', key: 'ui.settingsBtn' },
+      { sel: '#settingsBtn', attr: 'aria-label', key: 'ui.settingsBtn' },
+      { sel: '#loadingState > div:last-child', attr: 'textContent', key: 'ui.connecting' },
+      { sel: '#settingsBtnNoContent', attr: 'title', key: 'ui.settingsBtn' },
+      { sel: '#settingsBtnNoContent', attr: 'aria-label', key: 'ui.settingsBtn' },
+      { sel: '.no-content .title', attr: 'textContent', key: 'ui.noContent.title' },
+      { sel: '#statusLightStandalone', attr: 'title', key: 'ui.status.serverStatus' },
+      { sel: '#statusTextStandalone', attr: 'textContent', key: 'ui.noContent.connecting' },
+      { sel: '.form-label', attr: 'textContent', key: 'ui.form.optionsLabel' },
+      { sel: '#feedbackText', attr: 'placeholder', key: 'ui.form.placeholder' },
+      { sel: '#insertCodeBtn', attr: 'title', key: 'ui.form.insertCode' },
+      { sel: '#insertCodeBtn', attr: 'aria-label', key: 'ui.form.insertCode' },
+      { sel: '#uploadBtn', attr: 'title', key: 'ui.form.uploadImage' },
+      { sel: '#uploadBtn', attr: 'aria-label', key: 'ui.form.uploadImage' },
+      { sel: '#submitBtn', attr: 'title', key: 'ui.form.submit' },
+      { sel: '#submitBtn', attr: 'aria-label', key: 'ui.form.submit' },
+      { sel: '.settings-title', attr: 'textContent', key: 'settings.title' },
+      { sel: '#settingsClose', attr: 'title', key: 'settings.close' },
+      { sel: '#settingsClose', attr: 'aria-label', key: 'settings.close' }
+    ]
+    for (var i = 0; i < items.length; i++) {
+      try {
+        var el = document.querySelector(items[i].sel)
+        if (!el) continue
+        var val = t(items[i].key)
+        if (items[i].attr === 'textContent') { el.textContent = val }
+        else { el.setAttribute(items[i].attr, val) }
+      } catch (e) { /* 忽略单个元素翻译失败 */ }
+    }
   }
 
   const __cfgEl = document.getElementById('aiia-config')
@@ -3012,6 +3101,11 @@
       }
 
       const config = await response.json()
+
+      // TOML 配置驱动的语言切换（仅首次生效，避免轮询时重复切换）
+      if (config && config.language && !_serverLangApplied) {
+        applyServerLanguage(config.language)
+      }
 
       /* 验证服务器返回的配置是否包含有效内容 */
       if (config && typeof config.server_time === 'number') {

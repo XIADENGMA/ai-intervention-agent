@@ -89,10 +89,7 @@
     },
     "toast": {
       "configFallback": "配置加载失败，已使用任务详情兜底",
-      "configFallbackReason": "配置加载失败，已使用任务详情兜底（{{reason}}）",
-      "submitSuccess": "反馈已提交",
-      "submitEmpty": "请输入反馈内容或选择选项",
-      "rateLimited": "服务器繁忙，请稍后再试"
+      "configFallbackReason": "配置加载失败，已使用任务详情兜底（{{reason}}）"
     },
     "status": {
       "connected": "已连接",
@@ -142,12 +139,8 @@
       "tooLarge": "图片过大：{{size}}MB > 10MB"
     },
     "notification": {
-      "testTitle": "AI Intervention Agent 测试",
-      "testBody": "这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。",
       "newTask": "新任务已添加: {{id}}",
-      "newTasks": "收到 {{count}} 个新任务",
-      "feedback": "AI 交互反馈",
-      "barkTestSent": "Bark 测试通知已发送"
+      "newTasks": "收到 {{count}} 个新任务"
     }
   }
 }

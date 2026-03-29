@@ -89,10 +89,7 @@
     },
     "toast": {
       "configFallback": "Config load failed, using task detail fallback",
-      "configFallbackReason": "Config load failed, using task detail fallback ({{reason}})",
-      "submitSuccess": "Feedback submitted",
-      "submitEmpty": "Please enter feedback or select an option",
-      "rateLimited": "Server is busy, please wait a moment"
+      "configFallbackReason": "Config load failed, using task detail fallback ({{reason}})"
     },
     "status": {
       "connected": "Connected",
@@ -142,12 +139,8 @@
       "tooLarge": "Image too large: {{size}}MB > 10MB"
     },
     "notification": {
-      "testTitle": "AI Intervention Agent Test",
-      "testBody": "This is a macOS native notification test. If you see this, the config is correct.",
       "newTask": "New task added: {{id}}",
-      "newTasks": "Received {{count}} new tasks",
-      "feedback": "AI Interaction Feedback",
-      "barkTestSent": "Bark test notification sent"
+      "newTasks": "Received {{count}} new tasks"
     }
   }
 }

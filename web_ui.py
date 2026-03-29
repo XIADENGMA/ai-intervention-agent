@@ -40,6 +40,7 @@ from flask import (
     Flask,
     jsonify,
     render_template,
+    request,
 )
 from flask.typing import ResponseReturnValue
 from flask_compress import Compress
@@ -484,6 +485,12 @@ class WebFeedbackUI(
                 description: 服务器内部错误
             """
             try:
+                # 从 TOML 配置读取语言设置，随每次响应返回给前端（插件/Web 通用）
+                try:
+                    ui_lang = get_config().get_section("web_ui").get("language", "auto")
+                except Exception:
+                    ui_lang = "auto"
+
                 # 优先从 TaskQueue 获取激活任务
                 task_queue = get_task_queue()
                 active_task = task_queue.get_active_task()
@@ -499,10 +506,11 @@ class WebFeedbackUI(
                             "predefined_options": active_task.predefined_options,
                             "task_id": active_task.task_id,
                             "auto_resubmit_timeout": active_task.auto_resubmit_timeout,
-                            "remaining_time": active_task.get_remaining_time(),  # 剩余倒计时秒数
-                            "server_time": time.time(),  # 【新增】服务器当前时间戳（秒）
+                            "remaining_time": active_task.get_remaining_time(),
+                            "server_time": time.time(),
                             "deadline": active_task.created_at.timestamp()
-                            + active_task.auto_resubmit_timeout,  # 【新增】截止时间戳（秒）
+                            + active_task.auto_resubmit_timeout,
+                            "language": ui_lang,
                             "persistent": True,
                             "has_content": True,
                             "initial_empty": False,
@@ -528,10 +536,11 @@ class WebFeedbackUI(
                                 "predefined_options": first_task.predefined_options,
                                 "task_id": first_task.task_id,
                                 "auto_resubmit_timeout": first_task.auto_resubmit_timeout,
-                                "remaining_time": first_task.get_remaining_time(),  # 剩余倒计时秒数
-                                "server_time": time.time(),  # 【新增】服务器当前时间戳（秒）
+                                "remaining_time": first_task.get_remaining_time(),
+                                "server_time": time.time(),
                                 "deadline": first_task.created_at.timestamp()
-                                + first_task.auto_resubmit_timeout,  # 【新增】截止时间戳（秒）
+                                + first_task.auto_resubmit_timeout,
+                                "language": ui_lang,
                                 "persistent": True,
                                 "has_content": True,
                                 "initial_empty": False,
@@ -547,6 +556,7 @@ class WebFeedbackUI(
                                 "predefined_options": [],
                                 "task_id": None,
                                 "auto_resubmit_timeout": 0,
+                                "language": ui_lang,
                                 "persistent": True,
                                 "has_content": False,
                                 "initial_empty": False,
@@ -595,7 +605,8 @@ class WebFeedbackUI(
                             "predefined_options": options_snapshot,
                             "task_id": task_id_snapshot,
                             "auto_resubmit_timeout": effective_timeout,
-                            "remaining_time": effective_timeout,  # 单任务模式无创建时间
+                            "remaining_time": effective_timeout,
+                            "language": ui_lang,
                             "persistent": True,
                             "has_content": has_content_snapshot,
                             "initial_empty": initial_empty_snapshot,
@@ -611,6 +622,7 @@ class WebFeedbackUI(
                         "predefined_options": [],
                         "task_id": None,
                         "auto_resubmit_timeout": 0,
+                        "language": "auto",
                         "persistent": True,
                         "has_content": False,
                         "initial_empty": True,
@@ -655,6 +667,28 @@ class WebFeedbackUI(
                       example: ok
             """
             return jsonify({"status": "ok"})
+
+        @self.app.route("/api/update-language", methods=["POST"])
+        @self.limiter.limit("30 per minute")
+        def update_language() -> ResponseReturnValue:
+            """更新界面语言配置并持久化到 config.toml"""
+            try:
+                data = request.json or {}
+                lang = str(data.get("language", "auto")).strip()
+
+                supported = ("auto", "en", "zh-CN")
+                if lang not in supported:
+                    return jsonify(
+                        {"status": "error", "message": f"不支持的语言: {lang}"}
+                    ), 400
+
+                config_mgr = get_config()
+                config_mgr.update_section("web_ui", {"language": lang})
+
+                return jsonify({"status": "success", "language": lang})
+            except Exception as e:
+                logger.error(f"更新语言配置失败: {e}", exc_info=True)
+                return jsonify({"status": "error", "message": str(e)}), 500
 
         # 路由通过 Mixin 注册（各 Mixin 定义在 web_ui_routes/ 下）
         self._setup_task_routes()

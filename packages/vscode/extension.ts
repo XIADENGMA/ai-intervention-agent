@@ -13,7 +13,12 @@ let EXT_VERSION = '0.0.0'
 try {
   EXT_VERSION = require('./package.json').version || EXT_VERSION
 } catch {
-  // 忽略：打包/测试环境下可能读取不到版本号
+  try {
+    const _pkgPath = require('path').resolve(__dirname, '..', 'package.json')
+    EXT_VERSION = require(_pkgPath).version || EXT_VERSION
+  } catch {
+    // 忽略：打包/测试环境下可能读取不到版本号
+  }
 }
 
 const BUILD_ID: string = (() => {
@@ -22,10 +27,15 @@ const BUILD_ID: string = (() => {
   try {
     return require('child_process')
       .execSync('git rev-parse --short HEAD', {
-        encoding: 'utf8', timeout: 2000, cwd: __dirname,
+        encoding: 'utf8',
+        timeout: 2000,
+        cwd: __dirname,
         stdio: ['ignore', 'pipe', 'ignore']
-      }).trim()
-  } catch { return 'dev' }
+      })
+      .trim()
+  } catch {
+    return 'dev'
+  }
 })()
 
 let deactivateHook: (() => void) | null = null
@@ -86,6 +96,12 @@ function activate(context: vscode.ExtensionContext): void {
     }
   })
   let serverUrl = getConfiguredServerUrl()
+
+  try {
+    EXT_VERSION = context.extension.packageJSON.version || EXT_VERSION
+  } catch {
+    /* 忽略 */
+  }
 
   try {
     const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
@@ -176,7 +192,11 @@ function activate(context: vscode.ExtensionContext): void {
     }
   }
 
-  const applyStatusBarPresentation = ({ connected, active, pending }: StatusBarState = {}): void => {
+  const applyStatusBarPresentation = ({
+    connected,
+    active,
+    pending
+  }: StatusBarState = {}): void => {
     try {
       const a = typeof active === 'number' && Number.isFinite(active) ? active : 0
       const p = typeof pending === 'number' && Number.isFinite(pending) ? pending : 0
@@ -254,12 +274,13 @@ function activate(context: vscode.ExtensionContext): void {
         throw new Error(`HTTP ${resp.status}`)
       }
 
-      const data = await resp.json() as Record<string, unknown>
-      const stats = data && data.stats && typeof data.stats === 'object' ? data.stats as Record<string, unknown> : {}
-      const active =
-        stats && typeof stats.active === 'number' ? stats.active : 0
-      const pending =
-        stats && typeof stats.pending === 'number' ? stats.pending : 0
+      const data = (await resp.json()) as Record<string, unknown>
+      const stats =
+        data && data.stats && typeof data.stats === 'object'
+          ? (data.stats as Record<string, unknown>)
+          : {}
+      const active = stats && typeof stats.active === 'number' ? stats.active : 0
+      const pending = stats && typeof stats.pending === 'number' ? stats.pending : 0
       const connected = !!(data && data.success)
       const durationMs = Date.now() - startedAt
       const changed =
@@ -315,7 +336,11 @@ function activate(context: vscode.ExtensionContext): void {
             }
           }
           if (newTaskData.length > 0 && extTaskTrackingInitialized) {
-            if (provider && typeof (provider as unknown as Record<string, unknown>).dispatchNewTaskNotification === 'function') {
+            if (
+              provider &&
+              typeof (provider as unknown as Record<string, unknown>)
+                .dispatchNewTaskNotification === 'function'
+            ) {
               if (isViewVisible) {
                 logger.event(
                   'ext.skip_dispatch_webview_visible',
@@ -328,7 +353,11 @@ function activate(context: vscode.ExtensionContext): void {
                   { ids: newTaskData.map(t => t.id), viewVisible: false },
                   { level: 'info' }
                 )
-                ;(provider as unknown as { dispatchNewTaskNotification: (tasks: TaskData[]) => void }).dispatchNewTaskNotification(newTaskData)
+                ;(
+                  provider as unknown as {
+                    dispatchNewTaskNotification: (tasks: TaskData[]) => void
+                  }
+                ).dispatchNewTaskNotification(newTaskData)
               }
             }
           }
@@ -410,12 +439,21 @@ function activate(context: vscode.ExtensionContext): void {
     _disconnectSSE()
 
     const sseUrl = `${serverUrl}/api/events`
-    const parsed = (() => { try { return new URL(sseUrl) } catch { return null } })()
+    const parsed = (() => {
+      try {
+        return new URL(sseUrl)
+      } catch {
+        return null
+      }
+    })()
     if (!parsed) return
 
     const httpMod = parsed.protocol === 'https:' ? https : http
-    const req = httpMod.get(sseUrl, { headers: { Accept: 'text/event-stream' } }, (res) => {
-      if (_sseReq !== req) { res.resume(); return }
+    const req = httpMod.get(sseUrl, { headers: { Accept: 'text/event-stream' } }, res => {
+      if (_sseReq !== req) {
+        res.resume()
+        return
+      }
       if (res.statusCode !== 200) {
         res.resume()
         _handleSSEError()
@@ -438,28 +476,44 @@ function activate(context: vscode.ExtensionContext): void {
           try {
             const ev = JSON.parse(line.slice(6))
             if (ev && ev.new_status) {
-              logger.event('sse.task_changed', { taskId: ev.task_id, status: ev.new_status }, { level: 'debug' })
+              logger.event(
+                'sse.task_changed',
+                { taskId: ev.task_id, status: ev.new_status },
+                { level: 'debug' }
+              )
               if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
               _sseDebounceTimer = setTimeout(() => {
                 _sseDebounceTimer = null
                 scheduleStatusPoll(0)
               }, 80)
             }
-          } catch { /* noop */ }
+          } catch {
+            /* noop */
+          }
         }
       })
-      res.on('end', () => { if (_sseReq === req) _handleSSEError() })
-      res.on('error', () => { if (_sseReq === req) _handleSSEError() })
+      res.on('end', () => {
+        if (_sseReq === req) _handleSSEError()
+      })
+      res.on('error', () => {
+        if (_sseReq === req) _handleSSEError()
+      })
     })
 
-    req.on('error', () => { if (_sseReq === req) _handleSSEError() })
+    req.on('error', () => {
+      if (_sseReq === req) _handleSSEError()
+    })
     _sseReq = req
   }
 
   const _handleSSEError = (): void => {
     _sseConnected = false
     if (_sseReq) {
-      try { _sseReq.destroy() } catch { /* noop */ }
+      try {
+        _sseReq.destroy()
+      } catch {
+        /* noop */
+      }
       _sseReq = null
     }
     if (statusPollDisposed) return
@@ -473,9 +527,22 @@ function activate(context: vscode.ExtensionContext): void {
   }
 
   const _disconnectSSE = (): void => {
-    if (_sseReconnectTimer) { clearTimeout(_sseReconnectTimer); _sseReconnectTimer = null }
-    if (_sseDebounceTimer) { clearTimeout(_sseDebounceTimer); _sseDebounceTimer = null }
-    if (_sseReq) { try { _sseReq.destroy() } catch { /* noop */ }; _sseReq = null }
+    if (_sseReconnectTimer) {
+      clearTimeout(_sseReconnectTimer)
+      _sseReconnectTimer = null
+    }
+    if (_sseDebounceTimer) {
+      clearTimeout(_sseDebounceTimer)
+      _sseDebounceTimer = null
+    }
+    if (_sseReq) {
+      try {
+        _sseReq.destroy()
+      } catch {
+        /* noop */
+      }
+      _sseReq = null
+    }
     _sseConnected = false
   }
 
@@ -602,8 +669,14 @@ function activate(context: vscode.ExtensionContext): void {
       _connectSSE()
       scheduleStatusPoll(0)
 
-      if (provider && typeof (provider as unknown as { updateServerUrl?: (url: string) => void }).updateServerUrl === 'function') {
-        (provider as unknown as { updateServerUrl: (url: string) => void }).updateServerUrl(serverUrl)
+      if (
+        provider &&
+        typeof (provider as unknown as { updateServerUrl?: (url: string) => void })
+          .updateServerUrl === 'function'
+      ) {
+        ;(provider as unknown as { updateServerUrl: (url: string) => void }).updateServerUrl(
+          serverUrl
+        )
       }
     })
   )
@@ -613,8 +686,14 @@ function activate(context: vscode.ExtensionContext): void {
       isWindowFocused = !!state.focused
       scheduleStatusPoll(isWindowFocused && isViewVisible ? 0 : computeNextDelayMs())
       try {
-        if (provider && typeof (provider as unknown as { onWindowFocusChanged?: (focused: boolean) => void }).onWindowFocusChanged === 'function') {
-          (provider as unknown as { onWindowFocusChanged: (focused: boolean) => void }).onWindowFocusChanged(isWindowFocused)
+        if (
+          provider &&
+          typeof (provider as unknown as { onWindowFocusChanged?: (focused: boolean) => void })
+            .onWindowFocusChanged === 'function'
+        ) {
+          ;(
+            provider as unknown as { onWindowFocusChanged: (focused: boolean) => void }
+          ).onWindowFocusChanged(isWindowFocused)
         }
       } catch {
         // 忽略：不同宿主/版本下 focus 事件不应影响主流程
@@ -665,8 +744,11 @@ function activate(context: vscode.ExtensionContext): void {
         statusPollTimer = null
       }
       try {
-        if (provider && typeof (provider as unknown as { dispose?: () => void }).dispose === 'function') {
-          (provider as unknown as { dispose: () => void }).dispose()
+        if (
+          provider &&
+          typeof (provider as unknown as { dispose?: () => void }).dispose === 'function'
+        ) {
+          ;(provider as unknown as { dispose: () => void }).dispose()
         }
       } catch {
         // 忽略

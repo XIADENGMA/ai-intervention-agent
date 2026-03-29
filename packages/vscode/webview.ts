@@ -11,12 +11,6 @@ import {
 } from './notification-providers'
 
 const EXT_GITHUB_URL = 'https://github.com/XIADENGMA/ai-intervention-agent'
-let EXT_VERSION = '0.0.0'
-try {
-  EXT_VERSION = require('./package.json').version || EXT_VERSION
-} catch {
-  // 忽略：打包/测试环境下可能读取不到版本号
-}
 
 function getNonce(length = 32): string {
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
@@ -138,7 +132,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._appleScriptLogger = this._logger.child('applescript')
     this._appleScriptExecutor = new AppleScriptExecutor({ logger: this._appleScriptLogger })
     this._notificationLogger = this._logger.child('notify')
-    this._notificationCenter = new NotificationCenter({ logger: this._notificationLogger, dedupeWindowMs: 10000 })
+    this._notificationCenter = new NotificationCenter({
+      logger: this._notificationLogger,
+      dedupeWindowMs: 10000
+    })
     this._vscodeNotificationProvider = new VSCodeApiNotificationProvider({
       logger: this._notificationLogger.child('vscode')
     })
@@ -569,12 +566,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       }
       Promise.resolve()
         .then(() => this._notificationCenter.dispatch(event))
-        .then((result) => {
+        .then(result => {
           try {
             if (!this._notificationLogger || typeof this._notificationLogger.event !== 'function')
               return
-            const evt = result && result.event ? result.event as unknown as Record<string, unknown> : event
-            const types = evt && Array.isArray(evt.types) ? (evt.types as unknown[]).map(t => String(t)) : []
+            const evt =
+              result && result.event ? (result.event as unknown as Record<string, unknown>) : event
+            const types =
+              evt && Array.isArray(evt.types) ? (evt.types as unknown[]).map(t => String(t)) : []
             const delivered = result && result.delivered ? result.delivered : {}
             const skipped = !!(result && result.skipped)
             const reason = result && result.reason ? String(result.reason) : ''
@@ -615,11 +614,15 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
   _armRevealPanelOnNextFocus(event: Record<string, unknown>): void {
     try {
-      const evt = event && typeof event === 'object' ? event : {} as Record<string, unknown>
-      const types = evt && Array.isArray(evt.types) ? (evt.types as unknown[]).map(t => String(t)) : []
+      const evt = event && typeof event === 'object' ? event : ({} as Record<string, unknown>)
+      const types =
+        evt && Array.isArray(evt.types) ? (evt.types as unknown[]).map(t => String(t)) : []
       if (!types.includes(NotificationType.MACOS_NATIVE)) return
 
-      const md = evt && evt.metadata && typeof evt.metadata === 'object' ? evt.metadata as Record<string, unknown> : {}
+      const md =
+        evt && evt.metadata && typeof evt.metadata === 'object'
+          ? (evt.metadata as Record<string, unknown>)
+          : {}
       const isTest = !!(md && md.isTest)
       const kind = md && md.kind ? String(md.kind) : ''
       if (isTest) return
@@ -652,7 +655,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   }
 
   _handleNotify(message: WebviewMessage): void {
-    const event = message && message.event ? message.event as Record<string, unknown> : null
+    const event = message && message.event ? (message.event as Record<string, unknown>) : null
     if (!event) return
     try {
       if (this._logger && typeof this._logger.debug === 'function') {
@@ -660,10 +663,15 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         const src = event.source ? String(event.source) : 'webview'
         this._logger.debug(`_handleNotify: source=${src} dedupeKey=${dk}`)
       }
-    } catch { /* noop */ }
+    } catch {
+      /* noop */
+    }
     this._dispatchNotificationEvent(event)
     try {
-      const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata as Record<string, unknown> : {}
+      const md =
+        event && event.metadata && typeof event.metadata === 'object'
+          ? (event.metadata as Record<string, unknown>)
+          : {}
       if (md.kind === 'new_tasks' && Array.isArray(md.taskIds) && this._onNewTaskIdsFromWebview) {
         this._onNewTaskIdsFromWebview(md.taskIds as string[])
       }
@@ -794,7 +802,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         } as RequestInit)
         if (timeoutId) clearTimeout(timeoutId)
         if (!resp.ok) return this._notificationConfig
-        const data = await resp.json() as Record<string, unknown>
+        const data = (await resp.json()) as Record<string, unknown>
         const config = data.config as Record<string, unknown> | undefined
         if (data && data.status === 'success' && config) {
           this._notificationConfig = {
@@ -975,10 +983,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const webviewSettingsUiUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview-settings-ui.js')
     )
-    const i18nJsUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._extensionUri, 'i18n.js')
-    )
-    const extensionVersion = EXT_VERSION || '0.0.0'
+    const i18nJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'i18n.js'))
+    let extensionVersion = '0.0.0'
+    try {
+      const pkgText = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'package.json'))
+      if (pkgText) {
+        const parsed = JSON.parse(pkgText) as Record<string, unknown>
+        if (parsed.version) extensionVersion = String(parsed.version)
+      }
+    } catch {
+      // 忽略
+    }
     const githubUrl = EXT_GITHUB_URL || ''
     const githubUrlDisplay = githubUrl ? githubUrl.replace(/^https?:\/\//i, '') : ''
     const lottieJsUri = webview.asWebviewUri(
@@ -1018,7 +1033,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       const localeText = safeReadTextFile(
         vscode.Uri.joinPath(this._extensionUri, 'locales', i18nLang + '.json')
       )
-      i18nLocaleData = localeText ? JSON.parse(localeText) as Record<string, unknown> : null
+      i18nLocaleData = localeText ? (JSON.parse(localeText) as Record<string, unknown>) : null
     } catch {
       i18nLocaleData = null
     }
@@ -1027,12 +1042,27 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         const fallbackText = safeReadTextFile(
           vscode.Uri.joinPath(this._extensionUri, 'locales', 'en.json')
         )
-        i18nLocaleData = fallbackText ? JSON.parse(fallbackText) as Record<string, unknown> : null
+        i18nLocaleData = fallbackText ? (JSON.parse(fallbackText) as Record<string, unknown>) : null
         if (i18nLocaleData) i18nLang = 'en'
       } catch {
         i18nLocaleData = null
       }
     }
+    // 注入所有 Locale 数据，支持前端动态切换语言（TOML 配置变更时无需重新渲染 webview）
+    const allLocales: Record<string, Record<string, unknown>> = {}
+    for (const loc of ['en', 'zh-CN']) {
+      try {
+        const text = safeReadTextFile(
+          vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json')
+        )
+        if (text) allLocales[loc] = JSON.parse(text) as Record<string, unknown>
+      } catch {
+        // 忽略：单个 locale 读取失败不影响其他
+      }
+    }
+    const inlineAllLocalesLiteral = Object.keys(allLocales).length
+      ? safeJsonForInlineScript(allLocales)
+      : 'null'
     const inlineI18nLocaleLiteral = i18nLocaleData
       ? safeJsonForInlineScript(i18nLocaleData)
       : 'null'
@@ -1056,7 +1086,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; connect-src ${serverUrl} ${cspSource} 'self'; style-src ${cspSource}; script-src 'nonce-${nonce}'; img-src data: ${serverUrl} https: ${cspSource}; font-src ${serverUrl} data: ${cspSource}; object-src 'none'; frame-src 'none';">
     <meta id="aiia-config" data-server-url="${serverUrl}" data-csp-nonce="${nonce}" data-lottie-lib-url="${lottieJsUri}" data-no-content-lottie-json-url="${noContentLottieJsonUri}" data-no-content-fallback-svg-url="${activityIconUri}" data-mathjax-script-url="${mathjaxScriptUri}" data-marked-js-url="${markedJsUri}" data-prism-js-url="${prismJsUri}" data-notify-core-js-url="${webviewNotifyCoreUri}" data-settings-ui-js-url="${webviewSettingsUiUri}">
-    <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};window.__AIIA_I18N_LANG=${inlineI18nLangLiteral};window.__AIIA_I18N_LOCALE=${inlineI18nLocaleLiteral};</script>
+    <script nonce="${nonce}">window.__AIIA_NO_CONTENT_FALLBACK_SVG=${inlineNoContentFallbackSvgLiteral};window.__AIIA_NO_CONTENT_LOTTIE_DATA=${inlineNoContentLottieDataLiteral};window.__AIIA_I18N_LANG=${inlineI18nLangLiteral};window.__AIIA_I18N_LOCALE=${inlineI18nLocaleLiteral};window.__AIIA_I18N_ALL_LOCALES=${inlineAllLocalesLiteral};</script>
     <title>AI Intervention Agent</title>
     <link rel="stylesheet" href="${prismCssUri}">
     <link rel="stylesheet" href="${webviewCssUri}">

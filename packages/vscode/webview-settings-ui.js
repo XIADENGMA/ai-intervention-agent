@@ -11,7 +11,6 @@
   }
   if (!vscode) {
     try {
-
       vscode = acquireVsCodeApi()
     } catch (e) {
       vscode = null
@@ -55,9 +54,37 @@
     })
   }
 
+  // 防御性 i18n 初始化（与 webview-ui.js 同步，确保懒加载时 locale 已注册）
+  ;(function ensureI18nReady() {
+    try {
+      var i18n =
+        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N)
+      if (!i18n || typeof i18n.registerLocale !== 'function') return
+      var langs = typeof i18n.getAvailableLangs === 'function' ? i18n.getAvailableLangs() : []
+      if (langs.length > 0) return
+      var allLocales = (typeof window !== 'undefined' && window.__AIIA_I18N_ALL_LOCALES) || null
+      if (allLocales && typeof allLocales === 'object') {
+        var keys = Object.keys(allLocales)
+        for (var i = 0; i < keys.length; i++) {
+          if (allLocales[keys[i]] && typeof allLocales[keys[i]] === 'object') {
+            i18n.registerLocale(keys[i], allLocales[keys[i]])
+          }
+        }
+      }
+      var loc = (typeof window !== 'undefined' && window.__AIIA_I18N_LOCALE) || null
+      var lang = (typeof window !== 'undefined' && window.__AIIA_I18N_LANG) || ''
+      if (loc && typeof loc === 'object' && lang) {
+        i18n.registerLocale(String(lang), loc)
+        if (typeof i18n.setLang === 'function') i18n.setLang(String(lang))
+      }
+    } catch (e) { /* 忽略 */ }
+  })()
+
   function t(key, params) {
     try {
-      var i18n = (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+      var i18n =
+        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
         (typeof window !== 'undefined' && window.AIIA_I18N)
       if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
     } catch (e) {
@@ -68,13 +95,11 @@
 
   function getNotifyCore() {
     try {
-
       return globalThis && globalThis.AIIAWebviewNotifyCore
         ? globalThis.AIIAWebviewNotifyCore
         : null
     } catch (e) {
       try {
-
         return window && window.AIIAWebviewNotifyCore ? window.AIIAWebviewNotifyCore : null
       } catch (_) {
         return null
@@ -270,7 +295,8 @@
     }
     if (!result || !result.ok) {
       if (!silent && overlayOpen) {
-        const msg = result && result.message ? String(result.message) : t('settings.hint.loadFailed')
+        const msg =
+          result && result.message ? String(result.message) : t('settings.hint.loadFailed')
         setSettingsHint(t('settings.hint.loadFailedReason', { reason: msg }), true)
       }
       return false
@@ -330,7 +356,10 @@
     try {
       await refreshNotificationSettingsFromServer({ force: true, silent: false })
     } catch (e) {
-      setSettingsHint(t('settings.hint.loadFailedReason', { reason: (e && e.message ? e.message : String(e)) }), true)
+      setSettingsHint(
+        t('settings.hint.loadFailedReason', { reason: e && e.message ? e.message : String(e) }),
+        true
+      )
     }
     loadFeedbackConfig()
   }
@@ -404,7 +433,10 @@
       const resp = await fetch(SERVER_URL + '/api/update-notification-config', fetchOptions)
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok || !data || data.status !== 'success') {
-        const msg = data && data.message ? data.message : t('settings.hint.syncFailedHttp', { status: resp.status })
+        const msg =
+          data && data.message
+            ? data.message
+            : t('settings.hint.syncFailedHttp', { status: resp.status })
         setSettingsHint(msg, true)
         return
       }
@@ -424,7 +456,12 @@
       // 同步成功：短暂提示后自动隐藏（避免常驻）
       setSettingsHint(t('settings.hint.synced'), false, 1200)
     } catch (e) {
-      const msg = e && e.name === 'AbortError' ? t('settings.hint.timeout') : e && e.message ? e.message : String(e)
+      const msg =
+        e && e.name === 'AbortError'
+          ? t('settings.hint.timeout')
+          : e && e.message
+            ? e.message
+            : String(e)
       setSettingsHint(t('settings.hint.syncFailed', { reason: msg }), true)
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
@@ -465,14 +502,14 @@
         }
       })
       if (!posted) {
-        setSettingsHint(
-          t('settings.hint.postFailed'),
-          true
-        )
+        setSettingsHint(t('settings.hint.postFailed'), true)
         return
       }
     } catch (e) {
-      setSettingsHint(t('settings.hint.testFailed', { reason: (e && e.message ? e.message : String(e)) }), true)
+      setSettingsHint(
+        t('settings.hint.testFailed', { reason: e && e.message ? e.message : String(e) }),
+        true
+      )
     }
   }
 
@@ -499,7 +536,10 @@
 
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok || !data || data.status !== 'success') {
-        const msg = data && data.message ? data.message : t('settings.hint.testFailedHttp', { status: resp.status })
+        const msg =
+          data && data.message
+            ? data.message
+            : t('settings.hint.testFailedHttp', { status: resp.status })
         setSettingsHint(msg, true)
         return
       }
@@ -507,7 +547,10 @@
       setSettingsHint(data.message || t('settings.hint.barkTestSent'), false)
       postStatusInfo(data.message || t('settings.hint.barkTestSent'))
     } catch (e) {
-      setSettingsHint(t('settings.hint.testFailed', { reason: (e && e.message ? e.message : String(e)) }), true)
+      setSettingsHint(
+        t('settings.hint.testFailed', { reason: e && e.message ? e.message : String(e) }),
+        true
+      )
     }
   }
 
@@ -531,7 +574,7 @@
       if (resetFeedbackBtn) resetFeedbackBtn.addEventListener('click', resetFeedbackConfig)
 
       let fbSaveTimer = null
-      const debounceSaveFeedback = (updates) => {
+      const debounceSaveFeedback = updates => {
         if (fbSaveTimer) clearTimeout(fbSaveTimer)
         fbSaveTimer = setTimeout(() => saveFeedbackConfig(updates), 800)
       }
@@ -545,10 +588,14 @@
         })
       }
       if (fbPrompt) {
-        fbPrompt.addEventListener('input', () => debounceSaveFeedback({ resubmit_prompt: fbPrompt.value }))
+        fbPrompt.addEventListener('input', () =>
+          debounceSaveFeedback({ resubmit_prompt: fbPrompt.value })
+        )
       }
       if (fbSuffix) {
-        fbSuffix.addEventListener('input', () => debounceSaveFeedback({ prompt_suffix: fbSuffix.value }))
+        fbSuffix.addEventListener('input', () =>
+          debounceSaveFeedback({ prompt_suffix: fbSuffix.value })
+        )
       }
 
       if (settingsOverlay) {
@@ -582,7 +629,10 @@
       if (!resp.ok) return
       const data = await resp.json()
       if (data && data.status === 'success') {
-        const el = (id, v) => { const e = document.getElementById(id); if (e) e.value = v == null ? '' : String(v) }
+        const el = (id, v) => {
+          const e = document.getElementById(id)
+          if (e) e.value = v == null ? '' : String(v)
+        }
         if (data.config) {
           const c = data.config
           el('feedbackCountdown', c.frontend_countdown ?? 240)
@@ -604,17 +654,20 @@
       const resp = await fetch(SERVER_URL + '/api/update-feedback-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-        cache: 'no-store'
+        body: JSON.stringify(updates)
       })
       const data = await resp.json().catch(() => ({}))
       if (resp.ok && data.status === 'success') {
         setSettingsHint(t('settings.feedback.saved'), false, 1200)
       } else {
-        setSettingsHint(data.message || t('settings.feedback.saveFailed'), true)
+        var reason = data.message || 'HTTP ' + resp.status
+        setSettingsHint(t('settings.feedback.saveFailed') + ' (' + reason + ')', true)
       }
     } catch (e) {
-      setSettingsHint(t('settings.feedback.saveFailed'), true)
+      setSettingsHint(
+        t('settings.feedback.saveFailed') + (e && e.message ? ' (' + e.message + ')' : ''),
+        true
+      )
     }
   }
 
@@ -652,11 +705,9 @@
   }
 
   try {
-
     globalThis.AIIAWebviewSettingsUi = api
   } catch (e) {
     try {
-
       window.AIIAWebviewSettingsUi = api
     } catch (_) {
       // 忽略

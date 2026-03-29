@@ -387,4 +387,355 @@ suite('Extension Test Suite', () => {
     assert.strictEqual(lines.length, 1)
     assert.ok(/\[INFO\]\s+\[t\]\s+hello/.test(lines[0]))
   })
+
+  // ===========================================================================
+  // 运行时行为正确性验证（排查 Integration Gap / I18n Bootstrap Failure）
+  // ===========================================================================
+
+  test('Extension version 不应为 fallback 值 0.0.0', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    const pkgPath = path.join(ext.extensionPath, 'package.json')
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
+    assert.ok(pkg.version, 'package.json 缺少 version 字段')
+    assert.notStrictEqual(pkg.version, '0.0.0', '版本号不应为 fallback 值 0.0.0')
+    assert.ok(/^\d+\.\d+\.\d+/.test(pkg.version), `版本号 '${pkg.version}' 格式不符合 semver`)
+  })
+
+  test('i18n key coverage: 插件 JS 中所有 t() key 必须在 locale 文件中存在', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    const tKeyPattern = /(?<![a-zA-Z_])t\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]/g
+
+    const jsFiles = ['webview-ui.js', 'webview-settings-ui.js']
+    const allKeys = new Set()
+    for (const name of jsFiles) {
+      const filePath = path.join(ext.extensionPath, name)
+      if (!fs.existsSync(filePath)) continue
+      const content = fs.readFileSync(filePath, 'utf8')
+      let match
+      while ((match = tKeyPattern.exec(content)) !== null) {
+        allKeys.add(match[1])
+      }
+    }
+
+    assert.ok(allKeys.size > 0, '未提取到任何 t() key（可能提取逻辑有误）')
+
+    const localeNames = ['en', 'zh-CN']
+    for (const loc of localeNames) {
+      const localePath = path.join(ext.extensionPath, 'locales', loc + '.json')
+      if (!fs.existsSync(localePath)) {
+        assert.fail(`locale 文件不存在: ${localePath}`)
+      }
+      const data = JSON.parse(fs.readFileSync(localePath, 'utf8'))
+
+      const flatKeys = new Set()
+      function flatten(obj, prefix) {
+        for (const [k, v] of Object.entries(obj)) {
+          const full = prefix ? prefix + '.' + k : k
+          if (v && typeof v === 'object' && !Array.isArray(v)) {
+            flatten(v, full)
+          } else {
+            flatKeys.add(full)
+          }
+        }
+      }
+      flatten(data, '')
+
+      const missing = []
+      for (const key of allKeys) {
+        if (!flatKeys.has(key)) missing.push(key)
+      }
+
+      assert.strictEqual(
+        missing.length,
+        0,
+        `[${loc}] locale 文件缺失以下 i18n key:\n  ${missing.sort().join('\n  ')}`
+      )
+    }
+  })
+
+  test('Locale parity: 插件 en.json 和 zh-CN.json 应有相同的键结构', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    function flattenKeys(obj, prefix) {
+      const keys = new Set()
+      for (const [k, v] of Object.entries(obj)) {
+        const full = prefix ? prefix + '.' + k : k
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          for (const sub of flattenKeys(v, full)) keys.add(sub)
+        } else {
+          keys.add(full)
+        }
+      }
+      return keys
+    }
+
+    const enPath = path.join(ext.extensionPath, 'locales', 'en.json')
+    const zhPath = path.join(ext.extensionPath, 'locales', 'zh-CN.json')
+    assert.ok(fs.existsSync(enPath), 'en.json 不存在')
+    assert.ok(fs.existsSync(zhPath), 'zh-CN.json 不存在')
+
+    const enKeys = flattenKeys(JSON.parse(fs.readFileSync(enPath, 'utf8')), '')
+    const zhKeys = flattenKeys(JSON.parse(fs.readFileSync(zhPath, 'utf8')), '')
+
+    const onlyInEn = [...enKeys].filter(k => !zhKeys.has(k)).sort()
+    const onlyInZh = [...zhKeys].filter(k => !enKeys.has(k)).sort()
+
+    const msgs = []
+    if (onlyInEn.length) msgs.push('仅在 en.json: ' + onlyInEn.join(', '))
+    if (onlyInZh.length) msgs.push('仅在 zh-CN.json: ' + onlyInZh.join(', '))
+    assert.strictEqual(msgs.length, 0, 'Locale 键结构不一致:\n  ' + msgs.join('\n  '))
+  })
+
+  test('webview.ts 编译产物应包含版本号注入逻辑（非 require 方式）', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    const webviewJsPath = path.join(ext.extensionPath, 'dist', 'webview.js')
+    assert.ok(fs.existsSync(webviewJsPath), 'Missing dist/webview.js')
+    const webviewJs = fs.readFileSync(webviewJsPath, 'utf8')
+
+    assert.ok(
+      webviewJs.includes('extensionVersion'),
+      'dist/webview.js 应包含 extensionVersion 变量'
+    )
+    assert.ok(
+      webviewJs.includes('package.json'),
+      'dist/webview.js 应包含 package.json 读取逻辑'
+    )
+  })
+
+  // ===========================================================================
+  // 插件运行时行为正确性验证
+  // （加载 i18n 模块、注册 locale、实际调用 t() 验证翻译不返回原始 key）
+  // ===========================================================================
+
+  test('i18n runtime: 加载模块后 t() 翻译所有 plugin key 不应返回原始 key', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    const i18nPath = path.join(ext.extensionPath, 'i18n.js')
+    assert.ok(fs.existsSync(i18nPath), 'Missing i18n.js')
+
+    const enData = JSON.parse(
+      fs.readFileSync(path.join(ext.extensionPath, 'locales', 'en.json'), 'utf8')
+    )
+    const zhData = JSON.parse(
+      fs.readFileSync(path.join(ext.extensionPath, 'locales', 'zh-CN.json'), 'utf8')
+    )
+
+    // 模拟 webview 注入环境（webview.ts 在 HTML 中通过内联 script 写入这些全局变量）
+    const prevLang = globalThis.__AIIA_I18N_LANG
+    const prevLocale = globalThis.__AIIA_I18N_LOCALE
+    const prevAll = globalThis.__AIIA_I18N_ALL_LOCALES
+    const prevApi = globalThis.AIIA_I18N
+
+    globalThis.__AIIA_I18N_LANG = 'en'
+    globalThis.__AIIA_I18N_LOCALE = enData
+    globalThis.__AIIA_I18N_ALL_LOCALES = { en: enData, 'zh-CN': zhData }
+
+    // 清除缓存以确保 i18n IIFE 重新执行（触发自动注册）
+    delete require.cache[require.resolve(i18nPath)]
+    require(i18nPath)
+
+    const i18n = globalThis.AIIA_I18N
+    assert.ok(i18n, 'AIIA_I18N 未注册到 globalThis')
+    assert.ok(i18n.getAvailableLangs().length >= 2, '应至少注册 en 和 zh-CN 两个 locale')
+
+    // 提取所有 t() key
+    const tKeyPattern = /(?<![a-zA-Z_])t\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]/g
+    const allKeys = new Set()
+    for (const name of ['webview-ui.js', 'webview-settings-ui.js']) {
+      const filePath = path.join(ext.extensionPath, name)
+      if (!fs.existsSync(filePath)) continue
+      const content = fs.readFileSync(filePath, 'utf8')
+      let match
+      while ((match = tKeyPattern.exec(content)) !== null) {
+        allKeys.add(match[1])
+      }
+    }
+
+    assert.ok(allKeys.size > 0, '未提取到 t() key')
+
+    // 验证英文：t() 不应返回原始 key
+    i18n.setLang('en')
+    const enRawKeys = []
+    for (const key of allKeys) {
+      if (i18n.t(key) === key) enRawKeys.push(key)
+    }
+    assert.strictEqual(
+      enRawKeys.length,
+      0,
+      `[en] t() 返回原始 key（翻译缺失）:\n  ${enRawKeys.sort().join('\n  ')}`
+    )
+
+    // 验证中文：t() 不应返回原始 key
+    i18n.setLang('zh-CN')
+    const zhRawKeys = []
+    for (const key of allKeys) {
+      if (i18n.t(key) === key) zhRawKeys.push(key)
+    }
+    assert.strictEqual(
+      zhRawKeys.length,
+      0,
+      `[zh-CN] t() 返回原始 key（翻译缺失）:\n  ${zhRawKeys.sort().join('\n  ')}`
+    )
+
+    // 清理 globalThis（恢复原状）
+    if (prevLang !== undefined) globalThis.__AIIA_I18N_LANG = prevLang
+    else delete globalThis.__AIIA_I18N_LANG
+    if (prevLocale !== undefined) globalThis.__AIIA_I18N_LOCALE = prevLocale
+    else delete globalThis.__AIIA_I18N_LOCALE
+    if (prevAll !== undefined) globalThis.__AIIA_I18N_ALL_LOCALES = prevAll
+    else delete globalThis.__AIIA_I18N_ALL_LOCALES
+    if (prevApi !== undefined) globalThis.AIIA_I18N = prevApi
+    else delete globalThis.AIIA_I18N
+  })
+
+  test('i18n runtime: setLang() 应正确切换语言，翻译内容应不同', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    const i18nPath = path.join(ext.extensionPath, 'i18n.js')
+    const enData = JSON.parse(
+      fs.readFileSync(path.join(ext.extensionPath, 'locales', 'en.json'), 'utf8')
+    )
+    const zhData = JSON.parse(
+      fs.readFileSync(path.join(ext.extensionPath, 'locales', 'zh-CN.json'), 'utf8')
+    )
+
+    const prevLang = globalThis.__AIIA_I18N_LANG
+    const prevLocale = globalThis.__AIIA_I18N_LOCALE
+    const prevAll = globalThis.__AIIA_I18N_ALL_LOCALES
+    const prevApi = globalThis.AIIA_I18N
+
+    globalThis.__AIIA_I18N_LANG = 'en'
+    globalThis.__AIIA_I18N_LOCALE = enData
+    globalThis.__AIIA_I18N_ALL_LOCALES = { en: enData, 'zh-CN': zhData }
+
+    delete require.cache[require.resolve(i18nPath)]
+    require(i18nPath)
+
+    const i18n = globalThis.AIIA_I18N
+    assert.ok(i18n)
+
+    // 英文
+    i18n.setLang('en')
+    assert.strictEqual(i18n.getLang(), 'en')
+    const enTitle = i18n.t('settings.title')
+    assert.notStrictEqual(enTitle, 'settings.title', '英文翻译不应返回原始 key')
+
+    // 中文
+    i18n.setLang('zh-CN')
+    assert.strictEqual(i18n.getLang(), 'zh-CN')
+    const zhTitle = i18n.t('settings.title')
+    assert.notStrictEqual(zhTitle, 'settings.title', '中文翻译不应返回原始 key')
+
+    // 两种语言的翻译应不同
+    assert.notStrictEqual(enTitle, zhTitle, 'settings.title 在 en/zh-CN 下应有不同翻译')
+
+    // 清理
+    if (prevLang !== undefined) globalThis.__AIIA_I18N_LANG = prevLang
+    else delete globalThis.__AIIA_I18N_LANG
+    if (prevLocale !== undefined) globalThis.__AIIA_I18N_LOCALE = prevLocale
+    else delete globalThis.__AIIA_I18N_LOCALE
+    if (prevAll !== undefined) globalThis.__AIIA_I18N_ALL_LOCALES = prevAll
+    else delete globalThis.__AIIA_I18N_ALL_LOCALES
+    if (prevApi !== undefined) globalThis.AIIA_I18N = prevApi
+    else delete globalThis.AIIA_I18N
+  })
+
+  test('i18n runtime: 不存在的 key 应返回原始 key（降级而非崩溃）', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    const i18nPath = path.join(ext.extensionPath, 'i18n.js')
+    const enData = JSON.parse(
+      fs.readFileSync(path.join(ext.extensionPath, 'locales', 'en.json'), 'utf8')
+    )
+
+    const prevLang = globalThis.__AIIA_I18N_LANG
+    const prevLocale = globalThis.__AIIA_I18N_LOCALE
+    const prevAll = globalThis.__AIIA_I18N_ALL_LOCALES
+    const prevApi = globalThis.AIIA_I18N
+
+    globalThis.__AIIA_I18N_LANG = 'en'
+    globalThis.__AIIA_I18N_LOCALE = enData
+    globalThis.__AIIA_I18N_ALL_LOCALES = { en: enData }
+
+    delete require.cache[require.resolve(i18nPath)]
+    require(i18nPath)
+
+    const i18n = globalThis.AIIA_I18N
+    assert.ok(i18n)
+
+    // 不存在的 key 应返回原始 key（不崩溃）
+    const result = i18n.t('this.key.definitely.does.not.exist')
+    assert.strictEqual(result, 'this.key.definitely.does.not.exist')
+
+    // 参数插值在不存在的 key 上也不应崩溃
+    const result2 = i18n.t('nonexistent.key', { param: 'val' })
+    assert.strictEqual(result2, 'nonexistent.key')
+
+    // 清理
+    if (prevLang !== undefined) globalThis.__AIIA_I18N_LANG = prevLang
+    else delete globalThis.__AIIA_I18N_LANG
+    if (prevLocale !== undefined) globalThis.__AIIA_I18N_LOCALE = prevLocale
+    else delete globalThis.__AIIA_I18N_LOCALE
+    if (prevAll !== undefined) globalThis.__AIIA_I18N_ALL_LOCALES = prevAll
+    else delete globalThis.__AIIA_I18N_ALL_LOCALES
+    if (prevApi !== undefined) globalThis.AIIA_I18N = prevApi
+    else delete globalThis.AIIA_I18N
+  })
+
+  test('i18n runtime: 参数插值 {{param}} 应正确替换', () => {
+    const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+    assert.ok(ext, 'Extension not found')
+
+    const i18nPath = path.join(ext.extensionPath, 'i18n.js')
+    const enData = JSON.parse(
+      fs.readFileSync(path.join(ext.extensionPath, 'locales', 'en.json'), 'utf8')
+    )
+
+    const prevLang = globalThis.__AIIA_I18N_LANG
+    const prevLocale = globalThis.__AIIA_I18N_LOCALE
+    const prevAll = globalThis.__AIIA_I18N_ALL_LOCALES
+    const prevApi = globalThis.AIIA_I18N
+
+    globalThis.__AIIA_I18N_LANG = 'en'
+    globalThis.__AIIA_I18N_LOCALE = enData
+    globalThis.__AIIA_I18N_ALL_LOCALES = { en: enData }
+
+    delete require.cache[require.resolve(i18nPath)]
+    require(i18nPath)
+
+    const i18n = globalThis.AIIA_I18N
+    assert.ok(i18n)
+    i18n.setLang('en')
+
+    // settings.footer.version 模板为 "v{{version}}"
+    const versioned = i18n.t('settings.footer.version', { version: '1.5.0' })
+    assert.strictEqual(versioned, 'v1.5.0', '参数插值应正确替换 {{version}}')
+
+    // ui.countdown.remaining 模板为 "{{seconds}}s remaining"
+    const countdown = i18n.t('ui.countdown.remaining', { seconds: 42 })
+    assert.ok(
+      countdown.includes('42'),
+      `参数插值应包含 42，实际结果: "${countdown}"`
+    )
+
+    // 清理
+    if (prevLang !== undefined) globalThis.__AIIA_I18N_LANG = prevLang
+    else delete globalThis.__AIIA_I18N_LANG
+    if (prevLocale !== undefined) globalThis.__AIIA_I18N_LOCALE = prevLocale
+    else delete globalThis.__AIIA_I18N_LOCALE
+    if (prevAll !== undefined) globalThis.__AIIA_I18N_ALL_LOCALES = prevAll
+    else delete globalThis.__AIIA_I18N_ALL_LOCALES
+    if (prevApi !== undefined) globalThis.AIIA_I18N = prevApi
+    else delete globalThis.AIIA_I18N
+  })
 })

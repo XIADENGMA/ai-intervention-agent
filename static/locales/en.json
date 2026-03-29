@@ -7,7 +7,6 @@
     },
     "countdown": "{{seconds}}s until auto-reschedule",
     "loading": "Loading…",
-    "imageCount": "{{count}} images selected",
     "dragDrop": "Drop images here",
     "dragFormat": "Supports JPG, PNG, GIF, WEBP",
     "cancel": "Cancel",
@@ -16,7 +15,6 @@
     "feedbackPlaceholder": "Enter feedback…",
     "themeToggle": "Toggle theme",
     "settingsBtn": "Notification Settings",
-    "openSettings": "Open notification settings",
     "taskList": "Task list",
     "closeWebUI": "Close Web UI",
     "clearAllImages": "Clear all images",
@@ -48,7 +46,7 @@
     "language": "Interface language",
     "langAuto": "Auto-detect",
     "configPath": "Current config file path",
-    "configHint": "In dev mode, the working directory's <code>./config.toml</code> is used by default. To override, set the environment variable before launch: <code>AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml</code>.",
+    "configHint": "Actual config.toml path used by the backend service.",
     "shortcutSubmit": "Submit feedback:",
     "shortcutInsertCode": "Insert code:",
     "shortcutPasteImage": "Paste image:",
@@ -62,11 +60,9 @@
     "promptSuffix": "Feedback suffix",
     "promptSuffixHint": "Appended to every user feedback submission (max 500 chars)",
     "resetFeedbackConfig": "Reset feedback config",
-    "savingFeedback": "Saving…",
     "feedbackConfigSaved": "Feedback config saved",
     "feedbackConfigReset": "Feedback config reset to defaults",
-    "feedbackConfigSaveFailed": "Failed to save feedback config",
-    "disabledHint": "(disabled)"
+    "feedbackConfigSaveFailed": "Failed to save feedback config"
   },
   "status": {
     "loadFailed": "Failed to load config",
@@ -128,7 +124,6 @@
     "audioUnavailable": "Unavailable"
   },
   "notify": {
-    "title": "AI Interaction Feedback",
     "testTitle": "Settings Test",
     "testBody": "This is a test notification to verify your current settings are working correctly",
     "titleFlash": "[Notification] {{message}}"

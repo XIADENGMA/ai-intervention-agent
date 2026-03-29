@@ -26,7 +26,9 @@
   }
 
   function normalizeLang(raw) {
-    var s = String(raw || '').trim().toLowerCase()
+    var s = String(raw || '')
+      .trim()
+      .toLowerCase()
     if (s.indexOf('zh') === 0) return 'zh-CN'
     if (s.indexOf('en') === 0) return 'en'
     return s || DEFAULT_LANG
@@ -107,6 +109,43 @@
     } catch (e) {
       // 忽略
     }
+  }
+
+  // 自动注册注入的 locale 数据（由 webview.ts 通过内联 script 写入 globalThis）
+  try {
+    var _autoLocale =
+      typeof globalThis !== 'undefined' && globalThis.__AIIA_I18N_LOCALE
+        ? globalThis.__AIIA_I18N_LOCALE
+        : null
+    var _autoLang =
+      typeof globalThis !== 'undefined' && globalThis.__AIIA_I18N_LANG
+        ? String(globalThis.__AIIA_I18N_LANG)
+        : ''
+    if (_autoLocale && typeof _autoLocale === 'object' && _autoLang) {
+      registerLocale(_autoLang, _autoLocale)
+      setLang(_autoLang)
+    }
+  } catch (e) {
+    // 忽略
+  }
+
+  // 批量注册所有预注入的 Locale（支持动态切换语言，无需重新渲染 webview）
+  try {
+    var _allLocales =
+      typeof globalThis !== 'undefined' && globalThis.__AIIA_I18N_ALL_LOCALES
+        ? globalThis.__AIIA_I18N_ALL_LOCALES
+        : null
+    if (_allLocales && typeof _allLocales === 'object') {
+      var _locKeys = Object.keys(_allLocales)
+      for (var _li = 0; _li < _locKeys.length; _li++) {
+        var _lk = _locKeys[_li]
+        if (_allLocales[_lk] && typeof _allLocales[_lk] === 'object') {
+          registerLocale(_lk, _allLocales[_lk])
+        }
+      }
+    }
+  } catch (e) {
+    // 忽略
   }
 
   var api = {
