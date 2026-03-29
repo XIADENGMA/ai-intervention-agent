@@ -109,9 +109,9 @@ class TestDesignTokenDrift(unittest.TestCase):
 # ============================================================================
 
 _DATA_I18N_RE = re.compile(r'data-i18n(?:-\w+)?="([^"]+)"')
-# 匹配 t() / _t() / tl() 三种翻译函数调用
+# 匹配 t() / _t() / tl() / hostT() 等翻译函数调用
 _JS_T_CALL_RE = re.compile(
-    r"""(?<![a-zA-Z])_?tl?\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
+    r"""(?:(?<![a-zA-Z])_?tl?|hostT)\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
 )
 
 

@@ -70,6 +70,16 @@
       "github": "GitHub"
     }
   },
+  "statusBar": {
+    "connected": "已连接",
+    "disconnected": "未连接",
+    "unknown": "未知",
+    "tasks": "任务",
+    "reason": "原因",
+    "clickToOpen": "点击打开面板",
+    "openSettings": "命令：AI Intervention Agent: 打开配置（serverUrl）",
+    "language": "语言"
+  },
   "ui": {
     "settingsBtn": "通知设置",
     "connecting": "正在连接服务器…",

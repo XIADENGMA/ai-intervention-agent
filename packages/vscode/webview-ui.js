@@ -79,6 +79,7 @@
   function applyServerLanguage(lang) {
     if (!lang || lang === 'auto' || _serverLangApplied) return
     _serverLangApplied = true
+    try { vscode.postMessage({ type: 'langDetected', language: lang }) } catch (e) { /* 忽略 */ }
     var i18n = getI18n()
     if (!i18n || typeof i18n.setLang !== 'function' || typeof i18n.getLang !== 'function') return
     var normalized = typeof i18n.normalizeLang === 'function' ? i18n.normalizeLang(lang) : lang
@@ -86,7 +87,6 @@
       i18n.setLang(normalized)
       retranslateAllI18nElements()
     }
-    try { vscode.postMessage({ type: 'langDetected', language: lang }) } catch (e) { /* 忽略 */ }
   }
 
   function retranslateAllI18nElements() {

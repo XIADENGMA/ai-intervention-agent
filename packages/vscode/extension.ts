@@ -1,4 +1,6 @@
 import * as vscode from 'vscode'
+import * as fs from 'fs'
+import * as path from 'path'
 import * as http from 'http'
 import * as https from 'https'
 import { WebviewProvider } from './webview'
@@ -128,9 +130,40 @@ function activate(context: vscode.ExtensionContext): void {
     )
   }
 
+  // 扩展宿主 i18n：加载 locale 文件用于状态栏等 Host 侧 UI 翻译
+  const hostLocales: Record<string, Record<string, unknown>> = {}
+  let hostLang = 'en'
+  try {
+    const localesDir = path.join(context.extensionPath, 'locales')
+    for (const loc of ['en', 'zh-CN']) {
+      try {
+        const raw = fs.readFileSync(path.join(localesDir, `${loc}.json`), 'utf8')
+        if (raw) hostLocales[loc] = JSON.parse(raw) as Record<string, unknown>
+      } catch { /* 忽略 */ }
+    }
+    try {
+      const vsLang = vscode.env.language || ''
+      hostLang = vsLang.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+    } catch { /* 忽略 */ }
+  } catch { /* 忽略 */ }
+
+  const hostT = (key: string): string => {
+    try {
+      const dict = hostLocales[hostLang] || hostLocales['en']
+      if (!dict) return key
+      const parts = key.split('.')
+      let node: unknown = dict
+      for (const p of parts) {
+        if (node === null || node === undefined || typeof node !== 'object') return key
+        node = (node as Record<string, unknown>)[p]
+      }
+      return typeof node === 'string' ? node : key
+    } catch { return key }
+  }
+
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
   statusBar.command = 'ai-intervention-agent.openPanel'
-  statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
+  statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT('statusBar.language')}: ${hostLang}\n${hostT('statusBar.clickToOpen')}\n${hostT('statusBar.openSettings')}`
   statusBar.text = '$(sparkle-filled) --'
   statusBar.hide()
   let statusBarShown = false
@@ -165,7 +198,11 @@ function activate(context: vscode.ExtensionContext): void {
 
   const buildStatusBarTooltip = ({ connected, active, pending }: StatusBarState = {}): string => {
     try {
-      const statusText = connected === true ? '已连接' : connected === false ? '未连接' : '未知'
+      const statusText = connected === true
+        ? hostT('statusBar.connected')
+        : connected === false
+          ? hostT('statusBar.disconnected')
+          : hostT('statusBar.unknown')
       const a = typeof active === 'number' && Number.isFinite(active) ? active : 0
       const p = typeof pending === 'number' && Number.isFinite(pending) ? pending : 0
       const total = a + p
@@ -173,17 +210,19 @@ function activate(context: vscode.ExtensionContext): void {
       const lines: string[] = []
       lines.push(`AI Intervention Agent（${statusText}）`)
       if (connected === true) {
-        lines.push(`任务：Active ${a}  Pending ${p}  Total ${total}`)
+        lines.push(`${hostT('statusBar.tasks')}：Active ${a}  Pending ${p}  Total ${total}`)
       } else {
-        lines.push('任务：--')
+        lines.push(`${hostT('statusBar.tasks')}：--`)
       }
+
+      lines.push(`${hostT('statusBar.language')}: ${hostLang}`)
 
       if (connected === false || connected === null) {
         lines.push(`serverUrl: ${serverUrl}`)
       }
       if ((connected === false || connected === null) && lastPollError) {
         const name = lastPollErrorName ? `${lastPollErrorName}: ` : ''
-        lines.push(`原因：${name}${lastPollError}`)
+        lines.push(`${hostT('statusBar.reason')}：${name}${lastPollError}`)
       }
 
       return lines.join('\n')
@@ -638,6 +677,15 @@ function activate(context: vscode.ExtensionContext): void {
       for (const id of taskIds) {
         if (id) extKnownTaskIds.add(String(id))
       }
+    },
+    (lang: string) => {
+      if (!lang || lang === 'auto') return
+      const normalized = lang.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+      if (normalized !== hostLang) {
+        hostLang = normalized
+        logger.event('i18n.hostLangChanged', { lang: hostLang }, { level: 'info' })
+        applyStatusBarPresentation({ connected: lastConnected, active: lastActive ?? undefined, pending: lastPending ?? undefined })
+      }
     }
   )
   context.subscriptions.push(
@@ -665,7 +713,7 @@ function activate(context: vscode.ExtensionContext): void {
       statusPollBackoffMs = STATUS_POLL_FAST_MS
       extKnownTaskIds = new Set<string>()
       extTaskTrackingInitialized = false
-      statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n点击打开面板\n命令：AI Intervention Agent: 打开配置（serverUrl）`
+      statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT('statusBar.language')}: ${hostLang}\n${hostT('statusBar.clickToOpen')}\n${hostT('statusBar.openSettings')}`
       _connectSSE()
       scheduleStatusPoll(0)
 

@@ -70,6 +70,16 @@
       "github": "GitHub"
     }
   },
+  "statusBar": {
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "unknown": "Unknown",
+    "tasks": "Tasks",
+    "reason": "Reason",
+    "clickToOpen": "Click to open panel",
+    "openSettings": "Command: AI Intervention Agent: Open settings (serverUrl)",
+    "language": "Language"
+  },
   "ui": {
     "settingsBtn": "Notification Settings",
     "connecting": "Connecting to server…",

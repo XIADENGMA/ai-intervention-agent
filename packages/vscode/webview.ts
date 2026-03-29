@@ -95,6 +95,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _onVisibilityChanged: VisibilityCallback | null
   private _onTasksStatsChanged: TaskStatsCallback | null
   private _onNewTaskIdsFromWebview: TaskIdsCallback | null
+  private _onLanguageChanged: ((lang: string) => void) | null
   private _view: vscode.WebviewView | null
   private _disposables: vscode.Disposable[]
   private _lastServerStatus: boolean | null
@@ -117,7 +118,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     serverUrl = 'http://localhost:8080',
     onVisibilityChanged?: VisibilityCallback,
     onTasksStatsChanged?: TaskStatsCallback,
-    onNewTaskIdsFromWebview?: TaskIdsCallback
+    onNewTaskIdsFromWebview?: TaskIdsCallback,
+    onLanguageChanged?: (lang: string) => void
   ) {
     this._extensionUri = extensionUri
     this._outputChannel = outputChannel
@@ -162,6 +164,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       typeof onTasksStatsChanged === 'function' ? onTasksStatsChanged : null
     this._onNewTaskIdsFromWebview =
       typeof onNewTaskIdsFromWebview === 'function' ? onNewTaskIdsFromWebview : null
+    this._onLanguageChanged =
+      typeof onLanguageChanged === 'function' ? onLanguageChanged : null
     this._view = null
     this._disposables = []
     this._lastServerStatus = null
@@ -224,19 +228,24 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
   private async _prefetchServerLanguage(): Promise<void> {
     for (let attempt = 0; attempt < 2; attempt++) {
+      let timer: ReturnType<typeof setTimeout> | null = null
       try {
         const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 3500)
+        timer = setTimeout(() => controller.abort(), 3500)
         const resp = await fetch(`${this._serverUrl}/api/config`, {
           signal: controller.signal,
           headers: { Accept: 'application/json' }
         })
         clearTimeout(timer)
+        timer = null
         if (resp.ok) {
           const data = (await resp.json()) as Record<string, unknown>
           if (data.language && typeof data.language === 'string' && data.language !== 'auto') {
             this._cachedServerLang = data.language
             this._log(`[i18n] 服务器语言预取成功: ${data.language}`)
+            if (this._onLanguageChanged) {
+              try { this._onLanguageChanged(data.language as string) } catch { /* 忽略 */ }
+            }
             return
           }
           this._log('[i18n] 服务器返回 language=auto 或空，使用 vscode.env.language')
@@ -245,6 +254,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         this._log(`[i18n] 服务器响应非 200: ${resp.status}`)
       } catch {
         this._log(`[i18n] 语言预取失败 (尝试 ${attempt + 1}/2)`)
+      } finally {
+        if (timer) clearTimeout(timer)
       }
       if (attempt === 0) {
         await new Promise<void>(r => setTimeout(r, 500))
@@ -647,6 +658,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           if (lang && lang !== 'auto' && lang !== this._cachedServerLang) {
             this._cachedServerLang = lang
             this._log(`[i18n] 客户端检测到语言: ${lang}，重新渲染`)
+            if (this._onLanguageChanged) {
+              try { this._onLanguageChanged(lang) } catch { /* 忽略 */ }
+            }
             if (this._view && this._view.webview) {
               this._view.webview.html = this._getHtmlContent(this._view.webview)
             }
