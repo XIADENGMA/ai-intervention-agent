@@ -151,6 +151,68 @@ function configureMarkedSecurityOnce() {
 
 configureMarkedSecurityOnce()
 
+// ==================== Favicon 徽章 ====================
+var _faviconState = { original: null, lastCount: -1 }
+
+function _loadOriginalFavicon() {
+  if (_faviconState.original) return Promise.resolve(_faviconState.original)
+  return new Promise(resolve => {
+    var link = document.querySelector('link[rel="icon"]') || document.querySelector('link[rel="shortcut icon"]')
+    var href = link ? link.href : '/favicon.ico'
+    var img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = function () { _faviconState.original = img; resolve(img) }
+    img.onerror = function () { resolve(null) }
+    img.src = href
+  })
+}
+
+function updateFaviconBadge(count) {
+  count = Math.max(0, Math.floor(count) || 0)
+  if (count === _faviconState.lastCount) return
+  _faviconState.lastCount = count
+
+  _loadOriginalFavicon().then(function (img) {
+    var size = 32
+    var canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    var ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    if (img) ctx.drawImage(img, 0, 0, size, size)
+
+    if (count > 0) {
+      var text = count > 99 ? '99+' : String(count)
+      var radius = text.length > 2 ? 10 : 8
+      var cx = size - radius
+      var cy = radius
+
+      ctx.beginPath()
+      ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
+      ctx.fillStyle = '#ef4444'
+      ctx.fill()
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = '#fff'
+      ctx.stroke()
+
+      ctx.fillStyle = '#fff'
+      ctx.font = 'bold ' + (text.length > 2 ? 8 : 10) + 'px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(text, cx, cy + 0.5)
+    }
+
+    var link = document.querySelector('link[rel="icon"]')
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link)
+    }
+    try { link.href = canvas.toDataURL('image/png') } catch (e) { /* CSP/安全限制 */ }
+  })
+}
+
 // 创建本地引用以便在函数中使用
 var currentTasks = window.currentTasks
 var activeTaskId = window.activeTaskId
@@ -919,9 +981,11 @@ function renderTaskTabs() {
 
   if (incompleteTasks.length === 0) {
     container.classList.add('hidden')
+    updateFaviconBadge(0)
     return
   }
 
+  updateFaviconBadge(incompleteTasks.length)
   container.classList.remove('hidden')
 
   // 优化：只更新active状态，不重建DOM

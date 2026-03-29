@@ -1129,8 +1129,7 @@
     <!-- 验证工具类：统一验证和缓存功能 -->
     <script defer src="/static/js/validation-utils.js" nonce="{{ csp_nonce }}"></script>
 
-    <!-- 🎬 Lottie 动画库（defer 属性：按顺序异步加载） -->
-    <script defer src="/static/js/lottie.min.js" nonce="{{ csp_nonce }}"></script>
+    <!-- 🎬 Lottie 动画库（已改为按需懒加载，见 app.js initHourglassAnimation） -->
 
     <!-- 🎨 主题切换模块（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/theme.js?v={{ theme_version }}" nonce="{{ csp_nonce }}"></script>

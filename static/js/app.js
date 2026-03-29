@@ -208,65 +208,82 @@ function renderSproutFallback(container) {
   }
 }
 
+let _lottieLoadPromise = null
+
+function _ensureLottieLoaded() {
+  if (typeof lottie !== 'undefined') return Promise.resolve(true)
+  if (_lottieLoadPromise) return _lottieLoadPromise
+  _lottieLoadPromise = new Promise(resolve => {
+    const script = document.createElement('script')
+    script.src = '/static/js/lottie.min.js'
+    script.onload = () => resolve(typeof lottie !== 'undefined')
+    script.onerror = () => { _lottieLoadPromise = null; resolve(false) }
+    document.head.appendChild(script)
+  })
+  return _lottieLoadPromise
+}
+
+_ensureLottieLoaded()
+
+function _createLottieAnimation(container) {
+  try {
+    if (hourglassAnimation) hourglassAnimation.destroy()
+    hourglassAnimation = lottie.loadAnimation({
+      container,
+      renderer: 'svg',
+      loop: true,
+      autoplay: true,
+      path: '/static/lottie/sprout.json',
+      rendererSettings: { preserveAspectRatio: 'xMidYMid meet' }
+    })
+    hourglassAnimation.addEventListener('DOMLoaded', () => updateLottieAnimationColor())
+    hourglassAnimation.addEventListener('error', () => renderSproutFallback(container))
+    console.log('嫩芽动画初始化成功（懒加载）')
+  } catch (error) {
+    console.error('Lottie 动画初始化失败:', error)
+    renderSproutFallback(container)
+  }
+}
+
 /**
  * 初始化嫩芽生长 Lottie 动画
  *
- * 生命周期：
- *   1. 检查容器元素是否存在
- *   2. 检查 Lottie 库是否已加载
- *   3. 销毁已有动画（防止内存泄漏）
- *   4. 创建新动画实例
- *   5. 监听加载完成事件，应用主题颜色
- *   6. 监听错误事件，显示降级图标
+ * 策略：app.js 加载时即开始预取 lottie.min.js（见上方 _ensureLottieLoaded()）。
+ * 调用本函数时先等待一个短窗口（200ms），若 Lottie 在窗口内就绪则直接渲染，
+ * 跳过 SVG 占位，消除视觉闪烁；若超时则显示 SVG 占位并在 Lottie 就绪后
+ * 以 crossfade 过渡替换。
  */
 function initHourglassAnimation() {
   const container = document.getElementById('hourglass-lottie')
-  if (!container) {
-    console.warn('动画容器未找到')
+  if (!container) return
+
+  if (typeof lottie !== 'undefined') {
+    _createLottieAnimation(container)
     return
   }
 
-  // 检查 Lottie 库是否已通过 <script defer> 加载
-  if (typeof lottie === 'undefined') {
-    console.warn('Lottie 库未加载，显示备用图标')
+  let settled = false
+  const timer = setTimeout(() => {
+    if (settled) return
     renderSproutFallback(container)
-    return
-  }
+  }, 200)
 
-  try {
-    // 销毁旧动画实例（防止内存泄漏和重复动画）
-    if (hourglassAnimation) {
-      hourglassAnimation.destroy()
-    }
-
-    // 创建嫩芽生长动画
-    hourglassAnimation = lottie.loadAnimation({
-      container: container,
-      renderer: 'svg', // 使用 SVG 渲染器（高质量缩放）
-      loop: true, // 循环播放
-      autoplay: true, // 自动开始播放
-      path: '/static/lottie/sprout.json', // 动画 JSON 文件路径
-      rendererSettings: {
-        preserveAspectRatio: 'xMidYMid meet' // 保持宽高比，居中显示
+  _ensureLottieLoaded().then(ok => {
+    settled = true
+    clearTimeout(timer)
+    if (ok) {
+      if (container.querySelector('svg:not([class*="lottie"])')) {
+        container.style.opacity = '0'
+        container.style.transition = 'opacity .25s ease'
+        _createLottieAnimation(container)
+        requestAnimationFrame(() => { container.style.opacity = '1' })
+      } else {
+        _createLottieAnimation(container)
       }
-    })
-
-    // 动画加载完成后，根据当前主题更新线条颜色
-    hourglassAnimation.addEventListener('DOMLoaded', () => {
-      updateLottieAnimationColor()
-    })
-
-    // 动画加载错误处理（网络问题或 JSON 解析失败）
-    hourglassAnimation.addEventListener('error', () => {
-      console.warn('Lottie 动画加载失败，显示备用图标')
-      renderSproutFallback(container)
-    })
-
-    console.log('嫩芽动画初始化成功')
-  } catch (error) {
-    console.error('Lottie 动画初始化失败:', error)
-    renderSproutFallback(container) // 降级为 SVG/CSS 动画
-  }
+    } else {
+      if (!container.innerHTML.trim()) renderSproutFallback(container)
+    }
+  })
 }
 
 /**

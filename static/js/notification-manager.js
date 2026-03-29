@@ -271,8 +271,10 @@ class NotificationManager {
       // 创建音频上下文（需要用户交互后才能启用）
       this.audioContext = new AudioContextClass()
 
-      // 预加载默认音频文件
       await this.loadAudioFile('default', '/sounds/deng[噔].mp3')
+      if (!this.audioBuffers.has('default')) {
+        this._synthBuffer = this._createSynthNotificationBuffer()
+      }
 
       console.log('音频系统初始化完成')
     } catch (error) {
@@ -532,33 +534,61 @@ class NotificationManager {
     }
   }
 
+  /**
+   * 用 Web Audio API 合成一个短促的"叮"声 (C5 → E5 双音，~200ms)
+   * @returns {AudioBuffer|null}
+   */
+  _createSynthNotificationBuffer() {
+    if (!this.audioContext) return null
+    try {
+      const sr = this.audioContext.sampleRate
+      const dur = 0.22
+      const len = Math.ceil(sr * dur)
+      const buf = this.audioContext.createBuffer(1, len, sr)
+      const ch = buf.getChannelData(0)
+      const f1 = 523.25, f2 = 659.25
+      for (let i = 0; i < len; i++) {
+        const t = i / sr
+        const env = Math.exp(-t * 12)
+        ch[i] = env * 0.35 * (Math.sin(2 * Math.PI * f1 * t) + 0.6 * Math.sin(2 * Math.PI * f2 * t))
+      }
+      return buf
+    } catch (e) {
+      return null
+    }
+  }
+
   playSoundFallback(soundName) {
-    // 音频播放降级方案
     console.log(`使用音频降级方案: ${soundName}`)
 
+    if (this.audioContext && this._synthBuffer) {
+      try {
+        if (this.audioContext.state === 'suspended') this.audioContext.resume()
+        const src = this.audioContext.createBufferSource()
+        const gain = this.audioContext.createGain()
+        src.buffer = this._synthBuffer
+        src.connect(gain)
+        gain.connect(this.audioContext.destination)
+        gain.gain.value = Math.max(0, Math.min(1, this.config.soundVolume))
+        src.start(0)
+        console.log('合成提示音播放成功')
+        return true
+      } catch (e) {
+        console.warn('合成提示音播放失败:', e)
+      }
+    }
+
     try {
-      // 方案1: 尝试使用HTML5 Audio元素
       const audio = new Audio(
         `/sounds/${soundName === 'default' ? 'deng[噔].mp3' : soundName + '.mp3'}`
       )
       audio.volume = this.config.soundVolume
-
       const playPromise = audio.play()
       if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            console.log('HTML5 Audio播放成功')
-          })
-          .catch(error => {
-            console.warn('HTML5 Audio播放失败:', error)
-            // 方案2: 使用振动API（移动设备）
-            this.vibrateFallback()
-          })
+        playPromise.catch(() => this.vibrateFallback())
       }
       return true
     } catch (error) {
-      console.warn('HTML5 Audio降级失败:', error)
-      // 方案2: 使用振动API（移动设备）
       return this.vibrateFallback()
     }
   }
