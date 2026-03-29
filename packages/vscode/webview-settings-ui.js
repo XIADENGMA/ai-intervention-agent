@@ -192,7 +192,7 @@
       clearTimeout(settingsHintClearTimer)
       settingsHintClearTimer = null
     }
-    if (!isError && message && autoClearMs && autoClearMs > 0) {
+    if (!isError && text && autoClearMs && autoClearMs > 0) {
       settingsHintClearTimer = setTimeout(() => {
         try {
           const overlay = document.getElementById('settingsOverlay')

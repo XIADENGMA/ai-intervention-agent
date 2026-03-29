@@ -991,7 +991,6 @@ function renderTaskTabs() {
   // 优化：只更新active状态，不重建DOM
   const existingTabs = tabsContainer.querySelectorAll('.task-tab')
   const existingTaskIds = Array.from(existingTabs).map(tab => tab.dataset.taskId)
-  const currentTaskIds = currentTasks.map(t => t.task_id)
 
   // 只比较未完成的任务
   const incompleteTaskIds = incompleteTasks.map(t => t.task_id)
@@ -1024,13 +1023,6 @@ function renderTaskTabs() {
           tabsContainer.appendChild(tab)
         }
       })
-      tabsContainer.querySelectorAll('.task-tab:not(.task-tab-exit)').forEach(tab => {
-        const taskId = tab.dataset.taskId
-        const isActive = taskId === activeTaskId
-        tab.classList.toggle('active', isActive)
-        tab.setAttribute('aria-selected', isActive ? 'true' : 'false')
-        tab.setAttribute('tabindex', isActive ? '0' : '-1')
-      })
     } else {
       tabsContainer.innerHTML = ''
       incompleteTasks.forEach((task, i) => {
@@ -1044,6 +1036,13 @@ function renderTaskTabs() {
         tabsContainer.appendChild(tab)
       })
     }
+    tabsContainer.querySelectorAll('.task-tab:not(.task-tab-exit)').forEach(tab => {
+      const taskId = tab.dataset.taskId
+      const isActive = taskId === activeTaskId
+      tab.classList.toggle('active', isActive)
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false')
+      tab.setAttribute('tabindex', isActive ? '0' : '-1')
+    })
   } else {
     existingTabs.forEach(tab => {
       const taskId = tab.dataset.taskId

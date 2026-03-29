@@ -582,7 +582,7 @@ class NotificationManager {
       const audio = new Audio(
         `/sounds/${soundName === 'default' ? 'deng[噔].mp3' : soundName + '.mp3'}`
       )
-      audio.volume = this.config.soundVolume
+      audio.volume = Math.max(0, Math.min(1, this.config.soundVolume))
       const playPromise = audio.play()
       if (playPromise !== undefined) {
         playPromise.catch(() => this.vibrateFallback())
