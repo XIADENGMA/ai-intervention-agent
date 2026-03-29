@@ -207,8 +207,15 @@ jobs:
           node-version: "24"
 
       - name: 发布到 Open VSX（从 VSIX 发布）
+        if: env.OVSX_TOKEN != ''
         env:
           OVSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
         run: |
           npx --yes ovsx verify-pat xiadengma -p "$OVSX_TOKEN"
           npx --yes ovsx publish -p "$OVSX_TOKEN" vsix/*.vsix
+
+      - name: 跳过（OPEN_VSX_TOKEN 未配置）
+        if: env.OVSX_TOKEN == ''
+        env:
+          OVSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+        run: echo "::warning::OPEN_VSX_TOKEN secret not configured, skipping Open VSX publish"

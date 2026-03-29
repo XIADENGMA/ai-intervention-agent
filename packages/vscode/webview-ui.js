@@ -1605,6 +1605,8 @@
     startTimer()
   }
 
+  try { if (typeof globalThis !== 'undefined') globalThis.__AIIA_showToast = showToast } catch (e) { /* noop */ }
+
   // 文本框：自动高度（Auto-resize），并保留用户手动拖拽的最小高度
   //
   // 注意：Webview CSP 收紧后（移除 style-src 'unsafe-inline'），JS 不能再写 textarea.style.height。

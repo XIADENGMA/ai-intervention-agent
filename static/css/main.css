@@ -4698,28 +4698,6 @@ h1 {
   font-size: 14px; /* 字号 */
 }
 
-/**
- * 淡入动画（@keyframes fadeIn）：
- *
- * 功能说明：
- *   淡入动画，从透明渐变到不透明。
- *
- * 动画关键帧：
- *   - from: opacity: 0（完全透明）
- *   - to: opacity: 1（完全不透明）
- *
- * 使用场景：
- *   - 图片模态框显示时（.image-modal.show）
- */
-@keyframes fadeIn {
-  from {
-    opacity: 0; /* 完全透明 */
-  }
-  to {
-    opacity: 1; /* 完全不透明 */
-  }
-}
-
 /* 移动设备优化 */
 @media (max-width: 768px) {
   .image-preview-container {

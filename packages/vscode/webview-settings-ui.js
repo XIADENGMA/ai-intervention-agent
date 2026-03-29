@@ -166,12 +166,26 @@
   let uiInitialized = false
 
   function setSettingsHint(message, isError, autoClearMs) {
+    const text = message ? String(message).trim() : ''
+
+    if (text) {
+      const toast = typeof globalThis !== 'undefined' && globalThis.__AIIA_showToast
+      if (toast) {
+        toast(text, {
+          kind: isError ? 'error' : 'success',
+          timeoutMs: isError ? 4000 : (autoClearMs || 1400),
+          dedupeKey: 'settings:' + (isError ? 'err' : 'ok')
+        })
+        return
+      }
+    }
+
     const hint = document.getElementById('settingsHint')
     if (!hint) return
-    hint.textContent = message ? String(message) : ''
+    hint.textContent = text
     // CSP 收紧后禁止动态写入 inline style，这里改为 class 驱动
     hint.classList.toggle('aiia-error', !!isError)
-    hint.classList.toggle('aiia-has-message', !!message)
+    hint.classList.toggle('aiia-has-message', !!text)
 
     // 自动清理：避免“已加载”这类状态常驻造成困惑
     if (settingsHintClearTimer) {
