@@ -272,21 +272,19 @@ function initHourglassAnimation() {
     settled = true
     clearTimeout(timer)
     if (ok) {
-      const hasFallbackSvg = !!container.querySelector('svg:not([class*="lottie"])')
-      if (hasFallbackSvg) {
+      const fallbackSvgs = Array.from(container.querySelectorAll('svg'))
+      if (fallbackSvgs.length) {
         container.style.opacity = '0'
         container.style.transition = 'opacity .25s ease'
       }
       _createLottieAnimation(container)
-      if (hasFallbackSvg && hourglassAnimation) {
-        var clearFallback = () => {
-          container.querySelectorAll('svg:not([class*="lottie"])').forEach(s => s.remove())
-        }
+      if (fallbackSvgs.length && hourglassAnimation) {
+        var removeFallback = () => { fallbackSvgs.forEach(s => { if (s.parentNode) s.remove() }) }
         hourglassAnimation.addEventListener('DOMLoaded', () => {
-          clearFallback()
+          removeFallback()
           requestAnimationFrame(() => { container.style.opacity = '1' })
         })
-        setTimeout(() => { clearFallback(); container.style.opacity = '1' }, 2000)
+        setTimeout(() => { removeFallback(); container.style.opacity = '1' }, 2000)
       }
     } else {
       if (!container.innerHTML.trim()) renderSproutFallback(container)
