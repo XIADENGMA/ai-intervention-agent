@@ -988,8 +988,8 @@ function renderTaskTabs() {
   updateFaviconBadge(incompleteTasks.length)
   container.classList.remove('hidden')
 
-  // 优化：只更新active状态，不重建DOM
-  const existingTabs = tabsContainer.querySelectorAll('.task-tab')
+  // 优化：排除正在退出动画的标签，避免虚假重建
+  const existingTabs = tabsContainer.querySelectorAll('.task-tab:not(.task-tab-exit)')
   const existingTaskIds = Array.from(existingTabs).map(tab => tab.dataset.taskId)
 
   // 只比较未完成的任务

@@ -174,7 +174,7 @@
         toast(text, {
           kind: isError ? 'error' : 'success',
           timeoutMs: isError ? 4000 : (autoClearMs || 1400),
-          dedupeKey: 'settings:' + (isError ? 'err' : 'ok')
+          dedupeKey: 'settings:' + (isError ? 'err:' : 'ok:') + text.slice(0, 40)
         })
         return
       }

@@ -237,11 +237,15 @@ function _createLottieAnimation(container) {
       rendererSettings: { preserveAspectRatio: 'xMidYMid meet' }
     })
     hourglassAnimation.addEventListener('DOMLoaded', () => updateLottieAnimationColor())
-    hourglassAnimation.addEventListener('error', () => renderSproutFallback(container))
+    hourglassAnimation.addEventListener('error', () => {
+      renderSproutFallback(container)
+      container.style.opacity = '1'
+    })
     console.log('嫩芽动画初始化成功（懒加载）')
   } catch (error) {
     console.error('Lottie 动画初始化失败:', error)
     renderSproutFallback(container)
+    container.style.opacity = '1'
   }
 }
 
