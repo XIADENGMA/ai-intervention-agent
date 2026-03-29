@@ -107,6 +107,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _notificationConfig: NotificationConfig | null
   private _notificationConfigFetchedAt: number
   private _notificationConfigFetchPromise: Promise<NotificationConfig | null> | null
+  private _cachedServerLang: string | null
+  private _cachedLocales: Record<string, Record<string, unknown>>
+  private _cachedStaticAssets: { activityIconSvg: string; lottieData: unknown } | null
 
   constructor(
     extensionUri: vscode.Uri,
@@ -171,6 +174,82 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._notificationConfig = null
     this._notificationConfigFetchedAt = 0
     this._notificationConfigFetchPromise = null
+    this._cachedServerLang = null
+    this._cachedLocales = {}
+    this._cachedStaticAssets = null
+  }
+
+  private async _preloadResources(): Promise<void> {
+    const decoder = new TextDecoder('utf-8')
+    for (const loc of ['en', 'zh-CN']) {
+      if (this._cachedLocales[loc]) continue
+      try {
+        const uri = vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json')
+        const bytes = await vscode.workspace.fs.readFile(uri)
+        const text = decoder.decode(bytes)
+        if (text) this._cachedLocales[loc] = JSON.parse(text) as Record<string, unknown>
+      } catch {
+        try {
+          const text = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json'))
+          if (text) this._cachedLocales[loc] = JSON.parse(text) as Record<string, unknown>
+        } catch { /* 忽略 */ }
+      }
+    }
+    if (!this._cachedStaticAssets) {
+      let svgText = ''
+      let lottieData: unknown = null
+      try {
+        const svgBytes = await vscode.workspace.fs.readFile(
+          vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg')
+        )
+        svgText = decoder.decode(svgBytes)
+      } catch {
+        svgText = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg'))
+      }
+      try {
+        const lottieBytes = await vscode.workspace.fs.readFile(
+          vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json')
+        )
+        const raw = decoder.decode(lottieBytes)
+        lottieData = raw ? JSON.parse(raw) : null
+      } catch {
+        try {
+          const raw = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json'))
+          lottieData = raw ? JSON.parse(raw) : null
+        } catch { /* 忽略 */ }
+      }
+      this._cachedStaticAssets = { activityIconSvg: svgText, lottieData }
+    }
+  }
+
+  private async _prefetchServerLanguage(): Promise<void> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 3500)
+        const resp = await fetch(`${this._serverUrl}/api/config`, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json' }
+        })
+        clearTimeout(timer)
+        if (resp.ok) {
+          const data = (await resp.json()) as Record<string, unknown>
+          if (data.language && typeof data.language === 'string' && data.language !== 'auto') {
+            this._cachedServerLang = data.language
+            this._log(`[i18n] 服务器语言预取成功: ${data.language}`)
+            return
+          }
+          this._log('[i18n] 服务器返回 language=auto 或空，使用 vscode.env.language')
+          return
+        }
+        this._log(`[i18n] 服务器响应非 200: ${resp.status}`)
+      } catch {
+        this._log(`[i18n] 语言预取失败 (尝试 ${attempt + 1}/2)`)
+      }
+      if (attempt === 0) {
+        await new Promise<void>(r => setTimeout(r, 500))
+      }
+    }
   }
 
   _log(message: string): void {
@@ -223,7 +302,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._lastServerStatus = null
   }
 
-  resolveWebviewView(webviewView: vscode.WebviewView): void {
+  async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
+    await Promise.all([
+      this._preloadResources(),
+      this._prefetchServerLanguage()
+    ])
     this._view = webviewView
 
     webviewView.webview.options = {
@@ -364,6 +447,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._notificationConfig = null
     this._notificationConfigFetchedAt = 0
     this._notificationConfigFetchPromise = null
+    this._cachedServerLang = null
     if (this._view && this._view.webview) {
       try {
         this._webviewReady = false
@@ -376,30 +460,35 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         // 忽略
       }
 
-      this._view.webview.html = this._getHtmlContent(this._view.webview)
-
-      this._webviewReadyTimer = setTimeout(() => {
-        if (!this._webviewReady && this._logger && typeof this._logger.warn === 'function') {
-          try {
-            if (typeof this._logger.event === 'function') {
-              this._logger.event(
-                'webview.ready_timeout',
-                { timeoutMs: 2500, webviewReady: false, reason: 'serverUrl_changed' },
-                {
-                  level: 'warn',
-                  message: 'Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）'
+      const view = this._view
+      Promise.all([
+        this._preloadResources(),
+        this._prefetchServerLanguage()
+      ])
+        .catch(() => {})
+        .finally(() => {
+          if (view.webview) view.webview.html = this._getHtmlContent(view.webview)
+          this._webviewReadyTimer = setTimeout(() => {
+            if (!this._webviewReady && this._logger && typeof this._logger.warn === 'function') {
+              try {
+                if (typeof this._logger.event === 'function') {
+                  this._logger.event(
+                    'webview.ready_timeout',
+                    { timeoutMs: 2500, webviewReady: false, reason: 'serverUrl_changed' },
+                    {
+                      level: 'warn',
+                      message: 'Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）'
+                    }
+                  )
+                } else {
+                  this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
                 }
-              )
-            } else {
-              this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+              } catch {
+                this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+              }
             }
-          } catch {
-            this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
-          }
-        }
-      }, 2500)
-
-      this._sendMessage({ type: 'refresh' })
+          }, 2500)
+        })
     }
   }
 
@@ -549,6 +638,20 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         break
       case 'showMacOSNativeNotification':
         this._handleShowMacOSNativeNotification(message)
+        break
+      case 'langDetected':
+        try {
+          const lang = message && typeof (message as Record<string, unknown>).language === 'string'
+            ? String((message as Record<string, unknown>).language)
+            : ''
+          if (lang && lang !== 'auto' && lang !== this._cachedServerLang) {
+            this._cachedServerLang = lang
+            this._log(`[i18n] 客户端检测到语言: ${lang}，重新渲染`)
+            if (this._view && this._view.webview) {
+              this._view.webview.html = this._getHtmlContent(this._view.webview)
+            }
+          }
+        } catch { /* 忽略 */ }
         break
       default:
         break
@@ -986,10 +1089,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const i18nJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'i18n.js'))
     let extensionVersion = '0.0.0'
     try {
-      const pkgText = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'package.json'))
-      if (pkgText) {
-        const parsed = JSON.parse(pkgText) as Record<string, unknown>
-        if (parsed.version) extensionVersion = String(parsed.version)
+      const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
+      if (ext?.packageJSON?.version) {
+        extensionVersion = String(ext.packageJSON.version)
       }
     } catch {
       // 忽略
@@ -1004,60 +1106,62 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     )
     const nonce = getNonce()
 
-    const activityIconSvgText = safeReadTextFile(
-      vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg')
-    )
-    let noContentHourglassLottieData: unknown = null
-    try {
-      const hourglassJsonText = safeReadTextFile(
-        vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json')
-      )
-      noContentHourglassLottieData = hourglassJsonText ? JSON.parse(hourglassJsonText) : null
-    } catch {
-      noContentHourglassLottieData = null
-    }
+    const activityIconSvgText = this._cachedStaticAssets?.activityIconSvg
+      || safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg'))
+    const noContentHourglassLottieData = this._cachedStaticAssets?.lottieData ?? (() => {
+      try {
+        const raw = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json'))
+        return raw ? JSON.parse(raw) : null
+      } catch { return null }
+    })()
     const inlineNoContentFallbackSvgLiteral = safeStringForInlineScript(activityIconSvgText)
     const inlineNoContentLottieDataLiteral = noContentHourglassLottieData
       ? safeJsonForInlineScript(noContentHourglassLottieData)
       : 'null'
 
     let i18nLang = 'en'
-    try {
-      const vsLang = vscode.env.language || ''
-      i18nLang = vsLang.toLowerCase().indexOf('zh') === 0 ? 'zh-CN' : 'en'
-    } catch {
-      i18nLang = 'en'
-    }
-    let i18nLocaleData: Record<string, unknown> | null = null
-    try {
-      const localeText = safeReadTextFile(
-        vscode.Uri.joinPath(this._extensionUri, 'locales', i18nLang + '.json')
-      )
-      i18nLocaleData = localeText ? (JSON.parse(localeText) as Record<string, unknown>) : null
-    } catch {
-      i18nLocaleData = null
-    }
-    if (!i18nLocaleData) {
+    if (this._cachedServerLang) {
+      i18nLang = this._cachedServerLang.toLowerCase().indexOf('zh') === 0 ? 'zh-CN' : 'en'
+    } else {
       try {
-        const fallbackText = safeReadTextFile(
-          vscode.Uri.joinPath(this._extensionUri, 'locales', 'en.json')
-        )
-        i18nLocaleData = fallbackText ? (JSON.parse(fallbackText) as Record<string, unknown>) : null
-        if (i18nLocaleData) i18nLang = 'en'
+        const vsLang = vscode.env.language || ''
+        i18nLang = vsLang.toLowerCase().indexOf('zh') === 0 ? 'zh-CN' : 'en'
       } catch {
-        i18nLocaleData = null
+        i18nLang = 'en'
       }
     }
-    // 注入所有 Locale 数据，支持前端动态切换语言（TOML 配置变更时无需重新渲染 webview）
-    const allLocales: Record<string, Record<string, unknown>> = {}
-    for (const loc of ['en', 'zh-CN']) {
+    let i18nLocaleData: Record<string, unknown> | null =
+      this._cachedLocales[i18nLang] || null
+    if (!i18nLocaleData) {
       try {
-        const text = safeReadTextFile(
-          vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json')
+        const localeText = safeReadTextFile(
+          vscode.Uri.joinPath(this._extensionUri, 'locales', i18nLang + '.json')
         )
-        if (text) allLocales[loc] = JSON.parse(text) as Record<string, unknown>
-      } catch {
-        // 忽略：单个 locale 读取失败不影响其他
+        i18nLocaleData = localeText ? (JSON.parse(localeText) as Record<string, unknown>) : null
+      } catch { /* 忽略 */ }
+    }
+    if (!i18nLocaleData) {
+      i18nLocaleData = this._cachedLocales['en'] || null
+      if (!i18nLocaleData) {
+        try {
+          const fallbackText = safeReadTextFile(
+            vscode.Uri.joinPath(this._extensionUri, 'locales', 'en.json')
+          )
+          i18nLocaleData = fallbackText ? (JSON.parse(fallbackText) as Record<string, unknown>) : null
+        } catch { /* 忽略 */ }
+      }
+      if (i18nLocaleData) i18nLang = 'en'
+    }
+    const allLocales: Record<string, Record<string, unknown>> = { ...this._cachedLocales }
+    if (!allLocales['en'] || !allLocales['zh-CN']) {
+      for (const loc of ['en', 'zh-CN']) {
+        if (allLocales[loc]) continue
+        try {
+          const text = safeReadTextFile(
+            vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json')
+          )
+          if (text) allLocales[loc] = JSON.parse(text) as Record<string, unknown>
+        } catch { /* 忽略 */ }
       }
     }
     const inlineAllLocalesLiteral = Object.keys(allLocales).length
@@ -1096,10 +1200,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         <!-- Task tabs with status indicator -->
         <div class="tabs-container hidden" id="tasksTabsContainer">
             <div class="status-indicator">
-                <div class="breathing-light" id="statusLight" title="${tl('ui.status.serverStatus')}"></div>
+                <div class="breathing-light" id="statusLight" title="${tl('ui.status.serverStatus')}" data-i18n-title="ui.status.serverStatus"></div>
             </div>
             <!-- Task tabs will be dynamically generated here -->
-            <button class="settings-btn" id="settingsBtn" title="${tl('ui.settingsBtn')}" aria-label="${tl('ui.settingsBtn')}">
+            <button class="settings-btn" id="settingsBtn" title="${tl('ui.settingsBtn')}" aria-label="${tl('ui.settingsBtn')}" data-i18n-title="ui.settingsBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -1112,22 +1216,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             <!-- Loading state -->
             <div class="loading hidden" id="loadingState">
                 <div class="spinner"></div>
-                <div>${tl('ui.connecting')}</div>
+                <div data-i18n="ui.connecting">${tl('ui.connecting')}</div>
             </div>
 
             <!-- No content state -->
             <div class="no-content" id="noContentState">
-                <button class="settings-btn no-content-settings-btn" id="settingsBtnNoContent" title="${tl('ui.settingsBtn')}" aria-label="${tl('ui.settingsBtn')}">
+                <button class="settings-btn no-content-settings-btn" id="settingsBtnNoContent" title="${tl('ui.settingsBtn')}" aria-label="${tl('ui.settingsBtn')}" data-i18n-title="ui.settingsBtn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
                 <div class="no-content-icon" id="hourglass-lottie" aria-hidden="true">\ud83c\udf31</div>
-                <div class="title">${tl('ui.noContent.title')}</div>
+                <div class="title" data-i18n="ui.noContent.title">${tl('ui.noContent.title')}</div>
                 <div class="status-indicator-standalone">
-                    <div class="breathing-light" id="statusLightStandalone" title="${tl('ui.status.serverStatus')}"></div>
-                    <span id="statusTextStandalone">${tl('ui.noContent.connecting')}</span>
+                    <div class="breathing-light" id="statusLightStandalone" title="${tl('ui.status.serverStatus')}" data-i18n-title="ui.status.serverStatus"></div>
+                    <span id="statusTextStandalone" data-i18n="ui.noContent.connecting">${tl('ui.noContent.connecting')}</span>
                 </div>
                 <div class="no-content-progress" id="noContentProgress">
                     <div class="no-content-progress-bar"></div>
@@ -1143,7 +1247,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
                     <!-- Predefined options -->
                     <div class="form-section hidden" id="optionsSection">
-                        <div class="form-label">${tl('ui.form.optionsLabel')}</div>
+                        <div class="form-label" data-i18n="ui.form.optionsLabel">${tl('ui.form.optionsLabel')}</div>
                         <div class="options-container" id="optionsContainer"></div>
                     </div>
 
@@ -1160,6 +1264,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                             class="feedback-textarea"
                             id="feedbackText"
                             placeholder="${tl('ui.form.placeholder')}"
+                            data-i18n-placeholder="ui.form.placeholder"
                         ></textarea>
 
                         <!-- Hidden file input -->
@@ -1167,19 +1272,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
                         <!-- Button group (upload + submit) -->
                         <div class="input-buttons">
-                            <button type="button" class="insert-code-btn" id="insertCodeBtn" title="${tl('ui.form.insertCode')}" aria-label="${tl('ui.form.insertCode')}">
+                            <button type="button" class="insert-code-btn" id="insertCodeBtn" title="${tl('ui.form.insertCode')}" aria-label="${tl('ui.form.insertCode')}" data-i18n-title="ui.form.insertCode">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                                     <polyline points="16 18 22 12 16 6"></polyline>
                                     <polyline points="8 6 2 12 8 18"></polyline>
                                     <line x1="14" y1="4" x2="10" y2="20"></line>
                                 </svg>
                             </button>
-                            <button type="button" class="upload-btn" id="uploadBtn" title="${tl('ui.form.uploadImage')}" aria-label="${tl('ui.form.uploadImage')}">
+                            <button type="button" class="upload-btn" id="uploadBtn" title="${tl('ui.form.uploadImage')}" aria-label="${tl('ui.form.uploadImage')}" data-i18n-title="ui.form.uploadImage">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
                                     <path fill-rule="evenodd" clip-rule="evenodd" d="M3 4.5C3 3.67157 3.67157 3 4.5 3H15.5C16.3284 3 17 3.67157 17 4.5V15.5C17 16.3284 16.3284 17 15.5 17H4.5C3.67157 17 3 16.3284 3 15.5V4.5ZM4.5 4C4.22386 4 4 4.22386 4 4.5V12.2929L6.64645 9.64645C6.84171 9.45118 7.15829 9.45118 7.35355 9.64645L10 12.2929L13.1464 9.14645C13.3417 8.95118 13.6583 8.95118 13.8536 9.14645L16 11.2929V4.5C16 4.22386 15.7761 4 15.5 4H4.5ZM16 12.7071L13.5 10.2071L10.3536 13.3536C10.1583 13.5488 9.84171 13.5488 9.64645 13.3536L7 10.7071L4 13.7071V15.5C4 15.7761 4.22386 16 4.5 16H15.5C15.7761 16 16 15.7761 16 15.5V12.7071ZM7 7.5C7 6.94772 7.44772 6.5 8 6.5C8.55228 6.5 9 6.94772 9 7.5C9 8.05228 8.55228 8.5 8 8.5C7.44772 8.5 7 8.05228 7 7.5Z" fill="currentColor" />
                                 </svg>
                             </button>
-                            <button type="button" class="submit-btn-embedded" id="submitBtn" title="${tl('ui.form.submit')}" aria-label="${tl('ui.form.submit')}">
+                            <button type="button" class="submit-btn-embedded" id="submitBtn" title="${tl('ui.form.submit')}" aria-label="${tl('ui.form.submit')}" data-i18n-title="ui.form.submit">
                                 <svg class="btn-icon submit-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false">
                                     <path d="M19.26 9.77C19.91 9.08 20.92 8.91 21.73 9.32L21.89 9.40L21.94 9.43L22.19 9.63C22.20 9.64 22.22 9.65 22.23 9.66L44.63 30.46C45.05 30.86 45.30 31.42 45.30 32.00C45.30 32.44 45.16 32.86 44.91 33.21C44.90 33.23 44.89 33.24 44.88 33.26L44.66 33.50C44.65 33.52 44.64 33.53 44.63 33.54L22.23 54.34C21.38 55.13 20.05 55.08 19.26 54.23C18.47 53.38 18.52 52.05 19.37 51.26L40.12 32.00L19.37 12.74C19.36 12.73 19.35 12.72 19.34 12.70L19.12 12.46C19.11 12.45 19.10 12.43 19.09 12.42C18.52 11.62 18.57 10.52 19.26 9.77Z" fill="currentColor" />
                                 </svg>
@@ -1198,8 +1303,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     <div class="settings-overlay hidden" id="settingsOverlay">
         <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true">
             <div class="settings-header">
-                <div class="settings-title">${tl('settings.title')}</div>
-                <button class="settings-close" id="settingsClose" title="${tl('settings.close')}" aria-label="${tl('settings.close')}">
+                <div class="settings-title" data-i18n="settings.title">${tl('settings.title')}</div>
+                <button class="settings-close" id="settingsClose" title="${tl('settings.close')}" aria-label="${tl('settings.close')}" data-i18n-title="settings.close">
                     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                         <path d="M5 5L15 15"></path>
                         <path d="M15 5L5 15"></path>
@@ -1208,80 +1313,78 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             </div>
             <div class="settings-body">
                 <label class="settings-toggle">
-                    <span>${tl('settings.enabled')}</span>
+                    <span data-i18n="settings.enabled">${tl('settings.enabled')}</span>
                     <input type="checkbox" id="notifyEnabled">
                 </label>
                 <label class="settings-toggle">
-                    <span>${tl('settings.macosNative')}</span>
+                    <span data-i18n="settings.macosNative">${tl('settings.macosNative')}</span>
                     <input type="checkbox" id="notifyMacOSNativeEnabled">
                 </label>
 
                 <div class="settings-divider"></div>
 
                 <label class="settings-toggle">
-                    <span>${tl('settings.bark.enabled')}</span>
+                    <span data-i18n="settings.bark.enabled">${tl('settings.bark.enabled')}</span>
                     <input type="checkbox" id="notifyBarkEnabled">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.bark.url')}</span>
-                    <input type="text" id="notifyBarkUrl" placeholder="${tl('settings.bark.urlPlaceholder')}">
+                    <span class="settings-label" data-i18n="settings.bark.url">${tl('settings.bark.url')}</span>
+                    <input type="text" id="notifyBarkUrl" placeholder="${tl('settings.bark.urlPlaceholder')}" data-i18n-placeholder="settings.bark.urlPlaceholder">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.bark.deviceKey')}</span>
-                    <input type="text" id="notifyBarkDeviceKey" placeholder="${tl('settings.bark.deviceKeyPlaceholder')}">
+                    <span class="settings-label" data-i18n="settings.bark.deviceKey">${tl('settings.bark.deviceKey')}</span>
+                    <input type="text" id="notifyBarkDeviceKey" placeholder="${tl('settings.bark.deviceKeyPlaceholder')}" data-i18n-placeholder="settings.bark.deviceKeyPlaceholder">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.bark.icon')}</span>
-                    <input type="text" id="notifyBarkIcon" placeholder="${tl('settings.bark.iconPlaceholder')}">
+                    <span class="settings-label" data-i18n="settings.bark.icon">${tl('settings.bark.icon')}</span>
+                    <input type="text" id="notifyBarkIcon" placeholder="${tl('settings.bark.iconPlaceholder')}" data-i18n-placeholder="settings.bark.iconPlaceholder">
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.bark.action')}</span>
+                    <span class="settings-label" data-i18n="settings.bark.action">${tl('settings.bark.action')}</span>
                     <select id="notifyBarkAction">
-                        <option value="none">${tl('settings.bark.actionNone')}</option>
-                        <option value="url">${tl('settings.bark.actionUrl')}</option>
-                        <option value="copy">${tl('settings.bark.actionCopy')}</option>
+                        <option value="none" data-i18n="settings.bark.actionNone">${tl('settings.bark.actionNone')}</option>
+                        <option value="url" data-i18n="settings.bark.actionUrl">${tl('settings.bark.actionUrl')}</option>
+                        <option value="copy" data-i18n="settings.bark.actionCopy">${tl('settings.bark.actionCopy')}</option>
                     </select>
                 </label>
 
                 <div class="settings-divider"></div>
 
-                <div class="settings-section-title">${tl('settings.feedback.title')}</div>
+                <div class="settings-section-title" data-i18n="settings.feedback.title">${tl('settings.feedback.title')}</div>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.feedback.countdown')}</span>
+                    <span class="settings-label" data-i18n="settings.feedback.countdown">${tl('settings.feedback.countdown')}</span>
                     <input type="number" id="feedbackCountdown" min="0" max="250" step="10" value="240" style="max-width:100px">
-                    <span class="settings-field-hint">${tl('settings.feedback.countdownHint')}</span>
+                    <span class="settings-field-hint" data-i18n="settings.feedback.countdownHint">${tl('settings.feedback.countdownHint')}</span>
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.feedback.resubmitPrompt')}</span>
-                    <textarea id="feedbackResubmitPrompt" rows="2" maxlength="500" placeholder="${tl('settings.feedback.resubmitPromptPlaceholder')}"></textarea>
+                    <span class="settings-label" data-i18n="settings.feedback.resubmitPrompt">${tl('settings.feedback.resubmitPrompt')}</span>
+                    <textarea id="feedbackResubmitPrompt" rows="2" maxlength="500" placeholder="${tl('settings.feedback.resubmitPromptPlaceholder')}" data-i18n-placeholder="settings.feedback.resubmitPromptPlaceholder"></textarea>
                 </label>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.feedback.promptSuffix')}</span>
-                    <textarea id="feedbackPromptSuffix" rows="2" maxlength="500" placeholder="${tl('settings.feedback.promptSuffixPlaceholder')}"></textarea>
+                    <span class="settings-label" data-i18n="settings.feedback.promptSuffix">${tl('settings.feedback.promptSuffix')}</span>
+                    <textarea id="feedbackPromptSuffix" rows="2" maxlength="500" placeholder="${tl('settings.feedback.promptSuffixPlaceholder')}" data-i18n-placeholder="settings.feedback.promptSuffixPlaceholder"></textarea>
                 </label>
-                <button class="settings-action secondary" id="settingsResetFeedbackBtn">${tl('settings.feedback.reset')}</button>
-
                 <div class="settings-divider"></div>
 
-                <div class="settings-section-title">${tl('settings.config.title')}</div>
+                <div class="settings-section-title" data-i18n="settings.config.title">${tl('settings.config.title')}</div>
                 <label class="settings-field">
-                    <span class="settings-label">${tl('settings.config.path')}</span>
-                    <input type="text" id="settingsConfigPath" readonly placeholder="${tl('settings.config.pathPlaceholder')}">
-                    <span class="settings-field-hint">${tl('settings.config.pathHint')}</span>
+                    <span class="settings-label" data-i18n="settings.config.path">${tl('settings.config.path')}</span>
+                    <input type="text" id="settingsConfigPath" readonly placeholder="${tl('settings.config.pathPlaceholder')}" data-i18n-placeholder="settings.config.pathPlaceholder">
+                    <span class="settings-field-hint" data-i18n="settings.config.pathHint">${tl('settings.config.pathHint')}</span>
                 </label>
 
                 <div class="settings-divider"></div>
 
                 <div class="settings-actions">
-                    <button class="settings-action secondary" id="settingsTestNativeBtn">${tl('settings.testNative')}</button>
-                    <button class="settings-action secondary" id="settingsTestBarkBtn">${tl('settings.testBark')}</button>
+                    <button class="settings-action secondary" id="settingsTestNativeBtn" data-i18n="settings.testNative">${tl('settings.testNative')}</button>
+                    <button class="settings-action secondary" id="settingsTestBarkBtn" data-i18n="settings.testBark">${tl('settings.testBark')}</button>
                     <div class="settings-actions-right">
-                        <span class="settings-auto-save" title="${tl('settings.autoSaveTooltip')}">${tl('settings.autoSave')}</span>
+                        <span class="settings-auto-save" title="${tl('settings.autoSaveTooltip')}" data-i18n="settings.autoSave" data-i18n-title="settings.autoSaveTooltip">${tl('settings.autoSave')}</span>
                     </div>
                 </div>
                 <div class="settings-footer" id="settingsFooter">
-                    <span class="settings-footer-version">${tl('settings.footer.version').replace('{{version}}', extensionVersion)}</span>
-                    <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer">${tl('settings.footer.github')}</a>
+                    <span class="settings-footer-version" data-i18n="settings.footer.version" data-i18n-version="${extensionVersion}">${tl('settings.footer.version').replace('{{version}}', extensionVersion)}</span>
+                    <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer" data-i18n="settings.footer.github">${tl('settings.footer.github')}</a>
                 </div>
                 <div class="settings-hint" id="settingsHint"></div>
             </div>

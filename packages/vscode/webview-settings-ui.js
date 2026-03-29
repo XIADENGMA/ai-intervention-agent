@@ -93,6 +93,37 @@
     return key
   }
 
+  function retranslateSettingsPanel() {
+    var panel = document.getElementById('settingsPanel')
+    if (!panel) return
+    var els = panel.querySelectorAll('[data-i18n]')
+    for (var i = 0; i < els.length; i++) {
+      var key = els[i].getAttribute('data-i18n')
+      if (!key) continue
+      var ver = els[i].getAttribute('data-i18n-version')
+      var val = ver ? t(key, { version: ver }) : t(key)
+      if (val && val !== key) els[i].textContent = val
+    }
+    var titles = panel.querySelectorAll('[data-i18n-title]')
+    for (var j = 0; j < titles.length; j++) {
+      var tKey = titles[j].getAttribute('data-i18n-title')
+      if (!tKey) continue
+      var tVal = t(tKey)
+      if (tVal && tVal !== tKey) {
+        titles[j].setAttribute('title', tVal)
+        if (titles[j].hasAttribute('aria-label')) titles[j].setAttribute('aria-label', tVal)
+      }
+    }
+    var phs = panel.querySelectorAll('[data-i18n-placeholder]')
+    for (var k = 0; k < phs.length; k++) {
+      var phKey = phs[k].getAttribute('data-i18n-placeholder')
+      if (!phKey) continue
+      var phVal = t(phKey)
+      if (phVal && phVal !== phKey) phs[k].setAttribute('placeholder', phVal)
+    }
+  }
+  try { globalThis.__AIIA_retranslateSettingsPanel = retranslateSettingsPanel } catch (e) { /* 忽略 */ }
+
   function getNotifyCore() {
     try {
       return globalThis && globalThis.AIIAWebviewNotifyCore
@@ -570,9 +601,6 @@
         settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
       if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
 
-      const resetFeedbackBtn = document.getElementById('settingsResetFeedbackBtn')
-      if (resetFeedbackBtn) resetFeedbackBtn.addEventListener('click', resetFeedbackConfig)
-
       let fbSaveTimer = null
       const debounceSaveFeedback = updates => {
         if (fbSaveTimer) clearTimeout(fbSaveTimer)
@@ -669,16 +697,6 @@
         true
       )
     }
-  }
-
-  async function resetFeedbackConfig() {
-    await saveFeedbackConfig({
-      frontend_countdown: 240,
-      resubmit_prompt: '\u8bf7\u7acb\u5373\u8c03\u7528 interactive_feedback \u5de5\u5177',
-      prompt_suffix: '\n\u8bf7\u79ef\u6781\u8c03\u7528 interactive_feedback \u5de5\u5177'
-    })
-    await loadFeedbackConfig()
-    setSettingsHint(t('settings.feedback.resetDone'), false, 1200)
   }
 
   function dispose() {

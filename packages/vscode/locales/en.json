@@ -16,9 +16,7 @@
       "resubmitPromptPlaceholder": "Content auto-submitted on countdown expiry",
       "promptSuffix": "Feedback suffix",
       "promptSuffixPlaceholder": "Appended to every submission",
-      "reset": "Reset defaults",
       "saved": "Feedback config saved",
-      "resetDone": "Feedback config reset",
       "saveFailed": "Save feedback config failed"
     },
     "bark": {

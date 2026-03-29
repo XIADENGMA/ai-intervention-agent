@@ -78,47 +78,51 @@
 
   function applyServerLanguage(lang) {
     if (!lang || lang === 'auto' || _serverLangApplied) return
+    _serverLangApplied = true
     var i18n = getI18n()
     if (!i18n || typeof i18n.setLang !== 'function' || typeof i18n.getLang !== 'function') return
     var normalized = typeof i18n.normalizeLang === 'function' ? i18n.normalizeLang(lang) : lang
-    if (normalized === i18n.getLang()) { _serverLangApplied = true; return }
-    i18n.setLang(normalized)
-    _serverLangApplied = true
-    retranslateStaticElements()
+    if (normalized !== i18n.getLang()) {
+      i18n.setLang(normalized)
+      retranslateAllI18nElements()
+    }
+    try { vscode.postMessage({ type: 'langDetected', language: lang }) } catch (e) { /* 忽略 */ }
   }
 
-  function retranslateStaticElements() {
-    var items = [
-      { sel: '#statusLight', attr: 'title', key: 'ui.status.serverStatus' },
-      { sel: '#settingsBtn', attr: 'title', key: 'ui.settingsBtn' },
-      { sel: '#settingsBtn', attr: 'aria-label', key: 'ui.settingsBtn' },
-      { sel: '#loadingState > div:last-child', attr: 'textContent', key: 'ui.connecting' },
-      { sel: '#settingsBtnNoContent', attr: 'title', key: 'ui.settingsBtn' },
-      { sel: '#settingsBtnNoContent', attr: 'aria-label', key: 'ui.settingsBtn' },
-      { sel: '.no-content .title', attr: 'textContent', key: 'ui.noContent.title' },
-      { sel: '#statusLightStandalone', attr: 'title', key: 'ui.status.serverStatus' },
-      { sel: '#statusTextStandalone', attr: 'textContent', key: 'ui.noContent.connecting' },
-      { sel: '.form-label', attr: 'textContent', key: 'ui.form.optionsLabel' },
-      { sel: '#feedbackText', attr: 'placeholder', key: 'ui.form.placeholder' },
-      { sel: '#insertCodeBtn', attr: 'title', key: 'ui.form.insertCode' },
-      { sel: '#insertCodeBtn', attr: 'aria-label', key: 'ui.form.insertCode' },
-      { sel: '#uploadBtn', attr: 'title', key: 'ui.form.uploadImage' },
-      { sel: '#uploadBtn', attr: 'aria-label', key: 'ui.form.uploadImage' },
-      { sel: '#submitBtn', attr: 'title', key: 'ui.form.submit' },
-      { sel: '#submitBtn', attr: 'aria-label', key: 'ui.form.submit' },
-      { sel: '.settings-title', attr: 'textContent', key: 'settings.title' },
-      { sel: '#settingsClose', attr: 'title', key: 'settings.close' },
-      { sel: '#settingsClose', attr: 'aria-label', key: 'settings.close' }
-    ]
-    for (var i = 0; i < items.length; i++) {
-      try {
-        var el = document.querySelector(items[i].sel)
-        if (!el) continue
-        var val = t(items[i].key)
-        if (items[i].attr === 'textContent') { el.textContent = val }
-        else { el.setAttribute(items[i].attr, val) }
-      } catch (e) { /* 忽略单个元素翻译失败 */ }
-    }
+  function retranslateAllI18nElements() {
+    try {
+      var els = document.querySelectorAll('[data-i18n]')
+      for (var i = 0; i < els.length; i++) {
+        try {
+          var key = els[i].getAttribute('data-i18n')
+          if (!key) continue
+          var ver = els[i].getAttribute('data-i18n-version')
+          var val = ver ? t(key, { version: ver }) : t(key)
+          if (val && val !== key) els[i].textContent = val
+        } catch (e) { /* 忽略 */ }
+      }
+      var titleEls = document.querySelectorAll('[data-i18n-title]')
+      for (var j = 0; j < titleEls.length; j++) {
+        try {
+          var tkey = titleEls[j].getAttribute('data-i18n-title')
+          if (!tkey) continue
+          var tval = t(tkey)
+          if (tval && tval !== tkey) {
+            titleEls[j].setAttribute('title', tval)
+            titleEls[j].setAttribute('aria-label', tval)
+          }
+        } catch (e) { /* 忽略 */ }
+      }
+      var phEls = document.querySelectorAll('[data-i18n-placeholder]')
+      for (var k = 0; k < phEls.length; k++) {
+        try {
+          var pkey = phEls[k].getAttribute('data-i18n-placeholder')
+          if (!pkey) continue
+          var pval = t(pkey)
+          if (pval && pval !== pkey) phEls[k].setAttribute('placeholder', pval)
+        } catch (e) { /* 忽略 */ }
+      }
+    } catch (e) { /* 忽略 */ }
   }
 
   const __cfgEl = document.getElementById('aiia-config')
