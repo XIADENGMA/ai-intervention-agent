@@ -504,8 +504,8 @@ suite('Extension Test Suite', () => {
       'dist/webview.js 应包含 extensionVersion 变量'
     )
     assert.ok(
-      webviewJs.includes('package.json'),
-      'dist/webview.js 应包含 package.json 读取逻辑'
+      webviewJs.includes('packageJSON'),
+      'dist/webview.js 应包含 packageJSON 版本读取逻辑'
     )
   })
 
