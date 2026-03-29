@@ -86,13 +86,13 @@ def _main_impl(argv: list[str]) -> int:
     _run(["uv", "run", "ruff", "check", "."])
     _run(["uv", "run", "ty", "check", "."])
 
+    # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
+    _run(["uv", "run", "python", "scripts/minify_assets.py"])
+
     pytest_cmd = ["uv", "run", "pytest", "-q"]
     if args.with_coverage:
         pytest_cmd += ["--cov=.", "--cov-report=xml", "--cov-report=term-missing"]
     _run(pytest_cmd)
-
-    # 生成静态资源压缩文件（.min）；该类文件默认 gitignore
-    _run(["uv", "run", "python", "scripts/minify_assets.py"])
 
     if args.with_vscode:
         # 运行前先清理一次，避免误用上次残留产物
