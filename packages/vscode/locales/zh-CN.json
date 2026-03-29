@@ -35,8 +35,7 @@
     "config": {
       "title": "配置",
       "path": "当前配置文件路径",
-      "pathPlaceholder": "加载中…",
-      "pathHint": "后端服务实际读取的 config.toml 路径"
+      "pathPlaceholder": "加载中…"
     },
     "hint": {
       "loading": "加载中…",

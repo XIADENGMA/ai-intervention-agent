@@ -1384,7 +1384,6 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 <label class="settings-field">
                     <span class="settings-label" data-i18n="settings.config.path">${tl('settings.config.path')}</span>
                     <input type="text" id="settingsConfigPath" readonly placeholder="${tl('settings.config.pathPlaceholder')}" data-i18n-placeholder="settings.config.pathPlaceholder">
-                    <span class="settings-field-hint" data-i18n="settings.config.pathHint">${tl('settings.config.pathHint')}</span>
                 </label>
 
                 <div class="settings-divider"></div>

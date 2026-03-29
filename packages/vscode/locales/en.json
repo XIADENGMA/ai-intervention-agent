@@ -35,8 +35,7 @@
     "config": {
       "title": "Configuration",
       "path": "Config file path",
-      "pathPlaceholder": "Loading…",
-      "pathHint": "Actual config.toml path used by the backend service"
+      "pathPlaceholder": "Loading…"
     },
     "hint": {
       "loading": "Loading…",

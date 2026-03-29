@@ -46,7 +46,6 @@
     "language": "Interface language",
     "langAuto": "Auto-detect",
     "configPath": "Current config file path",
-    "configHint": "Actual config.toml path used by the backend service.",
     "shortcutSubmit": "Submit feedback:",
     "shortcutInsertCode": "Insert code:",
     "shortcutPasteImage": "Paste image:",
