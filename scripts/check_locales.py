@@ -85,6 +85,47 @@ def check_nls_pair(dir_path: Path) -> list[str]:
     return errors
 
 
+def check_cross_platform_aiia_parity(web_dir: Path, vscode_dir: Path) -> list[str]:
+    """IG-8：跨端 `aiia.*` namespace 必须在 Web UI 和 VSCode 插件之间完全对齐。
+
+    设计契约（见 ``docs/i18n-key-naming.zh-CN.md``）：
+      - ``aiia.*`` 是「跨端共享」命名空间；阶段 3 的 i18n 合并依赖它从第一次
+        引入起就在 4 个 locale 文件里一字不差。
+      - 其他顶层 namespace（``page``/``settings``/``ui`` 等）两端各自独立，
+        不受本检查约束。
+      - ``aiia`` 完全缺席时（两端都还没引入共享 key），本检查通过——
+        这就是「默认安全」：它只在至少一端开始引入 aiia.* key 后才起作用。
+    """
+    errors: list[str] = []
+    for locale in ("en.json", "zh-CN.json"):
+        web_file = web_dir / locale
+        vscode_file = vscode_dir / locale
+        if not web_file.exists() or not vscode_file.exists():
+            continue
+        try:
+            web_data = json.loads(web_file.read_text(encoding="utf-8"))
+            vscode_data = json.loads(vscode_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+
+        web_aiia_block = web_data.get("aiia")
+        vscode_aiia_block = vscode_data.get("aiia")
+        if not isinstance(web_aiia_block, dict):
+            web_aiia_block = {}
+        if not isinstance(vscode_aiia_block, dict):
+            vscode_aiia_block = {}
+
+        web_aiia_keys = flatten_keys(web_aiia_block, prefix="aiia")
+        vscode_aiia_keys = flatten_keys(vscode_aiia_block, prefix="aiia")
+
+        for key in sorted(web_aiia_keys - vscode_aiia_keys):
+            errors.append(f"[cross-platform {locale}] VSCode 缺少 aiia.* key: {key}")
+        for key in sorted(vscode_aiia_keys - web_aiia_keys):
+            errors.append(f"[cross-platform {locale}] Web UI 缺少 aiia.* key: {key}")
+
+    return errors
+
+
 def main() -> int:
     root = Path(__file__).resolve().parent.parent
     all_errors: list[str] = []
@@ -101,6 +142,13 @@ def main() -> int:
     vscode_dir = root / "packages" / "vscode"
     if vscode_dir.exists():
         all_errors.extend(check_nls_pair(vscode_dir))
+
+    web_locales_dir = root / "static" / "locales"
+    vscode_locales_dir = root / "packages" / "vscode" / "locales"
+    if web_locales_dir.exists() and vscode_locales_dir.exists():
+        all_errors.extend(
+            check_cross_platform_aiia_parity(web_locales_dir, vscode_locales_dir)
+        )
 
     if all_errors:
         print(f"❌ 发现 {len(all_errors)} 个 locale 一致性问题：")

@@ -279,6 +279,46 @@ class TestLocaleParity(unittest.TestCase):
         zh_keys = _flatten_keys(_load_json(zh_path))
         self._assert_keys_equal(en_keys, zh_keys, "en.json", "zh-CN.json")
 
+    def _aiia_keys(self, path: Path) -> set[str]:
+        """抽取单个 locale 文件里 ``aiia.*`` 命名空间下的展平 key 集合。"""
+        data = _load_json(path)
+        block = data.get("aiia")
+        if not isinstance(block, dict):
+            return set()
+        return _flatten_keys(block, prefix="aiia")
+
+    def test_aiia_namespace_cross_platform_parity_en(self):
+        """IG-8：Web UI 和 VSCode 插件的 en.json 在 ``aiia.*`` 下必须完全一致"""
+        web_en = WEB_LOCALES_DIR / "en.json"
+        vscode_en = VSCODE_LOCALES_DIR / "en.json"
+        if not web_en.exists() or not vscode_en.exists():
+            self.skipTest("en.json 文件不完整")
+
+        web_keys = self._aiia_keys(web_en)
+        vscode_keys = self._aiia_keys(vscode_en)
+        self._assert_keys_equal(
+            web_keys,
+            vscode_keys,
+            "Web UI en.json aiia.*",
+            "VSCode en.json aiia.*",
+        )
+
+    def test_aiia_namespace_cross_platform_parity_zh(self):
+        """IG-8：Web UI 和 VSCode 插件的 zh-CN.json 在 ``aiia.*`` 下必须完全一致"""
+        web_zh = WEB_LOCALES_DIR / "zh-CN.json"
+        vscode_zh = VSCODE_LOCALES_DIR / "zh-CN.json"
+        if not web_zh.exists() or not vscode_zh.exists():
+            self.skipTest("zh-CN.json 文件不完整")
+
+        web_keys = self._aiia_keys(web_zh)
+        vscode_keys = self._aiia_keys(vscode_zh)
+        self._assert_keys_equal(
+            web_keys,
+            vscode_keys,
+            "Web UI zh-CN.json aiia.*",
+            "VSCode zh-CN.json aiia.*",
+        )
+
 
 # ============================================================================
 # 4. Configuration Propagation（排查 Integration Gap）
