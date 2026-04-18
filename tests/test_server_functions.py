@@ -2078,6 +2078,8 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
     @patch("server_feedback.notification_manager")
     @patch("server_feedback.NOTIFICATION_AVAILABLE", True)
     def test_notification_send_success(self, mock_nm, mock_tid, mock_cfg, mock_arun):
+        from notification_manager import NotificationType
+
         mock_cfg.return_value = (_make_config(), 120)
         mock_nm.send_notification.return_value = "event-1"
         mock_nm.refresh_config_from_file.return_value = None
@@ -2093,6 +2095,14 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "ok")
         mock_nm.send_notification.assert_called_once()
+
+        # 回归保护：MCP 主进程必须同时承担 Bark 推送
+        # （否则"插件+MCP"场景会丢失 Bark 通知）
+        call_kwargs = mock_nm.send_notification.call_args.kwargs
+        types = call_kwargs.get("types") or []
+        self.assertIn(NotificationType.SYSTEM, types)
+        self.assertIn(NotificationType.SOUND, types)
+        self.assertIn(NotificationType.BARK, types)
 
     @patch("server_feedback.asyncio.run")
     @patch("service_manager.get_web_ui_config")
@@ -2403,6 +2413,8 @@ class TestInteractiveFeedback(unittest.TestCase):
         self, mock_nm, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
         """NOTIFICATION_AVAILABLE=True 时走通知分支"""
+        from notification_manager import NotificationType
+
         mock_cfg.return_value = (_make_config(), 120)
         mock_ensure.return_value = None
         mock_nm.send_notification.return_value = "event-1"
@@ -2415,6 +2427,14 @@ class TestInteractiveFeedback(unittest.TestCase):
         with self._patch_async_post(return_value=mock_resp):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
+
+        # 回归保护：interactive_feedback 同样必须把 Bark 纳入 MCP 主推送
+        mock_nm.send_notification.assert_called_once()
+        call_kwargs = mock_nm.send_notification.call_args.kwargs
+        types = call_kwargs.get("types") or []
+        self.assertIn(NotificationType.SYSTEM, types)
+        self.assertIn(NotificationType.SOUND, types)
+        self.assertIn(NotificationType.BARK, types)
 
     @patch("server_feedback.wait_for_task_completion")
     @patch("service_manager.ensure_web_ui_running")

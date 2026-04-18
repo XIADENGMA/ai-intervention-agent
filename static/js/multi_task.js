@@ -2202,8 +2202,7 @@ function showNewTaskNotification(count, taskIds) {
       notificationManager.dispatchEvent({
         type: 'new_tasks',
         count: typeof count === 'number' ? count : Number(count),
-        taskIds: Array.isArray(taskIds) ? taskIds : [],
-        dedupeKey: 'bark:new_tasks'
+        taskIds: Array.isArray(taskIds) ? taskIds : []
       })
       return
     }

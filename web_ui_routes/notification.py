@@ -173,7 +173,13 @@ class NotificationRoutesMixin:
 
         @self.app.route("/api/notify-new-tasks", methods=["POST"])
         def notify_new_tasks() -> ResponseReturnValue:
-            """触发新任务 Bark 推送通知
+            """触发新任务 Bark 推送通知（兼容保留，内部不再主动调用）
+
+            注意：从"后端统一推送"方案起，Bark 新任务通知由 MCP 主进程在
+            `server_feedback._interactive_feedback_impl` / `launch_feedback_ui`
+            中直接通过 `notification_manager.send_notification(types=[...BARK])` 发送，
+            Web UI 前端已不再调用该端点。此端点仅为外部第三方客户端兼容保留，
+            重复调用会触发重复 Bark 推送，请调用方自行做去重。
             ---
             tags:
               - Notification

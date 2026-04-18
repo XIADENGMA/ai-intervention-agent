@@ -418,7 +418,7 @@ class WebFeedbackUI(
 
             **通知API**：
                 - POST /api/test-bark                - 测试Bark通知
-                - POST /api/notify-new-tasks         - 新任务通知触发（移动端 Bark）
+                - POST /api/notify-new-tasks         - 新任务 Bark 触发（兼容第三方外部调用；内部 UI 不再调用，由 MCP 主进程统一推送）
                 - POST /api/update-notification-config - 更新通知配置
                 - GET  /api/get-notification-config  - 获取通知配置
 

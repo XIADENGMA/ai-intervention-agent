@@ -35,11 +35,6 @@ class NotificationManager {
     this.permissionRequestPromise = null
     this.autoPermissionListenersBound = false
     this.boundPermissionRequestHandler = null
-    // 事件去重：避免短时间内重复触发（尤其是移动端 Bark）
-    this._eventDeduper = new Map()
-    this._dedupeMaxKeys = 200
-    this._dedupeTtlMs = 5 * 60 * 1000
-    this._dedupeNextPruneAtMs = 0
     this.config = {
       enabled: true,
       webEnabled: true,
@@ -648,44 +643,6 @@ class NotificationManager {
     return results
   }
 
-  _pruneDeduper(now) {
-    try {
-      const cutoff = now - this._dedupeTtlMs
-      for (const [k, ts] of this._eventDeduper.entries()) {
-        if (typeof ts !== 'number' || ts < cutoff) {
-          this._eventDeduper.delete(k)
-        }
-      }
-      while (this._eventDeduper.size > this._dedupeMaxKeys) {
-        const firstKey = this._eventDeduper.keys().next().value
-        if (firstKey === undefined) break
-        this._eventDeduper.delete(firstKey)
-      }
-    } catch (e) {
-      // noop
-    }
-    this._dedupeNextPruneAtMs = now + 60000
-  }
-
-  _shouldDedupe(key, windowMs) {
-    try {
-      const k = String(key || '')
-      if (!k) return false
-      const now = Date.now()
-      if (now >= this._dedupeNextPruneAtMs || this._eventDeduper.size > this._dedupeMaxKeys) {
-        this._pruneDeduper(now)
-      }
-      const last = this._eventDeduper.get(k)
-      if (typeof last === 'number' && now - last < windowMs) {
-        return true
-      }
-      this._eventDeduper.set(k, now)
-      return false
-    } catch (e) {
-      return false
-    }
-  }
-
   /**
    * 统一的“前端通知中心入口”
    * - 由各业务模块（如 multi_task.js）派发事件
@@ -713,7 +670,9 @@ class NotificationManager {
   }
 
   /**
-   * 新任务通知（阶段 B：桌面端走 Visual Hint；移动端按配置优先 Bark）
+   * 新任务通知（Web UI 侧：仅做桌面 Visual Hint + 声音提示；
+   * 移动端 Bark 推送由后端 MCP 主进程在 server_feedback.py 里统一发送，
+   * 前端不再调用 /api/notify-new-tasks 以避免双推）
    */
   async notifyNewTasks(event = {}) {
     const countRaw = event && typeof event === 'object' ? event.count : null
@@ -752,55 +711,11 @@ class NotificationManager {
       // 忽略：声音播放失败不应影响主流程
     }
 
-    // 3) 移动端：按配置优先 Bark（通过后端触发，避免前端直连 Bark）
-    try {
-      if (
-        this.config &&
-        this.config.enabled !== false &&
-        this.config.mobileOptimized &&
-        isMobileDevice() &&
-        this.config.barkEnabled
-      ) {
-        const dedupeKey = String(event.dedupeKey || 'bark:new_tasks')
-        if (!this._shouldDedupe(dedupeKey, 3000)) {
-          await this._triggerBarkNewTasks({ count, taskIds })
-        }
-      }
-    } catch (e) {
-      // 忽略：Bark 触发失败不应影响主流程
-    }
+    // 注：移动端 Bark 推送已迁移到后端 MCP 主进程统一处理（server_feedback.py），
+    // 前端不再调用 /api/notify-new-tasks，避免 Web UI + 后端同时触发导致双推。
+    // 外部第三方客户端仍可按需 POST /api/notify-new-tasks 主动触发（API 兼容保留）。
 
     return { title, message, count, taskIds }
-  }
-
-  async _triggerBarkNewTasks(payload) {
-    try {
-      const body = {
-        count: payload && payload.count ? payload.count : 0,
-        taskIds: payload && Array.isArray(payload.taskIds) ? payload.taskIds : []
-      }
-
-      const resp = await fetch('/api/notify-new-tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok) {
-        console.warn('触发 Bark 新任务通知失败（HTTP）:', resp.status, data && data.message)
-        return false
-      }
-
-      // status: success / skipped / error（不抛异常，避免影响主流程）
-      if (data && data.status === 'success') {
-        return true
-      }
-      return false
-    } catch (error) {
-      console.warn('触发 Bark 新任务通知失败（已降级）:', error)
-      return false
-    }
   }
 
   showFallbackNotification(title, message, options = {}) {

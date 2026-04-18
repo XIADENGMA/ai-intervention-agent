@@ -249,11 +249,13 @@ def launch_feedback_ui(
                     if len(cleaned_summary) > 100:
                         notification_message += "..."
 
-                    # MCP 侧仅发送系统级通知，Bark 由前端统一处理（避免跨进程双重推送）
+                    # MCP 主进程统一发送：系统通知 + 声音 + Bark
+                    # Bark 由后端发起，避免"插件+MCP"场景下 Bark 丢失（前端不再触发 /api/notify-new-tasks）
+                    # 通知发送走 NotificationManager 的线程池（15s 超时），失败/超时不阻塞任务创建
                     mcp_types = [
-                        t
-                        for t in [NotificationType.SYSTEM, NotificationType.SOUND]
-                        if t != NotificationType.BARK
+                        NotificationType.SYSTEM,
+                        NotificationType.SOUND,
+                        NotificationType.BARK,
                     ]
                     event_id = notification_manager.send_notification(
                         title="新的交互反馈请求",
@@ -417,11 +419,13 @@ async def interactive_feedback(
                     if len(cleaned_message) > 100:
                         notification_message += "..."
 
-                    # MCP 侧仅发送系统级通知，Bark 由前端统一处理（避免跨进程双重推送）
+                    # MCP 主进程统一发送：系统通知 + 声音 + Bark
+                    # Bark 由后端发起，避免"插件+MCP"场景下 Bark 丢失（前端不再触发 /api/notify-new-tasks）
+                    # 通知发送走 NotificationManager 的线程池（15s 超时），失败/超时不阻塞任务创建
                     mcp_types = [
-                        t
-                        for t in [NotificationType.SYSTEM, NotificationType.SOUND]
-                        if t != NotificationType.BARK
+                        NotificationType.SYSTEM,
+                        NotificationType.SOUND,
+                        NotificationType.BARK,
                     ]
                     event_id = notification_manager.send_notification(
                         title="新的反馈请求",
