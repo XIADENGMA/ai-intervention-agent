@@ -94,7 +94,7 @@ export class AppleScriptExecutor {
 
     const body = ((script ?? '') as string).toString()
     if (!body.trim()) {
-      return Promise.reject(makeError('AppleScript 不能为空', 'APPLE_SCRIPT_EMPTY'))
+      return Promise.reject(makeError('AppleScript cannot be empty', 'APPLE_SCRIPT_EMPTY'))
     }
 
     const timeoutMs = this._timeoutMs
@@ -155,7 +155,7 @@ export class AppleScriptExecutor {
                 !!errAny.killed ||
                 signal === 'SIGTERM' ||
                 signal === 'SIGKILL'
-              const msg = errText || (error.message ? String(error.message) : 'AppleScript 执行失败')
+              const msg = errText || (error.message ? String(error.message) : 'AppleScript execution failed')
 
               const err = makeError(msg, isTimeout ? 'APPLE_SCRIPT_TIMEOUT' : 'APPLE_SCRIPT_FAILED', {
                 cause: error,

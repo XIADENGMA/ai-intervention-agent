@@ -254,18 +254,18 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           const data = (await resp.json()) as Record<string, unknown>
           if (data.language && typeof data.language === 'string' && data.language !== 'auto') {
             this._cachedServerLang = data.language
-            this._log(`[i18n] 服务器语言预取成功: ${data.language}`)
+            this._log(vscode.l10n.t('[i18n] Server language prefetch succeeded: {0}', String(data.language)))
             if (this._onLanguageChanged) {
               try { this._onLanguageChanged(data.language as string) } catch { /* 忽略 */ }
             }
             return
           }
-          this._log('[i18n] 服务器返回 language=auto 或空，使用 vscode.env.language')
+          this._log(vscode.l10n.t('[i18n] Server returned language=auto or empty, using vscode.env.language'))
           return
         }
-        this._log(`[i18n] 服务器响应非 200: ${resp.status}`)
+        this._log(vscode.l10n.t('[i18n] Server non-200 response: {0}', String(resp.status)))
       } catch {
-        this._log('[i18n] 语言预取失败，等待前端 langDetected 回传')
+        this._log(vscode.l10n.t('[i18n] Language prefetch failed, waiting for front-end langDetected'))
       } finally {
         if (timer) clearTimeout(timer)
       }
@@ -354,10 +354,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             { level: 'debug' }
           )
         } else {
-          this._log(`[事件] Webview 可见性变化: ${webviewView.visible ? '可见' : '隐藏'}`)
+          this._log(vscode.l10n.t('[event] Webview visibility changed: visible={0}', String(!!webviewView.visible)))
         }
       } catch {
-        this._log(`[事件] Webview 可见性变化: ${webviewView.visible ? '可见' : '隐藏'}`)
+        this._log(vscode.l10n.t('[event] Webview visibility changed: visible={0}', String(!!webviewView.visible)))
       }
       if (this._onVisibilityChanged) {
         this._onVisibilityChanged(!!webviewView.visible)
@@ -376,10 +376,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         if (this._logger && typeof this._logger.event === 'function') {
           this._logger.event('webview.disposed', {}, { level: 'info' })
         } else {
-          this._log('[事件] Webview 已销毁')
+          this._log(vscode.l10n.t('[event] Webview disposed'))
         }
       } catch {
-        this._log('[事件] Webview 已销毁')
+        this._log(vscode.l10n.t('[event] Webview disposed'))
       }
       if (this._onVisibilityChanged) {
         this._onVisibilityChanged(false)
@@ -422,12 +422,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     try {
       const scriptCount = (html.match(/<script\b/gi) || []).length
       if (this._logger && typeof this._logger.debug === 'function') {
-        this._logger.debug(`Webview HTML script 标签数量: ${scriptCount}`)
+        this._logger.debug(vscode.l10n.t('Webview HTML script tag count: {0}', String(scriptCount)))
       }
       const tickCount = (html.match(/`/g) || []).length
       if (tickCount > 0 && this._logger && typeof this._logger.warn === 'function') {
         this._logger.warn(
-          `Webview HTML 包含 ${tickCount} 个反引号字符：可能导致注入失败（建议继续外链化/运行时生成）`
+          vscode.l10n.t('Webview HTML contains {0} backtick character(s); may cause injection failure (recommend externalizing / runtime generation)', String(tickCount))
         )
       }
     } catch {
@@ -448,14 +448,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               { timeoutMs: 2500, webviewReady: false },
               {
                 level: 'warn',
-                message: 'Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）'
+                message: vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)')
               }
             )
           } else {
-            this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+            this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
           }
         } catch {
-          this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+          this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
         }
       }
     }, 2500)
@@ -470,7 +470,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
     try {
       if (this._logger && typeof this._logger.debug === 'function') {
-        this._logger.debug('Webview 已就绪')
+        this._logger.debug(vscode.l10n.t('Webview ready'))
       }
     } catch {
       // 忽略：日志系统异常不应影响主流程
@@ -511,14 +511,14 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     { timeoutMs: 2500, webviewReady: false, reason: 'serverUrl_changed' },
                     {
                       level: 'warn',
-                      message: 'Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）'
+                      message: vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)')
                     }
                   )
                 } else {
-                  this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+                  this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
                 }
               } catch {
-                this._logger.warn('Webview 未上报 ready：可能脚本未执行（CSP/注入/HTML 结构破损）')
+                this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
               }
             }
           }, 2500)
@@ -557,7 +557,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           if (this._logger && typeof this._logger.error === 'function') {
             this._logger.error(String(message.message))
           } else {
-            this._log(`[错误] ${message.message}`)
+            this._log(vscode.l10n.t('[error] {0}', String(message.message)))
           }
         } catch {
           // 忽略：日志系统异常不应影响主流程
@@ -578,10 +578,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           if (this._logger && typeof this._logger.event === 'function') {
             this._logger.event('webview.ready', { ready: true }, { level: 'info' })
           } else {
-            this._log('Webview 脚本 ready')
+            this._log(vscode.l10n.t('Webview script ready'))
           }
         } catch {
-          this._log('Webview 脚本 ready')
+          this._log(vscode.l10n.t('Webview script ready'))
         }
         break
       case 'tasksStats':
@@ -622,7 +622,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                   { level: prev === false ? 'info' : 'debug' }
                 )
               } else {
-                this._log('[事件] Webview 服务器状态: 已连接')
+                this._log(vscode.l10n.t('[event] Webview server status: connected'))
               }
             } else if (this._hasEverConnected) {
               if (this._logger && typeof this._logger.event === 'function') {
@@ -632,9 +632,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                   { level: 'warn' }
                 )
               } else if (this._logger && typeof this._logger.warn === 'function') {
-                this._logger.warn('[事件] Webview 服务器状态: 连接断开')
+                this._logger.warn(vscode.l10n.t('[event] Webview server status: disconnected'))
               } else {
-                this._log('[事件] Webview 服务器状态: 连接断开')
+                this._log(vscode.l10n.t('[event] Webview server status: disconnected'))
               }
             } else if (this._logger && typeof this._logger.debug === 'function') {
               if (typeof this._logger.event === 'function') {
@@ -644,7 +644,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                   { level: 'debug' }
                 )
               } else {
-                this._logger.debug('[事件] Webview 服务器状态: 连接断开')
+                this._logger.debug(vscode.l10n.t('[event] Webview server status: disconnected'))
               }
             }
           }
@@ -677,7 +677,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             : ''
           if (lang && lang !== 'auto' && lang !== this._cachedServerLang) {
             this._cachedServerLang = lang
-            this._log(`[i18n] 客户端检测到语言: ${lang}`)
+            this._log(vscode.l10n.t('[i18n] Client detected language: {0}', String(lang)))
             if (this._onLanguageChanged) {
               try { this._onLanguageChanged(lang) } catch { /* 忽略 */ }
             }
@@ -828,7 +828,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             type: 'clipboardText',
             success: false,
             requestId,
-            error: '剪贴板为空，请先复制一段代码。'
+            error: vscode.l10n.t('Clipboard is empty; please copy code first.')
           })
           return
         }
@@ -1205,9 +1205,16 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       return typeof node === 'string' ? node : key
     }
     const htmlLang = i18nLang === 'zh-CN' ? 'zh-CN' : 'en'
+    // 目前仅支持 en / zh-CN（都 LTR）。显式注入 dir 以保持与 Web UI 的无障碍行为一致，
+    // 并与 packages/vscode/i18n.js::langToDir 白名单对齐，未来加 RTL 语言仅需扩同一套逻辑。
+    const rtlPrefixes = ['ar', 'fa', 'he', 'iw', 'ps', 'ur', 'yi', 'ug', 'ckb', 'ku', 'dv', 'sd']
+    const htmlLangLower = htmlLang.toLowerCase()
+    const htmlDir = rtlPrefixes.some((p) => htmlLangLower === p || htmlLangLower.startsWith(p + '-'))
+      ? 'rtl'
+      : 'ltr'
 
     return `<!DOCTYPE html>
-<html lang="${htmlLang}">
+<html lang="${htmlLang}" dir="${htmlDir}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

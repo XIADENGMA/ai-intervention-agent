@@ -831,6 +831,32 @@ class WebFeedbackUI(
         # 必须是有效 BCP-47 tag，避免 <html lang="auto"> 导致屏幕阅读器判断错乱。
         html_lang = ui_lang if ui_lang in ("en", "zh-CN") else "en"
 
+        # HTML 根 dir 属性：现仅支持 en / zh-CN（都 LTR）。显式注入 "ltr" 而不是省略，
+        # 是为了：(1) 无障碍工具拿到明确方向信号；(2) 未来扩 RTL 语言时 setLang()
+        # 走同一套逻辑即可。对应 static/js/i18n.js::langToDir 白名单。
+        _RTL_LANG_PREFIXES = (
+            "ar",
+            "fa",
+            "he",
+            "iw",
+            "ps",
+            "ur",
+            "yi",
+            "ug",
+            "ckb",
+            "ku",
+            "dv",
+            "sd",
+        )
+        html_dir = (
+            "rtl"
+            if any(
+                html_lang.lower().startswith(p + "-") or html_lang.lower() == p
+                for p in _RTL_LANG_PREFIXES
+            )
+            else "ltr"
+        )
+
         static_dir = Path(__file__).resolve().parent / "static"
         return {
             "csp_nonce": self._get_csp_nonce(),
@@ -838,6 +864,7 @@ class WebFeedbackUI(
             "github_url": GITHUB_URL,
             "language": ui_lang,
             "html_lang": html_lang,
+            "html_dir": html_dir,
             "css_version": self._get_file_version(static_dir / "css" / "main.css"),
             "multi_task_version": self._get_file_version(
                 static_dir / "js" / "multi_task.js"

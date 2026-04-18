@@ -86,14 +86,22 @@ def _main_impl(argv: list[str]) -> int:
     _run(["uv", "run", "ruff", "check", "."])
     _run(["uv", "run", "ty", "check", "."])
 
-    # i18n 静态门禁（Web UI + VSCode webview）：
+    # i18n 静态门禁（Web UI + VSCode webview + VSCode extension host）：
     #   1. locale JSON key/type/占位符跨 locale 一致
     #   2. HTML 模板零硬编码 CJK
     #   3. JS 源文件零硬编码 CJK 字符串字面量（--scope all 覆盖 static/js 和
     #      packages/vscode，P8 之后两侧都必须干净）
+    #   4. TS 源文件零硬编码 CJK 字符串字面量（packages/vscode/*.ts；
+    #      L2·G6 之后 extension host 全部走 vscode.l10n.t）
+    #   5. locale 重复值检测（warn 级；I18n 维护性信号，不阻断 CI）
+    #   6. pseudo locale 与 en.json 同步（P9·L2·G4：QA 可切到 pseudo 看
+    #      硬编码泄漏 / 布局溢出 / Unicode 断裂）
     _run(["uv", "run", "python", "scripts/check_i18n_locale_parity.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_html_coverage.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_js_no_cjk.py", "--scope", "all"])
+    _run(["uv", "run", "python", "scripts/check_i18n_ts_no_cjk.py"])
+    _run(["uv", "run", "python", "scripts/check_i18n_duplicate_values.py"])
+    _run(["uv", "run", "python", "scripts/gen_pseudo_locale.py", "--check"])
 
     # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
     _run(["uv", "run", "python", "scripts/minify_assets.py"])

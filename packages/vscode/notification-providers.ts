@@ -681,7 +681,7 @@ export class AppleScriptNotificationProvider {
             { level: 'debug' }
           )
         } else if (this._logger && typeof this._logger.debug === 'function') {
-          this._logger.debug('忽略原生通知：非 macOS 平台')
+          this._logger.debug(vscode.l10n.t('Skipping native notification: non-macOS platform'))
         }
       } catch {
         // 忽略：日志系统异常不应影响通知流程
@@ -691,7 +691,7 @@ export class AppleScriptNotificationProvider {
 
     if (!this._executor || typeof this._executor.runAppleScript !== 'function') {
       if (isTest && vs && vs.window && typeof vs.window.showErrorMessage === 'function') {
-        vs.window.showErrorMessage('AppleScript 执行器不可用')
+        vs.window.showErrorMessage(vscode.l10n.t('AppleScript executor unavailable'))
       }
       return false
     }
@@ -778,7 +778,7 @@ export class AppleScriptNotificationProvider {
           } catch (e2: unknown) {
             const fallback = this._extractAppleScriptError(e2)
             const errObj = makeExecError(
-              fallback.message || first.message || 'AppleScript 执行失败',
+              fallback.message || first.message || vscode.l10n.t('AppleScript execution failed'),
               fallback.code || first.code || 'APPLE_SCRIPT_FAILED'
             );
             (errObj as unknown as Record<string, unknown>).primary = first;
@@ -825,10 +825,10 @@ export class AppleScriptNotificationProvider {
       }
       const msg =
         code === 'APPLE_SCRIPT_TIMEOUT'
-          ? 'AppleScript 执行超时'
+          ? vscode.l10n.t('AppleScript execution timed out')
           : raw
-            ? `AppleScript 执行失败：${raw}`
-            : 'AppleScript 执行失败'
+            ? vscode.l10n.t('AppleScript execution failed: {0}', raw)
+            : vscode.l10n.t('AppleScript execution failed')
       if (
         !diagnosticMode &&
         isTest &&
@@ -853,7 +853,9 @@ export class AppleScriptNotificationProvider {
             { level: 'warn' }
           )
         } else if (this._logger && typeof this._logger.warn === 'function') {
-          this._logger.warn(`原生通知失败 code=${code || 'unknown'} msg=${raw || ''}`.trim())
+          this._logger.warn(
+            vscode.l10n.t('Native notification failed code={0} msg={1}', String(code || 'unknown'), raw || '').trim()
+          )
         }
       } catch {
         // 忽略：日志系统异常不应影响通知流程
@@ -1067,7 +1069,7 @@ export class MacOSNativeNotificationProvider {
         vs.window &&
         typeof vs.window.showErrorMessage === 'function'
       ) {
-        vs.window.showErrorMessage('macOS 原生通知发送失败：' + msg)
+        vs.window.showErrorMessage(vscode.l10n.t('macOS native notification failed: {0}', String(msg)))
       }
       return false
     }

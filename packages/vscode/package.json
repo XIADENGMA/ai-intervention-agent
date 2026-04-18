@@ -21,6 +21,7 @@
     "onCommand:ai-intervention-agent.openSettings"
   ],
   "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "files": [
     "LICENSE",
     "activity-icon.svg",
@@ -48,6 +49,7 @@
     "prism.min.css",
     "prism.min.js",
     "locales/**",
+    "l10n/**",
     "package.nls.json",
     "package.nls.zh-CN.json",
     "README.md",

@@ -59,9 +59,14 @@ CJK_RE = re.compile(
 )
 
 STRING_RE = re.compile(
-    r"'([^'\\\n]*(?:\\.[^'\\\n]*)*)'"
-    r"|\"([^\"\\\n]*(?:\\.[^\"\\\n]*)*)\""
-    r"|`([^`\\]*(?:\\.[^`\\]*)*)`",
+    # Negative lookbehind for backslash prevents a `\`` appearing inside a
+    # regex literal (e.g. /`/g) or an already-escaped context from being
+    # mistaken for a fresh template-literal opener — which could otherwise
+    # pair up with a later backtick and report ghost CJK hits inside the
+    # surrounding HTML template literal.
+    r"(?<!\\)'([^'\\\n]*(?:\\.[^'\\\n]*)*)'"
+    r"|(?<!\\)\"([^\"\\\n]*(?:\\.[^\"\\\n]*)*)\""
+    r"|(?<!\\)`([^`\\]*(?:\\.[^`\\]*)*)`",
     re.DOTALL,
 )
 

@@ -39,8 +39,25 @@
     locales[normalizeLang(lang)] = data
   }
 
+  // RTL 语言 BCP-47 前缀白名单（与 static/js/i18n.js 保持行为一致）。
+  function langToDir(lang) {
+    if (/^(ar|fa|he|iw|ps|ur|yi|ug|ckb|ku|dv|sd)(-|$)/i.test(String(lang || ''))) {
+      return 'rtl'
+    }
+    return 'ltr'
+  }
+
   function setLang(lang) {
     currentLang = normalizeLang(lang)
+    try {
+      if (typeof document !== 'undefined' && document.documentElement) {
+        var docEl = document.documentElement
+        docEl.lang = currentLang === 'zh-CN' ? 'zh-CN' : currentLang === 'en' ? 'en' : currentLang
+        docEl.dir = langToDir(currentLang)
+      }
+    } catch (e) {
+      // 忽略（无 DOM 环境下也要能直接 setLang 用于单测）
+    }
   }
 
   function getLang() {

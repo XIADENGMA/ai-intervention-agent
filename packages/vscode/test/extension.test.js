@@ -474,9 +474,9 @@ suite('Extension Test Suite', () => {
 
     const pkgPath = path.join(ext.extensionPath, 'package.json')
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-    assert.ok(pkg.version, 'package.json 缺少 version 字段')
-    assert.notStrictEqual(pkg.version, '0.0.0', '版本号不应为 fallback 值 0.0.0')
-    assert.ok(/^\d+\.\d+\.\d+/.test(pkg.version), `版本号 '${pkg.version}' 格式不符合 semver`)
+    assert.ok(pkg.version, 'package.json missing version field')
+    assert.notStrictEqual(pkg.version, '0.0.0', 'version must not be fallback value 0.0.0')
+    assert.ok(/^\d+\.\d+\.\d+/.test(pkg.version), `version '${pkg.version}' must match semver`)
   })
 
   test('i18n key coverage: 插件 JS 中所有 t() key 必须在 locale 文件中存在', () => {
@@ -497,7 +497,7 @@ suite('Extension Test Suite', () => {
       }
     }
 
-    assert.ok(allKeys.size > 0, '未提取到任何 t() key（可能提取逻辑有误）')
+    assert.ok(allKeys.size > 0, 'no t() keys extracted (extraction logic may be broken)')
 
     const localeNames = ['en', 'zh-CN']
     for (const loc of localeNames) {
@@ -562,9 +562,9 @@ suite('Extension Test Suite', () => {
     const onlyInZh = [...zhKeys].filter(k => !enKeys.has(k)).sort()
 
     const msgs = []
-    if (onlyInEn.length) msgs.push('仅在 en.json: ' + onlyInEn.join(', '))
-    if (onlyInZh.length) msgs.push('仅在 zh-CN.json: ' + onlyInZh.join(', '))
-    assert.strictEqual(msgs.length, 0, 'Locale 键结构不一致:\n  ' + msgs.join('\n  '))
+    if (onlyInEn.length) msgs.push('only in en.json: ' + onlyInEn.join(', '))
+    if (onlyInZh.length) msgs.push('only in zh-CN.json: ' + onlyInZh.join(', '))
+    assert.strictEqual(msgs.length, 0, 'Locale key structure mismatch:\n  ' + msgs.join('\n  '))
   })
 
   test('webview.ts 编译产物应包含版本号注入逻辑（非 require 方式）', () => {
@@ -619,8 +619,8 @@ suite('Extension Test Suite', () => {
     require(i18nPath)
 
     const i18n = globalThis.AIIA_I18N
-    assert.ok(i18n, 'AIIA_I18N 未注册到 globalThis')
-    assert.ok(i18n.getAvailableLangs().length >= 2, '应至少注册 en 和 zh-CN 两个 locale')
+    assert.ok(i18n, 'AIIA_I18N not registered on globalThis')
+    assert.ok(i18n.getAvailableLangs().length >= 2, 'at least en + zh-CN locales must be registered')
 
     // 提取所有 t() key
     const tKeyPattern = /(?<![a-zA-Z_])t\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]/g
@@ -635,7 +635,7 @@ suite('Extension Test Suite', () => {
       }
     }
 
-    assert.ok(allKeys.size > 0, '未提取到 t() key')
+    assert.ok(allKeys.size > 0, 'no t() keys extracted')
 
     // 验证英文：t() 不应返回原始 key
     i18n.setLang('en')
@@ -703,16 +703,16 @@ suite('Extension Test Suite', () => {
     i18n.setLang('en')
     assert.strictEqual(i18n.getLang(), 'en')
     const enTitle = i18n.t('settings.title')
-    assert.notStrictEqual(enTitle, 'settings.title', '英文翻译不应返回原始 key')
+    assert.notStrictEqual(enTitle, 'settings.title', 'English translation must not return raw key')
 
-    // 中文
+    // Chinese
     i18n.setLang('zh-CN')
     assert.strictEqual(i18n.getLang(), 'zh-CN')
     const zhTitle = i18n.t('settings.title')
-    assert.notStrictEqual(zhTitle, 'settings.title', '中文翻译不应返回原始 key')
+    assert.notStrictEqual(zhTitle, 'settings.title', 'Chinese translation must not return raw key')
 
-    // 两种语言的翻译应不同
-    assert.notStrictEqual(enTitle, zhTitle, 'settings.title 在 en/zh-CN 下应有不同翻译')
+    // Translations must differ between the two languages
+    assert.notStrictEqual(enTitle, zhTitle, 'settings.title must differ between en and zh-CN')
 
     // 清理
     if (prevLang !== undefined) globalThis.__AIIA_I18N_LANG = prevLang
@@ -793,9 +793,9 @@ suite('Extension Test Suite', () => {
     assert.ok(i18n)
     i18n.setLang('en')
 
-    // settings.footer.version 模板为 "v{{version}}"
+    // settings.footer.version template is "v{{version}}"
     const versioned = i18n.t('settings.footer.version', { version: '1.5.0' })
-    assert.strictEqual(versioned, 'v1.5.0', '参数插值应正确替换 {{version}}')
+    assert.strictEqual(versioned, 'v1.5.0', 'param interpolation must replace {{version}}')
 
     // ui.countdown.remaining 模板为 "{{seconds}}s remaining"
     const countdown = i18n.t('ui.countdown.remaining', { seconds: 42 })

@@ -31,9 +31,24 @@
     locales[normalizeLang(lang)] = data
   }
 
+  // RTL 语言 BCP-47 前缀白名单。保持精确匹配（ar / fa / he / iw / ps / ur /
+  // yi / ug / ckb / ku / dv / sd），避免把 zh-Arab 之类混合脚本误判为 RTL。
+  function langToDir(lang) {
+    if (/^(ar|fa|he|iw|ps|ur|yi|ug|ckb|ku|dv|sd)(-|$)/i.test(String(lang || ''))) {
+      return 'rtl'
+    }
+    return 'ltr'
+  }
+
   function setLang(lang) {
     currentLang = normalizeLang(lang)
-    document.documentElement.lang = currentLang === 'zh-CN' ? 'zh-CN' : 'en'
+    try {
+      var docEl = document.documentElement
+      // 当前只支持 en / zh-CN（都是 LTR），但 <html dir> 必须始终显式，未来新增
+      // RTL 语言时只需扩 langToDir 白名单即可随 setLang 自动切换方向。
+      docEl.lang = currentLang === 'zh-CN' ? 'zh-CN' : currentLang === 'en' ? 'en' : currentLang
+      docEl.dir = langToDir(currentLang)
+    } catch (e) { /* noop */ }
   }
 
   function getLang() { return currentLang }

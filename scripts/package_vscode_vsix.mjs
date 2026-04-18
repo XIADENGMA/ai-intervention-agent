@@ -71,6 +71,10 @@ const includeList = [
   'prism.min.css',
   'prism.min.js',
   'locales',
+  // VSCode extension host l10n bundle (vscode.l10n.t backing store).
+  // Declared via "l10n": "./l10n" in package.json so the marketplace +
+  // VSCode runtime both pick it up; must be copied into the vsix root.
+  'l10n',
   'package.nls.json',
   'package.nls.zh-CN.json'
 ]

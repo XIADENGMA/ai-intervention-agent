@@ -244,7 +244,7 @@ function activate(context: vscode.ExtensionContext): void {
       if (connected === true) {
         statusBar.text = `$(sparkle-filled) ${formatTotalCount(total)}`
       } else if (connected === false) {
-        statusBar.text = '$(sparkle-filled) 离线'
+        statusBar.text = vscode.l10n.t('$(sparkle-filled) Offline')
       } else {
         statusBar.text = '$(sparkle-filled) --'
       }
@@ -254,10 +254,10 @@ function activate(context: vscode.ExtensionContext): void {
         statusBar.accessibilityInformation = {
           label:
             connected === true
-              ? `AI Intervention Agent 已连接，任务总数 ${total}`
+              ? vscode.l10n.t('AI Intervention Agent connected, {0} task(s) total', String(total))
               : connected === false
-                ? 'AI Intervention Agent 未连接'
-                : 'AI Intervention Agent 状态未知',
+                ? vscode.l10n.t('AI Intervention Agent not connected')
+                : vscode.l10n.t('AI Intervention Agent status unknown'),
           role: 'status'
         }
       } catch {
@@ -280,7 +280,7 @@ function activate(context: vscode.ExtensionContext): void {
       lastPollDurationMs = null
       lastPollHttpStatus = null
       lastPollErrorName = 'NoFetch'
-      lastPollError = '当前运行环境无 fetch，无法探测服务端状态'
+      lastPollError = vscode.l10n.t('No fetch available in current runtime; cannot probe server status')
       applyStatusBarPresentation({ connected: null, active: 0, pending: 0 })
       setStatusBarShown(true)
       return null
