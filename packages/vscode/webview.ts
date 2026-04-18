@@ -1102,6 +1102,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       vscode.Uri.joinPath(this._extensionUri, 'webview-settings-ui.js')
     )
     const i18nJsUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'i18n.js'))
+    // T1 · C10c: @aiia/tri-state-panel 双端共享组件。tri-state-panel.js / -loader.js /
+    // -bootstrap.js / .css 是 static/ 源的字节级拷贝，由
+    // tests/test_tri_state_panel_parity.py::sha256 守护，禁止手工编辑
+    // packages/vscode/ 下这 4 个文件，请改 static/ 并同步拷贝。
+    const triStatePanelJsUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'tri-state-panel.js')
+    )
+    const triStatePanelLoaderUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'tri-state-panel-loader.js')
+    )
+    const triStatePanelBootstrapUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'tri-state-panel-bootstrap.js')
+    )
     let extensionVersion = '0.0.0'
     try {
       const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
@@ -1236,6 +1249,50 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                 </svg>
             </button>
+        </div>
+
+        <!-- 统一三态面板（T1 · C10c / @aiia/tri-state-panel）
+             默认 data-state="ready" → CSS 将整个面板 display:none；通过 URL 调试参数
+             ?aiia_tri_state=loading|skeleton|empty|error[&aiia_tri_state_error=network|server_500|timeout|unknown]
+             [&aiia_tri_state_empty=default|filtered] 可手动切换到各分支用于 E2E 演示。
+             正式消费（loading/empty/error 真实业务驱动）由 C10d / S2 接入 window.AIIA_CONTENT_SM。
+             反向闸门（tests/test_runtime_behavior.py::test_pre_reserved_keys_not_yet_consumed）
+             依赖以下 13 个 data-i18n 声明 + tl() SSR 文本以标记 VSCode 端消费完成。 -->
+        <div
+            id="aiia-tri-state-panel"
+            class="aiia-tri-state-panel"
+            data-state="ready"
+            data-error-mode="unknown"
+            data-empty-mode="default"
+            role="status"
+            aria-live="polite"
+            aria-busy="false"
+        >
+            <div class="aiia-tsp-branch" data-tsp-branch="skeleton">
+                <span class="aiia-tsp-skeleton-placeholder" aria-hidden="true"></span>
+                <span class="aiia-tsp-skeleton-placeholder" aria-hidden="true"></span>
+            </div>
+            <div class="aiia-tsp-branch" data-tsp-branch="loading">
+                <h3 class="aiia-tsp-title" data-i18n="aiia.state.loading.title">${tl('aiia.state.loading.title')}</h3>
+                <p class="aiia-tsp-message" data-i18n="aiia.state.loading.message">${tl('aiia.state.loading.message')}</p>
+            </div>
+            <div class="aiia-tsp-branch" data-tsp-branch="empty">
+                <h3 class="aiia-tsp-title" data-i18n="aiia.state.empty.title">${tl('aiia.state.empty.title')}</h3>
+                <p class="aiia-tsp-empty-detail" data-tsp-empty-detail="default" data-i18n="aiia.state.empty.message.default">${tl('aiia.state.empty.message.default')}</p>
+                <p class="aiia-tsp-empty-detail" data-tsp-empty-detail="filtered" data-i18n="aiia.state.empty.message.filtered">${tl('aiia.state.empty.message.filtered')}</p>
+            </div>
+            <div class="aiia-tsp-branch" data-tsp-branch="error">
+                <h3 class="aiia-tsp-title" data-i18n="aiia.state.error.title">${tl('aiia.state.error.title')}</h3>
+                <p class="aiia-tsp-error-detail" data-tsp-error-detail="network" data-i18n="aiia.state.error.message.network">${tl('aiia.state.error.message.network')}</p>
+                <p class="aiia-tsp-error-detail" data-tsp-error-detail="server_500" data-i18n="aiia.state.error.message.server_500">${tl('aiia.state.error.message.server_500')}</p>
+                <p class="aiia-tsp-error-detail" data-tsp-error-detail="timeout" data-i18n="aiia.state.error.message.timeout">${tl('aiia.state.error.message.timeout')}</p>
+                <p class="aiia-tsp-error-detail" data-tsp-error-detail="unknown" data-i18n="aiia.state.error.message.unknown">${tl('aiia.state.error.message.unknown')}</p>
+                <div class="aiia-tsp-actions">
+                    <button type="button" class="aiia-tsp-action" data-tsp-action="retry" data-i18n="aiia.state.error.action.retry">${tl('aiia.state.error.action.retry')}</button>
+                    <button type="button" class="aiia-tsp-action" data-tsp-action="open_log" data-i18n="aiia.state.error.action.open_log">${tl('aiia.state.error.action.open_log')}</button>
+                    <button type="button" class="aiia-tsp-action" data-tsp-action="copy_diagnostics" data-i18n="aiia.state.error.action.copy_diagnostics">${tl('aiia.state.error.action.copy_diagnostics')}</button>
+                </div>
+            </div>
         </div>
 
         <!-- Main content -->
@@ -1426,6 +1483,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         <script nonce="${nonce}" src="${webviewHelpersUri}"></script>
         <script nonce="${nonce}" src="${webviewUiUri}"></script>
         <script nonce="${nonce}" src="${webviewNotifyCoreUri}"></script>
+
+        <!-- T1 · C10c: @aiia/tri-state-panel via Import Maps
+             importmap 必须出现在所有 <script type="module"> 之前（浏览器规范）。
+             业务代码通过 bare specifier \`@aiia/tri-state-panel\` 消费，Web UI 与
+             VSCode webview 双端书写完全一致——真正的物理文件路径差异只在
+             importmap 映射里。CSP 合规：importmap 与 module script 均携带 nonce，
+             受 \`script-src 'nonce-...'\` 约束。 -->
+        <script type="importmap" nonce="${nonce}">
+        {
+          "imports": {
+            "@aiia/tri-state-panel": "${triStatePanelJsUri}"
+          }
+        }
+        </script>
+        <script type="module" nonce="${nonce}" src="${triStatePanelLoaderUri}"></script>
+        <script nonce="${nonce}" src="${triStatePanelBootstrapUri}"></script>
 </body>
 </html>`
   }

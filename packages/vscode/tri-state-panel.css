@@ -1,0 +1,159 @@
+/*!
+ * @aiia/tri-state-panel · Unified tri-state panel styles
+ *
+ * Scope: static/css/main.css loads this file via @import inside the existing
+ * "components" cascade layer (see §T1 v3 §5 architecture diagram).
+ *
+ * Guard-clause order enforced by CSS alone:
+ *   - Default: every `.aiia-tsp-branch` is display:none.
+ *   - Only `.aiia-tri-state-panel[data-state="<X>"] [data-tsp-branch="<X>"]`
+ *     is flipped to display:flex.
+ *   - `[data-state="ready"]` hides the entire panel (the host's real content
+ *     region takes over).
+ *
+ * Error-mode / empty-mode detail paragraphs follow the same pattern via
+ * `[data-error-mode]` / `[data-empty-mode]`—only one detail line is ever
+ * visible simultaneously, so assistive tech never announces stale copy.
+ *
+ * All sizing / spacing / radius / transition values come from the shared
+ * design tokens introduced in C10a (see --aiia-state-* in main.css and
+ * packages/vscode/webview.css; parity guarded by tests/test_state_tokens.py).
+ */
+
+@layer components {
+  .aiia-tri-state-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: var(--aiia-state-max-width);
+    margin-inline: auto;
+    padding-block: var(--aiia-state-padding-y);
+    padding-inline: var(--aiia-state-padding-x);
+    border-radius: var(--aiia-state-radius);
+    transition: var(--aiia-state-transition);
+    color: inherit;
+    text-align: center;
+  }
+
+  .aiia-tri-state-panel[data-state='ready'] {
+    display: none;
+  }
+
+  .aiia-tsp-branch {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--aiia-state-gap);
+    width: 100%;
+  }
+
+  .aiia-tri-state-panel[data-state='skeleton'] [data-tsp-branch='skeleton'] {
+    display: flex;
+  }
+  .aiia-tri-state-panel[data-state='loading'] [data-tsp-branch='loading'] {
+    display: flex;
+  }
+  .aiia-tri-state-panel[data-state='empty'] [data-tsp-branch='empty'] {
+    display: flex;
+  }
+  .aiia-tri-state-panel[data-state='error'] [data-tsp-branch='error'] {
+    display: flex;
+  }
+
+  .aiia-tsp-icon {
+    width: var(--aiia-state-icon-size);
+    height: var(--aiia-state-icon-size);
+    flex: 0 0 auto;
+    opacity: 0.85;
+  }
+
+  .aiia-tsp-title {
+    margin: 0;
+    font-size: var(--aiia-state-title-size);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .aiia-tsp-message {
+    margin: 0;
+    font-size: var(--aiia-state-message-size);
+    line-height: 1.5;
+    opacity: 0.82;
+  }
+
+  .aiia-tsp-empty-detail {
+    display: none;
+    margin: 0;
+    font-size: var(--aiia-state-message-size);
+    line-height: 1.5;
+    opacity: 0.82;
+  }
+  .aiia-tri-state-panel[data-empty-mode='default'] [data-tsp-empty-detail='default'],
+  .aiia-tri-state-panel[data-empty-mode='filtered'] [data-tsp-empty-detail='filtered'] {
+    display: block;
+  }
+
+  .aiia-tsp-error-detail {
+    display: none;
+    margin: 0;
+    font-size: var(--aiia-state-message-size);
+    line-height: 1.5;
+    opacity: 0.9;
+  }
+  .aiia-tri-state-panel[data-error-mode='network'] [data-tsp-error-detail='network'],
+  .aiia-tri-state-panel[data-error-mode='server_500'] [data-tsp-error-detail='server_500'],
+  .aiia-tri-state-panel[data-error-mode='timeout'] [data-tsp-error-detail='timeout'],
+  .aiia-tri-state-panel[data-error-mode='unknown'] [data-tsp-error-detail='unknown'] {
+    display: block;
+  }
+
+  .aiia-tsp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 4px;
+  }
+
+  .aiia-tsp-action {
+    padding: 6px 14px;
+    font-size: var(--aiia-state-message-size);
+    line-height: 1.4;
+    border-radius: var(--aiia-state-radius);
+    border: 1px solid currentColor;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transition: var(--aiia-state-transition);
+  }
+  .aiia-tsp-action:hover,
+  .aiia-tsp-action:focus-visible {
+    opacity: 0.9;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+  }
+
+  .aiia-tsp-skeleton-placeholder {
+    width: 100%;
+    height: 1em;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, currentColor 10%, transparent) 0%,
+      color-mix(in srgb, currentColor 18%, transparent) 50%,
+      color-mix(in srgb, currentColor 10%, transparent) 100%
+    );
+    background-size: 200% 100%;
+    animation: aiia-tsp-shimmer 1.6s ease-in-out infinite;
+  }
+
+  @keyframes aiia-tsp-shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+}

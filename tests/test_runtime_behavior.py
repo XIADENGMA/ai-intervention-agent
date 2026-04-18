@@ -689,24 +689,12 @@ class TestI18nDeadKeys(unittest.TestCase):
     删除后，普通 dead-key 检查会立即接管，保证新一轮 locale 改动不出 dead key。
     """
 
-    _PRE_RESERVED_KEYS: dict[str, frozenset[str]] = {
-        key: frozenset({"web", "vscode"})
-        for key in (
-            "aiia.state.loading.title",
-            "aiia.state.loading.message",
-            "aiia.state.empty.title",
-            "aiia.state.empty.message.default",
-            "aiia.state.empty.message.filtered",
-            "aiia.state.error.title",
-            "aiia.state.error.message.network",
-            "aiia.state.error.message.server_500",
-            "aiia.state.error.message.timeout",
-            "aiia.state.error.message.unknown",
-            "aiia.state.error.action.retry",
-            "aiia.state.error.action.open_log",
-            "aiia.state.error.action.copy_diagnostics",
-        )
-    }
+    # T1 · C10c 已完成（packages/vscode/webview.ts 注入了 13 个 data-i18n
+    # 与 ${tl(...)} SSR 调用，_collect_all_used_vscode_keys 也将 aiia.state.*
+    # 标记为 vscode 已消费），双端皆已消费 → 反向闸门移除豁免，普通 dead-key
+    # 检查接管。如果未来又新增"短期单端豁免"，再按 T1 v3 §4 的 dict[str, frozenset[str]]
+    # 形态填回；空字典 + skipTest 是常态。
+    _PRE_RESERVED_KEYS: dict[str, frozenset[str]] = {}
 
     @classmethod
     def _pre_reserved_key_set(cls) -> set[str]:

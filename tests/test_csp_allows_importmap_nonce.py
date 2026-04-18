@@ -30,6 +30,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEB_UI_HTML = REPO_ROOT / "templates" / "web_ui.html"
 SECURITY_MODULE = REPO_ROOT / "web_ui_security.py"
+VSCODE_WEBVIEW_TS = REPO_ROOT / "packages" / "vscode" / "webview.ts"
 
 
 def _strip_html_comments(html: str) -> str:
@@ -110,6 +111,80 @@ class TestCspAllowsImportMapNonce(unittest.TestCase):
                 "Loader module script (type='module' src='/static/js/tri-state-panel-loader.js') "
                 "missing its nonce attribute. CSP nonce-only script-src would "
                 "reject it and bare-specifier resolution never runs."
+            )
+
+
+class TestCspAllowsImportMapNonceVscode(unittest.TestCase):
+    """Same regression pins, but for the VSCode webview half (T1 · C10c).
+
+    The webview HTML is generated dynamically inside
+    ``packages/vscode/webview.ts::_getHtmlContent``; this test class
+    asserts the same nonce contract on that template literal so the
+    Web UI and VSCode webview never drift.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.ts = VSCODE_WEBVIEW_TS.read_text(encoding="utf-8")
+
+    def test_csp_script_src_uses_nonce(self) -> None:
+        self.assertIn(
+            "script-src 'nonce-${nonce}'",
+            self.ts,
+            msg=(
+                "VSCode webview CSP must use nonce-based script-src "
+                "(``script-src 'nonce-${nonce}'``). Hash-only or allowlist-only "
+                "policies would break Import Maps (the <script type='importmap'> "
+                "must match the same nonce or hash rule as inline scripts)."
+            ),
+        )
+
+    def test_csp_does_not_require_trusted_types(self) -> None:
+        self.assertNotIn(
+            "require-trusted-types-for",
+            self.ts,
+            msg=(
+                "If `require-trusted-types-for 'script'` is enabled, Import "
+                "Maps and module scripts must be wrapped through a trusted "
+                "types policy. We are not ready for that rollout; this test "
+                "fails loudly when the CSP is hardened without first "
+                "retrofitting the importmap path."
+            ),
+        )
+
+    def test_importmap_script_carries_nonce(self) -> None:
+        match = re.search(
+            r'<script\s+type="importmap"\s+nonce="\$\{nonce\}"',
+            self.ts,
+        )
+        self.assertIsNotNone(
+            match,
+            msg=(
+                '<script type="importmap" nonce="${nonce}"> missing in '
+                "webview.ts::_getHtmlContent. Without the nonce attribute "
+                "the browser drops the importmap under the CSP "
+                "(nonce-only script-src), breaking every bare-specifier "
+                "import silently."
+            ),
+        )
+
+    def test_module_loader_script_carries_nonce(self) -> None:
+        pattern = re.compile(
+            r'<script\b[^>]*\btype="module"[^>]*\bnonce="\$\{nonce\}"'
+            r'[^>]*\bsrc="\$\{triStatePanelLoaderUri\}"',
+            flags=re.DOTALL,
+        )
+        alt_pattern = re.compile(
+            r'<script\b[^>]*\bsrc="\$\{triStatePanelLoaderUri\}"'
+            r'[^>]*\bnonce="\$\{nonce\}"[^>]*\btype="module"',
+            flags=re.DOTALL,
+        )
+        if not pattern.search(self.ts) and not alt_pattern.search(self.ts):
+            self.fail(
+                "Loader module script (type='module' src='${triStatePanelLoaderUri}') "
+                "missing its nonce attribute in webview.ts. CSP nonce-only "
+                "script-src would reject it and bare-specifier resolution "
+                "never runs."
             )
 
 
