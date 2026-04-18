@@ -238,12 +238,16 @@ class TestTriStatePanelEsModule(unittest.TestCase):
             )
 
     def test_main_css_imports_tri_state_panel(self) -> None:
-        self.assertIn(
-            '@import url("./tri-state-panel.css")',
+        import_re = re.compile(
+            r'@import\s+url\(\s*(["\'])\./tri-state-panel\.css\1\s*\)\s*;'
+        )
+        self.assertRegex(
             self.main_css_src,
+            import_re,
             msg=(
                 "static/css/main.css must @import ./tri-state-panel.css so the "
-                "component layer is actually loaded by the browser."
+                "component layer is actually loaded by the browser. Single or "
+                "double quotes are both acceptable (formatter-agnostic)."
             ),
         )
 

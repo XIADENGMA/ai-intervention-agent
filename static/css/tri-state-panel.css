@@ -37,7 +37,7 @@
     text-align: center;
   }
 
-  .aiia-tri-state-panel[data-state="ready"] {
+  .aiia-tri-state-panel[data-state='ready'] {
     display: none;
   }
 
@@ -49,16 +49,16 @@
     width: 100%;
   }
 
-  .aiia-tri-state-panel[data-state="skeleton"] [data-tsp-branch="skeleton"] {
+  .aiia-tri-state-panel[data-state='skeleton'] [data-tsp-branch='skeleton'] {
     display: flex;
   }
-  .aiia-tri-state-panel[data-state="loading"] [data-tsp-branch="loading"] {
+  .aiia-tri-state-panel[data-state='loading'] [data-tsp-branch='loading'] {
     display: flex;
   }
-  .aiia-tri-state-panel[data-state="empty"] [data-tsp-branch="empty"] {
+  .aiia-tri-state-panel[data-state='empty'] [data-tsp-branch='empty'] {
     display: flex;
   }
-  .aiia-tri-state-panel[data-state="error"] [data-tsp-branch="error"] {
+  .aiia-tri-state-panel[data-state='error'] [data-tsp-branch='error'] {
     display: flex;
   }
 
@@ -90,8 +90,8 @@
     line-height: 1.5;
     opacity: 0.82;
   }
-  .aiia-tri-state-panel[data-empty-mode="default"] [data-tsp-empty-detail="default"],
-  .aiia-tri-state-panel[data-empty-mode="filtered"] [data-tsp-empty-detail="filtered"] {
+  .aiia-tri-state-panel[data-empty-mode='default'] [data-tsp-empty-detail='default'],
+  .aiia-tri-state-panel[data-empty-mode='filtered'] [data-tsp-empty-detail='filtered'] {
     display: block;
   }
 
@@ -102,10 +102,10 @@
     line-height: 1.5;
     opacity: 0.9;
   }
-  .aiia-tri-state-panel[data-error-mode="network"] [data-tsp-error-detail="network"],
-  .aiia-tri-state-panel[data-error-mode="server_500"] [data-tsp-error-detail="server_500"],
-  .aiia-tri-state-panel[data-error-mode="timeout"] [data-tsp-error-detail="timeout"],
-  .aiia-tri-state-panel[data-error-mode="unknown"] [data-tsp-error-detail="unknown"] {
+  .aiia-tri-state-panel[data-error-mode='network'] [data-tsp-error-detail='network'],
+  .aiia-tri-state-panel[data-error-mode='server_500'] [data-tsp-error-detail='server_500'],
+  .aiia-tri-state-panel[data-error-mode='timeout'] [data-tsp-error-detail='timeout'],
+  .aiia-tri-state-panel[data-error-mode='unknown'] [data-tsp-error-detail='unknown'] {
     display: block;
   }
 
@@ -149,7 +149,11 @@
   }
 
   @keyframes aiia-tsp-shimmer {
-    0%   { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 }

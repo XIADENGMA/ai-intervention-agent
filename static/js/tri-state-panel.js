@@ -52,8 +52,10 @@ export class TriStatePanelController {
     this._rootEl.addEventListener('click', this._handleClick)
 
     const initialState = typeof opts.initialState === 'string' ? opts.initialState : null
-    const initialErrorMode = typeof opts.initialErrorMode === 'string' ? opts.initialErrorMode : null
-    const initialEmptyMode = typeof opts.initialEmptyMode === 'string' ? opts.initialEmptyMode : null
+    const initialErrorMode =
+      typeof opts.initialErrorMode === 'string' ? opts.initialErrorMode : null
+    const initialEmptyMode =
+      typeof opts.initialEmptyMode === 'string' ? opts.initialEmptyMode : null
 
     if (initialErrorMode) this.setErrorMode(initialErrorMode)
     if (initialEmptyMode) this.setEmptyMode(initialEmptyMode)
@@ -128,7 +130,11 @@ export class TriStatePanelController {
 
   dispose() {
     if (typeof this._unsubscribe === 'function') {
-      try { this._unsubscribe() } catch (_e) { /* noop */ }
+      try {
+        this._unsubscribe()
+      } catch (_e) {
+        /* noop */
+      }
       this._unsubscribe = null
     }
     this._rootEl.removeEventListener('click', this._handleClick)
@@ -136,7 +142,9 @@ export class TriStatePanelController {
   }
 }
 
-function noop() { /* intentional noop */ }
+function noop() {
+  /* intentional noop */
+}
 
 export const VERSION = '1.0.0'
 export const VALID_STATES_FROZEN = VALID_STATES

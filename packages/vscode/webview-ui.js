@@ -26,7 +26,8 @@
   // 防御性 i18n 初始化：确保 locale 数据已注册（解决某些 webview 环境下自动注册失败的问题）
   ;(function ensureI18nReady() {
     try {
-      var i18n = (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+      var i18n =
+        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
         (typeof window !== 'undefined' && window.AIIA_I18N)
       if (!i18n || typeof i18n.registerLocale !== 'function') return
 
@@ -54,15 +55,20 @@
           if (typeof i18n.setLang === 'function') i18n.setLang(String(lang))
         }
       }
-    } catch (e) { /* 忽略 */ }
+    } catch (e) {
+      /* 忽略 */
+    }
   })()
 
   function t(key, params) {
     try {
-      var i18n = (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+      var i18n =
+        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
         (typeof window !== 'undefined' && window.AIIA_I18N)
       if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
-    } catch (_e) { /* noop */ }
+    } catch (_e) {
+      /* noop */
+    }
     return key
   }
 
@@ -71,15 +77,24 @@
 
   function getI18n() {
     try {
-      return (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
-        (typeof window !== 'undefined' && window.AIIA_I18N) || null
-    } catch (e) { return null }
+      return (
+        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N) ||
+        null
+      )
+    } catch (e) {
+      return null
+    }
   }
 
   function applyServerLanguage(lang) {
     if (!lang || lang === 'auto' || _serverLangApplied) return
     _serverLangApplied = true
-    try { vscode.postMessage({ type: 'langDetected', language: lang }) } catch (e) { /* 忽略 */ }
+    try {
+      vscode.postMessage({ type: 'langDetected', language: lang })
+    } catch (e) {
+      /* 忽略 */
+    }
     var i18n = getI18n()
     if (!i18n || typeof i18n.setLang !== 'function' || typeof i18n.getLang !== 'function') return
     var normalized = typeof i18n.normalizeLang === 'function' ? i18n.normalizeLang(lang) : lang
@@ -99,7 +114,9 @@
           var ver = els[i].getAttribute('data-i18n-version')
           var val = ver ? t(key, { version: ver }) : t(key)
           if (val && val !== key) els[i].textContent = val
-        } catch (e) { /* 忽略 */ }
+        } catch (e) {
+          /* 忽略 */
+        }
       }
       var titleEls = document.querySelectorAll('[data-i18n-title]')
       for (var j = 0; j < titleEls.length; j++) {
@@ -111,7 +128,9 @@
             titleEls[j].setAttribute('title', tval)
             titleEls[j].setAttribute('aria-label', tval)
           }
-        } catch (e) { /* 忽略 */ }
+        } catch (e) {
+          /* 忽略 */
+        }
       }
       var phEls = document.querySelectorAll('[data-i18n-placeholder]')
       for (var k = 0; k < phEls.length; k++) {
@@ -120,9 +139,13 @@
           if (!pkey) continue
           var pval = t(pkey)
           if (pval && pval !== pkey) phEls[k].setAttribute('placeholder', pval)
-        } catch (e) { /* 忽略 */ }
+        } catch (e) {
+          /* 忽略 */
+        }
       }
-    } catch (e) { /* 忽略 */ }
+    } catch (e) {
+      /* 忽略 */
+    }
   }
 
   const __cfgEl = document.getElementById('aiia-config')
@@ -1423,7 +1446,11 @@
   function _connectSSE() {
     if (typeof EventSource === 'undefined') return
     if (_sseSource) {
-      try { _sseSource.close() } catch (_) { /* noop */ }
+      try {
+        _sseSource.close()
+      } catch (_) {
+        /* noop */
+      }
       _sseSource = null
     }
 
@@ -1446,8 +1473,17 @@
       if (_sseSource !== source) return
       try {
         const detail = JSON.parse(e.data)
-        log('SSE task_changed: ' + detail.task_id + ' ' + detail.old_status + ' → ' + detail.new_status)
-      } catch (_) { /* noop */ }
+        log(
+          'SSE task_changed: ' +
+            detail.task_id +
+            ' ' +
+            detail.old_status +
+            ' → ' +
+            detail.new_status
+        )
+      } catch (_) {
+        /* noop */
+      }
       if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
       _sseDebounceTimer = setTimeout(function () {
         _sseDebounceTimer = null
@@ -1458,7 +1494,11 @@
     source.onerror = function () {
       if (_sseSource !== source) return
       _sseConnected = false
-      try { source.close() } catch (_) { /* noop */ }
+      try {
+        source.close()
+      } catch (_) {
+        /* noop */
+      }
       _sseSource = null
       log('SSE 断开，回退到短间隔轮询，' + _sseReconnectDelay / 1000 + 's 后重连')
       pollBackoffMs = POLL_BASE_MS
@@ -1486,7 +1526,11 @@
       _sseDebounceTimer = null
     }
     if (_sseSource) {
-      try { _sseSource.close() } catch (_) { /* noop */ }
+      try {
+        _sseSource.close()
+      } catch (_) {
+        /* noop */
+      }
       _sseSource = null
     }
     _sseConnected = false
@@ -1546,8 +1590,7 @@
     if (!text) return
 
     var kindRaw = options && options.kind ? String(options.kind) : 'info'
-    var kind =
-      kindRaw === 'success' || kindRaw === 'warn' || kindRaw === 'error' ? kindRaw : 'info'
+    var kind = kindRaw === 'success' || kindRaw === 'warn' || kindRaw === 'error' ? kindRaw : 'info'
     var timeoutMsRaw = options && typeof options.timeoutMs === 'number' ? options.timeoutMs : 1800
     var timeoutMs = Math.max(800, Math.min(8000, Math.floor(timeoutMsRaw)))
     var dedupeKey = options && options.dedupeKey ? String(options.dedupeKey) : kind + ':' + text
@@ -1627,7 +1670,9 @@
     }
 
     el._toastRemove = remove
-    el.addEventListener('click', function () { remove() })
+    el.addEventListener('click', function () {
+      remove()
+    })
     el.addEventListener('mouseenter', pauseTimer)
     el.addEventListener('mouseleave', startTimer)
 
@@ -1642,7 +1687,11 @@
     startTimer()
   }
 
-  try { if (typeof globalThis !== 'undefined') globalThis.__AIIA_showToast = showToast } catch (e) { /* noop */ }
+  try {
+    if (typeof globalThis !== 'undefined') globalThis.__AIIA_showToast = showToast
+  } catch (e) {
+    /* noop */
+  }
 
   // 文本框：自动高度（Auto-resize），并保留用户手动拖拽的最小高度
   //
@@ -1870,8 +1919,7 @@
       }
 
       if (!ok || !text.trim()) {
-        const err =
-          message && message.error ? String(message.error) : t('ui.clipboard.empty')
+        const err = message && message.error ? String(message.error) : t('ui.clipboard.empty')
         vscode.postMessage({ type: 'showInfo', message: err })
         return
       }
@@ -1886,7 +1934,7 @@
     } catch (e) {
       vscode.postMessage({
         type: 'showInfo',
-        message: t('ui.clipboard.insertFailed', { reason: (e && e.message ? e.message : String(e)) })
+        message: t('ui.clipboard.insertFailed', { reason: e && e.message ? e.message : String(e) })
       })
       clipboardRequestId = null
       setInsertCodeBtnDisabled(false)
@@ -2183,7 +2231,9 @@
     }
 
     if (textStandalone) {
-      textStandalone.textContent = connected ? t('ui.status.connected') : t('ui.status.disconnected')
+      textStandalone.textContent = connected
+        ? t('ui.status.connected')
+        : t('ui.status.disconnected')
     }
 
     /* 只在服务器已连接时显示加载进度条 */
@@ -2883,7 +2933,11 @@
         (error.name === 'AbortError' || String(error.name || '') === 'AbortError')
       )
       const errMsg =
-        error && error.message ? String(error.message) : isAbort ? t('settings.hint.timeout') : String(error)
+        error && error.message
+          ? String(error.message)
+          : isAbort
+            ? t('settings.hint.timeout')
+            : String(error)
       logError(isAbort ? '激活任务超时：请检查服务端是否可用' : '激活任务失败: ' + errMsg)
       vscode.postMessage({
         type: 'showInfo',
@@ -3118,11 +3172,16 @@
       }
       if (reason !== 'no_content') {
         try {
-          showToast(reason ? t('ui.toast.configFallbackReason', { reason: reason }) : t('ui.toast.configFallback'), {
-            kind: 'warn',
-            timeoutMs: 1600,
-            dedupeKey: 'config:fallback'
-          })
+          showToast(
+            reason
+              ? t('ui.toast.configFallbackReason', { reason: reason })
+              : t('ui.toast.configFallback'),
+            {
+              kind: 'warn',
+              timeoutMs: 1600,
+              dedupeKey: 'config:fallback'
+            }
+          )
         } catch (e) {
           // 忽略
         }
@@ -3458,7 +3517,11 @@
       Promise.resolve()
         .then(() => preloaded.showNewTaskNotification(normalized))
         .catch(() => {
-          postStatusInfo(ids.length === 1 ? t('ui.notification.newTask', { id: ids[0] }) : t('ui.notification.newTasks', { count: ids.length }))
+          postStatusInfo(
+            ids.length === 1
+              ? t('ui.notification.newTask', { id: ids[0] })
+              : t('ui.notification.newTasks', { count: ids.length })
+          )
         })
       return
     }
@@ -3474,13 +3537,17 @@
         }
         log('[notifyNewTasks] notify-core 加载失败，回退到 vscode 状态栏通知')
         const msg =
-          ids.length === 1 ? t('ui.notification.newTask', { id: ids[0] }) : t('ui.notification.newTasks', { count: ids.length })
+          ids.length === 1
+            ? t('ui.notification.newTask', { id: ids[0] })
+            : t('ui.notification.newTasks', { count: ids.length })
         postStatusInfo(msg)
       })
       .catch(() => {
         try {
           const msg =
-            ids.length === 1 ? t('ui.notification.newTask', { id: ids[0] }) : t('ui.notification.newTasks', { count: ids.length })
+            ids.length === 1
+              ? t('ui.notification.newTask', { id: ids[0] })
+              : t('ui.notification.newTasks', { count: ids.length })
           postStatusInfo(msg)
         } catch (e) {
           // 忽略
@@ -4088,7 +4155,11 @@
     try {
       const now0 = Date.now()
       if (submitInFlight) {
-        showToast(t('ui.submit.submitting'), { kind: 'info', timeoutMs: 1200, dedupeKey: 'submit:inflight' })
+        showToast(t('ui.submit.submitting'), {
+          kind: 'info',
+          timeoutMs: 1200,
+          dedupeKey: 'submit:inflight'
+        })
         return null
       }
       if (submitBackoffUntilMs && now0 < submitBackoffUntilMs) {
@@ -4238,7 +4309,11 @@
         }
 
         // 显示成功提示
-        showToast(t('ui.submit.success'), { kind: 'success', timeoutMs: 1400, dedupeKey: 'submit:ok' })
+        showToast(t('ui.submit.success'), {
+          kind: 'success',
+          timeoutMs: 1400,
+          dedupeKey: 'submit:ok'
+        })
 
         // 重新轮询（使用pollAllData以更新任务列表）
         setTimeout(() => requestImmediateRefresh(), 200)
@@ -4736,13 +4811,23 @@
           const body = document.body
           if (body && body.classList && typeof requestAnimationFrame === 'function') {
             requestAnimationFrame(function () {
-              try { body.classList.add('aiia-repainting') } catch (_) { /* noop */ }
+              try {
+                body.classList.add('aiia-repainting')
+              } catch (_) {
+                /* noop */
+              }
               requestAnimationFrame(function () {
-                try { body.classList.remove('aiia-repainting') } catch (_) { /* noop */ }
+                try {
+                  body.classList.remove('aiia-repainting')
+                } catch (_) {
+                  /* noop */
+                }
               })
             })
           }
-        } catch (_) { /* noop */ }
+        } catch (_) {
+          /* noop */
+        }
         break
       case 'clipboardText':
         handleClipboardTextMessage(message)
@@ -4823,7 +4908,11 @@
       /* 忽略 */
     }
     // BM-7：即使启动失败，骨架屏也必须退场，否则会永久遮盖 error toast
-    try { hideBootSkeleton() } catch (_) { /* 忽略 */ }
+    try {
+      hideBootSkeleton()
+    } catch (_) {
+      /* 忽略 */
+    }
   })
   window.addEventListener('unhandledrejection', e => {
     reportFatalError('未处理 Promise 拒绝: ', e && e.reason ? e.reason : e)
@@ -4833,7 +4922,11 @@
     } catch (e2) {
       /* 忽略 */
     }
-    try { hideBootSkeleton() } catch (_) { /* 忽略 */ }
+    try {
+      hideBootSkeleton()
+    } catch (_) {
+      /* 忽略 */
+    }
   })
 
   // 启动
@@ -4848,6 +4941,10 @@
       /* 忽略 */
     }
     // init 同步抛错：走不到末尾的 hideBootSkeleton，这里兜底
-    try { hideBootSkeleton() } catch (_) { /* 忽略 */ }
+    try {
+      hideBootSkeleton()
+    } catch (_) {
+      /* 忽略 */
+    }
   }
 })()

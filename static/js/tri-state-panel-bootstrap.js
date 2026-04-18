@@ -84,14 +84,20 @@
     if (!rootEl) return
     var i18n = window.AIIA_I18N
     if (i18n && typeof i18n.translateDOM === 'function') {
-      try { i18n.translateDOM(rootEl) } catch (_e) { /* noop */ }
+      try {
+        i18n.translateDOM(rootEl)
+      } catch (_e) {
+        /* noop */
+      }
     }
   }
 
   function dispatchAction(action, meta) {
     var table = window[ACTION_DISPATCH_GLOBAL]
     if (table && typeof table[action] === 'function') {
-      try { table[action](meta) } catch (e) {
+      try {
+        table[action](meta)
+      } catch (e) {
         if (typeof console !== 'undefined' && console.error) {
           console.error('[tri-state-panel] action handler threw:', action, e)
         }
@@ -141,16 +147,24 @@
     window[CONTROLLER_GLOBAL] = controller
 
     if (debug.state && sm) {
-      try { sm.reset(debug.state) } catch (_e) { /* noop */ }
+      try {
+        sm.reset(debug.state)
+      } catch (_e) {
+        /* noop */
+      }
     }
 
     translatePanel(rootEl)
 
     if (typeof console !== 'undefined' && console.debug) {
       console.debug(
-        '[tri-state-panel] mounted (state=' + controller.getState() +
-        ', errorMode=' + controller.getErrorMode() +
-        ', emptyMode=' + controller.getEmptyMode() + ')'
+        '[tri-state-panel] mounted (state=' +
+          controller.getState() +
+          ', errorMode=' +
+          controller.getErrorMode() +
+          ', emptyMode=' +
+          controller.getEmptyMode() +
+          ')'
       )
     }
   }
@@ -170,7 +184,10 @@
   }
 
   function start() {
-    if (window.AIIA_TRI_STATE_PANEL && typeof window.AIIA_TRI_STATE_PANEL.TriStatePanelController === 'function') {
+    if (
+      window.AIIA_TRI_STATE_PANEL &&
+      typeof window.AIIA_TRI_STATE_PANEL.TriStatePanelController === 'function'
+    ) {
       mountController(window.AIIA_TRI_STATE_PANEL)
       return
     }
