@@ -4688,6 +4688,24 @@
       case 'refresh':
         requestImmediateRefresh()
         break
+      case 'force-repaint':
+        // BM-5：规避 VSCode issue #113188，retainContextWhenHidden=true 时
+        // 隐藏→显示可能留下 ghost 合成层。在两个连续的 rAF 里切换一个
+        // class，CSS 侧定义 `body.aiia-repainting { transform: translateZ(0) }`，
+        // 即可触发 layer 重建，肉眼无感知闪烁。
+        // 用 class 方式避开 CSP style-src 的 inline-style 限制。
+        try {
+          const body = document.body
+          if (body && body.classList && typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(function () {
+              try { body.classList.add('aiia-repainting') } catch (_) { /* noop */ }
+              requestAnimationFrame(function () {
+                try { body.classList.remove('aiia-repainting') } catch (_) { /* noop */ }
+              })
+            })
+          }
+        } catch (_) { /* noop */ }
+        break
       case 'clipboardText':
         handleClipboardTextMessage(message)
         break

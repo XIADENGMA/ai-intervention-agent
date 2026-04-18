@@ -57,6 +57,24 @@ suite('Extension Test Suite', () => {
       webviewJs.includes('webview-state.js'),
       'webview.ts 生成的 HTML 应加载 webview-state.js（IG-3 状态机契约）'
     )
+    // BM-5：规避 VSCode issue #113188 retainContextWhenHidden ghost rendering
+    // 两端都必须带 force-repaint 协议：host 可见时派发，webview 收到后做 rAF layer 重建
+    assert.ok(
+      webviewJs.includes("type: 'force-repaint'"),
+      'webview.ts 应在 onDidChangeVisibility 可见时发送 force-repaint（BM-5）'
+    )
+    assert.ok(
+      webviewUi.includes("case 'force-repaint'"),
+      "webview-ui.js 应处理 'force-repaint' 消息以清除 ghost 合成层（BM-5）"
+    )
+    assert.ok(
+      webviewUi.includes('aiia-repainting'),
+      'webview-ui.js 应通过切换 aiia-repainting class 触发重绘（避开 CSP inline-style）'
+    )
+    assert.ok(
+      webviewCss.includes('aiia-repainting'),
+      'webview.css 应定义 body.aiia-repainting 规则（含 translateZ 以建立新合成层）'
+    )
     assert.ok(webviewUi.includes('requestClipboardText'))
     assert.ok(webviewUi.includes('clipboardText'))
     assert.ok(webviewJs.includes('id="notifyMacOSNativeEnabled"'))

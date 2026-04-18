@@ -1374,6 +1374,16 @@ body.vscode-light .no-content-progress-bar {
 }
 
 /* ==========================================================================
+ * BM-5：force-repaint 辅助 class（规避 VSCode issue #113188）
+ *   webview.ts 在 onDidChangeVisibility (visible=true) 时发送 force-repaint，
+ *   webview-ui.js 在两个 rAF 里切换本 class，触发合成层重建以清除 ghost 残影。
+ *   prefers-reduced-motion 用户也应执行（这是视觉修复，不是动效）。
+ * ========================================================================== */
+body.aiia-repainting {
+  transform: translateZ(0);
+}
+
+/* ==========================================================================
  * A11y 层：键盘聚焦描边 + 减少动态效果偏好
  *   D3：仅在键盘聚焦（:focus-visible）时显示 outline，避免鼠标点击残留描边
  *   D2：用户开启「减少动态效果」时，抹平全局动画/过渡，保留结构可见

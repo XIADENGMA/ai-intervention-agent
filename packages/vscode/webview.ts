@@ -364,6 +364,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       }
       if (webviewView.visible) {
         this._sendMessage({ type: 'refresh' })
+        // BM-5：规避 VSCode issue #113188 的 ghost-rendering 残影。
+        // retainContextWhenHidden:true 时，隐藏→显示可能保留过期合成层；
+        // 发送 force-repaint 让前端用 rAF 触发 layer 重建清除残影。
+        this._sendMessage({ type: 'force-repaint' })
       }
     })
 
