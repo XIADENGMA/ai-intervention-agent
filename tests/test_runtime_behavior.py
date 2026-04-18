@@ -118,9 +118,10 @@ _DATA_I18N_RE = re.compile(r'data-i18n(?:-[a-z][\w-]*)?="([^"]+)"')
 #   - hostT('key')   — VSCode 扩展主进程内的 i18n helper
 #   - __vuT('key')   — validation-utils.js 的本地 helper（避开 import 循环）
 #   - __domSecT('key') — dom-security.js 的本地 helper（同上）
+#   - __ncT('key')   — webview-notify-core.js 的本地 helper（P8 新增）
 # 负向先行 ``(?<![.\w])`` 避免把 ``obj.t('foo')`` 这类属性访问误判成翻译。
 _JS_T_CALL_RE = re.compile(
-    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT)\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
+    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
 )
 
 
@@ -732,6 +733,7 @@ class TestI18nDeadKeys(unittest.TestCase):
         for name in (
             "webview-ui.js",
             "webview-settings-ui.js",
+            "webview-notify-core.js",
             "webview.ts",
             "extension.ts",
         ):

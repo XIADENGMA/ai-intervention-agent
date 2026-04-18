@@ -86,13 +86,14 @@ def _main_impl(argv: list[str]) -> int:
     _run(["uv", "run", "ruff", "check", "."])
     _run(["uv", "run", "ty", "check", "."])
 
-    # i18n 静态门禁（Web UI）：
+    # i18n 静态门禁（Web UI + VSCode webview）：
     #   1. locale JSON key/type/占位符跨 locale 一致
     #   2. HTML 模板零硬编码 CJK
-    #   3. Web UI JS 源文件零硬编码 CJK 字符串字面量（VSCode webview P8 待清理）
+    #   3. JS 源文件零硬编码 CJK 字符串字面量（--scope all 覆盖 static/js 和
+    #      packages/vscode，P8 之后两侧都必须干净）
     _run(["uv", "run", "python", "scripts/check_i18n_locale_parity.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_html_coverage.py"])
-    _run(["uv", "run", "python", "scripts/check_i18n_js_no_cjk.py"])
+    _run(["uv", "run", "python", "scripts/check_i18n_js_no_cjk.py", "--scope", "all"])
 
     # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
     _run(["uv", "run", "python", "scripts/minify_assets.py"])

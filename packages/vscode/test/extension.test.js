@@ -188,8 +188,9 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('applyHostThemeState'))
     assert.ok(webviewUi.includes("formData.append('task_id', taskIdToSubmit)"))
     // 高优先稳定性回归点：提交必须有超时兜底（避免服务端无响应导致 UI 永久卡住）
+    // P8 后：硬编码 CJK 已迁移到 locale，改为断言 i18n key + timeout 配置都在
     assert.ok(webviewUi.includes('SUBMIT_TIMEOUT_MS'))
-    assert.ok(webviewUi.includes('提交超时：请检查服务端是否可用'))
+    assert.ok(webviewUi.includes('ui.submit.timeoutCheckServer'))
     assert.ok(webviewUi.includes('buildMarkdownCodeFence'))
     assert.ok(webviewUi.includes('const codeBlockBody = buildMarkdownCodeFence(code, lang)'))
     assert.ok(!webviewUi.includes('const trimmed = raw.trim();'))

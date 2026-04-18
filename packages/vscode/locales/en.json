@@ -111,7 +111,8 @@
     },
     "task": {
       "switchedTo": "Switched to task: {{id}}",
-      "switchFailed": "Switch task failed: {{reason}}"
+      "switchFailed": "Switch task failed: {{reason}}",
+      "activateTimeoutCheckServer": "Activate task timeout: please check server availability"
     },
     "clipboard": {
       "empty": "Clipboard is empty, please copy some code first.",
@@ -136,6 +137,8 @@
       "rateLimited429": "Too many requests (HTTP 429){{hint}}",
       "rateLimitHint": ", please retry after {{seconds}}s",
       "failed": "Submit failed (HTTP {{status}})",
+      "failedReason": "Submit failed: {{reason}}",
+      "timeoutCheckServer": "Submit timeout: please check server availability",
       "success": "Feedback submitted"
     },
     "image": {
@@ -143,11 +146,22 @@
       "decodeFailed": "Failed to decode image",
       "invalid": "Invalid image file",
       "unsupportedFormat": "Unsupported image format: {{type}}",
-      "tooLarge": "Image too large: {{size}}MB > 10MB"
+      "tooLarge": "Image too large: {{size}}MB > 10MB",
+      "tooManyFiles": "Maximum {{count}} image(s) allowed",
+      "processingFailedReason": "Image processing failed: {{reason}}"
     },
     "notification": {
+      "title": "AI Intervention Agent",
       "newTask": "New task added: {{id}}",
-      "newTasks": "Received {{count}} new tasks"
+      "newTasks": "Received {{count}} new tasks",
+      "taskCountSuffix": "({{count}} tasks)"
+    }
+  },
+  "notify": {
+    "hint": {
+      "serverUrlMissing": "Notification config fetch failed: serverUrl is empty",
+      "loadFailedHttp": "Notification config load failed (HTTP {{status}})",
+      "requestTimeout": "Notification config request timeout"
     }
   },
   "aiia": {

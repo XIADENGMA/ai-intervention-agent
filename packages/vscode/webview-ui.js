@@ -106,45 +106,75 @@
 
   function retranslateAllI18nElements() {
     try {
-      var els = document.querySelectorAll('[data-i18n]')
-      for (var i = 0; i < els.length; i++) {
+      // Primary path: delegate to i18n.translateDOM() — covers data-i18n,
+      // data-i18n-html, and the full ATTR_BINDINGS table (title / placeholder
+      // / alt / aria-label / value). Keeps parity with static/js/i18n.js.
+      var i18n = getI18n()
+      if (i18n && typeof i18n.translateDOM === 'function') {
         try {
-          var key = els[i].getAttribute('data-i18n')
-          if (!key) continue
-          var ver = els[i].getAttribute('data-i18n-version')
-          var val = ver ? t(key, { version: ver }) : t(key)
-          if (val && val !== key) els[i].textContent = val
+          i18n.translateDOM()
         } catch (e) {
-          /* 忽略 */
+          /* fall through to local handling below */
         }
-      }
-      var titleEls = document.querySelectorAll('[data-i18n-title]')
-      for (var j = 0; j < titleEls.length; j++) {
-        try {
-          var tkey = titleEls[j].getAttribute('data-i18n-title')
-          if (!tkey) continue
-          var tval = t(tkey)
-          if (tval && tval !== tkey) {
-            titleEls[j].setAttribute('title', tval)
-            titleEls[j].setAttribute('aria-label', tval)
+      } else {
+        // Fallback: i18n module not yet loaded. Handle the 3 most common
+        // selectors so first-render doesn't leave raw keys on screen.
+        var els = document.querySelectorAll('[data-i18n]')
+        for (var i = 0; i < els.length; i++) {
+          try {
+            var key = els[i].getAttribute('data-i18n')
+            if (!key) continue
+            var val = t(key)
+            if (val && val !== key) els[i].textContent = val
+          } catch (e) {
+            /* ignore */
           }
-        } catch (e) {
-          /* 忽略 */
+        }
+        var titleEls = document.querySelectorAll('[data-i18n-title]')
+        for (var j = 0; j < titleEls.length; j++) {
+          try {
+            var tkey = titleEls[j].getAttribute('data-i18n-title')
+            if (!tkey) continue
+            var tval = t(tkey)
+            if (tval && tval !== tkey) {
+              titleEls[j].setAttribute('title', tval)
+              titleEls[j].setAttribute('aria-label', tval)
+            }
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        var phEls = document.querySelectorAll('[data-i18n-placeholder]')
+        for (var k = 0; k < phEls.length; k++) {
+          try {
+            var pkey = phEls[k].getAttribute('data-i18n-placeholder')
+            if (!pkey) continue
+            var pval = t(pkey)
+            if (pval && pval !== pkey) phEls[k].setAttribute('placeholder', pval)
+          } catch (e) {
+            /* ignore */
+          }
         }
       }
-      var phEls = document.querySelectorAll('[data-i18n-placeholder]')
-      for (var k = 0; k < phEls.length; k++) {
+
+      // Special case: data-i18n-version carries a version param that
+      // translateDOM() intentionally does NOT interpolate (kept here to keep
+      // the two i18n.js halves byte-identical with the static Web UI). Re-run
+      // just this slice so the footer version string refreshes on lang change.
+      var verEls = document.querySelectorAll('[data-i18n][data-i18n-version]')
+      for (var v = 0; v < verEls.length; v++) {
         try {
-          var pkey = phEls[k].getAttribute('data-i18n-placeholder')
-          if (!pkey) continue
-          var pval = t(pkey)
-          if (pval && pval !== pkey) phEls[k].setAttribute('placeholder', pval)
+          var vKey = verEls[v].getAttribute('data-i18n')
+          if (!vKey) continue
+          var ver = verEls[v].getAttribute('data-i18n-version')
+          var vVal = t(vKey, { version: ver })
+          if (vVal && vVal !== vKey) verEls[v].textContent = vVal
         } catch (e) {
-          /* 忽略 */
+          /* ignore */
         }
       }
     } catch (e) {
-      /* 忽略 */
+      /* ignore */
     }
   }
 
@@ -1178,7 +1208,7 @@
         if (!okLib || !data) {
           if (!lottieInitWarned) {
             lottieInitWarned = true
-            logError('Lottie 动画未加载（已降级为 SVG）')
+            log('Lottie not loaded (falling back to SVG)')
           }
           scheduleNoContentLottieRetry(!okLib ? 'lottie lib not ready' : 'lottie data missing')
           return
@@ -1228,7 +1258,7 @@
               renderNoContentFallbackIcon(container)
               if (!lottieInitWarned) {
                 lottieInitWarned = true
-                logError('Lottie 动画加载超时（已降级为 SVG）')
+                log('Lottie load timeout (falling back to SVG)')
               }
             } catch (_) {
               // 忽略
@@ -1260,7 +1290,7 @@
           }
           if (!lottieInitWarned) {
             lottieInitWarned = true
-            logError('Lottie 动画加载失败（已降级为 SVG）')
+            log('Lottie load failed (falling back to SVG)')
           }
           destroyNoContentHourglassAnimation()
           scheduleNoContentLottieRetry('lottie error event')
@@ -1291,9 +1321,13 @@
   // 【对齐服务端】server_time/deadline/remaining_time 支持（用于倒计时不漂移）
   let serverTimeOffset = 0 // 服务器时间 - 本地时间（秒）
   let taskDeadlines = {} // task_id -> deadline（秒级时间戳）
+  // Defaults kept empty on purpose: backend `/api/get-feedback-config` is
+  // the single source of truth for prompt strings. If the fetch fails we
+  // skip auto-submit (see triggerAutoSubmit) rather than send a hardcoded
+  // locale-specific fallback — matches static/js/multi_task.js behaviour.
   let feedbackPrompts = {
-    resubmit_prompt: '请立即调用 interactive_feedback 工具',
-    prompt_suffix: '\n请积极调用 interactive_feedback 工具'
+    resubmit_prompt: '',
+    prompt_suffix: ''
   }
   // 【对齐原始实现】多任务输入状态：每个任务独立保存输入/选项/图片，避免切换任务时“串任务”
   let taskTextareaContents = {} // task_id -> string
@@ -1461,7 +1495,7 @@
       if (_sseSource !== source) return
       _sseConnected = true
       _sseReconnectDelay = 1000
-      log('SSE 已连接，轮询降级为保底模式（30s）')
+      log('SSE connected, polling degraded to fallback mode (30s)')
       pollBackoffMs = POLL_SSE_FALLBACK_MS
       if (pollingTimer) {
         clearTimeout(pollingTimer)
@@ -1500,7 +1534,7 @@
         /* noop */
       }
       _sseSource = null
-      log('SSE 断开，回退到短间隔轮询，' + _sseReconnectDelay / 1000 + 's 后重连')
+      log('SSE disconnected, falling back to short-interval polling, reconnecting in ' + _sseReconnectDelay / 1000 + 's')
       pollBackoffMs = POLL_BASE_MS
       if (pollingTimer) {
         clearTimeout(pollingTimer)
@@ -1814,7 +1848,7 @@
         }
       }
     } catch (e) {
-      log('获取反馈提示语失败，使用缓存值: ' + (e && e.message ? e.message : String(e)))
+      log('Fetch feedback prompts failed, using cached values: ' + (e && e.message ? e.message : String(e)))
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
     }
@@ -2133,9 +2167,9 @@
         }
       })
 
-      log('事件监听器已设置')
+      log('Event listeners installed')
     } catch (error) {
-      logError('设置事件监听器失败: ' + error.message)
+      log('Install event listeners failed: ' + error.message)
     }
   }
 
@@ -2179,7 +2213,7 @@
           : error && error.message
             ? error.message
             : String(error)
-      logError('服务器连接失败: ' + msg)
+      log('Server connection failed: ' + msg)
       updateServerStatus(false)
       return false
     } finally {
@@ -2495,7 +2529,7 @@
       if (error && (error.name === 'AbortError' || error.code === 20)) {
         return false
       }
-      logError('轮询失败: ' + error.message)
+      log('Poll failed: ' + error.message)
       updateServerStatus(false)
       allTasks = []
       activeTaskId = null
@@ -2810,13 +2844,13 @@
       container.appendChild(tab)
     })
 
-    log('渲染了 ' + activeTasks.length + ' 个任务标签（已过滤掉已完成任务）')
+    log('Rendered ' + activeTasks.length + ' task tab(s) (completed tasks filtered)')
   }
 
   /* 切换活跃任务 - 将指定任务设置为当前活跃任务并刷新UI */
   async function switchToTask(taskId) {
     if (taskId === activeTaskId) {
-      log('任务已经是active状态: ' + taskId)
+      log('Task already active: ' + taskId)
       return
     }
 
@@ -2827,7 +2861,7 @@
         saveLocalStateForTask(prevTaskId)
       }
 
-      log('切换到任务: ' + taskId)
+      log('Switching to task: ' + taskId)
       // 先做本地 UI 立即切换（无网络延迟），再与服务端同步 active_task
       activeTaskId = taskId
       restoreLocalStateForTask(taskId)
@@ -2890,11 +2924,11 @@
       }
 
       if (response && response.ok) {
-        log('任务已激活: ' + taskId)
+        log('Task activated: ' + taskId)
         requestImmediateRefresh()
       } else {
         const status = response && typeof response.status === 'number' ? response.status : 0
-        logError('激活任务失败: HTTP ' + status)
+        logError(t('ui.task.switchFailed', { reason: 'HTTP ' + status }))
         vscode.postMessage({
           type: 'showInfo',
           message: t('ui.task.switchFailed', { reason: taskId })
@@ -2938,7 +2972,7 @@
           : isAbort
             ? t('settings.hint.timeout')
             : String(error)
-      logError(isAbort ? '激活任务超时：请检查服务端是否可用' : '激活任务失败: ' + errMsg)
+      logError(isAbort ? t('ui.task.activateTimeoutCheckServer') : t('ui.task.switchFailed', { reason: errMsg }))
       vscode.postMessage({
         type: 'showInfo',
         message: t('ui.task.switchFailed', { reason: errMsg })
@@ -3255,7 +3289,7 @@
       }
       const okFallback = await tryFallback('')
       if (okFallback) return true
-      logError('获取配置失败: ' + (error && error.message ? error.message : String(error)))
+      log('Fetch config failed: ' + (error && error.message ? error.message : String(error)))
       if (!(currentConfig && currentConfig.has_content)) {
         showNoContent()
       }
@@ -3466,7 +3500,7 @@
       syncImagesToTaskCache(config.task_id)
     }
 
-    log('UI已更新')
+    log('UI updated')
   }
 
   // 设置面板：按需加载（避免把通知配置/自动保存逻辑打进首屏解析）
@@ -3513,7 +3547,7 @@
     // 快速路径：notify-core 已通过 HTML <script> 同步加载
     const preloaded = getNotifyCoreModule()
     if (preloaded && typeof preloaded.showNewTaskNotification === 'function') {
-      log('[notifyNewTasks] notify-core 已预加载，直接派发 (' + ids.length + ' 个任务)')
+      log('[notifyNewTasks] notify-core preloaded, dispatching directly (' + ids.length + ' task(s))')
       Promise.resolve()
         .then(() => preloaded.showNewTaskNotification(normalized))
         .catch(() => {
@@ -3527,7 +3561,7 @@
     }
 
     // 回退路径：动态加载 notify-core（不应再走到这里，仅做兜底）
-    log('[notifyNewTasks] notify-core 未预加载，尝试动态加载')
+    log('[notifyNewTasks] notify-core not preloaded, attempting dynamic load')
     Promise.resolve()
       .then(() => ensureNotifyCoreLoaded())
       .then(ok => {
@@ -3535,7 +3569,7 @@
         if (ok && mod && typeof mod.showNewTaskNotification === 'function') {
           return mod.showNewTaskNotification(normalized)
         }
-        log('[notifyNewTasks] notify-core 加载失败，回退到 vscode 状态栏通知')
+        log('[notifyNewTasks] notify-core load failed, falling back to vscode status bar notification')
         const msg =
           ids.length === 1
             ? t('ui.notification.newTask', { id: ids[0] })
@@ -3585,10 +3619,10 @@
       }
 
       // marked.js 未加载时的降级处理
-      log('marked.js 未加载，使用纯文本显示')
+      log('marked.js not loaded, rendering as plain text')
       return '<pre>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
     } catch (e) {
-      log('Markdown 渲染失败，已降级为纯文本: ' + (e && e.message ? e.message : String(e)))
+      log('Markdown render failed, falling back to plain text: ' + (e && e.message ? e.message : String(e)))
       return '<pre>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>'
     }
   }
@@ -3979,7 +4013,7 @@
 
     // 验证倒计时秒数有效性
     if (!totalSeconds || totalSeconds <= 0) {
-      log('倒计时秒数无效: ' + totalSeconds)
+      log('Invalid countdown seconds: ' + totalSeconds)
       return
     }
 
@@ -3996,7 +4030,7 @@
       remainingSeconds = Math.max(0, Math.floor(totalSeconds))
     }
     lastCountdownTaskId = taskId // 记录当前倒计时对应的任务ID
-    log('启动倒计时: ' + remainingSeconds + '秒, 任务: ' + taskId)
+    log('Starting countdown: ' + remainingSeconds + 's, task: ' + taskId)
 
     function tick() {
       // 任务已切换，停止当前倒计时
@@ -4033,7 +4067,7 @@
   // 自动重调（倒计时结束时触发）
   async function autoSubmit() {
     const taskId = lastCountdownTaskId
-    log('倒计时结束，自动重调')
+    log('Countdown ended, auto-resubmitting')
     stopCountdown()
 
     // 自动重调需要“可重试但不过载”：对同一任务做最小退避，避免超时+提交失败时刷爆服务端（429）并影响手动提交
@@ -4059,15 +4093,41 @@
       autoSubmitAttempted[taskId] = now
     }
 
-    // 自动重调前实时拉取一次配置，确保 resubmit_prompt 热更新能立刻生效
-    let defaultMessage = '请立即调用 interactive_feedback 工具'
+    // Refetch feedback config right before auto-submit so hot-reloaded
+    // resubmit_prompt takes effect immediately. If the backend doesn't
+    // provide a prompt (network down, config missing), SKIP this round —
+    // don't send a hardcoded locale-specific fallback. The next polling
+    // tick / user action will retry.
+    let defaultMessage = ''
     try {
       const prompts = await fetchFeedbackPrompts()
       if (prompts && prompts.resubmit_prompt) {
         defaultMessage = String(prompts.resubmit_prompt)
       }
     } catch (e) {
-      // 忽略：保留默认文案兜底
+      // ignore — defaultMessage stays empty, handled below
+    }
+    if (!defaultMessage) {
+      try {
+        vscode.postMessage({
+          type: 'log',
+          level: 'warn',
+          message:
+            'Skip auto-submit for ' +
+            (taskId || '(unknown)') +
+            ': resubmit_prompt not configured or unavailable'
+        })
+      } catch (e) {
+        /* ignore */
+      }
+      if (taskId) {
+        try {
+          delete autoSubmitAttempted[taskId]
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      return
     }
 
     const ok = await submitWithData(defaultMessage, [], taskId)
@@ -4262,7 +4322,7 @@
       }
 
       if (response.ok) {
-        log('反馈提交成功')
+        log('Feedback submitted successfully')
         try {
           vscode.postMessage({
             type: 'log',
@@ -4364,10 +4424,10 @@
         (error.name === 'AbortError' || String(error.name || '') === 'AbortError')
       )
       if (isAbort) {
-        logError('提交超时：请检查服务端是否可用')
+        logError(t('ui.submit.timeoutCheckServer'))
       } else {
         const msg = error && error.message ? String(error.message) : String(error)
-        logError('提交失败：' + msg)
+        logError(t('ui.submit.failedReason', { reason: msg }))
       }
       return false
     } finally {
@@ -4706,7 +4766,7 @@
         e.preventDefault() // 纯图片粘贴时阻止默认行为，避免 textarea 出现占位文本
       }
       processImages(imageFiles)
-      log('从剪贴板粘贴了 ' + imageFiles.length + ' 张图片')
+      log('Pasted ' + imageFiles.length + ' image(s) from clipboard')
     }
   }
 
@@ -4714,7 +4774,7 @@
     for (const file of files || []) {
       if (!file) continue
       if (uploadedImages.length >= MAX_IMAGE_COUNT) {
-        const msg = '最多只能上传 ' + MAX_IMAGE_COUNT + ' 张图片'
+        const msg = t('ui.image.tooManyFiles', { count: MAX_IMAGE_COUNT })
         logError(msg)
         vscode.postMessage({ type: 'showInfo', message: msg })
         break
@@ -4734,7 +4794,7 @@
           syncImagesToTaskCache(activeTaskId)
         }
       } catch (e) {
-        const msg = '图片处理失败：' + (e && e.message ? e.message : String(e))
+        const msg = t('ui.image.processingFailedReason', { reason: e && e.message ? e.message : String(e) })
         logError(msg)
         vscode.postMessage({ type: 'showInfo', message: msg })
       }
@@ -4900,7 +4960,7 @@
 
   // 兜底捕获（避免脚本异常导致 UI 停在 loading 而无提示）
   window.addEventListener('error', e => {
-    reportFatalError('未捕获异常: ', e && e.error ? e.error : e)
+    reportFatalError('Uncaught exception: ', e && e.error ? e.error : e)
     try {
       hideTabs()
       showNoContent()
@@ -4915,7 +4975,7 @@
     }
   })
   window.addEventListener('unhandledrejection', e => {
-    reportFatalError('未处理 Promise 拒绝: ', e && e.reason ? e.reason : e)
+    reportFatalError('Unhandled Promise rejection: ', e && e.reason ? e.reason : e)
     try {
       hideTabs()
       showNoContent()
@@ -4933,7 +4993,7 @@
   try {
     init()
   } catch (e) {
-    reportFatalError('初始化失败: ', e)
+    reportFatalError('Initialization failed: ', e)
     try {
       hideTabs()
       showNoContent()

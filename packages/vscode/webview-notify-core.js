@@ -18,6 +18,20 @@
     }
   }
 
+  // Local i18n helper — mirrors webview-ui.js::t(): looks up AIIA_I18N and
+  // falls back to the bare key so a missing locale never breaks the path.
+  function __ncT(key, params) {
+    try {
+      var i18n =
+        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N)
+      if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
+    } catch (_e) {
+      /* noop */
+    }
+    return key
+  }
+
   const cfgEl = typeof document !== 'undefined' ? document.getElementById('aiia-config') : null
   const SERVER_URL =
     cfgEl && cfgEl.getAttribute('data-server-url') ? String(cfgEl.getAttribute('data-server-url')) : ''
@@ -90,7 +104,7 @@
 
   async function refreshNotificationSettingsFromServer({ force = false, silent = false } = {}) {
     if (!SERVER_URL) {
-      return { ok: false, message: 'serverUrl 为空' }
+      return { ok: false, message: __ncT('notify.hint.serverUrlMissing') }
     }
 
     let controller = null
@@ -116,11 +130,13 @@
       const resp = await fetch(SERVER_URL + '/api/get-notification-config', fetchOptions)
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok || !data || data.status !== 'success') {
+        const msg =
+          data && data.message
+            ? data.message
+            : __ncT('notify.hint.loadFailedHttp', { status: resp.status })
         if (!silent) {
-          const msg = data && data.message ? data.message : '加载失败（HTTP ' + resp.status + '）'
           logDebug('[notify-core] ' + msg)
         }
-        const msg = data && data.message ? data.message : '加载失败（HTTP ' + resp.status + '）'
         return { ok: false, message: msg }
       }
 
@@ -140,11 +156,15 @@
         changed
       }
     } catch (e) {
+      const msg =
+        e && e.name === 'AbortError'
+          ? __ncT('notify.hint.requestTimeout')
+          : e && e.message
+            ? e.message
+            : String(e)
       if (!silent) {
-        const msg = e && e.name === 'AbortError' ? '请求超时' : e && e.message ? e.message : String(e)
-        logDebug('[notify-core] 加载失败：' + msg)
+        logDebug('[notify-core] Load failed: ' + msg)
       }
-      const msg = e && e.name === 'AbortError' ? '请求超时' : e && e.message ? e.message : String(e)
       return { ok: false, message: msg }
     } finally {
       if (timeoutId) clearTimeout(timeoutId)
@@ -180,21 +200,21 @@
       if (summary) {
         msg = ids.length === 1
           ? summary
-          : summary + '（共 ' + ids.length + ' 个任务）'
+          : summary + ' ' + __ncT('ui.notification.taskCountSuffix', { count: ids.length })
       } else {
         msg = ids.length === 1
-          ? '新任务已添加: ' + ids[0]
-          : '收到 ' + ids.length + ' 个新任务'
+          ? __ncT('ui.notification.newTask', { id: ids[0] })
+          : __ncT('ui.notification.newTasks', { count: ids.length })
       }
 
-      logDebug('[notify-core] 检测到新任务: ' + msg)
+      logDebug('[notify-core] New task(s) detected: ' + msg)
 
       // 后台刷新设置（不阻塞通知派发），使用缓存立即决策
       refreshNotificationSettingsFromServer({ force: false, silent: true }).catch(function () {})
 
       var settings = notificationSettings || { enabled: true, macosNativeEnabled: true }
       if (settings && settings.enabled === false) {
-        logDebug('[notify-core] 通知已禁用 (enabled=false)，跳过')
+        logDebug('[notify-core] Notifications disabled (enabled=false), skipping')
         return
       }
 
@@ -202,10 +222,10 @@
       if (settings && settings.macosNativeEnabled) {
         types.push('macos_native')
       }
-      logDebug('[notify-core] 派发通知 types=' + types.join(',') + ' macosNativeEnabled=' + !!(settings && settings.macosNativeEnabled))
+      logDebug('[notify-core] Dispatching notification types=' + types.join(',') + ' macosNativeEnabled=' + !!(settings && settings.macosNativeEnabled))
 
       postNotificationEvent({
-        title: 'AI 交互反馈',
+        title: __ncT('ui.notification.title'),
         message: msg,
         trigger: 'immediate',
         types: types,
