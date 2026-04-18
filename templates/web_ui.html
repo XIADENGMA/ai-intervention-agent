@@ -1141,6 +1141,9 @@
     <!-- DOM 安全工具：防止 XSS 攻击（defer 属性：按顺序异步加载） -->
     <script defer src="/static/js/dom-security.js" nonce="{{ csp_nonce }}"></script>
 
+    <!-- 统一状态机（window.AIIAState；与 state_machine.py 契约同步，详见 state.js） -->
+    <script defer src="/static/js/state.js" nonce="{{ csp_nonce }}"></script>
+
     <!-- 📋 多任务管理模块（defer 属性：按顺序异步加载，依赖内联脚本中的函数） -->
     <script
       defer

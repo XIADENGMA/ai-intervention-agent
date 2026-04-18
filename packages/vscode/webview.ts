@@ -1079,6 +1079,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const mathjaxScriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'mathjax', 'tex-mml-svg.js')
     )
+    const webviewStateUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this._extensionUri, 'webview-state.js')
+    )
     const webviewHelpersUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, 'webview-helpers.js')
     )
@@ -1398,6 +1401,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     <!-- prism.min.js / marked.min.js 由 webview-ui.js 按需懒加载（首屏更快） -->
 
         <script nonce="${nonce}" src="${i18nJsUri}"></script>
+        <script nonce="${nonce}" src="${webviewStateUri}"></script>
         <script nonce="${nonce}" src="${webviewHelpersUri}"></script>
         <script nonce="${nonce}" src="${webviewUiUri}"></script>
         <script nonce="${nonce}" src="${webviewNotifyCoreUri}"></script>

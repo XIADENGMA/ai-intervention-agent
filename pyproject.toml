@@ -101,6 +101,7 @@ include = [
     "/server_config.py",
     "/i18n.py",
     "/protocol.py",
+    "/state_machine.py",
     "/config_modules",
     "/web_ui_routes",
     "/config.toml.default",

@@ -28,6 +28,7 @@
     "icon.svg",
     "dist/**/*.js",
     "dist/**/*.js.map",
+    "webview-state.js",
     "webview-ui.js",
     "webview-helpers.js",
     "webview-notify-core.js",

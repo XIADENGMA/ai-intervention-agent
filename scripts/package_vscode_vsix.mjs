@@ -41,6 +41,7 @@ const outVsix = path.join(vscodeDir, `${extName}-${extVersion}.vsix`)
 const includeList = [
   'package.json',
   'dist',
+  'webview-state.js',
   'webview-ui.js',
   'webview-helpers.js',
   'webview-notify-core.js',

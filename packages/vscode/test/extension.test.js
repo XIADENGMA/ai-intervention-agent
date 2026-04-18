@@ -19,6 +19,7 @@ suite('Extension Test Suite', () => {
     assert.ok(ext, 'Extension not found: xiadengma.ai-intervention-agent')
 
     const webviewJsPath = path.join(ext.extensionPath, 'dist', 'webview.js')
+    const webviewStatePath = path.join(ext.extensionPath, 'webview-state.js')
     const webviewHelpersPath = path.join(ext.extensionPath, 'webview-helpers.js')
     const webviewUiPath = path.join(ext.extensionPath, 'webview-ui.js')
     const webviewNotifyCorePath = path.join(ext.extensionPath, 'webview-notify-core.js')
@@ -29,6 +30,7 @@ suite('Extension Test Suite', () => {
     const extPkgPath = path.join(ext.extensionPath, 'package.json')
 
     assert.ok(fs.existsSync(webviewJsPath), 'Missing dist/webview.js in extension')
+    assert.ok(fs.existsSync(webviewStatePath), 'Missing webview-state.js in extension')
     assert.ok(fs.existsSync(webviewHelpersPath), 'Missing webview-helpers.js in extension')
     assert.ok(fs.existsSync(webviewUiPath), 'Missing webview-ui.js in extension')
     assert.ok(fs.existsSync(webviewNotifyCorePath), 'Missing webview-notify-core.js in extension')
@@ -49,6 +51,12 @@ suite('Extension Test Suite', () => {
     // 新功能回归点：插入代码按钮（剪贴板链路）
     assert.ok(webviewJs.includes('id="insertCodeBtn"'))
     assert.ok(webviewJs.includes('webview-helpers.js'))
+    // IG-3 统一状态机：HTML 必须在 helpers/ui 之前加载 webview-state.js，以便
+    // 后续模块可用 window.AIIAState.createMachine(...) 构造 SSE/内容状态机。
+    assert.ok(
+      webviewJs.includes('webview-state.js'),
+      'webview.ts 生成的 HTML 应加载 webview-state.js（IG-3 状态机契约）'
+    )
     assert.ok(webviewUi.includes('requestClipboardText'))
     assert.ok(webviewUi.includes('clipboardText'))
     assert.ok(webviewJs.includes('id="notifyMacOSNativeEnabled"'))
@@ -282,6 +290,7 @@ suite('Extension Test Suite', () => {
       for (const name of [
         'webview.css',
         'mathjax',
+        'webview-state.js',
         'webview-notify-core.js',
         'webview-settings-ui.js',
         'vendor'
