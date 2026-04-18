@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import httpx
+from fastmcp.exceptions import ToolError
 from mcp.types import TextContent
 from pydantic import Field
 
@@ -341,13 +342,26 @@ async def interactive_feedback(
 
     注意：该函数本身不负责 MCP 工具注册；注册由 `server.py` 中的 `mcp` 完成。
     """
+    # BM-1：参数验证失败是「用同样的参数无法恢复」的错误，应以 ToolError
+    # 上报给 agent，让 agent 调整参数后再重试，而不是无意义地消费 resubmit
+    # 文本反复调用（那会触发死循环）。
+    # 写在顶层 try/except 之外是为了让 ToolError 逃出下面的
+    # `except Exception -> _make_resubmit_response()` 兜底路径。
     try:
-        # 输入清理：截断过长内容，过滤非法选项（对齐工具契约/避免后端 400）
         cleaned_message, cleaned_options = server_config.validate_input(
             message, predefined_options
         )
-        predefined_options_list = cleaned_options
+    except (ValueError, ValidationError) as e:
+        logger.warning(f"interactive_feedback 参数错误: {e}")
+        raise ToolError(
+            f"Invalid argument: {e}. "
+            "Please ensure 'message' is a non-empty string and "
+            "'predefined_options' (if provided) is a list of strings, then retry."
+        ) from e
 
+    predefined_options_list = cleaned_options
+
+    try:
         # 自动生成唯一 task_id（避免极端并发下碰撞）
         task_id = server_config._generate_task_id()
 
