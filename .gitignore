@@ -240,6 +240,8 @@ config.json.bak
 
 # 个人笔记 / 待办
 TODO.md
+# 临时规划 / 草稿（文件名以 .tmp.md 结尾即被忽略）
+*.tmp.md
 
 # 已移除的项目管理与覆盖率配置
 .specify/

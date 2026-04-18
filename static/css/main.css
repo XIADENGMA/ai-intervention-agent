@@ -51,6 +51,26 @@
  */
 
 /* ========================================================================
+   CSS Cascade Layers：显式声明层级顺序（后声明的层优先级更高）
+     reset       重置/默认值修正
+     tokens      设计 token（颜色/尺寸/间距变量）
+     base        基础元素样式
+     components  组件样式（header/toast/task-tab 等）
+     a11y        无障碍增强（focus/reduce-motion 细节）
+     themes      主题覆盖（dark/light/high-contrast）
+
+   现状：新增此声明不会强制 reparent 已有规则。后续阶段可逐步把规则迁入层内，
+         避免一次性大 diff 引入视觉回归；此处只建立接缝（IG-4）。
+   ======================================================================== */
+@layer reset, tokens, base, components, a11y, themes;
+
+/* [hidden] 属性全局兜底：放在任何 @layer 之外，优先级最高；
+   即使后续规则用 display:flex/grid 覆盖，也能被 !important 强制隐藏。 */
+[hidden] {
+  display: none !important;
+}
+
+/* ========================================================================
    CSS 变量 - 主题系统 (Theme Variables)
    ======================================================================== */
 
@@ -7764,8 +7784,32 @@ code,
   pointer-events: none;
 }
 
+/* ========================================================================
+   A11y 层：键盘聚焦描边 + 减少动态效果偏好
+     D3：仅在键盘聚焦（:focus-visible）时显示 outline，避免鼠标点击残留描边
+     D2：用户开启「减少动态效果」时，抹平全局动画/过渡，保留结构可见
+   ======================================================================== */
+@layer a11y {
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--primary-500, currentColor);
+    outline-offset: 2px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-pulse { animation: none; }
-  .task-tab-enter { animation: none; }
-  .task-tab-exit  { animation-duration: 0.01ms; }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skeleton-pulse { animation: none !important; }
+  .task-tab-enter { animation: none !important; }
+  .task-tab-exit  { animation-duration: 0.01ms !important; }
 }
