@@ -68,12 +68,14 @@ const ThemeManager = (function () {
 
     const handleChange = (e) => {
       systemPreference = e.matches ? THEMES.LIGHT : THEMES.DARK;
-      console.log('系统主题偏好变更:', systemPreference);
+      console.log('System theme preference changed:', systemPreference);
 
-      // 如果是自动模式，跟随系统变化
+      // 无条件刷新按钮标签：在 auto 模式下，切换系统偏好也需要同步 aria-label/title
+      // 与 .is-light 类，避免按钮显示与真实主题不一致（P7 yellow finding）
       if (currentTheme === THEMES.AUTO) {
         applyTheme(systemPreference);
       }
+      updateToggleButton();
     };
 
     // 现代浏览器使用 addEventListener
@@ -118,7 +120,7 @@ const ThemeManager = (function () {
       detail: { theme: effectiveTheme, mode: theme }
     }));
 
-    console.log('主题已应用:', effectiveTheme, '(模式:', theme + ')');
+    console.log('Theme applied:', effectiveTheme, '(mode:', theme + ')');
   }
 
   /**
@@ -145,7 +147,7 @@ const ThemeManager = (function () {
     try {
       localStorage.setItem(STORAGE_KEY, theme);
     } catch (e) {
-      console.warn('无法保存主题偏好到 localStorage:', e);
+      console.warn('Cannot save theme preference to localStorage:', e);
     }
   }
 
@@ -157,7 +159,7 @@ const ThemeManager = (function () {
     try {
       return localStorage.getItem(STORAGE_KEY);
     } catch (e) {
-      console.warn('无法从 localStorage 加载主题偏好:', e);
+      console.warn('Cannot load theme preference from localStorage:', e);
       return null;
     }
   }
@@ -260,7 +262,7 @@ const ThemeManager = (function () {
       // 为已存在的按钮绑定点击事件
       bindExistingButtons();
 
-      console.log('主题管理器已初始化:', currentTheme);
+      console.log('Theme manager initialized:', currentTheme);
     },
 
     /**
@@ -269,7 +271,7 @@ const ThemeManager = (function () {
      */
     setTheme: function (theme) {
       if (!Object.values(THEMES).includes(theme)) {
-        console.warn('无效的主题:', theme);
+        console.warn('Invalid theme:', theme);
         return;
       }
 

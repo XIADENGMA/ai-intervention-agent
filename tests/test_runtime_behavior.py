@@ -108,10 +108,19 @@ class TestDesignTokenDrift(unittest.TestCase):
 # 2. I18n Key Coverage（排查 I18n Bootstrap Failure）
 # ============================================================================
 
-_DATA_I18N_RE = re.compile(r'data-i18n(?:-\w+)?="([^"]+)"')
-# 匹配 t() / _t() / tl() / hostT() 等翻译函数调用
+# 同时匹配：data-i18n / data-i18n-html / data-i18n-title / data-i18n-placeholder /
+# data-i18n-alt / data-i18n-value / data-i18n-aria-label。用 [\w-]* 支持含连字符的变体。
+_DATA_I18N_RE = re.compile(r'data-i18n(?:-[a-z][\w-]*)?="([^"]+)"')
+# 匹配翻译函数调用：
+#   - t('key')       — 主 i18n 入口（static/js/i18n.js 暴露 window.AIIA_I18N.t）
+#   - _t('key')      — multi_task.js 的内联封装
+#   - tl('key')      — 历史保留的 VSCode host 端快捷方式
+#   - hostT('key')   — VSCode 扩展主进程内的 i18n helper
+#   - __vuT('key')   — validation-utils.js 的本地 helper（避开 import 循环）
+#   - __domSecT('key') — dom-security.js 的本地 helper（同上）
+# 负向先行 ``(?<![.\w])`` 避免把 ``obj.t('foo')`` 这类属性访问误判成翻译。
 _JS_T_CALL_RE = re.compile(
-    r"""(?:(?<![a-zA-Z])_?tl?|hostT)\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
+    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT)\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
 )
 
 

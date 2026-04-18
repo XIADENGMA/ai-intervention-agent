@@ -80,6 +80,62 @@
     return val
   }
 
+  // 属性翻译映射表：[属性名, 设置方式]
+  // setter 传 'property' 表示走 el[prop] = val（如 el.title / el.placeholder），
+  // 传 'attribute' 表示走 el.setAttribute(attr, val)（如 aria-label 等标准 HTML 属性）
+  var ATTR_BINDINGS = [
+    { dataAttr: 'data-i18n-title', target: 'title', setter: 'property' },
+    { dataAttr: 'data-i18n-placeholder', target: 'placeholder', setter: 'property' },
+    { dataAttr: 'data-i18n-alt', target: 'alt', setter: 'property' },
+    { dataAttr: 'data-i18n-aria-label', target: 'aria-label', setter: 'attribute' },
+    { dataAttr: 'data-i18n-value', target: 'value', setter: 'property' }
+  ]
+
+  // 与 static/js/i18n.js::translateDOM 同签名同行为，保障 tri-state-panel-bootstrap.js
+  // 等字节镜像共享脚本在 VSCode 端的 data-i18n 扫描能真正生效（详见 §T1 v3 §4 契约）。
+  // 仅翻译直接命中的 key（miss 时 t() 返回 key 原值，此处 val === key 判断跳过赋值，
+  // 避免 placeholder 误被覆写成 key）。不处理 data-i18n-version 插值以保持双端一致，
+  // 该场景继续由 webview-ui.js::retranslateAllI18nElements 覆盖。
+  function translateDOM(root) {
+    var scope = root || (typeof document !== 'undefined' ? document : null)
+    if (!scope || typeof scope.querySelectorAll !== 'function') return
+
+    var els = scope.querySelectorAll('[data-i18n]')
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i]
+      var key = el.getAttribute('data-i18n')
+      if (!key) continue
+      var val = t(key)
+      if (val !== key) el.textContent = val
+    }
+
+    var htmlEls = scope.querySelectorAll('[data-i18n-html]')
+    for (var h = 0; h < htmlEls.length; h++) {
+      var hEl = htmlEls[h]
+      var hKey = hEl.getAttribute('data-i18n-html')
+      if (!hKey) continue
+      var hVal = t(hKey)
+      if (hVal !== hKey) hEl.innerHTML = hVal
+    }
+
+    for (var b = 0; b < ATTR_BINDINGS.length; b++) {
+      var binding = ATTR_BINDINGS[b]
+      var matches = scope.querySelectorAll('[' + binding.dataAttr + ']')
+      for (var m = 0; m < matches.length; m++) {
+        var mEl = matches[m]
+        var mKey = mEl.getAttribute(binding.dataAttr)
+        if (!mKey) continue
+        var mVal = t(mKey)
+        if (mVal === mKey) continue
+        if (binding.setter === 'property') {
+          mEl[binding.target] = mVal
+        } else {
+          mEl.setAttribute(binding.target, mVal)
+        }
+      }
+    }
+  }
+
   function init(options) {
     var opts = options && typeof options === 'object' ? options : {}
     if (opts.locales && typeof opts.locales === 'object') {
@@ -157,6 +213,7 @@
     registerLocale: registerLocale,
     detectLang: detectLang,
     normalizeLang: normalizeLang,
+    translateDOM: translateDOM,
     DEFAULT_LANG: DEFAULT_LANG
   }
 

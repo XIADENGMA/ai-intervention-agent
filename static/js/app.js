@@ -39,7 +39,9 @@
     const url = new URL(window.location.href)
     if (url.hostname === '0.0.0.0') {
       url.hostname = '127.0.0.1'
-      console.warn(`检测到访问地址为 0.0.0.0，已自动切换为 ${url.origin}（避免浏览器兼容性问题）`)
+      console.warn(
+        `Detected 0.0.0.0 host; auto-redirecting to ${url.origin} (avoids browser compatibility issues).`
+      )
       window.location.replace(url.toString())
     }
   } catch (e) {
@@ -51,28 +53,67 @@
 // 全局错误兜底：捕获未处理的 JS 异常和 Promise 拒绝
 // ==================================================================
 window.addEventListener('error', function (event) {
-  console.error('[全局错误]', event.error || event.message)
+  console.error('[global error]', event.error || event.message)
 })
 window.addEventListener('unhandledrejection', function (event) {
-  console.error('[未处理的 Promise 拒绝]', event.reason)
+  console.error('[unhandled rejection]', event.reason)
 })
 
 // ==================================================================
 // 带超时的 fetch 包装（防止网络异常时无限等待）
+//
+// 与朴素 `fetch(url, { signal })` 的差异：
+// - timeoutMs > 0 时自动添加超时信号；
+// - 调用方可以继续通过 options.signal 提供"外部取消"（例如页面卸载、用户
+//   手动取消）；外部信号和超时信号通过 AbortSignal.any（或兜底手写 merge）
+//   合并，**任何一方触发都会终止请求**，而不会像以前那样静默丢弃 caller signal。
+//
+// 浏览器兼容：
+// - AbortSignal.timeout() 和 AbortSignal.any() 在 Chrome 116+ / Firefox 124+ /
+//   Safari 17.4+ 已广泛可用；本函数对两者都做了 feature detect，缺失时用
+//   AbortController + addEventListener 手写 fallback。
 // ==================================================================
 function fetchWithTimeout(url, options, timeoutMs) {
-  if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
+  var userSignal = options && options.signal
+  var hasTimeout = typeof timeoutMs === 'number' && timeoutMs > 0
+
+  if (!hasTimeout) {
     return fetch(url, options)
   }
-  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-    var merged = Object.assign({}, options || {})
-    merged.signal = AbortSignal.timeout(timeoutMs)
-    return fetch(url, merged)
+
+  var hasAbortAny =
+    typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function'
+  var hasAbortTimeout =
+    typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+
+  if (hasAbortTimeout && (!userSignal || hasAbortAny)) {
+    var timeoutSignal = AbortSignal.timeout(timeoutMs)
+    var mergedSignal = userSignal
+      ? AbortSignal.any([userSignal, timeoutSignal])
+      : timeoutSignal
+    var mergedNative = Object.assign({}, options || {}, { signal: mergedSignal })
+    return fetch(url, mergedNative)
   }
+
   var controller = new AbortController()
   var timer = setTimeout(function () { controller.abort() }, timeoutMs)
-  var merged = Object.assign({}, options || {}, { signal: controller.signal })
-  return fetch(url, merged).finally(function () { clearTimeout(timer) })
+
+  function onUserAbort() { controller.abort() }
+  if (userSignal) {
+    if (userSignal.aborted) {
+      controller.abort()
+    } else {
+      userSignal.addEventListener('abort', onUserAbort, { once: true })
+    }
+  }
+
+  var mergedFallback = Object.assign({}, options || {}, { signal: controller.signal })
+  return fetch(url, mergedFallback).finally(function () {
+    clearTimeout(timer)
+    if (userSignal) {
+      userSignal.removeEventListener('abort', onUserAbort)
+    }
+  })
 }
 
 // 主题管理器已在 theme.js 中定义和初始化
@@ -128,7 +169,7 @@ function configureMarkedSecurity() {
 
     window.__aiiaMarkedSecurityConfigured = true
   } catch (e) {
-    console.warn('marked 安全配置失败（忽略）:', e)
+    console.warn('marked security config failed (ignored):', e)
   }
 }
 
@@ -241,9 +282,9 @@ function _createLottieAnimation(container) {
       renderSproutFallback(container)
       container.style.opacity = '1'
     })
-    console.log('嫩芽动画初始化成功（懒加载）')
+    console.log('Sprout animation initialized (lazy load)')
   } catch (error) {
-    console.error('Lottie 动画初始化失败:', error)
+    console.error('Lottie animation init failed:', error)
     renderSproutFallback(container)
     container.style.opacity = '1'
   }
@@ -323,13 +364,13 @@ function updateLottieAnimationColor() {
     container.style.filter = 'invert(1)'
   }
 
-  console.log('Lottie 动画颜色已更新:', isLightTheme ? '浅色模式（原色）' : '深色模式（反转）')
+  console.log('Lottie animation color updated:', isLightTheme ? 'light mode (original)' : 'dark mode (inverted)')
 }
 
 // 监听主题变化事件（由 ThemeManager 在 theme.js 中派发）
 // 用于在用户切换主题时即时更新 Lottie 动画颜色
 window.addEventListener('theme-changed', event => {
-  console.log('主题变更事件:', event.detail)
+  console.log('theme-changed event:', event.detail)
   // 延迟 50ms 执行，确保 DOM data-theme 属性已更新
   setTimeout(updateLottieAnimationColor, 50)
 })
@@ -347,7 +388,7 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
         try {
           htmlContent = marked.parse(content)
         } catch (e) {
-          console.warn('marked.js 解析失败:', e)
+          console.warn('marked.js parse failed:', e)
         }
       }
 
@@ -389,7 +430,7 @@ function renderMarkdownContent(element, content, isMarkdown = false) {
       } else if (window.MathJax && window.MathJax.typesetPromise) {
         // 回退：如果 MathJax 已加载但 loadMathJaxIfNeeded 不可用，直接渲染
         window.MathJax.typesetPromise([element]).catch(err => {
-          console.warn('MathJax 渲染失败:', err)
+          console.warn('MathJax render failed:', err)
         })
       }
     } else {
@@ -473,7 +514,7 @@ async function copyCodeToClipboard(preElement, button) {
       button.classList.remove('copied')
     }, 2000)
   } catch (err) {
-    console.error('复制失败:', err)
+    console.error('Copy failed:', err)
 
     // 显示错误状态
     const originalHTML = button.innerHTML
@@ -588,7 +629,7 @@ async function loadConfig() {
       separator.style.display = 'block'
     }
   } catch (error) {
-    console.error('加载配置失败:', error)
+    console.error('Config load failed:', error)
     showStatus(t('status.loadFailed'), 'error')
     throw error // 重新抛出错误，让调用者知道加载失败
   }
@@ -780,7 +821,7 @@ async function insertCodeFromClipboard() {
   } catch (error) {
     if (finished) return
     finish()
-    console.error('读取剪贴板失败:', error)
+    console.error('Clipboard read failed:', error)
     openCodePasteModal(error)
   }
 }
@@ -903,8 +944,19 @@ function handleCodePasteModalKeydown(event) {
   }
 }
 
+// 首次加载时缓存 submit 按钮的原始 innerHTML（含 SVG + data-i18n span），
+// 之后 finally 用它还原，避免 innerHTML 里硬编码中文（i18n / CI gate 要求）。
+let SUBMIT_BTN_ORIGINAL_HTML = null
+
+function captureSubmitBtnOriginalHTML() {
+  if (SUBMIT_BTN_ORIGINAL_HTML !== null) return
+  const btn = document.getElementById('submit-btn')
+  if (btn) SUBMIT_BTN_ORIGINAL_HTML = btn.innerHTML
+}
+
 // 提交反馈
 async function submitFeedback() {
+  captureSubmitBtnOriginalHTML()
   const feedbackText = document.getElementById('feedback-text').value.trim()
   const selectedOptions = []
 
@@ -949,7 +1001,7 @@ async function submitFeedback() {
 
     // 优先使用多任务提交端点（如果有活动任务）
     const submitUrl = currentTaskId ? `/api/tasks/${currentTaskId}/submit` : '/api/submit'
-    console.log(`使用提交端点: ${submitUrl}`)
+    console.log(`Using submit endpoint: ${submitUrl}`)
 
     const response = await fetchWithTimeout(submitUrl, {
       method: 'POST',
@@ -985,13 +1037,13 @@ async function submitFeedback() {
 
       // 立即刷新任务列表（由 multi_task.js 处理页面状态切换）
       if (typeof refreshTasksList === 'function') {
-        console.log('调用 refreshTasksList 刷新任务列表...')
+        console.log('Invoking refreshTasksList to refresh task list...')
         await refreshTasksList()
       } else {
         // 兼容旧模式：如果没有多任务支持，显示无内容页面
         if (config) {
           config.has_content = false
-          console.log('反馈提交后，本地状态已更新为无内容')
+          console.log('Feedback submitted; local state updated to empty')
         }
         showNoContentPage()
       }
@@ -999,18 +1051,18 @@ async function submitFeedback() {
       showStatus(result.message || t('status.submitFailed'), 'error')
     }
   } catch (error) {
-    console.error('提交失败:', error)
+    console.error('Submit failed:', error)
     showStatus(t('status.networkError'), 'error')
   } finally {
     const submitBtn = document.getElementById('submit-btn')
     submitBtn.disabled = false
-    // Claude 风格发送图标（右箭头，简洁风格）
-    submitBtn.innerHTML = `
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-        <path fill-rule="evenodd" clip-rule="evenodd" d="M3.29289 3.29289C3.68342 2.90237 4.31658 2.90237 4.70711 3.29289L10.7071 9.29289C11.0976 9.68342 11.0976 10.3166 10.7071 10.7071L4.70711 16.7071C4.31658 17.0976 3.68342 17.0976 3.29289 16.7071C2.90237 16.3166 2.90237 15.6834 3.29289 15.2929L8.58579 10L3.29289 4.70711C2.90237 4.31658 2.90237 3.68342 3.29289 3.29289ZM9.29289 3.29289C9.68342 2.90237 10.3166 2.90237 10.7071 3.29289L16.7071 9.29289C17.0976 9.68342 17.0976 10.3166 16.7071 10.7071L10.7071 16.7071C10.3166 17.0976 9.68342 17.0976 9.29289 16.7071C8.90237 16.3166 8.90237 15.6834 9.29289 15.2929L14.5858 10L9.29289 4.70711C8.90237 4.31658 8.90237 3.68342 9.29289 3.29289Z"/>
-      </svg>
-      提交反馈
-    `
+    // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
+    if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
+      submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML
+      if (window.AIIA_I18N && typeof window.AIIA_I18N.translateDOM === 'function') {
+        window.AIIA_I18N.translateDOM(submitBtn)
+      }
+    }
   }
 }
 
@@ -1036,7 +1088,7 @@ async function closeInterface() {
       showStatus(t('status.closeFailed'), 'error')
     }
   } catch (error) {
-    console.error('关闭界面失败:', error)
+    console.error('Close UI failed:', error)
     showStatus(t('status.closeUIFailed'), 'error')
   }
 
@@ -1048,21 +1100,21 @@ async function closeInterface() {
 
 // 安全刷新页面函数
 function refreshPageSafely() {
-  console.log('正在刷新页面...')
+  console.log('Reloading page…')
   try {
     window.location.reload()
   } catch (reloadError) {
-    console.error('页面刷新失败:', reloadError)
+    console.error('Page reload failed:', reloadError)
     // 如果刷新失败，尝试跳转到根路径
     try {
       window.location.href = window.location.origin
     } catch (redirectError) {
-      console.error('页面跳转失败:', redirectError)
+      console.error('Page redirect failed:', redirectError)
       // 最后的备选方案：跳转到空白页
       try {
         window.location.href = 'about:blank'
       } catch (blankError) {
-        console.error('所有页面操作都失败:', blankError)
+        console.error('All page navigation failed:', blankError)
       }
     }
   }
@@ -1094,7 +1146,7 @@ function refreshPageSafely() {
  */
 function stopContentPolling() {
   // 轮询已停用，此函数不执行任何操作
-  console.log('[app.js] stopContentPolling 被调用，但轮询已停用')
+  console.log('[app.js] stopContentPolling called, but polling is disabled')
 }
 
 // updatePageContent() 已删除
@@ -1144,31 +1196,29 @@ function detectPlatform() {
 }
 
 function getShortcutText(platform) {
-  const shortcuts = {
-    mac: [
-      '⌘+Enter  提交反馈',
-      '⌥+C      插入代码',
-      '⌘+V      粘贴图片',
-      '⌘+U      上传图片',
-      'Delete   清除图片'
-    ],
-    windows: [
-      'Ctrl+Enter 提交反馈',
-      'Alt+C      插入代码',
-      'Ctrl+V     粘贴图片',
-      'Ctrl+U     上传图片',
-      'Delete     清除图片'
-    ],
-    linux: [
-      'Ctrl+Enter 提交反馈',
-      'Alt+C      插入代码',
-      'Ctrl+V     粘贴图片',
-      'Ctrl+U     上传图片',
-      'Delete     清除图片'
-    ]
-  }
+  // 从 i18n 表里复用 settings.shortcut*，去掉结尾的冒号后拼装。
+  const strip = s => String(s).replace(/[:：]\s*$/, '')
+  const submit = strip(t('settings.shortcutSubmit'))
+  const insertCode = strip(t('settings.shortcutInsertCode'))
+  const pasteImage = strip(t('settings.shortcutPasteImage'))
+  const uploadImage = strip(t('settings.shortcutUploadImage'))
+  const clearImage = strip(t('settings.shortcutClearImage'))
 
-  const lines = shortcuts[platform] || shortcuts.windows
+  const lines = platform === 'mac'
+    ? [
+        `⌘+Enter  ${submit}`,
+        `⌥+C      ${insertCode}`,
+        `⌘+V      ${pasteImage}`,
+        `⌘+U      ${uploadImage}`,
+        `Delete   ${clearImage}`
+      ]
+    : [
+        `Ctrl+Enter ${submit}`,
+        `Alt+C      ${insertCode}`,
+        `Ctrl+V     ${pasteImage}`,
+        `Ctrl+U     ${uploadImage}`,
+        `Delete     ${clearImage}`
+      ]
   return lines.join('\n')
 }
 
@@ -1177,9 +1227,9 @@ function initializeShortcutTooltip() {
   if (!isMobileDevice()) {
     const platform = detectPlatform()
     updateShortcutDisplay(platform)
-    console.log(`检测到桌面平台: ${platform}，已设置对应快捷键`)
+    console.log(`Desktop platform detected: ${platform}, shortcut hints applied`)
   } else {
-    console.log('检测到移动设备，已隐藏快捷键部分')
+    console.log('Mobile device detected, shortcut hints hidden')
   }
 }
 
@@ -1214,8 +1264,8 @@ function initializeApp() {
   loadConfig()
     .then(() => {
       // 配置加载完成
-      console.log('配置加载完成')
-      console.log('当前配置:', {
+      console.log('Config loaded')
+      console.log('Current config:', {
         has_content: config.has_content,
         persistent: config.persistent,
         prompt_length: config.prompt ? config.prompt.length : 0
@@ -1231,10 +1281,10 @@ function initializeApp() {
       }
     })
     .catch(error => {
-      console.error('配置加载失败:', error)
+      console.error('Config load failed:', error)
       // 即使配置加载失败，也尝试初始化多任务支持
       setTimeout(() => {
-        console.log('配置加载失败，延迟初始化多任务支持...')
+        console.log('Config load failed, delayed multi-task init…')
         // startContentPolling() // 已停用
 
         // 初始化多任务支持（内含任务轮询）
@@ -1261,10 +1311,10 @@ function initializeApp() {
       return notificationManager.init()
     })
     .then(() => {
-      console.log('通知管理器初始化完成')
+      console.log('Notification manager initialized')
     })
     .catch(error => {
-      console.warn('设置或通知管理器初始化失败:', error)
+      console.warn('Settings or notification manager init failed:', error)
     })
 
   // 按钮事件
@@ -1318,25 +1368,41 @@ function initializeApp() {
       insertCodeFromClipboard()
     } else if (ctrlOrCmd && event.key === 'v') {
       // Ctrl/Cmd+V 粘贴图片 - 浏览器默认处理，我们只在paste事件中处理
-      console.log(`快捷键: ${isMac ? 'Cmd' : 'Ctrl'}+V 粘贴`)
+      console.log(`Shortcut: ${isMac ? 'Cmd' : 'Ctrl'}+V paste`)
     } else if (ctrlOrCmd && event.key === 'u') {
       event.preventDefault()
       document.getElementById('upload-image-btn').click()
-      console.log(`快捷键: ${isMac ? 'Cmd' : 'Ctrl'}+U 上传图片`)
+      console.log(`Shortcut: ${isMac ? 'Cmd' : 'Ctrl'}+U upload image`)
     } else if (event.key === 'Delete' && selectedImages.length > 0) {
       event.preventDefault()
       clearAllImages()
-      console.log('快捷键: Delete 清除所有图片')
+      console.log('Shortcut: Delete clear all images')
     } else if (ctrlOrCmd && event.shiftKey && event.key === 'N') {
       // Ctrl+Shift+N 测试通知
       event.preventDefault()
       testNotification()
-      console.log(`快捷键: ${isMac ? 'Cmd' : 'Ctrl'}+Shift+N 测试通知`)
+      console.log(`Shortcut: ${isMac ? 'Cmd' : 'Ctrl'}+Shift+N test notification`)
     }
   })
 
   // 用户首次交互时启用音频上下文
+  //
+  // 为什么要在 click/keydown/touchstart 上都挂监听：
+  //   Chrome 的 Autoplay Policy 会让 AudioContext 初始化时停留在 'suspended'
+  //   状态，直到用户产生「user gesture」才能 resume()。三类事件覆盖了桌面
+  //   点击、键盘操作、移动端触屏的全部首次交互路径。
+  //
+  // 为什么需要互卸载（P7-Step-23）：
+  //   如果只用 { once: true }，第一个触发的事件会自动移除「自己」，但另外
+  //   两个监听依然挂在 document 上。用户整个会话期间它们都不会再触发——只
+  //   是白白占用事件分发开销、并阻止 document 的监听器集合被 GC 回收。
+  //   改为统一的 "when any fires, remove all three" 之后，document 的事件
+  //   分发开销在首次交互后立即归零。
+  var AUDIO_UNLOCK_EVENTS = ['click', 'keydown', 'touchstart']
   function enableAudioOnFirstInteraction() {
+    for (var i = 0; i < AUDIO_UNLOCK_EVENTS.length; i++) {
+      document.removeEventListener(AUDIO_UNLOCK_EVENTS[i], enableAudioOnFirstInteraction)
+    }
     if (
       notificationManager.audioContext &&
       notificationManager.audioContext.state === 'suspended'
@@ -1344,25 +1410,24 @@ function initializeApp() {
       notificationManager.audioContext
         .resume()
         .then(() => {
-          console.log('音频上下文已启用')
+          console.log('Audio context enabled')
         })
         .catch(error => {
-          console.warn('启用音频上下文失败:', error)
+          console.warn('Enable audio context failed:', error)
         })
     }
   }
 
-  // 添加首次交互监听器
-  document.addEventListener('click', enableAudioOnFirstInteraction, { once: true })
-  document.addEventListener('keydown', enableAudioOnFirstInteraction, { once: true })
-  document.addEventListener('touchstart', enableAudioOnFirstInteraction, { once: true })
+  for (var i = 0; i < AUDIO_UNLOCK_EVENTS.length; i++) {
+    document.addEventListener(AUDIO_UNLOCK_EVENTS[i], enableAudioOnFirstInteraction)
+  }
 
   // 测试通知功能
   async function testNotification() {
     try {
       await notificationManager.sendNotification(
-        '通知测试',
-        '这是一个测试通知，用于验证通知功能是否正常工作',
+        t('status.testNotifyTitle'),
+        t('status.testNotifyBody'),
         {
           tag: 'test-notification',
           requireInteraction: false
@@ -1370,7 +1435,7 @@ function initializeApp() {
       )
       showStatus(t('status.testNotifySent'), 'success')
     } catch (error) {
-      console.error('测试通知失败:', error)
+      console.error('Test notification failed:', error)
       showStatus(t('status.testNotifyFailed'), 'error')
     }
   }

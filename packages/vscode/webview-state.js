@@ -78,9 +78,9 @@
 
   function createMachine(kind, initial) {
     var rules = TRANSITIONS[kind]
-    if (!rules) throw new Error('AIIAState: 未知状态机 ' + kind)
+    if (!rules) throw new Error('AIIAState: unknown state machine ' + kind)
     if (!Object.prototype.hasOwnProperty.call(rules, initial)) {
-      throw new Error('AIIAState: ' + kind + ' 初始态 ' + initial + ' 非法')
+      throw new Error('AIIAState: ' + kind + ' initial state ' + initial + ' is invalid')
     }
 
     var status = initial
@@ -97,7 +97,7 @@
       if (!canTransition(target)) {
         throw new InvalidTransition(
           kind + ': ' + status + ' -> ' + target +
-          ' 不合法，允许: ' + JSON.stringify(rules[status] || [])
+          ' is not allowed; allowed: ' + JSON.stringify(rules[status] || [])
         )
       }
       var previous = status
@@ -122,7 +122,7 @@
 
     function reset(to) {
       if (!Object.prototype.hasOwnProperty.call(rules, to)) {
-        throw new Error('AIIAState: ' + kind + ' 复位目标 ' + to + ' 非法')
+        throw new Error('AIIAState: ' + kind + ' reset target ' + to + ' is invalid')
       }
       status = to
     }

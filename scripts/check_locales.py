@@ -86,15 +86,16 @@ def check_nls_pair(dir_path: Path) -> list[str]:
 
 
 def check_cross_platform_aiia_parity(web_dir: Path, vscode_dir: Path) -> list[str]:
-    """IG-8：跨端 `aiia.*` namespace 必须在 Web UI 和 VSCode 插件之间完全对齐。
+    """跨端 ``aiia.*`` namespace 必须在 Web UI 和 VSCode 插件之间完全对齐。
 
-    设计契约（见 ``docs/i18n-key-naming.zh-CN.md``）：
-      - ``aiia.*`` 是「跨端共享」命名空间；阶段 3 的 i18n 合并依赖它从第一次
-        引入起就在 4 个 locale 文件里一字不差。
-      - 其他顶层 namespace（``page``/``settings``/``ui`` 等）两端各自独立，
-        不受本检查约束。
-      - ``aiia`` 完全缺席时（两端都还没引入共享 key），本检查通过——
-        这就是「默认安全」：它只在至少一端开始引入 aiia.* key 后才起作用。
+    命名规则（内联契约）：
+      - ``aiia.*`` 是「跨端共享」命名空间，所有 key 必须在 Web UI
+        (``static/locales/*.json``) 与 VSCode 插件 (``packages/vscode/locales/*.json``)
+        的 4 个 locale 文件里一字不差，便于未来抽取共享 locale 模块时零改引用。
+      - 其他顶层 namespace（``page``/``settings``/``ui``/``status``/``statusBar`` 等）
+        两端各自独立，不受本检查约束——两端 UI 结构不同，没有对齐价值。
+      - ``aiia`` 完全缺席时（两端都还没引入共享 key），本检查默认通过；
+        它只在至少一端开始引入 ``aiia.*`` key 后才起作用（默认安全 + 渐进约束）。
     """
     errors: list[str] = []
     for locale in ("en.json", "zh-CN.json"):

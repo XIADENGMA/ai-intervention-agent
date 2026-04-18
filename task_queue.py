@@ -355,6 +355,12 @@ class TaskQueue:
                 if task.auto_resubmit_timeout != auto_resubmit_timeout:
                     task.auto_resubmit_timeout = auto_resubmit_timeout
                     updated += 1
+
+        # 【P6R-1 修复】热更新已修改内存中的 auto_resubmit_timeout，
+        # 若启用持久化必须同步写盘，否则进程重启会从快照恢复旧 timeout。
+        # 与 add/complete/remove/set_active/clear 等其他状态变更保持一致。
+        if updated > 0:
+            self._persist()
         return updated
 
     def get_active_task(self) -> Task | None:
@@ -376,6 +382,15 @@ class TaskQueue:
             if new_task.status == TaskStatus.COMPLETED:
                 logger.warning(f"任务已完成，无法激活: {task_id}")
                 return False
+
+            # 【P6R-2 修复】幂等：若调用方尝试激活当前已经 active 的任务，
+            # 直接返回 True 且不触发任何状态事件/持久化。
+            # 否则下面的代码会把该任务先降级为 PENDING 再升级回 ACTIVE，
+            # 产生两个虚假事件（ACTIVE→PENDING / PENDING→ACTIVE），导致 SSE 闪烁、
+            # 回调重复、快照多写一次。
+            if self._active_task_id == task_id and new_task.status == TaskStatus.ACTIVE:
+                logger.debug(f"任务已经是 active 状态，跳过切换: {task_id}")
+                return True
 
             old_active_id = self._active_task_id
             old_active_status = None
@@ -999,29 +1014,46 @@ class TaskQueue:
             elapsed_since_save = (datetime.now(UTC) - saved_at).total_seconds()
 
             restored = 0
+            skipped = 0
             for item in data.get("tasks", []):
                 if not isinstance(item, dict):
+                    skipped += 1
                     continue
                 task_id = item.get("task_id")
                 prompt = item.get("prompt")
                 if not task_id or not prompt:
+                    skipped += 1
                     continue
                 status = item.get("status", TaskStatus.PENDING)
                 if status == TaskStatus.COMPLETED:
                     continue
 
-                created_at = datetime.fromisoformat(item["created_at"])
-                age_since_creation = (datetime.now(UTC) - created_at).total_seconds()
+                # 【P6Y-1 修复】per-task 独立 try-except：
+                # 单个任务的 created_at 解析失败、Pydantic 校验失败、
+                # 或 auto_resubmit_timeout 为非法类型时，仅丢弃该任务并继续恢复其他任务，
+                # 避免整个持久化文件因一条损坏记录而完全失效。
+                try:
+                    created_at = datetime.fromisoformat(item["created_at"])
+                    age_since_creation = (
+                        datetime.now(UTC) - created_at
+                    ).total_seconds()
 
-                task = Task(
-                    task_id=task_id,
-                    prompt=prompt,
-                    predefined_options=item.get("predefined_options"),
-                    auto_resubmit_timeout=item.get("auto_resubmit_timeout", 240),
-                    created_at=created_at,
-                    created_at_monotonic=time.monotonic() - age_since_creation,
-                    status=TaskStatus.PENDING,
-                )
+                    task = Task(
+                        task_id=task_id,
+                        prompt=prompt,
+                        predefined_options=item.get("predefined_options"),
+                        auto_resubmit_timeout=item.get("auto_resubmit_timeout", 240),
+                        created_at=created_at,
+                        created_at_monotonic=time.monotonic() - age_since_creation,
+                        status=TaskStatus.PENDING,
+                    )
+                except Exception as task_err:
+                    skipped += 1
+                    logger.warning(
+                        f"恢复单个任务失败（跳过）: task_id={task_id!r} err={task_err}"
+                    )
+                    continue
+
                 self._tasks[task_id] = task
                 restored += 1
 
@@ -1037,7 +1069,10 @@ class TaskQueue:
             if restored > 0:
                 logger.info(
                     f"从持久化文件恢复了 {restored} 个未完成任务"
-                    f"（文件保存于 {elapsed_since_save:.0f}s 前）"
+                    f"（文件保存于 {elapsed_since_save:.0f}s 前"
+                    f"{f'，跳过 {skipped} 个损坏项' if skipped else ''}）"
                 )
+            elif skipped > 0:
+                logger.warning(f"持久化文件中所有 {skipped} 个任务均损坏，已跳过")
         except Exception as e:
             logger.warning(f"任务恢复失败（将使用空队列）: {e}", exc_info=True)

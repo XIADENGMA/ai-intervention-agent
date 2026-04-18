@@ -55,7 +55,7 @@ class NotificationManager {
     }
 
     this.initPromise = (async () => {
-      console.log('初始化通知管理器...')
+      console.log('Initializing notification manager…')
       try {
         const hostname =
           window.location && typeof window.location.hostname === 'string'
@@ -68,7 +68,7 @@ class NotificationManager {
         const secureContext =
           typeof window.isSecureContext === 'boolean' ? window.isSecureContext : null
         console.log(
-          '[通知环境] hostname:',
+          '[notification env] hostname:',
           hostname,
           'isSecureContext:',
           secureContext,
@@ -81,14 +81,14 @@ class NotificationManager {
       this.syncPermissionState()
 
       if (!this.isSupported) {
-        console.warn('浏览器不支持 Web Notification API')
+        console.warn('Browser does not support Web Notification API')
       } else {
         await this.registerServiceWorker()
         this.bindAutoPermissionRequest()
       }
 
       await this.initAudio()
-      console.log('通知管理器初始化完成')
+      console.log('Notification manager initialized')
     })()
 
     return this.initPromise
@@ -110,7 +110,7 @@ class NotificationManager {
   async registerServiceWorker() {
     if (!this.supportsServiceWorkerNotifications()) {
       if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
-        console.warn('当前不是安全上下文，无法注册通知 service worker')
+        console.warn('Not in a secure context; cannot register notification service worker')
       }
       return null
     }
@@ -122,10 +122,10 @@ class NotificationManager {
     try {
       await navigator.serviceWorker.register('/notification-service-worker.js')
       this.serviceWorkerRegistration = await navigator.serviceWorker.ready
-      console.log('通知 service worker 已注册')
+      console.log('Notification service worker registered')
       return this.serviceWorkerRegistration
     } catch (error) {
-      console.warn('通知 service worker 注册失败:', error)
+      console.warn('Notification service worker registration failed:', error)
       return null
     }
   }
@@ -190,7 +190,7 @@ class NotificationManager {
 
   async requestPermission({ requireUserGesture = true } = {}) {
     if (!this.isSupported) {
-      console.warn('浏览器不支持 Web Notification API')
+      console.warn('Browser does not support Web Notification API')
       return false
     }
 
@@ -204,7 +204,7 @@ class NotificationManager {
     }
 
     if (typeof window.isSecureContext === 'boolean' && window.isSecureContext === false) {
-      console.warn('当前不是安全上下文，浏览器不会弹出通知权限请求')
+      console.warn('Not in a secure context; browser will not prompt for notification permission')
       return false
     }
 
@@ -213,7 +213,7 @@ class NotificationManager {
       navigator.userActivation &&
       navigator.userActivation.isActive === false
     ) {
-      console.warn('通知权限请求需要用户操作，已延迟到下一次交互')
+      console.warn('Notification permission request requires user gesture; deferred to next interaction')
       this.bindAutoPermissionRequest()
       return false
     }
@@ -232,7 +232,7 @@ class NotificationManager {
           })
         }
 
-        console.log(`通知权限状态: ${this.permission}`)
+        console.log(`Notification permission state: ${this.permission}`)
         window.dispatchEvent(
           new CustomEvent('notification-permission-changed', {
             detail: { permission: this.permission }
@@ -243,7 +243,7 @@ class NotificationManager {
 
       return await this.permissionRequestPromise
     } catch (error) {
-      console.error('请求通知权限失败:', error)
+      console.error('Request notification permission failed:', error)
       return false
     } finally {
       this.permissionRequestPromise = null
@@ -259,21 +259,21 @@ class NotificationManager {
       const AudioContextClass =
         window.AudioContext || window.webkitAudioContext || window.mozAudioContext
       if (!AudioContextClass) {
-        console.warn('浏览器不支持Web Audio API')
+        console.warn('Browser does not support Web Audio API')
         return
       }
 
       // 创建音频上下文（需要用户交互后才能启用）
       this.audioContext = new AudioContextClass()
 
-      await this.loadAudioFile('default', '/sounds/deng[噔].mp3')
+      await this.loadAudioFile('default', '/sounds/deng.mp3')
       if (!this.audioBuffers.has('default')) {
         this._synthBuffer = this._createSynthNotificationBuffer()
       }
 
-      console.log('音频系统初始化完成')
+      console.log('Audio system initialized')
     } catch (error) {
-      console.warn('音频系统初始化失败:', error)
+      console.warn('Audio system initialization failed:', error)
       // 降级：禁用音频功能
       this.config.soundEnabled = false
     }
@@ -287,22 +287,22 @@ class NotificationManager {
       const arrayBuffer = await response.arrayBuffer()
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
       this.audioBuffers.set(name, audioBuffer)
-      console.log(`音频文件加载成功: ${name}`)
+      console.log(`Audio file loaded: ${name}`)
       return true
     } catch (error) {
-      console.warn(`音频文件加载失败 ${name}:`, error)
+      console.warn(`Audio file load failed ${name}:`, error)
       return false
     }
   }
 
   async showNotification(title, message, options = {}) {
     if (!this.config.enabled || !this.config.webEnabled) {
-      console.log('Web 通知已禁用')
+      console.log('Web notifications disabled')
       return null
     }
 
     if (!this.isSupported) {
-      console.warn('浏览器不支持通知，使用降级方案')
+      console.warn('Browser does not support notifications; using fallback')
       this.showFallbackNotification(title, message, { ...options, reason: 'unsupported' })
       return null
     }
@@ -312,10 +312,10 @@ class NotificationManager {
         window.location && typeof window.location.origin === 'string' ? window.location.origin : ''
       const host =
         window.location && typeof window.location.host === 'string' ? window.location.host : ''
-      const where = origin || host || '当前页面'
+      const where = origin || host || 'current page'
       this.showFallbackNotification(
-        '浏览器原生通知不可用',
-        `当前访问地址（${where}）不是安全上下文。请使用 HTTPS 或 localhost/127.0.0.1 访问后重试。`,
+        'Browser native notifications unavailable',
+        `Current origin (${where}) is not a secure context. Please access over HTTPS or localhost/127.0.0.1 and retry.`,
         { ...options, reason: 'insecure_context' }
       )
       return null
@@ -323,7 +323,7 @@ class NotificationManager {
 
     this.syncPermissionState()
     if (this.permission !== 'granted') {
-      console.warn('当前没有系统通知权限')
+      console.warn('No system notification permission granted')
       if (this.config.autoRequestPermission) {
         const granted = await this.requestPermission({
           requireUserGesture: !(navigator.userActivation && navigator.userActivation.isActive)
@@ -384,10 +384,10 @@ class NotificationManager {
         return null
       }
 
-      console.log('系统通知已显示:', title)
+      console.log('System notification shown:', title)
       return notification
     } catch (error) {
-      console.error('显示通知失败:', error)
+      console.error('Show notification failed:', error)
       this.showFallbackNotification(title, message, {
         ...options,
         reason: 'show_notification_exception'
@@ -405,7 +405,7 @@ class NotificationManager {
           close() {}
         }
       } catch (error) {
-        console.warn('通过 service worker 显示通知失败，回退到页面 Notification:', error)
+        console.warn('Failed to show notification via service worker; falling back to page Notification:', error)
       }
     }
 
@@ -435,19 +435,19 @@ class NotificationManager {
 
       return notification
     } catch (error) {
-      console.error('页面 Notification 创建失败:', error)
+      console.error('Page Notification creation failed:', error)
       return null
     }
   }
 
   async playSound(soundName = 'default', volume = null, retryCount = 0) {
     if (!this.config.enabled || !this.config.soundEnabled || this.config.soundMute) {
-      console.log('声音通知已禁用')
+      console.log('Sound notifications disabled')
       return false
     }
 
     if (!this.audioContext) {
-      console.warn('音频上下文未初始化，尝试降级方案')
+      console.warn('Audio context not initialized; trying fallback')
       this.recordFallbackEvent('audio', { reason: 'no_audio_context', soundName })
       return this.playSoundFallback(soundName)
     }
@@ -456,9 +456,9 @@ class NotificationManager {
     if (this.audioContext.state === 'suspended') {
       try {
         await this.audioContext.resume()
-        console.log('音频上下文已恢复')
+        console.log('Audio context resumed')
       } catch (error) {
-        console.warn('恢复音频上下文失败:', error)
+        console.warn('Resume audio context failed:', error)
         this.recordFallbackEvent('audio', {
           reason: 'resume_failed',
           error: error.message,
@@ -470,10 +470,10 @@ class NotificationManager {
 
     const audioBuffer = this.audioBuffers.get(soundName)
     if (!audioBuffer) {
-      console.warn(`音频文件未找到: ${soundName}`)
+      console.warn(`Audio file not found: ${soundName}`)
       // 尝试加载默认音频文件
       if (soundName !== 'default') {
-        console.log('尝试使用默认音频文件')
+        console.log('Trying default audio file')
         return this.playSound('default', volume, retryCount)
       }
       this.recordFallbackEvent('audio', { reason: 'buffer_not_found', soundName })
@@ -494,11 +494,11 @@ class NotificationManager {
 
       // 添加错误处理
       source.addEventListener('ended', () => {
-        console.log(`声音播放完成: ${soundName}`)
+        console.log(`Sound playback finished: ${soundName}`)
       })
 
       source.addEventListener('error', error => {
-        console.error('音频播放错误:', error)
+        console.error('Audio playback error:', error)
         this.recordFallbackEvent('audio', {
           reason: 'playback_error',
           error: error.message,
@@ -507,10 +507,10 @@ class NotificationManager {
       })
 
       source.start(0)
-      console.log(`播放声音: ${soundName}`)
+      console.log(`Playing sound: ${soundName}`)
       return true
     } catch (error) {
-      console.error('播放声音失败:', error)
+      console.error('Play sound failed:', error)
       this.recordFallbackEvent('audio', {
         reason: 'playback_failed',
         error: error.message,
@@ -519,7 +519,7 @@ class NotificationManager {
 
       // 重试机制
       if (retryCount < 2) {
-        console.log(`重试播放声音 (${retryCount + 1}/2): ${soundName}`)
+        console.log(`Retry play sound (${retryCount + 1}/2): ${soundName}`)
         await new Promise(resolve => setTimeout(resolve, 500)) // 等待500ms后重试
         return this.playSound(soundName, volume, retryCount + 1)
       }
@@ -554,7 +554,7 @@ class NotificationManager {
   }
 
   playSoundFallback(soundName) {
-    console.log(`使用音频降级方案: ${soundName}`)
+    console.log(`Using audio fallback: ${soundName}`)
 
     if (this.audioContext && this._synthBuffer) {
       try {
@@ -566,16 +566,16 @@ class NotificationManager {
         gain.connect(this.audioContext.destination)
         gain.gain.value = Math.max(0, Math.min(1, this.config.soundVolume))
         src.start(0)
-        console.log('合成提示音播放成功')
+        console.log('Synth notification sound played successfully')
         return true
       } catch (e) {
-        console.warn('合成提示音播放失败:', e)
+        console.warn('Synth notification sound failed:', e)
       }
     }
 
     try {
       const audio = new Audio(
-        `/sounds/${soundName === 'default' ? 'deng[噔].mp3' : soundName + '.mp3'}`
+        `/sounds/${soundName === 'default' ? 'deng.mp3' : soundName + '.mp3'}`
       )
       audio.volume = Math.max(0, Math.min(1, this.config.soundVolume))
       const playPromise = audio.play()
@@ -593,14 +593,14 @@ class NotificationManager {
     if (this.config.mobileVibrate && 'vibrate' in navigator) {
       try {
         navigator.vibrate([200, 100, 200]) // 振动模式：200ms振动，100ms停止，200ms振动
-        console.log('使用振动提醒')
+        console.log('Using vibration alert')
         return true
       } catch (error) {
-        console.warn('振动提醒失败:', error)
+        console.warn('Vibration alert failed:', error)
       }
     }
 
-    console.log('所有音频降级方案都失败了')
+    console.log('All audio fallbacks failed')
     return false
   }
 
@@ -636,7 +636,7 @@ class NotificationManager {
         const promiseResults = await Promise.all(promises)
         results.push(...promiseResults)
       } catch (error) {
-        console.warn('通知执行过程中出现错误:', error)
+        console.warn('Notification execution error:', error)
       }
     }
 
@@ -664,7 +664,7 @@ class NotificationManager {
 
       return null
     } catch (error) {
-      console.warn('dispatchEvent 处理失败（已降级）:', error)
+      console.warn('dispatchEvent failed (falling back):', error)
       return null
     }
   }
@@ -690,7 +690,7 @@ class NotificationManager {
     const title =
       typeof event.title === 'string' && event.title ? event.title : 'AI Intervention Agent'
     const message =
-      count === 1 && taskIds.length === 1 ? `新任务已添加: ${taskIds[0]}` : `收到 ${count} 个新任务`
+      count === 1 && taskIds.length === 1 ? `New task added: ${taskIds[0]}` : `Received ${count} new task(s)`
 
     // 1) 桌面端：Visual Hint（不依赖系统通知权限）
     try {
@@ -720,7 +720,7 @@ class NotificationManager {
 
   showFallbackNotification(title, message, options = {}) {
     // 增强的降级方案：使用多种方式确保用户能收到通知
-    console.log(`降级通知: ${title} - ${message}`)
+    console.log(`Fallback notification: ${title} - ${message}`)
     const reason = options && typeof options === 'object' ? options.reason || 'unknown' : 'unknown'
 
     // 1. 尝试使用页面状态消息
@@ -737,7 +737,7 @@ class NotificationManager {
     }
 
     // 4. 尝试使用控制台样式输出
-    console.log(`%c[通知] ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
+    console.log(`%c[notification] ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
     console.log(`%c${message}`, 'color: #666; font-size: 12px;')
 
     // 5. 记录降级事件用于统计
@@ -769,7 +769,7 @@ class NotificationManager {
     this.config = { ...this.config, ...newConfig }
     this.syncPermissionState()
     this.bindAutoPermissionRequest()
-    console.log('通知配置已更新:', this.config)
+    console.log('Notification config updated:', this.config)
   }
 
   getStatus() {
@@ -898,13 +898,13 @@ class NotificationManager {
       // 性能优化：监控存储空间使用
       this.monitorLocalStorageUsage(storageKey)
     } catch (error) {
-      console.warn('无法记录降级事件:', error)
+      console.warn('Cannot record fallback event:', error)
       // 如果存储失败，尝试清理存储空间
       this.cleanupLocalStorage()
     }
 
     if (this.config.debug) {
-      console.log('降级事件记录:', event)
+      console.log('Fallback event recorded:', event)
     }
   }
 
@@ -918,15 +918,15 @@ class NotificationManager {
 
         if (sizeInBytes > 100 * 1024) {
           // 超过100KB时警告
-          console.warn(`localStorage事件记录过大: ${sizeInKB}KB，建议清理`)
+          console.warn(`localStorage event records are large: ${sizeInKB}KB; consider pruning`)
         }
 
         if (this.config.debug) {
-          console.log(`localStorage事件记录大小: ${sizeInKB}KB`)
+          console.log(`localStorage event records size: ${sizeInKB}KB`)
         }
       }
     } catch (error) {
-      console.warn('无法监控localStorage使用情况:', error)
+      console.warn('Cannot monitor localStorage usage:', error)
     }
   }
 
@@ -946,15 +946,15 @@ class NotificationManager {
       }
 
       localStorage.setItem(storageKey, JSON.stringify(recentEvents))
-      console.log(`localStorage清理完成，保留 ${recentEvents.length} 个事件`)
+      console.log(`localStorage pruning complete; kept ${recentEvents.length} events`)
     } catch (error) {
-      console.error('localStorage清理失败:', error)
+      console.error('localStorage pruning failed:', error)
       // 最后手段：清空事件记录
       try {
         localStorage.removeItem('ai-intervention-fallback-events')
-        console.log('已清空localStorage事件记录')
+        console.log('localStorage event records cleared')
       } catch (clearError) {
-        console.error('无法清空localStorage:', clearError)
+        console.error('Cannot clear localStorage:', clearError)
       }
     }
   }

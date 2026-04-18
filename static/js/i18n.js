@@ -66,8 +66,20 @@
     return val
   }
 
+  // 属性翻译映射表：[属性名, 设置方式]
+  // setter 传 'property' 表示走 el[prop] = val（如 el.title / el.placeholder），
+  // 传 'attribute' 表示走 el.setAttribute(attr, val)（如 aria-label 等标准 HTML 属性）
+  var ATTR_BINDINGS = [
+    { dataAttr: 'data-i18n-title', target: 'title', setter: 'property' },
+    { dataAttr: 'data-i18n-placeholder', target: 'placeholder', setter: 'property' },
+    { dataAttr: 'data-i18n-alt', target: 'alt', setter: 'property' },
+    { dataAttr: 'data-i18n-aria-label', target: 'aria-label', setter: 'attribute' },
+    { dataAttr: 'data-i18n-value', target: 'value', setter: 'property' }
+  ]
+
   function translateDOM(root) {
-    var els = (root || document).querySelectorAll('[data-i18n]')
+    var scope = root || document
+    var els = scope.querySelectorAll('[data-i18n]')
     for (var i = 0; i < els.length; i++) {
       var el = els[i]
       var key = el.getAttribute('data-i18n')
@@ -75,15 +87,8 @@
       var val = t(key)
       if (val !== key) el.textContent = val
     }
-    var attrs = (root || document).querySelectorAll('[data-i18n-title]')
-    for (var j = 0; j < attrs.length; j++) {
-      var attrEl = attrs[j]
-      var attrKey = attrEl.getAttribute('data-i18n-title')
-      if (!attrKey) continue
-      var attrVal = t(attrKey)
-      if (attrVal !== attrKey) attrEl.title = attrVal
-    }
-    var htmlEls = (root || document).querySelectorAll('[data-i18n-html]')
+
+    var htmlEls = scope.querySelectorAll('[data-i18n-html]')
     for (var h = 0; h < htmlEls.length; h++) {
       var hEl = htmlEls[h]
       var hKey = hEl.getAttribute('data-i18n-html')
@@ -91,13 +96,22 @@
       var hVal = t(hKey)
       if (hVal !== hKey) hEl.innerHTML = hVal
     }
-    var placeholders = (root || document).querySelectorAll('[data-i18n-placeholder]')
-    for (var k = 0; k < placeholders.length; k++) {
-      var phEl = placeholders[k]
-      var phKey = phEl.getAttribute('data-i18n-placeholder')
-      if (!phKey) continue
-      var phVal = t(phKey)
-      if (phVal !== phKey) phEl.placeholder = phVal
+
+    for (var b = 0; b < ATTR_BINDINGS.length; b++) {
+      var binding = ATTR_BINDINGS[b]
+      var matches = scope.querySelectorAll('[' + binding.dataAttr + ']')
+      for (var m = 0; m < matches.length; m++) {
+        var mEl = matches[m]
+        var mKey = mEl.getAttribute(binding.dataAttr)
+        if (!mKey) continue
+        var mVal = t(mKey)
+        if (mVal === mKey) continue
+        if (binding.setter === 'property') {
+          mEl[binding.target] = mVal
+        } else {
+          mEl.setAttribute(binding.target, mVal)
+        }
+      }
     }
   }
 

@@ -107,10 +107,13 @@ if (typeof window.taskDeadlines === 'undefined') {
   window.taskDeadlines = {} // 存储每个任务的截止时间戳（服务器时间）
 }
 // feedback 提示语（从服务端配置热更新获取）
+// 说明：后端 server_config.py 是唯一真源；这里的字段只是占位，实际值通过
+// /api/get-feedback-prompts 拉取。置空字符串避免前端携带硬编码中文，遇到请求失败时
+// 调用方（见 autoSubmitFeedback）会自行提示用户。
 if (typeof window.feedbackPrompts === 'undefined') {
   window.feedbackPrompts = {
-    resubmit_prompt: '请立即调用 interactive_feedback 工具',
-    prompt_suffix: '\n请积极调用 interactive_feedback 工具'
+    resubmit_prompt: '',
+    prompt_suffix: ''
   }
 }
 // 自动提交退避：避免“超时 + 提交失败/429”导致的重复提交风暴
@@ -252,7 +255,7 @@ async function fetchFeedbackPromptsFresh() {
       return window.feedbackPrompts
     }
   } catch (e) {
-    console.warn('获取反馈提示语配置失败，使用本地默认值:', e)
+    console.warn('Failed to fetch feedback prompts; using in-memory defaults:', e)
   }
   return window.feedbackPrompts
 }
@@ -323,7 +326,7 @@ function _connectSSE() {
     if (_sseSource !== source) return
     _sseConnected = true
     _sseReconnectDelay = 1000
-    console.log('SSE 已连接，轮询降级为保底模式（30s）')
+    console.log('SSE connected; polling degraded to safety-net mode (30s)')
     tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS
     if (tasksPollingTimer) {
       clearTimeout(tasksPollingTimer)
@@ -352,7 +355,7 @@ function _connectSSE() {
     _sseConnected = false
     try { source.close() } catch (_) { /* noop */ }
     _sseSource = null
-    console.warn('SSE 断开，回退到短间隔轮询，' + _sseReconnectDelay / 1000 + 's 后重连')
+    console.warn('SSE disconnected; falling back to short-interval polling, reconnecting in ' + _sseReconnectDelay / 1000 + 's')
     tasksPollBackoffMs = TASKS_POLL_BASE_MS
     if (tasksPollingTimer) {
       clearTimeout(tasksPollingTimer)
@@ -436,7 +439,7 @@ async function fetchAndApplyTasks(reason) {
         window.serverTimeOffset = data.server_time - localTime
         // 仅在偏移量较大时记录日志（避免日志刷屏）
         if (Math.abs(window.serverTimeOffset) > 1) {
-          console.log(`服务器时间偏移: ${window.serverTimeOffset.toFixed(2)}s`)
+          console.log(`Server time offset: ${window.serverTimeOffset.toFixed(2)}s`)
         }
       }
 
@@ -476,7 +479,7 @@ async function fetchAndApplyTasks(reason) {
       updateTasksList(data.tasks)
       updateTasksStats(data.stats)
       if (reason) {
-        console.debug(`任务列表已更新: ${reason}`)
+        console.debug(`Task list updated: ${reason}`)
       }
       return true
     }
@@ -487,7 +490,7 @@ async function fetchAndApplyTasks(reason) {
     if (error && (error.name === 'AbortError' || error.code === 20)) {
       return false
     }
-    console.error('获取任务列表失败:', error)
+    console.error('Failed to fetch task list:', error)
     return false
   } finally {
     // 释放 controller（避免长期持有）
@@ -547,7 +550,7 @@ function scheduleNextTasksPoll(delayMs) {
  */
 function startTasksPolling() {
   if (typeof document !== 'undefined' && document.hidden) {
-    console.log('页面不可见，跳过启动任务更新')
+    console.log('Page hidden; skip starting task polling')
     return
   }
 
@@ -572,7 +575,7 @@ function startTasksPolling() {
     })
   }
 
-  console.log('任务更新已启动（SSE 优先 + 轮询保底）')
+  console.log('Task polling started (SSE preferred + polling safety-net)')
 }
 
 /**
@@ -688,7 +691,7 @@ function updateTasksList(tasks) {
   // 检测新任务
   const addedTasks = newTaskIds.filter(id => !oldTaskIds.includes(id))
   if (addedTasks.length > 0) {
-    console.log(`检测到 ${addedTasks.length} 个新任务`)
+    console.log(`Detected ${addedTasks.length} new task(s)`)
 
     if (!isInitialTaskSnapshot) {
       // 如果当前有活动任务，使用合并机制避免短时间内频繁弹出多个通知
@@ -725,7 +728,7 @@ function updateTasksList(tasks) {
           // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout
           const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 250
           startTaskCountdown(task.task_id, timeout, task.auto_resubmit_timeout || 250)
-          console.log(`已为新任务启动倒计时: ${task.task_id}, 剩余 ${timeout}s`)
+          console.log(`Started countdown for new task: ${task.task_id}, remaining ${timeout}s`)
         }
       })
   }
@@ -733,13 +736,12 @@ function updateTasksList(tasks) {
   // 检测已删除的任务并清理倒计时
   const removedTasks = oldTaskIds.filter(id => !newTaskIds.includes(id))
   if (removedTasks.length > 0) {
-    console.log(`检测到 ${removedTasks.length} 个已删除任务`)
+    console.log(`Detected ${removedTasks.length} removed task(s)`)
     removedTasks.forEach(taskId => {
-      // 清理倒计时
       if (taskCountdowns[taskId]) {
         clearInterval(taskCountdowns[taskId].timer)
         delete taskCountdowns[taskId]
-        console.log(`已清理任务 ${taskId} 的倒计时`)
+        console.log(`Cleared countdown for task ${taskId}`)
       }
       // 【优化】清理任务截止时间缓存，防止内存泄漏
       if (window.taskDeadlines[taskId] !== undefined) {
@@ -809,7 +811,7 @@ function updateTasksList(tasks) {
   if (activeTask && activeTask.task_id !== activeTaskId) {
     const oldActiveTaskId = activeTaskId
     activeTaskId = activeTask.task_id
-    console.log(`同步activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`)
+    console.log(`Sync activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`)
 
     // 更新圆环颜色
     updateCountdownRingColors(oldActiveTaskId, activeTaskId)
@@ -819,13 +821,12 @@ function updateTasksList(tasks) {
     const firstIncompleteTask = tasks.find(t => t.status !== 'completed')
     if (firstIncompleteTask) {
       activeTaskId = firstIncompleteTask.task_id
-      console.log(`自动设置第一个未完成任务为active: ${activeTaskId}`)
+      console.log(`Auto-set first incomplete task as active: ${activeTaskId}`)
     } else {
-      console.log('所有任务已完成，不设置activeTaskId')
+      console.log('All tasks completed; not setting activeTaskId')
     }
   } else if (tasks.length === 0 && activeTaskId) {
-    // 如果任务列表为空，重置activeTaskId
-    console.log(`任务列表已清空，重置 activeTaskId: ${activeTaskId} -> null`)
+    console.log(`Task list cleared; reset activeTaskId: ${activeTaskId} -> null`)
     activeTaskId = null
   }
 
@@ -838,13 +839,13 @@ function updateTasksList(tasks) {
 
   if (hasActiveTasks && isShowingNoContent) {
     // 有任务但显示的是无内容页面，切换到内容页面
-    console.log('有任务但当前显示无内容页面，切换到内容页面')
+    console.log('Tasks present but showing no-content page; switching to content page')
     if (typeof showContentPage === 'function') {
       showContentPage()
     }
   } else if (!hasActiveTasks && contentContainer && contentContainer.style.display === 'block') {
     // 无任务但显示的是内容页面，切换到无内容页面
-    console.log('📭 无任务但显示内容页面，切换到无内容页面')
+    console.log('No tasks but showing content page; switching to no-content page')
     if (typeof showNoContentPage === 'function') {
       showNoContentPage()
     }
@@ -961,16 +962,15 @@ function renderTaskTabs() {
 
   // DOM未加载时延迟重试
   if (!container || !tabsContainer) {
-    console.warn('标签栏容器未找到，可能DOM还未加载完成，将在100ms后重试')
-    // 延迟100ms后重试一次
+    console.warn('Tab bar container not found; DOM may not be ready yet, retrying in 100ms')
     setTimeout(() => {
       const retryContainer = document.getElementById('task-tabs-container')
       const retryTabsContainer = document.getElementById('task-tabs')
       if (retryContainer && retryTabsContainer) {
-        console.log('重试成功，开始渲染标签栏')
+        console.log('Retry succeeded; rendering tab bar')
         renderTaskTabs()
       } else {
-        console.error('重试失败，标签栏容器仍然未找到')
+        console.error('Retry failed; tab bar container still missing')
       }
     }, 100)
     return
@@ -1228,7 +1228,7 @@ async function switchTask(taskId) {
     const textarea = document.getElementById('feedback-text')
     if (textarea) {
       taskTextareaContents[activeTaskId] = textarea.value
-      console.log(`已保存任务 ${activeTaskId} 的 textarea 内容`)
+      console.log(`Saved textarea content for task ${activeTaskId}`)
     }
 
     // 保存选项勾选状态
@@ -1240,7 +1240,7 @@ async function switchTask(taskId) {
         optionsStates[index] = checkbox.checked
       })
       taskOptionsStates[activeTaskId] = optionsStates
-      console.log(`已保存任务 ${activeTaskId} 的选项勾选状态`)
+      console.log(`Saved option selection state for task ${activeTaskId}`)
     }
 
     // 保存图片列表（深拷贝，避免引用问题）
@@ -1249,7 +1249,7 @@ async function switchTask(taskId) {
       ...img
       // 保留所有字段，包括 blob URL（每个任务独立管理）
     }))
-    console.log(`已保存任务 ${activeTaskId} 的图片列表 (${selectedImages.length} 张)`)
+    console.log(`Saved image list for task ${activeTaskId} (${selectedImages.length} images)`)
   }
 
   // 设置手动切换标志，防止轮询干扰
@@ -1269,7 +1269,7 @@ async function switchTask(taskId) {
   // 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
   const cachedTask = currentTasks.find(t => t.task_id === taskId)
   if (cachedTask && cachedTask.prompt) {
-    console.log(`使用缓存任务信息立即更新内容: ${taskId}`)
+    console.log(`Updating UI from cached task info immediately: ${taskId}`)
 
     // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
     const taskIdContainer = document.getElementById('task-id-container')
@@ -1296,19 +1296,19 @@ async function switchTask(taskId) {
       .then(res => res.json())
       .then(data => {
         if (!data.success) {
-          console.error('激活任务失败:', data.error)
+          console.error('Activate task failed:', data.error)
         } else {
-          console.log(`任务已激活: ${taskId}`)
+          console.log(`Task activated: ${taskId}`)
         }
       })
-      .catch(err => console.error('激活任务失败:', err))
+      .catch(err => console.error('Activate task failed:', err))
 
     // 后台异步加载完整详情（用于获取最新选项等）
     loadTaskDetails(taskId).catch(err => {
-      console.warn('加载任务详情失败，但UI已从缓存更新:', err)
+      console.warn('Load task details failed, but UI was updated from cache:', err)
     })
   } catch (error) {
-    console.error('切换任务失败:', error)
+    console.error('Switch task failed:', error)
   } finally {
     // 清除旧计时器并重新设置200ms后解除标志
     if (manualSwitchingTimer) {
@@ -1319,7 +1319,7 @@ async function switchTask(taskId) {
       manualSwitchingTimer = null
       // 分发事件通知其他模块恢复轮询
       window.dispatchEvent(new CustomEvent('taskSwitchComplete', { detail: { taskId } }))
-      console.log('任务切换锁定已解除，允许轮询恢复')
+      console.log('Task switch lock released; polling resumed')
     }, 200)
   }
 }
@@ -1410,7 +1410,7 @@ async function loadTaskDetails(taskId) {
 
     // 检查任务是否仍然是当前活动任务
     if (taskId !== activeTaskId) {
-      console.log(`跳过过期的任务详情: ${taskId}（当前活动: ${activeTaskId}）`)
+      console.log(`Skipping stale task details: ${taskId} (active: ${activeTaskId})`)
       return
     }
 
@@ -1437,7 +1437,7 @@ async function loadTaskDetails(taskId) {
       const textarea = document.getElementById('feedback-text')
       if (textarea && taskTextareaContents[taskId] !== undefined) {
         textarea.value = taskTextareaContents[taskId]
-        console.log(`已恢复任务 ${taskId} 的 textarea 内容`)
+        console.log(`Restored textarea content for task ${taskId}`)
       }
       // 如果之前没有保存过内容，保持当前值（避免在用户正在输入时被轮询调用清空）
 
@@ -1455,7 +1455,7 @@ async function loadTaskDetails(taskId) {
           updateImageCounter()
           updateImagePreviewVisibility()
         }
-        console.log(`已恢复任务 ${taskId} 的图片列表 (${selectedImages.length} 张)`)
+        console.log(`Restored image list for task ${taskId} (${selectedImages.length} images)`)
       }
       // 如果之前没有保存过图片，保持当前值（避免在用户正在添加图片时被轮询调用清空）
 
@@ -1466,17 +1466,17 @@ async function loadTaskDetails(taskId) {
         const remaining = task.remaining_time ?? task.auto_resubmit_timeout
         const total = task.auto_resubmit_timeout
         startTaskCountdown(task.task_id, remaining, total)
-        console.log(`首次启动倒计时: ${taskId}, 剩余 ${remaining}s / 总 ${total}s`)
+        console.log(`First-time countdown start: ${taskId}, remaining ${remaining}s / total ${total}s`)
       } else {
-        console.log(`倒计时已存在，不重置: ${taskId}`)
+        console.log(`Countdown already exists; not resetting: ${taskId}`)
       }
 
-      console.log(`已加载任务详情: ${taskId}`)
+      console.log(`Task details loaded: ${taskId}`)
     } else {
-      console.error('加载任务详情失败:', data.error)
+      console.error('Load task details failed:', data.error)
     }
   } catch (error) {
-    console.error('加载任务详情失败:', error)
+    console.error('Load task details failed:', error)
   }
 }
 
@@ -1517,7 +1517,7 @@ async function updateDescriptionDisplay(prompt) {
       try {
         htmlContent = marked.parse(prompt)
       } catch (e) {
-        console.warn('marked.js 解析失败:', e)
+        console.warn('marked.js parse failed:', e)
       }
     }
 
@@ -1539,7 +1539,7 @@ async function updateDescriptionDisplay(prompt) {
       processStrikethrough(descriptionElement)
     }
 
-    console.log('同步渲染 Markdown 完成')
+    console.log('Synchronous Markdown render complete')
 
     // MathJax 数学公式渲染（按需加载，不阻塞）
     // 注意：不能只在 MathJax 已加载时 typeset，否则“首次出现公式”的内容会一直不渲染
@@ -1549,11 +1549,11 @@ async function updateDescriptionDisplay(prompt) {
     } else if (window.MathJax && window.MathJax.typesetPromise) {
       // 回退：如果 MathJax 已加载但 loadMathJaxIfNeeded 不可用，直接渲染
       window.MathJax.typesetPromise([descriptionElement]).catch(err => {
-        console.warn('MathJax 渲染失败:', err)
+        console.warn('MathJax render failed:', err)
       })
     }
   } catch (error) {
-    console.error('更新描述失败:', error)
+    console.error('Update description failed:', error)
     descriptionElement.textContent = prompt
   }
 }
@@ -1601,7 +1601,7 @@ function updateOptionsDisplay(options) {
   let selectedStates = {}
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
     selectedStates = taskOptionsStates[activeTaskId]
-    console.log(`已恢复任务 ${activeTaskId} 的选项勾选状态`)
+    console.log(`Restored option selection state for task ${activeTaskId}`)
   } else {
     // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
     const existingCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
@@ -1692,7 +1692,7 @@ function updateOptionsDisplay(options) {
  * - 删除后无法恢复
  */
 async function closeTask(taskId) {
-  if (!confirm(`确定要关闭任务 ${taskId} 吗？`)) {
+  if (!confirm(_t('status.confirmCloseTask', { taskId }))) {
     return
   }
 
@@ -1701,7 +1701,7 @@ async function closeTask(taskId) {
     const data = await response.json()
 
     if (!response.ok || !data.success) {
-      console.error('服务端关闭任务失败:', data.error)
+      console.error('Server-side close task failed:', data.error)
       if (typeof showStatus === 'function') {
         showStatus(data.error || _t('status.closeFailed'), 'error')
       }
@@ -1738,9 +1738,9 @@ async function closeTask(taskId) {
       }
     }
 
-    console.log(`已关闭任务: ${taskId}`)
+    console.log(`Closed task: ${taskId}`)
   } catch (error) {
-    console.error('关闭任务失败:', error)
+    console.error('Close task failed:', error)
     if (typeof showStatus === 'function') {
       showStatus(_t('status.networkError'), 'error')
     }
@@ -1888,16 +1888,16 @@ function startTaskCountdown(taskId, remaining, total = null) {
         // 非激活任务超时：检查是否真的没有用户活动
         // 如果当前没有任何激活任务，说明用户完全无响应，也自动提交
         if (!activeTaskId) {
-          console.log(`非激活任务 ${taskId} 超时，且无活动任务，自动提交`)
+          console.log(`Non-active task ${taskId} timed out with no active task; auto-submitting`)
           autoSubmitTask(taskId)
         } else {
-          console.log(`任务 ${taskId} 超时，但用户正在处理其他任务 ${activeTaskId}，暂不自动提交`)
+          console.log(`Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`)
         }
       }
     }
   }, 1000)
 
-  console.log(`已启动任务倒计时: ${taskId}, 剩余 ${remaining}s / 总 ${timeout}s`)
+  console.log(`Started task countdown: ${taskId}, remaining ${remaining}s / total ${timeout}s`)
 }
 
 /**
@@ -1966,13 +1966,17 @@ async function autoSubmitTask(taskId) {
   } catch (e) {
     // 忽略：退避记录失败不应阻塞自动提交
   }
-  console.log(`任务 ${taskId} 倒计时结束，自动提交`)
+  console.log(`Task ${taskId} countdown ended; auto-submitting`)
   // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
+  // 若后端未提供（如网络故障），退出而不是发送硬编码字符串，由下一轮轮询/用户手动触发重试
   const prompts = await fetchFeedbackPromptsFresh()
-  const defaultMessage =
-    prompts && prompts.resubmit_prompt
-      ? prompts.resubmit_prompt
-      : '请立即调用 interactive_feedback 工具'
+  const defaultMessage = prompts && prompts.resubmit_prompt
+    ? String(prompts.resubmit_prompt)
+    : ''
+  if (!defaultMessage) {
+    console.warn(`Skip auto-submit for ${taskId}: resubmit_prompt not configured or unavailable`)
+    return
+  }
   await submitTaskFeedback(taskId, defaultMessage, [])
 }
 
@@ -2032,7 +2036,7 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
     const data = await response.json()
 
     if (data.success) {
-      console.log(`任务 ${taskId} 提交成功`)
+      console.log(`Task ${taskId} submitted successfully`)
       // 停止该任务的倒计时
       if (taskCountdowns[taskId]) {
         clearInterval(taskCountdowns[taskId].timer)
@@ -2041,15 +2045,15 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       // 清除该任务保存的所有状态
       if (taskTextareaContents[taskId] !== undefined) {
         delete taskTextareaContents[taskId]
-        console.log(`已清除任务 ${taskId} 保存的 textarea 内容`)
+        console.log(`Cleared saved textarea content for task ${taskId}`)
       }
       if (taskOptionsStates[taskId] !== undefined) {
         delete taskOptionsStates[taskId]
-        console.log(`已清除任务 ${taskId} 保存的选项勾选状态`)
+        console.log(`Cleared saved option selection state for task ${taskId}`)
       }
       if (taskImages[taskId] !== undefined) {
         delete taskImages[taskId]
-        console.log(`已清除任务 ${taskId} 保存的图片列表`)
+        console.log(`Cleared saved image list for task ${taskId}`)
       }
 
       // SSE 会在 complete_task 后 ~80ms 内自动触发 fetchAndApplyTasks，
@@ -2059,18 +2063,18 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
           await refreshTasksList()
           const nextTask = currentTasks.find(t => t.task_id !== taskId && t.status !== 'completed')
           if (nextTask) {
-            console.log(`自动切换到下一个任务: ${nextTask.task_id}`)
+            console.log(`Auto-switching to next task: ${nextTask.task_id}`)
             switchTask(nextTask.task_id)
           } else {
-            console.log(`所有任务已完成`)
+            console.log('All tasks completed')
           }
         }, 200)
       }
     } else {
-      console.error('提交任务失败:', data.error)
+      console.error('Submit task failed:', data.error)
     }
   } catch (error) {
-    console.error('提交任务反馈失败:', error)
+    console.error('Submit task feedback failed:', error)
   }
 }
 
@@ -2249,7 +2253,7 @@ function showNewTaskNotification(count, taskIds) {
  * - 依赖DOM已加载
  */
 async function initMultiTaskSupport() {
-  console.log('初始化多任务支持...')
+  console.log('Initializing multi-task support…')
 
   // 启动时预加载一次提示语（也会填充设置面板里的 config file）
   await fetchFeedbackPromptsFresh()
@@ -2264,7 +2268,7 @@ async function initMultiTaskSupport() {
   setInterval(function () {
     if (typeof document !== 'undefined' && document.hidden) return
     if (!tasksPollingTimer) {
-      console.warn('任务更新已停止，自动重新启动')
+      console.warn('Task polling stopped; auto-restarting')
       startTasksPolling()
     }
     if (!_sseConnected && !_sseReconnectTimer) {
@@ -2281,7 +2285,7 @@ async function initMultiTaskSupport() {
         taskTextareaContents[activeTaskId] = textarea.value
       }
     })
-    console.log('已启用 textarea 实时保存')
+    console.log('Enabled real-time textarea autosave')
   }
 
   // 监听选项变化
@@ -2298,10 +2302,10 @@ async function initMultiTaskSupport() {
         taskOptionsStates[activeTaskId] = states
       }
     })
-    console.log('已启用选项状态实时保存')
+    console.log('Enabled real-time option-state autosave')
   }
 
-  console.log('多任务支持初始化完成 (包含轮询健康检查和实时保存)')
+  console.log('Multi-task support initialized (with polling health-check and real-time autosave)')
 }
 
 /**
@@ -2342,7 +2346,7 @@ async function refreshTasksList() {
   const ok = await fetchAndApplyTasks('manual')
   if (ok) {
     tasksPollBackoffMs = TASKS_POLL_BASE_MS
-    console.log('任务列表已手动刷新')
+    console.log('Task list refreshed manually')
   }
 
   // 手动刷新后确保轮询处于运行态（页面可见时）

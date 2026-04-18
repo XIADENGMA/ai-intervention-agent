@@ -164,7 +164,7 @@ const KeyboardShortcuts = (function () {
     try {
       callback(event);
     } catch (error) {
-      console.error(`[KeyboardShortcuts] 执行快捷键 "${id}" 时出错:`, error);
+      console.error(`[KeyboardShortcuts] Error while executing shortcut "${id}":`, error);
     }
   }
 
@@ -185,7 +185,7 @@ const KeyboardShortcuts = (function () {
       // 注册默认快捷键
       this.registerDefaults();
 
-      console.log('[KeyboardShortcuts] 已初始化');
+      console.log('[KeyboardShortcuts] initialized');
     },
 
     /**
@@ -218,11 +218,11 @@ const KeyboardShortcuts = (function () {
       const id = parts.join('+');
 
       if (shortcuts.has(id)) {
-        console.warn(`[KeyboardShortcuts] 快捷键 "${shortcut}" 已存在，将被覆盖`);
+        console.warn(`[KeyboardShortcuts] Shortcut "${shortcut}" already exists, will be overridden`);
       }
 
       shortcuts.set(id, { callback, options: mergedOptions });
-      console.debug(`[KeyboardShortcuts] 注册: ${id}`);
+      console.debug(`[KeyboardShortcuts] registered: ${id}`);
     },
 
     /**
@@ -242,7 +242,7 @@ const KeyboardShortcuts = (function () {
       const id = parts.join('+');
 
       if (shortcuts.delete(id)) {
-        console.debug(`[KeyboardShortcuts] 注销: ${id}`);
+        console.debug(`[KeyboardShortcuts] unregistered: ${id}`);
       }
     },
 
@@ -332,27 +332,27 @@ const KeyboardShortcuts = (function () {
       const mod = isMac ? '⌘' : 'Ctrl';
       const alt = isMac ? '⌥' : 'Alt';
 
-      const helpText = `
-╔══════════════════════════════════════╗
-║         键盘快捷键帮助             ║
-╠══════════════════════════════════════╣
-║  ${mod}+Enter    提交反馈              ║
-║  ${mod}+,        打开设置              ║
-║  ${mod}+/        显示此帮助            ║
-║  T             切换主题              ║
-║  Tab           下一个任务            ║
-║  Shift+Tab     上一个任务            ║
-║  Escape        关闭弹窗/面板         ║
-╚══════════════════════════════════════╝
-      `.trim();
+      const t = (key, params) => window.AIIA_I18N ? window.AIIA_I18N.t(key, params) : key;
+      const helpText = [
+        '╔══════════════════════════════════════╗',
+        `║  ${t('shortcuts.helpTitle')}  ║`.padEnd(42, ' ') + '║',
+        '╠══════════════════════════════════════╣',
+        `║  ${mod}+Enter    ${t('shortcuts.submitFeedback')}`,
+        `║  ${mod}+,        ${t('shortcuts.openSettings')}`,
+        `║  ${mod}+/        ${t('shortcuts.showHelp')}`,
+        `║  T             ${t('shortcuts.toggleTheme')}`,
+        `║  Tab           ${t('shortcuts.nextTask')}`,
+        `║  Shift+Tab     ${t('shortcuts.prevTask')}`,
+        `║  Escape        ${t('shortcuts.closeModal')}`,
+        '╚══════════════════════════════════════╝'
+      ].join('\n');
 
       console.log(helpText);
 
-      // 显示提示通知
       if (typeof notificationManager !== 'undefined') {
         notificationManager.sendNotification(
-          '快捷键',
-          `${mod}+Enter 提交 | T 切换主题 | Esc 关闭弹窗`,
+          t('shortcuts.notifyTitle'),
+          t('shortcuts.notifyBody', { mod }),
           { tag: 'keyboard-help', requireInteraction: false }
         );
       }
@@ -373,7 +373,7 @@ const KeyboardShortcuts = (function () {
       document.removeEventListener('keydown', handleKeydown);
       shortcuts.clear();
       initialized = false;
-      console.log('[KeyboardShortcuts] 已销毁');
+      console.log('[KeyboardShortcuts] destroyed');
     }
   };
 })();

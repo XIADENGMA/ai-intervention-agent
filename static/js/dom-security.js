@@ -34,6 +34,18 @@
  * @static
  */
 
+// 本地 i18n 辅助函数，与 validation-utils.js 一致。
+function __domSecT(key, params) {
+  try {
+    if (typeof window !== 'undefined'
+      && window.AIIA_I18N
+      && typeof window.AIIA_I18N.t === 'function') {
+      return window.AIIA_I18N.t(key, params)
+    }
+  } catch (_e) { /* noop */ }
+  return key
+}
+
 class DOMSecurity {
   /**
    * 安全地设置元素的文本内容
@@ -286,7 +298,7 @@ class DOMSecurity {
     const closeButton = document.createElement('button')
     closeButton.className = 'in-page-notification-close'
     closeButton.textContent = '×'
-    closeButton.setAttribute('aria-label', '关闭通知')
+    closeButton.setAttribute('aria-label', __domSecT('page.closeNotification'))
 
     content.appendChild(titleElement)
     content.appendChild(messageElement)
@@ -363,7 +375,7 @@ class DOMSecurity {
       spinner.className = 'loading-spinner'
 
       const text = document.createElement('div')
-      text.textContent = '处理中...'
+      text.textContent = __domSecT('status.processing')
 
       loadingDiv.appendChild(spinner)
       loadingDiv.appendChild(text)
@@ -382,15 +394,14 @@ class DOMSecurity {
             openImageModal(src, imageItem.name || '', imageItem.size || 0)
           }
         } catch (e) {
-          // 预览失败不影响主流程
-          console.warn('打开图片预览失败:', e)
+          console.warn('Open image preview failed:', e)
         }
       })
 
       const removeButton = document.createElement('button')
       removeButton.className = 'image-preview-remove'
       removeButton.textContent = '×'
-      removeButton.setAttribute('aria-label', '删除图片')
+      removeButton.setAttribute('aria-label', __domSecT('page.removeImage'))
       removeButton.onclick = () => removeImage(imageItem.id)
 
       const info = document.createElement('div')
@@ -447,8 +458,12 @@ class DOMSecurity {
     // 失败图标（X）
     const errorIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>`
 
-    button.innerHTML = `${copyIconSvg}复制`
-    button.setAttribute('aria-label', '复制代码')
+    const copyLabel = __domSecT('page.copyCode')
+    const copiedLabel = __domSecT('page.copied')
+    const copyFailedLabel = __domSecT('page.copyFailed')
+
+    button.innerHTML = `${copyIconSvg}${copyLabel}`
+    button.setAttribute('aria-label', copyLabel)
 
     // 保存原始 HTML 以便恢复
     const originalHTML = button.innerHTML
@@ -456,14 +471,14 @@ class DOMSecurity {
     button.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(targetText)
-        button.innerHTML = `${checkIconSvg}已复制`
+        button.innerHTML = `${checkIconSvg}${copiedLabel}`
         button.classList.add('copied')
         setTimeout(() => {
           button.innerHTML = originalHTML
           button.classList.remove('copied')
         }, 2000)
       } catch (err) {
-        button.innerHTML = `${errorIconSvg}复制失败`
+        button.innerHTML = `${errorIconSvg}${copyFailedLabel}`
         button.classList.add('error')
         setTimeout(() => {
           button.innerHTML = originalHTML

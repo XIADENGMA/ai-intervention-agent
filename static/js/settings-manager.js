@@ -37,7 +37,7 @@ class SettingsManager {
     this.feedbackConfig = await this.loadFeedbackConfig()
     this.initEventListeners()
     this.initialized = true
-    console.log('SettingsManager 初始化完成')
+    console.log('SettingsManager initialized')
   }
 
   async loadSettings() {
@@ -65,12 +65,12 @@ class SettingsManager {
             barkIcon: serverConfig.bark_icon ?? this.defaultSettings.barkIcon,
             barkAction: serverConfig.bark_action ?? this.defaultSettings.barkAction
           }
-          console.log('从服务器加载配置成功')
+          console.log('Loaded settings from server')
           return settings
         }
       }
     } catch (error) {
-      console.warn('从服务器加载配置失败，尝试localStorage:', error)
+      console.warn('Load settings from server failed; falling back to localStorage:', error)
     }
 
     // 回退到localStorage
@@ -81,7 +81,7 @@ class SettingsManager {
         return { ...this.defaultSettings, ...parsed }
       }
     } catch (error) {
-      console.warn('加载设置失败，使用默认设置:', error)
+      console.warn('Load settings failed; using defaults:', error)
     }
     return { ...this.defaultSettings }
   }
@@ -89,9 +89,9 @@ class SettingsManager {
   saveSettings() {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(this.settings))
-      console.log('设置已保存')
+      console.log('Settings saved')
     } catch (error) {
-      console.error('保存设置失败:', error)
+      console.error('Save settings failed:', error)
     }
   }
 
@@ -99,7 +99,7 @@ class SettingsManager {
     this.settings[key] = value
     this.saveSettings()
     this.applySettings()
-    console.log(`设置已更新: ${key} = ${value}`)
+    console.log(`Setting updated: ${key} = ${value}`)
   }
 
   applySettings(options = {}) {
@@ -141,12 +141,12 @@ class SettingsManager {
 
       const result = await response.json()
       if (response.ok && result.status === 'success') {
-        console.log('后端通知配置已同步')
+        console.log('Notification config synced to server')
       } else {
-        console.warn('同步后端配置失败:', result.message)
+        console.warn('Sync notification config to server failed:', result.message)
       }
     } catch (error) {
-      console.error('同步后端配置失败:', error)
+      console.error('Sync notification config to server failed:', error)
     }
   }
 
@@ -155,7 +155,7 @@ class SettingsManager {
     this.saveSettings()
     this.updateUI()
     this.applySettings()
-    console.log('设置已重置为默认值')
+    console.log('Settings reset to defaults')
   }
 
   updateUI() {
@@ -385,7 +385,7 @@ class SettingsManager {
             body: JSON.stringify({ language: newLang })
           })
         } catch (e) {
-          console.warn('语言偏好持久化失败:', e)
+          console.warn('Persist language preference failed:', e)
         }
       })
     }
@@ -437,7 +437,7 @@ class SettingsManager {
       try {
         await this.init()
       } catch (e) {
-        console.warn('SettingsManager 初始化失败（打开设置面板时）:', e)
+        console.warn('SettingsManager init failed while opening settings panel:', e)
       }
     }
 
@@ -472,12 +472,12 @@ class SettingsManager {
     try {
       this.settings = await this.loadSettings()
     } catch (e) {
-      console.warn('打开设置面板时刷新配置失败，继续使用当前设置:', e)
+      console.warn('Refresh settings on open failed; keeping current:', e)
     }
     try {
       this.feedbackConfig = await this.loadFeedbackConfig()
     } catch (e) {
-      console.warn('打开设置面板时刷新反馈配置失败:', e)
+      console.warn('Refresh feedback config on open failed:', e)
     }
 
     this.updateUI()
@@ -601,7 +601,7 @@ class SettingsManager {
       })
       showStatus(t('status.testSent'), 'success')
     } catch (error) {
-      console.error('测试通知失败:', error)
+      console.error('Test notification failed:', error)
       showStatus(t('status.testFailed') + ': ' + error.message, 'error')
     }
   }
@@ -639,13 +639,13 @@ class SettingsManager {
 
       if (response.ok && result.status === 'success') {
         showStatus(result.message, 'success')
-        console.log('Bark 通知发送成功:', result)
+        console.log('Bark notification sent:', result)
       } else {
         showStatus(result.message || t('status.barkFailed'), 'error')
-        console.error('Bark 通知发送失败:', result)
+        console.error('Bark notification send failed:', result)
       }
     } catch (error) {
-      console.error('Bark 测试通知失败:', error)
+      console.error('Bark test notification failed:', error)
       showStatus(t('status.barkTestFailed', { reason: error.message }), 'error')
     }
   }
@@ -664,7 +664,7 @@ class SettingsManager {
         }
       }
     } catch (e) {
-      console.warn('加载反馈配置失败:', e)
+      console.warn('Load feedback config failed:', e)
     }
     return { frontend_countdown: 240, resubmit_prompt: '', prompt_suffix: '' }
   }
@@ -694,18 +694,37 @@ class SettingsManager {
         showStatus(data.message || t('settings.feedbackConfigSaveFailed'), 'error')
       }
     } catch (e) {
-      console.error('保存反馈配置失败:', e)
+      console.error('Save feedback config failed:', e)
       showStatus(t('settings.feedbackConfigSaveFailed'), 'error')
     }
   }
 
   async resetFeedbackConfig() {
-    await this.saveFeedbackConfig({
-      frontend_countdown: 240,
-      resubmit_prompt: '请立即调用 interactive_feedback 工具',
-      prompt_suffix: '\n请积极调用 interactive_feedback 工具'
-    })
-    this.feedbackConfig = await this.loadFeedbackConfig()
+    // 真源：调用后端 /api/reset-feedback-config，避免前端硬编码中文默认值。
+    // 若后端不可用，回退到重新读取当前配置；不再吞掉错误，好让用户知道发生了什么。
+    try {
+      const resp = await fetch('/api/reset-feedback-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok || data.status !== 'success') {
+        showStatus(
+          data.message || t('settings.feedbackConfigSaveFailed'),
+          'error'
+        )
+        return
+      }
+      if (data.defaults && typeof data.defaults === 'object') {
+        Object.assign(this.feedbackConfig || (this.feedbackConfig = {}), data.defaults)
+      } else {
+        this.feedbackConfig = await this.loadFeedbackConfig()
+      }
+    } catch (e) {
+      console.error('Reset feedback config failed:', e)
+      showStatus(t('settings.feedbackConfigSaveFailed'), 'error')
+      return
+    }
     this.updateFeedbackUI()
     showStatus(t('settings.feedbackConfigReset'), 'success')
   }

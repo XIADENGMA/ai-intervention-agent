@@ -23,6 +23,50 @@ if TYPE_CHECKING:
 logger = EnhancedLogger(__name__)
 
 
+def _sanitize_selected_options(raw: Any) -> list[str]:
+    """【P6Y-3 修复】清洗 /api/submit 传入的 selected_options 字段。
+
+    前端可能通过 multipart/form-data、URL-encoded form、application/json 三种方式提交，
+    任何一种都可能把 selected_options 传成 None / 字符串 / 字典 / 包含非字符串元素的列表。
+    若不校验直接写入 Task.result['selected_options']，前端读取时会出现：
+      - `.forEach is not a function` 或 `.map is not a function`
+      - 历史任务面板渲染崩溃
+      - 状态事件推送的数据结构异常
+
+    规则：
+      1. 非 list → 空列表
+      2. list 中的每个元素：非字符串则先用 str() 转；然后 strip；
+         过滤掉空字符串和超过 500 字符的异常长串；
+      3. 去重但保持顺序；
+      4. 最多保留 50 项（上层 UI 一般也就几项，这里只做兜底防滥用）。
+    """
+    if not isinstance(raw, list):
+        return []
+
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for item in raw:
+        if item is None:
+            continue
+        if not isinstance(item, str):
+            try:
+                item = str(item)
+            except Exception:
+                continue
+        item = item.strip()
+        if not item:
+            continue
+        if len(item) > 500:
+            continue
+        if item in seen:
+            continue
+        seen.add(item)
+        cleaned.append(item)
+        if len(cleaned) >= 50:
+            break
+    return cleaned
+
+
 class FeedbackRoutesMixin:
     """提供 3 个反馈相关 API 路由，由 WebFeedbackUI 通过 MRO 继承。"""
 
@@ -108,6 +152,7 @@ class FeedbackRoutesMixin:
                     selected_options = json.loads(selected_options_str)
                 except json.JSONDecodeError:
                     selected_options = []
+                selected_options = _sanitize_selected_options(selected_options)
 
                 logger.debug("接收到的反馈数据:")
                 logger.debug(f"  - 文字内容长度: {len(feedback_text)}")
@@ -125,6 +170,7 @@ class FeedbackRoutesMixin:
                     selected_options = json.loads(selected_options_str)
                 except json.JSONDecodeError:
                     selected_options = []
+                selected_options = _sanitize_selected_options(selected_options)
 
                 logger.debug("接收到的表单数据:")
                 logger.debug(
@@ -141,8 +187,12 @@ class FeedbackRoutesMixin:
                     feedback_text = str(
                         data.get("feedback_text", data.get("user_input", ""))
                     ).strip()
-                    selected_options = data.get("selected_options", [])
+                    selected_options = _sanitize_selected_options(
+                        data.get("selected_options", [])
+                    )
                     images = data.get("images", [])
+                    if not isinstance(images, list):
+                        images = []
 
                     logger.debug("接收到的JSON数据:")
                     logger.debug(

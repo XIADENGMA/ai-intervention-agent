@@ -6,6 +6,9 @@
  * 依赖（全局）：showStatus(), t(), DOMSecurity, ValidationUtils, hourglassAnimation
  * 暴露（全局）：selectedImages, initializeImageFeatures(), startPeriodicCleanup(),
  *               clearAllImages, removeImage, openImageModal, handleFileUpload, ...
+ *
+ * 加载顺序：templates/web_ui.html 中 image-upload.js 在 app.js 之前 defer 加载；
+ *          app.js 顶层定义的 function t() 会挂到全局对象上，事件回调执行时可用。
  */
 
 // ========== 图片处理功能 ==========
@@ -79,17 +82,19 @@ function validateImageFile(file) {
   // 回退到基础验证
   const errors = []
   if (!file || !file.type) {
-    errors.push('无效的文件对象')
+    errors.push(t('validation.invalidFile'))
     return errors
   }
   if (!SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-    errors.push(`不支持的文件格式: ${file.type}`)
+    errors.push(t('validation.unsupportedFormat', { type: file.type }))
   }
   if (file.size > MAX_IMAGE_SIZE) {
-    errors.push(`文件大小超过限制: ${(file.size / 1024 / 1024).toFixed(2)}MB > 10MB`)
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2)
+    const limitMB = (MAX_IMAGE_SIZE / 1024 / 1024).toFixed(0)
+    errors.push(t('validation.fileSizeExceeded', { actual: sizeMB, limit: limitMB }))
   }
   if (file.name && file.name.length > 255) {
-    errors.push('文件名过长')
+    errors.push(t('validation.fileNameTooLong'))
   }
   return errors
 }
@@ -132,7 +137,7 @@ function createObjectURL(file) {
     setTimeout(
       () => {
         if (objectURLs.has(url)) {
-          console.warn(`自动清理过期的URL对象: ${url}`)
+          console.warn(`Auto-cleaning expired object URL: ${url}`)
           revokeObjectURL(url)
         }
       },
@@ -141,7 +146,7 @@ function createObjectURL(file) {
 
     return url
   } catch (error) {
-    console.error('创建Object URL失败:', error)
+    console.error('createObjectURL failed:', error)
     return null
   }
 }
@@ -155,23 +160,23 @@ function revokeObjectURL(url) {
       URL.revokeObjectURL(url)
       objectURLs.delete(url)
       urlCreationTime.delete(url)
-      console.debug(`已清理URL对象: ${url}`)
+      console.debug(`Revoked object URL: ${url}`)
     }
   } catch (error) {
-    console.error('清理URL对象失败:', error)
+    console.error('Revoke object URL failed:', error)
   }
 }
 
 // 清理所有Object URLs
 function cleanupAllObjectURLs() {
-  console.log(`开始清理 ${objectURLs.size} 个URL对象`)
+  console.log(`Cleaning up ${objectURLs.size} object URLs`)
   const startTime = performance.now()
 
   objectURLs.forEach(url => {
     try {
       URL.revokeObjectURL(url)
     } catch (error) {
-      console.error(`清理URL失败: ${url}`, error)
+      console.error(`Revoke URL failed: ${url}`, error)
     }
   })
 
@@ -179,7 +184,7 @@ function cleanupAllObjectURLs() {
   urlCreationTime.clear()
 
   const endTime = performance.now()
-  console.log(`URL对象清理完成，耗时: ${(endTime - startTime).toFixed(2)}ms`)
+  console.log(`Object URL cleanup done in ${(endTime - startTime).toFixed(2)}ms`)
 }
 
 // 定期清理过期的URL对象（每5分钟检查一次）
@@ -197,7 +202,7 @@ function startPeriodicCleanup() {
       })
 
       if (expiredUrls.length > 0) {
-        console.log(`定期清理 ${expiredUrls.length} 个过期URL对象`)
+        console.log(`Periodic cleanup: ${expiredUrls.length} expired object URLs`)
         expiredUrls.forEach(url => revokeObjectURL(url))
       }
     },
@@ -309,9 +314,9 @@ function compressImage(file) {
         try {
           const ratio = ((1 - blob.size / file.size) * 100).toFixed(1)
           console.log(
-            `图片压缩: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
+            `Image compression: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
               blob.size / 1024
-            ).toFixed(2)}KB (压缩率: ${ratio}%) 输出: ${finalName}`
+            ).toFixed(2)}KB (ratio: ${ratio}%) out: ${finalName}`
           )
         } catch (_) {
           // 忽略：日志仅用于观测压缩效果
@@ -365,9 +370,9 @@ function compressImage(file) {
             attempt++
             if (attempt >= MAX_ATTEMPTS) {
               console.warn(
-                `图片压缩：已达到最大尝试次数，但仍超过 ${(MAX_RETURN_BYTES / 1024 / 1024).toFixed(
+                `Image compression: max attempts reached but still above ${(MAX_RETURN_BYTES / 1024 / 1024).toFixed(
                   1
-                )}MB，将返回当前压缩版本`
+                )}MB; returning current compressed version`
               )
               logCompression(blob, finalName)
               resolve(compressedFile)
@@ -479,16 +484,16 @@ async function addImageToList(file) {
     if (previewUrl) {
       imageItem.previewUrl = previewUrl
     } else {
-      throw new Error('创建预览URL失败')
+      throw new Error('createObjectURL failed for preview')
     }
 
     // 更新预览
     renderImagePreview(imageItem, false)
 
-    console.log('图片添加成功:', file.name, `(${(imageItem.size / 1024).toFixed(2)}KB)`)
+    console.log('Image added:', file.name, `(${(imageItem.size / 1024).toFixed(2)}KB)`)
     return true
   } catch (error) {
-    console.error('图片处理失败:', error)
+    console.error('Image processing failed:', error)
     showStatus(t('status.imageError', { reason: error.message }), 'error')
 
     // 释放可能已创建的预览 URL
@@ -513,30 +518,12 @@ async function addImageToList(file) {
   }
 }
 
-// 批量DOM更新队列
-let domUpdateQueue = []
-let domUpdateScheduled = false
-
-// 批量处理DOM更新
-function scheduleDOMUpdate(callback) {
-  domUpdateQueue.push(callback)
-  if (!domUpdateScheduled) {
-    domUpdateScheduled = true
-    rafUpdate(() => {
-      const fragment = document.createDocumentFragment()
-      domUpdateQueue.forEach(callback => callback(fragment))
-      domUpdateQueue = []
-      domUpdateScheduled = false
-    })
-  }
-}
-
 // 优化的图片预览渲染
 function renderImagePreview(imageItem, isLoading = false) {
   rafUpdate(() => {
     const previewContainer = document.getElementById('image-previews')
     if (!previewContainer) {
-      console.error('图片预览容器 #image-previews 未找到，无法渲染预览')
+      console.error('Image preview container #image-previews not found; cannot render')
       return
     }
     let previewElement = document.getElementById(`preview-${imageItem.id}`)
@@ -621,7 +608,7 @@ function clearAllImages() {
     setTimeout(() => window.gc(), 1000)
   }
 
-  console.log('所有图片已清除，内存已释放')
+  console.log('All images cleared; memory released')
 }
 
 // 页面卸载时的清理
@@ -682,7 +669,7 @@ async function handleFileUpload(files) {
 
   // 显示批量处理进度
   if (fileArray.length > 1) {
-    showStatus(t('status.processing', { count: fileArray.length }), 'info')
+    showStatus(t('status.processingBatch', { count: fileArray.length }), 'info')
   }
 
   // 分批处理文件，避免内存溢出
@@ -702,7 +689,7 @@ async function handleFileUpload(files) {
 
         return success
       } catch (error) {
-        console.error('文件处理失败:', file.name, error)
+        console.error('File processing failed:', file.name, error)
         processed++
         return false
       }
@@ -722,12 +709,16 @@ async function handleFileUpload(files) {
   // 显示最终结果
   if (fileArray.length > 1) {
     showStatus(
-      `完成处理: ${successful}/${fileArray.length} 个文件成功`,
+      t('status.batchComplete', { successful, total: fileArray.length }),
       successful > 0 ? 'success' : 'error'
     )
   } else if (fileArray.length === 1) {
+    const file = fileArray[0]
+    const filename = file && file.name ? file.name : ''
     showStatus(
-      successful > 0 ? '文件处理成功' : '文件处理失败',
+      successful > 0
+        ? t('status.fileProcessSuccess', { filename })
+        : t('status.fileProcessFailed', { filename, reason: '' }),
       successful > 0 ? 'success' : 'error'
     )
   }
@@ -824,7 +815,7 @@ function initializePasteFunction() {
 
       // 安全限制：避免极端大 data uri 卡死页面（阈值约 15MB base64）
       if (base64.length > 15 * 1024 * 1024) {
-        console.warn('剪贴板图片过大（data uri），已跳过')
+        console.warn('Clipboard data URI too large; skipped')
         return null
       }
 
@@ -841,7 +832,7 @@ function initializePasteFunction() {
       const filename = `pasted-image-${Date.now()}.${ext}`
       return new File([bytes], filename, { type: mime, lastModified: Date.now() })
     } catch (err) {
-      console.warn('解析剪贴板 data uri 图片失败:', err)
+      console.warn('Failed to parse clipboard data URI image:', err)
       return null
     }
   }
@@ -1003,7 +994,7 @@ function checkBrowserCompatibility() {
     clipboard: !!(navigator.clipboard && navigator.clipboard.read)
   }
 
-  console.log('浏览器兼容性检测:', features)
+  console.log('Browser compatibility check:', features)
 
   // 关键功能检查
   if (!features.fileAPI) {
@@ -1034,7 +1025,7 @@ function setupFeatureFallbacks() {
 
   // 复制API降级
   if (!navigator.clipboard) {
-    console.warn('剪贴板API不可用，使用降级方案')
+    console.warn('Clipboard API unavailable; falling back to manual paste')
   }
 
   // Object.assign降级
@@ -1056,7 +1047,7 @@ function setupFeatureFallbacks() {
 function initializeImageFeatures() {
   // 兼容性检查
   if (!checkBrowserCompatibility()) {
-    console.error('浏览器兼容性检查失败')
+    console.error('Browser compatibility check failed')
     return
   }
 
@@ -1074,9 +1065,9 @@ function initializeImageFeatures() {
       clearBtn.addEventListener('click', clearAllImages)
     }
 
-    console.log('图片功能初始化完成')
+    console.log('Image features initialized')
   } catch (error) {
-    console.error('图片功能初始化失败:', error)
+    console.error('Image features init failed:', error)
     showStatus(t('status.imageInitFailed'), 'error')
   }
 }

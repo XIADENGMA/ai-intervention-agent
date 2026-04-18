@@ -191,6 +191,21 @@
       mountController(window.AIIA_TRI_STATE_PANEL)
       return
     }
+    // Symmetric guard to the success path above: if the loader already
+    // rejected (module script evaluated + import() microtask settled
+    // BEFORE our DOMContentLoaded handler fired), the READY/FAILED
+    // events are already gone. Reading the flag keeps us from wiring
+    // a permanently-dead listener and leaving the panel stuck at the
+    // SSR "ready" initial state (CSS hides the panel entirely).
+    if (window.AIIA_TRI_STATE_PANEL_FAILURE) {
+      if (typeof console !== 'undefined' && console.error) {
+        console.error(
+          '[tri-state-panel] loader already failed before bootstrap registered its listener:',
+          window.AIIA_TRI_STATE_PANEL_FAILURE
+        )
+      }
+      return
+    }
     document.addEventListener(READY_EVENT, onReady)
     document.addEventListener(FAILED_EVENT, onFailed)
   }

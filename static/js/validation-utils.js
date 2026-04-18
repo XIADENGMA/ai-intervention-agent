@@ -10,6 +10,21 @@
  * @version 1.0.0
  */
 
+/**
+ * 本地 i18n 辅助函数（i18n 未加载时回退到 key）。
+ * 错误消息使用 validation.* / status.* 命名空间。
+ */
+function __vuT(key, params) {
+  try {
+    if (typeof window !== 'undefined'
+      && window.AIIA_I18N
+      && typeof window.AIIA_I18N.t === 'function') {
+      return window.AIIA_I18N.t(key, params)
+    }
+  } catch (_e) { /* noop */ }
+  return key
+}
+
 class ValidationUtils {
   // ========================================
   // 静态配置常量
@@ -75,28 +90,29 @@ class ValidationUtils {
 
     // 基础检查
     if (!file) {
-      errors.push('文件对象为空')
+      errors.push(__vuT('validation.invalidFile'))
       return { valid: false, errors }
     }
 
     if (!file.type) {
-      errors.push('无法识别文件类型')
+      errors.push(__vuT('validation.invalidFile'))
       return { valid: false, errors }
     }
 
     // 类型验证
     if (!this.SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-      errors.push(`不支持的图片格式: ${file.type}`)
+      errors.push(__vuT('validation.unsupportedFormat', { type: file.type }))
     }
 
     // 大小验证
     if (file.size < this.MIN_FILE_SIZE) {
-      errors.push(`文件太小 (${file.size} bytes)，可能是空文件或损坏`)
+      errors.push(__vuT('validation.fileTooSmall', { size: file.size }))
     }
 
     if (file.size > this.MAX_FILE_SIZE) {
       const sizeMB = (file.size / 1024 / 1024).toFixed(2)
-      errors.push(`文件超过大小限制: ${sizeMB}MB > 10MB`)
+      const limitMB = (this.MAX_FILE_SIZE / 1024 / 1024).toFixed(0)
+      errors.push(__vuT('validation.fileSizeExceeded', { actual: sizeMB, limit: limitMB }))
     }
 
     // 文件名验证
@@ -123,24 +139,27 @@ class ValidationUtils {
     const errors = []
 
     if (!filename) {
-      errors.push('文件名为空')
+      errors.push(__vuT('validation.filenameEmpty'))
       return errors
     }
 
     // 长度检查
     if (filename.length > this.MAX_FILENAME_LENGTH) {
-      errors.push(`文件名过长 (${filename.length} > ${this.MAX_FILENAME_LENGTH})`)
+      errors.push(
+        __vuT('validation.fileNameTooLong')
+        + ` (${filename.length} > ${this.MAX_FILENAME_LENGTH})`
+      )
     }
 
     // 危险字符检查（重置 lastIndex 以防 /g 标志累积状态）
     this.FORBIDDEN_FILENAME_CHARS.lastIndex = 0
     if (this.FORBIDDEN_FILENAME_CHARS.test(filename)) {
-      errors.push('文件名包含非法字符')
+      errors.push(__vuT('validation.filenameIllegalChars'))
     }
 
     // 路径遍历检查
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      errors.push('文件名包含路径遍历字符')
+      errors.push(__vuT('validation.filenamePathTraversal'))
     }
 
     return errors
@@ -159,7 +178,7 @@ class ValidationUtils {
     // 可疑扩展名检查
     for (const ext of this.SUSPICIOUS_EXTENSIONS) {
       if (filename.endsWith(ext)) {
-        errors.push(`检测到可疑文件类型: ${ext}`)
+        errors.push(__vuT('validation.suspiciousExt', { ext }))
         break
       }
     }
@@ -169,7 +188,7 @@ class ValidationUtils {
     if (parts.length > 2) {
       const lastExt = '.' + parts[parts.length - 1]
       if (this.SUSPICIOUS_EXTENSIONS.includes(lastExt)) {
-        errors.push('检测到伪装的可执行文件')
+        errors.push(__vuT('validation.maskedExecutable'))
       }
     }
 
@@ -200,18 +219,18 @@ class ValidationUtils {
     // 空值检查
     if (!text || text.trim() === '') {
       if (!allowEmpty) {
-        errors.push('输入不能为空')
+        errors.push(__vuT('validation.emptyField'))
       }
       return { valid: allowEmpty, errors, sanitized: '' }
     }
 
     // 长度检查
     if (text.length < minLength) {
-      errors.push(`输入长度不足 (${text.length} < ${minLength})`)
+      errors.push(__vuT('validation.inputTooShort', { length: text.length, min: minLength }))
     }
 
     if (text.length > maxLength) {
-      errors.push(`输入长度超限 (${text.length} > ${maxLength})`)
+      errors.push(__vuT('validation.inputTooLong', { length: text.length, max: maxLength }))
       sanitized = text.substring(0, maxLength)
     }
 
@@ -282,17 +301,18 @@ class ValidationUtils {
    * @param {number} value - 要验证的数值
    * @param {number} min - 最小值
    * @param {number} max - 最大值
-   * @param {string} [fieldName='值'] - 字段名称（用于错误消息）
+   * @param {string} [fieldName] - 字段名称（用于错误消息）。默认取 i18n 的 validation.defaultFieldName
    * @returns {Object} { valid: boolean, value: number, error: string }
    */
-  static validateNumberRange(value, min, max, fieldName = '值') {
+  static validateNumberRange(value, min, max, fieldName) {
     const num = Number(value)
+    const name = fieldName || __vuT('validation.defaultFieldName')
 
     if (isNaN(num)) {
       return {
         valid: false,
         value: min,
-        error: `${fieldName} 必须是数字`
+        error: __vuT('validation.notANumber', { field: name })
       }
     }
 
@@ -300,7 +320,7 @@ class ValidationUtils {
       return {
         valid: false,
         value: min,
-        error: `${fieldName} 不能小于 ${min}`
+        error: __vuT('validation.numberBelowMin', { field: name, min })
       }
     }
 
@@ -308,7 +328,7 @@ class ValidationUtils {
       return {
         valid: false,
         value: max,
-        error: `${fieldName} 不能大于 ${max}`
+        error: __vuT('validation.numberAboveMax', { field: name, max })
       }
     }
 
@@ -421,17 +441,32 @@ class APICache {
   /**
    * 带缓存的 fetch 请求
    *
+   * 安全策略：
+   *   - 仅缓存 GET 请求（POST/PUT/DELETE 等视为写操作，绕过缓存）
+   *   - 仅当响应 Content-Type 为 application/json 时才尝试 JSON 解析；
+   *     其余情况抛出明确错误，避免静默解析 HTML/纯文本导致下游崩溃
+   *
    * @param {string} url - 请求URL
    * @param {Object} [options] - fetch 选项
    * @param {number} [cacheTTL] - 缓存时间（毫秒）
    * @returns {Promise<*>} 响应数据
    */
   async fetchWithCache(url, options = {}, cacheTTL = this.defaultTTL) {
+    const parseJsonOrThrow = async response => {
+      const contentType = (response.headers.get('content-type') || '').toLowerCase()
+      if (!contentType.includes('application/json')) {
+        throw new Error(
+          `APICache.fetchWithCache: expected JSON response, got "${contentType || 'unknown'}" (url=${url})`
+        )
+      }
+      return response.json()
+    }
+
     // 只缓存 GET 请求
     const method = options.method?.toUpperCase() || 'GET'
     if (method !== 'GET') {
       const response = await fetch(url, options)
-      return response.json()
+      return parseJsonOrThrow(response)
     }
 
     // 检查缓存
@@ -443,7 +478,7 @@ class APICache {
 
     // 发起请求
     const response = await fetch(url, options)
-    const data = await response.json()
+    const data = await parseJsonOrThrow(response)
 
     // 存入缓存
     if (response.ok) {
@@ -618,7 +653,7 @@ class RequestDeduplicator {
   async dedupe(key, asyncFn) {
     // 如果已有相同请求在进行中，返回该请求的 Promise
     if (this.pendingRequests.has(key)) {
-      console.debug(`[RequestDeduplicator] 去重请求: ${key}`)
+      console.debug(`[RequestDeduplicator] deduped request: ${key}`)
       return this.pendingRequests.get(key)
     }
 
@@ -693,7 +728,7 @@ class LazyLoader {
 
     // 检查浏览器支持
     if (!('IntersectionObserver' in window)) {
-      console.warn('浏览器不支持 IntersectionObserver，使用降级方案')
+      console.warn('IntersectionObserver not supported, falling back to eager load')
       this.loadAllImages(selector)
       return
     }
@@ -721,7 +756,7 @@ class LazyLoader {
 
     // 保存观察器引用
     this._observer = observer
-    console.log(`懒加载已初始化，监控 ${document.querySelectorAll(selector).length} 张图片`)
+    console.log(`Lazy loader initialized, watching ${document.querySelectorAll(selector).length} images`)
   }
 
   /**
@@ -750,7 +785,7 @@ class LazyLoader {
     tempImg.onerror = () => {
       img.classList.remove(config.loadingClass)
       img.classList.add(config.errorClass)
-      console.warn(`图片加载失败: ${src}`)
+      console.warn(`Image load failed: ${src}`)
     }
 
     tempImg.src = src

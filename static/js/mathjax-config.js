@@ -124,7 +124,7 @@ window.MathJax = {
     ready: () => {
       // 输出加载状态到控制台
       // 用于调试和确认 MathJax 是否正常初始化
-      console.log('MathJax 已加载完成')
+      console.log('MathJax loaded')
 
       // 调用默认的初始化流程
       // 必须调用以完成 MathJax 的设置

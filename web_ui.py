@@ -827,12 +827,17 @@ class WebFeedbackUI(
         except Exception:
             ui_lang = "auto"
 
+        # HTML 根 lang 属性："auto" 时退化为 "en"（客户端 i18n 会在 DOM 上再改 <html lang>）。
+        # 必须是有效 BCP-47 tag，避免 <html lang="auto"> 导致屏幕阅读器判断错乱。
+        html_lang = ui_lang if ui_lang in ("en", "zh-CN") else "en"
+
         static_dir = Path(__file__).resolve().parent / "static"
         return {
             "csp_nonce": self._get_csp_nonce(),
             "version": get_project_version(),
             "github_url": GITHUB_URL,
             "language": ui_lang,
+            "html_lang": html_lang,
             "css_version": self._get_file_version(static_dir / "css" / "main.css"),
             "multi_task_version": self._get_file_version(
                 static_dir / "js" / "multi_task.js"

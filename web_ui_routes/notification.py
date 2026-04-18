@@ -779,3 +779,53 @@ class NotificationRoutesMixin:
                 return jsonify(
                     {"status": "error", "message": msg("notify.updateFailed")}
                 ), 500
+
+        @self.app.route("/api/reset-feedback-config", methods=["POST"])
+        @self.limiter.limit("10 per minute")
+        def reset_feedback_config() -> ResponseReturnValue:
+            """重置反馈配置为服务器默认值（单一真源）
+            ---
+            tags:
+              - Feedback
+            description: >-
+              把 feedback.frontend_countdown / resubmit_prompt / prompt_suffix 写回
+              server_config.py 中定义的默认值。前端不再硬编码中文默认值，
+              避免 i18n 破坏和默认值漂移。
+            responses:
+              200:
+                description: 配置已重置
+              500:
+                description: 重置失败
+            """
+            try:
+                from server_config import (
+                    AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+                    PROMPT_SUFFIX_DEFAULT,
+                    RESUBMIT_PROMPT_DEFAULT,
+                )
+
+                defaults = {
+                    "frontend_countdown": int(AUTO_RESUBMIT_TIMEOUT_DEFAULT),
+                    "resubmit_prompt": RESUBMIT_PROMPT_DEFAULT,
+                    "prompt_suffix": PROMPT_SUFFIX_DEFAULT,
+                }
+
+                config_mgr = get_config()
+                current = dict(config_mgr.get_section("feedback"))
+                current.update(defaults)
+                config_mgr.update_section("feedback", current)
+                logger.info("反馈配置已重置为默认值")
+
+                return jsonify(
+                    {
+                        "status": "success",
+                        "message": "反馈配置已重置为默认值",
+                        "defaults": defaults,
+                    }
+                )
+
+            except Exception as e:
+                logger.error(f"重置反馈配置失败: {e}", exc_info=True)
+                return jsonify(
+                    {"status": "error", "message": msg("notify.updateFailed")}
+                ), 500

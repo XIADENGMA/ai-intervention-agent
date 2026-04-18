@@ -44,12 +44,11 @@ window.MathJax = {
   },
   startup: {
     ready: () => {
-      console.log('MathJax 已加载完成')
+      console.log('MathJax loaded')
       MathJax.startup.defaultReady()
-      // 加载完成后渲染所有公式
       if (window._mathJaxPendingElements) {
         window._mathJaxPendingElements.forEach(el => {
-          MathJax.typesetPromise([el]).catch(err => console.warn('MathJax 渲染失败:', err))
+          MathJax.typesetPromise([el]).catch(err => console.warn('MathJax render failed:', err))
         })
         window._mathJaxPendingElements = []
       }
@@ -99,7 +98,7 @@ window.loadMathJaxIfNeeded = function (element, text) {
 
   // 已加载完成，直接渲染
   if (window._mathJaxLoaded && window.MathJax && window.MathJax.typesetPromise) {
-    MathJax.typesetPromise([element]).catch(err => console.warn('MathJax 渲染失败:', err))
+    MathJax.typesetPromise([element]).catch(err => console.warn('MathJax render failed:', err))
     return
   }
 
@@ -113,7 +112,7 @@ window.loadMathJaxIfNeeded = function (element, text) {
 
   // 开始加载 MathJax 脚本
   window._mathJaxLoading = true
-  console.log('📐 检测到数学公式，开始加载 MathJax (1.17MB)...')
+  console.log('MathJax: math content detected, loading MathJax (~1.17MB)…')
 
   // 动态创建 <script> 元素加载 MathJax
   const script = document.createElement('script')
@@ -122,10 +121,10 @@ window.loadMathJaxIfNeeded = function (element, text) {
   script.src = '/static/js/tex-mml-chtml.js' // 本地托管的 MathJax 脚本
   script.onload = function () {
     window._mathJaxLoaded = true
-    console.log('MathJax 加载完成')
+    console.log('MathJax script loaded')
   }
   script.onerror = function () {
-    console.error('MathJax 加载失败')
+    console.error('MathJax script load failed')
     window._mathJaxLoading = false
   }
   document.head.appendChild(script)

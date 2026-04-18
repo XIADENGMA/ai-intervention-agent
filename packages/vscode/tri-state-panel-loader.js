@@ -15,12 +15,17 @@
  *
  * Contract:
  *   - Mounts { TriStatePanelController, VERSION, VALID_STATES_FROZEN,
- *              ERROR_MODES_FROZEN, EMPTY_MODES_FROZEN } on window.AIIA_TRI_STATE_PANEL.
+ *              ERROR_MODES_FROZEN, EMPTY_MODES_FROZEN } on window.AIIA_TRI_STATE_PANEL
+ *     on success.
  *   - Dispatches a bubbling `aiia:tri-state-panel-ready` CustomEvent on
  *     document so classic consumers can wait for the module graph to resolve
  *     (avoids a race with `defer` classic scripts).
  *   - Never throws at top level (any import failure is surfaced via console
  *     + a CustomEvent `aiia:tri-state-panel-failed` carrying the error).
+ *   - On failure, also persists the error on `window.AIIA_TRI_STATE_PANEL_FAILURE`
+ *     BEFORE dispatching the event, so any late listener (registered after the
+ *     microtask that settled the import()) can still observe the outcome —
+ *     symmetrical with the success path's `window.AIIA_TRI_STATE_PANEL` flag.
  *
  * Do NOT consume this file directly from classic scripts. Use
  * `window.AIIA_TRI_STATE_PANEL` after the ready event.
@@ -40,6 +45,13 @@ function publish(pkg) {
 }
 
 function publishError(err) {
+  const globalNamespace = typeof window !== 'undefined' ? window : globalThis
+  // Persist FIRST so any late-registered listener (the classic bootstrap
+  // registers its DOMContentLoaded handler AFTER this microtask in the
+  // import()-rejects-synchronously path) can still observe the failure
+  // via a flag read — mirrors the success path's AIIA_TRI_STATE_PANEL.
+  globalNamespace.AIIA_TRI_STATE_PANEL_FAILURE =
+    err instanceof Error ? err : new Error(String(err && err.message ? err.message : err || 'unknown loader failure'))
   if (typeof console !== 'undefined' && console.error) {
     console.error('@aiia/tri-state-panel loader failed:', err)
   }
@@ -55,9 +67,9 @@ import('@aiia/tri-state-panel')
     publish({
       TriStatePanelController: mod.TriStatePanelController,
       VERSION: mod.VERSION,
-      VALID_STATES: mod.VALID_STATES_FROZEN,
-      ERROR_MODES: mod.ERROR_MODES_FROZEN,
-      EMPTY_MODES: mod.EMPTY_MODES_FROZEN
+      VALID_STATES_FROZEN: mod.VALID_STATES_FROZEN,
+      ERROR_MODES_FROZEN: mod.ERROR_MODES_FROZEN,
+      EMPTY_MODES_FROZEN: mod.EMPTY_MODES_FROZEN
     })
   })
   .catch(publishError)
