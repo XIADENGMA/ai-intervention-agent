@@ -100,6 +100,7 @@ include = [
     "/exceptions.py",
     "/server_config.py",
     "/i18n.py",
+    "/protocol.py",
     "/config_modules",
     "/web_ui_routes",
     "/config.toml.default",

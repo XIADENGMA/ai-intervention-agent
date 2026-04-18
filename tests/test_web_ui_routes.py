@@ -1606,5 +1606,86 @@ class TestStaticRoutesEdge(_RouteTestBase):
             self.assertEqual(resp.headers.get("Expires"), "0")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  protocol.py — /api/capabilities + /api/time
+# ═══════════════════════════════════════════════════════════════════════════
+class TestCapabilitiesEndpoint(_RouteTestBase):
+    """前后端契约发现端点的回归点。
+
+    这是 IG-1 的前端入口：若字段命名 / 结构发生变化，所有客户端的
+    feature detection 都会级联受影响，必须有明确断言护栏。
+    """
+
+    _port = 19200
+
+    def test_returns_expected_shape(self):
+        resp = self._client.get("/api/capabilities")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("protocol_version", data)
+        self.assertIn("server_version", data)
+        self.assertIn("build_id", data)
+        self.assertIn("features", data)
+        self.assertIsInstance(data["features"], dict)
+
+    def test_protocol_version_is_semver(self):
+        resp = self._client.get("/api/capabilities")
+        data = resp.get_json()
+        parts = data["protocol_version"].split(".")
+        self.assertEqual(len(parts), 3, "protocol_version 必须是三段 semver")
+        for part in parts:
+            self.assertTrue(part.isdigit(), f"protocol_version 段 {part!r} 应为数字")
+
+    def test_declared_features_contain_baseline(self):
+        resp = self._client.get("/api/capabilities")
+        data = resp.get_json()
+        features = data["features"]
+        for key in ("sse", "polling", "multi_task", "capabilities_endpoint", "clock"):
+            self.assertIn(key, features, f"features 缺少基线键 {key!r}")
+            self.assertIsInstance(features[key], bool)
+
+    def test_build_id_reads_env(self):
+        import os
+
+        import web_ui as web_ui_module
+
+        with patch.dict(os.environ, {"AIIA_BUILD_ID": "test-sha-abc"}):
+            resp = self._client.get("/api/capabilities")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.get_json()["build_id"], "test-sha-abc")
+
+        self.assertIsNotNone(web_ui_module)
+
+
+class TestServerClockEndpoint(_RouteTestBase):
+    """服务器时钟端点回归点（IG-2）。"""
+
+    _port = 19201
+
+    def test_returns_integer_ms_fields(self):
+        resp = self._client.get("/api/time")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("time_ms", data)
+        self.assertIn("monotonic_ms", data)
+        self.assertIsInstance(data["time_ms"], int)
+        self.assertIsInstance(data["monotonic_ms"], int)
+
+    def test_wall_clock_near_current_time(self):
+        import time as _time
+
+        before = int(_time.time() * 1000)
+        resp = self._client.get("/api/time")
+        after = int(_time.time() * 1000)
+        data = resp.get_json()
+        self.assertGreaterEqual(data["time_ms"], before - 5)
+        self.assertLessEqual(data["time_ms"], after + 5)
+
+    def test_monotonic_is_non_negative(self):
+        resp = self._client.get("/api/time")
+        data = resp.get_json()
+        self.assertGreaterEqual(data["monotonic_ms"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

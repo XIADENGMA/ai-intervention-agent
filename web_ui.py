@@ -51,6 +51,7 @@ from flask_limiter.util import get_remote_address
 from config_manager import get_config
 from enhanced_logging import EnhancedLogger
 from i18n import msg
+from protocol import get_capabilities, get_server_clock
 from server import get_task_queue
 from server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
@@ -667,6 +668,62 @@ class WebFeedbackUI(
                       example: ok
             """
             return jsonify({"status": "ok"})
+
+        @self.app.route("/api/capabilities", methods=["GET"])
+        def capabilities() -> ResponseReturnValue:
+            """返回服务器协议版本 / 声明的 features / build_id。
+
+            前端在连接早期调用本端点，用于：
+            - 依据 `protocol_version` 决定是否需要兼容模式或提示升级
+            - 依据 `features` 决定是否启用某个 UI 入口
+
+            `server_version` 来自 pyproject.toml；`build_id` 若可得则为 git short SHA。
+            详见 `protocol.py`。
+            ---
+            tags:
+              - System
+            responses:
+              200:
+                description: 能力声明
+                schema:
+                  type: object
+                  properties:
+                    protocol_version:
+                      type: string
+                      example: "1.0.0"
+                    server_version:
+                      type: string
+                      example: "1.5.18"
+                    build_id:
+                      type: string
+                      example: ""
+                    features:
+                      type: object
+            """
+            build_id = os.environ.get("AIIA_BUILD_ID", "")
+            return jsonify(get_capabilities(get_project_version(), build_id=build_id))
+
+        @self.app.route("/api/time", methods=["GET"])
+        def server_time() -> ResponseReturnValue:
+            """返回服务器实时时钟与单调时钟（毫秒）。
+
+            客户端用于 wall clock 对齐，避免前后端时间漂移导致 TTL / 动画错乱。
+            详见 `protocol.py::get_server_clock`。
+            ---
+            tags:
+              - System
+            responses:
+              200:
+                description: 服务器时钟
+                schema:
+                  type: object
+                  properties:
+                    time_ms:
+                      type: integer
+                    monotonic_ms:
+                      type: integer
+            """
+            return jsonify(get_server_clock())
 
         @self.app.route("/api/update-language", methods=["POST"])
         @self.limiter.limit("30 per minute")
