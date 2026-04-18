@@ -111,6 +111,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _cachedServerLang: string | null
   private _cachedLocales: Record<string, Record<string, unknown>>
   private _cachedStaticAssets: { activityIconSvg: string; lottieData: unknown } | null
+  private _prefetchServerLangPromise: Promise<void> | null
 
   constructor(
     extensionUri: vscode.Uri,
@@ -181,6 +182,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._cachedServerLang = null
     this._cachedLocales = {}
     this._cachedStaticAssets = null
+    this._prefetchServerLangPromise = null
   }
 
   private async _preloadResources(): Promise<void> {
@@ -226,12 +228,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async _prefetchServerLanguage(): Promise<void> {
-    for (let attempt = 0; attempt < 2; attempt++) {
+  private _prefetchServerLanguage(): Promise<void> {
+    // 缓存短路：已有结果就不再发请求（updateServerUrl 会清空缓存以便重新预取）
+    if (this._cachedServerLang) {
+      return Promise.resolve()
+    }
+    // 单飞锁：并发调用共享同一 Promise，避免对 /api/config 发起重复请求
+    if (this._prefetchServerLangPromise) {
+      return this._prefetchServerLangPromise
+    }
+    const task = (async (): Promise<void> => {
       let timer: ReturnType<typeof setTimeout> | null = null
       try {
         const controller = new AbortController()
-        timer = setTimeout(() => controller.abort(), 3500)
+        // 超时从 3500ms 收紧到 1000ms：localhost 本应毫秒级，失败即降级
+        // 不再重试：失败后前端 checkServerStatus 会通过 langDetected 回传语言
+        timer = setTimeout(() => controller.abort(), 1000)
         const resp = await fetch(`${this._serverUrl}/api/config`, {
           signal: controller.signal,
           headers: { Accept: 'application/json' }
@@ -253,14 +265,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         }
         this._log(`[i18n] 服务器响应非 200: ${resp.status}`)
       } catch {
-        this._log(`[i18n] 语言预取失败 (尝试 ${attempt + 1}/2)`)
+        this._log('[i18n] 语言预取失败，等待前端 langDetected 回传')
       } finally {
         if (timer) clearTimeout(timer)
       }
-      if (attempt === 0) {
-        await new Promise<void>(r => setTimeout(r, 500))
+    })()
+    this._prefetchServerLangPromise = task
+    // 无论成功失败都清单飞锁，允许 updateServerUrl 后重新预取
+    task.finally(() => {
+      if (this._prefetchServerLangPromise === task) {
+        this._prefetchServerLangPromise = null
       }
-    }
+    })
+    return task
   }
 
   _log(message: string): void {
@@ -314,10 +331,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   }
 
   async resolveWebviewView(webviewView: vscode.WebviewView): Promise<void> {
-    await Promise.all([
-      this._preloadResources(),
-      this._prefetchServerLanguage()
-    ])
+    // 只阻塞本地资源预加载（locales/svg/lottie，首次 ~50ms，二次 ~0ms）
+    // 服务器语言预取改为 fire-and-forget，避免服务器不可达时首屏最坏 7.5s 空白
+    // 语言纠偏有两条备份链路：
+    //   1) _getHtmlContent 先用 vscode.env.language 兜底
+    //   2) 前端 checkServerStatus 拿到 language 后通过 langDetected 回传
+    await this._preloadResources()
+    this._prefetchServerLanguage().catch(() => { /* 忽略：失败不影响首屏 */ })
     this._view = webviewView
 
     webviewView.webview.options = {
@@ -472,10 +492,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       }
 
       const view = this._view
-      Promise.all([
-        this._preloadResources(),
-        this._prefetchServerLanguage()
-      ])
+      // 同 resolveWebviewView：不 await 语言预取，避免切换 serverUrl 时首屏阻塞
+      this._prefetchServerLanguage().catch(() => { /* 忽略：失败不影响 UI */ })
+      this._preloadResources()
         .catch(() => {})
         .finally(() => {
           if (view.webview) view.webview.html = this._getHtmlContent(view.webview)
@@ -654,13 +673,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             : ''
           if (lang && lang !== 'auto' && lang !== this._cachedServerLang) {
             this._cachedServerLang = lang
-            this._log(`[i18n] 客户端检测到语言: ${lang}，重新渲染`)
+            this._log(`[i18n] 客户端检测到语言: ${lang}`)
             if (this._onLanguageChanged) {
               try { this._onLanguageChanged(lang) } catch { /* 忽略 */ }
             }
-            if (this._view && this._view.webview) {
-              this._view.webview.html = this._getHtmlContent(this._view.webview)
-            }
+            // 前端 applyServerLanguage 已通过 i18n.setLang + retranslateAllI18nElements
+            // 就地重翻译（覆盖 data-i18n / data-i18n-title / data-i18n-placeholder /
+            // data-i18n-version），host 侧不再重设 webview.html，避免一次 HTML 重建闪烁。
           }
         } catch { /* 忽略 */ }
         break
@@ -1097,16 +1116,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
     const activityIconSvgText = this._cachedStaticAssets?.activityIconSvg
       || safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg'))
-    const noContentHourglassLottieData = this._cachedStaticAssets?.lottieData ?? (() => {
-      try {
-        const raw = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json'))
-        return raw ? JSON.parse(raw) : null
-      } catch { return null }
-    })()
     const inlineNoContentFallbackSvgLiteral = safeStringForInlineScript(activityIconSvgText)
-    const inlineNoContentLottieDataLiteral = noContentHourglassLottieData
-      ? safeJsonForInlineScript(noContentHourglassLottieData)
-      : 'null'
+    // Lottie JSON (445KB) 不再内联进 HTML，改由前端通过 data-no-content-lottie-json-url
+    // 懒加载（webview-ui.js 里的 loadNoContentLottieData 走 fetch + force-cache 兜底）。
+    // 收益：HTML 体积 ~500KB → ~50KB，resolveWebviewView 与 langDetected re-render 更快。
+    const inlineNoContentLottieDataLiteral = 'null'
 
     let i18nLang = 'en'
     if (this._cachedServerLang) {

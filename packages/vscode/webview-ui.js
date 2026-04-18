@@ -1241,7 +1241,8 @@
   let taskOptionsStates = {} // task_id -> { [index:number]: boolean } | boolean[]
   let taskImages = {} // task_id -> Array<{name: string, data: string}>
 
-  // Webview 状态持久化（配合 retainContextWhenHidden=false，降低隐藏时内存常驻）
+  // Webview 状态持久化：即使启用 retainContextWhenHidden=true，reload window / 扩展 disable
+  // 时 webview 仍会 dispose，getState/setState 确保输入/选项/图片等状态可恢复
   const UI_STATE_VERSION = 1
   const UI_STATE_SAVE_DEBOUNCE_MS = 250
   const UI_STATE_TEXT_LIMIT_CHARS = 200000

@@ -66,7 +66,30 @@ suite('Extension Test Suite', () => {
     // 内存优先：Webview 状态应使用 getState/setState 持久化
     assert.ok(webviewUi.includes('vscode.getState'))
     assert.ok(webviewUi.includes('vscode.setState'))
-    assert.ok(extensionJs.includes('retainContextWhenHidden: false'))
+    // 侧边栏加载性能回归点：应启用 retainContextWhenHidden 以消除重复 resolveWebviewView 阻塞
+    assert.ok(
+      extensionJs.includes('retainContextWhenHidden: true'),
+      'extension.ts 应设置 retainContextWhenHidden: true，避免侧边栏隐藏/显示时重建 webview'
+    )
+    // 侧边栏加载性能回归点：语言预取必须 fire-and-forget（不能再 await，否则服务器不可达时首屏最坏 7.5s 空白）
+    assert.ok(
+      webviewJs.includes('this._prefetchServerLanguage().catch('),
+      '_prefetchServerLanguage 应以 .catch() fire-and-forget 方式调用，不得阻塞首屏'
+    )
+    assert.ok(
+      !webviewJs.includes('await this._prefetchServerLanguage('),
+      'resolveWebviewView/updateServerUrl 不应 await 语言预取（TLA/超时将阻塞首屏）'
+    )
+    // 侧边栏加载性能回归点：语言预取应收紧超时（1000ms，localhost 毫秒级，失败即降级）
+    assert.ok(
+      webviewJs.includes('controller.abort()'),
+      '_prefetchServerLanguage 必须有 AbortController 超时护栏'
+    )
+    // 侧边栏加载性能回归点：Lottie JSON 不应内联进 HTML（~445KB），由前端通过 URL 懒加载
+    assert.ok(
+      webviewJs.includes("const inlineNoContentLottieDataLiteral = 'null'"),
+      '_getHtmlContent 不应将 445KB Lottie JSON 内联进 HTML'
+    )
     // 边界回归点：0.0.0.0/:: 仅适合作为监听地址，扩展侧应映射为 localhost（避免客户端无法访问）
     assert.ok(extensionJs.includes("host === '0.0.0.0' || host === '::'"))
     // 稳定性/解耦：MathJax 应优先走 VSIX 内置资源（由 meta 注入 URL）

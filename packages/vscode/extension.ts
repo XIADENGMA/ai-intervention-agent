@@ -691,7 +691,9 @@ function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('aiInterventionAgent.feedbackView', provider, {
       webviewOptions: {
-        retainContextWhenHidden: false
+        // VSCode 官方推荐：保留 Webview 上下文以消除重复 resolveWebviewView + 阻塞 await，
+        // 侧边栏在隐藏/collapse/切视图后恢复秒开。内存开销约 1~3MB（Lottie 去内联后更低）。
+        retainContextWhenHidden: true
       }
     })
   )
