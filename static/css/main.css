@@ -64,6 +64,12 @@
    ======================================================================== */
 @layer reset, tokens, base, components, a11y, themes;
 
+/* 共享组件：统一三态面板（T1 · C10b）。
+   单一真源为 static/css/tri-state-panel.css；VSCode webview 打包时拷贝同一份文件，
+   通过 sha256 字节一致性测试（tests/test_tri_state_panel_parity.py，C10c 落地）守护。
+   自带 @layer components 声明，层级由本文件顶部的声明顺序统一排序。 */
+@import url("./tri-state-panel.css");
+
 /* [hidden] 属性全局兜底：放在任何 @layer 之外，优先级最高；
    即使后续规则用 display:flex/grid 覆盖，也能被 !important 强制隐藏。 */
 [hidden] {

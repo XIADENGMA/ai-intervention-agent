@@ -18,10 +18,10 @@
 
 ## 一、现状
 
-| 端 | locale 目录 | 顶层 namespace（en.json） |
-|----|------------|---------------------------|
-| Web UI | `static/locales/` | `page`、`settings`、`status`、`env`、`notify`、`theme` |
-| VSCode 插件 | `packages/vscode/locales/` | `settings`、`statusBar`、`ui` |
+| 端          | locale 目录                | 顶层 namespace（en.json）                              |
+| ----------- | -------------------------- | ------------------------------------------------------ |
+| Web UI      | `static/locales/`          | `page`、`settings`、`status`、`env`、`notify`、`theme` |
+| VSCode 插件 | `packages/vscode/locales/` | `settings`、`statusBar`、`ui`                          |
 
 两端**各自独立维护**，已有约束（通过 `test_runtime_behavior.py::TestLocaleParity`）：
 
@@ -37,13 +37,13 @@
 
 ## 二、命名空间三层划分
 
-| 顶层 namespace | 归属 | 跨端同步 | 典型条目 |
-|----------------|------|----------|----------|
-| `aiia.*` | **跨端共享** | **强制对齐**（`check_locales.py` 守护） | 三态面板、诊断按钮、全局 toast、aria-live 文案、公共命令标题 |
-| `page.*` | Web UI 专有 | 无 | 网页结构（header / footer / 拖拽区 / 占位符） |
-| `settings.*` | 双端各自独立 | 无 | 设置面板——**两端各写各的**（UI/开关名称本就不一样） |
-| `status.*` / `notify.*` / `theme.*` / `env.*` | Web UI 独有 | 无 | 状态栏 / 通知 / 主题 / 环境 |
-| `statusBar.*` / `ui.*` | VSCode 独有 | 无 | 状态栏 / 命令面板 |
+| 顶层 namespace                                | 归属         | 跨端同步                                | 典型条目                                                     |
+| --------------------------------------------- | ------------ | --------------------------------------- | ------------------------------------------------------------ |
+| `aiia.*`                                      | **跨端共享** | **强制对齐**（`check_locales.py` 守护） | 三态面板、诊断按钮、全局 toast、aria-live 文案、公共命令标题 |
+| `page.*`                                      | Web UI 专有  | 无                                      | 网页结构（header / footer / 拖拽区 / 占位符）                |
+| `settings.*`                                  | 双端各自独立 | 无                                      | 设置面板——**两端各写各的**（UI/开关名称本就不一样）          |
+| `status.*` / `notify.*` / `theme.*` / `env.*` | Web UI 独有  | 无                                      | 状态栏 / 通知 / 主题 / 环境                                  |
+| `statusBar.*` / `ui.*`                        | VSCode 独有  | 无                                      | 状态栏 / 命令面板                                            |
 
 **核心规则**：
 
@@ -64,12 +64,12 @@
 aiia.<domain>.<subject>.<attribute>[.<variant>]
 ```
 
-| 段 | 取值建议 | 示例 |
-|----|----------|------|
-| `<domain>` | 功能域，限定语义边界 | `state` / `diagnostics` / `command` / `dialog` / `toast` |
-| `<subject>` | 具体对象/状态 | `loading` / `empty` / `error` / `copied` / `reconnect` |
-| `<attribute>` | 渲染位置 | `title` / `message` / `action` / `tooltip` / `aria` |
-| `<variant>` | 变体/条件 | `network` / `timeout` / `server_500` / `default` |
+| 段            | 取值建议             | 示例                                                     |
+| ------------- | -------------------- | -------------------------------------------------------- |
+| `<domain>`    | 功能域，限定语义边界 | `state` / `diagnostics` / `command` / `dialog` / `toast` |
+| `<subject>`   | 具体对象/状态        | `loading` / `empty` / `error` / `copied` / `reconnect`   |
+| `<attribute>` | 渲染位置             | `title` / `message` / `action` / `tooltip` / `aria`      |
+| `<variant>`   | 变体/条件            | `network` / `timeout` / `server_500` / `default`         |
 
 **超过 5 段视为设计信号不对**——要么拆 namespace，要么改 `<attribute>`
 的组织方式。
@@ -225,12 +225,12 @@ uv run python scripts/check_locales.py
 
 ### 7.1 检查项
 
-| 检查 | 覆盖范围 | 失败信号 |
-|------|----------|----------|
-| `check_locale_pair("static/locales")` | Web UI en/zh | `[Web UI] zh-CN.json 缺少 key: …` |
-| `check_locale_pair("packages/vscode/locales")` | VSCode en/zh | `[VS Code Plugin] en.json 缺少 key: …` |
+| 检查                                            | 覆盖范围                    | 失败信号                                           |
+| ----------------------------------------------- | --------------------------- | -------------------------------------------------- |
+| `check_locale_pair("static/locales")`           | Web UI en/zh                | `[Web UI] zh-CN.json 缺少 key: …`                  |
+| `check_locale_pair("packages/vscode/locales")`  | VSCode en/zh                | `[VS Code Plugin] en.json 缺少 key: …`             |
 | `check_cross_platform_aiia_parity`（IG-8 新增） | Web UI ↔ VSCode 的 `aiia.*` | `[cross-platform en.json] VSCode 缺少 key: aiia.…` |
-| `check_nls_pair` | `package.nls.*` | `[package.nls] zh-CN 缺少 key: …` |
+| `check_nls_pair`                                | `package.nls.*`             | `[package.nls] zh-CN 缺少 key: …`                  |
 
 ### 7.2 跨端检查的正样例与反样例
 
@@ -278,8 +278,8 @@ uv run python scripts/check_locales.py
 
 ## 九、变更历史
 
-| 日期 | 变更 | 提交 |
-|------|------|------|
+| 日期       | 变更                                                    | 提交                |
+| ---------- | ------------------------------------------------------- | ------------------- |
 | 2026-04-18 | 首次创建，约定三层 namespace + 预留 key 清单 + 跨端守护 | C8（IG-8 本次提交） |
 
 ---
