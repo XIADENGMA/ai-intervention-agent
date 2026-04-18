@@ -170,6 +170,24 @@
 
   /* 主题切换过渡 */
   --theme-transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+
+  /*
+   * 三态面板（Loading / Empty / Error）共享 token —— 服务 T1（C10a）。
+   * 仅尺寸 / 间距 / 圆角 / 过渡；颜色由现有 --bg-* / --text-* / --error-*
+   * 等主题变量提供；与 VSCode 插件的 webview.css 里同名 token 保持一致，
+   * 便于 T1 双端行为统一。
+   *
+   * 不改动任何视觉 —— 此 commit 只引入 token 接缝，真正消费在 C10b/C10c。
+   */
+  --aiia-state-padding-y: 32px;
+  --aiia-state-padding-x: 24px;
+  --aiia-state-gap: 12px;
+  --aiia-state-icon-size: 48px;
+  --aiia-state-title-size: 16px;
+  --aiia-state-message-size: 14px;
+  --aiia-state-radius: 8px;
+  --aiia-state-max-width: 320px;
+  --aiia-state-transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 /* 亮色主题 - Anthropic 官方品牌配色方案（优化版） */

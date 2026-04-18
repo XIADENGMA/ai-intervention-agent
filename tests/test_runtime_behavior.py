@@ -669,7 +669,37 @@ class TestNotificationConfigRoundTrip(unittest.TestCase):
 
 
 class TestI18nDeadKeys(unittest.TestCase):
-    """排查 Locale Drift：locale 文件中不应存在未被任何代码引用的 dead key"""
+    """排查 Locale Drift：locale 文件中不应存在未被任何代码引用的 dead key
+
+    注意 C10a（IG-8 §四 预留 key 清单）引入的**预留** key 需要显式豁免：
+    这些 key 当前没有 DOM / JS 消费者，但已经**同步注入** Web UI 与
+    VSCode 插件两端的 locale（受 ``check_cross_platform_aiia_parity`` 守护
+    跨端对齐），以便 C10b / C10c 落地三态面板时直接引用——避免"阶段 1 先
+    各加两份、阶段 3 再合并"的改动发散。
+
+    为了让预留 key 不会变成"永久后门"，下方另增 ``test_pre_reserved_keys_not_yet_consumed``
+    做反向断言：**一旦**预留 key 被任意代码引用，就必须同步从
+    ``_PRE_RESERVED_KEYS`` 清单中移除——否则测试红。这样清单只会"从多到少
+    单向收敛"到完全消费、直至被删空。
+    """
+
+    _PRE_RESERVED_KEYS: frozenset[str] = frozenset(
+        {
+            "aiia.state.loading.title",
+            "aiia.state.loading.message",
+            "aiia.state.empty.title",
+            "aiia.state.empty.message.default",
+            "aiia.state.empty.message.filtered",
+            "aiia.state.error.title",
+            "aiia.state.error.message.network",
+            "aiia.state.error.message.server_500",
+            "aiia.state.error.message.timeout",
+            "aiia.state.error.message.unknown",
+            "aiia.state.error.action.retry",
+            "aiia.state.error.action.open_log",
+            "aiia.state.error.action.copy_diagnostics",
+        }
+    )
 
     def _collect_all_used_web_keys(self) -> set[str]:
         """收集 Web 端（HTML + JS）使用的所有 i18n key"""
@@ -712,7 +742,7 @@ class TestI18nDeadKeys(unittest.TestCase):
             self.skipTest("en.json 不存在")
 
         all_keys = _flatten_keys(_load_json(en_path))
-        dead = sorted(all_keys - used)
+        dead = sorted(all_keys - used - self._PRE_RESERVED_KEYS)
 
         if dead:
             self.fail(
@@ -732,13 +762,41 @@ class TestI18nDeadKeys(unittest.TestCase):
             self.skipTest("en.json 不存在")
 
         all_keys = _flatten_keys(_load_json(en_path))
-        dead = sorted(all_keys - used)
+        dead = sorted(all_keys - used - self._PRE_RESERVED_KEYS)
 
         if dead:
             self.fail(
                 f"VS Code locale 中有 {len(dead)} 个 dead key（未被任何代码引用）：\n  "
                 + "\n  ".join(dead[:20])
                 + (f"\n  ...（共 {len(dead)} 个）" if len(dead) > 20 else "")
+            )
+
+    def test_pre_reserved_keys_not_yet_consumed(self):
+        """反向断言：``_PRE_RESERVED_KEYS`` 里的 key **必须**尚未被任何代码引用。
+
+        一旦 C10b / C10c 实际消费了某个预留 key（在 HTML `data-i18n` 或 JS
+        `t("aiia.state.*")` 里出现），本测试就会红——强制提交者把该 key
+        从 ``_PRE_RESERVED_KEYS`` 中删掉。
+
+        这是防止 "allowlist 永久后门" 的单向闸门：预留清单只能向**少**收敛，
+        不能反向向**多**膨胀——如果要加新预留 key，必须同步更新本断言所在
+        的类常量并在 PR 里解释理由（对齐 `docs/i18n-key-naming.zh-CN.md`
+        §四 预留 key 清单）。
+        """
+        if not self._PRE_RESERVED_KEYS:
+            self.skipTest("_PRE_RESERVED_KEYS 已清空，C10b / C10c 已全部消费")
+
+        web_used = self._collect_all_used_web_keys()
+        vscode_used = self._collect_all_used_vscode_keys()
+        all_used = web_used | vscode_used
+
+        already_consumed = sorted(self._PRE_RESERVED_KEYS & all_used)
+        if already_consumed:
+            self.fail(
+                f"以下 {len(already_consumed)} 个 key 已被代码引用，"
+                f"但仍留在 TestI18nDeadKeys._PRE_RESERVED_KEYS 清单里——"
+                f"请把它们从 _PRE_RESERVED_KEYS 中删除：\n  "
+                + "\n  ".join(already_consumed)
             )
 
 

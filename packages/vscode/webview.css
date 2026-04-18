@@ -28,6 +28,30 @@
   display: none !important;
 }
 
+/* ==========================================================================
+ * 三态面板（Loading / Empty / Error）共享 token —— 服务 T1（C10a）。
+ *
+ * 与 Web UI 的 static/css/main.css :root 里同名 token **数值保持一致**，
+ * 保证 T1 双端行为统一。颜色由 --vscode-* 原生主题变量提供（插件侧不自带
+ * 颜色系统），所以这里只放尺寸 / 间距 / 圆角 / 过渡。
+ *
+ * 放在 @layer tokens 里避免被组件层规则覆盖；此 commit 只引入 token 接缝，
+ * 真正消费 DOM 在 C10c（VSCode webview 侧三态面板落地）。
+ * ========================================================================== */
+@layer tokens {
+  :root {
+    --aiia-state-padding-y: 32px;
+    --aiia-state-padding-x: 24px;
+    --aiia-state-gap: 12px;
+    --aiia-state-icon-size: 48px;
+    --aiia-state-title-size: 16px;
+    --aiia-state-message-size: 14px;
+    --aiia-state-radius: 8px;
+    --aiia-state-max-width: 320px;
+    --aiia-state-transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+}
+
 * {
   margin: 0;
   padding: 0;

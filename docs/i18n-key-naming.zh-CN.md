@@ -116,6 +116,21 @@ aiia.state.error.action.open_log
 aiia.state.error.action.copy_diagnostics
 ```
 
+> **dead-key 豁免与反向闸门**（C10a 引入）：
+> 本小节的 13 条 key 已**同步注入** 4 个 locale 文件，
+> 并在 `tests/test_runtime_behavior.py::TestI18nDeadKeys._PRE_RESERVED_KEYS`
+> 里同步登记，以豁免现有的 dead-key 检查。
+>
+> **C10b / C10c 消费这些 key 时必须**：
+>
+> 1. 在对应端的 HTML `data-i18n="aiia.state.*"` 或 JS `t('aiia.state.*')`
+>    引用 key；
+> 2. **同步**把该 key 从 `_PRE_RESERVED_KEYS` 里删除——否则
+>    `test_pre_reserved_keys_not_yet_consumed` 反向闸门会红并指名要求删除。
+>
+> 当 `_PRE_RESERVED_KEYS` 被消费到空集时，`test_pre_reserved_keys_not_yet_consumed`
+> 会自动 skip，此时本小节预留 key 全部落地，完成 C10a → C10b/C10c 的单向收敛。
+
 ### 4.2 `aiia.diagnostics.*`（服务于 T2 复制诊断 / S3 诊断日志）
 
 ```
