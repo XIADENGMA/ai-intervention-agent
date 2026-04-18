@@ -1066,6 +1066,42 @@
     }
   }
 
+  // BM-7：隐藏首帧 boot skeleton
+  // - 先加 leaving class 触发 160ms opacity 过渡
+  // - 过渡结束后再设 [hidden]（配合全局 [hidden]{display:none!important}）
+  // - 幂等：重复调用不会累加副作用；被 init 末尾 + 错误兜底共同触发
+  // - 不抛错：任何 DOM 异常都静默吞掉，绝不阻塞调用方
+  let __aiiaBootSkeletonHideStarted = false
+  function hideBootSkeleton() {
+    if (__aiiaBootSkeletonHideStarted) return
+    __aiiaBootSkeletonHideStarted = true
+    try {
+      const el = document.getElementById('aiiaBootSkeleton')
+      if (!el) return
+      if (el.hasAttribute('hidden')) return
+      // prefers-reduced-motion 下 CSS 已经关掉了 transition-duration，
+      // 所以这里无需区分场景，统一走 class + setTimeout 的双保险路径。
+      const commitHide = () => {
+        try {
+          el.setAttribute('hidden', '')
+        } catch (_) {
+          // 忽略
+        }
+      }
+      try {
+        el.classList.add('aiia-boot-skeleton--leaving')
+      } catch (_) {
+        // 某些老内核可能没有 classList；直接 hide
+        commitHide()
+        return
+      }
+      // 200ms > CSS transition 160ms，给过渡留 40ms 余量
+      setTimeout(commitHide, 200)
+    } catch (_) {
+      // 忽略
+    }
+  }
+
   function loadNoContentLottieData() {
     if (INLINE_NO_CONTENT_LOTTIE_DATA) {
       try {
@@ -1915,6 +1951,8 @@
       }
     }, 3000)
     vscode.postMessage({ type: 'ready' })
+    // BM-7：首帧骨架屏到此退场（ready 发出意味着基础 UI 已就位）
+    hideBootSkeleton()
   }
 
   /* 设置所有UI元素的事件监听器 - 包括按钮点击、图片上传、文本框调整等 */
@@ -4784,6 +4822,8 @@
     } catch (e2) {
       /* 忽略 */
     }
+    // BM-7：即使启动失败，骨架屏也必须退场，否则会永久遮盖 error toast
+    try { hideBootSkeleton() } catch (_) { /* 忽略 */ }
   })
   window.addEventListener('unhandledrejection', e => {
     reportFatalError('未处理 Promise 拒绝: ', e && e.reason ? e.reason : e)
@@ -4793,6 +4833,7 @@
     } catch (e2) {
       /* 忽略 */
     }
+    try { hideBootSkeleton() } catch (_) { /* 忽略 */ }
   })
 
   // 启动
@@ -4806,5 +4847,7 @@
     } catch (e2) {
       /* 忽略 */
     }
+    // init 同步抛错：走不到末尾的 hideBootSkeleton，这里兜底
+    try { hideBootSkeleton() } catch (_) { /* 忽略 */ }
   }
 })()

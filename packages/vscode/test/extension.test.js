@@ -75,6 +75,31 @@ suite('Extension Test Suite', () => {
       webviewCss.includes('aiia-repainting'),
       'webview.css 应定义 body.aiia-repainting 规则（含 translateZ 以建立新合成层）'
     )
+    // BM-7：首帧 boot skeleton（纯 CSS 占位 + JS 安全退场 + CSS 级兜底 autohide）
+    assert.ok(
+      webviewJs.includes('id="aiiaBootSkeleton"'),
+      'webview.ts 生成的 HTML 应包含 boot skeleton 容器（BM-7）'
+    )
+    assert.ok(
+      webviewJs.includes('aiia-boot-skeleton__bar--title'),
+      'webview.ts 生成的 HTML 应至少包含一条标题型骨架条（BM-7 结构性占位）'
+    )
+    assert.ok(
+      webviewCss.includes('.aiia-boot-skeleton'),
+      'webview.css 应定义 .aiia-boot-skeleton 规则（首帧占位层）'
+    )
+    assert.ok(
+      webviewCss.includes('aiia-boot-skeleton-autohide'),
+      'webview.css 应定义 aiia-boot-skeleton-autohide 动画作为 JS 失效兜底'
+    )
+    assert.ok(
+      webviewUi.includes('hideBootSkeleton'),
+      'webview-ui.js 应定义 hideBootSkeleton 并在 init 成功/错误兜底路径调用（BM-7）'
+    )
+    assert.ok(
+      webviewUi.includes('aiia-boot-skeleton--leaving'),
+      'webview-ui.js 应通过切换 --leaving class 触发淡出（避开 CSP inline-style）'
+    )
     assert.ok(webviewUi.includes('requestClipboardText'))
     assert.ok(webviewUi.includes('clipboardText'))
     assert.ok(webviewJs.includes('id="notifyMacOSNativeEnabled"'))

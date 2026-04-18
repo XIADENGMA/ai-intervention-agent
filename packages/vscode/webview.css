@@ -1384,6 +1384,118 @@ body.aiia-repainting {
 }
 
 /* ==========================================================================
+ * BM-7：首帧 boot skeleton
+ *   HTML 解析到此即可显示（link 标签仍然阻塞渲染，CSS 就绪即可命中规则）。
+ *   设计目标：
+ *     - 展示即将出现的 UI「形状」：标题条 / 正文条 / 按钮条
+ *     - 不抖动、不吸走焦点、不干扰 toast/settings overlay
+ *     - JS init() 成功后淡出 160ms，再通过 [hidden] 彻底脱离布局
+ *     - prefers-reduced-motion：关闭 shimmer，改为静态半透明
+ * ========================================================================== */
+.aiia-boot-skeleton {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 14px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 160ms ease-out;
+  /* CSS 级兜底：若 JS 完全无法执行（文件 404 / parse error），
+   * 6s 起淡出、8s 彻底隐藏，避免永久遮盖底层 noContentState。
+   * JS 正常时会先走 --leaving（animation:none 覆盖此动画），提前退场。 */
+  animation: aiia-boot-skeleton-autohide 8s ease-out forwards;
+}
+
+.aiia-boot-skeleton--leaving {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes aiia-boot-skeleton-autohide {
+  0%,
+  75% {
+    opacity: 1;
+    visibility: visible;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+.aiia-boot-skeleton__bar {
+  height: 12px;
+  border-radius: 4px;
+  background-color: var(--vscode-editorWidget-background, rgba(127, 127, 127, 0.18));
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: aiia-boot-skeleton-pulse 1.4s ease-in-out infinite;
+  will-change: background-position;
+}
+
+.aiia-boot-skeleton__bar--title {
+  width: 60%;
+  height: 18px;
+  margin-bottom: 6px;
+}
+
+.aiia-boot-skeleton__bar--short {
+  width: 40%;
+}
+
+.aiia-boot-skeleton__bar--button {
+  width: 96px;
+  height: 28px;
+  align-self: flex-end;
+  border-radius: 6px;
+}
+
+.aiia-boot-skeleton__spacer {
+  flex: 1 1 auto;
+  min-height: 12px;
+}
+
+@keyframes aiia-boot-skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* 浅色主题下 shimmer 改成淡黑色反光，避免白底上白光不可见 */
+html[data-vscode-theme-kind='light'] .aiia-boot-skeleton__bar,
+body.vscode-light .aiia-boot-skeleton__bar {
+  background-color: rgba(0, 0, 0, 0.06);
+  background-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 0.05) 50%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 优雅地尊重用户偏好：直接不显示骨架屏，
+   * 底层 noContentState 会立即可见；JS 正常时也不需要骨架覆盖。
+   * 这样能避免 C1 全局规则把 animation-duration 降到 0.01ms 导致骨架「闪一下」。 */
+  .aiia-boot-skeleton {
+    display: none;
+  }
+}
+
+/* ==========================================================================
  * A11y 层：键盘聚焦描边 + 减少动态效果偏好
  *   D3：仅在键盘聚焦（:focus-visible）时显示 outline，避免鼠标点击残留描边
  *   D2：用户开启「减少动态效果」时，抹平全局动画/过渡，保留结构可见

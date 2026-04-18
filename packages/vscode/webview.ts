@@ -1206,6 +1206,23 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     <link rel="stylesheet" href="${webviewCssUri}">
 </head>
 <body>
+    <!--
+      BM-7：首帧纯 CSS 骨架屏（boot skeleton）
+      - HTML 解析到此处即可显示，不依赖脚本执行
+      - JS init() 成功后通过切换 class + [hidden] 淡出（CSP 友好，无 inline style）
+      - 始终提供 fallback：window.onerror / unhandledrejection 也会隐藏它，
+        避免脚本异常导致永久遮盖真实 UI
+      - 只是装饰性占位：aria-hidden=true + role=presentation 不吸走焦点/朗读
+    -->
+    <div id="aiiaBootSkeleton" class="aiia-boot-skeleton" role="presentation" aria-hidden="true">
+        <div class="aiia-boot-skeleton__bar aiia-boot-skeleton__bar--title"></div>
+        <div class="aiia-boot-skeleton__bar"></div>
+        <div class="aiia-boot-skeleton__bar"></div>
+        <div class="aiia-boot-skeleton__bar aiia-boot-skeleton__bar--short"></div>
+        <div class="aiia-boot-skeleton__spacer"></div>
+        <div class="aiia-boot-skeleton__bar aiia-boot-skeleton__bar--button"></div>
+    </div>
+
     <div class="container">
         <!-- Task tabs with status indicator -->
         <div class="tabs-container hidden" id="tasksTabsContainer">
