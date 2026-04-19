@@ -1,0 +1,11 @@
+# GitHub CODEOWNERS
+# 语法参考：https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# 作用：
+#   1. 任意 PR 自动指派 owner 为 reviewer（替代 dependabot.yml 中已弃用的 `reviewers:`）；
+#   2. 当仓库启用 branch protection + "Require review from Code Owners" 时，强制 owner review；
+#   3. 单文件可匹配多个规则，最后匹配的规则生效（顺序很重要）。
+#
+# 规则顺序：先兜底，再按目录细化。当前单人维护，所有路径统一指派。
+
+* @xiadengma

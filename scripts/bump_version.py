@@ -210,15 +210,15 @@ def _update_package_lock_text(text: str, new_version: str) -> str:
 
 
 def _update_bug_template(text: str, new_version: str) -> str:
-    # - Plugin Version / Backend version: [e.g. 1.4.17]
-    pat = re.compile(
-        r"(\- Plugin Version / Backend version:\s*\[e\.g\.\s*)([^\]]+)(\])"
-    )
-    return _replace_first(pat, rf"\g<1>{new_version}\g<3>", text, label="bug_report.md")
+    # Issue Form YAML（v2）：目标行形如 `      placeholder: e.g. 1.5.19`
+    # 全文仅 version 字段的 placeholder 以 `e.g.` 起头，不会误匹配到 textarea 的
+    # 多行 `placeholder: |` 块。
+    pat = re.compile(r"(placeholder:\s*e\.g\.\s*)(\S+)")
+    return _replace_first(pat, rf"\g<1>{new_version}", text, label="bug_report.yml")
 
 
 def _extract_bug_template_example_version(text: str) -> str | None:
-    pat = re.compile(r"\- Plugin Version / Backend version:\s*\[e\.g\.\s*([^\]]+)\]")
+    pat = re.compile(r"placeholder:\s*e\.g\.\s*(\S+)")
     m = pat.search(text)
     return m.group(1) if m else None
 
@@ -276,7 +276,7 @@ def main(argv: list[str]) -> int:
         print("- package.json")
         print("- package-lock.json")
         print("- packages/vscode/package.json")
-        print("- .github/ISSUE_TEMPLATE/bug_report.md")
+        print("- .github/ISSUE_TEMPLATE/bug_report.yml")
         return 0
 
     # 版本号来源：
@@ -336,7 +336,7 @@ def main(argv: list[str]) -> int:
             ),
         ),
         (
-            root / ".github" / "ISSUE_TEMPLATE" / "bug_report.md",
+            root / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
             lambda t: _update_bug_template(t, new_version),
         ),
     ]
@@ -504,9 +504,9 @@ def main(argv: list[str]) -> int:
                                 file=sys.stderr,
                             )
 
-        bug_template_path = root / ".github" / "ISSUE_TEMPLATE" / "bug_report.md"
+        bug_template_path = root / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml"
         bug_text = _read_text_or_none(
-            bug_template_path, label=".github/ISSUE_TEMPLATE/bug_report.md"
+            bug_template_path, label=".github/ISSUE_TEMPLATE/bug_report.yml"
         )
         if bug_text is None:
             bad = True
@@ -515,13 +515,15 @@ def main(argv: list[str]) -> int:
             if cur is None:
                 bad = True
                 print(
-                    ".github/ISSUE_TEMPLATE/bug_report.md: 无法解析示例版本（期望包含 [e.g. X.Y.Z]）",
+                    ".github/ISSUE_TEMPLATE/bug_report.yml: 无法解析示例版本"
+                    "（期望存在 `placeholder: e.g. X.Y.Z`）",
                     file=sys.stderr,
                 )
             elif cur != new_version:
                 bad = True
                 print(
-                    f"版本不一致：.github/ISSUE_TEMPLATE/bug_report.md（当前: {cur}，期望: {new_version}）",
+                    f"版本不一致：.github/ISSUE_TEMPLATE/bug_report.yml"
+                    f"（当前: {cur}，期望: {new_version}）",
                     file=sys.stderr,
                 )
 

@@ -42,6 +42,12 @@ jobs:
       - name: 执行版本号同步
         run: uv run python scripts/bump_version.py ${{ inputs.version }}
 
+      # bump_version.py 内部已做跨文件写入，再跑一次 --check 等于冗余校验：
+      # 任何文件漏刷、被其他工具回滚、手工输入错位，这一步都能立即失败，
+      # 避免不一致版本号被提交进 main。
+      - name: 版本一致性复核（bump_version.py --check）
+        run: uv run python scripts/bump_version.py --check
+
       - name: 提交并推送
         run: |
           git config --global user.name "github-actions[bot]"

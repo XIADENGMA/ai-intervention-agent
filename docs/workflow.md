@@ -31,7 +31,7 @@ This document describes the recommended development and release workflow for thi
 ### Release (tag triggers GitHub Actions)
 
 - One-command version sync (without the `v` prefix): `uv run python scripts/bump_version.py X.Y.Z`
-  - Updates: `pyproject.toml` / `uv.lock` / `package.json` / `package-lock.json` / `packages/vscode/package.json` / `.github/ISSUE_TEMPLATE/bug_report.md`
+  - Updates: `pyproject.toml` / `uv.lock` / `package.json` / `package-lock.json` / `packages/vscode/package.json` / `.github/ISSUE_TEMPLATE/bug_report.yml`
   - Optional: `--ci-gate --with-vscode` (runs a local CI Gate after syncing)
 - `git commit -m "<type>: <message>"`
 - `git tag -a vX.Y.Z -m "vX.Y.Z"`

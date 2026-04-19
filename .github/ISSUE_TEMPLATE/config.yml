@@ -1,0 +1,23 @@
+# GitHub Issue chooser 配置
+# 参考：https://docs.github.com/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+#
+# 目的：
+#   1. `blank_issues_enabled: false` 强制走 Bug / Feature form，避免无结构的
+#      "求救式" issue 再堆进来；
+#   2. contact_links 把「不属于 issue」的通道显式前置：安全漏洞走私有 advisory、
+#      使用问题走 discussions、文档翻项目 README。
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: 🔐 Report a security vulnerability · 报告安全漏洞
+    url: https://github.com/xiadengma/ai-intervention-agent/security/advisories/new
+    about: 请通过 GitHub Private Vulnerability Reporting 私有披露，不要贴公开 issue。
+
+  - name: 💬 Ask a question / share an idea · 提问或讨论想法
+    url: https://github.com/xiadengma/ai-intervention-agent/discussions
+    about: 使用问题、环境排查、非确定性「想法」请来 Discussions，issue 只接受可复现 Bug / 明确的 Feature 提案。
+
+  - name: 📖 Documentation · 项目文档
+    url: https://github.com/xiadengma/ai-intervention-agent#readme
+    about: 安装、配置、发布流程请先查 README 与 docs/ 目录。

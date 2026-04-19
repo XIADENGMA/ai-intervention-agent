@@ -1,0 +1,110 @@
+name: 🐛 Bug report
+description: Report a reproducible defect in ai-intervention-agent. · 报告可复现的缺陷。
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Please fill in what you can — an end-to-end
+        reproduction is the single most important field.
+
+        多谢反馈！请尽量填完；可复现步骤是最关键的一栏。
+        安全漏洞请改走 [Security advisory](../security/advisories/new)，不要在 issue 里披露。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight · 事前检查
+      options:
+        - label: 已搜索现有 issue，这不是重复报告 · I searched existing issues.
+          required: true
+        - label: 我用的是最新版本（PyPI `ai-intervention-agent` 或 VSCode 扩展）· I'm on the latest release.
+          required: true
+        - label: 这不是安全漏洞（安全问题走 Security advisory）· This is not a security vulnerability.
+          required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component · 受影响组件
+      options:
+        - VSCode extension · VSCode 扩展
+        - Web UI（Flask 服务 / 浏览器界面）
+        - MCP server / CLI（`ai-intervention-agent` 命令行）
+        - AppleScript executor（macOS 本地通知 / 唤起）
+        - i18n / translations · 翻译
+        - Other · 其它
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version · 版本号
+      description: "`pip show ai-intervention-agent` 或 VSCode 扩展设置页看到的版本号。"
+      placeholder: e.g. 1.5.19
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-channel
+    attributes:
+      label: Install channel · 安装渠道
+      options:
+        - PyPI (`uv tool install` / `pipx install` / `pip install`)
+        - VS Code Marketplace
+        - Open VSX
+        - Built from source · 源码构建
+        - Other · 其它
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment · 运行环境
+      description: 写明 OS 版本、Python 版本、VSCode 版本（若相关）等。
+      placeholder: |
+        - OS: macOS 15.3 / Windows 11 / Ubuntu 24.04
+        - Python: 3.12.2
+        - VSCode: 1.96.4（若使用扩展）
+        - Node: 24.x（若影响 VSIX 构建）
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce · 复现步骤
+      description: 越精确越好；最好能贴最小化的 PoC。
+      placeholder: |
+        1. 启动 `ai-intervention-agent` …
+        2. 在 Web UI 中点击 …
+        3. 观察到 …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior · 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior · 实际行为
+      description: 请附错误日志 / 终端输出 / 浏览器 console / VSCode developer console 等。用代码块包裹。
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Screenshots / additional context · 截图或其他上下文
+      description: 可选。Web UI / VSCode webview 的前后对比图尤其有帮助。
+    validations:
+      required: false

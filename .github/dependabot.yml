@@ -1,6 +1,12 @@
 # Dependabot 配置
 # 功能：自动检测依赖更新并创建 PR
 # 检查频率：每周
+#
+# 关于 `groups:`：
+#   把大量琐碎的 patch/minor 合成单 PR，显著降低 dependabot 噪音。
+#   major 升级始终独立 PR（`update-types: ["major"]` 从默认 group 剔除），
+#   方便人工审阅 + 配合 auto-merge（见 .github/workflows/dependabot-auto-merge.yml
+#   的「仅 patch/minor 自动合并」逻辑）。
 
 version: 2
 
@@ -25,6 +31,14 @@ updates:
       prefix: 'chore(deps)'
     # 限制每次最多创建的 PR 数量
     open-pull-requests-limit: 5
+    groups:
+      # 非大版本 → 单个 PR（含运行时 + 测试依赖；项目 deps 体量小，不再细分）
+      python-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
     # 忽略特定依赖（可选）
     # ignore:
     #   - dependency-name: "some-package"
@@ -45,6 +59,14 @@ updates:
     commit-message:
       prefix: 'chore(ci)'
     open-pull-requests-limit: 5
+    groups:
+      # 所有 action 升级合进一个 PR（只要不是 major），actionlint + release 一次验证
+      actions-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
 
   # Node.js/npm 依赖更新 (负责根目录及 packages/vscode 插件)
   - package-ecosystem: 'npm'
@@ -62,3 +84,16 @@ updates:
     commit-message:
       prefix: 'chore(deps-npm)'
     open-pull-requests-limit: 5
+    groups:
+      # devDependencies（eslint/typescript/@vscode-* 等）噪音大，打包到一个 PR
+      npm-dev-minor-and-patch:
+        dependency-type: 'development'
+        update-types:
+          - 'minor'
+          - 'patch'
+      # 运行时依赖（flask/werkzeug/pillow 等）数量少但更重要，单独成组，review 更严
+      npm-prod-minor-and-patch:
+        dependency-type: 'production'
+        update-types:
+          - 'minor'
+          - 'patch'

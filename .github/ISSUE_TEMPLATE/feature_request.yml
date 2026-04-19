@@ -1,0 +1,74 @@
+name: ✨ Feature request
+description: Propose a new feature or enhancement. · 提出新功能或增强建议。
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the underlying need first — features rooted in a real
+        problem are far more likely to ship. Pure "wouldn't it be cool if …"
+        ideas are welcome in [Discussions](../discussions).
+
+        请先描述背后的真实需求——基于真实问题的提案更容易被接受；
+        纯粹的「要是能 …… 就好了」类设想建议发在
+        [Discussions](../discussions)。
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight · 事前检查
+      options:
+        - label: 已搜索现有 issue 与 discussions，这不是重复请求 · I searched existing issues/discussions.
+          required: true
+        - label: 我已阅读项目 README 与 docs，确认此功能目前不存在 · I verified the feature doesn't already exist.
+          required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Target component · 目标组件
+      options:
+        - VSCode extension · VSCode 扩展
+        - Web UI（Flask 服务 / 浏览器界面）
+        - MCP server / CLI
+        - AppleScript executor（macOS）
+        - i18n / translations · 翻译
+        - Cross-cutting / 不止一处
+        - Other · 其它
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem · 背景问题
+      description: 你在哪种场景下被哪种限制卡住？尽量具体到可观察的行为。
+      placeholder: 现在 … 我希望 …，但被 … 挡住。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution · 期望方案
+      description: 你想怎么解？能给出 API/UI 草稿更好。
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered · 已考虑的替代方案
+      description: 其他解法你已经评估过哪些？为什么当前方案更合适？
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context · 其他上下文
+      description: 可选：截图、参考链接、相似项目、mockup 等。
+    validations:
+      required: false

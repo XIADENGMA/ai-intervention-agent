@@ -1,0 +1,46 @@
+# GitHub Release Notes 自动分类
+# 被 `gh release create --generate-notes`（.github/workflows/release.yml）与
+# 仓库 Releases 页面的 "Generate release notes" 按钮消费。
+# 参考：https://docs.github.com/repositories/releasing-projects-on-github/automatically-generated-release-notes
+#
+# 匹配规则：按下方 categories 顺序从上到下 first-match-wins，未命中的进入
+# "Other Changes"。label 与仓库现有 label 对齐；依赖类走 Dependabot 打出的
+# `dependencies` + 生态标签。
+
+changelog:
+  exclude:
+    # 机器生成的 bump commit 不进 release notes（信息量 = 0）
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot[bot]
+      - github-actions[bot]
+
+  categories:
+    - title: "🚨 Security"
+      labels:
+        - security
+
+    - title: "💥 Breaking changes"
+      labels:
+        - breaking-change
+
+    - title: "✨ New features"
+      labels:
+        - enhancement
+
+    - title: "🐛 Bug fixes"
+      labels:
+        - bug
+
+    - title: "📖 Documentation"
+      labels:
+        - documentation
+
+    - title: "📦 Dependencies"
+      labels:
+        - dependencies
+
+    - title: "Other changes"
+      labels:
+        - "*"

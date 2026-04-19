@@ -31,7 +31,7 @@
 ### 发布（tag 触发 GitHub Actions Release）
 
 - 一键同步版本号（不带 `v` 前缀）：`uv run python scripts/bump_version.py X.Y.Z`
-  - 会同步：`pyproject.toml` / `uv.lock` / `package.json` / `package-lock.json` / `packages/vscode/package.json` / `.github/ISSUE_TEMPLATE/bug_report.md`
+  - 会同步：`pyproject.toml` / `uv.lock` / `package.json` / `package-lock.json` / `packages/vscode/package.json` / `.github/ISSUE_TEMPLATE/bug_report.yml`
   - 可选：`--ci-gate --with-vscode`（同步后跑一轮本地 CI Gate）
 - `git commit -m "<type>: <message>"`
 - `git tag -a vX.Y.Z -m "vX.Y.Z"`
