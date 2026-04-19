@@ -1278,12 +1278,17 @@ class TestLocaleValueQuality(unittest.TestCase):
                     issues.append(f"[{f.name}] {key}: 空值（UI 将显示空白）")
                 if val != val.strip():
                     issues.append(f"[{f.name}] {key}: 尾部/首部空白（'{val[:20]}…'）")
-                opens = val.count("{{")
-                closes = val.count("}}")
-                if opens != closes:
+                # 旧实现只数 ``{{`` / ``}}``（Mustache），引入 ICU subset 之后
+                # 会漏报 ``{count, plural, one {...}}`` 这类单大括号模板的不平
+                # 衡问题。改为统计单个 ``{`` 与 ``}`` 是否成对 —— 这同时覆盖
+                # Mustache（每个占位符各自含一对）和 ICU（嵌套也必须配对）。
+                single_opens = val.count("{")
+                single_closes = val.count("}")
+                if single_opens != single_closes:
                     issues.append(
                         f"[{f.name}] {key}: 占位符括号不匹配"
-                        f"（{{ 出现 {opens} 次，}} 出现 {closes} 次）"
+                        f"（{{ 出现 {single_opens} 次，"
+                        f"}} 出现 {single_closes} 次）"
                     )
 
         if issues:

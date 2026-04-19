@@ -102,6 +102,15 @@ def _main_impl(argv: list[str]) -> int:
     _run(["uv", "run", "python", "scripts/check_i18n_ts_no_cjk.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_duplicate_values.py"])
     _run(["uv", "run", "python", "scripts/gen_pseudo_locale.py", "--check"])
+    # Warn-level：orphan key 扫描 — 默认不 block 流水线（见脚本 docstring）。
+    _run(["uv", "run", "python", "scripts/check_i18n_orphan_keys.py"])
+    # P9·L8：i18n-keys.d.ts 与 packages/vscode/locales/en.json 同步
+    #   （TypeScript `hostT(key: I18nKey)` 依赖该 .d.ts 捕获拼写错误）。
+    _run(["uv", "run", "python", "scripts/gen_i18n_types.py", "--check"])
+    # P9·L9·G1：t(key, { params }) 与 locale 值占位符签名一致。strict
+    #   模式直接阻断 —— pytest 侧已经对 scan() 做硬断言，这里再打一道
+    #   人类可读报告方便 PR 作者本地预览。
+    _run(["uv", "run", "python", "scripts/check_i18n_param_signatures.py", "--strict"])
 
     # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
     _run(["uv", "run", "python", "scripts/minify_assets.py"])

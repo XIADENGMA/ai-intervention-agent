@@ -99,6 +99,36 @@ class TestPseudoizeFn:
         src = "The quick brown fox jumps"
         assert pseudoize(src) == pseudoize(src)
 
+    def test_preserves_icu_plural_keywords(self):
+        """ICU 关键字 (plural/select/one/other/=N/argName) 必须原样保留。
+
+        否则 runtime 端 i18n.js::_renderIcu 无法识别 kind/category，
+        整条消息会退化为模板字符串，pseudo locale 将彻底丧失 QA 价值。"""
+        src = "Have {count, plural, one {# task} other {# tasks}} left"
+        out = pseudoize(src)
+        # 结构关键字必须逐字节出现在 pseudo 输出中
+        for token in ("{count,", "plural,", "one {", "other {"):
+            assert token in out, f"ICU keyword {token!r} lost in pseudo: {out!r}"
+
+    def test_preserves_icu_select_keywords(self):
+        src = "{gender, select, male {he} female {she} other {they}}"
+        out = pseudoize(src)
+        for token in ("{gender,", "select,", "male {", "female {", "other {"):
+            assert token in out, f"ICU keyword {token!r} lost in pseudo: {out!r}"
+
+    def test_icu_option_body_is_pseudoized(self):
+        """ICU 外壳保留，但 option body 里的 `task`/`tasks` 文本必须 pseudo 化。"""
+        src = "{count, plural, one {# task} other {# tasks}}"
+        out = pseudoize(src)
+        # 纯 ASCII 的 body 字符应已被替换为重音变体 (至少 1 个 non-ASCII)
+        # 剥掉 prefix/suffix + ICU 关键字后仍应含非 ASCII
+        stripped = out[len(PREFIX) : -len(SUFFIX)]
+        for kw in ("{count,", "plural,", "one {", "other {", "}"):
+            stripped = stripped.replace(kw, "")
+        assert any(ord(c) > 127 for c in stripped), (
+            f"option body not pseudoized: {out!r}"
+        )
+
 
 class TestPseudoFilesInSyncWithEn:
     """committed pseudo files must match what the generator would produce

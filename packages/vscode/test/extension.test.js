@@ -579,10 +579,7 @@ suite('Extension Test Suite', () => {
       webviewJs.includes('extensionVersion'),
       'dist/webview.js 应包含 extensionVersion 变量'
     )
-    assert.ok(
-      webviewJs.includes('packageJSON'),
-      'dist/webview.js 应包含 packageJSON 版本读取逻辑'
-    )
+    assert.ok(webviewJs.includes('packageJSON'), 'dist/webview.js 应包含 packageJSON 版本读取逻辑')
   })
 
   // ===========================================================================
@@ -620,7 +617,10 @@ suite('Extension Test Suite', () => {
 
     const i18n = globalThis.AIIA_I18N
     assert.ok(i18n, 'AIIA_I18N not registered on globalThis')
-    assert.ok(i18n.getAvailableLangs().length >= 2, 'at least en + zh-CN locales must be registered')
+    assert.ok(
+      i18n.getAvailableLangs().length >= 2,
+      'at least en + zh-CN locales must be registered'
+    )
 
     // 提取所有 t() key
     const tKeyPattern = /(?<![a-zA-Z_])t\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]/g
@@ -799,10 +799,7 @@ suite('Extension Test Suite', () => {
 
     // ui.countdown.remaining 模板为 "{{seconds}}s remaining"
     const countdown = i18n.t('ui.countdown.remaining', { seconds: 42 })
-    assert.ok(
-      countdown.includes('42'),
-      `参数插值应包含 42，实际结果: "${countdown}"`
-    )
+    assert.ok(countdown.includes('42'), `参数插值应包含 42，实际结果: "${countdown}"`)
 
     // 清理
     if (prevLang !== undefined) globalThis.__AIIA_I18N_LANG = prevLang

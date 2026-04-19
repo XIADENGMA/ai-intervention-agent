@@ -152,7 +152,9 @@ try {
   // 注入 git short SHA 作为 BUILD_ID（替换 extension.js 中的 __BUILD_SHA__ 占位符）
   try {
     const sha = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
-      cwd: repoRoot, encoding: 'utf8', timeout: 5000
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 5000
     }).stdout.trim()
     if (sha) {
       const extJs = path.join(tmpDir, 'dist', 'extension.js')

@@ -5,5 +5,7 @@
   "command.openPanel": "AI Intervention Agent: Open Panel",
   "command.openSettings": "AI Intervention Agent: Open Settings (serverUrl)",
   "config.serverUrl.description": "AI Intervention Agent server URL (recommended: full address with port, e.g. http://localhost:8080)",
-  "config.logLevel.description": "Plugin log level (Output panel → AI Intervention Agent)"
+  "config.logLevel.description": "Plugin log level (Output panel → AI Intervention Agent)",
+  "config.i18nPseudoLocale.description": "Render the webview in the pseudo-locale (developer-only; visually tests every translatable string).",
+  "config.i18nPseudoLocale.markdownDescription": "Render the webview in the pseudo-locale `[!ňöḉőńţéńț_ńēẉẗàśǩ!]` etc. so hardcoded strings, concatenation bugs, and overflow are visible at a glance. **Developer-only** — do not enable for daily use."
 }

@@ -102,6 +102,15 @@
           ],
           "default": "info",
           "description": "%config.logLevel.description%"
+        },
+        "ai-intervention-agent.i18n.pseudoLocale": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.i18nPseudoLocale.description%",
+          "markdownDescription": "%config.i18nPseudoLocale.markdownDescription%",
+          "tags": [
+            "experimental"
+          ]
         }
       }
     }

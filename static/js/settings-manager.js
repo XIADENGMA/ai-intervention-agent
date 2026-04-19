@@ -709,10 +709,7 @@ class SettingsManager {
       })
       const data = await resp.json().catch(() => ({}))
       if (!resp.ok || data.status !== 'success') {
-        showStatus(
-          data.message || t('settings.feedbackConfigSaveFailed'),
-          'error'
-        )
+        showStatus(data.message || t('settings.feedbackConfigSaveFailed'), 'error')
         return
       }
       if (data.defaults && typeof data.defaults === 'object') {

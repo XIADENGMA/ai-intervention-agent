@@ -107,7 +107,7 @@
       "serverStatus": "Server connection status"
     },
     "countdown": {
-      "remaining": "{{seconds}}s remaining"
+      "remaining": "{seconds, plural, one {#s remaining} other {#s remaining}}"
     },
     "task": {
       "switchedTo": "Switched to task: {{id}}",
@@ -133,9 +133,9 @@
     "submit": {
       "label": "Submit feedback",
       "submitting": "Submitting…",
-      "rateLimited": "Submitting too frequently, please wait {{seconds}}s",
+      "rateLimited": "Submitting too frequently, please wait {seconds, plural, one {#s} other {#s}}",
       "rateLimited429": "Too many requests (HTTP 429){{hint}}",
-      "rateLimitHint": ", please retry after {{seconds}}s",
+      "rateLimitHint": ", please retry after {seconds, plural, one {#s} other {#s}}",
       "failed": "Submit failed (HTTP {{status}})",
       "failedReason": "Submit failed: {{reason}}",
       "timeoutCheckServer": "Submit timeout: please check server availability",
@@ -147,14 +147,14 @@
       "invalid": "Invalid image file",
       "unsupportedFormat": "Unsupported image format: {{type}}",
       "tooLarge": "Image too large: {{size}}MB > 10MB",
-      "tooManyFiles": "Maximum {{count}} image(s) allowed",
+      "tooManyFiles": "Maximum {count, plural, one {# image} other {# images}} allowed",
       "processingFailedReason": "Image processing failed: {{reason}}"
     },
     "notification": {
       "title": "AI Intervention Agent",
       "newTask": "New task added: {{id}}",
-      "newTasks": "Received {{count}} new tasks",
-      "taskCountSuffix": "({{count}} tasks)"
+      "newTasks": "Received {count, plural, one {# new task} other {# new tasks}}",
+      "taskCountSuffix": "({count, plural, one {# task} other {# tasks}})"
     }
   },
   "notify": {

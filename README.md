@@ -186,20 +186,20 @@ ai-intervention-agent usage details:
 
 ## VS Code extension (optional)
 
-| Item                           | Value                                                                                                                                                                          |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Purpose                        | Embed the interaction panel into VS Code’s sidebar to avoid switching to a browser.                                                                                            |
-| Install (Open VSX)             | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                                     |
-| Download VSIX (GitHub Release) | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                          |
-| Setting                        | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.toml.default`](config.toml.default)) |
+| Item                           | Value                                                                                                                                                                                                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Purpose                        | Embed the interaction panel into VS Code’s sidebar to avoid switching to a browser.                                                                                                                                                                                 |
+| Install (Open VSX)             | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                                                                                                                          |
+| Download VSIX (GitHub Release) | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                                                                                                               |
+| Setting                        | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.toml.default`](config.toml.default))                                                                                        |
 | Other settings                 | `ai-intervention-agent.logLevel` (Output → AI Intervention Agent)<br/>`ai-intervention-agent.enableAppleScript` (macOS only; for the “Run AppleScript” command; default: `false`. macOS native notifications are controlled separately and are enabled by default.) |
 
 ## Configuration
 
-| Item             | Value                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| Docs (English)   | [docs/configuration.md](docs/configuration.md)                                                    |
-| Docs (简体中文)  | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)                                        |
+| Item             | Value                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| Docs (English)   | [docs/configuration.md](docs/configuration.md)                                                 |
+| Docs (简体中文)  | [docs/configuration.zh-CN.md](docs/configuration.zh-CN.md)                                     |
 | Default template | [`config.toml.default`](config.toml.default) (on first run it will be copied to `config.toml`) |
 
 | OS      | User config directory                                  |
@@ -283,6 +283,7 @@ flowchart TD
 - **API docs (简体中文)**: [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **MCP tool reference**: [`docs/mcp_tools.md`](docs/mcp_tools.md)
 - **MCP 工具说明**: [`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)
+- **i18n contributor guide**: [`docs/i18n.md`](docs/i18n.md)
 - **DeepWiki**: [deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
 
 ## Related projects

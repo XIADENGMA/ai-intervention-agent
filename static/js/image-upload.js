@@ -370,9 +370,11 @@ function compressImage(file) {
             attempt++
             if (attempt >= MAX_ATTEMPTS) {
               console.warn(
-                `Image compression: max attempts reached but still above ${(MAX_RETURN_BYTES / 1024 / 1024).toFixed(
-                  1
-                )}MB; returning current compressed version`
+                `Image compression: max attempts reached but still above ${(
+                  MAX_RETURN_BYTES /
+                  1024 /
+                  1024
+                ).toFixed(1)}MB; returning current compressed version`
               )
               logCompression(blob, finalName)
               resolve(compressedFile)
@@ -684,7 +686,10 @@ async function handleFileUpload(files) {
 
         // 更新进度
         if (fileArray.length > 1) {
-          showStatus(t('status.processProgress', { done: processed, total: fileArray.length }), 'info')
+          showStatus(
+            t('status.processProgress', { done: processed, total: fileArray.length }),
+            'info'
+          )
         }
 
         return success
@@ -953,7 +958,15 @@ function openImageModal(base64, name, size) {
 
   modalImage.src = base64
   modalImage.alt = name
-  modalInfo.textContent = `${name} (${(size / 1024).toFixed(2)}KB)`
+  const _formatNum =
+    (window.AIIA_I18N && window.AIIA_I18N.formatNumber) ||
+    function (n) {
+      return Number(n).toFixed(2)
+    }
+  modalInfo.textContent = t('status.sizeLabelKB', {
+    name: name,
+    size: _formatNum(size / 1024, { maximumFractionDigits: 2 })
+  })
 
   modal.classList.add('show')
 

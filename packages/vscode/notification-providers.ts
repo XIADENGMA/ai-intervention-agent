@@ -110,7 +110,9 @@ function execFileAsyncWithOutput(
       execFile(
         file,
         Array.isArray(args) ? args : [],
-        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}) as { encoding: 'utf8' },
+        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}) as {
+          encoding: 'utf8'
+        },
         (error, stdout, stderr) => {
           const durationMs = Date.now() - startedAt
           const outText = (stdout ?? '').toString()
@@ -118,23 +120,28 @@ function execFileAsyncWithOutput(
           if (error) {
             const exitCode =
               typeof error.code === 'number' && Number.isFinite(error.code) ? error.code : null
-            const signal = error && (error as unknown as Record<string, unknown>).signal ? String((error as unknown as Record<string, unknown>).signal) : ''
+            const signal =
+              error && (error as unknown as Record<string, unknown>).signal
+                ? String((error as unknown as Record<string, unknown>).signal)
+                : ''
             const msg =
               errText.trim() || (error && error.message ? String(error.message) : 'execFile failed')
-            reject(makeExecError(msg, 'EXEC_FAILED', {
-              cause: error,
-              details: {
-                file: String(file || ''),
-                args: Array.isArray(args) ? args.map(String) : [],
-                exitCode,
-                signal,
-                durationMs,
-                stderr: errText.trim(),
-                stderrPreview: sanitizeForLog(errText, 400),
-                stdoutPreview: sanitizeForLog(outText, 240),
-                stdoutLen: outText.length
-              }
-            }))
+            reject(
+              makeExecError(msg, 'EXEC_FAILED', {
+                cause: error,
+                details: {
+                  file: String(file || ''),
+                  args: Array.isArray(args) ? args.map(String) : [],
+                  exitCode,
+                  signal,
+                  durationMs,
+                  stderr: errText.trim(),
+                  stderrPreview: sanitizeForLog(errText, 400),
+                  stdoutPreview: sanitizeForLog(outText, 240),
+                  stdoutLen: outText.length
+                }
+              })
+            )
             return
           }
           resolve({ stdout: outText, stderr: errText, durationMs })
@@ -142,9 +149,11 @@ function execFileAsyncWithOutput(
       )
     } catch (e: unknown) {
       const err = e instanceof Error ? e : new Error(String(e))
-      reject(makeExecError(err.message, 'EXEC_SPAWN_FAILED', {
-        details: { file: String(file || ''), args: Array.isArray(args) ? args.map(String) : [] }
-      }))
+      reject(
+        makeExecError(err.message, 'EXEC_SPAWN_FAILED', {
+          details: { file: String(file || ''), args: Array.isArray(args) ? args.map(String) : [] }
+        })
+      )
     }
   })
 }
@@ -159,19 +168,23 @@ function execFileAsync(
       execFile(
         file,
         Array.isArray(args) ? args : [],
-        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}) as { encoding: 'utf8' },
+        Object.assign({ encoding: 'utf8', windowsHide: true }, options || {}) as {
+          encoding: 'utf8'
+        },
         (error, stdout, stderr) => {
           if (error) {
             const errText = (stderr ?? '').toString().trim()
             const msg =
               errText || (error && error.message ? String(error.message) : 'execFile failed')
-            reject(makeExecError(msg, 'EXEC_FAILED', {
-              cause: error,
-              details: {
-                file: String(file || ''),
-                args: Array.isArray(args) ? args.map(String) : []
-              }
-            }))
+            reject(
+              makeExecError(msg, 'EXEC_FAILED', {
+                cause: error,
+                details: {
+                  file: String(file || ''),
+                  args: Array.isArray(args) ? args.map(String) : []
+                }
+              })
+            )
             return
           }
           resolve((stdout ?? '').toString())
@@ -207,7 +220,8 @@ function findMacAppBundlePathFromAppRoot(appRoot: string): string {
 function resolveBundledTerminalNotifierBinPath(): string {
   try {
     return path.join(
-      __dirname, '..',
+      __dirname,
+      '..',
       'vendor',
       'terminal-notifier',
       'terminal-notifier.app',
@@ -300,7 +314,11 @@ function ensureStableTerminalNotifier(): StableResult {
   _migrateLegacyAppSupportDir(stable.dir)
 
   const srcAppPath = path.join(
-    __dirname, '..', 'vendor', 'terminal-notifier', 'terminal-notifier.app'
+    __dirname,
+    '..',
+    'vendor',
+    'terminal-notifier',
+    'terminal-notifier.app'
   )
   if (!fs.existsSync(srcAppPath)) return fail('src-not-found')
 
@@ -355,7 +373,10 @@ export class VSCodeApiNotificationProvider {
     const message = toNonEmptyString(event && event.message, '')
     if (!message) return false
 
-    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {} as Record<string, unknown>
+    const md =
+      event && event.metadata && typeof event.metadata === 'object'
+        ? event.metadata
+        : ({} as Record<string, unknown>)
     const presentation = toNonEmptyString((md as Record<string, unknown>).presentation, 'statusBar')
     const severity = toNonEmptyString((md as Record<string, unknown>).severity, 'info')
     const timeoutMsRaw = (md as Record<string, unknown>).timeoutMs
@@ -418,19 +439,24 @@ export class AppleScriptNotificationProvider {
     const err = e as ExecError | null
     const code = err && err.code ? String(err.code) : 'unknown'
     const message = err && err.message ? String(err.message) : String(e)
-    const details = err && err.details && typeof err.details === 'object' ? err.details : {} as Record<string, unknown>
+    const details =
+      err && err.details && typeof err.details === 'object'
+        ? err.details
+        : ({} as Record<string, unknown>)
     const exitCode =
       details && typeof details.exitCode === 'number' && Number.isFinite(details.exitCode)
-        ? details.exitCode as number
+        ? (details.exitCode as number)
         : null
     const signal = details && details.signal ? String(details.signal) : ''
     const stderr = details && details.stderr ? String(details.stderr) : ''
     const durationMs =
       details && typeof details.durationMs === 'number' && Number.isFinite(details.durationMs)
-        ? details.durationMs as number
+        ? (details.durationMs as number)
         : null
     const injectedEnvKeys =
-      details && Array.isArray(details.injectedEnvKeys) ? (details.injectedEnvKeys as unknown[]).map(String) : []
+      details && Array.isArray(details.injectedEnvKeys)
+        ? (details.injectedEnvKeys as unknown[]).map(String)
+        : []
     return {
       code,
       message,
@@ -667,10 +693,21 @@ export class AppleScriptNotificationProvider {
     const message = toNonEmptyString(event && event.message, '')
     if (!message) return false
 
-    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {} as Record<string, unknown>
+    const md =
+      event && event.metadata && typeof event.metadata === 'object'
+        ? event.metadata
+        : ({} as Record<string, unknown>)
     const isTest = !!(md && (md as Record<string, unknown>).isTest)
-    const diagnosticMode = !!((md as Record<string, unknown>).diagnostic || (md as Record<string, unknown>).diagnostics || (md as Record<string, unknown>).debug)
-    const skipBundleInjection = !!((md as Record<string, unknown>).skipBundleInjection || (md as Record<string, unknown>).fastTest || (md as Record<string, unknown>).fast)
+    const diagnosticMode = !!(
+      (md as Record<string, unknown>).diagnostic ||
+      (md as Record<string, unknown>).diagnostics ||
+      (md as Record<string, unknown>).debug
+    )
+    const skipBundleInjection = !!(
+      (md as Record<string, unknown>).skipBundleInjection ||
+      (md as Record<string, unknown>).fastTest ||
+      (md as Record<string, unknown>).fast
+    )
 
     if (!isTest && process.platform !== 'darwin') {
       try {
@@ -697,7 +734,8 @@ export class AppleScriptNotificationProvider {
     }
 
     const script = `display notification ${toAppleScriptStringLiteral(message)} with title ${toAppleScriptStringLiteral(title)} sound name "Glass"\ndelay 0.05`
-    const shouldActivateHost = !skipBundleInjection && !!((md as Record<string, unknown>).activateOnClick !== false)
+    const shouldActivateHost =
+      !skipBundleInjection && !!((md as Record<string, unknown>).activateOnClick !== false)
     const diagBase: DiagnosticBase = {
       at: Date.now(),
       isTest,
@@ -780,9 +818,9 @@ export class AppleScriptNotificationProvider {
             const errObj = makeExecError(
               fallback.message || first.message || vscode.l10n.t('AppleScript execution failed'),
               fallback.code || first.code || 'APPLE_SCRIPT_FAILED'
-            );
-            (errObj as unknown as Record<string, unknown>).primary = first;
-            (errObj as unknown as Record<string, unknown>).fallback = fallback
+            )
+            ;(errObj as unknown as Record<string, unknown>).primary = first
+            ;(errObj as unknown as Record<string, unknown>).fallback = fallback
             throw errObj
           }
         }
@@ -854,7 +892,13 @@ export class AppleScriptNotificationProvider {
           )
         } else if (this._logger && typeof this._logger.warn === 'function') {
           this._logger.warn(
-            vscode.l10n.t('Native notification failed code={0} msg={1}', String(code || 'unknown'), raw || '').trim()
+            vscode.l10n
+              .t(
+                'Native notification failed code={0} msg={1}',
+                String(code || 'unknown'),
+                raw || ''
+              )
+              .trim()
           )
         }
       } catch {
@@ -908,11 +952,18 @@ export class MacOSNativeNotificationProvider {
         if (this._logger && typeof this._logger.event === 'function') {
           this._logger.event(
             'notify.terminal_notifier.resolved',
-            { from: 'stable', path: stable.bin, installed: stable.installed, error: stable.error || '' },
+            {
+              from: 'stable',
+              path: stable.bin,
+              installed: stable.installed,
+              error: stable.error || ''
+            },
             { level: 'debug' }
           )
         }
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
       return stable.bin
     }
     const p = resolveBundledTerminalNotifierBinPath()
@@ -926,7 +977,9 @@ export class MacOSNativeNotificationProvider {
             { level: 'debug' }
           )
         }
-      } catch { /* noop */ }
+      } catch {
+        /* noop */
+      }
       return p
     }
     this._terminalNotifierBin = ''
@@ -951,9 +1004,16 @@ export class MacOSNativeNotificationProvider {
     const message = toNonEmptyString(event && event.message, '')
     if (!message) return false
 
-    const md = event && event.metadata && typeof event.metadata === 'object' ? event.metadata : {} as Record<string, unknown>
+    const md =
+      event && event.metadata && typeof event.metadata === 'object'
+        ? event.metadata
+        : ({} as Record<string, unknown>)
     const isTest = !!(md && (md as Record<string, unknown>).isTest)
-    const diagnosticMode = !!((md as Record<string, unknown>).diagnostic || (md as Record<string, unknown>).diagnostics || (md as Record<string, unknown>).debug)
+    const diagnosticMode = !!(
+      (md as Record<string, unknown>).diagnostic ||
+      (md as Record<string, unknown>).diagnostics ||
+      (md as Record<string, unknown>).debug
+    )
 
     if (!isTest && process.platform !== 'darwin') return false
 
@@ -1012,7 +1072,10 @@ export class MacOSNativeNotificationProvider {
         const msg = err && err.message ? String(err.message) : String(e)
         this._terminalNotifierBin = ''
         this._terminalNotifierBinPromise = null
-        const details = err && err.details && typeof err.details === 'object' ? err.details : {} as Record<string, unknown>
+        const details =
+          err && err.details && typeof err.details === 'object'
+            ? err.details
+            : ({} as Record<string, unknown>)
         attempts.push({
           backend: 'terminal-notifier',
           mode: bundleId ? 'activate+execute' : 'plain',
@@ -1069,7 +1132,9 @@ export class MacOSNativeNotificationProvider {
         vs.window &&
         typeof vs.window.showErrorMessage === 'function'
       ) {
-        vs.window.showErrorMessage(vscode.l10n.t('macOS native notification failed: {0}', String(msg)))
+        vs.window.showErrorMessage(
+          vscode.l10n.t('macOS native notification failed: {0}', String(msg))
+        )
       }
       return false
     }

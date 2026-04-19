@@ -107,7 +107,7 @@
       "serverStatus": "服务器连接状态"
     },
     "countdown": {
-      "remaining": "剩余{{seconds}}秒"
+      "remaining": "{seconds, plural, other {剩余 # 秒}}"
     },
     "task": {
       "switchedTo": "切换到任务: {{id}}",
@@ -133,9 +133,9 @@
     "submit": {
       "label": "提交反馈",
       "submitting": "正在提交…",
-      "rateLimited": "提交过于频繁，请等待 {{seconds}} 秒",
+      "rateLimited": "提交过于频繁，请等待 {seconds, plural, other {# 秒}}",
       "rateLimited429": "提交过于频繁（HTTP 429）{{hint}}",
-      "rateLimitHint": "，建议等待 {{seconds}} 秒后再试",
+      "rateLimitHint": "，建议等待 {seconds, plural, other {# 秒}}后再试",
       "failed": "提交失败（HTTP {{status}}）",
       "failedReason": "提交失败：{{reason}}",
       "timeoutCheckServer": "提交超时：请检查服务端是否可用",
@@ -147,14 +147,14 @@
       "invalid": "无效的图片文件",
       "unsupportedFormat": "不支持的图片格式：{{type}}",
       "tooLarge": "图片过大：{{size}}MB > 10MB",
-      "tooManyFiles": "最多只能上传 {{count}} 张图片",
+      "tooManyFiles": "最多只能上传 {count, plural, other {# 张图片}}",
       "processingFailedReason": "图片处理失败：{{reason}}"
     },
     "notification": {
       "title": "AI 交互反馈",
       "newTask": "新任务已添加: {{id}}",
-      "newTasks": "收到 {{count}} 个新任务",
-      "taskCountSuffix": "（共 {{count}} 个任务）"
+      "newTasks": "收到 {count, plural, other {# 个新任务}}",
+      "taskCountSuffix": "（共 {count, plural, other {# 个任务}}）"
     }
   },
   "notify": {

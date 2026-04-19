@@ -37,13 +37,37 @@
 // 本地 i18n 辅助函数，与 validation-utils.js 一致。
 function __domSecT(key, params) {
   try {
-    if (typeof window !== 'undefined'
-      && window.AIIA_I18N
-      && typeof window.AIIA_I18N.t === 'function') {
+    if (
+      typeof window !== 'undefined' &&
+      window.AIIA_I18N &&
+      typeof window.AIIA_I18N.t === 'function'
+    ) {
       return window.AIIA_I18N.t(key, params)
     }
-  } catch (_e) { /* noop */ }
+  } catch (_e) {
+    /* noop */
+  }
   return key
+}
+
+// 数字本地化：优先走 AIIA_I18N.formatNumber，fallback 到 toFixed。
+// 暴露一层函数是为了 DOM 安全工具在初始化时还拿不到 AIIA_I18N 的
+// corner case（脚本加载顺序）时不至于炸掉整个预览面板。
+function __domSecFormatNumber(value, options) {
+  try {
+    if (
+      typeof window !== 'undefined' &&
+      window.AIIA_I18N &&
+      typeof window.AIIA_I18N.formatNumber === 'function'
+    ) {
+      return window.AIIA_I18N.formatNumber(value, options)
+    }
+  } catch (_e) {
+    /* noop */
+  }
+  var digits =
+    options && typeof options.maximumFractionDigits === 'number' ? options.maximumFractionDigits : 2
+  return Number(value).toFixed(digits)
 }
 
 class DOMSecurity {
@@ -211,7 +235,7 @@ class DOMSecurity {
     checkbox.value = this.sanitizeAttribute(value)
 
     // 添加立即视觉反馈：确保checked属性变化立即可见
-    checkbox.addEventListener('change', function(e) {
+    checkbox.addEventListener('change', function (e) {
       // 强制同步更新，确保状态立即反映
       this.checked = e.target.checked
     })
@@ -221,7 +245,7 @@ class DOMSecurity {
     labelElement.textContent = label
 
     // 点击整个容器区域都能触发checkbox（提升点击体验）
-    container.addEventListener('click', function(e) {
+    container.addEventListener('click', function (e) {
       // 如果点击的不是checkbox本身或label，则手动切换checkbox状态
       if (e.target !== checkbox && e.target !== labelElement) {
         checkbox.checked = !checkbox.checked
@@ -406,7 +430,10 @@ class DOMSecurity {
 
       const info = document.createElement('div')
       info.className = 'image-preview-info'
-      info.textContent = `${imageItem.name} (${(imageItem.size / 1024).toFixed(1)}KB)`
+      info.textContent = __domSecT('status.sizeLabelKB', {
+        name: imageItem.name,
+        size: __domSecFormatNumber(imageItem.size / 1024, { maximumFractionDigits: 1 })
+      })
 
       previewElement.appendChild(img)
       previewElement.appendChild(removeButton)
@@ -577,7 +604,7 @@ class DOMSecurity {
     if (typeof value !== 'string') return ''
 
     return value
-      .replace(/[<>'"&]/g, (match) => {
+      .replace(/[<>'"&]/g, match => {
         const entities = {
           '<': '&lt;',
           '>': '&gt;',

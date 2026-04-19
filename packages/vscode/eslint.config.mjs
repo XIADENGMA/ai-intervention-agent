@@ -1,4 +1,5 @@
 import globals from 'globals'
+import aiiaI18n from './eslint-plugin-aiia-i18n.mjs'
 
 export default [
   {
@@ -10,7 +11,13 @@ export default [
       'marked.min.js',
       'prism.min.js',
       'lottie.min.js',
-      'mathjax/**'
+      'mathjax/**',
+      // locale 源文件自己不应参与 lint（其内容用于 rule 的 validKeys 集）
+      'locales/**',
+      'l10n/**',
+      // 测试 fixture 目录（见 tests/vscode_eslint_i18n_fixture/）由外部 pytest
+      // 拉起，避免本地 npm run lint 被虚构数据污染。
+      'test/eslint-fixtures/**'
     ]
   },
   // Node.js / test 侧 JS（如 test/*.test.js、scripts/*.mjs）
@@ -68,6 +75,17 @@ export default [
         AIIA_TRI_STATE_PANEL_CONTROLLER: 'readonly',
         AIIA_CONTENT_SM: 'readonly'
       }
+    }
+  },
+  // L4·G2：i18n key 静态校验。对所有非 vendor 的 webview JS + 测试 JS 开启，
+  // 插件自己通过 CallExpression 走查所有 t/_t/tl/hostT/__vuT/__domSecT/__ncT
+  // 调用，对比 locales/en.json + static/locales/en.json 的 key 并 --max-warnings
+  // 0（由 npm run lint 已默认）将任何 undefined key 视为 fail。
+  {
+    files: ['**/*.js', '**/*.mjs'],
+    plugins: { 'aiia-i18n': aiiaI18n },
+    rules: {
+      'aiia-i18n/no-missing-i18n-key': 'error'
     }
   }
 ]

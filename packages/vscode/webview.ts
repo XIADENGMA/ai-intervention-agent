@@ -165,8 +165,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       typeof onTasksStatsChanged === 'function' ? onTasksStatsChanged : null
     this._onNewTaskIdsFromWebview =
       typeof onNewTaskIdsFromWebview === 'function' ? onNewTaskIdsFromWebview : null
-    this._onLanguageChanged =
-      typeof onLanguageChanged === 'function' ? onLanguageChanged : null
+    this._onLanguageChanged = typeof onLanguageChanged === 'function' ? onLanguageChanged : null
     this._view = null
     this._disposables = []
     this._lastServerStatus = null
@@ -196,9 +195,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         if (text) this._cachedLocales[loc] = JSON.parse(text) as Record<string, unknown>
       } catch {
         try {
-          const text = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json'))
+          const text = safeReadTextFile(
+            vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json')
+          )
           if (text) this._cachedLocales[loc] = JSON.parse(text) as Record<string, unknown>
-        } catch { /* 忽略 */ }
+        } catch {
+          /* 忽略 */
+        }
       }
     }
     if (!this._cachedStaticAssets) {
@@ -220,9 +223,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         lottieData = raw ? JSON.parse(raw) : null
       } catch {
         try {
-          const raw = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json'))
+          const raw = safeReadTextFile(
+            vscode.Uri.joinPath(this._extensionUri, 'lottie', 'sprout.json')
+          )
           lottieData = raw ? JSON.parse(raw) : null
-        } catch { /* 忽略 */ }
+        } catch {
+          /* 忽略 */
+        }
       }
       this._cachedStaticAssets = { activityIconSvg: svgText, lottieData }
     }
@@ -254,18 +261,30 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           const data = (await resp.json()) as Record<string, unknown>
           if (data.language && typeof data.language === 'string' && data.language !== 'auto') {
             this._cachedServerLang = data.language
-            this._log(vscode.l10n.t('[i18n] Server language prefetch succeeded: {0}', String(data.language)))
+            this._log(
+              vscode.l10n.t('[i18n] Server language prefetch succeeded: {0}', String(data.language))
+            )
             if (this._onLanguageChanged) {
-              try { this._onLanguageChanged(data.language as string) } catch { /* 忽略 */ }
+              try {
+                this._onLanguageChanged(data.language as string)
+              } catch {
+                /* 忽略 */
+              }
             }
             return
           }
-          this._log(vscode.l10n.t('[i18n] Server returned language=auto or empty, using vscode.env.language'))
+          this._log(
+            vscode.l10n.t(
+              '[i18n] Server returned language=auto or empty, using vscode.env.language'
+            )
+          )
           return
         }
         this._log(vscode.l10n.t('[i18n] Server non-200 response: {0}', String(resp.status)))
       } catch {
-        this._log(vscode.l10n.t('[i18n] Language prefetch failed, waiting for front-end langDetected'))
+        this._log(
+          vscode.l10n.t('[i18n] Language prefetch failed, waiting for front-end langDetected')
+        )
       } finally {
         if (timer) clearTimeout(timer)
       }
@@ -337,7 +356,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     //   1) _getHtmlContent 先用 vscode.env.language 兜底
     //   2) 前端 checkServerStatus 拿到 language 后通过 langDetected 回传
     await this._preloadResources()
-    this._prefetchServerLanguage().catch(() => { /* 忽略：失败不影响首屏 */ })
+    this._prefetchServerLanguage().catch(() => {
+      /* 忽略：失败不影响首屏 */
+    })
     this._view = webviewView
 
     webviewView.webview.options = {
@@ -354,10 +375,20 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             { level: 'debug' }
           )
         } else {
-          this._log(vscode.l10n.t('[event] Webview visibility changed: visible={0}', String(!!webviewView.visible)))
+          this._log(
+            vscode.l10n.t(
+              '[event] Webview visibility changed: visible={0}',
+              String(!!webviewView.visible)
+            )
+          )
         }
       } catch {
-        this._log(vscode.l10n.t('[event] Webview visibility changed: visible={0}', String(!!webviewView.visible)))
+        this._log(
+          vscode.l10n.t(
+            '[event] Webview visibility changed: visible={0}',
+            String(!!webviewView.visible)
+          )
+        )
       }
       if (this._onVisibilityChanged) {
         this._onVisibilityChanged(!!webviewView.visible)
@@ -427,7 +458,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       const tickCount = (html.match(/`/g) || []).length
       if (tickCount > 0 && this._logger && typeof this._logger.warn === 'function') {
         this._logger.warn(
-          vscode.l10n.t('Webview HTML contains {0} backtick character(s); may cause injection failure (recommend externalizing / runtime generation)', String(tickCount))
+          vscode.l10n.t(
+            'Webview HTML contains {0} backtick character(s); may cause injection failure (recommend externalizing / runtime generation)',
+            String(tickCount)
+          )
         )
       }
     } catch {
@@ -448,14 +482,24 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
               { timeoutMs: 2500, webviewReady: false },
               {
                 level: 'warn',
-                message: vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)')
+                message: vscode.l10n.t(
+                  'Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'
+                )
               }
             )
           } else {
-            this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
+            this._logger.warn(
+              vscode.l10n.t(
+                'Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'
+              )
+            )
           }
         } catch {
-          this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
+          this._logger.warn(
+            vscode.l10n.t(
+              'Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'
+            )
+          )
         }
       }
     }, 2500)
@@ -497,7 +541,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
       const view = this._view
       // 同 resolveWebviewView：不 await 语言预取，避免切换 serverUrl 时首屏阻塞
-      this._prefetchServerLanguage().catch(() => { /* 忽略：失败不影响 UI */ })
+      this._prefetchServerLanguage().catch(() => {
+        /* 忽略：失败不影响 UI */
+      })
       this._preloadResources()
         .catch(() => {})
         .finally(() => {
@@ -511,14 +557,24 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     { timeoutMs: 2500, webviewReady: false, reason: 'serverUrl_changed' },
                     {
                       level: 'warn',
-                      message: vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)')
+                      message: vscode.l10n.t(
+                        'Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'
+                      )
                     }
                   )
                 } else {
-                  this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
+                  this._logger.warn(
+                    vscode.l10n.t(
+                      'Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'
+                    )
+                  )
                 }
               } catch {
-                this._logger.warn(vscode.l10n.t('Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'))
+                this._logger.warn(
+                  vscode.l10n.t(
+                    'Webview not ready: script may not have executed (CSP / injection / HTML structure broken)'
+                  )
+                )
               }
             }
           }, 2500)
@@ -672,20 +728,27 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         break
       case 'langDetected':
         try {
-          const lang = message && typeof (message as Record<string, unknown>).language === 'string'
-            ? String((message as Record<string, unknown>).language)
-            : ''
+          const lang =
+            message && typeof (message as Record<string, unknown>).language === 'string'
+              ? String((message as Record<string, unknown>).language)
+              : ''
           if (lang && lang !== 'auto' && lang !== this._cachedServerLang) {
             this._cachedServerLang = lang
             this._log(vscode.l10n.t('[i18n] Client detected language: {0}', String(lang)))
             if (this._onLanguageChanged) {
-              try { this._onLanguageChanged(lang) } catch { /* 忽略 */ }
+              try {
+                this._onLanguageChanged(lang)
+              } catch {
+                /* 忽略 */
+              }
             }
             // 前端 applyServerLanguage 已通过 i18n.setLang + retranslateAllI18nElements
             // 就地重翻译（覆盖 data-i18n / data-i18n-title / data-i18n-placeholder /
             // data-i18n-version），host 侧不再重设 webview.html，避免一次 HTML 重建闪烁。
           }
-        } catch { /* 忽略 */ }
+        } catch {
+          /* 忽略 */
+        }
         break
       default:
         break
@@ -1134,8 +1197,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     )
     const nonce = getNonce()
 
-    const activityIconSvgText = this._cachedStaticAssets?.activityIconSvg
-      || safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg'))
+    const activityIconSvgText =
+      this._cachedStaticAssets?.activityIconSvg ||
+      safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, 'activity-icon.svg'))
     const inlineNoContentFallbackSvgLiteral = safeStringForInlineScript(activityIconSvgText)
     // Lottie JSON (445KB) 不再内联进 HTML，改由前端通过 data-no-content-lottie-json-url
     // 懒加载（webview-ui.js 里的 loadNoContentLottieData 走 fetch + force-cache 兜底）。
@@ -1143,7 +1207,25 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const inlineNoContentLottieDataLiteral = 'null'
 
     let i18nLang = 'en'
-    if (this._cachedServerLang) {
+    // P9·L5·G1: Pseudo-locale developer switch. When
+    // ``ai-intervention-agent.i18n.pseudoLocale`` is true we force
+    // ``i18nLang`` to ``pseudo`` and load ``locales/_pseudo/pseudo.json``.
+    // Guard with try/catch so a broken workspace settings file never
+    // bricks the webview.
+    let pseudoLocaleEnabled = false
+    try {
+      pseudoLocaleEnabled = Boolean(
+        vscode.workspace
+          .getConfiguration('ai-intervention-agent')
+          .get<boolean>('i18n.pseudoLocale', false)
+      )
+    } catch {
+      pseudoLocaleEnabled = false
+    }
+
+    if (pseudoLocaleEnabled) {
+      i18nLang = 'pseudo'
+    } else if (this._cachedServerLang) {
       i18nLang = this._cachedServerLang.toLowerCase().indexOf('zh') === 0 ? 'zh-CN' : 'en'
     } else {
       try {
@@ -1153,15 +1235,18 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         i18nLang = 'en'
       }
     }
-    let i18nLocaleData: Record<string, unknown> | null =
-      this._cachedLocales[i18nLang] || null
+    let i18nLocaleData: Record<string, unknown> | null = this._cachedLocales[i18nLang] || null
     if (!i18nLocaleData) {
       try {
-        const localeText = safeReadTextFile(
-          vscode.Uri.joinPath(this._extensionUri, 'locales', i18nLang + '.json')
-        )
+        const relPath =
+          i18nLang === 'pseudo'
+            ? ['locales', '_pseudo', 'pseudo.json']
+            : ['locales', i18nLang + '.json']
+        const localeText = safeReadTextFile(vscode.Uri.joinPath(this._extensionUri, ...relPath))
         i18nLocaleData = localeText ? (JSON.parse(localeText) as Record<string, unknown>) : null
-      } catch { /* 忽略 */ }
+      } catch {
+        /* 忽略 */
+      }
     }
     if (!i18nLocaleData) {
       i18nLocaleData = this._cachedLocales['en'] || null
@@ -1170,8 +1255,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           const fallbackText = safeReadTextFile(
             vscode.Uri.joinPath(this._extensionUri, 'locales', 'en.json')
           )
-          i18nLocaleData = fallbackText ? (JSON.parse(fallbackText) as Record<string, unknown>) : null
-        } catch { /* 忽略 */ }
+          i18nLocaleData = fallbackText
+            ? (JSON.parse(fallbackText) as Record<string, unknown>)
+            : null
+        } catch {
+          /* 忽略 */
+        }
       }
       if (i18nLocaleData) i18nLang = 'en'
     }
@@ -1184,7 +1273,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             vscode.Uri.joinPath(this._extensionUri, 'locales', loc + '.json')
           )
           if (text) allLocales[loc] = JSON.parse(text) as Record<string, unknown>
-        } catch { /* 忽略 */ }
+        } catch {
+          /* 忽略 */
+        }
+      }
+    }
+    // Pseudo locale is only bundled into allLocales when explicitly
+    // requested — we never want production sessions to accidentally
+    // swap in `[!ẗęśṭ!]` strings just because some cache key collides.
+    if (pseudoLocaleEnabled && !allLocales['pseudo']) {
+      try {
+        const text = safeReadTextFile(
+          vscode.Uri.joinPath(this._extensionUri, 'locales', '_pseudo', 'pseudo.json')
+        )
+        if (text) allLocales['pseudo'] = JSON.parse(text) as Record<string, unknown>
+      } catch {
+        /* 忽略 */
       }
     }
     const inlineAllLocalesLiteral = Object.keys(allLocales).length
@@ -1194,7 +1298,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       ? safeJsonForInlineScript(i18nLocaleData)
       : 'null'
     const inlineI18nLangLiteral = safeStringForInlineScript(i18nLang)
-    const tl = (key: string): string => {
+    // Server-side, pre-paint string resolver used only for the first
+    // HTML render (before ``i18n.js`` finishes loading and can retranslate
+    // via ``translateDOM``). Supports Mustache ``{{name}}`` substitution
+    // to mirror the runtime API in ``packages/vscode/i18n.js``, so call
+    // sites like ``tl('settings.footer.version', { version })`` produce
+    // the same output both pre- and post-hydration.
+    const tl = (key: string, params?: Record<string, string | number>): string => {
       if (!i18nLocaleData) return key
       const parts = String(key).split('.')
       let node: unknown = i18nLocaleData
@@ -1202,14 +1312,21 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         if (!node || typeof node !== 'object') return key
         node = (node as Record<string, unknown>)[p]
       }
-      return typeof node === 'string' ? node : key
+      if (typeof node !== 'string') return key
+      if (!params) return node
+      return node.replace(/\{\{(\w+)\}\}/g, (match, name) =>
+        Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+      )
     }
-    const htmlLang = i18nLang === 'zh-CN' ? 'zh-CN' : 'en'
+    // Pseudo locale contains only ASCII+Latin diacritics that Chromium
+    // renders fine under any BCP-47 tag; picking ``en-x-pseudo`` keeps
+    // accessibility tooling happy (lang must be a valid BCP-47 subtag).
+    const htmlLang = i18nLang === 'pseudo' ? 'en-x-pseudo' : i18nLang === 'zh-CN' ? 'zh-CN' : 'en'
     // 目前仅支持 en / zh-CN（都 LTR）。显式注入 dir 以保持与 Web UI 的无障碍行为一致，
     // 并与 packages/vscode/i18n.js::langToDir 白名单对齐，未来加 RTL 语言仅需扩同一套逻辑。
     const rtlPrefixes = ['ar', 'fa', 'he', 'iw', 'ps', 'ur', 'yi', 'ug', 'ckb', 'ku', 'dv', 'sd']
     const htmlLangLower = htmlLang.toLowerCase()
-    const htmlDir = rtlPrefixes.some((p) => htmlLangLower === p || htmlLangLower.startsWith(p + '-'))
+    const htmlDir = rtlPrefixes.some(p => htmlLangLower === p || htmlLangLower.startsWith(p + '-'))
       ? 'rtl'
       : 'ltr'
 
@@ -1473,7 +1590,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     </div>
                 </div>
                 <div class="settings-footer" id="settingsFooter">
-                    <span class="settings-footer-version" data-i18n="settings.footer.version" data-i18n-version="${extensionVersion}">${tl('settings.footer.version').replace('{{version}}', extensionVersion)}</span>
+                    <span class="settings-footer-version" data-i18n="settings.footer.version" data-i18n-version="${extensionVersion}">${tl('settings.footer.version', { version: extensionVersion })}</span>
                     <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer" data-i18n="settings.footer.github">${tl('settings.footer.github')}</a>
                 </div>
                 <div class="settings-hint" id="settingsHint"></div>

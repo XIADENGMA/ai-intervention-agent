@@ -54,7 +54,11 @@ export function toAppleScriptStringLiteral(value: unknown): string {
   return `"${escaped}"`
 }
 
-function makeError(message: string, code: string, extra?: Partial<AppleScriptError>): AppleScriptError {
+function makeError(
+  message: string,
+  code: string,
+  extra?: Partial<AppleScriptError>
+): AppleScriptError {
   const err: AppleScriptError = new Error(message)
   err.code = code
   if (extra) Object.assign(err, extra)
@@ -155,28 +159,51 @@ export class AppleScriptExecutor {
                 !!errAny.killed ||
                 signal === 'SIGTERM' ||
                 signal === 'SIGKILL'
-              const msg = errText || (error.message ? String(error.message) : 'AppleScript execution failed')
+              const msg =
+                errText || (error.message ? String(error.message) : 'AppleScript execution failed')
 
-              const err = makeError(msg, isTimeout ? 'APPLE_SCRIPT_TIMEOUT' : 'APPLE_SCRIPT_FAILED', {
-                cause: error,
-                details: {
-                  osascriptPath, osascriptArgs, timeoutMs, maxBufferBytes,
-                  injectedEnvKeys, durationMs, exitCode, signal,
-                  killed: !!errAny.killed, stderr: errText,
-                  stderrLen: errText.length, stdoutPreview: sanitizeForLog(outText, 240),
-                  stdoutLen: outText.length
+              const err = makeError(
+                msg,
+                isTimeout ? 'APPLE_SCRIPT_TIMEOUT' : 'APPLE_SCRIPT_FAILED',
+                {
+                  cause: error,
+                  details: {
+                    osascriptPath,
+                    osascriptArgs,
+                    timeoutMs,
+                    maxBufferBytes,
+                    injectedEnvKeys,
+                    durationMs,
+                    exitCode,
+                    signal,
+                    killed: !!errAny.killed,
+                    stderr: errText,
+                    stderrLen: errText.length,
+                    stdoutPreview: sanitizeForLog(outText, 240),
+                    stdoutLen: outText.length
+                  }
                 }
-              })
+              )
 
               try {
                 if (this._logger && typeof this._logger.event === 'function') {
                   this._logger.event(
                     'applescript.run.fail',
-                    { code: err.code, durationMs, msg: sanitizeForLog(msg), stderrLen: errText.length, exitCode, signal, injectedEnvKeys },
+                    {
+                      code: err.code,
+                      durationMs,
+                      msg: sanitizeForLog(msg),
+                      stderrLen: errText.length,
+                      exitCode,
+                      signal,
+                      injectedEnvKeys
+                    },
                     { level: 'warn' }
                   )
                 }
-              } catch { /* 忽略 */ }
+              } catch {
+                /* 忽略 */
+              }
 
               reject(err)
               return
@@ -185,9 +212,16 @@ export class AppleScriptExecutor {
             if (errText) {
               const err = makeError(errText, 'APPLE_SCRIPT_STDERR', {
                 details: {
-                  osascriptPath, osascriptArgs, timeoutMs, maxBufferBytes,
-                  injectedEnvKeys, durationMs, stderr: errText, stderrLen: errText.length,
-                  stdoutPreview: sanitizeForLog(outText, 240), stdoutLen: outText.length
+                  osascriptPath,
+                  osascriptArgs,
+                  timeoutMs,
+                  maxBufferBytes,
+                  injectedEnvKeys,
+                  durationMs,
+                  stderr: errText,
+                  stderrLen: errText.length,
+                  stdoutPreview: sanitizeForLog(outText, 240),
+                  stdoutLen: outText.length
                 }
               })
 
@@ -199,7 +233,9 @@ export class AppleScriptExecutor {
                     { level: 'warn' }
                   )
                 }
-              } catch { /* 忽略 */ }
+              } catch {
+                /* 忽略 */
+              }
 
               reject(err)
               return
@@ -213,7 +249,9 @@ export class AppleScriptExecutor {
                   { level: 'debug' }
                 )
               }
-            } catch { /* 忽略 */ }
+            } catch {
+              /* 忽略 */
+            }
 
             resolve(outText)
           }
@@ -222,7 +260,14 @@ export class AppleScriptExecutor {
         const baseErr = e instanceof Error ? e : new Error(String(e))
         const durationMs = Date.now() - startedAt
         const err = makeError(baseErr.message, 'APPLE_SCRIPT_SPAWN_FAILED', {
-          details: { osascriptPath, osascriptArgs, timeoutMs, maxBufferBytes, injectedEnvKeys, durationMs }
+          details: {
+            osascriptPath,
+            osascriptArgs,
+            timeoutMs,
+            maxBufferBytes,
+            injectedEnvKeys,
+            durationMs
+          }
         })
 
         try {
@@ -233,7 +278,9 @@ export class AppleScriptExecutor {
               { level: 'error' }
             )
           }
-        } catch { /* 忽略 */ }
+        } catch {
+          /* 忽略 */
+        }
 
         reject(err)
         return

@@ -5,5 +5,7 @@
   "command.openPanel": "AI Intervention Agent: 打开面板",
   "command.openSettings": "AI Intervention Agent: 打开配置（serverUrl）",
   "config.serverUrl.description": "AI Intervention Agent 服务端地址（建议填写到端口级别，例如 http://localhost:8080）",
-  "config.logLevel.description": "插件日志级别（Output 面板 → AI Intervention Agent）"
+  "config.logLevel.description": "插件日志级别（Output 面板 → AI Intervention Agent）",
+  "config.i18nPseudoLocale.description": "使用伪本地化渲染 webview（仅限开发者；用于在视觉上检查每一条可翻译字符串）。",
+  "config.i18nPseudoLocale.markdownDescription": "使用伪本地化 `[!ňöḉőńţéńț_ńēẉẗàśǩ!]` 等字符渲染 webview，一眼看出硬编码字符串、拼接 bug、布局溢出等问题。**仅限开发者** —— 日常使用请保持关闭。"
 }
