@@ -113,6 +113,47 @@ class _MissingKeyMixin(unittest.TestCase):
         )
         self.assertEqual(out, "missing.key")
 
+    def test_handler_throw_emits_console_warn(self) -> None:
+        # Observability requirement (L3·G3 follow-up): when the caller's
+        # missing-key handler throws AND strict=false, we must still
+        # surface the error via ``console.warn`` so it shows up in the
+        # devtools / host extension log. Silent swallowing hides real
+        # telemetry bugs; this test pins the parity between the Web UI
+        # and VSCode halves so the two copies can't drift again.
+        proc = subprocess.run(
+            [
+                "node",
+                "-e",
+                textwrap.dedent(
+                    """
+                    globalThis.window = globalThis;
+                    globalThis.document = undefined;
+                    globalThis.navigator = { language: 'en' };
+                    require(%(path)s);
+                    const api = globalThis.AIIA_I18N;
+                    api.registerLocale('en', { ok: 'hello' });
+                    api.setLang('en');
+                    api.setMissingKeyHandler(() => {
+                      throw new Error('handler-boom');
+                    });
+                    process.stdout.write(api.t('missing.key'));
+                    """
+                ).strip()
+                % {"path": json.dumps(str(self.I18N_PATH))},
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, "missing.key")
+        # Node's ``console.warn`` writes to stderr. The runtime must
+        # mention both the fault (error message) and enough context to
+        # identify which handler failed.
+        self.assertIn("handler-boom", proc.stderr)
+        self.assertIn("missing-key handler", proc.stderr)
+
     def test_strict_mode_bubbles_exception(self) -> None:
         # Strict + throwing handler → exit 1.
         proc = subprocess.run(

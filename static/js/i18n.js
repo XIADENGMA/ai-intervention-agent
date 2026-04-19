@@ -18,43 +18,222 @@
   var currentLang = DEFAULT_LANG
   var locales = {}
 
-  // Intl.PluralRules 缓存：只按 locale 键，PluralRules 本身没有 options 需要
-  // 区分。单独留这一个缓存表（而不是并入 _intlCache）是因为 _getPluralRules
-  // 在 ICU 热路径上被高频调用，多一次 JSON.stringify + 字符串拼接都要避免。
-  var _pluralRulesCache = {}
+  // Intl 实例缓存（L3·G2）——按 (ctor, locale, JSON(options)) 三元组缓存
+  // ``new Intl.NumberFormat / DateTimeFormat / …`` 实例。Intl 构造器在
+  // 低端移动设备和扩展宿主上单次开销可达毫秒级（见 Node.js
+  // performance 追踪），长列表滚动场景反复构造会明显掉帧；缓存把同一
+  // 屏多次调用摊到 1 次构造。
+  //
+  // LRU 有界：一个长会话若反复变换 NumberFormat options（每个条目各
+  // 自不同的 ``maximumFractionDigits``、ad-hoc style 对象）没有上界会
+  // 持续增长，Node 侧 extension host 没有 GC 压力时尤其危险。我们按
+  // ``Map`` 插入顺序做 LRU，命中时 delete→set 把 key 挪到 tail，满时
+  // drop head。
+  //
+  // 上限值 ``_INTL_LRU_MAX = 50`` / ``_PLURAL_LRU_MAX = 16`` 与
+  // ``tests/test_i18n_intl_cache_lru.py`` 锁定的常量一致；若要调高/
+  // 降低，必须同步更新该测试，避免契约悄悄漂移。
+  var _INTL_LRU_MAX = 50
+  var _PLURAL_LRU_MAX = 16
+  var _pluralRulesCache = new Map()
+  // ICU ``selectordinal`` resolves against a separate CLDR rule set
+  // (``Intl.PluralRules(lang, { type: 'ordinal' })``) — in English
+  // ``plural(3)`` is ``other`` but ``selectordinal(3)`` is ``few``
+  // (3rd). Keeping ordinal rules in their own bucket means hot-path
+  // cardinal callers (e.g. "N items") never evict their ordinal
+  // counterparts and vice-versa, and dashboards can show the two
+  // caches side-by-side.
+  var _pluralRulesOrdinalCache = new Map()
+  var _intlCache = {
+    NumberFormat: new Map(),
+    DateTimeFormat: new Map(),
+    RelativeTimeFormat: new Map(),
+    ListFormat: new Map()
+  }
+
+  // Bidirectional text isolation controls (Unicode UAX #9 §3.1).
+  //
+  // ``_FSI`` / ``_PDI`` bracket an embedded inline segment so the
+  // Unicode Bidirectional Algorithm treats it as an isolate instead
+  // of letting its strong characters bleed into the surrounding
+  // paragraph's directional run. Mozilla's Project Fluent,
+  // ICU4J 74's ``MessageFormatter.formatWithBidiIsolate`` and the
+  // W3C i18n WG's ``qa-bidi-unicode-controls`` all recommend this
+  // wrapping as the default for non-HTML sinks — which is exactly
+  // what the VSCode webview's Output Channel and our HTML ``title``
+  // attributes happen to be. The public ``wrapBidi`` helper
+  // (declared next to the API surface below) applies the pair.
+  var _FSI = '\u2068'
+  var _PDI = '\u2069'
+
+  // ICU AST compile cache (Batch-3 H12).
+  //
+  // ``_findIcuBlock`` + ``_parseIcuOptions`` are pure functions of
+  // the (already apostrophe-escaped) template string. FormatJS's
+  // ``intl-messageformat`` separates parse from format for exactly
+  // the same reason: hot re-renders should not re-walk the string
+  // character-by-character. We cache a descriptor of **all
+  // top-level ICU blocks** for a template once, then ``_renderIcu``
+  // iterates the cached array instead of calling ``_findIcuBlock``
+  // on every call.
+  //
+  // The cache is LRU-bounded to keep long-running webview hosts
+  // (extension host can live for hours) from retaining every
+  // template they ever saw; 256 entries matches FormatJS's default
+  // ``maxCacheSize`` for their parser LRU. Hits refresh insertion
+  // order (delete → set) so MRU templates survive eviction.
+  var _ICU_COMPILE_LRU_MAX = 256
+  var _icuCompileCache = new Map()
+
+  function _touchLru(map, key, value, max) {
+    if (map.has(key)) map.delete(key)
+    map.set(key, value)
+    while (map.size > max) {
+      var firstKey = map.keys().next().value
+      if (firstKey === undefined) break
+      map.delete(firstKey)
+    }
+  }
 
   function _getPluralRules(lang) {
     if (typeof Intl === 'undefined' || typeof Intl.PluralRules !== 'function') {
       return null
     }
-    if (!_pluralRulesCache[lang]) {
-      try {
-        _pluralRulesCache[lang] = new Intl.PluralRules(lang)
-      } catch (e) {
-        _pluralRulesCache[lang] = null
-      }
+    if (_pluralRulesCache.has(lang)) {
+      var hit = _pluralRulesCache.get(lang)
+      // Promote to MRU on every hit so the classic LRU guarantee holds.
+      _pluralRulesCache.delete(lang)
+      _pluralRulesCache.set(lang, hit)
+      return hit
     }
-    return _pluralRulesCache[lang]
+    var instance
+    try {
+      instance = new Intl.PluralRules(lang)
+    } catch (e) {
+      instance = null
+    }
+    _touchLru(_pluralRulesCache, lang, instance, _PLURAL_LRU_MAX)
+    return instance
   }
 
-  // 通用 Intl 工厂缓存：按 (ctor, locale, JSON(options)) 三元组缓存实例。
-  // 构造 DateTimeFormat / NumberFormat 都是毫秒级开销（尤其在低端移动
-  // 设备上），按 options 复用可以把同一屏反复调用摊到 1 次构造。
-  // 键用 JSON.stringify(options)：对于我们用到的 plain-object options 足够
-  // 稳定；哈希冲突仅在同一 locale 内发生，且最坏结果是冷启动一次，不影响
-  // 正确性。
-  var _intlCache = {
-    NumberFormat: {},
-    DateTimeFormat: {},
-    RelativeTimeFormat: {},
-    ListFormat: {}
+  function _getPluralRulesOrdinal(lang) {
+    if (typeof Intl === 'undefined' || typeof Intl.PluralRules !== 'function') {
+      return null
+    }
+    if (_pluralRulesOrdinalCache.has(lang)) {
+      var hit = _pluralRulesOrdinalCache.get(lang)
+      _pluralRulesOrdinalCache.delete(lang)
+      _pluralRulesOrdinalCache.set(lang, hit)
+      return hit
+    }
+    var instance
+    try {
+      instance = new Intl.PluralRules(lang, { type: 'ordinal' })
+    } catch (e) {
+      instance = null
+    }
+    _touchLru(_pluralRulesOrdinalCache, lang, instance, _PLURAL_LRU_MAX)
+    return instance
+  }
+
+  // Canonicalise ``opts`` so ``{a:1,b:2}`` and ``{b:2,a:1}`` share a
+  // cache entry. FormatJS's ``intl-format-cache`` uses the same
+  // sort-then-stringify idiom for the exact same reason: without it,
+  // callers that build options via ``Object.assign`` or spread produce
+  // order-sensitive keys and silently double the LRU footprint.
+  //
+  // Semantics intentionally match ``JSON.stringify`` except for key
+  // order:
+  //   - ``undefined`` at the top level round-trips to ``undefined``
+  //     (caller decides the fallback).
+  //   - ``undefined`` inside an object drops the key (same as JSON).
+  //   - ``undefined`` inside an array becomes ``null`` (same as JSON).
+  //   - Arrays preserve their positional order (arrays have positional
+  //     semantics in every ``Intl.*`` options shape we ship).
+  //   - ``Object.keys`` skips prototype-chain pollution, so a mutated
+  //     ``Object.prototype`` cannot leak extra keys into the cache key.
+  //   - ``toJSON`` on objects (Date, Temporal, user-defined) is honoured
+  //     before the key walk — the same "if toJSON exists, call it and
+  //     recurse" contract JSON.stringify applies — so two distinct Date
+  //     fields don't collapse to the same ``{}`` cache bucket.
+  //   - Cycles throw a tagged error (``err.__aiiaCircular = true``)
+  //     which ``_intlKey`` catches and degrades to a shape-sensitive
+  //     fallback key. Without the guard the recursion overflows the
+  //     stack and lands every cyclic caller on ``lang|?``, silently
+  //     sharing a single Intl instance across unrelated options.
+  function _stableStringify(value) {
+    return _stableStringifyInner(value, new WeakSet())
+  }
+
+  function _stableStringifyInner(value, seen) {
+    if (value === undefined) return undefined
+    if (value === null) return 'null'
+    var t = typeof value
+    if (t === 'bigint') {
+      return JSON.stringify(value.toString() + 'n')
+    }
+    if (t !== 'object') return JSON.stringify(value)
+    if (typeof value.toJSON === 'function') {
+      var viaToJson
+      try {
+        viaToJson = value.toJSON()
+      } catch (e) {
+        viaToJson = undefined
+      }
+      if (viaToJson !== value) {
+        return _stableStringifyInner(viaToJson, seen)
+      }
+    }
+    if (seen.has(value)) {
+      var cycleErr = new Error('_stableStringify: circular reference')
+      cycleErr.__aiiaCircular = true
+      throw cycleErr
+    }
+    seen.add(value)
+    try {
+      if (Array.isArray(value)) {
+        var arr = []
+        for (var i = 0; i < value.length; i++) {
+          var el = _stableStringifyInner(value[i], seen)
+          arr.push(el === undefined ? 'null' : el)
+        }
+        return '[' + arr.join(',') + ']'
+      }
+      var keys = Object.keys(value).sort()
+      var parts = []
+      for (var j = 0; j < keys.length; j++) {
+        var k = keys[j]
+        var v = _stableStringifyInner(value[k], seen)
+        if (v === undefined) continue
+        parts.push(JSON.stringify(k) + ':' + v)
+      }
+      return '{' + parts.join(',') + '}'
+    } finally {
+      seen.delete(value)
+    }
+  }
+
+  // Degraded fallback signature for opts we couldn't canonicalise
+  // (cycles / BigInt in unusual shapes / ToJSON that throws). Takes
+  // only the own top-level key names, alphabetised, so distinct shapes
+  // still collide on distinct fallback keys — never on a single
+  // ``lang|?`` bucket.
+  function _shapeSignature(opts) {
+    if (!opts || typeof opts !== 'object') return ''
+    try {
+      return Object.keys(opts).sort().join(',')
+    } catch (e) {
+      return ''
+    }
   }
 
   function _intlKey(lang, opts) {
     try {
-      return lang + '|' + JSON.stringify(opts || {})
+      var body = _stableStringify(opts || {})
+      return lang + '|' + (body === undefined ? '{}' : body)
     } catch (e) {
-      return lang + '|?'
+      var marker = e && e.__aiiaCircular ? 'cycle' : 'err'
+      return lang + '|?' + marker + '|' + _shapeSignature(opts)
     }
   }
 
@@ -63,23 +242,136 @@
     var bucket = _intlCache[ctor]
     if (!bucket) return null
     var key = _intlKey(lang, opts)
-    if (!(key in bucket)) {
-      try {
-        bucket[key] = new Intl[ctor](lang, opts || undefined)
-      } catch (e) {
-        bucket[key] = null
-      }
+    if (bucket.has(key)) {
+      var hit = bucket.get(key)
+      bucket.delete(key)
+      bucket.set(key, hit)
+      return hit
     }
-    return bucket[key]
+    var instance
+    try {
+      instance = new Intl[ctor](lang, opts || undefined)
+    } catch (e) {
+      instance = null
+    }
+    _touchLru(bucket, key, instance, _INTL_LRU_MAX)
+    return instance
   }
 
   function _getNumberFormat(lang) {
     return _getIntl('NumberFormat', lang, undefined)
   }
 
-  // ICU subset 解析：找到顶层 {arg, plural|select, …} 块。支持块内
-  // 嵌套 { } 对（用于 ICU 的 option body），忽略单花括号 {{param}} 占位
-  // —— 那是本模块自己的 mustache 语法、由 _interpolateMustache 单独处理。
+  // ICU MessagePattern ApostropheMode.DOUBLE_OPTIONAL 实现（L3·G1 续）。
+  // 对齐 ICU4J 默认模式 + FormatJS/messageformat.js 默认行为，**不是**
+  // JDK 兼容的 DOUBLE_REQUIRED：孤立的 `'` 保留字面（例如 ``I don't
+  // know`` 不需要写成 ``I don''t know``），只有 `'{/}/|/#` 才触发 quote
+  // span。
+  //
+  // 规则（来自 ICU4J MessagePattern.ApostropheMode 文档 + messageformat/
+  // messageformat issue tracker）：
+  //   1. ``''`` —— 任意位置都表示字面 ``'``。
+  //   2. ``'`` + 紧跟 {``{``, ``}``, ``|``, ``#``} —— 开启 quote span，
+  //      直到下一个**非成对**的 ``'``。span 内特殊字符全部按字面处理，
+  //      ``''`` 在 span 内依然表示字面 ``'``。span 的开闭 ``'`` 本身被
+  //      吃掉不输出。
+  //   3. 其他孤立的 ``'`` —— 保留字面 ``'``（DOUBLE_OPTIONAL 的关键
+  //      特征；DOUBLE_REQUIRED 会把它当作语法错误并吃掉）。
+  //
+  // 实现策略：tokenize-first。一次线性扫描把「受转义保护」的 ``{}|#'``
+  // 替换成 Private Use Area 标记（``\uE001..\uE005``），让下游的 ICU /
+  // mustache 解析把它们当作普通字符，最后在 ``t()`` 出口一次性还原。
+  // 好处：下游 parser 代码零侵入，也天然支持任意深度嵌套 ICU 块——因为
+  // PUA 字符不是 ICU 语法字符。
+  //
+  // PUA 的选择：``\uE001..\uE005`` 位于 BMP Private Use Area 起始段，
+  // 和任何真实用户文本冲突的概率可以忽略。
+  var _PUA_BRACE_OPEN = '\uE001'
+  var _PUA_BRACE_CLOSE = '\uE002'
+  var _PUA_PIPE = '\uE003'
+  var _PUA_HASH = '\uE004'
+  var _PUA_APOSTROPHE = '\uE005'
+  var _PUA_CLEAN_RE = /[\uE001\uE002\uE003\uE004\uE005]/g
+  function _puaFor(ch) {
+    if (ch === '{') return _PUA_BRACE_OPEN
+    if (ch === '}') return _PUA_BRACE_CLOSE
+    if (ch === '|') return _PUA_PIPE
+    if (ch === '#') return _PUA_HASH
+    return ch
+  }
+  function _icuEscapeApostrophes(str) {
+    if (str.indexOf("'") === -1) return str
+    var out = ''
+    var i = 0
+    var n = str.length
+    while (i < n) {
+      var ch = str.charAt(i)
+      if (ch !== "'") {
+        out += ch
+        i++
+        continue
+      }
+      var next = i + 1 < n ? str.charAt(i + 1) : ''
+      if (next === "'") {
+        out += _PUA_APOSTROPHE
+        i += 2
+        continue
+      }
+      if (next === '{' || next === '}' || next === '|' || next === '#') {
+        // 扫描 quote span 到下一个未成对 ``'``。``''`` 在 span 内是字面
+        // ``'``，不关闭 span（ICU DOUBLE_OPTIONAL 在 span 内部的行为和
+        // DOUBLE_REQUIRED 一致）。
+        var j = i + 1
+        while (j < n) {
+          if (str.charAt(j) === "'") {
+            if (j + 1 < n && str.charAt(j + 1) === "'") {
+              j += 2
+              continue
+            }
+            break
+          }
+          j++
+        }
+        var endIdx = j < n ? j : n
+        for (var k = i + 1; k < endIdx; k++) {
+          var cc = str.charAt(k)
+          if (cc === "'" && k + 1 < endIdx && str.charAt(k + 1) === "'") {
+            out += _PUA_APOSTROPHE
+            k++
+            continue
+          }
+          out += _puaFor(cc)
+        }
+        // 消费闭合 ``'`` 本身；若 span 未闭合到 EOS，ICU spec 允许让它
+        // 延伸到字符串末尾（已经在上面 for 循环里吃完了）。
+        i = endIdx + (j < n ? 1 : 0)
+        continue
+      }
+      // 孤立 ``'`` 后面不跟特殊字符 → 字面。
+      out += "'"
+      i++
+    }
+    return out
+  }
+  function _icuUnescapePua(str) {
+    if (!str) return str
+    return str.replace(_PUA_CLEAN_RE, function (ch) {
+      if (ch === _PUA_BRACE_OPEN) return '{'
+      if (ch === _PUA_BRACE_CLOSE) return '}'
+      if (ch === _PUA_PIPE) return '|'
+      if (ch === _PUA_HASH) return '#'
+      return "'"
+    })
+  }
+
+  // ICU subset 解析：找到顶层 {arg, plural|selectordinal|select, …} 块。
+  // 支持块内嵌套 { } 对（用于 ICU 的 option body），忽略单花括号 {{param}}
+  // 占位——那是本模块自己的 mustache 语法、由 _interpolateMustache 单独处理。
+  //
+  // ``selectordinal`` 与 ``plural`` 的唯一差别是 CLDR 类别（``Intl.PluralRules``
+  // 的 ``{ type: 'ordinal' }`` 模式）；语法、``=N`` exact match、``#``
+  // 占位的作用域规则全部一致。保留在同一个 ``kind`` 字段里，由
+  // ``_selectPluralOption`` 根据 kind 分派给不同的 rule set。
   //
   // 返回 {start, end, argName, kind, options} 或 null。
   function _findIcuBlock(str, from) {
@@ -114,7 +406,7 @@
       }
       var arg = body.substring(0, commaIdx).trim()
       var rest = body.substring(commaIdx + 1).trimStart()
-      var kindMatch = rest.match(/^(plural|select)\s*,\s*/)
+      var kindMatch = rest.match(/^(plural|selectordinal|select)\s*,\s*/)
       if (!kindMatch) {
         i = j + 1
         continue
@@ -166,14 +458,25 @@
     return out
   }
 
-  function _selectPluralOption(options, count, lang) {
+  function _selectPluralOption(options, count, lang, ordinal) {
     // ICU 规范：=N exact match 优先于 CLDR 类别。
     var exactKey = '=' + String(count)
     if (Object.prototype.hasOwnProperty.call(options, exactKey)) {
       return options[exactKey]
     }
-    var rules = _getPluralRules(lang)
-    var category = rules ? rules.select(count) : count === 1 ? 'one' : 'other'
+    var rules = ordinal ? _getPluralRulesOrdinal(lang) : _getPluralRules(lang)
+    // Fallback for environments without Intl.PluralRules: cardinal keeps
+    // the classic English one/other split; ordinal degrades straight to
+    // ``other`` (since no two CLDR languages share ordinal categories,
+    // picking anything else would produce actively wrong output).
+    var category
+    if (rules) {
+      category = rules.select(count)
+    } else if (ordinal) {
+      category = 'other'
+    } else {
+      category = count === 1 ? 'one' : 'other'
+    }
     if (Object.prototype.hasOwnProperty.call(options, category)) {
       return options[category]
     }
@@ -206,43 +509,132 @@
     return String(value)
   }
 
+  // Mustache `{{name}}` interpolation with prototype-pollution hardening.
+  //
+  // Two defensive layers (the same combo Snyk SNYK-JS-I18NEXT-1065979
+  // recommends for i18n pipelines):
+  //   1. Hard-reject the three canonical prototype-pollution keywords
+  //      (`__proto__`, `constructor`, `prototype`) **before** any
+  //      property lookup — even if a caller mistakenly sets them as
+  //      genuine own properties on `params`, we never render them.
+  //   2. Require the remaining names to be **own** properties of
+  //      `params` via `Object.prototype.hasOwnProperty.call`, so
+  //      prototype-inherited methods like `toString` / `hasOwnProperty`
+  //      can never leak `function … { [native code] }` strings into
+  //      user-visible text.
+  //
+  // Unknown names fall through to the literal `{{name}}` so the existing
+  // "undefined param keeps placeholder" contract is preserved.
   function _interpolateMustache(template, params) {
     if (!params || typeof params !== 'object') return template
     return template.replace(/\{\{(\w+)\}\}/g, function (match, name) {
-      return params[name] !== undefined ? String(params[name]) : match
+      if (name === '__proto__' || name === 'constructor' || name === 'prototype') {
+        return match
+      }
+      if (!Object.prototype.hasOwnProperty.call(params, name)) {
+        return match
+      }
+      var value = params[name]
+      return value !== undefined ? String(value) : match
     })
+  }
+
+  // Pre-compute the top-level ICU block layout for a template. See the
+  // ``_icuCompileCache`` comment above for the full rationale. The
+  // returned descriptor is shared across all ``_renderIcu`` calls for
+  // the same template string until it gets LRU-evicted.
+  function _compileIcuTemplate(template) {
+    if (_icuCompileCache.has(template)) {
+      var hit = _icuCompileCache.get(template)
+      _icuCompileCache.delete(template)
+      _icuCompileCache.set(template, hit)
+      return hit
+    }
+    var blocks = []
+    var cursor = 0
+    while (true) {
+      var block = _findIcuBlock(template, cursor)
+      if (!block) break
+      blocks.push(block)
+      cursor = block.end
+    }
+    var compiled = { blocks: blocks, trivial: blocks.length === 0 }
+    _touchLru(_icuCompileCache, template, compiled, _ICU_COMPILE_LRU_MAX)
+    return compiled
   }
 
   function _renderIcu(template, params, lang) {
     if (!params || typeof params !== 'object') return template
+    // Fast path: a template without any ``{`` character cannot host an
+    // ICU block and cannot host a ``{{mustache}}`` placeholder either,
+    // so both the compile-cache lookup and ``_findIcuBlock``'s scan
+    // are pure overhead. Skipping the cache here also prevents post-
+    // hash-replacement literals like ``"3 items"`` — which recurse
+    // through ``_renderIcu`` once per plural branch — from polluting
+    // the LRU with thousands of never-revisited entries.
+    if (template.indexOf('{') === -1) return template
+    var compiled = _compileIcuTemplate(template)
+    if (compiled.trivial) return template
     var result = ''
     var cursor = 0
-    while (true) {
-      var block = _findIcuBlock(template, cursor)
-      if (!block) {
-        result += template.substring(cursor)
-        break
-      }
+    var blocks = compiled.blocks
+    for (var bi = 0; bi < blocks.length; bi++) {
+      var block = blocks[bi]
       result += template.substring(cursor, block.start)
       var argValue = params[block.argName]
       var chosen
-      if (block.kind === 'plural') {
+      if (block.kind === 'plural' || block.kind === 'selectordinal') {
         var n = Number(argValue)
         if (!isFinite(n)) n = 0
-        chosen = _selectPluralOption(block.options, n, lang)
-        // # → 本地化数字。ICU 规定 # 仅在 plural 块里生效。
-        chosen = chosen.replace(/#/g, _formatNumber(n, lang))
+        chosen = _selectPluralOption(block.options, n, lang, block.kind === 'selectordinal')
+        // `#` → 本地化数字。ICU 规定 `#` 的作用域仅限**当前** plural /
+        // selectordinal 分支 body 的顶层文本——任何嵌套 `{…}` 块
+        // （inner plural / inner select / mustache `{{…}}`）内部的 `#`
+        // 属于各自的上下文，绝不能被外层 plural 替换。这里只替换 depth=0
+        // 的 `#`，避免出现 "items=1 + count=3 → 1 steps" 这种作用域串位
+        // 的 bug。
+        chosen = _replaceHashAtDepth0(chosen, _formatNumber(n, lang))
       } else {
         chosen = _selectSelectOption(block.options, argValue)
       }
-      // 递归渲染——option body 可能再嵌套 ICU 或 mustache（YAGNI-lite：
-      // 支持一层嵌套就够覆盖 "you have {n, plural, ...} in {{box}}" 这种）。
+      // 递归渲染——option body 内部可能还有任意层数的嵌套 ICU 块或
+      // mustache 占位符。递归时每一层 plural 各自处理自己的 depth-0 `#`，
+      // 语义等价于 ICU4J MessageFormat 的嵌套行为。每一层递归都会穿过
+      // ``_compileIcuTemplate``，所以 branch body 的解析结果也被复用。
       chosen = _renderIcu(chosen, params, lang)
       chosen = _interpolateMustache(chosen, params)
       result += chosen
       cursor = block.end
     }
+    result += template.substring(cursor)
     return result
+  }
+
+  // 只替换 plural 分支 body 在 depth=0 文本层的 `#`。``{`` / ``}`` 用作
+  // depth 计数器：mustache ``{{name}}`` 的 ``{{…}}`` 在本扫描里算作
+  // depth 0→2→0 的瞬时变化，内容字符处于 depth≥1 不会被误替换；内层
+  // ICU 块 ``{arg, plural, …}`` 同样让 depth>0 保护块内 `#`。apostrophe-
+  // escape 已经把「quote 内字面 ``{``/``}``」替换为 PUA 字符，不再参与
+  // depth 计数，所以 ``'{'`` 这类字面大括号不会破坏扫描。
+  function _replaceHashAtDepth0(str, replacement) {
+    if (!str || str.indexOf('#') === -1) return str
+    var out = ''
+    var depth = 0
+    for (var i = 0, L = str.length; i < L; i++) {
+      var ch = str.charAt(i)
+      if (ch === '{') {
+        depth++
+        out += ch
+      } else if (ch === '}') {
+        if (depth > 0) depth--
+        out += ch
+      } else if (ch === '#' && depth === 0) {
+        out += replacement
+      } else {
+        out += ch
+      }
+    }
+    return out
   }
 
   // Priority (highest → lowest) for detectLang():
@@ -341,17 +733,68 @@
     return Object.keys(locales)
   }
 
-  function resolve(key, lang) {
+  // Key resolution with prototype-pollution hardening.
+  //
+  // The dotted-key descent `node = node[part]` used to rely on the
+  // `typeof === 'string'` fallback to stop values like
+  // `Object.prototype.toString` from ever reaching callers. That's a
+  // fragile fuse (a later refactor that relaxes the type guard would
+  // reopen the hole), so we additionally:
+  //   1. Refuse the three canonical pollution names
+  //      (`__proto__`, `constructor`, `prototype`) at every segment.
+  //   2. Require each segment to be an **own** property of the current
+  //      node via `Object.prototype.hasOwnProperty.call`. An attacker-
+  //      controlled locale bundle that puts a literal `"__proto__"`
+  //      key into the JSON *would* satisfy ownership at that segment,
+  //      but step (1) still blocks it first; a deeply nested
+  //      `ui.toString.foo` lookup falls through here because
+  //      `toString` is prototype-inherited, not own.
+  // Batch-2 H11: ``_resolvePath`` is the walk-and-report helper under
+  // both ``resolve`` (legacy signature, value-or-undefined) and
+  // ``t()``. We return a small tuple so ``t()`` can distinguish three
+  // genuinely different developer mistakes without doubling the
+  // traversal cost:
+  //
+  //   * ``shape: 'ok'``         — leaf string resolved; caller gets it.
+  //   * ``shape: 'missing'``    — a segment was absent, blocked by the
+  //                                prototype-pollution guard, or the
+  //                                locale bundle itself was not loaded.
+  //                                Caller falls through to the default
+  //                                locale and then to ``_reportMissing``.
+  //   * ``shape: 'non-string'`` — traversal reached the last segment
+  //                                but landed on an object / number /
+  //                                null, meaning the caller aimed at
+  //                                a namespace instead of a leaf.
+  //                                Caller should nudge the developer
+  //                                with a *different* warning
+  //                                (``_reportNonString``) whose
+  //                                remedy is to use a deeper key,
+  //                                **not** to add a duplicate leaf.
+  //
+  // The legacy ``resolve`` stays value-or-undefined so the
+  // ``translateDOM`` hot path, ``_renderIcu``, and the existing
+  // missing-key tests never see the new shape.
+  function _resolvePath(key, lang) {
     var dict = locales[lang || currentLang]
     if (!dict) dict = locales[DEFAULT_LANG]
-    if (!dict) return undefined
+    if (!dict) return { value: undefined, shape: 'missing', nodeType: 'undefined' }
     var parts = String(key).split('.')
     var node = dict
     for (var i = 0; i < parts.length; i++) {
-      if (node === null || node === undefined || typeof node !== 'object') return undefined
-      node = node[parts[i]]
+      if (node === null || node === undefined || typeof node !== 'object') {
+        return { value: undefined, shape: 'missing', nodeType: typeof node }
+      }
+      var part = parts[i]
+      if (part === '__proto__' || part === 'constructor' || part === 'prototype') {
+        return { value: undefined, shape: 'missing', nodeType: 'blocked' }
+      }
+      if (!Object.prototype.hasOwnProperty.call(node, part)) {
+        return { value: undefined, shape: 'missing', nodeType: 'undefined' }
+      }
+      node = node[part]
     }
-    return typeof node === 'string' ? node : undefined
+    if (typeof node === 'string') return { value: node, shape: 'ok', nodeType: 'string' }
+    return { value: undefined, shape: 'non-string', nodeType: node === null ? 'null' : typeof node }
   }
 
   // P9·L5·G2: missing-key observability. The default behavior is
@@ -369,6 +812,15 @@
   var _missingKeyHandler = null
   var _strictMissing = false
   var _missingKeyStats = Object.create(null)
+  // Batch-2 H11: once-set for non-string resolves. Keyed by
+  // ``lang + '\u0001' + key`` so a single ``(lang, key)`` pair can
+  // only ever warn once per process — matching how React DevTools,
+  // Vue's ``warn``, and i18next's ``missingKeyHandler`` dedupe
+  // developer-facing noise. ``AIIA_I18N__test.resetNonStringHits``
+  // clears it so tests can assert the first-hit-only contract
+  // without process isolation.
+  var _nonStringHits = Object.create(null)
+  var _NONSTRING_SEP = '\u0001'
 
   function _reportMissing(key, lang) {
     try {
@@ -413,10 +865,53 @@
     _missingKeyStats = Object.create(null)
   }
 
+  // Batch-2 H11: warn-once (per locale+key) diagnostic for the
+  // "namespace instead of leaf" mistake. Kept strictly parallel with
+  // ``_reportMissing``:
+  //   * no handler, strict off → ``console.warn`` once then silent.
+  //   * strict on              → throw so tests / dev builds catch it.
+  //   * always records into ``_nonStringHits`` so ``getNonStringHits``
+  //     can show tests exactly what triggered.
+  function _reportNonString(key, lang, nodeType) {
+    var bucketKey = (lang == null ? '' : String(lang)) + _NONSTRING_SEP + String(key)
+    if (Object.prototype.hasOwnProperty.call(_nonStringHits, bucketKey)) {
+      return
+    }
+    _nonStringHits[bucketKey] = { lang: lang, key: key, type: nodeType }
+    if (_strictMissing) {
+      throw new Error(
+        '[i18n] non-string resolve: ' + key +
+        ' (lang=' + lang + ', type=' + nodeType + ')'
+      )
+    }
+    try {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn(
+          '[i18n] resolved non-string:',
+          key,
+          '(lang=' + lang + ', type=' + nodeType + ', hint: try a deeper key)'
+        )
+      }
+    } catch (_) {
+      /* noop */
+    }
+  }
+
   function t(key, params) {
-    var val = resolve(key, currentLang)
+    var detail = _resolvePath(key, currentLang)
+    var val = detail.value
+    var observed = detail
     if (val === undefined && currentLang !== DEFAULT_LANG) {
-      val = resolve(key, DEFAULT_LANG)
+      var fallback = _resolvePath(key, DEFAULT_LANG)
+      val = fallback.value
+      // Prefer the stronger diagnostic: if the current locale was
+      // plain-missing but the default locale has the key as an
+      // object (namespace), we still want to warn about the
+      // namespace mistake, because the author clearly intended to
+      // hit that path.
+      if (observed.shape === 'missing' && fallback.shape !== 'missing') {
+        observed = fallback
+      }
       // 首次遇到 current lang miss 且 DEFAULT_LANG 尚未加载时，后台拉取。
       // 这里 fire-and-forget：当前这次调用仍会返回 key，但下一次 t(key)
       // 将拿到英文 fallback；ensureDefaultLocale 成功回调里还会重译 DOM，
@@ -426,14 +921,33 @@
       }
     }
     if (val === undefined) {
-      _reportMissing(key, currentLang)
+      if (observed.shape === 'non-string') {
+        _reportNonString(key, currentLang, observed.nodeType)
+      } else {
+        _reportMissing(key, currentLang)
+      }
       return key
     }
-    // Pipeline: ICU (plural/select) → {{mustache}}. 两步不可交换：ICU
-    // option body 内部的 {{…}} 需要先等 ICU 挑出正确分支再插值，避免
-    // 错误分支里的 {{…}} 被提前替换然后被丢弃。
-    val = _renderIcu(val, params, currentLang)
-    val = _interpolateMustache(val, params)
+    // Pipeline: ICU apostrophe tokenize → ICU (plural/select) →
+    // {{mustache}} → detokenize. 顺序要点：
+    //   * tokenize 必须发生在 ICU 解析之前，否则 ``'{literal}'`` 会被
+    //     当成 ICU 块误解析。
+    //   * mustache 在 ICU 之后：ICU option body 内部的 {{…}} 需要先等
+    //     ICU 挑出正确分支再插值，否则错误分支里的 {{…}} 会被提前替换
+    //     然后随分支丢弃。
+    //   * detokenize 一次性还原 PUA 标记。即使 mustache value 里含 PUA
+    //     字符（极端情况），也会被统一还原；这是可接受的代价。
+    //   * params 为 null/undefined 时跳过整个 tokenize 流程，保留
+    //     ``t(key)`` 直接返回原模板的契约，让调用方可以用它探测 key 存在。
+    if (params && typeof params === 'object') {
+      val = _icuEscapeApostrophes(val)
+      val = _renderIcu(val, params, currentLang)
+      val = _interpolateMustache(val, params)
+      val = _icuUnescapePua(val)
+    } else {
+      val = _renderIcu(val, params, currentLang)
+      val = _interpolateMustache(val, params)
+    }
     return val
   }
 
@@ -501,8 +1015,27 @@
   }
 
   // 调用方通常只有两个 Date 的 delta，没有好办法选 unit；这个高阶包装
-  // 按绝对 delta 自动挑 second/minute/hour/day/month/year，阈值遵循
-  // Twitter/Slack 广泛使用的惯例。
+  // 按绝对 delta 自动挑 second/minute/hour/day/month/year。
+  //
+  // 阈值遵循 moment.js 的 relativeTimeThreshold 默认值（s=45/m=45/h=22/
+  // d=26/M=11），这是 day.js/luxon/date-fns-tz 以及几乎所有 humanize
+  // 风格的 UI 库沿用的行业事实标准。选择 moment 表而不是 `< 60 则秒 /
+  // < 3600 则分` 的朴素切分，是因为朴素表会在边界整秒渲染出 "in 60
+  // seconds" / "in 24 hours" / "in 30 days" 这种反直觉输出——从
+  // Twitter/Slack/GitHub 的 UI 复现看，用户期望在 45 秒时就已经看到
+  // "1 minute" 而不是继续数秒。
+  //
+  // 下表以 absSec（绝对秒差）为键：
+  //   absSec <     45 → second
+  //   absSec <  2 700 → minute   (= 45 × 60)
+  //   absSec < 79 200 → hour     (= 22 × 3 600)
+  //   absSec <  2 246 400 → day  (= 26 × 86 400)
+  //   absSec < 28 512 000 → month (= 11 × 30 × 86 400)
+  //   else               → year
+  //
+  // 注：month/year divisor 延续 moment 的「月 = 30 天 / 年 = 365 天」
+  // 粗粒度转换；精确日历换算与 UX 目标（快速粗分类时间轴）无关，留给
+  // 调用方若真需要精确日历差自行传 unit/value 给 formatRelativeTime。
   function formatRelativeFromNow(date, options) {
     var target = _toDate(date)
     var diffMs = target.getTime() - Date.now()
@@ -510,23 +1043,23 @@
     var absSec = Math.abs(diffMs) / 1000
     var sign = diffMs < 0 ? -1 : 1
     var value, unit
-    if (absSec < 60) {
+    if (absSec < 45) {
       value = sign * Math.round(absSec)
       unit = 'second'
-    } else if (absSec < 3600) {
+    } else if (absSec < 2700) {
       value = sign * Math.round(absSec / 60)
       unit = 'minute'
-    } else if (absSec < 86400) {
+    } else if (absSec < 79200) {
       value = sign * Math.round(absSec / 3600)
       unit = 'hour'
-    } else if (absSec < 86400 * 30) {
+    } else if (absSec < 2246400) {
       value = sign * Math.round(absSec / 86400)
       unit = 'day'
-    } else if (absSec < 86400 * 365) {
-      value = sign * Math.round(absSec / (86400 * 30))
+    } else if (absSec < 28512000) {
+      value = sign * Math.round(absSec / 2592000)
       unit = 'month'
     } else {
-      value = sign * Math.round(absSec / (86400 * 365))
+      value = sign * Math.round(absSec / 31536000)
       unit = 'year'
     }
     return formatRelativeTime(value, unit, options)
@@ -586,6 +1119,11 @@
       var hKey = hEl.getAttribute('data-i18n-html')
       if (!hKey) continue
       var hVal = t(hKey)
+      // AIIA-XSS-SAFE: ``data-i18n-html`` is an explicit opt-in that
+      // the locale value is authored markup. The value lives in
+      // locales/*.json (developer-controlled) and ``t()`` does not
+      // interpolate user-provided parameters at this call site. See
+      // docs/i18n.md § Security for the policy contract.
       if (hVal !== hKey) hEl.innerHTML = hVal
     }
 
@@ -706,6 +1244,26 @@
     }
   }
 
+  // Public helper: wrap a fragment in U+2068 FIRST STRONG ISOLATE
+  // / U+2069 POP DIRECTIONAL ISOLATE. See the ``_FSI`` / ``_PDI``
+  // comment near the top of the module for the W3C / UAX #9 §3.1
+  // rationale. Idempotent: already-wrapped input passes through
+  // unchanged so nested call-sites don't balloon into
+  // ``FSI·FSI·FSI·…·PDI·PDI·PDI``.
+  function wrapBidi(value) {
+    if (value === undefined || value === null) return ''
+    var s = typeof value === 'string' ? value : String(value)
+    if (s === '') return ''
+    if (
+      s.length >= 2 &&
+      s.charAt(0) === _FSI &&
+      s.charAt(s.length - 1) === _PDI
+    ) {
+      return s
+    }
+    return _FSI + s + _PDI
+  }
+
   // Pending prefetch flush helper (tests may await this to get
   // deterministic ordering without hacking setTimeout loops). Not part
   // of the public API; exposed via AIIA_I18N__test for the pytest harness.
@@ -716,6 +1274,53 @@
         return _pendingLoads[k]
       })
     )
+  }
+
+  // Cache-introspection hooks for tests/test_i18n_intl_cache_lru.py. These
+  // intentionally live on a ``__test`` object rather than the public API
+  // so production code can grep ``AIIA_I18N__test`` in one sweep to catch
+  // accidental dependencies.
+  function _testingClearIntlCaches() {
+    _pluralRulesCache.clear()
+    _pluralRulesOrdinalCache.clear()
+    _icuCompileCache.clear()
+    var names = Object.keys(_intlCache)
+    for (var i = 0; i < names.length; i++) _intlCache[names[i]].clear()
+  }
+  function _testingGetIcuCompileCacheSize() {
+    return _icuCompileCache.size
+  }
+  function _testingPeekIcuCompileKeys() {
+    return Array.from(_icuCompileCache.keys())
+  }
+  function _testingGetIntlCacheSize(ctor) {
+    var bucket = _intlCache[ctor]
+    return bucket ? bucket.size : 0
+  }
+  function _testingPeekIntlCacheKeys(ctor) {
+    var bucket = _intlCache[ctor]
+    return bucket ? Array.from(bucket.keys()) : []
+  }
+  function _testingGetPluralRulesCacheSize() {
+    return _pluralRulesCache.size
+  }
+  function _testingPeekPluralRulesKeys() {
+    return Array.from(_pluralRulesCache.keys())
+  }
+  function _testingGetPluralRulesOrdinalCacheSize() {
+    return _pluralRulesOrdinalCache.size
+  }
+  function _testingPeekPluralRulesOrdinalKeys() {
+    return Array.from(_pluralRulesOrdinalCache.keys())
+  }
+  function _testingGetNonStringHits() {
+    var out = []
+    var keys = Object.keys(_nonStringHits)
+    for (var i = 0; i < keys.length; i++) out.push(_nonStringHits[keys[i]])
+    return out
+  }
+  function _testingResetNonStringHits() {
+    _nonStringHits = Object.create(null)
   }
 
   var api = {
@@ -735,6 +1340,7 @@
     formatRelativeTime: formatRelativeTime,
     formatRelativeFromNow: formatRelativeFromNow,
     formatList: formatList,
+    wrapBidi: wrapBidi,
     setMissingKeyHandler: setMissingKeyHandler,
     setStrict: setStrict,
     getMissingKeyStats: getMissingKeyStats,
@@ -750,7 +1356,20 @@
   // Test-only hook (NOT part of the public contract). Kept under a
   // distinct name so downstream code never reaches for it.
   try {
-    window.AIIA_I18N__test = { flushPendingLoads: _testingFlushPendingLoads }
+    window.AIIA_I18N__test = {
+      flushPendingLoads: _testingFlushPendingLoads,
+      clearIntlCaches: _testingClearIntlCaches,
+      getIntlCacheSize: _testingGetIntlCacheSize,
+      peekIntlCacheKeys: _testingPeekIntlCacheKeys,
+      getPluralRulesCacheSize: _testingGetPluralRulesCacheSize,
+      peekPluralRulesKeys: _testingPeekPluralRulesKeys,
+      getPluralRulesOrdinalCacheSize: _testingGetPluralRulesOrdinalCacheSize,
+      peekPluralRulesOrdinalKeys: _testingPeekPluralRulesOrdinalKeys,
+      getIcuCompileCacheSize: _testingGetIcuCompileCacheSize,
+      peekIcuCompileKeys: _testingPeekIcuCompileKeys,
+      getNonStringHits: _testingGetNonStringHits,
+      resetNonStringHits: _testingResetNonStringHits
+    }
   } catch (e) {
     /* noop */
   }

@@ -17,43 +17,171 @@
   var currentLang = DEFAULT_LANG
   var locales = {}
 
-  // Intl.PluralRules 缓存：只按 locale 键，PluralRules 本身没有 options 需要
-  // 区分。单独留这一个缓存表（而不是并入 _intlCache）是因为 _getPluralRules
-  // 在 ICU 热路径上被高频调用，多一次 JSON.stringify + 字符串拼接都要避免。
-  var _pluralRulesCache = {}
+  // Intl instance cache + LRU — byte-parallel mirror of static/js/i18n.js.
+  // See that file's comment for the rationale. Hard caps:
+  //   * _INTL_LRU_MAX        = 50 per-ctor bucket
+  //   * _PLURAL_LRU_MAX      = 16 per-module
+  // Any adjustment must be kept in lockstep with the Web UI copy and
+  // with ``tests/test_i18n_intl_cache_lru.py``.
+  var _INTL_LRU_MAX = 50
+  var _PLURAL_LRU_MAX = 16
+  var _pluralRulesCache = new Map()
+  // Byte-parallel mirror of static/js/i18n.js — keep the separate
+  // ordinal bucket so dashboards can compare the two caches side by
+  // side and byte-parity tests stay green.
+  var _pluralRulesOrdinalCache = new Map()
+  var _intlCache = {
+    NumberFormat: new Map(),
+    DateTimeFormat: new Map(),
+    RelativeTimeFormat: new Map(),
+    ListFormat: new Map()
+  }
+
+  // Bidirectional text isolation controls (Unicode UAX #9 §3.1) —
+  // byte-parallel mirror of static/js/i18n.js. See that file for the
+  // full W3C / Project Fluent / ICU4J 74 rationale. The webview's
+  // Output Channel is a plain-text sink that the Unicode
+  // Bidirectional Algorithm is free to reorder in surprising ways
+  // around mixed-directionality fragments, so the helper needs to
+  // exist here too even though the extension host itself never sees
+  // RTL output directly.
+  var _FSI = '\u2068'
+  var _PDI = '\u2069'
+
+  // ICU AST compile cache (Batch-3 H12) — byte-parallel with
+  // static/js/i18n.js. FormatJS's ``intl-messageformat`` splits
+  // parse and format to amortise the parse cost; we do the same
+  // here, caching the top-level ICU block layout for up to
+  // ``_ICU_COMPILE_LRU_MAX`` templates. Hits refresh insertion
+  // order so MRU entries survive eviction. Any adjustment must be
+  // mirrored in ``static/js/i18n.js`` and the
+  // ``tests/test_i18n_icu_compile_cache.py`` cap pin.
+  var _ICU_COMPILE_LRU_MAX = 256
+  var _icuCompileCache = new Map()
+
+  function _touchLru(map, key, value, max) {
+    if (map.has(key)) map.delete(key)
+    map.set(key, value)
+    while (map.size > max) {
+      var firstKey = map.keys().next().value
+      if (firstKey === undefined) break
+      map.delete(firstKey)
+    }
+  }
 
   function _getPluralRules(lang) {
     if (typeof Intl === 'undefined' || typeof Intl.PluralRules !== 'function') {
       return null
     }
-    if (!_pluralRulesCache[lang]) {
-      try {
-        _pluralRulesCache[lang] = new Intl.PluralRules(lang)
-      } catch (e) {
-        _pluralRulesCache[lang] = null
-      }
+    if (_pluralRulesCache.has(lang)) {
+      var hit = _pluralRulesCache.get(lang)
+      _pluralRulesCache.delete(lang)
+      _pluralRulesCache.set(lang, hit)
+      return hit
     }
-    return _pluralRulesCache[lang]
+    var instance
+    try {
+      instance = new Intl.PluralRules(lang)
+    } catch (e) {
+      instance = null
+    }
+    _touchLru(_pluralRulesCache, lang, instance, _PLURAL_LRU_MAX)
+    return instance
   }
 
-  // 通用 Intl 工厂缓存：按 (ctor, locale, JSON(options)) 三元组缓存实例。
-  // 构造 DateTimeFormat / NumberFormat 都是毫秒级开销（尤其在低端移动
-  // 设备上），按 options 复用可以把同一屏反复调用摊到 1 次构造。
-  // 键用 JSON.stringify(options)：对于我们用到的 plain-object options 足够
-  // 稳定；哈希冲突仅在同一 locale 内发生，且最坏结果是冷启动一次，不影响
-  // 正确性。
-  var _intlCache = {
-    NumberFormat: {},
-    DateTimeFormat: {},
-    RelativeTimeFormat: {},
-    ListFormat: {}
+  function _getPluralRulesOrdinal(lang) {
+    if (typeof Intl === 'undefined' || typeof Intl.PluralRules !== 'function') {
+      return null
+    }
+    if (_pluralRulesOrdinalCache.has(lang)) {
+      var hit = _pluralRulesOrdinalCache.get(lang)
+      _pluralRulesOrdinalCache.delete(lang)
+      _pluralRulesOrdinalCache.set(lang, hit)
+      return hit
+    }
+    var instance
+    try {
+      instance = new Intl.PluralRules(lang, { type: 'ordinal' })
+    } catch (e) {
+      instance = null
+    }
+    _touchLru(_pluralRulesOrdinalCache, lang, instance, _PLURAL_LRU_MAX)
+    return instance
+  }
+
+  // Byte-parallel mirror of static/js/i18n.js ``_stableStringify`` /
+  // ``_intlKey``. See that file for rationale (FormatJS's
+  // ``intl-format-cache`` uses the same sort-then-stringify idiom;
+  // cycles / ``toJSON`` / BigInt are handled exactly the same way
+  // there so the byte-parity tests stay green).
+  function _stableStringify(value) {
+    return _stableStringifyInner(value, new WeakSet())
+  }
+
+  function _stableStringifyInner(value, seen) {
+    if (value === undefined) return undefined
+    if (value === null) return 'null'
+    var t = typeof value
+    if (t === 'bigint') {
+      return JSON.stringify(value.toString() + 'n')
+    }
+    if (t !== 'object') return JSON.stringify(value)
+    if (typeof value.toJSON === 'function') {
+      var viaToJson
+      try {
+        viaToJson = value.toJSON()
+      } catch (e) {
+        viaToJson = undefined
+      }
+      if (viaToJson !== value) {
+        return _stableStringifyInner(viaToJson, seen)
+      }
+    }
+    if (seen.has(value)) {
+      var cycleErr = new Error('_stableStringify: circular reference')
+      cycleErr.__aiiaCircular = true
+      throw cycleErr
+    }
+    seen.add(value)
+    try {
+      if (Array.isArray(value)) {
+        var arr = []
+        for (var i = 0; i < value.length; i++) {
+          var el = _stableStringifyInner(value[i], seen)
+          arr.push(el === undefined ? 'null' : el)
+        }
+        return '[' + arr.join(',') + ']'
+      }
+      var keys = Object.keys(value).sort()
+      var parts = []
+      for (var j = 0; j < keys.length; j++) {
+        var k = keys[j]
+        var v = _stableStringifyInner(value[k], seen)
+        if (v === undefined) continue
+        parts.push(JSON.stringify(k) + ':' + v)
+      }
+      return '{' + parts.join(',') + '}'
+    } finally {
+      seen.delete(value)
+    }
+  }
+
+  function _shapeSignature(opts) {
+    if (!opts || typeof opts !== 'object') return ''
+    try {
+      return Object.keys(opts).sort().join(',')
+    } catch (e) {
+      return ''
+    }
   }
 
   function _intlKey(lang, opts) {
     try {
-      return lang + '|' + JSON.stringify(opts || {})
+      var body = _stableStringify(opts || {})
+      return lang + '|' + (body === undefined ? '{}' : body)
     } catch (e) {
-      return lang + '|?'
+      var marker = e && e.__aiiaCircular ? 'cycle' : 'err'
+      return lang + '|?' + marker + '|' + _shapeSignature(opts)
     }
   }
 
@@ -62,18 +190,101 @@
     var bucket = _intlCache[ctor]
     if (!bucket) return null
     var key = _intlKey(lang, opts)
-    if (!(key in bucket)) {
-      try {
-        bucket[key] = new Intl[ctor](lang, opts || undefined)
-      } catch (e) {
-        bucket[key] = null
-      }
+    if (bucket.has(key)) {
+      var hit = bucket.get(key)
+      bucket.delete(key)
+      bucket.set(key, hit)
+      return hit
     }
-    return bucket[key]
+    var instance
+    try {
+      instance = new Intl[ctor](lang, opts || undefined)
+    } catch (e) {
+      instance = null
+    }
+    _touchLru(bucket, key, instance, _INTL_LRU_MAX)
+    return instance
   }
 
   function _getNumberFormat(lang) {
     return _getIntl('NumberFormat', lang, undefined)
+  }
+
+  // Apostrophe-escape tokenizer — byte-parallel mirror of static/js/i18n.js.
+  // See that file's comment for the ICU MessagePattern
+  // ApostropheMode.DOUBLE_OPTIONAL contract (ICU4J / FormatJS default,
+  // lone ``'`` stays literal) and the rationale for the PUA tokenize-then-
+  // detokenize strategy.
+  var _PUA_BRACE_OPEN = '\uE001'
+  var _PUA_BRACE_CLOSE = '\uE002'
+  var _PUA_PIPE = '\uE003'
+  var _PUA_HASH = '\uE004'
+  var _PUA_APOSTROPHE = '\uE005'
+  var _PUA_CLEAN_RE = /[\uE001\uE002\uE003\uE004\uE005]/g
+  function _puaFor(ch) {
+    if (ch === '{') return _PUA_BRACE_OPEN
+    if (ch === '}') return _PUA_BRACE_CLOSE
+    if (ch === '|') return _PUA_PIPE
+    if (ch === '#') return _PUA_HASH
+    return ch
+  }
+  function _icuEscapeApostrophes(str) {
+    if (str.indexOf("'") === -1) return str
+    var out = ''
+    var i = 0
+    var n = str.length
+    while (i < n) {
+      var ch = str.charAt(i)
+      if (ch !== "'") {
+        out += ch
+        i++
+        continue
+      }
+      var next = i + 1 < n ? str.charAt(i + 1) : ''
+      if (next === "'") {
+        out += _PUA_APOSTROPHE
+        i += 2
+        continue
+      }
+      if (next === '{' || next === '}' || next === '|' || next === '#') {
+        var j = i + 1
+        while (j < n) {
+          if (str.charAt(j) === "'") {
+            if (j + 1 < n && str.charAt(j + 1) === "'") {
+              j += 2
+              continue
+            }
+            break
+          }
+          j++
+        }
+        var endIdx = j < n ? j : n
+        for (var k = i + 1; k < endIdx; k++) {
+          var cc = str.charAt(k)
+          if (cc === "'" && k + 1 < endIdx && str.charAt(k + 1) === "'") {
+            out += _PUA_APOSTROPHE
+            k++
+            continue
+          }
+          out += _puaFor(cc)
+        }
+        i = endIdx + (j < n ? 1 : 0)
+        continue
+      }
+      out += "'"
+      i++
+    }
+    return out
+  }
+  function _icuUnescapePua(str) {
+    if (!str) return str
+    return str.replace(_PUA_CLEAN_RE, function (ch) {
+      if (ch === _PUA_BRACE_OPEN) return '{'
+      if (ch === _PUA_BRACE_CLOSE) return '}'
+      if (ch === _PUA_PIPE) return '|'
+      if (ch === _PUA_HASH) return '#'
+      return "'"
+    })
   }
 
   function _findIcuBlock(str, from) {
@@ -105,7 +316,7 @@
       }
       var arg = body.substring(0, commaIdx).trim()
       var rest = body.substring(commaIdx + 1).trimStart()
-      var kindMatch = rest.match(/^(plural|select)\s*,\s*/)
+      var kindMatch = rest.match(/^(plural|selectordinal|select)\s*,\s*/)
       if (!kindMatch) {
         i = j + 1
         continue
@@ -153,13 +364,20 @@
     return out
   }
 
-  function _selectPluralOption(options, count, lang) {
+  function _selectPluralOption(options, count, lang, ordinal) {
     var exactKey = '=' + String(count)
     if (Object.prototype.hasOwnProperty.call(options, exactKey)) {
       return options[exactKey]
     }
-    var rules = _getPluralRules(lang)
-    var category = rules ? rules.select(count) : count === 1 ? 'one' : 'other'
+    var rules = ordinal ? _getPluralRulesOrdinal(lang) : _getPluralRules(lang)
+    var category
+    if (rules) {
+      category = rules.select(count)
+    } else if (ordinal) {
+      category = 'other'
+    } else {
+      category = count === 1 ? 'one' : 'other'
+    }
     if (Object.prototype.hasOwnProperty.call(options, category)) {
       return options[category]
     }
@@ -192,31 +410,73 @@
     return String(value)
   }
 
+  // Byte-parallel mirror of static/js/i18n.js — see that file for the
+  // prototype-pollution rationale (SNYK-JS-I18NEXT-1065979 class of bug).
   function _interpolateMustache(template, params) {
     if (!params || typeof params !== 'object') return template
     return template.replace(/\{\{(\w+)\}\}/g, function (match, name) {
-      return params[name] !== undefined ? String(params[name]) : match
+      if (name === '__proto__' || name === 'constructor' || name === 'prototype') {
+        return match
+      }
+      if (!Object.prototype.hasOwnProperty.call(params, name)) {
+        return match
+      }
+      var value = params[name]
+      return value !== undefined ? String(value) : match
     })
+  }
+
+  // Pre-compute the top-level ICU block layout for a template.
+  // Byte-parallel mirror of ``static/js/i18n.js`` — see that file for
+  // the FormatJS-style parse/format split rationale. LRU-bounded at
+  // ``_ICU_COMPILE_LRU_MAX`` entries so a long-lived extension host
+  // never retains unbounded state.
+  function _compileIcuTemplate(template) {
+    if (_icuCompileCache.has(template)) {
+      var hit = _icuCompileCache.get(template)
+      _icuCompileCache.delete(template)
+      _icuCompileCache.set(template, hit)
+      return hit
+    }
+    var blocks = []
+    var cursor = 0
+    while (true) {
+      var block = _findIcuBlock(template, cursor)
+      if (!block) break
+      blocks.push(block)
+      cursor = block.end
+    }
+    var compiled = { blocks: blocks, trivial: blocks.length === 0 }
+    _touchLru(_icuCompileCache, template, compiled, _ICU_COMPILE_LRU_MAX)
+    return compiled
   }
 
   function _renderIcu(template, params, lang) {
     if (!params || typeof params !== 'object') return template
+    // Fast path: a template without any ``{`` character cannot host
+    // an ICU block, so skip the compile-cache lookup entirely.
+    // Without this guard, post-hash-replacement literals
+    // (``"1 item"`` / ``"2 items"`` / …) would each land in the LRU
+    // once per distinct ``n``, evicting the actual templates that
+    // matter. Byte-parallel mirror of static/js/i18n.js.
+    if (template.indexOf('{') === -1) return template
+    var compiled = _compileIcuTemplate(template)
+    if (compiled.trivial) return template
     var result = ''
     var cursor = 0
-    while (true) {
-      var block = _findIcuBlock(template, cursor)
-      if (!block) {
-        result += template.substring(cursor)
-        break
-      }
+    var blocks = compiled.blocks
+    for (var bi = 0; bi < blocks.length; bi++) {
+      var block = blocks[bi]
       result += template.substring(cursor, block.start)
       var argValue = params[block.argName]
       var chosen
-      if (block.kind === 'plural') {
+      if (block.kind === 'plural' || block.kind === 'selectordinal') {
         var n = Number(argValue)
         if (!isFinite(n)) n = 0
-        chosen = _selectPluralOption(block.options, n, lang)
-        chosen = chosen.replace(/#/g, _formatNumber(n, lang))
+        chosen = _selectPluralOption(block.options, n, lang, block.kind === 'selectordinal')
+        // Only replace `#` at depth 0 — see static/js/i18n.js for the
+        // nested-plural rationale. Byte-parallel mirror.
+        chosen = _replaceHashAtDepth0(chosen, _formatNumber(n, lang))
       } else {
         chosen = _selectSelectOption(block.options, argValue)
       }
@@ -225,7 +485,29 @@
       result += chosen
       cursor = block.end
     }
+    result += template.substring(cursor)
     return result
+  }
+
+  function _replaceHashAtDepth0(str, replacement) {
+    if (!str || str.indexOf('#') === -1) return str
+    var out = ''
+    var depth = 0
+    for (var i = 0, L = str.length; i < L; i++) {
+      var ch = str.charAt(i)
+      if (ch === '{') {
+        depth++
+        out += ch
+      } else if (ch === '}') {
+        if (depth > 0) depth--
+        out += ch
+      } else if (ch === '#' && depth === 0) {
+        out += replacement
+      } else {
+        out += ch
+      }
+    }
+    return out
   }
 
   function detectLang() {
@@ -294,18 +576,34 @@
     return Object.keys(locales)
   }
 
-  function resolve(key, lang) {
+  // Byte-parallel mirror of static/js/i18n.js ``_resolvePath`` — see
+  // that file for the prototype-pollution rationale and the Batch-2
+  // H11 shape-aware tuple contract. Both halves must refuse the same
+  // three canonical pollution names, require own-property ownership at
+  // every segment, and distinguish ``missing`` from ``non-string`` so
+  // the downstream warn-once diagnostic reports the right remedy.
+  function _resolvePath(key, lang) {
     var dict = locales[lang || currentLang]
     if (!dict) dict = locales[DEFAULT_LANG]
-    if (!dict) return undefined
+    if (!dict) return { value: undefined, shape: 'missing', nodeType: 'undefined' }
 
     var parts = String(key).split('.')
     var node = dict
     for (var i = 0; i < parts.length; i++) {
-      if (node === null || node === undefined || typeof node !== 'object') return undefined
-      node = node[parts[i]]
+      if (node === null || node === undefined || typeof node !== 'object') {
+        return { value: undefined, shape: 'missing', nodeType: typeof node }
+      }
+      var part = parts[i]
+      if (part === '__proto__' || part === 'constructor' || part === 'prototype') {
+        return { value: undefined, shape: 'missing', nodeType: 'blocked' }
+      }
+      if (!Object.prototype.hasOwnProperty.call(node, part)) {
+        return { value: undefined, shape: 'missing', nodeType: 'undefined' }
+      }
+      node = node[part]
     }
-    return typeof node === 'string' ? node : undefined
+    if (typeof node === 'string') return { value: node, shape: 'ok', nodeType: 'string' }
+    return { value: undefined, shape: 'non-string', nodeType: node === null ? 'null' : typeof node }
   }
 
   // P9·L5·G2: mirrors static/js/i18n.js — see that file's banner for
@@ -315,6 +613,10 @@
   var _missingKeyHandler = null
   var _strictMissing = false
   var _missingKeyStats = Object.create(null)
+  // Batch-2 H11: once-set for non-string resolves. Byte-parallel with
+  // static/js/i18n.js — see that file's banner for the design rationale.
+  var _nonStringHits = Object.create(null)
+  var _NONSTRING_SEP = '\u0001'
 
   function _reportMissing(key, lang) {
     try {
@@ -327,6 +629,18 @@
         _missingKeyHandler(key, lang)
       } catch (e) {
         if (_strictMissing) throw e
+        // Parity with static/js/i18n.js: a throwing handler in non-strict
+        // mode is a telemetry bug, not a UI bug. Silently swallowing it
+        // would hide the regression from the extension-host devtools /
+        // Output Channel, so surface it via ``console.warn`` (node routes
+        // this to stderr, which extension host also captures).
+        try {
+          if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[i18n] missing-key handler threw:', e)
+          }
+        } catch (_) {
+          /* noop */
+        }
       }
     } else if (_strictMissing) {
       throw new Error('[i18n] missing key: ' + key + ' (lang=' + lang + ')')
@@ -352,20 +666,68 @@
     _missingKeyStats = Object.create(null)
   }
 
+  // Batch-2 H11: byte-parallel mirror of static/js/i18n.js
+  // ``_reportNonString`` — same once-set, same strict-mode throw,
+  // same ``console.warn`` shape. Extension-host captures ``console.warn``
+  // into the Output Channel / Developer Tools, so the signal lands
+  // exactly where the Web UI's warning lands for a browser devtools
+  // user.
+  function _reportNonString(key, lang, nodeType) {
+    var bucketKey = (lang == null ? '' : String(lang)) + _NONSTRING_SEP + String(key)
+    if (Object.prototype.hasOwnProperty.call(_nonStringHits, bucketKey)) {
+      return
+    }
+    _nonStringHits[bucketKey] = { lang: lang, key: key, type: nodeType }
+    if (_strictMissing) {
+      throw new Error(
+        '[i18n] non-string resolve: ' + key +
+        ' (lang=' + lang + ', type=' + nodeType + ')'
+      )
+    }
+    try {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn(
+          '[i18n] resolved non-string:',
+          key,
+          '(lang=' + lang + ', type=' + nodeType + ', hint: try a deeper key)'
+        )
+      }
+    } catch (_) {
+      /* noop */
+    }
+  }
+
   function t(key, params) {
-    var val = resolve(key, currentLang)
+    var detail = _resolvePath(key, currentLang)
+    var val = detail.value
+    var observed = detail
     if (val === undefined && currentLang !== DEFAULT_LANG) {
-      val = resolve(key, DEFAULT_LANG)
+      var fallback = _resolvePath(key, DEFAULT_LANG)
+      val = fallback.value
+      if (observed.shape === 'missing' && fallback.shape !== 'missing') {
+        observed = fallback
+      }
     }
     if (val === undefined) {
-      _reportMissing(key, currentLang)
+      if (observed.shape === 'non-string') {
+        _reportNonString(key, currentLang, observed.nodeType)
+      } else {
+        _reportMissing(key, currentLang)
+      }
       return key
     }
-    // Pipeline: ICU (plural/select) → {{mustache}}. 两步不可交换：ICU
-    // option body 内部的 {{…}} 需要先等 ICU 挑出正确分支再插值，避免
-    // 错误分支里的 {{…}} 被提前替换然后被丢弃。
-    val = _renderIcu(val, params, currentLang)
-    val = _interpolateMustache(val, params)
+    // Pipeline: apostrophe tokenize → ICU → mustache → detokenize.
+    // See static/js/i18n.js for the full rationale; this copy is the
+    // byte-parallel mirror and must render identically on the same input.
+    if (params && typeof params === 'object') {
+      val = _icuEscapeApostrophes(val)
+      val = _renderIcu(val, params, currentLang)
+      val = _interpolateMustache(val, params)
+      val = _icuUnescapePua(val)
+    } else {
+      val = _renderIcu(val, params, currentLang)
+      val = _interpolateMustache(val, params)
+    }
     return val
   }
 
@@ -430,6 +792,11 @@
     return n + ' ' + unit + (Math.abs(n) === 1 ? '' : 's')
   }
 
+  // Bucket selection mirrors static/js/i18n.js — see that file's comment
+  // block for the rationale behind the moment.js 45/45/22/26/11 table.
+  // Keep the two copies byte-parallel: any tweak here MUST be mirrored
+  // there (enforced by tests/test_i18n_relative_time_thresholds.py's
+  // byte-parity case).
   function formatRelativeFromNow(date, options) {
     var target = _toDate(date)
     var diffMs = target.getTime() - Date.now()
@@ -437,23 +804,23 @@
     var absSec = Math.abs(diffMs) / 1000
     var sign = diffMs < 0 ? -1 : 1
     var value, unit
-    if (absSec < 60) {
+    if (absSec < 45) {
       value = sign * Math.round(absSec)
       unit = 'second'
-    } else if (absSec < 3600) {
+    } else if (absSec < 2700) {
       value = sign * Math.round(absSec / 60)
       unit = 'minute'
-    } else if (absSec < 86400) {
+    } else if (absSec < 79200) {
       value = sign * Math.round(absSec / 3600)
       unit = 'hour'
-    } else if (absSec < 86400 * 30) {
+    } else if (absSec < 2246400) {
       value = sign * Math.round(absSec / 86400)
       unit = 'day'
-    } else if (absSec < 86400 * 365) {
-      value = sign * Math.round(absSec / (86400 * 30))
+    } else if (absSec < 28512000) {
+      value = sign * Math.round(absSec / 2592000)
       unit = 'month'
     } else {
-      value = sign * Math.round(absSec / (86400 * 365))
+      value = sign * Math.round(absSec / 31536000)
       unit = 'year'
     }
     return formatRelativeTime(value, unit, options)
@@ -516,6 +883,11 @@
       var hKey = hEl.getAttribute('data-i18n-html')
       if (!hKey) continue
       var hVal = t(hKey)
+      // AIIA-XSS-SAFE: ``data-i18n-html`` is an explicit opt-in that
+      // the locale value is authored markup. The value lives in
+      // locales/*.json (developer-controlled) and ``t()`` does not
+      // interpolate user-provided parameters at this call site. See
+      // docs/i18n.md § Security for the policy contract.
       if (hVal !== hKey) hEl.innerHTML = hVal
     }
 
@@ -612,6 +984,25 @@
     return Promise.resolve(Boolean(locales[DEFAULT_LANG]))
   }
 
+  // Public helper: wrap a fragment in U+2068 FIRST STRONG ISOLATE /
+  // U+2069 POP DIRECTIONAL ISOLATE. Byte-parallel mirror of
+  // static/js/i18n.js — see that file and ``docs/i18n.md §
+  // Bidirectional text isolation`` for the W3C / UAX #9 §3.1
+  // rationale. Idempotent so nested call-sites never balloon.
+  function wrapBidi(value) {
+    if (value === undefined || value === null) return ''
+    var s = typeof value === 'string' ? value : String(value)
+    if (s === '') return ''
+    if (
+      s.length >= 2 &&
+      s.charAt(0) === _FSI &&
+      s.charAt(s.length - 1) === _PDI
+    ) {
+      return s
+    }
+    return _FSI + s + _PDI
+  }
+
   var api = {
     t: t,
     init: init,
@@ -628,6 +1019,7 @@
     formatRelativeTime: formatRelativeTime,
     formatRelativeFromNow: formatRelativeFromNow,
     formatList: formatList,
+    wrapBidi: wrapBidi,
     setMissingKeyHandler: setMissingKeyHandler,
     setStrict: setStrict,
     getMissingKeyStats: getMissingKeyStats,
@@ -640,6 +1032,74 @@
   } catch (e) {
     try {
       window.AIIA_I18N = api
+    } catch (_) {
+      // 忽略
+    }
+  }
+
+  // Test-only cache inspection hook. Mirrored with static/js/i18n.js so
+  // tests/test_i18n_intl_cache_lru.py can exercise the two halves through
+  // the same harness. Kept on ``__test`` to signal "not public API".
+  function _testingClearIntlCaches() {
+    _pluralRulesCache.clear()
+    _pluralRulesOrdinalCache.clear()
+    _icuCompileCache.clear()
+    var names = Object.keys(_intlCache)
+    for (var i = 0; i < names.length; i++) _intlCache[names[i]].clear()
+  }
+  function _testingGetIcuCompileCacheSize() {
+    return _icuCompileCache.size
+  }
+  function _testingPeekIcuCompileKeys() {
+    return Array.from(_icuCompileCache.keys())
+  }
+  function _testingGetIntlCacheSize(ctor) {
+    var bucket = _intlCache[ctor]
+    return bucket ? bucket.size : 0
+  }
+  function _testingPeekIntlCacheKeys(ctor) {
+    var bucket = _intlCache[ctor]
+    return bucket ? Array.from(bucket.keys()) : []
+  }
+  function _testingGetPluralRulesCacheSize() {
+    return _pluralRulesCache.size
+  }
+  function _testingPeekPluralRulesKeys() {
+    return Array.from(_pluralRulesCache.keys())
+  }
+  function _testingGetPluralRulesOrdinalCacheSize() {
+    return _pluralRulesOrdinalCache.size
+  }
+  function _testingPeekPluralRulesOrdinalKeys() {
+    return Array.from(_pluralRulesOrdinalCache.keys())
+  }
+  function _testingGetNonStringHits() {
+    var out = []
+    var keys = Object.keys(_nonStringHits)
+    for (var i = 0; i < keys.length; i++) out.push(_nonStringHits[keys[i]])
+    return out
+  }
+  function _testingResetNonStringHits() {
+    _nonStringHits = Object.create(null)
+  }
+  var _testHookBag = {
+    clearIntlCaches: _testingClearIntlCaches,
+    getIntlCacheSize: _testingGetIntlCacheSize,
+    peekIntlCacheKeys: _testingPeekIntlCacheKeys,
+    getPluralRulesCacheSize: _testingGetPluralRulesCacheSize,
+    peekPluralRulesKeys: _testingPeekPluralRulesKeys,
+    getPluralRulesOrdinalCacheSize: _testingGetPluralRulesOrdinalCacheSize,
+    peekPluralRulesOrdinalKeys: _testingPeekPluralRulesOrdinalKeys,
+    getIcuCompileCacheSize: _testingGetIcuCompileCacheSize,
+    peekIcuCompileKeys: _testingPeekIcuCompileKeys,
+    getNonStringHits: _testingGetNonStringHits,
+    resetNonStringHits: _testingResetNonStringHits
+  }
+  try {
+    globalThis.AIIA_I18N__test = _testHookBag
+  } catch (e) {
+    try {
+      window.AIIA_I18N__test = _testHookBag
     } catch (_) {
       // 忽略
     }

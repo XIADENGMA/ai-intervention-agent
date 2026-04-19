@@ -193,6 +193,139 @@ class TestIcuPluralWebUI(unittest.TestCase):
         out = self._render("en", "items", {"unrelated": True}, locale)
         self.assertEqual(out, "0 items")
 
+    # --- ICU MessagePattern apostrophe-escape (L3·G1 follow-up) ---
+    #
+    # ICU rule recap (from the MessagePattern.ApostropheMode spec and
+    # the messageformat/messageformat issue tracker):
+    #   * ``''`` anywhere → literal ``'``.
+    #   * A single ``'`` immediately followed by ``{``, ``}``, ``|``,
+    #     or ``#`` starts a quoted span that lasts until the next
+    #     un-paired ``'``. Inside the span, special chars are literal.
+    #   * A single ``'`` NOT followed by a special char is literal.
+    #
+    # Before the fix, our parser had no apostrophe state so:
+    #   * ``'{literal}'`` printed with the quotes AND got ``{literal}``
+    #     eaten as a malformed ICU attempt.
+    #   * ``''`` printed as two characters instead of one.
+    # These tests pin the exact ICU semantics.
+
+    def test_apostrophe_double_becomes_single(self) -> None:
+        out = self._render(
+            "en",
+            "msg",
+            {},
+            {"msg": "it''s fine"},
+        )
+        self.assertEqual(out, "it's fine")
+
+    def test_apostrophe_escapes_literal_braces(self) -> None:
+        out = self._render(
+            "en",
+            "msg",
+            {"x": 1},
+            {"msg": "render '{literal}' verbatim"},
+        )
+        self.assertEqual(out, "render {literal} verbatim")
+
+    def test_apostrophe_escapes_plural_hash(self) -> None:
+        # ``'#'`` inside a plural body must print literal '#' rather
+        # than the argument's localised number.
+        locale = {
+            "msg": "{n, plural, one {# item (tag '#')} other {# items (tag '#')}}"
+        }
+        self.assertEqual(self._render("en", "msg", {"n": 1}, locale), "1 item (tag #)")
+        self.assertEqual(self._render("en", "msg", {"n": 3}, locale), "3 items (tag #)")
+
+    def test_apostrophe_lone_remains_literal_without_special_char(self) -> None:
+        # ICU spec: an unpaired ' that is NOT followed by {, }, |, # is
+        # kept as a literal character. The word "don't" must survive.
+        out = self._render(
+            "en",
+            "msg",
+            {},
+            {"msg": "I don't know"},
+        )
+        self.assertEqual(out, "I don't know")
+
+    def test_apostrophe_mixed_double_and_quoted(self) -> None:
+        # Canonical ICU example (from the messageformat tracker):
+        #   "I said '{''Wow!''}'" → "I said {'Wow!'}"
+        # The ``'{`` opens the quoted span, ``''`` inside renders as
+        # literal ``'``, and the trailing ``'`` after ``}`` closes it.
+        out = self._render(
+            "en",
+            "msg",
+            {},
+            {"msg": "I said '{''Wow!''}'"},
+        )
+        self.assertEqual(out, "I said {'Wow!'}")
+
+    # --- Nested ICU (L3·G1 follow-up) ---
+    #
+    # Despite the ``YAGNI`` comment in the source, ``_renderIcu`` calls
+    # itself recursively on option bodies, so in practice we support
+    # arbitrary-depth nesting. These tests pin the actual behaviour so
+    # future refactors can't regress it.
+
+    def test_nested_plural_inside_select(self) -> None:
+        locale = {
+            "msg": (
+                "{status, select, "
+                "ok {{count, plural, one {# task ready} other {# tasks ready}}} "
+                "other {unknown}}"
+            )
+        }
+        self.assertEqual(
+            self._render("en", "msg", {"status": "ok", "count": 1}, locale),
+            "1 task ready",
+        )
+        self.assertEqual(
+            self._render("en", "msg", {"status": "ok", "count": 5}, locale),
+            "5 tasks ready",
+        )
+        self.assertEqual(
+            self._render("en", "msg", {"status": "error"}, locale),
+            "unknown",
+        )
+
+    def test_three_level_nesting_plural_select_plural(self) -> None:
+        # plural → select → plural. Exercises recursion beyond a single
+        # level so the implementation can't be simplified to a shallow
+        # one-level hack without breaking this case.
+        locale = {
+            "msg": (
+                "{items, plural, "
+                "one {{status, select, "
+                "new {just added} "
+                "done {finished} "
+                "other {{count, plural, one {1 step} other {# steps}}}"
+                "}} "
+                "other {# items}}"
+            )
+        }
+        self.assertEqual(
+            self._render(
+                "en",
+                "msg",
+                {"items": 1, "status": "new"},
+                locale,
+            ),
+            "just added",
+        )
+        self.assertEqual(
+            self._render(
+                "en",
+                "msg",
+                {"items": 1, "status": "other", "count": 3},
+                locale,
+            ),
+            "3 steps",
+        )
+        self.assertEqual(
+            self._render("en", "msg", {"items": 5}, locale),
+            "5 items",
+        )
+
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestIcuPluralVSCode(TestIcuPluralWebUI):

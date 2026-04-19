@@ -111,6 +111,11 @@ def _main_impl(argv: list[str]) -> int:
     #   模式直接阻断 —— pytest 侧已经对 scan() 做硬断言，这里再打一道
     #   人类可读报告方便 PR 作者本地预览。
     _run(["uv", "run", "python", "scripts/check_i18n_param_signatures.py", "--strict"])
+    # P10·B3·H13：locale JSON 形状校验。runtime 契约是 tree-of-objects
+    #   with string leaves；数字/布尔/null/数组 leaf 在 ``resolve()``
+    #   里只能退化成 ``[object Object]`` 或空字符串。此门禁在 lint 时
+    #   拦截，比 Batch-2 H11 的 runtime warn-once 更早。
+    _run(["uv", "run", "python", "scripts/check_i18n_locale_shape.py"])
 
     # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
     _run(["uv", "run", "python", "scripts/minify_assets.py"])
@@ -119,6 +124,36 @@ def _main_impl(argv: list[str]) -> int:
     if args.with_coverage:
         pytest_cmd += ["--cov=.", "--cov-report=xml", "--cov-report=term-missing"]
     _run(pytest_cmd)
+
+    # P10·B1.5·H7：两份 i18n.js 的跨特性 red-team smoke。pytest 已经对
+    # 每个单特性做了细粒度断言；这个脚本再跑一遍完整的 ICU/apostrophe/
+    # 嵌套 `#` / LRU / miss-key / prototype-pollution / byte-parity 集成
+    # 面，catch 两半在相同输入下的漂移，顺便给贡献者一个漂亮的 PASS/FAIL
+    # summary。Node 运行环境沿用 --with-vscode 那套解析规则。
+    node_cmd: list[str]
+    if _has_cmd("node"):
+        node_cmd = ["node", "scripts/red_team_i18n_runtime.mjs", "--quiet"]
+    elif _has_cmd("fnm"):
+        node_cmd = [
+            "fnm",
+            "exec",
+            "--using",
+            str(args.node_version),
+            "--",
+            "node",
+            "scripts/red_team_i18n_runtime.mjs",
+            "--quiet",
+        ]
+    else:
+        node_cmd = []
+    if node_cmd:
+        _run(node_cmd)
+    else:
+        print(
+            "[ci_gate] warn: neither node nor fnm available; "
+            "skipping red_team_i18n_runtime.mjs smoke check.",
+            file=sys.stderr,
+        )
 
     if args.with_vscode:
         # 运行前先清理一次，避免误用上次残留产物
