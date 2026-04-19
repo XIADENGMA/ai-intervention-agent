@@ -1,37 +1,13 @@
-"""Pinned random-fuzz parity test (Batch-3 H16).
+"""受控随机 fuzz 的 Web↔VSCode parity 测试（Batch-3 H16）。
 
-Why this matters
-----------------
-Hand-written unit tests have caught the specific edge cases we
-thought to write. They cannot, by construction, find the ones we
-haven't thought of: a random ICU template that happens to exercise
-a corner where ``_renderIcu`` leaks PUA markers, where the
-apostrophe tokenizer double-unescapes a literal, where nested
-plurals drop their ``#`` scope, etc.
+覆盖人工单测容易漏掉的组合（随机 ICU 模板让 ``_renderIcu`` 泄漏 PUA、
+撇号 tokenizer 双重 unescape、嵌套 plural 丢 ``#`` 作用域等）。
 
-FormatJS's own test suite ships snapshot fixtures but no fuzz
-driver. Their maintainers have spoken openly on the Unicode mailing
-list about "bugs we only found after users shipped"; Airbnb's
-polyglot.js and lingui.js have each taken at least one regression
-through the same class of gap.
+固定 ``SEED = 0xA11ABADE`` 驱动语法生成 ~200 条模板+参数，分别跑两份
+``i18n.js``；断言：返回不抛、输出是字符串、Web/VSCode byte-identical、
+U+F0000–U+F0FFF PUA 字符零漏出。
 
-Batch-3 H16 closes this gap with a **deterministic** random fuzz:
-
-* A single Python RNG seed (``SEED = 0xA11ABADE``) drives a grammar
-  that produces ~200 random templates + params.
-* Those templates are rendered through ``static/js/i18n.js`` and
-  ``packages/vscode/i18n.js`` in a single Node invocation each
-  (so runtime stays in the sub-second range).
-* Assertions:
-  - every call returns without throwing (``out`` field present);
-  - output is a ``string``;
-  - Web ↔ VSCode outputs are byte-identical;
-  - no U+F0000–U+F0FFF PUA character leaks (the apostrophe marker
-    must be stripped before return).
-
-Because the RNG is seeded, CI reproduces the exact matrix every
-run. A failing template is printed alongside its seed index so the
-regression can be pinned into the permanent suite.
+seed 固定 → CI 可复现；失败时 seed 下标同时打印，便于拉到永久样本集。
 """
 
 from __future__ import annotations
@@ -62,11 +38,9 @@ def _node_available() -> bool:
 
 
 def _literal(rng: random.Random) -> str:
-    """A short text fragment. Occasionally includes apostrophes
-    and hash marks so the tokenizer is exercised."""
+    """生成短文本片段，偶尔塞入撇号/``#`` 以触发 tokenizer 边界。"""
     length = rng.randint(0, 12)
     pieces = rng.choices(_ALPHABET, k=length)
-    # sprinkle in syntax-sensitive chars
     if rng.random() < 0.15:
         pieces.append("'")
     if rng.random() < 0.10:
@@ -158,8 +132,7 @@ def _build_corpus() -> list[dict]:
 
 
 def _run_node_batch(i18n_path: Path, corpus: list[dict]) -> list[dict]:
-    """Render each corpus entry inside a single node process; write
-    the results as a JSON array on stdout."""
+    """单次 node 调用渲染整个 corpus，结果作为 JSON 数组经 stdout 回传。"""
     harness = textwrap.dedent(
         """
         globalThis.window = globalThis;
@@ -219,7 +192,6 @@ class TestFuzzParity(unittest.TestCase):
 
         for entry, w, v in zip(corpus, web, vsc, strict=True):
             with self.subTest(id=entry["id"], tpl=entry["tpl"]):
-                # neither side throws
                 self.assertNotIn(
                     "err",
                     w,
@@ -230,17 +202,14 @@ class TestFuzzParity(unittest.TestCase):
                     v,
                     f"VSCode threw on seed#{entry['id']}: tpl={entry['tpl']!r}",
                 )
-                # both return strings
                 self.assertIsInstance(w["out"], str)
                 self.assertIsInstance(v["out"], str)
-                # byte-parity across halves
                 self.assertEqual(
                     w["out"],
                     v["out"],
                     f"parity diverged on seed#{entry['id']}:\n  tpl={entry['tpl']!r}\n"
                     f"  web={w['out']!r}\n  vsc={v['out']!r}",
                 )
-                # no PUA marker leak
                 self.assertFalse(
                     _has_pua_leak(w["out"]),
                     f"PUA marker leaked on seed#{entry['id']}: {w['out']!r}",

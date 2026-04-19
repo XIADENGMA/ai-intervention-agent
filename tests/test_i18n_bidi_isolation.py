@@ -1,41 +1,14 @@
-"""W3C / UAX #9 bidi-isolation helper contract (Batch-3 H14).
+"""双向文本隔离 helper 合约（Batch-3 H14，UAX #9 §3.1）。
 
-Why this matters
-----------------
-When a right-to-left locale (Arabic, Hebrew, Farsi) renders a string
-interpolating a left-to-right value — e.g. a filename, URL, or a
-person's name written in Latin script — the Unicode Bidirectional
-Algorithm can reorder glyphs in unexpected ways. The W3C
-``qa-bidi-unicode-controls`` guide and Unicode UAX #9 §3.1 recommend
-wrapping the embedded fragment with U+2068 FIRST STRONG ISOLATE (FSI)
-and U+2069 POP DIRECTIONAL ISOLATE (PDI) — equivalent to
-``<bdi dir="auto">`` in HTML but works in plain text, node sinks and
-VSCode webview Output Channels alike.
+公开 ``AIIA_I18N.wrapBidi(str)`` 给 plain-text sink（日志/Output
+Channel/HTML title）提前就位，未来上阿拉伯/希伯来 locale 不会炸。
 
-Mozilla's Project Fluent ships this as the default for all
-interpolated slots (``fluent.js`` ``@projectfluent/fluent-bundle``),
-and ICU4J 74 added the same wrap through its
-``MessageFormatter.formatWithBidiIsolate`` helper. The Unicode
-Consortium's own recommendation is "enable isolation by default for
-all future bidi embeddings where markup is not available".
-
-Our runtime doesn't yet render any RTL locale, but the tooling needs
-to be in place **before** we ship Arabic/Hebrew so we never discover
-the bug inside a released build. ``AIIA_I18N.wrapBidi(str)`` is the
-public helper; callers that stitch strings by hand (log lines, copy
-buttons showing verbatim user input next to an i18n'd message) use
-it explicitly.
-
-Contract
---------
-* ``wrapBidi(str)`` returns ``'\\u2068' + str + '\\u2069'``.
-* Null / undefined / missing → empty string (never throws).
-* Non-strings → stringified first, then wrapped.
-* Already-wrapped strings (first char FSI, last char PDI) pass through
-  unchanged — idempotent, so repeated calls at nested layers of the
-  stack never balloon into ``FSI·FSI·FSI·…·PDI·PDI·PDI``.
-* The helper is a public API (exposed on ``AIIA_I18N``) so both the
-  Web UI and the VSCode webview copies must ship it with byte-parity.
+合约：
+  * ``wrapBidi(str)`` → ``FSI + str + PDI``（U+2068 / U+2069）
+  * null / undefined / missing → 空串（绝不抛）
+  * 非字符串先 String() 再包
+  * 已包过的（首 FSI 末 PDI）原样返回（幂等，避免嵌套膨胀成 FSI·FSI·…）
+  * 公开 API，Web UI 与 VSCode 必须 byte-parity
 """
 
 from __future__ import annotations
@@ -90,10 +63,7 @@ class _WrapBidiMixin(unittest.TestCase):
         self.assertEqual(out, FSI + "Ada Lovelace" + PDI)
 
     def test_empty_string_round_trips_to_empty(self) -> None:
-        """FSI/PDI of an empty string would still be two invisible
-        code points — we treat empty input as "nothing to isolate"
-        instead and return ``''`` so UI lengths stay as expected.
-        """
+        """空输入直接返回 ``''``，避免给 UI 塞两个不可见控制字符。"""
         body = "process.stdout.write(JSON.stringify(api.wrapBidi('')));"
         code, out, err = _run_node(self.I18N_PATH, body)
         self.assertEqual(code, 0, err)
@@ -123,11 +93,7 @@ class _WrapBidiMixin(unittest.TestCase):
         self.assertEqual(out, payload)
 
     def test_isolates_rtl_segment_between_ltr_text(self) -> None:
-        """The canonical bug this fixes: a Hebrew placeholder sandwiched
-        between English words. Without FSI/PDI, UBA bleeds directional
-        runs across the boundary. The wrapper must produce exactly
-        ``…FSIעבריתPDI…`` so the Hebrew segment owns its own isolate.
-        """
+        """希伯来片段夹在英文里的经典 bug：UBA 会把方向跨边界溢出，必须严格得到 ``FSIעבריתPDI``。"""
         hebrew = "עברית"
         body = f"process.stdout.write(api.wrapBidi({json.dumps(hebrew)}));"
         code, out, err = _run_node(self.I18N_PATH, body)
@@ -155,16 +121,14 @@ class TestWrapBidiVSCode(_WrapBidiMixin):
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestWrapBidiByteParity(unittest.TestCase):
-    """The helper's behaviour must match byte-for-byte across the two
-    ``i18n.js`` copies for every input — this is the same contract we
-    enforce for the rest of the public API."""
+    """两份 i18n.js 对同一输入必须 byte-parity，与其余公共 API 合约一致。"""
 
     def test_parity_over_mixed_latin_cyrillic_hebrew_cjk_samples(self) -> None:
         samples = [
             "Ada",
-            "Иван",  # Cyrillic
-            "עברית",  # Hebrew
-            "abc مرحبا 123",  # mixed Latin + Arabic + digits
+            "Иван",
+            "עברית",
+            "abc مرحبا 123",
             "",
             "45.6",
             FSI + "already" + PDI,

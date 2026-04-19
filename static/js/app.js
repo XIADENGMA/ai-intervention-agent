@@ -505,9 +505,8 @@ async function copyCodeToClipboard(preElement, button) {
 
     // 更新按钮状态
     const originalHTML = button.innerHTML
-    // AIIA-XSS-SAFE: checkIconSvg is a dev-authored SVG literal and
-    // t('status.copied') pulls a static key from locales/*.json (no
-    // user-controlled params). See docs/i18n.md § Security.
+    // AIIA-XSS-SAFE: checkIconSvg 是开发者手写 SVG 字面量；t('status.copied')
+    // 走 locales/*.json 静态 key 且无参数。详见 docs/i18n.md § Security。
     button.innerHTML = checkIconSvg + t('status.copied')
     button.classList.add('copied')
 
@@ -521,8 +520,8 @@ async function copyCodeToClipboard(preElement, button) {
 
     // 显示错误状态
     const originalHTML = button.innerHTML
-    // AIIA-XSS-SAFE: errorIconSvg is a dev-authored SVG literal and
-    // t('status.copyFailed') is a static key with no params.
+    // AIIA-XSS-SAFE: errorIconSvg 是开发者手写 SVG 字面量；t('status.copyFailed')
+    // 走静态 key 且无参数。
     button.innerHTML = errorIconSvg + t('status.copyFailed')
     button.classList.add('error')
 
@@ -987,8 +986,7 @@ async function submitFeedback() {
   try {
     const submitBtn = document.getElementById('submit-btn')
     submitBtn.disabled = true
-    // AIIA-XSS-SAFE: t('status.submitting') is a static key with no
-    // params — output escapes no user-controlled payload.
+    // AIIA-XSS-SAFE: t('status.submitting') 是静态 key 且无参数，不携带用户可控数据。
     submitBtn.innerHTML = t('status.submitting')
 
     // 使用 FormData 上传文件，避免 base64 编码

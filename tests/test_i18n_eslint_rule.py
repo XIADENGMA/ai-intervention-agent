@@ -1,25 +1,16 @@
-"""L4·G2 – guard the ``aiia-i18n/no-missing-i18n-key`` ESLint rule.
+"""L4·G2 – 守护 ``aiia-i18n/no-missing-i18n-key`` ESLint rule。
 
-Why: we ship the rule in ``packages/vscode/eslint-plugin-aiia-i18n.mjs``
-and wire it into ``packages/vscode/eslint.config.mjs`` for every JS /
-MJS source. Those two files are edited in very different situations
-(rule authoring vs project config), so it's easy to disable the rule
-accidentally. This test pokes the linter with a known-bad fixture
-file and asserts:
+规则定义在 ``packages/vscode/eslint-plugin-aiia-i18n.mjs``，由
+``packages/vscode/eslint.config.mjs`` 接入所有 JS/MJS。两文件编辑场景
+割裂（写规则 vs 改项目配置），容易意外 disable。本测试：
+  1. 喂 bad fixture（``t('not.a.real.key')``）→ 至少 1 条 ruleId
+     ``aiia-i18n/no-missing-i18n-key`` 的报错；
+  2. 喂 control fixture（``t('validation.invalidFile')``，真实 key）→
+     该规则 0 报错。
 
-1. The fixture file (``t('not.a.real.key')``) produces **at least one**
-   ESLint problem with ``ruleId == aiia-i18n/no-missing-i18n-key``.
-2. A control fixture with a real key (``t('validation.invalidFile')``)
-   produces **zero** problems from that rule.
-
-Hermetic design
----------------
-We feed the fixtures to ESLint via ``--stdin`` with
-``--stdin-filename`` pointing at a temp file inside
-``packages/vscode/`` (ESLint flat-config requires the input path to
-be under the config root). We parse ``--format json`` so the test
-doesn't depend on text format. If ``npx eslint`` isn't available on
-PATH (e.g. Python-only developer env), the test SKIPs cleanly.
+Hermetic：``--stdin`` + ``--stdin-filename`` 指向 ``packages/vscode/`` 下
+临时文件（flat-config 要求 input path 在 config root 里）；``--format json``
+解析。``npx eslint`` 不在 PATH（纯 Python 环境）时 SKIP。
 """
 
 from __future__ import annotations
@@ -36,13 +27,8 @@ VSCODE_DIR = REPO_ROOT / "packages" / "vscode"
 
 
 def _run_via_shell(cmd: str, timeout: int = 60):
-    """Invoke a command through an interactive ``zsh`` so that
-    ``fnm``-managed ``npx`` / ``node`` shell functions get loaded.
-
-    Direct ``subprocess.run(['npx', ...])`` can't see those shell-level
-    functions and fails with ``command not found``. This mirrors the
-    approach in ``scripts/ci_gate.py`` when invoking ``npm run`` in
-    non-interactive CI."""
+    """通过 interactive zsh 执行命令，以加载 fnm 管理的 ``npx`` / ``node``
+    shell function（直接 subprocess 看不到，与 ``scripts/ci_gate.py`` 同款）。"""
     shell = shutil.which("zsh") or shutil.which("bash")
     if shell is None:
         return None
@@ -56,7 +42,7 @@ def _run_via_shell(cmd: str, timeout: int = 60):
 
 
 def _eslint_available() -> bool:
-    """Probe npx-eslint through an interactive shell (fnm-aware)."""
+    """通过 interactive shell 探测 npx-eslint（fnm-aware）。"""
     if (VSCODE_DIR / "node_modules" / "eslint").is_dir():
         return True
     proc = _run_via_shell(

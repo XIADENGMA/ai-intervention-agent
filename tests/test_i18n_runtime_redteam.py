@@ -1,26 +1,13 @@
-"""Cross-feature runtime red-team — integration scenarios that cut
-across the Batch-1 deepening changes (apostrophe escape, nested ``#``,
-LRU cache, miss-key parity). Single-feature tests pin each behaviour
-in isolation; this file pins the combinatorial surface that surfaces
-only when two or three features interact on the same template.
+"""跨特性 runtime red-team：把 Batch-1 深度加固（撇号、嵌套 ``#``、LRU、
+miss-key parity）在同一个模板里交叉起来，覆盖单特性测试漏掉的组合面。
 
-What's covered
---------------
-R5  Apostrophe escape ∩ plural selection ∩ mustache interpolation, with
-    a quoted ``'#total'`` literal in a plural ``other`` branch that
-    MUST survive as literal text while the unquoted trailing ``#``
-    continues to receive the localised count.
-
-R6  ``PluralRules`` LRU cap holds under a cross-locale plural burst
-    (> 16 distinct BCP-47 tags). Combines the plural pipeline with the
-    LRU eviction policy that bounds memory growth.
-
-BP  Byte-parity sanity: four templates chosen so a regression in any
-    of {apostrophe, nested ``#``, mustache, ICU} immediately diverges
-    the two halves. This is deliberately redundant with
-    ``test_i18n_pseudo_locale`` / ``test_i18n_icu_plural`` / etc. so
-    when CI triages a parity drift, both the "which feature" and
-    "which half" signals come from the same test module.
+覆盖：
+  R5  撇号 ∩ plural 选择 ∩ mustache 插值：``other`` 分支里 ``'#total'``
+      必须保留字面，同分支末尾不带引号的 ``#`` 仍走本地化数字。
+  R6  跨 locale plural 爆发（>16 个 BCP-47 tag）下 PluralRules LRU 不破防。
+  BP  byte-parity 哨兵：4 个模板覆盖 {apostrophe, nested ``#``, mustache, ICU}；
+      任一回归立刻让两半漂移。与 ``test_i18n_pseudo_locale`` / ``test_i18n_icu_plural``
+      故意有重叠，便于 CI 同时定位「哪个特性」+「哪一半」。
 """
 
 from __future__ import annotations
@@ -74,9 +61,7 @@ def _call_t(i18n_path: Path, template: str, params_json: str) -> str:
 
 
 def _call_plural_burst(i18n_path: Path) -> int:
-    """Exercise > PLURAL_LRU_MAX distinct locales to force eviction
-    and return the final PluralRules cache size.
-    """
+    """跑 > PLURAL_LRU_MAX 个不同 locale 触发淘汰，返回最终 PluralRules 桶大小。"""
     script = textwrap.dedent(
         """
         globalThis.window = globalThis;
@@ -120,7 +105,7 @@ def _call_plural_burst(i18n_path: Path) -> int:
     return int(proc.stdout)
 
 
-# R5 cases — apostrophe, plural, mustache all in one template.
+# R5：撇号 + plural + mustache 混在同模板
 R5_TEMPLATE = (
     "You have {count, plural, "
     "one {# task (don't forget!)} "
@@ -142,8 +127,7 @@ R5_CASES = [
     ),
 ]
 
-# BP cases — templates deliberately mix all Batch-1 features so any
-# regression in one half lights up as a byte-parity failure.
+# BP：模板刻意混合所有 Batch-1 特性；任一回归都会在 byte-parity 里炸出来
 BP_CASES = [
     ("greet_plain", "Hello, {{name}}!", '{"name":"Ada"}'),
     (
@@ -183,7 +167,7 @@ class _RedteamMixin(unittest.TestCase):
         self.assertLessEqual(
             size,
             16,
-            f"PluralRules LRU cap breached under cross-locale burst: size={size}",
+            f"跨 locale burst 撑爆了 PluralRules LRU 上限: size={size}",
         )
 
 
@@ -226,7 +210,7 @@ class TestRedTeamByteParity(unittest.TestCase):
                 mismatches.append(f"{label}: web={web!r} vsc={vsc!r}")
         self.assertFalse(
             mismatches,
-            "byte-parity drift between Web UI and VSCode i18n.js:\n  "
+            "Web UI 与 VSCode i18n.js 在 byte-parity 上漂移:\n  "
             + "\n  ".join(mismatches),
         )
 

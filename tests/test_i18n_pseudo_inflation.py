@@ -1,30 +1,17 @@
-"""P9·L9·G2 — pseudo-locale length-inflation assertions.
+"""P9·L9·G2 — pseudo-locale 长度膨胀断言。
 
-The industry-standard target (Microsoft MSDN, Google Material, Apple
-HIG) for pseudo-localized strings is **≥30%** longer than the source.
-This reliably surfaces layout issues in:
+MSDN / Material / Apple HIG 一致的行业目标：pseudo 串比源串长 ≥30%，
+才能挤出 fixed-width 按钮 / chip / ``max-width`` tooltip / ``text-overflow: ellipsis``
+/ 两行 sidebar 等布局问题。``gen_pseudo_locale.py`` docstring 声称 ~35%，
+本文件把这个数字钉住：
+  1. 每份文件平均膨胀 ≥30%；
+  2. 每个叶子被 ``[!! ... !!]`` 包裹（未包等于漏了 ``t()``，是 i18n 空洞）；
+  3. ``{{name}}`` mustache 占位符逐字回传（改内层就破坏 runtime substitution）；
+  4. ICU plural/select 结构 token 逐字回传（否则 runtime parser 挂）。
 
-- Buttons / chips that were sized for short English copy
-- Tooltips with fixed ``max-width``
-- Modal titles with ``text-overflow: ellipsis``
-- Sidebar labels that wrap to two lines
-
-Our ``scripts/gen_pseudo_locale.py`` claims "~35% longer" in its
-docstring but nothing pinned that claim. This file adds the pin:
-
-1. **Per-file** average inflation must hit the ≥30% target.
-2. Every leaf value must be wrapped in ``[!! ... !!]`` brackets so
-   QA can distinguish pseudo-translated strings from hardcoded
-   English (un-bracketed strings are i18n coverage gaps).
-3. Mustache placeholders (``{{name}}``) must round-trip unchanged —
-   any expansion added inside them would break runtime substitution.
-4. ICU plural/select structural tokens must round-trip unchanged —
-   same reason, the runtime parser would fail to recognize the form.
-
-Together these guard the three failure modes that make a pseudo
-locale useless: too short (no overflow pressure), broken structure
-(app crashes instead of just looking weird), or incomplete bracket
-wrapping (can't tell hardcoded from translated)."""
+三类致命失败模式都挡住：过短（无压力）、结构破坏（app 崩而不是看着丑）、
+未全部包裹（分不清硬编码与翻译）。
+"""
 
 from __future__ import annotations
 

@@ -1,16 +1,12 @@
-"""P9·L9·G1 — param-signature parity between t() call sites and locales.
+"""P9·L9·G1 — ``t()`` call site 与 locale 的 param 签名一致性 pytest 镜像。
 
-Pytest mirror of ``scripts/check_i18n_param_signatures.py``. This is
-the strict enforcement layer: the script runs in warn-mode from the
-CI gate (exit 0 always) so contributors can land WIP with placeholder
-drift, but this test file fails the run so merges stay clean.
+对应 ``scripts/check_i18n_param_signatures.py``：脚本以 warn 模式挂在
+CI gate（exit 0，允许 WIP 漂移），本文件以 strict 模式挂在 pytest，
+让合并前回归。
 
-The two-file split is intentional:
-- Script is the dev-facing tool (run locally, pretty report).
-- Test pins the contract so CI refuses to regress.
-
-We also exercise the parser with synthetic inputs so the scanner
-itself has regression coverage, independent of real locale data."""
+双轨拆分意图：脚本是 dev-facing 工具（本地跑、彩色报告），pytest
+锁合约防 CI 回归。另外合成输入直接喂 parser，给扫描器自身兜底。
+"""
 
 from __future__ import annotations
 
@@ -25,12 +21,7 @@ SCRIPT = ROOT / "scripts" / "check_i18n_param_signatures.py"
 
 
 def _load_script_module():
-    """Import the script without running ``main``.
-
-    The script has no ``if __name__`` guard shenanigans we need to
-    worry about — it just defines pure functions — so a raw
-    ``importlib`` load gives us access to the internals for unit
-    testing."""
+    """按模块加载脚本（脚本里全是纯函数，直接 importlib 即可）。"""
     spec = importlib.util.spec_from_file_location("_chk_param", SCRIPT)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -43,8 +34,7 @@ CHK = _load_script_module()
 
 
 class TestPlaceholderExtraction:
-    """Pin the placeholder-regex behavior so future edits don't
-    accidentally narrow or broaden the set of recognized tokens."""
+    """锁占位符正则行为，防止改动缩放识别集合。"""
 
     def test_mustache_only(self) -> None:
         assert CHK._placeholders_in("Hello {{name}}!") == {"name"}
@@ -84,8 +74,7 @@ class TestPlaceholderExtraction:
 
 
 class TestParamExtraction:
-    """Exercise the object-literal parser against the forms we see in
-    real source."""
+    """对真实源码里见过的对象字面量形状跑 parser。"""
 
     def test_shorthand_names(self) -> None:
         # `{ a, b, c }`
@@ -141,8 +130,7 @@ class TestCommentStripping:
 
 
 class TestEndToEndScan:
-    """The live scan must pass against the committed tree — this is
-    what fails the CI build if someone regresses."""
+    """对已提交 tree 跑 live 扫描——回归即挂 CI。"""
 
     def test_no_mismatches_on_real_codebase(self) -> None:
         report = CHK.scan()

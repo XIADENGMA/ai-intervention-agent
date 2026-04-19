@@ -1,42 +1,18 @@
 /**
- * ESLint flat-config plugin: aiia-i18n (L4·G2).
+ * ESLint flat-config 插件：aiia-i18n（L4·G2）。
  *
- * Two rules, both share the same AST walker but differ in severity /
- * default wiring per the TODO copy:
+ * 两条规则共用同一套 AST walker，仅默认启用/别名不同：
+ *   - ``aiia-i18n/no-missing-i18n-key``：``t|_t|tl|hostT|__vuT|__domSecT|__ncT``
+ *     里字面量 key 若不在已加载 locale 中即报错，拦 typo / rename 遗漏 / 复制粘贴错误。
+ *   - ``aiia-i18n/no-undefined-i18n-key``：上者别名（ICU / react-intl 叫法不统一，留作兼容）。
  *
- *   aiia-i18n/no-missing-i18n-key
- *     -- Any ``t|_t|tl|hostT|__vuT|__domSecT|__ncT`` call whose string
- *        literal argument is a key that is NOT present in the loaded
- *        locale JSON files is an error. Catches typos, renames that
- *        missed a call site, and copy-paste errors.
+ * 不做：
+ *   - 参数名校验（``{{count}}`` vs 实参）交 runtime + ``check_i18n_locale_parity.py``；
+ *   - 孤儿 key 扫描交 ``scripts/check_i18n_orphan_keys.py``。
  *
- *   aiia-i18n/no-undefined-i18n-key (alias of the above)
- *     -- Kept because TODO lists both names (ICU/react-intl convention
- *        varies). Downstream can enable either.
- *
- * **Non-goals**:
- *   - We do NOT validate parameter names (``{{count}}`` vs function
- *     args) — that's better handled at runtime and already covered by
- *     ``check_i18n_locale_parity.py`` for placeholder parity.
- *   - We do NOT scan the JSON itself for typo'd keys (orphans) — see
- *     ``scripts/check_i18n_orphan_keys.py``.
- *
- * **Locale resolution**:
- *   The rule loads ``<repoRoot>/packages/vscode/locales/en.json`` at
- *   rule-init time. For a mono-locale-root repo that's enough; when a
- *   project has multiple locale roots, pass them via rule options::
- *
- *     rules: {
- *       'aiia-i18n/no-missing-i18n-key': ['error', {
- *         localePaths: ['path/to/en.json', 'path/to/zh-CN.json']
- *       }]
- *     }
- *
- *   We union keys across all loaded locales and use the union as the
- *   "valid" set. That means a key only present in the secondary
- *   locale still counts as valid (the runtime fallback chain handles
- *   that). We rely on ``check_i18n_locale_parity.py`` + its pytest
- *   mirror to catch per-locale gaps.
+ * Locale 源：默认加载 ``<repo>/packages/vscode/locales/en.json``；多 locale 根时用 rule options
+ * 传 ``localePaths: [...]``。多 locale 取并集作「合法」集合（runtime fallback 链兜底），
+ * per-locale 缺漏由 ``check_i18n_locale_parity.py`` + 其 pytest 镜像抓。
  */
 
 import fs from 'node:fs'

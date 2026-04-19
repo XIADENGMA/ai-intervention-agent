@@ -1,36 +1,19 @@
-"""Prototype-pollution defence for ``_interpolateMustache``.
+"""``_interpolateMustache`` 的原型污染加固（Batch-1.5 H4）。
 
-Background
-----------
-Snyk SNYK-JS-I18NEXT-1065979 tracked a prototype-pollution pathway in
-i18next where attacker-controlled parameter names could reach
-``Object.prototype``-inherited properties and leak internals into the
-rendered UI. Our own ``_interpolateMustache`` accesses ``params[name]``
-directly, so the same family of payloads — ``{{__proto__}}``,
-``{{constructor}}``, ``{{toString}}``, ``{{hasOwnProperty}}`` — bleeds
-``function Object() { [native code] }`` / ``[object Object]`` into the
-translated string even when ``params`` is an empty ``{}``. Rendering
-prototype-walked values into user-visible text is both a correctness
-bug (localised strings shouldn't contain V8 native-function prints)
-and a classic security red flag (information disclosure about the
-runtime's object shape).
+Snyk SNYK-JS-I18NEXT-1065979 记录过 i18next 的原型污染路径——可控参数名
+命中 ``Object.prototype`` 继承属性就把 runtime 内部漏到 UI。本仓
+``_interpolateMustache`` 直接走 ``params[name]``，同类 payload
+（``{{__proto__}}`` / ``{{constructor}}`` / ``{{toString}}`` / ``{{hasOwnProperty}}``）
+即便 ``params = {}`` 也会把 ``function Object() { [native code] }`` /
+``[object Object]`` 渲染出去：既是正确性 bug，也是信息泄漏红线。
 
-Fix contract
-------------
-For every ``{{name}}`` placeholder the renderer must:
-  1. Only substitute when ``params`` owns ``name`` as its *own*
-     enumerable property (``Object.prototype.hasOwnProperty.call``).
-  2. Hard-reject the three canonical pollution vectors
-     (``__proto__``, ``constructor``, ``prototype``) even if somehow
-     set as own properties, so a future bug that merges untrusted
-     JSON straight into ``params`` still can't leak.
-  3. Leave the literal placeholder in place when the lookup fails
-     (preserves the existing "undefined param keeps `{{x}}`" contract
-     the rest of the i18n pipeline relies on).
+合约（每处 ``{{name}}``）：
+  1. 仅当 ``params`` 自有 own 属性命中时替换（``hasOwnProperty.call``）；
+  2. 即便 own 属性里塞了 ``__proto__`` / ``constructor`` / ``prototype``
+     也硬拒，给未来合并不受信 JSON 的场景留后手；
+  3. 命不中保留字面 ``{{x}}``，维持「缺参保占位」既有合约。
 
-This file pins that behaviour across both ``static/js/i18n.js`` and
-``packages/vscode/i18n.js`` so a regression in one half is caught
-before the other half benefits.
+两份 i18n.js 都要通过；任一回归必须立刻挂测试，避免一半先沾上 bug。
 """
 
 from __future__ import annotations
@@ -84,8 +67,7 @@ def _render(i18n_path: Path, template: str, params_json: str) -> str:
     return proc.stdout
 
 
-# Every one of these MUST produce the literal template back, not any
-# flavour of "[object Object]" or "function … { [native code] }".
+# 每条 case 必须原样返回模板字面，绝不能冒出 ``[object Object]`` / ``function … [native code]``
 POLLUTION_CASES = [
     ("proto_from_empty_params", "hello {{__proto__}}", "{}"),
     ("ctor_from_empty_params", "hello {{constructor}}", "{}"),
@@ -93,17 +75,14 @@ POLLUTION_CASES = [
     ("tostring_from_empty_params", "hello {{toString}}", "{}"),
     ("hasownprop_from_empty_params", "hello {{hasOwnProperty}}", "{}"),
     ("propertyisenumerable", "hi {{propertyIsEnumerable}}", "{}"),
-    # Even non-empty params must not leak prototype methods through the
-    # gaps where an "own" name collides with a dangerous reserved word.
+    # 非空 params 也不能因「own 名与保留名冲突」的缝隙漏出原型方法
     ("ctor_with_unrelated_own_prop", "hi {{constructor}}", '{"name":"Ada"}'),
     (
         "proto_with_unrelated_own_prop",
         "hi {{__proto__}}",
         '{"name":"Ada"}',
     ),
-    # Null-prototype params shouldn't bypass either (they don't leak in
-    # practice, but pin the behaviour so a future refactor can't swap
-    # the guard out).
+    # null-prototype params 也不得绕过（实测不泄，但钉住行为防将来重构退防线）
     (
         "tostring_with_null_proto_params",
         "hi {{toString}}",
@@ -123,7 +102,7 @@ class _InterpolationSecurityMixin(unittest.TestCase):
         self.assertEqual(
             out,
             template,
-            f"case={label!r} leaked prototype contents: got={out!r} expect literal={template!r}",
+            f"case={label!r} 漏出原型内容: got={out!r} 期望字面 {template!r}",
         )
 
     def test_own_properties_still_interpolate_normally(self) -> None:
@@ -135,10 +114,7 @@ class _InterpolationSecurityMixin(unittest.TestCase):
         self.assertEqual(out, "hello {{name}}")
 
     def test_reserved_own_key_still_blocked(self) -> None:
-        # Even if a caller manages to set ``__proto__`` as a genuine own
-        # property (e.g. via ``Object.defineProperty``), the renderer
-        # MUST still refuse — attacker-controlled JSON merged straight
-        # into params shouldn't become an exfiltration vector.
+        # 即便 caller 用 ``Object.defineProperty`` 硬塞 ``__proto__`` own property，也必须拒绝
         out = _render(
             self.I18N_PATH,
             "hi {{__proto__}}",

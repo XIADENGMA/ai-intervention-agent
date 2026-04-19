@@ -1,40 +1,22 @@
 #!/usr/bin/env python3
-"""L4·G1 – orphan (dead) i18n key scanner (warn-level CI gate).
+"""L4·G1 – i18n 孤儿 key 扫描（warn 级 CI gate）。
 
-Definition: an "orphan" key is one present in a locale JSON file but
-not referenced from any of the scanned surfaces:
+「孤儿」= locale JSON 里存在但下列 surface 都没引用：
+  * ``templates/web_ui.html`` 的 ``data-i18n[-*]="..."`` 属性；
+  * ``static/js/**/*.js`` 的 ``t('key')`` / ``__…T('key')`` 调用（跳过 vendor/min）；
+  * ``packages/vscode/{webview-ui.js, webview-settings-ui.js,
+    webview-notify-core.js, webview.ts, extension.ts}`` 同款。
 
-- ``templates/web_ui.html`` ``data-i18n="..."`` / ``data-i18n-html="..."`` /
-  ``data-i18n-*="..."`` attributes
-- ``static/js/**/*.js`` ``t('key')`` / ``__…T('key')`` calls (vendor/min
-  files skipped)
-- ``packages/vscode/{webview-ui.js, webview-settings-ui.js,
-  webview-notify-core.js, webview.ts, extension.ts}`` same patterns
+刻意不挂 CI：``tests/test_runtime_behavior.py`` 已经是强制线。此脚本 warn
+级输出（exit 0），允许短暂 unlink 下游 gate 继续跑，贡献者本地 rename 时
+也能直接看 diff。需要强制时用 ``--strict``（dev-only）。
 
-Intentionally NOT failing CI
-----------------------------
-Dead-key failures in ``tests/test_runtime_behavior.py`` are the strict
-line in the sand. This script duplicates the scan but reports as a
-soft warning: it exits ``0`` so ``ci_gate`` keeps flowing through
-downstream gates even if someone lands a locale change that temporarily
-unlinks a key. Contributors can run the script locally before/after a
-rename to see the diff immediately without having to run the full
-pytest suite.
+用法：
+    python scripts/check_i18n_orphan_keys.py           # warn
+    python scripts/check_i18n_orphan_keys.py --strict  # 命中任一孤儿即 exit 1
+    python scripts/check_i18n_orphan_keys.py --json    # 机读
 
-When an orphan set DOES appear in CI, the script still prints a report
-so reviewers can triage it on the PR — but it will never block the merge.
-If you want hard enforcement, set ``--strict`` (dev-only).
-
-Usage
------
-    python scripts/check_i18n_orphan_keys.py           # warn-level
-    python scripts/check_i18n_orphan_keys.py --strict  # exit 1 if any orphan
-    python scripts/check_i18n_orphan_keys.py --json    # machine-readable
-
-Exit codes
-----------
-- ``0`` – scan complete (warn mode) OR no orphans (strict mode)
-- ``1`` – ``--strict`` and at least one orphan found (or scan error)
+Exit：``0`` 扫完（warn）或无孤儿（strict）；``1`` strict 下有孤儿 / 扫描错误。
 """
 
 from __future__ import annotations

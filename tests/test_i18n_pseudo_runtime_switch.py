@@ -1,25 +1,17 @@
-"""P9·L5·G1 — runtime pseudo-locale switch regression.
+"""P9·L5·G1 — runtime pseudo-locale 切换回归。
 
-We generate pseudo JSON as part of the build (``gen_pseudo_locale.py``)
-but without a way to activate it at runtime, developers never see its
-output. These tests guard the four activation paths we want to support:
+``gen_pseudo_locale.py`` 已生成 pseudo JSON，但没有 runtime 激活路径
+开发者就看不到效果。本文件锁定四条激活链：
+  1. ``normalizeLang('pseudo')`` 返回 ``'pseudo'``（不塌陷到 en/zh-CN）；
+  2. Web UI ``loadLocale('pseudo')`` 走 ``i18n.js`` 的 special-case 映射
+     到 ``locales/_pseudo/pseudo.json``；
+  3. Web UI ``detectLang`` 能读取 ``?lang=pseudo`` / ``localStorage['aiia_i18n_lang']``
+     sticky opt-in；
+  4. VSCode 扩展设置 ``ai-intervention-agent.i18n.pseudoLocale`` 声明正确
+     （schema-only；runtime 由 mocha smoke 覆盖）。
 
-1. ``normalizeLang('pseudo')`` returns ``'pseudo'`` (rather than
-   collapsing to ``en`` / ``zh-CN``).
-2. ``loadLocale('pseudo')`` on the Web UI maps to
-   ``locales/_pseudo/pseudo.json`` via the special-case in
-   ``i18n.js``.
-3. The Web UI ``detectLang`` picks up ``?lang=pseudo`` / the
-   ``localStorage['aiia_i18n_lang']`` sticky opt-in.
-4. The VSCode extension setting
-   ``ai-intervention-agent.i18n.pseudoLocale`` is declared correctly
-   (schema-only; runtime wiring is smoke-tested by the mocha harness).
-
-Why pytest instead of the existing mocha suite? The mocha harness is
-VSCode-only (extension-host side); these switches live in the shared
-``i18n.js`` and must be verified against *both* copies. Pytest is the
-cross-cutting layer. Tests SKIP when ``node`` isn't available so
-non-CI developer laptops without Node can still run the suite."""
+本测试跑在两份 ``i18n.js`` 上，``node`` 不可用时 SKIP。
+"""
 
 from __future__ import annotations
 

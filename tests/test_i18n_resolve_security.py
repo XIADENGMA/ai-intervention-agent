@@ -1,32 +1,16 @@
-"""Locale-lookup hardening: ``resolve(key, lang)`` must never walk
-``Object.prototype``.
+"""locale 查找加固（Batch-1.5 H3）：``resolve(key, lang)`` 绝不能遍历
+``Object.prototype``。
 
-Threat model
-------------
-``resolve`` uses dotted-key paths like ``ui.btn.save`` to descend into
-the registered locale dictionary. The descent is ``node = node[part]``,
-which means a malicious or accidentally-polluted locale object could
-let an attacker exfiltrate runtime internals via a key such as
-``__proto__.constructor.name`` — the same family of issues Snyk has
-documented against i18next's own lookup path. Even without an active
-attacker, Object.prototype pollution elsewhere in the runtime (e.g. a
-shared dependency) would let ``resolve`` silently return strings the
-locale bundle never declared.
+威胁：``resolve`` 按 dotted-key 下潜（``node = node[part]``）。恶意或被污染
+的 locale 对象可以让 ``ui.__proto__.constructor.name`` 泄出 runtime 内部
+（Snyk 对 i18next 有同类 CVE）。即便没有主动攻击，任何 shared dep 污染
+``Object.prototype`` 也会让 ``resolve`` 返回 locale 从未声明的字符串。
 
-Fix contract
-------------
-For every dotted segment ``resolve`` must:
-  1. Refuse to traverse the three canonical pollution names
-     (``__proto__``, ``constructor``, ``prototype``). A key like
-     ``ui.__proto__.leak`` MUST resolve as missing, not as whatever
-     ``Object.prototype.leak`` returns.
-  2. Use ``Object.prototype.hasOwnProperty.call(node, part)`` so
-     values inherited through the prototype chain never count as
-     "found". Previously ``locales.en.toString`` would have returned
-     ``"function toString() { [native code] }"`` — which then fails
-     the ``typeof === 'string'`` guard and becomes a missing-key
-     miss, masking the real issue; this test asserts the stricter
-     guard so the class of bug is closed at the source.
+合约（每段必须）：
+  1. 拒绝 ``__proto__`` / ``constructor`` / ``prototype`` 三个关键字；
+  2. 用 ``Object.prototype.hasOwnProperty.call`` 判断，原型链继承属性
+     （如 ``toString``）不算命中，避免 ``typeof === 'string'`` 兜底把问题
+     降级成 missing-key 掩盖。
 """
 
 from __future__ import annotations
@@ -80,9 +64,8 @@ def _probe(i18n_path: Path, locale_expr: str, key: str) -> str:
     return proc.stdout
 
 
-# ``resolve('x.<pollutant>.y', 'en')`` must return the raw key (missing)
-# no matter what the runtime's prototype chain looks like. We build
-# fresh locale objects per case so the test is hermetic.
+# ``resolve('x.<pollutant>.y', 'en')`` 必须返回原始 key（miss）；每 case 用
+# 全新 locale 对象，测试保持 hermetic（不受 runtime 原型链状态影响）
 POLLUTION_KEYS = [
     ("proto_chain", "__proto__.toString"),
     ("ctor_chain", "constructor.name"),
@@ -102,8 +85,7 @@ class _ResolveSecurityMixin(unittest.TestCase):
         self.assertEqual(
             out,
             key,
-            f"case={label!r} resolved a prototype-chain value: got={out!r}; "
-            f"expected raw-key miss fallback {key!r}",
+            f"case={label!r} 泄漏了原型链值: got={out!r}; 期望退化为原始 key {key!r}",
         )
 
     def test_ownership_guard_allows_normal_keys(self) -> None:
@@ -115,10 +97,7 @@ class _ResolveSecurityMixin(unittest.TestCase):
         self.assertEqual(out, "ui.btn.save")
 
     def test_locale_injected_proto_value_not_returned(self) -> None:
-        # Simulate a hand-crafted locale where the attacker managed to
-        # put a ``__proto__``-shaped dictionary entry. ``resolve`` must
-        # ignore it entirely — we don't let attacker-controlled locale
-        # data reach the output even via a literal ``__proto__`` key.
+        # locale 里塞 ``__proto__`` own property 也必须拒绝，不让攻击者可控数据走字面 key 漏出
         locale_expr = (
             "(function(){ const o = {}; "
             'Object.defineProperty(o, "__proto__", { value: { leak: "pwn" }, enumerable: true }); '

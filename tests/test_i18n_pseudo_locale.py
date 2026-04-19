@@ -1,26 +1,16 @@
-"""G4 pytest: verify ``scripts/gen_pseudo_locale.py`` produces a
-well-formed, up-to-date pseudo locale for both Web UI and VSCode webview.
+"""G4：校验 ``scripts/gen_pseudo_locale.py`` 对 Web UI / VSCode webview
+两侧生成的 pseudo locale 形状正确且保持最新。
 
-What this test asserts:
-1. Pseudo locale files exist at the expected path
-   (``<locales>/_pseudo/pseudo.json``).
-2. ``--check`` mode is green — i.e. committed pseudo files are in sync
-   with the current ``en.json`` on each side.
-3. Key set / nesting structure of ``pseudo.json`` mirrors ``en.json``.
-4. Every leaf string has been transformed (wrapped in ``[!! !!]``)
-   and preserves all ``{{placeholder}}`` tokens verbatim.
-5. The transformation is deterministic (running pseudoize twice on the
-   same input gives the same output), so ``--check`` is reliable.
+合约：
+  1. ``<locales>/_pseudo/pseudo.json`` 存在；
+  2. ``--check`` 绿——committed pseudo 与各自 en.json 同步；
+  3. key 集合 / 嵌套结构与 en.json 镜像；
+  4. 每个叶子串都被 ``[!! !!]`` 包裹且 ``{{placeholder}}`` 原样保留；
+  5. 变换幂等——同输入两次 pseudoize 结果一致，``--check`` 才稳。
 
-Why these checks (and not just "did the generator run"):
-- Invariant 3 protects against key drift (en.json adds a key but the
-  committed pseudo.json wasn't regenerated).
-- Invariant 4 is the **whole point** of pseudo-localization: a string
-  that isn't bracketed never went through ``t()`` — it's a hardcoded
-  leak that QA would catch at render time.
-- Invariant 5 guards against non-determinism creeping into the
-  generator (e.g. someone adds a random character insertion) which
-  would make ``--check`` flaky.
+合约 3 防 key drift；合约 4 是 pseudo-localization 全部意义所在（未括
+起来的串等于漏了 ``t()``，QA 渲染时能直观发现）；合约 5 防有人往
+generator 里塞随机字符让 ``--check`` flaky。
 """
 
 from __future__ import annotations

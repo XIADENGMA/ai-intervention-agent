@@ -1,22 +1,15 @@
-"""P9·L7 — backend (Python) i18n hardening.
+"""P9·L7 — backend（Python）i18n 加固。
 
-``i18n.py`` is the backend counterpart of ``static/js/i18n.js`` — it
-ships error messages and notification copy surfaced from the
-Flask/FastMCP layer back to the web UI. Historically this dictionary
-lived in Python with zero test coverage, so it was trivial to:
+``i18n.py`` 是后端对位于 ``static/js/i18n.js`` 的一半——Flask/FastMCP
+层回传给 Web UI 的错误 / 通知文案。早期没测试覆盖，以下坑全是「沉默
+降级」：
+  * ``en`` 加了 key 但 ``zh-CN`` 没补 → 用户明明选中文仍出英文；
+  * 单侧 rename → 一侧 dead、另一侧 missing；
+  * ``{param}`` 占位符只在一侧 → call site 静默丢上下文；
+  * ``get_locale_message("does.not.exist")`` 从 route 走出来 → 只有打开
+    DevTools 才能发现。
 
-- Add an ``en`` key without a matching ``zh-CN`` translation (the
-  site would silently fall back to English even when the user had
-  explicitly picked Chinese).
-- Rename a key in one locale but not the other (dead key on one
-  side, missing key on the other).
-- Add ``{param}`` placeholders that only exist in one locale
-  (call sites would silently drop the context).
-- Call ``get_locale_message("does.not.exist")`` from a route and
-  never notice until the user opened DevTools.
-
-These tests pin the contract so the whole chain stays coherent.
-Each test has a justification in its docstring.
+本文件锁合约，保整条链一致。每个测试的动机见各自 docstring。
 """
 
 from __future__ import annotations

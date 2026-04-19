@@ -1,22 +1,16 @@
-"""P9·L5·G2 — missing-key observability hook.
+"""P9·L5·G2 — missing-key 观测钩子。
 
-``t(key)`` silently returning the raw key when a translation is missing
-is good for robustness (the UI never goes blank) but terrible for dev
-feedback loops — you only find out something's wrong when QA screams.
+``t(key)`` 命中不到时回显原 key 对 UI robustness 很好，但完全屏蔽
+了 dev 反馈循环。三条 API 补上：
+  * ``setMissingKeyHandler(fn)``——``(key, lang)`` 回调，dev tooling
+    / prod telemetry 用；
+  * ``setStrict(on)``——无 handler 时 ``t()`` 直接抛，dev build + 单测搭配；
+  * ``getMissingKeyStats()`` / ``resetMissingKeyStats()``——key→count，
+    给 dev dashboard 高亮热 key。
 
-We added three APIs to close that loop:
-
-- ``setMissingKeyHandler(fn)`` — fired with ``(key, lang)`` whenever a
-  lookup falls through. Intended for dev tooling and prod telemetry.
-- ``setStrict(on)`` — when no handler is set, this makes ``t()`` *throw*
-  on miss. Pair with unit tests + dev builds.
-- ``getMissingKeyStats()`` / ``resetMissingKeyStats()`` — a plain
-  key → count map so a dev dashboard can surface the hot keys.
-
-These tests pin the contract for both copies (``static/js/i18n.js`` and
-``packages/vscode/i18n.js``) so the two never drift. All tests run via
-a node subprocess to exercise the real IIFE module, mirroring the ICU
-suite in ``test_i18n_icu_plural.py``."""
+两份 ``i18n.js`` 都要锁合约；通过 node subprocess 跑真实 IIFE，与
+``test_i18n_icu_plural.py`` 对齐。
+"""
 
 from __future__ import annotations
 

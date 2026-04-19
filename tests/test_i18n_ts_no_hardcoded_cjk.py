@@ -1,26 +1,16 @@
-"""L2·G6: VSCode extension host TypeScript sources must not contain
-hardcoded CJK string literals.
+"""L2·G6：VSCode extension host TypeScript 源码不得带硬编码 CJK 字面量。
 
-Scope
------
-Mirrors ``scripts/check_i18n_ts_no_cjk.py`` as a pytest assertion so
-regressions surface before a contributor even stages a commit. Extension
-host code (``packages/vscode/*.ts``) runs on the Node side and its
-user-facing strings go through ``vscode.l10n.t(...)`` backed by
-``packages/vscode/l10n/bundle.l10n.*.json``. Any inline CJK literal here
-either bypasses translation (zh-CN text in en IDE, or vice versa) or
-leaks through to status bar / error toasts / diagnostic logs.
+对应 ``scripts/check_i18n_ts_no_cjk.py`` 的 pytest 镜像；extension host
+（``packages/vscode/*.ts``）跑在 Node 侧，用户可见串必须走
+``vscode.l10n.t(...)`` → ``l10n/bundle.l10n.*.json`` 链路。任何 inline CJK
+要么绕过翻译（zh-CN 串进 en IDE 反之），要么漏进状态栏 / 错误 toast /
+诊断日志。
 
-The webview JS side is covered by
-``tests/test_i18n_js_no_hardcoded_cjk.py``; together they form the
-i18n string-literal gate for every runtime that ships to the end user.
+Webview JS 侧由 ``tests/test_i18n_js_no_hardcoded_cjk.py`` 覆盖，合起来
+锁住所有面向终端用户的 runtime。
 
-Exemption contract
-------------------
-Append ``// aiia:i18n-allow-cjk`` on the same line to mark a literal as
-intentionally hardcoded. Use sparingly — every exemption is a potential
-translation regression that will never be reported in the bug tracker
-because the affected users cannot read the English test output.
+豁免：行尾 ``// aiia:i18n-allow-cjk``。慎用——受影响的用户往往读不懂
+英文测试输出，回归很难在 issue tracker 露头。
 """
 
 from __future__ import annotations
@@ -35,8 +25,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "check_i18n_ts_no_cjk.py"
 
 
 def _load_gate_module():
-    """Import ``scripts/check_i18n_ts_no_cjk.py`` as a module (the scripts
-    folder is not on ``sys.path`` by default)."""
+    """按模块加载 ``scripts/check_i18n_ts_no_cjk.py``（scripts/ 默认不在 sys.path）。"""
     spec = importlib.util.spec_from_file_location(
         "_aiia_check_i18n_ts_no_cjk", SCRIPT_PATH
     )

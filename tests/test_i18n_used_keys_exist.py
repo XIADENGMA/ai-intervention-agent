@@ -1,36 +1,21 @@
-"""P7·L1·step-13: every i18n key referenced in Web UI JavaScript MUST
-exist in every Web UI locale JSON file.
+"""P7·L1·step-13：Web UI JS 里引用的每个 i18n key 必须在所有 Web UI
+locale JSON 中存在。
 
-Why this test exists
---------------------
-The ``t()`` runtime is forgiving on purpose: if a requested key is not
-present in the current locale it falls back to the default locale
-(``en``), and if still not present it returns the literal key. That
-fallback is a feature for new translations still being typed, but a
-**regression** when the developer misspells a key or forgets to add
-the translation altogether — the UI quietly prints ``foo.bar.baz``
-instead of loudly failing.
+``t()`` 的 forgive 默认值（miss → 回 default → 回 raw key）对在翻的
+新 key 是 feature，对 typo / 漏翻是 regression——UI 静默印 ``foo.bar.baz``
+而不是响报。
 
-Scope
------
-* Covered files: every non-minified ``.js`` under ``static/js/`` plus
-  the HTML template ``templates/web_ui.html`` (which also carries
-  ``data-i18n*`` keys handled by ``translateDOM``).
-* Recognized call sites (stable across the codebase):
-      t('key')           // primary i18n function
-      __vuT('key')       // validation-utils.js local wrapper
-      __domSecT('key')   // dom-security.js local wrapper
-      _t('key')          // multi_task.js local wrapper
-      data-i18n*="key"   // HTML template attribute bindings
-* Dynamic keys (``t(variable)`` or ``t('prefix.' + suffix)``) cannot be
-  statically resolved and are intentionally skipped — we accept that
-  trade-off rather than ban template-based key construction.
+覆盖范围：
+  * ``static/js/**`` 非 min JS + ``templates/web_ui.html``（其
+    ``data-i18n*`` 属性由 ``translateDOM`` 处理）；
+  * 识别的 call site（codebase 稳定）：``t('key')`` / ``__vuT('key')``
+    （validation-utils）/ ``__domSecT('key')``（dom-security）/
+    ``_t('key')``（multi_task）/ ``data-i18n*="key"``；
+  * 动态 key（``t(variable)`` / ``t('prefix.' + suffix)``）无法静态解析，
+    刻意跳过——接受这个 trade-off，不禁模板 key 构造。
 
-What counts as "exists"
------------------------
-A key ``a.b.c`` exists in a locale iff traversing the JSON by each dot
-segment lands on a string leaf. A missing segment or a mid-path string
-(which would shadow the rest) both count as missing.
+「存在」判定：``a.b.c`` 按点段走 JSON，最终落在字符串叶子。中途缺段 /
+中途命到非叶子字符串都算 missing。
 """
 
 from __future__ import annotations

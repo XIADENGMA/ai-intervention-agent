@@ -1,29 +1,17 @@
-"""P7·L1·step-12: Web UI JS sources must not contain hardcoded CJK string
-literals. User-visible text belongs in ``static/locales/*.json`` and must
-be rendered through ``t('...')``; anything else couples the UI copy to a
-single language and blocks future locales.
+"""P7·L1·step-12：Web UI JS 源码不得带硬编码 CJK 字面量。用户可见串必
+须落在 ``static/locales/*.json`` 并通过 ``t('...')`` 渲染，否则 UI 文案
+被绑死在单一语言，未来 locale 无从扩展。
 
-Why this lives in pytest *and* in ``scripts/check_i18n_js_no_cjk.py``
-(redundancy is intentional):
-    * The CLI gate runs in CI (``ci_gate.py``) and on pre-commit hooks,
-      catching regressions before they land on a branch.
-    * The pytest assertion runs on every local ``pytest`` invocation a
-      contributor types, catching regressions *before* they even stage
-      a commit. When a test fails the developer sees the offending
-      file/line inline, which is faster than waiting for a CI red X.
+CLI gate（``scripts/check_i18n_js_no_cjk.py``）+ pytest 双轨刻意冗余：
+  * CLI gate 跑在 CI + pre-commit，挡住提交到分支的回归；
+  * pytest 在本地 ``pytest`` 时响，比等 CI 红 X 更早给到行号。
 
-Scope note:
-    Only the **Web UI** (``static/js/*``) is covered today. The VSCode
-    webview (``packages/vscode/*``) has ~66 legacy CJK literals that
-    pre-date the i18n refactor; those will be migrated in a follow-up
-    pass (tracked as P8). When that happens, flip the scan scope to
-    ``"all"`` and drop this note.
+当前范围：仅 Web UI（``static/js/*``）。VSCode webview（``packages/vscode/*``）
+有 ~66 条 i18n 化之前的 legacy CJK 字面量，P8 里统一迁移；届时把 scope
+开到 ``"all"`` 并删掉本注解。
 
-Exemption contract (shared with the CLI gate):
-    Append ``// aiia:i18n-allow-cjk`` on the same line to mark a literal
-    as intentionally hardcoded (e.g. an AI-prompt default that must
-    remain in Chinese regardless of UI locale). Use sparingly — every
-    exemption is a potential translation regression.
+豁免（与 CLI gate 共享）：同行尾部 ``// aiia:i18n-allow-cjk`` 标记刻意
+硬编码（例如 AI prompt 默认值要求保留中文）。慎用。
 """
 
 from __future__ import annotations
@@ -38,8 +26,7 @@ SCRIPT_PATH = REPO_ROOT / "scripts" / "check_i18n_js_no_cjk.py"
 
 
 def _load_gate_module():
-    """Import ``scripts/check_i18n_js_no_cjk.py`` as a module (the scripts
-    folder is not on ``sys.path`` by default)."""
+    """按模块加载 ``scripts/check_i18n_js_no_cjk.py``（scripts/ 默认不在 sys.path）。"""
     spec = importlib.util.spec_from_file_location(
         "_aiia_check_i18n_js_no_cjk", SCRIPT_PATH
     )
@@ -51,7 +38,7 @@ def _load_gate_module():
 
 
 class TestWebUiJsHasNoHardcodedCjk(unittest.TestCase):
-    """No file under ``static/js/`` may contain a CJK string literal."""
+    """``static/js/`` 下任何文件都不得含 CJK 字符串字面量。"""
 
     def test_webui_js_is_cjk_free(self) -> None:
         gate = _load_gate_module()

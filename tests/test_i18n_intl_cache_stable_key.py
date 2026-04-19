@@ -1,39 +1,16 @@
-"""Stable-sorted cache key for ``_intlCache`` and ``_pluralRulesCache``.
+"""``_intlCache`` / ``_pluralRulesCache`` 的稳定排序 cache key（Batch-1.5 H1）。
 
-Why this matters
-----------------
-FormatJS's ``intl-format-cache`` package (canonical reference for the
-"memoise ``new Intl.*`` instances" pattern the whole ecosystem uses)
-explicitly sorts the options object's keys before JSON-stringifying.
-Without that sort, two semantically-identical option objects created
-with different key insertion order — e.g. ``{a:1,b:2}`` vs
-``Object.assign({}, {b:2}, {a:1})``, or anything produced by spreading
-an API response — produce distinct cache keys, silently doubling memory
-pressure and shrinking our effective LRU budget.
+FormatJS ``intl-format-cache`` 在 JSON-stringify 前强制排序 options key，
+否则同义但 key 顺序不同的 options（``Object.assign`` / spread 产物）会产
+生不同缓存项，悄悄让 LRU 体积翻倍。
 
-The surface bug a user would hit:
-    formatNumber(1, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
-    formatNumber(1, { maximumFractionDigits: 2, currency: 'USD', style: 'currency' })
-    // before stable-sort: two entries, cap-50 bucket halves to 25 fresh slots
-    // after stable-sort:   one entry, full 50 slots available
+合约（两份 i18n.js 必须一致）：
+  * 递归排序所有嵌套对象 key；
+  * 数组保序（Intl options 里数组都是位置语义）；
+  * 任何 key 排列的序列化结果一致，两份 i18n.js 需 byte-parity。
 
-Fix contract
-------------
-Both ``static/js/i18n.js`` and ``packages/vscode/i18n.js`` must:
-  * Recursively sort all nested object keys when building the cache key.
-  * Treat arrays as order-preserving (arrays have positional semantics
-    in every Intl options shape we ship — ``formatToParts`` doesn't
-    take any — so we just serialise them in the order given).
-  * Produce identical stringified keys for any permutation of nested
-    options, across both copies (Web UI / VSCode), so byte-parity
-    holds for dashboard-quality caching invariants.
-
-Test harness
-------------
-We exercise the observable effect (``dbg.getIntlCacheSize`` and
-``dbg.peekIntlCacheKeys``) rather than the private ``_intlKey``
-function; that keeps the test aligned with the public contract
-callers actually depend on.
+测试走 ``dbg.getIntlCacheSize`` / ``dbg.peekIntlCacheKeys`` 的可观察效
+果，而非私有 ``_intlKey``，与调用方真正依赖的契约对齐。
 """
 
 from __future__ import annotations
@@ -105,9 +82,7 @@ class _StableKeyMixin(unittest.TestCase):
         )
 
     def test_nested_option_keys_are_order_agnostic(self) -> None:
-        # ``Intl.DateTimeFormat`` accepts a nested ``hour12`` / ``timeStyle``
-        # shape; real-world callers build these via ``Object.assign`` so the
-        # key order isn't guaranteed. The cache must treat them as equal.
+        # DateTimeFormat 的嵌套 options 常由 Object.assign 拼出，key 顺序不定，必须等价命中
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -121,8 +96,7 @@ class _StableKeyMixin(unittest.TestCase):
         self.assertEqual(int(out.strip()), 1)
 
     def test_distinct_option_values_still_occupy_distinct_entries(self) -> None:
-        # Stable-sort must NOT collapse genuinely different options into one
-        # key; we want dedup, not collision.
+        # 稳定排序只做去重，不能让真正不同的 options 撞 key
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -151,10 +125,7 @@ class TestStableKeyVSCode(_StableKeyMixin):
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestStableKeyByteParity(unittest.TestCase):
-    """Both halves must serialise identical canonical keys so dashboards
-    or CI snapshots don't diff when we compare cache dumps across the
-    Web UI and the VSCode webview.
-    """
+    """两份 i18n.js 输出同一 canonical key 序列（dashboard/CI snapshot 可 diff）。"""
 
     def test_canonical_cache_key_bytes_match(self) -> None:
         body = textwrap.dedent(

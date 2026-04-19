@@ -1,56 +1,25 @@
 #!/usr/bin/env python3
-"""P9·L9·G1 – param-signature parity between call sites and locale values.
+"""P9·L9·G1 – call site 与 locale value 的 param 签名一致性扫描。
 
-What it catches
----------------
-Runtime i18n already falls back gracefully when a placeholder has no
-matching parameter (the raw ``{name}`` literal stays in the rendered
-string). But that graceful fallback means bugs hide: nobody notices
-``t('greet', { usre: 'Alice' })`` is wrong until a user eyeballs the
-UI and says "why does it say 'Hello {user}'?"
+runtime 对缺参做了 graceful fallback（保留字面 ``{name}``），这让
+``t('greet', { usre: 'Alice' })`` 之类的 typo 可以一直藏到用户肉眼发现。
+本扫描把每个「静态可解析」的 ``t('key', { a, b })`` call site 与源 locale
+（``static/locales/en.json`` / ``packages/vscode/locales/en.json``）的 ICU
+占位符集合对账，报告三类失败：
+  * **Missing** – locale 有 ``{name}`` 但 call site 未传：UI 会直接露出占位。
+  * **Extra**   – call site 多传 ``{name}`` 但 locale 从不引用：多半是 rename 残留。
+  * **Unknown** – key 在源 locale 里根本不存在（与 ``test_runtime_behavior.py``
+    的 dead-key 检查 overlap，这里一并报便于一屏看完）。
 
-This scanner parses every simple ``t('key', { a, b })`` call site
-across the web UI + VSCode extension and diffs its keyword set against
-the ICU placeholder set declared in the **source** locale
-(``static/locales/en.json`` and ``packages/vscode/locales/en.json``).
+仅扫静态可解析 call site：
+  * ``t('literal.key', { a, b })`` / ``{ a: x }`` / ``{ a: fn(), b: 'lit' }``
+  * ``t('literal.key')``
+动态 key、动态 param 对象、spread（``{...rest}``）跳过。
 
-Three failure modes are reported:
+无论 warn/strict 都会打 summary；``--strict`` 任一 mismatch 即 exit 1，CI gate
+用它作硬线。
 
-- **Missing params** – the locale value uses ``{name}`` but the call
-  site doesn't pass ``name``. This is the most severe: the UI will
-  literally render the placeholder text.
-- **Extra params** – the call site passes ``{name}`` but the locale
-  value never uses it. Usually a rename left behind dead code; the
-  runtime silently discards it but it's confusing.
-- **Unknown key** – ``t(...)`` references a key that doesn't exist in
-  the source locale. This is a strict subset of the dead-key check
-  in ``tests/test_runtime_behavior.py`` but we replicate it here so
-  you see everything in one report.
-
-What it *doesn't* catch
------------------------
-We only look at **simple** call sites where both arguments are
-literals that static analysis can parse:
-
-- ``t('literal.key', { a, b })`` – shorthand object
-- ``t('literal.key', { a: x, b: y })`` – explicit values
-- ``t('literal.key', { a: fn(), b: 'lit' })`` – expressions OK
-- ``t('literal.key')`` – no params (still catches missing params)
-
-Dynamic keys and dynamic param objects are skipped:
-
-- ``t(someVar, { a })`` – skipped
-- ``t('key', paramsVar)`` – skipped
-- ``t('key', { ...rest })`` – skipped (we don't resolve the spread)
-
-A warn-level summary is printed either way. Strict mode (``--strict``)
-exits 1 on any mismatch, which is how the CI gate wires it once the
-codebase is clean.
-
-Exit codes
-----------
-- ``0`` – clean (or warn mode) — ci_gate continues.
-- ``1`` – ``--strict`` and at least one mismatch.
+Exit：``0`` 干净或 warn；``1`` strict 下命中。
 """
 
 from __future__ import annotations
@@ -70,14 +39,14 @@ WEB_JS_DIR = ROOT / "static" / "js"
 VSCODE_PKG_DIR = ROOT / "packages" / "vscode"
 TEMPLATES_DIR = ROOT / "templates"
 
-# Vendor/min bundles — not ours, not scannable.
+# 第三方/压缩 bundle，不扫
 VENDOR_JS = {
     "mathjax-loader.js",
     "tex-mml-chtml.js",
     "lottie.min.js",
 }
 
-# Match ``t('key', { ... })`` or ``t('key')``.
+# 匹配 ``t('key', { ... })`` 或 ``t('key')``
 # Captures (1: quote, 2: key, 3: optional object body).
 # The object body allows simple nesting of braces (e.g. `{ id: {foo} }`
 # shouldn't occur in our code, but pattern handles one level to avoid

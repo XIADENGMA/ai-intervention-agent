@@ -1,18 +1,13 @@
-"""P7·L1·step-6: ``templates/web_ui.html`` must not contain hardcoded
-CJK text nodes or attribute values. Every user-visible label, tooltip,
-placeholder, alt text, and aria-label must route through a ``data-i18n*``
-attribute so the client ``translateDOM()`` pass can swap it by locale.
+"""P7·L1·step-6：``templates/web_ui.html`` 不得带硬编码 CJK 文本节点 /
+属性值；所有用户可见的 label / tooltip / placeholder / alt / aria-label
+必须走 ``data-i18n*`` 属性，让客户端 ``translateDOM()`` 按 locale 替换。
 
-This is the pytest mirror of ``scripts/check_i18n_html_coverage.py``.
-See that module's docstring for the full rationale; having both is
-cheap and makes the invariant show up in local dev loops (pytest) *and*
-CI gates.
+对应 ``scripts/check_i18n_html_coverage.py``（pytest 镜像）：dev 本地和
+CI gate 都能看到违规。
 
-Exemption contract:
-    Append an HTML comment ``<!-- aiia:i18n-allow-cjk -->`` on the same
-    line to whitelist a genuinely-untranslatable string (e.g. the
-    ``简体中文`` language endonym in the language picker). Every
-    exemption is a potential regression surface — audit carefully.
+豁免：同一行尾部追加 ``<!-- aiia:i18n-allow-cjk -->`` 白名单真正不可译
+的串（如语言选择器里的 ``简体中文`` endonym）——每条豁免都是回归面，
+审慎使用。
 """
 
 from __future__ import annotations

@@ -1,45 +1,24 @@
-"""L3·G2: exercise the locale-aware ``formatNumber / formatDate /
-formatRelativeTime / formatRelativeFromNow / formatList`` wrappers
-baked into ``static/js/i18n.js`` and ``packages/vscode/i18n.js``.
+"""L3·G2：验证 ``formatNumber / formatDate / formatRelativeTime /
+formatRelativeFromNow / formatList`` 这套 locale-aware 包装器
+（Web UI + VSCode 两份 ``i18n.js``）。
 
-Why these tests exist
----------------------
-Without a single locale-aware formatting pipeline, contributors reach
-for ``(n / 1024).toFixed(2)`` or ``date.toLocaleString()`` directly and
-ship strings that (a) ignore the active locale and (b) can't be proofed
-by the pseudo-locale QA gate. The wrappers route everything through
-``Intl.*`` under the hood and cache per-locale instances so the hot path
-(e.g. re-rendering a task list) doesn't re-construct a formatter each
-call.
+无统一 locale-aware 管道，贡献者会直接用 ``(n/1024).toFixed(2)`` /
+``date.toLocaleString()``，（a）无视 active locale，（b）过不了 pseudo-locale
+QA gate。包装器底层走 ``Intl.*`` + per-locale 缓存，让热路径（如任务
+列表重渲）不逐次构造 formatter。
 
-What we verify
---------------
-1. Every wrapper is present in the public API surface in BOTH copies of
-   the module.
-2. ``formatNumber`` respects the active locale (en uses ``,`` as
-   thousands sep; zh-CN uses ``,`` too but we still check formatter
-   swap happens). Respects ``options.maximumFractionDigits``.
-3. ``formatDate`` respects the active locale and returns something
-   sensible for both Date and epoch-ms.
-4. ``formatRelativeTime`` routes through ``Intl.RelativeTimeFormat``
-   (e.g. ``"3 days ago"`` for en, ``"3天前"`` for zh-CN).
-5. ``formatRelativeFromNow`` auto-picks the right unit for a delta and
-   matches the ICU output format.
-6. ``formatList`` uses ``Intl.ListFormat`` conjunction formatting.
-7. Invalid input fails gracefully (``NaN`` → stringified fallback,
-   ``null`` / ``undefined`` → empty / raw value).
-8. Repeated calls are **idempotent** — the cache doesn't corrupt
-   subsequent returns.
+合约：
+  1. 两份 i18n.js 公共 API 都暴露所有 wrapper；
+  2. ``formatNumber`` 遵循 active locale + ``maximumFractionDigits``；
+  3. ``formatDate`` 支持 Date / epoch-ms 两种输入；
+  4. ``formatRelativeTime`` 走 ``Intl.RelativeTimeFormat``；
+  5. ``formatRelativeFromNow`` 根据 delta 自动挑单位；
+  6. ``formatList`` 走 ``Intl.ListFormat`` conjunction；
+  7. 非法输入优雅降级（NaN/null/undefined → 合理 fallback）；
+  8. 重复调用幂等，不被缓存污染。
 
-Node harness
-------------
-We reuse the same subprocess-based pattern as
-``test_i18n_icu_plural.py``: load the real file via ``require(...)``,
-register a locale (empty — these wrappers don't touch the locale
-dictionary), set lang, then call the function by name and print the
-result. Tests SKIP when ``node`` isn't on PATH so developer laptops
-without Node can still run the Python suite — CI always has Node via
-the mocha gate.
+Node harness 与 ``test_i18n_icu_plural.py`` 同款（subprocess 加载真实
+IIFE）。``node`` 不在 PATH 时 SKIP；CI 由 mocha gate 保证有 node。
 """
 
 from __future__ import annotations

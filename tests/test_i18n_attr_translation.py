@@ -1,50 +1,24 @@
-"""P7·L4: attribute-style i18n binding coverage (``data-i18n-alt``,
-``data-i18n-aria-label``, ``data-i18n-value``, ``data-i18n-title``,
-``data-i18n-placeholder``).
+"""P7·L4：属性 i18n binding 覆盖（``data-i18n-alt`` / ``-aria-label`` /
+``-value`` / ``-title`` / ``-placeholder``）。
 
-Background:
-    Historically ``AIIA_I18N.translateDOM`` only handled four attribute
-    variants: ``data-i18n`` (textContent), ``data-i18n-html`` (innerHTML),
-    ``data-i18n-title`` and ``data-i18n-placeholder``. That left a gap
-    for two very common cases:
+P7 之前 ``translateDOM`` 只覆盖 4 种属性（text/html/title/placeholder），
+留下三类坑：
+  * ``aria-label`` 是 icon-only 按钮唯一的 accessible name，非中文 locale
+    下会被 ``templates/web_ui.html`` 里硬写的中文冻住；
+  * ``alt`` 同款 a11y 回归；
+  * ``value``——``<input type=button/submit>`` 等场景，先行覆盖避免未来又一轮
+    「加第五个属性」重构。
 
-    * ``aria-label`` — the only way to provide an accessible name for
-      icon-only buttons (settings gear, theme toggle, close button). On a
-      non-Chinese locale these were silently frozen to the Chinese strings
-      hard-coded in ``templates/web_ui.html`` (e.g. ``aria-label="切换主题"``).
-    * ``alt`` — image alt text for preview thumbnails and inline icons,
-      same accessibility regression as above.
-    * ``value`` — the text label on ``<input type="button">`` / ``<input
-      type="submit">`` and (rare) ``<option>`` / ``<button value="...">``
-      cases. Not used heavily yet but covered pre-emptively so future
-      authors don't hit another "add a fifth attribute" round of
-      refactoring.
+P7 把 4 份重复循环合并成单一 ``ATTR_BINDINGS`` 表。本文件锁 3 条不变量：
+  1. 5 种属性全部在 binding 表中；
+  2. 每个 binding 的 setter 正确（``property`` 还是 ``attribute``）——
+     ``aria-label`` 不是 DOM property，走 property 赋值会在部分浏览器
+     静默 no-op；
+  3. Web UI + VSCode 两侧 binding 完全相同（selector 级由
+     ``test_i18n_translate_dom_parity.py`` 看管，这里扩到 setter 策略）。
 
-    The P7 rewrite collapsed the four duplicated loops into a single
-    ``ATTR_BINDINGS`` table in both ``static/js/i18n.js`` and
-    ``packages/vscode/i18n.js``. This test pins three invariants against
-    that table:
-
-    1. All five expected attributes are declared in the binding table.
-    2. Each binding correctly identifies itself as ``property`` (el[x]=v)
-       or ``attribute`` (el.setAttribute(x, v)) — critical because
-       ``aria-label`` is NOT a DOM property on ``HTMLElement`` (it is only
-       exposed as an attribute, so property-assignment silently no-ops
-       on some browsers).
-    3. Both halves (Web UI + VSCode) declare identical bindings — this
-       is the cross-platform parity guard already enforced at the
-       selector level by ``test_i18n_translate_dom_parity.py``, extended
-       here to cover the setter strategy as well.
-
-Why static analysis instead of jsdom:
-    Running the real ``translateDOM`` against a jsdom harness would be
-    more end-to-end, but it would also introduce a Node / jsdom runtime
-    dependency that the rest of ``tests/`` deliberately avoids. The
-    binding table is a single shape of literal data so pattern-matching
-    is sufficient. ``test_runtime_behavior.py`` already covers the dict
-    layer end-to-end; the missing layer was "does translateDOM cover the
-    attribute we added data-i18n-aria-label for?" which is exactly what
-    this test asserts.
+走静态分析而非 jsdom：binding 表是纯字面量数据，模式匹配够了；
+``test_runtime_behavior.py`` 已端到端覆盖字典层。
 """
 
 from __future__ import annotations

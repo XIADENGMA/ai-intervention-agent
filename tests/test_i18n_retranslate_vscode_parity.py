@@ -1,46 +1,21 @@
-"""Invariant: VSCode webview's retranslateAllI18nElements delegates to
-i18n.translateDOM() + handles data-i18n-version interpolation locally.
+"""P8 不变量：VSCode webview 的 ``retranslateAllI18nElements`` 委托给
+``i18n.translateDOM()``，并仅保留 ``data-i18n-version`` 本地处理。
 
-Background:
-    ``packages/vscode/webview-ui.js`` has a local ``retranslateAllI18nElements``
-    function that runs on language switch to refresh ``data-i18n*`` attributes
-    in the DOM. Prior to P8 it only handled three selectors:
+P8 之前 ``retranslateAllI18nElements`` 只认 3 种 selector（text/title/placeholder），
+而 P7 的 ``translateDOM`` 已扩到 5 种 + ``data-i18n-html``。任何新属性（如
+``data-i18n-alt``）在首屏被 ``translateDOM`` 翻译、但语言切换时被漏掉，
+静默回归。P8 改为委托 ``translateDOM()`` 自动继承所有当前 + 未来 selector，
+只把 ``data-i18n-version`` 的版本号插值留在本地（避免两份 i18n.js runtime
+行为漂移）。
 
-        data-i18n           (textContent)
-        data-i18n-title     (title + aria-label)
-        data-i18n-placeholder
+合约：
+  1. 函数调用了 ``i18n.translateDOM(``（主路径）；
+  2. 仍保留 ``data-i18n-version`` special case（``t(..., { version: ... })``）；
+  3. i18n 模块还没挂到 window 的竞态 fallback 至少覆盖
+     ``data-i18n`` / ``-title`` / ``-placeholder``。
 
-    Meanwhile ``packages/vscode/i18n.js::translateDOM`` was refactored in P7 to
-    use the unified ATTR_BINDINGS table, covering five attributes:
-
-        data-i18n-title / -placeholder / -alt / -aria-label / -value
-
-    plus ``data-i18n-html``. That asymmetry means if someone ever adds a
-    ``data-i18n-alt`` attribute to the VSCode webview HTML (templates/*.ts
-    served by webview.ts), it would be translated by translateDOM() on first
-    load but NOT by retranslateAllI18nElements() on language switch — silent
-    regression.
-
-    P8 fixes this by having ``retranslateAllI18nElements`` delegate to
-    ``i18n.translateDOM()`` when available (auto-inherits all current + future
-    selectors), and retains only a special case for ``data-i18n-version``
-    (version-interpolation kept out of the shared translateDOM to maintain
-    byte-identical parity between static/js/i18n.js and packages/vscode/i18n.js).
-
-What this test pins:
-
-1. The function calls ``i18n.translateDOM(`` (primary path).
-2. It still has a ``data-i18n-version`` special case with ``t(..., { version: ... })``.
-3. The minimal fallback (for the race condition where i18n module isn't yet
-   registered on window) handles at least data-i18n / data-i18n-title /
-   data-i18n-placeholder.
-
-Rationale for static analysis (not JSDOM):
-    The function reads from ``window.AIIA_I18N`` which is populated by a
-    sibling IIFE. Setting up a full harness would require loading the 200+ lines
-    of i18n.js plus mocking the webview globals — overkill for a structural
-    invariant. The runtime behavior is already covered by translateDOM's own
-    parity tests (test_i18n_translate_dom_parity, test_i18n_attr_translation).
+走静态分析而非 JSDOM：runtime 行为由 translateDOM 自身 parity 测试覆盖
+（``test_i18n_translate_dom_parity`` / ``test_i18n_attr_translation``）。
 """
 
 from __future__ import annotations

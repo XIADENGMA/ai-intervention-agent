@@ -1,23 +1,16 @@
-"""P9·L8 — guard the generated ``packages/vscode/i18n-keys.d.ts``.
+"""P9·L8 — 守护生成的 ``packages/vscode/i18n-keys.d.ts``。
 
-The TypeScript ``I18nKey`` literal union is compile-time armor for
-``hostT(...)`` calls in ``extension.ts``. If the generator drifts from
-the committed ``.d.ts`` (or from ``en.json``) the compiler silently
-stops catching typos. These tests pin the contract:
+TypeScript ``I18nKey`` literal union 给 ``extension.ts`` 里 ``hostT(...)``
+提供 compile-time 护甲；一旦生成器与 ``.d.ts`` / ``en.json`` 漂移，
+tsc 就不再捕捉 typo。合约：
+  1. 已提交 ``.d.ts`` 与当下生成结果一致（相当于 ``--check``）；
+  2. 生成的每个 key 都在 ``packages/vscode/locales/en.json`` 里
+     （无 stale / duplicate）；
+  3. ``extension.ts`` 里用到的 ``hostT(...)`` key 全在 union 中；
+  4. 生成结果幂等——同输入跑两次 byte-identical。
 
-1. The committed ``.d.ts`` matches what the generator would produce
-   right now (the CI gate equivalent of ``--check``).
-2. Every key the generator emits is actually a key defined in
-   ``packages/vscode/locales/en.json`` — no stale or duplicated keys.
-3. Every key used in ``extension.ts``'s ``hostT(...)`` calls is in
-   the generated union, so the type checker has enough information
-   to reject new typos.
-4. The generator's output is deterministic given the same input —
-   running twice produces byte-identical results.
-
-We deliberately avoid spinning up ``tsc`` in pytest (Node subprocess
-cost + cross-platform issues). Static string checks give us the same
-coverage with none of the flakiness."""
+不在 pytest 里起 ``tsc`` 子进程（代价 + 跨平台），静态串检查即可。
+"""
 
 from __future__ import annotations
 

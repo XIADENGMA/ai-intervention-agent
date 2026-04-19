@@ -1,39 +1,21 @@
-"""P7·L4·step-3: every locale JSON under ``static/locales/`` MUST expose
-the same set of keys (recursively), with the same value type, so the
-client's ``t()`` fallback-to-DEFAULT_LANG path is uniform across locales.
+"""P7·L4·step-3：``static/locales/*.json`` 的每个 locale 必须（递归）暴露
+相同 key 集合、相同值类型，``t()`` 的 ``currentLang → DEFAULT_LANG`` 回落
+路径才在各 locale 间一致。
 
-Background:
-    ``static/js/i18n.js::t`` implements ``currentLang → DEFAULT_LANG``
-    fallback. That mechanism exists so a newly added English key doesn't
-    render raw ``foo.bar.baz`` in Chinese until translators catch up.
-    But the fallback is single-hop: if a Chinese-only key (for whatever
-    reason the English file forgot) is missing on English, Chinese users
-    see the translation while English users see the raw key. The project
-    has historically kept a strict parity invariant — every key in one
-    locale must appear in every other locale — but without a test, the
-    invariant drifts every time a contributor adds a key on only one
-    side.
+回落是单跳：若某 key 只在 zh-CN 有而 en 缺，zh-CN 用户看翻译，en 用户
+看 raw key。项目历来强制 parity，但没测试时每次只单侧加 key 就会漂移。
 
-Scope & rationale:
-    * **Structural parity**: key SET (recursively flattened via dot
-      notation) must be equal across all locales.
-    * **Type parity**: if ``foo.bar`` is an object in one locale, it
-      must be an object in every locale (never a leaf string). This
-      catches the subtle bug where one side was refactored from
-      ``{"foo": "flat"}`` to ``{"foo": {"short": "flat"}}`` but the
-      other side was not.
-    * **Placeholder parity**: if the English says ``"Hello {{name}}"``,
-      every other locale MUST also include ``{{name}}`` — otherwise
-      interpolation silently drops the parameter. This is critical for
-      messages like ``env.secureOrigin`` which injects the page origin,
-      or ``status.barkTestFailed`` which injects the failure reason.
+合约：
+  * 结构 parity：递归扁平化后的 key SET 跨 locale 相等；
+  * 类型 parity：某 ``foo.bar`` 若在一 locale 是 object，其他 locale 必须
+    也是 object——挡住「一侧从 flat 重构到 nested 另一侧没跟进」的坑；
+  * 占位符 parity：英文是 ``"Hello {{name}}"``，其他 locale 也必须带
+    ``{{name}}``，否则 interpolation 静默丢参数。比如 ``env.secureOrigin``
+    注入页面 origin、``status.barkTestFailed`` 注入失败原因都是关键占位。
 
-Why this file and not a runtime ``scripts/check_locales.py`` only:
-    ``scripts/check_locales.py`` already exists and is the CI gate. But
-    CI gates can be disabled or bypassed; a pytest assertion is invoked
-    by the default test runner and fails fast during local development
-    *before* a contributor pushes. Duplicating the logic here is cheap
-    (both implementations stay small) and raises the floor.
+为什么不只靠 ``scripts/check_locales.py``：CI gate 可以被 disable / bypass，
+pytest 在本地 ``pytest`` 默认跑，在 push 之前就能挡。逻辑双轨冗余很便宜，
+抬高下限。
 """
 
 from __future__ import annotations

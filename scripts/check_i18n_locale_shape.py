@@ -1,43 +1,18 @@
 #!/usr/bin/env python3
-"""Locale JSON shape validator (Batch-3 H13).
+"""Locale JSON 形状校验（Batch-3 H13）：runtime 合约要求 locale bundle
+是「对象树 + 字符串叶子」，非字符串叶子会让 ``t()`` 退化为
+``[object Object]`` / ``"null"``。Batch-2 H11 在运行时加了 warn-once，
+本脚本是 lint-time 兜底：发现坏叶子/坏 interior/JSON 解析失败即非零退出，
+把问题挡在 PR 而不是 prod。
 
-Why this gate exists
---------------------
-Our runtime (``static/js/i18n.js`` + ``packages/vscode/i18n.js``)
-treats locale bundles as a **tree of objects with string leaves**.
-When a leaf is anything else — a number, a boolean, ``null``, an
-array — ``t()`` either returns ``[object Object]``, the literal
-``"null"``, or silently empties the slot. Batch-2 H11 added a
-runtime warn-once for non-string resolves so the bug shows up in
-the console, but by the time it reaches ``t()`` the bad JSON has
-already merged.
+i18next、polyglot.js、FormatJS extract 也是同款形状合约。
 
-This script is the lint-time backstop: it refuses to leave exit 0
-when any locale file under the scanned roots violates the shape,
-printing a structured diagnostic to stderr so reviewers can fix it
-in the PR instead of chasing a runtime warning in production.
+用法：
+    uv run python scripts/check_i18n_locale_shape.py
+    uv run python scripts/check_i18n_locale_shape.py --locales-dir path/to/locales
+    uv run python scripts/check_i18n_locale_shape.py --json
 
-The contract mirrors i18next's ``i18next-parser`` validator, Airbnb
-``polyglot.js`` ``Polyglot.validate``, and FormatJS's ``extract``
-shape check — all three refuse to emit a bundle where a leaf isn't
-a string. The script also catches interior nodes that are arrays
-(``{"page": ["a", "b"]}``) which is a common mistake when migrating
-copy from a YAML list.
-
-Usage
------
-::
-
-    python scripts/check_i18n_locale_shape.py
-    python scripts/check_i18n_locale_shape.py --locales-dir path/to/locales
-    python scripts/check_i18n_locale_shape.py --json
-
-Exit codes
-----------
-- ``0`` – all scanned bundles conform.
-- ``1`` – at least one violation (bad leaf type / bad interior type
-  / invalid JSON) OR no locale files were found in the scan roots
-  (which itself signals a configuration regression worth catching).
+退出码：``0`` 全部合规；``1`` 违规或 scan 根目录下无 ``*.json``（视为配置回归）。
 """
 
 from __future__ import annotations
@@ -54,19 +29,12 @@ DEFAULT_LOCALE_DIRS: tuple[Path, ...] = (
     ROOT / "packages" / "vscode" / "locales",
 )
 
-# Structured violation record:
-#   (bundle path relative to CWD, dotted key path or '<root>',
-#    short reason label, offending value's JS/Python type name).
+# 违规记录：(bundle 相对路径, 点号 key 路径/``<root>``, 原因, 实际类型)
 Violation = tuple[Path, str, str, str]
 
 
 def _type_label(value: Any) -> str:
-    """Human-readable label matching how the diagnostic reads aloud.
-
-    We spell out ``None → null`` and ``bool → boolean`` because the
-    error messages should match what a reader sees in the JSON source,
-    not the Python type name.
-    """
+    """返回 JSON 源里读出来的类型名（``None→null``、``bool→boolean``）。"""
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -90,20 +58,14 @@ def _walk(
     file_path: Path,
     out: list[Violation],
 ) -> None:
-    """Recursively validate shape of *node*.
-
-    ``node`` may be an object (dict) or a leaf (anything else). The
-    caller is responsible for passing the root object in first; this
-    function then descends into keys.
-    """
+    """递归校验节点形状：dict 往下走，字符串叶子合规，其余记违规。"""
     if isinstance(node, dict):
-        # empty dict is fine — it's a namespace placeholder.
         for key, value in node.items():
             child_path = [*path, str(key)]
             if isinstance(value, dict):
                 _walk(value, child_path, file_path, out)
             elif isinstance(value, str):
-                continue  # valid leaf
+                continue
             else:
                 out.append(
                     (
@@ -114,7 +76,6 @@ def _walk(
                     )
                 )
         return
-    # Root-level non-dict: the entire file is shaped wrong.
     out.append(
         (
             file_path,
@@ -230,8 +191,7 @@ def main(argv: list[str] | None = None) -> int:
 
     files = _discover_locale_files(roots)
     if not files:
-        # No JSONs under any configured root — this is a configuration
-        # regression (or a brand-new repo). Fail so reviewers see it.
+        # scan 根目录下无 JSON，视为配置回归——直接失败让 reviewer 看见
         print(
             "check_i18n_locale_shape: no *.json files found under "
             f"{', '.join(str(r) for r in roots)}",

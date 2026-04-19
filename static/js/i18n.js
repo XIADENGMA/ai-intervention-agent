@@ -18,31 +18,16 @@
   var currentLang = DEFAULT_LANG
   var locales = {}
 
-  // Intl 实例缓存（L3·G2）——按 (ctor, locale, JSON(options)) 三元组缓存
-  // ``new Intl.NumberFormat / DateTimeFormat / …`` 实例。Intl 构造器在
-  // 低端移动设备和扩展宿主上单次开销可达毫秒级（见 Node.js
-  // performance 追踪），长列表滚动场景反复构造会明显掉帧；缓存把同一
-  // 屏多次调用摊到 1 次构造。
-  //
-  // LRU 有界：一个长会话若反复变换 NumberFormat options（每个条目各
-  // 自不同的 ``maximumFractionDigits``、ad-hoc style 对象）没有上界会
-  // 持续增长，Node 侧 extension host 没有 GC 压力时尤其危险。我们按
-  // ``Map`` 插入顺序做 LRU，命中时 delete→set 把 key 挪到 tail，满时
-  // drop head。
-  //
-  // 上限值 ``_INTL_LRU_MAX = 50`` / ``_PLURAL_LRU_MAX = 16`` 与
-  // ``tests/test_i18n_intl_cache_lru.py`` 锁定的常量一致；若要调高/
-  // 降低，必须同步更新该测试，避免契约悄悄漂移。
+  // Intl 实例缓存（L3·G2）：按 (ctor, locale, stableKey(options)) 三元组
+  // 复用 ``Intl.NumberFormat / DateTimeFormat / …``，避免长列表滚动反复
+  // 构造。``Map`` 插入顺序即 LRU——命中时 delete→set 挪到 tail，满则 drop
+  // head。上限 50/16 由 tests/test_i18n_intl_cache_lru.py 锁定，改动需同步。
   var _INTL_LRU_MAX = 50
   var _PLURAL_LRU_MAX = 16
   var _pluralRulesCache = new Map()
-  // ICU ``selectordinal`` resolves against a separate CLDR rule set
-  // (``Intl.PluralRules(lang, { type: 'ordinal' })``) — in English
-  // ``plural(3)`` is ``other`` but ``selectordinal(3)`` is ``few``
-  // (3rd). Keeping ordinal rules in their own bucket means hot-path
-  // cardinal callers (e.g. "N items") never evict their ordinal
-  // counterparts and vice-versa, and dashboards can show the two
-  // caches side-by-side.
+  // selectordinal 走独立 CLDR rule set（``{ type: 'ordinal' }``）：英语
+  // ``plural(3)=other`` 但 ``selectordinal(3)=few``。分桶避免 cardinal
+  // 热路径把 ordinal 条目挤出去。
   var _pluralRulesOrdinalCache = new Map()
   var _intlCache = {
     NumberFormat: new Map(),
@@ -51,37 +36,17 @@
     ListFormat: new Map()
   }
 
-  // Bidirectional text isolation controls (Unicode UAX #9 §3.1).
-  //
-  // ``_FSI`` / ``_PDI`` bracket an embedded inline segment so the
-  // Unicode Bidirectional Algorithm treats it as an isolate instead
-  // of letting its strong characters bleed into the surrounding
-  // paragraph's directional run. Mozilla's Project Fluent,
-  // ICU4J 74's ``MessageFormatter.formatWithBidiIsolate`` and the
-  // W3C i18n WG's ``qa-bidi-unicode-controls`` all recommend this
-  // wrapping as the default for non-HTML sinks — which is exactly
-  // what the VSCode webview's Output Channel and our HTML ``title``
-  // attributes happen to be. The public ``wrapBidi`` helper
-  // (declared next to the API surface below) applies the pair.
+  // 双向文本隔离（UAX #9 §3.1）：FSI/PDI 把内嵌片段包成独立的 isolate，
+  // 避免 strong 字符溢出到外层段落方向。对 VSCode Output Channel、HTML
+  // ``title`` 等非 HTML sink 是 W3C i18n WG 推荐的默认写法。公开 API
+  // ``wrapBidi`` 在下方。
   var _FSI = '\u2068'
   var _PDI = '\u2069'
 
-  // ICU AST compile cache (Batch-3 H12).
-  //
-  // ``_findIcuBlock`` + ``_parseIcuOptions`` are pure functions of
-  // the (already apostrophe-escaped) template string. FormatJS's
-  // ``intl-messageformat`` separates parse from format for exactly
-  // the same reason: hot re-renders should not re-walk the string
-  // character-by-character. We cache a descriptor of **all
-  // top-level ICU blocks** for a template once, then ``_renderIcu``
-  // iterates the cached array instead of calling ``_findIcuBlock``
-  // on every call.
-  //
-  // The cache is LRU-bounded to keep long-running webview hosts
-  // (extension host can live for hours) from retaining every
-  // template they ever saw; 256 entries matches FormatJS's default
-  // ``maxCacheSize`` for their parser LRU. Hits refresh insertion
-  // order (delete → set) so MRU templates survive eviction.
+  // ICU AST 编译缓存（Batch-3 H12）：``_findIcuBlock`` + ``_parseIcuOptions``
+  // 是模板字符串的纯函数；对同一模板的热重渲不应逐字符再扫。LRU 上限 256
+  // 与 FormatJS 默认 ``maxCacheSize`` 对齐；命中走 delete→set 刷新到
+  // tail，满时淘汰 head。
   var _ICU_COMPILE_LRU_MAX = 256
   var _icuCompileCache = new Map()
 
@@ -101,7 +66,6 @@
     }
     if (_pluralRulesCache.has(lang)) {
       var hit = _pluralRulesCache.get(lang)
-      // Promote to MRU on every hit so the classic LRU guarantee holds.
       _pluralRulesCache.delete(lang)
       _pluralRulesCache.set(lang, hit)
       return hit
@@ -136,31 +100,17 @@
     return instance
   }
 
-  // Canonicalise ``opts`` so ``{a:1,b:2}`` and ``{b:2,a:1}`` share a
-  // cache entry. FormatJS's ``intl-format-cache`` uses the same
-  // sort-then-stringify idiom for the exact same reason: without it,
-  // callers that build options via ``Object.assign`` or spread produce
-  // order-sensitive keys and silently double the LRU footprint.
+  // 规范化 ``opts``：``{a:1,b:2}`` 与 ``{b:2,a:1}`` 必须共用缓存项，否
+  // 则 ``Object.assign`` / spread 构造出的 options 会让 LRU 体积悄悄翻倍
+  // （FormatJS ``intl-format-cache`` 同样走 sort-then-stringify）。
   //
-  // Semantics intentionally match ``JSON.stringify`` except for key
-  // order:
-  //   - ``undefined`` at the top level round-trips to ``undefined``
-  //     (caller decides the fallback).
-  //   - ``undefined`` inside an object drops the key (same as JSON).
-  //   - ``undefined`` inside an array becomes ``null`` (same as JSON).
-  //   - Arrays preserve their positional order (arrays have positional
-  //     semantics in every ``Intl.*`` options shape we ship).
-  //   - ``Object.keys`` skips prototype-chain pollution, so a mutated
-  //     ``Object.prototype`` cannot leak extra keys into the cache key.
-  //   - ``toJSON`` on objects (Date, Temporal, user-defined) is honoured
-  //     before the key walk — the same "if toJSON exists, call it and
-  //     recurse" contract JSON.stringify applies — so two distinct Date
-  //     fields don't collapse to the same ``{}`` cache bucket.
-  //   - Cycles throw a tagged error (``err.__aiiaCircular = true``)
-  //     which ``_intlKey`` catches and degrades to a shape-sensitive
-  //     fallback key. Without the guard the recursion overflows the
-  //     stack and lands every cyclic caller on ``lang|?``, silently
-  //     sharing a single Intl instance across unrelated options.
+  // 语义刻意对齐 ``JSON.stringify``，仅保证 key 顺序无关：
+  //   - 顶层 ``undefined`` 原样返回（让 caller 决定 fallback）
+  //   - object 内 ``undefined`` 丢 key、array 内 ``undefined`` 变 ``null``
+  //   - ``Object.keys`` 跳过原型链污染
+  //   - ``toJSON`` 先于 key walk（保持 Date/Temporal 的契约）
+  //   - 循环引用抛 ``err.__aiiaCircular = true``，由 ``_intlKey`` 捕获
+  //     后退到 shape-signature key，避免栈溢出塌陷到 ``lang|?`` 单桶
   function _stableStringify(value) {
     return _stableStringifyInner(value, new WeakSet())
   }
@@ -213,11 +163,9 @@
     }
   }
 
-  // Degraded fallback signature for opts we couldn't canonicalise
-  // (cycles / BigInt in unusual shapes / ToJSON that throws). Takes
-  // only the own top-level key names, alphabetised, so distinct shapes
-  // still collide on distinct fallback keys — never on a single
-  // ``lang|?`` bucket.
+  // 无法规范化时的降级签名（cycle / toJSON 抛异常等）：只取顶层 own keys
+  // 的字典序拼接，让不同 shape 仍落到不同 fallback key，而不是全部塌陷
+  // 成一个 ``lang|?`` 桶。
   function _shapeSignature(opts) {
     if (!opts || typeof opts !== 'object') return ''
     try {
@@ -465,10 +413,9 @@
       return options[exactKey]
     }
     var rules = ordinal ? _getPluralRulesOrdinal(lang) : _getPluralRules(lang)
-    // Fallback for environments without Intl.PluralRules: cardinal keeps
-    // the classic English one/other split; ordinal degrades straight to
-    // ``other`` (since no two CLDR languages share ordinal categories,
-    // picking anything else would produce actively wrong output).
+    // 无 Intl.PluralRules 环境下的降级：cardinal 走英语 one/other；
+    // ordinal 直接退到 ``other``（CLDR ordinal 类别无跨语言通用项，
+    // 猜测反而会给出明显错误的输出）。
     var category
     if (rules) {
       category = rules.select(count)
@@ -509,22 +456,13 @@
     return String(value)
   }
 
-  // Mustache `{{name}}` interpolation with prototype-pollution hardening.
-  //
-  // Two defensive layers (the same combo Snyk SNYK-JS-I18NEXT-1065979
-  // recommends for i18n pipelines):
-  //   1. Hard-reject the three canonical prototype-pollution keywords
-  //      (`__proto__`, `constructor`, `prototype`) **before** any
-  //      property lookup — even if a caller mistakenly sets them as
-  //      genuine own properties on `params`, we never render them.
-  //   2. Require the remaining names to be **own** properties of
-  //      `params` via `Object.prototype.hasOwnProperty.call`, so
-  //      prototype-inherited methods like `toString` / `hasOwnProperty`
-  //      can never leak `function … { [native code] }` strings into
-  //      user-visible text.
-  //
-  // Unknown names fall through to the literal `{{name}}` so the existing
-  // "undefined param keeps placeholder" contract is preserved.
+  // Mustache ``{{name}}`` 插值，带原型污染加固（对齐 Snyk
+  // SNYK-JS-I18NEXT-1065979 的建议）：
+  //   1. 直接拒绝 ``__proto__`` / ``constructor`` / ``prototype`` 三个
+  //      关键字，即使 caller 把它们显式挂到 params 上也不渲染；
+  //   2. 其余 name 必须是 ``params`` 自有属性（``hasOwnProperty.call``），
+  //      避免原型链方法（``toString`` 等）泄漏出 ``function … [native]`` 文本。
+  // 命中不到的 name 保留字面 ``{{name}}``，维持「缺参保留占位」契约。
   function _interpolateMustache(template, params) {
     if (!params || typeof params !== 'object') return template
     return template.replace(/\{\{(\w+)\}\}/g, function (match, name) {
@@ -539,10 +477,8 @@
     })
   }
 
-  // Pre-compute the top-level ICU block layout for a template. See the
-  // ``_icuCompileCache`` comment above for the full rationale. The
-  // returned descriptor is shared across all ``_renderIcu`` calls for
-  // the same template string until it gets LRU-evicted.
+  // 预解析模板顶层 ICU 块并缓存到 ``_icuCompileCache``；同一模板的
+  // 多次 ``_renderIcu`` 调用共享这份描述，直到 LRU 淘汰。
   function _compileIcuTemplate(template) {
     if (_icuCompileCache.has(template)) {
       var hit = _icuCompileCache.get(template)
@@ -565,13 +501,9 @@
 
   function _renderIcu(template, params, lang) {
     if (!params || typeof params !== 'object') return template
-    // Fast path: a template without any ``{`` character cannot host an
-    // ICU block and cannot host a ``{{mustache}}`` placeholder either,
-    // so both the compile-cache lookup and ``_findIcuBlock``'s scan
-    // are pure overhead. Skipping the cache here also prevents post-
-    // hash-replacement literals like ``"3 items"`` — which recurse
-    // through ``_renderIcu`` once per plural branch — from polluting
-    // the LRU with thousands of never-revisited entries.
+    // 快路径：模板无任何 ``{`` 时既无 ICU 块也无 mustache 占位，缓存
+    // 查询是纯开销；更关键的是 ``#`` 替换后的 "3 items" 等字面串会递
+    // 归走回 ``_renderIcu``，这里不短路会让 LRU 被一次性塞满、永不命中。
     if (template.indexOf('{') === -1) return template
     var compiled = _compileIcuTemplate(template)
     if (compiled.trivial) return template
@@ -637,15 +569,13 @@
     return out
   }
 
-  // Priority (highest → lowest) for detectLang():
-  //   1) ?lang=… URL query (developer tooling; survives reload)
-  //   2) localStorage['aiia_i18n_lang'] (sticky opt-in, set by a dev UI
-  //      or devtools; survives across sessions)
-  //   3) window.__AIIA_I18N_LANG (injected by the host/SSR)
-  //   4) navigator.language
+  // detectLang 优先级（高→低）：
+  //   1) ``?lang=…`` URL query（开发工具；刷新后保留）
+  //   2) ``localStorage['aiia_i18n_lang']``（跨会话 sticky）
+  //   3) ``window.__AIIA_I18N_LANG``（host/SSR 注入）
+  //   4) ``navigator.language``
   //   5) DEFAULT_LANG
-  // Everything maps through normalizeLang() so callers never have to
-  // deal with raw BCP-47 strings.
+  // 所有结果都过 normalizeLang，调用方不必处理原始 BCP-47 字符串。
   function detectLang() {
     try {
       if (typeof window !== 'undefined' && window.location && window.location.search) {
@@ -681,14 +611,9 @@
     return DEFAULT_LANG
   }
 
-  // Normalize common BCP-47 inputs down to one of our supported tags.
-  //
-  // P9·L5·G1: ``pseudo`` is a first-class tag — the tooling-built
-  // pseudo-locale (``static/locales/_pseudo/pseudo.json``) is not a
-  // translation target, but it IS a valid runtime locale when the
-  // developer toggles the switch. We preserve it verbatim (including
-  // the alias ``xx-AC`` Chrome uses in Accessibility Devtools, which
-  // we mirror to ``pseudo`` so one tag is sufficient).
+  // 把常见 BCP-47 输入归一化到本仓库支持的语言 tag。
+  // P9·L5·G1：``pseudo`` 是一等 tag（工具生成的 pseudo-locale），
+  // 同时把 Chrome a11y devtools 使用的别名 ``xx-AC`` 也折叠到 ``pseudo``。
   function normalizeLang(raw) {
     var s = String(raw || '')
       .trim()
@@ -733,47 +658,16 @@
     return Object.keys(locales)
   }
 
-  // Key resolution with prototype-pollution hardening.
-  //
-  // The dotted-key descent `node = node[part]` used to rely on the
-  // `typeof === 'string'` fallback to stop values like
-  // `Object.prototype.toString` from ever reaching callers. That's a
-  // fragile fuse (a later refactor that relaxes the type guard would
-  // reopen the hole), so we additionally:
-  //   1. Refuse the three canonical pollution names
-  //      (`__proto__`, `constructor`, `prototype`) at every segment.
-  //   2. Require each segment to be an **own** property of the current
-  //      node via `Object.prototype.hasOwnProperty.call`. An attacker-
-  //      controlled locale bundle that puts a literal `"__proto__"`
-  //      key into the JSON *would* satisfy ownership at that segment,
-  //      but step (1) still blocks it first; a deeply nested
-  //      `ui.toString.foo` lookup falls through here because
-  //      `toString` is prototype-inherited, not own.
-  // Batch-2 H11: ``_resolvePath`` is the walk-and-report helper under
-  // both ``resolve`` (legacy signature, value-or-undefined) and
-  // ``t()``. We return a small tuple so ``t()`` can distinguish three
-  // genuinely different developer mistakes without doubling the
-  // traversal cost:
-  //
-  //   * ``shape: 'ok'``         — leaf string resolved; caller gets it.
-  //   * ``shape: 'missing'``    — a segment was absent, blocked by the
-  //                                prototype-pollution guard, or the
-  //                                locale bundle itself was not loaded.
-  //                                Caller falls through to the default
-  //                                locale and then to ``_reportMissing``.
-  //   * ``shape: 'non-string'`` — traversal reached the last segment
-  //                                but landed on an object / number /
-  //                                null, meaning the caller aimed at
-  //                                a namespace instead of a leaf.
-  //                                Caller should nudge the developer
-  //                                with a *different* warning
-  //                                (``_reportNonString``) whose
-  //                                remedy is to use a deeper key,
-  //                                **not** to add a duplicate leaf.
-  //
-  // The legacy ``resolve`` stays value-or-undefined so the
-  // ``translateDOM`` hot path, ``_renderIcu``, and the existing
-  // missing-key tests never see the new shape.
+  // key 解析 + 原型污染加固：
+  //   1. 每段拒绝 ``__proto__`` / ``constructor`` / ``prototype``；
+  //   2. 每段必须是当前节点自有属性（``hasOwnProperty.call``），避免
+  //      ``toString`` 之类原型链方法被当作叶子返回。
+  // Batch-2 H11：``_resolvePath`` 统一服务 ``resolve``（legacy，返回
+  // value-or-undefined）和 ``t()``；返回 {value, shape, nodeType}：
+  //   * shape=ok         — 叶子字符串，直接返回
+  //   * shape=missing    — 段缺失或被加固规则拦掉，走 fallback 语言 + _reportMissing
+  //   * shape=non-string — 末段落在 object/number/null 等非字符串上，
+  //                        提醒调用方把 key 改深（_reportNonString）
   function _resolvePath(key, lang) {
     var dict = locales[lang || currentLang]
     if (!dict) dict = locales[DEFAULT_LANG]
@@ -797,28 +691,20 @@
     return { value: undefined, shape: 'non-string', nodeType: node === null ? 'null' : typeof node }
   }
 
-  // P9·L5·G2: missing-key observability. The default behavior is
-  // unchanged — ``t()`` returns the raw key so the UI never goes
-  // blank. But callers can opt into:
-  //   - A custom handler (`setMissingKeyHandler(fn)`) invoked with
-  //     (key, lang) whenever a lookup falls through. Dev tooling can
-  //     surface missing keys in the console / notification center;
-  //     prod telemetry can counter them.
-  //   - Strict mode (`setStrict(true)`) which makes the handler's
-  //     throws bubble up instead of being swallowed — use this in
-  //     unit tests and dev builds.
-  // ``_missingKeyStats`` is a simple per-key counter exposed via
-  // ``getMissingKeyStats()``; reset via ``resetMissingKeyStats()``.
+  // P9·L5·G2：missing-key 观测性。默认依旧返回 raw key（UI 不空白）。
+  // 调用方可以额外选择：
+  //   - ``setMissingKeyHandler(fn)``：每次 miss 回调 (key, lang)，
+  //     用于控制台/通知中心或埋点。
+  //   - ``setStrict(true)``：handler 抛出不再吞，直接冒泡 —— 单测/dev
+  //     构建建议开启。
+  // ``_missingKeyStats`` 记录 per-key 次数，经 ``getMissingKeyStats()``
+  // 暴露；``resetMissingKeyStats()`` 清零。
   var _missingKeyHandler = null
   var _strictMissing = false
   var _missingKeyStats = Object.create(null)
-  // Batch-2 H11: once-set for non-string resolves. Keyed by
-  // ``lang + '\u0001' + key`` so a single ``(lang, key)`` pair can
-  // only ever warn once per process — matching how React DevTools,
-  // Vue's ``warn``, and i18next's ``missingKeyHandler`` dedupe
-  // developer-facing noise. ``AIIA_I18N__test.resetNonStringHits``
-  // clears it so tests can assert the first-hit-only contract
-  // without process isolation.
+  // Batch-2 H11：非字符串命中的 warn-once 桶。key 形如
+  // ``lang + '\u0001' + key``，每个 (lang, key) 进程内只警告一次 ——
+  // 对齐 React DevTools / Vue warn / i18next missingKeyHandler 的去噪策略。
   var _nonStringHits = Object.create(null)
   var _NONSTRING_SEP = '\u0001'
 
@@ -865,13 +751,11 @@
     _missingKeyStats = Object.create(null)
   }
 
-  // Batch-2 H11: warn-once (per locale+key) diagnostic for the
-  // "namespace instead of leaf" mistake. Kept strictly parallel with
-  // ``_reportMissing``:
-  //   * no handler, strict off → ``console.warn`` once then silent.
-  //   * strict on              → throw so tests / dev builds catch it.
-  //   * always records into ``_nonStringHits`` so ``getNonStringHits``
-  //     can show tests exactly what triggered.
+  // Batch-2 H11：「key 指向 namespace 而非叶子」的 warn-once。结构与
+  // ``_reportMissing`` 并行：
+  //   * 非 strict → 首次 ``console.warn``，之后静默；
+  //   * strict   → 直接抛，方便单测 / dev 构建捕获；
+  //   * 无论哪种都写入 ``_nonStringHits``，让测试断言触发源头。
   function _reportNonString(key, lang, nodeType) {
     var bucketKey = (lang == null ? '' : String(lang)) + _NONSTRING_SEP + String(key)
     if (Object.prototype.hasOwnProperty.call(_nonStringHits, bucketKey)) {
@@ -904,11 +788,9 @@
     if (val === undefined && currentLang !== DEFAULT_LANG) {
       var fallback = _resolvePath(key, DEFAULT_LANG)
       val = fallback.value
-      // Prefer the stronger diagnostic: if the current locale was
-      // plain-missing but the default locale has the key as an
-      // object (namespace), we still want to warn about the
-      // namespace mistake, because the author clearly intended to
-      // hit that path.
+      // 诊断升级：当前 locale 是 plain-missing 但 DEFAULT_LANG 上把
+      // 同 key 命中成 namespace 时，仍按「namespace 误用」警告——作者
+      // 显然期望走这条路径。
       if (observed.shape === 'missing' && fallback.shape !== 'missing') {
         observed = fallback
       }
@@ -1119,11 +1001,9 @@
       var hKey = hEl.getAttribute('data-i18n-html')
       if (!hKey) continue
       var hVal = t(hKey)
-      // AIIA-XSS-SAFE: ``data-i18n-html`` is an explicit opt-in that
-      // the locale value is authored markup. The value lives in
-      // locales/*.json (developer-controlled) and ``t()`` does not
-      // interpolate user-provided parameters at this call site. See
-      // docs/i18n.md § Security for the policy contract.
+      // AIIA-XSS-SAFE: ``data-i18n-html`` 是 opt-in 的 authored-markup
+      // 通道，值来自 locales/*.json（开发者受控），此处 ``t()`` 不拼用户
+      // 参数。契约详见 docs/i18n.md § Security。
       if (hVal !== hKey) hEl.innerHTML = hVal
     }
 
@@ -1157,10 +1037,8 @@
   var _defaultPromise = null
 
   async function loadLocale(lang, url) {
-    // Pseudo locale lives under ``_pseudo/pseudo.json`` rather than
-    // ``<lang>.json``. Keep the on-disk layout unchanged (generator
-    // output) by routing ``pseudo`` through the special sub-path here
-    // instead of littering call sites with ``_pseudo/`` knowledge.
+    // pseudo locale 的磁盘布局是 ``_pseudo/pseudo.json``，保留在此处
+    // 分派，其它调用方无需关心子路径。
     var target = url
     if (!target && _localeBaseUrl) {
       if (lang === 'pseudo') {
@@ -1225,13 +1103,12 @@
     if (opts.localeBaseUrl) {
       _localeBaseUrl = opts.localeBaseUrl
       if (!locales[lang]) {
-        // Let loadLocale() compute the URL from lang so the
-        // ``pseudo`` → ``_pseudo/pseudo.json`` special-case lives in
-        // exactly one place.
+        // 让 loadLocale 自己按 lang 派发 URL，把 pseudo →
+        // ``_pseudo/pseudo.json`` 的特判收拢到一处。
         await loadLocale(lang)
       }
-      // Prefetch DEFAULT_LANG 在后台完成——不 await。对于 current === DEFAULT_LANG
-      // 的情形直接跳过（ensureDefaultLocale 自带短路）。
+      // DEFAULT_LANG 后台 prefetch，不 await；current===DEFAULT_LANG 时
+      // ``ensureDefaultLocale`` 自带短路。
       if (lang !== DEFAULT_LANG) {
         ensureDefaultLocale()
       }
@@ -1244,12 +1121,8 @@
     }
   }
 
-  // Public helper: wrap a fragment in U+2068 FIRST STRONG ISOLATE
-  // / U+2069 POP DIRECTIONAL ISOLATE. See the ``_FSI`` / ``_PDI``
-  // comment near the top of the module for the W3C / UAX #9 §3.1
-  // rationale. Idempotent: already-wrapped input passes through
-  // unchanged so nested call-sites don't balloon into
-  // ``FSI·FSI·FSI·…·PDI·PDI·PDI``.
+  // 对外 helper：用 U+2068 FSI / U+2069 PDI 包裹片段。幂等——已包裹的
+  // 输入原样返回，避免嵌套调用把文本撑成 ``FSI·FSI·…·PDI·PDI``。
   function wrapBidi(value) {
     if (value === undefined || value === null) return ''
     var s = typeof value === 'string' ? value : String(value)
@@ -1264,9 +1137,8 @@
     return _FSI + s + _PDI
   }
 
-  // Pending prefetch flush helper (tests may await this to get
-  // deterministic ordering without hacking setTimeout loops). Not part
-  // of the public API; exposed via AIIA_I18N__test for the pytest harness.
+  // 测试辅助：等待所有 pending prefetch 完成，避免 setTimeout hack。
+  // 不是公共 API，经 AIIA_I18N__test 暴露给 pytest harness。
   function _testingFlushPendingLoads() {
     var keys = Object.keys(_pendingLoads)
     return Promise.all(
@@ -1276,10 +1148,8 @@
     )
   }
 
-  // Cache-introspection hooks for tests/test_i18n_intl_cache_lru.py. These
-  // intentionally live on a ``__test`` object rather than the public API
-  // so production code can grep ``AIIA_I18N__test`` in one sweep to catch
-  // accidental dependencies.
+  // 缓存内省钩子（仅测试用）。故意挂在 ``__test`` 对象上而非公共 API，
+  // 这样生产代码 grep 一次 ``AIIA_I18N__test`` 就能定位误引用。
   function _testingClearIntlCaches() {
     _pluralRulesCache.clear()
     _pluralRulesOrdinalCache.clear()
@@ -1353,8 +1223,7 @@
   } catch (e) {
     /* noop */
   }
-  // Test-only hook (NOT part of the public contract). Kept under a
-  // distinct name so downstream code never reaches for it.
+  // 仅供测试，非公共契约；故意与 AIIA_I18N 区分命名，避免下游误用。
   try {
     window.AIIA_I18N__test = {
       flushPendingLoads: _testingFlushPendingLoads,

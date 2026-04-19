@@ -2157,9 +2157,8 @@ function showNewTaskVisualHint(count) {
     animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), fadeOutUp 0.3s ease-in 2.7s forwards;
     pointer-events: none;
   `
-  // AIIA-XSS-SAFE: createSvg is a dev-authored SVG literal; _t('page.noContent.newTasks', ...)
-  // interpolates an integer count (ICU plural) — params carry no user-controlled payload.
-  // See docs/i18n.md § Security.
+  // AIIA-XSS-SAFE: createSvg 是开发者手写 SVG 字面量；_t('page.noContent.newTasks', …)
+  // 只插值整数 count（ICU plural），无用户可控数据。详见 docs/i18n.md § Security。
   hint.innerHTML = `${createSvg}<span>${_t('page.noContent.newTasks', { count: count }) || 'Received ' + count + ' new feedback requests'}</span>`
 
   // 添加到页面

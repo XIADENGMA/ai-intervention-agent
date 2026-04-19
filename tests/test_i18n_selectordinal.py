@@ -1,47 +1,20 @@
-"""ICU ``selectordinal`` support + ordinal ``Intl.PluralRules`` LRU.
+"""ICU ``selectordinal`` 支持 + ordinal ``Intl.PluralRules`` LRU（Batch-2 H9）。
 
-Why this matters
-----------------
-ICU MessageFormat distinguishes **cardinal** plurals (``{n, plural, …}``
-— "5 items") from **ordinal** plurals (``{n, selectordinal, …}`` —
-"5th place"). They resolve against two CLDR rule sets:
+ICU MessageFormat 把序数（selectordinal，"5th"）与基数（plural，"5 items"）
+分开，分别走 CLDR 的 ordinal / cardinal 规则。英语里二者不同（``plural(3)
+=other`` 但 ``selectordinal(3)=few``）。主流实现（FormatJS / vue-i18n /
+i18next / react-intl）全部支持；TC39 Intl.MessageFormat 草案也纳入。
 
-* ``Intl.PluralRules(lang)`` – cardinal
-* ``Intl.PluralRules(lang, { type: 'ordinal' })`` – ordinal
+合约：
+  * ``_findIcuBlock`` 识别 ``selectordinal`` kind；
+  * 新 ``_getPluralRulesOrdinal(lang)`` 独立 LRU（16 上限），钩子
+    ``dbg.getPluralRulesOrdinalCacheSize`` / ``dbg.peekPluralRulesOrdinalKeys``；
+  * ``#`` 替换同 cardinal 规则（仅 depth-0，inner-plural-safe）；
+  * ``=N`` 精确匹配两种 kind 都支持；
+  * 缺失命中类别回落 ``other``，再缺则返回 ``""``；
+  * 无 ordinal 语法的 locale（如 zh-CN）由 CLDR 压到 ``other``。
 
-English is the canonical example where the two rule sets disagree:
-``plural(1)`` → ``one``, but ``selectordinal(1)`` → ``one``; ``plural(3)``
-→ ``other``, ``selectordinal(3)`` → ``few``. FormatJS, vue-i18n, i18next,
-and react-intl all ship ``selectordinal``; the TC39 Intl.MessageFormat
-proposal includes it. Without it our runtime silently falls through to
-``other`` for every ordinal, and any translator who writes
-``{n, selectordinal, …}`` sees their ``one`` / ``two`` / ``few`` branches
-ignored.
-
-Fix contract
-------------
-* ``_findIcuBlock`` recognises ``selectordinal`` as a kind (alongside
-  ``plural`` and ``select``).
-* A new ``_getPluralRulesOrdinal(lang)`` lookup shares the LRU
-  eviction discipline with its cardinal sibling — **16** entries cap,
-  testing hooks ``dbg.getPluralRulesOrdinalCacheSize`` /
-  ``dbg.peekPluralRulesOrdinalKeys`` for observability.
-* ``#`` replacement inside ordinal branches uses the locale's number
-  formatter, matching the cardinal contract (depth-0 only,
-  inner-plural-safe).
-* ``=N`` exact match stays supported for both ``plural`` and
-  ``selectordinal``.
-* Fallback to ``other`` when the authored message skips the resolved
-  category; missing ``other`` returns ``""`` (same as cardinal).
-* Non-English locales without ordinal-specific grammar (e.g. ``zh-CN``)
-  collapse to the ``other`` branch via CLDR, exactly what
-  ``Intl.PluralRules('zh-CN',{type:'ordinal'}).select(n)`` returns.
-
-Parity
-------
-Both ``static/js/i18n.js`` and ``packages/vscode/i18n.js`` must render
-identical strings for the same (lang, message, n) — covered by
-``TestOrdinalByteParity``.
+两份 i18n.js 对同 (lang, message, n) 输出一致（``TestOrdinalByteParity``）。
 """
 
 from __future__ import annotations
@@ -106,12 +79,7 @@ class _OrdinalMixin(unittest.TestCase):
         return out
 
     def test_en_selectordinal_suffixes_follow_cldr(self) -> None:
-        """The canonical English ordinal matrix from
-        ``Intl.PluralRules('en', { type: 'ordinal' })`` — verified
-        out-of-band with ``node -e``:
-            1→one 2→two 3→few 4→other 11→other 21→one 22→two 23→few
-            101→one 111→other 121→one
-        """
+        """英语 ordinal 标准矩阵（与 ``node -e`` 离线核对过）。"""
         cases = {
             1: "1st",
             2: "2nd",
@@ -177,9 +145,7 @@ class _OrdinalMixin(unittest.TestCase):
         }
         code, out, err = _run_node(self.I18N_PATH, body)
         self.assertEqual(code, 0, err)
-        # CLDR gives `other` for every integer in zh-CN ordinals, so every
-        # value must land on the `other` branch (`"\u7b2c#"`), not the
-        # English-leaning `one` / `two` / `few` branches.
+        # CLDR 对 zh-CN ordinal 一律归 other；所有值必须落在 ``第#`` 分支
         self.assertEqual(
             json.loads(out),
             ["\u7b2c1", "\u7b2c2", "\u7b2c3", "\u7b2c11", "\u7b2c21"],
@@ -209,13 +175,11 @@ class _OrdinalMixin(unittest.TestCase):
         self.assertEqual(
             json.loads(out),
             [1, 1],
-            "ordinal and cardinal PluralRules must live in separate LRU buckets",
+            "ordinal / cardinal PluralRules 必须分桶",
         )
 
     def test_ordinal_lru_hard_cap_matches_cardinal(self) -> None:
-        """Same 16-entry cap as the cardinal cache — anything else makes
-        dashboards showing both buckets inexplicably asymmetric.
-        """
+        """与 cardinal 桶同 16 entry 上限，避免仪表盘两桶不对称。"""
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -249,10 +213,8 @@ class TestOrdinalVSCode(_OrdinalMixin):
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestOrdinalByteParity(unittest.TestCase):
-    """Render the same message / same n on both copies; the strings must
-    match byte-for-byte. This is the runtime analogue of the byte-parity
-    guard tests/test_i18n_runtime_redteam.py already performs on the
-    cardinal / apostrophe / LRU branches.
+    """同 message 同 n 两份 i18n.js 输出必须 byte-identical。对齐
+    ``tests/test_i18n_runtime_redteam.py`` 在 cardinal/apostrophe/LRU 上的做法。
     """
 
     def test_byte_parity_en_ordinal_matrix(self) -> None:
@@ -273,7 +235,7 @@ class TestOrdinalByteParity(unittest.TestCase):
         self.assertEqual(
             json.loads(out_w),
             json.loads(out_v),
-            "selectordinal output drifted between Web UI and VSCode i18n.js",
+            "selectordinal 输出在 Web UI 与 VSCode i18n.js 之间漂移",
         )
 
 

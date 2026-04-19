@@ -17,18 +17,12 @@
   var currentLang = DEFAULT_LANG
   var locales = {}
 
-  // Intl instance cache + LRU — byte-parallel mirror of static/js/i18n.js.
-  // See that file's comment for the rationale. Hard caps:
-  //   * _INTL_LRU_MAX        = 50 per-ctor bucket
-  //   * _PLURAL_LRU_MAX      = 16 per-module
-  // Any adjustment must be kept in lockstep with the Web UI copy and
-  // with ``tests/test_i18n_intl_cache_lru.py``.
+  // Intl 实例缓存 + LRU，与 static/js/i18n.js 行为对齐。上限 50/16 由
+  // tests/test_i18n_intl_cache_lru.py 锁定，改动需两份一起改。
   var _INTL_LRU_MAX = 50
   var _PLURAL_LRU_MAX = 16
   var _pluralRulesCache = new Map()
-  // Byte-parallel mirror of static/js/i18n.js — keep the separate
-  // ordinal bucket so dashboards can compare the two caches side by
-  // side and byte-parity tests stay green.
+  // selectordinal 专用桶，保证 cardinal 热路径不会挤掉 ordinal 条目。
   var _pluralRulesOrdinalCache = new Map()
   var _intlCache = {
     NumberFormat: new Map(),
@@ -37,25 +31,15 @@
     ListFormat: new Map()
   }
 
-  // Bidirectional text isolation controls (Unicode UAX #9 §3.1) —
-  // byte-parallel mirror of static/js/i18n.js. See that file for the
-  // full W3C / Project Fluent / ICU4J 74 rationale. The webview's
-  // Output Channel is a plain-text sink that the Unicode
-  // Bidirectional Algorithm is free to reorder in surprising ways
-  // around mixed-directionality fragments, so the helper needs to
-  // exist here too even though the extension host itself never sees
-  // RTL output directly.
+  // 双向文本隔离（UAX #9 §3.1），与 Web 版逐字节并行：webview Output
+  // Channel 是 plain-text sink，UBA 会对混合方向片段做出奇的重排，因此
+  // 扩展侧也需要 wrapBidi。
   var _FSI = '\u2068'
   var _PDI = '\u2069'
 
-  // ICU AST compile cache (Batch-3 H12) — byte-parallel with
-  // static/js/i18n.js. FormatJS's ``intl-messageformat`` splits
-  // parse and format to amortise the parse cost; we do the same
-  // here, caching the top-level ICU block layout for up to
-  // ``_ICU_COMPILE_LRU_MAX`` templates. Hits refresh insertion
-  // order so MRU entries survive eviction. Any adjustment must be
-  // mirrored in ``static/js/i18n.js`` and the
-  // ``tests/test_i18n_icu_compile_cache.py`` cap pin.
+  // ICU AST 编译缓存（Batch-3 H12），对齐 Web 版。FormatJS 同样把 parse
+  // 与 format 拆开摊销；LRU 上限 256 由 tests/test_i18n_icu_compile_cache.py
+  // 锁定，改动需两份同步。
   var _ICU_COMPILE_LRU_MAX = 256
   var _icuCompileCache = new Map()
 
@@ -109,11 +93,10 @@
     return instance
   }
 
-  // Byte-parallel mirror of static/js/i18n.js ``_stableStringify`` /
-  // ``_intlKey``. See that file for rationale (FormatJS's
-  // ``intl-format-cache`` uses the same sort-then-stringify idiom;
-  // cycles / ``toJSON`` / BigInt are handled exactly the same way
-  // there so the byte-parity tests stay green).
+  // 稳定序列化：{a:1,b:2} 与 {b:2,a:1} 需共享缓存项。语义对齐 Web 版
+  // ``_stableStringify`` / ``_intlKey``——JSON-ish，额外处理 BigInt /
+  // toJSON，并对循环引用抛 ``err.__aiiaCircular`` 让 ``_intlKey`` 落到
+  // shape-signature 降级桶。
   function _stableStringify(value) {
     return _stableStringifyInner(value, new WeakSet())
   }
@@ -210,11 +193,9 @@
     return _getIntl('NumberFormat', lang, undefined)
   }
 
-  // Apostrophe-escape tokenizer — byte-parallel mirror of static/js/i18n.js.
-  // See that file's comment for the ICU MessagePattern
-  // ApostropheMode.DOUBLE_OPTIONAL contract (ICU4J / FormatJS default,
-  // lone ``'`` stays literal) and the rationale for the PUA tokenize-then-
-  // detokenize strategy.
+  // 撇号转义分词器：ICU MessagePattern ApostropheMode.DOUBLE_OPTIONAL
+  // 语义（ICU4J / FormatJS 默认：孤立 ``'`` 按字面），通过 PUA 占位先
+  // tokenize 再 detokenize，避开 ICU 子语法冲突。
   var _PUA_BRACE_OPEN = '\uE001'
   var _PUA_BRACE_CLOSE = '\uE002'
   var _PUA_PIPE = '\uE003'
@@ -410,8 +391,9 @@
     return String(value)
   }
 
-  // Byte-parallel mirror of static/js/i18n.js — see that file for the
-  // prototype-pollution rationale (SNYK-JS-I18NEXT-1065979 class of bug).
+  // Mustache 插值 + 原型污染加固：拒绝 ``__proto__`` / ``constructor`` /
+  // ``prototype``，其余 name 必须为 params 自有属性；命中不到保留占位。
+  // 对齐 SNYK-JS-I18NEXT-1065979 的加固建议。
   function _interpolateMustache(template, params) {
     if (!params || typeof params !== 'object') return template
     return template.replace(/\{\{(\w+)\}\}/g, function (match, name) {
@@ -426,11 +408,8 @@
     })
   }
 
-  // Pre-compute the top-level ICU block layout for a template.
-  // Byte-parallel mirror of ``static/js/i18n.js`` — see that file for
-  // the FormatJS-style parse/format split rationale. LRU-bounded at
-  // ``_ICU_COMPILE_LRU_MAX`` entries so a long-lived extension host
-  // never retains unbounded state.
+  // 预编译模板的顶层 ICU 块布局。FormatJS 同款 parse/format 拆分，LRU
+  // 上限 256 防止扩展宿主长期驻留无界状态。
   function _compileIcuTemplate(template) {
     if (_icuCompileCache.has(template)) {
       var hit = _icuCompileCache.get(template)
@@ -453,12 +432,9 @@
 
   function _renderIcu(template, params, lang) {
     if (!params || typeof params !== 'object') return template
-    // Fast path: a template without any ``{`` character cannot host
-    // an ICU block, so skip the compile-cache lookup entirely.
-    // Without this guard, post-hash-replacement literals
-    // (``"1 item"`` / ``"2 items"`` / …) would each land in the LRU
-    // once per distinct ``n``, evicting the actual templates that
-    // matter. Byte-parallel mirror of static/js/i18n.js.
+    // 快速路径：无 ``{`` 即不可能含 ICU 块，跳过 compile 查表。否则
+    // ``"1 item"`` / ``"2 items"`` 这类 # 替换后的字面量会逐个占位 LRU，
+    // 把真正的模板挤掉。
     if (template.indexOf('{') === -1) return template
     var compiled = _compileIcuTemplate(template)
     if (compiled.trivial) return template
@@ -474,8 +450,7 @@
         var n = Number(argValue)
         if (!isFinite(n)) n = 0
         chosen = _selectPluralOption(block.options, n, lang, block.kind === 'selectordinal')
-        // Only replace `#` at depth 0 — see static/js/i18n.js for the
-        // nested-plural rationale. Byte-parallel mirror.
+        // 仅替换 depth=0 的 ``#``，保留内层 plural/selectordinal 自己的 # 作用域。
         chosen = _replaceHashAtDepth0(chosen, _formatNumber(n, lang))
       } else {
         chosen = _selectSelectOption(block.options, argValue)
@@ -530,8 +505,7 @@
     return DEFAULT_LANG
   }
 
-  // P9·L5·G1: ``pseudo`` is a first-class tag (mirrors
-  // static/js/i18n.js::normalizeLang); see that file for rationale.
+  // P9·L5·G1：``pseudo`` 作为一等标签（与 static/js/i18n.js 一致）。
   function normalizeLang(raw) {
     var s = String(raw || '')
       .trim()
@@ -576,12 +550,10 @@
     return Object.keys(locales)
   }
 
-  // Byte-parallel mirror of static/js/i18n.js ``_resolvePath`` — see
-  // that file for the prototype-pollution rationale and the Batch-2
-  // H11 shape-aware tuple contract. Both halves must refuse the same
-  // three canonical pollution names, require own-property ownership at
-  // every segment, and distinguish ``missing`` from ``non-string`` so
-  // the downstream warn-once diagnostic reports the right remedy.
+  // key 解析 + 原型污染加固：每段拒绝 ``__proto__`` / ``constructor`` /
+  // ``prototype``，且必须是当前节点自有属性（``hasOwnProperty.call``）。
+  // Batch-2 H11：返回 {value, shape, nodeType}，区分 ``missing`` 与
+  // ``non-string`` 以触发不同的 warn-once 诊断。
   function _resolvePath(key, lang) {
     var dict = locales[lang || currentLang]
     if (!dict) dict = locales[DEFAULT_LANG]
@@ -606,15 +578,12 @@
     return { value: undefined, shape: 'non-string', nodeType: node === null ? 'null' : typeof node }
   }
 
-  // P9·L5·G2: mirrors static/js/i18n.js — see that file's banner for
-  // the missing-key observability contract. Kept deliberately simple
-  // in the VSCode copy because extension-host locale injection means
-  // there's no ``ensureDefaultLocale`` race path to worry about.
+  // P9·L5·G2：缺 key 观测三件套（handler/strict/stats）。VSCode 这份
+  // 因宿主直接注入 locale，不需要 ensureDefaultLocale 竞态处理。
   var _missingKeyHandler = null
   var _strictMissing = false
   var _missingKeyStats = Object.create(null)
-  // Batch-2 H11: once-set for non-string resolves. Byte-parallel with
-  // static/js/i18n.js — see that file's banner for the design rationale.
+  // Batch-2 H11：non-string resolve 的 (lang|key) 去重集合。
   var _nonStringHits = Object.create(null)
   var _NONSTRING_SEP = '\u0001'
 
@@ -629,11 +598,8 @@
         _missingKeyHandler(key, lang)
       } catch (e) {
         if (_strictMissing) throw e
-        // Parity with static/js/i18n.js: a throwing handler in non-strict
-        // mode is a telemetry bug, not a UI bug. Silently swallowing it
-        // would hide the regression from the extension-host devtools /
-        // Output Channel, so surface it via ``console.warn`` (node routes
-        // this to stderr, which extension host also captures).
+        // 非 strict 下：handler 抛异常属于遥测 bug，不要静默吞掉，
+        // 经 console.warn 浮到 Output Channel / devtools。
         try {
           if (typeof console !== 'undefined' && console.warn) {
             console.warn('[i18n] missing-key handler threw:', e)
@@ -666,12 +632,8 @@
     _missingKeyStats = Object.create(null)
   }
 
-  // Batch-2 H11: byte-parallel mirror of static/js/i18n.js
-  // ``_reportNonString`` — same once-set, same strict-mode throw,
-  // same ``console.warn`` shape. Extension-host captures ``console.warn``
-  // into the Output Channel / Developer Tools, so the signal lands
-  // exactly where the Web UI's warning lands for a browser devtools
-  // user.
+  // Batch-2 H11：once-set 去重 → strict 模式抛错 / 非 strict ``console.warn``
+  // 输出 deeper-key 建议，扩展宿主会把它捕获到 Output Channel。
   function _reportNonString(key, lang, nodeType) {
     var bucketKey = (lang == null ? '' : String(lang)) + _NONSTRING_SEP + String(key)
     if (Object.prototype.hasOwnProperty.call(_nonStringHits, bucketKey)) {
@@ -716,9 +678,7 @@
       }
       return key
     }
-    // Pipeline: apostrophe tokenize → ICU → mustache → detokenize.
-    // See static/js/i18n.js for the full rationale; this copy is the
-    // byte-parallel mirror and must render identically on the same input.
+    // 渲染管线：撇号 tokenize → ICU → mustache → detokenize。
     if (params && typeof params === 'object') {
       val = _icuEscapeApostrophes(val)
       val = _renderIcu(val, params, currentLang)
@@ -792,11 +752,8 @@
     return n + ' ' + unit + (Math.abs(n) === 1 ? '' : 's')
   }
 
-  // Bucket selection mirrors static/js/i18n.js — see that file's comment
-  // block for the rationale behind the moment.js 45/45/22/26/11 table.
-  // Keep the two copies byte-parallel: any tweak here MUST be mirrored
-  // there (enforced by tests/test_i18n_relative_time_thresholds.py's
-  // byte-parity case).
+  // 相对时间桶阈值沿用 moment.js 的 45/45/22/26/11 表；两份 i18n.js 必须
+  // 同步，由 tests/test_i18n_relative_time_thresholds.py 的 byte-parity 用例强约束。
   function formatRelativeFromNow(date, options) {
     var target = _toDate(date)
     var diffMs = target.getTime() - Date.now()
@@ -883,11 +840,9 @@
       var hKey = hEl.getAttribute('data-i18n-html')
       if (!hKey) continue
       var hVal = t(hKey)
-      // AIIA-XSS-SAFE: ``data-i18n-html`` is an explicit opt-in that
-      // the locale value is authored markup. The value lives in
-      // locales/*.json (developer-controlled) and ``t()`` does not
-      // interpolate user-provided parameters at this call site. See
-      // docs/i18n.md § Security for the policy contract.
+      // AIIA-XSS-SAFE: ``data-i18n-html`` 是显式 opt-in，locale 值来自
+      // 开发者控制的 locales/*.json；此处 ``t()`` 无用户参数插值。
+      // 合约详见 docs/i18n.md § Security。
       if (hVal !== hKey) hEl.innerHTML = hVal
     }
 
@@ -984,11 +939,8 @@
     return Promise.resolve(Boolean(locales[DEFAULT_LANG]))
   }
 
-  // Public helper: wrap a fragment in U+2068 FIRST STRONG ISOLATE /
-  // U+2069 POP DIRECTIONAL ISOLATE. Byte-parallel mirror of
-  // static/js/i18n.js — see that file and ``docs/i18n.md §
-  // Bidirectional text isolation`` for the W3C / UAX #9 §3.1
-  // rationale. Idempotent so nested call-sites never balloon.
+  // 公共 helper：用 U+2068 FSI / U+2069 PDI 包裹片段（UAX #9 §3.1）。
+  // 幂等——已包裹的字符串原样返回，避免嵌套调用膨胀。详见 docs/i18n.md。
   function wrapBidi(value) {
     if (value === undefined || value === null) return ''
     var s = typeof value === 'string' ? value : String(value)
@@ -1037,9 +989,7 @@
     }
   }
 
-  // Test-only cache inspection hook. Mirrored with static/js/i18n.js so
-  // tests/test_i18n_intl_cache_lru.py can exercise the two halves through
-  // the same harness. Kept on ``__test`` to signal "not public API".
+  // 测试专用缓存探针；挂在 ``__test`` 上表明非公共 API。
   function _testingClearIntlCaches() {
     _pluralRulesCache.clear()
     _pluralRulesOrdinalCache.clear()

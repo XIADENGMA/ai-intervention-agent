@@ -1,44 +1,21 @@
-"""L3·G2 follow-up — bound the Intl formatter instance cache.
+"""L3·G2 后续：给 Intl 实例缓存加 LRU 上限。
 
-Background
-----------
-``_getIntl`` memoises ``Intl.NumberFormat`` / ``Intl.DateTimeFormat`` /
-``Intl.RelativeTimeFormat`` / ``Intl.ListFormat`` instances by the triple
-``(ctor, locale, JSON(options))``. Construction of an ``Intl.*`` instance
-is measured in **milliseconds** on mobile Safari and low-end Android
-WebViews — see the Node.js performance issue tracker — so memoisation
-is genuinely necessary, but the current implementation has no upper
-bound. A long-running Web UI session that chats through many distinct
-``formatNumber`` option combinations (e.g. per-row currency toggles,
-``maximumFractionDigits`` variations, ad-hoc style objects) would leak
-instances indefinitely, and the VSCode extension host ships with no
-guardrail either.
+``_getIntl`` 按 ``(ctor, locale, JSON(options))`` 复用 ``Intl.*`` 实例（在
+低端移动设备上构造成本达毫秒级，缓存必要），但原实现无上限；长会话里
+多变的 ``formatNumber`` options 会持续膨胀 Web 与 VSCode host。
 
-Fix contract
-------------
-Both ``static/js/i18n.js`` and ``packages/vscode/i18n.js`` grow a very
-small LRU around ``_intlCache`` and ``_pluralRulesCache``:
+合约：两份 i18n.js 各自给 ``_intlCache`` / ``_pluralRulesCache`` 套 LRU：
 
-    AIIA_I18N__intl_lru_max            = 50   # per-ctor cap
-    AIIA_I18N__plural_rules_lru_max    = 16   # per-module cap
+    AIIA_I18N__intl_lru_max         = 50   # per-ctor
+    AIIA_I18N__plural_rules_lru_max = 16   # per-module
 
-Eviction is classic LRU: every cache hit reshuffles the key to the tail
-of an insertion-order set; on insert, if size > max, drop the head.
+命中 delete→set 挪到 tail，超出 max 删 head。
 
-To make the behaviour testable without exporting internals into the
-public API, we expose an ``AIIA_I18N__test`` namespace that only the
-pytest harness speaks to. The real application code never reads it. The
-hook is intentionally keyed to a double-underscore prefix so source
-review can grep it out in one pass.
+为避免把内部 state 暴给公共 API，测试用 ``AIIA_I18N__test`` 名字空间读写；
+双下划线前缀方便源码审查一眼排除。
 
-Why this file matters
----------------------
-Without a test pinning the LRU size and the eviction order, a future
-contributor could silently unbound the cache again — and we'd only
-discover it months later from a memory profile. The test suite below
-parameterises against both copies of ``i18n.js``; ``test_byte_parity``
-enforces that eviction decisions match across the two halves for the
-same input sequence so drift becomes a test failure, not a field bug.
+本文件锁定常量与淘汰顺序，``test_byte_parity`` 进一步保证两份决策一致，
+漂移会直接挂测试而不是晚几周在内存 profile 里才现形。
 """
 
 from __future__ import annotations
@@ -54,9 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WEBUI_I18N = ROOT / "static" / "js" / "i18n.js"
 VSCODE_I18N = ROOT / "packages" / "vscode" / "i18n.js"
 
-# Must match the constants baked into both i18n.js copies. If either
-# copy drifts these two numbers, the test will loudly fail rather than
-# quietly accept a looser bound.
+# 必须与两份 i18n.js 内常量一致；漂移则测试必须显式失败，而不是悄悄放宽上限
 INTL_LRU_MAX = 50
 PLURAL_RULES_LRU_MAX = 16
 
@@ -98,11 +73,7 @@ class _IntlLruMixin(unittest.TestCase):
     # ---- NumberFormat / DateTimeFormat / RelativeTimeFormat / ListFormat ----
 
     def test_intl_cache_respects_hard_cap_on_distinct_options(self) -> None:
-        # Feed 2x the cap worth of truly-distinct NumberFormat option
-        # triples (monotonic ``maximumFractionDigits`` so every ``i``
-        # maps to a fresh cache key). The per-ctor bucket MUST NOT grow
-        # past ``INTL_LRU_MAX``; if it does, we've reintroduced the
-        # unbounded-cache leak.
+        # 连续塞 2×cap 条不同 NumberFormat options；桶大小必须稳定在 ``INTL_LRU_MAX``
         body = textwrap.dedent(
             f"""
             dbg.clearIntlCaches();
@@ -118,25 +89,20 @@ class _IntlLruMixin(unittest.TestCase):
         self.assertEqual(
             size,
             INTL_LRU_MAX,
-            "NumberFormat cache should saturate at exactly the LRU cap "
-            f"after feeding {INTL_LRU_MAX * 2} distinct options; got {size}",
+            f"塞 {INTL_LRU_MAX * 2} 条 options 后 NumberFormat 桶应稳定在 LRU 上限，实际 {size}",
         )
 
     def test_intl_cache_evicts_oldest_first(self) -> None:
-        # Classic LRU check:
-        #   1. Fill cache with OPT_0..OPT_{max-1}.
-        #   2. Touch OPT_0 (moves it to MRU tail).
-        #   3. Insert OPT_max (forces eviction). With LRU, OPT_1 goes,
-        #      not OPT_0.
+        # 经典 LRU 检查：填满后 touch OPT_0 挪到 MRU，再插入新条目应淘汰 OPT_1 而非 OPT_0
         body = textwrap.dedent(
             f"""
             dbg.clearIntlCaches();
             for (let i = 0; i < {INTL_LRU_MAX}; i++) {{
               api.formatNumber(0, {{ maximumFractionDigits: i }});
             }}
-            // Touch OPT_0 -- promotes it to MRU.
+            // 命中 OPT_0 挪到 MRU
             api.formatNumber(0, {{ maximumFractionDigits: 0 }});
-            // Insert fresh entry past the cap.
+            // 越过 cap 插新条目触发淘汰
             api.formatNumber(0, {{ maximumFractionDigits: {INTL_LRU_MAX + 999} }});
             const keys = dbg.peekIntlCacheKeys('NumberFormat');
             const containsOpt0 = keys.some(k => k.endsWith('{{"maximumFractionDigits":0}}'));
@@ -154,20 +120,19 @@ class _IntlLruMixin(unittest.TestCase):
         self.assertEqual(
             report["size"],
             INTL_LRU_MAX,
-            f"cache size wrong after eviction: {report}",
+            f"淘汰后桶大小异常: {report}",
         )
         self.assertTrue(
             report["opt0Survives"],
-            "LRU reshuffle failed: OPT_0 was evicted after being touched",
+            "命中 reshuffle 失败：OPT_0 不应被淘汰",
         )
         self.assertTrue(
             report["opt1Evicted"],
-            "LRU eviction failed: oldest non-touched entry (OPT_1) should have been dropped",
+            "LRU 淘汰失败：最老未命中条目 OPT_1 应被挤出",
         )
 
     def test_intl_cache_hit_does_not_grow_bucket(self) -> None:
-        # Calling the same (ctor, locale, options) triple twice must
-        # reuse the cached instance, not create a second one.
+        # 同 (ctor, locale, options) 二次调用必须复用，而不是再建一个实例
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -186,9 +151,7 @@ class _IntlLruMixin(unittest.TestCase):
         self.assertEqual(report["third"], 1)
 
     def test_intl_cache_is_partitioned_per_ctor(self) -> None:
-        # Filling NumberFormat to capacity must not evict entries from
-        # DateTimeFormat. We don't want one high-churn formatter to
-        # starve the others.
+        # NumberFormat 撑爆不能挤掉 DateTimeFormat；每个 ctor 必须独立桶，避免高频 formatter 饿死其他
         body = textwrap.dedent(
             f"""
             dbg.clearIntlCaches();
@@ -207,16 +170,14 @@ class _IntlLruMixin(unittest.TestCase):
         self.assertEqual(
             report["dtSize"],
             1,
-            f"DateTimeFormat cache was touched by NumberFormat churn: {report}",
+            f"NumberFormat 的 churn 污染了 DateTimeFormat 桶: {report}",
         )
         self.assertLessEqual(report["nfSize"], INTL_LRU_MAX)
 
-    # ---- PluralRules cache (separate bucket, separate cap) ----
+    # ---- PluralRules 独立桶、独立上限 ----
 
     def test_plural_rules_cache_respects_hard_cap(self) -> None:
-        # Each distinct BCP-47 tag gets its own PluralRules instance.
-        # The cache must cap at PLURAL_RULES_LRU_MAX so a hostile page
-        # can't balloon memory by cycling locales.
+        # 每个 BCP-47 tag 一个 PluralRules 实例；上限防止恶意页面循环切 locale 撑爆内存
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -244,7 +205,7 @@ class _IntlLruMixin(unittest.TestCase):
         self.assertLessEqual(
             size,
             PLURAL_RULES_LRU_MAX,
-            f"PluralRules cache grew unbounded: size={size} > {PLURAL_RULES_LRU_MAX}",
+            f"PluralRules 桶失去上限: size={size} > {PLURAL_RULES_LRU_MAX}",
         )
 
     def test_clear_helper_actually_drops_all_buckets(self) -> None:
@@ -294,10 +255,8 @@ class TestIntlLruVSCode(_IntlLruMixin):
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestIntlLruByteParity(unittest.TestCase):
-    """Both halves must make identical eviction decisions for the same
-    input sequence, otherwise the Web UI and VSCode webview would render
-    subtly different numbers (e.g. a hot locale ejected in one copy and
-    retained in the other)."""
+    """两份对同输入序列必须作出一致的淘汰决策；否则 Web UI 与 VSCode webview
+    会给出细微不同的数字渲染（比如热门 locale 一边被淘汰、一边还在）。"""
 
     def test_eviction_order_matches_across_halves(self) -> None:
         body = textwrap.dedent(
@@ -316,7 +275,7 @@ class TestIntlLruByteParity(unittest.TestCase):
         self.assertEqual(
             json.loads(out_w),
             json.loads(out_v),
-            "LRU eviction order drifted between Web UI and VSCode i18n.js",
+            "Web UI 与 VSCode i18n.js 在 LRU 淘汰顺序上漂移",
         )
 
 

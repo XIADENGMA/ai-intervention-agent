@@ -1,27 +1,17 @@
-"""L4·G1 – pytest mirror of ``scripts/check_i18n_orphan_keys.py``.
+"""L4·G1 – ``scripts/check_i18n_orphan_keys.py`` 的 pytest 镜像。
 
-What this protects
-------------------
-The script itself is warn-only (never fails CI). That's intentional:
-it exists to give contributors a soft signal about keys that have
-accumulated in a locale file without any referrer. A strict gate
-already exists in ``test_runtime_behavior.py`` — this pytest guards
-the **scanner** rather than the codebase:
+脚本 warn-only（不挂 CI），给贡献者 soft 信号；strict dead-key gate 已在
+``test_runtime_behavior.py``。本文件锁「扫描器合约」而非 codebase 状态：
+  1. ``t(...)`` 提取正则必须认齐我们实际用过的 wrapper（``_t`` / ``tl``
+     / ``hostT`` / ``__vuT`` / ``__domSecT`` / ``__ncT``）；新增 wrapper 忘
+     了改扫描器会让 orphan 报告说谎；
+  2. JSON 输出形状稳定（``orphans`` / ``total_keys`` / ``used_keys``
+     per surface），给未来 dashboard / PR commenter 用；
+  3. ``--strict`` 真的在有 orphan 时 exit 1；
+  4. ``--json`` 输出是合法 JSON。
 
-1. The regex that extracts ``t(...)``-style call keys must recognize
-   every wrapper we actually use in production (``_t``, ``tl``,
-   ``hostT``, ``__vuT``, ``__domSecT``, ``__ncT``). If someone adds a
-   new wrapper and forgets to update the scanner, orphan reports will
-   lie; this test catches that.
-2. The scanner's output shape must be stable JSON (``orphans``,
-   ``total_keys``, ``used_keys`` per surface). Downstream consumers
-   (future dashboards, PR commenters) depend on the shape.
-3. ``--strict`` actually fails on orphan input.
-4. ``--json`` emits valid JSON.
-
-These are scanner-contract tests, not codebase-state tests. They use
-fabricated fixtures where possible to avoid double-coverage with
-the dead-key test in ``test_runtime_behavior.py``.
+使用合成 fixture，避免与 ``test_runtime_behavior.py`` 的 dead-key 测试
+双重覆盖。
 """
 
 from __future__ import annotations

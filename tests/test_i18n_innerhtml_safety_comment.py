@@ -1,45 +1,18 @@
-"""Enforce an XSS-safety annotation on every ``.innerHTML = t(…)`` site.
+"""强制每处 ``.innerHTML = t(…)`` 必须带 XSS 安全注释（Batch-2 H10）。
 
-Why this matters
-----------------
-i18next shipped **two** disclosed XSS CVEs (CVE-2017-16010 and
-AIKIDO-2024-10543) that boil down to the same root cause: callers
-assume interpolated translation output is HTML-safe, write it to
-``.innerHTML`` (or a framework equivalent that forwards to
-``innerHTML``), and a malicious author of translations — or of a
-parameter value — can inject arbitrary markup / ``<script>`` / ``on*``
-handlers.
+动机：i18next 历史上两次 XSS CVE（CVE-2017-16010 / AIKIDO-2024-10543）
+同根——调用方把 ``t()`` 输出当 HTML-safe 写进 ``innerHTML``。我们 ``t()``
+故意不做 HTML 转义（textContent 自动转义已足够，ICU ``#`` / mustache
+再做转义会双编码），与 react-intl 同契约。
 
-Our ``t()`` intentionally does **not** HTML-escape, because (a) most
-callers write it to ``textContent`` which auto-escapes, and (b) we use
-ICU ``#`` / mustache ``{{…}}`` interpolation with developer-authored
-templates where escaping would double-encode. That's the same contract
-``react-intl``'s ``FormattedMessage`` makes when rendered inside JSX.
+调用方契约（可审计）：任何把 ``t(…)`` / ``_t(…)`` / ``hVal`` 等写入
+``.innerHTML`` 的行，必须在同行或前一个连续注释块里带 ``AIIA-XSS-SAFE:``
+标记（典型场景：dev-authored locale + 无用户输入；或走过
+``sanitizePromptHtml``）。
 
-So the contract every caller must obey is simple and auditable:
-
-    Any line that writes a ``t(…)`` / ``_t(…)`` / DOM-translation output
-    to ``.innerHTML`` (or ``.innerHTML +=``) MUST carry an explicit
-    ``AIIA-XSS-SAFE:`` comment explaining why the payload is safe —
-    typically "dev-authored locale key + non-user-controlled params"
-    or "runs through ``sanitizePromptHtml``".
-
-This test is the auditable enforcement: it scans ``static/js/**`` and
-``packages/vscode/**`` for any ``.innerHTML`` write that pulls from a
-translation API and fails the suite unless the same line or the
-immediate preceding line carries the contract marker. New contributors
-get a pointer to ``docs/i18n.md`` Security §.
-
-Scope & non-goals
------------------
-* We deliberately **don't** cover every ``.innerHTML =`` write —
-  SVG markup, sanitised markdown, and fixed HTML blocks are outside
-  this policy's remit. That's the job of the separate CSP hardening
-  track.
-* Minified mirrors (``*.min.js``) are excluded; they're generated
-  artefacts.
-* Third-party vendored files (prism / marked / mathjax / lottie) are
-  excluded.
+范围：仅覆盖 ``static/js/**`` / ``packages/vscode/**``；排除 ``*.min.js``、
+第三方库（prism/marked/mathjax/lottie）、``.vscode-test`` 解包产物。
+SVG/markdown/固定 HTML 块不在本策略，交给单独 CSP 治理轨道。
 """
 
 from __future__ import annotations
@@ -62,11 +35,7 @@ EXCLUDE_DIRS = {
     "dist",
     "test",
     "tests",
-    # ``npm run vscode:check`` unpacks a pristine Visual Studio Code
-    # release into ``packages/vscode/.vscode-test/`` for integration
-    # testing. Those are MIT-licensed third-party sources we must not
-    # audit (and can't patch, since the next test run re-extracts
-    # them).
+    # ``npm run vscode:check`` 会把 VSCode 解包到 .vscode-test/，属 MIT 第三方源码，不审不改
     ".vscode-test",
 }
 EXCLUDE_FILE_PATTERNS = (
@@ -79,23 +48,12 @@ EXCLUDE_FILE_PATTERNS = (
 
 SAFETY_MARKER = "AIIA-XSS-SAFE:"
 
-# ``hEl.innerHTML = hVal`` in i18n.js translateDOM is the canonical
-# "allow HTML on a ``data-i18n-html`` attribute" path — the value came
-# straight from ``t(key)`` without params. The marker must still be on
-# that line; we don't special-case it.
+# i18n.js translateDOM 里 ``hEl.innerHTML = hVal``（data-i18n-html 分支）也要同样带标记，不特判
 INNERHTML_T_CALL = re.compile(
     r"\.innerHTML\s*[+]?=\s*[^;]*?(?:\bt\(|\b_t\(|\bt\s*\(|\bhVal\b|\b__domSecT\b)"
 )
 
-# A line qualifies as "part of the safety comment block" above the
-# ``.innerHTML = …`` assignment when it is pure whitespace or a
-# ``//``/``/*``/``*`` comment line. We walk upward from the offending
-# line collecting such lines — the marker only needs to appear
-# *somewhere in that contiguous comment block*. This matches how
-# developers actually write multi-line rationale comments (e.g. three
-# ``//`` lines citing the locale key, the interpolated params, and the
-# ``docs/i18n.md`` section) without forcing everything onto a single
-# line.
+# 空行或 ``//`` / ``/*`` / ``*`` 均视为「属于前置注释块」；marker 只要在连续注释块内出现即可
 _COMMENT_LINE = re.compile(r"^\s*(?://|/\*|\*|$)")
 
 
@@ -164,10 +122,7 @@ class TestInnerHtmlSafetyComment(unittest.TestCase):
             )
 
     def test_marker_regex_does_not_trigger_on_textcontent(self) -> None:
-        """Sanity: the regex must not false-positive on ``textContent = t(…)``
-        or ``innerText = t(…)``. This is a self-test so future regex tweaks
-        don't accidentally widen the net to safe sinks.
-        """
+        """自检：regex 不得命中 ``textContent = t(…)`` / ``innerText = t(…)``。"""
         safe_lines = [
             "button.textContent = t('status.copied')",
             "element.innerText = _t('page.label')",
@@ -178,9 +133,7 @@ class TestInnerHtmlSafetyComment(unittest.TestCase):
                 self.assertIsNone(INNERHTML_T_CALL.search(src))
 
     def test_marker_regex_catches_the_canonical_violations(self) -> None:
-        """Sanity: the regex must hit the exact patterns the codebase
-        uses today — catching them IS the point of the test.
-        """
+        """自检：regex 必须能命中仓库真实使用到的所有模式。"""
         unsafe_lines = [
             "button.innerHTML = checkIconSvg + t('status.copied')",
             "submitBtn.innerHTML = t('status.submitting')",
@@ -193,9 +146,7 @@ class TestInnerHtmlSafetyComment(unittest.TestCase):
                 self.assertIsNotNone(INNERHTML_T_CALL.search(src))
 
     def test_comment_block_walker_scans_past_multi_line_rationale(self) -> None:
-        """``_has_safety_marker`` must treat a three-line ``//`` block as
-        one "attached" comment, not three independent lines.
-        """
+        """多行 ``//`` 注释块视为一个 attached comment。"""
         block = [
             "    // AIIA-XSS-SAFE: dev-authored icon + static locale key.",
             "    // t() does not interpolate user-controlled params here.",
@@ -205,10 +156,7 @@ class TestInnerHtmlSafetyComment(unittest.TestCase):
         self.assertTrue(_has_safety_marker(block, 3))
 
     def test_comment_block_walker_rejects_detached_markers(self) -> None:
-        """A marker separated from the assignment by a code line must
-        **not** count — otherwise a stale marker upstream could keep
-        masking new offenders.
-        """
+        """标记与赋值行被代码行隔开则不算数，防止陈旧 marker 掩盖新违规。"""
         block = [
             "    // AIIA-XSS-SAFE: belongs to the previous innerHTML call.",
             "    element.classList.add('loaded')",

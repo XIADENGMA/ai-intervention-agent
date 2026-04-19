@@ -1,24 +1,17 @@
 #!/usr/bin/env node
 // Cross-feature red-team for the i18n runtime. Runs both ``i18n.js``
 // copies (Web UI + VSCode webview) side-by-side under a pinned
-// ``Date.now()`` and exercises every Batch-1 / Batch-1.5 edge case in
-// one self-contained script.
+// ``Date.now()`` and exercises every Batch-1 / Batch-1.5 / Batch-2 /
+// Batch-3 edge case in one self-contained script.
 //
-// Why this script exists alongside pytest
-// ---------------------------------------
-// The pytest suite pins each feature (apostrophe, nested ``#``, LRU,
-// miss-key, prototype-pollution) independently, which is ideal for
-// triage. This file complements it by reporting a single, human-
-// readable PASS/FAIL table covering the whole runtime surface — useful
-// as a pre-commit smoke check and as a CI gate that catches drift
-// between the two halves without needing the full pytest harness.
+// pytest 对单特性做细粒度断言；本脚本补一份人类可读的 PASS/FAIL
+// 集成表，pre-commit smoke 与 CI gate 都用它 catch 两半漂移。
 //
-// Usage
-// -----
+// Usage:
 //   node scripts/red_team_i18n_runtime.mjs          # runs all cases
 //   node scripts/red_team_i18n_runtime.mjs --quiet  # only prints FAIL
 //
-// Exit codes: 0 on all-green, 1 on any failure.
+// Exit: 0 all-green / 1 any failure.
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -348,8 +341,7 @@ console.log('\n=== R6 PluralRules LRU ===')
 // ---- E12 selectordinal + ordinal PluralRules LRU (Batch-2 H9) ----
 console.log('\n=== E12 selectordinal (Batch-2 H9) ===')
 {
-  // CLDR English ordinal categories, verified out-of-band via
-  //   node -e "for (const n of […]) console.log(n, new Intl.PluralRules('en', {type:'ordinal'}).select(n))"
+  // CLDR 英文 ordinal 类别（out-of-band 验证过 Intl.PluralRules({type:'ordinal'})）
   const ordinalLocale = {
     msg:
       '{n, selectordinal, ' +
@@ -374,22 +366,17 @@ console.log('\n=== E12 selectordinal (Batch-2 H9) ===')
   for (const [n, expected] of cases) {
     checkPair(`E12a en n=${n}`, runBoth('en', ordinalLocale, 'msg', { n }), expected)
   }
-  // Chinese has a single ordinal category ("other") — every number
-  // collapses onto the ``other`` branch. Same bundle, different locale.
+  // 中文 ordinal 只有 ``other`` 一档，任何数字都落到同一分支。
   for (const n of [1, 2, 3, 21, 101]) {
     checkPair(`E12b zh-CN n=${n}`, runBoth('zh-CN', ordinalLocale, 'msg', { n }), `${n}th`)
   }
-  // Exact-match ``=N`` must still beat the CLDR category — parity with
-  // cardinal plural.
+  // ``=N`` 精确匹配仍应胜过 CLDR 类别（与 cardinal plural 对齐）。
   const exactLocale = {
     msg: '{n, selectordinal, =0 {first-ever} one {#st} other {#th}}',
   }
   checkPair('E12c exact =0 beats other', runBoth('en', exactLocale, 'msg', { n: 0 }), 'first-ever')
   checkPair('E12d exact =0 non-match falls through', runBoth('en', exactLocale, 'msg', { n: 1 }), '1st')
-  // Partition: cardinal plural and ordinal plural must have their own
-  // LRU buckets, so exercising both on the same locale grows *both*
-  // caches, never steals from one. This is what prevents an ordinal
-  // hot path from evicting cardinal PluralRules under churn.
+  // cardinal/ordinal 各自 LRU 桶，混跑时两个 cache 都应各自增长。
   const cardinalLocale = { msg: '{n, plural, one {# item} other {# items}}' }
   const { api: api12, dbg: dbg12 } = loadI18n(WEB, 'en', ordinalLocale)
   dbg12.clearIntlCaches()
@@ -405,15 +392,13 @@ console.log('\n=== E13 cycle-safe cache key (Batch-2 H8) ===')
 {
   const { api, dbg } = loadI18n(WEB, 'en')
   dbg.clearIntlCaches()
-  // Cyclic options must not crash and must still produce a cache entry.
+  // 循环 options 不能崩，且仍产出一条 cache 项。
   const a = { style: 'decimal', context: null }
   a.context = a
   const out13a = api.formatNumber(1, a)
   check('E13a cycle: formatNumber returns a formatted string', out13a, '1')
   check('E13b cycle: NumberFormat bucket has exactly one entry', dbg.getIntlCacheSize('NumberFormat'), 1)
-  // Two distinct cyclic shapes must NOT alias onto one cache entry —
-  // that's what the shape-signature fallback in _intlKey defends
-  // against. Expand with a shape that has an extra top-level key.
+  // 不同 shape 的循环 options 不得 alias 到同一 entry（_intlKey shape-signature fallback）。
   const b = { style: 'decimal', note: 'extra' }
   b.note = b
   api.formatNumber(1, b)
@@ -422,9 +407,7 @@ console.log('\n=== E13 cycle-safe cache key (Batch-2 H8) ===')
     dbg.getIntlCacheSize('NumberFormat') >= 2,
     true,
   )
-  // BigInt in options exercises the typeof==='bigint' branch inside
-  // _stableStringifyInner — must not throw, and two distinct BigInts
-  // must produce distinct cache keys.
+  // BigInt 走 _stableStringifyInner 的 typeof==='bigint' 分支，不得抛错且不同 BigInt 不得同 key。
   dbg.clearIntlCaches()
   api.formatNumber(1, { minimumIntegerDigits: 2, bigMarker: 1n })
   api.formatNumber(1, { minimumIntegerDigits: 2, bigMarker: 2n })
@@ -433,9 +416,7 @@ console.log('\n=== E13 cycle-safe cache key (Batch-2 H8) ===')
     dbg.getIntlCacheSize('NumberFormat'),
     2,
   )
-  // Date via toJSON: JSON.stringify serialises ``Date`` through
-  // ``toJSON()`` to the ISO string. _stableStringifyInner must do the
-  // same so semantically identical dates collapse to one entry.
+  // Date 经 toJSON 收敛为 ISO 字符串（与 JSON.stringify 一致），语义等价的两个 Date 合并。
   dbg.clearIntlCaches()
   const fixed = new Date('2025-01-01T00:00:00.000Z')
   api.formatNumber(1, { style: 'decimal', anchoredAt: fixed })
@@ -466,7 +447,7 @@ console.log('\n=== E14 non-string resolve warn-once (Batch-2 H11) ===')
       { console: captureConsole },
     )
     dbg.resetNonStringHits()
-    // First three hits on the same namespace key → one warning.
+    // 同一 (lang,key) 连打三次 → 仅一次 warn（warn-once）
     api.t('aiia.foo')
     api.t('aiia.foo')
     api.t('aiia.foo')
@@ -480,17 +461,14 @@ console.log('\n=== E14 non-string resolve warn-once (Batch-2 H11) ===')
       warnLog[0].includes('aiia.foo') && warnLog[0].toLowerCase().includes('deeper key'),
       true,
     )
-    // Hits are introspectable so that the pytest harness can assert
-    // on state without parsing console output.
+    // pytest 侧可直接读 hits，无需解析 console
     const hits = dbg.getNonStringHits()
     check(
       `E14 ${tag} hits roundtrip through getNonStringHits`,
       hits.length === 1 && hits[0].key === 'aiia.foo' && hits[0].type === 'object',
       true,
     )
-    // Strict mode must throw the same non-string error (so test
-    // builds / CI catch it) rather than fall back onto the missing-key
-    // signature.
+    // strict 模式应抛 non-string resolve，而不是退到 missing-key 路径
     dbg.resetNonStringHits()
     api.setStrict(true)
     let thrown = null
@@ -531,7 +509,7 @@ console.log('\n=== E16 wrapBidi FSI/PDI (Batch-3 H14) ===')
       FSI + 'עברית' + PDI,
     )
   }
-  // Byte-parity: web and vsc must agree on every sample.
+  // Byte-parity：web / vsc 对每个样本必须给出同样输出。
   const samples = ['Ada', '', 'עברית', 'abc مرحبا', '42', FSI + 'pre' + PDI, 'صَفر']
   const webApi = loadI18n(WEB, 'en').api
   const vscApi = loadI18n(VSC, 'en').api
@@ -556,32 +534,30 @@ console.log('\n=== E17 ICU AST compile cache (Batch-3 H12) ===')
       hello: 'Hello {{name}}',
       literal: 'no placeholders at all',
     })
-    // Hook presence.
+    // 调试钩子存在
     check(
       `E17 ${tag} debug hooks present`,
       typeof dbg.getIcuCompileCacheSize === 'function' &&
         typeof dbg.peekIcuCompileKeys === 'function',
       true,
     )
-    // Same template reused → cache pins at 1.
+    // 同模板热重渲 → 缓存稳定在 1
     dbg.clearIntlCaches()
     for (let i = 0; i < 8; i++) api.t('msg', { n: i })
     check(`E17 ${tag} hot-hit pins at 1`, dbg.getIcuCompileCacheSize(), 1)
-    // Trivial literals (no `{`) take the fast path and do not land in
-    // the cache — this is the anti-pollution contract that keeps the
-    // LRU from filling up with rendered plural bodies.
+    // 无 `{` 字面量走 fast path、不进缓存（防止渲染后 plural body 污染 LRU）
     dbg.clearIntlCaches()
     for (let i = 0; i < 8; i++) api.t('literal')
     check(`E17 ${tag} fast-path literal not cached`, dbg.getIcuCompileCacheSize(), 0)
-    // Mustache template with `{{…}}` → cache entry (trivial flag).
+    // 带 `{{…}}` 的 mustache 模板占一条 trivial entry
     dbg.clearIntlCaches()
     api.t('hello', { name: 'Ada' })
     check(`E17 ${tag} mustache template counted as trivial entry`, dbg.getIcuCompileCacheSize(), 1)
-    // clearIntlCaches() also empties the ICU bucket.
+    // clearIntlCaches() 同步清空 ICU 桶
     dbg.clearIntlCaches()
     check(`E17 ${tag} clear empties ICU bucket`, dbg.getIcuCompileCacheSize(), 0)
   }
-  // LRU hard cap pinned at 256.
+  // LRU 硬上限 256
   {
     const bundle = {}
     for (let i = 0; i < 400; i++) {
@@ -616,13 +592,10 @@ console.log('\n=== E17 ICU AST compile cache (Batch-3 H12) ===')
 // ---- E18 smoke fuzz (Batch-3 H16 cross-check) ----
 console.log('\n=== E18 smoke fuzz (Batch-3 H16) ===')
 {
-  // Pinned random seed — intentionally duplicated in tests/test_i18n_fuzz_parity.py
-  // so CI can diff the two. A handful of "landmine" templates that
-  // each previously broke an ICU tokenizer in the wild (issues #123
-  // on formatjs/formatjs, #440 on i18next/i18next, #217 on
-  // icu4j/icu4j are the canonical references).
+  // 精选 landmine 模板——每条都曾在实际 ICU tokenizer 里炸过（formatjs /
+  // i18next / icu4j 的历史 issue），这里作为 fuzz 的人工边界样本。
   const mines = [
-    // Nested plural + apostrophe + trailing literal.
+    // 嵌套 plural + 转义撇号 + 尾部字面量
     [
       "{n, plural, =0 {It''s none} one {# thing here} other {# ''{items}'' left}}",
       { n: 0 },
@@ -633,22 +606,19 @@ console.log('\n=== E18 smoke fuzz (Batch-3 H16) ===')
       { n: 3 },
       "3 '{items}' left",
     ],
-    // Three-level nesting (plural → select → plural). The literal word
-    // "one" appears inside the select branches as normal text, not as
-    // interpolation — this mine specifically protects against the class
-    // of bug where the nested ``#`` accidentally escapes its innermost
-    // enclosing plural and gets replaced by the outer ``items`` count.
+    // 三层嵌套（plural → select → plural）：select 分支里的字面量 ``one``
+    // 必须当成普通文本，不能让内层 `#` 逃逸到外层 items 的数值上。
     [
       '{items, plural, one {{status, select, ok {one ok} other {one {count, plural, one {1 step} other {# steps}}}}} other {# items}}',
       { items: 1, status: 'other', count: 5 },
       'one 5 steps',
     ],
-    // selectordinal with =N exact-match precedence.
+    // selectordinal + =N 精确匹配优先级
     ['{n, selectordinal, =1 {first!} one {#st} two {#nd} few {#rd} other {#th}}', { n: 1 }, 'first!'],
     ['{n, selectordinal, =1 {first!} one {#st} two {#nd} few {#rd} other {#th}}', { n: 2 }, '2nd'],
-    // Plain mustache, no ICU.
+    // 纯 mustache，无 ICU
     ['Hello {{name}}!', { name: 'Ada' }, 'Hello Ada!'],
-    // Trivial literal should route through the fast path with no cache entry.
+    // trivial 字面量走 fast path，不占缓存
     ['just a literal', {}, 'just a literal'],
   ]
   for (const [tpl, params, expected] of mines) {

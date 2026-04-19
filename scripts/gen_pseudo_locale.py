@@ -1,37 +1,21 @@
 #!/usr/bin/env python3
-"""Generate (or check) pseudo-localized locale JSON files for i18n QA.
+"""生成 / 校验 pseudo locale JSON，用于 i18n QA。
 
-Pseudo-localization is a standard i18n testing technique
-(https://intlpull.com/blog/pseudo-localization-qa-testing-guide-2026):
-transform source strings into visually-distinct but ASCII-compatible
-variants so that QA + developers can spot, without waiting for
-translators:
+Pseudo-localization 是业界标准 QA 技术：把源串变成视觉上明显但 ASCII
+兼容的变体，不等翻译就能发现：
+  * 硬编码串（没走 ``t()`` / ``data-i18n`` 的仍渲成英文）；
+  * 拼接 bug（``t('a') + ' ' + t('b')`` 拼出来会断开）；
+  * 布局溢出（pseudo 比英文长约 35%，裁剪 / 截断立现）；
+  * Unicode 路径问题（重音字符遍历渲染/编码层）。
 
-- **Hardcoded strings** — any plain English string on-screen that wasn't
-  wrapped in ``t()``/``data-i18n=`` will still render in English.
-- **Concatenation bugs** — split strings like ``t('a') + ' ' + t('b')``
-  produce broken pseudo output.
-- **Layout overflow** — pseudo is ~35% longer than English; truncated
-  tooltips / clipped buttons surface immediately.
-- **Unicode path breaks** — accented characters exercise every
-  rendering/encoding layer.
+产物落在 ``<locales>/_pseudo/pseudo.json``（子目录，既有 ``glob('*.json')``
+loader 不会误加载）。启用 pseudo（dev URL 参数 / 调试开关）不在本脚本范围。
 
-This script does NOT ship pseudo locale to end-users. The generated
-file lives in ``<locales>/_pseudo/pseudo.json`` (under a subdirectory
-so existing ``glob('*.json')`` locale loaders don't pick it up by
-mistake). Developers can manually enable it for QA by e.g. loading
-the file via a dev-mode URL query or a debug toggle — that wiring is
-intentionally out of scope here.
+用法：
+    python scripts/gen_pseudo_locale.py           # 两侧各再生
+    python scripts/gen_pseudo_locale.py --check   # CI 用：stale 则 exit 1
 
----
-
-**Usage**:
-    python scripts/gen_pseudo_locale.py           # regenerate both sides
-    python scripts/gen_pseudo_locale.py --check   # CI-friendly: fail if stale
-
-**Exit codes**:
-- ``0``: generation succeeded, OR (--check) all pseudo files up-to-date
-- ``1``: (--check) at least one pseudo file is missing or stale
+Exit：``0`` 成功 / 全部最新；``1`` ``--check`` 时有文件缺失或过期。
 """
 
 from __future__ import annotations

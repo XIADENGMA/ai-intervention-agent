@@ -1,43 +1,22 @@
-"""Cycle-safe + JSON.stringify-aligned cache key for ``_stableStringify``.
+"""``_stableStringify`` 的环安全 + JSON.stringify 对齐（Batch-1.5 H1 加固）。
 
-Why this matters
-----------------
-H1 (Batch-1.5) added ``_stableStringify`` so semantically-identical Intl
-options collapse to a single LRU cache entry. That fix landed a recursive
-tree walk **without** a ``WeakSet`` seen guard and **without** ``toJSON``
-alignment. Three edge cases the subsequent hardening must cover:
+H1 给 Intl options 做了按值合并的 LRU，但当时没带 ``WeakSet`` seen 守卫，
+也没尊重 ``toJSON``。边界：
+  1. 循环 options（``Intl.*`` 会静默忽略未知字段，caller 把 debug 字段
+     ``opts.context = opts`` 合法回塞）→ 递归爆栈；``_intlKey`` try/catch
+     兜底但所有循环 caller 都塌陷到 ``lang|?`` 单桶，**不同循环 options
+     共享同一个 Intl 实例**，是正确性 bug。
+  2. Date 字段：``JSON.stringify(new Date(0))`` 走 ``toJSON`` 得 ISO 串；
+     ``Object.keys(date)`` 为空，当前 walk 会把所有 Date 折叠成 ``{}``。
+  3. fallback 路径：即便 stringify 合法失败（循环/BigInt/Symbol），不同
+     形状的 opts 也必须产出不同 key，否则跨 caller 复用实例。
 
-1. **Circular Intl options.** ``Intl.NumberFormat`` / ``Intl.DateTimeFormat``
-   silently ignore properties they don't know about (verified empirically
-   with ``node -e``), so callers can legally pass a structure that cycles
-   through an unrelated debug field (``opts.context = opts``). Our
-   recursion then overflows the call stack; the ``try/catch`` inside
-   ``_intlKey`` rescues the throw but dumps every cyclic caller into the
-   same ``lang|?`` bucket, so **distinct cyclic options share a single
-   Intl instance** — a correctness bug, not just a perf wart.
-
-2. **Date options.** ``JSON.stringify(new Date(0))`` returns the ISO
-   string because ``Date.prototype.toJSON`` exists; our current walk
-   enumerates ``Object.keys(date)`` which is empty, so every Date folds
-   into ``{}`` and callers that vary a Date field collide.
-
-3. **Shape differentiation under fallback.** Even when stringify does
-   legitimately fail (circular / BigInt / Symbol), distinct ``opts``
-   shapes must still differ in the cache key — otherwise we leak a
-   cross-caller Intl instance that mangles output.
-
-Fix contract (for both ``static/js/i18n.js`` and ``packages/vscode/i18n.js``)
----------------------------------------------------------------------------
-* ``_stableStringify`` recurses with a ``WeakSet`` seen guard; cycles
-  throw a sentinel that ``_intlKey`` can identify.
-* ``_stableStringify`` honours ``toJSON`` on objects that define it
-  (Date, Temporal, any caller-provided serialiser), matching
-  ``JSON.stringify`` semantics byte-for-byte.
-* ``_intlKey`` falls back to a **shape signature** (sorted list of
-  own top-level keys) when stringify fails, so distinct cyclic shapes
-  never collide to ``|?``.
-* Web UI and VSCode copies stay byte-parallel — same canonical key on
-  identical input, covered by the byte-parity check at the bottom.
+合约（两份 i18n.js）：
+  * ``_stableStringify`` 带 WeakSet seen，环触发 sentinel 由 ``_intlKey`` 捕获；
+  * ``_stableStringify`` 像 JSON.stringify 一样尊重 ``toJSON``；
+  * stringify 失败时 ``_intlKey`` 退到 shape signature（顶层 own keys 排序）
+    作为 fallback，避免塌陷到 ``|?``；
+  * 两份对同输入产同 canonical key（byte-parity 在末尾测）。
 """
 
 from __future__ import annotations
@@ -90,7 +69,7 @@ class _CycleMixin(unittest.TestCase):
     I18N_PATH: Path
 
     def test_cyclic_options_do_not_crash_and_produce_a_cache_entry(self) -> None:
-        """``a.self = a`` must not take the whole runtime down."""
+        """``a.self = a`` 不得整个 runtime 崩溃。"""
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -110,10 +89,7 @@ class _CycleMixin(unittest.TestCase):
         self.assertEqual(payload["size"], 1)
 
     def test_distinct_cyclic_shapes_do_not_collide_on_question_mark(self) -> None:
-        """Two cyclic opts with different top-level keys must live in
-        separate cache entries; otherwise we leak a formatter across
-        unrelated callers.
-        """
+        """不同顶层 key 的循环 opts 必须分桶，否则会跨 caller 复用 formatter。"""
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -131,9 +107,8 @@ class _CycleMixin(unittest.TestCase):
         self.assertEqual(int(out.strip()), 2)
 
     def test_date_options_align_with_json_stringify_semantics(self) -> None:
-        """``JSON.stringify`` calls ``toJSON`` on Date; _stableStringify
-        must do the same, so two distinct Date values in an option bag
-        do NOT collapse to a single empty-object key.
+        """``JSON.stringify`` 对 Date 走 ``toJSON``；_stableStringify 必须对齐，
+        否则不同 Date 值会折叠到同一个 ``{}`` key。
         """
         body = textwrap.dedent(
             """
@@ -152,13 +127,11 @@ class _CycleMixin(unittest.TestCase):
         self.assertEqual(
             json.loads(out),
             [1, 2],
-            "Date opts must dedup on identical values and split on different values.",
+            "Date opts 同值必须去重、异值必须分桶",
         )
 
     def test_custom_tojson_is_honoured(self) -> None:
-        """Any object with a ``toJSON`` method should round-trip through
-        it, matching ``JSON.stringify``.
-        """
+        """任何带 ``toJSON`` 方法的对象都要被 round-trip，对齐 ``JSON.stringify``。"""
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -190,10 +163,8 @@ class TestCycleVSCode(_CycleMixin):
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestCycleByteParity(unittest.TestCase):
-    """Both halves must serialise identical canonical keys even in the
-    degraded-cycle branch; otherwise a contributor debugging
-    ``AIIA_I18N__test.peekIntlCacheKeys('NumberFormat')`` in Web UI and
-    VSCode would see inexplicable drift.
+    """即便走环降级分支，两份也必须产出相同 canonical key；否则贡献者在
+    Web UI / VSCode 里分别 ``peekIntlCacheKeys('NumberFormat')`` 会看到莫名漂移。
     """
 
     def test_cycle_fallback_key_bytes_match(self) -> None:
@@ -216,7 +187,7 @@ class TestCycleByteParity(unittest.TestCase):
         self.assertEqual(
             json.loads(out_w),
             json.loads(out_v),
-            "cycle-fallback cache key bytes drifted between Web UI and VSCode i18n.js",
+            "环降级分支的 cache key 在 Web UI 与 VSCode i18n.js 之间漂移",
         )
 
 

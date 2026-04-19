@@ -1,43 +1,13 @@
-"""ICU AST compile cache pinning (Batch-3 H12).
+"""ICU AST 编译缓存（Batch-3 H12）。
 
-Why this matters
-----------------
-FormatJS's ``intl-messageformat`` splits work into two stages:
-``@formatjs/icu-messageformat-parser`` builds a parsed AST once per
-template string, then each ``format(params)`` call walks the AST.
-Their docs explicitly recommend hoisting the parser result out of
-hot loops, and their server-side rendering benchmark shows a 10–30×
-speed-up when the AST is cached between requests.
-
-Our in-house runtime has the same shape: ``_findIcuBlock`` +
-``_parseIcuOptions`` + ``_readBalancedBlock`` are pure functions of
-the raw template string, but today they re-run on every ``t()``
-call. ``formatRelativeFromNow`` re-templates task lists every 30 s,
-and every row issues 2–5 ``t()`` calls, so the ICU parse cost is
-paid hundreds of times per minute for strings that never change.
-
-Batch-3 H12 adds an LRU cache keyed by the **raw template string**
-mapping to a compiled descriptor:
-
-    { block: { start, open, close, argName, kind, options } | null,
-      trivial: boolean }
-
-``trivial = true`` means the template has no ICU block and
-``_renderIcu`` can skip its while-loop entirely and fall through to
-mustache interpolation. Non-trivial templates store one compiled
-block; subsequent ``t()`` calls reuse the descriptor instead of
-re-parsing the string.
-
-Contract
---------
-* Same template parsed twice → cache size stays at 1.
-* Distinct templates → distinct cache entries.
-* Hard LRU cap of 256 entries (matches FormatJS's default
-  ``maxCacheSize``). Evicted entries re-parse on next hit.
-* Cache hit must produce the same output as a cold parse.
-* ``_testingClearIntlCaches()`` clears ICU compile cache too.
-* Test-only introspection via ``dbg.getIcuCompileCacheSize()``.
-* Web UI ↔ VSCode byte-parity on all of the above.
+合约：
+  * 同模板重复 parse → cache size 保持 1
+  * 不同模板 → 不同 cache entry
+  * LRU 上限 256（与 FormatJS ``maxCacheSize`` 默认一致），淘汰后下次命中重新 parse
+  * 命中与冷 parse 必须产出一致结果
+  * ``_testingClearIntlCaches()`` 清空 ICU 桶
+  * 调试钩子 ``dbg.getIcuCompileCacheSize()`` 可读
+  * Web UI 与 VSCode 对上述行为 byte-parity
 """
 
 from __future__ import annotations
@@ -103,9 +73,7 @@ class _IcuCompileCacheMixin(unittest.TestCase):
         self.assertEqual(shape["clear"], "function")
         self.assertEqual(shape["peek"], "function")
 
-    # ------------------------------------------------------------------
-    # 1 template, N calls → 1 entry
-    # ------------------------------------------------------------------
+    # 1 模板 N 次调用 → 1 条缓存
     def test_same_template_parses_once_then_hits_cache(self) -> None:
         body = textwrap.dedent(
             """
@@ -122,10 +90,7 @@ class _IcuCompileCacheMixin(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(int(out), 1)
 
-    # ------------------------------------------------------------------
-    # trivial templates (no ICU block) are also cached so we don't even
-    # re-run _findIcuBlock's regex scan on every t()
-    # ------------------------------------------------------------------
+    # trivial 模板（无 ICU 块）也进缓存，避免每次 t() 重跑 _findIcuBlock
     def test_trivial_template_is_marked_and_cached(self) -> None:
         body = textwrap.dedent(
             """
@@ -142,9 +107,7 @@ class _IcuCompileCacheMixin(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(int(out), 1)
 
-    # ------------------------------------------------------------------
-    # distinct templates → distinct entries
-    # ------------------------------------------------------------------
+    # 不同模板 → 各自一条缓存
     def test_distinct_templates_land_in_distinct_entries(self) -> None:
         body = textwrap.dedent(
             """
@@ -163,13 +126,9 @@ class _IcuCompileCacheMixin(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(int(out), 3)
 
-    # ------------------------------------------------------------------
-    # LRU hard cap
-    # ------------------------------------------------------------------
+    # LRU 硬上限
     def test_lru_hard_cap_at_256_entries(self) -> None:
-        """Push 400 distinct templates through. The cache must stay at
-        or below 256 — eviction is proof the LRU is wired, not just a
-        growing Map."""
+        """灌 400 条不同模板，size 必须 ≤ 256，证明 LRU 真的在淘汰。"""
         body = textwrap.dedent(
             """
             dbg.clearIntlCaches();
@@ -189,11 +148,9 @@ class _IcuCompileCacheMixin(unittest.TestCase):
         self.assertEqual(code, 0, err)
         payload = json.loads(out)
         self.assertLessEqual(payload["size"], 256)
-        self.assertGreaterEqual(payload["size"], 200)  # must be near the cap
+        self.assertGreaterEqual(payload["size"], 200)
 
-    # ------------------------------------------------------------------
-    # cache hit produces identical output to cold parse
-    # ------------------------------------------------------------------
+    # 命中与冷 parse 输出一致
     def test_cache_hit_produces_correct_output(self) -> None:
         body = textwrap.dedent(
             """
@@ -216,9 +173,7 @@ class _IcuCompileCacheMixin(unittest.TestCase):
         self.assertEqual(payload["warm"], "1 item")
 
     def test_cache_hit_preserves_apostrophe_escape_semantics(self) -> None:
-        """Cached descriptor must remember apostrophe-escaped literals
-        exactly as a cold parse would emit them — otherwise two hits
-        on the same template diverge."""
+        """命中缓存必须沿用冷 parse 的撇号转义结果，否则两次命中会发散。"""
         body = textwrap.dedent(
             """
             api.registerLocale('en', {
@@ -239,9 +194,7 @@ class _IcuCompileCacheMixin(unittest.TestCase):
         self.assertEqual(payload["b"], "2 it's 2 items")
         self.assertEqual(payload["c"], "1 it's one")
 
-    # ------------------------------------------------------------------
-    # clearIntlCaches() clears ICU compile cache
-    # ------------------------------------------------------------------
+    # clearIntlCaches() 同步清空 ICU 编译桶
     def test_clear_intl_caches_also_empties_icu_compile(self) -> None:
         body = textwrap.dedent(
             """
@@ -279,9 +232,7 @@ class TestIcuCompileCacheVSCode(_IcuCompileCacheMixin):
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestIcuCompileCacheByteParity(unittest.TestCase):
-    """Both halves must report the same cache geometry for the same
-    inputs — if Web grows an entry and VSCode doesn't, the byte-parity
-    invariant is broken."""
+    """两份 i18n.js 对同输入必须给出同样的缓存 geometry（byte-parity 基准）。"""
 
     TEMPLATES: tuple[tuple[str, str], ...] = (
         ("t0", "Hello {{name}}"),

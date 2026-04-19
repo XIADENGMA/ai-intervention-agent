@@ -1,42 +1,26 @@
-"""Cross-platform parity guard for AIIA_I18N.translateDOM (T1 · C10c follow-up).
+"""T1·C10c 跨端 parity 守卫：``AIIA_I18N.translateDOM``。
 
-Background:
-    ``static/js/tri-state-panel-bootstrap.js`` (byte-mirrored to
-    ``packages/vscode/`` by ``scripts/package_vscode_vsix.mjs``) calls
-    ``window.AIIA_I18N.translateDOM(rootEl)`` once after mounting the
-    controller so the 13 ``data-i18n="aiia.state.*"`` strings become
-    localized text (see bootstrap.js §Behavior §3). The contract was
-    first documented in ``BEST_PRACTICES_PLAN.tmp.md`` §T1 v3 §4:
+``static/js/tri-state-panel-bootstrap.js``（由 ``package_vscode_vsix.mjs``
+byte-mirror 到 VSCode 侧）在 panel 挂载后调用 ``translateDOM(rootEl)``
+把 13 个 ``data-i18n="aiia.state.*"`` 串 i18n 化（bootstrap §Behavior §3）。
+合约首源于 BEST_PRACTICES_PLAN.tmp.md §T1 v3 §4：
 
-        > SSR + data-i18n 双写不是冗余：SSR 防 JS 失败时首屏空白；
-        > data-i18n 喂客户端 translateDOM(rootEl) 让语言切换无需重渲染。
+  > SSR + data-i18n 双写不是冗余：SSR 防 JS 失败时首屏空白；
+  > data-i18n 喂客户端 translateDOM(rootEl) 让语言切换无需重渲染。
 
-    The Web UI side (``static/js/i18n.js``) has shipped ``translateDOM``
-    since the initial i18n commit. The VSCode side (``packages/vscode/i18n.js``)
-    originally lacked the method, so the bootstrap call was a silent
-    no-op on VSCode — user-visible only if any ``aiia.*`` string were
-    ever injected at runtime after SSR (future extension risk). This
-    test pins the invariant: **both halves MUST expose ``translateDOM``
-    and scan the same four ``data-i18n[-variant]`` attribute set.**
+Web UI 侧一直有 ``translateDOM``；VSCode 侧早期缺，导致 bootstrap 调用
+在 VSCode 沦为静默 no-op。本文件锁不变量：两份 ``i18n.js`` 必须都导出
+``translateDOM`` 且扫同样四种 ``data-i18n[-variant]`` 属性集合。
 
-Failure modes this test catches:
+捕获的失败模式：
+  1. 任一侧移掉 ``translateDOM`` → bootstrap 本地化步骤变 dead code；
+  2. 只在单侧加 ``data-i18n-foo`` → 语言切换 retranslation 不对称；
+  3. 函数体在但未挂到 ``AIIA_I18N`` 公共 API → settings-manager.js 等
+     消费者静默失效。
 
-1. Someone removes ``translateDOM`` from either ``i18n.js``  → bootstrap's
-   panel-localization step silently becomes dead code on that side.
-2. Someone adds a new ``data-i18n-foo`` attribute to only one half's
-   ``translateDOM`` → asymmetric retranslation on language switch.
-3. Someone removes ``translateDOM`` from the public ``AIIA_I18N`` api
-   object (even though the function body still exists) → consumers like
-   ``static/js/settings-manager.js`` and the tri-state bootstrap silently
-   stop working on language switch.
-
-Why static analysis instead of JSDOM:
-    These files are classic ``;(function(){})()`` IIFE modules that
-    register ``window.AIIA_I18N`` as a side effect. Running them through
-    a real DOM harness is overkill for the contract we care about;
-    ``test_runtime_behavior.py`` already covers runtime i18n behavior
-    at the locale/dict layer. Static structural assertions are enough
-    to prevent the specific drift that caused §T1 v3 to be filed.
+走静态分析而非 JSDOM：这些 IIFE 跑在 ``window.AIIA_I18N`` 副作用里；
+runtime 行为由 ``test_runtime_behavior.py`` 覆盖，结构断言足够挡 §T1 v3
+记录的那种漂移。
 """
 
 from __future__ import annotations

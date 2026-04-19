@@ -1,29 +1,13 @@
-"""L3·G2 follow-up: pin ``formatRelativeFromNow`` bucket boundaries to
-the industry-canonical moment.js thresholds (44s / 45m / 22h / 26d /
-11month). Without this test we shipped output like ``"in 60 seconds"``
-/ ``"in 60 minutes"`` / ``"in 24 hours"`` / ``"in 30 days"`` /
-``"in 12 months"`` at the exact threshold where the user expects
-``"in 1 minute"`` / ``"in 1 hour"`` / ``"in 1 day"`` / ``"in 1 month"``
-/ ``"in 1 year"``.
+"""L3·G2 后续：把 ``formatRelativeFromNow`` 的桶边界钉到 moment.js 行业
+默认值（s=44 / m=45 / h=22 / d=26 / M=11）。否则阈值点会输出 "in 60
+seconds" / "in 24 hours" 这类低级错误，而用户期待 "in 1 minute" / "in
+1 hour"。
 
-Why moment's table and not our first-principles alternatives
-------------------------------------------------------------
-- moment.js ships ``s=45 / m=45 / h=22 / d=26 / M=11`` as defaults,
-  documented and referenced by day.js, luxon, date-fns-tz and every
-  major humanize library since ~2014.
-- ``Intl.RelativeTimeFormat`` only handles *value + unit → string*;
-  it explicitly leaves bucket-selection to the caller. Copying moment
-  avoids reinventing UX research.
-- Using the moment cutoffs makes our rounding behaviour match every
-  existing user-facing RTL bar chart / timeline on the web, reducing
-  the ``60-seconds-ago`` footgun to zero.
+moment 的阈值 day.js / luxon / date-fns-tz 全部沿用；``Intl.RelativeTimeFormat``
+只负责 value+unit→string，桶选择交给 caller，所以直接抄 moment 即可。
 
-Deterministic harness
----------------------
-We inject a fake ``Date`` into the node VM so each assertion maps to
-a known ``absSec``. ``Intl.RelativeTimeFormat.format(...)`` still uses
-the real ICU data (node's embedded CLDR), so the expected English
-strings lock us to the ICU contract, not to our own string table.
+测试用伪 ``Date`` 注入 node VM，``Intl.RelativeTimeFormat.format`` 仍走真实
+CLDR，所以预期串锁在 ICU 合约而非本仓的字符串表。
 """
 
 from __future__ import annotations
@@ -39,7 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WEBUI_I18N = ROOT / "static" / "js" / "i18n.js"
 VSCODE_I18N = ROOT / "packages" / "vscode" / "i18n.js"
 
-FAKE_NOW_MS = 1_704_164_645_000  # fixed epoch; deterministic reruns
+FAKE_NOW_MS = 1_704_164_645_000  # 固定时间戳，保证可重放
 
 
 def _node_available() -> bool:
@@ -47,8 +31,7 @@ def _node_available() -> bool:
 
 
 def _call_from_now(i18n_path: Path, delta_ms: int, lang: str = "en") -> str:
-    """Call ``api.formatRelativeFromNow(FAKE_NOW + delta_ms)`` in a VM
-    where ``Date.now()`` is pinned to ``FAKE_NOW_MS``. Return stdout."""
+    """在 ``Date.now()`` 被钉到 ``FAKE_NOW_MS`` 的 VM 里调用 ``api.formatRelativeFromNow``。"""
     script = textwrap.dedent(
         """
         const FAKE_NOW = %(fake_now)d;
@@ -91,19 +74,15 @@ def _call_from_now(i18n_path: Path, delta_ms: int, lang: str = "en") -> str:
     return proc.stdout
 
 
-# moment's default thresholds, translated into absSec ceilings:
-#   absSec <  45        → seconds
-#   absSec <  45 * 60   → minutes   (2700)
-#   absSec <  22 * 3600 → hours     (79200)
-#   absSec <  26 * 86400 → days     (2246400)
-#   absSec <  11 * 2592000 → months (28512000, using 30-day month)
-#   else               → years
-#
-# Expected Intl.RelativeTimeFormat.format output (numeric='always', en):
-#   ``in <n> <unit>`` with unit pluralised for n != 1.
-#
-# Note: the 30-day month is what moment.js uses internally; keeping it
-# consistent avoids subtle off-by-hours regressions when switching libs.
+# moment 默认阈值换算为 absSec 上限：
+#   <45          seconds
+#   <45*60       minutes (2700)
+#   <22*3600     hours   (79200)
+#   <26*86400    days    (2246400)
+#   <11*2592000  months  (28512000，30 天月)
+#   其余         years
+# ``Intl.RelativeTimeFormat.format`` 英文 numeric='always' 输出 ``in <n> <unit>``（n!=1 走复数）。
+# 30 天月沿用 moment 语义，避免换库时 off-by-hours。
 CASES = [
     # label,                  delta_ms,                expect_substring,      forbidden_substring
     ("0s", 0, "0 seconds", None),
@@ -120,7 +99,7 @@ CASES = [
     ("2246400s_promote_month", 2_246_400_000, "1 month", "day"),
     ("28511999s_11mo", 28_511_999_000, "11 months", None),
     ("28512000s_promote_year", 28_512_000_000, "1 year", "month"),
-    # Past-facing (negative deltas) parity:
+    # 负 delta 的 past-facing 对称
     ("neg_45s_promote", -45_000, "1 minute ago", None),
     ("neg_2700s_promote", -2_700_000, "1 hour ago", None),
     ("neg_79200s_promote", -79_200_000, "1 day ago", None),
@@ -178,8 +157,7 @@ class TestRelativeTimeThresholdsVSCode(_ThresholdMixin):
 
 
 class TestByteParityForRelativeTimeBuckets(unittest.TestCase):
-    """The two copies MUST produce identical output on every bucket
-    boundary so UI/VSCode feel the same on a 45-second-old timestamp."""
+    """每个桶边界两份 i18n.js 输出必须一致，保证 Web 与 VSCode 同输入同体验。"""
 
     @unittest.skipUnless(_node_available(), "node runtime unavailable")
     def test_two_halves_match_on_every_case(self) -> None:
@@ -195,25 +173,15 @@ class TestByteParityForRelativeTimeBuckets(unittest.TestCase):
         )
 
 
-# ---- Edge-case inputs (Infinity / NaN / MAX_SAFE_INTEGER) -----------------
+# ---- Infinity / NaN / MAX_SAFE_INTEGER 等脏输入 ---------------------------
 #
-# Users occasionally hand ``formatRelativeFromNow`` garbage — a missing
-# timestamp coerced through ``new Date("")``, an ``Infinity`` from a
-# broken API, a ``Number.MAX_SAFE_INTEGER`` accidentally left over from
-# a loop bound. The contract is:
-#   - Never throw. The formatter is on the rendering hot path; a throw
-#     there breaks the whole translated string.
-#   - Return the relative-time string for 0 seconds (``"in 0 seconds"``
-#     under ``numeric: 'always'``, ``en``). This matches moment.js's
-#     humanize(0) behaviour when fed a junk duration and is the least-
-#     surprising fallback we can offer.
-#   - Web UI and VSCode copies MUST behave identically (byte parity).
+# 合约：绝不抛（formatter 在热路径上），一律回落到 "0 seconds"（``numeric:
+# 'always'`` 英文），对齐 moment.js ``humanize(0)`` 行为；两份必须 byte-parity。
 
 
 def _call_with_target_expr(i18n_path: Path, target_expr: str, lang: str = "en") -> str:
-    """Evaluate ``target_expr`` at Node level and pass the resulting
-    value directly into ``formatRelativeFromNow``. Lets us exercise
-    non-JSON-encodable inputs like ``Infinity`` and ``NaN``.
+    """在 Node 层 eval ``target_expr`` 再喂给 ``formatRelativeFromNow``；
+    用来传 ``Infinity`` / ``NaN`` 等 JSON 不可表达的值。
     """
     script = textwrap.dedent(
         """
@@ -325,7 +293,7 @@ class TestRelativeTimeEdgeByteParity(unittest.TestCase):
                 mismatches.append(f"{label}: web={web!r} vsc={vsc!r}")
         self.assertFalse(
             mismatches,
-            "edge-case output diverged across halves:\n  " + "\n  ".join(mismatches),
+            "两份实现在 edge-case 上漂移：\n  " + "\n  ".join(mismatches),
         )
 
 
