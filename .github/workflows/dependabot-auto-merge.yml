@@ -16,6 +16,12 @@ jobs:
     timeout-minutes: 5
     if: github.actor == 'dependabot[bot]'
     steps:
+      # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
+      - name: Harden runner（audit）
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: audit
+
       # 用官方 fetch-metadata，替代以前手搓的 `gh pr view | parse semver` 脚本。
       # 好处：
       #   1. semver 解析 + 信号含 dependency-name / dependency-type / update-type 等，边界情况官方兜底；

@@ -48,6 +48,13 @@ jobs:
         os: [ubuntu-latest, macos-latest]
 
     steps:
+      # harden-runner 仅支持 Linux GitHub-hosted runner；macOS 矩阵行静默跳过
+      - name: Harden runner（audit）
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: audit
+
       - name: 检出代码
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 

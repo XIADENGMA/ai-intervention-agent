@@ -1,22 +1,11 @@
-name: Workflow Lint
+name: Dependency Review
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - ".github/workflows/**"
-      - ".github/actionlint*.y*ml"
   pull_request:
     branches:
       - main
-    paths:
-      - ".github/workflows/**"
-      - ".github/actionlint*.y*ml"
-  workflow_dispatch:
 
-# 同一分支只保留最新一次运行，避免排队浪费
+# 同一 PR 只保留最新一次运行
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,10 +18,16 @@ permissions:
   contents: read
 
 jobs:
-  actionlint:
-    name: actionlint
+  review:
+    name: Dependency Review
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
+    permissions:
+      # 在 PR 上评论审查摘要
+      pull-requests: write
+      contents: read
+
     steps:
       # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
       - name: Harden runner（audit）
@@ -43,9 +38,10 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: 运行 actionlint（含 shellcheck）
-        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d # v1.72.0
+      - name: 依赖审查（vuln + license 拦截）
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
-          # 直接失败阻塞合并，而不是把问题折叠进 PR review
-          reporter: github-check
-          fail_level: error
+          # 引入 moderate 级及以上漏洞的 PR 直接 fail（PR gate）
+          fail-on-severity: moderate
+          # 仅在失败时贴评论，减少 noise；摘要同时写入 job summary
+          comment-summary-in-pr: on-failure

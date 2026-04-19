@@ -1,0 +1,71 @@
+name: OSSF Scorecard
+
+on:
+  # branch_protection_rule 变更时自动复跑（scorecard 会评估 branch-protection 分数）
+  branch_protection_rule:
+  schedule:
+    # 周一 09:37 UTC ≈ 周一 17:37 Asia/Shanghai，与 dependabot/codeql 错峰
+    - cron: "37 9 * * 1"
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# 同一分支只保留最新一次运行
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      # 上传 SARIF 结果到 Security tab
+      security-events: write
+      # 使用 keyless OIDC 签名 publish_results（Sigstore）
+      id-token: write
+      contents: read
+      actions: read
+
+    steps:
+      # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
+      - name: Harden runner（audit）
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: audit
+
+      - name: 检出代码
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # scorecard-action 要求不保留 git credential；否则部分检查会告警
+          persist-credentials: false
+
+      - name: 运行 Scorecard 分析
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # 公有仓库推荐 true：结果发布到 OpenSSF 公共看板，
+          # 接入 https://scorecard.dev / api.securityscorecards.dev
+          publish_results: true
+
+      - name: 上传 Scorecard 结果产物
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+
+      - name: 上传 SARIF 到 Security tab
+        uses: github/codeql-action/upload-sarif@65216971a11ded447a6b76263d5a144519e5eee1 # v3.30.11
+        with:
+          sarif_file: results.sarif

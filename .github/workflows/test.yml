@@ -44,6 +44,12 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
+      # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
+      - name: Harden runner（audit）
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: audit
+
       - name: 检出代码
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 

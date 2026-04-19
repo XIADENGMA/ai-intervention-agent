@@ -1,0 +1,88 @@
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "static/locales/**"
+      - "packages/vscode/locales/**"
+      - "packages/vscode/l10n/**"
+      - "packages/vscode/package.nls*.json"
+      - ".github/**"
+      - "LICENSE"
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "static/locales/**"
+      - "packages/vscode/locales/**"
+      - "packages/vscode/l10n/**"
+      - "packages/vscode/package.nls*.json"
+      - ".github/**"
+      - "LICENSE"
+  schedule:
+    # 周一 18:23 UTC ≈ 周二 02:23 Asia/Shanghai，错开 PR/push 高峰
+    - cron: "23 18 * * 1"
+  workflow_dispatch:
+
+# 同一分支只保留最新一次运行，避免排队浪费
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL / ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # 上传 SARIF 结果到 Security tab
+      security-events: write
+      # 读取 action 元数据（CodeQL 需要）
+      actions: read
+      contents: read
+      packages: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 解释型语言 build-mode 统一 none，免去伪造构建脚本
+          - language: python
+          - language: javascript-typescript
+
+    steps:
+      # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
+      - name: Harden runner（audit）
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df # v2.18.0
+        with:
+          egress-policy: audit
+
+      - name: 检出代码
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: 初始化 CodeQL
+        uses: github/codeql-action/init@65216971a11ded447a6b76263d5a144519e5eee1 # v3.30.11
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          # security-extended：比默认 security 查询集多 ~30% 规则，比
+          # security-and-quality 少噪音，单人维护项目性价比最高
+          queries: security-extended
+
+      - name: 执行分析
+        uses: github/codeql-action/analyze@65216971a11ded447a6b76263d5a144519e5eee1 # v3.30.11
+        with:
+          category: "/language:${{ matrix.language }}"
