@@ -18,20 +18,17 @@ concurrency:
 
 permissions: read-all
 
-# 注意：scorecard-action 的 `publish_results: true` 要求 workflow **不得**在
-# top-level 设置 `env:` 或 `defaults:`（否则 OIDC 身份不唯一，OpenSSF 看板的
-# Sigstore 签名验证会 400）。所以 FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 放到
-# job 级。参考：https://github.com/ossf/scorecard-action#workflow-restrictions
+# 注意：scorecard-action 的 `publish_results: true` 对 workflow 结构有硬限制
+# （OIDC 身份必须唯一可验证）：既不允许 top-level 也不允许 job-level 的 `env:`
+# 或 `defaults:`。Scorecard 本身是 Go action + Sigstore，不跑第三方 JS
+# action，所以这里直接**不设 env**，不影响其他 workflow 的 Node24 迁移验证。
+# 参考：https://github.com/ossf/scorecard-action#workflow-restrictions
 
 jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
-    env:
-      # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     permissions:
       # 上传 SARIF 结果到 Security tab
