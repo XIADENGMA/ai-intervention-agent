@@ -16,17 +16,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions: read-all
+
+# 注意：scorecard-action 的 `publish_results: true` 要求 workflow **不得**在
+# top-level 设置 `env:` 或 `defaults:`（否则 OIDC 身份不唯一，OpenSSF 看板的
+# Sigstore 签名验证会 400）。所以 FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 放到
+# job 级。参考：https://github.com/ossf/scorecard-action#workflow-restrictions
 
 jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    env:
+      # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     permissions:
       # 上传 SARIF 结果到 Security tab

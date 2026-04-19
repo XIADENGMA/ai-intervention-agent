@@ -2,9 +2,10 @@ name: Dependabot Auto-Merge
 
 on: pull_request
 
+# 默认 read-only；只有 dependabot job 需要 `contents: write` + `pull-requests: write`。
+# 缩小权限面积以满足 OSSF Scorecard Token-Permissions 检查。
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 env:
   # 提前验证 GitHub Actions 在 Node.js 24 运行时的兼容性（2026-06-02 起将成为默认）
@@ -15,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.actor == 'dependabot[bot]'
+    permissions:
+      # 仅本 job 合 PR + 推 merge commit 需要 write
+      contents: write
+      pull-requests: write
     steps:
       # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
       - name: Harden runner（audit）

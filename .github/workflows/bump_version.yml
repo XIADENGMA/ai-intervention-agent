@@ -12,16 +12,21 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 默认 read-only，只有 bump-version job 需要 `contents: write`；
+# 缩小权限面积以满足 OSSF Scorecard Token-Permissions 检查。
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-permissions:
-  contents: write
 
 jobs:
   bump-version:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      # 仅本 job 需要推 commit；其他（未来）job 默认 read-only
+      contents: write
     steps:
       # 审计模式下 harden-runner 仅记录 egress，不 block；样本够了再切 block
       - name: Harden runner（audit）
