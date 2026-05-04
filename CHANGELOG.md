@@ -29,6 +29,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Chore
 
+- **Bilingual `README` Acknowledgements section formalises the
+  upstream lineage.** Pairs with the LICENSE backfill (which
+  retained Fábio Ferreira (2024) and Pau Oliva (2025) per MIT
+  terms): the new section credits both upstream authors with
+  links to their original repos
+  ([`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp)
+  · [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp))
+  and explicitly scopes the v1.5.x rewrite (Web UI, VS Code
+  extension, i18n, notification stack, CI/CD pipeline) to
+  [@xiadengma](https://github.com/xiadengma) so attribution
+  intent is unambiguous to PyPI / Marketplace readers landing
+  on either README. Inserted immediately above the existing
+  License section in both `README.md` and `README.zh-CN.md`.
 - **Top-level `Makefile` exposes `make test` / `make ci` /
   `make docs` / `make lint` / `make coverage` /
   `make vscode-check` / `make pre-commit` / `make clean` as

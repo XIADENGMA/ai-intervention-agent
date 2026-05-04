@@ -302,6 +302,10 @@ flowchart TD
 - [cunzhi](https://github.com/imhuso/cunzhi)
 - [other interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp)
 
+## Acknowledgements
+
+This project's heritage traces back to **Fábio Ferreira** (2024) and **Pau Oliva** (2025), whose original [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp) and [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp) seeded the MCP `interactive_feedback` tool surface. Their copyright notices are preserved in [`LICENSE`](LICENSE) per the MIT license terms. The v1.5.x line is a substantial rewrite — Web UI, VS Code extension, i18n, notification stack, CI/CD pipeline — owned and maintained by [@xiadengma](https://github.com/xiadengma) (PyPI / Open VSX / VS Code Marketplace publisher).
+
 ## License
 
 MIT License
