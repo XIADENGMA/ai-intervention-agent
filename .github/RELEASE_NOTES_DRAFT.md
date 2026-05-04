@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 44 maintenance commits added on top of the release. This is **not**
+> the 47 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,25 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **Frontend `frontend_countdown` input is no longer pinned at
+  250s.** Even after the runtime fix below, the actual UI controls
+  (Web UI HTML `<input max="250">`, VS Code webview HTML, and the
+  two settings-manager JS guards `val <= 250`) silently rejected
+  any user-typed value above 250 — so the bug was visible to
+  operators trying to *raise* the countdown but not the underlying
+  runtime constants. This release walks all four input surfaces
+  up to `max="3600"` (mirroring `AUTO_RESUBMIT_TIMEOUT_MAX`),
+  refreshes the five `?? 250` / `|| 250` fallbacks in
+  `static/js/multi_task.js` to `?? 240` / `|| 240` (the actual
+  `AUTO_RESUBMIT_TIMEOUT_DEFAULT`; 250 was the historical *MAX*,
+  not *DEFAULT*), and refreshes the 13 user-facing copy lines that
+  still said "Range 30-250" — both READMEs, `web_ui.py` docstring
+  + argparse help, three OpenAPI yaml schemas under
+  `web_ui_routes/`, and the four `autoResubmitTimeoutHint` /
+  `countdownHint` i18n bundles. `tests/test_frontend_input_range_parity.py`
+  locks all 13 magic numbers against
+  `server_config.AUTO_RESUBMIT_TIMEOUT_{MAX,DEFAULT}` so the next
+  refactor cannot drift again.
 - **Silent feedback-timeout truncation fixed.** The four runtime
   clamp constants in `server_config.py`
   (`FEEDBACK_TIMEOUT_MIN/MAX`, `AUTO_RESUBMIT_TIMEOUT_MIN/MAX`)
@@ -268,9 +287,9 @@ downstream packagers do not need to update integration scripts.
   climbs from 2244 to 2249. The TOML / doc parsers each
   carry a self-check so refactoring the regex later cannot
   silently weaken the gate.
-- **Two new introspection-based parity gates** lock the
+- **Three new introspection-based parity gates** lock the
   numeric clamp bounds in `shared_types.SECTION_MODELS`
-  against the two surfaces that historically drifted:
+  against the surfaces that historically drifted:
   - `tests/test_server_config_shared_types_parity.py`
     asserts `server_config.{FEEDBACK_TIMEOUT_MIN/MAX,
     AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` equal the
@@ -284,6 +303,15 @@ downstream packagers do not need to update integration scripts.
     inline comment, and asserts equality against the same
     introspected bounds. 2 tests; ~5 ranges captured per
     file (sanity-checked).
+  - `tests/test_frontend_input_range_parity.py` covers the
+    four frontend input controls (Web UI HTML / settings JS,
+    VS Code webview HTML / settings JS) plus the five
+    `?? 250` / `|| 250` fallbacks in `static/js/multi_task.js`,
+    asserting that all 13 magic numbers stay in sync with
+    `server_config.AUTO_RESUBMIT_TIMEOUT_{MAX,DEFAULT}`. The
+    multi_task sweep self-checks by requiring at least 5
+    captures so a regex regression cannot vacuously pass.
+    5 tests.
 
 ### Tooling / CI
 
