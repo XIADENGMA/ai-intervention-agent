@@ -64,6 +64,34 @@ invalidate 被沉默地撤销。修复：T1 写回前 re-check
 
 获取 Web UI 子进程日志文件路径，自动创建 logs 目录并截断过大文件。
 
+### `_is_port_available(host: str, port: int) -> bool`
+
+检测 ``(host, port)`` 是否可被 bind（pre-flight check）。
+
+why：
+    ``start_web_service`` 历史上靠 15s health-check loop 间接发现
+    端口冲突——如果用户的 8080 已被另一个进程占用，子进程会立刻
+    因 ``OSError: [Errno 48] Address already in use`` 退出，但调用
+    方要等满 ``max_wait = 15s`` 才看到 ``ServiceTimeoutError``，错
+    误码也是不太精确的 ``"start_timeout"`` —— 用户搞不清是端口冲突
+    还是 Flask 启动慢，文档里的 troubleshooting 章节专门写过这条。
+
+    Pre-flight ``socket.bind`` 在子进程启动前先验证端口可用，命中
+    EADDRINUSE 时立刻报 ``port_in_use``、错误码精确、用户体验
+    从"等 15s 然后看 timeout"变成"立刻收到端口被占的明确提示"。
+
+TOCTOU 说明：
+    bind 后立刻关闭再交给子进程 bind，存在窗口被别的进程抢占的
+    race，但这个 race 在用户实际场景几乎不存在（用户常态是"我
+    前一个 Web UI 还在跑"，不是"我此刻刻意起两个互相竞争的
+    binding"）。即使发生，子进程依然会 fail-fast 抛 OSError，
+    然后 ``except Exception`` 分支会兜底转成 ``start_failed``，
+    没有比 pre-flight 之前更糟。
+
+返回：
+    ``True``：端口可用；``False``：端口被占用 / 不可绑定（权限不足、
+    非法 host 等）。
+
 ### `start_web_service(config: WebUIConfig, script_dir: Path) -> None`
 
 启动 Flask Web UI 子进程，含健康检查

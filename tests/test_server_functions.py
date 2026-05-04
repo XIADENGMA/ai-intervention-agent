@@ -1940,6 +1940,15 @@ class TestStartWebService(unittest.TestCase):
     def setUp(self):
         server.ServiceManager._instance = None
         server.ServiceManager._lock = threading.Lock()
+        # 默认让 pre-flight 端口检查放行，避免本地开发机/CI 上恰好被
+        # 占用的端口让本类原有的"测 health-check 路径 / Popen 路径 /
+        # subprocess 错误路径"的测试因端口冲突提前 fail-fast 而误报。
+        # 专门测 _is_port_available 行为的子测自己 stop() 这层 mock。
+        self._port_patcher = patch(
+            "service_manager._is_port_available", return_value=True
+        )
+        self._port_patcher.start()
+        self.addCleanup(self._port_patcher.stop)
 
     def tearDown(self):
         server.ServiceManager._instance = None
@@ -2105,6 +2114,147 @@ class TestStartWebService(unittest.TestCase):
         cfg = _make_config()
         script_dir = _SERVER_DIR
         server.start_web_service(cfg, script_dir)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  R17.1 — _is_port_available pre-flight check for start_web_service
+# ═══════════════════════════════════════════════════════════════════════════
+class TestIsPortAvailable(unittest.TestCase):
+    """直接验 ``_is_port_available`` 行为契约。
+
+    why：
+        ``start_web_service`` 在 R17.1 之前依赖 15s health-check loop 间接
+        发现端口冲突，错误码模糊（``start_timeout``）。pre-flight check
+        让端口冲突立刻 fail-fast 为 ``port_in_use``，本组测试锁住该函数
+        的核心契约：可绑定→True，被占→False，权限不足→False。
+    """
+
+    def test_returns_true_for_unbound_high_port(self):
+        """随机高端口（OS 分配）必然可绑定。"""
+        from service_manager import _is_port_available
+
+        # bind 到 0 让 OS 选一个可用端口，关闭后立刻测试该端口仍可
+        # bind（SO_REUSEADDR 让 TIME_WAIT 不算占用）。
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("127.0.0.1", 0))
+            free_port = s.getsockname()[1]
+        # s 关闭后，free_port 大概率仍可用
+        self.assertTrue(_is_port_available("127.0.0.1", free_port))
+
+    def test_returns_false_when_port_actually_bound(self):
+        """端口被另一个 socket 持有时必须返回 False。"""
+        from service_manager import _is_port_available
+
+        # 故意持有一个端口模拟"另一个进程占着"
+        holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # 不设 SO_REUSEADDR，确保它真的"独占"该地址
+        holder.bind(("127.0.0.1", 0))
+        holder.listen(1)
+        try:
+            occupied = holder.getsockname()[1]
+            self.assertFalse(
+                _is_port_available("127.0.0.1", occupied),
+                f"端口 {occupied} 被 listen 占用时应返回 False",
+            )
+        finally:
+            holder.close()
+
+    def test_returns_false_for_privileged_port_when_unprivileged(self):
+        """非 root 进程 bind 80 端口必然 EACCES，应当返回 False。
+
+        skip：root 跑 CI 时 bind 80 可能成功——直接跳过避免误报。
+        """
+        import os
+
+        from service_manager import _is_port_available
+
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("以 root 跑测试时低端口可绑定，无法验证 EACCES 路径")
+
+        # 80 端口未被占用时也会因权限不足 raise OSError(EACCES)，
+        # 函数应 swallow 并返回 False。
+        result = _is_port_available("127.0.0.1", 80)
+        self.assertFalse(result, "非 root 进程 bind 80 应返回 False")
+
+    def test_returns_false_for_invalid_host(self):
+        """无效 host 字面量（如不存在的网卡 IP）应返回 False 而非抛异常。"""
+        from service_manager import _is_port_available
+
+        # 192.0.2.0/24 是 RFC 5737 TEST-NET-1 文档保留段，本机一般
+        # 不会有这个地址→bind 抛 EADDRNOTAVAIL，函数应 swallow。
+        result = _is_port_available("192.0.2.1", 12345)
+        self.assertFalse(result, "无效 host 上的 bind 应返回 False，而非抛 OSError")
+
+
+class TestStartWebServicePortInUse(unittest.TestCase):
+    """``start_web_service`` 在 pre-flight 命中端口冲突时的契约。
+
+    锁定：
+        1. health_check 失败 + 端口被占 → 立刻抛 ``port_in_use``，
+           **不会**走到 subprocess.Popen
+        2. 错误码必须是 ``port_in_use``，便于上层（CLI / Web UI）做
+           精确文案 / 自动选端口
+    """
+
+    def setUp(self):
+        server.ServiceManager._instance = None
+        server.ServiceManager._lock = threading.Lock()
+
+    def tearDown(self):
+        server.ServiceManager._instance = None
+
+    @patch("service_manager._is_port_available", return_value=False)
+    @patch("service_manager.subprocess.Popen")
+    @patch("service_manager.health_check_service", return_value=False)
+    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    def test_port_in_use_raises_fast_without_popen(
+        self, mock_hc, mock_popen, mock_port
+    ):
+        """端口被占时立刻抛 ServiceUnavailableError，subprocess 不应被调用。"""
+        cfg = _make_config()
+        script_dir = _SERVER_DIR
+        with self.assertRaises(ServiceUnavailableError) as ctx:
+            server.start_web_service(cfg, script_dir)
+
+        # 错误码契约
+        self.assertEqual(
+            ctx.exception.code,
+            "port_in_use",
+            f"期望 code='port_in_use'，实际：{ctx.exception.code}",
+        )
+        # fail-fast 契约：subprocess.Popen 一次都不该被调
+        mock_popen.assert_not_called()
+
+    @patch("service_manager._is_port_available", return_value=False)
+    @patch("service_manager.health_check_service", return_value=False)
+    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    def test_port_in_use_message_mentions_host_and_port(self, mock_hc, mock_port):
+        """异常消息应包含具体 host:port，方便用户定位。"""
+        cfg = _make_config(host="127.0.0.1", port=18080)
+        script_dir = _SERVER_DIR
+        with self.assertRaises(ServiceUnavailableError) as ctx:
+            server.start_web_service(cfg, script_dir)
+
+        msg = str(ctx.exception)
+        self.assertIn("127.0.0.1", msg, f"异常消息应含 host：{msg}")
+        self.assertIn("18080", msg, f"异常消息应含 port：{msg}")
+
+    @patch("service_manager._is_port_available", return_value=True)
+    @patch("service_manager.health_check_service", return_value=True)
+    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    def test_health_check_pass_skips_port_check(self, mock_hc, mock_port):
+        """health_check 通过（说明是我们自己的服务）→ pre-flight 不应执行。
+
+        语义：若 health_check 已识别出端口背后是本服务，pre-flight 端口
+        bind（必失败，因为我们自己占着）会让 start_web_service 误报
+        port_in_use。守住"health_check 是 short-circuit"这条契约。
+        """
+        cfg = _make_config()
+        script_dir = _SERVER_DIR
+        # 应当无异常返回，且 _is_port_available 不被调用
+        server.start_web_service(cfg, script_dir)
+        mock_port.assert_not_called()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -24,6 +24,8 @@
 
 ### `_get_web_ui_log_path(script_dir: Path) -> Path`
 
+### `_is_port_available(host: str, port: int) -> bool`
+
 ### `start_web_service(config: WebUIConfig, script_dir: Path) -> None`
 
 ### `update_web_content(summary: str, predefined_options: list[str] | None, task_id: str | None, auto_resubmit_timeout: int, config: WebUIConfig) -> None`

@@ -582,6 +582,63 @@ def _get_web_ui_log_path(script_dir: Path) -> Path:
     return log_path
 
 
+def _is_port_available(host: str, port: int) -> bool:
+    """检测 ``(host, port)`` 是否可被 bind（pre-flight check）。
+
+    why：
+        ``start_web_service`` 历史上靠 15s health-check loop 间接发现
+        端口冲突——如果用户的 8080 已被另一个进程占用，子进程会立刻
+        因 ``OSError: [Errno 48] Address already in use`` 退出，但调用
+        方要等满 ``max_wait = 15s`` 才看到 ``ServiceTimeoutError``，错
+        误码也是不太精确的 ``"start_timeout"`` —— 用户搞不清是端口冲突
+        还是 Flask 启动慢，文档里的 troubleshooting 章节专门写过这条。
+
+        Pre-flight ``socket.bind`` 在子进程启动前先验证端口可用，命中
+        EADDRINUSE 时立刻报 ``port_in_use``、错误码精确、用户体验
+        从"等 15s 然后看 timeout"变成"立刻收到端口被占的明确提示"。
+
+    TOCTOU 说明：
+        bind 后立刻关闭再交给子进程 bind，存在窗口被别的进程抢占的
+        race，但这个 race 在用户实际场景几乎不存在（用户常态是"我
+        前一个 Web UI 还在跑"，不是"我此刻刻意起两个互相竞争的
+        binding"）。即使发生，子进程依然会 fail-fast 抛 OSError，
+        然后 ``except Exception`` 分支会兜底转成 ``start_failed``，
+        没有比 pre-flight 之前更糟。
+
+    返回：
+        ``True``：端口可用；``False``：端口被占用 / 不可绑定（权限不足、
+        非法 host 等）。
+    """
+    families: list[int] = []
+    if ":" in host:
+        # IPv6 字面量优先 IPv6 socket
+        families.append(socket.AF_INET6)
+    else:
+        families.append(socket.AF_INET)
+
+    for family in families:
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as s:
+                # SO_REUSEADDR：避免上一个进程的 TIME_WAIT 假性占用
+                # 误报为冲突；SO_REUSEPORT 不开（macOS / Linux 行为不
+                # 一致，反而可能让 pre-flight 通过但实际启动失败）。
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                # bind 失败抛 OSError：errno 48 (macOS) / 98 (Linux)
+                # = EADDRINUSE，errno 49 (macOS) / 99 (Linux) =
+                # EADDRNOTAVAIL（无效 host）。两种都视作"不可用"。
+                s.bind((host, port))
+            # bind 成功后立刻关闭（with 退出会 close 释放端口）；子
+            # 进程启动时再次 bind 才是真正的服务监听。
+            return True
+        except OSError as exc:
+            logger.debug(
+                f"_is_port_available({host}:{port}, family={family}) "
+                f"bind 失败: {exc.errno=}, {exc}"
+            )
+            continue
+    return False
+
+
 def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
     """启动 Flask Web UI 子进程，含健康检查"""
     web_ui_path = script_dir / "web_ui.py"
@@ -603,6 +660,20 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
             f"Web 服务已在运行: http://{get_target_host(config.host)}:{config.port}"
         )
         return
+
+    # Pre-flight 端口可用性检查：避免子进程因 EADDRINUSE 立即退出却要
+    # 等满 15s health-check 才报错。能跑到这里说明：
+    #   1. 没有同名 service_name 的子进程在跑（is_process_running=False）
+    #   2. 没有任何 Web UI（包括外部）在监听该端口（health_check=False）
+    # 那么端口若不可 bind，必定是另一个非我们的进程占着。
+    if not _is_port_available(config.host, config.port):
+        msg = (
+            f"端口 {config.host}:{config.port} 已被占用，但 health-check "
+            f"未识别为本服务。请检查是否有其他进程占用该端口，"
+            f"或在配置中改用其他端口。"
+        )
+        logger.error(msg)
+        raise ServiceUnavailableError(msg, code="port_in_use")
 
     args = [
         sys.executable,
