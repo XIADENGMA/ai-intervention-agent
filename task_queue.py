@@ -1030,6 +1030,23 @@ class TaskQueue:
         - 跳过已完成的任务
         - 重建 created_at_monotonic 以保证剩余时间计算正确
         - 已超时的任务标记为 pending 但保留（让前端处理自动提交）
+
+        损坏文件 quarantine（R17.8）
+        ----------------------------
+        当顶层 ``json.loads`` / ``read_text`` / 顶层结构解析失败时，
+        把损坏文件**重命名**为 ``<persist_path>.corrupt-<ISO 时间戳>``
+        而非默认覆盖。理由：
+
+        1. ``_persist`` 用 ``tempfile.mkstemp + os.replace`` 原子写，
+           会**完全覆盖**原 target —— 用户重启后第一次 ``add_task``
+           触发 ``_persist`` 就会让损坏证据永久消失，运维**完全无法**
+           inspect 当时的文件状态。
+        2. quarantine 后的文件留在原目录，文件名带时间戳避免互相覆盖；
+           运维可以 ``ls *.corrupt-*`` 一眼看到所有历史损坏快照，配合
+           ``hexdump`` / ``json.tool`` 做断电诊断。
+        3. quarantine 失败（磁盘满 / 权限不够）也只是 logger.warning
+           降级，不阻断 ``_restore`` 的"使用空队列"兜底，绝不抛异常给
+           上层 ``__init__``。
         """
         if not self._persist_path or not self._persist_path.exists():
             return
@@ -1116,3 +1133,36 @@ class TaskQueue:
                 logger.warning(f"持久化文件中所有 {skipped} 个任务均损坏，已跳过")
         except Exception as e:
             logger.warning(f"任务恢复失败（将使用空队列）: {e}", exc_info=True)
+            self._quarantine_corrupt_persist_file(reason=str(e))
+
+    def _quarantine_corrupt_persist_file(self, *, reason: str) -> None:
+        """把损坏的 persist 文件重命名为 ``<path>.corrupt-<ISO>``，避免被
+        下次 ``_persist`` 的 ``os.replace`` 静默覆盖。
+
+        ``ISO`` 时间戳采用 ``YYYYMMDDTHHMMSSZ`` 紧凑格式（移除冒号 / 微秒，
+        因 Windows 文件名禁止冒号）。这样运维 ``ls *.corrupt-*`` 一眼能看到
+        所有历史损坏快照，按时间排序也是文件名字典序排序。
+
+        本函数本身严格容错：rename 失败（磁盘满 / 权限 / target 已被占用）
+        都吞 OSError 并 logger.warning，绝不向 ``_restore`` 抛异常。
+        """
+        if not self._persist_path or not self._persist_path.exists():
+            return
+        try:
+            ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            corrupt_path = self._persist_path.with_name(
+                f"{self._persist_path.name}.corrupt-{ts}"
+            )
+            os.replace(str(self._persist_path), str(corrupt_path))
+            logger.warning(
+                "已将损坏的持久化文件 quarantine 至 "
+                f"{corrupt_path.name}（原因: {reason}）；"
+                "运维可保留该文件用于断电 / fsync 异常诊断，"
+                "或手动删除"
+            )
+        except OSError as quarantine_err:
+            # rename 失败也只是 best-effort，吞掉以保留 _restore 的"用空
+            # 队列继续运行"语义。最坏情况下下次 _persist 会原子覆盖原文件。
+            logger.warning(
+                f"quarantine 损坏持久化文件失败（best-effort 已忽略）: {quarantine_err}"
+            )
