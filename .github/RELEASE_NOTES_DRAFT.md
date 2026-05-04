@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 55 maintenance commits added on top of the release. This is **not**
+> the 58 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -77,6 +77,22 @@ downstream packagers do not need to update integration scripts.
   cells. Configurations that previously hit the cap now actually
   take effect; configurations already inside the new range see
   identical behaviour.
+- **`POST /api/reset-feedback-config` now actually resets all 4
+  feedback fields (was: 3 of 4 silently).** The endpoint backing
+  the Web UI's "Reset feedback config to defaults" button only
+  included `frontend_countdown`, `resubmit_prompt`, `prompt_suffix`
+  in its `defaults` dict — `backend_max_wait` was missing. So an
+  operator who'd previously bumped `backend_max_wait` in
+  `config.toml` (or via a now-fixed config edit path) and clicked
+  "Reset" would see three fields revert and one silently retain
+  the old value. Partial reset. Endpoint now imports
+  `FEEDBACK_TIMEOUT_DEFAULT` and adds the fourth key, and a new
+  AST-based parity test
+  (`tests/test_reset_feedback_config_parity.py`) statically extracts
+  the dict-literal keys and asserts equality with
+  `SECTION_MODELS::feedback.model_fields` — so any future
+  Pydantic-side field addition that doesn't update the endpoint
+  fails CI before merge.
 - **Silent HTTP-retry / HTTP-timeout truncation fixed.** Same
   pattern as feedback-timeout, on a different code surface: the
   six `WebUIConfig.ClassVar` clamp bounds in `server_config.py`
@@ -307,10 +323,11 @@ downstream packagers do not need to update integration scripts.
   climbs from 2244 to 2249. The TOML / doc parsers each
   carry a self-check so refactoring the regex later cannot
   silently weaken the gate.
-- **Five new introspection-based parity gates** lock the
-  numeric clamp bounds + default values in
-  `shared_types.SECTION_MODELS` against the five surfaces that
-  historically drifted (or could drift in the future):
+- **Six new introspection-based parity gates** lock the
+  numeric clamp bounds, default values, and reset-endpoint field
+  coverage in `shared_types.SECTION_MODELS` against the six
+  surfaces that historically drifted (or could drift in the
+  future):
   - `tests/test_server_config_shared_types_parity.py`
     asserts `server_config.{FEEDBACK_TIMEOUT_MIN/MAX,
     AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` equal the
@@ -369,6 +386,30 @@ downstream packagers do not need to update integration scripts.
     `from_config_file` divides by 100) is asserted explicitly
     so a future refactor can't break the implicit ÷100 contract
     silently. 8 tests.
+  - `tests/test_reset_feedback_config_parity.py` covers the
+    "reset endpoint partial coverage" failure mode that the
+    round-4 audit caught: the
+    `POST /api/reset-feedback-config` endpoint's `defaults`
+    dict literal must contain **every** field from
+    `SECTION_MODELS::feedback`, not just the UI-visible subset.
+    Uses Python's `ast` module to statically extract
+    dict-literal keys (more direct than spinning up a Flask
+    test client and inspecting the response), with a sanity
+    check that ≥ 1 key is found so a refactor to
+    `dict(...)`-constructor or comprehension form would fail
+    loudly rather than vacuously pass. 1 test.
+  - `test_frontend_input_range_parity.py` extended with a new
+    `TestSettingsManagerFallbackDefault` class that locks
+    `static/js/settings-manager.js::updateFeedbackUI`'s
+    `frontend_countdown ?? 240` fallback to
+    `AUTO_RESUBMIT_TIMEOUT_DEFAULT`. Sister gate to the
+    existing `multi_task.js` 5-fallback sweep. The settings
+    panel input element pulls from this fallback in the brief
+    window before `/api/feedback-config` resolves; without
+    this gate, a future `DEFAULT` change would silently leave
+    the settings-panel skeleton showing the old number. 1
+    test (total parity gate now covers 14 magic numbers across
+    5 frontend files).
 
 ### Tooling / CI
 
