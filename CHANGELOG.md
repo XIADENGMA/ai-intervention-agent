@@ -85,6 +85,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   visitors. Both READMEs now carry a CodeQL badge in the
   same row, signalling that static analysis is
   continuously enforced.
+- **API reference now covers every project-root `*.py`
+  module (23 of 23, was 14).** Round-8/9 audit discharged
+  the 9-entry documentation backlog by graduating
+  `server.py`, `web_ui.py`, `server_feedback.py`,
+  `service_manager.py`, `web_ui_security.py`,
+  `web_ui_validators.py`, `web_ui_config_sync.py`,
+  `web_ui_mdns.py`, and `web_ui_mdns_utils.py` over four
+  sequential commits (one per surface, plus a final
+  6-module batch). Each commit moved the module name from
+  `IGNORED_MODULES` to `MODULES_TO_DOCUMENT` in
+  `scripts/generate_docs.py`, placed it in
+  `QUICK_NAV_CORE` or `QUICK_NAV_UTILITY` based on whether
+  it owns a public contract or is internal plumbing,
+  regenerated the bilingual `docs/api(.zh-CN)/` pages
+  (English signature-only, Chinese full-docstring), and
+  refreshed `docs/api(.zh-CN)/index.md` plus the
+  bilingual `docs/README{,.zh-CN}.md` cross-links. The
+  classification invariant established in the same wave
+  (see Tooling) prevents future modules from slipping in
+  undocumented; `IGNORED_MODULES` is now an empty
+  `frozenset[str]` for the first time in the v1.5.x line.
+  Per-locale page count: 14 → 23. No source-side change
+  in any graduation commit; the new pages render existing
+  module/function docstrings as-is.
 
 ### Tooling
 
@@ -171,6 +195,61 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   contract, including a reverse-lock that fails if a
   future contributor wires `needs_minification` back into
   the `--check` path.
+- **`scripts/ci_gate.py` no longer silently skips the
+  Node-driven i18n red-team smoke when `node`/`fnm` is
+  absent.** The runtime gate
+  (`scripts/red_team_i18n_runtime.mjs`, runs the bilingual
+  locale bundles end-to-end through the actual `Intl`
+  pipeline) historically printed a single "skip" line and
+  exited 0 on machines without Node, so a CI runner that
+  lost Node mid-upgrade would go silently green. Decision
+  logic extracted into a new helper
+  `_resolve_node_redteam_cmd(node_version)` that returns a
+  command list when `fnm`/`node` is available and an empty
+  list otherwise; `ci_gate` now raises `RuntimeError` on the
+  empty case unless the operator explicitly opts out via
+  `AIIA_SKIP_NODE_REDTEAM=1`. 5 unit tests
+  (`tests/test_ci_gate_node_redteam.py`) lock the four
+  branches plus a stability assertion on the `_run_warn`
+  signature.
+- **Top-level Python module classification invariant
+  (`scripts/generate_docs.py`).** Introduces a new
+  `IGNORED_MODULES: frozenset[str]` constant — initially
+  populated with the 9 root `*.py` modules that had no
+  generated docs (`server`, `web_ui`, `server_feedback`,
+  `service_manager`, `web_ui_security`,
+  `web_ui_validators`, `web_ui_config_sync`,
+  `web_ui_mdns`, `web_ui_mdns_utils`) plus per-module
+  `TODO(round-8/docs-debt)` markers explaining the
+  rationale — and adds the
+  `_assert_top_level_modules_classified()` invariant
+  called from `generate_index()`. The invariant rejects
+  any unclassified `*.py` (must appear in
+  `MODULES_TO_DOCUMENT` xor `IGNORED_MODULES`) and any
+  overlap between the two sets. 5 introspection-based
+  unit tests
+  (`tests/test_docs_module_classification_parity.py`)
+  cover the full state machine plus a `TODO`-marker
+  contract for any non-empty `IGNORED_MODULES`.
+  Round-8/9 then graduated all 9 entries in three
+  sequential commits (`server.py`, `web_ui.py`,
+  `server_feedback.py`, then a final batch of 6:
+  `service_manager.py`, `web_ui_security.py`,
+  `web_ui_validators.py`, `web_ui_config_sync.py`,
+  `web_ui_mdns.py`, `web_ui_mdns_utils.py`). Each
+  graduation moves the module name from
+  `IGNORED_MODULES` to `MODULES_TO_DOCUMENT`, places it
+  in `QUICK_NAV_CORE` or `QUICK_NAV_UTILITY` based on
+  whether it owns a public contract or is internal
+  plumbing, regenerates the bilingual `docs/api(.zh-CN)/`
+  pages, and refreshes `docs/api(.zh-CN)/index.md` plus
+  the bilingual `docs/README{,.zh-CN}.md` cross-links.
+  `IGNORED_MODULES` is now an empty `frozenset[str]`
+  (typed annotation preserved with a docstring marking
+  the contract for any future re-population). Per-locale
+  page count climbs from 14 to 23. No source-side change
+  in any graduation commit; the pages render existing
+  docstrings only.
 
 ### Fixed
 
@@ -219,6 +298,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the old value. Endpoint now imports `FEEDBACK_TIMEOUT_DEFAULT`
   and covers the fourth key; AST-based parity test prevents
   regression.
+- **OpenAPI input-spec `auto_resubmit_timeout` lacked
+  `minimum`/`maximum` bounds.** Both
+  `POST /api/add-task` and `POST /api/update-feedback`
+  declared the field as a free `type: number` with no
+  range constraint and no integer constraint, but
+  `task_queue.add_task` and the Web UI feedback writer
+  pin it to `[0, 3600]` (with 0 disabling, otherwise
+  `[10, 3600]`). External clients hitting the OpenAPI
+  spec to discover the contract had to either read the
+  Python source or get bitten at runtime. Both endpoint
+  yaml docstrings now declare
+  `type: integer, minimum: 0, maximum: 3600` with a
+  description explicitly cross-referencing
+  `server_config.AUTO_RESUBMIT_TIMEOUT_MAX`. New AST/YAML
+  parity test
+  (`tests/test_openapi_input_range_parity.py`) loads the
+  endpoint source, walks the docstring `requestBody`
+  schema, and asserts the OpenAPI bounds equal the
+  `_clamp_int` closure cells of
+  `SECTION_MODELS::feedback.auto_resubmit_timeout` — so
+  any future Pydantic-side widening (e.g.
+  `[0, 7200]`) automatically requires the OpenAPI
+  spec to follow.
 - **CI Gate output is now WARNING-clean across consecutive runs.**
   `enhanced_logging.py` registers a Loguru sink against `sys.__stderr__`
   at module import — that path bypasses pytest's `capsys`/`capfd` capture

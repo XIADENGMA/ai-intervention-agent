@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 64 maintenance commits added on top of the release. This is **not**
+> the 74 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -308,6 +308,29 @@ downstream packagers do not need to update integration scripts.
   instead of the legacy key-only `scripts/check_locales.py`,
   with a parenthetical explaining the legacy survives only
   for backward compatibility.
+- **API reference now covers every project-root `*.py` module
+  (23 of 23, was 14).** The round-8 audit introduced an
+  `IGNORED_MODULES` set in `scripts/generate_docs.py` to make
+  the previously-implicit "we deliberately skip these" choice
+  visible (with `TODO` markers and a per-module rationale), and
+  added a classification invariant
+  (`tests/test_docs_module_classification_parity.py`) so a new
+  module can no longer slip in undocumented. Round-8/9 then
+  discharged the entire backlog by graduating all 9 originally
+  ignored modules in three sequential commits — `server.py`,
+  `web_ui.py`, `server_feedback.py`, and a final batch of 6
+  (`service_manager.py`, `web_ui_security.py`,
+  `web_ui_validators.py`, `web_ui_config_sync.py`,
+  `web_ui_mdns.py`, `web_ui_mdns_utils.py`). `IGNORED_MODULES`
+  is now an empty `frozenset[str]`, the largest visible
+  documentation gap in v1.5.x is closed, and the bilingual
+  `docs/README{,.zh-CN}.md` index plus the auto-generated Quick
+  navigation in `docs/api(.zh-CN)/index.md` enumerate every
+  module under both Core and Utility groupings. Per-locale page
+  count climbs from 14 to 23. No source-side change in any of
+  the four graduation commits — the new pages render existing
+  module/function docstrings, so the underlying public API
+  surface is unchanged.
 
 ### Tests
 
