@@ -287,7 +287,7 @@ flowchart TD
 
 - **文档总索引**（按角色定位）：[`docs/README.zh-CN.md`](docs/README.zh-CN.md) · [`docs/README.md`](docs/README.md)
 - **脚本索引**（CI 门禁 / 生成器 / QA）：[`scripts/README.md`](scripts/README.md)
-- **发布说明**：[`CHANGELOG.md`](CHANGELOG.md)
+- **发布说明**：[`CHANGELOG.md`](CHANGELOG.md) · VS Code 插件 marketplace 专属：[`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
 - **贡献指南**：[`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 - **API 文档（英文）**：[`docs/api/index.md`](docs/api/index.md)
 - **API 文档（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
