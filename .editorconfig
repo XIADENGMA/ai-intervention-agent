@@ -1,0 +1,32 @@
+# EditorConfig：统一不同 IDE / 编辑器的基础格式化设置
+# 详见 https://editorconfig.org
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# Python：与 ruff (line-length = 88, indent = 4 spaces) 保持一致
+[*.py]
+indent_size = 4
+max_line_length = 88
+
+# JS/TS/JSON/CSS/HTML/Markdown：与社区主流 + Prettier 默认保持一致
+[*.{js,mjs,cjs,jsx,ts,tsx,json,jsonc,css,html,md,mdx,yml,yaml,toml}]
+indent_size = 2
+
+# Makefile 必须用 tab，否则 make 会报错
+[Makefile]
+indent_style = tab
+
+# Shell 脚本：保留 4 空格便于阅读
+[*.{sh,bash,zsh}]
+indent_size = 4
+
+# 配置文件 .default：跟随同后缀的设置
+[*.{toml,jsonc}.default]
+indent_size = 2
