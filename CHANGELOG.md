@@ -382,6 +382,62 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
+- **`start_web_service` now fails fast on port conflict
+  (`code="port_in_use"`) instead of waiting 15 s for a misleading
+  `start_timeout`.** Pre-fix, when the configured port (default
+  `8080`) was already held by another process, the spawned subprocess
+  exited immediately with `OSError: [Errno 48] Address already in
+  use`, but `start_web_service` would happily wait the full
+  `max_wait = 15 s` health-check loop before raising
+  `ServiceTimeoutError(code="start_timeout")` — a misleading
+  "service is slow to start" diagnosis when the actual root cause is
+  a hard, deterministic port collision. Troubleshooting docs even
+  called this out as a known papercut. New module-private
+  `_is_port_available(host, port)` performs a pre-flight
+  `socket.bind` (with `SO_REUSEADDR` so `TIME_WAIT` doesn't trigger
+  a false positive) right *after* the existing `health_check_service`
+  short-circuit, so the "our own healthy service is already
+  listening" path is unchanged (we'd otherwise spuriously self-fail
+  every restart, since pre-flight bind would fail against our own
+  listener). When the port is genuinely owned by another process,
+  `start_web_service` raises
+  `ServiceUnavailableError(code="port_in_use", ...)` containing
+  `host:port` for log/UI surfacing, in milliseconds rather than 15
+  seconds. There is a sub-millisecond TOCTOU window between
+  pre-flight close and subprocess re-bind where another process
+  could grab the port; in that case the existing `except Exception`
+  Popen branch still produces a truthful `code="start_failed"`, so
+  the worst case under contention is "as good as before" rather
+  than "worse than before". Seven new locks in
+  `tests/test_server_functions.py`: four direct contract tests in
+  `TestIsPortAvailable` (free high port → `True`; bound listening
+  socket → `False`; privileged port (`80`) → `False` with `EACCES`
+  swallowed — skipped under `root` since root *can* bind 80; RFC
+  5737 invalid host (`192.0.2.1`) → `False` with `EADDRNOTAVAIL`
+  swallowed) and three integration tests in
+  `TestStartWebServicePortInUse` (`port_in_use` raises *without*
+  invoking `subprocess.Popen` — the entire point of pre-flight is
+  fail-fast; error message contains both host and port for log/UI
+  surfacing; reverse-lock that `health_check_service`'s short-
+  circuit still wins over pre-flight — without that lock our own
+  already-running healthy server would spuriously self-reject every
+  restart attempt). The pre-existing 12 `TestStartWebService` cases
+  now stub `_is_port_available = True` in `setUp` so they validate
+  Popen / health-check / notification paths independent of whatever
+  the dev's `8080` happens to look like at runtime — previously they
+  passed only because the test machine's `8080` was empty. Why
+  `socket.bind` instead of `socket.connect`: `connect` only tells
+  you whether *something* answers TCP — it can't distinguish "port
+  is free" from "port is bound but the holder hasn't `listen()`ed
+  yet" (which would let a slow-listen race through pre-flight and
+  *then* fail at Popen). `bind` directly probes "can this address
+  family + port tuple be claimed", which is the property
+  `subprocess.Popen` will need a moment later. Why not also
+  `SO_REUSEPORT`: macOS / Linux disagree on its semantics (Linux
+  load-balances incoming connections across listeners, macOS allows
+  multiple bind-only-no-listen sockets), so leaving it off keeps
+  pre-flight's verdict aligned with what the actual subprocess
+  bind will see.
 
 ### Security
 

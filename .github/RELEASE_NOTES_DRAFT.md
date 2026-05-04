@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 112 maintenance commits added on top of the release. This is **not**
+> the 115 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -233,6 +233,44 @@ downstream packagers do not need to update integration scripts.
   statically locks the default constants in [1, 50] MB sane
   range and asserts WARN ≤ FAIL, so a reviewer cannot silently
   disarm the guard by raising the default.
+- **`start_web_service` now fails fast on port conflict (≤ 1 ms vs. 15 s).**
+  ``service_manager.start_web_service`` previously relied on its
+  15-second health-check loop to indirectly surface
+  ``EADDRINUSE``: when the configured port (default 8080) was
+  already held by another process, the spawned subprocess would
+  exit immediately with ``OSError: [Errno 48] Address already in
+  use``, but ``start_web_service`` would happily wait the full
+  ``max_wait = 15s`` before raising ``ServiceTimeoutError(code=
+  "start_timeout")`` — a misleading "service slow to start"
+  diagnosis when the actual root cause is a hard, deterministic
+  port collision. The troubleshooting docs even called this out
+  as a known papercut. New ``_is_port_available`` helper performs
+  a pre-flight ``socket.bind`` (with ``SO_REUSEADDR`` so
+  ``TIME_WAIT`` stragglers don't trigger a false positive) right
+  after the existing ``health_check_service`` short-circuit, so
+  if the user *is* already running our service the path is
+  unchanged, but if the port is genuinely owned by another
+  process we raise ``ServiceUnavailableError(code="port_in_use")``
+  with the host:port in the message. There is a TOCTOU window
+  between bind-close and subprocess re-bind, but it's bounded
+  to milliseconds and the existing ``except Exception`` Popen
+  branch still tells the truth even if a race lands inside that
+  window — net-net strictly better than 15 s of misleading
+  silence. Seven locks in
+  ``tests/test_server_functions.py``: four direct
+  ``_is_port_available`` contract tests
+  (``TestIsPortAvailable``: free high port → True, listening
+  socket → False, privileged port → False, RFC 5737 invalid
+  host → False without raising), three integration tests
+  (``TestStartWebServicePortInUse``: port-in-use raises
+  ``port_in_use`` *without* invoking ``subprocess.Popen``,
+  exception message includes both host and port, and a
+  reverse-lock that ``health_check_service`` short-circuit
+  must run before pre-flight or our own healthy service would
+  spuriously fail itself). Existing
+  ``TestStartWebService`` setUp now stubs ``_is_port_available
+  = True`` to keep the dozen pre-existing scenarios independent
+  of whatever the dev's 8080 happens to look like at runtime.
 - **Bark double-push when `bark_timeout > 15s` is fixed.**
   ``_process_event``'s ``as_completed(timeout=15)`` was hardcoded
   even though Pydantic ``coerce_bark_timeout`` accepts ``[1, 300]``.
@@ -795,6 +833,40 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **`start_web_service` pre-flight port check (`_is_port_available`)
+  fails fast on `EADDRINUSE` with `code="port_in_use"`.** Pre-fix,
+  a busy port produced 15 s of "service slow to start" silence
+  before surfacing as ``ServiceTimeoutError(code="start_timeout")``;
+  the troubleshooting docs even called this out as a known papercut.
+  Post-fix, ``_is_port_available`` runs a ``socket.bind``
+  (``SO_REUSEADDR`` set so ``TIME_WAIT`` doesn't trigger false
+  positives) right *after* the existing ``health_check_service``
+  short-circuit — so an already-running healthy instance still
+  short-circuits before pre-flight (avoiding a self-fail when our
+  own server is bound to the port), and a genuinely-occupied port
+  raises ``ServiceUnavailableError(code="port_in_use", ...)``
+  containing the host:port in milliseconds. The bind→close→Popen
+  sequence has a millisecond TOCTOU window where another process
+  could grab the port between checks, but the existing
+  ``except Exception`` branch in ``Popen`` still produces a truthful
+  ``code="start_failed"``, so the worst case is "as-good-as-before"
+  rather than "worse-than-before". Seven new locks in
+  ``tests/test_server_functions.py``: four direct contract tests
+  (``TestIsPortAvailable``: free high port → True; bound listening
+  socket → False; privileged port (80) → False with EACCES swallowed
+  — skipped under root; RFC 5737 invalid host (192.0.2.1) → False
+  with EADDRNOTAVAIL swallowed) and three integration tests
+  (``TestStartWebServicePortInUse``: ``port_in_use`` raises
+  *without* invoking ``subprocess.Popen``, error message contains
+  both host and port for log/UI surfacing, and a reverse-lock that
+  ``health_check_service``'s short-circuit still wins over
+  pre-flight — without that lock our own already-running healthy
+  server would spuriously self-reject every restart attempt). The
+  pre-existing 12 ``TestStartWebService`` cases now stub
+  ``_is_port_available = True`` in setUp so they validate
+  Popen / health-check / notification paths independent of whatever
+  the dev's 8080 happens to look like at runtime — previously they
+  passed only because the test machine's 8080 was empty.
 - **`/api/events` SSE endpoint now has an explicit `300/min` rate
   limit instead of inheriting the global default `60/min`.** SSE is a
   long connection (one ``EventSource`` instance = one limiter token)
