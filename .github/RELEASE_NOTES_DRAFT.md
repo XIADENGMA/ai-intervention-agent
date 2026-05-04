@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 87 maintenance commits added on top of the release. This is **not**
+> the 89 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,22 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **`LogDeduplicator` now wall-clock-immune (monotonic time fix).**
+  ``should_log`` previously used ``time.time()`` for its 5 s
+  ``time_window`` check; if the wall clock moved backwards (NTP
+  resync, manual clock adjustment, VM resume-from-suspend, DST
+  tail-overlap on naive systems), ``current_time - last_time``
+  went negative, ``≤ window`` was trivially true forever, and
+  the same ERROR line was silently squelched indefinitely —
+  worst-class observability failure (Heisenbug with blast-radius
+  scaling to how long the clock stayed backwards). Now uses
+  ``time.monotonic()``, the textbook-correct primitive for
+  "X seconds elapsed" windows. Two locks in
+  ``tests/test_enhanced_logging.py::TestLogDeduplicatorMonotonic``:
+  static source-grep that ``should_log`` doesn't revert to
+  ``time.time()``, and a black-box test that monkey-patches
+  ``time.time`` to report one hour in the past — dedup must
+  still allow the fresh log through.
 - **MCP-side timeout no longer creates ghost web_ui tasks.**
   ``wait_for_task_completion``'s ``asyncio.wait_for`` TimeoutError
   branch returned ``_make_resubmit_response`` to the AI client but

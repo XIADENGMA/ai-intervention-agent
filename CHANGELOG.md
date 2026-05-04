@@ -285,6 +285,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **`LogDeduplicator` could silently drop critical ERROR logs after
+  wall-clock backwards jumps.** The deduplicator's "did this exact
+  message fire within the last 5 s?" check used `time.time()`,
+  which is wall-clock time and can move *backwards* on NTP
+  resync, manual clock adjustment, DST tail-overlap on naive
+  systems, or a virtual machine resuming from suspend. When that
+  happens, `current_time - last_time` becomes negative,
+  `≤ time_window` is trivially true forever, and the same ERROR
+  line is silently squelched indefinitely — one of the worst
+  observability failure modes (Heisenbug whose blast-radius
+  scales with how long the clock stayed backwards). Switched the
+  comparison to `time.monotonic()`, which is the textbook-correct
+  primitive for "X seconds elapsed" windows (it cannot move
+  backwards or be tampered with by NTP / users / hypervisors).
+  Companion `tests/test_enhanced_logging.py::TestLogDeduplicatorMonotonic`
+  carries two locks: a static-source assertion that
+  `should_log` never reverts to `time.time()`, and a black-box
+  contract test that monkey-patches `time.time()` to report
+  one hour in the past — the dedup must still allow a fresh log
+  through, proving the implementation is wall-clock-immune.
 - **`wait_for_task_completion` orphaned web_ui tasks on timeout / cancel.**
   When the MCP-side `asyncio.wait_for(completion.wait())` tripped its
   `effective_timeout` (default 600s) the function returned a
