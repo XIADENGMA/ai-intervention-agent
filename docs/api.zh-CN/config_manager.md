@@ -1,5 +1,7 @@
 # config_manager
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/config_manager.md`](../api/config_manager.md)
+
 配置管理模块：TOML 配置文件的跨平台加载、读写、热重载。
 
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。

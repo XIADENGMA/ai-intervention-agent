@@ -1,5 +1,7 @@
 # notification_providers
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/notification_providers.md`](../api/notification_providers.md)
+
 通知提供者实现 - Web/Sound/Bark/System 四种通知方式。
 
 所有提供者实现 send(event) -> bool 接口，由 NotificationManager 调用。

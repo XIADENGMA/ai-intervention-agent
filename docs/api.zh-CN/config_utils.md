@@ -1,5 +1,7 @@
 # config_utils
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/config_utils.md`](../api/config_utils.md)
+
 配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助。
 
 ## 函数

@@ -1,5 +1,7 @@
 # exceptions
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/exceptions.md`](../api/exceptions.md)
+
 项目统一异常定义。
 
 所有业务异常均继承 AIAgentError 基类，支持结构化错误码与附加详情，

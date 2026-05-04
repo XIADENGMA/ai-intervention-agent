@@ -1,5 +1,7 @@
 # notification_models
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/notification_models.md`](../api/notification_models.md)
+
 通知领域模型：枚举与事件结构（避免 manager/provider 循环依赖）。
 
 ## 类

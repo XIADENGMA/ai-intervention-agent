@@ -1,5 +1,7 @@
 # file_validator
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/file_validator.md`](../api/file_validator.md)
+
 文件验证模块 - 魔数验证、恶意内容扫描、文件名安全检查，防止上传攻击。
 
 ## 函数

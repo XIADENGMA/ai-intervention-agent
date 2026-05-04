@@ -1,5 +1,7 @@
 # notification_manager
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/notification_manager.md`](../api/notification_manager.md)
+
 通知管理器模块 - 统一管理 Web/声音/Bark/系统多渠道通知。
 
 采用单例模式，支持插件化提供者注册、事件队列、失败降级。线程安全。

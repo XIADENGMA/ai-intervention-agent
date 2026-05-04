@@ -148,6 +148,14 @@ def generate_markdown(
             f"[`docs/api.zh-CN/{module_info['name']}.md`](../api.zh-CN/{module_info['name']}.md)"
         )
         lines.append("")
+    else:
+        # 中文文档保留完整 docstring；签名速查请看英文 signature-only 版本，
+        # 与英文页顶部的 cross-link 保持双语对称（双方都给读者一键跳到对侧）。
+        lines.append(
+            f"> 英文 signature-only 版本（仅函数 / 类签名速查）："
+            f"[`docs/api/{module_info['name']}.md`](../api/{module_info['name']}.md)"
+        )
+        lines.append("")
 
     # 模块文档
     if include_docstrings and module_info["docstring"]:

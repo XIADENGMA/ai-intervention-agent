@@ -1,5 +1,7 @@
 # state_machine
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/state_machine.md`](../api/state_machine.md)
+
 统一状态机常量与迁移规则（前后端契约的 Python 源头）。
 
 为什么要集中定义？

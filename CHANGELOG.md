@@ -29,6 +29,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **Chinese API reference pages now carry a back-link to the
+  English signature-only version.** Symmetric to the existing
+  English pages' "For the Chinese version with full
+  docstrings, see…" header, every `docs/api.zh-CN/*.md` now
+  starts with "英文 signature-only 版本（仅函数 / 类签名速查）：…"
+  pointing at its sibling under `docs/api/`. Previously the
+  link was one-directional: English readers could jump to
+  Chinese for full narrative, but Chinese readers had no
+  pointer to the signature-focused English summary even though
+  the latter is often more useful when scanning an unfamiliar
+  module quickly. Implemented in `scripts/generate_docs.py::generate_markdown`
+  by adding a symmetric `else` branch to the existing
+  language-conditional cross-link block. Re-running the
+  generator inserts the link into all 14 Chinese pages
+  (existing 11 + the three added in the previous commit).
 - **API reference now covers `protocol.py`, `state_machine.py`,
   and `i18n.py`.** These three modules are the front/back-end
   contract for protocol versioning, state-machine transitions,

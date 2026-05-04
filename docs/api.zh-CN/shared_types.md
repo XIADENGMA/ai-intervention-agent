@@ -1,5 +1,7 @@
 # shared_types
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/shared_types.md`](../api/shared_types.md)
+
 共享类型定义（Pydantic 配置段模型 + TypedDict 反馈结构）
 
 目的：

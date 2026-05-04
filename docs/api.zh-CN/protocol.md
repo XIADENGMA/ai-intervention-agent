@@ -1,5 +1,7 @@
 # protocol
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/protocol.md`](../api/protocol.md)
+
 协议版本 / Capabilities / ServerClock 定义。
 
 此模块是前后端契约的单一事实来源：

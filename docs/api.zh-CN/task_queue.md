@@ -1,5 +1,7 @@
 # task_queue
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/task_queue.md`](../api/task_queue.md)
+
 任务队列管理 - 线程安全、状态管理、自动清理、延迟删除、持久化。
 
 ## 类

@@ -1,5 +1,7 @@
 # server_config
 
+> 英文 signature-only 版本（仅函数 / 类签名速查）：[`docs/api/server_config.md`](../api/server_config.md)
+
 MCP 服务器配置与工具函数 — 配置数据类、常量、输入验证、响应解析。
 
 从 server.py 提取的无状态模块：
