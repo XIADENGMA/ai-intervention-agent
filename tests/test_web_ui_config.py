@@ -3210,6 +3210,91 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────
+# mDNS Zeroconf() 构造与 ServiceInfo 失败的降级路径
+#
+# 真实环境会让这两个调用抛 OSError：
+#   - Linux + Avahi 共存且未开 disallow-other-stacks=no → EADDRINUSE
+#   - Windows 169.254.x.x link-local 接口 → WinError 10049
+#   - IPv6 loopback 无 multicast → errno 101
+#   - publish_ip 不是合法 IPv4 字面量 → socket.inet_aton 抛 OSError
+# 历史上这两个分支没有 try 包围，会让 WebFeedbackUI.run() 整个挂掉
+# （违反 docstring 「mDNS 失败 → 降级，不影响 Web UI 启动」承诺）。
+# ──────────────────────────────────────────────────────────
+
+
+class TestMdnsConstructorFailures(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from web_ui import WebFeedbackUI
+
+        cls.ui = WebFeedbackUI(prompt="mdns ctor", port=18937)
+
+    def test_zeroconf_oserror_degrades_gracefully(self):
+        """``Zeroconf()`` 抛 OSError → 不抛、不影响 web UI 启动"""
+        self.ui.host = "0.0.0.0"
+        self.ui._mdns_zeroconf = None
+        # MagicMock(side_effect=...) 让"调用 mock"时抛异常，模拟 Zeroconf() 构造抛
+        zc_class_mock = MagicMock(side_effect=OSError(98, "Address already in use"))
+        mock_mod = types.ModuleType("zeroconf")
+        object.__setattr__(
+            mock_mod,
+            "NonUniqueNameException",
+            type("NonUniqueNameException", (Exception,), {}),
+        )
+        object.__setattr__(mock_mod, "ServiceInfo", MagicMock)
+        object.__setattr__(mock_mod, "Zeroconf", zc_class_mock)
+
+        with (
+            patch.object(self.ui, "_get_mdns_config", return_value={}),
+            patch.object(self.ui, "_should_enable_mdns", return_value=True),
+            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch.dict("sys.modules", {"zeroconf": mock_mod}),
+        ):
+            try:
+                self.ui._start_mdns_if_needed()
+            except OSError:
+                self.fail(
+                    "Zeroconf() 构造异常必须被 web_ui_mdns 内部捕获并降级，"
+                    "否则会让 WebFeedbackUI.run() 启动失败"
+                )
+            self.assertIsNone(
+                self.ui._mdns_zeroconf,
+                "降级后必须保持 _mdns_zeroconf=None，避免外层误以为 mDNS 已发布",
+            )
+
+    def test_serviceinfo_inet_aton_oserror_degrades(self):
+        """``socket.inet_aton`` 抛 OSError（publish_ip 非法 IPv4）→ 降级"""
+        self.ui.host = "0.0.0.0"
+        self.ui._mdns_zeroconf = None
+        mock_zc_inst = MagicMock()
+        mock_mod = _make_zeroconf_module(zc_inst=mock_zc_inst)
+
+        with (
+            patch.object(self.ui, "_get_mdns_config", return_value={}),
+            patch.object(self.ui, "_should_enable_mdns", return_value=True),
+            patch(
+                "web_ui_mdns.detect_best_publish_ipv4",
+                return_value="not-an-ip",
+            ),
+            patch.dict("sys.modules", {"zeroconf": mock_mod}),
+            patch(
+                "web_ui_mdns.socket.inet_aton",
+                side_effect=OSError("illegal IP address string passed"),
+            ),
+        ):
+            try:
+                self.ui._start_mdns_if_needed()
+            except OSError:
+                self.fail(
+                    "ServiceInfo addresses=[socket.inet_aton(invalid)] 异常必须被"
+                    "捕获并降级，否则会让 WebFeedbackUI.run() 启动失败"
+                )
+            self.assertIsNone(self.ui._mdns_zeroconf)
+            # Zeroconf() 不应被构造（在 ServiceInfo 失败后我们提前 return）
+            mock_mod.Zeroconf.assert_not_called()
+
+
+# ──────────────────────────────────────────────────────────
 # mDNS inspect.signature 兼容性分支 (allow_name_change / allow_rename)
 # ──────────────────────────────────────────────────────────
 

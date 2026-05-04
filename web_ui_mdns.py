@@ -103,16 +103,49 @@ class MdnsMixin:
             "publish_ip": publish_ip,
         }
 
-        info = ServiceInfo(
-            MDNS_SERVICE_TYPE_HTTP,
-            service_fqdn,
-            addresses=[socket.inet_aton(publish_ip)],
-            port=self.port,
-            properties=properties,
-            server=server_fqdn,
-        )
+        try:
+            info = ServiceInfo(
+                MDNS_SERVICE_TYPE_HTTP,
+                service_fqdn,
+                addresses=[socket.inet_aton(publish_ip)],
+                port=self.port,
+                properties=properties,
+                server=server_fqdn,
+            )
+        except (OSError, ValueError) as e:
+            # 历史教训：``socket.inet_aton`` 在 publish_ip 不是合法 IPv4 字面量时
+            # 抛 ``OSError``（``illegal IP address string passed``）；这条分支会
+            # 让 ``run()`` 内的 ``_start_mdns_if_needed()`` 抛出，进而让整个 Web
+            # UI 起不来 —— 违反 docstring 承诺「失败则降级，不影响 Web UI 启动」。
+            # 包成软失败 + 日志告警 + 返回。
+            logger.warning(
+                f"mDNS ServiceInfo 构造失败（publish_ip={publish_ip!r}），"
+                f"已降级，不影响 Web UI 启动: {e}",
+                exc_info=True,
+            )
+            return
 
-        zc = Zeroconf()
+        # 历史教训：``Zeroconf()`` 在以下真实环境会抛 ``OSError``：
+        #   - Linux + Avahi 共存且未开 ``disallow-other-stacks=no``: errno 98
+        #     (EADDRINUSE)
+        #   - Windows 上有 169.254.x.x link-local 接口: WinError 10049
+        #   - IPv6 loopback 无 multicast 能力: errno 101 (Network unreachable)
+        # 不包 try 会让 ``WebFeedbackUI.run()`` 直接挂掉，整个 Web UI
+        # 起不来 —— 这违反 docstring 承诺的「mDNS 失败 → 降级」原则。
+        try:
+            zc = Zeroconf()
+        except OSError as e:
+            logger.warning(
+                f"Zeroconf 构造失败（端口冲突 / 接口不可用 / IPv6 loopback 无 "
+                f"multicast 等），已降级为仅 IP/localhost 访问: {e}",
+                exc_info=True,
+            )
+            print(
+                f"mDNS 不可用：Zeroconf 端点初始化失败（{e}）。"
+                "已降级为仅通过 IP/localhost 访问。"
+            )
+            return
+
         try:
             kwargs: dict[str, Any] = {}
             try:
