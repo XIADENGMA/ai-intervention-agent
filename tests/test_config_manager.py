@@ -1268,6 +1268,113 @@ class TestConfigManagerReload(unittest.TestCase):
         self.assertEqual(old_config.keys(), new_config.keys())
 
 
+class TestReloadDiscardsPendingChanges(unittest.TestCase):
+    """reload 时必须清空 ``_pending_changes`` + 取消 ``_save_timer``。
+
+    文档参见 ``ConfigManager._load_config`` 的 docstring；这里
+    精确锁住"external-edit-wins"语义。
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.path = Path(self.tmpdir) / "rl.toml"
+        self.path.write_text(
+            '[notification]\nbark_url = "https://A"\n', encoding="utf-8"
+        )
+
+    def tearDown(self):
+        try:
+            shutil.rmtree(self.tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_pending_changes_cleared_on_reload(self):
+        """``cfg.set(..., save=True)`` → reload → pending 必须被清空"""
+        from config_manager import ConfigManager
+
+        mgr = ConfigManager(str(self.path))
+        mgr.stop_file_watcher()
+        try:
+            mgr.set("notification.bark_url", "https://process-side", save=True)
+            self.assertNotEqual(mgr._pending_changes, {})
+            mgr.reload()
+            self.assertEqual(
+                mgr._pending_changes,
+                {},
+                "reload() 必须清空 _pending_changes，否则 _delayed_save "
+                "fires 时会把进程内 stale-set 默默写回，覆盖外部编辑",
+            )
+        finally:
+            mgr.shutdown()
+
+    def test_save_timer_cancelled_on_reload(self):
+        """reload 必须取消 ``_save_timer``，timer 不能在 reload 后还能 fire"""
+        from config_manager import ConfigManager
+
+        mgr = ConfigManager(str(self.path))
+        mgr.stop_file_watcher()
+        try:
+            mgr.set("notification.bark_url", "https://process-side", save=True)
+            timer = mgr._save_timer
+            self.assertIsNotNone(timer)
+            mgr.reload()
+            self.assertIsNone(
+                mgr._save_timer,
+                "reload() 必须取消 _save_timer 并置 None，否则旧 timer "
+                "回调可能在 reload 后异步写盘，污染 disk-truth",
+            )
+        finally:
+            mgr.shutdown()
+
+    def test_external_edit_wins_after_reload(self):
+        """完整 race 重现：set → 模拟外部 edit → reload → disk 必须保留外部值"""
+        from config_manager import ConfigManager
+
+        mgr = ConfigManager(str(self.path))
+        mgr.stop_file_watcher()
+        try:
+            # T=0: 进程内 set（pending）
+            mgr.set("notification.bark_url", "https://process-side", save=True)
+
+            # T=1: 外部编辑 disk
+            self.path.write_text(
+                '[notification]\nbark_url = "https://external"\n',
+                encoding="utf-8",
+            )
+
+            # T=2: reload（模拟 file_watcher）
+            mgr.reload()
+
+            # T=3+: 即使 _delayed_save 被外力 trigger，pending 已空 → no-op
+            mgr._delayed_save()
+
+            # disk 必须仍是 "external"，不应被 stale "process-side" 覆盖
+            disk_text = self.path.read_text(encoding="utf-8")
+            self.assertIn(
+                "https://external",
+                disk_text,
+                "external-edit-wins 失败：进程内 stale set 覆盖了外部编辑",
+            )
+            self.assertNotIn(
+                "https://process-side",
+                disk_text,
+                "external-edit-wins 失败：disk 仍残留 stale process-side 值",
+            )
+        finally:
+            mgr.shutdown()
+
+    def test_initial_load_does_not_warn_on_empty_pending(self):
+        """``__init__`` 调用 ``_load_config`` 时 pending 必为空，no-op 路径不应报警"""
+        from config_manager import ConfigManager
+
+        with self.assertNoLogs(level="WARNING"):
+            mgr = ConfigManager(str(self.path))
+            try:
+                self.assertEqual(mgr._pending_changes, {})
+            finally:
+                mgr.shutdown()
+
+
 class TestConfigManagerUpdate(unittest.TestCase):
     """测试配置更新"""
 

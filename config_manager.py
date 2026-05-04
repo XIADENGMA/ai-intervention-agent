@@ -468,8 +468,42 @@ class ConfigManager(
             return False
 
     def _load_config(self):
-        """从磁盘加载配置文件，排除 network_security，合并默认配置"""
+        """从磁盘加载配置文件，排除 network_security，合并默认配置。
+
+        【External-edit-wins 策略】
+        当 ``reload()`` / file_watcher 触发本方法时，若内存中还有
+        ``_pending_changes``（进程内 ``set()`` 调用产生、3s 延迟保存窗口内
+        未落盘），必须**清空**这些 pending 并取消 ``_save_timer``，否则会
+        发生悄悄的 last-write-wins race：
+
+            T=0    ProcessThread  cfg.set("notification.bark_url", "A")
+                                  → _pending_changes["notification.bark_url"] = "A"
+                                  → schedule timer at +3s
+            T=1.5  ExternalEditor user saves config.toml with bark_url = "B"
+            T=2    FileWatcher    detects mtime change → calls reload()
+                                  → _load_config() reads "B" into self._config
+            T=3    SaveTimer      fires → _delayed_save() applies
+                                  _pending_changes["A"] over self._config
+                                  → writes "A" back to disk
+
+        净效果：用户的外部编辑（"B"）被进程内 stale-set 默默覆盖，no warning。
+        修复：reload 阶段清空 ``_pending_changes`` 并取消 ``_save_timer``，
+        日志 WARNING 提示丢弃的变更（让外部编辑赢，符合"我改了配置文件就该
+        生效"的用户直觉）。``__init__`` 调用本方法时 ``_pending_changes`` 必为
+        空字典，分支 no-op，所以这个清理对初次加载零影响。
+        """
         with self._lock:
+            if self._pending_changes:
+                logger.warning(
+                    f"reload 时发现 {len(self._pending_changes)} 个未保存的"
+                    f"进程内 config 变更，将被外部编辑覆盖（external-edit-wins 策略）："
+                    f"{sorted(self._pending_changes)}"
+                )
+                self._pending_changes.clear()
+                if self._save_timer is not None:
+                    self._save_timer.cancel()
+                    self._save_timer = None
+
             # 【可靠性】加载失败时回滚到上一次成功配置，避免“编辑中间态/损坏文件”导致回退到默认值
             had_previous_config = bool(self._config)
             previous_config = self._config.copy()
