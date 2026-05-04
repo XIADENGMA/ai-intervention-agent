@@ -1569,6 +1569,180 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  R17.4 — retry-before-close protects against SSE-completed + transient
+#          fetch-failure ghost-close race
+# ═══════════════════════════════════════════════════════════════════════════
+class TestRetryFetchBeforeClose(unittest.TestCase):
+    """``wait_for_task_completion`` 的 finally 必须在 ``_close_orphan_task_best_effort``
+    之前 retry ``_fetch_result``——避免"SSE 报告 completed + 首次 fetch
+    撞短暂网络抖动"导致 ``close`` 把已 completed 的 task（连同 user feedback）
+    永久删掉的 race。
+
+    历史 bug 推导：
+        T0  user 提交反馈 → web_ui ``/api/submit`` → ``task_queue.complete_task``
+            → status=COMPLETED + ``result`` 写入
+        T1  SSE 推送 ``task_changed(new_status=completed)``
+        T2  ``_sse_listener`` 收到 → 调 ``_fetch_result()`` → **撞短暂 503
+            / connection error / DNS 抖动** → 返回 None
+        T3  ``completion.set()`` → finally 执行
+        T4  R17.4 之前：``result_box[0] is None`` → ``_close_orphan_task_best_effort``
+            → ``POST /close`` → web_ui ``remove_task`` → COMPLETED task 连
+            同 result 被立即删掉
+        T5  最后一行 ``_fetch_result()`` retry → 404 → ``_make_resubmit_response``
+            → AI 让用户重新提交
+
+        用户白填一遍反馈，零日志告警（log 只看到 "ghost task cleanup"
+        和 "resubmit"，看不出实际 result 在 T2 fetch 抖动时已存在）。
+
+    本组测试用 mock 驱动 ``_fetch_result``：第 1 次返回 None（模拟抖动），
+    第 2 次返回 completed result（模拟抖动恢复）。修复后必须：
+        - retry 命中 result，``post`` (close) 调用次数为 0；
+        - 最终返回值是 retry 拿到的 result，不是 ``_make_resubmit_response``。
+    """
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_retry_recovers_result_skips_close(self, mock_get_client, mock_get_cfg):
+        """SSE 检测到 completed + 首次 fetch 抖动 → retry 成功 → 跳过 close。"""
+        from unittest.mock import AsyncMock
+
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        # 状态机：第 1 次 GET → 503（模拟抖动），后续 GET → completed
+        call_log = {"get_count": 0}
+        completed_result = {
+            "user_input": "辛辛苦苦填的反馈",
+            "selected_options": ["yes"],
+        }
+
+        async def stateful_get(*_args, **_kwargs):
+            call_log["get_count"] += 1
+            if call_log["get_count"] == 1:
+                # 首次抖动：503——_fetch_result 在 except Exception 路径
+                # 返回 None，正好复现"SSE 看到 completed + 本地 fetch 失败"
+                resp = MagicMock()
+                resp.status_code = 503
+                resp.json.side_effect = ValueError("bad gateway")
+                return resp
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "task": {"status": "completed", "result": completed_result},
+            }
+            return resp
+
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=stateful_get)
+        post_mock = AsyncMock()
+        post_mock.return_value = MagicMock(status_code=200)
+        client.post = post_mock
+        mock_get_client.return_value = client
+
+        with patch("server_config.BACKEND_MIN", 1):
+            result = asyncio.run(server.wait_for_task_completion("t-jitter", timeout=3))
+
+        # 1) 最终拿到的是 retry 救回来的 result，不是 resubmit response
+        self.assertEqual(
+            result,
+            completed_result,
+            f"retry 必须把 result 救回来，实际：{result}",
+        )
+
+        # 2) close 一次都不应被调——因为 retry 成功后 result_box[0] 已填
+        self.assertEqual(
+            post_mock.call_count,
+            0,
+            "retry 救回 result 后绝对不能再 close（会把 completed task 真删了）；"
+            f"实际 close 次数：{post_mock.call_count}",
+        )
+
+        # 3) GET 至少被调 2 次（一次抖动 + 至少一次 retry）
+        self.assertGreaterEqual(
+            call_log["get_count"],
+            2,
+            f"retry-before-close 必须确保至少 2 次 GET，实际：{call_log['get_count']}",
+        )
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_retry_still_failing_falls_back_to_close(
+        self, mock_get_client, mock_get_cfg
+    ):
+        """retry 也失败 → 走原 R13·B1 close 路径，行为完全等价于修复前。"""
+        from unittest.mock import AsyncMock
+
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        async def always_pending(*_args, **_kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "task": {"status": "pending", "result": None},
+            }
+            return resp
+
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=always_pending)
+        post_mock = AsyncMock()
+        post_mock.return_value = MagicMock(status_code=200)
+        client.post = post_mock
+        mock_get_client.return_value = client
+
+        with patch("server_config.BACKEND_MIN", 1):
+            result = asyncio.run(
+                server.wait_for_task_completion("t-still-pending", timeout=2)
+            )
+
+        self.assertIn("text", result, "retry 仍失败时必须返回 resubmit response")
+        # close 路径仍被走（retry 没救回 result）
+        self.assertGreaterEqual(
+            post_mock.call_count,
+            1,
+            "retry 失败时仍必须走 ghost-task close 路径以兼容 R13·B1",
+        )
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_retry_does_not_fire_when_result_already_present(
+        self, mock_get_client, mock_get_cfg
+    ):
+        """正常路径：``_sse_listener`` 已经填了 ``result_box`` → finally 跳过 retry。
+
+        这条防 retry 错误改写已成功拿到的 result（``result_box[0] = retry_result``
+        在 None 检查内部，但要 lock 住未来重构不会把 retry 提到检查之外）。
+        """
+        from unittest.mock import AsyncMock
+
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        completed_result = {"user_input": "first", "selected_options": []}
+        get_count = {"value": 0}
+
+        async def already_done(*_args, **_kwargs):
+            get_count["value"] += 1
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "task": {"status": "completed", "result": completed_result},
+            }
+            return resp
+
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=already_done)
+        post_mock = AsyncMock()
+        client.post = post_mock
+        mock_get_client.return_value = client
+
+        result = asyncio.run(server.wait_for_task_completion("t-done", timeout=5))
+
+        self.assertEqual(result, completed_result)
+        self.assertEqual(post_mock.call_count, 0, "完成路径不应触发 close（不变契约）")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  FeedbackServiceContext
 # ═══════════════════════════════════════════════════════════════════════════
 class TestFeedbackServiceContext(unittest.TestCase):

@@ -215,6 +215,27 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         with contextlib.suppress(asyncio.CancelledError):
             await poll_task
 
+        # R17.4 retry-before-close 兜底：SSE 报告 completed 但首次
+        # ``_fetch_result()`` 撞到瞬时网络抖动（503 / connection
+        # error / DNS 短暂失败）时，``result_box[0]`` 还是 None ——
+        # 如果直接进 R13·B1 close 路径，``_close_orphan_task_best_effort``
+        # 的 ``POST /close`` 会让 web_ui ``task_queue.remove_task``
+        # 把**已经 completed**（且仍带着 user-feedback 的 result）的
+        # task 立即删掉，紧接着 ``_make_resubmit_response`` 让 AI
+        # 重新提交，用户辛辛苦苦填的反馈被永久丢失却零日志告警。
+        #
+        # 多 fetch 一次给抖动一个机会：retry 成功 → 填 ``result_box``
+        # → 跳过 close（因为 ``is None`` 检查会 short-circuit）；
+        # retry 仍失败 → 真的没结果 → 走原 R13·B1 ghost-task close
+        # 路径，行为和修复前完全一致。
+        if result_box[0] is None:
+            retry_result = await _fetch_result()
+            if retry_result is not None:
+                result_box[0] = retry_result
+                logger.info(
+                    f"close 前二次 fetch 拿到 result，跳过 ghost-task close: {task_id}"
+                )
+
         # R13·B1 ghost-task cleanup
         # 仅在没拿到 result 时才 close —— 拿到 result 说明 web_ui 已经
         # 通过 /api/submit → task_queue.complete_task 把 task 标记
@@ -227,6 +248,11 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         logger.info(f"任务完成: {task_id}")
         return cast(dict[str, Any], result_box[0])
 
+    # R13·B1 残留兜底：即便 close 已发出，如果 close 网络失败而 task 在
+    # web_ui 那侧仍 status=completed（罕见，需要 close 走 IO 错而 GET
+    # 走通），最后再 fetch 一次能拿回 result——属于 best-effort 兜底，
+    # R17.4 retry-before-close 已经在 close 之前覆盖了主要 race，这一
+    # 行只覆盖"close 失败 + task 没被清"这个边缘场景。
     r = await _fetch_result()
     if r is not None:
         return r
