@@ -59,6 +59,10 @@ npm install
 
 若想完全关闭这条路径，在面板的 **通知设置** 中关掉 macOS 原生通知，执行器就不会被触发。
 
+> 在这条路径里发现安全问题？请按仓库
+> [`SECURITY.md`](../../SECURITY.md) 流程上报；走私有 GitHub
+> Security Advisory，不要在公开 issue 里披露。
+
 ## macOS 原生通知
 
 - macOS 原生通知优先通过内置的 `terminal-notifier` 发送，失败时回退为 `osascript display notification`。

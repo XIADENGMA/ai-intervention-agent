@@ -43,6 +43,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **Cross-links between `SECURITY.md` and the VS Code
+  README's AppleScript executor section.** Both bilingual
+  `SECURITY.md` "Out of scope" entries already named the
+  AppleScript executor as a deliberately-local subsystem,
+  but did not point readers at the place where the seven
+  safeguards (platform check, absolute binary path, stdin
+  delivery, hard timeout, output cap, log redaction, no
+  user-supplied scripts) are enumerated. Conversely, the
+  `packages/vscode/README{,.zh-CN}.md` security-model
+  sections did not flag the private-advisory reporting
+  contract for issues found in that very surface — a tiny
+  hole that could lead a security researcher to
+  accidentally drop a public issue. Added bidirectional
+  references in plain language (no anchors, since the
+  GitHub slug for `## AppleScript executor (macOS only) ·
+  security model` is brittle across renderers); each side
+  now nudges to the right document for the other half of
+  the contract. Pure docs / no behaviour change.
 - **`docs/mcp_tools{,.zh-CN}.md` timeout description matches
   the runtime `_clamp_int` bounds.** The "Notes on
   timeouts" section quoted `feedback.frontend_countdown`'s
