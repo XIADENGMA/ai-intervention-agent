@@ -279,6 +279,13 @@ class TaskRoutesMixin:
                       items:
                         type: string
                       description: 预定义选项列表
+                    predefined_options_defaults:
+                      type: array
+                      items:
+                        type: boolean
+                      description: |
+                        每个预定义选项的"默认是否选中"标记（与 predefined_options 一一对应，
+                        长度必须相同；省略时等价于全部 false）。
                     auto_resubmit_timeout:
                       type: number
                       description: 超时时间（秒，最大 250）
@@ -329,6 +336,7 @@ class TaskRoutesMixin:
             task_id_raw = data.get("task_id", data.get("id"))
             prompt_raw = data.get("prompt", data.get("message"))
             options_raw = data.get("predefined_options", data.get("options"))
+            options_defaults_raw = data.get("predefined_options_defaults")
             timeout_raw = data.get("auto_resubmit_timeout", data.get("timeout"))
 
             if not isinstance(task_id_raw, str) or not task_id_raw.strip():
@@ -386,6 +394,41 @@ class TaskRoutesMixin:
                         cleaned.append(s)
                 predefined_options = cleaned
 
+            # 解析"默认选中"数组（TODO #3）。校验：必须是 list[bool]，长度可省略；
+            # 长度与 predefined_options 不一致时按位置截断/补 False，宽容地尽量保留信息。
+            predefined_options_defaults: list[bool] | None = None
+            if options_defaults_raw is not None:
+                if not isinstance(options_defaults_raw, list):
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "predefined_options_defaults 必须是布尔数组",
+                            }
+                        ),
+                        400,
+                    )
+                normalized_defaults: list[bool] = []
+                for d in options_defaults_raw:
+                    if isinstance(d, bool):
+                        normalized_defaults.append(d)
+                    elif isinstance(d, (int, float)):
+                        normalized_defaults.append(bool(d))
+                    elif isinstance(d, str):
+                        normalized_defaults.append(
+                            d.strip().lower()
+                            in {"true", "1", "yes", "y", "on", "selected"}
+                        )
+                    else:
+                        normalized_defaults.append(False)
+                if predefined_options is not None:
+                    n = len(predefined_options)
+                    if len(normalized_defaults) > n:
+                        normalized_defaults = normalized_defaults[:n]
+                    elif len(normalized_defaults) < n:
+                        normalized_defaults += [False] * (n - len(normalized_defaults))
+                predefined_options_defaults = normalized_defaults
+
             default_timeout = _get_default_auto_resubmit_timeout_from_config()
             timeout_explicit = "auto_resubmit_timeout" in data or "timeout" in data
             if timeout_explicit:
@@ -422,6 +465,7 @@ class TaskRoutesMixin:
                     task_id=task_id,
                     prompt=prompt,
                     predefined_options=predefined_options,
+                    predefined_options_defaults=predefined_options_defaults,
                     auto_resubmit_timeout=auto_resubmit_timeout,
                 )
             except Exception as e:
@@ -475,6 +519,11 @@ class TaskRoutesMixin:
                           type: array
                           items:
                             type: string
+                        predefined_options_defaults:
+                          type: array
+                          items:
+                            type: boolean
+                          description: 与 predefined_options 一一对应的默认选中状态
                         created_at:
                           type: string
                           format: date-time
@@ -513,6 +562,9 @@ class TaskRoutesMixin:
                             "task_id": task.task_id,
                             "prompt": task.prompt,
                             "predefined_options": task.predefined_options,
+                            "predefined_options_defaults": (
+                                task.predefined_options_defaults
+                            ),
                             "status": task.status,
                             "created_at": task.created_at.isoformat(),
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,

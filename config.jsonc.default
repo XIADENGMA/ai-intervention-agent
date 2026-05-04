@@ -36,6 +36,9 @@
     "bark_icon": "",
     // Bark通知动作 - 有效值: none（无操作）/url（打开链接）/copy（复制）
     "bark_action": "none",
+    // Bark 点击 URL 模板 - bark_action=url 且事件没有显式 URL 时生效
+    // 支持占位符: {task_id}, {event_id}, {base_url}
+    "bark_url_template": "{base_url}/?task_id={task_id}",
     // 发送失败重试次数（不含首次尝试） - 范围 [0, 10]
     "retry_count": 3,
     // 重试间隔(秒) - 范围 [0, 60]
@@ -56,7 +59,11 @@
     // HTTP最大重试次数 - 范围 [0, 10]
     "http_max_retries": 3,
     // HTTP重试延迟(秒) - 范围 [0.1, 60.0]
-    "http_retry_delay": 1.0
+    "http_retry_delay": 1.0,
+    // 外部访问基地址 - 用于 Bark/PWA 点击跳转
+    // 留空时优先使用 mDNS http://{mdns.hostname}:{port}，再回退到 http://{host}:{port}
+    // 反代、HTTPS 或自定义局域网域名可显式填写，例如: "https://ai.example.com"
+    "external_base_url": ""
   },
   // 网络安全配置
   "network_security": {

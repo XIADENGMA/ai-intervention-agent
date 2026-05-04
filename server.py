@@ -45,9 +45,11 @@ __all__ = [
     "main",
     "mcp",
     "parse_structured_response",
+    "resolve_external_base_url",
     "start_web_service",
     "update_web_content",
     "validate_input",
+    "validate_input_with_defaults",
     "wait_for_task_completion",
 ]
 
@@ -88,7 +90,9 @@ from server_config import (
     get_feedback_prompts,
     get_target_host,
     parse_structured_response,
+    resolve_external_base_url,
     validate_input,
+    validate_input_with_defaults,
 )
 from service_manager import (
     ServiceManager,

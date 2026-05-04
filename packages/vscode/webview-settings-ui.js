@@ -232,6 +232,7 @@
       setValue('notifyBarkDeviceKey', s.barkDeviceKey)
       setValue('notifyBarkIcon', s.barkIcon)
       setValue('notifyBarkAction', s.barkAction)
+      setValue('notifyBarkUrlTemplate', s.barkUrlTemplate)
     } finally {
       isPopulatingSettingsForm = false
     }
@@ -255,7 +256,8 @@
       barkUrl: getValue('notifyBarkUrl') || 'https://api.day.app/push',
       barkDeviceKey: getValue('notifyBarkDeviceKey'),
       barkIcon: getValue('notifyBarkIcon'),
-      barkAction: getValue('notifyBarkAction') || 'none'
+      barkAction: getValue('notifyBarkAction') || 'none',
+      barkUrlTemplate: getValue('notifyBarkUrlTemplate') || '{base_url}/?task_id={task_id}'
     }
   }
 
@@ -574,7 +576,8 @@
           bark_url: updates.barkUrl || 'https://api.day.app/push',
           bark_device_key: updates.barkDeviceKey || '',
           bark_icon: updates.barkIcon || '',
-          bark_action: updates.barkAction || 'none'
+          bark_action: updates.barkAction || 'none',
+          bark_url_template: updates.barkUrlTemplate || '{base_url}/?task_id={task_id}'
         }),
         cache: 'no-store'
       })

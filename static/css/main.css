@@ -2727,6 +2727,69 @@ h1 {
   margin-bottom: 0.25rem; /* 底部外边距 */
 }
 
+/* ------------------------------------------------------------------------
+   配置文件路径行（输入框 + 用 IDE 打开按钮，TODO #4）
+   ------------------------------------------------------------------------ */
+
+.config-path-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.config-path-row .config-path-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.config-path-open-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.85rem;
+  min-width: 2.6rem;
+}
+
+.config-path-open-btn .btn-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.config-path-open-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.config-path-status {
+  margin-top: 0.3rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  min-height: 1em; /* 预留行高，避免出现/消失时抖动 */
+}
+
+.config-path-status.is-error {
+  color: #ff453a; /* 与项目错误色保持一致 */
+}
+
+.config-path-status.is-success {
+  color: #34c759; /* iOS green */
+}
+
+/* 仅供屏幕阅读器使用的隐藏标签 */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ========================================================================
    通用按钮样式 (Generic Button Styles)
    ======================================================================== */

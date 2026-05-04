@@ -511,6 +511,7 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
             timeout=http_timeout,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            external_base_url=str(web_ui_config.get("external_base_url", "") or ""),
         )
 
         result: tuple[WebUIConfig, int] = (config, auto_resubmit_timeout)

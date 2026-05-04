@@ -239,6 +239,8 @@ class TestTriStatePanelVscodeDom(unittest.TestCase):
         )
         self.assertIsNotNone(importmap_match, msg="Importmap script missing")
         self.assertIsNotNone(module_match, msg="No <script type='module'> found")
+        assert importmap_match is not None
+        assert module_match is not None
         self.assertLess(
             importmap_match.start(),
             module_match.start(),

@@ -33,6 +33,7 @@ from server_config import (
     get_feedback_prompts,
     get_target_host,
     parse_structured_response,
+    resolve_external_base_url,
     validate_input,
 )
 
@@ -62,6 +63,10 @@ class TestWebUIConfig(unittest.TestCase):
     def test_clamp_retries(self):
         cfg = WebUIConfig(host="localhost", port=8080, max_retries=99)
         self.assertLessEqual(cfg.max_retries, 10)
+
+    def test_external_base_url_default(self):
+        cfg = WebUIConfig(host="localhost", port=8080)
+        self.assertEqual(cfg.external_base_url, "")
 
 
 class TestFeedbackConfig(unittest.TestCase):
@@ -95,14 +100,16 @@ class TestFeedbackConfig(unittest.TestCase):
         self.assertEqual(cfg.auto_resubmit_timeout, 0)
 
     def test_long_prompt_truncated(self):
-        long_prompt = "x" * 1000
+        from server_config import PROMPT_MAX_LENGTH
+
+        long_prompt = "x" * (PROMPT_MAX_LENGTH + 500)
         cfg = FeedbackConfig(
             timeout=600,
             auto_resubmit_timeout=240,
             resubmit_prompt=long_prompt,
             prompt_suffix="",
         )
-        self.assertLessEqual(len(cfg.resubmit_prompt), 500 + 10)
+        self.assertLessEqual(len(cfg.resubmit_prompt), PROMPT_MAX_LENGTH + 10)
 
 
 class TestGetFeedbackConfig(unittest.TestCase):
@@ -234,6 +241,38 @@ class TestGetTargetHost(unittest.TestCase):
 
     def test_specific_host_preserved(self):
         self.assertEqual(get_target_host("192.168.1.1"), "192.168.1.1")
+
+
+class TestResolveExternalBaseUrl(unittest.TestCase):
+    """resolve_external_base_url 函数"""
+
+    def test_prefers_config_object_external_base_url(self):
+        cfg = WebUIConfig(
+            host="0.0.0.0",
+            port=8080,
+            external_base_url="http://ai.local:8080/",
+        )
+        self.assertEqual(resolve_external_base_url(cfg), "http://ai.local:8080")
+
+    @patch("server_config.get_config")
+    def test_auto_mdns_for_non_loopback_bind(self, mock_get_config):
+        mock_get_config.return_value.get_section.side_effect = lambda section: {
+            "web_ui": {},
+            "mdns": {"enabled": "auto", "hostname": "ai.local"},
+            "network_security": {},
+        }.get(section, {})
+        cfg = WebUIConfig(host="0.0.0.0", port=8080)
+        self.assertEqual(resolve_external_base_url(cfg), "http://ai.local:8080")
+
+    @patch("server_config.get_config")
+    def test_falls_back_to_host_port_when_mdns_disabled(self, mock_get_config):
+        mock_get_config.return_value.get_section.side_effect = lambda section: {
+            "web_ui": {},
+            "mdns": {"enabled": False, "hostname": "ai.local"},
+            "network_security": {},
+        }.get(section, {})
+        cfg = WebUIConfig(host="0.0.0.0", port=8080)
+        self.assertEqual(resolve_external_base_url(cfg), "http://localhost:8080")
 
 
 class TestFormatFileSize(unittest.TestCase):

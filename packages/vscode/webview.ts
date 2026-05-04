@@ -1555,6 +1555,11 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         <option value="copy" data-i18n="settings.bark.actionCopy">${tl('settings.bark.actionCopy')}</option>
                     </select>
                 </label>
+                <label class="settings-field">
+                    <span class="settings-label" data-i18n="settings.bark.urlTemplate">${tl('settings.bark.urlTemplate')}</span>
+                    <input type="text" id="notifyBarkUrlTemplate" placeholder="${tl('settings.bark.urlTemplatePlaceholder')}" data-i18n-placeholder="settings.bark.urlTemplatePlaceholder">
+                    <span class="settings-field-hint" data-i18n="settings.bark.urlTemplateHint">${tl('settings.bark.urlTemplateHint')}</span>
+                </label>
 
                 <div class="settings-divider"></div>
 

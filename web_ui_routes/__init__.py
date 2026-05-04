@@ -8,11 +8,13 @@
 from web_ui_routes.feedback import FeedbackRoutesMixin
 from web_ui_routes.notification import NotificationRoutesMixin
 from web_ui_routes.static import StaticRoutesMixin
+from web_ui_routes.system import SystemRoutesMixin
 from web_ui_routes.task import TaskRoutesMixin
 
 __all__ = [
     "FeedbackRoutesMixin",
     "NotificationRoutesMixin",
     "StaticRoutesMixin",
+    "SystemRoutesMixin",
     "TaskRoutesMixin",
 ]

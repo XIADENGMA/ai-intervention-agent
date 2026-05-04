@@ -30,7 +30,10 @@
       "action": "Bark Action",
       "actionNone": "None",
       "actionUrl": "Open URL",
-      "actionCopy": "Copy content"
+      "actionCopy": "Copy content",
+      "urlTemplate": "Click URL template",
+      "urlTemplatePlaceholder": "http://ai.local:8080/?task_id={task_id}",
+      "urlTemplateHint": "Used when Bark Action is Open URL and no explicit URL is supplied. Supports {task_id}, {event_id}, and {base_url}."
     },
     "config": {
       "title": "Configuration",

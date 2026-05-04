@@ -8,6 +8,22 @@
  * 暴露: window.settingsManager (SettingsManager 实例)
  */
 
+// 模块内 i18n 帮助函数：调用 window.AIIA_I18N.t() 失败/缺键时回退到内置 fallback。
+// 命名为 `_tl`（i18n 扫描器接受的 wrapper：_t / _tl / t / tl / hostT / __vuT 等），
+// 不复用 multi_task.js 的 `_t`，因为后者的第二个参数是 params 而不是 fallback 字符串，
+// 在 i18n 未加载等边界场景里会向用户暴露原始 key。
+function _tl(key, fallback) {
+  try {
+    if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
+      const value = window.AIIA_I18N.t(key)
+      if (value && value !== key) return value
+    }
+  } catch (_e) {
+    // 忽略 i18n 读取失败
+  }
+  return fallback
+}
+
 // 设置管理器
 class SettingsManager {
   constructor() {
@@ -25,7 +41,8 @@ class SettingsManager {
       barkUrl: 'https://api.day.app/push',
       barkDeviceKey: '',
       barkIcon: '',
-      barkAction: 'none'
+      barkAction: 'none',
+      barkUrlTemplate: '{base_url}/?task_id={task_id}'
     }
     this.initialized = false
     // 注意：不在构造函数中调用 init()，由 DOMContentLoaded 触发
@@ -36,6 +53,7 @@ class SettingsManager {
     this.settings = await this.loadSettings()
     this.feedbackConfig = await this.loadFeedbackConfig()
     this.initEventListeners()
+    this.initOpenConfigFileButton()
     this.initialized = true
     console.log('SettingsManager initialized')
   }
@@ -63,7 +81,8 @@ class SettingsManager {
             barkUrl: serverConfig.bark_url ?? this.defaultSettings.barkUrl,
             barkDeviceKey: serverConfig.bark_device_key ?? this.defaultSettings.barkDeviceKey,
             barkIcon: serverConfig.bark_icon ?? this.defaultSettings.barkIcon,
-            barkAction: serverConfig.bark_action ?? this.defaultSettings.barkAction
+            barkAction: serverConfig.bark_action ?? this.defaultSettings.barkAction,
+            barkUrlTemplate: serverConfig.bark_url_template ?? this.defaultSettings.barkUrlTemplate
           }
           console.log('Loaded settings from server')
           return settings
@@ -119,7 +138,8 @@ class SettingsManager {
         barkUrl: this.settings.barkUrl,
         barkDeviceKey: this.settings.barkDeviceKey,
         barkIcon: this.settings.barkIcon,
-        barkAction: this.settings.barkAction
+        barkAction: this.settings.barkAction,
+        barkUrlTemplate: this.settings.barkUrlTemplate
       })
     }
 
@@ -184,6 +204,10 @@ class SettingsManager {
     document.getElementById('bark-device-key').value = this.settings.barkDeviceKey
     document.getElementById('bark-icon').value = this.settings.barkIcon
     document.getElementById('bark-action').value = this.settings.barkAction
+    const barkUrlTplEl = document.getElementById('bark-url-template')
+    if (barkUrlTplEl) {
+      barkUrlTplEl.value = this.settings.barkUrlTemplate || ''
+    }
   }
 
   /**
@@ -325,6 +349,11 @@ class SettingsManager {
       resetFeedbackBtn.addEventListener('click', () => this.resetFeedbackConfig())
     }
 
+    const openConfigBtn = document.getElementById('open-config-file-btn')
+    if (openConfigBtn) {
+      openConfigBtn.addEventListener('click', () => this.openConfigFileInIde())
+    }
+
     const feedbackCountdown = document.getElementById('feedback-countdown')
     const feedbackPrompt = document.getElementById('feedback-resubmit-prompt')
     const feedbackSuffix = document.getElementById('feedback-prompt-suffix')
@@ -423,12 +452,144 @@ class SettingsManager {
         this.updateSetting('barkIcon', e.target.value)
       } else if (e.target.id === 'bark-action') {
         this.updateSetting('barkAction', e.target.value)
+      } else if (e.target.id === 'bark-url-template') {
+        this.updateSetting('barkUrlTemplate', e.target.value)
       }
     })
 
     window.addEventListener('notification-permission-changed', () => {
       this.updateStatus()
     })
+  }
+
+  // ==================== 配置文件路径：用 IDE 打开按钮（TODO #4） ====================
+  // 设计：先调用 /api/system/open-config-file/info 拿到当前可用的编辑器名，
+  //  - 如果有可用 IDE，启用按钮并把 IDE 名写到 tooltip / 状态文案；
+  //  - 如果只有 system fallback，依然启用，但提示用"系统默认应用"打开；
+  //  - 完全没有可用方式时，禁用按钮并解释原因。
+  // 后端只接受环回请求，所以远程访问的客户端按钮也应保持禁用且显示原因。
+  async initOpenConfigFileButton() {
+    const btn = document.getElementById('open-config-file-btn')
+    const status = document.getElementById('open-config-file-status')
+    if (!btn) return
+
+    const setDisabledWithReason = reason => {
+      btn.disabled = true
+      btn.setAttribute('aria-disabled', 'true')
+      btn.title = reason
+      if (status) {
+        status.textContent = reason
+        status.classList.remove('is-error', 'is-success')
+      }
+    }
+
+    try {
+      const resp = await fetch('/api/system/open-config-file/info', {
+        method: 'GET',
+        credentials: 'same-origin'
+      })
+      if (resp.status === 403) {
+        const remoteFallback =
+          'Open-in-IDE is only available on the local machine running the server.'
+        setDisabledWithReason(_tl('settings.openConfigInIdeRemoteBlocked', remoteFallback))
+        return
+      }
+      if (!resp.ok) {
+        setDisabledWithReason(
+          _tl('settings.openConfigInIdeUnavailable', 'Open-in-IDE is unavailable.')
+        )
+        return
+      }
+      const data = await resp.json()
+      if (!data || data.success === false) {
+        setDisabledWithReason(
+          _tl('settings.openConfigInIdeUnavailable', 'Open-in-IDE is unavailable.')
+        )
+        return
+      }
+
+      const editor = data.editor
+      const hasEditor = !!data.editor_available
+      const hasFallback = !!data.system_fallback_available
+
+      if (!hasEditor && !hasFallback) {
+        const noEditorFallback =
+          'No supported IDE (Cursor / VS Code / Sublime / etc.) found in PATH.'
+        setDisabledWithReason(_tl('settings.openConfigInIdeNoEditor', noEditorFallback))
+        return
+      }
+
+      btn.disabled = false
+      btn.removeAttribute('aria-disabled')
+      const verb = hasEditor && editor ? editor : 'system default'
+      btn.title = _tl('settings.openConfigInIdeReady', `Open with ${verb}`).replace(
+        '{editor}',
+        verb
+      )
+      if (status) {
+        status.classList.remove('is-error', 'is-success')
+        status.textContent = ''
+      }
+    } catch (e) {
+      console.warn('open-config-file info fetch failed:', e)
+      setDisabledWithReason(
+        _tl('settings.openConfigInIdeUnavailable', 'Open-in-IDE is unavailable.')
+      )
+    }
+  }
+
+  async openConfigFileInIde() {
+    const btn = document.getElementById('open-config-file-btn')
+    const status = document.getElementById('open-config-file-status')
+    const pathInput = document.getElementById('config-file-path')
+    if (!btn) return
+
+    const originalDisabled = btn.disabled
+    btn.disabled = true
+    if (status) {
+      status.classList.remove('is-error', 'is-success')
+      status.textContent = _tl('settings.openConfigInIdeRequesting', 'Opening…')
+    }
+
+    try {
+      const resp = await fetch('/api/system/open-config-file', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        // 不传 path：让后端使用它自己读到的当前配置文件路径，避免前端被篡改的输入框
+        // 绕过白名单校验。如果后端有多个候选路径，这里默认使用主路径（primary）。
+        body: JSON.stringify({})
+      })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok || data.success === false) {
+        const errMsg =
+          (data && data.error) ||
+          _tl('settings.openConfigInIdeFailed', 'Failed to open config file.')
+        if (status) {
+          status.classList.add('is-error')
+          status.textContent = errMsg
+        }
+        return
+      }
+      // 成功：把后端返回的实际路径回填到输入框（确保前后端视角一致）
+      if (pathInput && data.path) {
+        pathInput.value = data.path
+      }
+      if (status) {
+        status.classList.add('is-success')
+        const editor = data.editor || 'system'
+        const tpl = _tl('settings.openConfigInIdeOpened', 'Opened with {editor}.')
+        status.textContent = tpl.replace('{editor}', editor)
+      }
+    } catch (e) {
+      console.error('Open config file failed:', e)
+      if (status) {
+        status.classList.add('is-error')
+        status.textContent = _tl('settings.openConfigInIdeFailed', 'Failed to open config file.')
+      }
+    } finally {
+      btn.disabled = originalDisabled
+    }
   }
 
   async showSettings() {
@@ -631,7 +792,8 @@ class SettingsManager {
           bark_url: this.settings.barkUrl,
           bark_device_key: this.settings.barkDeviceKey,
           bark_icon: this.settings.barkIcon,
-          bark_action: this.settings.barkAction
+          bark_action: this.settings.barkAction,
+          bark_url_template: this.settings.barkUrlTemplate || this.defaultSettings.barkUrlTemplate
         })
       })
 

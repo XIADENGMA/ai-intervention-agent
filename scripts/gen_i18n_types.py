@@ -78,7 +78,8 @@ def load_keys(src: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    module_doc = __doc__ or ""
+    parser = argparse.ArgumentParser(description=module_doc.splitlines()[0])
     parser.add_argument(
         "--check",
         action="store_true",

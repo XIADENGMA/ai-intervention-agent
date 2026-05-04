@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
 from web_ui_routes.feedback import _sanitize_selected_options
@@ -94,9 +95,9 @@ class TestSanitizeSelectedOptions(unittest.TestCase):
 class _RouteTestBase(unittest.TestCase):
     """启动真实 Flask test_client，针对 /api/submit 做端到端回归。"""
 
-    _port = 19520
-    _ui = None
-    _client = None
+    _port: ClassVar[int] = 19520
+    _ui: ClassVar[Any] = None
+    _client: ClassVar[Any] = None
 
     @classmethod
     def setUpClass(cls) -> None:

@@ -68,6 +68,7 @@ class TestWebUiImportMap(unittest.TestCase):
                 "No <script type='importmap'>...</script> block found in "
                 "templates/web_ui.html — required by §T1 v3 §3."
             )
+        assert match is not None
         attrs = match.group("attrs")
         self.assertIn(
             'nonce="{{ csp_nonce }}"',
@@ -133,6 +134,8 @@ class TestWebUiImportMap(unittest.TestCase):
             module_match,
             msg="No <script type='module'> found — bootstrap loader is missing",
         )
+        assert importmap_match is not None
+        assert module_match is not None
         self.assertLess(
             importmap_match.start(),
             module_match.start(),
@@ -205,6 +208,7 @@ class TestVscodeWebviewImportMap(unittest.TestCase):
                 "No <script type='importmap'>...</script> block found in "
                 "webview.ts::_getHtmlContent — required by §T1 v3 §C10c."
             )
+        assert match is not None
         attrs = match.group("attrs")
         self.assertIn(
             'nonce="${nonce}"',
@@ -285,6 +289,8 @@ class TestVscodeWebviewImportMap(unittest.TestCase):
             module_match,
             msg="No <script type='module'> found in webview.ts — bootstrap loader is missing",
         )
+        assert importmap_match is not None
+        assert module_match is not None
         self.assertLess(
             importmap_match.start(),
             module_match.start(),

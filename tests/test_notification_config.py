@@ -198,6 +198,7 @@ class TestFromConfigFile(unittest.TestCase):
             "bark_url": "https://api.day.app/push",
             "bark_device_key": "test_key",
             "bark_action": "url",
+            "bark_url_template": "{base_url}/?task_id={task_id}",
         }
         mock_get_config.return_value = mock_config_mgr
 
@@ -207,6 +208,7 @@ class TestFromConfigFile(unittest.TestCase):
         self.assertEqual(config.sound_volume, 0.8)  # 转换后
         self.assertTrue(config.bark_enabled)
         self.assertEqual(config.bark_action, "url")
+        self.assertEqual(config.bark_url_template, "{base_url}/?task_id={task_id}")
 
     @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
     @patch("notification_manager.get_config")

@@ -30,7 +30,10 @@
       "action": "Bark Action",
       "actionNone": "无操作",
       "actionUrl": "打开链接",
-      "actionCopy": "复制内容"
+      "actionCopy": "复制内容",
+      "urlTemplate": "点击跳转 URL 模板",
+      "urlTemplatePlaceholder": "http://ai.local:8080/?task_id={task_id}",
+      "urlTemplateHint": "Bark Action 为“打开链接”且事件未提供具体 URL 时生效。支持 {task_id}、{event_id}、{base_url}。"
     },
     "config": {
       "title": "配置",

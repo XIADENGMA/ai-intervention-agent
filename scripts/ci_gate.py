@@ -118,7 +118,10 @@ def _main_impl(argv: list[str]) -> int:
     # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
     _run(["uv", "run", "python", "scripts/minify_assets.py"])
 
-    pytest_cmd = ["uv", "run", "pytest", "-q"]
+    # 测试集中包含大量“故意喂坏配置”的用例；这些用例会产生日志级
+    # WARNING/ERROR，但断言本身期望通过。门禁输出保持干净，只让真实失败
+    # 通过 pytest 退出码和失败摘要体现。
+    pytest_cmd = ["uv", "run", "pytest", "-q", "-o", "log_cli=false"]
     if args.with_coverage:
         pytest_cmd += ["--cov=.", "--cov-report=xml", "--cov-report=term-missing"]
     _run(pytest_cmd)

@@ -55,6 +55,19 @@ ALLOWLIST_VALUES: frozenset[str] = frozenset(
         # Web UI: status 与 page 两个命名空间下的通用动作反馈
         "Copied",
         "Copy failed",
+        "Insert code",
+        "Keyboard shortcuts",
+        "Loading…",
+        "Submit feedback",
+        "Test notification failed",
+        "Test notification sent",
+        "Toggle theme",
+        "测试通知失败",
+        "测试通知已发送",
+        # VSCode: statusBar/ui/settings 下的同义展示文案，保留各自 key 便于功能内演进
+        "Connected",
+        "Disconnected",
+        "Notification Settings",
         # VSCode notify.hint + ui.task 也可能共用这个短词
         "Retry",
     }

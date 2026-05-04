@@ -80,6 +80,7 @@ from web_ui_routes import (
     FeedbackRoutesMixin,
     NotificationRoutesMixin,
     StaticRoutesMixin,
+    SystemRoutesMixin,
     TaskRoutesMixin,
 )
 from web_ui_security import SecurityMixin
@@ -156,6 +157,7 @@ class WebFeedbackUI(
     FeedbackRoutesMixin,
     NotificationRoutesMixin,
     StaticRoutesMixin,
+    SystemRoutesMixin,
 ):
     """Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管理。
 
@@ -166,6 +168,7 @@ class WebFeedbackUI(
     - FeedbackRoutesMixin    — 反馈提交/查询（3 个路由）
     - NotificationRoutesMixin — 通知配置/触发（5 个路由）
     - StaticRoutesMixin      — 静态资源（8 个路由）
+    - SystemRoutesMixin      — 系统集成（用 IDE 打开配置文件等）
     核心路由（index / config / health / close）保留在本类。
     """
 
@@ -752,6 +755,7 @@ class WebFeedbackUI(
         self._setup_feedback_routes()
         self._setup_notification_routes()
         self._setup_static_routes()
+        self._setup_system_routes()
 
         # 模板缺失降级：返回简洁 HTML 错误页（无外部依赖）
         from jinja2 import TemplateNotFound

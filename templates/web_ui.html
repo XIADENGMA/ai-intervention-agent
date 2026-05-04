@@ -4,9 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>AI Intervention Agent</title>
+
+    <!--
+      PWA / favicon 图标家族（按设备分别覆盖）：
+      - SVG 优先，桌面浏览器与 Android Chrome 都能直接使用矢量
+      - 16/32 PNG 给老旧浏览器和 Windows 任务栏
+      - 180 PNG 是 iOS Safari「添加到主屏幕」必需（iOS 不读 SVG）
+      - manifest 中再列 192/512/maskable，安装为 PWA 时图标才正确
+    -->
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
     <link rel="mask-icon" href="/icons/icon.svg" color="#8B5CF6" />
-    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#8B5CF6" />
+    <meta name="application-name" content="AI Intervention Agent" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="AI Agent" />
+    <meta name="mobile-web-app-capable" content="yes" />
 
     <!-- 0.0.0.0 访问兼容性：尽早重定向到 127.0.0.1，避免浏览器/Fetch/通知权限异常 -->
     <script nonce="{{ csp_nonce }}">
@@ -913,6 +930,25 @@
                   </label>
                 </div>
                 <div class="setting-item">
+                  <label class="setting-label has-input">
+                    <span class="setting-title" data-i18n="settings.barkUrlTemplate"
+                      >Click URL template</span
+                    >
+                    <input
+                      type="text"
+                      id="bark-url-template"
+                      class="setting-input"
+                      data-i18n-placeholder="settings.barkUrlTemplatePlaceholder"
+                      placeholder="http://ai.local:8080/?task_id={task_id}"
+                      value=""
+                    />
+                  </label>
+                  <p class="setting-description" data-i18n="settings.barkUrlTemplateHint">
+                    Used when click action is "Open link" and no explicit URL is supplied. Supports
+                    {task_id} / {event_id} / {base_url} placeholders.
+                  </p>
+                </div>
+                <div class="setting-item">
                   <button class="btn btn-secondary" id="test-bark-notification-btn">
                     <svg
                       class="btn-icon"
@@ -1062,7 +1098,9 @@
                     <option value="auto" data-i18n="settings.langAuto">Auto-detect</option>
                     <!-- Endonyms (language self-names) stay untranslated for cross-locale consistency -->
                     <option value="en">English</option>
-                    <option value="zh-CN">简体中文</option><!-- aiia:i18n-allow-cjk -->
+                    <option value="zh-CN" data-i18n="settings.langZhCN">
+                      Chinese (Simplified)
+                    </option>
                   </select>
                 </label>
               </div>
@@ -1071,15 +1109,49 @@
                   <span class="setting-title" data-i18n="settings.configPath"
                     >Current config file path</span
                   >
-                  <input
-                    type="text"
-                    id="config-file-path"
-                    class="setting-input"
-                    value="Loading…"
-                    data-i18n-value="page.loading"
-                    readonly
-                  />
+                  <div class="config-path-row">
+                    <input
+                      type="text"
+                      id="config-file-path"
+                      class="setting-input config-path-input"
+                      value="Loading…"
+                      data-i18n-value="page.loading"
+                      readonly
+                    />
+                    <button
+                      type="button"
+                      id="open-config-file-btn"
+                      class="btn btn-secondary btn-icon-only config-path-open-btn"
+                      data-i18n-title="settings.openConfigInIde"
+                      title="Open the config file in your installed IDE (Cursor / VS Code / etc.)"
+                      disabled
+                    >
+                      <svg
+                        class="btn-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M14 3h7v7" />
+                        <path d="M10 14L21 3" />
+                        <path d="M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6" />
+                      </svg>
+                      <span class="visually-hidden" data-i18n="settings.openConfigInIde"
+                        >Open in IDE</span
+                      >
+                    </button>
+                  </div>
                 </label>
+                <div
+                  id="open-config-file-status"
+                  class="config-path-status"
+                  role="status"
+                  aria-live="polite"
+                ></div>
               </div>
             </div>
 
@@ -1133,7 +1205,7 @@
                     id="feedback-resubmit-prompt"
                     class="setting-input"
                     rows="2"
-                    maxlength="500"
+                    maxlength="10000"
                     style="resize: vertical; font-family: inherit"
                   ></textarea>
                 </label>
@@ -1141,7 +1213,7 @@
                   style="margin-top: 0.3rem; color: var(--text-secondary); font-size: 0.82rem"
                   data-i18n-html="settings.resubmitPromptHint"
                 >
-                  Content auto-submitted when countdown expires (max 500 chars).
+                  Content auto-submitted when countdown expires (max 10000 chars).
                 </div>
               </div>
               <div class="setting-item">
@@ -1153,7 +1225,7 @@
                     id="feedback-prompt-suffix"
                     class="setting-input"
                     rows="2"
-                    maxlength="500"
+                    maxlength="10000"
                     style="resize: vertical; font-family: inherit"
                   ></textarea>
                 </label>
@@ -1161,7 +1233,7 @@
                   style="margin-top: 0.3rem; color: var(--text-secondary); font-size: 0.82rem"
                   data-i18n-html="settings.promptSuffixHint"
                 >
-                  Appended to every user feedback submission (max 500 chars).
+                  Appended to every user feedback submission (max 10000 chars).
                 </div>
               </div>
               <div class="setting-item">

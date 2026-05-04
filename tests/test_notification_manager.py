@@ -1440,8 +1440,11 @@ class TestProcessEvent(unittest.TestCase):
         mgr.register_provider(NotificationType.WEB, mock_provider)
 
         event = _make_event(max_retries=2)
-        mgr._process_event(event)
+        # 用 assertLogs 同时验证「retry warning 被打出」并捕获日志（避免污染 CI 输出）
+        with self.assertLogs("notification_manager", level="WARNING") as cm:
+            mgr._process_event(event)
         self.assertEqual(event.retry_count, 1)
+        self.assertTrue(any("发送失败" in m for m in cm.output))
 
     def test_all_fail_no_retries_triggers_fallback(self):
         mgr = _make_manager()
@@ -1465,8 +1468,11 @@ class TestProcessEvent(unittest.TestCase):
         mgr.register_provider(NotificationType.WEB, mock_provider)
 
         event = _make_event(max_retries=2)
-        mgr._process_event(event)
+        # provider.send 抛异常时也会走 retry warning 路径；用 assertLogs 静音
+        with self.assertLogs("notification_manager", level="WARNING") as cm:
+            mgr._process_event(event)
         self.assertEqual(event.retry_count, 1)
+        self.assertTrue(any("发送失败" in m or "crash" in m for m in cm.output))
 
     def test_exception_no_retries_triggers_fallback(self):
         mgr = _make_manager()
