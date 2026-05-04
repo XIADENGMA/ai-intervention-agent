@@ -11,7 +11,7 @@
     "feedback": {
       "title": "Feedback",
       "countdown": "Auto-reschedule (seconds)",
-      "countdownHint": "Auto-resubmit when countdown expires. 30-250, 0 to disable.",
+      "countdownHint": "Auto-resubmit when countdown expires. Range 10-3600 seconds, 0 to disable.",
       "resubmitPrompt": "Resubmit prompt",
       "resubmitPromptPlaceholder": "Content auto-submitted on countdown expiry",
       "promptSuffix": "Feedback suffix",

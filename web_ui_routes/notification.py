@@ -717,7 +717,8 @@ class NotificationRoutesMixin:
                     frontend_countdown:
                       type: integer
                       minimum: 0
-                      maximum: 250
+                      maximum: 3600
+                      description: 倒计时秒数；0=禁用；非零值范围 [10, 3600]，与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐
                     resubmit_prompt:
                       type: string
                       maxLength: 10000

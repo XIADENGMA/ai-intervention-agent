@@ -367,7 +367,10 @@ class SettingsManager {
     if (feedbackCountdown) {
       feedbackCountdown.addEventListener('change', () => {
         const val = parseInt(feedbackCountdown.value, 10)
-        if (!isNaN(val) && val >= 0 && val <= 250) {
+        // Range mirrors server_config.AUTO_RESUBMIT_TIMEOUT_MAX (3600s); 0
+        // remains the "disabled" sentinel. Locked by
+        // tests/test_frontend_input_range_parity.py.
+        if (!isNaN(val) && val >= 0 && val <= 3600) {
           debounceSaveFeedback({ frontend_countdown: val })
         }
       })

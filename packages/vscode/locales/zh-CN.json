@@ -11,7 +11,7 @@
     "feedback": {
       "title": "反馈",
       "countdown": "自动重调倒计时（秒）",
-      "countdownHint": "倒计时结束后自动重新提交。范围 30-250，0 为禁用。",
+      "countdownHint": "倒计时结束后自动重新提交。范围 10-3600 秒，0 为禁用。",
       "resubmitPrompt": "重调提示语",
       "resubmitPromptPlaceholder": "倒计时结束后自动提交的提示内容",
       "promptSuffix": "反馈后缀",

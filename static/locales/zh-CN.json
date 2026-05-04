@@ -94,7 +94,7 @@
     "shortcutClearImage": "清除图片：",
     "feedbackTitle": "反馈",
     "autoResubmitTimeout": "自动重调倒计时（秒）",
-    "autoResubmitTimeoutHint": "倒计时结束后自动重新提交反馈请求。范围 30-250，设为 0 则禁用。",
+    "autoResubmitTimeoutHint": "倒计时结束后自动重新提交反馈请求。范围 10-3600 秒，设为 0 则禁用。",
     "resubmitPrompt": "重调提示语",
     "resubmitPromptHint": "倒计时结束后自动提交的提示内容（最多 10000 字符）",
     "promptSuffix": "反馈后缀",

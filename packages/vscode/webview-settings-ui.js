@@ -629,7 +629,10 @@
       if (fbCountdown) {
         fbCountdown.addEventListener('change', () => {
           const v = parseInt(fbCountdown.value, 10)
-          if (!isNaN(v) && v >= 0 && v <= 250) debounceSaveFeedback({ frontend_countdown: v })
+          // Range mirrors server_config.AUTO_RESUBMIT_TIMEOUT_MAX (3600s); 0
+          // remains the "disabled" sentinel. Locked by
+          // tests/test_frontend_input_range_parity.py.
+          if (!isNaN(v) && v >= 0 && v <= 3600) debounceSaveFeedback({ frontend_countdown: v })
         })
       }
       if (fbPrompt) {

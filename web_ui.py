@@ -1088,7 +1088,7 @@ def web_feedback_ui(
         prompt: 提示文本（Markdown 格式）
         predefined_options: 预定义选项列表（可选）
         task_id: 任务 ID（可选）
-        auto_resubmit_timeout: 自动重调倒计时（秒，默认 240 秒；最大 250 秒；0 表示禁用）
+        auto_resubmit_timeout: 自动重调倒计时（秒，默认 240；范围 [10, 3600]；0=禁用）
         output_file: 输出文件路径（可选；若指定则将结果保存为 JSON 文件）
         host: 绑定主机地址（默认"0.0.0.0"）
         port: 绑定端口（默认8080）
@@ -1147,7 +1147,7 @@ if __name__ == "__main__":
         --prompt: 向用户展示的提示/问题（支持 Markdown，默认"我已经实现了您请求的更改。"）
         --predefined-options: 预定义选项列表（用 ||| 分隔）
         --task-id: 任务 ID（可选；主要用于调试/脚本集成）
-        --auto-resubmit-timeout: 自动重调倒计时（秒，默认 240 秒；最大 250 秒；0 表示禁用）
+        --auto-resubmit-timeout: 自动重调倒计时（秒，默认 240；范围 [10, 3600]；0=禁用）
         --output-file: 将反馈结果保存为 JSON 文件的路径
         --host: Web UI 监听地址（默认 "0.0.0.0"）
         --port: Web UI 监听端口（默认 8080）
@@ -1188,7 +1188,7 @@ if __name__ == "__main__":
         "--auto-resubmit-timeout",
         type=int,
         default=AUTO_RESUBMIT_TIMEOUT_DEFAULT,
-        help="自动重调倒计时（秒；0 表示禁用；最大 250 秒）",
+        help="自动重调倒计时（秒；0 表示禁用；范围 [10, 3600]，与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐）",
     )
     parser.add_argument("--output-file", help="将反馈结果保存为 JSON 文件的路径")
     parser.add_argument("--host", default="0.0.0.0", help="Web UI 监听地址")

@@ -1566,7 +1566,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 <div class="settings-section-title" data-i18n="settings.feedback.title">${tl('settings.feedback.title')}</div>
                 <label class="settings-field">
                     <span class="settings-label" data-i18n="settings.feedback.countdown">${tl('settings.feedback.countdown')}</span>
-                    <input type="number" id="feedbackCountdown" min="0" max="250" step="10" value="240" style="max-width:100px">
+                    <input type="number" id="feedbackCountdown" min="0" max="3600" step="10" value="240" style="max-width:100px">
                     <span class="settings-field-hint" data-i18n="settings.feedback.countdownHint">${tl('settings.feedback.countdownHint')}</span>
                 </label>
                 <label class="settings-field">

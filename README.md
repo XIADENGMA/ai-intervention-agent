@@ -98,7 +98,9 @@ pip install ai-intervention-agent
 > `interactive_feedback` is a **long-running tool**. Some clients have a hard request timeout, so the Web UI provides a countdown + auto re-submit option to keep sessions alive.
 >
 > - Default: `feedback.frontend_countdown=240` seconds
-> - Max: `250` seconds (to stay under common 300s hard timeouts)
+> - Range: `0` (disabled) or `[10, 3600]` seconds. The default 240 stays
+>   under the common 300s session hard timeout; raise it intentionally
+>   when your client allows longer turns.
 
 3. (Optional) Customize your config:
 

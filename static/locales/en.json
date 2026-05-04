@@ -94,7 +94,7 @@
     "shortcutClearImage": "Clear images:",
     "feedbackTitle": "Feedback",
     "autoResubmitTimeout": "Auto-reschedule countdown (seconds)",
-    "autoResubmitTimeoutHint": "Automatically resubmit feedback request when countdown expires. Range 30-250, set to 0 to disable.",
+    "autoResubmitTimeoutHint": "Automatically resubmit feedback request when countdown expires. Range 10-3600 seconds, set to 0 to disable.",
     "resubmitPrompt": "Resubmit prompt",
     "resubmitPromptHint": "Content auto-submitted when countdown expires (max 10000 chars)",
     "promptSuffix": "Feedback suffix",

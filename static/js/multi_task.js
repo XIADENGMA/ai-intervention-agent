@@ -800,9 +800,11 @@ function updateTasksList(tasks) {
       .filter(t => addedTasks.includes(t.task_id))
       .forEach(task => {
         if (task.status !== 'completed' && !taskCountdowns[task.task_id]) {
-          // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout
-          const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 250
-          startTaskCountdown(task.task_id, timeout, task.auto_resubmit_timeout || 250)
+          // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout；
+          // 末位 fallback 用 server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240)，
+          // 不是旧 MAX (250)。
+          const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 240
+          startTaskCountdown(task.task_id, timeout, task.auto_resubmit_timeout || 240)
           console.log(`Started countdown for new task: ${task.task_id}, remaining ${timeout}s`)
         }
       })
@@ -850,7 +852,8 @@ function updateTasksList(tasks) {
   // 场景：配置变更将 auto_resubmit_timeout 从 0（禁用）切回 >0（启用）
   tasks.forEach(task => {
     if (task.status === 'completed') return
-    const total = typeof task.auto_resubmit_timeout === 'number' ? task.auto_resubmit_timeout : 250
+    // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240).
+    const total = typeof task.auto_resubmit_timeout === 'number' ? task.auto_resubmit_timeout : 240
     if (total <= 0) {
       // 禁用：确保不启动倒计时
       if (taskCountdowns[task.task_id]) {
@@ -1225,12 +1228,14 @@ function createTaskTab(task) {
     let remaining, total
     if (taskCountdowns[task.task_id]) {
       remaining = taskCountdowns[task.task_id].remaining
-      total = taskCountdowns[task.task_id].timeout || 250
+      // Fallback uses server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240),
+      // not the historical MAX (250 / 290).
+      total = taskCountdowns[task.task_id].timeout || 240
     } else {
       // 倒计时还未启动，优先使用服务器返回的 remaining_time
       // 这样刷新页面后圆环显示正确的剩余时间
-      remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 250
-      total = task.auto_resubmit_timeout || 250
+      remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 240
+      total = task.auto_resubmit_timeout || 240
     }
 
     // SVG圆环实现
@@ -1947,7 +1952,9 @@ function startTaskCountdown(taskId, remaining, total = null) {
     const countdownRing = document.getElementById(`countdown-${taskId}`)
     if (countdownRing) {
       const remaining = taskCountdowns[taskId].remaining
-      const total = taskCountdowns[taskId].timeout || 250 // 【优化】默认从290改为250
+      // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
+      // historical 250/290 were stale "MAX" values, not "DEFAULT".
+      const total = taskCountdowns[taskId].timeout || 240
       const progress = remaining / total // 进度（0-1）
 
       // 更新SVG circle的stroke-dashoffset

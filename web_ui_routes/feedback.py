@@ -283,7 +283,7 @@ class FeedbackRoutesMixin:
                       type: string
                     auto_resubmit_timeout:
                       type: number
-                      description: 超时时间（秒，最大 250）
+                      description: 倒计时（秒，范围 [10, 3600]；0=禁用；与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐）
             responses:
               200:
                 description: 更新成功
