@@ -285,6 +285,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tooling
 
+- **`LogDeduplicator` now reaps expired cache entries on the cache-hit
+  path, not just on cache miss.** Pre-fix, `_cleanup_cache` only ran
+  inside the cache-miss branch — so if the runtime hits a stable
+  steady state where one hot ERROR keeps re-firing and getting
+  deduped (cache hit branch), the other 999 entries already older
+  than `time_window` would never be reaped. Not a true memory leak
+  (the `max_cache_size = 1000` ceiling still applies), but a
+  correctness violation: a "5-second dedup window" should mean
+  expired entries drop within ~5 s, not "whenever the next miss
+  happens to fire — which might be never". The hash-table also
+  stayed permanently near the cap, lengthening probe chains for
+  every subsequent `in self.cache` lookup on the hot path. New
+  behaviour: lazy-cleanup token
+  (`_LAZY_CLEANUP_INTERVAL_SECONDS = 30.0`, 6 × default `time_window`
+  = ≤ 2 stale windows of residency); both `should_log` paths now
+  check `current_time - self._last_cleanup_time >= interval` and
+  drain expired entries on the way through. `_last_cleanup_time`
+  initialised to `0.0` so the very first call always settles a
+  real `time.monotonic()` baseline (without it, every call in the
+  first 30 s would re-trigger cleanup, the inverse degenerate
+  case). Three locks in
+  `tests/test_enhanced_logging.py::TestLogDeduplicatorLazyCleanupOnHit`:
+  behavioural test injects 9 stale entries, hammers a hot key while
+  sleeping past `time_window`, asserts cache shrinks to ≤ 1 entry
+  on next hit; constant-range invariant
+  `5.0 <= _LAZY_CLEANUP_INTERVAL_SECONDS <= 120.0`; and first-call
+  baseline guard that prevents perpetual cleanup.
 - **`NotificationManager.shutdown` gains a `grace_period` knob and
   `atexit` now uses a 1.5 s grace window.** Pre-fix, `atexit` called
   `shutdown(wait=False)`, which cancelled pending futures but did
@@ -358,6 +385,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Security
 
+- **VSCode webview CSP nonce now uses Node CSPRNG (`crypto.randomBytes`)
+  instead of `Math.random`.** Pre-fix, `getNonce` in
+  `packages/vscode/webview.ts` sampled a 62-char alphabet × 32 chars,
+  which **looks** like ~190 bits of entropy on paper but in practice
+  draws every char from V8's `Math.random` — implemented as
+  xorshift128+ with **53 bits of internal state**, publicly
+  analysable, and predictable from a handful of observations.
+  An attacker observing nonces emitted by a session could project
+  the next ones with off-the-shelf tooling, regressing the
+  `script-src 'nonce-${nonce}'` allowlist for inline `<script>`
+  blocks back to effectively `script-src 'unsafe-inline'`. New
+  implementation uses `crypto.randomBytes(16).toString('base64')`
+  (Node CSPRNG → OS `getentropy` / `getrandom` / `BCryptGenRandom`,
+  16 bytes = 128 bits real entropy, ≥ 2× the CSP3 §6 threshold of
+  64 bits), matching the [vscode-extension-samples webview-sample](https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts)
+  pattern verbatim. Four AST/text locks in
+  `tests/test_csp_allows_importmap_nonce.py::TestNonceCsprngContract`:
+  VSCode `getNonce` body must contain `crypto.randomBytes` AND must
+  NOT contain `Math.random` or the legacy 62-char alphabet literal,
+  the `import * as crypto from 'crypto'` line at file top is
+  required (without it the new body is a `ReferenceError`, not a
+  graceful failure), and the corresponding Python
+  `web_ui_security.py` path must use `secrets.token_urlsafe(N≥16)`
+  (rejecting `N=8` which would land exactly on the 64-bit threshold
+  with zero safety margin).
 - **NUL byte (`\x00`) in upload filenames promoted from `warnings` to
   `errors`.** `file_validator.FileValidator._validate_filename` previously
   routed `\x00` through `_DANGEROUS_CHARS`, producing only a warning while

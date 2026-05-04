@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 107 maintenance commits added on top of the release. This is **not**
+> the 110 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,29 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **VSCode webview CSP nonce now uses Node CSPRNG, not `Math.random`.**
+  ``packages/vscode/webview.ts::getNonce`` previously sampled a
+  62-char alphabet × 32 chars from V8's ``Math.random`` (xorshift128+,
+  53-bit state, publicly analysable, predictable from a handful of
+  observations). Looks like high entropy on paper; in practice an
+  attacker observing emitted nonces could predict subsequent ones
+  off-the-shelf, regressing the ``script-src 'nonce-${nonce}'``
+  allowlist for inline ``<script>`` to effectively
+  ``'unsafe-inline'``. Replaced with
+  ``crypto.randomBytes(16).toString('base64')`` (Node CSPRNG → OS
+  ``getentropy``/``getrandom``/``BCryptGenRandom``, 128 bits real
+  entropy, 2× the CSP3 §6 threshold of 64 bits), matching the
+  [vscode-extension-samples webview-sample](https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts)
+  pattern verbatim. Four AST/text locks in
+  ``TestNonceCsprngContract``: VSCode getNonce body contains
+  ``crypto.randomBytes`` AND lacks ``Math.random``/legacy alphabet
+  literal, ``import * as crypto from 'crypto'`` is at file top, and
+  the parallel Python ``web_ui_security.py`` path must use
+  ``secrets.token_urlsafe(N≥16)`` (``N=8`` rejected for landing
+  exactly on the 64-bit threshold with zero margin). Other
+  ``Math.random`` usages in this codebase (request-ID generation,
+  jitter calculation, ID suffixes) are intentionally left untouched
+  — those are non-cryptographic and CSPRNG would be over-engineering.
 - **NUL byte (`\x00`) in upload filenames now hard-rejected.**
   ``file_validator.FileValidator._validate_filename`` previously routed
   ``\x00`` through ``_DANGEROUS_CHARS`` and produced only a warning,
@@ -692,6 +715,30 @@ downstream packagers do not need to update integration scripts.
 
 ### Tooling / CI
 
+- **`LogDeduplicator` cache reaps expired entries on hit path.**
+  Pre-fix, ``_cleanup_cache`` only ran inside the cache-miss branch
+  — so if the runtime hit a stable steady state where one hot ERROR
+  kept re-firing and getting deduped (cache hit branch), the other
+  999 entries already older than ``time_window`` would never be
+  reaped. Not a true leak (the ``max_cache_size`` ceiling still
+  applies), but a correctness violation: a "5-second dedup window"
+  should mean expired entries drop within ~5 s, not "whenever the
+  next miss happens to fire — which might be never". Hash-table
+  also stayed near the cap, lengthening probe chains on every hot
+  ``in self.cache`` lookup. Fix: lazy-cleanup token
+  ``_LAZY_CLEANUP_INTERVAL_SECONDS = 30.0`` (6 × default
+  ``time_window``); both should_log paths check
+  ``current_time - self._last_cleanup_time >= interval`` and drain
+  expired entries on the way through. ``_last_cleanup_time``
+  initialised to ``0.0`` settles to a real ``time.monotonic()``
+  baseline on first call (without that anchor, every call in the
+  first 30 s would re-trigger cleanup, the inverse degenerate
+  case). Three locks in ``TestLogDeduplicatorLazyCleanupOnHit``:
+  behavioural test injects 9 stale entries + hammers hot key while
+  sleeping past ``time_window`` and asserts shrinkage to ≤ 1 entry
+  on next hit; constant-range invariant
+  ``5.0 <= _LAZY_CLEANUP_INTERVAL_SECONDS <= 120.0``; first-call
+  baseline guard.
 - **`NotificationManager.shutdown` gains a bounded `grace_period`
   knob; `atexit` uses 1.5 s.** Pre-fix, ``atexit`` called
   ``shutdown(wait=False)`` which cancelled pending futures but did
