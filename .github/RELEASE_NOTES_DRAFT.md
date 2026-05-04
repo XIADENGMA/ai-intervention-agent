@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 86 maintenance commits added on top of the release. This is **not**
+> the 87 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,27 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **MCP-side timeout no longer creates ghost web_ui tasks.**
+  ``wait_for_task_completion``'s ``asyncio.wait_for`` TimeoutError
+  branch returned ``_make_resubmit_response`` to the AI client but
+  never told ``web_ui`` to clean its ``task_queue``. The AI then
+  re-invoked ``interactive_feedback`` with a fresh ``task_id`` —
+  the old task was still ACTIVE so the new one queued PENDING,
+  the Web UI ``current_prompt`` (bound to ACTIVE) still showed the
+  old prompt, the user typed feedback that wired back to the
+  *old* ``task_id``, and the MCP side waiting on SSE for the *new*
+  ``task_id`` would loop forever. The fix adds a finally-block
+  ``_close_orphan_task_best_effort`` that POSTs
+  ``/api/tasks/<id>/close`` when ``result_box[0] is None`` (covers
+  TIMEOUT, KeyboardInterrupt, parent cancel simultaneously),
+  with 2 s short timeout, every non-CancelledError swallowed,
+  ``CancelledError`` re-raised so asyncio cancel semantics survive,
+  and 404 downgraded to debug. Five locking tests
+  (``tests/test_server_functions.py::TestGhostTaskCleanupOnTimeout``):
+  timeout path *must* close, completed path *must not* close (would
+  race with ``/api/submit → complete_task``), 404 path *must not*
+  close, close failure *must not* propagate, ``CancelledError``
+  *must* re-raise.
 - **`ConfigManager.reload()` external-edit-wins race fix.**
   When ``cfg.set(...)`` queued a 3-second batch save and the
   user edited ``config.toml`` in their IDE during that window,

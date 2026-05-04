@@ -285,6 +285,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **`wait_for_task_completion` orphaned web_ui tasks on timeout / cancel.**
+  When the MCP-side `asyncio.wait_for(completion.wait())` tripped its
+  `effective_timeout` (default 600s) the function returned a
+  `_make_resubmit_response()` to the AI client *but* did not notify
+  `web_ui` to clean its `task_queue`. The AI client would then
+  re-invoke `interactive_feedback`, generating a fresh `task_id` and
+  POSTing it to `/api/tasks` — but the original task was still
+  ACTIVE, so the new task came in PENDING. The Web UI
+  `current_prompt` is bound to the active task, so the user saw the
+  *old* prompt and submitted feedback against the old `task_id`;
+  meanwhile the MCP side was still waiting on SSE for the new
+  `task_id`'s `task_changed(completed)` event, which would never
+  fire — leading to another timeout and another resubmit, an
+  effectively infinite loop visible only as "AI keeps asking the
+  same question". The fix adds an asyncio finally-block hook
+  (`_close_orphan_task_best_effort`) that POSTs
+  `/api/tasks/<task_id>/close` whenever `result_box[0]` is still
+  `None` at exit (covers TIMEOUT, KeyboardInterrupt, parent
+  cancel paths simultaneously). The helper:
+  - uses a 2 s short timeout (LAN/loopback close should never need
+    more), so a wedged Web UI doesn't pin the cleanup,
+  - swallows every non-`CancelledError` exception (`httpx.ConnectError`,
+    HTTP 5xx, DNS, etc.) — it's best-effort cleanup, not a critical
+    path,
+  - re-raises `CancelledError` to preserve asyncio cancel semantics
+    and avoid `Task was destroyed but it is pending!` warnings,
+  - downgrades 404 to debug log (Web UI already GC'd the task; not
+    worth a warning).
+
+  Companion `tests/test_server_functions.py::TestGhostTaskCleanupOnTimeout`
+  locks the contract with five tests: timeout path *must* call close,
+  completed path *must not* call close (would race with
+  `complete_task`), 404 path *must not* call close (no-op), close
+  failure *must not* propagate, and `CancelledError` *must* re-raise.
 - **`ConfigManager.reload()` silently lost in-process edits.** When
   `_save_timer` was queued (3-second batch debounce after a
   `cfg.set(...)`) and the file watcher fired before the timer
