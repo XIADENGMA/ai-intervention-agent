@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 76 maintenance commits added on top of the release. This is **not**
+> the 80 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -65,6 +65,66 @@ downstream packagers do not need to update integration scripts.
   including a reverse-lock that the sentinel must be ``object()``
   identity (not ``None`` / ``False`` / ``""`` which would collide
   with legitimate payloads).
+- **Settings debounce no longer drops your edits across fields.**
+  ``debounceSaveFeedback`` (Web UI ``static/js/settings-manager.js``
+  + VSCode webview ``packages/vscode/webview-settings-ui.js``)
+  used a `setTimeout` closure that captured the most-recent
+  `updates` argument; a `clearTimeout` followed by a fresh
+  `setTimeout` silently DISCARDED the prior payload. So editing
+  `frontend_countdown` then within 800ms editing `resubmit_prompt`
+  would only POST the second field, leaving the first edit
+  unsaved with no error toast. The fix collects updates into a
+  `pendingUpdates` buffer via `Object.assign(...||{}, updates||{})`
+  and the timer drains it as a single merged POST. New
+  `tests/test_debounce_save_feedback_accumulates.py` locks the
+  Web/VSCode parity contract (3 tests), including a *bidirectional*
+  parity gate that fails when only one mirror gets fixed.
+- **Notification retry jitter (0–50%) added to defeat
+  thundering-herd on synchronized failures.**
+  `NotificationManager._schedule_retry` previously used a fixed
+  `retry_delay`, so when multiple in-flight Bark / Web /
+  System sends failed within a single ms the retries fired in
+  exact lock-step → spike load on the upstream and a higher
+  chance of correlated re-failure. New
+  `_RETRY_DELAY_JITTER_RATIO = 0.5` adds `random.uniform(0,
+  base_delay * 0.5)` jitter; the base delay is preserved as a
+  floor so the existing fixed-delay contract still holds.
+  `tests/test_notification_manager.py::TestScheduleRetryJitter`
+  (5 tests) locks the bound and verifies the constant cannot be
+  silently inflated past 1.0 (which would let jitter > base
+  delay and let order-of-arrival depend on luck).
+- **`SystemNotificationProvider`'s plyer `timeout` magic number
+  (`10.0`) now lives in `_DISPLAY_DURATION_SECONDS`** with a
+  documented invariant that the value is a *banner display
+  duration*, not a *send timeout*. plyer has no async surface;
+  the call is synchronous and blocks until the platform API
+  returns (osascript / balloon notification / libnotify). The
+  fallback for an actually-stuck platform call is
+  `NotificationManager._process_event::as_completed(timeout=
+  bark_timeout + buffer)`, which is now explicitly cross-linked
+  in both source files. Reverse-locked by
+  `tests/test_notification_providers.py::TestSystemProviderSend`
+  (2 new tests, including a `[3, 30]` range justification on
+  the constant).
+- **i18n fuzz parity coverage extended to ICU corner cases.**
+  The original 200-sample `tests/test_i18n_fuzz_parity.py`
+  covered `literal | mustache | plural | selectordinal | select`
+  up to depth 2, plus `'` / `#` / `{not-a-brace}` tokenizer
+  edges — but four ICU-standard corner cases were silently
+  untested for the project's lifetime: `=N` literal-value
+  branch in `_selectPluralOption` (line 410), empty plural arm
+  body `one {}`, multi-codepoint Unicode (4-byte BMP+ emoji,
+  ZWJ sequences `👨‍👩‍👧`, regional indicator flags `🇨🇳`,
+  variation-selector + ZWJ `🏳️‍🌈`, combining marks
+  `a\u0301`), and BiDi controls (LRM/RLM/LRE/PDF). New
+  `EXT_SEED=0xFACECAFE` corpus of 100 samples forces each new
+  sample through one of `{exact | empty_arm | emoji | bidi}`
+  flavors; `n*` params land on 0/1 with 70% probability so
+  `=0`/`=1` arms actually fire. Web ↔ VSCode `i18n.js` are
+  byte-identical across all 102 new templates with zero PUA
+  leakage and zero exceptions; the new gate locks the
+  surrogate-pair-safe substring and BiDi pass-through
+  invariants forever.
 - **Frontend `frontend_countdown` input is no longer pinned at
   250s.** Even after the runtime fix below, the actual UI controls
   (Web UI HTML `<input max="250">`, VS Code webview HTML, and the

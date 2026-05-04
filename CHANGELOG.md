@@ -250,6 +250,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   page count climbs from 14 to 23. No source-side change
   in any graduation commit; the pages render existing
   docstrings only.
+- **`SystemNotificationProvider`'s plyer `timeout` magic
+  number now lives in `_DISPLAY_DURATION_SECONDS`** (= 10s)
+  with a fully documented contract that the value is the
+  *banner display duration*, not a *send timeout*. Historical
+  bug-magnet: the previous local variable name
+  ``timeout_seconds = 10.0`` strongly suggested send-side
+  semantics. plyer has no async/cancellation surface; the call
+  is synchronous and blocks until the platform API returns
+  (osascript / balloon / libnotify). The fallback for an
+  actually-stuck platform call is
+  ``NotificationManager._process_event::as_completed(timeout=
+  bark_timeout + buffer)``, which is now explicitly cross-
+  linked in both source files. Locked by
+  ``tests/test_notification_providers.py::TestSystemProviderSend``
+  (2 new tests including a `[3, 30]` range justification on
+  the constant).
 
 ### Fixed
 
@@ -341,6 +357,42 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   reverse-lock that the sentinel must be ``object()`` identity
   — using ``None`` / ``False`` / ``{}`` would collide with
   legitimate SSE payloads and randomly terminate streams).
+- **Settings panel debounce silently dropped edits when user
+  switched fields within 800ms.** Both
+  ``static/js/settings-manager.js`` and
+  ``packages/vscode/webview-settings-ui.js`` had a
+  ``debounceSaveFeedback = updates =>`` whose
+  ``setTimeout(() => save(updates), 800)`` body captured the
+  most-recent ``updates`` argument; a ``clearTimeout`` followed
+  by a fresh ``setTimeout`` would silently DISCARD the prior
+  payload. Reproduce: T=0 set ``frontend_countdown=60`` → timer
+  armed; T=300 set ``resubmit_prompt="x"`` → ``clearTimeout``
+  cancels first timer, second timer arms with only the second
+  field; T=1100 ``saveFeedbackConfig({resubmit_prompt:"x"})``
+  fires, ``frontend_countdown=60`` is gone forever with zero
+  user-visible error toast. Fix accumulates updates into a
+  ``pendingUpdates`` buffer (``Object.assign(buf||{},
+  updates||{})``); the timer drains the buffer as a single
+  merged POST. Web ↔ VSCode parity is locked by
+  ``tests/test_debounce_save_feedback_accumulates.py`` (3 tests
+  including a bidirectional parity gate that fails when only
+  one mirror is fixed).
+- **Concurrent notification retry thundering-herd.**
+  ``NotificationManager._schedule_retry`` previously used a
+  fixed ``retry_delay`` (default 2s, configurable to
+  ``[0, 60]s``) so multiple in-flight Bark / Web / System
+  sends failing within a single ms would re-fire retries in
+  exact lock-step. Spike load on the upstream + correlated
+  re-failure risk. Fix introduces
+  ``_RETRY_DELAY_JITTER_RATIO = 0.5``; effective delay is now
+  ``base_delay + random.uniform(0, base_delay * 0.5)``, with a
+  fast-path preserving ``delay == 0`` semantics exactly. New
+  ``tests/test_notification_manager.py::TestScheduleRetryJitter``
+  (5 tests) locks the lower bound (delay ≥ base), the upper
+  bound (≤ base * 1.5), the zero fast-path, and a reverse-lock
+  on the ratio constant (must stay ≤ 1.0 or jitter could
+  exceed base delay → retry order becomes nondeterministic).
+
 - **OpenAPI input-spec `auto_resubmit_timeout` lacked
   `minimum`/`maximum` bounds.** Both
   `POST /api/add-task` and `POST /api/update-feedback`
@@ -536,6 +588,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `[notification]::debug` /
   `[web_ui]::language` /
   `[mdns]::enabled` doc drift to ship in the first place.
+- **`tests/test_i18n_fuzz_parity.py` extended with a Round-11
+  ``EXT_SEED=0xFACECAFE`` corpus (100 samples) covering ICU-
+  standard corner cases the original 200-sample fuzz never
+  exercised:** ``=N`` exact-match branch in
+  ``_selectPluralOption`` (line 410, implemented but no
+  project locale used it → silently untested), empty plural
+  arm body ``one {}``, multi-codepoint Unicode (4-byte BMP+
+  emoji ``🚀``, ZWJ sequences ``👨‍👩‍👧``, regional
+  indicator flag ``🇨🇳``, variation-selector + ZWJ
+  ``🏳️‍🌈``, combining marks ``a\u0301``), and BiDi
+  controls (LRM/RLM/LRE/PDF). Each new sample is forced
+  through one of {``exact`` | ``empty_arm`` | ``emoji`` |
+  ``bidi``} flavors so the new code paths are guaranteed
+  reachable rather than randomly skipped; ``n*`` params land
+  on 0/1 with 70% probability so ``=0``/``=1`` arms actually
+  fire. All 102 new templates are byte-identical Web ↔
+  VSCode (``static/js/i18n.js`` ↔ ``packages/vscode/i18n.js``)
+  with zero PUA leakage and zero exceptions. Locks the
+  surrogate-pair-safe substring and BiDi pass-through
+  invariants forever.
 
 ### Documentation
 
