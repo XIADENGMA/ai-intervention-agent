@@ -830,11 +830,18 @@ class NotificationRoutesMixin:
             try:
                 from server_config import (
                     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+                    FEEDBACK_TIMEOUT_DEFAULT,
                     PROMPT_SUFFIX_DEFAULT,
                     RESUBMIT_PROMPT_DEFAULT,
                 )
 
+                # 不变量：本 dict 的 key 集合必须 == SECTION_MODELS::feedback 的字段集合，
+                # 否则 partial reset 会让某个字段静默保留上次的用户值（contract 是
+                # "重置整个 feedback section"，不是 "只重置 UI 可见字段"）。
+                # 用 tests/test_reset_feedback_config_parity.py 的 introspection
+                # 测试锁住这个覆盖契约。
                 defaults = {
+                    "backend_max_wait": int(FEEDBACK_TIMEOUT_DEFAULT),
                     "frontend_countdown": int(AUTO_RESUBMIT_TIMEOUT_DEFAULT),
                     "resubmit_prompt": RESUBMIT_PROMPT_DEFAULT,
                     "prompt_suffix": PROMPT_SUFFIX_DEFAULT,
