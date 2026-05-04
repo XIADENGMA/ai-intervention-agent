@@ -382,6 +382,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
+- **`ServiceManager._signal_handler` now `raise KeyboardInterrupt`
+  on the main thread after `cleanup_all`, so SIGTERM / SIGINT
+  actually exit the process instead of leaving a zombie waiting
+  on stdin.** Pre-fix, registering custom handlers for SIGINT
+  and SIGTERM replaces Python's built-in handlers — SIGINT no
+  longer auto-translates to `KeyboardInterrupt`, and SIGTERM no
+  longer auto-`SystemExit`. Our handler ran cleanup, set
+  `_should_exit = True`, then *returned*. Once the handler
+  returned the signal was "handled" from the kernel's POV and
+  `mcp.run()`'s blocking stdio loop resumed waiting on stdin —
+  the web_ui subprocess and httpx clients had been torn down,
+  but the parent process kept hanging at ~120 MB RSS until
+  systemd's `TimeoutStopSec` SIGKILL'd it. Reproducer:
+  `kill -TERM <pid>` against a stdio-mode server → child dies,
+  parent stays in `S` state. The `_should_exit = True` flag was
+  never read anywhere — FastMCP / mcp's `stdio_server` doesn't
+  expose a "should-exit" hook into its blocking read loop. Fix
+  layer: after running `cleanup_all` + setting `_should_exit`,
+  explicitly `raise KeyboardInterrupt(f"signal {signum} →
+  graceful shutdown")` from the main-thread branch. `server.main()`'s
+  pre-existing `except KeyboardInterrupt:` arm picks it up,
+  runs an idempotent second `cleanup_services()` (no-op because
+  the first run already cleared everything), `break`s out of the
+  retry loop, and `return`s — process exits with code 0 in
+  milliseconds. Cleanup deliberately runs *before* the raise so
+  resources release even if `KeyboardInterrupt` propagation
+  encounters anything weird in the call chain. Cleanup-error
+  path stays correct: a `RuntimeError` from `cleanup_all` is
+  logged + swallowed, but the handler still raises
+  `KeyboardInterrupt` so the user gets an exit instead of a
+  zombie + an internal error. Non-main-thread branch is left
+  unchanged — raising `KeyboardInterrupt` off the main thread
+  is a Python anti-pattern (`signal.set_wakeup_fd` only fires
+  on the main thread anyway) and only the main thread can
+  meaningfully unblock `mcp.run()`. Six locks in
+  `tests/test_server_functions.py`: existing
+  `test_signal_handler_main_thread` upgraded to
+  `assertRaises(KeyboardInterrupt)`; existing
+  `test_signal_handler_cleanup_error` upgraded to confirm the
+  raise still fires *despite* a cleanup `RuntimeError` (the
+  fail-loud invariant); plus three new tests:
+  `test_signal_handler_sigterm_main_thread_raises_keyboardinterrupt`
+  (the headline reverse-lock — exception message must contain
+  both the literal "signal" word and the SIGTERM signum so a
+  future refactor cannot quietly demote it to a no-op),
+  `test_signal_handler_sigint_main_thread_raises_keyboardinterrupt`
+  (SIGINT parity — protects against a refactor that special-
+  cases SIGTERM and silently regresses SIGINT), and
+  `test_signal_handler_calls_cleanup_before_raising` (call-order
+  trace asserting `cleanup` precedes `raise` — moving the raise
+  earlier would resurrect the resource-leak class). Pytest
+  count climbs 2455 → 2458.
 - **`wait_for_task_completion` now retries `_fetch_result()` once
   before `_close_orphan_task_best_effort()` so a transient SSE-
   completion + fetch-jitter race no longer permanently deletes a

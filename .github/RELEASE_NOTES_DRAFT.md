@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 121 maintenance commits added on top of the release. This is **not**
+> the 123 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -833,6 +833,57 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **`ServiceManager._signal_handler` now `raise KeyboardInterrupt`
+  on the main thread after cleanup — closes a "SIGTERM zombie"
+  where the supervisor's terminate signal silently failed to exit
+  the process.** Pre-fix, registering a custom handler for `SIGINT`
+  and `SIGTERM` *replaced* Python's default handler — the default
+  for SIGINT is "translate to `KeyboardInterrupt` on the main
+  thread", and for SIGTERM is "raise `SystemExit` / let the C
+  layer abort the process". Our handler ran `cleanup_all`, set
+  `_should_exit = True`, then *returned* — at which point the
+  signal had been "handled" from Python's POV and `mcp.run()`'s
+  blocking stdio `read()` resumed. End result: `cleanup_all` shut
+  down the web_ui subprocess and httpx clients, but the main
+  process kept hanging on stdin waiting for the next MCP message.
+  Reproducer: `kill -TERM <pid>` against a stdio-mode `server.py`
+  → web_ui dies, but the parent stays in `D`/`S` state, leaks
+  ~120 MB RSS, and only systemd's `TimeoutStopSec` SIGKILL
+  reaps it. The `_should_exit = True` flag was wired up but
+  *nothing* in `mcp.run()`'s loop polled it (FastMCP / mcp's
+  `stdio_server` doesn't expose a "should-exit" hook). Fix:
+  after `cleanup_all` and `_should_exit = True`, explicitly
+  `raise KeyboardInterrupt(f"signal {signum} → graceful
+  shutdown")`. `server.main()`'s pre-existing
+  `except KeyboardInterrupt` branch picks it up, runs an
+  idempotent second `cleanup_services()` (which is now a no-op
+  because the first run cleared everything), `break`s out of the
+  retry loop, and `return`s — process exits with code 0. Cleanup
+  remains *before* the raise so resources get released even if
+  `KeyboardInterrupt` propagation gets weird. Cleanup-error path
+  still recovers: `RuntimeError` from `cleanup_all` is logged,
+  swallowed, and the handler still raises `KeyboardInterrupt` so
+  the user gets an exit instead of a zombie. Non-main-thread
+  branch unchanged (raising `KeyboardInterrupt` off the main
+  thread is a Python anti-pattern and only the main thread can
+  meaningfully unblock `mcp.run()`). Six locks in
+  ``tests/test_server_functions.py``: existing
+  ``test_signal_handler_main_thread`` upgraded to
+  ``assertRaises(KeyboardInterrupt)``, existing
+  ``test_signal_handler_cleanup_error`` upgraded to confirm
+  KeyboardInterrupt still raises *despite* cleanup failure (the
+  fail-loud path), plus three new tests:
+  ``test_signal_handler_sigterm_main_thread_raises_keyboardinterrupt``
+  (the headline reverse-lock — exception message contains both
+  the literal "signal" word and the SIGTERM signum so future
+  refactors can't quietly demote it),
+  ``test_signal_handler_sigint_main_thread_raises_keyboardinterrupt``
+  (parity for SIGINT — protects against a refactor that special-
+  cases SIGTERM and silently regresses SIGINT), and
+  ``test_signal_handler_calls_cleanup_before_raising`` (order
+  trace asserting `cleanup` precedes `raise` — moving the raise
+  earlier would resurrect the resource-leak class). Pytest count
+  climbs 2455 → 2458.
 - **`wait_for_task_completion` retries `_fetch_result` once before
   ghost-task close, closing a "SSE-completed + fetch-jitter →
   delete user's feedback" race.** Pre-fix race: T0 user submits
