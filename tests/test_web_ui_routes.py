@@ -1692,6 +1692,142 @@ class TestCapabilitiesEndpoint(_RouteTestBase):
         self.assertIsNotNone(web_ui_module)
 
 
+class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
+    """``/api/update-feedback-config`` 错误分支与字段独立更新覆盖。
+
+    happy path（三字段一并更新 + round-trip 读回）已在
+    ``test_runtime_behavior.TestFeedbackConfigRoundTrip`` 锁定。本测试聚焦
+    错误处理与单字段路径，防止 regress 后用户端无声损失。
+    """
+
+    _port = 19250
+
+    def test_non_int_frontend_countdown_returns_400(self):
+        """``frontend_countdown`` 不能转 int → 400 + 中文报错信息。
+
+        防止 lambda 误转 ``int(None) → TypeError`` 一路打到 500，把
+        traceback 暴露给浏览器。
+        """
+        resp = self._client.post(
+            "/api/update-feedback-config",
+            json={"frontend_countdown": "not-an-int"},
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "error")
+        self.assertIn("frontend_countdown", data["message"])
+
+    def test_zero_frontend_countdown_disables_timer(self):
+        """``frontend_countdown=0`` 是「禁用前端倒计时」的特殊语义，
+        必须原样落盘，不能被 ``clamp_value`` 提到 ``AUTO_RESUBMIT_TIMEOUT_MIN``。
+        """
+        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+            mock_mgr = MagicMock()
+            mock_mgr.get_section.return_value = {}
+            mock_get_config.return_value = mock_mgr
+
+            resp = self._client.post(
+                "/api/update-feedback-config",
+                json={"frontend_countdown": 0},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        update_call = mock_mgr.update_section.call_args
+        assert update_call is not None
+        section, payload = update_call.args
+        self.assertEqual(section, "feedback")
+        self.assertEqual(payload.get("frontend_countdown"), 0)
+
+    def test_only_resubmit_prompt_is_updated(self):
+        """单字段更新：仅 ``resubmit_prompt``，不应同时改其它字段。"""
+        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+            mock_mgr = MagicMock()
+            mock_mgr.get_section.return_value = {"frontend_countdown": 60}
+            mock_get_config.return_value = mock_mgr
+
+            resp = self._client.post(
+                "/api/update-feedback-config",
+                json={"resubmit_prompt": "请马上回复"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        _, payload = mock_mgr.update_section.call_args.args
+        self.assertEqual(payload.get("resubmit_prompt"), "请马上回复")
+        self.assertEqual(payload.get("frontend_countdown"), 60)
+
+    def test_only_prompt_suffix_is_updated(self):
+        """单字段更新：仅 ``prompt_suffix``。"""
+        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+            mock_mgr = MagicMock()
+            mock_mgr.get_section.return_value = {}
+            mock_get_config.return_value = mock_mgr
+
+            resp = self._client.post(
+                "/api/update-feedback-config",
+                json={"prompt_suffix": "\n（自动追加）"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        _, payload = mock_mgr.update_section.call_args.args
+        self.assertEqual(payload.get("prompt_suffix"), "\n（自动追加）")
+
+    def test_no_recognised_fields_returns_success_with_message(self):
+        """payload 里没有任何已知字段 → 200 + 「无可识别的更新字段」，
+        不调用 ``update_section``。
+        """
+        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+            mock_mgr = MagicMock()
+            mock_mgr.get_section.return_value = {}
+            mock_get_config.return_value = mock_mgr
+
+            resp = self._client.post(
+                "/api/update-feedback-config",
+                json={"unknown_field": 123},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("无可识别", data["message"])
+        mock_mgr.update_section.assert_not_called()
+
+    def test_non_dict_payload_treated_as_empty(self):
+        """payload 不是 dict（如发了一个 list）→ 视为空 dict，回 200 + 提示。"""
+        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+            mock_mgr = MagicMock()
+            mock_mgr.get_section.return_value = {}
+            mock_get_config.return_value = mock_mgr
+
+            resp = self._client.post(
+                "/api/update-feedback-config",
+                json=["not", "a", "dict"],
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        mock_mgr.update_section.assert_not_called()
+
+    def test_config_manager_exception_returns_500(self):
+        """``update_section`` 抛异常 → 500 + 标准化错误（不泄漏 traceback）。"""
+        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+            mock_mgr = MagicMock()
+            mock_mgr.get_section.return_value = {}
+            mock_mgr.update_section.side_effect = OSError(
+                "simulated config write failure"
+            )
+            mock_get_config.return_value = mock_mgr
+
+            resp = self._client.post(
+                "/api/update-feedback-config",
+                json={"frontend_countdown": 120},
+            )
+
+        self.assertEqual(resp.status_code, 500)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "error")
+        # 标准化文案，不应是 raw exception text
+        self.assertNotIn("simulated config write failure", data["message"])
+
+
 class TestServerClockEndpoint(_RouteTestBase):
     """服务器时钟端点回归点（IG-2）。"""
 
