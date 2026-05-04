@@ -29,6 +29,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/README{,.zh-CN}.md` API-reference module list is in
+  sync with `MODULES_TO_DOCUMENT` again.** Both bilingual
+  index files used to enumerate the API auto-gen scope as
+  "`config_manager`, `notification_*`, `task_queue`,
+  `file_validator`, `enhanced_logging`, `exceptions`,
+  `shared_types`, `config_utils`" — that list was last
+  refreshed before commit `a8db779` added `protocol.py`,
+  `state_machine.py`, and `i18n.py` to the generator. The
+  index now groups the modules by Core / Utility (matching
+  the bilingual quick-navigation grid emitted into the
+  generated `api{,.zh-CN}/index.md`) and additionally
+  surfaces the `make docs-check` shortcut for drift
+  detection. Pure docs patch — no generator or test
+  change.
 - **PR template's "Local verification" checklist now lists
   `make ci` / `make vscode-check` shortcuts alongside the
   existing `uv run python scripts/ci_gate.py …` invocations,

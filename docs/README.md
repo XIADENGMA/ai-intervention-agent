@@ -27,10 +27,15 @@ Find your role below to jump straight to the page you need.
   how `t()` works at runtime, what each `check_i18n_*.py` gate
   enforces, how to add a new locale or extend the pseudo locale.
 - [`api/index.md`](api/index.md) · [`api.zh-CN/index.md`](api.zh-CN/index.md)
-  — auto-generated module reference for `config_manager`,
-  `notification_*`, `task_queue`, `file_validator`, `enhanced_logging`,
-  `exceptions`, `shared_types`, `config_utils`. Regenerate with
-  `uv run python scripts/generate_docs.py`.
+  — auto-generated module reference for the public Python surface:
+  core contract modules (`config_manager`, `notification_*`,
+  `task_queue`, `protocol`, `state_machine`, `server_config`,
+  `exceptions`) and utility modules (`config_utils`, `i18n`,
+  `shared_types`, `notification_models`, `file_validator`,
+  `enhanced_logging`). Regenerate with
+  `uv run python scripts/generate_docs.py`; verify drift with
+  `make docs-check` (or
+  `uv run python scripts/generate_docs.py --check`).
 
 ## Operators · running it on a real machine
 
