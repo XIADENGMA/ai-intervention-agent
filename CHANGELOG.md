@@ -27,6 +27,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   back-to-back `uv run python scripts/ci_gate.py` runs producing zero
   WARNING/ERROR/FAIL/RETRY lines.
 
+### Tests
+
+- **New regression gate:
+  `tests/test_config_docs_parity.py`** locks the
+  contract that every key declared in
+  `config.toml.default` must appear in *both*
+  `docs/configuration.md` and
+  `docs/configuration.zh-CN.md` as a backticked entry in
+  the matching `### \`<section>\`` table — and vice versa
+  (no orphan documented keys). Complements the existing
+  `tests/test_config_defaults_consistency.py` which guards
+  the runtime default dict ↔ TOML template invariant.
+  5 new tests; 2244 → 2249 total passing. The TOML / doc
+  parsers each have a self-check so refactoring the regex
+  later cannot silently weaken the gate (e.g., dropping a
+  section it never noticed). Closes the structural gap
+  that allowed the
+  `[notification]::debug` /
+  `[web_ui]::language` /
+  `[mdns]::enabled` doc drift to ship in the first place.
+
 ### Documentation
 
 - **`docs/configuration{,.zh-CN}.md` is back in sync with
