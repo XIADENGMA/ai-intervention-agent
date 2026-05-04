@@ -30,6 +30,23 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=_repo_root(), check=True)
 
 
+def _run_warn(cmd: list[str], *, label: str) -> None:
+    """跑命令；非 0 退出码不阻断，只打印 [ci_gate] WARN 提示到 stderr。
+
+    用于"漂移检测但不阻塞主名项"的 warn 级门禁——在维护者尚未把
+    drift 修复纳入提交流程时，给一条人类可读的提醒，而不是直接 fail
+    一个绿色 CI。当本地约定开始严格执行后，把对应调用从 `_run_warn`
+    切到 `_run` 即可升级为硬门禁。
+    """
+    completed = subprocess.run(cmd, cwd=_repo_root(), check=False)
+    if completed.returncode != 0:
+        print(
+            f"[ci_gate] WARN: {label} 检测到漂移（exit_code={completed.returncode}），"
+            "不阻断本次主流程。请按上方提示同步源码 / 文档后再次提交。",
+            file=sys.stderr,
+        )
+
+
 def _cleanup_vscode_vsix() -> int:
     """清理 VSCode 插件打包产物（避免 .vsix 污染 CI/工作区）"""
     vs_dir = _repo_root() / "packages" / "vscode"
@@ -114,6 +131,30 @@ def _main_impl(argv: list[str]) -> int:
     # P10·B3·H13：locale JSON 形状校验（tree-of-objects + string leaves）。
     #   比 Batch-2 H11 的 runtime warn-once 更早，lint 时就挡回 PR。
     _run(["uv", "run", "python", "scripts/check_i18n_locale_shape.py"])
+
+    # docs/api(.zh-CN)/* 漂移检测（warn 级，不阻断）。`generate_docs.py
+    # --check` 已经支持双语言、幂等、报告漂移文件路径。一旦改动 Python
+    # 源码的 docstring / 签名而忘了重生 docs，CI 会输出 [ci_gate] WARN
+    # 提示，但绿色 CI 不变。修复方法：`uv run python scripts/generate_docs.py
+    # --lang en` 与 `--lang zh-CN` 两个命令同步即可。维护者觉得 docs/api
+    # 严格同步是硬契约时，把这两行从 `_run_warn` 切到 `_run` 即可升级
+    # 为 fail-closed 门禁。
+    _run_warn(
+        ["uv", "run", "python", "scripts/generate_docs.py", "--lang", "en", "--check"],
+        label="docs/api/ (English)",
+    )
+    _run_warn(
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/generate_docs.py",
+            "--lang",
+            "zh-CN",
+            "--check",
+        ],
+        label="docs/api.zh-CN/ (Chinese)",
+    )
 
     # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
     _run(["uv", "run", "python", "scripts/minify_assets.py"])

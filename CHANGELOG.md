@@ -29,6 +29,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Chore
 
+- **`scripts/ci_gate.py` now runs `generate_docs.py --check` for
+  both locales (warn-level, non-blocking).** A new `_run_warn`
+  helper executes the command but converts a non-zero exit into
+  a `[ci_gate] WARN: …` line on stderr instead of aborting. Now
+  any `git push` that ships Python signature / docstring changes
+  but forgets to run `uv run python scripts/generate_docs.py
+  --lang en` (and `--lang zh-CN`) gets a human-readable nudge
+  in the local CI output, with the exact remediation command
+  printed. The main flow stays green so single-letter
+  contributor pull-requests don't get blocked by API-doc
+  drift on day one. Promotion path: when the team standardises
+  on regenerate-on-commit, switching the two lines from
+  `_run_warn` to `_run` upgrades the gate to fail-closed.
 - **`LICENSE` now lists xiadengma alongside the upstream
   copyright holders (Fábio Ferreira, Pau Oliva).** The MIT
   license requires retaining the original notices, but
