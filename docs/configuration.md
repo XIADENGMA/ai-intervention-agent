@@ -114,9 +114,9 @@ Controls the Web UI server and HTTP client behavior.
 | `host`                 | string  | `127.0.0.1` | May be overridden by `network_security.bind_interface` |
 | `port`                 | number  | `8080`      | Range `[1, 65535]`                                     |
 | `debug`                | boolean | `false`     | Debug mode                                             |
-| `http_request_timeout` | number  | `30`        | Seconds, range `[1, 300]`                              |
-| `http_max_retries`     | number  | `3`         | Range `[0, 10]`                                        |
-| `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0.1, 60.0]`                           |
+| `http_request_timeout` | number  | `30`        | Seconds, range `[1, 600]`                              |
+| `http_max_retries`     | number  | `3`         | Range `[0, 20]`                                        |
+| `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0, 60]`                               |
 | `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to mDNS (`http://ai.local:{port}`) when enabled, then `http://{host}:{port}` |
 
 ### `network_security`
@@ -167,8 +167,8 @@ Controls timeouts and auto re-submit prompts.
 
 | Key                  | Type   | Default                                     | Notes                                                                     |
 | -------------------- | ------ | ------------------------------------------- | ------------------------------------------------------------------------- |
-| `backend_max_wait`   | number | `600`                                       | Backend maximum wait (seconds), range `[60, 3600]`                        |
-| `frontend_countdown` | number | `240`                                       | Frontend auto-submit countdown (seconds), range `[30, 250]`; `0` disables |
+| `backend_max_wait`   | number | `600`                                       | Backend maximum wait (seconds), range `[10, 7200]`                                     |
+| `frontend_countdown` | number | `240`                                       | Frontend auto-submit countdown (seconds), range `[10, 3600]`; `0` (or any non-positive integer) disables |
 | `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`    | Returned on error/timeout to encourage re-calling the tool                |
 | `prompt_suffix`      | string | `"\\n请积极调用 interactive_feedback 工具"` | Appended to the user feedback text                                        |
 

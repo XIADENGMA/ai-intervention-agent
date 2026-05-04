@@ -29,6 +29,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/configuration{,.zh-CN}.md` numeric ranges are
+  back in sync with `shared_types.SECTION_MODELS`** —
+  `cbe5b9a` (TypedDict → Pydantic refactor) and `d0e60ea`
+  (range bumps) updated the runtime `_clamp_int(...)`
+  bounds without touching the docs, leaving five fields
+  with stale ranges:
+  - `[web_ui]::http_request_timeout` doc said `[1, 300]`,
+    code allows `[1, 600]`
+  - `[web_ui]::http_max_retries` doc said `[0, 10]`, code
+    allows `[0, 20]`
+  - `[web_ui]::http_retry_delay` doc said `[0.1, 60.0]`,
+    code allows `[0, 60]`
+  - `[feedback]::backend_max_wait` doc said `[60, 3600]`,
+    code allows `[10, 7200]`
+  - `[feedback]::frontend_countdown` doc said `[30, 250]`,
+    code allows `[10, 3600]` (with `0`/non-positive
+    disabling)
+  Doc updates align both bilingual tables with the runtime
+  reality (a user constraint reading the docs was being
+  told a *narrower* allowed range than the binary actually
+  enforces — same surprise direction as not knowing
+  `external_base_url` exists). Companion test
+  (`tests/test_config_docs_range_parity.py`) prevents the
+  drift from re-emerging. Pure docs + new test patch — no
+  runtime / `_clamp_int` change.
 - **`docs/security/AUDIT_2026-05-04.md` no longer carries a
   `<TBD>` placeholder for the remediation commit hash.**
   The audit document opened with `STATUS: REMEDIATED (runtime
@@ -43,6 +68,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **New regression gate:
+  `tests/test_config_docs_range_parity.py`** locks the
+  contract that any numeric range stated in
+  `docs/configuration{,.zh-CN}.md` (e.g. `range \`[1, 600]\``)
+  must equal the actual `(min, max)` carried by the
+  matching `BeforeValidator(_clamp_int(...))` in
+  `shared_types.SECTION_MODELS`. Uses `__closure__`
+  introspection so adding/removing a numeric field does
+  not require touching the test, and a self-check pins
+  several known anchors (e.g. `port=[1, 65535]`) so
+  future `_clamp_int` refactors cannot silently weaken
+  the assertion to vacuous truth. 3 new tests; 2249 → 2252
+  total passing.
 - **New regression gate:
   `tests/test_config_docs_parity.py`** locks the
   contract that every key declared in
