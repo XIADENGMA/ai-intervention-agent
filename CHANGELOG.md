@@ -118,6 +118,59 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   13 cases) covers extraction edge cases (pre-release tags,
   build metadata, missing field), single-line replacement
   contract, and a real-repo sanity parse.
+- **`docs/api(.zh-CN)/*` drift detection promoted from
+  warn-level to fail-closed in `scripts/ci_gate.py`.** The
+  round-6 audit caught `docs/api/task_queue.md` (English) one
+  round behind the Chinese mirror after a DRY refactor of
+  `task_queue.add_task` — the warn signal had been emitting
+  across multiple CI runs without action. Both
+  `generate_docs.py --lang {en,zh-CN} --check` invocations
+  now use the fail-closed `_run` helper with a `label`
+  suffix in the failure message that points at the exact
+  remediation command. An inline comment in `ci_gate.py`
+  preserves the upgrade rationale so future maintainers do
+  not regress to warn-level.
+- **Local-CI parity holes closed for two pre-existing
+  scripts.** Two maintenance scripts that had lived under
+  `scripts/` but were never wired into `scripts/ci_gate.py`
+  are now fail-closed gates, so `make ci` /
+  `make pre-commit` finally surface them:
+  - `scripts/check_locales.py` covers two locale surfaces
+    that the primary `check_i18n_locale_parity.py` does not
+    touch — VS Code manifest translations
+    (`packages/vscode/package.nls{,.zh-CN}.json`) and
+    cross-platform `aiia.*` namespace alignment between
+    Web UI (`static/locales/`) and the VSCode webview
+    locale bundles. Without it, a missing key in the
+    manifest meant commands/views showed as raw `%key%`
+    placeholders in one language at install time, with
+    zero CI signal.
+  - `scripts/bump_version.py --check` runs the
+    eight-file version-sync invariant
+    (`pyproject.toml`/`uv.lock`/`package.json`/`package-lock.json`
+    × {root, plugin}, `bug_report.yml`, `CITATION.cff`)
+    locally instead of only in the GitHub Actions matrix
+    (Python 3.11 slice). Local pre-flight signal now
+    matches remote CI signal exactly; the test.yml step
+    is preserved as a defensive second layer.
+- **`scripts/minify_assets.py --check` switched from mtime
+  heuristic to byte-level content comparison.** The
+  previous `src.stat().st_mtime > dst.stat().st_mtime`
+  test produced 100% false positives on fresh CI runners
+  and after every `git checkout` (because checkout resets
+  working-tree mtimes). New
+  `content_drifts(src, dst, minify_func)` actually runs the
+  minifier and byte-compares the output to the on-disk
+  `.min.{js,css}`, reporting drift only when contents
+  differ. Missing destination or minifier exception are
+  both treated as drift so CI surfaces problems instead of
+  silently fixing them. Default execution mode (no flag)
+  keeps the mtime fast-path for incremental local
+  rebuilds. 7 unit tests
+  (`tests/test_minify_assets_helpers.py`) lock the new
+  contract, including a reverse-lock that fails if a
+  future contributor wires `needs_minification` back into
+  the `--check` path.
 
 ### Fixed
 
