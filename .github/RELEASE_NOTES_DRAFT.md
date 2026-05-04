@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 25 maintenance commits added on top of the release. This is **not**
+> the 32 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -86,6 +86,18 @@ not need to update integration scripts.
   `state_machine.py` (Connection / Content / Interaction state
   machines), and `i18n.py` (back-end locale-keyed message
   lookup). Total per-locale page count climbs from 11 to 14.
+- **Configuration docs (`docs/configuration{,.zh-CN}.md`) are
+  back in sync with `config.toml.default`** plus a new pytest
+  regression gate (`tests/test_config_docs_parity.py`) that
+  fails CI if they ever drift again. Three real drift points
+  shipped silently in v1.5.x and were fixed in this wave:
+  `[notification]::debug` and `[web_ui]::language` were absent
+  from both bilingual tables; `docs/configuration.zh-CN.md::
+  [mdns]::enabled` was still describing the pre-v1.5 contract
+  (`null` default) instead of the runtime sentinel `"auto"`;
+  the Chinese minimal example was a stale `jsonc` snippet
+  although the recommended on-disk format has been TOML for
+  the entire v1.5.x line.
 
 ### Documentation
 
@@ -171,6 +183,46 @@ not need to update integration scripts.
   CI Gate` and `docs/workflow{.zh-CN}.md`** so contributors
   reading the entry-point pages discover the alias instead of
   only seeing the long-form `uv run python scripts/ci_gate.py …`.
+- **PR template `.github/PULL_REQUEST_TEMPLATE.md::§Local
+  verification`** now lists the `make ci` / `make vscode-check`
+  / `make docs-check` aliases alongside the long-form
+  invocations, closing the consistency gap with
+  `CONTRIBUTING.md` and `docs/workflow*.md`.
+- **`docs/README{,.zh-CN}.md` API-module list synced with
+  `MODULES_TO_DOCUMENT`** — both bilingual indexes were still
+  enumerating the pre-`a8db779` module set; refreshed to the
+  Core / Utility grouping that mirrors the auto-generated
+  index, plus a `make docs-check` callout so contributors
+  who add a new module see the verification command on the
+  same page.
+- **`docs/security/AUDIT_2026-05-04.md::STATUS line** no
+  longer carries a `<TBD>` placeholder for the remediation
+  commit hash — replaced with a deep-link to commit
+  `95e4151` (the `:lock: chore(deps): security wave …`
+  commit that actually closed all 17 runtime CVEs). A
+  forensic-trail token in a security artefact should not
+  read as "remediation pending" when remediation has
+  shipped.
+- **`docs/workflow{,.zh-CN}.md` ad-hoc Locale-check entry
+  now points at the modern `scripts/check_i18n_locale_parity.py`**
+  instead of the legacy key-only `scripts/check_locales.py`,
+  with a parenthetical explaining the legacy survives only
+  for backward compatibility.
+
+### Tests
+
+- **New regression gate
+  (`tests/test_config_docs_parity.py`)** locks the contract
+  that every key declared in `config.toml.default` must
+  appear in *both* `docs/configuration.md` and
+  `docs/configuration.zh-CN.md` as a backticked entry in
+  the matching `### \`<section>\`` table — and vice versa
+  (no orphan documented keys). Complements the existing
+  `tests/test_config_defaults_consistency.py` (runtime
+  default dict ↔ TOML template). 5 new tests; pytest total
+  climbs from 2244 to 2249. The TOML / doc parsers each
+  carry a self-check so refactoring the regex later cannot
+  silently weaken the gate.
 
 ### Tooling / CI
 
