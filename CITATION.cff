@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "AI Intervention Agent"
+abstract: >
+  An MCP (Model Context Protocol) server that lets a human intervene
+  in real time during AI-assisted development workflows. Through a
+  Web UI shared by browsers and the VS Code extension, the user can
+  review the agent's current context, send fresh instructions, and
+  approve or redirect the agent via the `interactive_feedback` tool.
+type: software
+license: MIT
+url: "https://github.com/xiadengma/ai-intervention-agent"
+repository-code: "https://github.com/xiadengma/ai-intervention-agent"
+authors:
+  - family-names: xiadengma
+    alias: xiadengma
+keywords:
+  - mcp
+  - model-context-protocol
+  - ai
+  - llm
+  - agent
+  - human-in-the-loop
+  - feedback
+  - claude
+  - cursor
+  - vscode
+version: "1.5.21"
+date-released: "2026-05-04"
