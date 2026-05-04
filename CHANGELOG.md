@@ -23,11 +23,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - 20 contract tests in `tests/test_tool_annotations.py` and
   `tests/test_server_identity.py` to lock the new metadata and prevent silent
   regressions.
+- `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1, bilingual)
+  so GitHub's Community Standards page is fully green and new contributors find
+  setup / commit-style guidance on the first click.
 
 ### Documentation
 
 - New "Server-level metadata" and "Tool-level annotations" sections in
   `docs/mcp_tools.md` and `docs/mcp_tools.zh-CN.md`.
+- README and README.zh-CN now highlight the MCP 2025-11-25 spec compliance and
+  link to `CHANGELOG.md`, `CONTRIBUTING.md`, and `CODE_OF_CONDUCT.md`.
+
+### Chore
+
+- `.editorconfig` for cross-editor formatting consistency (Python 4-space,
+  JS/TS/MD 2-space, Makefile tab), aligned with the existing ruff conventions.
+- `.gitattributes` to force LF line endings on text sources (so Windows clones
+  do not silently break byte-sensitive tests) and to mark binary assets and
+  vendored / generated files for GitHub linguist.
 
 ## [1.5.20] - 2026-05-04
 
