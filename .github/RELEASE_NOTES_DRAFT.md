@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 53 maintenance commits added on top of the release. This is **not**
+> the 55 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
