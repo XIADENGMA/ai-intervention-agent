@@ -29,6 +29,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Chore
 
+- **Coverage red line (`fail_under = 88`) and report polish in
+  `pyproject.toml`.** The project shipped without any
+  `[tool.coverage.*]` section, so coverage could regress
+  arbitrarily without CI noticing. Added:
+  - `[tool.coverage.run] omit = ["scripts/*", "tests/*", "*/test_*.py", "manual_test.py"]`
+    so the denominator only includes production code (test
+    files inflating their own coverage to 100% would mask
+    regressions in the surfaces that matter).
+  - `[tool.coverage.run] parallel = true` to correctly merge
+    `.coverage` data when pytest is run with `-n` / xfail
+    rerun-on-failure tooling later.
+  - `[tool.coverage.report] fail_under = 88` — the v1.5.22
+    measurement is 90.96%, leaving ~3% volatility headroom
+    before CI blocks the merge. Includes a comment recommending
+    `+1%` per minor release while keeping `≥2%` of headroom to
+    absorb innocuous churn.
+  - `[tool.coverage.report] skip_covered = true` and
+    `show_missing = true` — the term-missing report no longer
+    drowns reviewers in 100%-clean files, and remaining gaps
+    surface their specific line numbers.
+  - `[tool.coverage.report] exclude_lines` — recognise
+    `pragma: no cover`, `raise NotImplementedError`,
+    `if TYPE_CHECKING:`, and `if __name__ == "__main__":` so
+    the metric stays honest without manual annotation in every
+    file.
+  Verified by running `uv run python scripts/ci_gate.py
+  --with-coverage`: TOTAL = 90.96%, fail_under = 88, exit 0.
 - **`.pre-commit-config.yaml` gains three commonly-recommended
   hooks from `pre-commit/pre-commit-hooks` (already pinned at
   `v5.0.0`, so zero new dependency).**

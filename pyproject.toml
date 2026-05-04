@@ -166,6 +166,33 @@ dev = [
 [tool.pytest.ini_options]
 filterwarnings = ["error"]
 
+[tool.coverage.run]
+# 测试时排除一次性 / 离线脚本，避免被算进 fail_under 红线（它们独立跑）
+omit = [
+    "scripts/*",
+    "tests/*",
+    "*/test_*.py",
+    "manual_test.py",
+]
+# 让 pytest-xdist / xfail 等场景正确合并多次 run 的 .coverage 数据
+parallel = true
+
+[tool.coverage.report]
+# 当前实测 ~90.96%（v1.5.22）；红线给 ~3% 退化容差，再低就阻塞 CI。
+# 修订建议：每次主版本提升红线 +1%，但保持 < 实测值 ≥2%，防止偶发抖动。
+fail_under = 88
+# 报告里不再展示已 100% 覆盖的文件，把注意力收敛到真有缺口的模块
+skip_covered = true
+# 显示未覆盖的具体行号，让 reviewer 一眼定位需要补测试的位置
+show_missing = true
+# 把 pragma 注释（如 `# pragma: no cover`）当成第一类公民，便于审阅排除路径
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
 [tool.ruff]
 # 目标 Python 版本
 target-version = "py311"
