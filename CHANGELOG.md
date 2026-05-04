@@ -7,6 +7,49 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 > Earlier history (versions ≤ 1.5.19) lives in the git log only.
 
+## [Unreleased]
+
+### Tests
+
+- **Boundary-test hardening for the v1.5.21 line.** Added 29 regression tests
+  covering previously-unexercised failure paths and routes that had zero
+  coverage. Net effect: full-suite count rose from 2212 to 2241, and overall
+  line coverage improved from 89.93% to 90.88%.
+  - `tests/test_server_identity.py` — single-icon read failure isolation
+    (one corrupt PNG must not nuke the whole `icons` list) +
+    `importlib.metadata` exception fallback to `0.0.0+local`.
+  - `tests/test_web_ui_routes_system.py` — `/api/system/open-config-file`
+    edge cases: empty `_resolve_allowed_paths()`, default target missing on
+    disk, explicit editor uninstalled (graceful auto-detect fallback).
+  - `tests/test_web_ui_update_language.py` (new file) — `/api/update-language`
+    full contract: three valid languages, empty-payload default, unknown /
+    empty-string rejection, whitespace stripping, write-failure 500 path.
+  - `tests/test_web_ui_routes.py::TestStaticRoutesEdge` — new
+    `/manifest.webmanifest` regression point (PWA install banner depends on
+    it; v1.5.20 added the route with no test).
+  - `tests/test_web_ui_routes.py::TestUpdateFeedbackConfigEndpoint` — error
+    branches for `/api/update-feedback-config` (non-int countdown,
+    `frontend_countdown=0` "disable timer" semantics, single-field updates,
+    no-recognised-fields message, non-dict payload coercion, 500 path with
+    i18n message wrapping verification).
+  - `tests/test_web_ui_routes.py::TestCreateTask` — full type-coercion matrix
+    for `predefined_options_defaults` (TODO #3 field shipped in v1.5.20 with
+    zero direct tests): bool / int / float / str-aliases / unknown types,
+    plus length truncate / pad-with-False.
+  - `tests/test_web_ui_routes.py::TestCloseTask` (new class) —
+    `/api/tasks/<id>/close` happy / 404 / 500 (route was untested since
+    multi-task feature shipped).
+
+### Coverage by file (informational)
+
+| Module | v1.5.21 | Now | Δ |
+| --- | --- | --- | --- |
+| `web_ui_routes/static.py` | 89.0% | **100.0%** | +11.0% |
+| `web_ui.py` | 88.0% | **98.77%** | +10.77% |
+| `web_ui_routes/task.py` | 73.37% | **87.62%** | +14.25% |
+| `web_ui_routes/notification.py` | 92.88% | **97.41%** | +4.53% |
+| `web_ui_routes/system.py` | 79.53% | **82.33%** | +2.80% |
+
 ## [1.5.21] - 2026-05-04
 
 ### Added
