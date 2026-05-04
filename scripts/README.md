@@ -52,7 +52,11 @@ README is here so a fresh contributor can grep one file and see
   `packages/vscode/i18n-keys.d.ts` from `en.json` so TypeScript
   `hostT(key: I18nKey)` catches typos at build time.
 - [`generate_docs.py`](generate_docs.py) — auto-generate
-  `docs/api/*.md` from Python source docstrings + signatures.
+  `docs/api/*.md` (and `docs/api.zh-CN/*.md` with `--lang zh-CN`)
+  from Python source docstrings + signatures. `--check` mode
+  detects drift without writing (exit 1 + drift list when
+  out-of-sync); ideal as a pre-merge sanity check after
+  signature edits.
 
 ## Asset / packaging pipeline
 

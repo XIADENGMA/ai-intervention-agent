@@ -78,6 +78,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`scripts/generate_docs.py` gains a `--check` mode + the
+  generator is now idempotent.** The new flag does an in-memory
+  byte-level compare against the on-disk file and exits with
+  status 1 + a list of drifted paths when they don't match —
+  ready to be wired into CI once contributors are comfortable
+  running `--lang en` and `--lang zh-CN` after every signature
+  edit. Idempotency required tightening `generate_markdown()` to
+  strip a stray pair of trailing newlines that pre-commit's
+  `end-of-file-fixer` was collapsing on every run, which had
+  previously caused first-time `--check` users to see a phantom
+  drift on a freshly-regenerated tree. Verified by running the
+  generator twice in a row and confirming `git diff --stat`
+  reports zero changes; `--check` then exits cleanly. Wiring
+  to `ci_gate.py` deferred so the contract remains opt-in until
+  the team standardises on regenerate-on-commit.
 - **API reference (`docs/api/` + `docs/api.zh-CN/`) refreshed to
   match current source.** Running
   `uv run python scripts/generate_docs.py --lang en`

@@ -189,7 +189,12 @@ def generate_markdown(
                         lines.append(method["docstring"])
                         lines.append("")
 
-    return "\n".join(lines) + "\n"
+    # 每个 class/function 区块末尾会留一个 ""（视觉空行），最后一个区块的
+    # 那个空行 + final-newline 会叠成 "\n\n"，被 pre-commit
+    # `end-of-file-fixer` 还原为 "\n"。先 rstrip 掉所有结尾空白，再补
+    # 唯一一个 "\n"，确保 generator 的输出与 fixer 整理后的盘上字节一致，
+    # 这也是 `--check` 模式的幂等前提。
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def generate_index(modules: list[str], *, lang: str, output_dir_display: str) -> str:
@@ -259,7 +264,27 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
     return "\n".join(lines) + "\n"
 
 
-def main():
+def _write_or_check(path: Path, content: str, *, check: bool, drift: list[Path]) -> str:
+    """写入或仅校验是否漂移。
+
+    返回单字符状态指示符（用于打印）：
+      - ``"="`` 文件已存在且字节级一致（check 与 write 都不改）
+      - ``"+"`` 文件不存在或字节级不一致；
+        - check 模式：仅记录到 ``drift`` 列表，不写盘
+        - write 模式：写入盘并视作成功生成
+    """
+    expected = content.encode("utf-8")
+    actual = path.read_bytes() if path.exists() else b""
+    if actual == expected:
+        return "="
+    if check:
+        drift.append(path)
+        return "+"
+    path.write_bytes(expected)
+    return "+"
+
+
+def main() -> int:
     parser = argparse.ArgumentParser(description="代码文档生成脚本")
     parser.add_argument(
         "--lang",
@@ -278,22 +303,32 @@ def main():
         default=None,
         help="输出目录（默认：en=docs/api/，zh-CN=docs/api.zh-CN/）",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "校验模式：不写盘，仅检查 docs/api(.zh-CN) 是否与当前源码同步。"
+            "存在漂移时退出码 1，列出漂移文件路径，便于 CI / pre-merge 拦截。"
+        ),
+    )
     args = parser.parse_args()
 
     if not args.output:
         args.output = "docs/api/" if args.lang == "en" else "docs/api.zh-CN/"
 
     output_dir = PROJECT_ROOT / args.output
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not args.check:
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 50)
-    print("代码文档生成工具")
+    print("代码文档生成工具" + ("（校验模式）" if args.check else ""))
     print("=" * 50)
     print(f"输出目录: {output_dir}")
     print(f"输出格式: {args.format}")
     print()
 
-    generated_modules = []
+    generated_modules: list[str] = []
+    drift: list[Path] = []
 
     for module_file in MODULES_TO_DOCUMENT:
         filepath = PROJECT_ROOT / module_file
@@ -313,27 +348,49 @@ def main():
                     include_docstrings=(args.lang != "en"),
                 )
                 output_file = output_dir / f"{module_info['name']}.md"
-                output_file.write_text(content, encoding="utf-8")
-                print(f"   ✅ 生成: {output_file.name}")
+                status = _write_or_check(
+                    output_file, content, check=args.check, drift=drift
+                )
+                marker = "🔄" if status == "+" else "✅"
+                action = (
+                    ("漂移" if args.check else "生成") if status == "+" else "已同步"
+                )
+                print(f"   {marker} {action}: {output_file.name}")
                 generated_modules.append(module_file)
 
         except Exception as e:
             print(f"   ❌ 错误: {e}")
 
-    # 生成索引
     if generated_modules:
         index_content = generate_index(
             generated_modules, lang=args.lang, output_dir_display=args.output
         )
         index_file = output_dir / "index.md"
-        index_file.write_text(index_content, encoding="utf-8")
-        print(f"\n📑 索引: {index_file}")
+        status = _write_or_check(
+            index_file, index_content, check=args.check, drift=drift
+        )
+        marker = "🔄" if status == "+" else "📑"
+        action = ("漂移" if args.check else "索引") if status == "+" else "索引已同步"
+        print(f"\n{marker} {action}: {index_file}")
 
     print()
     print("=" * 50)
+    if args.check:
+        if drift:
+            print(f"❌ 校验失败：发现 {len(drift)} 个漂移文件")
+            for p in drift:
+                rel = p.relative_to(PROJECT_ROOT)
+                print(f"  - {rel}")
+            print()
+            print("修复方法：")
+            print(f"  uv run python scripts/generate_docs.py --lang {args.lang}")
+            return 1
+        print(f"✅ 校验通过：所有 {len(generated_modules)} 个文档与源码一致")
+        return 0
     print(f"完成！共生成 {len(generated_modules)} 个文档")
     print(f"查看: {output_dir}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
