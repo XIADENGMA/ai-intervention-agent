@@ -133,6 +133,15 @@ def _main_impl(argv: list[str]) -> int:
     #   6. pseudo locale 与 en.json 同步（P9·L2·G4：QA 可切到 pseudo 看
     #      硬编码泄漏 / 布局溢出 / Unicode 断裂）
     _run(["uv", "run", "python", "scripts/check_i18n_locale_parity.py"])
+    # check_locales.py 与 check_i18n_locale_parity.py 互补，独占两块覆盖：
+    #   - VS Code manifest 翻译：``package.nls.json`` / ``package.nls.zh-CN.json``
+    #     （parity 脚本只看 ``locales/*.json``，不看 manifest 翻译；遗漏会让
+    #     扩展上架时某种语言下 commands/views 标题缺失）
+    #   - 跨端 ``aiia.*`` namespace 一致：Web UI ↔ VSCode 两侧的 ``aiia.*``
+    #     keys 必须一字不差（为未来抽取共享 locale 模块铺路）
+    # 缺这一道时，单端补 ``aiia.*`` key、忘了同步另一端，CI 会沉默放过，
+    # 直到运行时 i18n 回退到原始 key 才暴露。
+    _run(["uv", "run", "python", "scripts/check_locales.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_html_coverage.py"])
     _run(["uv", "run", "python", "scripts/check_i18n_js_no_cjk.py", "--scope", "all"])
     _run(["uv", "run", "python", "scripts/check_i18n_ts_no_cjk.py"])
@@ -179,6 +188,16 @@ def _main_impl(argv: list[str]) -> int:
         ],
         label="docs/api.zh-CN/ (Chinese)",
     )
+
+    # 版本一致性 fail-closed 门禁：``bump_version.py --check`` 验证
+    # ``pyproject.toml``、``uv.lock``、根/插件 ``package.json`` /
+    # ``package-lock.json``、``.github/ISSUE_TEMPLATE/bug_report.yml``、
+    # ``CITATION.cff`` 全部对齐。历史上 ``test.yml`` 独占这一步，本地
+    # ``make ci`` / ``make pre-commit`` 跑不到，只有 push 之后 CI 才报
+    # 红——一次往返浪费 5–10 分钟。挪进 ci_gate 后本地预检和远端 CI 的
+    # 信号面完全一致（local-CI parity），``test.yml`` 那一步保留作为
+    # 防御性兜底，不构成重复执行成本（同一进程，跑两次还是 < 0.1s）。
+    _run(["uv", "run", "python", "scripts/bump_version.py", "--check"])
 
     # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
     _run(["uv", "run", "python", "scripts/minify_assets.py"])
