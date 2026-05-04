@@ -8,10 +8,25 @@
     "vscode": "^1.105.0"
   },
   "publisher": "xiadengma",
+  "license": "MIT",
+  "homepage": "https://github.com/xiadengma/ai-intervention-agent#readme",
   "repository": {
     "type": "git",
     "url": "https://github.com/XIADENGMA/ai-intervention-agent.git"
   },
+  "bugs": {
+    "url": "https://github.com/xiadengma/ai-intervention-agent/issues"
+  },
+  "keywords": [
+    "ai",
+    "mcp",
+    "feedback",
+    "agent",
+    "intervention",
+    "claude",
+    "cursor",
+    "windsurf"
+  ],
   "categories": [
     "Other"
   ],
