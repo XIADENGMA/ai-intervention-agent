@@ -382,6 +382,48 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
+- **`TaskQueue._restore` quarantines corrupt persist files to
+  `<path>.corrupt-<ISO timestamp>` instead of letting the next
+  `_persist` silently overwrite them.** Pre-fix the top-level
+  `except` branch in `_restore` logged "任务恢复失败（将使用空
+  队列）" and degraded to an empty queue when `json.loads` failed
+  (causes: unclean shutdown before R17.2 flush+fsync landed,
+  partially-written tmp files left over from power loss between
+  `tempfile.mkstemp` and `os.replace`, future kernel/filesystem
+  data corruption). The very next `add_task` then called
+  `_persist`, whose `tempfile.mkstemp + os.replace` atomic-write
+  unconditionally overwrites the existing target — destroying
+  the only forensic evidence of what went wrong. Ops
+  investigating "all my tasks disappeared" reports could no
+  longer `hexdump` to distinguish "truncated JSON" (fsync gap)
+  from "garbled bytes" (filesystem bug) from "partially-written
+  rename" (`os.replace` race) — three failure classes needing
+  three different remediation strategies. Fix is a new
+  module-private `_quarantine_corrupt_persist_file(self, *,
+  reason: str)` called from the top-level `except`: atomic
+  rename via `os.replace` with a compact
+  `YYYYMMDDTHHMMSSZ` suffix (ASCII-only because Windows file-
+  name rules forbid `:`; sortable so `ls *.corrupt-*` lists
+  oldest-first; per-second resolution because corruption is
+  one-shot, not a hot loop — colliding events in the same
+  second collapse to the latest sample which is fine because
+  same-second events share root cause). Best-effort `try/except
+  OSError` ensures quarantine failure never raises into
+  `__init__`; worst case is pre-fix baseline (silent overwrite),
+  strictly an improvement. Five new locks in
+  `TestCorruptPersistQuarantine`: truncated-JSON repro asserts
+  queue degrades to empty AND original path is gone AND
+  quarantine file is byte-identical to original; filename-format
+  regex lock (`YYYYMMDDTHHMMSSZ`); the *load-bearing*
+  `test_subsequent_persist_does_not_overwrite_quarantine` proves
+  `add_task` after corruption writes a fresh `tasks.json` while
+  preserving the `*.corrupt-*` quarantine intact;
+  `os.replace`-raises-unconditionally case still constructs
+  cleanly (locks "best-effort never raises"); structural
+  reverse-lock that the quarantine call lives in the `except`
+  branch with `reason=str(e)` (a refactor that moves it into
+  the `try` block or removes it would silently re-introduce the
+  bug). Pytest count climbs 2467 → 2472.
 - **Image-upload pipeline gains four-tier OOM defense; closes
   a pre-existing 100 GB single-part exploit hidden behind a
   deceptive "为什么不依赖 MAX_CONTENT_LENGTH" docstring.**

@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 127 maintenance commits added on top of the release. This is **not**
+> the 129 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -833,6 +833,57 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **`TaskQueue._restore` now quarantines corrupt persist files
+  (`<path>.corrupt-<ISO timestamp>`) instead of letting the next
+  `_persist` silently overwrite them.** Pre-fix `_restore` had a
+  top-level `try/except` that logged "任务恢复失败（将使用空队列）"
+  and degraded to an empty queue when `json.loads` failed (typical
+  causes: unclean shutdown before the R17.2 flush+fsync landed,
+  partially-written tmp files left over from power loss, future
+  filesystem-level data corruption). Then the very next `add_task`
+  would call `_persist`, whose `tempfile.mkstemp + os.replace`
+  atomic-write pattern *unconditionally* overwrites the existing
+  target — destroying the only forensic evidence of *what* went
+  wrong. Ops investigating "all my tasks disappeared" reports
+  could no longer `hexdump` the bytes to distinguish "truncated
+  JSON suggesting fsync gap" from "garbled bytes suggesting
+  filesystem bug" from "partially-written rename suggesting
+  `os.replace` race" — three failure classes needing three
+  different remediation strategies. Fix is a new module-private
+  `_quarantine_corrupt_persist_file(self, *, reason: str)` called
+  from the top-level `except`: rename (atomic at directory-entry
+  level, doesn't re-read the bytes that just failed to read)
+  with a compact `YYYYMMDDTHHMMSSZ` suffix (ASCII-only because
+  Windows file-name rules forbid `:`; sortable so `ls *.corrupt-*`
+  lists oldest-first; per-second resolution is enough because
+  corruption is one-shot, not a hot loop). Best-effort `try/except
+  OSError` ensures quarantine failure never raises into
+  `__init__` — worst case is the pre-fix baseline (silent
+  overwrite), so it's strictly an improvement. Five new locks in
+  `TestCorruptPersistQuarantine`: `test_truncated_json_is_quarantined`
+  writes a JSON-truncated-at-byte-44 file (the canonical "kernel
+  panic mid-write" repro) and asserts the queue degrades to
+  empty AND the original path no longer has a file AND the
+  quarantine file's bytes are byte-identical to the original
+  corruption (forensic integrity);
+  `test_quarantine_filename_format` regex-locks the suffix exactly
+  (rejects future "let's add microseconds" or "let's use canonical
+  `:`" regressions that would break Windows);
+  `test_subsequent_persist_does_not_overwrite_quarantine` is the
+  *load-bearing* test — captures the quarantine file path + bytes
+  before, calls `add_task` (which triggers `_persist`), asserts
+  the quarantine file is still in place with byte-identical
+  content AND a fresh `tasks.json` was written;
+  `test_quarantine_failure_does_not_propagate` patches `os.replace`
+  to raise unconditionally, asserts construction succeeds and
+  queue degrades cleanly (locks "best-effort, never raise"
+  invariant); `test_quarantine_called_from_restore_except`
+  patches `_quarantine_corrupt_persist_file` itself and asserts
+  call-once with `reason=...` containing the JSON parser error
+  string — structural reverse-lock against a future refactor that
+  moves the quarantine call into the `try` block (would only fire
+  on success, useless) or removes it altogether. Pytest count
+  climbs 2467 → 2472.
 - **Flaky `test_cache_performance` rewritten as deterministic
   behaviour-level invariant locks; full pytest suite no longer
   trips on previous-test interference.** The original test
