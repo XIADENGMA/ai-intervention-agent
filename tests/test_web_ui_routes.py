@@ -1421,6 +1421,49 @@ class TestActivateTask(_RouteTestBase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  task.py — /api/tasks/<id>/close POST  (端点之前完全无测试)
+# ═══════════════════════════════════════════════════════════════════════════
+class TestCloseTask(_RouteTestBase):
+    """``/api/tasks/<task_id>/close`` 路由在 v1.5.x 一直存在但无回归点。
+
+    它是用户在多任务面板里手动关闭某个反馈任务的入口；若静默坏掉，
+    任务会一直停留在 SSE 列表里无法清理。
+    """
+
+    _port = 19035
+
+    @patch("web_ui_routes.task.get_task_queue")
+    def test_close_success(self, mock_get_tq):
+        mock_tq = MagicMock()
+        mock_tq.remove_task.return_value = True
+        mock_get_tq.return_value = mock_tq
+
+        resp = self._client.post("/api/tasks/task-x/close")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        mock_tq.remove_task.assert_called_once_with("task-x")
+
+    @patch("web_ui_routes.task.get_task_queue")
+    def test_close_task_not_found_404(self, mock_get_tq):
+        mock_tq = MagicMock()
+        mock_tq.remove_task.return_value = False
+        mock_get_tq.return_value = mock_tq
+
+        resp = self._client.post("/api/tasks/ghost/close")
+        self.assertEqual(resp.status_code, 404)
+        data = resp.get_json()
+        self.assertFalse(data["success"])
+        self.assertIn("不存在", data["error"])
+
+    @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
+    def test_close_exception_500(self, _):
+        resp = self._client.post("/api/tasks/any/close")
+        self.assertEqual(resp.status_code, 500)
+        self.assertIn("error", resp.get_json())
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  task.py — /api/tasks/<id>/submit POST
 # ═══════════════════════════════════════════════════════════════════════════
 class TestSubmitTaskFeedback(_RouteTestBase):
