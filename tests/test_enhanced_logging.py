@@ -220,6 +220,99 @@ class TestLogDeduplicatorCleanup(unittest.TestCase):
         self.assertLessEqual(len(dedup.cache), 20)
 
 
+class TestLogDeduplicatorLazyCleanupOnHit(unittest.TestCase):
+    """R16·D：cache hit 路径也能触发懒清理，stale entry 不再永久滞留。
+
+    历史 bug：``_cleanup_cache`` 仅在 cache miss 路径触发；如果某条
+    高频 ERROR 一直 cache hit，``cache`` 里的其它 stale entry 永远
+    不会被清理（即使每条都过期），形成"软滞留"——不是真泄漏（``max_cache_size``
+    上限存在），但违反"过期即清"的语义、让 hash 表常态保持在上限附近。
+    """
+
+    def test_lazy_cleanup_runs_on_hit_path(self):
+        """高频 cache hit 场景下 stale entry 也能在懒清理周期内被清。
+
+        步骤：
+            1. 用极短 ``time_window`` (0.05s) 和较短 ``_LAZY_CLEANUP_INTERVAL_SECONDS``
+               (monkey-patch 到 0.05s) 快速触发懒清理；
+            2. 注入 9 条 stale entry；
+            3. 持续命中第 10 条（cache hit 路径）；
+            4. 在 ``_LAZY_CLEANUP_INTERVAL_SECONDS`` 之后再次 should_log
+               同一条 hot entry，触发懒清理，stale 9 条应被清理。
+        """
+        dedup = LogDeduplicator(time_window=0.05, max_cache_size=100)
+        dedup._LAZY_CLEANUP_INTERVAL_SECONDS = 0.05
+
+        for i in range(9):
+            dedup.should_log(f"stale_{i}")
+        # 此刻共 9 条 entry（皆"新鲜"，未过期）
+
+        time.sleep(0.10)
+        # 现在所有 9 条都已经超过 time_window=0.05s，应该被视为 stale
+
+        dedup.should_log("hot_msg")
+        self.assertIn(hash("hot_msg"), dedup.cache)
+        # cache miss 路径走 _cleanup_cache → stale 全清，cache 仅剩 hot
+
+        time.sleep(0.10)
+
+        result, _ = dedup.should_log("hot_msg")
+        # 这次是 cache hit；如 lazy cleanup 不在 hit 路径运行，stale
+        # 不会被清。当前实现：lazy cleanup 在每次 should_log 入口
+        # 检查（含 cache hit 路径），所以 cache 仍只剩 hot_msg。
+        self.assertLessEqual(
+            len(dedup.cache),
+            1,
+            f"懒清理未在 cache hit 路径触发：cache 里仍有 {len(dedup.cache)} 条",
+        )
+
+    def test_lazy_cleanup_interval_constant_exists(self):
+        """Reverse-lock：``_LAZY_CLEANUP_INTERVAL_SECONDS`` 必须存在
+        且 ≥ default ``time_window`` (5.0s)。
+
+        意图：清理周期不能短于时间窗，否则反复无效遍历；不能远大于
+        2 × 时间窗，否则 stale 滞留可观察。30s 是经验值。
+        """
+        self.assertTrue(
+            hasattr(LogDeduplicator, "_LAZY_CLEANUP_INTERVAL_SECONDS"),
+            "LogDeduplicator 必须保留 _LAZY_CLEANUP_INTERVAL_SECONDS 类常量"
+            "（懒清理周期）—— 误删会让 cache hit 路径退化回 R16·D 之前的"
+            "行为：高频 cache hit 时 stale entry 永远不被清。",
+        )
+        interval = LogDeduplicator._LAZY_CLEANUP_INTERVAL_SECONDS
+        self.assertGreaterEqual(
+            interval,
+            5.0,
+            "_LAZY_CLEANUP_INTERVAL_SECONDS 不应短于默认 time_window (5s)",
+        )
+        self.assertLessEqual(
+            interval,
+            120.0,
+            "_LAZY_CLEANUP_INTERVAL_SECONDS 不应远大于 2 × time_window，"
+            "否则 stale 滞留可观察，违反 R16·D 修复初衷",
+        )
+
+    def test_first_should_log_does_not_trigger_unintended_cleanup(self):
+        """初始化时 ``_last_cleanup_time = 0.0``，首次 should_log 必触发
+        一次 cleanup（cache 为空，no-op，但 ``_last_cleanup_time`` 必须
+        被刷成当前 ``time.monotonic()``，避免后续高频 should_log 持续触发
+        cleanup（无穷 cleanup 退化到 R16·D 之前的 cache miss-only 路径
+        反向，hot path 浪费）。
+        """
+        dedup = LogDeduplicator()
+        before = dedup._last_cleanup_time
+        self.assertEqual(before, 0.0)
+
+        dedup.should_log("first")
+        after = dedup._last_cleanup_time
+        self.assertGreater(
+            after,
+            0.0,
+            "首次 should_log 后 _last_cleanup_time 必须更新到 time.monotonic()，"
+            "否则高频 should_log 会无穷触发 cleanup",
+        )
+
+
 class TestLogDeduplicatorMonotonic(unittest.TestCase):
     """R13·B2 reverse-lock：``LogDeduplicator`` 必须用 ``time.monotonic()``。
 

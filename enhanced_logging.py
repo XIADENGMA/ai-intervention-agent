@@ -70,12 +70,28 @@ class LogDeduplicator:
     住此契约（reverse-lock：源码不能切回 ``time.time()`` 否则测试失败）。
     """
 
+    # 【R16·D】懒清理触发周期（秒）。
+    # 历史实现 ``_cleanup_cache`` **仅**在 cache miss 路径触发；如果某条
+    # 高频 ERROR 一直 cache hit，``cache`` 里的其它 999 条 stale entry
+    # 永远不会被清理（即使每条都 ``time.monotonic() - last_time > 5s``
+    # 早过期了），形成软滞留——不是真泄漏（``max_cache_size = 1000``
+    # 上限存在），但违反"过期即清"的语义，且让 ``should_log`` 的
+    # ``in self.cache`` 哈希表常态保持在上限附近，多无用的 hash
+    # collision。lazy cleanup 周期 ≥ ``time_window`` 即可保证最差情况
+    # 下 stale entry 滞留不超过 2 × time_window；选 30s（= 6 ×
+    # 默认 ``time_window=5s``）平衡"清理频率"与"clean-up 自身开销"。
+    _LAZY_CLEANUP_INTERVAL_SECONDS: float = 30.0
+
     def __init__(self, time_window: float = 5.0, max_cache_size: int = 1000) -> None:
         """初始化时间窗口和缓存"""
         self.time_window = time_window
         self.max_cache_size = max_cache_size
         self.cache: dict[int, tuple[float, int]] = {}
         self.lock = threading.Lock()
+        # 上一次 ``_cleanup_cache`` 触发时刻（``time.monotonic()`` 域）。
+        # 初值 ``0.0`` 让首次 ``should_log`` 必然触发一次 cleanup（无影响：
+        # 此时 cache 为空，cleanup 是 no-op）。
+        self._last_cleanup_time: float = 0.0
 
     def should_log(self, message: str) -> tuple[bool, str | None]:
         """检查是否应记录，返回 (should_log, duplicate_info)"""
@@ -83,6 +99,15 @@ class LogDeduplicator:
             # 【R13·B2】monotonic 时间源——参见 class docstring。
             current_time = time.monotonic()
             msg_hash = hash(message)
+
+            # 【R16·D】懒清理：无论 hit/miss 都按周期检查一次过期，
+            # 避免高频 cache hit 场景下 cache 里堆 stale entry。
+            if (
+                current_time - self._last_cleanup_time
+                >= self._LAZY_CLEANUP_INTERVAL_SECONDS
+            ):
+                self._cleanup_cache(current_time)
+                self._last_cleanup_time = current_time
 
             if msg_hash in self.cache:
                 last_time, count = self.cache[msg_hash]
@@ -95,6 +120,7 @@ class LogDeduplicator:
             else:
                 self.cache[msg_hash] = (current_time, 1)
                 self._cleanup_cache(current_time)
+                self._last_cleanup_time = current_time
                 return True, None
 
     def _cleanup_cache(self, current_time: float) -> None:
