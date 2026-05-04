@@ -1615,6 +1615,31 @@ class TestStaticRoutesEdge(_RouteTestBase):
             self.assertEqual(resp.headers.get("Pragma"), "no-cache")
             self.assertEqual(resp.headers.get("Expires"), "0")
 
+    def test_pwa_manifest_endpoint_returns_json(self):
+        """``/manifest.webmanifest`` 应返回 PWA manifest JSON，
+        Content-Type 为 ``application/manifest+json``，且包含浏览器
+        ``Add to Home Screen`` 必需字段。
+
+        没有此端点 → 浏览器收到 404 后会忽略整个 PWA install banner，
+        在 ai.local 等域名上图标会回退成截图。这是 v1.5.20 的 PWA
+        关键路径，必须有回归点。
+        """
+        import json as _json
+
+        resp = self._client.get("/manifest.webmanifest")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("Content-Type"), "application/manifest+json")
+        cache = resp.headers.get("Cache-Control", "")
+        self.assertIn("max-age=3600", cache)
+        manifest = _json.loads(resp.data)
+        self.assertIn("name", manifest)
+        self.assertIn("icons", manifest)
+        self.assertIsInstance(manifest["icons"], list)
+        self.assertGreater(len(manifest["icons"]), 0)
+        for icon in manifest["icons"]:
+            self.assertIn("src", icon)
+            self.assertIn("sizes", icon)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  protocol.py — /api/capabilities + /api/time
