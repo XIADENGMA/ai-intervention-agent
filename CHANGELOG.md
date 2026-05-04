@@ -34,6 +34,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   surfaces the extension on common AI workflow keywords (`mcp`, `claude`,
   `cursor`, `windsurf`, …); the License field no longer shows
   `(unknown)`; the Q&A tab links to GitHub Issues.
+- **`CITATION.cff` (Citation File Format 1.2.0)** at the repo root, so
+  GitHub's "Cite this repository" sidebar button works (renders BibTeX
+  / APA / RIS) and Zotero / Zenodo plugins pick up correct metadata.
 
 ### Tests
 
