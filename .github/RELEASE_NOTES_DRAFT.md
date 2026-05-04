@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 104 maintenance commits added on top of the release. This is **not**
+> the 107 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,38 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **NUL byte (`\x00`) in upload filenames now hard-rejected.**
+  ``file_validator.FileValidator._validate_filename`` previously routed
+  ``\x00`` through ``_DANGEROUS_CHARS`` and produced only a warning,
+  leaving ``valid=True`` for filenames like ``image.png\x00.exe`` —
+  the canonical C-string-truncation attack vector that turns into
+  ``image.png`` whenever a downstream re-crosses a C boundary
+  (OS path APIs, CGI forwarders, libs that call into glibc) and
+  bypasses the extension whitelist. Python 3's ``open()``/``Path()``
+  *does* raise ``ValueError``, but enforcement belongs at the
+  validator gate, not deferred to whichever downstream happens to
+  fail first. NUL is now split out of the dangerous-chars frozenset
+  entirely and given a dedicated ``errors`` branch with a
+  "path-truncation 攻击向量" message; three locks in
+  ``TestFilenameValidation`` (mid-string NUL, leading NUL, plus a
+  reverse-lock that ``\x00 not in FileValidator._DANGEROUS_CHARS``
+  defends against future "let's unify special-char handling"
+  refactors that would silently demote NUL back to warning).
+- **`/sounds/<filename>` route now enforces a `.mp3`/`.wav`/`.ogg`
+  extension whitelist.** Pre-fix the handler delegated entirely to
+  ``send_from_directory(sounds_dir, filename)``, which only blocks
+  ``..``-traversal and otherwise streams *any* file in ``sounds/``.
+  The directory currently holds a single ``deng[噔].mp3``, but a
+  future contributor dropping a ``.json`` config or ``.txt`` README
+  in there would silently turn it into an HTTP-fetchable static
+  asset (information disclosure with zero log signal). Fix mirrors
+  the ``/static/lottie/<filename>`` idiom (``if not filename or not
+  filename.lower().endswith((...)): abort(404)``), keeping the two
+  static routes structurally aligned for future review. Three locks
+  in ``TestStaticRoutesEdge`` (non-audio extensions hit
+  ``abort(404)`` before ``send_from_directory`` runs, uppercase
+  ``.MP3`` passes the whitelist, empty filename routes via Flask's
+  308/404).
 - **Server-side defense-in-depth caps on uploaded images
   (10 / 100 MB).** ``extract_uploaded_images`` previously trusted the
   ``image-upload.js`` client-side ``MAX_IMAGE_COUNT = 10`` /
@@ -660,6 +692,35 @@ downstream packagers do not need to update integration scripts.
 
 ### Tooling / CI
 
+- **`NotificationManager.shutdown` gains a bounded `grace_period`
+  knob; `atexit` uses 1.5 s.** Pre-fix, ``atexit`` called
+  ``shutdown(wait=False)`` which cancelled pending futures but did
+  nothing for in-flight ones — and the worker threads are non-daemon,
+  meaning a wedged ``osascript`` / Bark / 钉钉 HTTP call could keep
+  the interpreter alive long after ``sys.exit``/Ctrl-C, with stdout
+  half torn down and atexit hooks already executed. New signature
+  ``shutdown(wait=False, grace_period=0.0)`` — default ``0.0`` is a
+  perfect no-op for existing callers; positive values trigger a
+  ``for thread in self._executor._threads: thread.join(timeout=remaining)``
+  loop under a ``time.monotonic()`` deadline so the *total* tail-wait
+  is bounded by ``grace_period`` (4 stuck workers ≠ 4 × grace; the
+  budget is shared). Why not ``daemon=True``: would require
+  subclassing ``ThreadPoolExecutor`` and reimplementing
+  ``_adjust_thread_count`` (private, churns across CPython 3.9–3.13);
+  ``grace_period`` only *reads* ``_threads``, never mutates the pool,
+  and survives a hypothetical CPython attribute removal via
+  ``getattr(..., ()) or ()`` fallback. Eight locks in
+  ``TestShutdownGracePeriod``: ``grace=0`` doesn't touch
+  ``_threads`` (preserve old behaviour), ``grace>0`` joins every
+  worker exactly once with positive ``timeout <= grace`` (timeout
+  presence is critical — without it one wedged worker could block
+  forever), ``wait=True`` ignores grace (no double-wait stack),
+  shared deadline budget bounds total elapsed, single
+  ``thread.join`` exception is swallowed (atexit must not raise),
+  missing ``_threads`` attribute is safe, ``_ATEXIT_GRACE_PERIOD_SECONDS``
+  is reverse-locked in ``(0, 5)`` (nobody can sneak a 30 s grace in
+  that would make Cursor "feel hung" on quit), and the signature
+  keeps ``grace_period=0.0`` as the default.
 - **`server.main()` MCP-restart loop now uses capped exponential
   backoff with jitter instead of `time.sleep(1)`.** Multi-instance
   setups (Cursor + VS Code on the same machine, IDE multi-workers,

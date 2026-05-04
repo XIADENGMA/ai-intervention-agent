@@ -285,6 +285,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tooling
 
+- **`NotificationManager.shutdown` gains a `grace_period` knob and
+  `atexit` now uses a 1.5 s grace window.** Pre-fix, `atexit` called
+  `shutdown(wait=False)`, which cancelled pending futures but did
+  nothing for already-running ones — meanwhile the worker threads are
+  non-daemon, so a wedged `osascript`/Bark/钉钉 HTTP call could keep
+  the interpreter alive long after `sys.exit` / Ctrl-C, with stdout
+  half torn down and atexit hooks already gone. New signature:
+  `shutdown(wait=False, grace_period=0.0)` — default `0.0` is a perfect
+  no-op for existing callers; positive values trigger a
+  `for thread in self._executor._threads: thread.join(timeout=remaining)`
+  pass under a `time.monotonic()` deadline, so the *total* wait is
+  bounded by `grace_period` regardless of how many workers are still
+  running (4 stuck workers ≠ 4 × grace; the budget is shared).
+  `_ATEXIT_GRACE_PERIOD_SECONDS = 1.5` is the picked value: short
+  enough that humans don't perceive a quit hang, long enough to cover
+  one full HTTP request round-trip (typical 200–800 ms). Why not
+  `daemon=True`: would require subclassing `ThreadPoolExecutor` and
+  reimplementing `_adjust_thread_count` (private, churns across CPython
+  3.9–3.13); `grace_period` only *reads* `_threads`, never mutates the
+  pool, and survives a hypothetical CPython removal via the
+  `getattr(..., ()) or ()` fallback. Eight locks in new
+  `TestShutdownGracePeriod`: `grace=0` doesn't touch `_threads`,
+  `grace>0` joins every worker exactly once with positive
+  `timeout <= grace`, `wait=True` ignores grace (no double-wait),
+  shared deadline budget bounds total elapsed, single `thread.join`
+  exception is swallowed (atexit must not raise), missing `_threads`
+  attribute is safe, `_ATEXIT_GRACE_PERIOD_SECONDS ∈ (0, 5)` (reverse-
+  locked), and the signature keeps `grace_period=0.0` default.
 - **`server.main()` MCP-restart loop now uses capped exponential
   backoff + jitter instead of `time.sleep(1)` between every retry.**
   The original loop slept exactly 1.0 s between every restart attempt;
@@ -330,6 +358,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Security
 
+- **NUL byte (`\x00`) in upload filenames promoted from `warnings` to
+  `errors`.** `file_validator.FileValidator._validate_filename` previously
+  routed `\x00` through `_DANGEROUS_CHARS`, producing only a warning while
+  leaving `valid=True` for filenames like `image.png\x00.exe`. Filenames
+  containing NUL have zero legitimate use and are the canonical
+  C-string-truncation attack vector — any downstream that re-crosses a
+  C boundary (OS path APIs, CGI forwarders, third-party libs that call
+  into glibc) can have the name silently truncated to `image.png` and
+  bypass the extension whitelist. Python 3's `open()` / `Path()` does
+  raise `ValueError`, but enforcement should live at the validator gate,
+  not be deferred to whichever downstream happens to fail first. Fix:
+  `\x00` removed from `_DANGEROUS_CHARS` entirely and given a dedicated
+  `errors.append(...)` branch with a precise "path-truncation 攻击向量"
+  message. Three locks in `TestFilenameValidation`: mid-string NUL
+  produces `valid=False`, leading NUL produces `valid=False`, and a
+  reverse-lock asserts `\x00 not in FileValidator._DANGEROUS_CHARS`
+  (defends against a "let's unify special-char handling" refactor that
+  would silently demote NUL back to warning).
+- **`/sounds/<filename>` route now enforces an explicit
+  `.mp3`/`.wav`/`.ogg` extension whitelist.** Pre-fix the handler
+  delegated entirely to `send_from_directory(sounds_dir, filename)`,
+  which only blocks `..`-style traversal and otherwise streams *any*
+  file inside `sounds/`. The directory currently holds a single
+  `deng[噔].mp3`, but a future contributor dropping a `.json` config or
+  `.txt` README in there would silently turn it into an HTTP-fetchable
+  static asset (information disclosure with zero log signal). Fix
+  mirrors the `/static/lottie/<filename>` idiom (`if not filename or not
+  filename.lower().endswith((...)): abort(404)`), so the two static
+  routes stay structurally aligned for future review. Three locks in
+  `TestStaticRoutesEdge`: non-audio extensions (`.json`/`.txt`/`.env`/
+  `.exe`) hit `abort(404)` before `send_from_directory` is consulted,
+  uppercase `.MP3` passes the whitelist (defends the lower-cased
+  `endswith` contract), and empty filename routes-to-308 / 404 from
+  Flask's own routing (parity with `/static/lottie/`).
 - **Server-side defense-in-depth caps on uploaded image count and total
   bytes.** `web_ui_routes/_upload_helpers.py::extract_uploaded_images`
   is the entry point for `/api/submit-feedback` and
