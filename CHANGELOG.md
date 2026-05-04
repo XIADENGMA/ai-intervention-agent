@@ -37,6 +37,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **`CITATION.cff` (Citation File Format 1.2.0)** at the repo root, so
   GitHub's "Cite this repository" sidebar button works (renders BibTeX
   / APA / RIS) and Zotero / Zenodo plugins pick up correct metadata.
+- **`SUPPORT.md` (bilingual)** — closes the last unchecked item on
+  GitHub's Community Standards page. Routes incoming questions by
+  topic (defect → bug template, security → private advisory, etc.)
+  and lays out maintainer-driven best-effort SLOs (1–3 day ack,
+  2-week silent-bump grace) so newcomers know what response time to
+  expect.
 
 ### Tests
 
