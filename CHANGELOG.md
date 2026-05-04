@@ -29,6 +29,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/configuration{,.zh-CN}.md` is back in sync with
+  `config.toml.default`.** Three drift points were silently
+  shipping in v1.5.x:
+  - `[notification]::debug` (boolean, default `false`) was
+    documented in the TOML template but absent from both
+    bilingual configuration tables — readers reaching for
+    extra notification log verbosity had to grep the
+    template.
+  - `[web_ui]::language` (string, default `"auto"`) — same
+    issue. The setting controls the UI locale (`"auto"` /
+    `"en"` / `"zh-CN"`) and is one of the most user-asked
+    config keys.
+  - The Chinese `[mdns]::enabled` row showed type
+    `boolean / null` and default `null`, but the actual
+    runtime contract has used the string sentinel `"auto"`
+    for several minor releases (the English doc and the TOML
+    template both already say `"auto"`). Updated to match.
+  - The Chinese "最小示例" was still a stale `jsonc` snippet
+    even though the recommended on-disk format is `config.toml`.
+    Replaced with the parallel TOML form already used by the
+    English doc.
+  Pure docs patch — neither the runtime config schema nor
+  `config.toml.default` change. `make ci` passes.
 - **`docs/README{,.zh-CN}.md` API-reference module list is in
   sync with `MODULES_TO_DOCUMENT` again.** Both bilingual
   index files used to enumerate the API auto-gen scope as

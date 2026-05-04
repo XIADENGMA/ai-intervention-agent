@@ -81,6 +81,7 @@ Controls web/sound/system/Bark notifications.
 | Key                       | Type    | Default  | Notes                                                                       |
 | ------------------------- | ------- | -------- | --------------------------------------------------------------------------- |
 | `enabled`                 | boolean | `true`   | Global switch                                                               |
+| `debug`                   | boolean | `false`  | Notification-module-only log verbosity toggle (does not affect other logs)  |
 | `web_enabled`             | boolean | `true`   | Browser notifications                                                       |
 | `auto_request_permission` | boolean | `true`   | Auto request permission on page load                                        |
 | `web_icon`                | string  | `"default"` | `"default"` or a custom icon URL                                         |
@@ -109,6 +110,7 @@ Controls the Web UI server and HTTP client behavior.
 
 | Key                    | Type    | Default     | Notes                                                  |
 | ---------------------- | ------- | ----------- | ------------------------------------------------------ |
+| `language`             | string  | `"auto"`    | UI language. `"auto"` auto-detects (browser `navigator.language` / VS Code `vscode.env.language`); set explicitly to `"en"` or `"zh-CN"` to force a locale |
 | `host`                 | string  | `127.0.0.1` | May be overridden by `network_security.bind_interface` |
 | `port`                 | number  | `8080`      | Range `[1, 65535]`                                     |
 | `debug`                | boolean | `false`     | Debug mode                                             |
