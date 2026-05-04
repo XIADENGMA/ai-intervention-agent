@@ -44,6 +44,7 @@ MODULES_TO_DOCUMENT = [
     "notification_models.py",
     "notification_providers.py",
     "task_queue.py",
+    "web_ui.py",
     "file_validator.py",
     "enhanced_logging.py",
 ]
@@ -65,8 +66,6 @@ IGNORED_MODULES = frozenset(
         "server_feedback.py",
         # TODO(round-8/docs-debt): Web 服务编排（进程生命周期 + HTTP 客户端）。
         "service_manager.py",
-        # TODO(round-8/docs-debt): Flask Web UI 主类；最高优先级补文档。
-        "web_ui.py",
         # TODO(round-8/docs-debt): web_ui ↔ config 双向同步；与 web_ui.py 一组搬。
         "web_ui_config_sync.py",
         # TODO(round-8/docs-debt): mDNS 发现服务。
@@ -317,6 +316,7 @@ QUICK_NAV_CORE = (
     "server",
     "server_config",
     "task_queue",
+    "web_ui",
 )
 QUICK_NAV_UTILITY = (
     "config_utils",
@@ -411,6 +411,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **server**: MCP server entry point — `interactive_feedback` tool registration, multi-task queue lifecycle, notification integration, and the `main()` event loop",
                 "- **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)",
                 "- **task_queue**: Task queue",
+                "- **web_ui**: Flask Web UI main class — multi-task panel, file uploads, notifications, mDNS publishing, security middleware, and browser bootstrapping",
                 "",
                 "### Utility modules",
                 "",
@@ -443,6 +444,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **server**: MCP 服务器入口 —— `interactive_feedback` 工具注册、多任务队列生命周期、通知集成与 `main()` 事件循环",
                 "- **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）",
                 "- **task_queue**: 任务队列",
+                "- **web_ui**: Flask Web UI 主类 —— 多任务面板、文件上传、通知、mDNS 发布、安全中间件与浏览器引导",
                 "",
                 "### 工具模块",
                 "",

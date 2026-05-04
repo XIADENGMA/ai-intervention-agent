@@ -19,6 +19,7 @@
 - [notification_models](notification_models.md)
 - [notification_providers](notification_providers.md)
 - [task_queue](task_queue.md)
+- [web_ui](web_ui.md)
 - [file_validator](file_validator.md)
 - [enhanced_logging](enhanced_logging.md)
 
@@ -34,6 +35,7 @@
 - **server**: MCP 服务器入口 —— `interactive_feedback` 工具注册、多任务队列生命周期、通知集成与 `main()` 事件循环
 - **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）
 - **task_queue**: 任务队列
+- **web_ui**: Flask Web UI 主类 —— 多任务面板、文件上传、通知、mDNS 发布、安全中间件与浏览器引导
 
 ### 工具模块
 

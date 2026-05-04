@@ -19,6 +19,7 @@ English API reference (signatures-focused).
 - [notification_models](notification_models.md)
 - [notification_providers](notification_providers.md)
 - [task_queue](task_queue.md)
+- [web_ui](web_ui.md)
 - [file_validator](file_validator.md)
 - [enhanced_logging](enhanced_logging.md)
 
@@ -34,6 +35,7 @@ English API reference (signatures-focused).
 - **server**: MCP server entry point — `interactive_feedback` tool registration, multi-task queue lifecycle, notification integration, and the `main()` event loop
 - **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)
 - **task_queue**: Task queue
+- **web_ui**: Flask Web UI main class — multi-task panel, file uploads, notifications, mDNS publishing, security middleware, and browser bootstrapping
 
 ### Utility modules
 
