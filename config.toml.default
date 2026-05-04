@@ -74,8 +74,8 @@ http_max_retries = 3
 # HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0.1, 60.0]
 http_retry_delay = 1.0
 # 外部访问基地址 / External base URL for notification click links and reverse proxies.
-# Leave empty to fall back to http://{host}:{port}; set to e.g. "http://ai.local:8080"
-# when Bark/PWA should open a LAN or mDNS address.
+# Leave empty to prefer mDNS http://{mdns.hostname}:{port} when available, then fall back
+# to http://{host}:{port}. Set explicitly for reverse proxies, HTTPS, or a custom LAN host.
 external_base_url = ""
 
 # ──────────────────────────────────────────────

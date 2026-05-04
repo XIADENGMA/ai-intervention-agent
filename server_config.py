@@ -401,16 +401,22 @@ def resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str:
 
     优先级：
         1. ``[web_ui] external_base_url`` 配置（用户显式指定，如 ``http://ai.local:8080``）
-        2. ``http://{target_host}:{port}``（基于 ``[web_ui] host/port`` 推导）
+        2. mDNS 地址（``[mdns] hostname``，默认 ``ai.local``），仅在 mDNS 显式启用
+           或 ``auto`` 且监听地址不是 loopback 时使用
+        3. ``http://{target_host}:{port}``（基于 ``[web_ui] host/port`` 推导）
 
     返回值会去掉末尾斜杠，便于直接和 ``/path`` 拼接；解析失败时返回空串。
     """
     try:
         config_mgr = get_config()
         web_section = config_mgr.get_section("web_ui") or {}
+        mdns_section = config_mgr.get_section("mdns") or {}
+        network_section = config_mgr.get_section("network_security") or {}
     except Exception as exc:
         logger.debug(f"读取 [web_ui] 配置失败，无法解析外部基地址: {exc}")
         web_section = {}
+        mdns_section = {}
+        network_section = {}
 
     explicit = (
         str(getattr(web_ui_config, "external_base_url", "") or "").strip()
@@ -427,7 +433,12 @@ def resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str:
 
     if web_ui_config is None:
         try:
-            host = str(web_section.get("host", "127.0.0.1"))
+            host = str(
+                network_section.get(
+                    "bind_interface",
+                    web_section.get("host", "127.0.0.1"),
+                )
+            )
             port = int(web_section.get("port", 8080))
         except (TypeError, ValueError):
             return ""
@@ -437,6 +448,27 @@ def resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str:
 
     if not host:
         return ""
+
+    host_normalized = host.strip().lower()
+    loopback_hosts = {"127.0.0.1", "localhost", "::1", "[::1]"}
+    mdns_enabled_raw = mdns_section.get("enabled", "auto")
+    mdns_enabled = False
+    if isinstance(mdns_enabled_raw, bool):
+        mdns_enabled = mdns_enabled_raw
+    else:
+        mdns_enabled_text = str(mdns_enabled_raw).strip().lower()
+        if mdns_enabled_text in {"true", "1", "yes", "on", "enabled"}:
+            mdns_enabled = True
+        elif mdns_enabled_text in {"false", "0", "no", "off", "disabled"}:
+            mdns_enabled = False
+        else:
+            mdns_enabled = host_normalized not in loopback_hosts
+
+    mdns_hostname = str(mdns_section.get("hostname", "ai.local") or "").strip()
+    mdns_hostname = mdns_hostname.rstrip(".").strip("/")
+    if mdns_enabled and mdns_hostname and "://" not in mdns_hostname:
+        return f"http://{mdns_hostname}:{port}"
+
     return f"http://{get_target_host(host)}:{port}"
 
 

@@ -60,8 +60,9 @@
     "http_max_retries": 3,
     // HTTP重试延迟(秒) - 范围 [0.1, 60.0]
     "http_retry_delay": 1.0,
-    // 外部访问基地址 - 用于 Bark/PWA 点击跳转；留空则使用 http://{host}:{port}
-    // 例如: "http://ai.local:8080"
+    // 外部访问基地址 - 用于 Bark/PWA 点击跳转
+    // 留空时优先使用 mDNS http://{mdns.hostname}:{port}，再回退到 http://{host}:{port}
+    // 反代、HTTPS 或自定义局域网域名可显式填写，例如: "https://ai.example.com"
     "external_base_url": ""
   },
   // 网络安全配置

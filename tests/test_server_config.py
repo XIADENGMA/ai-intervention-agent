@@ -255,8 +255,22 @@ class TestResolveExternalBaseUrl(unittest.TestCase):
         self.assertEqual(resolve_external_base_url(cfg), "http://ai.local:8080")
 
     @patch("server_config.get_config")
-    def test_falls_back_to_host_port(self, mock_get_config):
-        mock_get_config.return_value.get_section.return_value = {}
+    def test_auto_mdns_for_non_loopback_bind(self, mock_get_config):
+        mock_get_config.return_value.get_section.side_effect = lambda section: {
+            "web_ui": {},
+            "mdns": {"enabled": "auto", "hostname": "ai.local"},
+            "network_security": {},
+        }.get(section, {})
+        cfg = WebUIConfig(host="0.0.0.0", port=8080)
+        self.assertEqual(resolve_external_base_url(cfg), "http://ai.local:8080")
+
+    @patch("server_config.get_config")
+    def test_falls_back_to_host_port_when_mdns_disabled(self, mock_get_config):
+        mock_get_config.return_value.get_section.side_effect = lambda section: {
+            "web_ui": {},
+            "mdns": {"enabled": False, "hostname": "ai.local"},
+            "network_security": {},
+        }.get(section, {})
         cfg = WebUIConfig(host="0.0.0.0", port=8080)
         self.assertEqual(resolve_external_base_url(cfg), "http://localhost:8080")
 

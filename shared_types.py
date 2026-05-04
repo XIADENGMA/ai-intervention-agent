@@ -187,8 +187,8 @@ class WebUISectionConfig(BaseModel):
     http_max_retries: Annotated[int, BeforeValidator(_clamp_int(0, 20, 3))] = 3
     http_retry_delay: Annotated[float, BeforeValidator(_clamp_float(0, 60, 1.0))] = 1.0
     # external_base_url: 可选；用于拼装 Bark 点击 URL 等"外部跳转"链接。
-    # 留空时按 http://{host}:{port} 兜底；用户可填 mDNS/反代域名，例如
-    # "http://ai.local:8080" 或 "https://ai.example.com"。
+    # 留空时优先按 mDNS（http://{mdns.hostname}:{port}）兜底，再回退到
+    # http://{host}:{port}；用户可填反代域名，例如 "https://ai.example.com"。
     # 末尾斜杠会被视为同义字符，运行时会做规范化。
     external_base_url: SafeStr = ""
 

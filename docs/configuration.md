@@ -115,7 +115,7 @@ Controls the Web UI server and HTTP client behavior.
 | `http_request_timeout` | number  | `30`        | Seconds, range `[1, 300]`                              |
 | `http_max_retries`     | number  | `3`         | Range `[0, 10]`                                        |
 | `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0.1, 60.0]`                           |
-| `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to `http://{host}:{port}` |
+| `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to mDNS (`http://ai.local:{port}`) when enabled, then `http://{host}:{port}` |
 
 ### `network_security`
 
