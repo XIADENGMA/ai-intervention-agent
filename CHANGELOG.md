@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+(no changes since `v1.5.22`)
+
+## [1.5.22] — 2026-05-04
+
+A maintenance + security release. Runtime CVE exposure cleared from 17
+to 0; +32 boundary-tests; full GitHub Community Standards compliance;
+PyPI / VSCode marketplace metadata polish; release notes draft and
+audit artefacts. Runtime behaviour is functionally unchanged from
+v1.5.21 — operators can drop in the new wheel / extension without
+config migration.
+
 ### Security
 
 - **Dependency vulnerability audit + remediation.** Ran `pip-audit 2.10.0`
