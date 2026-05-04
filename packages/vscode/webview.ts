@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import * as fs from 'fs'
+import * as crypto from 'crypto'
 import { createLogger } from './logger'
 import type { Logger } from './logger'
 import { AppleScriptExecutor } from './applescript-executor'
@@ -12,13 +13,25 @@ import {
 
 const EXT_GITHUB_URL = 'https://github.com/XIADENGMA/ai-intervention-agent'
 
-function getNonce(length = 32): string {
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let text = ''
-  for (let i = 0; i < length; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length))
-  }
-  return text
+/**
+ * 生成符合 CSP3 (`script-src 'nonce-...'`) 推荐熵阈值的 nonce。
+ *
+ * **不要换回 `Math.random()`。** 历史实现是 62-char alphabet × 32 字符
+ * 的字符串，看起来熵很高，但 V8 的 `Math.random` 内部是 xorshift128+
+ * (53 bits PRNG state)，输出在 [V8 源码](https://github.com/v8/v8/blob/main/src/numbers/math-random.cc)
+ * 已经是公开可分析的 —— 攻击者只要观察少量 nonce 就能预测后续的，
+ * 把"unsafe-inline 的兜底防御"打成纸糊（CSP3 §6 安全条款明确禁止
+ * 用 non-CSPRNG 生成 nonce）。
+ *
+ * Node.js 的 `crypto.randomBytes(16)` 走 OS CSPRNG（macOS
+ * `getentropy`、Linux `getrandom`、Windows `BCryptGenRandom`），16 字节
+ * 即 128 bits 熵，超过 CSP3 推荐的 64 bits 阈值；`base64` 编码后是 24
+ * 字符（含两位 `=` padding，浏览器 CSP nonce 比对不挑剔 padding）。
+ *
+ * 与 [VSCode 官方 webview-sample](https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts) 同步。
+ */
+function getNonce(): string {
+  return crypto.randomBytes(16).toString('base64')
 }
 
 function safeReadTextFile(uri: vscode.Uri): string {

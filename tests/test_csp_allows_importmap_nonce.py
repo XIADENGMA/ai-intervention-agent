@@ -188,5 +188,134 @@ class TestCspAllowsImportMapNonceVscode(unittest.TestCase):
             )
 
 
+class TestNonceCsprngContract(unittest.TestCase):
+    """Reverse-locks for both halves of the CSP nonce generator.
+
+    Why this matters: a nonce-based CSP is **only** as strong as the
+    randomness it's seeded with. CSP3 §6 explicitly requires CSPRNG
+    output ≥ 64 bits — `Math.random` (V8 xorshift128+, 53-bit state,
+    [public algorithm](https://github.com/v8/v8/blob/main/src/numbers/math-random.cc))
+    falls below the threshold and is observably-predictable from a
+    handful of outputs. If a future "simplification" PR swaps the
+    generator back to `Math.random` / Python `random.SystemRandom`
+    is replaced by `random.choice`, attackers can predict the nonce
+    and bypass the entire CSP nonce-allowlist for inline `<script>`
+    blocks (regressing to effectively `script-src 'unsafe-inline'`).
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.ts = VSCODE_WEBVIEW_TS.read_text(encoding="utf-8")
+        cls.security_src = SECURITY_MODULE.read_text(encoding="utf-8")
+
+    def test_vscode_getNonce_uses_node_crypto(self) -> None:
+        """``packages/vscode/webview.ts::getNonce`` 必须走 Node.js 内置
+        ``crypto.randomBytes``（→ OS CSPRNG）。"""
+        self.assertIn(
+            "crypto.randomBytes",
+            self.ts,
+            msg=(
+                "webview.ts::getNonce must use crypto.randomBytes (Node.js "
+                "CSPRNG → OS getentropy/getrandom/BCryptGenRandom). "
+                "Math.random is a V8 xorshift128+ PRNG with 53-bit state "
+                "and observably predictable output — using it for CSP "
+                "nonces effectively regresses to 'unsafe-inline'."
+            ),
+        )
+        self.assertIn(
+            "import * as crypto from 'crypto'",
+            self.ts,
+            msg=(
+                "Expected `import * as crypto from 'crypto'` at the top of "
+                "webview.ts so getNonce can reach Node's CSPRNG. If a "
+                "future refactor reaches for browser-side crypto.subtle, "
+                "remember the extension host runs in Node, not the "
+                "webview's V8 isolate."
+            ),
+        )
+
+    def test_vscode_getNonce_does_not_use_math_random(self) -> None:
+        """Reverse-lock：``getNonce`` 函数体绝不能再出现 ``Math.random``。
+
+        历史实现把 ``Math.random()`` 在 62-char alphabet 上 sample 32
+        字符，看似熵 ≈ 190 bits，但 V8 PRNG state 仅 53 bits，攻击者
+        观察少量 nonce 即可预测后续值。
+        """
+        # 抓出 getNonce 函数体的范围（从 ``function getNonce`` 到下一个
+        # 顶层 ``function`` 或文件末尾），仅检查这段内是否出现 Math.random。
+        match = re.search(
+            r"function\s+getNonce\b[^{]*\{(?P<body>.*?)\n\}",
+            self.ts,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(
+            match, msg="无法定位 webview.ts::getNonce 函数体（语法漂移？）"
+        )
+        assert match is not None  # ty narrowing
+        body = match.group("body")
+        self.assertNotIn(
+            "Math.random",
+            body,
+            msg=(
+                "webview.ts::getNonce 函数体含 Math.random —— 这是 V8 "
+                "xorshift128+ PRNG，53 bits state，CSP3 §6 明确禁止用于 "
+                "nonce 生成。请回到 crypto.randomBytes(16).toString('base64')。"
+            ),
+        )
+        self.assertNotIn(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+            body,
+            msg=(
+                "webview.ts::getNonce 函数体含手工 alphabet 字符串采样 —— "
+                "这通常意味着 Math.random 风格的滚轮采样回归。CSPRNG 路径"
+                "不需要 alphabet（base64 编码即可）。"
+            ),
+        )
+
+    def test_python_csp_nonce_uses_secrets_module(self) -> None:
+        """Web UI 端 ``web_ui_security.py`` 必须用 ``secrets`` 模块（CSPRNG）
+        而非 ``random.choice`` 之类的 PRNG。"""
+        self.assertIn(
+            "secrets.token_urlsafe",
+            self.security_src,
+            msg=(
+                "web_ui_security.py 必须用 secrets.token_urlsafe(16) 生成 "
+                "CSP nonce —— 16 字节 = 128 bits 熵（OS CSPRNG），符合 "
+                "CSP3 §6 要求。如改成 random.choice / hashlib.md5(time)，"
+                "整个 nonce-only CSP 退化为 'unsafe-inline'。"
+            ),
+        )
+        # 反向：``import random`` 用于 nonce 路径会触发本测试 fail。
+        # 注意 web_ui_security.py 整体可以 import random（用于其它非密码学
+        # 用途），所以这里只锁 secrets.token_urlsafe 必须存在，不强行禁用
+        # ``import random`` —— 但如果直接出现 ``random.choice`` /
+        # ``random.randint`` 在 nonce 上下文，应另起一道测试拦截。
+
+    def test_python_csp_nonce_byte_length_at_least_16(self) -> None:
+        """Reverse-lock：``secrets.token_urlsafe(N)`` 的 N 必须 ≥ 16
+        （= 128 bits 熵 = CSP3 §6 阈值的 2×）。
+
+        历史 N=16 是合理选择（24 字符 base64 输出，浏览器友好）；
+        如有人误改成 8（=64 bits，刚好踩在 CSP3 阈值上，无安全裕度）
+        或更小，本测试 fail。
+        """
+        matches = re.findall(
+            r"secrets\.token_urlsafe\(\s*(\d+)\s*\)", self.security_src
+        )
+        self.assertTrue(
+            len(matches) > 0,
+            "web_ui_security.py 找不到任何 secrets.token_urlsafe(...) 调用",
+        )
+        for byte_count_str in matches:
+            byte_count = int(byte_count_str)
+            self.assertGreaterEqual(
+                byte_count,
+                16,
+                f"secrets.token_urlsafe({byte_count}) 熵不足 128 bits "
+                "（每字节 8 bits，需要 ≥ 16 字节）。CSP3 §6 阈值 64 bits，"
+                "16 字节给一倍裕度。",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
