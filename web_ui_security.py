@@ -63,8 +63,27 @@ class SecurityMixin:
             )
             response.headers["X-Frame-Options"] = "DENY"
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-XSS-Protection"] = "1; mode=block"
+            # ``X-XSS-Protection`` 是 IE / 早期 Chrome 的"反射 XSS auditor"
+            # 开关，已被 [MDN 标记为废弃](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection)：
+            # 该 auditor 自身被发现可被滥用造成 XSS（攻击者诱导 auditor
+            # 误删合法脚本来打开新攻击面）；现代浏览器已经全部移除实现。
+            # OWASP Secure Headers Project / Mozilla Observatory 现在
+            # 推荐 **明确写 ``0``** —— 即"显式关闭"，让 CSP 接管唯一的
+            # XSS 防御路径，避免遗留浏览器（IE11 / 老 Chrome）跑过期
+            # auditor。历史值 ``1; mode=block`` 在现代浏览器是 no-op，
+            # 在某些遗留 browser 上反而**降低**安全性，所以 ``0`` 是
+            # **更安全**的选择，不是降级。
+            response.headers["X-XSS-Protection"] = "0"
             response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            # ``Cross-Origin-Opener-Policy: same-origin`` 让窗口和它的
+            # cross-origin opener 互相隔离，关闭 ``window.opener`` 句柄
+            # —— 这是 Spectre 类侧信道攻击和 tabnabbing 的标准防御
+            # （[MDN 指南](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cross-Origin-Opener-Policy)）。
+            # 我们的 Web UI 没有合法的 cross-origin opener 用例（VSCode
+            # webview 走 vscode-webview:// 协议有自己的隔离层），所以
+            # ``same-origin`` 是 zero-cost 的安全提升。**不**加 ``CORP``
+            # 因为 vscode-webview 的资源加载策略目前没法显式标注 origin。
+            response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
             response.headers["Permissions-Policy"] = (
                 "geolocation=(), microphone=(), camera=(), "
                 "payment=(), usb=(), magnetometer=(), gyroscope=()"
