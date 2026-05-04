@@ -23,12 +23,27 @@ if TYPE_CHECKING:
 logger = EnhancedLogger(__name__)
 
 
+# Sentinel：当 ``_SSEBus`` 因 backpressure 把订阅者从 ``_subscribers`` 集合里
+# 踢掉时，会向那个 queue 塞这个对象。Generator 拿到它就 ``return``，浏览器
+# EventSource 看到 EOF 后会自动 reconnect → 重新 ``subscribe()`` → 拿到一条
+# 全新的、空的 queue 重新接收事件。
+#
+# 历史上这里没有 sentinel：被 discard 之后 ``q`` 仍在 generator 手里持有引用，
+# generator 继续 ``q.get(timeout=25)`` 把旧积压消费掉、然后无限发心跳。客户端
+# 看心跳在跳，认为连接活着，但 ``emit`` 已经不再往这个 queue 写新事件——也就是
+# 「服务器以为客户端断了，客户端以为服务器还在推」的 silent disconnection。
+# 由 ``test_sse_bus_backpressure_disconnect_signals_generator`` 锁定 contract。
+_SSE_DISCONNECT_SENTINEL = object()
+
+
 class _SSEBus:
     """线程安全的 SSE 事件总线：TaskQueue 回调 → 所有已连接的 EventSource 客户端
 
     清理策略：
     - emit 时：队列满（Full）的立即移除
     - emit 时：队列积压超过 3/4 容量的也移除（消费者大概率已断开）
+    - 移除时往订阅者 queue 塞 ``_SSE_DISCONNECT_SENTINEL``，让 generator
+      看到它后主动 ``return``，触发浏览器 EventSource 自动 reconnect。
     """
 
     _QUEUE_MAXSIZE = 64
@@ -62,6 +77,21 @@ class _SSEBus:
                     dead.append(q)
             for q in dead:
                 self._subscribers.discard(q)
+                # 主动通知 generator 退出。优先级 sentinel > 旧消息：
+                # 即使 queue.Full（说明前面 emit 在 ``put_nowait`` 时就掉到了
+                # ``except queue.Full`` 那行），也要 ``get_nowait`` 排出最旧的
+                # 那条 payload 来腾位子。代价是 client 错过最早的一条 SSE 事件
+                # （但浏览器 EventSource 自动 reconnect 时会重新 ``subscribe``，
+                # 拿到下一条新事件 + 后续所有事件，比 silent disconnection 强得多）。
+                while True:
+                    try:
+                        q.put_nowait(_SSE_DISCONNECT_SENTINEL)
+                        break
+                    except queue.Full:
+                        try:
+                            q.get_nowait()
+                        except queue.Empty:
+                            break
 
     @property
     def subscriber_count(self) -> int:
@@ -139,9 +169,12 @@ class TaskRoutesMixin:
                     while True:
                         try:
                             event = q.get(timeout=25)
-                            yield f"event: {event['type']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
                         except queue.Empty:
                             yield ": heartbeat\n\n"
+                            continue
+                        if event is _SSE_DISCONNECT_SENTINEL:
+                            return
+                        yield f"event: {event['type']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
                 except GeneratorExit:
                     pass
                 finally:
