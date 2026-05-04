@@ -66,6 +66,31 @@ def _run_warn(cmd: list[str], *, label: str) -> None:
         )
 
 
+def _resolve_node_redteam_cmd(node_version: str) -> list[str]:
+    """根据 ``node`` / ``fnm`` 是否可用，返回 i18n red-team 应当执行的命令。
+
+    返回空列表表示"两者都不可用"——上层 caller 必须按 ``AIIA_SKIP_NODE_REDTEAM``
+    环境变量决定 fail-closed 还是 graceful skip（见 ``_main_impl``）。
+
+    单独抽出函数是为了让 ``tests/test_ci_gate_node_redteam.py`` 直接调用真实
+    决策代码，而不是复刻一份测试用的二份逻辑（容易漂移）。
+    """
+    if _has_cmd("node"):
+        return ["node", "scripts/red_team_i18n_runtime.mjs", "--quiet"]
+    if _has_cmd("fnm"):
+        return [
+            "fnm",
+            "exec",
+            "--using",
+            node_version,
+            "--",
+            "node",
+            "scripts/red_team_i18n_runtime.mjs",
+            "--quiet",
+        ]
+    return []
+
+
 def _cleanup_vscode_vsix() -> int:
     """清理 VSCode 插件打包产物（避免 .vsix 污染 CI/工作区）"""
     vs_dir = _repo_root() / "packages" / "vscode"
@@ -214,29 +239,32 @@ def _main_impl(argv: list[str]) -> int:
     # 单特性断言，这里补一遍完整集成面（ICU/apostrophe/嵌套 # / LRU /
     # miss-key / prototype-pollution / byte-parity），catch 两半漂移。
     # Node 运行环境沿用 --with-vscode 的解析规则。
-    node_cmd: list[str]
-    if _has_cmd("node"):
-        node_cmd = ["node", "scripts/red_team_i18n_runtime.mjs", "--quiet"]
-    elif _has_cmd("fnm"):
-        node_cmd = [
-            "fnm",
-            "exec",
-            "--using",
-            str(args.node_version),
-            "--",
-            "node",
-            "scripts/red_team_i18n_runtime.mjs",
-            "--quiet",
-        ]
-    else:
-        node_cmd = []
+    node_cmd = _resolve_node_redteam_cmd(str(args.node_version))
     if node_cmd:
         _run(node_cmd)
-    else:
+    elif os.environ.get("AIIA_SKIP_NODE_REDTEAM") == "1":
+        # 显式 opt-out 路径：本地开发者没装 Node 时仍想跑 ci_gate，可以
+        # 设环境变量绕过。CI 不会设置此变量（GitHub Actions 镜像自带
+        # Node），所以 CI 上的覆盖率不会被弱化。
         print(
-            "[ci_gate] warn: neither node nor fnm available; "
-            "skipping red_team_i18n_runtime.mjs smoke check.",
+            "[ci_gate] skip: AIIA_SKIP_NODE_REDTEAM=1; "
+            "red_team_i18n_runtime.mjs smoke check intentionally bypassed. "
+            "Re-run without this flag once Node/fnm is installed.",
             file=sys.stderr,
+        )
+    else:
+        # fail-closed：与 round-6 docs/api drift 升级同 spirit。silent skip
+        # 一个 smoke check 让 CI 看起来绿但实际没跑过，比直接 fail 更糟糕。
+        # 历史教训：v1.5.x 早期 docs-check 用 warn 级，warn 输出谁都不看，
+        # 跑了几十次才发现 task_queue.md 漂移了一整轮。i18n red-team 的失败
+        # 模式更严重（ICU 解析、apostrophe 转义、LRU 等多个 batch 的回归
+        # smoke），所以这里直接 fail-closed；本地开发者真没 Node 时
+        # ``AIIA_SKIP_NODE_REDTEAM=1 make ci`` 显式 opt-out。
+        raise RuntimeError(
+            "未找到 node 或 fnm；i18n red-team smoke (scripts/red_team_i18n_runtime.mjs) "
+            "无法运行。请安装 Node.js（推荐 v24.14.0，与 CI 对齐）或使用 fnm 管理 Node 版本。"
+            "如果你确认本地 Node 缺失但仍要跑 ci_gate，可以设置环境变量 "
+            "AIIA_SKIP_NODE_REDTEAM=1 显式 opt-out（CI 不会读这个变量，CI 覆盖率不会被弱化）。"
         )
 
     if args.with_vscode:
