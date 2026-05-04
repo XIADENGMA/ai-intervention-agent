@@ -13,6 +13,7 @@
 - [protocol](protocol.md)
 - [state_machine](state_machine.md)
 - [server](server.md)
+- [server_feedback](server_feedback.md)
 - [server_config](server_config.md)
 - [shared_types](shared_types.md)
 - [notification_manager](notification_manager.md)
@@ -33,6 +34,7 @@
 - **protocol**: 协议版本、Capabilities、服务器时钟 —— 前后端契约的单一事实来源
 - **state_machine**: 连接 / 内容 / 交互状态机（与前端 `state.js` 常量一一对应）
 - **server**: MCP 服务器入口 —— `interactive_feedback` 工具注册、多任务队列生命周期、通知集成与 `main()` 事件循环
+- **server_feedback**: 从 `server.py` 抽出的 `interactive_feedback` 工具实现 —— 任务轮询、上下文管理、未装饰的工具函数本体（注册仍在 `server.mcp`）
 - **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）
 - **task_queue**: 任务队列
 - **web_ui**: Flask Web UI 主类 —— 多任务面板、文件上传、通知、mDNS 发布、安全中间件与浏览器引导

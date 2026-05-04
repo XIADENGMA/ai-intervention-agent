@@ -38,6 +38,7 @@ MODULES_TO_DOCUMENT = [
     "protocol.py",
     "state_machine.py",
     "server.py",
+    "server_feedback.py",
     "server_config.py",
     "shared_types.py",
     "notification_manager.py",
@@ -62,8 +63,6 @@ MODULES_TO_DOCUMENT = [
 # graduate 到 MODULES_TO_DOCUMENT。
 IGNORED_MODULES = frozenset(
     {
-        # TODO(round-8/docs-debt): MCP feedback 工具实现；与 server.py 同步搬。
-        "server_feedback.py",
         # TODO(round-8/docs-debt): Web 服务编排（进程生命周期 + HTTP 客户端）。
         "service_manager.py",
         # TODO(round-8/docs-debt): web_ui ↔ config 双向同步；与 web_ui.py 一组搬。
@@ -314,6 +313,7 @@ QUICK_NAV_CORE = (
     "protocol",
     "state_machine",
     "server",
+    "server_feedback",
     "server_config",
     "task_queue",
     "web_ui",
@@ -409,6 +409,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **protocol**: Protocol version, capabilities, and server clock — single source of truth for the front/back contract",
                 "- **state_machine**: Connection / content / interaction state machines (mirrors front-end constants in `state.js`)",
                 "- **server**: MCP server entry point — `interactive_feedback` tool registration, multi-task queue lifecycle, notification integration, and the `main()` event loop",
+                "- **server_feedback**: `interactive_feedback` MCP tool implementation extracted from `server.py` — task polling, context management, undecorated tool function (registration stays on `server.mcp`)",
                 "- **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)",
                 "- **task_queue**: Task queue",
                 "- **web_ui**: Flask Web UI main class — multi-task panel, file uploads, notifications, mDNS publishing, security middleware, and browser bootstrapping",
@@ -442,6 +443,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **protocol**: 协议版本、Capabilities、服务器时钟 —— 前后端契约的单一事实来源",
                 "- **state_machine**: 连接 / 内容 / 交互状态机（与前端 `state.js` 常量一一对应）",
                 "- **server**: MCP 服务器入口 —— `interactive_feedback` 工具注册、多任务队列生命周期、通知集成与 `main()` 事件循环",
+                "- **server_feedback**: 从 `server.py` 抽出的 `interactive_feedback` 工具实现 —— 任务轮询、上下文管理、未装饰的工具函数本体（注册仍在 `server.mcp`）",
                 "- **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）",
                 "- **task_queue**: 任务队列",
                 "- **web_ui**: Flask Web UI 主类 —— 多任务面板、文件上传、通知、mDNS 发布、安全中间件与浏览器引导",
