@@ -282,8 +282,10 @@ class FeedbackRoutesMixin:
                     task_id:
                       type: string
                     auto_resubmit_timeout:
-                      type: number
-                      description: 倒计时（秒，范围 [10, 3600]；0=禁用；与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐）
+                      type: integer
+                      minimum: 0
+                      maximum: 3600
+                      description: 倒计时秒数；0=禁用；非零值范围 [10, 3600]，与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐（与 POST /api/update-feedback-config 同字段一致）
             responses:
               200:
                 description: 更新成功

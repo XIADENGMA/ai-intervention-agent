@@ -287,9 +287,11 @@ class TaskRoutesMixin:
                         每个预定义选项的"默认是否选中"标记（与 predefined_options 一一对应，
                         长度必须相同；省略时等价于全部 false）。
                     auto_resubmit_timeout:
-                      type: number
-                      description: 倒计时（秒，范围 [10, 3600]；0=禁用；与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐）
+                      type: integer
+                      minimum: 0
+                      maximum: 3600
                       default: 240
+                      description: 倒计时秒数；0=禁用；非零值范围 [10, 3600]，与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐（与 POST /api/update-feedback-config 同字段一致）
             responses:
               200:
                 description: 任务创建成功
