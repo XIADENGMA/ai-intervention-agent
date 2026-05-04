@@ -54,11 +54,11 @@
     "port": 8080,
     // 调试模式
     "debug": false,
-    // HTTP请求超时(秒) - 范围 [1, 300]
+    // HTTP请求超时(秒) - 范围 [1, 600]
     "http_request_timeout": 30,
-    // HTTP最大重试次数 - 范围 [0, 10]
+    // HTTP最大重试次数 - 范围 [0, 20]
     "http_max_retries": 3,
-    // HTTP重试延迟(秒) - 范围 [0.1, 60.0]
+    // HTTP重试延迟(秒) - 范围 [0, 60]
     "http_retry_delay": 1.0,
     // 外部访问基地址 - 用于 Bark/PWA 点击跳转
     // 留空时优先使用 mDNS http://{mdns.hostname}:{port}，再回退到 http://{host}:{port}
@@ -100,10 +100,10 @@
   // - frontend_countdown <= 0：后端等待 = max(backend_max_wait, 260秒)
   // - 否则：后端等待 = min(max(前端倒计时 + 40秒, 260秒), backend_max_wait)
   "feedback": {
-    // 后端最大等待时间(秒) - 范围 [60, 3600]
+    // 后端最大等待时间(秒) - 范围 [10, 7200]
     // 作用：限制后端轮询的最大时间，防止无限等待
     "backend_max_wait": 600,
-    // 前端自动重调倒计时(秒) - 范围 [30, 250]，0=禁用自动重调
+    // 前端自动重调倒计时(秒) - 范围 [10, 3600]，0=禁用自动重调
     // 参考 Cursor 5分钟会话超时，建议设置为 4 分钟 (240秒)
     "frontend_countdown": 240,
     // 错误/超时时返回的提示语（引导AI重新调用工具）

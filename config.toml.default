@@ -67,11 +67,11 @@ host = "127.0.0.1"
 port = 8080
 # 调试模式 / Debug mode
 debug = false
-# HTTP 请求超时(秒) / HTTP request timeout (seconds) - range [1, 300]
+# HTTP 请求超时(秒) / HTTP request timeout (seconds) - range [1, 600]
 http_request_timeout = 30
-# HTTP 最大重试次数 / HTTP max retries - range [0, 10]
+# HTTP 最大重试次数 / HTTP max retries - range [0, 20]
 http_max_retries = 3
-# HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0.1, 60.0]
+# HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0, 60]
 http_retry_delay = 1.0
 # 外部访问基地址 / External base URL for notification click links and reverse proxies.
 # Leave empty to prefer mDNS http://{mdns.hostname}:{port} when available, then fall back
@@ -119,10 +119,10 @@ service_name = "AI Intervention Agent"
 # - otherwise: backend_wait = min(max(frontend_countdown + 40s, 260s), backend_max_wait)
 # ──────────────────────────────────────────────
 [feedback]
-# 后端最大等待时间(秒) / Backend max wait time (seconds) - range [60, 3600]
+# 后端最大等待时间(秒) / Backend max wait time (seconds) - range [10, 7200]
 # 限制后端轮询最大时间 / Limits max backend polling time to prevent indefinite wait
 backend_max_wait = 600
-# 前端自动重调倒计时(秒) / Frontend auto-reschedule countdown (seconds) - range [30, 250], 0=disabled
+# 前端自动重调倒计时(秒) / Frontend auto-reschedule countdown (seconds) - range [10, 3600], 0=disabled
 # 参考 Cursor 5分钟超时 / Based on Cursor 5-min session timeout, recommend 4 min (240s)
 frontend_countdown = 240
 # 错误/超时时的提示语 / Prompt on error/timeout (guides AI to re-invoke the tool)
