@@ -280,6 +280,7 @@ flowchart TD
 ## Documentation
 
 - **Release notes**: [`CHANGELOG.md`](CHANGELOG.md)
+- **Contributing**: [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 - **API docs index**: [`docs/api/index.md`](docs/api/index.md)
 - **API docs (简体中文)**: [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **MCP tool reference**: [`docs/mcp_tools.md`](docs/mcp_tools.md)
