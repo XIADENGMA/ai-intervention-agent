@@ -12,6 +12,18 @@
 
 #### Methods
 
+##### `clamp_sound_volume(cls, v: float) -> float`
+
+##### `coerce_retry_count(cls, v: Any) -> int`
+
+##### `coerce_retry_delay(cls, v: Any) -> int`
+
+##### `coerce_bark_timeout(cls, v: Any) -> int`
+
+##### `validate_bark_action(cls, v: str) -> str`
+
+##### `warn_bark_config(self) -> 'NotificationConfig'`
+
 ##### `from_config_file(cls) -> 'NotificationConfig'`
 
 ### `class NotificationManager`
@@ -26,7 +38,7 @@
 
 ##### `trigger_callbacks(self, event_name: str) -> None`
 
-##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: Optional[List[NotificationType]] = None, metadata: Optional[Dict[str, Any]] = None, priority: NotificationPriority | str = NotificationPriority.NORMAL) -> str`
+##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: list[NotificationType] | None = None, metadata: dict[str, Any] | None = None, priority: NotificationPriority | str = NotificationPriority.NORMAL) -> str`
 
 ##### `shutdown(self, wait: bool = False) -> None`
 
@@ -40,4 +52,4 @@
 
 ##### `update_config_without_save(self) -> None`
 
-##### `get_status(self) -> Dict[str, Any]`
+##### `get_status(self) -> dict[str, Any]`

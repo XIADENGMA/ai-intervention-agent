@@ -16,9 +16,24 @@
 
 #### 方法
 
+##### `clamp_sound_volume(cls, v: float) -> float`
+
+##### `coerce_retry_count(cls, v: Any) -> int`
+
+##### `coerce_retry_delay(cls, v: Any) -> int`
+
+##### `coerce_bark_timeout(cls, v: Any) -> int`
+
+##### `validate_bark_action(cls, v: str) -> str`
+
+##### `warn_bark_config(self) -> 'NotificationConfig'`
+
 ##### `from_config_file(cls) -> 'NotificationConfig'`
 
 从配置文件 notification 段加载配置，sound_volume 自动转换 0-100 到 0.0-1.0
+
+注意：get_section() 已通过 Pydantic 段模型（NotificationSectionConfig）完成
+类型强转（SafeBool/ClampedInt）和范围钳位，此处无需再做手工转换。
 
 ### `class NotificationManager`
 
@@ -42,7 +57,7 @@
 
 触发指定事件的所有回调，异常不中断后续回调
 
-##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: Optional[List[NotificationType]] = None, metadata: Optional[Dict[str, Any]] = None, priority: NotificationPriority | str = NotificationPriority.NORMAL) -> str`
+##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: list[NotificationType] | None = None, metadata: dict[str, Any] | None = None, priority: NotificationPriority | str = NotificationPriority.NORMAL) -> str`
 
 发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。
 
@@ -70,6 +85,6 @@ shutdown 后重建线程池
 
 仅内存更新配置，不写文件。bark_enabled 变化时自动更新提供者。
 
-##### `get_status(self) -> Dict[str, Any]`
+##### `get_status(self) -> dict[str, Any]`
 
 返回管理器状态：enabled/providers/queue_size/config/stats

@@ -6,7 +6,18 @@
 
 ## 函数
 
-### `create_notification_providers(config) -> Dict[NotificationType, BaseNotificationProvider]`
+### `_coerce_bark_format_value(value: Any) -> str`
+
+把任意 value 转成对 URL 友好的字符串；非标量一律视为空。
+
+### `render_bark_url_template(template: str, params: dict[str, Any]) -> str`
+
+安全渲染 Bark 点击 URL 模板。
+
+- 模板为空 / 渲染异常时返回空串（调用方应判空跳过 url 字段）。
+- 不会抛出 KeyError；缺失的占位符保持 "{name}" 字面量（便于排查）。
+
+### `create_notification_providers(config) -> dict[NotificationType, BaseNotificationProvider]`
 
 工厂函数 - 根据配置启用状态创建提供者实例
 
@@ -15,6 +26,12 @@
 创建提供者并注册到全局 notification_manager
 
 ## 类
+
+### `class _BarkSafeFormatDict`
+
+str.format_map() 的兜底字典：未命中的 key 原样返回 "{key}"。
+
+#### 方法
 
 ### `class BaseNotificationProvider`
 
@@ -40,7 +57,7 @@ Web 浏览器通知 - 准备通知数据到 event.metadata 供前端轮询展示
 
 ##### `__init__(self, config)`
 
-##### `register_client(self, client_id: str, client_info: Dict[str, Any])`
+##### `register_client(self, client_id: str, client_info: dict[str, Any])`
 
 注册 Web 客户端
 

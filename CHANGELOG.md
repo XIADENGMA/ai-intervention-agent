@@ -78,6 +78,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **API reference (`docs/api/` + `docs/api.zh-CN/`) refreshed to
+  match current source.** Running
+  `uv run python scripts/generate_docs.py --lang en`
+  and `--lang zh-CN` against the v1.5.22 tree revealed two
+  drifts that had built up since the last regeneration:
+  1. **`server_config.py` was completely missing** from both
+     index pages despite being declared in
+     `MODULES_TO_DOCUMENT` (`scripts/generate_docs.py:33-44`).
+     The module is the result of the v1.5.20 server-side
+     refactor that hoisted dataclasses + input validation +
+     response parsing out of `server.py`; without its API doc
+     reviewers had to grep source. Now generated for both
+     locales and surfaced in the Chinese index's "核心模块"
+     quick-nav alongside `config_manager` / `task_queue`.
+  2. **Nine existing module docs (`config_manager`,
+     `notification_*`, `task_queue`, `enhanced_logging`,
+     `shared_types`, etc.) had ~250 lines of net additions**
+     mirroring real signature changes / new methods that
+     landed across v1.5.x. The regenerate is purely
+     reflection of in-source docstrings and signatures, no
+     hand-editing.
+  Also fixed three latent generator-style bugs in
+  `scripts/generate_docs.py` so future regenerations don't
+  re-introduce noise:
+  - Output now ends with a trailing `\n` (was missing,
+    triggering pre-commit's `end-of-file-fixer` on every
+    regenerate).
+  - Italic emphasis switched from `*…*` to `_…_` to match
+    the style canonicalised across the repo (CHANGELOG +
+    AUDIT entries follow the same convention since the
+    earlier markdown sweep).
+  - Empty lines after `### 核心模块` / `### 工具模块` /
+    `---` separators added so MD renderers (GitHub web,
+    Marked, Pandoc) all parse the H3s as block headings.
 - **`packages/vscode/CHANGELOG.md` (new)** — VS Code Marketplace and
   Open VSX render the extension package's own `CHANGELOG.md` on the
   listing's "Changelog" tab. Until now the extension shipped without

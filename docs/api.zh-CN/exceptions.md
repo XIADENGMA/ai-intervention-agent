@@ -29,8 +29,8 @@
 项目基础异常。
 
 属性:
-code: 机器可读的错误码（如 "service_unavailable"），可选
-details: 附加结构化信息，便于调试或前端展示
+    code: 机器可读的错误码（如 "service_unavailable"），可选
+    details: 附加结构化信息，便于调试或前端展示
 
 #### 方法
 

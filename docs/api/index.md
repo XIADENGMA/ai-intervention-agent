@@ -9,6 +9,7 @@ English API reference (signatures-focused).
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
 - [exceptions](exceptions.md)
+- [server_config](server_config.md)
 - [shared_types](shared_types.md)
 - [notification_manager](notification_manager.md)
 - [notification_models](notification_models.md)

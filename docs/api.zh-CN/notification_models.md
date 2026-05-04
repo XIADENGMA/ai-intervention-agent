@@ -19,3 +19,7 @@
 ### `class NotificationEvent`
 
 通知事件 - 封装一次通知的标题/消息/类型/触发时机/重试信息。
+
+#### 方法
+
+##### `coerce_none_metadata(cls, v: Any) -> dict[str, Any]`

@@ -11,3 +11,7 @@
 ### `class NotificationPriority`
 
 ### `class NotificationEvent`
+
+#### Methods
+
+##### `coerce_none_metadata(cls, v: Any) -> dict[str, Any]`

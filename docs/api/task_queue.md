@@ -4,6 +4,8 @@
 
 ## Classes
 
+### `class TaskStatus`
+
 ### `class Task`
 
 #### Methods
@@ -18,23 +20,23 @@
 
 #### Methods
 
-##### `__init__(self, max_tasks: int = 10)`
+##### `__init__(self, max_tasks: int = 10, persist_path: str | None = None)`
 
 ##### `clear_all_tasks(self) -> int`
 
-##### `add_task(self, task_id: str, prompt: str, predefined_options: Optional[List[str]] = None, auto_resubmit_timeout: int = 240) -> bool`
+##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = 240, predefined_options_defaults: list[bool] | None = None) -> bool`
 
-##### `get_task(self, task_id: str) -> Optional[Task]`
+##### `get_task(self, task_id: str) -> Task | None`
 
-##### `get_all_tasks(self) -> List[Task]`
+##### `get_all_tasks(self) -> list[Task]`
 
 ##### `update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int`
 
-##### `get_active_task(self) -> Optional[Task]`
+##### `get_active_task(self) -> Task | None`
 
 ##### `set_active_task(self, task_id: str) -> bool`
 
-##### `complete_task(self, task_id: str, result: Dict[str, Any]) -> bool`
+##### `complete_task(self, task_id: str, result: dict[str, Any]) -> bool`
 
 ##### `remove_task(self, task_id: str) -> bool`
 
@@ -44,8 +46,8 @@
 
 ##### `stop_cleanup(self) -> None`
 
-##### `get_task_count(self) -> Dict[str, int]`
+##### `get_task_count(self) -> dict[str, int]`
 
-##### `register_status_change_callback(self, callback: Callable[[str, Optional[str], str], None]) -> None`
+##### `register_status_change_callback(self, callback: Callable[[str, str | None, str], None]) -> None`
 
-##### `unregister_status_change_callback(self, callback: Callable[[str, Optional[str], str], None]) -> None`
+##### `unregister_status_change_callback(self, callback: Callable[[str, str | None, str], None]) -> None`

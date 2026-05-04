@@ -1,8 +1,12 @@
 # task_queue
 
-任务队列管理 - 线程安全、状态管理、自动清理、延迟删除。
+任务队列管理 - 线程安全、状态管理、自动清理、延迟删除、持久化。
 
 ## 类
+
+### `class TaskStatus`
+
+任务状态枚举（StrEnum 使其与纯字符串完全兼容）
 
 ### `class Task`
 
@@ -60,9 +64,9 @@
 ## 数据结构
 
 ### 内部字段
-- `_tasks`: Dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
+- `_tasks`: dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
 - `_lock`: Lock - 线程锁，保护共享数据
-- `_active_task_id`: Optional[str] - 当前活动任务ID
+- `_active_task_id`: str | None - 当前活动任务ID
 - `_stop_cleanup`: Event - 停止清理线程的事件
 - `_cleanup_thread`: Thread - 后台清理线程
 
@@ -122,7 +126,7 @@ remove_task()     → 直接删除
 
 #### 方法
 
-##### `__init__(self, max_tasks: int = 10)`
+##### `__init__(self, max_tasks: int = 10, persist_path: str | None = None)`
 
 初始化任务队列
 
@@ -130,19 +134,8 @@ remove_task()     → 直接删除
 
 参数:
     max_tasks (int): 最大并发任务数，默认10
-        - 建议值：5-20（根据实际需求）
-        - 过大：内存占用增加
-        - 过小：容易达到上限
-
-异常:
-    无：所有异常都会被捕获并记录日志
-
-副作用:
-    - 启动守护线程 TaskQueueCleanup
-    - 记录初始化日志
-
-线程安全:
-    线程安全（使用 Lock 保护共享数据）
+    persist_path (str|None): 持久化文件路径。设置后任务状态变更自动写入磁盘，
+        重启时自动恢复未完成任务。传 None 禁用持久化（纯内存模式）。
 
 ##### `clear_all_tasks(self) -> int`
 
@@ -150,34 +143,36 @@ remove_task()     → 直接删除
 
 删除所有任务并重置队列状态，用于服务启动时清理残留任务。
 
-##### `add_task(self, task_id: str, prompt: str, predefined_options: Optional[List[str]] = None, auto_resubmit_timeout: int = 240) -> bool`
+##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = 240, predefined_options_defaults: list[bool] | None = None) -> bool`
 
 添加任务，无活动任务时自动激活
 
-##### `get_task(self, task_id: str) -> Optional[Task]`
+##### `get_task(self, task_id: str) -> Task | None`
 
 获取指定任务
 
 通过任务ID查询任务对象，返回任务的当前状态快照。
 
-**注意**：返回的是任务对象引用，修改其属性可能影响队列状态
-（虽然不推荐直接修改，应使用提供的方法）
+**注意**：返回的是任务对象的直接引用（非深拷贝）。调用方在锁外读取
+属性时，可能与其他线程对同一 Task 的写操作产生竞态。当前所有调用点
+均为只读访问（读 task_id/prompt/status），GIL 保证了单属性读取的安全，
+但如需一致的多字段快照，应自行加锁或在锁内完成读取。
 
 参数:
     task_id (str): 任务唯一标识符
 
 返回:
-    Optional[Task]: 任务对象，不存在则返回 None
+    Task | None: 任务对象，不存在则返回 None
         - Task对象包含所有任务信息
         - None表示任务不存在或已被删除
 
 线程安全:
-    线程安全（使用 Lock 保护）
+    查询本身线程安全（使用 Lock 保护），但返回值的后续访问不受锁保护。
 
 时间复杂度:
     O(1) - 字典查询
 
-##### `get_all_tasks(self) -> List[Task]`
+##### `get_all_tasks(self) -> list[Task]`
 
 获取所有任务列表
 
@@ -203,7 +198,7 @@ remove_task()     → 直接删除
 返回:
     int: 实际更新的任务数量
 
-##### `get_active_task(self) -> Optional[Task]`
+##### `get_active_task(self) -> Task | None`
 
 获取当前活动任务
 
@@ -211,7 +206,7 @@ remove_task()     → 直接删除
 
 手动切换活动任务
 
-##### `complete_task(self, task_id: str, result: Dict[str, Any]) -> bool`
+##### `complete_task(self, task_id: str, result: dict[str, Any]) -> bool`
 
 完成任务并标记为延迟删除（核心方法）
 
@@ -238,7 +233,7 @@ remove_task()     → 直接删除
 
 参数:
     task_id (str): 要完成的任务ID
-    result (Dict[str, Any]): 任务执行结果
+    result (dict[str, Any]): 任务执行结果
         - 通常包含 'feedback', 'selected_options' 等键
         - 格式由调用方决定
         - 示例：{'feedback': '用户输入', 'selected_options': ['选项1']}
@@ -413,7 +408,7 @@ remove_task()     → 直接删除
     - 守护线程会在主线程退出时强制停止
     - 多次调用是安全的（幂等操作）
 
-##### `get_task_count(self) -> Dict[str, int]`
+##### `get_task_count(self) -> dict[str, int]`
 
 获取任务统计信息
 
@@ -433,7 +428,7 @@ remove_task()     → 直接删除
 - 调试和日志
 
 返回:
-    Dict[str, int]: 任务统计字典
+    dict[str, int]: 任务统计字典
         键值对：
         - 'total': int - 总任务数
         - 'pending': int - 等待任务数
@@ -453,7 +448,7 @@ remove_task()     → 直接删除
     - total = pending + active + completed
     - completed任务会在10秒后被清理
 
-##### `register_status_change_callback(self, callback: Callable[[str, Optional[str], str], None]) -> None`
+##### `register_status_change_callback(self, callback: Callable[[str, str | None, str], None]) -> None`
 
 注册任务状态变更回调函数
 
@@ -479,7 +474,7 @@ callback : callable
 ...     print(f"任务 {task_id}: {old_status} -> {new_status}")
 >>> queue.register_status_change_callback(on_status_change)
 
-##### `unregister_status_change_callback(self, callback: Callable[[str, Optional[str], str], None]) -> None`
+##### `unregister_status_change_callback(self, callback: Callable[[str, str | None, str], None]) -> None`
 
 取消注册任务状态变更回调函数
 

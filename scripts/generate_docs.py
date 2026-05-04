@@ -189,7 +189,7 @@ def generate_markdown(
                         lines.append(method["docstring"])
                         lines.append("")
 
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 def generate_index(modules: list[str], *, lang: str, output_dir_display: str) -> str:
@@ -224,7 +224,8 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
             [
                 "",
                 "---",
-                f"*Auto-generated under `{output_dir_display}`*",
+                "",
+                f"_Auto-generated under `{output_dir_display}`_",
             ]
         )
     else:
@@ -234,12 +235,15 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "## 快速导航",
                 "",
                 "### 核心模块",
+                "",
                 "- **config_manager**: 配置管理",
                 "- **exceptions**: 统一异常定义与错误响应",
                 "- **notification_manager**: 通知管理",
+                "- **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）",
                 "- **task_queue**: 任务队列",
                 "",
                 "### 工具模块",
+                "",
                 "- **config_utils**: 配置工具函数",
                 "- **shared_types**: 共享 TypedDict 类型定义",
                 "- **notification_models**: 通知数据模型",
@@ -247,11 +251,12 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **enhanced_logging**: 日志增强",
                 "",
                 "---",
-                f"*文档自动生成于 `{output_dir_display}`*",
+                "",
+                f"_文档自动生成于 `{output_dir_display}`_",
             ]
         )
 
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 def main():

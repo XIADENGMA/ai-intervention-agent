@@ -16,11 +16,11 @@
 
 在 dataclass __post_init__ 中限制字段值（支持 frozen=True）
 
-### `get_compat_config(config: Mapping[str, Any], new_key: str, old_key: Optional[str] = None, default: Any = None) -> Any`
+### `get_compat_config(config: Mapping[str, Any], new_key: str, old_key: str | None = None, default: Any = None) -> Any`
 
 获取配置值，优先级：new_key > old_key > default
 
-### `get_typed_config(config: dict, key: str, default: T, value_type: type[T], min_val: Number | None = None, max_val: Number | None = None, old_key: Optional[str] = None) -> T`
+### `get_typed_config(config: dict, key: str, default: T, value_type: type[T], min_val: Number | None = None, max_val: Number | None = None, old_key: str | None = None) -> T`
 
 获取配置值并进行类型转换和边界验证
 
@@ -28,6 +28,6 @@
 
 验证枚举值是否在有效范围内，无效时返回默认值
 
-### `truncate_string(value: str | None, max_length: int, field_name: str, default: Optional[str] = None, log_warning: bool = True) -> str`
+### `truncate_string(value: str | None, max_length: int, field_name: str, default: str | None = None, log_warning: bool = True) -> str`
 
 截断字符串到指定长度，空值时使用默认值

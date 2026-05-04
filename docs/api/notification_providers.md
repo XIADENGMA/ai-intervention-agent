@@ -4,11 +4,19 @@
 
 ## Functions
 
-### `create_notification_providers(config) -> Dict[NotificationType, BaseNotificationProvider]`
+### `_coerce_bark_format_value(value: Any) -> str`
+
+### `render_bark_url_template(template: str, params: dict[str, Any]) -> str`
+
+### `create_notification_providers(config) -> dict[NotificationType, BaseNotificationProvider]`
 
 ### `initialize_notification_system(config)`
 
 ## Classes
+
+### `class _BarkSafeFormatDict`
+
+#### Methods
 
 ### `class BaseNotificationProvider`
 
@@ -26,7 +34,7 @@
 
 ##### `__init__(self, config)`
 
-##### `register_client(self, client_id: str, client_info: Dict[str, Any])`
+##### `register_client(self, client_id: str, client_info: dict[str, Any])`
 
 ##### `unregister_client(self, client_id: str)`
 

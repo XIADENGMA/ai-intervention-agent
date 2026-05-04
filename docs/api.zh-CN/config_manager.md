@@ -1,8 +1,9 @@
 # config_manager
 
-配置管理模块：TOML 配置文件的跨平台加载、读写、热重载（旧 JSONC/JSON 文件自动迁移）。
+配置管理模块：TOML 配置文件的跨平台加载、读写、热重载。
 
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理、文件变更监听。
+旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
 通过 get_config() 获取全局 ConfigManager 实例。
 
 ## 函数
@@ -11,7 +12,7 @@
 
 ### `_sanitize_config_value_for_log(key: str, value: Any) -> str`
 
-### `parse_jsonc(content: str) -> Dict[str, Any]`
+### `parse_jsonc(content: str) -> dict[str, Any]`
 
 解析 JSONC（带注释的 JSON）为字典，支持 // 单行注释和 /* */ 多行注释。
 
@@ -26,7 +27,7 @@
 ----
 - **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
   - uvx 运行（推荐给普通用户）
-  - 通过 pip/uv 安装后运行（避免在任意项目目录意外生成 config.toml）
+  - 通过 pip/uv 安装后运行（避免在任意项目目录意外生成 config.jsonc）
 - **开发模式（False）**：优先使用当前目录配置（从仓库运行时更方便调试）。
 
 判定规则
@@ -40,7 +41,8 @@
 查找配置文件路径，支持环境变量覆盖、uvx 模式和开发模式。
 
 查找优先级（开发模式）：当前目录 > 用户配置目录 > 创建新配置。
-uvx 模式仅使用用户配置目录。支持 .jsonc/.json 两种格式。
+格式优先级：TOML > JSONC > JSON（向后兼容）。
+uvx 模式仅使用用户配置目录。
 跨平台配置目录：Linux ~/.config、macOS ~/Library/Application Support、Windows %APPDATA%。
 
 ### `_get_user_config_dir_fallback() -> Path`
@@ -85,6 +87,8 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 核心特性：使用可重入锁（RLock）保护共享状态、延迟保存优化、network_security 独立管理（带缓存）、
 文件变更监听、配置导入导出。通过模块级 config_manager 全局实例访问。
 
+支持格式：TOML（主格式）。旧 JSONC/JSON 文件在首次加载时自动迁移为 TOML。
+
 路由通过 Mixin 拆分（各 Mixin 定义在 config_modules/ 下）：
 - TomlEngineMixin: TOML 格式解析/保存（保留注释）
 - NetworkSecurityMixin: network_security 段校验/读写
@@ -105,7 +109,7 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 设置配置值（支持嵌套键，自动创建中间路径，值变化检测，可选延迟保存）
 
-##### `update(self, updates: Dict[str, Any], save: bool = True) -> None`
+##### `update(self, updates: dict[str, Any], save: bool = True) -> None`
 
 批量更新配置（仅处理变化项，合并为一次延迟保存，原子操作）
 
@@ -113,23 +117,11 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 强制立即保存配置文件（取消延迟保存，应用所有待保存变更）
 
-##### `get_section(self, section: Literal['notification'], use_cache: bool = ...) -> 'NotificationConfig'`
+##### `get_section(self, section: str, use_cache: bool = True) -> dict[str, Any]`
 
-##### `get_section(self, section: Literal['web_ui'], use_cache: bool = ...) -> 'WebUISectionConfig'`
+获取配置段的深拷贝（带 Pydantic 校验、缓存优化，network_security 特殊处理）
 
-##### `get_section(self, section: Literal['mdns'], use_cache: bool = ...) -> 'MdnsConfig'`
-
-##### `get_section(self, section: Literal['network_security'], use_cache: bool = ...) -> 'NetworkSecurityConfig'`
-
-##### `get_section(self, section: Literal['feedback'], use_cache: bool = ...) -> 'FeedbackConfig'`
-
-##### `get_section(self, section: str, use_cache: bool = ...) -> Dict[str, Any]`
-
-##### `get_section(self, section: str, use_cache: bool = True) -> Dict[str, Any]`
-
-获取配置段的深拷贝（带缓存优化，network_security 特殊处理）
-
-##### `update_section(self, section: str, updates: Dict[str, Any], save: bool = True) -> None`
+##### `update_section(self, section: str, updates: dict[str, Any], save: bool = True) -> None`
 
 更新配置段（检测变化，触发回调，可选延迟保存）
 
@@ -145,7 +137,7 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 清空所有配置缓存
 
-##### `get_cache_stats(self) -> Dict[str, Any]`
+##### `get_cache_stats(self) -> dict[str, Any]`
 
 获取缓存统计（命中/未命中/失效次数、命中率等）
 
@@ -157,19 +149,19 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 设置缓存有效期（TTL）
 
-##### `get_all(self) -> Dict[str, Any]`
+##### `get_all(self) -> dict[str, Any]`
 
-获取所有配置的副本（不含 network_security）
+获取所有配置的深拷贝（不含 network_security），防止外部修改内部状态
 
-##### `get_typed(self, key: str, default: Any, value_type: type, min_val: Optional[Any] = None, max_val: Optional[Any] = None) -> Any`
+##### `get_typed(self, key: str, default: Any, value_type: type, min_val: Any | None = None, max_val: Any | None = None) -> Any`
 
 获取配置值，带类型转换和边界验证
 
-##### `get_int(self, key: str, default: int = 0, min_val: Optional[int] = None, max_val: Optional[int] = None) -> int`
+##### `get_int(self, key: str, default: int = 0, min_val: int | None = None, max_val: int | None = None) -> int`
 
 获取整数配置值
 
-##### `get_float(self, key: str, default: float = 0.0, min_val: Optional[float] = None, max_val: Optional[float] = None) -> float`
+##### `get_float(self, key: str, default: float = 0.0, min_val: float | None = None, max_val: float | None = None) -> float`
 
 获取浮点数配置值
 
@@ -177,6 +169,6 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 获取布尔配置值
 
-##### `get_str(self, key: str, default: str = '', max_length: Optional[int] = None) -> str`
+##### `get_str(self, key: str, default: str = '', max_length: int | None = None) -> str`
 
 获取字符串配置值（可选截断）

@@ -7,6 +7,7 @@
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
 - [exceptions](exceptions.md)
+- [server_config](server_config.md)
 - [shared_types](shared_types.md)
 - [notification_manager](notification_manager.md)
 - [notification_models](notification_models.md)
@@ -22,6 +23,7 @@
 - **config_manager**: 配置管理
 - **exceptions**: 统一异常定义与错误响应
 - **notification_manager**: 通知管理
+- **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）
 - **task_queue**: 任务队列
 
 ### 工具模块
