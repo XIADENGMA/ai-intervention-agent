@@ -43,7 +43,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   entrypoint for `.github/workflows/test.yml`; `make ci` is
   just an alias for local use. Verified `make help`,
   `make lint`, `make docs-check`, and `make ci` against a
-  clean tree.
+  clean tree. The shortcut is also surfaced in
+  `CONTRIBUTING.md` (Section 2 Local CI Gate),
+  `docs/workflow.md`, `docs/workflow.zh-CN.md`, and
+  `scripts/README.md` so newcomers landing in any of those
+  pages discover it without having to grep for `Makefile`.
 - **`scripts/ci_gate.py` now runs `generate_docs.py --check` for
   both locales (warn-level, non-blocking).** A new `_run_warn`
   helper executes the command but converts a non-zero exit into

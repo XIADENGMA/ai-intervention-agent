@@ -33,17 +33,24 @@ npm install
 ## 2. Local CI Gate · 提交前必跑的本地门禁
 
 ```bash
-# Python 一键全量门禁
-uv run python scripts/ci_gate.py
+# 推荐：通过顶层 Makefile（thin wrapper，等价于 uv run python scripts/ci_gate.py …）
+make ci                # Python 一键全量门禁
+make vscode-check      # 含 VSCode 扩展打包验证
+make coverage          # 全量门禁 + 覆盖率 XML 报告
+make help              # 列出所有快捷命令
 
-# 含 VSCode 扩展打包验证
+# 等价的直调入口（CI 工作流仍在用，下面命令保留是为了脚本/CI 引用）
+uv run python scripts/ci_gate.py
 uv run python scripts/ci_gate.py --with-vscode
 
-# 仅看 i18n 红队
+# 仅看 i18n 红队（独立调试 i18n 实现时用）
 node scripts/red_team_i18n_runtime.mjs
 ```
 
 要求：**0 warning · 0 error · 测试全绿**。
+
+> Makefile 仅是别名，源真理仍在 `scripts/ci_gate.py`；详见
+> [`scripts/README.md`](scripts/README.md) 的 _Makefile shortcuts_ 表。
 
 ---
 

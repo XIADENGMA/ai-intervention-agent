@@ -14,6 +14,11 @@
   - 默认是“本地模式”：会自动格式化（`ruff format`），并运行 ruff/ty/pytest/minify
   - CI 模式（只检查；不自动格式化源码，但会生成 gitignore 的构建产物如 `.min`）：`uv run python scripts/ci_gate.py --ci --with-coverage`
   - 若希望一并跑 VSCode 插件门禁：`uv run python scripts/ci_gate.py --with-vscode`
+  - Makefile 快捷命令（thin wrapper，按肌肉记忆任选）：
+    - `make ci` ≡ `uv run python scripts/ci_gate.py`
+    - `make coverage` ≡ `uv run python scripts/ci_gate.py --with-coverage`
+    - `make vscode-check` ≡ `uv run python scripts/ci_gate.py --with-vscode`
+    - `make help` 列出全部快捷命令；裸 `make` 也会打印同一张表。
 - 单独运行各工具（定向修复时使用）：
   - Lint 检查：`uv run ruff check .`（自动修复：`uv run ruff check --fix .`）
   - 格式化：`uv run ruff format .`（仅检查：`uv run ruff format --check .`）

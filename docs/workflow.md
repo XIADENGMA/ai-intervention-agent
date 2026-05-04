@@ -14,6 +14,11 @@ This document describes the recommended development and release workflow for thi
   - Default is **local mode**: auto-formats (`ruff format`) and runs ruff/ty/pytest/minify
   - CI mode (check-only; no auto-format, but may generate gitignored build artifacts like `.min`): `uv run python scripts/ci_gate.py --ci --with-coverage`
   - Include VSCode checks: `uv run python scripts/ci_gate.py --with-vscode`
+  - Makefile shortcuts (thin wrappers — pick whichever your muscle memory prefers):
+    - `make ci` ≡ `uv run python scripts/ci_gate.py`
+    - `make coverage` ≡ `uv run python scripts/ci_gate.py --with-coverage`
+    - `make vscode-check` ≡ `uv run python scripts/ci_gate.py --with-vscode`
+    - `make help` lists every shortcut; `make` (no args) prints the same table.
 - Individual tool commands (for targeted fixing):
   - Lint: `uv run ruff check .` (auto-fix: `uv run ruff check --fix .`)
   - Format: `uv run ruff format .` (check-only: `uv run ruff format --check .`)
