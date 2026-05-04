@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 51 maintenance commits added on top of the release. This is **not**
+> the 52 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -77,6 +77,26 @@ downstream packagers do not need to update integration scripts.
   cells. Configurations that previously hit the cap now actually
   take effect; configurations already inside the new range see
   identical behaviour.
+- **Silent HTTP-retry / HTTP-timeout truncation fixed.** Same
+  pattern as feedback-timeout, on a different code surface: the
+  six `WebUIConfig.ClassVar` clamp bounds in `server_config.py`
+  (`TIMEOUT_MAX=300`, `MAX_RETRIES_MAX=10`, `RETRY_DELAY_MIN=0.1`)
+  were stricter than the Pydantic `_clamp_int/_clamp_float(...)`
+  bounds in `shared_types.SECTION_MODELS::web_ui`. So a user
+  writing `[web_ui] http_request_timeout = 500` (or
+  `http_max_retries = 15`, or `http_retry_delay = 0.05`) in
+  `config.toml` saw the value accepted by Pydantic, but
+  `service_manager._load_web_ui_config_from_disk` then
+  re-constructed `WebUIConfig(timeout=500, ...)` and the
+  `@field_validator` did a *second* clamp round — silently
+  capping 500 → 300, 15 → 10, 0.05 → 0.1 (with a warning log,
+  but the schema and config docs both promised the wider range
+  was honoured). Bounds now match the Pydantic side
+  (`[1, 600]` / `[0, 20]` / `[0, 60]`); the `web_ui` section was
+  added to `tests/test_server_config_shared_types_parity.py`
+  with three new introspection-based gates, so any future
+  Pydantic edit (or `WebUIConfig.ClassVar` edit) that breaks
+  parity will fail CI before merge.
 - **Default-config inline range comments aligned with SECTION_MODELS.**
   The first surface a new operator reads — the `range/范围 [a, b]`
   hints in `config.toml.default` and `config.jsonc.default` — had
@@ -296,8 +316,14 @@ downstream packagers do not need to update integration scripts.
     AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` equal the
     `(min, max)` pulled directly from the
     `BeforeValidator` closure cells of
-    `feedback.{backend_max_wait, frontend_countdown}`. 2
-    tests.
+    `feedback.{backend_max_wait, frontend_countdown}`, and
+    additionally asserts the six `WebUIConfig.ClassVar`
+    bounds (`TIMEOUT_MIN/MAX`, `MAX_RETRIES_MIN/MAX`,
+    `RETRY_DELAY_MIN/MAX`) equal the
+    `web_ui.{http_request_timeout, http_max_retries,
+    http_retry_delay}` Pydantic ranges — closing the same
+    silent-truncation gap on the HTTP-retry surface. 5 tests
+    total (2 feedback + 3 web_ui).
   - `tests/test_default_config_range_parity.py` walks both
     `config.toml.default` and `config.jsonc.default` with
     format-aware regex, parses every `range/范围 [a, b]`
