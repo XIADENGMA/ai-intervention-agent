@@ -56,7 +56,7 @@ node scripts/red_team_i18n_runtime.mjs
 | ✨    | feat        | 新功能（非破坏性）                  |
 | 🐛    | fix         | Bug 修复                            |
 | 📝    | docs        | 仅文档                              |
-| ✅    | test        | 测试相关                            |
+| ✅ / 🧪 | test      | 测试相关（`🧪` 推荐用于扩展/新增覆盖；`✅` 用于已有测试的稳定化、修复或迁移） |
 | 🔧    | chore       | 杂务、CI、依赖                      |
 | 🔒    | security    | 安全相关                            |
 | ♻️    | refactor    | 行为不变的重构                      |
@@ -69,6 +69,8 @@ node scripts/red_team_i18n_runtime.mjs
 ✨ feat(mcp): expose server metadata, tool annotations, and icons
 🐛 fix(notification): route Bark through MCP backend for plugin-only sessions
 📝 docs(release): introduce CHANGELOG and link from READMEs
+🧪 test(server-identity): cover icon/version fallback paths
+✅ test: silence expected retry warnings, raise perf-test queue cap
 ```
 
 ---
