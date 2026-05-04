@@ -69,14 +69,18 @@ class TestNotificationManagerPerformance(unittest.TestCase):
             notification_manager,
         )
 
-        # 确保通知启用
+        # send_notification 是异步的（事件被推到线程池后立即返回），如果不禁用 retry，
+        # 性能测试结束后线程池里残留的事件还会跑 retry 链路 → 污染后续测试窗口的 CI 输出
+        # （会冒出 "通知发送失败，将在 2s 后重试" WARNING）。设 retry_count=0 让失败的
+        # 通知直接 finalize 而不 retry；性能测试本身不验证 retry 行为，对断言无影响。
         original_enabled = notification_manager.config.enabled
+        original_retry_count = notification_manager.config.retry_count
         notification_manager.config.enabled = True
+        notification_manager.config.retry_count = 0
 
         try:
             start_time = time.time()
 
-            # 发送 100 个通知
             for i in range(100):
                 notification_manager.send_notification(
                     title=f"性能测试 {i}",
@@ -87,11 +91,11 @@ class TestNotificationManagerPerformance(unittest.TestCase):
 
             elapsed = time.time() - start_time
 
-            # 100 个通知应该在 2 秒内完成
             self.assertLess(elapsed, 2.0, f"通知发送过慢: {elapsed:.3f}s")
             print(f"\n通知发送性能: 100 个通知耗时 {elapsed:.3f}s")
         finally:
             notification_manager.config.enabled = original_enabled
+            notification_manager.config.retry_count = original_retry_count
 
     def test_config_refresh_performance(self):
         """测试配置刷新性能"""
@@ -117,7 +121,10 @@ class TestTaskQueuePerformance(unittest.TestCase):
         """每个测试前的准备"""
         from task_queue import TaskQueue
 
-        self.queue = TaskQueue()
+        # 性能测试要加 100 个任务（test_task_add_performance）和 50 个并发任务
+        # （test_task_concurrent_operations），都超过 TaskQueue 默认 max_tasks=10
+        # 限制；用大上限避免触发"队列已满" WARNING 污染 CI 输出。
+        self.queue = TaskQueue(max_tasks=2000)
 
     def tearDown(self):
         """每个测试后的清理"""
