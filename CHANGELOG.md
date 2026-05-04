@@ -123,14 +123,14 @@ config migration.
 
 ### Coverage by file (informational)
 
-| Module | v1.5.21 | Now | Δ |
-| --- | --- | --- | --- |
-| `web_ui_routes/static.py` | 89.0% | **100.0%** | +11.0% |
-| `web_ui.py` | 88.0% | **98.77%** | +10.77% |
-| `web_ui_routes/task.py` | 73.37% | **87.62%** | +14.25% |
-| `web_ui_routes/notification.py` | 92.88% | **97.41%** | +4.53% |
-| `web_ui_routes/system.py` | 79.53% | **82.33%** | +2.80% |
-| `web_ui_validators.py` | 93.85% | **99.23%** | +5.38% |
+| Module                          | v1.5.21 | Now        | Δ       |
+| ------------------------------- | ------- | ---------- | ------- |
+| `web_ui_routes/static.py`       | 89.0%   | **100.0%** | +11.0%  |
+| `web_ui.py`                     | 88.0%   | **98.77%** | +10.77% |
+| `web_ui_routes/task.py`         | 73.37%  | **87.62%** | +14.25% |
+| `web_ui_routes/notification.py` | 92.88%  | **97.41%** | +4.53%  |
+| `web_ui_routes/system.py`       | 79.53%  | **82.33%** | +2.80%  |
+| `web_ui_validators.py`          | 93.85%  | **99.23%** | +5.38%  |
 
 ## [1.5.21] - 2026-05-04
 
