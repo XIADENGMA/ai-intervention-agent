@@ -123,6 +123,41 @@ suite('AppleScript Executor', () => {
     })
   })
 
+  test('maxBuffer 溢出应映射为 APPLE_SCRIPT_OUTPUT_TOO_LARGE，而不是误判 timeout', async () => {
+    // Node ``execFile`` 在 stdout/stderr 总长 > maxBuffer 时抛
+    // ``ERR_CHILD_PROCESS_STDIO_MAXBUFFER`` 并 SIGTERM kill 子进程。
+    // 历史 bug：``isTimeout = !!err.killed || signal === 'SIGTERM'`` 把
+    // 这种情况错标为 ``APPLE_SCRIPT_TIMEOUT``，让用户错误地去调大
+    // ``timeoutMs``（实际应该调大 ``maxBufferBytes``）。
+    const executorPath = getExecutorPath()
+    const { AppleScriptExecutor } = require(executorPath)
+
+    const fakeExec = (_file, _args, _opts, cb) => {
+      const child = { stdin: { on: () => {}, end: () => {} } }
+      // Node 真实抛出形态：``error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'``
+      // ``killed === true``，``signal === 'SIGTERM'``。
+      const err = new Error('stdout maxBuffer exceeded')
+      err.code = 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+      err.killed = true
+      err.signal = 'SIGTERM'
+      process.nextTick(() => cb(err, '', ''))
+      return child
+    }
+
+    const executor = new AppleScriptExecutor({ platform: 'darwin', execImpl: fakeExec })
+    await assert.rejects(executor.runAppleScript('return "ok"'), err => {
+      assert.strictEqual(
+        err.code,
+        'APPLE_SCRIPT_OUTPUT_TOO_LARGE',
+        'maxBuffer 溢出必须映射为 APPLE_SCRIPT_OUTPUT_TOO_LARGE，' +
+          '不能因 killed=true / signal=SIGTERM 被误标为 APPLE_SCRIPT_TIMEOUT；' +
+          '否则用户会去调大 timeoutMs，浪费时间。实际收到: ' +
+          String(err && err.code)
+      )
+      return true
+    })
+  })
+
   test('失败时应携带 details（exitCode / injectedEnvKeys / stderr 等）', async () => {
     const executorPath = getExecutorPath()
     const { AppleScriptExecutor } = require(executorPath)

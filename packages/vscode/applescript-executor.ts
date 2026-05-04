@@ -154,17 +154,30 @@ export class AppleScriptExecutor {
               const errAny = error as NodeJS.ErrnoException & { killed?: boolean; signal?: string }
               const exitCode = typeof errAny.code === 'number' ? errAny.code : null
               const signal = errAny.signal ? String(errAny.signal) : ''
+              // Node ``execFile`` 在 stdout/stderr 总长度超过 ``maxBuffer`` 时抛
+              // ``ERR_CHILD_PROCESS_STDIO_MAXBUFFER`` 并 SIGTERM kill 子进程。
+              // 所以 ``errAny.killed === true``、``signal === 'SIGTERM'``，跟
+              // 真 timeout 不可区分 —— 必须用 ``error.code`` 字符串先单独
+              // 区分掉，否则用户看到的是误导的 ``APPLE_SCRIPT_TIMEOUT``。
+              const errCodeStr = typeof errAny.code === 'string' ? errAny.code : ''
+              const isMaxBufferOverflow = errCodeStr === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
               const isTimeout =
-                errAny.code === 'ETIMEDOUT' ||
-                !!errAny.killed ||
-                signal === 'SIGTERM' ||
-                signal === 'SIGKILL'
+                !isMaxBufferOverflow &&
+                (errAny.code === 'ETIMEDOUT' ||
+                  !!errAny.killed ||
+                  signal === 'SIGTERM' ||
+                  signal === 'SIGKILL')
               const msg =
                 errText || (error.message ? String(error.message) : 'AppleScript execution failed')
 
+              let resolvedCode: string
+              if (isMaxBufferOverflow) resolvedCode = 'APPLE_SCRIPT_OUTPUT_TOO_LARGE'
+              else if (isTimeout) resolvedCode = 'APPLE_SCRIPT_TIMEOUT'
+              else resolvedCode = 'APPLE_SCRIPT_FAILED'
+
               const err = makeError(
                 msg,
-                isTimeout ? 'APPLE_SCRIPT_TIMEOUT' : 'APPLE_SCRIPT_FAILED',
+                resolvedCode,
                 {
                   cause: error,
                   details: {
