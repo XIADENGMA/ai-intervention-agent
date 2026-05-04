@@ -1212,6 +1212,138 @@ class TestCreateTask(_RouteTestBase):
             call_kwargs = mock_tq.add_task.call_args
             self.assertEqual(call_kwargs.kwargs.get("predefined_options"), ["valid"])
 
+    # ────────────────────────────────────────────────────────────────────
+    # predefined_options_defaults（TODO #3 加的字段，原本完全无测试覆盖）
+    # ────────────────────────────────────────────────────────────────────
+
+    def test_options_defaults_non_list_returns_400(self):
+        """``predefined_options_defaults`` 不是 list（如对象/字符串）→ 400。"""
+        resp = self._client.post(
+            "/api/tasks",
+            json={
+                "task_id": "td-1",
+                "prompt": "p",
+                "predefined_options": ["A", "B"],
+                "predefined_options_defaults": "true",
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertIn("predefined_options_defaults", data["error"])
+
+    def test_options_defaults_mixed_types_normalized(self):
+        """defaults 内含 bool / int / float / str / 其它 → 全部规范化为 bool。
+
+        覆盖 task.py 411-423 的 normalisation 矩阵：
+        - True / 1 / 1.0 / 'true' / 'yes' / 'on' / 'selected' → True
+        - False / 0 / 0.0 / 'no' / 'off' / 'random' / None / list / dict → False
+        """
+        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+            mock_tq = MagicMock()
+            mock_tq.add_task.return_value = True
+            mock_get_tq.return_value = mock_tq
+
+            resp = self._client.post(
+                "/api/tasks",
+                json={
+                    "task_id": "td-2",
+                    "prompt": "p",
+                    "predefined_options": [
+                        "a",
+                        "b",
+                        "c",
+                        "d",
+                        "e",
+                        "f",
+                        "g",
+                        "h",
+                    ],
+                    "predefined_options_defaults": [
+                        True,  # → True
+                        1,  # int truthy → True
+                        "yes",  # str alias → True
+                        "selected",  # str alias → True
+                        0,  # int falsy → False
+                        "no",  # str non-alias → False
+                        None,  # 其它 → False
+                        ["x"],  # 列表 → False
+                    ],
+                },
+            )
+            self.assertEqual(resp.status_code, 200)
+
+            call_kwargs = mock_tq.add_task.call_args.kwargs
+            defaults = call_kwargs.get("predefined_options_defaults")
+            self.assertEqual(
+                defaults,
+                [True, True, True, True, False, False, False, False],
+            )
+
+    def test_options_defaults_too_long_truncated(self):
+        """defaults 长度大于 options → 截断到 options 长度。"""
+        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+            mock_tq = MagicMock()
+            mock_tq.add_task.return_value = True
+            mock_get_tq.return_value = mock_tq
+
+            resp = self._client.post(
+                "/api/tasks",
+                json={
+                    "task_id": "td-3",
+                    "prompt": "p",
+                    "predefined_options": ["a", "b"],
+                    "predefined_options_defaults": [True, False, True, False],
+                },
+            )
+            self.assertEqual(resp.status_code, 200)
+            defaults = mock_tq.add_task.call_args.kwargs.get(
+                "predefined_options_defaults"
+            )
+            self.assertEqual(defaults, [True, False])
+
+    def test_options_defaults_too_short_padded_with_false(self):
+        """defaults 长度小于 options → 用 False 补足到 options 长度。"""
+        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+            mock_tq = MagicMock()
+            mock_tq.add_task.return_value = True
+            mock_get_tq.return_value = mock_tq
+
+            resp = self._client.post(
+                "/api/tasks",
+                json={
+                    "task_id": "td-4",
+                    "prompt": "p",
+                    "predefined_options": ["a", "b", "c", "d"],
+                    "predefined_options_defaults": [True],
+                },
+            )
+            self.assertEqual(resp.status_code, 200)
+            defaults = mock_tq.add_task.call_args.kwargs.get(
+                "predefined_options_defaults"
+            )
+            self.assertEqual(defaults, [True, False, False, False])
+
+    def test_options_defaults_omitted_keeps_none(self):
+        """``predefined_options_defaults`` 字段缺省 → 不传给 add_task（None）。"""
+        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+            mock_tq = MagicMock()
+            mock_tq.add_task.return_value = True
+            mock_get_tq.return_value = mock_tq
+
+            resp = self._client.post(
+                "/api/tasks",
+                json={
+                    "task_id": "td-5",
+                    "prompt": "p",
+                    "predefined_options": ["a", "b"],
+                },
+            )
+            self.assertEqual(resp.status_code, 200)
+            defaults = mock_tq.add_task.call_args.kwargs.get(
+                "predefined_options_defaults"
+            )
+            self.assertIsNone(defaults)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  task.py — /api/tasks/<id> GET (detail)
