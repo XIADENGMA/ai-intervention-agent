@@ -196,7 +196,7 @@ ai-intervention-agent usage details:
 | Install (Open VSX)             | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                                                                                                                          |
 | Download VSIX (GitHub Release) | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                                                                                                               |
 | Setting                        | `ai-intervention-agent.serverUrl` (should match your Web UI URL, e.g. `http://localhost:8080`; you can change `web_ui.port` in [`config.toml.default`](config.toml.default))                                                                                        |
-| Other settings                 | `ai-intervention-agent.logLevel` (Output → AI Intervention Agent)<br/>`ai-intervention-agent.enableAppleScript` (macOS only; for the “Run AppleScript” command; default: `false`. macOS native notifications are controlled separately and are enabled by default.) |
+| Other settings                 | `ai-intervention-agent.logLevel` (Output → AI Intervention Agent). macOS native notifications are enabled by default and can be toggled in the sidebar's **Notification Settings** panel. See [`packages/vscode/README.md`](packages/vscode/README.md) for the full settings list and the AppleScript executor security model.                                                                |
 
 ## Configuration
 

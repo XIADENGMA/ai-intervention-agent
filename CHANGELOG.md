@@ -29,6 +29,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **Removed phantom `ai-intervention-agent.enableAppleScript`
+  reference from both root READMEs.** The setting key has not been
+  declared in `packages/vscode/package.json::contributes.configuration`
+  for several minor releases (the AppleScript path is gated only by
+  the macOS native notification toggle inside the panel UI). The
+  outdated row sent users hunting through `settings.json` for a
+  control that no longer exists; replaced with a one-line pointer
+  to the VS Code extension README.
+- **`packages/vscode/README.md` + `.zh-CN.md` gain two new
+  sections:**
+    1. `i18n.pseudoLocale` *(experimental)* setting documented for
+       the first time — it had been declared in `package.json`
+       and tagged `experimental` since v1.5.x but had no end-user
+       documentation, so QA folk who want to spot hardcoded strings
+       or layout overflow could not discover it.
+    2. **AppleScript executor security model** — full enumeration of
+       the seven safeguards baked into `applescript-executor.ts`
+       (platform check, absolute `/usr/bin/osascript` path, stdin
+       script delivery, 8 s hard timeout, 1 MiB output cap, log
+       redaction, and "no user-supplied scripts" architectural
+       invariant). `SECURITY.md` already mentioned the executor in
+       the "Out of scope" section; this expansion lets reviewers
+       (and downstream packagers) verify the assertion at source.
 - **`docs/troubleshooting.md` + `docs/troubleshooting.zh-CN.md` (new,
   bilingual)** — focused FAQ covering the eight most common
   deployment / runtime issues: port-in-use Web UI failure, blank

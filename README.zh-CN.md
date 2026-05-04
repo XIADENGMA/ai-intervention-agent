@@ -198,7 +198,7 @@ ai-intervention-agent 工具使用细节：
 | 安装（Open VSX）            | [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent)                                                                                                                                                                |
 | 下载 VSIX（GitHub Release） | [GitHub Releases](https://github.com/xiadengma/ai-intervention-agent/releases/latest)                                                                                                                                                     |
 | 设置                        | `ai-intervention-agent.serverUrl`（填写你的 Web UI 地址，例如 `http://localhost:8080`；端口可在 [`config.toml.default`](config.toml.default) 的 `web_ui.port` 中修改）                                                                    |
-| 其他设置                    | `ai-intervention-agent.logLevel`（Output → AI Intervention Agent）<br/>`ai-intervention-agent.enableAppleScript`（仅 macOS；用于“执行 AppleScript”命令；默认关闭；不影响 macOS 原生通知：原生通知默认开启，可在侧边栏「通知设置」中关闭） |
+| 其他设置                    | `ai-intervention-agent.logLevel`（Output → AI Intervention Agent）。macOS 原生通知默认开启，可在侧边栏「通知设置」面板中关闭。完整设置项与 AppleScript executor 安全模型详见 [`packages/vscode/README.zh-CN.md`](packages/vscode/README.zh-CN.md)。                                                                                              |
 
 ## 配置说明
 

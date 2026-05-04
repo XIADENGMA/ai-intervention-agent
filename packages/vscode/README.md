@@ -41,6 +41,23 @@ npm install
 
 - `ai-intervention-agent.serverUrl`: server URL (default: `http://localhost:8080`)
 - `ai-intervention-agent.logLevel`: extension log level (default: `info`; view: Output → AI Intervention Agent)
+- `ai-intervention-agent.i18n.pseudoLocale` *(experimental)*: when `true`, swaps the active UI bundle for a pseudo-localised one — useful for spotting hardcoded strings, layout overflow, and Unicode issues without leaving English. Default: `false`.
+
+> Notification toggles (Web / sound / system / Bark) are managed inside the panel's **Notification Settings** UI and persisted in the server-side `config.toml`, not in `settings.json`.
+
+## AppleScript executor (macOS only) · security model
+
+The extension ships an internal AppleScript executor (`applescript-executor.ts`) used by the macOS native notification path. It is **not** a user-facing "run arbitrary AppleScript" command — there is no command palette entry that hands user input to `osascript`. It is bound by the following safeguards:
+
+- **Platform check**: rejects with `PLATFORM_NOT_SUPPORTED` on non-`darwin` (`process.platform !== 'darwin'`).
+- **Absolute binary path**: invokes `/usr/bin/osascript` (no `PATH` lookup, immune to PATH poisoning).
+- **stdin script delivery**: passes the script body via stdin (`osascript -`) instead of as command-line arguments, eliminating shell-quoting bugs.
+- **Hard timeout**: 8 s default (`APPLE_SCRIPT_TIMEOUT` thrown on overrun); kills the child via SIGTERM/SIGKILL.
+- **Output cap**: 1 MiB stdout/stderr buffer ceiling.
+- **Log redaction**: `sanitizeForLog()` collapses newlines and truncates to 160 chars before any debug log line is emitted.
+- **No user-supplied scripts**: the only call sites compose the script from constants + `toAppleScriptStringLiteral()`-escaped values pulled from the notification payload.
+
+If you want to disable the AppleScript path entirely, toggle macOS native notifications off in the panel's **Notification Settings** — the executor will not be invoked.
 
 ## macOS native notifications
 

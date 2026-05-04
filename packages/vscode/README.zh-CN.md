@@ -41,6 +41,23 @@ npm install
 
 - `ai-intervention-agent.serverUrl`：服务端地址（默认 `http://localhost:8080`）
 - `ai-intervention-agent.logLevel`：日志级别（默认 `info`；查看位置：Output → AI Intervention Agent）
+- `ai-intervention-agent.i18n.pseudoLocale` *（实验性）*：开启后用 pseudo-localised 文案替换当前 UI 语言包；用于在不切英文环境的前提下排查硬编码字符串、布局溢出与 Unicode 渲染问题。默认 `false`。
+
+> 通知开关（Web / 声音 / 系统 / Bark）由面板内的 **通知设置** 维护，并写入服务端 `config.toml`，不放在 VS Code 的 `settings.json` 里。
+
+## AppleScript executor（仅 macOS）· 安全模型
+
+插件内置一个 AppleScript 执行器（`applescript-executor.ts`），仅服务于 macOS 原生通知。它**不是**面向用户的"任意运行 AppleScript"命令——命令面板里没有把用户输入交给 `osascript` 的入口。约束如下：
+
+- **平台校验**：非 `darwin` 一律 `PLATFORM_NOT_SUPPORTED`（`process.platform !== 'darwin'`）。
+- **绝对路径**：调用 `/usr/bin/osascript`，不走 `PATH` 查找，免疫 PATH poisoning。
+- **stdin 传脚本**：脚本体通过 stdin 传给 `osascript -`，不作为命令行参数，杜绝 shell quoting 漏洞。
+- **硬超时**：默认 8 秒（超时抛 `APPLE_SCRIPT_TIMEOUT`），子进程通过 SIGTERM/SIGKILL 终止。
+- **输出上限**：stdout / stderr 各 1 MiB 缓冲。
+- **日志脱敏**：`sanitizeForLog()` 折行 + 截断至 160 字符后才允许进入 debug 日志。
+- **不接受用户脚本**：仅有的调用点用常量 + `toAppleScriptStringLiteral()` 转义后的通知字段拼装脚本。
+
+若想完全关闭这条路径，在面板的 **通知设置** 中关掉 macOS 原生通知，执行器就不会被触发。
 
 ## macOS 原生通知
 
