@@ -9,6 +9,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI Gate output is now WARNING-clean across consecutive runs.**
+  `enhanced_logging.py` registers a Loguru sink against `sys.__stderr__`
+  at module import — that path bypasses pytest's `capsys`/`capfd` capture
+  and `unittest.TestCase.assertLogs` (which only collects stdlib
+  `LogRecord`s before the `InterceptHandler` forwards them). Combined
+  with `LogDeduplicator`'s 5-second time window, that occasionally let
+  one ``通知发送失败，将在 2s 后重试`` line leak to the terminal on the
+  first `ci_gate.py` invocation of a fresh shell, then silently
+  disappear on subsequent re-runs (dedup hit) — a flaky-output footgun.
+  A new session-scoped `autouse` fixture in `tests/conftest.py`
+  (`_silence_loguru_sinks_during_tests`) drops the Loguru sink at
+  pytest startup. `assertLogs` continues to assert WARNING records as
+  before; only the duplicate stderr drain is removed. Verified by two
+  back-to-back `uv run python scripts/ci_gate.py` runs producing zero
+  WARNING/ERROR/FAIL/RETRY lines.
+
 ### Documentation
 
 - **OpenSSF Scorecard badge added to both READMEs** (English + 简体中文).

@@ -75,6 +75,40 @@ def _reset_config_file_to_default(path: Path) -> None:
 _reset_config_file_to_default(_active_config_path())
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _silence_loguru_sinks_during_tests():
+    """会话级：移除 enhanced_logging 模块加载时注入的 loguru stderr sink。
+
+    背景
+    ----
+    `enhanced_logging.py` 通过 `InterceptHandler` 把 stdlib logging 路由到
+    loguru，并把 loguru sink 接到 `sys.__stderr__`（绕过 pytest capsys）。
+    LogDeduplicator 还有 5 秒时间窗口去重——这两件事叠加导致 CI Gate 偶尔
+    会“漏出”一条 retry/重试类 WARNING 到终端：
+      1. 同一条消息在 5s 内只会输出一次（首次测试触发后被印一次）；
+      2. 后续相同消息被去重静默，造成下一轮 ci_gate 看不到 WARNING；
+      3. 但跨用例时序变化时（首测顺序不同）会再次漏出，输出不可预测。
+
+    `assertLogs` 抓的是 stdlib LogRecord（在 InterceptHandler.emit 之前），
+    因此移除 loguru sink 不影响“断言能抓到 WARNING”，只是让 loguru 不再
+    直接写 stderr。pytest 输出立刻变得稳定干净。
+
+    退出时不再 restore——pytest 进程立刻终止，restore 反而会引入额外的
+    edge case（fixture 顺序、其他 finalizer 也想往 stderr 写）。
+    """
+    try:
+        # 触发 enhanced_logging 加载（确保 sink 已注册），然后再 remove。
+        from loguru import logger as _loguru_logger
+
+        import enhanced_logging  # noqa: F401
+
+        _loguru_logger.remove()
+    except Exception:
+        # 静默 fallback：测试运行不应被日志静音失败拖垮
+        pass
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _isolate_config_and_notification_singletons():
     """每个用例前后都做隔离，保证测试离线且互不污染。"""
