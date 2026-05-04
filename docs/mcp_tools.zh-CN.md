@@ -2,6 +2,34 @@
 
 本项目当前对外暴露 **1 个** MCP 工具：
 
+### Server 级元数据（v1.5.21+）
+
+`initialize` 协议响应中下发以下字段，client（ChatGPT Desktop / Claude Desktop / Cursor 等）会据此呈现 server 列表 UI、向 LLM 提供调用指引：
+
+| 字段           | 内容                                                                                              | 用途                                                |
+| -------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `name`         | `AI Intervention Agent MCP`                                                                       | client 工具列表显示                                 |
+| `version`      | 当前包版本（如 `1.5.21`，从 `importlib.metadata` 自动读取，未安装时回退 `0.0.0+local`）           | client 兼容性判断 / 故障排查                        |
+| `instructions` | 中文使用指引（适合 / 不适合调用的场景、行为约定等）                                               | 在 initialize 阶段下发给 LLM，作为工具选用的元规则  |
+| `website_url`  | `https://github.com/xiadengma/ai-intervention-agent`                                              | client UI 链接到项目主页                            |
+| `icons`        | 4 个 base64 data URI（32/192/512 PNG + SVG），server 启动时一次性嵌入                             | client 在 server 列表 UI 显示项目图标，self-contained 不依赖外部 CDN |
+
+### Tool 级注解（Tool Annotations）
+
+`interactive_feedback` 在 `tools/list` 协议响应中携带以下 annotations，让 client 准确识别工具语义并优化交互（如 ChatGPT Desktop 不会再每次弹"危险操作"二次确认）：
+
+| 字段              | 值     | 含义                                                                                |
+| ----------------- | ------ | ----------------------------------------------------------------------------------- |
+| `title`           | `Interactive Feedback (人机协作反馈)` | 客户端 UI 显示的友好标题                                |
+| `readOnlyHint`    | `false`| 工具会持久化任务并触发通知，并非完全只读                                            |
+| `destructiveHint` | `false`| 不会删除/覆盖任何源代码、git 历史或数据库 —— client 无需弹"危险操作"二次确认        |
+| `idempotentHint`  | `false`| 每次调用都会创建新的反馈任务，非幂等                                                |
+| `openWorldHint`   | `true` | 工具与外部用户和通知服务交互，是开放世界工具                                        |
+
+> 这些字段遵循 MCP 协议规范（spec 2024-11-05+），FastMCP 3.x 原生支持。
+
+---
+
 ### `interactive_feedback`
 
 通过 Web UI（浏览器或 VS Code Webview）向用户发起**交互式反馈**请求，并将用户输入结果返回给 MCP 调用方。

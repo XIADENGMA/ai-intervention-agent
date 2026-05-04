@@ -2,6 +2,34 @@
 
 This project currently exposes **one** MCP tool:
 
+### Server-level metadata (v1.5.21+)
+
+The `initialize` protocol response advertises the following fields. Clients (ChatGPT Desktop / Claude Desktop / Cursor, etc.) use them to render the server list UI and to surface LLM-facing guidance:
+
+| Field          | Content                                                                                       | Purpose                                                                |
+| -------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `name`         | `AI Intervention Agent MCP`                                                                   | Display label in the client's tool list                                |
+| `version`      | Current package version (e.g. `1.5.21`, read via `importlib.metadata`; falls back to `0.0.0+local` when not installed) | Client-side compatibility checks and troubleshooting                   |
+| `instructions` | Chinese usage guide (when to call / when not to call / behavior contract)                      | Delivered during `initialize` so the LLM has meta-rules for tool use   |
+| `website_url`  | `https://github.com/xiadengma/ai-intervention-agent`                                          | Client UI link to the project homepage                                 |
+| `icons`        | Four base64 data URIs (32/192/512 PNG + SVG) embedded once at server startup                   | Client server-list icon, fully self-contained without remote CDN deps  |
+
+### Tool-level annotations
+
+`interactive_feedback` carries the following annotations in the `tools/list` response so clients understand the tool semantics correctly (e.g. ChatGPT Desktop stops asking for "destructive operation" confirmation on every call):
+
+| Field             | Value  | Meaning                                                                          |
+| ----------------- | ------ | -------------------------------------------------------------------------------- |
+| `title`           | `Interactive Feedback (人机协作反馈)` | Friendly label shown in client UI                  |
+| `readOnlyHint`    | `false`| The tool persists tasks and triggers notifications, so it is not strictly read-only |
+| `destructiveHint` | `false`| Never modifies source code, git history, or databases — clients can skip confirm |
+| `idempotentHint`  | `false`| Each call creates a new feedback task, so it is non-idempotent                    |
+| `openWorldHint`   | `true` | The tool interacts with a real human and notification services — open-world tool |
+
+> These fields follow the MCP spec (2024-11-05+) and are natively supported by FastMCP 3.x.
+
+---
+
 ### `interactive_feedback`
 
 Request **interactive user feedback** through the Web UI (browser or VS Code Webview), then return the result back to the MCP client.
