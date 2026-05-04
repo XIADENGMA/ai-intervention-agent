@@ -943,10 +943,31 @@ class TaskQueue:
     # ========================================================================
 
     def _persist(self) -> None:
-        """将当前任务快照写入磁盘（原子操作：tmpfile → os.replace）。
+        """将当前任务快照写入磁盘（原子操作：tmpfile → fsync → os.replace）。
 
         仅在 persist_path 已设置时执行。已完成的任务不写入持久化文件。
         调用方应在锁外调用此方法。
+
+        why fsync：
+            ``os.replace(tmp, target)`` 本身是 ``rename(2)`` 系统调用，inode
+            层面是原子的，但**目标 inode 指向的数据**在 ``rename`` 时可能
+            还停留在 OS page cache 没刷盘。如果机器在 ``replace`` 之后
+            ``fsync`` 之前 panic / 断电：
+              1. 重启后磁盘 inode 已经指向新文件名
+              2. 但新文件实际数据从未落盘 → 上面是 0 字节 / NUL fill /
+                 部分写入
+              3. 旧文件已经被 ``rename`` 替换掉，无法回滚
+            ``fsync`` 强制让 page cache 落盘后才允许 ``replace``，
+            消除这个窗口。详见 ``Linux fsync(2) man-page``、
+            ``danluu.com/file-consistency``、``Postgres fsyncgate`` 案例。
+
+            本仓库其他 5 处原子写入路径
+            （``config_manager._save_config_immediate``、
+            ``config_modules/io_operations.py``、
+            ``config_modules/network_security._atomic_write_config``、
+            ``scripts/bump_version.py``）都已经按
+            ``flush() → fsync(fileno()) → os.replace()`` 序列写，本函数
+            因为历史原因漏了——补上以保持仓库内的一致性。
         """
         if not self._persist_path:
             return
@@ -984,6 +1005,12 @@ class TaskQueue:
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
+                    # flush() 把 stdio buffer 推到内核；fsync(fileno()) 才
+                    # 把内核 page cache 推到磁盘——两步缺一不可。flush 单独
+                    # 不够（缓存仍在 page cache）；fsync 单独可能漏写当前
+                    # buffer 里没 flush 的部分。
+                    f.flush()
+                    os.fsync(f.fileno())
                 os.replace(tmp_path, str(self._persist_path))
             except Exception:
                 try:
