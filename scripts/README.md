@@ -8,6 +8,28 @@ README is here so a fresh contributor can grep one file and see
 > 中文用户：脚本说明的语言是英文以保持与 docstring 一致；用法示例
 > 直接读各脚本的 `--help` 或 docstring 即可。
 
+## Makefile shortcuts
+
+For local use the repo root [`Makefile`](../Makefile) wraps the most
+common entry points:
+
+| Target              | Equivalent                                                      |
+| ------------------- | --------------------------------------------------------------- |
+| `make ci`           | `uv run python scripts/ci_gate.py`                              |
+| `make coverage`     | `uv run python scripts/ci_gate.py --with-coverage`              |
+| `make vscode-check` | `uv run python scripts/ci_gate.py --with-vscode`                |
+| `make docs`         | `generate_docs.py --lang en` + `--lang zh-CN`                   |
+| `make docs-check`   | `generate_docs.py --check` for both locales                     |
+| `make lint`         | `ruff format` + `ruff check` + `ty check`                       |
+| `make test`         | `pytest -q` (no i18n / minify gates — fast loop only)           |
+| `make pre-commit`   | `pre-commit run --all-files`                                    |
+| `make clean`        | wipe `dist/` / `.coverage*` / `*.vsix` / `.ruff_cache` / et al. |
+| `make help`         | print the full table (also the default `make` target)           |
+
+The `Makefile` is a thin wrapper; CI still calls
+[`ci_gate.py`](ci_gate.py) directly so the source of truth never
+diverges.
+
 ## CI Gate orchestrator
 
 - [`ci_gate.py`](ci_gate.py) — single-entry façade:

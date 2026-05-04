@@ -29,6 +29,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Chore
 
+- **Top-level `Makefile` exposes `make test` / `make ci` /
+  `make docs` / `make lint` / `make coverage` /
+  `make vscode-check` / `make pre-commit` / `make clean` as
+  thin wrappers around `scripts/ci_gate.py` and friends.** The
+  source of truth still lives in those scripts; the `Makefile`
+  only saves contributors from typing `uv run python scripts/…`
+  four times a day and matches the muscle memory that most
+  Python projects standardise on. `.DEFAULT_GOAL := help` makes
+  bare `make` print the target table, so a fresh checkout's
+  first `make` is informative instead of surprising. No CI
+  surface change — `scripts/ci_gate.py` remains the canonical
+  entrypoint for `.github/workflows/test.yml`; `make ci` is
+  just an alias for local use. Verified `make help`,
+  `make lint`, `make docs-check`, and `make ci` against a
+  clean tree.
 - **`scripts/ci_gate.py` now runs `generate_docs.py --check` for
   both locales (warn-level, non-blocking).** A new `_run_warn`
   helper executes the command but converts a non-zero exit into
