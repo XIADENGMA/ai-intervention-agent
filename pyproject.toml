@@ -69,6 +69,8 @@ Homepage = "https://github.com/xiadengma/ai-intervention-agent"
 Repository = "https://github.com/xiadengma/ai-intervention-agent"
 Issues = "https://github.com/xiadengma/ai-intervention-agent/issues"
 Documentation = "https://github.com/xiadengma/ai-intervention-agent#readme"
+Changelog = "https://github.com/xiadengma/ai-intervention-agent/blob/main/CHANGELOG.md"
+"Release notes" = "https://github.com/xiadengma/ai-intervention-agent/releases"
 
 [project.scripts]
 ai-intervention-agent = "server:main"
