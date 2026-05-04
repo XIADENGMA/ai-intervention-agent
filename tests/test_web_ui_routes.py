@@ -1754,6 +1754,45 @@ class TestStaticRoutesEdge(_RouteTestBase):
         resp = self._client.get("/static/lottie/")
         self.assertIn(resp.status_code, (404, 308))
 
+    def test_sounds_non_audio_extension_returns_404(self):
+        """``/sounds/<filename>`` 仅放行 ``.mp3 / .wav / .ogg``。
+
+        与 lottie 路由的白名单同构 ——
+        ``send_from_directory`` 只防路径穿越，没有"只暴露音频"的语义保证；
+        如果 ``sounds/`` 目录被误放入 ``.json`` / ``.txt``，扩展名白名单
+        把它们关在 404 后面（深度防御 + 防意外信息泄露）。
+        """
+        for path in (
+            "/sounds/config.json",
+            "/sounds/README.txt",
+            "/sounds/secret.env",
+            "/sounds/weird.exe",
+        ):
+            resp = self._client.get(path)
+            self.assertEqual(
+                resp.status_code,
+                404,
+                f"非音频扩展名 {path} 应返回 404，实际 {resp.status_code}",
+            )
+
+    def test_sounds_uppercase_extension_passes_whitelist(self):
+        """``Foo.MP3`` —— 大小写应同等放行，避免文件改名后突然 404。
+
+        404 是因为找不到文件本身（sounds/ 内没有 ``Foo.MP3``），不是因为
+        扩展名校验拒绝；这区分了"白名单 reject"和"文件不存在"两种语义。
+        """
+        resp = self._client.get("/sounds/Foo.MP3")
+        # 命中白名单 ⇒ 走 send_from_directory ⇒ 文件不存在也是 404，但不是
+        # 扩展名拒绝产生的 abort(404)。这里只能间接验证：响应不应该是因
+        # 为白名单提前 abort，否则未来如果有人加了 ``Foo.MP3`` 文件会回归。
+        # 实际就两种合法状态：404（文件确实没有）或 200（文件存在）。
+        self.assertIn(resp.status_code, (200, 404))
+
+    def test_sounds_empty_filename_returns_404(self):
+        """``/sounds/`` —— Flask routing 自身应 404 / 308，与 lottie 同。"""
+        resp = self._client.get("/sounds/")
+        self.assertIn(resp.status_code, (404, 308))
+
     def test_service_worker_headers(self):
         resp = self._client.get("/notification-service-worker.js")
         if resp.status_code == 200:

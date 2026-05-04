@@ -109,7 +109,7 @@ class StaticRoutesMixin:
             """提供音频文件的静态资源路由
 
             功能说明：
-                安全地提供sounds目录下的音频文件（mp3、wav、ogg等）。
+                安全地提供sounds目录下的音频文件（mp3、wav、ogg）。
 
             参数说明：
                 filename: 音频文件名（URL路径参数）
@@ -121,10 +121,20 @@ class StaticRoutesMixin:
                 - 已豁免（静态资源不做限流，避免首屏加载被 429 影响）
 
             注意事项：
+                - 仅允许 .mp3 / .wav / .ogg 三种扩展名（与 ``/static/lottie/``
+                  的白名单同构）；意图：``send_from_directory`` 仅防路径穿越，
+                  没有"只暴露音频"的语义保证；如果将来 ``sounds/`` 目录被
+                  误放入 ``.json`` 配置 / ``.txt`` README，扩展名白名单
+                  能继续把它们关在 404 后面，避免意外信息泄露。
                 - 使用send_from_directory防止路径遍历攻击
                 - 文件名自动清理，不支持../ 等危险路径
                 - 音频文件较大，注意带宽占用
             """
+            if not filename or not str(filename).lower().endswith(
+                (".mp3", ".wav", ".ogg")
+            ):
+                abort(404)
+
             sounds_dir = self._project_root / "sounds"
             return send_from_directory(str(sounds_dir), filename)
 
