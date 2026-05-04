@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """P6R-1 回归：update_auto_resubmit_timeout_for_all 必须触发持久化。
 
 背景：

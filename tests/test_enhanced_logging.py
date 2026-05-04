@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 AI Intervention Agent - Enhanced Logging 模块单元测试
 

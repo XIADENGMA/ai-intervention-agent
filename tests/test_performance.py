@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 AI Intervention Agent - 性能测试
 

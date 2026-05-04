@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """通知提供者实现 - Web/Sound/Bark/System 四种通知方式。
 
 所有提供者实现 send(event) -> bool 接口，由 NotificationManager 调用。

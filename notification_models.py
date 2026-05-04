@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """通知领域模型：枚举与事件结构（避免 manager/provider 循环依赖）。"""
 
 import time

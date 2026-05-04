@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
-"""
-配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助。
-"""
+"""配置工具模块：边界值验证、向后兼容配置读取、类型转换辅助。"""
 
 import logging
 from collections.abc import Mapping

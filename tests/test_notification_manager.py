@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 AI Intervention Agent - 通知管理器单元测试
 

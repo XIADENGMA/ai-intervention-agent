@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """P6R-2 回归：set_active_task 对 already-active 的任务必须幂等。
 
 背景：

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """P6Y-3 回归：/api/submit 必须对 selected_options 做类型校验。
 
 背景：

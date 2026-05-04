@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 配置热更新（feedback）相关测试
 

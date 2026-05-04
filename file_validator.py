@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """文件验证模块 - 魔数验证、恶意内容扫描、文件名安全检查，防止上传攻击。"""
 
 import logging

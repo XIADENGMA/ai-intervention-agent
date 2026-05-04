@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """P6Y-1 回归：_restore 必须逐条容错，单任务损坏不中断整体恢复。
 
 背景：

@@ -9,6 +9,38 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Tooling
+
+- **Shebang ↔ executable-bit invariant is now enforced.**
+  Two layers:
+  1. **Repo-wide cleanup**: 6 top-level library modules
+     (`config_manager.py` / `config_utils.py` /
+     `file_validator.py` / `notification_manager.py` /
+     `notification_models.py` / `notification_providers.py`)
+     and 14 test files (`tests/test_*.py`) carried a
+     leftover `#!/usr/bin/env python3` shebang despite never
+     being entry-points — pytest is the sole driver for
+     tests, and the library modules are imported, never
+     executed. Shebangs removed; `if __name__ == "__main__":
+     unittest.main()` blocks already in tests still work
+     when invoked via `python -m`.
+  2. **Mode normalisation**: 16 entry-point scripts under
+     `scripts/` (`ci_gate.py`, all 9 i18n gates,
+     `bump_version.py`, `generate_docs.py`,
+     `minify_assets.py`, `manual_test.py`,
+     `test_mcp_client.py`, `red_team_i18n_runtime.mjs`,
+     plus `run_coverage.sh`) were tracked as `100644` even
+     though their shebangs implied `chmod +x` —
+     `./scripts/run_coverage.sh` would fail with
+     `permission denied` on a fresh clone (despite
+     `scripts/README.md` documenting that exact
+     invocation). Re-tracked as `100755`.
+  3. **Pre-commit gate**: two new
+     `pre-commit/pre-commit-hooks` hooks
+     (`check-shebang-scripts-are-executable` +
+     `check-executables-have-shebangs`) prevent both
+     directions of drift in future PRs.
+
 ### Documentation
 
 - **`docs/mcp_tools{,.zh-CN}.md` timeout description matches

@@ -38,3 +38,14 @@ repos:
       # 等调试残留进 commit。生产代码里出现一次会让运维 attach 不上正确的
       # stdin，且性能测试会因此 hang，影响面比 ruff 的语法 lint 更隐蔽。
       - id: debug-statements
+      # 守 shebang ↔ 可执行位的双向契约：
+      #   * `check-shebang-scripts-are-executable` —— 有 `#!` 的脚本（含
+      #     scripts/run_coverage.sh）必须在 git index 里是 100755，否则
+      #     `./scripts/run_coverage.sh` 会 EACCES。
+      #   * `check-executables-have-shebangs` —— 反向：被 git 标 100755
+      #     的文件如果没有 shebang，跨 OS clone 时 macOS / Linux 会按
+      #     `binary` 启动失败。
+      # 一同启用避免漂移到 v1.5.x 已经被咬过一次的"docs 写着可以
+      # `./scripts/...` 但实际 mode 是 100644"那种 footgun。
+      - id: check-shebang-scripts-are-executable
+      - id: check-executables-have-shebangs
