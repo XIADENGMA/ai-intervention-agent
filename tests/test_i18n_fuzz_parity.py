@@ -1,4 +1,4 @@
-"""受控随机 fuzz 的 Web↔VSCode parity 测试（Batch-3 H16）。
+"""受控随机 fuzz 的 Web↔VSCode parity 测试（Batch-3 H16 + Round-11 扩展）。
 
 覆盖人工单测容易漏掉的组合（随机 ICU 模板让 ``_renderIcu`` 泄漏 PUA、
 撇号 tokenizer 双重 unescape、嵌套 plural 丢 ``#`` 作用域等）。
@@ -8,6 +8,16 @@
 U+F0000–U+F0FFF PUA 字符零漏出。
 
 seed 固定 → CI 可复现；失败时 seed 下标同时打印，便于拉到永久样本集。
+
+Round-11 扩展（``EXT_SEED = 0xFACECAFE``）：在原始 corpus 之外追加针对
+ICU 标准 corner case 的 100 条样本：
+  * ``=N`` 字面值匹配（``i18n.js::_selectPluralOption`` line 410 实现）
+  * emoji / 非-BMP 字符（surrogate pair 处理）
+  * 组合字符（grapheme cluster，e.g. ``a\u0301`` = á 但占两个 code unit）
+  * 极短输入（空 plural arm body、零字符 mustache 参数）
+覆盖目的：让 ``=N`` 分支不再是「只在生产 locale 没有用就永远不知道是否
+work」的盲点；同时用 surrogate pair 防止未来引入「按 length 切片」的
+正则误改 silently 砍掉一个 emoji 的低位 surrogate。
 """
 
 from __future__ import annotations
@@ -30,7 +40,13 @@ ITERATIONS = 200
 MAX_DEPTH = 2
 PUA_RANGE = (0xF0000, 0xF1000)
 
+EXT_SEED = 0xFACECAFE
+EXT_ITERATIONS = 100
+
 _ALPHABET = string.ascii_letters + string.digits + " ,.-!?"
+_EMOJI_POOL = ["🚀", "🌍", "👨‍👩‍👧", "🇨🇳", "🏳️‍🌈"]
+_COMBINING_POOL = ["a\u0301", "e\u0301", "n\u0303", "o\u0308"]
+_BIDI_POOL = ["\u200e", "\u200f", "\u202a", "\u202c"]
 
 
 def _node_available() -> bool:
@@ -70,6 +86,33 @@ def _plural(rng: random.Random, depth: int, args: list[str]) -> str:
         parts.append(f"few {{{few_body}}}")
     parts.append(f"other {{{other_body}}}")
     return "{" + name + ", " + kind + ", " + " ".join(parts) + "}"
+
+
+def _plural_with_exact(rng: random.Random, depth: int, args: list[str]) -> str:
+    """``=N`` 字面值匹配优先于 CLDR 类别（i18n.js 第 410 行实现）。"""
+    name = f"n{len(args)}"
+    args.append(name)
+    zero_body = _body(rng, depth + 1, args)
+    one_body = _body(rng, depth + 1, args)
+    other_body = _body(rng, depth + 1, args)
+    parts = [
+        f"=0 {{{zero_body}}}",
+        f"=1 {{{one_body}}}",
+        f"other {{{other_body}}}",
+    ]
+    return "{" + name + ", plural, " + " ".join(parts) + "}"
+
+
+def _empty_arm_plural(rng: random.Random, depth: int, args: list[str]) -> str:
+    """空 ``one {}`` arm — 0 个字符的合法 ICU body。
+
+    历史上 ``_parseIcuOptions`` 用 ``while depth > 0`` 扫描花括号，空 body 是
+    「打开 ``{`` 立即关闭 ``}``」，对深度计数器是个边界条件。
+    """
+    name = f"n{len(args)}"
+    args.append(name)
+    other_body = _body(rng, depth + 1, args)
+    return "{" + name + ", plural, one {} other {" + other_body + "}}"
 
 
 def _select(rng: random.Random, depth: int, args: list[str]) -> str:
@@ -131,6 +174,69 @@ def _build_corpus() -> list[dict]:
     return corpus
 
 
+def _ext_template(rng: random.Random) -> tuple[str, dict]:
+    """Round-11 扩展 corpus 的模板生成器。
+
+    从 ``[=N plural | empty-arm plural | emoji-heavy mustache | bidi mustache]``
+    四档随机选一种结构性 corner case，再用 ``_plural_with_exact``/
+    ``_empty_arm_plural``/常规 ``_template`` 组合，强制每条样本都至少触发
+    一个新的代码路径（不退化成与原 corpus 重复的纯文本）。
+    """
+    args: list[str] = []
+    pieces: list[str] = []
+    flavor = rng.choice(["exact", "empty_arm", "emoji", "bidi"])
+    if flavor == "exact":
+        pieces.append(_plural_with_exact(rng, 0, args))
+        pieces.append(_literal(rng))
+    elif flavor == "empty_arm":
+        pieces.append(_empty_arm_plural(rng, 0, args))
+    elif flavor == "emoji":
+        emoji = rng.choice(_EMOJI_POOL)
+        combine = rng.choice(_COMBINING_POOL)
+        pieces.append(f"{emoji} ")
+        pieces.append(_mustache(rng, args))
+        pieces.append(f" {combine}")
+    else:  # bidi
+        bidi = rng.choice(_BIDI_POOL)
+        pieces.append(_literal(rng))
+        pieces.append(bidi)
+        pieces.append(_mustache(rng, args))
+
+    tpl = "".join(pieces)
+    params: dict[str, object] = {}
+    for arg in args:
+        if arg.startswith(("n", "N")):
+            # 让 ``=0``/``=1`` 字面分支真有命中机会（70% 概率落在 0/1）
+            if rng.random() < 0.7:
+                params[arg] = rng.randint(0, 1)
+            else:
+                params[arg] = rng.randint(2, 5)
+        elif arg.startswith(("s", "S")):
+            params[arg] = rng.choice(["a", "b", "c", "d"])
+        else:
+            # mustache 参数偶尔塞 emoji / 组合字符 / 空串：覆盖 ``_interpolateMustache``
+            # 在拼接非 ASCII 时是否原样保留 byte sequence
+            choices = [
+                "Ada",
+                "",
+                rng.choice(_EMOJI_POOL),
+                rng.choice(_COMBINING_POOL),
+                "ünıçödé",
+                "'x'",
+            ]
+            params[arg] = rng.choice(choices)
+    return tpl, params
+
+
+def _build_ext_corpus() -> list[dict]:
+    rng = random.Random(EXT_SEED)
+    corpus: list[dict] = []
+    for idx in range(EXT_ITERATIONS):
+        tpl, params = _ext_template(rng)
+        corpus.append({"id": ITERATIONS + idx, "tpl": tpl, "params": params})
+    return corpus
+
+
 def _run_node_batch(i18n_path: Path, corpus: list[dict]) -> list[dict]:
     """单次 node 调用渲染整个 corpus，结果作为 JSON 数组经 stdout 回传。"""
     harness = textwrap.dedent(
@@ -183,13 +289,9 @@ def _has_pua_leak(s: str) -> bool:
 
 @unittest.skipUnless(_node_available(), "node runtime unavailable")
 class TestFuzzParity(unittest.TestCase):
-    def test_deterministic_fuzz_preserves_byte_parity(self) -> None:
-        corpus = _build_corpus()
-        web = _run_node_batch(WEBUI_I18N, corpus)
-        vsc = _run_node_batch(VSCODE_I18N, corpus)
-        self.assertEqual(len(web), ITERATIONS)
-        self.assertEqual(len(vsc), ITERATIONS)
-
+    def _assert_parity(
+        self, corpus: list[dict], web: list[dict], vsc: list[dict]
+    ) -> None:
         for entry, w, v in zip(corpus, web, vsc, strict=True):
             with self.subTest(id=entry["id"], tpl=entry["tpl"]):
                 self.assertNotIn(
@@ -214,6 +316,26 @@ class TestFuzzParity(unittest.TestCase):
                     _has_pua_leak(w["out"]),
                     f"PUA marker leaked on seed#{entry['id']}: {w['out']!r}",
                 )
+
+    def test_deterministic_fuzz_preserves_byte_parity(self) -> None:
+        corpus = _build_corpus()
+        web = _run_node_batch(WEBUI_I18N, corpus)
+        vsc = _run_node_batch(VSCODE_I18N, corpus)
+        self.assertEqual(len(web), ITERATIONS)
+        self.assertEqual(len(vsc), ITERATIONS)
+        self._assert_parity(corpus, web, vsc)
+
+    def test_extended_fuzz_covers_icu_corner_cases(self) -> None:
+        """``=N`` 字面值 / 空 plural arm / emoji surrogate / bidi 控制字符。
+
+        和主 fuzz 用不同 seed，保证扩展失败时不污染原 corpus 的诊断信息。
+        """
+        corpus = _build_ext_corpus()
+        web = _run_node_batch(WEBUI_I18N, corpus)
+        vsc = _run_node_batch(VSCODE_I18N, corpus)
+        self.assertEqual(len(web), EXT_ITERATIONS)
+        self.assertEqual(len(vsc), EXT_ITERATIONS)
+        self._assert_parity(corpus, web, vsc)
 
 
 if __name__ == "__main__":
