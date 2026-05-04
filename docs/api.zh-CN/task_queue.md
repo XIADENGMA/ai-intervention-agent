@@ -145,7 +145,7 @@ remove_task()     → 直接删除
 
 删除所有任务并重置队列状态，用于服务启动时清理残留任务。
 
-##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = 240, predefined_options_defaults: list[bool] | None = None) -> bool`
+##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None) -> bool`
 
 添加任务，无活动任务时自动激活
 

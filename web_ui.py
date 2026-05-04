@@ -177,7 +177,7 @@ class WebFeedbackUI(
         prompt: str,
         predefined_options: list[str] | None = None,
         task_id: str | None = None,
-        auto_resubmit_timeout: int = 240,
+        auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
         host: str = "0.0.0.0",
         port: int = 8080,
     ):

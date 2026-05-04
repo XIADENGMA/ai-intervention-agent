@@ -15,7 +15,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from server_config import AUTO_RESUBMIT_TIMEOUT_MAX, AUTO_RESUBMIT_TIMEOUT_MIN
+from server_config import (
+    AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+    AUTO_RESUBMIT_TIMEOUT_MAX,
+    AUTO_RESUBMIT_TIMEOUT_MIN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ class Task(BaseModel):
     # TODO #3：每个预定义选项的"默认是否选中"。可省略；省略时等价于全 False。
     # 长度若与 predefined_options 不一致，前端按位置逐一对应、缺失项视为 False。
     predefined_options_defaults: list[bool] | None = None
-    auto_resubmit_timeout: int = 240
+    auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_at_monotonic: float = Field(default_factory=time.monotonic)
     status: str = TaskStatus.PENDING
@@ -236,7 +240,7 @@ class TaskQueue:
         task_id: str,
         prompt: str,
         predefined_options: list[str] | None = None,
-        auto_resubmit_timeout: int = 240,
+        auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
         predefined_options_defaults: list[bool] | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
