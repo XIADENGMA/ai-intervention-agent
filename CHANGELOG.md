@@ -298,6 +298,49 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the old value. Endpoint now imports `FEEDBACK_TIMEOUT_DEFAULT`
   and covers the fourth key; AST-based parity test prevents
   regression.
+- **Bark notifications fired twice on cross-region networks when
+  user widened `bark_timeout` above 15s.** The async waiter inside
+  ``NotificationManager._process_event`` had a hardcoded
+  ``as_completed(futures, timeout=15)`` whose comment said
+  "Bark default 10s" — but Pydantic ``coerce_bark_timeout``
+  accepts ``[1, 300]``. With ``bark_timeout = 30`` (a normal
+  setting on Mainland-China-to-day.app routes), ``as_completed``
+  raised ``TimeoutError`` at 15s → retry path triggered →
+  original Bark future was still in-flight (HTTP request at ~25s,
+  budget 30s) and returned 200 (push #1) → retry future kicked
+  off, returned 200 (push #2). End result: every Bark event
+  arrived twice on the user's iPhone. Window now scales as
+  ``bark_timeout + _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS``
+  (constant default 5s; buffer absorbs thread-pool dispatch +
+  httpx connection-pool warmup + first-time DNS). Locked by
+  ``tests/test_notification_manager.py::
+  TestProcessEventBarkTimeoutWindow`` (6 tests covering default /
+  user-widened / Pydantic max / Pydantic min / corruption-fallback
+  windows + a reverse-lock on the buffer constant).
+- **SSE event stream silently halted for slow / backgrounded
+  EventSource clients (e.g. laptop sleep, cellular handoff,
+  background browser tab).** ``_SSEBus`` used to ``discard`` a
+  subscriber's queue from ``_subscribers`` when its backlog hit
+  3/4 of capacity (48 / 64), but did nothing to signal the
+  generator on the other end. Generator stayed parked on
+  ``q.get(timeout=25)``, drained the leftover backlog, then
+  yielded ``: heartbeat`` forever — browser ``EventSource``
+  saw a healthy stream of heartbeats and never triggered
+  ``onerror`` / auto-reconnect. From the user's perspective
+  the task list silently froze; ``F5`` recovered (full re-fetch)
+  but real-time updates were dead. ``_SSEBus.emit`` now injects
+  a module-level sentinel ``_SSE_DISCONNECT_SENTINEL`` into the
+  queue when discarding a subscriber (with ``get_nowait`` evict-
+  then-retry when the queue itself was already at capacity, at
+  the cost of one missing oldest event that auto-reconnect's
+  ``GET /api/tasks`` re-fetch covers). Generator branches on
+  ``event is _SSE_DISCONNECT_SENTINEL`` and ``return`` s, which
+  ends the response body, browser sees EOF, EventSource auto-
+  reconnects within ~3s. Locked by
+  ``tests/test_sse_bus_disconnect.py`` (6 tests including a
+  reverse-lock that the sentinel must be ``object()`` identity
+  — using ``None`` / ``False`` / ``{}`` would collide with
+  legitimate SSE payloads and randomly terminate streams).
 - **OpenAPI input-spec `auto_resubmit_timeout` lacked
   `minimum`/`maximum` bounds.** Both
   `POST /api/add-task` and `POST /api/update-feedback`

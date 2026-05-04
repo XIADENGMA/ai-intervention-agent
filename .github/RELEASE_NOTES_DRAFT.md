@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 74 maintenance commits added on top of the release. This is **not**
+> the 76 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,30 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **Bark double-push when `bark_timeout > 15s` is fixed.**
+  ``_process_event``'s ``as_completed(timeout=15)`` was hardcoded
+  even though Pydantic ``coerce_bark_timeout`` accepts ``[1, 300]``.
+  Users on cross-region networks who configured ``bark_timeout = 30``
+  saw two iOS pushes per logical event: ``as_completed`` would time
+  out at 15s → retry path triggered → original Bark request still
+  in-flight returned 200 (push #1) → retry returned 200 (push #2).
+  Window now scales as ``bark_timeout +
+  _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS`` (default buffer 5s).
+  ``tests/test_notification_manager.py::TestProcessEventBarkTimeoutWindow``
+  locks the contract with 6 unit tests including a reverse-lock on
+  the buffer constant.
+- **SSE silent disconnect on slow clients is fixed.** ``_SSEBus``
+  used to ``discard`` slow consumers from ``_subscribers`` without
+  notifying the generator on the other side; the browser kept
+  receiving heartbeats but real ``task_changed`` events stopped
+  flowing → user's task list silently froze. New
+  ``_SSE_DISCONNECT_SENTINEL`` is injected into the queue when a
+  consumer is forced out, generator returns on it, browser sees EOF
+  + auto-reconnect → fresh subscription. New
+  ``tests/test_sse_bus_disconnect.py`` (6 tests) locks the contract,
+  including a reverse-lock that the sentinel must be ``object()``
+  identity (not ``None`` / ``False`` / ``""`` which would collide
+  with legitimate payloads).
 - **Frontend `frontend_countdown` input is no longer pinned at
   250s.** Even after the runtime fix below, the actual UI controls
   (Web UI HTML `<input max="250">`, VS Code webview HTML, and the
