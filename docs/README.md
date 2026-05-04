@@ -30,11 +30,12 @@ Find your role below to jump straight to the page you need.
   — auto-generated module reference for the public Python surface:
   core contract modules (`config_manager`, `notification_*`,
   `task_queue`, `protocol`, `state_machine`, `server`,
-  `server_feedback`, `server_config`, `web_ui`, `exceptions`)
-  and utility modules
-  (`config_utils`, `i18n`,
-  `shared_types`, `notification_models`, `file_validator`,
-  `enhanced_logging`). Regenerate with
+  `server_feedback`, `server_config`, `service_manager`, `web_ui`,
+  `web_ui_security`, `web_ui_validators`, `exceptions`) and utility
+  modules (`config_utils`, `i18n`, `shared_types`,
+  `notification_models`, `file_validator`, `enhanced_logging`,
+  `web_ui_config_sync`, `web_ui_mdns`, `web_ui_mdns_utils`).
+  Regenerate with
   `uv run python scripts/generate_docs.py`; verify drift with
   `make docs-check` (or
   `uv run python scripts/generate_docs.py --check`).

@@ -27,9 +27,11 @@
   — 自动生成的 Python 公共表面模块参考：核心契约模块
   （`config_manager`、`notification_*`、`task_queue`、`protocol`、
   `state_machine`、`server`、`server_feedback`、`server_config`、
-  `web_ui`、`exceptions`）+ 工具模块
+  `service_manager`、`web_ui`、`web_ui_security`、`web_ui_validators`、
+  `exceptions`）+ 工具模块
   （`config_utils`、`i18n`、`shared_types`、`notification_models`、
-  `file_validator`、`enhanced_logging`）。用
+  `file_validator`、`enhanced_logging`、`web_ui_config_sync`、
+  `web_ui_mdns`、`web_ui_mdns_utils`）。用
   `uv run python scripts/generate_docs.py` 重新生成；
   漂移检测用 `make docs-check`（即
   `uv run python scripts/generate_docs.py --check`）。

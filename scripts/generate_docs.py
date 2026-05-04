@@ -40,12 +40,18 @@ MODULES_TO_DOCUMENT = [
     "server.py",
     "server_feedback.py",
     "server_config.py",
+    "service_manager.py",
     "shared_types.py",
     "notification_manager.py",
     "notification_models.py",
     "notification_providers.py",
     "task_queue.py",
     "web_ui.py",
+    "web_ui_config_sync.py",
+    "web_ui_mdns.py",
+    "web_ui_mdns_utils.py",
+    "web_ui_security.py",
+    "web_ui_validators.py",
     "file_validator.py",
     "enhanced_logging.py",
 ]
@@ -61,22 +67,19 @@ MODULES_TO_DOCUMENT = [
 # 质量、生成签名、刷 docs/README 的 Quick navigation 分组、维护
 # 18 份 .md）。先用 IGNORED_MODULES 把现状锁定，未来一个一个
 # graduate 到 MODULES_TO_DOCUMENT。
-IGNORED_MODULES = frozenset(
-    {
-        # TODO(round-8/docs-debt): Web 服务编排（进程生命周期 + HTTP 客户端）。
-        "service_manager.py",
-        # TODO(round-8/docs-debt): web_ui ↔ config 双向同步；与 web_ui.py 一组搬。
-        "web_ui_config_sync.py",
-        # TODO(round-8/docs-debt): mDNS 发现服务。
-        "web_ui_mdns.py",
-        # TODO(round-8/docs-debt): mDNS 工具函数（hostname 校验等）。
-        "web_ui_mdns_utils.py",
-        # TODO(round-8/docs-debt): 网络访问控制 / IP 白名单 / 安全 Header。
-        "web_ui_security.py",
-        # TODO(round-8/docs-debt): 输入校验（add_task / update_feedback 等 endpoint）。
-        "web_ui_validators.py",
-    }
-)
+IGNORED_MODULES: frozenset[str] = frozenset()
+"""项目根 ``*.py`` 中"故意不渲染 docs"的清单。
+
+v1.5.x round-8 完成 7 个 docs-debt 模块的 graduation 之后，集合
+归零——所有项目根 ``*.py`` 都进入 ``MODULES_TO_DOCUMENT``。保留为
+``frozenset[str]``（不是 ``frozenset()`` 的字面量）让类型注解仍
+被 IDE / ty 静态识别，并且未来一旦需要新增 ignored 条目时不需要
+改类型签名，只需 ``frozenset({"foo.py"})`` 一行。
+
+加新 ignored 条目时同步加 ``# TODO(...)`` 注释；与
+``test_docs_module_classification_parity::test_ignored_modules_have_todo_marker``
+约定一致——空集合时该测试会自动 noop（loop 没有 iteration），
+单一条目 / 多条目都会强制 TODO 注释存在。"""
 
 
 def _enumerate_top_level_python_modules() -> set[str]:
@@ -315,8 +318,11 @@ QUICK_NAV_CORE = (
     "server",
     "server_feedback",
     "server_config",
+    "service_manager",
     "task_queue",
     "web_ui",
+    "web_ui_security",
+    "web_ui_validators",
 )
 QUICK_NAV_UTILITY = (
     "config_utils",
@@ -326,6 +332,9 @@ QUICK_NAV_UTILITY = (
     "notification_providers",
     "file_validator",
     "enhanced_logging",
+    "web_ui_config_sync",
+    "web_ui_mdns",
+    "web_ui_mdns_utils",
 )
 
 
@@ -411,8 +420,11 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **server**: MCP server entry point — `interactive_feedback` tool registration, multi-task queue lifecycle, notification integration, and the `main()` event loop",
                 "- **server_feedback**: `interactive_feedback` MCP tool implementation extracted from `server.py` — task polling, context management, undecorated tool function (registration stays on `server.mcp`)",
                 "- **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)",
+                "- **service_manager**: Web service orchestration — process lifecycle, HTTP client, Web UI bring-up + health checks",
                 "- **task_queue**: Task queue",
                 "- **web_ui**: Flask Web UI main class — multi-task panel, file uploads, notifications, mDNS publishing, security middleware, and browser bootstrapping",
+                "- **web_ui_security**: Security policy mixin — IP allow/deny lists, CSP headers, network-security config loading (mixed into `WebFeedbackUI` via MRO)",
+                "- **web_ui_validators**: Pure validation/normalisation helpers for network-security configs and timeouts (extracted from `web_ui.py`; safe to call from tests / CLI / hot-reload paths)",
                 "",
                 "### Utility modules",
                 "",
@@ -423,6 +435,9 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)",
                 "- **file_validator**: File validation",
                 "- **enhanced_logging**: Logging enhancements",
+                "- **web_ui_config_sync**: Hot-reload callbacks — propagate `feedback.auto_resubmit_timeout` and network-security config changes into running tasks / Web UI instances",
+                "- **web_ui_mdns**: mDNS / DNS-SD lifecycle mixin — service discovery, registration, deregistration",
+                "- **web_ui_mdns_utils**: mDNS pure helpers — hostname normalisation, virtual-NIC filtering, IPv4 detection",
                 "",
                 "---",
                 "",
@@ -445,8 +460,11 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **server**: MCP 服务器入口 —— `interactive_feedback` 工具注册、多任务队列生命周期、通知集成与 `main()` 事件循环",
                 "- **server_feedback**: 从 `server.py` 抽出的 `interactive_feedback` 工具实现 —— 任务轮询、上下文管理、未装饰的工具函数本体（注册仍在 `server.mcp`）",
                 "- **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）",
+                "- **service_manager**: Web 服务编排层 —— 进程生命周期管理、HTTP 客户端、Web UI 启动与健康检查",
                 "- **task_queue**: 任务队列",
                 "- **web_ui**: Flask Web UI 主类 —— 多任务面板、文件上传、通知、mDNS 发布、安全中间件与浏览器引导",
+                "- **web_ui_security**: 安全策略 Mixin —— IP 访问控制、CSP 安全头注入、网络安全配置加载（通过 MRO 注入 `WebFeedbackUI`）",
+                "- **web_ui_validators**: 网络安全配置 / 超时校验的纯函数（从 `web_ui.py` 抽出；测试 / CLI / 配置热更新均可安全复用）",
                 "",
                 "### 工具模块",
                 "",
@@ -457,6 +475,9 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **notification_providers**: 具体通知后端实现（Web Push / 系统声音 / Bark / 移动振动 / macOS 原生）",
                 "- **file_validator**: 文件验证",
                 "- **enhanced_logging**: 日志增强",
+                "- **web_ui_config_sync**: 配置热更新回调 —— 把 `feedback.auto_resubmit_timeout` 与网络安全配置变更同步到运行中的任务 / Web UI 实例",
+                "- **web_ui_mdns**: mDNS / DNS-SD 生命周期 Mixin —— 服务发现、注册、注销",
+                "- **web_ui_mdns_utils**: mDNS 纯函数辅助 —— 主机名规范化、虚拟网卡过滤、IPv4 探测",
                 "",
                 "---",
                 "",

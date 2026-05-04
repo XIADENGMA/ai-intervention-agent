@@ -86,18 +86,29 @@ class TestTopLevelModuleClassification(unittest.TestCase):
         )
 
     def test_ignored_modules_have_todo_marker(self) -> None:
-        """``IGNORED_MODULES`` 集合是 frozenset，无法在源里附注释——
-        改为对脚本源码做 substring 检查：每个 ignored 模块名上方
-        必须出现一个 ``TODO`` 标记，避免悄悄添加无说明的"永久 ignored"条目。
+        """``IGNORED_MODULES`` 中每个非空条目上方都必须有 ``TODO`` 注释。
+
+        源码可能是两种形态：
+          * ``IGNORED_MODULES = frozenset({"foo.py", "bar.py"})``——有内容
+          * ``IGNORED_MODULES: frozenset[str] = frozenset()``——空集（v1.5.x
+            round-8 把所有 docs-debt 全部 graduate 之后的状态）
+
+        空集时本测试 noop（loop 没有 iteration），自动通过；
+        非空时遍历每个 quoted 模块名，断言上方紧邻一行包含 ``TODO``。
         """
+        if not gd.IGNORED_MODULES:
+            return
         gd_file = gd.__file__
         assert gd_file is not None, "scripts/generate_docs 模块缺少 __file__"
         source = Path(gd_file).read_text(encoding="utf-8")
-        # 找到 IGNORED_MODULES 块的范围
-        start_marker = "IGNORED_MODULES = frozenset("
-        end_marker = "\n)\n"
+        start_marker = "IGNORED_MODULES = frozenset({"
+        end_marker = "})\n"
         start = source.find(start_marker)
-        self.assertNotEqual(start, -1, "未找到 IGNORED_MODULES 定义")
+        self.assertNotEqual(
+            start,
+            -1,
+            "未找到 IGNORED_MODULES = frozenset({...}) 定义",
+        )
         end = source.find(end_marker, start)
         self.assertNotEqual(end, -1, "未找到 IGNORED_MODULES 结束标记")
         block = source[start:end]
