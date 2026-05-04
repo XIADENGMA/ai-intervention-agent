@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 16 maintenance commits added on top of the release. This is **not**
+> the 25 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -65,6 +65,27 @@ not need to update integration scripts.
   fork lineage (Pau Oliva 2025, Fábio Ferreira 2024). `pyproject.toml::authors`
   and `CITATION.cff::authors` had said this for releases; the
   licence header was the last lagging surface.
+- **Top-level `Makefile` ships 11 thin-wrapper shortcuts** —
+  `make ci`, `make test`, `make lint`, `make coverage`,
+  `make docs`, `make docs-check`, `make vscode-check`,
+  `make pre-commit`, `make clean`, `make install`, `make help`
+  (default goal). Every target delegates to an existing
+  `scripts/ci_gate.py`-or-friends invocation, so CI workflows
+  and the local Makefile cannot drift.
+- **Bilingual API reference is now structurally symmetric.**
+  Three latent oversights were closed in one swoop: the
+  English `index.md` gained the missing "Quick navigation"
+  Core/Utility grouping (the Chinese version always had it);
+  every Chinese `*.md` page now carries a back-link to its
+  English signature-only sibling (the inverse direction
+  already existed); and the Chinese index now opens with the
+  parity subtitle "中文 API 参考（含完整 docstring 叙述）。"
+  matching the existing English subtitle.
+- **API reference covers three additional contract modules** —
+  `protocol.py` (PROTOCOL_VERSION + Capabilities + ServerClock),
+  `state_machine.py` (Connection / Content / Interaction state
+  machines), and `i18n.py` (back-end locale-keyed message
+  lookup). Total per-locale page count climbs from 11 to 14.
 
 ### Documentation
 
@@ -130,6 +151,26 @@ not need to update integration scripts.
   `docs/security/AUDIT_2026-05-04.md`** — table column alignment
   normalised to GitHub-style left-anchored, italic emphasis switched
   from `*…*` to `_…_` so future style sweeps can use a single regex.
+- **Bilingual `README` Acknowledgements section** formalises the
+  upstream lineage. Pairs with the `LICENSE` backfill above:
+  links to [`noopstudios/interactive-feedback-mcp`](https://github.com/noopstudios/interactive-feedback-mcp)
+  (Fábio Ferreira, 2024) and
+  [`poliva/interactive-feedback-mcp`](https://github.com/poliva/interactive-feedback-mcp)
+  (Pau Oliva, 2025), and explicitly scopes the v1.5.x rewrite
+  (Web UI, VS Code extension, i18n, notification stack, CI/CD)
+  to `xiadengma`.
+- **`README` Documentation index now cross-links
+  `packages/vscode/CHANGELOG.md`** so visitors don't have to
+  grep the tree to find the Marketplace-specific changelog.
+- **`packages/vscode/README{.zh-CN}.md` gain a Changelog
+  section** with two bullets — extension-only changelog
+  (relative link, resolves through the Marketplace's URL
+  rewriter) and the repository-wide changelog (absolute URL
+  for safety on Marketplace renderers).
+- **`make` shortcuts surfaced in `CONTRIBUTING.md::§2 Local
+  CI Gate` and `docs/workflow{.zh-CN}.md`** so contributors
+  reading the entry-point pages discover the alias instead of
+  only seeing the long-form `uv run python scripts/ci_gate.py …`.
 
 ### Tooling / CI
 
@@ -177,6 +218,12 @@ not need to update integration scripts.
     in the MCP server path because `pdb` blocks on `sys.stdin`
     (the MCP transport channel). `ruff`'s `T20` does not catch
     this.
+- **Top-level `Makefile` (new)** — 11 thin-wrapper targets
+  expose `make {ci,test,lint,coverage,docs,docs-check,
+  vscode-check,pre-commit,clean,install,help}`. Pure
+  delegation; CI surface unchanged (`.github/workflows/test.yml`
+  still calls `scripts/ci_gate.py` directly). `.DEFAULT_GOAL :=
+  help` makes `make` (no args) print the table.
 
 ### Packaging / metadata
 
