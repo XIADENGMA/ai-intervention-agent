@@ -128,6 +128,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **New regression gate:
+  `tests/test_mcp_tools_doc_consistency.py`** (3 cases)
+  locks the contract that `docs/mcp_tools{,.zh-CN}.md`
+  surfaces the **exact** current values of
+  `server_config.MAX_MESSAGE_LENGTH` (10000) and
+  `MAX_OPTION_LENGTH` (500) in their bold form
+  (`**N**`). Includes a sanity guard that lists every
+  bold 2–5 digit integer in those two docs and
+  whitelists only constants tied to known runtime values
+  — adding a new magic number to the docs without
+  whitelist updates fails the test, forcing reviewers
+  to confirm the new docs token has a backing constant.
+  Forms a third layer of docs↔code defence next to
+  `test_config_docs_parity.py` (key set) and
+  `test_config_docs_range_parity.py` (numeric ranges).
 - **New regression suite:
   `tests/test_bump_version_helpers.py`** (27 cases) covers
   the remaining six file-type helpers in
