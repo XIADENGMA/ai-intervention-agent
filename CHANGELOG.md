@@ -285,6 +285,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **`GET /api/tasks` OpenAPI response schema dropped `deadline` from
+  the per-task properties due to a 2-column docstring indentation
+  drift.** In `web_ui_routes/task.py::get_tasks` the `deadline:` line
+  was indented to the same column as `properties:`, which YAML
+  interpreted as a sibling key of `items.type` / `items.properties`
+  rather than a child of `items.properties`. Result: every OpenAPI
+  consumer (swagger-ui, generated TypeScript / Python clients,
+  `swagger-cli validate`, `openapi-generator-cli`) saw a `task` object
+  schema without a `deadline` field — but the live JSON response
+  *did* contain `deadline` (set in the `task_list.append(...)` block),
+  so downstream deserializers either silently ignored it or failed
+  validation depending on strictness. Reproducing the broken schema
+  is invisible because YAML doesn't error on this kind of misindent;
+  it just rebinds the key. Re-indented `deadline:` to align with
+  sibling fields (`task_id` / `status` / `remaining_time` / etc.).
+  Locked by
+  `tests/test_openapi_input_range_parity.py::test_get_tasks_response_includes_deadline_under_items_properties`,
+  which runs `yaml.safe_load` on the docstring and asserts
+  `"deadline" in tasks.items.properties` — reverse-locked: re-applying
+  the bad 24-column indent makes the test fail with an explicit
+  pointer to the responsible docstring line.
 - **`LogDeduplicator` could silently drop critical ERROR logs after
   wall-clock backwards jumps.** The deduplicator's "did this exact
   message fire within the last 5 s?" check used `time.time()`,

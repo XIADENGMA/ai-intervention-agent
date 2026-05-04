@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 89 maintenance commits added on top of the release. This is **not**
+> the 93 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -378,6 +378,25 @@ downstream packagers do not need to update integration scripts.
 
 ### Documentation
 
+- **`GET /api/tasks` OpenAPI response schema now lists `deadline` as
+  a per-task field (was silently misparented).** The docstring YAML
+  in `web_ui_routes/task.py::get_tasks` had `deadline:` indented to
+  the same column as `properties:`, so YAML treated it as a sibling
+  key of `items.type` / `items.properties` rather than a child of
+  `items.properties`. Result: every OpenAPI consumer (swagger-ui,
+  generated TypeScript / Python clients, `swagger-cli validate`,
+  `openapi-generator-cli`) saw a task object schema *without* a
+  `deadline` field — but the live JSON response **did** contain
+  `deadline` (set in `task_list.append(...)`), so downstream
+  deserializers either silently ignored it or failed validation
+  depending on strictness. The bug is invisible because YAML doesn't
+  error on this kind of misindent; it just rebinds the key. Re-indented
+  to align with sibling fields. Locked by
+  `tests/test_openapi_input_range_parity.py::test_get_tasks_response_includes_deadline_under_items_properties`,
+  which runs `yaml.safe_load` on the docstring and asserts
+  `"deadline" in tasks.items.properties` — reverse-locked: re-applying
+  the bad 24-column indent makes the test fail with an explicit
+  pointer to the responsible docstring line.
 - **`docs/README.md` + `docs/README.zh-CN.md` (new, bilingual)** —
   audience-first directory index for the 30+ markdown files. Splits
   navigation into four roles: end users, contributors, operators,
