@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **`docs/mcp_tools.md` / `docs/mcp_tools.zh-CN.md` now document all three
+  shapes of `predefined_options`** (simple `list[str]`, object form
+  `list[{label, default}]`, and `list[str]` + `predefined_options_defaults`).
+  Previously only the simple form was documented; LLM clients had to read
+  the source to discover the pre-selection capability shipped in v1.5.20.
+  Includes the documented normalisation matrix (truthy alias list, length
+  truncate / pad-with-False rule) and side-by-side examples for both new
+  shapes.
+
 ### Tests
 
 - **Boundary-test hardening for the v1.5.21 line.** Added 29 regression tests
