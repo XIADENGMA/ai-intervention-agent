@@ -38,6 +38,25 @@ from notification_models import (
 logger = EnhancedLogger(__name__)
 
 
+# `_process_event` 用 ``concurrent.futures.as_completed(..., timeout=...)``
+# 等待所有 channel 的 future。这个窗口必须严格大于 ``self.config.bark_timeout``
+# （目前唯一会真正阻塞 thread-pool 工作线程的 HTTP-bound provider；其他 channel
+# 走纯本地 metadata 准备或 plyer 调用，瞬时返回）。
+#
+# 历史上这里硬编码 ``timeout=15`` + 注释 "（Bark 默认10秒）"——这把 ``bark_timeout``
+# 用户合法配置范围 ``[1, 300]`` 中的所有 ``> 15`` 取值都拍死了：
+#   1. 用户把 ``bark_timeout`` 配成 30（Bark 服务器在跨境网络下 25s 才返回是常态）。
+#   2. ``as_completed`` 在 15s 抛 TimeoutError；Bark future 仍在 thread-pool 跑。
+#   3. ``success_count == 0`` 触发 retry，新一轮 future 进 pool 排队。
+#   4. 老 future 在 25s 跑完返回 200；新 future 也跑完返回 200。
+#   5. 用户的 iOS 在不到 30s 内收到两条同样的 Bark 推送 = 重复打扰。
+#
+# Buffer 而不是 +0：thread-pool 调度尾时延 + httpx connection-pool warmup +
+# DNS 解析（首次）合计 < 5s，所以这里 +5 既能屏蔽尾时延，又不会让健康的 Bark
+# 失败时 retry 拖太久。
+_AS_COMPLETED_TIMEOUT_BUFFER_SECONDS = 5
+
+
 class NotificationConfig(BaseModel):
     """通知配置类 - 全局开关/Web/声音/触发时机/重试/移动优化/Bark 等配置。"""
 
@@ -520,10 +539,18 @@ class NotificationManager:
 
             # 【优化】使用 try-except 捕获超时，避免未完成任务导致错误日志
             # as_completed 超时时会抛出 TimeoutError: "N (of M) futures unfinished"
+            #
+            # Window = ``bark_timeout`` + buffer：见模块顶部
+            # ``_AS_COMPLETED_TIMEOUT_BUFFER_SECONDS`` 的设计说明。这一行历史上
+            # 硬编码 ``timeout=15``，会在 ``bark_timeout > 15`` 时让用户重复
+            # 收到 Bark 推送——已通过 ``test_notification_manager_as_completed_timeout``
+            # 锁住 contract。
             try:
-                for future in as_completed(
-                    futures, timeout=15
-                ):  # 15秒超时（Bark 默认10秒）
+                bark_timeout = max(int(getattr(self.config, "bark_timeout", 10)), 1)
+                as_completed_timeout = (
+                    bark_timeout + _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS
+                )
+                for future in as_completed(futures, timeout=as_completed_timeout):
                     completed_count += 1
                     notification_type = futures[future]
                     try:

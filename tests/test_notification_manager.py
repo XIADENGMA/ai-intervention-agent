@@ -2009,6 +2009,99 @@ class TestProcessEventTimeout(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────
+# _process_event: ``as_completed`` 等待窗口 = bark_timeout + buffer
+#
+# 历史 bug：``timeout=15`` 硬编码 → 用户配 ``bark_timeout = 30``（合法范围 [1,300]）
+# 时 ``as_completed`` 在 15s 提前抛 TimeoutError；老 future 在 30s 跑完发了 1 条
+# Bark，retry future 又跑完发了 1 条 → 用户重复收到推送。
+#
+# 这一组 5 个测试锁住「窗口必须 ≥ ``bark_timeout`` + buffer」+「buffer 常量值」
+# 不可在 review 之外被悄悄改动。
+# ──────────────────────────────────────────────────────────
+
+
+class TestProcessEventBarkTimeoutWindow(unittest.TestCase):
+    """as_completed 等待窗口 = bark_timeout + _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS。"""
+
+    @staticmethod
+    def _capture_as_completed_timeout(mgr, bark_timeout_value: Any) -> float:
+        """运行一次 _process_event；返回它给 as_completed 传入的 timeout 值。"""
+        captured: dict[str, Any] = {}
+
+        def _spy_as_completed(fs, timeout=None):
+            captured["timeout"] = timeout
+            return iter([])
+
+        try:
+            mgr.config.bark_timeout = bark_timeout_value
+        except Exception:
+            mgr.config.__dict__["bark_timeout"] = bark_timeout_value
+
+        fake_future = MagicMock()
+        fake_future.done.return_value = False
+        fake_future.cancel.return_value = True
+        mgr._executor = MagicMock()
+        mgr._executor.submit.return_value = fake_future
+
+        with patch("notification_manager.as_completed", side_effect=_spy_as_completed):
+            event = _make_event(
+                types=[NotificationType.WEB],
+                max_retries=0,
+            )
+            mgr._process_event(event)
+
+        return float(captured.get("timeout") or 0)
+
+    def test_default_bark_timeout_uses_15s_window(self):
+        """``bark_timeout=10`` (默认) → ``as_completed`` 等 15s。"""
+        mgr = _make_manager()
+        timeout = self._capture_as_completed_timeout(mgr, 10)
+        self.assertEqual(timeout, 15.0)
+
+    def test_user_widened_bark_timeout_extends_window(self):
+        """用户把 ``bark_timeout`` 调到 30 → ``as_completed`` 必须也跟着等 35s。"""
+        mgr = _make_manager()
+        timeout = self._capture_as_completed_timeout(mgr, 30)
+        self.assertEqual(
+            timeout,
+            35.0,
+            "bark_timeout=30 时 as_completed 窗口必须 ≥ 35s "
+            "（否则用户会收到重复 Bark 推送，详见 _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS 文档）",
+        )
+
+    def test_max_bark_timeout_uses_305s_window(self):
+        """``bark_timeout=300`` (上限) → ``as_completed`` 等 305s。"""
+        mgr = _make_manager()
+        timeout = self._capture_as_completed_timeout(mgr, 300)
+        self.assertEqual(timeout, 305.0)
+
+    def test_minimum_bark_timeout_uses_6s_window(self):
+        """``bark_timeout=1`` (下限) → ``as_completed`` 等 6s。"""
+        mgr = _make_manager()
+        timeout = self._capture_as_completed_timeout(mgr, 1)
+        self.assertEqual(timeout, 6.0)
+
+    def test_invalid_bark_timeout_falls_back_to_default_window(self):
+        """``bark_timeout`` 异常类型回退默认 10 → 窗口 15s（不应抛）。"""
+        mgr = _make_manager()
+        timeout = self._capture_as_completed_timeout(mgr, "not-a-number")
+        self.assertEqual(timeout, 15.0)
+
+    def test_buffer_constant_value_locked(self):
+        """反向锁：``_AS_COMPLETED_TIMEOUT_BUFFER_SECONDS`` 不能在没充分讨论的情况下被改。"""
+        from notification_manager import _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS
+
+        self.assertEqual(
+            _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS,
+            5,
+            "如果你确实需要调这个 buffer，请：\n"
+            "  1. 先想清楚这个改动对 thread-pool 调度尾时延的吸收能力的影响\n"
+            "  2. 想清楚这个改动对失败 Bark 推送 retry 拖延时间的影响\n"
+            "  3. 然后同时更新这条断言 + 模块顶部的设计说明 + RELEASE_NOTES",
+        )
+
+
+# ──────────────────────────────────────────────────────────
 # _process_event: 外层 Exception 分支 (lines 616-636)
 # ──────────────────────────────────────────────────────────
 
