@@ -1397,6 +1397,178 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  R13·B1 Ghost-task cleanup contract
+# ═══════════════════════════════════════════════════════════════════════════
+class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
+    """``wait_for_task_completion`` 必须在 timeout / cancel 路径通知 web_ui
+    清理 ``task_queue`` 中的 ghost task；正常完成路径必须**不**触发 close
+    （会跟 ``/api/submit → complete_task`` 形成 race，且后台清理 GC 已经会
+    在 10 秒后接手）。这条契约由本类锁住。
+
+    历史 bug 详见 ``server_feedback._close_orphan_task_best_effort`` 的
+    docstring：MCP 客户端 timeout 后重新 invoke 会让旧 task 一直占着 active
+    槽位，前端展示错乱的 prompt，用户提交反馈被绑到旧 task_id，新 task
+    永远 timeout，死循环。
+    """
+
+    def _make_async_client(self, get_side_effect):
+        """构建 mock AsyncClient：``get`` 走业务 mock，``post`` 单独锁住调用次数。"""
+        from unittest.mock import AsyncMock
+
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=get_side_effect)
+        post_mock = AsyncMock()
+        post_mock.return_value = MagicMock(status_code=200)
+        client.post = post_mock
+        return client, post_mock
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_timeout_path_calls_close_endpoint(self, mock_get_client, mock_get_cfg):
+        """timeout 路径必须 POST /api/tasks/<id>/close 一次。"""
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        async def always_pending(*_args, **_kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "task": {"status": "pending", "result": None},
+            }
+            return resp
+
+        client, post_mock = self._make_async_client(always_pending)
+        mock_get_client.return_value = client
+
+        with patch("server_config.BACKEND_MIN", 1):
+            result = asyncio.run(server.wait_for_task_completion("t-orphan", timeout=2))
+
+        self.assertIn("text", result, "timeout 仍应返回 resubmit_response")
+        self.assertGreaterEqual(
+            post_mock.call_count,
+            1,
+            "timeout 路径必须至少调 close 一次（ghost-task cleanup）；"
+            f"实际调用次数: {post_mock.call_count}",
+        )
+        called_url = post_mock.call_args[0][0]
+        self.assertIn(
+            "/api/tasks/t-orphan/close",
+            called_url,
+            f"close URL 错误：{called_url}",
+        )
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_completed_path_does_not_call_close(self, mock_get_client, mock_get_cfg):
+        """正常完成路径必须**不**调 close（避免和 complete_task race）。"""
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        async def already_done(*_args, **_kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "task": {
+                    "status": "completed",
+                    "result": {"user_input": "done", "selected_options": []},
+                },
+            }
+            return resp
+
+        client, post_mock = self._make_async_client(already_done)
+        mock_get_client.return_value = client
+
+        result = asyncio.run(server.wait_for_task_completion("t-done", timeout=5))
+
+        self.assertEqual(result.get("user_input"), "done")
+        self.assertEqual(
+            post_mock.call_count,
+            0,
+            "完成路径绝不能调 close —— 会和 web_ui /api/submit 触发的 "
+            "complete_task race，且后台 cleanup 线程 10s 后会自然 GC。"
+            f"实际调用次数: {post_mock.call_count}",
+        )
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_404_path_does_not_call_close(self, mock_get_client, mock_get_cfg):
+        """404 路径：web_ui 已经把 task 清掉了，再 close 没意义且会 spam log。"""
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        async def gone(*_args, **_kwargs):
+            return MagicMock(status_code=404)
+
+        client, post_mock = self._make_async_client(gone)
+        mock_get_client.return_value = client
+
+        result = asyncio.run(server.wait_for_task_completion("t-gone", timeout=5))
+
+        self.assertIn("text", result)
+        # _fetch_result 在 404 时返回 resubmit_response（非 None），
+        # _poll_fallback 把它写进 result_box → finally 跳过 close。
+        self.assertEqual(
+            post_mock.call_count,
+            0,
+            "404 路径 web_ui 已自清，再 close 是无谓 traffic + 404 spam。"
+            f"实际调用次数: {post_mock.call_count}",
+        )
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_close_endpoint_failure_does_not_propagate(
+        self, mock_get_client, mock_get_cfg
+    ):
+        """close 内部抛异常时主路径仍正常返回 resubmit_response。"""
+        from unittest.mock import AsyncMock
+
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        async def always_pending(*_args, **_kwargs):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "task": {"status": "pending", "result": None},
+            }
+            return resp
+
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=always_pending)
+        # close 内部抛 ConnectError —— 模拟 web_ui 已经下线
+        client.post = AsyncMock(side_effect=httpx.ConnectError("web_ui down"))
+        mock_get_client.return_value = client
+
+        with patch("server_config.BACKEND_MIN", 1):
+            result = asyncio.run(server.wait_for_task_completion("t-down", timeout=2))
+
+        self.assertIn(
+            "text",
+            result,
+            "close 失败也必须返回 resubmit_response，best-effort 不能阻塞主路径",
+        )
+
+    def test_close_orphan_helper_reraises_cancelled_error(self):
+        """``CancelledError`` 必须 re-raise，不能被 best-effort except 吞掉。"""
+        from unittest.mock import AsyncMock
+
+        from server_feedback import _close_orphan_task_best_effort
+
+        with (
+            patch("service_manager.get_web_ui_config") as mock_cfg,
+            patch("service_manager.get_async_client") as mock_client_factory,
+        ):
+            mock_cfg.return_value = (_make_config(), 120)
+            client = MagicMock()
+            client.post = AsyncMock(side_effect=asyncio.CancelledError())
+            mock_client_factory.return_value = client
+
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(
+                    _close_orphan_task_best_effort("t-cancel", "127.0.0.1", 8080)
+                )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  FeedbackServiceContext
 # ═══════════════════════════════════════════════════════════════════════════
 class TestFeedbackServiceContext(unittest.TestCase):

@@ -43,11 +43,69 @@ except ImportError as e:
     NOTIFICATION_AVAILABLE = False
 
 
+async def _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None:
+    """R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
+
+    历史教训：``wait_for_task_completion`` 在 ``TimeoutError`` 路径仅返回
+    ``_make_resubmit_response()`` 给 MCP 客户端，**不**通知 web_ui。
+    后果：
+
+        T0   AI invokes interactive_feedback → POST /api/tasks 加 task A
+             → web_ui task_queue: A=ACTIVE
+        T1+  user 离开，超过 backend_timeout（默认 600s）
+        T2   server.py 这边 ``asyncio.wait_for`` TimeoutError
+             → 返回 resubmit prompt 给 AI
+             → web_ui task_queue: **A 仍 ACTIVE**
+        T3   AI 收到 resubmit，重新 invoke interactive_feedback
+             → POST /api/tasks 加 task B
+             → web_ui: A=ACTIVE, B=PENDING
+        T4   user 回来在前端看到的是 ``current_prompt``（绑定 active）
+             = task A 的 prompt
+        T5   user 提交反馈 → /api/submit → ``task_queue.complete_task(A)``
+             → A=COMPLETED, B 升级为 ACTIVE 但 server.py 这边等的是 B
+                的 SSE，永远等不到 → 又一次 timeout → 死循环。
+
+    本函数 fire-and-forget POST ``/api/tasks/<task_id>/close`` 通知
+    web_ui ``task_queue.remove_task(task_id)``，让 active 槽腾出来。
+    所有失败（连接错 / HTTP 非 200 / 网络 timeout）一律吞掉只 debug 日志，
+    因为父协程已经在 timeout / cancel 通道，cleanup 不该把它进一步阻塞。
+    ``CancelledError`` 必须 re-raise，否则父 cancel 语义被吞，asyncio
+    loop 关闭时会 warn。
+    """
+    close_url = f"http://{host}:{port}/api/tasks/{task_id}/close"
+    try:
+        cfg = service_manager.get_web_ui_config()[0]
+        client = service_manager.get_async_client(cfg)
+        # 2s timeout：足够 LAN/loopback 内一次 close；远超肯定是 web_ui 死了，
+        # best-effort 放手即可。
+        resp = await client.post(close_url, timeout=2)
+        if resp.status_code == 200:
+            logger.info(f"timeout/cancel 路径已清理 ghost task: {task_id}")
+        else:
+            # 404 通常是 web_ui 已经把它清掉了（用户主动 close 过一次或者
+            # 后台清理 GC 提前命中），这是正常路径不报警；其它非 200 才警。
+            level = logger.debug if resp.status_code == 404 else logger.warning
+            level(f"清理 ghost task {task_id} 收到非 200: HTTP {resp.status_code}")
+    except asyncio.CancelledError:
+        # 父 cancel 优先 —— 不能在 cleanup 路径吞 cancel，会破坏 asyncio
+        # 取消语义并触发 "Task was destroyed but it is pending!" 警告。
+        raise
+    except Exception as e:
+        # httpx.HTTPError / 连接拒绝 / DNS 错 / 任何其它都进这里：cleanup
+        # 是 best-effort，不该打断主路径返回 resubmit_response。
+        logger.debug(f"清理 ghost task {task_id} 失败（已忽略，best-effort）: {e}")
+
+
 async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]:
     """SSE 事件驱动 + HTTP 轮询保底等待任务完成。
 
     双通道并行：SSE 提供 <50ms 实时检测，HTTP 轮询（每 2s）作为 SSE 断连的安全网。
     任一通道检测到完成即终止另一通道。
+
+    【R13·B1 ghost-task cleanup】timeout / 父 cancel 路径下，本函数会
+    在 finally 中通过 ``_close_orphan_task_best_effort`` 通知 web_ui
+    清理 ``task_queue`` 中的孤儿任务，避免重新 invoke 后旧 task 占着
+    active 槽位让前端展示错乱的 prompt。
     """
     if timeout > 0:
         timeout = max(timeout, server_config.BACKEND_MIN)
@@ -156,6 +214,14 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             await sse_task
         with contextlib.suppress(asyncio.CancelledError):
             await poll_task
+
+        # R13·B1 ghost-task cleanup
+        # 仅在没拿到 result 时才 close —— 拿到 result 说明 web_ui 已经
+        # 通过 /api/submit → task_queue.complete_task 把 task 标记
+        # completed 了，再 close 是 race（且后台 cleanup 线程会在 10s
+        # 后 GC，不需要重复操作）。
+        if result_box[0] is None:
+            await _close_orphan_task_best_effort(task_id, target_host, config.port)
 
     if result_box[0] is not None:
         logger.info(f"任务完成: {task_id}")

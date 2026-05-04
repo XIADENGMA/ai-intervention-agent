@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None`
+
 ### `async wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]`
 
 ### `launch_feedback_ui(summary: str, predefined_options: list[str] | None = None, task_id: str | None = None, timeout: int = 300) -> dict[str, Any]`

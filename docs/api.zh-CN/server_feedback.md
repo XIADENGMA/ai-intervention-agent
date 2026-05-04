@@ -10,12 +10,47 @@
 
 ## 函数
 
+### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None`
+
+R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
+
+历史教训：``wait_for_task_completion`` 在 ``TimeoutError`` 路径仅返回
+``_make_resubmit_response()`` 给 MCP 客户端，**不**通知 web_ui。
+后果：
+
+    T0   AI invokes interactive_feedback → POST /api/tasks 加 task A
+         → web_ui task_queue: A=ACTIVE
+    T1+  user 离开，超过 backend_timeout（默认 600s）
+    T2   server.py 这边 ``asyncio.wait_for`` TimeoutError
+         → 返回 resubmit prompt 给 AI
+         → web_ui task_queue: **A 仍 ACTIVE**
+    T3   AI 收到 resubmit，重新 invoke interactive_feedback
+         → POST /api/tasks 加 task B
+         → web_ui: A=ACTIVE, B=PENDING
+    T4   user 回来在前端看到的是 ``current_prompt``（绑定 active）
+         = task A 的 prompt
+    T5   user 提交反馈 → /api/submit → ``task_queue.complete_task(A)``
+         → A=COMPLETED, B 升级为 ACTIVE 但 server.py 这边等的是 B
+            的 SSE，永远等不到 → 又一次 timeout → 死循环。
+
+本函数 fire-and-forget POST ``/api/tasks/<task_id>/close`` 通知
+web_ui ``task_queue.remove_task(task_id)``，让 active 槽腾出来。
+所有失败（连接错 / HTTP 非 200 / 网络 timeout）一律吞掉只 debug 日志，
+因为父协程已经在 timeout / cancel 通道，cleanup 不该把它进一步阻塞。
+``CancelledError`` 必须 re-raise，否则父 cancel 语义被吞，asyncio
+loop 关闭时会 warn。
+
 ### `async wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]`
 
 SSE 事件驱动 + HTTP 轮询保底等待任务完成。
 
 双通道并行：SSE 提供 <50ms 实时检测，HTTP 轮询（每 2s）作为 SSE 断连的安全网。
 任一通道检测到完成即终止另一通道。
+
+【R13·B1 ghost-task cleanup】timeout / 父 cancel 路径下，本函数会
+在 finally 中通过 ``_close_orphan_task_best_effort`` 通知 web_ui
+清理 ``task_queue`` 中的孤儿任务，避免重新 invoke 后旧 task 占着
+active 槽位让前端展示错乱的 prompt。
 
 ### `launch_feedback_ui(summary: str, predefined_options: list[str] | None = None, task_id: str | None = None, timeout: int = 300) -> dict[str, Any]`
 
