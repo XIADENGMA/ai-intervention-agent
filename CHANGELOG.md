@@ -27,6 +27,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   back-to-back `uv run python scripts/ci_gate.py` runs producing zero
   WARNING/ERROR/FAIL/RETRY lines.
 
+### Chore
+
+- **PyPI metadata enrichment in `pyproject.toml`.** Added four new
+  `classifiers` that the listing was missing despite shipping the
+  underlying capability for several minor releases:
+  - `Environment :: Web Environment` — the bundled Flask Web UI is
+    a first-class user-facing surface, not a hidden runtime detail.
+  - `Framework :: Flask` — Flask is the listed runtime dependency
+    powering the Web UI; declaring it lets PyPI's faceted search
+    surface the project under Flask's framework filter.
+  - `Natural Language :: English` and `Natural Language :: Chinese
+    (Simplified)` — the project ships fully bilingual READMEs,
+    docs, locale bundles, and VS Code extension `package.nls.*`;
+    declaring both Natural Language facets lets non-English Python
+    devs find the package without guessing.
+  Also added a `Discussions` entry under `[project.urls]` pointing
+  at GitHub Discussions, mirroring the route already advertised in
+  `.github/ISSUE_TEMPLATE/config.yml` for "use questions / share
+  ideas". `pip show ai-intervention-agent` and the PyPI sidebar now
+  surface a direct route to the discussions board, not just the
+  issue tracker.
+  Did **not** add `Typing :: Typed`: that classifier is for
+  PEP 561 library packages whose downstream users `import` typed
+  symbols. This project ships as a CLI / MCP-server application;
+  there are no public Python APIs for downstream consumers.
+
 ### Documentation
 
 - **`packages/vscode/CHANGELOG.md` (new)** — VS Code Marketplace and
