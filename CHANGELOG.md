@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **README badges advertise the CodeQL workflow alongside
+  OpenSSF Scorecard.** `.github/workflows/codeql.yml` has
+  been running on every push / PR / weekly schedule for
+  several minor releases, but neither English nor Chinese
+  README surfaced its pass/fail state — only the Scorecard
+  badge made the security workflow chain visible to
+  visitors. Both READMEs now carry a CodeQL badge in the
+  same row, signalling that static analysis is
+  continuously enforced.
+
 ### Tooling
 
 - **`scripts/generate_docs.py` now refuses to ship an

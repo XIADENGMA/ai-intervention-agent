@@ -14,6 +14,9 @@
     <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/scorecard.yml">
       <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/scorecard.yml?branch=main&label=OpenSSF%20Scorecard&style=flat-square" alt="OpenSSF Scorecard" />
     </a>
+    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/codeql.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/codeql.yml?branch=main&label=CodeQL&style=flat-square" alt="CodeQL" />
+    </a>
     <a href="https://pypi.org/project/ai-intervention-agent/">
       <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=flat-square" alt="PyPI" />
     </a>
