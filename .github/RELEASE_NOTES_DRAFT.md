@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 110 maintenance commits added on top of the release. This is **not**
+> the 112 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,22 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **Security headers modernised:** ``X-XSS-Protection`` flipped from
+  ``1; mode=block`` to ``"0"`` and a new
+  ``Cross-Origin-Opener-Policy: same-origin`` joined the lineup.
+  ``X-XSS-Protection: 1; mode=block`` was the late-2010s default,
+  but the in-browser XSS auditor was discovered to be exploitable
+  as an *XSS oracle* (selectively deleting legitimate scripts to
+  open new attack surface). Modern browsers ignore the header
+  entirely; IE11 and embedded-Chromium clients still honour it
+  and the auditor in those stacks is a *negative* security
+  delta. OWASP Secure Headers Project + Mozilla Observatory now
+  recommend explicit ``"0"`` ("CSP owns XSS defence"). Our
+  nonce-only CSP is unchanged — this just closes a residual
+  auditor surface. The COOP addition severs ``window.opener``
+  between cross-origin tabs (kills tabnabbing + cross-origin
+  ``window.opener.location`` redirects). Six AST locks in
+  ``tests/test_security_headers_modern.py``.
 - **VSCode webview CSP nonce now uses Node CSPRNG, not `Math.random`.**
   ``packages/vscode/webview.ts::getNonce`` previously sampled a
   62-char alphabet × 32 chars from V8's ``Math.random`` (xorshift128+,

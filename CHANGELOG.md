@@ -385,6 +385,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Security
 
+- **`X-XSS-Protection` flipped from `1; mode=block` to `0`; new
+  `Cross-Origin-Opener-Policy: same-origin` header.** The legacy
+  ``X-XSS-Protection: 1; mode=block`` was the late-2010s default,
+  but the in-browser XSS auditor it activated was later shown to
+  be exploitable as an *XSS oracle* (attackers steered the
+  auditor to selectively delete legitimate scripts, opening a
+  different attack surface; see Mozilla's deprecation note +
+  Chrome's removal CVEs). Modern browsers ignore the header
+  entirely, but IE11 and embedded-Chromium clients still honour
+  ``1`` and run the auditor — a *negative* security delta on
+  exactly the legacy stacks people deploy this header to protect.
+  OWASP Secure Headers Project + Mozilla Observatory now both
+  recommend explicit ``0`` ("CSP owns XSS defence here"). Our
+  CSP remains nonce-only (``script-src 'nonce-...'``), so this is
+  purely closing a residual auditor surface. Same commit adds
+  ``Cross-Origin-Opener-Policy: same-origin`` (severs
+  ``window.opener`` between cross-origin tabs, killing tabnabbing
+  + ``window.opener.location = attacker_url`` redirects); zero
+  legitimate use case for a cross-origin opener (VSCode webview
+  is fully isolated via ``vscode-webview://``), so this is
+  zero-cost hardening. Intentionally **not** adding
+  ``Cross-Origin-Resource-Policy`` because the webview's fetch
+  path lacks an explicit origin and CORP=same-origin would block
+  legitimate ``vscode-webview://`` cross-origin loads. Six locks
+  in new ``tests/test_security_headers_modern.py``: explicit
+  ``"0"`` value present, every ``"1"``-prefixed variant absent
+  (defends against typo-driven regression), COOP=same-origin
+  present, COOP=unsafe-none rejected, plus two sanity guards
+  that ``X-Frame-Options`` / ``X-Content-Type-Options`` /
+  ``Referrer-Policy`` / ``Permissions-Policy`` / nonce-CSP all
+  survive unchanged.
 - **VSCode webview CSP nonce now uses Node CSPRNG (`crypto.randomBytes`)
   instead of `Math.random`.** Pre-fix, `getNonce` in
   `packages/vscode/webview.ts` sampled a 62-char alphabet × 32 chars,
