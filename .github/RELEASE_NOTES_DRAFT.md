@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 93 maintenance commits added on top of the release. This is **not**
+> the 95 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,21 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **`service_manager.get_web_ui_config` cache no longer resurrects a
+  stale config after a concurrent invalidate.** The 10 s TTL cache was
+  protecting *both* read and write under the lock but doing the toml
+  load (~5–50 ms) outside, so a file-watcher-triggered
+  ``_invalidate_runtime_caches_on_config_change`` mid-load would clear
+  the cache, then the in-flight load would re-write the pre-invalidate
+  tuple over the cleared slot, leaving subsequent readers with a value
+  the user already overwrote on disk — silent staleness for up to one
+  full TTL window. Fixed with a generation-token pattern: every
+  invalidate bumps ``_config_cache_generation``; cache misses snapshot
+  it under the lock, the load runs unlocked as before, and write-back
+  re-checks equality and drops the write on mismatch. Three locks in
+  ``tests/test_web_ui_config.py::TestGetWebUIConfigGenerationToken``,
+  including a reverse-lock that removing the generation check
+  immediately re-introduces the bug.
 - **`LogDeduplicator` now wall-clock-immune (monotonic time fix).**
   ``should_log`` previously used ``time.time()`` for its 5 s
   ``time_window`` check; if the wall clock moved backwards (NTP

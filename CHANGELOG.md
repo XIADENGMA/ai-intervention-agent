@@ -285,6 +285,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **`service_manager.get_web_ui_config` could resurrect a stale config
+  after a concurrent `[config]` invalidate.** The cached config sits
+  behind a 10 s TTL and is wiped by
+  `_invalidate_runtime_caches_on_config_change` whenever the file
+  watcher fires (manual edits in IDE, or any `cfg.set(...)` that
+  cascades through). But the get path was a textbook double-checked
+  pattern with the read *and* the write under the lock and the load
+  outside it: T1 cache-miss → release lock → ~5–50 ms toml read +
+  Pydantic validate → T2 watcher fires `_invalidate(...)` mid-load →
+  T1 finishes and unconditionally re-writes the *pre-invalidate* tuple
+  into the cache → T3 hits cache and gets the value the user already
+  overwrote on disk. Silent staleness for up to one full TTL window;
+  no existing test caught it because the race needed sub-millisecond
+  interleaving. Fixed by adding `_config_cache_generation` (monotonic
+  counter, bumped on every `_invalidate(...)`), snapshotting it under
+  the lock at miss-time, and re-checking equality at write-back; on
+  mismatch the write is dropped (T1's caller still gets its load
+  result, but the cache stays clean and T3 re-loads). Three locks in
+  `tests/test_web_ui_config.py::TestGetWebUIConfigGenerationToken`:
+  the load-during-invalidate path *must not* resurrect cache (reverse-
+  locked: removing the generation check immediately fails the test
+  with an explicit "stale 旧值复活" hint), `_invalidate(...)` *must*
+  increment the counter, and the no-race happy path *must* still write
+  back normally — last lock is the guard against the fix trivially
+  regressing into "never cache anything".
 - **`GET /api/tasks` OpenAPI response schema dropped `deadline` from
   the per-task properties due to a 2-column docstring indentation
   drift.** In `web_ui_routes/task.py::get_tasks` the `deadline:` line
