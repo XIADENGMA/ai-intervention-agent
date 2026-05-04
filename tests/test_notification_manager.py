@@ -2777,5 +2777,141 @@ class TestGetStatusEdge(unittest.TestCase):
         self.assertEqual(status["stats"], {})
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+#  R17.3 — Worker pool sizing aligns with NotificationType count
+# ═══════════════════════════════════════════════════════════════════════════
+class TestWorkerCountMatchesNotificationTypes(unittest.TestCase):
+    """``ThreadPoolExecutor`` worker 数 = 通知渠道数的契约。
+
+    why：
+        历史上 ``max_workers=3`` 写死，但 ``NotificationType`` 有 4 个
+        成员（WEB / SOUND / BARK / SYSTEM）。"全开"用户的第 4 个 future
+        进队列等空闲 worker，前 3 个一旦接近 ``bark_timeout`` 边缘，
+        ``as_completed(timeout=bark_timeout + buffer)`` 先到期强 cancel
+        排队中的 future——用户漏收一条通知却零日志告警。
+
+        本组测试锁住三层防御：
+          1. 常量本身 = ``len(NotificationType)``——加新渠道时本文件
+             无需手动跟随调整；
+          2. 实际 ``self._executor._max_workers`` 等于该常量；
+          3. ``restart()`` 后线程池容量保持一致——历史曾出现
+             ``__init__`` 改了但 ``restart`` 没改，让 atexit→restart
+             路径上的容量与正常启动路径不一致。
+    """
+
+    def test_worker_count_constant_equals_enum_size(self):
+        """``_NOTIFICATION_WORKER_COUNT`` 必须等于 ``NotificationType`` 成员数。"""
+        from notification_manager import _NOTIFICATION_WORKER_COUNT
+        from notification_models import NotificationType
+
+        self.assertEqual(
+            _NOTIFICATION_WORKER_COUNT,
+            len(NotificationType),
+            "Worker count should track NotificationType cardinality. "
+            f"常量={_NOTIFICATION_WORKER_COUNT}, 枚举大小={len(NotificationType)}",
+        )
+
+    def test_worker_count_at_least_four(self):
+        """硬下限：worker 数永远不能 <4。
+
+        当前 NotificationType 有 4 个成员；如果未来有人删枚举值导致
+        len()<4，全渠道用户的并发度回退是可观察的回归——这层防御
+        让"删渠道"必须是有意识的决定，而不是悄无声息的退步。
+        """
+        from notification_manager import _NOTIFICATION_WORKER_COUNT
+
+        self.assertGreaterEqual(
+            _NOTIFICATION_WORKER_COUNT,
+            4,
+            "项目当前有 4 种通知类型，worker 不能少于 4。",
+        )
+
+    def test_executor_uses_constant_max_workers(self):
+        """``self._executor._max_workers`` 必须命中常量值。
+
+        ThreadPoolExecutor 暴露 ``_max_workers`` 属性（CPython 3.9+），
+        是唯一无需改运行时行为就能验证容量的接口。
+        """
+        from notification_manager import (
+            _NOTIFICATION_WORKER_COUNT,
+            NotificationManager,
+        )
+
+        NotificationManager._instance = None
+        try:
+            mgr = NotificationManager()
+            actual = getattr(mgr._executor, "_max_workers", None)
+            self.assertEqual(
+                actual,
+                _NOTIFICATION_WORKER_COUNT,
+                f"__init__ 应当把 max_workers 设为 {_NOTIFICATION_WORKER_COUNT}，"
+                f"实际：{actual}",
+            )
+        finally:
+            try:
+                mgr._executor.shutdown(wait=False)
+            except Exception:
+                pass
+            NotificationManager._instance = None
+
+    def test_restart_recreates_executor_with_same_capacity(self):
+        """``restart()`` 后的新线程池必须保持同样容量——避免双路径漂移。"""
+        from notification_manager import (
+            _NOTIFICATION_WORKER_COUNT,
+            NotificationManager,
+        )
+
+        NotificationManager._instance = None
+        try:
+            mgr = NotificationManager()
+            mgr.shutdown(wait=False)
+            mgr.restart()
+
+            actual = getattr(mgr._executor, "_max_workers", None)
+            self.assertEqual(
+                actual,
+                _NOTIFICATION_WORKER_COUNT,
+                f"restart() 后 max_workers 应保持 {_NOTIFICATION_WORKER_COUNT}，"
+                f"实际：{actual}（与 __init__ 不一致就是双路径漂移）",
+            )
+        finally:
+            try:
+                mgr._executor.shutdown(wait=False)
+            except Exception:
+                pass
+            NotificationManager._instance = None
+
+    def test_no_hardcoded_three_in_executor_construction(self):
+        """reverse-lock：源码里不能再出现 ``max_workers=3`` 字面量。
+
+        AST-grep 比纯文本 grep 鲁棒：避免误伤注释 / docstring 里
+        提到的历史值。
+        """
+        import ast
+        import inspect
+
+        from notification_manager import NotificationManager
+
+        src = inspect.getsource(NotificationManager)
+        tree = ast.parse(src)
+
+        offending: list[tuple[int, str]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                for kw in node.keywords:
+                    if (
+                        kw.arg == "max_workers"
+                        and isinstance(kw.value, ast.Constant)
+                        and kw.value.value == 3
+                    ):
+                        offending.append((node.lineno, ast.unparse(node)))
+
+        self.assertEqual(
+            offending,
+            [],
+            f"NotificationManager 不应再硬编码 max_workers=3；残留位置：{offending}",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -58,6 +58,28 @@ logger = EnhancedLogger(__name__)
 _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS = 5
 
 
+# ``ThreadPoolExecutor`` worker 数 = 通知渠道总数。
+#
+# why：
+#     ``_process_event`` 会为每个 ``event.types`` 里的渠道 submit 一个
+#     future。如果 ``max_workers < len(NotificationType)``，"全开"用户
+#     submit 的最后几个 future 会进队列等空闲 worker——一旦前面的
+#     渠道接近 ``bark_timeout`` 边缘（HTTPS 上行卡住、DNS 解析慢
+#     等），``as_completed(timeout=bark_timeout + buffer)`` 会先到期
+#     强 cancel 排队中的 future，用户漏收一条通知却零日志告警。
+#
+#     绑定到 ``len(NotificationType)`` 让两边自动同步：未来加新渠道
+#     时只在 ``notification_models.NotificationType`` 里加一项，本
+#     文件无需手动跟随调整常量。
+#
+# 资源开销：
+#     ``ThreadPoolExecutor`` 是惰性创建 worker 的（``submit`` 时按需
+#     ``_adjust_thread_count``），所以即使 ``max_workers=10`` 没人用
+#     也不会真起 10 个线程。本项目当前是 4 个渠道，每个 worker 大约
+#     8KB stack + Python 帧开销 ≈ 几十 KB——上限提到 4 几乎零成本。
+_NOTIFICATION_WORKER_COUNT = len(NotificationType)
+
+
 # ``_schedule_retry`` 的 thundering-herd 防御：在 ``retry_delay`` 之上叠加
 # ``[0, retry_delay * jitter_ratio]`` 区间的随机抖动。
 #
@@ -293,10 +315,21 @@ class NotificationManager:
             self._worker_thread = None
             self._stop_event = threading.Event()
 
-            # 【性能优化】使用线程池异步发送通知，避免阻塞主流程
-            # max_workers=3 足够覆盖常见场景（通常同时启用的渠道不超过 3 个）
+            # 【性能优化】使用线程池异步发送通知，避免阻塞主流程。
+            # max_workers 动态等于 ``NotificationType`` 成员数（目前 4：
+            # WEB/SOUND/BARK/SYSTEM），这样：
+            #   1. 用户同时启用全部渠道时，每个渠道都有专属 worker，
+            #      最慢渠道（典型是 BARK 走 HTTPS 上行）不会让其他
+            #      渠道排队等空闲 worker；
+            #   2. 未来新增渠道时只需在枚举里加一项，线程池自动伸缩，
+            #      不需要再来这里改硬编码常量。
+            # 历史上写死 ``max_workers=3``：在 4 渠道全开时第 4 个 future
+            # 进队列等，前 3 个卡接近 ``bark_timeout`` 边缘时第 4 个
+            # 根本没机会跑，``as_completed`` timeout 后被强 cancel——
+            # 用户漏收一条通知，零日志告警。
             self._executor = ThreadPoolExecutor(
-                max_workers=3, thread_name_prefix="NotificationWorker"
+                max_workers=_NOTIFICATION_WORKER_COUNT,
+                thread_name_prefix="NotificationWorker",
             )
 
             # 【可靠性】延迟通知 Timer 管理（用于测试/退出时可控清理）
@@ -911,8 +944,11 @@ class NotificationManager:
             return
 
         self._shutdown_called = False
+        # 与 ``__init__`` 保持完全一致——不能在这里 fork 出独立的常量，
+        # 否则未来加新通知渠道时容易遗漏一处。
         self._executor = ThreadPoolExecutor(
-            max_workers=3, thread_name_prefix="NotificationWorker"
+            max_workers=_NOTIFICATION_WORKER_COUNT,
+            thread_name_prefix="NotificationWorker",
         )
 
     def get_config(self) -> NotificationConfig:
