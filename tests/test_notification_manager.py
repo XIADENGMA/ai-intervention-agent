@@ -428,30 +428,101 @@ class TestNotificationManagerPerformance(unittest.TestCase):
 
         self.manager = notification_manager
 
-    def test_cache_performance(self):
-        """测试缓存带来的性能提升"""
+    def test_cache_behavior_skips_get_section_on_unchanged_mtime(self):
+        """R17.7：缓存命中时**不应**调用 ``config_mgr.get_section``。
+
+        历史背景
+        --------
+        本测试原先用 ``time.time()`` 量"50 次有缓存调用 ≤ 50 次无缓存调用 ×
+        1.5"的速度比来验证缓存。问题：
+
+        1. ``time.time()`` 在毫秒级以内的精度差，多核 / GC / JIT 任意一个
+           扰动都能让 50 次循环的总耗时（典型 1-10 ms）抖动 5-10 倍。
+        2. 单跑能过、批跑可能被前后测试的 GC / fsync / IO 推进搞 fail。
+           这就是 flaky 测试的典型形态。
+
+        修法
+        ----
+        改成**行为验证**：缓存命中走的是 ``mtime`` 短路分支
+        （``return`` 之前根本没读 toml 也没调 ``get_section``）。把底层的
+        ``config_mgr.get_section`` mock 掉，断言：
+
+        - force=True 调用 50 次 → ``get_section`` 被调 50 次
+        - force=False 且 mtime 未变 → ``get_section`` 被调 **0** 次
+
+        这种锁是确定性的，不受机器性能 / CI 环境波动影响，且锁住的"缓存
+        命中跳过 IO"是缓存真正的语义价值，比"跑得快"更有意义。
+        """
+        from unittest.mock import patch
+
+        fixed_mtime = 1700000000.0  # 选一个固定的 epoch 时间
+
+        class _StubStat:
+            st_mtime = fixed_mtime
+
+        with patch("notification_manager.get_config") as mock_get_config:
+            mock_cfg = mock_get_config.return_value
+            mock_cfg.config_file.stat.return_value = _StubStat()
+            mock_cfg.get_section.return_value = {}
+
+            iterations = 50
+
+            for _ in range(iterations):
+                self.manager.refresh_config_from_file(force=True)
+            forced_calls = mock_cfg.get_section.call_count
+            self.assertEqual(
+                forced_calls,
+                iterations,
+                f"force=True 下应调用 get_section 恰好 {iterations} 次，"
+                f"实际 {forced_calls}",
+            )
+            self.assertEqual(
+                self.manager._config_file_mtime,
+                fixed_mtime,
+                "force=True 后 _config_file_mtime 应被更新为 stub 的 mtime",
+            )
+
+            mock_cfg.get_section.reset_mock()
+            for _ in range(iterations):
+                self.manager.refresh_config_from_file()
+            cached_calls = mock_cfg.get_section.call_count
+            self.assertEqual(
+                cached_calls,
+                0,
+                f"mtime 未变化时缓存应短路，预期 get_section 调用 0 次，"
+                f"实际 {cached_calls}（缓存语义被破坏）",
+            )
+
+    def test_cache_invalidation_on_mtime_change(self):
+        """R17.7：mtime 变化时缓存必须失效，重新调用 ``get_section``。
+
+        反向锁：保护"缓存太激进"的 bug 类——如果缓存命中分支的判断条件
+        被错误地放宽（比如改成"配置文件存在就跳过"），mtime 变化也不会
+        触发刷新，用户改 ``config.toml`` 后等 N 分钟仍看到旧值。
+        """
+        from unittest.mock import patch
+
         # 预热
         self.manager.refresh_config_from_file(force=True)
+        cached_mtime = self.manager._config_file_mtime
 
-        # 测试强制刷新（无缓存）
-        iterations = 50
-        start = time.time()
-        for _ in range(iterations):
-            self.manager.refresh_config_from_file(force=True)
-        no_cache_time = time.time() - start
+        with patch("notification_manager.get_config") as mock_get_config:
+            mock_cfg = mock_get_config.return_value
+            mock_cfg.get_section.return_value = {}
 
-        # 测试缓存刷新
-        start = time.time()
-        for _ in range(iterations):
-            self.manager.refresh_config_from_file()
-        cache_time = time.time() - start
+            # 模拟"用户改了配置文件"：返回比缓存大的 mtime
+            class _NewerStat:
+                st_mtime = cached_mtime + 1.0
 
-        # 缓存应该更快
-        print(f"\n性能对比: 无缓存={no_cache_time:.4f}s, 有缓存={cache_time:.4f}s")
+            mock_cfg.config_file.stat.return_value = _NewerStat()
 
-        # 缓存时间应该明显更短（至少 2 倍）
-        # 但由于测试环境差异，这里只验证不会比无缓存更慢
-        self.assertLessEqual(cache_time, no_cache_time * 1.5)
+            self.manager.refresh_config_from_file(force=False)
+            self.assertEqual(
+                mock_cfg.get_section.call_count,
+                1,
+                "mtime 变化时必须重新加载 (调 get_section 一次)；"
+                "若为 0 说明缓存对 mtime 变更失能",
+            )
 
 
 class TestNotificationManagerSendNotification(unittest.TestCase):
