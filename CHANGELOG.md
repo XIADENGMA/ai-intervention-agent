@@ -121,6 +121,51 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **Silent feedback-timeout truncation.** `server_config.py`'s
+  `FEEDBACK_TIMEOUT_MIN/MAX` and `AUTO_RESUBMIT_TIMEOUT_MIN/MAX`
+  were stricter than the Pydantic `_clamp_int(...)` ranges in
+  `shared_types.SECTION_MODELS::feedback`, so a user setting
+  `frontend_countdown = 1000` in `config.toml` saw the value
+  accepted by the schema, surfaced as `1000` in the Web UI's
+  current-config panel, but at runtime `task_queue.py` and
+  `web_ui_validators.py` (reading `AUTO_RESUBMIT_TIMEOUT_MAX = 250`)
+  silently truncated to 250. Same story for `backend_max_wait`
+  (capped at 3600 instead of the documented 7200). Constants
+  widened to `[10, 3600]` / `[10, 7200]` to match Pydantic.
+  Configurations that previously hit the cap now actually take
+  effect; existing in-range configs see identical behaviour.
+- **Silent HTTP-retry / HTTP-timeout truncation.** Same
+  pattern as feedback-timeout, on `WebUIConfig.ClassVar` bounds
+  in `server_config.py`: `TIMEOUT_MAX=300` / `MAX_RETRIES_MAX=10`
+  / `RETRY_DELAY_MIN=0.1` were stricter than Pydantic
+  `[1, 600]` / `[0, 20]` / `[0, 60]`. So
+  `[web_ui] http_request_timeout = 500` was accepted by Pydantic
+  but `service_manager._load_web_ui_config_from_disk` re-clamped
+  to 300 in the second-pass `WebUIConfig(...)` construction.
+  Bounds now match Pydantic side; six new introspection tests
+  guarantee the lockstep stays.
+- **Frontend `frontend_countdown` input pinned at 250s** even
+  after the runtime widening above. Web UI HTML (`<input
+  max="250">`), VS Code webview HTML, and the two settings-
+  manager JS guards (`v <= 250`) all silently rejected
+  user-typed values above 250. All four input surfaces now
+  walked up to `max="3600"` (mirroring
+  `AUTO_RESUBMIT_TIMEOUT_MAX`); 13 user-facing copy lines
+  saying "Range 30-250" refreshed across READMEs, OpenAPI
+  schemas, web_ui.py argparse help, and i18n locale files.
+  Five `?? 250` / `|| 250` fallbacks in
+  `static/js/multi_task.js` corrected to `?? 240` / `|| 240`
+  (the actual `AUTO_RESUBMIT_TIMEOUT_DEFAULT`; 250 was the
+  historical *MAX*, not *DEFAULT*).
+- **`POST /api/reset-feedback-config` partial reset**: the
+  endpoint backing the Web UI's "Reset feedback config to
+  defaults" button only included 3 of 4 SECTION_MODELS::feedback
+  fields in its `defaults` dict (`backend_max_wait` was
+  silently NOT reset). Operators who'd previously customised
+  `backend_max_wait` saw three fields revert and one preserve
+  the old value. Endpoint now imports `FEEDBACK_TIMEOUT_DEFAULT`
+  and covers the fourth key; AST-based parity test prevents
+  regression.
 - **CI Gate output is now WARNING-clean across consecutive runs.**
   `enhanced_logging.py` registers a Loguru sink against `sys.__stderr__`
   at module import — that path bypasses pytest's `capsys`/`capfd` capture
@@ -178,6 +223,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **Six new introspection-based parity gates** lock the
+  numeric clamp bounds, default values, and reset-endpoint
+  field coverage in `shared_types.SECTION_MODELS` against
+  five other surfaces that historically drifted (or could
+  drift in the future):
+  - `tests/test_server_config_shared_types_parity.py` —
+    `server_config.{FEEDBACK_TIMEOUT_MIN/MAX,
+    AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` and the six
+    `WebUIConfig.ClassVar` bounds equal the
+    `SECTION_MODELS::{feedback, web_ui}` Pydantic ranges
+    via `BeforeValidator` closure introspection (5 tests).
+  - `tests/test_default_config_range_parity.py` — both
+    `config.toml.default` and `config.jsonc.default` inline
+    `range/范围 [a, b]` comments equal the introspected
+    Pydantic bounds (2 tests).
+  - `tests/test_frontend_input_range_parity.py` — Web UI
+    HTML / settings JS, VS Code webview HTML / settings JS
+    input bounds + `multi_task.js` fallbacks +
+    `settings-manager.js` fallback all equal
+    `server_config.AUTO_RESUBMIT_TIMEOUT_{MAX,DEFAULT}`
+    (6 tests, 14 magic numbers across 5 files).
+  - `tests/test_server_config_defaults_parity.py` —
+    `server_config.*_DEFAULT` constants equal
+    `SECTION_MODELS::feedback` field defaults via
+    `model_fields[name].default` introspection (4 tests).
+  - `tests/test_notification_config_parity.py` —
+    `NotificationConfig`'s four `coerce_*` 2nd-clamp
+    bounds equal Pydantic ranges via black-box behaviour
+    assertions; explicit ÷100 scale-mismatch invariant for
+    `sound_volume` (8 tests).
+  - `tests/test_reset_feedback_config_parity.py` — AST
+    extracts the `defaults = {...}` dict literal in
+    `web_ui_routes/notification.py::reset_feedback_config`
+    and asserts equality with
+    `SECTION_MODELS::feedback.model_fields` (1 test).
 - **New regression gate:
   `tests/test_mcp_tools_doc_consistency.py`** (3 cases)
   locks the contract that `docs/mcp_tools{,.zh-CN}.md`
