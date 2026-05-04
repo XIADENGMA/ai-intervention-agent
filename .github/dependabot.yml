@@ -84,6 +84,18 @@ updates:
     commit-message:
       prefix: 'chore(deps-npm)'
     open-pull-requests-limit: 5
+    # 关于 `ignore`：
+    #   `@types/vscode` 必须 ≤ `engines.vscode` 的最低支持版本，否则插件
+    #   会用到运行时不存在的 API。详见 microsoft/vscode-vsce#506 与
+    #   microsoft/vscode-vsce src/validation.ts 的 major.minor 强校验。
+    #   因此把 @types/vscode 的所有 semver 升级都交给人工，与 engines.vscode
+    #   一起手动 bump（避免再次出现 dependabot 反复把它升超 engine 的循环）。
+    ignore:
+      - dependency-name: '@types/vscode'
+        update-types:
+          - 'version-update:semver-major'
+          - 'version-update:semver-minor'
+          - 'version-update:semver-patch'
     groups:
       # devDependencies（eslint/typescript/@vscode-* 等）噪音大，打包到一个 PR
       npm-dev-minor-and-patch:
