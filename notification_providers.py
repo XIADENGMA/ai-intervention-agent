@@ -481,8 +481,29 @@ class SystemNotificationProvider(BaseNotificationProvider):
             self.supported = False
             logger.debug("系统通知不支持（缺少plyer库）")
 
+    # plyer.notify(..., timeout=N) 的 N 是「通知显示时长（秒）」，**不是**
+    # 发送超时——plyer 没有发送超时入口，调用过程是同步阻塞到底层平台 API
+    # （macOS osascript / Windows balloon notification / Linux libnotify）
+    # 返回。
+    #
+    # 这里复用 ``NotificationManager._process_event`` 里的
+    # ``as_completed(timeout=bark_timeout + buffer)`` 作为兜底：
+    # 如果底层平台 API 卡住超过 15s，``as_completed`` 会抛 ``TimeoutError``
+    # 并把这条 future 视为失败（``cancel()`` 对运行中任务无效，但 future
+    # 不会再被等下去）。
+    #
+    # 故意保持 ``timeout=10``（10 秒显示时长）而不是更长：超过 10s 仍未消失
+    # 的桌面通知大概率被用户错过，且会和后续 task 的通知打架。
+    _DISPLAY_DURATION_SECONDS = 10
+
     def send(self, event: NotificationEvent) -> bool:
-        """调用 plyer 发送系统通知"""
+        """调用 plyer 发送系统通知
+
+        注意：``timeout`` 参数指通知 banner 在屏幕上显示的时长，不是发送超时。
+        plyer 自身没有发送超时机制；如果底层平台 API 卡住，依赖
+        ``NotificationManager._process_event`` 的 ``as_completed`` 兜底
+        （见 ``notification_manager._AS_COMPLETED_TIMEOUT_BUFFER_SECONDS``）。
+        """
         try:
             if not self.supported:
                 logger.debug("系统通知不支持，跳过发送")
@@ -491,13 +512,11 @@ class SystemNotificationProvider(BaseNotificationProvider):
                 logger.debug("系统通知未初始化 notify 句柄，跳过发送")
                 return False
 
-            timeout_seconds = 10.0
-
             self._notify(
                 title=event.title,
                 message=event.message,
                 app_name="AI Intervention Agent",
-                timeout=timeout_seconds,
+                timeout=self._DISPLAY_DURATION_SECONDS,
             )
 
             logger.debug(f"系统通知发送成功: {event.id}")

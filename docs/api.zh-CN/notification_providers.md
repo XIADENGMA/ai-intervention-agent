@@ -114,3 +114,8 @@ HTTP POST 发送通知到 Bark，返回成功与否
 ##### `send(self, event: NotificationEvent) -> bool`
 
 调用 plyer 发送系统通知
+
+注意：``timeout`` 参数指通知 banner 在屏幕上显示的时长，不是发送超时。
+plyer 自身没有发送超时机制；如果底层平台 API 卡住，依赖
+``NotificationManager._process_event`` 的 ``as_completed`` 兜底
+（见 ``notification_manager._AS_COMPLETED_TIMEOUT_BUFFER_SECONDS``）。

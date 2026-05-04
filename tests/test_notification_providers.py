@@ -1181,6 +1181,53 @@ class TestSystemProviderSend(unittest.TestCase):
         event = create_event()
         self.assertFalse(provider.send(event))
 
+    def test_send_uses_display_duration_constant(self):
+        """plyer ``timeout`` 必须等于 ``_DISPLAY_DURATION_SECONDS``。
+
+        历史这里硬编码了 ``timeout_seconds = 10.0`` + 误导性变量名（看起来像
+        send timeout，实际是 plyer 的 banner 显示时长）。提取成类常量
+        ``_DISPLAY_DURATION_SECONDS`` 后必须保证 plyer 收到的就是这个值。
+        """
+        from notification_providers import SystemNotificationProvider
+
+        config = NotificationConfig()
+        config.web_timeout = 5000
+        provider = SystemNotificationProvider(config)
+        provider.supported = True
+        provider._notify = MagicMock()
+
+        event = create_event()
+        provider.send(event)
+
+        provider._notify.assert_called_once()
+        call_kwargs = provider._notify.call_args.kwargs
+        self.assertEqual(
+            call_kwargs.get("timeout"),
+            SystemNotificationProvider._DISPLAY_DURATION_SECONDS,
+            "plyer 的 timeout 参数必须来自类常量；硬编码 magic number "
+            "会让未来想调显示时长的人找不到入口",
+        )
+
+    def test_display_duration_constant_value_locked(self):
+        """反向锁：``_DISPLAY_DURATION_SECONDS`` 不能被悄悄改成无意义值。
+
+        - ``< 3``：banner 闪一下就消失，用户大概率错过通知。
+        - ``> 30``：和后续 task 通知互相打架。
+        - ``== 0``：plyer 行为依平台而异（macOS = 永久；Linux = 立即）；
+          会引入跨平台分歧。
+        """
+        from notification_providers import SystemNotificationProvider
+
+        self.assertEqual(
+            SystemNotificationProvider._DISPLAY_DURATION_SECONDS,
+            10,
+            "如果你确实想调通知 banner 的显示时长，请：\n"
+            "  1. 想清楚跨平台行为差异（macOS 用 osascript display notification "
+            "尊重 timeout；Linux libnotify 行为依发行版而异）\n"
+            "  2. 在 [3, 30] 范围内选值，否则会触发上面的边缘案例\n"
+            "  3. 同时更新这条断言 + 类常量 + 模块级 docstring",
+        )
+
 
 class TestInitializeNotificationSystem(unittest.TestCase):
     """initialize_notification_system 函数"""
