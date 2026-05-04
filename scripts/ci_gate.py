@@ -26,8 +26,27 @@ def _has_cmd(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def _run(cmd: list[str]) -> None:
-    subprocess.run(cmd, cwd=_repo_root(), check=True)
+def _run(cmd: list[str], *, label: str | None = None) -> None:
+    """跑命令；非 0 退出码 fail-fast 抛出 ``CalledProcessError``。
+
+    可选 ``label``：在 ``subprocess.run(check=True)`` 抛错前先打印
+    ``[ci_gate] FAIL: <label>...`` 到 stderr，方便快速定位是哪一道
+    门禁失败（避免 traceback 里只看到 ``Command '[...]' returned
+    non-zero exit status N`` 这种通用消息）。``_run_warn`` 已经在
+    warn 级用了同名参数；这里复用以保持上下层调用接口一致。
+    """
+    completed = subprocess.run(cmd, cwd=_repo_root(), check=False)
+    if completed.returncode != 0:
+        if label:
+            print(
+                f"[ci_gate] FAIL: {label} 检测到漂移 / 失败"
+                f"（exit_code={completed.returncode}）。"
+                "门禁已 fail-closed；请按上方提示修复后再次提交。",
+                file=sys.stderr,
+            )
+        # 与之前 ``check=True`` 的语义对齐：抛 ``CalledProcessError`` 由
+        # 上层 ``_main_impl`` 捕获并以非 0 退出，保留与既有调用方的兼容
+        raise subprocess.CalledProcessError(completed.returncode, cmd)
 
 
 def _run_warn(cmd: list[str], *, label: str) -> None:
@@ -132,18 +151,23 @@ def _main_impl(argv: list[str]) -> int:
     #   比 Batch-2 H11 的 runtime warn-once 更早，lint 时就挡回 PR。
     _run(["uv", "run", "python", "scripts/check_i18n_locale_shape.py"])
 
-    # docs/api(.zh-CN)/* 漂移检测（warn 级，不阻断）。`generate_docs.py
-    # --check` 已经支持双语言、幂等、报告漂移文件路径。一旦改动 Python
-    # 源码的 docstring / 签名而忘了重生 docs，CI 会输出 [ci_gate] WARN
-    # 提示，但绿色 CI 不变。修复方法：`uv run python scripts/generate_docs.py
-    # --lang en` 与 `--lang zh-CN` 两个命令同步即可。维护者觉得 docs/api
-    # 严格同步是硬契约时，把这两行从 `_run_warn` 切到 `_run` 即可升级
-    # 为 fail-closed 门禁。
-    _run_warn(
+    # docs/api(.zh-CN)/* 漂移检测 — fail-closed 硬门禁（自 v1.5.23 起）。
+    # `generate_docs.py --check` 已经支持双语言、幂等、报告漂移文件路径。
+    # 一旦改动 Python 源码的 docstring / 签名而忘了重生 docs，CI 会
+    # 直接 fail，且错误消息里给出可立即复制的修复命令。修复方法：
+    #   `uv run python scripts/generate_docs.py --lang en`
+    #   `uv run python scripts/generate_docs.py --lang zh-CN`
+    # 升级历史：v1.5.x 早期是 ``_run_warn`` warn 级（不阻断）；事实证明
+    # warn 容易被忽视——v1.5.23 圈子审计发现 docs/api/task_queue.md
+    # 与中文镜像的 ``add_task`` 签名 drift 了一个 round（DRY refactor 之后
+    # 只 regen 了中文，英文被悄悄落下，warn-level CI 跑了几十次也没人
+    # 改）。升级为 ``_run``（fail-closed）后，这种 silent drift 不可能
+    # 再合入 main。
+    _run(
         ["uv", "run", "python", "scripts/generate_docs.py", "--lang", "en", "--check"],
         label="docs/api/ (English)",
     )
-    _run_warn(
+    _run(
         [
             "uv",
             "run",
