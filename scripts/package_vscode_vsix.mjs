@@ -186,6 +186,70 @@ try {
   }
 
   console.log(`已生成 VSIX：${outVsix}`)
+
+  // ──────────────────────────────────────────────────────────────────
+  // R12·A4 · VSIX 尺寸预算守卫
+  //
+  // 历史教训：VS Code extension 一旦把 mathjax/lottie/字体等大资源整
+  // 个 bundle 进去，VSIX 体积会从 KB 级跳到 50+ MB，导致：
+  //   1. Marketplace 安装/更新慢，用户卷曲；
+  //   2. ``code --install-extension`` 在窄带 CI 上 timeout；
+  //   3. Air-gapped 运维下载/分发成本高。
+  // 本守卫在打包末尾对 .vsix 做"压缩后"尺寸 check：
+  //   - 超 ``WARN_PACKED_BYTES`` → console.warn 提示 review；
+  //   - 超 ``FAIL_PACKED_BYTES`` → 直接 ``process.exit(1)`` fail-closed。
+  // 阈值刻意比当前实际尺寸（约 2.7 MB / 1.5.22）留有充足 headroom，
+  // 既不会让一次正常的 +X KB 增量被误报，又能在 4-6 MB 的"意外飞涨"
+  // 区间立刻 trip。两个阈值都可通过 env var 覆盖，方便临时大幅增量
+  // 上线前调高，但默认必须保守。
+  //
+  // 数值合理性由 ``tests/test_vscode_vsix_size_budget.py`` 静态守护，
+  // 防止"为通过 CI 把阈值改到 100 MB"这种自残式 escape hatch。
+  // ──────────────────────────────────────────────────────────────────
+  const WARN_PACKED_MB_DEFAULT = 4
+  const FAIL_PACKED_MB_DEFAULT = 6
+  const _parseMbEnv = (envName, fallback) => {
+    const raw = process.env[envName]
+    if (raw === undefined || raw === '') return fallback
+    const n = Number(raw)
+    if (!Number.isFinite(n) || n <= 0) {
+      console.warn(`无效的 ${envName}=${JSON.stringify(raw)}，回退到默认 ${fallback} MB`)
+      return fallback
+    }
+    return n
+  }
+  const warnMb = _parseMbEnv('AIIA_VSCODE_VSIX_WARN_PACKED_MB', WARN_PACKED_MB_DEFAULT)
+  const failMb = _parseMbEnv('AIIA_VSCODE_VSIX_MAX_PACKED_MB', FAIL_PACKED_MB_DEFAULT)
+  if (failMb < warnMb) {
+    console.error(
+      `配置错误：FAIL 阈值 (${failMb} MB) 小于 WARN 阈值 (${warnMb} MB)；` +
+        `请检查 AIIA_VSCODE_VSIX_MAX_PACKED_MB / AIIA_VSCODE_VSIX_WARN_PACKED_MB`
+    )
+    process.exit(1)
+  }
+  const packedBytes = fs.statSync(outVsix).size
+  const packedMb = packedBytes / (1024 * 1024)
+  const failBytes = failMb * 1024 * 1024
+  const warnBytes = warnMb * 1024 * 1024
+  console.log(
+    `VSIX 尺寸预算检查：实际 ${packedMb.toFixed(2)} MB（${packedBytes} bytes）` +
+      `；WARN ≥ ${warnMb} MB；FAIL ≥ ${failMb} MB`
+  )
+  if (packedBytes >= failBytes) {
+    console.error(
+      `❌ VSIX 超出硬上限：${packedMb.toFixed(2)} MB ≥ ${failMb} MB。` +
+        `请检查是否意外打入了大型资源（mathjax/lottie/字体等）；` +
+        `如确需放行，临时设 AIIA_VSCODE_VSIX_MAX_PACKED_MB=N（必须同时更新 ` +
+        `tests/test_vscode_vsix_size_budget.py 的合理性范围，并在 PR 描述里说明原因）。`
+    )
+    process.exit(1)
+  }
+  if (packedBytes >= warnBytes) {
+    console.warn(
+      `⚠️  VSIX 接近预算：${packedMb.toFixed(2)} MB ≥ ${warnMb} MB（WARN 阈值）。` +
+        `若非有意增量，请检查 includeList 是否多打了文件。`
+    )
+  }
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true })
 }
