@@ -176,6 +176,42 @@ class TestFilenameValidation(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertTrue(any("文件名过长" in e for e in result["errors"]))
 
+    def test_nul_byte_in_filename_is_error(self):
+        """``image.png\x00.exe`` —— NUL 截断攻击；这是 errors 而非 warnings。
+
+        修复前 ``\x00`` 走 ``_DANGEROUS_CHARS`` 路径只产 warning，``valid``
+        仍可能为 True；修复后必须命中错误并把 ``valid`` 翻成 False。
+        """
+        result = self.validator.validate_file(self.png_data, "image.png\x00.exe")
+
+        self.assertFalse(result["valid"], "含 NUL byte 的文件名必须 valid=False")
+        self.assertTrue(
+            any("NUL" in e for e in result["errors"]),
+            f"errors 应包含 NUL 字节描述，实际：{result['errors']}",
+        )
+
+    def test_nul_byte_at_start(self):
+        """``\x00image.png`` —— 起始 NUL 同样应被 errors 拒绝。"""
+        result = self.validator.validate_file(self.png_data, "\x00image.png")
+
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("NUL" in e for e in result["errors"]))
+
+    def test_nul_byte_not_in_dangerous_chars_set(self):
+        """Reverse-lock：``_DANGEROUS_CHARS`` 不能再包含 ``\x00``。
+
+        如果未来有人为了"统一处理"把 ``\x00`` 又塞回 frozenset，这个测试
+        会立刻 fail，提醒：NUL 是 errors 而非 warnings。
+        """
+        from file_validator import FileValidator
+
+        self.assertNotIn(
+            "\x00",
+            FileValidator._DANGEROUS_CHARS,
+            "NUL byte 必须在 _validate_filename 中单独 errors 处理，"
+            "不应回到 _DANGEROUS_CHARS 的 warning 路径",
+        )
+
 
 class TestFileSizeValidation(unittest.TestCase):
     """测试文件大小验证"""

@@ -180,8 +180,16 @@ MALICIOUS_PATTERNS = [
 class FileValidator:
     """文件验证器 - 魔数验证、恶意内容扫描、文件名安全检查。"""
 
-    # 【优化】类级别常量：危险字符集合（所有实例共享）
-    _DANGEROUS_CHARS = frozenset(["<", ">", ":", '"', "|", "?", "*", "\0"])
+    # 【优化】类级别常量：危险字符集合（所有实例共享）。
+    # 注意 ``\0``（NUL byte）刻意**不**列在这里，由 ``_validate_filename`` 单独
+    # 升级为 error 而非 warning ——
+    # NUL 是 C 字符串终结符，``image.png\x00.exe`` 这类构造会让任何把
+    # 文件名再次穿过 C 边界的下游（OS path API、CGI 转发、第三方库）
+    # 把名字截断成 ``image.png``，绕过扩展名白名单。Python 3 的
+    # ``open(...)`` / ``Path(...)`` 已经会主动 ``ValueError``，但本验证器
+    # 是上传链路的第一道闸，不该让 NUL 走到下游再被各自 fail（错误
+    # 行为不可预测、log 难定位）；统一在这里直接拒绝。
+    _DANGEROUS_CHARS = frozenset(["<", ">", ":", '"', "|", "?", "*"])
 
     def __init__(self, max_file_size: int = 10 * 1024 * 1024):  # 10MB
         """初始化并预编译恶意内容正则"""
@@ -385,6 +393,12 @@ class FileValidator:
         stripped_name = filename.strip()
         if not stripped_name or stripped_name == "." or stripped_name == "..":
             result["errors"].append("文件名无效（空或只包含点）")
+
+        # NUL byte 截断攻击（``image.png\x00.exe`` → 下游 C boundary 截断成
+        # ``image.png``）；这是 errors 而非 warnings —— 任何含 NUL 的文件名
+        # 都没有合法用途，应直接拒绝。
+        if "\x00" in filename:
+            result["errors"].append("文件名包含 NUL 字节（path-truncation 攻击向量）")
 
         # 检查路径遍历攻击
         if ".." in filename or "/" in filename or "\\" in filename:
