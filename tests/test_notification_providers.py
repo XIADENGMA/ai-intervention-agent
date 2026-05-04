@@ -281,6 +281,85 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertNotIn("action", payload)
 
     @patch("notification_providers.httpx.Client.post")
+    def test_payload_url_template_when_action_url_without_explicit_url(self, mock_post):
+        """bark_action=url 且 metadata 无显式 URL 时，使用 bark_url_template 渲染"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        self.config.bark_action = "url"
+        self.config.bark_url_template = (
+            "{base_url}/?task_id={task_id}&event_id={event_id}"
+        )
+        event = create_event(
+            title="测试标题",
+            message="测试消息",
+            metadata={"task_id": "task-123", "base_url": "http://ai.local:8080/"},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+        _, kwargs = mock_post.call_args
+        payload = kwargs.get("json", {})
+        self.assertEqual(
+            payload.get("url"),
+            f"http://ai.local:8080/?task_id=task-123&event_id={event.id}",
+        )
+        self.assertNotIn("action", payload)
+
+    @patch("notification_providers.httpx.Client.post")
+    def test_payload_url_template_does_not_override_explicit_url(self, mock_post):
+        """metadata 显式 URL 优先于 bark_url_template"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        self.config.bark_action = "url"
+        self.config.bark_url_template = "{base_url}/?task_id={task_id}"
+        event = create_event(
+            title="测试标题",
+            message="测试消息",
+            metadata={
+                "task_id": "task-123",
+                "base_url": "http://ai.local:8080",
+                "url": "https://example.com/explicit",
+            },
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+        _, kwargs = mock_post.call_args
+        payload = kwargs.get("json", {})
+        self.assertEqual(payload.get("url"), "https://example.com/explicit")
+
+    @patch("notification_providers.logger.warning")
+    @patch("notification_providers.httpx.Client.post")
+    def test_payload_url_template_rejects_non_http_result(
+        self, mock_post, _mock_warning
+    ):
+        """模板渲染结果不是 http(s) URL 时不发送 url 字段"""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        self.config.bark_action = "url"
+        self.config.bark_url_template = "ai.local/?task_id={task_id}"
+        event = create_event(
+            title="测试标题",
+            message="测试消息",
+            metadata={"task_id": "task-123"},
+        )
+
+        result = self.provider.send(event)
+
+        self.assertTrue(result)
+        _, kwargs = mock_post.call_args
+        payload = kwargs.get("json", {})
+        self.assertNotIn("url", payload)
+
+    @patch("notification_providers.httpx.Client.post")
     def test_payload_copy_field_when_action_copy(self, mock_post):
         """bark_action=copy 时应使用 Bark 的 copy 字段"""
         mock_response = MagicMock()
@@ -1149,6 +1228,7 @@ def _make_ext_config(**overrides) -> MagicMock:
         "bark_device_key": "test_key",
         "bark_icon": "",
         "bark_action": "none",
+        "bark_url_template": "",
         "bark_timeout": 10,
         "web_timeout": 5000,
         "web_icon": "",

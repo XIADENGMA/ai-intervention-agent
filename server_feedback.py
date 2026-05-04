@@ -258,12 +258,25 @@ def launch_feedback_ui(
                         NotificationType.SOUND,
                         NotificationType.BARK,
                     ]
+                    base_url = ""
+                    try:
+                        base_url = server_config.resolve_external_base_url(config)
+                    except Exception as exc:
+                        logger.debug(f"解析 external_base_url 失败: {exc}")
+
+                    notif_metadata: dict[str, Any] = {
+                        "task_id": task_id,
+                        "source": "launch_feedback_ui",
+                    }
+                    if base_url:
+                        notif_metadata["base_url"] = base_url
+
                     event_id = notification_manager.send_notification(
                         title="新的交互反馈请求",
                         message=notification_message,
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=mcp_types,
-                        metadata={"task_id": task_id, "source": "launch_feedback_ui"},
+                        metadata=notif_metadata,
                     )
 
                     if event_id:
@@ -331,35 +344,186 @@ def launch_feedback_ui(
 
 
 async def interactive_feedback(
-    message: str = Field(description="向用户展示的具体问题/提示（支持 Markdown）"),
+    message: str | None = Field(
+        default=None,
+        description=(
+            "Question, summary, or proposal to display to the human user. "
+            "MUST be a non-empty string. Supports CommonMark / GitHub-Flavored Markdown "
+            "(headings, lists, tables, fenced code blocks, links, inline code). "
+            "Recommended length: 1-2000 characters; hard limit 10000 (longer input is truncated). "
+            "Best practices: (1) state the question clearly in the first line; "
+            "(2) include the recommended/default answer when proposing options; "
+            '(3) escape special characters properly in JSON (use \\" for quotes, \\n for newlines). '
+            "If omitted, the server falls back to `summary` or `prompt` for cross-tool compatibility."
+        ),
+    ),
     predefined_options: list | None = Field(
         default=None,
-        description="可选的预定义选项列表，供用户单选/多选",
+        description=(
+            "Optional list of predefined choices the user can pick from "
+            "(rendered as multi-select checkboxes alongside a free-text reply). "
+            "MUST be either null/omitted or a JSON array of strings; non-string items are dropped. "
+            "Each option: 1-500 characters (longer items are truncated). "
+            "Tips: (1) keep options short, action-oriented and mutually distinguishable; "
+            "(2) if you have a recommended/default answer, place it first and mark it (e.g. '[Recommended] ...'); "
+            "(3) the user may also ignore options and reply with free text. "
+            "If omitted, the server falls back to `options` for cross-tool compatibility."
+        ),
+    ),
+    summary: str | None = Field(
+        default=None,
+        description=(
+            "Compatibility alias for `message` (used by noopstudios/Minidoracat "
+            "interactive-feedback-mcp variants). Ignored when `message` is provided."
+        ),
+    ),
+    prompt: str | None = Field(
+        default=None,
+        description="Compatibility alias for `message`. Ignored when `message` is provided.",
+    ),
+    options: list | None = Field(
+        default=None,
+        description=(
+            "Compatibility alias for `predefined_options`. "
+            "Ignored when `predefined_options` is provided."
+        ),
+    ),
+    project_directory: str | None = Field(
+        default=None,
+        description=(
+            "Accepted for compatibility with other feedback MCP variants; this server "
+            "ignores it (project context is taken from the running Web UI / config)."
+        ),
+    ),
+    submit_button_text: str | None = Field(
+        default=None,
+        description="Accepted for compatibility; this server uses its own UI labels.",
+    ),
+    timeout: int | None = Field(
+        default=None,
+        description=(
+            "Accepted for compatibility; this server uses its own configured backend "
+            "timeout and auto-resubmit countdown."
+        ),
+    ),
+    feedback_type: str | None = Field(
+        default=None,
+        description="Accepted for compatibility; ignored by this server.",
+    ),
+    priority: str | None = Field(
+        default=None,
+        description="Accepted for compatibility; ignored by this server.",
+    ),
+    language: str | None = Field(
+        default=None,
+        description="Accepted for compatibility; UI language follows the user's saved settings.",
+    ),
+    tags: list | None = Field(
+        default=None,
+        description="Accepted for compatibility; ignored by this server.",
+    ),
+    user_id: str | None = Field(
+        default=None,
+        description="Accepted for compatibility; ignored by this server.",
     ),
 ) -> list:
-    """
-    MCP 工具实现：请求用户通过 Web UI 提供交互反馈
+    """Ask the human user for interactive feedback through the Web UI.
 
-    注意：该函数本身不负责 MCP 工具注册；注册由 `server.py` 中的 `mcp` 完成。
+    Use this tool whenever you need a human decision, clarification, confirmation,
+    plan approval, design review, or final sign-off before continuing — especially
+    when the next step has multiple valid approaches, irreversible side effects,
+    or significant trade-offs.
+
+    Behavior:
+    - Renders the resolved message (Markdown) and an optional list of options in
+      a Web UI; the user submits text + selected options + optional images.
+    - The call blocks until the user submits, the auto-resubmit countdown
+      expires, or the configured backend timeout is reached.
+    - On success, returns a list of MCP content blocks (text + image) that
+      include the user reply, selected options, and an optional prompt suffix.
+    - On parameter validation failure, raises `ToolError` so the agent can
+      retry with corrected arguments. On service / task failure, returns a
+      configurable resubmit prompt instructing the agent to call this tool
+      again, instead of silently dropping the request.
+
+    Cross-tool compatibility:
+    - `summary` / `prompt` are accepted as aliases for `message` so the same
+      `mcp.json` config can target other feedback MCP variants without
+      retraining the agent.
+    - `options` is an alias for `predefined_options`.
+    - `project_directory`, `submit_button_text`, `timeout`, `feedback_type`,
+      `priority`, `language`, `tags`, `user_id` are accepted but ignored.
+      They prevent the first-call validation failures observed when an agent
+      reuses arguments shaped for a different feedback MCP server.
+
+    Note: this function is not the MCP registration site itself; `server.py`
+    wraps it with `mcp.tool()` to expose it to MCP clients.
     """
+    # 漂移参数兜底：当 agent 误把别的 feedback MCP 工具的参数传给我们时，
+    # 仍然尽力解析出 message / predefined_options，避免首次调用直接报错。
+    resolved_message: Any = message
+    if resolved_message is None or (
+        isinstance(resolved_message, str) and not resolved_message.strip()
+    ):
+        for alias_name, alias_value in (("summary", summary), ("prompt", prompt)):
+            if isinstance(alias_value, str) and alias_value.strip():
+                logger.info(
+                    f"interactive_feedback: 收到 '{alias_name}' 别名参数，已映射到 'message'"
+                )
+                resolved_message = alias_value
+                break
+
+    resolved_options: list | None = predefined_options
+    if resolved_options is None and isinstance(options, list):
+        logger.info(
+            "interactive_feedback: 收到 'options' 别名参数，已映射到 'predefined_options'"
+        )
+        resolved_options = options
+
+    # 仅在调试场景下记录被忽略的兼容参数（INFO 级别会在生产中产生噪音，因此用 debug）。
+    _ignored_compat = {
+        name: value
+        for name, value in (
+            ("project_directory", project_directory),
+            ("submit_button_text", submit_button_text),
+            ("timeout", timeout),
+            ("feedback_type", feedback_type),
+            ("priority", priority),
+            ("language", language),
+            ("tags", tags),
+            ("user_id", user_id),
+        )
+        if value not in (None, "", [])
+    }
+    if _ignored_compat:
+        logger.debug(
+            f"interactive_feedback: 收到兼容字段（已忽略）: {list(_ignored_compat.keys())}"
+        )
+
     # BM-1：参数验证失败是「用同样的参数无法恢复」的错误，应以 ToolError
     # 上报给 agent，让 agent 调整参数后再重试，而不是无意义地消费 resubmit
     # 文本反复调用（那会触发死循环）。
     # 写在顶层 try/except 之外是为了让 ToolError 逃出下面的
     # `except Exception -> _make_resubmit_response()` 兜底路径。
     try:
-        cleaned_message, cleaned_options = server_config.validate_input(
-            message, predefined_options
+        (
+            cleaned_message,
+            cleaned_options,
+            cleaned_defaults,
+        ) = server_config.validate_input_with_defaults(
+            cast(str, resolved_message), resolved_options
         )
     except (ValueError, ValidationError) as e:
         logger.warning(f"interactive_feedback 参数错误: {e}")
         raise ToolError(
             f"Invalid argument: {e}. "
-            "Please ensure 'message' is a non-empty string and "
-            "'predefined_options' (if provided) is a list of strings, then retry."
+            "Please ensure 'message' (or alias 'summary'/'prompt') is a non-empty string "
+            "and 'predefined_options' (or alias 'options'), if provided, is a list of strings "
+            "or {label, default} objects, then retry."
         ) from e
 
     predefined_options_list = cleaned_options
+    predefined_options_defaults = cleaned_defaults
 
     try:
         # 自动生成唯一 task_id（避免极端并发下碰撞）
@@ -387,6 +551,7 @@ async def interactive_feedback(
                     "task_id": task_id,
                     "prompt": cleaned_message,
                     "predefined_options": predefined_options_list,
+                    "predefined_options_defaults": predefined_options_defaults,
                     "auto_resubmit_timeout": auto_resubmit_timeout,
                 },
                 timeout=5,

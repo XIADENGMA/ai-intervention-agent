@@ -78,6 +78,31 @@ class StaticRoutesMixin:
             icons_dir = self._project_root / "icons"
             return send_from_directory(str(icons_dir), filename)
 
+        @self.app.route("/manifest.webmanifest")
+        @self.limiter.exempt
+        def serve_webmanifest() -> ResponseReturnValue:
+            """提供 PWA Web App Manifest 文件。
+
+            功能说明：
+                返回 ``icons/manifest.webmanifest``，供浏览器在
+                ``Add to Home Screen`` / ``Install app`` 时识别应用名、图标
+                与启动 URL，是 ai.local 等域名安装为 PWA 后图标显示正确的关键。
+
+            返回值：
+                manifest 文件内容（application/manifest+json MIME 类型）。
+
+            频率限制：
+                - 已豁免：浏览器仅在 PWA 安装/检测时拉取，几乎不产生流量。
+            """
+            icons_dir = self._project_root / "icons"
+            response = send_from_directory(
+                str(icons_dir),
+                "manifest.webmanifest",
+                mimetype="application/manifest+json",
+            )
+            response.headers["Cache-Control"] = "public, max-age=3600"
+            return response
+
         @self.app.route("/sounds/<filename>")
         @self.limiter.exempt
         def serve_sounds(filename: str) -> ResponseReturnValue:

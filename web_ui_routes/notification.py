@@ -90,6 +90,7 @@ class NotificationRoutesMixin:
                 bark_device_key = data.get("bark_device_key", "")
                 bark_icon = data.get("bark_icon", "")
                 bark_action = data.get("bark_action", "none")
+                bark_url_template = str(data.get("bark_url_template", "") or "").strip()
 
                 if not bark_device_key:
                     return jsonify(
@@ -107,9 +108,24 @@ class NotificationRoutesMixin:
                             self.bark_device_key = bark_device_key
                             self.bark_icon = bark_icon
                             self.bark_action = bark_action
+                            self.bark_url_template = bark_url_template
 
                     temp_config = TempConfig()
                     bark_provider = BarkNotificationProvider(temp_config)
+
+                    test_metadata: dict[str, Any] = {
+                        "test": True,
+                        "task_id": "test-task-id",
+                    }
+                    base_url_for_test = ""
+                    try:
+                        import server_config as _sc
+
+                        base_url_for_test = _sc.resolve_external_base_url()
+                    except Exception:
+                        base_url_for_test = ""
+                    if base_url_for_test:
+                        test_metadata["base_url"] = base_url_for_test
 
                     test_event = NotificationEvent(
                         id=f"test_bark_{int(time.time())}",
@@ -117,7 +133,7 @@ class NotificationRoutesMixin:
                         message="这是一个 Bark 通知测试，如果收到此消息，说明配置正确。",
                         trigger=NotificationTrigger.IMMEDIATE,
                         types=[NotificationType.BARK],
-                        metadata={"test": True},
+                        metadata=test_metadata,
                     )
 
                     success = bark_provider.send(test_event)
@@ -504,6 +520,13 @@ class NotificationRoutesMixin:
                             normalize_string,
                             normalize_string,
                         ),
+                        (
+                            ("barkUrlTemplate", "bark_url_template"),
+                            "bark_url_template",
+                            "bark_url_template",
+                            normalize_string,
+                            normalize_string,
+                        ),
                     ]
 
                     manager_updates: dict[str, Any] = {}
@@ -626,7 +649,10 @@ class NotificationRoutesMixin:
                 feedback_config = config_mgr.get_section("feedback")
 
                 from config_utils import truncate_string
-                from server_config import AUTO_RESUBMIT_TIMEOUT_DEFAULT
+                from server_config import (
+                    AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+                    PROMPT_MAX_LENGTH,
+                )
 
                 raw_countdown = feedback_config.get(
                     "frontend_countdown",
@@ -647,13 +673,13 @@ class NotificationRoutesMixin:
                             "frontend_countdown": frontend_countdown,
                             "resubmit_prompt": truncate_string(
                                 feedback_config.get("resubmit_prompt"),
-                                500,
+                                PROMPT_MAX_LENGTH,
                                 "feedback.resubmit_prompt",
                                 default="请立即调用 interactive_feedback 工具",
                             ),
                             "prompt_suffix": truncate_string(
                                 feedback_config.get("prompt_suffix"),
-                                500,
+                                PROMPT_MAX_LENGTH,
                                 "feedback.prompt_suffix",
                                 default="\n请积极调用 interactive_feedback 工具",
                             ),
@@ -692,10 +718,10 @@ class NotificationRoutesMixin:
                       maximum: 250
                     resubmit_prompt:
                       type: string
-                      maxLength: 500
+                      maxLength: 10000
                     prompt_suffix:
                       type: string
-                      maxLength: 500
+                      maxLength: 10000
             responses:
               200:
                 description: 配置已更新
@@ -716,6 +742,7 @@ class NotificationRoutesMixin:
                 from server_config import (
                     AUTO_RESUBMIT_TIMEOUT_MAX,
                     AUTO_RESUBMIT_TIMEOUT_MIN,
+                    PROMPT_MAX_LENGTH,
                     PROMPT_SUFFIX_DEFAULT,
                     RESUBMIT_PROMPT_DEFAULT,
                 )
@@ -749,7 +776,7 @@ class NotificationRoutesMixin:
                 if "resubmit_prompt" in data:
                     feedback_config["resubmit_prompt"] = truncate_string(
                         data["resubmit_prompt"],
-                        500,
+                        PROMPT_MAX_LENGTH,
                         "feedback.resubmit_prompt",
                         default=RESUBMIT_PROMPT_DEFAULT,
                     )
@@ -758,7 +785,7 @@ class NotificationRoutesMixin:
                 if "prompt_suffix" in data:
                     feedback_config["prompt_suffix"] = truncate_string(
                         data["prompt_suffix"],
-                        500,
+                        PROMPT_MAX_LENGTH,
                         "feedback.prompt_suffix",
                         default=PROMPT_SUFFIX_DEFAULT,
                     )

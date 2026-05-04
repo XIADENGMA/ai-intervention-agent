@@ -73,12 +73,22 @@ class TestBarkTestEndpoint(_RouteTestBase):
 
         resp = self._client.post(
             "/api/test-bark",
-            json={"bark_device_key": "real-key", "bark_url": "https://bark.test/push"},
+            json={
+                "bark_device_key": "real-key",
+                "bark_url": "https://bark.test/push",
+                "bark_action": "url",
+                "bark_url_template": "{base_url}/?task_id={task_id}",
+            },
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertEqual(data["status"], "success")
         self.assertIn("sent", data["message"])
+        temp_config = mock_provider_cls.call_args.args[0]
+        self.assertEqual(temp_config.bark_url_template, "{base_url}/?task_id={task_id}")
+        self.assertEqual(temp_config.bark_action, "url")
+        event_kwargs = mock_event_cls.call_args.kwargs
+        self.assertEqual(event_kwargs["metadata"]["task_id"], "test-task-id")
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch("web_ui_routes.notification.BarkNotificationProvider")

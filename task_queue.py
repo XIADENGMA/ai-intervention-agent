@@ -37,6 +37,9 @@ class Task(BaseModel):
     task_id: str
     prompt: str
     predefined_options: list[str] | None = None
+    # TODO #3：每个预定义选项的"默认是否选中"。可省略；省略时等价于全 False。
+    # 长度若与 predefined_options 不一致，前端按位置逐一对应、缺失项视为 False。
+    predefined_options_defaults: list[bool] | None = None
     auto_resubmit_timeout: int = 240
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     created_at_monotonic: float = Field(default_factory=time.monotonic)
@@ -234,6 +237,7 @@ class TaskQueue:
         prompt: str,
         predefined_options: list[str] | None = None,
         auto_resubmit_timeout: int = 240,
+        predefined_options_defaults: list[bool] | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         new_status: str | None = None
@@ -260,6 +264,7 @@ class TaskQueue:
                 task_id=task_id,
                 prompt=prompt,
                 predefined_options=predefined_options,
+                predefined_options_defaults=predefined_options_defaults,
                 auto_resubmit_timeout=auto_resubmit_timeout,
             )
 
@@ -952,6 +957,7 @@ class TaskQueue:
                             "task_id": task.task_id,
                             "prompt": task.prompt,
                             "predefined_options": task.predefined_options,
+                            "predefined_options_defaults": task.predefined_options_defaults,
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
                             "created_at": task.created_at.isoformat(),
                             "status": task.status,
@@ -1042,6 +1048,9 @@ class TaskQueue:
                         task_id=task_id,
                         prompt=prompt,
                         predefined_options=item.get("predefined_options"),
+                        predefined_options_defaults=item.get(
+                            "predefined_options_defaults"
+                        ),
                         auto_resubmit_timeout=item.get("auto_resubmit_timeout", 240),
                         created_at=created_at,
                         created_at_monotonic=time.monotonic() - age_since_creation,

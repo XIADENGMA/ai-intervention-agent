@@ -43,7 +43,8 @@ class TestFeedbackConfigConstants(unittest.TestCase):
         # 验证缓冲和最低值
         self.assertEqual(BACKEND_BUFFER, 40)  # 【优化】从60改为40
         self.assertEqual(BACKEND_MIN, 260)  # 【优化】从300改为260，预留40秒安全余量
-        self.assertEqual(PROMPT_MAX_LENGTH, 500)
+        # TODO #5：从 500 提升到 10000，配合 web_ui_routes/notification.py 的同步更新
+        self.assertEqual(PROMPT_MAX_LENGTH, 10000)
 
 
 class TestFeedbackConfigDataclass(unittest.TestCase):
@@ -157,10 +158,10 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
         self.assertEqual(config.resubmit_prompt, RESUBMIT_PROMPT_DEFAULT)
 
     def test_long_resubmit_prompt_truncation(self):
-        """测试过长 resubmit_prompt 截断"""
+        """测试过长 resubmit_prompt 截断（TODO #5：上限从 500 提升到 10000）"""
         from server import PROMPT_MAX_LENGTH, FeedbackConfig
 
-        long_prompt = "A" * 600  # 超过 500
+        long_prompt = "A" * (PROMPT_MAX_LENGTH + 100)  # 必须超出上限才会触发截断
         config = FeedbackConfig(
             timeout=600,
             auto_resubmit_timeout=240,
@@ -171,10 +172,10 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
         self.assertEqual(len(config.resubmit_prompt), PROMPT_MAX_LENGTH)
 
     def test_long_prompt_suffix_truncation(self):
-        """测试过长 prompt_suffix 截断"""
+        """测试过长 prompt_suffix 截断（TODO #5：上限从 500 提升到 10000）"""
         from server import PROMPT_MAX_LENGTH, FeedbackConfig
 
-        long_suffix = "B" * 600  # 超过 500
+        long_suffix = "B" * (PROMPT_MAX_LENGTH + 100)
         config = FeedbackConfig(
             timeout=600,
             auto_resubmit_timeout=240,

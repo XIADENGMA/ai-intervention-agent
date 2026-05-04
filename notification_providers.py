@@ -5,6 +5,7 @@
 """
 
 import re
+import string
 import sys
 import time
 from abc import ABC, abstractmethod
@@ -18,6 +19,62 @@ from enhanced_logging import EnhancedLogger
 from notification_models import NotificationEvent, NotificationType
 
 logger = EnhancedLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Bark URL 模板渲染辅助
+#
+# 设计目标：
+# - 用户在配置里写 "http://ai.local:8080/?task_id={task_id}" 这种模板时，
+#   Bark 通知能正确渲染并嵌入 metadata。
+# - 任何缺失的占位符（例如模板里有 {weird_key} 但 metadata 没给）原样保留，
+#   绝不抛 KeyError，从而避免一条配置错误导致整个 Bark 通知发不出去。
+# - 任何无法被序列化为字符串的值（None / dict / list 等）一律退化为空串，
+#   防止 Pythonic 表达污染 URL（例如 "[1, 2]"）。
+# ---------------------------------------------------------------------------
+
+
+class _BarkSafeFormatDict(dict):
+    """str.format_map() 的兜底字典：未命中的 key 原样返回 "{key}"。"""
+
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
+_BARK_TEMPLATE_FORMATTER = string.Formatter()
+
+
+def _coerce_bark_format_value(value: Any) -> str:
+    """把任意 value 转成对 URL 友好的字符串；非标量一律视为空。"""
+    if value is None:
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return str(value)
+    return ""
+
+
+def render_bark_url_template(template: str, params: dict[str, Any]) -> str:
+    """安全渲染 Bark 点击 URL 模板。
+
+    - 模板为空 / 渲染异常时返回空串（调用方应判空跳过 url 字段）。
+    - 不会抛出 KeyError；缺失的占位符保持 "{name}" 字面量（便于排查）。
+    """
+    tpl = (template or "").strip()
+    if not tpl:
+        return ""
+
+    safe_params = _BarkSafeFormatDict(
+        {key: _coerce_bark_format_value(val) for key, val in params.items()}
+    )
+
+    try:
+        return _BARK_TEMPLATE_FORMATTER.vformat(tpl, (), safe_params).strip()
+    except (ValueError, IndexError) as exc:
+        # 例如未闭合的 "{"、位置参数引用，记 warn 但不抛
+        logger.warning(
+            f"渲染 Bark URL 模板失败: template={tpl!r} error={exc}; 已退化为空 URL"
+        )
+        return ""
 
 
 class BaseNotificationProvider(ABC):
@@ -271,6 +328,33 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                 if isinstance(value, str) and value.strip():
                                     url_value = value.strip()
                                     break
+
+                        # metadata 没有提供 URL 时，回退到 bark_url_template
+                        # 设计：模板只在缺省时生效，避免覆盖调用方明确指定的 URL
+                        if not url_value:
+                            template = (
+                                getattr(self.config, "bark_url_template", "") or ""
+                            )
+                            if template:
+                                base_url = ""
+                                if event.metadata and isinstance(
+                                    event.metadata.get("base_url"), str
+                                ):
+                                    base_url = event.metadata.get("base_url", "")
+                                params: dict[str, Any] = {
+                                    "task_id": (event.metadata or {}).get(
+                                        "task_id", ""
+                                    ),
+                                    "event_id": event.id or "",
+                                    "base_url": (base_url or "").rstrip("/"),
+                                }
+                                rendered = render_bark_url_template(template, params)
+                                if rendered.startswith(("http://", "https://")):
+                                    url_value = rendered
+                                elif rendered:
+                                    logger.warning(
+                                        f"bark_url_template 渲染结果不是合法 URL，已忽略: {rendered!r}"
+                                    )
 
                         if url_value:
                             bark_data["url"] = url_value

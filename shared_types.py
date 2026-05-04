@@ -168,6 +168,10 @@ class NotificationSectionConfig(BaseModel):
     bark_icon: SafeStr = ""
     bark_action: SafeStr = "none"
     bark_timeout: Annotated[int, BeforeValidator(_clamp_int(1, 300, 10))] = 10
+    # bark_url_template: 当 bark_action == "url" 且事件 metadata 未提供具体链接时，
+    # 用此模板生成点击跳转 URL；支持 {task_id} / {event_id} / {base_url} 占位符，
+    # 未识别的占位符会原样保留，不会抛出 KeyError
+    bark_url_template: SafeStr = ""
 
 
 class WebUISectionConfig(BaseModel):
@@ -182,6 +186,11 @@ class WebUISectionConfig(BaseModel):
     http_request_timeout: Annotated[int, BeforeValidator(_clamp_int(1, 600, 30))] = 30
     http_max_retries: Annotated[int, BeforeValidator(_clamp_int(0, 20, 3))] = 3
     http_retry_delay: Annotated[float, BeforeValidator(_clamp_float(0, 60, 1.0))] = 1.0
+    # external_base_url: 可选；用于拼装 Bark 点击 URL 等"外部跳转"链接。
+    # 留空时按 http://{host}:{port} 兜底；用户可填 mDNS/反代域名，例如
+    # "http://ai.local:8080" 或 "https://ai.example.com"。
+    # 末尾斜杠会被视为同义字符，运行时会做规范化。
+    external_base_url: SafeStr = ""
 
 
 class MdnsSectionConfig(BaseModel):

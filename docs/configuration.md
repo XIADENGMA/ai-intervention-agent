@@ -98,6 +98,7 @@ Controls web/sound/system/Bark notifications.
 | `bark_device_key`         | string  | `""`     | Required when `bark_enabled=true`                                           |
 | `bark_icon`               | string  | `""`     | Optional                                                                    |
 | `bark_action`             | string  | `"none"` | `none` / `url` / `copy`                                                     |
+| `bark_url_template`       | string  | `""`     | Used when `bark_action="url"` and no explicit event URL exists. Supports `{task_id}`, `{event_id}`, `{base_url}` |
 | `retry_count`             | number  | `3`      | Range `[0, 10]` (excluding the first attempt)                               |
 | `retry_delay`             | number  | `2`      | Seconds, range `[0, 60]`                                                    |
 | `bark_timeout`            | number  | `10`     | Seconds, range `[1, 300]`                                                   |
@@ -114,6 +115,7 @@ Controls the Web UI server and HTTP client behavior.
 | `http_request_timeout` | number  | `30`        | Seconds, range `[1, 300]`                              |
 | `http_max_retries`     | number  | `3`         | Range `[0, 10]`                                        |
 | `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0.1, 60.0]`                           |
+| `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to `http://{host}:{port}` |
 
 ### `network_security`
 

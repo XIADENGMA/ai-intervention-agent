@@ -1224,6 +1224,7 @@ class TestThemeTokenCoverage(unittest.TestCase):
         root_match = re.search(r":root\s*\{([^}]+)\}", text)
         if not root_match:
             self.skipTest("未找到 :root 块")
+        assert root_match is not None
 
         root_vars = set(_CSS_VAR_DEFINITION_RE.findall(root_match.group(1)))
 

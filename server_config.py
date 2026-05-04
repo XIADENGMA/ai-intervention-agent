@@ -35,7 +35,7 @@ AUTO_RESUBMIT_TIMEOUT_MAX = 250  # 前端最大倒计时（秒）
 BACKEND_BUFFER = 40  # 后端缓冲时间（秒，前端+缓冲=后端最小）
 BACKEND_MIN = 260  # 后端最低等待时间（秒，预留安全余量避免 MCPHub 300秒硬超时）
 
-PROMPT_MAX_LENGTH = 500  # 提示语最大长度
+PROMPT_MAX_LENGTH = 10000  # 提示语最大长度（resubmit_prompt / prompt_suffix）
 RESUBMIT_PROMPT_DEFAULT = "请立即调用 interactive_feedback 工具"
 PROMPT_SUFFIX_DEFAULT = "\n请积极调用 interactive_feedback 工具"
 
@@ -69,6 +69,7 @@ class WebUIConfig(BaseModel):
     timeout: int = 30
     max_retries: int = 3
     retry_delay: float = 1.0
+    external_base_url: str = ""
 
     @field_validator("language")
     @classmethod
@@ -265,10 +266,45 @@ def _make_resubmit_response(as_mcp: bool = True) -> list | dict:
 # ============================================================================
 
 
-def validate_input(
+def _normalize_option_default(value: Any) -> bool:
+    """把任意输入归一化为 bool（接受 true/false/1/0/"true"/"false"/"yes"/"no"）。
+
+    保持宽松：未知值视为未默认选中（False），避免因 LLM 偶发地传入字符串
+    类型的 "true"/"false" 而把"默认勾选"功能直接打掉。
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y", "on", "selected"}
+    return False
+
+
+def validate_input_with_defaults(
     prompt: str, predefined_options: list | None = None
-) -> tuple[str, list]:
-    """验证清理输入：截断过长内容，过滤非法选项"""
+) -> tuple[str, list[str], list[bool]]:
+    """验证清理输入：截断过长内容，过滤非法选项，并解析每项的"默认选中"状态。
+
+    `predefined_options` 兼容三种格式（向后兼容 + TODO #3 增强）：
+
+    1. 纯字符串：``"选项 A"`` —— default 为 False
+    2. 带默认选中的对象：``{"label": "选项 B", "default": True}`` ——
+       支持的别名：``label`` / ``text`` / ``value``，``default`` /
+       ``selected`` / ``checked``。
+    3. 紧凑数组：``["选项 C", true]`` —— 第一项为 label，第二项为 default。
+
+    Returns
+    -------
+    tuple[str, list[str], list[bool]]
+        归一化后的 ``(prompt, options_labels, options_defaults)``，两个列表长度
+        始终一致，长度为 0 表示用户未提供选项。
+
+    See Also
+    --------
+    validate_input : 旧版本，仅返回 ``(prompt, options_labels)``，向后兼容；
+        若仅关心 label 不需要 default 信息时使用即可。
+    """
     try:
         cleaned_prompt = prompt.strip()
     except AttributeError:
@@ -280,18 +316,67 @@ def validate_input(
         cleaned_prompt = cleaned_prompt[:MAX_MESSAGE_LENGTH] + "..."
 
     cleaned_options: list[str] = []
+    cleaned_defaults: list[bool] = []
     if predefined_options:
         for option in predefined_options:
-            if not isinstance(option, str):
-                logger.warning(f"跳过非字符串选项: {option}")
-                continue
-            cleaned_option = option.strip()
-            if cleaned_option and len(cleaned_option) <= MAX_OPTION_LENGTH:
-                cleaned_options.append(cleaned_option)
-            elif len(cleaned_option) > MAX_OPTION_LENGTH:
-                logger.warning(f"选项过长被截断: {cleaned_option[:50]}...")
-                cleaned_options.append(cleaned_option[:MAX_OPTION_LENGTH] + "...")
+            label_raw: Any = None
+            default_raw: Any = False
 
+            if isinstance(option, str):
+                label_raw = option
+            elif isinstance(option, dict):
+                # 兼容多种命名约定：label / text / value，selected / default / checked
+                label_raw = (
+                    option.get("label")
+                    if option.get("label") is not None
+                    else option.get("text")
+                    if option.get("text") is not None
+                    else option.get("value")
+                )
+                default_raw = (
+                    option.get("default")
+                    if option.get("default") is not None
+                    else option.get("selected")
+                    if option.get("selected") is not None
+                    else option.get("checked")
+                )
+            elif isinstance(option, (list, tuple)) and len(option) >= 1:
+                label_raw = option[0]
+                if len(option) >= 2:
+                    default_raw = option[1]
+            else:
+                logger.warning(f"跳过非法选项（既不是字符串也不是对象）: {option!r}")
+                continue
+
+            if not isinstance(label_raw, str):
+                logger.warning(f"跳过非字符串选项 label: {label_raw!r}")
+                continue
+
+            cleaned_option = label_raw.strip()
+            if not cleaned_option:
+                continue
+
+            if len(cleaned_option) > MAX_OPTION_LENGTH:
+                logger.warning(f"选项过长被截断: {cleaned_option[:50]}...")
+                cleaned_option = cleaned_option[:MAX_OPTION_LENGTH] + "..."
+
+            cleaned_options.append(cleaned_option)
+            cleaned_defaults.append(_normalize_option_default(default_raw))
+
+    return cleaned_prompt, cleaned_options, cleaned_defaults
+
+
+def validate_input(
+    prompt: str, predefined_options: list | None = None
+) -> tuple[str, list[str]]:
+    """验证清理输入：截断过长内容，过滤非法选项（向后兼容签名）。
+
+    返回 ``(prompt, options_labels)``。如需同时获取每项的"默认选中"状态，
+    请使用 :func:`validate_input_with_defaults`。
+    """
+    cleaned_prompt, cleaned_options, _ = validate_input_with_defaults(
+        prompt, predefined_options
+    )
     return cleaned_prompt, cleaned_options
 
 
@@ -309,6 +394,50 @@ def _generate_task_id() -> str:
 def get_target_host(host: str) -> str:
     """将不可直连的监听地址转换为客户端可访问地址（如 localhost）"""
     return "localhost" if host in {"0.0.0.0", "::"} else host
+
+
+def resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str:
+    """解析"对外可访问"的 Web UI 基地址，用于通知点击跳转等场景。
+
+    优先级：
+        1. ``[web_ui] external_base_url`` 配置（用户显式指定，如 ``http://ai.local:8080``）
+        2. ``http://{target_host}:{port}``（基于 ``[web_ui] host/port`` 推导）
+
+    返回值会去掉末尾斜杠，便于直接和 ``/path`` 拼接；解析失败时返回空串。
+    """
+    try:
+        config_mgr = get_config()
+        web_section = config_mgr.get_section("web_ui") or {}
+    except Exception as exc:
+        logger.debug(f"读取 [web_ui] 配置失败，无法解析外部基地址: {exc}")
+        web_section = {}
+
+    explicit = (
+        str(getattr(web_ui_config, "external_base_url", "") or "").strip()
+        if web_ui_config is not None
+        else ""
+    )
+    explicit = explicit or str(web_section.get("external_base_url", "") or "").strip()
+    if explicit:
+        if explicit.startswith(("http://", "https://")):
+            return explicit.rstrip("/")
+        logger.warning(
+            f"web_ui.external_base_url 必须以 http:// 或 https:// 开头，已忽略: {explicit!r}"
+        )
+
+    if web_ui_config is None:
+        try:
+            host = str(web_section.get("host", "127.0.0.1"))
+            port = int(web_section.get("port", 8080))
+        except (TypeError, ValueError):
+            return ""
+    else:
+        host = web_ui_config.host
+        port = int(web_ui_config.port)
+
+    if not host:
+        return ""
+    return f"http://{get_target_host(host)}:{port}"
 
 
 # ============================================================================

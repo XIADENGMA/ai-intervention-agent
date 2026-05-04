@@ -160,12 +160,19 @@ var _faviconState = { original: null, lastCount: -1 }
 function _loadOriginalFavicon() {
   if (_faviconState.original) return Promise.resolve(_faviconState.original)
   return new Promise(resolve => {
-    var link = document.querySelector('link[rel="icon"]') || document.querySelector('link[rel="shortcut icon"]')
+    var link =
+      document.querySelector('link[rel="icon"]') ||
+      document.querySelector('link[rel="shortcut icon"]')
     var href = link ? link.href : '/favicon.ico'
     var img = new Image()
     img.crossOrigin = 'anonymous'
-    img.onload = function () { _faviconState.original = img; resolve(img) }
-    img.onerror = function () { resolve(null) }
+    img.onload = function () {
+      _faviconState.original = img
+      resolve(img)
+    }
+    img.onerror = function () {
+      resolve(null)
+    }
     img.src = href
   })
 }
@@ -212,7 +219,11 @@ function updateFaviconBadge(count) {
       link.rel = 'icon'
       document.head.appendChild(link)
     }
-    try { link.href = canvas.toDataURL('image/png') } catch (e) { /* CSP/安全限制 */ }
+    try {
+      link.href = canvas.toDataURL('image/png')
+    } catch (e) {
+      /* CSP/安全限制 */
+    }
   })
 }
 
@@ -315,7 +326,11 @@ var _sseReconnectDelay = 1000
 function _connectSSE() {
   if (typeof EventSource === 'undefined') return
   if (_sseSource) {
-    try { _sseSource.close() } catch (_) { /* noop */ }
+    try {
+      _sseSource.close()
+    } catch (_) {
+      /* noop */
+    }
     _sseSource = null
   }
 
@@ -353,9 +368,17 @@ function _connectSSE() {
   source.onerror = function () {
     if (_sseSource !== source) return
     _sseConnected = false
-    try { source.close() } catch (_) { /* noop */ }
+    try {
+      source.close()
+    } catch (_) {
+      /* noop */
+    }
     _sseSource = null
-    console.warn('SSE disconnected; falling back to short-interval polling, reconnecting in ' + _sseReconnectDelay / 1000 + 's')
+    console.warn(
+      'SSE disconnected; falling back to short-interval polling, reconnecting in ' +
+        _sseReconnectDelay / 1000 +
+        's'
+    )
     tasksPollBackoffMs = TASKS_POLL_BASE_MS
     if (tasksPollingTimer) {
       clearTimeout(tasksPollingTimer)
@@ -1011,7 +1034,9 @@ function renderTaskTabs() {
         if (el) {
           el.classList.add('task-tab-exit')
           el.addEventListener('animationend', () => el.remove(), { once: true })
-          setTimeout(() => { if (el.parentNode) el.remove() }, 300)
+          setTimeout(() => {
+            if (el.parentNode) el.remove()
+          }, 300)
         }
       })
       addedIds.forEach(id => {
@@ -1019,7 +1044,9 @@ function renderTaskTabs() {
         if (task) {
           const tab = createTaskTab(task)
           tab.classList.add('task-tab-enter')
-          tab.addEventListener('animationend', () => tab.classList.remove('task-tab-enter'), { once: true })
+          tab.addEventListener('animationend', () => tab.classList.remove('task-tab-enter'), {
+            once: true
+          })
           tabsContainer.appendChild(tab)
         }
       })
@@ -1028,11 +1055,15 @@ function renderTaskTabs() {
       incompleteTasks.forEach((task, i) => {
         const tab = createTaskTab(task)
         tab.classList.add('task-tab-enter')
-        tab.style.animationDelay = (i * 60) + 'ms'
-        tab.addEventListener('animationend', () => {
-          tab.classList.remove('task-tab-enter')
-          tab.style.animationDelay = ''
-        }, { once: true })
+        tab.style.animationDelay = i * 60 + 'ms'
+        tab.addEventListener(
+          'animationend',
+          () => {
+            tab.classList.remove('task-tab-enter')
+            tab.style.animationDelay = ''
+          },
+          { once: true }
+        )
         tabsContainer.appendChild(tab)
       })
     }
@@ -1286,7 +1317,7 @@ async function switchTask(taskId) {
     // 更新描述和选项
     updateDescriptionDisplay(cachedTask.prompt)
     if (cachedTask.predefined_options) {
-      updateOptionsDisplay(cachedTask.predefined_options)
+      updateOptionsDisplay(cachedTask.predefined_options, cachedTask.predefined_options_defaults)
     }
   }
 
@@ -1431,7 +1462,7 @@ async function loadTaskDetails(taskId) {
       }
 
       updateDescriptionDisplay(task.prompt)
-      updateOptionsDisplay(task.predefined_options)
+      updateOptionsDisplay(task.predefined_options, task.predefined_options_defaults)
 
       // 恢复该任务之前保存的textarea内容
       const textarea = document.getElementById('feedback-text')
@@ -1466,7 +1497,9 @@ async function loadTaskDetails(taskId) {
         const remaining = task.remaining_time ?? task.auto_resubmit_timeout
         const total = task.auto_resubmit_timeout
         startTaskCountdown(task.task_id, remaining, total)
-        console.log(`First-time countdown start: ${taskId}, remaining ${remaining}s / total ${total}s`)
+        console.log(
+          `First-time countdown start: ${taskId}, remaining ${remaining}s / total ${total}s`
+        )
       } else {
         console.log(`Countdown already exists; not resetting: ${taskId}`)
       }
@@ -1593,14 +1626,19 @@ async function updateDescriptionDisplay(prompt) {
  * - 容器不存在时会跳过
  * - 选项数组为空时显示空列表
  */
-function updateOptionsDisplay(options) {
+function updateOptionsDisplay(options, optionDefaults) {
   const optionsContainer = document.getElementById('options-container')
   if (!optionsContainer) return
 
   // 优先使用该任务之前保存的勾选状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
+  // 注意：这里需要区分"用户从未交互过"与"用户已显式取消默认值"——
+  //   - 已经为该 task 保存过 selection state 的，按用户的最新意图渲染（包括"取消默认勾选"）
+  //   - 没有保存过的，使用后端 predefined_options_defaults 的"默认勾选"作为初始值
   let selectedStates = {}
+  let hasUserInteraction = false
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
     selectedStates = taskOptionsStates[activeTaskId]
+    hasUserInteraction = true
     console.log(`Restored option selection state for task ${activeTaskId}`)
   } else {
     // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
@@ -1608,12 +1646,18 @@ function updateOptionsDisplay(options) {
     existingCheckboxes.forEach(checkbox => {
       selectedStates[checkbox.id] = checkbox.checked
     })
+    // existingCheckboxes 可能来自上一次渲染（task 切换后场景）；
+    // 这里用 length>0 近似判断为"已经存在 UI 状态"，避免被默认值覆盖
+    if (existingCheckboxes.length > 0) {
+      hasUserInteraction = true
+    }
   }
 
   // 清空现有选项
   optionsContainer.innerHTML = ''
 
   if (options && options.length > 0) {
+    const defaults = Array.isArray(optionDefaults) ? optionDefaults : []
     options.forEach((option, index) => {
       const optionDiv = document.createElement('div')
       optionDiv.className = 'option-item'
@@ -1624,8 +1668,13 @@ function updateOptionsDisplay(options) {
       checkbox.value = option
 
       // 恢复选中状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
+      // 优先级：已保存的用户交互 > 后端 default > 未选中
       const checkboxId = `option-${index}`
-      if (selectedStates[checkboxId] || selectedStates[index]) {
+      if (hasUserInteraction) {
+        if (selectedStates[checkboxId] || selectedStates[index]) {
+          checkbox.checked = true
+        }
+      } else if (defaults[index] === true) {
         checkbox.checked = true
       }
 
@@ -1891,7 +1940,9 @@ function startTaskCountdown(taskId, remaining, total = null) {
           console.log(`Non-active task ${taskId} timed out with no active task; auto-submitting`)
           autoSubmitTask(taskId)
         } else {
-          console.log(`Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`)
+          console.log(
+            `Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`
+          )
         }
       }
     }
@@ -1970,9 +2021,7 @@ async function autoSubmitTask(taskId) {
   // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
   // 若后端未提供（如网络故障），退出而不是发送硬编码字符串，由下一轮轮询/用户手动触发重试
   const prompts = await fetchFeedbackPromptsFresh()
-  const defaultMessage = prompts && prompts.resubmit_prompt
-    ? String(prompts.resubmit_prompt)
-    : ''
+  const defaultMessage = prompts && prompts.resubmit_prompt ? String(prompts.resubmit_prompt) : ''
   if (!defaultMessage) {
     console.warn(`Skip auto-submit for ${taskId}: resubmit_prompt not configured or unavailable`)
     return
@@ -2028,10 +2077,14 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       }
     })
 
-    const response = await fetchWithTimeout(`/api/tasks/${taskId}/submit`, {
-      method: 'POST',
-      body: formData
-    }, 30000)
+    const response = await fetchWithTimeout(
+      `/api/tasks/${taskId}/submit`,
+      {
+        method: 'POST',
+        body: formData
+      },
+      30000
+    )
 
     const data = await response.json()
 

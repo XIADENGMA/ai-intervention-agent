@@ -40,6 +40,11 @@ bark_device_key = ""
 bark_icon = ""
 # Bark 通知动作 / Bark click action - valid: none / url (open link) / copy
 bark_action = "none"
+# Bark 点击 URL 模板 / Bark click URL template
+# Effective when bark_action = "url" and the event does not provide an explicit URL.
+# Supported placeholders: {task_id}, {event_id}, {base_url}
+# Example: "{base_url}/?task_id={task_id}"
+bark_url_template = ""
 # 发送失败重试次数 / Retry count on send failure (excluding first attempt) - range [0, 10]
 retry_count = 3
 # 重试间隔(秒) / Retry interval (seconds) - range [0, 60]
@@ -68,6 +73,10 @@ http_request_timeout = 30
 http_max_retries = 3
 # HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0.1, 60.0]
 http_retry_delay = 1.0
+# 外部访问基地址 / External base URL for notification click links and reverse proxies.
+# Leave empty to fall back to http://{host}:{port}; set to e.g. "http://ai.local:8080"
+# when Bark/PWA should open a LAN or mDNS address.
+external_base_url = ""
 
 # ──────────────────────────────────────────────
 # 网络安全配置 / Network Security Settings

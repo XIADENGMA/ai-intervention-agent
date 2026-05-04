@@ -142,5 +142,78 @@ class TestInteractiveFeedbackResubmitPathPreserved(unittest.TestCase):
         mock_wait.assert_not_called()
 
 
+class TestInteractiveFeedbackCompatAliases(unittest.TestCase):
+    """跨工具兼容：当其它 feedback MCP 的参数（summary / project_directory 等）
+    误传过来时，本工具应当正常解析而不是首次调用就失败（TODO #1）。"""
+
+    @patch("server_feedback.wait_for_task_completion")
+    @patch("service_manager.ensure_web_ui_running")
+    @patch("service_manager.get_web_ui_config")
+    @patch("server_config._generate_task_id", return_value="compat-task-1")
+    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    def test_summary_alias_is_accepted_when_message_missing(
+        self, mock_tid, mock_cfg, mock_ensure, mock_wait
+    ):
+        mock_cfg.return_value = (_make_config(), 120)
+        mock_ensure.return_value = None
+        mock_wait.return_value = {
+            "user_input": "ok",
+            "selected_options": [],
+            "images": [],
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        with _patch_async_post(return_value=mock_resp):
+            result = asyncio.run(
+                _interactive_feedback_fn(
+                    None,
+                    None,
+                    summary="please review",
+                    project_directory="/tmp/proj",
+                    submit_button_text="提交选择",
+                )
+            )
+
+        self.assertIsInstance(result, list)
+        mock_wait.assert_called_once()
+
+    def test_unknown_compat_args_do_not_raise(self):
+        """常见漂移字段不应触发 ToolError（与 TODO #1 报错对照）。"""
+        with (
+            patch("server_feedback.wait_for_task_completion") as mock_wait,
+            patch("service_manager.ensure_web_ui_running", return_value=None),
+            patch(
+                "service_manager.get_web_ui_config", return_value=(_make_config(), 120)
+            ),
+            patch("server_config._generate_task_id", return_value="compat-task-2"),
+            patch("server_feedback.NOTIFICATION_AVAILABLE", False),
+        ):
+            mock_wait.return_value = {
+                "user_input": "ok",
+                "selected_options": [],
+                "images": [],
+            }
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            with _patch_async_post(return_value=mock_resp):
+                result = asyncio.run(
+                    _interactive_feedback_fn(
+                        "hi",
+                        None,
+                        project_directory="/tmp/proj",
+                        submit_button_text="提交选择",
+                        timeout=999,
+                        feedback_type="question",
+                        priority="high",
+                        language="zh",
+                        tags=["a", "b"],
+                        user_id="u1",
+                    )
+                )
+            self.assertIsInstance(result, list)
+
+
 if __name__ == "__main__":
     unittest.main()
