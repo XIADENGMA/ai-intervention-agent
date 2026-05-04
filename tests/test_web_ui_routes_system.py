@@ -227,6 +227,68 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 500)
         self.assertIn("vanish", resp.get_json()["error"].lower())
 
+    @patch("web_ui_routes.system._resolve_allowed_paths", return_value=[])
+    def test_no_allowed_paths_returns_400(self, _mock_resolve):
+        """server 端解析不出任何配置路径 → 400 拦截。
+
+        这是「极端环境（如 read-only fs / 配置加载失败）」的兜底护栏，
+        防止在没有可写配置的环境里盲启子进程。
+        """
+        resp = self._client.post(
+            "/api/system/open-config-file",
+            json={},
+            environ_overrides={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(resp.status_code, 400)
+        data = resp.get_json()
+        self.assertFalse(data["success"])
+        self.assertIn("config file path", data["error"].lower())
+
+    @patch("web_ui_routes.system._resolve_allowed_paths")
+    def test_default_target_does_not_exist_returns_400(self, mock_resolve):
+        """默认 target 在磁盘上不存在 → 400，不应继续启动子进程。
+
+        动机：白名单里只声明了"允许打开的路径"，但若文件实际不存在，启动
+        编辑器只会得到一个空 buffer / 报错弹窗，体验差且模糊。
+        """
+        ghost = Path("/tmp/aiia-nonexistent-config-aaaa-bbbb.toml")
+        mock_resolve.return_value = [ghost]
+        if ghost.exists():
+            ghost.unlink()
+
+        resp = self._client.post(
+            "/api/system/open-config-file",
+            json={},
+            environ_overrides={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("does not exist", resp.get_json()["error"].lower())
+
+    @patch("web_ui_routes.system.subprocess.Popen")
+    @patch("web_ui_routes.system.shutil.which")
+    @patch("web_ui_routes.system._detect_default_editor")
+    def test_explicit_editor_not_in_path_falls_back_to_auto_detect(
+        self, mock_detect, mock_which, mock_popen
+    ):
+        """显式 editor 在白名单内但不在 PATH → 走自动探测，不直接 500。
+
+        防止「用户在 dropdown 里选了 cursor，但 cursor 卸载了」时弹错误，
+        而是平滑回退到 _detect_default_editor 找下一个可用编辑器。
+        """
+        mock_which.return_value = None
+        mock_detect.return_value = ("/opt/code", ["--reuse-window"])
+        mock_popen.return_value = MagicMock(pid=1234)
+
+        resp = self._client.post(
+            "/api/system/open-config-file",
+            json={"editor": "cursor"},
+            environ_overrides={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["editor"], "code")
+
 
 # ════════════════════════════════════════════════════════════════════════════
 #  GET /api/system/open-config-file/info - 探测能力 endpoint
