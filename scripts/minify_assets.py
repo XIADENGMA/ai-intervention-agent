@@ -58,10 +58,38 @@ def get_minified_name(filepath: Path) -> Path:
 
 
 def needs_minification(src: Path, dst: Path) -> bool:
-    """检查是否需要压缩"""
+    """增量构建启发式：mtime 早于源文件则需要重新压缩。
+
+    只用于本地"增量执行"（``python scripts/minify_assets.py`` 不带参数时），
+    避免每次都全量 minify。**不能**用于 ``--check`` 漂移检测，原因是：
+
+    - ``git checkout`` 会把工作树文件的 mtime 全部重置为 checkout 时刻
+    - fresh clone 之后 src 和 dst 的 mtime 完全不可控（取决于文件系统、
+      checkout 顺序、CI runner 是否启用了 mtime 保留）
+    - 实测：在 GitHub Actions runner 上 mtime 漂移率接近 100%
+
+    ``--check`` 必须用 ``content_drifts`` 直接比较 minify 输出，否则一定误报。
+    """
     if not dst.exists():
         return True
     return src.stat().st_mtime > dst.stat().st_mtime
+
+
+def content_drifts(src: Path, dst: Path, minify_func) -> bool:
+    """内容比较：minify(src) 是否等于 dst 现有内容。
+
+    专给 ``--check`` 模式用，纯属字节比较，避开 mtime 不稳定。``dst`` 不
+    存在视为漂移；``minify(src)`` 失败（rjsmin 抛异常等）也视为漂移以
+    确保 CI 暴露问题而不是默默通过。
+    """
+    if not dst.exists():
+        return True
+    try:
+        expected = minify_func(src.read_text(encoding="utf-8"))
+    except Exception:
+        return True
+    actual = dst.read_text(encoding="utf-8")
+    return expected != actual
 
 
 def minify_js(content: str) -> str:
@@ -118,15 +146,22 @@ def process_directory(
 
         minified_path = get_minified_name(filepath)
 
-        # 检查是否需要压缩
-        if not force and not needs_minification(filepath, minified_path):
-            files_skipped += 1
-            continue
-
+        # check_only 必须用内容比较：mtime 在 fresh clone / git checkout 后
+        # 不可信（详见 needs_minification 的 docstring）。--check 只判定
+        # "minify 输出 vs 现有 .min 内容是否一致"，与 mtime 完全脱钩。
         if check_only:
+            if not content_drifts(filepath, minified_path, minify_func):
+                files_skipped += 1
+                continue
             print(f"需要压缩: {filepath.name}")
             files_processed += 1
             needs_count += 1
+            continue
+
+        # 增量执行：mtime 启发式仅作为"何时跳过 minify 工作"的优化，
+        # 不参与 fail 判定。
+        if not force and not needs_minification(filepath, minified_path):
+            files_skipped += 1
             continue
 
         # 读取原始文件
