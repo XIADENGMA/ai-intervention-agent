@@ -68,7 +68,8 @@
     "package.nls.json",
     "package.nls.zh-CN.json",
     "README.md",
-    "README.zh-CN.md"
+    "README.zh-CN.md",
+    "CHANGELOG.md"
   ],
   "contributes": {
     "viewsContainers": {

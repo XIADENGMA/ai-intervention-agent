@@ -60,6 +60,12 @@ const includeList = [
   'vendor',
   'README.md',
   'README.zh-CN.md',
+  // Marketplace + Open VSX render this file on the extension's "Changelog"
+  // tab. Source-of-truth lives at the repo root (`CHANGELOG.md`); this
+  // file is the per-release extension-only excerpt with a link back to the
+  // project-wide changelog. Maintained alongside the package.json `version`
+  // bump so users see what changed in the wheel they just installed.
+  'CHANGELOG.md',
   'LICENSE',
   'activity-icon.svg',
   'icon.png',

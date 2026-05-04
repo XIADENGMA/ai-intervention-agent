@@ -29,6 +29,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`packages/vscode/CHANGELOG.md` (new)** — VS Code Marketplace and
+  Open VSX render the extension package's own `CHANGELOG.md` on the
+  listing's "Changelog" tab. Until now the extension shipped without
+  this file, so users on the Marketplace page saw an empty Changelog
+  tab no matter how many releases had landed. The new file is a
+  curated per-release excerpt of the extension-relevant changes from
+  v1.5.20 onwards, with a link back to the root `CHANGELOG.md` for
+  the full project history. Wired into the VSIX in two places:
+  `package.json::files` (npm metadata) and
+  `scripts/package_vscode_vsix.mjs::includeList` (the actual VSIX
+  copy step uses an explicit allowlist rather than reading `files`,
+  to keep the monorepo from leaking sibling packages into the
+  vsix). Single source of truth stays the root `CHANGELOG.md`; the
+  extension copy is updated alongside each version bump.
 - **`docs/README.md` + `docs/README.zh-CN.md` (new, bilingual)** —
   audience-first directory index for the 30+ markdown files under
   `docs/`. Splits navigation into four roles (end users wanting
