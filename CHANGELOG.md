@@ -283,6 +283,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (2 new tests including a `[3, 30]` range justification on
   the constant).
 
+### Tooling
+
+- **`/api/events` SSE endpoint now declares an explicit
+  `@limiter.limit("300 per minute")` instead of inheriting the global
+  default `60/min`.** Reproducer: open the Web UI, do a brisk
+  `Cmd+R`/`F5` cycle 5–10 times in 30 s (also happens on flaky LAN
+  where the browser auto-reconnects EventSource). Pre-fix the limiter
+  starts returning 429 to the SSE handshake; `EventSource.onerror`
+  kicks in, the `multi_task.js` polling fallback takes over, and the
+  observer blames the SSE pipeline rather than the limiter that
+  rejected it. New `300/min` matches the `/api/tasks` neighbour
+  endpoint, leaves multiple browser tabs and reconnect bursts breathing
+  room, and intentionally avoids `@limiter.exempt` so a misbehaving
+  client can't open unbounded connections to drain the per-subscriber
+  queue. Three AST-driven locks in
+  `tests/test_sse_endpoint_rate_limit.py`: `def sse_events` exists,
+  has exactly one `@self.limiter.limit(...)` decorator with
+  `"300 per minute"`, and is *not* `@limiter.exempt`. Future refactors
+  that drop the explicit limit (regressing to `60/min`) or upgrade to
+  `exempt` (unbounded connections) both fail the test with a direct
+  pointer to this commit's rationale.
+
 ### Security
 
 - **Server-side defense-in-depth caps on uploaded image count and total

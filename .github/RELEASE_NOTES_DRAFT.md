@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 96 maintenance commits added on top of the release. This is **not**
+> the 97 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -660,6 +660,20 @@ downstream packagers do not need to update integration scripts.
 
 ### Tooling / CI
 
+- **`/api/events` SSE endpoint now has an explicit `300/min` rate
+  limit instead of inheriting the global default `60/min`.** SSE is a
+  long connection (one ``EventSource`` instance = one limiter token)
+  but browsers auto-reconnect on flaky LAN, and a brisk page-reload
+  cycle in dev / debug easily punches through 60/min — the limiter's
+  ``429`` lands on the SSE handshake, ``EventSource.onerror`` fires,
+  the polling fallback kicks in, and the observer blames the SSE
+  pipeline rather than the limiter that rejected it. ``300/min``
+  aligns with the ``/api/tasks`` neighbour and leaves headroom for
+  multiple tabs / reconnect bursts. Intentionally **not**
+  ``@limiter.exempt`` so a misbehaving client can't open unbounded
+  connections. Three AST-driven locks in
+  ``tests/test_sse_endpoint_rate_limit.py`` (existence + exact value
+  + ``not exempt``).
 - **`scripts/ci_gate.py` is now WARNING-clean.** A new session-scoped
   `autouse` fixture in `tests/conftest.py`
   (`_silence_loguru_sinks_during_tests`) drops the Loguru stderr
