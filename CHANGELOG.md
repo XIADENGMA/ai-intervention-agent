@@ -29,6 +29,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/api.zh-CN/index.md` gains a one-line subtitle.**
+  Symmetric polish to the English index's "English API
+  reference (signatures-focused)." subtitle: the Chinese
+  index now opens with "中文 API 参考（含完整 docstring 叙述）。"
+  so a Chinese reader landing on the index immediately knows
+  they're getting full docstring narratives (vs the English
+  signature-only summary), without having to click a module
+  page first to find out. Generator emits both subtitles from
+  the same `lang`-conditional block in
+  `scripts/generate_docs.py::generate_index`; re-running
+  `--lang zh-CN` rewrites the on-disk index with the new line.
 - **Chinese API reference pages now carry a back-link to the
   English signature-only version.** Symmetric to the existing
   English pages' "For the Chinese version with full

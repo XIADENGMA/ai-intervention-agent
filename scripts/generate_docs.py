@@ -225,6 +225,8 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
         lines = [
             "# AI Intervention Agent API 文档",
             "",
+            "中文 API 参考（含完整 docstring 叙述）。",
+            "",
             "- English version: [`docs/api/index.md`](../api/index.md)",
             "",
             "## 模块列表",
