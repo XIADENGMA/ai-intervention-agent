@@ -108,6 +108,11 @@ npm run vscode:test
   - 确认服务端可访问（默认端口 8080 或按你的 `serverUrl` 设置）
   - VS Code → Help → Toggle Developer Tools 查看控制台错误
 
+## 更新日志
+
+- **VS Code 插件专属**（Marketplace / Open VSX 精选版）：[`CHANGELOG.md`](CHANGELOG.md)
+- **全仓库**（含服务端 / Web UI / 文档）：[GitHub `CHANGELOG.md`](https://github.com/xiadengma/ai-intervention-agent/blob/main/CHANGELOG.md)
+
 ## 项目地址
 
 - 主仓库：[`XIADENGMA/ai-intervention-agent`](https://github.com/XIADENGMA/ai-intervention-agent)

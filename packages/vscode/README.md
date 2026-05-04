@@ -108,6 +108,11 @@ npm run vscode:test
   - Make sure the server is reachable (default port 8080, or your configured `serverUrl`)
   - Check VS Code Developer Tools console logs
 
+## Changelog
+
+- **Extension-only (curated for the Marketplace / Open VSX listing)**: [`CHANGELOG.md`](CHANGELOG.md)
+- **Repository-wide (server / Web UI / docs)**: [GitHub `CHANGELOG.md`](https://github.com/xiadengma/ai-intervention-agent/blob/main/CHANGELOG.md)
+
 ## Repository
 
 - [`XIADENGMA/ai-intervention-agent`](https://github.com/XIADENGMA/ai-intervention-agent)
