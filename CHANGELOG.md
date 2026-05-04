@@ -1195,6 +1195,38 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **Flaky `test_cache_performance` rewritten as deterministic
+  behaviour-level invariant locks for
+  `notification_manager.refresh_config_from_file`.** The
+  original test asserted `cache_time <= no_cache_time * 1.5`
+  using `time.time()` deltas over 50 iterations (typical
+  1-10 ms total per batch). Wall-clock comparisons at sub-100ms
+  granularity are inherently unreliable: kernel preemption, GC
+  pauses on the parallel pytest worker, JIT warm-up order, and
+  cgroup-shared CPU on CI all jitter several × the measurement
+  window. Real failure mode observed: `cache=10.8ms vs no_cache=1.7ms`
+  (cache *slower* than no-cache by 6×) when the test ran late
+  in a 2400-test batch — the warm-up `force=True` had pre-warmed
+  code paths and disk caches more than the cache-hit branch's
+  later mtime check could ever benefit from. Replaced with two
+  behaviour-level locks: (1)
+  `test_cache_behavior_skips_get_section_on_unchanged_mtime`
+  patches `notification_manager.get_config` so
+  `mock_cfg.config_file.stat()` returns a fixed `st_mtime`,
+  runs 50 `force=True` iterations and asserts
+  `mock_cfg.get_section.call_count == 50` (force always
+  reloads), then 50 `force=False` iterations after `reset_mock()`
+  and asserts `call_count == 0` (cache-hit short-circuit must
+  skip the toml reload entirely); (2)
+  `test_cache_invalidation_on_mtime_change` runs the same
+  scaffold with a *newer* `st_mtime`, asserting `get_section`
+  is called exactly once (reverse-lock against future "let's
+  cache more aggressively" refactors that would silently leave
+  users on stale config until process restart). Locks the
+  *real* invariant the cache provides — "skip IO when mtime is
+  unchanged" — rather than the cache's downstream speed
+  property. Test count climbs 2465 → 2467; production code
+  unchanged.
 - **Six new introspection-based parity gates** lock the
   numeric clamp bounds, default values, and reset-endpoint
   field coverage in `shared_types.SECTION_MODELS` against

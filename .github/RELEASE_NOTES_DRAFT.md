@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 125 maintenance commits added on top of the release. This is **not**
+> the 127 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -833,6 +833,37 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **Flaky `test_cache_performance` rewritten as deterministic
+  behaviour-level invariant locks; full pytest suite no longer
+  trips on previous-test interference.** The original test
+  asserted `cache_time <= no_cache_time * 1.5` over 50 iterations
+  using `time.time()` (typical 1-10 ms total per batch). Wall-
+  clock comparisons at sub-100ms granularity are inherently
+  unreliable: kernel preemption, GC pauses on the parallel
+  pytest worker, JIT warm-up order, and cgroup-shared CPU on
+  CI machines all jitter several times the measurement window.
+  Observed failure: `cache=10.8ms vs no_cache=1.7ms` (cache
+  *slower* than no-cache by 6×) when the test ran late in a
+  2400-test batch where the warm-up `force=True` pre-warmed
+  code paths and disk caches more than the cache-hit branch's
+  later mtime check could benefit from. Replaced with two
+  behaviour-level locks: (1)
+  `test_cache_behavior_skips_get_section_on_unchanged_mtime`
+  patches `get_config` so `mock_cfg.config_file.stat()` returns
+  a fixed `st_mtime`, runs 50 `force=True` iterations and
+  asserts `mock_cfg.get_section.call_count == 50` (force always
+  reloads), then 50 `force=False` iterations after `reset_mock()`
+  and asserts `call_count == 0` (cache-hit short-circuit must
+  skip the toml reload entirely). (2)
+  `test_cache_invalidation_on_mtime_change` runs the same
+  scaffold with a *newer* `st_mtime`, asserting `get_section`
+  *is* called exactly once (reverse-lock against future "let's
+  cache more aggressively" refactors that would silently leave
+  users on stale config until process restart). Locks the *real*
+  invariant the cache provides — "skip IO when mtime is
+  unchanged" — rather than the cache's downstream speed
+  property. Test count climbs 2465 → 2467; production code
+  unchanged.
 - **Image-upload pipeline gains four-tier OOM defense; fixed a
   pre-existing 100 GB single-part exploit hidden behind a
   deceptive "为什么不依赖 MAX_CONTENT_LENGTH" docstring.**
