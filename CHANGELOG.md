@@ -29,6 +29,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/workflow{,.zh-CN}.md` no longer recommends the
+  legacy `scripts/check_locales.py` for ad-hoc locale
+  validation.** Both files used to instruct contributors to
+  run `check_locales.py` as the "Locale check" entry under
+  the per-tool list, but `scripts/README.md::§i18n static
+  gates` already flagged that script as "minimal smoke
+  (key-only parity), kept for legacy invocations" — the
+  modern equivalent is `check_i18n_locale_parity.py` (full
+  parity: keys + nested shapes + ICU placeholders), which is
+  what `ci_gate.py` already runs. The bullet now points new
+  contributors at the modern script with a parenthetical
+  noting `check_locales.py` survives only for backward
+  compatibility, eliminating a discoverability trap where a
+  reader who skipped the scripts/README would reach for the
+  weaker validator.
 - **`docs/api.zh-CN/index.md` gains a one-line subtitle.**
   Symmetric polish to the English index's "English API
   reference (signatures-focused)." subtitle: the Chinese

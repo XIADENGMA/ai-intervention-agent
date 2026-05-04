@@ -25,7 +25,7 @@
   - 类型检查：`uv run ty check .`
   - 测试：`uv run pytest -q`
   - 静态资源压缩：`uv run python scripts/minify_assets.py`
-  - Locale 一致性检查：`uv run python scripts/check_locales.py`
+  - Locale 一致性检查（完整版——key + 嵌套结构 + ICU 占位符）：`uv run python scripts/check_i18n_locale_parity.py`（旧的 `scripts/check_locales.py` 仅 key 平铺校验，保留兼容；`ci_gate.py` 已经跑的是现代版）
   - 版本号一致性检查：`uv run python scripts/bump_version.py --check --from-pyproject`
 - VSCode 插件：`npm run vscode:check`（Linux/headless：`xvfb-run -a npm run vscode:check`）
   - 若 Node 由 `fnm` 管理且在非交互 shell 下 `node` 不可用，可用：`fnm exec --using v24.14.0 -- npm run vscode:check`

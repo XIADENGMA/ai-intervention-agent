@@ -25,7 +25,7 @@ This document describes the recommended development and release workflow for thi
   - Type check: `uv run ty check .`
   - Test: `uv run pytest -q`
   - Minify: `uv run python scripts/minify_assets.py`
-  - Locale check: `uv run python scripts/check_locales.py`
+  - Locale parity check (full — keys + nested shapes + ICU placeholders): `uv run python scripts/check_i18n_locale_parity.py` (the legacy `scripts/check_locales.py` is a key-only smoke kept for backward compatibility; new code paths should target `check_i18n_locale_parity.py`, which is what `ci_gate.py` already runs)
   - Version check: `uv run python scripts/bump_version.py --check --from-pyproject`
 - VSCode extension: `npm run vscode:check` (Linux/headless: `xvfb-run -a npm run vscode:check`)
   - If you use `fnm` and `node` is unavailable in non-interactive shells: `fnm exec --using v24.14.0 -- npm run vscode:check`
