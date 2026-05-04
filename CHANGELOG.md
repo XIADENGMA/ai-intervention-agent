@@ -27,6 +27,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   back-to-back `uv run python scripts/ci_gate.py` runs producing zero
   WARNING/ERROR/FAIL/RETRY lines.
 
+### Fixed
+
+- **English API reference index now has a parity "Quick
+  navigation" section.** `scripts/generate_docs.py::generate_index`
+  used to emit a Core/Utility-modules grouped quick-navigation
+  block only for `--lang zh-CN` (lines 236–262 of the previous
+  generator), so `docs/api/index.md` (English) had a flat
+  module list while `docs/api.zh-CN/index.md` (Chinese) gained
+  a structured "核心模块 / 工具模块" overview. That meant
+  English readers landing on the auto-generated reference got a
+  visibly degraded onboarding experience compared to Chinese
+  readers — for a project that ships bilingual READMEs and
+  bilingual workflow docs, that's an unintended asymmetry.
+  Both languages now emit the same Core/Utility groupings; the
+  English copy uses the audience-appropriate wording
+  ("Configuration management", "Notification orchestration",
+  etc.). Verified with `uv run python scripts/generate_docs.py --lang en`
+  + `--lang zh-CN` followed by `git diff docs/api/index.md
+  docs/api.zh-CN/index.md` showing identical structural skeletons.
+
 ### Chore
 
 - **Bilingual `README` Acknowledgements section formalises the

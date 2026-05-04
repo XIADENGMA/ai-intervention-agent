@@ -18,6 +18,24 @@ English API reference (signatures-focused).
 - [file_validator](file_validator.md)
 - [enhanced_logging](enhanced_logging.md)
 
+## Quick navigation
+
+### Core modules
+
+- **config_manager**: Configuration management
+- **exceptions**: Unified exception definitions and error responses
+- **notification_manager**: Notification orchestration
+- **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)
+- **task_queue**: Task queue
+
+### Utility modules
+
+- **config_utils**: Configuration utility helpers
+- **shared_types**: Shared TypedDict definitions
+- **notification_models**: Notification data models
+- **file_validator**: File validation
+- **enhanced_logging**: Logging enhancements
+
 ---
 
 _Auto-generated under `docs/api/`_
