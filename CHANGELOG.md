@@ -101,6 +101,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **New regression suite:
+  `tests/test_bump_version_helpers.py`** (27 cases) covers
+  the remaining six file-type helpers in
+  `scripts/bump_version.py` that previously had **zero**
+  unit coverage —
+  `_{update,extract}_pyproject_version`,
+  `_{update,extract}_uv_lock_version`,
+  `_update_json_version_text` (package.json /
+  packages/vscode/package.json),
+  `_update_package_lock_text` (root + nested workspace
+  triple-write), and
+  `_{update,extract}_bug_template_example_version`. Forms a
+  symmetric defence with the existing
+  `tests/test_bump_version_citation.py` (CITATION.cff) and
+  closes the test gap that let the CITATION omission ship in
+  the first place. Each helper gets contract-level
+  assertions: round-trip preservation, side-effect locality
+  (third-party deps in `package-lock.json::node_modules/*`
+  unchanged, `[tool.*]` sections in `pyproject.toml`
+  preserved, multiline `placeholder: |` YAML blocks not
+  touched), failure-path raises, and a real-repo sanity
+  parse. Cross-file round-trip pins all helpers converging
+  on the same target string. 2274 → 2301 total passing.
 - **New regression gate:
   `tests/test_api_index_quick_nav_parity.py`** locks the
   contract that the *generated* `docs/api/index.md` and
