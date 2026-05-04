@@ -208,8 +208,67 @@ def generate_markdown(
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
+# Quick navigation 分组：必须覆盖 MODULES_TO_DOCUMENT 中**全部**模块。
+# 修改 MODULES_TO_DOCUMENT 时同步更新此处即可（``_assert_quick_nav_covers_all_modules``
+# 会在 generate_index 入口 fail-fast 提示遗漏）。
+QUICK_NAV_CORE = (
+    "config_manager",
+    "exceptions",
+    "notification_manager",
+    "protocol",
+    "state_machine",
+    "server_config",
+    "task_queue",
+)
+QUICK_NAV_UTILITY = (
+    "config_utils",
+    "i18n",
+    "shared_types",
+    "notification_models",
+    "notification_providers",
+    "file_validator",
+    "enhanced_logging",
+)
+
+
+def _assert_quick_nav_covers_all_modules(modules: list[str]) -> None:
+    """守住「``MODULES_TO_DOCUMENT`` ⊆ Quick nav 分组」不变量。
+
+    历史教训
+    ---------
+    v1.5.x 早期 ``notification_providers`` 漏在 Quick navigation 之外，
+    虽然 ``## Modules`` 列表完整 14 项，``### Core/Utility`` 分组仅
+    13 项。今天看是「文案漂移」，未来加 ``audio.py`` / ``ssml.py``
+    时如果只动 ``MODULES_TO_DOCUMENT`` 不动这两个分组，会再次复发。
+
+    在 ``generate_index`` 入口断言「分组并集 ⊇ 渲染清单」，
+    fail-fast + 一次性给出全部缺漏，而不是让 reviewer 翻 200 行 markdown
+    数 bullet。
+    """
+    declared = {Path(m).stem for m in modules}
+    in_nav = set(QUICK_NAV_CORE) | set(QUICK_NAV_UTILITY)
+    missing = declared - in_nav
+    extra = in_nav - declared
+    if missing or extra:
+        details = []
+        if missing:
+            details.append(
+                f"missing from Quick navigation (add to QUICK_NAV_CORE / "
+                f"QUICK_NAV_UTILITY in scripts/generate_docs.py): {sorted(missing)}"
+            )
+        if extra:
+            details.append(
+                f"listed in Quick navigation but not in MODULES_TO_DOCUMENT "
+                f"(stale entry; remove): {sorted(extra)}"
+            )
+        raise SystemExit(
+            "generate_docs.py invariant violation:\n  - " + "\n  - ".join(details)
+        )
+
+
 def generate_index(modules: list[str], *, lang: str, output_dir_display: str) -> str:
     """生成文档索引"""
+    _assert_quick_nav_covers_all_modules(modules)
     if lang == "en":
         lines = [
             "# AI Intervention Agent API Docs",
@@ -259,6 +318,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **i18n**: Lightweight back-end i18n (request-language detection + locale-keyed message lookup)",
                 "- **shared_types**: Shared TypedDict definitions",
                 "- **notification_models**: Notification data models",
+                "- **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)",
                 "- **file_validator**: File validation",
                 "- **enhanced_logging**: Logging enhancements",
                 "",
@@ -289,6 +349,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **i18n**: 后端轻量 i18n（请求语言检测 + 本地化消息查表）",
                 "- **shared_types**: 共享 TypedDict 类型定义",
                 "- **notification_models**: 通知数据模型",
+                "- **notification_providers**: 具体通知后端实现（Web Push / 系统声音 / Bark / 移动振动 / macOS 原生）",
                 "- **file_validator**: 文件验证",
                 "- **enhanced_logging**: 日志增强",
                 "",

@@ -39,6 +39,7 @@
 - **i18n**: 后端轻量 i18n（请求语言检测 + 本地化消息查表）
 - **shared_types**: 共享 TypedDict 类型定义
 - **notification_models**: 通知数据模型
+- **notification_providers**: 具体通知后端实现（Web Push / 系统声音 / Bark / 移动振动 / macOS 原生）
 - **file_validator**: 文件验证
 - **enhanced_logging**: 日志增强
 

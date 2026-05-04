@@ -39,6 +39,7 @@ English API reference (signatures-focused).
 - **i18n**: Lightweight back-end i18n (request-language detection + locale-keyed message lookup)
 - **shared_types**: Shared TypedDict definitions
 - **notification_models**: Notification data models
+- **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)
 - **file_validator**: File validation
 - **enhanced_logging**: Logging enhancements
 

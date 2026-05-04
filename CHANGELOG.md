@@ -11,6 +11,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tooling
 
+- **`scripts/generate_docs.py` now refuses to ship an
+  `index.md` whose Quick navigation grouping does not cover
+  every entry in `MODULES_TO_DOCUMENT`.** Promotes the two
+  hand-curated lists to module-level constants
+  (`QUICK_NAV_CORE` + `QUICK_NAV_UTILITY`) and asserts their
+  union equals the rendered set on every `generate_index`
+  call. Fail-fast on missing/extra entries with an actionable
+  error message instead of silently emitting an asymmetric
+  index.
 - **`scripts/bump_version.py` now also synchronises
   `CITATION.cff::version`** — the script previously walked
   six version-bearing files (`pyproject.toml`, `uv.lock`,
@@ -92,6 +101,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **New regression gate:
+  `tests/test_api_index_quick_nav_parity.py`** locks the
+  contract that the *generated* `docs/api/index.md` and
+  `docs/api.zh-CN/index.md` Quick navigation sections cover
+  every module declared in `scripts/generate_docs.py::
+  MODULES_TO_DOCUMENT`. Catches the
+  `notification_providers`-style omission both at generator
+  invocation (via `_assert_quick_nav_covers_all_modules`'s
+  fail-fast `SystemExit`) **and** at the rendered file level
+  (parses `### Core/Utility` blocks of both bilingual
+  indexes). 9 new tests; 2265 → 2274 total passing.
 - **New regression gate:
   `tests/test_config_docs_range_parity.py`** locks the
   contract that any numeric range stated in
