@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 36 maintenance commits added on top of the release. This is **not**
+> the 44 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -29,16 +29,44 @@
 
 ## What changed in v1.5.23
 
-This is a **documentation + tooling polish** maintenance release. The
-shipped runtime is functionally unchanged from v1.5.22; every commit
-either fills a long-overdue documentation gap, hardens the maintenance
-contract (CI Gate / pre-commit / coverage red line), or aligns metadata
-with the actual project ownership. Operators can drop in the new
-wheel / extension without config migration; downstream packagers do
-not need to update integration scripts.
+This is primarily a **documentation + tooling polish** maintenance
+release, plus one small but real **runtime fix** worth singling out
+(see "Silent feedback-timeout truncation" under Highlights). The rest
+of the shipped runtime is functionally unchanged from v1.5.22; every
+other commit either fills a long-overdue documentation gap, hardens
+the maintenance contract (CI Gate / pre-commit / coverage red line),
+or aligns metadata with the actual project ownership. Operators can
+drop in the new wheel / extension without config migration;
+downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **Silent feedback-timeout truncation fixed.** The four runtime
+  clamp constants in `server_config.py`
+  (`FEEDBACK_TIMEOUT_MIN/MAX`, `AUTO_RESUBMIT_TIMEOUT_MIN/MAX`)
+  were stricter than the Pydantic `_clamp_int(...)` bounds in
+  `shared_types.SECTION_MODELS::feedback`, so a user setting
+  `frontend_countdown = 1000` in `config.toml` saw the value
+  accepted by the schema, surfaced as "1000" in the Web UI's
+  current-config panel, but at runtime `task_queue.py` and
+  `web_ui_validators.py` (reading `AUTO_RESUBMIT_TIMEOUT_MAX = 250`)
+  silently truncated the active countdown to 250. Same story for
+  `backend_max_wait` (capped at 3600 instead of the documented
+  7200). Constants now match `shared_types`'s `[10, 3600]` /
+  `[10, 7200]` ranges and `tests/test_server_config_shared_types_parity.py`
+  prevents regression by introspecting `BeforeValidator` closure
+  cells. Configurations that previously hit the cap now actually
+  take effect; configurations already inside the new range see
+  identical behaviour.
+- **Default-config inline range comments aligned with SECTION_MODELS.**
+  The first surface a new operator reads — the `range/范围 [a, b]`
+  hints in `config.toml.default` and `config.jsonc.default` — had
+  five stale entries (`http_request_timeout`, `http_max_retries`,
+  `http_retry_delay`, `backend_max_wait`, `frontend_countdown`)
+  that drifted when `shared_types` widened its `_clamp_int` bounds
+  earlier in v1.5.x. `tests/test_default_config_range_parity.py`
+  uses the same introspection helper as the docs/configuration parity
+  test to lock both templates against future drift.
 - **Audience-first navigation** for the 30+ documents under `docs/`
   and the 20 automation scripts under `scripts/` — fresh
   contributors no longer have to grep titles to find their entry
@@ -240,6 +268,22 @@ not need to update integration scripts.
   climbs from 2244 to 2249. The TOML / doc parsers each
   carry a self-check so refactoring the regex later cannot
   silently weaken the gate.
+- **Two new introspection-based parity gates** lock the
+  numeric clamp bounds in `shared_types.SECTION_MODELS`
+  against the two surfaces that historically drifted:
+  - `tests/test_server_config_shared_types_parity.py`
+    asserts `server_config.{FEEDBACK_TIMEOUT_MIN/MAX,
+    AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` equal the
+    `(min, max)` pulled directly from the
+    `BeforeValidator` closure cells of
+    `feedback.{backend_max_wait, frontend_countdown}`. 2
+    tests.
+  - `tests/test_default_config_range_parity.py` walks both
+    `config.toml.default` and `config.jsonc.default` with
+    format-aware regex, parses every `range/范围 [a, b]`
+    inline comment, and asserts equality against the same
+    introspected bounds. 2 tests; ~5 ranges captured per
+    file (sanity-checked).
 
 ### Tooling / CI
 
