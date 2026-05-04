@@ -618,10 +618,34 @@
         settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
       if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
 
+      // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
+      //
+      // 历史 bug：
+      //   const debounceSaveFeedback = updates => {
+      //     if (fbSaveTimer) clearTimeout(fbSaveTimer)
+      //     fbSaveTimer = setTimeout(() => saveFeedbackConfig(updates), 800)
+      //   }
+      //
+      // 重现：
+      //   T=0    用户改 frontend_countdown=60 → 设 timer(at 800ms)
+      //   T=300  用户改 resubmit_prompt="x"   → clearTimeout(旧 timer)，
+      //                                          新 timer(at 1100ms)
+      //   T=1100 发送 {resubmit_prompt:"x"}，frontend_countdown=60 永久丢失
+      //
+      // 修复：每次调用把 updates 合进 ``fbPendingUpdates``，timer 真正触发时
+      // 一次性 POST。clearTimeout 只是「重新计时」，不再丢弃 payload。
+      // 锁定行为：tests/test_webview_debounce_save_feedback.test.mjs。
       let fbSaveTimer = null
+      let fbPendingUpdates = null
       const debounceSaveFeedback = updates => {
         if (fbSaveTimer) clearTimeout(fbSaveTimer)
-        fbSaveTimer = setTimeout(() => saveFeedbackConfig(updates), 800)
+        fbPendingUpdates = Object.assign(fbPendingUpdates || {}, updates || {})
+        fbSaveTimer = setTimeout(() => {
+          const merged = fbPendingUpdates
+          fbPendingUpdates = null
+          fbSaveTimer = null
+          saveFeedbackConfig(merged)
+        }, 800)
       }
       const fbCountdown = document.getElementById('feedbackCountdown')
       const fbPrompt = document.getElementById('feedbackResubmitPrompt')

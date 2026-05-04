@@ -358,10 +358,29 @@ class SettingsManager {
     const feedbackPrompt = document.getElementById('feedback-resubmit-prompt')
     const feedbackSuffix = document.getElementById('feedback-prompt-suffix')
 
+    // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
+    //
+    // 历史 bug：旧实现 ``setTimeout(..., updates)`` 每次都用最新一次调用
+    // 的 ``updates``，clearTimeout 时旧 payload 直接丢弃。重现：
+    //   T=0    改 frontend_countdown=60        → timer(at 800)
+    //   T=300  改 resubmit_prompt="x"          → clearTimeout(旧)，
+    //                                            新 timer(at 1100)
+    //   T=1100 发送 {resubmit_prompt:"x"}      → frontend_countdown=60 永久丢
+    //
+    // 修复：每次调用把 updates 合进 ``feedbackPendingUpdates``，timer
+    // 触发时一次性 POST。和 packages/vscode/webview-settings-ui.js 保持
+    // byte-parity（双份代码必须同步修，否则 Web/VSCode 行为分歧）。
     let feedbackSaveTimer = null
+    let feedbackPendingUpdates = null
     const debounceSaveFeedback = updates => {
       if (feedbackSaveTimer) clearTimeout(feedbackSaveTimer)
-      feedbackSaveTimer = setTimeout(() => this.saveFeedbackConfig(updates), 800)
+      feedbackPendingUpdates = Object.assign(feedbackPendingUpdates || {}, updates || {})
+      feedbackSaveTimer = setTimeout(() => {
+        const merged = feedbackPendingUpdates
+        feedbackPendingUpdates = null
+        feedbackSaveTimer = null
+        this.saveFeedbackConfig(merged)
+      }, 800)
     }
 
     if (feedbackCountdown) {
