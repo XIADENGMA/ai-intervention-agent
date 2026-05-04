@@ -289,6 +289,7 @@ flowchart TD
 - **API docs (简体中文)**: [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **MCP tool reference**: [`docs/mcp_tools.md`](docs/mcp_tools.md)
 - **MCP 工具说明**: [`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)
+- **Troubleshooting / FAQ**: [`docs/troubleshooting.md`](docs/troubleshooting.md) · [`docs/troubleshooting.zh-CN.md`](docs/troubleshooting.zh-CN.md)
 - **i18n contributor guide**: [`docs/i18n.md`](docs/i18n.md)
 - **DeepWiki**: [deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
 

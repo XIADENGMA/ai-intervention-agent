@@ -29,6 +29,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/troubleshooting.md` + `docs/troubleshooting.zh-CN.md` (new,
+  bilingual)** — focused FAQ covering the eight most common
+  deployment / runtime issues: port-in-use Web UI failure, blank
+  VS Code panel, empty task list / SSE replay, notification
+  channels (Web / sound / system / Bark) silence triage, mDNS
+  `ai.local` resolution, "Open in IDE" button no-op, PWA install
+  prompt missing, and local-vs-CI Gate divergence. Each entry
+  follows a "symptom → cause → fix" structure so users can
+  self-diagnose in <2 minutes. Linked from `SUPPORT.md` (under
+  "Before opening an issue") and from both READMEs (Documentation
+  section).
 - **OpenSSF Scorecard badge added to both READMEs** (English + 简体中文).
   The badge tracks the `scorecard.yml` workflow status (currently green;
   `publish_results: true` already streams attested SARIF to Sigstore +

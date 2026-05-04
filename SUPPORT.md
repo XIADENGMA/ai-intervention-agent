@@ -19,7 +19,7 @@ This file routes questions to the right channel so they get the fastest, most us
 
 1. **Search existing issues and discussions** — duplicates are the most common cause of slow responses.
 2. **Confirm you are on the latest version**. PyPI: `pip install -U ai-intervention-agent`; VS Code: marketplace auto-update.
-3. **Read the relevant doc page**: [`README.md`](README.md), [`docs/configuration.md`](docs/configuration.md), [`docs/mcp_tools.md`](docs/mcp_tools.md).
+3. **Read the relevant doc page**: [`README.md`](README.md), [`docs/troubleshooting.md`](docs/troubleshooting.md), [`docs/configuration.md`](docs/configuration.md), [`docs/mcp_tools.md`](docs/mcp_tools.md).
 4. **Try a clean reproduction**: run `uv run python scripts/manual_test.py --port 8080 --verbose` and confirm the issue persists with the published code, not your local patches.
 5. **Have logs ready**: enable `ai-intervention-agent.logLevel = "debug"` in VS Code, or set `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG` for the standalone server.
 
@@ -69,7 +69,7 @@ This project does not currently accept paid sponsorships. If you'd like to suppo
 
 1. **先搜索现有 issue / discussion**，重复是回复慢最常见原因。
 2. **确认在最新版本**：PyPI `pip install -U ai-intervention-agent`，VS Code 走 marketplace 自动更新。
-3. **看相关文档页**：[`README.zh-CN.md`](README.zh-CN.md)、[`docs/configuration.zh-CN.md`](docs/configuration.zh-CN.md)、[`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)。
+3. **看相关文档页**：[`README.zh-CN.md`](README.zh-CN.md)、[`docs/troubleshooting.zh-CN.md`](docs/troubleshooting.zh-CN.md)、[`docs/configuration.zh-CN.md`](docs/configuration.zh-CN.md)、[`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)。
 4. **尝试纯净复现**：`uv run python scripts/manual_test.py --port 8080 --verbose`，确认问题在 published 代码上仍能复现，而非你本地的私改造成。
 5. **准备好日志**：VS Code 里把 `ai-intervention-agent.logLevel` 设为 `debug`；独立 server 设环境变量 `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG`。
 
