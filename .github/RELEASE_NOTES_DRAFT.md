@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 119 maintenance commits added on top of the release. This is **not**
+> the 121 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -833,6 +833,33 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **`wait_for_task_completion` retries `_fetch_result` once before
+  ghost-task close, closing a "SSE-completed + fetch-jitter →
+  delete user's feedback" race.** Pre-fix race: T0 user submits
+  feedback → web_ui `complete_task` → COMPLETED with `result`; T1
+  SSE pushes `task_changed(completed)`; T2 `_sse_listener` calls
+  `_fetch_result()` *but* GET hits transient 503/ConnectError/
+  DNS jitter → returns `None`; T3 `completion.set()` fires
+  regardless; T4 finally's R13·B1 branch sees `result_box[0] is
+  None` → POSTs `/api/tasks/<id>/close` → `task_queue.remove_task`
+  deletes the COMPLETED task **and its result**; T5 line-230
+  fallback `_fetch_result` hits 404 → `_make_resubmit_response`
+  → AI hands the user a "please resubmit" with zero log signal
+  that a result existed briefly. Real-world reproducer:
+  cross-region cellular network mid-handoff, intermediate proxy
+  502-ing during TLS cert rotation, brief `httpx.AsyncClient`
+  pool eviction race. Fix is one extra `_fetch_result` hop in
+  the same finally — if `result_box[0] is None` after SSE/poll
+  tasks have been awaited, retry once; transient failures clear
+  in <1 s, so the retry recovers `result`, fills `result_box[0]`,
+  and the existing `is None` close-guard short-circuits past
+  close. If retry also fails, falls through to the original
+  R13·B1 path with bit-identical behaviour (no regression for
+  genuinely stuck scenarios). Three locks in
+  `TestRetryFetchBeforeClose`: stateful AsyncMock (1st GET →
+  503, 2nd → completed) recovers result + zero `client.post` +
+  ≥ 2 GETs; always-pending case still calls close; reverse-lock
+  on normal completion path. Pytest count 2452 → 2455.
 - **`NotificationManager` worker pool now sized to
   `len(NotificationType)` (currently 4), not hardcoded `3` — closes
   a "全开" user's silent notification drop.** Pre-fix

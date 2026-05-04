@@ -382,6 +382,50 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
+- **`wait_for_task_completion` now retries `_fetch_result()` once
+  before `_close_orphan_task_best_effort()` so a transient SSE-
+  completion + fetch-jitter race no longer permanently deletes a
+  user's already-submitted feedback.** Pre-fix race window: SSE
+  reports `task_changed(new_status=completed)` while the user's
+  result is already written to `task_queue` → `_sse_listener`
+  calls `_fetch_result()` to grab the payload → that GET hits a
+  transient 503 / ConnectError / DNS jitter (cross-region cellular
+  handoff, proxy returning 502 mid-TLS-cert-rotation, momentary
+  `httpx.AsyncClient` pool eviction) → `_fetch_result` returns
+  `None` from its broad `except Exception` branch → `completion.set()`
+  fires regardless → finally checks `result_box[0] is None` → True
+  → `_close_orphan_task_best_effort()` POSTs `/api/tasks/<id>/close`
+  → web_ui `task_queue.remove_task` deletes the COMPLETED task
+  **and its `result` payload** → user receives a `_make_resubmit_response`
+  back through the AI, with zero log signal that a result *did*
+  exist briefly. Fix is a single retry hop in the same finally
+  block: if `result_box[0] is None` after both SSE / poll tasks
+  have been awaited, call `_fetch_result()` once more — transient
+  failures typically clear in <1 s, so the retry recovers the
+  result, fills `result_box[0]`, and the existing `if result_box[0]
+  is None` close-guard short-circuits past the close call entirely.
+  If the retry *also* fails (genuinely no result, web_ui truly
+  wedged), control flows into the original R13·B1 close path with
+  behaviour bit-identical to pre-fix — no regression for the
+  timeout / genuinely-stuck scenarios the original commit was
+  written for. The post-finally line-230 `_fetch_result()` is
+  preserved as a third-tier fallback for the rare case where
+  `_close_orphan_task_best_effort` raised `CancelledError` yet
+  the task was never actually closed (its role is largely subsumed
+  by the new retry but it's free defence-in-depth). Three new
+  locks in `TestRetryFetchBeforeClose`:
+  `test_retry_recovers_result_skips_close` drives the exact race
+  with a stateful `AsyncMock` GET (1st → 503, 2nd → completed
+  result) and asserts (a) the return value is the recovered result
+  not `_make_resubmit_response`, (b) `client.post` (close) is
+  called *zero* times, (c) GET is called ≥ 2× to confirm the
+  retry fired; `test_retry_still_failing_falls_back_to_close`
+  preserves the always-pending case and confirms `client.post`
+  *is* called at least once;
+  `test_retry_does_not_fire_when_result_already_present` reverse-
+  locks the normal completion path so a future refactor moving
+  the retry outside the `is None` guard cannot silently overwrite
+  a legitimately-obtained result. Pytest count 2452 → 2455.
 - **`NotificationManager.ThreadPoolExecutor(max_workers=...)` now
   binds to `len(NotificationType)` (currently 4) instead of a
   hardcoded `3`, closing a "全开" user's silent notification drop.**
