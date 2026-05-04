@@ -9,7 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-(no changes since `v1.5.22`)
+### Chore
+
+- **PyPI Development Status classifier graduated from `4 - Beta` to
+  `5 - Production/Stable`** in `pyproject.toml`. v1.5.22 ships 2244 passing
+  tests at 90.96% line coverage, zero known CVEs in the production dependency
+  chain (post pip-audit wave), and is published on PyPI / Open VSX / VS Code
+  Marketplace under v1.5.x; the `Beta` label was an unnecessary speedbump for
+  adopters scanning the project page. Pure metadata change — no runtime impact.
 
 ## [1.5.22] — 2026-05-04
 
