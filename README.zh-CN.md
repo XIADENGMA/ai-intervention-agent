@@ -281,6 +281,7 @@ flowchart TD
 
 ## 文档
 
+- **发布说明**：[`CHANGELOG.md`](CHANGELOG.md)
 - **API 文档（英文）**：[`docs/api/index.md`](docs/api/index.md)
 - **API 文档（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **MCP 工具说明（英文）**：[`docs/mcp_tools.md`](docs/mcp_tools.md)
