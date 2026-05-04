@@ -92,12 +92,14 @@ class TestTaskQueueBasic(unittest.TestCase):
         self.assertIsNotNone(self.queue.get_task("task-1"))
 
     def test_add_task_clamps_timeout_min(self):
-        """倒计时边界：auto_resubmit_timeout<30 时应被钳制到 30（0 例外）"""
+        """倒计时边界：auto_resubmit_timeout 小于 AUTO_RESUBMIT_TIMEOUT_MIN 时应被钳制到下限（0 例外）"""
+        from server_config import AUTO_RESUBMIT_TIMEOUT_MIN
+
         self.queue.add_task("task-1", "测试提示", auto_resubmit_timeout=1)
         task = self.queue.get_task("task-1")
         self.assertIsNotNone(task)
         assert task is not None
-        self.assertEqual(task.auto_resubmit_timeout, 30)
+        self.assertEqual(task.auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MIN)
 
     def test_add_duplicate_task(self):
         """测试添加重复任务"""
@@ -920,11 +922,13 @@ class TestAddTaskTimeoutEdge(unittest.TestCase):
         q.stop_cleanup()
 
     def test_timeout_small_positive_clamped(self):
+        from server_config import AUTO_RESUBMIT_TIMEOUT_MIN
+
         q = TaskQueue()
-        q.add_task("t1", "p", auto_resubmit_timeout=10)
+        q.add_task("t1", "p", auto_resubmit_timeout=1)
         task = q.get_task("t1")
         assert task is not None
-        self.assertEqual(task.auto_resubmit_timeout, 30)
+        self.assertEqual(task.auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_MIN)
         q.stop_cleanup()
 
 

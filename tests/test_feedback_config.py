@@ -34,11 +34,11 @@ class TestFeedbackConfigConstants(unittest.TestCase):
         self.assertEqual(FEEDBACK_TIMEOUT_DEFAULT, 600)
         self.assertEqual(AUTO_RESUBMIT_TIMEOUT_DEFAULT, 240)
 
-        # 验证边界值
-        self.assertEqual(FEEDBACK_TIMEOUT_MIN, 60)
-        self.assertEqual(FEEDBACK_TIMEOUT_MAX, 3600)
-        self.assertEqual(AUTO_RESUBMIT_TIMEOUT_MIN, 30)
-        self.assertEqual(AUTO_RESUBMIT_TIMEOUT_MAX, 250)  # 【优化】从290改为250
+        # 验证边界值（与 shared_types.SECTION_MODELS::feedback 对齐）
+        self.assertEqual(FEEDBACK_TIMEOUT_MIN, 10)
+        self.assertEqual(FEEDBACK_TIMEOUT_MAX, 7200)
+        self.assertEqual(AUTO_RESUBMIT_TIMEOUT_MIN, 10)
+        self.assertEqual(AUTO_RESUBMIT_TIMEOUT_MAX, 3600)
 
         # 验证缓冲和最低值
         self.assertEqual(BACKEND_BUFFER, 40)  # 【优化】从60改为40
@@ -71,7 +71,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
         from server import FEEDBACK_TIMEOUT_MIN, FeedbackConfig
 
         config = FeedbackConfig(
-            timeout=10,  # 小于 60
+            timeout=5,  # 小于 10
             auto_resubmit_timeout=240,
             resubmit_prompt="测试",
             prompt_suffix="",
@@ -84,7 +84,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
         from server import FEEDBACK_TIMEOUT_MAX, FeedbackConfig
 
         config = FeedbackConfig(
-            timeout=5000,  # 大于 3600
+            timeout=10000,  # 大于 7200
             auto_resubmit_timeout=240,
             resubmit_prompt="测试",
             prompt_suffix="",
@@ -111,7 +111,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
         config = FeedbackConfig(
             timeout=600,
-            auto_resubmit_timeout=10,  # 小于 30
+            auto_resubmit_timeout=5,  # 小于 10
             resubmit_prompt="测试",
             prompt_suffix="",
         )
@@ -124,7 +124,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
         config = FeedbackConfig(
             timeout=600,
-            auto_resubmit_timeout=500,  # 大于 250（优化后的最大值）
+            auto_resubmit_timeout=5000,  # 大于 3600（与 shared_types 对齐）
             resubmit_prompt="测试",
             prompt_suffix="",
         )
@@ -334,17 +334,17 @@ class TestWebUIValidateAutoResubmitTimeout(unittest.TestCase):
         self.assertEqual(result, 0)
 
     def test_below_min(self):
-        """测试小于最小值"""
+        """测试小于最小值（与 shared_types 对齐后 MIN=10）"""
         from web_ui import AUTO_RESUBMIT_TIMEOUT_MIN, validate_auto_resubmit_timeout
 
-        result = validate_auto_resubmit_timeout(10)
+        result = validate_auto_resubmit_timeout(5)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MIN)
 
     def test_above_max(self):
-        """测试大于最大值"""
+        """测试大于最大值（与 shared_types 对齐后 MAX=3600）"""
         from web_ui import AUTO_RESUBMIT_TIMEOUT_MAX, validate_auto_resubmit_timeout
 
-        result = validate_auto_resubmit_timeout(500)
+        result = validate_auto_resubmit_timeout(99999)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MAX)
 
     def test_normal_value(self):

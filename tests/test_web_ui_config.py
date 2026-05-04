@@ -1800,7 +1800,10 @@ class TestValidateAutoResubmitTimeout(unittest.TestCase):
     def test_above_max_clamped(self):
         from web_ui import AUTO_RESUBMIT_TIMEOUT_MAX, validate_auto_resubmit_timeout
 
-        self.assertEqual(validate_auto_resubmit_timeout(999), AUTO_RESUBMIT_TIMEOUT_MAX)
+        # 与 shared_types 对齐后 MAX=3600，需要更大的越界值才能触发上限钳位
+        self.assertEqual(
+            validate_auto_resubmit_timeout(99999), AUTO_RESUBMIT_TIMEOUT_MAX
+        )
 
     def test_within_range_unchanged(self):
         from web_ui import validate_auto_resubmit_timeout

@@ -82,13 +82,17 @@ class TestFeedbackConfig(unittest.TestCase):
         self.assertEqual(cfg.timeout, 600)
 
     def test_clamp_timeout(self):
+        from server_config import FEEDBACK_TIMEOUT_MAX
+
         cfg = FeedbackConfig(
-            timeout=9999,
+            timeout=99999,
             auto_resubmit_timeout=240,
             resubmit_prompt="test",
             prompt_suffix="",
         )
-        self.assertLessEqual(cfg.timeout, 3600)
+        # 用常量而非硬编码：边界已在 shared_types/server_config 之间锁定（见
+        # tests/test_server_config_shared_types_parity.py）
+        self.assertEqual(cfg.timeout, FEEDBACK_TIMEOUT_MAX)
 
     def test_zero_auto_resubmit_not_clamped(self):
         cfg = FeedbackConfig(

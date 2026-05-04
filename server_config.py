@@ -24,13 +24,18 @@ logger = EnhancedLogger(__name__)
 # 超时与边界常量
 # ============================================================================
 
+# NOTE: 这些 MIN/MAX 常量必须与 ``shared_types.SECTION_MODELS::feedback`` 中的
+# Pydantic ``_clamp_int(min, max, default)`` 边界保持一致 —— 否则会出现「config.toml
+# 写 frontend_countdown=1000，shared_types Pydantic 接受 1000，但 web_ui_validators /
+# task_queue 用本文件的常量把它 clamp 回 250」这种 docs 撒谎、行为不一致的漂移。
+# ``tests/test_server_config_shared_types_parity.py`` 锁住此契约。
 FEEDBACK_TIMEOUT_DEFAULT = 600  # 默认后端最大等待时间（秒）
-FEEDBACK_TIMEOUT_MIN = 60  # 后端最小等待时间（秒）
-FEEDBACK_TIMEOUT_MAX = 3600  # 后端最大等待时间上限（秒，1小时）
+FEEDBACK_TIMEOUT_MIN = 10  # 后端最小等待时间（秒，与 shared_types 对齐）
+FEEDBACK_TIMEOUT_MAX = 7200  # 后端最大等待时间上限（秒，2 小时；与 shared_types 对齐）
 
 AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MIN = 30  # 前端最小倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MAX = 250  # 前端最大倒计时（秒）
+AUTO_RESUBMIT_TIMEOUT_MIN = 10  # 前端最小倒计时（秒，与 shared_types 对齐）
+AUTO_RESUBMIT_TIMEOUT_MAX = 3600  # 前端最大倒计时（秒，1 小时；与 shared_types 对齐）
 
 BACKEND_BUFFER = 40  # 后端缓冲时间（秒，前端+缓冲=后端最小）
 BACKEND_MIN = 260  # 后端最低等待时间（秒，预留安全余量避免 MCPHub 300秒硬超时）
