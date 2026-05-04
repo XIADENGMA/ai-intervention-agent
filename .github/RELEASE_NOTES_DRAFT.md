@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 83 maintenance commits added on top of the release. This is **not**
+> the 86 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,62 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **`ConfigManager.reload()` external-edit-wins race fix.**
+  When ``cfg.set(...)`` queued a 3-second batch save and the
+  user edited ``config.toml`` in their IDE during that window,
+  ``_load_config`` would read the external bytes into
+  ``self._config`` but the still-armed ``_save_timer`` would
+  fire on the original tick and clobber the disk with the
+  in-memory ``_pending_changes``. Net effect: external edit
+  silently lost, no warning, last-write-wins. ``_load_config``
+  now clears ``_pending_changes`` and cancels ``_save_timer``
+  under the lock on every reload (with a WARNING log listing
+  the discarded keys); matches operator intuition that "if I
+  edited the file, my edit should win". Reproduced + locked by
+  ``tests/test_config_manager.py::TestReloadDiscardsPendingChanges``
+  (4 tests, including the full T0→T3 race).
+- **mDNS startup no longer crashes the entire Web UI on a bad
+  publish address or busy Avahi.** ``Zeroconf()`` and
+  ``socket.inet_aton(publish_ip)`` / ``ServiceInfo(...)`` were
+  unprotected, so EADDRINUSE / WinError 10049 / ENETUNREACH /
+  illegal-IP-string would propagate up out of
+  ``WebFeedbackUI.run()`` and prevent startup — violating the
+  documented contract that mDNS failure must degrade
+  gracefully to IP/localhost-only access. Both call-sites now
+  wrap the failure in ``try/except``, log a WARNING with
+  ``exc_info``, print a user-visible degradation notice, and
+  return early so ``WebFeedbackUI.run()`` continues.
+  ``tests/test_web_ui_config.py::TestMdnsConstructorFailures``
+  exercises both branches via mock injection (2 tests).
+- **AppleScript ``maxBuffer`` overflow no longer reports as
+  TIMEOUT.** When ``osascript`` produces > ``maxBufferBytes``
+  of combined stdout+stderr, Node throws
+  ``ERR_CHILD_PROCESS_STDIO_MAXBUFFER`` *with*
+  ``killed=true / signal=SIGTERM``. The previous classifier
+  checked only ``killed`` / ``signal`` and surfaced
+  ``APPLE_SCRIPT_TIMEOUT``, sending users on a wild goose
+  chase to bump ``timeoutMs``. The classifier in
+  ``packages/vscode/applescript-executor.ts`` now distinguishes
+  the two and surfaces ``APPLE_SCRIPT_OUTPUT_TOO_LARGE``,
+  preserving the existing TIMEOUT vs FAILED ladder for
+  everything else. New
+  ``packages/vscode/test/applescript-executor.test.js::maxBuffer``
+  test injects a fake ``execFile`` reproducing the exact error
+  shape Node throws, locking the disambiguation.
+- **VSIX size budget guard added.**
+  ``scripts/package_vscode_vsix.mjs`` reads the post-package
+  ``.vsix`` byte size and applies a two-tier check: WARN at
+  4 MB and FAIL (``process.exit(1)``) at 6 MB packed. Current
+  1.5.x ships at ~2.7 MB packed, leaving generous headroom for
+  normal feature work but tripping immediately if a bundle
+  accident pushes the artifact into the multi-MB range.
+  Defaults overridable via env var
+  ``AIIA_VSCODE_VSIX_{WARN,MAX}_PACKED_MB`` for one-off
+  intentional jumps. Companion
+  ``tests/test_vscode_vsix_size_budget.py`` (6 tests)
+  statically locks the default constants in [1, 50] MB sane
+  range and asserts WARN ≤ FAIL, so a reviewer cannot silently
+  disarm the guard by raising the default.
 - **Bark double-push when `bark_timeout > 15s` is fixed.**
   ``_process_event``'s ``as_completed(timeout=15)`` was hardcoded
   even though Pydantic ``coerce_bark_timeout`` accepts ``[1, 300]``.

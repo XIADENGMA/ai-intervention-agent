@@ -11,6 +11,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tooling
 
+- **VSIX size budget guard added to the packaging script.**
+  `scripts/package_vscode_vsix.mjs` now reads the post-package
+  `.vsix` byte size and applies a two-tier check: WARN at 4 MB
+  and FAIL (`process.exit(1)`) at 6 MB packed. Current 1.5.x
+  ships at ~2.7 MB packed, so both thresholds leave generous
+  headroom for normal feature work but trip immediately if a
+  bundle accident (e.g. shipping the entire `mathjax/` tree
+  uncompressed, or pulling a heavy npm dep transitively into
+  the webview) pushes the artifact into the multi-MB range.
+  Defaults can be overridden via
+  `AIIA_VSCODE_VSIX_WARN_PACKED_MB` /
+  `AIIA_VSCODE_VSIX_MAX_PACKED_MB` for one-off intentional
+  jumps. Companion `tests/test_vscode_vsix_size_budget.py`
+  statically locks the default constants in the [1, 50] MB
+  sane range and asserts WARN ≤ FAIL, so a reviewer cannot
+  silently disarm the guard by raising the default to 100 MB.
 - **Shebang ↔ executable-bit invariant is now enforced.**
   Two layers:
   1. **Repo-wide cleanup**: 6 top-level library modules
@@ -268,6 +284,61 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the constant).
 
 ### Fixed
+
+- **`ConfigManager.reload()` silently lost in-process edits.** When
+  `_save_timer` was queued (3-second batch debounce after a
+  `cfg.set(...)`) and the file watcher fired before the timer
+  did — e.g. operator edits `config.toml` in their IDE during
+  a Bark URL field-edit window — `_load_config` would read the
+  external bytes into `self._config`, then the lingering
+  `_save_timer` would still wake up and `_pending_changes`
+  would clobber the freshly-loaded external value back onto
+  disk. Net effect: external edits silently lost, no warning,
+  last-write-wins. Switched to *external-edit-wins* on reload:
+  `_load_config` now clears `_pending_changes` and cancels
+  `_save_timer` under the lock, logging a WARNING listing the
+  discarded keys; matches operator intuition ("if I edited the
+  file, my edit should win"). Companion
+  `tests/test_config_manager.py::TestReloadDiscardsPendingChanges`
+  reproduces the full race + locks the warning behaviour.
+- **mDNS startup could crash the entire Web UI when Zeroconf
+  endpoint was unavailable.** `WebFeedbackUI._start_mdns_if_needed`
+  called `Zeroconf()` and `socket.inet_aton(publish_ip)` /
+  `ServiceInfo(...)` without try/except, so any of:
+  - Linux + Avahi conflict (`errno 98 EADDRINUSE`),
+  - Windows 169.254.x.x link-local interfaces (`WinError 10049`),
+  - IPv6-only loopback without multicast (`errno 101 ENETUNREACH`),
+  - or a malformed `publish_ip` reaching `socket.inet_aton`
+    (`OSError: illegal IP address string passed`)
+
+  would propagate up out of `WebFeedbackUI.run()` and prevent
+  the Web UI from starting at all — violating the documented
+  contract that "mDNS failure must degrade gracefully to
+  IP/localhost-only access". Both call-sites now wrap the
+  failure in `try/except (OSError, ValueError)`, log a WARNING
+  with `exc_info`, print a user-visible degradation notice, and
+  return early so `WebFeedbackUI.run()` continues normally.
+  `tests/test_web_ui_config.py::TestMdnsConstructorFailures`
+  exercises both branches via mock injection.
+- **AppleScript `maxBuffer` overflow misclassified as timeout.**
+  When `osascript` produced more than `maxBufferBytes` of
+  combined stdout+stderr (e.g. when a developer accidentally
+  pasted a large AppleScript that returns a 5 MB result),
+  `child_process.execFile` would throw with
+  `error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'` *and*
+  `killed === true` / `signal === 'SIGTERM'`. The previous
+  classifier checked only `killed`/`signal` and reported
+  `APPLE_SCRIPT_TIMEOUT`, sending users on a wild goose chase
+  to bump `timeoutMs` (which would not help — the real fix is
+  to tighten the script or raise `maxBufferBytes`). The error
+  classifier in `packages/vscode/applescript-executor.ts` now
+  checks `errCodeStr === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'`
+  *first* and surfaces it as `APPLE_SCRIPT_OUTPUT_TOO_LARGE`,
+  preserving the existing TIMEOUT vs FAILED ladder for
+  everything else. New
+  `packages/vscode/test/applescript-executor.test.js::maxBuffer
+  overflow` test injects a fake `execFile` that reproduces the
+  exact error shape Node throws, locking the disambiguation.
 
 - **Silent feedback-timeout truncation.** `server_config.py`'s
   `FEEDBACK_TIMEOUT_MIN/MAX` and `AUTO_RESUBMIT_TIMEOUT_MIN/MAX`
