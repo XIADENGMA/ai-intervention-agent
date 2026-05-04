@@ -56,6 +56,7 @@ __all__ = [
 import atexit
 import io
 import os
+import random
 import sys
 import threading
 import time
@@ -420,8 +421,23 @@ def main() -> None:
     fastmcp_logger.setLevel(_stdlib_logging.WARNING)
 
     # 重试配置
+    # 历史上是 ``time.sleep(1)`` 固定 1s 间隔，如果同一台机器同时跑多个 MCP
+    # 实例（IDE 多 worker / Cursor + VS Code 同时调起），每次 mcp.run() 同
+    # 类失败（例如 stdio EOF / 上游服务挂掉）后所有实例会在 t+1 / t+2 同步
+    # 重试，撞向同一个下游资源 → thundering herd。
+    #
+    # 改成 ``base × 2^(n-1) + jitter`` 指数退避（行业最佳实践，AWS Architecture
+    # Blog "Exponential Backoff and Jitter" / Google SRE Workbook §22）：
+    #   - 第 1 次重试：1s + jitter[0, 0.5s)
+    #   - 第 2 次重试：2s + jitter[0, 1.0s)
+    # ``MAX_RETRIES = 3`` 仍然只允许 2 次重试（第 3 次失败就 exit），所以
+    # cap 到 4s 在这里实际不会触发，但保留 upper bound 是 future-proof：
+    # 如果未来把 MAX_RETRIES 调大，jitter 不会让单次等待无限增长。
     max_retries = 3
     retry_count = 0
+    _RETRY_BASE_DELAY_SECONDS = 1.0
+    _RETRY_MAX_DELAY_SECONDS = 4.0
+    _RETRY_JITTER_RATIO = 0.5
 
     while retry_count < max_retries:
         try:
@@ -449,8 +465,17 @@ def main() -> None:
             if retry_count < max_retries:
                 # 仅清理子进程/端口等资源，保留通知线程池，便于同进程重启
                 cleanup_services(shutdown_notification_manager=False)
-                logger.warning("将在 1 秒后尝试重启服务器...")
-                time.sleep(1)
+
+                base = min(
+                    _RETRY_BASE_DELAY_SECONDS * (2 ** (retry_count - 1)),
+                    _RETRY_MAX_DELAY_SECONDS,
+                )
+                jitter = random.uniform(0.0, base * _RETRY_JITTER_RATIO)
+                delay = base + jitter
+                logger.warning(
+                    f"将在 {delay:.2f}s 后尝试重启服务器（指数退避 + jitter）..."
+                )
+                time.sleep(delay)
             else:
                 # 达到最大重试次数：准备退出进程，做全量清理
                 cleanup_services(shutdown_notification_manager=True)
