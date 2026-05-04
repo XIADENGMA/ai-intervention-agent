@@ -79,8 +79,8 @@
 
 `interactive_feedback` 设计为**长时间运行**工具。
 
-- 前端倒计时由 `feedback.frontend_countdown` 控制（默认 **240s**，最大 **250s**）。
-- 后端等待时长由“前端倒计时 + 缓冲”推导（精确规则见 `docs/configuration.zh-CN.md`）。
+- 前端倒计时由 `feedback.frontend_countdown` 控制（默认 **240s**，范围 **[10, 3600]s**；`0` 或任何非正整数表示关闭倒计时）。
+- 后端等待时长（`feedback.backend_max_wait`，范围 **[10, 7200]s**）由“前端倒计时 + 缓冲”推导（精确规则见 `docs/configuration.zh-CN.md`）。
 
 #### 示例
 

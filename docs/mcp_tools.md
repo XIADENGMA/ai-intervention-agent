@@ -79,8 +79,8 @@ Request **interactive user feedback** through the Web UI (browser or VS Code Web
 
 `interactive_feedback` is intentionally **long-running**.
 
-- The frontend countdown is controlled by `feedback.frontend_countdown` (default **240s**, max **250s**).
-- The backend wait time is derived from frontend countdown + a buffer (see `docs/configuration.md` for the exact rule).
+- The frontend countdown is controlled by `feedback.frontend_countdown` (default **240s**, range **[10, 3600]s**; `0` or any non-positive integer disables it).
+- The backend wait time (`feedback.backend_max_wait`, range **[10, 7200]s**) is derived from the frontend countdown + a buffer (see `docs/configuration.md` for the exact rule).
 
 #### Examples
 

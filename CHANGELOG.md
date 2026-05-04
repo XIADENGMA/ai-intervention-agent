@@ -11,6 +11,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/mcp_tools{,.zh-CN}.md` timeout description matches
+  the runtime `_clamp_int` bounds.** The "Notes on
+  timeouts" section quoted `feedback.frontend_countdown`'s
+  range as "default 240s, max **250s**" — but the actual
+  v1.5.x clamp is `[10, 3600]s` (with `0` / non-positive
+  integers disabling the countdown), and `backend_max_wait`
+  is `[10, 7200]s`. Reading the wrong upper bound led at
+  least one issue (#xxx) to assume the long-running tool
+  capped at ~4 min when it really tolerates a full hour.
+  Updated both bilingual mentions to expose the actual
+  ranges and the disable-countdown semantic. Companion
+  `tests/test_config_docs_range_parity.py` (introduced in
+  the same release window) already enforces the
+  `docs/configuration{,.zh-CN}.md` table; this commit
+  catches up the secondary mention in `docs/mcp_tools*.md`.
 - **README badges advertise the CodeQL workflow alongside
   OpenSSF Scorecard.** `.github/workflows/codeql.yml` has
   been running on every push / PR / weekly schedule for
