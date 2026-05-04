@@ -382,6 +382,78 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
+- **`TaskQueue._persist` now `flush()`es and `fsync()`s before
+  `os.replace()` so a kernel panic / power loss after rename can no
+  longer leave the on-disk task-queue file as NUL-filled or
+  truncated bytes.** Pre-fix, `_persist` did `tempfile.mkstemp →
+  write → os.replace` without flushing the stdio buffer or fsyncing
+  the file descriptor; `os.replace` is atomic at the rename(2)
+  / inode level (the kernel guarantees old-name → new-name flips
+  atomically), but it commits *only the rename metadata* — the
+  *file's actual data bytes* may still be in the OS page cache,
+  never written to the storage device. Crash window: if the machine
+  panics or loses power *after* `os.replace` has rewritten the
+  directory entry but *before* the OS journal flushes the new
+  inode's page cache, the post-recovery on-disk state is "directory
+  entry points at the new file" + "new file content is whatever
+  zero-fill / partial-write the storage controller decided" + "old
+  file is gone forever (rename consumed it)" — strictly worse than
+  the no-atomic-write naive case where the old file would have
+  survived. Canonical "atomic-write footgun" documented in the Linux
+  fsync(2) man page, danluu.com/file-consistency, the LWN
+  "ext4-and-data-loss" post, and the Postgres `fsyncgate`
+  post-mortem. Crucially, this repo *already has* 5 other
+  atomic-write paths that all do `flush + fsync + replace` correctly
+  (`config_manager._save_config_immediate`,
+  `config_modules/io_operations.py`,
+  `config_modules/network_security._atomic_write_config`,
+  `scripts/bump_version.py`); `task_queue._persist` was the one
+  outlier, and its docstring even claimed "原子操作：tmpfile →
+  os.replace" — giving readers a false sense of correctness. New
+  sequence: `f.write → f.flush() → os.fsync(f.fileno()) →
+  os.replace()`. Why both `flush` *and* `fsync`: `flush()` pushes
+  the Python stdio buffer down to the kernel page cache; `fsync()`
+  pushes the kernel page cache down to the storage device. Flush
+  alone leaves data in the page cache (kernel may delay writeback
+  by minutes); fsync alone may miss the tail of the stdio buffer
+  that hasn't been flushed yet. Why *not* also `fsync(parent_dir_fd)`
+  — which would additionally guarantee the rename's directory-entry
+  change is flushed: the other 5 atomic-write paths in this repo
+  don't do directory fsync either, and adding it only here would
+  create *worse* inconsistency — if directory fsync becomes the bar,
+  all 6 paths should be upgraded together in a separate commit.
+  Five new locks in `tests/test_task_queue_persist_fsync.py`:
+  `TestPersistFsyncContract::test_persist_calls_fsync_before_replace`
+  (syscall-order trace via `patch(side_effect=...)` asserting
+  `fsync` precedes `replace` — without it a "fsync after replace
+  as cleanup" refactor would silently regress);
+  `test_persist_calls_flush_before_fsync` (source-text inspection
+  of `f.flush()` < `os.fsync(f.fileno())` index, blended with
+  behavioural fsync→replace assertion — `MagicMock(spec=StringIO)`
+  was rejected because ty's strict-shadow check forbids implicit
+  instance-method override of `StringIO.flush`);
+  `test_fsync_failure_does_not_replace` injects `OSError("simulated
+  EIO")` into `os.fsync` and asserts (a) `os.replace` is *never*
+  called and (b) the on-disk byte content is bit-identical to
+  before — the critical fail-loud property that prevents the "fsync
+  failed AND replace ran" double-failure mode where the user loses
+  *both* old and new data;
+  `TestPersistAtomicWriteParity::test_targeted_functions_have_flush_and_fsync_before_replace`
+  is AST-driven cross-file invariant checking against
+  `task_queue.TaskQueue._persist` AND
+  `config_manager._save_config_immediate` (the two class-method /
+  module-level representatives of the atomic-write idiom),
+  asserting all three tokens (`.flush()`, `os.fsync(`,
+  `os.replace(`) appear in each function source — without this
+  static check, a future copy-paste of `_persist` into another
+  module could silently lose `fsync`; `test_persist_signature_unchanged`
+  reverse-locks `inspect.signature(TaskQueue._persist).parameters
+  == ["self"]` so a future "let's parameterize fsync behaviour"
+  refactor (e.g. adding `no_fsync=True`) fails immediately —
+  parameterized fsync = optional fsync = back to the bug. Full
+  pytest count climbs from 2442 → 2447 (+5, no regressions). API
+  docs unchanged: `_persist` is private and doesn't appear in
+  `task_queue.md`.
 - **`start_web_service` now fails fast on port conflict
   (`code="port_in_use"`) instead of waiting 15 s for a misleading
   `start_timeout`.** Pre-fix, when the configured port (default

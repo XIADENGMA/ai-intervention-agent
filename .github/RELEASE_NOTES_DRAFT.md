@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 115 maintenance commits added on top of the release. This is **not**
+> the 117 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -833,6 +833,52 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **`TaskQueue._persist` joins the rest of the repo's atomic-write
+  paths in `flush + fsync` before `os.replace`, closing a kernel-
+  panic / power-loss footgun.** Pre-fix the function did
+  `tempfile.mkstemp → write → os.replace` without `flush()` /
+  `fsync()` — `os.replace` is atomic at the inode/rename(2) level,
+  but it commits *only the rename metadata*, leaving the actual
+  data bytes free to sit in the OS page cache for minutes. If the
+  machine panics or loses power between `replace` and the OS's own
+  page-cache flush, post-recovery state is "directory entry points
+  at new file" + "new file content is NUL-fill / partial write" +
+  "old file is gone forever" — strictly worse than the no-atomic-
+  write case where the old file at least survives. This is the
+  canonical "atomic-write footgun" documented in the Linux
+  `fsync(2)` man page, `danluu.com/file-consistency`, the LWN
+  ext4-data-loss thread, and the Postgres `fsyncgate` post-mortem.
+  Critically, this repo already has 5 other atomic-write paths that
+  all do `flush + fsync + replace` correctly
+  (`config_manager._save_config_immediate`,
+  `config_modules/io_operations.py`,
+  `config_modules/network_security._atomic_write_config`,
+  `scripts/bump_version.py`) — `task_queue._persist` was the one
+  outlier, with a docstring that even claimed "原子操作: tmpfile →
+  os.replace", giving readers a *false* sense of correctness. New
+  sequence: `f.write → f.flush() → os.fsync(f.fileno()) →
+  os.replace()`. Both calls are mandatory: `flush()` pushes Python
+  stdio → kernel page cache; `fsync()` pushes page cache → storage
+  device. Flush alone leaves data in page cache; fsync alone
+  misses the un-flushed stdio tail. Deliberately *not* also adding
+  `fsync(parent_dir_fd)` (which would flush the rename's directory-
+  entry change) because none of the other 5 atomic-write paths do
+  it either — adding only here would create the *opposite* of the
+  inconsistency we're closing. Five locks in
+  `tests/test_task_queue_persist_fsync.py`: syscall-order trace
+  asserting `fsync` precedes `replace`; source-text + behavioural
+  hybrid asserting `f.flush()` precedes `os.fsync(f.fileno())`;
+  `OSError(EIO)` injection on `fsync` confirming `os.replace` is
+  never called *and* on-disk bytes are unchanged (the fail-loud
+  property that prevents "fsync failed but replace ran" double-
+  failure); AST-driven cross-file parity check against both
+  `task_queue.TaskQueue._persist` and
+  `config_manager._save_config_immediate` (token-level invariant
+  preventing copy-paste regressions); reverse-lock on
+  `inspect.signature(_persist).parameters == ["self"]` blocking any
+  future `no_fsync=True` parameterization. Pytest count climbs
+  2442 → 2447 (+5, no regressions). API docs unchanged: `_persist`
+  is private and not surfaced in `task_queue.md`.
 - **`start_web_service` pre-flight port check (`_is_port_available`)
   fails fast on `EADDRINUSE` with `code="port_in_use"`.** Pre-fix,
   a busy port produced 15 s of "service slow to start" silence
