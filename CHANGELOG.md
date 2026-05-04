@@ -29,6 +29,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **`docs/README.md` + `docs/README.zh-CN.md` (new, bilingual)** —
+  audience-first directory index for the 30+ markdown files under
+  `docs/`. Splits navigation into four roles (end users wanting
+  config / troubleshooting; contributors touching code or
+  translations; operators caring about noise levels; reviewers
+  auditing security). Replaces the previous "grep + guess"
+  onboarding experience and is referenced from both root READMEs'
+  Documentation section.
+- **`scripts/README.md` (new)** — one-liner index for all 20
+  automation entry points (the `ci_gate.py` orchestrator, eight
+  i18n static gates, three generators, the asset/packaging
+  pipeline, three test harnesses, and the coverage wrapper).
+  Lets fresh contributors grep one file and learn **what** each
+  script does, **when** it runs, and **what** it gates without
+  reading every docstring. Linked from both root READMEs'
+  Documentation section.
 - **Removed phantom `ai-intervention-agent.enableAppleScript`
   reference from both root READMEs.** The setting key has not been
   declared in `packages/vscode/package.json::contributes.configuration`

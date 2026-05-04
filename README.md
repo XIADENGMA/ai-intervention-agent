@@ -283,6 +283,8 @@ flowchart TD
 
 ## Documentation
 
+- **Docs index** (by audience): [`docs/README.md`](docs/README.md) · [`docs/README.zh-CN.md`](docs/README.zh-CN.md)
+- **Scripts index** (CI gates / generators / QA): [`scripts/README.md`](scripts/README.md)
 - **Release notes**: [`CHANGELOG.md`](CHANGELOG.md)
 - **Contributing**: [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 - **API docs index**: [`docs/api/index.md`](docs/api/index.md)
