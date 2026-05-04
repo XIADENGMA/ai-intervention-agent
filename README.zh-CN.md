@@ -176,6 +176,7 @@ ai-intervention-agent 工具使用细节：
 - **自动重调**：倒计时到点自动提交，减少会话超时中断
 - **通知**：Web UI / 声音 / 系统通知 / Bark
 - **远程友好**：适配 SSH 端口转发等远程开发场景
+- **MCP 协议规范**（2025-11-25）：工具注解 + Server 身份元数据 + 自包含图标，让 ChatGPT Desktop / Claude Desktop / Cursor 原生识别工具语义，不再每次弹「危险操作」二次确认
 
 ## 工作原理
 
@@ -281,6 +282,8 @@ flowchart TD
 
 ## 文档
 
+- **发布说明**：[`CHANGELOG.md`](CHANGELOG.md)
+- **贡献指南**：[`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 - **API 文档（英文）**：[`docs/api/index.md`](docs/api/index.md)
 - **API 文档（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **MCP 工具说明（英文）**：[`docs/mcp_tools.md`](docs/mcp_tools.md)

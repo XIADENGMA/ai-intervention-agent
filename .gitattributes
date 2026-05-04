@@ -1,0 +1,78 @@
+# 全局：所有文本文件统一用 LF 行尾，防止 Windows clone 时被 git 自动转 CRLF
+# 而搞坏 hash / 行尾敏感的测试。Binary 文件单独标注。
+
+* text=auto eol=lf
+
+# 显式 LF（即便系统是 Windows，clone 后仍是 LF）
+*.py        text eol=lf
+*.pyi       text eol=lf
+*.pyx       text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.jsx       text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.mdx       text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.html      text eol=lf
+*.htm       text eol=lf
+*.svg       text eol=lf
+*.txt       text eol=lf
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.zsh       text eol=lf
+Makefile    text eol=lf
+Dockerfile  text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+.editorconfig  text eol=lf
+
+# Windows 专用脚本：CRLF
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary（git 不做行尾转换，diff 也不显示文本 diff）
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.ico       binary
+*.icns      binary
+*.pdf       binary
+*.zip       binary
+*.tar.gz    binary
+*.tgz       binary
+*.gz        binary
+*.7z        binary
+*.bz2       binary
+*.xz        binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.mp3       binary
+*.mp4       binary
+*.wav       binary
+*.ogg       binary
+*.vsix      binary
+*.whl       binary
+
+# 让 GitHub linguist 不把这些视为"主要语言"，避免污染语言统计
+docs/api/**     linguist-documentation
+docs/api.zh-CN/** linguist-documentation
+locales/**      linguist-generated
+*.min.js        linguist-vendored
+*.min.css       linguist-vendored
+vendor/**       linguist-vendored
+packages/vscode/vendor/** linguist-vendored
