@@ -19,6 +19,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Includes the documented normalisation matrix (truthy alias list, length
   truncate / pad-with-False rule) and side-by-side examples for both new
   shapes.
+- **`CONTRIBUTING.md` clarifies `✅` vs `🧪` test-commit emoji semantics**:
+  `🧪` for new / expanded test surface (boundary tests, missing route
+  coverage), `✅` for stabilising / fixing / migrating existing tests.
+
+### Chore
+
+- **PyPI metadata gains `Changelog` and `Release notes` Project-URL
+  entries** in `pyproject.toml`. PyPI's "Project links" sidebar and
+  `pip show` now include direct links to `CHANGELOG.md` and the GitHub
+  Releases tab.
+- **VSCode extension manifest gains `license`, `homepage`, `bugs.url`,
+  and `keywords`** in `packages/vscode/package.json`. Marketplace search
+  surfaces the extension on common AI workflow keywords (`mcp`, `claude`,
+  `cursor`, `windsurf`, …); the License field no longer shows
+  `(unknown)`; the Q&A tab links to GitHub Issues.
 
 ### Tests
 
