@@ -27,6 +27,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   back-to-back `uv run python scripts/ci_gate.py` runs producing zero
   WARNING/ERROR/FAIL/RETRY lines.
 
+### Documentation
+
+- **API reference now covers `protocol.py`, `state_machine.py`,
+  and `i18n.py`.** These three modules are the front/back-end
+  contract for protocol versioning, state-machine transitions,
+  and back-end i18n message lookup respectively — all single-
+  source-of-truth modules whose absence from the API reference
+  was a discoverability gap. `scripts/generate_docs.py`
+  appends them to `MODULES_TO_DOCUMENT` and slots them into the
+  bilingual quick-navigation grouping (`protocol` /
+  `state_machine` → Core; `i18n` → Utility). Re-running the
+  generator emits 14 module pages per locale (was 11) plus the
+  refreshed `index.md`. Pure documentation surface — no Python
+  source change. Verified with `make ci` (full gate green) and
+  by spot-checking the three new pages render the public
+  function signatures.
+
 ### Fixed
 
 - **English API reference index now has a parity "Quick
