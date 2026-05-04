@@ -11,19 +11,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Security
 
-- **Dependency vulnerability audit committed** under `docs/security/`. Ran
-  `pip-audit 2.10.0` against the v1.5.21 environment, found 17
-  CVE/GHSA items across 10 packages, and triaged each one against our
-  actual code paths and deployment posture (loopback by default, no
-  OAuth, no public file upload). Effective risk: 5 findings do not affect
-  us at all (vulnerable feature unused), 8 are mitigated by loopback-only
-  binding, and 3 (werkzeug `safe_join`) are Windows-only request hangs.
-  Both the human-readable triage (`AUDIT_2026-05-04.md`) and the raw JSON
-  snapshot (`pip-audit-2026-05-04.json`) are committed so subsequent
-  audits can `diff` against the threat-model baseline. **No code change**:
-  the recommended remediation is letting Dependabot's weekly grouped PRs
-  pull the upstream fixes in, with an explicit `uv lock --upgrade-package`
-  recipe documented for maintainers who want to pull the wave forward.
+- **Dependency vulnerability audit + remediation.** Ran `pip-audit 2.10.0`
+  against the v1.5.21 environment, found 17 CVE/GHSA items across 10
+  packages, and **upgraded the runtime chain in one coordinated bump**:
+  `fastmcp 3.1.1 → 3.2.4` (which cascaded `starlette 0.46 → 1.0`,
+  `cryptography 45 → 47`, `cffi 1 → 2`, `python-multipart 0.0.20 → 0.0.27`,
+  `werkzeug 3.1.3 → 3.1.8`, `authlib 1.6.9 → 1.7.0`,
+  `markdown 3.8 → 3.10.2`, `pygments 2.19 → 2.20`,
+  `python-dotenv 1.1 → 1.2.2`). Post-upgrade `pip-audit` reports **1
+  remaining finding** (`pytest 8.4.0 / CVE-2025-71176`), which is
+  dev-only tooling and intentionally deferred to a separate PR (8 → 9
+  is a major version bump). Net production CVE exposure: **17 → 0**.
+  Both the pre- (`pip-audit-2026-05-04.json`) and post-upgrade
+  (`pip-audit-2026-05-04-post-upgrade.json`) snapshots are committed
+  under `docs/security/` for future-baseline diffs.
+- **Compat fix in `scripts/test_mcp_client.py`**: fastmcp 3.2 moved the
+  private `_convert_to_content` helper from `fastmcp.tools.tool` to
+  `fastmcp.tools.base`. The self-check now does a `try/except ImportError`
+  fallback so it works on both 3.1 and 3.2+.
 
 ### Documentation
 

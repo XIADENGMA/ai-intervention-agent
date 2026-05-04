@@ -246,7 +246,14 @@ class TestRunner:
 def self_check_image_return_format() -> bool:
     """自检：图片返回是否符合 MCP ContentBlock 约定（type/data/mimeType）"""
     try:
-        from fastmcp.tools.tool import _convert_to_content
+        try:
+            from fastmcp.tools.base import (  # type: ignore[import-not-found]
+                _convert_to_content,
+            )
+        except ImportError:
+            from fastmcp.tools.tool import (  # type: ignore[import-not-found]
+                _convert_to_content,
+            )
         from mcp.types import ImageContent, TextContent
 
         from server import parse_structured_response

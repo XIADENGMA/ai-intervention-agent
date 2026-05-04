@@ -73,19 +73,32 @@ from 89.93% to 90.96%, and six key files now sit at 95%+.
   the maintainer-driven best-effort SLOs (1–3 day ack, 2-week silent-bump
   grace).
 
-### Security audit (no code change, audit-only)
+### Security audit + remediation (production CVE 17 → 0)
 
-A `pip-audit` snapshot of the v1.5.21 lockfile is now permanently
-committed under `docs/security/` (raw JSON + human-readable triage).
-17 advisories were filed against 10 transitive packages; the triage
-shows that **5 do not apply to us** (we never invoke `fastmcp install`,
-`OAuthProxy`, authlib's cache, dotenv `set_key`, and `pytest` is
-dev-only), **8 are neutralised by our loopback-only deployment**, and
-the remaining 3 (`werkzeug` `safe_join`) only manifest on Windows
-hosts. The recommended remediation is to let Dependabot's weekly
-grouped PRs pull in upstream fixes; the audit document includes an
-explicit `uv lock --upgrade-package …` recipe for maintainers who want
-to pull the wave forward.
+A `pip-audit` snapshot of the v1.5.21 lockfile reported 17 CVE/GHSA
+items across 10 packages. Rather than wait for Dependabot, the runtime
+chain was upgraded in a single coordinated bump:
+
+- `fastmcp 3.1.1 → 3.2.4` (cascades to `starlette 0.46→1.0`,
+  `cryptography 45→47`, `cffi 1→2`, `python-multipart 0.0.20→0.0.27`,
+  `werkzeug 3.1.3→3.1.8`, `authlib 1.6.9→1.7.0`)
+- Standalone bumps: `markdown 3.8→3.10.2`, `pygments 2.19→2.20`,
+  `python-dotenv 1.1→1.2.2`
+
+One small repo-side change was needed: `scripts/test_mcp_client.py`
+imported a private fastmcp helper that moved between 3.1 and 3.2; it
+now does a `try/except ImportError` fallback so it stays compatible
+with both lines.
+
+**Post-upgrade audit: 1 finding remaining** (`pytest 8.4.0 → 9.0.3`,
+dev-only tooling DoS). Pytest 8→9 is a major version jump and is
+intentionally deferred to a separate PR. **Net production CVE
+exposure: 0.** Pre- and post-upgrade JSON snapshots are committed
+under `docs/security/` so future audits can diff against the new
+baseline.
+
+The full 2244-test suite, ruff/format, ty, i18n parity, and red-team
+gate all pass on the post-upgrade lockfile.
 
 ### Documentation
 
