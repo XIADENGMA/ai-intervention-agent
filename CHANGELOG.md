@@ -29,6 +29,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Documentation
 
+- **PR template's "Local verification" checklist now lists
+  `make ci` / `make vscode-check` shortcuts alongside the
+  existing `uv run python scripts/ci_gate.py …` invocations,
+  closing the consistency gap with `CONTRIBUTING.md` and
+  `docs/workflow{,.zh-CN}.md`. Also adds a `make docs-check`
+  bullet so contributors who touch Python public API or
+  docstrings are reminded to verify `docs/api{,.zh-CN}/`
+  doesn't drift.
 - **`docs/workflow{,.zh-CN}.md` no longer recommends the
   legacy `scripts/check_locales.py` for ad-hoc locale
   validation.** Both files used to instruct contributors to

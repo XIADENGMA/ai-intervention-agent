@@ -26,12 +26,14 @@ Fixes #
 <!--
   勾选你已实际跑过的项；仅修改文档或配置可以酌情跳过对应项。
   命令细节见 docs/workflow.zh-CN.md / docs/workflow.md。
+  Makefile shortcut 形式（thin wrapper）等价于 uv 直调形式，挑你顺手的即可。
 -->
 
-- [ ] `uv run python scripts/ci_gate.py`（ruff / ty / pytest / minify 全绿）
-- [ ] `uv run python scripts/ci_gate.py --with-vscode`（若改动 VSCode 扩展 / 发布前必跑）
+- [ ] `make ci` 或 `uv run python scripts/ci_gate.py`（ruff / ty / pytest / minify 全绿）
+- [ ] `make vscode-check` 或 `uv run python scripts/ci_gate.py --with-vscode`（若改动 VSCode 扩展 / 发布前必跑）
 - [ ] `node scripts/red_team_i18n_runtime.mjs`（若改动 i18n 运行时 / 翻译 / locale JSON）
 - [ ] `uv run python scripts/bump_version.py --check`（若改动任何带版本号的元文件）
+- [ ] `make docs-check`（若改动 Python 公共 API / docstring，确认 `docs/api{,.zh-CN}/` 不漂移）
 
 ## Touched areas · 影响面
 
