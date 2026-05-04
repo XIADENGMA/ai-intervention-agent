@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **OpenSSF Scorecard badge added to both READMEs** (English + 简体中文).
+  The badge tracks the `scorecard.yml` workflow status (currently green;
+  `publish_results: true` already streams attested SARIF to Sigstore +
+  GitHub Security tab via OIDC). Wired in as a workflow-status badge —
+  rather than the shields.io `ossf-scorecard` endpoint — until the
+  OpenSSF public catalogue (`api.securityscorecards.dev`) finishes
+  ingesting this repository, so visitors don't see "no score / invalid
+  repo path" on first paint. We can swap to the score badge in a
+  follow-up once the public API returns 200.
+
 ### Chore
 
 - **PyPI Development Status classifier graduated from `4 - Beta` to
