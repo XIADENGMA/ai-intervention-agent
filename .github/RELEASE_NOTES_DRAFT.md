@@ -253,19 +253,23 @@ not need to update integration scripts.
 ```sh
 # Run the full local CI Gate (≈ 50 s):
 uv run python scripts/ci_gate.py
+# Or via the new Makefile shortcut: `make ci`
 
 # Optionally include the VS Code extension test suite + VSIX build
 # (slower; needed before pushing the Marketplace artefact):
 uv run python scripts/ci_gate.py --with-vscode
+# Or: `make vscode-check`
 
 # Confirm the API references are in sync (now part of ci_gate as a
-# warn-level check; this is the explicit explicit form):
+# warn-level check; this is the explicit form):
 uv run python scripts/generate_docs.py --lang en --check
 uv run python scripts/generate_docs.py --lang zh-CN --check
+# Or: `make docs-check`
 
 # Coverage red line check (CI runner uses --with-coverage; locally
 # you can opt in):
 uv run python scripts/ci_gate.py --with-coverage
+# Or: `make coverage`
 ```
 
 ### Compat note
