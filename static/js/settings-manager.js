@@ -793,8 +793,7 @@ class SettingsManager {
           bark_device_key: this.settings.barkDeviceKey,
           bark_icon: this.settings.barkIcon,
           bark_action: this.settings.barkAction,
-          bark_url_template:
-            this.settings.barkUrlTemplate || this.defaultSettings.barkUrlTemplate
+          bark_url_template: this.settings.barkUrlTemplate || this.defaultSettings.barkUrlTemplate
         })
       })
 
