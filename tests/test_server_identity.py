@@ -114,6 +114,43 @@ class TestServerIcons(unittest.TestCase):
         result = server._build_server_icons()
         self.assertIsInstance(result, list)
 
+    def test_build_server_icons_skips_individual_failure(self) -> None:
+        """单个图标文件 corrupt / 读不出 data URI 时，应跳过它继续处理其它图标。
+
+        防止「一个图标坏掉 → server 启动整体崩 / icons 全空」的脆弱链路。
+        """
+        from unittest.mock import patch
+
+        from fastmcp.utilities.types import Image as _RealImage
+
+        original_to_data_uri = _RealImage.to_data_uri
+        call_counter = {"n": 0}
+
+        def flaky_to_data_uri(self):  # type: ignore[no-untyped-def]
+            """模拟「第 1 个图标读 raise，剩下的正常」。"""
+            call_counter["n"] += 1
+            if call_counter["n"] == 1:
+                raise OSError("simulated corrupt icon")
+            return original_to_data_uri(self)
+
+        with patch.object(_RealImage, "to_data_uri", flaky_to_data_uri):
+            icons = server._build_server_icons()
+
+        # 4 个 icon 配置 - 第 1 个失败 → 仍能拿到剩下 3 个
+        self.assertGreaterEqual(len(icons), 1, "单个图标失败不应让函数返回空列表")
+        self.assertLess(len(icons), 4, "失败的图标确实被跳过")
+
+    def test_resolve_server_version_handles_metadata_failure(self) -> None:
+        """`importlib.metadata.version` 抛异常时回退到 0.0.0+local。"""
+        from unittest.mock import patch
+
+        with patch(
+            "importlib.metadata.version", side_effect=Exception("simulated failure")
+        ):
+            ver = server._resolve_server_version()
+
+        self.assertEqual(ver, "0.0.0+local")
+
 
 if __name__ == "__main__":
     unittest.main()
