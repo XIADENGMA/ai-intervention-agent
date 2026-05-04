@@ -149,8 +149,16 @@ class TaskRoutesMixin:
         _ensure_sse_callback_registered()
 
         @self.app.route("/api/events")
+        @self.limiter.limit("300 per minute")
         def sse_events() -> Response:
             """SSE 事件流：实时推送任务变更通知
+
+            限流：``300/min``。SSE 是长连接，单次 ``EventSource`` 实例只
+            消耗 1 次限额；但浏览器在网络抖动 / 用户频繁 reload 场景下
+            会反复 reconnect，全局默认 ``60/min`` 在重启浏览器、刷新调
+            试时太容易触顶。提到 ``300/min`` 与 ``/api/tasks`` 拉取频率
+            对齐，并避免 ``@limiter.exempt`` 让滥用者无限建立连接消耗
+            server-side 队列。
             ---
             tags:
               - Tasks
