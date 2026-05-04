@@ -40,7 +40,25 @@ HTTP /api/health 检查，验证服务是否正常
 
 ### `get_web_ui_config() -> tuple[WebUIConfig, int]`
 
-加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)
+加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)。
+
+并发模型：cache fetch 与 cache write 都在 ``_config_cache_lock`` 内，
+但 load（含 toml 读 + Pydantic 校验）刻意不在锁内，避免 IO 阻塞所有
+并发读。代价：两个 cache miss 的 thread 同时 load 时只是各 load 一次
+（结果一致，最后写入谁都行），但要防一种更隐蔽的 race：
+
+T1: cache miss → 拿到 ``gen_at_start = G``
+T1: 释放锁，开始 load（耗时 IO）
+T2: ``_invalidate_runtime_caches_on_config_change`` 触发（如 config.toml
+    被外部编辑），cache 清空 + ``_config_cache_generation`` += 1（→ G+1）
+T1: load 完毕（用的是新文件 *或* 旧文件，看 OS 调度），尝试写回缓存
+
+如果 T1 用的是旧文件值，又写回缓存，则 T3 读取时拿到 stale value——
+invalidate 被沉默地撤销。修复：T1 写回前 re-check
+``_config_cache_generation == gen_at_start``；不匹配则丢弃 cache write
+（仍正常返回 result 给 T1 自己，因为 T1 的语义只是"我现在需要值"）。
+
+后续 T3 进来会再 cache miss → 拿到 G+1 → 重新 load 一次 → 拿到新值。
 
 ### `_get_web_ui_log_path(script_dir: Path) -> Path`
 

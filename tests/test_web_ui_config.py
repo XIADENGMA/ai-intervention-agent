@@ -310,6 +310,126 @@ class TestGetWebUIConfig(unittest.TestCase):
         self.assertEqual(auto_resubmit, 240)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# R14·B1 · service_manager._config_cache 代际不变量
+# ═══════════════════════════════════════════════════════════════════════════
+class TestGetWebUIConfigGenerationToken(unittest.TestCase):
+    """``get_web_ui_config`` 在 load 期间被 invalidate 时不能写回 stale 值。
+
+    历史 race（修复前）：
+
+        T1: cache miss → 释放锁 → 开始 load
+        T2: ``_invalidate_runtime_caches_on_config_change`` 触发
+            （文件外部编辑），cache 清空
+        T1: load 完毕 → 把旧值写回 cache（**bug**：复活了已被 invalidate
+            的旧值）
+        T3: cache hit → 拿到 stale config
+
+    修复：把 ``_config_cache_generation`` 当 token 用，invalidate 时 +1，
+    write-back 前 re-check 是否仍等于 ``gen_at_start``；不等就丢弃 write，
+    后续 cache miss 重新 load 即可。
+    """
+
+    def setUp(self) -> None:
+        import service_manager
+
+        service_manager._config_cache["config"] = None
+        service_manager._config_cache["timestamp"] = 0
+        service_manager._config_cache_generation = 0
+
+    @patch("service_manager.get_config")
+    def test_invalidate_during_load_does_not_resurrect_stale_config(
+        self, mock_get_config
+    ):
+        """load 期间 invalidate 触发 → load 完毕的结果不能写回 cache。"""
+        import service_manager
+        from server import get_web_ui_config
+
+        load_started = threading.Event()
+        invalidate_done = threading.Event()
+
+        def slow_get_section(section: str):
+            # 第一次进来时阻塞，等 invalidate 在外部线程完成
+            data = {
+                "web_ui": {"port": 8080, "timeout": 30},
+                "feedback": {"auto_resubmit_timeout": 240},
+                "network_security": {"bind_interface": "127.0.0.1"},
+            }
+            if section == "web_ui":
+                load_started.set()
+                # 给外部 invalidate 100ms 窗口
+                invalidate_done.wait(timeout=2.0)
+            return data[section]
+
+        mock_config_mgr = MagicMock()
+        mock_config_mgr.get_section.side_effect = slow_get_section
+        mock_get_config.return_value = mock_config_mgr
+
+        result_box: list[Any] = [None]
+
+        def _run():
+            result_box[0] = get_web_ui_config()
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+
+        load_started.wait(timeout=2.0)
+        # 此时 T1 卡在 load 中，_config_cache_generation 还是 0
+        self.assertEqual(service_manager._config_cache_generation, 0)
+
+        # 模拟 invalidate（generation +1）
+        service_manager._invalidate_runtime_caches_on_config_change()
+        self.assertEqual(service_manager._config_cache_generation, 1)
+
+        # 让 T1 继续完成 load
+        invalidate_done.set()
+        thread.join(timeout=5.0)
+        self.assertFalse(thread.is_alive())
+        self.assertIsNotNone(result_box[0])
+
+        # 关键断言：T1 的 load 结果不应被写回 cache
+        # （cache 应保持 invalidate 后的 None 状态）
+        self.assertIsNone(
+            service_manager._config_cache["config"],
+            "load 期间被 invalidate 后，结果不应被写回 cache（否则旧值复活）",
+        )
+
+    @patch("service_manager.get_config")
+    def test_invalidate_increments_generation_token(self, mock_get_config):
+        """``_invalidate_runtime_caches_on_config_change`` 必须自增 generation。"""
+        import service_manager
+
+        del mock_get_config  # 仅为 patch decorator 提供绑定，不使用
+
+        before = service_manager._config_cache_generation
+        service_manager._invalidate_runtime_caches_on_config_change()
+        self.assertEqual(service_manager._config_cache_generation, before + 1)
+
+        service_manager._invalidate_runtime_caches_on_config_change()
+        self.assertEqual(service_manager._config_cache_generation, before + 2)
+
+    @patch("service_manager.get_config")
+    def test_no_invalidate_during_load_writes_back_normally(self, mock_get_config):
+        """无 invalidate race 的常规路径必须正常写回 cache（避免修复回退到永远不写）。"""
+        import service_manager
+        from server import get_web_ui_config
+
+        mock_config_mgr = MagicMock()
+        mock_config_mgr.get_section.side_effect = lambda section: {
+            "web_ui": {"port": 8080},
+            "feedback": {"auto_resubmit_timeout": 240},
+            "network_security": {"bind_interface": "127.0.0.1"},
+        }[section]
+        mock_get_config.return_value = mock_config_mgr
+
+        config, _ = get_web_ui_config()
+        self.assertEqual(config.port, 8080)
+
+        # cache 应该被写入
+        self.assertIsNotNone(service_manager._config_cache["config"])
+        self.assertGreater(service_manager._config_cache["timestamp"], 0)
+
+
 class TestWebUIFinalPush(unittest.TestCase):
     """Web UI 最终冲刺测试"""
 

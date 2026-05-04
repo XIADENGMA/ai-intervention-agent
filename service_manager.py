@@ -48,6 +48,12 @@ _http_client_lock = threading.Lock()
 _config_cache: dict[str, Any] = {"config": None, "timestamp": 0.0, "ttl": 10.0}
 _config_cache_lock = threading.Lock()
 
+# 每次 ``_invalidate_runtime_caches_on_config_change`` 触发都会自增 1。
+# ``get_web_ui_config`` 在 cache miss → load 阶段记录 generation，
+# load 完毕写回前 re-check：若中途被 invalidate 过，丢弃此次 load 结果，
+# 避免 "load 期间 config.toml 改了 → 旧值复活" 的 race（详见函数注释）。
+_config_cache_generation: int = 0
+
 _config_callbacks_registered: bool = False
 _config_callbacks_lock = threading.Lock()
 
@@ -68,11 +74,12 @@ def _close_async_client_best_effort(client: httpx.AsyncClient | None) -> None:
 
 def _invalidate_runtime_caches_on_config_change() -> None:
     """配置变更回调：清空配置缓存 + 关闭 httpx 客户端以便下次重建"""
-    global _async_client, _sync_client
+    global _async_client, _sync_client, _config_cache_generation
     try:
         with _config_cache_lock:
             _config_cache["config"] = None
             _config_cache["timestamp"] = 0
+            _config_cache_generation += 1
     except Exception:
         pass
 
@@ -462,7 +469,26 @@ class ServiceManager:
 
 
 def get_web_ui_config() -> tuple[WebUIConfig, int]:
-    """加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)"""
+    """加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)。
+
+    并发模型：cache fetch 与 cache write 都在 ``_config_cache_lock`` 内，
+    但 load（含 toml 读 + Pydantic 校验）刻意不在锁内，避免 IO 阻塞所有
+    并发读。代价：两个 cache miss 的 thread 同时 load 时只是各 load 一次
+    （结果一致，最后写入谁都行），但要防一种更隐蔽的 race：
+
+    T1: cache miss → 拿到 ``gen_at_start = G``
+    T1: 释放锁，开始 load（耗时 IO）
+    T2: ``_invalidate_runtime_caches_on_config_change`` 触发（如 config.toml
+        被外部编辑），cache 清空 + ``_config_cache_generation`` += 1（→ G+1）
+    T1: load 完毕（用的是新文件 *或* 旧文件，看 OS 调度），尝试写回缓存
+
+    如果 T1 用的是旧文件值，又写回缓存，则 T3 读取时拿到 stale value——
+    invalidate 被沉默地撤销。修复：T1 写回前 re-check
+    ``_config_cache_generation == gen_at_start``；不匹配则丢弃 cache write
+    （仍正常返回 result 给 T1 自己，因为 T1 的语义只是"我现在需要值"）。
+
+    后续 T3 进来会再 cache miss → 拿到 G+1 → 重新 load 一次 → 拿到新值。
+    """
     _ensure_config_change_callbacks_registered()
 
     current_time = time.monotonic()
@@ -473,6 +499,7 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         ):
             logger.debug("使用缓存的 Web UI 配置")
             return cast(tuple[WebUIConfig, int], _config_cache["config"])
+        gen_at_start = _config_cache_generation
 
     try:
         config_mgr = get_config()
@@ -516,8 +543,13 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
 
         result: tuple[WebUIConfig, int] = (config, auto_resubmit_timeout)
         with _config_cache_lock:
-            _config_cache["config"] = result
-            _config_cache["timestamp"] = current_time
+            if _config_cache_generation == gen_at_start:
+                _config_cache["config"] = result
+                _config_cache["timestamp"] = current_time
+            else:
+                logger.debug(
+                    "配置缓存代际跳变（load 期间 config 被失效），跳过 cache 写入"
+                )
 
         logger.info(
             f"Web UI 配置加载成功: {host}:{port}, 自动重调超时: {auto_resubmit_timeout}秒"
