@@ -43,8 +43,8 @@ bark_action = "none"
 # Bark 点击 URL 模板 / Bark click URL template
 # Effective when bark_action = "url" and the event does not provide an explicit URL.
 # Supported placeholders: {task_id}, {event_id}, {base_url}
-# Example: "{base_url}/?task_id={task_id}"
-bark_url_template = ""
+# Default opens the Web UI/PWA directly at the task created by the notification.
+bark_url_template = "{base_url}/?task_id={task_id}"
 # 发送失败重试次数 / Retry count on send failure (excluding first attempt) - range [0, 10]
 retry_count = 3
 # 重试间隔(秒) / Retry interval (seconds) - range [0, 60]

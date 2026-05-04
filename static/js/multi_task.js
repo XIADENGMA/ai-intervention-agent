@@ -240,6 +240,58 @@ var newTaskHintTimer = window.newTaskHintTimer
 var hasLoadedTaskSnapshot = window.hasLoadedTaskSnapshot
 var feedbackPrompts = window.feedbackPrompts
 var autoSubmitAttempted = window.autoSubmitAttempted
+var pendingDeepLinkedTaskId = getDeepLinkedTaskIdFromUrl()
+
+/**
+ * 从 URL 查询参数读取待跳转任务 ID。
+ *
+ * Bark / PWA 点击链接通常形如 `/?task_id=...`。这里保持宽松兼容：
+ * - `task_id`: 后端 bark_url_template 默认推荐字段
+ * - `taskId`: 前端/JS 常见 camelCase 写法
+ * - `tid`: 短链场景下的备用字段
+ */
+function getDeepLinkedTaskIdFromUrl() {
+  try {
+    if (!window.location || !window.location.search) return ''
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('task_id') || params.get('taskId') || params.get('tid') || ''
+    const taskId = String(raw).trim()
+    // 仅做长度保护，不限制字符集；task_id 可能包含项目名、UUID、短横线等。
+    return taskId.length <= 200 ? taskId : ''
+  } catch (_e) {
+    return ''
+  }
+}
+
+function tryApplyDeepLinkedTask(tasks) {
+  if (!pendingDeepLinkedTaskId || !Array.isArray(tasks) || tasks.length === 0) {
+    return false
+  }
+
+  const target = tasks.find(
+    task => task && task.task_id === pendingDeepLinkedTaskId && task.status !== 'completed'
+  )
+  if (!target) {
+    // 任务可能还没从后端快照恢复出来，保留 pending，下一轮轮询继续尝试。
+    return false
+  }
+
+  const targetTaskId = pendingDeepLinkedTaskId
+  pendingDeepLinkedTaskId = ''
+
+  if (targetTaskId === activeTaskId) {
+    loadTaskDetails(targetTaskId)
+    return true
+  }
+
+  console.log(`Deep link target task detected: ${targetTaskId}`)
+  setTimeout(() => {
+    switchTask(targetTaskId).catch(error => {
+      console.error('Deep link task switch failed:', error)
+    })
+  }, 0)
+  return true
+}
 
 /**
  * 从服务端获取最新的反馈提示语配置（支持运行中热更新）
@@ -879,6 +931,11 @@ function updateTasksList(tasks) {
 
   // 如果正在手动切换，跳过自动加载
   if (isManualSwitching) {
+    return
+  }
+
+  // Bark/PWA 深链接：首次打开 `/?task_id=...` 时自动切换到目标任务。
+  if (tryApplyDeepLinkedTask(tasks)) {
     return
   }
 

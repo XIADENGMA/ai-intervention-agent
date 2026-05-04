@@ -90,7 +90,9 @@ class NotificationRoutesMixin:
                 bark_device_key = data.get("bark_device_key", "")
                 bark_icon = data.get("bark_icon", "")
                 bark_action = data.get("bark_action", "none")
-                bark_url_template = str(data.get("bark_url_template", "") or "").strip()
+                bark_url_template = str(
+                    data.get("bark_url_template", "{base_url}/?task_id={task_id}") or ""
+                ).strip()
 
                 if not bark_device_key:
                     return jsonify(

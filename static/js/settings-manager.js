@@ -42,7 +42,7 @@ class SettingsManager {
       barkDeviceKey: '',
       barkIcon: '',
       barkAction: 'none',
-      barkUrlTemplate: ''
+      barkUrlTemplate: '{base_url}/?task_id={task_id}'
     }
     this.initialized = false
     // 注意：不在构造函数中调用 init()，由 DOMContentLoaded 触发
@@ -793,7 +793,8 @@ class SettingsManager {
           bark_device_key: this.settings.barkDeviceKey,
           bark_icon: this.settings.barkIcon,
           bark_action: this.settings.barkAction,
-          bark_url_template: this.settings.barkUrlTemplate || ''
+          bark_url_template:
+            this.settings.barkUrlTemplate || this.defaultSettings.barkUrlTemplate
         })
       })
 

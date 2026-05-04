@@ -85,7 +85,7 @@
       barkDeviceKey: c.bark_device_key || '',
       barkIcon: c.bark_icon || '',
       barkAction: c.bark_action || 'none',
-      barkUrlTemplate: c.bark_url_template || ''
+      barkUrlTemplate: c.bark_url_template || '{base_url}/?task_id={task_id}'
     }
   }
 

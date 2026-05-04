@@ -191,6 +191,19 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
         self.assertIn("visibilitychange", js)
         self.assertIn("no-store", js)
 
+    def test_multi_task_supports_task_deep_links(self):
+        """回归测试：Bark/PWA 点击 `?task_id=` 后应能自动切换到目标任务"""
+        response = self.client.get("/static/js/multi_task.js")
+        if response.status_code != 200:
+            self.skipTest("multi_task.js 不存在，跳过任务深链接回归测试")
+
+        js = response.data.decode("utf-8", errors="ignore")
+        response.close()
+        self.assertIn("getDeepLinkedTaskIdFromUrl", js)
+        self.assertIn("tryApplyDeepLinkedTask", js)
+        self.assertIn("task_id", js)
+        self.assertIn("switchTask(targetTaskId)", js)
+
     def test_multi_task_mathjax_lazy_load_present(self):
         """回归测试：任务描述渲染应支持 MathJax 懒加载（避免首次出现公式不渲染）"""
         response = self.client.get("/static/js/multi_task.js")

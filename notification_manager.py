@@ -84,7 +84,7 @@ class NotificationConfig(BaseModel):
     bark_timeout: int = 10
     # 当 bark_action == "url" 时，事件 metadata 没有提供 url/web_ui_url/action_url/link
     # 则按此模板渲染。支持的占位符：{task_id} / {event_id} / {base_url}
-    bark_url_template: str = ""
+    bark_url_template: str = "{base_url}/?task_id={task_id}"
 
     # ==================== 系统/平台原生通知 ====================
     system_enabled: bool = False
@@ -188,7 +188,9 @@ class NotificationConfig(BaseModel):
             bark_icon=cfg.get("bark_icon", ""),
             bark_action=cfg.get("bark_action", "none"),
             bark_timeout=cfg.get("bark_timeout", 10),
-            bark_url_template=cfg.get("bark_url_template", ""),
+            bark_url_template=cfg.get(
+                "bark_url_template", "{base_url}/?task_id={task_id}"
+            ),
             system_enabled=cfg.get("system_enabled", False),
             macos_native_enabled=cfg.get("macos_native_enabled", True),
         )
@@ -856,7 +858,9 @@ class NotificationManager:
                 self.config.bark_device_key = cfg.get("bark_device_key", "")
                 self.config.bark_icon = cfg.get("bark_icon", "")
                 self.config.bark_action = cfg.get("bark_action", "none")
-                self.config.bark_url_template = cfg.get("bark_url_template", "")
+                self.config.bark_url_template = cfg.get(
+                    "bark_url_template", "{base_url}/?task_id={task_id}"
+                )
                 self.config.retry_count = cfg.get("retry_count", 3)
                 self.config.retry_delay = cfg.get("retry_delay", 2)
                 self.config.bark_timeout = cfg.get("bark_timeout", 10)

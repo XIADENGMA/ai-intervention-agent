@@ -257,7 +257,7 @@
       barkDeviceKey: getValue('notifyBarkDeviceKey'),
       barkIcon: getValue('notifyBarkIcon'),
       barkAction: getValue('notifyBarkAction') || 'none',
-      barkUrlTemplate: getValue('notifyBarkUrlTemplate')
+      barkUrlTemplate: getValue('notifyBarkUrlTemplate') || '{base_url}/?task_id={task_id}'
     }
   }
 
@@ -577,7 +577,7 @@
           bark_device_key: updates.barkDeviceKey || '',
           bark_icon: updates.barkIcon || '',
           bark_action: updates.barkAction || 'none',
-          bark_url_template: updates.barkUrlTemplate || ''
+          bark_url_template: updates.barkUrlTemplate || '{base_url}/?task_id={task_id}'
         }),
         cache: 'no-store'
       })

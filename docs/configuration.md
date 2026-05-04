@@ -98,7 +98,7 @@ Controls web/sound/system/Bark notifications.
 | `bark_device_key`         | string  | `""`     | Required when `bark_enabled=true`                                           |
 | `bark_icon`               | string  | `""`     | Optional                                                                    |
 | `bark_action`             | string  | `"none"` | `none` / `url` / `copy`                                                     |
-| `bark_url_template`       | string  | `""`     | Used when `bark_action="url"` and no explicit event URL exists. Supports `{task_id}`, `{event_id}`, `{base_url}` |
+| `bark_url_template`       | string  | `"{base_url}/?task_id={task_id}"` | Used when `bark_action="url"` and no explicit event URL exists. Supports `{task_id}`, `{event_id}`, `{base_url}` |
 | `retry_count`             | number  | `3`      | Range `[0, 10]` (excluding the first attempt)                               |
 | `retry_delay`             | number  | `2`      | Seconds, range `[0, 60]`                                                    |
 | `bark_timeout`            | number  | `10`     | Seconds, range `[1, 300]`                                                   |

@@ -1228,7 +1228,7 @@ def _make_ext_config(**overrides) -> MagicMock:
         "bark_device_key": "test_key",
         "bark_icon": "",
         "bark_action": "none",
-        "bark_url_template": "",
+        "bark_url_template": "{base_url}/?task_id={task_id}",
         "bark_timeout": 10,
         "web_timeout": 5000,
         "web_icon": "",

@@ -171,7 +171,7 @@ class NotificationSectionConfig(BaseModel):
     # bark_url_template: 当 bark_action == "url" 且事件 metadata 未提供具体链接时，
     # 用此模板生成点击跳转 URL；支持 {task_id} / {event_id} / {base_url} 占位符，
     # 未识别的占位符会原样保留，不会抛出 KeyError
-    bark_url_template: SafeStr = ""
+    bark_url_template: SafeStr = "{base_url}/?task_id={task_id}"
 
 
 class WebUISectionConfig(BaseModel):
