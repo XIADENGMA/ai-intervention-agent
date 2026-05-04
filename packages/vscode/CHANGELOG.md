@@ -14,6 +14,20 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Webview "frontend countdown" input no longer caps at 250s.**
+  The settings panel's `<input type="number" id="feedbackCountdown"
+  max="250">` and the `webview-settings-ui.js` save guard
+  (`v >= 0 && v <= 250`) silently rejected any user-typed value
+  above 250 — even though the backend has supported `[10, 3600]s`
+  for several minor releases. Both surfaces are now widened to
+  `max="3600"` / `v <= 3600`, matching `AUTO_RESUBMIT_TIMEOUT_MAX`
+  on the server. The `<input value="240">` placeholder and the
+  bilingual `countdownHint` strings ("Range 10-3600 seconds" /
+  "范围 10-3600 秒") were updated in the same wave. Locked by
+  `tests/test_frontend_input_range_parity.py`.
+
 ### Documentation
 
 - Removed phantom `ai-intervention-agent.enableAppleScript` setting
