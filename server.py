@@ -61,6 +61,7 @@ import threading
 import time
 
 from fastmcp import FastMCP
+from mcp.types import Icon, ToolAnnotations
 
 from enhanced_logging import EnhancedLogger
 from server_config import (
@@ -164,7 +165,94 @@ try:
 except ImportError:
     pass
 
-mcp: FastMCP = FastMCP("AI Intervention Agent MCP")
+
+def _resolve_server_version() -> str:
+    """读取已安装包版本号，失败时返回开发占位符。
+
+    通过 MCP initialize 协议暴露给 client，方便 client 做兼容判断 / 调试日志。
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError
+        from importlib.metadata import version as _pkg_version
+
+        try:
+            return _pkg_version("ai-intervention-agent")
+        except PackageNotFoundError:
+            return "0.0.0+local"
+    except Exception:
+        return "0.0.0+local"
+
+
+def _build_server_icons() -> list[Icon]:
+    """启动时一次性把本地 icons 转成 data URI，让 server icons 完全 self-contained。
+
+    设计取舍：
+    - 使用 base64 data URI 而不是 GitHub raw URL，避免对 main 分支 push 状态的依赖
+      （已发布版本即使 main 上图标资源被删，client 仍能渲染图标）
+    - 多尺寸覆盖：32/192/512 + SVG，让 client UI 按显示密度自选
+    - 总开销 ~17KB（base64 化），仅在 initialize 一次性下发，可忽略
+    - 任何 icon 文件缺失时跳过，不影响 server 启动
+    """
+    from pathlib import Path
+
+    from fastmcp.utilities.types import Image
+
+    icons_dir = Path(__file__).resolve().parent / "icons"
+    icon_specs: list[tuple[str, str, list[str]]] = [
+        ("favicon-32.png", "image/png", ["32x32"]),
+        ("icon-192.png", "image/png", ["192x192"]),
+        ("icon-512.png", "image/png", ["512x512"]),
+        ("icon.svg", "image/svg+xml", ["any"]),
+    ]
+    icons: list[Icon] = []
+    for filename, mime, sizes in icon_specs:
+        path = icons_dir / filename
+        if not path.is_file():
+            continue
+        try:
+            data_uri = Image(path=str(path)).to_data_uri()
+            icons.append(Icon(src=data_uri, mimeType=mime, sizes=sizes))
+        except Exception:
+            # 单个图标失败不阻塞 server 启动
+            continue
+    return icons
+
+
+# Server-level icons：让 ChatGPT Desktop / Claude Desktop / Cursor 等 client UI
+# 在 MCP 服务器列表中显示项目图标，用户能直观区分多个 server。
+_SERVER_ICONS: list[Icon] = _build_server_icons()
+
+# MCP server 身份信息：name + instructions + version + website_url + icons
+# - name：客户端工具列表显示
+# - instructions：在 initialize 协议响应中下发，指导 LLM "什么时候用 / 什么时候不用"
+#   这是让 LLM agent 正确选用工具最关键的一处文档
+# - version：暴露给 client，便于做能力协商 / 故障排查
+# - website_url：项目主页，client UI 可链接，方便用户查阅文档 / 反馈问题
+# - icons：server-level 图标，client UI 用来在服务器列表中标识本服务
+mcp: FastMCP = FastMCP(
+    name="AI Intervention Agent MCP",
+    instructions=(
+        "本 MCP 服务暴露唯一工具 `interactive_feedback`，用于通过 Web UI 向人类用户请求"
+        "澄清、决策或签收。\n\n"
+        "**适合调用的场景**：\n"
+        "1. 需求不明确，需要在继续前向用户确认。\n"
+        "2. 存在多种方案，需要用户挑选。\n"
+        "3. 方案 / 策略发生变更，需要用户显式批准。\n"
+        "4. 即将宣布任务完成，需要最终确认。\n\n"
+        "**不适合调用的场景**：\n"
+        "- 你能基于现有上下文自行回答的问题。\n"
+        "- 不需要人类决策的常规进度更新。\n\n"
+        "**行为约定**：\n"
+        "- 开放世界工具（与真人交互，可能推送通知）。\n"
+        "- 非破坏性（不会修改源代码 / git / 数据库）。\n"
+        "- 非幂等（每次调用都会创建一个新的反馈任务）。\n"
+        "- 阻塞直到用户提交、自动重提示倒计时触发或后端超时。\n\n"
+        "用户可以附上文字、选项和图片；返回值是 MCP 内容块（text + image）的列表。"
+    ),
+    version=_resolve_server_version(),
+    website_url="https://github.com/xiadengma/ai-intervention-agent",
+    icons=_SERVER_ICONS,
+)
 logger = EnhancedLogger(__name__)
 
 # interactive_feedback / FeedbackServiceContext 等反馈逻辑已移至 server_feedback.py。
@@ -178,7 +266,23 @@ from server_feedback import (
     interactive_feedback as _interactive_feedback_impl,
 )
 
-interactive_feedback = mcp.tool()(_interactive_feedback_impl)
+# MCP 工具行为提示 (Tool Annotations，遵循 MCP spec 2024-11-05+)
+# 让 client (ChatGPT / Claude Desktop / Cursor) 准确理解 interactive_feedback 的副作用面：
+# - 不修改源代码 / git / 数据库；只持久化任务事件并触发通知 -> 严格意义不是只读，readOnly=False
+# - 不删除/覆盖任何用户资源 -> destructive=False，client 无需弹"危险操作"二次确认
+# - 每次调用产生新任务事件 -> 非幂等
+# - 与外部用户和通知服务交互 -> openWorld=True
+_INTERACTIVE_FEEDBACK_ANNOTATIONS = ToolAnnotations(
+    title="Interactive Feedback (人机协作反馈)",
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=True,
+)
+
+interactive_feedback = mcp.tool(annotations=_INTERACTIVE_FEEDBACK_ANNOTATIONS)(
+    _interactive_feedback_impl
+)
 
 # TaskQueue 仅由 Web UI 子进程使用（web_ui.py / web_ui_routes 会调用 get_task_queue()）。
 # MCP 服务器主进程中此函数从未被调用，因此不会创建 TaskQueue 实例或后台清理线程。
