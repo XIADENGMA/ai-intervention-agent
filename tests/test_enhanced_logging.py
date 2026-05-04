@@ -220,6 +220,77 @@ class TestLogDeduplicatorCleanup(unittest.TestCase):
         self.assertLessEqual(len(dedup.cache), 20)
 
 
+class TestLogDeduplicatorMonotonic(unittest.TestCase):
+    """R13·B2 reverse-lock：``LogDeduplicator`` 必须用 ``time.monotonic()``。
+
+    历史教训：用 ``time.time()`` 时若系统时钟被向后调（NTP / 用户手动 /
+    虚拟机暂停后恢复），缓存里的 ``last_time`` 突然变成"未来"，
+    ``current_time - last_time`` 取负数，永远 ``<= time_window``，关键
+    ERROR 长时间被静默 —— 即"假性一直去重"。``time.monotonic()`` 单调
+    递增，对相对时间窗口是教科书级正确选择。
+
+    本类不直接 monkey-patch wall clock，而是：
+
+    1. 静态扫源码确认 ``should_log`` 用的是 ``time.monotonic()``，不是
+       ``time.time()``；
+    2. 行为黑盒测试：``patch time.time`` 让它返回乱序值（模拟 wall
+       clock 倒走），如果实现真用了 ``time.monotonic()`` 行为不变；
+       若哪天回退到 ``time.time()``，本测试会立即破。
+    """
+
+    def test_source_uses_monotonic_not_time(self):
+        """源码层面：``should_log`` 必须调 ``time.monotonic()``，不能用 ``time.time()``。"""
+        import inspect
+
+        from enhanced_logging import LogDeduplicator as _LD
+
+        src = inspect.getsource(_LD.should_log)
+        self.assertIn(
+            "time.monotonic()",
+            src,
+            "LogDeduplicator.should_log 必须用 time.monotonic() —— "
+            "wall clock 在 NTP/手动调时下会倒走，让 ``current_time - "
+            "last_time`` 取负数永远 ≤ window，关键 ERROR 长时间被静默。",
+        )
+        self.assertNotIn(
+            "time.time()",
+            src,
+            "LogDeduplicator.should_log 不能再用 time.time() —— 这是 "
+            "Round-13 修复的回归点；若需要 wall clock 时间戳（比如打"
+            "印当前时间），请独立调用 time.time() 而非用作窗口判断。",
+        )
+
+    def test_wall_clock_jump_backwards_does_not_silence_logs(self):
+        """行为契约：``time.time()`` 倒走时 ``LogDeduplicator`` 不能被骗到。"""
+        import time as _time
+        from unittest.mock import patch as _patch
+
+        dedup = LogDeduplicator(time_window=0.5)
+
+        # 第一次：建 baseline
+        ok1, info1 = dedup.should_log("ntp_test_msg")
+        self.assertTrue(ok1)
+        self.assertIsNone(info1)
+
+        # 模拟 wall clock 倒走 1 小时（time.time 返回更小的值）。如果实现
+        # 错误地用 ``time.time``，下一次 should_log 看到的 ``current_time``
+        # 会比 ``last_time`` 小 → 判负数 ≤ window → 错误去重。
+        original_time = _time.time
+
+        def go_back(*_args, **_kwargs):
+            return original_time() - 3600.0
+
+        with _patch.object(_time, "time", side_effect=go_back):
+            time.sleep(0.6)  # 实际 monotonic 已超过 0.5s window
+            ok2, _ = dedup.should_log("ntp_test_msg")
+
+        self.assertTrue(
+            ok2,
+            "wall clock 被向后调 1h 时不应该让 dedup 错误去重；这正是 "
+            "monotonic 修复的核心场景。如果失败说明回归到 time.time()。",
+        )
+
+
 class TestEnhancedLoggerAdvanced(unittest.TestCase):
     """EnhancedLogger 高级分支"""
 

@@ -49,7 +49,26 @@ _global_sanitizer = LogSanitizer()
 
 
 class LogDeduplicator:
-    """日志去重器 - 时间窗口内相同消息只记录一次，使用 hash() 高效判重。"""
+    """日志去重器 - 时间窗口内相同消息只记录一次，使用 hash() 高效判重。
+
+    【R13·B2】时间源刻意选 ``time.monotonic()`` 而不是 ``time.time()``：
+
+    - ``time.time()`` 是 wall clock，会被 NTP 同步、用户手工调时、夏令时
+      切换、虚拟机暂停后恢复等改动；任何这些事件都可能让
+      ``current_time - last_time`` 取到负数 / 跳大 / 跳小，让"过去 5 秒"
+      的窗口语义错乱：
+        * 系统时间被向前调 1h → 旧条目突然变成"1 小时后"，``> 5s`` →
+          被判过期 → 接下来同样的 ERROR 又会输出（无所谓，安全方向）。
+        * 系统时间被向后调 1h → 新消息进来时 ``current_time - last_time``
+          是负数 → 永远 ``<= 5s`` → 旧条目永远去重 → 关键 ERROR 长时
+          间被静默（**这是真正危险的方向**）。
+    - ``time.monotonic()`` 单调递增、不受 wall clock 影响，对"过去 X 秒"
+      这种相对时间窗口是教科书级正确选择（Python 官方 ``timeit`` /
+      ``asyncio`` 内部 timeout 都用它）。
+
+    由 ``tests/test_enhanced_logging.py::TestLogDeduplicatorMonotonic`` 锁
+    住此契约（reverse-lock：源码不能切回 ``time.time()`` 否则测试失败）。
+    """
 
     def __init__(self, time_window: float = 5.0, max_cache_size: int = 1000) -> None:
         """初始化时间窗口和缓存"""
@@ -61,7 +80,8 @@ class LogDeduplicator:
     def should_log(self, message: str) -> tuple[bool, str | None]:
         """检查是否应记录，返回 (should_log, duplicate_info)"""
         with self.lock:
-            current_time = time.time()
+            # 【R13·B2】monotonic 时间源——参见 class docstring。
+            current_time = time.monotonic()
             msg_hash = hash(message)
 
             if msg_hash in self.cache:
