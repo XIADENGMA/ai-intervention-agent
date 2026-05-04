@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 58 maintenance commits added on top of the release. This is **not**
+> the 64 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -425,12 +425,54 @@ downstream packagers do not need to update integration scripts.
   authoritative diff list + remediation command when the
   `docs/api(.zh-CN)/*` files don't match current Python source.
   Idempotent: two consecutive invocations produce zero `git diff`.
-- **`scripts/ci_gate.py` runs `generate_docs.py --check` for both
-  locales (warn-level, non-blocking)** via a new `_run_warn`
-  helper. Translated drift produces a `[ci_gate] WARN: …` line
-  on stderr but does not fail the gate, giving contributors a
-  human-readable nudge before the contract becomes fail-closed
-  (the upgrade is a one-line change documented in source).
+- **`docs/api(.zh-CN)/*` drift detection promoted to fail-closed.**
+  Round-6 audit caught `docs/api/task_queue.md` (English) drifting
+  one round behind the Chinese mirror after a DRY refactor of
+  `task_queue.add_task` — the warn-level gate had been emitting
+  the warning across multiple CI runs but nobody acted on it.
+  `scripts/ci_gate.py` now invokes both `generate_docs.py --lang
+  {en,zh-CN} --check` via the fail-closed `_run` helper (with a
+  `label` suffix in the failure message pointing at the exact
+  remediation command). The upgrade history is preserved in an
+  inline comment in `ci_gate.py` so future maintainers understand
+  why warn-level was rejected.
+- **Local-CI parity holes closed** — two pre-existing maintenance
+  scripts that lived in `scripts/` but were never wired into
+  `scripts/ci_gate.py` are now part of the fail-closed pipeline,
+  so `make ci` / `make pre-commit` finally see them:
+  - `scripts/check_locales.py` covers two surfaces that the
+    primary `check_i18n_locale_parity.py` does not touch:
+    VS Code manifest translations
+    (`packages/vscode/package.nls{,.zh-CN}.json`) and
+    cross-platform `aiia.*` namespace alignment between Web UI
+    and the VSCode webview locale bundles. Without it, a
+    missing key in the manifest meant commands/views showed as
+    raw `%key%` placeholders in one language at install time
+    with no CI signal.
+  - `scripts/bump_version.py --check` runs the eight-file
+    version-sync invariant
+    (`pyproject.toml`/`uv.lock`/`package.json`/`package-lock.json`
+    × {root, plugin}, `bug_report.yml`, `CITATION.cff`)
+    locally instead of only in the GitHub Actions matrix
+    (Python 3.11 slice). Local pre-flight signal now matches
+    remote CI signal exactly.
+- **`scripts/minify_assets.py --check` switched from mtime
+  heuristic to byte-level content comparison.** The previous
+  `src.stat().st_mtime > dst.stat().st_mtime` test produced
+  100% false positives on fresh CI runners and after every
+  `git checkout` because checkout resets working-tree mtimes.
+  New `content_drifts(src, dst, minify_func)` actually runs the
+  minifier and byte-compares the output to the on-disk
+  `.min.{js,css}`, reporting a real drift only when the
+  contents differ. A missing destination or a minifier
+  exception are both treated as drifts so CI surfaces problems
+  loudly instead of silently fixing them. Default execution
+  mode (no flag) keeps the mtime fast-path for incremental
+  local rebuilds. 7 new unit tests
+  (`tests/test_minify_assets_helpers.py`) lock the new
+  contract, including a reverse-lock that fails immediately if
+  a future contributor wires `needs_minification` back into
+  the `--check` path.
 - **Coverage red line (`fail_under = 88`) and report polish in
   `pyproject.toml`** — `[tool.coverage.run]` excludes test files
   and one-shot scripts so they cannot inflate themselves to 100 %;
