@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 95 maintenance commits added on top of the release. This is **not**
+> the 96 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -41,6 +41,19 @@ downstream packagers do not need to update integration scripts.
 
 ### Highlights at a glance
 
+- **Server-side defense-in-depth caps on uploaded images
+  (10 / 100 MB).** ``extract_uploaded_images`` previously trusted the
+  ``image-upload.js`` client-side ``MAX_IMAGE_COUNT = 10`` /
+  ``MAX_IMAGE_SIZE = 10 MB`` limits; a curl-based caller bypassing the
+  client could push hundreds of images and let the process spend
+  memory base64-encoding each one. Added
+  ``MAX_IMAGES_PER_REQUEST = 10`` (mirrors client) and
+  ``MAX_TOTAL_UPLOAD_BYTES = 100 MB`` (10 × per-file-cap), both
+  truncating with ``continue`` not ``break`` and logging once per
+  cap per request. Six locks in
+  ``tests/test_upload_helpers_caps.py`` including a regex-grep parity
+  test that ties ``MAX_IMAGES_PER_REQUEST`` to the client constant,
+  preventing silent desync.
 - **`service_manager.get_web_ui_config` cache no longer resurrects a
   stale config after a concurrent invalidate.** The 10 s TTL cache was
   protecting *both* read and write under the lock but doing the toml

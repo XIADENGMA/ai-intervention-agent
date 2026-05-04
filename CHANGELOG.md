@@ -283,6 +283,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (2 new tests including a `[3, 30]` range justification on
   the constant).
 
+### Security
+
+- **Server-side defense-in-depth caps on uploaded image count and total
+  bytes.** `web_ui_routes/_upload_helpers.py::extract_uploaded_images`
+  is the entry point for `/api/submit-feedback` and
+  `/api/tasks/<id>/submit` image streams. The `static/js/image-upload.js`
+  client side already capped `MAX_IMAGE_COUNT = 10` and
+  `MAX_IMAGE_SIZE = 10 MB`, but the server side had no matching limits
+  beyond `file_validator`'s per-file 10 MB check — a curl-based caller
+  bypassing the client could push hundreds of images and let the
+  process eat memory translating each into base64 + storing the
+  validated copy in the queue. Added `MAX_IMAGES_PER_REQUEST = 10`
+  (mirrors client) and `MAX_TOTAL_UPLOAD_BYTES = 100 * 1024 * 1024`
+  (10 × per-file-cap). Both caps `continue` past offending fields
+  rather than `break`-ing, so a single oversized field doesn't abort
+  scanning of the rest of the request, and each cap logs exactly once
+  per request to keep observability without log-flooding. Six locks
+  in `tests/test_upload_helpers_caps.py`: regex-grep parity with
+  `image-upload.js::MAX_IMAGE_COUNT` (future client changes can't
+  silently desync), `MAX_TOTAL_UPLOAD_BYTES` sanity range
+  `[10 × per-file, 500 MB]`, both at-cap and over-cap count paths,
+  monkey-patched byte cap drives byte-cap truncation, and AST assertion
+  that the loop uses `continue` rather than `break` (defends against a
+  refactor that would let one bad field abort the rest of the scan).
+
 ### Fixed
 
 - **`service_manager.get_web_ui_config` could resurrect a stale config
