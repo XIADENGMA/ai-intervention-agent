@@ -26,7 +26,7 @@
 - [`api.zh-CN/index.md`](api.zh-CN/index.md) · [`api/index.md`](api/index.md)
   — 自动生成的 Python 公共表面模块参考：核心契约模块
   （`config_manager`、`notification_*`、`task_queue`、`protocol`、
-  `state_machine`、`server_config`、`exceptions`）+ 工具模块
+  `state_machine`、`server`、`server_config`、`exceptions`）+ 工具模块
   （`config_utils`、`i18n`、`shared_types`、`notification_models`、
   `file_validator`、`enhanced_logging`）。用
   `uv run python scripts/generate_docs.py` 重新生成；

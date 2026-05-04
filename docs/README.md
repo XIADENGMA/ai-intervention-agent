@@ -29,8 +29,9 @@ Find your role below to jump straight to the page you need.
 - [`api/index.md`](api/index.md) · [`api.zh-CN/index.md`](api.zh-CN/index.md)
   — auto-generated module reference for the public Python surface:
   core contract modules (`config_manager`, `notification_*`,
-  `task_queue`, `protocol`, `state_machine`, `server_config`,
-  `exceptions`) and utility modules (`config_utils`, `i18n`,
+  `task_queue`, `protocol`, `state_machine`, `server`,
+  `server_config`, `exceptions`) and utility modules
+  (`config_utils`, `i18n`,
   `shared_types`, `notification_models`, `file_validator`,
   `enhanced_logging`). Regenerate with
   `uv run python scripts/generate_docs.py`; verify drift with

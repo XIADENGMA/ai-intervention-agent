@@ -12,6 +12,7 @@ English API reference (signatures-focused).
 - [i18n](i18n.md)
 - [protocol](protocol.md)
 - [state_machine](state_machine.md)
+- [server](server.md)
 - [server_config](server_config.md)
 - [shared_types](shared_types.md)
 - [notification_manager](notification_manager.md)
@@ -30,6 +31,7 @@ English API reference (signatures-focused).
 - **notification_manager**: Notification orchestration
 - **protocol**: Protocol version, capabilities, and server clock — single source of truth for the front/back contract
 - **state_machine**: Connection / content / interaction state machines (mirrors front-end constants in `state.js`)
+- **server**: MCP server entry point — `interactive_feedback` tool registration, multi-task queue lifecycle, notification integration, and the `main()` event loop
 - **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)
 - **task_queue**: Task queue
 

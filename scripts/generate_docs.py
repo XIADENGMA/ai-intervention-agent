@@ -37,6 +37,7 @@ MODULES_TO_DOCUMENT = [
     "i18n.py",
     "protocol.py",
     "state_machine.py",
+    "server.py",
     "server_config.py",
     "shared_types.py",
     "notification_manager.py",
@@ -60,8 +61,6 @@ MODULES_TO_DOCUMENT = [
 # graduate 到 MODULES_TO_DOCUMENT。
 IGNORED_MODULES = frozenset(
     {
-        # TODO(round-8/docs-debt): MCP 服务器核心入口；最高优先级补文档。
-        "server.py",
         # TODO(round-8/docs-debt): MCP feedback 工具实现；与 server.py 同步搬。
         "server_feedback.py",
         # TODO(round-8/docs-debt): Web 服务编排（进程生命周期 + HTTP 客户端）。
@@ -315,6 +314,7 @@ QUICK_NAV_CORE = (
     "notification_manager",
     "protocol",
     "state_machine",
+    "server",
     "server_config",
     "task_queue",
 )
@@ -408,6 +408,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **notification_manager**: Notification orchestration",
                 "- **protocol**: Protocol version, capabilities, and server clock — single source of truth for the front/back contract",
                 "- **state_machine**: Connection / content / interaction state machines (mirrors front-end constants in `state.js`)",
+                "- **server**: MCP server entry point — `interactive_feedback` tool registration, multi-task queue lifecycle, notification integration, and the `main()` event loop",
                 "- **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)",
                 "- **task_queue**: Task queue",
                 "",
@@ -439,6 +440,7 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
                 "- **notification_manager**: 通知管理",
                 "- **protocol**: 协议版本、Capabilities、服务器时钟 —— 前后端契约的单一事实来源",
                 "- **state_machine**: 连接 / 内容 / 交互状态机（与前端 `state.js` 常量一一对应）",
+                "- **server**: MCP 服务器入口 —— `interactive_feedback` 工具注册、多任务队列生命周期、通知集成与 `main()` 事件循环",
                 "- **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）",
                 "- **task_queue**: 任务队列",
                 "",
