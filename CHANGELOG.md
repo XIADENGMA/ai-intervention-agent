@@ -382,6 +382,57 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
+- **`NotificationManager.ThreadPoolExecutor(max_workers=...)` now
+  binds to `len(NotificationType)` (currently 4) instead of a
+  hardcoded `3`, closing a "全开" user's silent notification drop.**
+  Pre-fix, both `__init__` and the `restart()` recreate-pool path
+  created the executor with `max_workers=3` plus a comment claiming
+  "通常同时启用的渠道不超过 3 个" — but
+  `notification_models.NotificationType` actually enumerates 4
+  members (`WEB`/`SOUND`/`BARK`/`SYSTEM`). Reproducer: a user with
+  `web_enabled=True` + `sound_enabled=True` + `bark_enabled=True` +
+  system available submits a feedback → `_process_event` iterates
+  `event.types` (4 items) and `submit()`s 4 futures into a 3-worker
+  pool. The 4th future enters the executor's queue waiting for a
+  free worker, but
+  `as_completed(futures, timeout=bark_timeout +
+  _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS)` (default 10+5 = 15 s) starts
+  ticking *immediately* on submit, not when the 4th worker
+  eventually starts. If the 3 in-flight futures (typically
+  dominated by BARK's HTTPS round-trip with cross-region latency)
+  all finish near the 15 s edge, the 4th future has zero remaining
+  time, never gets dispatched, and is force-cancelled in the
+  `except TimeoutError` branch's cleanup loop — the user simply
+  doesn't get one of their notifications, and the only log signal
+  is a generic "通知发送部分超时: N/M 完成" warning that doesn't
+  reveal the *systematic* shortfall (this channel **always** loses
+  to scheduling order, not random network luck). New module-level
+  `_NOTIFICATION_WORKER_COUNT = len(NotificationType)` makes the
+  worker count auto-sync with the enum; future contributors adding
+  a 5th channel just add a member to `NotificationType` and the
+  executor's capacity grows automatically, with zero hardcoded
+  constants to forget. Both `__init__` and `restart()` reference
+  the same constant, eliminating the historical drift class where
+  one path got updated and the other didn't. Resource impact is
+  essentially zero: `ThreadPoolExecutor` lazily spawns workers
+  (`_adjust_thread_count` only creates threads on
+  `submit()`-with-backlog), so 3→4 doesn't pre-allocate anything;
+  per-thread overhead (~8 KB stack + Python frame) is negligible
+  next to interpreter baseline. Five new locks in
+  `TestWorkerCountMatchesNotificationTypes`:
+  `_NOTIFICATION_WORKER_COUNT == len(NotificationType)` (the
+  auto-sync invariant); `_NOTIFICATION_WORKER_COUNT >= 4` (hard
+  floor — shrinking the enum to 3 must be conscious, not silent);
+  live executor's `_max_workers` after `__init__` matches the
+  constant; live executor after `shutdown(wait=False) → restart()`
+  also matches (locks the dual-path parity that historically
+  diverged); AST reverse-lock walking
+  `NotificationManager.__init__` + `restart()` via
+  `inspect.getsource` + `ast.parse`, asserting no
+  `Call(func=ThreadPoolExecutor, keywords=[..., max_workers=
+  Constant(3)])` survives (chose AST over textual grep because
+  textual grep false-positives on test fixtures and changelog
+  quotes). Pytest count climbs 2447 → 2452.
 - **`TaskQueue._persist` now `flush()`es and `fsync()`s before
   `os.replace()` so a kernel panic / power loss after rename can no
   longer leave the on-disk task-queue file as NUL-filled or

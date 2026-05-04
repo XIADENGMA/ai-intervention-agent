@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 117 maintenance commits added on top of the release. This is **not**
+> the 119 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -833,6 +833,33 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **`NotificationManager` worker pool now sized to
+  `len(NotificationType)` (currently 4), not hardcoded `3` — closes
+  a "全开" user's silent notification drop.** Pre-fix
+  `ThreadPoolExecutor(max_workers=3)` (in both `__init__` and
+  `restart`) had a comment claiming "通常同时启用的渠道不超过 3
+  个" — but `NotificationType` actually enumerates 4 members
+  (`WEB`/`SOUND`/`BARK`/`SYSTEM`). When a user enabled all 4
+  channels, the 4th `submit()`ed future entered the queue and
+  `as_completed(timeout=bark_timeout + buffer)` (default 15 s)
+  started ticking immediately. If the 3 in-flight futures
+  (dominated by BARK's HTTPS round-trip) finished near the
+  edge, the 4th future never got dispatched and was
+  force-cancelled in the `TimeoutError` cleanup loop — the user
+  silently dropped one notification with only a generic "部分超时"
+  log line, not the systematic "this channel always loses" signal
+  the bug actually was. New module-level
+  `_NOTIFICATION_WORKER_COUNT = len(NotificationType)` auto-syncs
+  the executor capacity with the enum; both `__init__` and
+  `restart()` reference the same constant, killing the dual-path
+  drift class. Resource impact ~zero (executor is lazy in worker
+  spawn, ~8 KB stack per thread). Five locks in new
+  `TestWorkerCountMatchesNotificationTypes`: constant equals
+  enum size, constant ≥ 4 hard-floor, live `_executor._max_workers`
+  matches the constant after `__init__`, same after
+  `shutdown(wait=False) → restart()`, AST reverse-lock that no
+  `max_workers=3` `Call` survives in `NotificationManager` source.
+  Pytest count climbs 2447 → 2452.
 - **`TaskQueue._persist` joins the rest of the repo's atomic-write
   paths in `flush + fsync` before `os.replace`, closing a kernel-
   panic / power-loss footgun.** Pre-fix the function did
