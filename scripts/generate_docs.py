@@ -47,6 +47,104 @@ MODULES_TO_DOCUMENT = [
     "enhanced_logging.py",
 ]
 
+# 显式标记"项目根有 *.py 但故意不出现在 docs/api 里"的模块。
+# 没有正当理由的话，模块应该挪去 ``MODULES_TO_DOCUMENT``——本集合
+# 配合 ``_assert_top_level_modules_classified`` 让未来新增模块时
+# 必须做明确决策，而不是悄悄遗漏一个核心模块。
+#
+# 当前 9 个条目是 v1.5.x 的"历史欠账"——技术上**应该**全部文档化
+# （它们都有完整的 module-level docstring + ``__all__``），但批量
+# 补 9 份英文 / 中文 docs 是单独的工程工作（每模块都要审 docstring
+# 质量、生成签名、刷 docs/README 的 Quick navigation 分组、维护
+# 18 份 .md）。先用 IGNORED_MODULES 把现状锁定，未来一个一个
+# graduate 到 MODULES_TO_DOCUMENT。
+IGNORED_MODULES = frozenset(
+    {
+        # TODO(round-8/docs-debt): MCP 服务器核心入口；最高优先级补文档。
+        "server.py",
+        # TODO(round-8/docs-debt): MCP feedback 工具实现；与 server.py 同步搬。
+        "server_feedback.py",
+        # TODO(round-8/docs-debt): Web 服务编排（进程生命周期 + HTTP 客户端）。
+        "service_manager.py",
+        # TODO(round-8/docs-debt): Flask Web UI 主类；最高优先级补文档。
+        "web_ui.py",
+        # TODO(round-8/docs-debt): web_ui ↔ config 双向同步；与 web_ui.py 一组搬。
+        "web_ui_config_sync.py",
+        # TODO(round-8/docs-debt): mDNS 发现服务。
+        "web_ui_mdns.py",
+        # TODO(round-8/docs-debt): mDNS 工具函数（hostname 校验等）。
+        "web_ui_mdns_utils.py",
+        # TODO(round-8/docs-debt): 网络访问控制 / IP 白名单 / 安全 Header。
+        "web_ui_security.py",
+        # TODO(round-8/docs-debt): 输入校验（add_task / update_feedback 等 endpoint）。
+        "web_ui_validators.py",
+    }
+)
+
+
+def _enumerate_top_level_python_modules() -> set[str]:
+    """项目根目录下所有 ``*.py`` 文件名（不含子目录、不含 ``__init__.py``）。
+
+    分类不变量的 LHS。集合语义；顺序不重要。
+    """
+    return {
+        p.name
+        for p in PROJECT_ROOT.glob("*.py")
+        if p.is_file() and p.name != "__init__.py"
+    }
+
+
+def _assert_top_level_modules_classified() -> None:
+    """守住「项目根 ``*.py`` ⊆ ``MODULES_TO_DOCUMENT`` ∪ ``IGNORED_MODULES``」不变量。
+
+    场景
+    ----
+    *  新增模块 ``foo.py`` 但忘了在 ``MODULES_TO_DOCUMENT`` 登记 → 该模块没
+       有 docs，下游用户 grep 不到，CI 沉默。本不变量 fail-closed 提示。
+    *  ``MODULES_TO_DOCUMENT`` / ``IGNORED_MODULES`` 列了一个已删除的模块
+       → "stale entry"。一段时间后会让 reviewer 困惑"为什么这条留着"。
+
+    设计
+    ----
+    *  与 ``_assert_quick_nav_covers_all_modules`` 同形（都是分类完整性
+       不变量），错误消息模板也保持一致：缺谁、误列谁、修复在哪改。
+    *  通过 ``generate_index`` 入口触发——任何一次 ``generate_docs.py``
+       /``--check`` /``minify_assets.py`` 联动都会走这条路径。
+    *  ``IGNORED_MODULES`` 故意做成 ``frozenset``（不可变），避免运行
+       时被某个 import 副作用追加，让 CI 错过签收。
+    """
+    declared = set(MODULES_TO_DOCUMENT)
+    ignored = set(IGNORED_MODULES)
+    classified = declared | ignored
+    actual = _enumerate_top_level_python_modules()
+
+    unclassified = actual - classified
+    stale = classified - actual
+    overlap = declared & ignored
+
+    if unclassified or stale or overlap:
+        details: list[str] = []
+        if unclassified:
+            details.append(
+                f"top-level modules with no classification (add to MODULES_TO_DOCUMENT "
+                f"to render docs, or to IGNORED_MODULES with a TODO/justification): "
+                f"{sorted(unclassified)}"
+            )
+        if stale:
+            details.append(
+                f"listed in MODULES_TO_DOCUMENT or IGNORED_MODULES but no matching "
+                f"file at project root (stale entry; remove from "
+                f"scripts/generate_docs.py): {sorted(stale)}"
+            )
+        if overlap:
+            details.append(
+                f"appears in BOTH MODULES_TO_DOCUMENT and IGNORED_MODULES (the two "
+                f"sets must be disjoint; pick one): {sorted(overlap)}"
+            )
+        raise SystemExit(
+            "generate_docs.py invariant violation:\n  - " + "\n  - ".join(details)
+        )
+
 
 def extract_docstring(node: ast.AST) -> str | None:
     """提取 AST 节点的 docstring"""
@@ -269,6 +367,7 @@ def _assert_quick_nav_covers_all_modules(modules: list[str]) -> None:
 def generate_index(modules: list[str], *, lang: str, output_dir_display: str) -> str:
     """生成文档索引"""
     _assert_quick_nav_covers_all_modules(modules)
+    _assert_top_level_modules_classified()
     if lang == "en":
         lines = [
             "# AI Intervention Agent API Docs",
