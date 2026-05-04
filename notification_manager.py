@@ -4,6 +4,7 @@
 """
 
 import logging
+import random
 import threading
 import time
 import uuid
@@ -55,6 +56,29 @@ logger = EnhancedLogger(__name__)
 # DNS 解析（首次）合计 < 5s，所以这里 +5 既能屏蔽尾时延，又不会让健康的 Bark
 # 失败时 retry 拖太久。
 _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS = 5
+
+
+# ``_schedule_retry`` 的 thundering-herd 防御：在 ``retry_delay`` 之上叠加
+# ``[0, retry_delay * jitter_ratio]`` 区间的随机抖动。
+#
+# 行业最佳实践（AWS Architecture Blog "Exponential Backoff and Jitter" /
+# Google SRE Workbook §22）：当 N 个客户端在网络抖动后同时失败、同时重试，
+# 没有 jitter 的话所有重试会在同一时刻撞向同一个下游服务，造成 thundering
+# herd → 下游永远恢复不了。引入 0-50% 的随机延迟即可把重试时刻打散，让下游
+# 有喘息窗口。
+#
+# 我们这里**故意不用指数退避**（``2^retry_count`` 那种）：
+#   1. ``max_retries`` 默认 3，指数退避在小 N 下没什么区别。
+#   2. ``retry_delay`` 默认 2s——加指数退避后总等待变成 2+4+8=14s，对单用户
+#      场景的感知延迟太长。
+#   3. Notification 不是关键路径（用户已经看到 Web UI），重试只是 best-effort，
+#      没必要为了 4-th-retry 的低概率场景拉高 99 分位延迟。
+# 简单的固定延迟 + jitter 是这个场景的甜蜜点。
+#
+# ``retry_delay == 0`` 时绕过 jitter（见 ``_schedule_retry`` 的 fast-path）：
+#   1. 测试代码 / 高频压测路径会显式设 ``retry_delay = 0`` 期望「立即重试」。
+#   2. 引入 jitter 会让那些场景出现亚秒级抖动 → 测试断言不稳定。
+_RETRY_DELAY_JITTER_RATIO = 0.5
 
 
 class NotificationConfig(BaseModel):
@@ -480,14 +504,26 @@ class NotificationManager:
             pass
 
     def _schedule_retry(self, event: NotificationEvent) -> None:
-        """使用 Timer 调度事件重试"""
+        """使用 Timer 调度事件重试。
+
+        延迟 = ``retry_delay`` + ``jitter``，``jitter`` ∈ [0,
+        ``retry_delay`` * ``_RETRY_DELAY_JITTER_RATIO``]。``retry_delay
+        == 0`` 时退化为「立即重试」（jitter 也跳过；见模块级常量
+        ``_RETRY_DELAY_JITTER_RATIO`` 的设计说明）。
+        """
         if getattr(self, "_shutdown_called", False):
             return
 
         try:
-            delay_seconds = max(int(getattr(self.config, "retry_delay", 2)), 0)
+            base_delay = max(int(getattr(self.config, "retry_delay", 2)), 0)
         except (TypeError, ValueError):
-            delay_seconds = 2
+            base_delay = 2
+
+        if base_delay == 0:
+            delay_seconds: float = 0.0
+        else:
+            jitter = random.uniform(0.0, base_delay * _RETRY_DELAY_JITTER_RATIO)
+            delay_seconds = base_delay + jitter
 
         timer_key = f"{event.id}__retry_{event.retry_count}"
 

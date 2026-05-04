@@ -1596,6 +1596,112 @@ class TestScheduleRetry(unittest.TestCase):
 
 
 # ──────────────────────────────────────────────────────────
+# _schedule_retry 的 jitter 防御 (thundering-herd)
+#
+# 历史 bug：所有重试用同一个 ``retry_delay`` 没有抖动。多用户同时失败时
+# 重试会精确撞向同一时刻。修复策略是 fixed delay + 0-50% jitter，避开
+# 指数退避（``max_retries`` 默认 3，指数退避在小 N 下没意义且会拉高
+# 99 分位延迟）。
+#
+# 这一组 5 个测试锁 contract：
+#   1. ``retry_delay == 0`` 跳过 jitter（兼容测试 / 高频压测路径）
+#   2. ``retry_delay == 2`` 时 delay ∈ [2, 3]
+#   3. ``retry_delay == 10`` 时 delay ∈ [10, 15]
+#   4. 多次调用产生不同 delay（jitter 真的随机，不是 mock）
+#   5. 反向锁 ``_RETRY_DELAY_JITTER_RATIO == 0.5`` 不能被悄悄改
+# ──────────────────────────────────────────────────────────
+
+
+class TestScheduleRetryJitter(unittest.TestCase):
+    """``_schedule_retry`` 必须在 ``retry_delay`` 上叠加 0-50% jitter。"""
+
+    @staticmethod
+    def _capture_timer_delay(mgr, retry_delay_value: int) -> float:
+        """跑一次 ``_schedule_retry``，返回它构造 ``threading.Timer`` 时的 delay 参数。"""
+        captured: dict[str, float] = {}
+
+        class _SpyTimer:
+            def __init__(self, delay, target):
+                captured["delay"] = float(delay)
+                self._delay = delay
+                self._target = target
+                self.daemon = False
+
+            def start(self) -> None:
+                # 不真正启动；测试只关心 delay 参数
+                pass
+
+            def cancel(self) -> None:
+                pass
+
+        try:
+            mgr.config.retry_delay = retry_delay_value
+        except Exception:
+            mgr.config.__dict__["retry_delay"] = retry_delay_value
+
+        with patch("notification_manager.threading.Timer", _SpyTimer):
+            mgr._schedule_retry(_make_event())
+
+        return captured.get("delay", -1.0)
+
+    def test_zero_retry_delay_bypasses_jitter(self):
+        """``retry_delay == 0`` → delay 必须等于 0（不能有 jitter 抖动）。"""
+        mgr = _make_manager()
+        delay = self._capture_timer_delay(mgr, 0)
+        self.assertEqual(
+            delay,
+            0.0,
+            "retry_delay=0 是「立即重试」语义，常用于测试和高频压测；"
+            "不能引入亚秒级 jitter 抖动",
+        )
+
+    def test_default_retry_delay_within_jitter_range(self):
+        """``retry_delay == 2`` → delay ∈ [2.0, 3.0]（0-50% jitter）。"""
+        mgr = _make_manager()
+        delay = self._capture_timer_delay(mgr, 2)
+        self.assertGreaterEqual(delay, 2.0, "delay 必须不小于 retry_delay")
+        self.assertLessEqual(
+            delay,
+            3.0,
+            "delay 必须不超过 retry_delay * (1 + _RETRY_DELAY_JITTER_RATIO)",
+        )
+
+    def test_widened_retry_delay_within_jitter_range(self):
+        """``retry_delay == 10`` → delay ∈ [10.0, 15.0]。"""
+        mgr = _make_manager()
+        delay = self._capture_timer_delay(mgr, 10)
+        self.assertGreaterEqual(delay, 10.0)
+        self.assertLessEqual(delay, 15.0)
+
+    def test_jitter_actually_randomises(self):
+        """多次调用必须产生**不同的** delay 值（jitter 真的随机）。"""
+        mgr = _make_manager()
+        seen: set[float] = set()
+        for _ in range(20):
+            delay = self._capture_timer_delay(mgr, 2)
+            seen.add(delay)
+        self.assertGreater(
+            len(seen),
+            1,
+            "20 次调用全产生同一个 delay，说明 jitter 没真的生效（"
+            "可能 random.uniform 被 patch 死了或 jitter 计算逻辑错）",
+        )
+
+    def test_jitter_ratio_constant_value_locked(self):
+        """反向锁：``_RETRY_DELAY_JITTER_RATIO`` 不能在没充分讨论的情况下被改。"""
+        from notification_manager import _RETRY_DELAY_JITTER_RATIO
+
+        self.assertEqual(
+            _RETRY_DELAY_JITTER_RATIO,
+            0.5,
+            "如果你确实需要调这个 ratio，请：\n"
+            "  1. 想清楚对单用户感知延迟的影响（jitter 是「拖慢」99 分位）\n"
+            "  2. 想清楚对多用户 thundering herd 的防御能力的影响\n"
+            "  3. 然后同时更新这条断言 + 模块顶部的设计说明 + RELEASE_NOTES",
+        )
+
+
+# ──────────────────────────────────────────────────────────
 # shutdown / restart
 # ──────────────────────────────────────────────────────────
 
