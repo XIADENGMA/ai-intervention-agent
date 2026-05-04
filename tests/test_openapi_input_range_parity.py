@@ -162,3 +162,80 @@ def test_all_feedback_countdown_inputs_have_bounds() -> None:
         "OpenAPI feedback-countdown input parity drifted from "
         "shared_types.SECTION_MODELS::feedback:\n  - " + "\n  - ".join(failures)
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# R13·B3 · OpenAPI response schema 缩进契约
+# ═══════════════════════════════════════════════════════════════════════════
+def test_get_tasks_response_includes_deadline_under_items_properties() -> None:
+    """``GET /api/tasks`` 的 response 中 ``tasks.items.properties.deadline`` 必须存在。
+
+    历史 bug：docstring 里 ``deadline`` 一行的缩进比 ``remaining_time``
+    少 2 列，YAML 把它解析成 ``items`` 自己的 key（即和 ``type``/
+    ``properties`` 同级），而不是 ``items.properties`` 下的字段。后果：
+
+      tasks:
+        items:
+          type: object
+          properties:           ← 这里 deadline 应该出现
+            task_id:
+            status:
+            ...
+            remaining_time:
+          deadline:             ← 实际错误位置：items 自己的 key
+
+    swagger UI / OpenAPI client generators 看到的 task 对象 schema 会
+    缺失 deadline 字段说明，调用方实现 deserializer 时会忽略它，再加
+    上字段名又是合法 YAML key（不会触发 yaml.safe_load 异常），整个
+    bug 沉默——本测试直接走 yaml 解析后断言字段位置正确，是这种
+    "YAML 合法 / 语义错位" 的最便宜防御。
+    """
+    source_path = ROUTES_DIR / "task.py"
+    blocks = _extract_yaml_blocks(source_path)
+
+    # 找 GET /api/tasks 的 200 响应 schema —— 它的 properties.tasks.items 必须有 deadline。
+    target_items_properties: dict | None = None
+    for spec in blocks:
+        responses = spec.get("responses")
+        if not isinstance(responses, dict):
+            continue
+        ok = responses.get(200)
+        if not isinstance(ok, dict):
+            continue
+        schema = ok.get("schema")
+        if not isinstance(schema, dict):
+            continue
+        properties = schema.get("properties")
+        if not isinstance(properties, dict):
+            continue
+        tasks_field = properties.get("tasks")
+        if not isinstance(tasks_field, dict):
+            continue
+        items = tasks_field.get("items")
+        if not isinstance(items, dict):
+            continue
+        items_props = items.get("properties")
+        # 仅匹配 task list response：properties 里至少有 task_id + status，
+        # 区别于碰巧也带 ``tasks`` 字段的其他 endpoint。
+        if (
+            isinstance(items_props, dict)
+            and "task_id" in items_props
+            and "status" in items_props
+        ):
+            target_items_properties = items_props
+            break
+
+    assert target_items_properties is not None, (
+        "未在 web_ui_routes/task.py 任何 endpoint 的 responses[200].schema 中找到 "
+        "tasks[].items.properties.{task_id,status,...} —— GET /api/tasks 的 OpenAPI "
+        "spec 是否被改名/重构？请同步本测试。"
+    )
+
+    assert "deadline" in target_items_properties, (
+        "`deadline` 必须出现在 ``tasks.items.properties`` 之下；如果你看到这条 "
+        "失败信息，先去检查 `web_ui_routes/task.py::get_tasks` 的 docstring，"
+        "确认 `deadline:` 这一行的缩进与 `task_id`/`status`/`remaining_time` "
+        "对齐（同列）。任何低 2 列以上的缩进都会让 yaml 把它解析为 items 自己 "
+        "的 key，swagger UI / OpenAPI client generator 看到的 task schema 就会 "
+        "缺失 deadline 字段说明 —— 这是 v1.5.x 修过的回归点。"
+    )

@@ -225,7 +225,7 @@ class TaskRoutesMixin:
                             type: number
                           remaining_time:
                             type: number
-                        deadline:
+                          deadline:
                             type: number
                             description: 截止时间戳 (server_time + remaining_time)
                     stats:
