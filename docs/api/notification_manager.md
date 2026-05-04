@@ -40,7 +40,7 @@
 
 ##### `send_notification(self, title: str, message: str, trigger: NotificationTrigger = NotificationTrigger.IMMEDIATE, types: list[NotificationType] | None = None, metadata: dict[str, Any] | None = None, priority: NotificationPriority | str = NotificationPriority.NORMAL) -> str`
 
-##### `shutdown(self, wait: bool = False) -> None`
+##### `shutdown(self, wait: bool = False, grace_period: float = 0.0) -> None`
 
 ##### `restart(self) -> None`
 

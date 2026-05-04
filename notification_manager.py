@@ -819,8 +819,33 @@ class NotificationManager:
         logger.info(f"执行降级处理: {event.id}")
         self.trigger_callbacks("notification_fallback", event)
 
-    def shutdown(self, wait: bool = False) -> None:
-        """关闭管理器，取消延迟 Timer 并关闭线程池（幂等）"""
+    def shutdown(self, wait: bool = False, grace_period: float = 0.0) -> None:
+        """关闭管理器，取消延迟 Timer 并关闭线程池（幂等）。
+
+        参数：
+            wait: ``True`` 时阻塞直到全部 worker 完成（与
+                ``ThreadPoolExecutor.shutdown(wait=True)`` 同语义）；
+                ``False`` 时仅取消 pending future、不等 in-flight。
+            grace_period: ``wait=False`` 时的额外宽限窗口（秒）。
+                取值 ``> 0`` 表示：在 ``shutdown`` 调用线程上 best-effort
+                ``join`` 每个 worker 线程，最多累计 ``grace_period`` 秒，
+                让正在跑的 osascript / HTTP 通知有机会自然收尾，避免
+                ``atexit`` 阶段 in-flight 被切断后才意识到（log 已经
+                关、进程已经在 cleanup）。**不**会让 ``shutdown`` 等到
+                超过 ``grace_period``——超时则直接 return，worker 继续
+                由 Python 主进程退出阶段去 join 收尾（worker 默认
+                non-daemon）。
+
+        Why grace_period 而不是直接 ``daemon=True``:
+            把 worker 标 daemon 需要子类化 ``ThreadPoolExecutor`` 重写
+            ``_adjust_thread_count``（私有 API，跨 Python 版本不稳）。
+            grace_period 路径只读 ``_threads`` 集合（私有但仅遍历），
+            不修改 ``ThreadPoolExecutor`` 行为，最低耦合。
+
+            行业参考：Pgsql / etcd / aiohttp 在退出阶段都给 worker
+            一段固定 grace（典型 1-3s），平衡"通知应当尽量送达"与
+            "用户不该看到程序挂起"两个目标。
+        """
         if getattr(self, "_shutdown_called", False):
             return
         self._shutdown_called = True
@@ -847,6 +872,28 @@ class NotificationManager:
             self._executor.shutdown(wait=wait)
         except Exception as e:
             logger.debug(f"关闭通知线程池失败（忽略）: {e}")
+
+        # grace-wait：给 in-flight worker 显式时间窗口收尾。
+        # 仅在 ``wait=False`` 且 ``grace_period > 0`` 时启用——
+        # ``wait=True`` 已是无限等待，不需要再叠加 grace。
+        if not wait and grace_period > 0:
+            try:
+                deadline = time.monotonic() + grace_period
+                # ``_threads`` 是 ``ThreadPoolExecutor`` 私有属性
+                # （CPython 3.9-3.13 一直存在），这里仅 read 不 mutate。
+                worker_threads = list(getattr(self._executor, "_threads", ()) or ())
+                for t in worker_threads:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        # 超时了，剩下的 worker 留给 Python 主进程退出阶段 join
+                        break
+                    try:
+                        t.join(timeout=remaining)
+                    except Exception:
+                        # join 罕见地抛异常（线程对象失效等），跳过
+                        continue
+            except Exception as e:
+                logger.debug(f"grace-wait 期间异常（忽略）: {e}")
 
         # 关闭并清空 providers（释放可能的网络连接池等资源）
         try:
@@ -1123,10 +1170,21 @@ notification_manager = NotificationManager()
 # - shutdown() 幂等，重复调用安全
 import atexit  # noqa: E402
 
+# atexit 的 grace 窗口（秒）。1.5s 是经验值：
+#   - 短到不会让用户察觉"程序卡住"（人对 <2s 退出延迟一般无感）；
+#   - 长到能覆盖一次完整的 Bark / 钉钉 HTTP request（典型 200-800ms），
+#     让 in-flight 通知有机会自然 ack 后再让进程退出。
+# 如果 worker 在 grace 内未完成（例如卡 osascript），剩余 join 留给
+# Python 主进程退出阶段（worker 默认 non-daemon，主进程会再等一次），
+# grace_period 这一层只负责"显式可观测"。
+_ATEXIT_GRACE_PERIOD_SECONDS = 1.5
+
 
 def _shutdown_global_notification_manager():
     try:
-        notification_manager.shutdown(wait=False)
+        notification_manager.shutdown(
+            wait=False, grace_period=_ATEXIT_GRACE_PERIOD_SECONDS
+        )
     except Exception:
         # 退出阶段不再抛异常
         pass

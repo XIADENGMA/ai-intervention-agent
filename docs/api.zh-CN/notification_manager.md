@@ -63,9 +63,33 @@
 
 发送通知主入口，返回事件ID。types=None 时根据配置自动选择渠道。
 
-##### `shutdown(self, wait: bool = False) -> None`
+##### `shutdown(self, wait: bool = False, grace_period: float = 0.0) -> None`
 
-关闭管理器，取消延迟 Timer 并关闭线程池（幂等）
+关闭管理器，取消延迟 Timer 并关闭线程池（幂等）。
+
+参数：
+    wait: ``True`` 时阻塞直到全部 worker 完成（与
+        ``ThreadPoolExecutor.shutdown(wait=True)`` 同语义）；
+        ``False`` 时仅取消 pending future、不等 in-flight。
+    grace_period: ``wait=False`` 时的额外宽限窗口（秒）。
+        取值 ``> 0`` 表示：在 ``shutdown`` 调用线程上 best-effort
+        ``join`` 每个 worker 线程，最多累计 ``grace_period`` 秒，
+        让正在跑的 osascript / HTTP 通知有机会自然收尾，避免
+        ``atexit`` 阶段 in-flight 被切断后才意识到（log 已经
+        关、进程已经在 cleanup）。**不**会让 ``shutdown`` 等到
+        超过 ``grace_period``——超时则直接 return，worker 继续
+        由 Python 主进程退出阶段去 join 收尾（worker 默认
+        non-daemon）。
+
+Why grace_period 而不是直接 ``daemon=True``:
+    把 worker 标 daemon 需要子类化 ``ThreadPoolExecutor`` 重写
+    ``_adjust_thread_count``（私有 API，跨 Python 版本不稳）。
+    grace_period 路径只读 ``_threads`` 集合（私有但仅遍历），
+    不修改 ``ThreadPoolExecutor`` 行为，最低耦合。
+
+    行业参考：Pgsql / etcd / aiohttp 在退出阶段都给 worker
+    一段固定 grace（典型 1-3s），平衡"通知应当尽量送达"与
+    "用户不该看到程序挂起"两个目标。
 
 ##### `restart(self) -> None`
 

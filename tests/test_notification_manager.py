@@ -2308,6 +2308,147 @@ class TestShutdownEdgeCases(unittest.TestCase):
         mgr.shutdown(wait=False)
 
 
+class TestShutdownGracePeriod(unittest.TestCase):
+    """grace_period：``shutdown(wait=False, grace_period=N)`` 的契约。
+
+    场景：``atexit`` 阶段需要给 in-flight osascript / HTTP 通知一段
+    显式收尾时间，但又不能无限等。这里锁住四个不变量：
+        1. ``grace_period > 0`` 时**有**额外等待，上限不超过 grace；
+        2. ``grace_period = 0`` 时立即返回（保留原行为，向后兼容）；
+        3. ``wait=True`` 时 grace_period 被忽略（已是无限等）；
+        4. atexit hook 用了非零 grace（避免未来回退）。
+    """
+
+    def test_grace_period_zero_does_not_join_threads(self):
+        """``grace_period=0`` 时不应触碰 ``_threads``（保留原行为）。"""
+        mgr = _make_manager()
+        sentinel_thread = MagicMock()
+        sentinel_thread.join = MagicMock()
+        mgr._executor = MagicMock()
+        mgr._executor._threads = {sentinel_thread}
+
+        mgr.shutdown(wait=False, grace_period=0.0)
+
+        sentinel_thread.join.assert_not_called()
+
+    def test_grace_period_positive_joins_threads(self):
+        """``grace_period > 0`` 时遍历 ``_threads`` 并 join 每个 worker。"""
+        mgr = _make_manager()
+        t1, t2 = MagicMock(), MagicMock()
+        t1.join = MagicMock()
+        t2.join = MagicMock()
+        mgr._executor = MagicMock()
+        mgr._executor._threads = {t1, t2}
+
+        mgr.shutdown(wait=False, grace_period=0.5)
+
+        t1.join.assert_called_once()
+        t2.join.assert_called_once()
+        # 每次 join 的 timeout 都应非负、且 <= grace
+        for call in t1.join.call_args_list + t2.join.call_args_list:
+            timeout = call.kwargs.get("timeout", call.args[0] if call.args else None)
+            self.assertIsNotNone(timeout, "join 必须传 timeout（防无限等）")
+            self.assertGreater(timeout, 0)
+            self.assertLessEqual(timeout, 0.5)
+
+    def test_grace_period_with_wait_true_is_noop(self):
+        """``wait=True`` 时已是无限等，grace_period 不应再叠加 join。"""
+        mgr = _make_manager()
+        sentinel_thread = MagicMock()
+        sentinel_thread.join = MagicMock()
+        mgr._executor = MagicMock()
+        mgr._executor._threads = {sentinel_thread}
+
+        mgr.shutdown(wait=True, grace_period=0.5)
+
+        sentinel_thread.join.assert_not_called()
+
+    def test_grace_period_overall_bound_respected(self):
+        """累计 grace 时间不应超出 ``grace_period`` 太多。
+
+        即使 4 个 worker 每个 join 都不返回（例如真线程卡死），
+        ``shutdown`` 也应在大约 grace 秒内返回，而不是 4×grace。
+        """
+        import time as _time
+
+        mgr = _make_manager()
+
+        slow_threads = []
+        for _ in range(4):
+            t = MagicMock()
+            # join 立即返回（不模拟真阻塞，否则单测变慢）
+            t.join = MagicMock()
+            slow_threads.append(t)
+        mgr._executor = MagicMock()
+        mgr._executor._threads = set(slow_threads)
+
+        start = _time.monotonic()
+        mgr.shutdown(wait=False, grace_period=0.1)
+        elapsed = _time.monotonic() - start
+
+        # 4 个 mock join 立即返回，shutdown 整体应远低于 grace*2
+        self.assertLess(
+            elapsed,
+            0.5,
+            f"shutdown 整体耗时 {elapsed:.2f}s 超出预期上限",
+        )
+
+    def test_grace_period_join_exception_is_swallowed(self):
+        """单个 thread.join 抛异常不应中断后续清理。"""
+        mgr = _make_manager()
+        good = MagicMock()
+        good.join = MagicMock()
+        bad = MagicMock()
+        bad.join = MagicMock(side_effect=RuntimeError("thread invalidated"))
+        mgr._executor = MagicMock()
+        mgr._executor._threads = {bad, good}
+
+        # 不应抛
+        mgr.shutdown(wait=False, grace_period=0.1)
+
+    def test_grace_period_threads_attr_missing_is_safe(self):
+        """``_threads`` 不存在（私有 API 在未来 Python 删除）应安全降级。"""
+        mgr = _make_manager()
+        mgr._executor = MagicMock(spec=[])  # 只有 spec=[] 的对象不含 _threads
+
+        # 不应抛 AttributeError
+        mgr.shutdown(wait=False, grace_period=0.1)
+
+    def test_atexit_hook_uses_nonzero_grace(self):
+        """Reverse-lock：``_shutdown_global_notification_manager`` 必须给
+        非零 grace_period，避免未来有人误删退化为 ``wait=False, grace=0``。
+        """
+        from notification_manager import _ATEXIT_GRACE_PERIOD_SECONDS
+
+        self.assertGreater(
+            _ATEXIT_GRACE_PERIOD_SECONDS,
+            0.0,
+            "atexit 必须给 in-flight 通知非零的收尾窗口",
+        )
+        # 上限：不让某次失败 release 把 grace 改成 30s 之类，导致用户
+        # 退出 Cursor 后 30s 进程才真的死掉。
+        self.assertLess(
+            _ATEXIT_GRACE_PERIOD_SECONDS,
+            5.0,
+            "atexit grace 不应超过 5s，否则用户感知为'程序卡住'",
+        )
+
+    def test_shutdown_signature_has_grace_period(self):
+        """Reverse-lock：签名必须有 ``grace_period`` 参数（不要被回退）。"""
+        import inspect
+
+        from notification_manager import NotificationManager
+
+        sig = inspect.signature(NotificationManager.shutdown)
+        self.assertIn(
+            "grace_period",
+            sig.parameters,
+            "shutdown 必须保留 grace_period 参数（atexit 路径依赖它）",
+        )
+        # 默认值应为 0.0（向后兼容：旧调用方 shutdown(wait=False) 行为不变）
+        self.assertEqual(sig.parameters["grace_period"].default, 0.0)
+
+
 # ──────────────────────────────────────────────────────────
 # _update_bark_provider 错误路径 (lines 1045-1051)
 # ──────────────────────────────────────────────────────────
