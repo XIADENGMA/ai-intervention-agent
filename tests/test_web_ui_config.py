@@ -1905,6 +1905,19 @@ class TestValidateAllowedNetworks(unittest.TestCase):
         result = validate_allowed_networks(["10.0.0.0/8", "192.168.0.0/16"])
         self.assertEqual(result, ["10.0.0.0/8", "192.168.0.0/16"])
 
+    def test_none_and_non_string_entries_classified_as_invalid(self):
+        """直接命中 web_ui_validators.py:123-124 — `None` / 数字 / 空字符串
+        在循环顶部就被归到 invalid_networks，不会进入 ip_network() 抛异常路径。
+
+        现有测试只覆盖了 try/except 抛异常的 invalid 路径；这条用例锁定
+        「类型 / 真值早退」分支，避免后续重构时把这层兜底拆掉。
+        """
+        from web_ui import validate_allowed_networks
+
+        result = validate_allowed_networks([None, 0, "", 123, "10.0.0.0/8"])
+        # 仅有效的 CIDR 进入返回值
+        self.assertEqual(result, ["10.0.0.0/8"])
+
 
 class TestValidateBlockedIps(unittest.TestCase):
     def test_not_list_returns_empty(self):
@@ -1923,6 +1936,30 @@ class TestValidateBlockedIps(unittest.TestCase):
 
         result = validate_blocked_ips(["10.0.0.1", "192.168.1.1"])
         self.assertEqual(result, ["10.0.0.1", "192.168.1.1"])
+
+    def test_cidr_blocked_normalized(self):
+        """命中 web_ui_validators.py:155 — `validate_blocked_ips` 应支持 CIDR 格式
+
+        而不只是单 IP。`ip_network(strict=False)` 会把 `10.0.0.1/24` 这种
+        「主机位非零」的写法规范化成 `10.0.0.0/24`，避免存盘时同一段被记录
+        两种形式。
+        """
+        from web_ui import validate_blocked_ips
+
+        result = validate_blocked_ips(["10.0.0.1/24", "192.168.1.0/16"])
+        self.assertEqual(result, ["10.0.0.0/24", "192.168.0.0/16"])
+
+    def test_ipv4_mapped_ipv6_normalized(self):
+        """命中 web_ui_validators.py:108 — `_normalize_ip_str` 应把
+        IPv4-mapped IPv6（`::ffff:10.0.0.1`）规范化为对应的 IPv4 表示。
+
+        防止同一台设备的两种 IP 表示被各自登记到 blocklist，造成
+        访问控制规则不一致。
+        """
+        from web_ui import validate_blocked_ips
+
+        result = validate_blocked_ips(["::ffff:10.0.0.1"])
+        self.assertEqual(result, ["10.0.0.1"])
 
 
 class TestValidateNetworkSecurityConfig(unittest.TestCase):
