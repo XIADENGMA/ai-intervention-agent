@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 52 maintenance commits added on top of the release. This is **not**
+> the 53 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -307,9 +307,9 @@ downstream packagers do not need to update integration scripts.
   climbs from 2244 to 2249. The TOML / doc parsers each
   carry a self-check so refactoring the regex later cannot
   silently weaken the gate.
-- **Four new introspection-based parity gates** lock the
+- **Five new introspection-based parity gates** lock the
   numeric clamp bounds + default values in
-  `shared_types.SECTION_MODELS` against the four surfaces that
+  `shared_types.SECTION_MODELS` against the five surfaces that
   historically drifted (or could drift in the future):
   - `tests/test_server_config_shared_types_parity.py`
     asserts `server_config.{FEEDBACK_TIMEOUT_MIN/MAX,
@@ -351,6 +351,24 @@ downstream packagers do not need to update integration scripts.
     pulled directly from `model_fields[name].default` and
     asserted to equal the imported `server_config` values.
     4 tests.
+  - `tests/test_notification_config_parity.py` covers the
+    fifth (and last historically-vulnerable)
+    "config layer that re-clamps Pydantic-validated values"
+    surface: `NotificationConfig`'s four `coerce_*`
+    validators (`retry_count`, `retry_delay`, `bark_timeout`,
+    `sound_volume`). Today's bounds happen to match
+    `SECTION_MODELS::notification` exactly, but no CI gate
+    locked that — a future Pydantic-side widening would have
+    silently re-introduced the truncation pattern. Uses
+    **black-box behaviour assertions** (feed an oversized /
+    undersized value, confirm clamp-result equals the
+    introspected Pydantic max / min) so it works regardless of
+    whether the validator is hardcoded inline or
+    `ClassVar`-driven. The `sound_volume` percentage / decimal
+    scale mismatch (Pydantic `[0, 100]` vs runtime `[0.0, 1.0]`,
+    `from_config_file` divides by 100) is asserted explicitly
+    so a future refactor can't break the implicit ÷100 contract
+    silently. 8 tests.
 
 ### Tooling / CI
 
