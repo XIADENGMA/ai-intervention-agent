@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 123 maintenance commits added on top of the release. This is **not**
+> the 125 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -833,6 +833,79 @@ downstream packagers do not need to update integration scripts.
   ``tests/test_server_main_retry_backoff.py`` (four static, two
   behavioural — including a strict-monotonic check that retry 2 must
   exceed retry 1, rejecting jitter-coincidence false positives).
+- **Image-upload pipeline gains four-tier OOM defense; fixed a
+  pre-existing 100 GB single-part exploit hidden behind a
+  deceptive "为什么不依赖 MAX_CONTENT_LENGTH" docstring.**
+  Pre-fix the upload pipeline had two layers (per-request count
+  cap + per-request byte cap) but a critical gap: `file.read()`
+  in `extract_uploaded_images` was a *bare* call (loads the
+  entire part into a Python `bytes`), *and* `web_ui.py` set no
+  `app.config["MAX_CONTENT_LENGTH"]`, *and* the module
+  docstring rationalised the gap by claiming
+  `MAX_CONTENT_LENGTH` "对 form-only 请求会一并影响" — which
+  is **false**: `MAX_CONTENT_LENGTH` only rejects requests
+  *exceeding* its threshold, so setting it to 101 MB has zero
+  effect on the < 1 KB form-only text submissions the
+  docstring worried about. Net effect: an attacker sending a
+  single multipart part with `image_0 = 100 GB` would (1)
+  breeze past Flask/Werkzeug's parse stage (no
+  `MAX_CONTENT_LENGTH` to compare against), (2) get streamed
+  to a temp file by Werkzeug's `FileStorage` (filling disk
+  before any application code runs), (3) hit `file.read()`
+  which loads the *whole* part into RAM — process now holds
+  100 GB in `bytes` PLUS the disk temp file. Only *then* would
+  `validate_uploaded_file` reject for `> 10 MB`, but the OOM
+  kill has already happened. The existing
+  `MAX_TOTAL_UPLOAD_BYTES = 100 MB` per-request cap is checked
+  *between* parts, not within a single part, so a single
+  100 GB part sails right through it. Fix is a four-tier
+  defense ordered by rejection time:
+  - **Tier 1 (request-level Flask cap):** `web_ui.py` now sets
+    `self.app.config["MAX_CONTENT_LENGTH"] = MAX_TOTAL_UPLOAD_BYTES + 1 MB`.
+    Werkzeug rejects with HTTP 413 *before* any temp-file
+    streaming, so the disk never sees the malicious bytes.
+    1 MB buffer covers multipart boundary + per-part headers
+    (~20 KB total) + form text (`feedback_text` /
+    `selected_options` ≤ 100 KB) + safety margin. Imports
+    `MAX_TOTAL_UPLOAD_BYTES` directly so the constant has
+    *one* source of truth — no drift class.
+  - **Tier 2 (per-file read cap):** new
+    `MAX_FILE_SIZE_BYTES = 10 MB` constant in
+    `_upload_helpers.py` (mirrors `FileValidator` default
+    `max_file_size`); `file.read()` is replaced with
+    `file.read(MAX_FILE_SIZE_BYTES + 1)`. The `+ 1` byte
+    distinguishes "exactly at cap" (legal) from "above cap"
+    (reject) without ambiguity. Survives the case where a
+    reverse proxy strips `Content-Length` (rendering tier 1
+    inert because Werkzeug can't pre-judge the body size) —
+    per-part bytes-in-memory stay strictly capped at 10 MB +
+    1 byte, never the attacker's 100 GB.
+  - **Tier 3 (per-request budgets):** `MAX_IMAGES_PER_REQUEST = 10`
+    + `MAX_TOTAL_UPLOAD_BYTES = 100 MB` (unchanged from
+    pre-fix; reverse-locked against client-side
+    `MAX_IMAGE_COUNT`).
+  - **Tier 4 (magic-number / extension / content-scan):**
+    `validate_uploaded_file` rejects PNG-headerless files,
+    dangerous extensions, embedded scripts (unchanged).
+  The deceptive docstring sentence is removed and replaced
+  with the explicit four-tier ordering. Eight new locks
+  across two test classes: `TestPerFileSizeCap` × 5
+  (constant-equals-validator-default parity, ≤ total-budget
+  sanity, oversized-rejected-before-validate via
+  `mock_validate.assert_not_called()`, at-cap passes through,
+  AST-driven reverse-lock that walks the parsed function and
+  asserts ≥ 1 `file.read(N)` call with non-empty `args` AND
+  zero bare `file.read()` — protects against future "clean up
+  the `+ 1`" refactors); `TestFlaskMaxContentLength` × 3
+  (sharing one `WebFeedbackUI` via `setUpClass` because
+  `__init__` only sets up app/limiter/routes and
+  `shutdown_server()` would `os.kill(SIGINT)` the test
+  runner — explicit constructor-only-not-server lock):
+  config present + positive, value covers
+  `MAX_TOTAL_UPLOAD_BYTES` while bounded above to prevent
+  tier-1 dilution into a Gigabyte cap, AST + text reverse-lock
+  that `web_ui.py` references the constant rather than
+  hardcoding the literal. Pytest count climbs 2458 → 2465.
 - **`ServiceManager._signal_handler` now `raise KeyboardInterrupt`
   on the main thread after cleanup — closes a "SIGTERM zombie"
   where the supervisor's terminate signal silently failed to exit

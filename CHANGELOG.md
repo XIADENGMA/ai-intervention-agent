@@ -382,6 +382,67 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
+- **Image-upload pipeline gains four-tier OOM defense; closes
+  a pre-existing 100 GB single-part exploit hidden behind a
+  deceptive "为什么不依赖 MAX_CONTENT_LENGTH" docstring.**
+  Pre-fix the layered defense had a critical gap: `file.read()`
+  in `extract_uploaded_images` was a *bare* call (loads the
+  entire part into a Python `bytes`), *and* `web_ui.py` set no
+  `app.config["MAX_CONTENT_LENGTH"]`, *and* the module docstring
+  rationalised the gap by claiming `MAX_CONTENT_LENGTH` "对
+  form-only 请求会一并影响" — which is **false**:
+  `MAX_CONTENT_LENGTH` only rejects requests *exceeding* its
+  threshold, so setting it to 101 MB has zero effect on the
+  < 1 KB form-only text submissions the docstring worried about.
+  Exploit chain: an attacker sending a single multipart part with
+  `image_0` set to 100 GB would (1) breeze past Flask/Werkzeug's
+  parse stage (no `MAX_CONTENT_LENGTH`), (2) get streamed to a
+  temp file by Werkzeug's `FileStorage` (filling disk before
+  application code runs), (3) hit `file.read()` which loads the
+  *whole* part into RAM — process now holds 100 GB in `bytes`
+  *plus* the disk temp file. Only *then* would
+  `validate_uploaded_file` reject for `> 10 MB`, but OOM-kill
+  has already happened. The existing
+  `MAX_TOTAL_UPLOAD_BYTES = 100 MB` per-request cap is checked
+  *between* parts, not within a single part, so a single 100 GB
+  part sails right through it. Fix is a four-tier defense ordered
+  by rejection time:
+  - **Tier 1 (request-level Flask cap):** `web_ui.py` now sets
+    `self.app.config["MAX_CONTENT_LENGTH"] = MAX_TOTAL_UPLOAD_BYTES + 1 MB`.
+    Werkzeug rejects with HTTP 413 *before* any temp-file
+    streaming; the disk never sees the malicious bytes. 1 MB
+    buffer covers multipart boundary + per-part headers
+    (~20 KB total) + form text fields + safety margin. Imports
+    `MAX_TOTAL_UPLOAD_BYTES` directly so there's *one* source
+    of truth.
+  - **Tier 2 (per-file read cap):** new
+    `MAX_FILE_SIZE_BYTES = 10 MB` constant in
+    `_upload_helpers.py` (mirrors `FileValidator` default
+    `max_file_size`); the bare `file.read()` becomes
+    `file.read(MAX_FILE_SIZE_BYTES + 1)`. The `+ 1` byte
+    distinguishes "exactly at cap" (legal) from "above cap"
+    (reject) without ambiguity. Survives the case where a
+    reverse proxy strips `Content-Length` (which would render
+    tier 1 inert because Werkzeug can't pre-judge body size) —
+    per-part RAM stays strictly capped at 10 MB + 1 byte.
+  - **Tier 3 (per-request budgets):** `MAX_IMAGES_PER_REQUEST = 10`
+    + `MAX_TOTAL_UPLOAD_BYTES = 100 MB` (unchanged from pre-fix).
+  - **Tier 4 (magic-number / extension / content-scan):**
+    `validate_uploaded_file` rejects PNG-headerless files,
+    dangerous extensions, embedded scripts (unchanged).
+  The deceptive docstring sentence is removed and replaced with
+  the explicit four-tier ordering. Eight new locks: `TestPerFileSizeCap`
+  × 5 (constant-equals-validator-default parity,
+  ≤ total-budget sanity, oversized-rejected-before-validate via
+  `mock_validate.assert_not_called()`, at-cap passes through,
+  AST-driven reverse-lock asserting ≥ 1 `file.read(N)` call with
+  non-empty `args` AND zero bare `file.read()` — protects against
+  future "clean up the `+ 1`" refactors); `TestFlaskMaxContentLength`
+  × 3 (config present + positive, value covers
+  `MAX_TOTAL_UPLOAD_BYTES` while bounded above so tier-1 can't
+  dilute into a Gigabyte cap, AST + text reverse-lock that
+  `web_ui.py` references the constant rather than hardcoding the
+  literal). Pytest count climbs 2458 → 2465.
 - **`ServiceManager._signal_handler` now `raise KeyboardInterrupt`
   on the main thread after `cleanup_all`, so SIGTERM / SIGINT
   actually exit the process instead of leaving a zombie waiting
