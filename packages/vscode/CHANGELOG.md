@@ -14,6 +14,8 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.23] — 2026-05-04
+
 ### Fixed
 
 - **Webview "frontend countdown" input no longer caps at 250s.**
