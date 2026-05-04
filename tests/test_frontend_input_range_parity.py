@@ -182,5 +182,45 @@ class TestFrontendCountdownFallbackDefault(unittest.TestCase):
         )
 
 
+class TestSettingsManagerFallbackDefault(unittest.TestCase):
+    """``static/js/settings-manager.js`` 中 ``updateFeedbackUI`` 的 ``?? N`` fallback = ``AUTO_RESUBMIT_TIMEOUT_DEFAULT``。
+
+    设置面板首次打开（``feedbackConfig`` 还没从 ``/api/feedback-config``
+    fetch 回来时）会用这个 fallback 显示输入框默认值。如果 fallback 与
+    server-side ``AUTO_RESUBMIT_TIMEOUT_DEFAULT`` 漂移，用户看到的"默认
+    值"和服务器实际默认值就不一致——属于和 ``multi_task.js`` 同类型的
+    fragile 硬编码。
+
+    与 ``multi_task.js`` 的 5 处 fallback 测试是兄弟 gate，共同覆盖整个
+    Web UI frontend 的 ``frontend_countdown`` fallback 表面。
+    """
+
+    def setUp(self) -> None:
+        self.expected = AUTO_RESUBMIT_TIMEOUT_DEFAULT  # 当前 = 240
+        self.text = _read(REPO_ROOT / "static" / "js" / "settings-manager.js")
+
+    def test_update_feedback_ui_countdown_fallback(self) -> None:
+        """``fc.frontend_countdown ?? N`` 中的 ``N`` 必须 = ``DEFAULT``。"""
+        # 在 updateFeedbackUI 函数体内寻找 frontend_countdown 的 fallback
+        m = re.search(
+            r"frontend_countdown\s*\?\?\s*(\d+)",
+            self.text,
+        )
+        self.assertIsNotNone(
+            m,
+            "static/js/settings-manager.js: 找不到 `frontend_countdown ?? <int>` "
+            "fallback——可能函数被重构（比如改成 `?.frontend_countdown ?? `），"
+            "本测试需要更新正则",
+        )
+        assert m is not None
+        self.assertEqual(
+            int(m.group(1)),
+            self.expected,
+            f"static/js/settings-manager.js: frontend_countdown ?? {m.group(1)} "
+            f"but AUTO_RESUBMIT_TIMEOUT_DEFAULT={self.expected}. "
+            f"Update settings-manager.js fallback to match the server-side default.",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
