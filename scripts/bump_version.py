@@ -223,6 +223,21 @@ def _extract_bug_template_example_version(text: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _update_citation_version(text: str, new_version: str) -> str:
+    # CITATION.cff（CITATION File Format 1.2.0）：目标行形如 `version: "1.5.22"`。
+    # 文件顶层只有一个 `version:` 字段（区别于 `cff-version:`），因此 ^version:
+    # 行首锚定足以避免误匹配。引号样式保持原样（项目当前用双引号；裸值
+    # `version: 1.5.22` 也合法但本仓未使用）。
+    pat = re.compile(r'^(version:\s*)"[^"]*"', re.MULTILINE)
+    return _replace_first(pat, rf'\g<1>"{new_version}"', text, label="CITATION.cff")
+
+
+def _extract_citation_version(text: str) -> str | None:
+    pat = re.compile(r'^version:\s*"([^"]*)"', re.MULTILINE)
+    m = pat.search(text)
+    return m.group(1) if m else None
+
+
 def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=_repo_root(), check=True)
 
@@ -277,6 +292,7 @@ def main(argv: list[str]) -> int:
         print("- package-lock.json")
         print("- packages/vscode/package.json")
         print("- .github/ISSUE_TEMPLATE/bug_report.yml")
+        print("- CITATION.cff  (version 字段；date-released 仍需手动维护)")
         return 0
 
     # 版本号来源：
@@ -338,6 +354,10 @@ def main(argv: list[str]) -> int:
         (
             root / ".github" / "ISSUE_TEMPLATE" / "bug_report.yml",
             lambda t: _update_bug_template(t, new_version),
+        ),
+        (
+            root / "CITATION.cff",
+            lambda t: _update_citation_version(t, new_version),
         ),
     ]
 
@@ -524,6 +544,26 @@ def main(argv: list[str]) -> int:
                 print(
                     f"版本不一致：.github/ISSUE_TEMPLATE/bug_report.yml"
                     f"（当前: {cur}，期望: {new_version}）",
+                    file=sys.stderr,
+                )
+
+        citation_path = root / "CITATION.cff"
+        citation_text = _read_text_or_none(citation_path, label="CITATION.cff")
+        if citation_text is None:
+            bad = True
+        else:
+            cur = _extract_citation_version(citation_text)
+            if cur is None:
+                bad = True
+                print(
+                    "CITATION.cff: 无法解析顶层 version 字段"
+                    '（期望存在 `version: "X.Y.Z"`）',
+                    file=sys.stderr,
+                )
+            elif cur != new_version:
+                bad = True
+                print(
+                    f"版本不一致：CITATION.cff（当前: {cur}，期望: {new_version}）",
                     file=sys.stderr,
                 )
 

@@ -9,6 +9,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Tooling
+
+- **`scripts/bump_version.py` now also synchronises
+  `CITATION.cff::version`** — the script previously walked
+  six version-bearing files (`pyproject.toml`, `uv.lock`,
+  `package.json`, root + nested `package-lock.json`,
+  `packages/vscode/package.json`,
+  `.github/ISSUE_TEMPLATE/bug_report.yml`) but **silently
+  skipped** `CITATION.cff::version`. After running
+  `uv run python scripts/bump_version.py 1.5.23`, the
+  citation file would still report `version: "1.5.22"` to
+  Zenodo / academic citation tooling — and `--check` would
+  not catch the drift. Added a third helper pair
+  (`_extract_citation_version` / `_update_citation_version`)
+  that rewrites only the top-level `version: "X.Y.Z"` line
+  (anchored at line start, so `cff-version: 1.2.0` stays
+  put), preserves `date-released` and the rest of the file
+  byte-for-byte, and is idempotent. The dry-run output and
+  `--check` validation pass have been extended to mention
+  CITATION.cff. Companion test (`tests/test_bump_version_citation.py`,
+  13 cases) covers extraction edge cases (pre-release tags,
+  build metadata, missing field), single-line replacement
+  contract, and a real-repo sanity parse.
+
 ### Fixed
 
 - **CI Gate output is now WARNING-clean across consecutive runs.**

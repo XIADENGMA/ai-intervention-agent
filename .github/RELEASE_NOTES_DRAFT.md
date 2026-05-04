@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 32 maintenance commits added on top of the release. This is **not**
+> the 36 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -9,8 +9,11 @@
 >
 > 1. Bump the version in `pyproject.toml`, `packages/vscode/package.json`,
 >    `package.json` (root), `CITATION.cff`, and `.github/ISSUE_TEMPLATE/bug_report.yml`.
->    Run `uv run python scripts/bump_version.py 1.5.23` if it covers
->    every file; double-check with `--check`.
+>    `uv run python scripts/bump_version.py 1.5.23` covers all of them
+>    in a single shot (CITATION.cff joined the synchronised set in this
+>    cycle); double-check with `--check`. Manually update
+>    `CITATION.cff::date-released` to the tag date — the script
+>    deliberately leaves that to the publisher.
 > 2. Move the `[Unreleased]` block in `CHANGELOG.md` to
 >    `[1.5.23] - <date>` and add a fresh empty `[Unreleased]` heading.
 > 3. Update `packages/vscode/CHANGELOG.md`: move the `[Unreleased]`
@@ -98,6 +101,20 @@ not need to update integration scripts.
   the Chinese minimal example was a stale `jsonc` snippet
   although the recommended on-disk format has been TOML for
   the entire v1.5.x line.
+- **`scripts/bump_version.py` now also synchronises
+  `CITATION.cff::version`.** The script previously walked six
+  version-bearing files (`pyproject.toml`, `uv.lock`,
+  `package.json`, both `package-lock.json` paths,
+  `packages/vscode/package.json`,
+  `.github/ISSUE_TEMPLATE/bug_report.yml`) but silently skipped
+  `CITATION.cff::version`. After running
+  `bump_version.py 1.5.23` the citation file would still report
+  `version: "1.5.22"` to Zenodo / academic citation tooling —
+  and `--check` would not catch it. Both code-paths
+  (`apply` + `--check`) now include CITATION.cff; covered by
+  `tests/test_bump_version_citation.py` (13 cases). The
+  `date-released` field is intentionally still publisher-owned
+  (the script has no clock side-effect).
 
 ### Documentation
 
