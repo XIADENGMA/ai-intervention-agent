@@ -174,6 +174,7 @@ ai-intervention-agent usage details:
 - **Auto re-submit**: keep sessions alive by auto-submitting at timeout
 - **Notifications**: web / sound / system / Bark
 - **SSH-friendly**: great with port forwarding
+- **MCP-spec compliant** (2025-11-25 protocol): tool annotations, server identity, and self-contained icons let ChatGPT Desktop / Claude Desktop / Cursor render the server natively without nagging "destructive operation" confirmations
 
 ## How it works
 
