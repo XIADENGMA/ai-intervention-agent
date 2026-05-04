@@ -793,7 +793,8 @@ class TestServiceManager(unittest.TestCase):
     def test_signal_handler_main_thread(self):
         sm = server.ServiceManager()
         with patch.object(sm, "cleanup_all"):
-            sm._signal_handler(2, None)
+            with self.assertRaises(KeyboardInterrupt):
+                sm._signal_handler(2, None)
             self.assertTrue(sm._should_exit)
 
     @patch("service_manager.is_web_service_running", return_value=False)
@@ -1880,10 +1881,60 @@ class TestServiceManagerDeep(unittest.TestCase):
         self.assertFalse(sm._should_exit)
 
     def test_signal_handler_cleanup_error(self):
-        """cleanup_all 失败不应导致信号处理器崩溃"""
+        """cleanup_all 失败不应让其原始异常逃逸；仍应走 KeyboardInterrupt 正常退出路径"""
         sm = server.ServiceManager()
         with patch.object(sm, "cleanup_all", side_effect=RuntimeError("cleanup boom")):
-            sm._signal_handler(signal.SIGTERM, None)
+            with self.assertRaises(KeyboardInterrupt):
+                sm._signal_handler(signal.SIGTERM, None)
+            # 即使 cleanup 抛错，主线程分支仍把 _should_exit 置 True
+            self.assertTrue(sm._should_exit)
+
+    def test_signal_handler_sigterm_main_thread_raises_keyboardinterrupt(self):
+        """R17.5: SIGTERM 在主线程必须 raise KeyboardInterrupt 让 mcp.run() 退出。
+
+        反向锁：注册自定义 SIGTERM handler 后，Python 默认的 ``raise SystemExit``
+        被吞掉。如果 handler 不主动 raise，cleanup 完成后 mcp.run() 的 stdio
+        loop 会继续阻塞，进程变僵尸（监督程序发 SIGTERM 没反应）。这条
+        测试锁住"必须显式抛出 KeyboardInterrupt"的不变量，未来谁删掉
+        ``raise KeyboardInterrupt`` 这一行立即红线。
+        """
+        sm = server.ServiceManager()
+        with patch.object(sm, "cleanup_all"):
+            with self.assertRaises(KeyboardInterrupt) as cm:
+                sm._signal_handler(signal.SIGTERM, None)
+        self.assertIn("signal", str(cm.exception).lower())
+        self.assertIn(str(int(signal.SIGTERM)), str(cm.exception))
+        self.assertTrue(sm._should_exit)
+
+    def test_signal_handler_sigint_main_thread_raises_keyboardinterrupt(self):
+        """R17.5: SIGINT 在主线程必须 raise KeyboardInterrupt（保持与 Python 默认行为兼容）"""
+        sm = server.ServiceManager()
+        with patch.object(sm, "cleanup_all"):
+            with self.assertRaises(KeyboardInterrupt) as cm:
+                sm._signal_handler(signal.SIGINT, None)
+        self.assertIn(str(int(signal.SIGINT)), str(cm.exception))
+        self.assertTrue(sm._should_exit)
+
+    def test_signal_handler_calls_cleanup_before_raising(self):
+        """R17.5: cleanup_all 必须在 KeyboardInterrupt 抛出**之前**完成。
+
+        反向锁：如果未来谁把 ``raise KeyboardInterrupt`` 移到 ``cleanup_all``
+        之前，cleanup 永远不会跑，web_ui 子进程、ThreadPool、httpx client
+        都会泄漏。本测试用调用顺序追踪锁住"先 cleanup 再 raise"。
+        """
+        sm = server.ServiceManager()
+        order: list[str] = []
+
+        def fake_cleanup(*args, **kwargs):
+            del args, kwargs
+            order.append("cleanup")
+
+        with patch.object(sm, "cleanup_all", side_effect=fake_cleanup):
+            try:
+                sm._signal_handler(signal.SIGTERM, None)
+            except KeyboardInterrupt:
+                order.append("raise")
+        self.assertEqual(order, ["cleanup", "raise"])
 
     @patch("service_manager.is_web_service_running", return_value=False)
     def test_terminate_process_outer_exception(self, _):

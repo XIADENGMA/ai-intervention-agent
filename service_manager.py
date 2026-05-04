@@ -275,6 +275,20 @@ class ServiceManager:
 
         if threading.current_thread() is threading.main_thread():
             self._should_exit = True
+            # R17.5：自定义 SIGINT/SIGTERM handler **吞掉**了 Python 解释器
+            # 的默认行为：
+            #   - SIGINT：默认是把 SIGINT 翻译成 ``KeyboardInterrupt``
+            #     抛给主线程；我们注册了 handler 就替换了这一翻译。
+            #   - SIGTERM：默认是直接 ``raise SystemExit`` / 让 C 层 abort
+            #     进程；handler 替换后进程不会自动退出。
+            # 所以 cleanup 跑完后，mcp.run() 的 stdio loop **仍在阻塞**等
+            # 下一个消息——cleanup 结果是关 web_ui 子进程而非关本进程，
+            # 用户看到的是"按 Ctrl+C 没反应 / 监督程序发 SIGTERM 没反应"
+            # 的僵尸态。显式 ``raise KeyboardInterrupt`` 让 ``server.main()``
+            # 的 ``except KeyboardInterrupt`` 兼容路径接管：它会再调一次
+            # ``cleanup_services``（幂等所以无害），然后正常 ``break`` 出
+            # 重试循环并 ``return``。
+            raise KeyboardInterrupt(f"signal {signum} → graceful shutdown")
         else:
             logger.info("非主线程收到信号，已清理服务但不强制退出")
 
