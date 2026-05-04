@@ -285,6 +285,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tooling
 
+- **`server.main()` MCP-restart loop now uses capped exponential
+  backoff + jitter instead of `time.sleep(1)` between every retry.**
+  The original loop slept exactly 1.0 s between every restart attempt;
+  if a user runs the same `ai-intervention-agent` MCP server from
+  multiple IDE clients on the same machine (Cursor + VS Code is the
+  common combo, but also IDE multi-workers / browser automation that
+  spawns its own MCP child), an upstream blip that knocks all of them
+  over at once will lockstep them through retries — every instance
+  wakes within the same ~10 ms window, hammers whatever resource just
+  recovered, and amplifies the original blip into a denial-of-recovery
+  loop. Classic thundering-herd reproduction. Replaced with
+  `delay = min(base × 2^(n-1), 4.0) + uniform(0, base × 0.5)` per AWS
+  Architecture Blog "Exponential Backoff and Jitter" / Google SRE
+  Workbook §22; first retry sleeps `[1.0, 1.5)` s, second sleeps
+  `[2.0, 3.0)` s, cap stays harmless at `MAX_RETRIES = 3` but is
+  future-proof if the ceiling ever rises. Six locks in
+  `tests/test_server_main_retry_backoff.py`: four AST/source-text
+  invariants (`2 **`, `random.uniform`, `min(...)`, no hardcoded
+  `time.sleep(1)`/`time.sleep(2)`) and two behavioural ones that drive
+  `server.main()` with mocked `mcp.run` — first verifies retry 2 is
+  *strictly greater* than retry 1 (rejects jitter-coincidence false
+  positives), second verifies `KeyboardInterrupt` still bypasses both
+  `time.sleep` and `sys.exit`.
 - **`/api/events` SSE endpoint now declares an explicit
   `@limiter.limit("300 per minute")` instead of inheriting the global
   default `60/min`.** Reproducer: open the Web UI, do a brisk

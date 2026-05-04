@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 101 maintenance commits added on top of the release. This is **not**
+> the 104 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -660,6 +660,17 @@ downstream packagers do not need to update integration scripts.
 
 ### Tooling / CI
 
+- **`server.main()` MCP-restart loop now uses capped exponential
+  backoff with jitter instead of `time.sleep(1)`.** Multi-instance
+  setups (Cursor + VS Code on the same machine, IDE multi-workers,
+  browser-automation spawns) used to lockstep their restart attempts
+  after a shared upstream blip — every instance woke within the same
+  ~10 ms window and re-hammered the resource that just recovered.
+  Replaced with `delay = min(base × 2^(n-1), 4.0) + uniform(0,
+  base × 0.5)` per AWS / Google SRE backoff playbooks. Six locks in
+  ``tests/test_server_main_retry_backoff.py`` (four static, two
+  behavioural — including a strict-monotonic check that retry 2 must
+  exceed retry 1, rejecting jitter-coincidence false positives).
 - **`/api/events` SSE endpoint now has an explicit `300/min` rate
   limit instead of inheriting the global default `60/min`.** SSE is a
   long connection (one ``EventSource`` instance = one limiter token)
