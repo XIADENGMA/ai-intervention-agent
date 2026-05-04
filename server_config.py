@@ -59,11 +59,17 @@ class WebUIConfig(BaseModel):
     PORT_MIN: ClassVar[int] = 1
     PORT_MAX: ClassVar[int] = 65535
     PORT_PRIVILEGED: ClassVar[int] = 1024
+    # 不变量：以下 6 个常量必须等于 ``shared_types.SECTION_MODELS::web_ui`` 中
+    # 对应 Pydantic 字段的 ``BeforeValidator(_clamp_int/_clamp_float(...))`` 边界。
+    # 否则 ``service_manager._load_web_ui_config_from_disk`` 会做"二次 clamp"，
+    # 把已通过 Pydantic 校验的用户值悄悄截断（例如 ``http_request_timeout=500``
+    # → Pydantic 接受 500 → 这里被强行降到 300）。详见
+    # ``tests/test_server_config_shared_types_parity.py::TestWebUIConfigSharedTypesParity``。
     TIMEOUT_MIN: ClassVar[int] = 1
-    TIMEOUT_MAX: ClassVar[int] = 300
+    TIMEOUT_MAX: ClassVar[int] = 600
     MAX_RETRIES_MIN: ClassVar[int] = 0
-    MAX_RETRIES_MAX: ClassVar[int] = 10
-    RETRY_DELAY_MIN: ClassVar[float] = 0.1
+    MAX_RETRIES_MAX: ClassVar[int] = 20
+    RETRY_DELAY_MIN: ClassVar[float] = 0.0
     RETRY_DELAY_MAX: ClassVar[float] = 60.0
 
     SUPPORTED_LANGS: ClassVar[tuple] = ("auto", "en", "zh-CN")

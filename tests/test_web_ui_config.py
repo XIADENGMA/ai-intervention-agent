@@ -32,14 +32,12 @@ class TestWebUIConfigConstants(unittest.TestCase):
         self.assertEqual(WebUIConfig.PORT_MAX, 65535)
         self.assertEqual(WebUIConfig.PORT_PRIVILEGED, 1024)
 
-        # 超时常量
         self.assertEqual(WebUIConfig.TIMEOUT_MIN, 1)
-        self.assertEqual(WebUIConfig.TIMEOUT_MAX, 300)
+        self.assertEqual(WebUIConfig.TIMEOUT_MAX, 600)
 
-        # 重试常量
         self.assertEqual(WebUIConfig.MAX_RETRIES_MIN, 0)
-        self.assertEqual(WebUIConfig.MAX_RETRIES_MAX, 10)
-        self.assertEqual(WebUIConfig.RETRY_DELAY_MIN, 0.1)
+        self.assertEqual(WebUIConfig.MAX_RETRIES_MAX, 20)
+        self.assertEqual(WebUIConfig.RETRY_DELAY_MIN, 0.0)
         self.assertEqual(WebUIConfig.RETRY_DELAY_MAX, 60.0)
 
 
@@ -110,8 +108,8 @@ class TestWebUIConfigTimeout(unittest.TestCase):
         config = WebUIConfig(host="127.0.0.1", port=8080, timeout=1)
         self.assertEqual(config.timeout, 1)
 
-        config = WebUIConfig(host="127.0.0.1", port=8080, timeout=300)
-        self.assertEqual(config.timeout, 300)
+        config = WebUIConfig(host="127.0.0.1", port=8080, timeout=600)
+        self.assertEqual(config.timeout, 600)
 
     def test_timeout_below_min(self):
         """测试超时时间小于最小值"""
@@ -127,10 +125,10 @@ class TestWebUIConfigTimeout(unittest.TestCase):
         """测试超时时间大于最大值"""
         from server import WebUIConfig
 
-        config = WebUIConfig(host="127.0.0.1", port=8080, timeout=500)
+        config = WebUIConfig(host="127.0.0.1", port=8080, timeout=1000)
         self.assertEqual(config.timeout, WebUIConfig.TIMEOUT_MAX)
 
-        config = WebUIConfig(host="127.0.0.1", port=8080, timeout=3600)
+        config = WebUIConfig(host="127.0.0.1", port=8080, timeout=99999)
         self.assertEqual(config.timeout, WebUIConfig.TIMEOUT_MAX)
 
 
@@ -148,8 +146,8 @@ class TestWebUIConfigMaxRetries(unittest.TestCase):
         config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=0)
         self.assertEqual(config.max_retries, 0)
 
-        config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=10)
-        self.assertEqual(config.max_retries, 10)
+        config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=20)
+        self.assertEqual(config.max_retries, 20)
 
     def test_max_retries_below_min(self):
         """测试重试次数小于最小值"""
@@ -165,7 +163,7 @@ class TestWebUIConfigMaxRetries(unittest.TestCase):
         """测试重试次数大于最大值"""
         from server import WebUIConfig
 
-        config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=20)
+        config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=25)
         self.assertEqual(config.max_retries, WebUIConfig.MAX_RETRIES_MAX)
 
         config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=100)
@@ -183,8 +181,8 @@ class TestWebUIConfigRetryDelay(unittest.TestCase):
         self.assertEqual(config.retry_delay, 1.0)
 
         # 边界值
-        config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=0.1)
-        self.assertEqual(config.retry_delay, 0.1)
+        config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=0.0)
+        self.assertEqual(config.retry_delay, 0.0)
 
         config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=60.0)
         self.assertEqual(config.retry_delay, 60.0)
@@ -193,7 +191,7 @@ class TestWebUIConfigRetryDelay(unittest.TestCase):
         """测试重试延迟小于最小值"""
         from server import WebUIConfig
 
-        config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=0.0)
+        config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=-0.5)
         self.assertEqual(config.retry_delay, WebUIConfig.RETRY_DELAY_MIN)
 
         config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=-1.0)
@@ -252,7 +250,7 @@ class TestWebUIConfigCombined(unittest.TestCase):
             port=8080,
             timeout=0,  # 调整到 1
             max_retries=-5,  # 调整到 0
-            retry_delay=0.0,  # 调整到 0.1
+            retry_delay=-1.0,  # 调整到 0.0
         )
 
         self.assertEqual(config.timeout, WebUIConfig.TIMEOUT_MIN)

@@ -57,12 +57,12 @@ class TestWebUIConfig(unittest.TestCase):
         self.assertEqual(cfg.port, 80)
 
     def test_clamp_timeout(self):
-        cfg = WebUIConfig(host="localhost", port=8080, timeout=999)
-        self.assertLessEqual(cfg.timeout, 300)
+        cfg = WebUIConfig(host="localhost", port=8080, timeout=99999)
+        self.assertEqual(cfg.timeout, WebUIConfig.TIMEOUT_MAX)
 
     def test_clamp_retries(self):
         cfg = WebUIConfig(host="localhost", port=8080, max_retries=99)
-        self.assertLessEqual(cfg.max_retries, 10)
+        self.assertEqual(cfg.max_retries, WebUIConfig.MAX_RETRIES_MAX)
 
     def test_external_base_url_default(self):
         cfg = WebUIConfig(host="localhost", port=8080)

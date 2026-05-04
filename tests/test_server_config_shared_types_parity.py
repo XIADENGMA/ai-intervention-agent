@@ -1,22 +1,37 @@
-r"""防回归：``server_config.py`` 顶部的运行时钳位常量 = ``shared_types.SECTION_MODELS::feedback`` Pydantic 边界。
+r"""防回归：``server_config.py`` 的运行时钳位常量 = ``shared_types.SECTION_MODELS`` Pydantic 边界。
+
+覆盖范围
+--------
+1. ``feedback`` section（顶层模块常量）：
+   - ``FEEDBACK_TIMEOUT_MIN/MAX`` ↔ ``SECTION_MODELS::feedback.backend_max_wait``
+   - ``AUTO_RESUBMIT_TIMEOUT_MIN/MAX`` ↔ ``SECTION_MODELS::feedback.frontend_countdown``
+2. ``web_ui`` section（``WebUIConfig.ClassVar``）：
+   - ``WebUIConfig.TIMEOUT_MIN/MAX`` ↔ ``SECTION_MODELS::web_ui.http_request_timeout``
+   - ``WebUIConfig.MAX_RETRIES_MIN/MAX`` ↔ ``SECTION_MODELS::web_ui.http_max_retries``
+   - ``WebUIConfig.RETRY_DELAY_MIN/MAX`` ↔ ``SECTION_MODELS::web_ui.http_retry_delay``
 
 历史背景
----------
-``shared_types.SECTION_MODELS::feedback`` 中的 ``backend_max_wait`` /
-``frontend_countdown`` 用 ``BeforeValidator(_clamp_int(...))`` 各自定义了
-``[10, 7200]`` 和 ``[10, 3600]`` 的合法范围；但 ``server_config.py`` 顶部
-另外维护着一份运行时常量（``FEEDBACK_TIMEOUT_MIN/MAX`` 与
-``AUTO_RESUBMIT_TIMEOUT_MIN/MAX``）—— ``task_queue.py`` 和
-``web_ui_validators.py`` 在二次 clamp 时使用的就是这套常量。
+--------
+``shared_types.SECTION_MODELS`` 中的字段用 ``BeforeValidator(_clamp_int/
+_clamp_float(...))`` 定义合法范围；但 ``server_config.py`` 另外维护一份运行
+时常量（``FEEDBACK_TIMEOUT_MIN/MAX``、``AUTO_RESUBMIT_TIMEOUT_MIN/MAX``、
+``WebUIConfig.TIMEOUT/MAX_RETRIES/RETRY_DELAY_MIN/MAX``），``task_queue.py``、
+``web_ui_validators.py`` 与 ``service_manager._load_web_ui_config_from_disk``
+做"二次 clamp"时使用的就是这套常量。
 
-历史漂移：v1.5.x 早期 ``server_config`` 的范围比 ``shared_types`` 严格
-（``FEEDBACK_TIMEOUT_MAX=3600`` vs Pydantic ``7200``；``AUTO_RESUBMIT_TIMEOUT_MAX
-=250`` vs Pydantic ``3600``），导致用户在 ``config.toml`` 写
-``frontend_countdown = 1000``，Pydantic 接受 ``1000``，但 web_ui 二次 clamp
-回 ``250``——表面通过校验，运行时被静默截断。
+历史漂移（v1.5.x 早期）：
 
-修复后加这个回归位，把"runtime clamp 常量 = SECTION_MODELS Pydantic 范围"
-的契约锁住——以后任何一边动了，CI 都必须在另一边同步。
+- ``FEEDBACK_TIMEOUT_MAX=3600`` vs Pydantic ``7200``
+- ``AUTO_RESUBMIT_TIMEOUT_MAX=250`` vs Pydantic ``3600``
+- ``WebUIConfig.TIMEOUT_MAX=300`` vs Pydantic ``600``
+- ``WebUIConfig.MAX_RETRIES_MAX=10`` vs Pydantic ``20``
+- ``WebUIConfig.RETRY_DELAY_MIN=0.1`` vs Pydantic ``0.0``
+
+后果：用户写 ``config.toml`` 中 ``http_request_timeout = 500``，Pydantic 接
+受 500，但 ``service_manager`` 在构造 ``WebUIConfig`` 时被二次 clamp 到 300
+——表面通过校验，运行时被静默截断（虽然有 warning log）。修复后加这个回
+归位，把"runtime clamp 常量 = SECTION_MODELS Pydantic 范围"的契约锁住——
+以后任何一边动了，CI 必须在另一边同步。
 
 设计原则
 --------
@@ -43,6 +58,7 @@ from server_config import (
     AUTO_RESUBMIT_TIMEOUT_MIN,
     FEEDBACK_TIMEOUT_MAX,
     FEEDBACK_TIMEOUT_MIN,
+    WebUIConfig,
 )
 from shared_types import SECTION_MODELS
 from tests.test_config_docs_range_parity import (
@@ -92,6 +108,70 @@ class TestServerConfigSharedTypesParity(unittest.TestCase):
             f"({py_min}, {py_max}). "
             f"Update server_config.py top-level constants OR shared_types.py "
             f"_clamp_int_allow_zero(...) bounds so they stay in lockstep.",
+        )
+
+
+class TestWebUIConfigSharedTypesParity(unittest.TestCase):
+    """``WebUIConfig`` 的 6 个 ClassVar 钳位常量必须 = ``SECTION_MODELS::web_ui`` Pydantic 边界。
+
+    历史漂移（在 v1.5.x 中段被发现并修复）：``service_manager`` 把已经被
+    Pydantic 校验过的 dict 再传给 ``WebUIConfig(...)`` 构造器，``WebUIConfig``
+    内部的 ``@field_validator`` 会做"二次 clamp"。如果 ``ClassVar`` 边界比
+    Pydantic 严格，用户在 config 里写 ``http_request_timeout=500`` 会被
+    悄悄降到 300——通过 Pydantic 又被运行时截断，最为隐蔽。
+    """
+
+    def setUp(self) -> None:
+        self.web_ui_bounds = _introspect_field_bounds(SECTION_MODELS["web_ui"])
+        for key in ("http_request_timeout", "http_max_retries", "http_retry_delay"):
+            self.assertIn(
+                key,
+                self.web_ui_bounds,
+                "introspect_field_bounds 没找到 SECTION_MODELS::web_ui 中的 "
+                f"`{key}`——说明 shared_types._clamp_int / _clamp_float 工厂"
+                "签名变了，本测试需要先更新 introspection 逻辑",
+            )
+
+    def test_http_timeout_matches_pydantic(self) -> None:
+        """``WebUIConfig.TIMEOUT_MIN/MAX`` ↔ ``SECTION_MODELS::web_ui.http_request_timeout``"""
+        py_min, py_max = self.web_ui_bounds["http_request_timeout"]
+        self.assertEqual(
+            (WebUIConfig.TIMEOUT_MIN, WebUIConfig.TIMEOUT_MAX),
+            (py_min, py_max),
+            f"WebUIConfig.TIMEOUT_MIN/MAX = "
+            f"({WebUIConfig.TIMEOUT_MIN}, {WebUIConfig.TIMEOUT_MAX}) "
+            f"but shared_types.SECTION_MODELS::web_ui.http_request_timeout "
+            f"clamps to ({py_min}, {py_max}). "
+            f"Update server_config.py WebUIConfig.ClassVar OR shared_types.py "
+            f"_clamp_int(...) bounds so they stay in lockstep.",
+        )
+
+    def test_http_max_retries_matches_pydantic(self) -> None:
+        """``WebUIConfig.MAX_RETRIES_MIN/MAX`` ↔ ``SECTION_MODELS::web_ui.http_max_retries``"""
+        py_min, py_max = self.web_ui_bounds["http_max_retries"]
+        self.assertEqual(
+            (WebUIConfig.MAX_RETRIES_MIN, WebUIConfig.MAX_RETRIES_MAX),
+            (py_min, py_max),
+            f"WebUIConfig.MAX_RETRIES_MIN/MAX = "
+            f"({WebUIConfig.MAX_RETRIES_MIN}, {WebUIConfig.MAX_RETRIES_MAX}) "
+            f"but shared_types.SECTION_MODELS::web_ui.http_max_retries "
+            f"clamps to ({py_min}, {py_max}). "
+            f"Update server_config.py WebUIConfig.ClassVar OR shared_types.py "
+            f"_clamp_int(...) bounds so they stay in lockstep.",
+        )
+
+    def test_http_retry_delay_matches_pydantic(self) -> None:
+        """``WebUIConfig.RETRY_DELAY_MIN/MAX`` ↔ ``SECTION_MODELS::web_ui.http_retry_delay``"""
+        py_min, py_max = self.web_ui_bounds["http_retry_delay"]
+        self.assertEqual(
+            (WebUIConfig.RETRY_DELAY_MIN, WebUIConfig.RETRY_DELAY_MAX),
+            (py_min, py_max),
+            f"WebUIConfig.RETRY_DELAY_MIN/MAX = "
+            f"({WebUIConfig.RETRY_DELAY_MIN}, {WebUIConfig.RETRY_DELAY_MAX}) "
+            f"but shared_types.SECTION_MODELS::web_ui.http_retry_delay "
+            f"clamps to ({py_min}, {py_max}). "
+            f"Update server_config.py WebUIConfig.ClassVar OR shared_types.py "
+            f"_clamp_float(...) bounds so they stay in lockstep.",
         )
 
 
