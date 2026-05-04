@@ -23,6 +23,18 @@ repos:
       - id: check-yaml
       - id: check-json
         exclude: (\.jsonc$|jsconfig\.json$)
+      # TOML 语法校验：项目用 TOML 承载 pyproject.toml + config.toml(.default)，
+      # check-yaml/check-json 之前漏了这一格式。
+      - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=500]
+      # 与 .gitattributes 的 `* text=auto eol=lf` 互补：让 pre-commit
+      # 在提交前主动把 CRLF 收敛成 LF（Windows checkout 的常见漂移点），
+      # 而不是只能 push 后等 CI 才发现。
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      # 防止 `breakpoint()` / `import pdb; pdb.set_trace()` / `pdb.run(...)`
+      # 等调试残留进 commit。生产代码里出现一次会让运维 attach 不上正确的
+      # stdin，且性能测试会因此 hang，影响面比 ruff 的语法 lint 更隐蔽。
+      - id: debug-statements

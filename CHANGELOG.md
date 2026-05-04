@@ -29,6 +29,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Chore
 
+- **`.pre-commit-config.yaml` gains three commonly-recommended
+  hooks from `pre-commit/pre-commit-hooks` (already pinned at
+  `v5.0.0`, so zero new dependency).**
+  - `check-toml` — the project lives on TOML (`pyproject.toml`,
+    `config.toml.default`, `tests/fixtures/*.toml`, every release
+    note's `[project.urls]` entry). `check-yaml` and `check-json`
+    were already on; without `check-toml` a malformed bracket in
+    `pyproject.toml` would have to wait for `uv sync` /
+    `uv build` to fail. Added next to the existing format
+    sanity checks.
+  - `mixed-line-ending --fix=lf` — `.gitattributes` already declares
+    `* text=auto eol=lf`, but Windows checkouts can still produce
+    CRLF in newly authored files until the first `git checkout`
+    re-normalisation. The hook auto-rewrites to LF at commit time,
+    closing the loop pre-push (instead of letting CI catch it).
+  - `debug-statements` — guards against `breakpoint()` /
+    `import pdb; pdb.set_trace()` /  `pdb.run(...)` slipping into
+    commits. Particularly nasty in the MCP server path where
+    `pdb` will block on `sys.stdin` and the host process appears
+    to hang silently. `ruff`'s `T20` category does not catch
+    `breakpoint()`, so the dedicated hook adds a real safety net.
+  Verified with `uv run pre-commit run --all-files`: all three
+  new hooks pass on the current tree, no surprises to clean up.
 - **PyPI metadata enrichment in `pyproject.toml`.** Added four new
   `classifiers` that the listing was missing despite shipping the
   underlying capability for several minor releases:
