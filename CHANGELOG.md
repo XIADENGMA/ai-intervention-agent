@@ -22,10 +22,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
-- **Boundary-test hardening for the v1.5.21 line.** Added 29 regression tests
+- **Boundary-test hardening for the v1.5.21 line.** Added 32 regression tests
   covering previously-unexercised failure paths and routes that had zero
-  coverage. Net effect: full-suite count rose from 2212 to 2241, and overall
-  line coverage improved from 89.93% to 90.88%.
+  coverage. Net effect: full-suite count rose from 2212 to 2244, and overall
+  line coverage improved from 89.93% to 90.96%.
   - `tests/test_server_identity.py` — single-icon read failure isolation
     (one corrupt PNG must not nuke the whole `icons` list) +
     `importlib.metadata` exception fallback to `0.0.0+local`.
@@ -50,6 +50,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - `tests/test_web_ui_routes.py::TestCloseTask` (new class) —
     `/api/tasks/<id>/close` happy / 404 / 500 (route was untested since
     multi-task feature shipped).
+  - `tests/test_web_ui_config.py::TestValidateAllowedNetworks` and
+    `TestValidateBlockedIps` — three security-critical branches
+    previously skipped: `None` / non-string / empty-string early-reject
+    for `allowed_networks`, CIDR normalisation (`10.0.0.1/24` →
+    `10.0.0.0/24`) for `blocked_ips`, and IPv4-mapped IPv6 unwrap
+    (`::ffff:10.0.0.1` → `10.0.0.1`) so the same physical host can't
+    bypass blocklist via dual-stack representation.
 
 ### Coverage by file (informational)
 
@@ -60,6 +67,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 | `web_ui_routes/task.py` | 73.37% | **87.62%** | +14.25% |
 | `web_ui_routes/notification.py` | 92.88% | **97.41%** | +4.53% |
 | `web_ui_routes/system.py` | 79.53% | **82.33%** | +2.80% |
+| `web_ui_validators.py` | 93.85% | **99.23%** | +5.38% |
 
 ## [1.5.21] - 2026-05-04
 
