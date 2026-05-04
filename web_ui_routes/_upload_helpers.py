@@ -2,22 +2,33 @@
 
 供 task.py 和 feedback.py 中的提交端点共用，消除图片处理逻辑重复。
 
-服务端深度防御限额（与 ``static/js/image-upload.js`` 的客户端阈值
-对齐）：
+分层防御（与 ``static/js/image-upload.js`` 的客户端阈值对齐，按拒绝时机由
+早到晚排列；任何一层 fail 都不会进入下一层）：
 
-- ``MAX_IMAGES_PER_REQUEST = 10`` —— 单次请求最多接受的 ``image_*``
-  字段数量。客户端 (``MAX_IMAGE_COUNT``) 同值；本常量是"客户端被
-  人为绕过 / 直接 curl 调 API"时的最后一道闸。
+第一层：``app.config["MAX_CONTENT_LENGTH"] = MAX_TOTAL_UPLOAD_BYTES + 1 MB``
+    在 ``web_ui.py`` 设置。Flask/Werkzeug 在 multipart 解析阶段直接拒绝
+    超大请求（返回 413 Request Entity Too Large），避免恶意 100GB 单
+    part 先被流到磁盘临时文件再被下游 cap 发现。OWASP "Limit upload
+    size" 推荐做法。
 
-- ``MAX_TOTAL_UPLOAD_BYTES = 100 * 1024 * 1024`` —— 单次请求所有图片
-  累计字节上限（10 张 × 10 MB），与 ``file_validator`` 的
-  ``max_file_size = 10MB`` 单文件限额相乘后的合理上限。任何累计超
-  限的请求都会被丢弃后续文件，已通过验证的前几张仍正常返回（避免
-  全有或全无导致客户端体验突然中断；前端通过 toast 提示用户重试）。
+第二层：``MAX_FILE_SIZE_BYTES = 10 MB`` 单文件读取硬上限
+    本文件 ``file.read(MAX_FILE_SIZE_BYTES + 1)`` 限制 per-part 读取
+    字节数。即使第一层被反向代理 / 网关 strip 掉了 ``Content-Length``
+    头（导致 ``MAX_CONTENT_LENGTH`` 无法生效），本层仍能阻止"单 part
+    无限大 → 进程内存爆"的 OOM 路径。读取后若 ``len(file_content) >
+    MAX_FILE_SIZE_BYTES`` 立即丢弃。
 
-为什么不依赖 ``app.config["MAX_CONTENT_LENGTH"]``：那是 Flask 在
-multipart 解析前就 reject 整个请求的开关，对 form-only 请求（无
-图片，仅文字）会一并影响。这里在文件读取阶段做累计统计更精准。
+第三层：``MAX_IMAGES_PER_REQUEST = 10``（数量预算）+
+       ``MAX_TOTAL_UPLOAD_BYTES = 100 MB``（累计字节预算）
+    本文件层面的累计限额。客户端 (``MAX_IMAGE_COUNT`` /
+    ``MAX_IMAGE_SIZE``) 同值；这层是"客户端被人为绕过 / 直接 curl
+    调 API"时的兜底。任何累计超限的请求都会被丢弃后续文件，已通过
+    验证的前几张仍正常返回（避免全有或全无导致客户端体验突然中断；
+    前端通过 toast 提示用户重试）。
+
+第四层：``validate_uploaded_file`` magic-number / extension / content-scan
+    在 ``file_validator.py``。即使尺寸过关也要确认是真图片且无恶意
+    内容（脚本注入、php 标签、可执行扩展名等）。
 """
 
 from __future__ import annotations
@@ -37,6 +48,13 @@ logger = EnhancedLogger(__name__)
 
 MAX_IMAGES_PER_REQUEST: int = 10
 MAX_TOTAL_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 10 张 × 10 MB
+# R17.6 第二道闸：单文件读取硬上限。与 ``file_validator.FileValidator.__init__``
+# 默认 ``max_file_size = 10 * 1024 * 1024`` 完全一致，确保读取层 cap 与验证层
+# cap 不会出现 drift。任何超过本上限的 part 都在 ``file.read()`` 阶段就被截断
+# 拒绝，比依赖下游 ``validate_uploaded_file`` 的"文件大小超过限制" 错误更早一拍
+# 生效（节省一次内存拷贝 + 一次正则扫描），同时阻止 ``MAX_CONTENT_LENGTH`` 被
+# 上游剥离时的单 part OOM。
+MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024
 
 
 def extract_uploaded_images(
@@ -88,7 +106,17 @@ def extract_uploaded_images(
         if not file or not file.filename:
             continue
         try:
-            file_content = file.read()
+            # R17.6 第二道闸：read 至多 MAX_FILE_SIZE_BYTES + 1 字节，
+            # 用 +1 让超出阈值的 part 能够被检测到（"恰好等于" vs
+            # "超过" 的歧义判定）。内存占用始终被严格 cap 在 10 MB +
+            # 1 字节，攻击者无法靠"单 part 无限大"耗尽内存。
+            file_content = file.read(MAX_FILE_SIZE_BYTES + 1)
+            if len(file_content) > MAX_FILE_SIZE_BYTES:
+                logger.warning(
+                    f"文件超过单文件上限 ({MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB): "
+                    f"{file.filename} - 已读 {len(file_content)} bytes，拒绝"
+                )
+                continue
             validation_result = validate_uploaded_file(
                 file_content, file.filename, file.content_type
             )

@@ -83,6 +83,7 @@ from web_ui_routes import (
     SystemRoutesMixin,
     TaskRoutesMixin,
 )
+from web_ui_routes._upload_helpers import MAX_TOTAL_UPLOAD_BYTES
 from web_ui_security import SecurityMixin
 from web_ui_validators import (
     DEFAULT_ALLOWED_NETWORKS,
@@ -220,6 +221,25 @@ class WebFeedbackUI(
             origins=_cors_origins,
             supports_credentials=False,
         )
+
+        # ==================================================================
+        # R17.6 第一道闸：请求体上限（multipart 解析前的硬闸）
+        # ==================================================================
+        # 设 ``MAX_CONTENT_LENGTH`` 让 Flask/Werkzeug 在 multipart 解析阶段就 reject
+        # 超大请求 —— 避免恶意请求把 100GB 单个 ``image_*`` part 先流到磁盘临时文件
+        # 再被下游 ``_upload_helpers`` cap 拒绝（已经晚了：磁盘写入 + 后续
+        # ``file.read()`` 全量加载 = 必然 OOM/磁盘写满）。
+        #
+        # 阈值 = ``MAX_TOTAL_UPLOAD_BYTES`` (100 MB) + 1 MB buffer，覆盖：
+        #   - multipart boundary + part headers（每张图 ~1-2 KB × 10 张 = ~20 KB）
+        #   - ``feedback_text`` / ``selected_options`` form 字段（< 100 KB 上限）
+        #   - 其他 form 字段 + safety margin
+        # form-only 文本请求 < 1 KB，不受影响（OWASP "Limit upload size" 推荐做法）。
+        #
+        # 这是分层防御的第一层；后续闸在 ``_upload_helpers.py`` 的模块 docstring
+        # 中详细枚举（per-file cap / per-request cap / magic-number 验证）。
+        # ==================================================================
+        self.app.config["MAX_CONTENT_LENGTH"] = MAX_TOTAL_UPLOAD_BYTES + 1024 * 1024
 
         # OpenAPI / Swagger 文档（访问 /apidocs 查看交互式 API 文档）
         self.app.config["SWAGGER"] = {

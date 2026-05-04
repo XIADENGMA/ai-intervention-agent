@@ -29,6 +29,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from web_ui_routes import _upload_helpers
 from web_ui_routes._upload_helpers import (
+    MAX_FILE_SIZE_BYTES,
     MAX_IMAGES_PER_REQUEST,
     MAX_TOTAL_UPLOAD_BYTES,
     extract_uploaded_images,
@@ -219,6 +220,245 @@ class TestUploadHelperBoundaryNotes(unittest.TestCase):
             "extract_uploaded_images 不应在限额检查后用 break 跳出"
             "（用 continue 保留对剩余字段的扫描记录，防御日志更完整）",
         )
+
+
+class TestPerFileSizeCap(unittest.TestCase):
+    """R17.6 第二道闸：``MAX_FILE_SIZE_BYTES`` 单文件读取硬上限。
+
+    动机：``MAX_CONTENT_LENGTH`` 是请求级闸（第一道闸），但反向代理 / 网关
+    可能会 strip 掉 ``Content-Length`` 头，让 Flask 无法预判请求体大小；这
+    种情况下，没有第二道闸的话，单 part 上传 100GB 仍能让进程 OOM。本测试
+    类锁住第二道闸的关键不变量：``file.read()`` 必须带 size 参数，且超出
+    时立即丢弃不进入 validate。
+    """
+
+    def test_max_file_size_constant_matches_validator_default(self) -> None:
+        """``MAX_FILE_SIZE_BYTES`` 必须与 ``file_validator.FileValidator``
+        默认 ``max_file_size`` 一致 —— 否则两层 cap 出现 drift，攻击者能找
+        到只过其中一层的口子。"""
+        from file_validator import FileValidator
+
+        validator = FileValidator()
+        self.assertEqual(
+            MAX_FILE_SIZE_BYTES,
+            validator.max_file_size,
+            "MAX_FILE_SIZE_BYTES 必须与 FileValidator.max_file_size 默认值"
+            "完全一致；任何 drift 都意味着两层防御对'多大才算超大'有不同"
+            "判断，攻击者可利用这个间隙",
+        )
+
+    def test_max_file_size_at_or_below_total(self) -> None:
+        """``MAX_FILE_SIZE_BYTES`` 必须 ≤ ``MAX_TOTAL_UPLOAD_BYTES`` —— 否则
+        单文件就能超出累计预算，预算检查瞬间失效。"""
+        self.assertLessEqual(
+            MAX_FILE_SIZE_BYTES,
+            MAX_TOTAL_UPLOAD_BYTES,
+            "MAX_FILE_SIZE_BYTES > MAX_TOTAL_UPLOAD_BYTES 是配置错误：单文件"
+            "本身就超出了「整次请求」的累计预算",
+        )
+
+    def test_oversized_part_rejected_before_validate(self) -> None:
+        """单 part 超过 ``MAX_FILE_SIZE_BYTES`` 时必须立即拒绝，不调
+        ``validate_uploaded_file``。否则验证函数会浪费 CPU 跑魔数检查 +
+        正则扫描，且如果未来 validator 出现 bug 把超大 part 误放，整条防御
+        链就漏了。"""
+        # 模拟一个攻击者发送超大 part：让 .read(N) 返回 N 字节恰好超出
+        # MAX_FILE_SIZE_BYTES 一字节（这正是 read(MAX+1) 调用的合约）。
+        oversized_content = b"\x00" * (MAX_FILE_SIZE_BYTES + 1)
+        oversized_file = MagicMock()
+        oversized_file.filename = "evil.png"
+        oversized_file.content_type = "image/png"
+        oversized_file.read.return_value = oversized_content
+
+        request = _make_mock_request({"image_0": oversized_file})
+
+        # 用 patch 监视 validate_uploaded_file 是否被调到（不应该）
+        from unittest.mock import patch
+
+        with patch(
+            "web_ui_routes._upload_helpers.validate_uploaded_file"
+        ) as mock_validate:
+            result = extract_uploaded_images(request)
+
+        self.assertEqual(
+            len(result),
+            0,
+            "超过 MAX_FILE_SIZE_BYTES 的 part 必须被拒绝（不出现在结果列表）",
+        )
+        mock_validate.assert_not_called()
+
+    def test_at_max_file_size_passes_through(self) -> None:
+        """单 part 恰好 ``MAX_FILE_SIZE_BYTES`` 字节（边界情形）必须通过 cap
+        检查 —— 否则会出现"声明 10 MB 上限但实际只接受 < 10 MB"的
+        off-by-one 误差，让前端文档误导用户。
+
+        注：这里我们只测 cap 检查通过，不测 validate 通过（10 MB 的 \\x00
+        显然不是合法 PNG，validate 会拒绝；但 cap 这一层应该放行）。
+        """
+        from unittest.mock import patch
+
+        at_cap_content = b"\x00" * MAX_FILE_SIZE_BYTES
+        at_cap_file = MagicMock()
+        at_cap_file.filename = "boundary.png"
+        at_cap_file.content_type = "image/png"
+        at_cap_file.read.return_value = at_cap_content
+
+        request = _make_mock_request({"image_0": at_cap_file})
+
+        with patch(
+            "web_ui_routes._upload_helpers.validate_uploaded_file",
+            return_value={
+                "valid": False,
+                "errors": ["fake reject"],
+                "warnings": [],
+                "mime_type": None,
+                "file_type": None,
+                "extension": ".bin",
+                "size": 0,
+            },
+        ) as mock_validate:
+            extract_uploaded_images(request)
+
+        # cap 应该放行 → validate 被调到（即使最后被 validate 拒）
+        mock_validate.assert_called_once()
+
+    def test_file_read_call_has_size_argument(self) -> None:
+        """AST 反向锁：``file.read()`` 必须带 size 参数 —— 裸 ``file.read()``
+        会读全量，让第二道闸彻底失效。任何"清理代码删除 size 参数"的重构
+        都会立即被本测试拦下。
+        """
+        import ast
+        import inspect
+
+        src = inspect.getsource(extract_uploaded_images)
+        tree = ast.parse(src)
+
+        bare_read_calls: list[ast.Call] = []
+        sized_read_calls: list[ast.Call] = []
+
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "read"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "file"
+            ):
+                if not node.args and not node.keywords:
+                    bare_read_calls.append(node)
+                else:
+                    sized_read_calls.append(node)
+
+        self.assertGreater(
+            len(sized_read_calls),
+            0,
+            "extract_uploaded_images 中必须存在至少一个带 size 参数的 "
+            "file.read(N) 调用 —— 找不到则说明第二道闸被绕过了",
+        )
+        self.assertEqual(
+            len(bare_read_calls),
+            0,
+            f"extract_uploaded_images 中发现 {len(bare_read_calls)} 个裸 "
+            f"file.read() 调用 —— 必须带 size 参数（建议 MAX_FILE_SIZE_BYTES + 1），"
+            "否则攻击者可发送 100GB 单 part 让进程 OOM",
+        )
+
+
+class TestFlaskMaxContentLength(unittest.TestCase):
+    """R17.6 第一道闸：Flask ``app.config['MAX_CONTENT_LENGTH']`` 必须设置。
+
+    动机：没有 ``MAX_CONTENT_LENGTH`` 时，Flask/Werkzeug 会把整个请求体流到
+    临时存储后再交给应用代码 —— 攻击者能用 100GB 单 part 把磁盘写满 / 进程
+    内存爆。设置后超过阈值的请求在 multipart 解析阶段就被 413 拒绝。
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """构造一个 WebFeedbackUI 实例供所有测试共用。
+
+        ``WebFeedbackUI.__init__`` 只初始化 Flask app / limiter / 路由 mixin，
+        不会启动 server（``shutdown_server`` 会向当前进程发 SIGINT，绝对不能
+        在测试里调）。共享一个实例避免每条测试都重新初始化 Compress / Swagger 等
+        重型组件。
+        """
+        from web_ui import WebFeedbackUI
+
+        cls._ui = WebFeedbackUI(prompt="smoke-r17.6", task_id="r17-6-cap", port=0)
+
+    def test_max_content_length_present(self) -> None:
+        """``MAX_CONTENT_LENGTH`` 必须在 app.config 中设置（非 None / 非 0）。"""
+        value = self._ui.app.config.get("MAX_CONTENT_LENGTH")
+        self.assertIsNotNone(value, "app.config['MAX_CONTENT_LENGTH'] 必须设置")
+        assert value is not None  # ty narrowing
+        self.assertGreater(
+            value,
+            0,
+            "app.config['MAX_CONTENT_LENGTH'] 必须为正数（0/None 等价于无限制）",
+        )
+
+    def test_max_content_length_covers_max_total_upload_bytes(self) -> None:
+        """``MAX_CONTENT_LENGTH`` 必须 ≥ ``MAX_TOTAL_UPLOAD_BYTES`` —— 否则
+        合法的 100 MB 累计上传请求会在 Flask 层被错误地 413 拒绝，前端用户
+        永远无法上传完整批次。"""
+        value = self._ui.app.config.get("MAX_CONTENT_LENGTH")
+        self.assertIsNotNone(value)
+        assert value is not None  # ty narrowing
+        self.assertGreaterEqual(
+            value,
+            MAX_TOTAL_UPLOAD_BYTES,
+            f"MAX_CONTENT_LENGTH ({value}) < MAX_TOTAL_UPLOAD_BYTES "
+            f"({MAX_TOTAL_UPLOAD_BYTES}) 是配置错误：合法上传会被 413",
+        )
+        # 但也不能太大（防止配置错误把 cap 放到 GB 级，第一道闸失效）
+        self.assertLessEqual(
+            value,
+            MAX_TOTAL_UPLOAD_BYTES + 100 * 1024 * 1024,
+            f"MAX_CONTENT_LENGTH ({value}) >> MAX_TOTAL_UPLOAD_BYTES "
+            "+ 100 MB 缓冲，超出合理 buffer 范围（multipart overhead + "
+            "form text 总和远小于 100 MB）",
+        )
+
+    def test_max_content_length_does_not_drift_from_constant(self) -> None:
+        """``MAX_CONTENT_LENGTH`` 必须直接引用 ``MAX_TOTAL_UPLOAD_BYTES`` 常量
+        而非硬编码数字 —— 防止常量更新时 web_ui.py 没同步更新（这正是历史上
+        多个 dual-path drift bug 的根源）。"""
+        import inspect
+
+        import web_ui
+
+        src = inspect.getsource(web_ui)
+        # 必须出现 MAX_TOTAL_UPLOAD_BYTES 引用（无论是直接 import 还是
+        # 模块级访问）
+        self.assertIn(
+            "MAX_TOTAL_UPLOAD_BYTES",
+            src,
+            "web_ui.py 必须引用 MAX_TOTAL_UPLOAD_BYTES 常量（而非硬编码数字），"
+            "否则常量更新时 web_ui 不会自动跟进，第一道闸与第三道闸 drift",
+        )
+        # 反向锁：MAX_CONTENT_LENGTH 一定不能被赋值为字面量数字（避免硬编码）
+        import ast
+        import re
+
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                # 找 self.app.config["MAX_CONTENT_LENGTH"] = ... 这类赋值
+                for target in node.targets:
+                    if (
+                        isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Attribute)
+                        and target.value.attr == "config"
+                        and isinstance(target.slice, ast.Constant)
+                        and target.slice.value == "MAX_CONTENT_LENGTH"
+                    ):
+                        # value 必须不是纯字面量（应该是涉及 MAX_TOTAL_UPLOAD_BYTES
+                        # 的表达式）
+                        value_src = ast.unparse(node.value)
+                        self.assertTrue(
+                            re.search(r"MAX_TOTAL_UPLOAD_BYTES", value_src),
+                            f"MAX_CONTENT_LENGTH 赋值表达式必须引用 "
+                            f"MAX_TOTAL_UPLOAD_BYTES；当前是 {value_src!r}",
+                        )
 
 
 def _file_validator_sanity_check() -> None:
