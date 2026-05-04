@@ -27,6 +27,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   back-to-back `uv run python scripts/ci_gate.py` runs producing zero
   WARNING/ERROR/FAIL/RETRY lines.
 
+### Documentation
+
+- **`docs/security/AUDIT_2026-05-04.md` no longer carries a
+  `<TBD>` placeholder for the remediation commit hash.**
+  The audit document opened with `STATUS: REMEDIATED (runtime
+  CVEs cleared 17 → 0 on commit \`<TBD>\`…)` since the
+  upgrade landed in `95e4151` (`🔒 chore(deps): security wave
+  - production CVE exposure 17 -> 0`); a leftover
+  `<TBD>` token in a security artefact is exactly the kind
+  of stale string a future operator would mis-interpret as
+  "remediation pending". Replaced with a deep-link to the
+  fix commit on GitHub plus the commit subject line for
+  zero-context audit trails. Pure documentation patch.
+
 ### Tests
 
 - **New regression gate:
