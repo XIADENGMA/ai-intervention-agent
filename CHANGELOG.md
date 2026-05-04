@@ -29,6 +29,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Chore
 
+- **`LICENSE` now lists xiadengma alongside the upstream
+  copyright holders (Fábio Ferreira, Pau Oliva).** The MIT
+  license requires retaining the original notices, but
+  `pyproject.toml::authors` and `CITATION.cff::authors` had
+  declared xiadengma as the project author for the entire v1.5
+  series while `LICENSE` still attributed the work solely to
+  the upstream forks. Downstream consumers reading the wheel's
+  `LICENSE` file (or the GitHub "About" sidebar's copyright
+  resolver) saw a misleading "owned by Fabio + Pau" signal.
+  xiadengma's notice is placed first to reflect being the
+  current primary author of the v1.5.x rewrite (per the v1.5.20
+  server-side refactor and full VS Code extension authoring);
+  Fábio Ferreira (2024) and Pau Oliva (2025) are retained per
+  MIT's "the above copyright notice ... shall be included" rule.
 - **Coverage red line (`fail_under = 88`) and report polish in
   `pyproject.toml`.** The project shipped without any
   `[tool.coverage.*]` section, so coverage could regress
