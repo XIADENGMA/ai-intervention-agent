@@ -9,6 +9,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Security
+
+- **Dependency vulnerability audit committed** under `docs/security/`. Ran
+  `pip-audit 2.10.0` against the v1.5.21 environment, found 17
+  CVE/GHSA items across 10 packages, and triaged each one against our
+  actual code paths and deployment posture (loopback by default, no
+  OAuth, no public file upload). Effective risk: 5 findings do not affect
+  us at all (vulnerable feature unused), 8 are mitigated by loopback-only
+  binding, and 3 (werkzeug `safe_join`) are Windows-only request hangs.
+  Both the human-readable triage (`AUDIT_2026-05-04.md`) and the raw JSON
+  snapshot (`pip-audit-2026-05-04.json`) are committed so subsequent
+  audits can `diff` against the threat-model baseline. **No code change**:
+  the recommended remediation is letting Dependabot's weekly grouped PRs
+  pull the upstream fixes in, with an explicit `uv lock --upgrade-package`
+  recipe documented for maintainers who want to pull the wave forward.
+
 ### Documentation
 
 - **`docs/mcp_tools.md` / `docs/mcp_tools.zh-CN.md` now document all three

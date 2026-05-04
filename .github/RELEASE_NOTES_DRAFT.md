@@ -73,6 +73,20 @@ from 89.93% to 90.96%, and six key files now sit at 95%+.
   the maintainer-driven best-effort SLOs (1–3 day ack, 2-week silent-bump
   grace).
 
+### Security audit (no code change, audit-only)
+
+A `pip-audit` snapshot of the v1.5.21 lockfile is now permanently
+committed under `docs/security/` (raw JSON + human-readable triage).
+17 advisories were filed against 10 transitive packages; the triage
+shows that **5 do not apply to us** (we never invoke `fastmcp install`,
+`OAuthProxy`, authlib's cache, dotenv `set_key`, and `pytest` is
+dev-only), **8 are neutralised by our loopback-only deployment**, and
+the remaining 3 (`werkzeug` `safe_join`) only manifest on Windows
+hosts. The recommended remediation is to let Dependabot's weekly
+grouped PRs pull in upstream fixes; the audit document includes an
+explicit `uv lock --upgrade-package …` recipe for maintainers who want
+to pull the wave forward.
+
 ### Documentation
 
 - **`docs/mcp_tools.{md,zh-CN.md}`** now document all three input shapes of
