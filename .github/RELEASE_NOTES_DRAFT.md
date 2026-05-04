@@ -1,7 +1,7 @@
 # Release notes draft (post-v1.5.22 / candidate v1.5.23)
 
 > Draft assembled by the assistant after the v1.5.22 tag, summarising
-> the 47 maintenance commits added on top of the release. This is **not**
+> the 51 maintenance commits added on top of the release. This is **not**
 > a published release; the file is committed under `.github/` only as a
 > paste-ready artifact for whoever cuts the next minor.
 >
@@ -287,9 +287,10 @@ downstream packagers do not need to update integration scripts.
   climbs from 2244 to 2249. The TOML / doc parsers each
   carry a self-check so refactoring the regex later cannot
   silently weaken the gate.
-- **Three new introspection-based parity gates** lock the
-  numeric clamp bounds in `shared_types.SECTION_MODELS`
-  against the surfaces that historically drifted:
+- **Four new introspection-based parity gates** lock the
+  numeric clamp bounds + default values in
+  `shared_types.SECTION_MODELS` against the four surfaces that
+  historically drifted (or could drift in the future):
   - `tests/test_server_config_shared_types_parity.py`
     asserts `server_config.{FEEDBACK_TIMEOUT_MIN/MAX,
     AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` equal the
@@ -312,6 +313,18 @@ downstream packagers do not need to update integration scripts.
     multi_task sweep self-checks by requiring at least 5
     captures so a regex regression cannot vacuously pass.
     5 tests.
+  - `tests/test_server_config_defaults_parity.py` is the
+    sister gate to `test_server_config_shared_types_parity.py`
+    — that one locks MIN/MAX clamp bounds, this one locks
+    field DEFAULTS (the parallel invariant that controls
+    first-load values + what the panel's "reset to defaults"
+    button writes back). All four feedback constants
+    (`FEEDBACK_TIMEOUT_DEFAULT`,
+    `AUTO_RESUBMIT_TIMEOUT_DEFAULT`,
+    `RESUBMIT_PROMPT_DEFAULT`, `PROMPT_SUFFIX_DEFAULT`) are
+    pulled directly from `model_fields[name].default` and
+    asserted to equal the imported `server_config` values.
+    4 tests.
 
 ### Tooling / CI
 
