@@ -1,4 +1,4 @@
-"""R21.1：``templates/web_ui.html`` ``<head>`` 关键资源 preload 不变量。
+"""R21.1 / R27.1：``templates/web_ui.html`` ``<head>`` 关键资源 preload 不变量。
 
 设计目标
 ========
@@ -7,6 +7,16 @@ R20.x 把 Web UI 子进程冷启动从 ~1980 ms 压到 ~360 ms，剩下 ~360 ms 
 新的瓶颈。R21.1 用 ``<link rel="preload" as="script">`` 在 ``<head>`` 早期
 告诉浏览器去并行下载 body 末尾才声明的 defer 脚本（``app.js`` /
 ``multi_task.js`` / ``i18n.js`` / ``state.js``）。预期 FCP 提早 30-100 ms。
+
+R27.1（增量）：
+~~~~~~~~~~~~~~~
+v1.5.32 之后审计发现 head 内已经声明 ``<script defer>`` 的 ``marked.js`` /
+``prism.js`` 没有匹配的 preload link，preload-scanner（HTML5 lookahead
+pre-parser）只有等到主解析器扫到 ``<script defer src="...">`` 标签时才会
+发起请求，此时其它 preload 早已抢先 ~5-15 ms 在下载。R27.1 把这两个文件
+也加进 preload 列表让 preload-scanner 在 ``<head>`` 解析最早期就并行
+发起请求，并把 ``prism.js`` 切换到 upstream 自带的 ``prism.min.js``
+（行为字节级一致，体积从 58 KB → 25 KB / brotli 后 15 KB → 7.3 KB）。
 
 为什么需要 invariants
 ======================
@@ -23,7 +33,8 @@ preload 的 cache 命中**必须**满足"URL 完全相等"约束：
 测试矩阵
 ========
 1. **存在性**：``<head>`` 必须包含 ``app.js`` / ``multi_task.js`` /
-   ``i18n.js`` / ``state.js`` 这 4 条 preload。
+   ``i18n.js`` / ``state.js`` / ``marked.js`` / ``prism.min.js``
+   这 6 条 preload（前 4 条来自 R21.1，后 2 条来自 R27.1）。
 2. **URL 一致性**：每条 preload 的 ``href``（含 Jinja2 占位符）必须
    与 body 末尾相同名字 ``<script>`` 的 ``src`` 完全相等。
 3. **位置 invariant**：preload 必须出现在 ``<head>`` 块内、且在 body 中
@@ -36,6 +47,9 @@ preload 的 cache 命中**必须**满足"URL 完全相等"约束：
    rel="stylesheet">`` 同步加载，再 preload 一遍是重复工作；
    ``mathjax-loader.js`` 在 head 早期就声明了 defer，浏览器扫到就发
    请求，preload 没增量；这条测试用 source-text 检查防止后续 PR 误加。
+6. **R27.1 不变量**：``prism.js``（未压缩）必须**不再**被引用（switched
+   to ``prism.min.js``）；``marked.js`` / ``prism.min.js`` 必须有匹配
+   preload link 与 body ``<script defer>`` src，二者字节级一致。
 
 测试不验证什么
 ===============
@@ -113,16 +127,28 @@ def _find_script_srcs(html: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# 1. 存在性：4 条核心 preload 必须出现在 <head>
+# 1. 存在性：6 条核心 preload 必须出现在 <head>
+#    - R21.1 (4 条)：app.js / multi_task.js / i18n.js / state.js
+#    - R27.1 (2 条)：marked.js / prism.min.js（head 内 defer 脚本补充 preload）
 # ---------------------------------------------------------------------------
 
-# (preload href, 下游 body script 中相同名字的 src)
-EXPECTED_PRELOADS = [
+# (preload href, 下游 body / head script 中相同名字的 src)
+# R21.1 原始 4 条：
+EXPECTED_PRELOADS_R21_1 = [
     "/static/js/app.js?v={{ app_version }}",
     "/static/js/multi_task.js?v={{ multi_task_version }}",
     "/static/js/i18n.js",
     "/static/js/state.js",
 ]
+
+# R27.1 增量 2 条（head 内 defer 脚本：marked.js + prism.min.js）：
+EXPECTED_PRELOADS_R27_1 = [
+    "/static/js/marked.js",
+    "/static/js/prism.min.js",
+]
+
+# 合并后的完整 forward-lock 列表（test_preload_count 的精确数量基准）：
+EXPECTED_PRELOADS = EXPECTED_PRELOADS_R21_1 + EXPECTED_PRELOADS_R27_1
 
 
 class TestPreloadPresence:
@@ -133,19 +159,23 @@ class TestPreloadPresence:
         head = _extract_head(_read_template())
         hrefs = _find_preload_hrefs(head)
         assert expected in hrefs, (
-            f"R21.1 期望 ``<link rel='preload' href='{expected}' as='script'>`` "
+            f"R21.1/R27.1 期望 ``<link rel='preload' href='{expected}' as='script'>`` "
             f"出现在 ``<head>``，实际 head 里 as='script' 的 preload 列表："
             f"\n{hrefs}\n"
             "FCP 优化的核心是让浏览器在 head 解析阶段就并行下载下游 defer 脚本。"
         )
 
     def test_preload_count(self) -> None:
-        """精确 4 条；多 1 条少 1 条都要让作者解释，避免悄悄漂移成 8 条
-        把带宽全占满（preload 太多反而拖慢真正关键资源的优先级）。"""
+        """精确 6 条；多 1 条少 1 条都要让作者解释，避免悄悄漂移成 8 条
+        把带宽全占满（preload 太多反而拖慢真正关键资源的优先级）。
+
+        当前 6 条 = R21.1 (4) + R27.1 (2)。新增/移除条目时同步更新对应
+        ``EXPECTED_PRELOADS_R21_1`` 或 ``EXPECTED_PRELOADS_R27_1`` 列表。
+        """
         head = _extract_head(_read_template())
         hrefs = _find_preload_hrefs(head)
         assert len(hrefs) == len(EXPECTED_PRELOADS), (
-            f"R21.1 期望 head 内有 {len(EXPECTED_PRELOADS)} 条 ``as=script`` preload，"
+            f"R21.1/R27.1 期望 head 内有 {len(EXPECTED_PRELOADS)} 条 ``as=script`` preload，"
             f"实际 {len(hrefs)} 条：\n{hrefs}\n"
             "增加 preload 之前请评估带宽优先级影响——参考 web.dev/preload-critical-assets。"
         )
@@ -196,6 +226,31 @@ class TestPreloadUrlConsistency:
         body_srcs = _find_script_srcs(body)
         assert "/static/js/state.js" in body_srcs, (
             '找不到 body 内 ``<script src="/static/js/state.js">``。'
+        )
+
+    def test_marked_js_preload_matches_head_script_src(self) -> None:
+        """R27.1：``marked.js`` preload href 必须与 head 内 ``<script defer>`` src
+        字节级一致（marked.js 在 head 内 defer 加载，不在 body）。
+        """
+        head = _extract_head(_read_template())
+        head_srcs = _find_script_srcs(head)
+        assert "/static/js/marked.js" in head_srcs, (
+            '找不到 head 内 ``<script defer src="/static/js/marked.js">``——'
+            "R27.1 假设 marked.js 仍以 head 内 defer 加载，"
+            f"实际 head script src：\n{head_srcs}"
+        )
+
+    def test_prism_min_js_preload_matches_head_script_src(self) -> None:
+        """R27.1：``prism.min.js`` preload href 必须与 head 内 ``<script defer>`` src
+        字节级一致——同时验证 ``prism.js``（未压缩）已经从模板中移除。
+        """
+        head = _extract_head(_read_template())
+        head_srcs = _find_script_srcs(head)
+        assert "/static/js/prism.min.js" in head_srcs, (
+            '找不到 head 内 ``<script defer src="/static/js/prism.min.js">``——'
+            "R27.1 切换到 ``prism.min.js`` 是 ``-33 KB / -8 KB brotli`` 的核心收益，"
+            f"如果模板回退到 ``prism.js`` 应在 ``test_prism_unminified_not_referenced`` "
+            f"被检出。当前 head script src：\n{head_srcs}"
         )
 
 
@@ -370,4 +425,78 @@ class TestPreloadNoNonceRequired:
             "preload 是声明性资源提示，不执行任何脚本，CSP 不约束它；"
             "加 nonce 会误导 reviewer 以为我们依赖 nonce 验证 preload。\n"
             f"当前 tag：{tag}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 7. R27.1 反向锁：``prism.js`` 必须**不再**被引用（已切换到 ``prism.min.js``）
+# ---------------------------------------------------------------------------
+
+
+class TestPrismMinifiedSwitch:
+    """R27.1 forward + reverse lock：模板必须使用 ``prism.min.js``，禁止退回未压缩版。
+
+    ``prism.min.js`` 是 upstream 自带的 minified 版本（不是项目自动 minify 出来的），
+    功能字节级等价，体积 58 KB → 25 KB / brotli 后 15 KB → 7.3 KB。如果一个未来 PR
+    误把模板回退到 ``prism.js``：
+
+    - 直接用户体验损失：每个冷加载多下 ~33 KB raw / ~8 KB brotli 带宽
+    - 解析时间损失：未压缩源码的 JS engine parse + compile 时间也更长
+    - 缓存层失效：浏览器缓存的是 ``/static/js/prism.min.js`` 的 etag，回退到
+      ``prism.js`` 会触发完整重新下载
+
+    这条测试是字节级 forward lock：源代码里**任何位置**都不能再以
+    ``"/static/js/prism.js"``（带前导斜杠的绝对路径，避开 CSS / docs 内的偶遇匹配）
+    出现。
+    """
+
+    def test_template_does_not_reference_unminified_prism_js(self) -> None:
+        text = _read_template()
+        # 反向锁：模板不允许出现 "/static/js/prism.js"（未压缩版的标准路径）
+        # 用绝对路径前导斜杠 + 完整文件名匹配，避免与 ``/static/js/prism.min.js``、
+        # ``/static/css/prism.css``、``/static/js/prism-components/...`` 等混淆。
+        unminified_pattern = re.compile(r"/static/js/prism\.js(?!\w)")
+        match = unminified_pattern.search(text)
+        assert match is None, (
+            f"R27.1 反向锁违反：模板第 ~{text[: match.start()].count(chr(10)) + 1} 行"
+            f"引用了 ``/static/js/prism.js``（未压缩版）。"
+            "R27.1 的核心收益是 58 KB → 25 KB（brotli 后 15 KB → 7.3 KB），"
+            "请使用 ``/static/js/prism.min.js``。\n"
+            f"匹配上下文：{text[max(0, match.start() - 50) : match.end() + 50]}"
+        )
+
+    def test_minified_prism_file_exists(self) -> None:
+        """确保 ``static/js/prism.min.js`` 实际存在——upstream 已经发了 minified 版本。
+
+        如果这个文件因为某次 ``rm`` 误删了，模板里的 preload 与 ``<script>`` 都会
+        404，preload 反而变成 unused preload 警告。这条测试是 fail-loud 兜底。
+        """
+        prism_min = REPO_ROOT / "static" / "js" / "prism.min.js"
+        assert prism_min.is_file(), (
+            f"R27.1 物理文件不存在：``{prism_min}``。"
+            "upstream Prism.js 自带 minified 版本，本项目不自动 minify 它（参见"
+            " ``scripts/minify_assets.py`` 的 ``SKIP_PATTERNS``），所以这个文件必须"
+            "随 Prism 升级一起从 upstream 复制过来。"
+        )
+
+        size_bytes = prism_min.stat().st_size
+        assert 10_000 < size_bytes < 100_000, (
+            f"R27.1 ``prism.min.js`` 体积异常：{size_bytes} 字节，"
+            "正常应在 10-100 KB 区间（v1.5.32 实测 ~25 KB）。"
+            "如果显著小于 10 KB 可能是文件损坏，显著大于 100 KB 可能是不小心放进去未压缩版。"
+        )
+
+    def test_unminified_prism_js_still_present_for_dev_inspection(self) -> None:
+        """``static/js/prism.js``（未压缩版）应保留，便于本地调试与 source map 查看。
+
+        我们只是从模板**引用**切换到 ``prism.min.js``，不删除未压缩版——这与
+        ``scripts/minify_assets.py`` 的语义一致：minify 产物与源文件并存，
+        生产模板用 minified、本地调试可以临时 hack 模板看未压缩版。
+        """
+        prism_unminified = REPO_ROOT / "static" / "js" / "prism.js"
+        assert prism_unminified.is_file(), (
+            f"R27.1 文件被误删：``{prism_unminified}``。"
+            "未压缩版 ``prism.js`` 是调试用源文件，应与 ``prism.min.js`` 并存。"
+            "如果要永久移除未压缩版，需要先在 ``scripts/minify_assets.py`` 与"
+            "测试套件 ``test_runtime_behavior.py::test_minified_source_file_sync`` 同步策略。"
         )

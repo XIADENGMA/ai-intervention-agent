@@ -19,7 +19,7 @@
  *   - dom-security.js: DOM 安全工具
  *   - validation-utils.js: 验证工具
  *   - marked.js: Markdown 解析
- *   - prism.js: 代码高亮
+ *   - prism.min.js: 代码高亮（R27.1：从 prism.js 切换到 upstream minified 版本）
  *   - lottie.min.js: 动画库
  */
 
