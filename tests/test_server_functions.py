@@ -599,48 +599,66 @@ class TestEnsureConfigCallbacksRegistered(unittest.TestCase):
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  get_task_queue / _shutdown_global_task_queue
+#
+#  R20.8 后实现已迁移到 task_queue_singleton 模块；server.{get_task_queue,
+#  _shutdown_global_task_queue} 是 re-export。测试同时验证 server 入口的
+#  公开 API 行为，并在 task_queue_singleton 模块上 patch 全局单例（不再
+#  存在 server._global_task_queue 这个模块变量）。
 # ═══════════════════════════════════════════════════════════════════════════
+import task_queue_singleton
+
+
 class TestGetTaskQueue(unittest.TestCase):
     def test_lazy_init(self):
-        original = server._global_task_queue
-        server._global_task_queue = None
+        original = task_queue_singleton._global_task_queue
+        task_queue_singleton._global_task_queue = None
         try:
             tq = server.get_task_queue()
             self.assertIsNotNone(tq)
             same = server.get_task_queue()
             self.assertIs(tq, same)
         finally:
-            server._global_task_queue = original
+            task_queue_singleton._global_task_queue = original
+
+    def test_re_export_identity(self):
+        """server.get_task_queue 必须是 task_queue_singleton.get_task_queue 的别名。
+
+        R20.8 优化依赖此恒等关系：web_ui 子进程从 task_queue_singleton 直接
+        import，而 server.get_task_queue 仍作为公开 API 暴露——两者必须返
+        回**完全相同的 callable**，否则会出现「外部调用 server.get_task_queue
+        命中实例 A，内部 web_ui 调用拿到实例 B」的双单例分裂 bug。
+        """
+        self.assertIs(server.get_task_queue, task_queue_singleton.get_task_queue)
 
 
 class TestShutdownGlobalTaskQueue(unittest.TestCase):
     def test_with_running_queue(self):
-        original = server._global_task_queue
+        original = task_queue_singleton._global_task_queue
         mock_tq = MagicMock()
-        server._global_task_queue = mock_tq
+        task_queue_singleton._global_task_queue = mock_tq
         try:
             server._shutdown_global_task_queue()
             mock_tq.stop_cleanup.assert_called_once()
         finally:
-            server._global_task_queue = original
+            task_queue_singleton._global_task_queue = original
 
     def test_with_none_queue(self):
-        original = server._global_task_queue
-        server._global_task_queue = None
+        original = task_queue_singleton._global_task_queue
+        task_queue_singleton._global_task_queue = None
         try:
             server._shutdown_global_task_queue()
         finally:
-            server._global_task_queue = original
+            task_queue_singleton._global_task_queue = original
 
     def test_exception_suppressed(self):
-        original = server._global_task_queue
+        original = task_queue_singleton._global_task_queue
         mock_tq = MagicMock()
         mock_tq.stop_cleanup.side_effect = RuntimeError("oops")
-        server._global_task_queue = mock_tq
+        task_queue_singleton._global_task_queue = mock_tq
         try:
             server._shutdown_global_task_queue()
         finally:
-            server._global_task_queue = original
+            task_queue_singleton._global_task_queue = original
 
 
 # ═══════════════════════════════════════════════════════════════════════════

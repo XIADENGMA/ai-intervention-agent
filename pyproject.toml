@@ -104,6 +104,7 @@ include = [
     "/notification_providers.py",
     "/shared_types.py",
     "/task_queue.py",
+    "/task_queue_singleton.py",
     "/exceptions.py",
     "/server_config.py",
     "/i18n.py",

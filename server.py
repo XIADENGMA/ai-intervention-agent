@@ -53,12 +53,12 @@ __all__ = [
     "wait_for_task_completion",
 ]
 
-import atexit
+import atexit  # noqa: F401  (kept for test-suite compatibility: tests patch server.atexit)
 import io
 import os
 import random
 import sys
-import threading
+import threading  # noqa: F401  (kept for test-suite compatibility: tests patch server.threading.main_thread)
 import time
 
 from fastmcp import FastMCP
@@ -111,7 +111,6 @@ from service_manager import (
     start_web_service,
     update_web_content,
 )
-from task_queue import TaskQueue
 
 # 禁用 FastMCP banner 和 Rich 输出，避免污染 stdio
 os.environ["NO_COLOR"] = "1"
@@ -285,44 +284,22 @@ interactive_feedback = mcp.tool(annotations=_INTERACTIVE_FEEDBACK_ANNOTATIONS)(
     _interactive_feedback_impl
 )
 
-# TaskQueue 仅由 Web UI 子进程使用（web_ui.py / web_ui_routes 会调用 get_task_queue()）。
-# MCP 服务器主进程中此函数从未被调用，因此不会创建 TaskQueue 实例或后台清理线程。
-# 采用懒加载 + 双重检查锁定，确保线程安全且无不必要的资源消耗。
-_global_task_queue: TaskQueue | None = None
-_global_task_queue_lock = threading.Lock()
-
-
-def get_task_queue() -> TaskQueue:
-    """获取全局任务队列实例
-
-    返回:
-        TaskQueue: 全局任务队列实例
-    """
-    global _global_task_queue
-    if _global_task_queue is None:
-        with _global_task_queue_lock:
-            if _global_task_queue is None:
-                from pathlib import Path
-
-                persist_path = str(
-                    Path(__file__).resolve().parent / "data" / "tasks.json"
-                )
-                _global_task_queue = TaskQueue(max_tasks=10, persist_path=persist_path)
-    assert _global_task_queue is not None
-    return _global_task_queue
-
-
-def _shutdown_global_task_queue() -> None:
-    """进程退出时尽量停止 TaskQueue 后台线程（幂等）。"""
-    try:
-        if _global_task_queue is not None:
-            _global_task_queue.stop_cleanup()
-    except Exception:
-        # 退出阶段不再抛异常
-        pass
-
-
-atexit.register(_shutdown_global_task_queue)
+# R20.8 性能优化：TaskQueue 单例的实现已迁移到独立模块 ``task_queue_singleton``。
+#
+# 历史背景：``get_task_queue`` 仅由 Web UI 子进程使用（web_ui.py / web_ui_routes
+# 会调用），但旧实现放在本模块导致 web_ui 子进程因 ``from server import
+# get_task_queue`` 拖入整条 ``fastmcp`` / ``mcp`` / ``loguru`` 依赖链，凭空多
+# 出约 310 ms 启动延迟。迁移后 Web UI 子进程改从 ``task_queue_singleton``
+# 直接导入，跳过整个 MCP server 模块；本模块通过下方 re-export 保留公开 API
+# ``server.get_task_queue`` / ``server._shutdown_global_task_queue``，外部调用
+# 者无感知。
+#
+# 注：``server._global_task_queue`` 这个模块级变量**不再**在本模块定义——
+# 测试代码若需要直接 patch 全局单例，应改写 ``task_queue_singleton._global_task_queue``。
+from task_queue_singleton import (  # noqa: F401  (re-export for back-compat)
+    _shutdown_global_task_queue,
+    get_task_queue,
+)
 
 
 def cleanup_services(shutdown_notification_manager: bool = True) -> None:

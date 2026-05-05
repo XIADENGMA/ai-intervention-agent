@@ -21,6 +21,7 @@
 - [notification_models](notification_models.md)
 - [notification_providers](notification_providers.md)
 - [task_queue](task_queue.md)
+- [task_queue_singleton](task_queue_singleton.md)
 - [web_ui](web_ui.md)
 - [web_ui_config_sync](web_ui_config_sync.md)
 - [web_ui_mdns](web_ui_mdns.md)
@@ -44,6 +45,7 @@
 - **server_config**: MCP 服务器配置与工具函数（数据类、常量、输入验证、响应解析）
 - **service_manager**: Web 服务编排层 —— 进程生命周期管理、HTTP 客户端、Web UI 启动与健康检查
 - **task_queue**: 任务队列
+- **task_queue_singleton**: 轻量级 `TaskQueue` 单例访问器（与 `server.py` 解耦）—— 让 Web UI 子进程不再为了拿一个 task queue 而触发 `fastmcp` / `mcp` 整条依赖链加载（R20.8 启动延迟优化）
 - **web_ui**: Flask Web UI 主类 —— 多任务面板、文件上传、通知、mDNS 发布、安全中间件与浏览器引导
 - **web_ui_security**: 安全策略 Mixin —— IP 访问控制、CSP 安全头注入、网络安全配置加载（通过 MRO 注入 `WebFeedbackUI`）
 - **web_ui_validators**: 网络安全配置 / 超时校验的纯函数（从 `web_ui.py` 抽出；测试 / CLI / 配置热更新均可安全复用）

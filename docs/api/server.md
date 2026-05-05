@@ -8,10 +8,6 @@
 
 ### `_build_server_icons() -> list[Icon]`
 
-### `get_task_queue() -> TaskQueue`
-
-### `_shutdown_global_task_queue() -> None`
-
 ### `cleanup_services(shutdown_notification_manager: bool = True) -> None`
 
 ### `main() -> None`

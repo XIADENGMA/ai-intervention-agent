@@ -10,8 +10,10 @@ from flask.typing import ResponseReturnValue
 
 from enhanced_logging import EnhancedLogger
 from i18n import msg
-from server import get_task_queue
 from shared_types import FeedbackResult
+
+# R20.8: 直接 import task_queue_singleton 避免拖入 fastmcp/mcp（详见模块注释）。
+from task_queue_singleton import get_task_queue
 from web_ui_routes._upload_helpers import extract_uploaded_images
 
 if TYPE_CHECKING:

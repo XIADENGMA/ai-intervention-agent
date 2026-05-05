@@ -52,13 +52,16 @@ from config_manager import get_config
 from enhanced_logging import EnhancedLogger
 from i18n import msg
 from protocol import get_capabilities, get_server_clock
-from server import get_task_queue
+
+# R20.8: 直接 import 自 task_queue_singleton 模块，避免拖入 fastmcp/mcp 依赖链
+# （web_ui.py 是子进程入口，不需要 MCP server 能力，详见 task_queue_singleton.py 注释）。
 from server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
     AUTO_RESUBMIT_TIMEOUT_MIN,
 )
 from shared_types import FeedbackResult
+from task_queue_singleton import get_task_queue
 from web_ui_config_sync import (
     _ensure_feedback_timeout_hot_reload_callback_registered,
     _ensure_network_security_hot_reload_callback_registered,

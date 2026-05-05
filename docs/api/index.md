@@ -21,6 +21,7 @@ English API reference (signatures-focused).
 - [notification_models](notification_models.md)
 - [notification_providers](notification_providers.md)
 - [task_queue](task_queue.md)
+- [task_queue_singleton](task_queue_singleton.md)
 - [web_ui](web_ui.md)
 - [web_ui_config_sync](web_ui_config_sync.md)
 - [web_ui_mdns](web_ui_mdns.md)
@@ -44,6 +45,7 @@ English API reference (signatures-focused).
 - **server_config**: MCP server configuration and utility helpers (dataclasses, constants, input validation, response parsing)
 - **service_manager**: Web service orchestration — process lifecycle, HTTP client, Web UI bring-up + health checks
 - **task_queue**: Task queue
+- **task_queue_singleton**: Lightweight `TaskQueue` singleton accessor decoupled from `server.py` — keeps the Web UI subprocess from pulling in `fastmcp` / `mcp` purely to access the queue (R20.8 startup-latency optimisation)
 - **web_ui**: Flask Web UI main class — multi-task panel, file uploads, notifications, mDNS publishing, security middleware, and browser bootstrapping
 - **web_ui_security**: Security policy mixin — IP allow/deny lists, CSP headers, network-security config loading (mixed into `WebFeedbackUI` via MRO)
 - **web_ui_validators**: Pure validation/normalisation helpers for network-security configs and timeouts (extracted from `web_ui.py`; safe to call from tests / CLI / hot-reload paths)
