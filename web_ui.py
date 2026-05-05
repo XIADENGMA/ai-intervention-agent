@@ -44,9 +44,11 @@ from flask import (
 from flask.typing import ResponseReturnValue
 from flask_compress import Compress
 from flask_cors import CORS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 
+# R26.1: ``flask_limiter`` imports 故意不在这里——见 ``WebUIApp.__init__``
+# 体内的本地 import。原因：``flask_limiter`` 顶级 import 实测 ~21 ms（在 flask
+# 已加载后的增量成本），但本模块**很多**单元测试只需 ``from web_ui import 小工具``
+# 而不会构造 ``WebUIApp``，那些路径不应该为永不使用的 ``Limiter`` 付费。
 from config_manager import get_config
 from enhanced_logging import EnhancedLogger
 from i18n import msg
@@ -417,6 +419,13 @@ class WebFeedbackUI(
         self.network_security_config = self._load_network_security_config()
         # 【热更新】network_security（allowed_networks/blocked_ips/access_control_enabled）也应随配置文件变化生效
         _ensure_network_security_hot_reload_callback_registered()
+
+        # R26.1: ``flask_limiter`` 推迟到第一次构造 ``WebUIApp`` 才加载——本模块顶部
+        # 不再 ``from flask_limiter import Limiter``，所以 ``import web_ui`` 路径
+        # （包含大量只取小工具函数的单元测试）不再付 ~64 ms 加载费。第二次以后的
+        # ``WebUIApp`` 构造命中 ``sys.modules`` cache，几乎零成本。
+        from flask_limiter import Limiter
+        from flask_limiter.util import get_remote_address
 
         self.limiter = Limiter(
             key_func=get_remote_address,
