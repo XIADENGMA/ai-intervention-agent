@@ -54,7 +54,12 @@ def _parse_accept_encoding(req_obj: object | None = None) -> set[str]:
     顺序），要么用 ``*`` 占位；少数 ``q=0`` 表示「明确拒绝」时我们也尊重
     （``gzip;q=0`` 表示不要 gzip）。
     """
-    accept = (req_obj or request).headers.get("Accept-Encoding", "")
+    # 显式三元 + ``getattr`` 兜底：``req_obj`` 是 ``object | None`` 形式以
+    # 兼容测试时传 mock；ty 静态分析看不出 ``req_obj or request`` 在
+    # ``req_obj is None`` 时回退到全局 Flask ``request`` 代理，所以做一次
+    # 精确判空让类型推断把 fallback 路径单独 narrow 到 ``request``。
+    src = req_obj if req_obj is not None else request
+    accept = getattr(src, "headers", {}).get("Accept-Encoding", "")
     if not accept:
         return set()
 

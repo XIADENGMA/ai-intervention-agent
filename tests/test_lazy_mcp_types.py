@@ -149,10 +149,18 @@ class TestRuntimeBehaviorParity(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertEqual(len(result), 1, "纯文本输入应只产 1 个 TextContent")
         text_cls = _lazy_mcp_types().TextContent
-        self.assertIsInstance(result[0], text_cls)
-        self.assertEqual(result[0].type, "text")
-        self.assertIn("hello", result[0].text)
-        self.assertIn("A", result[0].text)
+        first = result[0]
+        # ``isinstance(first, text_cls)`` 是运行时缩窄；ty 不会跟踪动态 class
+        # 解析，所以再追加一层 ``assert isinstance`` 让静态类型推断把
+        # ``first`` narrow 到 ``TextContent``，避免后续 ``.text`` 访问出现
+        # ``possibly-missing-attribute`` warning。
+        from mcp.types import TextContent
+
+        self.assertIsInstance(first, text_cls)
+        assert isinstance(first, TextContent)
+        self.assertEqual(first.type, "text")
+        self.assertIn("hello", first.text)
+        self.assertIn("A", first.text)
 
     def test_make_resubmit_response_as_mcp_returns_list_of_textcontent(self) -> None:
         from server_config import _lazy_mcp_types, _make_resubmit_response
