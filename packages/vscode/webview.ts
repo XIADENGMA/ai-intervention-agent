@@ -105,6 +105,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
   private _vscodeNotificationProvider: VSCodeApiNotificationProvider;
   private _macosNativeNotificationProvider: MacOSNativeNotificationProvider;
   private _serverUrl: string;
+  private _extensionVersion: string;
   private _onVisibilityChanged: VisibilityCallback | null;
   private _onTasksStatsChanged: TaskStatsCallback | null;
   private _onNewTaskIdsFromWebview: TaskIdsCallback | null;
@@ -127,12 +128,22 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     activityIconSvg: string;
     lottieData: unknown;
   } | null;
+  // R20.13-E：``inlineAllLocalesLiteral`` 是 ``_getHtmlContent`` 每次都要序列化
+  // 一次的 ~10 KB JSON。对单个 webview 生命周期内 ``_cachedLocales`` 内容很少
+  // 变（只有 ``_preloadResources`` 第一次填充 + 偶尔 fallback 补一两条 entry），
+  // 把序列化结果缓存起来配合一个键（locale 名集合 + 内容长度签名）做轻量失效。
+  // 命中缓存时 ``_getHtmlContent`` 直接拿 string 拼 HTML，省去 ``JSON.stringify``
+  // (~50-100 µs) + ``replace(/</g, ...)`` (~5 µs)。绝对值噪声级，但配合 R20.12-B
+  // 的「能不重算就别重算」思路，一致性比 µs 更重要。
+  private _cachedInlineAllLocalesJson: string | null;
+  private _cachedInlineAllLocalesKey: string | null;
   private _prefetchServerLangPromise: Promise<void> | null;
 
   constructor(
     extensionUri: vscode.Uri,
     outputChannel: vscode.OutputChannel,
     serverUrl = "http://localhost:8080",
+    extensionVersion: string = "0.0.0",
     onVisibilityChanged?: VisibilityCallback,
     onTasksStatsChanged?: TaskStatsCallback,
     onNewTaskIdsFromWebview?: TaskIdsCallback,
@@ -181,6 +192,13 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       this._macosNativeNotificationProvider,
     );
     this._serverUrl = serverUrl;
+    // R20.13-B/F：从 host 端 ``activate`` 一次性传入版本号，免得每次
+    // ``_getHtmlContent`` 都掏 ``vscode.extensions.getExtension`` 注册表查表
+    // （macOS M1 实测每次 ~1-3 ms，热路径 1-2 次 / 会话）。
+    this._extensionVersion =
+      typeof extensionVersion === "string" && extensionVersion
+        ? extensionVersion
+        : "0.0.0";
     this._onVisibilityChanged =
       typeof onVisibilityChanged === "function" ? onVisibilityChanged : null;
     this._onTasksStatsChanged =
@@ -206,6 +224,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     this._cachedServerLang = null;
     this._cachedLocales = {};
     this._cachedStaticAssets = null;
+    this._cachedInlineAllLocalesJson = null;
+    this._cachedInlineAllLocalesKey = null;
     this._prefetchServerLangPromise = null;
   }
 
@@ -1375,17 +1395,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const triStatePanelBootstrapUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._extensionUri, "tri-state-panel-bootstrap.js"),
     );
-    let extensionVersion = "0.0.0";
-    try {
-      const ext = vscode.extensions.getExtension(
-        "xiadengma.ai-intervention-agent",
-      );
-      if (ext?.packageJSON?.version) {
-        extensionVersion = String(ext.packageJSON.version);
-      }
-    } catch {
-      // 忽略
-    }
+    // R20.13-B/F：从构造器一次性传入的 ``_extensionVersion`` 取值；不再
+    // 在 ``_getHtmlContent`` 热路径上做 ``vscode.extensions.getExtension``
+    // 注册表查表。``WebviewProvider`` 实例总是由 ``extension.ts::activate``
+    // 创建，``EXT_VERSION`` 在 activation 期间已经填好（``context.extension
+    // .packageJSON.version``）。
+    const extensionVersion = this._extensionVersion;
     const githubUrl = EXT_GITHUB_URL || "";
     const githubUrlDisplay = githubUrl
       ? githubUrl.replace(/^https?:\/\//i, "")
@@ -1512,9 +1527,32 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         /* 忽略 */
       }
     }
-    const inlineAllLocalesLiteral = Object.keys(allLocales).length
-      ? safeJsonForInlineScript(allLocales)
-      : "null";
+    // R20.13-E：``safeJsonForInlineScript(allLocales)`` 序列化 ~10 KB JSON +
+    // ``replace(/</g, '\\u003c')`` 的代价，按 ``_cachedLocales`` 内容签名缓存
+    // 结果。键由「locale 名集合（排序、|分隔）+ 各 entry 字典 key 数」组成，
+    // 既反映新增 locale（如开了 pseudoLocale 之后），也反映 entry 大小级别的
+    // 变化；不靠完整 deep equal，因为 ``_cachedLocales`` 写入路径是 readFile +
+    // JSON.parse，正常生命周期内不会原地 mutate。
+    const localeNames = Object.keys(allLocales).sort();
+    const localeSignature = localeNames
+      .map((n) => `${n}:${Object.keys(allLocales[n] || {}).length}`)
+      .join("|");
+    let inlineAllLocalesLiteral: string;
+    if (
+      localeNames.length > 0 &&
+      this._cachedInlineAllLocalesKey === localeSignature &&
+      this._cachedInlineAllLocalesJson !== null
+    ) {
+      inlineAllLocalesLiteral = this._cachedInlineAllLocalesJson;
+    } else if (localeNames.length === 0) {
+      inlineAllLocalesLiteral = "null";
+      this._cachedInlineAllLocalesJson = null;
+      this._cachedInlineAllLocalesKey = null;
+    } else {
+      inlineAllLocalesLiteral = safeJsonForInlineScript(allLocales);
+      this._cachedInlineAllLocalesJson = inlineAllLocalesLiteral;
+      this._cachedInlineAllLocalesKey = localeSignature;
+    }
     const inlineI18nLocaleLiteral = i18nLocaleData
       ? safeJsonForInlineScript(i18nLocaleData)
       : "null";

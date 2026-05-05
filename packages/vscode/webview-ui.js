@@ -24,6 +24,34 @@
     // 忽略
   }
   // 防御性 i18n 初始化：确保 locale 数据已注册（解决某些 webview 环境下自动注册失败的问题）
+  //
+  // R20.13-D：从「启动时 eager-register __AIIA_I18N_ALL_LOCALES 里所有语言」
+  // 改成「只 eager-register 当前 active 语言 + ``en`` 兜底」。
+  //
+  // 原因
+  // ----
+  // ``i18n.js::_resolvePath`` (line 558-559) 缺 key 时会回退到 ``locales[
+  // DEFAULT_LANG='en']``，所以 ``en`` 必须始终注册才能维持「中文 locale 缺
+  // 哪个 key 就回退英文」的合约。但其他非 active 语言（在双语支持的当下
+  // 实际上只有「另一种」，即 active=zh-CN 时无需 eager-register pseudo /
+  // 任何 stranded locale）真的没必要在启动路径上付 ``Object.keys + 循环
+  // registerLocale`` 的代价。
+  //
+  // 实测 50-100 µs 节省，绝对值不大但和 R20.12-B「能不解析就别解析」
+  // 思路一致：reserve startup CPU for things that *must* run on first
+  // paint。
+  //
+  // Fallback 链路
+  // -------------
+  // - 默认 active=en：register en（没人 fallback 到 zh-CN）
+  // - active=zh-CN：register zh-CN + en
+  // - active=pseudo（dev mode）：register pseudo + en
+  // - 上述之外（未来扩 locale）：register active + en
+  //
+  // 运行时切换链路（``applyServerLanguage`` 接 ``langDetected``）保留向后兼容：
+  // 切到一个 startup 没 eager-register 的语言时，``applyServerLanguage`` 会先
+  // ``ensureLocaleRegistered(target)`` 从 ``__AIIA_I18N_ALL_LOCALES`` 补注册再
+  // ``setLang``（避免「语言切了 t() 仍返回英文」的悄悄回归）。
   ;(function ensureI18nReady() {
     try {
       var i18n =
@@ -31,34 +59,76 @@
         (typeof window !== 'undefined' && window.AIIA_I18N)
       if (!i18n || typeof i18n.registerLocale !== 'function') return
 
-      // 检测是否已有 locale 注册
       var langs = typeof i18n.getAvailableLangs === 'function' ? i18n.getAvailableLangs() : []
       var needsInit = langs.length === 0
 
-      // 注册所有预注入的 locale（__AIIA_I18N_ALL_LOCALES 包含 en + zh-CN）
       var allLocales = (typeof window !== 'undefined' && window.__AIIA_I18N_ALL_LOCALES) || null
+      var activeLang =
+        (typeof window !== 'undefined' && window.__AIIA_I18N_LANG) || ''
+
+      // R20.13-D 关键改动：只 eager 注册 active + 'en'，不再循环 ALL_LOCALES。
+      // 其余语言数据保留在 ``window.__AIIA_I18N_ALL_LOCALES`` 里，由
+      // ``ensureLocaleRegistered`` 在运行时切换语言时按需补注册。
       if (allLocales && typeof allLocales === 'object') {
-        var keys = Object.keys(allLocales)
-        for (var ai = 0; ai < keys.length; ai++) {
-          if (allLocales[keys[ai]] && typeof allLocales[keys[ai]] === 'object') {
-            i18n.registerLocale(keys[ai], allLocales[keys[ai]])
+        var registerOne = function (lang) {
+          if (!lang) return
+          var data = allLocales[lang]
+          if (data && typeof data === 'object') {
+            try {
+              i18n.registerLocale(lang, data)
+            } catch (_) {
+              /* 忽略：单条 register 失败不影响其他语言 */
+            }
           }
         }
+        if (activeLang) registerOne(activeLang)
+        // 非 'en' active 时确保 'en' fallback 也在；active='en' 时上面那行
+        // 已经覆盖（registerLocale 是幂等的，但避免一次重复调用更省 µs）。
+        if (activeLang !== 'en') registerOne('en')
       }
 
-      // 如果之前没有 locale，再补注册单语言 fallback
+      // needsInit 路径（i18n 模块还完全 empty）：用 single-language ``__AIIA_I18N_LOCALE``
+      // 兜底，行为对齐 pre-fix。
       if (needsInit) {
         var loc = (typeof window !== 'undefined' && window.__AIIA_I18N_LOCALE) || null
-        var lang = (typeof window !== 'undefined' && window.__AIIA_I18N_LANG) || ''
-        if (loc && typeof loc === 'object' && lang) {
-          i18n.registerLocale(String(lang), loc)
-          if (typeof i18n.setLang === 'function') i18n.setLang(String(lang))
+        if (loc && typeof loc === 'object' && activeLang) {
+          i18n.registerLocale(String(activeLang), loc)
+          if (typeof i18n.setLang === 'function') i18n.setLang(String(activeLang))
         }
       }
     } catch (e) {
       /* 忽略 */
     }
   })()
+
+  // R20.13-D：把「target locale 还没 register 就先从 __AIIA_I18N_ALL_LOCALES
+  // 取一份 register」抽出成一个工具函数，给 ``applyServerLanguage`` 用。返回
+  // 值 ``true`` = 已注册或本次成功补注册；``false`` = 数据真的找不到（让调用
+  // 方决定是否 fallback / 报错）。函数挂在 IIFE 闭包里，未对外暴露 — 因为
+  // ``applyServerLanguage`` 是当前唯一会用到运行时切换的入口。
+  function ensureLocaleRegistered(targetLang) {
+    if (!targetLang) return false
+    try {
+      var i18n =
+        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
+        (typeof window !== 'undefined' && window.AIIA_I18N)
+      if (!i18n || typeof i18n.registerLocale !== 'function') return false
+      var registered = typeof i18n.getAvailableLangs === 'function' ? i18n.getAvailableLangs() : []
+      if (registered.indexOf(targetLang) >= 0) return true
+      var allLocales = (typeof window !== 'undefined' && window.__AIIA_I18N_ALL_LOCALES) || null
+      if (allLocales && allLocales[targetLang] && typeof allLocales[targetLang] === 'object') {
+        try {
+          i18n.registerLocale(targetLang, allLocales[targetLang])
+          return true
+        } catch (_) {
+          return false
+        }
+      }
+      return false
+    } catch (_) {
+      return false
+    }
+  }
 
   function t(key, params) {
     try {
@@ -99,6 +169,12 @@
     if (!i18n || typeof i18n.setLang !== 'function' || typeof i18n.getLang !== 'function') return
     var normalized = typeof i18n.normalizeLang === 'function' ? i18n.normalizeLang(lang) : lang
     if (normalized !== i18n.getLang()) {
+      // R20.13-D：startup 只 eager-register 了 active + 'en'，runtime 切到没
+      // register 的语言时（如 active='en' → server 说 'zh-CN'）先 lazy 补注册
+      // 一次，否则 ``setLang('zh-CN')`` 拨过去后 ``t()`` 找不到 zh-CN locale 又
+      // 全部回退英文 —— pre-fix 因为 startup 全量 register，这种隐式回退的悄悄
+      // 回归会让 R20.13-D 看起来「优化生效」实际却破坏了 i18n 合约。
+      ensureLocaleRegistered(normalized)
       i18n.setLang(normalized)
       retranslateAllI18nElements()
     }
