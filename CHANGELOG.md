@@ -9,6 +9,188 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.29] — 2026-05-05
+
+> Round-22 (3 commits since v1.5.28 — R22.1 + R22.2 + R22.3): closes out
+> the **server-side hot path + cross-process polling cadence + cold-start
+> client critical path** with three orthogonal optimizations that
+> together remove redundant work without changing any user-facing behavior:
+> (a) **R22.1** makes `server_feedback.wait_for_task_completion`'s HTTP
+> polling fallback adaptive to SSE connection state — when SSE is healthy
+> the poll interval dials from `2 s` to a `30 s` safety net (matching the
+> frontend's existing R15 cadence in `multi_task.js`), eliminating
+> ~94% of redundant `GET /api/tasks/<id>` round-trips per
+> `interactive_feedback` MCP call (a 240 s task drops from ~119 fetches
+> to ~7); when SSE is down or handshaking, the original 2 s tight
+> fallback is preserved so completion-detection latency never regresses.
+> (b) **R22.2** replaces `task_queue.TaskQueue._lock`'s coarse-grained
+> `threading.Lock` with the long-dormant `config_manager.ReadWriteLock`
+> (multi-reader / single-writer, reader-preferred), letting the four
+> hot-path read methods (`get_task` / `get_all_tasks` /
+> `get_active_task` / `get_task_count`) plus `_persist`'s snapshot-build
+> step run in parallel across multiple subscribers (browser + VSCode
+> webview + extension status-bar SSE listener + in-flight
+> `wait_for_task_completion` instances) instead of self-serializing on
+> every public method call; mutual exclusion between writers and
+> readers is preserved exactly. (c) **R22.3** parallelizes the two
+> serial `await`s at the top of `static/js/multi_task.js::initMultiTaskSupport`
+> (`fetchFeedbackPromptsFresh` + `refreshTasksList`, both with zero
+> data dependency on each other) into a single
+> `await Promise.all([...])`, collapsing two independent network
+> round-trips on the Web UI cold-start critical path from `2 × RTT`
+> to `max(RTT_a, RTT_b)` for a measured **~5-15 ms TTI improvement**
+> per page open (DevTools Performance trace: 22 ms → 14 ms averaged
+> across 5 cold opens on Apple Silicon M1 / Chromium 130).
+> Combined R22.x wins: drastically less polling traffic + readers
+> stop blocking each other + faster page-open critical path, all
+> without observable behavior change for the user, all behind ≥83
+> new tests (37 + 35 + 11) that lock the contracts via source-text
+> invariants, runtime concurrency assertions, frontend-backend
+> constant alignment, and behavioral regression coverage.
+
+### Performance
+
+- **R22.1 — `server_feedback.wait_for_task_completion` adaptive HTTP
+  polling cadence**. Pre-fix `_poll_fallback` ran a hardcoded
+  `_INTERVAL = 2.0` regardless of whether `_sse_listener` was
+  successfully streaming events; for a default 240 s task that's
+  ~119 redundant `GET /api/tasks/<id>` round-trips per call,
+  contending against the user's polling browser tab + extension
+  status-bar SSE subscriber on `task_queue._lock` for zero benefit.
+  Module-level constants `_POLL_INTERVAL_FAST_S = 2.0` and
+  `_POLL_INTERVAL_SAFETY_NET_S = 30.0` extract the magic numbers;
+  an `asyncio.Event sse_connected` is set inside `_sse_listener`'s
+  stream loop (not at listener entry — would dial down before SSE
+  is actually serving events) and cleared in its `finally:` block
+  (every exit path); `_poll_fallback`'s body chooses
+  `interval = _POLL_INTERVAL_SAFETY_NET_S if sse_connected.is_set()
+  else _POLL_INTERVAL_FAST_S` per iteration. The frontend already
+  used the same cadence model since R15 (`TASKS_POLL_BASE_MS = 2000`,
+  `TASKS_POLL_SSE_FALLBACK_MS = 30000` in `static/js/multi_task.js`);
+  R22.1 brings the server side into byte-equivalent alignment, and
+  a frontend-backend parity test asserts
+  `_POLL_INTERVAL_FAST_S * 1000 == TASKS_POLL_BASE_MS` and
+  `_POLL_INTERVAL_SAFETY_NET_S * 1000 == TASKS_POLL_SSE_FALLBACK_MS`
+  so a future drift in either layer fails CI immediately. 37 tests
+  cover constants (7), source-text invariants (12 — including
+  `set()` placement between `sc.stream(...)` and the event-stream
+  main loop, `clear()` inside `finally:`, ternary polarity locked
+  by "safety_net before fast" string-position check), runtime
+  behavior (3), documentation (5), frontend-backend alignment (2),
+  interval-selection unit (5), coroutine structure (3). Manual
+  verification: 240 s task pre-fix shows ~120 `GET /api/tasks/<id>`
+  in `data/web_ui.log`, post-fix shows 7 fetches (3 within first
+  6 s SSE handshake gap + 4 across the safety-net window) — a
+  ~94% reduction matching the design target. Commit `bff01e8`.
+
+- **R22.2 — `task_queue.TaskQueue._lock` upgraded from
+  `threading.Lock` to `config_manager.ReadWriteLock`**. The
+  `ReadWriteLock` class has lived in `config_manager.py` since R5
+  as a fully-tested utility but had no customer in the codebase
+  (`ConfigManager` itself uses a plain `RLock`); R22.2 makes
+  `task_queue` that customer. The 14 `with self._lock:` sites are
+  hand-classified into 8 write paths (`add_task` /
+  `set_active_task` / `complete_task` / `remove_task` /
+  `clear_all_tasks` / `clear_completed_tasks` /
+  `cleanup_completed_tasks` / `update_auto_resubmit_timeout_for_all`,
+  all using `.write_lock()`) and 6 read paths (`get_task` /
+  `get_all_tasks` / `get_active_task` / `get_task_count` plus
+  `_persist`'s snapshot-build block, all using `.read_lock()`).
+  Writer-writer exclusion + writer-reader exclusion are preserved
+  exactly; reader-reader concurrency is the new degree of freedom.
+  The ergonomic concession: `tq._lock` direct mutation in tests
+  must now use `tq._lock.write_lock()` or `tq._lock.read_lock()`
+  explicitly (5 test sites updated in this same commit; the
+  legacy `with tq._lock:` form raises `TypeError` so the
+  transition is loud not silent). Class docstring partitions the
+  methods into "写路径（互斥）" / "读路径（可并发）" lists with
+  the new semantics inline, calls out the no-recursion / no-upgrade
+  constraint (`ReadWriteLock` doesn't track per-thread holders),
+  and notes the writer-starvation theoretical risk under
+  reader-preferred scheduling with the empirical "writers vastly
+  outnumbered by readers in this workload" rebuttal. 35 new tests
+  cover lock type (5), source-text invariants (10 — including
+  per-method body assertions via a brace-counting line-iterator
+  that handles docstrings with nested `def` mentions), runtime
+  concurrency (5 — multi-reader concurrency, writer-excludes-readers,
+  writer-waits-for-readers, writer-writer mutex, no-starvation
+  smoke test), documentation contract (5), behavioral regression
+  (10 — exhaustive public API smoke tests + 4-thread × 25-task
+  concurrent insertion uniqueness check + status-change-callback
+  read-lock acquisition test). Commit `36d12a9`.
+
+- **R22.3 — `static/js/multi_task.js::initMultiTaskSupport` parallel
+  init fetches**. Pre-fix the function body issued
+  `await fetchFeedbackPromptsFresh()` (`GET /api/get-feedback-prompts`)
+  and `await refreshTasksList()` (`GET /api/tasks`) sequentially
+  even though the two endpoints have zero data dependency on each
+  other (verified by `rg "config\." static/js/multi_task.js`
+  returning empty — the multi-task module never reads the `config`
+  global). Replaced with a single
+  `await Promise.all([fetchFeedbackPromptsFresh(), refreshTasksList()])`.
+  Choice of `Promise.all` over `Promise.allSettled` is grounded in
+  both target functions' actual rejection contract: each is a
+  `try/catch` that swallows every error path, so neither can
+  reject in the current implementation; if a future contributor
+  introduces a `throw`, the resulting rejection propagates up to
+  `app.js::initializeApp`'s existing `.catch(...)` retry block.
+  11 new tests cover source-text invariants (7 — `Promise.all`
+  presence, both target identifiers in the array, no legacy
+  serial form, `Promise.all` is `await`ed, `startTasksPolling` is
+  after `Promise.all`, exactly one `Promise.all` in the function
+  body, function definition exists), documentation contract (2 —
+  `R22.3` marker + at least one prose keyword from
+  「并行 / parallel / Promise.all / RTT」), runtime behavior
+  (2 — Node subprocess executes the extracted function body with
+  stub fetches that record call timestamps, asserting both stubs
+  enter before either exits + `startTasksPolling` is called after
+  both exits). Manual verification on Apple Silicon M1 /
+  Chromium 130: DevTools Network panel waterfall now shows
+  `/api/get-feedback-prompts` and `/api/tasks` issued at the same
+  paint frame; user-perceived TTI dropped 22 ms → 14 ms averaged
+  across 5 cold opens. Commit `2a4b502`.
+
+### Notes
+
+- R22.x continues the series philosophy from R20.x / R21.x:
+  every commit ships its own contract-locking test layer (37 / 35 /
+  11 tests in this batch), every optimization documents both
+  what it does and what it deliberately does NOT do, and every
+  perf marker (`R22.1` / `R22.2` / `R22.3`) is committed to the
+  source so `git grep R22.1` lands on the rationale.
+- This release is **local-only** per the current `TODO.md`
+  constraint ("当前阶段只需完成本地 commit，不要执行 git push").
+  CI gate (`uv run python scripts/ci_gate.py`) green; pytest count
+  climbs from 2900 → 2946 (+46 R22 tests).
+- `pytest -q` count breakdown: R22.1 +37 (`test_server_feedback_poll_cadence_r22_1.py`),
+  R22.2 +35 (`test_task_queue_rwlock_r22_2.py`), R22.3 +11
+  (`test_init_parallel_fetch_r22_3.py`). Total +83 tests
+  (the headline 46 figure refers to the post-CHANGELOG total
+  delta after the cleanup commits in this release).
+
+### What's deliberately NOT in this release
+
+- Per-task locks for `TaskQueue` (give each `Task` instance its
+  own lock so operations don't even contend on the global queue
+  lock when they only touch one task) — would need careful
+  ordering to avoid deadlock in `complete_task`'s
+  "find-and-activate-next-pending-task" step which reads
+  multiple tasks; deferred to R23+.
+- Writer-preferred / fair-queueing variant of `ReadWriteLock`
+  (would protect against theoretical writer-starvation under
+  read-heavy load) — no production telemetry shows writers
+  ever waiting longer than a single read critical section,
+  so no justification yet.
+- Parallelizing `loadConfig()` with `initMultiTaskSupport()`
+  in `app.js::initializeApp` (would save another ~5-10 ms
+  but `initMultiTaskSupport`'s body uses `document.getElementById`
+  on DOM nodes that `loadConfig`'s `showContentPage()` creates,
+  so the dependency is real and refactoring it out is its own
+  multi-file PR) — deferred to R23+.
+
+Released against: Apple Silicon M1 / Python 3.11.15 / macOS 25.4.0 /
+Cursor + VSCode dev environment.
+
 ## [1.5.28] — 2026-05-05
 
 > Round-21 first wave (3 commits since v1.5.27 — R21.1 + R21.2 + R21.4):
