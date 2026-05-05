@@ -44,8 +44,21 @@ loop 关闭时会 warn。
 
 SSE 事件驱动 + HTTP 轮询保底等待任务完成。
 
-双通道并行：SSE 提供 <50ms 实时检测，HTTP 轮询（每 2s）作为 SSE 断连的安全网。
+双通道并行：SSE 提供 <50 ms 实时检测，HTTP 轮询作为 SSE 断连的安全网。
 任一通道检测到完成即终止另一通道。
+
+【R22.1】HTTP 轮询节奏自适应：
+    - SSE 已连接 → 30 s safety net（与前端
+      ``static/js/multi_task.js::TASKS_POLL_SSE_FALLBACK_MS = 30000``
+      同节奏）；
+    - SSE 未连接 / 已断开 → 2 s 紧密兜底（与前端
+      ``TASKS_POLL_BASE_MS = 2000`` 同节奏）。
+    ``_sse_listener`` 进入 stream 主循环时 set ``sse_connected``，
+    所有退出路径在 finally 里 clear；``_poll_fallback`` 每周期读
+    flag 决定 interval。SSE 健康场景下，单次任务（默认 240 s 倒计时）
+    从 ~119 次冗余 fetch 减到 ~7 次（-94%），节省 web_ui 端 ``task_queue``
+    锁竞争与网络栈开销。常量见模块顶部 ``_POLL_INTERVAL_FAST_S`` /
+    ``_POLL_INTERVAL_SAFETY_NET_S``。
 
 【R13·B1 ghost-task cleanup】timeout / 父 cancel 路径下，本函数会
 在 finally 中通过 ``_close_orphan_task_best_effort`` 通知 web_ui

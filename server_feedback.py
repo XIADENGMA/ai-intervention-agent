@@ -43,6 +43,28 @@ except ImportError as e:
     NOTIFICATION_AVAILABLE = False
 
 
+# R22.1: ``wait_for_task_completion`` 的 HTTP 轮询保底节奏。
+# 设计原则：双通道兜底 = SSE 实时通道（<50 ms 完成检测）+ HTTP 轮询保底。
+# SSE 是主路径；轮询只在 SSE 故障时保命。
+#
+# - SSE 未连接（启动期 / SSE 连接失败 / 连接中断）：紧密 2s 兜底，与前端
+#   ``static/js/multi_task.js::TASKS_POLL_BASE_MS = 2000`` 同节奏，确保
+#   单次故障不会让任务完成检测延迟超过 2 s。
+# - SSE 已连接：拉成 30s safety net，与前端
+#   ``TASKS_POLL_SSE_FALLBACK_MS = 30000`` 同节奏。SSE 通道工作时
+#   每 2 s 一次的 HTTP 轮询纯粹是冗余调用——单次任务（默认 240 s 倒计时）
+#   会触发 ~119 次冗余 ``GET /api/tasks/<id>``，每次 1-3 ms 网络开销 +
+#   web_ui ``task_queue._lock`` 取锁。SSE-健康场景下，这些调用只是兜底，
+#   30s safety net 把冗余频次砍到 ~7 次/任务（-94%）。
+#
+# 边界与权衡：SSE 在 30s 窗口中段断开会让完成检测延迟到当前 30s 窗口结束
+# 后才被发现（最坏 ~30 s）。与前端同语义；考虑到 SSE 在 LAN/loopback 上
+# 几乎不掉线，且 SSE listener 故障会立即让 ``sse_connected`` flag 翻 False
+# （下一个 wait 周期就会复用 2s 紧密节奏），实操影响极小。
+_POLL_INTERVAL_FAST_S = 2.0
+_POLL_INTERVAL_SAFETY_NET_S = 30.0
+
+
 async def _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None:
     """R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
 
@@ -99,8 +121,21 @@ async def _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> 
 async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]:
     """SSE 事件驱动 + HTTP 轮询保底等待任务完成。
 
-    双通道并行：SSE 提供 <50ms 实时检测，HTTP 轮询（每 2s）作为 SSE 断连的安全网。
+    双通道并行：SSE 提供 <50 ms 实时检测，HTTP 轮询作为 SSE 断连的安全网。
     任一通道检测到完成即终止另一通道。
+
+    【R22.1】HTTP 轮询节奏自适应：
+        - SSE 已连接 → 30 s safety net（与前端
+          ``static/js/multi_task.js::TASKS_POLL_SSE_FALLBACK_MS = 30000``
+          同节奏）；
+        - SSE 未连接 / 已断开 → 2 s 紧密兜底（与前端
+          ``TASKS_POLL_BASE_MS = 2000`` 同节奏）。
+        ``_sse_listener`` 进入 stream 主循环时 set ``sse_connected``，
+        所有退出路径在 finally 里 clear；``_poll_fallback`` 每周期读
+        flag 决定 interval。SSE 健康场景下，单次任务（默认 240 s 倒计时）
+        从 ~119 次冗余 fetch 减到 ~7 次（-94%），节省 web_ui 端 ``task_queue``
+        锁竞争与网络栈开销。常量见模块顶部 ``_POLL_INTERVAL_FAST_S`` /
+        ``_POLL_INTERVAL_SAFETY_NET_S``。
 
     【R13·B1 ghost-task cleanup】timeout / 父 cancel 路径下，本函数会
     在 finally 中通过 ``_close_orphan_task_best_effort`` 通知 web_ui
@@ -124,6 +159,11 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     )
 
     completion = asyncio.Event()
+    # R22.1: SSE 通道连接状态，由 ``_sse_listener`` 维护，``_poll_fallback``
+    # 据此在每个 wait 周期选择合适的 interval（连接 → 30s safety net；
+    # 未连接 → 2s 紧密兜底）。set/clear 动作必须在 listener 内部，poll 只读，
+    # 这样语义就是"SSE 当前是否在 stream 主循环"，对完成检测的延迟影响可控。
+    sse_connected = asyncio.Event()
     result_box: list[Any] = [None]
 
     async def _fetch_result() -> dict[str, Any] | None:
@@ -149,7 +189,12 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         return None
 
     async def _sse_listener() -> None:
-        """SSE 实时通道：收到 task_changed(completed) 即通知完成。"""
+        """SSE 实时通道：收到 task_changed(completed) 即通知完成。
+
+        R22.1: stream 进入主循环前 set ``sse_connected`` 让 ``_poll_fallback``
+        切到 30s safety net 节奏；任何退出路径（正常完成、cancel、异常）
+        都在 finally 里 clear 该 flag，确保 poll 在下一周期回到 2s 紧密兜底。
+        """
         try:
             async with (
                 httpx.AsyncClient() as sc,
@@ -158,6 +203,8 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
                 ) as resp,
             ):
                 logger.debug(f"SSE 连接已建立: {task_id}")
+                # 通知 _poll_fallback：SSE 主路径已就绪，可以拉成 30s safety net
+                sse_connected.set()
                 async for line in resp.aiter_lines():
                     if completion.is_set():
                         return
@@ -182,18 +229,29 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
             raise
         except Exception as e:
             logger.debug(f"SSE 监听失败（依赖轮询保底）: {e}")
+        finally:
+            sse_connected.clear()
 
     async def _poll_fallback() -> None:
-        """HTTP 轮询保底：每 2s 检查一次，SSE 断开时仍能检测完成。"""
-        _INTERVAL = 2.0
+        """HTTP 轮询保底：SSE 已连接时 30s safety net，否则 2s 紧密兜底。
+
+        R22.1 之前固定 2s 间隔，与 SSE 主路径并行造成每任务 ~119 次
+        冗余 fetch；现在每个 wait 周期开始前读 ``sse_connected.is_set()``
+        决定 interval：SSE 健康 → 30s safety net；SSE 未起 / 已断 → 2s。
+        """
         while not completion.is_set():
             r = await _fetch_result()
             if r is not None:
                 result_box[0] = r
                 completion.set()
                 return
+            interval = (
+                _POLL_INTERVAL_SAFETY_NET_S
+                if sse_connected.is_set()
+                else _POLL_INTERVAL_FAST_S
+            )
             try:
-                await asyncio.wait_for(completion.wait(), timeout=_INTERVAL)
+                await asyncio.wait_for(completion.wait(), timeout=interval)
                 return
             except TimeoutError:
                 pass
