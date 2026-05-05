@@ -62,9 +62,16 @@ def _extract_debounce_block(text: str) -> str:
     取**最后**一个匹配，避免误匹配注释里复制的旧实现（修复版往往会
     在注释里保留 ``const debounceSaveFeedback = updates =>`` 历史片段
     作为反例对照）。两份修复后的函数体都 < 600 字符，slice 足以覆盖。
+
+    箭头函数参数可以是 ``updates`` 或 ``(updates)``——Prettier
+    `arrowParens: "always"` 默认会加括号，旧仓库 `arrowParens: "avoid"`
+    则不加。锁的是 debounce 累积语义，括号风格无关。
     """
     matches = list(
-        re.finditer(r"const\s+debounceSaveFeedback\s*=\s*updates\s*=>", text)
+        re.finditer(
+            r"const\s+debounceSaveFeedback\s*=\s*(?:updates|\(\s*updates\s*\))\s*=>",
+            text,
+        )
     )
     if not matches:
         return ""

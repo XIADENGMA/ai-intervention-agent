@@ -99,7 +99,12 @@ class TestWebviewTsInjection:
             "webview.ts 模板未写出 dir=${htmlDir}"
         )
         for prefix in ("ar", "he", "fa", "ur"):
-            assert f"'{prefix}'" in src, f"webview.ts RTL 白名单缺少 {prefix!r}"
+            # Quote-agnostic：Prettier 把数组字面量 ['ar', ...] 改写成
+            # ["ar", ...] 后旧的 single-quote-only 检查会 false-fail；
+            # 真正要锁的是「白名单包含这个前缀」，引号风格无关。
+            assert re.search(rf"['\"]{re.escape(prefix)}['\"]", src), (
+                f"webview.ts RTL 白名单缺少 {prefix!r}"
+            )
 
 
 class TestHtmlDirContextValues:

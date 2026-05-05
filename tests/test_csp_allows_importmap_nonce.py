@@ -222,15 +222,18 @@ class TestNonceCsprngContract(unittest.TestCase):
                 "nonces effectively regresses to 'unsafe-inline'."
             ),
         )
-        self.assertIn(
-            "import * as crypto from 'crypto'",
+        self.assertRegex(
             self.ts,
+            # Quote-agnostic：Prettier 默认 double-quote，但项目历史是
+            # single-quote；任意一种都得过这道闸门，避免格式化波动 → 源码
+            # lock false-fail。
+            r"""import\s+\*\s+as\s+crypto\s+from\s+['"]crypto['"]""",
             msg=(
-                "Expected `import * as crypto from 'crypto'` at the top of "
-                "webview.ts so getNonce can reach Node's CSPRNG. If a "
-                "future refactor reaches for browser-side crypto.subtle, "
-                "remember the extension host runs in Node, not the "
-                "webview's V8 isolate."
+                "Expected `import * as crypto from 'crypto'` (or "
+                "double-quoted equivalent) at the top of webview.ts so "
+                "getNonce can reach Node's CSPRNG. If a future refactor "
+                "reaches for browser-side crypto.subtle, remember the "
+                "extension host runs in Node, not the webview's V8 isolate."
             ),
         )
 

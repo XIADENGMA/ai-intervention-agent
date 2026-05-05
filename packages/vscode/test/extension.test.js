@@ -59,12 +59,16 @@ suite('Extension Test Suite', () => {
     )
     // BM-5：规避 VSCode issue #113188 retainContextWhenHidden ghost rendering
     // 两端都必须带 force-repaint 协议：host 可见时派发，webview 收到后做 rAF layer 重建
+    // Quote-agnostic：Prettier double-quote 与历史 single-quote 写法都得过；
+    // 锁的是「编译产物里出现 force-repaint 字面量」，引号风格无关。
     assert.ok(
-      webviewJs.includes("type: 'force-repaint'"),
+      webviewJs.includes("type: 'force-repaint'") ||
+        webviewJs.includes('type: "force-repaint"'),
       'webview.ts 应在 onDidChangeVisibility 可见时发送 force-repaint（BM-5）'
     )
     assert.ok(
-      webviewUi.includes("case 'force-repaint'"),
+      webviewUi.includes("case 'force-repaint'") ||
+        webviewUi.includes('case "force-repaint"'),
       "webview-ui.js 应处理 'force-repaint' 消息以清除 ghost 合成层（BM-5）"
     )
     assert.ok(
@@ -111,7 +115,11 @@ suite('Extension Test Suite', () => {
     assert.ok(settingsUi.includes("kind: 'test_macos_native'"))
     // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
     assert.ok(webviewUi.includes("type: 'tasksStats'"))
-    assert.ok(webviewJs.includes("case 'tasksStats':"))
+    // Quote-agnostic：编译产物随 prettier 切到 double-quote 后不能让源码级 lock 假 fail
+    assert.ok(
+      webviewJs.includes("case 'tasksStats':") ||
+        webviewJs.includes('case "tasksStats":')
+    )
     // 性能回归点：空闲态应自动降低轮询频率，减少无意义请求
     assert.ok(webviewUi.includes('POLL_IDLE_MS'))
     // 内存优先：Webview 状态应使用 getState/setState 持久化
@@ -137,8 +145,10 @@ suite('Extension Test Suite', () => {
       '_prefetchServerLanguage 必须有 AbortController 超时护栏'
     )
     // 侧边栏加载性能回归点：Lottie JSON 不应内联进 HTML（~445KB），由前端通过 URL 懒加载
+    // Quote-agnostic：值是字符串字面量 'null' / "null"，prettier 双引号化后等价
     assert.ok(
-      webviewJs.includes("const inlineNoContentLottieDataLiteral = 'null'"),
+      webviewJs.includes("const inlineNoContentLottieDataLiteral = 'null'") ||
+        webviewJs.includes('const inlineNoContentLottieDataLiteral = "null"'),
       '_getHtmlContent 不应将 445KB Lottie JSON 内联进 HTML'
     )
     // 边界回归点：0.0.0.0/:: 仅适合作为监听地址，扩展侧应映射为 localhost（避免客户端无法访问）
