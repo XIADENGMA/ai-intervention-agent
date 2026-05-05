@@ -30,6 +30,8 @@
 
 ##### `get_all_tasks(self) -> list[Task]`
 
+##### `get_all_tasks_with_stats(self) -> tuple[list[Task], dict[str, int]]`
+
 ##### `update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int`
 
 ##### `get_active_task(self) -> Task | None`

@@ -185,6 +185,37 @@ remove_task()     → 直接删除
 
 获取所有任务列表
 
+##### `get_all_tasks_with_stats(self) -> tuple[list[Task], dict[str, int]]`
+
+单次 read_lock 内同时拿 task list + stats，专门给 ``/api/tasks`` 用。
+
+R23.4: ``web_ui_routes/task.py::get_tasks`` 之前用 ``get_all_tasks()``
++ ``get_task_count()`` 两次独立调用，每次都进入一次 ``read_lock`` 上下
+文（R22.2 起的 ``ReadWriteLock``，单次 ~200-500 ns 的 atomic 进出 +
+readers 计数原子加减）；现在合并成一次。
+
+why：
+- ``/api/tasks`` 是 hot path（前端默认 2 s 间隔轮询，扩展状态栏 SSE
+  失败后兜底也是 3 s）：单 web_ui 进程稳态有 2-5 个并发客户端各拉一次，
+  每分钟 ~50-150 次调用。每个调用省 ~400-900 ns（一次 read_lock 进出
+  + 一次 list view 重新构造），按 100 次/min 算每分钟省 40-90 µs；
+  虽然绝对值小，但 stage R22.2 已经把 read 端优化到 RWLock 极限，再
+  细一阶就只能合并相邻的读 —— R23.4 是当前抽象层下能拿到的最后一个
+  read-side 优化。
+- **原子语义升级**：旧版两次 ``read_lock`` 中间，writer 可以插队改
+  ``_tasks`` —— 比如 ``add_task`` 在 ``get_all_tasks`` 返回后、
+  ``get_task_count`` 进入前修改了字典；调用方就拿到 N 个 task 但
+  stats 显示 N+1 个 total，前端必须容忍这种 1-step skew（之前通过
+  ``server_time`` 字段隐式协调）。新版单次 ``read_lock`` 让 list 和
+  stats 完全一致，对前端 invariant 检查更友好（虽然 R20.14-C 起 SSE
+  payload 已直接带 stats，所以这条 fetch 路径的 skew 风险本就极低）。
+
+Returns:
+    tuple[list[Task], dict[str, int]]:
+        - tasks: 与 ``get_all_tasks()`` 同语义的 list copy
+        - stats: 与 ``get_task_count()`` 同结构的 dict（含 total /
+          pending / active / completed / max）
+
 ##### `update_auto_resubmit_timeout_for_all(self, auto_resubmit_timeout: int) -> int`
 
 更新所有未完成任务的 auto_resubmit_timeout

@@ -995,13 +995,19 @@ class TestGetTasks(_RouteTestBase):
             prompt="hello world test prompt",
             auto_resubmit_timeout=120,
         )
-        mock_tq.get_all_tasks.return_value = [task]
-        mock_tq.get_task_count.return_value = {
-            "total": 1,
-            "pending": 1,
-            "active": 0,
-            "completed": 0,
-        }
+        # R23.4: 路由层改用 get_all_tasks_with_stats() 单次 read_lock 同时拿
+        # list + stats；mock 也跟着切到新 API。保留旧 API 的 mock 以兜底其它
+        # 共享代码路径（例如 SSE 回调中的 get_task_count）。
+        mock_tq.get_all_tasks_with_stats.return_value = (
+            [task],
+            {
+                "total": 1,
+                "pending": 1,
+                "active": 0,
+                "completed": 0,
+                "max": 100,
+            },
+        )
         mock_get_tq.return_value = mock_tq
 
         resp = self._client.get("/api/tasks")
@@ -1016,6 +1022,10 @@ class TestGetTasks(_RouteTestBase):
             age_seconds=10, throttle_seconds=30.0
         )
         mock_tq.cleanup_completed_tasks.assert_not_called()
+        # R23.4: 新合并 API 必须被调用一次，旧 pair 不应被路由层使用
+        mock_tq.get_all_tasks_with_stats.assert_called_once()
+        mock_tq.get_all_tasks.assert_not_called()
+        mock_tq.get_task_count.assert_not_called()
 
     @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
     def test_exception_returns_500(self, _):
