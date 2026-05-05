@@ -1010,7 +1010,12 @@ class TestGetTasks(_RouteTestBase):
         self.assertTrue(data["success"])
         self.assertEqual(len(data["tasks"]), 1)
         self.assertEqual(data["tasks"][0]["task_id"], "t1")
-        mock_tq.cleanup_completed_tasks.assert_called_once_with(age_seconds=10)
+        # R20.5：路由从未节流的 cleanup_completed_tasks 切到节流版本，
+        # 减少 hot-path 上的冗余 cleanup 调用（后台清理线程已每 5s 跑一次）。
+        mock_tq.cleanup_completed_tasks_throttled.assert_called_once_with(
+            age_seconds=10, throttle_seconds=30.0
+        )
+        mock_tq.cleanup_completed_tasks.assert_not_called()
 
     @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
     def test_exception_returns_500(self, _):

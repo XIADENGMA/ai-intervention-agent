@@ -44,6 +44,8 @@
 
 ##### `cleanup_completed_tasks(self, age_seconds: int = 10) -> int`
 
+##### `cleanup_completed_tasks_throttled(self, age_seconds: int = 10, throttle_seconds: float = 30.0) -> int`
+
 ##### `stop_cleanup(self) -> None`
 
 ##### `get_task_count(self) -> dict[str, int]`

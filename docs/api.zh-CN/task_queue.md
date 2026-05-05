@@ -379,6 +379,64 @@ remove_task()     → 直接删除
     - 后台线程默认使用 age_seconds=10
     - 可以手动调用来立即清理
 
+##### `cleanup_completed_tasks_throttled(self, age_seconds: int = 10, throttle_seconds: float = 30.0) -> int`
+
+节流版 cleanup —— 用于 hot path（如 GET /api/tasks）的兜底调用。
+
+与未节流的 ``cleanup_completed_tasks`` 行为一致，但**距离上次执行
+不足 ``throttle_seconds`` 时直接返回 0**（不加 ``self._lock``）。
+
+why
+---
+历史上 ``GET /api/tasks`` 在每次请求都会调用一次未节流 cleanup，配合
+前端 2s 轮询 + 后台清理线程的 5s 节奏，导致 cleanup 调用频率被 hot
+path 放大到后台节奏的 ~5-10x。每次 cleanup 都要：
+
+1. ``acquire(self._lock)`` — 与 ``add_task`` / ``complete_task`` /
+   ``get_all_tasks`` 共用同一把粗粒度锁，hot-path 命中会增加 lock
+   contention（虽然单次 critical section ~5µs，但乘以高频后非零）；
+2. ``datetime.now(UTC)`` — Python 层的 syscall + tz 处理；
+3. 遍历 ``self._tasks`` (O(n))，即使没有任何任务到期。
+
+本方法把 hot-path 的真实 cleanup 频率封顶到 ``1 / throttle_seconds``，
+与后台 5s 主节奏正交叠加，cleanup 总频率从 ``polls/s + 1/5`` 降为
+``1/30 + 1/5 ≈ 0.23/s``，且 99% 的请求在快路径（非锁的原子读写
++ 一次时间戳比较）上完成。
+
+参数
+----
+age_seconds : int, default 10
+    任务完成后保留的秒数，与未节流版本一致。
+throttle_seconds : float, default 30.0
+    节流窗口长度。设为 0 时退化为未节流行为（不推荐，仅用于测试）。
+
+返回
+----
+int
+    清理的任务数量；节流命中或队列空时返回 0。
+
+线程安全
+--------
+``self._hotpath_cleanup_lock`` 仅保护 ``_last_hotpath_cleanup_monotonic``
+的读写，**不**与 ``self._lock`` 嵌套（cleanup 真正执行时先释放
+``_hotpath_cleanup_lock`` 再调用未节流版本）。所以本方法对常规
+``add_task`` / ``complete_task`` 路径零阻塞影响。
+
+副作用
+------
+- 节流未触发时：可能删除过期 completed 任务（同 cleanup_completed_tasks）。
+- 节流触发时：仅一次 ``time.monotonic()`` 调用。
+
+时间复杂度
+----------
+- 节流触发（fast path）：O(1)
+- 节流未触发：O(n)，n = len(self._tasks)
+
+历史背景
+--------
+本节流策略由 R20.5 引入；触发原因是审计 v1.5.25 后的 hot path 时
+发现 ``GET /api/tasks`` 在多 client 并发场景下的冗余 cleanup 调用。
+
 ##### `stop_cleanup(self) -> None`
 
 停止后台清理线程

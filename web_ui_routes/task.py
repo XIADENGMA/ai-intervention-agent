@@ -255,7 +255,13 @@ class TaskRoutesMixin:
             try:
                 task_queue = get_task_queue()
 
-                task_queue.cleanup_completed_tasks(age_seconds=10)
+                # P0：从未节流改为节流版（30s 窗口）—— 后台清理线程已经每 5s
+                # 跑一次未节流 cleanup，hot path 上重复执行只会放大锁竞争。
+                # 保留兜底意图（后台线程异常停滞时仍能清理），但 99% 的请求
+                # 走 fast path（一次 time.monotonic + 阈值比较），不接触 _tasks。
+                task_queue.cleanup_completed_tasks_throttled(
+                    age_seconds=10, throttle_seconds=30.0
+                )
 
                 tasks = task_queue.get_all_tasks()
 
@@ -587,7 +593,12 @@ class TaskRoutesMixin:
             try:
                 task_queue = get_task_queue()
 
-                task_queue.cleanup_completed_tasks(age_seconds=10)
+                # P0：与 GET /api/tasks 同样收口为节流版（参见同文件上方注释）。
+                # 此路由是单任务详情查询，hot path 命中率比 /api/tasks 低，
+                # 但仍受益于"不在每个请求上重复扫表 + 加锁"。
+                task_queue.cleanup_completed_tasks_throttled(
+                    age_seconds=10, throttle_seconds=30.0
+                )
 
                 task = task_queue.get_task(task_id)
 
