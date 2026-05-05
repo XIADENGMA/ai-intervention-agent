@@ -9,6 +9,126 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.24] — 2026-05-05
+
+> Round-18 micro-audit hardening wave (3 commits since v1.5.23):
+> R18.2 closes a webview dispose-race that wrote false-positive
+> `webview.ready_timeout` warnings against already-disposed views;
+> R18.3 fixes a real i18n-orphan-scanner blind spot exposed by
+> Prettier's multi-line `_tl(...)` formatting (4 truly-used
+> `settings.openConfigInIde*` keys were silently flagged dead);
+> R18.4 makes 5 source-text invariants quote- and paren-agnostic
+> so future formatter passes cannot misleadingly trip them.
+
+### Fixed
+
+- **R18.2 — VSCode webview `updateServerUrl` finally now
+  short-circuits when its captured `_view` is no longer the
+  active one.** Pre-fix the finally unconditionally assigned
+  `view.webview.html = this._getHtmlContent(...)` and armed a
+  fresh `_webviewReadyTimer` even when `_preloadResources` had
+  resolved against a stale view (the user collapsed the
+  activity-bar container, the workspace tore the panel down,
+  `extension.deactivate` ran, etc., all fire
+  `onDidDispose` → `this._view = null` while the in-flight
+  HTTP probe / locale fetch keeps draining). Two visible
+  consequences disappeared: (1) occasional
+  `Webview is disposed` unhandled rejection in the extension
+  host's Output channel; (2) a 2.5 s-deferred
+  `webview.ready_timeout` warning that was a *pure* false
+  positive — the webview was already gone — but looked exactly
+  like the genuine "script never reported ready" CSP-failure
+  signal and would mislead operators triaging real injection
+  failures. Fix is a one-line guard:
+  `if (this._view !== view) return` at the top of the finally,
+  before either side-effect. The pre-finally `dispose()` already
+  cleared the *previous* `_webviewReadyTimer`; not creating a
+  new one is enough to fully close the loop. Five source-text
+  locks in `tests/test_vscode_webview_dispose_race.py`:
+  presence (guard literal exists), order (guard before
+  `setTimeout`), structural reverse-lock (guard inside
+  `_preloadResources(...).finally(() => { ... })`, not hoisted
+  to function top where it would be dead code), over-fix
+  reverse-lock (the 2.5 s `setTimeout` for *real*
+  ready-timeout observability must survive), and capture-time
+  reverse-lock (`const view = this._view` precedes
+  `_preloadResources()`, otherwise the guard degenerates to
+  `this._view !== this._view`).
+
+- **R18.3 — `i18n-orphan-scanner` regex now tolerates Prettier
+  multi-line `_tl(...)` calls.** Pre-fix
+  `scripts/check_i18n_orphan_keys.py::JS_T_CALL_RE` and the
+  byte-identical `tests/test_runtime_behavior.py::_JS_T_CALL_RE`
+  used `\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]`, requiring
+  the opening parenthesis to be immediately followed by a
+  string-quote. That assumption held for compact one-liners
+  like `_tl('foo.bar')` but Prettier (default `printWidth: 80`)
+  splits long fallback-bearing calls across lines: `_tl(\n  "settings.openConfigInIdeOpened",\n  "Opened with {editor}.",\n)`.
+  After R18.2's collateral Prettier pass over
+  `static/js/settings-manager.js` reformatted exactly four such
+  call sites (`settings.openConfigInIdeOpened` / `Ready` /
+  `Requesting` / `Unavailable`), the scanner suddenly believed
+  those four keys were never referenced — production code still
+  used them, locale JSON still defined them, but
+  `test_web_locale_no_dead_keys` and
+  `test_strict_exits_zero_when_no_orphans` both started failing
+  with a misleading "dead key" message that would have led an
+  unaware contributor to *delete* still-load-bearing locale
+  strings. Fix is a one-token relaxation: `\(['"]` → `\(\s*['"]`,
+  exactly mirroring the form
+  `scripts/check_i18n_param_signatures.py::_T_CALL_RE` already
+  used (which is why that scanner was unaffected). Both copies
+  of the regex updated together with cross-file invariant
+  comments. Three new locks in `TestRegexCoversAllWrappers`:
+  `test_prettier_multiline_call_is_matched` (the headline
+  reverse-lock — exact Prettier output reproduction);
+  `test_tab_indented_multiline_call_is_matched` (Biome /
+  hand-formatted projects use `\t`);
+  `test_single_line_compact_call_still_matched` (positive
+  reverse-lock that the relaxation does NOT regress compact
+  forms `_tl('a.b.c')` / `tl("x.y", fallback)` /
+  `t( 'spaced.inside' )` — without it a future "let's require
+  whitespace between `(` and quote" PR would break every
+  compact callsite).
+
+### Tests
+
+- **R18.4 — 5 source-text invariants now quote-/paren-agnostic.**
+  Five locks hard-coded the historical single-quote / no-paren
+  JS style and started false-failing the moment R18.2's
+  Prettier pass converted `webview.ts` and `settings-manager.js`
+  to double-quote + trailing-comma + `(updates) =>` form. Each
+  failure surfaced as a misleading "this contract was broken"
+  message that pointed reviewers at the wrong root cause:
+  `test_vscode_getNonce_uses_node_crypto` claimed
+  `import * as crypto from 'crypto'` was missing when only the
+  quote style had changed; `test_webview_template_injects_html_dir`
+  claimed the RTL whitelist had lost `'ar'` when only the
+  array-literal quote style had flipped;
+  `test_web_settings_manager_accumulates` failed to extract the
+  `debounceSaveFeedback` body because it required `updates =>`
+  while Prettier's `arrowParens: 'always'` default produces
+  `(updates) =>`; `packages/vscode/test/extension.test.js`'s
+  "Webview 应包含插入代码与提交护栏回归点" failed three times
+  over because `webviewJs.includes("type: 'force-repaint'")`,
+  `webviewJs.includes("case 'tasksStats':")`, and
+  `webviewJs.includes("const inlineNoContentLottieDataLiteral = 'null'")`
+  all rejected the corresponding double-quote forms in the
+  freshly-Prettier'd compiled output. Fix replaces each
+  substring `.includes(...)` / `assertIn(...)` lock with the
+  union of single- and double-quote variants (or, where regex
+  was already in use, broadens the regex to `['"]`), keeping
+  the *semantic* invariant intact while letting either quote
+  style pass. The `debounceSaveFeedback` extractor specifically
+  tolerates both `updates =>` and `(updates) =>`. No production
+  code changed. Inline rationale comments at each broadened
+  lock cite Prettier and the relevant ESLint config so a
+  future reviewer can see *why* the lock is permissive without
+  having to bisect the git log. Pytest count climbs
+  2475 → 2483 (+8) across R18.2 (5 new locks), R18.3 (3 new
+  locks); R18.4 only relaxes 5 existing locks rather than
+  adding new ones. Full `npm run vscode:check` 28/28 green.
+
 ## [1.5.23] — 2026-05-04
 
 ### Tooling
