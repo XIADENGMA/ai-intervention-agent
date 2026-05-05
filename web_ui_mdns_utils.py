@@ -2,6 +2,20 @@
 
 包含主机名规范化、虚拟网卡过滤、IPv4 地址探测等纯函数，
 由 WebFeedbackUI 的 mDNS 功能调用。
+
+R23.2: ``psutil`` 改成 lazy 导入。
+why：``import psutil`` 在 ``web_ui`` cold-start trace 上是 ~3 ms 的纯静态成本
+（``psutil._psosx`` ~1.5 ms + ``psutil._common`` ~1 ms + 子模块 ~0.5 ms），
+但 psutil 在本模块**唯一的使用点**是 ``_list_non_loopback_ipv4`` —— 只有
+在 mDNS 启用（``bind_interface != 127.0.0.1``）且需要枚举本机网卡时才会触发，
+而 mDNS 注册又在 ``WebFeedbackUI.run()`` 启动的 daemon thread 异步执行（R20.11
+确立的契约）。所以 main thread 的 cold-start 路径上 100% 不需要 psutil。
+本地回环开发场景（``host=127.0.0.1``）甚至**永远**用不到。
+延迟到 ``_list_non_loopback_ipv4`` 内部首次调用时才 import：
+- ``sys.modules`` 已缓存，第二次调用零成本（mDNS 一般只查一次网卡）
+- 第一次 import 在 daemon thread 中发生（mDNS 路径），不阻塞 main thread
+  的 ``app.run()`` socket listen
+- 失败仍走原有 ``except Exception`` 兜底（返回空列表 → mDNS 降级为不发布）
 """
 
 from __future__ import annotations
@@ -9,8 +23,6 @@ from __future__ import annotations
 import socket
 from ipaddress import AddressValueError, ip_address
 from typing import Any
-
-import psutil
 
 from enhanced_logging import EnhancedLogger
 
@@ -103,8 +115,15 @@ def _get_default_route_ipv4() -> str | None:
 
 
 def _list_non_loopback_ipv4(prefer_physical: bool = True) -> list[str]:
-    """枚举本机非回环 IPv4 地址（优先物理网卡）"""
+    """枚举本机非回环 IPv4 地址（优先物理网卡）。
+
+    R23.2: ``psutil`` 改成函数内 lazy import（详见模块顶部注释）。``sys.modules``
+    会自动缓存，第二次及以后调用零额外 import 成本；第一次 import 失败（极罕见，
+    psutil 是 hard dep）走 ``except Exception`` 路径，返回空列表让 mDNS 降级。
+    """
     try:
+        import psutil
+
         addrs = psutil.net_if_addrs()
         stats = psutil.net_if_stats()
     except Exception:

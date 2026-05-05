@@ -1259,8 +1259,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(True), "lo0": self._stat(True)}
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertIn("192.168.1.50", result)
@@ -1276,8 +1276,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"docker0": self._stat(True), "en0": self._stat(True)}
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=True)
             self.assertNotIn("172.17.0.1", result)
@@ -1290,8 +1290,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(False)}
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -1303,8 +1303,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(True)}
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -1312,9 +1312,7 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
     def test_psutil_exception(self):
         from web_ui import _list_non_loopback_ipv4
 
-        with patch(
-            "web_ui_mdns_utils.psutil.net_if_addrs", side_effect=RuntimeError("fail")
-        ):
+        with patch("psutil.net_if_addrs", side_effect=RuntimeError("fail")):
             result = _list_non_loopback_ipv4()
             self.assertEqual(result, [])
 
@@ -1328,8 +1326,8 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         stats = {"en0": self._stat(True), "en1": self._stat(True)}
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, ["192.168.1.1", "8.8.8.8"])
@@ -2765,8 +2763,8 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
         stats = {"en0": self._stat(True)}
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -2779,8 +2777,8 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
         stats = {"en0": self._stat(True)}
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -2796,8 +2794,8 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
         mock_ip.version = 6
 
         with (
-            patch("web_ui_mdns_utils.psutil.net_if_addrs", return_value=addrs),
-            patch("web_ui_mdns_utils.psutil.net_if_stats", return_value=stats),
+            patch("psutil.net_if_addrs", return_value=addrs),
+            patch("psutil.net_if_stats", return_value=stats),
             patch("web_ui_mdns_utils.ip_address", return_value=mock_ip),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
