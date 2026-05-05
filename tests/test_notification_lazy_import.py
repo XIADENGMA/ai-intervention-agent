@@ -229,11 +229,11 @@ class TestGracefulDegradationParity(unittest.TestCase):
         模块属性翻转——这是 Python 测试隔离的合法手段。
         """
         original = bool(self._notif_module.NOTIFICATION_AVAILABLE)
-        self._notif_module.NOTIFICATION_AVAILABLE = value  # type: ignore[invalid-assignment]
+        self._notif_module.NOTIFICATION_AVAILABLE = value  # ty: ignore[unresolved-attribute]
         return original
 
     def _restore_notification_available(self, value: bool) -> None:
-        self._notif_module.NOTIFICATION_AVAILABLE = value  # type: ignore[invalid-assignment]
+        self._notif_module.NOTIFICATION_AVAILABLE = value  # ty: ignore[unresolved-attribute]
 
     def test_test_bark_returns_500_when_notification_unavailable(self) -> None:
         original = self._set_notification_available(False)

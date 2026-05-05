@@ -63,7 +63,7 @@ def _toml_section_keys(template_path: Path) -> dict[str, set[str]]:
         if not isinstance(body, dict):
             # Top-level scalar — not a section; skip (current template has none).
             continue
-        out[section] = set(body.keys())
+        out[section] = set(body.keys())  # ty: ignore[invalid-assignment]
     return out
 
 

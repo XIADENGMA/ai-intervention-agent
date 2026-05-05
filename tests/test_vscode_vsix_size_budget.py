@@ -116,10 +116,11 @@ class TestExistingVsixWithinBudget:
     def test_vsix_artifact_under_fail_budget_if_present(self) -> None:
         candidates = sorted(VSIX_DIR.glob("*.vsix"))
         if not candidates:
-            pytest.skip(
+            msg = (
                 "packages/vscode/*.vsix 不存在（dev 机器尚未打包），跳过尺寸软 check。"
                 "CI 在 release.yml 里会主动跑 npm run package，触发硬 check。"
             )
+            pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]
         fail_mb = _extract_default_mb("FAIL_PACKED_MB_DEFAULT")
         fail_bytes = fail_mb * 1024 * 1024
         for vsix in candidates:

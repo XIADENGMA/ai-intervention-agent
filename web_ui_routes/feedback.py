@@ -420,7 +420,7 @@ class FeedbackRoutesMixin:
             if timeout_explicit:
                 raw_timeout = data.get("auto_resubmit_timeout")
                 try:
-                    timeout_int = int(raw_timeout)
+                    timeout_int = int(raw_timeout)  # ty: ignore[invalid-argument-type]
                 except Exception:
                     return (
                         jsonify(

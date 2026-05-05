@@ -152,7 +152,7 @@ class TestSSEBusLockTightening(unittest.TestCase):
             slow_put_release.wait(timeout=1.0)
             original_put_nowait(item)
 
-        slow_q.put_nowait = slow_put_nowait  # type: ignore[method-assign]
+        slow_q.put_nowait = slow_put_nowait  # ty: ignore[invalid-assignment]
         with bus._lock:
             bus._subscribers.clear()
             bus._subscribers.add(slow_q)

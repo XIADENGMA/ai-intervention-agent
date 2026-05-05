@@ -75,7 +75,7 @@ class TestLockType(_TaskQueueFixture):
         """旧用法 ``with tq._lock:`` 必须显式失败 —— 否则会静默忽略锁。"""
         tq = self._make()
         with self.assertRaises(TypeError):
-            with tq._lock:  # type: ignore[attr-defined]
+            with tq._lock:  # ty: ignore[invalid-context-manager]
                 pass
 
     def test_each_instance_has_independent_lock(self) -> None:

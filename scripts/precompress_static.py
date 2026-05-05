@@ -85,7 +85,7 @@ try:
 
     BROTLI_AVAILABLE = True
 except ImportError:
-    _brotli_mod = None  # type: ignore[assignment]
+    _brotli_mod = None  # ty: ignore[invalid-assignment]
     BROTLI_AVAILABLE = False
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

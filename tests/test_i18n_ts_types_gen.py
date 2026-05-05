@@ -131,7 +131,7 @@ class TestHostTCallsAreTypeable:
 
     def test_all_hostt_keys_present_in_dts(self) -> None:
         if not EXTENSION_TS.is_file():
-            pytest.skip("extension.ts not present in this tree")
+            pytest.skip("extension.ts not present in this tree")  # ty: ignore[too-many-positional-arguments]
         text = self._strip_comments(EXTENSION_TS.read_text(encoding="utf-8"))
         used = set(self._HOST_T_RE.findall(text))
         assert used, "expected at least one hostT('key') call"

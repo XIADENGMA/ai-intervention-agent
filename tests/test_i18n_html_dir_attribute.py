@@ -138,7 +138,7 @@ class TestHtmlDirContextValues:
 
         original = web_ui.get_config
         stub = self._StubConfig(lang)
-        web_ui.get_config = lambda: stub  # type: ignore[assignment]
+        web_ui.get_config = lambda: stub  # ty: ignore[invalid-assignment]
         try:
             return manager._get_template_context()
         finally:

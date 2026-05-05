@@ -1189,7 +1189,7 @@ class TestIsProbablyVirtualInterface(unittest.TestCase):
         from web_ui import _is_probably_virtual_interface
 
         self.assertFalse(_is_probably_virtual_interface(""))
-        self.assertFalse(_is_probably_virtual_interface(None))  # type: ignore[arg-type]
+        self.assertFalse(_is_probably_virtual_interface(None))  # ty: ignore[invalid-argument-type]
 
 
 class TestGetDefaultRouteIPv4(unittest.TestCase):
@@ -2153,7 +2153,7 @@ class TestIsIpAllowedExtended(unittest.TestCase):
 
     def test_non_dict_config(self):
         """network_security_config 不是 dict 时走空 cfg 分支（默认只允许回环）"""
-        self.ui.network_security_config = None  # type: ignore[assignment]
+        self.ui.network_security_config = None  # ty: ignore[invalid-assignment]
         self.assertTrue(self.ui._is_ip_allowed("127.0.0.1"))
         self.assertFalse(self.ui._is_ip_allowed("1.2.3.4"))
 
@@ -2307,7 +2307,7 @@ class TestMdnsLifecycle(unittest.TestCase):
             import sys
 
             saved = sys.modules.get("zeroconf")
-            sys.modules["zeroconf"] = None  # type: ignore[assignment]
+            sys.modules["zeroconf"] = None  # ty: ignore[invalid-assignment]
             try:
                 self.ui._start_mdns_if_needed()
                 self.assertIsNone(self.ui._mdns_zeroconf)
@@ -2827,7 +2827,7 @@ class TestNetworkSecurityDCLInnerBranch(unittest.TestCase):
                 def __exit__(self_lock, *args):
                     pass
 
-            web_ui._NETWORK_SECURITY_CALLBACK_LOCK = _SetFlagLock()  # type: ignore[assignment]
+            web_ui._NETWORK_SECURITY_CALLBACK_LOCK = _SetFlagLock()  # ty: ignore[invalid-assignment]
             web_ui._ensure_network_security_hot_reload_callback_registered()
             self.assertTrue(web_ui._NETWORK_SECURITY_CALLBACK_REGISTERED)
         finally:

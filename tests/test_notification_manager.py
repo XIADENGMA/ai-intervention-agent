@@ -1079,7 +1079,7 @@ class TestNotificationManagerDCLBranches(unittest.TestCase):
                 def __exit__(self_lock, *args):
                     pass
 
-            NotificationManager._lock = _RaceLock()
+            NotificationManager._lock = _RaceLock()  # ty: ignore[invalid-assignment]
             inst = NotificationManager.__new__(NotificationManager)
             self.assertIs(inst, sentinel)
         finally:
@@ -1116,7 +1116,7 @@ class TestNotificationManagerDCLBranches(unittest.TestCase):
                     pass
 
             mgr._initialized = False
-            NotificationManager._lock = _RaceLock()
+            NotificationManager._lock = _RaceLock()  # ty: ignore[invalid-assignment]
             mgr.__init__()
             self.assertTrue(mgr._initialized)
         finally:
@@ -1156,7 +1156,7 @@ class TestNotificationManagerDelayedShutdown(unittest.TestCase):
                 self._calls += 1
                 return self._calls > 1
 
-        notification_manager._shutdown_called = _DelayedTrue()  # type: ignore[assignment]
+        notification_manager._shutdown_called = _DelayedTrue()  # ty: ignore[invalid-assignment]
         try:
             event_id = notification_manager.send_notification(
                 title="delayed-test",
@@ -1266,25 +1266,25 @@ class TestNotificationConfigEdgeCases(unittest.TestCase):
     def test_retry_count_string_coerced(self):
         from notification_manager import NotificationConfig
 
-        cfg = NotificationConfig(retry_count="5")  # type: ignore[arg-type]
+        cfg = NotificationConfig(retry_count="5")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.retry_count, 5)
 
     def test_retry_count_invalid_string(self):
         from notification_manager import NotificationConfig
 
-        cfg = NotificationConfig(retry_count="abc")  # type: ignore[arg-type]
+        cfg = NotificationConfig(retry_count="abc")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.retry_count, 3)
 
     def test_retry_delay_invalid(self):
         from notification_manager import NotificationConfig
 
-        cfg = NotificationConfig(retry_delay="bad")  # type: ignore[arg-type]
+        cfg = NotificationConfig(retry_delay="bad")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.retry_delay, 2)
 
     def test_bark_timeout_invalid(self):
         from notification_manager import NotificationConfig
 
-        cfg = NotificationConfig(bark_timeout="x")  # type: ignore[arg-type]
+        cfg = NotificationConfig(bark_timeout="x")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.bark_timeout, 10)
 
     def test_bark_action_invalid_enum(self):

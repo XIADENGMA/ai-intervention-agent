@@ -640,7 +640,7 @@ class TestSingletonLogManagerDCL(unittest.TestCase):
                 def __exit__(self_lock, *args):
                     pass
 
-            SingletonLogManager._lock = _RaceLock()  # type: ignore[assignment]
+            SingletonLogManager._lock = _RaceLock()  # ty: ignore[invalid-assignment]
             inst = SingletonLogManager.__new__(SingletonLogManager)
             self.assertIs(inst, sentinel)
         finally:

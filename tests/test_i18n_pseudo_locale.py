@@ -143,7 +143,7 @@ class TestPseudoStructuralParity:
     )
     def test_key_sets_match(self, en_path: Path, pseudo_path: Path):
         if not en_path.is_file():
-            pytest.skip(f"{en_path} not present")
+            pytest.skip(f"{en_path} not present")  # ty: ignore[too-many-positional-arguments]
         assert pseudo_path.is_file(), (
             f"Missing {pseudo_path}. Run gen_pseudo_locale.py."
         )
@@ -165,7 +165,7 @@ class TestEveryLeafTransformed:
     @pytest.mark.parametrize("pseudo_path", [WEB_PSEUDO, VSCODE_PSEUDO])
     def test_all_leaves_are_bracketed(self, pseudo_path: Path):
         if not pseudo_path.is_file():
-            pytest.skip(f"{pseudo_path} not present")
+            pytest.skip(f"{pseudo_path} not present")  # ty: ignore[too-many-positional-arguments]
         leaves = _flatten(json.loads(pseudo_path.read_text(encoding="utf-8")))
         broken: list[tuple[str, str]] = []
         for k, v in leaves.items():
@@ -181,7 +181,7 @@ class TestEveryLeafTransformed:
     def test_placeholders_preserved(self, en_path: Path, pseudo_path: Path):
         """en.json 中的每个 {{name}} 必须在对应 pseudo 字符串里**原样**出现。"""
         if not (en_path.is_file() and pseudo_path.is_file()):
-            pytest.skip("locale file missing")
+            pytest.skip("locale file missing")  # ty: ignore[too-many-positional-arguments]
         en_leaves = _flatten(json.loads(en_path.read_text(encoding="utf-8")))
         ps_leaves = _flatten(json.loads(pseudo_path.read_text(encoding="utf-8")))
         missing: list[str] = []

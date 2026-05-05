@@ -1139,7 +1139,7 @@ class TestSoundProviderException(unittest.TestCase):
         config.sound_volume = 0.5
         config.sound_file = "default"
         provider = SoundNotificationProvider(config)
-        provider.sound_files = None  # type: ignore[assignment]
+        provider.sound_files = None  # ty: ignore[invalid-assignment]
         event = create_event()
         self.assertFalse(provider.send(event))
 
@@ -1303,14 +1303,14 @@ def _make_ext_event(**overrides) -> NotificationEvent:
         "metadata": {},
     }
     defaults.update(overrides)
-    return NotificationEvent(**defaults)  # type: ignore[arg-type]
+    return NotificationEvent(**defaults)  # ty: ignore[invalid-argument-type]
 
 
 class TestBarkCloseException(unittest.TestCase):
     def test_close_session_error_swallowed(self):
         cfg = _make_ext_config()
         provider = BarkNotificationProvider(cfg)
-        provider.session.close = MagicMock(side_effect=RuntimeError("close error"))  # type: ignore[assignment]
+        provider.session.close = MagicMock(side_effect=RuntimeError("close error"))  # ty: ignore[invalid-assignment]
         provider.close()
 
     def test_close_success(self):

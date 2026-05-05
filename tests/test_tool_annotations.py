@@ -26,7 +26,7 @@ def _resolved_tool() -> Tool:
     tools = asyncio.run(server.mcp.list_tools())
     tool = next((t for t in tools if t.name == "interactive_feedback"), None)
     assert tool is not None, "interactive_feedback 未在 MCP 工具列表中暴露"
-    return tool
+    return tool  # ty: ignore[invalid-return-type]
 
 
 def _resolved_annotations() -> ToolAnnotations:

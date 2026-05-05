@@ -113,13 +113,13 @@ class TestSaveTomlWithComments(unittest.TestCase):
         }
         result = self.engine._save_toml_with_comments(config)
         parsed = tomlkit.parse(result)
-        self.assertFalse(parsed["network_security"]["enable_access_control"])  # type: ignore[index]
+        self.assertFalse(parsed["network_security"]["enable_access_control"])  # ty: ignore[not-subscriptable]
 
     def test_skips_network_security_key_in_iteration(self):
         """config_to_save 中如果还残留 network_security 键，循环中跳过"""
         self.engine._original_content = SAMPLE_TOML
         engine = self.engine
-        engine._exclude_network_security = staticmethod(lambda c: c)  # type: ignore[assignment]
+        engine._exclude_network_security = staticmethod(lambda c: c)  # ty: ignore[invalid-assignment]
         config = {
             "server": {"host": "127.0.0.1", "port": 8080},
             "network_security": {"enable_access_control": True},
@@ -133,7 +133,7 @@ class TestSaveTomlWithComments(unittest.TestCase):
         config = {"top_key": {"nested": 42}}
         result = self.engine._save_toml_with_comments(config)
         parsed = tomlkit.parse(result)
-        self.assertEqual(parsed["top_key"]["nested"], 42)  # type: ignore[index]
+        self.assertEqual(parsed["top_key"]["nested"], 42)  # ty: ignore[not-subscriptable]
 
     def test_new_section_added_to_doc(self):
         """原始文档中没有的新 section 应被添加"""
@@ -141,7 +141,7 @@ class TestSaveTomlWithComments(unittest.TestCase):
         config = {"server": {"host": "127.0.0.1"}, "new_section": {"key": "value"}}
         result = self.engine._save_toml_with_comments(config)
         parsed = tomlkit.parse(result)
-        self.assertEqual(parsed["new_section"]["key"], "value")  # type: ignore[index]
+        self.assertEqual(parsed["new_section"]["key"], "value")  # ty: ignore[not-subscriptable]
 
     def test_existing_non_dict_value_overwritten(self):
         """原始文档中 section 已存在且不是 dict，直接覆盖"""
@@ -157,7 +157,7 @@ class TestUpdateTomlTable(unittest.TestCase):
 
     def _make_table(self, toml_str: str, section: str) -> Table:
         doc = tomlkit.parse(toml_str)
-        return doc[section]  # type: ignore[return-value]
+        return doc[section]  # ty: ignore[invalid-return-type]
 
     def test_update_existing_key(self):
         table = self._make_table("[s]\nk = 1\n", "s")
@@ -174,7 +174,7 @@ class TestUpdateTomlTable(unittest.TestCase):
         toml_str = "[s]\n[s.nested]\ninner = 1\n"
         table = self._make_table(toml_str, "s")
         TomlEngineMixin._update_toml_table(table, {"nested": {"inner": 99}})
-        self.assertEqual(table["nested"]["inner"], 99)  # type: ignore[index]
+        self.assertEqual(table["nested"]["inner"], 99)  # ty: ignore[not-subscriptable]
 
     def test_nested_dict_replaces_non_table(self):
         """目标键存在但不是 Table 时，dict 值直接替换"""
@@ -202,7 +202,7 @@ class TestSaveNetworkSecurityToml(unittest.TestCase):
             {"enable_access_control": True}
         )
         parsed = tomlkit.parse(result)
-        self.assertTrue(parsed["network_security"]["enable_access_control"])  # type: ignore[index]
+        self.assertTrue(parsed["network_security"]["enable_access_control"])  # ty: ignore[not-subscriptable]
 
     def test_create_ns_section_when_missing(self):
         self.engine._original_content = "[server]\nhost = '127.0.0.1'\n"
@@ -210,7 +210,7 @@ class TestSaveNetworkSecurityToml(unittest.TestCase):
             {"enable_access_control": True}
         )
         parsed = tomlkit.parse(result)
-        self.assertTrue(parsed["network_security"]["enable_access_control"])  # type: ignore[index]
+        self.assertTrue(parsed["network_security"]["enable_access_control"])  # ty: ignore[not-subscriptable]
 
     def test_preserves_other_sections(self):
         self.engine._original_content = SAMPLE_TOML
@@ -218,7 +218,7 @@ class TestSaveNetworkSecurityToml(unittest.TestCase):
             {"enable_access_control": True}
         )
         parsed = tomlkit.parse(result)
-        self.assertEqual(parsed["server"]["host"], "127.0.0.1")  # type: ignore[index]
+        self.assertEqual(parsed["server"]["host"], "127.0.0.1")  # ty: ignore[not-subscriptable]
 
 
 if __name__ == "__main__":

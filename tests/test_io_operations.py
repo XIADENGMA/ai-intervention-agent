@@ -25,7 +25,7 @@ class TestImportConfig(unittest.TestCase):
 
     def test_import_non_dict_returns_false(self):
         mgr = self._get_manager()
-        self.assertFalse(mgr.import_config("not a dict", save=False))  # type: ignore[arg-type]
+        self.assertFalse(mgr.import_config("not a dict", save=False))  # ty: ignore[invalid-argument-type]
 
     def test_import_wrapped_config(self):
         """带 "config" 包装的标准导出格式"""

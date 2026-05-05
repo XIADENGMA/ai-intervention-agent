@@ -156,9 +156,9 @@ _loguru_logger.remove()
 
 _stderr_stream = sys.__stderr__ if getattr(sys, "__stderr__", None) else sys.stderr
 
-_loguru_logger = _loguru_logger.patch(_sanitize_and_escape)  # type: ignore[arg-type]
+_loguru_logger = _loguru_logger.patch(_sanitize_and_escape)  # ty: ignore[invalid-argument-type]
 
-_sink_id = _loguru_logger.add(  # type: ignore[call-overload]
+_sink_id = _loguru_logger.add(  # ty: ignore[no-matching-overload]
     _stderr_stream,
     format="{time:YYYY-MM-DD HH:mm:ss,SSS} - {extra[logger_name]} - {level} - {message}",
     level="DEBUG",

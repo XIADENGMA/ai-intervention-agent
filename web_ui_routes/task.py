@@ -889,7 +889,7 @@ class TaskRoutesMixin:
 
                 images = extract_uploaded_images(request)
 
-                result = {
+                result: dict[str, Any] = {
                     "user_input": feedback_text,
                     "selected_options": selected_options,
                 }

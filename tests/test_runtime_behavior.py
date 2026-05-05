@@ -1375,7 +1375,7 @@ class TestTOMLConfigIntegrity(unittest.TestCase):
         try:
             import tomllib
         except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
+            import tomli as tomllib  # ty: ignore[unresolved-import]
 
         text = config_path.read_text(encoding="utf-8")
         try:
@@ -1393,7 +1393,7 @@ class TestTOMLConfigIntegrity(unittest.TestCase):
         try:
             import tomllib
         except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
+            import tomli as tomllib  # ty: ignore[unresolved-import]
 
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         missing = [s for s in self._REQUIRED_SECTIONS if s not in data]
@@ -1409,7 +1409,7 @@ class TestTOMLConfigIntegrity(unittest.TestCase):
         try:
             import tomllib
         except ModuleNotFoundError:
-            import tomli as tomllib  # type: ignore[no-redef]
+            import tomli as tomllib  # ty: ignore[unresolved-import]
 
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
         web_ui = data.get("web_ui", {})

@@ -152,7 +152,8 @@ def _update_uv_lock_version(text: str, new_version: str) -> str:
                 if ver_m:
                     prefix, _old, suffix = ver_m.groups()
                     # 保持与原文件类似的格式（缩进/换行）
-                    indent = re.match(r"^(\s*)", line).group(1)
+                    indent_match = re.match(r"^(\s*)", line)
+                    indent = indent_match.group(1) if indent_match else ""
                     lines[i] = f'{indent}{prefix}"{new_version}"{suffix}\n'
                     return "".join(lines)
 

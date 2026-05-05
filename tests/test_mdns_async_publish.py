@@ -126,7 +126,7 @@ class TestMdnsThreadLifecycle(unittest.TestCase):
             "在 mDNS conflict-probe 卡住时会让 Web UI shutdown hang 任意长时间",
         )
         # ty 类型收紧：上面 assertIsNotNone 后已经知道非 None
-        timeout_value = float(raw_timeout)  # type: ignore[arg-type]
+        timeout_value = float(raw_timeout)  # ty: ignore[invalid-argument-type]
         self.assertGreater(timeout_value, 0.0, "join timeout 必须 > 0")
         self.assertLessEqual(
             timeout_value,

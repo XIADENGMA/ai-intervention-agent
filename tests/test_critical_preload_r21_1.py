@@ -315,11 +315,12 @@ class TestPreloadDoesNotIncludeAntiPattern:
             tag = tag_match.group(0)
             href_m = re.search(r'\bhref\s*=\s*"([^"]+)"', tag)
             if href_m and "main.css" in href_m.group(1):
-                pytest.fail(
+                msg = (
                     f"R21.1 anti-pattern：``{href_m.group(1)}`` 被 preload。"
                     " main.css 已经是 head 内 ``<link rel='stylesheet'>`` 同步加载，"
                     "再 preload 一次会触发 Chrome ``Resource was preloaded but used twice`` 警告。"
                 )
+                pytest.fail(msg)  # ty: ignore[invalid-argument-type]
 
     def test_mathjax_loader_not_preloaded(self) -> None:
         head = _extract_head(_read_template())
@@ -331,11 +332,12 @@ class TestPreloadDoesNotIncludeAntiPattern:
             tag = tag_match.group(0)
             href_m = re.search(r'\bhref\s*=\s*"([^"]+)"', tag)
             if href_m and "mathjax-loader" in href_m.group(1):
-                pytest.fail(
+                msg = (
                     "R21.1 anti-pattern：``mathjax-loader.js`` 被 preload。"
                     " 它在 head 早期就 ``<script defer>``，浏览器扫到 head 时已经"
                     "在并行下载，再加 preload 没有增量收益。"
                 )
+                pytest.fail(msg)  # ty: ignore[invalid-argument-type]
 
 
 # ---------------------------------------------------------------------------

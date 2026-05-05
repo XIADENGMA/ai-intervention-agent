@@ -221,7 +221,7 @@ class TestValidateInput(unittest.TestCase):
 
     def test_non_string_prompt_raises(self):
         with self.assertRaises(ValueError):
-            validate_input(123)  # type: ignore[arg-type]
+            validate_input(123)  # ty: ignore[invalid-argument-type]
 
 
 class TestGenerateTaskId(unittest.TestCase):
@@ -444,7 +444,7 @@ class TestParseStructuredResponse(unittest.TestCase):
         self.assertTrue(len(result) >= 1)
 
     def test_non_dict_response(self):
-        result = parse_structured_response("not a dict")  # type: ignore[arg-type]
+        result = parse_structured_response("not a dict")  # ty: ignore[invalid-argument-type]
         self.assertTrue(len(result) >= 1)
 
     def test_selected_options_non_list(self):

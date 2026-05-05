@@ -175,10 +175,10 @@ enabled = "auto"
         import tomlkit
 
         parsed = tomlkit.parse(saved)
-        self.assertEqual(parsed["notification"]["enabled"], True)  # type: ignore[index]
-        self.assertEqual(parsed["mdns"]["enabled"], False)  # type: ignore[index]
+        self.assertEqual(parsed["notification"]["enabled"], True)  # ty: ignore[not-subscriptable]
+        self.assertEqual(parsed["mdns"]["enabled"], False)  # ty: ignore[not-subscriptable]
         self.assertEqual(
-            parsed["notification"]["bark_url"],  # type: ignore[index]
+            parsed["notification"]["bark_url"],  # ty: ignore[not-subscriptable]
             "https://example.com/api/push",
         )
 
@@ -2144,7 +2144,7 @@ class TestUpdateSectionNetworkSecurity(unittest.TestCase):
     def test_update_section_network_security_non_dict(self):
         mgr = ConfigManager()
         with self.assertRaises(ConfigValidationError):
-            mgr.update_section("network_security", "not dict", save=False)  # type: ignore[arg-type]
+            mgr.update_section("network_security", "not dict", save=False)  # ty: ignore[invalid-argument-type]
 
     def test_update_section_no_changes(self):
         mgr = ConfigManager()
@@ -3134,7 +3134,7 @@ class TestMigrateJsoncToToml(unittest.TestCase):
 
             content = mgr.config_file.read_text(encoding="utf-8")
             parsed = tomlkit.parse(content)
-            self.assertEqual(parsed["server"]["host"], "127.0.0.1")  # type: ignore[index]
+            self.assertEqual(parsed["server"]["host"], "127.0.0.1")  # ty: ignore[not-subscriptable]
 
     def test_migrate_json_file(self):
         """JSON 文件应被迁移为 TOML"""
@@ -3158,7 +3158,7 @@ class TestMigrateJsoncToToml(unittest.TestCase):
 
             content = mgr.config_file.read_text(encoding="utf-8")
             parsed = tomlkit.parse(content)
-            self.assertEqual(parsed["mdns"]["enabled"], "auto")  # type: ignore[index]
+            self.assertEqual(parsed["mdns"]["enabled"], "auto")  # ty: ignore[not-subscriptable]
 
     def test_migrate_preserves_mdns_true(self):
         """mdns.enabled=true 不应被改为 'auto'"""
@@ -3172,7 +3172,7 @@ class TestMigrateJsoncToToml(unittest.TestCase):
 
             content = mgr.config_file.read_text(encoding="utf-8")
             parsed = tomlkit.parse(content)
-            self.assertTrue(parsed["mdns"]["enabled"])  # type: ignore[index]
+            self.assertTrue(parsed["mdns"]["enabled"])  # ty: ignore[not-subscriptable]
 
     def test_migrate_failure_returns_false(self):
         """迁移失败（如文件读取异常）应返回 False"""
@@ -3209,7 +3209,7 @@ class TestMigrateJsoncToToml(unittest.TestCase):
 
             content = mgr.config_file.read_text(encoding="utf-8")
             parsed = tomlkit.parse(content)
-            self.assertEqual(parsed["server"]["host"], "test")  # type: ignore[index]
+            self.assertEqual(parsed["server"]["host"], "test")  # ty: ignore[not-subscriptable]
 
     def test_migrate_adds_new_section_to_template(self):
         """迁移数据中有模板没有的 section 时应追加"""
@@ -3226,7 +3226,7 @@ class TestMigrateJsoncToToml(unittest.TestCase):
 
             content = mgr.config_file.read_text(encoding="utf-8")
             parsed = tomlkit.parse(content)
-            self.assertEqual(parsed["custom_section"]["key"], "value")  # type: ignore[index]
+            self.assertEqual(parsed["custom_section"]["key"], "value")  # ty: ignore[not-subscriptable]
 
     def test_load_config_triggers_migration(self):
         """_load_config 应在非 TOML 且非显式路径时触发自动迁移"""

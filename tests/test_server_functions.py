@@ -2741,7 +2741,7 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
     def test_value_error(self):
         with self.assertRaises(ValidationError):
-            server.launch_feedback_ui(123)  # type: ignore[arg-type]
+            server.launch_feedback_ui(123)  # ty: ignore[invalid-argument-type]
 
     @patch("server_feedback.asyncio.run")
     @patch("service_manager.get_web_ui_config")
