@@ -45,10 +45,21 @@ DATA_I18N_RE = re.compile(
 # Match ``t('key')``, ``_t('key')``, ``tl('key')``, ``hostT('key')``,
 # ``__vuT('key')``, ``__domSecT('key')``, ``__ncT('key')``. The negative
 # lookbehind ``(?<![.\w])`` suppresses property-access false positives
-# like ``obj.t('x')``. Must stay in sync with
-# ``tests/test_runtime_behavior.py::_JS_T_CALL_RE``.
+# like ``obj.t('x')``. The ``\(\s*`` (rather than the historically tighter
+# ``\(``) tolerates Prettier multi-line formatting of the form ::
+#
+#     _tl(
+#       "settings.openConfigInIdeOpened",
+#       "Opened with {editor}.",
+#     )
+#
+# Without the ``\s*`` the scanner would silently miss those call sites
+# whenever Prettier (or any future formatter) decides to break the
+# argument list across lines, making truly-used keys look like dead
+# orphans and producing false positives in the strict gate. Must stay
+# in sync with ``tests/test_runtime_behavior.py::_JS_T_CALL_RE``.
 JS_T_CALL_RE = re.compile(
-    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
+    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
 )
 
 # Vendor / min'd JS that we don't own and don't want to treat as call sites.

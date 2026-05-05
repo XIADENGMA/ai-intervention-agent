@@ -121,7 +121,12 @@ _DATA_I18N_RE = re.compile(r'data-i18n(?:-[a-z][\w-]*)?="([^"]+)"')
 #   - __ncT('key')   — webview-notify-core.js 的本地 helper（P8 新增）
 # 负向先行 ``(?<![.\w])`` 避免把 ``obj.t('foo')`` 这类属性访问误判成翻译。
 _JS_T_CALL_RE = re.compile(
-    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
+    # ``\(\s*`` 而不是 ``\(``：Prettier 把
+    # ``_tl("settings.openConfigInIdeOpened", "Opened with {editor}.")``
+    # 切成多行后第一参数前会带 ``\n      `` 缩进，旧正则 silent miss → 4 个
+    # 真在用的 key 被误判 dead；锁在 R18.3。必须与
+    # ``scripts/check_i18n_orphan_keys.py::JS_T_CALL_RE`` 同步。
+    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
 )
 
 

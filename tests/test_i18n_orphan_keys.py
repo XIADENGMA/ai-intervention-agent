@@ -61,6 +61,45 @@ class TestRegexCoversAllWrappers(unittest.TestCase):
         matches = JS_T_CALL_RE.findall("myT('foo.bar')")
         self.assertEqual(matches, [])
 
+    def test_prettier_multiline_call_is_matched(self) -> None:
+        """R18.3 reverse-lock：Prettier 把长参数列表切成多行后第一参数前会带
+        换行 + 缩进；扫描器必须容忍这种格式，否则真在用的 key 会被误报为 dead。
+
+        这是一个真实历史 bug 的回归 fixture：
+        ``static/js/settings-manager.js`` 里 4 个 ``settings.openConfigInIde*``
+        key 在 Prettier 把 ``_tl(`` 切成多行后被旧正则 silent miss，
+        ``test_runtime_behavior::test_web_locale_no_dead_keys`` 误报失败。
+        """
+        # 准确还原 Prettier 行为：``_tl(`` 后立刻 ``\n`` + 6 空格缩进
+        snippet = (
+            '_tl(\n  "settings.openConfigInIdeOpened",\n  "Opened with {editor}.",\n)'
+        )
+        matches = JS_T_CALL_RE.findall(snippet)
+        self.assertIn(
+            "settings.openConfigInIdeOpened",
+            matches,
+            "Prettier 多行 _tl(\\n  'key', ...) 必须能被 JS_T_CALL_RE 识别；"
+            "否则 4 个 settings.openConfigInIde* key 会重新被误报为 dead。",
+        )
+
+    def test_tab_indented_multiline_call_is_matched(self) -> None:
+        """ESLint / Biome / Tabs-only 项目可能用 ``\\t`` 缩进而不是空格；
+        ``\\s*`` 也必须覆盖 tab，避免再开一道兼容性洞。"""
+        snippet = "tl(\n\t'foo.bar',\n\t'fallback'\n)"
+        matches = JS_T_CALL_RE.findall(snippet)
+        self.assertIn("foo.bar", matches)
+
+    def test_single_line_compact_call_still_matched(self) -> None:
+        """正向反向锁：放宽到 ``\\(\\s*`` 不能让旧的紧凑形式失配。"""
+        for call in (
+            "_tl('a.b.c')",
+            'tl("x.y", fallback)',
+            "t( 'spaced.inside' )",
+        ):
+            with self.subTest(call=call):
+                matches = JS_T_CALL_RE.findall(call)
+                self.assertTrue(matches, f"compact-form regression: {call!r} unmatched")
+
 
 class TestFlatten(unittest.TestCase):
     def test_flatten_simple(self) -> None:
