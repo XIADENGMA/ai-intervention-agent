@@ -406,6 +406,129 @@ class TestEnhancedLoggerAdvanced(unittest.TestCase):
         logger.info("msg1")
 
 
+class TestEnhancedLoggerFastPathShortCircuit(unittest.TestCase):
+    """R20.6: EnhancedLogger.log 在 effective level 低于 logger 阈值时
+    应当 fast-path 短路，不走 deduplicator（避免锁竞争 + cache 污染）。
+
+    历史问题：原实现先 ``deduplicator.should_log()`` 再交由 stdlib 过滤，
+    导致 WARNING 级别 logger 上每次 debug() 调用都付出 dedup 锁竞争代价，
+    最终 debug 消息却被丢弃。Fast-path 短路让 isEnabledFor=False 的消息
+    在进入 dedup 之前 return。
+    """
+
+    def _make_logger_with_clean_dedup(self, name: str) -> EnhancedLogger:
+        logger = EnhancedLogger(name)
+        # 用全新的 deduplicator，确保测试间隔离
+        logger.deduplicator = LogDeduplicator(time_window=60.0, max_cache_size=100)
+        return logger
+
+    def test_debug_filtered_does_not_populate_dedup_cache(self):
+        """logger=WARNING 时，debug 调用必须 short-circuit，不进 dedup cache。"""
+        logger = self._make_logger_with_clean_dedup("test_fastpath_debug")
+        logger.setLevel(logging.WARNING)
+
+        for i in range(50):
+            logger.debug(f"hot-path debug message {i}")
+
+        self.assertEqual(
+            len(logger.deduplicator.cache),
+            0,
+            "WARNING-level logger 上的 debug 调用必须 short-circuit；"
+            "dedup cache 不应被这些不会输出的消息污染。"
+            f"实际 cache 大小：{len(logger.deduplicator.cache)}",
+        )
+
+    def test_info_filtered_does_not_populate_dedup_cache(self):
+        """logger=WARNING 时，info 调用同样 short-circuit。"""
+        logger = self._make_logger_with_clean_dedup("test_fastpath_info")
+        logger.setLevel(logging.WARNING)
+
+        for i in range(50):
+            logger.info(f"hot-path info message {i}")
+
+        self.assertEqual(
+            len(logger.deduplicator.cache),
+            0,
+            "WARNING-level logger 上的 info 调用必须 short-circuit",
+        )
+
+    def test_warning_passes_through_to_dedup(self):
+        """logger=WARNING 时，warning 消息正常进 dedup（不能被 short-circuit 误伤）。"""
+        logger = self._make_logger_with_clean_dedup("test_fastpath_warning")
+        logger.setLevel(logging.WARNING)
+
+        logger.warning("real warning message")
+
+        self.assertEqual(
+            len(logger.deduplicator.cache),
+            1,
+            "warning 消息必须进入 dedup cache（被 stdlib 接受）",
+        )
+
+    def test_level_mapping_promotes_to_error_passes_through(self):
+        """``_get_effective_level`` 把 INFO 提升到 ERROR 时必须能输出（mapping 优先于原 level 检查）。"""
+        logger = self._make_logger_with_clean_dedup("test_fastpath_mapping_up")
+        logger.setLevel(logging.WARNING)
+
+        # "服务启动失败" 在 level_mapping 中映射到 ERROR
+        # 调用方传 INFO，但实际 effective_level=ERROR > WARNING → 必须输出
+        logger.info("服务启动失败 - 端口被占用")
+
+        self.assertEqual(
+            len(logger.deduplicator.cache),
+            1,
+            "level_mapping 把 INFO 提升到 ERROR 后必须通过 fast-path；"
+            "如果 short-circuit 错误地先用 raw INFO 判断会误丢这条 ERROR 消息。",
+        )
+
+    def test_level_mapping_demotes_to_debug_short_circuited(self):
+        """``_get_effective_level`` 把 INFO 降到 DEBUG 时必须被 short-circuit。"""
+        logger = self._make_logger_with_clean_dedup("test_fastpath_mapping_down")
+        logger.setLevel(logging.WARNING)
+
+        # "收到反馈请求" 在 level_mapping 中映射到 DEBUG
+        # 调用方传 INFO，但实际 effective_level=DEBUG < WARNING → short-circuit
+        logger.info("收到反馈请求 - test_payload")
+
+        self.assertEqual(
+            len(logger.deduplicator.cache),
+            0,
+            "level_mapping 把 INFO 降到 DEBUG 后必须被 short-circuit；"
+            "如果 short-circuit 错误地先用 raw INFO 判断会让这条 DEBUG 消息进 cache。",
+        )
+
+    def test_dynamic_level_change_recovers_visibility(self):
+        """从 WARNING 切到 DEBUG 后第一条 debug 消息必须立即可见（验证副作用更新文档）。
+
+        原实现下，WARNING 期间发的 N 条 "x" debug 都进了 dedup cache（虽然没输出），
+        切到 DEBUG 后第 N+1 条 "x" 在 5s 窗口内会被 dedup 误判为"重复 N+1 次"。
+        Fast-path 修复后，WARNING 期间的 debug 不进 cache，切到 DEBUG 后的第一条
+        debug 是首次入 cache，正常输出。
+        """
+        logger = self._make_logger_with_clean_dedup("test_fastpath_dynamic")
+        logger.setLevel(logging.WARNING)
+
+        # WARNING 期间发 5 条同样的 debug —— short-circuit 路径
+        for _ in range(5):
+            logger.debug("ghost cache hit")
+
+        self.assertEqual(
+            len(logger.deduplicator.cache),
+            0,
+            "WARNING 期间发的 debug 不应在 dedup cache 留痕（避免幽灵命中）",
+        )
+
+        # 切到 DEBUG 后第一条 debug 应进 cache 并被记录
+        logger.setLevel(logging.DEBUG)
+        logger.debug("ghost cache hit")
+
+        self.assertEqual(
+            len(logger.deduplicator.cache),
+            1,
+            "切到 DEBUG 后第一条 debug 必须进 cache（不被 stale cache 命中）",
+        )
+
+
 class TestGetLogLevelFromConfig(unittest.TestCase):
     """get_log_level_from_config 函数"""
 

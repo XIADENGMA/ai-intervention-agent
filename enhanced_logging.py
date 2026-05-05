@@ -252,8 +252,34 @@ class EnhancedLogger:
         return default_level
 
     def log(self, level: int, message: str, *args: Any, **kwargs: Any) -> None:
-        """记录日志，带去重和级别映射"""
+        """记录日志，带去重和级别映射
+
+        Fast path：在调用 ``deduplicator.should_log`` 之前先用底层 stdlib
+        ``isEnabledFor`` 短路。``deduplicator`` 内部要 ``acquire(self.lock)``
+        + ``hash(message)`` + cache 查表（可能触发懒清理），单次 ~1-3 µs；
+        但如果当前 effective level 已经被过滤，所有这些工作最终都会被丢弃。
+        WARNING 级别（默认）+ 高频 ``debug`` / ``info`` 调用场景下，原实现
+        每次 debug 调用都付出 dedup 锁竞争代价，但所有 debug 消息最终都会
+        被 stdlib 层过滤——典型的"先工作再判断"反模式。
+
+        why effective_level（不是 raw level）作为短路判断
+        ------------------------------------------------
+        ``_get_effective_level`` 会把"服务启动失败"等关键词从 caller 传入的
+        INFO/DEBUG 强制提升到 ERROR；反之"收到反馈请求"会从 INFO 降到 DEBUG。
+        因此 effective_level 可能比 raw level **更高或更低**，不能用 raw level
+        预判，必须先做 mapping 再短路。``_get_effective_level`` 自身只做字典
+        9-key 遍历 + 字符串 ``in`` 检查（~0.5 µs），远便宜过 dedup 路径。
+
+        副作用差异
+        ----------
+        预过滤 debug 消息现在不再进入 ``deduplicator`` cache。这与用户预期
+        一致：从 WARNING 动态切到 DEBUG 后，第一条 debug 消息应当立即输出，
+        而不是被原本不会输出的"幽灵 cache 命中"沉默掉。
+        """
         effective_level = self._get_effective_level(message, level)
+        if not self.logger.isEnabledFor(effective_level):
+            return
+
         should_log, duplicate_info = self.deduplicator.should_log(message)
 
         if should_log:
