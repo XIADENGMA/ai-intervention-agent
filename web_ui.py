@@ -383,12 +383,28 @@ class WebFeedbackUI(
                 }
             },
         )
+        # P0 / R20.7：``/api/config`` 是被 VSCode webview + 浏览器 web UI 每 ~2-30s
+        # 反复轮询的 hot path，handler 中的 ``render_markdown(active_task.prompt)``
+        # 是 ~5-20 ms 的 CPU 密集型路径（codehilite Pygments + footnote AST + LaTeX
+        # 扫描 + nl2br rewrite 等 10+ 扩展）。但 prompt 在同一个 task 生命周期内
+        # **不会变**（除非 ``/api/update`` 显式改写或新 task 接管 active），所以
+        # 同一个文本会被重新解析几十到几百次。
+        #
+        # 缓存策略：以完整 prompt 字符串为 key，渲染后的 HTML 为 value，dict 配合
+        # 插入顺序当 LRU。容量 16 = 远大于 ``max_tasks=10``，在合理使用场景下能
+        # 同时缓存所有 active + pending 任务的渲染结果，命中率应接近 100%。
+        # 共享 ``_md_lock``：避免在 ``self.md.reset() / convert()`` 期间又有
+        # 线程穿越 cache miss 路径触发并发 reset/convert（``markdown.Markdown``
+        # 实例**非线程安全**，不能并发 convert）。
+        self._md_cache: dict[str, str] = {}
+        self._md_cache_capacity: int = 16
 
     def render_markdown(self, text: str) -> str:
         """渲染Markdown文本为HTML
 
         功能说明：
             将Markdown格式的文本转换为HTML，应用代码高亮、表格、LaTeX等扩展。
+            **R20.7：附带 LRU 缓存**——同一 ``text`` 重复调用直接命中 cache。
 
         参数说明：
             text: Markdown格式的文本字符串（支持GFM风格）
@@ -398,20 +414,55 @@ class WebFeedbackUI(
 
         处理流程：
             1. 检查文本是否为空
-            2. 重置 Markdown 实例状态（避免脚注编号、TOC 跨渲染泄漏）
-            3. 调用self.md.convert()进行Markdown到HTML转换
-            4. 应用所有启用的扩展（代码高亮、表格、脚注等）
-            5. 返回渲染后的HTML
+            2. **缓存查表**：命中则 LRU touch（pop + 重新插入末尾）后直接返回
+            3. **缓存未命中**：重置 Markdown 实例 → convert → 写入 cache
+               （超过容量时 evict 最旧条目）
+
+        缓存语义
+        --------
+        - **key**：完整 prompt 字符串（避免 hash 冲突；prompt 长度受
+          ``PROMPT_MAX_LENGTH`` 上限保护，单条最多 ~50KB）。
+        - **value**：渲染后的 HTML 字符串。
+        - **容量**：16 条（远大于 ``max_tasks=10``，合理场景命中率 ~100%）。
+        - **LRU 实现**：``dict`` 插入顺序保证（Python 3.7+），命中时
+          ``pop`` + 重新插入把热条目移到末尾，逐出时
+          ``next(iter(...))`` 是最旧的 key。
+
+        线程安全
+        --------
+        - 共享 ``self._md_lock``：``markdown.Markdown`` 实例非线程安全，
+          ``reset() + convert()`` 必须串行执行；缓存读写也在同一锁内，
+          避免 cache write 与 markdown convert race。
+        - 没用 ``RLock`` 因为方法内部不会递归 acquire 自己。
 
         注意事项：
             - 空文本返回空字符串（避免None错误）
             - HTML未进行额外的XSS过滤，依赖Markdown库的安全性
+            - cache 不在 ``/api/update`` 时显式失效——新 prompt 会作为新 key
+              进入 cache，旧 key 自然 LRU evict，简化逻辑且无正确性问题。
         """
         if not text:
             return ""
         with self._md_lock:
+            # Fast path：缓存命中
+            cached = self._md_cache.get(text)
+            if cached is not None:
+                # LRU touch：把命中条目移到末尾（最近使用）
+                self._md_cache.pop(text)
+                self._md_cache[text] = cached
+                return cached
+
+            # Slow path：渲染
             self.md.reset()
-            return str(self.md.convert(text))
+            html = str(self.md.convert(text))
+
+            # 写入 cache（超容量时逐出最旧条目）
+            if len(self._md_cache) >= self._md_cache_capacity:
+                # ``dict`` 保证插入顺序，``next(iter(...))`` 是最旧 key
+                oldest_key = next(iter(self._md_cache))
+                self._md_cache.pop(oldest_key, None)
+            self._md_cache[text] = html
+            return html
 
     def setup_routes(self) -> None:
         """注册所有API路由和静态资源路由

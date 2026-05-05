@@ -115,6 +115,7 @@ Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管
 
 功能说明：
     将Markdown格式的文本转换为HTML，应用代码高亮、表格、LaTeX等扩展。
+    **R20.7：附带 LRU 缓存**——同一 ``text`` 重复调用直接命中 cache。
 
 参数说明：
     text: Markdown格式的文本字符串（支持GFM风格）
@@ -124,14 +125,32 @@ Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管
 
 处理流程：
     1. 检查文本是否为空
-    2. 重置 Markdown 实例状态（避免脚注编号、TOC 跨渲染泄漏）
-    3. 调用self.md.convert()进行Markdown到HTML转换
-    4. 应用所有启用的扩展（代码高亮、表格、脚注等）
-    5. 返回渲染后的HTML
+    2. **缓存查表**：命中则 LRU touch（pop + 重新插入末尾）后直接返回
+    3. **缓存未命中**：重置 Markdown 实例 → convert → 写入 cache
+       （超过容量时 evict 最旧条目）
+
+缓存语义
+--------
+- **key**：完整 prompt 字符串（避免 hash 冲突；prompt 长度受
+  ``PROMPT_MAX_LENGTH`` 上限保护，单条最多 ~50KB）。
+- **value**：渲染后的 HTML 字符串。
+- **容量**：16 条（远大于 ``max_tasks=10``，合理场景命中率 ~100%）。
+- **LRU 实现**：``dict`` 插入顺序保证（Python 3.7+），命中时
+  ``pop`` + 重新插入把热条目移到末尾，逐出时
+  ``next(iter(...))`` 是最旧的 key。
+
+线程安全
+--------
+- 共享 ``self._md_lock``：``markdown.Markdown`` 实例非线程安全，
+  ``reset() + convert()`` 必须串行执行；缓存读写也在同一锁内，
+  避免 cache write 与 markdown convert race。
+- 没用 ``RLock`` 因为方法内部不会递归 acquire 自己。
 
 注意事项：
     - 空文本返回空字符串（避免None错误）
     - HTML未进行额外的XSS过滤，依赖Markdown库的安全性
+    - cache 不在 ``/api/update`` 时显式失效——新 prompt 会作为新 key
+      进入 cache，旧 key 自然 LRU evict，简化逻辑且无正确性问题。
 
 ##### `setup_routes(self) -> None`
 
