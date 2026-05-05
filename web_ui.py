@@ -197,6 +197,10 @@ class WebFeedbackUI(
         self._mdns_service_info: Any | None = None
         self._mdns_hostname: str | None = None
         self._mdns_publish_ip: str | None = None
+        # R20.11: mDNS register 在后台 daemon 线程异步执行，避免 1.7s 的 conflict-probe
+        # 阻塞 Flask listen socket 的可用性。run() 启动 thread，_stop_mdns 在 finally
+        # 中 join 等待清理。
+        self._mdns_thread: threading.Thread | None = None
         self.feedback_result: FeedbackResult | None = None
         self._project_root: Path = Path(__file__).resolve().parent
         self.current_prompt = prompt if prompt else ""
@@ -1121,7 +1125,16 @@ class WebFeedbackUI(
             print(f"请在浏览器中打开: http://{self.host}:{self.port}")
 
         # mDNS 发布（默认：bind_interface 不是 127.0.0.1 时启用）
-        self._start_mdns_if_needed()
+        # R20.11：异步发布以避免 zeroconf.register_service 的 ~1.7s mDNS conflict-probe
+        # 阻塞 app.run() 进入 listen。后台 daemon 线程并行注册；_stop_mdns 会 join 线程。
+        # 用户访问 http://127.0.0.1:port / http://<lan-ip>:port 不依赖 mDNS 名字解析，
+        # 仅 LAN 上的其他设备使用 ai.local 时才会等 mDNS announcement 完成。
+        self._mdns_thread = threading.Thread(
+            target=self._start_mdns_if_needed,
+            name="ai-agent-mdns-register",
+            daemon=True,
+        )
+        self._mdns_thread.start()
 
         print("🔄 页面将保持打开，可实时更新内容")
         print()
