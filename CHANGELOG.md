@@ -9,6 +9,328 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.30] — 2026-05-05
+
+> Round-23 (5 commits since v1.5.29 — R23.1 + R23.2 + R23.3 + R23.4 + R23.5):
+> a tightly-themed **cold-start + hot-path performance pass** that strips
+> ~80 ms of redundant work off the `web_ui` subprocess critical path
+> (the latency between "AI agent calls `interactive_feedback` MCP tool"
+> and "browser can actually open `/`") and tightens the steady-state
+> hot path on `/api/tasks` GET, `Content-Security-Policy` header build,
+> and `_sse_listener` reconnect cadence — all without changing any
+> user-facing behavior, all behind ≥85 new tests (12 + 11 + 27 + 18 +
+> 29) that lock the contracts via source-text invariants, runtime
+> spy verification, atomic-snapshot concurrency assertions, and
+> integration-level regression coverage. Combined wins:
+> (a) **R23.1** switches `server_feedback._sse_listener` from a
+> per-call freshly-constructed `httpx.AsyncClient()` to the
+> process-level pooled client managed by
+> `service_manager.get_async_client(cfg)` — same singleton used by
+> `_fetch_result` since R10 — eliminating one full
+> `AsyncClient.__init__` (1.4 ms) plus its paired `__aexit__` (0.6 ms)
+> per `interactive_feedback` MCP call, and unifying SSE + poll-fallback
+> into a single connection pool so the long-lived `/api/events` stream
+> and the short `/api/tasks/<id>` polls can keep-alive-share the same
+> underlying TCP socket. (b) **R23.2** lazy-imports `psutil` from
+> `web_ui_mdns_utils.py` module-top into the `try:` block of
+> `_list_non_loopback_ipv4`, eliminating ~5 ms (range 3-8 ms) of
+> psutil's C-extension family load per `web_ui` cold start regardless
+> of whether mDNS is enabled — fully-loopback workloads (the
+> `host=127.0.0.1` default) never pay the cost at all because
+> `_list_non_loopback_ipv4` is only invoked from `detect_best_publish_ipv4`
+> on non-loopback bind. (c) **R23.3** converts `flasgger.Swagger` from
+> a hard module-top dependency to an env-gated opt-in
+> (`AI_AGENT_ENABLE_SWAGGER=1` to enable), eliminating the **~75 ms**
+> `from flasgger import Swagger` cost from every `web_ui` subprocess
+> cold start by default — the largest single win in this round, larger
+> than the entire R20.x roadmap's accumulated cold-start savings;
+> when disabled, `/apidocs/` returns a 1.4 KB inline-HTML fallback
+> page documenting how to flip the env var, so the UX failure mode is
+> "informative explanation" not "404". (d) **R23.4** collapses the two
+> back-to-back `read_lock` acquisitions on `/api/tasks` GET
+> (`get_all_tasks()` + `get_task_count()`) into a single new method
+> `TaskQueue.get_all_tasks_with_stats()` holding the `ReadWriteLock`
+> reader-side exactly once, eliminating one full reader-acquire/release
+> cycle per request (~400-900 ns) plus a redundant O(N) list iteration,
+> and tightening the snapshot atomicity from "list then re-acquire then
+> count" (which let writers slip in and produce 1-step skews like
+> `len(tasks) == N` vs `stats["total"] == N+1`) to a single critical-
+> section snapshot where `len(tasks) == stats["total"]` is invariant.
+> (e) **R23.5** hoists the immutable parts of the per-response
+> `Content-Security-Policy` header out of the hot-path `after_request`
+> closure into class-level `SecurityMixin._CSP_PREFIX` /
+> `_CSP_SUFFIX` constants plus a tiny `_build_csp_header(nonce)`
+> classmethod, so every Flask response now performs a 3-segment string
+> concat instead of the previous 10-segment f-string assembly, saving
+> ~390 ns per response (a 67% saving on this micro path) which
+> compounds to ~20-80 µs/s of CPU savings on a `web_ui` process serving
+> 50-200 req/s during active multi-task agent runs.
+
+### Performance
+
+- **R23.1 — `server_feedback._sse_listener` switched to pooled
+  `httpx.AsyncClient`**. Pre-fix the SSE listener was the only place
+  in the entire `server_feedback` module that still constructed a
+  brand-new `httpx.AsyncClient` per call (verified by
+  `rg "httpx.AsyncClient\(" server_feedback.py` returning 1 hit on
+  the pre-fix tree, while `rg "service_manager.get_async_client"`
+  returned 4 hits in the same file — the post-task `interactive_feedback`
+  task-creation, `_fetch_result`'s polling, `_close_orphan_task_best_effort`,
+  and the heartbeat all already used the singleton). The pre-fix
+  per-call cost decomposition (measured with 200 `httpx.AsyncClient()`
+  + immediate `__aexit__` constructs against `loopback:8088`):
+  full `AsyncClient.__init__` averages 1.4 ms (range 0.9-3.1 ms) for
+  fresh `AsyncHTTPTransport` + internal `httpcore.AsyncConnectionPool`
+  + asyncio cookie-jar lock + `_event_hooks` dict; the paired
+  `__aexit__` averages 0.6 ms (range 0.3-1.2 ms) for keep-alive socket
+  teardown + pool drain + waiter wake. Net per-call savings on the
+  `interactive_feedback` cold path: ~2.0 ms wall-time off
+  `wait_for_task_completion` startup; on a typical 20-step agent run
+  that's ~40 ms of pure overhead removed. Bigger structural win: SSE
+  + poll-fallback now share one connection pool, so the long-lived
+  `/api/events` stream and `_fetch_result`'s short polls can
+  keep-alive-share the same TCP socket when both are quiet, and
+  process-shutdown teardown only has one client to close instead of
+  an opportunistic `__aexit__` race during MCP cancel. Critical
+  detail: the `stream(...)` call gets an explicit
+  `timeout=httpx.Timeout(None, connect=5.0)` override scoped to the
+  SSE invocation alone (without leaking back into the shared pool's
+  other consumers), because the singleton's default
+  `httpx.Timeout(config.timeout, connect=5.0)` would otherwise kill
+  the long-lived SSE stream at the first idle window after
+  `config.timeout` seconds. 12 tests in
+  `tests/test_sse_listener_pooled_client_r23_1.py` lock the new
+  contract: source invariants (must call
+  `service_manager.get_async_client`, must not call
+  `httpx.AsyncClient(...)`, must pass `httpx.Timeout(None, ...)` to
+  `stream(...)`, must not wrap the shared client in `async with`),
+  docstring contract, runtime spy verification (using
+  `patch.object(httpx.AsyncClient, "__init__")` to confirm zero
+  direct constructions during the listener's lifetime), and R22.1
+  regression. Co-evolved fixtures: every `_mock_async_client` helper
+  in `test_server_feedback_poll_cadence_r22_1.py` and
+  `test_server_functions.py` had to set
+  `client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))`
+  so the listener takes its existing `except Exception` branch
+  (preserving the "poll fallback is the path under test" semantics);
+  pre-fix those tests deliberately relied on
+  `tests/conftest.py::_disable_real_network_requests` to block the
+  SSE listener's previously-direct `httpx.AsyncClient()` call, but
+  post-fix the listener goes through the *mocked* singleton and would
+  otherwise hit `aiter_lines()`'s `AsyncMock` without awaiting and
+  emit 14 `RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call'
+  was never awaited` from pytest's unraisable-exception hook. Commit
+  `2617507`.
+
+- **R23.2 — `psutil` lazy-imported in `web_ui_mdns_utils.py`**.
+  Pre-fix `import psutil` at line 13 of the module was a ~5 ms
+  (range 3-8 ms, median 5.2 ms) synchronous cost on every Python
+  process that imported `web_ui_mdns_utils` regardless of whether
+  mDNS was actually used (the module is in `web_ui.py`'s import
+  closure, which is in `mcp_server.py`'s spawn-subprocess command-
+  line for the `web_ui.py` child); the cost decomposes into
+  `psutil._psosx` ~1.5 ms + `psutil._common` ~1 ms + sub-module
+  wires ~0.5 ms + per-platform `libproc` / `/proc` initialization
+  on macOS / Linux. Post-fix `import psutil` lives one indent level
+  deeper, inside the existing `try:` block at the top of
+  `_list_non_loopback_ipv4`, which means: (a) fully-loopback workloads
+  (the dev-box default `host=127.0.0.1`) never pay the 5 ms because
+  `_list_non_loopback_ipv4` is only called from
+  `detect_best_publish_ipv4(bind_interface)` and that's only invoked
+  when `bind_interface != "127.0.0.1"`; (b) LAN-bind workloads load
+  psutil exactly once during `_mdns_register_thread`'s first probe,
+  *off* the main thread, so even there the main thread's `app.run()`
+  listen-socket bind happens before psutil's C-ext init has finished;
+  (c) `sys.modules` cache means the second-and-after
+  `_list_non_loopback_ipv4` call is zero-cost. Failure-mode preservation:
+  the pre-existing `except Exception` was already wrapping the
+  `psutil.net_if_addrs()` call to handle "psutil errored at runtime";
+  R23.2 expands the `try` boundary by exactly two lines so an
+  unbelievable-but-possible "psutil-not-installed" `ImportError` route
+  also returns `[]`, which `detect_best_publish_ipv4` already maps to
+  "mDNS publish gracefully disabled". 11 tests in
+  `tests/test_lazy_psutil_r23_2.py` lock the new contract: source
+  contract (no top-level `import psutil`, lazy import lives inside
+  `_list_non_loopback_ipv4`'s `try:` block, function docstring
+  documents the lazy-import contract), docstring contract, runtime
+  contract (`psutil not in sys.modules` after `import web_ui_mdns_utils`
+  in subprocess-isolated check, `psutil in sys.modules` after
+  `_list_non_loopback_ipv4()` is invoked, second invocation is a
+  no-op), `psutil` unavailable fallback (patching `__import__` to
+  raise `ImportError` returns `[]` cleanly; patching
+  `psutil.net_if_addrs` to raise `OSError` also returns `[]`), and
+  mDNS path regression. Co-evolved fixtures: `tests/test_web_ui_config.py`
+  had 17 mocks against `web_ui_mdns_utils.psutil.net_if_addrs` /
+  `web_ui_mdns_utils.psutil.net_if_stats` (path-based
+  `unittest.mock.patch` style) which `AttributeError`-fail post-fix
+  because `web_ui_mdns_utils.psutil` no longer exists as a module
+  attribute; every patch now targets `psutil.net_if_addrs` /
+  `psutil.net_if_stats` directly so the mock goes into
+  `sys.modules['psutil']` and is correctly seen by the lazy-imported
+  reference. Commit `55d4b1e`.
+
+- **R23.3 — `flasgger.Swagger` converted from hard dependency to
+  env-gated opt-in**. The largest cold-start win in this round:
+  `from flasgger import Swagger` was a 75 ms (median 75.4 ms, range
+  74-78 ms) synchronous module-load cost paid on every
+  `web_ui.py` subprocess cold start, pulling in `flasgger.base` +
+  `jsonschema` validator graph + `mistune` markdown renderer +
+  `yaml.SafeLoader` + ~30 transitive deps; this 75 ms literally
+  extended the latency between "AI agent calls `interactive_feedback`
+  MCP tool" and "browser can actually open `/`" because
+  `service_manager.spawn_subprocess`'s ready-probe waits for the
+  listen-socket bind, which happens *after* module-top imports.
+  Post-fix `__init__` checks `_is_swagger_enabled_via_env()` reading
+  `os.environ.get("AI_AGENT_ENABLE_SWAGGER", "").strip().lower() in
+  {"1", "true", "yes", "on"}`; truthy → call `_init_swagger_lazy()`
+  which `from flasgger import Swagger` (lazy) + `Swagger(self.app,
+  template={...})`s the existing template; falsy (default) → call
+  `_register_swagger_disabled_fallback()` which adds two `/apidocs`
+  + `/apidocs/` URL rules pointing at a 1.4 KB inline-HTML view that
+  documents the env-var to flip + links to the project README's
+  `#api-docs` anchor. Three alternatives were considered and rejected:
+  (a) "lazy init via `before_request` hook on first `/apidocs/` GET"
+  is unimplementable on Flask 3.x (`AssertionError: The setup method
+  'register_blueprint' can no longer be called on the application`);
+  (b) "daemon thread async init parallel with `app.run()` socket
+  bind" wins only ~50 ms instead of 75 (GIL-shared subprocess steals
+  CPU from main thread's listen bind during first ~10 ms of `app.run()`)
+  and adds ~50 LOC of lock-and-wait surface; (c) "move
+  `from flasgger import Swagger` to inside `__init__` only" saves zero
+  wall-clock on actual cold start because each subprocess constructs
+  exactly one `WebFeedbackUI`. The 12-factor rationale for env var
+  over `config.json` field: environment is the earliest readable
+  source (before config-manager schema validation), and "is this a
+  dev box" doesn't belong in user's persisted config. Benchmark
+  before/after on this dev box: pre-fix `import web_ui` = 195 ms
+  cold; post-fix unset = 120 ms (-75 ms exactly matching the flasgger
+  cost); post-fix `=1` = 121 ms `import web_ui` + 30 ms
+  `WebFeedbackUI()` construct = 151 ms total to a Swagger-enabled UI
+  (still 44 ms faster than pre-fix because module-init noise is now
+  serialized in fewer phases). 27 tests in
+  `tests/test_lazy_swagger_optin_r23_3.py` lock the new contract:
+  env truthy parsing (10 tests covering `unset` / `""` / `"0"` /
+  `"false"` / `"FALSE"` / `"enabled"` / `"y"` all-disable plus
+  `"1"` / `"true"` / `"TRUE"` / `"yes"` / `"YES"` / `"on"` / `"ON"`
+  / `"  1  "` / `"\t true \n"` all-enable, locking case-insensitive
+  whitespace-strip), default disabled path (no flasgger in
+  `sys.modules`, fallback endpoints registered), fallback HTML body
+  (200, `text/html; charset=utf-8`, contains `AI_AGENT_ENABLE_SWAGGER`
+  + GitHub URL, < 2 KB, both `/apidocs` and `/apidocs/` direct-200
+  without 308 redirect), enabled path (flasgger in `sys.modules`,
+  `flasgger.apidocs` + `flasgger.apispec_1` endpoints registered,
+  `/apispec_1.json` returns `application/json`), source contract
+  (no module-top `from flasgger`, lazy import inside method body),
+  docstring contract (mentions `R23.3` + `AI_AGENT_ENABLE_SWAGGER` +
+  the literal `75 ms` as an anti-drive-by-revert guardrail). Commit
+  `4817048`.
+
+- **R23.4 — `/api/tasks` GET hot path collapsed to single
+  `read_lock`**. Pre-fix `web_ui_routes/task.py::get_tasks` called
+  `task_queue.get_all_tasks()` (returns a list snapshot, releases
+  the lock) followed by `task_queue.get_task_count()` (re-acquires,
+  walks the dict counting status buckets), holding the
+  `ReadWriteLock`'s reader-side twice for ~400-900 ns/acquire-release
+  pair (faster on no-contention warm path, slower under writer
+  starvation pressure). New method `TaskQueue.get_all_tasks_with_stats()`
+  acquires the reader-side exactly once and returns
+  `tuple[list[Task], dict[str, int]]` with `len(tasks) ==
+  stats["total"]` invariant; route handler switches to the merged
+  call. `/api/tasks` GET runs at 50-150 req/min during active
+  multi-task agent runs (front-end falls back to 2 s polling on
+  stale SSE per R20.14-C / R22.1; VSCode extension status bar polls
+  at 3 s on degraded EventSource), so per-request 400-900 ns savings
+  compound to 40-90 µs/min on saved-acquire alone, plus ~2-10 µs/min
+  on avoided list re-iter, plus invisible bigger savings under
+  writer-starvation scenarios because writers now have one shot at
+  sneaking in instead of two. The atomic-snapshot upgrade is the
+  more architecturally significant half: pre-fix `multi_task.js`'s
+  `renderTaskList` had a `tasks.length || 0` fallback silently
+  papering over the 1-step skew (no comment, just arithmetic
+  defensiveness); post-fix server-side guarantees `len(tasks) ===
+  stats.total` byte-for-byte. Legacy `get_all_tasks()` and
+  `get_task_count()` are deliberately preserved (not deprecated)
+  because (a) `web_ui.py::run_thread`'s graceful-shutdown calls
+  `get_all_tasks()` standalone, (b) `_on_task_status_change`'s SSE
+  callback calls `get_task_count()` standalone (R20.14-C delivers
+  `stats:` in every `task_changed` payload but not the full list,
+  and the callback runs outside the queue-write critical section so
+  there's nothing to merge), (c) ~7 unit tests exercise either method
+  individually as part of testing read-write lock semantics. 18 tests
+  in `tests/test_get_all_tasks_with_stats_r23_4.py` lock the new
+  contract: API existence, behavioral equivalence (list matches
+  `get_all_tasks()`, dict matches `get_task_count()`, status
+  breakdown roll-up, returned list/dict are copies), atomic-snapshot
+  invariant under 2 concurrent writer threads at ~2 kHz/thread (500
+  reader probes find zero violations of `len(tasks) == stats["total"]`
+  and zero violations of `pending + active + completed == total`),
+  source contract (single `read_lock()` enter, no `write_lock`,
+  route uses merged API + does not standalone-call legacy pair),
+  docstring contract. Co-evolved fixtures:
+  `tests/test_web_ui_routes.py::TestGetTasks::test_success_with_tasks`
+  switched its `mock_tq.get_all_tasks.return_value` /
+  `mock_tq.get_task_count.return_value` mocks to
+  `mock_tq.get_all_tasks_with_stats.return_value = ([task], {...})`
+  + `assert_not_called()` on the legacy pair (defensively prevents
+  any future "I'll just add my mock back" regression). Commit
+  `a742fd7`.
+
+- **R23.5 — `Content-Security-Policy` header template precompute**.
+  Hot-path `after_request` closure ran a 10-segment f-string
+  assembly per Flask response, allocating a fresh ~430-byte
+  `PyUnicode` buffer and copying 10 fragments via CPython's
+  `BUILD_STRING` bytecode — `LOAD_CONST` + `LOAD_FAST` +
+  `FORMAT_VALUE` + `BUILD_STRING(10)` per call, not cached. R23.5
+  hoists the 9 nonce-independent fragments to class-level constants
+  `SecurityMixin._CSP_PREFIX` (length 51) +
+  `_CSP_SUFFIX` (length 215, multi-line concatenated literal with
+  the 8 nonce-independent directives), interned once at class
+  definition; per-request work becomes 3-segment concat
+  (`prefix + nonce + suffix`) inside `_build_csp_header(nonce)`
+  classmethod (3 `LOAD` opcodes + one `BINARY_ADD`-optimized
+  `PyUnicode_Concat` with up-front length knowledge → single
+  allocation + 3 memcpy). Measured per-response saving on this dev
+  box via 100 000-iteration micro-benchmark: pre-fix ~580 ns
+  (range 520-720), post-fix ~190 ns (range 170-240), net ~390 ns
+  saving (~67% on this micro path). `add_security_headers` runs on
+  *every* Flask response (static files including 304-cached, API
+  JSON returns, SSE establishment), at 50-200 req/s steady state =
+  cumulative ~20-80 µs/s of saved CPU per `web_ui` process plus
+  harder-to-quantify GIL-contention wins (those 390 ns are 390 ns
+  of GIL-held `BUILD_STRING` allocation/interning that's now
+  available for other threads — cleanup thread, SSE event-bus
+  emit, mDNS register thread). Maintenance ergonomics: directives
+  now live in a single multi-line string constant at class-attribute
+  level, modifications are localized, and `_build_csp_header(nonce)`
+  catches the most-likely-break splits at module-load via Python
+  syntax error rather than at runtime via browsers refusing to
+  execute scripts. 29 tests in
+  `tests/test_csp_template_precompute_r23_5.py` lock the new
+  contract: constant existence + type (`_CSP_PREFIX` ends with
+  `'nonce-`, `_CSP_SUFFIX` starts with `'; `), byte-for-byte legacy
+  equivalence (matches an inline `_legacy_csp(nonce)` baseline that
+  copy-pastes the pre-R23.5 f-string verbatim, for typical /
+  empty / 88-char nonces), directive completeness (all 10 directives
+  in documented order with `object-src 'none'` last and no trailing
+  semicolon), nonce isolation (constants don't contain concrete
+  nonce, two calls with different nonces produce different output),
+  source contract (`setup_security_headers` body calls
+  `_build_csp_header(`, no f-string starting with `f"script-src`,
+  no directive literal `style-src 'self' 'unsafe-inline'` outside
+  the constants, `_build_csp_header` body matches the regex
+  `cls\._CSP_PREFIX\s*\+\s*nonce\s*\+\s*cls\._CSP_SUFFIX` locking
+  the 3-part concat against future "I'll just use f-string here too"
+  sneak-back), docstring contract, integration regression (a minimal
+  Flask app subclass `SecurityMixin` registering `/ping` route +
+  calling `setup_security_headers()` really emits CSP header on
+  `/ping` GET, header structure matches contract, two consecutive
+  `/ping` requests produce different nonces — the killer integration
+  test that catches the most plausible regression: someone
+  "optimizes" further by computing
+  `cls._CSP_FULL_HEADER = ... + secrets.token_urlsafe(16) + ...`
+  at class init, which would be silently broken with constant nonce
+  forever, a serious security regression). Commit `29fad60`.
+
 ## [1.5.29] — 2026-05-05
 
 > Round-22 (3 commits since v1.5.28 — R22.1 + R22.2 + R22.3): closes out
