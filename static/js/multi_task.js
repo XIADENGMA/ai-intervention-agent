@@ -2403,11 +2403,19 @@ function showNewTaskNotification(count, taskIds) {
 async function initMultiTaskSupport() {
   console.log('Initializing multi-task support…')
 
-  // 启动时预加载一次提示语（也会填充设置面板里的 config file）
-  await fetchFeedbackPromptsFresh()
-
-  // 立即获取一次任务列表（不等待轮询）
-  await refreshTasksList()
+  // R22.3：冷启关键路径并行化。
+  // why：`fetchFeedbackPromptsFresh()` (`GET /api/get-feedback-prompts`) 与
+  // `refreshTasksList()` (`GET /api/tasks`) 在数据流上彼此独立——前者只
+  // 写 `window.feedbackPrompts` + 设置面板的 `config-file-path` 输入框，
+  // 后者只写任务列表 UI，两者没有共享变量也没有时序依赖。串行 await 等
+  // 于把两个独立的网络往返叠加成 2× RTT；改 `Promise.all` 后两个请求在
+  // 同一个事件循环 tick 内并行下发，关键路径压到 max(RTT_a, RTT_b)，
+  // 在典型 LAN/loopback 上节省 ~5-15 ms 的 user-perceived TTI 延迟。
+  // 失败兜底：两个调用各自内部已经 try/catch 退化（前者保留默认 prompt，
+  // 后者由 polling 健康检查回收），所以单个 reject 不会掀翻另一个；用
+  // `Promise.all` 是安全的——任何一个 rejection 仍会向上抛，但目前两个
+  // 函数都是 swallow-and-fallback 风格，事实上不会 reject。
+  await Promise.all([fetchFeedbackPromptsFresh(), refreshTasksList()])
 
   // 启动定时轮询
   startTasksPolling()

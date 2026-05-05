@@ -481,13 +481,17 @@ class TestBehaviouralRegression(_TaskQueueFixture):
     def test_add_task_then_get_task(self) -> None:
         tq = self._make()
         self.assertTrue(tq.add_task("t1", "p1"))
-        self.assertEqual(tq.get_task("t1").prompt, "p1")
+        task = tq.get_task("t1")
+        self.assertIsNotNone(task)
+        assert task is not None  # type-narrowing
+        self.assertEqual(task.prompt, "p1")
 
     def test_get_active_task_when_first_added(self) -> None:
         tq = self._make()
         tq.add_task("t1", "p1")
         active = tq.get_active_task()
         self.assertIsNotNone(active)
+        assert active is not None  # type-narrowing
         self.assertEqual(active.task_id, "t1")
 
     def test_complete_then_auto_activate_next(self) -> None:
@@ -497,6 +501,7 @@ class TestBehaviouralRegression(_TaskQueueFixture):
         tq.complete_task("t1", {"feedback": "ok"})
         active = tq.get_active_task()
         self.assertIsNotNone(active)
+        assert active is not None  # type-narrowing
         self.assertEqual(active.task_id, "t2")
 
     def test_remove_task_does_not_affect_others(self) -> None:
@@ -547,7 +552,10 @@ class TestBehaviouralRegression(_TaskQueueFixture):
         tq.add_task("t1", "p1")
         tq.add_task("t2", "p2")
         self.assertTrue(tq.set_active_task("t2"))
-        self.assertEqual(tq.get_active_task().task_id, "t2")
+        active = tq.get_active_task()
+        self.assertIsNotNone(active)
+        assert active is not None  # type-narrowing
+        self.assertEqual(active.task_id, "t2")
 
     def test_concurrent_writes_serialise_safely(self) -> None:
         """高并发写不应出现状态错乱：每个 task_id 唯一，最终任务数正确。"""
