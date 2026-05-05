@@ -12,9 +12,97 @@ from enhanced_logging import EnhancedLogger
 
 if TYPE_CHECKING:
     from flask import Flask
+    from flask.wrappers import Response
     from flask_limiter import Limiter
 
 logger = EnhancedLogger(__name__)
+
+
+# R20.14-D：静态资源 gzip 预压缩响应器
+# ============================================================================
+#
+# ``scripts/precompress_static.py`` 离线把 ``static/css/*.css``、
+# ``static/js/*.js``、``static/locales/*.json`` 这类大文件压成 ``<file>.gz``
+# 副本。本 helper 把「请求带 ``Accept-Encoding: gzip`` 时优先返回 ``.gz``」
+# 的协商写到一个地方，三个 serve_* 路由共享。
+#
+# 失败兜底：
+# - ``.gz`` 不存在 → 返回原文件（zero overhead）；
+# - 客户端不支持 gzip → 返回原文件（这种 client 在 2026 年几乎绝迹，但保留）；
+# - 任何 IO 异常 → fallback 到原路径，让上层路由处理常规 404 / 500。
+#
+# 必须给所有响应（无论是否 gzip）打 ``Vary: Accept-Encoding``，让 CDN /
+# 反向代理知道「同一 URL 在不同 Accept-Encoding 下产出不同响应」，避免一个
+# 客户端拿到的 .gz 被另一个不支持 gzip 的客户端从中间缓存里命中。
+
+
+def _client_accepts_gzip(req_obj: object | None = None) -> bool:
+    """简单解析 ``Accept-Encoding`` 是否包含 gzip。
+
+    不去解析 q 值（``gzip;q=0`` 表示明确拒绝，但实践中极少出现），保持解析
+    成本最低。从 unit test 角度也好 mock。
+    """
+    accept = (req_obj or request).headers.get("Accept-Encoding", "")
+    if not accept:
+        return False
+    # 最简化解析：分号前看 token 是不是 'gzip'
+    for token in accept.split(","):
+        token = token.strip().split(";", 1)[0].strip().lower()
+        if token in ("gzip", "*"):
+            return True
+    return False
+
+
+def _send_with_optional_gzip(
+    directory: Path,
+    filename: str,
+    *,
+    mimetype: str | None = None,
+) -> Response:
+    """``send_from_directory`` 的 gzip-aware 版本。
+
+    若：
+    - 客户端在 ``Accept-Encoding`` 里声明支持 gzip；
+    - ``directory / (filename + '.gz')`` 存在；
+
+    则发送 ``.gz`` 文件，并打上：
+    - ``Content-Encoding: gzip``
+    - ``Content-Type``: 用原文件 ``filename`` 的扩展名推断（不让 send_from_directory
+      把它识别成 ``application/gzip``）
+
+    否则退化到 ``send_from_directory(directory, filename)`` —— 即历史行为。
+
+    所有响应都打 ``Vary: Accept-Encoding``。
+    """
+    gz_filename = filename + ".gz"
+    gz_path = directory / gz_filename
+
+    use_gzip = False
+    try:
+        use_gzip = _client_accepts_gzip() and gz_path.is_file()
+    except OSError:
+        use_gzip = False
+
+    if use_gzip:
+        # 发送预压缩字节，但 Content-Type 用原文件类型 —— 浏览器 Accept-Encoding
+        # 协商的语义就是「内容是 X 类型，传输用 gzip 编码」。如果让 Flask 自己
+        # 推断 mimetype，它会看到 .gz 后缀返回 application/gzip，浏览器就会把它
+        # 当成下载文件而不是 JS / CSS / JSON 来执行 / 应用。
+        response = send_from_directory(str(directory), gz_filename, mimetype=mimetype)
+        response.headers["Content-Encoding"] = "gzip"
+    else:
+        response = send_from_directory(str(directory), filename, mimetype=mimetype)
+
+    # 即使没用 gzip 也要打 Vary，否则中间缓存可能错配。
+    existing_vary = response.headers.get("Vary", "")
+    if "Accept-Encoding" not in existing_vary:
+        response.headers["Vary"] = (
+            f"{existing_vary}, Accept-Encoding".lstrip(", ")
+            if existing_vary
+            else "Accept-Encoding"
+        )
+
+    return response
 
 
 class StaticRoutesMixin:
@@ -172,7 +260,11 @@ class StaticRoutesMixin:
 
             actual_filename = self._get_minified_file(css_dir, filename, ".css")
 
-            response = send_from_directory(str(css_dir), actual_filename)
+            # R20.14-D：``Accept-Encoding: gzip`` + 同名 ``.gz`` 时，发送预压缩
+            # 副本（运行时零 CPU 开销，体积砍 70-85%）；否则原路径不变。
+            response = _send_with_optional_gzip(
+                css_dir, actual_filename, mimetype="text/css"
+            )
 
             if request.args.get("v"):
                 response.headers["Cache-Control"] = (
@@ -217,7 +309,10 @@ class StaticRoutesMixin:
 
             actual_filename = self._get_minified_file(js_dir, filename, ".js")
 
-            response = send_from_directory(str(js_dir), actual_filename)
+            # R20.14-D：同 serve_css，gzip 协商优先，无 .gz 副本则透明 fallback。
+            response = _send_with_optional_gzip(
+                js_dir, actual_filename, mimetype="application/javascript"
+            )
 
             if request.args.get("v"):
                 response.headers["Cache-Control"] = (
@@ -238,6 +333,35 @@ class StaticRoutesMixin:
             )
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Service-Worker-Allowed"] = "/"
+            return response
+
+        @self.app.route("/static/locales/<filename>")
+        @self.limiter.exempt
+        def serve_locales(filename: str) -> ResponseReturnValue:
+            """提供 i18n 语言包 JSON 文件。
+
+            R20.14-D 引入此路由前，``/static/locales/<lang>.json`` 走 Flask
+            默认 ``static_folder`` 处理，没有 gzip 协商。语言包单文件 ~11 KB，
+            gzip 后 ~2 KB，对 ``language='auto'`` 模式（R20.12-B 的 inline
+            优化对它无效）的首屏 i18n 切换体感影响明显。
+
+            白名单：仅 ``.json`` 防止意外暴露其他类型文件。
+            缓存：带 ``?v=hash`` 走 1 年 immutable，无版本号走 1 小时短缓存。
+            """
+            if not filename or not str(filename).lower().endswith(".json"):
+                abort(404)
+
+            locales_dir = self._project_root / "static" / "locales"
+            response = _send_with_optional_gzip(
+                locales_dir, filename, mimetype="application/json"
+            )
+
+            if request.args.get("v"):
+                response.headers["Cache-Control"] = (
+                    "public, max-age=31536000, immutable"
+                )
+            else:
+                response.headers["Cache-Control"] = "public, max-age=3600"
             return response
 
         @self.app.route("/static/lottie/<filename>")
@@ -267,8 +391,10 @@ class StaticRoutesMixin:
                 abort(404)
 
             lottie_dir = self._project_root / "static" / "lottie"
-            return send_from_directory(
-                str(lottie_dir), filename, mimetype="application/json"
+            # R20.14-D：Lottie JSON 通常 50-200 KB（``loading-leaves.json`` 即
+            # 50 KB+），gzip 后 ~10-30 KB，3-5× 体积比，值得协商压缩。
+            return _send_with_optional_gzip(
+                lottie_dir, filename, mimetype="application/json"
             )
 
         @self.app.route("/favicon.ico")
