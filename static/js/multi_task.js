@@ -365,6 +365,9 @@ var updateCountdownDisplay = window.updateCountdownDisplay
 var TASKS_POLL_BASE_MS = 2000
 var TASKS_POLL_MAX_MS = 30000
 var TASKS_POLL_SSE_FALLBACK_MS = 30000
+// 单次 /api/tasks 请求的硬超时；超时后 abort，避免半开连接 hang 住整个轮询机制。
+// 与 packages/vscode/webview-ui.js 的 POLL_TASKS_TIMEOUT_MS 对齐（6s）。
+var TASKS_POLL_TIMEOUT_MS = 6000
 var tasksPollBackoffMs = TASKS_POLL_BASE_MS
 var tasksPollAbortController = null
 var tasksPollVisibilityHandlerInstalled = false
@@ -500,6 +503,23 @@ async function fetchAndApplyTasks(reason) {
     fetchOptions.signal = tasksPollAbortController.signal
   }
 
+  // 硬超时护栏：服务端半开连接 / 网络黑洞会导致 fetch 永不返回，
+  // 进而冻结 scheduleNextTasksPoll → 整个轮询机制失效（健康检查也无法识别，
+  // 因为 tasksPollingTimer 仍为已 fired 的非 null ID）。
+  // 6s 内未返回则强制 abort，让上层 backoff/重试逻辑接管。
+  let tasksTimeoutId = null
+  if (tasksPollAbortController) {
+    tasksTimeoutId = setTimeout(() => {
+      try {
+        if (tasksPollAbortController) {
+          tasksPollAbortController.abort()
+        }
+      } catch (e) {
+        // 忽略：abort 可能因状态已变而抛异常
+      }
+    }, TASKS_POLL_TIMEOUT_MS)
+  }
+
   try {
     const response = await fetch('/api/tasks', fetchOptions)
     if (!response.ok) {
@@ -561,13 +581,22 @@ async function fetchAndApplyTasks(reason) {
 
     return false
   } catch (error) {
-    // AbortError：正常的“防重叠”路径，不计为错误
+    // AbortError：正常的“防重叠”或“硬超时”路径，不计为错误
     if (error && (error.name === 'AbortError' || error.code === 20)) {
       return false
     }
     console.error('Failed to fetch task list:', error)
     return false
   } finally {
+    // 清理硬超时定时器（成功路径与异常路径都需要）
+    if (tasksTimeoutId !== null) {
+      try {
+        clearTimeout(tasksTimeoutId)
+      } catch (e) {
+        // 忽略
+      }
+      tasksTimeoutId = null
+    }
     // 释放 controller（避免长期持有）
     tasksPollAbortController = null
   }
