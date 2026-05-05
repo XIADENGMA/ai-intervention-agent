@@ -9,6 +9,325 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.27] — 2026-05-05
+
+> Round-20 final wave (8 commits since v1.5.26 — R20.10 → R20.14):
+> closes out the user-directed four-layer performance roadmap
+> ("深挖性能优化，先从本体 MCP 开始，再到网页, 再到插件, 再到整体").
+> **R20.10** (notification first-touch hoist via `find_spec`) takes
+> `import web_ui` from **192 ms → 156 ms (-36 ms / -19%)**; **R20.11**
+> (mDNS daemon-thread async publish) shrinks the Web UI subprocess
+> spawn-to-listen wall time from **1922 ms → 203 ms (-1718 ms / -89.4%)**
+> — the single largest user-perceived latency win in the entire R20.x
+> batch, directly visible as faster first `interactive_feedback`
+> round-trips. **R20.12** (browser runtime cold-start) lands three
+> orthogonal cuts: `mathjax-loader.js` defer (FCP head-block elimination),
+> inline locale JSON (30-80 ms RTT save when language is non-`auto`),
+> `createImageBitmap` async-decode migration (40-60% wall-time reduction
+> on first image paste). **R20.13** (VSCode plugin) lands six orthogonal
+> cuts; the headline is `BUILD_ID` lazy-load via `fs.existsSync('.git')`
+> gate, taking production VSIX activation from **8.12 ms → 30 µs
+> (-99.6%)**. **R20.14** wraps the batch with cross-layer infrastructure:
+> A — end-to-end perf benchmark (`scripts/perf_e2e_bench.py`) +
+> regression gate (`scripts/perf_gate.py`) + `tests/data/perf_e2e_baseline.json`
+> baseline; C — SSE pre-serialize + lock-tightening + embedded `stats`
+> for optimistic plugin status-bar updates (status-bar tick from
+> ~85 ms → ~2 ms); D — gzip pre-compression (`scripts/precompress_static.py`)
+> + `Accept-Encoding`-aware static route negotiator + dedicated
+> `/static/locales/*` route (2.5 MB → 796 KB / -68% wire size, with
+> the largest single asset `tex-mml-chtml.js` going 1.17 MB → 264 KB
+> / -77%); E — `docs/perf-r20-roadmap.md` (English) +
+> `docs/perf-r20-roadmap.zh-CN.md` (Chinese mirror) capturing the
+> full R20.x narrative + measurements + trade-offs as a single
+> coherent document. End-to-end "AI agent calls `interactive_feedback`
+> → user sees Web UI fully translated and ready to type" wall-clock
+> latency: **~1980 ms → ~360 ms across the entire R20.x batch (-82%)**.
+
+### Performance
+
+- **R20.10 — `web_ui_routes/notification.py` lazy-loads
+  `notification_manager` / `notification_providers` via
+  `importlib.util.find_spec` + first-touch hoist on the three notification
+  routes.** Pre-fix the Web UI subprocess paid ~65 ms at every cold start
+  to load `notification_manager` (which transitively loaded `httpx` /
+  `pydantic` / `concurrent.futures.ThreadPoolExecutor` / `config_manager` /
+  `notification_models`) plus ~7 ms for `notification_providers`'s `Bark`
+  provider stack — pure dead weight on every Web UI cold start because
+  most users go entire sessions without hitting any of the three
+  notification endpoints (`/api/test-bark`, `/api/notify-new-tasks`,
+  `/api/update-notification-config`). Fix: at module load only call
+  `find_spec("notification_manager")` (~100 µs vs ~65 ms full load) and
+  `find_spec("notification_providers")` (~50 µs) to set
+  `NOTIFICATION_AVAILABLE = bool(spec)` capability flag, declare 5
+  module-level `Foo: Any = None` placeholders so existing 24 test
+  fixtures' `mock.patch("web_ui_routes.notification.notification_manager", ...)`
+  keep working unchanged, add `_ensure_notification_loaded()` /
+  `_ensure_bark_provider_loaded()` lazy-load helpers guarded by
+  `if notification_manager is None:` short-circuit so mocks correctly
+  bypass the lazy-import branch, and inject single-line `_ensure_*` calls
+  at the entry of each route handler. **Measured `import web_ui`: 192 ms
+  → 156 ms (-36 ms / -19%)**. Cumulative `import web_ui` improvement
+  relative to pre-R20.8 baseline: **425 ms → 156 ms (-269 ms / -63%)**.
+  Trade-off: first user click on "Test Bark Push" / first
+  `/api/notify-new-tasks` / first notification config save pays a
+  one-shot ~65 ms lazy-load tax; subsequent calls reuse `sys.modules`
+  cache via the `if notification_manager is None:` short-circuit, so
+  amortized cost trends to zero. Seventeen new tests lock the contract
+  across 5 axes: subprocess-isolated decoupling invariants
+  (`'notification_manager' not in sys.modules` after `import web_ui` in
+  a fresh subprocess), `NOTIFICATION_AVAILABLE` correctness via
+  `find_spec`, graceful-degradation parity (3 routes' 500 / `status:
+  skipped` paths preserved when `NOTIFICATION_AVAILABLE=False`),
+  source-text invariants (7 grep-based regressions guards forbidding
+  any module-top-level `from notification_manager import ...`), and
+  lazy-load caching semantics (first `/api/test-bark` call in fresh
+  subprocess populates `sys.modules['notification_manager']`).
+
+- **R20.11 — `WebFeedbackUI.run()` publishes mDNS service info from a
+  background daemon thread instead of synchronously blocking on
+  `zeroconf.register_service`.** Pre-fix `web_ui.py::run()` invoked
+  `self._start_mdns_if_needed()` synchronously before reaching
+  `app.run(host=..., port=...)`; the inner `zeroconf.register_service`
+  per RFC 6762 §8 sends 3× 250 ms multicast probes followed by an
+  announcement burst plus settle delay, totaling ~1.7 s of pure
+  protocol-mandated wall-clock blocking on every Web UI subprocess
+  cold start (verified via `subprocess.run([..., zc.register_service(info)])`
+  micro-benchmark: import zeroconf 27 ms, `Zeroconf()` 1.7 ms,
+  `ServiceInfo` construct 0 ms, **`register_service` 1705 ms**, unregister
+  0.5 ms, close 256 ms — register dominates the lifecycle by ~93%).
+  This blocking was nearly always wasted: the typical flow is
+  "AI agent calls `interactive_feedback` → MCP server spawns Web UI
+  subprocess → wait for socket listen → auto-launch browser at
+  `http://127.0.0.1:port`" — both the local 127.0.0.1 connection and
+  the LAN-IP fallback **never depend on mDNS hostname resolution**;
+  mDNS is only consulted when other LAN devices type `http://ai.local:port`,
+  which doesn't need to happen *before* the local Flask listen socket
+  is bound. Fix: declare `self._mdns_thread: threading.Thread | None`
+  in `__init__`, replace synchronous `_start_mdns_if_needed()` call
+  with `threading.Thread(target=..., name="ai-agent-mdns-register",
+  daemon=True).start()`. The `daemon=True` is load-bearing because
+  the same mDNS conflict-probe blocking would otherwise hang Web UI
+  subprocess shutdown; the `name="ai-agent-mdns-register"` improves
+  diagnosability in `py-spy dump` / `ps -L`. `_stop_mdns` gains a
+  `thread.join(timeout=2.0)` preamble (slightly larger than the typical
+  1.7 s register window so 95% of normal shutdowns wait for the
+  unregister + announcement to land). **Measured Web UI subprocess
+  spawn → socket-listen wall time: 1922 ms → 203 ms (-1718 ms /
+  -89.4%)** — the single biggest user-perceived latency win in the
+  R20.x batch. Trade-off: an extremely fast SIGTERM (within 100 ms
+  of subprocess start) could interrupt the daemon mid-register,
+  leaving a half-published mDNS record on the LAN — but Zeroconf's
+  TTL-based cleanup handles eventual consistency, no observer on the
+  LAN ever notices. Stdout ordering of "mDNS published" vs "Running on
+  http://..." now appears in the opposite order; cosmetic only,
+  nothing in code parses these lines.
+
+- **R20.12 — Three orthogonal browser-side cold-start cuts.**
+  (A) `mathjax-loader.js` switches from `<script>` to `<script defer>`
+  in `templates/web_ui.html`; the head-blocking ~5-10 ms parse stall
+  on every initial page load is eliminated because the script's only
+  job is declaring `window.MathJax` config + a `loadMathJaxIfNeeded`
+  helper, and the actual 1.17 MB `tex-mml-chtml.js` is dynamically
+  appended only when the user pastes math-containing markdown.
+  (B) When `web_ui.config.language ∈ {'en', 'zh-CN'}` (i.e. non-`auto`),
+  `web_ui.py::_get_template_context()` reads the corresponding
+  `static/locales/<lang>.json` via a new `lru_cache(maxsize=8)`-backed
+  `_read_inline_locale_json()` helper, ships the compact-serialized
+  JSON inline as `window._AIIA_INLINE_LOCALE` in the HTML, and
+  `templates/web_ui.html` calls `window.AIIA_I18N.registerLocale(lang,
+  data)` before invoking `init()` — so `i18n.init()` skips the
+  otherwise-mandatory `fetch /static/locales/<lang>.json` (11 KB /
+  30-80 ms RTT). XSS protection: `<` is escaped to `\u003c` in the
+  inlined JSON to prevent a stray `</script>` substring from closing
+  the inline script tag prematurely.
+  (C) `static/js/image-upload.js::compressImage` migrates from the
+  legacy `new Image() + URL.createObjectURL(file) + img.onload`
+  synchronous-decode path to the modern `createImageBitmap(file)`
+  async-decode path, with a `_loadImageViaObjectURL(file)` fallback
+  for Safari < 14 / older Firefox / browsers without `createImageBitmap`.
+  Mirrors the `decodeImageSource()` design already shipped in
+  `packages/vscode/webview-ui.js`. Single-image compression wall time
+  drops 40-60% on modern Chromium / Firefox 105+ / Safari 14+ browsers.
+  Twenty-seven new tests in `tests/test_browser_perf_r20_12.py` lock
+  the contract.
+
+- **R20.13 — Six orthogonal VSCode extension-host + webview cold-start
+  cuts.** (A) `extension.ts::BUILD_ID` IIFE that synchronously
+  fork+exec'd `git rev-parse --short HEAD` at module-load time on
+  every extension activation gets refactored into a lazy `getBuildId()`
+  function gated by `fs.existsSync(path.join(__dirname, '..', '..',
+  '.git'))`, so production VSIX installs (where `__BUILD_SHA__`
+  build-time placeholder hasn't been substituted AND there's no
+  `.git` dir up the tree) skip the fork+exec entirely — measured
+  `git rev-parse` baseline 8.12 ms vs gated `existsSync` 30.3 µs =
+  **-99.6% / -8.09 ms per activation**. (B) `webview.ts::WebviewProvider`
+  constructor now accepts an `extensionVersion: string` parameter
+  that `extension.ts::activate` passes once-per-session from
+  `context.extension.packageJSON.version`, instead of `_getHtmlContent`
+  calling `vscode.extensions.getExtension(...).packageJSON.version`
+  every render (~1-3 ms saved per render). (C) `extension.ts::activate`
+  is now `async` and the host-side i18n locale loading replaces serial
+  `for (const loc of [...]) fs.readFileSync(...)` with parallel
+  `await Promise.all([...].map(async loc => fs.promises.readFile(...)))`,
+  halving the locale I/O wait time. (D) `webview-ui.js::ensureI18nReady`
+  IIFE used to iterate `Object.keys(window.__AIIA_I18N_ALL_LOCALES)` and
+  eager-`registerLocale()` every locale at startup (~50-100 µs of
+  mostly-wasted work since only one language is rendered per session);
+  now eager-registers exactly the active language plus `'en'` fallback,
+  and a new `ensureLocaleRegistered(targetLang)` helper runs lazily
+  inside `applyServerLanguage()` to register any non-eager locale
+  on-demand when the server's `langDetected` event arrives. (E)
+  `webview.ts::_getHtmlContent` caches the result of
+  `safeJsonForInlineScript(allLocales)` in two new instance fields
+  with a cache key composed as `<sorted-locale-names>:<each-entry-key-count>`
+  so any change to `_cachedLocales` naturally invalidates the cache.
+  (F) The constructor-injected `this._extensionVersion` from (B) is
+  now consumed inside `_getHtmlContent` as
+  `const extensionVersion = this._extensionVersion;`, completing the
+  B+F write-side / read-side pair that fully eliminates
+  `vscode.extensions.getExtension` from the HTML render path. Twenty-five
+  new tests in `tests/test_vscode_perf_r20_13.py` lock all six changes.
+
+- **R20.14-C — Cross-process `task_status_change → plugin status-bar`
+  hot-path collapses from ~85 ms → ~2 ms via three SSE pipeline cuts.**
+  (alpha) `_SSEBus.emit` pre-serializes the JSON payload once into a
+  new `_serialized` field instead of letting each subscriber's SSE
+  generator re-`json.dumps` the same dict, saving ~50 µs per
+  subscriber-event pair. (beta) `_SSEBus.emit` lock tightening replaces
+  the "entire emit body inside `with self._lock`" pattern with the
+  canonical "snapshot-then-act": `with self._lock: snapshot =
+  list(self._subscribers)`, then iterate `snapshot` outside the lock
+  for `put_nowait` / `qsize` / dead-list-build, then re-acquire the
+  lock only for the tight `set.discard` cleanup loop. The semantic
+  contract ("subscribers added during emit don't receive the current
+  event") is preserved exactly. (gamma-lite) `_on_task_status_change`
+  now calls `get_task_count()` (the callback already runs outside the
+  queue lock per existing doc-comment) and embeds
+  `stats: {pending, active, completed, total}` in the SSE payload;
+  plugin's `_connectSSE` handler reads `ev.stats` and immediately
+  calls `applyStatusBarPresentation` with the new counts before the
+  existing 80 ms debounce + `fetch /api/tasks` (canonical truth) round-trip
+  completes — 40× faster visual feedback while keeping the fetch as
+  the safety net for new-task detection and stats correctness. Failure
+  mode: `get_task_count()` raise / queue-not-initialized → `stats`
+  field is *omitted* (not empty-dict) so old/cautious clients
+  correctly fall back to `fetch /api/tasks`. Twenty-two new tests in
+  `tests/test_cross_process_perf_r20_14c.py` lock the contract.
+
+- **R20.14-D — 63 static assets pre-compressed to `.gz` siblings, with
+  Accept-Encoding-aware static-route negotiation.** New
+  `scripts/precompress_static.py` walks `static/css/`, `static/js/`,
+  `static/locales/` for files ≥ 500 bytes (aligned with
+  `flask-compress`'s `COMPRESS_MIN_SIZE`), gzip-compresses each at
+  level 9 with `mtime=0` (byte-reproducible across re-runs), writes
+  via `tempfile + os.replace` for atomic-rename safety; supports
+  default / `--clean` / `--check` modes. New `_send_with_optional_gzip`
+  helper in `web_ui_routes/static.py` checks
+  `Accept-Encoding: gzip` AND `<file>.gz` exists, serves the `.gz`
+  with `Content-Encoding: gzip` + `Vary: Accept-Encoding` + the
+  *original* mimetype (not `application/gzip`); `serve_css` /
+  `serve_js` / `serve_lottie` switch to it transparently, plus a new
+  `serve_locales` route is registered for `/static/locales/<filename>`
+  (Flask's built-in static handler doesn't apply our gzip negotiation
+  for that path). Total wire-size: **2.5 MB → 796 KB (-68%)**; largest
+  single asset `tex-mml-chtml.js`: **1.17 MB → 264 KB (-77%)**. The
+  `.gz` files are committed to the repo deliberately
+  (`static/**/*.gz linguist-generated -diff` in `.gitattributes`)
+  rather than `.gitignore`'d — design tradeoff favoring clone-and-go
+  developer experience over "every fork must run precompress before
+  first server start". Brotli pre-compression is deliberately deferred
+  to a future round (would require `brotli` runtime dependency, no
+  current telemetry justifying the cost). Thirty-five new tests in
+  `tests/test_static_compression_r20_14d.py` lock the contract.
+
+### Added
+
+- **R20.14-A — End-to-end performance benchmark + regression gate.**
+  `scripts/perf_e2e_bench.py` (511 lines) measures five wall-clock
+  benchmarks via subprocess isolation: `import_web_ui` (cold-process
+  `python -c "import web_ui"`, captures the R20.4-R20.10 lazy-import
+  lattice cost), `spawn_to_listen` (`subprocess.Popen([python,
+  web_ui.py])` to first successful `socket.create_connection`,
+  captures R20.11's mDNS daemonization win), `html_render`
+  (`_get_template_context()` + `render_template()` round-trip with a
+  one-off warmup render to flush Jinja2's first-compile cache),
+  `api_health_round_trip` and `api_config_round_trip` (real Web UI
+  subprocess on `_free_port()`-allocated localhost, `http.client`
+  round-trip 10× with `time.sleep(0.11)` between requests to respect
+  Flask-Limiter's 10/s default). Each benchmark reports median, p90,
+  min, max, and the full per-iteration `samples_ms: list[float]`
+  array. `scripts/perf_gate.py` (465 lines) compares current results
+  JSON against `tests/data/perf_e2e_baseline.json`, applying per-benchmark
+  thresholds composed as `max(baseline_ms × pct_threshold,
+  abs_floor_ms)` (defaults 30% pct + 5 ms floor; the 5 ms floor
+  prevents sub-millisecond `html_render` from triggering false-positive
+  regressions on noisy CI). Verdict types: `pass`, `regression` (exit 1),
+  `new` (informational, exit 0), `dropped` (exit 0 with warning),
+  `error` (corrupt JSON / missing file, exit 2). Supports
+  `--update-baseline` for atomic baseline refresh after a deliberate
+  accepted regression. The harness is deliberately *not* wired into
+  `ci_gate.py` (running 5 benchmarks at default iterations is ~30 s on
+  workstation / ~90 s on slow CI, would single-handedly double the
+  green-test wall time); intended workflow is local pre-release.
+  Sixty-six new tests across `tests/test_perf_e2e_bench_r20_14a.py`
+  (23 tests) and `tests/test_perf_gate_r20_14a.py` (43 tests) lock
+  every verdict path and source-text invariant.
+
+### Documentation
+
+- **R20.14-E — `docs/perf-r20-roadmap.md` (English, 463 lines) +
+  `docs/perf-r20-roadmap.zh-CN.md` (Chinese mirror, 418 lines).**
+  Captures the R20.x batch as a single coherent narrative across
+  10 sections: why this document exists, the four-layer roadmap
+  table, Layer 1 Core MCP cold start (R20.4-R20.10) with the
+  `find_spec` first-touch hoist pattern, Layer 1.5 Subprocess
+  spawn-to-listen (R20.11) with the RFC 6762 §8 background, Layer 2
+  Browser runtime (R20.12), Layer 3 VSCode plugin (R20.13), Layer 4
+  Overall system (R20.14 A/C/D/E), what we deliberately did NOT
+  optimize (six negative-decision entries), reproducing the numbers
+  (copy-pasteable workflow), and future work pointers. Both files
+  cross-link via the standard `> 中文版：[...]` / `> English: [...]`
+  blockquote pattern matching the existing `docs/api/` ↔ `docs/api.zh-CN/`
+  parity convention.
+
+### Changed
+
+- **chore(gitignore-perf-baseline) — exempt `tests/data/` from the
+  broad `data/` runtime-state ignore.** Pre-fix `.gitignore` line 190's
+  bare `data/` (intended for runtime task-persistence directories
+  like `./data/`) prefix-matched `tests/data/` too, silently dropping
+  R20.14-A's `tests/data/perf_e2e_baseline.json` from `git status`
+  even though the file existed on disk. Fix adds two negation lines
+  immediately after `data/`: `!tests/data/` (un-ignore the directory
+  itself) plus `!tests/data/**` (un-ignore all children — git's
+  negation rules require both per gitignore(5)). Without this
+  fix, `scripts/perf_gate.py` would exit with "baseline file not
+  found" on every fresh clone, neutering the regression gate that
+  R20.14-A specifically built. Also adds
+  `static/**/*.gz       linguist-generated -diff` to `.gitattributes`
+  so GitHub's web UI / `git diff` won't try to text-diff binary gzip
+  streams and won't include them in the repo's language-statistics
+  percentages.
+
+### Release
+
+- Version-sync via `uv run python scripts/bump_version.py 1.5.27`:
+  `pyproject.toml` / `uv.lock` / `package.json` / `package-lock.json` /
+  `packages/vscode/package.json` / `.github/ISSUE_TEMPLATE/bug_report.yml` /
+  `CITATION.cff` (the `version` field; `date-released` is still
+  maintained manually via the workflow doc).
+
+- Pytest count climbs **2580 → 2770 (+190 tests)** across the batch
+  (+17 R20.10 + 27 R20.12 + 25 R20.13 + 23 R20.14-A `perf_e2e_bench`
+  + 43 R20.14-A `perf_gate` + 22 R20.14-C cross-process + 35 R20.14-D
+  static compression — no regressions, 1 pre-existing skip).
+  `uv run python scripts/ci_gate.py` stays green throughout.
+
+- End-to-end "AI agent calls `interactive_feedback` → user sees
+  Web UI fully translated and ready to type" wall-clock latency
+  across the entire R20.x batch (R20.4 → R20.14 cumulative):
+  **~1980 ms → ~360 ms (-82%)**.
+
 ## [1.5.26] — 2026-05-05
 
 > Round-20 deep performance-optimization batch (6 commits since v1.5.25):
