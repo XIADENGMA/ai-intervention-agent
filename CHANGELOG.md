@@ -9,6 +9,59 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R19.1 — `scripts/check_tag_push_safety.py` + `make release-check`
+  pre-push gate for the GitHub 3-tag webhook hard limit.** Real bug
+  caught during the v1.5.24 release: GitHub silently drops
+  `push.tags` webhook events when more than 3 tags are pushed in a
+  single push (see `actions/runner#3644`). Locally accumulated tags
+  v1.5.20 / v1.5.21 / v1.5.23 / v1.5.24 (4 unpushed) were pushed
+  with `git push --follow-tags origin main`; the push itself
+  reported success and all 4 tags appeared on origin, but
+  `release.yml` (which is `on.push.tags`) **never fired**, leaving
+  PyPI / GitHub Release / VS Code Marketplace publishes silently
+  un-executed — and neither the push output nor the GitHub Actions
+  UI surfaced any error. The recovery was to delete the failed tag
+  on remote (`git push origin :refs/tags/v1.5.24`) and re-push it
+  alone (`git push origin v1.5.24`), since per-tag pushes don't
+  trip the limit. To prevent the next-time bite, this round adds a
+  read-only check tool that diffs `git tag -l 'v*.*.*'` against
+  `git ls-remote --tags origin` and fails (exit 1) if 4+ unpushed
+  tags exist, listing each one with the recommended fix command
+  (`git push origin <tag>` per tag). It is intentionally **not**
+  wired into `ci_gate.py` (CI never pushes tags so the check is
+  meaningless there) but **is** wired into `Makefile` as
+  `release-check` and into the release section of
+  `docs/workflow{,.zh-CN}.md` as a step before
+  `git push --follow-tags origin main`. Fourteen new locks in
+  `tests/test_check_tag_push_safety.py` cover: 0 unpushed
+  (positive baseline), threshold-boundary (exactly 3 → exit 0),
+  fail-above-threshold (4 → exit 1, stderr contains every tag and
+  the per-tag fix command), `--threshold 0` strict mode, the
+  annotated-tag `<tag>^{}` dereference dedup (otherwise the same
+  tag appears twice in the remote set and the diff is wrong),
+  non-SemVer tag filtering (`v1.5` / `foo` / `1.5.0` shouldn't
+  pollute either set — keeps lightweight historical / wip tags out
+  of the ledger), pre-release SemVer (`v1.5.24-rc.1` accepted to
+  match `bump_version.py`'s acceptance set), git-not-installed
+  (`FileNotFoundError` → exit 2 distinct from business-level exit
+  1), `subprocess.CalledProcessError` (e.g. `origin` does not
+  appear → exit 2 with the full git command in stderr for
+  diagnostics), and 3 `_semver_key` locks proving the sort orders
+  by numeric MAJOR/MINOR/PATCH (lexicographic sort would put
+  `v1.5.10` before `v1.5.2` and break the "push in version order"
+  recovery instructions). Threshold of 3 chosen to align exactly
+  with GitHub's documented "more than three tags" limit — not 5 or
+  10 — so the check fails the moment a real-world `--follow-tags`
+  push would be silently dropped, with no false negatives. Uses
+  `git ls-remote` rather than `git for-each-ref refs/remotes/origin`
+  because the latter relies on the local cache from the last
+  `git fetch` and would silent-pass when a contributor forgot to
+  fetch; the network round-trip cost (~10–500 ms) is acceptable
+  for a manual pre-push gate. Pytest count climbs 2482 → 2496
+  (+14, no regressions).
+
 ## [1.5.24] — 2026-05-05
 
 > Round-18 micro-audit hardening wave (3 commits since v1.5.23):

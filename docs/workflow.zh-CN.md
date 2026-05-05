@@ -40,7 +40,11 @@
   - 可选：`--ci-gate --with-vscode`（同步后跑一轮本地 CI Gate）
 - `git commit -m "<type>: <message>"`
 - `git tag -a vX.Y.Z -m "vX.Y.Z"`
+- **推送前闸门（R19.1）**：`make release-check`（≡ `uv run python scripts/check_tag_push_safety.py`）
+  - GitHub 平台限制：单次 push 中包含 >3 个 tag 时，**`push.tags` webhook 事件不会被创建**（见 `actions/runner#3644`），`release.yml` 静默不触发。如果本地累积了 `v1.5.20 / v1.5.21 / v1.5.23 / v1.5.24` 这种 4 个未推送 tag，`git push --follow-tags` 会**返回成功**，但 PyPI / GitHub Release / VSCode Marketplace 全部不会发布，且 push 输出和 GitHub UI 都不会给出错误反馈。
+  - 这一步会把本地 `v*.*.*` tag 与 `git ls-remote --tags origin` 做差集，如果未推送的 tag 数量 ≥ 4，立即 fail（exit 1）。在 `git push --follow-tags origin main` **之前**运行。
 - `git push --follow-tags origin main`
+  - 如果 `make release-check` 报出 4+ 未推送 tag，请改为逐个推送：`git push origin v1.5.24`（单 tag push 不触发 GitHub 3-tag 限流）。
 - 若发布流水线失败：**修复后 bump 补丁版本再重新打 tag（例如 `v1.4.17` → `v1.4.18`）**，不要移动/重打已发布的 tag
 
 ### 发布后（在线验收）

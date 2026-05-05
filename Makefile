@@ -14,7 +14,7 @@
 # Discoverability:
 #   `make` (no args) → renders the help table; same as `make help`.
 
-.PHONY: help install lint test ci coverage docs docs-check vscode-check pre-commit clean
+.PHONY: help install lint test ci coverage docs docs-check vscode-check pre-commit release-check clean
 
 # Default goal: print the help table so a fresh checkout's `make` is informative
 # instead of surprising. Pinning this is more robust than relying on Make's
@@ -33,6 +33,7 @@ help:
 	@echo "  make docs-check     verify docs/api/ + docs/api.zh-CN/ are in sync (no writes)"
 	@echo "  make vscode-check   full CI Gate + VS Code extension test + VSIX build"
 	@echo "  make pre-commit     run all pre-commit hooks against all files"
+	@echo "  make release-check  verify <=3 unpushed v*.*.* tags before 'git push --follow-tags'"
 	@echo "  make clean          remove generated build / coverage / lint artefacts"
 	@echo ""
 	@echo "All targets are thin wrappers; the source of truth lives in"
@@ -68,6 +69,9 @@ vscode-check:
 
 pre-commit:
 	uv run pre-commit run --all-files
+
+release-check:
+	uv run python scripts/check_tag_push_safety.py
 
 clean:
 	rm -rf build dist *.egg-info
