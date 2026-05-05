@@ -66,34 +66,76 @@ class _SSEBus:
             self._subscribers.discard(q)
 
     def emit(self, event_type: str, data: dict | None = None) -> None:
-        payload = {"type": event_type, "data": data or {}}
+        # R20.14-C：单次预序列化复用给所有订阅者
+        # ----------------------------------------------------------------
+        # 历史实现里每个 SSE generator 在 yield 前自己做一次
+        # ``json.dumps(event['data'])``。N 个订阅者就 dumps N 次同一份数据；
+        # 在订阅者数 ≥ 3 的浏览器多 tab / VSCode webview + 状态栏并存场景下
+        # 是纯浪费。把序列化 hoist 到 emit 里一次，附带写进 payload 的
+        # ``_serialized`` 字段（详见 ``sse_events`` generator 处的消费逻辑）。
+        # 失败兜底：序列化抛异常时退化到 ``None``，generator 看见 None 时再
+        # 回退到 on-demand dumps，保留原行为不让单条坏数据让整个 SSE 总线挂掉。
+        try:
+            serialized_data = json.dumps(data or {}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            serialized_data = None
+        payload = {
+            "type": event_type,
+            "data": data or {},
+            "_serialized": serialized_data,
+        }
+
+        # R20.14-C：snapshot-then-put，缩短 ``_lock`` 临界区
+        # ----------------------------------------------------------------
+        # 历史实现把 N 次 ``put_nowait`` + N 次 ``q.qsize()`` 都关在 ``_lock``
+        # 里执行。``put_nowait`` 自身要拿 queue 的内部锁，``qsize`` 在 CPython
+        # 实现上也走 thread-safe path，每次 ~1µs；N=10 时整个 emit 占用 ~10µs
+        # 的 ``_lock`` 临界区，会和 subscribe / unsubscribe 互斥。
+        # 这里改成「锁内只 list(self._subscribers) 拍快照，锁外做 put」，让
+        # ``_lock`` 临界区退化到一次 set→list 拷贝（~1µs / 100 元素），
+        # 多 producer 场景里几乎无竞争。
+        # 语义保持：snapshot 之后新加入的订阅者不会收到本条事件——这与原实现
+        # 「subscribe() 必须等 emit() 释放锁后才能进入 set」是同一行为。
         with self._lock:
-            dead: list[queue.Queue] = []
-            for q in self._subscribers:
-                try:
-                    q.put_nowait(payload)
-                except queue.Full:
-                    dead.append(q)
-                    continue
-                if q.qsize() >= self._BACKPRESSURE_THRESHOLD:
-                    dead.append(q)
+            snapshot = list(self._subscribers)
+
+        dead: list[queue.Queue] = []
+        for q in snapshot:
+            try:
+                q.put_nowait(payload)
+            except queue.Full:
+                dead.append(q)
+                continue
+            if q.qsize() >= self._BACKPRESSURE_THRESHOLD:
+                dead.append(q)
+
+        if not dead:
+            return
+
+        # R20.14-C：dead 清理需要重新拿 ``_lock``，但这里只是 set.discard
+        # （O(1)）+ sentinel 注入（不需要 _lock 保护，sentinel 是塞给单个
+        # queue 的，与 ``_subscribers`` 集合无关）。把 sentinel 注入留在锁外，
+        # 锁只覆盖最小改动。
+        with self._lock:
             for q in dead:
                 self._subscribers.discard(q)
-                # 主动通知 generator 退出。优先级 sentinel > 旧消息：
-                # 即使 queue.Full（说明前面 emit 在 ``put_nowait`` 时就掉到了
-                # ``except queue.Full`` 那行），也要 ``get_nowait`` 排出最旧的
-                # 那条 payload 来腾位子。代价是 client 错过最早的一条 SSE 事件
-                # （但浏览器 EventSource 自动 reconnect 时会重新 ``subscribe``，
-                # 拿到下一条新事件 + 后续所有事件，比 silent disconnection 强得多）。
-                while True:
+
+        for q in dead:
+            # 主动通知 generator 退出。优先级 sentinel > 旧消息：
+            # 即使 queue.Full（说明前面 emit 在 ``put_nowait`` 时就掉到了
+            # ``except queue.Full`` 那行），也要 ``get_nowait`` 排出最旧的
+            # 那条 payload 来腾位子。代价是 client 错过最早的一条 SSE 事件
+            # （但浏览器 EventSource 自动 reconnect 时会重新 ``subscribe``，
+            # 拿到下一条新事件 + 后续所有事件，比 silent disconnection 强得多）。
+            while True:
+                try:
+                    q.put_nowait(_SSE_DISCONNECT_SENTINEL)
+                    break
+                except queue.Full:
                     try:
-                        q.put_nowait(_SSE_DISCONNECT_SENTINEL)
+                        q.get_nowait()
+                    except queue.Empty:
                         break
-                    except queue.Full:
-                        try:
-                            q.get_nowait()
-                        except queue.Empty:
-                            break
 
     @property
     def subscriber_count(self) -> int:
@@ -107,10 +149,33 @@ _sse_bus = _SSEBus()
 def _on_task_status_change(
     task_id: str, old_status: str | None, new_status: str
 ) -> None:
-    _sse_bus.emit(
-        "task_changed",
-        {"task_id": task_id, "old_status": old_status, "new_status": new_status},
-    )
+    # R20.14-C：把当前任务统计直接塞进事件 payload
+    # ----------------------------------------------------------------
+    # 浏览器/插件收到 task_changed 后旧路径要再 fetch 一次 ``/api/tasks``
+    # 才知道总数变化，多一次 ~3 ms 的 round-trip。这里趁回调线程已经在
+    # 锁外（``_trigger_status_change`` 注释明确说"回调在锁外触发"）顺手
+    # 调一次 ``get_task_count()``，把 ``stats: {pending, active,
+    # completed, total}`` 一起 push 出去，让 client 拿到事件就能立刻
+    # 更新 UI 显示，3 ms fetch 退化为可选的兜底校验。
+    # 失败兜底：``get_task_count`` 抛异常 / 队列模块没起来时直接省掉
+    # stats 字段（不是空字典），让旧客户端的「stats 不存在 → 走 fetch」
+    # 兜底路径仍然生效，避免「stats 是空 → 误以为 0」的脏读。
+    stats: dict[str, int] | None = None
+    try:
+        tq = get_task_queue()
+        if tq is not None:
+            stats = tq.get_task_count()
+    except Exception:
+        stats = None
+
+    payload: dict[str, str | None | dict[str, int]] = {
+        "task_id": task_id,
+        "old_status": old_status,
+        "new_status": new_status,
+    }
+    if stats is not None:
+        payload["stats"] = stats
+    _sse_bus.emit("task_changed", payload)
 
 
 _sse_callback_registered = False
@@ -184,7 +249,18 @@ class TaskRoutesMixin:
                             continue
                         if event is _SSE_DISCONNECT_SENTINEL:
                             return
-                        yield f"event: {event['type']}\ndata: {json.dumps(event['data'], ensure_ascii=False)}\n\n"
+                        # R20.14-C：优先消费 emit 里预序列化好的 ``_serialized``
+                        # 字段；缺失时（旧式 payload / dumps 失败兜底）再 on-demand
+                        # 走一次 dumps。多 generator 共享同一份字符串，省 (N-1) 次
+                        # 序列化开销。
+                        serialized = (
+                            event.get("_serialized")
+                            if isinstance(event, dict)
+                            else None
+                        )
+                        if serialized is None:
+                            serialized = json.dumps(event["data"], ensure_ascii=False)
+                        yield f"event: {event['type']}\ndata: {serialized}\n\n"
                 except GeneratorExit:
                     pass
                 finally:

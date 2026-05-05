@@ -602,6 +602,35 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
                 { taskId: ev.task_id, status: ev.new_status },
                 { level: 'debug' }
               )
+              // R20.14-C：optimistic status bar update from embedded stats
+              // ----------------------------------------------------------
+              // 服务端 R20.14-C 起在 task_changed 事件里直接 push
+              // ``stats: {pending, active, completed, total}``。我们立刻
+              // 把它绘制到 status bar，让用户看到的延迟从「80ms 防抖 +
+              // 3ms fetch round-trip = 83ms」缩短到「SSE 网络抖动 ≈ 1-2ms」。
+              // 同时保留 80ms 的 debounce + scheduleStatusPoll(0)：fetch
+              // 仍然要跑，新任务检测（dispatchNewTaskNotification）依赖完整
+              // tasks 数组，且 fetch 是 stats 的 canonical truth 来源。
+              // 这里的 optimistic 路径只走「视觉反馈优先」语义。
+              const optStats =
+                ev.stats && typeof ev.stats === 'object'
+                  ? (ev.stats as Record<string, unknown>)
+                  : null
+              if (optStats) {
+                const optActive =
+                  typeof optStats.active === 'number' ? optStats.active : 0
+                const optPending =
+                  typeof optStats.pending === 'number' ? optStats.pending : 0
+                if (lastConnected !== false) {
+                  lastActive = optActive
+                  lastPending = optPending
+                  applyStatusBarPresentation({
+                    connected: true,
+                    active: optActive,
+                    pending: optPending
+                  })
+                }
+              }
               if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
               _sseDebounceTimer = setTimeout(() => {
                 _sseDebounceTimer = null
