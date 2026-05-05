@@ -41,7 +41,7 @@ npm install
 
 - `ai-intervention-agent.serverUrl`: server URL (default: `http://localhost:8080`)
 - `ai-intervention-agent.logLevel`: extension log level (default: `info`; view: Output → AI Intervention Agent)
-- `ai-intervention-agent.i18n.pseudoLocale` *(experimental)*: when `true`, swaps the active UI bundle for a pseudo-localised one — useful for spotting hardcoded strings, layout overflow, and Unicode issues without leaving English. Default: `false`.
+- `ai-intervention-agent.i18n.pseudoLocale` _(experimental)_: when `true`, swaps the active UI bundle for a pseudo-localised one — useful for spotting hardcoded strings, layout overflow, and Unicode issues without leaving English. Default: `false`.
 
 > Notification toggles (Web / sound / system / Bark) are managed inside the panel's **Notification Settings** UI and persisted in the server-side `config.toml`, not in `settings.json`.
 

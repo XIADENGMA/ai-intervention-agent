@@ -14,20 +14,20 @@
 // 在 i18n 未加载等边界场景里会向用户暴露原始 key。
 function _tl(key, fallback) {
   try {
-    if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
-      const value = window.AIIA_I18N.t(key)
-      if (value && value !== key) return value
+    if (window.AIIA_I18N && typeof window.AIIA_I18N.t === "function") {
+      const value = window.AIIA_I18N.t(key);
+      if (value && value !== key) return value;
     }
   } catch (_e) {
     // 忽略 i18n 读取失败
   }
-  return fallback
+  return fallback;
 }
 
 // 设置管理器
 class SettingsManager {
   constructor() {
-    this.storageKey = 'ai-intervention-agent-settings'
+    this.storageKey = "ai-intervention-agent-settings";
     this.defaultSettings = {
       enabled: true,
       webEnabled: true,
@@ -38,91 +38,108 @@ class SettingsManager {
       mobileOptimized: true,
       mobileVibrate: true,
       barkEnabled: false,
-      barkUrl: 'https://api.day.app/push',
-      barkDeviceKey: '',
-      barkIcon: '',
-      barkAction: 'none',
-      barkUrlTemplate: '{base_url}/?task_id={task_id}'
-    }
-    this.initialized = false
+      barkUrl: "https://api.day.app/push",
+      barkDeviceKey: "",
+      barkIcon: "",
+      barkAction: "none",
+      barkUrlTemplate: "{base_url}/?task_id={task_id}",
+    };
+    this.initialized = false;
     // 注意：不在构造函数中调用 init()，由 DOMContentLoaded 触发
   }
 
   async init() {
-    if (this.initialized) return
-    this.settings = await this.loadSettings()
-    this.feedbackConfig = await this.loadFeedbackConfig()
-    this.initEventListeners()
-    this.initOpenConfigFileButton()
-    this.initialized = true
-    console.log('SettingsManager initialized')
+    if (this.initialized) return;
+    this.settings = await this.loadSettings();
+    this.feedbackConfig = await this.loadFeedbackConfig();
+    this.initEventListeners();
+    this.initOpenConfigFileButton();
+    this.initialized = true;
+    console.log("SettingsManager initialized");
   }
 
   async loadSettings() {
     try {
       // 优先从服务器加载配置
-      const response = await fetch('/api/get-notification-config')
+      const response = await fetch("/api/get-notification-config");
       if (response.ok) {
-        const result = await response.json()
-        if (result.status === 'success') {
+        const result = await response.json();
+        if (result.status === "success") {
           // 将服务器配置映射到前端格式
-          const serverConfig = result.config
+          const serverConfig = result.config;
           const settings = {
             enabled: serverConfig.enabled ?? this.defaultSettings.enabled,
-            webEnabled: serverConfig.web_enabled ?? this.defaultSettings.webEnabled,
+            webEnabled:
+              serverConfig.web_enabled ?? this.defaultSettings.webEnabled,
             autoRequestPermission:
-              serverConfig.auto_request_permission ?? this.defaultSettings.autoRequestPermission,
-            soundEnabled: serverConfig.sound_enabled ?? this.defaultSettings.soundEnabled,
-            soundMute: serverConfig.sound_mute ?? this.defaultSettings.soundMute,
-            soundVolume: serverConfig.sound_volume ?? this.defaultSettings.soundVolume,
-            mobileOptimized: serverConfig.mobile_optimized ?? this.defaultSettings.mobileOptimized,
-            mobileVibrate: serverConfig.mobile_vibrate ?? this.defaultSettings.mobileVibrate,
-            barkEnabled: serverConfig.bark_enabled ?? this.defaultSettings.barkEnabled,
+              serverConfig.auto_request_permission ??
+              this.defaultSettings.autoRequestPermission,
+            soundEnabled:
+              serverConfig.sound_enabled ?? this.defaultSettings.soundEnabled,
+            soundMute:
+              serverConfig.sound_mute ?? this.defaultSettings.soundMute,
+            soundVolume:
+              serverConfig.sound_volume ?? this.defaultSettings.soundVolume,
+            mobileOptimized:
+              serverConfig.mobile_optimized ??
+              this.defaultSettings.mobileOptimized,
+            mobileVibrate:
+              serverConfig.mobile_vibrate ?? this.defaultSettings.mobileVibrate,
+            barkEnabled:
+              serverConfig.bark_enabled ?? this.defaultSettings.barkEnabled,
             barkUrl: serverConfig.bark_url ?? this.defaultSettings.barkUrl,
-            barkDeviceKey: serverConfig.bark_device_key ?? this.defaultSettings.barkDeviceKey,
+            barkDeviceKey:
+              serverConfig.bark_device_key ??
+              this.defaultSettings.barkDeviceKey,
             barkIcon: serverConfig.bark_icon ?? this.defaultSettings.barkIcon,
-            barkAction: serverConfig.bark_action ?? this.defaultSettings.barkAction,
-            barkUrlTemplate: serverConfig.bark_url_template ?? this.defaultSettings.barkUrlTemplate
-          }
-          console.log('Loaded settings from server')
-          return settings
+            barkAction:
+              serverConfig.bark_action ?? this.defaultSettings.barkAction,
+            barkUrlTemplate:
+              serverConfig.bark_url_template ??
+              this.defaultSettings.barkUrlTemplate,
+          };
+          console.log("Loaded settings from server");
+          return settings;
         }
       }
     } catch (error) {
-      console.warn('Load settings from server failed; falling back to localStorage:', error)
+      console.warn(
+        "Load settings from server failed; falling back to localStorage:",
+        error,
+      );
     }
 
     // 回退到localStorage
     try {
-      const stored = localStorage.getItem(this.storageKey)
+      const stored = localStorage.getItem(this.storageKey);
       if (stored) {
-        const parsed = JSON.parse(stored)
-        return { ...this.defaultSettings, ...parsed }
+        const parsed = JSON.parse(stored);
+        return { ...this.defaultSettings, ...parsed };
       }
     } catch (error) {
-      console.warn('Load settings failed; using defaults:', error)
+      console.warn("Load settings failed; using defaults:", error);
     }
-    return { ...this.defaultSettings }
+    return { ...this.defaultSettings };
   }
 
   saveSettings() {
     try {
-      localStorage.setItem(this.storageKey, JSON.stringify(this.settings))
-      console.log('Settings saved')
+      localStorage.setItem(this.storageKey, JSON.stringify(this.settings));
+      console.log("Settings saved");
     } catch (error) {
-      console.error('Save settings failed:', error)
+      console.error("Save settings failed:", error);
     }
   }
 
   updateSetting(key, value) {
-    this.settings[key] = value
-    this.saveSettings()
-    this.applySettings()
-    console.log(`Setting updated: ${key} = ${value}`)
+    this.settings[key] = value;
+    this.saveSettings();
+    this.applySettings();
+    console.log(`Setting updated: ${key} = ${value}`);
   }
 
   applySettings(options = {}) {
-    const { syncBackend = true } = options
+    const { syncBackend = true } = options;
     // 更新前端通知管理器配置
     if (notificationManager) {
       notificationManager.updateConfig({
@@ -139,74 +156,88 @@ class SettingsManager {
         barkDeviceKey: this.settings.barkDeviceKey,
         barkIcon: this.settings.barkIcon,
         barkAction: this.settings.barkAction,
-        barkUrlTemplate: this.settings.barkUrlTemplate
-      })
+        barkUrlTemplate: this.settings.barkUrlTemplate,
+      });
     }
 
     // 同步配置到后端
     if (syncBackend) {
-      this.syncConfigToBackend()
+      this.syncConfigToBackend();
     }
   }
 
   async syncConfigToBackend() {
     try {
-      const response = await fetch('/api/update-notification-config', {
-        method: 'POST',
+      const response = await fetch("/api/update-notification-config", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify(this.settings)
-      })
+        body: JSON.stringify(this.settings),
+      });
 
-      const result = await response.json()
-      if (response.ok && result.status === 'success') {
-        console.log('Notification config synced to server')
+      const result = await response.json();
+      if (response.ok && result.status === "success") {
+        console.log("Notification config synced to server");
       } else {
-        console.warn('Sync notification config to server failed:', result.message)
+        console.warn(
+          "Sync notification config to server failed:",
+          result.message,
+        );
       }
     } catch (error) {
-      console.error('Sync notification config to server failed:', error)
+      console.error("Sync notification config to server failed:", error);
     }
   }
 
   resetSettings() {
-    this.settings = { ...this.defaultSettings }
-    this.saveSettings()
-    this.updateUI()
-    this.applySettings()
-    console.log('Settings reset to defaults')
+    this.settings = { ...this.defaultSettings };
+    this.saveSettings();
+    this.updateUI();
+    this.applySettings();
+    console.log("Settings reset to defaults");
   }
 
   updateUI() {
     // 更新设置面板中的控件状态
-    document.getElementById('notification-enabled').checked = this.settings.enabled
-    document.getElementById('web-notification-enabled').checked = this.settings.webEnabled
-    document.getElementById('auto-request-permission').checked = this.settings.autoRequestPermission
-    document.getElementById('sound-notification-enabled').checked = this.settings.soundEnabled
-    document.getElementById('sound-mute').checked = this.settings.soundMute
-    document.getElementById('sound-volume').value = this.settings.soundVolume
-    document.querySelector('.volume-value').textContent = `${this.settings.soundVolume}%`
-    document.getElementById('mobile-optimized').checked = this.settings.mobileOptimized
-    document.getElementById('mobile-vibrate').checked = this.settings.mobileVibrate
+    document.getElementById("notification-enabled").checked =
+      this.settings.enabled;
+    document.getElementById("web-notification-enabled").checked =
+      this.settings.webEnabled;
+    document.getElementById("auto-request-permission").checked =
+      this.settings.autoRequestPermission;
+    document.getElementById("sound-notification-enabled").checked =
+      this.settings.soundEnabled;
+    document.getElementById("sound-mute").checked = this.settings.soundMute;
+    document.getElementById("sound-volume").value = this.settings.soundVolume;
+    document.querySelector(".volume-value").textContent =
+      `${this.settings.soundVolume}%`;
+    document.getElementById("mobile-optimized").checked =
+      this.settings.mobileOptimized;
+    document.getElementById("mobile-vibrate").checked =
+      this.settings.mobileVibrate;
 
     // 语言选择器
-    const langSelect = document.getElementById('language-select')
+    const langSelect = document.getElementById("language-select");
     if (langSelect) {
-      const currentLang = window.AIIA_I18N ? window.AIIA_I18N.getLang() : 'auto'
-      const cfgLang = window.AIIA_CONFIG_LANG || 'auto'
-      langSelect.value = cfgLang !== 'auto' ? cfgLang : currentLang || 'auto'
+      const currentLang = window.AIIA_I18N
+        ? window.AIIA_I18N.getLang()
+        : "auto";
+      const cfgLang = window.AIIA_CONFIG_LANG || "auto";
+      langSelect.value = cfgLang !== "auto" ? cfgLang : currentLang || "auto";
     }
 
     // 更新 Bark 设置
-    document.getElementById('bark-notification-enabled').checked = this.settings.barkEnabled
-    document.getElementById('bark-url').value = this.settings.barkUrl
-    document.getElementById('bark-device-key').value = this.settings.barkDeviceKey
-    document.getElementById('bark-icon').value = this.settings.barkIcon
-    document.getElementById('bark-action').value = this.settings.barkAction
-    const barkUrlTplEl = document.getElementById('bark-url-template')
+    document.getElementById("bark-notification-enabled").checked =
+      this.settings.barkEnabled;
+    document.getElementById("bark-url").value = this.settings.barkUrl;
+    document.getElementById("bark-device-key").value =
+      this.settings.barkDeviceKey;
+    document.getElementById("bark-icon").value = this.settings.barkIcon;
+    document.getElementById("bark-action").value = this.settings.barkAction;
+    const barkUrlTplEl = document.getElementById("bark-url-template");
     if (barkUrlTplEl) {
-      barkUrlTplEl.value = this.settings.barkUrlTemplate || ''
+      barkUrlTplEl.value = this.settings.barkUrlTemplate || "";
     }
   }
 
@@ -242,121 +273,145 @@ class SettingsManager {
       // 警告图标（感叹号三角形）- 未请求权限/未知状态
       warning: `<svg class="status-icon status-icon-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #FF9800;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`,
       // 暂停图标（双竖线）- 音频已暂停
-      paused: `<svg class="status-icon status-icon-paused" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #9E9E9E;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`
-    }
+      paused: `<svg class="status-icon status-icon-paused" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; vertical-align: middle; margin-right: 4px; color: #9E9E9E;"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`,
+    };
     // 默认返回警告图标，处理未知类型
-    return icons[type] || icons.warning
+    return icons[type] || icons.warning;
   }
 
   updateStatus() {
     // 更新状态信息（使用 SVG 图标替代 emoji）
     const secureContext =
-      typeof window !== 'undefined' && typeof window.isSecureContext === 'boolean'
+      typeof window !== "undefined" &&
+      typeof window.isSecureContext === "boolean"
         ? window.isSecureContext
-        : null
+        : null;
     const origin =
-      typeof window !== 'undefined' && window.location && typeof window.location.origin === 'string'
+      typeof window !== "undefined" &&
+      window.location &&
+      typeof window.location.origin === "string"
         ? window.location.origin
-        : ''
+        : "";
 
     const browserSupportHtml = notificationManager.isSupported
       ? secureContext === false
-        ? this.getStatusIcon('warning') + t('env.supportedLimited')
-        : this.getStatusIcon('success') + t('env.supported')
-      : this.getStatusIcon('error') + t('env.notSupported')
+        ? this.getStatusIcon("warning") + t("env.supportedLimited")
+        : this.getStatusIcon("success") + t("env.supported")
+      : this.getStatusIcon("error") + t("env.notSupported");
 
-    let secureContextHtml
+    let secureContextHtml;
     if (secureContext === true) {
       secureContextHtml =
-        this.getStatusIcon('success') +
-        (origin ? t('env.secureOrigin', { origin: origin }) : t('env.secure'))
+        this.getStatusIcon("success") +
+        (origin ? t("env.secureOrigin", { origin: origin }) : t("env.secure"));
     } else if (secureContext === false) {
       secureContextHtml =
-        this.getStatusIcon('warning') +
-        (origin ? t('env.insecureOrigin', { origin: origin }) : t('env.insecure'))
+        this.getStatusIcon("warning") +
+        (origin
+          ? t("env.insecureOrigin", { origin: origin })
+          : t("env.insecure"));
     } else {
-      secureContextHtml = this.getStatusIcon('warning') + t('env.unknown')
+      secureContextHtml = this.getStatusIcon("warning") + t("env.unknown");
     }
 
-    let permissionHtml
+    let permissionHtml;
     if (secureContext === false) {
-      permissionHtml = this.getStatusIcon('warning') + t('env.permLimited')
-    } else if (notificationManager.permission === 'granted') {
-      permissionHtml = this.getStatusIcon('success') + t('env.permGranted')
-    } else if (notificationManager.permission === 'denied') {
-      permissionHtml = this.getStatusIcon('error') + t('env.permDenied')
+      permissionHtml = this.getStatusIcon("warning") + t("env.permLimited");
+    } else if (notificationManager.permission === "granted") {
+      permissionHtml = this.getStatusIcon("success") + t("env.permGranted");
+    } else if (notificationManager.permission === "denied") {
+      permissionHtml = this.getStatusIcon("error") + t("env.permDenied");
     } else {
-      permissionHtml = this.getStatusIcon('warning') + t('env.permNotRequested')
+      permissionHtml =
+        this.getStatusIcon("warning") + t("env.permNotRequested");
     }
 
     // 音频状态中文化
-    let audioStateHtml = this.getStatusIcon('error') + t('env.audioUnavailable')
+    let audioStateHtml =
+      this.getStatusIcon("error") + t("env.audioUnavailable");
     if (notificationManager.audioContext) {
-      const state = notificationManager.audioContext.state
+      const state = notificationManager.audioContext.state;
       switch (state) {
-        case 'running':
-          audioStateHtml = this.getStatusIcon('success') + t('env.audioRunning')
-          break
-        case 'suspended':
-          audioStateHtml = this.getStatusIcon('paused') + t('env.audioPaused')
-          break
-        case 'closed':
-          audioStateHtml = this.getStatusIcon('error') + t('env.audioClosed')
-          break
+        case "running":
+          audioStateHtml =
+            this.getStatusIcon("success") + t("env.audioRunning");
+          break;
+        case "suspended":
+          audioStateHtml = this.getStatusIcon("paused") + t("env.audioPaused");
+          break;
+        case "closed":
+          audioStateHtml = this.getStatusIcon("error") + t("env.audioClosed");
+          break;
         default:
-          audioStateHtml = this.getStatusIcon('warning') + state
+          audioStateHtml = this.getStatusIcon("warning") + state;
       }
     }
 
-    document.getElementById('browser-support-status').innerHTML = browserSupportHtml
-    document.getElementById('notification-permission-status').innerHTML = permissionHtml
-    document.getElementById('audio-status').innerHTML = audioStateHtml
-    const secureEl = document.getElementById('notification-secure-context-status')
+    document.getElementById("browser-support-status").innerHTML =
+      browserSupportHtml;
+    document.getElementById("notification-permission-status").innerHTML =
+      permissionHtml;
+    document.getElementById("audio-status").innerHTML = audioStateHtml;
+    const secureEl = document.getElementById(
+      "notification-secure-context-status",
+    );
     if (secureEl) {
-      secureEl.innerHTML = secureContextHtml
+      secureEl.innerHTML = secureContextHtml;
     }
   }
 
   initEventListeners() {
     // 设置按钮点击事件 - 使用直接绑定确保可靠
-    const settingsBtn = document.getElementById('settings-btn')
-    const settingsCloseBtn = document.getElementById('settings-close-btn')
-    const testNotificationBtn = document.getElementById('test-notification-btn')
-    const testBarkNotificationBtn = document.getElementById('test-bark-notification-btn')
-    const resetSettingsBtn = document.getElementById('reset-settings-btn')
+    const settingsBtn = document.getElementById("settings-btn");
+    const settingsCloseBtn = document.getElementById("settings-close-btn");
+    const testNotificationBtn = document.getElementById(
+      "test-notification-btn",
+    );
+    const testBarkNotificationBtn = document.getElementById(
+      "test-bark-notification-btn",
+    );
+    const resetSettingsBtn = document.getElementById("reset-settings-btn");
 
     if (settingsBtn) {
-      settingsBtn.addEventListener('click', e => {
-        e.stopPropagation()
-        this.showSettings()
-      })
+      settingsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.showSettings();
+      });
     }
     if (settingsCloseBtn) {
-      settingsCloseBtn.addEventListener('click', () => this.hideSettings())
+      settingsCloseBtn.addEventListener("click", () => this.hideSettings());
     }
     if (testNotificationBtn) {
-      testNotificationBtn.addEventListener('click', () => this.testNotification())
+      testNotificationBtn.addEventListener("click", () =>
+        this.testNotification(),
+      );
     }
     if (testBarkNotificationBtn) {
-      testBarkNotificationBtn.addEventListener('click', () => this.testBarkNotification())
+      testBarkNotificationBtn.addEventListener("click", () =>
+        this.testBarkNotification(),
+      );
     }
     if (resetSettingsBtn) {
-      resetSettingsBtn.addEventListener('click', () => this.resetSettings())
+      resetSettingsBtn.addEventListener("click", () => this.resetSettings());
     }
 
-    const resetFeedbackBtn = document.getElementById('reset-feedback-config-btn')
+    const resetFeedbackBtn = document.getElementById(
+      "reset-feedback-config-btn",
+    );
     if (resetFeedbackBtn) {
-      resetFeedbackBtn.addEventListener('click', () => this.resetFeedbackConfig())
+      resetFeedbackBtn.addEventListener("click", () =>
+        this.resetFeedbackConfig(),
+      );
     }
 
-    const openConfigBtn = document.getElementById('open-config-file-btn')
+    const openConfigBtn = document.getElementById("open-config-file-btn");
     if (openConfigBtn) {
-      openConfigBtn.addEventListener('click', () => this.openConfigFileInIde())
+      openConfigBtn.addEventListener("click", () => this.openConfigFileInIde());
     }
 
-    const feedbackCountdown = document.getElementById('feedback-countdown')
-    const feedbackPrompt = document.getElementById('feedback-resubmit-prompt')
-    const feedbackSuffix = document.getElementById('feedback-prompt-suffix')
+    const feedbackCountdown = document.getElementById("feedback-countdown");
+    const feedbackPrompt = document.getElementById("feedback-resubmit-prompt");
+    const feedbackSuffix = document.getElementById("feedback-prompt-suffix");
 
     // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
     //
@@ -370,118 +425,128 @@ class SettingsManager {
     // 修复：每次调用把 updates 合进 ``feedbackPendingUpdates``，timer
     // 触发时一次性 POST。和 packages/vscode/webview-settings-ui.js 保持
     // byte-parity（双份代码必须同步修，否则 Web/VSCode 行为分歧）。
-    let feedbackSaveTimer = null
-    let feedbackPendingUpdates = null
-    const debounceSaveFeedback = updates => {
-      if (feedbackSaveTimer) clearTimeout(feedbackSaveTimer)
-      feedbackPendingUpdates = Object.assign(feedbackPendingUpdates || {}, updates || {})
+    let feedbackSaveTimer = null;
+    let feedbackPendingUpdates = null;
+    const debounceSaveFeedback = (updates) => {
+      if (feedbackSaveTimer) clearTimeout(feedbackSaveTimer);
+      feedbackPendingUpdates = Object.assign(
+        feedbackPendingUpdates || {},
+        updates || {},
+      );
       feedbackSaveTimer = setTimeout(() => {
-        const merged = feedbackPendingUpdates
-        feedbackPendingUpdates = null
-        feedbackSaveTimer = null
-        this.saveFeedbackConfig(merged)
-      }, 800)
-    }
+        const merged = feedbackPendingUpdates;
+        feedbackPendingUpdates = null;
+        feedbackSaveTimer = null;
+        this.saveFeedbackConfig(merged);
+      }, 800);
+    };
 
     if (feedbackCountdown) {
-      feedbackCountdown.addEventListener('change', () => {
-        const val = parseInt(feedbackCountdown.value, 10)
+      feedbackCountdown.addEventListener("change", () => {
+        const val = parseInt(feedbackCountdown.value, 10);
         // Range mirrors server_config.AUTO_RESUBMIT_TIMEOUT_MAX (3600s); 0
         // remains the "disabled" sentinel. Locked by
         // tests/test_frontend_input_range_parity.py.
         if (!isNaN(val) && val >= 0 && val <= 3600) {
-          debounceSaveFeedback({ frontend_countdown: val })
+          debounceSaveFeedback({ frontend_countdown: val });
         }
-      })
+      });
     }
     if (feedbackPrompt) {
-      feedbackPrompt.addEventListener('input', () => {
-        debounceSaveFeedback({ resubmit_prompt: feedbackPrompt.value })
-      })
+      feedbackPrompt.addEventListener("input", () => {
+        debounceSaveFeedback({ resubmit_prompt: feedbackPrompt.value });
+      });
     }
     if (feedbackSuffix) {
-      feedbackSuffix.addEventListener('input', () => {
-        debounceSaveFeedback({ prompt_suffix: feedbackSuffix.value })
-      })
+      feedbackSuffix.addEventListener("input", () => {
+        debounceSaveFeedback({ prompt_suffix: feedbackSuffix.value });
+      });
     }
 
     // 主题切换按钮点击事件 - 已由 theme.js 处理，此处删除避免重复绑定
 
     // 语言切换
-    const langSelect = document.getElementById('language-select')
+    const langSelect = document.getElementById("language-select");
     if (langSelect) {
-      langSelect.addEventListener('change', async () => {
-        const newLang = langSelect.value
+      langSelect.addEventListener("change", async () => {
+        const newLang = langSelect.value;
         if (window.AIIA_I18N) {
           const targetLang =
-            newLang === 'auto'
+            newLang === "auto"
               ? window.AIIA_I18N.detectLang()
-              : window.AIIA_I18N.normalizeLang(newLang)
+              : window.AIIA_I18N.normalizeLang(newLang);
 
           if (!window.AIIA_I18N.getAvailableLangs().includes(targetLang)) {
-            await window.AIIA_I18N.loadLocale(targetLang, '/static/locales/' + targetLang + '.json')
+            await window.AIIA_I18N.loadLocale(
+              targetLang,
+              "/static/locales/" + targetLang + ".json",
+            );
           }
-          if (targetLang !== 'en' && !window.AIIA_I18N.getAvailableLangs().includes('en')) {
-            await window.AIIA_I18N.loadLocale('en', '/static/locales/en.json')
+          if (
+            targetLang !== "en" &&
+            !window.AIIA_I18N.getAvailableLangs().includes("en")
+          ) {
+            await window.AIIA_I18N.loadLocale("en", "/static/locales/en.json");
           }
 
-          window.AIIA_I18N.setLang(targetLang)
-          window.AIIA_I18N.translateDOM()
+          window.AIIA_I18N.setLang(targetLang);
+          window.AIIA_I18N.translateDOM();
         }
 
         try {
-          await fetch('/api/update-language', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ language: newLang })
-          })
+          await fetch("/api/update-language", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ language: newLang }),
+          });
         } catch (e) {
-          console.warn('Persist language preference failed:', e)
+          console.warn("Persist language preference failed:", e);
         }
-      })
+      });
     }
 
     // 设置面板背景点击关闭
-    document.addEventListener('click', e => {
-      if (e.target.id === 'settings-panel') {
-        this.hideSettings()
+    document.addEventListener("click", (e) => {
+      if (e.target.id === "settings-panel") {
+        this.hideSettings();
       }
-    })
+    });
 
     // 设置项变更事件
-    document.addEventListener('change', e => {
+    document.addEventListener("change", (e) => {
       const settingMap = {
-        'notification-enabled': 'enabled',
-        'web-notification-enabled': 'webEnabled',
-        'auto-request-permission': 'autoRequestPermission',
-        'sound-notification-enabled': 'soundEnabled',
-        'sound-mute': 'soundMute',
-        'mobile-optimized': 'mobileOptimized',
-        'mobile-vibrate': 'mobileVibrate',
-        'bark-notification-enabled': 'barkEnabled'
-      }
+        "notification-enabled": "enabled",
+        "web-notification-enabled": "webEnabled",
+        "auto-request-permission": "autoRequestPermission",
+        "sound-notification-enabled": "soundEnabled",
+        "sound-mute": "soundMute",
+        "mobile-optimized": "mobileOptimized",
+        "mobile-vibrate": "mobileVibrate",
+        "bark-notification-enabled": "barkEnabled",
+      };
 
       if (settingMap[e.target.id]) {
-        this.updateSetting(settingMap[e.target.id], e.target.checked)
-      } else if (e.target.id === 'sound-volume') {
-        this.updateSetting('soundVolume', parseInt(e.target.value))
-        document.querySelector('.volume-value').textContent = `${e.target.value}%`
-      } else if (e.target.id === 'bark-url') {
-        this.updateSetting('barkUrl', e.target.value)
-      } else if (e.target.id === 'bark-device-key') {
-        this.updateSetting('barkDeviceKey', e.target.value)
-      } else if (e.target.id === 'bark-icon') {
-        this.updateSetting('barkIcon', e.target.value)
-      } else if (e.target.id === 'bark-action') {
-        this.updateSetting('barkAction', e.target.value)
-      } else if (e.target.id === 'bark-url-template') {
-        this.updateSetting('barkUrlTemplate', e.target.value)
+        this.updateSetting(settingMap[e.target.id], e.target.checked);
+      } else if (e.target.id === "sound-volume") {
+        this.updateSetting("soundVolume", parseInt(e.target.value));
+        document.querySelector(".volume-value").textContent =
+          `${e.target.value}%`;
+      } else if (e.target.id === "bark-url") {
+        this.updateSetting("barkUrl", e.target.value);
+      } else if (e.target.id === "bark-device-key") {
+        this.updateSetting("barkDeviceKey", e.target.value);
+      } else if (e.target.id === "bark-icon") {
+        this.updateSetting("barkIcon", e.target.value);
+      } else if (e.target.id === "bark-action") {
+        this.updateSetting("barkAction", e.target.value);
+      } else if (e.target.id === "bark-url-template") {
+        this.updateSetting("barkUrlTemplate", e.target.value);
       }
-    })
+    });
 
-    window.addEventListener('notification-permission-changed', () => {
-      this.updateStatus()
-    })
+    window.addEventListener("notification-permission-changed", () => {
+      this.updateStatus();
+    });
   }
 
   // ==================== 配置文件路径：用 IDE 打开按钮（TODO #4） ====================
@@ -491,126 +556,148 @@ class SettingsManager {
   //  - 完全没有可用方式时，禁用按钮并解释原因。
   // 后端只接受环回请求，所以远程访问的客户端按钮也应保持禁用且显示原因。
   async initOpenConfigFileButton() {
-    const btn = document.getElementById('open-config-file-btn')
-    const status = document.getElementById('open-config-file-status')
-    if (!btn) return
+    const btn = document.getElementById("open-config-file-btn");
+    const status = document.getElementById("open-config-file-status");
+    if (!btn) return;
 
-    const setDisabledWithReason = reason => {
-      btn.disabled = true
-      btn.setAttribute('aria-disabled', 'true')
-      btn.title = reason
+    const setDisabledWithReason = (reason) => {
+      btn.disabled = true;
+      btn.setAttribute("aria-disabled", "true");
+      btn.title = reason;
       if (status) {
-        status.textContent = reason
-        status.classList.remove('is-error', 'is-success')
+        status.textContent = reason;
+        status.classList.remove("is-error", "is-success");
       }
-    }
+    };
 
     try {
-      const resp = await fetch('/api/system/open-config-file/info', {
-        method: 'GET',
-        credentials: 'same-origin'
-      })
+      const resp = await fetch("/api/system/open-config-file/info", {
+        method: "GET",
+        credentials: "same-origin",
+      });
       if (resp.status === 403) {
         const remoteFallback =
-          'Open-in-IDE is only available on the local machine running the server.'
-        setDisabledWithReason(_tl('settings.openConfigInIdeRemoteBlocked', remoteFallback))
-        return
+          "Open-in-IDE is only available on the local machine running the server.";
+        setDisabledWithReason(
+          _tl("settings.openConfigInIdeRemoteBlocked", remoteFallback),
+        );
+        return;
       }
       if (!resp.ok) {
         setDisabledWithReason(
-          _tl('settings.openConfigInIdeUnavailable', 'Open-in-IDE is unavailable.')
-        )
-        return
+          _tl(
+            "settings.openConfigInIdeUnavailable",
+            "Open-in-IDE is unavailable.",
+          ),
+        );
+        return;
       }
-      const data = await resp.json()
+      const data = await resp.json();
       if (!data || data.success === false) {
         setDisabledWithReason(
-          _tl('settings.openConfigInIdeUnavailable', 'Open-in-IDE is unavailable.')
-        )
-        return
+          _tl(
+            "settings.openConfigInIdeUnavailable",
+            "Open-in-IDE is unavailable.",
+          ),
+        );
+        return;
       }
 
-      const editor = data.editor
-      const hasEditor = !!data.editor_available
-      const hasFallback = !!data.system_fallback_available
+      const editor = data.editor;
+      const hasEditor = !!data.editor_available;
+      const hasFallback = !!data.system_fallback_available;
 
       if (!hasEditor && !hasFallback) {
         const noEditorFallback =
-          'No supported IDE (Cursor / VS Code / Sublime / etc.) found in PATH.'
-        setDisabledWithReason(_tl('settings.openConfigInIdeNoEditor', noEditorFallback))
-        return
+          "No supported IDE (Cursor / VS Code / Sublime / etc.) found in PATH.";
+        setDisabledWithReason(
+          _tl("settings.openConfigInIdeNoEditor", noEditorFallback),
+        );
+        return;
       }
 
-      btn.disabled = false
-      btn.removeAttribute('aria-disabled')
-      const verb = hasEditor && editor ? editor : 'system default'
-      btn.title = _tl('settings.openConfigInIdeReady', `Open with ${verb}`).replace(
-        '{editor}',
-        verb
-      )
+      btn.disabled = false;
+      btn.removeAttribute("aria-disabled");
+      const verb = hasEditor && editor ? editor : "system default";
+      btn.title = _tl(
+        "settings.openConfigInIdeReady",
+        `Open with ${verb}`,
+      ).replace("{editor}", verb);
       if (status) {
-        status.classList.remove('is-error', 'is-success')
-        status.textContent = ''
+        status.classList.remove("is-error", "is-success");
+        status.textContent = "";
       }
     } catch (e) {
-      console.warn('open-config-file info fetch failed:', e)
+      console.warn("open-config-file info fetch failed:", e);
       setDisabledWithReason(
-        _tl('settings.openConfigInIdeUnavailable', 'Open-in-IDE is unavailable.')
-      )
+        _tl(
+          "settings.openConfigInIdeUnavailable",
+          "Open-in-IDE is unavailable.",
+        ),
+      );
     }
   }
 
   async openConfigFileInIde() {
-    const btn = document.getElementById('open-config-file-btn')
-    const status = document.getElementById('open-config-file-status')
-    const pathInput = document.getElementById('config-file-path')
-    if (!btn) return
+    const btn = document.getElementById("open-config-file-btn");
+    const status = document.getElementById("open-config-file-status");
+    const pathInput = document.getElementById("config-file-path");
+    if (!btn) return;
 
-    const originalDisabled = btn.disabled
-    btn.disabled = true
+    const originalDisabled = btn.disabled;
+    btn.disabled = true;
     if (status) {
-      status.classList.remove('is-error', 'is-success')
-      status.textContent = _tl('settings.openConfigInIdeRequesting', 'Opening…')
+      status.classList.remove("is-error", "is-success");
+      status.textContent = _tl(
+        "settings.openConfigInIdeRequesting",
+        "Opening…",
+      );
     }
 
     try {
-      const resp = await fetch('/api/system/open-config-file', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
+      const resp = await fetch("/api/system/open-config-file", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
         // 不传 path：让后端使用它自己读到的当前配置文件路径，避免前端被篡改的输入框
         // 绕过白名单校验。如果后端有多个候选路径，这里默认使用主路径（primary）。
-        body: JSON.stringify({})
-      })
-      const data = await resp.json().catch(() => ({}))
+        body: JSON.stringify({}),
+      });
+      const data = await resp.json().catch(() => ({}));
       if (!resp.ok || data.success === false) {
         const errMsg =
           (data && data.error) ||
-          _tl('settings.openConfigInIdeFailed', 'Failed to open config file.')
+          _tl("settings.openConfigInIdeFailed", "Failed to open config file.");
         if (status) {
-          status.classList.add('is-error')
-          status.textContent = errMsg
+          status.classList.add("is-error");
+          status.textContent = errMsg;
         }
-        return
+        return;
       }
       // 成功：把后端返回的实际路径回填到输入框（确保前后端视角一致）
       if (pathInput && data.path) {
-        pathInput.value = data.path
+        pathInput.value = data.path;
       }
       if (status) {
-        status.classList.add('is-success')
-        const editor = data.editor || 'system'
-        const tpl = _tl('settings.openConfigInIdeOpened', 'Opened with {editor}.')
-        status.textContent = tpl.replace('{editor}', editor)
+        status.classList.add("is-success");
+        const editor = data.editor || "system";
+        const tpl = _tl(
+          "settings.openConfigInIdeOpened",
+          "Opened with {editor}.",
+        );
+        status.textContent = tpl.replace("{editor}", editor);
       }
     } catch (e) {
-      console.error('Open config file failed:', e)
+      console.error("Open config file failed:", e);
       if (status) {
-        status.classList.add('is-error')
-        status.textContent = _tl('settings.openConfigInIdeFailed', 'Failed to open config file.')
+        status.classList.add("is-error");
+        status.textContent = _tl(
+          "settings.openConfigInIdeFailed",
+          "Failed to open config file.",
+        );
       }
     } finally {
-      btn.disabled = originalDisabled
+      btn.disabled = originalDisabled;
     }
   }
 
@@ -618,34 +705,37 @@ class SettingsManager {
     // 防御性：确保已初始化（极端情况下用户可能在 init() 未完成时快速点击）
     if (!this.initialized) {
       try {
-        await this.init()
+        await this.init();
       } catch (e) {
-        console.warn('SettingsManager init failed while opening settings panel:', e)
+        console.warn(
+          "SettingsManager init failed while opening settings panel:",
+          e,
+        );
       }
     }
 
-    const panel = document.getElementById('settings-panel')
+    const panel = document.getElementById("settings-panel");
     if (panel) {
       // 临时移除 container 的 overflow: hidden，以便设置面板可以覆盖整个屏幕
-      const container = document.querySelector('.container')
+      const container = document.querySelector(".container");
       if (container) {
-        container.style.overflow = 'visible'
+        container.style.overflow = "visible";
       }
 
-      panel.classList.remove('hidden')
-      panel.style.display = 'flex'
+      panel.classList.remove("hidden");
+      panel.style.display = "flex";
 
-      this.applySettingsTheme()
+      this.applySettingsTheme();
 
-      this._settingsEscHandler = e => {
-        if (e.key === 'Escape') this.hideSettings()
-      }
-      document.addEventListener('keydown', this._settingsEscHandler)
+      this._settingsEscHandler = (e) => {
+        if (e.key === "Escape") this.hideSettings();
+      };
+      document.addEventListener("keydown", this._settingsEscHandler);
 
       const firstFocusable = panel.querySelector(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      )
-      if (firstFocusable) setTimeout(() => firstFocusable.focus(), 50)
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (firstFocusable) setTimeout(() => firstFocusable.focus(), 50);
     }
 
     // 每次打开设置面板都从后端刷新一次配置
@@ -653,28 +743,28 @@ class SettingsManager {
     // - 让“外部编辑 config.jsonc”能在不刷新页面的情况下反映到 UI
     // - 避免打开面板时把旧的本地缓存配置反向写回后端（覆盖外部修改）
     try {
-      this.settings = await this.loadSettings()
+      this.settings = await this.loadSettings();
     } catch (e) {
-      console.warn('Refresh settings on open failed; keeping current:', e)
+      console.warn("Refresh settings on open failed; keeping current:", e);
     }
     try {
-      this.feedbackConfig = await this.loadFeedbackConfig()
+      this.feedbackConfig = await this.loadFeedbackConfig();
     } catch (e) {
-      console.warn('Refresh feedback config on open failed:', e)
+      console.warn("Refresh feedback config on open failed:", e);
     }
 
-    this.updateUI()
-    this.updateFeedbackUI()
-    this.updateStatus()
+    this.updateUI();
+    this.updateFeedbackUI();
+    this.updateStatus();
   }
 
   applySettingsTheme() {
-    const theme = document.documentElement.getAttribute('data-theme')
+    const theme = document.documentElement.getAttribute("data-theme");
 
     // 动态注入浅色主题样式（解决 CSS 优先级问题）
-    if (!document.getElementById('settings-light-theme-styles')) {
-      const style = document.createElement('style')
-      style.id = 'settings-light-theme-styles'
+    if (!document.getElementById("settings-light-theme-styles")) {
+      const style = document.createElement("style");
+      style.id = "settings-light-theme-styles";
       style.textContent = `
         [data-theme="light"] .settings-panel {
           background: rgba(0, 0, 0, 0.7) !important;
@@ -750,136 +840,150 @@ class SettingsManager {
           border-color: rgba(0, 0, 0, 0.15) !important;
           color: #141413 !important;
         }
-      `
-      document.head.appendChild(style)
+      `;
+      document.head.appendChild(style);
     }
   }
 
   hideSettings() {
-    const panel = document.getElementById('settings-panel')
+    const panel = document.getElementById("settings-panel");
     if (panel) {
-      const container = document.querySelector('.container')
+      const container = document.querySelector(".container");
       if (container) {
-        container.style.overflow = ''
+        container.style.overflow = "";
       }
 
-      panel.classList.add('hidden')
-      panel.style.display = 'none'
+      panel.classList.add("hidden");
+      panel.style.display = "none";
     }
 
     if (this._settingsEscHandler) {
-      document.removeEventListener('keydown', this._settingsEscHandler)
-      this._settingsEscHandler = null
+      document.removeEventListener("keydown", this._settingsEscHandler);
+      this._settingsEscHandler = null;
     }
 
-    const settingsBtn = document.getElementById('settings-btn')
-    if (settingsBtn) settingsBtn.focus()
+    const settingsBtn = document.getElementById("settings-btn");
+    if (settingsBtn) settingsBtn.focus();
   }
 
   async testNotification() {
     try {
-      await notificationManager.sendNotification(t('notify.testTitle'), t('notify.testBody'), {
-        tag: 'settings-test',
-        requireInteraction: false
-      })
-      showStatus(t('status.testSent'), 'success')
+      await notificationManager.sendNotification(
+        t("notify.testTitle"),
+        t("notify.testBody"),
+        {
+          tag: "settings-test",
+          requireInteraction: false,
+        },
+      );
+      showStatus(t("status.testSent"), "success");
     } catch (error) {
-      console.error('Test notification failed:', error)
-      showStatus(t('status.testFailed') + ': ' + error.message, 'error')
+      console.error("Test notification failed:", error);
+      showStatus(t("status.testFailed") + ": " + error.message, "error");
     }
   }
 
   async testBarkNotification() {
     try {
       if (!this.settings.barkEnabled) {
-        showStatus(t('status.enableBarkFirst'), 'warning')
-        return
+        showStatus(t("status.enableBarkFirst"), "warning");
+        return;
       }
 
       if (!this.settings.barkUrl || !this.settings.barkDeviceKey) {
-        showStatus(t('status.configureBark'), 'warning')
-        return
+        showStatus(t("status.configureBark"), "warning");
+        return;
       }
 
       // 显示发送中状态
-      showStatus(t('status.sendingBark'), 'info')
+      showStatus(t("status.sendingBark"), "info");
 
       // 通过后端API发送Bark通知，避免CORS问题
-      const response = await fetch('/api/test-bark', {
-        method: 'POST',
+      const response = await fetch("/api/test-bark", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json'
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           bark_url: this.settings.barkUrl,
           bark_device_key: this.settings.barkDeviceKey,
           bark_icon: this.settings.barkIcon,
           bark_action: this.settings.barkAction,
-          bark_url_template: this.settings.barkUrlTemplate || this.defaultSettings.barkUrlTemplate
-        })
-      })
+          bark_url_template:
+            this.settings.barkUrlTemplate ||
+            this.defaultSettings.barkUrlTemplate,
+        }),
+      });
 
-      const result = await response.json()
+      const result = await response.json();
 
-      if (response.ok && result.status === 'success') {
-        showStatus(result.message, 'success')
-        console.log('Bark notification sent:', result)
+      if (response.ok && result.status === "success") {
+        showStatus(result.message, "success");
+        console.log("Bark notification sent:", result);
       } else {
-        showStatus(result.message || t('status.barkFailed'), 'error')
-        console.error('Bark notification send failed:', result)
+        showStatus(result.message || t("status.barkFailed"), "error");
+        console.error("Bark notification send failed:", result);
       }
     } catch (error) {
-      console.error('Bark test notification failed:', error)
-      showStatus(t('status.barkTestFailed', { reason: error.message }), 'error')
+      console.error("Bark test notification failed:", error);
+      showStatus(
+        t("status.barkTestFailed", { reason: error.message }),
+        "error",
+      );
     }
   }
 
   async loadFeedbackConfig() {
     try {
-      const resp = await fetch('/api/get-feedback-prompts', { cache: 'no-store' })
+      const resp = await fetch("/api/get-feedback-prompts", {
+        cache: "no-store",
+      });
       if (resp.ok) {
-        const data = await resp.json()
-        if (data.status === 'success' && data.config) {
+        const data = await resp.json();
+        if (data.status === "success" && data.config) {
           return {
             frontend_countdown: data.config.frontend_countdown ?? 240,
-            resubmit_prompt: data.config.resubmit_prompt ?? '',
-            prompt_suffix: data.config.prompt_suffix ?? ''
-          }
+            resubmit_prompt: data.config.resubmit_prompt ?? "",
+            prompt_suffix: data.config.prompt_suffix ?? "",
+          };
         }
       }
     } catch (e) {
-      console.warn('Load feedback config failed:', e)
+      console.warn("Load feedback config failed:", e);
     }
-    return { frontend_countdown: 240, resubmit_prompt: '', prompt_suffix: '' }
+    return { frontend_countdown: 240, resubmit_prompt: "", prompt_suffix: "" };
   }
 
   updateFeedbackUI() {
-    const fc = this.feedbackConfig || {}
-    const countdownEl = document.getElementById('feedback-countdown')
-    const promptEl = document.getElementById('feedback-resubmit-prompt')
-    const suffixEl = document.getElementById('feedback-prompt-suffix')
-    if (countdownEl) countdownEl.value = fc.frontend_countdown ?? 240
-    if (promptEl) promptEl.value = fc.resubmit_prompt ?? ''
-    if (suffixEl) suffixEl.value = fc.prompt_suffix ?? ''
+    const fc = this.feedbackConfig || {};
+    const countdownEl = document.getElementById("feedback-countdown");
+    const promptEl = document.getElementById("feedback-resubmit-prompt");
+    const suffixEl = document.getElementById("feedback-prompt-suffix");
+    if (countdownEl) countdownEl.value = fc.frontend_countdown ?? 240;
+    if (promptEl) promptEl.value = fc.resubmit_prompt ?? "";
+    if (suffixEl) suffixEl.value = fc.prompt_suffix ?? "";
   }
 
   async saveFeedbackConfig(updates) {
     try {
-      const resp = await fetch('/api/update-feedback-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      })
-      const data = await resp.json()
-      if (resp.ok && data.status === 'success') {
-        Object.assign(this.feedbackConfig, updates)
-        showStatus(t('settings.feedbackConfigSaved'), 'success')
+      const resp = await fetch("/api/update-feedback-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.status === "success") {
+        Object.assign(this.feedbackConfig, updates);
+        showStatus(t("settings.feedbackConfigSaved"), "success");
       } else {
-        showStatus(data.message || t('settings.feedbackConfigSaveFailed'), 'error')
+        showStatus(
+          data.message || t("settings.feedbackConfigSaveFailed"),
+          "error",
+        );
       }
     } catch (e) {
-      console.error('Save feedback config failed:', e)
-      showStatus(t('settings.feedbackConfigSaveFailed'), 'error')
+      console.error("Save feedback config failed:", e);
+      showStatus(t("settings.feedbackConfigSaveFailed"), "error");
     }
   }
 
@@ -887,29 +991,35 @@ class SettingsManager {
     // 真源：调用后端 /api/reset-feedback-config，避免前端硬编码中文默认值。
     // 若后端不可用，回退到重新读取当前配置；不再吞掉错误，好让用户知道发生了什么。
     try {
-      const resp = await fetch('/api/reset-feedback-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || data.status !== 'success') {
-        showStatus(data.message || t('settings.feedbackConfigSaveFailed'), 'error')
-        return
+      const resp = await fetch("/api/reset-feedback-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.status !== "success") {
+        showStatus(
+          data.message || t("settings.feedbackConfigSaveFailed"),
+          "error",
+        );
+        return;
       }
-      if (data.defaults && typeof data.defaults === 'object') {
-        Object.assign(this.feedbackConfig || (this.feedbackConfig = {}), data.defaults)
+      if (data.defaults && typeof data.defaults === "object") {
+        Object.assign(
+          this.feedbackConfig || (this.feedbackConfig = {}),
+          data.defaults,
+        );
       } else {
-        this.feedbackConfig = await this.loadFeedbackConfig()
+        this.feedbackConfig = await this.loadFeedbackConfig();
       }
     } catch (e) {
-      console.error('Reset feedback config failed:', e)
-      showStatus(t('settings.feedbackConfigSaveFailed'), 'error')
-      return
+      console.error("Reset feedback config failed:", e);
+      showStatus(t("settings.feedbackConfigSaveFailed"), "error");
+      return;
     }
-    this.updateFeedbackUI()
-    showStatus(t('settings.feedbackConfigReset'), 'success')
+    this.updateFeedbackUI();
+    showStatus(t("settings.feedbackConfigReset"), "success");
   }
 }
 
 // 创建全局设置管理器实例
-const settingsManager = new SettingsManager()
+const settingsManager = new SettingsManager();

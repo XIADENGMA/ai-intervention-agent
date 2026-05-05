@@ -41,7 +41,7 @@ npm install
 
 - `ai-intervention-agent.serverUrl`：服务端地址（默认 `http://localhost:8080`）
 - `ai-intervention-agent.logLevel`：日志级别（默认 `info`；查看位置：Output → AI Intervention Agent）
-- `ai-intervention-agent.i18n.pseudoLocale` *（实验性）*：开启后用 pseudo-localised 文案替换当前 UI 语言包；用于在不切英文环境的前提下排查硬编码字符串、布局溢出与 Unicode 渲染问题。默认 `false`。
+- `ai-intervention-agent.i18n.pseudoLocale` _（实验性）_：开启后用 pseudo-localised 文案替换当前 UI 语言包；用于在不切英文环境的前提下排查硬编码字符串、布局溢出与 Unicode 渲染问题。默认 `false`。
 
 > 通知开关（Web / 声音 / 系统 / Bark）由面板内的 **通知设置** 维护，并写入服务端 `config.toml`，不放在 VS Code 的 `settings.json` 里。
 
