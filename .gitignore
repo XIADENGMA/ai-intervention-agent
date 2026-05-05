@@ -188,6 +188,10 @@ logs/
 
 # 运行时数据（任务持久化、状态文件）
 data/
+# 例外：tests/data/ 下保存的是固定测试夹具（如 R20.14-A perf gate 的 baseline JSON），
+# 必须随仓库分发，否则 `scripts/perf_gate.py` 在新 clone 上会因缺失 baseline 直接失败。
+!tests/data/
+!tests/data/**
 pids
 *.pid
 *.seed
