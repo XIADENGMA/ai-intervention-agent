@@ -15,6 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from config_manager import ReadWriteLock
 from server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
@@ -123,7 +124,7 @@ class TaskQueue:
 
     ### 内部字段
     - `_tasks`: dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
-    - `_lock`: Lock - 线程锁，保护共享数据
+    - `_lock`: ReadWriteLock - 读写锁，多读者并发，写者独占（R22.2 起）
     - `_active_task_id`: str | None - 当前活动任务ID
     - `_stop_cleanup`: Event - 停止清理线程的事件
     - `_cleanup_thread`: Thread - 后台清理线程
@@ -142,21 +143,28 @@ class TaskQueue:
     remove_task()     → 直接删除
     ```
 
-    ## 线程安全保证
+    ## 线程安全保证（R22.2 重构后）
 
-    所有以下方法都使用 `with self._lock:` 保护：
-    - add_task, get_task, get_all_tasks
-    - set_active_task, get_active_task
-    - complete_task, remove_task
-    - clear_completed_tasks, cleanup_completed_tasks
-    - get_task_count, clear_all_tasks
+    所有公共方法均通过 ``self._lock`` 保护，但读路径走 ``read_lock()``、
+    写路径走 ``write_lock()``，读读并发、读写仍互斥、写写仍互斥：
+
+    - **写路径**（互斥）：``add_task`` / ``set_active_task`` /
+      ``complete_task`` / ``remove_task`` / ``clear_completed_tasks`` /
+      ``cleanup_completed_tasks`` / ``clear_all_tasks`` /
+      ``update_auto_resubmit_timeout_for_all``
+    - **读路径**（可并发）：``get_task`` / ``get_all_tasks`` /
+      ``get_active_task`` / ``get_task_count`` / ``_persist`` 内部读快照
+
+    禁忌：禁止在已持锁的线程中再次获取本锁（``ReadWriteLock`` 不支持
+    递归 / 升级 / 降级）。当前所有写后副作用（``_persist`` /
+    ``_trigger_status_change``）均在锁外触发，无嵌套风险。
 
     ## 性能考虑
 
-    - **Lock粒度**：方法级别（粗粒度）
-      - 优点：实现简单，不易出错
-      - 缺点：高并发时可能成为瓶颈
-      - 适用场景：中低并发（<100 QPS）
+    - **Lock 类型**：``ReadWriteLock``（读写分离）
+      - R22.2 起：读读并发，写者独占；多 client 高频读路径不再互相阻塞
+      - 适用场景：读多写少（GET /api/tasks SSE / 倒计时刷新 ≫ add/complete）
+      - 注意：写者饥饿风险存在但实测可接受（写频次 ≪ 读频次）
 
     - **内存占用**：O(n)，n为任务数量
       - 每个任务约1KB（取决于prompt和options）
@@ -195,7 +203,16 @@ class TaskQueue:
         """
         self.max_tasks = max_tasks
         self._tasks: dict[str, Task] = {}
-        self._lock = Lock()
+        # R22.2：把粗粒度 ``threading.Lock`` 升级为 ``ReadWriteLock``。
+        # why：``GET /api/tasks`` / SSE / 倒计时刷新都是高频纯读路径
+        # （``get_task`` / ``get_all_tasks`` / ``get_active_task`` /
+        # ``get_task_count`` / ``_persist`` snapshot），互相之间没有冲突，
+        # 但旧 ``Lock`` 一律串行，多 client + 多面板场景下读侧自相阻塞。
+        # ``ReadWriteLock`` 让读读并发、读写仍互斥、写写仍互斥，对单写者频率
+        # 几乎不变，但 N 个并发读者从串行降为并行。约束：禁止在同一线程嵌套
+        # 持锁（``_persist`` 已设计为锁外调用，``_trigger_status_change``
+        # 也在锁外触发，无嵌套风险）。
+        self._lock = ReadWriteLock()
         self._active_task_id: str | None = None
 
         self._status_change_callbacks: list[Callable[[str, str | None, str], None]] = []
@@ -232,7 +249,7 @@ class TaskQueue:
         删除所有任务并重置队列状态，用于服务启动时清理残留任务。
 
         """
-        with self._lock:
+        with self._lock.write_lock():
             count = len(self._tasks)
             self._tasks.clear()
             self._active_task_id = None
@@ -253,7 +270,7 @@ class TaskQueue:
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         new_status: str | None = None
-        with self._lock:
+        with self._lock.write_lock():
             if auto_resubmit_timeout <= 0:
                 auto_resubmit_timeout = 0
             else:
@@ -326,12 +343,12 @@ class TaskQueue:
         时间复杂度:
             O(1) - 字典查询
         """
-        with self._lock:
+        with self._lock.read_lock():
             return self._tasks.get(task_id)
 
     def get_all_tasks(self) -> list[Task]:
         """获取所有任务列表"""
-        with self._lock:
+        with self._lock.read_lock():
             # 【性能优化】Python 3.7+ dict 保持插入顺序，直接返回 values
             return list(self._tasks.values())
 
@@ -365,7 +382,7 @@ class TaskQueue:
             )
 
         updated = 0
-        with self._lock:
+        with self._lock.write_lock():
             for task in self._tasks.values():
                 if task.status == TaskStatus.COMPLETED:
                     continue
@@ -382,7 +399,7 @@ class TaskQueue:
 
     def get_active_task(self) -> Task | None:
         """获取当前活动任务"""
-        with self._lock:
+        with self._lock.read_lock():
             if self._active_task_id:
                 return self._tasks.get(self._active_task_id)
             return None
@@ -390,7 +407,7 @@ class TaskQueue:
     def set_active_task(self, task_id: str) -> bool:
         """手动切换活动任务"""
         status_events: list[tuple[str, str | None, str]] = []
-        with self._lock:
+        with self._lock.write_lock():
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
@@ -495,7 +512,7 @@ class TaskQueue:
             - 如果没有pending任务，_active_task_id 保持为 None
         """
         status_events: list[tuple[str, str | None, str]] = []
-        with self._lock:
+        with self._lock.write_lock():
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
@@ -571,7 +588,7 @@ class TaskQueue:
             - 删除后任务立即不可查询
         """
         status_events: list[tuple[str, str | None, str]] = []
-        with self._lock:
+        with self._lock.write_lock():
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
@@ -644,7 +661,7 @@ class TaskQueue:
             - 适用于需要立即清理的场景
             - 后台清理线程使用的是cleanup_completed_tasks
         """
-        with self._lock:
+        with self._lock.write_lock():
             completed_task_ids = [
                 tid
                 for tid, task in self._tasks.items()
@@ -702,7 +719,7 @@ class TaskQueue:
             - 后台线程默认使用 age_seconds=10
             - 可以手动调用来立即清理
         """
-        with self._lock:
+        with self._lock.write_lock():
             now = datetime.now(UTC)  # 使用 UTC 时间，与 completed_at 保持一致
             tasks_to_remove = []
 
@@ -924,7 +941,7 @@ class TaskQueue:
             - total = pending + active + completed
             - completed任务会在10秒后被清理
         """
-        with self._lock:
+        with self._lock.read_lock():
             counts: dict[str, int] = {
                 TaskStatus.PENDING: 0,
                 TaskStatus.ACTIVE: 0,
@@ -1056,7 +1073,7 @@ class TaskQueue:
         if not self._persist_path:
             return
         try:
-            with self._lock:
+            with self._lock.read_lock():
                 snapshot = []
                 for task in self._tasks.values():
                     if task.status == TaskStatus.COMPLETED:

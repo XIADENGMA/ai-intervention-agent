@@ -67,7 +67,7 @@
 
 ### 内部字段
 - `_tasks`: dict[str, Task] - 任务字典，key为task_id（Python 3.7+ 保持插入顺序）
-- `_lock`: Lock - 线程锁，保护共享数据
+- `_lock`: ReadWriteLock - 读写锁，多读者并发，写者独占（R22.2 起）
 - `_active_task_id`: str | None - 当前活动任务ID
 - `_stop_cleanup`: Event - 停止清理线程的事件
 - `_cleanup_thread`: Thread - 后台清理线程
@@ -86,21 +86,28 @@ complete_task()   → status = "completed"（10秒后删除）
 remove_task()     → 直接删除
 ```
 
-## 线程安全保证
+## 线程安全保证（R22.2 重构后）
 
-所有以下方法都使用 `with self._lock:` 保护：
-- add_task, get_task, get_all_tasks
-- set_active_task, get_active_task
-- complete_task, remove_task
-- clear_completed_tasks, cleanup_completed_tasks
-- get_task_count, clear_all_tasks
+所有公共方法均通过 ``self._lock`` 保护，但读路径走 ``read_lock()``、
+写路径走 ``write_lock()``，读读并发、读写仍互斥、写写仍互斥：
+
+- **写路径**（互斥）：``add_task`` / ``set_active_task`` /
+  ``complete_task`` / ``remove_task`` / ``clear_completed_tasks`` /
+  ``cleanup_completed_tasks`` / ``clear_all_tasks`` /
+  ``update_auto_resubmit_timeout_for_all``
+- **读路径**（可并发）：``get_task`` / ``get_all_tasks`` /
+  ``get_active_task`` / ``get_task_count`` / ``_persist`` 内部读快照
+
+禁忌：禁止在已持锁的线程中再次获取本锁（``ReadWriteLock`` 不支持
+递归 / 升级 / 降级）。当前所有写后副作用（``_persist`` /
+``_trigger_status_change``）均在锁外触发，无嵌套风险。
 
 ## 性能考虑
 
-- **Lock粒度**：方法级别（粗粒度）
-  - 优点：实现简单，不易出错
-  - 缺点：高并发时可能成为瓶颈
-  - 适用场景：中低并发（<100 QPS）
+- **Lock 类型**：``ReadWriteLock``（读写分离）
+  - R22.2 起：读读并发，写者独占；多 client 高频读路径不再互相阻塞
+  - 适用场景：读多写少（GET /api/tasks SSE / 倒计时刷新 ≫ add/complete）
+  - 注意：写者饥饿风险存在但实测可接受（写频次 ≪ 读频次）
 
 - **内存占用**：O(n)，n为任务数量
   - 每个任务约1KB（取决于prompt和options）

@@ -58,7 +58,7 @@ class TestCleanupThrottle(unittest.TestCase):
         added = self.queue.add_task(task_id=task_id, prompt=f"test-{task_id}")
         self.assertTrue(added)
         # 直接拿任务对象写状态（绕过 complete_task 自带的延迟删除回调链）
-        with self.queue._lock:
+        with self.queue._lock.write_lock():
             task = self.queue._tasks[task_id]
             task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.now(UTC) - timedelta(
@@ -90,7 +90,7 @@ class TestCleanupThrottle(unittest.TestCase):
         )
 
         # t2 仍在内存中，证明节流真的阻止了 cleanup
-        with self.queue._lock:
+        with self.queue._lock.read_lock():
             self.assertIn("t2", self.queue._tasks)
 
     def test_throttled_runs_again_after_window(self) -> None:
@@ -132,8 +132,12 @@ class TestCleanupThrottle(unittest.TestCase):
         # 跑一次让节流时间戳进入 throttle 窗口
         self.queue.cleanup_completed_tasks_throttled(throttle_seconds=60.0)
 
-        # 持有 self._lock 模拟 add_task 长时操作
-        with self.queue._lock:
+        # 持有 self._lock 写锁模拟 add_task / complete_task 等写路径
+        # 写锁排斥所有读 + 写，等价于旧 ``threading.Lock`` 互斥语义。
+        # 该测试在意：fast-path 节流命中时不该尝试拿主锁，
+        # 所以这里用最严格的写锁去抢 → 若 fast-path 真的去拿读/写锁，
+        # 就会被这里阻塞，从而暴露问题。
+        with self.queue._lock.write_lock():
             # 在另一线程跑 throttled cleanup（理论上应立即返回 0，不被阻塞）
             result_holder: dict[str, int | None] = {"value": None}
             done = threading.Event()

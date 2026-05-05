@@ -817,7 +817,7 @@ class TestTaskQueuePartialBranches(unittest.TestCase):
         tq.add_task("t1", "prompt1")
         tq.add_task("t2", "prompt2")
 
-        with tq._lock:
+        with tq._lock.write_lock():
             tq._tasks["t1"].status = "pending"
 
         result = tq.set_active_task("t2")
@@ -841,7 +841,7 @@ class TestTaskQueuePartialBranches(unittest.TestCase):
         tq.add_task("t1", "prompt1")
         tq.add_task("t2", "prompt2")
 
-        with tq._lock:
+        with tq._lock.write_lock():
             tq._active_task_id = "ghost_task"
 
         result = tq.set_active_task("t2")
