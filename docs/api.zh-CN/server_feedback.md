@@ -8,6 +8,22 @@
 注意：`interactive_feedback` 的 MCP 工具注册由 `server.py` 持有的 `mcp` 实例完成，
 本模块内的 `interactive_feedback` 为“未装饰”的实现函数。
 
+R25.2 性能注解：``httpx`` 顶级导入被推迟到使用点
+================================================
+
+本模块只在 SSE 监听 (``_sse_listener``) / launch_feedback_ui / interactive_feedback
+三处真正发起 HTTP 时才需要 httpx，``server.py`` 顶层 import 本模块时若再 import
+httpx 等于把 ~55 ms 的 transport 初始化预热成本绑死在 MCP 进程 cold-start 上。
+搭配 ``service_manager`` 的同步改造（同样推迟到使用点），cold-start 总省 ~55 ms
+（``httpx`` 只加载一次，两处任意一个先到都会写入 ``sys.modules`` 命中后续 import）。
+
+注意：本模块没有任何模块级 ``httpx.X`` 类型注解（``except httpx.HTTPError`` 与
+``httpx.Timeout(...)`` 都在函数体内），因此**不**需要 ``if TYPE_CHECKING: import httpx``
+守护块——三个使用点（``_sse_listener`` / ``launch_feedback_ui`` / ``interactive_feedback``）
+直接函数体首行 ``import httpx`` 就够了。``service_manager`` 那边因为有 ``_async_client:
+httpx.AsyncClient | None = None`` 等模块级注解，所以保留 TYPE_CHECKING 块；这条
+路径上的不对称是有意的。
+
 ## 函数
 
 ### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None`
@@ -67,7 +83,11 @@ active 槽位让前端展示错乱的 prompt。
 
 ### `launch_feedback_ui(summary: str, predefined_options: list[str] | None = None, task_id: str | None = None, timeout: int = 300) -> dict[str, Any]`
 
-废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具
+废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具。
+
+R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
+可以解析符号；同时本函数会调用 ``service_manager.update_web_content`` 等
+使用 httpx 的接口，``sys.modules['httpx']`` 命中 cache 后零成本。
 
 ### `async interactive_feedback(message: str | None = Field(default=None, description='Question, summary, or proposal to display to the human user. MUST be a non-empty string. Supports CommonMark / GitHub-Flavored Markdown (headings, lists, tables, fenced code blocks, links, inline code). Recommended length: 1-2000 characters; hard limit 10000 (longer input is truncated). Best practices: (1) state the question clearly in the first line; (2) include the recommended/default answer when proposing options; (3) escape special characters properly in JSON (use \\" for quotes, \\n for newlines). If omitted, the server falls back to `summary` or `prompt` for cross-tool compatibility.'), predefined_options: list | None = Field(default=None, description="Optional list of predefined choices the user can pick from (rendered as multi-select checkboxes alongside a free-text reply). MUST be either null/omitted or a JSON array of strings; non-string items are dropped. Each option: 1-500 characters (longer items are truncated). Tips: (1) keep options short, action-oriented and mutually distinguishable; (2) if you have a recommended/default answer, place it first and mark it (e.g. '[Recommended] ...'); (3) the user may also ignore options and reply with free text. If omitted, the server falls back to `options` for cross-tool compatibility."), summary: str | None = Field(default=None, description='Compatibility alias for `message` (used by noopstudios/Minidoracat interactive-feedback-mcp variants). Ignored when `message` is provided.'), prompt: str | None = Field(default=None, description='Compatibility alias for `message`. Ignored when `message` is provided.'), options: list | None = Field(default=None, description='Compatibility alias for `predefined_options`. Ignored when `predefined_options` is provided.'), project_directory: str | None = Field(default=None, description='Accepted for compatibility with other feedback MCP variants; this server ignores it (project context is taken from the running Web UI / config).'), submit_button_text: str | None = Field(default=None, description='Accepted for compatibility; this server uses its own UI labels.'), timeout: int | None = Field(default=None, description='Accepted for compatibility; this server uses its own configured backend timeout and auto-resubmit countdown.'), feedback_type: str | None = Field(default=None, description='Accepted for compatibility; ignored by this server.'), priority: str | None = Field(default=None, description='Accepted for compatibility; ignored by this server.'), language: str | None = Field(default=None, description="Accepted for compatibility; UI language follows the user's saved settings."), tags: list | None = Field(default=None, description='Accepted for compatibility; ignored by this server.'), user_id: str | None = Field(default=None, description='Accepted for compatibility; ignored by this server.')) -> list`
 
@@ -102,6 +122,10 @@ Cross-tool compatibility:
 
 Note: this function is not the MCP registration site itself; `server.py`
 wraps it with `mcp.tool()` to expose it to MCP clients.
+
+R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
+解析符号——本工具被 MCP 客户端首次调用时一次性付 ~55 ms 加载费，而 MCP server
+cold-start 路径完全不会进入此函数（``server.py`` 顶层 import 时只是定义而已）。
 
 ## 类
 

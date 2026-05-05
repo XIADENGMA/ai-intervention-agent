@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_ensure_notification_system_loaded() -> tuple[Any, Any]`
+
 ### `_close_async_client_best_effort(client: httpx.AsyncClient | None) -> None`
 
 ### `_invalidate_runtime_caches_on_config_change() -> None`

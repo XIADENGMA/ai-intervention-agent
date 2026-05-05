@@ -122,12 +122,48 @@ class TestSourceInvariants(unittest.TestCase):
             )
 
     def test_top_module_imports_httpx(self) -> None:
-        """模块级仍需要 import httpx（提供 `httpx.Timeout` 类型）。"""
+        """R25.2 之后：``server_feedback`` 顶层不再 ``import httpx``，改成函数体内 lazy import。
+
+        原因：``server_feedback`` 在 R25.2 之前直接 ``import httpx``，把 ~55 ms 的
+        cold-start 成本绑死在 ``server.py`` 顶层 import 链路上。R25.2 把 ``httpx``
+        从模块顶层移到使用点函数体首行；由于 ``server_feedback`` 没有模块级
+        ``httpx.X`` 类型注解（``except httpx.HTTPError`` 与 ``httpx.Timeout(...)`` 都在
+        函数体内），连 ``TYPE_CHECKING`` 守护块都不需要——三处使用点（``_sse_listener``
+        / ``launch_feedback_ui`` / ``interactive_feedback``）直接本地 ``import httpx`` 即可。
+
+        本测试断言：
+
+        1. 顶层不能再裸 ``import httpx``。
+        2. ``_sse_listener`` 函数体里必须有 ``import httpx`` 才能引用 ``httpx.Timeout``。
+
+        如果未来有人把 ``import httpx`` 加回顶层，本测试会立刻失败，挡住 +55 ms 的
+        cold-start regression。
+        """
         module_src = inspect.getsource(server_feedback)
-        self.assertTrue(
-            re.search(r"^import httpx\b", module_src, re.MULTILINE) is not None,
-            "server_feedback 模块顶层必须 import httpx 才能用 httpx.Timeout",
+
+        # 1) 不能有裸的 ``import httpx`` 在模块顶层（缩进 0）
+        bare_top_level = re.search(r"^import httpx\b", module_src, re.MULTILINE)
+        self.assertIsNone(
+            bare_top_level,
+            "R25.2: server_feedback 顶层不能再 ``import httpx``——应改成函数体内 lazy import",
         )
+
+        # 2) ``_sse_listener`` 函数体里必须有运行时本地 import httpx
+        sse_listener_match = re.search(
+            r"async def _sse_listener\(\) -> None:.*?(?=\n    async def |\n\s{0,4}\S)",
+            module_src,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(
+            sse_listener_match,
+            "未找到 _sse_listener 函数体——测试需要更新",
+        )
+        if sse_listener_match is not None:
+            self.assertIn(
+                "import httpx",
+                sse_listener_match.group(0),
+                "R25.2: _sse_listener 函数体必须本地 import httpx 才能引用 httpx.Timeout",
+            )
 
 
 # ============================================================================

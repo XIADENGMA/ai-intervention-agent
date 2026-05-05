@@ -2051,17 +2051,27 @@ class TestServiceManagerDeep(unittest.TestCase):
             sm.cleanup_all(shutdown_notification_manager=False)
 
     @patch("service_manager.NOTIFICATION_AVAILABLE", True)
-    @patch("service_manager.notification_manager")
+    @patch("service_manager._notification_initialized", True)
+    @patch("service_manager._notification_manager_singleton")
     @patch("service_manager.is_web_service_running", return_value=False)
     def test_cleanup_all_shutdown_notification_manager(self, _, mock_nm):
+        """R25.2: cleanup_all 走「已加载过通知系统」路径时仍然 shutdown 单例。
+
+        新的懒加载实现把 ``notification_manager`` 单例从模块顶层 import 改成
+        ``_notification_manager_singleton`` 私有引用，由 ``_ensure_notification_system_loaded``
+        填充；测试这里直接 patch 私有名 + 把 ``_notification_initialized`` 翻成 True，
+        模拟「已经被某个调用方触发过加载」的状态。
+        """
         sm = server.ServiceManager()
         sm.cleanup_all(shutdown_notification_manager=True)
         mock_nm.shutdown.assert_called_once()
 
     @patch("service_manager.NOTIFICATION_AVAILABLE", True)
-    @patch("service_manager.notification_manager")
+    @patch("service_manager._notification_initialized", True)
+    @patch("service_manager._notification_manager_singleton")
     @patch("service_manager.is_web_service_running", return_value=False)
     def test_cleanup_all_shutdown_notification_manager_failure(self, _, mock_nm):
+        """R25.2: shutdown 抛错时 cleanup_all 仍然吞掉异常继续走完。"""
         mock_nm.shutdown.side_effect = RuntimeError("shutdown fail")
         sm = server.ServiceManager()
         sm.cleanup_all(shutdown_notification_manager=True)
@@ -2350,45 +2360,64 @@ class TestStartWebService(unittest.TestCase):
     @patch("server.time.sleep")
     @patch("service_manager.health_check_service")
     @patch("service_manager.subprocess.Popen")
-    @patch("service_manager.initialize_notification_system")
-    @patch("service_manager.notification_manager")
-    @patch("service_manager.NOTIFICATION_AVAILABLE", True)
-    def test_notification_init_success(
-        self, mock_nm, mock_init_ns, mock_popen, mock_hc, mock_sleep
-    ):
+    def test_notification_init_success(self, mock_popen, mock_hc, mock_sleep):
+        """R25.2: 懒加载下，``start_web_service`` 通过 ``_ensure_notification_system_loaded``
+        拿到 ``(nm_singleton, init_fn)`` 两个引用并调用 ``init_fn(nm_singleton.get_config())``。
+
+        ``_ensure_notification_system_loaded`` 内部会 ``import notification_manager`` /
+        ``import notification_providers``——为了避免真实加载 + 影响进程级单例状态，这里
+        直接 patch 整个 ``_ensure_notification_system_loaded`` 让它返回两个 mock，断言
+        ``init_fn`` 被以 ``nm.get_config()`` 调用过。
+        """
         mock_proc = MagicMock()
         mock_proc.pid = 1003
         mock_popen.return_value = mock_proc
         mock_hc.side_effect = [False, True]
+
+        mock_nm = MagicMock()
         mock_nm.get_config.return_value = {}
+        mock_init_ns = MagicMock()
 
         cfg = _make_config()
         script_dir = _SERVER_DIR
-        server.start_web_service(cfg, script_dir)
-        mock_init_ns.assert_called_once()
+        with (
+            patch("service_manager.NOTIFICATION_AVAILABLE", True),
+            patch(
+                "service_manager._ensure_notification_system_loaded",
+                return_value=(mock_nm, mock_init_ns),
+            ),
+        ):
+            server.start_web_service(cfg, script_dir)
+        mock_init_ns.assert_called_once_with({})
 
     @patch("server.time.sleep")
     @patch("service_manager.health_check_service")
     @patch("service_manager.subprocess.Popen")
-    @patch(
-        "service_manager.initialize_notification_system",
-        side_effect=RuntimeError("init fail"),
-    )
-    @patch("service_manager.notification_manager")
-    @patch("service_manager.NOTIFICATION_AVAILABLE", True)
-    def test_notification_init_failure(
-        self, mock_nm, mock_init_ns, mock_popen, mock_hc, mock_sleep
-    ):
-        """通知系统初始化失败不影响服务启动"""
+    def test_notification_init_failure(self, mock_popen, mock_hc, mock_sleep):
+        """R25.2: 通知系统初始化失败不影响服务启动（懒加载版）。
+
+        与 success 用同样的 patch 策略；这里把 ``init_fn`` 的 ``side_effect`` 设成
+        RuntimeError，验证异常被吞掉、``start_web_service`` 仍然走完正常流程。
+        """
         mock_proc = MagicMock()
         mock_proc.pid = 1004
         mock_popen.return_value = mock_proc
         mock_hc.side_effect = [False, True]
+
+        mock_nm = MagicMock()
         mock_nm.get_config.return_value = {}
+        mock_init_ns = MagicMock(side_effect=RuntimeError("init fail"))
 
         cfg = _make_config()
         script_dir = _SERVER_DIR
-        server.start_web_service(cfg, script_dir)
+        with (
+            patch("service_manager.NOTIFICATION_AVAILABLE", True),
+            patch(
+                "service_manager._ensure_notification_system_loaded",
+                return_value=(mock_nm, mock_init_ns),
+            ),
+        ):
+            server.start_web_service(cfg, script_dir)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

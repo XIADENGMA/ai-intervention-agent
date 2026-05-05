@@ -3,6 +3,22 @@
 该模块从 `server.py` 抽取反馈相关逻辑，避免在 MCP 入口文件里堆积业务代码。
 注意：`interactive_feedback` 的 MCP 工具注册由 `server.py` 持有的 `mcp` 实例完成，
 本模块内的 `interactive_feedback` 为“未装饰”的实现函数。
+
+R25.2 性能注解：``httpx`` 顶级导入被推迟到使用点
+================================================
+
+本模块只在 SSE 监听 (``_sse_listener``) / launch_feedback_ui / interactive_feedback
+三处真正发起 HTTP 时才需要 httpx，``server.py`` 顶层 import 本模块时若再 import
+httpx 等于把 ~55 ms 的 transport 初始化预热成本绑死在 MCP 进程 cold-start 上。
+搭配 ``service_manager`` 的同步改造（同样推迟到使用点），cold-start 总省 ~55 ms
+（``httpx`` 只加载一次，两处任意一个先到都会写入 ``sys.modules`` 命中后续 import）。
+
+注意：本模块没有任何模块级 ``httpx.X`` 类型注解（``except httpx.HTTPError`` 与
+``httpx.Timeout(...)`` 都在函数体内），因此**不**需要 ``if TYPE_CHECKING: import httpx``
+守护块——三个使用点（``_sse_listener`` / ``launch_feedback_ui`` / ``interactive_feedback``）
+直接函数体首行 ``import httpx`` 就够了。``service_manager`` 那边因为有 ``_async_client:
+httpx.AsyncClient | None = None`` 等模块级注解，所以保留 TYPE_CHECKING 块；这条
+路径上的不对称是有意的。
 """
 
 from __future__ import annotations
@@ -14,7 +30,6 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-import httpx
 from fastmcp.exceptions import ToolError
 from mcp.types import TextContent
 from pydantic import Field
@@ -219,7 +234,15 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         把 read timeout 解除，否则 SSE 在第一个空闲窗口就会被 httpx 当成
         超时砍掉。这个 per-call timeout 覆盖只影响本次 stream 请求，不会
         污染池里其他 short request 的 timeout 行为。
+
+        R25.2: 函数体首行 ``import httpx`` 把 httpx 引入函数局部命名空间——
+        SSE 监听只在 ``interactive_feedback`` 工具调用时触发，到达此处
+        ``service_manager.get_async_client(cfg)`` 必然已经把 httpx 加载到
+        ``sys.modules``，本地 import 走 cache 没有额外开销，但能让 ty 与运行时
+        都正确解析 ``httpx.Timeout``。
         """
+        import httpx
+
         try:
             cfg = service_manager.get_web_ui_config()[0]
             sc = service_manager.get_async_client(cfg)
@@ -348,7 +371,14 @@ def launch_feedback_ui(
     task_id: str | None = None,
     timeout: int = 300,
 ) -> dict[str, Any]:
-    """废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具"""
+    """废弃：旧版 Python API，推荐使用 interactive_feedback() MCP 工具。
+
+    R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
+    可以解析符号；同时本函数会调用 ``service_manager.update_web_content`` 等
+    使用 httpx 的接口，``sys.modules['httpx']`` 命中 cache 后零成本。
+    """
+    import httpx  # used by `except httpx.HTTPError` below; ruff sees the usage
+
     # 确保超时时间不小于300秒（0表示无限等待，保持不变）
     if timeout > 0:
         timeout = max(timeout, 300)
@@ -632,7 +662,13 @@ async def interactive_feedback(
 
     Note: this function is not the MCP registration site itself; `server.py`
     wraps it with `mcp.tool()` to expose it to MCP clients.
+
+    R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
+    解析符号——本工具被 MCP 客户端首次调用时一次性付 ~55 ms 加载费，而 MCP server
+    cold-start 路径完全不会进入此函数（``server.py`` 顶层 import 时只是定义而已）。
     """
+    import httpx  # used by `except httpx.HTTPError` below; ruff sees the usage
+
     # 漂移参数兜底：当 agent 误把别的 feedback MCP 工具的参数传给我们时，
     # 仍然尽力解析出 message / predefined_options，避免首次调用直接报错。
     resolved_message: Any = message
