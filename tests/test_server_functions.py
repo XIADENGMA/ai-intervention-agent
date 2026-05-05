@@ -1237,7 +1237,15 @@ class TestUpdateWebContent(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════
 class TestWaitForTaskCompletionExtended(unittest.TestCase):
     def _mock_async_client(self, get_side_effect=None, get_return_value=None):
-        """构建 mock AsyncClient，get 方法返回 awaitable"""
+        """构建 mock AsyncClient，get 方法返回 awaitable。
+
+        R23.1：``_sse_listener`` 也走 ``service_manager.get_async_client``，
+        所以 mock client 必须显式让 ``stream(...)`` 抛异常表示"SSE 不可用"，
+        否则 MagicMock 默认让 ``async with sc.stream(...)`` 走 happy path 然后
+        触发 ``aiter_lines()`` AsyncMock 未 await 的 RuntimeWarning。SSE 阻断
+        后 listener 在 finally 里 ``sse_connected.clear()``，``_poll_fallback``
+        以 2s fast cadence 接管，本测试套用的就是 poll-only 路径。
+        """
         from unittest.mock import AsyncMock
 
         mock_client = MagicMock()
@@ -1245,6 +1253,7 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
             mock_client.get = AsyncMock(side_effect=get_side_effect)
         else:
             mock_client.get = AsyncMock(return_value=get_return_value)
+        mock_client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         return mock_client
 
     @patch("service_manager.get_web_ui_config")
@@ -1326,6 +1335,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.get = AsyncMock(side_effect=mock_get)
+        # R23.1：阻 SSE 主循环（详见 _mock_async_client docstring）
+        mock_client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = mock_client
         result = asyncio.run(server.wait_for_task_completion("t-flaky", timeout=10))
         self.assertEqual(result.get("user_input"), "recovered")
@@ -1356,6 +1367,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.get = AsyncMock(side_effect=mock_get)
+        # R23.1：阻 SSE 主循环
+        mock_client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = mock_client
         result = asyncio.run(server.wait_for_task_completion("t-retry", timeout=10))
         self.assertEqual(result.get("user_input"), "ok")
@@ -1383,6 +1396,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.get = AsyncMock(side_effect=mock_get)
+        # R23.1：阻 SSE 主循环
+        mock_client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = mock_client
         result = asyncio.run(server.wait_for_task_completion("t-json", timeout=10))
         self.assertEqual(result.get("user_input"), "ok")
@@ -1410,6 +1425,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.get = AsyncMock(side_effect=mock_get)
+        # R23.1：阻 SSE 主循环
+        mock_client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = mock_client
         result = asyncio.run(server.wait_for_task_completion("t-type", timeout=10))
         self.assertEqual(result.get("user_input"), "ok")
@@ -1431,7 +1448,13 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
     """
 
     def _make_async_client(self, get_side_effect):
-        """构建 mock AsyncClient：``get`` 走业务 mock，``post`` 单独锁住调用次数。"""
+        """构建 mock AsyncClient：``get`` 走业务 mock，``post`` 单独锁住调用次数。
+
+        R23.1：``stream`` 必须显式 raise，让 ``_sse_listener`` 走 graceful
+        degradation 退出，poll fallback 接管。否则 MagicMock 默认让 SSE 主循环
+        进入 ``aiter_lines()`` 触发未 await 的 RuntimeWarning。详见
+        ``TestWaitForTaskCompletionExtended._mock_async_client``。
+        """
         from unittest.mock import AsyncMock
 
         client = MagicMock()
@@ -1439,6 +1462,7 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
         post_mock = AsyncMock()
         post_mock.return_value = MagicMock(status_code=200)
         client.post = post_mock
+        client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         return client, post_mock
 
     @patch("service_manager.get_web_ui_config")
@@ -1555,6 +1579,8 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
         client.get = AsyncMock(side_effect=always_pending)
         # close 内部抛 ConnectError —— 模拟 web_ui 已经下线
         client.post = AsyncMock(side_effect=httpx.ConnectError("web_ui down"))
+        # R23.1：阻止 SSE 主循环进入 mock 默认 aiter_lines 路径
+        client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
         with patch("server_config.BACKEND_MIN", 1):
@@ -1656,6 +1682,8 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
         post_mock = AsyncMock()
         post_mock.return_value = MagicMock(status_code=200)
         client.post = post_mock
+        # R23.1：阻 SSE 主循环，让 retry-before-close 路径独立可测
+        client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
         with patch("server_config.BACKEND_MIN", 1):
@@ -1707,6 +1735,8 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
         post_mock = AsyncMock()
         post_mock.return_value = MagicMock(status_code=200)
         client.post = post_mock
+        # R23.1：阻 SSE 主循环，让 poll-only fallback 路径独立可测
+        client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
         with patch("server_config.BACKEND_MIN", 1):
@@ -1753,6 +1783,8 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
         client.get = AsyncMock(side_effect=already_done)
         post_mock = AsyncMock()
         client.post = post_mock
+        # R23.1：阻 SSE 主循环，让 fast poll 完成路径独立可测
+        client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
         result = asyncio.run(server.wait_for_task_completion("t-done", timeout=5))

@@ -338,6 +338,14 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
         else:
             client.get = AsyncMock(return_value=get_return_value)
         client.post = AsyncMock()
+        # R23.1 起 ``_sse_listener`` 也走 ``service_manager.get_async_client``，
+        # 所以测试里必须显式让 ``stream(...)`` 抛出表示"SSE 不可用"，让 listener
+        # 按既有 graceful degradation 路径退出（finally 清 ``sse_connected``，
+        # ``_poll_fallback`` 接管 2 s fast cadence）。否则 MagicMock 默认让
+        # ``async with sc.stream(...)`` 进入主体并触发 ``aiter_lines()`` 的
+        # AsyncMock，产生 RuntimeWarning。R22.1 既有契约（SSE 永不连接 →
+        # poll 按 2 s 节奏运行）保持不变。
+        client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         return client
 
     @patch("service_manager.get_web_ui_config")

@@ -194,14 +194,38 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         R22.1: stream 进入主循环前 set ``sse_connected`` 让 ``_poll_fallback``
         切到 30s safety net 节奏；任何退出路径（正常完成、cancel、异常）
         都在 finally 里 clear 该 flag，确保 poll 在下一周期回到 2s 紧密兜底。
+
+        R23.1: 复用 ``service_manager.get_async_client(cfg)`` 维护的进程级
+        ``httpx.AsyncClient`` 连接池，而不是每次任务都新建一个独立 client。
+        why：
+        - **TCP/TLS 握手复用**：同一个 web_ui 进程的 polling 路径
+          （``_fetch_result``）已经通过 connection pool 复用 keep-alive
+          连接；让 SSE stream 也走这个池子，意味着 SSE 不再独占一对
+          new socket，连续多次 ``interactive_feedback`` 调用之间能复用
+          底层 TCP 连接（loopback 上单次握手 ~50-200 µs，但 client
+          构造本身的 ``AsyncHTTPTransport`` + retry 策略初始化 + asyncio
+          lock 获取大概 1-3 ms / 次，省掉这部分是主要收益）。
+        - **资源生命周期统一**：过去每次 ``interactive_feedback`` 都
+          ``__aenter__/__aexit__`` 一个 ``httpx.AsyncClient``，意味着每次
+          MCP 调用都做一次完整的 transport 初始化+销毁；现在交给进程级
+          singleton 管理，进程退出时 ``service_manager._close_async_client_best_effort``
+          统一回收。
+
+        必须显式覆盖 ``timeout``：``service_manager.get_async_client`` 的
+        默认 ``httpx.Timeout(config.timeout, connect=5.0)`` 把 read timeout
+        设成 ``config.timeout``（短请求合适），但 SSE stream 是 long-lived
+        ——服务端在没有事件时一直 hold 住连接不发数据，正常行为。所以
+        ``stream(...)`` 调用时必须传 ``httpx.Timeout(None, connect=5.0)``
+        把 read timeout 解除，否则 SSE 在第一个空闲窗口就会被 httpx 当成
+        超时砍掉。这个 per-call timeout 覆盖只影响本次 stream 请求，不会
+        污染池里其他 short request 的 timeout 行为。
         """
         try:
-            async with (
-                httpx.AsyncClient() as sc,
-                sc.stream(
-                    "GET", sse_url, timeout=httpx.Timeout(None, connect=5.0)
-                ) as resp,
-            ):
+            cfg = service_manager.get_web_ui_config()[0]
+            sc = service_manager.get_async_client(cfg)
+            async with sc.stream(
+                "GET", sse_url, timeout=httpx.Timeout(None, connect=5.0)
+            ) as resp:
                 logger.debug(f"SSE 连接已建立: {task_id}")
                 # 通知 _poll_fallback：SSE 主路径已就绪，可以拉成 30s safety net
                 sse_connected.set()
