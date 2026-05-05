@@ -83,9 +83,20 @@ class NotificationManager {
       if (!this.isSupported) {
         console.warn('Browser does not support Web Notification API')
       } else {
-        await this.registerServiceWorker()
         this.bindAutoPermissionRequest()
       }
+
+      // R21.2：service worker 注册移出 ``isSupported`` 守护
+      // ----------------------------------------------------------------
+      // 历史上 ``registerServiceWorker`` 只在 ``isSupported``（``Notification``
+      // API 存在）路径上跑，导致 iOS 16- / 部分 Android 自带浏览器（不支持
+      // ``Notification`` 但支持 ``serviceWorker``）拿不到 SW，自然也享受
+      // 不到静态资源 cache-first 加速。现在把注册提前到 init 主流程，
+      // ``registerServiceWorker`` 内部仍然有 ``supportsServiceWorkerNotifications``
+      // 守护（名字 misleading，但实现实际只检查 ``serviceWorker`` in
+      // navigator + secure context，与 Notification 无关），所以无 SW
+      // 支持的环境会优雅返回 null，不破坏现有契约。
+      await this.registerServiceWorker()
 
       await this.initAudio()
       console.log('Notification manager initialized')
