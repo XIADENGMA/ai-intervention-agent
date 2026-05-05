@@ -233,10 +233,16 @@ class TestRunIntegration(unittest.TestCase):
             self.assertEqual(rc, 1, "check 模式发现 stale 时必须 exit 1（CI gate 用）")
 
     def test_main_check_returns_0_when_all_fresh(self) -> None:
+        # R21.4：``--check`` 同时验证 gzip 和 br 两份产物，所以 setup 必须把
+        # 两种副本都备齐才能让 ``_main(["--check"])`` 返 0。R20.14-D 时代只造
+        # ``.gz`` 就够了；保留这条测试是验证「fresh 路径全绿时 _main 返 0」
+        # 的契约，不是验 R20.14-D 的 single-encoding 行为。
         with TemporaryDirectory() as tmp:
             d = Path(tmp)
             (d / "main.js").write_bytes(b"x" * 10000)
             precompress.compress_file(d / "main.js")
+            if precompress.BROTLI_AVAILABLE:
+                precompress.compress_file_br(d / "main.js")
             rc = precompress._main(["--check", "--dir", str(d)])
             self.assertEqual(rc, 0)
 

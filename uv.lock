@@ -11,6 +11,7 @@ name = "ai-intervention-agent"
 version = "1.5.27"
 source = { editable = "." }
 dependencies = [
+    { name = "brotli" },
     { name = "fastmcp" },
     { name = "flasgger" },
     { name = "flask" },
@@ -55,6 +56,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "brotli", specifier = ">=1.2.0" },
     { name = "fastmcp", specifier = ">=3.0.0" },
     { name = "flasgger", specifier = ">=0.9.7" },
     { name = "flask", specifier = ">=3.1.3" },

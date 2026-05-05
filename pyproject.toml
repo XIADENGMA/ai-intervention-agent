@@ -54,6 +54,13 @@ dependencies = [
     "zeroconf>=0.146.0",
     "loguru>=0.7.3",
     "flasgger>=0.9.7",
+    # R21.4: brotli precompression for static assets (br > gzip > identity in
+    # `web_ui_routes/static.py` negotiation). Saves additional 17-23% on top of
+    # gzip on our largest assets (tex-mml-chtml.js: 264 KB gz → 204 KB br).
+    # Already pulled in transitively via flask-compress[brotli], but declared
+    # here as a first-class dep so `uv sync` / `pip install ai-intervention-agent`
+    # always installs it explicitly.
+    "brotli>=1.2.0",
 ]
 
 [project.optional-dependencies]

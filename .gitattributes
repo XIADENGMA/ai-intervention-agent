@@ -53,6 +53,7 @@ Dockerfile  text eol=lf
 *.tar.gz    binary
 *.tgz       binary
 *.gz        binary
+*.br        binary
 *.7z        binary
 *.bz2       binary
 *.xz        binary
@@ -77,8 +78,10 @@ locales/**      linguist-generated
 vendor/**       linguist-vendored
 packages/vscode/vendor/** linguist-vendored
 
-# R20.14-D：``static/**/*.gz`` 是 ``scripts/precompress_static.py`` 的产物，
-# 重新生成完全可重现（``mtime=0``）。标 generated 让 linguist + GitHub diff
-# UI 不要展开它们；标 binary（在上面的 ``*.gz`` 规则里已隐含）让 git 不做
-# 文本比对避免误判 churn。
+# R20.14-D + R21.4：``static/**/*.gz`` / ``static/**/*.br`` 都是
+# ``scripts/precompress_static.py`` 的产物，重新生成完全可重现
+# （gzip 用 ``mtime=0``，brotli 输出本身不带 mtime）。标 generated 让
+# linguist + GitHub diff UI 不要展开它们；标 binary（在上面的 ``*.gz`` /
+# ``*.br`` 规则里已隐含）让 git 不做文本比对避免误判 churn。
 static/**/*.gz       linguist-generated -diff
+static/**/*.br       linguist-generated -diff
