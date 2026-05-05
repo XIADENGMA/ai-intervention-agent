@@ -9,7 +9,187 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-## [1.5.25] — 2026-05-05
+## [1.5.26] — 2026-05-05
+
+> Round-20 deep performance-optimization batch (6 commits since v1.5.25):
+> R20.4 closes a Web UI fetch-no-timeout black-hole that mirror-locks the
+> existing VSCode 6 s abort guard; R20.5 collapses two redundant per-request
+> `cleanup_completed_tasks` scans behind a 30 s monotonic-clock throttle
+> on the GET `/api/tasks` and `/api/tasks/<id>` hot paths; R20.6 short-circuits
+> `EnhancedLogger.log` on `isEnabledFor(level)` *before* the dedup pipeline
+> and fixes a latent ghost-hit cache bug; R20.7 adds a 16-entry LRU cache
+> to `WebFeedbackUI.render_markdown` so `/api/config` polls no longer
+> re-parse identical prompts at 5–20 ms each; **R20.8** carves
+> `task_queue_singleton` out of `server.py` so the Web UI subprocess no
+> longer drags `fastmcp` / `mcp` through `from server import get_task_queue`,
+> shrinking `import web_ui` from **425 ms → 271 ms (-156 ms / -36.5%)**;
+> **R20.9** lazies `mcp.types` behind PEP 563 + a `TYPE_CHECKING` gate +
+> `_lazy_mcp_types()` cache, taking `import server_config` from
+> **213 ms → 72 ms (-141 ms / -66%)** and stacking on top of R20.8 to
+> bring `import web_ui` to **192 ms** — combined startup-latency
+> improvement of **-233 ms / -55%** for the Web UI subprocess cold start,
+> directly visible as faster first `interactive_feedback` round-trips.
+
+### Fixed
+
+- **R20.4 — `static/js/multi_task.js::fetchAndApplyTasks` now wraps every
+  `/api/tasks` poll in a 6-second `AbortController` hard timeout (mirrors
+  VSCode `webview-ui.js::POLL_TASKS_TIMEOUT_MS`).** Pre-fix the function
+  only used `tasksPollAbortController` for *overlap protection* (cancel
+  previous in-flight when next poll starts), but had no time-bound on the
+  in-flight fetch itself; the moment the server's `/api/tasks` socket
+  transitioned to a TCP black-hole (firewall flip mid-session, NAT reset,
+  reverse-proxy half-open keepalive without RST/FIN), `await fetch(...)`
+  blocked indefinitely with no exception, no timeout, and no further
+  `setTimeout`-driven re-arming — and because the 30 s health-check at the
+  bottom of `multi_task.js` checks `if (!tasksPollingTimer)` (still holds
+  the last fired-but-not-cleared timer ID), it could not detect this
+  freeze. User-observable symptom: task list silently stops updating, no
+  error toast, no console log, page looks alive but server view is
+  permanently stale. Asymmetric to VSCode webview which has had identical
+  protection since round-15. Fix is a 4-line minimal addition: declare
+  `var TASKS_POLL_TIMEOUT_MS = 6000` (deliberately equal to VSCode's
+  `POLL_TASKS_TIMEOUT_MS`, with a load-bearing comment marking the
+  cross-file invariant), wire `setTimeout(() => abort(), TIMEOUT_MS)`
+  inside `fetchAndApplyTasks`, and `clearTimeout` in `finally` to avoid
+  timer leaks. Existing AbortError handling already swallows the abort
+  path silently and falls through to `scheduleNextTasksPoll`'s
+  backoff-and-retry, so the polling chain self-heals within 6 s instead
+  of staying stuck forever. Five new source-text invariants in
+  `tests/test_webui_tasks_poll_timeout.py` lock the constant value, the
+  `setTimeout`+`abort` callback structure, the `finally` clearing, the
+  cross-file parity with VSCode, and the `null.abort()` race guard.
+
+### Performance
+
+- **R20.5 — `TaskQueue.cleanup_completed_tasks_throttled` collapses
+  per-request `/api/tasks` and `/api/tasks/<id>` cleanup scans behind a
+  30 s monotonic-clock throttle.** Pre-fix `web_ui_routes/task.py::list_tasks`
+  and `get_task_detail` each called the full O(N) `cleanup_completed_tasks(age_seconds=10)`
+  on every poll — the same work the background cleanup thread already
+  performs on a 5 s cadence. Under typical load (1 browser + 1 VSCode
+  webview polling every 2 s = ~60 calls/min) the redundant scans burned
+  ~5–10 µs/request of CPU *and* held `self._lock` long enough to interfere
+  with `add_task` / `complete_task` from concurrent submissions. New
+  `cleanup_completed_tasks_throttled(age_seconds, throttle_seconds=30.0)`
+  uses `time.monotonic()` (NTP-jump safe) and a separate `_hotpath_cleanup_lock`
+  to (a) skip the slow path entirely if last invocation was within the
+  window, and (b) prevent a thundering-herd among 8+ concurrent polls
+  (only one runs the slow path, others observe the freshly-updated
+  timestamp and short-circuit). Eight new tests lock: throttle-suppress,
+  throttle-rearm-after-window, `throttle_seconds=0` degenerates to
+  unthrottled, the fast path doesn't touch `_lock` (verified by holding
+  the main lock from a parallel thread), monotonic clock parity,
+  thundering-herd serialization, and two source-text invariants on the
+  routes themselves so a future "let me simplify by removing the wrapper"
+  PR has to confront the deprecation explicitly.
+
+- **R20.6 — `EnhancedLogger.log` short-circuits on
+  `self.logger.isEnabledFor(effective_level)` BEFORE the dedup pipeline.**
+  Pre-fix the dedup pipeline (`acquire(LogDeduplicator.lock)` +
+  `hash(message)` + cache `dict[int, tuple[float, int]]` lookup +
+  lazy-cleanup branch + counter update) ran on every call regardless of
+  whether the resolved log level was actually enabled — production
+  WARNING-level loggers paid full ~0.5 µs/call for every silenced
+  `logger.debug(...)` / `logger.info(...)`, *and* could "ghost-hit" the
+  dedup cache (a filtered DEBUG message would still increment the
+  counter, so a future raise-the-level + re-emit would mis-dedup against
+  a phantom hit). Fix raises the level check above the dedup acquire/release;
+  silenced calls now return after a single `isEnabledFor` lookup
+  (~50 ns) — measured **54% latency reduction on silenced debug calls**.
+  Six new tests lock: silenced-debug returns without acquiring dedup lock,
+  silenced-info likewise, enabled-debug still goes through dedup,
+  enabled-warning still goes through, the `self.logger.isEnabledFor`
+  call site is preserved by source-text invariant, and
+  `LogDeduplicator.should_log` is *not* called when level is filtered.
+
+- **R20.7 — `WebFeedbackUI.render_markdown` gains a 16-entry insertion-ordered
+  LRU cache so `/api/config` polls stop re-parsing identical prompts.**
+  Pre-fix `render_markdown` unconditionally ran the full markdown.Markdown
+  extension chain (codehilite Pygments + footnotes + tables + 10 more)
+  on every call, ~5–20 ms of CPU at a steady ~1 call/s/active task during
+  long feedback sessions where `active_task.prompt` is *literally constant*.
+  Cache uses Python 3.7+ insertion-order dict semantics (no `cachetools`
+  / `functools.lru_cache` / `OrderedDict` overhead); LRU touch via
+  `pop + __setitem__`; capacity 16 = 1.6× `TaskQueue.max_tasks=10` for
+  comfortable headroom. **Measured 5787× speedup on hits** (828 µs miss →
+  0.14 µs hit on Apple Silicon M1 / Python 3.11.15 with a representative
+  complex prompt). Cache shares the existing `_md_lock` (markdown.Markdown
+  is not thread-safe, so a single-mutex regime is mandatory at the convert
+  layer anyway). The empty-string short-circuit (`if not text: return ""`)
+  lives *before* lock acquisition to avoid an unhelpful `""` cache slot.
+  Fifteen new tests lock the contract: hit/miss correctness, LRU-not-FIFO
+  protection of recent hits, capacity bounding under fuzz (80 unique
+  prompts → len ≤ 16), 8-thread × 10-round concurrent stress, and six
+  source-text invariants (cache field declared, capacity bound declared,
+  with-lock guard, get-lookup, LRU touch, eviction strategy).
+
+- **R20.8 — `task_queue_singleton.py` extracts the `TaskQueue` singleton
+  out of `server.py` so the Web UI subprocess no longer drags `fastmcp` /
+  `mcp` / `loguru` through `from server import get_task_queue`.** Original
+  comment in `server.py` already flagged the antipattern: *"TaskQueue is
+  used only by the Web UI subprocess (web_ui.py / web_ui_routes call
+  get_task_queue()). The MCP server main process never calls this
+  function."* — yet `web_ui.py`, `web_ui_routes/task.py`, and
+  `web_ui_routes/feedback.py` all `from server import get_task_queue`,
+  and that single import-line forced ~310 ms of `fastmcp` / `mcp` /
+  `loguru` static loading on every Web UI subprocess cold start. Fix
+  ports the singleton (lock + double-checked locking + atexit shutdown)
+  to a new lightweight module that depends only on stdlib + `task_queue`;
+  `server.py` re-exports `get_task_queue` and `_shutdown_global_task_queue`
+  with `# noqa: F401` so the public API surface (`server.get_task_queue`)
+  is unchanged for external callers. Tests directly patching
+  `server._global_task_queue` (a private module variable, used in 5 spots
+  of `tests/test_server_functions.py`) are migrated to
+  `task_queue_singleton._global_task_queue`. **Measured `import web_ui`:
+  425 ms → 271 ms (-156 ms / -36.5%)**. Eighteen new tests lock the
+  contract: double-checked locking under 20-thread concurrent first-call,
+  shutdown idempotency, persist-path byte-parity (`<root>/data/tasks.json`),
+  `server.get_task_queue is task_queue_singleton.get_task_queue`
+  re-export identity (prevents the "double-singleton split" failure mode),
+  fresh-subprocess decoupling check (`import task_queue_singleton` does
+  *not* trigger `fastmcp` loading), and seven source-text invariants
+  ensuring `web_ui.py` / `web_ui_routes/{task,feedback}.py` import from
+  the singleton module rather than from `server`.
+
+- **R20.9 — `server_config.py` lazies `mcp.types` behind PEP 563 + a
+  `TYPE_CHECKING` gate + `_lazy_mcp_types()` single-cache accessor, so
+  `task_queue` / `web_ui` no longer pull in `mcp.types` (~184 ms) at
+  module-load time.** R20.8 left `task_queue → server_config → mcp.types`
+  as the next biggest indirect cost on the Web UI subprocess cold-start
+  path. Web UI subprocess never calls any function that uses `mcp.types`
+  classes (`parse_structured_response`, `_process_image`,
+  `_make_resubmit_response` are all main-process only), so paying ~184 ms
+  to load them was pure waste. Fix:
+  1. `from __future__ import annotations` (PEP 563) so all type annotations
+     become string-deferred and module load no longer needs the
+     `ContentBlock` / `ImageContent` / `TextContent` class objects;
+  2. `from mcp.types import ContentBlock, ImageContent, TextContent` moves
+     under `if TYPE_CHECKING:` (`# noqa: F401` for the unused-at-runtime
+     check) — type checkers / IDEs / mypy still resolve the names;
+  3. `_lazy_mcp_types()` caches the module reference on first call (GIL-
+     and idempotence-safe), all three runtime call sites switch to
+     `_lazy_mcp_types().TextContent(...)` / `.ImageContent(...)` and
+     hoist the lookup once at the top of `parse_structured_response` to
+     avoid repeated attribute lookups inside the per-image loop.
+  **Measured `import server_config`: 213 ms → 72 ms (-141 ms / -66%);
+  `import task_queue`: 218 ms → 72 ms (-145 ms / -67%); `import web_ui`:
+  271 ms → 192 ms (-79 ms / -29%)**. Combined with R20.8: `import web_ui`
+  goes from 425 ms baseline to 192 ms (-233 ms / -55% cold-start
+  improvement), directly compressing the time from "MCP tool call" →
+  "Web UI subprocess Flask listen" → "first browser response". Trade-off
+  on `server.py` main process: first call to a response-builder pays
+  ~140 ms one-time lazy-load (subsequent calls 0 µs); since the user is
+  already awaiting the full MCP tool round-trip on the first call, the
+  +140 ms is unobservable. Thirteen new tests lock the contract:
+  three subprocess-isolated decoupling checks (server_config / task_queue
+  cold-load does *not* import `mcp.types`; first call to
+  `parse_structured_response` *does*), lazy-loader cache-singleton
+  identity, runtime-behavior parity on all three response builders,
+  PEP-563 string-form annotation accessibility, and four source-text
+  invariants forbidding any module-level `mcp.types` import resurrection.
+
+
 
 > Round-19 release-tooling hardening (1 commit since v1.5.24): R19.1
 > closes the GitHub 3-tag webhook hard limit that silently dropped the
