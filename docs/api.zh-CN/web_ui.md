@@ -57,6 +57,26 @@ return_value=True)``，且支持子进程在 ``__init__`` 之前的早期路径
 Returns:
     bool: 是否启用 Swagger UI。
 
+### `_compute_file_version(file_path_str: str) -> str`
+
+根据文件 mtime 生成 8 位版本字符串，按 ``file_path_str`` 缓存。
+
+使用 ``str`` 而不是 ``Path`` 作为 cache key，因为 ``Path`` 的 ``__hash__`` 比
+``str`` 的更慢；外层调用方传 ``str(path)`` 即可。
+
+缓存语义与 ``_read_inline_locale_json`` 一致：进程级缓存，文件改动需重启进程
+才能反映新 mtime——dev 重启 web_ui subprocess 已是日常操作，prod 部署后文件
+不变所以缓存命中率 100%。
+
+### `_get_module_static_dir() -> Path`
+
+返回 ``web_ui.py`` 同目录下的 ``static/`` 路径，模块级 lru_cache 一次。
+
+R26.2 引入：``WebFeedbackUI._get_template_context`` 优先使用 ``self._static_dir``
+（由 ``__init__`` 填充），但部分单元测试通过 ``object.__new__(WebFeedbackUI)``
+跳过 ``__init__`` 直接构造裸对象，此时 ``self._static_dir`` 不存在；这条
+fallback 路径让那些测试继续工作而不必显式设置 ``_static_dir``。
+
 ### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080) -> FeedbackResult | None`
 
 启动 Web UI（交互反馈界面）的便捷函数

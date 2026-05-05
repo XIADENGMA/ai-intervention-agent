@@ -247,6 +247,10 @@ class TestTemplateContextInlineLocale(unittest.TestCase):
         mock_config = MagicMock()
         mock_config.get_section.return_value = {"language": language}
 
+        # R26.2: ``_get_template_context`` 现在调用模块级 ``_compute_file_version``
+        # 而不是实例方法 ``_get_file_version``——后者保留为公共 API 供其他调用方
+        # 使用，但在热路径上被替换。这里 patch 模块级函数让所有 4 次调用都返回稳定值
+        # 以便快照比较。
         with (
             patch("web_ui.get_config", return_value=mock_config),
             patch.object(
@@ -254,11 +258,7 @@ class TestTemplateContextInlineLocale(unittest.TestCase):
                 "_get_csp_nonce",
                 return_value="test-nonce",
             ),
-            patch.object(
-                WebFeedbackUI,
-                "_get_file_version",
-                return_value="v1",
-            ),
+            patch("web_ui._compute_file_version", return_value="v1"),
         ):
             return ui._get_template_context()
 
