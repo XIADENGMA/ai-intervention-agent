@@ -9,6 +9,233 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.32] — 2026-05-05
+
+> Round-25 + early Round-26 (5 commits since v1.5.31 — R25.1 typecheck-tooling
+> upgrade + R25.2 lazy-httpx + R26.1 lazy-flask_limiter + R26.2 template-context
+> hot path + R26.3 lazy-markdown): a **typecheck-tooling refresh** plus a
+> **second cold-start optimization wave** that systematically defers every
+> remaining heavy module-top import in the `service_manager` / `server_feedback`
+> / `web_ui` import chain to its actual use site, then tightens the most
+> frequently-rendered hot path (`_get_template_context`, called once per browser
+> page render and once per VS Code webview re-render). Combined wins:
+> (a) **R25.1** bumps `ty` from v0.0.7 (the version frozen since v1.5.0's
+> initial lock) to v0.0.34 (~6 months and 27 Astral releases later) and
+> migrates 60+ `# type: ignore[...]` mypy-style suppressions to `# ty:
+> ignore[...]` ty-style across 28 files (1 production module + 5 production
+> scripts/routes + 22 test files), eliminating the 3 pre-existing
+> `possibly-missing-attribute` warnings via real type narrowing rather than
+> suppression and keeping the entire repo on green ty diagnostics with the
+> latest stable directive syntax — the trigger is that ty's old `# type:
+> ignore[code]` syntax is going to be removed in a future major bump, and
+> doing it now under controlled conditions with full test coverage is far
+> safer than under release pressure later. (b) **R25.2** defers the
+> module-top `import httpx` in `service_manager.py` and `server_feedback.py`
+> to in-function imports at every actual use site (`get_async_client` /
+> `get_sync_client` / `health_check_service` / `update_web_content` for
+> service_manager; `_sse_listener` / `launch_feedback_ui` /
+> `interactive_feedback` for server_feedback), gated behind `if
+> TYPE_CHECKING: import httpx` for the module-level type annotations,
+> dropping `import service_manager` cold-start from ~149 ms to ~69 ms
+> (-79 ms / -53%); pair the httpx surgery with a tri-state lazy load of
+> the optional notification subsystem because the eager
+> `from notification_manager import notification_manager` was the secondary
+> cold-start tax (constructs a 4-thread `ThreadPoolExecutor` + reads
+> on-disk config + transitively pulls notification_providers' own httpx
+> import — undoing all the above httpx surgery on Bark-enabled configs);
+> the `_ensure_notification_system_loaded()` 3-state lazy initializer
+> (uninitialized → loaded-OK → load-failed) caches the singleton on first
+> call and short-circuits at <10 µs per cache-hit thereafter. (c) **R26.1**
+> defers the module-top `from flask_limiter import Limiter` /
+> `from flask_limiter.util import get_remote_address` in `web_ui.py` to
+> in-function imports inside `WebFeedbackUI.__init__`'s `Limiter(...)`
+> construction site, saving ~15-21 ms of incremental cold-start cost on
+> the frequent "import a small utility from web_ui" path used by 100+
+> test sites that don't construct the full `WebUIApp`. (d) **R26.2**
+> tightens the `_get_template_context` hot path on every render by
+> hoisting `_RTL_LANG_PREFIXES` from a 12-element function-local tuple
+> allocated per call to a module-level `frozenset[str]` (O(1) member
+> lookup vs the previous up-to-12 `startswith` calls), extracting
+> `_compute_file_version(file_path_str)` as a module-level
+> `@lru_cache(maxsize=64)` free function (4 fresh `Path.stat().st_mtime`
+> syscalls per render → 0 syscalls after first render), and pre-computing
+> `static_dir` once at `__init__` time (`self._static_dir`) instead of
+> `Path(__file__).resolve().parent / "static"` per call, dropping
+> `_get_template_context` from ~70 µs/call to ~41 µs/call (-41%),
+> compounding under the empirically-observed ~50-200 calls/min steady-state
+> browser polling rate for ~1.5-6 ms/min CPU saving per `web_ui`
+> subprocess. (e) **R26.3** defers the module-top `import markdown` in
+> `web_ui.py` and the eager `markdown.Markdown(extensions=[...10
+> plugins...])` instance construction inside `setup_markdown` to a single
+> coordinated lazy-init point inside `render_markdown(text)`'s critical
+> section (under the existing `self._md_lock`), removing ~20-25 ms of
+> wall-clock cost from the cold-start path that was paid for plugin
+> warm-up (codehilite Pygments lexer + footnote AST + nl2br rewrite +
+> md_in_html sanitizer + table/toc/fenced_code/attr_list/def_list/abbr
+> regex compilation), with race-prevention via double-checked locking
+> (the *first* thread to grab the lock pays the import + construct cost;
+> subsequent threads see `self.md is not None` and skip), verified via a
+> 100-thread `threading.Barrier`-synchronized test that asserts exactly
+> 1 `Markdown(...)` constructor call across the contention window.
+> Cumulative cold-start improvements from v1.5.31 → v1.5.32:
+> `service_manager` cold-start dropped ~80 ms (~149 ms → ~69 ms),
+> `web_ui` cold-start dropped ~9 ms (~111 ms → ~102 ms),
+> `WebFeedbackUI()` constructor dropped ~20 ms (~145 ms → ~125 ms),
+> compounding to a ~30-100 ms reduction in the user-perceived "AI agent
+> calls `interactive_feedback` → browser sees `/`" latency depending on
+> which path dominates in a given session. The R23.x → R26.3 cumulative
+> series totals ~150 ms saved on the cold-start critical path since
+> v1.5.29, all behind 60+ new tests across 5 dedicated suites
+> (`tests/test_lazy_httpx_r25_2.py` 15 tests +
+> `tests/test_lazy_flask_limiter_r26_1.py` 5 tests +
+> `tests/test_template_context_hot_path_r26_2.py` 12 tests +
+> `tests/test_lazy_markdown_r26_3.py` 11 tests + R25.1 typecheck-cleanup
+> behavior tests). All ci_gate stages green at `3099 passed, 1 skipped`
+> with zero ruff / ty / pytest warnings, locale-parity / minify /
+> red-team-i18n / vscode source-contract / BP byte-parity all clean.
+
+### Tooling
+
+- **R25.1 — `ty` v0.0.7 → v0.0.34 + 60+ ignore-syntax migration**
+  (28 files: `enhanced_logging.py`, 5 production scripts/routes,
+  22 test files, plus `uv.lock`). Bump triggers an expected ~60 new
+  diagnostics that ty v0.0.34's improved TypedDict narrowing /
+  tomlkit type tracking / Any-propagation surfaces as known-good
+  test patterns (intentionally invalid-type validator probes,
+  partial mocks overwriting locked attributes, `tomlkit.Item` subscript
+  chains that v0.0.7's typeshed snapshot was widening too aggressively);
+  fixes are one-by-one source-text adjustments preserving byte-for-byte
+  runtime behavior. Production fixes: 6 ignore-syntax migrations + 1
+  defensive null-check refactor in `scripts/bump_version.py:155-156`
+  (where `re.match(r"^(\s*)", line).group(1)` was correctly flagged by
+  ty even though the `\s*` regex always matches — the explicit
+  `indent_match.group(1) if indent_match else ""` form is genuinely
+  defensive code at zero runtime cost) + 1 type widening in
+  `web_ui_routes/task.py:96` (`result: dict[str, Any]` accommodating
+  the route's mixed string / list / dict response shape). Test fixes:
+  60+ ignore migrations spanning `not-subscriptable` (×14),
+  `invalid-argument-type` (×8), `invalid-assignment` (×9),
+  `too-many-positional-arguments` (×4), `unresolved-attribute` (×2),
+  `invalid-context-manager` (×1), `invalid-return-type` (×1, in
+  `tests/test_tool_annotations.py`'s structural-vs-nominal type
+  reconciliation between `fastmcp.tools.base.Tool` and
+  `mcp.types.Tool` which inherit but ty enforces nominal), and
+  `unresolved-import` (×3, on the Python <3.11 `tomli` fallback that
+  is dead code in our ≥3.11-pinned env). Verification:
+  `uv run ty check .` post-migration → `All checks passed!` (was
+  `Found 60 diagnostics` immediately after the lock bump pre-migration);
+  `uv run python scripts/ci_gate.py` → `2958 passed, 1 skipped` (no
+  test removed or skipped, baseline preserved). Out of scope: no other
+  dependency upgrades — the `uv.lock` diff is exactly one package /
+  one version line / corresponding sdist+wheel URL set.
+
+### Performance
+
+- **R25.2 — Lazy `httpx` + lazy notification system**
+  (`service_manager.py`, `server_feedback.py`, plus 15-test
+  `tests/test_lazy_httpx_r25_2.py` source-text + runtime invariant
+  suite). Eliminates ~55 ms `httpx` cold-import + ~24 ms eager
+  `NotificationManager` singleton construction (4-thread executor
+  + on-disk config parse + Bark provider's transitive httpx pull) from
+  the `service_manager` module-load path; `import service_manager` cold-
+  start drops from ~149 ms to ~69 ms (-79 ms / -53%). The 3-state
+  `_ensure_notification_system_loaded()` lazy-init function caches
+  `(_notification_manager_singleton, _initialize_notification_system_fn)`
+  on first call (returns cached refs <10 µs/call thereafter, verified
+  via 1000-iteration micro-benchmark), with `cleanup_all` gated on
+  `_notification_initialized AND _notification_manager_singleton is not None`
+  so cold-shutdown paths that never triggered the lazy load don't
+  reverse-trigger it just to call `shutdown()`. `start_web_service`
+  is the single intentional lazy-load trigger in production (after
+  it runs the notification system stays loaded for the rest of the
+  process lifetime, so subsequent `cleanup_all` calls do find the
+  singleton to shut down).
+
+- **R26.1 — Lazy `flask_limiter` import**
+  (`web_ui.py`, plus 5-test `tests/test_lazy_flask_limiter_r26_1.py`
+  source-text + runtime + behavior contract suite). Defers the
+  module-top `from flask_limiter import Limiter` /
+  `from flask_limiter.util import get_remote_address` to in-function
+  imports placed inside `WebFeedbackUI.__init__` immediately preceding
+  the `self.limiter = Limiter(key_func=get_remote_address, app=self.app,
+  default_limits=["60 per minute", "10 per second"], storage_uri="memory://",
+  strategy="fixed-window")` construction call — `flask_limiter`'s
+  ~21 ms incremental cold-start cost (after flask is already loaded,
+  flask_limiter shares most of its dependency tree so the new cost
+  is much less than its ~65 ms isolated cost) is now paid only by
+  the WebFeedbackUI-instantiation path (real Flask subprocess startup,
+  integration tests, perf benchmarks) rather than by the much-more-
+  frequent "import a small utility from web_ui" path used by 100+
+  test sites that only need `validate_auto_resubmit_timeout` /
+  `MDNS_DEFAULT_HOSTNAME` / `_is_probably_virtual_interface` /
+  `_read_inline_locale_json` / etc. Pattern matches R23.3 lazy
+  flasgger and R25.2 lazy httpx / notification.
+
+- **R26.2 — `_get_template_context` hot path tightening**
+  (`web_ui.py`, plus 12-test `tests/test_template_context_hot_path_r26_2.py`
+  module-level constants + source-text + html_dir behavior +
+  backward-compat suite). Three independent micro-bottlenecks pulled
+  out of the per-render path: (1) `_RTL_LANG_PREFIXES` migrated from
+  a 12-element function-local tuple allocated on every invocation
+  to a module-level `frozenset[str]` (12 BCP-47 RTL primary subtags
+  per W3C language-direction guidance), with `frozenset` chosen over
+  `set` for the immutable-shared-data invariant + thread-safe sharing
+  + fixed hash table at construction time — the lookup pattern
+  simultaneously upgrades from `any(html_lang.lower().startswith(p +
+  "-") or html_lang.lower() == p for p in _RTL_LANG_PREFIXES)` (12
+  fresh string concat allocations + 12 startswith calls per call)
+  to `primary_subtag = html_lang.lower().partition("-")[0]; html_dir
+  = "rtl" if primary_subtag in _RTL_LANG_PREFIXES else "ltr"` (one
+  partition + one frozenset lookup, ~12× faster on the membership
+  test step); (2) `_compute_file_version(file_path_str: str) -> str`
+  extracted as a module-level `@lru_cache(maxsize=64)` free function
+  replacing the previous `WebFeedbackUI._get_file_version(self, path)`
+  instance method that ran one fresh `Path(file_path).stat().st_mtime`
+  syscall per call per file — with 4 calls per render this was 4
+  fresh stat() syscalls per render, each costing ~0.5-2 µs warm and
+  ~5-15 µs cold; post-fix the cache hit rate is 100% after the first
+  render so subsequent calls drop to ~50-200 ns of `lru_cache` dict-
+  probe overhead vs the previous ~2-8 µs of stat() per call; (3)
+  `static_dir` pre-computed once at `WebFeedbackUI.__init__` time as
+  `self._static_dir: Path = self._project_root / "static"` instead of
+  `Path(__file__).resolve().parent / "static"` per render, with a
+  module-level `_get_module_static_dir()` `@lru_cache(maxsize=1)`
+  fallback for unit tests that bypass `__init__` via
+  `object.__new__(WebFeedbackUI)`. Net: `_get_template_context` drops
+  from ~70 µs/call (range 64-78 µs across 5 runs) to ~41 µs/call
+  (range 38-46 µs), -41% / -29 µs per call; at the empirically-
+  observed ~50-200 calls/min steady-state browser polling rate this
+  saves ~1.5-6 ms/min CPU per `web_ui` subprocess.
+
+- **R26.3 — Lazy `markdown` + lazy `markdown.Markdown(...)` instance**
+  (`web_ui.py`, plus 11-test `tests/test_lazy_markdown_r26_3.py` 4-section
+  source + runtime + thread-safety + backward-compat suite). Defers the
+  module-top `import markdown` (~8.9 ms cold-cache module load) AND
+  the eager `markdown.Markdown(extensions=[...10 plugins...])` instance
+  construction inside `setup_markdown` (~10-15 ms one-time plugin warm-
+  up: codehilite Pygments lexer + footnote AST regex + nl2br rewrite +
+  md_in_html sanitizer + table/toc/fenced_code/attr_list/def_list/abbr
+  regex compilation) to a single coordinated lazy-init point inside
+  `render_markdown(text)`'s critical section, paying the combined
+  ~20-25 ms cost at first-render-needed time instead of cold-start time.
+  The lazy-init uses double-checked locking via the existing
+  `self._md_lock` (`threading.Lock` instance that was already protecting
+  `self.md.reset() + self.md.convert()` against concurrent rendering
+  because python-markdown's `Markdown` class is not thread-safe).
+  `_MD_EXTENSIONS` and `_MD_EXTENSION_CONFIGS` extracted to module-level
+  constants for stable test anchoring; the `noclasses=True` codehilite
+  setting is preserved in the constants because the project's R23.5-
+  hardened CSP header doesn't permit external Pygments stylesheets and
+  Pygments must emit `style="..."` inline attributes. Race protection
+  verified via 100-thread `threading.Barrier(parties=100)`-synchronized
+  test that monkey-patches `markdown.Markdown` with a counting wrapper
+  and asserts the constructor is called exactly once across all 100
+  workers (not 1+race-leftover). User-perceived: pre-fix `python -X
+  importtime -c "import web_ui"` showed `markdown` at position #5 with
+  ~8.9 ms self-time; post-fix `markdown` is absent from the top-30
+  imports. `WebFeedbackUI()` constructor cold drops from ~145 ms to
+  ~125 ms (5 cold runs averaged).
+
 ## [1.5.31] — 2026-05-05
 
 > Round-24 kickoff (1 commit since v1.5.30 — R24.1): a single but
