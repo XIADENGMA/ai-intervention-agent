@@ -6,6 +6,8 @@
 
 ### `get_project_version() -> str`
 
+### `_read_inline_locale_json(locale_path_str: str) -> str | None`
+
 ### `web_feedback_ui(prompt: str, predefined_options: list[str] | None = None, task_id: str | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, output_file: str | None = None, host: str = '0.0.0.0', port: int = 8080) -> FeedbackResult | None`
 
 ## Classes

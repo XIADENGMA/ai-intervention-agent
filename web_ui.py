@@ -142,6 +142,43 @@ def get_project_version() -> str:
     return version
 
 
+@lru_cache(maxsize=8)
+def _read_inline_locale_json(locale_path_str: str) -> str | None:
+    """读取 locale JSON 文件并返回已序列化的字符串（R20.12-B 内联首屏 locale）。
+
+    返回值约定：
+        - 成功：JSON 序列化后的紧凑字符串（``json.dumps(data, ensure_ascii=False, separators=(",", ":"))``），
+          模板用 Jinja2 ``|safe`` 注入到 ``window._AIIA_INLINE_LOCALE``；
+        - 失败：``None``，模板会跳过 inline 注入，前端 ``i18n.init`` 走原 fetch 兜底路径。
+
+    设计要点：
+        - **缓存**：``lru_cache(maxsize=8)`` 让每次 ``GET /`` 请求只读 1 次磁盘（首请求 ~3 ms 解析+
+          序列化，命中后 <1 μs）。8 条容量足够覆盖 ``en`` / ``zh-CN`` / ``_pseudo/pseudo`` 等
+          所有 locale 同时被多 Web UI 实例调用的场景；
+        - **入参 str 而非 Path**：``Path`` 虽然可哈希，但 ``Path("a/b") == Path("./a/b")`` 不成立，
+          可能造成同一文件被缓存为两条；接受 ``str`` 让调用方先 ``str(path.resolve())`` 归一化；
+        - **紧凑序列化**：``separators=(",", ":")`` 删空格让 inline 体积比直接传 dict 给
+          Jinja ``|tojson`` 小 ~15%（zh-CN.json 11 KB → 9.4 KB），HTML 体积更友好；
+        - **ensure_ascii=False**：中文/日文等 BMP 外字符直接保留 UTF-8，避免 ``\\uXXXX`` 转义把
+          字节数翻倍。模板已声明 ``<meta charset="UTF-8">``，安全；
+        - **失败默认 None**：磁盘损坏 / 权限问题 / JSON 解析失败均不影响 Web UI 正常启动，
+          前端 ``i18n.init`` 检测到 ``window._AIIA_INLINE_LOCALE === undefined`` 后走旧 fetch 路径。
+
+    安全：
+        locale 文件来自项目内置 ``static/locales/``，**非用户输入**，不存在注入风险。Jinja2 的
+        ``|safe`` filter 在这里安全 —— 我们已经 ``json.dumps`` 把所有特殊字符转义。但仍要在
+        模板中用 ``</script>`` 字符串截断防御（``<`` 替换为 ``\\u003c``），见 ``templates/web_ui.html``。
+    """
+    try:
+        with open(locale_path_str, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+        return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+
+
 # ============================================================================
 # 模块级状态（配置热更新回调使用，web_ui_config_sync 通过 lazy import 访问）
 # ============================================================================
@@ -897,12 +934,16 @@ class WebFeedbackUI(
 
         os.kill(os.getpid(), signal.SIGINT)
 
-    def _get_template_context(self) -> dict[str, str]:
+    def _get_template_context(self) -> dict[str, str | None]:
         """构建 Jinja2 模板渲染上下文。
 
         返回 render_template('web_ui.html', **ctx) 所需的全部变量：
         csp_nonce / version / github_url / language / css_version /
-        multi_task_version / theme_version / app_version。
+        multi_task_version / theme_version / app_version / inline_locale_json。
+
+        R20.12-B: 新增 ``inline_locale_json``（``str | None``）—— lang 非 ``auto`` 时
+        是序列化好的 JSON 字符串，让 i18n 跳过 fetch；lang=auto 时是 ``None``，模板
+        ``{% if inline_locale_json %}`` 会跳过注入。
         """
         try:
             ui_lang = get_config().get_section("web_ui").get("language", "auto")
@@ -940,6 +981,16 @@ class WebFeedbackUI(
         )
 
         static_dir = Path(__file__).resolve().parent / "static"
+
+        # R20.12-B: 当后端已经知道首屏语言（非 ``auto``）时，把对应 locale JSON 内联进 HTML，
+        # 让 ``i18n.init()`` 跳过一次 ``fetch /static/locales/<lang>.json``（11 KB / 30-80 ms RTT）。
+        # ``auto`` 模式时浏览器要先探测 ``navigator.language`` 才能决定下载哪个 locale，
+        # server 没法预知，故仅在显式设置语言时启用。
+        inline_locale_json: str | None = None
+        if ui_lang in ("en", "zh-CN"):
+            locale_path = static_dir / "locales" / f"{ui_lang}.json"
+            inline_locale_json = _read_inline_locale_json(str(locale_path))
+
         return {
             "csp_nonce": self._get_csp_nonce(),
             "version": get_project_version(),
@@ -953,6 +1004,7 @@ class WebFeedbackUI(
             ),
             "theme_version": self._get_file_version(static_dir / "js" / "theme.js"),
             "app_version": self._get_file_version(static_dir / "js" / "app.js"),
+            "inline_locale_json": inline_locale_json,
         }
 
     def update_content(

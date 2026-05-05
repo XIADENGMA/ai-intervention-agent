@@ -2213,7 +2213,12 @@ class TestGetTemplateContext(unittest.TestCase):
         cls.web_ui = WebFeedbackUI(prompt="template test 2", port=18909)
 
     def test_context_keys(self):
-        """_get_template_context 返回 Jinja2 所需的全部变量"""
+        """_get_template_context 返回 Jinja2 所需的全部变量
+
+        R20.12-B: 新增 ``inline_locale_json`` 字段（``str | None``），lang=auto 时为
+        ``None`` 让 Jinja 模板的 ``{% if inline_locale_json %}`` 跳过注入。其他字段
+        仍必须是 ``str``，模板用 ``{{ ... }}`` 直接插值不允许 ``None``。
+        """
         with self.web_ui.app.test_request_context("/"):
             from flask import g
 
@@ -2230,8 +2235,16 @@ class TestGetTemplateContext(unittest.TestCase):
             "app_version",
         }
         self.assertTrue(required_keys.issubset(ctx.keys()))
-        for v in ctx.values():
-            self.assertIsInstance(v, str)
+        # inline_locale_json 可以是 str 或 None（R20.12-B 契约）；其他 required key
+        # 仍必须是 str —— 否则 Jinja 模板插值会抛或输出 "None"。
+        nullable_keys = {"inline_locale_json"}
+        for k, v in ctx.items():
+            if k in nullable_keys:
+                self.assertIsInstance(v, (str, type(None)))
+            else:
+                self.assertIsInstance(
+                    v, str, msg=f"context['{k}'] 必须是 str（实际 {type(v).__name__})"
+                )
 
     def test_context_nonce_from_g(self):
         """上下文中 csp_nonce 取自 flask.g"""
