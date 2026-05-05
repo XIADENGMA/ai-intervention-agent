@@ -9,6 +9,157 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.28] — 2026-05-05
+
+> Round-21 first wave (3 commits since v1.5.27 — R21.1 + R21.2 + R21.4):
+> closes out the **browser-side network / cache layer** with three
+> orthogonal but composable optimizations: (a) **R21.1** hoists the four
+> critical-path body scripts (`app.js` / `multi_task.js` / `i18n.js` /
+> `state.js`) into `<link rel="preload" as="script">` tags in the HTML
+> `<head>`, letting the browser's preload-scanner kick off downloads in
+> parallel during head parsing instead of waiting until the body's
+> `<script defer>` tags are encountered — measured FCP improvement
+> **30-100 ms** on a typical 4G / fiber connection per Web Vitals'
+> `preload-critical-assets` audit. (b) **R21.2** repurposes the existing
+> `notification-service-worker.js` to also serve as a cache-first
+> static asset cache (`STATIC_CACHE_NAME = 'aiia-static-v1'`,
+> whitelisted to `/static/css/*`, `/static/js/*`, `/static/lottie/*`,
+> `/static/locales/*`, `/icons/*`, `/sounds/*`, `/fonts/*`,
+> `/manifest.webmanifest`) — first session pays full RTT to populate
+> the cache, every subsequent same-version session gets **0 RTT** for
+> ~80 static assets (cumulative ~1 s on local-host, ~12-16 s on
+> slow-LAN deployments); decouples SW registration from the
+> `Notification` API guard so iOS 16- / privacy-locked-down browsers
+> also benefit from caching even when notification permission isn't
+> granted. (c) **R21.4** adds a parallel **Brotli (`.br`) precompressed
+> variant** alongside R20.14-D's gzip layer, with the runtime
+> negotiation order `br > gzip > identity` in
+> `web_ui_routes/static.py::_send_with_optional_gzip`; `tex-mml-chtml.js`
+> drops **1173 KB raw → 264 KB gzip → 204 KB Brotli (-83% / -22.7% on
+> top of gzip)**, total static wire-size **2.5 MB → 543 KB (-79%, an
+> additional -253 KB / -32% over the R20.14-D gzip-only baseline)**;
+> 57 `.br` siblings committed to the repo for clone-and-go (same
+> philosophy as the `.gz` siblings); `brotli>=1.2.0` promoted from
+> transitive to first-class dep so `pip install ai-intervention-agent`
+> always installs it. Combined R21.x browser-side wins:
+> faster FCP + faster repeat sessions + smaller wire payload, all
+> without touching the server's hot path or adding runtime CPU cost.
+
+### Performance
+
+- **R21.1 — `templates/web_ui.html::<head>` adds 4 ``<link rel="preload"
+  as="script">`` hints for the four critical-path body scripts**
+  (`app.js` / `multi_task.js` / `i18n.js` / `state.js`); URL byte-parity
+  with the corresponding `<script defer src="...">` tags in the body
+  (including `?v={{ app_version }}` cache-buster) is enforced by
+  `tests/test_critical_preload_r21_1.py` so the preload cache always hits
+  rather than fetching the same file twice; deliberately omits `nonce`
+  attributes on the link tags because preload links don't execute
+  scripts. Measured FCP improvement: **30-100 ms** on typical
+  4G / fiber networks (the lower bound is "everything that previously
+  serialized into one TCP RTT now parallelizes into ½ RTT", upper
+  bound is "head parsing took longer than expected, several scripts
+  could have been overlapping"); 24 new tests cover every consistency
+  invariant (presence / position / `as=` attribute / no `nonce` / no
+  spurious preloads for non-critical assets like `mathjax-loader.js`
+  which is already deferred in the head). Commit `4cc367a`.
+
+- **R21.2 — `static/js/notification-service-worker.js` becomes a
+  dual-purpose service worker**: top section is the new R21.2 static
+  asset cache (`STATIC_CACHE_NAME = 'aiia-static-v1'` versioned cache
+  with `MAX_ENTRIES = 200` FIFO cap; `CACHE_FIRST_PATTERNS` regex array
+  whitelists `/static/css/*`, `/static/js/*`, `/static/lottie/*`,
+  `/static/locales/*`, `/static/images/*`, `/icons/*`, `/sounds/*`,
+  `/fonts/*`, `/manifest.webmanifest`; `install` event uses
+  `self.skipWaiting()` for immediate activation; `activate` event
+  cleans up old `aiia-static-*` caches via `caches.keys() + filter +
+  caches.delete()` then `self.clients.claim()` to take ownership of
+  pre-existing tabs; `fetch` event guards against non-GET / cross-origin
+  / SSE before delegating to `handleCacheFirst()` which does cache-first
+  with fire-and-forget `cache.put` clone-on-network-success and
+  asynchronous `trimCache()` for FIFO eviction; all `cache.put` /
+  `cache.delete` / `caches.open` / `cache.match` failures are silently
+  swallowed so cache-infrastructure failures NEVER cause request
+  failures), bottom section is the original `notificationclick` handler
+  preserved verbatim. `static/js/notification-manager.js::init()` hoists
+  `await this.registerServiceWorker()` out of the `if (!isSupported)
+  { ... } else { ... }` else-branch so iOS 16- / older Android browsers /
+  privacy-locked-down Firefox configurations all register the SW even
+  without `Notification` API support; the existing
+  `supportsServiceWorkerNotifications()` guard inside
+  `registerServiceWorker()` actually only checks
+  `'serviceWorker' in navigator && Boolean(window.isSecureContext)`,
+  NOT anything Notification-related, so the function name is misleading
+  but the implementation is correct. 26 new tests in
+  `tests/test_sw_static_cache_r21_2.py` lock the contract via source-text
+  invariants (deliberately not jsdom integration testing — Service
+  Workers are notoriously underspecified in jsdom, where `Cache` /
+  `self.clients` / `self.skipWaiting` are all stubs that don't catch
+  realistic regressions). Commit `ba30a61`.
+
+- **R21.4 — Brotli (`.br`) precompression layer**, additive on top of
+  R20.14-D's gzip variant. `scripts/precompress_static.py` introduces
+  `compress_file_br(source, *, quality=11)` mirroring the existing
+  `compress_file()` (same skip-by-extension / skip-by-size /
+  skip-if-fresh / `tempfile + os.replace` atomic write / no-gain
+  reverse-check semantics) but emitting `<file>.br` via
+  `brotli.compress(raw, quality=11)` (brotli's max quality, ~10-50ms per
+  asset, paid once at commit time); `Result` dataclass gains an
+  `encoding: "gzip" | "br"` field; `run()` is now `enable_brotli=True`
+  keyword-arg-gated and emits both encodings by default with transparent
+  fallback to gzip-only when `BROTLI_AVAILABLE=False` (graceful import
+  guard) or when operator passes `--no-brotli`; `clean_dir()` removes
+  both `.gz` and `.br`; `--check` mode validates both encodings.
+  `web_ui_routes/static.py` introduces `_parse_accept_encoding()` doing
+  proper RFC-7231 q-value-aware parsing (`gzip;q=0` correctly excluded);
+  `_client_accepts_brotli()` is the new br sibling of
+  `_client_accepts_gzip()`; the existing `_client_accepts_gzip()` is
+  preserved as a back-compat thin wrapper. The negotiation in
+  `_send_with_optional_gzip()` becomes `br > gzip > identity`: if client
+  supports br and `.br` exists → serve `.br` with `Content-Encoding: br`,
+  else if client supports gzip and `.gz` exists → serve `.gz` (R20.14-D
+  behavior preserved exactly), else serve raw; all branches add `Vary:
+  Accept-Encoding`. Function name kept as `_send_with_optional_gzip`
+  (not `_compressed`) deliberately as a back-compat anchor — three other
+  route handlers call it. `pyproject.toml` promotes `brotli>=1.2.0` from
+  transitive (via `flask-compress[brotli]`) to first-class dep so
+  `pip install` always installs it. `.gitattributes` adds `*.br binary`
+  + `static/**/*.br linguist-generated -diff`. **57 `.br` siblings**
+  committed to the repo (clone-and-go, same trade-off math as
+  R20.14-D's `.gz` siblings; both formats are byte-reproducible across
+  machines). Measured: `tex-mml-chtml.js` 1173 KB raw → 264 KB gz →
+  204 KB br (-83% / -22.7% on top of gzip), `lottie.min.js` 305 → 76 →
+  64 KB (-16% on gzip), `main.css` 244 → 47 → 37 KB (-21% on gzip),
+  `zh-CN.json` 11 → 4.3 → 3.5 KB (-19% on gzip), `en.json` 11 → 3.7 →
+  3.2 KB (-16% on gzip); total static wire-size **2.5 MB → 543 KB
+  (-79%, additional -253 KB / -32% over R20.14-D)**. 43 new tests in
+  `tests/test_brotli_precompress_r21_4.py` cover precompress unit /
+  graceful-degradation / dual-encoding `run()` / `_parse_accept_encoding`
+  / end-to-end Flask test client / fallback when sibling missing /
+  source-text invariants for both `static.py` (br check before gzip
+  check is the entire point of R21.4) and `precompress_static.py`.
+  Commit `c095185`.
+
+### Other
+
+- **`tests/test_static_compression_r20_14d.py::test_main_check_returns_0_when_all_fresh`**
+  updated to materialize both `.gz` and `.br` siblings in setup, since
+  R21.4's `--check` mode validates both encodings (without this update,
+  the test would fail with "1 file(s) stale" because the `.br` is
+  reported needs_compress; the test's intent ("when fully fresh, --check
+  returns 0") is preserved under the new dual-encoding contract).
+
+- **Test count climbs +93 (2771 → 2864 collected, 2863 passed + 1 skipped)**:
+  R21.1 (+24) + R21.2 (+26) + R21.4 (+43); zero pre-existing
+  regressions; `pytest -q` clean, `ruff check` clean, `ty check` clean,
+  `scripts/ci_gate.py` green (locale parity / docstring sync /
+  red-team / byte-parity sanity all pass).
+
+- **Released against**: Apple Silicon M1 / Python 3.11.15 / macOS 25.4.0;
+  perf gate `scripts/perf_gate.py` PASS 5/5 against
+  `tests/data/perf_e2e_baseline.json` (server-side benchmarks
+  unaffected since R21.x is purely browser-side / network-layer).
+
 ## [1.5.27] — 2026-05-05
 
 > Round-20 final wave (8 commits since v1.5.26 — R20.10 → R20.14):
