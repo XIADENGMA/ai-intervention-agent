@@ -44,7 +44,7 @@ body:
     attributes:
       label: Version · 版本号
       description: "`pip show ai-intervention-agent` 或 VSCode 扩展设置页看到的版本号。"
-      placeholder: e.g. 1.5.23
+      placeholder: e.g. 1.5.24
     validations:
       required: true
 
