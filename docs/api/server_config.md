@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_lazy_mcp_types() -> Any`
+
 ### `get_feedback_config() -> FeedbackConfig`
 
 ### `calculate_backend_timeout(auto_resubmit_timeout: int, max_timeout: int = 0, infinite_wait: bool = False) -> int`

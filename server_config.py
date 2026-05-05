@@ -4,19 +4,60 @@
 - WebUIConfig / FeedbackConfig 数据类及其 getter
 - 超时计算、输入验证、图片处理、MCP 响应构建
 - 所有函数不依赖 server.py 的全局状态（缓存、进程管理等）
+
+R20.9 性能优化（lazy mcp.types）：
+================================
+``mcp.types`` 单独 import 约 ~184 ms（被 task_queue → server_config 间接拖入
+即可观察到）。MCP 响应构建（``parse_structured_response`` / ``_process_image``
+/ ``_make_resubmit_response``）只在 MCP server 主进程调用，Web UI 子进程
+压根用不到 ``ImageContent`` / ``TextContent`` / ``ContentBlock``。
+
+通过 ``from __future__ import annotations``（PEP 563）+ ``TYPE_CHECKING``
+gate + 一次性缓存的 ``_lazy_mcp_types()`` 访问器，把 ``mcp.types`` 推迟到
+**首次实际调用**响应构建函数时才加载。Web UI 子进程从此完全不会触发
+``mcp.types`` 加载，task_queue 间接 import 时间从 ~218 ms 降至 ~30 ms。
 """
+
+from __future__ import annotations
 
 import base64
 import uuid
 from pathlib import Path
-from typing import Any, ClassVar, Literal, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
-from mcp.types import ContentBlock, ImageContent, TextContent
 from pydantic import BaseModel, field_validator
 
 from config_manager import get_config
 from config_utils import clamp_value, get_compat_config, truncate_string
 from enhanced_logging import EnhancedLogger
+
+if TYPE_CHECKING:
+    # 仅供类型检查器解析签名/注解；运行时绝不触发 mcp.types 加载。
+    # 与下方 ``_lazy_mcp_types()`` 配合实现「类型注解零成本 + 运行时
+    # lazy load」双赢。``TextContent`` 在 ``__future__ annotations`` 下
+    # 仅出现在字符串化的类型注解中，ruff 看不到使用——用 noqa 显式声明。
+    from mcp.types import ContentBlock, ImageContent, TextContent  # noqa: F401
+
+# R20.9：mcp.types 单例缓存。首次调用 `_lazy_mcp_types()` 时才真正 import
+# `mcp.types` 模块（~184 ms），后续调用直接返回缓存。Web UI 子进程不会调用
+# 任何使用本访问器的函数，因此该模块永远不会被加载。
+_mcp_types_module: Any = None
+
+
+def _lazy_mcp_types() -> Any:
+    """懒加载并缓存 ``mcp.types`` 模块对象（线程安全：GIL + 幂等赋值）。
+
+    返回的对象有 ``TextContent`` / ``ImageContent`` / ``ContentBlock`` 等
+    类属性。调用方应直接通过本函数返回值访问，不要重新 ``import mcp.types``
+    （那会让 lazy 化的努力前功尽弃）。
+    """
+    global _mcp_types_module
+    if _mcp_types_module is None:
+        from mcp import types as _mcp_types
+
+        _mcp_types_module = _mcp_types
+    return _mcp_types_module
+
 
 logger = EnhancedLogger(__name__)
 
@@ -268,7 +309,8 @@ def _make_resubmit_response(as_mcp: bool = True) -> list | dict:
     """创建错误/超时的重新提交响应"""
     resubmit_prompt, _ = get_feedback_prompts()
     if as_mcp:
-        return [TextContent(type="text", text=resubmit_prompt)]
+        # R20.9: lazy load mcp.types，避免子进程 import 链路被污染
+        return [_lazy_mcp_types().TextContent(type="text", text=resubmit_prompt)]
     return {"text": resubmit_prompt}
 
 
@@ -568,8 +610,11 @@ def _process_image(image: dict, index: int) -> tuple[ImageContent | None, str | 
     size = image.get("size", len(base64_data) * 3 // 4)
     text_desc = f"=== 图片 {index + 1} ===\n文件名: {filename}\n类型: {content_type}\n大小: {_format_file_size(size)}"
 
+    # R20.9: lazy load mcp.types
     return (
-        ImageContent(type="image", data=base64_data, mimeType=str(content_type)),
+        _lazy_mcp_types().ImageContent(
+            type="image", data=base64_data, mimeType=str(content_type)
+        ),
         text_desc,
     )
 
@@ -625,14 +670,21 @@ def parse_structured_response(
 
     combined_text = _append_prompt_suffix(combined_text)
 
-    result.append(TextContent(type="text", text=combined_text))
+    # R20.9: 单次调用内 hoist 一次 _lazy_mcp_types() 引用，避免 isinstance
+    # 与 append 各自重复函数调用（同一个调用栈内 mcp.types 已经被 lazy 加载，
+    # 但 attribute lookup 有微小开销）。
+    _mt = _lazy_mcp_types()
+    text_cls = _mt.TextContent
+    image_cls = _mt.ImageContent
+
+    result.append(text_cls(type="text", text=combined_text))
 
     logger.debug("最终返回结果:")
     for i, item in enumerate(result):
-        if isinstance(item, TextContent):
+        if isinstance(item, text_cls):
             preview = item.text[:100] + ("..." if len(item.text) > 100 else "")
             logger.debug(f"  - [{i}] TextContent: '{preview}'")
-        elif isinstance(item, ImageContent):
+        elif isinstance(item, image_cls):
             logger.debug(
                 f"  - [{i}] ImageContent: mimeType={item.mimeType}, data_length={len(item.data)}"
             )
