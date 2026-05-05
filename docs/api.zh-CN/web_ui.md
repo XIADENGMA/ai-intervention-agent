@@ -169,7 +169,19 @@ Web 反馈界面核心类 - Flask 应用、安全策略、API 路由、任务管
     - linenums: False（禁用行号）
 
 副作用：
-    - 创建self.md实例（Markdown渲染器）
+    - 创建 ``self._md_lock``（线程安全锁）+ ``self._md_cache``（LRU 缓存）
+    - **不**立即创建 ``self.md`` 实例——见 R26.3 lazy-init 注释
+
+R26.3 lazy-init 行为：
+    - ``self.md`` 初始化为 ``None`` sentinel（类型是 ``Any``，因为 ``markdown``
+      不在模块级 import）
+    - 真正的 ``markdown.Markdown(extensions=..., extension_configs=...)``
+      实例化推迟到首次 ``render_markdown(text)`` 调用
+    - ``self._md_lock`` 守住双重检查 lazy-init 的 race：第一个进入临界区的
+      线程负责构造 ``self.md``，后续线程看到非 None 直接走 reset/convert 流程
+    - 单元测试如果想直接访问 ``self.ui.md.convert``，必须先调用一次
+      ``render_markdown(...)`` 触发懒初始化（已有测试 ``tests/test_render_markdown_cache.py``
+      都符合这条调用顺序，无需改测试）
 
 注意事项：
     - Pygments需要额外安装（pip install pygments）

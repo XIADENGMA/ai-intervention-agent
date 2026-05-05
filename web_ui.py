@@ -34,7 +34,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import markdown
 from flask import (
     Flask,
     jsonify,
@@ -45,6 +44,17 @@ from flask.typing import ResponseReturnValue
 from flask_compress import Compress
 from flask_cors import CORS
 
+# R26.3: ``markdown`` 顶级 import 实测 ~8.9 ms cold-start cost (cold cache, macOS M1 / Python 3.11)，
+# 加上 ``markdown.Markdown(extensions=[...10 plugins...])`` 实例化的 ~10-15 ms（codehilite
+# Pygments + footnote AST + nl2br + md_in_html + ... 一次性预热全部插件的 regex/lexer），合计
+# ~20-25 ms 落在 ``web_ui`` 子进程冷启动的 wall-clock 上。R26.3 把两件事都推迟到首次
+# ``render_markdown(text)`` 调用：(1) ``import markdown`` 下沉到 ``render_markdown`` 体内，
+# (2) ``markdown.Markdown(...)`` 实例化也推迟，由 ``self.md`` 的 ``None`` sentinel 触发，
+# 配 ``self._md_lock`` 守住「双重检查 lazy init」语义（``markdown.Markdown`` 实例非线程安全，
+# 现成的锁顺手保护初始化 race）。生产路径上首次 ``render_markdown`` 是 ``GET /api/config``
+# 第一次轮询命中 active task 时；早于此之前的 ``GET /static/*``、``GET /``、``OPTIONS *``
+# 等路径都不需要 Markdown 实例，纯粹的延迟收益。
+#
 # R26.1: ``flask_limiter`` imports 故意不在这里——见 ``WebUIApp.__init__``
 # 体内的本地 import。原因：``flask_limiter`` 顶级 import 实测 ~21 ms（在 flask
 # 已加载后的增量成本），但本模块**很多**单元测试只需 ``from web_ui import 小工具``
@@ -264,6 +274,36 @@ _FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.RLock()
 # 收益：``_get_template_context`` 从 ~0.07 ms 进一步降到 ~0.02 ms（每次调用
 # 省 4 个 stat() syscall + 1 个 Path.resolve() syscall + 12 元素 tuple 分配），
 # 在多 webview 重渲染场景下累积可见。
+# R26.3: ``markdown.Markdown`` 实例的 extensions / extension_configs 提到模块级，
+# 让 ``render_markdown`` 的 lazy-init 路径只调用一行 ``markdown.Markdown(**_MD_INIT_KWARGS)``，
+# 配置内容与原来逐字相同——10 个扩展（fenced_code / codehilite / tables / toc / nl2br /
+# attr_list / def_list / abbr / footnotes / md_in_html）+ codehilite 的 Pygments + monokai
+# 内联样式配置。修改这两个常量等同于改变全部 prompt 的渲染行为，需要走 doc + 测试同步流程。
+_MD_EXTENSIONS: list[str] = [
+    "fenced_code",
+    "codehilite",
+    "tables",
+    "toc",
+    "nl2br",
+    "attr_list",
+    "def_list",
+    "abbr",
+    "footnotes",
+    "md_in_html",
+]
+
+_MD_EXTENSION_CONFIGS: dict[str, dict[str, Any]] = {
+    "codehilite": {
+        "css_class": "highlight",
+        "use_pygments": True,
+        "noclasses": True,
+        "pygments_style": "monokai",
+        "guess_lang": True,
+        "linenums": False,
+    }
+}
+
+
 _RTL_LANG_PREFIXES: frozenset[str] = frozenset(
     {
         "ar",
@@ -610,7 +650,19 @@ class WebFeedbackUI(
             - linenums: False（禁用行号）
 
         副作用：
-            - 创建self.md实例（Markdown渲染器）
+            - 创建 ``self._md_lock``（线程安全锁）+ ``self._md_cache``（LRU 缓存）
+            - **不**立即创建 ``self.md`` 实例——见 R26.3 lazy-init 注释
+
+        R26.3 lazy-init 行为：
+            - ``self.md`` 初始化为 ``None`` sentinel（类型是 ``Any``，因为 ``markdown``
+              不在模块级 import）
+            - 真正的 ``markdown.Markdown(extensions=..., extension_configs=...)``
+              实例化推迟到首次 ``render_markdown(text)`` 调用
+            - ``self._md_lock`` 守住双重检查 lazy-init 的 race：第一个进入临界区的
+              线程负责构造 ``self.md``，后续线程看到非 None 直接走 reset/convert 流程
+            - 单元测试如果想直接访问 ``self.ui.md.convert``，必须先调用一次
+              ``render_markdown(...)`` 触发懒初始化（已有测试 ``tests/test_render_markdown_cache.py``
+              都符合这条调用顺序，无需改测试）
 
         注意事项：
             - Pygments需要额外安装（pip install pygments）
@@ -618,30 +670,7 @@ class WebFeedbackUI(
             - 扩展顺序可能影响渲染结果
         """
         self._md_lock = threading.Lock()
-        self.md = markdown.Markdown(
-            extensions=[
-                "fenced_code",
-                "codehilite",
-                "tables",
-                "toc",
-                "nl2br",
-                "attr_list",
-                "def_list",
-                "abbr",
-                "footnotes",
-                "md_in_html",
-            ],
-            extension_configs={
-                "codehilite": {
-                    "css_class": "highlight",
-                    "use_pygments": True,
-                    "noclasses": True,
-                    "pygments_style": "monokai",
-                    "guess_lang": True,
-                    "linenums": False,
-                }
-            },
-        )
+        self.md: Any = None
         # P0 / R20.7：``/api/config`` 是被 VSCode webview + 浏览器 web UI 每 ~2-30s
         # 反复轮询的 hot path，handler 中的 ``render_markdown(active_task.prompt)``
         # 是 ~5-20 ms 的 CPU 密集型路径（codehilite Pygments + footnote AST + LaTeX
@@ -703,7 +732,20 @@ class WebFeedbackUI(
         if not text:
             return ""
         with self._md_lock:
-            # Fast path：缓存命中
+            # R26.3: lazy-init ``markdown.Markdown(...)`` 实例。
+            # 临界区已经持有 ``self._md_lock``，所以这是个标准的「单次初始化」
+            # pattern——即使 N 个线程同时跑到这里，第一个进入锁的线程构造实例，
+            # 后续线程看到 ``self.md is not None`` 直接跳过初始化 block。
+            # ``import markdown`` 也在此处下沉，sys.modules 缓存让重复 import
+            # 是 ~50 ns 的字典查询，不是真的重新解析模块。
+            if self.md is None:
+                import markdown
+
+                self.md = markdown.Markdown(
+                    extensions=_MD_EXTENSIONS,
+                    extension_configs=_MD_EXTENSION_CONFIGS,
+                )
+
             cached = self._md_cache.get(text)
             if cached is not None:
                 # LRU touch：把命中条目移到末尾（最近使用）
@@ -711,7 +753,6 @@ class WebFeedbackUI(
                 self._md_cache[text] = cached
                 return cached
 
-            # Slow path：渲染
             self.md.reset()
             html = str(self.md.convert(text))
 

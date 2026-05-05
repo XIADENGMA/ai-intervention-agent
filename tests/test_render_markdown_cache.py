@@ -77,6 +77,11 @@ class TestRenderMarkdownCacheCorrectness(unittest.TestCase):
     def test_cache_miss_calls_convert_once_per_unique_text(self) -> None:
         """N 个不同 prompt 调 ``convert`` 恰好 N 次"""
         prompts = [f"# Heading {i}" for i in range(5)]
+        # R26.3: ``self.ui.md`` 现在 lazy-init——首次 ``render_markdown`` 才构造，
+        # 否则 ``patch.object(self.ui.md, ...)`` 会拿到 None 报 AttributeError。
+        # 用一个**不在 ``prompts`` 列表里**的 warmup text，让 lazy init 触发但
+        # 不污染 ``call_count`` 计数（``patch`` 是在 warmup *之后*才生效的）。
+        self.ui.render_markdown("# warmup-not-in-prompts")
         with patch.object(
             self.ui.md, "convert", wraps=self.ui.md.convert
         ) as wrapped_convert:
