@@ -9,6 +9,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.25] — 2026-05-05
+
+> Round-19 release-tooling hardening (1 commit since v1.5.24): R19.1
+> closes the GitHub 3-tag webhook hard limit that silently dropped the
+> v1.5.24 release pipeline this very session — `release.yml` never
+> fired because `git push --follow-tags` carried 4 unpushed tags
+> (v1.5.20 / v1.5.21 / v1.5.23 / v1.5.24), and GitHub's documented
+> webhook contract drops `push.tags` events when the count exceeds 3.
+> This release adds a developer-machine pre-push gate
+> (`scripts/check_tag_push_safety.py` + `make release-check`) that
+> fails fast with a per-tag recovery command list, so the next time a
+> contributor accumulates 4+ tags locally the gate fires *before*
+> `git push` instead of after the silent failure.
+
 ### Added
 
 - **R19.1 — `scripts/check_tag_push_safety.py` + `make release-check`
