@@ -304,6 +304,52 @@ class EnhancedLogger:
     def error(self, message: str, *args: Any, **kwargs: Any) -> None:
         self.log(logging.ERROR, message, *args, **kwargs)
 
+    # R40 P0-S3 端到端诊断日志链：grep-friendly event-style format
+    # ----------------------------------------------------------------------
+    # 用法：
+    #     logger.event("task.created", task_id=tid, summary_len=120,
+    #                  options=3)
+    # 输出（INFO，进入去重/脱敏管线，落到 stderr）：
+    #     2026-05-06 15:54:00,123 - ai_intervention_agent.server_feedback - INFO -
+    #         event=task.created task_id=task_abcd1234 summary_len=120 options=3
+    #
+    # 设计取舍：
+    # - 整条日志一行，便于 ``grep '^.*event=task\\.created'`` 把整个子系统时间
+    #   线拉出来；
+    # - 值序列化最小化：``int/float/bool/None`` bare，含空格 / 特殊符号的
+    #   字符串走 ``repr()`` 自动加引号转义，避免 grep 时被空格切错列；
+    # - 走 ``self.info()`` 复用现有去重 + 脱敏 + level mapping，但 event
+    #   message 不会命中任何 keyword pattern，effective_level 保持 INFO；
+    # - 不依赖 loguru ``bind``：保持 stdlib logging API 兼容，单测可以
+    #   ``patch.object(logger, 'info')`` 直接断言（见
+    #   ``tests/test_enhanced_logging_event_method.py``）。
+    @staticmethod
+    def _format_event_value(value: Any) -> str:
+        """Render a single context value for the event log line.
+
+        Public-static so tests can spot-check formatting rules without
+        instantiating an EnhancedLogger (which spins up a SingletonLogManager).
+        """
+        if value is None or isinstance(value, (bool, int, float)):
+            return str(value)
+        if isinstance(value, str):
+            if value and not any(ch.isspace() or ch in "=\"'\\" for ch in value):
+                return value
+            return repr(value)
+        return repr(value)
+
+    def event(self, name: str, **ctx: Any) -> None:
+        """Emit a single grep-friendly event log line.
+
+        ``name`` should be a stable dotted identifier (``task.created``,
+        ``task.notified``, ``task.completed``, ``server.boot``, …). ``ctx``
+        is rendered as ``key=value`` pairs after the event name.
+        """
+        parts = [f"event={name}"]
+        for key, value in ctx.items():
+            parts.append(f"{key}={self._format_event_value(value)}")
+        self.info(" ".join(parts))
+
 
 enhanced_logger = EnhancedLogger(__name__)
 

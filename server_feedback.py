@@ -747,6 +747,23 @@ async def interactive_feedback(
         # 自动生成唯一 task_id（避免极端并发下碰撞）
         task_id = server_config._generate_task_id()
 
+        # R40 P0-S3：task lifecycle 端到端诊断日志链。
+        # ``_task_t0`` 用 ``time.monotonic()`` 而不是 ``time.time()``——后者会
+        # 被 NTP / 用户改时钟扰动；前者单调递增，``time.completed`` 计算的
+        # ``duration_ms`` 永远 >= 0、可信度高。t0 在最早的稳定锚点采样
+        # （task_id 已经生成、参数已经 validate），把"工具入口到 task_id 落地"
+        # 的开销折进 task.created 之外的 server.boot 维度。
+        _task_t0 = time.monotonic()
+        logger.event(
+            "task.created",
+            task_id=task_id,
+            message_len=len(cleaned_message),
+            options_count=len(predefined_options_list)
+            if predefined_options_list
+            else 0,
+            has_defaults=bool(predefined_options_defaults),
+        )
+
         logger.info(
             f"收到反馈请求: {cleaned_message[:50]}... (自动生成task_id: {task_id})"
         )
@@ -798,10 +815,22 @@ async def interactive_feedback(
                 logger.error(
                     f"添加任务失败: HTTP {response.status_code}, 详情: {error_detail}"
                 )
+                logger.event(
+                    "task.failed",
+                    task_id=task_id,
+                    stage="notify",
+                    reason=f"http_{response.status_code}",
+                )
                 # 返回配置的提示语，引导 AI 重新调用工具
                 return server_config._make_resubmit_response()
 
             logger.info(f"任务已通过API添加到队列: {task_id}")
+            logger.event(
+                "task.notified",
+                task_id=task_id,
+                host=target_host,
+                port=int(config.port),
+            )
 
             # 【新增】发送通知（立即触发，不阻塞主流程）
             if NOTIFICATION_AVAILABLE:
@@ -850,6 +879,12 @@ async def interactive_feedback(
 
         except httpx.HTTPError as e:
             logger.error(f"添加任务请求失败，无法连接到 Web UI: {e}", exc_info=True)
+            logger.event(
+                "task.failed",
+                task_id=task_id,
+                stage="notify",
+                reason=f"httpx_error:{type(e).__name__}",
+            )
             # 返回配置的提示语，引导 AI 重新调用工具
             return server_config._make_resubmit_response()
 
@@ -863,10 +898,22 @@ async def interactive_feedback(
         if "error" in result:
             # 记录任务执行失败的详细错误
             logger.error(f"任务执行失败: {result['error']}, 任务 ID: {task_id}")
+            logger.event(
+                "task.failed",
+                task_id=task_id,
+                stage="wait",
+                reason=str(result["error"])[:80],
+                duration_ms=int((time.monotonic() - _task_t0) * 1000),
+            )
             # 返回配置的提示语，引导 AI 重新调用工具
             return server_config._make_resubmit_response()
 
         logger.info("反馈请求处理完成")
+        logger.event(
+            "task.completed",
+            task_id=task_id,
+            duration_ms=int((time.monotonic() - _task_t0) * 1000),
+        )
 
         # 解析返回：兼容新旧格式 + 兜底处理 {"text": "..."} 降级返回
         if isinstance(result, dict):

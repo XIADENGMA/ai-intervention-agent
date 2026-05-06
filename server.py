@@ -558,6 +558,23 @@ def main() -> None:
     fastmcp_logger = _stdlib_logging.getLogger("fastmcp")
     fastmcp_logger.setLevel(_stdlib_logging.WARNING)
 
+    # R40 P0-S3：启动 banner —— 借鉴 cursor-count v0.4.5 设计，
+    # 让"贴一段 stderr 输出"就能一眼看出"server 跑在哪个版本 / 哪个 transport
+    # / 装了哪些中间件 / Python 版本是什么"。banner 只在 server 进程启动
+    # 一次，对运行性能零影响。
+    #
+    # 走 ``logger.warning`` 而不是 ``logger.info``：项目 root logger 默认
+    # WARNING，info banner 会被 sink 过滤掉。banner 是诊断必备信息，应当
+    # 默认就打出来；用 WARNING 级别表示"这不是错误，只是一定要被看到的
+    # 启动证据"，与项目其它子系统的 ``logger.warning`` 用法一致。
+    middleware_names = [type(mw).__name__ for mw in mcp.middleware]
+    logger.warning(
+        f"event=server.boot version={_resolve_server_version()} "
+        f"transport=stdio mcp_name={mcp.name!r} "
+        f"python={sys.version.split()[0]} "
+        f"middleware={','.join(middleware_names)}"
+    )
+
     # 重试配置
     # 历史上是 ``time.sleep(1)`` 固定 1s 间隔，如果同一台机器同时跑多个 MCP
     # 实例（IDE 多 worker / Cursor + VS Code 同时调起），每次 mcp.run() 同
