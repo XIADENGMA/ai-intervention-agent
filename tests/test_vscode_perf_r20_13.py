@@ -515,3 +515,24 @@ def test_cumulative_ext_version_pipeline_intact() -> None:
     assert re.search(r"extensionVersion\s*:\s*string", sig), (
         "WebviewProvider constructor 的形参列表必须显式声明 ``extensionVersion: string``"
     )
+
+
+def test_status_bar_poll_changed_path_does_not_apply_twice() -> None:
+    """状态变化轮询路径不应重复写 status bar。
+
+    pre-fix：``changed`` 分支里调用一次 ``applyStatusBarPresentation``，
+    随后 ``if (statusBarShown)`` 又调用一次；同一次 ``/api/tasks`` 成功响应会
+    重复写 text / tooltip / accessibilityInformation。
+    """
+    text = _read(EXTENSION_TS)
+    body = _extract_function_body_after(
+        text, r"const\s+updateStatusBar\s*=\s*async\s*\(\s*\)\s*:\s*Promise<[^>]+>"
+    )
+    assert re.search(
+        r"if\s*\(\s*changed\s*\)[\s\S]*?applyStatusBarPresentation", body
+    ), "changed 分支仍应立即刷新 status bar"
+    assert "if (!changed && statusBarShown)" in body, (
+        "非变化路径才需要用 statusBarShown 做保底刷新；"
+        " changed=true 时不能重复调用 applyStatusBarPresentation"
+    )
+    assert "if (statusBarShown) {\n        applyStatusBarPresentation" not in body

@@ -439,7 +439,7 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           { level }
         )
       }
-      if (statusBarShown) {
+      if (!changed && statusBarShown) {
         applyStatusBarPresentation({ connected, active, pending })
       }
       updateStatusBarVisibility()
