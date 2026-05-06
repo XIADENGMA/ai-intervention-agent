@@ -233,7 +233,7 @@ try {
   const warnBytes = warnMb * 1024 * 1024
   console.log(
     `VSIX 尺寸预算检查：实际 ${packedMb.toFixed(2)} MB（${packedBytes} bytes）` +
-      `；WARN ≥ ${warnMb} MB；FAIL ≥ ${failMb} MB`
+      `；review threshold ≥ ${warnMb} MB；hard limit ≥ ${failMb} MB`
   )
   if (packedBytes >= failBytes) {
     console.error(

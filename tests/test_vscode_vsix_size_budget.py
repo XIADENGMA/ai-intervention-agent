@@ -109,6 +109,13 @@ class TestSizeBudgetDefaultsArePresent:
             "超 FAIL 阈值时必须 fail-closed（``process.exit(1)``），不能只 warn。"
         )
 
+    def test_success_summary_uses_neutral_threshold_labels(self) -> None:
+        """成功路径不应输出 WARN/FAIL 字样，避免健康 CI 日志被误读。"""
+        text = _read_script_text()
+        assert "review threshold ≥ ${warnMb} MB" in text
+        assert "hard limit ≥ ${failMb} MB" in text
+        assert "；WARN ≥ ${warnMb} MB；FAIL ≥ ${failMb} MB" not in text
+
 
 class TestExistingVsixWithinBudget:
     """如果产物存在，确认它没破阈值。"""

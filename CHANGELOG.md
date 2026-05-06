@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.36] — 2026-05-06
+
+### Changed
+
+- Optimized the VS Code extension status bar polling path to avoid writing the
+  same presentation twice when a `/api/tasks` response changes the visible
+  state.
+- Kept the VSIX packaging success summary free of `WARN`/`FAIL` threshold labels
+  unless an actual budget condition is hit, so healthy local and CI logs remain
+  easier to scan.
+
 ## [1.5.35] — 2026-05-06
 
 ### Fixed

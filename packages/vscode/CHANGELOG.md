@@ -14,6 +14,17 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.36] — 2026-05-06
+
+### Changed
+
+- Reduced redundant status bar work during task polling by avoiding a second
+  presentation write when the same response has already applied the changed
+  connected/active/pending state.
+- Updated the VSIX packaging success summary to use neutral threshold labels,
+  keeping healthy package logs free of warning-like wording while preserving the
+  existing size-budget guard.
+
 ## [1.5.23] — 2026-05-04
 
 ### Fixed
