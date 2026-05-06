@@ -223,7 +223,23 @@ class SecurityMixin:
             logger.warning(f"IP {client_ip} 不在允许的网络范围内，拒绝访问")
             return False
 
-        except AddressValueError as e:
+        except (AddressValueError, ValueError, TypeError) as e:
+            # R39 修正：``ipaddress.ip_address()`` 对 ``"abc"`` 这种非 IP 字符串
+            # 抛的是 *普通* ``ValueError``，**不是** ``AddressValueError``
+            # （AddressValueError 仅用于 ``IPv4Address`` / ``IPv6Address`` 直接
+            # 构造时的协议判定失败，``ip_address`` 工厂函数只用基类 ValueError
+            # 包装："X does not appear to be an IPv4 or IPv6 address"）。
+            #
+            # 历史代码只 catch ``AddressValueError``，后果是当 ``REMOTE_ADDR``
+            # 异常字段（被反代 / WSGI 层污染成空串、IPv6 格式残缺、或者
+            # ``REMOTE_ADDR=None`` 这种 ``TypeError`` 路径）漏到这里时，
+            # 整个 ``before_request`` hook 直接 raise，Flask 兜成 500 给 client，
+            # 而 *访问控制日志却不会写* —— 运维看到的是 500 风暴而不是
+            # "拒掉 1 个非法 IP"，定位成本极高。
+            #
+            # fail-closed 一致性：黑名单 / 白名单内层循环已经是
+            # ``(AddressValueError, ValueError, TypeError)`` 全覆盖，外层
+            # 拓宽到一致策略，整个安全判定不再有 raise 路径。
             logger.warning(f"无效的IP地址 {client_ip}: {e}")
             return False
 

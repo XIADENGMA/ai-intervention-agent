@@ -1667,14 +1667,25 @@ class TestIsIpAllowed(unittest.TestCase):
         self.assertTrue(self.ui._is_ip_allowed("127.0.0.1"))
 
     def test_invalid_client_ip(self):
-        """无效的客户端 IP 抛出 ValueError（ip_address 抛出 ValueError 非 AddressValueError）"""
+        """无效的客户端 IP 必须 fail-closed 返回 False，不能向上抛 ValueError。
+
+        历史上 ``_is_ip_allowed`` 的外层 ``try / except`` 只捕获
+        ``AddressValueError``，但 ``ipaddress.ip_address("not_an_ip")``
+        实际抛的是基类 ``ValueError`` —— 这条 ValueError 会冒泡到 Flask
+        ``before_request``，把整个请求兜成 500，*同时丢失访问控制日志*：
+        运维看到 500 风暴而不是"拒掉 1 个非法来源 IP"。R39 把外层
+        ``except`` 拓宽到 ``(AddressValueError, ValueError, TypeError)``
+        统一 fail-closed，本测试锁住修复后的契约。
+        """
         self.ui.network_security_config = {
             "access_control_enabled": True,
             "allowed_networks": ["127.0.0.0/8"],
             "blocked_ips": [],
         }
-        with self.assertRaises(ValueError):
-            self.ui._is_ip_allowed("not_an_ip")
+        self.assertFalse(
+            self.ui._is_ip_allowed("not_an_ip"),
+            "无效客户端 IP 必须返回 False（拒绝）而不是 raise ValueError",
+        )
 
     def test_should_trust_forwarded_for_empty(self):
         from web_ui import WebFeedbackUI
