@@ -392,14 +392,15 @@ class TestStaticRoutesIntegration(unittest.TestCase):
     def setUp(self) -> None:
         # 锁定 R20.14-D 实现成立的前提：``static/js/`` 至少要有一个 .gz 存在
         # （precompress_static.py 已跑过）。如果没有 .gz，整个测试族都没意义。
-        gz_files = list((REPO_ROOT / "static" / "js").glob("*.js.gz"))
+        gz_files = sorted((REPO_ROOT / "static" / "js").glob("*.min.js.gz"))
         if not gz_files:
             self.skipTest(
-                "static/js/*.js.gz 缺失；先跑 "
+                "static/js/*.min.js.gz 缺失；先跑 "
                 "`uv run python scripts/precompress_static.py`"
             )
         self.sample_gz = gz_files[0]
-        # 派生原文件名
+        # 派生原文件名。必须选 `.min.js.gz`，避免 `/static/js/app.js`
+        # 被路由自动改写到 `app.min.js` 后和测试选中的 `app.js.gz` 错配。
         self.sample_basename = self.sample_gz.name.removesuffix(".gz")
 
     def _make_ui(self) -> Any:
