@@ -5,6 +5,7 @@ on: pull_request
 # 默认 read-only；只有 dependabot job 需要 `contents: write` + `pull-requests: write`。
 # 缩小权限面积以满足 OSSF Scorecard Token-Permissions 检查。
 permissions:
+  actions: read
   contents: read
 
 env:
@@ -17,6 +18,7 @@ jobs:
     timeout-minutes: 5
     if: github.actor == 'dependabot[bot]'
     permissions:
+      actions: read
       # 仅本 job 合 PR + 推 merge commit 需要 write
       contents: write
       pull-requests: write

@@ -15,6 +15,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -24,6 +25,7 @@ jobs:
     timeout-minutes: 5
 
     permissions:
+      actions: read
       # 在 PR 上评论审查摘要
       pull-requests: write
       contents: read
