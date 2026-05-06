@@ -38,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import server
 from server import mcp
 from server_config import MAX_MESSAGE_LENGTH, MAX_OPTION_LENGTH
 
@@ -138,6 +139,16 @@ class TestMcpToolsDocMetadataMatchesCode(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertIn("FastMCP", text)
             self.assertIn("timeout", text)
+
+    def test_docs_mention_tool_level_version(self) -> None:
+        tool = asyncio.run(mcp.get_tool("interactive_feedback"))
+        self.assertEqual(
+            getattr(tool, "version", None), server._resolve_server_version()
+        )
+
+        for path in DOC_PATHS:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("version", text)
 
 
 if __name__ == "__main__":

@@ -117,6 +117,13 @@ class TestInteractiveFeedbackAnnotations(unittest.TestCase):
             "不应再叠加 FastMCP decorator timeout",
         )
 
+    def test_fastmcp_tool_version_matches_server_version(self) -> None:
+        """工具级 version 与 server version 保持一致，便于 client 做契约诊断。"""
+        tool = _resolved_tool()
+        self.assertEqual(
+            getattr(tool, "version", None), server._resolve_server_version()
+        )
+
 
 class TestAnnotationsRoundTripViaProtocol(unittest.TestCase):
     """端到端：通过 MCP 协议公共 API 获取 annotations，模拟 client 视角。"""

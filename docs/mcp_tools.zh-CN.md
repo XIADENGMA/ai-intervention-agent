@@ -32,8 +32,9 @@
 
 `interactive_feedback` 注册了 FastMCP tags：`human-in-the-loop`、`feedback`
 和 `approval`，便于支持 tags 的 client / gateway 将其归类为人类审阅 /
-批准类工具。它**没有**设置 FastMCP decorator timeout：这是长时间运行的人类
-反馈工具，等待策略由下方配置项中的后端超时规则控制。
+批准类工具。它的工具级 `version` 与包 / server version 保持一致，便于 client
+做契约诊断。它**没有**设置 FastMCP decorator timeout：这是长时间运行的人类反馈
+工具，等待策略由下方配置项中的后端超时规则控制。
 
 ---
 
