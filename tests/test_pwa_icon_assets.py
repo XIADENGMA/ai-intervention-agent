@@ -134,25 +134,31 @@ def test_manifest_icon_files_exist_and_match_declared_png_sizes() -> None:
 
 def test_manifest_covers_pwa_installation_icon_sizes() -> None:
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-    by_size = {
-        str(icon.get("sizes")): icon
-        for icon in manifest.get("icons", [])
-        if isinstance(icon, dict)
-    }
+    icons = [icon for icon in manifest.get("icons", []) if isinstance(icon, dict)]
+
+    # 每个尺寸可能同时被 any / maskable 两条 entry 占用，按 (size, purpose)
+    # 索引避免后加入的 entry 把前一条覆盖掉。
+    by_size_purpose: dict[tuple[str, str], dict] = {}
+    for icon in icons:
+        sizes = str(icon.get("sizes"))
+        for purpose in str(icon.get("purpose", "any")).split():
+            by_size_purpose[(sizes, purpose)] = icon
 
     for size in ("72x72", "96x96", "128x128", "144x144", "192x192", "512x512"):
-        icon = by_size.get(size)
-        assert icon is not None, f"PWA manifest 应覆盖常见安装图标尺寸：{size}"
-        assert icon.get("type") == "image/png", f"{size} PWA icon 应使用 PNG"
+        icon = by_size_purpose.get((size, "any"))
+        assert icon is not None, f"PWA manifest 应覆盖常见安装图标尺寸（any）：{size}"
+        assert icon.get("type") == "image/png", f"{size} any PWA icon 应使用 PNG"
 
-    maskable_512 = [
-        icon
-        for icon in manifest.get("icons", [])
-        if isinstance(icon, dict)
-        and icon.get("sizes") == "512x512"
-        and "maskable" in str(icon.get("purpose", "")).split()
-    ]
-    assert maskable_512, "PWA manifest 必须提供 512x512 maskable 图标"
+    # Lighthouse PWA audit 推荐 192 与 512 两档都提供 maskable，
+    # 缺 192 maskable 会让 Android Chrome 把 512 下采样到 192 启动器槽位 → 毛刺。
+    for size in ("192x192", "512x512"):
+        maskable = by_size_purpose.get((size, "maskable"))
+        assert maskable is not None, (
+            f"PWA manifest 必须提供 {size} maskable 图标（Lighthouse PWA audit 推荐）"
+        )
+        assert maskable.get("type") == "image/png", (
+            f"{size} maskable icon 应使用 PNG（W3C maskable spec 要求实色画布）"
+        )
 
 
 def test_web_ui_icon_links_reference_existing_assets() -> None:
@@ -301,27 +307,33 @@ def test_favicon_ico_contains_required_multi_sizes() -> None:
 
 
 def test_maskable_icon_distinct_from_any_icon() -> None:
-    """``icon-maskable-512.png`` 与 ``icon-512.png`` 必须**字节不同**。
+    """``icon-maskable-{192,512}.png`` 与对应 any 版本必须**字节不同**。
 
     W3C maskable 规范要求 maskable 图标实色填充整张 canvas + 主体落在中心
     80% safe zone 内；"any" 图标允许保留透明角和延伸到边缘。两者**视觉设计**
     不同，r32 把 maskable PNG 与 any PNG 复制成同一份字节就会同时违反两边
     的视觉契约（maskable 角透明、any 主体被压缩）。
+
+    192 与 512 两档都验：r40 引入 192 maskable 时同样可能因为脚本 bug /
+    渲染 fallback 让两者字节相同，这条 test 把 r32 的 512 锁同步扩展到 192。
     """
 
-    any_path = ICONS_DIR / "icon-512.png"
-    maskable_path = ICONS_DIR / "icon-maskable-512.png"
-    assert any_path.is_file(), f"missing: {any_path}"
-    assert maskable_path.is_file(), f"missing: {maskable_path}"
-
-    any_hash = hashlib.sha256(any_path.read_bytes()).hexdigest()
-    maskable_hash = hashlib.sha256(maskable_path.read_bytes()).hexdigest()
-    assert any_hash != maskable_hash, (
-        "icon-maskable-512.png 与 icon-512.png 字节完全相同——maskable 与 any "
-        "purpose 的视觉设计必须独立。请运行 `uv run python "
-        "scripts/generate_pwa_icons.py` 从 icons/icon-maskable.svg 重新生成 "
-        "maskable PNG。"
+    pairs = (
+        (ICONS_DIR / "icon-192.png", ICONS_DIR / "icon-maskable-192.png", "192x192"),
+        (ICONS_DIR / "icon-512.png", ICONS_DIR / "icon-maskable-512.png", "512x512"),
     )
+    for any_path, maskable_path, size_label in pairs:
+        assert any_path.is_file(), f"missing: {any_path}"
+        assert maskable_path.is_file(), f"missing: {maskable_path}"
+
+        any_hash = hashlib.sha256(any_path.read_bytes()).hexdigest()
+        maskable_hash = hashlib.sha256(maskable_path.read_bytes()).hexdigest()
+        assert any_hash != maskable_hash, (
+            f"{maskable_path.name} 与 {any_path.name} ({size_label}) 字节完全"
+            "相同——maskable 与 any purpose 的视觉设计必须独立。请运行 "
+            "`uv run python scripts/generate_pwa_icons.py` 从 "
+            "icons/icon-maskable.svg 重新生成 maskable PNG。"
+        )
 
 
 def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
@@ -405,36 +417,47 @@ def _png_alpha_at(path: Path, points: list[tuple[int, int]]) -> list[int]:
 
 
 def test_maskable_icon_has_opaque_canvas() -> None:
-    """``icon-maskable-512.png`` 整张 canvas 必须实色（无透明角）。
+    """``icon-maskable-{192,512}.png`` 整张 canvas 必须实色（无透明角）。
 
     W3C maskable 规范：OS 蒙板（圆形 / squircle / teardrop / 任意形状）会按设备
     形状裁切；透明角在裁切后会留下视觉空洞，与系统其他图标不一致。本测试只
     采样 4 个角和中心 5 个点（不读全图，对 CI 时间友好），任何角落 alpha=0
     都判失败。
+
+    192 与 512 都验：r40 把 192 maskable 加进 manifest 后，rsvg-convert 在
+    192px 渲染时若 stride padding 异常也可能在四角引入半透明像素。
     """
 
-    path = ICONS_DIR / "icon-maskable-512.png"
-    width, height = _png_dimensions(path)
-    assert width == height == 512, (
-        f"icon-maskable-512.png 尺寸应为 512×512，实际 {width}×{height}"
-    )
+    expected_sizes = {
+        "icon-maskable-192.png": 192,
+        "icon-maskable-512.png": 512,
+    }
 
-    corners = [
-        (0, 0),
-        (width - 1, 0),
-        (0, height - 1),
-        (width - 1, height - 1),
-        (5, 5),
-        (width - 6, 5),
-        (5, height - 6),
-        (width - 6, height - 6),
-    ]
-    alphas = _png_alpha_at(path, corners)
-    transparent_corners = [pt for pt, a in zip(corners, alphas, strict=True) if a < 250]
-    assert not transparent_corners, (
-        "maskable PNG 不应有透明角落（W3C maskable spec：OS 蒙板裁切后会留空洞）。"
-        f"以下采样点 alpha < 250: {transparent_corners}"
-    )
+    for filename, expected in expected_sizes.items():
+        path = ICONS_DIR / filename
+        width, height = _png_dimensions(path)
+        assert width == height == expected, (
+            f"{filename} 尺寸应为 {expected}×{expected}，实际 {width}×{height}"
+        )
+
+        corners = [
+            (0, 0),
+            (width - 1, 0),
+            (0, height - 1),
+            (width - 1, height - 1),
+            (5, 5),
+            (width - 6, 5),
+            (5, height - 6),
+            (width - 6, height - 6),
+        ]
+        alphas = _png_alpha_at(path, corners)
+        transparent_corners = [
+            pt for pt, a in zip(corners, alphas, strict=True) if a < 250
+        ]
+        assert not transparent_corners, (
+            f"{filename} 不应有透明角落（W3C maskable spec：OS 蒙板裁切后会留空洞）。"
+            f"以下采样点 alpha < 250: {transparent_corners}"
+        )
 
 
 def test_apple_touch_icon_has_opaque_corners() -> None:
@@ -539,4 +562,86 @@ def test_lottie_sprout_byte_parity_between_web_and_vscode() -> None:
         f"  static/lottie/sprout.json                  sha256 = {web_hash[:32]}…\n"
         f"  packages/vscode/lottie/sprout.json         sha256 = {vscode_hash[:32]}…\n"
         f"  修法：cp static/lottie/sprout.json packages/vscode/lottie/sprout.json"
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# r40 PWA 修复批次：apple-touch-icon 归位 / 192 maskable 引入 / 显式
+# prefer_related_applications。每条 test 的注释都说明它锁的是哪一面 regression。
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def test_pwa_manifest_does_not_declare_apple_touch_icon() -> None:
+    """``manifest.webmanifest`` 不应声明 ``apple-touch-icon.png``（180×180）。
+
+    根因：iOS Safari 在 ``Add to Home Screen`` 时**不读** ``manifest.webmanifest``，
+    它读 HTML ``<link rel="apple-touch-icon" sizes="180x180" href="...">``。把
+    180×180 列在 manifest icons 里，结果是 Android Chrome PWA installer 把它
+    视为一个 ``any`` purpose 的 180px 候选，**可能在选择 192 启动器槽位时把
+    180 拉伸/挤压填充**，导致用户感知"PWA 安装后图标不正确"。
+
+    apple-touch-icon.png 仍需要存在 disk + ``templates/web_ui.html`` 的
+    ``<link rel="apple-touch-icon">`` 仍要保留——本 test 只锁定 manifest
+    icons 里**不要**有 180×180 / apple-touch 字面量。
+    """
+
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    icons = manifest.get("icons", [])
+
+    offending: list[dict] = []
+    for icon in icons:
+        if not isinstance(icon, dict):
+            continue
+        src = str(icon.get("src", ""))
+        sizes = str(icon.get("sizes", ""))
+        if "apple-touch" in src or sizes == "180x180":
+            offending.append(icon)
+
+    assert not offending, (
+        "manifest.webmanifest 不应声明 apple-touch-icon / 180×180（iOS 不读"
+        " manifest，Android Chrome 会把它误选为 192 启动器槽位）。多余条目："
+        f"{offending}"
+    )
+
+
+def test_pwa_manifest_explicitly_disables_related_applications() -> None:
+    """``manifest.webmanifest`` 必须显式声明 ``prefer_related_applications: false``。
+
+    背景：``prefer_related_applications`` 默认值在 W3C spec 上是 ``false``，但
+    Chrome / Edge 安装 banner 在缺省字段时会偶发显示"安装相关应用"提示
+    （当 ``related_applications`` 也没声明时这是空操作，但 banner 文案仍可
+    能让用户困惑）。显式 ``false`` 让 PWA installability check 100% 走"安装
+    本 PWA"路径，无任何提示模糊性。
+    """
+
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    assert manifest.get("prefer_related_applications") is False, (
+        "manifest.webmanifest 必须显式声明 prefer_related_applications=false，"
+        "避免 Chrome 安装 banner 在某些版本上回退到模糊提示。"
+    )
+
+
+def test_pwa_manifest_icon_purposes_explicitly_declared() -> None:
+    """每个 manifest icon 必须显式声明 ``purpose`` 字段。
+
+    根因：W3C spec 规定 ``purpose`` 缺省为 ``any``，但**显式优于隐式**。在
+    r32 之前的 manifest 里 favicon-16/32 没有 purpose 字段，依赖默认值；
+    日后任何 PWA installer 实现微调（例如 Chrome 把缺省值改作 "monochrome"
+    或对 ``maskable`` 提升优先级），都可能让缺省 entry 的展示行为发生静默
+    漂移。锁定 explicit 让 manifest 行为对 spec 演进免疫。
+    """
+
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    icons = manifest.get("icons", [])
+
+    missing: list[str] = []
+    for icon in icons:
+        if not isinstance(icon, dict):
+            continue
+        if "purpose" not in icon:
+            missing.append(str(icon.get("src", icon)))
+
+    assert not missing, (
+        "manifest.webmanifest 中以下 icon entry 缺 explicit purpose 字段："
+        f"{missing}。每个 icon 都应显式写 purpose: any / maskable / monochrome。"
     )

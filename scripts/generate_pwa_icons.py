@@ -116,6 +116,9 @@ PNG_OUTPUTS: tuple[PngSpec, ...] = (
     PngSpec("icon-192.png", 192, "any"),
     PngSpec("icon-512.png", 512, "any"),
     # PWA manifest "maskable" purpose —— 整张实色 + 80% safe zone
+    # 同时输出 192 + 512：Lighthouse PWA audit 推荐两档都覆盖。Android Chrome
+    # 把 192 作为启动器图标第一选择，缺失时会拿 512 maskable 下采样导致毛刺。
+    PngSpec("icon-maskable-192.png", 192, "maskable"),
     PngSpec("icon-maskable-512.png", 512, "maskable"),
 )
 
