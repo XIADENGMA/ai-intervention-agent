@@ -103,6 +103,15 @@ function _t(key, params) {
   return key
 }
 
+function _debugLog() {
+  if (!window.AIIA_DEBUG || !console || typeof console.debug !== 'function') return
+  try {
+    console.debug.apply(console, arguments)
+  } catch (_e) {
+    /* noop */
+  }
+}
+
 if (typeof window.taskDeadlines === 'undefined') {
   window.taskDeadlines = {} // 存储每个任务的截止时间戳（服务器时间）
 }
@@ -396,7 +405,7 @@ function _connectSSE() {
     if (_sseSource !== source) return
     _sseConnected = true
     _sseReconnectDelay = 1000
-    console.log('SSE connected; polling degraded to safety-net mode (30s)')
+    _debugLog('SSE connected; polling degraded to safety-net mode (30s)')
     tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS
     if (tasksPollingTimer) {
       clearTimeout(tasksPollingTimer)
@@ -409,7 +418,7 @@ function _connectSSE() {
     if (_sseSource !== source) return
     try {
       var detail = JSON.parse(e.data)
-      console.debug('SSE task_changed:', detail.task_id, detail.old_status, '→', detail.new_status)
+      _debugLog('SSE task_changed:', detail.task_id, detail.old_status, '→', detail.new_status)
     } catch (_) {
       /* noop */
     }
@@ -429,7 +438,7 @@ function _connectSSE() {
       /* noop */
     }
     _sseSource = null
-    console.warn(
+    _debugLog(
       'SSE disconnected; falling back to short-interval polling, reconnecting in ' +
         _sseReconnectDelay / 1000 +
         's'
