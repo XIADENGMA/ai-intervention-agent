@@ -424,6 +424,21 @@ class TestExtensionVersionSanity(unittest.TestCase):
         )
 
 
+class TestProjectMetadataConsistency(unittest.TestCase):
+    """跨发布面的基础元数据必须一致，避免 registry / audit 工具误报。"""
+
+    def test_npm_workspace_license_matches_project_license(self):
+        """根 npm workspace 虽然 private，也必须与仓库 MIT 许可证一致。"""
+        root_pkg = _load_json(REPO_ROOT / "package.json")
+        lock = _load_json(REPO_ROOT / "package-lock.json")
+        vscode_pkg = _load_json(VSCODE_DIR / "package.json")
+
+        self.assertEqual(root_pkg.get("private"), True)
+        self.assertEqual(root_pkg.get("license"), "MIT")
+        self.assertEqual(lock.get("packages", {}).get("", {}).get("license"), "MIT")
+        self.assertEqual(vscode_pkg.get("license"), "MIT")
+
+
 # ============================================================================
 # 6. Static Resource Integrity（排查 Build-time Resource Resolution Failure）
 # ============================================================================
