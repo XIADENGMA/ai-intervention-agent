@@ -2,7 +2,7 @@
 
 历史背景
 ---------
-``bump_version.py`` 守了 6 个版本号文件（``pyproject.toml`` /
+``bump_version.py`` 曾经只守了 6 个版本号文件（``pyproject.toml`` /
 ``uv.lock`` / ``package.json`` / ``package-lock.json`` /
 ``packages/vscode/package.json`` / ``.github/ISSUE_TEMPLATE/bug_report.yml``）
 但**漏掉**了 ``CITATION.cff::version``。后果：发布 v1.5.23 时
@@ -155,6 +155,16 @@ class TestRoundTrip(unittest.TestCase):
             ver or "",
             r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$",
         )
+
+
+class TestWorkflowDocsMentionCitation(unittest.TestCase):
+    """发布文档必须列出 ``CITATION.cff``，避免说明与脚本行为再次漂移。"""
+
+    def test_release_workflow_docs_include_citation_target(self) -> None:
+        for rel in ("docs/workflow.md", "docs/workflow.zh-CN.md"):
+            with self.subTest(rel=rel):
+                text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+                self.assertIn("CITATION.cff", text)
 
 
 if __name__ == "__main__":

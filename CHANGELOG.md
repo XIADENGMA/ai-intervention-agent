@@ -9,6 +9,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.35] — 2026-05-06
+
+### Fixed
+
+- Guarded the Web UI multi-task SSE debug logger against browser-like
+  environments where `console` is absent, avoiding a possible `ReferenceError`
+  while keeping normal SSE connection churn silent unless `window.AIIA_DEBUG`
+  is enabled.
+
+## [1.5.34] — 2026-05-06
+
+### Fixed
+
+- Kept the published release in sync with the latest verified main branch by
+  shipping the release workflow notice downgrade and Web UI SSE console-noise
+  reduction after `v1.5.33`.
+
+## [1.5.33] — 2026-05-06
+
+### Fixed
+
+- Restored the GitHub Releases page flow by cutting a fresh tag-based release
+  after the earlier `workflow_dispatch` validation runs, which build artifacts
+  but do not create GitHub Releases.
+- Added release workflow noise hardening: optional VS Code Marketplace/Open VSX
+  token skips now emit `notice` annotations instead of successful-run
+  `warning` annotations.
+- Gated Web UI multi-task SSE connection/reconnect status logs behind
+  `window.AIIA_DEBUG`, reducing default browser-console noise on normal network
+  churn.
+
 ## [1.5.32] — 2026-05-05
 
 > Round-25 + early Round-26 (5 commits since v1.5.31 — R25.1 typecheck-tooling
