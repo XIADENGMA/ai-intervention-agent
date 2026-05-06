@@ -99,6 +99,24 @@ class TestInteractiveFeedbackAnnotations(unittest.TestCase):
             "工具与外部用户/通知服务交互，必须 openWorldHint=True",
         )
 
+    def test_fastmcp_tags_describe_human_feedback_use_case(self) -> None:
+        """FastMCP tags 帮助支持标签的 client / gateway 对工具分类。"""
+        tool = _resolved_tool()
+        self.assertEqual(
+            getattr(tool, "tags", None),
+            {"human-in-the-loop", "feedback", "approval"},
+            "interactive_feedback 应按人机协作反馈场景打标签",
+        )
+
+    def test_fastmcp_decorator_timeout_left_to_backend_policy(self) -> None:
+        """不要设置 FastMCP decorator timeout，避免截断长时间人类反馈。"""
+        tool = _resolved_tool()
+        self.assertIsNone(
+            getattr(tool, "timeout", None),
+            "interactive_feedback 的等待时长由 feedback.backend_max_wait 控制，"
+            "不应再叠加 FastMCP decorator timeout",
+        )
+
 
 class TestAnnotationsRoundTripViaProtocol(unittest.TestCase):
     """端到端：通过 MCP 协议公共 API 获取 annotations，模拟 client 视角。"""

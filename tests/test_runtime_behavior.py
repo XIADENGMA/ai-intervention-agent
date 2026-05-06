@@ -428,8 +428,18 @@ class TestExtensionVersionSanity(unittest.TestCase):
 # 6. Static Resource Integrity（排查 Build-time Resource Resolution Failure）
 # ============================================================================
 
-_TEMPLATE_SRC_RE = re.compile(r'(?:src|href)="(/static/[^"?]+)')
+_TEMPLATE_SRC_RE = re.compile(
+    r'(?:src|href)="((?:/static/|/icons/)[^"?]+|/manifest\.webmanifest)'
+)
 _JINJA_TAG_RE = re.compile(r"\{\{[^}]+\}\}")
+
+
+def _resolve_web_asset_path(ref: str) -> Path:
+    """把浏览器路由引用映射回仓库实体文件路径。"""
+    clean = _JINJA_TAG_RE.sub("", ref).rstrip("/")
+    if clean == "/manifest.webmanifest":
+        return REPO_ROOT / "icons" / "manifest.webmanifest"
+    return REPO_ROOT / clean.lstrip("/")
 
 
 class TestStaticResourceIntegrity(unittest.TestCase):
@@ -447,8 +457,7 @@ class TestStaticResourceIntegrity(unittest.TestCase):
 
         missing: list[str] = []
         for ref in refs:
-            clean = _JINJA_TAG_RE.sub("", ref)
-            file_path = REPO_ROOT / clean.lstrip("/")
+            file_path = _resolve_web_asset_path(ref)
             if not file_path.exists():
                 missing.append(ref)
 

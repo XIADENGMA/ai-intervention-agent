@@ -280,9 +280,10 @@ _INTERACTIVE_FEEDBACK_ANNOTATIONS = ToolAnnotations(
     openWorldHint=True,
 )
 
-interactive_feedback = mcp.tool(annotations=_INTERACTIVE_FEEDBACK_ANNOTATIONS)(
-    _interactive_feedback_impl
-)
+interactive_feedback = mcp.tool(
+    annotations=_INTERACTIVE_FEEDBACK_ANNOTATIONS,
+    tags={"human-in-the-loop", "feedback", "approval"},
+)(_interactive_feedback_impl)
 
 # R20.8 性能优化：TaskQueue 单例的实现已迁移到独立模块 ``task_queue_singleton``。
 #

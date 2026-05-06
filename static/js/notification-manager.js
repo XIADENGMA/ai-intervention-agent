@@ -23,6 +23,8 @@ function isMobileDevice() {
   )
 }
 
+const DEFAULT_NOTIFICATION_SOUND_URL = '/sounds/deng.wav'
+
 // 通知管理系统
 class NotificationManager {
   constructor() {
@@ -277,7 +279,7 @@ class NotificationManager {
       // 创建音频上下文（需要用户交互后才能启用）
       this.audioContext = new AudioContextClass()
 
-      await this.loadAudioFile('default', '/sounds/deng.mp3')
+      await this.loadAudioFile('default', DEFAULT_NOTIFICATION_SOUND_URL)
       if (!this.audioBuffers.has('default')) {
         this._synthBuffer = this._createSynthNotificationBuffer()
       }
@@ -586,7 +588,7 @@ class NotificationManager {
 
     try {
       const audio = new Audio(
-        `/sounds/${soundName === 'default' ? 'deng.mp3' : soundName + '.mp3'}`
+        soundName === 'default' ? DEFAULT_NOTIFICATION_SOUND_URL : `/sounds/${soundName}.mp3`
       )
       audio.volume = Math.max(0, Math.min(1, this.config.soundVolume))
       const playPromise = audio.play()
