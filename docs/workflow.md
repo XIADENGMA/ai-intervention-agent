@@ -11,8 +11,8 @@ This document describes the recommended development and release workflow for thi
 ### Pre-commit (Local CI Gate)
 
 - One-command gate (recommended): `uv run python scripts/ci_gate.py`
-  - Default is **local mode**: auto-formats (`ruff format`) and runs ruff/ty/pytest/minify
-  - CI mode (check-only; no auto-format, but may generate gitignored build artifacts like `.min`): `uv run python scripts/ci_gate.py --ci --with-coverage`
+  - Default is **local mode**: auto-formats (`ruff format`) and runs ruff/ty/pytest/minify/precompress
+  - CI mode (check-only; no auto-format, but may generate gitignored build artifacts like `.min`, `.gz`, `.br`): `uv run python scripts/ci_gate.py --ci --with-coverage`
   - Include VSCode checks: `uv run python scripts/ci_gate.py --with-vscode`
   - Makefile shortcuts (thin wrappers — pick whichever your muscle memory prefers):
     - `make ci` ≡ `uv run python scripts/ci_gate.py`
@@ -25,6 +25,7 @@ This document describes the recommended development and release workflow for thi
   - Type check: `uv run ty check .`
   - Test: `uv run pytest -q`
   - Minify: `uv run python scripts/minify_assets.py`
+  - Precompress static assets: `uv run python scripts/precompress_static.py`
   - Locale parity check (full — keys + nested shapes + ICU placeholders): `uv run python scripts/check_i18n_locale_parity.py` (the legacy `scripts/check_locales.py` is a key-only smoke kept for backward compatibility; new code paths should target `check_i18n_locale_parity.py`, which is what `ci_gate.py` already runs)
   - Version check: `uv run python scripts/bump_version.py --check --from-pyproject`
 - VSCode extension: `npm run vscode:check` (Linux/headless: `xvfb-run -a npm run vscode:check`)

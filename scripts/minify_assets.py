@@ -158,9 +158,14 @@ def process_directory(
             needs_count += 1
             continue
 
-        # 增量执行：mtime 启发式仅作为"何时跳过 minify 工作"的优化，
-        # 不参与 fail 判定。
-        if not force and not needs_minification(filepath, minified_path):
+        # 增量执行：mtime 启发式只能作为快速触发器，不能作为唯一跳过条件。
+        # 否则会出现 ``--check`` 用内容比较发现漂移，但普通生成模式因 dst
+        # mtime 更新而跳过，导致"按提示运行脚本后仍失败"。
+        if (
+            not force
+            and not needs_minification(filepath, minified_path)
+            and not content_drifts(filepath, minified_path, minify_func)
+        ):
             files_skipped += 1
             continue
 

@@ -2578,6 +2578,22 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
 
         asyncio.run(server.ensure_web_ui_running(_make_config()))
 
+    @patch("service_manager.get_async_client")
+    def test_uses_provided_async_client(self, mock_get_client):
+        """调用方已持有 AsyncClient 时，健康检查不应重复 lookup singleton。"""
+        from unittest.mock import AsyncMock
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        asyncio.run(server.ensure_web_ui_running(_make_config(), client=mock_client))
+
+        mock_get_client.assert_not_called()
+        mock_client.get.assert_awaited_once()
+
     @patch("service_manager.start_web_service")
     @patch("service_manager.get_async_client")
     def test_health_fail_starts_service(self, mock_get_client, mock_start):
@@ -2901,6 +2917,36 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
         self.assertTrue(any(isinstance(c, TextContent) for c in result))
+
+    @patch("server_feedback.wait_for_task_completion")
+    @patch("service_manager.ensure_web_ui_running")
+    @patch("service_manager.get_web_ui_config")
+    @patch("server_config._generate_task_id", return_value="if-task-reuse")
+    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    def test_reuses_async_client_for_health_check_and_task_post(
+        self, mock_tid, mock_cfg, mock_ensure, mock_wait
+    ):
+        """interactive_feedback 应复用同一个 AsyncClient 完成 health + add task。"""
+        from unittest.mock import AsyncMock
+
+        mock_cfg.return_value = (_make_config(), 120)
+        mock_ensure.return_value = None
+        mock_wait.return_value = {"user_input": "ok"}
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        mock_client = MagicMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("service_manager.get_async_client", return_value=mock_client) as m:
+            result = self._run("test prompt")
+
+        self.assertIsInstance(result, list)
+        m.assert_called_once()
+        mock_ensure.assert_awaited_once()
+        self.assertIs(mock_ensure.call_args.kwargs.get("client"), mock_client)
+        mock_client.post.assert_awaited_once()
 
     @patch("server_feedback.wait_for_task_completion")
     @patch("service_manager.ensure_web_ui_running")

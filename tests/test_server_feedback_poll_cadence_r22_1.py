@@ -205,13 +205,15 @@ class TestSourceInvariants(unittest.TestCase):
         延迟最多 30s。set 的位置必须紧跟 ``sc.stream(...)`` 后。
 
         实现策略：用字符串索引代替"嵌套括号"正则——前者鲁棒，后者
-        无法跨多行 ``sc.stream("GET", sse_url, timeout=httpx.Timeout(...))``
+        无法跨多行 ``http_client.stream("GET", sse_url, timeout=httpx.Timeout(...))``
         正确匹配（嵌套括号让 [^)]* 提前停止）。
         """
         body = self.sse_listener_body
-        stream_idx = body.find("sc.stream(")
+        stream_idx = body.find("http_client.stream(")
         async_for_idx = body.find("async for line in resp.aiter_lines")
-        self.assertGreaterEqual(stream_idx, 0, "sse_listener 必须用 sc.stream(...)")
+        self.assertGreaterEqual(
+            stream_idx, 0, "sse_listener 必须用 http_client.stream(...)"
+        )
         self.assertGreater(
             async_for_idx,
             stream_idx,
@@ -391,6 +393,60 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
             )
 
         self.assertEqual(result.get("user_input"), "ok-from-poll")
+
+    @patch("service_manager.get_web_ui_config")
+    @patch("service_manager.get_async_client")
+    def test_wait_path_reuses_config_and_async_client(
+        self, mock_get_client, mock_get_cfg
+    ):
+        """同一次 wait 生命周期内只加载一次配置和 AsyncClient。
+
+        R27.3：``wait_for_task_completion`` 启动时已经拿到 WebUIConfig 和
+        AsyncClient；后续 ``_fetch_result`` / ``_sse_listener`` / close cleanup
+        都应复用它们。否则每个 poll 周期都会重复进入配置 TTL 锁和 client
+        singleton lookup，SSE 故障场景下会把本来已经降低的轮询成本又加回来。
+        """
+        from service_manager import WebUIConfig
+
+        cfg = WebUIConfig(
+            host="127.0.0.1",
+            port=8088,
+            language="auto",
+            timeout=5,
+            max_retries=0,
+            retry_delay=0.1,
+            external_base_url="",
+        )
+        mock_get_cfg.return_value = (cfg, 60)
+
+        completed = MagicMock()
+        completed.status_code = 200
+        completed.json.return_value = {
+            "success": True,
+            "task": {
+                "status": "completed",
+                "result": {"user_input": "reuse-ok"},
+            },
+        }
+        mock_get_client.return_value = self._mock_async_client(
+            get_return_value=completed
+        )
+
+        result = asyncio.run(
+            server_feedback.wait_for_task_completion("t-reuse", timeout=5)
+        )
+
+        self.assertEqual(result.get("user_input"), "reuse-ok")
+        self.assertEqual(
+            mock_get_cfg.call_count,
+            1,
+            "同一次 wait 不应在每次 _fetch_result 里重复加载 Web UI 配置",
+        )
+        self.assertEqual(
+            mock_get_client.call_count,
+            1,
+            "同一次 wait 应复用同一个 AsyncClient，而不是每条子路径重复 lookup",
+        )
 
     @patch("service_manager.get_web_ui_config")
     @patch("service_manager.get_async_client")

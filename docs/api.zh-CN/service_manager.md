@@ -155,9 +155,13 @@ R25.2: 函数体首行 ``import httpx`` 把 httpx 引入函数局部命名空间
 保证后续 ``except httpx.TimeoutException / ConnectError / HTTPError`` 可以
 解析符号；首次调用与首个 interactive_feedback 工具调用同步发生，付一次性 ~55 ms。
 
-### `async ensure_web_ui_running(config: WebUIConfig) -> None`
+### `async ensure_web_ui_running(config: WebUIConfig, client: Any | None = None) -> None`
 
-检查并自动启动 Web UI 服务（异步）
+检查并自动启动 Web UI 服务（异步）。
+
+``client`` 允许 ``interactive_feedback`` 复用本次调用已取出的
+AsyncClient，避免健康检查和后续 POST /api/tasks 分别做一次
+singleton lookup；未传入时保持历史行为。
 
 ### `cleanup_http_clients() -> None`
 

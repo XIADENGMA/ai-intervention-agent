@@ -22,12 +22,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > (a) **R25.1** bumps `ty` from v0.0.7 (the version frozen since v1.5.0's
 > initial lock) to v0.0.34 (~6 months and 27 Astral releases later) and
 > migrates 60+ `# type: ignore[...]` mypy-style suppressions to `# ty:
-> ignore[...]` ty-style across 28 files (1 production module + 5 production
+ignore[...]` ty-style across 28 files (1 production module + 5 production
 > scripts/routes + 22 test files), eliminating the 3 pre-existing
 > `possibly-missing-attribute` warnings via real type narrowing rather than
 > suppression and keeping the entire repo on green ty diagnostics with the
 > latest stable directive syntax — the trigger is that ty's old `# type:
-> ignore[code]` syntax is going to be removed in a future major bump, and
+ignore[code]` syntax is going to be removed in a future major bump, and
 > doing it now under controlled conditions with full test coverage is far
 > safer than under release pressure later. (b) **R25.2** defers the
 > module-top `import httpx` in `service_manager.py` and `server_feedback.py`
@@ -35,7 +35,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > `get_sync_client` / `health_check_service` / `update_web_content` for
 > service_manager; `_sse_listener` / `launch_feedback_ui` /
 > `interactive_feedback` for server_feedback), gated behind `if
-> TYPE_CHECKING: import httpx` for the module-level type annotations,
+TYPE_CHECKING: import httpx` for the module-level type annotations,
 > dropping `import service_manager` cold-start from ~149 ms to ~69 ms
 > (-79 ms / -53%); pair the httpx surgery with a tri-state lazy load of
 > the optional notification subsystem because the eager
@@ -66,14 +66,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > browser polling rate for ~1.5-6 ms/min CPU saving per `web_ui`
 > subprocess. (e) **R26.3** defers the module-top `import markdown` in
 > `web_ui.py` and the eager `markdown.Markdown(extensions=[...10
-> plugins...])` instance construction inside `setup_markdown` to a single
+plugins...])` instance construction inside `setup_markdown` to a single
 > coordinated lazy-init point inside `render_markdown(text)`'s critical
 > section (under the existing `self._md_lock`), removing ~20-25 ms of
 > wall-clock cost from the cold-start path that was paid for plugin
 > warm-up (codehilite Pygments lexer + footnote AST + nl2br rewrite +
 > md_in_html sanitizer + table/toc/fenced_code/attr_list/def_list/abbr
 > regex compilation), with race-prevention via double-checked locking
-> (the *first* thread to grab the lock pays the import + construct cost;
+> (the _first_ thread to grab the lock pays the import + construct cost;
 > subsequent threads see `self.md is not None` and skip), verified via a
 > 100-thread `threading.Barrier`-synchronized test that asserts exactly
 > 1 `Markdown(...)` constructor call across the contention window.
@@ -136,20 +136,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `tests/test_lazy_httpx_r25_2.py` source-text + runtime invariant
   suite). Eliminates ~55 ms `httpx` cold-import + ~24 ms eager
   `NotificationManager` singleton construction (4-thread executor
-  + on-disk config parse + Bark provider's transitive httpx pull) from
-  the `service_manager` module-load path; `import service_manager` cold-
-  start drops from ~149 ms to ~69 ms (-79 ms / -53%). The 3-state
-  `_ensure_notification_system_loaded()` lazy-init function caches
-  `(_notification_manager_singleton, _initialize_notification_system_fn)`
-  on first call (returns cached refs <10 µs/call thereafter, verified
-  via 1000-iteration micro-benchmark), with `cleanup_all` gated on
-  `_notification_initialized AND _notification_manager_singleton is not None`
-  so cold-shutdown paths that never triggered the lazy load don't
-  reverse-trigger it just to call `shutdown()`. `start_web_service`
-  is the single intentional lazy-load trigger in production (after
-  it runs the notification system stays loaded for the rest of the
-  process lifetime, so subsequent `cleanup_all` calls do find the
-  singleton to shut down).
+  - on-disk config parse + Bark provider's transitive httpx pull) from
+    the `service_manager` module-load path; `import service_manager` cold-
+    start drops from ~149 ms to ~69 ms (-79 ms / -53%). The 3-state
+    `_ensure_notification_system_loaded()` lazy-init function caches
+    `(_notification_manager_singleton, _initialize_notification_system_fn)`
+    on first call (returns cached refs <10 µs/call thereafter, verified
+    via 1000-iteration micro-benchmark), with `cleanup_all` gated on
+    `_notification_initialized AND _notification_manager_singleton is not None`
+    so cold-shutdown paths that never triggered the lazy load don't
+    reverse-trigger it just to call `shutdown()`. `start_web_service`
+    is the single intentional lazy-load trigger in production (after
+    it runs the notification system stays loaded for the rest of the
+    process lifetime, so subsequent `cleanup_all` calls do find the
+    singleton to shut down).
 
 - **R26.1 — Lazy `flask_limiter` import**
   (`web_ui.py`, plus 5-test `tests/test_lazy_flask_limiter_r26_1.py`
@@ -158,8 +158,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `from flask_limiter.util import get_remote_address` to in-function
   imports placed inside `WebFeedbackUI.__init__` immediately preceding
   the `self.limiter = Limiter(key_func=get_remote_address, app=self.app,
-  default_limits=["60 per minute", "10 per second"], storage_uri="memory://",
-  strategy="fixed-window")` construction call — `flask_limiter`'s
+default_limits=["60 per minute", "10 per second"], storage_uri="memory://",
+strategy="fixed-window")` construction call — `flask_limiter`'s
   ~21 ms incremental cold-start cost (after flask is already loaded,
   flask_limiter shares most of its dependency tree so the new cost
   is much less than its ~65 ms isolated cost) is now paid only by
@@ -180,32 +180,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   to a module-level `frozenset[str]` (12 BCP-47 RTL primary subtags
   per W3C language-direction guidance), with `frozenset` chosen over
   `set` for the immutable-shared-data invariant + thread-safe sharing
-  + fixed hash table at construction time — the lookup pattern
-  simultaneously upgrades from `any(html_lang.lower().startswith(p +
-  "-") or html_lang.lower() == p for p in _RTL_LANG_PREFIXES)` (12
-  fresh string concat allocations + 12 startswith calls per call)
-  to `primary_subtag = html_lang.lower().partition("-")[0]; html_dir
-  = "rtl" if primary_subtag in _RTL_LANG_PREFIXES else "ltr"` (one
-  partition + one frozenset lookup, ~12× faster on the membership
-  test step); (2) `_compute_file_version(file_path_str: str) -> str`
-  extracted as a module-level `@lru_cache(maxsize=64)` free function
-  replacing the previous `WebFeedbackUI._get_file_version(self, path)`
-  instance method that ran one fresh `Path(file_path).stat().st_mtime`
-  syscall per call per file — with 4 calls per render this was 4
-  fresh stat() syscalls per render, each costing ~0.5-2 µs warm and
-  ~5-15 µs cold; post-fix the cache hit rate is 100% after the first
-  render so subsequent calls drop to ~50-200 ns of `lru_cache` dict-
-  probe overhead vs the previous ~2-8 µs of stat() per call; (3)
-  `static_dir` pre-computed once at `WebFeedbackUI.__init__` time as
-  `self._static_dir: Path = self._project_root / "static"` instead of
-  `Path(__file__).resolve().parent / "static"` per render, with a
-  module-level `_get_module_static_dir()` `@lru_cache(maxsize=1)`
-  fallback for unit tests that bypass `__init__` via
-  `object.__new__(WebFeedbackUI)`. Net: `_get_template_context` drops
-  from ~70 µs/call (range 64-78 µs across 5 runs) to ~41 µs/call
-  (range 38-46 µs), -41% / -29 µs per call; at the empirically-
-  observed ~50-200 calls/min steady-state browser polling rate this
-  saves ~1.5-6 ms/min CPU per `web_ui` subprocess.
+  - fixed hash table at construction time — the lookup pattern
+    simultaneously upgrades from `any(html_lang.lower().startswith(p +
+"-") or html_lang.lower() == p for p in _RTL_LANG_PREFIXES)` (12
+    fresh string concat allocations + 12 startswith calls per call)
+    to `primary_subtag = html_lang.lower().partition("-")[0]; html_dir
+= "rtl" if primary_subtag in _RTL_LANG_PREFIXES else "ltr"` (one
+    partition + one frozenset lookup, ~12× faster on the membership
+    test step); (2) `_compute_file_version(file_path_str: str) -> str`
+    extracted as a module-level `@lru_cache(maxsize=64)` free function
+    replacing the previous `WebFeedbackUI._get_file_version(self, path)`
+    instance method that ran one fresh `Path(file_path).stat().st_mtime`
+    syscall per call per file — with 4 calls per render this was 4
+    fresh stat() syscalls per render, each costing ~0.5-2 µs warm and
+    ~5-15 µs cold; post-fix the cache hit rate is 100% after the first
+    render so subsequent calls drop to ~50-200 ns of `lru_cache` dict-
+    probe overhead vs the previous ~2-8 µs of stat() per call; (3)
+    `static_dir` pre-computed once at `WebFeedbackUI.__init__` time as
+    `self._static_dir: Path = self._project_root / "static"` instead of
+    `Path(__file__).resolve().parent / "static"` per render, with a
+    module-level `_get_module_static_dir()` `@lru_cache(maxsize=1)`
+    fallback for unit tests that bypass `__init__` via
+    `object.__new__(WebFeedbackUI)`. Net: `_get_template_context` drops
+    from ~70 µs/call (range 64-78 µs across 5 runs) to ~41 µs/call
+    (range 38-46 µs), -41% / -29 µs per call; at the empirically-
+    observed ~50-200 calls/min steady-state browser polling rate this
+    saves ~1.5-6 ms/min CPU per `web_ui` subprocess.
 
 - **R26.3 — Lazy `markdown` + lazy `markdown.Markdown(...)` instance**
   (`web_ui.py`, plus 11-test `tests/test_lazy_markdown_r26_3.py` 4-section
@@ -231,7 +231,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   test that monkey-patches `markdown.Markdown` with a counting wrapper
   and asserts the constructor is called exactly once across all 100
   workers (not 1+race-leftover). User-perceived: pre-fix `python -X
-  importtime -c "import web_ui"` showed `markdown` at position #5 with
+importtime -c "import web_ui"` showed `markdown` at position #5 with
   ~8.9 ms self-time; post-fix `markdown` is absent from the top-30
   imports. `WebFeedbackUI()` constructor cold drops from ~145 ms to
   ~125 ms (5 cold runs averaged).
@@ -241,7 +241,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > Round-24 kickoff (1 commit since v1.5.30 — R24.1): a single but
 > high-impact **VS Code webview cold-open** optimization that
 > parallelizes the 4 disk reads `WebviewProvider._preloadResources`
-> performs on the *only* synchronous-blocking step of the webview's
+> performs on the _only_ synchronous-blocking step of the webview's
 > first-frame critical path. Pre-fix, `_preloadResources` was a
 > textbook serial-await pattern (`for (const loc of ["en", "zh-CN"])`
 > for the locale JSON files, then `await readFile(activity-icon.svg)`,
@@ -251,7 +251,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > v1.5.30 we'd accumulated 4 fully-independent disk reads pretending
 > to depend on each other through shared `await` semicolons. **R24.1**
 > collapses them into `await Promise.all([loadLocale("en"),
-> loadLocale("zh-CN"), loadStaticAssets()])` with a nested
+loadLocale("zh-CN"), loadStaticAssets()])` with a nested
 > `Promise.all([svgPromise, lottiePromise])` inside `loadStaticAssets`,
 > taking the wall-clock from ~52 ms (range 47-58 ms, σ=4.1) down to
 > ~16 ms (range 14-19 ms, σ=2.3) — net **-35 ms** off the user-perceived
@@ -293,7 +293,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   reduction. The 16 ms post-fix floor is the unavoidable IPC RTT for
   `vscode.workspace.fs.readFile`'s renderer↔extension-host
   postMessage bridge plus the slowest of the 4 reads (the ~12 KB
-  `lottie/sprout.json`); the pre-fix latency was the *sum* of those
+  `lottie/sprout.json`); the pre-fix latency was the _sum_ of those
   4 RTTs. The 4 reads are fully independent (proven by
   `rg "_cachedLocales|_cachedStaticAssets" packages/vscode/webview.ts`
   returning the read sites, none of which trigger before
@@ -304,12 +304,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `vscode.workspace.fs.readFile` + `safeReadTextFile` workspace-trust
   fallback, then dispatches all three via `await Promise.all([...])`;
   `loadStaticAssets` itself uses a nested `Promise.all([svgPromise,
-  lottiePromise])` to parallelize SVG and lottie reads at a second
+lottiePromise])` to parallelize SVG and lottie reads at a second
   layer, then writes back `this._cachedStaticAssets = {
-  activityIconSvg, lottieData }` *atomically* after both promises
+activityIconSvg, lottieData }` _atomically_ after both promises
   resolve (preventing partial-write states where another path could
   observe `_cachedStaticAssets.activityIconSvg !== undefined &&
-  _cachedStaticAssets.lottieData === undefined`, which would silently
+_cachedStaticAssets.lottieData === undefined`, which would silently
   break the lottie sprout animation in the empty-state placeholder).
   Tests: 13 new source-text-contract tests in
   `tests/test_vscode_perf_r24_1.py` (covering serial-loop removal,
@@ -339,8 +339,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > and "browser can actually open `/`") and tightens the steady-state
 > hot path on `/api/tasks` GET, `Content-Security-Policy` header build,
 > and `_sse_listener` reconnect cadence — all without changing any
-> user-facing behavior, all behind ≥85 new tests (12 + 11 + 27 + 18 +
-> 29) that lock the contracts via source-text invariants, runtime
+> user-facing behavior, all behind ≥85 new tests (12 + 11 + 27 + 18 + 29) that lock the contracts via source-text invariants, runtime
 > spy verification, atomic-snapshot concurrency assertions, and
 > integration-level regression coverage. Combined wins:
 > (a) **R23.1** switches `server_feedback._sse_listener` from a
@@ -399,49 +398,49 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   task-creation, `_fetch_result`'s polling, `_close_orphan_task_best_effort`,
   and the heartbeat all already used the singleton). The pre-fix
   per-call cost decomposition (measured with 200 `httpx.AsyncClient()`
-  + immediate `__aexit__` constructs against `loopback:8088`):
-  full `AsyncClient.__init__` averages 1.4 ms (range 0.9-3.1 ms) for
-  fresh `AsyncHTTPTransport` + internal `httpcore.AsyncConnectionPool`
-  + asyncio cookie-jar lock + `_event_hooks` dict; the paired
-  `__aexit__` averages 0.6 ms (range 0.3-1.2 ms) for keep-alive socket
-  teardown + pool drain + waiter wake. Net per-call savings on the
-  `interactive_feedback` cold path: ~2.0 ms wall-time off
-  `wait_for_task_completion` startup; on a typical 20-step agent run
-  that's ~40 ms of pure overhead removed. Bigger structural win: SSE
-  + poll-fallback now share one connection pool, so the long-lived
-  `/api/events` stream and `_fetch_result`'s short polls can
-  keep-alive-share the same TCP socket when both are quiet, and
-  process-shutdown teardown only has one client to close instead of
-  an opportunistic `__aexit__` race during MCP cancel. Critical
-  detail: the `stream(...)` call gets an explicit
-  `timeout=httpx.Timeout(None, connect=5.0)` override scoped to the
-  SSE invocation alone (without leaking back into the shared pool's
-  other consumers), because the singleton's default
-  `httpx.Timeout(config.timeout, connect=5.0)` would otherwise kill
-  the long-lived SSE stream at the first idle window after
-  `config.timeout` seconds. 12 tests in
-  `tests/test_sse_listener_pooled_client_r23_1.py` lock the new
-  contract: source invariants (must call
-  `service_manager.get_async_client`, must not call
-  `httpx.AsyncClient(...)`, must pass `httpx.Timeout(None, ...)` to
-  `stream(...)`, must not wrap the shared client in `async with`),
-  docstring contract, runtime spy verification (using
-  `patch.object(httpx.AsyncClient, "__init__")` to confirm zero
-  direct constructions during the listener's lifetime), and R22.1
-  regression. Co-evolved fixtures: every `_mock_async_client` helper
-  in `test_server_feedback_poll_cadence_r22_1.py` and
-  `test_server_functions.py` had to set
-  `client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))`
-  so the listener takes its existing `except Exception` branch
-  (preserving the "poll fallback is the path under test" semantics);
-  pre-fix those tests deliberately relied on
-  `tests/conftest.py::_disable_real_network_requests` to block the
-  SSE listener's previously-direct `httpx.AsyncClient()` call, but
-  post-fix the listener goes through the *mocked* singleton and would
-  otherwise hit `aiter_lines()`'s `AsyncMock` without awaiting and
-  emit 14 `RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call'
-  was never awaited` from pytest's unraisable-exception hook. Commit
-  `2617507`.
+  - immediate `__aexit__` constructs against `loopback:8088`):
+    full `AsyncClient.__init__` averages 1.4 ms (range 0.9-3.1 ms) for
+    fresh `AsyncHTTPTransport` + internal `httpcore.AsyncConnectionPool`
+  - asyncio cookie-jar lock + `_event_hooks` dict; the paired
+    `__aexit__` averages 0.6 ms (range 0.3-1.2 ms) for keep-alive socket
+    teardown + pool drain + waiter wake. Net per-call savings on the
+    `interactive_feedback` cold path: ~2.0 ms wall-time off
+    `wait_for_task_completion` startup; on a typical 20-step agent run
+    that's ~40 ms of pure overhead removed. Bigger structural win: SSE
+  - poll-fallback now share one connection pool, so the long-lived
+    `/api/events` stream and `_fetch_result`'s short polls can
+    keep-alive-share the same TCP socket when both are quiet, and
+    process-shutdown teardown only has one client to close instead of
+    an opportunistic `__aexit__` race during MCP cancel. Critical
+    detail: the `stream(...)` call gets an explicit
+    `timeout=httpx.Timeout(None, connect=5.0)` override scoped to the
+    SSE invocation alone (without leaking back into the shared pool's
+    other consumers), because the singleton's default
+    `httpx.Timeout(config.timeout, connect=5.0)` would otherwise kill
+    the long-lived SSE stream at the first idle window after
+    `config.timeout` seconds. 12 tests in
+    `tests/test_sse_listener_pooled_client_r23_1.py` lock the new
+    contract: source invariants (must call
+    `service_manager.get_async_client`, must not call
+    `httpx.AsyncClient(...)`, must pass `httpx.Timeout(None, ...)` to
+    `stream(...)`, must not wrap the shared client in `async with`),
+    docstring contract, runtime spy verification (using
+    `patch.object(httpx.AsyncClient, "__init__")` to confirm zero
+    direct constructions during the listener's lifetime), and R22.1
+    regression. Co-evolved fixtures: every `_mock_async_client` helper
+    in `test_server_feedback_poll_cadence_r22_1.py` and
+    `test_server_functions.py` had to set
+    `client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))`
+    so the listener takes its existing `except Exception` branch
+    (preserving the "poll fallback is the path under test" semantics);
+    pre-fix those tests deliberately relied on
+    `tests/conftest.py::_disable_real_network_requests` to block the
+    SSE listener's previously-direct `httpx.AsyncClient()` call, but
+    post-fix the listener goes through the _mocked_ singleton and would
+    otherwise hit `aiter_lines()`'s `AsyncMock` without awaiting and
+    emit 14 `RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call'
+was never awaited` from pytest's unraisable-exception hook. Commit
+    `2617507`.
 
 - **R23.2 — `psutil` lazy-imported in `web_ui_mdns_utils.py`**.
   Pre-fix `import psutil` at line 13 of the module was a ~5 ms
@@ -460,7 +459,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `detect_best_publish_ipv4(bind_interface)` and that's only invoked
   when `bind_interface != "127.0.0.1"`; (b) LAN-bind workloads load
   psutil exactly once during `_mdns_register_thread`'s first probe,
-  *off* the main thread, so even there the main thread's `app.run()`
+  _off_ the main thread, so even there the main thread's `app.run()`
   listen-socket bind happens before psutil's C-ext init has finished;
   (c) `sys.modules` cache means the second-and-after
   `_list_non_loopback_ipv4` call is zero-cost. Failure-mode preservation:
@@ -500,51 +499,51 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   extended the latency between "AI agent calls `interactive_feedback`
   MCP tool" and "browser can actually open `/`" because
   `service_manager.spawn_subprocess`'s ready-probe waits for the
-  listen-socket bind, which happens *after* module-top imports.
+  listen-socket bind, which happens _after_ module-top imports.
   Post-fix `__init__` checks `_is_swagger_enabled_via_env()` reading
   `os.environ.get("AI_AGENT_ENABLE_SWAGGER", "").strip().lower() in
-  {"1", "true", "yes", "on"}`; truthy → call `_init_swagger_lazy()`
+{"1", "true", "yes", "on"}`; truthy → call `_init_swagger_lazy()`
   which `from flasgger import Swagger` (lazy) + `Swagger(self.app,
-  template={...})`s the existing template; falsy (default) → call
+template={...})`s the existing template; falsy (default) → call
   `_register_swagger_disabled_fallback()` which adds two `/apidocs`
-  + `/apidocs/` URL rules pointing at a 1.4 KB inline-HTML view that
-  documents the env-var to flip + links to the project README's
-  `#api-docs` anchor. Three alternatives were considered and rejected:
-  (a) "lazy init via `before_request` hook on first `/apidocs/` GET"
-  is unimplementable on Flask 3.x (`AssertionError: The setup method
-  'register_blueprint' can no longer be called on the application`);
-  (b) "daemon thread async init parallel with `app.run()` socket
-  bind" wins only ~50 ms instead of 75 (GIL-shared subprocess steals
-  CPU from main thread's listen bind during first ~10 ms of `app.run()`)
-  and adds ~50 LOC of lock-and-wait surface; (c) "move
-  `from flasgger import Swagger` to inside `__init__` only" saves zero
-  wall-clock on actual cold start because each subprocess constructs
-  exactly one `WebFeedbackUI`. The 12-factor rationale for env var
-  over `config.json` field: environment is the earliest readable
-  source (before config-manager schema validation), and "is this a
-  dev box" doesn't belong in user's persisted config. Benchmark
-  before/after on this dev box: pre-fix `import web_ui` = 195 ms
-  cold; post-fix unset = 120 ms (-75 ms exactly matching the flasgger
-  cost); post-fix `=1` = 121 ms `import web_ui` + 30 ms
-  `WebFeedbackUI()` construct = 151 ms total to a Swagger-enabled UI
-  (still 44 ms faster than pre-fix because module-init noise is now
-  serialized in fewer phases). 27 tests in
-  `tests/test_lazy_swagger_optin_r23_3.py` lock the new contract:
-  env truthy parsing (10 tests covering `unset` / `""` / `"0"` /
-  `"false"` / `"FALSE"` / `"enabled"` / `"y"` all-disable plus
-  `"1"` / `"true"` / `"TRUE"` / `"yes"` / `"YES"` / `"on"` / `"ON"`
-  / `"  1  "` / `"\t true \n"` all-enable, locking case-insensitive
-  whitespace-strip), default disabled path (no flasgger in
-  `sys.modules`, fallback endpoints registered), fallback HTML body
-  (200, `text/html; charset=utf-8`, contains `AI_AGENT_ENABLE_SWAGGER`
-  + GitHub URL, < 2 KB, both `/apidocs` and `/apidocs/` direct-200
-  without 308 redirect), enabled path (flasgger in `sys.modules`,
-  `flasgger.apidocs` + `flasgger.apispec_1` endpoints registered,
-  `/apispec_1.json` returns `application/json`), source contract
-  (no module-top `from flasgger`, lazy import inside method body),
-  docstring contract (mentions `R23.3` + `AI_AGENT_ENABLE_SWAGGER` +
-  the literal `75 ms` as an anti-drive-by-revert guardrail). Commit
-  `4817048`.
+  - `/apidocs/` URL rules pointing at a 1.4 KB inline-HTML view that
+    documents the env-var to flip + links to the project README's
+    `#api-docs` anchor. Three alternatives were considered and rejected:
+    (a) "lazy init via `before_request` hook on first `/apidocs/` GET"
+    is unimplementable on Flask 3.x (`AssertionError: The setup method
+'register_blueprint' can no longer be called on the application`);
+    (b) "daemon thread async init parallel with `app.run()` socket
+    bind" wins only ~50 ms instead of 75 (GIL-shared subprocess steals
+    CPU from main thread's listen bind during first ~10 ms of `app.run()`)
+    and adds ~50 LOC of lock-and-wait surface; (c) "move
+    `from flasgger import Swagger` to inside `__init__` only" saves zero
+    wall-clock on actual cold start because each subprocess constructs
+    exactly one `WebFeedbackUI`. The 12-factor rationale for env var
+    over `config.json` field: environment is the earliest readable
+    source (before config-manager schema validation), and "is this a
+    dev box" doesn't belong in user's persisted config. Benchmark
+    before/after on this dev box: pre-fix `import web_ui` = 195 ms
+    cold; post-fix unset = 120 ms (-75 ms exactly matching the flasgger
+    cost); post-fix `=1` = 121 ms `import web_ui` + 30 ms
+    `WebFeedbackUI()` construct = 151 ms total to a Swagger-enabled UI
+    (still 44 ms faster than pre-fix because module-init noise is now
+    serialized in fewer phases). 27 tests in
+    `tests/test_lazy_swagger_optin_r23_3.py` lock the new contract:
+    env truthy parsing (10 tests covering `unset` / `""` / `"0"` /
+    `"false"` / `"FALSE"` / `"enabled"` / `"y"` all-disable plus
+    `"1"` / `"true"` / `"TRUE"` / `"yes"` / `"YES"` / `"on"` / `"ON"`
+    / `"  1  "` / `"\t true \n"` all-enable, locking case-insensitive
+    whitespace-strip), default disabled path (no flasgger in
+    `sys.modules`, fallback endpoints registered), fallback HTML body
+    (200, `text/html; charset=utf-8`, contains `AI_AGENT_ENABLE_SWAGGER`
+  - GitHub URL, < 2 KB, both `/apidocs` and `/apidocs/` direct-200
+    without 308 redirect), enabled path (flasgger in `sys.modules`,
+    `flasgger.apidocs` + `flasgger.apispec_1` endpoints registered,
+    `/apispec_1.json` returns `application/json`), source contract
+    (no module-top `from flasgger`, lazy import inside method body),
+    docstring contract (mentions `R23.3` + `AI_AGENT_ENABLE_SWAGGER` +
+    the literal `75 ms` as an anti-drive-by-revert guardrail). Commit
+    `4817048`.
 
 - **R23.4 — `/api/tasks` GET hot path collapsed to single
   `read_lock`**. Pre-fix `web_ui_routes/task.py::get_tasks` called
@@ -556,7 +555,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   starvation pressure). New method `TaskQueue.get_all_tasks_with_stats()`
   acquires the reader-side exactly once and returns
   `tuple[list[Task], dict[str, int]]` with `len(tasks) ==
-  stats["total"]` invariant; route handler switches to the merged
+stats["total"]` invariant; route handler switches to the merged
   call. `/api/tasks` GET runs at 50-150 req/min during active
   multi-task agent runs (front-end falls back to 2 s polling on
   stale SSE per R20.14-C / R22.1; VSCode extension status bar polls
@@ -569,7 +568,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `renderTaskList` had a `tasks.length || 0` fallback silently
   papering over the 1-step skew (no comment, just arithmetic
   defensiveness); post-fix server-side guarantees `len(tasks) ===
-  stats.total` byte-for-byte. Legacy `get_all_tasks()` and
+stats.total` byte-for-byte. Legacy `get_all_tasks()` and
   `get_task_count()` are deliberately preserved (not deprecated)
   because (a) `web_ui.py::run_thread`'s graceful-shutdown calls
   `get_all_tasks()` standalone, (b) `_on_task_status_change`'s SSE
@@ -592,9 +591,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   switched its `mock_tq.get_all_tasks.return_value` /
   `mock_tq.get_task_count.return_value` mocks to
   `mock_tq.get_all_tasks_with_stats.return_value = ([task], {...})`
-  + `assert_not_called()` on the legacy pair (defensively prevents
-  any future "I'll just add my mock back" regression). Commit
-  `a742fd7`.
+  - `assert_not_called()` on the legacy pair (defensively prevents
+    any future "I'll just add my mock back" regression). Commit
+    `a742fd7`.
 
 - **R23.5 — `Content-Security-Policy` header template precompute**.
   Hot-path `after_request` closure ran a 10-segment f-string
@@ -614,7 +613,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   box via 100 000-iteration micro-benchmark: pre-fix ~580 ns
   (range 520-720), post-fix ~190 ns (range 170-240), net ~390 ns
   saving (~67% on this micro path). `add_security_headers` runs on
-  *every* Flask response (static files including 304-cached, API
+  _every_ Flask response (static files including 304-cached, API
   JSON returns, SSE establishment), at 50-200 req/s steady state =
   cumulative ~20-80 µs/s of saved CPU per `web_ui` process plus
   harder-to-quantify GIL-contention wins (those 390 ns are 390 ns
@@ -707,7 +706,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   is actually serving events) and cleared in its `finally:` block
   (every exit path); `_poll_fallback`'s body chooses
   `interval = _POLL_INTERVAL_SAFETY_NET_S if sse_connected.is_set()
-  else _POLL_INTERVAL_FAST_S` per iteration. The frontend already
+else _POLL_INTERVAL_FAST_S` per iteration. The frontend already
   used the same cadence model since R15 (`TASKS_POLL_BASE_MS = 2000`,
   `TASKS_POLL_SSE_FALLBACK_MS = 30000` in `static/js/multi_task.js`);
   R22.1 brings the server side into byte-equivalent alignment, and
@@ -872,8 +871,8 @@ Cursor + VSCode dev environment.
 
 ### Performance
 
-- **R21.1 — `templates/web_ui.html::<head>` adds 4 ``<link rel="preload"
-  as="script">`` hints for the four critical-path body scripts**
+- **R21.1 — `templates/web_ui.html::<head>` adds 4 `<link rel="preload"
+as="script">` hints for the four critical-path body scripts**
   (`app.js` / `multi_task.js` / `i18n.js` / `state.js`); URL byte-parity
   with the corresponding `<script defer src="...">` tags in the body
   (including `?v={{ app_version }}` cache-buster) is enforced by
@@ -898,7 +897,7 @@ Cursor + VSCode dev environment.
   `/fonts/*`, `/manifest.webmanifest`; `install` event uses
   `self.skipWaiting()` for immediate activation; `activate` event
   cleans up old `aiia-static-*` caches via `caches.keys() + filter +
-  caches.delete()` then `self.clients.claim()` to take ownership of
+caches.delete()` then `self.clients.claim()` to take ownership of
   pre-existing tabs; `fetch` event guards against non-GET / cross-origin
   / SSE before delegating to `handleCacheFirst()` which does cache-first
   with fire-and-forget `cache.put` clone-on-network-success and
@@ -908,7 +907,7 @@ Cursor + VSCode dev environment.
   failures), bottom section is the original `notificationclick` handler
   preserved verbatim. `static/js/notification-manager.js::init()` hoists
   `await this.registerServiceWorker()` out of the `if (!isSupported)
-  { ... } else { ... }` else-branch so iOS 16- / older Android browsers /
+{ ... } else { ... }` else-branch so iOS 16- / older Android browsers /
   privacy-locked-down Firefox configurations all register the SW even
   without `Notification` API support; the existing
   `supportsServiceWorkerNotifications()` guard inside
@@ -944,26 +943,26 @@ Cursor + VSCode dev environment.
   supports br and `.br` exists → serve `.br` with `Content-Encoding: br`,
   else if client supports gzip and `.gz` exists → serve `.gz` (R20.14-D
   behavior preserved exactly), else serve raw; all branches add `Vary:
-  Accept-Encoding`. Function name kept as `_send_with_optional_gzip`
+Accept-Encoding`. Function name kept as `_send_with_optional_gzip`
   (not `_compressed`) deliberately as a back-compat anchor — three other
   route handlers call it. `pyproject.toml` promotes `brotli>=1.2.0` from
   transitive (via `flask-compress[brotli]`) to first-class dep so
   `pip install` always installs it. `.gitattributes` adds `*.br binary`
-  + `static/**/*.br linguist-generated -diff`. **57 `.br` siblings**
-  committed to the repo (clone-and-go, same trade-off math as
-  R20.14-D's `.gz` siblings; both formats are byte-reproducible across
-  machines). Measured: `tex-mml-chtml.js` 1173 KB raw → 264 KB gz →
-  204 KB br (-83% / -22.7% on top of gzip), `lottie.min.js` 305 → 76 →
-  64 KB (-16% on gzip), `main.css` 244 → 47 → 37 KB (-21% on gzip),
-  `zh-CN.json` 11 → 4.3 → 3.5 KB (-19% on gzip), `en.json` 11 → 3.7 →
-  3.2 KB (-16% on gzip); total static wire-size **2.5 MB → 543 KB
-  (-79%, additional -253 KB / -32% over R20.14-D)**. 43 new tests in
-  `tests/test_brotli_precompress_r21_4.py` cover precompress unit /
-  graceful-degradation / dual-encoding `run()` / `_parse_accept_encoding`
-  / end-to-end Flask test client / fallback when sibling missing /
-  source-text invariants for both `static.py` (br check before gzip
-  check is the entire point of R21.4) and `precompress_static.py`.
-  Commit `c095185`.
+  - `static/**/*.br linguist-generated -diff`. **57 `.br` siblings**
+    committed to the repo (clone-and-go, same trade-off math as
+    R20.14-D's `.gz` siblings; both formats are byte-reproducible across
+    machines). Measured: `tex-mml-chtml.js` 1173 KB raw → 264 KB gz →
+    204 KB br (-83% / -22.7% on top of gzip), `lottie.min.js` 305 → 76 →
+    64 KB (-16% on gzip), `main.css` 244 → 47 → 37 KB (-21% on gzip),
+    `zh-CN.json` 11 → 4.3 → 3.5 KB (-19% on gzip), `en.json` 11 → 3.7 →
+    3.2 KB (-16% on gzip); total static wire-size **2.5 MB → 543 KB
+    (-79%, additional -253 KB / -32% over R20.14-D)**. 43 new tests in
+    `tests/test_brotli_precompress_r21_4.py` cover precompress unit /
+    graceful-degradation / dual-encoding `run()` / `_parse_accept_encoding`
+    / end-to-end Flask test client / fallback when sibling missing /
+    source-text invariants for both `static.py` (br check before gzip
+    check is the entire point of R21.4) and `precompress_static.py`.
+    Commit `c095185`.
 
 ### Other
 
@@ -1009,15 +1008,16 @@ Cursor + VSCode dev environment.
 > baseline; C — SSE pre-serialize + lock-tightening + embedded `stats`
 > for optimistic plugin status-bar updates (status-bar tick from
 > ~85 ms → ~2 ms); D — gzip pre-compression (`scripts/precompress_static.py`)
-> + `Accept-Encoding`-aware static route negotiator + dedicated
-> `/static/locales/*` route (2.5 MB → 796 KB / -68% wire size, with
-> the largest single asset `tex-mml-chtml.js` going 1.17 MB → 264 KB
-> / -77%); E — `docs/perf-r20-roadmap.md` (English) +
-> `docs/perf-r20-roadmap.zh-CN.md` (Chinese mirror) capturing the
-> full R20.x narrative + measurements + trade-offs as a single
-> coherent document. End-to-end "AI agent calls `interactive_feedback`
-> → user sees Web UI fully translated and ready to type" wall-clock
-> latency: **~1980 ms → ~360 ms across the entire R20.x batch (-82%)**.
+>
+> - `Accept-Encoding`-aware static route negotiator + dedicated
+>   `/static/locales/*` route (2.5 MB → 796 KB / -68% wire size, with
+>   the largest single asset `tex-mml-chtml.js` going 1.17 MB → 264 KB
+>   / -77%); E — `docs/perf-r20-roadmap.md` (English) +
+>   `docs/perf-r20-roadmap.zh-CN.md` (Chinese mirror) capturing the
+>   full R20.x narrative + measurements + trade-offs as a single
+>   coherent document. End-to-end "AI agent calls `interactive_feedback`
+>   → user sees Web UI fully translated and ready to type" wall-clock
+>   latency: **~1980 ms → ~360 ms across the entire R20.x batch (-82%)**.
 
 ### Performance
 
@@ -1053,7 +1053,7 @@ Cursor + VSCode dev environment.
   (`'notification_manager' not in sys.modules` after `import web_ui` in
   a fresh subprocess), `NOTIFICATION_AVAILABLE` correctness via
   `find_spec`, graceful-degradation parity (3 routes' 500 / `status:
-  skipped` paths preserved when `NOTIFICATION_AVAILABLE=False`),
+skipped` paths preserved when `NOTIFICATION_AVAILABLE=False`),
   source-text invariants (7 grep-based regressions guards forbidding
   any module-top-level `from notification_manager import ...`), and
   lazy-load caching semantics (first `/api/test-bark` call in fresh
@@ -1077,11 +1077,11 @@ Cursor + VSCode dev environment.
   `http://127.0.0.1:port`" — both the local 127.0.0.1 connection and
   the LAN-IP fallback **never depend on mDNS hostname resolution**;
   mDNS is only consulted when other LAN devices type `http://ai.local:port`,
-  which doesn't need to happen *before* the local Flask listen socket
+  which doesn't need to happen _before_ the local Flask listen socket
   is bound. Fix: declare `self._mdns_thread: threading.Thread | None`
   in `__init__`, replace synchronous `_start_mdns_if_needed()` call
   with `threading.Thread(target=..., name="ai-agent-mdns-register",
-  daemon=True).start()`. The `daemon=True` is load-bearing because
+daemon=True).start()`. The `daemon=True` is load-bearing because
   the same mDNS conflict-probe blocking would otherwise hang Web UI
   subprocess shutdown; the `name="ai-agent-mdns-register"` improves
   diagnosability in `py-spy dump` / `ps -L`. `_stop_mdns` gains a
@@ -1111,7 +1111,7 @@ Cursor + VSCode dev environment.
   `_read_inline_locale_json()` helper, ships the compact-serialized
   JSON inline as `window._AIIA_INLINE_LOCALE` in the HTML, and
   `templates/web_ui.html` calls `window.AIIA_I18N.registerLocale(lang,
-  data)` before invoking `init()` — so `i18n.init()` skips the
+data)` before invoking `init()` — so `i18n.init()` skips the
   otherwise-mandatory `fetch /static/locales/<lang>.json` (11 KB /
   30-80 ms RTT). XSS protection: `<` is escaped to `\u003c` in the
   inlined JSON to prevent a stray `</script>` substring from closing
@@ -1132,7 +1132,7 @@ Cursor + VSCode dev environment.
   fork+exec'd `git rev-parse --short HEAD` at module-load time on
   every extension activation gets refactored into a lazy `getBuildId()`
   function gated by `fs.existsSync(path.join(__dirname, '..', '..',
-  '.git'))`, so production VSIX installs (where `__BUILD_SHA__`
+'.git'))`, so production VSIX installs (where `__BUILD_SHA__`
   build-time placeholder hasn't been substituted AND there's no
   `.git` dir up the tree) skip the fork+exec entirely — measured
   `git rev-parse` baseline 8.12 ms vs gated `existsSync` 30.3 µs =
@@ -1172,7 +1172,7 @@ Cursor + VSCode dev environment.
   subscriber-event pair. (beta) `_SSEBus.emit` lock tightening replaces
   the "entire emit body inside `with self._lock`" pattern with the
   canonical "snapshot-then-act": `with self._lock: snapshot =
-  list(self._subscribers)`, then iterate `snapshot` outside the lock
+list(self._subscribers)`, then iterate `snapshot` outside the lock
   for `put_nowait` / `qsize` / dead-list-build, then re-acquire the
   lock only for the tight `set.discard` cleanup loop. The semantic
   contract ("subscribers added during emit don't receive the current
@@ -1186,7 +1186,7 @@ Cursor + VSCode dev environment.
   completes — 40× faster visual feedback while keeping the fetch as
   the safety net for new-task detection and stats correctness. Failure
   mode: `get_task_count()` raise / queue-not-initialized → `stats`
-  field is *omitted* (not empty-dict) so old/cautious clients
+  field is _omitted_ (not empty-dict) so old/cautious clients
   correctly fall back to `fetch /api/tasks`. Twenty-two new tests in
   `tests/test_cross_process_perf_r20_14c.py` lock the contract.
 
@@ -1201,7 +1201,7 @@ Cursor + VSCode dev environment.
   helper in `web_ui_routes/static.py` checks
   `Accept-Encoding: gzip` AND `<file>.gz` exists, serves the `.gz`
   with `Content-Encoding: gzip` + `Vary: Accept-Encoding` + the
-  *original* mimetype (not `application/gzip`); `serve_css` /
+  _original_ mimetype (not `application/gzip`); `serve_css` /
   `serve_js` / `serve_lottie` switch to it transparently, plus a new
   `serve_locales` route is registered for `/static/locales/<filename>`
   (Flask's built-in static handler doesn't apply our gzip negotiation
@@ -1223,7 +1223,7 @@ Cursor + VSCode dev environment.
   benchmarks via subprocess isolation: `import_web_ui` (cold-process
   `python -c "import web_ui"`, captures the R20.4-R20.10 lazy-import
   lattice cost), `spawn_to_listen` (`subprocess.Popen([python,
-  web_ui.py])` to first successful `socket.create_connection`,
+web_ui.py])` to first successful `socket.create_connection`,
   captures R20.11's mDNS daemonization win), `html_render`
   (`_get_template_context()` + `render_template()` round-trip with a
   one-off warmup render to flush Jinja2's first-compile cache),
@@ -1235,13 +1235,13 @@ Cursor + VSCode dev environment.
   array. `scripts/perf_gate.py` (465 lines) compares current results
   JSON against `tests/data/perf_e2e_baseline.json`, applying per-benchmark
   thresholds composed as `max(baseline_ms × pct_threshold,
-  abs_floor_ms)` (defaults 30% pct + 5 ms floor; the 5 ms floor
+abs_floor_ms)` (defaults 30% pct + 5 ms floor; the 5 ms floor
   prevents sub-millisecond `html_render` from triggering false-positive
   regressions on noisy CI). Verdict types: `pass`, `regression` (exit 1),
   `new` (informational, exit 0), `dropped` (exit 0 with warning),
   `error` (corrupt JSON / missing file, exit 2). Supports
   `--update-baseline` for atomic baseline refresh after a deliberate
-  accepted regression. The harness is deliberately *not* wired into
+  accepted regression. The harness is deliberately _not_ wired into
   `ci_gate.py` (running 5 benchmarks at default iterations is ~30 s on
   workstation / ~90 s on slow CI, would single-handedly double the
   green-test wall time); intended workflow is local pre-release.
@@ -1295,9 +1295,9 @@ Cursor + VSCode dev environment.
 
 - Pytest count climbs **2580 → 2770 (+190 tests)** across the batch
   (+17 R20.10 + 27 R20.12 + 25 R20.13 + 23 R20.14-A `perf_e2e_bench`
-  + 43 R20.14-A `perf_gate` + 22 R20.14-C cross-process + 35 R20.14-D
-  static compression — no regressions, 1 pre-existing skip).
-  `uv run python scripts/ci_gate.py` stays green throughout.
+  - 43 R20.14-A `perf_gate` + 22 R20.14-C cross-process + 35 R20.14-D
+    static compression — no regressions, 1 pre-existing skip).
+    `uv run python scripts/ci_gate.py` stays green throughout.
 
 - End-to-end "AI agent calls `interactive_feedback` → user sees
   Web UI fully translated and ready to type" wall-clock latency
@@ -1311,7 +1311,7 @@ Cursor + VSCode dev environment.
 > existing VSCode 6 s abort guard; R20.5 collapses two redundant per-request
 > `cleanup_completed_tasks` scans behind a 30 s monotonic-clock throttle
 > on the GET `/api/tasks` and `/api/tasks/<id>` hot paths; R20.6 short-circuits
-> `EnhancedLogger.log` on `isEnabledFor(level)` *before* the dedup pipeline
+> `EnhancedLogger.log` on `isEnabledFor(level)` _before_ the dedup pipeline
 > and fixes a latent ghost-hit cache bug; R20.7 adds a 16-entry LRU cache
 > to `WebFeedbackUI.render_markdown` so `/api/config` polls no longer
 > re-parse identical prompts at 5–20 ms each; **R20.8** carves
@@ -1330,7 +1330,7 @@ Cursor + VSCode dev environment.
 - **R20.4 — `static/js/multi_task.js::fetchAndApplyTasks` now wraps every
   `/api/tasks` poll in a 6-second `AbortController` hard timeout (mirrors
   VSCode `webview-ui.js::POLL_TASKS_TIMEOUT_MS`).** Pre-fix the function
-  only used `tasksPollAbortController` for *overlap protection* (cancel
+  only used `tasksPollAbortController` for _overlap protection_ (cancel
   previous in-flight when next poll starts), but had no time-bound on the
   in-flight fetch itself; the moment the server's `/api/tasks` socket
   transitioned to a TCP black-hole (firewall flip mid-session, NAT reset,
@@ -1364,7 +1364,7 @@ Cursor + VSCode dev environment.
   on every poll — the same work the background cleanup thread already
   performs on a 5 s cadence. Under typical load (1 browser + 1 VSCode
   webview polling every 2 s = ~60 calls/min) the redundant scans burned
-  ~5–10 µs/request of CPU *and* held `self._lock` long enough to interfere
+  ~5–10 µs/request of CPU _and_ held `self._lock` long enough to interfere
   with `add_task` / `complete_task` from concurrent submissions. New
   `cleanup_completed_tasks_throttled(age_seconds, throttle_seconds=30.0)`
   uses `time.monotonic()` (NTP-jump safe) and a separate `_hotpath_cleanup_lock`
@@ -1386,7 +1386,7 @@ Cursor + VSCode dev environment.
   lazy-cleanup branch + counter update) ran on every call regardless of
   whether the resolved log level was actually enabled — production
   WARNING-level loggers paid full ~0.5 µs/call for every silenced
-  `logger.debug(...)` / `logger.info(...)`, *and* could "ghost-hit" the
+  `logger.debug(...)` / `logger.info(...)`, _and_ could "ghost-hit" the
   dedup cache (a filtered DEBUG message would still increment the
   counter, so a future raise-the-level + re-emit would mis-dedup against
   a phantom hit). Fix raises the level check above the dedup acquire/release;
@@ -1396,14 +1396,14 @@ Cursor + VSCode dev environment.
   silenced-info likewise, enabled-debug still goes through dedup,
   enabled-warning still goes through, the `self.logger.isEnabledFor`
   call site is preserved by source-text invariant, and
-  `LogDeduplicator.should_log` is *not* called when level is filtered.
+  `LogDeduplicator.should_log` is _not_ called when level is filtered.
 
 - **R20.7 — `WebFeedbackUI.render_markdown` gains a 16-entry insertion-ordered
   LRU cache so `/api/config` polls stop re-parsing identical prompts.**
   Pre-fix `render_markdown` unconditionally ran the full markdown.Markdown
   extension chain (codehilite Pygments + footnotes + tables + 10 more)
   on every call, ~5–20 ms of CPU at a steady ~1 call/s/active task during
-  long feedback sessions where `active_task.prompt` is *literally constant*.
+  long feedback sessions where `active_task.prompt` is _literally constant_.
   Cache uses Python 3.7+ insertion-order dict semantics (no `cachetools`
   / `functools.lru_cache` / `OrderedDict` overhead); LRU touch via
   `pop + __setitem__`; capacity 16 = 1.6× `TaskQueue.max_tasks=10` for
@@ -1412,7 +1412,7 @@ Cursor + VSCode dev environment.
   complex prompt). Cache shares the existing `_md_lock` (markdown.Markdown
   is not thread-safe, so a single-mutex regime is mandatory at the convert
   layer anyway). The empty-string short-circuit (`if not text: return ""`)
-  lives *before* lock acquisition to avoid an unhelpful `""` cache slot.
+  lives _before_ lock acquisition to avoid an unhelpful `""` cache slot.
   Fifteen new tests lock the contract: hit/miss correctness, LRU-not-FIFO
   protection of recent hits, capacity bounding under fuzz (80 unique
   prompts → len ≤ 16), 8-thread × 10-round concurrent stress, and six
@@ -1422,10 +1422,10 @@ Cursor + VSCode dev environment.
 - **R20.8 — `task_queue_singleton.py` extracts the `TaskQueue` singleton
   out of `server.py` so the Web UI subprocess no longer drags `fastmcp` /
   `mcp` / `loguru` through `from server import get_task_queue`.** Original
-  comment in `server.py` already flagged the antipattern: *"TaskQueue is
+  comment in `server.py` already flagged the antipattern: _"TaskQueue is
   used only by the Web UI subprocess (web_ui.py / web_ui_routes call
   get_task_queue()). The MCP server main process never calls this
-  function."* — yet `web_ui.py`, `web_ui_routes/task.py`, and
+  function."_ — yet `web_ui.py`, `web_ui_routes/task.py`, and
   `web_ui_routes/feedback.py` all `from server import get_task_queue`,
   and that single import-line forced ~310 ms of `fastmcp` / `mcp` /
   `loguru` static loading on every Web UI subprocess cold start. Fix
@@ -1443,7 +1443,7 @@ Cursor + VSCode dev environment.
   `server.get_task_queue is task_queue_singleton.get_task_queue`
   re-export identity (prevents the "double-singleton split" failure mode),
   fresh-subprocess decoupling check (`import task_queue_singleton` does
-  *not* trigger `fastmcp` loading), and seven source-text invariants
+  _not_ trigger `fastmcp` loading), and seven source-text invariants
   ensuring `web_ui.py` / `web_ui_routes/{task,feedback}.py` import from
   the singleton module rather than from `server`.
 
@@ -1467,24 +1467,22 @@ Cursor + VSCode dev environment.
      `_lazy_mcp_types().TextContent(...)` / `.ImageContent(...)` and
      hoist the lookup once at the top of `parse_structured_response` to
      avoid repeated attribute lookups inside the per-image loop.
-  **Measured `import server_config`: 213 ms → 72 ms (-141 ms / -66%);
-  `import task_queue`: 218 ms → 72 ms (-145 ms / -67%); `import web_ui`:
-  271 ms → 192 ms (-79 ms / -29%)**. Combined with R20.8: `import web_ui`
-  goes from 425 ms baseline to 192 ms (-233 ms / -55% cold-start
-  improvement), directly compressing the time from "MCP tool call" →
-  "Web UI subprocess Flask listen" → "first browser response". Trade-off
-  on `server.py` main process: first call to a response-builder pays
-  ~140 ms one-time lazy-load (subsequent calls 0 µs); since the user is
-  already awaiting the full MCP tool round-trip on the first call, the
-  +140 ms is unobservable. Thirteen new tests lock the contract:
-  three subprocess-isolated decoupling checks (server_config / task_queue
-  cold-load does *not* import `mcp.types`; first call to
-  `parse_structured_response` *does*), lazy-loader cache-singleton
-  identity, runtime-behavior parity on all three response builders,
-  PEP-563 string-form annotation accessibility, and four source-text
-  invariants forbidding any module-level `mcp.types` import resurrection.
-
-
+     **Measured `import server_config`: 213 ms → 72 ms (-141 ms / -66%);
+     `import task_queue`: 218 ms → 72 ms (-145 ms / -67%); `import web_ui`:
+     271 ms → 192 ms (-79 ms / -29%)**. Combined with R20.8: `import web_ui`
+     goes from 425 ms baseline to 192 ms (-233 ms / -55% cold-start
+     improvement), directly compressing the time from "MCP tool call" →
+     "Web UI subprocess Flask listen" → "first browser response". Trade-off
+     on `server.py` main process: first call to a response-builder pays
+     ~140 ms one-time lazy-load (subsequent calls 0 µs); since the user is
+     already awaiting the full MCP tool round-trip on the first call, the
+     +140 ms is unobservable. Thirteen new tests lock the contract:
+     three subprocess-isolated decoupling checks (server_config / task_queue
+     cold-load does _not_ import `mcp.types`; first call to
+     `parse_structured_response` _does_), lazy-loader cache-singleton
+     identity, runtime-behavior parity on all three response builders,
+     PEP-563 string-form annotation accessibility, and four source-text
+     invariants forbidding any module-level `mcp.types` import resurrection.
 
 > Round-19 release-tooling hardening (1 commit since v1.5.24): R19.1
 > closes the GitHub 3-tag webhook hard limit that silently dropped the
@@ -1495,7 +1493,7 @@ Cursor + VSCode dev environment.
 > This release adds a developer-machine pre-push gate
 > (`scripts/check_tag_push_safety.py` + `make release-check`) that
 > fails fast with a per-tag recovery command list, so the next time a
-> contributor accumulates 4+ tags locally the gate fires *before*
+> contributor accumulates 4+ tags locally the gate fires _before_
 > `git push` instead of after the silent failure.
 
 ### Added
@@ -1577,21 +1575,21 @@ Cursor + VSCode dev environment.
   consequences disappeared: (1) occasional
   `Webview is disposed` unhandled rejection in the extension
   host's Output channel; (2) a 2.5 s-deferred
-  `webview.ready_timeout` warning that was a *pure* false
+  `webview.ready_timeout` warning that was a _pure_ false
   positive — the webview was already gone — but looked exactly
   like the genuine "script never reported ready" CSP-failure
   signal and would mislead operators triaging real injection
   failures. Fix is a one-line guard:
   `if (this._view !== view) return` at the top of the finally,
   before either side-effect. The pre-finally `dispose()` already
-  cleared the *previous* `_webviewReadyTimer`; not creating a
+  cleared the _previous_ `_webviewReadyTimer`; not creating a
   new one is enough to fully close the loop. Five source-text
   locks in `tests/test_vscode_webview_dispose_race.py`:
   presence (guard literal exists), order (guard before
   `setTimeout`), structural reverse-lock (guard inside
   `_preloadResources(...).finally(() => { ... })`, not hoisted
   to function top where it would be dead code), over-fix
-  reverse-lock (the 2.5 s `setTimeout` for *real*
+  reverse-lock (the 2.5 s `setTimeout` for _real_
   ready-timeout observability must survive), and capture-time
   reverse-lock (`const view = this._view` precedes
   `_preloadResources()`, otherwise the guard degenerates to
@@ -1615,7 +1613,7 @@ Cursor + VSCode dev environment.
   `test_web_locale_no_dead_keys` and
   `test_strict_exits_zero_when_no_orphans` both started failing
   with a misleading "dead key" message that would have led an
-  unaware contributor to *delete* still-load-bearing locale
+  unaware contributor to _delete_ still-load-bearing locale
   strings. Fix is a one-token relaxation: `\(['"]` → `\(\s*['"]`,
   exactly mirroring the form
   `scripts/check_i18n_param_signatures.py::_T_CALL_RE` already
@@ -1660,12 +1658,12 @@ Cursor + VSCode dev environment.
   substring `.includes(...)` / `assertIn(...)` lock with the
   union of single- and double-quote variants (or, where regex
   was already in use, broadens the regex to `['"]`), keeping
-  the *semantic* invariant intact while letting either quote
+  the _semantic_ invariant intact while letting either quote
   style pass. The `debounceSaveFeedback` extractor specifically
   tolerates both `updates =>` and `(updates) =>`. No production
   code changed. Inline rationale comments at each broadened
   lock cite Prettier and the relevant ESLint config so a
-  future reviewer can see *why* the lock is permissive without
+  future reviewer can see _why_ the lock is permissive without
   having to bisect the git log. Pytest count climbs
   2475 → 2483 (+8) across R18.2 (5 new locks), R18.3 (3 new
   locks); R18.4 only relaxes 5 existing locks rather than
@@ -1702,7 +1700,7 @@ Cursor + VSCode dev environment.
      being entry-points — pytest is the sole driver for
      tests, and the library modules are imported, never
      executed. Shebangs removed; `if __name__ == "__main__":
-     unittest.main()` blocks already in tests still work
+unittest.main()` blocks already in tests still work
      when invoked via `python -m`.
   2. **Mode normalisation**: 16 entry-point scripts under
      `scripts/` (`ci_gate.py`, all 9 i18n gates,
@@ -1738,7 +1736,7 @@ Cursor + VSCode dev environment.
   accidentally drop a public issue. Added bidirectional
   references in plain language (no anchors, since the
   GitHub slug for `## AppleScript executor (macOS only) ·
-  security model` is brittle across renderers); each side
+security model` is brittle across renderers); each side
   now nudges to the right document for the other half of
   the contract. Pure docs / no behaviour change.
 - **`docs/mcp_tools{,.zh-CN}.md` timeout description matches
@@ -1933,17 +1931,17 @@ Cursor + VSCode dev environment.
 - **`SystemNotificationProvider`'s plyer `timeout` magic
   number now lives in `_DISPLAY_DURATION_SECONDS`** (= 10s)
   with a fully documented contract that the value is the
-  *banner display duration*, not a *send timeout*. Historical
+  _banner display duration_, not a _send timeout_. Historical
   bug-magnet: the previous local variable name
-  ``timeout_seconds = 10.0`` strongly suggested send-side
+  `timeout_seconds = 10.0` strongly suggested send-side
   semantics. plyer has no async/cancellation surface; the call
   is synchronous and blocks until the platform API returns
   (osascript / balloon / libnotify). The fallback for an
   actually-stuck platform call is
-  ``NotificationManager._process_event::as_completed(timeout=
-  bark_timeout + buffer)``, which is now explicitly cross-
+  `NotificationManager._process_event::as_completed(timeout=
+bark_timeout + buffer)`, which is now explicitly cross-
   linked in both source files. Locked by
-  ``tests/test_notification_providers.py::TestSystemProviderSend``
+  `tests/test_notification_providers.py::TestSystemProviderSend`
   (2 new tests including a `[3, 30]` range justification on
   the constant).
 
@@ -1986,7 +1984,7 @@ Cursor + VSCode dev environment.
   `shutdown(wait=False, grace_period=0.0)` — default `0.0` is a perfect
   no-op for existing callers; positive values trigger a
   `for thread in self._executor._threads: thread.join(timeout=remaining)`
-  pass under a `time.monotonic()` deadline, so the *total* wait is
+  pass under a `time.monotonic()` deadline, so the _total_ wait is
   bounded by `grace_period` regardless of how many workers are still
   running (4 stuck workers ≠ 4 × grace; the budget is shared).
   `_ATEXIT_GRACE_PERIOD_SECONDS = 1.5` is the picked value: short
@@ -1994,7 +1992,7 @@ Cursor + VSCode dev environment.
   one full HTTP request round-trip (typical 200–800 ms). Why not
   `daemon=True`: would require subclassing `ThreadPoolExecutor` and
   reimplementing `_adjust_thread_count` (private, churns across CPython
-  3.9–3.13); `grace_period` only *reads* `_threads`, never mutates the
+  3.9–3.13); `grace_period` only _reads_ `_threads`, never mutates the
   pool, and survives a hypothetical CPython removal via the
   `getattr(..., ()) or ()` fallback. Eight locks in new
   `TestShutdownGracePeriod`: `grace=0` doesn't touch `_threads`,
@@ -2024,7 +2022,7 @@ Cursor + VSCode dev environment.
   invariants (`2 **`, `random.uniform`, `min(...)`, no hardcoded
   `time.sleep(1)`/`time.sleep(2)`) and two behavioural ones that drive
   `server.main()` with mocked `mcp.run` — first verifies retry 2 is
-  *strictly greater* than retry 1 (rejects jitter-coincidence false
+  _strictly greater_ than retry 1 (rejects jitter-coincidence false
   positives), second verifies `KeyboardInterrupt` still bypasses both
   `time.sleep` and `sys.exit`.
 - **`/api/events` SSE endpoint now declares an explicit
@@ -2042,7 +2040,7 @@ Cursor + VSCode dev environment.
   queue. Three AST-driven locks in
   `tests/test_sse_endpoint_rate_limit.py`: `def sse_events` exists,
   has exactly one `@self.limiter.limit(...)` decorator with
-  `"300 per minute"`, and is *not* `@limiter.exempt`. Future refactors
+  `"300 per minute"`, and is _not_ `@limiter.exempt`. Future refactors
   that drop the explicit limit (regressing to `60/min`) or upgrade to
   `exempt` (unbounded connections) both fail the test with a direct
   pointer to this commit's rationale.
@@ -2064,7 +2062,7 @@ Cursor + VSCode dev environment.
   rename" (`os.replace` race) — three failure classes needing
   three different remediation strategies. Fix is a new
   module-private `_quarantine_corrupt_persist_file(self, *,
-  reason: str)` called from the top-level `except`: atomic
+reason: str)` called from the top-level `except`: atomic
   rename via `os.replace` with a compact
   `YYYYMMDDTHHMMSSZ` suffix (ASCII-only because Windows file-
   name rules forbid `:`; sortable so `ls *.corrupt-*` lists
@@ -2072,13 +2070,13 @@ Cursor + VSCode dev environment.
   one-shot, not a hot loop — colliding events in the same
   second collapse to the latest sample which is fine because
   same-second events share root cause). Best-effort `try/except
-  OSError` ensures quarantine failure never raises into
+OSError` ensures quarantine failure never raises into
   `__init__`; worst case is pre-fix baseline (silent overwrite),
   strictly an improvement. Five new locks in
   `TestCorruptPersistQuarantine`: truncated-JSON repro asserts
   queue degrades to empty AND original path is gone AND
   quarantine file is byte-identical to original; filename-format
-  regex lock (`YYYYMMDDTHHMMSSZ`); the *load-bearing*
+  regex lock (`YYYYMMDDTHHMMSSZ`); the _load-bearing_
   `test_subsequent_persist_does_not_overwrite_quarantine` proves
   `add_task` after corruption writes a fresh `tasks.json` while
   preserving the `*.corrupt-*` quarantine intact;
@@ -2092,12 +2090,12 @@ Cursor + VSCode dev environment.
   a pre-existing 100 GB single-part exploit hidden behind a
   deceptive "为什么不依赖 MAX_CONTENT_LENGTH" docstring.**
   Pre-fix the layered defense had a critical gap: `file.read()`
-  in `extract_uploaded_images` was a *bare* call (loads the
-  entire part into a Python `bytes`), *and* `web_ui.py` set no
-  `app.config["MAX_CONTENT_LENGTH"]`, *and* the module docstring
+  in `extract_uploaded_images` was a _bare_ call (loads the
+  entire part into a Python `bytes`), _and_ `web_ui.py` set no
+  `app.config["MAX_CONTENT_LENGTH"]`, _and_ the module docstring
   rationalised the gap by claiming `MAX_CONTENT_LENGTH` "对
   form-only 请求会一并影响" — which is **false**:
-  `MAX_CONTENT_LENGTH` only rejects requests *exceeding* its
+  `MAX_CONTENT_LENGTH` only rejects requests _exceeding_ its
   threshold, so setting it to 101 MB has zero effect on the
   < 1 KB form-only text submissions the docstring worried about.
   Exploit chain: an attacker sending a single multipart part with
@@ -2105,21 +2103,21 @@ Cursor + VSCode dev environment.
   parse stage (no `MAX_CONTENT_LENGTH`), (2) get streamed to a
   temp file by Werkzeug's `FileStorage` (filling disk before
   application code runs), (3) hit `file.read()` which loads the
-  *whole* part into RAM — process now holds 100 GB in `bytes`
-  *plus* the disk temp file. Only *then* would
+  _whole_ part into RAM — process now holds 100 GB in `bytes`
+  _plus_ the disk temp file. Only _then_ would
   `validate_uploaded_file` reject for `> 10 MB`, but OOM-kill
   has already happened. The existing
   `MAX_TOTAL_UPLOAD_BYTES = 100 MB` per-request cap is checked
-  *between* parts, not within a single part, so a single 100 GB
+  _between_ parts, not within a single part, so a single 100 GB
   part sails right through it. Fix is a four-tier defense ordered
   by rejection time:
   - **Tier 1 (request-level Flask cap):** `web_ui.py` now sets
     `self.app.config["MAX_CONTENT_LENGTH"] = MAX_TOTAL_UPLOAD_BYTES + 1 MB`.
-    Werkzeug rejects with HTTP 413 *before* any temp-file
+    Werkzeug rejects with HTTP 413 _before_ any temp-file
     streaming; the disk never sees the malicious bytes. 1 MB
     buffer covers multipart boundary + per-part headers
     (~20 KB total) + form text fields + safety margin. Imports
-    `MAX_TOTAL_UPLOAD_BYTES` directly so there's *one* source
+    `MAX_TOTAL_UPLOAD_BYTES` directly so there's _one_ source
     of truth.
   - **Tier 2 (per-file read cap):** new
     `MAX_FILE_SIZE_BYTES = 10 MB` constant in
@@ -2132,23 +2130,23 @@ Cursor + VSCode dev environment.
     tier 1 inert because Werkzeug can't pre-judge body size) —
     per-part RAM stays strictly capped at 10 MB + 1 byte.
   - **Tier 3 (per-request budgets):** `MAX_IMAGES_PER_REQUEST = 10`
-    + `MAX_TOTAL_UPLOAD_BYTES = 100 MB` (unchanged from pre-fix).
+    - `MAX_TOTAL_UPLOAD_BYTES = 100 MB` (unchanged from pre-fix).
   - **Tier 4 (magic-number / extension / content-scan):**
     `validate_uploaded_file` rejects PNG-headerless files,
     dangerous extensions, embedded scripts (unchanged).
-  The deceptive docstring sentence is removed and replaced with
-  the explicit four-tier ordering. Eight new locks: `TestPerFileSizeCap`
-  × 5 (constant-equals-validator-default parity,
-  ≤ total-budget sanity, oversized-rejected-before-validate via
-  `mock_validate.assert_not_called()`, at-cap passes through,
-  AST-driven reverse-lock asserting ≥ 1 `file.read(N)` call with
-  non-empty `args` AND zero bare `file.read()` — protects against
-  future "clean up the `+ 1`" refactors); `TestFlaskMaxContentLength`
-  × 3 (config present + positive, value covers
-  `MAX_TOTAL_UPLOAD_BYTES` while bounded above so tier-1 can't
-  dilute into a Gigabyte cap, AST + text reverse-lock that
-  `web_ui.py` references the constant rather than hardcoding the
-  literal). Pytest count climbs 2458 → 2465.
+    The deceptive docstring sentence is removed and replaced with
+    the explicit four-tier ordering. Eight new locks: `TestPerFileSizeCap`
+    × 5 (constant-equals-validator-default parity,
+    ≤ total-budget sanity, oversized-rejected-before-validate via
+    `mock_validate.assert_not_called()`, at-cap passes through,
+    AST-driven reverse-lock asserting ≥ 1 `file.read(N)` call with
+    non-empty `args` AND zero bare `file.read()` — protects against
+    future "clean up the `+ 1`" refactors); `TestFlaskMaxContentLength`
+    × 3 (config present + positive, value covers
+    `MAX_TOTAL_UPLOAD_BYTES` while bounded above so tier-1 can't
+    dilute into a Gigabyte cap, AST + text reverse-lock that
+    `web_ui.py` references the constant rather than hardcoding the
+    literal). Pytest count climbs 2458 → 2465.
 - **`ServiceManager._signal_handler` now `raise KeyboardInterrupt`
   on the main thread after `cleanup_all`, so SIGTERM / SIGINT
   actually exit the process instead of leaving a zombie waiting
@@ -2156,7 +2154,7 @@ Cursor + VSCode dev environment.
   and SIGTERM replaces Python's built-in handlers — SIGINT no
   longer auto-translates to `KeyboardInterrupt`, and SIGTERM no
   longer auto-`SystemExit`. Our handler ran cleanup, set
-  `_should_exit = True`, then *returned*. Once the handler
+  `_should_exit = True`, then _returned_. Once the handler
   returned the signal was "handled" from the kernel's POV and
   `mcp.run()`'s blocking stdio loop resumed waiting on stdin —
   the web_ui subprocess and httpx clients had been torn down,
@@ -2168,12 +2166,12 @@ Cursor + VSCode dev environment.
   expose a "should-exit" hook into its blocking read loop. Fix
   layer: after running `cleanup_all` + setting `_should_exit`,
   explicitly `raise KeyboardInterrupt(f"signal {signum} →
-  graceful shutdown")` from the main-thread branch. `server.main()`'s
+graceful shutdown")` from the main-thread branch. `server.main()`'s
   pre-existing `except KeyboardInterrupt:` arm picks it up,
   runs an idempotent second `cleanup_services()` (no-op because
   the first run already cleared everything), `break`s out of the
   retry loop, and `return`s — process exits with code 0 in
-  milliseconds. Cleanup deliberately runs *before* the raise so
+  milliseconds. Cleanup deliberately runs _before_ the raise so
   resources release even if `KeyboardInterrupt` propagation
   encounters anything weird in the call chain. Cleanup-error
   path stays correct: a `RuntimeError` from `cleanup_all` is
@@ -2188,7 +2186,7 @@ Cursor + VSCode dev environment.
   `test_signal_handler_main_thread` upgraded to
   `assertRaises(KeyboardInterrupt)`; existing
   `test_signal_handler_cleanup_error` upgraded to confirm the
-  raise still fires *despite* a cleanup `RuntimeError` (the
+  raise still fires _despite_ a cleanup `RuntimeError` (the
   fail-loud invariant); plus three new tests:
   `test_signal_handler_sigterm_main_thread_raises_keyboardinterrupt`
   (the headline reverse-lock — exception message must contain
@@ -2216,14 +2214,14 @@ Cursor + VSCode dev environment.
   → `_close_orphan_task_best_effort()` POSTs `/api/tasks/<id>/close`
   → web_ui `task_queue.remove_task` deletes the COMPLETED task
   **and its `result` payload** → user receives a `_make_resubmit_response`
-  back through the AI, with zero log signal that a result *did*
+  back through the AI, with zero log signal that a result _did_
   exist briefly. Fix is a single retry hop in the same finally
   block: if `result_box[0] is None` after both SSE / poll tasks
   have been awaited, call `_fetch_result()` once more — transient
   failures typically clear in <1 s, so the retry recovers the
   result, fills `result_box[0]`, and the existing `if result_box[0]
-  is None` close-guard short-circuits past the close call entirely.
-  If the retry *also* fails (genuinely no result, web_ui truly
+is None` close-guard short-circuits past the close call entirely.
+  If the retry _also_ fails (genuinely no result, web_ui truly
   wedged), control flows into the original R13·B1 close path with
   behaviour bit-identical to pre-fix — no regression for the
   timeout / genuinely-stuck scenarios the original commit was
@@ -2237,10 +2235,10 @@ Cursor + VSCode dev environment.
   with a stateful `AsyncMock` GET (1st → 503, 2nd → completed
   result) and asserts (a) the return value is the recovered result
   not `_make_resubmit_response`, (b) `client.post` (close) is
-  called *zero* times, (c) GET is called ≥ 2× to confirm the
+  called _zero_ times, (c) GET is called ≥ 2× to confirm the
   retry fired; `test_retry_still_failing_falls_back_to_close`
   preserves the always-pending case and confirms `client.post`
-  *is* called at least once;
+  _is_ called at least once;
   `test_retry_does_not_fire_when_result_already_present` reverse-
   locks the normal completion path so a future refactor moving
   the retry outside the `is None` guard cannot silently overwrite
@@ -2259,8 +2257,8 @@ Cursor + VSCode dev environment.
   pool. The 4th future enters the executor's queue waiting for a
   free worker, but
   `as_completed(futures, timeout=bark_timeout +
-  _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS)` (default 10+5 = 15 s) starts
-  ticking *immediately* on submit, not when the 4th worker
+_AS_COMPLETED_TIMEOUT_BUFFER_SECONDS)` (default 10+5 = 15 s) starts
+  ticking _immediately_ on submit, not when the 4th worker
   eventually starts. If the 3 in-flight futures (typically
   dominated by BARK's HTTPS round-trip with cross-region latency)
   all finish near the 15 s edge, the 4th future has zero remaining
@@ -2268,7 +2266,7 @@ Cursor + VSCode dev environment.
   `except TimeoutError` branch's cleanup loop — the user simply
   doesn't get one of their notifications, and the only log signal
   is a generic "通知发送部分超时: N/M 完成" warning that doesn't
-  reveal the *systematic* shortfall (this channel **always** loses
+  reveal the _systematic_ shortfall (this channel **always** loses
   to scheduling order, not random network luck). New module-level
   `_NOTIFICATION_WORKER_COUNT = len(NotificationType)` makes the
   worker count auto-sync with the enum; future contributors adding
@@ -2293,21 +2291,21 @@ Cursor + VSCode dev environment.
   `NotificationManager.__init__` + `restart()` via
   `inspect.getsource` + `ast.parse`, asserting no
   `Call(func=ThreadPoolExecutor, keywords=[..., max_workers=
-  Constant(3)])` survives (chose AST over textual grep because
+Constant(3)])` survives (chose AST over textual grep because
   textual grep false-positives on test fixtures and changelog
   quotes). Pytest count climbs 2447 → 2452.
 - **`TaskQueue._persist` now `flush()`es and `fsync()`s before
   `os.replace()` so a kernel panic / power loss after rename can no
   longer leave the on-disk task-queue file as NUL-filled or
   truncated bytes.** Pre-fix, `_persist` did `tempfile.mkstemp →
-  write → os.replace` without flushing the stdio buffer or fsyncing
+write → os.replace` without flushing the stdio buffer or fsyncing
   the file descriptor; `os.replace` is atomic at the rename(2)
   / inode level (the kernel guarantees old-name → new-name flips
-  atomically), but it commits *only the rename metadata* — the
-  *file's actual data bytes* may still be in the OS page cache,
+  atomically), but it commits _only the rename metadata_ — the
+  _file's actual data bytes_ may still be in the OS page cache,
   never written to the storage device. Crash window: if the machine
-  panics or loses power *after* `os.replace` has rewritten the
-  directory entry but *before* the OS journal flushes the new
+  panics or loses power _after_ `os.replace` has rewritten the
+  directory entry but _before_ the OS journal flushes the new
   inode's page cache, the post-recovery on-disk state is "directory
   entry points at the new file" + "new file content is whatever
   zero-fill / partial-write the storage controller decided" + "old
@@ -2316,7 +2314,7 @@ Cursor + VSCode dev environment.
   survived. Canonical "atomic-write footgun" documented in the Linux
   fsync(2) man page, danluu.com/file-consistency, the LWN
   "ext4-and-data-loss" post, and the Postgres `fsyncgate`
-  post-mortem. Crucially, this repo *already has* 5 other
+  post-mortem. Crucially, this repo _already has_ 5 other
   atomic-write paths that all do `flush + fsync + replace` correctly
   (`config_manager._save_config_immediate`,
   `config_modules/io_operations.py`,
@@ -2325,16 +2323,16 @@ Cursor + VSCode dev environment.
   outlier, and its docstring even claimed "原子操作：tmpfile →
   os.replace" — giving readers a false sense of correctness. New
   sequence: `f.write → f.flush() → os.fsync(f.fileno()) →
-  os.replace()`. Why both `flush` *and* `fsync`: `flush()` pushes
+os.replace()`. Why both `flush` _and_ `fsync`: `flush()` pushes
   the Python stdio buffer down to the kernel page cache; `fsync()`
   pushes the kernel page cache down to the storage device. Flush
   alone leaves data in the page cache (kernel may delay writeback
   by minutes); fsync alone may miss the tail of the stdio buffer
-  that hasn't been flushed yet. Why *not* also `fsync(parent_dir_fd)`
+  that hasn't been flushed yet. Why _not_ also `fsync(parent_dir_fd)`
   — which would additionally guarantee the rename's directory-entry
   change is flushed: the other 5 atomic-write paths in this repo
   don't do directory fsync either, and adding it only here would
-  create *worse* inconsistency — if directory fsync becomes the bar,
+  create _worse_ inconsistency — if directory fsync becomes the bar,
   all 6 paths should be upgraded together in a separate commit.
   Five new locks in `tests/test_task_queue_persist_fsync.py`:
   `TestPersistFsyncContract::test_persist_calls_fsync_before_replace`
@@ -2347,11 +2345,11 @@ Cursor + VSCode dev environment.
   was rejected because ty's strict-shadow check forbids implicit
   instance-method override of `StringIO.flush`);
   `test_fsync_failure_does_not_replace` injects `OSError("simulated
-  EIO")` into `os.fsync` and asserts (a) `os.replace` is *never*
+EIO")` into `os.fsync` and asserts (a) `os.replace` is _never_
   called and (b) the on-disk byte content is bit-identical to
   before — the critical fail-loud property that prevents the "fsync
   failed AND replace ran" double-failure mode where the user loses
-  *both* old and new data;
+  _both_ old and new data;
   `TestPersistAtomicWriteParity::test_targeted_functions_have_flush_and_fsync_before_replace`
   is AST-driven cross-file invariant checking against
   `task_queue.TaskQueue._persist` AND
@@ -2362,7 +2360,7 @@ Cursor + VSCode dev environment.
   static check, a future copy-paste of `_persist` into another
   module could silently lose `fsync`; `test_persist_signature_unchanged`
   reverse-locks `inspect.signature(TaskQueue._persist).parameters
-  == ["self"]` so a future "let's parameterize fsync behaviour"
+== ["self"]` so a future "let's parameterize fsync behaviour"
   refactor (e.g. adding `no_fsync=True`) fails immediately —
   parameterized fsync = optional fsync = back to the bug. Full
   pytest count climbs from 2442 → 2447 (+5, no regressions). API
@@ -2373,7 +2371,7 @@ Cursor + VSCode dev environment.
   `start_timeout`.** Pre-fix, when the configured port (default
   `8080`) was already held by another process, the spawned subprocess
   exited immediately with `OSError: [Errno 48] Address already in
-  use`, but `start_web_service` would happily wait the full
+use`, but `start_web_service` would happily wait the full
   `max_wait = 15 s` health-check loop before raising
   `ServiceTimeoutError(code="start_timeout")` — a misleading
   "service is slow to start" diagnosis when the actual root cause is
@@ -2381,7 +2379,7 @@ Cursor + VSCode dev environment.
   called this out as a known papercut. New module-private
   `_is_port_available(host, port)` performs a pre-flight
   `socket.bind` (with `SO_REUSEADDR` so `TIME_WAIT` doesn't trigger
-  a false positive) right *after* the existing `health_check_service`
+  a false positive) right _after_ the existing `health_check_service`
   short-circuit, so the "our own healthy service is already
   listening" path is unchanged (we'd otherwise spuriously self-fail
   every restart, since pre-flight bind would fail against our own
@@ -2398,10 +2396,10 @@ Cursor + VSCode dev environment.
   `tests/test_server_functions.py`: four direct contract tests in
   `TestIsPortAvailable` (free high port → `True`; bound listening
   socket → `False`; privileged port (`80`) → `False` with `EACCES`
-  swallowed — skipped under `root` since root *can* bind 80; RFC
+  swallowed — skipped under `root` since root _can_ bind 80; RFC
   5737 invalid host (`192.0.2.1`) → `False` with `EADDRNOTAVAIL`
   swallowed) and three integration tests in
-  `TestStartWebServicePortInUse` (`port_in_use` raises *without*
+  `TestStartWebServicePortInUse` (`port_in_use` raises _without_
   invoking `subprocess.Popen` — the entire point of pre-flight is
   fail-fast; error message contains both host and port for log/UI
   surfacing; reverse-lock that `health_check_service`'s short-
@@ -2413,10 +2411,10 @@ Cursor + VSCode dev environment.
   the dev's `8080` happens to look like at runtime — previously they
   passed only because the test machine's `8080` was empty. Why
   `socket.bind` instead of `socket.connect`: `connect` only tells
-  you whether *something* answers TCP — it can't distinguish "port
+  you whether _something_ answers TCP — it can't distinguish "port
   is free" from "port is bound but the holder hasn't `listen()`ed
   yet" (which would let a slow-listen race through pre-flight and
-  *then* fail at Popen). `bind` directly probes "can this address
+  _then_ fail at Popen). `bind` directly probes "can this address
   family + port tuple be claimed", which is the property
   `subprocess.Popen` will need a moment later. Why not also
   `SO_REUSEPORT`: macOS / Linux disagree on its semantics (Linux
@@ -2429,35 +2427,35 @@ Cursor + VSCode dev environment.
 
 - **`X-XSS-Protection` flipped from `1; mode=block` to `0`; new
   `Cross-Origin-Opener-Policy: same-origin` header.** The legacy
-  ``X-XSS-Protection: 1; mode=block`` was the late-2010s default,
+  `X-XSS-Protection: 1; mode=block` was the late-2010s default,
   but the in-browser XSS auditor it activated was later shown to
-  be exploitable as an *XSS oracle* (attackers steered the
+  be exploitable as an _XSS oracle_ (attackers steered the
   auditor to selectively delete legitimate scripts, opening a
   different attack surface; see Mozilla's deprecation note +
   Chrome's removal CVEs). Modern browsers ignore the header
   entirely, but IE11 and embedded-Chromium clients still honour
-  ``1`` and run the auditor — a *negative* security delta on
+  `1` and run the auditor — a _negative_ security delta on
   exactly the legacy stacks people deploy this header to protect.
   OWASP Secure Headers Project + Mozilla Observatory now both
-  recommend explicit ``0`` ("CSP owns XSS defence here"). Our
-  CSP remains nonce-only (``script-src 'nonce-...'``), so this is
+  recommend explicit `0` ("CSP owns XSS defence here"). Our
+  CSP remains nonce-only (`script-src 'nonce-...'`), so this is
   purely closing a residual auditor surface. Same commit adds
-  ``Cross-Origin-Opener-Policy: same-origin`` (severs
-  ``window.opener`` between cross-origin tabs, killing tabnabbing
-  + ``window.opener.location = attacker_url`` redirects); zero
-  legitimate use case for a cross-origin opener (VSCode webview
-  is fully isolated via ``vscode-webview://``), so this is
-  zero-cost hardening. Intentionally **not** adding
-  ``Cross-Origin-Resource-Policy`` because the webview's fetch
-  path lacks an explicit origin and CORP=same-origin would block
-  legitimate ``vscode-webview://`` cross-origin loads. Six locks
-  in new ``tests/test_security_headers_modern.py``: explicit
-  ``"0"`` value present, every ``"1"``-prefixed variant absent
-  (defends against typo-driven regression), COOP=same-origin
-  present, COOP=unsafe-none rejected, plus two sanity guards
-  that ``X-Frame-Options`` / ``X-Content-Type-Options`` /
-  ``Referrer-Policy`` / ``Permissions-Policy`` / nonce-CSP all
-  survive unchanged.
+  `Cross-Origin-Opener-Policy: same-origin` (severs
+  `window.opener` between cross-origin tabs, killing tabnabbing
+  - `window.opener.location = attacker_url` redirects); zero
+    legitimate use case for a cross-origin opener (VSCode webview
+    is fully isolated via `vscode-webview://`), so this is
+    zero-cost hardening. Intentionally **not** adding
+    `Cross-Origin-Resource-Policy` because the webview's fetch
+    path lacks an explicit origin and CORP=same-origin would block
+    legitimate `vscode-webview://` cross-origin loads. Six locks
+    in new `tests/test_security_headers_modern.py`: explicit
+    `"0"` value present, every `"1"`-prefixed variant absent
+    (defends against typo-driven regression), COOP=same-origin
+    present, COOP=unsafe-none rejected, plus two sanity guards
+    that `X-Frame-Options` / `X-Content-Type-Options` /
+    `Referrer-Policy` / `Permissions-Policy` / nonce-CSP all
+    survive unchanged.
 - **VSCode webview CSP nonce now uses Node CSPRNG (`crypto.randomBytes`)
   instead of `Math.random`.** Pre-fix, `getNonce` in
   `packages/vscode/webview.ts` sampled a 62-char alphabet × 32 chars,
@@ -2504,13 +2502,13 @@ Cursor + VSCode dev environment.
 - **`/sounds/<filename>` route now enforces an explicit
   `.mp3`/`.wav`/`.ogg` extension whitelist.** Pre-fix the handler
   delegated entirely to `send_from_directory(sounds_dir, filename)`,
-  which only blocks `..`-style traversal and otherwise streams *any*
+  which only blocks `..`-style traversal and otherwise streams _any_
   file inside `sounds/`. The directory currently holds a single
   `deng[噔].mp3`, but a future contributor dropping a `.json` config or
   `.txt` README in there would silently turn it into an HTTP-fetchable
   static asset (information disclosure with zero log signal). Fix
   mirrors the `/static/lottie/<filename>` idiom (`if not filename or not
-  filename.lower().endswith((...)): abort(404)`), so the two static
+filename.lower().endswith((...)): abort(404)`), so the two static
   routes stay structurally aligned for future review. Three locks in
   `TestStaticRoutesEdge`: non-audio extensions (`.json`/`.txt`/`.env`/
   `.exe`) hit `abort(404)` before `send_from_directory` is consulted,
@@ -2548,10 +2546,10 @@ Cursor + VSCode dev environment.
   `_invalidate_runtime_caches_on_config_change` whenever the file
   watcher fires (manual edits in IDE, or any `cfg.set(...)` that
   cascades through). But the get path was a textbook double-checked
-  pattern with the read *and* the write under the lock and the load
+  pattern with the read _and_ the write under the lock and the load
   outside it: T1 cache-miss → release lock → ~5–50 ms toml read +
   Pydantic validate → T2 watcher fires `_invalidate(...)` mid-load →
-  T1 finishes and unconditionally re-writes the *pre-invalidate* tuple
+  T1 finishes and unconditionally re-writes the _pre-invalidate_ tuple
   into the cache → T3 hits cache and gets the value the user already
   overwrote on disk. Silent staleness for up to one full TTL window;
   no existing test caught it because the race needed sub-millisecond
@@ -2561,10 +2559,10 @@ Cursor + VSCode dev environment.
   mismatch the write is dropped (T1's caller still gets its load
   result, but the cache stays clean and T3 re-loads). Three locks in
   `tests/test_web_ui_config.py::TestGetWebUIConfigGenerationToken`:
-  the load-during-invalidate path *must not* resurrect cache (reverse-
+  the load-during-invalidate path _must not_ resurrect cache (reverse-
   locked: removing the generation check immediately fails the test
-  with an explicit "stale 旧值复活" hint), `_invalidate(...)` *must*
-  increment the counter, and the no-race happy path *must* still write
+  with an explicit "stale 旧值复活" hint), `_invalidate(...)` _must_
+  increment the counter, and the no-race happy path _must_ still write
   back normally — last lock is the guard against the fix trivially
   regressing into "never cache anything".
 - **`GET /api/tasks` OpenAPI response schema dropped `deadline` from
@@ -2576,7 +2574,7 @@ Cursor + VSCode dev environment.
   consumer (swagger-ui, generated TypeScript / Python clients,
   `swagger-cli validate`, `openapi-generator-cli`) saw a `task` object
   schema without a `deadline` field — but the live JSON response
-  *did* contain `deadline` (set in the `task_list.append(...)` block),
+  _did_ contain `deadline` (set in the `task_list.append(...)` block),
   so downstream deserializers either silently ignored it or failed
   validation depending on strictness. Reproducing the broken schema
   is invisible because YAML doesn't error on this kind of misindent;
@@ -2591,7 +2589,7 @@ Cursor + VSCode dev environment.
 - **`LogDeduplicator` could silently drop critical ERROR logs after
   wall-clock backwards jumps.** The deduplicator's "did this exact
   message fire within the last 5 s?" check used `time.time()`,
-  which is wall-clock time and can move *backwards* on NTP
+  which is wall-clock time and can move _backwards_ on NTP
   resync, manual clock adjustment, DST tail-overlap on naive
   systems, or a virtual machine resuming from suspend. When that
   happens, `current_time - last_time` becomes negative,
@@ -2611,13 +2609,13 @@ Cursor + VSCode dev environment.
 - **`wait_for_task_completion` orphaned web_ui tasks on timeout / cancel.**
   When the MCP-side `asyncio.wait_for(completion.wait())` tripped its
   `effective_timeout` (default 600s) the function returned a
-  `_make_resubmit_response()` to the AI client *but* did not notify
+  `_make_resubmit_response()` to the AI client _but_ did not notify
   `web_ui` to clean its `task_queue`. The AI client would then
   re-invoke `interactive_feedback`, generating a fresh `task_id` and
   POSTing it to `/api/tasks` — but the original task was still
   ACTIVE, so the new task came in PENDING. The Web UI
   `current_prompt` is bound to the active task, so the user saw the
-  *old* prompt and submitted feedback against the old `task_id`;
+  _old_ prompt and submitted feedback against the old `task_id`;
   meanwhile the MCP side was still waiting on SSE for the new
   `task_id`'s `task_changed(completed)` event, which would never
   fire — leading to another timeout and another resubmit, an
@@ -2638,10 +2636,11 @@ Cursor + VSCode dev environment.
     worth a warning).
 
   Companion `tests/test_server_functions.py::TestGhostTaskCleanupOnTimeout`
-  locks the contract with five tests: timeout path *must* call close,
-  completed path *must not* call close (would race with
-  `complete_task`), 404 path *must not* call close (no-op), close
-  failure *must not* propagate, and `CancelledError` *must* re-raise.
+  locks the contract with five tests: timeout path _must_ call close,
+  completed path _must not_ call close (would race with
+  `complete_task`), 404 path _must not_ call close (no-op), close
+  failure _must not_ propagate, and `CancelledError` _must_ re-raise.
+
 - **`ConfigManager.reload()` silently lost in-process edits.** When
   `_save_timer` was queued (3-second batch debounce after a
   `cfg.set(...)`) and the file watcher fired before the timer
@@ -2651,7 +2650,7 @@ Cursor + VSCode dev environment.
   `_save_timer` would still wake up and `_pending_changes`
   would clobber the freshly-loaded external value back onto
   disk. Net effect: external edits silently lost, no warning,
-  last-write-wins. Switched to *external-edit-wins* on reload:
+  last-write-wins. Switched to _external-edit-wins_ on reload:
   `_load_config` now clears `_pending_changes` and cancels
   `_save_timer` under the lock, logging a WARNING listing the
   discarded keys; matches operator intuition ("if I edited the
@@ -2677,12 +2676,13 @@ Cursor + VSCode dev environment.
   return early so `WebFeedbackUI.run()` continues normally.
   `tests/test_web_ui_config.py::TestMdnsConstructorFailures`
   exercises both branches via mock injection.
+
 - **AppleScript `maxBuffer` overflow misclassified as timeout.**
   When `osascript` produced more than `maxBufferBytes` of
   combined stdout+stderr (e.g. when a developer accidentally
   pasted a large AppleScript that returns a 5 MB result),
   `child_process.execFile` would throw with
-  `error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'` *and*
+  `error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'` _and_
   `killed === true` / `signal === 'SIGTERM'`. The previous
   classifier checked only `killed`/`signal` and reported
   `APPLE_SCRIPT_TIMEOUT`, sending users on a wild goose chase
@@ -2690,11 +2690,11 @@ Cursor + VSCode dev environment.
   to tighten the script or raise `maxBufferBytes`). The error
   classifier in `packages/vscode/applescript-executor.ts` now
   checks `errCodeStr === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'`
-  *first* and surfaces it as `APPLE_SCRIPT_OUTPUT_TOO_LARGE`,
+  _first_ and surfaces it as `APPLE_SCRIPT_OUTPUT_TOO_LARGE`,
   preserving the existing TIMEOUT vs FAILED ladder for
   everything else. New
   `packages/vscode/test/applescript-executor.test.js::maxBuffer
-  overflow` test injects a fake `execFile` that reproduces the
+overflow` test injects a fake `execFile` that reproduces the
   exact error shape Node throws, locking the disambiguation.
 
 - **Silent feedback-timeout truncation.** `server_config.py`'s
@@ -2722,7 +2722,7 @@ Cursor + VSCode dev environment.
   guarantee the lockstep stays.
 - **Frontend `frontend_countdown` input pinned at 250s** even
   after the runtime widening above. Web UI HTML (`<input
-  max="250">`), VS Code webview HTML, and the two settings-
+max="250">`), VS Code webview HTML, and the two settings-
   manager JS guards (`v <= 250`) all silently rejected
   user-typed values above 250. All four input surfaces now
   walked up to `max="3600"` (mirroring
@@ -2732,7 +2732,7 @@ Cursor + VSCode dev environment.
   Five `?? 250` / `|| 250` fallbacks in
   `static/js/multi_task.js` corrected to `?? 240` / `|| 240`
   (the actual `AUTO_RESUBMIT_TIMEOUT_DEFAULT`; 250 was the
-  historical *MAX*, not *DEFAULT*).
+  historical _MAX_, not _DEFAULT_).
 - **`POST /api/reset-feedback-config` partial reset**: the
   endpoint backing the Web UI's "Reset feedback config to
   defaults" button only included 3 of 4 SECTION_MODELS::feedback
@@ -2744,80 +2744,80 @@ Cursor + VSCode dev environment.
   regression.
 - **Bark notifications fired twice on cross-region networks when
   user widened `bark_timeout` above 15s.** The async waiter inside
-  ``NotificationManager._process_event`` had a hardcoded
-  ``as_completed(futures, timeout=15)`` whose comment said
-  "Bark default 10s" — but Pydantic ``coerce_bark_timeout``
-  accepts ``[1, 300]``. With ``bark_timeout = 30`` (a normal
-  setting on Mainland-China-to-day.app routes), ``as_completed``
-  raised ``TimeoutError`` at 15s → retry path triggered →
+  `NotificationManager._process_event` had a hardcoded
+  `as_completed(futures, timeout=15)` whose comment said
+  "Bark default 10s" — but Pydantic `coerce_bark_timeout`
+  accepts `[1, 300]`. With `bark_timeout = 30` (a normal
+  setting on Mainland-China-to-day.app routes), `as_completed`
+  raised `TimeoutError` at 15s → retry path triggered →
   original Bark future was still in-flight (HTTP request at ~25s,
   budget 30s) and returned 200 (push #1) → retry future kicked
   off, returned 200 (push #2). End result: every Bark event
   arrived twice on the user's iPhone. Window now scales as
-  ``bark_timeout + _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS``
+  `bark_timeout + _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS`
   (constant default 5s; buffer absorbs thread-pool dispatch +
   httpx connection-pool warmup + first-time DNS). Locked by
-  ``tests/test_notification_manager.py::
-  TestProcessEventBarkTimeoutWindow`` (6 tests covering default /
+  `tests/test_notification_manager.py::
+TestProcessEventBarkTimeoutWindow` (6 tests covering default /
   user-widened / Pydantic max / Pydantic min / corruption-fallback
   windows + a reverse-lock on the buffer constant).
 - **SSE event stream silently halted for slow / backgrounded
   EventSource clients (e.g. laptop sleep, cellular handoff,
-  background browser tab).** ``_SSEBus`` used to ``discard`` a
-  subscriber's queue from ``_subscribers`` when its backlog hit
+  background browser tab).** `_SSEBus` used to `discard` a
+  subscriber's queue from `_subscribers` when its backlog hit
   3/4 of capacity (48 / 64), but did nothing to signal the
   generator on the other end. Generator stayed parked on
-  ``q.get(timeout=25)``, drained the leftover backlog, then
-  yielded ``: heartbeat`` forever — browser ``EventSource``
+  `q.get(timeout=25)`, drained the leftover backlog, then
+  yielded `: heartbeat` forever — browser `EventSource`
   saw a healthy stream of heartbeats and never triggered
-  ``onerror`` / auto-reconnect. From the user's perspective
-  the task list silently froze; ``F5`` recovered (full re-fetch)
-  but real-time updates were dead. ``_SSEBus.emit`` now injects
-  a module-level sentinel ``_SSE_DISCONNECT_SENTINEL`` into the
-  queue when discarding a subscriber (with ``get_nowait`` evict-
+  `onerror` / auto-reconnect. From the user's perspective
+  the task list silently froze; `F5` recovered (full re-fetch)
+  but real-time updates were dead. `_SSEBus.emit` now injects
+  a module-level sentinel `_SSE_DISCONNECT_SENTINEL` into the
+  queue when discarding a subscriber (with `get_nowait` evict-
   then-retry when the queue itself was already at capacity, at
   the cost of one missing oldest event that auto-reconnect's
-  ``GET /api/tasks`` re-fetch covers). Generator branches on
-  ``event is _SSE_DISCONNECT_SENTINEL`` and ``return`` s, which
+  `GET /api/tasks` re-fetch covers). Generator branches on
+  `event is _SSE_DISCONNECT_SENTINEL` and `return` s, which
   ends the response body, browser sees EOF, EventSource auto-
   reconnects within ~3s. Locked by
-  ``tests/test_sse_bus_disconnect.py`` (6 tests including a
-  reverse-lock that the sentinel must be ``object()`` identity
-  — using ``None`` / ``False`` / ``{}`` would collide with
+  `tests/test_sse_bus_disconnect.py` (6 tests including a
+  reverse-lock that the sentinel must be `object()` identity
+  — using `None` / `False` / `{}` would collide with
   legitimate SSE payloads and randomly terminate streams).
 - **Settings panel debounce silently dropped edits when user
   switched fields within 800ms.** Both
-  ``static/js/settings-manager.js`` and
-  ``packages/vscode/webview-settings-ui.js`` had a
-  ``debounceSaveFeedback = updates =>`` whose
-  ``setTimeout(() => save(updates), 800)`` body captured the
-  most-recent ``updates`` argument; a ``clearTimeout`` followed
-  by a fresh ``setTimeout`` would silently DISCARD the prior
-  payload. Reproduce: T=0 set ``frontend_countdown=60`` → timer
-  armed; T=300 set ``resubmit_prompt="x"`` → ``clearTimeout``
+  `static/js/settings-manager.js` and
+  `packages/vscode/webview-settings-ui.js` had a
+  `debounceSaveFeedback = updates =>` whose
+  `setTimeout(() => save(updates), 800)` body captured the
+  most-recent `updates` argument; a `clearTimeout` followed
+  by a fresh `setTimeout` would silently DISCARD the prior
+  payload. Reproduce: T=0 set `frontend_countdown=60` → timer
+  armed; T=300 set `resubmit_prompt="x"` → `clearTimeout`
   cancels first timer, second timer arms with only the second
-  field; T=1100 ``saveFeedbackConfig({resubmit_prompt:"x"})``
-  fires, ``frontend_countdown=60`` is gone forever with zero
+  field; T=1100 `saveFeedbackConfig({resubmit_prompt:"x"})`
+  fires, `frontend_countdown=60` is gone forever with zero
   user-visible error toast. Fix accumulates updates into a
-  ``pendingUpdates`` buffer (``Object.assign(buf||{},
-  updates||{})``); the timer drains the buffer as a single
+  `pendingUpdates` buffer (`Object.assign(buf||{},
+updates||{})`); the timer drains the buffer as a single
   merged POST. Web ↔ VSCode parity is locked by
-  ``tests/test_debounce_save_feedback_accumulates.py`` (3 tests
+  `tests/test_debounce_save_feedback_accumulates.py` (3 tests
   including a bidirectional parity gate that fails when only
   one mirror is fixed).
 - **Concurrent notification retry thundering-herd.**
-  ``NotificationManager._schedule_retry`` previously used a
-  fixed ``retry_delay`` (default 2s, configurable to
-  ``[0, 60]s``) so multiple in-flight Bark / Web / System
+  `NotificationManager._schedule_retry` previously used a
+  fixed `retry_delay` (default 2s, configurable to
+  `[0, 60]s`) so multiple in-flight Bark / Web / System
   sends failing within a single ms would re-fire retries in
   exact lock-step. Spike load on the upstream + correlated
   re-failure risk. Fix introduces
-  ``_RETRY_DELAY_JITTER_RATIO = 0.5``; effective delay is now
-  ``base_delay + random.uniform(0, base_delay * 0.5)``, with a
-  fast-path preserving ``delay == 0`` semantics exactly. New
-  ``tests/test_notification_manager.py::TestScheduleRetryJitter``
+  `_RETRY_DELAY_JITTER_RATIO = 0.5`; effective delay is now
+  `base_delay + random.uniform(0, base_delay * 0.5)`, with a
+  fast-path preserving `delay == 0` semantics exactly. New
+  `tests/test_notification_manager.py::TestScheduleRetryJitter`
   (5 tests) locks the lower bound (delay ≥ base), the upper
-  bound (≤ base * 1.5), the zero fast-path, and a reverse-lock
+  bound (≤ base \* 1.5), the zero fast-path, and a reverse-lock
   on the ratio constant (must stay ≤ 1.0 or jitter could
   exceed base delay → retry order becomes nondeterministic).
 
@@ -2850,7 +2850,7 @@ Cursor + VSCode dev environment.
   and `unittest.TestCase.assertLogs` (which only collects stdlib
   `LogRecord`s before the `InterceptHandler` forwards them). Combined
   with `LogDeduplicator`'s 5-second time window, that occasionally let
-  one ``通知发送失败，将在 2s 后重试`` line leak to the terminal on the
+  one `通知发送失败，将在 2s 后重试` line leak to the terminal on the
   first `ci_gate.py` invocation of a fresh shell, then silently
   disappear on subsequent re-runs (dedup hit) — a flaky-output footgun.
   A new session-scoped `autouse` fixture in `tests/conftest.py`
@@ -2879,25 +2879,25 @@ Cursor + VSCode dev environment.
   - `[feedback]::frontend_countdown` doc said `[30, 250]`,
     code allows `[10, 3600]` (with `0`/non-positive
     disabling)
-  Doc updates align both bilingual tables with the runtime
-  reality (a user constraint reading the docs was being
-  told a *narrower* allowed range than the binary actually
-  enforces — same surprise direction as not knowing
-  `external_base_url` exists). Companion test
-  (`tests/test_config_docs_range_parity.py`) prevents the
-  drift from re-emerging. Pure docs + new test patch — no
-  runtime / `_clamp_int` change.
+    Doc updates align both bilingual tables with the runtime
+    reality (a user constraint reading the docs was being
+    told a _narrower_ allowed range than the binary actually
+    enforces — same surprise direction as not knowing
+    `external_base_url` exists). Companion test
+    (`tests/test_config_docs_range_parity.py`) prevents the
+    drift from re-emerging. Pure docs + new test patch — no
+    runtime / `_clamp_int` change.
 - **`docs/security/AUDIT_2026-05-04.md` no longer carries a
   `<TBD>` placeholder for the remediation commit hash.**
   The audit document opened with `STATUS: REMEDIATED (runtime
-  CVEs cleared 17 → 0 on commit \`<TBD>\`…)` since the
-  upgrade landed in `95e4151` (`🔒 chore(deps): security wave
+CVEs cleared 17 → 0 on commit \`<TBD>\`…)`since the
+upgrade landed in`95e4151` (`🔒 chore(deps): security wave
   - production CVE exposure 17 -> 0`); a leftover
-  `<TBD>` token in a security artefact is exactly the kind
-  of stale string a future operator would mis-interpret as
-  "remediation pending". Replaced with a deep-link to the
-  fix commit on GitHub plus the commit subject line for
-  zero-context audit trails. Pure documentation patch.
+`<TBD>` token in a security artefact is exactly the kind
+    of stale string a future operator would mis-interpret as
+    "remediation pending". Replaced with a deep-link to the
+    fix commit on GitHub plus the commit subject line for
+    zero-context audit trails. Pure documentation patch.
 
 ### Tests
 
@@ -2911,7 +2911,7 @@ Cursor + VSCode dev environment.
   pauses on the parallel pytest worker, JIT warm-up order, and
   cgroup-shared CPU on CI all jitter several × the measurement
   window. Real failure mode observed: `cache=10.8ms vs no_cache=1.7ms`
-  (cache *slower* than no-cache by 6×) when the test ran late
+  (cache _slower_ than no-cache by 6×) when the test ran late
   in a 2400-test batch — the warm-up `force=True` had pre-warmed
   code paths and disk caches more than the cache-hit branch's
   later mtime check could ever benefit from. Replaced with two
@@ -2925,11 +2925,11 @@ Cursor + VSCode dev environment.
   and asserts `call_count == 0` (cache-hit short-circuit must
   skip the toml reload entirely); (2)
   `test_cache_invalidation_on_mtime_change` runs the same
-  scaffold with a *newer* `st_mtime`, asserting `get_section`
+  scaffold with a _newer_ `st_mtime`, asserting `get_section`
   is called exactly once (reverse-lock against future "let's
   cache more aggressively" refactors that would silently leave
   users on stale config until process restart). Locks the
-  *real* invariant the cache provides — "skip IO when mtime is
+  _real_ invariant the cache provides — "skip IO when mtime is
   unchanged" — rather than the cache's downstream speed
   property. Test count climbs 2465 → 2467; production code
   unchanged.
@@ -2940,7 +2940,7 @@ Cursor + VSCode dev environment.
   drift in the future):
   - `tests/test_server_config_shared_types_parity.py` —
     `server_config.{FEEDBACK_TIMEOUT_MIN/MAX,
-    AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` and the six
+AUTO_RESUBMIT_TIMEOUT_MIN/MAX}` and the six
     `WebUIConfig.ClassVar` bounds equal the
     `SECTION_MODELS::{feedback, web_ui}` Pydantic ranges
     via `BeforeValidator` closure introspection (5 tests).
@@ -3008,10 +3008,10 @@ Cursor + VSCode dev environment.
   on the same target string. 2274 → 2301 total passing.
 - **New regression gate:
   `tests/test_api_index_quick_nav_parity.py`** locks the
-  contract that the *generated* `docs/api/index.md` and
+  contract that the _generated_ `docs/api/index.md` and
   `docs/api.zh-CN/index.md` Quick navigation sections cover
   every module declared in `scripts/generate_docs.py::
-  MODULES_TO_DOCUMENT`. Catches the
+MODULES_TO_DOCUMENT`. Catches the
   `notification_providers`-style omission both at generator
   invocation (via `_assert_quick_nav_covers_all_modules`'s
   fail-fast `SystemExit`) **and** at the rendered file level
@@ -3021,50 +3021,44 @@ Cursor + VSCode dev environment.
   `tests/test_config_docs_range_parity.py`** locks the
   contract that any numeric range stated in
   `docs/configuration{,.zh-CN}.md` (e.g. `range \`[1, 600]\``)
-  must equal the actual `(min, max)` carried by the
-  matching `BeforeValidator(_clamp_int(...))` in
-  `shared_types.SECTION_MODELS`. Uses `__closure__`
-  introspection so adding/removing a numeric field does
-  not require touching the test, and a self-check pins
-  several known anchors (e.g. `port=[1, 65535]`) so
-  future `_clamp_int` refactors cannot silently weaken
+must equal the actual `(min, max)`carried by the
+matching`BeforeValidator(\_clamp_int(...))`in`shared_types.SECTION_MODELS`. Uses `**closure**`introspection so adding/removing a numeric field does
+not require touching the test, and a self-check pins
+several known anchors (e.g.`port=[1, 65535]`) so
+future `\_clamp_int` refactors cannot silently weaken
   the assertion to vacuous truth. 3 new tests; 2249 → 2252
   total passing.
 - **New regression gate:
   `tests/test_config_docs_parity.py`** locks the
   contract that every key declared in
-  `config.toml.default` must appear in *both*
+  `config.toml.default` must appear in _both_
   `docs/configuration.md` and
   `docs/configuration.zh-CN.md` as a backticked entry in
-  the matching `### \`<section>\`` table — and vice versa
-  (no orphan documented keys). Complements the existing
-  `tests/test_config_defaults_consistency.py` which guards
-  the runtime default dict ↔ TOML template invariant.
-  5 new tests; 2244 → 2249 total passing. The TOML / doc
-  parsers each have a self-check so refactoring the regex
-  later cannot silently weaken the gate (e.g., dropping a
-  section it never noticed). Closes the structural gap
-  that allowed the
-  `[notification]::debug` /
-  `[web_ui]::language` /
-  `[mdns]::enabled` doc drift to ship in the first place.
+  the matching `### \`<section>\``table — and vice versa
+(no orphan documented keys). Complements the existing`tests/test_config_defaults_consistency.py`which guards
+the runtime default dict ↔ TOML template invariant.
+5 new tests; 2244 → 2249 total passing. The TOML / doc
+parsers each have a self-check so refactoring the regex
+later cannot silently weaken the gate (e.g., dropping a
+section it never noticed). Closes the structural gap
+that allowed the`[notification]::debug`/`[web_ui]::language`/`[mdns]::enabled` doc drift to ship in the first place.
 - **`tests/test_i18n_fuzz_parity.py` extended with a Round-11
-  ``EXT_SEED=0xFACECAFE`` corpus (100 samples) covering ICU-
+  `EXT_SEED=0xFACECAFE` corpus (100 samples) covering ICU-
   standard corner cases the original 200-sample fuzz never
-  exercised:** ``=N`` exact-match branch in
-  ``_selectPluralOption`` (line 410, implemented but no
+  exercised:** `=N` exact-match branch in
+  `_selectPluralOption` (line 410, implemented but no
   project locale used it → silently untested), empty plural
-  arm body ``one {}``, multi-codepoint Unicode (4-byte BMP+
-  emoji ``🚀``, ZWJ sequences ``👨‍👩‍👧``, regional
-  indicator flag ``🇨🇳``, variation-selector + ZWJ
-  ``🏳️‍🌈``, combining marks ``a\u0301``), and BiDi
+  arm body `one {}`, multi-codepoint Unicode (4-byte BMP+
+  emoji `🚀`, ZWJ sequences `👨‍👩‍👧`, regional
+  indicator flag `🇨🇳`, variation-selector + ZWJ
+  `🏳️‍🌈`, combining marks `a\u0301`), and BiDi
   controls (LRM/RLM/LRE/PDF). Each new sample is forced
-  through one of {``exact`` | ``empty_arm`` | ``emoji`` |
-  ``bidi``} flavors so the new code paths are guaranteed
-  reachable rather than randomly skipped; ``n*`` params land
-  on 0/1 with 70% probability so ``=0``/``=1`` arms actually
+  through one of {`exact` | `empty_arm` | `emoji` |
+  `bidi`} flavors so the new code paths are guaranteed
+  reachable rather than randomly skipped; `n*` params land
+  on 0/1 with 70% probability so `=0`/`=1` arms actually
   fire. All 102 new templates are byte-identical Web ↔
-  VSCode (``static/js/i18n.js`` ↔ ``packages/vscode/i18n.js``)
+  VSCode (`static/js/i18n.js` ↔ `packages/vscode/i18n.js`)
   with zero PUA leakage and zero exceptions. Locks the
   surrogate-pair-safe substring and BiDi pass-through
   invariants forever.
@@ -3092,8 +3086,8 @@ Cursor + VSCode dev environment.
     even though the recommended on-disk format is `config.toml`.
     Replaced with the parallel TOML form already used by the
     English doc.
-  Pure docs patch — neither the runtime config schema nor
-  `config.toml.default` change. `make ci` passes.
+    Pure docs patch — neither the runtime config schema nor
+    `config.toml.default` change. `make ci` passes.
 - **`docs/README{,.zh-CN}.md` API-reference module list is in
   sync with `MODULES_TO_DOCUMENT` again.** Both bilingual
   index files used to enumerate the API auto-gen scope as
@@ -3108,7 +3102,7 @@ Cursor + VSCode dev environment.
   surfaces the `make docs-check` shortcut for drift
   detection. Pure docs patch — no generator or test
   change.
-- **PR template's "Local verification" checklist now lists
+- \*\*PR template's "Local verification" checklist now lists
   `make ci` / `make vscode-check` shortcuts alongside the
   existing `uv run python scripts/ci_gate.py …` invocations,
   closing the consistency gap with `CONTRIBUTING.md` and
@@ -3121,7 +3115,7 @@ Cursor + VSCode dev environment.
   validation.** Both files used to instruct contributors to
   run `check_locales.py` as the "Locale check" entry under
   the per-tool list, but `scripts/README.md::§i18n static
-  gates` already flagged that script as "minimal smoke
+gates` already flagged that script as "minimal smoke
   (key-only parity), kept for legacy invocations" — the
   modern equivalent is `check_i18n_locale_parity.py` (full
   parity: keys + nested shapes + ICU placeholders), which is
@@ -3189,8 +3183,8 @@ Cursor + VSCode dev environment.
   English copy uses the audience-appropriate wording
   ("Configuration management", "Notification orchestration",
   etc.). Verified with `uv run python scripts/generate_docs.py --lang en`
-  + `--lang zh-CN` followed by `git diff docs/api/index.md
-  docs/api.zh-CN/index.md` showing identical structural skeletons.
+  - `--lang zh-CN` followed by `git diff docs/api/index.md
+docs/api.zh-CN/index.md` showing identical structural skeletons.
 
 ### Chore
 
@@ -3232,7 +3226,7 @@ Cursor + VSCode dev environment.
   a `[ci_gate] WARN: …` line on stderr instead of aborting. Now
   any `git push` that ships Python signature / docstring changes
   but forgets to run `uv run python scripts/generate_docs.py
-  --lang en` (and `--lang zh-CN`) gets a human-readable nudge
+--lang en` (and `--lang zh-CN`) gets a human-readable nudge
   in the local CI output, with the exact remediation command
   printed. The main flow stays green so single-letter
   contributor pull-requests don't get blocked by API-doc
@@ -3278,8 +3272,8 @@ Cursor + VSCode dev environment.
     `if TYPE_CHECKING:`, and `if __name__ == "__main__":` so
     the metric stays honest without manual annotation in every
     file.
-  Verified by running `uv run python scripts/ci_gate.py
-  --with-coverage`: TOTAL = 90.96%, fail_under = 88, exit 0.
+    Verified by running `uv run python scripts/ci_gate.py
+--with-coverage`: TOTAL = 90.96%, fail_under = 88, exit 0.
 - **`.pre-commit-config.yaml` gains three commonly-recommended
   hooks from `pre-commit/pre-commit-hooks` (already pinned at
   `v5.0.0`, so zero new dependency).**
@@ -3296,13 +3290,13 @@ Cursor + VSCode dev environment.
     re-normalisation. The hook auto-rewrites to LF at commit time,
     closing the loop pre-push (instead of letting CI catch it).
   - `debug-statements` — guards against `breakpoint()` /
-    `import pdb; pdb.set_trace()` /  `pdb.run(...)` slipping into
+    `import pdb; pdb.set_trace()` / `pdb.run(...)` slipping into
     commits. Particularly nasty in the MCP server path where
     `pdb` will block on `sys.stdin` and the host process appears
     to hang silently. `ruff`'s `T20` category does not catch
     `breakpoint()`, so the dedicated hook adds a real safety net.
-  Verified with `uv run pre-commit run --all-files`: all three
-  new hooks pass on the current tree, no surprises to clean up.
+    Verified with `uv run pre-commit run --all-files`: all three
+    new hooks pass on the current tree, no surprises to clean up.
 - **PyPI metadata enrichment in `pyproject.toml`.** Added four new
   `classifiers` that the listing was missing despite shipping the
   underlying capability for several minor releases:
@@ -3312,20 +3306,20 @@ Cursor + VSCode dev environment.
     powering the Web UI; declaring it lets PyPI's faceted search
     surface the project under Flask's framework filter.
   - `Natural Language :: English` and `Natural Language :: Chinese
-    (Simplified)` — the project ships fully bilingual READMEs,
+  (Simplified)` — the project ships fully bilingual READMEs,
     docs, locale bundles, and VS Code extension `package.nls.*`;
     declaring both Natural Language facets lets non-English Python
     devs find the package without guessing.
-  Also added a `Discussions` entry under `[project.urls]` pointing
-  at GitHub Discussions, mirroring the route already advertised in
-  `.github/ISSUE_TEMPLATE/config.yml` for "use questions / share
-  ideas". `pip show ai-intervention-agent` and the PyPI sidebar now
-  surface a direct route to the discussions board, not just the
-  issue tracker.
-  Did **not** add `Typing :: Typed`: that classifier is for
-  PEP 561 library packages whose downstream users `import` typed
-  symbols. This project ships as a CLI / MCP-server application;
-  there are no public Python APIs for downstream consumers.
+    Also added a `Discussions` entry under `[project.urls]` pointing
+    at GitHub Discussions, mirroring the route already advertised in
+    `.github/ISSUE_TEMPLATE/config.yml` for "use questions / share
+    ideas". `pip show ai-intervention-agent` and the PyPI sidebar now
+    surface a direct route to the discussions board, not just the
+    issue tracker.
+    Did **not** add `Typing :: Typed`: that classifier is for
+    PEP 561 library packages whose downstream users `import` typed
+    symbols. This project ships as a CLI / MCP-server application;
+    there are no public Python APIs for downstream consumers.
 
 ### Documentation
 
@@ -3365,9 +3359,9 @@ Cursor + VSCode dev environment.
      landed across v1.5.x. The regenerate is purely
      reflection of in-source docstrings and signatures, no
      hand-editing.
-  Also fixed three latent generator-style bugs in
-  `scripts/generate_docs.py` so future regenerations don't
-  re-introduce noise:
+     Also fixed three latent generator-style bugs in
+     `scripts/generate_docs.py` so future regenerations don't
+     re-introduce noise:
   - Output now ends with a trailing `\n` (was missing,
     triggering pre-commit's `end-of-file-fixer` on every
     regenerate).
@@ -3418,19 +3412,19 @@ Cursor + VSCode dev environment.
   to the VS Code extension README.
 - **`packages/vscode/README.md` + `.zh-CN.md` gain two new
   sections:**
-    1. `i18n.pseudoLocale` *(experimental)* setting documented for
-       the first time — it had been declared in `package.json`
-       and tagged `experimental` since v1.5.x but had no end-user
-       documentation, so QA folk who want to spot hardcoded strings
-       or layout overflow could not discover it.
-    2. **AppleScript executor security model** — full enumeration of
-       the seven safeguards baked into `applescript-executor.ts`
-       (platform check, absolute `/usr/bin/osascript` path, stdin
-       script delivery, 8 s hard timeout, 1 MiB output cap, log
-       redaction, and "no user-supplied scripts" architectural
-       invariant). `SECURITY.md` already mentioned the executor in
-       the "Out of scope" section; this expansion lets reviewers
-       (and downstream packagers) verify the assertion at source.
+  1. `i18n.pseudoLocale` _(experimental)_ setting documented for
+     the first time — it had been declared in `package.json`
+     and tagged `experimental` since v1.5.x but had no end-user
+     documentation, so QA folk who want to spot hardcoded strings
+     or layout overflow could not discover it.
+  2. **AppleScript executor security model** — full enumeration of
+     the seven safeguards baked into `applescript-executor.ts`
+     (platform check, absolute `/usr/bin/osascript` path, stdin
+     script delivery, 8 s hard timeout, 1 MiB output cap, log
+     redaction, and "no user-supplied scripts" architectural
+     invariant). `SECURITY.md` already mentioned the executor in
+     the "Out of scope" section; this expansion lets reviewers
+     (and downstream packagers) verify the assertion at source.
 - **`docs/troubleshooting.md` + `docs/troubleshooting.zh-CN.md` (new,
   bilingual)** — focused FAQ covering the eight most common
   deployment / runtime issues: port-in-use Web UI failure, blank

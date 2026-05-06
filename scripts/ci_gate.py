@@ -224,8 +224,12 @@ def _main_impl(argv: list[str]) -> int:
     # 防御性兜底，不构成重复执行成本（同一进程，跑两次还是 < 0.1s）。
     _run(["uv", "run", "python", "scripts/bump_version.py", "--check"])
 
-    # 先生成 .min 文件，再跑 pytest（pytest 会校验 .min 是否与源文件同步）
+    # 先生成 .min / 预压缩副本，再跑 pytest。
+    # pytest 会校验预压缩 .gz/.br 解压后与原文 byte-identical；如果只更新
+    # .min 而不重生预压缩副本，CI 会在 static compression 集成测试中选到
+    # stale .gz 并失败。
     _run(["uv", "run", "python", "scripts/minify_assets.py"])
+    _run(["uv", "run", "python", "scripts/precompress_static.py"])
 
     # 测试集中包含大量“故意喂坏配置”的用例；这些用例会产生日志级
     # WARNING/ERROR，但断言本身期望通过。门禁输出保持干净，只让真实失败

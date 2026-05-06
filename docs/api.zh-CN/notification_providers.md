@@ -29,6 +29,12 @@
 
 ## 类
 
+### `class _LazyHttpx`
+
+延迟加载 httpx，同时保留 ``notification_providers.httpx.X`` 访问形态。
+
+#### 方法
+
 ### `class _BarkSafeFormatDict`
 
 str.format_map() 的兜底字典：未命中的 key 原样返回 "{key}"。

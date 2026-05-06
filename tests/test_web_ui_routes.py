@@ -1027,6 +1027,41 @@ class TestGetTasks(_RouteTestBase):
         mock_tq.get_all_tasks.assert_not_called()
         mock_tq.get_task_count.assert_not_called()
 
+    @patch("web_ui_routes.task.get_task_queue")
+    def test_list_uses_single_monotonic_snapshot(self, mock_get_tq):
+        """GET /api/tasks 应在一次响应内复用同一个 monotonic 快照。"""
+        mock_tq = MagicMock()
+        tasks = []
+        for idx in range(2):
+            task = MagicMock()
+            task.task_id = f"t{idx}"
+            task.status = "active"
+            task.prompt = "hello"
+            task.created_at.isoformat.return_value = f"2026-01-01T00:00:0{idx}+00:00"
+            task.auto_resubmit_timeout = 120
+            task.get_remaining_time.return_value = 100 - idx
+            tasks.append(task)
+
+        mock_tq.get_all_tasks_with_stats.return_value = (
+            tasks,
+            {
+                "total": 2,
+                "pending": 0,
+                "active": 2,
+                "completed": 0,
+                "max": 100,
+            },
+        )
+        mock_get_tq.return_value = mock_tq
+
+        with patch("web_ui_routes.task.time.monotonic", return_value=1234.5) as m:
+            resp = self._client.get("/api/tasks")
+
+        self.assertEqual(resp.status_code, 200)
+        m.assert_called_once()
+        for task in tasks:
+            task.get_remaining_time.assert_called_once_with(now_monotonic=1234.5)
+
     @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
     def test_exception_returns_500(self, _):
         resp = self._client.get("/api/tasks")
@@ -1386,6 +1421,30 @@ class TestGetTaskDetail(_RouteTestBase):
         self.assertIn("remaining_time", data["task"])
         self.assertIn("deadline", data["task"])
         self.assertIn("server_time", data)
+
+    @patch("web_ui_routes.task.get_task_queue")
+    def test_detail_uses_monotonic_snapshot(self, mock_get_tq):
+        """GET /api/tasks/<id> 也应显式传入 monotonic 快照计算剩余时间。"""
+        mock_tq = MagicMock()
+        task = MagicMock()
+        task.task_id = "detail-snapshot"
+        task.prompt = "test prompt"
+        task.predefined_options = []
+        task.predefined_options_defaults = []
+        task.status = "active"
+        task.created_at.isoformat.return_value = "2026-01-01T00:00:00+00:00"
+        task.auto_resubmit_timeout = 120
+        task.result = None
+        task.get_remaining_time.return_value = 77
+        mock_tq.get_task.return_value = task
+        mock_get_tq.return_value = mock_tq
+
+        with patch("web_ui_routes.task.time.monotonic", return_value=4321.0) as m:
+            resp = self._client.get("/api/tasks/detail-snapshot")
+
+        self.assertEqual(resp.status_code, 200)
+        m.assert_called_once()
+        task.get_remaining_time.assert_called_once_with(now_monotonic=4321.0)
 
     @patch("web_ui_routes.task.get_task_queue")
     def test_task_not_found(self, mock_get_tq):
@@ -1756,6 +1815,7 @@ class TestFaviconRoute(_RouteTestBase):
             self.assertEqual(resp.headers.get("Content-Type"), "image/x-icon")
             cache = resp.headers.get("Cache-Control", "")
             self.assertIn("no-cache", cache)
+        resp.close()
 
 
 class TestStaticRoutesEdge(_RouteTestBase):
@@ -1864,6 +1924,7 @@ class TestStaticRoutesEdge(_RouteTestBase):
         self.assertIn("name", manifest)
         self.assertIn("icons", manifest)
         self.assertIsInstance(manifest["icons"], list)
+        resp.close()
         self.assertGreater(len(manifest["icons"]), 0)
         for icon in manifest["icons"]:
             self.assertIn("src", icon)

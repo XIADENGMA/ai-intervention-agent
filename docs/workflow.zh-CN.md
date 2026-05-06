@@ -11,8 +11,8 @@
 ### 提交前（本地 CI Gate）
 
 - 一键运行（推荐）：`uv run python scripts/ci_gate.py`
-  - 默认是“本地模式”：会自动格式化（`ruff format`），并运行 ruff/ty/pytest/minify
-  - CI 模式（只检查；不自动格式化源码，但会生成 gitignore 的构建产物如 `.min`）：`uv run python scripts/ci_gate.py --ci --with-coverage`
+  - 默认是“本地模式”：会自动格式化（`ruff format`），并运行 ruff/ty/pytest/minify/precompress
+  - CI 模式（只检查；不自动格式化源码，但会生成 gitignore 的构建产物如 `.min`、`.gz`、`.br`）：`uv run python scripts/ci_gate.py --ci --with-coverage`
   - 若希望一并跑 VSCode 插件门禁：`uv run python scripts/ci_gate.py --with-vscode`
   - Makefile 快捷命令（thin wrapper，按肌肉记忆任选）：
     - `make ci` ≡ `uv run python scripts/ci_gate.py`
@@ -25,6 +25,7 @@
   - 类型检查：`uv run ty check .`
   - 测试：`uv run pytest -q`
   - 静态资源压缩：`uv run python scripts/minify_assets.py`
+  - 静态资源预压缩：`uv run python scripts/precompress_static.py`
   - Locale 一致性检查（完整版——key + 嵌套结构 + ICU 占位符）：`uv run python scripts/check_i18n_locale_parity.py`（旧的 `scripts/check_locales.py` 仅 key 平铺校验，保留兼容；`ci_gate.py` 已经跑的是现代版）
   - 版本号一致性检查：`uv run python scripts/bump_version.py --check --from-pyproject`
 - VSCode 插件：`npm run vscode:check`（Linux/headless：`xvfb-run -a npm run vscode:check`）

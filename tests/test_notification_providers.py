@@ -135,7 +135,9 @@ class TestSoundNotificationProvider(unittest.TestCase):
     def test_volume_boundary(self):
         """测试音量边界值"""
         # 测试超出边界的音量值
-        self.config.sound_volume = 1.5
+        with patch("config_utils.logger.warning") as mock_warning:
+            self.config.sound_volume = 1.5
+        mock_warning.assert_called_once()
 
         event = create_event()
 
@@ -1048,7 +1050,9 @@ class TestBarkSendEdgeCases(unittest.TestCase):
     def test_action_unknown_non_url(self, mock_post):
         """bark_action 是未知非 URL 值 → 忽略"""
         mock_post.return_value = MagicMock(status_code=200)
-        provider = self._make_provider(bark_action="some_random_value")
+        with patch("config_utils.logger.warning") as mock_warning:
+            provider = self._make_provider(bark_action="some_random_value")
+        mock_warning.assert_called_once()
         event = create_event(title="T", message="M")
         self.assertTrue(provider.send(event))
         payload = mock_post.call_args.kwargs["json"]
@@ -1310,7 +1314,7 @@ class TestBarkCloseException(unittest.TestCase):
     def test_close_session_error_swallowed(self):
         cfg = _make_ext_config()
         provider = BarkNotificationProvider(cfg)
-        provider.session.close = MagicMock(side_effect=RuntimeError("close error"))  # ty: ignore[invalid-assignment]
+        provider.session.close = MagicMock(side_effect=RuntimeError("close error"))
         provider.close()
 
     def test_close_success(self):

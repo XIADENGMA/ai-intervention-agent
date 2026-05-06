@@ -12,12 +12,23 @@ from collections.abc import Callable
 from importlib.util import find_spec
 from typing import Any
 
-import httpx
-
 from enhanced_logging import EnhancedLogger
 from notification_models import NotificationEvent, NotificationType
 
 logger = EnhancedLogger(__name__)
+
+
+class _LazyHttpx:
+    """延迟加载 httpx，同时保留 ``notification_providers.httpx.X`` 访问形态。"""
+
+    def __getattr__(self, name: str) -> Any:
+        import httpx as real_httpx
+
+        globals()["httpx"] = real_httpx
+        return getattr(real_httpx, name)
+
+
+httpx: Any = _LazyHttpx()
 
 
 # ---------------------------------------------------------------------------

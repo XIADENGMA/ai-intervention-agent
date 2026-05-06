@@ -130,21 +130,22 @@ def _find_script_srcs(html: str) -> list[str]:
 # 1. 存在性：6 条核心 preload 必须出现在 <head>
 #    - R21.1 (4 条)：app.js / multi_task.js / i18n.js / state.js
 #    - R27.1 (2 条)：marked.js / prism.min.js（head 内 defer 脚本补充 preload）
+#    - R27.2：所有 6 条都升级为带 ``?v={{ ... }}`` 版本号查询 → 1 年 immutable 缓存
 # ---------------------------------------------------------------------------
 
 # (preload href, 下游 body / head script 中相同名字的 src)
-# R21.1 原始 4 条：
+# R21.1 原始 4 条（R27.2 后 i18n.js / state.js 也带版本号）：
 EXPECTED_PRELOADS_R21_1 = [
     "/static/js/app.js?v={{ app_version }}",
     "/static/js/multi_task.js?v={{ multi_task_version }}",
-    "/static/js/i18n.js",
-    "/static/js/state.js",
+    "/static/js/i18n.js?v={{ i18n_js_version }}",
+    "/static/js/state.js?v={{ state_js_version }}",
 ]
 
-# R27.1 增量 2 条（head 内 defer 脚本：marked.js + prism.min.js）：
+# R27.1 增量 2 条（head 内 defer 脚本，R27.2 后也带版本号）：
 EXPECTED_PRELOADS_R27_1 = [
-    "/static/js/marked.js",
-    "/static/js/prism.min.js",
+    "/static/js/marked.js?v={{ marked_js_version }}",
+    "/static/js/prism.min.js?v={{ prism_min_js_version }}",
 ]
 
 # 合并后的完整 forward-lock 列表（test_preload_count 的精确数量基准）：
@@ -215,41 +216,56 @@ class TestPreloadUrlConsistency:
         )
 
     def test_i18n_js_preload_matches_body_src(self) -> None:
+        """R27.2：``i18n.js`` preload + body script src 都必须带 ``?v={{ i18n_js_version }}``。"""
         body = _extract_body(_read_template())
         body_srcs = _find_script_srcs(body)
-        assert "/static/js/i18n.js" in body_srcs, (
-            '找不到 body 内 ``<script src="/static/js/i18n.js">``。'
+        target = "/static/js/i18n.js?v={{ i18n_js_version }}"
+        assert target in body_srcs, (
+            f'找不到 body 内 ``<script src="{target}">``——'
+            "R27.2 升级缓存策略要求 i18n.js 带 ``?v={{ i18n_js_version }}`` 才能命中 "
+            "``Cache-Control: max-age=31536000, immutable`` 分支。"
+            f"\n实际 body script src 列表前 12 项：\n{body_srcs[:12]}"
         )
 
     def test_state_js_preload_matches_body_src(self) -> None:
+        """R27.2：``state.js`` preload + body script src 都必须带 ``?v={{ state_js_version }}``。"""
         body = _extract_body(_read_template())
         body_srcs = _find_script_srcs(body)
-        assert "/static/js/state.js" in body_srcs, (
-            '找不到 body 内 ``<script src="/static/js/state.js">``。'
+        target = "/static/js/state.js?v={{ state_js_version }}"
+        assert target in body_srcs, (
+            f'找不到 body 内 ``<script src="{target}">``——'
+            "R27.2 升级缓存策略要求 state.js 带 ``?v={{ state_js_version }}`` 才能命中 "
+            "``Cache-Control: max-age=31536000, immutable`` 分支。"
+            f"\n实际 body script src 列表前 12 项：\n{body_srcs[:12]}"
         )
 
     def test_marked_js_preload_matches_head_script_src(self) -> None:
         """R27.1：``marked.js`` preload href 必须与 head 内 ``<script defer>`` src
         字节级一致（marked.js 在 head 内 defer 加载，不在 body）。
+        R27.2：URL 必须带 ``?v={{ marked_js_version }}`` 命中 1 年 immutable 缓存。
         """
         head = _extract_head(_read_template())
         head_srcs = _find_script_srcs(head)
-        assert "/static/js/marked.js" in head_srcs, (
-            '找不到 head 内 ``<script defer src="/static/js/marked.js">``——'
-            "R27.1 假设 marked.js 仍以 head 内 defer 加载，"
-            f"实际 head script src：\n{head_srcs}"
+        target = "/static/js/marked.js?v={{ marked_js_version }}"
+        assert target in head_srcs, (
+            f'找不到 head 内 ``<script defer src="{target}">``——'
+            "R27.1 假设 marked.js 仍以 head 内 defer 加载，R27.2 进一步要求带版本号。"
+            f"\n实际 head script src：\n{head_srcs}"
         )
 
     def test_prism_min_js_preload_matches_head_script_src(self) -> None:
         """R27.1：``prism.min.js`` preload href 必须与 head 内 ``<script defer>`` src
         字节级一致——同时验证 ``prism.js``（未压缩）已经从模板中移除。
+        R27.2：URL 必须带 ``?v={{ prism_min_js_version }}`` 命中 1 年 immutable 缓存。
         """
         head = _extract_head(_read_template())
         head_srcs = _find_script_srcs(head)
-        assert "/static/js/prism.min.js" in head_srcs, (
-            '找不到 head 内 ``<script defer src="/static/js/prism.min.js">``——'
+        target = "/static/js/prism.min.js?v={{ prism_min_js_version }}"
+        assert target in head_srcs, (
+            f'找不到 head 内 ``<script defer src="{target}">``——'
             "R27.1 切换到 ``prism.min.js`` 是 ``-33 KB / -8 KB brotli`` 的核心收益，"
-            f"如果模板回退到 ``prism.js`` 应在 ``test_prism_unminified_not_referenced`` "
+            "R27.2 进一步要求带 ``?v={{ prism_min_js_version }}`` 实现 1 年 immutable 缓存。"
+            f"\n如果模板回退到 ``prism.js`` 应在 ``test_template_does_not_reference_unminified_prism_js`` "
             f"被检出。当前 head script src：\n{head_srcs}"
         )
 
@@ -499,4 +515,104 @@ class TestPrismMinifiedSwitch:
             "未压缩版 ``prism.js`` 是调试用源文件，应与 ``prism.min.js`` 并存。"
             "如果要永久移除未压缩版，需要先在 ``scripts/minify_assets.py`` 与"
             "测试套件 ``test_runtime_behavior.py::test_minified_source_file_sync`` 同步策略。"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 8. R27.2 缓存策略 forward lock：所有 preload URL 都必须带 ``?v={{ ... }}``
+# ---------------------------------------------------------------------------
+
+
+class TestCacheBustingVersionQueryParam:
+    """R27.2 forward lock：模板里所有 ``<link rel="preload">`` 与对应 ``<script>`` src
+    都必须带 ``?v={{ ... }}`` 占位符，让 ``serve_js`` / ``serve_css`` 命中
+    ``Cache-Control: public, max-age=31536000, immutable`` 分支（1 年永久缓存）。
+
+    没有版本号查询时 ``serve_js`` 走 ``max-age=3600`` 短缓存，返回用户每小时
+    都要走一次 304 revalidation 往返，对 LAN/loopback 部署影响 ~10-30 ms RTT
+    × 6 个 critical preload = 60-180 ms 累计延迟。
+    """
+
+    @pytest.mark.parametrize("expected", EXPECTED_PRELOADS)
+    def test_preload_url_carries_version_query(self, expected: str) -> None:
+        """每条 preload 的 href 必须带 ``?v={{ ... }}`` 占位符。"""
+        # forward lock：URL 必须包含 ``?v=`` 才能命中 1 年 immutable 缓存分支
+        assert "?v=" in expected, (
+            f"R27.2 forward lock 违反：``{expected}`` 缺少 ``?v=`` 版本号查询。"
+            "EXPECTED_PRELOADS 列表是 R21.1/R27.1/R27.2 串联起来的合同，所有条目"
+            "都必须带 ``?v={{ <variable> }}`` 才能命中 ``serve_js`` 的 1 年缓存分支。"
+            f"如果是新加的资源，请同步：(1) 模板里 preload + script 都带版本号；"
+            f"(2) ``_get_template_context`` 里加 ``<resource>_version`` 字段；"
+            f"(3) 在这个测试列表里把新条目加进 ``EXPECTED_PRELOADS_R*``。"
+        )
+        # forward lock：占位符必须是 Jinja2 变量形式 ``{{ ... }}``，不能是硬编码
+        # 字符串（硬编码会让 cache 失效，因为浏览器看到 URL 字符串相等仍然用旧版本）
+        assert "{{" in expected and "}}" in expected, (
+            f"R27.2 forward lock 违反：``{expected}`` 的 ``?v=`` 必须用 Jinja2 占位符 "
+            "``{{ <variable> }}`` 而非硬编码字符串。"
+            "硬编码会让 cache 在文件变更时不失效（浏览器看到相同 URL 用旧 cache）。"
+        )
+
+    def test_jinja2_variable_names_match_get_template_context(self) -> None:
+        """模板里 ``{{ <name>_version }}`` 的变量名必须能在 ``_get_template_context`` 找到。
+
+        这条测试**实际渲染**模板的 head 节，确认所有 ``?v=`` 占位符都被填充成
+        非空字符串——空字符串意味着 ``_compute_file_version`` 返回了 fallback ``"1"``
+        或者变量根本没传，会让 cache key 退化。
+        """
+        from web_ui import WebFeedbackUI
+
+        ui = WebFeedbackUI(
+            prompt="R27.2 cache-busting test",
+            task_id="r27-2-cache-test",
+            port=8975,
+        )
+        ctx = ui._get_template_context()
+
+        # forward lock：4 个 R27.2 新增字段必须存在且非空
+        for field in (
+            "i18n_js_version",
+            "state_js_version",
+            "marked_js_version",
+            "prism_min_js_version",
+        ):
+            assert field in ctx, (
+                f"R27.2 forward lock 违反：``_get_template_context`` 缺失 ``{field}``。"
+                "EXPECTED_PRELOADS 列表里的 ``?v={{ %s }}`` 占位符没有对应的 Python 字段，"
+                "Jinja2 渲染时该位置会变成空字符串——浏览器看到 ``?v=`` 后跟空"
+                "（或纯字面 ``{{ %s }}`` 字符串残留）会触发缓存策略失败。"
+                % (field, field)
+            )
+            value = ctx[field]
+            assert value is not None and len(str(value)) > 0, (
+                f"R27.2 forward lock 违反：``_get_template_context`` 里 ``{field}`` 为空"
+                f"（实际值：``{value!r}``）。"
+                "应当返回 ``_compute_file_version(...)`` 的非空 8 位 mtime hash 字符串。"
+                '如果文件不存在，``_compute_file_version`` 会返回 fallback ``"1"``，'
+                "也是非空——为空意味着调用链上有 bug 或者文件路径错了。"
+            )
+
+    def test_six_preload_urls_distinct_version_variables(self) -> None:
+        """6 条 preload 必须用 6 个**互不相同**的 Jinja2 变量名（不是 ``app_version`` 重复 6 次）。
+
+        变量名混用会让缓存粒度退化——例如如果所有 6 条都用 ``app_version``，
+        改动 ``app.js`` 就强制 6 条全失效，浪费带宽。
+        """
+        # 提取每条 preload URL 里 ``?v={{ <variable> }}`` 的变量名
+        var_pattern = re.compile(r"\?v=\{\{\s*(\w+)\s*\}\}")
+        variables: list[str] = []
+        for url in EXPECTED_PRELOADS:
+            m = var_pattern.search(url)
+            assert m is not None, (
+                f"R27.2 内部一致性违反：``{url}`` 没有匹配 "
+                f"``?v={{ <variable> }}`` 模式。"
+            )
+            variables.append(m.group(1))
+
+        unique = set(variables)
+        assert len(unique) == len(variables), (
+            f"R27.2 forward lock 违反：6 条 preload 的版本变量必须互不相同，实际有重复：\n"
+            f"变量列表：{variables}\n"
+            f"唯一变量：{unique}\n"
+            "重复的变量名意味着改一个文件会让所有共享变量的资源都失效，浪费带宽。"
         )

@@ -2,7 +2,10 @@
 <html lang="{{ html_lang }}" dir="{{ html_dir }}">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>AI Intervention Agent</title>
 
     <!--
@@ -13,10 +16,24 @@
       - manifest 中再列 192/512/maskable，安装为 PWA 时图标才正确
     -->
     <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" sizes="any" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/icons/favicon-32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/icons/favicon-16.png"
+    />
     <link rel="mask-icon" href="/icons/icon.svg" color="#8B5CF6" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/icons/apple-touch-icon.png"
+    />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#8B5CF6" />
     <meta name="application-name" content="AI Intervention Agent" />
@@ -27,22 +44,22 @@
 
     <!-- 0.0.0.0 访问兼容性：尽早重定向到 127.0.0.1，避免浏览器/Fetch/通知权限异常 -->
     <script nonce="{{ csp_nonce }}">
-      ;(function redirectZeroHostToLoopback() {
+      (function redirectZeroHostToLoopback() {
         try {
-          const url = new URL(window.location.href)
-          if (url.hostname === '0.0.0.0') {
-            url.hostname = '127.0.0.1'
+          const url = new URL(window.location.href);
+          if (url.hostname === "0.0.0.0") {
+            url.hostname = "127.0.0.1";
             console.warn(
-              'Detected 0.0.0.0 host; auto-redirecting to ' +
+              "Detected 0.0.0.0 host; auto-redirecting to " +
                 url.origin +
-                ' (avoids browser compatibility issues).'
-            )
-            window.location.replace(url.toString())
+                " (avoids browser compatibility issues).",
+            );
+            window.location.replace(url.toString());
           }
         } catch (e) {
           // 忽略：不影响主流程
         }
-      })()
+      })();
     </script>
 
     <!-- 资源预加载优化：减少首屏渲染阻塞
@@ -68,10 +85,26 @@
       href="/static/js/multi_task.js?v={{ multi_task_version }}"
       as="script"
     />
-    <link rel="preload" href="/static/js/i18n.js" as="script" />
-    <link rel="preload" href="/static/js/state.js" as="script" />
-    <link rel="preload" href="/static/js/marked.js" as="script" />
-    <link rel="preload" href="/static/js/prism.min.js" as="script" />
+    <link
+      rel="preload"
+      href="/static/js/i18n.js?v={{ i18n_js_version }}"
+      as="script"
+    />
+    <link
+      rel="preload"
+      href="/static/js/state.js?v={{ state_js_version }}"
+      as="script"
+    />
+    <link
+      rel="preload"
+      href="/static/js/marked.js?v={{ marked_js_version }}"
+      as="script"
+    />
+    <link
+      rel="preload"
+      href="/static/js/prism.min.js?v={{ prism_min_js_version }}"
+      as="script"
+    />
 
     <!-- MathJax 数学公式支持 - 按需加载优化（1.17MB → 需要时才加载）
          R20.12-A: 加 `defer` 解 head 同步阻塞 — 该脚本只定义 `window.MathJax`
@@ -79,19 +112,36 @@
          真正的 tex-mml-chtml.js 是用户首次粘贴含公式 Markdown 时才动态 appendChild，
          此时 DOMContentLoaded 早已 fire，defer 完全安全。defer 按 HTML 顺序执行，
          本脚本仍是第一个 defer，先于 marked / prism / app 加载，依赖关系不变。 -->
-    <script defer src="/static/js/mathjax-loader.js" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/mathjax-loader.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- Prism.js 代码高亮 CSS -->
     <link rel="stylesheet" href="/static/css/prism.css" />
 
-    <!-- marked.js Markdown 渲染（defer 属性：按顺序异步加载） -->
-    <script defer src="/static/js/marked.js" nonce="{{ csp_nonce }}"></script>
+    <!-- marked.js Markdown 渲染（defer 属性：按顺序异步加载）
+         R27.2：``?v={{ marked_js_version }}`` 让 ``serve_js`` 路由匹配带版本查询
+         分支，缓存策略从 ``max-age=3600``（1 小时）升级到 ``max-age=31536000,
+         immutable``（1 年永久），重复打开 web_ui 跳过 304 revalidation 往返。 -->
+    <script
+      defer
+      src="/static/js/marked.js?v={{ marked_js_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- Prism.js 代码高亮 JS（defer 属性：按顺序异步加载）
          R27.1：切换到 ``prism.min.js``（upstream 自带 minified 版本），与 ``prism.js``
          功能行为字节级等价，但体积 58 KB → 25 KB（brotli 后 15 KB → 7.3 KB），
-         同时上方 ``<head>`` 内有匹配的 preload link 让 preload-scanner 抢先发请求。 -->
-    <script defer src="/static/js/prism.min.js" nonce="{{ csp_nonce }}"></script>
+         同时上方 ``<head>`` 内有匹配的 preload link 让 preload-scanner 抢先发请求。
+         R27.2：与 ``marked.js`` 一致带 ``?v={{ prism_min_js_version }}`` 实现 1 年
+         immutable 缓存策略升级。 -->
+    <script
+      defer
+      src="/static/js/prism.min.js?v={{ prism_min_js_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- 主样式表（外部文件，带版本哈希用于缓存控制） -->
     <link
@@ -101,26 +151,53 @@
     />
   </head>
   <body>
-    <a href="#feedback-text" class="skip-to-content" data-i18n="page.skipToContent"
+    <a
+      href="#feedback-text"
+      class="skip-to-content"
+      data-i18n="page.skipToContent"
       >Skip to content</a
     >
     <div class="container" role="main">
       <div class="header">
         <h1>
           <div class="header-icon">
-            <svg width="32" height="32" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 120 120"
+              xmlns="http://www.w3.org/2000/svg"
+            >
               <defs>
-                <linearGradient id="masterBg" x1="50%" y1="0%" x2="50%" y2="100%">
+                <linearGradient
+                  id="masterBg"
+                  x1="50%"
+                  y1="0%"
+                  x2="50%"
+                  y2="100%"
+                >
                   <stop offset="0%" class="svg-stop-1" />
                   <stop offset="100%" class="svg-stop-2" />
                 </linearGradient>
-                <radialGradient id="aiFluidCore" cx="50%" cy="50%" r="70%" fx="52%" fy="48%">
+                <radialGradient
+                  id="aiFluidCore"
+                  cx="50%"
+                  cy="50%"
+                  r="70%"
+                  fx="52%"
+                  fy="48%"
+                >
                   <stop offset="0%" class="svg-stop-3" />
                   <stop offset="30%" class="svg-stop-4" />
                   <stop offset="60%" class="svg-stop-5" />
                   <stop offset="100%" class="svg-stop-6" />
                 </radialGradient>
-                <linearGradient id="interventionControl" x1="0%" y1="0%" x2="100%" y2="100%">
+                <linearGradient
+                  id="interventionControl"
+                  x1="0%"
+                  y1="0%"
+                  x2="100%"
+                  y2="100%"
+                >
                   <stop offset="0%" class="svg-stop-7" />
                   <stop offset="30%" class="svg-stop-8" />
                   <stop offset="70%" class="svg-stop-9" />
@@ -302,16 +379,24 @@
       >
         <div class="aiia-tsp-branch" data-tsp-branch="skeleton">
           <span class="aiia-tsp-skeleton-placeholder" aria-hidden="true"></span>
-          <span class="aiia-tsp-skeleton-placeholder" aria-hidden="true" style="width: 70%"></span>
+          <span
+            class="aiia-tsp-skeleton-placeholder"
+            aria-hidden="true"
+            style="width: 70%"
+          ></span>
         </div>
         <div class="aiia-tsp-branch" data-tsp-branch="loading">
-          <h3 class="aiia-tsp-title" data-i18n="aiia.state.loading.title">Loading…</h3>
+          <h3 class="aiia-tsp-title" data-i18n="aiia.state.loading.title">
+            Loading…
+          </h3>
           <p class="aiia-tsp-message" data-i18n="aiia.state.loading.message">
             Fetching latest content…
           </p>
         </div>
         <div class="aiia-tsp-branch" data-tsp-branch="empty">
-          <h3 class="aiia-tsp-title" data-i18n="aiia.state.empty.title">No content yet</h3>
+          <h3 class="aiia-tsp-title" data-i18n="aiia.state.empty.title">
+            No content yet
+          </h3>
           <p
             class="aiia-tsp-empty-detail"
             data-tsp-empty-detail="default"
@@ -328,7 +413,9 @@
           </p>
         </div>
         <div class="aiia-tsp-branch" data-tsp-branch="error">
-          <h3 class="aiia-tsp-title" data-i18n="aiia.state.error.title">Something went wrong</h3>
+          <h3 class="aiia-tsp-title" data-i18n="aiia.state.error.title">
+            Something went wrong
+          </h3>
           <p
             class="aiia-tsp-error-detail"
             data-tsp-error-detail="network"
@@ -389,14 +476,22 @@
       <!-- 无有效内容页面 -->
       <div id="no-content-container" class="no-content-container">
         <div class="no-content-icon" id="hourglass-lottie"></div>
-        <h2 class="no-content-title" data-i18n="page.noContent.title">No feedback requests</h2>
-        <p class="no-content-description" data-i18n="page.noContent.description">
+        <h2 class="no-content-title" data-i18n="page.noContent.title">
+          No feedback requests
+        </h2>
+        <p
+          class="no-content-description"
+          data-i18n="page.noContent.description"
+        >
           Waiting for new feedback requests…
         </p>
         <div class="no-content-progress">
           <div class="no-content-progress-bar"></div>
         </div>
-        <div class="button-container no-content-buttons" id="no-content-buttons">
+        <div
+          class="button-container no-content-buttons"
+          id="no-content-buttons"
+        >
           <button
             class="btn btn-secondary"
             id="close-btn"
@@ -459,19 +554,38 @@
 
             <div class="countdown-container hidden" id="countdown-container">
               <span class="countdown-label">⏰</span>
-              <span class="countdown-text" id="countdown-text" data-i18n="page.countdown"
+              <span
+                class="countdown-text"
+                id="countdown-text"
+                data-i18n="page.countdown"
                 >0s until auto-reschedule</span
               >
             </div>
           </div>
 
-          <div class="description markdown-content" id="description" data-i18n="page.loading">
+          <div
+            class="description markdown-content"
+            id="description"
+            data-i18n="page.loading"
+          >
             <!-- 骨架屏占位（首次加载时显示，数据到达后自动移除） -->
-            <div id="content-skeleton" class="skeleton-container" aria-hidden="true">
-              <div class="skeleton-pulse skeleton-line skeleton-line-short"></div>
-              <div class="skeleton-pulse skeleton-line skeleton-line-long"></div>
-              <div class="skeleton-pulse skeleton-line skeleton-line-medium"></div>
-              <div class="skeleton-pulse skeleton-line skeleton-line-full"></div>
+            <div
+              id="content-skeleton"
+              class="skeleton-container"
+              aria-hidden="true"
+            >
+              <div
+                class="skeleton-pulse skeleton-line skeleton-line-short"
+              ></div>
+              <div
+                class="skeleton-pulse skeleton-line skeleton-line-long"
+              ></div>
+              <div
+                class="skeleton-pulse skeleton-line skeleton-line-medium"
+              ></div>
+              <div
+                class="skeleton-pulse skeleton-line skeleton-line-full"
+              ></div>
               <div class="skeleton-pulse skeleton-block"></div>
             </div>
           </div>
@@ -483,7 +597,10 @@
           <div class="separator hidden" id="separator"></div>
 
           <!-- 图片预览区域 -->
-          <div class="image-preview-container hidden" id="image-preview-container">
+          <div
+            class="image-preview-container hidden"
+            id="image-preview-container"
+          >
             <div class="image-preview-header">
               <span class="image-count-text">
                 <span data-i18n="page.imageCountPrefix">Selected</span>
@@ -527,7 +644,9 @@
           <div class="drag-overlay hidden" id="drag-overlay">
             <div class="drag-overlay-content">
               <div class="drag-icon">📁</div>
-              <div class="drag-text" data-i18n="page.dragDrop">Drop images here</div>
+              <div class="drag-text" data-i18n="page.dragDrop">
+                Drop images here
+              </div>
               <div class="drag-subtext" data-i18n="page.dragFormat">
                 Supports JPG, PNG, GIF, WEBP
               </div>
@@ -538,7 +657,9 @@
           <div class="image-modal" id="image-modal">
             <div class="image-modal-content">
               <img id="modal-image" src="" alt="" />
-              <button class="image-modal-close" onclick="closeImageModal()">×</button>
+              <button class="image-modal-close" onclick="closeImageModal()">
+                ×
+              </button>
               <div class="image-modal-info" id="modal-info"></div>
             </div>
           </div>
@@ -584,10 +705,15 @@
                   <div
                     id="code-paste-hint"
                     data-i18n="page.codePasteHint"
-                    style="margin-bottom: 0.75rem; color: var(--text-secondary); font-size: 0.9rem"
+                    style="
+                      margin-bottom: 0.75rem;
+                      color: var(--text-secondary);
+                      font-size: 0.9rem;
+                    "
                   >
-                    Due to browser security restrictions, clipboard cannot be read automatically.
-                    Please paste code below (iOS: long-press → paste), then click "Insert".
+                    Due to browser security restrictions, clipboard cannot be
+                    read automatically. Please paste code below (iOS: long-press
+                    → paste), then click "Insert".
                   </div>
                   <textarea
                     id="code-paste-textarea"
@@ -623,7 +749,13 @@
           </div>
 
           <!-- 隐藏的文件上传input -->
-          <input type="file" id="file-upload-input" multiple accept="image/*" class="hidden" />
+          <input
+            type="file"
+            id="file-upload-input"
+            multiple
+            accept="image/*"
+            class="hidden"
+          />
 
           <div class="textarea-container">
             <textarea
@@ -635,7 +767,11 @@
           </div>
 
           <div class="button-container">
-            <button type="button" class="btn btn-secondary" id="insert-code-btn">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="insert-code-btn"
+            >
               <!-- Claude 风格代码图标（线条版） -->
               <svg
                 class="btn-icon"
@@ -653,7 +789,11 @@
               </svg>
               <span data-i18n="page.insertCodeBtn">Insert code</span>
             </button>
-            <button type="button" class="btn btn-secondary" id="upload-image-btn">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="upload-image-btn"
+            >
               <!-- Claude 风格图片图标（线条版） -->
               <svg
                 class="btn-icon"
@@ -689,7 +829,12 @@
             </button>
           </div>
 
-          <div class="status-message" id="status-message" role="status" aria-live="polite"></div>
+          <div
+            class="status-message"
+            id="status-message"
+            role="status"
+            aria-live="polite"
+          ></div>
         </div>
       </div>
 
@@ -782,20 +927,34 @@
                       d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
                     />
                   </svg>
-                  <span data-i18n="settings.desktopSection">Desktop notifications (browser)</span>
+                  <span data-i18n="settings.desktopSection"
+                    >Desktop notifications (browser)</span
+                  >
                 </h5>
                 <div class="setting-item">
                   <label class="setting-label">
-                    <input type="checkbox" id="web-notification-enabled" checked />
-                    <span class="setting-title" data-i18n="settings.desktopNotify"
+                    <input
+                      type="checkbox"
+                      id="web-notification-enabled"
+                      checked
+                    />
+                    <span
+                      class="setting-title"
+                      data-i18n="settings.desktopNotify"
                       >Enable desktop notifications</span
                     >
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">
-                    <input type="checkbox" id="auto-request-permission" checked />
-                    <span class="setting-title" data-i18n="settings.autoPermission"
+                    <input
+                      type="checkbox"
+                      id="auto-request-permission"
+                      checked
+                    />
+                    <span
+                      class="setting-title"
+                      data-i18n="settings.autoPermission"
                       >Auto-request browser notification permission</span
                     >
                   </label>
@@ -815,13 +974,21 @@
                     stroke-linejoin="round"
                   >
                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path
+                      d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"
+                    />
                   </svg>
-                  <span data-i18n="settings.soundSection">Sound notifications</span>
+                  <span data-i18n="settings.soundSection"
+                    >Sound notifications</span
+                  >
                 </h5>
                 <div class="setting-item">
                   <label class="setting-label">
-                    <input type="checkbox" id="sound-notification-enabled" checked />
+                    <input
+                      type="checkbox"
+                      id="sound-notification-enabled"
+                      checked
+                    />
                     <span class="setting-title" data-i18n="settings.soundNotify"
                       >Sound notification</span
                     >
@@ -830,12 +997,16 @@
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="sound-mute" />
-                    <span class="setting-title" data-i18n="settings.muteMode">Mute mode</span>
+                    <span class="setting-title" data-i18n="settings.muteMode"
+                      >Mute mode</span
+                    >
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label">
-                    <span class="setting-title" data-i18n="settings.volumeControl"
+                    <span
+                      class="setting-title"
+                      data-i18n="settings.volumeControl"
                       >Volume control</span
                     >
                     <input
@@ -871,7 +1042,9 @@
                 <div class="setting-item">
                   <label class="setting-label">
                     <input type="checkbox" id="mobile-optimized" checked />
-                    <span class="setting-title" data-i18n="settings.mobileOptimize"
+                    <span
+                      class="setting-title"
+                      data-i18n="settings.mobileOptimize"
                       >Mobile device optimization</span
                     >
                   </label>
@@ -903,7 +1076,9 @@
                     />
                     <path d="M10 2c1 .5 2 2 2 5" />
                   </svg>
-                  <span data-i18n="settings.barkSection">Bark notifications (iOS)</span>
+                  <span data-i18n="settings.barkSection"
+                    >Bark notifications (iOS)</span
+                  >
                 </h5>
                 <div class="setting-item">
                   <label class="setting-label">
@@ -954,17 +1129,27 @@
                 </div>
                 <div class="setting-item">
                   <label class="setting-label has-input">
-                    <span class="setting-title" data-i18n="settings.barkAction">Click action</span>
+                    <span class="setting-title" data-i18n="settings.barkAction"
+                      >Click action</span
+                    >
                     <select id="bark-action" class="setting-select">
-                      <option value="none" data-i18n="settings.barkActionNone">No action</option>
-                      <option value="url" data-i18n="settings.barkActionUrl">Open link</option>
-                      <option value="copy" data-i18n="settings.barkActionCopy">Copy content</option>
+                      <option value="none" data-i18n="settings.barkActionNone">
+                        No action
+                      </option>
+                      <option value="url" data-i18n="settings.barkActionUrl">
+                        Open link
+                      </option>
+                      <option value="copy" data-i18n="settings.barkActionCopy">
+                        Copy content
+                      </option>
                     </select>
                   </label>
                 </div>
                 <div class="setting-item">
                   <label class="setting-label has-input">
-                    <span class="setting-title" data-i18n="settings.barkUrlTemplate"
+                    <span
+                      class="setting-title"
+                      data-i18n="settings.barkUrlTemplate"
                       >Click URL template</span
                     >
                     <input
@@ -976,13 +1161,20 @@
                       value=""
                     />
                   </label>
-                  <p class="setting-description" data-i18n="settings.barkUrlTemplateHint">
-                    Used when click action is "Open link" and no explicit URL is supplied. Supports
-                    {task_id} / {event_id} / {base_url} placeholders.
+                  <p
+                    class="setting-description"
+                    data-i18n="settings.barkUrlTemplateHint"
+                  >
+                    Used when click action is "Open link" and no explicit URL is
+                    supplied. Supports {task_id} / {event_id} / {base_url}
+                    placeholders.
                   </p>
                 </div>
                 <div class="setting-item">
-                  <button class="btn btn-secondary" id="test-bark-notification-btn">
+                  <button
+                    class="btn btn-secondary"
+                    id="test-bark-notification-btn"
+                  >
                     <svg
                       class="btn-icon"
                       viewBox="0 0 24 24"
@@ -998,7 +1190,9 @@
                       <polyline points="14 2 14 8 20 8" />
                       <line x1="9" y1="15" x2="15" y2="15" />
                     </svg>
-                    <span data-i18n="settings.testBarkBtn">Test Bark notification</span>
+                    <span data-i18n="settings.testBarkBtn"
+                      >Test Bark notification</span
+                    >
                   </button>
                 </div>
               </div>
@@ -1019,27 +1213,45 @@
                     <line x1="12" y1="16" x2="12" y2="12" />
                     <line x1="12" y1="8" x2="12.01" y2="8" />
                   </svg>
-                  <span data-i18n="settings.statusSection">Status information</span>
+                  <span data-i18n="settings.statusSection"
+                    >Status information</span
+                  >
                 </h5>
                 <div class="status-row">
-                  <span data-i18n="settings.browserSupport">Browser notification support:</span>
-                  <span id="browser-support-status" data-i18n="settings.detecting">Detecting…</span>
-                </div>
-                <div class="status-row">
-                  <span data-i18n="settings.secureContext">Secure context:</span>
-                  <span id="notification-secure-context-status" data-i18n="settings.detecting"
+                  <span data-i18n="settings.browserSupport"
+                    >Browser notification support:</span
+                  >
+                  <span
+                    id="browser-support-status"
+                    data-i18n="settings.detecting"
                     >Detecting…</span
                   >
                 </div>
                 <div class="status-row">
-                  <span data-i18n="settings.notifyPermission">Notification permission:</span>
-                  <span id="notification-permission-status" data-i18n="settings.detecting"
+                  <span data-i18n="settings.secureContext"
+                    >Secure context:</span
+                  >
+                  <span
+                    id="notification-secure-context-status"
+                    data-i18n="settings.detecting"
+                    >Detecting…</span
+                  >
+                </div>
+                <div class="status-row">
+                  <span data-i18n="settings.notifyPermission"
+                    >Notification permission:</span
+                  >
+                  <span
+                    id="notification-permission-status"
+                    data-i18n="settings.detecting"
                     >Detecting…</span
                   >
                 </div>
                 <div class="status-row">
                   <span data-i18n="settings.audioStatus">Audio status:</span>
-                  <span id="audio-status" data-i18n="settings.detecting">Detecting…</span>
+                  <span id="audio-status" data-i18n="settings.detecting"
+                    >Detecting…</span
+                  >
                 </div>
               </div>
 
@@ -1077,7 +1289,9 @@
                       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                     </svg>
-                    <span data-i18n="settings.testDesktopBtn">Test desktop notification</span>
+                    <span data-i18n="settings.testDesktopBtn"
+                      >Test desktop notification</span
+                    >
                   </button>
                 </div>
                 <div class="setting-item">
@@ -1128,7 +1342,9 @@
                     >Interface language</span
                   >
                   <select id="language-select" class="setting-input">
-                    <option value="auto" data-i18n="settings.langAuto">Auto-detect</option>
+                    <option value="auto" data-i18n="settings.langAuto">
+                      Auto-detect
+                    </option>
                     <!-- Endonyms (language self-names) stay untranslated for cross-locale consistency -->
                     <option value="en">English</option>
                     <option value="zh-CN" data-i18n="settings.langZhCN">
@@ -1171,9 +1387,13 @@
                       >
                         <path d="M14 3h7v7" />
                         <path d="M10 14L21 3" />
-                        <path d="M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6" />
+                        <path
+                          d="M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"
+                        />
                       </svg>
-                      <span class="visually-hidden" data-i18n="settings.openConfigInIde"
+                      <span
+                        class="visually-hidden"
+                        data-i18n="settings.openConfigInIde"
                         >Open in IDE</span
                       >
                     </button>
@@ -1207,7 +1427,9 @@
             <div class="setting-group">
               <div class="setting-item">
                 <label class="setting-label has-input">
-                  <span class="setting-title" data-i18n="settings.autoResubmitTimeout"
+                  <span
+                    class="setting-title"
+                    data-i18n="settings.autoResubmitTimeout"
                     >Auto-reschedule countdown (seconds)</span
                   >
                   <input
@@ -1222,16 +1444,22 @@
                   />
                 </label>
                 <div
-                  style="margin-top: 0.3rem; color: var(--text-secondary); font-size: 0.82rem"
+                  style="
+                    margin-top: 0.3rem;
+                    color: var(--text-secondary);
+                    font-size: 0.82rem;
+                  "
                   data-i18n-html="settings.autoResubmitTimeoutHint"
                 >
-                  Automatically resubmit feedback request when countdown expires. Range 10-3600
-                  seconds, set to 0 to disable.
+                  Automatically resubmit feedback request when countdown
+                  expires. Range 10-3600 seconds, set to 0 to disable.
                 </div>
               </div>
               <div class="setting-item">
                 <label class="setting-label has-input">
-                  <span class="setting-title" data-i18n="settings.resubmitPrompt"
+                  <span
+                    class="setting-title"
+                    data-i18n="settings.resubmitPrompt"
                     >Resubmit prompt</span
                   >
                   <textarea
@@ -1243,10 +1471,15 @@
                   ></textarea>
                 </label>
                 <div
-                  style="margin-top: 0.3rem; color: var(--text-secondary); font-size: 0.82rem"
+                  style="
+                    margin-top: 0.3rem;
+                    color: var(--text-secondary);
+                    font-size: 0.82rem;
+                  "
                   data-i18n-html="settings.resubmitPromptHint"
                 >
-                  Content auto-submitted when countdown expires (max 10000 chars).
+                  Content auto-submitted when countdown expires (max 10000
+                  chars).
                 </div>
               </div>
               <div class="setting-item">
@@ -1263,14 +1496,21 @@
                   ></textarea>
                 </label>
                 <div
-                  style="margin-top: 0.3rem; color: var(--text-secondary); font-size: 0.82rem"
+                  style="
+                    margin-top: 0.3rem;
+                    color: var(--text-secondary);
+                    font-size: 0.82rem;
+                  "
                   data-i18n-html="settings.promptSuffixHint"
                 >
                   Appended to every user feedback submission (max 10000 chars).
                 </div>
               </div>
               <div class="setting-item">
-                <button class="btn btn-secondary" id="reset-feedback-config-btn">
+                <button
+                  class="btn btn-secondary"
+                  id="reset-feedback-config-btn"
+                >
                   <svg
                     class="btn-icon"
                     viewBox="0 0 24 24"
@@ -1282,9 +1522,13 @@
                   >
                     <polyline points="1 4 1 10 7 10" />
                     <polyline points="23 20 23 14 17 14" />
-                    <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+                    <path
+                      d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"
+                    />
                   </svg>
-                  <span data-i18n="settings.resetFeedbackConfig">Reset feedback config</span>
+                  <span data-i18n="settings.resetFeedbackConfig"
+                    >Reset feedback config</span
+                  >
                 </button>
               </div>
             </div>
@@ -1305,27 +1549,39 @@
                   d="M6 8h.001M10 8h.001M14 8h.001M18 8h.001M8 12h.001M12 12h.001M16 12h.001M6 16h12"
                 />
               </svg>
-              <span data-i18n="settings.shortcutsSection">Common shortcuts</span>
+              <span data-i18n="settings.shortcutsSection"
+                >Common shortcuts</span
+              >
             </h4>
             <div class="setting-group shortcuts-section">
               <div class="status-row">
-                <span data-i18n="settings.shortcutSubmit">Submit feedback:</span>
+                <span data-i18n="settings.shortcutSubmit"
+                  >Submit feedback:</span
+                >
                 <span id="shortcut-submit">Ctrl+Enter</span>
               </div>
               <div class="status-row">
-                <span data-i18n="settings.shortcutInsertCode">Insert code:</span>
+                <span data-i18n="settings.shortcutInsertCode"
+                  >Insert code:</span
+                >
                 <span id="shortcut-code">Alt+C</span>
               </div>
               <div class="status-row">
-                <span data-i18n="settings.shortcutPasteImage">Paste image:</span>
+                <span data-i18n="settings.shortcutPasteImage"
+                  >Paste image:</span
+                >
                 <span id="shortcut-paste">Ctrl+V</span>
               </div>
               <div class="status-row">
-                <span data-i18n="settings.shortcutUploadImage">Upload image:</span>
+                <span data-i18n="settings.shortcutUploadImage"
+                  >Upload image:</span
+                >
                 <span id="shortcut-upload">Ctrl+U</span>
               </div>
               <div class="status-row">
-                <span data-i18n="settings.shortcutClearImage">Clear images:</span>
+                <span data-i18n="settings.shortcutClearImage"
+                  >Clear images:</span
+                >
                 <span id="shortcut-delete">Delete</span>
               </div>
             </div>
@@ -1366,21 +1622,42 @@
     </div>
 
     <!-- 验证工具类：统一验证和缓存功能 -->
-    <script defer src="/static/js/validation-utils.js" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/validation-utils.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- 🎬 Lottie 动画库（已改为按需懒加载，见 app.js initHourglassAnimation） -->
 
     <!-- 🎨 主题切换模块（defer 属性：按顺序异步加载） -->
-    <script defer src="/static/js/theme.js?v={{ theme_version }}" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/theme.js?v={{ theme_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- ⌨️ 键盘快捷键模块（defer 属性：按顺序异步加载） -->
-    <script defer src="/static/js/keyboard-shortcuts.js" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/keyboard-shortcuts.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- DOM 安全工具：防止 XSS 攻击（defer 属性：按顺序异步加载） -->
-    <script defer src="/static/js/dom-security.js" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/dom-security.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
-    <!-- 统一状态机（window.AIIAState；与 state_machine.py 契约同步，详见 state.js） -->
-    <script defer src="/static/js/state.js" nonce="{{ csp_nonce }}"></script>
+    <!-- 统一状态机（window.AIIAState；与 state_machine.py 契约同步，详见 state.js）
+         R27.2：``?v={{ state_js_version }}`` 让 ``serve_js`` 命中 1 年 immutable 缓存。 -->
+    <script
+      defer
+      src="/static/js/state.js?v={{ state_js_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- 📋 多任务管理模块（defer 属性：按顺序异步加载，依赖内联脚本中的函数） -->
     <script
@@ -1394,8 +1671,13 @@
          R20.12-B: 服务端已知语言时（非 'auto'）把 locale JSON 内联，让 i18n.init() 跳过
          一次 fetch /static/locales/<lang>.json (11 KB / 30-80 ms RTT)。
          注入字符串里的 '<' 会被转义成 '\u003c'，避免 inline JSON 内偶现的 '</script>' 子串
-         提前关闭脚本块（XSS 防御标准做法）。 -->
-    <script defer src="/static/js/i18n.js" nonce="{{ csp_nonce }}"></script>
+         提前关闭脚本块（XSS 防御标准做法）。
+         R27.2：``?v={{ i18n_js_version }}`` 让 ``serve_js`` 命中 1 年 immutable 缓存。 -->
+    <script
+      defer
+      src="/static/js/i18n.js?v={{ i18n_js_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
     {% if inline_locale_json %}
     <script defer nonce="{{ csp_nonce }}">
       window._AIIA_INLINE_LOCALE_LANG = {{ html_lang|tojson }};
@@ -1425,12 +1707,28 @@
     </script>
 
     <!-- 拆分模块（在 app.js 之前加载） -->
-    <script defer src="/static/js/notification-manager.js" nonce="{{ csp_nonce }}"></script>
-    <script defer src="/static/js/settings-manager.js" nonce="{{ csp_nonce }}"></script>
-    <script defer src="/static/js/image-upload.js" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/notification-manager.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
+    <script
+      defer
+      src="/static/js/settings-manager.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
+    <script
+      defer
+      src="/static/js/image-upload.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- 主应用脚本（依赖: 上述所有模块） -->
-    <script defer src="/static/js/app.js?v={{ app_version }}" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/app.js?v={{ app_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
 
     <!-- T1 · C10b: @aiia/tri-state-panel via Import Maps
          importmap 必须出现在所有 <script type="module"> 之前（浏览器规范）。
@@ -1449,6 +1747,10 @@
       nonce="{{ csp_nonce }}"
       src="/static/js/tri-state-panel-loader.js"
     ></script>
-    <script defer src="/static/js/tri-state-panel-bootstrap.js" nonce="{{ csp_nonce }}"></script>
+    <script
+      defer
+      src="/static/js/tri-state-panel-bootstrap.js"
+      nonce="{{ csp_nonce }}"
+    ></script>
   </body>
 </html>

@@ -558,6 +558,7 @@ class TestWebUIStaticResources(unittest.TestCase):
         response = self.client.get("/favicon.ico")
 
         self.assertIn(response.status_code, [200, 204, 404, 302])
+        response.close()
 
     def test_static_images(self):
         """测试静态图片"""

@@ -148,7 +148,7 @@ class TestCliEntrypoints:
 
     def test_check_mode_exits_zero_when_up_to_date(self) -> None:
         proc = subprocess.run(
-            ["uv", "run", "python", str(SCRIPT), "--check"],
+            [sys.executable, str(SCRIPT), "--check"],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -162,7 +162,7 @@ class TestCliEntrypoints:
 
     def test_stdout_mode_prints_dts(self) -> None:
         proc = subprocess.run(
-            ["uv", "run", "python", str(SCRIPT), "--stdout"],
+            [sys.executable, str(SCRIPT), "--stdout"],
             cwd=ROOT,
             capture_output=True,
             text=True,

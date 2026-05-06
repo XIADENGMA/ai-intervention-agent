@@ -16,9 +16,12 @@
 
 #### 方法
 
-##### `get_remaining_time(self) -> int`
+##### `get_remaining_time(self, now_monotonic: float | None = None) -> int`
 
-计算剩余倒计时（使用单调时间）
+计算剩余倒计时（使用单调时间）。
+
+``now_monotonic`` 允许高频列表接口在一次请求内复用同一个时间快照，
+避免每个任务各自调用一次 ``time.monotonic()``。
 
 ##### `get_deadline_monotonic(self) -> float`
 

@@ -53,6 +53,7 @@ import os
 import re
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -129,6 +130,25 @@ class TestCompressFileBrUnit:
         assert result.action == "skipped_fresh"
         assert result.encoding == "br"
         assert result.original_size > 0
+
+    def test_recompresses_when_br_mtime_fresh_but_content_stale(
+        self, tmp_path: Path
+    ) -> None:
+        """``.br`` mtime 看似 fresh 但内容旧时必须重压。"""
+        source = tmp_path / "stable.js"
+        source.write_text("new-content\n" * 1000, encoding="utf-8")
+        br = source.with_suffix(".js.br")
+        assert precompress_static._brotli_mod is not None
+        br.write_bytes(precompress_static._brotli_mod.compress(b"old-content\n" * 1000))
+
+        future = source.stat().st_mtime + 100
+        os.utime(br, (future, future))
+
+        result = precompress_static.compress_file_br(source)
+        assert result.action == "compressed"
+        assert precompress_static._brotli_mod.decompress(br.read_bytes()) == (
+            source.read_bytes()
+        )
 
     def test_skipped_no_gain_for_random_bytes(self, tmp_path: Path) -> None:
         """随机字节流（高 entropy）压缩后 ≥ 原大小 → skipped_no_gain。"""
@@ -385,51 +405,61 @@ class TestSendWithNegotiation:
 
     def test_brotli_preferred_when_supported_and_present(self) -> None:
         client = self.app.test_client()
-        rv = client.get("/css/test.css", headers={"Accept-Encoding": "br, gzip"})
-        assert rv.status_code == 200
-        assert rv.headers.get("Content-Encoding") == "br", (
-            f"client 支持 br + .br 存在时应该优先 br，实际 "
-            f"Content-Encoding={rv.headers.get('Content-Encoding')!r}"
-        )
-        assert "Accept-Encoding" in rv.headers.get("Vary", "")
+        with closing(
+            client.get("/css/test.css", headers={"Accept-Encoding": "br, gzip"})
+        ) as rv:
+            assert rv.status_code == 200
+            assert rv.headers.get("Content-Encoding") == "br", (
+                f"client 支持 br + .br 存在时应该优先 br，实际 "
+                f"Content-Encoding={rv.headers.get('Content-Encoding')!r}"
+            )
+            assert "Accept-Encoding" in rv.headers.get("Vary", "")
 
     def test_gzip_used_when_only_gzip_supported(self) -> None:
         client = self.app.test_client()
-        rv = client.get("/css/test.css", headers={"Accept-Encoding": "gzip"})
-        assert rv.status_code == 200
-        assert rv.headers.get("Content-Encoding") == "gzip"
-        assert "Accept-Encoding" in rv.headers.get("Vary", "")
+        with closing(
+            client.get("/css/test.css", headers={"Accept-Encoding": "gzip"})
+        ) as rv:
+            assert rv.status_code == 200
+            assert rv.headers.get("Content-Encoding") == "gzip"
+            assert "Accept-Encoding" in rv.headers.get("Vary", "")
 
     def test_identity_when_neither_supported(self) -> None:
         client = self.app.test_client()
-        rv = client.get("/css/test.css", headers={"Accept-Encoding": "identity"})
-        assert rv.status_code == 200
-        assert rv.headers.get("Content-Encoding") in (None, "")
-        assert rv.data == self.raw
-        assert "Accept-Encoding" in rv.headers.get("Vary", "")
+        with closing(
+            client.get("/css/test.css", headers={"Accept-Encoding": "identity"})
+        ) as rv:
+            assert rv.status_code == 200
+            assert rv.headers.get("Content-Encoding") in (None, "")
+            assert rv.data == self.raw
+            assert "Accept-Encoding" in rv.headers.get("Vary", "")
 
     def test_identity_when_no_accept_encoding(self) -> None:
         client = self.app.test_client()
-        rv = client.get("/css/test.css")
-        assert rv.status_code == 200
-        # Flask-Compress 这个 app 没装，所以肯定 raw
-        assert rv.headers.get("Content-Encoding") in (None, "")
-        assert rv.data == self.raw
+        with closing(client.get("/css/test.css")) as rv:
+            assert rv.status_code == 200
+            # Flask-Compress 这个 app 没装，所以肯定 raw
+            assert rv.headers.get("Content-Encoding") in (None, "")
+            assert rv.data == self.raw
 
     def test_brotli_q0_falls_back_to_gzip(self) -> None:
         """``br;q=0`` 表示明确拒绝 br → 应降级到 gzip。"""
         client = self.app.test_client()
-        rv = client.get("/css/test.css", headers={"Accept-Encoding": "br;q=0, gzip"})
-        assert rv.status_code == 200
-        assert rv.headers.get("Content-Encoding") == "gzip"
+        with closing(
+            client.get("/css/test.css", headers={"Accept-Encoding": "br;q=0, gzip"})
+        ) as rv:
+            assert rv.status_code == 200
+            assert rv.headers.get("Content-Encoding") == "gzip"
 
     def test_star_accepts_brotli(self) -> None:
         """``*`` 通配符应该被识别为支持 br。"""
         client = self.app.test_client()
-        rv = client.get("/css/test.css", headers={"Accept-Encoding": "*"})
-        assert rv.status_code == 200
-        # 优先级：br 先尝试
-        assert rv.headers.get("Content-Encoding") == "br"
+        with closing(
+            client.get("/css/test.css", headers={"Accept-Encoding": "*"})
+        ) as rv:
+            assert rv.status_code == 200
+            # 优先级：br 先尝试
+            assert rv.headers.get("Content-Encoding") == "br"
 
 
 class TestSendWithFallbackWhenSiblingMissing:
@@ -462,11 +492,13 @@ class TestSendWithFallbackWhenSiblingMissing:
 
     def test_falls_back_to_gzip_when_br_missing(self) -> None:
         client = self.app.test_client()
-        rv = client.get("/js/x.js", headers={"Accept-Encoding": "br, gzip"})
-        assert rv.status_code == 200
-        assert rv.headers.get("Content-Encoding") == "gzip", (
-            ".br 缺失但 .gz 存在 + client 支持两者 → 应降级 gzip"
-        )
+        with closing(
+            client.get("/js/x.js", headers={"Accept-Encoding": "br, gzip"})
+        ) as rv:
+            assert rv.status_code == 200
+            assert rv.headers.get("Content-Encoding") == "gzip", (
+                ".br 缺失但 .gz 存在 + client 支持两者 → 应降级 gzip"
+            )
 
     def test_raw_when_only_br_supported_but_missing(self) -> None:
         """client 只声明支持 br，但 .br 副本缺失 → 服务原文件。
@@ -475,10 +507,10 @@ class TestSendWithFallbackWhenSiblingMissing:
         gzip，所以 gzip 检查失败，最终落到 raw。
         """
         client = self.app.test_client()
-        rv = client.get("/js/x.js", headers={"Accept-Encoding": "br"})
-        assert rv.status_code == 200
-        assert rv.headers.get("Content-Encoding") in (None, "")
-        assert rv.data == self.raw
+        with closing(client.get("/js/x.js", headers={"Accept-Encoding": "br"})) as rv:
+            assert rv.status_code == 200
+            assert rv.headers.get("Content-Encoding") in (None, "")
+            assert rv.data == self.raw
 
 
 # ===========================================================================

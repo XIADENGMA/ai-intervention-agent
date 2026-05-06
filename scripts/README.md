@@ -34,8 +34,8 @@ diverges.
 
 - [`ci_gate.py`](ci_gate.py) — single-entry façade:
   `uv sync` → `ruff format/check` → `ty` → 8× i18n parity gates →
-  `minify_assets.py --check` → `pytest` (optionally
-  `--with-coverage`) → red-team i18n smoke → optional
+  `minify_assets.py` → `precompress_static.py` → `pytest`
+  (optionally `--with-coverage`) → red-team i18n smoke → optional
   `--with-vscode` (npm `vscode:check`). Consumed by both local
   pre-commit loops and `.github/workflows/test.yml`.
 

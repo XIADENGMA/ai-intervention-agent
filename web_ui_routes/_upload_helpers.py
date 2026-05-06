@@ -72,9 +72,8 @@ def extract_uploaded_images(
     限额行为：
         - 累计验证通过的图片数到达 ``MAX_IMAGES_PER_REQUEST`` 时，
           后续 ``image_*`` 字段会被跳过并 WARNING 一次（按字段名）。
-        - 累计原始字节数到达 ``MAX_TOTAL_UPLOAD_BYTES`` 时同样跳过
-          剩余字段（已读入内存的当前文件不会被丢弃，避免拼一半的
-          状态机；下一个字段一开始就拒）。
+        - 累计原始字节数达到或即将超过 ``MAX_TOTAL_UPLOAD_BYTES`` 时跳过
+          当前/后续字段，确保返回的图片总字节数不会越过服务端预算。
     """
     images: list[dict[str, Any]] = []
     total_bytes = 0
@@ -116,6 +115,15 @@ def extract_uploaded_images(
                     f"文件超过单文件上限 ({MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB): "
                     f"{file.filename} - 已读 {len(file_content)} bytes，拒绝"
                 )
+                continue
+            if total_bytes + len(file_content) > MAX_TOTAL_UPLOAD_BYTES:
+                if not cap_logged_bytes:
+                    logger.warning(
+                        f"达到单次请求累计字节上限 "
+                        f"({MAX_TOTAL_UPLOAD_BYTES // (1024 * 1024)} MB)，"
+                        "已丢弃会超过上限的 image_* 字段（深度防御）"
+                    )
+                    cap_logged_bytes = True
                 continue
             validation_result = validate_uploaded_file(
                 file_content, file.filename, file.content_type

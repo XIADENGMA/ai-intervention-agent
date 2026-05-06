@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import gzip
 import unittest
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -125,6 +126,23 @@ class TestCompressFile(unittest.TestCase):
                 "skipped_fresh",
                 "已新鲜的 .gz 不应被重压（避免 CI mtime 漂移）",
             )
+
+    def test_recompresses_when_gz_mtime_fresh_but_content_stale(self) -> None:
+        with TemporaryDirectory() as tmp:
+            p = Path(tmp) / "main.js"
+            p.write_bytes(b"new-content\n" * 1000)
+            gz = p.with_suffix(".js.gz")
+            gz.write_bytes(gzip.compress(b"old-content\n" * 1000, mtime=0))
+
+            # 模拟 git checkout / 缓存恢复后：副本 mtime 看起来更新，但内容来自旧源。
+            future = p.stat().st_mtime + 100
+            import os
+
+            os.utime(gz, (future, future))
+
+            r = precompress.compress_file(p)
+            self.assertEqual(r.action, "compressed")
+            self.assertEqual(gzip.decompress(gz.read_bytes()), p.read_bytes())
 
     def test_recompresses_when_source_newer(self) -> None:
         import os
@@ -322,40 +340,46 @@ class TestSendWithOptionalGzip(unittest.TestCase):
     def test_gzip_accepted_returns_compressed_with_correct_headers(self) -> None:
         app = self._make_app()
         client = app.test_client()
-        resp = client.get("/static/js/fixture.js", headers={"Accept-Encoding": "gzip"})
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.headers.get("Content-Encoding"), "gzip")
-        # Content-Type 必须是 JS，不是 application/gzip
-        self.assertEqual(
-            resp.headers.get("Content-Type", "").split(";")[0],
-            "application/javascript",
-        )
-        # Vary 必须包含 Accept-Encoding
-        self.assertIn("Accept-Encoding", resp.headers.get("Vary", ""))
-        # body 必须是预压缩的字节，不是原始 JS
-        self.assertEqual(resp.data, self.compressed_content)
-        # 反向验证：解压后等于原文
-        self.assertEqual(gzip.decompress(resp.data), self.original_content)
+        with closing(
+            client.get("/static/js/fixture.js", headers={"Accept-Encoding": "gzip"})
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.headers.get("Content-Encoding"), "gzip")
+            # Content-Type 必须是 JS，不是 application/gzip
+            self.assertEqual(
+                resp.headers.get("Content-Type", "").split(";")[0],
+                "application/javascript",
+            )
+            # Vary 必须包含 Accept-Encoding
+            self.assertIn("Accept-Encoding", resp.headers.get("Vary", ""))
+            # body 必须是预压缩的字节，不是原始 JS
+            self.assertEqual(resp.data, self.compressed_content)
+            # 反向验证：解压后等于原文
+            self.assertEqual(gzip.decompress(resp.data), self.original_content)
 
     def test_no_gzip_in_accept_encoding_returns_uncompressed(self) -> None:
         app = self._make_app()
         client = app.test_client()
-        resp = client.get("/static/js/fixture.js", headers={"Accept-Encoding": "br"})
-        self.assertEqual(resp.status_code, 200)
-        self.assertNotEqual(resp.headers.get("Content-Encoding"), "gzip")
-        self.assertEqual(resp.data, self.original_content)
-        # 即使没用 gzip，Vary 仍要打（CDN 才能正确分桶）
-        self.assertIn("Accept-Encoding", resp.headers.get("Vary", ""))
+        with closing(
+            client.get("/static/js/fixture.js", headers={"Accept-Encoding": "br"})
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            self.assertNotEqual(resp.headers.get("Content-Encoding"), "gzip")
+            self.assertEqual(resp.data, self.original_content)
+            # 即使没用 gzip，Vary 仍要打（CDN 才能正确分桶）
+            self.assertIn("Accept-Encoding", resp.headers.get("Vary", ""))
 
     def test_no_gz_sibling_falls_back_to_uncompressed(self) -> None:
         # client 接受 gzip，但 .gz sibling 不存在 → 透明 fallback
         app = self._make_app()
         client = app.test_client()
-        resp = client.get("/static/js/no_gz.js", headers={"Accept-Encoding": "gzip"})
-        self.assertEqual(resp.status_code, 200)
-        # flask-compress 在测试 app 里没启，所以 Content-Encoding 应为 None
-        self.assertNotEqual(resp.headers.get("Content-Encoding"), "gzip")
-        self.assertEqual(resp.data, self.original_content)
+        with closing(
+            client.get("/static/js/no_gz.js", headers={"Accept-Encoding": "gzip"})
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            # flask-compress 在测试 app 里没启，所以 Content-Encoding 应为 None
+            self.assertNotEqual(resp.headers.get("Content-Encoding"), "gzip")
+            self.assertEqual(resp.data, self.original_content)
 
 
 class TestStaticRoutesIntegration(unittest.TestCase):
@@ -386,33 +410,37 @@ class TestStaticRoutesIntegration(unittest.TestCase):
     def test_serve_js_sends_gz_when_accept_encoding_gzip(self) -> None:
         ui = self._make_ui()
         client = ui.app.test_client()
-        resp = client.get(
-            f"/static/js/{self.sample_basename}",
-            headers={"Accept-Encoding": "gzip"},
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(
-            resp.headers.get("Content-Encoding"),
-            "gzip",
-            f"GET /static/js/{self.sample_basename} with Accept-Encoding: gzip 必须返回预压缩",
-        )
-        # body 是预压缩字节
-        self.assertEqual(resp.data, self.sample_gz.read_bytes())
+        with closing(
+            client.get(
+                f"/static/js/{self.sample_basename}",
+                headers={"Accept-Encoding": "gzip"},
+            )
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(
+                resp.headers.get("Content-Encoding"),
+                "gzip",
+                f"GET /static/js/{self.sample_basename} with Accept-Encoding: gzip 必须返回预压缩",
+            )
+            # body 是预压缩字节
+            self.assertEqual(resp.data, self.sample_gz.read_bytes())
 
     def test_serve_js_decompresses_to_match_original(self) -> None:
         ui = self._make_ui()
         client = ui.app.test_client()
-        resp = client.get(
-            f"/static/js/{self.sample_basename}",
-            headers={"Accept-Encoding": "gzip"},
-        )
-        decompressed = gzip.decompress(resp.data)
-        original = (REPO_ROOT / "static" / "js" / self.sample_basename).read_bytes()
-        self.assertEqual(
-            decompressed,
-            original,
-            "预压缩 .gz 解压后必须与原文 byte-identical（precompress 逻辑正确性）",
-        )
+        with closing(
+            client.get(
+                f"/static/js/{self.sample_basename}",
+                headers={"Accept-Encoding": "gzip"},
+            )
+        ) as resp:
+            decompressed = gzip.decompress(resp.data)
+            original = (REPO_ROOT / "static" / "js" / self.sample_basename).read_bytes()
+            self.assertEqual(
+                decompressed,
+                original,
+                "预压缩 .gz 解压后必须与原文 byte-identical（precompress 逻辑正确性）",
+            )
 
     def test_serve_js_no_accept_encoding_returns_uncompressed(self) -> None:
         ui = self._make_ui()
@@ -420,54 +448,58 @@ class TestStaticRoutesIntegration(unittest.TestCase):
         # 显式不带 Accept-Encoding，让 _client_accepts_gzip 走否定分支。
         # ``flask-compress`` 在 ``WebFeedbackUI`` 里启用，但它只在
         # ``Accept-Encoding`` 包含 gzip 时才压缩，不会和我们的协商打架。
-        resp = client.get(
-            f"/static/js/{self.sample_basename}",
-            headers={"Accept-Encoding": "identity"},
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertNotEqual(
-            resp.headers.get("Content-Encoding"),
-            "gzip",
-            "identity-only 客户端不应收到 gzip body",
-        )
+        with closing(
+            client.get(
+                f"/static/js/{self.sample_basename}",
+                headers={"Accept-Encoding": "identity"},
+            )
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            self.assertNotEqual(
+                resp.headers.get("Content-Encoding"),
+                "gzip",
+                "identity-only 客户端不应收到 gzip body",
+            )
 
     def test_serve_locales_route_exists_and_returns_json(self) -> None:
         # R20.14-D 新增的 /static/locales/<filename>.json 路由
         ui = self._make_ui()
         client = ui.app.test_client()
-        resp = client.get(
-            "/static/locales/en.json", headers={"Accept-Encoding": "gzip"}
-        )
-        self.assertEqual(resp.status_code, 200)
-        # 必须是 JSON Content-Type（哪怕走的是 .gz 路径）
-        self.assertIn(
-            "application/json",
-            resp.headers.get("Content-Type", ""),
-            "locales 路由必须返回 application/json，不是 application/gzip",
-        )
+        with closing(
+            client.get("/static/locales/en.json", headers={"Accept-Encoding": "gzip"})
+        ) as resp:
+            self.assertEqual(resp.status_code, 200)
+            # 必须是 JSON Content-Type（哪怕走的是 .gz 路径）
+            self.assertIn(
+                "application/json",
+                resp.headers.get("Content-Type", ""),
+                "locales 路由必须返回 application/json，不是 application/gzip",
+            )
 
     def test_serve_locales_rejects_non_json(self) -> None:
         ui = self._make_ui()
         client = ui.app.test_client()
-        resp = client.get("/static/locales/evil.txt")
-        self.assertEqual(
-            resp.status_code,
-            404,
-            "locales 路由必须只接受 .json，避免意外暴露其他扩展名",
-        )
+        with closing(client.get("/static/locales/evil.txt")) as resp:
+            self.assertEqual(
+                resp.status_code,
+                404,
+                "locales 路由必须只接受 .json，避免意外暴露其他扩展名",
+            )
 
     def test_vary_header_set_on_compressed_response(self) -> None:
         ui = self._make_ui()
         client = ui.app.test_client()
-        resp = client.get(
-            f"/static/js/{self.sample_basename}",
-            headers={"Accept-Encoding": "gzip"},
-        )
-        self.assertIn(
-            "Accept-Encoding",
-            resp.headers.get("Vary", ""),
-            "Vary: Accept-Encoding 必须打，否则 CDN 会跨客户端错误分桶",
-        )
+        with closing(
+            client.get(
+                f"/static/js/{self.sample_basename}",
+                headers={"Accept-Encoding": "gzip"},
+            )
+        ) as resp:
+            self.assertIn(
+                "Accept-Encoding",
+                resp.headers.get("Vary", ""),
+                "Vary: Accept-Encoding 必须打，否则 CDN 会跨客户端错误分桶",
+            )
 
 
 class TestSourceInvariants(unittest.TestCase):
@@ -511,6 +543,23 @@ class TestSourceInvariants(unittest.TestCase):
         # 防御：SKIP_EXTENSIONS 必须包含 .gz，否则会出现 .gz.gz 嵌套
         src = self.PRECOMP_PATH.read_text(encoding="utf-8")
         self.assertIn('".gz"', src, "SKIP_EXTENSIONS 必须包含 .gz 防嵌套")
+
+    def test_ci_gate_precompresses_after_minify_before_pytest(self) -> None:
+        """CI gate 更新 .min 后必须重生 .gz/.br，再进入 pytest。"""
+        src = (REPO_ROOT / "scripts" / "ci_gate.py").read_text(encoding="utf-8")
+        minify_idx = src.find('"scripts/minify_assets.py"')
+        precompress_idx = src.find('"scripts/precompress_static.py"')
+        pytest_idx = src.find('pytest_cmd = ["uv", "run", "pytest"')
+
+        self.assertGreaterEqual(minify_idx, 0, "ci_gate 必须先运行 minify_assets.py")
+        self.assertGreaterEqual(
+            precompress_idx,
+            0,
+            "ci_gate 必须在 pytest 前运行 precompress_static.py，避免 stale .gz",
+        )
+        self.assertGreaterEqual(pytest_idx, 0, "ci_gate 必须声明 pytest_cmd")
+        self.assertLess(minify_idx, precompress_idx)
+        self.assertLess(precompress_idx, pytest_idx)
 
     def test_static_helper_sets_vary_header(self) -> None:
         src = self.STATIC_PATH.read_text(encoding="utf-8")

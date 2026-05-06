@@ -1254,6 +1254,25 @@ class WebFeedbackUI(
             ),
             "theme_version": _compute_file_version(str(static_dir / "js" / "theme.js")),
             "app_version": _compute_file_version(str(static_dir / "js" / "app.js")),
+            # R27.2: 给 i18n.js / state.js / marked.js / prism.min.js 也加上版本号查询
+            # 串，模板中下游 ``<link rel="preload">`` 与 ``<script defer>`` 一起统一带
+            # ``?v={{ ... }}``，从 ``serve_js`` 的 ``Cache-Control: public, max-age=3600``
+            # （1 小时短缓存）升级到 ``public, max-age=31536000, immutable``（1 年永久
+            # 缓存），重复打开 web_ui 不再走 304 revalidation 往返。每个 ``_compute_file_version``
+            # 调用是 ``Path.stat()`` + ``str`` 截取，命中率 100% 的 ``lru_cache(maxsize=64)``
+            # 加持下 4 次新增成本 < 1 µs。
+            "i18n_js_version": _compute_file_version(
+                str(static_dir / "js" / "i18n.js")
+            ),
+            "state_js_version": _compute_file_version(
+                str(static_dir / "js" / "state.js")
+            ),
+            "marked_js_version": _compute_file_version(
+                str(static_dir / "js" / "marked.js")
+            ),
+            "prism_min_js_version": _compute_file_version(
+                str(static_dir / "js" / "prism.min.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 

@@ -23,7 +23,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # 必须在 sys.path 调整后再 import；与 tests/test_i18n_duplicate_values.py 同形。
-from scripts.minify_assets import content_drifts, needs_minification
+from scripts.minify_assets import content_drifts, needs_minification, process_directory
 
 
 def _identity(content: str) -> str:
@@ -131,6 +131,34 @@ class TestNeedsMinificationIsHeuristicOnly(unittest.TestCase):
         os.utime(src, (new_time, new_time))
         self.assertTrue(needs_minification(src, dst))
         self.assertFalse(content_drifts(src, dst, _identity))
+
+
+class TestDefaultMinifyRepairsContentDrift(unittest.TestCase):
+    """默认生成模式也要修复内容漂移，不能只依赖 mtime 启发式。"""
+
+    def setUp(self) -> None:
+        self._tmp_ctx = TemporaryDirectory()
+        self.tmp = Path(self._tmp_ctx.name)
+        self.addCleanup(self._tmp_ctx.cleanup)
+
+    def test_default_mode_repairs_drift_even_when_dst_mtime_is_newer(self) -> None:
+        src = self.tmp / "a.js"
+        dst = self.tmp / "a.min.js"
+        src.write_text("body", encoding="utf-8")
+        dst.write_text("stale", encoding="utf-8")
+
+        old_time = time.time() - 3600
+        new_time = time.time()
+        os.utime(src, (old_time, old_time))
+        os.utime(dst, (new_time, new_time))
+
+        process_directory(self.tmp, "js", _uppercase, check_only=False, force=False)
+
+        self.assertEqual(
+            dst.read_text(encoding="utf-8"),
+            "BODY",
+            "默认生成模式不能只看 mtime；否则 --check 发现的内容漂移无法被普通生成修复",
+        )
 
 
 if __name__ == "__main__":

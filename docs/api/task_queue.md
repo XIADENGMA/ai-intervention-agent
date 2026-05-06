@@ -10,7 +10,7 @@
 
 #### Methods
 
-##### `get_remaining_time(self) -> int`
+##### `get_remaining_time(self, now_monotonic: float | None = None) -> int`
 
 ##### `get_deadline_monotonic(self) -> float`
 

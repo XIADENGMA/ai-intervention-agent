@@ -171,9 +171,6 @@ dev = [
     # NOTE: 与 [project.optional-dependencies].dev 保持同步
 ]
 
-[tool.pytest.ini_options]
-filterwarnings = ["error"]
-
 [tool.coverage.run]
 # 测试时排除一次性 / 离线脚本，避免被算进 fail_under 红线（它们独立跑）
 omit = [

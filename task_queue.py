@@ -52,8 +52,12 @@ class Task(BaseModel):
     result: dict[str, Any] | None = None
     completed_at: datetime | None = None
 
-    def get_remaining_time(self) -> int:
-        """计算剩余倒计时（使用单调时间）"""
+    def get_remaining_time(self, now_monotonic: float | None = None) -> int:
+        """计算剩余倒计时（使用单调时间）。
+
+        ``now_monotonic`` 允许高频列表接口在一次请求内复用同一个时间快照，
+        避免每个任务各自调用一次 ``time.monotonic()``。
+        """
         if self.status == TaskStatus.COMPLETED:
             return 0
 
@@ -62,7 +66,8 @@ class Task(BaseModel):
             return 0
 
         # 【优化】使用单调时间计算，不受系统时间调整影响
-        elapsed = time.monotonic() - self.created_at_monotonic
+        now = time.monotonic() if now_monotonic is None else now_monotonic
+        elapsed = now - self.created_at_monotonic
         remaining = self.auto_resubmit_timeout - elapsed
 
         # 确保返回值在合理范围内

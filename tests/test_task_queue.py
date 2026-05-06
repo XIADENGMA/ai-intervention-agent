@@ -874,6 +874,22 @@ class TestTaskDataclassEdges(unittest.TestCase):
         task.status = "active"
         self.assertEqual(task.get_remaining_time(), 0)
 
+    def test_get_remaining_time_accepts_monotonic_snapshot(self):
+        """高频列表接口可传入同一个 monotonic 快照，避免每个任务重复读时钟。"""
+        task = Task(
+            task_id="t-snapshot",
+            prompt="p",
+            auto_resubmit_timeout=60,
+            created_at_monotonic=100.0,
+        )
+        task.status = "active"
+
+        with patch(
+            "task_queue.time.monotonic",
+            side_effect=AssertionError("不应读取全局 monotonic"),
+        ):
+            self.assertEqual(task.get_remaining_time(now_monotonic=115.2), 44)
+
     def test_get_deadline_monotonic_disabled(self):
         task = Task(task_id="t3", prompt="p", auto_resubmit_timeout=0)
         self.assertEqual(task.get_deadline_monotonic(), float("inf"))

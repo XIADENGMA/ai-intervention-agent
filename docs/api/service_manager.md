@@ -32,7 +32,7 @@
 
 ### `update_web_content(summary: str, predefined_options: list[str] | None, task_id: str | None, auto_resubmit_timeout: int, config: WebUIConfig) -> None`
 
-### `async ensure_web_ui_running(config: WebUIConfig) -> None`
+### `async ensure_web_ui_running(config: WebUIConfig, client: Any | None = None) -> None`
 
 ### `cleanup_http_clients() -> None`
 

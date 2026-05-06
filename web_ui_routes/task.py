@@ -66,6 +66,13 @@ class _SSEBus:
             self._subscribers.discard(q)
 
     def emit(self, event_type: str, data: dict | None = None) -> None:
+        # R27.4：无订阅者时直接返回，避免状态变更在无人消费时仍做 JSON 序列化。
+        # snapshot 必须仍在锁内完成，保持 subscribe/unsubscribe 并发语义。
+        with self._lock:
+            snapshot = list(self._subscribers)
+        if not snapshot:
+            return
+
         # R20.14-C：单次预序列化复用给所有订阅者
         # ----------------------------------------------------------------
         # 历史实现里每个 SSE generator 在 yield 前自己做一次
@@ -96,9 +103,6 @@ class _SSEBus:
         # 多 producer 场景里几乎无竞争。
         # 语义保持：snapshot 之后新加入的订阅者不会收到本条事件——这与原实现
         # 「subscribe() 必须等 emit() 释放锁后才能进入 set」是同一行为。
-        with self._lock:
-            snapshot = list(self._subscribers)
-
         dead: list[queue.Queue] = []
         for q in snapshot:
             try:
@@ -351,10 +355,11 @@ class TaskRoutesMixin:
                 tasks, stats = task_queue.get_all_tasks_with_stats()
 
                 server_time = time.time()
+                now_monotonic = time.monotonic()
 
                 task_list = []
                 for task in tasks:
-                    remaining = task.get_remaining_time()
+                    remaining = task.get_remaining_time(now_monotonic=now_monotonic)
                     task_list.append(
                         {
                             "task_id": task.task_id,
@@ -689,7 +694,8 @@ class TaskRoutesMixin:
                     return jsonify({"success": False, "error": "任务不存在"}), 404
 
                 server_time = time.time()
-                remaining = task.get_remaining_time()
+                now_monotonic = time.monotonic()
+                remaining = task.get_remaining_time(now_monotonic=now_monotonic)
 
                 return jsonify(
                     {

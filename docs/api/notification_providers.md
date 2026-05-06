@@ -14,6 +14,10 @@
 
 ## Classes
 
+### `class _LazyHttpx`
+
+#### Methods
+
 ### `class _BarkSafeFormatDict`
 
 #### Methods

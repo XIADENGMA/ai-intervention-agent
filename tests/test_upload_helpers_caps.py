@@ -181,6 +181,29 @@ class TestUploadHelperByteCap(unittest.TestCase):
         finally:
             _upload_helpers.MAX_TOTAL_UPLOAD_BYTES = original
 
+    def test_byte_cap_rejects_file_that_would_cross_limit(self) -> None:
+        """当前文件会让累计字节超过上限时，应拒绝当前文件而不是越线接受。"""
+        original = _upload_helpers.MAX_TOTAL_UPLOAD_BYTES
+        try:
+            # 第 1 张后尚未达到上限；第 2 张如果被接受会超过总字节上限。
+            _upload_helpers.MAX_TOTAL_UPLOAD_BYTES = 2 * len(_TINY_PNG) - 1
+
+            files = {
+                "image_a": _make_mock_file("a.png", _TINY_PNG),
+                "image_b": _make_mock_file("b.png", _TINY_PNG),
+            }
+            request = _make_mock_request(files)
+            result = extract_uploaded_images(request)
+
+            self.assertEqual(
+                len(result),
+                1,
+                "累计字节上限应约束 total_bytes + 当前文件大小；"
+                "不能只在进入循环前检查 total_bytes >= cap",
+            )
+        finally:
+            _upload_helpers.MAX_TOTAL_UPLOAD_BYTES = original
+
 
 class TestUploadHelperBoundaryNotes(unittest.TestCase):
     """读取代码确认两个限额都通过 ``continue`` 而非 ``break`` 跳过——

@@ -4,7 +4,7 @@
 
 ## Functions
 
-### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None`
+### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`
 
 ### `async wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]`
 

@@ -39,9 +39,9 @@ R20.11 实施：``run()`` 启动后台 daemon 线程跑 ``_start_mdns_if_needed`
 
 4. **集成测试（subprocess-isolated 端到端）**
    - 完整 ``subprocess.Popen([python, '-u', web_ui.py])`` 到 socket
-     可连接的 wall time 必须 < 600 ms（保留 3× R20.11 中位数的余量
-     应对 CI 环境抖动；R20.10 baseline 是 1922 ms，任何回归都会被这条
-     测试 fire on）
+     可连接的 wall time 必须 < 1200 ms（R20.11 本地中位数约 200 ms；
+     GitHub Actions Python 3.13 + coverage 曾实测 ~730 ms。1200 ms 仍显著低于
+     R20.10 同步 mDNS baseline 1922 ms，能抓住“又同步化”的回归）
 """
 
 from __future__ import annotations
@@ -342,14 +342,15 @@ class TestEndToEndSpawnToListenLatency(unittest.TestCase):
             s.bind(("127.0.0.1", 0))
             return s.getsockname()[1]
 
-    def test_spawn_to_listen_under_600ms(self) -> None:
-        """端到端冷启动到 socket listen 必须 < 600 ms
+    def test_spawn_to_listen_under_1200ms(self) -> None:
+        """端到端冷启动到 socket listen 必须 < 1200 ms
 
-        预期实测中位数 ~200 ms（R20.11 后），上限 600 ms 为 3× 余量应对 CI 抖动。
-        如果这条测试失败，说明 mDNS 又被同步化了，或 web_ui import 时间又涨了。
+        预期实测中位数 ~200 ms（R20.11 后）；GitHub Actions Python 3.13 + coverage
+        曾出现 ~730 ms 的冷启动。1200 ms 仍低于 R20.10 同步 mDNS baseline，
+        能继续拦住 mDNS 又被同步化或 web_ui import 大幅回退。
 
         R20.10 baseline: 1922 ms（mDNS conflict-probe 同步阻塞 ~1.7s）
-        R20.11 target:   ≤ 600 ms（mDNS 异步发布，不阻塞 listen）
+        R20.11 target:   ≤ 1200 ms（mDNS 异步发布，不阻塞 listen）
         """
         port = self._free_port()
         env = {**os.environ, "AI_INTERVENTION_AGENT_NO_BROWSER": "1"}
@@ -389,10 +390,10 @@ class TestEndToEndSpawnToListenLatency(unittest.TestCase):
             assert elapsed_ms is not None
             self.assertLess(
                 elapsed_ms,
-                600.0,
-                f"spawn-to-listen 实测 {elapsed_ms:.1f} ms 超过 600 ms 上限——"
-                f"R20.11 baseline 是 ~200 ms 中位数；600 ms 是 3× 余量。"
-                f"如果实测 > 600 ms，最可能原因是 mDNS 被同步化了"
+                1200.0,
+                f"spawn-to-listen 实测 {elapsed_ms:.1f} ms 超过 1200 ms 上限——"
+                f"R20.11 baseline 是 ~200 ms 中位数；1200 ms 已包含 CI 抖动余量。"
+                f"如果实测 > 1200 ms，最可能原因是 mDNS 被同步化了"
                 f"（run() 中 _start_mdns_if_needed 又被裸调用而非 Thread target）",
             )
         finally:

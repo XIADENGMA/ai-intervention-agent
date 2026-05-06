@@ -122,6 +122,15 @@ class TestSSEBusPreSerialization(unittest.TestCase):
         payload = q.get_nowait()
         self.assertEqual(payload["_serialized"], "{}")
 
+    def test_emit_without_subscribers_skips_serialization(self) -> None:
+        """没有 SSE 订阅者时，emit 不应为无人消费的事件做 JSON 序列化。"""
+        bus = _SSEBus()
+        with patch(
+            "web_ui_routes.task.json.dumps",
+            side_effect=AssertionError("无订阅者时不应序列化"),
+        ):
+            bus.emit("task_changed", {"task_id": "nobody"})
+
 
 class TestSSEBusLockTightening(unittest.TestCase):
     """``emit`` 临界区改造：put_nowait 必须在锁外，emit 不能阻塞 subscribe。"""

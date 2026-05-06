@@ -26,7 +26,7 @@ httpx.AsyncClient | None = None`` 等模块级注解，所以保留 TYPE_CHECKIN
 
 ## 函数
 
-### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None`
+### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`
 
 R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
 
@@ -55,6 +55,9 @@ web_ui ``task_queue.remove_task(task_id)``，让 active 槽腾出来。
 因为父协程已经在 timeout / cancel 通道，cleanup 不该把它进一步阻塞。
 ``CancelledError`` 必须 re-raise，否则父 cancel 语义被吞，asyncio
 loop 关闭时会 warn。
+
+``client`` 用于 ``wait_for_task_completion`` 热路径复用已创建的
+AsyncClient；留空时保持历史行为，便于单测和旧调用方直接使用本 helper。
 
 ### `async wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str, Any]`
 

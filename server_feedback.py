@@ -80,7 +80,12 @@ _POLL_INTERVAL_FAST_S = 2.0
 _POLL_INTERVAL_SAFETY_NET_S = 30.0
 
 
-async def _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> None:
+async def _close_orphan_task_best_effort(
+    task_id: str,
+    host: str,
+    port: int,
+    client: Any | None = None,
+) -> None:
     """R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
 
     历史教训：``wait_for_task_completion`` 在 ``TimeoutError`` 路径仅返回
@@ -108,11 +113,15 @@ async def _close_orphan_task_best_effort(task_id: str, host: str, port: int) -> 
     因为父协程已经在 timeout / cancel 通道，cleanup 不该把它进一步阻塞。
     ``CancelledError`` 必须 re-raise，否则父 cancel 语义被吞，asyncio
     loop 关闭时会 warn。
+
+    ``client`` 用于 ``wait_for_task_completion`` 热路径复用已创建的
+    AsyncClient；留空时保持历史行为，便于单测和旧调用方直接使用本 helper。
     """
     close_url = f"http://{host}:{port}/api/tasks/{task_id}/close"
     try:
-        cfg = service_manager.get_web_ui_config()[0]
-        client = service_manager.get_async_client(cfg)
+        if client is None:
+            cfg = service_manager.get_web_ui_config()[0]
+            client = service_manager.get_async_client(cfg)
         # 2s timeout：足够 LAN/loopback 内一次 close；远超肯定是 web_ui 死了，
         # best-effort 放手即可。
         resp = await client.post(close_url, timeout=2)
@@ -164,6 +173,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     target_host = server_config.get_target_host(config.host)
     api_url = f"http://{target_host}:{config.port}/api/tasks/{task_id}"
     sse_url = f"http://{target_host}:{config.port}/api/events"
+    http_client = service_manager.get_async_client(config)
 
     start_time_monotonic = time.monotonic()
     effective_timeout: float | None = float(timeout) if timeout > 0 else None
@@ -184,9 +194,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     async def _fetch_result() -> dict[str, Any] | None:
         """获取已完成任务的结果，404 返回重调提示。"""
         try:
-            cfg = service_manager.get_web_ui_config()[0]
-            client = service_manager.get_async_client(cfg)
-            resp = await client.get(api_url, timeout=2)
+            resp = await http_client.get(api_url, timeout=2)
             if resp.status_code == 404:
                 return server_config._make_resubmit_response(as_mcp=False)
             if resp.status_code == 200:
@@ -244,9 +252,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         import httpx
 
         try:
-            cfg = service_manager.get_web_ui_config()[0]
-            sc = service_manager.get_async_client(cfg)
-            async with sc.stream(
+            async with http_client.stream(
                 "GET", sse_url, timeout=httpx.Timeout(None, connect=5.0)
             ) as resp:
                 logger.debug(f"SSE 连接已建立: {task_id}")
@@ -347,7 +353,9 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         # completed 了，再 close 是 race（且后台 cleanup 线程会在 10s
         # 后 GC，不需要重复操作）。
         if result_box[0] is None:
-            await _close_orphan_task_best_effort(task_id, target_host, config.port)
+            await _close_orphan_task_best_effort(
+                task_id, target_host, config.port, client=http_client
+            )
 
     if result_box[0] is not None:
         logger.info(f"任务完成: {task_id}")
@@ -745,16 +753,16 @@ async def interactive_feedback(
 
         # 获取配置
         config, auto_resubmit_timeout = service_manager.get_web_ui_config()
+        client = service_manager.get_async_client(config)
 
         # 确保 Web UI 正在运行
-        await service_manager.ensure_web_ui_running(config)
+        await service_manager.ensure_web_ui_running(config, client=client)
 
         # 通过 HTTP API 添加任务
         target_host = server_config.get_target_host(config.host)
         api_url = f"http://{target_host}:{config.port}/api/tasks"
 
         try:
-            client = service_manager.get_async_client(config)
             response = await client.post(
                 api_url,
                 json={

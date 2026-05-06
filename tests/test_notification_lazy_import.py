@@ -136,6 +136,36 @@ class TestImportDecoupling(unittest.TestCase):
             "通知模块依赖链中最重的单点（含 httpcore / connection_pool / rich.console）",
         )
 
+    def test_loading_notification_providers_does_not_load_httpx(self) -> None:
+        """导入 provider 模块本身不应加载 httpx；只有 Bark provider 首次使用才需要。"""
+        out = self._run_in_subprocess(
+            "import sys\n"
+            "import notification_providers  # noqa: F401\n"
+            "print('LOADED' if 'httpx' in sys.modules else 'NOT_LOADED')\n"
+        )
+        last = out.splitlines()[-1] if out else ""
+        self.assertEqual(
+            last,
+            "NOT_LOADED",
+            "import notification_providers 不应立刻加载 httpx；Web/Sound/System "
+            "provider 不需要 HTTP transport，Bark 首次使用时再加载即可",
+        )
+
+    def test_bark_provider_first_use_loads_httpx(self) -> None:
+        """访问 Bark provider 的 HTTP transport 时才真正加载 httpx。"""
+        out = self._run_in_subprocess(
+            "import sys\n"
+            "from notification_manager import NotificationConfig\n"
+            "from notification_providers import BarkNotificationProvider\n"
+            "before = 'httpx' in sys.modules\n"
+            "provider = BarkNotificationProvider(NotificationConfig())\n"
+            "after = 'httpx' in sys.modules\n"
+            "provider.close()\n"
+            "print(f'BEFORE={before} AFTER={after}')\n"
+        )
+        last = out.splitlines()[-1] if out else ""
+        self.assertEqual(last, "BEFORE=False AFTER=True")
+
     def test_loading_full_web_ui_does_not_load_notification_manager(self) -> None:
         """端到端验证：完整 import web_ui 也不应触发通知模块加载"""
         out = self._run_in_subprocess(

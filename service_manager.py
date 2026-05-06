@@ -1044,12 +1044,22 @@ def update_web_content(
         raise ServiceConnectionError(f"更新 Web 内容失败: {e}", code="unknown") from e
 
 
-async def ensure_web_ui_running(config: WebUIConfig) -> None:
-    """检查并自动启动 Web UI 服务（异步）"""
+async def ensure_web_ui_running(
+    config: WebUIConfig,
+    client: Any | None = None,
+) -> None:
+    """检查并自动启动 Web UI 服务（异步）。
+
+    ``client`` 允许 ``interactive_feedback`` 复用本次调用已取出的
+    AsyncClient，避免健康检查和后续 POST /api/tasks 分别做一次
+    singleton lookup；未传入时保持历史行为。
+    """
     try:
         target_host = get_target_host(config.host)
-        client = get_async_client(config)
-        response = await client.get(
+        health_client = client
+        if health_client is None or getattr(health_client, "is_closed", False) is True:
+            health_client = get_async_client(config)
+        response = await health_client.get(
             f"http://{target_host}:{config.port}/api/health",
             timeout=2,
         )
