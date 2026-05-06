@@ -7,6 +7,9 @@ warning 噪声并提高 CI 可复现性。
 
 harden-runner 会查询当前 workflow run 元数据；使用它的 workflow 至少应给
 `actions: read`，避免只读 token 权限过窄时第三方审计 Action 退化出 API 噪声。
+
+Release workflow 中未配置可选发布密钥是正常降级路径，应显示为 notice，
+不能用 warning annotation 污染成功发布记录。
 """
 
 from __future__ import annotations
@@ -60,3 +63,11 @@ def test_harden_runner_workflows_grant_actions_read() -> None:
             f"{workflow} 使用 harden-runner 时应授予 actions: read，"
             "避免 run metadata 查询退化为有噪声的 API 路径"
         )
+
+
+def test_release_optional_marketplace_skips_use_notice_not_warning() -> None:
+    text = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "::warning::VSCE_PAT secret not configured" not in text
+    assert "::warning::OPEN_VSX_TOKEN secret not configured" not in text
+    assert "::notice::VSCE_PAT secret not configured" in text
+    assert "::notice::OPEN_VSX_TOKEN secret not configured" in text

@@ -212,7 +212,7 @@ jobs:
         if: env.VSCE_PAT == ''
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: echo "::warning::VSCE_PAT secret not configured, skipping VS Code Marketplace publish"
+        run: echo "::notice::VSCE_PAT secret not configured, skipping VS Code Marketplace publish"
 
   open-vsx:
     name: Publish VSCode Extension to Open VSX
@@ -252,4 +252,4 @@ jobs:
         if: env.OVSX_TOKEN == ''
         env:
           OVSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
-        run: echo "::warning::OPEN_VSX_TOKEN secret not configured, skipping Open VSX publish"
+        run: echo "::notice::OPEN_VSX_TOKEN secret not configured, skipping Open VSX publish"
