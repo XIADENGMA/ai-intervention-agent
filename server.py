@@ -286,6 +286,58 @@ interactive_feedback = mcp.tool(
     version=_resolve_server_version(),
 )(_interactive_feedback_impl)
 
+# R37 FastMCP 最佳实践：注册 ErrorHandlingMiddleware
+# ===================================================
+#
+# 缘由：FastMCP 3.x 官方推荐生产 server 把 `ErrorHandlingMiddleware` 作为
+# 整条中间件链的最外层（参见 https://gofastmcp.com/servers/middleware §
+# 「Execution Order」），让 *所有* 下游异常（包括 FastMCP 自带的
+# DereferenceRefsMiddleware 在解析 schema $ref 时可能抛出的异常）都先经过它，
+# 被统一捕获、按 MCP 错误码分类、写进 stderr 日志，并按
+# `{error_type}:{method}` 累计计数，方便 client UI / 运维事后定位高频异常面。
+#
+# 实现细节：
+#   - FastMCP 把所有 middleware 放在 `mcp.middleware: list[Middleware]`，运行
+#     时按 `for mw in reversed(self.middleware): chain = partial(mw, ...)` 反向
+#     折叠成洋葱链。也就是说 **list 中靠前 = 越靠外**（第一个先跑）。
+#     `add_middleware()` 是 `append`，而我们要把 ErrorHandling 摆在最外层
+#     以便兜住 DereferenceRefsMiddleware（FastMCP 在 __init__ 时已 append 进去），
+#     因此必须用 `insert(0, ...)` 而不是 `add_middleware()`。
+#   - 用独立 logger ``ai_intervention_agent.fastmcp_errors`` 而不是默认的
+#     ``fastmcp.errors``：和项目其它子系统的 logger 命名空间对齐，运维
+#     ``grep '^.*ai_intervention_agent\.' stderr.log`` 能拿到完整一面镜；
+#     即便未来把 ``fastmcp`` 整体静音，本插件 error 日志依然会通过 root logger
+#     落到 stderr handler。
+#   - ``include_traceback=False``：默认只记一行紧凑日志（``Error in tools/call:
+#     ValueError: ...``）。完整 traceback 在 ``server_feedback`` 自己的 try/
+#     except 里已经用 ``logger.error(..., exc_info=True)`` 写过一份，不重复输
+#     出避免日志噪音。
+#   - ``transform_errors=True``：把 ``ValueError`` / ``TypeError`` / ``KeyError``
+#     等裸异常映射成 ``McpError(-32602 Invalid params)`` 等标准错误码，client
+#     端（Cursor / ChatGPT Desktop）能直接渲染合适提示而不是字符串拼接。
+#     注意：``McpError`` 自身会被原样透传，不会被二次转换 / 计数为 unknown。
+#   - 单例存储 ``_ERROR_HANDLING_MIDDLEWARE``：测试 / 运维入口可通过
+#     ``server.get_mcp_error_stats()`` 查到累计计数，回归契约靠
+#     ``tests/test_fastmcp_middleware_r37.py`` 静态检查。
+from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
+
+_ERROR_HANDLING_MIDDLEWARE: ErrorHandlingMiddleware = ErrorHandlingMiddleware(
+    logger=_stdlib_logging.getLogger("ai_intervention_agent.fastmcp_errors"),
+    include_traceback=False,
+    transform_errors=True,
+)
+mcp.middleware.insert(0, _ERROR_HANDLING_MIDDLEWARE)
+
+
+def get_mcp_error_stats() -> dict[str, int]:
+    """返回 MCP 中间件累计的异常计数（``{error_type}:{method}`` → 次数）。
+
+    供运维 / 测试在不污染 server 进程的情况下抽样诊断热点异常路径。
+    返回的是副本，外部修改不会影响内部累加器。
+    """
+    return _ERROR_HANDLING_MIDDLEWARE.get_error_stats()
+
+
 # R20.8 性能优化：TaskQueue 单例的实现已迁移到独立模块 ``task_queue_singleton``。
 #
 # 历史背景：``get_task_queue`` 仅由 Web UI 子进程使用（web_ui.py / web_ui_routes

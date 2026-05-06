@@ -8,6 +8,8 @@
 
 ### `_build_server_icons() -> list[Icon]`
 
+### `get_mcp_error_stats() -> dict[str, int]`
+
 ### `cleanup_services(shutdown_notification_manager: bool = True) -> None`
 
 ### `main() -> None`
