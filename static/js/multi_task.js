@@ -104,7 +104,13 @@ function _t(key, params) {
 }
 
 function _debugLog() {
-  if (!window.AIIA_DEBUG || !console || typeof console.debug !== 'function') return
+  if (
+    !window.AIIA_DEBUG ||
+    typeof console === 'undefined' ||
+    typeof console.debug !== 'function'
+  ) {
+    return
+  }
   try {
     console.debug.apply(console, arguments)
   } catch (_e) {

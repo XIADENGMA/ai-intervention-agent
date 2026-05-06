@@ -25,6 +25,16 @@ def _extract_connect_sse(source: str) -> str:
     return match.group("body")
 
 
+def _extract_debug_log(source: str) -> str:
+    match = re.search(
+        r"function _debugLog\(\) \{(?P<body>.*?)\n\}\n\nif \(typeof window\.taskDeadlines",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None, "multi_task.js 必须保留 _debugLog helper"
+    return match.group("body")
+
+
 def test_sse_normal_state_logs_are_debug_gated() -> None:
     source = _read_source()
     assert "function _debugLog()" in source
@@ -38,3 +48,10 @@ def test_sse_normal_state_logs_are_debug_gated() -> None:
     assert "console.debug(" not in sse_body
     assert "console.warn(" not in sse_body
     assert sse_body.count("_debugLog(") >= 3
+
+
+def test_debug_log_handles_missing_console_without_reference_error() -> None:
+    debug_body = _extract_debug_log(_read_source())
+    assert "typeof console === 'undefined'" in debug_body
+    assert "!console" not in debug_body
+    assert "typeof console.debug !== 'function'" in debug_body
