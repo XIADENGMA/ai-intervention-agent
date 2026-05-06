@@ -338,6 +338,113 @@ def get_mcp_error_stats() -> dict[str, int]:
     return _ERROR_HANDLING_MIDDLEWARE.get_error_stats()
 
 
+# R40 FastMCP 最佳实践：注册 Timing + Logging 中间件
+# ===================================================
+#
+# 缘由：FastMCP 3.x 官方推荐生产 server 至少叠加这三层中间件——
+# ``ErrorHandling`` / ``Timing`` / ``Logging``（参见 §「Combine Multiple
+# Middleware」官方示例）。R37 已经把 ErrorHandling 接成最外层，本批次（r40）
+# 补齐另外两层：
+#
+# - ``TimingMiddleware``：每个 ``request``（``tools/call`` / ``resources/read``
+#   等）执行后写一行 ``Request <method> took X.XX ms`` 到 stderr，让运维 /
+#   QA 能在不改业务代码的情况下抓 tool latency 异常（例如 web_ui 启动卡顿、
+#   通知后端 timeout）；
+# - ``LoggingMiddleware``：在 request 进入 / 退出时写结构化日志。开 ``include_
+#   payload_length=True`` 但不开 ``include_payloads``——payload 里可能含用户
+#   隐私（``message`` 字段是 LLM 与人类的对话），仅记长度足以诊断"工具被调用
+#   了多少次、payload 大小分布"，又不会把对话内容落到磁盘。
+#
+# 顺序（``mcp.middleware`` 列表，前 = 外层）：
+#   ``[ErrorHandling, DereferenceRefs(FastMCP 内置), Timing, Logging]``
+# 也就是说运行链：
+#   ``ErrorHandling → DereferenceRefs → Timing → Logging → handler``
+# 这个排布让：
+#   * Timing 测到的耗时不包含 ErrorHandling 的 try/except 建栈开销（micro），
+#     但包含 handler + 内层 logging 序列化（合理，整体感受耗时）；
+#   * Logging 在最内层看到的是已经 dereferenced 的 schema，日志噪音最小；
+#   * 任何中间件自身抛异常都会被外层 ErrorHandling 兜住，不污染 stdio 通道。
+#
+# 日志默认级别 INFO（``log_level=20``）。项目根 logger 已设为 WARNING，所以
+# 默认情况下两个中间件**不会输出**——按需把
+# ``ai_intervention_agent.fastmcp_requests`` / ``ai_intervention_agent.fastmcp_timing``
+# 单独提升到 INFO 即可开启 tracing，无需重启 server。
+from fastmcp.server.middleware.logging import LoggingMiddleware
+from fastmcp.server.middleware.timing import TimingMiddleware
+
+_TIMING_MIDDLEWARE: TimingMiddleware = TimingMiddleware(
+    logger=_stdlib_logging.getLogger("ai_intervention_agent.fastmcp_timing"),
+    log_level=_stdlib_logging.INFO,
+)
+_LOGGING_MIDDLEWARE: LoggingMiddleware = LoggingMiddleware(
+    logger=_stdlib_logging.getLogger("ai_intervention_agent.fastmcp_requests"),
+    log_level=_stdlib_logging.INFO,
+    include_payloads=False,
+    include_payload_length=True,
+    max_payload_length=1000,
+)
+mcp.add_middleware(_TIMING_MIDDLEWARE)
+mcp.add_middleware(_LOGGING_MIDDLEWARE)
+
+
+# R40 FastMCP 最佳实践：暴露 server 自检 resource
+# ===================================================
+#
+# 让 client（Cursor / Claude Desktop / ChatGPT Desktop）通过 MCP `resources/
+# read` 读取 ``aiia://server/info`` 拿到本服务器的 self-information：
+#
+#   - ``version`` / ``name``：与 initialize 协议一致，用于跨工具调试比对；
+#   - ``transport``：当前传输（固定 stdio，未来若开 streamable-http 会变）；
+#   - ``error_stats``：来自 ErrorHandlingMiddleware 的累计计数，运维快速看
+#     "最近哪一类异常最频繁"；
+#   - ``web_ui``：本服务的核心副服务（用户交互所在），best-effort 检测端口
+#     是否在监听，让 client 一眼看出"反馈 UI 启不起来"还是"启起来了但是 LLM
+#     没拿到回复"。
+#
+# 设计取舍：
+#   - 同步函数：FastMCP resource 支持 sync/async 两种，sync 实现简单；
+#   - best-effort：``web_ui`` 检查任何异常都吞掉，永远返回有效 dict 让 client
+#     UI 不会在自检页面渲染崩溃；
+#   - 不触发 web_ui 启动：本 resource 是只读自检，**不应**有副作用（不调用
+#     ``ensure_web_ui_running``），否则会让"读自检页面"变成"启动整套服务"。
+@mcp.resource(
+    "aiia://server/info",
+    name="Server Info",
+    description=(
+        "Self-information for ai-intervention-agent MCP server. Returns version, "
+        "transport, accumulated error stats, and Web UI runtime status as JSON."
+    ),
+    mime_type="application/json",
+    tags={"diagnostics", "self-info"},
+)
+def server_info_resource() -> dict[str, object]:
+    """Return diagnostic self-information for this MCP server."""
+    info: dict[str, object] = {
+        "name": mcp.name,
+        "version": _resolve_server_version(),
+        "transport": "stdio",
+        "error_stats": get_mcp_error_stats(),
+    }
+
+    web_ui_info: dict[str, object] = {}
+    try:
+        config, _auto_resubmit = get_web_ui_config()
+        host = get_target_host(config.host)
+        port = int(config.port)
+        web_ui_info["host"] = host
+        web_ui_info["port"] = port
+        try:
+            web_ui_info["running"] = bool(is_web_service_running(host, port))
+        except Exception as probe_exc:
+            web_ui_info["running"] = False
+            web_ui_info["probe_error"] = f"{type(probe_exc).__name__}: {probe_exc}"
+    except Exception as cfg_exc:
+        web_ui_info["error"] = f"{type(cfg_exc).__name__}: {cfg_exc}"
+
+    info["web_ui"] = web_ui_info
+    return info
+
+
 # R20.8 性能优化：TaskQueue 单例的实现已迁移到独立模块 ``task_queue_singleton``。
 #
 # 历史背景：``get_task_queue`` 仅由 Web UI 子进程使用（web_ui.py / web_ui_routes
