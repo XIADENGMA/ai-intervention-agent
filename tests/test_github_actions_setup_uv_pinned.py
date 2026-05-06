@@ -10,6 +10,9 @@ harden-runner 会查询当前 workflow run 元数据；使用它的 workflow 至
 
 Release workflow 中未配置可选发布密钥是正常降级路径，应显示为 notice，
 不能用 warning annotation 污染成功发布记录。
+
+覆盖率产物缺失不是可接受的绿色降级路径，应 fail-closed，而不是在
+成功 workflow 上挂一个 warning annotation。
 """
 
 from __future__ import annotations
@@ -71,3 +74,16 @@ def test_release_optional_marketplace_skips_use_notice_not_warning() -> None:
     assert "::warning::OPEN_VSX_TOKEN secret not configured" not in text
     assert "::notice::VSCE_PAT secret not configured" in text
     assert "::notice::OPEN_VSX_TOKEN secret not configured" in text
+
+
+def test_coverage_artifact_missing_file_fails_closed() -> None:
+    text = (ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+    coverage_upload = re.search(
+        r"name:\s*上传覆盖率报告（coverage\.xml）[\s\S]*?if-no-files-found:\s*(?P<mode>\w+)",
+        text,
+    )
+    assert coverage_upload, "Tests workflow 应上传 coverage.xml 产物"
+    assert coverage_upload.group("mode") == "error", (
+        "coverage.xml 缺失应直接 fail-closed，不能用 warning 级 artifact 策略"
+    )
+    assert "if-no-files-found: warn" not in text
