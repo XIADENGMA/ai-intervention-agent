@@ -29,6 +29,7 @@ r"""防回归：``docs/mcp_tools{,.zh-CN}.md`` 中的硬编码上限必须 = ``s
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import unittest
 from pathlib import Path
@@ -37,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from server import mcp
 from server_config import MAX_MESSAGE_LENGTH, MAX_OPTION_LENGTH
 
 DOC_PATHS = (
@@ -109,6 +111,33 @@ class TestMcpToolsDocLimitsMatchCode(unittest.TestCase):
                 f"Either add the constant to server_config / shared_types and "
                 f"extend ALLOWED here, or remove the magic number from the doc.",
             )
+
+
+class TestMcpToolsDocMetadataMatchesCode(unittest.TestCase):
+    """FastMCP 工具元数据变更时，LLM-facing docs 必须同步。"""
+
+    def test_docs_mention_interactive_feedback_tags(self) -> None:
+        tool = asyncio.run(mcp.get_tool("interactive_feedback"))
+        tags = getattr(tool, "tags", set())
+        self.assertEqual(tags, {"human-in-the-loop", "feedback", "approval"})
+
+        for path in DOC_PATHS:
+            text = path.read_text(encoding="utf-8")
+            for tag in sorted(tags):
+                self.assertIn(
+                    tag,
+                    text,
+                    f"{path.relative_to(REPO_ROOT)}: missing FastMCP tag {tag!r}",
+                )
+
+    def test_docs_explain_no_fastmcp_decorator_timeout(self) -> None:
+        tool = asyncio.run(mcp.get_tool("interactive_feedback"))
+        self.assertIsNone(getattr(tool, "timeout", None))
+
+        for path in DOC_PATHS:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("FastMCP", text)
+            self.assertIn("timeout", text)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,15 @@ The `initialize` protocol response advertises the following fields. Clients (Cha
 
 > These fields follow the MCP spec (2024-11-05+) and are natively supported by FastMCP 3.x.
 
+### FastMCP tool metadata
+
+`interactive_feedback` is registered with FastMCP tags
+`human-in-the-loop`, `feedback`, and `approval`, so clients or gateways that
+surface tags can group it with human review / approval tools. It intentionally
+does **not** set a FastMCP decorator timeout: this is a long-running human
+feedback tool, and wait policy is controlled by the backend configuration
+documented below.
+
 ---
 
 ### `interactive_feedback`

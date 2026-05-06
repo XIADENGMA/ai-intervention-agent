@@ -28,6 +28,13 @@
 
 > 这些字段遵循 MCP 协议规范（spec 2024-11-05+），FastMCP 3.x 原生支持。
 
+### FastMCP 工具元数据
+
+`interactive_feedback` 注册了 FastMCP tags：`human-in-the-loop`、`feedback`
+和 `approval`，便于支持 tags 的 client / gateway 将其归类为人类审阅 /
+批准类工具。它**没有**设置 FastMCP decorator timeout：这是长时间运行的人类
+反馈工具，等待策略由下方配置项中的后端超时规则控制。
+
 ---
 
 ### `interactive_feedback`
