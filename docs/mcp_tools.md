@@ -26,7 +26,10 @@ The `initialize` protocol response advertises the following fields. Clients (Cha
 | `idempotentHint`  | `false`| Each call creates a new feedback task, so it is non-idempotent                    |
 | `openWorldHint`   | `true` | The tool interacts with a real human and notification services — open-world tool |
 
-> These fields follow the MCP spec (2024-11-05+) and are natively supported by FastMCP 3.x.
+> These fields follow the MCP spec (latest `2025-11-25`, originally introduced in
+> `2024-11-05`) and are natively supported by FastMCP 3.x. See
+> [MCP changelog](https://modelcontextprotocol.io/specification/2025-11-25/changelog)
+> for the spec history.
 
 ### FastMCP tool metadata
 
@@ -82,8 +85,28 @@ Request **interactive user feedback** through the Web UI (browser or VS Code Web
 
 - Ensures the Web UI service is running
 - Creates a task via the Web UI HTTP API (`POST /api/tasks`)
-- Waits for completion by polling (`GET /api/tasks/{task_id}`) until timeout
-- On failure/timeout, returns a configurable prompt (see `feedback.resubmit_prompt`) to encourage the client to call the tool again
+- Waits for completion using a **dual-channel** transport: SSE (`GET /api/events`,
+  with `Last-Event-ID` resume to recover missed events when the connection drops)
+  as the primary path, plus a low-frequency HTTP poll (`GET /api/tasks/{task_id}`)
+  as a safety net (`30s` while SSE is healthy, falling back to `2s` when SSE drops)
+- Forwards `task.created` / `task.notified` / `task.completed` events to the MCP
+  client via `ctx.info(...)`, so chat-style clients (Cursor / Claude Desktop /
+  ChatGPT Desktop) can render a live progress entry in the sidebar
+- Subject to the production middleware chain
+  (`ErrorHandling` + `RateLimiting` 10 req/s burst 20 + `Timing` + `Logging`)
+- On failure/timeout, returns a configurable prompt (see `feedback.resubmit_prompt`)
+  to encourage the client to call the tool again
+
+#### Server self-info resource
+
+Clients can read `aiia://server/info` (MIME `application/json`, tags
+`diagnostics` / `self-info`) to obtain a JSON snapshot of the running server:
+`name` / `version` / `transport` / `runtime` (Python version + executable +
+platform) / `fastmcp.version` / `middleware` chain / `error_stats` /
+`web_ui` (host + port + reachability) / `task_queue` (initialized + size +
+pending). The resource is **side-effect free** — it never wakes the Web UI
+process or constructs a new task queue, so it's safe to poll from a status
+panel.
 
 #### Notes on timeouts
 

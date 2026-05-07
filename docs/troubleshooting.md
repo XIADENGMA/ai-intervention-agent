@@ -93,7 +93,7 @@ does not show the task.
 | **Web** | Browser tab is in the background and OS denied permission | Click the bell icon on the page → "Allow notifications". On Safari, also enable in System Settings → Notifications → Safari. |
 | **Sound** | `notifications.sound_mute = true` or volume = 0 | Settings page → Sound → toggle "Mute" off, raise volume. iOS / iPadOS require the page to be foregrounded once per session. |
 | **System (plyer)** | macOS missing `pyobjus` (intentional skip) | macOS native notifications via plyer are intentionally skipped; the project relies on `macos_native_enabled = true` (`osascript`-based) instead. Linux requires `libnotify`; Windows uses Toast. |
-| **Bark** | Wrong device key, push server unreachable, or `bark_url` not pointing at your self-hosted instance | Test the URL with `curl -v "$BARK_URL/$DEVICE_KEY/test"`. Set `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` for a click-through deep link. |
+| **Bark** | Wrong device key, push server unreachable, or `bark_url` not pointing at your self-hosted instance | Test the URL with `curl -v "$BARK_URL/$DEVICE_KEY/test"`. Set `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` for a click-through deep link. **If the URL would resolve to a loopback address** (`localhost` / `127.x.x.x` / `::1`) the agent now suppresses it server-side — the phone never gets a useless click target — and the Web UI Bark settings panel surfaces a copy-pasteable LAN-IP suggestion (`http://<lan-ip>:<port>`). Apply that to `web_ui.external_base_url` (or expose mDNS) and re-trigger. |
 
 ## 5. mDNS (`ai.local`) does not resolve on the LAN
 
@@ -155,7 +155,43 @@ offer to install it as a Progressive Web App.
 - iOS users: `Share` → `Add to Home Screen` always works regardless
   of the install banner heuristics.
 
-## 8. CI Gate fails locally but passes in GitHub Actions (or vice versa)
+## 8. Tapping a Bark notification on my phone opens the Bark app instead of the PWA
+
+**Symptom**: you receive the Bark push, but tapping it lands on Bark's
+home screen / "no URL configured" message instead of opening the
+AI Intervention Agent feedback page.
+
+**Cause** (almost always one of these two):
+
+1. **The push payload had no `url` field** — the agent detected the
+   resolved URL was a loopback address and stripped it (introduced in
+   the `bark-r42` round). Loopback URLs cannot route from a phone back
+   to your laptop's `localhost`; sending them would always fail.
+2. **`bark_action` is set to a value other than `"url"`** — `bark_action
+   = "default"` lets the user tap to dismiss; only `"url"` (or any
+   absolute http/https URL) makes the Bark app deep-link.
+
+**Fix**:
+
+1. Open the Web UI (or VS Code extension) → **Settings → Notifications →
+   Bark**. The new diagnostic panel under the URL template shows one of:
+   - `OK: Click target = http://<your-lan-ip>:<port>` — everything is
+     fine, retry from the AI client.
+   - `Loopback detected — phones cannot reach <url>` + a one-click "Copy
+     LAN URL" button. Click it, paste into `web_ui.external_base_url`,
+     save, and retry.
+   - `Cannot detect any LAN IP` — your machine is offline or only on a
+     VPN that hides interfaces. Switch to LAN-bound Wi-Fi or use the
+     mDNS `<host>.local` URL.
+2. (Optional) Verify with `curl http://127.0.0.1:<port>/api/system/network-base-url-status`
+   — the `recommendation` field tells you exactly which knob to turn:
+   `ok` / `configure_external_base_url` / `bind_lan_interface`.
+
+> Note: `0.0.0.0` is **not** a valid `external_base_url` — it's a wildcard
+> bind on the server side, not a reachable address from the phone. The
+> diagnostic panel rejects it with the same loopback warning.
+
+## 9. CI Gate fails locally but passes in GitHub Actions (or vice versa)
 
 **Symptom**: `uv run python scripts/ci_gate.py` reports a failure
 that does not reproduce in CI; or the opposite.

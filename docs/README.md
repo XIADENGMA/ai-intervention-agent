@@ -10,9 +10,9 @@ Find your role below to jump straight to the page you need.
 - [`configuration.md`](configuration.md) · [`configuration.zh-CN.md`](configuration.zh-CN.md)
   — full TOML reference (`config.toml`), every setting with default and reload semantics.
 - [`troubleshooting.md`](troubleshooting.md) · [`troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md)
-  — eight most common issues ("port in use", "VS Code panel blank",
-  "notifications silent", "mDNS broken", etc.) with
-  symptom → cause → fix.
+  — nine most common issues ("port in use", "VS Code panel blank",
+  "notifications silent", "mDNS broken", "Bark notification opens
+  Bark instead of the PWA", etc.) with symptom → cause → fix.
 - [`mcp_tools.md`](mcp_tools.md) · [`mcp_tools.zh-CN.md`](mcp_tools.zh-CN.md)
   — server-level metadata plus the single `interactive_feedback`
   tool's I/O schema. Drop it in front of Cursor / Claude Desktop /
@@ -67,4 +67,6 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.22._
+index never lies. Last refreshed for v1.5.23 (R43–R44 cycle:
+config-path resolution audit + fastmcp best-practices + bark/SSE
+docs alignment)._

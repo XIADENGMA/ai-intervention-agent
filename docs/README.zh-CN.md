@@ -10,8 +10,9 @@
 - [`configuration.zh-CN.md`](configuration.zh-CN.md) · [`configuration.md`](configuration.md)
   — 完整 TOML 参考（`config.toml`），每个配置项的默认值与热加载语义。
 - [`troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md) · [`troubleshooting.md`](troubleshooting.md)
-  — 部署/运行最常见的 8 个问题（端口占用、VS Code 面板空白、
-  通知不响、mDNS 异常等），按「现象 → 原因 → 修复」组织。
+  — 部署/运行最常见的 9 个问题（端口占用、VS Code 面板空白、
+  通知不响、mDNS 异常、「Bark 通知点开是 Bark App 而不是 PWA」等），
+  按「现象 → 原因 → 修复」组织。
 - [`mcp_tools.zh-CN.md`](mcp_tools.zh-CN.md) · [`mcp_tools.md`](mcp_tools.md)
   — server 级元数据 + 唯一的 `interactive_feedback` 工具 I/O
   契约。直接喂给 Cursor / Claude Desktop / ChatGPT Desktop 就能用。
@@ -60,4 +61,5 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.22。_
+更新对应 v1.5.23（R43–R44 周期：配置路径解析审计 + fastmcp 最佳
+实践 + Bark/SSE 文档对齐）。_

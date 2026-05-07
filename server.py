@@ -266,7 +266,10 @@ from server_feedback import (
     interactive_feedback as _interactive_feedback_impl,
 )
 
-# MCP 工具行为提示 (Tool Annotations，遵循 MCP spec 2024-11-05+)
+# MCP 工具行为提示 (Tool Annotations，遵循 MCP spec 2025-11-25)
+# ToolAnnotations 自 2024-11-05 引入，2025-11-25 仍向后兼容；当前 mcp SDK
+# 1.26.x 的 ``LATEST_PROTOCOL_VERSION = "2025-11-25"``，README/docs 与代码
+# 在 r44/r45 一致性 audit 中统一对齐到这一版本。
 # 让 client (ChatGPT / Claude Desktop / Cursor) 准确理解 interactive_feedback 的副作用面：
 # - 不修改源代码 / git / 数据库；只持久化任务事件并触发通知 -> 严格意义不是只读，readOnly=False
 # - 不删除/覆盖任何用户资源 -> destructive=False，client 无需弹"危险操作"二次确认

@@ -26,7 +26,9 @@
 | `idempotentHint`  | `false`| 每次调用都会创建新的反馈任务，非幂等                                                |
 | `openWorldHint`   | `true` | 工具与外部用户和通知服务交互，是开放世界工具                                        |
 
-> 这些字段遵循 MCP 协议规范（spec 2024-11-05+），FastMCP 3.x 原生支持。
+> 这些字段遵循 MCP 协议规范（最新版本 `2025-11-25`，最早在 `2024-11-05` 引入），
+> FastMCP 3.x 原生支持。spec 历史变更见
+> [MCP changelog](https://modelcontextprotocol.io/specification/2025-11-25/changelog)。
 
 ### FastMCP 工具元数据
 
@@ -80,8 +82,27 @@
 
 - 确保 Web UI 服务可用
 - 通过 Web UI HTTP API 创建任务（`POST /api/tasks`）
-- 轮询任务完成（`GET /api/tasks/{task_id}`）直到完成或超时
-- 若发生异常/超时，会返回可配置提示语（见 `feedback.resubmit_prompt`）引导调用方重新调用该工具
+- 通过**双通道**等待任务完成：SSE（`GET /api/events`，支持 `Last-Event-ID` 断线
+  续传）作为主路径，HTTP 轮询（`GET /api/tasks/{task_id}`）作为安全网（SSE 健康
+  时拉成 30s safety net，SSE 掉线时回到 2s 紧密兜底）
+- 通过 `ctx.info(...)` 把 `task.created` / `task.notified` / `task.completed`
+  等事件回送 MCP client，让 Cursor / Claude Desktop / ChatGPT Desktop 在 chat
+  sidebar 实时渲染进度
+- 受生产级中间件链保护（`ErrorHandling` + `RateLimiting` 10 req/s burst 20 +
+  `Timing` + `Logging`）
+- 若发生异常/超时，会返回可配置提示语（见 `feedback.resubmit_prompt`）引导调用方
+  重新调用该工具
+
+#### Server 自检 resource
+
+Client 端可以通过 MCP `resources/read` 读取 `aiia://server/info`（MIME
+`application/json`，tags `diagnostics` / `self-info`）拿到当前 server 的
+JSON 快照：`name` / `version` / `transport` / `runtime`（Python 版本 +
+解释器路径 + 平台）/ `fastmcp.version` / `middleware`（中间件链）/
+`error_stats` / `web_ui`（host + port + reachability）/ `task_queue`
+（initialized + size + pending）。这个 resource 是**只读自检**——绝不会
+唤醒 Web UI 子进程或构造新的 task queue 单例，可以放心从状态面板里
+轮询。
 
 #### 关于超时
 

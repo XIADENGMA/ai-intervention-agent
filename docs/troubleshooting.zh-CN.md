@@ -83,7 +83,7 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 | **Web** | 浏览器 tab 在后台 + 系统拒绝授权 | 页面右上角铃铛 → "允许通知"。Safari 还要去 系统设置 → 通知 → Safari 单独允许。 |
 | **声音** | `notifications.sound_mute = true` 或音量 0 | 设置页 → 声音 → 关闭"静音"，调高音量。iOS / iPadOS 需要每次会话至少把页面置前一次。 |
 | **系统（plyer）** | macOS 缺 `pyobjus`（**有意跳过**） | macOS 通过 plyer 走的系统通知有意跳过；项目改用 `macos_native_enabled = true`（基于 `osascript`）。Linux 需要 `libnotify`；Windows 走 Toast。 |
-| **Bark** | device key 错 / 推送服务不可达 / `bark_url` 没指向你自建实例 | 用 `curl -v "$BARK_URL/$DEVICE_KEY/test"` 单测。设 `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` 做点击直达。 |
+| **Bark** | device key 错 / 推送服务不可达 / `bark_url` 没指向你自建实例 | 用 `curl -v "$BARK_URL/$DEVICE_KEY/test"` 单测。设 `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` 做点击直达。**如果解析出来的 URL 是 loopback 地址**（`localhost` / `127.x.x.x` / `::1`），agent 现在会在服务端直接过滤——手机不会再收到一个无法点击打开的 URL；同时 Web UI 的 Bark 设置面板会推荐对应的 LAN IP（`http://<lan-ip>:<port>`）让你一键复制并写入 `web_ui.external_base_url`（或开 mDNS）后重试。 |
 
 ## 5. mDNS（`ai.local`）局域网解析不出来
 
@@ -143,7 +143,26 @@ export AI_INTERVENTION_AGENT_OPEN_WITH=cursor
 - iOS 用户：`分享` → `添加到主屏幕` 是稳定可用的兜底，不依赖
   浏览器的安装横幅启发。
 
-## 8. 本地 CI Gate 挂了，但 GitHub Actions 是绿的（或反过来）
+## 8. 在手机上点 Bark 通知，打开的是 Bark App 而不是 PWA
+
+**症状**：手机收到了 Bark 推送，但是点开后停在 Bark 主页 / 提示"未配置 URL"，没有跳进 AI Intervention Agent 的反馈页。
+
+**原因**（基本就这两种）：
+
+1. **推送负载里没有 `url` 字段** —— agent 检测到生成的 URL 是 loopback 地址后主动剥离了（`bark-r42` 引入）。loopback URL 从手机视角根本走不回你电脑的 `localhost`，发了也是死链。
+2. **`bark_action` 没设成 `"url"`** —— `bark_action = "default"` 是"点开后即关闭通知"；只有 `"url"`（或者直接写一个 http/https 完整 URL）才会让 Bark App 真正去 deep-link。
+
+**修复**：
+
+1. 打开 Web UI（或 VS Code 插件）→ **设置 → 通知 → Bark**。URL 模板下方新增的诊断面板会展示其中之一：
+   - `OK：点击目标 = http://<你的 LAN IP>:<端口>` → 一切正常，AI client 那边重试。
+   - `检测到 loopback —— 手机无法访问 <url>` + 一个 "复制 LAN URL" 按钮。点一下复制，粘贴到 `web_ui.external_base_url`，保存后重试。
+   - `未检测到 LAN IP` → 你机器离线 / 只在 VPN 里。换到 LAN-bound 的 Wi-Fi 或者用 mDNS `<host>.local`。
+2. （可选）用 `curl http://127.0.0.1:<端口>/api/system/network-base-url-status` 验证 —— 返回里的 `recommendation` 字段告诉你具体要调哪一个：`ok` / `configure_external_base_url` / `bind_lan_interface`。
+
+> 注意：`0.0.0.0` **不是**合法的 `external_base_url` —— 它是服务端的"绑定到所有接口"通配符，从手机视角是无意义地址。诊断面板会用同一条 loopback 警告把它驳回。
+
+## 9. 本地 CI Gate 挂了，但 GitHub Actions 是绿的（或反过来）
 
 **症状**：`uv run python scripts/ci_gate.py` 在本地挂，CI 没复现；或反过来。
 

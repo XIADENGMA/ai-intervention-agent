@@ -180,18 +180,20 @@ ai-intervention-agent usage details:
 - **Web UI**: Markdown, code highlighting, and math rendering
 - **Multi-task**: tab switching with independent countdown timers
 - **Auto re-submit**: keep sessions alive by auto-submitting at timeout
-- **Notifications**: web / sound / system / Bark
-- **SSH-friendly**: great with port forwarding
+- **Notifications**: web / sound / system / Bark (loopback URLs auto-suppressed; LAN-IP suggestion surfaced in settings)
+- **SSH / LAN friendly**: works behind port forwarding; mDNS publishes a `<host>.local` URL when the local network supports it
+- **Server self-info resource** (`aiia://server/info`): live runtime / fastmcp version / middleware chain / task-queue snapshot for cross-tool diagnostics
 - **MCP-spec compliant** (2025-11-25 protocol): tool annotations, server identity, and self-contained icons let ChatGPT Desktop / Claude Desktop / Cursor render the server natively without nagging "destructive operation" confirmations
+- **Production-grade middleware**: `ErrorHandling` + `RateLimiting` (10 req/s, burst 20) + `Timing` + `Logging` chain, with structured `task.created` / `task.completed` events forwarded to the MCP client via `ctx.info`
 
 ## How it works
 
 1. Your AI client calls the MCP tool `interactive_feedback`.
 2. The MCP server ensures the Web UI process is running, then creates a task via HTTP (`POST /api/tasks`).
-3. The browser (or VS Code Webview) renders tasks by polling the Web UI API.
+3. The browser (or VS Code Webview) renders the task using a **dual-channel** transport: SSE (`GET /api/events`, with `Last-Event-ID` resume) for real-time updates, and HTTP polling as a safety net when SSE drops.
 4. When you submit feedback, the Web UI completes the task in the task queue.
-5. The MCP server polls for completion (`GET /api/tasks/{task_id}`) and returns your feedback (text + images) back to the AI client.
-6. Optionally, the MCP server triggers notifications (Bark / system / sound / web hints) based on your config.
+5. The MCP server waits via SSE + a low-frequency HTTP poll (`GET /api/tasks/{task_id}`), then returns your feedback (text + images) back to the AI client.
+6. Optionally, the MCP server triggers notifications (Bark / system / sound / web hints) based on your config. Bark URLs that resolve to loopback addresses are automatically suppressed and the Web UI surfaces a LAN-IP suggestion in the settings panel.
 
 ## VS Code extension (optional)
 
@@ -247,15 +249,15 @@ flowchart TD
     WEB_SRV --> HTTP_API
     WEB_SRV --> TASK_Q
     WEB_SRV --> WEB_CFG_MGR
-    WEB_FRONTEND <-->|poll /api/tasks| HTTP_API
+    WEB_FRONTEND <-->|"SSE /api/events + poll /api/tasks"| HTTP_API
     WEB_FRONTEND -->|submit feedback| HTTP_API
   end
 
   subgraph VSCODE_PROC["VS Code extension (Node)"]
-    VSCODE_EXT["Extension host<br/>(packages/vscode/extension.js)"]
-    VSCODE_WEBVIEW["Webview frontend<br/>(webview.js + webview-ui.js<br/>+ webview-notify-core.js + webview-settings-ui.js)"]
+    VSCODE_EXT["Extension host<br/>(packages/vscode/extension.ts)"]
+    VSCODE_WEBVIEW["Webview frontend<br/>(webview.ts + webview-ui.js<br/>+ webview-notify-core.js + webview-settings-ui.js<br/>+ tri-state-panel.js)"]
     VSCODE_EXT --> VSCODE_WEBVIEW
-    VSCODE_WEBVIEW <-->|poll /api/tasks| HTTP_API
+    VSCODE_WEBVIEW <-->|"SSE /api/events + poll /api/tasks"| HTTP_API
     VSCODE_WEBVIEW -->|submit feedback| HTTP_API
   end
 
