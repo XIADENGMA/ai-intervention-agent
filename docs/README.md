@@ -67,6 +67,8 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.38 (R47–R49 cycle:
-runtime counters + config_changed SSE broadcast + tightened VSIX
-budget; the prior R43–R45 work is captured in v1.5.37)._
+index never lies. Last refreshed for v1.5.39 (R50 + R51-A/B/C
+cycle: server_info sse_bus block + 250 ms config_changed debounce,
+TaskQueue write-lock watchdog, named-event SSE heartbeat, recent
+WARN/ERROR ring buffer; the prior R47–R49 work is captured in
+v1.5.38)._

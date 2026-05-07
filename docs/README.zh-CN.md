@@ -61,5 +61,7 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.38（R47–R49 周期：运行时计数器 + config_changed SSE
-广播 + 收紧 VSIX 体积预算；上一周期 R43–R45 收口在 v1.5.37）。_
+更新对应 v1.5.39（R50 + R51-A/B/C 周期：server_info 加 sse_bus
+子块 + 250 ms config_changed debounce、TaskQueue 写锁 watchdog、
+SSE named-event 心跳、最近 WARN/ERROR 日志 ring buffer；上一周期
+R47–R49 收口在 v1.5.38）。_

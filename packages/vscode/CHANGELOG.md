@@ -14,6 +14,19 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.39] — 2026-05-08
+
+### Added
+
+- **R51-B** — Server SSE keep-alive is now a proper named event
+  (`event: heartbeat\ndata: {ts_unix}`) instead of an invisible SSE
+  comment. The extension registers an `evType === 'heartbeat'` branch
+  that emits a debug-level `sse.heartbeat` log entry — useful for
+  diagnosing long-lived connection stalls without affecting the status
+  bar at all. Existing connections that don't care about heartbeat
+  continue to work because the SSE spec drops unhandled named events
+  silently.
+
 ## [1.5.38] — 2026-05-08
 
 ### Added

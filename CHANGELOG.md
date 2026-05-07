@@ -9,6 +9,71 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.39] — 2026-05-08
+
+> Round-50 / Round-51-A / Round-51-B / Round-51-C: an observability +
+> reliability follow-up to v1.5.38. Four independent, self-contained
+> features that together turn `aiia://server/info` into a single
+> drop-in self-diagnostic page (sse_bus counters, recent_logs, plus the
+> existing R47 `interactive_feedback` / R44 `runtime` blocks), keep
+> SSE keep-alive observable on both ends of the wire, and surface the
+> first hint of a TaskQueue lock starvation incident before users
+> notice. 64 new test cases total.
+
+### Added
+
+- **R50-A** — `server_info_resource` exposes a new `sse_bus` sub-block
+  by polling `/api/system/sse-stats` cross-process with a 0.5 s timeout
+  when the Web UI is up. MCP self-info now shows `emit_total` /
+  `latest_event_id` / `gap_warnings_emitted` / `backpressure_discards`
+  / `subscriber_count` / `history_size` alongside the R47
+  `interactive_feedback` totals. Degrades to `{available: false,
+  reason}` when the Web UI is offline and to `{error}` for any HTTP /
+  network failure — never raises, never starts the Web UI itself.
+- **R51-A** — `task_queue.add_task` now runs inside a deadlock-aware
+  `_watched_write_lock(...)` wrapper. A shared
+  `TaskQueueLockWatchdog` daemon scans pending acquisitions every 5 s
+  and dumps the full thread-stack snapshot to `logger.error` if a
+  critical section is held longer than 30 s, with a per-record
+  `dumped` flag preventing log spam. The `ReadWriteLock` itself is
+  untouched so existing write paths keep working; future rounds can
+  migrate them incrementally.
+- **R51-B** — SSE generator's keep-alive frame is now a proper named
+  event (`event: heartbeat\ndata: {"ts_unix": ...}`) instead of an
+  invisible SSE comment. `_SSEBus` exposes a `_heartbeat_total`
+  counter via `bump_heartbeat()` and `stats_snapshot()`, which
+  propagates through `/api/system/sse-stats` and (via R50-A) into the
+  `aiia://server/info` `sse_bus` block. Frontend (`multi_task.js`) and
+  VS Code extension (`extension.ts`) both register a heartbeat
+  listener that emits a debug-level log; existing clients that only
+  listen for `task_changed` are 100 % backward compatible (SSE spec
+  silently drops unhandled named events).
+- **R51-C** — `enhanced_logging` gains a process-wide ring buffer
+  (max 200 entries, 500-char cap per entry) of WARNING+ log lines.
+  `EnhancedLogger.log()` records each line through `_record_to_ring`
+  after handing the entry to the underlying logger, with sanitization
+  (passwords / `sk-` keys / `ghp_` tokens redacted) and full
+  try/except isolation. `server_info_resource` exposes the most recent
+  twenty entries as a `recent_logs` sub-block so MCP client UIs and
+  operators can see "what went wrong recently" without ssh-ing into
+  the box to grep stderr.
+
+### Changed
+
+- **R50-B** — `_emit_config_changed_to_sse_bus` is now leading-edge
+  debounced (250 ms) using `time.monotonic` + `threading.Lock`. Editor
+  save bursts that trigger multiple mtime callbacks now produce a
+  single SSE event, avoiding toast flicker on the PWA and status-bar
+  churn in VS Code while keeping the first event instantaneous.
+
+### Tooling / Smoke
+
+- `scripts/smoke_test_r50.py` — manual end-to-end smoke that boots the
+  Flask app on a random loopback port, fires five `_emit_*` calls in
+  100 ms plus one more after the 250 ms window, and asserts exactly
+  two `config_changed` frames are observed on `/api/events` plus an
+  `emit_total` delta of 2 on `/api/system/sse-stats`.
+
 ## [1.5.38] — 2026-05-08
 
 > Round-47 / Round-48 / Round-49: a hardening + observability follow-up
