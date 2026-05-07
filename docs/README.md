@@ -67,9 +67,11 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.41 (R53 cycle: hard
-prompt-size cap on add_task at 10 MB with a 6 MB warn threshold,
-and a new GET /api/system/health endpoint that aggregates the
-existing sse-stats / task_queue / recent-errors signals into a
-K8s-probe-friendly status enum. The prior R52 / R51 / R50 work is
-captured in v1.5.40 / v1.5.39 release sections)._
+index never lies. Last refreshed for v1.5.42 (R54 cycle: 1.0s TTL
+cache around the cross-process /api/system/sse-stats fetch in
+server_info_resource so client-UI ticks can't burn through the
+60/min limiter; and a major LogSanitizer expansion that fixes a
+silent leak of OpenAI sk-proj / sk-ant project-scoped keys plus
+adds AWS / GCP / GitHub-server / HuggingFace / Stripe / JWT and
+URL basic-auth coverage. Earlier R53 / R52 / R51 / R50 work
+remains captured in v1.5.41 / v1.5.40 / v1.5.39)._

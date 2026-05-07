@@ -61,8 +61,10 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.41（R53 周期：`add_task` 新增 10 MB 硬上限 + 6 MB 告警的
-prompt 大小校验，新增 GET /api/system/health 端点把已有
-sse-stats / task_queue / recent-errors 信号聚合成 K8s 探针
-友好的 status enum。上一周期 R52 / R51 / R50 收口在
-v1.5.40 / v1.5.39）。_
+更新对应 v1.5.42（R54 周期：``server_info_resource`` 跨进程拉
+``/api/system/sse-stats`` 加 1.0s TTL 缓存，避免 client UI 高频
+轮询 self-info 撞穿 60/min 限流；同时大幅扩展 ``LogSanitizer``
+覆盖：修复了 ``sk-proj`` / ``sk-ant`` 工程级 key 静默泄漏的旧
+正则 bug，新增 AWS / GCP / GitHub server / HuggingFace / Stripe /
+JWT / URL basic-auth 的脱敏。上一周期 R53 / R52 / R51 / R50 收口
+在 v1.5.41 / v1.5.40 / v1.5.39）。_

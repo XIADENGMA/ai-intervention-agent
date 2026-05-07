@@ -9,6 +9,46 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.42] — 2026-05-08
+
+> Round-54 round-up: an observability-and-safety follow-up to v1.5.41
+> with two laser-focused fixes — one performance, one security.
+
+### Added
+
+- **R54-A** — `server._fetch_sse_stats_cached(host, port)` interposes
+  a 1.0 s TTL cache between `server_info_resource` and the
+  cross-process `httpx.get /api/system/sse-stats` round-trip. Without
+  this, client UIs that poll `aiia://server/info` on a sub-second
+  cadence (PWA status badge, VSCode webview tick) burned through the
+  Web UI's 60 / min rate limiter on the sse-stats endpoint within a
+  few hundred milliseconds. The cache is success-only (errors are
+  never cached so transient failures don't pin the self-info page),
+  uses fine-grained locking around the cache dict only (network
+  call happens outside the lock), always returns fresh dict copies
+  to prevent caller-side mutation, and tags hit responses with
+  `cached: true` + `cache_age_s` for observability.
+
+### Changed / Security
+
+- **R54-B** — major `LogSanitizer` expansion. Closes a real silent
+  leak: the legacy `\bsk-[A-Za-z0-9]{32,}\b` pattern's character
+  class doesn't include `-`, so on `sk-proj-XXX` (OpenAI
+  project-scoped) and `sk-ant-XXX` (Anthropic) it would only match
+  `sk-proj` (4 chars) — far below the 32-char floor — and drop the
+  match, leaking the entire key into stderr / the R51-C ring buffer.
+  Added vendor-anchored coverage for OpenAI / Anthropic combined,
+  GitHub all five token forms (`gh[psour]_`), Slack expanded
+  (`xox[bpasr]-`), AWS Access Key ID, Google / Firebase / GCP, Stripe
+  live & test, HuggingFace, JWT (anchored on `eyJ` to avoid
+  blanket-redacting arbitrary three-segment dot strings), and URL
+  basic-auth (back-reference rewrite that keeps scheme + username for
+  forensic value but redacts only the password segment, producing
+  `https://alice:***REDACTED***@host`). Deliberately not added: bare
+  `Bearer <token>` headers, generic 16+ char hex, generic 32+ char
+  base64 — all three would false-positive on legitimate logs (commit
+  hashes, image data URIs, digest values).
+
 ## [1.5.41] — 2026-05-08
 
 > Round-53 round-up: a small but pointed safety + observability cycle.
