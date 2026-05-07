@@ -540,6 +540,98 @@ class SystemRoutesMixin:
                     500,
                 )
 
+        @self.app.route("/api/system/recent-logs", methods=["GET"])
+        @self.limiter.limit("30 per minute")
+        def recent_logs() -> ResponseReturnValue:
+            """返回 ``enhanced_logging`` ring buffer 里最近 N 条 WARN/ERROR（R52-B）。
+
+            ---
+            tags:
+              - System
+            description: |
+                给运维 / 状态面板拉取最近的 WARNING/ERROR 日志摘要，**已脱敏**
+                （password / sk- key / ghp_ token 等被 ``LogSanitizer`` 替换为
+                ``***REDACTED***``）、单条 message 截断到 500 字符。
+
+                ``limit`` query 参数可选，默认 50，上限 200（即 ring buffer 容量）；
+                返回顺序按时间正序（旧 → 新）。
+
+                ``aiia://server/info`` 资源已经默认带了最新 20 条；本端点存在的
+                意义是：(1) 让 PWA / VS Code 状态面板可以独立拉日志而不依赖
+                MCP；(2) ``server_info`` 默认 20 条不够时可以拿更多。
+
+                **任意来源** 的请求都允许查询——payload 已脱敏，无敏感信息。
+                rate-limit 30/min 比 sse-stats 更紧（500 字节/条 × 200 条 ≈ 100KB
+                相对昂贵），避免被滥用做日志爬取。
+            parameters:
+              - in: query
+                name: limit
+                description: 返回最近 N 条；默认 50，1 ≤ limit ≤ 200
+                required: false
+                type: integer
+            responses:
+              200:
+                description: 最近 N 条日志快照
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    count:
+                      type: integer
+                      description: 实际返回条数（≤ limit）
+                    entries:
+                      type: array
+                      description: 按时间正序的日志条目数组
+                      items:
+                        type: object
+                        properties:
+                          ts_unix:
+                            type: integer
+                          level_no:
+                            type: integer
+                          level_name:
+                            type: string
+                          logger_name:
+                            type: string
+                          message:
+                            type: string
+            """
+            try:
+                from enhanced_logging import _LOG_RING_MAXLEN, get_recent_logs
+
+                # 解析 limit query：默认 50，上限即 buffer 容量。
+                raw_limit = request.args.get("limit", "")
+                limit = 50
+                if raw_limit:
+                    try:
+                        candidate = int(str(raw_limit).strip())
+                        if 1 <= candidate <= _LOG_RING_MAXLEN:
+                            limit = candidate
+                    except (ValueError, TypeError):
+                        # 非法 limit 用默认 50；不直接 400，避免轻易因输入错被拒
+                        pass
+
+                entries = get_recent_logs(limit=limit)
+                return jsonify(
+                    {
+                        "success": True,
+                        "count": len(entries),
+                        "entries": entries,
+                    }
+                )
+            except Exception as exc:
+                logger.warning(f"recent-logs 探测失败: {exc}", exc_info=True)
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Failed to read recent logs ring buffer",
+                        }
+                    ),
+                    500,
+                )
+
         @self.app.route("/api/system/open-config-file/info", methods=["GET"])
         @self.limiter.exempt
         def open_config_file_info() -> ResponseReturnValue:
