@@ -66,6 +66,21 @@ class _SSEBus:
     # 风暴场景（实测 100 个并发任务 status 切换时也才 ~50 条）。
     _HISTORY_MAXLEN = 128
 
+    # R58：单条 SSE 事件序列化后字节上限。超过则**不发**这条事件，把它替
+    # 换成一个 ``oversize_drop`` warning。
+    #
+    # 阈值选取：
+    # - 256 KB 是多个 SSE/HTTP 中间件的实战安全线。nginx ``proxy_buffer_size``
+    #   默认 8 KB / ``proxy_buffers 4 8k`` 默认共 32 KB，超过就触发 buffer
+    #   flush 抖动；Cloudflare Free / Pro 的 ``response_max_body_size`` 上
+    #   限 100 MB 但建议单 SSE message ≤ 1 MB；Chrome/Firefox EventSource
+    #   实现的 buffer growth 上限 ~16 MB，长期超大消息会触发 GC 抖动。
+    # - 我们的合法 SSE event：``task_changed`` 数据 1-2 KB；``config_changed``
+    #   元数据 < 500 B；``gap_warning`` < 200 B。256 KB 是合法量级的 100×
+    #   以上，永远不会误伤。
+    # - 256 KB = 262144 B。``json.dumps`` 后 UTF-8 编码字节计数。
+    _OVERSIZE_LIMIT_BYTES: int = 256 * 1024
+
     def __init__(self) -> None:
         self._subscribers: set[queue.Queue] = set()
         self._lock = threading.Lock()
@@ -100,6 +115,11 @@ class _SSEBus:
         self._gap_warnings_emitted: int = 0
         self._backpressure_discards: int = 0
         self._heartbeat_total: int = 0
+        # R58：超过 ``_OVERSIZE_LIMIT_BYTES`` 序列化字节的 emit 调用次数。
+        # 正常稳定运行应当永远 = 0；非零意味着有人在 emit 不正常的大 payload
+        # （日志包含整段 stderr？把整个 task 表都 dump 进去？误把 binary 当
+        # JSON 序列化？），需要排查。
+        self._oversize_drops: int = 0
 
     def subscribe(self, after_id: int | None = None) -> queue.Queue:
         """订阅 SSE 事件流；可选 ``after_id`` 触发缺失事件回放。
@@ -201,6 +221,30 @@ class _SSEBus:
             serialized_data = json.dumps(data or {}, ensure_ascii=False)
         except (TypeError, ValueError):
             serialized_data = None
+
+        # R58：如果序列化字节数超过阈值，把这条 emit 替换成一个 ``oversize_drop``
+        # warning（自身只携带元数据，不含原 payload）。原 payload 不发，避
+        # 免单条 256 KB+ 事件 fan-out 给 N 个订阅者时占用 N×size 网络/内存。
+        # ``oversize_drop`` 仍然占用 id 槽位、仍然被 client EventSource 看
+        # 到，所以不会引起 ``Last-Event-ID`` resume 的 gap_warning。
+        if serialized_data is not None:
+            payload_bytes = len(serialized_data.encode("utf-8"))
+            if payload_bytes > self._OVERSIZE_LIMIT_BYTES:
+                with self._lock:
+                    self._oversize_drops += 1
+                # 留住原 event_type 当 metadata，方便 client UI / dashboard
+                # 知道是"哪种事件被丢了"。
+                original_event_type = event_type
+                event_type = "oversize_drop"
+                data = {
+                    "original_event_type": original_event_type,
+                    "size_bytes": payload_bytes,
+                    "limit_bytes": self._OVERSIZE_LIMIT_BYTES,
+                }
+                try:
+                    serialized_data = json.dumps(data, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    serialized_data = None
 
         with self._lock:
             self._next_id += 1
@@ -326,6 +370,8 @@ class _SSEBus:
                 "subscriber_count": len(self._subscribers),
                 "history_size": len(self._history),
                 "heartbeat_total": self._heartbeat_total,
+                # R58：超过 _OVERSIZE_LIMIT_BYTES 被替换成 oversize_drop 的次数
+                "oversize_drops": self._oversize_drops,
             }
 
 

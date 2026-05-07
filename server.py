@@ -522,6 +522,7 @@ def _fetch_sse_stats_cached(host: str, port: int) -> dict[str, object]:
                 "subscriber_count",
                 "history_size",
                 "heartbeat_total",
+                "oversize_drops",
             ):
                 if key in body:
                     result[key] = body[key]
