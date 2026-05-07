@@ -58,7 +58,7 @@ import io
 import os
 import random
 import sys
-import threading  # noqa: F401  (kept for test-suite compatibility: tests patch server.threading.main_thread)
+import threading  # used for server.threading.main_thread (tests patch this) + _sse_stats_cache_lock
 import time
 
 from fastmcp import FastMCP
@@ -451,6 +451,91 @@ mcp.middleware.insert(1, _RATE_LIMITING_MIDDLEWARE)
 #     UI 不会在自检页面渲染崩溃；
 #   - 不触发 web_ui 启动：本 resource 是只读自检，**不应**有副作用（不调用
 #     ``ensure_web_ui_running``），否则会让"读自检页面"变成"启动整套服务"。
+# R54-A：SSE-stats 跨进程 GET 的 1.0s TTL cache
+# ============================================================================
+# 缘由：``server_info_resource`` 暴露 sse_bus 子块需要去 web_ui 子进程拉
+# ``/api/system/sse-stats``。client UI（PWA / VSCode webview）会高频 poll
+# self-info（fast refresh / status badge tick），如果每次都 fire 一次 httpx，
+# 会很快撞穿 sse-stats 的 60/min 速率限流，让真正用 sse-stats 的页面看到
+# 429 错误。
+#
+# 解决：用一个 module-level dict + 单调时间戳做 1.0 秒 TTL 缓存。命中 cache
+# 时不发 HTTP，未命中才发；只有成功结果写 cache（失败不写，让下次立刻重试）。
+# 锁粒度只护读写 cache 元数据，``httpx.get`` 在锁外，避免一个慢请求把所有
+# 并发 caller 串行起来。
+#
+# 这层缓存的数据**不可信任为 fresh**：如果 caller 关心毫秒级精度（不存在的
+# 场景），应该绕开 self-info 直接打 sse-stats。本 cache 服务的是
+# "sub-second cadence 的 client tick" 场景，1 秒粒度足够给 LLM / 人类阅读。
+_SSE_STATS_CACHE_TTL_S: float = 1.0
+_sse_stats_cache: dict[str, object] = {}
+_sse_stats_cache_ts: float = 0.0
+_sse_stats_cache_lock: threading.Lock = threading.Lock()
+
+
+def _fetch_sse_stats_cached(host: str, port: int) -> dict[str, object]:
+    """1.0s TTL 包装 GET /api/system/sse-stats（R54-A）。
+
+    返回值约定（永远是新建 dict，绝不返回内部缓存引用）：
+    - 成功：``{emit_total, latest_event_id, gap_warnings_emitted,
+      backpressure_discards, subscriber_count, history_size}``，可能附
+      ``cached: True`` 标志（命中 cache）；
+    - 失败：``{error: "<type>: <msg>"}`` 或 ``{error: "sse-stats HTTP 429"}``
+      / ``{error: "sse-stats response not success: ..."}``。
+
+    线程安全：cache 的 read-modify-write 受单一 ``threading.Lock`` 保护；
+    实际网络调用（httpx.get）在锁外执行，避免一个慢请求阻塞所有 caller。
+    """
+    global _sse_stats_cache_ts
+    now = time.monotonic()
+    with _sse_stats_cache_lock:
+        age = now - _sse_stats_cache_ts
+        if _sse_stats_cache and age < _SSE_STATS_CACHE_TTL_S:
+            cached_copy = dict(_sse_stats_cache)
+            cached_copy["cached"] = True
+            cached_copy["cache_age_s"] = round(age, 3)
+            return cached_copy
+
+    target_url = f"http://{host}:{port}/api/system/sse-stats"
+    result: dict[str, object] = {}
+    try:
+        import httpx
+
+        # 500 ms 上限：覆盖 loopback + 一次 round-trip 的 worst case。
+        resp = httpx.get(target_url, timeout=0.5)
+    except Exception as net_exc:
+        result["error"] = f"{type(net_exc).__name__}: {net_exc}"
+        return result
+
+    if resp.status_code == 200:
+        try:
+            body = resp.json()
+        except Exception as json_exc:
+            result["error"] = f"json decode failed: {json_exc!r}"
+            return result
+        if isinstance(body, dict) and body.get("success"):
+            for key in (
+                "emit_total",
+                "latest_event_id",
+                "gap_warnings_emitted",
+                "backpressure_discards",
+                "subscriber_count",
+                "history_size",
+                "heartbeat_total",
+            ):
+                if key in body:
+                    result[key] = body[key]
+            with _sse_stats_cache_lock:
+                _sse_stats_cache.clear()
+                _sse_stats_cache.update(result)
+                _sse_stats_cache_ts = time.monotonic()
+        else:
+            result["error"] = f"sse-stats response not success: {body!r}"
+    else:
+        result["error"] = f"sse-stats HTTP {resp.status_code}"
+    return result
+
+
 @mcp.resource(
     "aiia://server/info",
     name="Server Info",
@@ -594,39 +679,17 @@ def server_info_resource() -> dict[str, object]:
     # - 不主动启动 web_ui：``web_ui_info["running"]`` 是上一段（R40 引入）
     #   通过 socket 探测得到的，不会触发 ensure_web_ui_running。读自检页
     #   仍是只读副作用。
+    # - R54-A：``_fetch_sse_stats_cached`` 包了 1.0s TTL cache，避免 client UI
+    #   高频 polling self-info（fast refresh / VSCode webview tick）时把
+    #   ``/api/system/sse-stats`` 的 60/min 限流额度撞穿。命中 cache 时**完全
+    #   不发请求**，未命中才发，并把成功结果写回；失败不写 cache 让下次重试。
     sse_bus_info: dict[str, object] = {}
     try:
         if web_ui_info.get("running"):
             host = web_ui_info.get("host")
             port = web_ui_info.get("port")
             if isinstance(host, str) and isinstance(port, int) and port > 0:
-                import httpx
-
-                # 500 ms 上限：覆盖 loopback + 一次 round-trip 的 worst case。
-                # 真实 loopback 命中 < 5 ms；只有 web_ui 内部死锁才会撞超时，
-                # 此时 caller 会拿到 ``error: timeout`` 而不是被 hang。
-                target_url = f"http://{host}:{port}/api/system/sse-stats"
-                resp = httpx.get(target_url, timeout=0.5)
-                if resp.status_code == 200:
-                    body = resp.json()
-                    if isinstance(body, dict) and body.get("success"):
-                        # 把 ``success`` 字段拆掉，只保留计数指标本体
-                        for key in (
-                            "emit_total",
-                            "latest_event_id",
-                            "gap_warnings_emitted",
-                            "backpressure_discards",
-                            "subscriber_count",
-                            "history_size",
-                        ):
-                            if key in body:
-                                sse_bus_info[key] = body[key]
-                    else:
-                        sse_bus_info["error"] = (
-                            f"sse-stats response not success: {body!r}"
-                        )
-                else:
-                    sse_bus_info["error"] = f"sse-stats HTTP {resp.status_code}"
+                sse_bus_info = _fetch_sse_stats_cached(host, port)
             else:
                 sse_bus_info["error"] = (
                     f"web_ui host/port not usable: host={host!r} port={port!r}"

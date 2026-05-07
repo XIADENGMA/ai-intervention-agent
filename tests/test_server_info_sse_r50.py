@@ -72,6 +72,12 @@ class TestServerInfoSseBusWebUINotRunning(unittest.TestCase):
 class TestServerInfoSseBusWebUIRunningOK(unittest.TestCase):
     """web_ui 在跑且 ``/api/system/sse-stats`` 返回成功 → 字段透传。"""
 
+    def setUp(self) -> None:
+        # R54-A：清 cache，避免上一个测试用例的成功结果污染本用例。
+        with server._sse_stats_cache_lock:
+            server._sse_stats_cache.clear()
+            server._sse_stats_cache_ts = 0.0
+
     def test_counters_reflected_when_endpoint_returns_success(self) -> None:
         fake_resp = MagicMock()
         fake_resp.status_code = 200
@@ -100,6 +106,13 @@ class TestServerInfoSseBusWebUIRunningOK(unittest.TestCase):
 
 class TestServerInfoSseBusWebUIRunningFailureModes(unittest.TestCase):
     """各种异常路径都必须降级到 ``error`` 字段，绝不抛异常。"""
+
+    def setUp(self) -> None:
+        # R54-A：每个用例前清 cache，否则前一个用例（possibly success path）写入
+        # 的 cache 会在 TTL 内被本用例命中，本用例的失败 mock 永远跑不到。
+        with server._sse_stats_cache_lock:
+            server._sse_stats_cache.clear()
+            server._sse_stats_cache_ts = 0.0
 
     def test_http_500_falls_back_to_error(self) -> None:
         fake_resp = MagicMock()
