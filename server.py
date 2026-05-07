@@ -61,6 +61,13 @@ import sys
 import threading  # used for server.threading.main_thread (tests patch this) + _sse_stats_cache_lock
 import time
 
+# R62：进程启动时戳（unix epoch 秒）。在 module import 时即被赋值，所以
+# 它代表的是「server module 第一次被加载的时刻」——对一个 ``python -m
+# server`` / ``uvx`` / fastmcp run 的进程，这一刻就是「进程开始干活」的
+# 时间，足以作为 uptime 计算的基线。
+# 这个值在整个进程生命周期中恒定不变，不持锁、不重置。
+_PROCESS_STARTED_AT_UNIX: float = time.time()
+
 from fastmcp import FastMCP
 from mcp.types import Icon, ToolAnnotations
 
@@ -647,6 +654,14 @@ def server_info_resource() -> dict[str, object]:
         "error_stats": get_mcp_error_stats(),
     }
 
+    # R44 + R62：runtime 元信息块。
+    # ----------------------------------------------------------------------
+    # R44 起初只有 3 个字段（python_version / python_executable / platform 单
+    # 行串）。R62 在原块上扩展进 ``python_implementation`` / ``started_at_unix``
+    # / ``uptime_seconds`` 三个新字段——这些是 OS-level ``process`` 块（R60）
+    # 之外、Python-level 的运行时元信息：哪个解释器实现、何时启动、跑了多久。
+    # 整个块仍然在一个 try 里，任一字段失败都走 ``error`` 兜底，不影响顶层
+    # ``info`` 的其他块。
     runtime_info: dict[str, object] = {}
     try:
         import platform as _platform
@@ -655,6 +670,16 @@ def server_info_resource() -> dict[str, object]:
         runtime_info["python_executable"] = sys.executable
         runtime_info["platform"] = (
             f"{_platform.system()} {_platform.release()} ({_platform.machine()})"
+        )
+        # R62：新增字段，与上面 3 个老字段共存。``platform`` 单行串依然适合
+        # 给 client UI 一行展示；新加的 ``python_implementation`` 让运维一
+        # 眼分清 CPython / PyPy / Jython（生产偶发会有人 pin 错），而
+        # ``uptime_seconds`` / ``started_at_unix`` 是「这个 process 跑了多
+        # 久」的标准 SRE 指标。
+        runtime_info["python_implementation"] = _platform.python_implementation()
+        runtime_info["started_at_unix"] = round(_PROCESS_STARTED_AT_UNIX, 3)
+        runtime_info["uptime_seconds"] = round(
+            time.time() - _PROCESS_STARTED_AT_UNIX, 3
         )
     except Exception as runtime_exc:
         runtime_info["error"] = f"{type(runtime_exc).__name__}: {runtime_exc}"
