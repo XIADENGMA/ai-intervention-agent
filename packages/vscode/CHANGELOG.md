@@ -14,6 +14,18 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.45] — 2026-05-08
+
+> Server-side observability + safety release; no extension-facing
+> behaviour changes. Bumped to keep the VS Code extension version in
+> lockstep with the PyPI server package. Server-side now exposes
+> ``X-RateLimit-*`` headers on rate-limited API responses so SDK
+> clients (incl. this extension's status-bar polling loop) can
+> observe their budget proactively (R57); and ``_SSEBus.emit`` now
+> drops oversize (>256 KB) payloads in favour of a metadata
+> ``oversize_drop`` event to prevent N×fan-out memory blowups (R58).
+> Both transparent to the extension UI.
+
 ## [1.5.44] — 2026-05-08
 
 > Server-side performance release; no extension-facing behaviour

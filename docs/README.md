@@ -67,10 +67,12 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.44 (R56 cycle: static-
-asset Cache-Control aligned across the after_request hook and route
-handlers; hook now also covers /static/locales/ so language=auto
-clients no longer refetch 11 KB of JSON every hour — 24× over-fetch
-fix; ETag / 304 conditional-GET behaviour preserved. Earlier R55 /
-R54 / R53 / R52 / R51 / R50 work remains captured in v1.5.43 /
-v1.5.42 / v1.5.41 / v1.5.40 / v1.5.39)._
+index never lies. Last refreshed for v1.5.45 (R57+R58 cycle:
+Flask-Limiter ``headers_enabled=True`` so every rate-limited API
+response now carries IETF-draft ``X-RateLimit-Limit/-Remaining/-Reset``
++ ``Retry-After`` for proactive client backoff (R57); and
+``_SSEBus.emit`` now guards a 256 KB byte ceiling — oversize
+payloads are replaced with an ``oversize_drop`` metadata event,
+preventing N×fan-out memory blowups (R58). Earlier R56 / R55 /
+R54 / R53 / R52 / R51 / R50 work remains captured in v1.5.44 /
+v1.5.43 / v1.5.42 / v1.5.41 / v1.5.40 / v1.5.39)._

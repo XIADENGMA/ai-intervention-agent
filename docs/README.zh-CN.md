@@ -61,9 +61,11 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.44（R56 周期：静态资源 ``Cache-Control`` 在
-``after_request`` hook 与 route 级 handler 之间全面对齐；hook 新增
-``/static/locales/`` 分支，让 ``language='auto'`` 模式不再每小时
-回源拉一次 ~11 KB locale JSON（24 倍过取）；保留 ETag / 304 conditional
-GET 默认行为。上一周期 R55 / R54 / R53 / R52 / R51 / R50 收口在
-v1.5.43 / v1.5.42 / v1.5.41 / v1.5.40 / v1.5.39）。_
+更新对应 v1.5.45（R57+R58 周期：Flask-Limiter 启用
+``headers_enabled=True``，让每个限流响应都带 IETF-draft 的
+``X-RateLimit-Limit/-Remaining/-Reset`` + ``Retry-After``（R57）；
+``_SSEBus.emit`` 加 256 KB 字节上限护栏，超大 payload 被替换成
+``oversize_drop`` 元事件，避免单条事件 N 倍 fan-out 撑爆订阅者
+内存（R58）。上一周期 R56 / R55 / R54 / R53 / R52 / R51 / R50
+收口在 v1.5.44 / v1.5.43 / v1.5.42 / v1.5.41 / v1.5.40 /
+v1.5.39）。_

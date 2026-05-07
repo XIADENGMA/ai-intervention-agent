@@ -9,6 +9,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.45] — 2026-05-08
+
+> Round-57+58 round-up: two complementary observability/safety wins
+> on top of v1.5.44 — exposing per-client rate-limit budgets in
+> response headers, and shielding the SSE bus from a single oversize
+> emit that would fan-out N× memory across subscribers.
+
+### Added
+
+- **R57** — ``Limiter(headers_enabled=True)`` so every rate-limited
+  response now carries the IETF-draft / RFC-6585-aligned
+  ``X-RateLimit-Limit`` / ``X-RateLimit-Remaining`` /
+  ``X-RateLimit-Reset`` (and ``Retry-After`` on 429s). Pre-R57 the
+  only signal a client got was a hard 429; with the headers exposed,
+  SDKs / reverse proxies (HAProxy, Envoy, Traefik) / monitoring
+  dashboards / fail2ban / mobile clients with adaptive backoff can
+  proactively slow down before the bucket empties. ``limiter.exempt``
+  static-asset endpoints (every css/js/locale/font/icon/sound/lottie/
+  manifest/favicon/SW) keep their behaviour: no headers leaked. 9
+  dedicated tests in ``tests/test_ratelimit_headers_r57.py``.
+
+- **R58** — ``_SSEBus.emit`` now guards a 256 KB byte-size ceiling on
+  the JSON-serialized payload. When exceeded, the original payload is
+  **not** sent; a synthetic ``oversize_drop`` event is fan-out instead,
+  carrying ``original_event_type`` / ``size_bytes`` / ``limit_bytes``
+  metadata. The drop still consumes one ``_next_id`` slot (so
+  ``Last-Event-ID`` resume semantics aren't broken) and increments a
+  new ``oversize_drops`` counter exposed via ``stats_snapshot()`` →
+  ``/api/system/sse-stats`` → cross-process cache →
+  ``aiia://server/info``. Pre-R58, a single oversize payload (full
+  stderr blob, entire task-table dump, misencoded binary, etc.)
+  could fan-out N× memory across all subscribers; now it's bounded
+  to a tiny metadata replacement. Threshold chosen to clear nginx
+  default ``proxy_buffer_size`` (8 KB) by 32×, sit comfortably below
+  Cloudflare's recommended SSE-message ceiling (~1 MB), and stay 100×
+  above legitimate traffic (task_changed 1-2 KB, config_changed
+  < 500 B, gap_warning < 200 B). 13 dedicated tests in
+  ``tests/test_sse_oversize_guard_r58.py``.
+
 ## [1.5.44] — 2026-05-08
 
 > Round-56 round-up: a single client-side performance/consistency win
