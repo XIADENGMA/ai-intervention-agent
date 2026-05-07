@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -539,6 +540,130 @@ class SystemRoutesMixin:
                     ),
                     500,
                 )
+
+        @self.app.route("/api/system/health", methods=["GET"])
+        @self.limiter.limit("120 per minute")
+        def system_health() -> ResponseReturnValue:
+            """综合健康检查端点（R53-F），适合 K8s liveness/readiness probe / 监控仪表板。
+
+            ---
+            tags:
+              - System
+            description: |
+                聚合 SSE bus / TaskQueue / 最近日志 三个维度的健康指标，用一份
+                简单 JSON 给监控系统消费。**不包含敏感信息**（无 prompt 内容、
+                无 config 值），所有字段都是数值或 enum，可直接对接 Datadog /
+                Prometheus / 自建监控。
+
+                ## 响应规约
+
+                * ``status``：整体健康度的 enum：
+
+                  - ``healthy``：所有子系统正常；
+                  - ``degraded``：有 ERROR 级日志或 backpressure 累计但服务仍在跑，
+                    监控可以告警但不应自动重启；
+                  - ``unhealthy``：任何子系统拉取失败 / 内部异常，监控应当 page
+                    on-call。
+
+                * ``checks``：各子检查的 ``{ok: bool, ...}`` 详情，方便定位问题。
+
+                * ``ts_unix``：本次 health 评估时刻（int 秒），监控可基于它检测
+                  端点本身的 freshness。
+
+                ## HTTP 状态码
+
+                * 200 — ``healthy`` / ``degraded``：服务可用；
+                * 503 — ``unhealthy``：服务有内部问题，K8s readiness probe 应据此
+                  判定不发流量给本实例。
+
+                rate-limit 120/min（高于 sse-stats 60/min 和 recent-logs 30/min），
+                因为 K8s probe 默认 10 s 一次，120/min 给两实例共用足够余量。
+            responses:
+              200:
+                description: 服务健康（healthy 或 degraded）
+              503:
+                description: 服务不健康（任意子检查内部异常）
+            """
+            ts = int(time.time())
+            checks: dict[str, dict[str, object]] = {}
+            try:
+                from web_ui_routes.task import _sse_bus
+
+                snap = _sse_bus.stats_snapshot()
+                checks["sse_bus"] = {
+                    "ok": True,
+                    "subscriber_count": snap.get("subscriber_count", 0),
+                    "backpressure_discards": snap.get("backpressure_discards", 0),
+                    "gap_warnings_emitted": snap.get("gap_warnings_emitted", 0),
+                }
+            except Exception as exc:
+                checks["sse_bus"] = {"ok": False, "error": str(exc)}
+
+            try:
+                from task_queue_singleton import get_task_queue
+
+                tq = get_task_queue()
+                # ``get_task_count`` 返回 ``{"total": int, ...}``
+                count_dict = tq.get_task_count()
+                checks["task_queue"] = {
+                    "ok": True,
+                    "total": count_dict.get("total", 0),
+                    "max_tasks": tq.max_tasks,
+                }
+            except Exception as exc:
+                checks["task_queue"] = {"ok": False, "error": str(exc)}
+
+            try:
+                from enhanced_logging import get_recent_logs
+
+                # 数最近 5 分钟内的 ERROR 数量。5 分钟是个权衡：太短(1m)
+                # 容易因为 cron job 的瞬时 spike 误判，太长(30m)无法反映
+                # 当下健康度。监控可结合多次采样判趋势。
+                cutoff = ts - 300
+                recent = get_recent_logs()
+                error_count = sum(
+                    1
+                    for entry in recent
+                    if entry.get("level_no", 0) >= 40  # ERROR=40, CRITICAL=50
+                    and entry.get("ts_unix", 0) >= cutoff
+                )
+                checks["recent_errors"] = {
+                    "ok": True,
+                    "count_last_5min": error_count,
+                    "buffer_total": len(recent),
+                }
+            except Exception as exc:
+                checks["recent_errors"] = {"ok": False, "error": str(exc)}
+
+            # 整体 status 决策
+            all_ok = all(check.get("ok") for check in checks.values())
+            # ``checks[*]`` 的 value 是 ``dict[str, object]``，子 .get(...) 因此返回
+            # ``object``，``int()`` 拒绝直接转。改用本地变量 + ``isinstance`` 守
+            # 卫：拿到 int / 数值就用，否则降级为 0（说明该子检查挂了，直接当
+            # 没观测到来抑制误判）。
+            sse_check = checks.get("sse_bus", {})
+            re_check = checks.get("recent_errors", {})
+            bp_raw = (
+                sse_check.get("backpressure_discards", 0)
+                if isinstance(sse_check, dict)
+                else 0
+            )
+            err_raw = (
+                re_check.get("count_last_5min", 0) if isinstance(re_check, dict) else 0
+            )
+            backpressure = bp_raw if isinstance(bp_raw, int) else 0
+            recent_err_count = err_raw if isinstance(err_raw, int) else 0
+
+            if not all_ok:
+                status = "unhealthy"
+            elif backpressure > 0 or recent_err_count > 0:
+                status = "degraded"
+            else:
+                status = "healthy"
+
+            payload = {"status": status, "ts_unix": ts, "checks": checks}
+            http_code = 503 if status == "unhealthy" else 200
+            return jsonify(payload), http_code
 
         @self.app.route("/api/system/recent-logs", methods=["GET"])
         @self.limiter.limit("30 per minute")
