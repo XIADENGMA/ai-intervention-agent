@@ -11,6 +11,9 @@
 
 from __future__ import annotations
 
+import threading
+import time
+
 from enhanced_logging import EnhancedLogger
 from server_config import AUTO_RESUBMIT_TIMEOUT_DEFAULT
 from web_ui_validators import validate_auto_resubmit_timeout
@@ -169,12 +172,50 @@ def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
 # ============================================================================
 
 
+_CONFIG_CHANGED_EMIT_DEBOUNCE_S: float = 0.25
+"""``_emit_config_changed_to_sse_bus`` 的 leading-edge debounce 窗口（秒）。
+
+设计取舍 (R50-B)：
+- 用户一次 ``Cmd+S`` 通常会让编辑器把 config.toml 写两到三次（先 truncate
+  再 fsync），mtime 跳变两到三轮 → ``ConfigManager._trigger_config_change_callbacks``
+  会在 ~50 ms 内被连击 2-3 次，回调一遍跑下来本来会发 2-3 个 SSE 事件。
+- ``_HISTORY_MAXLEN=128`` 可以容纳得了，但前端 toast / VSCode 状态栏
+  会闪 2-3 次，看起来像 "为啥它一直在喊配置变了"。
+- 250 ms 的 leading-edge 设计：第一次 callback 立刻 emit，
+  紧随其后的 callback 在 250 ms 内全部跳过，250 ms 之后又是新一轮。
+  这样保证 "立刻有提示" 但 "不刷屏"。
+
+为什么不用 trailing-edge：trailing-edge 需要 ``threading.Timer`` 排程一个
+延迟回调，进程退出时若 timer 还在 pending、其 callback 可能在 SSE bus
+已 shut 后跑，造成 ``ValueError: I/O on closed file``。leading-edge 没有
+timer 状态，整体可靠性更好。
+"""
+
+_last_emit_monotonic: float = 0.0
+_emit_debounce_lock: threading.Lock = threading.Lock()
+
+
 def _emit_config_changed_to_sse_bus() -> None:
-    """配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件。
+    """配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件（带 debounce）。
 
     所有已连接的 client（浏览器 PWA / VSCode Webview）都会立刻收到这个
     事件，UI 自行决定是 toast 提示还是 silent log。
+
+    R50-B：leading-edge debounce 防止 mtime 风暴下 SSE 事件刷屏。
+    详见 ``_CONFIG_CHANGED_EMIT_DEBOUNCE_S`` 注释。
     """
+    global _last_emit_monotonic
+    with _emit_debounce_lock:
+        now = time.monotonic()
+        if now - _last_emit_monotonic < _CONFIG_CHANGED_EMIT_DEBOUNCE_S:
+            logger.debug(
+                f"config_changed 事件被 debounce 抑制"
+                f"（距上次 emit {(now - _last_emit_monotonic) * 1000:.0f} ms < "
+                f"{_CONFIG_CHANGED_EMIT_DEBOUNCE_S * 1000:.0f} ms 窗口）"
+            )
+            return
+        _last_emit_monotonic = now
+
     try:
         # lazy import：避免模块加载阶段就拖入 web_ui_routes / Flask 等。
         # ``_sse_bus`` 是 module-level singleton，import 不会有副作用。

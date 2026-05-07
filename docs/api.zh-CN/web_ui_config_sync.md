@@ -36,10 +36,13 @@
 
 ### `_emit_config_changed_to_sse_bus() -> None`
 
-配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件。
+配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件（带 debounce）。
 
 所有已连接的 client（浏览器 PWA / VSCode Webview）都会立刻收到这个
 事件，UI 自行决定是 toast 提示还是 silent log。
+
+R50-B：leading-edge debounce 防止 mtime 风暴下 SSE 事件刷屏。
+详见 ``_CONFIG_CHANGED_EMIT_DEBOUNCE_S`` 注释。
 
 ### `_ensure_config_changed_sse_callback_registered() -> None`
 

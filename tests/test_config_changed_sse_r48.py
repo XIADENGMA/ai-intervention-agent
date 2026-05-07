@@ -40,6 +40,11 @@ import web_ui_config_sync
 class TestEmitConfigChangedSendsSSEEvent(unittest.TestCase):
     """``_emit_config_changed_to_sse_bus`` 必须调用 ``_sse_bus.emit`` 恰好一次。"""
 
+    def setUp(self) -> None:
+        # R50-B：每个用例前重置 debounce state，避免上个用例刚 emit 完
+        # 让本用例落进 250ms 抑制窗口里。
+        web_ui_config_sync._last_emit_monotonic = 0.0
+
     def test_emit_is_called_with_event_type_and_payload(self) -> None:
         with patch("web_ui_routes.task._sse_bus") as fake_bus:
             web_ui_config_sync._emit_config_changed_to_sse_bus()
@@ -143,6 +148,8 @@ class TestEndToEndCallbackChain(unittest.TestCase):
     def setUp(self) -> None:
         self._original_flag = web_ui._CONFIG_CHANGED_SSE_CALLBACK_REGISTERED
         web_ui._CONFIG_CHANGED_SSE_CALLBACK_REGISTERED = False
+        # R50-B：重置 debounce state，避免和别的用例打架
+        web_ui_config_sync._last_emit_monotonic = 0.0
 
     def tearDown(self) -> None:
         web_ui._CONFIG_CHANGED_SSE_CALLBACK_REGISTERED = self._original_flag

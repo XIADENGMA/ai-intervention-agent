@@ -581,6 +581,63 @@ def server_info_resource() -> dict[str, object]:
         feedback_counters_info["error"] = f"{type(fb_exc).__name__}: {fb_exc}"
     info["interactive_feedback"] = feedback_counters_info
 
+    # R50-A：SSE bus 计数器跨进程拉取
+    # ----------------------------------------------------------------
+    # 设计要点：
+    # - SSE bus 是 ``web_ui_routes/task.py`` 模块级单例，跑在 web_ui 子进程
+    #   里——MCP server 进程根本看不到它。所以这里走 HTTP best-effort：
+    #   只有当 ``web_ui_info["running"]=True`` 时才尝试 GET 一次
+    #   ``/api/system/sse-stats``。
+    # - 短超时（500 ms）+ 任意异常吞掉：本 resource 的 sla 是"几十毫秒
+    #   返回 dict"；万一 web_ui 在某个内部锁里 hang 住，不能让自检页面也
+    #   一起 hang，宁可 sse_bus 块缺失。
+    # - 不主动启动 web_ui：``web_ui_info["running"]`` 是上一段（R40 引入）
+    #   通过 socket 探测得到的，不会触发 ensure_web_ui_running。读自检页
+    #   仍是只读副作用。
+    sse_bus_info: dict[str, object] = {}
+    try:
+        if web_ui_info.get("running"):
+            host = web_ui_info.get("host")
+            port = web_ui_info.get("port")
+            if isinstance(host, str) and isinstance(port, int) and port > 0:
+                import httpx
+
+                # 500 ms 上限：覆盖 loopback + 一次 round-trip 的 worst case。
+                # 真实 loopback 命中 < 5 ms；只有 web_ui 内部死锁才会撞超时，
+                # 此时 caller 会拿到 ``error: timeout`` 而不是被 hang。
+                target_url = f"http://{host}:{port}/api/system/sse-stats"
+                resp = httpx.get(target_url, timeout=0.5)
+                if resp.status_code == 200:
+                    body = resp.json()
+                    if isinstance(body, dict) and body.get("success"):
+                        # 把 ``success`` 字段拆掉，只保留计数指标本体
+                        for key in (
+                            "emit_total",
+                            "latest_event_id",
+                            "gap_warnings_emitted",
+                            "backpressure_discards",
+                            "subscriber_count",
+                            "history_size",
+                        ):
+                            if key in body:
+                                sse_bus_info[key] = body[key]
+                    else:
+                        sse_bus_info["error"] = (
+                            f"sse-stats response not success: {body!r}"
+                        )
+                else:
+                    sse_bus_info["error"] = f"sse-stats HTTP {resp.status_code}"
+            else:
+                sse_bus_info["error"] = (
+                    f"web_ui host/port not usable: host={host!r} port={port!r}"
+                )
+        else:
+            sse_bus_info["available"] = False
+            sse_bus_info["reason"] = "web_ui not running"
+    except Exception as sse_exc:
+        sse_bus_info["error"] = f"{type(sse_exc).__name__}: {sse_exc}"
+    info["sse_bus"] = sse_bus_info
+
     return info
 
 
