@@ -659,6 +659,61 @@ def server_info_resource() -> dict[str, object]:
         runtime_info["error"] = f"{type(runtime_exc).__name__}: {runtime_exc}"
     info["runtime"] = runtime_info
 
+    # R60：进程级运行时指标 —— RSS / 用户 CPU 时间 / 线程数 / 文件描述符数。
+    # 注意 ``platform`` 模块在 ``runtime_info`` 块里是 ``import platform as _platform``
+    # 局部绑定的，作用域只在那个 ``try`` 内。这里再 import 一次给本块自己用。
+    # ----------------------------------------------------------------
+    # 让 client UI 在不外接 ``ps`` / ``htop`` / Grafana 的情况下也能看到
+    # "MCP host 进程占多少内存、跑了多久 CPU、有多少线程"——这些是判断
+    # 内存泄漏 / 线程逃逸 / FD 泄漏的最快入口。
+    #
+    # 不引入 ``psutil`` 依赖：用 stdlib ``resource`` + ``os``。
+    # - ``resource.getrusage(RUSAGE_SELF)``：跨平台（macOS / Linux），
+    #   ``ru_maxrss`` 单位 macOS 是 byte / Linux 是 KB —— 这里统一
+    #   normalize 到 byte，client UI 拿到的字段单位永远一致；
+    # - ``threading.active_count()`` / ``os.getpid()`` 都是 stdlib，
+    #   零依赖；
+    # - ``len(os.listdir('/proc/self/fd'))`` 是 Linux 专属，macOS 没
+    #   ``/proc``，会 fallback 到 ``-1`` 表示 unsupported。
+    # 任何子项失败都局部 ``error`` 不影响主块。
+    process_info: dict[str, object] = {}
+    try:
+        import platform as _proc_platform
+
+        process_info["pid"] = os.getpid()
+        process_info["thread_count"] = threading.active_count()
+        try:
+            import resource as _resource
+
+            ru = _resource.getrusage(_resource.RUSAGE_SELF)
+            # ru_maxrss 单位差异：macOS bytes / Linux KB。判断方式：
+            # 若 system 是 Darwin 直接当 bytes；否则按 KB × 1024 转 bytes。
+            # 这样 client UI 永远看到 bytes 单位的 ``rss_bytes``。
+            if _proc_platform.system() == "Darwin":
+                process_info["rss_bytes"] = int(ru.ru_maxrss)
+            else:
+                process_info["rss_bytes"] = int(ru.ru_maxrss) * 1024
+            process_info["user_cpu_seconds"] = round(ru.ru_utime, 3)
+            process_info["sys_cpu_seconds"] = round(ru.ru_stime, 3)
+        except Exception as ru_exc:
+            process_info["resource_error"] = f"{type(ru_exc).__name__}: {ru_exc}"
+
+        try:
+            # Linux fd 数：``/proc/self/fd`` 目录下条目数 = 打开文件描述符
+            # 数（含 socket、pipe、log file 等）。macOS / Windows 没 ``/proc``，
+            # 这里 ``-1`` 表示 unsupported（client UI 应当展示成 "n/a" 而不是
+            # 警报）。
+            fd_dir = "/proc/self/fd"
+            if os.path.isdir(fd_dir):
+                process_info["open_fds"] = len(os.listdir(fd_dir))
+            else:
+                process_info["open_fds"] = -1
+        except Exception as fd_exc:
+            process_info["fd_error"] = f"{type(fd_exc).__name__}: {fd_exc}"
+    except Exception as proc_exc:
+        process_info["error"] = f"{type(proc_exc).__name__}: {proc_exc}"
+    info["process"] = process_info
+
     fastmcp_info: dict[str, object] = {}
     try:
         from importlib.metadata import PackageNotFoundError as _PkgNotFound
