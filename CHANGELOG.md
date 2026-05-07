@@ -9,6 +9,38 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.43] — 2026-05-08
+
+> Round-55 round-up: a single observability win on top of v1.5.42 —
+> closing a hard-won blind spot that meant "self-info" had been
+> reporting only ~10 % of the platform's actual error stream.
+
+### Added
+
+- **R55** — `server.server_info_resource()` now returns a unified
+  `recent_logs` block that aggregates `WARNING`/`ERROR` entries from
+  **both** the MCP host process **and** the Web UI subprocess into a
+  single timestamp-sorted list, each entry tagged with
+  `source: "mcp"` or `source: "web_ui"`. The MCP process's ring buffer
+  (R51-C) had always been wired in, but in practice the MCP host emits
+  ~0–3 entries per day — almost all real failures (TaskQueue lock
+  warnings, SSE bus back-pressure, AppleScript / Bark / config-watcher
+  exceptions) live in the Web UI subprocess's separate ring. Pre-R55,
+  the MCP-side `aiia://server/info` page was effectively blind to ~90 %
+  of operational errors. Cross-process fetch goes through a new
+  `server._fetch_recent_logs_cached(host, port, limit)` with the same
+  1.0 s TTL / success-only / fresh-copy / cache-key-includes-limit
+  shape pioneered in R54-A, so a tight self-info polling loop won't
+  blow through the Web UI's 30 / min rate limit on
+  `/api/system/recent-logs`. Tagged with new sub-fields
+  `mcp_count` / `web_ui_count` / `web_ui_meta` (carries the underlying
+  fetch error or `available: false` reason if applicable) for fine-grained
+  observability without breaking the long-standing `count` /
+  `entries` shape (R51-C tests still green). 13 dedicated tests cover
+  cache hit/miss, TTL expiry, different-limit cache invalidation, all
+  four HTTP failure paths, the merged sort order, web_ui-offline
+  fallback, and isolated-copy semantics.
+
 ## [1.5.42] — 2026-05-08
 
 > Round-54 round-up: an observability-and-safety follow-up to v1.5.41

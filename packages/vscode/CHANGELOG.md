@@ -14,6 +14,15 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.43] — 2026-05-08
+
+> Server-side observability release; no extension-facing behaviour
+> changes. Bumped to keep the VS Code extension version in lockstep
+> with the PyPI server package. Server-side aggregates `recent_logs`
+> across the MCP host and Web UI subprocess, exposing both sources in
+> the `aiia://server/info` resource through a 1.0 s TTL cross-process
+> cache (R55). Transparent to the extension UI.
+
 ## [1.5.42] — 2026-05-08
 
 > Server-side hardening release; no extension-facing behaviour

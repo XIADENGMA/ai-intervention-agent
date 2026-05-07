@@ -67,11 +67,11 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.42 (R54 cycle: 1.0s TTL
-cache around the cross-process /api/system/sse-stats fetch in
-server_info_resource so client-UI ticks can't burn through the
-60/min limiter; and a major LogSanitizer expansion that fixes a
-silent leak of OpenAI sk-proj / sk-ant project-scoped keys plus
-adds AWS / GCP / GitHub-server / HuggingFace / Stripe / JWT and
-URL basic-auth coverage. Earlier R53 / R52 / R51 / R50 work
-remains captured in v1.5.41 / v1.5.40 / v1.5.39)._
+index never lies. Last refreshed for v1.5.43 (R55 cycle:
+server_info_resource now aggregates recent_logs across the MCP
+host and Web UI subprocess, each entry tagged source mcp/web_ui
+and merged ts_unix-ascending; cross-process fetch goes through a
+new 1.0s TTL cache so self-info polling can't burn through the
+30/min limiter on /api/system/recent-logs. Earlier R54 / R53 /
+R52 / R51 / R50 work remains captured in v1.5.42 / v1.5.41 /
+v1.5.40 / v1.5.39)._
