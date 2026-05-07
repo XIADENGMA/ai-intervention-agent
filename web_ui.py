@@ -554,12 +554,23 @@ class WebFeedbackUI(
         from flask_limiter import Limiter
         from flask_limiter.util import get_remote_address
 
+        # R57：``headers_enabled=True`` 让 Flask-Limiter 在每个**受限响应**
+        # 上自动注入 `X-RateLimit-Limit` / `X-RateLimit-Remaining` /
+        # `X-RateLimit-Reset` / `Retry-After`（429 时）。这是 RFC 6585 + IETF
+        # `RateLimit-*` draft 行业标准，让客户端 SDK / 反向代理 / 监控面板能
+        # 主动观测限流状态，而不是被动等到 429 才反应。
+        # - ``limiter.exempt`` 装饰过的端点（绝大多数静态资源）默认**不带**
+        #   该头，避免 favicon / locales JSON 之类的无意义 noise；
+        # - 头值取自当前请求"最严格的那条限流"（比如 60 per minute 与 10
+        #   per second 同时生效，客户端会看到剩多少额度的是这两者中先耗尽
+        #   的那一条），符合用户直觉。
         self.limiter = Limiter(
             key_func=get_remote_address,
             app=self.app,
             default_limits=["60 per minute", "10 per second"],
             storage_uri="memory://",
             strategy="fixed-window",
+            headers_enabled=True,
         )
 
         self.setup_security_headers()
