@@ -1474,6 +1474,37 @@ class WebFeedbackUI(
         )
         self._mdns_thread.start()
 
+        # R59：给 web_ui 子进程的**主线程**显式注册 SIGTERM handler。
+        # ----------------------------------------------------------------
+        # 默认情况下 Python 的 SIGTERM handler 是直接 SystemExit，bypass
+        # ``app.run()`` 的 ``KeyboardInterrupt`` 捕获 → 我们的 ``finally``
+        # 永远跑不到，``self._stop_mdns()`` 也就不执行：浏览器侧 SSE 长连
+        # 接、mDNS announcement、werkzeug worker thread 都是被 OS 强行 close
+        # 而非 graceful close。后果：
+        # - LAN 上其它设备仍然把 ``ai.local`` 解析到这个已关闭的进程，要等
+        #   下一次 mDNS TTL 过期才能感知；
+        # - SSE generator 的 ``finally: bus.unsubscribe(q)`` 不跑 → 内存里
+        #   残留的 queue 直到下次 emit 触发 backpressure 才被 GC。
+        # 把 SIGTERM 翻译成 ``KeyboardInterrupt``，复用现成的 ``app.run()``
+        # 退出路径走 ``finally: self._stop_mdns()``。仅在主线程注册，避免
+        # 嵌套 ``ValueError: signal only works in main thread``。
+        try:
+            if threading.current_thread() is threading.main_thread() and hasattr(
+                signal, "SIGTERM"
+            ):
+
+                def _term_to_keyboard_interrupt(signum: int, frame: object) -> None:
+                    del frame
+                    raise KeyboardInterrupt(
+                        f"signal {signum} → graceful web_ui shutdown"
+                    )
+
+                signal.signal(signal.SIGTERM, _term_to_keyboard_interrupt)
+        except (ValueError, OSError) as sig_exc:
+            # Windows 不支持某些 signal；非主线程也可能抛 ValueError。
+            # 静默跳过：默认 SIGTERM behaviour 仍然是 SystemExit，至少能退。
+            logger.debug(f"无法注册 SIGTERM handler: {sig_exc}")
+
         print("🔄 页面将保持打开，可实时更新内容")
         print()
 
