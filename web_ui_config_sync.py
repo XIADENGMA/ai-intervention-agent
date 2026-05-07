@@ -140,3 +140,87 @@ def _ensure_feedback_timeout_hot_reload_callback_registered() -> None:
                 f"注册 feedback 配置热更新回调失败（将降级为仅对新任务生效）：{e}",
                 exc_info=True,
             )
+
+
+# ============================================================================
+# R48: config_changed SSE 推送
+#
+# 设计动机：项目里已经有 ``ConfigManager.start_file_watcher`` + 一组 ``register_
+# config_change_callback`` 在做"运行时热更新"——但用户视角下的反馈缺位：
+#
+#   - 改了 ``notification.bark_url``：要么走 ``_invalidate_runtime_caches_on_config_change``
+#     无声生效，要么压根不在热更新白名单里（多数复杂字段都是后者）。
+#   - 用户没有任何 UI 反馈，只能"改完配置 → 等 / 重启 → 试试看"；非常容易踩
+#     "我以为我改了，但其实是 cwd 错了 / 文件被自动迁移了"的坑。
+#
+# 解决方式：所有 config 变更都额外推一个 ``config_changed`` SSE 事件，让前端
+# （浏览器 PWA / VSCode Webview / VSCode 状态栏）能主动弹一行提示
+# "配置已变更，按 Ctrl+R 重载页面"。客户端不强制 reload，因为：
+#
+#   1. 已经热更新的字段（feedback / network_security）是无感生效的，
+#      用户重载只是为了看 UI 上的当前值；
+#   2. 还没热更新的字段（如 ``mcp.tool_metadata``）只能等下一次重启 server
+#      才能体现，重载页面也无济于事；
+#   3. 让客户端自己决定是 toast 还是 silent log 更合理。
+#
+# 安全性：``_sse_bus.emit`` 自身已经是线程安全 + backpressure-aware，
+# 即使每秒 10 次 mtime 变更也不会让 SSE 链路炸掉；保险起见我们的回调
+# 也只发一个 lightweight 字典，不带任何敏感配置内容。
+# ============================================================================
+
+
+def _emit_config_changed_to_sse_bus() -> None:
+    """配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件。
+
+    所有已连接的 client（浏览器 PWA / VSCode Webview）都会立刻收到这个
+    事件，UI 自行决定是 toast 提示还是 silent log。
+    """
+    try:
+        # lazy import：避免模块加载阶段就拖入 web_ui_routes / Flask 等。
+        # ``_sse_bus`` 是 module-level singleton，import 不会有副作用。
+        from web_ui_routes.task import _sse_bus
+
+        _sse_bus.emit(
+            "config_changed",
+            {
+                "reason": "config_file_modified",
+                "hint": (
+                    "Configuration file changed. Reload the page to see the latest values."
+                ),
+            },
+        )
+        logger.debug("config_changed 事件已通过 SSE 总线广播")
+    except Exception as e:
+        # 推送失败不应影响主热更新流程；其它已注册的 callback 还会跑。
+        logger.warning(
+            f"广播 config_changed 事件失败（其它热更新回调不受影响）：{e}",
+            exc_info=True,
+        )
+
+
+def _ensure_config_changed_sse_callback_registered() -> None:
+    """确保仅注册一次 config_changed SSE 推送回调（R48）。
+
+    与 ``_ensure_*_hot_reload_callback_registered`` 同样的 idempotent
+    模式：模块级 flag + lock 双检，保证不重复注册同一个 callback。
+    注册失败 → 降级到"只在重启时生效"，记录 warning 但不抛异常。
+    """
+    import web_ui as _wu
+
+    if _wu._CONFIG_CHANGED_SSE_CALLBACK_REGISTERED:
+        return
+    with _wu._CONFIG_CHANGED_SSE_CALLBACK_LOCK:
+        if _wu._CONFIG_CHANGED_SSE_CALLBACK_REGISTERED:
+            return
+        try:
+            config_mgr = _wu.get_config()
+            config_mgr.register_config_change_callback(_emit_config_changed_to_sse_bus)
+            _wu._CONFIG_CHANGED_SSE_CALLBACK_REGISTERED = True
+            logger.debug(
+                "已注册 config_changed SSE 推送回调（让 client 在配置变更时主动提示）"
+            )
+        except Exception as e:
+            logger.warning(
+                f"注册 config_changed SSE 推送回调失败（client 将无法收到变更提示）：{e}",
+                exc_info=True,
+            )

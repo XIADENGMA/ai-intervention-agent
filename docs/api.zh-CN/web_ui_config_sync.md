@@ -33,3 +33,18 @@
 ### `_ensure_feedback_timeout_hot_reload_callback_registered() -> None`
 
 确保仅注册一次 feedback.auto_resubmit_timeout 热更新回调。
+
+### `_emit_config_changed_to_sse_bus() -> None`
+
+配置变更回调：通过 SSE 总线推一个 ``config_changed`` 事件。
+
+所有已连接的 client（浏览器 PWA / VSCode Webview）都会立刻收到这个
+事件，UI 自行决定是 toast 提示还是 silent log。
+
+### `_ensure_config_changed_sse_callback_registered() -> None`
+
+确保仅注册一次 config_changed SSE 推送回调（R48）。
+
+与 ``_ensure_*_hot_reload_callback_registered`` 同样的 idempotent
+模式：模块级 flag + lock 双检，保证不重复注册同一个 callback。
+注册失败 → 降级到"只在重启时生效"，记录 warning 但不抛异常。

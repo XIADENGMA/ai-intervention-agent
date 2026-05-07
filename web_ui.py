@@ -74,6 +74,7 @@ from server_config import (
 from shared_types import FeedbackResult
 from task_queue_singleton import get_task_queue
 from web_ui_config_sync import (
+    _ensure_config_changed_sse_callback_registered,
     _ensure_feedback_timeout_hot_reload_callback_registered,
     _ensure_network_security_hot_reload_callback_registered,
     _get_default_auto_resubmit_timeout_from_config,
@@ -251,6 +252,13 @@ _CURRENT_WEB_UI_INSTANCE: Any | None = None
 _NETWORK_SECURITY_CALLBACK_REGISTERED: bool = False
 _NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
 _FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.RLock()
+# R48：``config_changed`` SSE 推送回调注册状态。一次注册全局生效；后续
+# config 文件 mtime 变化时通过 ``_sse_bus.emit("config_changed", ...)``
+# 让所有连着的 client（浏览器 PWA / VSCode webview / 状态栏）显式提示
+# 「配置已变更，建议重载」，而不是让用户忍受"我以为我改了配置但没生效"
+# 的 silent staleness。
+_CONFIG_CHANGED_SSE_CALLBACK_REGISTERED: bool = False
+_CONFIG_CHANGED_SSE_CALLBACK_LOCK = threading.Lock()
 
 # ============================================================================
 # R26.2: ``_get_template_context`` 热路径常量与 lru_cache
@@ -533,6 +541,11 @@ class WebFeedbackUI(
         self.network_security_config = self._load_network_security_config()
         # 【热更新】network_security（allowed_networks/blocked_ips/access_control_enabled）也应随配置文件变化生效
         _ensure_network_security_hot_reload_callback_registered()
+
+        # R48: 注册 config_changed SSE 推送回调，让 client 端在配置变更时
+        # 收到一个 ``event: config_changed``，可选地提示用户重载页面。
+        # 注册失败不阻塞 server 启动；详见 web_ui_config_sync 注释。
+        _ensure_config_changed_sse_callback_registered()
 
         # R26.1: ``flask_limiter`` 推迟到第一次构造 ``WebUIApp`` 才加载——本模块顶部
         # 不再 ``from flask_limiter import Limiter``，所以 ``import web_ui`` 路径

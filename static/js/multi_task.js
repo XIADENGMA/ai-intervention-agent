@@ -472,6 +472,32 @@ function _connectSSE() {
     }, 0)
   })
 
+  // R48：服务端检测到 config.toml 文件变更时（mtime 改变）会广播 ``config_changed``
+  // SSE 事件。前端不强制 reload —— 已经热更新的字段（feedback / network_security）
+  // 是无感生效的；其它字段的影响只能等下次 server 重启，reload 页面也无济于事。
+  // 我们这里只做一行 toast 提示，让用户知道 "你的修改被服务端看到了"。
+  source.addEventListener('config_changed', function (e) {
+    if (_sseSource !== source) return
+    _debugLog('SSE config_changed received')
+    var hint = 'Configuration file changed. Reload the page to see the latest values.'
+    try {
+      var detail = JSON.parse(e && e.data ? e.data : '{}')
+      _debugLog('SSE config_changed detail:', detail)
+      if (detail && typeof detail.hint === 'string' && detail.hint) hint = detail.hint
+    } catch (_) {
+      /* noop：detail 解析失败 → 用 fallback hint */
+    }
+    // 用项目内既有的 ``_showToast`` helper（``static/js/app.js``）。它把消息渲染为
+    // 顶部居中、带过渡动画的非阻塞 toast，自动 1.8s 消失，符合"提示但不打断"
+    // 的 UX 诉求。VSCode Webview / 测试 stub 等场景里 helper 可能不存在，此时
+    // 默默吞掉提示也比抛 ReferenceError 强 —— 主流程（task 列表更新）不会受影响。
+    if (typeof _showToast === 'function') {
+      try { _showToast(hint) } catch (_) { /* noop */ }
+    } else if (typeof console !== 'undefined' && console && console.info) {
+      try { console.info('[aiia] config_changed:', hint) } catch (_) { /* noop */ }
+    }
+  })
+
   source.onerror = function () {
     if (_sseSource !== source) return
     _sseConnected = false

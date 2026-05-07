@@ -647,6 +647,35 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           return
         }
 
+        if (evType === 'config_changed') {
+          // R48：服务端检测到 config 文件变更，给运维 / 用户一个 toast 提示。
+          // 状态栏侧不强制 fetch（config 多数字段已经走 ConfigManager 热更新
+          // 静默生效；与 task 状态无关，不影响 status-bar 数字）。仅记录事件
+          // + 弹一条非阻塞 information message，让用户知道"我刚改的 toml 被
+          // server 看见了"。
+          logger.event('sse.config_changed', { dataStr }, { level: 'info' })
+          let hint = 'AI Intervention Agent: configuration file changed.'
+          try {
+            const detail = JSON.parse(dataStr)
+            if (detail && typeof detail.hint === 'string' && detail.hint) {
+              hint = detail.hint
+            }
+          } catch {
+            /* fallback hint */
+          }
+          try {
+            // ``vscode`` 模块在本文件顶部已 import；调用 setStatusBarMessage
+            // 让通知出现在 VSCode status bar 区域 6 秒，不弹 modal。
+            vscode.window.setStatusBarMessage(`$(sync) ${hint}`, 6000)
+          } catch {
+            /* ignore: 在 unit-test 沙箱里 vscode.window 可能被 stub */
+          }
+          pendingId = null
+          pendingType = null
+          pendingDataLines = []
+          return
+        }
+
         if (evType !== 'task_changed' && evType !== 'message') {
           // 未识别的事件类型：写一条 trace 日志便于排查，但不当 task_changed
           // 处理（避免误更新 status bar）。

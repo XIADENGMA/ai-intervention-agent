@@ -13,3 +13,7 @@
 ### `_ensure_network_security_hot_reload_callback_registered() -> None`
 
 ### `_ensure_feedback_timeout_hot_reload_callback_registered() -> None`
+
+### `_emit_config_changed_to_sse_bus() -> None`
+
+### `_ensure_config_changed_sse_callback_registered() -> None`
