@@ -676,6 +676,17 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           return
         }
 
+        if (evType === 'heartbeat') {
+          // R51-B：服务端每 25s 推一帧 named-event heartbeat 替代旧的 SSE comment。
+          // 状态栏不需要任何视觉变化（heartbeat 是"连接还活着"的 keep-alive），
+          // 仅做 trace log 让排查长连接断流问题时能看到 last-heartbeat 时间。
+          logger.event('sse.heartbeat', { dataStr }, { level: 'debug' })
+          pendingId = null
+          pendingType = null
+          pendingDataLines = []
+          return
+        }
+
         if (evType !== 'task_changed' && evType !== 'message') {
           // 未识别的事件类型：写一条 trace 日志便于排查，但不当 task_changed
           // 处理（避免误更新 status bar）。

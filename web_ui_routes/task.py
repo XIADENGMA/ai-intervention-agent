@@ -92,9 +92,14 @@ class _SSEBus:
         #   网络抖动 / VSCode 长时间挂起后重连。
         # - ``_backpressure_discards``：``emit()`` 因 queue Full 或积压超阈值踢
         #   subscriber 的次数。慢消费者（浏览器 tab 卡死、机器换页风暴）会让它涨。
+        # - ``_heartbeat_total``（R51-B）：generator 因 ``q.get(timeout)``
+        #   超时而 yield 一帧 ``event: heartbeat`` 的累计次数。N 个连接每
+        #   25 s 各 +1，闲置 24 h 大概 (3600/25)*24 ≈ 3.5 k；持续不涨意味
+        #   着 generator 被卡住或所有连接都很活跃。
         self._emit_total: int = 0
         self._gap_warnings_emitted: int = 0
         self._backpressure_discards: int = 0
+        self._heartbeat_total: int = 0
 
     def subscribe(self, after_id: int | None = None) -> queue.Queue:
         """订阅 SSE 事件流；可选 ``after_id`` 触发缺失事件回放。
@@ -285,8 +290,16 @@ class _SSEBus:
         with self._lock:
             return list(self._history)
 
+    def bump_heartbeat(self) -> None:
+        """generator yield heartbeat 一帧时调用，把 ``_heartbeat_total`` 加 1。
+
+        R51-B：分离出独立方法是为了单元测试不依赖真起 Flask 的 generator
+        就能断言计数器涨了。线程安全：``self._lock`` 保证写不丢。"""
+        with self._lock:
+            self._heartbeat_total += 1
+
     def stats_snapshot(self) -> dict[str, int]:
-        """返回 SSE 总线的运行时计数器快照（R47）。
+        """返回 SSE 总线的运行时计数器快照（R47 + R51-B）。
 
         字段语义：
         - ``emit_total``：``emit()`` 调用累计次数；
@@ -297,7 +310,9 @@ class _SSEBus:
           subscriber 的累计次数（持续上涨意味着浏览器 tab / extension 端有
           慢消费者）；
         - ``subscriber_count``：当前活跃订阅者数（基线指标）；
-        - ``history_size``：当前 history deque 长度（≤ ``_HISTORY_MAXLEN``）。
+        - ``history_size``：当前 history deque 长度（≤ ``_HISTORY_MAXLEN``）；
+        - ``heartbeat_total``（R51-B）：generator 因 ``q.get`` 超时而 yield
+          一帧 ``event: heartbeat`` 的累计次数。
 
         所有字段都是单调累计（除了 ``subscriber_count`` / ``history_size`` 是
         瞬时值），caller 可以记录两次快照后做差，得到一段窗口内的速率。
@@ -310,6 +325,7 @@ class _SSEBus:
                 "backpressure_discards": self._backpressure_discards,
                 "subscriber_count": len(self._subscribers),
                 "history_size": len(self._history),
+                "heartbeat_total": self._heartbeat_total,
             }
 
 
@@ -447,7 +463,23 @@ class TaskRoutesMixin:
                         try:
                             event = q.get(timeout=25)
                         except queue.Empty:
-                            yield ": heartbeat\n\n"
+                            # R51-B：把 SSE comment 心跳升级为 named event。
+                            # comment 行（``: heartbeat\n\n``）只能让中间代理
+                            # 看到"还有字节",但浏览器 ``EventSource`` / VSCode
+                            # webview 看不到，监控不到 server-side liveness。
+                            # 改成 named event 后 client 可以
+                            # ``addEventListener('heartbeat', ...)`` 估算 RTT、
+                            # detect 应用层卡死，且 SSE 协议规范规定未注册
+                            # listener 会自动忽略，向后兼容。
+                            _sse_bus.bump_heartbeat()
+                            try:
+                                hb_payload = json.dumps(
+                                    {"ts_unix": int(time.time())},
+                                    ensure_ascii=False,
+                                )
+                            except (TypeError, ValueError):
+                                hb_payload = "{}"
+                            yield f"event: heartbeat\ndata: {hb_payload}\n\n"
                             continue
                         if event is _SSE_DISCONNECT_SENTINEL:
                             return

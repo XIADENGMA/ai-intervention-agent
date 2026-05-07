@@ -498,6 +498,17 @@ function _connectSSE() {
     }
   })
 
+  // R51-B：监听 named-event heartbeat。服务端每 25 s 发一帧，data 里带 ts_unix。
+  // 默认只 debug log（避免污染主控制台），但暴露这条 listener 让上层 / 测试 / 调试
+  // 工具可以基于它估算 RTT、检测连接健康。
+  source.addEventListener('heartbeat', function (e) {
+    if (_sseSource !== source) return
+    try {
+      var detail = JSON.parse(e && e.data ? e.data : '{}')
+      _debugLog('SSE heartbeat:', detail)
+    } catch (_) { /* noop */ }
+  })
+
   source.onerror = function () {
     if (_sseSource !== source) return
     _sseConnected = false
