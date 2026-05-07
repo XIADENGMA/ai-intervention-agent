@@ -61,10 +61,9 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.43（R55 周期：``server_info_resource`` 把
-``recent_logs`` 跨进程聚合 — MCP host 自身 ring 和 Web UI 子进程
-的 ring 一起合并、按 ``ts_unix`` 升序、每条带 ``source: mcp``
-或 ``source: web_ui`` 标签；跨进程拉 ``/api/system/recent-logs``
-走新的 1.0s TTL 缓存，避免 self-info 高频轮询撞穿 30/min 限流。
-上一周期 R54 / R53 / R52 / R51 / R50 收口在 v1.5.42 / v1.5.41 /
-v1.5.40 / v1.5.39）。_
+更新对应 v1.5.44（R56 周期：静态资源 ``Cache-Control`` 在
+``after_request`` hook 与 route 级 handler 之间全面对齐；hook 新增
+``/static/locales/`` 分支，让 ``language='auto'`` 模式不再每小时
+回源拉一次 ~11 KB locale JSON（24 倍过取）；保留 ETag / 304 conditional
+GET 默认行为。上一周期 R55 / R54 / R53 / R52 / R51 / R50 收口在
+v1.5.43 / v1.5.42 / v1.5.41 / v1.5.40 / v1.5.39）。_

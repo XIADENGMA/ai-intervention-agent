@@ -67,11 +67,10 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.43 (R55 cycle:
-server_info_resource now aggregates recent_logs across the MCP
-host and Web UI subprocess, each entry tagged source mcp/web_ui
-and merged ts_unix-ascending; cross-process fetch goes through a
-new 1.0s TTL cache so self-info polling can't burn through the
-30/min limiter on /api/system/recent-logs. Earlier R54 / R53 /
-R52 / R51 / R50 work remains captured in v1.5.42 / v1.5.41 /
-v1.5.40 / v1.5.39)._
+index never lies. Last refreshed for v1.5.44 (R56 cycle: static-
+asset Cache-Control aligned across the after_request hook and route
+handlers; hook now also covers /static/locales/ so language=auto
+clients no longer refetch 11 KB of JSON every hour — 24× over-fetch
+fix; ETag / 304 conditional-GET behaviour preserved. Earlier R55 /
+R54 / R53 / R52 / R51 / R50 work remains captured in v1.5.43 /
+v1.5.42 / v1.5.41 / v1.5.40 / v1.5.39)._

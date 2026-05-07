@@ -9,6 +9,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.44] — 2026-05-08
+
+> Round-56 round-up: a single client-side performance/consistency win
+> on top of v1.5.43 — fixing a quiet docstring lie and a 24× over-fetch
+> on i18n locale JSON.
+
+### Changed
+
+- **R56** — static-asset ``Cache-Control`` is now consistent across
+  the ``add_security_headers`` after_request hook and the route-level
+  handlers. Pre-R56, ``serve_css`` / ``serve_js`` set
+  ``max-age=3600`` (1 h) at the route level, but the hook
+  unconditionally rewrote it to ``max-age=86400`` (1 d) — the
+  docstring claimed "1 hour" but production was actually "1 day", a
+  silent drift. More impactful: ``/static/locales/*`` was **not**
+  matched by any hook prefix, so the route-level 1 h was final, and
+  ``language='auto'`` clients (where R20.12-B's inline optimization
+  doesn't apply) refetched ~11 KB of locale JSON every hour — 24×
+  more often than every other static asset. Hook now matches
+  ``/static/locales/`` with the same v=hash / no-v split as js/css
+  (1 year immutable / 1 day); route-level handlers updated to write
+  the same value the hook will overwrite with (belt-and-suspenders
+  fallback); docstrings rewritten to truthfully describe the policy;
+  hook gains an inline cache-policy table for at-a-glance audit.
+  Special-purpose endpoints (``manifest.webmanifest`` 1 h,
+  ``favicon.ico`` no-cache, notification SW no-cache) intentionally
+  keep their route-level headers because the hook's path prefixes
+  don't match them, and their semantic short-cache values are correct.
+  16 dedicated tests in
+  ``tests/test_static_cache_headers_r56.py`` verify hook coverage of
+  all four prefix groups, special-path retention, ETag presence, and
+  conditional-GET 304 Not Modified semantics — because
+  ``Cache-Control`` only saves bytes-not-sent, ETag is what saves
+  bytes-not-downloaded after the cache stales.
+
 ## [1.5.43] — 2026-05-08
 
 > Round-55 round-up: a single observability win on top of v1.5.42 —

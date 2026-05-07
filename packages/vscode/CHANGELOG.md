@@ -14,6 +14,15 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.44] — 2026-05-08
+
+> Server-side performance release; no extension-facing behaviour
+> changes. Bumped to keep the VS Code extension version in lockstep
+> with the PyPI server package. Server-side aligns static-asset
+> Cache-Control across the hook and route handlers, fixing a silent
+> docstring drift on JS/CSS and a 24× over-fetch on i18n locale JSON
+> (R56). Transparent to the extension UI.
+
 ## [1.5.43] — 2026-05-08
 
 > Server-side observability release; no extension-facing behaviour
