@@ -131,3 +131,11 @@ INFO/DEBUG 强制提升到 ERROR；反之"收到反馈请求"会从 INFO 降到 
 ##### `warning(self, message: str) -> None`
 
 ##### `error(self, message: str) -> None`
+
+##### `event(self, name: str) -> None`
+
+Emit a single grep-friendly event log line.
+
+``name`` should be a stable dotted identifier (``task.created``,
+``task.notified``, ``task.completed``, ``server.boot``, …). ``ctx``
+is rendered as ``key=value`` pairs after the event name.

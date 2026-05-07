@@ -57,3 +57,5 @@
 ##### `warning(self, message: str) -> None`
 
 ##### `error(self, message: str) -> None`
+
+##### `event(self, name: str) -> None`

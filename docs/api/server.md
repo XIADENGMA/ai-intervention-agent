@@ -10,6 +10,8 @@
 
 ### `get_mcp_error_stats() -> dict[str, int]`
 
+### `server_info_resource() -> dict[str, object]`
+
 ### `cleanup_services(shutdown_notification_manager: bool = True) -> None`
 
 ### `main() -> None`
