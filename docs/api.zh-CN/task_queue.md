@@ -4,6 +4,46 @@
 
 任务队列管理 - 线程安全、状态管理、自动清理、延迟删除、持久化。
 
+## 函数
+
+### `_capture_all_thread_stacks() -> str`
+
+采集进程内所有线程的当前调用栈，拼成可读字符串。
+
+``sys._current_frames`` 在 CPython 是受支持的公开-但-下划线 API
+（PEP 8 的"私有但 stdlib 有保证"约定）；在 PyPy 上也实现了。任何不可
+采集的环境都返回 fallback 串而不是抛异常，避免 watchdog 自身崩溃。
+
+### `_scan_pending_and_dump_slow() -> int`
+
+单次扫描：把超时但尚未 dump 的 record 拣出来，dump 全栈到 logger.error。
+
+返回这一次新 dump 的 record 数量，方便测试断言。被 daemon 主循环周期调用，
+也可被测试单独调用，因此和 ``_lock_watchdog_loop`` 解耦。
+
+### `_lock_watchdog_loop() -> None`
+
+daemon 后台线程主循环：用 Event 而非裸 ``time.sleep``，方便测试唤醒。
+
+### `_ensure_lock_watchdog_started() -> None`
+
+懒启动：第一次有人 ``_watched_write_lock`` 才把 daemon 起来。
+
+幂等：重复调用直接返回。即便 daemon 因不可预期原因退出，下次调用会
+重新起一个新的 ―― 这是"自愈"语义而非"crash"。
+
+### `_watched_write_lock(rwlock: ReadWriteLock, label: str) -> Generator[None, None, None]`
+
+``rwlock.write_lock()`` 的 deadlock-aware 包装。
+
+使用方式：
+
+    with _watched_write_lock(self._lock, "add_task"):
+        ... critical section ...
+
+超过 ``_LOCK_WATCHDOG_TIMEOUT_S`` 没释放，daemon 会 dump 全栈到
+``logger.error``。dump 不会打断流程，仅作"现场快照"用，便于事后分析。
+
 ## 类
 
 ### `class TaskStatus`

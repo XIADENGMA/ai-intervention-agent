@@ -3,10 +3,13 @@
 import json
 import logging
 import os
+import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+import traceback
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -23,6 +26,166 @@ from server_config import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# R51-A：写锁 deadlock detector
+# ----------------------------------------------------------------------------
+# 设计要点：
+#   1. **不改 ``ReadWriteLock``**：保留 contextmanager 语义，watchdog 仅是
+#      orthogonal 的旁路观察。
+#   2. **零 hot-path 开销**：每次 ``_watched_write_lock`` 进出仅做一次
+#      ``dict[int]`` 写、一次 ``threading.Lock`` 进出，约 1 μs 量级；
+#      不创建 ``threading.Timer``（创建/cancel 大约 ~10 μs，且产生 GC 压力）。
+#   3. **共享后台线程**：模块级单例 ``_watchdog_thread`` daemon，每 5 s 扫描
+#      一次 ``_pending_acquisitions``，发现 hold 时长 > ``_LOCK_WATCHDOG_TIMEOUT_S``
+#      就 dump 全部线程栈到 ``logger.error`` 一次（``dumped`` flag 防止 spam）。
+#   4. **覆盖范围**：watch ``acquire + hold + release`` 整个 critical section。
+#      实务上这正是我们想看到的：deadlock 的征兆既包括"拿不到锁"，也包括
+#      "拿到锁但临界区内卡死"。
+#   5. **演进路径**：第一阶段只 instrument ``add_task`` 这条最热写路径；后续
+#      可逐步把 ``complete_task`` / ``cleanup_completed_tasks`` 等 17 处写锁
+#      迁移到 ``_watched_write_lock``，每条带独立 ``label`` 便于诊断。
+# ============================================================================
+
+_LOCK_WATCHDOG_TIMEOUT_S: float = 30.0
+"""单次 ``_watched_write_lock`` 的 acquire+hold 上限。超过这个时长 watchdog
+扫到一次就 dump 全线程栈到 ``logger.error``。
+
+30 s 是一个折中：实测 ``add_task`` 的临界区微秒级 → 任何 > 5 s 的 wait 都
+肯定异常；但 CI 环境跑 pytest 时，sleep / IO 抖动可能超过 1 s，所以保留
+一个相对宽松的窗口避免误报。运行时可由测试通过 monkeypatch 调小。"""
+
+_LOCK_WATCHDOG_SCAN_INTERVAL_S: float = 5.0
+"""watchdog 扫描周期。``_LOCK_WATCHDOG_TIMEOUT_S / _LOCK_WATCHDOG_SCAN_INTERVAL_S
+≈ 6`` 意味着真出现 deadlock 时最快 5 s、最慢 35 s 就会有 dump 进入日志。"""
+
+_pending_acquisitions: dict[int, dict[str, Any]] = {}
+"""``rec_id -> {label, thread_id, start, dumped}``：当前正持有 / 等待
+``_watched_write_lock`` 的所有 record。``rec_id`` 用 ``id(rec)``，
+保证同一线程嵌套调用不会冲突（虽然 ``ReadWriteLock`` 已禁止嵌套）。"""
+
+_pending_acquisitions_lock = threading.Lock()
+"""保护 ``_pending_acquisitions`` 的细粒度 lock。作用域非常短（dict 增删），
+不嵌入临界区，因此不会和 ``ReadWriteLock`` 形成新的 lock-order 风险。"""
+
+_watchdog_thread: threading.Thread | None = None
+_watchdog_started_lock = threading.Lock()
+
+
+def _capture_all_thread_stacks() -> str:
+    """采集进程内所有线程的当前调用栈，拼成可读字符串。
+
+    ``sys._current_frames`` 在 CPython 是受支持的公开-但-下划线 API
+    （PEP 8 的"私有但 stdlib 有保证"约定）；在 PyPy 上也实现了。任何不可
+    采集的环境都返回 fallback 串而不是抛异常，避免 watchdog 自身崩溃。"""
+    try:
+        frames = sys._current_frames()
+    except Exception as exc:  # pragma: no cover — 防御性
+        return f"<failed to capture stacks: {exc!r}>"
+    chunks: list[str] = []
+    for tid, frame in frames.items():
+        chunks.append(f"\n--- Thread id={tid} ---\n")
+        try:
+            chunks.extend(traceback.format_stack(frame))
+        except Exception as exc:  # pragma: no cover — 防御性
+            chunks.append(f"<failed to format stack for tid={tid}: {exc!r}>\n")
+    return "".join(chunks)
+
+
+def _scan_pending_and_dump_slow() -> int:
+    """单次扫描：把超时但尚未 dump 的 record 拣出来，dump 全栈到 logger.error。
+
+    返回这一次新 dump 的 record 数量，方便测试断言。被 daemon 主循环周期调用，
+    也可被测试单独调用，因此和 ``_lock_watchdog_loop`` 解耦。"""
+    now = time.monotonic()
+    slow_records: list[dict[str, Any]] = []
+    with _pending_acquisitions_lock:
+        for rec in _pending_acquisitions.values():
+            if rec.get("dumped"):
+                continue
+            if now - rec["start"] > _LOCK_WATCHDOG_TIMEOUT_S:
+                rec["dumped"] = True
+                slow_records.append(dict(rec))
+    if not slow_records:
+        return 0
+    stacks = _capture_all_thread_stacks()
+    for rec in slow_records:
+        logger.error(
+            f"⚠️ TaskQueue 写锁卡死 > {_LOCK_WATCHDOG_TIMEOUT_S:.0f}s "
+            f"(label={rec['label']}, "
+            f"waiting_thread_id={rec['thread_id']}, "
+            f"waited={(now - rec['start']):.1f}s)\n"
+            f"全线程栈快照：\n{stacks}"
+        )
+    return len(slow_records)
+
+
+_lock_watchdog_wake_event = threading.Event()
+"""测试可通过 ``_lock_watchdog_wake_event.set()`` 把 daemon 从 sleep 里唤醒，
+让它立刻执行下一轮 ``_scan_pending_and_dump_slow``。生产路径不会用到。"""
+
+
+def _lock_watchdog_loop() -> None:
+    """daemon 后台线程主循环：用 Event 而非裸 ``time.sleep``，方便测试唤醒。"""
+    while True:
+        try:
+            woke = _lock_watchdog_wake_event.wait(_LOCK_WATCHDOG_SCAN_INTERVAL_S)
+            if woke:
+                _lock_watchdog_wake_event.clear()
+            _scan_pending_and_dump_slow()
+        except Exception as exc:
+            # watchdog 本身绝不能让 daemon 死掉
+            logger.warning(f"Lock watchdog loop 异常（已吞）: {exc}", exc_info=True)
+
+
+def _ensure_lock_watchdog_started() -> None:
+    """懒启动：第一次有人 ``_watched_write_lock`` 才把 daemon 起来。
+
+    幂等：重复调用直接返回。即便 daemon 因不可预期原因退出，下次调用会
+    重新起一个新的 ―― 这是"自愈"语义而非"crash"。"""
+    global _watchdog_thread
+    with _watchdog_started_lock:
+        if _watchdog_thread is not None and _watchdog_thread.is_alive():
+            return
+        _watchdog_thread = threading.Thread(
+            target=_lock_watchdog_loop,
+            name="TaskQueueLockWatchdog",
+            daemon=True,
+        )
+        _watchdog_thread.start()
+        logger.debug("TaskQueueLockWatchdog daemon 已启动")
+
+
+@contextmanager
+def _watched_write_lock(
+    rwlock: ReadWriteLock, label: str
+) -> Generator[None, None, None]:
+    """``rwlock.write_lock()`` 的 deadlock-aware 包装。
+
+    使用方式：
+
+        with _watched_write_lock(self._lock, "add_task"):
+            ... critical section ...
+
+    超过 ``_LOCK_WATCHDOG_TIMEOUT_S`` 没释放，daemon 会 dump 全栈到
+    ``logger.error``。dump 不会打断流程，仅作"现场快照"用，便于事后分析。"""
+    _ensure_lock_watchdog_started()
+    rec: dict[str, Any] = {
+        "label": label,
+        "thread_id": threading.get_ident(),
+        "start": time.monotonic(),
+        "dumped": False,
+    }
+    rec_id = id(rec)
+    with _pending_acquisitions_lock:
+        _pending_acquisitions[rec_id] = rec
+    try:
+        with rwlock.write_lock():
+            yield
+    finally:
+        with _pending_acquisitions_lock:
+            _pending_acquisitions.pop(rec_id, None)
 
 
 class TaskStatus(StrEnum):
@@ -275,7 +438,9 @@ class TaskQueue:
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         new_status: str | None = None
-        with self._lock.write_lock():
+        # R51-A：用 deadlock-aware 写锁包装。临界区内任何卡死都会被
+        # ``_lock_watchdog_loop`` 检测并把全栈 dump 到 logger.error。
+        with _watched_write_lock(self._lock, "add_task"):
             if auto_resubmit_timeout <= 0:
                 auto_resubmit_timeout = 0
             else:

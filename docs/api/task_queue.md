@@ -2,6 +2,18 @@
 
 > For the Chinese version with full docstrings, see: [`docs/api.zh-CN/task_queue.md`](../api.zh-CN/task_queue.md)
 
+## Functions
+
+### `_capture_all_thread_stacks() -> str`
+
+### `_scan_pending_and_dump_slow() -> int`
+
+### `_lock_watchdog_loop() -> None`
+
+### `_ensure_lock_watchdog_started() -> None`
+
+### `_watched_write_lock(rwlock: ReadWriteLock, label: str) -> Generator[None, None, None]`
+
 ## Classes
 
 ### `class TaskStatus`

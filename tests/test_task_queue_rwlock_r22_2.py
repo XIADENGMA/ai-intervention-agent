@@ -134,7 +134,12 @@ class TestSourceInvariants(unittest.TestCase):
         )
 
     def test_write_paths_use_write_lock(self) -> None:
-        """每个写方法的方法体内必须使用 ``self._lock.write_lock()``。"""
+        """每个写方法的方法体内必须取写锁。
+
+        R22.2 起：``self._lock.write_lock()`` 直接调用；
+        R51-A 起：可以通过 ``_watched_write_lock(self._lock, "...")`` 包装，
+        deadlock detector 透明包了一层。两种 pattern 任一即合契。
+        """
         write_methods = [
             "clear_all_tasks",
             "add_task",
@@ -148,10 +153,14 @@ class TestSourceInvariants(unittest.TestCase):
         for method in write_methods:
             with self.subTest(method=method):
                 body = self._extract_method_body(method)
-                self.assertIn(
-                    "self._lock.write_lock()",
-                    body,
-                    f"写方法 {method} 必须使用 self._lock.write_lock()",
+                acquires_write_lock = (
+                    "self._lock.write_lock()" in body
+                    or "_watched_write_lock(self._lock," in body
+                )
+                self.assertTrue(
+                    acquires_write_lock,
+                    f"写方法 {method} 必须取写锁（裸 ``self._lock.write_lock()`` 或"
+                    " R51-A 起的 ``_watched_write_lock(self._lock, ...)`` 包装）",
                 )
                 self.assertNotIn(
                     "self._lock.read_lock()",
