@@ -33,7 +33,16 @@
       "actionCopy": "Copy content",
       "urlTemplate": "Click URL template",
       "urlTemplatePlaceholder": "http://ai.local:8080/?task_id={task_id}",
-      "urlTemplateHint": "Used when Bark Action is Open URL and no explicit URL is supplied. Supports {task_id}, {event_id}, and {base_url}."
+      "urlTemplateHint": "Used when Bark Action is Open URL and no explicit URL is supplied. Supports {task_id}, {event_id}, and {base_url}.",
+      "baseUrlStatusTitle": "Externally reachable base URL",
+      "baseUrlStatusOk": "Current base_url: {url} (Bark notifications open correctly on mobile)",
+      "baseUrlStatusLoopback": "Current base_url is a loopback address ({url}); Bark notifications cannot open it on mobile devices.",
+      "baseUrlStatusUnreachable": "No externally reachable base_url detected; the Bark click URL will be omitted.",
+      "baseUrlSuggestLan": "Suggested fix: copy the LAN address below into web_ui.external_base_url, or change web_ui.host to 0.0.0.0/your LAN IP.",
+      "baseUrlSuggestNoLan": "No usable LAN interface detected; manually set web_ui.external_base_url to a reachable URL.",
+      "baseUrlCopyLan": "Copy LAN URL",
+      "baseUrlCopied": "Copied",
+      "baseUrlRecheck": "Re-check"
     },
     "config": {
       "title": "Configuration",

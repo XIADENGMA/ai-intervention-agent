@@ -54,6 +54,7 @@ class SettingsManager {
     this.feedbackConfig = await this.loadFeedbackConfig();
     this.initEventListeners();
     this.initOpenConfigFileButton();
+    this.initBarkBaseUrlStatus();
     this.initialized = true;
     console.log("SettingsManager initialized");
   }
@@ -699,6 +700,141 @@ class SettingsManager {
     } finally {
       btn.disabled = originalDisabled;
     }
+  }
+
+  // ==================== Bark base_url 可达性诊断（TODO #3） ====================
+  // 设计：Bark 通知点击后会让手机浏览器打开 ``bark_url_template`` 渲染出的
+  //   URL；但若 web_ui 监听 loopback（默认 127.0.0.1）且未配 external_base_url，
+  //   渲染出的 url host 会被手机解析到自身，必然打不开。本面板通过
+  //   /api/system/network-base-url-status 拉取后端探测的 effective_base_url
+  //   + LAN IP 推荐 + 修复建议，引导用户改 web_ui.host 或 external_base_url。
+  // 容错：探测失败 / 离线时，整个诊断块隐藏，不打扰用户主流程。
+  async initBarkBaseUrlStatus() {
+    const item = document.getElementById("bark-base-url-status-item");
+    const message = document.getElementById("bark-base-url-status-message");
+    const suggestion = document.getElementById("bark-base-url-status-suggestion");
+    const copyBtn = document.getElementById("bark-base-url-copy-btn");
+    const recheckBtn = document.getElementById("bark-base-url-recheck-btn");
+
+    if (!item || !message || !suggestion) return;
+
+    const renderStatus = async () => {
+      try {
+        const resp = await fetch("/api/system/network-base-url-status", {
+          method: "GET",
+          credentials: "same-origin",
+        });
+        if (!resp.ok) {
+          item.hidden = true;
+          return;
+        }
+        const data = await resp.json();
+        if (!data || data.success === false) {
+          item.hidden = true;
+          return;
+        }
+
+        const isLoopback = data.is_loopback === true;
+        const effective = data.effective_base_url || "";
+        const suggested = data.suggested_lan_base_url || "";
+        const recommendation = data.recommendation || "ok";
+
+        if (recommendation === "ok") {
+          message.textContent = (
+            _tl("settings.baseUrlStatusOk", "Current base_url: {url}") || ""
+          ).replace("{url}", effective);
+          suggestion.textContent = "";
+          item.hidden = false;
+          item.classList.remove("is-warning");
+          item.classList.add("is-ok");
+          if (copyBtn) copyBtn.hidden = true;
+          return;
+        }
+
+        item.hidden = false;
+        item.classList.remove("is-ok");
+        item.classList.add("is-warning");
+
+        if (isLoopback && effective) {
+          message.textContent = (
+            _tl(
+              "settings.baseUrlStatusLoopback",
+              "Current base_url is a loopback address ({url}).",
+            ) || ""
+          ).replace("{url}", effective);
+        } else {
+          message.textContent = _tl(
+            "settings.baseUrlStatusUnreachable",
+            "No externally reachable base_url detected.",
+          );
+        }
+
+        if (suggested) {
+          suggestion.textContent = _tl(
+            "settings.baseUrlSuggestLan",
+            "Suggested fix: copy the LAN address below into web_ui.external_base_url.",
+          );
+          if (copyBtn) {
+            copyBtn.hidden = false;
+            copyBtn.dataset.lanUrl = suggested;
+            copyBtn.title = suggested;
+          }
+        } else {
+          suggestion.textContent = _tl(
+            "settings.baseUrlSuggestNoLan",
+            "No usable LAN interface detected; manually set web_ui.external_base_url.",
+          );
+          if (copyBtn) {
+            copyBtn.hidden = true;
+            copyBtn.dataset.lanUrl = "";
+          }
+        }
+      } catch (e) {
+        console.warn("network-base-url-status fetch failed:", e);
+        item.hidden = true;
+      }
+    };
+
+    if (recheckBtn) {
+      recheckBtn.addEventListener("click", () => {
+        renderStatus();
+      });
+    }
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        const url = copyBtn.dataset.lanUrl || "";
+        if (!url) return;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(url);
+          } else {
+            const ta = document.createElement("textarea");
+            ta.value = url;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+              document.execCommand("copy");
+            } finally {
+              document.body.removeChild(ta);
+            }
+          }
+          const span = copyBtn.querySelector("span");
+          if (span) {
+            const original = span.textContent;
+            span.textContent = _tl("settings.baseUrlCopied", "Copied");
+            setTimeout(() => {
+              span.textContent = original;
+            }, 1500);
+          }
+        } catch (e) {
+          console.warn("Copy LAN url failed:", e);
+        }
+      });
+    }
+
+    await renderStatus();
   }
 
   async showSettings() {

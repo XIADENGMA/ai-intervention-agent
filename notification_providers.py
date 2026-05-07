@@ -18,6 +18,30 @@ from notification_models import NotificationEvent, NotificationType
 logger = EnhancedLogger(__name__)
 
 
+def _bark_url_is_loopback(url: str) -> bool:
+    """Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。
+
+    手机收到 Bark 通知时，``http://localhost:8080`` 等 loopback URL 会被
+    手机自身解析（RFC 6762 §11 / RFC 5735）—— 把这种 URL 推过去等于让用户
+    点开后看到 "无法访问"，反而不如不附 ``url`` 字段（这样 Bark 默认行为
+    是停留在通知中心，体验更可控）。
+
+    实现 lazy import ``server_config.is_loopback_url`` 以避免触发 ``mcp.types``
+    的级联加载（参见 ``server_config._lazy_mcp_types``），任何 import / 解析
+    异常都返回 ``False``，让通知链路按 "未识别即放行" 优雅降级。
+    """
+    if not isinstance(url, str) or not url:
+        return False
+    try:
+        from server_config import is_loopback_url
+    except Exception:
+        return False
+    try:
+        return bool(is_loopback_url(url))
+    except Exception:
+        return False
+
+
 class _LazyHttpx:
     """延迟加载 httpx，同时保留 ``notification_providers.httpx.X`` 访问形态。"""
 
@@ -336,7 +360,16 @@ class BarkNotificationProvider(BaseNotificationProvider):
                             for key in ("url", "web_ui_url", "action_url", "link"):
                                 value = event.metadata.get(key)
                                 if isinstance(value, str) and value.strip():
-                                    url_value = value.strip()
+                                    candidate = value.strip()
+                                    if _bark_url_is_loopback(candidate):
+                                        # 跨设备推送场景下 loopback 必然解析到手机
+                                        # 自身，丢弃后让 fallback 模板再尝试一次。
+                                        logger.warning(
+                                            f"event.metadata['{key}']={candidate!r} 是回环地址，"
+                                            "手机端 Bark 无法跳转，已忽略此候选"
+                                        )
+                                        continue
+                                    url_value = candidate
                                     break
 
                         # metadata 没有提供 URL 时，回退到 bark_url_template
@@ -360,7 +393,18 @@ class BarkNotificationProvider(BaseNotificationProvider):
                                 }
                                 rendered = render_bark_url_template(template, params)
                                 if rendered.startswith(("http://", "https://")):
-                                    url_value = rendered
+                                    if _bark_url_is_loopback(rendered):
+                                        # 模板里包含 loopback host 时，例如用户写
+                                        # ``http://127.0.0.1:8080/...`` 或上游
+                                        # base_url 解析成 loopback——丢弃 url 字段，
+                                        # Bark 默认行为是停在通知中心。
+                                        logger.warning(
+                                            f"bark_url_template 渲染结果命中回环地址 {rendered!r}，"
+                                            "已抑制 url 字段；建议将 web_ui.host 改为 0.0.0.0 "
+                                            "或在设置面板配置 external_base_url 为 LAN/公网 URL"
+                                        )
+                                    else:
+                                        url_value = rendered
                                 elif rendered:
                                     logger.warning(
                                         f"bark_url_template 渲染结果不是合法 URL，已忽略: {rendered!r}"
@@ -386,7 +430,13 @@ class BarkNotificationProvider(BaseNotificationProvider):
                 else:
                     # 兼容旧用法：直接将 bark_action 当作 URL（仅当其像 URL）
                     if bark_action.startswith(("http://", "https://")):
-                        bark_data["url"] = bark_action
+                        if _bark_url_is_loopback(bark_action):
+                            logger.warning(
+                                f"bark_action 是回环地址 {bark_action!r}，已抑制 url 字段；"
+                                "请改用具体的 LAN/公网 URL 或 url/copy 枚举"
+                            )
+                        else:
+                            bark_data["url"] = bark_action
                     else:
                         # 未知值直接忽略，避免发送无效字段导致请求失败
                         logger.debug(

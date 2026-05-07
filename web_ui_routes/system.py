@@ -375,6 +375,111 @@ class SystemRoutesMixin:
                 }
             )
 
+        @self.app.route("/api/system/network-base-url-status", methods=["GET"])
+        @self.limiter.limit("60 per minute")
+        def network_base_url_status() -> ResponseReturnValue:
+            """返回当前 Web UI 的对外 base_url 诊断信息。
+
+            ---
+            tags:
+              - System
+            description: |
+                设置面板（Bark / 跨设备通知）用本接口判断 ``effective_base_url``
+                是否回环、并展示 ``suggested_lan_base_url`` 推荐值，引导用户配
+                ``web_ui.external_base_url`` 或调整 ``web_ui.host``。
+
+                **任意来源** 的请求都允许查询 —— LAN 上 PWA 设置面板也需要看到
+                这个状态。所有字段都是诊断元数据，不暴露内部敏感配置。
+            responses:
+              200:
+                description: 诊断快照
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    effective_base_url:
+                      type: string
+                      description: |
+                        ``resolve_external_base_url(for_external_use=False)`` 的结果，
+                        即"通常会展示给用户的 base_url"。可能是 loopback。
+                    is_loopback:
+                      type: boolean
+                      description: |
+                        ``effective_base_url`` 是否命中 ``is_loopback_url``。
+                        ``true`` 表示跨设备点击通知**会失败**。
+                    external_safe_base_url:
+                      type: string
+                      description: |
+                        ``for_external_use=True`` 模式的结果——loopback 时为空串，
+                        Bark 推送链路实际用这个。
+                    suggested_lan_base_url:
+                      type: string
+                      description: |
+                        ``suggest_lan_base_url`` 探测结果（``http://<lan-ip>:<port>``）。
+                        探测失败 / 离线返回空串。
+                    recommendation:
+                      type: string
+                      description: |
+                        ``configure_external_base_url`` / ``bind_lan_interface`` /
+                        ``ok``，对应不同的修复建议（前端可选择性国际化）。
+                    port:
+                      type: integer
+            """
+            try:
+                import server_config
+
+                effective = server_config.resolve_external_base_url() or ""
+                external_safe = (
+                    server_config.resolve_external_base_url(for_external_use=True) or ""
+                )
+                is_loopback = bool(
+                    effective and server_config.is_loopback_url(effective)
+                )
+
+                cfg = get_config()
+                web_section = cfg.get_section("web_ui") or {}
+                try:
+                    port = int(web_section.get("port", 8080))
+                except (TypeError, ValueError):
+                    port = 8080
+
+                suggested_lan: str = ""
+                if is_loopback or not external_safe:
+                    suggested_lan = server_config.suggest_lan_base_url(port) or ""
+
+                if not is_loopback and external_safe:
+                    recommendation = "ok"
+                elif suggested_lan:
+                    recommendation = "configure_external_base_url"
+                else:
+                    recommendation = "bind_lan_interface"
+
+                return jsonify(
+                    {
+                        "success": True,
+                        "effective_base_url": effective,
+                        "is_loopback": is_loopback,
+                        "external_safe_base_url": external_safe,
+                        "suggested_lan_base_url": suggested_lan,
+                        "recommendation": recommendation,
+                        "port": port,
+                    }
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"network-base-url-status 探测失败: {exc}", exc_info=True
+                )
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Failed to resolve base url status",
+                        }
+                    ),
+                    500,
+                )
+
         @self.app.route("/api/system/open-config-file/info", methods=["GET"])
         @self.limiter.exempt
         def open_config_file_info() -> ResponseReturnValue:

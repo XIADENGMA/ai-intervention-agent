@@ -449,7 +449,56 @@ def get_target_host(host: str) -> str:
     return "localhost" if host in {"0.0.0.0", "::"} else host
 
 
-def resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str:
+def is_loopback_url(url: str) -> bool:
+    """判断 URL 的 host 是否解析到本机回环地址。
+
+    覆盖三类常见写法：
+        * 字面量 ``localhost`` / ``127.0.0.1`` / ``::1`` / ``[::1]``
+        * 整个 ``127.0.0.0/8`` IPv4 段（``127.123.45.67`` 也算回环）
+        * ``ipaddress.ip_address(host).is_loopback`` 真值的 IPv6 地址
+
+    用于在 Bark / 跨设备通知场景过滤 ``http://localhost:8080`` 这类
+    "对外推送但点了打不开" 的 base_url：手机 Bark 解析 loopback 会指向
+    手机自己，必然打不开 Web UI。
+
+    任何解析失败 / 空串 / 非 string 输入都返回 ``False``，让调用方按
+    "未识别即放行" 处理，避免误伤合法的 LAN/公网 URL。
+    """
+    if not isinstance(url, str):
+        return False
+
+    candidate = url.strip()
+    if not candidate:
+        return False
+
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(candidate)
+    except (TypeError, ValueError):
+        return False
+
+    host = parsed.hostname
+    if not host:
+        return False
+
+    host_lower = host.strip().lower()
+    if host_lower in {"localhost", "127.0.0.1", "::1"}:
+        return True
+
+    try:
+        from ipaddress import ip_address
+
+        return bool(ip_address(host_lower).is_loopback)
+    except (TypeError, ValueError):
+        return False
+
+
+def resolve_external_base_url(
+    web_ui_config: WebUIConfig | None = None,
+    *,
+    for_external_use: bool = False,
+) -> str:
     """解析"对外可访问"的 Web UI 基地址，用于通知点击跳转等场景。
 
     优先级：
@@ -459,6 +508,13 @@ def resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str:
         3. ``http://{target_host}:{port}``（基于 ``[web_ui] host/port`` 推导）
 
     返回值会去掉末尾斜杠，便于直接和 ``/path`` 拼接；解析失败时返回空串。
+
+    参数 ``for_external_use``（默认 ``False`` 保持向后兼容）：
+        * ``False``：保留原契约——任何解析成功的 URL 都返回，包括 loopback。
+        * ``True``：调用方明确声明 "我要给跨设备/外部场景用"，函数会在
+          解析结果命中 :func:`is_loopback_url` 时返回 ``""``，迫使调用方
+          走 "无外部可达地址" 的降级路径（例如 Bark 通知不附 ``url`` 字段、
+          UI 显示提示让用户配 ``external_base_url`` 或 ``web_ui.host``）。
     """
     try:
         config_mgr = get_config()
@@ -477,52 +533,115 @@ def resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str:
         else ""
     )
     explicit = explicit or str(web_section.get("external_base_url", "") or "").strip()
+    resolved = ""
     if explicit:
         if explicit.startswith(("http://", "https://")):
-            return explicit.rstrip("/")
-        logger.warning(
-            f"web_ui.external_base_url 必须以 http:// 或 https:// 开头，已忽略: {explicit!r}"
-        )
+            resolved = explicit.rstrip("/")
+        else:
+            logger.warning(
+                f"web_ui.external_base_url 必须以 http:// 或 https:// 开头，已忽略: {explicit!r}"
+            )
 
-    if web_ui_config is None:
+    if not resolved:
+        if web_ui_config is None:
+            try:
+                host = str(
+                    network_section.get(
+                        "bind_interface",
+                        web_section.get("host", "127.0.0.1"),
+                    )
+                )
+                port = int(web_section.get("port", 8080))
+            except (TypeError, ValueError):
+                return ""
+        else:
+            host = web_ui_config.host
+            port = int(web_ui_config.port)
+
+        if not host:
+            return ""
+
+        host_normalized = host.strip().lower()
+        loopback_hosts = {"127.0.0.1", "localhost", "::1", "[::1]"}
+        mdns_enabled_raw = mdns_section.get("enabled", "auto")
+        mdns_enabled = False
+        if isinstance(mdns_enabled_raw, bool):
+            mdns_enabled = mdns_enabled_raw
+        else:
+            mdns_enabled_text = str(mdns_enabled_raw).strip().lower()
+            if mdns_enabled_text in {"true", "1", "yes", "on", "enabled"}:
+                mdns_enabled = True
+            elif mdns_enabled_text in {"false", "0", "no", "off", "disabled"}:
+                mdns_enabled = False
+            else:
+                mdns_enabled = host_normalized not in loopback_hosts
+
+        mdns_hostname = str(mdns_section.get("hostname", "ai.local") or "").strip()
+        mdns_hostname = mdns_hostname.rstrip(".").strip("/")
+        if mdns_enabled and mdns_hostname and "://" not in mdns_hostname:
+            resolved = f"http://{mdns_hostname}:{port}"
+        else:
+            resolved = f"http://{get_target_host(host)}:{port}"
+
+    if for_external_use and resolved and is_loopback_url(resolved):
+        logger.debug(
+            "resolve_external_base_url(for_external_use=True): "
+            f"过滤 loopback 结果 {resolved!r}，调用方将走无外部 base_url 降级路径"
+        )
+        return ""
+
+    return resolved
+
+
+def suggest_lan_base_url(port: int) -> str | None:
+    """探测一个适合对外推送的 LAN base_url（``http://<lan-ipv4>:<port>``）。
+
+    用于 Bark / 跨设备通知场景：当 :func:`resolve_external_base_url` 在
+    ``for_external_use=True`` 模式返回空串时，UI / 日志可以用本函数给出
+    "你应该配成什么样" 的具体推荐。
+
+    内部复用 :func:`web_ui_mdns_utils.detect_best_publish_ipv4`（lazy import，
+    避免冷启动加载 ``psutil``）。它会跳过 ``docker0`` / VPN tunnel / 回环 /
+    link-local 地址，优先返回路由探测到的默认出口 IPv4，再退化到物理网卡
+    枚举。任何探测失败都返回 ``None``，调用方应优雅降级（例如 UI 隐藏
+    "推荐 LAN IP" 行）。
+    """
+    try:
+        port_int = int(port)
+    except (TypeError, ValueError):
+        return None
+    if port_int < 1 or port_int > 65535:
+        return None
+
+    try:
+        from web_ui_mdns_utils import detect_best_publish_ipv4
+    except Exception as exc:
+        logger.debug(f"加载 web_ui_mdns_utils 失败，无法推荐 LAN base_url: {exc}")
+        return None
+
+    try:
         try:
-            host = str(
+            config_mgr = get_config()
+            network_section = config_mgr.get_section("network_security") or {}
+            web_section = config_mgr.get_section("web_ui") or {}
+            bind_interface = str(
                 network_section.get(
                     "bind_interface",
                     web_section.get("host", "127.0.0.1"),
                 )
             )
-            port = int(web_section.get("port", 8080))
-        except (TypeError, ValueError):
-            return ""
-    else:
-        host = web_ui_config.host
-        port = int(web_ui_config.port)
+        except Exception as exc:
+            logger.debug(f"读取 bind_interface 失败，使用默认 127.0.0.1: {exc}")
+            bind_interface = "127.0.0.1"
 
-    if not host:
-        return ""
+        ip = detect_best_publish_ipv4(bind_interface)
+    except Exception as exc:
+        logger.debug(f"detect_best_publish_ipv4 调用失败: {exc}")
+        return None
 
-    host_normalized = host.strip().lower()
-    loopback_hosts = {"127.0.0.1", "localhost", "::1", "[::1]"}
-    mdns_enabled_raw = mdns_section.get("enabled", "auto")
-    mdns_enabled = False
-    if isinstance(mdns_enabled_raw, bool):
-        mdns_enabled = mdns_enabled_raw
-    else:
-        mdns_enabled_text = str(mdns_enabled_raw).strip().lower()
-        if mdns_enabled_text in {"true", "1", "yes", "on", "enabled"}:
-            mdns_enabled = True
-        elif mdns_enabled_text in {"false", "0", "no", "off", "disabled"}:
-            mdns_enabled = False
-        else:
-            mdns_enabled = host_normalized not in loopback_hosts
-
-    mdns_hostname = str(mdns_section.get("hostname", "ai.local") or "").strip()
-    mdns_hostname = mdns_hostname.rstrip(".").strip("/")
-    if mdns_enabled and mdns_hostname and "://" not in mdns_hostname:
-        return f"http://{mdns_hostname}:{port}"
-
-    return f"http://{get_target_host(host)}:{port}"
+    if not ip:
+        return None
+    return f"http://{ip}:{port_int}"
 
 
 # ============================================================================

@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_bark_url_is_loopback(url: str) -> bool`
+
 ### `_coerce_bark_format_value(value: Any) -> str`
 
 ### `render_bark_url_template(template: str, params: dict[str, Any]) -> str`

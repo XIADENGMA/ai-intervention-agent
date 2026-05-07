@@ -8,6 +8,19 @@
 
 ## 函数
 
+### `_bark_url_is_loopback(url: str) -> bool`
+
+Bark provider 内部 helper：判断渲染出的点击 URL 是否回环地址。
+
+手机收到 Bark 通知时，``http://localhost:8080`` 等 loopback URL 会被
+手机自身解析（RFC 6762 §11 / RFC 5735）—— 把这种 URL 推过去等于让用户
+点开后看到 "无法访问"，反而不如不附 ``url`` 字段（这样 Bark 默认行为
+是停留在通知中心，体验更可控）。
+
+实现 lazy import ``server_config.is_loopback_url`` 以避免触发 ``mcp.types``
+的级联加载（参见 ``server_config._lazy_mcp_types``），任何 import / 解析
+异常都返回 ``False``，让通知链路按 "未识别即放行" 优雅降级。
+
 ### `_coerce_bark_format_value(value: Any) -> str`
 
 把任意 value 转成对 URL 友好的字符串；非标量一律视为空。

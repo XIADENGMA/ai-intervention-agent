@@ -33,7 +33,16 @@
       "actionCopy": "复制内容",
       "urlTemplate": "点击跳转 URL 模板",
       "urlTemplatePlaceholder": "http://ai.local:8080/?task_id={task_id}",
-      "urlTemplateHint": "Bark Action 为“打开链接”且事件未提供具体 URL 时生效。支持 {task_id}、{event_id}、{base_url}。"
+      "urlTemplateHint": "Bark Action 为“打开链接”且事件未提供具体 URL 时生效。支持 {task_id}、{event_id}、{base_url}。",
+      "baseUrlStatusTitle": "对外可达基地址",
+      "baseUrlStatusOk": "当前 base_url：{url}（手机端 Bark 点击通知可正常跳转）",
+      "baseUrlStatusLoopback": "当前 base_url 是回环地址（{url}），手机端点击 Bark 通知会指向手机自身、无法打开 Web UI。",
+      "baseUrlStatusUnreachable": "未检测到可对外访问的 base_url，Bark 通知点击将不附 url 字段。",
+      "baseUrlSuggestLan": "推荐配置：复制下方 LAN 地址到 web_ui.external_base_url，或将 web_ui.host 改为 0.0.0.0/LAN IP。",
+      "baseUrlSuggestNoLan": "未探测到可用 LAN 网卡（可能是离线或被 VPN 隔离）。可手动将 web_ui.external_base_url 设为可访问的 URL。",
+      "baseUrlCopyLan": "复制 LAN 地址",
+      "baseUrlCopied": "已复制",
+      "baseUrlRecheck": "重新检测"
     },
     "config": {
       "title": "配置",

@@ -30,7 +30,11 @@
 
 ### `get_target_host(host: str) -> str`
 
+### `is_loopback_url(url: str) -> bool`
+
 ### `resolve_external_base_url(web_ui_config: WebUIConfig | None = None) -> str`
+
+### `suggest_lan_base_url(port: int) -> str | None`
 
 ### `_format_file_size(size: int) -> str`
 

@@ -472,7 +472,9 @@ def launch_feedback_ui(
                     ]
                     base_url = ""
                     try:
-                        base_url = server_config.resolve_external_base_url(config)
+                        base_url = server_config.resolve_external_base_url(
+                            config, for_external_use=True
+                        )
                     except Exception as exc:
                         logger.debug(f"解析 external_base_url 失败: {exc}")
 
@@ -482,6 +484,18 @@ def launch_feedback_ui(
                     }
                     if base_url:
                         notif_metadata["base_url"] = base_url
+                    else:
+                        # ``for_external_use=True`` 返回空 = 当前监听只对本机
+                        # 可见（loopback），把 base_url 推给 Bark 反而会让手机
+                        # 点击通知时打开 ``http://localhost:port`` 解析到手机
+                        # 自身。此处不把 base_url 写进 metadata，让 Bark provider
+                        # 在缺失 base_url 时跳过 ``url`` 字段（参见
+                        # ``notification_providers.BarkNotificationProvider``）。
+                        # 仅记一次 info 级提示而非 warn，避免本地开发自测刷屏。
+                        logger.info(
+                            "Bark 通知 base_url 为空（host 为 loopback 或未配置 external_base_url）"
+                            "；已跳过 url 字段，建议在设置面板配置 web_ui.external_base_url 或 mDNS"
+                        )
 
                     event_id = notification_manager.send_notification(
                         title="新的交互反馈请求",

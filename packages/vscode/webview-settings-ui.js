@@ -560,6 +560,133 @@
     }
   }
 
+  // Bark base_url 可达性诊断（TODO #3 / r42）
+  //
+  // 目标：当 server_config.resolve_external_base_url 解析到 loopback 时（默认
+  // bind=127.0.0.1 + 没填 external_base_url），手机端 Bark 收到的 url 必然指向
+  // 自己——本函数把后端 /api/system/network-base-url-status 的诊断信息渲染到
+  // settings 面板，引导用户复制 LAN URL 到 web_ui.external_base_url。
+  //
+  // 边界：
+  // - SERVER_URL 缺失（极端 webview 配置错配）→ 静默隐藏，避免空指针。
+  // - 后端探测失败 / 离线 / 5xx → 隐藏整个区块，不打扰主设置面板。
+  // - LAN IP 探测不到 → 显示 "no LAN" 提示，复制按钮隐藏。
+  async function initBarkBaseUrlStatus() {
+    const item = document.getElementById('settingsBarkBaseUrlStatus')
+    const message = document.getElementById('settingsBarkBaseUrlMessage')
+    const suggestion = document.getElementById('settingsBarkBaseUrlSuggestion')
+    const copyBtn = document.getElementById('settingsBarkBaseUrlCopyBtn')
+    const recheckBtn = document.getElementById('settingsBarkBaseUrlRecheckBtn')
+    if (!item || !message || !suggestion) return
+
+    const renderStatus = async () => {
+      if (!SERVER_URL) {
+        item.hidden = true
+        return
+      }
+      try {
+        const resp = await fetch(SERVER_URL + '/api/system/network-base-url-status', {
+          method: 'GET',
+          cache: 'no-store'
+        })
+        if (!resp.ok) {
+          item.hidden = true
+          return
+        }
+        const data = await resp.json().catch(() => null)
+        if (!data || data.success === false) {
+          item.hidden = true
+          return
+        }
+
+        const isLoopback = data.is_loopback === true
+        const effective = String(data.effective_base_url || '')
+        const suggested = String(data.suggested_lan_base_url || '')
+        const recommendation = String(data.recommendation || 'ok')
+
+        if (recommendation === 'ok') {
+          // 单 brace ``{url}`` 不走 i18n 的 ICU/Mustache 引擎（ICU 用
+          // ``{name, plural,...}`` / Mustache 用 ``{{name}}``）。这里手动 replace
+          // 与 PWA settings-manager.js 保持一致，并通过
+          // scripts/check_i18n_param_signatures.py 的 strict gate。
+          message.textContent = String(t('settings.bark.baseUrlStatusOk') || '').replace(
+            '{url}',
+            effective
+          )
+          suggestion.textContent = ''
+          if (copyBtn) copyBtn.hidden = true
+          item.hidden = false
+          return
+        }
+
+        item.hidden = false
+        message.textContent =
+          isLoopback && effective
+            ? String(t('settings.bark.baseUrlStatusLoopback') || '').replace(
+                '{url}',
+                effective
+              )
+            : t('settings.bark.baseUrlStatusUnreachable')
+
+        if (suggested) {
+          suggestion.textContent = t('settings.bark.baseUrlSuggestLan')
+          if (copyBtn) {
+            copyBtn.hidden = false
+            copyBtn.dataset.lanUrl = suggested
+            copyBtn.title = suggested
+          }
+        } else {
+          suggestion.textContent = t('settings.bark.baseUrlSuggestNoLan')
+          if (copyBtn) {
+            copyBtn.hidden = true
+            copyBtn.dataset.lanUrl = ''
+          }
+        }
+      } catch (_e) {
+        item.hidden = true
+      }
+    }
+
+    if (recheckBtn) {
+      recheckBtn.addEventListener('click', () => {
+        renderStatus()
+      })
+    }
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const url = copyBtn.dataset && copyBtn.dataset.lanUrl ? copyBtn.dataset.lanUrl : ''
+        if (!url) return
+        try {
+          if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(url)
+          } else {
+            const ta = document.createElement('textarea')
+            ta.value = url
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            try {
+              document.execCommand('copy')
+            } finally {
+              document.body.removeChild(ta)
+            }
+          }
+          const original = copyBtn.textContent
+          copyBtn.textContent = t('settings.bark.baseUrlCopied')
+          setTimeout(() => {
+            copyBtn.textContent = original
+          }, 1500)
+        } catch (_e) {
+          // 复制失败：webview clipboard 权限问题或 textarea fallback 失败，
+          // 按 hint 提示用户手动复制即可。
+        }
+      })
+    }
+
+    await renderStatus()
+  }
+
   async function testBark() {
     try {
       if (!SERVER_URL) {
@@ -617,6 +744,18 @@
       if (settingsTestNativeBtn)
         settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
       if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
+
+      // Bark base_url 可达性诊断（TODO #3 / r42）：
+      //   /api/system/network-base-url-status 给设置面板展示「是否回环」+
+      //   「推荐 LAN URL」。VS Code webview CSP 已 allow connect-src=SERVER_URL，
+      //   直接 fetch；探测失败 / 远程 webview 无法访问时静默隐藏整个区块，避免
+      //   把后端 5xx / 超时 倒灌成 UI 噪音。锁定行为见
+      //   tests/test_bark_loopback_pwa_redirect_r42.py。
+      try {
+        initBarkBaseUrlStatus()
+      } catch (_e) {
+        // 忽略：诊断面板失败不应影响主设置面板渲染
+      }
 
       // GitHub footer 外链：VS Code webview 默认禁止 <a target="_blank">
       // 直接 navigate 到 https URL（点击后看似没反应）。这里劫持 click，

@@ -1953,6 +1953,15 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                     <input type="text" id="notifyBarkUrlTemplate" placeholder="${tl("settings.bark.urlTemplatePlaceholder")}" data-i18n-placeholder="settings.bark.urlTemplatePlaceholder">
                     <span class="settings-field-hint" data-i18n="settings.bark.urlTemplateHint">${tl("settings.bark.urlTemplateHint")}</span>
                 </label>
+                <div class="settings-field bark-base-url-status" id="settingsBarkBaseUrlStatus" hidden>
+                    <span class="settings-label" data-i18n="settings.bark.baseUrlStatusTitle">${tl("settings.bark.baseUrlStatusTitle")}</span>
+                    <span class="settings-field-hint" id="settingsBarkBaseUrlMessage"></span>
+                    <span class="settings-field-hint" id="settingsBarkBaseUrlSuggestion"></span>
+                    <div class="settings-bark-base-url-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+                        <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlCopyBtn" hidden data-i18n="settings.bark.baseUrlCopyLan">${tl("settings.bark.baseUrlCopyLan")}</button>
+                        <button type="button" class="settings-action secondary" id="settingsBarkBaseUrlRecheckBtn" data-i18n="settings.bark.baseUrlRecheck">${tl("settings.bark.baseUrlRecheck")}</button>
+                    </div>
+                </div>
 
                 <div class="settings-divider"></div>
 

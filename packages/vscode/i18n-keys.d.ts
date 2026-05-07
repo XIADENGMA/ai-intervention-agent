@@ -25,6 +25,15 @@ export type I18nKey =
   | "settings.bark.actionCopy"
   | "settings.bark.actionNone"
   | "settings.bark.actionUrl"
+  | "settings.bark.baseUrlCopied"
+  | "settings.bark.baseUrlCopyLan"
+  | "settings.bark.baseUrlRecheck"
+  | "settings.bark.baseUrlStatusLoopback"
+  | "settings.bark.baseUrlStatusOk"
+  | "settings.bark.baseUrlStatusTitle"
+  | "settings.bark.baseUrlStatusUnreachable"
+  | "settings.bark.baseUrlSuggestLan"
+  | "settings.bark.baseUrlSuggestNoLan"
   | "settings.bark.deviceKey"
   | "settings.bark.deviceKeyPlaceholder"
   | "settings.bark.enabled"
@@ -162,6 +171,15 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "settings.bark.actionCopy",
   "settings.bark.actionNone",
   "settings.bark.actionUrl",
+  "settings.bark.baseUrlCopied",
+  "settings.bark.baseUrlCopyLan",
+  "settings.bark.baseUrlRecheck",
+  "settings.bark.baseUrlStatusLoopback",
+  "settings.bark.baseUrlStatusOk",
+  "settings.bark.baseUrlStatusTitle",
+  "settings.bark.baseUrlStatusUnreachable",
+  "settings.bark.baseUrlSuggestLan",
+  "settings.bark.baseUrlSuggestNoLan",
   "settings.bark.deviceKey",
   "settings.bark.deviceKeyPlaceholder",
   "settings.bark.enabled",
