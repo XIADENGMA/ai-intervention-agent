@@ -67,8 +67,7 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.39 (R50 + R51-A/B/C
-cycle: server_info sse_bus block + 250 ms config_changed debounce,
-TaskQueue write-lock watchdog, named-event SSE heartbeat, recent
-WARN/ERROR ring buffer; the prior R47–R49 work is captured in
-v1.5.38)._
+index never lies. Last refreshed for v1.5.40 (R52 cycle:
+TaskQueue write-lock watchdog rolled out across all 8 paths +
+GET /api/system/recent-logs endpoint; the prior R50 + R51-A/B/C
+work is captured in v1.5.39)._

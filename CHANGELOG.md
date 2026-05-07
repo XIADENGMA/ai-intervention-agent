@@ -9,6 +9,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.40] — 2026-05-08
+
+> Round-52 follow-up to v1.5.39: completes the watchdog rollout
+> (R51-A had only wrapped one write path, R52-A wraps the remaining
+> seven) and surfaces the R51-C log ring buffer as its own HTTP
+> endpoint so PWAs, web status panels, and cross-process tooling
+> don't have to go through MCP. 15 new test cases.
+
+### Added
+
+- **R52-B** — `GET /api/system/recent-logs` returns the most-recent
+  WARNING/ERROR entries from the `enhanced_logging` ring buffer
+  (entries already sanitized; passwords / `sk-` keys / `ghp_` tokens
+  replaced by `***REDACTED***`). Rate-limited at 30 / min, no loopback
+  gate (LAN PWAs can fetch — payload is sanitized). Accepts
+  `?limit=N` query, default 50, clamped to ring capacity.
+
+### Changed
+
+- **R52-A** — Every `task_queue` write path now runs inside
+  `_watched_write_lock(...)` with its own diagnostic label. R51-A
+  introduced the wrapper but only applied it to `add_task`; R52-A
+  finishes the migration for `clear_all_tasks`,
+  `update_auto_resubmit_timeout_for_all`, `set_active_task`,
+  `complete_task`, `remove_task`, `clear_completed_tasks`, and
+  `cleanup_completed_tasks`. A new source-level invariant test
+  enforces that any future write path must use the wrapper too.
+
 ## [1.5.39] — 2026-05-08
 
 > Round-50 / Round-51-A / Round-51-B / Round-51-C: an observability +

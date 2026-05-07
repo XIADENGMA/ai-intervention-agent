@@ -14,6 +14,12 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.40] — 2026-05-08
+
+> Server-side hardening release; no extension-facing behaviour
+> changes. Bumped to keep the VS Code extension version in lockstep
+> with the PyPI server package.
+
 ## [1.5.39] — 2026-05-08
 
 ### Added
