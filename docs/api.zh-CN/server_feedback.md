@@ -26,6 +26,20 @@ httpx.AsyncClient | None = None`` 等模块级注解，所以保留 TYPE_CHECKIN
 
 ## 函数
 
+### `_bump_feedback_counter(name: str, by: int = 1) -> None`
+
+``_FEEDBACK_COUNTERS[name] += by``（线程安全；未知 key 时静默）。
+
+遇到未知 key 不抛异常 / 也不创建新 key——拼写错误应当被测试捕获，
+而不是在生产里悄悄拉一个新指标。
+
+### `get_feedback_counters() -> dict[str, int]`
+
+返回 interactive_feedback 计数器快照（R47）；永远是拷贝，不是引用。
+
+给 ``server.server_info_resource`` 在 ``aiia://server/info`` 子块里
+渲染，运维侧通过 MCP `resources/read` 拉取即可看到累计值。
+
 ### `async _emit_ctx_info(ctx: FastMCPContext | None, message: str) -> None`
 
 Best-effort 把 task lifecycle 关键节点回写到 MCP client 端日志。

@@ -80,6 +80,21 @@ class _SSEBus:
         self._history: collections.deque[tuple[int, dict]] = collections.deque(
             maxlen=self._HISTORY_MAXLEN
         )
+        # R47：运行时计数器，让运维 / client UI 在不订阅 SSE 的情况下评估健康度。
+        # 全部走 ``self._lock`` 保护，因为 emit / subscribe / discard 路径已经持锁，
+        # 加 3 个 ``int += 1`` 几乎零成本；比起再起一份 ``threading.Lock`` 还简单。
+        # 语义：
+        # - ``_emit_total``：``emit()`` 被调用的累计次数。基线指标，client UI
+        #   能用 ``emit_total - last_event_id`` 推断"emit 完成 vs id 分配"的偏差
+        #   （正常情况两者应当一致）。
+        # - ``_gap_warnings_emitted``：``subscribe(after_id=...)`` 命中 evict 分支
+        #   塞 ``gap_warning`` 的次数。正常 idle Web UI 应当 ≈ 0；持续增长意味着
+        #   网络抖动 / VSCode 长时间挂起后重连。
+        # - ``_backpressure_discards``：``emit()`` 因 queue Full 或积压超阈值踢
+        #   subscriber 的次数。慢消费者（浏览器 tab 卡死、机器换页风暴）会让它涨。
+        self._emit_total: int = 0
+        self._gap_warnings_emitted: int = 0
+        self._backpressure_discards: int = 0
 
     def subscribe(self, after_id: int | None = None) -> queue.Queue:
         """订阅 SSE 事件流；可选 ``after_id`` 触发缺失事件回放。
@@ -113,6 +128,7 @@ class _SSEBus:
                     # 当前 history（让客户端至少拿到最新窗口里的事件，之后客户端
                     # 自己 fetch 全量）。
                     inject_gap_warning = True
+                    self._gap_warnings_emitted += 1
                     replay_items = [payload for _, payload in self._history]
                 elif after_id < latest_id:
                     # 在 history 范围内，正常补发。
@@ -183,6 +199,7 @@ class _SSEBus:
 
         with self._lock:
             self._next_id += 1
+            self._emit_total += 1
             event_id = self._next_id
             payload = {
                 "id": event_id,
@@ -228,9 +245,12 @@ class _SSEBus:
         # （O(1)）+ sentinel 注入（不需要 _lock 保护，sentinel 是塞给单个
         # queue 的，与 ``_subscribers`` 集合无关）。把 sentinel 注入留在锁外，
         # 锁只覆盖最小改动。
+        # R47：同时把 backpressure 计数器在持锁期间累加；放在锁内是因为这本身
+        # 就是 lock 的天然临界区，不会增加任何锁等待时间。
         with self._lock:
             for q in dead:
                 self._subscribers.discard(q)
+            self._backpressure_discards += len(dead)
 
         for q in dead:
             # 主动通知 generator 退出。优先级 sentinel > 旧消息：
@@ -264,6 +284,33 @@ class _SSEBus:
         """复制一份 history 给测试 / 诊断用，永远不返回内部状态引用。"""
         with self._lock:
             return list(self._history)
+
+    def stats_snapshot(self) -> dict[str, int]:
+        """返回 SSE 总线的运行时计数器快照（R47）。
+
+        字段语义：
+        - ``emit_total``：``emit()`` 调用累计次数；
+        - ``latest_event_id``：最近一次 emit 分配的 id（``= _next_id``）；
+        - ``gap_warnings_emitted``：``subscribe(after_id=...)`` 命中 evict 分支
+          的累计次数（持续上涨意味着客户端经常带着过老的 token 重连）；
+        - ``backpressure_discards``：``emit()`` 因 queue Full / 积压超阈值踢
+          subscriber 的累计次数（持续上涨意味着浏览器 tab / extension 端有
+          慢消费者）；
+        - ``subscriber_count``：当前活跃订阅者数（基线指标）；
+        - ``history_size``：当前 history deque 长度（≤ ``_HISTORY_MAXLEN``）。
+
+        所有字段都是单调累计（除了 ``subscriber_count`` / ``history_size`` 是
+        瞬时值），caller 可以记录两次快照后做差，得到一段窗口内的速率。
+        """
+        with self._lock:
+            return {
+                "emit_total": self._emit_total,
+                "latest_event_id": self._next_id,
+                "gap_warnings_emitted": self._gap_warnings_emitted,
+                "backpressure_discards": self._backpressure_discards,
+                "subscriber_count": len(self._subscribers),
+                "history_size": len(self._history),
+            }
 
 
 _sse_bus = _SSEBus()

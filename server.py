@@ -563,6 +563,24 @@ def server_info_resource() -> dict[str, object]:
         task_queue_info["error"] = f"{type(tq_exc).__name__}: {tq_exc}"
     info["task_queue"] = task_queue_info
 
+    # R47：interactive_feedback 累计计数器。``server_feedback`` 顶层已经
+    # 被 ``server.py`` import（见上方 ``from server_feedback import ...``），
+    # 这里 ``getattr`` 拿单例 dict，避免重复 import 触发任何副作用。
+    feedback_counters_info: dict[str, object] = {}
+    try:
+        import server_feedback as _sfb
+
+        getter = getattr(_sfb, "get_feedback_counters", None)
+        if callable(getter):
+            feedback_counters_info = dict(getter())
+        else:
+            feedback_counters_info["error"] = (
+                "get_feedback_counters not found on server_feedback"
+            )
+    except Exception as fb_exc:
+        feedback_counters_info["error"] = f"{type(fb_exc).__name__}: {fb_exc}"
+    info["interactive_feedback"] = feedback_counters_info
+
     return info
 
 

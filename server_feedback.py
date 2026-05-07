@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -64,6 +65,60 @@ try:
 except ImportError as e:
     logger.warning(f"通知系统不可用: {e}", exc_info=True)
     NOTIFICATION_AVAILABLE = False
+
+
+# R47：interactive_feedback 运行时计数器
+# ===========================================
+#
+# 让运维 / client UI 在不订阅 SSE 的情况下评估"反馈工具是否在被滥用"。
+# 三类计数互斥，按 task lifecycle 锚点累加：
+#   - ``created_total``：进入 ``interactive_feedback`` 后通过参数 validate
+#     的次数（早期 ``ToolError`` 不计入；那是 schema-level 拒绝）。
+#   - ``completed_total``：``task.completed`` 锚点触发的次数（人类用户已经
+#     回复并 wait_for_task_completion 拿到正常 dict）。
+#   - ``failed_total``：``task.failed`` 锚点触发的次数（涵盖 notify 阶段
+#     httpx 失败、wait 阶段超时 / 错误、以及最外层 except 兜底）。
+#
+# 阈值用法：
+#   - ``created_total`` >> ``completed_total + failed_total``：客户端在
+#     等用户回复（正常或 LLM 调过头）；
+#   - ``failed_total`` 连续走高：Web UI 子进程出问题 / notify HTTP 失败；
+#   - ``completed_total / created_total`` 接近 1：用户参与度高、流程畅通。
+#
+# 实现细节：
+#   - 用 ``threading.Lock`` 而不是 ``asyncio.Lock``：本工具在 sync 测试 /
+#     CLI / 多线程后端里都会被读，threading.Lock 保兼容；
+#   - 不暴露内部 dict 的引用，``get_feedback_counters`` 返回拷贝；
+#   - dict 只往里写已知 key，避免 typo 静默成 0。
+_FEEDBACK_COUNTERS: dict[str, int] = {
+    "created_total": 0,
+    "completed_total": 0,
+    "failed_total": 0,
+}
+_FEEDBACK_COUNTERS_LOCK = threading.Lock()
+
+
+def _bump_feedback_counter(name: str, by: int = 1) -> None:
+    """``_FEEDBACK_COUNTERS[name] += by``（线程安全；未知 key 时静默）。
+
+    遇到未知 key 不抛异常 / 也不创建新 key——拼写错误应当被测试捕获，
+    而不是在生产里悄悄拉一个新指标。
+    """
+    if name not in _FEEDBACK_COUNTERS:
+        logger.warning(f"_bump_feedback_counter: ignoring unknown counter {name!r}")
+        return
+    with _FEEDBACK_COUNTERS_LOCK:
+        _FEEDBACK_COUNTERS[name] += by
+
+
+def get_feedback_counters() -> dict[str, int]:
+    """返回 interactive_feedback 计数器快照（R47）；永远是拷贝，不是引用。
+
+    给 ``server.server_info_resource`` 在 ``aiia://server/info`` 子块里
+    渲染，运维侧通过 MCP `resources/read` 拉取即可看到累计值。
+    """
+    with _FEEDBACK_COUNTERS_LOCK:
+        return dict(_FEEDBACK_COUNTERS)
 
 
 async def _emit_ctx_info(
@@ -831,6 +886,7 @@ async def interactive_feedback(
             else 0,
             has_defaults=bool(predefined_options_defaults),
         )
+        _bump_feedback_counter("created_total")
 
         logger.info(
             f"收到反馈请求: {cleaned_message[:50]}... (自动生成task_id: {task_id})"
@@ -969,6 +1025,7 @@ async def interactive_feedback(
                 stage="notify",
                 reason=f"httpx_error:{type(e).__name__}",
             )
+            _bump_feedback_counter("failed_total")
             # 返回配置的提示语，引导 AI 重新调用工具
             return server_config._make_resubmit_response()
 
@@ -989,6 +1046,7 @@ async def interactive_feedback(
                 reason=str(result["error"])[:80],
                 duration_ms=int((time.monotonic() - _task_t0) * 1000),
             )
+            _bump_feedback_counter("failed_total")
             # 返回配置的提示语，引导 AI 重新调用工具
             return server_config._make_resubmit_response()
 
@@ -999,6 +1057,7 @@ async def interactive_feedback(
             task_id=task_id,
             duration_ms=_completed_duration_ms,
         )
+        _bump_feedback_counter("completed_total")
         await _emit_ctx_info(
             ctx,
             f"Received human feedback for task {task_id} (took {_completed_duration_ms} ms)",
@@ -1053,6 +1112,7 @@ async def interactive_feedback(
 
     except Exception as e:
         logger.error(f"interactive_feedback 工具执行失败: {e}", exc_info=True)
+        _bump_feedback_counter("failed_total")
         # 返回配置的提示语，引导 AI 重新调用工具
         return server_config._make_resubmit_response()
 

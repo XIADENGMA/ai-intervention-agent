@@ -4,6 +4,10 @@
 
 ## Functions
 
+### `_bump_feedback_counter(name: str, by: int = 1) -> None`
+
+### `get_feedback_counters() -> dict[str, int]`
+
 ### `async _emit_ctx_info(ctx: FastMCPContext | None, message: str) -> None`
 
 ### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`

@@ -480,6 +480,66 @@ class SystemRoutesMixin:
                     500,
                 )
 
+        @self.app.route("/api/system/sse-stats", methods=["GET"])
+        @self.limiter.limit("60 per minute")
+        def sse_stats() -> ResponseReturnValue:
+            """返回 SSE 总线运行时计数器（R47）。
+
+            ---
+            tags:
+              - System
+            description: |
+                给运维 / VS Code 状态栏 / Web UI 状态面板提供 ``_SSEBus`` 的健康指标快照：
+                ``emit_total`` / ``latest_event_id`` / ``gap_warnings_emitted`` /
+                ``backpressure_discards`` / ``subscriber_count`` / ``history_size``。
+
+                所有字段都是单调累计或瞬时值；caller 可以记两次快照算速率。
+                **任意来源** 的请求都允许查询——这是只读诊断元数据，不暴露任何
+                敏感配置 / 用户内容（payload 只含计数）。
+            responses:
+              200:
+                description: SSE 总线指标快照
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    emit_total:
+                      type: integer
+                      description: emit() 被调用的累计次数
+                    latest_event_id:
+                      type: integer
+                      description: 最近一次 emit 分配的 id
+                    gap_warnings_emitted:
+                      type: integer
+                      description: subscribe(after_id=...) 命中 evict 分支的累计次数
+                    backpressure_discards:
+                      type: integer
+                      description: emit() 因 queue Full / 积压超阈值踢 subscriber 的累计次数
+                    subscriber_count:
+                      type: integer
+                      description: 当前活跃 SSE 订阅者数（瞬时值）
+                    history_size:
+                      type: integer
+                      description: 当前 history deque 长度（瞬时值，≤ _HISTORY_MAXLEN）
+            """
+            try:
+                from web_ui_routes.task import _sse_bus
+
+                snapshot = _sse_bus.stats_snapshot()
+                return jsonify({"success": True, **snapshot})
+            except Exception as exc:
+                logger.warning(f"sse-stats 探测失败: {exc}", exc_info=True)
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Failed to read SSE stats snapshot",
+                        }
+                    ),
+                    500,
+                )
+
         @self.app.route("/api/system/open-config-file/info", methods=["GET"])
         @self.limiter.exempt
         def open_config_file_info() -> ResponseReturnValue:
