@@ -82,6 +82,31 @@ class TestSizeBudgetDefaultsArePresent:
             "上调到 >50 MB 等于关掉硬上限，请审查。"
         )
 
+    # R49：除"宽 sanity 区间"之外，再锁住"当前生效的具体阈值"——
+    # 任何对默认值的调整都必须同步修改下面这两个测试，从而被 PR
+    # review 看到。两层守护的分工：
+    #   - 上面 sane-range：防止灾难（改成 100 MB 之类）
+    #   - 下面 anchor：让正常的"再次上调阈值"动作可见
+    # 当下数值（v1.5.37 R49 收紧后）：WARN=3 MB / FAIL=5 MB。
+    EXPECTED_WARN_MB_R49 = 3
+    EXPECTED_FAIL_MB_R49 = 5
+
+    def test_warn_default_matches_r49_anchor(self) -> None:
+        warn_mb = _extract_default_mb("WARN_PACKED_MB_DEFAULT")
+        assert warn_mb == self.EXPECTED_WARN_MB_R49, (
+            f"WARN_PACKED_MB_DEFAULT={warn_mb} MB 与 R49 锚定值 "
+            f"{self.EXPECTED_WARN_MB_R49} MB 不一致；"
+            "若确需调整，请同步修改 EXPECTED_WARN_MB_R49 + CHANGELOG。"
+        )
+
+    def test_fail_default_matches_r49_anchor(self) -> None:
+        fail_mb = _extract_default_mb("FAIL_PACKED_MB_DEFAULT")
+        assert fail_mb == self.EXPECTED_FAIL_MB_R49, (
+            f"FAIL_PACKED_MB_DEFAULT={fail_mb} MB 与 R49 锚定值 "
+            f"{self.EXPECTED_FAIL_MB_R49} MB 不一致；"
+            "若确需调整，请同步修改 EXPECTED_FAIL_MB_R49 + CHANGELOG。"
+        )
+
     def test_warn_le_fail(self) -> None:
         warn_mb = _extract_default_mb("WARN_PACKED_MB_DEFAULT")
         fail_mb = _extract_default_mb("FAIL_PACKED_MB_DEFAULT")

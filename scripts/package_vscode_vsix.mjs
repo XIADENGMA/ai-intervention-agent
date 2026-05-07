@@ -198,16 +198,23 @@ try {
   // 本守卫在打包末尾对 .vsix 做"压缩后"尺寸 check：
   //   - 超 ``WARN_PACKED_BYTES`` → console.warn 提示 review；
   //   - 超 ``FAIL_PACKED_BYTES`` → 直接 ``process.exit(1)`` fail-closed。
-  // 阈值刻意比当前实际尺寸（约 2.7 MB / 1.5.22）留有充足 headroom，
-  // 既不会让一次正常的 +X KB 增量被误报，又能在 4-6 MB 的"意外飞涨"
-  // 区间立刻 trip。两个阈值都可通过 env var 覆盖，方便临时大幅增量
-  // 上线前调高，但默认必须保守。
+  //
+  // 阈值演变：
+  //   - 1.5.22：实测约 2.7 MB；当时定 WARN=4 / FAIL=6 留 ~50% headroom。
+  //   - 1.5.37（R49）：实测稳定在 2.60 MB；前两年没新增大资源，把
+  //     WARN 收紧到 3 MB（仍有 ~15% headroom，覆盖一次 ~400 KB 的正常增
+  //     量），FAIL 收紧到 5 MB（覆盖到一次 ~2.4 MB 的飞涨意外，相当
+  //     于 mathjax 大资源被重复打包级别的事故）。
+  //
+  // 收紧后语义：当 review threshold (WARN) 命中时，PR 必须解释新增了
+  // 什么；hard limit (FAIL) 才会真正 break release。两个阈值都可通过
+  // env var 覆盖，方便临时大幅增量上线前调高，但默认必须保守。
   //
   // 数值合理性由 ``tests/test_vscode_vsix_size_budget.py`` 静态守护，
   // 防止"为通过 CI 把阈值改到 100 MB"这种自残式 escape hatch。
   // ──────────────────────────────────────────────────────────────────
-  const WARN_PACKED_MB_DEFAULT = 4
-  const FAIL_PACKED_MB_DEFAULT = 6
+  const WARN_PACKED_MB_DEFAULT = 3
+  const FAIL_PACKED_MB_DEFAULT = 5
   const _parseMbEnv = (envName, fallback) => {
     const raw = process.env[envName]
     if (raw === undefined || raw === '') return fallback
