@@ -16,10 +16,33 @@ from loguru import logger as _loguru_logger
 
 
 class LogSanitizer:
-    """日志脱敏 - 检测并替换密码、API key 等敏感信息为 ***REDACTED***。"""
+    """日志脱敏 - 检测并替换密码、API key 等敏感信息为 ``***REDACTED***``。
+
+    覆盖范围（R54-B 扩展，按高频泄漏 vendor 排序，每条都加注释说明锚点）：
+
+    1. **通用字段写法**：``password=`` / ``passwd=`` / ``secret_key=`` /
+       ``private_key=``。这是最常见的 .env / config 文件 / debug 日志格式。
+    2. **OpenAI 系列**：
+       - 老格式：``sk-XXX``（dash 后续无 dash）；
+       - 新工程级 key：``sk-proj-XXX``（dash 后含 dash，`_-` 字符集 / 40+ 字符）；
+       - Anthropic：``sk-ant-XXX``（同上）；
+       共用一个能把 dash 也吃进 character class 的 regex，避免老 regex 在
+       ``sk-proj-...`` 处只 match 到 ``sk-proj`` 4 个字符就失配。
+    3. **GitHub** 系列：``ghp_`` (PAT) / ``ghs_`` (server) / ``gho_`` (oauth) /
+       ``ghu_`` (user-to-server) / ``ghr_`` (refresh)，全部 36 字符。
+    4. **Slack**：``xoxb-`` (bot) / ``xoxp-`` (user)。
+    5. **AWS**：``AKIA[A-Z0-9]{16}``（Access Key ID，固定 20 字符）。
+    6. **Google API**：``AIza[0-9A-Za-z_-]{35}``（39 字符总长）。
+    7. **HuggingFace**：``hf_[A-Za-z0-9]{34,}``。
+    8. **Stripe**：``sk_live_`` / ``sk_test_`` / ``pk_live_`` / ``pk_test_``，
+       通常 24+ 字符。
+    9. **URL basic auth**：``http(s)://user:password@host`` 中的密码段——
+       人类经常无意把整条 URL 黏到日志里。
+    10. **JWT**（保守判定）：必须 ``eyJ`` 开头 + 三段 base64url——避免误伤
+        普通 base64 字符串。
+    """
 
     def __init__(self) -> None:
-        """预编译敏感信息正则模式"""
         self.sensitive_patterns = [
             re.compile(r'password["\']?\s*[:=]\s*["\']?[^\s"\']{6,}["\']?'),
             re.compile(r'passwd["\']?\s*[:=]\s*["\']?[^\s"\']{6,}["\']?'),
@@ -29,15 +52,39 @@ class LogSanitizer:
             re.compile(
                 r'private[_-]?key["\']?\s*[:=]\s*["\']?[A-Za-z0-9._-]{16,}["\']?'
             ),
-            re.compile(r"\bsk-[A-Za-z0-9]{32,}\b"),
-            re.compile(r"\bxoxb-[A-Za-z0-9-]{50,}\b"),
-            re.compile(r"\bghp_[A-Za-z0-9]{36}\b"),
+            # OpenAI / Anthropic 全形态：sk-XXX、sk-proj-XXX、sk-ant-XXX 都吃。
+            # 字符集允许 ``-`` 和 ``_``，长度 ≥ 24 避免误伤 ``sk-foo`` 这种短串。
+            re.compile(r"\bsk-[A-Za-z0-9_-]{24,}\b"),
+            # Slack tokens (bot / user / app 各形态)
+            re.compile(r"\bxox[bpasr]-[A-Za-z0-9-]{20,}\b"),
+            # GitHub tokens (PAT / server / oauth / user-to-server / refresh)
+            re.compile(r"\bgh[psour]_[A-Za-z0-9]{36}\b"),
+            # AWS Access Key ID (20 chars total, always AKIA + 16)
+            re.compile(r"\bAKIA[A-Z0-9]{16}\b"),
+            # Google / Firebase / GCP API key (AIza + 35 chars)
+            re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"),
+            # HuggingFace tokens
+            re.compile(r"\bhf_[A-Za-z0-9]{34,}\b"),
+            # Stripe live/test publishable / secret keys
+            re.compile(r"\b(?:sk|pk)_(?:live|test)_[0-9A-Za-z]{16,}\b"),
+            # URL basic auth: capture user:password@ from http(s) URLs
+            re.compile(r"(https?://)([^:/\s]+):([^@/\s]+)@"),
+            # JWT (3 base64url segments, leading eyJ to anchor)
+            re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),
         ]
 
     def sanitize(self, message: str) -> str:
-        """脱敏消息中的敏感信息"""
+        """脱敏消息中的敏感信息。
+
+        URL basic auth 是唯一保留 username 的特殊形态，用反向引用把
+        ``http(s)://``+username 部分留下，仅密码段替换为 ``***REDACTED***``，
+        让运维仍然能从日志里看到"是哪个账号在 leak"。其它形态全部一刀切替换。
+        """
         for pattern in self.sensitive_patterns:
-            message = pattern.sub("***REDACTED***", message)
+            if pattern.pattern.startswith("(https?://)"):
+                message = pattern.sub(r"\1\2:***REDACTED***@", message)
+            else:
+                message = pattern.sub("***REDACTED***", message)
         return message
 
 

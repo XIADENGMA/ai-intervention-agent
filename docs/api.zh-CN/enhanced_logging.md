@@ -40,17 +40,42 @@ Loguru patcher: 防注入转义 + 敏感信息脱敏
 
 ### `class LogSanitizer`
 
-日志脱敏 - 检测并替换密码、API key 等敏感信息为 ***REDACTED***。
+日志脱敏 - 检测并替换密码、API key 等敏感信息为 ``***REDACTED***``。
+
+覆盖范围（R54-B 扩展，按高频泄漏 vendor 排序，每条都加注释说明锚点）：
+
+1. **通用字段写法**：``password=`` / ``passwd=`` / ``secret_key=`` /
+   ``private_key=``。这是最常见的 .env / config 文件 / debug 日志格式。
+2. **OpenAI 系列**：
+   - 老格式：``sk-XXX``（dash 后续无 dash）；
+   - 新工程级 key：``sk-proj-XXX``（dash 后含 dash，`_-` 字符集 / 40+ 字符）；
+   - Anthropic：``sk-ant-XXX``（同上）；
+   共用一个能把 dash 也吃进 character class 的 regex，避免老 regex 在
+   ``sk-proj-...`` 处只 match 到 ``sk-proj`` 4 个字符就失配。
+3. **GitHub** 系列：``ghp_`` (PAT) / ``ghs_`` (server) / ``gho_`` (oauth) /
+   ``ghu_`` (user-to-server) / ``ghr_`` (refresh)，全部 36 字符。
+4. **Slack**：``xoxb-`` (bot) / ``xoxp-`` (user)。
+5. **AWS**：``AKIA[A-Z0-9]{16}``（Access Key ID，固定 20 字符）。
+6. **Google API**：``AIza[0-9A-Za-z_-]{35}``（39 字符总长）。
+7. **HuggingFace**：``hf_[A-Za-z0-9]{34,}``。
+8. **Stripe**：``sk_live_`` / ``sk_test_`` / ``pk_live_`` / ``pk_test_``，
+   通常 24+ 字符。
+9. **URL basic auth**：``http(s)://user:password@host`` 中的密码段——
+   人类经常无意把整条 URL 黏到日志里。
+10. **JWT**（保守判定）：必须 ``eyJ`` 开头 + 三段 base64url——避免误伤
+    普通 base64 字符串。
 
 #### 方法
 
 ##### `__init__(self) -> None`
 
-预编译敏感信息正则模式
-
 ##### `sanitize(self, message: str) -> str`
 
-脱敏消息中的敏感信息
+脱敏消息中的敏感信息。
+
+URL basic auth 是唯一保留 username 的特殊形态，用反向引用把
+``http(s)://``+username 部分留下，仅密码段替换为 ``***REDACTED***``，
+让运维仍然能从日志里看到"是哪个账号在 leak"。其它形态全部一刀切替换。
 
 ### `class LogDeduplicator`
 
