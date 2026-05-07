@@ -31,6 +31,14 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastmcp.exceptions import ToolError
+
+# ``Context`` 用于 ``interactive_feedback(..., ctx: FastMCPContext | None = None)``
+# 的运行时签名解析：FastMCP 在 ``mcp.tool()`` 装饰器里走 ``typing.get_type_hints()``
+# 解析参数注解（即便启用了 ``from __future__ import annotations``），所以本符号
+# **必须**在运行时也可解析；用 ``TYPE_CHECKING`` 守护会触发 NameError。
+# fastmcp 包已经被 ``server.py`` 顶层 import，此处再多 import 一个子模块零额外
+# 冷启动开销。
+from fastmcp.server.context import Context as FastMCPContext
 from mcp.types import TextContent
 from pydantic import Field
 
@@ -56,6 +64,42 @@ try:
 except ImportError as e:
     logger.warning(f"通知系统不可用: {e}", exc_info=True)
     NOTIFICATION_AVAILABLE = False
+
+
+async def _emit_ctx_info(
+    ctx: FastMCPContext | None,
+    message: str,
+    **extra: Any,
+) -> None:
+    """Best-effort 把 task lifecycle 关键节点回写到 MCP client 端日志。
+
+    R44 helper：被 ``interactive_feedback`` 在 ``task.created`` /
+    ``task.notified`` / ``task.completed`` 等关键锚点调用，让
+    Cursor / Claude Desktop / ChatGPT Desktop 在 chat sidebar 渲染一行
+    "正在等用户回复" 进度日志。
+
+    设计取舍：
+    - ``ctx`` 为 ``None``：直接 no-op。pytest / CLI / 集成测试 / 直接 Python
+      调用时都会走到这条；保证本工具仍可在 MCP 之外被人测。
+    - ``ctx.info`` 抛异常：吞掉并降级到本地 ``logger.debug``。MCP client
+      连接断开 / 协议异常都不应该让业务流程崩。
+    - 与 ``logger.event``/``logger.info`` 的关系：
+        * ``logger.event``：结构化事件日志，落到 server 端 stderr，运维诊断
+          走这条；
+        * ``logger.info``：人类可读 server 端日志；
+        * ``ctx.info``：发到 MCP client，是 *人类用户* 在 chat 看到的进度。
+      三条管线各自独立，互不影响——服务器端日志一定有，client 看到的可能
+      因为协议错误丢失，这是预期行为。
+    """
+    if ctx is None:
+        return
+    try:
+        if extra:
+            await ctx.info(message, extra=extra)
+        else:
+            await ctx.info(message)
+    except Exception as ctx_exc:
+        logger.debug(f"ctx.info 失败（已忽略）: {type(ctx_exc).__name__}: {ctx_exc}")
 
 
 # R22.1: ``wait_for_task_completion`` 的 HTTP 轮询保底节奏。
@@ -652,6 +696,8 @@ async def interactive_feedback(
         default=None,
         description="Accepted for compatibility; ignored by this server.",
     ),
+    *,
+    ctx: FastMCPContext | None = None,
 ) -> list:
     """Ask the human user for interactive feedback through the Web UI.
 
@@ -688,6 +734,14 @@ async def interactive_feedback(
     R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
     解析符号——本工具被 MCP 客户端首次调用时一次性付 ~55 ms 加载费，而 MCP server
     cold-start 路径完全不会进入此函数（``server.py`` 顶层 import 时只是定义而已）。
+
+    R44 FastMCP 最佳实践：``ctx`` 关键字参数（FastMCP 自动注入）让本函数可以走
+    ``await _emit_ctx_info(ctx, ...)`` 把 task lifecycle 事件回送给 client
+    （Cursor / Claude Desktop / ChatGPT Desktop）。client 收到后会在 chat
+    sidebar 渲染一行进度日志，让人类用户能"看到工具确实在工作、正在等真人
+    回复"，而不是猜"agent 是不是 hung 住了"。``ctx`` 永远 keyword-only 且
+    默认 None，所以本工具被通过别的入口（pytest 直接调）调用时不会因为缺
+    ctx 而崩；具体安全语义见 ``_emit_ctx_info`` 的 docstring。
     """
     import httpx  # used by `except httpx.HTTPError` below; ruff sees the usage
 
@@ -781,6 +835,15 @@ async def interactive_feedback(
         logger.info(
             f"收到反馈请求: {cleaned_message[:50]}... (自动生成task_id: {task_id})"
         )
+        await _emit_ctx_info(
+            ctx,
+            f"Created interactive feedback task {task_id}",
+            task_id=task_id,
+            message_len=len(cleaned_message),
+            options_count=len(predefined_options_list)
+            if predefined_options_list
+            else 0,
+        )
 
         # 获取配置
         config, auto_resubmit_timeout = service_manager.get_web_ui_config()
@@ -844,6 +907,13 @@ async def interactive_feedback(
                 task_id=task_id,
                 host=target_host,
                 port=int(config.port),
+            )
+            await _emit_ctx_info(
+                ctx,
+                f"Waiting for human feedback on task {task_id}",
+                task_id=task_id,
+                web_ui_host=target_host,
+                web_ui_port=int(config.port),
             )
 
             # 【新增】发送通知（立即触发，不阻塞主流程）
@@ -923,10 +993,17 @@ async def interactive_feedback(
             return server_config._make_resubmit_response()
 
         logger.info("反馈请求处理完成")
+        _completed_duration_ms = int((time.monotonic() - _task_t0) * 1000)
         logger.event(
             "task.completed",
             task_id=task_id,
-            duration_ms=int((time.monotonic() - _task_t0) * 1000),
+            duration_ms=_completed_duration_ms,
+        )
+        await _emit_ctx_info(
+            ctx,
+            f"Received human feedback for task {task_id} (took {_completed_duration_ms} ms)",
+            task_id=task_id,
+            duration_ms=_completed_duration_ms,
         )
 
         # 解析返回：兼容新旧格式 + 兜底处理 {"text": "..."} 降级返回

@@ -387,6 +387,47 @@ mcp.add_middleware(_TIMING_MIDDLEWARE)
 mcp.add_middleware(_LOGGING_MIDDLEWARE)
 
 
+# R44 FastMCP 最佳实践：注册 RateLimitingMiddleware
+# ===================================================
+#
+# 缘由：FastMCP 3.x 把 ``ErrorHandling`` / ``RateLimiting`` / ``Timing`` /
+# ``Logging`` 称为生产 server 的「四件套」（参见
+# https://gofastmcp.com/servers/middleware §「Combine Multiple Middleware」
+# 官方示例）。R37 / R40 已补齐除 RateLimiting 之外的三件，本批次（r44）
+# 收尾。
+#
+# 工具语义决定阈值：
+#   - ``interactive_feedback`` 是阻塞工具，LLM 一旦调用就进入「等用户回复」
+#     的真人环节，正常使用频率远低于每秒一次。
+#   - 但 LLM 失控（bug / prompt 注入 / 错误重试逻辑）时可能在毫秒级反复
+#     调用同一工具，触发 web_ui 子进程冷启动 / 通知风暴 / SSE 历史溢出，
+#     给运维和用户都带来真实痛感。
+#   - ``max_requests_per_second=10`` + ``burst_capacity=20`` 的 token bucket：
+#     正常人类操作场景永远命中不到限流（用户提交→LLM 重新调，间隔通常 1s+），
+#     但能在 LLM 死循环时把热点请求限制在合理范围、给运维报警留窗口。
+#   - ``RateLimitError`` 被外层 ``ErrorHandlingMiddleware`` 兜住、按 method
+#     计数为 ``RateLimitError:tools/call``，client UI 会拿到一行结构化错误
+#     而不是字符串，便于人类 / agent 快速辨识"被限流了"。
+#
+# 顺序（``mcp.middleware`` 列表，前 = 外层）：
+#   ``[ErrorHandling, RateLimiting, DereferenceRefs, Timing, Logging]``
+# 也就是说运行链：
+#   ``ErrorHandling → RateLimiting → DereferenceRefs → Timing → Logging``
+# 关键点：``RateLimiting`` 在 ``DereferenceRefs`` 之前，限流命中时无需付
+# schema 解析的开销；同时被外层 ``ErrorHandling`` 转换为标准 MCP 错误码
+# 让 client 能正常渲染。
+from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
+
+_RATE_LIMITING_MIDDLEWARE: RateLimitingMiddleware = RateLimitingMiddleware(
+    max_requests_per_second=10.0,
+    burst_capacity=20,
+)
+# ``insert(1, ...)`` 是把 RateLimiting 摆在 ErrorHandling（位置 0）之后、
+# DereferenceRefs / Timing / Logging 之前——按 FastMCP 反向折叠规则，最终
+# 实际执行顺序就是「ErrorHandling 最外、RateLimiting 紧随其后」。
+mcp.middleware.insert(1, _RATE_LIMITING_MIDDLEWARE)
+
+
 # R40 FastMCP 最佳实践：暴露 server 自检 resource
 # ===================================================
 #
@@ -412,19 +453,65 @@ mcp.add_middleware(_LOGGING_MIDDLEWARE)
     name="Server Info",
     description=(
         "Self-information for ai-intervention-agent MCP server. Returns version, "
-        "transport, accumulated error stats, and Web UI runtime status as JSON."
+        "transport, runtime details, middleware chain, accumulated error stats, "
+        "Web UI runtime status, and task-queue snapshot as JSON."
     ),
     mime_type="application/json",
     tags={"diagnostics", "self-info"},
 )
 def server_info_resource() -> dict[str, object]:
-    """Return diagnostic self-information for this MCP server."""
+    """Return diagnostic self-information for this MCP server.
+
+    R44 增强（仍然 best-effort，每一个子段都被独立 try/except 包住）：
+
+    - ``runtime``：``python_version`` / ``python_executable`` / ``platform``，
+      让运维诊断 "用 uv 还是 pipx 起的"、"哪个 interpreter"，无需 ssh 上去
+      跑 ``which python``；
+    - ``fastmcp``：直接读 ``importlib.metadata`` 报本地装的 fastmcp 版本，
+      跨 client 比对兼容性时用得上；
+    - ``middleware``：每个中间件的类名，按运行顺序排列。让 client 端能直
+      观看到链路是否被外部 hook 改过，定位"为啥我没看到 timing 日志"这种
+      问题；
+    - ``task_queue``：当前队列长度（best-effort，不实例化新单例），让
+      client 一眼看到"是不是有积压任务没人处理"。
+    """
     info: dict[str, object] = {
         "name": mcp.name,
         "version": _resolve_server_version(),
         "transport": "stdio",
         "error_stats": get_mcp_error_stats(),
     }
+
+    runtime_info: dict[str, object] = {}
+    try:
+        import platform as _platform
+
+        runtime_info["python_version"] = sys.version.split()[0]
+        runtime_info["python_executable"] = sys.executable
+        runtime_info["platform"] = (
+            f"{_platform.system()} {_platform.release()} ({_platform.machine()})"
+        )
+    except Exception as runtime_exc:
+        runtime_info["error"] = f"{type(runtime_exc).__name__}: {runtime_exc}"
+    info["runtime"] = runtime_info
+
+    fastmcp_info: dict[str, object] = {}
+    try:
+        from importlib.metadata import PackageNotFoundError as _PkgNotFound
+        from importlib.metadata import version as _pkg_version
+
+        try:
+            fastmcp_info["version"] = _pkg_version("fastmcp")
+        except _PkgNotFound:
+            fastmcp_info["version"] = "unknown"
+    except Exception as fmcp_exc:
+        fastmcp_info["error"] = f"{type(fmcp_exc).__name__}: {fmcp_exc}"
+    info["fastmcp"] = fastmcp_info
+
+    try:
+        info["middleware"] = [type(mw).__name__ for mw in mcp.middleware]
+    except Exception as mw_exc:
+        info["middleware_error"] = f"{type(mw_exc).__name__}: {mw_exc}"
 
     web_ui_info: dict[str, object] = {}
     try:
@@ -440,8 +527,39 @@ def server_info_resource() -> dict[str, object]:
             web_ui_info["probe_error"] = f"{type(probe_exc).__name__}: {probe_exc}"
     except Exception as cfg_exc:
         web_ui_info["error"] = f"{type(cfg_exc).__name__}: {cfg_exc}"
-
     info["web_ui"] = web_ui_info
+
+    # task_queue snapshot —— 走 ``task_queue_singleton`` 而不是 ``server.get_task_queue``
+    # 的实例化路径：本 resource 是"只读自检"，绝不应该因为读自检页面导致
+    # 全局单例被构造出来（特别是 web_ui 子进程在用一份独立的单例的时候，
+    # MCP server 进程读自检页不该副作用一份新队列）。``_global_task_queue``
+    # 是 ``Optional[TaskQueue]``，None 表示尚未构造。
+    task_queue_info: dict[str, object] = {}
+    try:
+        import task_queue_singleton as _tq_singleton
+
+        existing = getattr(_tq_singleton, "_global_task_queue", None)
+        if existing is None:
+            task_queue_info["initialized"] = False
+        else:
+            task_queue_info["initialized"] = True
+            try:
+                # 新版 TaskQueue 暴露 ``size()`` / ``pending_count()``，但为了向后
+                # 兼容（万一旧分支没有），这里 best-effort 探测，缺什么写什么。
+                size_attr = getattr(existing, "size", None)
+                if callable(size_attr):
+                    task_queue_info["size"] = int(size_attr())
+                pending_attr = getattr(existing, "pending_count", None)
+                if callable(pending_attr):
+                    task_queue_info["pending"] = int(pending_attr())
+            except Exception as q_probe_exc:
+                task_queue_info["probe_error"] = (
+                    f"{type(q_probe_exc).__name__}: {q_probe_exc}"
+                )
+    except Exception as tq_exc:
+        task_queue_info["error"] = f"{type(tq_exc).__name__}: {tq_exc}"
+    info["task_queue"] = task_queue_info
+
     return info
 
 

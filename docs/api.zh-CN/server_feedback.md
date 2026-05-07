@@ -26,6 +26,28 @@ httpx.AsyncClient | None = None`` 等模块级注解，所以保留 TYPE_CHECKIN
 
 ## 函数
 
+### `async _emit_ctx_info(ctx: FastMCPContext | None, message: str) -> None`
+
+Best-effort 把 task lifecycle 关键节点回写到 MCP client 端日志。
+
+R44 helper：被 ``interactive_feedback`` 在 ``task.created`` /
+``task.notified`` / ``task.completed`` 等关键锚点调用，让
+Cursor / Claude Desktop / ChatGPT Desktop 在 chat sidebar 渲染一行
+"正在等用户回复" 进度日志。
+
+设计取舍：
+- ``ctx`` 为 ``None``：直接 no-op。pytest / CLI / 集成测试 / 直接 Python
+  调用时都会走到这条；保证本工具仍可在 MCP 之外被人测。
+- ``ctx.info`` 抛异常：吞掉并降级到本地 ``logger.debug``。MCP client
+  连接断开 / 协议异常都不应该让业务流程崩。
+- 与 ``logger.event``/``logger.info`` 的关系：
+    * ``logger.event``：结构化事件日志，落到 server 端 stderr，运维诊断
+      走这条；
+    * ``logger.info``：人类可读 server 端日志；
+    * ``ctx.info``：发到 MCP client，是 *人类用户* 在 chat 看到的进度。
+  三条管线各自独立，互不影响——服务器端日志一定有，client 看到的可能
+  因为协议错误丢失，这是预期行为。
+
 ### `async _close_orphan_task_best_effort(task_id: str, host: str, port: int, client: Any | None = None) -> None`
 
 R13·B1 · timeout / cancel 路径的 ghost-task 兜底清理。
@@ -129,6 +151,14 @@ wraps it with `mcp.tool()` to expose it to MCP clients.
 R25.2: 函数体首行 ``import httpx`` 让下面 ``except httpx.HTTPError`` 在运行时
 解析符号——本工具被 MCP 客户端首次调用时一次性付 ~55 ms 加载费，而 MCP server
 cold-start 路径完全不会进入此函数（``server.py`` 顶层 import 时只是定义而已）。
+
+R44 FastMCP 最佳实践：``ctx`` 关键字参数（FastMCP 自动注入）让本函数可以走
+``await _emit_ctx_info(ctx, ...)`` 把 task lifecycle 事件回送给 client
+（Cursor / Claude Desktop / ChatGPT Desktop）。client 收到后会在 chat
+sidebar 渲染一行进度日志，让人类用户能"看到工具确实在工作、正在等真人
+回复"，而不是猜"agent 是不是 hung 住了"。``ctx`` 永远 keyword-only 且
+默认 None，所以本工具被通过别的入口（pytest 直接调）调用时不会因为缺
+ctx 而崩；具体安全语义见 ``_emit_ctx_info`` 的 docstring。
 
 ## 类
 
