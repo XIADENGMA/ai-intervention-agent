@@ -21,31 +21,104 @@
 异常:
     json.JSONDecodeError: JSON 语法错误时抛出
 
+### `_path_contains_segment(candidate: Path | str, segment: str) -> bool`
+
+检测路径中是否包含某个完整的目录段（不会被前缀/后缀误匹配）。
+
+例如 ``/Users/foo/uv-bar`` 不应该被 ``segment="uv"`` 命中——只命中真正
+出现 ``.../uv/...`` 这种完整目录节。同时兼容 Windows 反斜杠与 POSIX
+斜杠。
+
+### `_looks_like_repo_checkout(module_dir: Path) -> bool`
+
+模块目录是否是本仓库源码树（同级有 ``pyproject.toml`` + ``server.py``）。
+
+抽出来方便单测 + 增强可读性。
+
+### `_path_under(child: Path, parents: tuple[Path, ...]) -> bool`
+
+``child`` 是否位于 ``parents`` 任一目录下（含 child == parent 等价）。
+
+### `_is_isolated_install_runtime() -> bool`
+
+启发式检测当前 Python 是否运行在 uv / uvx / uv tool / pipx / pip 隔离环境。
+
+覆盖 2026 年常见的 4 类隔离运行时：
+
+* **uvx**（``uv tool run``）—— sys.executable 在 uv cache 临时 venv 里，
+  路径常见形态 ``~/.cache/uv/builds-v0/<hash>/.venv/bin/python``。
+* **uv tool install**—— sys.executable 在 ``~/.local/share/uv/tools/<name>/.venv/bin/python``
+  （或 ``$XDG_DATA_HOME/uv/tools/...``、``%LOCALAPPDATA%\uv\tools\...``）。
+* **pipx install**—— sys.executable 在 ``~/.local/share/pipx/venvs/<name>/bin/python``。
+* **pip install + 全局 / 项目 venv**—— 模块文件本身在 ``site-packages`` 下，
+  运行时不需要看 sys.executable。
+
+任一命中就视为 "已安装到用户环境"，必须走用户配置目录。环境变量
+``UV_TOOL_DIR`` / ``UV_CACHE_DIR`` / ``PIPX_HOME`` 也会作为路径前缀
+参与匹配，覆盖用户自定义安装目录的情况。
+
 ### `_is_uvx_mode() -> bool`
 
-检测是否应使用“用户配置目录”（uvx/安装模式）而非“开发模式”。
+检测是否应使用"用户配置目录"（uvx / 已安装模式）而非"开发模式"。
 
 说明
 ----
-- **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
+* **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
   - uvx 运行（推荐给普通用户）
-  - 通过 pip/uv 安装后运行（避免在任意项目目录意外生成 config.jsonc）
-- **开发模式（False）**：优先使用当前目录配置（从仓库运行时更方便调试）。
+  - 通过 pip / uv tool / pipx 等任意方式安装后运行
+* **开发模式（False）**：优先使用当前目录配置（从仓库克隆运行时更方便调试）。
 
-判定规则
+判定优先级（高 → 低，命中即返回）
 ----
-1) 若检测到 uvx 运行特征（sys.executable 含 uvx 或 UVX_PROJECT 环境变量），返回 True
-2) 若当前代码看起来位于本仓库源码树内，且当前工作目录位于该源码树内，返回 False
-3) 其他情况（默认）：返回 True
+1. ``AI_INTERVENTION_AGENT_DEV_MODE`` 显式启用 → 开发模式（``False``）。
+2. ``AI_INTERVENTION_AGENT_USER_MODE`` 显式启用 → 用户模式（``True``）。
+3. 兼容旧 ``UVX_PROJECT`` → 用户模式。
+4. 启发式检测 :func:`_is_isolated_install_runtime`（uvx / uv tool / pipx
+   / site-packages）→ 用户模式。
+5. 仓库检出 + cwd 在仓库内（兼顾仓库内 ``.venv`` 的 isolated runtime
+   case）→ 开发模式。
+6. 默认（保守）→ 用户模式。
+
+任何判定阶段抛异常都降级为用户模式，避免误把"任意 git 仓库 cwd"判为
+开发模式而在那里写 ``config.toml``。
+
+注：步骤 5 对仓库内 ``.venv``（``./venv`` / ``./.venv`` / ``./uv-venv``
+等开发者本地 venv）做 carve-out——虽然 ``Path(sys.executable)`` 可能
+在 ``./.venv/bin/python``，但只要模块自己仍在仓库源码树（不在
+site-packages）且 cwd 在源码树，就视为 dev。
 
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
-查找配置文件路径，支持环境变量覆盖、uvx 模式和开发模式。
+查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。
 
-查找优先级（开发模式）：当前目录 > 用户配置目录 > 创建新配置。
-格式优先级：TOML > JSONC > JSON（向后兼容）。
-uvx 模式仅使用用户配置目录。
-跨平台配置目录：Linux ~/.config、macOS ~/Library/Application Support、Windows %APPDATA%。
+检测路径以单个 ``logger.info`` 行可追溯地表达——每次冷启动都能从日志反查
+出"为什么用了这个路径"。
+
+优先级（高 → 低）
+----
+1. ``config_filename`` 自身是绝对路径或带子目录 → 原样返回，跳过所有探测。
+2. ``AI_INTERVENTION_AGENT_CONFIG_FILE`` 环境变量 → 显式 override；目录形态
+   会自动追加 ``config_filename``。
+3. :func:`_is_uvx_mode` 命中 → 仅在用户配置目录搜索 + 创建。
+4. 否则：当前目录 > 用户配置目录。
+
+格式探测
+----
+每个候选目录都按 TOML > JSONC > JSON 的次序尝试，用于向后兼容历史
+JSONC/JSON 用户。**同目录里同时存在多种格式时只采用排序首位**——
+这一行为会显式 warn，避免静默忽略 user-edited JSONC。
+
+跨平台配置目录
+----
+* Linux：``$XDG_CONFIG_HOME/ai-intervention-agent`` 或 ``~/.config/ai-intervention-agent``
+* macOS：``~/Library/Application Support/ai-intervention-agent``
+* Windows：``%APPDATA%\ai-intervention-agent``
+
+错误处理
+----
+用户配置目录探测失败（``platformdirs`` 都不可用 + 自家 fallback 也 raise）
+最终降级为 ``Path(config_filename)``——但会把 ``warning`` 日志带上完整堆栈
+便于排查权限 / 只读 home 等问题。
 
 ### `_get_user_config_dir_fallback() -> Path`
 

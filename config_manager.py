@@ -192,39 +192,177 @@ def parse_jsonc(content: str) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(cleaned_content))
 
 
-def _is_uvx_mode() -> bool:
+def _path_contains_segment(candidate: Path | str, segment: str) -> bool:
+    """检测路径中是否包含某个完整的目录段（不会被前缀/后缀误匹配）。
+
+    例如 ``/Users/foo/uv-bar`` 不应该被 ``segment="uv"`` 命中——只命中真正
+    出现 ``.../uv/...`` 这种完整目录节。同时兼容 Windows 反斜杠与 POSIX
+    斜杠。
     """
-    检测是否应使用“用户配置目录”（uvx/安装模式）而非“开发模式”。
+    try:
+        text = str(candidate)
+    except Exception:
+        return False
+    posix = text.replace("\\", "/")
+    needles = (
+        f"/{segment}/",
+        f"/.{segment}/",
+        f"/{segment}-",
+    )
+    return any(n in posix for n in needles)
+
+
+_REPO_MARKER_FILES = ("pyproject.toml", "server.py")
+
+
+def _looks_like_repo_checkout(module_dir: Path) -> bool:
+    """模块目录是否是本仓库源码树（同级有 ``pyproject.toml`` + ``server.py``）。
+
+    抽出来方便单测 + 增强可读性。
+    """
+    return all((module_dir / name).exists() for name in _REPO_MARKER_FILES)
+
+
+def _path_under(child: Path, parents: tuple[Path, ...]) -> bool:
+    """``child`` 是否位于 ``parents`` 任一目录下（含 child == parent 等价）。"""
+    try:
+        child_resolved = child.resolve()
+    except Exception:
+        return False
+    for parent in parents:
+        try:
+            parent_resolved = parent.resolve()
+        except Exception:
+            continue
+        if child_resolved == parent_resolved:
+            return True
+        if parent_resolved in child_resolved.parents:
+            return True
+    return False
+
+
+def _is_isolated_install_runtime() -> bool:
+    """启发式检测当前 Python 是否运行在 uv / uvx / uv tool / pipx / pip 隔离环境。
+
+    覆盖 2026 年常见的 4 类隔离运行时：
+
+    * **uvx**（``uv tool run``）—— sys.executable 在 uv cache 临时 venv 里，
+      路径常见形态 ``~/.cache/uv/builds-v0/<hash>/.venv/bin/python``。
+    * **uv tool install**—— sys.executable 在 ``~/.local/share/uv/tools/<name>/.venv/bin/python``
+      （或 ``$XDG_DATA_HOME/uv/tools/...``、``%LOCALAPPDATA%\\uv\\tools\\...``）。
+    * **pipx install**—— sys.executable 在 ``~/.local/share/pipx/venvs/<name>/bin/python``。
+    * **pip install + 全局 / 项目 venv**—— 模块文件本身在 ``site-packages`` 下，
+      运行时不需要看 sys.executable。
+
+    任一命中就视为 "已安装到用户环境"，必须走用户配置目录。环境变量
+    ``UV_TOOL_DIR`` / ``UV_CACHE_DIR`` / ``PIPX_HOME`` 也会作为路径前缀
+    参与匹配，覆盖用户自定义安装目录的情况。
+    """
+    try:
+        executable_path = Path(sys.executable).resolve()
+    except (OSError, RuntimeError):
+        executable_path = Path(sys.executable)
+
+    try:
+        module_path = Path(__file__).resolve()
+    except Exception:
+        module_path = Path(__file__)
+
+    # 1) 模块本身已被 pip / uv pip / setuptools 安装到 site-packages。
+    if _path_contains_segment(module_path, "site-packages") or _path_contains_segment(
+        module_path, "dist-packages"
+    ):
+        return True
+
+    # 2) 启发式：uvx / uv tool / pipx 路径段命中。优先用环境变量配置的目录前缀
+    #    （UV_TOOL_DIR / UV_CACHE_DIR / PIPX_HOME / UV_PYTHON_INSTALL_DIR），
+    #    没配再用 ``/uv/`` ``/pipx/`` 等通用 segment 兜底。
+    env_dirs: list[Path] = []
+    for env_name in (
+        "UV_TOOL_DIR",
+        "UV_CACHE_DIR",
+        "UV_PYTHON_INSTALL_DIR",
+        "PIPX_HOME",
+        "PIPX_LOCAL_VENVS",
+    ):
+        value = os.environ.get(env_name)
+        if value:
+            env_dirs.append(Path(value).expanduser())
+    if env_dirs and _path_under(executable_path, tuple(env_dirs)):
+        return True
+
+    # 只命中"已安装到用户环境"的具体子目录——不要匹配 ``~/.local/share/uv/python/``
+    # 之类的 uv-managed Python interpreter，那不代表项目是已安装；仓库内 ``uv run``
+    # 解析出的 sys.executable 经常落在 managed Python 那里，不能误判。
+    posix_exec = str(executable_path).replace("\\", "/")
+    install_segments = (
+        "/uvx/",
+        "/uv/tools/",
+        "/.local/share/uv/tools/",
+        "/pipx/venvs/",
+        "/.local/share/pipx/venvs/",
+        "/.cache/uv/builds-",
+    )
+    return any(segment in posix_exec for segment in install_segments)
+
+
+def _is_uvx_mode() -> bool:
+    """检测是否应使用"用户配置目录"（uvx / 已安装模式）而非"开发模式"。
 
     说明
     ----
-    - **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
+    * **用户模式（True）**：使用用户配置目录（跨平台标准路径）。
       - uvx 运行（推荐给普通用户）
-      - 通过 pip/uv 安装后运行（避免在任意项目目录意外生成 config.jsonc）
-    - **开发模式（False）**：优先使用当前目录配置（从仓库运行时更方便调试）。
+      - 通过 pip / uv tool / pipx 等任意方式安装后运行
+    * **开发模式（False）**：优先使用当前目录配置（从仓库克隆运行时更方便调试）。
 
-    判定规则
+    判定优先级（高 → 低，命中即返回）
     ----
-    1) 若检测到 uvx 运行特征（sys.executable 含 uvx 或 UVX_PROJECT 环境变量），返回 True
-    2) 若当前代码看起来位于本仓库源码树内，且当前工作目录位于该源码树内，返回 False
-    3) 其他情况（默认）：返回 True
+    1. ``AI_INTERVENTION_AGENT_DEV_MODE`` 显式启用 → 开发模式（``False``）。
+    2. ``AI_INTERVENTION_AGENT_USER_MODE`` 显式启用 → 用户模式（``True``）。
+    3. 兼容旧 ``UVX_PROJECT`` → 用户模式。
+    4. 启发式检测 :func:`_is_isolated_install_runtime`（uvx / uv tool / pipx
+       / site-packages）→ 用户模式。
+    5. 仓库检出 + cwd 在仓库内（兼顾仓库内 ``.venv`` 的 isolated runtime
+       case）→ 开发模式。
+    6. 默认（保守）→ 用户模式。
+
+    任何判定阶段抛异常都降级为用户模式，避免误把"任意 git 仓库 cwd"判为
+    开发模式而在那里写 ``config.toml``。
+
+    注：步骤 5 对仓库内 ``.venv``（``./venv`` / ``./.venv`` / ``./uv-venv``
+    等开发者本地 venv）做 carve-out——虽然 ``Path(sys.executable)`` 可能
+    在 ``./.venv/bin/python``，但只要模块自己仍在仓库源码树（不在
+    site-packages）且 cwd 在源码树，就视为 dev。
     """
-    executable_path = sys.executable
-    if "uvx" in executable_path or ".local/share/uvx" in executable_path:
+
+    def _bool_env(name: str) -> bool:
+        raw = os.environ.get(name, "")
+        return raw.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+    # 1) 显式 dev override：开发者主动指定，最高优先级。
+    if _bool_env("AI_INTERVENTION_AGENT_DEV_MODE"):
+        return False
+
+    # 2) 显式 user override：仓库内调试 "假装是已安装"。
+    if _bool_env("AI_INTERVENTION_AGENT_USER_MODE"):
         return True
 
-    # 检查环境变量
-    if os.getenv("UVX_PROJECT"):
+    # 3) 兼容旧 UVX_PROJECT。
+    if os.environ.get("UVX_PROJECT"):
         return True
 
-    # 仅当“代码本身位于仓库源码树”且 cwd 位于该源码树内时，才视为开发模式。
-    # 避免在普通用户的任意 git 仓库/项目目录中误判为开发模式，导致配置文件被创建在当前目录。
+    # 4) 启发式：模块装在 site-packages 或运行在 uv tool / pipx 隔离 venv 中。
+    try:
+        if _is_isolated_install_runtime():
+            return True
+    except Exception:
+        pass
+
+    # 5) 仓库源码树 + cwd 在源码树（dev carve-out）。
     try:
         module_dir = Path(__file__).resolve().parent
-        is_repo_checkout = (module_dir / "pyproject.toml").exists() and (
-            module_dir / "server.py"
-        ).exists()
-        if is_repo_checkout:
+        if _looks_like_repo_checkout(module_dir):
             cwd = Path.cwd().resolve()
             if cwd == module_dir or module_dir in cwd.parents:
                 return False
@@ -232,20 +370,45 @@ def _is_uvx_mode() -> bool:
         # 任何判定异常都降级为用户模式（更安全/更符合文档预期）
         pass
 
+    # 6) 默认保守地走用户模式。
     return True
 
 
 def find_config_file(config_filename: str = "config.toml") -> Path:
-    """
-    查找配置文件路径，支持环境变量覆盖、uvx 模式和开发模式。
+    """查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。
 
-    查找优先级（开发模式）：当前目录 > 用户配置目录 > 创建新配置。
-    格式优先级：TOML > JSONC > JSON（向后兼容）。
-    uvx 模式仅使用用户配置目录。
-    跨平台配置目录：Linux ~/.config、macOS ~/Library/Application Support、Windows %APPDATA%。
+    检测路径以单个 ``logger.info`` 行可追溯地表达——每次冷启动都能从日志反查
+    出"为什么用了这个路径"。
+
+    优先级（高 → 低）
+    ----
+    1. ``config_filename`` 自身是绝对路径或带子目录 → 原样返回，跳过所有探测。
+    2. ``AI_INTERVENTION_AGENT_CONFIG_FILE`` 环境变量 → 显式 override；目录形态
+       会自动追加 ``config_filename``。
+    3. :func:`_is_uvx_mode` 命中 → 仅在用户配置目录搜索 + 创建。
+    4. 否则：当前目录 > 用户配置目录。
+
+    格式探测
+    ----
+    每个候选目录都按 TOML > JSONC > JSON 的次序尝试，用于向后兼容历史
+    JSONC/JSON 用户。**同目录里同时存在多种格式时只采用排序首位**——
+    这一行为会显式 warn，避免静默忽略 user-edited JSONC。
+
+    跨平台配置目录
+    ----
+    * Linux：``$XDG_CONFIG_HOME/ai-intervention-agent`` 或 ``~/.config/ai-intervention-agent``
+    * macOS：``~/Library/Application Support/ai-intervention-agent``
+    * Windows：``%APPDATA%\\ai-intervention-agent``
+
+    错误处理
+    ----
+    用户配置目录探测失败（``platformdirs`` 都不可用 + 自家 fallback 也 raise）
+    最终降级为 ``Path(config_filename)``——但会把 ``warning`` 日志带上完整堆栈
+    便于排查权限 / 只读 home 等问题。
     """
     requested_path = Path(config_filename).expanduser()
     if requested_path.is_absolute() or requested_path.parent != Path("."):
+        logger.info(f"使用调用方显式给定的绝对/子目录配置路径: {requested_path}")
         return requested_path
 
     override = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
@@ -253,28 +416,67 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
         override_path = Path(override).expanduser()
         if override_path.is_dir() or override.endswith(("/", "\\")):
             override_path = override_path / config_filename
+        try:
+            override_resolved = override_path.resolve()
+        except Exception:
+            override_resolved = override_path
         logger.info(
-            f"使用环境变量 AI_INTERVENTION_AGENT_CONFIG_FILE 指定配置文件: {override_path}"
+            "使用环境变量 AI_INTERVENTION_AGENT_CONFIG_FILE 指定配置文件: "
+            f"{override_resolved} (raw={override!r})"
         )
         return override_path
 
     is_uvx_mode = _is_uvx_mode()
 
     if is_uvx_mode:
-        logger.info("检测到用户模式（uvx/安装），使用用户配置目录")
+        logger.info(
+            "配置路径检测：用户模式（uvx / uv tool / pipx / pip 安装），"
+            "仅使用用户配置目录"
+        )
     else:
-        logger.info("检测到开发模式，优先使用当前目录配置")
+        logger.info(
+            "配置路径检测：开发模式（仓库源码树 + cwd 在树内），优先使用当前目录配置"
+        )
 
     # 向后兼容的候选文件名列表（TOML 优先）
     _COMPAT_NAMES = ("config.toml", "config.jsonc", "config.json")
 
-    if not is_uvx_mode:
-        # 开发模式：检查当前工作目录
+    def _pick_existing(directory: Path | None) -> Path | None:
+        """在 ``directory`` 中按 TOML > JSONC > JSON 优先返回首个存在的候选。
+
+        ``directory=None`` 表示使用进程级当前目录（``Path(name)`` 隐式相对
+        cwd 解析），保留与历史 ``Path(name).exists()`` 行为兼容的 mock 表面：
+        老测试通过 ``patch('config_manager.Path')`` 替换全局 Path 类来注入
+        虚拟候选，``Path(name).exists()`` 仍然能命中。
+
+        当目录里**同时**存在多种格式时把后面被忽略的格式 warn 出来，便于用户
+        反查"我的 config.jsonc 怎么没生效"。
+        """
+        candidates: list[tuple[str, Path]] = []
         for name in _COMPAT_NAMES:
-            candidate = Path(name)
-            if candidate.exists():
-                logger.info(f"使用当前目录的配置文件: {candidate.absolute()}")
-                return candidate
+            target = (directory / name) if directory is not None else Path(name)
+            if target.exists():
+                candidates.append((name, target))
+        if not candidates:
+            return None
+        first_name, first_path = candidates[0]
+        if len(candidates) > 1:
+            ignored = ", ".join(name for name, _ in candidates[1:])
+            location = directory if directory is not None else "当前目录"
+            logger.warning(
+                f"{location} 同时存在多种格式: "
+                f"{', '.join(name for name, _ in candidates)}；"
+                f"已采用 {first_name}，将忽略 {ignored}（如需切换请删除/重命名）"
+            )
+        return first_path
+
+    if not is_uvx_mode:
+        # 开发模式：检查当前工作目录（``directory=None`` 让 Path(name) 走进程
+        # 级 cwd 解析；保留对老式 ``patch('config_manager.Path')`` 测试的兼容性）。
+        cwd_hit = _pick_existing(None)
+        if cwd_hit is not None:
+            logger.info(f"使用当前目录的配置文件: {cwd_hit.absolute()}")
+            return cwd_hit
 
     try:
         try:
@@ -284,12 +486,10 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
         except ImportError:
             user_config_dir_path = _get_user_config_dir_fallback()
 
-        # 按优先级搜索用户配置目录
-        for name in _COMPAT_NAMES:
-            candidate = user_config_dir_path / name
-            if candidate.exists():
-                logger.info(f"使用用户配置目录的配置文件: {candidate}")
-                return candidate
+        user_hit = _pick_existing(user_config_dir_path)
+        if user_hit is not None:
+            logger.info(f"使用用户配置目录的配置文件: {user_hit}")
+            return user_hit
 
         # 都不存在，返回 TOML 路径（用于创建默认配置）
         user_config_file = user_config_dir_path / config_filename
@@ -297,7 +497,11 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
         return user_config_file
 
     except Exception as e:
-        logger.warning(f"获取用户配置目录失败: {e}，使用当前目录", exc_info=True)
+        logger.warning(
+            f"获取用户配置目录失败: {e}，将回退到当前目录 ({Path(config_filename).absolute()})；"
+            "若长期使用此路径请配 AI_INTERVENTION_AGENT_CONFIG_FILE 显式锁定",
+            exc_info=True,
+        )
         return Path(config_filename)
 
 

@@ -10,6 +10,14 @@
 
 ### `parse_jsonc(content: str) -> dict[str, Any]`
 
+### `_path_contains_segment(candidate: Path | str, segment: str) -> bool`
+
+### `_looks_like_repo_checkout(module_dir: Path) -> bool`
+
+### `_path_under(child: Path, parents: tuple[Path, ...]) -> bool`
+
+### `_is_isolated_install_runtime() -> bool`
+
 ### `_is_uvx_mode() -> bool`
 
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`

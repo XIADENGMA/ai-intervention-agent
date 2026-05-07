@@ -11,23 +11,51 @@ Default template: `config.toml.default`.
 
 ### Config file location & lookup order
 
-The lookup strategy depends on how you run the MCP server.
+The lookup strategy depends on how you run the MCP server. The detection runs
+in this order—**first match wins**:
+
+| # | Source                                      | Mode                | Wins when…                                                                         |
+| - | ------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| 1 | `AI_INTERVENTION_AGENT_CONFIG_FILE` env var | (any)               | Any value is set; absolute path or directory both supported                        |
+| 2 | `AI_INTERVENTION_AGENT_DEV_MODE=1` env      | Forced **dev**      | You're hacking inside the repo and want `./config.toml` even from outside the repo |
+| 3 | `AI_INTERVENTION_AGENT_USER_MODE=1` env     | Forced **user**     | Inside the repo but want it to behave like a real install (e.g. systemd service)   |
+| 4 | `UVX_PROJECT` env (legacy)                  | Forced **user**     | Set by some uvx runners; back-compat                                               |
+| 5 | Auto-detected isolated runtime              | **user**            | `sys.executable` is in `~/.local/share/uv/tools/…` / `~/.local/share/pipx/venvs/…` / `~/.cache/uv/builds-…` / module is under `site-packages` / `dist-packages` |
+| 6 | Repo-checkout heuristic                     | **dev**             | `pyproject.toml` + `server.py` next to `config_manager.py` AND your shell `cwd` is inside that tree |
+| 7 | Default                                     | **user** (safe)     | Anything else — never write `config.toml` into a stranger's `cwd`                  |
 
 #### Override (all modes)
 
-You can force a config path via environment variable:
+```bash
+# Pin to a specific file
+AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml
 
-- `AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/config.toml`
-- `AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/dir/` (it will append `config.toml`)
+# Or a directory; `config.toml` gets appended automatically
+AI_INTERVENTION_AGENT_CONFIG_FILE=/path/to/dir/
 
-#### uvx mode (recommended for end users)
+# Force dev mode from outside the repo (e.g. a CI shell)
+AI_INTERVENTION_AGENT_DEV_MODE=1
+
+# Force user mode while you're inside the repo (e.g. systemd service running from /opt/aiia)
+AI_INTERVENTION_AGENT_USER_MODE=1
+```
+
+`UV_TOOL_DIR`, `UV_CACHE_DIR`, `PIPX_HOME`, and `PIPX_LOCAL_VENVS` are also
+honoured: if `sys.executable` lives under any of those, the agent treats it as
+an installed runtime even if your custom paths don't match the default
+`~/.local/share/...` layout.
+
+#### uvx / `uv tool install` / pipx mode (recommended for end users)
 
 - Uses **only** the user config directory.
 - If the file does not exist, it will create it by copying the packaged `config.toml.default`.
+- `~/.local/share/uv/tools/<name>/`, `~/.local/share/pipx/venvs/<name>/`, and
+  `~/.cache/uv/builds-…` are all detected automatically — you don't need to set
+  any env vars.
 
 #### Dev mode (running from the repo)
 
-Priority order:
+Priority order inside dev mode:
 
 1. `./config.toml`
 2. `./config.jsonc` (backward compatible, auto-migrated)
@@ -42,6 +70,11 @@ Priority order:
 > - Linux: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/.config/ai-intervention-agent/config.toml`
 > - macOS: `AI_INTERVENTION_AGENT_CONFIG_FILE=~/Library/Application Support/ai-intervention-agent/config.toml`
 > - Windows: `AI_INTERVENTION_AGENT_CONFIG_FILE=%APPDATA%/ai-intervention-agent/config.toml`
+
+> Tip (avoid "I edited my config.jsonc but nothing changed"):
+> If a directory contains both `config.toml` and `config.jsonc` (or `config.json`), TOML wins
+> and the agent emits a `WARNING` log line listing the ignored siblings. Delete or rename the
+> stale formats once you've migrated.
 
 ### Auto-migration
 
