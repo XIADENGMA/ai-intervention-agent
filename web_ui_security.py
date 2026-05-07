@@ -120,8 +120,28 @@ class SecurityMixin:
                 "payment=(), usb=(), magnetometer=(), gyroscope=()"
             )
 
+            # ----------------------------------------------------------
+            # 静态资源缓存策略（R56 整理后）
+            # ----------------------------------------------------------
+            # Flask 下 ``after_request`` 在 route handler 之后跑，所以这里
+            # 设置的 ``Cache-Control`` 会**覆盖** route 级 ``serve_css`` /
+            # ``serve_js`` 等手写的同名 header。我们统一以 hook 为唯一权威，
+            # route 级保留同值的 header 仅作 belt-and-suspenders（hook 出
+            # bug 时 route 级仍能托底），实际生效以本表为准：
+            #
+            # | 路径前缀                  | 带 ?v=                | 不带 ?v=         |
+            # |---------------------------|------------------------|------------------|
+            # | /static/js, /static/css   | 1 year immutable       | 1 day            |
+            # | /static/locales (R56 加) | 1 year immutable       | 1 day            |
+            # | /static/lottie, /fonts    | 30 days immutable      | 30 days immutable|
+            # | /sounds, /icons (非 .ico) | 1 week                 | 1 week           |
+            #
+            # 不在表中的资源（``/manifest.webmanifest`` / ``/favicon.ico`` /
+            # ``/notification-service-worker.js``）由 route 级显式设置，hook
+            # 不命中其路径前缀，所以保留 route 级的语义化值（manifest=1h、
+            # favicon=no-cache、SW=no-cache）。
             path = request.path
-            if path.startswith(("/static/js/", "/static/css/")):
+            if path.startswith(("/static/js/", "/static/css/", "/static/locales/")):
                 if request.args.get("v"):
                     response.headers["Cache-Control"] = (
                         "public, max-age=31536000, immutable"

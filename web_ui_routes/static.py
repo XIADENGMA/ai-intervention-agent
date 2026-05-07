@@ -299,9 +299,12 @@ class StaticRoutesMixin:
             返回值：
                 CSS文件内容（text/css MIME类型）
 
-            【性能优化】缓存策略：
-                - 普通 CSS 文件：缓存 1 小时
-                - 带版本号的 CSS 文件（?v=xxx）：缓存 1 年
+            【性能优化】缓存策略（R56 与 ``add_security_headers`` hook 对齐）：
+                - 普通 CSS 文件：缓存 1 天
+                - 带版本号的 CSS 文件（?v=xxx）：缓存 1 年 immutable
+
+                注意：``after_request`` hook 是最终权威，下面 route 级写的同样
+                值仅作 belt-and-suspenders；如果 hook 改动，hook 优先生效。
 
             【性能优化】自动压缩版本选择：
                 - 自动检测并优先使用 .min.css 压缩版本
@@ -330,7 +333,7 @@ class StaticRoutesMixin:
                     "public, max-age=31536000, immutable"
                 )
             else:
-                response.headers["Cache-Control"] = "public, max-age=3600"
+                response.headers["Cache-Control"] = "public, max-age=86400"
 
             return response
 
@@ -348,9 +351,12 @@ class StaticRoutesMixin:
             返回值：
                 JavaScript文件内容（application/javascript MIME类型）
 
-            【性能优化】缓存策略：
-                - 普通 JS 文件：缓存 1 小时
-                - 带版本号的 JS 文件（?v=xxx）：缓存 1 年
+            【性能优化】缓存策略（R56 与 ``add_security_headers`` hook 对齐）：
+                - 普通 JS 文件：缓存 1 天
+                - 带版本号的 JS 文件（?v=xxx）：缓存 1 年 immutable
+
+                注意：``after_request`` hook 是最终权威；下面 route 级写的同样
+                值仅作 belt-and-suspenders。
 
             【性能优化】自动压缩版本选择：
                 - 自动检测并优先使用 .min.js 压缩版本
@@ -378,7 +384,7 @@ class StaticRoutesMixin:
                     "public, max-age=31536000, immutable"
                 )
             else:
-                response.headers["Cache-Control"] = "public, max-age=3600"
+                response.headers["Cache-Control"] = "public, max-age=86400"
 
             return response
 
@@ -405,7 +411,10 @@ class StaticRoutesMixin:
             优化对它无效）的首屏 i18n 切换体感影响明显。
 
             白名单：仅 ``.json`` 防止意外暴露其他类型文件。
-            缓存：带 ``?v=hash`` 走 1 年 immutable，无版本号走 1 小时短缓存。
+            缓存（R56 与 ``add_security_headers`` hook 对齐）：
+                带 ``?v=hash`` 走 1 年 immutable；无版本号走 1 天，与
+                ``/static/js/`` / ``/static/css/`` 保持一致，省得切换语言时
+                每小时回源拉一次。
             """
             if not filename or not str(filename).lower().endswith(".json"):
                 abort(404)
@@ -420,7 +429,7 @@ class StaticRoutesMixin:
                     "public, max-age=31536000, immutable"
                 )
             else:
-                response.headers["Cache-Control"] = "public, max-age=3600"
+                response.headers["Cache-Control"] = "public, max-age=86400"
             return response
 
         @self.app.route("/static/lottie/<filename>")
