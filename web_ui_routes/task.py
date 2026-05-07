@@ -7,7 +7,7 @@ import json
 import queue
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from flask import Response, jsonify, request
 from flask.typing import ResponseReturnValue
@@ -24,6 +24,27 @@ if TYPE_CHECKING:
     from flask_limiter import Limiter
 
 logger = EnhancedLogger(__name__)
+
+
+class SSEBusStatsSnapshot(TypedDict):
+    """``_SSEBus.stats_snapshot`` 返回值结构（R47 + R51-B + R58 + R61）。
+
+    用 TypedDict 而不是裸 ``dict[str, int | dict[str, int]]`` 是为了让
+    caller 拿到键时能正确推断到具体类型——caller 几乎都是 ``after["emit_total"]
+    - before["emit_total"]`` 这种纯数字操作，TypedDict 让 ``ty``/IDE 一眼
+    看出 ``emit_total`` 是 ``int`` 而 ``emit_by_type`` 是 ``dict[str, int]``，
+    避免每个 caller 都要 ``cast(int, snap["emit_total"])``。
+    """
+
+    emit_total: int
+    latest_event_id: int
+    gap_warnings_emitted: int
+    backpressure_discards: int
+    subscriber_count: int
+    history_size: int
+    heartbeat_total: int
+    oversize_drops: int
+    emit_by_type: dict[str, int]
 
 
 # Sentinel：当 ``_SSEBus`` 因 backpressure 把订阅者从 ``_subscribers`` 集合里
@@ -120,6 +141,15 @@ class _SSEBus:
         # （日志包含整段 stderr？把整个 task 表都 dump 进去？误把 binary 当
         # JSON 序列化？），需要排查。
         self._oversize_drops: int = 0
+        # R61：每事件类型的 emit 计数 histogram。相比 ``_emit_total`` 的
+        # 单一基线指标，这里把 ``task_changed`` / ``config_changed`` /
+        # ``gap_warning`` / ``oversize_drop`` 等分桶累加，让 dashboard 一眼
+        # 看清楚 SSE 流量是被哪类事件占主导（持续涨 ``backpressure_discards``
+        # 时配合本表能立即定位是哪条事件涨太快）。``Counter`` 自带
+        # ``most_common()``，UI 想出 top-N 直接调。所有写入都走 ``_lock``
+        # 保护，``stats_snapshot`` 返回时也走锁内 ``dict(...)`` 浅拷贝避免
+        # 并发改写。
+        self._emit_by_type: collections.Counter[str] = collections.Counter()
 
     def subscribe(self, after_id: int | None = None) -> queue.Queue:
         """订阅 SSE 事件流；可选 ``after_id`` 触发缺失事件回放。
@@ -249,6 +279,12 @@ class _SSEBus:
         with self._lock:
             self._next_id += 1
             self._emit_total += 1
+            # R61：按 event_type 分桶累加。``oversize_drop`` 替换路径会用替换
+            # 后的 type（``"oversize_drop"`` 而非原 ``"task_changed"``），这正
+            # 是我们想看到的——dashboard 能直接观测到"这一桶 oversize 事件
+            # 实际上来自哪个上游 type"，因为替换后的 ``data["original_event_type"]``
+            # 仍然保留了原 type 名。
+            self._emit_by_type[event_type] += 1
             event_id = self._next_id
             payload = {
                 "id": event_id,
@@ -342,7 +378,7 @@ class _SSEBus:
         with self._lock:
             self._heartbeat_total += 1
 
-    def stats_snapshot(self) -> dict[str, int]:
+    def stats_snapshot(self) -> SSEBusStatsSnapshot:
         """返回 SSE 总线的运行时计数器快照（R47 + R51-B）。
 
         字段语义：
@@ -372,6 +408,9 @@ class _SSEBus:
                 "heartbeat_total": self._heartbeat_total,
                 # R58：超过 _OVERSIZE_LIMIT_BYTES 被替换成 oversize_drop 的次数
                 "oversize_drops": self._oversize_drops,
+                # R61：每事件类型的 emit 计数。返回 dict 浅拷贝，调用方外部
+                # 修改不影响内部 Counter；UI 想出 top-N 自行 ``Counter(...).most_common(n)``。
+                "emit_by_type": dict(self._emit_by_type),
             }
 
 

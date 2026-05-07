@@ -202,14 +202,24 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
         self.assertEqual(fake_err.call_count, 0)
 
     def test_scan_after_critical_section_exits_does_not_dump(self) -> None:
-        """临界区已退出 → record 已移除，扫描见不到任何"超时"项。"""
+        """临界区已退出 → record 已移除，扫描见不到任何"超时"项。
+
+        历史 flake：当 daemon 已被前面的测试启动后，``time.sleep(0.2)``
+        期间它可能 race 到 ``_lock_watchdog_wake_event.wait`` 早醒一次，
+        把临界区里的 ``exited-test`` record 也扫一遍并 ``logger.error``。
+        如果我们一开始就 ``patch logger.error`` 整个块，这次 race 就会
+        污染 ``fake_err.call_count``。改为「先让临界区完整跑完、record
+        通过 ``finally`` 移除，再开 patch 扫一次」——本测的关注点就只是
+        「临界区退出后不再 dump」，daemon 在临界区内的并发行为不在考察范围。
+        """
         from config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
+        with task_queue._watched_write_lock(rwlock, "exited-test"):
+            time.sleep(0.2)
+        # 临界区退出后才开 patch + scan，避免 daemon 在 sleep 期间 race
+        # 到 ``logger.error`` 把 fake_err 的计数器污染掉。
         with patch.object(task_queue.logger, "error") as fake_err:
-            with task_queue._watched_write_lock(rwlock, "exited-test"):
-                time.sleep(0.2)
-            # 出来之后再扫，不应再有 record
             dumped_count = task_queue._scan_pending_and_dump_slow()
         self.assertEqual(dumped_count, 0)
         self.assertEqual(fake_err.call_count, 0)

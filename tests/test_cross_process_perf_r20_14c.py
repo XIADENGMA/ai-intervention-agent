@@ -514,11 +514,24 @@ class TestSourceInvariants(unittest.TestCase):
     def setUp(self) -> None:
         self.src = self.SCRIPT_PATH.read_text(encoding="utf-8")
 
-    def test_emit_has_pre_serialize_step(self) -> None:
-        # emit 函数体内必须出现 json.dumps + _serialized 字段
+    def _emit_body(self) -> str:
+        """提取 emit 函数源码体。
+
+        R61 之前用魔数窗口 3000 字节裁切；随着 R40-S2/R58/R61 加入注释和
+        分支，emit 函数体已超过该窗口导致后段断言假阴性。改为「从
+        ``def emit(`` 到下一个 top-level ``def`` 之间」精确切片，与文件
+        长度无关、与新增注释无关。
+        """
         idx = self.src.find("def emit(")
         self.assertGreaterEqual(idx, 0, "emit 方法找不到")
-        body = self.src[idx : idx + 3000]
+        # 找下一个同缩进级别的 def——emit 是 _SSEBus 类成员，缩进 4 空格，
+        # 下一个 ``    def `` 就是 emit 的尽头。
+        next_def = self.src.find("\n    def ", idx + 1)
+        end = next_def if next_def > 0 else len(self.src)
+        return self.src[idx:end]
+
+    def test_emit_has_pre_serialize_step(self) -> None:
+        body = self._emit_body()
         self.assertIn(
             "json.dumps",
             body,
@@ -531,9 +544,7 @@ class TestSourceInvariants(unittest.TestCase):
         )
 
     def test_emit_uses_snapshot_pattern(self) -> None:
-        # 函数体内必须有 list(self._subscribers) 的快照模式（锁外 put 的标志）
-        idx = self.src.find("def emit(")
-        body = self.src[idx : idx + 3000]
+        body = self._emit_body()
         self.assertIn(
             "list(self._subscribers)",
             body,

@@ -523,6 +523,7 @@ def _fetch_sse_stats_cached(host: str, port: int) -> dict[str, object]:
                 "history_size",
                 "heartbeat_total",
                 "oversize_drops",
+                "emit_by_type",  # R61: per-event-type histogram
             ):
                 if key in body:
                     result[key] = body[key]
