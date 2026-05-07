@@ -14,6 +14,25 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.38] — 2026-05-08
+
+### Added
+
+- **R48** — Status-bar hint when the server-side configuration file
+  changes. The extension now listens for the new `config_changed`
+  Server-Sent Event and surfaces it via
+  `vscode.window.setStatusBarMessage` (6 seconds, non-blocking). No
+  modal popup, no extra polling — you simply see "configuration file
+  changed" in the bottom bar when the agent's TOML edits land.
+
+### Changed
+
+- **R49** — Tightened the VSIX size budget from `4 / 6` MB
+  (review / hard-limit) to `3 / 5` MB. Current builds are ~2.6 MB so
+  this change is invisible to end users; it just makes future bloat
+  regressions visible in PR review instead of hiding behind the lax
+  4 MB threshold.
+
 ## [1.5.37] — 2026-05-08
 
 ### Fixed

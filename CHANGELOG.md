@@ -9,6 +9,61 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.38] — 2026-05-08
+
+> Round-47 / Round-48 / Round-49: a hardening + observability follow-up
+> to the v1.5.37 R43–R45 cycle. Three independent, self-contained
+> improvements that each ship with a dedicated test file (45 new test
+> cases total): runtime counters across the SSE bus and
+> `interactive_feedback`, a live `config_changed` SSE broadcast for
+> hot-reload feedback, and a tightened VSIX size budget.
+
+### Added
+
+- **R47** — Three new monotonic counter families let operators and
+  client UIs answer "is the SSE bus dropping events?" / "is my LLM
+  hammering the feedback tool?" without subscribing to the live SSE
+  stream:
+  - `_SSEBus._emit_total` / `_gap_warnings_emitted` /
+    `_backpressure_discards`, exposed via `_SSEBus.stats_snapshot()`.
+  - `server_feedback._FEEDBACK_COUNTERS`
+    (`created_total` / `completed_total` / `failed_total`) wired into
+    the existing `task.created` / `task.completed` / `task.failed × 3`
+    log anchors. Public read API: `get_feedback_counters()`.
+  - `aiia://server/info` resource now includes an
+    `interactive_feedback` block (R47-isolated try/except, same pattern
+    as R44 `runtime` / `fastmcp` / `middleware` / `task_queue`).
+  - `GET /api/system/sse-stats` returns the SSE counter snapshot as
+    JSON. Rate-limited to 60 req/min and intentionally **not**
+    loopback-gated — LAN PWAs / VS Code status panels need it.
+- **R48** — Server-side `ConfigManager` mtime-driven hot reload now
+  broadcasts a `config_changed` SSE event so users see a real signal
+  when their TOML edits land server-side, instead of the previous
+  "I changed it but did anything happen?" silence:
+  - `_emit_config_changed_to_sse_bus` callback (no leaked config
+    values; only `{reason, hint}` payload).
+  - `_ensure_config_changed_sse_callback_registered` follows the
+    existing idempotent flag+lock pattern.
+  - `static/js/multi_task.js` reuses the project-wide `_showToast`
+    helper to surface the hint as a non-blocking 1.8 s toast.
+  - `packages/vscode/extension.ts` calls
+    `vscode.window.setStatusBarMessage` (6 s, non-blocking) — explicit
+    choice over `showInformationMessage` to avoid modal interruption.
+
+### Changed
+
+- **R49** — Tightened the `WARN_PACKED_MB_DEFAULT` /
+  `FAIL_PACKED_MB_DEFAULT` thresholds in
+  `scripts/package_vscode_vsix.mjs` from `4 / 6` to `3 / 5` MB. Today's
+  measured VSIX is **2.60 MB**, so the new review threshold (3 MB)
+  still has ~15 % headroom while flagging the next ~400 KB regression
+  for PR review. Hard limit (5 MB) now covers a ~2.4 MB catastrophic
+  flap (e.g. mathjax getting double-bundled) before tripping
+  `process.exit(1)`. Existing env-var escape hatches
+  (`AIIA_VSCODE_VSIX_WARN_PACKED_MB` /
+  `AIIA_VSCODE_VSIX_MAX_PACKED_MB`) and the `failMb < warnMb`
+  runtime guard are unchanged.
+
 ## [1.5.37] — 2026-05-08
 
 > Round-43 / Round-44 / Round-45: a three-pronged hardening cycle covering
