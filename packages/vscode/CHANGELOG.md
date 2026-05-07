@@ -14,6 +14,17 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.37] — 2026-05-08
+
+### Fixed
+
+- **R41** — Settings-panel "GitHub" / "PWA" / docs links now actually open in
+  an external browser. They previously did nothing because the click was
+  intercepted by the Webview but never sent back to the extension host. The
+  Webview now posts an `openExternal` message to `webview.ts` for every
+  `target="_blank"` anchor, and the extension forwards it through
+  `vscode.env.openExternal` (the same path the status-bar tooltip already used).
+
 ## [1.5.36] — 2026-05-06
 
 ### Changed

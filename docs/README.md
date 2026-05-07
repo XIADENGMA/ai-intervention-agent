@@ -67,6 +67,6 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.23 (R43–R44 cycle:
+index never lies. Last refreshed for v1.5.37 (R43–R45 cycle:
 config-path resolution audit + fastmcp best-practices + bark/SSE
 docs alignment)._

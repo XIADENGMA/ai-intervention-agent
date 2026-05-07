@@ -9,6 +9,83 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.37] — 2026-05-08
+
+> Round-43 / Round-44 / Round-45: a three-pronged hardening cycle covering
+> (1) config-path resolution (R43), (2) FastMCP 3.x best-practices middleware
+> chain + ctx.info forwarding + enriched server self-info (R44), and (3) a
+> docs/README/code consistency audit aligning every user-facing surface with
+> the SSE Last-Event-ID, Bark-loopback-suppression, and middleware-stack
+> reality introduced over R40–R44 (R45). The code is bumped to `v1.5.37`
+> after this section is cut.
+
+### Added
+
+- **R44** — Production middleware "four-piece set" (`ErrorHandling` +
+  `RateLimiting` + `Timing` + `Logging`): the long-missing `RateLimitingMiddleware`
+  (`max_requests_per_second=10.0`, `burst_capacity=20`) is now inserted at
+  position 1 of `mcp.middleware`, between `ErrorHandling` (outermost) and
+  `DereferenceRefs` / `Timing` / `Logging`. The thresholds are deliberately
+  loose for an interactive-blocking tool — they only fire when an LLM goes
+  haywire and hammers `interactive_feedback` in a tight loop.
+- **R44** — `interactive_feedback` now accepts a keyword-only `ctx:
+  FastMCPContext | None = None` parameter so FastMCP auto-injects the request
+  context. The new `_emit_ctx_info` helper forwards three structured progress
+  events to the MCP client (`task.created` / `task.notified` / `task.completed`),
+  letting Cursor / Claude Desktop / ChatGPT Desktop render a live "waiting for
+  human feedback" line in the chat sidebar instead of a silent block.
+- **R44** — `aiia://server/info` self-info resource enriched with `runtime`
+  (Python version + executable + platform), `fastmcp.version`,
+  `middleware` chain (class names in execution order), and `task_queue` snapshot
+  (initialized + size + pending). Each block has its own try/except so a
+  partial-introspection failure never breaks the resource. The resource is
+  side-effect-free — reading it never wakes the Web UI subprocess.
+- **R43** — `AI_INTERVENTION_AGENT_DEV_MODE` and `AI_INTERVENTION_AGENT_USER_MODE`
+  environment-variable overrides for the config-path resolution chain. Set
+  `DEV_MODE=1` to force `./config.toml` even from outside the repo (useful in CI
+  shells); set `USER_MODE=1` to make a process started inside the repo behave
+  like a real install (useful for systemd services running from `/opt/aiia`).
+- **R43** — `_is_isolated_install_runtime()` helper recognises modern installer
+  layouts (`~/.local/share/uv/tools/`, `~/.local/share/pipx/venvs/`,
+  `~/.cache/uv/builds-…`, plus any `site-packages` / `dist-packages` install)
+  and honours user-set `UV_TOOL_DIR` / `UV_CACHE_DIR` / `PIPX_HOME` /
+  `PIPX_LOCAL_VENVS` so custom tool layouts are also detected.
+
+### Changed
+
+- **R45** — README / docs/README / docs/mcp_tools / docs/troubleshooting
+  rewritten to reflect SSE + HTTP dual-channel transport (was: "polling the
+  Web UI API"), Bark loopback auto-suppression with LAN-IP suggestions (was:
+  silent), and the production middleware chain. Mermaid architecture diagram
+  now shows `extension.ts` (was: `.js`) and lists `tri-state-panel.js` in the
+  Webview frontend tile.
+- **R45** — `server.py` ToolAnnotations comment block updated from "MCP spec
+  2024-11-05+" to "MCP spec 2025-11-25" matching `mcp.types.LATEST_PROTOCOL_VERSION`
+  in the currently shipped `mcp 1.26.x`.
+- **R43** — `find_config_file()` now uses a `_pick_existing()` helper that
+  walks `config.toml` → `.jsonc` → `.json` per directory and emits a
+  `WARNING` log line listing the ignored siblings whenever a directory has
+  more than one format. Resolves the long-standing "I edited `config.jsonc`
+  but it didn't take effect" surprise where a stale `config.toml` silently
+  shadowed the edits.
+- **R43** — `_is_uvx_mode()` rewritten as a deterministic 6-level priority
+  chain (env override → DEV_MODE / USER_MODE flag → legacy `UVX_PROJECT` →
+  isolated-install detection → repo-checkout heuristic guarded by `cwd`
+  membership → safe `user`-mode default). The `cwd`-membership guard fixes
+  the previous false positive where running an installed copy from inside
+  any random repo checkout was misclassified as dev.
+
+### Documentation
+
+- **R45** — Added troubleshooting issue #8 ("Tapping a Bark notification on my
+  phone opens Bark instead of the PWA") with a 3-step diagnostic flow
+  (settings panel → API endpoint → `external_base_url` patch). The original
+  CI-Gate troubleshooting entry slid to #9.
+- **R43** — `docs/configuration.md` and `docs/configuration.zh-CN.md` now ship
+  a 7-row priority table summarising the new env-override / isolated-install /
+  repo-checkout decision tree, plus a "multi-format conflict" tip explaining
+  the new warning log.
+
 ## [1.5.36] — 2026-05-06
 
 ### Changed

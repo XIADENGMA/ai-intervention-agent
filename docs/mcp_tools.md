@@ -9,7 +9,7 @@ The `initialize` protocol response advertises the following fields. Clients (Cha
 | Field          | Content                                                                                       | Purpose                                                                |
 | -------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `name`         | `AI Intervention Agent MCP`                                                                   | Display label in the client's tool list                                |
-| `version`      | Current package version (e.g. `1.5.21`, read via `importlib.metadata`; falls back to `0.0.0+local` when not installed) | Client-side compatibility checks and troubleshooting                   |
+| `version`      | Current package version (read via `importlib.metadata`; e.g. `1.5.37`; falls back to `0.0.0+local` when not installed) | Client-side compatibility checks and troubleshooting                   |
 | `instructions` | Chinese usage guide (when to call / when not to call / behavior contract)                      | Delivered during `initialize` so the LLM has meta-rules for tool use   |
 | `website_url`  | `https://github.com/xiadengma/ai-intervention-agent`                                          | Client UI link to the project homepage                                 |
 | `icons`        | Four base64 data URIs (32/192/512 PNG + SVG) embedded once at server startup                   | Client server-list icon, fully self-contained without remote CDN deps  |
