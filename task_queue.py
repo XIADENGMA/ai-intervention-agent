@@ -417,7 +417,7 @@ class TaskQueue:
         删除所有任务并重置队列状态，用于服务启动时清理残留任务。
 
         """
-        with self._lock.write_lock():
+        with _watched_write_lock(self._lock, "clear_all_tasks"):
             count = len(self._tasks)
             self._tasks.clear()
             self._active_task_id = None
@@ -599,7 +599,7 @@ class TaskQueue:
             )
 
         updated = 0
-        with self._lock.write_lock():
+        with _watched_write_lock(self._lock, "update_auto_resubmit_timeout_for_all"):
             for task in self._tasks.values():
                 if task.status == TaskStatus.COMPLETED:
                     continue
@@ -624,7 +624,7 @@ class TaskQueue:
     def set_active_task(self, task_id: str) -> bool:
         """手动切换活动任务"""
         status_events: list[tuple[str, str | None, str]] = []
-        with self._lock.write_lock():
+        with _watched_write_lock(self._lock, "set_active_task"):
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
@@ -729,7 +729,7 @@ class TaskQueue:
             - 如果没有pending任务，_active_task_id 保持为 None
         """
         status_events: list[tuple[str, str | None, str]] = []
-        with self._lock.write_lock():
+        with _watched_write_lock(self._lock, "complete_task"):
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
@@ -805,7 +805,7 @@ class TaskQueue:
             - 删除后任务立即不可查询
         """
         status_events: list[tuple[str, str | None, str]] = []
-        with self._lock.write_lock():
+        with _watched_write_lock(self._lock, "remove_task"):
             if task_id not in self._tasks:
                 logger.warning(f"任务不存在: {task_id}")
                 return False
@@ -878,7 +878,7 @@ class TaskQueue:
             - 适用于需要立即清理的场景
             - 后台清理线程使用的是cleanup_completed_tasks
         """
-        with self._lock.write_lock():
+        with _watched_write_lock(self._lock, "clear_completed_tasks"):
             completed_task_ids = [
                 tid
                 for tid, task in self._tasks.items()
@@ -936,7 +936,7 @@ class TaskQueue:
             - 后台线程默认使用 age_seconds=10
             - 可以手动调用来立即清理
         """
-        with self._lock.write_lock():
+        with _watched_write_lock(self._lock, "cleanup_completed_tasks"):
             now = datetime.now(UTC)  # 使用 UTC 时间，与 completed_at 保持一致
             tasks_to_remove = []
 
