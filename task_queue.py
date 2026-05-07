@@ -48,6 +48,32 @@ logger = logging.getLogger(__name__)
 #      迁移到 ``_watched_write_lock``，每条带独立 ``label`` 便于诊断。
 # ============================================================================
 
+# ============================================================================
+# R53-A：``add_task`` 输入大小防护
+# ----------------------------------------------------------------------------
+# add_task 直接把 prompt 存进 self._tasks 的 Task 对象，长期占用进程内存；恶意
+# 或 buggy caller 塞 100 MB 字符串就能把内存炸了，且我们的 SSE 推送会把
+# task_changed payload 里的 statistics + 摘要信息广播给所有连接，巨型 payload
+# 还会撑爆 SSE bus 的 history deque。
+#
+# 设计：6 MB warn（让运维察觉异常 caller），10 MB reject（硬上限，单条 add_task
+# 直接返回 False）。阈值参考：
+#   * 单条人类可读 prompt 极少超过 100 KB；
+#   * markdown summary 包含图片 base64 时偶尔触达 1-2 MB；
+#   * 6 MB 已经是任何"合理"业务的 100 倍以上；
+#   * 10 MB 接近 Flask 默认 MAX_CONTENT_LENGTH（16 MB）的实际下限，再大请求
+#     在 ``request.get_json`` 阶段早就被 reject 了。
+# ============================================================================
+
+_PROMPT_WARN_BYTES: int = 6 * 1024 * 1024  # 6 MB
+"""``add_task`` 收到的 prompt（UTF-8 编码后字节数）超过此值时 ``logger.warning``。
+不会拒绝，但日志里会留下 footprint 让运维看到 caller 的异常输入趋势。"""
+
+_PROMPT_REJECT_BYTES: int = 10 * 1024 * 1024  # 10 MB
+"""``add_task`` 收到的 prompt 超过此值时直接 ``return False``，不进队列。
+保护进程内存 + SSE history deque + 跨进程 IPC payload。"""
+
+
 _LOCK_WATCHDOG_TIMEOUT_S: float = 30.0
 """单次 ``_watched_write_lock`` 的 acquire+hold 上限。超过这个时长 watchdog
 扫到一次就 dump 全线程栈到 ``logger.error``。
@@ -437,6 +463,30 @@ class TaskQueue:
         predefined_options_defaults: list[bool] | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
+        # R53-A：在拿写锁之前先做 prompt size 校验。锁外校验有两个好处：
+        # (1) reject 路径不消耗写锁，不阻塞其它合法 add_task；
+        # (2) 巨型 prompt 不进锁内的 Task() 构造（pydantic validator 也要走
+        # str → 内部字段拷贝，10+ MB 字符串拷贝会拖慢临界区）。
+        try:
+            prompt_bytes = len(prompt.encode("utf-8", errors="replace"))
+        except Exception:
+            # 非常规边界：prompt 不是 str（caller 传错类型）。这里不抛 TypeError
+            # —— 后续 Task() 构造会因 pydantic 校验自然失败，返回 False 等价
+            # 于 reject。我们只在能算出 size 时做 size gate。
+            prompt_bytes = 0
+        if prompt_bytes > _PROMPT_REJECT_BYTES:
+            logger.warning(
+                f"add_task 拒绝 task_id={task_id}：prompt {prompt_bytes / 1024 / 1024:.1f} MB "
+                f"超过硬上限 {_PROMPT_REJECT_BYTES / 1024 / 1024:.0f} MB（R53-A）"
+            )
+            return False
+        if prompt_bytes > _PROMPT_WARN_BYTES:
+            logger.warning(
+                f"add_task 大 prompt 警告 task_id={task_id}："
+                f"prompt {prompt_bytes / 1024 / 1024:.1f} MB 超过 warn 阈值 "
+                f"{_PROMPT_WARN_BYTES / 1024 / 1024:.0f} MB（R53-A，未拒绝）"
+            )
+
         new_status: str | None = None
         # R51-A：用 deadlock-aware 写锁包装。临界区内任何卡死都会被
         # ``_lock_watchdog_loop`` 检测并把全栈 dump 到 logger.error。
