@@ -18,6 +18,24 @@ Loguru patcher: 防注入转义 + 敏感信息脱敏
 
 根据配置设置 root logger 和所有 handler 的级别
 
+### `_record_to_ring(level_no: int, name: str, message: str) -> None`
+
+把一条日志推入 ring buffer，自带 level 过滤 + 脱敏 + 长度截断。
+
+``level_no`` < ``logging.WARNING`` 的日志直接丢弃（hot path 上的 INFO/DEBUG
+数量级远高，进 buffer 没意义）。
+
+### `get_recent_logs(limit: int | None = None) -> list[dict[str, Any]]`
+
+返回最近 N 条 WARNING/ERROR 日志，按时间正序（旧 → 新）。
+
+``limit=None`` 返回全部 buffer 内容（最多 ``_LOG_RING_MAXLEN`` 条）。
+返回的是 dict 的浅拷贝列表 —— 修改返回值不会污染 buffer。
+
+### `clear_recent_logs() -> None`
+
+清空 ring buffer，主要供测试 setUp 隔离用。
+
 ## 类
 
 ### `class LogSanitizer`

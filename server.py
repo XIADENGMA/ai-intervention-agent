@@ -638,6 +638,22 @@ def server_info_resource() -> dict[str, object]:
         sse_bus_info["error"] = f"{type(sse_exc).__name__}: {sse_exc}"
     info["sse_bus"] = sse_bus_info
 
+    # R51-C：最近 N 条 WARNING/ERROR 日志摘要（已脱敏，每条 ≤ 500 字符）。
+    # 让 MCP client UI 在 server-info 页里直接看到"最近哪里出过错"，省去 ssh
+    # 翻 stderr 的成本。limit=20 是显示上限，不是采集上限（buffer 实际保留
+    # ``enhanced_logging._LOG_RING_MAXLEN`` 条）。任何获取失败都降级为 error
+    # 字段，绝不影响主流程。
+    recent_logs_info: dict[str, object] = {}
+    try:
+        from enhanced_logging import get_recent_logs as _get_recent_logs
+
+        entries = _get_recent_logs(limit=20)
+        recent_logs_info["count"] = len(entries)
+        recent_logs_info["entries"] = entries
+    except Exception as log_exc:
+        recent_logs_info["error"] = f"{type(log_exc).__name__}: {log_exc}"
+    info["recent_logs"] = recent_logs_info
+
     return info
 
 

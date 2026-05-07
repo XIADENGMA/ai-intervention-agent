@@ -1,5 +1,6 @@
 """增强日志模块 - 基于 Loguru，提供脱敏、防注入、去重，全部输出到 stderr（MCP 友好）。"""
 
+import collections
 import logging
 import re
 import sys
@@ -287,6 +288,10 @@ class EnhancedLogger:
                 message += f" ({duplicate_info})"
 
             self.logger.log(effective_level, message, *args, **kwargs)
+            # R51-C：把 WARNING+ 写进 ring buffer，让 server_info_resource 能拉
+            # 最近 N 条诊断日志。``_record_to_ring`` 自带脱敏 + level 过滤 +
+            # 长度截断，进 buffer 的内容是安全可外发的。
+            _record_to_ring(effective_level, self.logger.name, message)
 
     def setLevel(self, level: int) -> None:
         """兼容标准 logging.Logger API：设置底层 logger 的级别。"""
@@ -404,3 +409,81 @@ def configure_logging_from_config() -> None:
         handler.setLevel(log_level)
 
     logging.info(f"日志级别已设置为: {logging.getLevelName(log_level)}")
+
+
+# ============================================================================
+# R51-C：WARNING/ERROR 日志 ring buffer
+# ----------------------------------------------------------------------------
+# 设计目标：让 ``aiia://server/info`` 资源能附带「最近 N 条 WARN/ERROR」摘要，
+# 让运维 / MCP client UI 在看到健康度有异时立即拿到上下文，无需 ssh 上去翻
+# stderr / Loguru 的轮转日志文件。
+#
+# 关键约束：
+#   1. 不破坏现有日志输出路径（loguru sink、stdlib logger 桥接、去重器）
+#      —— ring buffer 仅在 ``EnhancedLogger.log`` 决定真正输出后才再插一手。
+#   2. 进 buffer 的 message **必须脱敏**。``LogSanitizer`` 已经被 loguru
+#      patcher 调用，但 patcher 在 sink 层；我们在更早的 ring 写入处主动
+#      调一次 ``_global_sanitizer.sanitize``，确保 buffer 里也是 redacted
+#      文本。
+#   3. 长度截断 500 字符，避免一条超长 stack trace 把 buffer 撑爆，也防止
+#      ``server_info_resource`` 一次性返回 MB 级 payload。
+#   4. 线程安全 + 容量上限：``collections.deque(maxlen=...)`` 自带 O(1)
+#      ring 行为，配合一把 ``threading.Lock`` 即可。
+#   5. 字段可序列化：``ts_unix`` / ``level_no`` / ``level_name`` / ``logger_name``
+#      / ``message`` 都是 JSON-safe，``server_info_resource`` 直接透传。
+# ============================================================================
+
+_LOG_RING_MAXLEN: int = 200
+"""ring buffer 容量。200 条 × 平均 200 字节 ≈ 40 KB，对常驻 daemon 可忽略。
+日志频率高的项目可调大；R51-C 起步先用 200，留余量。"""
+
+_LOG_RING_MESSAGE_MAXLEN: int = 500
+"""单条 ring entry 的 message 字段最大长度。超出截断为 ``message[:500] + '…'``。"""
+
+_log_ring: collections.deque[dict[str, Any]] = collections.deque(
+    maxlen=_LOG_RING_MAXLEN
+)
+_log_ring_lock = threading.Lock()
+
+
+def _record_to_ring(level_no: int, name: str, message: str) -> None:
+    """把一条日志推入 ring buffer，自带 level 过滤 + 脱敏 + 长度截断。
+
+    ``level_no`` < ``logging.WARNING`` 的日志直接丢弃（hot path 上的 INFO/DEBUG
+    数量级远高，进 buffer 没意义）。"""
+    if level_no < logging.WARNING:
+        return
+    try:
+        sanitized = _global_sanitizer.sanitize(str(message))
+        if len(sanitized) > _LOG_RING_MESSAGE_MAXLEN:
+            sanitized = sanitized[:_LOG_RING_MESSAGE_MAXLEN] + "…"
+        entry: dict[str, Any] = {
+            "ts_unix": int(time.time()),
+            "level_no": int(level_no),
+            "level_name": logging.getLevelName(level_no),
+            "logger_name": name,
+            "message": sanitized,
+        }
+        with _log_ring_lock:
+            _log_ring.append(entry)
+    except Exception:
+        # ring buffer 失败绝不能影响真正的日志输出，吞掉异常即可
+        pass
+
+
+def get_recent_logs(limit: int | None = None) -> list[dict[str, Any]]:
+    """返回最近 N 条 WARNING/ERROR 日志，按时间正序（旧 → 新）。
+
+    ``limit=None`` 返回全部 buffer 内容（最多 ``_LOG_RING_MAXLEN`` 条）。
+    返回的是 dict 的浅拷贝列表 —— 修改返回值不会污染 buffer。"""
+    with _log_ring_lock:
+        snapshot = list(_log_ring)
+    if limit is not None and limit > 0:
+        snapshot = snapshot[-limit:]
+    return snapshot
+
+
+def clear_recent_logs() -> None:
+    """清空 ring buffer，主要供测试 setUp 隔离用。"""
+    with _log_ring_lock:
+        _log_ring.clear()

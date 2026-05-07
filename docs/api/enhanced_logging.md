@@ -10,6 +10,12 @@
 
 ### `configure_logging_from_config() -> None`
 
+### `_record_to_ring(level_no: int, name: str, message: str) -> None`
+
+### `get_recent_logs(limit: int | None = None) -> list[dict[str, Any]]`
+
+### `clear_recent_logs() -> None`
+
 ## Classes
 
 ### `class LogSanitizer`
