@@ -916,6 +916,9 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       case "requestClipboardText":
         this._handleRequestClipboardText(message);
         break;
+      case "openExternal":
+        this._handleOpenExternal(message);
+        break;
       case "langDetected":
         try {
           const lang =
@@ -1137,6 +1140,73 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
           error: e instanceof Error ? e.message : String(e),
         });
       });
+  }
+
+  /**
+   * 处理 webview 发来的 openExternal 消息。
+   *
+   * VS Code webview 出于安全模型禁止 <a target="_blank" href="https://...">
+   * 直接 navigate（点击后看似无反应），需要由 host 调
+   * `vscode.env.openExternal` 显式打开默认浏览器。
+   *
+   * 安全约束：
+   * - 协议白名单仅放行 http(s) 与 mailto，避免 webview 借此 channel 调起
+   *   file:// / vscode:// / command: 等敏感 URI（潜在的本地命令执行/任意
+   *   文件读取风险）。
+   * - 任何解析失败 / 非法协议 / 缺失字段都静默返回，绝不抛出，避免单条坏
+   *   消息影响主消息循环。
+   * - 仅记录到 logger（不弹 UI），点击是低频用户行为，不需要打扰用户。
+   */
+  _handleOpenExternal(message: WebviewMessage): void {
+    try {
+      const rawUrl =
+        message && (message as Record<string, unknown>).url;
+      const url = typeof rawUrl === "string" ? rawUrl.trim() : "";
+      if (!url) return;
+
+      if (!/^(?:https?|mailto):/i.test(url)) {
+        try {
+          if (this._logger && typeof this._logger.warn === "function") {
+            this._logger.warn(
+              `Refused openExternal for non-http(s)/mailto URL: ${url.slice(0, 120)}`,
+            );
+          }
+        } catch {
+          // 忽略：日志失败不影响安全决策
+        }
+        return;
+      }
+
+      let parsed: vscode.Uri;
+      try {
+        parsed = vscode.Uri.parse(url, true);
+      } catch {
+        try {
+          if (this._logger && typeof this._logger.warn === "function") {
+            this._logger.warn(
+              `Refused openExternal for unparseable URL: ${url.slice(0, 120)}`,
+            );
+          }
+        } catch {
+          // 忽略
+        }
+        return;
+      }
+
+      void Promise.resolve(vscode.env.openExternal(parsed)).catch((e) => {
+        try {
+          if (this._logger && typeof this._logger.warn === "function") {
+            this._logger.warn(
+              `vscode.env.openExternal failed: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
+        } catch {
+          // 忽略
+        }
+      });
+    } catch {
+      // 忽略：openExternal 异常不应影响主流程
+    }
   }
 
   _sendMessage(message: WebviewMessage): void {

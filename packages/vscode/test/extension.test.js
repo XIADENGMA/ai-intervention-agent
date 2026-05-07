@@ -108,6 +108,36 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes('clipboardText'))
     assert.ok(webviewJs.includes('id="notifyMacOSNativeEnabled"'))
     assert.ok(webviewJs.includes('id="settingsTestNativeBtn"'))
+
+    // 设置面板 footer 外链回归点：VS Code webview 默认禁止
+    // <a target="_blank" href="https://...">  直接 navigate（点击后无反应），
+    // 需要通过 vscode.postMessage({type:'openExternal'}) 转发给 host，host
+    // 调 vscode.env.openExternal 打开默认浏览器。
+    // 锁住前端拦截 + host 处理两端契约，避免回归丢失。
+    assert.ok(
+      settingsUi.includes(".settings-footer-link[target=\"_blank\"]") ||
+        settingsUi.includes(".settings-footer-link[target='_blank']"),
+      'webview-settings-ui.js 应查询并劫持 .settings-footer-link[target="_blank"] 的 click 事件'
+    )
+    assert.ok(
+      settingsUi.includes("type: 'openExternal'") ||
+        settingsUi.includes('type: "openExternal"'),
+      'webview-settings-ui.js 应通过 postMessage({type:"openExternal", url}) 转发给 host'
+    )
+    assert.ok(
+      webviewJs.includes('case "openExternal":') ||
+        webviewJs.includes("case 'openExternal':"),
+      'webview.ts 必须处理 openExternal 消息（vscode.env.openExternal 打开外链）'
+    )
+    assert.ok(
+      webviewJs.includes('vscode.env.openExternal'),
+      'webview.ts 必须在 openExternal 路径调用 vscode.env.openExternal'
+    )
+    assert.ok(
+      webviewJs.includes('/^(?:https?|mailto):/i') ||
+        webviewJs.includes("/^(?:https?|mailto):/i"),
+      'openExternal 必须做协议白名单（仅允许 http/https/mailto，避免 file:// / command: 等敏感 URI）'
+    )
     // 阶段 C：统一 NotificationEvent 分发（Webview → Extension）
     assert.ok(webviewUi.includes("type: 'notify'"))
     assert.ok(notifyCore.includes('macos_native'))

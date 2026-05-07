@@ -618,6 +618,29 @@
         settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
       if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
 
+      // GitHub footer 外链：VS Code webview 默认禁止 <a target="_blank">
+      // 直接 navigate 到 https URL（点击后看似没反应）。这里劫持 click，
+      // 改走 vscode.postMessage({type:'openExternal', url}) → 主进程
+      // vscode.env.openExternal 打开默认浏览器，确保点击 GitHub 链接可达。
+      // 锁定行为：packages/vscode/test/extension.test.js 中的字面量回归点
+      // （选择器 / postMessage 类型 / host case / openExternal 调用 / 协议白名单）。
+      const settingsFooterLinks = document.querySelectorAll(
+        '.settings-footer-link[target="_blank"]'
+      )
+      settingsFooterLinks.forEach(linkEl => {
+        linkEl.addEventListener('click', e => {
+          try {
+            const href = linkEl.getAttribute('href') || ''
+            if (!/^https?:\/\//i.test(href)) return
+            e.preventDefault()
+            e.stopPropagation()
+            postMessage({ type: 'openExternal', url: href })
+          } catch (_e) {
+            // 忽略：拦截失败时退化为浏览器默认行为，不影响主流程
+          }
+        })
+      })
+
       // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
       //
       // 历史 bug：
