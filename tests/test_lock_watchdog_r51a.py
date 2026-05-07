@@ -123,9 +123,36 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
     def setUp(self) -> None:
         self._orig_timeout = task_queue._LOCK_WATCHDOG_TIMEOUT_S
         task_queue._LOCK_WATCHDOG_TIMEOUT_S = 0.1  # 0.1 s 超时
+        # ``_pending_acquisitions`` 是 module-level dict，在 daemon 与
+        # ``_watched_write_lock`` 之间共享。如果上一个 test class（比如真实
+        # ``TaskQueue.add_task`` 路径）在并发场景下意外早退、record 没及时被
+        # ``finally`` 清掉，会让本类的 dedup-flag 测试看到来自上一个用例的
+        # "已 dumped" 残留 → 计数对不上。这里强清一次，让本类测试从一个
+        # 干净的 dedup 状态起。
+        with task_queue._pending_acquisitions_lock:
+            task_queue._pending_acquisitions.clear()
 
     def tearDown(self) -> None:
         task_queue._LOCK_WATCHDOG_TIMEOUT_S = self._orig_timeout
+        # 退出本类后再清一次，保护下游 test class（同一进程跑 flake 反演时
+        # 也避免我们造成的污染）。
+        with task_queue._pending_acquisitions_lock:
+            task_queue._pending_acquisitions.clear()
+
+    def _reset_dumped_for_label(self, label: str) -> None:
+        """防 daemon race：把目标 record 的 ``dumped`` flag 重置回 False。
+
+        daemon 是个 5s 周期的后台 thread，单跑这个测试时几乎不会 race，但
+        全量 pytest 跑时（前面有别的测试触发了 ``_ensure_lock_watchdog_started``
+        → daemon 已经在 ``_lock_watchdog_wake_event.wait(5s)``）daemon 偶尔
+        会在我们 sleep 的 0.2s 窗口里被早期 wait 唤醒并扫一次，把 record
+        标 ``dumped=True``，让我们自己的 ``_scan_pending_and_dump_slow()``
+        命中 dedup 跳过。这里手动清这个 flag，让我们的测试 scan 必然命中。
+        """
+        with task_queue._pending_acquisitions_lock:
+            for rec in task_queue._pending_acquisitions.values():
+                if rec.get("label") == label:
+                    rec["dumped"] = False
 
     def test_scan_dumps_when_critical_section_held_too_long(self) -> None:
         from config_manager import ReadWriteLock
@@ -134,6 +161,9 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
         with patch.object(task_queue.logger, "error") as fake_err:
             with task_queue._watched_write_lock(rwlock, "slow-test"):
                 time.sleep(0.2)  # > 0.1 s 阈值
+                # daemon 可能在 sleep 期间偷扫一次 → 重置 + 清 fake_err 计数。
+                self._reset_dumped_for_label("slow-test")
+                fake_err.reset_mock()
                 dumped_count = task_queue._scan_pending_and_dump_slow()
         self.assertEqual(dumped_count, 1)
         self.assertEqual(fake_err.call_count, 1)
@@ -149,6 +179,9 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
         with patch.object(task_queue.logger, "error") as fake_err:
             with task_queue._watched_write_lock(rwlock, "dedup-test"):
                 time.sleep(0.2)
+                # 防 daemon race：先 reset，让第一轮我们的 scan 必然命中。
+                self._reset_dumped_for_label("dedup-test")
+                fake_err.reset_mock()
                 # 连扫 5 次：只有第一次 dump
                 dump_counts = [
                     task_queue._scan_pending_and_dump_slow() for _ in range(5)
