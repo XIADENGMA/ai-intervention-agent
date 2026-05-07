@@ -536,6 +536,81 @@ def _fetch_sse_stats_cached(host: str, port: int) -> dict[str, object]:
     return result
 
 
+# R55：``recent_logs`` 跨进程拉取的 1.0s TTL cache（与 R54-A 同思路）。
+# ============================================================================
+# 缘由：``server_info_resource`` 的 ``recent_logs`` 子块需要从 web_ui 子进程
+# 拉一份 ``/api/system/recent-logs``。这个端点限流 30/min，比 sse-stats 还
+# 紧；client UI 任何 sub-second polling 都能在十秒内打穿。沿用 R54-A 的
+# success-only / fine-grained-lock / always-fresh-copy 设计。
+_RECENT_LOGS_CACHE_TTL_S: float = 1.0
+_recent_logs_cache: dict[str, object] = {}
+_recent_logs_cache_ts: float = 0.0
+_recent_logs_cache_lock: threading.Lock = threading.Lock()
+
+
+def _fetch_recent_logs_cached(
+    host: str, port: int, limit: int = 20
+) -> dict[str, object]:
+    """1.0s TTL 包装 GET /api/system/recent-logs（R55）。
+
+    返回值约定：
+    - 成功：``{entries: list[dict], count: int}``，可能附 ``cached: True``；
+    - 失败：``{error: ...}``。永远是新建 dict。
+
+    注意 ``limit`` 进 cache key 一起：不同 limit 视作不同请求，避免一个
+    limit=20 的请求填了 cache 后，limit=50 命中误得到 truncated entries。
+    """
+    global _recent_logs_cache_ts
+    now = time.monotonic()
+    cache_key = f"limit={int(limit)}"
+    with _recent_logs_cache_lock:
+        age = now - _recent_logs_cache_ts
+        if (
+            _recent_logs_cache
+            and age < _RECENT_LOGS_CACHE_TTL_S
+            and _recent_logs_cache.get("_key") == cache_key
+        ):
+            cached_copy = {k: v for k, v in _recent_logs_cache.items() if k != "_key"}
+            cached_copy["cached"] = True
+            cached_copy["cache_age_s"] = round(age, 3)
+            return cached_copy
+
+    target_url = f"http://{host}:{port}/api/system/recent-logs?limit={int(limit)}"
+    result: dict[str, object] = {}
+    try:
+        import httpx
+
+        resp = httpx.get(target_url, timeout=0.5)
+    except Exception as net_exc:
+        result["error"] = f"{type(net_exc).__name__}: {net_exc}"
+        return result
+
+    if resp.status_code == 200:
+        try:
+            body = resp.json()
+        except Exception as json_exc:
+            result["error"] = f"json decode failed: {json_exc!r}"
+            return result
+        if isinstance(body, dict) and body.get("success"):
+            entries = body.get("entries")
+            if isinstance(entries, list):
+                result["entries"] = entries
+                result["count"] = len(entries)
+            else:
+                result["entries"] = []
+                result["count"] = 0
+            with _recent_logs_cache_lock:
+                _recent_logs_cache.clear()
+                _recent_logs_cache.update(result)
+                _recent_logs_cache["_key"] = cache_key
+                _recent_logs_cache_ts = time.monotonic()
+        else:
+            result["error"] = f"recent-logs response not success: {body!r}"
+    else:
+        result["error"] = f"recent-logs HTTP {resp.status_code}"
+    return result
+
+
 @mcp.resource(
     "aiia://server/info",
     name="Server Info",
@@ -701,18 +776,69 @@ def server_info_resource() -> dict[str, object]:
         sse_bus_info["error"] = f"{type(sse_exc).__name__}: {sse_exc}"
     info["sse_bus"] = sse_bus_info
 
-    # R51-C：最近 N 条 WARNING/ERROR 日志摘要（已脱敏，每条 ≤ 500 字符）。
+    # R51-C / R55：最近 N 条 WARNING/ERROR 日志摘要（已脱敏，每条 ≤ 500 字符）。
     # 让 MCP client UI 在 server-info 页里直接看到"最近哪里出过错"，省去 ssh
-    # 翻 stderr 的成本。limit=20 是显示上限，不是采集上限（buffer 实际保留
-    # ``enhanced_logging._LOG_RING_MAXLEN`` 条）。任何获取失败都降级为 error
-    # 字段，绝不影响主流程。
+    # 翻 stderr 的成本。
+    #
+    # R55 升级：跨进程聚合
+    # - MCP server 进程的 ring 主要捕获 MCP-host / FastMCP middleware / 客户端
+    #   交互层的告警（量很少，通常每天 0-3 条）；
+    # - Web UI 子进程的 ring 才是真正的"业务故障源"——TaskQueue 锁告警、SSE
+    #   bus backpressure、配置文件变更失败、Bark 推送失败、AppleScript 执行
+    #   失败 等绝大多数 ERROR 都在那个 ring 里；
+    # - 不聚合就等于 self-info 默认看不见 90% 的故障。这里把两边 ring 的 entries
+    #   merge 成一份按 ts_unix 升序排列的列表，每条多一个 ``source`` 字段
+    #   （``"mcp"`` / ``"web_ui"``）让 client UI 能一眼分辨故障来源。
+    #
+    # 跨进程拉取走 ``_fetch_recent_logs_cached``，复用 R54-A 的 1.0s TTL cache
+    # 思路抑制 self-info 高频 polling 把 /api/system/recent-logs 的 30/min 限
+    # 流额度撞穿。任何子获取失败都降级到 ``error`` 字段，绝不影响 mcp 侧的
+    # entries 输出。
     recent_logs_info: dict[str, object] = {}
     try:
         from enhanced_logging import get_recent_logs as _get_recent_logs
 
-        entries = _get_recent_logs(limit=20)
-        recent_logs_info["count"] = len(entries)
-        recent_logs_info["entries"] = entries
+        mcp_entries: list[dict[str, object]] = []
+        for ent in _get_recent_logs(limit=20):
+            tagged = dict(ent)
+            tagged["source"] = "mcp"
+            mcp_entries.append(tagged)
+        recent_logs_info["mcp_count"] = len(mcp_entries)
+
+        web_ui_entries: list[dict[str, object]] = []
+        web_ui_recent_meta: dict[str, object] = {}
+        if web_ui_info.get("running"):
+            host = web_ui_info.get("host")
+            port = web_ui_info.get("port")
+            if isinstance(host, str) and isinstance(port, int) and port > 0:
+                fetched = _fetch_recent_logs_cached(host, port, limit=20)
+                fetched_entries = fetched.get("entries")
+                if isinstance(fetched_entries, list):
+                    for ent in fetched_entries:
+                        if not isinstance(ent, dict):
+                            continue
+                        tagged = dict(ent)
+                        tagged["source"] = "web_ui"
+                        web_ui_entries.append(tagged)
+                if "error" in fetched:
+                    web_ui_recent_meta["error"] = fetched["error"]
+                if fetched.get("cached"):
+                    web_ui_recent_meta["cached"] = True
+        else:
+            web_ui_recent_meta["available"] = False
+            web_ui_recent_meta["reason"] = "web_ui not running"
+
+        recent_logs_info["web_ui_count"] = len(web_ui_entries)
+        if web_ui_recent_meta:
+            recent_logs_info["web_ui_meta"] = web_ui_recent_meta
+
+        # 合并按 ts_unix 升序，最新的在末尾。这样 client UI 可以直接 reverse
+        # 显示成"最新事件在前"。如果 entries 没 ts_unix 字段（异常路径）保留
+        # 末位，避免 sort key 异常。
+        merged = mcp_entries + web_ui_entries
+        merged.sort(key=lambda e: e.get("ts_unix", 0) if isinstance(e, dict) else 0)
+        recent_logs_info["count"] = len(merged)
+        recent_logs_info["entries"] = merged
     except Exception as log_exc:
         recent_logs_info["error"] = f"{type(log_exc).__name__}: {log_exc}"
     info["recent_logs"] = recent_logs_info
