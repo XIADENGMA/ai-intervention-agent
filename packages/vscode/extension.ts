@@ -554,12 +554,27 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   let _sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
   let _sseReconnectDelay = 1000
   let _sseDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  // R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
+  // 我们走的是 Node `http.get` 直连 + 手动重连 + 自带 buffer 解析（不是浏览器
+  // EventSource），所以浏览器内置的 Last-Event-ID 自动补齐机制完全帮不上忙；
+  // 重连时手动同时塞进 URL ``?last_event_id=`` query 和 ``Last-Event-ID`` 头：
+  //   - query 让"中间代理 strip 掉 header"的极端场景仍能 resume；
+  //   - header 让任何标准 SSE-aware 中间件看到 token，符合 HTML Living Standard
+  //     的预期；
+  // 服务端 sse_events 路由 query > header 优先级解析，两边写一个不会冲突。
+  // ``gap_warning`` (id=-1) 服务端故意不输出 ``id:`` 行，所以这里 _lastEventId
+  // 不会被 -1 污染，避免重连时 after_id=-1 触发死循环。
+  let _lastEventId: string | null = null
 
   const _connectSSE = (): void => {
     if (statusPollDisposed) return
     _disconnectSSE()
 
-    const sseUrl = `${serverUrl}/api/events`
+    let sseUrl = `${serverUrl}/api/events`
+    if (_lastEventId) {
+      const sep = sseUrl.indexOf('?') >= 0 ? '&' : '?'
+      sseUrl += `${sep}last_event_id=${encodeURIComponent(_lastEventId)}`
+    }
     const parsed = (() => {
       try {
         return new URL(sseUrl)
@@ -569,8 +584,13 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
     })()
     if (!parsed) return
 
+    const headers: Record<string, string> = { Accept: 'text/event-stream' }
+    if (_lastEventId) {
+      headers['Last-Event-ID'] = _lastEventId
+    }
+
     const httpMod = parsed.protocol === 'https:' ? https : http
-    const req = httpMod.get(sseUrl, { headers: { Accept: 'text/event-stream' } }, res => {
+    const req = httpMod.get(sseUrl, { headers }, res => {
       if (_sseReq !== req) {
         res.resume()
         return
@@ -585,7 +605,109 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
       _sseReconnectDelay = 1000
       logger.event('sse.connected', {}, { level: 'debug' })
 
+      // R40-S2：跨 chunk 累积 ``id:`` / ``event:`` / ``data:`` 三类字段，
+      // 在遇到空行（事件分隔符）时一次性 emit。原实现只看 ``data:`` 行，
+      // 错过了 ``id:`` 用于 resume，也错过了 ``event:`` 用于按事件类型分发
+      // （gap_warning 与 task_changed 不能再走同一条 ``new_status`` 路径）。
       let buffer = ''
+      let pendingId: string | null = null
+      let pendingType: string | null = null
+      let pendingDataLines: string[] = []
+
+      const flushPendingEvent = (): void => {
+        if (pendingDataLines.length === 0 && pendingType === null && pendingId === null) {
+          return
+        }
+        // SSE 规范：多行 data 用 ``\n`` 拼接；为 0 行时 data 视为空字符串。
+        const dataStr = pendingDataLines.join('\n')
+        const evType = pendingType || 'message'
+
+        // 仅为正整数 id 更新 _lastEventId（gap_warning id=-1 服务端不输出
+        // ``id:`` 行，理论上 pendingId 永远不会是 -1，但这里多一道防御）。
+        if (pendingId !== null && pendingId !== '') {
+          const parsedId = Number(pendingId)
+          if (Number.isFinite(parsedId) && parsedId > 0) {
+            _lastEventId = String(parsedId)
+          }
+        }
+
+        if (evType === 'gap_warning') {
+          // history evict：服务端无法从 ring buffer 给我们补发完整事件序列；
+          // 客户端必须主动 fetch 全量。这里立刻 trigger status poll 而不是
+          // 等 80ms debounce——丢数据的窗口越短越好。
+          logger.event('sse.gap_warning', { dataStr }, { level: 'warn' })
+          if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+          _sseDebounceTimer = setTimeout(() => {
+            _sseDebounceTimer = null
+            scheduleStatusPoll(0)
+          }, 0)
+          pendingId = null
+          pendingType = null
+          pendingDataLines = []
+          return
+        }
+
+        if (evType !== 'task_changed' && evType !== 'message') {
+          // 未识别的事件类型：写一条 trace 日志便于排查，但不当 task_changed
+          // 处理（避免误更新 status bar）。
+          logger.event('sse.unknown_event', { evType, dataStr }, { level: 'debug' })
+          pendingId = null
+          pendingType = null
+          pendingDataLines = []
+          return
+        }
+
+        try {
+          const ev = JSON.parse(dataStr)
+          if (ev && ev.new_status) {
+            logger.event(
+              'sse.task_changed',
+              { taskId: ev.task_id, status: ev.new_status },
+              { level: 'debug' }
+            )
+            // R20.14-C：optimistic status bar update from embedded stats
+            // ----------------------------------------------------------
+            // 服务端 R20.14-C 起在 task_changed 事件里直接 push
+            // ``stats: {pending, active, completed, total}``。我们立刻
+            // 把它绘制到 status bar，让用户看到的延迟从「80ms 防抖 +
+            // 3ms fetch round-trip = 83ms」缩短到「SSE 网络抖动 ≈ 1-2ms」。
+            // 同时保留 80ms 的 debounce + scheduleStatusPoll(0)：fetch
+            // 仍然要跑，新任务检测（dispatchNewTaskNotification）依赖完整
+            // tasks 数组，且 fetch 是 stats 的 canonical truth 来源。
+            // 这里的 optimistic 路径只走「视觉反馈优先」语义。
+            const optStats =
+              ev.stats && typeof ev.stats === 'object'
+                ? (ev.stats as Record<string, unknown>)
+                : null
+            if (optStats) {
+              const optActive =
+                typeof optStats.active === 'number' ? optStats.active : 0
+              const optPending =
+                typeof optStats.pending === 'number' ? optStats.pending : 0
+              if (lastConnected !== false) {
+                lastActive = optActive
+                lastPending = optPending
+                applyStatusBarPresentation({
+                  connected: true,
+                  active: optActive,
+                  pending: optPending
+                })
+              }
+            }
+            if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+            _sseDebounceTimer = setTimeout(() => {
+              _sseDebounceTimer = null
+              scheduleStatusPoll(0)
+            }, 80)
+          }
+        } catch {
+          /* noop */
+        }
+        pendingId = null
+        pendingType = null
+        pendingDataLines = []
+      }
+
       res.setEncoding('utf8')
       res.on('data', (chunk: string) => {
         if (_sseReq !== req) return
@@ -593,53 +715,30 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
         for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const ev = JSON.parse(line.slice(6))
-            if (ev && ev.new_status) {
-              logger.event(
-                'sse.task_changed',
-                { taskId: ev.task_id, status: ev.new_status },
-                { level: 'debug' }
-              )
-              // R20.14-C：optimistic status bar update from embedded stats
-              // ----------------------------------------------------------
-              // 服务端 R20.14-C 起在 task_changed 事件里直接 push
-              // ``stats: {pending, active, completed, total}``。我们立刻
-              // 把它绘制到 status bar，让用户看到的延迟从「80ms 防抖 +
-              // 3ms fetch round-trip = 83ms」缩短到「SSE 网络抖动 ≈ 1-2ms」。
-              // 同时保留 80ms 的 debounce + scheduleStatusPoll(0)：fetch
-              // 仍然要跑，新任务检测（dispatchNewTaskNotification）依赖完整
-              // tasks 数组，且 fetch 是 stats 的 canonical truth 来源。
-              // 这里的 optimistic 路径只走「视觉反馈优先」语义。
-              const optStats =
-                ev.stats && typeof ev.stats === 'object'
-                  ? (ev.stats as Record<string, unknown>)
-                  : null
-              if (optStats) {
-                const optActive =
-                  typeof optStats.active === 'number' ? optStats.active : 0
-                const optPending =
-                  typeof optStats.pending === 'number' ? optStats.pending : 0
-                if (lastConnected !== false) {
-                  lastActive = optActive
-                  lastPending = optPending
-                  applyStatusBarPresentation({
-                    connected: true,
-                    active: optActive,
-                    pending: optPending
-                  })
-                }
-              }
-              if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
-              _sseDebounceTimer = setTimeout(() => {
-                _sseDebounceTimer = null
-                scheduleStatusPoll(0)
-              }, 80)
-            }
-          } catch {
-            /* noop */
+          if (line === '') {
+            // 空行：事件结束，flush pending event
+            flushPendingEvent()
+            continue
           }
+          if (line.startsWith(':')) {
+            // 注释行（含 heartbeat ``: heartbeat``）：忽略
+            continue
+          }
+          if (line.startsWith('id:')) {
+            pendingId = line.slice(3).replace(/^\s+/, '')
+            continue
+          }
+          if (line.startsWith('event:')) {
+            pendingType = line.slice(6).replace(/^\s+/, '')
+            continue
+          }
+          if (line.startsWith('data:')) {
+            // SSE 规范：``data:`` 后允许有可选空格；多行 data 各自 strip
+            // 一次前导空格后用 ``\n`` 拼接。
+            pendingDataLines.push(line.slice(5).replace(/^\s/, ''))
+            continue
+          }
+          // 其他字段（如 retry:）忽略：我们不暴露给 server 控制重连节奏。
         }
       })
       res.on('end', () => {

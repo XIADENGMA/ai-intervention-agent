@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import json
 import queue
 import threading
@@ -46,19 +47,113 @@ class _SSEBus:
     - emit 时：队列积压超过 3/4 容量的也移除（消费者大概率已断开）
     - 移除时往订阅者 queue 塞 ``_SSE_DISCONNECT_SENTINEL``，让 generator
       看到它后主动 ``return``，触发浏览器 EventSource 自动 reconnect。
+
+    R40-S2 (Last-Event-ID resume)：
+    - 给每条 emit 出去的事件分配单调递增整数 id（``self._next_id``）。
+    - 维护一个长度为 ``_HISTORY_MAXLEN`` 的环形缓冲区 ``_history``，存最近的
+      ``(id, payload)``，让客户端用 ``Last-Event-ID`` 头 / ``last_event_id``
+      query 表达"我最后看到的是这一条"，``subscribe(after_id=N)`` 在 add(q) 之
+      前先把 history 里 ``id > N`` 的事件按序 put 进去 → 客户端无感补齐。
+    - 如果 ``after_id`` 已经被 evict 出 buffer（断线时间超出 maxlen 容量），
+      塞一个 ``gap_warning`` 事件，让客户端知道丢了一些事件，应该主动 fetch
+      ``/api/tasks`` 拿最新全量状态。
     """
 
     _QUEUE_MAXSIZE = 64
     _BACKPRESSURE_THRESHOLD = _QUEUE_MAXSIZE * 3 // 4
+    # R40-S2：环形缓冲区长度。SSE 事件一条 ~150B 序列化后 + 包装 ~250B，
+    # 128 条 ≈ 32KB / bus 实例，可控；同时覆盖几秒到 1 分钟内的 task 切换
+    # 风暴场景（实测 100 个并发任务 status 切换时也才 ~50 条）。
+    _HISTORY_MAXLEN = 128
 
     def __init__(self) -> None:
         self._subscribers: set[queue.Queue] = set()
         self._lock = threading.Lock()
+        # R40-S2：从 0 开始单调递增；emit 拿锁的时候 +=1。
+        # 用 int + lock 的方案，不用 itertools.count + atomic：emit 频率 ≤ 数十 Hz，
+        # 锁 contention 在 100ns 量级，相比 emit 内的 json.dumps（≤ 5µs）和
+        # put_nowait（~1µs * N）忽略不计；同时享受 lock-step 一致性，避免
+        # next_id-then-history-append 中间被另一个线程插队导致 history 乱序。
+        self._next_id: int = 0
+        # 用 deque 保 O(1) append + 自动 evict；存 (id, payload) tuple，
+        # subscribe(after_id) 时按序遍历挑出 > after_id 的项。
+        self._history: collections.deque[tuple[int, dict]] = collections.deque(
+            maxlen=self._HISTORY_MAXLEN
+        )
 
-    def subscribe(self) -> queue.Queue:
+    def subscribe(self, after_id: int | None = None) -> queue.Queue:
+        """订阅 SSE 事件流；可选 ``after_id`` 触发缺失事件回放。
+
+        ``after_id``（来自 ``Last-Event-ID`` header / query）= 客户端最后看到
+        的事件 id。补发策略：
+        - ``None``：纯订阅，从订阅时刻起的下一条 emit 开始收。
+        - 落在 history 范围内（``oldest_id <= after_id < latest_id``）：把
+          history 里 ``id > after_id`` 的事件按序压入新 queue，客户端无感补齐。
+        - ``after_id`` 太旧（已被 evict）或 ``after_id < 0`` 但 history 非空：
+          塞一个 ``gap_warning`` 事件 + 后续所有 history（如 history 仍非空），
+          告诉客户端"我可能丢了若干事件，请主动 refetch 全量"。
+        - ``after_id`` 比 ``_next_id - 1`` 还大（客户端比 server 还新，说明
+          server 重启了 _next_id 归零）：当作首次订阅，可选发 reset 事件，但
+          为了简单先按 ``None`` 处理，gap_warning 已经覆盖兜底。
+        """
         q: queue.Queue = queue.Queue(maxsize=self._QUEUE_MAXSIZE)
+
+        # 单一锁内完成「snapshot history → add subscriber」原子操作，让 emit
+        # 不会在 subscribe 拿 history 和加入 _subscribers 之间插队 → 避免
+        # 「补发 history 和后续 emit 之间漏一条 / 重复一条」的竞态。
         with self._lock:
+            replay_items: list[dict] = []
+            inject_gap_warning = False
+
+            if after_id is not None and self._history:
+                oldest_id, _ = self._history[0]
+                latest_id, _ = self._history[-1]
+                if after_id < oldest_id - 1:
+                    # 太旧：buffer 已 evict，必然丢事件。塞 gap_warning + 全部
+                    # 当前 history（让客户端至少拿到最新窗口里的事件，之后客户端
+                    # 自己 fetch 全量）。
+                    inject_gap_warning = True
+                    replay_items = [payload for _, payload in self._history]
+                elif after_id < latest_id:
+                    # 在 history 范围内，正常补发。
+                    replay_items = [
+                        payload
+                        for evt_id, payload in self._history
+                        if evt_id > after_id
+                    ]
+                # after_id == latest_id 或 after_id > latest_id：客户端是
+                # up-to-date 或者比 server 还新（server 重启 _next_id=0），都不补发。
+
             self._subscribers.add(q)
+
+        if inject_gap_warning:
+            warning_data = {
+                "reason": "history_evicted",
+                "after_id": after_id,
+            }
+            try:
+                warning_serialized = json.dumps(warning_data, ensure_ascii=False)
+            except (TypeError, ValueError):
+                warning_serialized = None
+            warning_payload = {
+                "id": -1,
+                "type": "gap_warning",
+                "data": warning_data,
+                "_serialized": warning_serialized,
+            }
+            try:
+                q.put_nowait(warning_payload)
+            except queue.Full:
+                # 新 queue maxsize=64，刚 subscribe 不可能 Full；这里只是防御性兜底。
+                pass
+
+        for payload in replay_items:
+            try:
+                q.put_nowait(payload)
+            except queue.Full:
+                # 同上，刚创建的 queue 不会 Full；保险起见忽略多余的补发。
+                break
+
         return q
 
     def unsubscribe(self, q: queue.Queue) -> None:
@@ -66,13 +161,6 @@ class _SSEBus:
             self._subscribers.discard(q)
 
     def emit(self, event_type: str, data: dict | None = None) -> None:
-        # R27.4：无订阅者时直接返回，避免状态变更在无人消费时仍做 JSON 序列化。
-        # snapshot 必须仍在锁内完成，保持 subscribe/unsubscribe 并发语义。
-        with self._lock:
-            snapshot = list(self._subscribers)
-        if not snapshot:
-            return
-
         # R20.14-C：单次预序列化复用给所有订阅者
         # ----------------------------------------------------------------
         # 历史实现里每个 SSE generator 在 yield 前自己做一次
@@ -82,15 +170,35 @@ class _SSEBus:
         # ``_serialized`` 字段（详见 ``sse_events`` generator 处的消费逻辑）。
         # 失败兜底：序列化抛异常时退化到 ``None``，generator 看见 None 时再
         # 回退到 on-demand dumps，保留原行为不让单条坏数据让整个 SSE 总线挂掉。
+        #
+        # R40-S2：把 id 分配 + history append + subscriber snapshot 三步并
+        # 入同一个 ``_lock`` 临界区。原 R20.14-C 注释里的「snapshot 之后新加
+        # 入的订阅者不会收到本条事件」语义保持不变；新订阅者拿不到这条 emit
+        # 对应的 payload，但能通过 ``subscribe(after_id=...)`` 在下一次重连时
+        # 从 history 里拿回——这正是 Last-Event-ID resume 的用途。
         try:
             serialized_data = json.dumps(data or {}, ensure_ascii=False)
         except (TypeError, ValueError):
             serialized_data = None
-        payload = {
-            "type": event_type,
-            "data": data or {},
-            "_serialized": serialized_data,
-        }
+
+        with self._lock:
+            self._next_id += 1
+            event_id = self._next_id
+            payload = {
+                "id": event_id,
+                "type": event_type,
+                "data": data or {},
+                "_serialized": serialized_data,
+            }
+            self._history.append((event_id, payload))
+
+            # R27.4：无订阅者时直接返回，避免状态变更在无人消费时仍做投递。
+            # 注意：history 必须 **在** 无订阅者快速返回之前 append——这正是
+            # Last-Event-ID resume 想要的：「事件已发生，client 重连时能补」。
+            if not self._subscribers:
+                return
+
+            snapshot = list(self._subscribers)
 
         # R20.14-C：snapshot-then-put，缩短 ``_lock`` 临界区
         # ----------------------------------------------------------------
@@ -145,6 +253,17 @@ class _SSEBus:
     def subscriber_count(self) -> int:
         with self._lock:
             return len(self._subscribers)
+
+    @property
+    def latest_event_id(self) -> int:
+        """最近一次 emit 出去的事件 id；用于诊断 / 测试。"""
+        with self._lock:
+            return self._next_id
+
+    def history_snapshot(self) -> list[tuple[int, dict]]:
+        """复制一份 history 给测试 / 诊断用，永远不返回内部状态引用。"""
+        with self._lock:
+            return list(self._history)
 
 
 _sse_bus = _SSEBus()
@@ -241,7 +360,39 @@ class TaskRoutesMixin:
             """
             _ensure_sse_callback_registered()
 
-            q = _sse_bus.subscribe()
+            # R40-S2：双通道 Last-Event-ID 解析（query 优先 → header → None）
+            # ----------------------------------------------------------------
+            # 浏览器原生 EventSource 在重连时会自动带 ``Last-Event-ID`` header
+            # （HTML Living Standard），但有两类场景拿不到这个 header：
+            #   1) 客户端主动 close + new EventSource（VSCode 插件断线重连
+            #      策略、PWA "刷新连接" 按钮等）—— 此时不是浏览器自动 retry，
+            #      header 不会自动注入；
+            #   2) 跨来源 / Service Worker 缓存场景下中间代理偶尔会 strip 掉
+            #      自定义 header，导致服务端始终看不到 resume token。
+            # 因此除了支持标准 header，再支持 ``?last_event_id=N`` query 作为
+            # 通用 fallback：客户端只要把 query 拼上，无论何种重连路径都能传
+            # resume token。query 优先于 header，让"客户端明确要求"压过"浏览器
+            # 默认重传"，避免两边不一致时拿到旧值（极小概率，但足以让 gap_warning
+            # 决策错乱）。
+            after_id_raw = (
+                request.args.get("last_event_id")
+                or request.headers.get("Last-Event-ID")
+                or ""
+            )
+            after_id: int | None = None
+            if after_id_raw:
+                try:
+                    after_id_value = int(str(after_id_raw).strip())
+                    # 负数 / 0 都按 None 处理：
+                    # - 负数没意义（emit id 从 1 起），用户明显是构造异常 token
+                    # - 0 是哨兵（``_SSEBus._next_id`` 初值），表示"我什么都没看到过"，
+                    #   等价于全新订阅，用 None 走"纯订阅"路径。
+                    if after_id_value > 0:
+                        after_id = after_id_value
+                except (ValueError, TypeError):
+                    after_id = None
+
+            q = _sse_bus.subscribe(after_id=after_id)
 
             def generate():
                 try:
@@ -264,7 +415,26 @@ class TaskRoutesMixin:
                         )
                         if serialized is None:
                             serialized = json.dumps(event["data"], ensure_ascii=False)
-                        yield f"event: {event['type']}\ndata: {serialized}\n\n"
+                        # R40-S2：合法事件输出 ``id: N`` 行让浏览器
+                        # ``EventSource`` 维护 ``e.lastEventId``，重连时自动
+                        # 把它带回 ``Last-Event-ID`` header；客户端断线
+                        # 重建时也能从我们给的 query 拿同样的 token。
+                        # ``gap_warning`` 用 id=-1 做哨兵：它是补偿事件，
+                        # 不应该成为客户端 resume 的锚点（否则下次重连会
+                        # 用 -1 当 after_id，sub 又会再发一条 gap_warning，
+                        # 死循环）。这里只为正整数 id 输出 ``id:`` 行。
+                        event_id = event.get("id") if isinstance(event, dict) else None
+                        event_type = (
+                            event.get("type") if isinstance(event, dict) else None
+                        ) or "message"
+                        if isinstance(event_id, int) and event_id > 0:
+                            yield (
+                                f"id: {event_id}\n"
+                                f"event: {event_type}\n"
+                                f"data: {serialized}\n\n"
+                            )
+                        else:
+                            yield f"event: {event_type}\ndata: {serialized}\n\n"
                 except GeneratorExit:
                     pass
                 finally:

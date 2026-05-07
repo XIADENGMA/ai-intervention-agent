@@ -1539,6 +1539,14 @@
   let _sseReconnectTimer = null
   let _sseReconnectDelay = 1000
   let _sseDebounceTimer = null
+  // R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
+  // 浏览器 EventSource 重连时**会**自动带 ``Last-Event-ID`` header，但因为
+  // 我们在 onerror 里走"主动 close + 新建 EventSource"（带退避 + 配合插件可见
+  // 性策略），这条手动 reconnect 路径不是浏览器 retry，header 不会被自动注入；
+  // 因此把 ``_lastEventId`` 拼到 URL ``?last_event_id=`` query 上做 resume token。
+  // ``gap_warning`` 事件 (id=-1) 不会推到这里——服务端只为正整数 id 输出 ``id:``
+  // 行，浏览器 EventSource 不会用 -1 当 lastEventId。
+  let _lastEventId = null
 
   let lastTasksHash = ''
   let lastTaskIds = new Set()
@@ -1564,7 +1572,18 @@
       _sseSource = null
     }
 
-    const source = new EventSource(SERVER_URL + '/api/events')
+    // R40-S2：把 _lastEventId 拼到 query 上让服务端从 history 里补发。
+    // 优先 query 是因为：
+    //   (a) 我们的重连不是浏览器自动 retry（onerror → close → 主动 new
+    //       EventSource），Last-Event-ID header 不会被浏览器自动注入；
+    //   (b) 即使浏览器自动 retry 也不一定能穿透中间代理 / SW 缓存，query
+    //       是更可靠的传输通道。
+    let sseUrl = SERVER_URL + '/api/events'
+    if (_lastEventId) {
+      const sep = sseUrl.indexOf('?') >= 0 ? '&' : '?'
+      sseUrl += sep + 'last_event_id=' + encodeURIComponent(_lastEventId)
+    }
+    const source = new EventSource(sseUrl)
     _sseSource = source
 
     source.onopen = function () {
@@ -1581,6 +1600,11 @@
 
     source.addEventListener('task_changed', function (e) {
       if (_sseSource !== source) return
+      // R40-S2：先存 lastEventId 再 debounce poll。e.lastEventId 由浏览器
+      // 自动从 ``id:`` 行解析填充；空字符串视为没拿到（旧 server 兜底）。
+      if (e && typeof e.lastEventId === 'string' && e.lastEventId !== '') {
+        _lastEventId = e.lastEventId
+      }
       try {
         const detail = JSON.parse(e.data)
         log(
@@ -1599,6 +1623,26 @@
         _sseDebounceTimer = null
         pollAllData('sse')
       }, 80)
+    })
+
+    // R40-S2：history ring buffer evict 时 server 会推 ``gap_warning``
+    // 让客户端知道"我可能丢了若干事件，请主动拉全量"。这条事件 id=-1，
+    // 不应作为 resume 锚点；忽略 e.lastEventId 更新逻辑，立即触发 fetch
+    // 全量同步（pollAllData('sse-gap')）。
+    source.addEventListener('gap_warning', function (e) {
+      if (_sseSource !== source) return
+      log('SSE gap_warning received, fetching tasks for full resync')
+      try {
+        const detail = JSON.parse(e.data)
+        log('SSE gap_warning detail: ' + JSON.stringify(detail))
+      } catch (_) {
+        /* noop */
+      }
+      if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+      _sseDebounceTimer = setTimeout(function () {
+        _sseDebounceTimer = null
+        pollAllData('sse-gap')
+      }, 0)
     })
 
     source.onerror = function () {

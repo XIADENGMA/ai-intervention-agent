@@ -392,6 +392,13 @@ var _sseSource = null
 var _sseConnected = false
 var _sseReconnectTimer = null
 var _sseReconnectDelay = 1000
+// R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
+// 浏览器 EventSource 自动填 ``e.lastEventId``，但因为我们的 onerror →
+// close → new EventSource 走主动重连路径（不是浏览器 retry），自带的
+// ``Last-Event-ID`` header 不会注入；通过 URL ``?last_event_id=`` query
+// 让服务端从 history ring buffer 里补发缺失事件。
+// gap_warning (id=-1) 不会进这里：服务端只为正整数 id 输出 ``id:`` 行。
+var _lastEventId = null
 
 function _connectSSE() {
   if (typeof EventSource === 'undefined') return
@@ -404,7 +411,15 @@ function _connectSSE() {
     _sseSource = null
   }
 
-  var source = new EventSource('/api/events')
+  // R40-S2：拼 last_event_id 让 server 走 history resume 路径。
+  // 同 packages/vscode/webview-ui.js 的同名逻辑，原因相同（手动 reconnect
+  // 不触发浏览器自动 Last-Event-ID header）。
+  var sseUrl = '/api/events'
+  if (_lastEventId) {
+    var sep = sseUrl.indexOf('?') >= 0 ? '&' : '?'
+    sseUrl += sep + 'last_event_id=' + encodeURIComponent(_lastEventId)
+  }
+  var source = new EventSource(sseUrl)
   _sseSource = source
 
   source.onopen = function () {
@@ -422,6 +437,10 @@ function _connectSSE() {
   var _sseDebounceTimer = null
   source.addEventListener('task_changed', function (e) {
     if (_sseSource !== source) return
+    // R40-S2：先存 lastEventId 再 debounce poll。空字符串视为没拿到（旧 server）。
+    if (e && typeof e.lastEventId === 'string' && e.lastEventId !== '') {
+      _lastEventId = e.lastEventId
+    }
     try {
       var detail = JSON.parse(e.data)
       _debugLog('SSE task_changed:', detail.task_id, detail.old_status, '→', detail.new_status)
@@ -433,6 +452,24 @@ function _connectSSE() {
       _sseDebounceTimer = null
       fetchAndApplyTasks('sse')
     }, 80)
+  })
+
+  // R40-S2：history evict 警告 → 立即 fetch 全量。这条事件不更新 _lastEventId
+  // （id=-1 不会被浏览器自动填），不当 resume 锚点，避免死循环。
+  source.addEventListener('gap_warning', function (e) {
+    if (_sseSource !== source) return
+    _debugLog('SSE gap_warning received, fetching tasks for full resync')
+    try {
+      var detail = JSON.parse(e.data)
+      _debugLog('SSE gap_warning detail:', detail)
+    } catch (_) {
+      /* noop */
+    }
+    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+    _sseDebounceTimer = setTimeout(function () {
+      _sseDebounceTimer = null
+      fetchAndApplyTasks('sse-gap')
+    }, 0)
   })
 
   source.onerror = function () {

@@ -122,14 +122,55 @@ class TestSSEBusPreSerialization(unittest.TestCase):
         payload = q.get_nowait()
         self.assertEqual(payload["_serialized"], "{}")
 
-    def test_emit_without_subscribers_skips_serialization(self) -> None:
-        """没有 SSE 订阅者时，emit 不应为无人消费的事件做 JSON 序列化。"""
+    def test_emit_without_subscribers_still_writes_serialized_history(self) -> None:
+        """R40-S2 后契约：无订阅者也必须序列化 + 写 history。
+
+        历史背景
+        --------
+        - **R20.14-C 旧语义**：emit 在无订阅者时直接 ``return``，``json.dumps``
+          被视为"为无人消费的事件做无意义序列化"，因此 patch ``json.dumps`` 让
+          它抛 ``AssertionError``、再 emit 一条事件验证"该路径完全没走"。
+        - **R40-S2 新语义**：``_SSEBus`` 引入 history ring buffer 后，emit 必须
+          把 ``(id, payload)`` 写进 ``_history``，让稍后 ``subscribe(after_id=N)``
+          的客户端能从 history 里拿到 ``_serialized`` 字符串补发——不预先序列化
+          的话，重连补发要么得 lazy-dumps（多线程下竞态难处理）要么得保留原
+          ``data`` 字典（重连补发时再 dumps，每个新订阅者都要做一次，把"省 N
+          倍 dumps"的优化反向放大成"重连风暴下乘 M 倍 dumps"）。
+
+        所以 R40-S2 后这条测试**必须反向**：
+        - emit 仍要 ``json.dumps``（无论是否有订阅者）；
+        - history 必须保留 ``_serialized`` 字符串；
+        - 后续 ``subscribe(after_id=N)`` 能直接拿到 ``_serialized``，零 dumps。
+
+        被锁住的契约：history append（写）和 ``_serialized`` 字段（结构）。
+        """
         bus = _SSEBus()
-        with patch(
-            "web_ui_routes.task.json.dumps",
-            side_effect=AssertionError("无订阅者时不应序列化"),
-        ):
-            bus.emit("task_changed", {"task_id": "nobody"})
+        # 无订阅者时 emit
+        bus.emit("task_changed", {"task_id": "nobody"})
+
+        # history 必须保留这条事件，后续 resume 能补发
+        history = bus.history_snapshot()
+        self.assertEqual(
+            len(history),
+            1,
+            "R40-S2 contract: emit 必须写 history,即使无订阅者(支持 Last-Event-ID resume)",
+        )
+        event_id, payload = history[0]
+        self.assertEqual(event_id, 1, "首条 emit id 应为 1")
+        self.assertEqual(payload["type"], "task_changed")
+        self.assertEqual(payload["data"], {"task_id": "nobody"})
+        # _serialized 必须就位，给重连客户端零 dumps 补发
+        self.assertEqual(
+            payload["_serialized"],
+            '{"task_id": "nobody"}',
+            "R40-S2 contract: history 里的 payload 必须含预序列化字符串",
+        )
+
+        # 后置验证：现在订阅 + 用 after_id=0 → 应该补发这条事件
+        q = bus.subscribe(after_id=0)
+        replayed = q.get_nowait()
+        self.assertEqual(replayed["type"], "task_changed")
+        self.assertEqual(replayed["_serialized"], '{"task_id": "nobody"}')
 
 
 class TestSSEBusLockTightening(unittest.TestCase):
@@ -358,12 +399,22 @@ class TestSSEGeneratorConsumesPreSerialized(unittest.TestCase):
     SCRIPT_PATH = REPO_ROOT / "web_ui_routes" / "task.py"
 
     def test_generator_uses_serialized_field_in_yield(self) -> None:
-        """源码不变量：``yield`` 那一行必须先取 ``event.get('_serialized')``。"""
+        """源码不变量：``yield`` 那一行必须先取 ``event.get('_serialized')``。
+
+        切片长度
+        --------
+        函数体在 R40-S2 引入 Last-Event-ID resume 后膨胀到约 ~80 行
+        （新增 query/header 解析 + history-aware ``id:`` 输出注释），所以
+        简单的 ``[idx:idx+2500]`` 切片会把 ``event.get("_serialized")``
+        甩出窗口。这里把切片放大到 5000 字节，且为下一次扩展留出余量；
+        函数继续膨胀时再把这个数字往上调即可，不要降级到"全文 grep"——
+        全文 grep 会把同名调用从其它类（``_SSEBus.emit``）匹配进来，
+        失去"必须出现在 sse_events generator 里"的契约保障。
+        """
         src = self.SCRIPT_PATH.read_text(encoding="utf-8")
-        # 找到 sse_events 函数体
         idx = src.find("def sse_events")
         self.assertGreaterEqual(idx, 0)
-        body = src[idx : idx + 2500]
+        body = src[idx : idx + 5000]
         # 关键 invariant：generator 必须优先消费 _serialized
         self.assertIn(
             'event.get("_serialized")',
@@ -405,13 +456,18 @@ class TestExtensionTsConsumesStats(unittest.TestCase):
     def setUp(self) -> None:
         self.src = self.EXT_PATH.read_text(encoding="utf-8")
 
+    # R40-S2 后 _connectSSE 函数体显著膨胀（新增 id/event/data 三类
+    # SSE 字段的逐行累积 + flushPendingEvent 内联处理 + Last-Event-ID
+    # query/header 双写），从大约 100 行扩到 ~200 行。原 4000 字节切片
+    # 不再覆盖到 ``if (optStats)`` 这段位于 flushPendingEvent 内部的
+    # optimistic 更新分支，把切片放大到 15000 留出未来 refactor 余量。
+    _CONNECT_SSE_BODY_WINDOW = 15000
+
     def test_sse_handler_reads_stats_field(self) -> None:
         # 不变量：SSE handler 函数体必须 reference ev.stats
-        # 找到 _connectSSE 函数体
         idx = self.src.find("_connectSSE")
         self.assertGreaterEqual(idx, 0)
-        # _connectSSE 函数体延伸到 _handleSSEError；取一段足够包含的窗口
-        body = self.src[idx : idx + 4000]
+        body = self.src[idx : idx + self._CONNECT_SSE_BODY_WINDOW]
         self.assertIn(
             "ev.stats",
             body,
@@ -423,12 +479,14 @@ class TestExtensionTsConsumesStats(unittest.TestCase):
     ) -> None:
         idx = self.src.find("_connectSSE")
         self.assertGreaterEqual(idx, 0)
-        body = self.src[idx : idx + 4000]
-        # 必须在 stats 分支里（即 if (optStats) {} 之内）调用 applyStatusBarPresentation
+        body = self.src[idx : idx + self._CONNECT_SSE_BODY_WINDOW]
+        # R40-S2 重构后：``if (optStats) { ... if (lastConnected !== false) {
+        # ... applyStatusBarPresentation }}`` 形成嵌套块，原 ``[^}]*`` 走到
+        # 内层 ``if (lastConnected !== false) {`` 后会卡住。改用 ``[\s\S]*?``
+        # （DOTALL，非贪婪）让 regex 跨任意嵌套块到达 applyStatusBarPresentation。
         match = re.search(
-            r"if\s*\(\s*optStats\s*\)\s*\{[^}]*applyStatusBarPresentation",
+            r"if\s*\(\s*optStats\s*\)\s*\{[\s\S]*?applyStatusBarPresentation",
             body,
-            re.DOTALL,
         )
         self.assertIsNotNone(
             match,
@@ -440,7 +498,7 @@ class TestExtensionTsConsumesStats(unittest.TestCase):
         # optimistic 更新不能取代 fetch；scheduleStatusPoll(0) 仍须保留
         idx = self.src.find("_connectSSE")
         self.assertGreaterEqual(idx, 0)
-        body = self.src[idx : idx + 4000]
+        body = self.src[idx : idx + self._CONNECT_SSE_BODY_WINDOW]
         self.assertIn(
             "scheduleStatusPoll(0)",
             body,
