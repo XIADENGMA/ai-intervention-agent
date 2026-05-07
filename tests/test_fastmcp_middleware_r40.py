@@ -42,7 +42,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import unittest
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
@@ -297,9 +297,14 @@ class TestServerInfoResourceRuntime(unittest.TestCase):
             info = server.server_info_resource()
 
         self.assertIsInstance(info, dict)
-        self.assertIsInstance(info["web_ui"], dict)
-        self.assertIn("error", info["web_ui"])
-        self.assertIn("synthetic", str(info["web_ui"]["error"]))
+        # ``server_info_resource`` 声明返回 ``dict[str, object]``,
+        # ty 静态分析下 ``info["web_ui"]`` 推断为 ``object``,
+        # 必须 cast 后才能继续下标访问;
+        # 运行时由 self.assertIsInstance 断言兜底实际类型。
+        web_ui = cast(dict[str, Any], info["web_ui"])
+        self.assertIsInstance(web_ui, dict)
+        self.assertIn("error", web_ui)
+        self.assertIn("synthetic", str(web_ui["error"]))
 
     def test_web_ui_probe_swallows_port_check_error(self) -> None:
         """``is_web_service_running`` 抛异常时 ``web_ui`` 子字段仍含 host/port + probe_error，
@@ -321,10 +326,13 @@ class TestServerInfoResourceRuntime(unittest.TestCase):
         ):
             info = server.server_info_resource()
 
-        self.assertIsInstance(info["web_ui"], dict)
-        self.assertEqual(info["web_ui"]["running"], False)
-        self.assertIn("probe_error", info["web_ui"])
-        self.assertIn("synthetic-probe", str(info["web_ui"]["probe_error"]))
+        # 同 test_web_ui_probe_swallows_config_error: cast 后再下标访问;
+        # 运行时由 assertIsInstance 兜底。
+        web_ui = cast(dict[str, Any], info["web_ui"])
+        self.assertIsInstance(web_ui, dict)
+        self.assertEqual(web_ui["running"], False)
+        self.assertIn("probe_error", web_ui)
+        self.assertIn("synthetic-probe", str(web_ui["probe_error"]))
 
 
 if __name__ == "__main__":
