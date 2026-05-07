@@ -14,6 +14,14 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.5.41] — 2026-05-08
+
+> Server-side hardening release; no extension-facing behaviour
+> changes. Bumped to keep the VS Code extension version in lockstep
+> with the PyPI server package. Server-side adds a hard 10 MB cap
+> on `add_task` prompts (R53-A) and a new `GET /api/system/health`
+> endpoint (R53-F) — both transparent to the extension UI.
+
 ## [1.5.40] — 2026-05-08
 
 > Server-side hardening release; no extension-facing behaviour

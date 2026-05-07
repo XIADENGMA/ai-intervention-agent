@@ -61,6 +61,8 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.40（R52 周期：TaskQueue 写锁 watchdog 扩展到全部
-8 处写路径 + 新增 GET /api/system/recent-logs 端点；上一周期
-R50 + R51-A/B/C 收口在 v1.5.39）。_
+更新对应 v1.5.41（R53 周期：`add_task` 新增 10 MB 硬上限 + 6 MB 告警的
+prompt 大小校验，新增 GET /api/system/health 端点把已有
+sse-stats / task_queue / recent-errors 信号聚合成 K8s 探针
+友好的 status enum。上一周期 R52 / R51 / R50 收口在
+v1.5.40 / v1.5.39）。_

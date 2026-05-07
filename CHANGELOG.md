@@ -9,6 +9,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.5.41] — 2026-05-08
+
+> Round-53 round-up: a small but pointed safety + observability cycle.
+> `add_task` finally has a hard upper bound on prompt size (the original
+> design had no guard at all, so a single buggy / hostile caller could
+> push 100 MB into memory and through every SSE broadcast); and the
+> existing telemetry primitives (sse-stats from R47, task_queue size,
+> log ring buffer from R51-C / R52-B) are aggregated into one canonical
+> `GET /api/system/health` endpoint shaped exactly the way K8s liveness
+> / readiness probes and uptime monitors expect.
+
+### Added
+
+- **R53-A** — `task_queue.add_task` now enforces a layered prompt-size
+  policy before acquiring the write lock:
+  - Above `_PROMPT_WARN_BYTES` (6 MB UTF-8) — log a warning and accept,
+    so operators can `grep` for misbehaving callers without blocking
+    work;
+  - Above `_PROMPT_REJECT_BYTES` (10 MB UTF-8) — return `False`
+    immediately without entering the critical section, matching
+    existing back-pressure return semantics. The check is done outside
+    the watchdog-wrapped `_watched_write_lock` so oversized rejects
+    can't starve legitimate tasks. Byte counting uses
+    `len(prompt.encode("utf-8", errors="replace"))` so non-ASCII
+    prompts are sized realistically.
+- **R53-F** — `GET /api/system/health` aggregates SSE bus, TaskQueue,
+  and recent-errors signals into a single `{status, ts_unix, checks}`
+  payload with a three-state enum:
+  - `unhealthy` (HTTP 503) — any sub-check raised internally; K8s
+    readiness should depool;
+  - `degraded` (HTTP 200) — all sub-checks ran but `backpressure_discards`
+    or 5-min ERROR count > 0; alert without auto-restart;
+  - `healthy` (HTTP 200) — all green.
+  Rate-limited at 120 / min (vs sse-stats 60 / min, recent-logs 30 / min)
+  to give two-replica K8s probe traffic 20× headroom. **No loopback
+  gate** — probes always come from the cluster network. Endpoint is
+  data-only (no `task.prompt`, no config values), safe to expose on
+  the same address as the Web UI without a separate auth boundary.
+
 ## [1.5.40] — 2026-05-08
 
 > Round-52 follow-up to v1.5.39: completes the watchdog rollout

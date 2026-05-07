@@ -67,7 +67,9 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.40 (R52 cycle:
-TaskQueue write-lock watchdog rolled out across all 8 paths +
-GET /api/system/recent-logs endpoint; the prior R50 + R51-A/B/C
-work is captured in v1.5.39)._
+index never lies. Last refreshed for v1.5.41 (R53 cycle: hard
+prompt-size cap on add_task at 10 MB with a 6 MB warn threshold,
+and a new GET /api/system/health endpoint that aggregates the
+existing sse-stats / task_queue / recent-errors signals into a
+K8s-probe-friendly status enum. The prior R52 / R51 / R50 work is
+captured in v1.5.40 / v1.5.39 release sections)._
