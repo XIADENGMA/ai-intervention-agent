@@ -61,13 +61,13 @@ Find your role below to jump straight to the page you need.
   triage, README architecture completeness). Required reading
   before adding a new CSS theme variant or a new MCP tool field.
 - [`lessons-learned-r70s.md`](lessons-learned-r70s.md) — internal
-  post-mortem for the v1.5.46 / `[Unreleased]` R71 → R80b batch
-  (CodeQL triage discipline, governance-doc relocation,
-  zero-warning sprint, PyPA `src/` layout migration, cross-MCP
-  compat aliases, defensive-branch coverage, markdown link-rot
-  guardrail, CHANGELOG backfill). Required reading before any
-  big-bang reorganisation, accept-but-ignore alias, or
-  `git mv` of a `.md` file.
+  post-mortem for the v1.6.0 R71 → R82 batch (CodeQL triage
+  discipline, governance-doc relocation, zero-warning sprint,
+  PyPA `src/` layout migration, cross-MCP compat aliases,
+  defensive-branch coverage, markdown link-rot guardrail,
+  CHANGELOG backfill, coverage-data-file relocation). Required
+  reading before any big-bang reorganisation, accept-but-ignore
+  alias, or `git mv` of a `.md` file.
 - [`security-triage-r72.md`](security-triage-r72.md) — line-by-line
   disposition of every GitHub code-scanning alert open as of the
   May 2026 sweep. Documents the R72-A (15 × log-injection via

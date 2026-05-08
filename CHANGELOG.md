@@ -9,6 +9,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R84** — post-1.6.0 documentation drift cleanup: refresh the
+  Supported-versions table in `.github/SECURITY.md` from
+  `1.5.x` to `1.6.x`, retitle `docs/lessons-learned-r70s.md`
+  from "R71 → R80b cycle" to the actual shipped scope
+  "R71 → R82 cycle" (twelve base R-numbers, eighteen counting
+  the b/c/d/-D variants), point its forward-looking
+  decay-prevention guidance at `v1.6.1+` instead of `v1.5.47+`,
+  realign `docs/README.md` / `docs/README.zh-CN.md` Reviewers
+  blurbs and `docs/lessons-learned-r60s.md` to the v1.6.0
+  release identity, and clean root `package.json` metadata
+  (replace the HTML-fragment `description`, populate
+  `author`, broaden `keywords` to match the VS Code
+  extension's eight-keyword list plus `monorepo`). No code
+  paths touched; this is governance- and store-listing-only
+  copy work to keep the post-release artefacts honest.
+
 ## [1.6.0] — 2026-05-08
 
 > Round-72+ aggregate: a security-triage pass (R72 / R72-D), three
@@ -107,14 +125,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   machine because Python picked up `./web_ui.py` from cwd" class
   of bugs.
 - **R81** — internal post-mortem `docs/lessons-learned-r70s.md`
-  for the R71 → R80b batch, mirroring the R63 → R70 template
+  for the R71 → R82 batch, mirroring the R63 → R70 template
   established by `docs/lessons-learned-r60s.md`. Eight root
   causes (CodeQL noise, governance-doc relocation, zero-warning
   sprint, `src/` layout migration, MCP cross-tool compat,
   defensive-branch coverage, markdown link rot, CHANGELOG
   drift) plus cross-cutting takeaways. `docs/README.md`
   Reviewers section gains the new entry and the index footer
-  is refreshed for the v1.5.46 cycle.
+  is refreshed for the v1.6.0 cycle.
 - **R82** — relocate `coverage.py` parallel-run intermediate
   files (`.coverage.<host>.<pid>.<rand>`) from repo root to
   the `.coverage_data/` subdirectory via

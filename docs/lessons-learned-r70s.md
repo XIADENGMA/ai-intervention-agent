@@ -1,18 +1,20 @@
-# Lessons learned — R71 → R80b cycle
+# Lessons learned — R71 → R82 cycle
 
-> Internal post-mortem for the v1.5.46 / `[Unreleased]` batch. Reviewers
+> Internal post-mortem for the v1.6.0 batch (R71 → R82). Reviewers
 > auditing the next release should read this alongside
 > [`lessons-learned-r60s.md`](lessons-learned-r60s.md) and
 > [`security-triage-r72.md`](security-triage-r72.md). Cross-link from
 > `CHANGELOG.md` for the bullet version.
 
-This batch shipped fourteen `R` numbers between the v1.5.45 tag and
-the next release: R71 (post-mortem write-up) · R72 / R72-D (CodeQL
-sweep) · R73 (governance docs relocation) · R74 / R74b / R74c / R74d
-(zero-warning sprint) · R75 (`ruff LOG` family rollout) · R76 / R76b
-(`src/` layout + config-template prune) · R77 (cross-MCP compat
-aliases) · R78 / R79 (coverage uplift) · R80 (link-rot guardrail) ·
-R80b (`CHANGELOG` backfill).
+This batch shipped twelve base `R` numbers (eighteen counting the
+b/c/d/-D variants) between the v1.5.45 tag and the v1.6.0 release:
+R71 (post-mortem prep) · R72 / R72-D (CodeQL sweep) · R73 (governance
+docs relocation) · R74 / R74b / R74c / R74d (zero-warning sprint) ·
+R75 (`ruff LOG` family rollout) · R76 / R76b (`src/` layout +
+config-template prune) · R77 (cross-MCP compat aliases) · R78 / R79
+(coverage uplift) · R80 (link-rot guardrail) · R80b (`CHANGELOG`
+backfill) · R81 (this post-mortem) · R82 (coverage data-file
+relocation).
 
 The pattern this cycle is structurally different from R63 → R70:
 that batch was driven by user-visible regressions (light-mode iOS
@@ -21,7 +23,7 @@ batch is driven by **silent decay** — security alerts piling up,
 warnings the team learned to ignore, link rot inside `.github/`
 docs, a flat layout that grew past its useful lifetime. We document
 the lessons here so the same class of decay does not return in
-v1.5.47+.
+v1.6.1+.
 
 ## Root cause 1 — Security-tool noise creates false confidence; "fix all" is not triage
 

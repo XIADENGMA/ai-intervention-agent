@@ -9,7 +9,7 @@ R66 / R67) that look unrelated on the surface — Bark sentinel,
 predefined-options defaults, server build info, light-mode button text,
 iOS-blue leakage, brand-color guardrail, docs polish — but trace back
 to a small handful of recurring root causes. We document them here so
-the same class of bug does not return in v1.5.46+.
+the same class of bug does not return in v1.6.0+.
 
 ## Root cause 1 — "dark-first" CSS without a light counterpart
 

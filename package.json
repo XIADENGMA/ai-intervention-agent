@@ -1,7 +1,7 @@
 {
   "name": "ai-intervention-agent-root",
   "version": "1.6.0",
-  "description": "<h1 align=\"center\">   <a href=\"\">     <img src=\"icons/icon.svg\" width=\"150\" height=\"150\" alt=\"banner\" /><br>   </a> </h1>",
+  "description": "AI Intervention Agent monorepo root: aggregates the PyPI MCP server, the VS Code / Open VSX extension under packages/vscode, and Web UI tooling. private:true; never published to npm.",
   "main": "index.js",
   "private": true,
   "workspaces": [
@@ -18,8 +18,18 @@
     "type": "git",
     "url": "git+https://github.com/XIADENGMA/ai-intervention-agent.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ai",
+    "mcp",
+    "feedback",
+    "agent",
+    "intervention",
+    "claude",
+    "cursor",
+    "windsurf",
+    "monorepo"
+  ],
+  "author": "xiadengma <52972447+XIADENGMA@users.noreply.github.com>",
   "license": "MIT",
   "type": "commonjs",
   "bugs": {

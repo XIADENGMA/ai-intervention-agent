@@ -10,8 +10,8 @@ VS Code Marketplace.
 
 | Version | Status          |
 | ------- | --------------- |
-| 1.5.x   | ✅ Supported     |
-| < 1.5   | ❌ End-of-life   |
+| 1.6.x   | ✅ Supported     |
+| < 1.6   | ❌ End-of-life   |
 
 If you need a backport to an older line, open a discussion first — we evaluate
 case by case based on CVSS and exposure.
@@ -66,8 +66,8 @@ Open VSX / VS Code Marketplace，旧 minor 立即 EOL。
 
 | 版本     | 状态      |
 | ------- | -------- |
-| 1.5.x   | ✅ 支持   |
-| < 1.5   | ❌ EOL   |
+| 1.6.x   | ✅ 支持   |
+| < 1.6   | ❌ EOL   |
 
 需要向旧线回移补丁？先开 discussion，我们按 CVSS 与暴露面逐例评估。
 

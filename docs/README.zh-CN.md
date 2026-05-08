@@ -56,10 +56,10 @@
   Dependabot major-bump 分诊、README 架构完整性）。新增 CSS 主
   题变体或 MCP 工具字段前必读。
 - [`lessons-learned-r70s.md`](lessons-learned-r70s.md) —
-  v1.5.46 / `[Unreleased]` R71 → R80b 批次的内部复盘
-  （CodeQL 警告分诊、治理文档迁入 `.github/`、零警告冲刺、PyPA
-  `src/` 布局迁移、跨 MCP 兼容别名、防御分支覆盖率冲刺、
-  Markdown 链接腐烂护栏、CHANGELOG 回填）。任何大型重组、
+  v1.6.0 R71 → R82 批次的内部复盘（CodeQL 警告分诊、治理文档
+  迁入 `.github/`、零警告冲刺、PyPA `src/` 布局迁移、跨 MCP
+  兼容别名、防御分支覆盖率冲刺、Markdown 链接腐烂护栏、
+  CHANGELOG 回填、coverage 数据文件改写位置）。任何大型重组、
   accept-but-ignore 兼容字段、或 `git mv` 任意 `.md` 文件之
   前必读。
 - [`security-triage-r72.md`](security-triage-r72.md) — 2026 年 5
