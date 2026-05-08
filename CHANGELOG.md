@@ -11,6 +11,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R90** — fix `.gitattributes` linguist globs that R76 silently
+  detached. Three regression-quiet rules pointed at pre-R76
+  layout: `locales/**` (now matches nothing — Web UI locales live
+  under `src/ai_intervention_agent/static/locales/` and VS Code
+  extension locales under `packages/vscode/locales/`),
+  `static/**/*.gz` and `static/**/*.br` (now match nothing —
+  R20.14-D / R21.4 precompressed siblings live under
+  `src/ai_intervention_agent/static/**`). Effect: GitHub linguist
+  was counting locale JSON and `.gz` / `.br` files as primary
+  language churn since R76, polluting the language-percentage
+  pie on the repo landing page. Replace each broken glob with a
+  pair (or single src-prefixed) that points at the real
+  locations; verify with `git check-attr -a` that `linguist-generated`
+  + `-diff` actually apply now. No code or runtime behaviour
+  touched.
+
 - **R89** — restore the VSIX packaging pipeline silently broken by R76.
   ``scripts/package_vscode_vsix.mjs`` had a hard-coded
   ``SHARED_TRI_STATE_PANEL_FILES`` array listing the four shared

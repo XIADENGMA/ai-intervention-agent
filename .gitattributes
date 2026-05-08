@@ -72,16 +72,22 @@ Dockerfile  text eol=lf
 # 让 GitHub linguist 不把这些视为"主要语言"，避免污染语言统计
 docs/api/**     linguist-documentation
 docs/api.zh-CN/** linguist-documentation
-locales/**      linguist-generated
+# R76 PyPA src/ 布局后，Web UI locale 在 ``src/ai_intervention_agent/static/locales/``，
+# VSCode extension locale 在 ``packages/vscode/locales/``，根目录不再有 ``locales/``。
+# 旧 ``locales/**`` 单条规则在新布局下 match 不到任何文件 (silent skip)。
+src/ai_intervention_agent/static/locales/** linguist-generated
+packages/vscode/locales/**                  linguist-generated
 *.min.js        linguist-vendored
 *.min.css       linguist-vendored
 vendor/**       linguist-vendored
 packages/vscode/vendor/** linguist-vendored
 
-# R20.14-D + R21.4：``static/**/*.gz`` / ``static/**/*.br`` 都是
-# ``scripts/precompress_static.py`` 的产物，重新生成完全可重现
-# （gzip 用 ``mtime=0``，brotli 输出本身不带 mtime）。标 generated 让
-# linguist + GitHub diff UI 不要展开它们；标 binary（在上面的 ``*.gz`` /
-# ``*.br`` 规则里已隐含）让 git 不做文本比对避免误判 churn。
-static/**/*.gz       linguist-generated -diff
-static/**/*.br       linguist-generated -diff
+# R20.14-D + R21.4：预压缩产物都是 ``scripts/precompress_static.py`` 的输出，
+# 重新生成完全可重现（gzip 用 ``mtime=0``，brotli 输出本身不带 mtime）。
+# 标 generated 让 linguist + GitHub diff UI 不要展开它们；标 binary
+# （在上面的 ``*.gz`` / ``*.br`` 规则里已隐含）让 git 不做文本比对避免误判 churn。
+# R90：R76 把 ``static/`` 挪到了 ``src/ai_intervention_agent/static/``，
+# 旧 ``static/**/*.gz`` 单条规则在新布局下 match 不到任何文件，silent
+# 漂出 linguist 统计。
+src/ai_intervention_agent/static/**/*.gz       linguist-generated -diff
+src/ai_intervention_agent/static/**/*.br       linguist-generated -diff
