@@ -11,6 +11,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R104** — replace silent `self.skipTest("...CSS 不存在")` with
+  loud `self.fail(...)` in `tests/test_state_tokens.py`. The
+  test module is the **only** thing pinning the cross-platform
+  parity of `--aiia-state-*` design tokens between
+  `src/ai_intervention_agent/static/css/main.css` (Web UI) and
+  `packages/vscode/webview.css` (VS Code webview). Previous
+  implementation had four silent-skip surfaces:
+
+  1. `test_web_css_defines_all_expected_tokens` — `if not
+     WEB_CSS.exists(): self.skipTest(...)`.
+  2. `test_vscode_css_defines_all_expected_tokens` — same shape on
+     `VSCODE_CSS`.
+  3. `test_cross_platform_token_values_equal` — combined
+     `if not WEB_CSS.exists() or not VSCODE_CSS.exists():
+     self.skipTest(...)`.
+  4. `test_transition_token_is_proper_shorthand` — per-end
+     `if not path.exists(): continue` quietly drops half the
+     coverage.
+
+  Same shape as R76's "static rearrange ⇒ guard goes silently
+  broken" pattern that R88/R100/R101/R102 already purged from
+  brand-color, HTML coverage, and i18n no-CJK / locale scanners.
+  R104 introduces a `_fail_missing_css(test, path, label)` helper
+  with diagnostic output (relative + absolute path + remediation
+  pointer back to `WEB_CSS` / `VSCODE_CSS` constants) and uses it
+  in all four test cases. Adds a new `TestPathDriftR104` class
+  with two layer-0 sanity tests (`WEB_CSS`/`VSCODE_CSS` resolve to
+  existing files) so a path-constant drift is reported as the
+  *first* failure in CI output, not buried under cascading test
+  errors. Reverse-injection (mock `WEB_CSS` or `VSCODE_CSS` to
+  `/__definitely_not_existing__/missing.css`) yields **4 fails, 0
+  skips** with R104 tag present in every fail message.
+
+  Also documents the doc/code drift R103 introduced into
+  `scripts/README.md` `## Visual / brand guardrails` section
+  (used to say "Wired into `pre-commit`" but R103 added the
+  `ci_gate.py` invocation as a second wiring layer; copy now
+  reflects both wiring paths and the `R66 / R99 / R103` lineage).
+
 - **R103** — wire `scripts/check_brand_color_consistency.py` into
   `ci_gate.py` to close the **second layer** of the R66/R88/R99
   brand-color guardrail. R88 fixed the `files`-glob/`DEFAULT_ROOT`

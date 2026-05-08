@@ -68,12 +68,15 @@ diverges.
 ## Visual / brand guardrails
 
 - [`check_brand_color_consistency.py`](check_brand_color_consistency.py)
-  _(R66)_ — fail if `static/css/main.css` re-introduces the
-  iOS-system-blue `rgba(0, 122, 255, …)` family the project's
-  brand palette (dark-mode `#a855f7`, light-mode Anthropic
-  Orange `#d97757`) was meant to replace. Wired into
-  `pre-commit` so a single hardcoded blue cannot land on `main`
-  again.
+  _(R66 / R99 / R103)_ — fail if `static/css/main.css`
+  re-introduces the iOS-system-blue `rgba(0, 122, 255, …)` family
+  (R66) **or** the same color in `#007aff` hex form (R99) the
+  project's brand palette (dark-mode `#a855f7`, light-mode
+  Anthropic Orange `#d97757`) was meant to replace. Two wiring
+  layers (R103): `.pre-commit-config.yaml` for fast staged
+  feedback **and** `ci_gate.py` for CI-side fallback so a developer
+  who skipped `pre-commit install` still gets the baseline lock
+  enforced before merge.
 
 ## Generators
 
