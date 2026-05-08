@@ -9,6 +9,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R88** — restore the R66 brand-color guardrail that R76
+  silently broke. The R76 PyPA `src/` migration moved
+  `static/css/main.css` to
+  `src/ai_intervention_agent/static/css/main.css`, but the R66
+  guard's two layout hooks didn't follow:
+  `scripts/check_brand_color_consistency.py::DEFAULT_ROOT`
+  still read `"static/css"` (so `uv run python scripts/check_brand_color_consistency.py`
+  exits 2 with "扫描根目录不存在 → static/css") and
+  `.pre-commit-config.yaml` still pinned `files: ^static/css/.*\.css$`
+  (so the local hook never matched any file in the new layout —
+  the worst kind of "silent skip"). Both defaults now point at
+  `src/ai_intervention_agent/static/css`. Add three regression
+  tests (`TestDefaultsPointAtRealLocations`) that assert
+  `DEFAULT_ROOT` resolves to an existing directory, contains at
+  least one `.css` file, and the `.pre-commit-config.yaml`
+  `files` glob shares the same prefix — so the next layout
+  refactor cannot resurrect the silent-broken state without a
+  red test.
+
 ### Changed
 
 - **R87** — fix `static/locales/**` path-ignore drift in

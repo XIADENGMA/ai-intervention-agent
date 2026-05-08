@@ -4,11 +4,12 @@
 背景
 ----
 
-R64/R65 修复发现：``static/css/main.css`` 内 ``rgba(0, 122, 255, X)``
-（iOS system blue）出现 64 次，与项目品牌色（dark mode 紫 ``#a855f7``、
-light mode Anthropic Orange ``#d97757``）不一致，造成 light mode 视觉
-漂移。R65 已为 7 个高频组件加 light-mode override，但底层 64 处硬编码
-仍在 — 完全替换风险大（详见 R65 commit message）。
+R64/R65 修复发现：``src/ai_intervention_agent/static/css/main.css``
+内 ``rgba(0, 122, 255, X)``（iOS system blue）出现 64 次，与项目品
+牌色（dark mode 紫 ``#a855f7``、light mode Anthropic Orange
+``#d97757``）不一致，造成 light mode 视觉漂移。R65 已为 7 个高频组件加
+light-mode override，但底层 64 处硬编码仍在 — 完全替换风险大（详见
+R65 commit message）。
 
 本脚本作为 **护栏（guardrail）**：
 * 当前 baseline 64 处硬编码作为「已知技术债」，允许保留；
@@ -22,7 +23,7 @@ light mode Anthropic Orange ``#d97757``）不一致，造成 light mode 视觉
 
 ::
 
-    # 默认扫 static/css/，baseline 64
+    # 默认扫 src/ai_intervention_agent/static/css/，baseline 见 DEFAULT_BASELINE
     uv run python scripts/check_brand_color_consistency.py
 
     # 自定义 baseline（重构期使用）
@@ -42,7 +43,10 @@ light mode Anthropic Orange ``#d97757``）不一致，造成 light mode 视觉
 ----
 
 通过 ``.pre-commit-config.yaml`` 的 ``local`` repo hook 接入：每次提交
-若动了 ``static/css/*.css`` 就跑一次，<200 ms 完成。
+若动了 ``src/ai_intervention_agent/static/css/*.css`` 就跑一次，
+<200 ms 完成。R76 把 ``static/`` 从仓库根挪进包内（PyPA src/ 布局），
+此前默认 ``DEFAULT_ROOT = "static/css"`` 在新布局下指向不存在的目录，
+hook 实际上已 silently broken；R88 修复并对齐 hook 的 ``files`` glob。
 """
 
 from __future__ import annotations
@@ -52,7 +56,7 @@ import re
 import sys
 from pathlib import Path
 
-DEFAULT_ROOT = "static/css"
+DEFAULT_ROOT = "src/ai_intervention_agent/static/css"
 # R66 baseline 锁定的是「strip 注释后」的实际 CSS 属性值里的硬编码数。
 # R66 commit 时手测 64 处含注释引用，剥离注释后剩 34 处实际样式漂移。
 # 后续若有 PR 重构这 34 处中的某些用 ``var(--brand-accent-rgb)`` 替换，

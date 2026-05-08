@@ -233,6 +233,67 @@ class TestPreCommitHookRegistered(unittest.TestCase):
         )
 
 
+class TestDefaultsPointAtRealLocations(unittest.TestCase):
+    """R88 防回归：``DEFAULT_ROOT`` 与 hook ``files`` glob 必须指向
+    实际存在的目录 / 至少能匹配到该目录下的真实 CSS 文件。
+
+    历史教训：R76 把 ``static/`` 从仓库根挪进 ``src/ai_intervention_agent/``
+    包内（PyPA src/ 布局），但 R66 留下的两个默认值都没跟着改：
+
+    1. ``scripts/check_brand_color_consistency.py::DEFAULT_ROOT = "static/css"``
+       —— 当 hook 真的被触发（无 ``--root``）时，脚本会以 exit 2 报
+       "扫描根目录不存在 → static/css" 失败。
+    2. ``.pre-commit-config.yaml`` 的 ``files: ^static/css/.*\\.css$``
+       —— 在新布局下不 match 任何文件，hook 永远不会被 pre-commit
+       触发（最坏的"silent skip"）。
+
+    本测试三个断言保证这两个默认值与现实保持一致：
+    """
+
+    def test_default_root_directory_exists(self) -> None:
+        """``DEFAULT_ROOT`` 解析后必须是真实存在的目录。"""
+        root_path = REPO_ROOT / guard.DEFAULT_ROOT
+        self.assertTrue(
+            root_path.exists() and root_path.is_dir(),
+            f"DEFAULT_ROOT={guard.DEFAULT_ROOT!r} 解析后指向不存在的目录 "
+            f"{root_path}。这意味着 pre-commit hook 真的触发时会以 exit 2 "
+            f"失败（参见 R88 修复）。如果有意改动 CSS 目录布局，请同步把 "
+            f"``DEFAULT_ROOT`` 改成新位置（再把 .pre-commit-config.yaml "
+            f"的 ``files`` glob 改成同步前缀）。",
+        )
+
+    def test_default_root_contains_at_least_one_css_file(self) -> None:
+        """``DEFAULT_ROOT`` 必须至少能扫到一个 ``.css``，否则 baseline
+        永远是 0、护栏失去意义。
+        """
+        root_path = REPO_ROOT / guard.DEFAULT_ROOT
+        css_files = list(root_path.glob("*.css"))
+        self.assertGreater(
+            len(css_files),
+            0,
+            f"DEFAULT_ROOT={guard.DEFAULT_ROOT!r} 下找不到 .css 文件 "
+            f"({root_path})；R66 baseline guard 实际上空跑。",
+        )
+
+    def test_pre_commit_files_glob_matches_default_root(self) -> None:
+        """``.pre-commit-config.yaml`` 的 ``files`` glob 必须以
+        ``DEFAULT_ROOT`` 作为前缀（normalise / 转义后比较），否则两条
+        路径会再次漂移分裂（R88 的两个 silent broken 修复必须同步）。
+        """
+        config_text = (REPO_ROOT / ".pre-commit-config.yaml").read_text(
+            encoding="utf-8"
+        )
+        expected_prefix = f"^{guard.DEFAULT_ROOT}/"
+        self.assertIn(
+            expected_prefix,
+            config_text,
+            f"找不到 ``files: {expected_prefix}...`` 风格的 hook 配置。"
+            f" R88 修复后 ``.pre-commit-config.yaml`` 与脚本默认 "
+            f"``DEFAULT_ROOT={guard.DEFAULT_ROOT!r}`` 必须一起以同一个前缀指向 "
+            f"src/ 布局；任何一边改了，另一边必须同步改。",
+        )
+
+
 if __name__ == "__main__":
     # patch 避免 pre-commit 测试在 isolated 环境里找不到 sys.path 注入
     with patch.dict(sys.modules, {"check_brand_color_consistency": guard}):

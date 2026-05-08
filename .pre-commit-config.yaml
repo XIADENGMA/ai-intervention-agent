@@ -52,12 +52,18 @@ repos:
 
   # R66：CSS 品牌色硬编码漂移检测器（local hook）。
   #
-  # 背景：static/css/main.css 里历史遗留 34 处 ``rgba(0, 122, 255, X)``
-  # （iOS 系统蓝），与项目品牌色（dark mode 紫 #a855f7 / light mode
-  # Anthropic Orange #d97757）不符。R64/R65 先为 7 个高频组件加了
-  # ``[data-theme='light']`` override，但底层硬编码替换风险大、推迟到
-  # 后续 PR 渐进重构。本 hook 防止「PR 又新增更多 iOS 蓝硬编码」的
-  # 倒退（参见 scripts/check_brand_color_consistency.py 的 docstring）。
+  # 背景：``src/ai_intervention_agent/static/css/main.css`` 里历史遗留
+  # 34 处 ``rgba(0, 122, 255, X)``（iOS 系统蓝），与项目品牌色（dark
+  # mode 紫 #a855f7 / light mode Anthropic Orange #d97757）不符。
+  # R64/R65 先为 7 个高频组件加了 ``[data-theme='light']`` override，
+  # 但底层硬编码替换风险大、推迟到后续 PR 渐进重构。本 hook 防止
+  # 「PR 又新增更多 iOS 蓝硬编码」的倒退（参见
+  # scripts/check_brand_color_consistency.py 的 docstring）。
+  #
+  # R88：R76 把 ``static/`` 从仓库根挪进 ``src/ai_intervention_agent/``
+  # 包内（PyPA src/ 布局），原 ``files: ^static/css/...`` 与脚本默认
+  # ``DEFAULT_ROOT = "static/css"`` 在新布局下都不再 match，hook 已
+  # silently broken。修正后两者均指向新位置。
   #
   # ``--quiet`` 让 hook 在 baseline 通过时不输出，pre-commit 友好。
   - repo: local
@@ -67,5 +73,5 @@ repos:
         entry: uv run python scripts/check_brand_color_consistency.py --quiet
         language: system
         pass_filenames: false
-        files: ^static/css/.*\.css$
+        files: ^src/ai_intervention_agent/static/css/.*\.css$
         exclude: \.min\.css$
