@@ -506,6 +506,10 @@
   }
 
   // P9·L5·G1：``pseudo`` 作为一等标签（与 static/js/i18n.js 一致）。
+  // R72-D · CodeQL js/client-side-request-forgery 修复：未知 lang 一律
+  // 折叠到 DEFAULT_LANG，禁止未知字符串透传到任何 fetch URL。和
+  // static/js/i18n.js::normalizeLang 行为保持一致；详见
+  // docs/security-triage-r72.md row 35。
   function normalizeLang(raw) {
     var s = String(raw || '')
       .trim()
@@ -513,7 +517,7 @@
     if (s === 'pseudo' || s === 'xx-ac' || s === 'xx') return 'pseudo'
     if (s.indexOf('zh') === 0) return 'zh-CN'
     if (s.indexOf('en') === 0) return 'en'
-    return s || DEFAULT_LANG
+    return DEFAULT_LANG
   }
 
   function registerLocale(lang, data) {

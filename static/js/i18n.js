@@ -614,6 +614,14 @@
   // 把常见 BCP-47 输入归一化到本仓库支持的语言 tag。
   // P9·L5·G1：``pseudo`` 是一等 tag（工具生成的 pseudo-locale），
   // 同时把 Chrome a11y devtools 使用的别名 ``xx-AC`` 也折叠到 ``pseudo``。
+  //
+  // R72-D · CodeQL js/client-side-request-forgery #35 修复：``loadLocale``
+  // 之前会把 normalizeLang 返回的 lang 拼进 fetch URL（``_localeBaseUrl + '/' +
+  // lang + '.json'``）；老 fallback ``return s || DEFAULT_LANG`` 让任意
+  // 非 zh/en/pseudo 字符串原样回传，理论上 ``lang='evil/path'`` 能让浏览器
+  // fetch ``<base>/evil/path.json``（同源、攻击面有限，但仍是 unfettered
+  // attacker-controlled URL）。改为：所有 zh/en/pseudo 之外的输入都折叠到
+  // DEFAULT_LANG，让 fetch 路径只能落在已知 locale 文件上。
   function normalizeLang(raw) {
     var s = String(raw || '')
       .trim()
@@ -621,7 +629,7 @@
     if (s === 'pseudo' || s === 'xx-ac' || s === 'xx') return 'pseudo'
     if (s.indexOf('zh') === 0) return 'zh-CN'
     if (s.indexOf('en') === 0) return 'en'
-    return s || DEFAULT_LANG
+    return DEFAULT_LANG
   }
 
   function registerLocale(lang, data) {

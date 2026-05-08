@@ -8,14 +8,14 @@
 
 ## Summary
 
-54 alerts were OPEN before the sweep:
+54 alerts were OPEN before the sweep. End-state after R72-A → R72-D:
 
-| Disposition          | Count | Action                                                |
-| -------------------- | ----- | ----------------------------------------------------- |
-| **Fixed in code**    |  18   | R72-A (15 × log-injection) + R72-B (1 × stack-trace)  |
-| **False positive**   |  20   | dismissed via `gh api ... -X PATCH state=dismissed`   |
-| **Won't fix**        |   9   | OpenSSF Scorecard governance items, not code defects  |
-| **Open / follow-up** |   7   | tracked under R72-C (web-side XSS / property review)  |
+| Disposition          | Count | Action                                                                              |
+| -------------------- | ----- | ----------------------------------------------------------------------------------- |
+| **Fixed in code**    |  17   | R72-A (15 × log-injection) + R72-B (1 × stack-trace) + R72-D (1 × locale CSRF)      |
+| **False positive**   |  32   | dismissed via `gh api ... -X PATCH state=dismissed` (R72-C 23 + R72-D 9)            |
+| **Won't fix**        |   5   | OpenSSF Scorecard governance items, not code defects (`#38 #39 #40 #41 #44`)        |
+| **Open / follow-up** |   0   | sweep is closed; new alerts will be triaged in a follow-up `docs/security-triage-*.md` |
 
 ## R72-A — global stdlib-log injection mitigation (15 fixes)
 
@@ -142,17 +142,25 @@ one-sentence justification we sent in the dismissal comment.
 | #51  | js/remote-property-injection      | `static/js/multi_task.js:2456`                      | Property name is the toast event type literal (`error` / `info` / `success`); finite enum, not user-shaped.                                                                                                                    |
 | #52  | js/remote-property-injection      | `static/js/multi_task.js:2473`                      | Same toast-type dispatch.                                                                                                                                                                                                       |
 
-## R72-D — Open / follow-up (deliberately deferred to a later cycle)
+## R72-D — Resolved follow-up (was deferred, now closed)
 
-These need a real refactor or a wider audit that would dilute this
-commit. Tracked here so they're not forgotten.
+Originally tracked as "needs a wider audit" in a separate cycle. The
+audit was done in this same R72 sweep — outcomes below.
 
-| #     | Rule                          | Path                                          | Reason for deferral                                                                                                                                            |
-| ----- | ----------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #20   | js/xss-through-dom            | `packages/vscode/i18n.js:846`                 | Likely false positive (DOM textContent write), but the pattern is in vendored-from-static i18n.js code; needs a side-by-side audit with `static/js/i18n.js`. |
-| #21   | js/xss-through-dom            | `static/js/dom-security.js:409`               | Re-reentry path of `setHtml` with caller-marked-trusted markdown; needs a focused audit of trust-boundary annotations.                                         |
-| #22–#28 | js/xss-through-dom          | `packages/vscode/webview-ui.js` × 6 + `static/js/i18n.js:1007` | Same family as #20/#21, batched.                                                                                                                                |
-| #35   | js/client-side-request-forgery | `static/js/i18n.js:1056`                      | Locale-fetch URL constructed from user-supplied locale string; needs a positive-list of locales to be enforced on both ends.                                  |
+### Code fix shipped
+
+| #   | Rule                           | Path                                                                       | Resolution                                                                                                                                                             |
+| --- | ------------------------------ | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #35 | js/client-side-request-forgery | `static/js/i18n.js::normalizeLang` and `packages/vscode/i18n.js::normalizeLang` | Added a strict whitelist (`pseudo` / `zh*` / `en*`); any other input now folds to `DEFAULT_LANG`. Locked by `tests/test_i18n_normalize_lang_csrf_r72d.py` (Node sandbox). |
+
+### Dismissed as false positive
+
+| #         | Rule                | Path                                  | Reason FP                                                                                                                                            |
+| --------- | ------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #20       | js/xss-through-dom  | `packages/vscode/i18n.js:846`         | Mirror of #27: this is the `data-i18n-html` opt-in channel; the `innerHTML` value is the value of a server-controlled `static/locales/*.json` entry. |
+| #21       | js/xss-through-dom  | `static/js/dom-security.js:409`       | `img.src = previewUrl` is a URL, not an HTML string; the URL is a local blob URL minted from a user-uploaded image. CodeQL false-flags URL-as-DOM-text. |
+| #22 – #26, #28 | js/xss-through-dom | `packages/vscode/webview-ui.js` × 6 | All are `script.src = SOME_URL_CONST` writes where the URL constant is injected by the VS Code extension as a `vscode-resource://...` URL (extension-trusted) and the script tag carries a CSP nonce. |
+| #27       | js/xss-through-dom  | `static/js/i18n.js:1007`              | The `data-i18n-html` opt-in channel: only DOM nodes that explicitly request HTML (instead of the safer `data-i18n` text channel) reach this code path; values are server-controlled `locales/*.json`. The inline `AIIA-XSS-SAFE` comment documents the trust boundary. |
 
 ## R72-E — OpenSSF Scorecard governance items (won't fix in code)
 
