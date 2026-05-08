@@ -52,6 +52,13 @@ def test_sse_normal_state_logs_are_debug_gated() -> None:
 
 def test_debug_log_handles_missing_console_without_reference_error() -> None:
     debug_body = _extract_debug_log(_read_source())
-    assert "typeof console === 'undefined'" in debug_body
+    # 同时接受单/双引号字面量：测试锁住 typeof guard 语义，而不是引号风格。
+    # Prettier 默认 singleQuote=false 会把字面量整体改成双引号，重写文件时
+    # 这条不应假阴。
+    assert re.search(r"typeof console === ['\"]undefined['\"]", debug_body), (
+        "missing typeof console === 'undefined'/\"undefined\" guard"
+    )
     assert "!console" not in debug_body
-    assert "typeof console.debug !== 'function'" in debug_body
+    assert re.search(r"typeof console\.debug !== ['\"]function['\"]", debug_body), (
+        "missing typeof console.debug !== 'function'/\"function\" guard"
+    )

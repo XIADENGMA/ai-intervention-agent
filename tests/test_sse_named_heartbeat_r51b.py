@@ -129,19 +129,21 @@ class TestFrontendHeartbeatListener(unittest.TestCase):
     def test_multi_task_js_has_heartbeat_listener(self) -> None:
         path = REPO_ROOT / "static" / "js" / "multi_task.js"
         src = path.read_text(encoding="utf-8")
-        self.assertIn(
-            "addEventListener('heartbeat'",
+        # 引号风格无关：Prettier 默认双引号 + 项目内未强制 singleQuote。锁
+        # 住「listener 存在」即可，避免 reformat 整个文件就让回归测假阴。
+        self.assertRegex(
             src,
-            "multi_task.js 必须注册 'heartbeat' listener（R51-B）",
+            r"addEventListener\(['\"]heartbeat['\"]",
+            "multi_task.js 必须注册 heartbeat listener（R51-B）",
         )
 
     def test_extension_ts_handles_heartbeat(self) -> None:
         path = REPO_ROOT / "packages" / "vscode" / "extension.ts"
         src = path.read_text(encoding="utf-8")
-        self.assertIn(
-            "evType === 'heartbeat'",
+        self.assertRegex(
             src,
-            "extension.ts 必须处理 evType === 'heartbeat' 分支（R51-B）",
+            r"evType === ['\"]heartbeat['\"]",
+            "extension.ts 必须处理 evType === heartbeat 分支（R51-B）",
         )
         self.assertIn(
             "sse.heartbeat",

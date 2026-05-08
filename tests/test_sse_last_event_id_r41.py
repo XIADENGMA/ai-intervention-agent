@@ -291,7 +291,9 @@ class TestFrontendResumeLiterals(unittest.TestCase):
 
     def test_webview_ui_handles_gap_warning(self) -> None:
         self.assertIn("gap_warning", self.webview_ui)
-        self.assertIn("'gap_warning'", self.webview_ui)
+        # 同时接受单/双引号字面量：测试只锁「以字符串字面量形式提到 gap_warning
+        # 事件名（区分于注释里写的字面单词）」，不锁引号风格。Prettier 默认双引号。
+        self.assertRegex(self.webview_ui, r"['\"]gap_warning['\"]")
 
     # multi_task.js（PWA 端）
     def test_multi_task_tracks_last_event_id(self) -> None:
@@ -301,14 +303,15 @@ class TestFrontendResumeLiterals(unittest.TestCase):
 
     def test_multi_task_handles_gap_warning(self) -> None:
         self.assertIn("gap_warning", self.multi_task)
-        self.assertIn("'gap_warning'", self.multi_task)
+        self.assertRegex(self.multi_task, r"['\"]gap_warning['\"]")
 
     # extension.ts（VSCode Node SSE 端）
     def test_extension_ts_tracks_last_event_id(self) -> None:
         self.assertIn("_lastEventId", self.extension_ts)
         self.assertIn("last_event_id=", self.extension_ts)
         # Node 端没有 EventSource 自动 e.lastEventId，必须手动解析 ``id:`` 行
-        self.assertIn("'id:'", self.extension_ts)
+        # （字面量形式，引号风格不限——Prettier 默认双引号）
+        self.assertRegex(self.extension_ts, r"['\"]id:['\"]")
 
     def test_extension_ts_sets_last_event_id_header_on_reconnect(self) -> None:
         # SSE 标准 header（HTML Living Standard 4.13.4）：浏览器自动带

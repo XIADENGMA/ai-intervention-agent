@@ -189,9 +189,12 @@ class TestFrontendListenersExist(unittest.TestCase):
         source = (REPO_ROOT / "static" / "js" / "multi_task.js").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            "addEventListener('config_changed'",
+        # 同时接受单/双引号字面量：测试锁住「listener 存在」语义，而不是引号风格。
+        # Prettier 默认 `singleQuote: false` 会把整个文件改成双引号；当文件被
+        # 大规模 reformat 时不应让本测试假阴。
+        self.assertRegex(
             source,
+            r"addEventListener\(['\"]config_changed['\"]",
             "multi_task.js 必须监听 config_changed SSE 事件，给浏览器用户提示",
         )
 
