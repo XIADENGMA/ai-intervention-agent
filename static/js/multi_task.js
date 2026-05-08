@@ -57,205 +57,205 @@
 
 // ==================== 全局变量定义 ====================
 // 使用 window 对象确保变量在全局作用域中可用
-if (typeof window.currentTasks === 'undefined') {
-  window.currentTasks = [] // 所有任务列表
+if (typeof window.currentTasks === "undefined") {
+  window.currentTasks = []; // 所有任务列表
 }
-if (typeof window.activeTaskId === 'undefined') {
-  window.activeTaskId = null // 当前活动任务ID
+if (typeof window.activeTaskId === "undefined") {
+  window.activeTaskId = null; // 当前活动任务ID
 }
-if (typeof window.taskCountdowns === 'undefined') {
-  window.taskCountdowns = {} // 每个任务的独立倒计时
+if (typeof window.taskCountdowns === "undefined") {
+  window.taskCountdowns = {}; // 每个任务的独立倒计时
 }
-if (typeof window.tasksPollingTimer === 'undefined') {
-  window.tasksPollingTimer = null // 任务轮询定时器
+if (typeof window.tasksPollingTimer === "undefined") {
+  window.tasksPollingTimer = null; // 任务轮询定时器
 }
-if (typeof window.taskTextareaContents === 'undefined') {
-  window.taskTextareaContents = {} // 存储每个任务的 textarea 内容
+if (typeof window.taskTextareaContents === "undefined") {
+  window.taskTextareaContents = {}; // 存储每个任务的 textarea 内容
 }
-if (typeof window.taskOptionsStates === 'undefined') {
-  window.taskOptionsStates = {} // 存储每个任务的选项勾选状态
+if (typeof window.taskOptionsStates === "undefined") {
+  window.taskOptionsStates = {}; // 存储每个任务的选项勾选状态
 }
-if (typeof window.taskImages === 'undefined') {
-  window.taskImages = {} // 存储每个任务的图片列表
+if (typeof window.taskImages === "undefined") {
+  window.taskImages = {}; // 存储每个任务的图片列表
 }
 // 新任务通知合并机制 - 防止频繁弹出多个通知
-if (typeof window.pendingNewTaskCount === 'undefined') {
-  window.pendingNewTaskCount = 0 // 待显示的新任务数量
+if (typeof window.pendingNewTaskCount === "undefined") {
+  window.pendingNewTaskCount = 0; // 待显示的新任务数量
 }
-if (typeof window.newTaskHintTimer === 'undefined') {
-  window.newTaskHintTimer = null // 通知合并定时器
+if (typeof window.newTaskHintTimer === "undefined") {
+  window.newTaskHintTimer = null; // 通知合并定时器
 }
-if (typeof window.hasLoadedTaskSnapshot === 'undefined') {
-  window.hasLoadedTaskSnapshot = false // 首次任务快照仅用于建立基线，不触发系统通知
+if (typeof window.hasLoadedTaskSnapshot === "undefined") {
+  window.hasLoadedTaskSnapshot = false; // 首次任务快照仅用于建立基线，不触发系统通知
 }
 // 【优化】服务器时间同步机制 - 解决切换标签页后倒计时不准的问题
-if (typeof window.serverTimeOffset === 'undefined') {
-  window.serverTimeOffset = 0 // 服务器时间与本地时间的偏移量（秒）
+if (typeof window.serverTimeOffset === "undefined") {
+  window.serverTimeOffset = 0; // 服务器时间与本地时间的偏移量（秒）
 }
 function _t(key, params) {
   try {
-    if (window.AIIA_I18N && typeof window.AIIA_I18N.t === 'function') {
-      return window.AIIA_I18N.t(key, params)
+    if (window.AIIA_I18N && typeof window.AIIA_I18N.t === "function") {
+      return window.AIIA_I18N.t(key, params);
     }
   } catch (_e) {
     /* noop */
   }
-  return key
+  return key;
 }
 
 function _debugLog() {
   if (
     !window.AIIA_DEBUG ||
-    typeof console === 'undefined' ||
-    typeof console.debug !== 'function'
+    typeof console === "undefined" ||
+    typeof console.debug !== "function"
   ) {
-    return
+    return;
   }
   try {
-    console.debug.apply(console, arguments)
+    console.debug.apply(console, arguments);
   } catch (_e) {
     /* noop */
   }
 }
 
-if (typeof window.taskDeadlines === 'undefined') {
-  window.taskDeadlines = {} // 存储每个任务的截止时间戳（服务器时间）
+if (typeof window.taskDeadlines === "undefined") {
+  window.taskDeadlines = {}; // 存储每个任务的截止时间戳（服务器时间）
 }
 // feedback 提示语（从服务端配置热更新获取）
 // 说明：后端 server_config.py 是唯一真源；这里的字段只是占位，实际值通过
 // /api/get-feedback-prompts 拉取。置空字符串避免前端携带硬编码中文，遇到请求失败时
 // 调用方（见 autoSubmitFeedback）会自行提示用户。
-if (typeof window.feedbackPrompts === 'undefined') {
+if (typeof window.feedbackPrompts === "undefined") {
   window.feedbackPrompts = {
-    resubmit_prompt: '',
-    prompt_suffix: ''
-  }
+    resubmit_prompt: "",
+    prompt_suffix: "",
+  };
 }
 // 自动提交退避：避免“超时 + 提交失败/429”导致的重复提交风暴
-if (typeof window.autoSubmitAttempted === 'undefined') {
-  window.autoSubmitAttempted = {} // task_id -> lastAttemptAt(ms)
+if (typeof window.autoSubmitAttempted === "undefined") {
+  window.autoSubmitAttempted = {}; // task_id -> lastAttemptAt(ms)
 }
 
 // ==================== marked.js 安全配置 ====================
 // 多任务模块可能会在 app.js 之前触发 Markdown 渲染，因此需要在此处提前完成安全配置：
 // - 禁用 Markdown 原生 HTML 渲染（避免 <style>/<iframe> 等注入造成 UI 污染）
 // - 关闭 mangle/headerIds，减少不必要的 DOM 变化
-if (typeof window.__aiiaMarkedSecurityConfigured === 'undefined') {
-  window.__aiiaMarkedSecurityConfigured = false
+if (typeof window.__aiiaMarkedSecurityConfigured === "undefined") {
+  window.__aiiaMarkedSecurityConfigured = false;
 }
 
 function configureMarkedSecurityOnce() {
-  if (window.__aiiaMarkedSecurityConfigured) return
-  if (typeof marked === 'undefined' || !marked) return
+  if (window.__aiiaMarkedSecurityConfigured) return;
+  if (typeof marked === "undefined" || !marked) return;
 
   try {
-    if (typeof marked.use === 'function') {
+    if (typeof marked.use === "function") {
       marked.use({
         renderer: {
           html() {
-            return ''
-          }
-        }
-      })
+            return "";
+          },
+        },
+      });
     }
-    if (typeof marked.setOptions === 'function') {
-      marked.setOptions({ mangle: false, headerIds: false })
+    if (typeof marked.setOptions === "function") {
+      marked.setOptions({ mangle: false, headerIds: false });
     }
-    window.__aiiaMarkedSecurityConfigured = true
+    window.__aiiaMarkedSecurityConfigured = true;
   } catch (e) {
     // 忽略：配置失败不应影响主流程
   }
 }
 
-configureMarkedSecurityOnce()
+configureMarkedSecurityOnce();
 
 // ==================== Favicon 徽章 ====================
-var _faviconState = { original: null, lastCount: -1 }
+var _faviconState = { original: null, lastCount: -1 };
 
 function _loadOriginalFavicon() {
-  if (_faviconState.original) return Promise.resolve(_faviconState.original)
-  return new Promise(resolve => {
+  if (_faviconState.original) return Promise.resolve(_faviconState.original);
+  return new Promise((resolve) => {
     var link =
       document.querySelector('link[rel="icon"]') ||
-      document.querySelector('link[rel="shortcut icon"]')
-    var href = link ? link.href : '/favicon.ico'
-    var img = new Image()
-    img.crossOrigin = 'anonymous'
+      document.querySelector('link[rel="shortcut icon"]');
+    var href = link ? link.href : "/favicon.ico";
+    var img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = function () {
-      _faviconState.original = img
-      resolve(img)
-    }
+      _faviconState.original = img;
+      resolve(img);
+    };
     img.onerror = function () {
-      resolve(null)
-    }
-    img.src = href
-  })
+      resolve(null);
+    };
+    img.src = href;
+  });
 }
 
 function updateFaviconBadge(count) {
-  count = Math.max(0, Math.floor(count) || 0)
-  if (count === _faviconState.lastCount) return
-  _faviconState.lastCount = count
+  count = Math.max(0, Math.floor(count) || 0);
+  if (count === _faviconState.lastCount) return;
+  _faviconState.lastCount = count;
 
   _loadOriginalFavicon().then(function (img) {
-    var size = 32
-    var canvas = document.createElement('canvas')
-    canvas.width = size
-    canvas.height = size
-    var ctx = canvas.getContext('2d')
-    if (!ctx) return
+    var size = 32;
+    var canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    var ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-    if (img) ctx.drawImage(img, 0, 0, size, size)
+    if (img) ctx.drawImage(img, 0, 0, size, size);
 
     if (count > 0) {
-      var text = count > 99 ? '99+' : String(count)
-      var radius = text.length > 2 ? 10 : 8
-      var cx = size - radius
-      var cy = radius
+      var text = count > 99 ? "99+" : String(count);
+      var radius = text.length > 2 ? 10 : 8;
+      var cx = size - radius;
+      var cy = radius;
 
-      ctx.beginPath()
-      ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
-      ctx.fillStyle = '#ef4444'
-      ctx.fill()
-      ctx.lineWidth = 1.5
-      ctx.strokeStyle = '#fff'
-      ctx.stroke()
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = "#ef4444";
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
 
-      ctx.fillStyle = '#fff'
-      ctx.font = 'bold ' + (text.length > 2 ? 8 : 10) + 'px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(text, cx, cy + 0.5)
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold " + (text.length > 2 ? 8 : 10) + "px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, cx, cy + 0.5);
     }
 
-    var link = document.querySelector('link[rel="icon"]')
+    var link = document.querySelector('link[rel="icon"]');
     if (!link) {
-      link = document.createElement('link')
-      link.rel = 'icon'
-      document.head.appendChild(link)
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
     }
     try {
-      link.href = canvas.toDataURL('image/png')
+      link.href = canvas.toDataURL("image/png");
     } catch (e) {
       /* CSP/安全限制 */
     }
-  })
+  });
 }
 
 // 创建本地引用以便在函数中使用
-var currentTasks = window.currentTasks
-var activeTaskId = window.activeTaskId
-var taskCountdowns = window.taskCountdowns
-var tasksPollingTimer = window.tasksPollingTimer
-var taskTextareaContents = window.taskTextareaContents
-var taskOptionsStates = window.taskOptionsStates
-var taskImages = window.taskImages
-var pendingNewTaskCount = window.pendingNewTaskCount
-var newTaskHintTimer = window.newTaskHintTimer
-var hasLoadedTaskSnapshot = window.hasLoadedTaskSnapshot
-var feedbackPrompts = window.feedbackPrompts
-var autoSubmitAttempted = window.autoSubmitAttempted
-var pendingDeepLinkedTaskId = getDeepLinkedTaskIdFromUrl()
+var currentTasks = window.currentTasks;
+var activeTaskId = window.activeTaskId;
+var taskCountdowns = window.taskCountdowns;
+var tasksPollingTimer = window.tasksPollingTimer;
+var taskTextareaContents = window.taskTextareaContents;
+var taskOptionsStates = window.taskOptionsStates;
+var taskImages = window.taskImages;
+var pendingNewTaskCount = window.pendingNewTaskCount;
+var newTaskHintTimer = window.newTaskHintTimer;
+var hasLoadedTaskSnapshot = window.hasLoadedTaskSnapshot;
+var feedbackPrompts = window.feedbackPrompts;
+var autoSubmitAttempted = window.autoSubmitAttempted;
+var pendingDeepLinkedTaskId = getDeepLinkedTaskIdFromUrl();
 
 /**
  * 从 URL 查询参数读取待跳转任务 ID。
@@ -267,45 +267,49 @@ var pendingDeepLinkedTaskId = getDeepLinkedTaskIdFromUrl()
  */
 function getDeepLinkedTaskIdFromUrl() {
   try {
-    if (!window.location || !window.location.search) return ''
-    const params = new URLSearchParams(window.location.search)
-    const raw = params.get('task_id') || params.get('taskId') || params.get('tid') || ''
-    const taskId = String(raw).trim()
+    if (!window.location || !window.location.search) return "";
+    const params = new URLSearchParams(window.location.search);
+    const raw =
+      params.get("task_id") || params.get("taskId") || params.get("tid") || "";
+    const taskId = String(raw).trim();
     // 仅做长度保护，不限制字符集；task_id 可能包含项目名、UUID、短横线等。
-    return taskId.length <= 200 ? taskId : ''
+    return taskId.length <= 200 ? taskId : "";
   } catch (_e) {
-    return ''
+    return "";
   }
 }
 
 function tryApplyDeepLinkedTask(tasks) {
   if (!pendingDeepLinkedTaskId || !Array.isArray(tasks) || tasks.length === 0) {
-    return false
+    return false;
   }
 
   const target = tasks.find(
-    task => task && task.task_id === pendingDeepLinkedTaskId && task.status !== 'completed'
-  )
+    (task) =>
+      task &&
+      task.task_id === pendingDeepLinkedTaskId &&
+      task.status !== "completed",
+  );
   if (!target) {
     // 任务可能还没从后端快照恢复出来，保留 pending，下一轮轮询继续尝试。
-    return false
+    return false;
   }
 
-  const targetTaskId = pendingDeepLinkedTaskId
-  pendingDeepLinkedTaskId = ''
+  const targetTaskId = pendingDeepLinkedTaskId;
+  pendingDeepLinkedTaskId = "";
 
   if (targetTaskId === activeTaskId) {
-    loadTaskDetails(targetTaskId)
-    return true
+    loadTaskDetails(targetTaskId);
+    return true;
   }
 
-  console.log(`Deep link target task detected: ${targetTaskId}`)
+  console.log(`Deep link target task detected: ${targetTaskId}`);
   setTimeout(() => {
-    switchTask(targetTaskId).catch(error => {
-      console.error('Deep link task switch failed:', error)
-    })
-  }, 0)
-  return true
+    switchTask(targetTaskId).catch((error) => {
+      console.error("Deep link task switch failed:", error);
+    });
+  }, 0);
+  return true;
 }
 
 /**
@@ -316,60 +320,70 @@ function tryApplyDeepLinkedTask(tasks) {
  */
 async function fetchFeedbackPromptsFresh() {
   try {
-    const resp = await fetchWithTimeout('/api/get-feedback-prompts', { cache: 'no-store' }, 10000)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const data = await resp.json()
-    if (data && data.status === 'success' && data.config) {
-      window.feedbackPrompts = data.config
-      feedbackPrompts = window.feedbackPrompts
+    const resp = await fetchWithTimeout(
+      "/api/get-feedback-prompts",
+      { cache: "no-store" },
+      10000,
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data && data.status === "success" && data.config) {
+      window.feedbackPrompts = data.config;
+      feedbackPrompts = window.feedbackPrompts;
 
       // 同步“当前实际使用的配置文件路径”到设置面板（如果存在对应DOM）
       if (data.meta && data.meta.config_file) {
-        const el = document.getElementById('config-file-path')
+        const el = document.getElementById("config-file-path");
         if (el) {
-          el.value = data.meta.config_file
+          el.value = data.meta.config_file;
         }
       }
-      return window.feedbackPrompts
+      return window.feedbackPrompts;
     }
   } catch (e) {
-    console.warn('Failed to fetch feedback prompts; using in-memory defaults:', e)
+    console.warn(
+      "Failed to fetch feedback prompts; using in-memory defaults:",
+      e,
+    );
   }
-  return window.feedbackPrompts
+  return window.feedbackPrompts;
 }
 
 // 倒计时相关全局变量
-if (typeof window.remainingSeconds === 'undefined') {
-  window.remainingSeconds = 0
+if (typeof window.remainingSeconds === "undefined") {
+  window.remainingSeconds = 0;
 }
-if (typeof window.countdownTimer === 'undefined') {
-  window.countdownTimer = null
+if (typeof window.countdownTimer === "undefined") {
+  window.countdownTimer = null;
 }
-var remainingSeconds = window.remainingSeconds
-var countdownTimer = window.countdownTimer
+var remainingSeconds = window.remainingSeconds;
+var countdownTimer = window.countdownTimer;
 
 /**
  * 更新倒计时显示（如果函数未定义则提供默认实现）
  * @param {number} seconds - 剩余秒数（可选）
  */
-if (typeof window.updateCountdownDisplay !== 'function') {
+if (typeof window.updateCountdownDisplay !== "function") {
   window.updateCountdownDisplay = function (seconds) {
-    const countdownContainer = document.getElementById('countdown-container')
-    const countdownText = document.getElementById('countdown-text')
+    const countdownContainer = document.getElementById("countdown-container");
+    const countdownText = document.getElementById("countdown-text");
 
-    if (!countdownContainer || !countdownText) return
+    if (!countdownContainer || !countdownText) return;
 
-    const displaySeconds = typeof seconds === 'number' ? seconds : window.remainingSeconds
+    const displaySeconds =
+      typeof seconds === "number" ? seconds : window.remainingSeconds;
 
     if (displaySeconds > 0) {
-      countdownText.textContent = _t('page.countdown', { seconds: displaySeconds })
-      countdownContainer.classList.remove('hidden')
+      countdownText.textContent = _t("page.countdown", {
+        seconds: displaySeconds,
+      });
+      countdownContainer.classList.remove("hidden");
     } else {
-      countdownContainer.classList.add('hidden')
+      countdownContainer.classList.add("hidden");
     }
-  }
+  };
 }
-var updateCountdownDisplay = window.updateCountdownDisplay
+var updateCountdownDisplay = window.updateCountdownDisplay;
 
 // ==================== SSE + 轮询混合模式 ====================
 //
@@ -377,113 +391,121 @@ var updateCountdownDisplay = window.updateCountdownDisplay
 // 立即拉取 /api/tasks 获取最新数据。SSE 不可用时自动降级为短间隔轮询。
 // SSE 连接期间仍保留一个低频保底轮询（30s），防止事件丢失。
 
-var TASKS_POLL_BASE_MS = 2000
-var TASKS_POLL_MAX_MS = 30000
-var TASKS_POLL_SSE_FALLBACK_MS = 30000
+var TASKS_POLL_BASE_MS = 2000;
+var TASKS_POLL_MAX_MS = 30000;
+var TASKS_POLL_SSE_FALLBACK_MS = 30000;
 // 单次 /api/tasks 请求的硬超时；超时后 abort，避免半开连接 hang 住整个轮询机制。
 // 与 packages/vscode/webview-ui.js 的 POLL_TASKS_TIMEOUT_MS 对齐（6s）。
-var TASKS_POLL_TIMEOUT_MS = 6000
-var tasksPollBackoffMs = TASKS_POLL_BASE_MS
-var tasksPollAbortController = null
-var tasksPollVisibilityHandlerInstalled = false
+var TASKS_POLL_TIMEOUT_MS = 6000;
+var tasksPollBackoffMs = TASKS_POLL_BASE_MS;
+var tasksPollAbortController = null;
+var tasksPollVisibilityHandlerInstalled = false;
 
 // SSE 连接状态
-var _sseSource = null
-var _sseConnected = false
-var _sseReconnectTimer = null
-var _sseReconnectDelay = 1000
+var _sseSource = null;
+var _sseConnected = false;
+var _sseReconnectTimer = null;
+var _sseReconnectDelay = 1000;
 // R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
 // 浏览器 EventSource 自动填 ``e.lastEventId``，但因为我们的 onerror →
 // close → new EventSource 走主动重连路径（不是浏览器 retry），自带的
 // ``Last-Event-ID`` header 不会注入；通过 URL ``?last_event_id=`` query
 // 让服务端从 history ring buffer 里补发缺失事件。
 // gap_warning (id=-1) 不会进这里：服务端只为正整数 id 输出 ``id:`` 行。
-var _lastEventId = null
+var _lastEventId = null;
 
 function _connectSSE() {
-  if (typeof EventSource === 'undefined') return
+  if (typeof EventSource === "undefined") return;
   if (_sseSource) {
     try {
-      _sseSource.close()
+      _sseSource.close();
     } catch (_) {
       /* noop */
     }
-    _sseSource = null
+    _sseSource = null;
   }
 
   // R40-S2：拼 last_event_id 让 server 走 history resume 路径。
   // 同 packages/vscode/webview-ui.js 的同名逻辑，原因相同（手动 reconnect
   // 不触发浏览器自动 Last-Event-ID header）。
-  var sseUrl = '/api/events'
+  var sseUrl = "/api/events";
   if (_lastEventId) {
-    var sep = sseUrl.indexOf('?') >= 0 ? '&' : '?'
-    sseUrl += sep + 'last_event_id=' + encodeURIComponent(_lastEventId)
+    var sep = sseUrl.indexOf("?") >= 0 ? "&" : "?";
+    sseUrl += sep + "last_event_id=" + encodeURIComponent(_lastEventId);
   }
-  var source = new EventSource(sseUrl)
-  _sseSource = source
+  var source = new EventSource(sseUrl);
+  _sseSource = source;
 
   source.onopen = function () {
-    if (_sseSource !== source) return
-    _sseConnected = true
-    _sseReconnectDelay = 1000
-    _debugLog('SSE connected; polling degraded to safety-net mode (30s)')
-    tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS
+    if (_sseSource !== source) return;
+    _sseConnected = true;
+    _sseReconnectDelay = 1000;
+    _debugLog("SSE connected; polling degraded to safety-net mode (30s)");
+    tasksPollBackoffMs = TASKS_POLL_SSE_FALLBACK_MS;
     if (tasksPollingTimer) {
-      clearTimeout(tasksPollingTimer)
-      scheduleNextTasksPoll(TASKS_POLL_SSE_FALLBACK_MS)
+      clearTimeout(tasksPollingTimer);
+      scheduleNextTasksPoll(TASKS_POLL_SSE_FALLBACK_MS);
     }
-  }
+  };
 
-  var _sseDebounceTimer = null
-  source.addEventListener('task_changed', function (e) {
-    if (_sseSource !== source) return
+  var _sseDebounceTimer = null;
+  source.addEventListener("task_changed", function (e) {
+    if (_sseSource !== source) return;
     // R40-S2：先存 lastEventId 再 debounce poll。空字符串视为没拿到（旧 server）。
-    if (e && typeof e.lastEventId === 'string' && e.lastEventId !== '') {
-      _lastEventId = e.lastEventId
+    if (e && typeof e.lastEventId === "string" && e.lastEventId !== "") {
+      _lastEventId = e.lastEventId;
     }
     try {
-      var detail = JSON.parse(e.data)
-      _debugLog('SSE task_changed:', detail.task_id, detail.old_status, '→', detail.new_status)
+      var detail = JSON.parse(e.data);
+      _debugLog(
+        "SSE task_changed:",
+        detail.task_id,
+        detail.old_status,
+        "→",
+        detail.new_status,
+      );
     } catch (_) {
       /* noop */
     }
-    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
     _sseDebounceTimer = setTimeout(function () {
-      _sseDebounceTimer = null
-      fetchAndApplyTasks('sse')
-    }, 80)
-  })
+      _sseDebounceTimer = null;
+      fetchAndApplyTasks("sse");
+    }, 80);
+  });
 
   // R40-S2：history evict 警告 → 立即 fetch 全量。这条事件不更新 _lastEventId
   // （id=-1 不会被浏览器自动填），不当 resume 锚点，避免死循环。
-  source.addEventListener('gap_warning', function (e) {
-    if (_sseSource !== source) return
-    _debugLog('SSE gap_warning received, fetching tasks for full resync')
+  source.addEventListener("gap_warning", function (e) {
+    if (_sseSource !== source) return;
+    _debugLog("SSE gap_warning received, fetching tasks for full resync");
     try {
-      var detail = JSON.parse(e.data)
-      _debugLog('SSE gap_warning detail:', detail)
+      var detail = JSON.parse(e.data);
+      _debugLog("SSE gap_warning detail:", detail);
     } catch (_) {
       /* noop */
     }
-    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+    if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
     _sseDebounceTimer = setTimeout(function () {
-      _sseDebounceTimer = null
-      fetchAndApplyTasks('sse-gap')
-    }, 0)
-  })
+      _sseDebounceTimer = null;
+      fetchAndApplyTasks("sse-gap");
+    }, 0);
+  });
 
   // R48：服务端检测到 config.toml 文件变更时（mtime 改变）会广播 ``config_changed``
   // SSE 事件。前端不强制 reload —— 已经热更新的字段（feedback / network_security）
   // 是无感生效的；其它字段的影响只能等下次 server 重启，reload 页面也无济于事。
   // 我们这里只做一行 toast 提示，让用户知道 "你的修改被服务端看到了"。
-  source.addEventListener('config_changed', function (e) {
-    if (_sseSource !== source) return
-    _debugLog('SSE config_changed received')
-    var hint = 'Configuration file changed. Reload the page to see the latest values.'
+  source.addEventListener("config_changed", function (e) {
+    if (_sseSource !== source) return;
+    _debugLog("SSE config_changed received");
+    var hint =
+      "Configuration file changed. Reload the page to see the latest values.";
     try {
-      var detail = JSON.parse(e && e.data ? e.data : '{}')
-      _debugLog('SSE config_changed detail:', detail)
-      if (detail && typeof detail.hint === 'string' && detail.hint) hint = detail.hint
+      var detail = JSON.parse(e && e.data ? e.data : "{}");
+      _debugLog("SSE config_changed detail:", detail);
+      if (detail && typeof detail.hint === "string" && detail.hint)
+        hint = detail.hint;
     } catch (_) {
       /* noop：detail 解析失败 → 用 fallback hint */
     }
@@ -491,223 +513,246 @@ function _connectSSE() {
     // 顶部居中、带过渡动画的非阻塞 toast，自动 1.8s 消失，符合"提示但不打断"
     // 的 UX 诉求。VSCode Webview / 测试 stub 等场景里 helper 可能不存在，此时
     // 默默吞掉提示也比抛 ReferenceError 强 —— 主流程（task 列表更新）不会受影响。
-    if (typeof _showToast === 'function') {
-      try { _showToast(hint) } catch (_) { /* noop */ }
-    } else if (typeof console !== 'undefined' && console && console.info) {
-      try { console.info('[aiia] config_changed:', hint) } catch (_) { /* noop */ }
+    if (typeof _showToast === "function") {
+      try {
+        _showToast(hint);
+      } catch (_) {
+        /* noop */
+      }
+    } else if (typeof console !== "undefined" && console && console.info) {
+      try {
+        console.info("[aiia] config_changed:", hint);
+      } catch (_) {
+        /* noop */
+      }
     }
-  })
+  });
 
   // R51-B：监听 named-event heartbeat。服务端每 25 s 发一帧，data 里带 ts_unix。
   // 默认只 debug log（避免污染主控制台），但暴露这条 listener 让上层 / 测试 / 调试
   // 工具可以基于它估算 RTT、检测连接健康。
-  source.addEventListener('heartbeat', function (e) {
-    if (_sseSource !== source) return
+  source.addEventListener("heartbeat", function (e) {
+    if (_sseSource !== source) return;
     try {
-      var detail = JSON.parse(e && e.data ? e.data : '{}')
-      _debugLog('SSE heartbeat:', detail)
-    } catch (_) { /* noop */ }
-  })
-
-  source.onerror = function () {
-    if (_sseSource !== source) return
-    _sseConnected = false
-    try {
-      source.close()
+      var detail = JSON.parse(e && e.data ? e.data : "{}");
+      _debugLog("SSE heartbeat:", detail);
     } catch (_) {
       /* noop */
     }
-    _sseSource = null
-    _debugLog(
-      'SSE disconnected; falling back to short-interval polling, reconnecting in ' +
-        _sseReconnectDelay / 1000 +
-        's'
-    )
-    tasksPollBackoffMs = TASKS_POLL_BASE_MS
-    if (tasksPollingTimer) {
-      clearTimeout(tasksPollingTimer)
-      scheduleNextTasksPoll(0)
+  });
+
+  source.onerror = function () {
+    if (_sseSource !== source) return;
+    _sseConnected = false;
+    try {
+      source.close();
+    } catch (_) {
+      /* noop */
     }
-    if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer)
+    _sseSource = null;
+    _debugLog(
+      "SSE disconnected; falling back to short-interval polling, reconnecting in " +
+        _sseReconnectDelay / 1000 +
+        "s",
+    );
+    tasksPollBackoffMs = TASKS_POLL_BASE_MS;
+    if (tasksPollingTimer) {
+      clearTimeout(tasksPollingTimer);
+      scheduleNextTasksPoll(0);
+    }
+    if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer);
     _sseReconnectTimer = setTimeout(function () {
-      if (typeof document !== 'undefined' && document.hidden) return
-      _connectSSE()
-    }, _sseReconnectDelay)
-    _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2)
-  }
+      if (typeof document !== "undefined" && document.hidden) return;
+      _connectSSE();
+    }, _sseReconnectDelay);
+    _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2);
+  };
 }
 
 function _disconnectSSE() {
   if (_sseReconnectTimer) {
-    clearTimeout(_sseReconnectTimer)
-    _sseReconnectTimer = null
+    clearTimeout(_sseReconnectTimer);
+    _sseReconnectTimer = null;
   }
   if (_sseSource) {
     try {
-      _sseSource.close()
+      _sseSource.close();
     } catch (_) {
       /* noop */
     }
-    _sseSource = null
+    _sseSource = null;
   }
-  _sseConnected = false
+  _sseConnected = false;
 }
 
 function getNextBackoffMs(currentMs) {
-  var next = Math.min(TASKS_POLL_MAX_MS, Math.round(currentMs * 1.7))
-  var jitter = Math.round(next * 0.1 * Math.random())
-  return next + jitter
+  var next = Math.min(TASKS_POLL_MAX_MS, Math.round(currentMs * 1.7));
+  var jitter = Math.round(next * 0.1 * Math.random());
+  return next + jitter;
 }
 
 async function fetchAndApplyTasks(reason) {
   // 页面不可见：不发请求（由 visibilitychange 负责 stop，但这里再兜底）
-  if (typeof document !== 'undefined' && document.hidden) {
-    return false
+  if (typeof document !== "undefined" && document.hidden) {
+    return false;
   }
 
   // 手动切换期间：尽量少扰动 UI（不主动拉取）
   if (isManualSwitching) {
-    return false
+    return false;
   }
 
   // AbortController：保证同时最多 1 个 in-flight 的 /api/tasks 请求
   try {
-    if (tasksPollAbortController && typeof tasksPollAbortController.abort === 'function') {
-      tasksPollAbortController.abort()
+    if (
+      tasksPollAbortController &&
+      typeof tasksPollAbortController.abort === "function"
+    ) {
+      tasksPollAbortController.abort();
     }
   } catch (e) {
     // 忽略：部分浏览器/环境下 abort 可能抛异常
   }
 
-  if (typeof AbortController !== 'undefined') {
-    tasksPollAbortController = new AbortController()
+  if (typeof AbortController !== "undefined") {
+    tasksPollAbortController = new AbortController();
   } else {
-    tasksPollAbortController = null
+    tasksPollAbortController = null;
   }
 
   const fetchOptions = {
-    cache: 'no-store'
-  }
+    cache: "no-store",
+  };
   if (tasksPollAbortController) {
-    fetchOptions.signal = tasksPollAbortController.signal
+    fetchOptions.signal = tasksPollAbortController.signal;
   }
 
   // 硬超时护栏：服务端半开连接 / 网络黑洞会导致 fetch 永不返回，
   // 进而冻结 scheduleNextTasksPoll → 整个轮询机制失效（健康检查也无法识别，
   // 因为 tasksPollingTimer 仍为已 fired 的非 null ID）。
   // 6s 内未返回则强制 abort，让上层 backoff/重试逻辑接管。
-  let tasksTimeoutId = null
+  let tasksTimeoutId = null;
   if (tasksPollAbortController) {
     tasksTimeoutId = setTimeout(() => {
       try {
         if (tasksPollAbortController) {
-          tasksPollAbortController.abort()
+          tasksPollAbortController.abort();
         }
       } catch (e) {
         // 忽略：abort 可能因状态已变而抛异常
       }
-    }, TASKS_POLL_TIMEOUT_MS)
+    }, TASKS_POLL_TIMEOUT_MS);
   }
 
   try {
-    const response = await fetch('/api/tasks', fetchOptions)
+    const response = await fetch("/api/tasks", fetchOptions);
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new Error(`HTTP ${response.status}`);
     }
-    const data = await response.json()
+    const data = await response.json();
 
     if (data.success) {
       // 【优化】更新服务器时间偏移量，解决切换标签页后倒计时不准的问题
       if (data.server_time) {
-        const localTime = Date.now() / 1000
-        window.serverTimeOffset = data.server_time - localTime
+        const localTime = Date.now() / 1000;
+        window.serverTimeOffset = data.server_time - localTime;
         // 仅在偏移量较大时记录日志（避免日志刷屏）
         if (Math.abs(window.serverTimeOffset) > 1) {
-          console.log(`Server time offset: ${window.serverTimeOffset.toFixed(2)}s`)
+          console.log(
+            `Server time offset: ${window.serverTimeOffset.toFixed(2)}s`,
+          );
         }
       }
 
       // 【优化】保存每个任务的 deadline
       if (data.tasks) {
-        data.tasks.forEach(task => {
+        data.tasks.forEach((task) => {
           if (task.deadline) {
-            window.taskDeadlines[task.task_id] = task.deadline
+            window.taskDeadlines[task.task_id] = task.deadline;
           }
           // 【热更新】当后端同步更新 auto_resubmit_timeout 时，前端倒计时也要实时跟随
           // - deadline 已在上面更新，remaining 计算会随之变化
           // - 这里额外同步 total(timeout) 以保证圆环进度正确
-          if (taskCountdowns && taskCountdowns[task.task_id] && task.status !== 'completed') {
-            if (typeof task.auto_resubmit_timeout === 'number') {
+          if (
+            taskCountdowns &&
+            taskCountdowns[task.task_id] &&
+            task.status !== "completed"
+          ) {
+            if (typeof task.auto_resubmit_timeout === "number") {
               // <=0 语义：禁用自动提交（清理倒计时）
               if (task.auto_resubmit_timeout <= 0) {
                 try {
                   if (taskCountdowns[task.task_id].timer) {
-                    clearInterval(taskCountdowns[task.task_id].timer)
+                    clearInterval(taskCountdowns[task.task_id].timer);
                   }
                 } catch (e) {
                   // 忽略：定时器可能已被清理
                 }
-                delete taskCountdowns[task.task_id]
-                delete window.taskDeadlines[task.task_id]
+                delete taskCountdowns[task.task_id];
+                delete window.taskDeadlines[task.task_id];
               } else {
-                taskCountdowns[task.task_id].timeout = task.auto_resubmit_timeout
+                taskCountdowns[task.task_id].timeout =
+                  task.auto_resubmit_timeout;
               }
             }
-            if (typeof task.remaining_time === 'number' && taskCountdowns[task.task_id]) {
-              taskCountdowns[task.task_id].remaining = task.remaining_time
+            if (
+              typeof task.remaining_time === "number" &&
+              taskCountdowns[task.task_id]
+            ) {
+              taskCountdowns[task.task_id].remaining = task.remaining_time;
             }
           }
-        })
+        });
       }
 
-      updateTasksList(data.tasks)
-      updateTasksStats(data.stats)
+      updateTasksList(data.tasks);
+      updateTasksStats(data.stats);
       if (reason) {
-        console.debug(`Task list updated: ${reason}`)
+        console.debug(`Task list updated: ${reason}`);
       }
-      return true
+      return true;
     }
 
-    return false
+    return false;
   } catch (error) {
     // AbortError：正常的“防重叠”或“硬超时”路径，不计为错误
-    if (error && (error.name === 'AbortError' || error.code === 20)) {
-      return false
+    if (error && (error.name === "AbortError" || error.code === 20)) {
+      return false;
     }
-    console.error('Failed to fetch task list:', error)
-    return false
+    console.error("Failed to fetch task list:", error);
+    return false;
   } finally {
     // 清理硬超时定时器（成功路径与异常路径都需要）
     if (tasksTimeoutId !== null) {
       try {
-        clearTimeout(tasksTimeoutId)
+        clearTimeout(tasksTimeoutId);
       } catch (e) {
         // 忽略
       }
-      tasksTimeoutId = null
+      tasksTimeoutId = null;
     }
     // 释放 controller（避免长期持有）
-    tasksPollAbortController = null
+    tasksPollAbortController = null;
   }
 }
 
 function scheduleNextTasksPoll(delayMs) {
   if (tasksPollingTimer) {
-    clearTimeout(tasksPollingTimer)
-    tasksPollingTimer = null
+    clearTimeout(tasksPollingTimer);
+    tasksPollingTimer = null;
   }
   tasksPollingTimer = setTimeout(
     async () => {
-      const ok = await fetchAndApplyTasks('poll')
+      const ok = await fetchAndApplyTasks("poll");
       if (ok) {
-        tasksPollBackoffMs = TASKS_POLL_BASE_MS
+        tasksPollBackoffMs = TASKS_POLL_BASE_MS;
       } else {
-        tasksPollBackoffMs = getNextBackoffMs(tasksPollBackoffMs)
+        tasksPollBackoffMs = getNextBackoffMs(tasksPollBackoffMs);
       }
-      scheduleNextTasksPoll(tasksPollBackoffMs)
+      scheduleNextTasksPoll(tasksPollBackoffMs);
     },
-    Math.max(0, delayMs)
-  )
+    Math.max(0, delayMs),
+  );
 }
 
 /**
@@ -742,33 +787,35 @@ function scheduleNextTasksPoll(delayMs) {
  * - 页面卸载时应调用 `stopTasksPolling` 停止轮询
  */
 function startTasksPolling() {
-  if (typeof document !== 'undefined' && document.hidden) {
-    console.log('Page hidden; skip starting task polling')
-    return
+  if (typeof document !== "undefined" && document.hidden) {
+    console.log("Page hidden; skip starting task polling");
+    return;
   }
 
-  stopTasksPolling()
+  stopTasksPolling();
 
-  _connectSSE()
+  _connectSSE();
 
-  tasksPollBackoffMs = _sseConnected ? TASKS_POLL_SSE_FALLBACK_MS : TASKS_POLL_BASE_MS
-  scheduleNextTasksPoll(0)
+  tasksPollBackoffMs = _sseConnected
+    ? TASKS_POLL_SSE_FALLBACK_MS
+    : TASKS_POLL_BASE_MS;
+  scheduleNextTasksPoll(0);
 
-  if (!tasksPollVisibilityHandlerInstalled && typeof document !== 'undefined') {
-    tasksPollVisibilityHandlerInstalled = true
-    document.addEventListener('visibilitychange', function () {
+  if (!tasksPollVisibilityHandlerInstalled && typeof document !== "undefined") {
+    tasksPollVisibilityHandlerInstalled = true;
+    document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
-        stopTasksPolling()
+        stopTasksPolling();
       } else {
-        startTasksPolling()
+        startTasksPolling();
       }
-    })
-    window.addEventListener('beforeunload', function () {
-      stopTasksPolling()
-    })
+    });
+    window.addEventListener("beforeunload", function () {
+      stopTasksPolling();
+    });
   }
 
-  console.log('Task polling started (SSE preferred + polling safety-net)')
+  console.log("Task polling started (SSE preferred + polling safety-net)");
 }
 
 /**
@@ -795,38 +842,41 @@ function startTasksPolling() {
  */
 function stopTasksPolling() {
   if (tasksPollingTimer) {
-    clearTimeout(tasksPollingTimer)
-    tasksPollingTimer = null
+    clearTimeout(tasksPollingTimer);
+    tasksPollingTimer = null;
   }
 
   try {
-    if (tasksPollAbortController && typeof tasksPollAbortController.abort === 'function') {
-      tasksPollAbortController.abort()
+    if (
+      tasksPollAbortController &&
+      typeof tasksPollAbortController.abort === "function"
+    ) {
+      tasksPollAbortController.abort();
     }
   } catch (e) {
     // noop
   } finally {
-    tasksPollAbortController = null
+    tasksPollAbortController = null;
   }
 
-  _disconnectSSE()
+  _disconnectSSE();
 }
 
 // ==================== 任务列表更新 ====================
 
 // 防止轮询与手动切换冲突的标志
 // 同时暴露到 window 以便其他模块的内容轮询可以检查
-let isManualSwitching = false
-let manualSwitchingTimer = null
+let isManualSwitching = false;
+let manualSwitchingTimer = null;
 
 // 将标志同步到 window 对象，供跨模块通信
-Object.defineProperty(window, 'isManualSwitching', {
+Object.defineProperty(window, "isManualSwitching", {
   get: () => isManualSwitching,
-  set: val => {
-    isManualSwitching = val
+  set: (val) => {
+    isManualSwitching = val;
   },
-  configurable: true
-})
+  configurable: true,
+});
 
 /**
  * 更新任务列表
@@ -877,37 +927,37 @@ Object.defineProperty(window, 'isManualSwitching', {
  * - 倒计时是独立的，每个任务有自己的计时器
  */
 function updateTasksList(tasks) {
-  const oldTaskIds = currentTasks.map(t => t.task_id)
-  const newTaskIds = tasks.map(t => t.task_id)
-  const isInitialTaskSnapshot = !hasLoadedTaskSnapshot
+  const oldTaskIds = currentTasks.map((t) => t.task_id);
+  const newTaskIds = tasks.map((t) => t.task_id);
+  const isInitialTaskSnapshot = !hasLoadedTaskSnapshot;
 
   // 检测新任务
-  const addedTasks = newTaskIds.filter(id => !oldTaskIds.includes(id))
+  const addedTasks = newTaskIds.filter((id) => !oldTaskIds.includes(id));
   if (addedTasks.length > 0) {
-    console.log(`Detected ${addedTasks.length} new task(s)`)
+    console.log(`Detected ${addedTasks.length} new task(s)`);
 
     if (!isInitialTaskSnapshot) {
       // 如果当前有活动任务，使用合并机制避免短时间内频繁弹出多个通知
       if (activeTaskId) {
-        pendingNewTaskCount += addedTasks.length
-        window.pendingNewTaskCount = pendingNewTaskCount
+        pendingNewTaskCount += addedTasks.length;
+        window.pendingNewTaskCount = pendingNewTaskCount;
 
         if (newTaskHintTimer) {
-          clearTimeout(newTaskHintTimer)
+          clearTimeout(newTaskHintTimer);
         }
 
         newTaskHintTimer = setTimeout(() => {
           if (pendingNewTaskCount > 0) {
-            showNewTaskNotification(pendingNewTaskCount)
-            pendingNewTaskCount = 0
-            window.pendingNewTaskCount = 0
+            showNewTaskNotification(pendingNewTaskCount);
+            pendingNewTaskCount = 0;
+            window.pendingNewTaskCount = 0;
           }
-          newTaskHintTimer = null
-          window.newTaskHintTimer = null
-        }, 150)
-        window.newTaskHintTimer = newTaskHintTimer
+          newTaskHintTimer = null;
+          window.newTaskHintTimer = null;
+        }, 150);
+        window.newTaskHintTimer = newTaskHintTimer;
       } else {
-        showNewTaskNotification(addedTasks.length)
+        showNewTaskNotification(addedTasks.length);
       }
     }
 
@@ -915,155 +965,182 @@ function updateTasksList(tasks) {
     // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
     // 这样刷新页面后倒计时不会重置
     tasks
-      .filter(t => addedTasks.includes(t.task_id))
-      .forEach(task => {
-        if (task.status !== 'completed' && !taskCountdowns[task.task_id]) {
+      .filter((t) => addedTasks.includes(t.task_id))
+      .forEach((task) => {
+        if (task.status !== "completed" && !taskCountdowns[task.task_id]) {
           // 优先使用 remaining_time（服务器计算的剩余时间），否则使用 auto_resubmit_timeout；
           // 末位 fallback 用 server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240)，
           // 不是旧 MAX (250)。
-          const timeout = task.remaining_time ?? task.auto_resubmit_timeout ?? 240
-          startTaskCountdown(task.task_id, timeout, task.auto_resubmit_timeout || 240)
-          console.log(`Started countdown for new task: ${task.task_id}, remaining ${timeout}s`)
+          const timeout =
+            task.remaining_time ?? task.auto_resubmit_timeout ?? 240;
+          startTaskCountdown(
+            task.task_id,
+            timeout,
+            task.auto_resubmit_timeout || 240,
+          );
+          console.log(
+            `Started countdown for new task: ${task.task_id}, remaining ${timeout}s`,
+          );
         }
-      })
+      });
   }
 
   // 检测已删除的任务并清理倒计时
-  const removedTasks = oldTaskIds.filter(id => !newTaskIds.includes(id))
+  const removedTasks = oldTaskIds.filter((id) => !newTaskIds.includes(id));
   if (removedTasks.length > 0) {
-    console.log(`Detected ${removedTasks.length} removed task(s)`)
-    removedTasks.forEach(taskId => {
+    console.log(`Detected ${removedTasks.length} removed task(s)`);
+    removedTasks.forEach((taskId) => {
       if (taskCountdowns[taskId]) {
-        clearInterval(taskCountdowns[taskId].timer)
-        delete taskCountdowns[taskId]
-        console.log(`Cleared countdown for task ${taskId}`)
+        clearInterval(taskCountdowns[taskId].timer);
+        delete taskCountdowns[taskId];
+        console.log(`Cleared countdown for task ${taskId}`);
       }
       // 【优化】清理任务截止时间缓存，防止内存泄漏
       if (window.taskDeadlines[taskId] !== undefined) {
-        delete window.taskDeadlines[taskId]
+        delete window.taskDeadlines[taskId];
       }
       // 清理任务缓存
       if (taskTextareaContents[taskId] !== undefined) {
-        delete taskTextareaContents[taskId]
+        delete taskTextareaContents[taskId];
       }
       if (taskOptionsStates[taskId] !== undefined) {
-        delete taskOptionsStates[taskId]
+        delete taskOptionsStates[taskId];
       }
       if (taskImages[taskId] !== undefined) {
-        delete taskImages[taskId]
+        delete taskImages[taskId];
       }
       // 清理自动提交尝试记录（避免长时间使用导致对象膨胀）
       if (autoSubmitAttempted && autoSubmitAttempted[taskId] !== undefined) {
-        delete autoSubmitAttempted[taskId]
+        delete autoSubmitAttempted[taskId];
       }
-    })
+    });
   }
 
   // 检测当前页面状态和任务状态
-  const hasActiveTasks = tasks.length > 0 && tasks.some(t => t.status !== 'completed')
+  const hasActiveTasks =
+    tasks.length > 0 && tasks.some((t) => t.status !== "completed");
 
-  currentTasks = tasks
-  hasLoadedTaskSnapshot = true
-  window.hasLoadedTaskSnapshot = true
+  currentTasks = tasks;
+  hasLoadedTaskSnapshot = true;
+  window.hasLoadedTaskSnapshot = true;
 
   // 【热更新兜底】确保所有未完成任务都有倒计时
   // 场景：配置变更将 auto_resubmit_timeout 从 0（禁用）切回 >0（启用）
-  tasks.forEach(task => {
-    if (task.status === 'completed') return
+  tasks.forEach((task) => {
+    if (task.status === "completed") return;
     // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240).
-    const total = typeof task.auto_resubmit_timeout === 'number' ? task.auto_resubmit_timeout : 240
+    const total =
+      typeof task.auto_resubmit_timeout === "number"
+        ? task.auto_resubmit_timeout
+        : 240;
     if (total <= 0) {
       // 禁用：确保不启动倒计时
       if (taskCountdowns[task.task_id]) {
         try {
           if (taskCountdowns[task.task_id].timer) {
-            clearInterval(taskCountdowns[task.task_id].timer)
+            clearInterval(taskCountdowns[task.task_id].timer);
           }
         } catch (e) {
           // 忽略：定时器可能已被清理
         }
-        delete taskCountdowns[task.task_id]
+        delete taskCountdowns[task.task_id];
       }
-      return
+      return;
     }
-    const existingCountdown = taskCountdowns[task.task_id]
+    const existingCountdown = taskCountdowns[task.task_id];
     // 关键：如果任务已变为 active，但其倒计时 timer 之前因“pending 超时被暂停”而停止，需要兜底恢复
     // 否则会出现：任务 remaining_time=0 且 status=active，但自动提交不会再次触发，导致 0s 任务堆积
     const shouldEnsure =
-      !existingCountdown || (task.status === 'active' && !existingCountdown.timer)
+      !existingCountdown ||
+      (task.status === "active" && !existingCountdown.timer);
     if (shouldEnsure) {
-      const remaining = task.remaining_time ?? total
+      const remaining = task.remaining_time ?? total;
       // active 任务已超时：直接触发自动提交（内部带退避/去重），避免依赖“重启倒计时再 tick”造成抖动/重复
-      if (task.status === 'active' && typeof remaining === 'number' && remaining <= 0) {
-        autoSubmitTask(task.task_id)
+      if (
+        task.status === "active" &&
+        typeof remaining === "number" &&
+        remaining <= 0
+      ) {
+        autoSubmitTask(task.task_id);
       } else {
-        startTaskCountdown(task.task_id, remaining, total)
+        startTaskCountdown(task.task_id, remaining, total);
       }
     }
-  })
+  });
 
   // 从任务列表中找到active任务，同步activeTaskId
-  const activeTask = tasks.find(t => t.status === 'active')
+  const activeTask = tasks.find((t) => t.status === "active");
   if (activeTask && activeTask.task_id !== activeTaskId) {
-    const oldActiveTaskId = activeTaskId
-    activeTaskId = activeTask.task_id
-    console.log(`Sync activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`)
+    const oldActiveTaskId = activeTaskId;
+    activeTaskId = activeTask.task_id;
+    console.log(`Sync activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`);
 
     // 更新圆环颜色
-    updateCountdownRingColors(oldActiveTaskId, activeTaskId)
+    updateCountdownRingColors(oldActiveTaskId, activeTaskId);
   } else if (!activeTaskId && tasks.length > 0) {
     // 如果activeTaskId为null，且有任务，自动设置第一个未完成任务为active
     // 注意：tasks数组可能包含已完成任务，必须过滤
-    const firstIncompleteTask = tasks.find(t => t.status !== 'completed')
+    const firstIncompleteTask = tasks.find((t) => t.status !== "completed");
     if (firstIncompleteTask) {
-      activeTaskId = firstIncompleteTask.task_id
-      console.log(`Auto-set first incomplete task as active: ${activeTaskId}`)
+      activeTaskId = firstIncompleteTask.task_id;
+      console.log(`Auto-set first incomplete task as active: ${activeTaskId}`);
     } else {
-      console.log('All tasks completed; not setting activeTaskId')
+      console.log("All tasks completed; not setting activeTaskId");
     }
   } else if (tasks.length === 0 && activeTaskId) {
-    console.log(`Task list cleared; reset activeTaskId: ${activeTaskId} -> null`)
-    activeTaskId = null
+    console.log(
+      `Task list cleared; reset activeTaskId: ${activeTaskId} -> null`,
+    );
+    activeTaskId = null;
   }
 
   // 确保页面状态与任务状态一致
   // - 有未完成任务时，显示内容页面
   // - 无未完成任务时，显示无内容页面
-  const contentContainer = document.getElementById('content-container')
-  const noContentContainer = document.getElementById('no-content-container')
-  const isShowingNoContent = noContentContainer && noContentContainer.style.display === 'flex'
+  const contentContainer = document.getElementById("content-container");
+  const noContentContainer = document.getElementById("no-content-container");
+  const isShowingNoContent =
+    noContentContainer && noContentContainer.style.display === "flex";
 
   if (hasActiveTasks && isShowingNoContent) {
     // 有任务但显示的是无内容页面，切换到内容页面
-    console.log('Tasks present but showing no-content page; switching to content page')
-    if (typeof showContentPage === 'function') {
-      showContentPage()
+    console.log(
+      "Tasks present but showing no-content page; switching to content page",
+    );
+    if (typeof showContentPage === "function") {
+      showContentPage();
     }
-  } else if (!hasActiveTasks && contentContainer && contentContainer.style.display === 'block') {
+  } else if (
+    !hasActiveTasks &&
+    contentContainer &&
+    contentContainer.style.display === "block"
+  ) {
     // 无任务但显示的是内容页面，切换到无内容页面
-    console.log('No tasks but showing content page; switching to no-content page')
-    if (typeof showNoContentPage === 'function') {
-      showNoContentPage()
+    console.log(
+      "No tasks but showing content page; switching to no-content page",
+    );
+    if (typeof showNoContentPage === "function") {
+      showNoContentPage();
     }
   }
 
   // 更新标签页UI
-  renderTaskTabs()
+  renderTaskTabs();
 
   // 如果正在手动切换，跳过自动加载
   if (isManualSwitching) {
-    return
+    return;
   }
 
   // Bark/PWA 深链接：首次打开 `/?task_id=...` 时自动切换到目标任务。
   if (tryApplyDeepLinkedTask(tasks)) {
-    return
+    return;
   }
 
   // 如果activeTaskId刚刚被同步更新，加载其详情
   // （activeTask已在上面定义，不重复声明）
   if (activeTask && activeTask.task_id === activeTaskId) {
-    loadTaskDetails(activeTaskId)
+    loadTaskDetails(activeTaskId);
   }
 }
 
@@ -1089,7 +1166,7 @@ function updateTasksList(tasks) {
 function updateTasksStats(stats) {
   // 任务计数徽章已从UI中移除，此函数不再执行任何操作
   // 保留此函数是为了避免其他代码调用时出错
-  return
+  return;
 
   /* 旧代码已注释（徽章功能已移除）
   const badge = document.getElementById('task-count-badge')
@@ -1158,108 +1235,129 @@ function updateTasksStats(stats) {
  * - 删除标签时会触发过渡动画
  */
 function renderTaskTabs() {
-  const tabsContainer = document.getElementById('task-tabs')
-  const container = document.getElementById('task-tabs-container')
+  const tabsContainer = document.getElementById("task-tabs");
+  const container = document.getElementById("task-tabs-container");
 
   // DOM未加载时延迟重试
   if (!container || !tabsContainer) {
-    console.warn('Tab bar container not found; DOM may not be ready yet, retrying in 100ms')
+    console.warn(
+      "Tab bar container not found; DOM may not be ready yet, retrying in 100ms",
+    );
     setTimeout(() => {
-      const retryContainer = document.getElementById('task-tabs-container')
-      const retryTabsContainer = document.getElementById('task-tabs')
+      const retryContainer = document.getElementById("task-tabs-container");
+      const retryTabsContainer = document.getElementById("task-tabs");
       if (retryContainer && retryTabsContainer) {
-        console.log('Retry succeeded; rendering tab bar')
-        renderTaskTabs()
+        console.log("Retry succeeded; rendering tab bar");
+        renderTaskTabs();
       } else {
-        console.error('Retry failed; tab bar container still missing')
+        console.error("Retry failed; tab bar container still missing");
       }
-    }, 100)
-    return
+    }, 100);
+    return;
   }
 
   // 过滤出未完成的任务
-  const incompleteTasks = currentTasks.filter(task => task.status !== 'completed')
+  const incompleteTasks = currentTasks.filter(
+    (task) => task.status !== "completed",
+  );
 
   if (incompleteTasks.length === 0) {
-    container.classList.add('hidden')
-    updateFaviconBadge(0)
-    return
+    container.classList.add("hidden");
+    updateFaviconBadge(0);
+    return;
   }
 
-  updateFaviconBadge(incompleteTasks.length)
-  container.classList.remove('hidden')
+  updateFaviconBadge(incompleteTasks.length);
+  container.classList.remove("hidden");
 
   // 优化：排除正在退出动画的标签，避免虚假重建
-  const existingTabs = tabsContainer.querySelectorAll('.task-tab:not(.task-tab-exit)')
-  const existingTaskIds = Array.from(existingTabs).map(tab => tab.dataset.taskId)
+  const existingTabs = tabsContainer.querySelectorAll(
+    ".task-tab:not(.task-tab-exit)",
+  );
+  const existingTaskIds = Array.from(existingTabs).map(
+    (tab) => tab.dataset.taskId,
+  );
 
   // 只比较未完成的任务
-  const incompleteTaskIds = incompleteTasks.map(t => t.task_id)
+  const incompleteTaskIds = incompleteTasks.map((t) => t.task_id);
 
   // 检查是否需要重建（任务列表变化）
   const needsRebuild =
     existingTaskIds.length !== incompleteTaskIds.length ||
-    existingTaskIds.some((id, i) => id !== incompleteTaskIds[i])
+    existingTaskIds.some((id, i) => id !== incompleteTaskIds[i]);
 
   if (needsRebuild) {
-    const removedIds = existingTaskIds.filter(id => !incompleteTaskIds.includes(id))
-    const addedIds = incompleteTaskIds.filter(id => !existingTaskIds.includes(id))
-    const isIncremental = removedIds.length + addedIds.length <= 2 && existingTaskIds.length > 0
+    const removedIds = existingTaskIds.filter(
+      (id) => !incompleteTaskIds.includes(id),
+    );
+    const addedIds = incompleteTaskIds.filter(
+      (id) => !existingTaskIds.includes(id),
+    );
+    const isIncremental =
+      removedIds.length + addedIds.length <= 2 && existingTaskIds.length > 0;
 
     if (isIncremental) {
-      removedIds.forEach(id => {
-        const el = tabsContainer.querySelector(`[data-task-id="${id}"]`)
+      removedIds.forEach((id) => {
+        const el = tabsContainer.querySelector(`[data-task-id="${id}"]`);
         if (el) {
-          el.classList.add('task-tab-exit')
-          el.addEventListener('animationend', () => el.remove(), { once: true })
+          el.classList.add("task-tab-exit");
+          el.addEventListener("animationend", () => el.remove(), {
+            once: true,
+          });
           setTimeout(() => {
-            if (el.parentNode) el.remove()
-          }, 300)
+            if (el.parentNode) el.remove();
+          }, 300);
         }
-      })
-      addedIds.forEach(id => {
-        const task = incompleteTasks.find(t => t.task_id === id)
+      });
+      addedIds.forEach((id) => {
+        const task = incompleteTasks.find((t) => t.task_id === id);
         if (task) {
-          const tab = createTaskTab(task)
-          tab.classList.add('task-tab-enter')
-          tab.addEventListener('animationend', () => tab.classList.remove('task-tab-enter'), {
-            once: true
-          })
-          tabsContainer.appendChild(tab)
+          const tab = createTaskTab(task);
+          tab.classList.add("task-tab-enter");
+          tab.addEventListener(
+            "animationend",
+            () => tab.classList.remove("task-tab-enter"),
+            {
+              once: true,
+            },
+          );
+          tabsContainer.appendChild(tab);
         }
-      })
+      });
     } else {
-      tabsContainer.innerHTML = ''
+      tabsContainer.innerHTML = "";
       incompleteTasks.forEach((task, i) => {
-        const tab = createTaskTab(task)
-        tab.classList.add('task-tab-enter')
-        tab.style.animationDelay = i * 60 + 'ms'
+        const tab = createTaskTab(task);
+        tab.classList.add("task-tab-enter");
+        tab.style.animationDelay = i * 60 + "ms";
         tab.addEventListener(
-          'animationend',
+          "animationend",
           () => {
-            tab.classList.remove('task-tab-enter')
-            tab.style.animationDelay = ''
+            tab.classList.remove("task-tab-enter");
+            tab.style.animationDelay = "";
           },
-          { once: true }
-        )
-        tabsContainer.appendChild(tab)
-      })
+          { once: true },
+        );
+        tabsContainer.appendChild(tab);
+      });
     }
-    tabsContainer.querySelectorAll('.task-tab:not(.task-tab-exit)').forEach(tab => {
-      const taskId = tab.dataset.taskId
-      const isActive = taskId === activeTaskId
-      tab.classList.toggle('active', isActive)
-      tab.setAttribute('aria-selected', isActive ? 'true' : 'false')
-      tab.setAttribute('tabindex', isActive ? '0' : '-1')
-    })
+    tabsContainer
+      .querySelectorAll(".task-tab:not(.task-tab-exit)")
+      .forEach((tab) => {
+        const taskId = tab.dataset.taskId;
+        const isActive = taskId === activeTaskId;
+        tab.classList.toggle("active", isActive);
+        tab.setAttribute("aria-selected", isActive ? "true" : "false");
+        tab.setAttribute("tabindex", isActive ? "0" : "-1");
+      });
   } else {
-    existingTabs.forEach(tab => {
-      const taskId = tab.dataset.taskId
-      const isActive = taskId === activeTaskId
-      tab.classList.toggle('active', isActive)
-      tab.setAttribute('aria-selected', isActive ? 'true' : 'false')
-      tab.setAttribute('tabindex', isActive ? '0' : '-1')
-    })
+    existingTabs.forEach((tab) => {
+      const taskId = tab.dataset.taskId;
+      const isActive = taskId === activeTaskId;
+      tab.classList.toggle("active", isActive);
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+      tab.setAttribute("tabindex", isActive ? "0" : "-1");
+    });
   }
 }
 
@@ -1302,69 +1400,74 @@ function renderTaskTabs() {
  * - 倒计时环ID格式：`countdown-ring-{task_id}`
  */
 function createTaskTab(task) {
-  const tab = document.createElement('div')
-  tab.className = 'task-tab'
-  tab.setAttribute('role', 'tab')
-  tab.setAttribute('aria-selected', task.status === 'active' ? 'true' : 'false')
-  tab.setAttribute('tabindex', task.status === 'active' ? '0' : '-1')
-  if (task.status === 'active') {
-    tab.classList.add('active')
+  const tab = document.createElement("div");
+  tab.className = "task-tab";
+  tab.setAttribute("role", "tab");
+  tab.setAttribute(
+    "aria-selected",
+    task.status === "active" ? "true" : "false",
+  );
+  tab.setAttribute("tabindex", task.status === "active" ? "0" : "-1");
+  if (task.status === "active") {
+    tab.classList.add("active");
   }
-  tab.dataset.taskId = task.task_id
+  tab.dataset.taskId = task.task_id;
 
   // 任务名称
-  const textSpan = document.createElement('span')
-  textSpan.className = 'task-tab-text'
+  const textSpan = document.createElement("span");
+  textSpan.className = "task-tab-text";
 
   // 智能显示：前缀截断 + 完整数字
   // 例如: "ai-intervention-agent-2822" → "ai-interven... 2822"
-  const taskParts = task.task_id.split('-')
-  const lastPart = taskParts[taskParts.length - 1] // 最后的数字
-  const prefixParts = taskParts.slice(0, -1).join('-') // 前面部分
+  const taskParts = task.task_id.split("-");
+  const lastPart = taskParts[taskParts.length - 1]; // 最后的数字
+  const prefixParts = taskParts.slice(0, -1).join("-"); // 前面部分
 
-  let displayName
+  let displayName;
   if (prefixParts.length > 12) {
     // 前缀过长，截断
-    displayName = `${prefixParts.substring(0, 11)}... ${lastPart}`
+    displayName = `${prefixParts.substring(0, 11)}... ${lastPart}`;
   } else {
-    displayName = `${prefixParts} ${lastPart}`
+    displayName = `${prefixParts} ${lastPart}`;
   }
 
-  textSpan.textContent = displayName
-  textSpan.title = task.task_id // 悬停显示完整ID
+  textSpan.textContent = displayName;
+  textSpan.title = task.task_id; // 悬停显示完整ID
 
   // 先添加文本（左边）
-  tab.appendChild(textSpan)
+  tab.appendChild(textSpan);
 
   // SVG圆环倒计时（总是显示，在右边）
-  if (task.status !== 'completed') {
-    const countdownRing = document.createElement('div')
-    countdownRing.className = 'countdown-ring'
-    countdownRing.id = `countdown-${task.task_id}`
+  if (task.status !== "completed") {
+    const countdownRing = document.createElement("div");
+    countdownRing.className = "countdown-ring";
+    countdownRing.id = `countdown-${task.task_id}`;
 
     // 使用已有的倒计时数据或服务器返回的剩余时间
-    let remaining, total
+    let remaining, total;
     if (taskCountdowns[task.task_id]) {
-      remaining = taskCountdowns[task.task_id].remaining
+      remaining = taskCountdowns[task.task_id].remaining;
       // Fallback uses server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240),
       // not the historical MAX (250 / 290).
-      total = taskCountdowns[task.task_id].timeout || 240
+      total = taskCountdowns[task.task_id].timeout || 240;
     } else {
       // 倒计时还未启动，优先使用服务器返回的 remaining_time
       // 这样刷新页面后圆环显示正确的剩余时间
-      remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 240
-      total = task.auto_resubmit_timeout || 240
+      remaining = task.remaining_time ?? task.auto_resubmit_timeout ?? 240;
+      total = task.auto_resubmit_timeout || 240;
     }
 
     // SVG圆环实现
-    const radius = 9 // 圆环半径
-    const circumference = 2 * Math.PI * radius // 圆周长
-    const progress = remaining / total // 进度（0-1）
-    const offset = circumference * (1 - progress) // dash-offset
+    const radius = 9; // 圆环半径
+    const circumference = 2 * Math.PI * radius; // 圆周长
+    const progress = remaining / total; // 进度（0-1）
+    const offset = circumference * (1 - progress); // dash-offset
 
     // 使用activeTaskId判断是否active，而不是task.status
-    const isActive = task.task_id === activeTaskId
-    const strokeColor = isActive ? 'rgba(255, 255, 255, 0.9)' : 'rgba(139, 92, 246, 0.9)'
+    const isActive = task.task_id === activeTaskId;
+    const strokeColor = isActive
+      ? "rgba(255, 255, 255, 0.9)"
+      : "rgba(139, 92, 246, 0.9)";
 
     countdownRing.innerHTML = `
       <svg width="22" height="22" viewBox="0 0 22 22">
@@ -1379,16 +1482,16 @@ function createTaskTab(task) {
         />
       </svg>
       <span class="countdown-number">${remaining}</span>
-    `
-    countdownRing.title = _t('page.countdown', { seconds: remaining })
+    `;
+    countdownRing.title = _t("page.countdown", { seconds: remaining });
 
-    tab.appendChild(countdownRing) // 在textSpan之后
+    tab.appendChild(countdownRing); // 在textSpan之后
   }
 
   // 点击标签切换任务
-  tab.onclick = () => switchTask(task.task_id)
+  tab.onclick = () => switchTask(task.task_id);
 
-  return tab
+  return tab;
 }
 
 // ==================== 任务切换 ====================
@@ -1436,102 +1539,116 @@ function createTaskTab(task) {
 async function switchTask(taskId) {
   // 保存当前任务的textarea内容、选项勾选状态和图片列表
   if (activeTaskId) {
-    const textarea = document.getElementById('feedback-text')
+    const textarea = document.getElementById("feedback-text");
     if (textarea) {
-      taskTextareaContents[activeTaskId] = textarea.value
-      console.log(`Saved textarea content for task ${activeTaskId}`)
+      taskTextareaContents[activeTaskId] = textarea.value;
+      console.log(`Saved textarea content for task ${activeTaskId}`);
     }
 
     // 保存选项勾选状态
-    const optionsContainer = document.getElementById('options-container')
+    const optionsContainer = document.getElementById("options-container");
     if (optionsContainer) {
-      const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
-      const optionsStates = []
+      const checkboxes = optionsContainer.querySelectorAll(
+        'input[type="checkbox"]',
+      );
+      const optionsStates = [];
       checkboxes.forEach((checkbox, index) => {
-        optionsStates[index] = checkbox.checked
-      })
-      taskOptionsStates[activeTaskId] = optionsStates
-      console.log(`Saved option selection state for task ${activeTaskId}`)
+        optionsStates[index] = checkbox.checked;
+      });
+      taskOptionsStates[activeTaskId] = optionsStates;
+      console.log(`Saved option selection state for task ${activeTaskId}`);
     }
 
     // 保存图片列表（深拷贝，避免引用问题）
     // 注意：不能简单浅拷贝，因为图片对象包含 blob URL，需要独立管理
-    taskImages[activeTaskId] = selectedImages.map(img => ({
-      ...img
+    taskImages[activeTaskId] = selectedImages.map((img) => ({
+      ...img,
       // 保留所有字段，包括 blob URL（每个任务独立管理）
-    }))
-    console.log(`Saved image list for task ${activeTaskId} (${selectedImages.length} images)`)
+    }));
+    console.log(
+      `Saved image list for task ${activeTaskId} (${selectedImages.length} images)`,
+    );
   }
 
   // 设置手动切换标志，防止轮询干扰
-  isManualSwitching = true
+  isManualSwitching = true;
 
   // 分发事件通知其他模块暂停轮询
-  window.dispatchEvent(new CustomEvent('taskSwitchStart', { detail: { taskId } }))
+  window.dispatchEvent(
+    new CustomEvent("taskSwitchStart", { detail: { taskId } }),
+  );
 
   // 立即更新UI，提升响应速度
-  const oldActiveTaskId = activeTaskId
-  activeTaskId = taskId
-  renderTaskTabs() // 立即更新标签高亮
+  const oldActiveTaskId = activeTaskId;
+  activeTaskId = taskId;
+  renderTaskTabs(); // 立即更新标签高亮
 
   // 立即更新圆环颜色，不等待DOM重建
-  updateCountdownRingColors(oldActiveTaskId, taskId)
+  updateCountdownRingColors(oldActiveTaskId, taskId);
 
   // 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
-  const cachedTask = currentTasks.find(t => t.task_id === taskId)
+  const cachedTask = currentTasks.find((t) => t.task_id === taskId);
   if (cachedTask && cachedTask.prompt) {
-    console.log(`Updating UI from cached task info immediately: ${taskId}`)
+    console.log(`Updating UI from cached task info immediately: ${taskId}`);
 
     // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
-    const taskIdContainer = document.getElementById('task-id-container')
-    const taskIdText = document.getElementById('task-id-text')
+    const taskIdContainer = document.getElementById("task-id-container");
+    const taskIdText = document.getElementById("task-id-text");
     if (taskIdContainer && taskIdText) {
       if (cachedTask.task_id && cachedTask.task_id.trim()) {
-        taskIdText.textContent = cachedTask.task_id
-        taskIdContainer.classList.remove('hidden')
+        taskIdText.textContent = cachedTask.task_id;
+        taskIdContainer.classList.remove("hidden");
       } else {
-        taskIdContainer.classList.add('hidden')
+        taskIdContainer.classList.add("hidden");
       }
     }
 
     // 更新描述和选项
-    updateDescriptionDisplay(cachedTask.prompt)
+    updateDescriptionDisplay(cachedTask.prompt);
     if (cachedTask.predefined_options) {
-      updateOptionsDisplay(cachedTask.predefined_options, cachedTask.predefined_options_defaults)
+      updateOptionsDisplay(
+        cachedTask.predefined_options,
+        cachedTask.predefined_options_defaults,
+      );
     }
   }
 
   try {
     // 后台执行激活请求（不阻塞 UI）
-    fetchWithTimeout(`/api/tasks/${taskId}/activate`, { method: 'POST' }, 10000)
-      .then(res => res.json())
-      .then(data => {
+    fetchWithTimeout(`/api/tasks/${taskId}/activate`, { method: "POST" }, 10000)
+      .then((res) => res.json())
+      .then((data) => {
         if (!data.success) {
-          console.error('Activate task failed:', data.error)
+          console.error("Activate task failed:", data.error);
         } else {
-          console.log(`Task activated: ${taskId}`)
+          console.log(`Task activated: ${taskId}`);
         }
       })
-      .catch(err => console.error('Activate task failed:', err))
+      .catch((err) => console.error("Activate task failed:", err));
 
     // 后台异步加载完整详情（用于获取最新选项等）
-    loadTaskDetails(taskId).catch(err => {
-      console.warn('Load task details failed, but UI was updated from cache:', err)
-    })
+    loadTaskDetails(taskId).catch((err) => {
+      console.warn(
+        "Load task details failed, but UI was updated from cache:",
+        err,
+      );
+    });
   } catch (error) {
-    console.error('Switch task failed:', error)
+    console.error("Switch task failed:", error);
   } finally {
     // 清除旧计时器并重新设置200ms后解除标志
     if (manualSwitchingTimer) {
-      clearTimeout(manualSwitchingTimer)
+      clearTimeout(manualSwitchingTimer);
     }
     manualSwitchingTimer = setTimeout(() => {
-      isManualSwitching = false
-      manualSwitchingTimer = null
+      isManualSwitching = false;
+      manualSwitchingTimer = null;
       // 分发事件通知其他模块恢复轮询
-      window.dispatchEvent(new CustomEvent('taskSwitchComplete', { detail: { taskId } }))
-      console.log('Task switch lock released; polling resumed')
-    }, 200)
+      window.dispatchEvent(
+        new CustomEvent("taskSwitchComplete", { detail: { taskId } }),
+      );
+      console.log("Task switch lock released; polling resumed");
+    }, 200);
   }
 }
 
@@ -1561,22 +1678,22 @@ async function switchTask(taskId) {
 function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
   // 将旧active任务的圆环改为紫色
   if (oldActiveTaskId) {
-    const oldRing = document.getElementById(`countdown-${oldActiveTaskId}`)
+    const oldRing = document.getElementById(`countdown-${oldActiveTaskId}`);
     if (oldRing) {
-      const oldCircle = oldRing.querySelector('circle')
+      const oldCircle = oldRing.querySelector("circle");
       if (oldCircle) {
-        oldCircle.setAttribute('stroke', 'rgba(139, 92, 246, 0.9)')
+        oldCircle.setAttribute("stroke", "rgba(139, 92, 246, 0.9)");
       }
     }
   }
 
   // 将新active任务的圆环改为白色
   if (newActiveTaskId) {
-    const newRing = document.getElementById(`countdown-${newActiveTaskId}`)
+    const newRing = document.getElementById(`countdown-${newActiveTaskId}`);
     if (newRing) {
-      const newCircle = newRing.querySelector('circle')
+      const newCircle = newRing.querySelector("circle");
       if (newCircle) {
-        newCircle.setAttribute('stroke', 'rgba(255, 255, 255, 0.9)')
+        newCircle.setAttribute("stroke", "rgba(255, 255, 255, 0.9)");
       }
     }
   }
@@ -1616,57 +1733,68 @@ function updateCountdownRingColors(oldActiveTaskId, newActiveTaskId) {
  */
 async function loadTaskDetails(taskId) {
   try {
-    const response = await fetchWithTimeout(`/api/tasks/${taskId}`, undefined, 10000)
-    const data = await response.json()
+    const response = await fetchWithTimeout(
+      `/api/tasks/${taskId}`,
+      undefined,
+      10000,
+    );
+    const data = await response.json();
 
     // 检查任务是否仍然是当前活动任务
     if (taskId !== activeTaskId) {
-      console.log(`Skipping stale task details: ${taskId} (active: ${activeTaskId})`)
-      return
+      console.log(
+        `Skipping stale task details: ${taskId} (active: ${activeTaskId})`,
+      );
+      return;
     }
 
     if (data.success) {
-      const task = data.task
+      const task = data.task;
 
       // 更新页面内容
       // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
-      const taskIdContainer = document.getElementById('task-id-container')
-      const taskIdText = document.getElementById('task-id-text')
+      const taskIdContainer = document.getElementById("task-id-container");
+      const taskIdText = document.getElementById("task-id-text");
       if (taskIdContainer && taskIdText) {
         if (task.task_id && task.task_id.trim()) {
-          taskIdText.textContent = task.task_id
-          taskIdContainer.classList.remove('hidden')
+          taskIdText.textContent = task.task_id;
+          taskIdContainer.classList.remove("hidden");
         } else {
-          taskIdContainer.classList.add('hidden')
+          taskIdContainer.classList.add("hidden");
         }
       }
 
-      updateDescriptionDisplay(task.prompt)
-      updateOptionsDisplay(task.predefined_options, task.predefined_options_defaults)
+      updateDescriptionDisplay(task.prompt);
+      updateOptionsDisplay(
+        task.predefined_options,
+        task.predefined_options_defaults,
+      );
 
       // 恢复该任务之前保存的textarea内容
-      const textarea = document.getElementById('feedback-text')
+      const textarea = document.getElementById("feedback-text");
       if (textarea && taskTextareaContents[taskId] !== undefined) {
-        textarea.value = taskTextareaContents[taskId]
-        console.log(`Restored textarea content for task ${taskId}`)
+        textarea.value = taskTextareaContents[taskId];
+        console.log(`Restored textarea content for task ${taskId}`);
       }
       // 如果之前没有保存过内容，保持当前值（避免在用户正在输入时被轮询调用清空）
 
       // 恢复该任务之前保存的图片列表
       if (taskImages[taskId] && taskImages[taskId].length > 0) {
         // 深拷贝图片对象，避免引用问题
-        selectedImages = taskImages[taskId].map(img => ({ ...img }))
+        selectedImages = taskImages[taskId].map((img) => ({ ...img }));
         // 重新渲染图片预览
-        const previewContainer = document.getElementById('image-previews')
+        const previewContainer = document.getElementById("image-previews");
         if (previewContainer) {
-          previewContainer.innerHTML = ''
-          selectedImages.forEach(imageItem => {
-            renderImagePreview(imageItem, false)
-          })
-          updateImageCounter()
-          updateImagePreviewVisibility()
+          previewContainer.innerHTML = "";
+          selectedImages.forEach((imageItem) => {
+            renderImagePreview(imageItem, false);
+          });
+          updateImageCounter();
+          updateImagePreviewVisibility();
         }
-        console.log(`Restored image list for task ${taskId} (${selectedImages.length} images)`)
+        console.log(
+          `Restored image list for task ${taskId} (${selectedImages.length} images)`,
+        );
       }
       // 如果之前没有保存过图片，保持当前值（避免在用户正在添加图片时被轮询调用清空）
 
@@ -1674,22 +1802,22 @@ async function loadTaskDetails(taskId) {
       if (!taskCountdowns[task.task_id]) {
         // 使用服务器返回的 remaining_time（剩余时间），而非固定的 auto_resubmit_timeout
         // 这样刷新页面后倒计时不会重置
-        const remaining = task.remaining_time ?? task.auto_resubmit_timeout
-        const total = task.auto_resubmit_timeout
-        startTaskCountdown(task.task_id, remaining, total)
+        const remaining = task.remaining_time ?? task.auto_resubmit_timeout;
+        const total = task.auto_resubmit_timeout;
+        startTaskCountdown(task.task_id, remaining, total);
         console.log(
-          `First-time countdown start: ${taskId}, remaining ${remaining}s / total ${total}s`
-        )
+          `First-time countdown start: ${taskId}, remaining ${remaining}s / total ${total}s`,
+        );
       } else {
-        console.log(`Countdown already exists; not resetting: ${taskId}`)
+        console.log(`Countdown already exists; not resetting: ${taskId}`);
       }
 
-      console.log(`Task details loaded: ${taskId}`)
+      console.log(`Task details loaded: ${taskId}`);
     } else {
-      console.error('Load task details failed:', data.error)
+      console.error("Load task details failed:", data.error);
     }
   } catch (error) {
-    console.error('Load task details failed:', error)
+    console.error("Load task details failed:", error);
   }
 }
 
@@ -1718,56 +1846,56 @@ async function loadTaskDetails(taskId) {
  * - 容器不存在时会跳过
  */
 async function updateDescriptionDisplay(prompt) {
-  const descriptionElement = document.getElementById('description')
-  if (!descriptionElement) return
+  const descriptionElement = document.getElementById("description");
+  if (!descriptionElement) return;
 
   try {
     // 同步渲染（立即显示，不使用 requestAnimationFrame）
-    let htmlContent = prompt
+    let htmlContent = prompt;
 
     // 使用 marked.js 解析 Markdown
-    if (typeof marked !== 'undefined') {
+    if (typeof marked !== "undefined") {
       try {
-        htmlContent = marked.parse(prompt)
+        htmlContent = marked.parse(prompt);
       } catch (e) {
-        console.warn('marked.js parse failed:', e)
+        console.warn("marked.js parse failed:", e);
       }
     }
 
     // 直接更新 DOM（同步）
-    descriptionElement.innerHTML = htmlContent
+    descriptionElement.innerHTML = htmlContent;
 
     // Prism.js 代码高亮（同步）
-    if (typeof Prism !== 'undefined') {
-      Prism.highlightAllUnder(descriptionElement)
+    if (typeof Prism !== "undefined") {
+      Prism.highlightAllUnder(descriptionElement);
     }
 
     // 处理代码块（同步）
-    if (typeof processCodeBlocks === 'function') {
-      processCodeBlocks(descriptionElement)
+    if (typeof processCodeBlocks === "function") {
+      processCodeBlocks(descriptionElement);
     }
 
     // 处理删除线（同步）
-    if (typeof processStrikethrough === 'function') {
-      processStrikethrough(descriptionElement)
+    if (typeof processStrikethrough === "function") {
+      processStrikethrough(descriptionElement);
     }
 
-    console.log('Synchronous Markdown render complete')
+    console.log("Synchronous Markdown render complete");
 
     // MathJax 数学公式渲染（按需加载，不阻塞）
     // 注意：不能只在 MathJax 已加载时 typeset，否则“首次出现公式”的内容会一直不渲染
-    const textContent = descriptionElement.textContent || ''
+    const textContent = descriptionElement.textContent || "";
     if (window.loadMathJaxIfNeeded) {
-      window.loadMathJaxIfNeeded(descriptionElement, textContent)
+      window.loadMathJaxIfNeeded(descriptionElement, textContent);
     } else if (window.MathJax && window.MathJax.typesetPromise) {
       // 回退：如果 MathJax 已加载但 loadMathJaxIfNeeded 不可用，直接渲染
-      window.MathJax.typesetPromise([descriptionElement]).catch(err => {
-        console.warn('MathJax render failed:', err)
-      })
+      window.MathJax.typesetPromise([descriptionElement]).catch((err) => {
+        console.warn("MathJax render failed:", err);
+      });
     }
   } catch (error) {
-    console.error('Update description failed:', error)
-    descriptionElement.textContent = prompt
+    console.error("Update description failed:", error);
+    descriptionElement.textContent = prompt;
   }
 }
 
@@ -1807,77 +1935,79 @@ async function updateDescriptionDisplay(prompt) {
  * - 选项数组为空时显示空列表
  */
 function updateOptionsDisplay(options, optionDefaults) {
-  const optionsContainer = document.getElementById('options-container')
-  if (!optionsContainer) return
+  const optionsContainer = document.getElementById("options-container");
+  if (!optionsContainer) return;
 
   // 优先使用该任务之前保存的勾选状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
   // 注意：这里需要区分"用户从未交互过"与"用户已显式取消默认值"——
   //   - 已经为该 task 保存过 selection state 的，按用户的最新意图渲染（包括"取消默认勾选"）
   //   - 没有保存过的，使用后端 predefined_options_defaults 的"默认勾选"作为初始值
-  let selectedStates = {}
-  let hasUserInteraction = false
+  let selectedStates = {};
+  let hasUserInteraction = false;
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
-    selectedStates = taskOptionsStates[activeTaskId]
-    hasUserInteraction = true
-    console.log(`Restored option selection state for task ${activeTaskId}`)
+    selectedStates = taskOptionsStates[activeTaskId];
+    hasUserInteraction = true;
+    console.log(`Restored option selection state for task ${activeTaskId}`);
   } else {
     // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
-    const existingCheckboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
-    existingCheckboxes.forEach(checkbox => {
-      selectedStates[checkbox.id] = checkbox.checked
-    })
+    const existingCheckboxes = optionsContainer.querySelectorAll(
+      'input[type="checkbox"]',
+    );
+    existingCheckboxes.forEach((checkbox) => {
+      selectedStates[checkbox.id] = checkbox.checked;
+    });
     // existingCheckboxes 可能来自上一次渲染（task 切换后场景）；
     // 这里用 length>0 近似判断为"已经存在 UI 状态"，避免被默认值覆盖
     if (existingCheckboxes.length > 0) {
-      hasUserInteraction = true
+      hasUserInteraction = true;
     }
   }
 
   // 清空现有选项
-  optionsContainer.innerHTML = ''
+  optionsContainer.innerHTML = "";
 
   if (options && options.length > 0) {
-    const defaults = Array.isArray(optionDefaults) ? optionDefaults : []
+    const defaults = Array.isArray(optionDefaults) ? optionDefaults : [];
     options.forEach((option, index) => {
-      const optionDiv = document.createElement('div')
-      optionDiv.className = 'option-item'
+      const optionDiv = document.createElement("div");
+      optionDiv.className = "option-item";
 
-      const checkbox = document.createElement('input')
-      checkbox.type = 'checkbox'
-      checkbox.id = `option-${index}`
-      checkbox.value = option
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = `option-${index}`;
+      checkbox.value = option;
 
       // 恢复选中状态（支持新格式：{id: checked} 和旧格式：[index: checked]）
       // 优先级：已保存的用户交互 > 后端 default > 未选中
-      const checkboxId = `option-${index}`
+      const checkboxId = `option-${index}`;
       if (hasUserInteraction) {
         if (selectedStates[checkboxId] || selectedStates[index]) {
-          checkbox.checked = true
+          checkbox.checked = true;
         }
       } else if (defaults[index] === true) {
-        checkbox.checked = true
+        checkbox.checked = true;
       }
 
-      const label = document.createElement('label')
-      label.htmlFor = `option-${index}`
-      label.textContent = option
+      const label = document.createElement("label");
+      label.htmlFor = `option-${index}`;
+      label.textContent = option;
 
-      optionDiv.appendChild(checkbox)
-      optionDiv.appendChild(label)
-      optionsContainer.appendChild(optionDiv)
-    })
+      optionDiv.appendChild(checkbox);
+      optionDiv.appendChild(label);
+      optionsContainer.appendChild(optionDiv);
+    });
 
-    optionsContainer.classList.remove('hidden')
-    optionsContainer.classList.add('visible')
+    optionsContainer.classList.remove("hidden");
+    optionsContainer.classList.add("visible");
 
-    const separator = document.getElementById('separator')
+    const separator = document.getElementById("separator");
     if (separator) {
-      separator.classList.remove('hidden')
-      separator.classList.add('visible')
+      separator.classList.remove("hidden");
+      separator.classList.add("visible");
     }
   } else {
-    optionsContainer.classList.add('hidden')
-    optionsContainer.classList.remove('visible')
+    optionsContainer.classList.add("hidden");
+    optionsContainer.classList.remove("visible");
   }
 }
 
@@ -1921,57 +2051,61 @@ function updateOptionsDisplay(options, optionDefaults) {
  * - 删除后无法恢复
  */
 async function closeTask(taskId) {
-  if (!confirm(_t('status.confirmCloseTask', { taskId }))) {
-    return
+  if (!confirm(_t("status.confirmCloseTask", { taskId }))) {
+    return;
   }
 
   try {
-    const response = await fetchWithTimeout(`/api/tasks/${taskId}/close`, { method: 'POST' }, 10000)
-    const data = await response.json()
+    const response = await fetchWithTimeout(
+      `/api/tasks/${taskId}/close`,
+      { method: "POST" },
+      10000,
+    );
+    const data = await response.json();
 
     if (!response.ok || !data.success) {
-      console.error('Server-side close task failed:', data.error)
-      if (typeof showStatus === 'function') {
-        showStatus(data.error || _t('status.closeFailed'), 'error')
+      console.error("Server-side close task failed:", data.error);
+      if (typeof showStatus === "function") {
+        showStatus(data.error || _t("status.closeFailed"), "error");
       }
-      return
+      return;
     }
 
     // 服务端已移除，清理前端状态
     if (taskCountdowns[taskId]) {
-      clearInterval(taskCountdowns[taskId].timer)
-      delete taskCountdowns[taskId]
+      clearInterval(taskCountdowns[taskId].timer);
+      delete taskCountdowns[taskId];
     }
     if (window.taskDeadlines[taskId] !== undefined) {
-      delete window.taskDeadlines[taskId]
+      delete window.taskDeadlines[taskId];
     }
-    delete taskTextareaContents[taskId]
-    delete taskOptionsStates[taskId]
-    delete taskImages[taskId]
+    delete taskTextareaContents[taskId];
+    delete taskOptionsStates[taskId];
+    delete taskImages[taskId];
     if (autoSubmitAttempted) {
-      delete autoSubmitAttempted[taskId]
+      delete autoSubmitAttempted[taskId];
     }
 
-    currentTasks = currentTasks.filter(t => t.task_id !== taskId)
-    renderTaskTabs()
+    currentTasks = currentTasks.filter((t) => t.task_id !== taskId);
+    renderTaskTabs();
 
     if (activeTaskId === taskId) {
-      const nextTask = currentTasks.find(t => t.status !== 'completed')
+      const nextTask = currentTasks.find((t) => t.status !== "completed");
       if (nextTask) {
-        switchTask(nextTask.task_id)
+        switchTask(nextTask.task_id);
       } else {
-        activeTaskId = null
-        if (typeof showNoContentPage === 'function') {
-          showNoContentPage()
+        activeTaskId = null;
+        if (typeof showNoContentPage === "function") {
+          showNoContentPage();
         }
       }
     }
 
-    console.log(`Closed task: ${taskId}`)
+    console.log(`Closed task: ${taskId}`);
   } catch (error) {
-    console.error('Close task failed:', error)
-    if (typeof showStatus === 'function') {
-      showStatus(_t('status.networkError'), 'error')
+    console.error("Close task failed:", error);
+    if (typeof showStatus === "function") {
+      showStatus(_t("status.networkError"), "error");
     }
   }
 }
@@ -2026,10 +2160,10 @@ async function closeTask(taskId) {
  */
 function startTaskCountdown(taskId, remaining, total = null) {
   // 如果没有指定 total，使用 remaining 作为 total（向后兼容）
-  const timeout = total || remaining
+  const timeout = total || remaining;
   // 停止该任务的旧倒计时
   if (taskCountdowns[taskId] && taskCountdowns[taskId].timer) {
-    clearInterval(taskCountdowns[taskId].timer)
+    clearInterval(taskCountdowns[taskId].timer);
   }
 
   // 初始化倒计时数据
@@ -2038,75 +2172,75 @@ function startTaskCountdown(taskId, remaining, total = null) {
   taskCountdowns[taskId] = {
     remaining: remaining,
     timeout: timeout, // 总超时时间，用于计算进度百分比
-    timer: null
-  }
+    timer: null,
+  };
 
   // 如果是活动任务，更新主倒计时显示
   if (taskId === activeTaskId) {
-    updateCountdownDisplay(remaining)
+    updateCountdownDisplay(remaining);
   }
 
   // 【优化】基于服务器时间计算剩余时间的辅助函数
   // 解决切换标签页后 JavaScript 定时器不准确的问题
   function calculateRemainingFromDeadline() {
-    const deadline = window.taskDeadlines[taskId]
+    const deadline = window.taskDeadlines[taskId];
     if (deadline) {
       // 使用服务器时间偏移校正本地时间
-      const adjustedNow = Date.now() / 1000 + (window.serverTimeOffset || 0)
-      return Math.max(0, Math.floor(deadline - adjustedNow))
+      const adjustedNow = Date.now() / 1000 + (window.serverTimeOffset || 0);
+      return Math.max(0, Math.floor(deadline - adjustedNow));
     }
     // 没有 deadline 信息，使用递减方式（向后兼容）
-    return taskCountdowns[taskId].remaining - 1
+    return taskCountdowns[taskId].remaining - 1;
   }
 
   // 启动定时器
   taskCountdowns[taskId].timer = setInterval(() => {
     // 【优化】使用基于 deadline 的计算方式，而非简单递减
     // 这样即使标签页被切换（导致 JS 定时器不准确），恢复后也能显示正确的剩余时间
-    const newRemaining = calculateRemainingFromDeadline()
-    taskCountdowns[taskId].remaining = newRemaining
+    const newRemaining = calculateRemainingFromDeadline();
+    taskCountdowns[taskId].remaining = newRemaining;
 
     // 更新SVG圆环倒计时
-    const countdownRing = document.getElementById(`countdown-${taskId}`)
+    const countdownRing = document.getElementById(`countdown-${taskId}`);
     if (countdownRing) {
-      const remaining = taskCountdowns[taskId].remaining
+      const remaining = taskCountdowns[taskId].remaining;
       // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
       // historical 250/290 were stale "MAX" values, not "DEFAULT".
-      const total = taskCountdowns[taskId].timeout || 240
-      const progress = remaining / total // 进度（0-1）
+      const total = taskCountdowns[taskId].timeout || 240;
+      const progress = remaining / total; // 进度（0-1）
 
       // 更新SVG circle的stroke-dashoffset
-      const radius = 9
-      const circumference = 2 * Math.PI * radius
-      const offset = circumference * (1 - progress)
+      const radius = 9;
+      const circumference = 2 * Math.PI * radius;
+      const offset = circumference * (1 - progress);
 
-      const circle = countdownRing.querySelector('circle')
-      const numberSpan = countdownRing.querySelector('.countdown-number')
+      const circle = countdownRing.querySelector("circle");
+      const numberSpan = countdownRing.querySelector(".countdown-number");
 
       if (circle) {
-        circle.setAttribute('stroke-dashoffset', offset)
+        circle.setAttribute("stroke-dashoffset", offset);
       }
       if (numberSpan) {
-        numberSpan.textContent = remaining
+        numberSpan.textContent = remaining;
       }
 
-      countdownRing.title = _t('page.countdown', { seconds: remaining })
+      countdownRing.title = _t("page.countdown", { seconds: remaining });
     }
 
     // 如果是活动任务，也更新主倒计时
     if (taskId === activeTaskId) {
-      updateCountdownDisplay(taskCountdowns[taskId].remaining)
+      updateCountdownDisplay(taskCountdowns[taskId].remaining);
     }
 
     // 倒计时结束
     if (taskCountdowns[taskId].remaining <= 0) {
       try {
-        clearInterval(taskCountdowns[taskId].timer)
+        clearInterval(taskCountdowns[taskId].timer);
       } catch (e) {
         // 忽略：定时器可能已被清理
       }
       // 关键：标记该任务的 timer 已停止，便于后续在任务变为 active 时重启倒计时/触发自动提交
-      taskCountdowns[taskId].timer = null
+      taskCountdowns[taskId].timer = null;
       // 智能自动提交逻辑：
       // 1. 如果是当前激活的任务 → 立即自动提交
       // 2. 如果不是激活任务，检查是否有其他活动任务在处理
@@ -2114,23 +2248,27 @@ function startTaskCountdown(taskId, remaining, total = null) {
       //    - 如果有活动任务，说明用户正在处理其他任务，暂不自动提交
       if (taskId === activeTaskId) {
         // 当前激活任务超时，直接自动提交
-        autoSubmitTask(taskId)
+        autoSubmitTask(taskId);
       } else {
         // 非激活任务超时：检查是否真的没有用户活动
         // 如果当前没有任何激活任务，说明用户完全无响应，也自动提交
         if (!activeTaskId) {
-          console.log(`Non-active task ${taskId} timed out with no active task; auto-submitting`)
-          autoSubmitTask(taskId)
+          console.log(
+            `Non-active task ${taskId} timed out with no active task; auto-submitting`,
+          );
+          autoSubmitTask(taskId);
         } else {
           console.log(
-            `Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`
-          )
+            `Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`,
+          );
         }
       }
     }
-  }, 1000)
+  }, 1000);
 
-  console.log(`Started task countdown: ${taskId}, remaining ${remaining}s / total ${timeout}s`)
+  console.log(
+    `Started task countdown: ${taskId}, remaining ${remaining}s / total ${timeout}s`,
+  );
 }
 
 /**
@@ -2155,9 +2293,9 @@ function startTaskCountdown(taskId, remaining, total = null) {
  */
 function formatCountdown(seconds) {
   if (seconds > 60) {
-    return `${Math.floor(seconds / 60)}m`
+    return `${Math.floor(seconds / 60)}m`;
   }
-  return `${seconds}s`
+  return `${seconds}s`;
 }
 
 /**
@@ -2187,28 +2325,35 @@ function formatCountdown(seconds) {
 async function autoSubmitTask(taskId) {
   // 自动提交治理：同一 task 做最小退避（可重试但不过载），避免超时+提交失败/429 时刷爆服务端
   try {
-    const now = Date.now()
-    const last = autoSubmitAttempted && autoSubmitAttempted[taskId]
-    const RETRY_INTERVAL_MS = 30 * 1000
-    if (typeof last === 'number' && last > 0 && now - last < RETRY_INTERVAL_MS) {
-      return
+    const now = Date.now();
+    const last = autoSubmitAttempted && autoSubmitAttempted[taskId];
+    const RETRY_INTERVAL_MS = 30 * 1000;
+    if (
+      typeof last === "number" &&
+      last > 0 &&
+      now - last < RETRY_INTERVAL_MS
+    ) {
+      return;
     }
     if (autoSubmitAttempted) {
-      autoSubmitAttempted[taskId] = now
+      autoSubmitAttempted[taskId] = now;
     }
   } catch (e) {
     // 忽略：退避记录失败不应阻塞自动提交
   }
-  console.log(`Task ${taskId} countdown ended; auto-submitting`)
+  console.log(`Task ${taskId} countdown ended; auto-submitting`);
   // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
   // 若后端未提供（如网络故障），退出而不是发送硬编码字符串，由下一轮轮询/用户手动触发重试
-  const prompts = await fetchFeedbackPromptsFresh()
-  const defaultMessage = prompts && prompts.resubmit_prompt ? String(prompts.resubmit_prompt) : ''
+  const prompts = await fetchFeedbackPromptsFresh();
+  const defaultMessage =
+    prompts && prompts.resubmit_prompt ? String(prompts.resubmit_prompt) : "";
   if (!defaultMessage) {
-    console.warn(`Skip auto-submit for ${taskId}: resubmit_prompt not configured or unavailable`)
-    return
+    console.warn(
+      `Skip auto-submit for ${taskId}: resubmit_prompt not configured or unavailable`,
+    );
+    return;
   }
-  await submitTaskFeedback(taskId, defaultMessage, [])
+  await submitTaskFeedback(taskId, defaultMessage, []);
 }
 
 /**
@@ -2248,68 +2393,70 @@ async function autoSubmitTask(taskId) {
  */
 async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
   try {
-    const formData = new FormData()
-    formData.append('feedback_text', feedbackText)
-    formData.append('selected_options', JSON.stringify(selectedOptions))
+    const formData = new FormData();
+    formData.append("feedback_text", feedbackText);
+    formData.append("selected_options", JSON.stringify(selectedOptions));
 
     // 添加图片文件
     selectedImages.forEach((img, index) => {
       if (img.file) {
-        formData.append(`image_${index}`, img.file)
+        formData.append(`image_${index}`, img.file);
       }
-    })
+    });
 
     const response = await fetchWithTimeout(
       `/api/tasks/${taskId}/submit`,
       {
-        method: 'POST',
-        body: formData
+        method: "POST",
+        body: formData,
       },
-      30000
-    )
+      30000,
+    );
 
-    const data = await response.json()
+    const data = await response.json();
 
     if (data.success) {
-      console.log(`Task ${taskId} submitted successfully`)
+      console.log(`Task ${taskId} submitted successfully`);
       // 停止该任务的倒计时
       if (taskCountdowns[taskId]) {
-        clearInterval(taskCountdowns[taskId].timer)
-        delete taskCountdowns[taskId]
+        clearInterval(taskCountdowns[taskId].timer);
+        delete taskCountdowns[taskId];
       }
       // 清除该任务保存的所有状态
       if (taskTextareaContents[taskId] !== undefined) {
-        delete taskTextareaContents[taskId]
-        console.log(`Cleared saved textarea content for task ${taskId}`)
+        delete taskTextareaContents[taskId];
+        console.log(`Cleared saved textarea content for task ${taskId}`);
       }
       if (taskOptionsStates[taskId] !== undefined) {
-        delete taskOptionsStates[taskId]
-        console.log(`Cleared saved option selection state for task ${taskId}`)
+        delete taskOptionsStates[taskId];
+        console.log(`Cleared saved option selection state for task ${taskId}`);
       }
       if (taskImages[taskId] !== undefined) {
-        delete taskImages[taskId]
-        console.log(`Cleared saved image list for task ${taskId}`)
+        delete taskImages[taskId];
+        console.log(`Cleared saved image list for task ${taskId}`);
       }
 
       // SSE 会在 complete_task 后 ~80ms 内自动触发 fetchAndApplyTasks，
       // 如果 SSE 不可用则回退轮询也会处理。这里仅做一次兜底刷新。
       if (!_sseConnected) {
         setTimeout(async () => {
-          await refreshTasksList()
-          const nextTask = currentTasks.find(t => t.task_id !== taskId && t.status !== 'completed')
+          await refreshTasksList();
+          const nextTask = currentTasks.find(
+            (t) => t.task_id !== taskId && t.status !== "completed",
+          );
           if (nextTask) {
-            console.log(`Auto-switching to next task: ${nextTask.task_id}`)
-            switchTask(nextTask.task_id)
+            console.log(`Auto-switching to next task: ${nextTask.task_id}`);
+            switchTask(nextTask.task_id);
           } else {
-            console.log('All tasks completed')
+            console.log("All tasks completed");
           }
-        }, 200)
+        }, 200);
       }
     } else {
-      console.error('Submit task failed:', data.error)
+      console.error("Submit task failed:", data.error);
     }
   } catch (error) {
-    console.error('Submit task feedback failed:', error)
+    console.error("Submit task feedback failed:", error);
   }
 }
 
@@ -2342,37 +2489,38 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
  * - 仅视觉反馈
  */
 function showNewTaskVisualHint(count) {
-  const container = document.getElementById('task-tabs-container')
-  if (!container) return
+  const container = document.getElementById("task-tabs-container");
+  if (!container) return;
 
   // 检测当前主题 (light/dark)
-  const html = document.documentElement
-  const currentTheme = html.getAttribute('data-theme')
-  const isLightTheme = currentTheme === 'light'
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute("data-theme");
+  const isLightTheme = currentTheme === "light";
 
   // Claude 风格 "Create - 创作" SVG 图标（橙色强调色 #d97757）
-  const createSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none" style="flex-shrink: 0; margin-right: 10px;"><path d="M15.5117 1.99707C15.9213 2.0091 16.3438 2.13396 16.6768 2.46679C17.0278 2.81814 17.1209 3.26428 17.0801 3.68261C17.0404 4.08745 16.8765 4.49344 16.6787 4.85058C16.3934 5.36546 15.9941 5.85569 15.6348 6.20898C15.7682 6.41421 15.8912 6.66414 15.9551 6.9453C16.0804 7.4977 15.9714 8.13389 15.4043 8.70116C14.8566 9.24884 13.974 9.54823 13.1943 9.71679C12.7628 9.81003 12.3303 9.86698 11.9473 9.90233C12.0596 10.2558 12.0902 10.7051 11.8779 11.2012L11.8223 11.3203C11.5396 11.8854 11.0275 12.2035 10.4785 12.3965C9.93492 12.5875 9.29028 12.6792 8.65332 12.75C7.99579 12.8231 7.34376 12.8744 6.70117 12.9775C6.14371 13.067 5.63021 13.1903 5.18652 13.3818L5.00585 13.4658C4.53515 14.2245 4.13745 14.9658 3.80957 15.6465C4.43885 15.2764 5.1935 15 5.99999 15C6.27614 15 6.49999 15.2238 6.49999 15.5C6.49999 15.7761 6.27613 16 5.99999 16C5.35538 16 4.71132 16.2477 4.15039 16.6103C3.58861 16.9736 3.14957 17.427 2.91601 17.7773C2.91191 17.7835 2.90568 17.788 2.90136 17.7939C2.88821 17.8119 2.8746 17.8289 2.85937 17.8447C2.85117 17.8533 2.84268 17.8612 2.83398 17.8691C2.81803 17.8835 2.80174 17.897 2.78417 17.9092C2.774 17.9162 2.76353 17.9225 2.75292 17.9287C2.73854 17.9372 2.72412 17.9451 2.70898 17.9521C2.69079 17.9605 2.6723 17.9675 2.65332 17.9736C2.6417 17.9774 2.63005 17.9805 2.61816 17.9834C2.60263 17.9872 2.5871 17.9899 2.57128 17.9922C2.55312 17.9948 2.53511 17.9974 2.5166 17.998C2.50387 17.9985 2.49127 17.9976 2.47851 17.9971C2.45899 17.9962 2.43952 17.9954 2.41992 17.9922C2.40511 17.9898 2.39062 17.9862 2.37597 17.9824C2.36477 17.9795 2.35294 17.9783 2.34179 17.9746C2.33697 17.973 2.33286 17.9695 2.32812 17.9678C2.31042 17.9612 2.29351 17.953 2.27636 17.9443C2.26332 17.9378 2.25053 17.9314 2.23828 17.9238C2.23339 17.9208 2.22747 17.9192 2.22265 17.916C2.21414 17.9103 2.20726 17.9026 2.19921 17.8965C2.18396 17.8849 2.16896 17.8735 2.15527 17.8603C2.14518 17.8507 2.13609 17.8404 2.12695 17.8301C2.11463 17.8161 2.10244 17.8023 2.09179 17.7871C2.08368 17.7756 2.07736 17.7631 2.07031 17.751C2.06168 17.7362 2.05297 17.7216 2.04589 17.706C2.03868 17.6901 2.03283 17.6738 2.02734 17.6572C2.0228 17.6436 2.01801 17.6302 2.01464 17.6162C2.01117 17.6017 2.009 17.587 2.00683 17.5722C2.00411 17.5538 2.00161 17.5354 2.00097 17.5166C2.00054 17.5039 2.00141 17.4912 2.00195 17.4785C2.00279 17.459 2.00364 17.4395 2.00683 17.4199C2.00902 17.4064 2.01327 17.3933 2.0166 17.3799C2.01973 17.3673 2.02123 17.3543 2.02539 17.3418C2.41772 16.1648 3.18163 14.466 4.30468 12.7012C4.31908 12.5557 4.34007 12.3582 4.36914 12.1201C4.43379 11.5907 4.53836 10.8564 4.69921 10.0381C5.0174 8.41955 5.56814 6.39783 6.50585 4.9912L6.73242 4.66894C7.27701 3.93277 7.93079 3.30953 8.61035 2.85156C9.3797 2.33311 10.2221 2 11.001 2C11.7951 2.00025 12.3531 2.35795 12.7012 2.70605C12.7723 2.77723 12.8348 2.84998 12.8896 2.91796C13.2829 2.66884 13.7917 2.39502 14.3174 2.21191C14.6946 2.08056 15.1094 1.98537 15.5117 1.99707ZM17.04 15.5537C17.1486 15.3 17.4425 15.1818 17.6963 15.29C17.95 15.3986 18.0683 15.6925 17.96 15.9463C17.4827 17.0612 16.692 18 15.5 18C14.6309 17.9999 13.9764 17.5003 13.5 16.7978C13.0236 17.5003 12.3691 18 11.5 18C10.6309 17.9999 9.97639 17.5003 9.49999 16.7978C9.02359 17.5003 8.36911 18 7.49999 18C7.22391 17.9999 7 17.7761 6.99999 17.5C6.99999 17.2239 7.22391 17 7.49999 17C8.07039 17 8.6095 16.5593 9.04003 15.5537L9.07421 15.4873C9.16428 15.3412 9.32494 15.25 9.49999 15.25C9.70008 15.25 9.88121 15.3698 9.95996 15.5537L10.042 15.7353C10.4581 16.6125 10.9652 16.9999 11.5 17C12.0704 17 12.6095 16.5593 13.04 15.5537L13.0742 15.4873C13.1643 15.3412 13.3249 15.25 13.5 15.25C13.7001 15.25 13.8812 15.3698 13.96 15.5537L14.042 15.7353C14.4581 16.6125 14.9652 16.9999 15.5 17C16.0704 17 16.6095 16.5593 17.04 15.5537ZM15.4824 2.99707C15.247 2.99022 14.9608 3.04682 14.6465 3.15624C14.0173 3.37541 13.389 3.76516 13.0498 4.01953C12.9277 4.11112 12.7697 4.14131 12.6221 4.10253C12.4745 4.06357 12.3522 3.9591 12.291 3.81933V3.81835C12.2892 3.81468 12.2861 3.80833 12.2822 3.80078C12.272 3.78092 12.2541 3.7485 12.2295 3.70898C12.1794 3.62874 12.1011 3.52019 11.9941 3.41308C11.7831 3.2021 11.4662 3.00024 11.001 2.99999C10.4904 2.99999 9.84173 3.22729 9.16894 3.68066C8.58685 4.07297 8.01568 4.61599 7.5371 5.26269L7.33789 5.54589C6.51634 6.77827 5.99475 8.63369 5.68066 10.2314C5.63363 10.4707 5.5913 10.7025 5.55371 10.9238C7.03031 9.01824 8.94157 7.19047 11.2812 6.05077C11.5295 5.92989 11.8283 6.03301 11.9492 6.28124C12.0701 6.52949 11.967 6.82829 11.7187 6.94921C9.33153 8.11208 7.38648 10.0746 5.91406 12.1103C6.12313 12.0632 6.33385 12.0238 6.54296 11.9902C7.21709 11.8821 7.92723 11.8243 8.54296 11.7558C9.17886 11.6852 9.72123 11.6025 10.1465 11.4531C10.5662 11.3056 10.8063 11.1158 10.9277 10.873L10.9795 10.7549C11.0776 10.487 11.0316 10.2723 10.9609 10.1123C10.918 10.0155 10.8636 9.93595 10.8203 9.88183C10.7996 9.85598 10.7822 9.83638 10.7715 9.82518L10.7607 9.81542L10.7627 9.8164L10.7646 9.81835C10.6114 9.67972 10.5597 9.46044 10.6338 9.26757C10.7082 9.07475 10.8939 8.94726 11.1006 8.94726C11.5282 8.94719 12.26 8.8956 12.9834 8.73925C13.7297 8.5779 14.3654 8.32602 14.6973 7.99413C15.0087 7.68254 15.0327 7.40213 14.9795 7.16698C14.9332 6.96327 14.8204 6.77099 14.707 6.62792L14.5957 6.50195C14.4933 6.39957 14.4401 6.25769 14.4502 6.11327C14.4605 5.96888 14.5327 5.83599 14.6484 5.74902C14.9558 5.51849 15.4742 4.96086 15.8037 4.3662C15.9675 4.07048 16.0637 3.80137 16.085 3.58593C16.1047 3.38427 16.0578 3.26213 15.9697 3.17382C15.8631 3.06726 15.7102 3.00377 15.4824 2.99707Z" fill="#d97757"/></svg>`
+  const createSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 20 20" fill="none" style="flex-shrink: 0; margin-right: 10px;"><path d="M15.5117 1.99707C15.9213 2.0091 16.3438 2.13396 16.6768 2.46679C17.0278 2.81814 17.1209 3.26428 17.0801 3.68261C17.0404 4.08745 16.8765 4.49344 16.6787 4.85058C16.3934 5.36546 15.9941 5.85569 15.6348 6.20898C15.7682 6.41421 15.8912 6.66414 15.9551 6.9453C16.0804 7.4977 15.9714 8.13389 15.4043 8.70116C14.8566 9.24884 13.974 9.54823 13.1943 9.71679C12.7628 9.81003 12.3303 9.86698 11.9473 9.90233C12.0596 10.2558 12.0902 10.7051 11.8779 11.2012L11.8223 11.3203C11.5396 11.8854 11.0275 12.2035 10.4785 12.3965C9.93492 12.5875 9.29028 12.6792 8.65332 12.75C7.99579 12.8231 7.34376 12.8744 6.70117 12.9775C6.14371 13.067 5.63021 13.1903 5.18652 13.3818L5.00585 13.4658C4.53515 14.2245 4.13745 14.9658 3.80957 15.6465C4.43885 15.2764 5.1935 15 5.99999 15C6.27614 15 6.49999 15.2238 6.49999 15.5C6.49999 15.7761 6.27613 16 5.99999 16C5.35538 16 4.71132 16.2477 4.15039 16.6103C3.58861 16.9736 3.14957 17.427 2.91601 17.7773C2.91191 17.7835 2.90568 17.788 2.90136 17.7939C2.88821 17.8119 2.8746 17.8289 2.85937 17.8447C2.85117 17.8533 2.84268 17.8612 2.83398 17.8691C2.81803 17.8835 2.80174 17.897 2.78417 17.9092C2.774 17.9162 2.76353 17.9225 2.75292 17.9287C2.73854 17.9372 2.72412 17.9451 2.70898 17.9521C2.69079 17.9605 2.6723 17.9675 2.65332 17.9736C2.6417 17.9774 2.63005 17.9805 2.61816 17.9834C2.60263 17.9872 2.5871 17.9899 2.57128 17.9922C2.55312 17.9948 2.53511 17.9974 2.5166 17.998C2.50387 17.9985 2.49127 17.9976 2.47851 17.9971C2.45899 17.9962 2.43952 17.9954 2.41992 17.9922C2.40511 17.9898 2.39062 17.9862 2.37597 17.9824C2.36477 17.9795 2.35294 17.9783 2.34179 17.9746C2.33697 17.973 2.33286 17.9695 2.32812 17.9678C2.31042 17.9612 2.29351 17.953 2.27636 17.9443C2.26332 17.9378 2.25053 17.9314 2.23828 17.9238C2.23339 17.9208 2.22747 17.9192 2.22265 17.916C2.21414 17.9103 2.20726 17.9026 2.19921 17.8965C2.18396 17.8849 2.16896 17.8735 2.15527 17.8603C2.14518 17.8507 2.13609 17.8404 2.12695 17.8301C2.11463 17.8161 2.10244 17.8023 2.09179 17.7871C2.08368 17.7756 2.07736 17.7631 2.07031 17.751C2.06168 17.7362 2.05297 17.7216 2.04589 17.706C2.03868 17.6901 2.03283 17.6738 2.02734 17.6572C2.0228 17.6436 2.01801 17.6302 2.01464 17.6162C2.01117 17.6017 2.009 17.587 2.00683 17.5722C2.00411 17.5538 2.00161 17.5354 2.00097 17.5166C2.00054 17.5039 2.00141 17.4912 2.00195 17.4785C2.00279 17.459 2.00364 17.4395 2.00683 17.4199C2.00902 17.4064 2.01327 17.3933 2.0166 17.3799C2.01973 17.3673 2.02123 17.3543 2.02539 17.3418C2.41772 16.1648 3.18163 14.466 4.30468 12.7012C4.31908 12.5557 4.34007 12.3582 4.36914 12.1201C4.43379 11.5907 4.53836 10.8564 4.69921 10.0381C5.0174 8.41955 5.56814 6.39783 6.50585 4.9912L6.73242 4.66894C7.27701 3.93277 7.93079 3.30953 8.61035 2.85156C9.3797 2.33311 10.2221 2 11.001 2C11.7951 2.00025 12.3531 2.35795 12.7012 2.70605C12.7723 2.77723 12.8348 2.84998 12.8896 2.91796C13.2829 2.66884 13.7917 2.39502 14.3174 2.21191C14.6946 2.08056 15.1094 1.98537 15.5117 1.99707ZM17.04 15.5537C17.1486 15.3 17.4425 15.1818 17.6963 15.29C17.95 15.3986 18.0683 15.6925 17.96 15.9463C17.4827 17.0612 16.692 18 15.5 18C14.6309 17.9999 13.9764 17.5003 13.5 16.7978C13.0236 17.5003 12.3691 18 11.5 18C10.6309 17.9999 9.97639 17.5003 9.49999 16.7978C9.02359 17.5003 8.36911 18 7.49999 18C7.22391 17.9999 7 17.7761 6.99999 17.5C6.99999 17.2239 7.22391 17 7.49999 17C8.07039 17 8.6095 16.5593 9.04003 15.5537L9.07421 15.4873C9.16428 15.3412 9.32494 15.25 9.49999 15.25C9.70008 15.25 9.88121 15.3698 9.95996 15.5537L10.042 15.7353C10.4581 16.6125 10.9652 16.9999 11.5 17C12.0704 17 12.6095 16.5593 13.04 15.5537L13.0742 15.4873C13.1643 15.3412 13.3249 15.25 13.5 15.25C13.7001 15.25 13.8812 15.3698 13.96 15.5537L14.042 15.7353C14.4581 16.6125 14.9652 16.9999 15.5 17C16.0704 17 16.6095 16.5593 17.04 15.5537ZM15.4824 2.99707C15.247 2.99022 14.9608 3.04682 14.6465 3.15624C14.0173 3.37541 13.389 3.76516 13.0498 4.01953C12.9277 4.11112 12.7697 4.14131 12.6221 4.10253C12.4745 4.06357 12.3522 3.9591 12.291 3.81933V3.81835C12.2892 3.81468 12.2861 3.80833 12.2822 3.80078C12.272 3.78092 12.2541 3.7485 12.2295 3.70898C12.1794 3.62874 12.1011 3.52019 11.9941 3.41308C11.7831 3.2021 11.4662 3.00024 11.001 2.99999C10.4904 2.99999 9.84173 3.22729 9.16894 3.68066C8.58685 4.07297 8.01568 4.61599 7.5371 5.26269L7.33789 5.54589C6.51634 6.77827 5.99475 8.63369 5.68066 10.2314C5.63363 10.4707 5.5913 10.7025 5.55371 10.9238C7.03031 9.01824 8.94157 7.19047 11.2812 6.05077C11.5295 5.92989 11.8283 6.03301 11.9492 6.28124C12.0701 6.52949 11.967 6.82829 11.7187 6.94921C9.33153 8.11208 7.38648 10.0746 5.91406 12.1103C6.12313 12.0632 6.33385 12.0238 6.54296 11.9902C7.21709 11.8821 7.92723 11.8243 8.54296 11.7558C9.17886 11.6852 9.72123 11.6025 10.1465 11.4531C10.5662 11.3056 10.8063 11.1158 10.9277 10.873L10.9795 10.7549C11.0776 10.487 11.0316 10.2723 10.9609 10.1123C10.918 10.0155 10.8636 9.93595 10.8203 9.88183C10.7996 9.85598 10.7822 9.83638 10.7715 9.82518L10.7607 9.81542L10.7627 9.8164L10.7646 9.81835C10.6114 9.67972 10.5597 9.46044 10.6338 9.26757C10.7082 9.07475 10.8939 8.94726 11.1006 8.94726C11.5282 8.94719 12.26 8.8956 12.9834 8.73925C13.7297 8.5779 14.3654 8.32602 14.6973 7.99413C15.0087 7.68254 15.0327 7.40213 14.9795 7.16698C14.9332 6.96327 14.8204 6.77099 14.707 6.62792L14.5957 6.50195C14.4933 6.39957 14.4401 6.25769 14.4502 6.11327C14.4605 5.96888 14.5327 5.83599 14.6484 5.74902C14.9558 5.51849 15.4742 4.96086 15.8037 4.3662C15.9675 4.07048 16.0637 3.80137 16.085 3.58593C16.1047 3.38427 16.0578 3.26213 15.9697 3.17382C15.8631 3.06726 15.7102 3.00377 15.4824 2.99707Z" fill="#d97757"/></svg>`;
 
   // 主题适配样式
   const themeStyles = isLightTheme
     ? {
         // 浅色主题：温暖的米白背景 + 深色文字
-        background: 'linear-gradient(135deg, #faf9f5 0%, #f2f1ec 100%)',
-        color: '#131314',
-        border: '1px solid rgba(217, 119, 87, 0.4)',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(217, 119, 87, 0.15)'
+        background: "linear-gradient(135deg, #faf9f5 0%, #f2f1ec 100%)",
+        color: "#131314",
+        border: "1px solid rgba(217, 119, 87, 0.4)",
+        boxShadow:
+          "0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(217, 119, 87, 0.15)",
       }
     : {
         // 深色主题：与任务标签区域风格一致
-        background: 'rgba(45, 45, 60, 0.95)',
-        color: 'rgba(245, 245, 247, 0.95)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)'
-      }
+        background: "rgba(45, 45, 60, 0.95)",
+        color: "rgba(245, 245, 247, 0.95)",
+        border: "1px solid rgba(255, 255, 255, 0.08)",
+        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+      };
 
   // 创建提示元素
-  const hint = document.createElement('div')
-  hint.id = 'new-task-hint'
+  const hint = document.createElement("div");
+  hint.id = "new-task-hint";
   hint.style.cssText = `
     position: fixed;
     top: 20px;
@@ -2391,22 +2539,22 @@ function showNewTaskVisualHint(count) {
     z-index: 10000;
     animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), fadeOutUp 0.3s ease-in 2.7s forwards;
     pointer-events: none;
-  `
+  `;
   // AIIA-XSS-SAFE: createSvg 是开发者手写 SVG 字面量；_t('page.noContent.newTasks', …)
   // 只插值整数 count（ICU plural），无用户可控数据。详见 docs/i18n.md § Security。
-  hint.innerHTML = `${createSvg}<span>${_t('page.noContent.newTasks', { count: count }) || 'Received ' + count + ' new feedback requests'}</span>`
+  hint.innerHTML = `${createSvg}<span>${_t("page.noContent.newTasks", { count: count }) || "Received " + count + " new feedback requests"}</span>`;
 
   // 添加到页面
-  document.body.appendChild(hint)
+  document.body.appendChild(hint);
 
   // 3秒后自动移除
   setTimeout(() => {
     if (hint.parentNode) {
-      hint.parentNode.removeChild(hint)
+      hint.parentNode.removeChild(hint);
     }
-  }, 3000)
+  }, 3000);
 
-  console.log(`显示新任务视觉提示: ${count} 个新任务`)
+  console.log(`显示新任务视觉提示: ${count} 个新任务`);
 }
 
 /**
@@ -2436,16 +2584,16 @@ function showNewTaskVisualHint(count) {
 function showNewTaskNotification(count, taskIds) {
   try {
     if (
-      typeof notificationManager !== 'undefined' &&
+      typeof notificationManager !== "undefined" &&
       notificationManager &&
-      typeof notificationManager.dispatchEvent === 'function'
+      typeof notificationManager.dispatchEvent === "function"
     ) {
       notificationManager.dispatchEvent({
-        type: 'new_tasks',
-        count: typeof count === 'number' ? count : Number(count),
-        taskIds: Array.isArray(taskIds) ? taskIds : []
-      })
-      return
+        type: "new_tasks",
+        count: typeof count === "number" ? count : Number(count),
+        taskIds: Array.isArray(taskIds) ? taskIds : [],
+      });
+      return;
     }
   } catch (e) {
     // 忽略：通知中心异常不应影响轮询主流程
@@ -2453,7 +2601,7 @@ function showNewTaskNotification(count, taskIds) {
 
   // 降级：仅展示视觉提示
   try {
-    showNewTaskVisualHint(count)
+    showNewTaskVisualHint(count);
   } catch (e) {
     // 忽略：视觉提示失败不应影响轮询主流程
   }
@@ -2490,7 +2638,7 @@ function showNewTaskNotification(count, taskIds) {
  * - 依赖DOM已加载
  */
 async function initMultiTaskSupport() {
-  console.log('Initializing multi-task support…')
+  console.log("Initializing multi-task support…");
 
   // R22.3：冷启关键路径并行化。
   // why：`fetchFeedbackPromptsFresh()` (`GET /api/get-feedback-prompts`) 与
@@ -2504,53 +2652,57 @@ async function initMultiTaskSupport() {
   // 后者由 polling 健康检查回收），所以单个 reject 不会掀翻另一个；用
   // `Promise.all` 是安全的——任何一个 rejection 仍会向上抛，但目前两个
   // 函数都是 swallow-and-fallback 风格，事实上不会 reject。
-  await Promise.all([fetchFeedbackPromptsFresh(), refreshTasksList()])
+  await Promise.all([fetchFeedbackPromptsFresh(), refreshTasksList()]);
 
   // 启动定时轮询
-  startTasksPolling()
+  startTasksPolling();
 
   // 健康检查：每 30s 确保轮询/SSE 仍在运行
   setInterval(function () {
-    if (typeof document !== 'undefined' && document.hidden) return
+    if (typeof document !== "undefined" && document.hidden) return;
     if (!tasksPollingTimer) {
-      console.warn('Task polling stopped; auto-restarting')
-      startTasksPolling()
+      console.warn("Task polling stopped; auto-restarting");
+      startTasksPolling();
     }
     if (!_sseConnected && !_sseReconnectTimer) {
-      _connectSSE()
+      _connectSSE();
     }
-  }, 30000)
+  }, 30000);
 
   // 【新增】实时保存 textarea 和选项状态
   // 监听 input 事件，每次输入都保存，避免轮询导致内容丢失
-  const textarea = document.getElementById('feedback-text')
+  const textarea = document.getElementById("feedback-text");
   if (textarea) {
-    textarea.addEventListener('input', () => {
+    textarea.addEventListener("input", () => {
       if (activeTaskId) {
-        taskTextareaContents[activeTaskId] = textarea.value
+        taskTextareaContents[activeTaskId] = textarea.value;
       }
-    })
-    console.log('Enabled real-time textarea autosave')
+    });
+    console.log("Enabled real-time textarea autosave");
   }
 
   // 监听选项变化
-  const optionsContainer = document.getElementById('options-container')
+  const optionsContainer = document.getElementById("options-container");
   if (optionsContainer) {
-    optionsContainer.addEventListener('change', event => {
-      if (event.target.type === 'checkbox' && activeTaskId) {
+    optionsContainer.addEventListener("change", (event) => {
+      if (event.target.type === "checkbox" && activeTaskId) {
         // 保存所有选项的勾选状态
-        const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]')
-        const states = {}
-        checkboxes.forEach(cb => {
-          states[cb.id] = cb.checked
-        })
-        taskOptionsStates[activeTaskId] = states
+        const checkboxes = optionsContainer.querySelectorAll(
+          'input[type="checkbox"]',
+        );
+        const states = {};
+        checkboxes.forEach((cb) => {
+          states[cb.id] = cb.checked;
+        });
+        taskOptionsStates[activeTaskId] = states;
       }
-    })
-    console.log('Enabled real-time option-state autosave')
+    });
+    console.log("Enabled real-time option-state autosave");
   }
 
-  console.log('Multi-task support initialized (with polling health-check and real-time autosave)')
+  console.log(
+    "Multi-task support initialized (with polling health-check and real-time autosave)",
+  );
 }
 
 /**
@@ -2588,20 +2740,23 @@ async function initMultiTaskSupport() {
  * - 可以与轮询并行运行
  */
 async function refreshTasksList() {
-  const ok = await fetchAndApplyTasks('manual')
+  const ok = await fetchAndApplyTasks("manual");
   if (ok) {
-    tasksPollBackoffMs = TASKS_POLL_BASE_MS
-    console.log('Task list refreshed manually')
+    tasksPollBackoffMs = TASKS_POLL_BASE_MS;
+    console.log("Task list refreshed manually");
   }
 
   // 手动刷新后确保轮询处于运行态（页面可见时）
-  if (!tasksPollingTimer && !(typeof document !== 'undefined' && document.hidden)) {
-    startTasksPolling()
+  if (
+    !tasksPollingTimer &&
+    !(typeof document !== "undefined" && document.hidden)
+  ) {
+    startTasksPolling();
   }
 }
 
 // 导出函数供外部使用
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   window.multiTaskModule = {
     startTasksPolling,
     stopTasksPolling,
@@ -2610,21 +2765,24 @@ if (typeof window !== 'undefined') {
     initMultiTaskSupport,
     refreshTasksList,
     get sseConnected() {
-      return _sseConnected
-    }
-  }
+      return _sseConnected;
+    },
+  };
 
   // 直接导出常用函数到 window，方便 app.js 调用
-  window.refreshTasksList = refreshTasksList
+  window.refreshTasksList = refreshTasksList;
 }
 
 // ==================== 轻量初始化（无需进入多任务模式也生效） ====================
 // 目的：
 // - 让「设置 → 配置」里的“当前配置文件路径”能在页面打开后自动填充
 // - 让 feedbackPrompts 在任何模式下都能拿到最新配置（支持热更新）
-if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-  document.addEventListener('DOMContentLoaded', () => {
+if (
+  typeof document !== "undefined" &&
+  typeof document.addEventListener === "function"
+) {
+  document.addEventListener("DOMContentLoaded", () => {
     // 不阻塞首屏：异步拉取即可
-    fetchFeedbackPromptsFresh()
-  })
+    fetchFeedbackPromptsFresh();
+  });
 }
