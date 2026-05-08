@@ -190,6 +190,88 @@ def _resolve_server_version() -> str:
         return "0.0.0+local"
 
 
+# R63：build 元信息（git commit / branch / dirty 状态）。
+# ============================================================================
+# 与 R62 ``runtime`` 互补：``runtime`` 给 Python 解释器视角，``build`` 给源码
+# 视角——「这个 process 跑的是哪个 commit、是不是 dirty 工作树」。这是
+# 生产 issue triage 的标配，比 ``version`` 字符串精确：``v1.5.45`` 可能对
+# 应过 100 个 commit，但 ``git_commit=fa6f49d`` 只对应一份代码。
+#
+# 实现策略：
+# - **Lazy 加 cache**：第一次调用 ``_resolve_build_info()`` 时一次性 fork
+#   git subprocess（3 个），结果缓存到 ``_BUILD_INFO_CACHE``。后续调用直接
+#   返回 dict 浅拷贝。对 server_info_resource 这种被频繁拉取的端点，避免
+#   每次都启动 3 个 ``git`` subprocess。
+# - **失败 graceful**：pip install / docker / pyinstaller 部署没有 ``.git``
+#   目录，``git`` subprocess 会失败，cache 里就存 ``"unknown"``。client UI
+#   不应当把 ``unknown`` 当告警。
+# - **超时保护**：每个 ``git`` subprocess 限 2 s，防 corrupt repo 卡死整个
+#   server_info 端点。
+# - **Thread-safe**：双重检查锁定，避免多个 fastmcp task 同时 fork 3×N 个
+#   git subprocess。
+_BUILD_INFO_CACHE: dict[str, str] = {}
+_BUILD_INFO_CACHE_LOCK: threading.Lock = threading.Lock()
+
+
+def _resolve_build_info() -> dict[str, str]:
+    """返回 ``{git_commit, git_branch, git_dirty}``，失败字段填 ``"unknown"``。
+
+    Thread-safe + lazy + 单次缓存：第一次拿到的结果在整个进程生命周期内不
+    会变（即使工作树后续被改了，cache 也不刷——这与 ``_PROCESS_STARTED_AT_UNIX``
+    的语义一致：「我跑起来时是哪个 commit」）。
+
+    返回 dict 是拷贝；调用方修改不影响 module-level cache。
+    """
+    global _BUILD_INFO_CACHE
+    if _BUILD_INFO_CACHE:
+        return dict(_BUILD_INFO_CACHE)
+
+    with _BUILD_INFO_CACHE_LOCK:
+        # 双重检查：进入锁后再看一次 cache，防止多个 thread 同时穿透
+        if _BUILD_INFO_CACHE:
+            return dict(_BUILD_INFO_CACHE)
+
+        import subprocess as _subprocess
+        from pathlib import Path as _Path
+
+        repo_root = _Path(__file__).resolve().parent
+        cache: dict[str, str] = {}
+
+        def _git(args: list[str]) -> str:
+            try:
+                out = _subprocess.check_output(
+                    ["git", *args],
+                    cwd=str(repo_root),
+                    stderr=_subprocess.DEVNULL,
+                    timeout=2.0,
+                )
+                return out.decode("utf-8", errors="replace").strip()
+            except Exception:
+                return "unknown"
+
+        cache["git_commit"] = _git(["rev-parse", "--short", "HEAD"])
+        cache["git_branch"] = _git(["rev-parse", "--abbrev-ref", "HEAD"])
+        # ``git status --porcelain`` 输出非空 = 工作树 dirty
+        # 这里检查的是工作树状态，不是 cache；空字符串 = clean。
+        try:
+            porc = (
+                _subprocess.check_output(
+                    ["git", "status", "--porcelain"],
+                    cwd=str(repo_root),
+                    stderr=_subprocess.DEVNULL,
+                    timeout=2.0,
+                )
+                .decode("utf-8", errors="replace")
+                .strip()
+            )
+            cache["git_dirty"] = "yes" if porc else "no"
+        except Exception:
+            cache["git_dirty"] = "unknown"
+
+        _BUILD_INFO_CACHE = cache
+        return dict(cache)
+
+
 def _build_server_icons() -> list[Icon]:
     """启动时一次性把本地 icons 转成 data URI，让 server icons 完全 self-contained。
 
@@ -653,6 +735,15 @@ def server_info_resource() -> dict[str, object]:
         "transport": "stdio",
         "error_stats": get_mcp_error_stats(),
     }
+
+    # R63：build 元信息（git commit / branch / dirty）
+    # 给 issue triage 的精确锚点：``version`` 是 1.5.x 的 release 号（人类
+    # 可读），``build`` 是 commit hash + branch（机器可读）。两者一起回答
+    # 「这个 process 跑的是哪个 commit」。
+    try:
+        info["build"] = _resolve_build_info()
+    except Exception as build_exc:
+        info["build"] = {"error": f"{type(build_exc).__name__}: {build_exc}"}
 
     # R44 + R62：runtime 元信息块。
     # ----------------------------------------------------------------------
