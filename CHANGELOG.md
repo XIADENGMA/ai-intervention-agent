@@ -11,6 +11,87 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R96** — repair a silently-skipped CSRF parity test. The R72-D
+  fix tightened `normalizeLang` in **two** mirrored
+  files — `static/js/i18n.js` and `packages/vscode/i18n.js` — and
+  the regression suite `tests/test_i18n_normalize_lang_csrf_r72d.py`
+  was supposed to exercise both. In practice
+  `test_packages_vscode_i18n_consistency` skipped on every run
+  because the JS sandbox harness only looked at
+  `sandbox.window.AIIA_I18N`, while the vscode mirror exports via
+  `globalThis.AIIA_I18N = api`; under `vm.runInContext` the
+  `globalThis === sandbox` aliasing places the api at
+  `sandbox.AIIA_I18N`, leaving `sandbox.window.AIIA_I18N` undefined
+  and the harness short-circuited to `skipTest("doesn't expose
+  normalizeLang via window")`. So R72-D's "vscode mirror must keep
+  the same hardening" contract was a green test that never
+  actually ran.
+
+  Symptom thread:
+
+  - `pytest -v -rs tests/test_i18n_normalize_lang_csrf_r72d.py`
+    consistently reported the vscode parity case as `SKIPPED`
+    with reason _"packages/vscode/i18n.js doesn't expose
+    normalizeLang via window: NODE_FAIL: FAIL: normalizeLang not
+    exported"_. The wording made it look like the file _itself_
+    was broken; reviewers reasonably concluded it was
+    environmental (unusual node host) and the case was tolerated.
+  - `packages/vscode/i18n.js:986-994` does export the api: it
+    just chooses `globalThis.AIIA_I18N = api` first and only
+    falls back to `window.AIIA_I18N = api` if the globalThis
+    write throws. Inside the harness the globalThis write succeeds
+    (because `sandbox.globalThis = sandbox`), so the fallback
+    branch is never taken — and the harness only ever looked at
+    the fallback location.
+  - Net effect: one live `normalizeLang` mirror was being
+    fuzz-tested against `KNOWN_GOOD` and `UNKNOWN_OR_HOSTILE`
+    every PR, the other was untested. A regression in the vscode
+    copy (e.g. losing the `zh-TW → zh-CN` fold or the
+    path-traversal collapse to `DEFAULT_LANG`) would land on
+    `main` with green CI. CodeQL would still flag it on the
+    next scan, but only after release.
+
+  Root cause: silent-skip masquerading as coverage. The harness
+  was written when both files used `window.AIIA_I18N = api` (back
+  in v1.5.x); a later refactor (the `globalThis` + try/catch
+  fallback in `packages/vscode/i18n.js`) shifted the export site
+  but the harness was never updated. The "skip if missing" guard,
+  added to handle environments without node, kept the suite
+  green while the actual contract eroded.
+
+  Fix:
+
+  1. **Harness**: extend the api lookup to
+     `sandbox.window.AIIA_I18N || sandbox.AIIA_I18N`, with a
+     comment naming both export shapes and the historical
+     reason. Both files now resolve the api on first try.
+  2. **Test scope**: replace the vscode case's single-input
+     smoke (`evil/path → en`) with the same dual-set assertion
+     `static/js/i18n.js` already gets:
+     `_assert_known_canonical(_I18N_JS_VSCODE)` walks
+     `KNOWN_GOOD` (12 inputs incl. `zh-TW`, `xx-AC`, ` pseudo `)
+     and `_assert_default_lang(_I18N_JS_VSCODE)` walks
+     `UNKNOWN_OR_HOSTILE` (13 inputs incl.
+     `../../../etc/passwd`, `javascript:alert(1)`,
+     `Object.prototype`). 25 sub-asserts vs the original 1 —
+     the vscode mirror now has equivalent coverage.
+  3. **Self-test**: temporarily reverting
+     `packages/vscode/i18n.js::normalizeLang` to either
+     `return raw` or a partial fold (only `zh-cn`, no `zh-TW`)
+     reproduced exactly the failure shape we'd want
+     (`AssertionError: 'evil/path' != 'en'` and
+     `normalizeLang('zh-TW') should be 'zh-CN', got 'en'`).
+     Restoring the file returned to green — confirming the
+     gate now actually fires.
+
+  Verification: `ci_gate.py` green; `pytest -q` shows
+  `3847 passed, 2 skipped` (was 3846 passed, 3 skipped — net +1
+  test that now actually runs, no new skips). The two remaining
+  skips are intentional (`test_pre_reserved_keys_not_yet_consumed`
+  marks an unimplemented Future hook; `test_vsix_artifact_under_
+  fail_budget_if_present` is fixture-driven and only runs when a
+  prebuilt `.vsix` exists in-tree).
+
 - **R95** — fix a TOML-escape silent breakage in
   `docs/configuration.{md,zh-CN.md}` where the
   `[feedback]::prompt_suffix` Default column showed

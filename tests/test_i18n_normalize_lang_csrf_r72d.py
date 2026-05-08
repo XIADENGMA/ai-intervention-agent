@@ -43,7 +43,15 @@ sandbox.globalThis = sandbox;
 sandbox.global = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(code, sandbox);
-const api = sandbox.window.AIIA_I18N;
+// 两份 i18n.js 用了不同的 export 路径：
+//   - static/js/i18n.js:                    window.AIIA_I18N = api（写死 window）
+//   - packages/vscode/i18n.js:              globalThis.AIIA_I18N = api（走 globalThis，try-catch fallback 到 window）
+// vm.runInContext 让 globalThis === sandbox，所以 vscode 版的 api 落在 sandbox.AIIA_I18N
+// 而**不是** sandbox.window.AIIA_I18N。R96 之前 harness 只读 sandbox.window.AIIA_I18N，
+// 在 vscode 这条 export 路径下永远拿不到，于是 ``test_packages_vscode_i18n_consistency``
+// 总是 skip ——CSRF 加固的"vscode 镜像也必须有"这条契约表面上有测试，实际从未跑过。
+// 同时 fallback ``sandbox.AIIA_I18N``（或任意 ``window.AIIA_I18N``）满足两份文件。
+const api = sandbox.window.AIIA_I18N || sandbox.AIIA_I18N;
 if (!api || typeof api.normalizeLang !== 'function') {{
   process.stderr.write('FAIL: normalizeLang not exported from ' + i18nPath);
   process.exit(1);
@@ -155,19 +163,34 @@ class TestNormalizeLangCsrfHardening(unittest.TestCase):
 
     def test_packages_vscode_i18n_consistency(self) -> None:
         """``packages/vscode/i18n.js`` 镜像 ``static/js/i18n.js`` 行为；如果它存在，
-        则必须有同样的 csrf 加固。如果不存在或没有 normalizeLang 函数，跳过。
+        则必须有同样的 csrf 加固 + canonical 折叠表。如果不存在或没有 normalizeLang
+        函数，跳过。
+
+        R96 之前本测试的 harness 只读 ``sandbox.window.AIIA_I18N``，但 vscode 版
+        i18n.js 的 export 路径是 ``globalThis.AIIA_I18N = api``（``vm.runInContext``
+        让 ``globalThis === sandbox``，所以 api 落在 ``sandbox.AIIA_I18N`` 而非
+        ``sandbox.window.AIIA_I18N``）——结果 ``getNormalize`` 永远返回 None，本
+        测试始终 skip，CSRF 加固在 vscode 镜像里是否真存在从未真正被 CI 验证。
+        R96 把 harness 改成同时尝试 ``sandbox.window.AIIA_I18N`` 与
+        ``sandbox.AIIA_I18N``，并把 smoke 升级为完整的 KNOWN_GOOD / HOSTILE 双
+        集合断言（与 static 侧 ``test_static_i18n_*`` 保持等价覆盖），这样
+        vscode 端的 normalizeLang 漂移（漏掉 ``xx-AC → pseudo`` / ``zh-TW →
+        zh-CN`` / 路径穿越未折叠）等任意一项都会 fail。
         """
         if not _I18N_JS_VSCODE.exists():
             self.skipTest(f"{_I18N_JS_VSCODE} not present")
-        # smoke test：未知输入应该返回 en
-        got = _run_normalize(_I18N_JS_VSCODE, "evil/path")
-        # vscode side 可能没 export window.aiia_i18n（webview-only），如果失败
-        # 只是 skip 而不是 fail
-        if got is None or got.startswith("NODE_FAIL"):
+        # 先做一次 sentinel：harness 能否顺利跑通这份 i18n.js？
+        sentinel = _run_normalize(_I18N_JS_VSCODE, "evil/path")
+        if sentinel is None or (
+            isinstance(sentinel, str) and sentinel.startswith("NODE_FAIL")
+        ):
             self.skipTest(
-                f"packages/vscode/i18n.js doesn't expose normalizeLang via window: {got}"
+                f"packages/vscode/i18n.js doesn't expose normalizeLang via "
+                f"sandbox.window/sandbox.AIIA_I18N: {sentinel}"
             )
-        self.assertEqual(got, "en", f"packages/vscode i18n missing csrf fix: {got!r}")
+        # 等价 coverage：与 static 侧保持一致的双集合断言。
+        self._assert_known_canonical(_I18N_JS_VSCODE)
+        self._assert_default_lang(_I18N_JS_VSCODE)
 
 
 @unittest.skipIf(shutil.which("node") is None, "node not on PATH")
