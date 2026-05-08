@@ -19,7 +19,8 @@ runtime 对缺参做了 graceful fallback（保留字面 ``{name}``），这让
 无论 warn/strict 都会打 summary；``--strict`` 任一 mismatch 即 exit 1，CI gate
 用它作硬线。
 
-Exit：``0`` 干净或 warn；``1`` strict 下命中。
+Exit：``0`` 干净或 warn；``1`` strict 下命中；``2`` 源 locale 缺失（R110
+layer-0 path-drift sanity check，与 R102 ``check_locales.py`` 同款约定）。
 """
 
 from __future__ import annotations
@@ -319,9 +320,12 @@ def _collect_surface(
 
 
 def _scan_web() -> list[dict[str, Any]]:
+    """Scan Web UI surface. ``WEB_LOCALES_DIR/en.json`` 必须由 main() 的
+    layer-0 path-drift sanity check (R110) 已验证存在；本函数不再做
+    silent ``if not en.is_file(): return []`` (那是 R102 已经在
+    ``check_locales.py`` 修过的 silent-skip-on-missing-source 反模式)。
+    """
     en = WEB_LOCALES_DIR / "en.json"
-    if not en.is_file():
-        return []
     flat = _flatten(_load_json(en))
     placeholders = {k: _placeholders_in(v) for k, v in flat.items()}
     files: list[Path] = []
@@ -333,9 +337,9 @@ def _scan_web() -> list[dict[str, Any]]:
 
 
 def _scan_vscode() -> list[dict[str, Any]]:
+    """Scan VS Code extension surface. ``VSCODE_LOCALES_DIR/en.json``
+    存在性同 ``_scan_web``，由 main() 的 layer-0 sanity check 保证。"""
     en = VSCODE_LOCALES_DIR / "en.json"
-    if not en.is_file():
-        return []
     flat = _flatten(_load_json(en))
     placeholders = {k: _placeholders_in(v) for k, v in flat.items()}
     targets = (
@@ -392,6 +396,46 @@ def main(argv: list[str] | None = None) -> int:
         help="Emit machine-readable JSON instead of a human report.",
     )
     args = parser.parse_args(argv)
+
+    # R110：layer-0 path-drift sanity check —— Web 与 VS Code 的源 locale
+    # 必须真实存在，缺失即 fail-loud (exit 2) 而非 silent ``return []``。
+    # ``_scan_web`` / ``_scan_vscode`` 之前在 ``en.json`` 缺失时静默返回
+    # 空列表，``total = sum(len([])) = 0`` 让 ``--strict`` 也走 exit 0
+    # 路径——整个 param-signature 校验 zero-coverage 但 CI 仍然绿。
+    # 这与 R88/R100/R101/R102 已经在 brand-color guard / HTML coverage /
+    # ts/js no-cjk / locale shape 几个扫描器修过的 silent-skip-on-missing-
+    # source 反模式同款。Layer-0 hoist 把这条 R102 family 的最后一个
+    # i18n 扫描器收尾。Exit code 约定与 R102 一致（0=clean, 1=violations,
+    # 2=configuration error）。
+    required_paths = [
+        (WEB_LOCALES_DIR / "en.json", "Web UI 源 locale"),
+        (VSCODE_LOCALES_DIR / "en.json", "VS Code 源 locale"),
+    ]
+    missing = [(path, label) for path, label in required_paths if not path.is_file()]
+    if missing:
+        print(
+            "ERROR: missing required source locale(s) (configuration drift, "
+            "not 'OK' — failing loud per R110, mirrors R102 in check_locales.py):",
+            file=sys.stderr,
+        )
+        for path, label in missing:
+            try:
+                rel = path.relative_to(ROOT).as_posix()
+            except ValueError:
+                rel = str(path)
+            print(
+                f"  - {label}: {rel}\n    Resolved absolute path: {path}",
+                file=sys.stderr,
+            )
+        print(
+            "\nThese resources are i18n single-source-of-truth — every key\n"
+            "and placeholder in the call-site / locale-value diff comes from\n"
+            "them. If a refactor moved them, update WEB_LOCALES_DIR /\n"
+            "VSCODE_LOCALES_DIR at the top of this script (and any matching\n"
+            "CI gate path).",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         report = scan()

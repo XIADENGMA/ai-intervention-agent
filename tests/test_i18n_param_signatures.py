@@ -159,11 +159,18 @@ class TestScannerResilience:
         root = tmp_path
         web_locales = root / "src" / "ai_intervention_agent" / "static" / "locales"
         web_js = root / "src" / "ai_intervention_agent" / "static" / "js"
+        vscode_locales = root / "packages" / "vscode" / "locales"
         web_locales.mkdir(parents=True)
         web_js.mkdir(parents=True)
+        # R110：``_scan_web`` / ``_scan_vscode`` 不再 silent skip 缺源
+        # locale；测试 monkeypatch 改 root 时必须给两端都建空 en.json
+        # （否则 ``_load_json`` 直接抛 FileNotFoundError，与 main 顶部
+        # layer-0 的 fail-loud 行为一致）。
+        vscode_locales.mkdir(parents=True)
         (web_locales / "en.json").write_text(
             '{ "hello": "Hi {{user}}!" }', encoding="utf-8"
         )
+        (vscode_locales / "en.json").write_text("{}", encoding="utf-8")
         (web_js / "app.js").write_text(
             "var x = t('hello');\nvar y = t('hello', { wrong: 1 });\n",
             encoding="utf-8",
@@ -174,9 +181,7 @@ class TestScannerResilience:
         monkeypatch.setattr(
             CHK, "TEMPLATES_DIR", root / "src" / "ai_intervention_agent" / "templates"
         )
-        monkeypatch.setattr(
-            CHK, "VSCODE_LOCALES_DIR", root / "packages" / "vscode" / "locales"
-        )
+        monkeypatch.setattr(CHK, "VSCODE_LOCALES_DIR", vscode_locales)
         monkeypatch.setattr(CHK, "VSCODE_PKG_DIR", root / "packages" / "vscode")
         report = CHK.scan()
         web_issues = report["web"]
@@ -194,11 +199,14 @@ class TestScannerResilience:
         root = tmp_path
         web_locales = root / "src" / "ai_intervention_agent" / "static" / "locales"
         web_js = root / "src" / "ai_intervention_agent" / "static" / "js"
+        vscode_locales = root / "packages" / "vscode" / "locales"
         web_locales.mkdir(parents=True)
         web_js.mkdir(parents=True)
+        vscode_locales.mkdir(parents=True)  # R110 同款补齐
         (web_locales / "en.json").write_text(
             '{ "hello": "Hi {{user}}!" }', encoding="utf-8"
         )
+        (vscode_locales / "en.json").write_text("{}", encoding="utf-8")
         # Key is a variable — scanner should ignore.
         (web_js / "app.js").write_text(
             "var x = t(someKey, { user });\n", encoding="utf-8"
@@ -206,12 +214,159 @@ class TestScannerResilience:
         monkeypatch.setattr(CHK, "ROOT", root)
         monkeypatch.setattr(CHK, "WEB_LOCALES_DIR", web_locales)
         monkeypatch.setattr(CHK, "WEB_JS_DIR", web_js)
-        monkeypatch.setattr(
-            CHK, "VSCODE_LOCALES_DIR", root / "packages" / "vscode" / "locales"
-        )
+        monkeypatch.setattr(CHK, "VSCODE_LOCALES_DIR", vscode_locales)
         monkeypatch.setattr(CHK, "VSCODE_PKG_DIR", root / "packages" / "vscode")
         report = CHK.scan()
         assert report["web"] == []
+
+
+class TestMainPathDriftR110:
+    """R110：``main()`` 顶部的 layer-0 path-drift sanity check。
+
+    Web 与 VS Code 的源 ``en.json`` 必须真实存在；缺失即 fail-loud
+    (exit 2) 而非 silent ``return []`` → ``total = 0`` → ``--strict``
+    走 exit 0 路径（zero-coverage CI 仍绿）。与 R88/R100/R101/R102
+    在 brand-color guard / HTML coverage / ts/js no-cjk / locale
+    shape 几个扫描器修过的 silent-skip-on-missing-source 同款修复。
+
+    反向注入只验证 "main() 在 layer-0 抓到 missing 源 locale 后立刻
+    fail 2" 的契约；真实 happy path 由 ``TestEndToEndScan`` 兜底。
+    """
+
+    def _run_main(
+        self,
+        argv: list[str],
+        web_locales: Path,
+        vscode_locales: Path,
+        capsys: pytest.CaptureFixture[str],
+        web_js: Path | None = None,
+        vscode_pkg: Path | None = None,
+    ) -> tuple[int, str, str]:
+        """Helper：run main() with locale & JS source directories
+        monkey-patched on a fresh module load (避免污染 module-level
+        ``CHK`` 给同 process 其他测试)。capture stdout/stderr, return
+        (rc, out, err)."""
+        import importlib.util as _ilu
+
+        spec = _ilu.spec_from_file_location("_chk_param_isolated", SCRIPT)
+        assert spec is not None and spec.loader is not None
+        mod = _ilu.module_from_spec(spec)
+        sys.modules["_chk_param_isolated"] = mod
+        spec.loader.exec_module(mod)
+        # ty 看不到动态加载模块的 module-level 常量，用 ignore 注释抑制
+        # unresolved-attribute false-positive；运行时直接属性赋值等价。
+        mod.WEB_LOCALES_DIR = web_locales  # ty: ignore[unresolved-attribute]
+        mod.VSCODE_LOCALES_DIR = vscode_locales  # ty: ignore[unresolved-attribute]
+        if web_js is not None:
+            mod.WEB_JS_DIR = web_js  # ty: ignore[unresolved-attribute]
+        if vscode_pkg is not None:
+            mod.VSCODE_PKG_DIR = vscode_pkg  # ty: ignore[unresolved-attribute]
+        rc = mod.main(argv)
+        captured = capsys.readouterr()
+        return rc, captured.out, captured.err
+
+    def test_missing_web_en_returns_2_with_r110_tag(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Web ``en.json`` 缺失 → main 返回 2 + 含 R110 tag + 含相对路径。"""
+        web_locales = tmp_path / "web_locales_no_en"
+        vscode_locales = tmp_path / "vscode_locales"
+        web_locales.mkdir()
+        vscode_locales.mkdir()
+        (vscode_locales / "en.json").write_text("{}", encoding="utf-8")
+
+        rc, _out, err = self._run_main(
+            ["--strict"], web_locales, vscode_locales, capsys
+        )
+        assert rc == 2, (
+            f"missing web en.json must yield exit 2 (got {rc}); stderr:\n{err}"
+        )
+        assert "R110" in err, f"diagnostic must mention R110; stderr:\n{err}"
+        assert "Web UI 源 locale" in err, f"label missing; stderr:\n{err}"
+
+    def test_missing_vscode_en_returns_2_with_r110_tag(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """VS Code ``en.json`` 缺失 → 同款 fail 2."""
+        web_locales = tmp_path / "web_locales"
+        vscode_locales = tmp_path / "vscode_locales_no_en"
+        web_locales.mkdir()
+        vscode_locales.mkdir()
+        (web_locales / "en.json").write_text("{}", encoding="utf-8")
+
+        rc, _out, err = self._run_main(
+            ["--strict"], web_locales, vscode_locales, capsys
+        )
+        assert rc == 2, (
+            f"missing vscode en.json must yield exit 2 (got {rc}); stderr:\n{err}"
+        )
+        assert "R110" in err
+        assert "VS Code 源 locale" in err
+
+    def test_both_missing_lists_both_paths(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """两个 ``en.json`` 都缺时 stderr 必须列出**两条** missing 信息。"""
+        web_locales = tmp_path / "web_locales_no_en"
+        vscode_locales = tmp_path / "vscode_locales_no_en"
+        web_locales.mkdir()
+        vscode_locales.mkdir()
+
+        rc, _out, err = self._run_main(
+            ["--strict"], web_locales, vscode_locales, capsys
+        )
+        assert rc == 2
+        assert "Web UI 源 locale" in err
+        assert "VS Code 源 locale" in err
+        assert err.count("Resolved absolute path") == 2
+
+    def test_happy_path_returns_0(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """两个 ``en.json`` 都存在且无 mismatch → exit 0。
+
+        端到端验证：layer-0 不误伤 happy path。注意必须也 patch
+        ``WEB_JS_DIR`` / ``VSCODE_PKG_DIR`` 到空目录，否则 ``_scan_*``
+        会扫真实仓库代码、找到 t() call site 的 keys，但 monkey-patched
+        locale 是 ``{}`` 空 → 所有 keys 报 unknown-key。"""
+        web_locales = tmp_path / "web_locales"
+        vscode_locales = tmp_path / "vscode_locales"
+        web_js = tmp_path / "web_js"
+        vscode_pkg = tmp_path / "vscode_pkg"
+        web_locales.mkdir()
+        vscode_locales.mkdir()
+        web_js.mkdir()
+        vscode_pkg.mkdir()
+        (web_locales / "en.json").write_text("{}", encoding="utf-8")
+        (vscode_locales / "en.json").write_text("{}", encoding="utf-8")
+
+        rc, out, _err = self._run_main(
+            ["--strict"],
+            web_locales,
+            vscode_locales,
+            capsys,
+            web_js=web_js,
+            vscode_pkg=vscode_pkg,
+        )
+        assert rc == 0, f"happy path must exit 0 (got {rc}); stdout:\n{out}"
+
+    def test_diagnostic_includes_remediation_hint(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """缺 source 时 stderr 必须包含修复指引（更新 WEB_LOCALES_DIR /
+        VSCODE_LOCALES_DIR 常量），与 R102 ``check_locales.py`` 同款
+        "tell me how to fix it" 模式。"""
+        web_locales = tmp_path / "web_locales_no_en"
+        vscode_locales = tmp_path / "vscode_locales_no_en"
+        web_locales.mkdir()
+        vscode_locales.mkdir()
+
+        rc, _out, err = self._run_main(
+            ["--strict"], web_locales, vscode_locales, capsys
+        )
+        assert rc == 2
+        assert "WEB_LOCALES_DIR" in err
+        assert "VSCODE_LOCALES_DIR" in err
 
 
 if __name__ == "__main__":

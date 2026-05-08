@@ -11,6 +11,46 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R110** — close the **last** silent-skip in the i18n scanner family
+  at `scripts/check_i18n_param_signatures.py`. Two layered silent
+  returns (R102 同款，与 R88/R100/R101/R102 在 brand-color guard /
+  HTML coverage / ts/js no-cjk / locale shape 几个扫描器修过的
+  silent-skip-on-missing-source 反模式同款):
+
+  1. `_scan_web()`: `if not en.is_file(): return []` —
+     `WEB_LOCALES_DIR/en.json` 缺失时静默返回空列表。
+  2. `_scan_vscode()`: 同款 `VSCODE_LOCALES_DIR/en.json` 缺失静默路径。
+
+  Combined effect: 任一源 `en.json` 缺失 → `total = sum(len([])) = 0`
+  → `--strict` 也走 exit 0 → 整个 param-signature 一致性校验
+  zero-coverage 但 CI 仍然绿。Real-world latent risk today: 零（两
+  个源 `en.json` 都在），但等价于 R76 把 `static/` 挪进 `src/` 时
+  R66 brand-color guard 已经被 R88 打 patch 的同款"重构 ⇒ 守门静默
+  失效"模式——不修就是埋雷等下次重构。
+
+  Fix: 加 main() 顶部 layer-0 path-drift sanity check（与 R102
+  `check_locales.py::main()` 同款 design），列出 2 个核心源
+  `en.json` 路径，缺失即 fail-loud (exit 2) + 含 R110 tag + 含相对
+  / 绝对路径 + 修复指引（更新 `WEB_LOCALES_DIR` /
+  `VSCODE_LOCALES_DIR` 常量）。`_scan_web` / `_scan_vscode` 移除
+  内部 silent skip（layer-0 已 hoist）。Exit code 0/1/2 与 R102
+  约定对齐：0=clean, 1=violations, 2=configuration error。
+
+  Updated docstring's Exit 段反映新 exit 2 路径。新 `TestMainPathDriftR110`
+  类（5 cases）锁：missing web en / missing vscode en / both missing /
+  happy path / 修复指引含 `WEB_LOCALES_DIR` + `VSCODE_LOCALES_DIR`。
+  Reverse-injection（移除 layer-0 R110 检查）→ 4 of 5 R110 测试 fail
+  with rc 1 ≠ 2 / 缺 R110 tag / 缺修复指引；happy path 不被影响。
+  Updated `TestScannerResilience.test_detects_missing_param` 与
+  `test_skips_dynamic_key`：现需给 monkey-patched root 同时建空
+  `vscode_locales/en.json`，因 `_scan_vscode` 不再 silent skip。
+
+  Closes the silent-skip-on-missing-source family that ran through
+  R88/R96/R100/R101/R102/R104/R105/R106/R107/R108/R110: every
+  scanner / validator / test in the repo that takes "core resource
+  missing" 全部以 `R{tag}` 标签 fail-loud + diagnostic + remediation
+  hint，CI 在源缺失时再也不会 silent green。
+
 - **R109** — close the **last** R66/R99 brand-color drift gap by
   expanding the hex-form regex from a single literal `#007aff` to a
   union covering the entire iOS-blue family. Two real hardcoded
