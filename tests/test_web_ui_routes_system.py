@@ -440,5 +440,304 @@ class TestSystemHelpers(unittest.TestCase):
             self.assertTrue(all(isinstance(s, str) for s in result))
 
 
+# ════════════════════════════════════════════════════════════════════════════
+#  GET /api/system/network-base-url-status — 探测 effective base URL 是否对外可达
+# ════════════════════════════════════════════════════════════════════════════
+class TestNetworkBaseUrlStatusEndpoint(_SystemRouteBase):
+    """R77 补测：原 endpoint 在 web_ui_routes/system.py L445-489 完全无覆盖。
+
+    目标：锁定四种 status 推荐的输出契约（``ok`` / ``configure_external_base_url``
+    / ``bind_lan_interface`` + 内部异常 fallback 500）。
+    """
+
+    _port = 19130
+
+    def _patch_resolvers(
+        self,
+        *,
+        effective: str = "",
+        external_safe: str = "",
+        is_loopback: bool = False,
+        suggested_lan: str = "",
+    ):
+        """构造 server_config 三个查询函数的 mock 组合。"""
+        server_config = "ai_intervention_agent.web_ui_routes.system.server_config"
+
+        # resolve_external_base_url 是双调用：第 1 次拿 effective，第 2 次（带
+        # for_external_use=True）拿 external_safe。用 side_effect 的函数 mock
+        # 区分两路：
+        def _resolve_external(*_args, **kwargs):
+            if kwargs.get("for_external_use"):
+                return external_safe
+            return effective
+
+        return [
+            patch(
+                "ai_intervention_agent.server_config.resolve_external_base_url",
+                side_effect=_resolve_external,
+            ),
+            patch(
+                "ai_intervention_agent.server_config.is_loopback_url",
+                return_value=is_loopback,
+            ),
+            patch(
+                "ai_intervention_agent.server_config.suggest_lan_base_url",
+                return_value=suggested_lan or None,
+            ),
+        ]
+
+    def _get(self):
+        return self._client.get("/api/system/network-base-url-status")
+
+    def test_external_safe_url_recommends_ok(self):
+        """非 loopback + 有 external_safe → recommendation = ``ok``。"""
+        patches = self._patch_resolvers(
+            effective="http://10.0.0.5:8080",
+            external_safe="http://10.0.0.5:8080",
+            is_loopback=False,
+        )
+        with patches[0], patches[1], patches[2]:
+            resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["recommendation"], "ok")
+        self.assertFalse(body["is_loopback"])
+        self.assertEqual(body["effective_base_url"], "http://10.0.0.5:8080")
+
+    def test_loopback_with_lan_suggestion_recommends_configure(self):
+        """loopback effective + 有 LAN 候选 → recommendation = ``configure_external_base_url``。"""
+        patches = self._patch_resolvers(
+            effective="http://127.0.0.1:8080",
+            external_safe="",
+            is_loopback=True,
+            suggested_lan="http://192.168.1.10:8080",
+        )
+        with patches[0], patches[1], patches[2]:
+            resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["recommendation"], "configure_external_base_url")
+        self.assertTrue(body["is_loopback"])
+        self.assertEqual(body["suggested_lan_base_url"], "http://192.168.1.10:8080")
+
+    def test_loopback_without_lan_suggestion_recommends_bind_lan(self):
+        """loopback + 无 LAN 候选 → recommendation = ``bind_lan_interface``。"""
+        patches = self._patch_resolvers(
+            effective="http://127.0.0.1:8080",
+            external_safe="",
+            is_loopback=True,
+            suggested_lan="",
+        )
+        with patches[0], patches[1], patches[2]:
+            resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["recommendation"], "bind_lan_interface")
+        self.assertTrue(body["is_loopback"])
+        self.assertEqual(body["suggested_lan_base_url"], "")
+
+    def test_internal_exception_returns_500(self):
+        """resolver 抛异常时 endpoint 返回 500，并不泄漏 stack trace。"""
+        with patch(
+            "ai_intervention_agent.server_config.resolve_external_base_url",
+            side_effect=RuntimeError("boom"),
+        ):
+            resp = self._get()
+        self.assertEqual(resp.status_code, 500)
+        body = resp.get_json()
+        self.assertFalse(body["success"])
+        self.assertNotIn("boom", body.get("error", ""))
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  GET /api/system/health — K8s probe 友好的综合健康检查
+# ════════════════════════════════════════════════════════════════════════════
+class TestSystemHealthEndpoint(_SystemRouteBase):
+    """R77 补测：原 endpoint 在 web_ui_routes/system.py L602-681 完全无覆盖。
+
+    目标：锁定三档 status enum（``healthy`` / ``degraded`` / ``unhealthy``）
+    的判定边界，特别是 backpressure / recent-error 数值的强制 int 守卫。
+    """
+
+    _port = 19131
+
+    def _get(self):
+        return self._client.get("/api/system/health")
+
+    def test_healthy_when_all_checks_pass(self):
+        """SSE bus + TaskQueue + recent_errors 都正常 + 0 错误 → healthy + 200。"""
+        with (
+            patch(
+                "ai_intervention_agent.enhanced_logging.get_recent_logs",
+                return_value=[],
+            ),
+        ):
+            resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["status"], "healthy")
+        self.assertIn("checks", body)
+        self.assertTrue(body["checks"]["sse_bus"]["ok"])
+        self.assertTrue(body["checks"]["task_queue"]["ok"])
+        self.assertTrue(body["checks"]["recent_errors"]["ok"])
+
+    def test_degraded_when_recent_errors_seen(self):
+        """近 5 分钟有 ERROR 但所有检查 ok → degraded + 200（K8s 不应重启）。"""
+        import time as _time
+
+        now = int(_time.time())
+        fake_log = [
+            {
+                "ts_unix": now - 30,
+                "level_no": 40,  # ERROR
+                "level_name": "ERROR",
+                "logger_name": "fake",
+                "message": "stuff went wrong",
+            }
+        ]
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=fake_log,
+        ):
+            resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["status"], "degraded")
+        self.assertEqual(body["checks"]["recent_errors"]["count_last_5min"], 1)
+
+    def test_unhealthy_when_subsystem_check_fails(self):
+        """任意子检查抛异常 → unhealthy + 503（K8s readiness probe 不发流量）。"""
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task._sse_bus.stats_snapshot",
+            side_effect=RuntimeError("sse bus crashed"),
+        ):
+            resp = self._get()
+        self.assertEqual(resp.status_code, 503)
+        body = resp.get_json()
+        self.assertEqual(body["status"], "unhealthy")
+        self.assertFalse(body["checks"]["sse_bus"]["ok"])
+
+    def test_payload_carries_no_sensitive_fields(self):
+        """规约：payload 必须不含 prompt 内容 / config 值（只有数值或 enum）。"""
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=[],
+        ):
+            resp = self._get()
+        body = resp.get_json()
+        # 只允许的顶层字段
+        self.assertEqual(set(body.keys()), {"status", "ts_unix", "checks"})
+        self.assertIsInstance(body["ts_unix"], int)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+#  GET /api/system/recent-logs — ring buffer 最近 N 条 WARN/ERROR 日志摘要
+# ════════════════════════════════════════════════════════════════════════════
+class TestSystemRecentLogsEndpoint(_SystemRouteBase):
+    """R77 补测：原 endpoint 在 web_ui_routes/system.py L740-768 完全无覆盖。
+
+    目标：锁定 limit 边界（默认 50 / 上限 _LOG_RING_MAXLEN / 非法值降级），
+    确认正常路径返回 ring buffer 已脱敏快照。
+    """
+
+    _port = 19132
+
+    def _get(self, **params):
+        return self._client.get("/api/system/recent-logs", query_string=params)
+
+    def test_default_limit_is_50(self):
+        """默认 limit=50 应传给 get_recent_logs。"""
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=[],
+        ) as mock_get:
+            resp = self._get()
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertTrue(body["success"])
+        self.assertEqual(body["count"], 0)
+        mock_get.assert_called_once_with(limit=50)
+
+    def test_explicit_limit_is_passed_through(self):
+        """合法范围内的 limit 直接透传到 get_recent_logs。"""
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=[],
+        ) as mock_get:
+            self._get(limit=37)
+        mock_get.assert_called_once_with(limit=37)
+
+    def test_invalid_limit_falls_back_to_default(self):
+        """非数字 limit → 用默认 50；不返回 400（避免轻易因输入错被拒）。"""
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=[],
+        ) as mock_get:
+            resp = self._get(limit="not-a-number")
+        self.assertEqual(resp.status_code, 200)
+        mock_get.assert_called_once_with(limit=50)
+
+    def test_limit_above_buffer_capacity_falls_back_to_default(self):
+        """limit > _LOG_RING_MAXLEN → 用默认 50（不直接 cap 是为了让客户端意识到上限）。"""
+        from ai_intervention_agent.enhanced_logging import _LOG_RING_MAXLEN
+
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=[],
+        ) as mock_get:
+            self._get(limit=_LOG_RING_MAXLEN + 100)
+        mock_get.assert_called_once_with(limit=50)
+
+    def test_zero_limit_falls_back_to_default(self):
+        """limit=0 不在 [1, MAX] 范围内 → 用默认 50。"""
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=[],
+        ) as mock_get:
+            self._get(limit=0)
+        mock_get.assert_called_once_with(limit=50)
+
+    def test_returns_entries_in_payload(self):
+        """非空 ring buffer → entries 列表透传 + count 正确。"""
+        fake_entries = [
+            {
+                "ts_unix": 1700000000,
+                "level_no": 30,
+                "level_name": "WARNING",
+                "logger_name": "x",
+                "message": "warn 1",
+            },
+            {
+                "ts_unix": 1700000010,
+                "level_no": 40,
+                "level_name": "ERROR",
+                "logger_name": "y",
+                "message": "err 2",
+            },
+        ]
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            return_value=fake_entries,
+        ):
+            resp = self._get(limit=2)
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["count"], 2)
+        self.assertEqual(body["entries"], fake_entries)
+
+    def test_internal_exception_returns_500(self):
+        """get_recent_logs 抛异常时 endpoint 返回 500，错误信息不泄漏内部细节。"""
+        with patch(
+            "ai_intervention_agent.enhanced_logging.get_recent_logs",
+            side_effect=RuntimeError("ring buffer corruption"),
+        ):
+            resp = self._get()
+        self.assertEqual(resp.status_code, 500)
+        body = resp.get_json()
+        self.assertFalse(body["success"])
+        self.assertNotIn("ring buffer corruption", body.get("error", ""))
+
+
 if __name__ == "__main__":
     unittest.main()
