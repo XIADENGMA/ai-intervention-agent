@@ -37,10 +37,10 @@ Fixes #
 
 ## Touched areas · 影响面
 
-- [ ] Web UI（`static/`, `templates/`, `web_ui*.py`）
+- [ ] Web UI（`src/ai_intervention_agent/static/`, `src/ai_intervention_agent/templates/`, `src/ai_intervention_agent/web_ui*.py`）
 - [ ] VSCode 扩展（`packages/vscode/`）
-- [ ] MCP server / runtime（`task_queue.py`, `web_ui_routes/`, `applescript-executor.ts`）
-- [ ] i18n 翻译（`static/locales/`, `packages/vscode/locales/`, `packages/vscode/l10n/`, `packages/vscode/package.nls*.json`）
+- [ ] MCP server / runtime（`src/ai_intervention_agent/task_queue.py`, `src/ai_intervention_agent/web_ui_routes/`, `packages/vscode/applescript-executor.ts`）
+- [ ] i18n 翻译（`src/ai_intervention_agent/static/locales/`, `packages/vscode/locales/`, `packages/vscode/l10n/`, `packages/vscode/package.nls*.json`）
 - [ ] CI / 发布（`.github/workflows/`, `scripts/ci_gate.py`, `scripts/package_vscode_vsix.mjs`）
 - [ ] 文档（`README*.md`, `docs/**`）
 

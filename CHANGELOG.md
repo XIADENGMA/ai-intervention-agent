@@ -11,6 +11,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R86** — refresh `.github/PULL_REQUEST_TEMPLATE.md` "Touched
+  areas" checkboxes to reflect the post-R76 `src/` layout. The
+  previous list pointed at `static/`, `templates/`, `web_ui*.py`,
+  `task_queue.py`, `web_ui_routes/`, and `applescript-executor.ts`
+  as if they still lived at the repo root; after the R76 PyPA
+  ``src/`` migration they live under
+  `src/ai_intervention_agent/` (with `applescript-executor.ts`
+  belonging to `packages/vscode/`). Forward-looking checklist
+  only — no code touched, no historical CHANGELOG copy adjusted.
+
 - **R85** — refresh `scripts/README.md` inventory: backfill 7
   scripts that shipped between v1.5.22 and v1.6.0 but never
   made it into the README index — `check_brand_color_consistency.py`
