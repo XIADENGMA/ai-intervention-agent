@@ -9,6 +9,137 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+> Round-72+ aggregate: a security-triage pass (R72 / R72-D), three
+> repo-shape refactors (R73 / R76 / R76b), four zero-warning
+> hardenings (R74 / R74b / R74c / R74d / R75), and an R77+ "what
+> still needs rounding-out" sweep covering MCP cross-tool compat,
+> low-coverage modules, and broken docs links.
+
+### Security
+
+- **R72** — close 16 CodeQL Code Scanning findings: 15
+  log-injection (an `enhanced_logging` root-logger
+  `InterceptHandler` now sanitises every record reaching the loguru
+  pipeline at the boundary, regardless of which third-party
+  library called the stdlib logger) + 1 stack-trace exposure in
+  `web_ui_routes/system.py` (replaced raw `traceback.format_exc()`
+  surfacing in the response body with a generic message). 20 false
+  positives + 7 line-shift restate findings dismissed and
+  documented in `docs/security-triage-r72.md`. The remaining 5
+  OPEN findings are OpenSSF governance issues for the repo owner;
+  the 10 OPEN web-XSS / CSRF findings are tracked as R72-D
+  follow-ups.
+- **R72-D** — close the R72-D batch: harden the locale-set
+  endpoint with CSRF protection, dismiss the 9 remaining
+  xss-through-dom DOM-XSS findings as false positives (they all
+  pivot on a `textContent` write, which is by-construction safe).
+
+### Added
+
+- **R78** — 14 new tests in
+  `tests/test_web_ui_routes_system.py` covering the previously
+  untested operator-/monitor-facing endpoints
+  `/api/system/network-base-url-status`, `/api/system/health`, and
+  `/api/system/recent-logs`. Locks down each endpoint's
+  decision-tree (e.g. `recommendation` enum cases, `status`
+  enum cases for healthy/degraded/unhealthy) and ensures
+  internal exceptions return generic error payloads (no stack
+  trace exposure regression). Coverage of
+  `web_ui_routes/system.py` rises from 58.36% to 84.19%.
+- **R79** — 8 new tests in `tests/test_i18n_backend.py`
+  (`TestBackendDetectRequestLang`) covering
+  `detect_request_lang`'s three-stage fallback (Accept-Language
+  header → config_manager → DEFAULT_LANG) and the format-error
+  branch in `get_locale_message`. The
+  `test_detect_lang_unknown_accept_language_normalizes_to_default`
+  case in particular captures a non-obvious property of the
+  dispatch tree: `normalize_lang` always returns a value in
+  `SUPPORTED_LANGS`, so unsupported headers like `fr-FR` are
+  mapped to `en` and the config branch is *never* consulted —
+  important to lock down before adding a third locale (e.g.
+  `ja`). Coverage of `i18n.py` rises from 75.81% to 98.39%.
+- **R80** — `tests/test_docs_links_no_rot.py` link-rot regression
+  guard: walks every `*.md` under repo root + `docs/` +
+  `.github/` + `packages/vscode/` + `scripts/`, extracts every
+  `[label](target)` link, filters external URLs / fragment-only /
+  regex-literal false positives, and verifies the surviving
+  relative paths exist on the filesystem. Failure messages list
+  exact `md_file:line` for each broken link so a single fix-pass
+  can address every regression.
+- **R77** — `interactive_feedback` MCP tool gains two new
+  cross-MCP-variant compat fields: `timeout_seconds` (alias for
+  `timeout`) and `task_id` (accepted but ignored — the server
+  always auto-generates an internal task ID). Both close the
+  v1.5.36 user-feedback ticket reporting Pydantic
+  `unexpected_keyword_argument` ValidationErrors when an agent
+  reused arguments shaped for sibling feedback-MCP variants. 3
+  new tests in `tests/test_interactive_feedback_errors.py` lock
+  the contract: the v1.5.36 reproducer (all three drift fields
+  combined) no longer raises, `timeout_seconds` does not
+  override server-side `feedback.timeout` config, and external
+  `task_id` is silently replaced with the server-generated value.
+
+### Changed
+
+- **R73** — trim the repo root directory: relocate 4 governance
+  docs (`CONTRIBUTING.md` / `SECURITY.md` / `SUPPORT.md` /
+  `CODE_OF_CONDUCT.md`) into `.github/` per the GitHub-recommended
+  layout. The repo root now hosts only README / CHANGELOG / LICENSE
+  / TODO and the active config templates.
+- **R76** — adopt the PyPA-recommended `src/` layout. Every
+  Python module, sub-package, and web asset directory now lives
+  under `src/ai_intervention_agent/`. The migration spans 1074
+  absolute imports rewritten to `ai_intervention_agent.<m>`, 879
+  `unittest.mock.patch` target strings updated, 119 hard-coded
+  `static/` / `templates/` / `icons/` / `sounds/` paths re-rooted
+  in tests/scripts, and 49 source-text anchors in regex-based
+  test contracts. `pyproject.toml` (`[tool.hatch.build.targets.{wheel,sdist}]`),
+  `MANIFEST.in`, `.gitignore`, `docs/api(.zh-CN)`, the ESLint
+  i18n plugin (`packages/vscode/eslint-plugin-aiia-i18n.mjs`),
+  `scripts/ci_gate.py` (`--cov=src/ai_intervention_agent`),
+  `scripts/generate_docs.py` (output-dir + index.md generation),
+  and `scripts/red_team_i18n_runtime.mjs` are all updated in
+  lockstep. The editable-install import path now matches the
+  wheel-install path exactly, eliminating the "it works on my
+  machine because Python picked up `./web_ui.py` from cwd" class
+  of bugs.
+
+### Fixed
+
+- **R74** — clear 2 `ty` type diagnostics that surfaced after
+  upgrading typeshed annotations + sync drifted API docs the
+  upgrade caused.
+- **R74b** — make 2 single-quote anchors in the VSCode test
+  suite prettier double-quote compatible (a long-tail of R71's
+  prettier-config landing).
+- **R74c** — rewrite 2 ``# type: narrowing`` comments as plain
+  prose so a future contributor doesn't think they're real
+  type-checker directives.
+- **R74d** — bump `package-lock.json` `@types/node` to the 25.x
+  lockfile range to satisfy the upstream constraint after the
+  monorepo's transitive `@types/node` requirement tightened.
+- **R75** — enable the `ruff` `LOG` lint family + fix 4
+  root-logger / `exc_info` anti-patterns (e.g. `logging.getLogger
+  ("root").error(...)` -> `logger.error(..., exc_info=True)`).
+- **R80** — repair 14 broken relative markdown links in
+  `.github/CONTRIBUTING.md` (4) / `.github/SECURITY.md` (2) /
+  `.github/SUPPORT.md` (8) where the original maintainer-authored
+  links assumed a "repo root" mental model but GitHub renders
+  relative links from the file's own directory. All 14 links now
+  use `../` prefixes and resolve correctly on github.com.
+
+### Removed
+
+- **R76b** — drop the `config.jsonc.default` template. The JSONC
+  config format hasn't been the recommended path since v1.5.0
+  (default switched to TOML, with legacy `config.jsonc` files
+  still auto-migrated by `config_manager` at startup). Removing
+  the sample template eliminates the maintenance load of keeping
+  range/comment-parity tests in lockstep across two formats and
+  removes a confusing duplicate entry from the "open default
+  config" UI button. Existing JSONC user configs continue to
+  auto-migrate; only the *sample* template is gone.
+
 ## [1.5.45] — 2026-05-08
 
 > Round-57+58 round-up: two complementary observability/safety wins
