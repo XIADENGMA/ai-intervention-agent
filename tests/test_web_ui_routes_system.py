@@ -423,9 +423,9 @@ class TestSystemHelpers(unittest.TestCase):
 
         paths = _resolve_allowed_paths()
         path_strs = {str(p) for p in paths}
+        # R76 起仅 ``config.toml.default`` 随包发布；JSONC 模板已移除。
         self.assertTrue(
-            any(s.endswith("config.toml.default") for s in path_strs)
-            or any(s.endswith("config.jsonc.default") for s in path_strs),
+            any(s.endswith("config.toml.default") for s in path_strs),
             f"default 模板未出现在白名单中: {path_strs}",
         )
 

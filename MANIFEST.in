@@ -6,7 +6,6 @@
 include README.md
 include LICENSE
 include config.toml.default
-include config.jsonc.default
 recursive-include src/ai_intervention_agent *.py *.html *.json *.svg *.ico *.css *.js *.woff *.woff2 *.ttf *.png *.gif *.lottie *.wav *.mp3 *.webmanifest
 global-exclude __pycache__
 global-exclude *.py[co]

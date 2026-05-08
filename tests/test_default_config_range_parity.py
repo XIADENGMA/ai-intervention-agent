@@ -1,4 +1,4 @@
-r"""防回归：``config.toml.default`` / ``config.jsonc.default`` 注释中的数值范围必须 = ``shared_types.SECTION_MODELS`` 实际允许范围。
+r"""防回归：``config.toml.default`` 注释中的数值范围必须 = ``shared_types.SECTION_MODELS`` 实际允许范围。
 
 历史背景
 ---------
@@ -6,19 +6,23 @@ v1.5.x 早期发现两条平行的范围漂移：
 
 1. ``docs/configuration{,.zh-CN}.md`` 表格里的范围数字落后于 Pydantic
    ``_clamp_int`` 边界（已在 ``test_config_docs_range_parity.py`` 锁住）。
-2. ``config.toml.default`` / ``config.jsonc.default`` 的 inline 注释也落后了
-   同样的数字（例如 ``range [60, 3600]`` / ``范围 [30, 250]``）——这是用户**首
-   次接触配置时看到的文档**，比 ``docs/configuration*.md`` 还要面向新人。
+2. ``config.toml.default`` 的 inline 注释也落后了同样的数字
+   （例如 ``range [60, 3600]`` / ``范围 [30, 250]``）——这是用户**首次接触
+   配置时看到的文档**，比 ``docs/configuration*.md`` 还要面向新人。
    修复后加这个回归位以防再次漂移。
+
+R76 起本测试只覆盖 TOML 模板。``config.jsonc.default`` 已被 R76 移除
+（v1.5+ 主线只随包分发 TOML 模板，v1.4 之前的 JSONC 配置仍由
+``config_manager`` 的 auto-migrate 路径兼容，但不再有独立 ``.default`` 样例）。
 
 设计原则
 --------
 - 复用 ``test_config_docs_range_parity._introspect_field_bounds`` introspection；
   避免硬编码 ``(10, 7200)`` 之类的常数。
 - 解析策略：默认配置文件的注释都形如 ``range [lo, hi]`` 或 ``范围 [lo, hi]``，
-  紧接其后是一行 ``key = val`` (TOML) 或 ``"key": val`` (JSONC)。我们扫描每行，
-  捕获 range，再用滑动窗口在后续 5 行内找首个有效 key —— 5 行的窗口足以覆盖
-  跨多行注释（例如「作用：限制...」）但不会跨越到下一个字段。
+  紧接其后是一行 ``key = val`` (TOML)。我们扫描每行，捕获 range，再用滑动
+  窗口在后续 5 行内找首个有效 key —— 5 行的窗口足以覆盖跨多行注释（例
+  如「作用：限制...」）但不会跨越到下一个字段。
 - 不要求 default 文件覆盖**所有** SECTION_MODELS 字段（注释里没写范围的字段
   跳过）；但凡是写了 ``range/范围 [..]`` 的字段，必须与 introspect 结果一致。
 """
@@ -41,7 +45,6 @@ from tests.test_config_docs_range_parity import (
 
 DEFAULT_FILES = {
     "toml": REPO_ROOT / "config.toml.default",
-    "jsonc": REPO_ROOT / "config.jsonc.default",
 }
 
 # 接受英文 ``range [lo, hi]`` 与中文 ``范围 [lo, hi]``，整数 / 简单浮点都兼容
@@ -49,12 +52,10 @@ RANGE_RE = re.compile(
     r"(?:range|范围)\s*[`'\"]?\[\s*([\d.]+)\s*,\s*([\d.]+)\s*\][`'\"]?",
     re.IGNORECASE,
 )
-# TOML 风格 ``key = val``，与 JSONC 风格 ``"key": val``（捕第一个匹配）
+# TOML 风格 ``key = val``
 KEY_TOML_RE = re.compile(r"^\s*([a-z_][a-z0-9_]*)\s*=")
-KEY_JSONC_RE = re.compile(r'^\s*"([a-z_][a-z0-9_]*)"\s*:')
-# section header：TOML 是 ``[section]`` 或 ``[[section]]``；JSONC 是 ``"section": {``
+# section header：TOML 是 ``[section]`` 或 ``[[section]]``
 SECTION_TOML_RE = re.compile(r"^\s*\[\[?([a-z_][a-z0-9_]*)\]\]?\s*$")
-SECTION_JSONC_RE = re.compile(r'^\s*"([a-z_][a-z0-9_]*)"\s*:\s*\{')
 
 # 单行最多向后看几行找紧邻的字段定义：覆盖跨多行注释，但不跨越到下一个字段
 KEY_LOOKAHEAD_LINES = 6
@@ -64,10 +65,14 @@ def _parse_default_ranges(
     path: Path, fmt: str
 ) -> dict[str, dict[str, tuple[float, float]]]:
     r"""扫一份 default 文件，输出 ``{section: {key: (lo, hi)}}``，仅覆盖注释里写了范围的字段。"""
+    if fmt != "toml":
+        raise ValueError(
+            f"R76 起仅支持 toml 模板解析；收到 fmt={fmt!r}（仅作为接口安全网）",
+        )
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    section_re = SECTION_TOML_RE if fmt == "toml" else SECTION_JSONC_RE
-    key_re = KEY_TOML_RE if fmt == "toml" else KEY_JSONC_RE
+    section_re = SECTION_TOML_RE
+    key_re = KEY_TOML_RE
 
     sections: dict[str, dict[str, tuple[float, float]]] = {}
     current_section: str | None = None
@@ -92,7 +97,7 @@ def _parse_default_ranges(
 
 
 class TestDefaultConfigRangeParity(unittest.TestCase):
-    """``config.{toml,jsonc}.default`` 注释里 ``range/范围 [..]`` 必须 = ``SECTION_MODELS`` 反推边界。"""
+    """``config.toml.default`` 注释里 ``range/范围 [..]`` 必须 = ``SECTION_MODELS`` 反推边界。"""
 
     def setUp(self) -> None:
         self.code_bounds = {
@@ -137,9 +142,6 @@ class TestDefaultConfigRangeParity(unittest.TestCase):
 
     def test_toml_default_matches_introspected_ranges(self) -> None:
         self._assert_default_matches("toml")
-
-    def test_jsonc_default_matches_introspected_ranges(self) -> None:
-        self._assert_default_matches("jsonc")
 
 
 if __name__ == "__main__":

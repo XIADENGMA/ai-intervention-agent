@@ -46,11 +46,14 @@ def _project_root() -> Path:
 
 
 def _default_config_template() -> Path:
-    root = _project_root()
-    toml_tpl = root / "config.toml.default"
-    if toml_tpl.exists():
-        return toml_tpl
-    return root / "config.jsonc.default"
+    """返回仓库随附的默认 TOML 配置模板路径。
+
+    R76 起仅保留 TOML 模板（``config.toml.default``）。v1.4 之前的 JSONC
+    自动迁移路径在 ``config_manager`` 中仍然支持，但已不再分发独立的
+    ``config.jsonc.default`` 样例（用户若要切回 JSONC 自行从 TOML 改写
+    即可，``_load_jsonc`` 路径不需要它做 parity）。
+    """
+    return _project_root() / "config.toml.default"
 
 
 def _active_config_path() -> Path:

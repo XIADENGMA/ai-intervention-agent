@@ -85,15 +85,16 @@ def _resolve_allowed_paths() -> list[Path]:
     # 是 ``parent.parent.parent.parent``（system.py → web_ui_routes → ai_intervention_agent
     # → src → repo_root）。模板既可能在仓库根（开发环境），也可能在包内
     # （wheel 安装到 site-packages 的旧布局），两种都加进候选避免 UI 找不到。
+    # R76 同时移除了 ``config.jsonc.default`` 模板（v1.4 之前的 JSONC 配置仍由
+    # ``config_manager`` auto-migrate 兼容，但不再随包发布独立样例）。
     here = Path(__file__).resolve()
     repo_root = here.parent.parent.parent.parent
     pkg_root = here.parent.parent
-    for default_name in ("config.toml.default", "config.jsonc.default"):
-        for base in (repo_root, pkg_root):
-            p = (base / default_name).resolve()
-            if p.exists():
-                candidates.append(p)
-                break
+    for base in (repo_root, pkg_root):
+        p = (base / "config.toml.default").resolve()
+        if p.exists():
+            candidates.append(p)
+            break
 
     # 去重
     deduped: list[Path] = []

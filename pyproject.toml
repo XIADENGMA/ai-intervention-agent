@@ -98,11 +98,12 @@ packages = ["src/ai_intervention_agent"]
 [tool.hatch.build.targets.sdist]
 # R76 起所有运行时资产（``templates/`` ``static/`` ``icons/`` ``sounds/``）都迁入
 # ``src/ai_intervention_agent/`` 包内，会随 wheel.packages 自动随 sdist 一并打包；
-# 此处仅再列出仓库根的配置模板与说明文档。
+# 此处仅再列出仓库根的 TOML 配置模板与说明文档。
+# JSONC 模板已在 R76 一并移除（详见 v1.5 之后单一 TOML 主线 +
+# config_manager 里的 v1.4 jsonc auto-migrate 路径）。
 include = [
     "/src/ai_intervention_agent",
     "/config.toml.default",
-    "/config.jsonc.default",
     "/README.md",
     "/LICENSE",
 ]
