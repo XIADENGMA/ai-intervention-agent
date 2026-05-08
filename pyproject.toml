@@ -49,6 +49,15 @@ dependencies = [
     "pydantic>=2.0.0",
     "plyer>=2.1.0",
     "psutil>=6.1.0",
+    # Pygments 没有被任何 ``import pygments`` 直接引用 —— 它是
+    # ``markdown`` 包的 ``codehilite`` 扩展运行时依赖，由
+    # ``web_ui.py::setup_markdown`` 通过 ``use_pygments=True`` 激活
+    # 触发（见 ``src/ai_intervention_agent/web_ui.py`` 第 288 行附近的
+    # MarkdownExt 配置块）。``markdown[pygments]`` 没有 PEP 508 extra，所
+    # 以必须显式声明为 first-class dep——否则 ``uv sync`` 在 transitive
+    # 解析失败 / pip resolver 收紧时会悄悄少装 Pygments，运行时代码块
+    # 会回落到无高亮的 ``<code>...``，且零报错。`scripts/check_unused_deps`
+    # 这类静态扫描会把它误标为 unused，不要因此删除。
     "pygments>=2.18.0",
     "tomlkit>=0.14.0",
     "zeroconf>=0.146.0",
