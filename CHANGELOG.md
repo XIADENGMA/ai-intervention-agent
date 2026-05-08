@@ -11,6 +11,80 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R98** — close out the R92/R97 fix family by porting the same
+  line-first comment-strip workaround into
+  `scripts/check_i18n_js_no_cjk.py::_strip_comments`. R92 originally
+  fixed the bug in two of the four sibling i18n scanners
+  (`check_i18n_orphan_keys.py`, `check_i18n_param_signatures.py`)
+  and pinned the trigger case in its docstring as
+  `static/js/app.js:538`'s `// 走 locales/*.json 静态 key` comment
+  swallowing 688 lines into the next `*/`. R97 ported the fix to
+  the third sibling (`check_i18n_ts_no_cjk.py`). R98 cleans up the
+  fourth — `check_i18n_js_no_cjk.py` was the only scanner in the
+  family still running `BLOCK_COMMENT_RE.sub` first.
+
+  Empirical impact on the current tree:
+
+  - `static/js/app.js:539-1201` — 509 lines silently blanked by the
+    buggy strip pass before STRING_RE ever ran (triggered exactly
+    by `app.js:538`, the very line R92's docstring named).
+  - `static/js/i18n.js:1015-1089` — 58 more lines blanked,
+    triggered by `i18n.js:1013`'s
+    `// 通道，值来自 locales/*.json...` comment.
+  - 0 hardcoded CJK literals are currently inside those blanked
+    regions, so the gate kept returning
+    `OK: no hardcoded CJK string literals` for the wrong reason.
+
+  Decision history mirror R97 — token-level lex prototype rejected
+  for the same RegExp-literal slash-ambiguity reason that
+  `webview.ts:575`'s `(html.match(/`/g) || [])` exposed in R97;
+  line-first workaround chosen for parity with the three already-
+  fixed siblings, with the `//` inside string literals trade-off
+  documented inline. Empirically `static/js/*.js` plus
+  `packages/vscode/*.js` contain 0 string literals that mix `//`
+  with CJK, so the trade-off is academic for the current codebase.
+
+  Diagnostic note: the initial R98 impact survey accidentally
+  used a regex pattern of `r"/\\\*.*?\\\*/"` typed at the zsh
+  command line. Shell + raw-string double-escaping turned that
+  into a literal-backslash matcher (`/\\*.*?\\*/`), which produced
+  spurious matches and made the bug look 5x worse than it was
+  (10 affected files / 2k lines / 19 missed CJK literals). After
+  rewriting the diagnostic into an actual `.py` file with a
+  proper `r"/\*.*?\*/"` pattern, the real impact dropped to
+  the 2 files / 567 lines / 0 missed literals reported above.
+  Filed as a meta-lesson: any "scope of damage" survey for a
+  regex-related silent breakage should run from an editor file,
+  not a shell `-c` invocation, because shell escape semantics
+  silently corrupt the regex.
+
+  Fix:
+
+  - `scripts/check_i18n_js_no_cjk.py::_strip_comments` — rewrite to
+    line-first via `find("//")` plus a single block-comment regex
+    pass, exactly matching the R97 implementation. Inline
+    docstring documents the strip-order rationale, the regex-
+    literal lex pitfall (so nobody re-upgrades to a token-level
+    lex without understanding the `webview.ts:575` trap), and the
+    URL-string-`//` trade-off carried over from R92/R97.
+  - `tests/test_i18n_js_no_cjk_strip_order_r98.py` — new
+    fixture-based regression suite, structurally identical to
+    `test_i18n_ts_no_cjk_strip_order_r97.py` (5 cases: bare `/*`
+    after `//` plus a later legit `*/`; multi-line span with
+    three intermediate CJK literals; byte-length parity for
+    `\n`-preserving substitution; byte-offset parity; end-to-end
+    `scan_file()` round-trip via `tempfile.NamedTemporaryFile`).
+    Reverse-injection verified: swap `_strip_comments` back to
+    the buggy block-first form and 4 of 5 cases fail with
+    informative diagnostics (the `byte_length` case is
+    intentionally a weaker invariant that both implementations
+    satisfy — kept because it documents the offset-preservation
+    contract that `scan_file()` depends on).
+
+  Result: with R98 landed, all four i18n strip-comment scanners
+  use the same R92 line-first folkway and are in lockstep as
+  their respective docstrings have always claimed.
+
 - **R97** — repair the same line-vs-block comment ordering bug
   in `scripts/check_i18n_ts_no_cjk.py::_strip_comments` that R92
   already fixed in the **sibling** scanner

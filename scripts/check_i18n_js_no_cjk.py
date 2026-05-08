@@ -70,24 +70,62 @@ STRING_RE = re.compile(
     re.DOTALL,
 )
 
+# R98：剥序由「先 block 后 line」改为「先 line 后 block」——和 R92
+# (``check_i18n_orphan_keys.py`` / ``check_i18n_param_signatures.py``) 与
+# R97 (``check_i18n_ts_no_cjk.py``) 的双层 bug 完全同源。R92 提交时漏 back-
+# port 到 ``js_no_cjk``——这是同一族扫描器中最后一个仍带 buggy 实现的。
+#
+# 旧实现 bug
+# ----------
+# ``BLOCK_COMMENT_RE.sub`` 在前的话，line comment 内裸写的 ``/*`` 会被 block-
+# comment 正则当成开头，吞噬到下一处真实 ``*/`` 为止。R92 docstring 已经
+# 点名两个真实触发点：
+#   - ``static/js/app.js:538``  (``// 走 locales/*.json 静态 key 且无参数``)
+#     吞 509 行直到下一处 JSDoc ``*/``
+#   - ``static/js/i18n.js:1013`` (``// 通道，值来自 locales/*.json...``)
+#     吞 58 行直到下一处 ``*/``
+# 这两段被吞区域**当前**都没有未豁免的硬编码 CJK 字面量（实测 0 silent
+# miss），所以表面零误报，但属于「latent silent breakage」——任何未来 patch
+# 在被吞区域插入 CJK 字面量都会逃过扫描。
+#
+# 为什么不用 token-level lex
+# --------
+# 与 R97 同样的 trade-off：完整识别 JS 5-token 需要解决 RegExp literal 的
+# slash-ambiguity（``a/b/c`` 是除法 vs regex 取决于上下文），工程量大；R92
+# 折中已被 sister scanners 在生产稳定运行多月，对当前代码库实测 0 误报。
+#
+# 已知 trade-off（与 R92/R97 一致）
+# --------
+# ``//`` 出现在 string 字面量内（如 ``"https://..."``）会被 line-strip 截
+# 短，可能漏掉同字符串内的 CJK。实测 ``static/js/*.js`` + ``packages/vscode/
+# *.js`` 中的此类 string 全是 ASCII URL（github.com / localhost），0 处含
+# CJK，未来若出现「URL 含 CJK 域名」+「需要 i18n」的双重场景再升级。
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-LINE_COMMENT_RE = re.compile(r"//[^\n]*")
 ALLOW_MARKER = "aiia:i18n-allow-cjk"
 
 
 def _strip_comments(src: str) -> str:
-    """Remove comments so that comment-embedded CJK (docstrings, 说明) is ignored.
+    """Zero out ``//`` line comments and ``/* ... */`` block comments while
+    preserving line offsets exactly (``\\n`` count and total byte length
+    unchanged) so that ``stripped[:start].count("\\n") + 1`` line-number
+    mapping in callers stays accurate.
 
-    Block-replace comments with spaces so line numbers line up with the original.
+    Pass order matters (R98/R97/R92): line comments are blanked **before**
+    block comments. Otherwise patterns like ``// see locales/*.json`` get
+    mis-parsed because the bare ``/*`` inside the *line* comment is read as
+    a block-comment opener that swallows hundreds of subsequent lines.
     """
 
-    def _blank(match: re.Match[str]) -> str:
+    def _blank_block(match: re.Match[str]) -> str:
         span = match.group(0)
-        return re.sub(r"[^\n]", " ", span)
+        return "".join("\n" if ch == "\n" else " " for ch in span)
 
-    src = BLOCK_COMMENT_RE.sub(_blank, src)
-    src = LINE_COMMENT_RE.sub(_blank, src)
-    return src
+    out_lines: list[str] = []
+    for line in src.split("\n"):
+        idx = line.find("//")
+        out_lines.append(line if idx == -1 else line[:idx] + " " * (len(line) - idx))
+    intermediate = "\n".join(out_lines)
+    return BLOCK_COMMENT_RE.sub(_blank_block, intermediate)
 
 
 # Directories under packages/vscode that contain non-webview code or vendored
