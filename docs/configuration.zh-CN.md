@@ -192,7 +192,7 @@ dev 模式内部优先级顺序：
 | `backend_max_wait`   | number | `600`                                       | 后端最大等待（秒），范围 `[10, 7200]`                                  |
 | `frontend_countdown` | number | `240`                                       | 前端自动重调倒计时（秒），范围 `[10, 3600]`；`0`（或任意非正整数）禁用 |
 | `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`    | 错误/超时返回的引导语                                                  |
-| `prompt_suffix`      | string | `"\\n请积极调用 interactive_feedback 工具"` | 追加到用户反馈末尾的提示语                                             |
+| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"`  | 追加到用户反馈末尾的提示语。开头的 `\n` 是 TOML 转义的换行符；原样复制到 `config.toml` 即可（加载时 TOML 解析器会把它还原成真实换行）。 |
 
 **超时规则**：
 

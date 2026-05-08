@@ -204,7 +204,7 @@ Controls timeouts and auto re-submit prompts.
 | `backend_max_wait`   | number | `600`                                       | Backend maximum wait (seconds), range `[10, 7200]`                                                       |
 | `frontend_countdown` | number | `240`                                       | Frontend auto-submit countdown (seconds), range `[10, 3600]`; `0` (or any non-positive integer) disables |
 | `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`    | Returned on error/timeout to encourage re-calling the tool                                               |
-| `prompt_suffix`      | string | `"\\n请积极调用 interactive_feedback 工具"` | Appended to the user feedback text                                                                       |
+| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"`  | Appended to the user feedback text. Leading `\n` is a TOML-escaped newline; copy-paste verbatim into `config.toml` (the TOML parser unescapes it back to a real newline at load time). |
 
 **Timeout rule**:
 

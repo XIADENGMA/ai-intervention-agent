@@ -11,6 +11,90 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R95** — fix a TOML-escape silent breakage in
+  `docs/configuration.{md,zh-CN.md}` where the
+  `[feedback]::prompt_suffix` Default column showed
+  `"\\n请积极调用 interactive_feedback 工具"` (two backslashes + `n`)
+  while `config.toml.default` line 140 declared
+  `"\n请积极调用 interactive_feedback 工具"` (TOML-escaped real
+  newline). Add a TOML-roundtrip parity gate
+  (`tests/test_config_docs_string_default_roundtrip.py`).
+
+  Symptom thread:
+
+  - `config.toml.default` line 140:
+    `prompt_suffix = "\n请积极调用 interactive_feedback 工具"` —
+    TOML's basic-string `\n` is an escape sequence, parsed to byte
+    `0x0A`. The runtime default is therefore "real newline + 中文".
+  - The configuration tables in both `docs/configuration.md` line 207
+    and `docs/configuration.zh-CN.md` line 195 listed the Default as
+    `` `"\\n请积极调用 interactive_feedback 工具"` ``.
+  - Markdown does **not** unescape backslashes inside
+    backtick-delimited inline code, so the GitHub-rendered cell
+    showed `"\\n请积极…"` (two literal backslashes followed by `n`).
+  - A user "restoring the default" by copy-pasting that rendered
+    string into their own `config.toml` ended up with
+    `prompt_suffix = "\\n请积极…"`. TOML parses `\\` to a literal
+    backslash and `n` to a literal `n`, so the resulting string
+    starts with the **two characters `\n`**, not a newline. The AI
+    suffix then renders glued to the user's feedback with no line
+    break — wrong layout, no warning, no error. Pure silent
+    breakage that has been live since the prompt-suffix feature
+    landed in v1.5.x.
+  - `tests/test_web_ui_routes.py::test_only_prompt_suffix_is_updated`
+    and `tests/test_reset_feedback_config_endpoint.py` both pass real
+    `"\n…"` strings around (line 605, 2163, 70 etc.), so the
+    in-memory contract has always been "leading byte 0x0A" — the
+    drift was strictly between the canonical TOML value and the
+    docs presentation, with no symptom inside the test suite.
+
+  Root cause: docs authors inserted an extra backslash to "make the
+  newline visible" in the rendered table, not realising that
+  backtick code in Markdown preserves backslashes verbatim, so the
+  reader sees more backslashes than the canonical TOML actually
+  contains. None of the existing parity gates ever cross-checked
+  the *parsed value* of the docs cell against the parsed value in
+  `config.toml.default` — `test_config_docs_parity` only checks
+  that the **key set** is identical between the table and the
+  template; `test_config_docs_range_parity` only validates numeric
+  bounds. A pure-string default could drift like this and stay
+  invisible until a human reviewer (R95) caught it by eye.
+
+  Fix:
+
+  1. **Drop the extra backslash** in both translations:
+     `docs/configuration.md` line 207 and
+     `docs/configuration.zh-CN.md` line 195 now read
+     `` `"\n请积极调用 interactive_feedback 工具"` `` (one backslash
+     + `n`), with an inline note clarifying that the leading `\n`
+     is a TOML-escaped newline that the parser turns back into a
+     real newline at load time. So a user copy-pasting the
+     rendered cell into `config.toml` gets the same parsed bytes
+     as the template default — round-trip identity restored.
+  2. **Add a TOML-roundtrip parity gate**:
+     `tests/test_config_docs_string_default_roundtrip.py` (2 tests,
+     both green post-fix). It walks the table rows in both
+     configuration docs, finds every row whose type is `string`
+     and whose Default cell is a backtick-wrapped TOML literal,
+     wraps it as `k = <literal>` and runs `tomllib.loads`, then
+     compares the parsed value against the same key in
+     `config.toml.default`. On mismatch the failure message shows
+     both parsed sides plus the literal note _"用户照 doc 复制粘贴
+     会得到错误默认值"_ so the next contributor immediately sees
+     the impact axis. The companion test
+     `test_prompt_suffix_doc_roundtrips_to_real_newline` is a
+     byte-equal lock that asserts `feedback.prompt_suffix` starts
+     with `0x0A` and that both translations roundtrip to it,
+     making the historical regression impossible to reintroduce
+     without flipping the test red.
+  3. **Self-test the gate**: temporarily reverting the docs fix
+     reproduced two failures with the exact `"\\n" → "\n"` diff
+     printed; restoring the fix returned to green — proves the
+     gate would have caught R95 at PR time.
+
+  Verification: `ci_gate.py` green (3846 passed, 3 skipped, 0
+  warnings, 0 errors).
+
 - **R94** — fix a docs-to-code drift in
   `docs/troubleshooting.{md,zh-CN.md}` that told users to set
   `web_ui.bind_interface` to fix the "phone can't reach `ai.local:8080`
