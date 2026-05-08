@@ -1,4 +1,4 @@
-"""R66：CSS 品牌色硬编码漂移检测器测试。
+"""R66 / R99 / R109：CSS 品牌色硬编码漂移检测器测试。
 
 锁定 ``scripts/check_brand_color_consistency.py`` 的核心行为：
 
@@ -10,7 +10,10 @@
    ``exit 1`` 并给出文件位置、``count < baseline`` 时 ``exit 0`` 并
    warn 提示降 baseline；
 4. 当前 ``static/css/main.css`` 实际硬编码数 == 脚本默认 baseline，
-   保证 R66 commit 时刻的 baseline 数字与代码同步。
+   保证 R66/R99/R109 commit 时刻的 baseline 数字与代码同步；
+5. R109：hex 端正则扩展为 union ``#007aff|#0a84ff|#0056cc`` 后，
+   三个 variant 都被识别、能各自单独命中、且不会误命中到其他相似
+   hex 值（如 ``#007abf``、``#0a85ff``、``#0156cc``）。
 
 这是「护栏脚本本身的测试」，对应 R64/R65 的「修复结果测试」。
 """
@@ -166,6 +169,130 @@ class TestFindIosBlueHexLocationsR99(unittest.TestCase):
         self.assertEqual(
             guard.find_ios_blue_hex_locations(".x { color: red; }"),
             [],
+        )
+
+
+class TestIosBlueHexFamilyR109(unittest.TestCase):
+    """R109：iOS 蓝家族扩展——``#007aff`` (light) / ``#0a84ff`` (dark) /
+    ``#0056cc`` (darker hover) 三个 variant 都属同一品牌漂移源，
+    合并到一条 hex baseline 9（= 7 + 1 + 1）。
+
+    历史教训：R99 设计时只覆盖了 ``#007aff``，``main.css::1020``
+    ``.btn-primary-enabled`` 直接硬编码 ``#0a84ff`` 与 ``::3982``
+    ``.btn-primary:hover`` 直接硬编码 ``#0056cc``——两处都是同性质的
+    iOS 蓝品牌漂移源（light mode 显示成 iOS 蓝，与 ``#a855f7`` /
+    ``#d97757`` 品牌色不一致），但 R66/R99 防线完全没盖到。R109 用
+    union 正则把三个 variant 合并锁定。
+    """
+
+    def test_0a84ff_dark_mode_systemblue(self) -> None:
+        """R109：``#0a84ff`` (iOS 13+ dark systemBlue) 必须命中。"""
+        src = ".btn-primary-enabled { background-color: #0a84ff; }"
+        self.assertEqual(guard.count_ios_blue_hex(src), 1)
+
+    def test_0a84ff_uppercase(self) -> None:
+        """case-insensitive：``#0A84FF`` 同样命中。"""
+        src = "color: #0A84FF;"
+        self.assertEqual(guard.count_ios_blue_hex(src), 1)
+
+    def test_0056cc_darker_hover(self) -> None:
+        """R109：``#0056cc`` (iOS 蓝 darker hover variant) 必须命中。"""
+        src = ".btn-primary:hover { background: #0056cc; }"
+        self.assertEqual(guard.count_ios_blue_hex(src), 1)
+
+    def test_0056cc_uppercase(self) -> None:
+        src = "background: #0056CC;"
+        self.assertEqual(guard.count_ios_blue_hex(src), 1)
+
+    def test_all_three_variants_together(self) -> None:
+        """三个 variant 同时出现，count = 3。"""
+        src = (
+            "a { color: #007aff; } "
+            "b { background: #0a84ff; } "
+            "c { background: #0056cc; }"
+        )
+        self.assertEqual(guard.count_ios_blue_hex(src), 3)
+
+    def test_does_not_match_near_neighbors(self) -> None:
+        """正则 ``\\b`` 边界 + union 精确匹配：相邻 hex 不应误命中。"""
+        src = (
+            "color: #0a85ff;"  # 末位差 1
+            "border: 1px solid #0156cc;"  # 首位差 1
+            "background: #0a84fe;"  # 末位差 1
+            "color: #1056cc;"  # 首位差 1
+        )
+        self.assertEqual(guard.count_ios_blue_hex(src), 0)
+
+    def test_does_not_match_brand_palette(self) -> None:
+        """品牌色 ``#a855f7`` (紫) / ``#d97757`` (橙) 严格不应误命中
+        到三个 variant 中任意一个——即使大小写混合。
+        """
+        src = (
+            ":root { --brand-accent: #a855f7; --brand-light-accent: #d97757; }"
+            ".x { color: #A855F7; background: #D97757; }"
+        )
+        self.assertEqual(guard.count_ios_blue_hex(src), 0)
+
+    def test_find_locations_returns_all_variants(self) -> None:
+        """``find_ios_blue_hex_locations`` 三个 variant 都返回行号。"""
+        src = (
+            "line1\n"
+            ".a { color: #007aff; }\n"
+            ".b { background: #0a84ff; }\n"
+            ".c { background: #0056cc; }\n"
+            "lastline\n"
+        )
+        locs = guard.find_ios_blue_hex_locations(src)
+        self.assertEqual(len(locs), 3)
+        line_numbers = [lineno for lineno, _line in locs]
+        self.assertEqual(line_numbers, [2, 3, 4])
+
+    def test_actual_main_css_has_each_variant(self) -> None:
+        """端到端：``main.css`` 剥注释后必须能扫到三个 variant 各自的
+        预期数量（R109 baseline 9 = 7 + 1 + 1 的拆解必须真实存在）。
+
+        反向验证：若某天有 PR 把 ``#0a84ff`` 重构掉了但没同步把
+        ``DEFAULT_HEX_BASELINE`` 从 9 降到 8，会同时被
+        ``test_default_hex_baseline_matches_main_css_count`` 抓到（实际
+        数 8 != baseline 9）；但本测试**直接**断言变体数量分布，给出
+        更精确的诊断信息（"是哪个 variant 变了"）。
+        """
+        css_path = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css" / "main.css"
+        )
+        self.assertTrue(css_path.exists(), "main.css 必须存在")
+        raw = css_path.read_text(encoding="utf-8")
+        stripped = guard.strip_css_comments(raw)
+
+        import re as _re
+
+        count_007aff = len(_re.findall(r"#007aff\b", stripped, _re.IGNORECASE))
+        count_0a84ff = len(_re.findall(r"#0a84ff\b", stripped, _re.IGNORECASE))
+        count_0056cc = len(_re.findall(r"#0056cc\b", stripped, _re.IGNORECASE))
+
+        self.assertEqual(
+            count_007aff,
+            7,
+            f"R99 锁定 ``#007aff`` 应为 7 处实际硬编码（剥注释后），实际 {count_007aff}。"
+            f"若变化，请同步 R109 docstring 的拆解数字。",
+        )
+        self.assertEqual(
+            count_0a84ff,
+            1,
+            f"R109 锁定 ``#0a84ff`` 应为 1 处（``.btn-primary-enabled`` 背景），实际 {count_0a84ff}。"
+            f"若被重构掉了，请把 ``DEFAULT_HEX_BASELINE`` 从 9 降到 8。",
+        )
+        self.assertEqual(
+            count_0056cc,
+            1,
+            f"R109 锁定 ``#0056cc`` 应为 1 处（``.btn-primary:hover`` 背景），实际 {count_0056cc}。"
+            f"若被重构掉了，请把 ``DEFAULT_HEX_BASELINE`` 从 9 降到 8。",
+        )
+        self.assertEqual(
+            count_007aff + count_0a84ff + count_0056cc,
+            guard.DEFAULT_HEX_BASELINE,
+            f"三个 variant 总和必须 == DEFAULT_HEX_BASELINE "
+            f"({guard.DEFAULT_HEX_BASELINE})。",
         )
 
 

@@ -68,15 +68,20 @@ diverges.
 ## Visual / brand guardrails
 
 - [`check_brand_color_consistency.py`](check_brand_color_consistency.py)
-  _(R66 / R99 / R103)_ — fail if `static/css/main.css`
+  _(R66 / R99 / R103 / R109)_ — fail if `static/css/main.css`
   re-introduces the iOS-system-blue `rgba(0, 122, 255, …)` family
-  (R66) **or** the same color in `#007aff` hex form (R99) the
-  project's brand palette (dark-mode `#a855f7`, light-mode
-  Anthropic Orange `#d97757`) was meant to replace. Two wiring
-  layers (R103): `.pre-commit-config.yaml` for fast staged
-  feedback **and** `ci_gate.py` for CI-side fallback so a developer
-  who skipped `pre-commit install` still gets the baseline lock
-  enforced before merge.
+  (R66, baseline 34) **or** the iOS-blue hex family
+  `#007aff / #0a84ff / #0056cc` (R99 + R109, baseline 9 = 7 + 1 + 1)
+  the project's brand palette (dark-mode `#a855f7`, light-mode
+  Anthropic Orange `#d97757`) was meant to replace. The hex family
+  union covers light-mode `#007aff`, dark-mode systemBlue
+  `#0a84ff` and the darker hover variant `#0056cc` — same drift
+  source, same baseline, mirrors how R65's rgba baseline already
+  collapses every alpha channel into one number. Two wiring layers
+  (R103): `.pre-commit-config.yaml` for fast staged feedback **and**
+  `ci_gate.py` for CI-side fallback so a developer who skipped
+  `pre-commit install` still gets the baseline lock enforced before
+  merge.
 
 ## Generators
 

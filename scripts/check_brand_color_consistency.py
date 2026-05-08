@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R66 / R99：CSS 品牌色硬编码漂移检测器（rgba decimal + hex 双形式）。
+"""R66 / R99 / R109：CSS 品牌色硬编码漂移检测器（rgba decimal + hex 家族）。
 
 背景
 ----
@@ -17,11 +17,27 @@ R99 进一步发现：R66 设计时只考虑了 ``rgba(0, 122, 255, X)`` decimal
 decimal 形式同样属于品牌色漂移源，light mode 同样显示成 iOS 蓝）。
 R99 单独建立 hex baseline 7，与 R66 的 rgba baseline 34 独立运作。
 
+R109 收尾："iOS 蓝家族"还有两个变体在 R99 漏检：
+
+* ``#0a84ff`` —— iOS 13+ / macOS dark mode 系统蓝（dark mode systemBlue
+  的 hex 直写），实测 ``main.css::1020`` ``.btn-primary-enabled``
+  背景色直接硬编码这个值——同性质漂移；
+* ``#0056cc`` —— iOS 蓝的 darker variant（hover/active 用 30% 暗色），
+  实测 ``main.css::3982`` ``.btn-primary:hover`` 背景色——同性质漂移。
+
+R109 把 hex 端的正则扩成 union（``#007aff|#0a84ff|#0056cc``），
+``DEFAULT_HEX_BASELINE`` 从 7 增到 9（= 7 + 1 + 1），与 R65 把不同
+alpha 通道（``0.05/0.1/0.5/0.8``）合并到同一条 rgba baseline 的设计
+**同构**——同一品牌漂移家族用一条 baseline 锁住，保持简单。后续清理
+重构（把 ``#0a84ff`` 替换成 ``var(--brand-accent-dark)`` 等）会让
+hex 计数下降，脚本会 ``ℹ️`` 提示同步降 baseline。
+
 本脚本作为 **护栏（guardrail）**：
-* 当前 baseline `34 (rgba decimal) + 7 (hex)` 处硬编码作为「已知技术债」，
-  允许保留；
-* 任何**新增**的 ``rgba(0, 122, 255, X)`` 或 ``#007aff`` 直接 fail ——
-  强迫开发者使用品牌色 / CSS 变量；
+* 当前 baseline ``34 (rgba decimal) + 9 (hex 家族 = #007aff + #0a84ff +
+  #0056cc)`` 处硬编码作为「已知技术债」，允许保留；
+* 任何**新增**的 ``rgba(0, 122, 255, X)`` 或 ``#007aff`` /
+  ``#0a84ff`` / ``#0056cc`` 直接 fail —— 强迫开发者使用品牌色 / CSS
+  变量；
 * 后续如果有人把硬编码逐步重构成 ``rgba(var(--brand-accent-rgb), X)``
   之类（baseline 减少），只 warn 提示更新对应 baseline 数字，不 fail。
 
@@ -70,13 +86,17 @@ DEFAULT_ROOT = "src/ai_intervention_agent/static/css"
 # 脚本会 warn 提示同步把 baseline 数字降下来。
 DEFAULT_BASELINE = 34
 
-# R99 baseline：iOS 系统蓝的 hex 形式（``#007aff``）。R66 设计时只考虑了
-# ``rgba(0, 122, 255, X)`` decimal 形式作为漂移源，遗漏了同色的 hex 形式。
-# 实测 ``main.css`` 含 7 处真 hex 硬编码（剥注释后），全部为真实样式漂移
-# 源（边框 / 背景 / 文字色 / linear-gradient stop），与 R65 治理的 rgba
-# decimal 漂移**性质完全相同**——light mode 显示成 iOS 蓝。R99 单独给
-# hex 一条 baseline 锁住现状不让恶化，后续清理与 rgba decimal 一并完成。
-DEFAULT_HEX_BASELINE = 7
+# R99 / R109 baseline：iOS 系统蓝家族的 hex 形式。R66 设计时只考虑了
+# ``rgba(0, 122, 255, X)`` decimal 形式作为漂移源，R99 补了 ``#007aff``
+# light-mode hex 形式，R109 再补 ``#0a84ff`` (dark-mode systemBlue) 与
+# ``#0056cc`` (iOS 蓝 darker hover variant)，三者合一条 baseline——
+# 与 R65 把所有 alpha 通道（``0.05/0.1/0.5/0.8``）合并到同一条 rgba
+# baseline 的设计同构。实测 ``main.css`` 剥注释后命中：
+#   * ``#007aff`` × 7（边框/背景/文字色/linear-gradient stop）
+#   * ``#0a84ff`` × 1（``.btn-primary-enabled`` 背景）
+#   * ``#0056cc`` × 1（``.btn-primary:hover`` 背景）
+# = 9 处真硬编码，全部为真实样式漂移源，light mode 显示成 iOS 蓝。
+DEFAULT_HEX_BASELINE = 9
 
 # iOS 系统蓝 RGB 字面量。tolerant 于：
 #   - 任意空白（rgba( 0 , 122 , 255 ...）
@@ -84,11 +104,15 @@ DEFAULT_HEX_BASELINE = 7
 #   - alpha 通道无所谓（0.05 / 0.1 / 0.5 / 0.8 等）
 _IOS_BLUE_RE = re.compile(r"rgba?\s*\(\s*0\s*,\s*122\s*,\s*255\b")
 
-# R99：iOS 系统蓝的 hex 形式（``#007aff``，大小写均可）。``\b`` 防止误匹
-# ``#007affab`` 之类的扩展（CSS 不允许，但 robustness）。R66 docstring 里
-# 的 hex 形式 RCA 引用（``#a855f7`` / ``#d97757``）不会误命中——它们都
-# 不是 iOS 蓝。
-_IOS_BLUE_HEX_RE = re.compile(r"#007aff\b", re.IGNORECASE)
+# R99 / R109：iOS 系统蓝家族的 hex 形式 union 正则（大小写均可）。
+# 三个变体属于同一品牌漂移家族——light mode 都显示成 iOS 蓝。
+#   * ``#007aff`` —— iOS-system-blue (light mode)
+#   * ``#0a84ff`` —— iOS-system-blue (dark mode) / macOS systemBlue dark
+#   * ``#0056cc`` —— iOS-system-blue darker variant (hover/active)
+# ``\b`` 防止误匹 ``#007affab`` 之类扩展（CSS 不允许，但 robustness）。
+# R66 docstring 里的 hex 形式 RCA 引用（``#a855f7`` / ``#d97757``）不
+# 会误命中——它们都不是 iOS 蓝家族。
+_IOS_BLUE_HEX_RE = re.compile(r"#(?:007aff|0a84ff|0056cc)\b", re.IGNORECASE)
 
 # CSS 块注释 ``/* ... */`` —— 跨行非贪婪。
 _CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -112,7 +136,12 @@ def count_ios_blue(text: str) -> int:
 
 
 def count_ios_blue_hex(text: str) -> int:
-    """统计 ``text`` 内 iOS 蓝 ``#007aff`` hex 形式出现次数（R99，已假设注释已剔除）。"""
+    """统计 ``text`` 内 iOS 蓝家族 hex 形式出现次数（已假设注释已剔除）。
+
+    R109 起包含三个 variant：``#007aff`` (light) / ``#0a84ff`` (dark)
+    / ``#0056cc`` (darker hover)——全部属同一品牌漂移家族，合用一条
+    baseline，与 R65 把所有 rgba alpha 通道合并到同一条 baseline 同构。
+    """
     return len(_IOS_BLUE_HEX_RE.findall(text))
 
 
@@ -130,7 +159,12 @@ def find_ios_blue_locations(text: str) -> list[tuple[int, str]]:
 
 
 def find_ios_blue_hex_locations(text: str) -> list[tuple[int, str]]:
-    """R99：返回 hex 形式 ``#007aff`` 的 ``[(line_number, line_content), ...]``。"""
+    """R99 / R109：返回 iOS 蓝家族 hex 形式 ``[(line_number, line_content), ...]``。
+
+    R109 起返回所有三个 variant（``#007aff`` / ``#0a84ff`` / ``#0056cc``）的
+    命中位置——一行可能命中多个 variant，函数仍按 ``\\b`` word boundary
+    单点匹配返回行号，避免重复行号。
+    """
     locations: list[tuple[int, str]] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         if _IOS_BLUE_HEX_RE.search(line):
@@ -205,8 +239,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_HEX_BASELINE,
         help=(
-            f"R99：hex 形式 ``#007aff`` 的允许硬编码上限"
-            f"（默认 {DEFAULT_HEX_BASELINE}，即 R99 commit 时的快照）"
+            f"R99 / R109：hex 家族（``#007aff`` / ``#0a84ff`` / ``#0056cc``）"
+            f"的允许硬编码上限（默认 {DEFAULT_HEX_BASELINE}，即 R109 commit "
+            f"时的快照 = 7 + 1 + 1）"
         ),
     )
     parser.add_argument(
@@ -269,8 +304,8 @@ def main(argv: list[str] | None = None) -> int:
         failed = True
     if hex_total > args.hex_baseline:
         _report_violation(
-            "hex",
-            "#007aff",
+            "hex 家族",
+            "#007aff / #0a84ff / #0056cc",
             hex_total,
             args.hex_baseline,
             hex_per_file,
@@ -292,9 +327,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         if hex_total < args.hex_baseline:
             print(
-                f"ℹ️  CSS 品牌色检查通过（hex 已降低）："
+                f"ℹ️  CSS 品牌色检查通过（hex 家族已降低）："
                 f"iOS 蓝硬编码 {hex_total} < baseline {args.hex_baseline}\n"
-                f"   你似乎重构掉了 {args.hex_baseline - hex_total} 处 ``#007aff``，\n"
+                f"   你似乎重构掉了 {args.hex_baseline - hex_total} 处 hex 家族 "
+                f"(``#007aff`` / ``#0a84ff`` / ``#0056cc``)，\n"
                 f"   建议把脚本里的 ``DEFAULT_HEX_BASELINE`` 同步降到 {hex_total} 锁定本次进度。"
             )
         if rgba_total == args.baseline and hex_total == args.hex_baseline:

@@ -11,6 +11,56 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R109** — close the **last** R66/R99 brand-color drift gap by
+  expanding the hex-form regex from a single literal `#007aff` to a
+  union covering the entire iOS-blue family. Two real hardcoded
+  hex variants in `static/css/main.css` were sitting unprotected by
+  the R66/R99 guardrail because they don't share the exact `#007aff`
+  literal R99 indexed:
+
+  1. `main.css::1020` — `.btn-primary-enabled { background-color:
+     #0a84ff; }` (iOS 13+ / macOS dark-mode systemBlue, the dark
+     counterpart to `#007aff`).
+  2. `main.css::3982` — `.btn-primary:hover { background: #0056cc; }`
+     (iOS-blue darker hover variant, ≈ 30 % darken of `#007aff`).
+
+  Both render as iOS blue in light mode (the **same** drift source
+  R66 / R99 explicitly fight) but neither tripped the existing
+  `re.compile(r"#007aff\b")`. Real-world latent risk: zero today
+  (only 2 instances, both already-known references in the
+  changelog history), but the gap shape is identical to R88's
+  "guard regex doesn't catch close-relative drift" — invisible
+  until a future PR adds another `#0a84ff` for hover or another
+  `#0056cc` for active state.
+
+  R109 changes the hex regex to
+  `re.compile(r"#(?:007aff|0a84ff|0056cc)\b", re.IGNORECASE)`,
+  bumps `DEFAULT_HEX_BASELINE` from 7 to 9 (= 7 `#007aff` + 1
+  `#0a84ff` + 1 `#0056cc`), and updates the violation messages /
+  ℹ️ warn copy to mention all three variants. The "one baseline
+  per drift family" design mirrors R65 collapsing every rgba
+  alpha-channel variant (`0.05 / 0.1 / 0.5 / 0.8`, …) onto a
+  single baseline 34 — same family ⇒ same baseline number, simpler
+  for the next refactor that picks them off in batches.
+
+  New `TestIosBlueHexFamilyR109` (9 cases) locks: each variant
+  in / out, case-insensitivity, near-neighbor non-matches
+  (`#0a85ff`, `#0156cc`, `#0a84fe`, `#1056cc`), brand-palette
+  guard (`#a855f7` / `#d97757` never false-positive), and a
+  `test_actual_main_css_has_each_variant` end-to-end assertion
+  that the breakdown 7 + 1 + 1 = 9 actually exists in `main.css`
+  after comment stripping. Reverse-injection (revert the union
+  regex back to the R99 single `#007aff`) yields **8 fails** (4
+  variant-specific cases + 2 family integration + 1 baseline-sync
+  guard + 1 CLI exit-code) — confirming the new tests catch
+  exactly the regression they're meant to.
+
+  Closes the brand-color drift family that started at R64/R65 and
+  ran through R66/R88/R99/R103: every iOS-blue color form
+  (rgba decimal, hex light, hex dark, hex darker hover) is now
+  baseline-locked, and both wiring layers (pre-commit + ci_gate)
+  enforce them on every PR.
+
 - **R108** — final cleanup of the silent-path-skip family in
   `tests/`. Converts the last unconditional `pytest.skip` in
   `tests/test_i18n_ts_types_gen.py::TestHostTCallsAreTypeable::
