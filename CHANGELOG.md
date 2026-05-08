@@ -11,6 +11,66 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R100** — turn the `if not TEMPLATE_PATH.exists()` silent-skip
+  in `scripts/check_i18n_html_coverage.py::main()` into a loud
+  fail-with-exit-2 (configuration drift). Same silent-broken
+  signature R88 fixed on the brand-color guard: when R76 moved
+  `static/` from the repo root into `src/ai_intervention_agent/`
+  the brand-color script's `DEFAULT_ROOT = "static/css"` started
+  pointing at a non-existent directory and the scanner became a
+  silent no-op. R88 fixed it by changing the missing-root branch
+  from `return 0` to `return 2 + diagnostic`. The HTML coverage
+  scanner had the exact same `return 0 + SKIP message` shape; if
+  any future refactor renames or relocates `templates/web_ui.html`
+  the scanner would silently report `OK` while having zero
+  coverage of the template, and any new hardcoded CJK that lands
+  in the HTML would slip past CI.
+
+  This is latent — the live tree's `TEMPLATE_PATH` resolves fine
+  today, so the existing `test_web_ui_template_has_no_hardcoded_cjk`
+  test passes for the right reason. But the silent-skip path was
+  exactly one path-rename away from masquerading as coverage,
+  matching R88's root cause exactly. Loud failure mode forces the
+  reviewer to either update `TEMPLATE_PATH` or restore the file
+  rather than letting the gate quietly degrade.
+
+  Decision: copy R88's exact pattern verbatim — `return 2`,
+  stderr diagnostic message naming the resolved absolute path
+  and pointing at the constant to update. This keeps R66/R88/R100
+  in lockstep so future readers seeing one of them recognise the
+  shape immediately.
+
+  Fix:
+
+  - `scripts/check_i18n_html_coverage.py::main()` — replace
+    `print("SKIP: ..."); return 0` with a multi-line stderr
+    diagnostic and `return 2`. Update the docstring's exit code
+    section to document the new code with explicit reference to
+    R76/R88 lineage.
+  - `tests/test_i18n_html_template_coverage.py` — add
+    `TestHtmlCoveragePathDriftR100` with three cases:
+    + `test_missing_template_returns_exit_2_not_silent_skip`
+      monkey-patches `TEMPLATE_PATH` to a non-existent path and
+      asserts `main()` returns 2 (not 0).
+    + `test_missing_template_emits_clear_stderr_diagnostic`
+      asserts the stderr message contains both `ERROR` and
+      `configuration drift` keywords so reviewers can't miss
+      the diagnostic.
+    + `test_existing_template_still_works_normally` runs
+      `main()` against the real `TEMPLATE_PATH` and asserts the
+      exit code is 0 or 1 (clean / violations) — never 2 — so
+      R100 doesn't regress the happy path.
+
+    Reverse-injection verified: revert `_strip_comments` ... no
+    wait, revert `main()` back to the `return 0` shape and 2 of
+    the 3 R100-specific cases fail with informative diagnostics
+    (return code mismatch + stderr keyword check), the
+    happy-path case stays green. Mirror of R88's verification
+    pattern.
+
+  Result: 4 tests pass (1 existing + 3 R100), full ci_gate
+  3872 passed / 2 skipped / 0 warnings, ruff lint+format clean.
+
 - **R99** — close R66's coverage gap by adding hex form `#007aff`
   to the iOS-blue brand-color drift detector. R66 designed the
   `rgba(0, 122, 255, X)` decimal-form scanner against the 64

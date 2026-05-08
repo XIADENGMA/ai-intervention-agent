@@ -27,6 +27,11 @@ i18n key；元素内的英文默认文本只是「fallback」，运行时会被 
 ------
 - 0：模板中无硬编码 CJK 用户文本。
 - 1：至少有一个违反项；逐行输出位置与上下文。
+- 2：配置错误（``TEMPLATE_PATH`` 解析后指向不存在的文件）。R100 之前
+  这条路径返回 0（silent skip），与 R88 修复 brand-color guard 时的
+  ``DEFAULT_ROOT`` 漂移问题完全同源——R76 重布局把 ``static/`` 挪进
+  ``src/ai_intervention_agent/`` 包内时也可能动 ``templates/``，这里
+  改成 fail-loud 阻止类似 silent breakage 复发。
 """
 
 from __future__ import annotations
@@ -110,9 +115,25 @@ def scan_template(path: Path) -> list[tuple[int, str, str]]:
 
 
 def main() -> int:
+    # R100：TEMPLATE_PATH 不存在 → fail-loud（exit 2），不再 silent skip
+    # 返回 0。R76 重布局把 ``static/`` 挪进 ``src/ai_intervention_agent/``
+    # 包内时让 R66 的 brand-color guard silently broken（R88 修），同款风
+    # 险这里也存在：如果以后有人重命名 / 移动 ``web_ui.html`` 但忘了同
+    # 步 ``TEMPLATE_PATH``，旧的 silent-skip 实现会让 CI gate 一直 pass，
+    # 模板里悄悄回流的硬编码 CJK 没人察觉到。loud failure 模式下 reviewer
+    # 会立刻看到 stderr 的报错，被迫显式决定（重命名常量或恢复路径）。
     if not TEMPLATE_PATH.exists():
-        print(f"SKIP: template not found: {TEMPLATE_PATH}", file=sys.stderr)
-        return 0
+        rel = TEMPLATE_PATH.relative_to(ROOT).as_posix()
+        print(
+            f"ERROR: HTML template not found: {rel}\n"
+            f"  Resolved absolute path: {TEMPLATE_PATH}\n"
+            f"  This is a configuration drift, not 'OK' — the template either\n"
+            f"  moved (update TEMPLATE_PATH in scripts/check_i18n_html_coverage.py)\n"
+            f"  or got accidentally deleted. Failing loud (exit 2) instead of\n"
+            f"  silently skipping (R100; matches R88's fix on brand-color guard).",
+            file=sys.stderr,
+        )
+        return 2
     violations = scan_template(TEMPLATE_PATH)
     for line, kind, snippet in violations:
         rel = TEMPLATE_PATH.relative_to(ROOT).as_posix()
