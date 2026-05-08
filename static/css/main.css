@@ -7508,6 +7508,97 @@ code,
 }
 
 /* ========================================================================
+   R65：浅色模式 — iOS 蓝硬编码 leakage 修复
+   ========================================================================
+
+   背景：
+     早期开发时 ``main.css`` 内大量组件硬编码 ``rgba(0, 122, 255, X)``
+     （iOS system blue），随后引入 light/dark 主题变量时只覆盖了高频
+     按钮（btn 系列、option-item、scrollbar 等），但 7 个 high-traffic
+     组件在浅色模式下仍然漏出 iOS 蓝，与 Anthropic Orange (#d97757)
+     主调不和谐。
+
+   修复策略（与 R64 同款 minimal-touch）：
+     仅添加 ``[data-theme='light']`` override，深色模式 100% 不变。
+     替换品牌色：``#d97757`` (Orange) / ``#c56a4c`` (Deep Orange) /
+     对应 RGB ``rgba(217, 119, 87, X)`` 用于 box-shadow / border 透明度。
+
+   覆盖列表（按用户使用频率从高到低）：
+     1. ``.feedback-textarea:focus``  — 反馈文本框聚焦
+     2. ``.btn:active``               — 按钮按下瞬间（R64 漏修）
+     3. ``.description``              — LLM prompt 显示容器
+     4. ``.textarea-drag-over``       — 拖图到文本框
+     5. ``.drag-overlay-content``     — 拖图到页面其他位置
+     6. ``.setting-input:focus``      — 设置面板输入框聚焦
+     7. ``.settings-btn:focus``       — 设置按钮 focus 阴影
+
+   验证：tests/test_light_mode_ios_blue_leakage_r65.py 锁定 7 条规则。
+   ======================================================================== */
+
+/* R65-1：反馈文本框聚焦 — 把蓝色边框/外轮廓换成 Anthropic Orange */
+[data-theme='light'] .feedback-textarea:focus {
+  border-color: rgba(217, 119, 87, 0.5);
+  box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3);
+}
+
+/* R65-2：按钮按下瞬间不再闪 iOS 蓝（保留橙色主调） */
+[data-theme='light'] .btn:active,
+[data-theme='light'] .btn-primary:active,
+[data-theme='light'] .btn-secondary:active {
+  background: #c56a4c;
+  border-color: #c56a4c;
+}
+
+/* R65-3：问题描述容器 — 蓝紫渐变背景换成温暖 Orange/Cream 渐变 */
+[data-theme='light'] .description {
+  background: linear-gradient(
+    135deg,
+    rgba(217, 119, 87, 0.08) 0%,
+    rgba(106, 155, 204, 0.06) 50%,
+    rgba(120, 140, 93, 0.05) 100%
+  );
+  border: 1px solid rgba(217, 119, 87, 0.25);
+  color: var(--text-primary);
+  box-shadow: 0 4px 8px rgba(217, 119, 87, 0.1);
+}
+
+/* R65-3b：description 顶部装饰线在浅色模式上需要可见的细线 */
+[data-theme='light'] .description::before {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(20, 20, 19, 0.15),
+    transparent
+  );
+}
+
+/* R65-4：拖图到反馈文本框时的高亮（!important 是源规则用的） */
+[data-theme='light'] .textarea-drag-over {
+  border-color: rgba(217, 119, 87, 0.6) !important;
+  background: rgba(217, 119, 87, 0.05) !important;
+  box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3) !important;
+}
+
+/* R65-5：拖图到页面其他位置时的覆盖层 */
+[data-theme='light'] .drag-overlay-content {
+  border: 2px dashed rgba(217, 119, 87, 0.5);
+  background: rgba(217, 119, 87, 0.1);
+  color: var(--text-primary);
+}
+
+/* R65-6：设置面板输入框聚焦 — 蓝色 → Orange */
+[data-theme='light'] .setting-input:focus {
+  border-color: #d97757;
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1);
+}
+
+/* R65-7：设置按钮 focus 阴影（无障碍要求保留聚焦轮廓） */
+[data-theme='light'] .settings-btn:focus {
+  box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3);
+}
+
+/* ========================================================================
    深色主题按钮颜色配置
    ========================================================================
 
