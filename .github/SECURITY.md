@@ -49,7 +49,7 @@ listed on the GitHub profile `@xiadengma`. Please tag the subject with
 - Issues requiring local shell / filesystem write access the user already has
   (the AppleScript executor is intentionally local-only and gated by macOS
   permissions — see the **AppleScript executor security model** section of
-  [`packages/vscode/README.md`](packages/vscode/README.md) for the full
+  [`packages/vscode/README.md`](../packages/vscode/README.md) for the full
   safeguard list).
 - Social engineering of maintainers.
 
@@ -101,6 +101,6 @@ Open VSX / VS Code Marketplace，旧 minor 立即 EOL。
   升级开 PR。
 - 需要本地 shell / 文件写权限才能触发的问题：AppleScript executor 本就是设计
   为仅在本机运行，且受 macOS 权限控制 —— 完整的七项防护边界详见
-  [`packages/vscode/README.zh-CN.md`](packages/vscode/README.zh-CN.md) 中
+  [`packages/vscode/README.zh-CN.md`](../packages/vscode/README.zh-CN.md) 中
   **AppleScript executor 安全模型** 一节。
 - 针对维护者的社会工程攻击。

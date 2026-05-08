@@ -3,8 +3,8 @@
 Thanks for considering a contribution! 感谢愿意贡献代码。
 
 This file is the **entry point**; the full development / release workflow lives in
-[`docs/workflow.md`](docs/workflow.md) (English) and
-[`docs/workflow.zh-CN.md`](docs/workflow.zh-CN.md) (中文).
+[`docs/workflow.md`](../docs/workflow.md) (English) and
+[`docs/workflow.zh-CN.md`](../docs/workflow.zh-CN.md) (中文).
 
 本文档只列**最小必备清单**；详细的本地开发 / 发布流程见上述两份 `docs/workflow*.md`。
 
@@ -50,7 +50,7 @@ node scripts/red_team_i18n_runtime.mjs
 要求：**0 warning · 0 error · 测试全绿**。
 
 > Makefile 仅是别名，源真理仍在 `scripts/ci_gate.py`；详见
-> [`scripts/README.md`](scripts/README.md) 的 _Makefile shortcuts_ 表。
+> [`scripts/README.md`](../scripts/README.md) 的 _Makefile shortcuts_ 表。
 
 ---
 
@@ -86,7 +86,7 @@ node scripts/red_team_i18n_runtime.mjs
 
 1. 从 `main` 分支拉 feature 分支：`git checkout -b feat/<short-name>`
 2. 本地跑 CI Gate 全绿 → push 到 fork → 开 PR
-3. PR 描述按 [`PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) 模板填写
+3. PR 描述按 [`PULL_REQUEST_TEMPLATE.md`](PULL_REQUEST_TEMPLATE.md) 模板填写
 4. 至少自审一次受影响的主路径
 5. 等待 GitHub Actions（`Tests` / `VSCode Extension` / `CodeQL` / `Scorecard`）全绿
 6. Maintainer review · 通过后 squash 或 `--no-ff` merge
