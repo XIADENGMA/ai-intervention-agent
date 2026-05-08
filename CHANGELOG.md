@@ -11,6 +11,52 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R111** — close a real **PII redaction silent-leak**: `LogSanitizer`
+  in `enhanced_logging.py` (and its VS Code mirror `packages/vscode/
+  logger.ts::redactSensitive`) caught the legacy classic GitHub PAT
+  `ghp_[A-Za-z0-9]{36}` family R54-B introduced in 2022, but **never**
+  caught the **fine-grained PAT** family `github_pat_<11 char ID>_
+  <82 char secret>` (≈ 93 chars total) that GitHub introduced in
+  October 2022 and now defaults to for newly-created tokens.
+
+  Real-world latent leak: any developer pasting a fine-grained PAT
+  into a debug log, error trace, MCP request, curl command, or git
+  remote URL would have it land **plaintext** on stderr — visible
+  to MCP clients, to `_record_to_ring` ring-buffer entries, to
+  Output Channels (VS Code), and to anything tailing the process.
+  CI/CD pipelines printing the token at debug verbosity would push
+  it into permanent build logs. Same severity as the R54-B drop,
+  fixed three years late because the regex set was never re-audited
+  against GitHub's evolving token format.
+
+  Fix: add `re.compile(r"\bgithub_pat_[A-Za-z0-9_]{60,}\b")` to the
+  Python `LogSanitizer` pattern list (placed after the classic
+  `gh[psour]_` regex per "specific-before-general" ordering, even
+  though they're disjoint), and mirror the same JS regex
+  (`/\bgithub_pat_[A-Za-z0-9_]{60,}\b/g`) into VS Code
+  `logger.ts::redactSensitive`. Lower-bound 60 chars covers all
+  observed fine-grained formats (typical 82–93) while rejecting
+  short look-alikes like `github_pat_short`.
+
+  Tests: new `TestGitHubFineGrainedPATR111` class (6 cases) locks
+  typical 93-char form, mixed-case secret, leak via `curl -H
+  'Authorization: token <PAT>'` (the most common copy-paste leak
+  path — note **not** the URL-basic-auth form, which gets
+  sanitized by the unrelated url-basic-auth regex and would mask
+  R111 regression), classic `ghp_` still works (no ordering
+  regression), and two false-positive guards (`github_pat_short` /
+  arbitrary `github user pat` text). Reverse-injection (delete the
+  R111 regex) → 3 of 6 tests fail (typical / mixed-case / curl
+  command leak) confirming new tests catch exactly the regression
+  they're meant to.
+
+  Closes the PII redaction freshness gap. Future audit cadence:
+  the LogSanitizer pattern set should be re-checked against
+  GitHub's [official secret scanning patterns][gh-secret-scanning]
+  whenever GitHub announces a new token format.
+
+  [gh-secret-scanning]: https://docs.github.com/en/code-security/secret-scanning/about-secret-scanning
+
 - **R110** — close the **last** silent-skip in the i18n scanner family
   at `scripts/check_i18n_param_signatures.py`. Two layered silent
   returns (R102 同款，与 R88/R100/R101/R102 在 brand-color guard /

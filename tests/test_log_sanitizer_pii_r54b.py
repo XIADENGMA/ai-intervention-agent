@@ -134,6 +134,71 @@ class TestAllGitHubTokenForms(unittest.TestCase):
         self.assertIn(REDACTED, self.s.sanitize(f"refresh={token}"))
 
 
+class TestGitHubFineGrainedPATR111(unittest.TestCase):
+    """R111：GitHub fine-grained PAT (``github_pat_<11+82>``) 必须脱敏。
+
+    历史漂移：R54-B 实施时（2022 之前）GitHub fine-grained PAT 还不普
+    及，sanitizer 只盯了 5 种经典 ``gh[psour]_`` 前缀；2022 GitHub 推
+    出 fine-grained PAT 并设为新建 token 的默认形态后，本 sanitizer
+    完全不识别——任何 fine-grained PAT 黏到日志会**明文进 stderr**，
+    MCP 客户端可见，高严重 PII 漏脱敏。R111 补这个家族。
+
+    Fine-grained PAT 实际格式：``github_pat_<11 char ID>_<82 char
+    secret>``，total ≈ 93 字符。GitHub 自家 secret-scanning pattern
+    是 ``github_pat_[A-Z0-9_]{82}``（限大写），实测真实 token 含小写
+    所以本项目用更宽的 ``[A-Za-z0-9_]{60,}``，覆盖现行所有形态。
+    """
+
+    def setUp(self) -> None:
+        self.s = LogSanitizer()
+
+    def test_fine_grained_pat_typical(self) -> None:
+        """典型 93 字符 fine-grained PAT。"""
+        token = "github_pat_11ABCDEFGHI" + "J" * 11 + "_" + "K" * 82
+        out = self.s.sanitize(f"GH_TOKEN={token}")
+        self.assertNotIn(token, out, f"fine-grained PAT 未被脱敏：\n{out}")
+        self.assertIn(REDACTED, out)
+
+    def test_fine_grained_pat_with_lowercase(self) -> None:
+        """实测格式包含小写字符；本 sanitizer 用 ``[A-Za-z0-9_]`` 字符集。"""
+        token = (
+            "github_pat_AbCdEfGhIjK_" + "lMnOpQrStUvWxYz0123456789ABCDEF_" + "z" * 60
+        )
+        out = self.s.sanitize(f"key={token}")
+        self.assertNotIn(token, out)
+
+    def test_fine_grained_pat_in_curl_command(self) -> None:
+        """实战常见 leak 路径：``curl -H "Authorization: token github_pat_..."``。
+
+        这条测试**不能**用 URL basic auth 形式（``https://user:token@host``），
+        因为那条 regex 会兜底脱敏整个 token 部分，无法单独验证 R111
+        fine-grained PAT 自己的 regex 是否生效。改用 curl 命令字符串
+        + ``Authorization: token <PAT>`` header 形式 —— 实战中开发者
+        最常 copy-paste 进 issue / 讨论组的 leak 形态。"""
+        token = "github_pat_11ABCDEFGHI" + "J" * 11 + "_" + "K" * 82
+        cmd = f"curl -H 'Authorization: token {token}' https://api.github.com/user"
+        out = self.s.sanitize(cmd)
+        self.assertNotIn(
+            token, out, f"curl Authorization 中的 fine-grained PAT 未脱敏：\n{out}"
+        )
+        self.assertIn(REDACTED, out)
+
+    def test_classic_ghp_still_works_after_fine_grained_added(self) -> None:
+        """加 fine-grained 模式后老 ``ghp_`` 仍正确（regex 顺序无回归）。"""
+        token = "ghp_" + "A" * 36
+        self.assertIn(REDACTED, self.s.sanitize(f"GH={token}"))
+
+    def test_does_not_match_short_string_with_prefix(self) -> None:
+        """``github_pat_short`` (< 60 char 后缀) 不应误匹——R111 lower bound 防误伤。"""
+        msg = "github_pat_short"  # 小于 60 char，不收
+        self.assertEqual(self.s.sanitize(msg), msg)
+
+    def test_does_not_match_random_lookalike(self) -> None:
+        """不以 ``github_pat_`` 开头的字符串不会被命中。"""
+        msg = "PR comment: github user pat is great"
+        self.assertEqual(self.s.sanitize(msg), msg)
+
+
 class TestSlackUserToken(unittest.TestCase):
     """新增 ``xoxp-`` (user) 覆盖。"""
 

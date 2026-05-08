@@ -101,6 +101,10 @@ log 行。
    ``sk-proj-...`` 处只 match 到 ``sk-proj`` 4 个字符就失配。
 3. **GitHub** 系列：``ghp_`` (PAT) / ``ghs_`` (server) / ``gho_`` (oauth) /
    ``ghu_`` (user-to-server) / ``ghr_`` (refresh)，全部 36 字符。
+   **R111** 起补 fine-grained PAT (``github_pat_<11+82 chars>``)，2022 起
+   GitHub 主推格式且成为新建 token 的默认形态，比经典 ``ghp_`` 更常见
+   但 R54-B 当时未覆盖，导致 fine-grained PAT 黏到日志会**明文进
+   stderr** —— MCP 客户端可见，高严重 PII 漏脱敏。
 4. **Slack**：``xoxb-`` (bot) / ``xoxp-`` (user)。
 5. **AWS**：``AKIA[A-Z0-9]{16}``（Access Key ID，固定 20 字符）。
 6. **Google API**：``AIza[0-9A-Za-z_-]{35}``（39 字符总长）。

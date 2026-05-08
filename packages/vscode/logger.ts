@@ -166,6 +166,10 @@ function redactSensitive(input: unknown): string {
 
     text = text.replace(/\bsk-[A-Za-z0-9]{32,}\b/g, '***REDACTED***')
     text = text.replace(/\bghp_[A-Za-z0-9]{36}\b/g, '***REDACTED***')
+    // R111：GitHub fine-grained PAT（github_pat_<11 char ID>_<82 char secret>，
+    // 2022 起 GitHub 主推格式，长度 ≈ 93 字符）。VS Code 端 logger 与
+    // Python 端 LogSanitizer (enhanced_logging.py R111) 保持脱敏对齐。
+    text = text.replace(/\bgithub_pat_[A-Za-z0-9_]{60,}\b/g, '***REDACTED***')
     text = text.replace(/\bxoxb-[A-Za-z0-9-]{50,}\b/g, '***REDACTED***')
 
     text = text.replace(

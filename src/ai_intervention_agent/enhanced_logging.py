@@ -31,6 +31,10 @@ class LogSanitizer:
        ``sk-proj-...`` 处只 match 到 ``sk-proj`` 4 个字符就失配。
     3. **GitHub** 系列：``ghp_`` (PAT) / ``ghs_`` (server) / ``gho_`` (oauth) /
        ``ghu_`` (user-to-server) / ``ghr_`` (refresh)，全部 36 字符。
+       **R111** 起补 fine-grained PAT (``github_pat_<11+82 chars>``)，2022 起
+       GitHub 主推格式且成为新建 token 的默认形态，比经典 ``ghp_`` 更常见
+       但 R54-B 当时未覆盖，导致 fine-grained PAT 黏到日志会**明文进
+       stderr** —— MCP 客户端可见，高严重 PII 漏脱敏。
     4. **Slack**：``xoxb-`` (bot) / ``xoxp-`` (user)。
     5. **AWS**：``AKIA[A-Z0-9]{16}``（Access Key ID，固定 20 字符）。
     6. **Google API**：``AIza[0-9A-Za-z_-]{35}``（39 字符总长）。
@@ -60,6 +64,16 @@ class LogSanitizer:
             re.compile(r"\bxox[bpasr]-[A-Za-z0-9-]{20,}\b"),
             # GitHub tokens (PAT / server / oauth / user-to-server / refresh)
             re.compile(r"\bgh[psour]_[A-Za-z0-9]{36}\b"),
+            # R111：GitHub fine-grained PAT（2022 主推格式）。GitHub 官方
+            # secret-scanning pattern 是 ``github_pat_[A-Z0-9_]{82}``（全大
+            # 写约束），但实测真实 token 包含小写——fine-grained PAT 实际
+            # 形态：``github_pat_<11 char ID>_<82 char secret>``，total ≈ 93
+            # 字符。用 ``[A-Za-z0-9_]{60,}`` 覆盖所有现行形态且容忍小幅扩张。
+            # 必须在 ``ghp_`` regex 之后才注册，避免 ``\bgh[psour]_`` 把
+            # ``github_pat_`` 错误吃成 ``ghp_at_...``（实测不会，因为
+            # ``github_pat_`` 前缀的 ``g`` 后是 ``i`` 不在 ``[psour]`` 集合
+            # 内）；为 robustness 仍按"具体先于概括"原则放在通用前缀之后。
+            re.compile(r"\bgithub_pat_[A-Za-z0-9_]{60,}\b"),
             # AWS Access Key ID (20 chars total, always AKIA + 16)
             re.compile(r"\bAKIA[A-Z0-9]{16}\b"),
             # Google / Firebase / GCP API key (AIza + 35 chars)
