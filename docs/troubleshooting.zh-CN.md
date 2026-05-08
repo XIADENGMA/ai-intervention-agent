@@ -93,8 +93,10 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 **原因**：
 
 - **mDNS 只在绑定到非 loopback 接口时发布**。
-  把 `web_ui.bind_interface` 改成局域网 IP（比如 `192.168.x.y`）
-  或者 `0.0.0.0`，不能是 `127.0.0.1`。
+  把 `network_security.bind_interface` 改成局域网 IP（比如 `192.168.x.y`）
+  或者 `0.0.0.0`，不能是 `127.0.0.1`。（`bind_interface` 配置项在
+  `[network_security]` section 下，不是 `[web_ui]` —— 它在运行时会
+  覆盖 `web_ui.host`。）
 - **macOS 休眠 / Wi-Fi 省电** 大约 5 分钟后会清掉 Bonjour 记录。
   要么 caffeinate 保持唤醒，要么手机刷一下页面 —— 通常重新解析
   是秒级的。

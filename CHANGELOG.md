@@ -11,6 +11,84 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R94** — fix a docs-to-code drift in
+  `docs/troubleshooting.{md,zh-CN.md}` that told users to set
+  `web_ui.bind_interface` to fix the "phone can't reach `ai.local:8080`
+  on the same Wi-Fi" symptom, when the option actually lives under
+  `[network_security]`. Add a parity gate
+  (`tests/test_config_docs_inline_parity.py`) that scans every
+  `docs/**/*.md` (except `configuration{,.zh-CN}.md` and `CHANGELOG.md`,
+  both already covered by other gates) for backticked
+  ``<section>.<key>`` references and fails if the pair is not declared
+  in `config.toml.default`.
+
+  Symptom thread:
+
+  - The "Mobile / tablet can't open `ai.local:8080`" recipe in
+    `docs/troubleshooting.md` line 106 (and the Chinese mirror at
+    `docs/troubleshooting.zh-CN.md` line 96) prescribed:
+    > Set `web_ui.bind_interface` to your LAN IP …
+  - `config.toml.default` line 92-93 declares `bind_interface` under
+    `[network_security]`, **not** `[web_ui]`. The Pydantic model
+    `WebUISectionConfig` (`shared_types.py`) has no `bind_interface`
+    field; `network_security.py::load_network_security_config()` is the
+    real reader.
+  - Result: a user who copy-pastes
+    `[web_ui]\nbind_interface = "0.0.0.0"` into their `config.toml`
+    sees **no warning, no error, and no behavioural change** — the key
+    is silently ignored because Pydantic's `extra="ignore"` policy
+    treats unknown keys as comments. The phone-on-LAN issue stays
+    broken and the user has no signal that the recipe is wrong.
+  - The mirror docs page `docs/configuration.zh-CN.md` line 150 already
+    listed `bind_interface` correctly under `[network_security]`, so
+    `test_config_docs_parity` could not catch the drift (it only
+    cross-checks the `configuration*.md` tables vs the TOML template,
+    not free-form prose in other docs).
+
+  Root cause: same shape as R93. An option was correctly **declared**
+  on the canonical surfaces (TOML template + Pydantic model +
+  `configuration.md` table), but a separate **prose recipe** in
+  troubleshooting docs put the key in the wrong section. None of the
+  existing parity gates inspected free-form docs for inline
+  ``section.key`` references — that surface had zero CI coverage. So
+  any docs author writing a quick recipe could land a section-name
+  typo and only a real user trying the recipe would notice (and even
+  then they'd most likely blame their own setup, not the docs).
+
+  Fix:
+
+  1. **Correct both translations**:
+     `docs/troubleshooting.md` line 106 and
+     `docs/troubleshooting.zh-CN.md` line 96 now say
+     `network_security.bind_interface`, with a one-line clarification
+     reminding readers that `bind_interface` lives under
+     `[network_security]` (it overrides `web_ui.host` at runtime — see
+     `web_ui_mdns_utils.py::detect_best_publish_ipv4`).
+  2. **Add a regression gate**:
+     `tests/test_config_docs_inline_parity.py` (2 tests, both green
+     post-fix). It walks `docs/**/*.md`, finds every backticked
+     ``<section>.<key>`` whose `section` is one of the live top-level
+     TOML sections, and asserts the `key` is declared there. On
+     mismatch the failure message points to the section that *actually*
+     owns the key — so the next contributor who writes
+     ``feedback.bind_interface`` gets _"`bind_interface` is declared
+     in `[network_security]`, write `network_security.bind_interface`
+     instead"_ verbatim, no detective work required. False-positive
+     suppression: file-suffix-shaped keys (`web_ui.py`, `server.py`,
+     `i18n-keys.d.ts`) are excluded so the lessons-learned posts
+     keep working; `CHANGELOG.md` and the `configuration{,.zh-CN}.md`
+     tables are excluded because they're either historical record
+     (CHANGELOG keeps old key names from migrations) or covered by
+     existing parity gates (`test_config_docs_parity.py`,
+     `test_config_defaults_consistency.py`).
+  3. **Self-test the gate**: temporarily inverting the fix locally
+     reproduced the failure with the suggested-section message, then
+     restoring the fix returned to green — proves the gate would have
+     caught R94 at PR time.
+
+  Verification: `ci_gate.py` green (3844 passed, 3 skipped, 0 warnings,
+  0 errors).
+
 - **R93** — wire up the `AI_INTERVENTION_AGENT_LOG_LEVEL` env var
   contract that `docs/troubleshooting.md` and `.github/SUPPORT.md`
   have promised since v1.5, and surface the `web_ui.log_level` config

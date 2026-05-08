@@ -103,8 +103,10 @@ does not show the task.
 **Causes**:
 
 - **mDNS only publishes when bound to a non-loopback interface**.
-  Set `web_ui.bind_interface` to your LAN IP (e.g. `192.168.x.y`) or
-  `0.0.0.0`, not `127.0.0.1`.
+  Set `network_security.bind_interface` to your LAN IP (e.g. `192.168.x.y`)
+  or `0.0.0.0`, not `127.0.0.1`. (`bind_interface` lives under the
+  `[network_security]` section, not `[web_ui]` — it overrides
+  `web_ui.host` at runtime.)
 - **macOS Sleep / Wi-Fi power-save** drops the Bonjour record after
   ~5 minutes of idle. Either pin caffeinate, or just refresh the
   page on the phone — re-resolution is usually instant.
