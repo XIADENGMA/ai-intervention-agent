@@ -103,6 +103,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   wheel-install path exactly, eliminating the "it works on my
   machine because Python picked up `./web_ui.py` from cwd" class
   of bugs.
+- **R81** — internal post-mortem `docs/lessons-learned-r70s.md`
+  for the R71 → R80b batch, mirroring the R63 → R70 template
+  established by `docs/lessons-learned-r60s.md`. Eight root
+  causes (CodeQL noise, governance-doc relocation, zero-warning
+  sprint, `src/` layout migration, MCP cross-tool compat,
+  defensive-branch coverage, markdown link rot, CHANGELOG
+  drift) plus cross-cutting takeaways. `docs/README.md`
+  Reviewers section gains the new entry and the index footer
+  is refreshed for the v1.5.46 cycle.
 
 ### Fixed
 

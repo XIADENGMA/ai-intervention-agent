@@ -60,6 +60,14 @@ Find your role below to jump straight to the page you need.
   build-info diagnostic, Prettier rollout, Dependabot major-bump
   triage, README architecture completeness). Required reading
   before adding a new CSS theme variant or a new MCP tool field.
+- [`lessons-learned-r70s.md`](lessons-learned-r70s.md) — internal
+  post-mortem for the v1.5.46 / `[Unreleased]` R71 → R80b batch
+  (CodeQL triage discipline, governance-doc relocation,
+  zero-warning sprint, PyPA `src/` layout migration, cross-MCP
+  compat aliases, defensive-branch coverage, markdown link-rot
+  guardrail, CHANGELOG backfill). Required reading before any
+  big-bang reorganisation, accept-but-ignore alias, or
+  `git mv` of a `.md` file.
 - [`security-triage-r72.md`](security-triage-r72.md) — line-by-line
   disposition of every GitHub code-scanning alert open as of the
   May 2026 sweep. Documents the R72-A (15 × log-injection via
@@ -80,14 +88,19 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.45 (R63 → R70 batch:
-diagnostic build-info under `aiia://server/info`, Bark deep-link
-`aiia_test=1` sentinel, MCP `predefined_options_defaults` schema
-parameter, light-mode button text + 7 iOS-blue leakage fixes,
-brand-color drift guardrail with pre-commit hook, README inner-
-modules pointer + Dependency Review FAQ, Prettier-defaults
-overhaul across `multi_task.js` / VSCode TS-JS / docs Markdown /
-`settings-manager.js` + `web_ui.html`). Internal post-mortem at
+index never lies. Last refreshed for the v1.5.46 /
+`[Unreleased]` cycle (R71 → R80b batch: CodeQL alert triage with
+audit trail, governance docs relocated to `.github/`,
+zero-warning sprint clearing 4 ruff-LOG / 2 ty / prettier /
+lockfile diagnostics, PyPA `src/ai_intervention_agent/` layout
+migration plus `config.jsonc.default` removal, MCP
+`interactive_feedback` cross-tool compat aliases for
+`timeout_seconds` / `task_id`, defensive-branch coverage uplift on
+`web_ui_routes/system.py` and `i18n.py`, markdown link-rot
+guardrail with 14 broken-link fixes inside `.github/`, and
+`CHANGELOG.md [Unreleased]` backfill). Internal post-mortem at
+[`lessons-learned-r70s.md`](lessons-learned-r70s.md). Prior
+v1.5.45 (R63 → R70 batch) post-mortem at
 [`lessons-learned-r60s.md`](lessons-learned-r60s.md). Earlier
 R57 / R58 work (Flask-Limiter `headers_enabled=True` + 256 KB SSE
 oversize guard) remains captured in v1.5.44; older R56 → R50 in

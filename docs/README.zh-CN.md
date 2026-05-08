@@ -55,6 +55,13 @@
   移、Bark 深链接 sentinel、build-info 诊断块、Prettier 收尾、
   Dependabot major-bump 分诊、README 架构完整性）。新增 CSS 主
   题变体或 MCP 工具字段前必读。
+- [`lessons-learned-r70s.md`](lessons-learned-r70s.md) —
+  v1.5.46 / `[Unreleased]` R71 → R80b 批次的内部复盘
+  （CodeQL 警告分诊、治理文档迁入 `.github/`、零警告冲刺、PyPA
+  `src/` 布局迁移、跨 MCP 兼容别名、防御分支覆盖率冲刺、
+  Markdown 链接腐烂护栏、CHANGELOG 回填）。任何大型重组、
+  accept-but-ignore 兼容字段、或 `git mv` 任意 `.md` 文件之
+  前必读。
 - [`security-triage-r72.md`](security-triage-r72.md) — 2026 年 5
   月对全部 GitHub code-scanning 警告的逐条分诊。包含 R72-A（15 ×
   log-injection 通过全局 root InterceptHandler 一次性修掉）+
@@ -72,14 +79,18 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.45（R63 → R70 批次：`aiia://server/info` 诊断
-build 块、Bark 深链接 `aiia_test=1` sentinel、MCP
-`predefined_options_defaults` schema 参数、浅色模式按钮文字 +
-7 处 iOS 蓝泄漏修复、品牌色漂移护栏 + pre-commit hook、README
-内部模块指针 + Dependency Review FAQ、Prettier 默认值收尾覆盖
-`multi_task.js` / VSCode TS-JS / docs Markdown / `settings-
-manager.js` + `web_ui.html`）。内部复盘见
-[`lessons-learned-r60s.md`](lessons-learned-r60s.md)。上一周期
+更新对应 v1.5.46 / `[Unreleased]` 周期（R71 → R80b 批次：
+带审计轨迹的 CodeQL 分诊、治理文档迁入 `.github/`、清掉 4 条
+ruff-LOG / 2 条 ty / prettier / lockfile 诊断的零警告冲刺、
+PyPA `src/ai_intervention_agent/` 布局迁移并删除
+`config.jsonc.default`、为 `interactive_feedback` 添加跨工具
+兼容别名 `timeout_seconds` / `task_id`、`web_ui_routes/system.py`
+与 `i18n.py` 防御分支覆盖率冲刺、Markdown 链接腐烂护栏 + 修复
+`.github/` 内 14 条断链、`CHANGELOG.md [Unreleased]` 回填）。
+内部复盘见
+[`lessons-learned-r70s.md`](lessons-learned-r70s.md)。上一
+v1.5.45（R63 → R70 批次）复盘见
+[`lessons-learned-r60s.md`](lessons-learned-r60s.md)。更早的
 R57 / R58（Flask-Limiter `headers_enabled=True` + 256 KB SSE
-oversize 护栏）记录在 v1.5.44；更早的 R56 → R50 在 v1.5.43 →
+oversize 护栏）记录在 v1.5.44；R56 → R50 在 v1.5.43 →
 v1.5.39。_
