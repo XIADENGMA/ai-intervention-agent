@@ -11,6 +11,7 @@ AI Intervention Agent - Enhanced Logging 模块单元测试
 """
 
 import logging
+import os
 import time
 import unittest
 
@@ -598,6 +599,92 @@ class TestLogDuplicateInfoAppend(unittest.TestCase):
             mock_log.assert_called_once()
             logged_msg = mock_log.call_args[0][1]
             self.assertIn("(重复 3 次)", logged_msg)
+
+
+class TestEnvVarOverridesConfig(unittest.TestCase):
+    """``AI_INTERVENTION_AGENT_LOG_LEVEL`` env var must win over config.
+
+    Background：``docs/troubleshooting.md`` 与 ``.github/SUPPORT.md`` 自 v1.5
+    起就告诉 standalone server 用户 "set ``AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG``
+    to get DEBUG logs"，但代码侧直到 R93 才真接通这个 env var；之前 docs
+    写的承诺 = silent breakage（用户照做后日志级别没变，找不到原因）。
+    本套测试锁住 R93 起的契约：env var 优先，无效值 fallback 到 config，
+    config 里的 explicit 设置仍 honored，env var 与 VS Code logLevel 是
+    独立轴（VS Code 用户不受 standalone env var 影响）。
+    """
+
+    def setUp(self) -> None:
+        self._saved_env = os.environ.pop("AI_INTERVENTION_AGENT_LOG_LEVEL", None)
+
+    def tearDown(self) -> None:
+        if self._saved_env is None:
+            os.environ.pop("AI_INTERVENTION_AGENT_LOG_LEVEL", None)
+        else:
+            os.environ["AI_INTERVENTION_AGENT_LOG_LEVEL"] = self._saved_env
+
+    def test_env_var_debug_wins_over_config_warning(self) -> None:
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = {"log_level": "WARNING"}
+        os.environ["AI_INTERVENTION_AGENT_LOG_LEVEL"] = "DEBUG"
+        with _patch("ai_intervention_agent.config_manager.config_manager", mock_mgr):
+            from ai_intervention_agent.enhanced_logging import get_log_level_from_config
+
+            self.assertEqual(get_log_level_from_config(), logging.DEBUG)
+
+    def test_env_var_lowercase_accepted(self) -> None:
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = {"log_level": "ERROR"}
+        os.environ["AI_INTERVENTION_AGENT_LOG_LEVEL"] = "info"
+        with _patch("ai_intervention_agent.config_manager.config_manager", mock_mgr):
+            from ai_intervention_agent.enhanced_logging import get_log_level_from_config
+
+            self.assertEqual(get_log_level_from_config(), logging.INFO)
+
+    def test_env_var_invalid_falls_back_to_config(self) -> None:
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = {"log_level": "ERROR"}
+        os.environ["AI_INTERVENTION_AGENT_LOG_LEVEL"] = "VERBOSE"  # invalid
+        with _patch("ai_intervention_agent.config_manager.config_manager", mock_mgr):
+            from ai_intervention_agent.enhanced_logging import get_log_level_from_config
+
+            # invalid env var → fallback to config_manager → ERROR
+            self.assertEqual(get_log_level_from_config(), logging.ERROR)
+
+    def test_env_var_empty_string_falls_back_to_config(self) -> None:
+        """空字符串 / 全空白不应触发 env var 路径，避免 ``=`` 后忘记填值的
+        shell 配置悄悄把级别拉到 fallback 默认（WARNING）的副作用。"""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = {"log_level": "DEBUG"}
+        os.environ["AI_INTERVENTION_AGENT_LOG_LEVEL"] = "   "
+        with _patch("ai_intervention_agent.config_manager.config_manager", mock_mgr):
+            from ai_intervention_agent.enhanced_logging import get_log_level_from_config
+
+            self.assertEqual(get_log_level_from_config(), logging.DEBUG)
+
+    def test_no_env_var_uses_config(self) -> None:
+        """缺省 env var 必须保持原有 config 路径不变（向后兼容）。"""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        mock_mgr = MagicMock()
+        mock_mgr.get.return_value = {"log_level": "INFO"}
+        # env var 已在 setUp 里 pop
+        with _patch("ai_intervention_agent.config_manager.config_manager", mock_mgr):
+            from ai_intervention_agent.enhanced_logging import get_log_level_from_config
+
+            self.assertEqual(get_log_level_from_config(), logging.INFO)
 
 
 class TestGetLogLevelEdgePaths(unittest.TestCase):

@@ -73,6 +73,13 @@ http_request_timeout = 30
 http_max_retries = 3
 # HTTP 重试延迟(秒) / HTTP retry delay (seconds) - range [0, 60]
 http_retry_delay = 1.0
+# 日志级别 / Log level for the standalone server's enhanced_logging module.
+# Valid values (case-insensitive): "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL".
+# Override at runtime with the env var ``AI_INTERVENTION_AGENT_LOG_LEVEL`` —
+# the env var wins over this config when both are set, useful for one-off
+# debugging without touching config.toml. VS Code extension users tune
+# ``ai-intervention-agent.logLevel`` in VS Code settings instead (separate axis).
+log_level = "WARNING"
 # 外部访问基地址 / External base URL for notification click links and reverse proxies.
 # Leave empty to prefer mDNS http://{mdns.hostname}:{port} when available, then fall back
 # to http://{host}:{port}. Set explicitly for reverse proxies, HTTPS, or a custom LAN host.

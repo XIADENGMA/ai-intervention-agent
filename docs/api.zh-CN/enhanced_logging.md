@@ -49,7 +49,17 @@ log 行。
 
 ### `get_log_level_from_config() -> int`
 
-从配置文件读取 web_ui.log_level，默认 WARNING
+从环境变量 / 配置文件读取日志级别。
+
+解析顺序（first match wins）：
+
+1. **环境变量** ``AI_INTERVENTION_AGENT_LOG_LEVEL``——standalone server
+   场景下最常见的诊断入口。``docs/troubleshooting.md`` /
+   ``.github/SUPPORT.md`` 自 v1.5 起就向用户公开承诺这个 env var
+   存在，但 R92 之前实际没接入；R93 把契约真兑现到代码层。env var
+   不区分大小写，无效值会回退到 config 解析路径并打 warning。
+2. **配置文件** ``[web_ui].log_level``。
+3. **默认值** ``WARNING``。
 
 ### `configure_logging_from_config() -> None`
 

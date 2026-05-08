@@ -138,6 +138,7 @@ dev 模式内部优先级顺序：
 | `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                  |
 | `http_max_retries`     | number  | `3`         | HTTP 最大重试次数，范围 `[0, 20]`                                                                                                                     |
 | `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`                                                                                                                   |
+| `log_level`            | string  | `"WARNING"` | 独立服务端 enhanced_logging 模块日志级别，大小写不敏感，有效值：`"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`。可被环境变量 `AI_INTERVENTION_AGENT_LOG_LEVEL` 覆盖（env 优先）。VS Code 扩展使用方应改 VS Code 设置里的 `ai-intervention-agent.logLevel`（独立维度）。 |
 | `external_base_url`    | string  | `""`        | 通知点击跳转使用的外部 Web UI 基地址，例如 `http://ai.local:8080`；留空时优先回退到 mDNS（`http://ai.local:{port}`），再回退到 `http://{host}:{port}` |
 
 ### `network_security`（网络安全）

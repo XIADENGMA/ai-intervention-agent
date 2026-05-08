@@ -186,6 +186,15 @@ class WebUISectionConfig(BaseModel):
     http_request_timeout: Annotated[int, BeforeValidator(_clamp_int(1, 600, 30))] = 30
     http_max_retries: Annotated[int, BeforeValidator(_clamp_int(0, 20, 3))] = 3
     http_retry_delay: Annotated[float, BeforeValidator(_clamp_float(0, 60, 1.0))] = 1.0
+    # log_level: standalone server 的 enhanced_logging 模块日志级别。
+    # 有效值（不区分大小写）："DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"；
+    # 运行时还可被 ``AI_INTERVENTION_AGENT_LOG_LEVEL`` 环境变量覆盖（env var
+    # 胜出，便于不改 config.toml 做一次性 debug）。这里仅做 ``SafeStr`` 不做
+    # 严格 enum 校验——``enhanced_logging.get_log_level_from_config`` 自己负
+    # 责无效值的 fallback 与 warning，避免 Pydantic 阶段就抛 ValidationError
+    # 把整个 web_ui section 拒绝掉（用户体验：错一个 log_level 不应炸掉整个
+    # web_ui section 的别的字段）。
+    log_level: SafeStr = "WARNING"
     # external_base_url: 可选；用于拼装 Bark 点击 URL 等"外部跳转"链接。
     # 留空时优先按 mDNS（http://{mdns.hostname}:{port}）兜底，再回退到
     # http://{host}:{port}；用户可填反代域名，例如 "https://ai.example.com"。

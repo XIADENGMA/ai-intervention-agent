@@ -2,6 +2,7 @@
 
 import collections
 import logging
+import os
 import re
 import sys
 import threading
@@ -467,8 +468,34 @@ LOG_LEVEL_MAP = {
 VALID_LOG_LEVELS = tuple(LOG_LEVEL_MAP.keys())
 
 
+_LOG_LEVEL_ENV_VAR = "AI_INTERVENTION_AGENT_LOG_LEVEL"
+
+
 def get_log_level_from_config() -> int:
-    """从配置文件读取 web_ui.log_level，默认 WARNING"""
+    """从环境变量 / 配置文件读取日志级别。
+
+    解析顺序（first match wins）：
+
+    1. **环境变量** ``AI_INTERVENTION_AGENT_LOG_LEVEL``——standalone server
+       场景下最常见的诊断入口。``docs/troubleshooting.md`` /
+       ``.github/SUPPORT.md`` 自 v1.5 起就向用户公开承诺这个 env var
+       存在，但 R92 之前实际没接入；R93 把契约真兑现到代码层。env var
+       不区分大小写，无效值会回退到 config 解析路径并打 warning。
+    2. **配置文件** ``[web_ui].log_level``。
+    3. **默认值** ``WARNING``。
+    """
+    raw_env = os.environ.get(_LOG_LEVEL_ENV_VAR)
+    if raw_env is not None and raw_env.strip():
+        env_upper = raw_env.strip().upper()
+        if env_upper in LOG_LEVEL_MAP:
+            return LOG_LEVEL_MAP[env_upper]
+        # env var 值无效时不直接 fallback——记 warning 提醒用户改回有效值，
+        # 然后继续走 config 路径（不阻塞启动）。
+        enhanced_logger.warning(
+            f"环境变量 {_LOG_LEVEL_ENV_VAR}='{raw_env}' 不是有效日志级别，"
+            f"有效值: {VALID_LOG_LEVELS}；尝试退回 config / 默认值。"
+        )
+
     try:
         from ai_intervention_agent.config_manager import config_manager
 
