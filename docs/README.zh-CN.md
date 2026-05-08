@@ -55,6 +55,12 @@
   移、Bark 深链接 sentinel、build-info 诊断块、Prettier 收尾、
   Dependabot major-bump 分诊、README 架构完整性）。新增 CSS 主
   题变体或 MCP 工具字段前必读。
+- [`security-triage-r72.md`](security-triage-r72.md) — 2026 年 5
+  月对全部 GitHub code-scanning 警告的逐条分诊。包含 R72-A（15 ×
+  log-injection 通过全局 root InterceptHandler 一次性修掉）+
+  R72-B（1 × `open-config-file` stack-trace 泄漏）的代码修复、20
+  个误报的 dismiss 理由、以及 OpenSSF Scorecard 治理项的"暂不修"
+  政策说明。
 
 ## 双语覆盖
 

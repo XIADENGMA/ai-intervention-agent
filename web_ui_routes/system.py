@@ -357,11 +357,17 @@ class SystemRoutesMixin:
                 )
             except OSError as exc:
                 logger.error(f"启动编辑器失败: {exc}", exc_info=True)
+                # R72-B (CodeQL py/stack-trace-exposure #46)：不把 OSError
+                # 的 errno / filename 等系统细节回传给客户端。运维需要这些
+                # 时去看服务器日志（已经 exc_info=True 完整记录）。
                 return (
                     jsonify(
                         {
                             "success": False,
-                            "error": f"Failed to launch editor: {exc}",
+                            "error": (
+                                "Failed to launch editor; check server logs "
+                                "for details."
+                            ),
                         }
                     ),
                     500,

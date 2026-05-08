@@ -234,6 +234,52 @@ class InterceptHandler(logging.Handler):
         )
 
 
+def _install_root_intercept_once() -> None:
+    """R72-A：在 root logger 上 idempotently 安装一份 ``InterceptHandler``。
+
+    目的
+    ----
+
+    项目里一部分模块（``task_queue``、``config_manager``、``file_validator``、
+    ``i18n``、``config_utils``）用的是 ``logging.getLogger(__name__)`` 而不是
+    走 ``EnhancedLogger`` / ``SingletonLogManager.setup_logger``。它们的
+    ``logger.propagate`` 默认是 True，会冒泡到 root logger。如果 root 没装
+    handler，stdlib ``logging.lastResort`` 会把这些消息原样吐到 stderr，
+    **绕过 Loguru 的 ``_sanitize_and_escape`` patcher**。
+
+    后果是 CodeQL ``py/log-injection`` 在 ``task_queue.add_task`` 等位置上
+    报警是技术上正确的——一个能注入 ``\\n`` 到 ``task_id`` 的攻击者就能伪造
+    log 行。
+
+    修复方案是在 root logger 上挂一份 ``InterceptHandler``，把所有未显式
+    设置 handler 的 stdlib logger 全部桥接进 Loguru，统一享受
+    ``_sanitize_and_escape``（CRLF / null byte 转义）+ ``_global_sanitizer``
+    （PII 脱敏）。
+
+    幂等性
+    ------
+
+    用 ``isinstance(h, InterceptHandler)`` 检测已存在的 handler，避免重复
+    安装。这对测试场景特别重要：``pytest`` 可能多次 import 模块，
+    ``logging`` root 是进程级单例。
+
+    与 ``SingletonLogManager.setup_logger`` 的关系
+    -------------------------------------------------
+
+    ``setup_logger`` 装的 handler 是在 *named* logger 上，且明确把
+    ``propagate`` 设为 False；root 的 handler 不会跟 named logger 重复
+    输出。两条路径独立、不串。
+    """
+    root = logging.getLogger()
+    for handler in root.handlers:
+        if isinstance(handler, InterceptHandler):
+            return
+    root.addHandler(InterceptHandler())
+
+
+_install_root_intercept_once()
+
+
 class SingletonLogManager:
     """单例日志管理器 - 配置 stdlib logger 路由到 Loguru，线程安全。"""
 

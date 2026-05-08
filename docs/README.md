@@ -60,6 +60,13 @@ Find your role below to jump straight to the page you need.
   build-info diagnostic, Prettier rollout, Dependabot major-bump
   triage, README architecture completeness). Required reading
   before adding a new CSS theme variant or a new MCP tool field.
+- [`security-triage-r72.md`](security-triage-r72.md) — line-by-line
+  disposition of every GitHub code-scanning alert open as of the
+  May 2026 sweep. Documents the R72-A (15 × log-injection via
+  global root InterceptHandler) and R72-B (1 × stack-trace exposure
+  in `open-config-file`) fixes, the 20 false-positive dismissals
+  with justifications, and the OpenSSF Scorecard governance items
+  intentionally won't-fix.
 
 ## Bilingual coverage
 

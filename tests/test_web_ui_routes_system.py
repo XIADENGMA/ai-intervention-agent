@@ -200,7 +200,14 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
     @patch("web_ui_routes.system.subprocess.Popen")
     @patch("web_ui_routes.system._detect_default_editor")
     def test_popen_oserror_returns_500(self, mock_detect, mock_popen):
-        """Popen 抛 OSError（如权限不足） → 500，错误信息不暴露 stderr。"""
+        """Popen 抛 OSError（如权限不足） → 500，错误信息不暴露 stderr。
+
+        R72-B（CodeQL py/stack-trace-exposure 修复）锁定：错误响应仅包含
+        generic "check server logs" 提示，**不能** 把 OSError 的 detail
+        （这里是 "Permission denied"，更恶意的场景下可能包含路径、errno、
+        系统库版本等）回传给客户端——这些都属于"对外可见的 stack-trace 类
+        信息泄漏"。详情写到服务器 log（已经 ``exc_info=True``）。
+        """
         mock_detect.return_value = ("/opt/cursor", [])
         mock_popen.side_effect = OSError("Permission denied")
 
@@ -210,7 +217,18 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
             environ_overrides={"REMOTE_ADDR": "127.0.0.1"},
         )
         self.assertEqual(resp.status_code, 500)
-        self.assertIn("launch editor", resp.get_json()["error"].lower())
+        body = resp.get_json()
+        self.assertIn("launch editor", body["error"].lower())
+        self.assertIn(
+            "check server logs",
+            body["error"].lower(),
+            "R72-B 契约：错误信息必须引导运维去查日志",
+        )
+        self.assertNotIn(
+            "Permission denied",
+            body["error"],
+            "R72-B 契约：OSError 的原始 detail 不能泄漏给客户端",
+        )
 
     @patch("web_ui_routes.system.subprocess.Popen")
     @patch("web_ui_routes.system._detect_default_editor")
