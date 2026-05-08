@@ -687,12 +687,41 @@ async def interactive_feedback(
         description=(
             "Optional list of predefined choices the user can pick from "
             "(rendered as multi-select checkboxes alongside a free-text reply). "
-            "MUST be either null/omitted or a JSON array of strings; non-string items are dropped. "
-            "Each option: 1-500 characters (longer items are truncated). "
-            "Tips: (1) keep options short, action-oriented and mutually distinguishable; "
-            "(2) if you have a recommended/default answer, place it first and mark it (e.g. '[Recommended] ...'); "
+            "Three input shapes are accepted (v1.5.20+): "
+            "(a) list[str] — simple labels, all initially unchecked; "
+            "(b) list[dict] of shape "
+            '{"label": str, "default": bool} — let the recommended option '
+            "start pre-checked without any extra param "
+            '(aliases: "label"/"text"/"value", "default"/"selected"/"checked"); '
+            "(c) list[str] paired with the sibling param "
+            "`predefined_options_defaults` (parallel boolean array). "
+            "Non-string and non-{label,...} items are silently dropped. "
+            "Each option max length: 500 characters (longer items are truncated). "
+            "Tips: "
+            "(1) keep options short, action-oriented and mutually distinguishable; "
+            "(2) prefer the dict form "
+            '`{"label": "Apply", "default": true}` to mark the '
+            "recommended/default answer — the UI now renders real pre-checked "
+            "checkboxes, so do NOT rely on text-prefix hacks for marking "
+            "recommended options; "
             "(3) the user may also ignore options and reply with free text. "
-            "If omitted, the server falls back to `options` for cross-tool compatibility."
+            "If omitted, the server falls back to `options` for "
+            "cross-tool compatibility."
+        ),
+    ),
+    predefined_options_defaults: list | None = Field(
+        default=None,
+        description=(
+            "Optional sibling array (v1.5.20+) for the `list[str]` shape of "
+            "`predefined_options`: each element decides whether the "
+            "corresponding checkbox starts pre-checked. "
+            "Truthy aliases (case-insensitive, trimmed): "
+            'True / 1 / 1.0 / "true" / "yes" / "on" / "selected"; '
+            "everything else (including None / 0 / lists / dicts) → False. "
+            "Length is silently truncated when longer than `predefined_options` "
+            "and padded with False when shorter. "
+            "Ignored when `predefined_options` already uses the "
+            '{"label", "default"} dict form (which takes precedence).'
         ),
     ),
     summary: str | None = Field(
@@ -820,6 +849,36 @@ async def interactive_feedback(
             "interactive_feedback: 收到 'options' 别名参数，已映射到 'predefined_options'"
         )
         resolved_options = options
+
+    # R63b：parallel array 形态——把 ``predefined_options_defaults`` 合并进
+    # ``resolved_options``，统一走 dict 形态后再交给
+    # ``validate_input_with_defaults``。这样上层 LLM 既可以用 dict 形态
+    # ``[{"label": ..., "default": true}]``，也可以用平行数组形态
+    # ``predefined_options=[...] + predefined_options_defaults=[...]``，与
+    # ``docs/mcp_tools.md`` v1.5.20+ 公开 API 对齐。
+    # 注意：dict 形态中的 ``default`` 字段优先级高于这里的 parallel 数组——
+    # 当某项已经是 dict 时跳过合并，保持调用方的原始意图。
+    if (
+        isinstance(predefined_options_defaults, list)
+        and isinstance(resolved_options, list)
+        and resolved_options
+    ):
+        merged_options: list[Any] = []
+        for idx, opt in enumerate(resolved_options):
+            if isinstance(opt, str):
+                # 仅当 opt 是纯字符串时才注入 default；超长 defaults 静默截
+                # 断、过短自动 pad False（``_normalize_option_default`` 处理
+                # 不可解释的值）
+                default_raw = (
+                    predefined_options_defaults[idx]
+                    if idx < len(predefined_options_defaults)
+                    else False
+                )
+                merged_options.append({"label": opt, "default": default_raw})
+            else:
+                # dict / list-pair 形态：保持原样，避免覆盖调用方显式 default
+                merged_options.append(opt)
+        resolved_options = merged_options
 
     # 仅在调试场景下记录被忽略的兼容参数（INFO 级别会在生产中产生噪音，因此用 debug）。
     _ignored_compat = {
