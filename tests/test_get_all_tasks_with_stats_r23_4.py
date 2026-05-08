@@ -243,7 +243,7 @@ class TestSourceContract(unittest.TestCase):
             self.task_route_src,
         )
         self.assertIsNotNone(match, "无法定位 get_tasks 函数体")
-        assert match is not None  # type: narrowing for mypy
+        assert match is not None  # narrows Optional[Match] for mypy/ty
         body = match.group(0)
         self.assertNotIn(
             "task_queue.get_all_tasks()",

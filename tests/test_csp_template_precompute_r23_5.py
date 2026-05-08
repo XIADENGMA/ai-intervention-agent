@@ -331,7 +331,9 @@ class TestIntegrationViaFlaskApp(unittest.TestCase):
         nonce_re = re.compile(r"script-src 'self' 'nonce-([^']+)'")
         m1 = nonce_re.search(r1.headers.get("Content-Security-Policy", ""))
         m2 = nonce_re.search(r2.headers.get("Content-Security-Policy", ""))
-        assert m1 is not None and m2 is not None  # type: narrowing
+        assert (
+            m1 is not None and m2 is not None
+        )  # narrows Optional[Match] for type checker
         self.assertNotEqual(
             m1.group(1),
             m2.group(1),
