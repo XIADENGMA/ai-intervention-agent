@@ -112,6 +112,108 @@ class TestFindIosBlueLocations(unittest.TestCase):
         self.assertEqual(guard.find_ios_blue_locations(".x { color: red; }"), [])
 
 
+class TestCountIosBlueHexR99(unittest.TestCase):
+    """R99：``count_ios_blue_hex`` 容忍 hex 形式 ``#007aff`` 的多种写法。"""
+
+    def test_basic_lowercase(self) -> None:
+        src = "color: #007aff;"
+        self.assertEqual(guard.count_ios_blue_hex(src), 1)
+
+    def test_basic_uppercase(self) -> None:
+        """case-insensitive：``#007AFF`` 同样命中。"""
+        src = "color: #007AFF;"
+        self.assertEqual(guard.count_ios_blue_hex(src), 1)
+
+    def test_mixed_case(self) -> None:
+        src = "color: #007AfF;"
+        self.assertEqual(guard.count_ios_blue_hex(src), 1)
+
+    def test_multiple_occurrences(self) -> None:
+        src = (
+            "a { color: #007aff; } "
+            "b { border: 1px solid #007aff; background: #007AFF; }"
+        )
+        self.assertEqual(guard.count_ios_blue_hex(src), 3)
+
+    def test_does_not_match_other_hex(self) -> None:
+        """``#007abf`` / ``#107aff`` 不应误命中。"""
+        src = "color: #007abf; border-color: #107aff;"
+        self.assertEqual(guard.count_ios_blue_hex(src), 0)
+
+    def test_word_boundary(self) -> None:
+        """``\\b`` 边界：``#007affab`` 不应命中（虽然 CSS 不允许这种扩展）。"""
+        src = "color: #007affab;"
+        self.assertEqual(guard.count_ios_blue_hex(src), 0)
+
+    def test_does_not_match_brand_purple_or_orange(self) -> None:
+        """品牌色 ``#a855f7`` / ``#d97757`` 不能误命中——它们不是 iOS 蓝。"""
+        src = ":root { --brand-accent: #a855f7; --brand-light-accent: #d97757; }"
+        self.assertEqual(guard.count_ios_blue_hex(src), 0)
+
+
+class TestFindIosBlueHexLocationsR99(unittest.TestCase):
+    """R99：``find_ios_blue_hex_locations`` 返回行号 + 行内容。"""
+
+    def test_returns_line_number_and_content(self) -> None:
+        src = "first line\n.x { color: #007aff; }\nthird line\n"
+        locs = guard.find_ios_blue_hex_locations(src)
+        self.assertEqual(len(locs), 1)
+        lineno, line = locs[0]
+        self.assertEqual(lineno, 2)
+        self.assertIn("#007aff", line)
+
+    def test_empty_when_no_match(self) -> None:
+        self.assertEqual(
+            guard.find_ios_blue_hex_locations(".x { color: red; }"),
+            [],
+        )
+
+
+class TestScanCssFilesReturnsBothFormsR99(unittest.TestCase):
+    """R99：``scan_css_files`` 必须**同时**返回 rgba decimal 和 hex 两种
+    形式的扫描结果。R99 之前函数签名是 ``(rgba_total, rgba_per_file)``，
+    R99 改成 ``(rgba_total, rgba_per_file, hex_total, hex_per_file)``——
+    若有人误改回 2-tuple 这个测试会立刻 fail。"""
+
+    def test_returns_4_tuple(self) -> None:
+        css_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
+        result = guard.scan_css_files(css_dir)
+        self.assertEqual(
+            len(result),
+            4,
+            "scan_css_files 必须返回 4-tuple "
+            "(rgba_total, rgba_per_file, hex_total, hex_per_file)。R99 之前的 "
+            "2-tuple 签名漏掉了 hex 形式 ``#007aff`` 的同色硬编码扫描结果。",
+        )
+        rgba_total, rgba_per_file, hex_total, hex_per_file = result
+        self.assertIsInstance(rgba_total, int)
+        self.assertIsInstance(rgba_per_file, dict)
+        self.assertIsInstance(hex_total, int)
+        self.assertIsInstance(hex_per_file, dict)
+
+    def test_hex_form_is_actually_scanned(self) -> None:
+        """端到端：构造内存 fixture 验证 ``#007aff`` 真的会被扫到。"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            css_path = Path(tmpdir) / "fixture.css"
+            css_path.write_text(
+                ".a { color: #007aff; }\n"
+                ".b { background: rgba(0, 122, 255, 0.5); }\n"
+                "/* doc 引用 #007aff 不计 */\n",
+                encoding="utf-8",
+            )
+            rgba_total, _rgba_pf, hex_total, _hex_pf = guard.scan_css_files(
+                Path(tmpdir)
+            )
+            self.assertEqual(rgba_total, 1, "rgba decimal 应当扫到 1 处")
+            self.assertEqual(
+                hex_total,
+                1,
+                "hex 形式应当扫到 1 处（注释里的 #007aff 已被剥）",
+            )
+
+
 class TestCliExitCodes(unittest.TestCase):
     """CLI ``main()`` 入口的退出码语义。"""
 
@@ -187,26 +289,49 @@ class TestCliExitCodes(unittest.TestCase):
 class TestBaselineMatchesActualCount(unittest.TestCase):
     """关键回归守护：脚本默认 baseline 必须与当前 main.css 实际数同步。
 
-    若有人改动 ``main.css`` 但忘了同步 ``DEFAULT_BASELINE``：
+    若有人改动 ``main.css`` 但忘了同步 ``DEFAULT_BASELINE`` /
+    ``DEFAULT_HEX_BASELINE``：
     * 增加硬编码 → ``test_exit_0_at_baseline`` 仍然过（因为 baseline 也增了
       但脚本 fail）—— 不会被 catch；
     * 减少硬编码 → 脚本退化到 ``ℹ️`` 模式，不 fail，但 baseline 数字
       与现实脱节，下次再有人新增就感觉不到压力。
-    本测试直接断言 ``DEFAULT_BASELINE == 实际扫描数``，强迫两者必须
-    一起改、一起 commit。
+    本测试直接断言 ``baseline == 实际扫描数``，强迫两者必须一起改、一起
+    commit。R99 加 hex 形式 ``#007aff`` 的并行断言（与 rgba decimal 形式
+    各自独立 baseline）。
     """
 
     def test_default_baseline_matches_main_css_count(self) -> None:
         css_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
-        total, _per_file = guard.scan_css_files(css_dir)
+        rgba_total, _rgba_per_file, hex_total, _hex_per_file = guard.scan_css_files(
+            css_dir
+        )
         self.assertEqual(
-            total,
+            rgba_total,
             guard.DEFAULT_BASELINE,
-            f"DEFAULT_BASELINE ({guard.DEFAULT_BASELINE}) 与实际扫描数 "
-            f"({total}) 不一致。请：\n"
-            f"  - 若新增了 iOS 蓝硬编码：先重构成 var() 或 Orange override；\n"
-            f"  - 若重构去掉了硬编码：把 scripts/check_brand_color_consistency.py "
-            f"的 DEFAULT_BASELINE 改成 {total} 锁定本次进度。",
+            f"DEFAULT_BASELINE ({guard.DEFAULT_BASELINE}) 与实际 rgba decimal "
+            f"扫描数 ({rgba_total}) 不一致。请：\n"
+            f"  - 若新增了 ``rgba(0, 122, 255, X)``：先重构成 var() 或 "
+            f"Orange override；\n"
+            f"  - 若重构去掉了：把 scripts/check_brand_color_consistency.py "
+            f"的 DEFAULT_BASELINE 改成 {rgba_total} 锁定本次进度。",
+        )
+
+    def test_default_hex_baseline_matches_main_css_count(self) -> None:
+        """R99：hex 形式 ``#007aff`` 的同款 baseline 锁定。"""
+        css_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
+        _rgba_total, _rgba_per_file, hex_total, _hex_per_file = guard.scan_css_files(
+            css_dir
+        )
+        self.assertEqual(
+            hex_total,
+            guard.DEFAULT_HEX_BASELINE,
+            f"DEFAULT_HEX_BASELINE ({guard.DEFAULT_HEX_BASELINE}) 与实际 hex "
+            f"扫描数 ({hex_total}) 不一致。请：\n"
+            f"  - 若新增了 ``#007aff``：先重构成 var() 或 Orange override "
+            f"（hex 形式与 rgba decimal 形式同色，对 light mode 视觉漂移"
+            f"贡献相同）；\n"
+            f"  - 若重构去掉了：把 scripts/check_brand_color_consistency.py "
+            f"的 DEFAULT_HEX_BASELINE 改成 {hex_total} 锁定本次进度。",
         )
 
 

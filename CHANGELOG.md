@@ -11,6 +11,99 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R99** — close R66's coverage gap by adding hex form `#007aff`
+  to the iOS-blue brand-color drift detector. R66 designed the
+  `rgba(0, 122, 255, X)` decimal-form scanner against the 64
+  observed live in `static/css/main.css`, but didn't account for
+  developers writing the **same** color in hex form
+  (`#007aff` / `#007AFF`) — and seven such hex hardcodes were
+  already present (and silently uncovered) in `main.css`:
+
+  - L2118 `linear-gradient(90deg, #007aff, ...)` — gradient stop
+  - L2592, L2678 `border-color: #007aff` — focus borders
+  - L3968 `background: #007aff` — solid blue backgrounds
+  - L5114 `border-top: 2px solid #007aff` — accent borders
+  - L5434 `border-left: 3px solid #007aff` — accent borders
+  - L5793 `color: #007aff` — text color
+
+  All seven render as iOS blue under both dark and light modes,
+  with the same R65-tracked drift consequence: in light mode the
+  brand color is supposed to be Anthropic Orange (`#d97757`), so
+  these uncovered hex hardcodes contributed to the very visual
+  drift R66 was supposed to gate against. R66 was the right idea
+  with an incomplete pattern.
+
+  Followed R66's "baseline-locks-debt, gate-prevents-growth"
+  methodology rather than rewriting the existing 34-strong rgba
+  baseline: added a parallel `DEFAULT_HEX_BASELINE = 7` that locks
+  the hex form's current count, with the rgba-decimal baseline 34
+  unchanged (the two formats describe distinct snapshots from
+  different commit moments — mixing them would distort the
+  "refactor reduced baseline" warning signal). Net guard surface
+  is `34 (rgba decimal) + 7 (hex) = 41` known iOS-blue hardcodes;
+  any *new* hardcode in either form fails the gate.
+
+  Decision history (mirrors R66's own design):
+
+  - **Option A** — extend `_IOS_BLUE_RE` to also match hex,
+    bumping baseline to 41. Rejected: muddles "rgba refactor
+    progress" with "hex refactor progress" in the same number;
+    R66's docstring documents the rgba baseline 34 as the R66
+    commit-time snapshot, and changing it retroactively would
+    rewrite that historical claim.
+  - **Option B** (chosen) — independent `_IOS_BLUE_HEX_RE` with
+    its own `DEFAULT_HEX_BASELINE = 7` locked at the R99
+    commit-time snapshot. Each baseline matches its own commit-
+    moment evidence, refactor-progress-warnings stay separable.
+  - **Option C** — only-no-new-hex policy, hex baseline dynamic
+    (always == current count). Rejected: would never alert on
+    hex form *increases* via the baseline mechanism, only via
+    the running gate, which is opposite of how R66 operates and
+    creates inconsistency between the two scanner forms.
+
+  Fix:
+
+  - `scripts/check_brand_color_consistency.py` —
+    + add `_IOS_BLUE_HEX_RE = re.compile(r"#007aff\b", re.IGNORECASE)`,
+      `count_ios_blue_hex()`, `find_ios_blue_hex_locations()`;
+    + `scan_css_files()` signature changes from 2-tuple to
+      4-tuple `(rgba_total, rgba_per_file, hex_total, hex_per_file)`;
+    + `main()` runs both gates independently, fails if either
+      exceeds its baseline, prints separate warnings for either's
+      reduction;
+    + `--quiet` now also suppresses ℹ️ "below baseline" warnings
+      (R66 original quiet only had ✅ to suppress because the
+      below-baseline path didn't fire on the live tree; R99's
+      double-baseline opens that path more easily so quiet mode
+      needs to cover it too — preserves the pre-commit silent-
+      success contract).
+  - `tests/test_brand_color_consistency_r66.py` —
+    + 7 new `TestCountIosBlueHexR99` cases (lowercase / uppercase
+      / mixed case / multiple / non-iOS hex / word boundary /
+      brand-color-must-not-false-match);
+    + 2 new `TestFindIosBlueHexLocationsR99` cases (line-number
+      + content / empty when no match);
+    + 2 new `TestScanCssFilesReturnsBothFormsR99` cases (4-tuple
+      shape contract + end-to-end fixture proving hex form
+      actually gets scanned + comment-stripped);
+    + 1 new baseline-parity `test_default_hex_baseline_matches
+      _main_css_count` mirroring the rgba decimal one;
+    + adapt `test_default_baseline_matches_main_css_count` to
+      the 4-tuple unpack.
+
+    Reverse-injection verified: replace `_IOS_BLUE_HEX_RE` with a
+    regex that never matches and 8 of the 35 cases fail with
+    informative diagnostics covering both the unit-level
+    contract and the live-tree baseline (the reverse-injection
+    also caught and prompted the `--quiet` fix above — testing
+    paid back its own rent).
+
+  Result: 35 tests pass (22 existing + 13 new), full ci_gate
+  3869 passed / 2 skipped / 0 warnings, ruff lint+format clean.
+  R66 design philosophy preserved verbatim — the live tree is
+  exactly where R99 found it, baseline guard now reflects what
+  was on disk all along.
+
 - **R98** — close out the R92/R97 fix family by porting the same
   line-first comment-strip workaround into
   `scripts/check_i18n_js_no_cjk.py::_strip_comments`. R92 originally
