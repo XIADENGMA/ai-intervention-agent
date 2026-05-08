@@ -494,10 +494,11 @@ def test_apple_touch_icon_has_opaque_corners() -> None:
 def test_maskable_source_svg_exists_and_distinct_from_any_svg() -> None:
     """maskable 必须有独立的 SVG 源，不能与 any purpose 共用。
 
-    锁定 ``icons/icon-maskable.svg`` 文件存在 + 与 ``icons/icon.svg`` 字节不同。
-    这是脚本 ``scripts/generate_pwa_icons.py`` 的输入契约——如果 maskable.svg
-    丢失，``--check`` 模式会立即报错；如果有人误将 ``icons/icon.svg`` 复制成
-    maskable.svg 就会让两者输出 byte-identical PNG，再次回到 r32 之前的 bug。
+    锁定 ``src/ai_intervention_agent/icons/icon-maskable.svg`` 文件存在 + 与
+    ``src/ai_intervention_agent/icons/icon.svg`` 字节不同。这是脚本
+    ``scripts/generate_pwa_icons.py`` 的输入契约——如果 maskable.svg 丢失，
+    ``--check`` 模式会立即报错；如果有人误将 ``icon.svg`` 复制成 ``icon-maskable.svg``
+    就会让两者输出 byte-identical PNG，再次回到 r32 之前的 bug。
     """
 
     any_svg = ICONS_DIR / "icon.svg"
@@ -517,10 +518,10 @@ def test_maskable_source_svg_exists_and_distinct_from_any_svg() -> None:
 
 
 def test_icon_svg_byte_parity_between_web_and_vscode() -> None:
-    """``icons/icon.svg`` 与 ``packages/vscode/icon.svg`` 必须 byte-identical。
+    """``src/ai_intervention_agent/icons/icon.svg`` 与 ``packages/vscode/icon.svg`` 必须 byte-identical。
 
     背景：``packages/vscode/`` 是 VSCode 扩展打包根，``vsce package`` 不会跨
-    extension root 引用 ``../icons/icon.svg``，所以扩展端必须有自己的副本。
+    extension root 引用 ``../../src/ai_intervention_agent/icons/icon.svg``，所以扩展端必须有自己的副本。
     两份字节相同的文件没有任何 byte-parity 锁就会随时间漂移——一边更新，
     另一边遗忘。这就是 PWA r32 之前同样的失败模式（声明 vs 实存不对齐）的
     "升级版"：声明都对，但**字节内容**对不上。
@@ -541,10 +542,10 @@ def test_icon_svg_byte_parity_between_web_and_vscode() -> None:
     vscode_hash = hashlib.sha256(vscode_svg.read_bytes()).hexdigest()
     assert web_hash == vscode_hash, (
         f"icon.svg byte parity 失败：\n"
-        f"  icons/icon.svg                   sha256 = {web_hash[:32]}…\n"
-        f"  packages/vscode/icon.svg         sha256 = {vscode_hash[:32]}…\n"
-        f"  修法：把 icons/icon.svg 复制到 packages/vscode/icon.svg "
-        f"（cp icons/icon.svg packages/vscode/icon.svg）。两边任何一边修改"
+        f"  src/ai_intervention_agent/icons/icon.svg  sha256 = {web_hash[:32]}…\n"
+        f"  packages/vscode/icon.svg                  sha256 = {vscode_hash[:32]}…\n"
+        f"  修法：把 src/ai_intervention_agent/icons/icon.svg 复制到 packages/vscode/icon.svg "
+        f"（cp src/ai_intervention_agent/icons/icon.svg packages/vscode/icon.svg）。两边任何一边修改"
         f"必须同步，与 tests/test_tri_state_panel_parity.py 同源策略。"
     )
 

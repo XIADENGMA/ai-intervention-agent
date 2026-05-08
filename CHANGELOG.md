@@ -11,6 +11,56 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R91** — fix two README image-render regressions plus the long
+  tail of `icons/icon.svg` path drift left by R76. Two distinct
+  failure modes had the same visible symptom ("repo landing page
+  shows broken / oversized images"):
+
+  1. **`<img style=...>` silently stripped by GitHub markdown
+     sanitizer.** All six in-README screenshot tags carried
+     `style="height: 320px; margin-right: 12px;"`, which works
+     locally / in IDE preview but is removed when GitHub renders
+     README — `style` is not on the GitHub markup whitelist
+     (`github/markup#486`). Effect: PNGs were displayed at their
+     native 1920×1200 / 750×1266 raster size (≈ 5–10× the intended
+     visual height), pushing every "Quick start" / "Key features"
+     paragraph below a giant screenshot block. Replace
+     `style="height: 320px"` with the whitelisted bare `height="320"`
+     attribute (pixel-only, equivalent rendering, no sanitizer
+     stripping); two `<picture>` siblings now rely on the inline
+     element's natural inter-tag whitespace for the 12 px gap that
+     `margin-right` used to provide. Verified by re-checking each of
+     the 11 referenced asset paths still resolves to a file in
+     `git ls-files .github/assets/`.
+  2. **`icons/icon.svg` reference drift** in 5 files that R76 missed
+     when it relocated the icon set from `icons/` (repo root) to
+     `src/ai_intervention_agent/icons/`. The Flask `/icons/<filename>`
+     route was already correct (it computes `_project_root /
+     "icons"` from `src/ai_intervention_agent/web_ui.py:413`,
+     which **is** the new location, so HTTP serving was unaffected),
+     but five doc / docstring / comment references still pointed at
+     the pre-R76 root path:
+     - `README.md:3` and `README.zh-CN.md:3` — repo logo `<img src>`
+       (loaded by GitHub from the relative path → 404 on landing
+       page until refreshed)
+     - `scripts/README.md` and `scripts/generate_pwa_icons.py`
+       module docstring — "Run after editing `icons/icon.svg`" mis-
+       documents the contributor workflow
+     - `src/ai_intervention_agent/icons/icon-maskable.svg` SVG
+       comment — references its sibling at the wrong path
+     - `tests/test_pwa_icon_assets.py` docstrings (3 sites)
+       mis-state the locked file path; the test logic itself was
+       fine because it dereferences `ICONS_DIR` (already updated
+       to the post-R76 path), but copy-paste from the docstring
+       would lead future maintainers to the wrong file.
+
+  Both classes of fix are pure docs / markup; there is no code or
+  runtime behaviour change. The `.vsix` manifest, the
+  `manifest.webmanifest`, the `notification-manager.js` icon URL,
+  and the Flask `/icons/<filename>` route still use the absolute
+  HTTP path `/icons/icon.svg` — those are URL paths, not filesystem
+  paths, and remain correct.
+
 - **R90** — fix `.gitattributes` linguist globs that R76 silently
   detached. Three regression-quiet rules pointed at pre-R76
   layout: `locales/**` (now matches nothing — Web UI locales live

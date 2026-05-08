@@ -1,6 +1,6 @@
 <svg width="512" height="512" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
   <!--
-    PWA maskable icon. Differences from icons/icon.svg (per W3C maskable spec):
+    PWA maskable icon. Differences from src/ai_intervention_agent/icons/icon.svg (per W3C maskable spec):
       1. Full-canvas opaque fill (no transparent corners) so any OS mask
          (circle / squircle / teardrop / rectangle) can crop without holes.
       2. Main subject scaled to 0.6x and centered, keeping all high-alpha

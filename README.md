@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/xiadengma/ai-intervention-agent">
-    <img src="icons/icon.svg" width="160" height="160" alt="AI Intervention Agent" />
+    <img src="src/ai_intervention_agent/icons/icon.svg" width="160" height="160" alt="AI Intervention Agent" />
   </a>
 
   <h2>AI Intervention Agent</h2>
@@ -139,11 +139,11 @@ ai-intervention-agent usage details:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
-    <img alt="Desktop - feedback page" src=".github/assets/desktop_light_content.png" style="height: 320px; margin-right: 12px;" />
+    <img alt="Desktop - feedback page" src=".github/assets/desktop_light_content.png" height="320" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" style="height: 320px;" />
+    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" height="320" />
   </picture>
 </p>
 
@@ -155,19 +155,19 @@ ai-intervention-agent usage details:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_no_content.png">
-    <img alt="Desktop - empty state" src=".github/assets/desktop_light_no_content.png" style="height: 320px; margin-right: 12px;" />
+    <img alt="Desktop - empty state" src=".github/assets/desktop_light_no_content.png" height="320" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_no_content.png">
-    <img alt="Mobile - empty state" src=".github/assets/mobile_light_no_content.png" style="height: 320px;" />
+    <img alt="Mobile - empty state" src=".github/assets/mobile_light_no_content.png" height="320" />
   </picture>
 </p>
 
 <p align="center"><sub>Empty state (auto switches between dark/light)</sub></p>
 
 <p align="center">
-  <img src=".github/assets/desktop_screenshot.png" alt="Desktop - settings" style="height: 320px; margin-right: 12px;" />
-  <img src=".github/assets/mobile_screenshot.png" alt="Mobile - settings" style="height: 320px;" />
+  <img src=".github/assets/desktop_screenshot.png" alt="Desktop - settings" height="320" />
+  <img src=".github/assets/mobile_screenshot.png" alt="Mobile - settings" height="320" />
 </p>
 
 <p align="center"><sub>Settings (dark)</sub></p>

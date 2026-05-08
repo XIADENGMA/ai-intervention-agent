@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/xiadengma/ai-intervention-agent">
-    <img src="icons/icon.svg" width="160" height="160" alt="AI Intervention Agent" />
+    <img src="src/ai_intervention_agent/icons/icon.svg" width="160" height="160" alt="AI Intervention Agent" />
   </a>
 
   <h2>AI Intervention Agent</h2>
@@ -136,39 +136,37 @@ ai-intervention-agent 工具使用细节：
 ## 界面截图
 
 <p align="center">
-  <img src=".github/assets/desktop_light_content.png" alt="桌面端 - 反馈页（浅色）" style="height: 320px; margin-right: 12px;" />
-  <img src=".github/assets/mobile_light_content.png" alt="移动端 - 反馈页（浅色）" style="height: 320px;" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
+    <img alt="桌面端 - 反馈页" src=".github/assets/desktop_light_content.png" height="320" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
+    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" height="320" />
+  </picture>
 </p>
 
-<p align="center"><sub>反馈页（浅色模式）</sub></p>
+<p align="center"><sub>反馈页（自动跟随深浅色）</sub></p>
 
 <details>
-<summary>更多截图</summary>
+<summary>更多截图（空状态 + 设置页）</summary>
 
 <p align="center">
-  <img src=".github/assets/desktop_light_no_content.png" alt="桌面端 - 空状态（浅色）" style="height: 320px; margin-right: 12px;" />
-  <img src=".github/assets/mobile_light_no_content.png" alt="移动端 - 空状态（浅色）" style="height: 320px;" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_no_content.png">
+    <img alt="桌面端 - 空状态" src=".github/assets/desktop_light_no_content.png" height="320" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_no_content.png">
+    <img alt="移动端 - 空状态" src=".github/assets/mobile_light_no_content.png" height="320" />
+  </picture>
 </p>
 
-<p align="center"><sub>空状态（浅色模式）</sub></p>
+<p align="center"><sub>空状态（自动跟随深浅色）</sub></p>
 
 <p align="center">
-  <img src=".github/assets/desktop_dark_content.png" alt="桌面端 - 反馈页（深色）" style="height: 320px; margin-right: 12px;" />
-  <img src=".github/assets/mobile_dark_content.png" alt="移动端 - 反馈页（深色）" style="height: 320px;" />
-</p>
-
-<p align="center"><sub>反馈页（深色模式）</sub></p>
-
-<p align="center">
-  <img src=".github/assets/desktop_dark_no_content.png" alt="桌面端 - 空状态（深色）" style="height: 320px; margin-right: 12px;" />
-  <img src=".github/assets/mobile_dark_no_content.png" alt="移动端 - 空状态（深色）" style="height: 320px;" />
-</p>
-
-<p align="center"><sub>空状态（深色模式）</sub></p>
-
-<p align="center">
-  <img src=".github/assets/desktop_screenshot.png" alt="桌面端 - 设置" style="height: 320px; margin-right: 12px;" />
-  <img src=".github/assets/mobile_screenshot.png" alt="移动端 - 设置" style="height: 320px;" />
+  <img src=".github/assets/desktop_screenshot.png" alt="桌面端 - 设置" height="320" />
+  <img src=".github/assets/mobile_screenshot.png" alt="移动端 - 设置" height="320" />
 </p>
 
 <p align="center"><sub>设置页（深色）</sub></p>

@@ -93,7 +93,7 @@ diverges.
   PWA / favicon / `apple-touch-icon` family from a single SVG
   source so the multi-size `favicon.ico` (16/32/48/256), the
   iOS opaque-background tile, and the maskable PWA icon stay in
-  sync. Run after editing `icons/icon.svg`.
+  sync. Run after editing `src/ai_intervention_agent/icons/icon.svg`.
 
 ## Asset / packaging pipeline
 

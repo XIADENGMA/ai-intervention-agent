@@ -17,8 +17,8 @@ PWA / favicon / iOS apple-touch-icon 对图标质量有不同的硬性要求：
 
 为了同时满足以上 4 类约束，我们维护**两个 SVG 源**：
 
-* ``icons/icon.svg``           — "any" purpose，原始设计；
-* ``icons/icon-maskable.svg``  — 实色背景 + 主体缩到 0.6× 居中，专供 maskable。
+* ``src/ai_intervention_agent/icons/icon.svg``           — "any" purpose，原始设计；
+* ``src/ai_intervention_agent/icons/icon-maskable.svg``  — 实色背景 + 主体缩到 0.6× 居中，专供 maskable。
 
 并由本脚本一次性产出所有 PNG/ICO，幂等可重复。
 
