@@ -11,6 +11,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R108** — final cleanup of the silent-path-skip family in
+  `tests/`. Converts the last unconditional `pytest.skip` in
+  `tests/test_i18n_ts_types_gen.py::TestHostTCallsAreTypeable::
+  test_all_hostt_keys_present_in_dts` to `pytest.fail`. The check
+  is the *only* thing pinning the three-way contract between
+  `packages/vscode/extension.ts` (call sites of `hostT(key)`),
+  `packages/vscode/locales/en.json` (the runtime keys), and
+  `packages/vscode/i18n-keys.d.ts` (the TypeScript literal union
+  that gives `hostT` compile-time type safety). Silently skipping
+  when `extension.ts` is missing meant a refactor that renamed or
+  deleted the extension host entry point would let
+  `hostT('typo')` regressions slip through entirely (test was
+  reporting `SKIPPED`, CI was green, no coverage). Same shape and
+  same fix as R104/R105/R107.
+
+  Reverse-injection (point `EXTENSION_TS` at
+  `/__definitely_not_existing__/extension.ts` and re-run the
+  case) raises `pytest.fail.Exception` with `R108: extension.ts
+  missing: ...` diagnostic — confirming silent-skip purged.
+  Audited the remaining `pytest.skip` / `self.skipTest` callsites
+  in `tests/`; the survivors (`test_vscode_vsix_size_budget.py:155`
+  for "dev box hasn't packaged a `.vsix` yet, CI's `release.yml`
+  triggers the hard check"; `test_ratelimit_headers_r57.py:94` for
+  transient non-integer header parses) are intentional design
+  skips, not configuration drift, and stay as `skipTest`.
+
+  This closes the silent-skip-path-drift purge that started at R88
+  and ran through R96/R100/R101/R102/R104/R105/R106/R107: every
+  scanner / validator / test in the repo that previously took
+  "core resource missing" and silently returned 0 / SKIPPED now
+  treats it as configuration drift and fails loudly with a
+  diagnostic message and a remediation pointer.
+
 - **R107** — convert three `pytest.skip("locale file ... not present")`
   paths in `tests/test_i18n_pseudo_locale.py` to `pytest.fail`. The
   three checked locale resources (`src/ai_intervention_agent/static/

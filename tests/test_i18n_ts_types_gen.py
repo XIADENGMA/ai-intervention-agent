@@ -130,8 +130,20 @@ class TestHostTCallsAreTypeable:
         return "\n".join(lines)
 
     def test_all_hostt_keys_present_in_dts(self) -> None:
+        # R108：``extension.ts`` 是 VS Code extension host 主入口，缺失即
+        # 配置漂移（与 R104 main.css/webview.css / R105 i18n.js / R107 locale
+        # 同款）。原 silent skip 让重命名 / 删除 ``extension.ts`` 时整个
+        # ``hostT(...)`` ↔ ``en.json`` ↔ ``.d.ts`` 三方一致性 0 覆盖；
+        # CI 看似绿。改成 pytest.fail 让 reviewer 立刻看到漂移。
         if not EXTENSION_TS.is_file():
-            pytest.skip("extension.ts not present in this tree")  # ty: ignore[too-many-positional-arguments]
+            reason: str = (
+                f"R108: extension.ts missing: {EXTENSION_TS}\n"
+                f"  This is configuration drift (VS Code extension host single-source\n"
+                f"  missing) — failing loud per R108 (matches R102/R104/R105/R107).\n"
+                f"  Either restore the file or update EXTENSION_TS at top of\n"
+                f"  tests/test_i18n_ts_types_gen.py."
+            )
+            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
         text = self._strip_comments(EXTENSION_TS.read_text(encoding="utf-8"))
         used = set(self._HOST_T_RE.findall(text))
         assert used, "expected at least one hostT('key') call"
