@@ -11,6 +11,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R106** — drop seven `try: from ai_intervention_agent.server
+  import X; except ImportError: self.skipTest(...)` blocks in
+  `tests/test_server_functions.py`. The pattern was redundant *and*
+  actively harmful:
+
+  - **Redundant**: the test module already does
+    `import ai_intervention_agent.server as server` at the top, so
+    if the package fails to import the module won't even collect.
+    Reaching one of the per-class `try` blocks means the module
+    imported fine — the only remaining `ImportError` mode is "the
+    public symbol got renamed or deleted".
+  - **Harmful**: catching that `ImportError` and turning it into a
+    `skipTest` makes `wait_for_task_completion`,
+    `ensure_web_ui_running`, `launch_feedback_ui`,
+    `MAX_MESSAGE_LENGTH`, `MAX_OPTION_LENGTH`, `logger`, and
+    `interactive_feedback` look like optional symbols. They are
+    not — they are the public server contract. Silently skipping
+    a "core API got deleted" regression while CI prints `OK` is
+    the worst flavor of green-test-no-coverage.
+
+  R106 swaps every `try/except ImportError/skipTest` block for a
+  hard `from ai_intervention_agent.server import X`. If `X`
+  vanishes, pytest collects the test as `ERROR` (with the actual
+  `ImportError` traceback in the report), not `SKIPPED`.
+  Reverse-injection (delete `MAX_MESSAGE_LENGTH` and `logger` off
+  the live `server` module via `delattr`, then re-run the
+  affected `TestServerConstants::test_max_message_length` /
+  `TestServerLogger::test_logger_exists` cases) yields **1 error,
+  0 skips** per case with the canonical
+  `ImportError: cannot import name 'X' from 'ai_intervention_agent.server'`
+  diagnostic. Same shape as R96/R104/R105's "test silent-skip ⇒
+  no coverage" purge family.
+
 - **R105** — finish purging silent-skips from
   `tests/test_i18n_normalize_lang_csrf_r72d.py`. R96 already
   fixed the test harness so the **VS Code mirror** of

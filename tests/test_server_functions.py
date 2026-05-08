@@ -164,26 +164,29 @@ class TestWaitForTaskCompletion(unittest.TestCase):
     """等待任务完成函数测试"""
 
     def test_wait_for_task_completion_exists(self):
-        """测试函数存在"""
-        try:
-            from ai_intervention_agent.server import wait_for_task_completion
+        """测试函数存在。
 
-            self.assertTrue(callable(wait_for_task_completion))
-        except ImportError:
-            self.skipTest("无法导入 wait_for_task_completion")
+        R106：原实现用 ``try: import ...; except ImportError:
+        self.skipTest(...)`` 包住 import，把"server 公共 API 被重命名/
+        删除" silent skip 掉。但顶层已经 ``import ai_intervention_agent.
+        server as server``，能跑到这一行说明 module 能 import；唯一的
+        ImportError 触发条件就是公开符号缺失——这是真 bug，不是合法
+        skip。R106 改成 hard import：``ImportError`` 自然变成 pytest
+        test ERROR（fail-loud），与 R96/R104/R105 silent-skip 修复同 spirit。
+        """
+        from ai_intervention_agent.server import wait_for_task_completion
+
+        self.assertTrue(callable(wait_for_task_completion))
 
 
 class TestEnsureWebUIRunning(unittest.TestCase):
     """确保 Web UI 运行函数测试"""
 
     def test_ensure_web_ui_running_exists(self):
-        """测试函数存在"""
-        try:
-            from ai_intervention_agent.server import ensure_web_ui_running
+        """测试函数存在（R106 同款修复）。"""
+        from ai_intervention_agent.server import ensure_web_ui_running
 
-            self.assertTrue(callable(ensure_web_ui_running))
-        except ImportError:
-            self.skipTest("无法导入 ensure_web_ui_running")
+        self.assertTrue(callable(ensure_web_ui_running))
 
 
 class TestGetTargetHost(unittest.TestCase):
@@ -212,64 +215,51 @@ class TestLaunchFeedbackUI(unittest.TestCase):
     """启动反馈 UI 函数测试"""
 
     def test_launch_feedback_ui_exists(self):
-        """测试函数存在"""
-        try:
-            from ai_intervention_agent.server import launch_feedback_ui
+        """测试函数存在（R106 同款修复）。"""
+        from ai_intervention_agent.server import launch_feedback_ui
 
-            self.assertTrue(callable(launch_feedback_ui))
-        except ImportError:
-            self.skipTest("无法导入 launch_feedback_ui")
+        self.assertTrue(callable(launch_feedback_ui))
 
 
 class TestServerConstants(unittest.TestCase):
     """服务器常量测试"""
 
     def test_max_message_length(self):
-        """测试最大消息长度常量"""
-        try:
-            from ai_intervention_agent.server import MAX_MESSAGE_LENGTH
+        """测试最大消息长度常量（R106 同款修复）。"""
+        from ai_intervention_agent.server import MAX_MESSAGE_LENGTH
 
-            self.assertIsInstance(MAX_MESSAGE_LENGTH, int)
-            self.assertGreater(MAX_MESSAGE_LENGTH, 0)
-        except ImportError:
-            self.skipTest("无法导入 MAX_MESSAGE_LENGTH")
+        self.assertIsInstance(MAX_MESSAGE_LENGTH, int)
+        self.assertGreater(MAX_MESSAGE_LENGTH, 0)
 
     def test_max_option_length(self):
-        """测试最大选项长度常量"""
-        try:
-            from ai_intervention_agent.server import MAX_OPTION_LENGTH
+        """测试最大选项长度常量（R106 同款修复）。"""
+        from ai_intervention_agent.server import MAX_OPTION_LENGTH
 
-            self.assertIsInstance(MAX_OPTION_LENGTH, int)
-            self.assertGreater(MAX_OPTION_LENGTH, 0)
-        except ImportError:
-            self.skipTest("无法导入 MAX_OPTION_LENGTH")
+        self.assertIsInstance(MAX_OPTION_LENGTH, int)
+        self.assertGreater(MAX_OPTION_LENGTH, 0)
 
 
 class TestServerLogger(unittest.TestCase):
     """服务器日志测试"""
 
     def test_logger_exists(self):
-        """测试日志器存在"""
-        try:
-            from ai_intervention_agent.server import logger
+        """测试日志器存在（R106 同款修复）。"""
+        from ai_intervention_agent.server import logger
 
-            self.assertIsNotNone(logger)
-        except ImportError:
-            self.skipTest("无法导入 logger")
+        self.assertIsNotNone(logger)
 
 
 class TestInteractiveFeedbackTool(unittest.TestCase):
     """交互式反馈工具测试"""
 
     def test_interactive_feedback_exists(self):
-        """测试 interactive_feedback 函数存在"""
-        try:
-            from ai_intervention_agent.server import interactive_feedback
+        """测试 interactive_feedback 函数存在（R106 同款修复）。
 
-            # interactive_feedback 可能是被 MCP 装饰器处理的异步函数
-            self.assertIsNotNone(interactive_feedback)
-        except ImportError:
-            self.skipTest("无法导入 interactive_feedback")
+        ``interactive_feedback`` 可能是被 MCP 装饰器处理的异步函数。
+        """
+        from ai_intervention_agent.server import interactive_feedback
+
+        self.assertIsNotNone(interactive_feedback)
 
 
 class TestContentTypes(unittest.TestCase):
