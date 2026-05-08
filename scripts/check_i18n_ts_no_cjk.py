@@ -63,8 +63,39 @@ STRING_RE = re.compile(
     re.DOTALL,
 )
 
-BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-LINE_COMMENT_RE = re.compile(r"//[^\n]*")
+# R97：剥序由「先 block 后 line」改为「先 line 后 block」——与
+# ``check_i18n_orphan_keys.py::_strip_source_comments``（R92 修复）保持完全
+# 对齐，同一双层 bug。
+#
+# 旧实现 bug
+# ----------
+# ``BLOCK_COMMENT_RE.sub`` 在前的话，``packages/vscode/extension.ts:59`` 里裸
+# 写的 ``// 命中...packages/* 多走一`` 中那个 ``/*`` 会被 block-comment 正则
+# 当成开头，吞噬到下一处真实 ``*/`` 为止——实测吃掉 ~50 行真代码（变成等长
+# 空白）。这 50 行恰好都是真注释所以表面零误报，但属于「lurking silent
+# breakage」：一旦未来有人在 ``// foo /* bar`` 类型注释附近塞入硬编码 CJK
+# 字符串，扫描器就会漏报。
+#
+# 为什么不用 token-level lex 自动避边界？
+# --------
+# 试过——5-token 交替正则识别 ``//`` / ``/* */`` / 三种 string 字面量本身
+# 没问题，但 JS 还有第 6 种顶层 token：**RegExp 字面量**（``/.../flags``）。
+# ``packages/vscode/webview.ts:575`` 的 ``html.match(/`/g)`` 里裸 backtick
+# 会被 token-lex 误识为 template literal 起点，吞掉后续大量代码，导致 30+
+# 新的 false positive。完整识别 JS RegExp 字面量需要解决著名的 slash-
+# ambiguity（``a/b/c`` 是除法还是 regex？取决于上下文），工程量与回报严重
+# 失衡。R92 折中的边界覆盖率虽不完美，但已被 ``check_i18n_orphan_keys.py``
+# 在生产稳定运行多月，对当前代码库**实测零误报**（见下文 trade-off 注释）。
+#
+# 已知 trade-off（与 R92 一致）
+# --------
+# ``//`` 出现在 string 字面量内（如 ``const url = "https://..."``）时，本扫
+# 描器会把 ``//`` 之后整行替成空格——若该字符串恰好同时含有 CJK 字面量，
+# 则会被本扫描器漏报。但实测（``packages/vscode/*.ts``）8 处含 ``//`` 的
+# string 字面量都是 ASCII URL（github.com / localhost 等），0 处含 CJK；
+# 未来若出现「URL 含 CJK 域名」+「该字符串需要 i18n 化」的双重场景，再升级
+# 到 stage-aware lex 或交给 ``vscode.l10n.t()`` 包裹路径上的 fail-fast。
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 ALLOW_MARKER = "aiia:i18n-allow-cjk"
 
 _SKIP_PREFIXES: tuple[str, ...] = (
@@ -79,13 +110,29 @@ _SKIP_PREFIXES: tuple[str, ...] = (
 
 
 def _strip_comments(src: str) -> str:
-    def _blank(match: re.Match[str]) -> str:
-        span = match.group(0)
-        return re.sub(r"[^\n]", " ", span)
+    """Zero out ``//`` line comments and ``/* ... */`` block comments while
+    preserving line offsets.
 
-    src = BLOCK_COMMENT_RE.sub(_blank, src)
-    src = LINE_COMMENT_RE.sub(_blank, src)
-    return src
+    Pass order matters (R97/R92): line comments are blanked **before** block
+    comments. Otherwise patterns like ``// see locales/*.json`` get mis-parsed
+    because the bare ``/*`` inside the *line* comment is read as a block-
+    comment opener that swallows hundreds of subsequent lines.
+
+    Replacement uses spaces for non-newline chars so that byte offsets (and
+    therefore ``stripped[:start].count("\\n")`` line-number mapping in the
+    caller) stay exact.
+    """
+
+    def _blank_block(match: re.Match[str]) -> str:
+        span = match.group(0)
+        return "".join("\n" if ch == "\n" else " " for ch in span)
+
+    out_lines: list[str] = []
+    for line in src.split("\n"):
+        idx = line.find("//")
+        out_lines.append(line if idx == -1 else line[:idx] + " " * (len(line) - idx))
+    intermediate = "\n".join(out_lines)
+    return _BLOCK_COMMENT_RE.sub(_blank_block, intermediate)
 
 
 def _iter_ts_source_files() -> list[Path]:

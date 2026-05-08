@@ -11,6 +11,111 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R97** — repair the same line-vs-block comment ordering bug
+  in `scripts/check_i18n_ts_no_cjk.py::_strip_comments` that R92
+  already fixed in the **sibling** scanner
+  `scripts/check_i18n_orphan_keys.py::_strip_source_comments`.
+  Both scanners share the same job — strip comments before
+  scanning literals — and both originally ran the passes in the
+  buggy order: `BLOCK_COMMENT_RE.sub` first, `LINE_COMMENT_RE.sub`
+  second. R92 caught the orphan-keys variant; the no-cjk-literal
+  variant slipped through because, by accident, the only line in
+  `packages/vscode/extension.ts` that triggers it
+  (`extension.ts:59 // 命中 repo root...packages/* 多走一`) is
+  immediately followed by ~50 lines that **also** happen to be
+  real comments — so the buggy block-comment regex swallowed
+  ~50 lines of real source into blank space, but those 50 lines
+  contained no string literals so the scanner reported zero
+  false positives. Latent silent breakage: any future patch that
+  inserts a hardcoded CJK string anywhere inside that swallowed
+  region (or in any other `// foo /* bar` line-comment context
+  that gets added later) would slip past the gate untouched.
+
+  Symptom thread (none visible until R97):
+
+  - `python scripts/check_i18n_ts_no_cjk.py` was reporting
+    `OK: no hardcoded CJK string literals` every run. True for
+    the current tree, but not robust — the gate was passing for
+    the wrong reason on `extension.ts`. Diagnostic harness
+    (drop-in mock of the strip pass) showed 50 contiguous lines
+    of real source were being mass-blanked before STRING_RE
+    even ran.
+  - The companion fix in `check_i18n_orphan_keys.py`
+    (R92, commit `55634b2`) already documents the exact same
+    `// see locales/*.json`-style trap and its line-first
+    workaround. Both scripts were supposed to "stay in
+    lockstep" per R92's docstring, but the lockstep was only
+    enforced for the orphan-key gate.
+
+  Root cause: copy-paste skew. When the no-cjk-literal scanner
+  was added in P8 (a later cycle than the orphan-keys scanner),
+  it adopted the same buggy strip implementation that R92 later
+  fixed in the orphan-keys side — but the R92 fix never got
+  back-ported to the no-cjk side. Tests on `extension.ts` kept
+  passing for the unrelated reason described above, so the skew
+  remained invisible.
+
+  Considered fixes:
+
+  - **Token-level lex** identifying line/block comments + three
+    kinds of string literals in a single pass (so comment
+    starters inside strings, and quote chars inside comments,
+    both get respected automatically). Prototype passed 7
+    boundary fixtures including the R92 trap and the
+    URL-with-CJK case (`"https://中文.example.com"`), but
+    immediately blew up on `webview.ts:575`
+    `(html.match(/`/g) || []).length`: the bare backtick
+    inside a regex literal got mis-identified as a template
+    literal opener, swallowing 30+ subsequent lines and
+    producing 30 false positives. Full JavaScript regex
+    literal recognition needs to solve the slash-ambiguity
+    (`a/b/c` is division **or** a regex depending on context)
+    and the engineering cost vs. payoff is way out of balance
+    for a one-line scanner fix.
+  - **Match R92 exactly** (chosen). Walk source line-by-line,
+    use `line.find("//")` to clip the line at the first `//`
+    occurrence (replacing the tail with spaces), then run the
+    block-comment regex over the result. The known
+    trade-off — `//` appearing inside a string literal will
+    truncate the string in the scanner's view — is documented
+    inline. Empirically (`packages/vscode/*.ts` over 7 files,
+    1.1k+ lines) the 8 string literals containing `//` are all
+    ASCII URLs (`https://github.com/...`, `http://localhost`,
+    etc.); zero of them contain CJK. If the codebase ever
+    grows a "URL string with a CJK domain that also needs
+    i18n" then we'll graduate to a stage-aware lex; until
+    then, parity with R92's already-stable approach is the
+    cheapest safe fix.
+
+  Fix:
+
+  - `scripts/check_i18n_ts_no_cjk.py::_strip_comments` — rewrite
+    to walk lines with `find("//")` first, then a single
+    `/\*.*?\*/` block-comment regex pass. Replacement uses
+    space chars for non-`\n` content so byte offsets are
+    preserved exactly, keeping
+    `stripped[:start].count("\n") + 1` line-number mapping in
+    `scan_file()` accurate. Inline docstring documents the
+    pass-order rationale, the regex-literal lex pitfall (so
+    nobody upgrades back to a token-level lex without
+    understanding the webview.ts:575 trap), and the
+    URL-string-`//` trade-off carried over from R92.
+  - `tests/test_i18n_ts_no_cjk_strip_order_r97.py` — new
+    fixture-based regression suite, independent of
+    `extension.ts`'s current contents, that locks the
+    line-first contract. 5 cases: bare `/*` after `//` plus a
+    later legitimate `*/`; multi-line span with three
+    intermediate CJK literals; byte-length parity for
+    `\n`-preserving substitution; byte-offset parity for the
+    triggering shape; and an end-to-end `scan_file()` round-trip
+    via `tempfile.NamedTemporaryFile`. Reverse-injection check:
+    swap `_strip_comments` back to the buggy block-first
+    implementation and 4 of the 5 cases fail (the
+    `byte_length` case is intentionally a weaker invariant
+    that both implementations satisfy — kept because it
+    documents the offset-preservation contract that
+    `scan_file()`'s line-number math depends on).
+
 - **R96** — repair a silently-skipped CSRF parity test. The R72-D
   fix tightened `normalizeLang` in **two** mirrored
   files — `static/js/i18n.js` and `packages/vscode/i18n.js` — and
