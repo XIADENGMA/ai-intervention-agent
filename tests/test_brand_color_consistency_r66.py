@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
-import check_brand_color_consistency as guard
+import check_brand_color_consistency as guard  # ty: ignore[unresolved-import]
 
 
 class TestStripCssComments(unittest.TestCase):

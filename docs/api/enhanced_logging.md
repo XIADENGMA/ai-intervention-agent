@@ -6,6 +6,8 @@
 
 ### `_sanitize_and_escape(record: dict[str, Any]) -> None`
 
+### `_install_root_intercept_once() -> None`
+
 ### `get_log_level_from_config() -> int`
 
 ### `configure_logging_from_config() -> None`

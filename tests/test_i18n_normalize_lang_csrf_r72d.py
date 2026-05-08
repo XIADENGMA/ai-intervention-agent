@@ -187,7 +187,7 @@ class TestNormalizeLangSourceContract(unittest.TestCase):
             text,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, "源码必须包含 normalizeLang 函数定义")
+        assert match is not None, "源码必须包含 normalizeLang 函数定义"
         body = match.group(1)
         self.assertNotIn(
             "return s || DEFAULT_LANG",
