@@ -1046,6 +1046,12 @@ class WebFeedbackUI(
                     message:
                       type: string
             """
+            # 关闭计时器**故意**保持 non-daemon（threading.Timer 默认即 non-daemon）：
+            # 我们要先把 200 OK 返回给前端，再走 0.5s 延迟去 ``os.kill(SIGINT)`` 优雅
+            # 关停 Flask。如果改成 daemon=True，Python 解释器在主线程结束瞬间会立刻
+            # 杀掉计时器线程，``shutdown_server`` 可能根本没机会执行 → 出现"前端
+            # 收到 success 但服务一直未关"的悬挂状态。non-daemon 让进程**等到**
+            # 计时器跑完再退，这是优雅停机契约的关键一环。
             threading.Timer(0.5, self.shutdown_server).start()
             return jsonify({"status": "success", "message": msg("server.shuttingDown")})
 

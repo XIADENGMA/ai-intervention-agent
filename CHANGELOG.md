@@ -11,6 +11,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R91c** — document the `/api/close` shutdown Timer's intentional
+  non-daemon mode in `src/ai_intervention_agent/web_ui.py`. The
+  endpoint kicks off `threading.Timer(0.5, self.shutdown_server)`
+  to give the HTTP response time to flush back to the client
+  before `os.kill(SIGINT)` tears Flask down. `threading.Timer`
+  defaults `daemon=False`, which is the **correct** choice for
+  this code path (Python interpreter waits for the timer to fire
+  before shutting down → guaranteed graceful shutdown), but the
+  same default would be **wrong** for any other Timer in the file
+  (we explicitly set `daemon=True` on the mDNS register thread,
+  the file watcher thread, the task-queue cleanup thread, and the
+  notification timers). Without an inline comment, future
+  contributors who notice the pattern divergence may "normalize"
+  this Timer to daemon=True and silently break the optimistic-200
+  shutdown contract — the visible failure mode is exactly the
+  bug we want to prevent: front-end gets `{"status": "success"}`
+  but the service stays up indefinitely because the Python
+  interpreter killed the timer before SIGINT fired. Add a 6-line
+  block comment naming the contract and pointing at the failure
+  mode. Pure docs; runtime behavior unchanged. Verified by:
+  `curl -X POST /api/close` → `{"status":"success"}`, then
+  `curl /api/health` 2 seconds later → curl exit 7
+  ("Couldn't connect"), confirming the non-daemon timer **did**
+  finish executing `shutdown_server()` before the process exited.
+
 - **R91b** — patch Node 21+ `globalThis.navigator` read-only accessor
   in 14 i18n test harnesses (1 real failure + 13 preventive). Node
   v21 introduced `globalThis.navigator` as a built-in property; in
