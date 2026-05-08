@@ -7461,6 +7461,52 @@ code,
   color: #fff; /* 统一白色文字 */
 }
 
+/* R64：浅色模式 .btn 内部 span 必须继承按钮主色（白色）。
+ *
+ * 根因背景：
+ *   ``[data-theme='light'] span`` 的全局覆盖（同文件 line 6890-6920）
+ *   会把所有 ``<span>`` 强制设为 ``var(--text-primary)`` = #141413（深色），
+ *   按钮 ``.btn / .btn-primary / .btn-secondary { color: #fff }`` 只调节
+ *   button 元素本身，不会传播到被 element-selector 直接命中的子 span。
+ *   导致 11 个内嵌 ``<span data-i18n=...>`` 文字的按钮在浅色模式下出现
+ *   「图标白色 + 文字黑色」的反差（图标用 stroke="currentColor" 取的是
+ *   button.color，所以是白）。
+ *
+ * 修复策略（minimal-touch / 体胆方案）：
+ *   显式把按钮内子元素 color 拉回到 inherit，让它们从按钮自身获取颜色，
+ *   既不动既有 element-selector 全局规则、也不引入 !important。
+ *
+ * 验证：tests/test_light_mode_button_text_color_r64.py / chrome-devtools 实测。
+ */
+[data-theme='light'] .btn,
+[data-theme='light'] .btn-secondary,
+[data-theme='light'] .btn-primary {
+  color: #fff;
+}
+
+[data-theme='light'] .btn span,
+[data-theme='light'] .btn-secondary span,
+[data-theme='light'] .btn-primary span {
+  color: inherit;
+}
+
+/* R64：浅色模式按钮 hover 效果回归——
+ *   1. 取消 ``transform: translateY(-1px)``（来自 .btn:hover 默认）；
+ *   2. 把蓝色品牌阴影换成 Anthropic Orange 阴影；
+ *   3. 关闭 ``.btn::after`` 白色发光层（在棕红背景上会变「褪色」感）。
+ * 深色模式不受影响——这里只用 [data-theme='light'] 收紧 specificity。
+ */
+[data-theme='light'] .btn:hover,
+[data-theme='light'] .btn-secondary:hover,
+[data-theme='light'] .btn-primary:hover {
+  transform: none;
+  box-shadow: 0 2px 6px rgba(217, 119, 87, 0.25);
+}
+
+[data-theme='light'] .btn:hover::after {
+  opacity: 0;
+}
+
 /* ========================================================================
    深色主题按钮颜色配置
    ========================================================================
