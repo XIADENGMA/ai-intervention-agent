@@ -11,6 +11,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R102** — close the silent-path-drift loop on the **last** i18n
+  consistency scanner: `scripts/check_locales.py::main()`. Three
+  layered silent skips collapsed to `0` (= "OK") whenever any of 6
+  core locale resources went missing, mirroring R76 → R88/R100/R101's
+  pattern of "static rearrange ⇒ guard goes silently broken":
+
+  - `for dir_path, label in locale_dirs: if dir_path.exists():` —
+    web-side or vscode-side `locales/` directory drift skips both
+    `check_locale_pair` calls.
+  - `if vscode_dir.exists(): all_errors.extend(check_nls_pair(vscode_dir))`
+    — and inside `check_nls_pair`, `if not en.exists() or not zh.exists():
+    return []` — `package.nls{,.zh-CN}.json` drift skips silently.
+  - `if web_locales_dir.exists() and vscode_locales_dir.exists():` —
+    cross-platform `aiia.*` parity skipped silently if either side moves.
+
+  Real impact today: **0 latent drift hidden** (all 6 paths exist),
+  so this is preventive — but in a project where R76 already proved
+  refactors do move static dirs, leaving this silent skip in place
+  was the same latent breakage that bit R88. R102 hoists a layer-0
+  sanity check at the top of `main()` listing all 6 required paths,
+  prints a structured diagnostic to `stderr` (label + relative path
+  + absolute path + remediation pointer back to the path constants
+  in the script), and returns `2` — matching the `0/1/2` exit-code
+  convention R88/R100/R101 settled on (0=clean, 1=violations,
+  2=configuration error). Updated `tests/test_check_locales.py`
+  with a `TestMainPathDriftR102` class (5 tests) that monkey-patches
+  `Path.exists` to simulate each missing-resource scenario; reverse-
+  injection (revert R102 to silent-skip) caused 4/5 to fail with
+  `exit 0/1 != 2` and missing diagnostic strings, proving the
+  guards actually catch regressions.
+
 - **R101** — purge the same `if not <root>.exists(): return 0`
   silent-skip anti-pattern from `check_i18n_ts_no_cjk.py` and
   `check_i18n_js_no_cjk.py` that R88 had purged from the brand-
