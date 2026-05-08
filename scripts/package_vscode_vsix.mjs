@@ -89,17 +89,31 @@ const includeList = [
 ];
 
 // T1 · C10c · @aiia/tri-state-panel：单一真源 → 镜像同步。
-// Web UI 与 VSCode webview 共享四个文件，真源放在 static/js|css/，
-// packages/vscode/ 持有的副本仅作为 vsix 打包入口（webview 不能直接
-// 跨 extension 根目录读取 ../static/ 资源）。每次打包先 hard-overwrite
+// Web UI 与 VSCode webview 共享四个文件，真源放在
+// src/ai_intervention_agent/static/{js,css}/（R76 PyPA src/ 布局后位置；
+// 在此之前真源路径是 ``static/{js,css}/``），packages/vscode/ 持有的副本
+// 仅作为 vsix 打包入口（webview 不能直接跨 extension 根目录读取
+// ../src/ai_intervention_agent/static/ 资源）。每次打包先 hard-overwrite
 // packages/vscode/<basename>，再让 includeList 把它们打入 vsix。
 // CI 端的 tests/test_tri_state_panel_parity.py 用 sha256 强制两端一致，
 // 任何手工编辑 packages/vscode/tri-state-panel*.{js,css} 都会被发现并被回退。
 const SHARED_TRI_STATE_PANEL_FILES = [
-  ["static/js/tri-state-panel.js", "tri-state-panel.js"],
-  ["static/js/tri-state-panel-loader.js", "tri-state-panel-loader.js"],
-  ["static/js/tri-state-panel-bootstrap.js", "tri-state-panel-bootstrap.js"],
-  ["static/css/tri-state-panel.css", "tri-state-panel.css"],
+  [
+    "src/ai_intervention_agent/static/js/tri-state-panel.js",
+    "tri-state-panel.js",
+  ],
+  [
+    "src/ai_intervention_agent/static/js/tri-state-panel-loader.js",
+    "tri-state-panel-loader.js",
+  ],
+  [
+    "src/ai_intervention_agent/static/js/tri-state-panel-bootstrap.js",
+    "tri-state-panel-bootstrap.js",
+  ],
+  [
+    "src/ai_intervention_agent/static/css/tri-state-panel.css",
+    "tri-state-panel.css",
+  ],
 ];
 
 function syncSharedTriStatePanel() {

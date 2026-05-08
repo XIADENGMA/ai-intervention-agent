@@ -11,6 +11,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R89** — restore the VSIX packaging pipeline silently broken by R76.
+  ``scripts/package_vscode_vsix.mjs`` had a hard-coded
+  ``SHARED_TRI_STATE_PANEL_FILES`` array listing the four shared
+  ``@aiia/tri-state-panel`` source files at ``static/js/...`` /
+  ``static/css/...``. R76 moved those sources to
+  ``src/ai_intervention_agent/static/{js,css}/...`` and updated the
+  byte-parity test ``tests/test_tri_state_panel_parity.py``, but the
+  packager script itself was missed. Result: every invocation of
+  ``node scripts/package_vscode_vsix.mjs`` (called from
+  ``npm run vscode:package`` and ``make vscode-check`` and the
+  release workflow) exits 1 with ``@aiia/tri-state-panel 真源缺失：
+  static/js/tri-state-panel.js``. The byte-parity test continued to
+  pass because it independently reads the new ``src/`` paths and the
+  pre-R76 mirror copies in ``packages/vscode/`` are still
+  byte-identical to those new sources, so the test surface didn't
+  expose the dead packager. Update the array's first column to the
+  ``src/ai_intervention_agent/static/...`` prefix and refresh the
+  comment block. Add a new
+  ``test_packager_script_src_paths_match_test_source_paths`` regression
+  test that asserts every ``SHARED_PAIRS`` source path appears
+  literally inside ``scripts/package_vscode_vsix.mjs``, so any
+  future R76-class layout move that touches one side without the
+  other turns red instead of silently breaking VSIX builds.
+
 - **R88** — restore the R66 brand-color guardrail that R76
   silently broke. The R76 PyPA `src/` migration moved
   `static/css/main.css` to

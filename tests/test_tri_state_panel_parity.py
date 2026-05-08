@@ -152,6 +152,45 @@ class TestTriStatePanelByteParity(unittest.TestCase):
                 + "\n  Fix: add each filename to packages/vscode/package.json::files[]."
             )
 
+    def test_packager_script_src_paths_match_test_source_paths(self) -> None:
+        """R89 防回归：``scripts/package_vscode_vsix.mjs`` 内的源路径常量
+        必须与本测试的 ``SHARED_PAIRS`` 第一列保持一致。
+
+        历史教训：R76 PyPA src/ 布局迁移把真源从 ``static/js|css/`` 挪到了
+        ``src/ai_intervention_agent/static/{js,css}/``。本测试的
+        ``SHARED_PAIRS`` 跟着改了，但 .mjs script 内的
+        ``SHARED_TRI_STATE_PANEL_FILES`` 数组没改 —— 结果：
+
+        - 字节同源测试照样过（test 自己读新路径），
+        - 但每次 ``node scripts/package_vscode_vsix.mjs`` 都直接
+          ``process.exit(1)`` with ``@aiia/tri-state-panel 真源缺失``
+          —— **VSIX 包从此打不出来**，CI 端 ``make vscode-check`` 也
+          会 fail，但 ``ci_gate.py`` 的 Python 路径不调它，所以
+          test_tri_state_panel_parity 一直绿，问题被隐藏。
+
+        本测试做最小化的 contains 检查：要求每条 src 路径（相对仓库根）
+        都以字符串字面量形式出现在 .mjs 的内容里。这种检查抓得住「.py
+        测试改了路径但 .mjs 忘改」的不对称漂移；它不要求 JS 解析器，
+        所以 Python 测试套件也能跑。
+        """
+        packager = REPO_ROOT / "scripts" / "package_vscode_vsix.mjs"
+        self.assertTrue(packager.exists(), f"{packager} 必须存在")
+        text = packager.read_text(encoding="utf-8")
+        missing: list[str] = []
+        for src, _ in SHARED_PAIRS:
+            rel = src.relative_to(REPO_ROOT).as_posix()
+            if rel not in text:
+                missing.append(rel)
+        if missing:
+            self.fail(
+                "scripts/package_vscode_vsix.mjs::SHARED_TRI_STATE_PANEL_FILES "
+                "里找不到下列源路径的字面量：\n  "
+                + "\n  ".join(missing)
+                + "\n本 .py 测试与 .mjs 打包脚本必须共用同一组 src/ 路径前缀；"
+                "如果迁移了真源目录，请同步把 .mjs 里的 "
+                "SHARED_TRI_STATE_PANEL_FILES 数组改成新位置（参见 R89 修复）。"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
