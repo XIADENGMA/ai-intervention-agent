@@ -783,6 +783,27 @@ async def interactive_feedback(
         default=None,
         description="Accepted for compatibility; ignored by this server.",
     ),
+    timeout_seconds: int | None = Field(
+        default=None,
+        description=(
+            "Compatibility alias for `timeout` (used by some MCP clients that "
+            "explicitly suffix the unit). Both fields are accepted for "
+            "compatibility — this server ignores them and uses its own "
+            "configured backend timeout / auto-resubmit countdown. "
+            "When both are provided, this server logs a debug line and discards "
+            "both, since neither overrides server config."
+        ),
+    ),
+    task_id: str | None = Field(
+        default=None,
+        description=(
+            "Accepted for compatibility (some agents pre-generate a trace ID "
+            "and pass it through); this server always auto-generates an "
+            "internal task ID and ignores the externally supplied value. "
+            "Useful when the same `mcp.json` config also points at MCP "
+            "variants that *do* honour an externally supplied task ID."
+        ),
+    ),
     *,
     ctx: FastMCPContext | None = None,
 ) -> list:
@@ -810,10 +831,11 @@ async def interactive_feedback(
       `mcp.json` config can target other feedback MCP variants without
       retraining the agent.
     - `options` is an alias for `predefined_options`.
-    - `project_directory`, `submit_button_text`, `timeout`, `feedback_type`,
-      `priority`, `language`, `tags`, `user_id` are accepted but ignored.
-      They prevent the first-call validation failures observed when an agent
-      reuses arguments shaped for a different feedback MCP server.
+    - `project_directory`, `submit_button_text`, `timeout`, `timeout_seconds`,
+      `feedback_type`, `priority`, `language`, `tags`, `user_id`, `task_id`
+      are accepted but ignored. They prevent the first-call validation
+      failures observed when an agent reuses arguments shaped for a
+      different feedback MCP server.
 
     Note: this function is not the MCP registration site itself; `server.py`
     wraps it with `mcp.tool()` to expose it to MCP clients.
@@ -884,17 +906,21 @@ async def interactive_feedback(
         resolved_options = merged_options
 
     # 仅在调试场景下记录被忽略的兼容参数（INFO 级别会在生产中产生噪音，因此用 debug）。
+    # NOTE: `timeout_seconds` 是 `timeout` 的兼容别名（有些客户端显式带单位后缀），
+    # `task_id` 仅作为 trace ID 兼容（此服务器始终自动生成）；二者都纯日志不影响业务。
     _ignored_compat = {
         name: value
         for name, value in (
             ("project_directory", project_directory),
             ("submit_button_text", submit_button_text),
             ("timeout", timeout),
+            ("timeout_seconds", timeout_seconds),
             ("feedback_type", feedback_type),
             ("priority", priority),
             ("language", language),
             ("tags", tags),
             ("user_id", user_id),
+            ("task_id", task_id),
         )
         if value not in (None, "", [])
     }

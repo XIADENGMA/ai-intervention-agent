@@ -240,6 +240,151 @@ class TestInteractiveFeedbackCompatAliases(unittest.TestCase):
                 )
             self.assertIsInstance(result, list)
 
+    def test_v1_5_36_drift_args_do_not_raise(self):
+        """R77：v1.5.36 测试反馈里实际报错的 3 个字段必须被吸收。
+
+        错误样本（TODO.md 引用）：
+          - ``predefined_options_defaults=[...]`` —— R63b 已加正式参数
+          - ``timeout_seconds=600`` —— R77 加 alias（与 ``timeout`` 同义）
+          - ``task_id='src-layout-resources-decision-r76'`` —— R77 加并显式忽略
+
+        本用例同时传这三个字段，验证不再触发 Pydantic
+        ``unexpected_keyword_argument``，调用能跑通到 ``wait_for_task_completion``。
+        """
+        with (
+            patch(
+                "ai_intervention_agent.server_feedback.wait_for_task_completion"
+            ) as mock_wait,
+            patch(
+                "ai_intervention_agent.service_manager.ensure_web_ui_running",
+                return_value=None,
+            ),
+            patch(
+                "ai_intervention_agent.service_manager.get_web_ui_config",
+                return_value=(_make_config(), 120),
+            ),
+            patch(
+                "ai_intervention_agent.server_config._generate_task_id",
+                return_value="compat-task-r77",
+            ),
+            patch(
+                "ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False
+            ),
+        ):
+            mock_wait.return_value = {
+                "user_input": "ok",
+                "selected_options": [],
+                "images": [],
+            }
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            with _patch_async_post(return_value=mock_resp):
+                result = asyncio.run(
+                    _interactive_feedback_fn(
+                        "Continue?",
+                        ["[范围] 只修最小必要", "[范围] 询问 — 推荐"],
+                        predefined_options_defaults=[False, True],
+                        timeout_seconds=600,
+                        task_id="src-layout-resources-decision-r76",
+                    )
+                )
+            self.assertIsInstance(result, list)
+            mock_wait.assert_called_once()
+
+    def test_timeout_seconds_alias_does_not_override_server_config(self):
+        """``timeout_seconds`` 是兼容别名 — 不应改变实际后端等待时间（由 server_config 计算）。"""
+        with (
+            patch(
+                "ai_intervention_agent.server_feedback.wait_for_task_completion"
+            ) as mock_wait,
+            patch(
+                "ai_intervention_agent.service_manager.ensure_web_ui_running",
+                return_value=None,
+            ),
+            patch(
+                "ai_intervention_agent.service_manager.get_web_ui_config",
+                return_value=(_make_config(), 120),
+            ),
+            patch(
+                "ai_intervention_agent.server_config._generate_task_id",
+                return_value="compat-task-timeout-seconds",
+            ),
+            patch(
+                "ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False
+            ),
+        ):
+            mock_wait.return_value = {
+                "user_input": "ok",
+                "selected_options": [],
+                "images": [],
+            }
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            with _patch_async_post(return_value=mock_resp):
+                asyncio.run(
+                    _interactive_feedback_fn(
+                        "hi",
+                        None,
+                        timeout_seconds=999_999,
+                    )
+                )
+            mock_wait.assert_called_once()
+            actual_timeout = (
+                mock_wait.call_args.kwargs.get("timeout") or mock_wait.call_args.args[1]
+            )
+            self.assertNotEqual(
+                actual_timeout,
+                999_999,
+                "timeout_seconds 不能直接代替 server_config 计算出的后端 timeout",
+            )
+
+    def test_external_task_id_is_ignored_in_favour_of_generated_id(self):
+        """外部传入的 ``task_id`` 不应替换 server 自动生成的 task_id（防止 trace ID 串扰）。"""
+        with (
+            patch(
+                "ai_intervention_agent.server_feedback.wait_for_task_completion"
+            ) as mock_wait,
+            patch(
+                "ai_intervention_agent.service_manager.ensure_web_ui_running",
+                return_value=None,
+            ),
+            patch(
+                "ai_intervention_agent.service_manager.get_web_ui_config",
+                return_value=(_make_config(), 120),
+            ),
+            patch(
+                "ai_intervention_agent.server_config._generate_task_id",
+                return_value="server-side-id",
+            ),
+            patch(
+                "ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False
+            ),
+        ):
+            mock_wait.return_value = {
+                "user_input": "ok",
+                "selected_options": [],
+                "images": [],
+            }
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            external_id = "client-supplied-id-do-not-honour"
+            with _patch_async_post(return_value=mock_resp):
+                asyncio.run(
+                    _interactive_feedback_fn(
+                        "hi",
+                        None,
+                        task_id=external_id,
+                    )
+                )
+            args, kwargs = mock_wait.call_args
+            actual_task_id = kwargs.get("task_id") or (args[0] if args else None)
+            self.assertEqual(
+                actual_task_id,
+                "server-side-id",
+                "外部 task_id 必须被忽略；server 用自己生成的 ID",
+            )
+            self.assertNotEqual(actual_task_id, external_id)
+
 
 if __name__ == "__main__":
     unittest.main()
