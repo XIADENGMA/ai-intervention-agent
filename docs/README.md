@@ -54,6 +54,12 @@ Find your role below to jump straight to the page you need.
   the upgrade recipe and remaining-CVE rationale.
 - [`../SECURITY.md`](../SECURITY.md) — disclosure policy, supported
   versions, AppleScript executor security model.
+- [`lessons-learned-r60s.md`](lessons-learned-r60s.md) — internal
+  post-mortem for the v1.5.45 R63 → R70 batch (light-mode iOS-blue
+  leakage, MCP-tool-description drift, Bark deep-link sentinel,
+  build-info diagnostic, Prettier rollout, Dependabot major-bump
+  triage, README architecture completeness). Required reading
+  before adding a new CSS theme variant or a new MCP tool field.
 
 ## Bilingual coverage
 
@@ -67,12 +73,15 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for v1.5.45 (R57+R58 cycle:
-Flask-Limiter ``headers_enabled=True`` so every rate-limited API
-response now carries IETF-draft ``X-RateLimit-Limit/-Remaining/-Reset``
-+ ``Retry-After`` for proactive client backoff (R57); and
-``_SSEBus.emit`` now guards a 256 KB byte ceiling — oversize
-payloads are replaced with an ``oversize_drop`` metadata event,
-preventing N×fan-out memory blowups (R58). Earlier R56 / R55 /
-R54 / R53 / R52 / R51 / R50 work remains captured in v1.5.44 /
-v1.5.43 / v1.5.42 / v1.5.41 / v1.5.40 / v1.5.39)._
+index never lies. Last refreshed for v1.5.45 (R63 → R70 batch:
+diagnostic build-info under `aiia://server/info`, Bark deep-link
+`aiia_test=1` sentinel, MCP `predefined_options_defaults` schema
+parameter, light-mode button text + 7 iOS-blue leakage fixes,
+brand-color drift guardrail with pre-commit hook, README inner-
+modules pointer + Dependency Review FAQ, Prettier-defaults
+overhaul across `multi_task.js` / VSCode TS-JS / docs Markdown /
+`settings-manager.js` + `web_ui.html`). Internal post-mortem at
+[`lessons-learned-r60s.md`](lessons-learned-r60s.md). Earlier
+R57 / R58 work (Flask-Limiter `headers_enabled=True` + 256 KB SSE
+oversize guard) remains captured in v1.5.44; older R56 → R50 in
+v1.5.43 → v1.5.39._

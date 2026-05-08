@@ -50,6 +50,11 @@
   说明。
 - [`../SECURITY.md`](../SECURITY.md) — 漏洞披露政策、受支持版本、
   AppleScript executor 安全模型。
+- [`lessons-learned-r60s.md`](lessons-learned-r60s.md) — v1.5.45
+  R63 → R70 批次的内部复盘（浅色模式 iOS 蓝泄漏、MCP 工具描述漂
+  移、Bark 深链接 sentinel、build-info 诊断块、Prettier 收尾、
+  Dependabot major-bump 分诊、README 架构完整性）。新增 CSS 主
+  题变体或 MCP 工具字段前必读。
 
 ## 双语覆盖
 
@@ -61,11 +66,14 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.45（R57+R58 周期：Flask-Limiter 启用
-``headers_enabled=True``，让每个限流响应都带 IETF-draft 的
-``X-RateLimit-Limit/-Remaining/-Reset`` + ``Retry-After``（R57）；
-``_SSEBus.emit`` 加 256 KB 字节上限护栏，超大 payload 被替换成
-``oversize_drop`` 元事件，避免单条事件 N 倍 fan-out 撑爆订阅者
-内存（R58）。上一周期 R56 / R55 / R54 / R53 / R52 / R51 / R50
-收口在 v1.5.44 / v1.5.43 / v1.5.42 / v1.5.41 / v1.5.40 /
-v1.5.39）。_
+更新对应 v1.5.45（R63 → R70 批次：`aiia://server/info` 诊断
+build 块、Bark 深链接 `aiia_test=1` sentinel、MCP
+`predefined_options_defaults` schema 参数、浅色模式按钮文字 +
+7 处 iOS 蓝泄漏修复、品牌色漂移护栏 + pre-commit hook、README
+内部模块指针 + Dependency Review FAQ、Prettier 默认值收尾覆盖
+`multi_task.js` / VSCode TS-JS / docs Markdown / `settings-
+manager.js` + `web_ui.html`）。内部复盘见
+[`lessons-learned-r60s.md`](lessons-learned-r60s.md)。上一周期
+R57 / R58（Flask-Limiter `headers_enabled=True` + 256 KB SSE
+oversize 护栏）记录在 v1.5.44；更早的 R56 → R50 在 v1.5.43 →
+v1.5.39。_
