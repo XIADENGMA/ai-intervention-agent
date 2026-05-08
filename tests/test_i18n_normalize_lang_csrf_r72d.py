@@ -177,16 +177,49 @@ class TestNormalizeLangCsrfHardening(unittest.TestCase):
         vscode 端的 normalizeLang 漂移（漏掉 ``xx-AC → pseudo`` / ``zh-TW →
         zh-CN`` / 路径穿越未折叠）等任意一项都会 fail。
         """
+        # R105：缺文件 → fail-loud，不再 silent skip。``packages/vscode/
+        # i18n.js`` 是 VS Code 镜像 i18n 实现的单一源；缺失即配置漂移
+        # （与 R104 main.css/webview.css 同款修复）。R96 已把 harness 修对
+        # 让 vscode 镜像的 normalizeLang 真能跑，但没动这条 silent skip——
+        # 现在补上。
         if not _I18N_JS_VSCODE.exists():
-            self.skipTest(f"{_I18N_JS_VSCODE} not present")
-        # 先做一次 sentinel：harness 能否顺利跑通这份 i18n.js？
+            try:
+                rel = _I18N_JS_VSCODE.relative_to(_PROJECT_ROOT).as_posix()
+            except ValueError:
+                rel = str(_I18N_JS_VSCODE)
+            self.fail(
+                f"R105: packages/vscode/i18n.js missing: {rel}\n"
+                f"  Resolved absolute path: {_I18N_JS_VSCODE}\n"
+                f"  This is configuration drift, not 'OK' — failing loud (R105;\n"
+                f"  matches R88/R100/R101/R102/R104 family). Either update\n"
+                f"  _I18N_JS_VSCODE in tests/test_i18n_normalize_lang_csrf_r72d.py\n"
+                f"  or restore the missing mirror file."
+            )
+        # R105：sentinel = "NODE_FAIL: ..." 表示 i18n.js 没正确导出
+        # ``normalizeLang``——R96 修过 harness 后这种状态是真 bug 信号
+        # （比如 export 路径漂移、syntax error、API 名字漂移），而不是合法
+        # 环境缺失（class-level ``@unittest.skipIf(node is None)`` 已经守住
+        # node 不可用的合法 skip 路径）。原 silent skip 让这种 bug 在 CI 输
+        # 出里和合法 skip 混在一起，没人看；改成 fail-loud。
         sentinel = _run_normalize(_I18N_JS_VSCODE, "evil/path")
-        if sentinel is None or (
-            isinstance(sentinel, str) and sentinel.startswith("NODE_FAIL")
-        ):
-            self.skipTest(
-                f"packages/vscode/i18n.js doesn't expose normalizeLang via "
-                f"sandbox.window/sandbox.AIIA_I18N: {sentinel}"
+        self.assertIsNotNone(
+            sentinel,
+            msg=(
+                "R105: _run_normalize returned None despite class-level node-skip "
+                "guard. This indicates a regression in the test harness itself."
+            ),
+        )
+        if isinstance(sentinel, str) and sentinel.startswith("NODE_FAIL"):
+            self.fail(
+                f"R105: packages/vscode/i18n.js failed to export normalizeLang.\n"
+                f"  Sentinel: {sentinel}\n"
+                f"  This is a real export/wiring bug (not a missing-Node skip).\n"
+                f"  R96 fixed the harness to read sandbox.window.AIIA_I18N OR\n"
+                f"  sandbox.AIIA_I18N — if NODE_FAIL still happens, either:\n"
+                f"    1. i18n.js has a syntax error / runtime exception, or\n"
+                f"    2. the export path drifted again (e.g. someone renamed\n"
+                f"       AIIA_I18N → AIIA_I18N_API), or\n"
+                f"    3. normalizeLang got renamed / deleted."
             )
         # 等价 coverage：与 static 侧保持一致的双集合断言。
         self._assert_known_canonical(_I18N_JS_VSCODE)

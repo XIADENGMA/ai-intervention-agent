@@ -11,6 +11,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R105** — finish purging silent-skips from
+  `tests/test_i18n_normalize_lang_csrf_r72d.py`. R96 already
+  fixed the test harness so the **VS Code mirror** of
+  `i18n.js::normalizeLang` actually got exercised (instead of
+  silently `skipTest`'ing because `sandbox.window.AIIA_I18N` was
+  the wrong export path). But R96 left two related silent-skip
+  surfaces in `test_packages_vscode_i18n_consistency`:
+
+  1. `if not _I18N_JS_VSCODE.exists(): self.skipTest(...)` — same
+     R76-rearrange ⇒ silent-broken pattern that
+     R88/R100/R101/R102/R104 already purged.
+     `packages/vscode/i18n.js` is the VS Code mirror's i18n
+     single-source-of-truth; missing it is configuration drift,
+     not "OK".
+  2. `if sentinel is None or NODE_FAIL: self.skipTest(...)` —
+     after R96 wired the harness to read both
+     `sandbox.window.AIIA_I18N` and `sandbox.AIIA_I18N`, a
+     `NODE_FAIL` sentinel can only come from a real export/wiring
+     bug (rename of `AIIA_I18N`, syntax error, deleted
+     `normalizeLang`). The class-level
+     `@unittest.skipIf(shutil.which("node") is None)` already
+     handles the legit "no Node on PATH" skip path. Catching real
+     bugs as silent skips meant a CI dashboard could go green
+     while `normalizeLang` was structurally broken.
+
+  R105 swaps both `skipTest` calls for `self.fail(...)` with
+  diagnostic messages tagged `R105:` and listing the three
+  realistic failure modes (export-path drift / syntax error /
+  identifier rename) so a future reviewer can locate the
+  regression without reading test scaffolding. Reverse-injection
+  with `mock.patch.object` simulating both scenarios (missing
+  file, mocked `NODE_FAIL` sentinel) yields **1 fail, 0 skips**
+  per case with R105 tag present in every fail message.
+
 - **R104** — replace silent `self.skipTest("...CSS 不存在")` with
   loud `self.fail(...)` in `tests/test_state_tokens.py`. The
   test module is the **only** thing pinning the cross-platform
