@@ -264,11 +264,30 @@ var pendingDeepLinkedTaskId = getDeepLinkedTaskIdFromUrl();
  * - `task_id`: 后端 bark_url_template 默认推荐字段
  * - `taskId`: 前端/JS 常见 camelCase 写法
  * - `tid`: 短链场景下的备用字段
+ *
+ * R63a：识别 `aiia_test=1` sentinel —— 后端 `/api/test-bark` 渲染出来
+ * 的 URL 上会强制带这个 query，命中时跳过 deep-link 并给用户一个 toast，
+ * 避免 `pendingDeepLinkedTaskId` 永久挂着虚假的 `test-task-id` 让每轮轮询
+ * 都白调 `currentTasks.find(...)`。
  */
 function getDeepLinkedTaskIdFromUrl() {
   try {
     if (!window.location || !window.location.search) return "";
     const params = new URLSearchParams(window.location.search);
+
+    // R63a：Bark 测试通知 sentinel —— 命中时不参与 deep-link 路径。
+    const aiiaTest = (params.get("aiia_test") || "").trim().toLowerCase();
+    if (aiiaTest === "1" || aiiaTest === "true" || aiiaTest === "yes") {
+      try {
+        if (typeof _showToast === "function") {
+          _showToast("Bark test notification opened — UI is working.");
+        }
+      } catch (_) {
+        /* noop：toast 失败不应阻塞主流程 */
+      }
+      return "";
+    }
+
     const raw =
       params.get("task_id") || params.get("taskId") || params.get("tid") || "";
     const taskId = String(raw).trim();

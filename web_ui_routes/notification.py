@@ -191,6 +191,16 @@ class NotificationRoutesMixin:
                     _ensure_notification_loaded()
                     _ensure_bark_provider_loaded()
 
+                    # R63a: 给 test-bark 渲染出来的点击 URL 强制加 ``aiia_test=1``
+                    # query，让前端 ``getDeepLinkedTaskIdFromUrl`` 识别后跳过
+                    # deep-link 并 toast 提示，避免 ``pendingDeepLinkedTaskId="test-task-id"``
+                    # 在 PWA 端永久挂起 + 每轮轮询白调 ``.find()``。详见
+                    # tests/test_test_bark_aiia_test_sentinel_r63a.py。
+                    test_url_template = bark_url_template
+                    if test_url_template and "aiia_test=" not in test_url_template:
+                        sep = "&" if "?" in test_url_template else "?"
+                        test_url_template = f"{test_url_template}{sep}aiia_test=1"
+
                     class TempConfig:
                         def __init__(self) -> None:
                             self.bark_enabled = True
@@ -198,7 +208,7 @@ class NotificationRoutesMixin:
                             self.bark_device_key = bark_device_key
                             self.bark_icon = bark_icon
                             self.bark_action = bark_action
-                            self.bark_url_template = bark_url_template
+                            self.bark_url_template = test_url_template
 
                     temp_config = TempConfig()
                     bark_provider = BarkNotificationProvider(temp_config)

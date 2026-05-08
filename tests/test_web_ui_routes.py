@@ -85,9 +85,18 @@ class TestBarkTestEndpoint(_RouteTestBase):
         self.assertEqual(data["status"], "success")
         self.assertIn("sent", data["message"])
         temp_config = mock_provider_cls.call_args.args[0]
-        self.assertEqual(temp_config.bark_url_template, "{base_url}/?task_id={task_id}")
+        # R63a：test-bark 端点会给 ``bark_url_template`` 末尾追加 ``aiia_test=1``
+        # query，让前端识别测试通知后跳过 deep-link 防止挂死任务。详见
+        # ``tests/test_test_bark_aiia_test_sentinel_r63a.py``。
+        self.assertEqual(
+            temp_config.bark_url_template,
+            "{base_url}/?task_id={task_id}&aiia_test=1",
+        )
         self.assertEqual(temp_config.bark_action, "url")
         event_kwargs = mock_event_cls.call_args.kwargs
+        # 保留 task_id="test-task-id" 让模板能正常占位渲染；前端用 aiia_test=1
+        # sentinel 而不是检查 task_id 字面量，避免破坏未来可能换用真实 task_id
+        # 的实现。
         self.assertEqual(event_kwargs["metadata"]["task_id"], "test-task-id")
 
     @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
