@@ -1,4 +1,4 @@
-"""G4：校验 ``scripts/gen_pseudo_locale.py`` 对 Web UI / VSCode webview
+"""G4 / R107：校验 ``scripts/gen_pseudo_locale.py`` 对 Web UI / VSCode webview
 两侧生成的 pseudo locale 形状正确且保持最新。
 
 合约：
@@ -11,6 +11,13 @@
 合约 3 防 key drift；合约 4 是 pseudo-localization 全部意义所在（未括
 起来的串等于漏了 ``t()``，QA 渲染时能直观发现）；合约 5 防有人往
 generator 里塞随机字符让 ``--check`` flaky。
+
+R107：原实现对「``en.json`` / ``pseudo.json`` 不存在」用 ``pytest.skip``
+silent skip。这 4 个 locale 文件都是项目 i18n 单一源，缺失即配置漂移
+（与 R104 ``main.css/webview.css`` / R105 ``packages/vscode/i18n.js``
+/ R102 ``check_locales.py`` 的 6 个核心资源同款）。改成 ``pytest.fail``
+让 reviewer 立刻看到漂移，与 R88/R100/R101/R102/R104/R105/R106 silent-
+skip 修复家族对齐。
 """
 
 from __future__ import annotations
@@ -151,7 +158,18 @@ class TestPseudoStructuralParity:
     )
     def test_key_sets_match(self, en_path: Path, pseudo_path: Path):
         if not en_path.is_file():
-            pytest.skip(f"{en_path} not present")  # ty: ignore[too-many-positional-arguments]
+            # 预先求值并赋给单变量避开 ty 对 pytest.fail 多 positional args
+            # 的 false-positive（多行 f-string 隐式拼接 / call expr 会被 ty
+            # 解析成多参传递）。
+            reason: str = (
+                f"R107: en locale missing: {en_path}\n"
+                f"  This is configuration drift (i18n single-source missing),\n"
+                f"  not 'OK' — failing loud per R107 (matches R102/R104/R105\n"
+                f"  silent-skip purge family). Either restore the file or\n"
+                f"  update WEB_EN/VSCODE_EN at top of "
+                f"tests/test_i18n_pseudo_locale.py."
+            )
+            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
         assert pseudo_path.is_file(), (
             f"Missing {pseudo_path}. Run gen_pseudo_locale.py."
         )
@@ -173,7 +191,14 @@ class TestEveryLeafTransformed:
     @pytest.mark.parametrize("pseudo_path", [WEB_PSEUDO, VSCODE_PSEUDO])
     def test_all_leaves_are_bracketed(self, pseudo_path: Path):
         if not pseudo_path.is_file():
-            pytest.skip(f"{pseudo_path} not present")  # ty: ignore[too-many-positional-arguments]
+            reason: str = (
+                f"R107: pseudo locale missing: {pseudo_path}\n"
+                f"  Run ``uv run python scripts/gen_pseudo_locale.py`` to (re)generate.\n"
+                f"  silent skip would mask the case where someone deletes "
+                f"_pseudo/pseudo.json\n"
+                f"  while leaving en.json fresh — this whole test class would no-op."
+            )
+            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
         leaves = _flatten(json.loads(pseudo_path.read_text(encoding="utf-8")))
         broken: list[tuple[str, str]] = []
         for k, v in leaves.items():
@@ -188,8 +213,19 @@ class TestEveryLeafTransformed:
     )
     def test_placeholders_preserved(self, en_path: Path, pseudo_path: Path):
         """en.json 中的每个 {{name}} 必须在对应 pseudo 字符串里**原样**出现。"""
-        if not (en_path.is_file() and pseudo_path.is_file()):
-            pytest.skip("locale file missing")  # ty: ignore[too-many-positional-arguments]
+        if not en_path.is_file() or not pseudo_path.is_file():
+            missing_paths: list[str] = []
+            if not en_path.is_file():
+                missing_paths.append(f"en={en_path}")
+            if not pseudo_path.is_file():
+                missing_paths.append(f"pseudo={pseudo_path}")
+            reason: str = (
+                f"R107: locale file(s) missing: {', '.join(missing_paths)}\n"
+                f"  This is configuration drift; failing loud per R107.\n"
+                f"  Restore the missing files or fix the path constants in "
+                f"tests/test_i18n_pseudo_locale.py."
+            )
+            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
         en_leaves = _flatten(json.loads(en_path.read_text(encoding="utf-8")))
         ps_leaves = _flatten(json.loads(pseudo_path.read_text(encoding="utf-8")))
         missing: list[str] = []

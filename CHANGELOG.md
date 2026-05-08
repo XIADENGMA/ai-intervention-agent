@@ -11,6 +11,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R107** — convert three `pytest.skip("locale file ... not present")`
+  paths in `tests/test_i18n_pseudo_locale.py` to `pytest.fail`. The
+  three checked locale resources (`src/ai_intervention_agent/static/
+  locales/en.json`, `packages/vscode/locales/en.json`, and the
+  paired `_pseudo/pseudo.json` outputs from `gen_pseudo_locale.py`)
+  are i18n single-source-of-truth — same tier as the 6 core locale
+  resources R102 already path-locked at `check_locales.py::main()`,
+  the `main.css`/`webview.css` design-token sources R104 locked,
+  and `packages/vscode/i18n.js` R105 locked. Silent-skipping when
+  any one is missing meant a refactor that drops `_pseudo/` could
+  ship with the entire `TestPseudoStructuralParity` /
+  `TestEveryLeafTransformed` family no-opping; CI green, coverage
+  zero.
+
+  Implementation note: `pytest.fail` surfaces a known ty stub
+  glitch — the type checker mis-resolves `pytest.fail(reason: str,
+  pytrace: bool, msg: object)` against multi-line f-strings or
+  reassigned `reason` variables, reporting `Expected bool, found
+  str` for the first positional arg. The existing convention in
+  this repo (`tests/test_critical_preload_r21_1.py:396, 413`) is
+  to suppress the false-positive with `# ty:
+  ignore[invalid-argument-type]`. R107 follows the same suppression
+  pattern, with R107-tagged diagnostic strings explaining
+  remediation (run `gen_pseudo_locale.py`, restore the file,
+  update `WEB_EN`/`VSCODE_EN`/`WEB_PSEUDO`/`VSCODE_PSEUDO` constants).
+  Reverse-injection by direct method calls with
+  `Path("/__definitely_not_existing__/missing.json")` for each of
+  the 3 fail paths confirms `pytest.fail.Exception` raises with
+  R107 tag in every case (3/3 verified, 0 silent skips remain).
+
 - **R106** — drop seven `try: from ai_intervention_agent.server
   import X; except ImportError: self.skipTest(...)` blocks in
   `tests/test_server_functions.py`. The pattern was redundant *and*
