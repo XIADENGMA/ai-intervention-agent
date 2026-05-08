@@ -185,6 +185,28 @@ def _main_impl(argv: list[str]) -> int:
     #   比 Batch-2 H11 的 runtime warn-once 更早，lint 时就挡回 PR。
     _run(["uv", "run", "python", "scripts/check_i18n_locale_shape.py"])
 
+    # R103：CSS 品牌色硬编码漂移检测（R66/R88/R99 系列防线兜底接入 CI）。
+    #
+    # 历史漂移：脚本最初只挂在 ``.pre-commit-config.yaml`` 的 local hook
+    # 上（``check_brand_color_consistency.py`` docstring 第 49–56 行明文说
+    # "通过 .pre-commit-config.yaml 的 local repo hook 接入"）。但是：
+    #   1. ``test.yml`` / ``release.yml`` CI workflow 都只跑 ``ci_gate.py
+    #      --ci``，没有 ``pre-commit run --all-files`` 步骤；
+    #   2. 仓库不强制开发者执行 ``pre-commit install``（hook 是开发者机器
+    #      配置，不在版本控制范围内）；
+    #   3. pre-commit hook 是 staged-only + ``files: ^src/.../static/css/.*
+    #      \.css$``，不动 CSS 的 PR 永远不触发，但 CI 也不兜底。
+    # 三个失败模式合起来：开发者本地不装 pre-commit 时，新增
+    # ``rgba(0, 122, 255, X)`` 或 ``#007aff`` 全部能 silently merge——R66
+    # baseline 34 / R99 hex baseline 7 的锁定**完全失效**。R88 修复了 hook
+    # files glob 与脚本 ``DEFAULT_ROOT`` 的同步漂移，但没修「hook 没接入 CI
+    # 执行路径」这一层。R103 收尾：把脚本接入 ci_gate，确保任何 PR（无论
+    # 开发者本地是否装 pre-commit）push 后都会经过这道防线。
+    #
+    # ``--quiet`` 让脚本通过 baseline 时不输出（与 pre-commit hook 一致）；
+    # 失败时仍会打印超 baseline 的具体行号 / 文件位置 / 修复指引。
+    _run(["uv", "run", "python", "scripts/check_brand_color_consistency.py", "--quiet"])
+
     # docs/api(.zh-CN)/* 漂移检测 — fail-closed 硬门禁（自 v1.5.23 起）。
     # `generate_docs.py --check` 已经支持双语言、幂等、报告漂移文件路径。
     # 一旦改动 Python 源码的 docstring / 签名而忘了重生 docs，CI 会

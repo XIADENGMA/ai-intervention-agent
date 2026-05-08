@@ -11,6 +11,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R103** — wire `scripts/check_brand_color_consistency.py` into
+  `ci_gate.py` to close the **second layer** of the R66/R88/R99
+  brand-color guardrail. R88 fixed the `files`-glob/`DEFAULT_ROOT`
+  drift _inside_ the pre-commit hook, but the script was **only**
+  invoked from `.pre-commit-config.yaml` — not from
+  `ci_gate.py --ci`. Three failure modes lined up:
+
+  1. `test.yml` and `release.yml` only call `uv run python
+     scripts/ci_gate.py --ci` — never `pre-commit run --all-files`.
+  2. The repo does not enforce `pre-commit install`; hooks live on
+     each developer's machine, not in version control.
+  3. The hook is staged-only with `files: ^src/.../static/css/.*\.css$`
+     — PRs that don't touch CSS never trigger it, but CI also has
+     no fallback for the ones that do.
+
+  Combined effect: a developer who clones, ignores the README's
+  "run `uv run pre-commit install`" hint, and sends a PR adding
+  `rgba(0, 122, 255, X)` or `#007aff` to `main.css` would have
+  the R66 baseline 34 / R99 hex baseline 7 lock **silently bypassed**
+  on the way to `main`. Real-world latent risk: zero today (current
+  PRs all pass the baseline), but the structure of the failure is
+  identical to R88's "hook glob drift" — invisible until the next
+  refactor lands a regression. R103 appends a single
+  `_run([..., "scripts/check_brand_color_consistency.py", "--quiet"])`
+  call at the tail of the i18n drift-detector sequence in
+  `_main_impl`, so every CI run (and every local `uv run python
+  scripts/ci_gate.py`) now exercises the baseline lock. `--quiet`
+  matches the pre-commit hook's silent-on-pass contract. New
+  `tests/test_ci_gate_brand_color_r103.py` (4 cases) regex-asserts
+  the invocation, the `--quiet` flag, the position-after-`check_i18n_
+  locale_shape.py` ordering, and the script's continued existence.
+  Reverse-injection (delete the new `_run` line) → 3/4 fail with
+  contract-violation messages, proving the guard catches future
+  regressions.
+
 - **R102** — close the silent-path-drift loop on the **last** i18n
   consistency scanner: `scripts/check_locales.py::main()`. Three
   layered silent skips collapsed to `0` (= "OK") whenever any of 6
