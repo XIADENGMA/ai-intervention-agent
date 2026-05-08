@@ -1186,7 +1186,10 @@ class WebFeedbackUI(
             body: dict[str, Any] = {"success": False, "error": str(exc)}
             if exc.code:
                 body["code"] = exc.code
-            logger.warning(f"AIAgentError ({exc.code}): {exc}", exc_info=True)
+            logger.warning(
+                f"AIAgentError ({exc.code}): {exc}",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
             return jsonify(body), status
 
     def shutdown_server(self) -> None:

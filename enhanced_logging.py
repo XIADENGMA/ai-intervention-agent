@@ -480,14 +480,14 @@ def get_log_level_from_config() -> int:
         if log_level_upper in LOG_LEVEL_MAP:
             return LOG_LEVEL_MAP[log_level_upper]
         else:
-            logging.warning(
+            enhanced_logger.warning(
                 f"无效的日志级别 '{log_level_str}'，"
                 f"有效值: {VALID_LOG_LEVELS}，使用默认值 WARNING"
             )
             return logging.WARNING
 
     except Exception as e:
-        logging.debug(f"读取日志级别配置失败: {e}，使用默认值 WARNING")
+        enhanced_logger.debug(f"读取日志级别配置失败: {e}，使用默认值 WARNING")
         return logging.WARNING
 
 
@@ -501,7 +501,7 @@ def configure_logging_from_config() -> None:
     for handler in root_logger.handlers:
         handler.setLevel(log_level)
 
-    logging.info(f"日志级别已设置为: {logging.getLevelName(log_level)}")
+    enhanced_logger.info(f"日志级别已设置为: {logging.getLevelName(log_level)}")
 
 
 # ============================================================================

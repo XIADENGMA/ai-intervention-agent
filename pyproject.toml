@@ -216,6 +216,8 @@ select = [
     "SIM",  # flake8-simplify — 简化代码模式
     "PIE",  # flake8-pie — 各种微小优化
     "PERF", # perflint — 性能反模式检测
+    "LOG",  # flake8-logging — 抓 root-logger 直调 / exc_info 误用，配合 R72-A
+            # 的 InterceptHandler 防回归
     "RUF",  # Ruff 自有规则
 ]
 ignore = [
