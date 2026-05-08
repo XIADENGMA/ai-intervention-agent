@@ -24,30 +24,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   pie on the repo landing page. Replace each broken glob with a
   pair (or single src-prefixed) that points at the real
   locations; verify with `git check-attr -a` that `linguist-generated`
-  + `-diff` actually apply now. No code or runtime behaviour
-  touched.
+  - `-diff` actually apply now. No code or runtime behaviour
+    touched.
 
 - **R89** — restore the VSIX packaging pipeline silently broken by R76.
-  ``scripts/package_vscode_vsix.mjs`` had a hard-coded
-  ``SHARED_TRI_STATE_PANEL_FILES`` array listing the four shared
-  ``@aiia/tri-state-panel`` source files at ``static/js/...`` /
-  ``static/css/...``. R76 moved those sources to
-  ``src/ai_intervention_agent/static/{js,css}/...`` and updated the
-  byte-parity test ``tests/test_tri_state_panel_parity.py``, but the
+  `scripts/package_vscode_vsix.mjs` had a hard-coded
+  `SHARED_TRI_STATE_PANEL_FILES` array listing the four shared
+  `@aiia/tri-state-panel` source files at `static/js/...` /
+  `static/css/...`. R76 moved those sources to
+  `src/ai_intervention_agent/static/{js,css}/...` and updated the
+  byte-parity test `tests/test_tri_state_panel_parity.py`, but the
   packager script itself was missed. Result: every invocation of
-  ``node scripts/package_vscode_vsix.mjs`` (called from
-  ``npm run vscode:package`` and ``make vscode-check`` and the
-  release workflow) exits 1 with ``@aiia/tri-state-panel 真源缺失：
-  static/js/tri-state-panel.js``. The byte-parity test continued to
-  pass because it independently reads the new ``src/`` paths and the
-  pre-R76 mirror copies in ``packages/vscode/`` are still
+  `node scripts/package_vscode_vsix.mjs` (called from
+  `npm run vscode:package` and `make vscode-check` and the
+  release workflow) exits 1 with `@aiia/tri-state-panel 真源缺失：
+static/js/tri-state-panel.js`. The byte-parity test continued to
+  pass because it independently reads the new `src/` paths and the
+  pre-R76 mirror copies in `packages/vscode/` are still
   byte-identical to those new sources, so the test surface didn't
   expose the dead packager. Update the array's first column to the
-  ``src/ai_intervention_agent/static/...`` prefix and refresh the
+  `src/ai_intervention_agent/static/...` prefix and refresh the
   comment block. Add a new
-  ``test_packager_script_src_paths_match_test_source_paths`` regression
-  test that asserts every ``SHARED_PAIRS`` source path appears
-  literally inside ``scripts/package_vscode_vsix.mjs``, so any
+  `test_packager_script_src_paths_match_test_source_paths` regression
+  test that asserts every `SHARED_PAIRS` source path appears
+  literally inside `scripts/package_vscode_vsix.mjs`, so any
   future R76-class layout move that touches one side without the
   other turns red instead of silently breaking VSIX builds.
 
@@ -89,7 +89,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   previous list pointed at `static/`, `templates/`, `web_ui*.py`,
   `task_queue.py`, `web_ui_routes/`, and `applescript-executor.ts`
   as if they still lived at the repo root; after the R76 PyPA
-  ``src/`` migration they live under
+  `src/` migration they live under
   `src/ai_intervention_agent/` (with `applescript-executor.ts`
   belonging to `packages/vscode/`). Forward-looking checklist
   only — no code touched, no historical CHANGELOG copy adjusted.
@@ -175,7 +175,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   case in particular captures a non-obvious property of the
   dispatch tree: `normalize_lang` always returns a value in
   `SUPPORTED_LANGS`, so unsupported headers like `fr-FR` are
-  mapped to `en` and the config branch is *never* consulted —
+  mapped to `en` and the config branch is _never_ consulted —
   important to lock down before adding a third locale (e.g.
   `ja`). Coverage of `i18n.py` rises from 75.81% to 98.39%.
 - **R80** — `tests/test_docs_links_no_rot.py` link-rot regression
@@ -257,7 +257,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **R74b** — make 2 single-quote anchors in the VSCode test
   suite prettier double-quote compatible (a long-tail of R71's
   prettier-config landing).
-- **R74c** — rewrite 2 ``# type: narrowing`` comments as plain
+- **R74c** — rewrite 2 `# type: narrowing` comments as plain
   prose so a future contributor doesn't think they're real
   type-checker directives.
 - **R74d** — bump `package-lock.json` `@types/node` to the 25.x
@@ -265,7 +265,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   monorepo's transitive `@types/node` requirement tightened.
 - **R75** — enable the `ruff` `LOG` lint family + fix 4
   root-logger / `exc_info` anti-patterns (e.g. `logging.getLogger
-  ("root").error(...)` -> `logger.error(..., exc_info=True)`).
+("root").error(...)` -> `logger.error(..., exc_info=True)`).
 - **R80** — repair 14 broken relative markdown links in
   `.github/CONTRIBUTING.md` (4) / `.github/SECURITY.md` (2) /
   `.github/SUPPORT.md` (8) where the original maintainer-authored
@@ -283,7 +283,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   range/comment-parity tests in lockstep across two formats and
   removes a confusing duplicate entry from the "open default
   config" UI button. Existing JSONC user configs continue to
-  auto-migrate; only the *sample* template is gone.
+  auto-migrate; only the _sample_ template is gone.
 
 ## [1.5.45] — 2026-05-08
 
