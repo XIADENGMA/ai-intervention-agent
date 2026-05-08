@@ -256,7 +256,7 @@ def self_check_image_return_format() -> bool:
             )
         from mcp.types import ImageContent, TextContent
 
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         # 构造一个最小图片样例：base64("f") == "Zg=="
         response = {

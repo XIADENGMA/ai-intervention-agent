@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LOCALES_DIR = REPO_ROOT / "static" / "locales"
+LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 VSCODE_LOCALES_DIR = REPO_ROOT / "packages" / "vscode" / "locales"
 
 

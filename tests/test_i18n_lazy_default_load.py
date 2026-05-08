@@ -42,7 +42,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEBUI_I18N = REPO_ROOT / "static" / "js" / "i18n.js"
+WEBUI_I18N = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "i18n.js"
 
 
 def _node_available() -> bool:

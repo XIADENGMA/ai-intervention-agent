@@ -18,7 +18,7 @@ class TestFeedbackConfigConstants(unittest.TestCase):
 
     def test_constants_imported(self):
         """测试常量导入"""
-        from server import (
+        from ai_intervention_agent.server import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
             AUTO_RESUBMIT_TIMEOUT_MAX,
             AUTO_RESUBMIT_TIMEOUT_MIN,
@@ -52,7 +52,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_normal_values(self):
         """测试正常值"""
-        from server import FeedbackConfig
+        from ai_intervention_agent.server import FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
@@ -68,7 +68,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_timeout_below_min(self):
         """测试 timeout 小于最小值"""
-        from server import FEEDBACK_TIMEOUT_MIN, FeedbackConfig
+        from ai_intervention_agent.server import FEEDBACK_TIMEOUT_MIN, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=5,  # 小于 10
@@ -81,7 +81,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_timeout_above_max(self):
         """测试 timeout 大于最大值"""
-        from server import FEEDBACK_TIMEOUT_MAX, FeedbackConfig
+        from ai_intervention_agent.server import FEEDBACK_TIMEOUT_MAX, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=10000,  # 大于 7200
@@ -94,7 +94,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_auto_resubmit_timeout_zero(self):
         """测试 auto_resubmit_timeout 为 0（禁用）"""
-        from server import FeedbackConfig
+        from ai_intervention_agent.server import FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
@@ -107,7 +107,10 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_auto_resubmit_timeout_below_min(self):
         """测试 auto_resubmit_timeout 小于最小值"""
-        from server import AUTO_RESUBMIT_TIMEOUT_MIN, FeedbackConfig
+        from ai_intervention_agent.server import (
+            AUTO_RESUBMIT_TIMEOUT_MIN,
+            FeedbackConfig,
+        )
 
         config = FeedbackConfig(
             timeout=600,
@@ -120,7 +123,10 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_auto_resubmit_timeout_above_max(self):
         """测试 auto_resubmit_timeout 大于最大值"""
-        from server import AUTO_RESUBMIT_TIMEOUT_MAX, FeedbackConfig
+        from ai_intervention_agent.server import (
+            AUTO_RESUBMIT_TIMEOUT_MAX,
+            FeedbackConfig,
+        )
 
         config = FeedbackConfig(
             timeout=600,
@@ -133,7 +139,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_empty_resubmit_prompt(self):
         """测试空 resubmit_prompt"""
-        from server import RESUBMIT_PROMPT_DEFAULT, FeedbackConfig
+        from ai_intervention_agent.server import RESUBMIT_PROMPT_DEFAULT, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
@@ -146,7 +152,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_whitespace_only_resubmit_prompt(self):
         """测试仅空白字符的 resubmit_prompt"""
-        from server import RESUBMIT_PROMPT_DEFAULT, FeedbackConfig
+        from ai_intervention_agent.server import RESUBMIT_PROMPT_DEFAULT, FeedbackConfig
 
         config = FeedbackConfig(
             timeout=600,
@@ -159,7 +165,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_long_resubmit_prompt_truncation(self):
         """测试过长 resubmit_prompt 截断（TODO #5：上限从 500 提升到 10000）"""
-        from server import PROMPT_MAX_LENGTH, FeedbackConfig
+        from ai_intervention_agent.server import PROMPT_MAX_LENGTH, FeedbackConfig
 
         long_prompt = "A" * (PROMPT_MAX_LENGTH + 100)  # 必须超出上限才会触发截断
         config = FeedbackConfig(
@@ -173,7 +179,7 @@ class TestFeedbackConfigDataclass(unittest.TestCase):
 
     def test_long_prompt_suffix_truncation(self):
         """测试过长 prompt_suffix 截断（TODO #5：上限从 500 提升到 10000）"""
-        from server import PROMPT_MAX_LENGTH, FeedbackConfig
+        from ai_intervention_agent.server import PROMPT_MAX_LENGTH, FeedbackConfig
 
         long_suffix = "B" * (PROMPT_MAX_LENGTH + 100)
         config = FeedbackConfig(
@@ -191,14 +197,14 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 
     def test_infinite_wait(self):
         """测试无限等待模式"""
-        from server import calculate_backend_timeout
+        from ai_intervention_agent.server import calculate_backend_timeout
 
         result = calculate_backend_timeout(240, infinite_wait=True)
         self.assertEqual(result, 0)
 
     def test_disabled_auto_resubmit(self):
         """测试禁用自动提交"""
-        from server import BACKEND_MIN, calculate_backend_timeout
+        from ai_intervention_agent.server import BACKEND_MIN, calculate_backend_timeout
 
         # auto_resubmit_timeout = 0
         result = calculate_backend_timeout(0, max_timeout=600)
@@ -210,7 +216,11 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 
     def test_normal_calculation(self):
         """测试正常计算"""
-        from server import BACKEND_BUFFER, BACKEND_MIN, calculate_backend_timeout
+        from ai_intervention_agent.server import (
+            BACKEND_BUFFER,
+            BACKEND_MIN,
+            calculate_backend_timeout,
+        )
 
         # 240 + 40 = 280 > BACKEND_MIN(260)，使用 280
         result = calculate_backend_timeout(240, max_timeout=600)
@@ -219,7 +229,7 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 
     def test_below_backend_min(self):
         """测试计算结果低于最低值"""
-        from server import BACKEND_MIN, calculate_backend_timeout
+        from ai_intervention_agent.server import BACKEND_MIN, calculate_backend_timeout
 
         # 100 + 40 = 140 < 260, 应该使用 260（BACKEND_MIN）
         result = calculate_backend_timeout(100, max_timeout=600)
@@ -227,7 +237,7 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 
     def test_max_timeout_limit(self):
         """测试最大超时限制"""
-        from server import calculate_backend_timeout
+        from ai_intervention_agent.server import calculate_backend_timeout
 
         # 250 + 40 = 290 < 320, max_timeout = 320, 应该返回 290
         result = calculate_backend_timeout(250, max_timeout=320)
@@ -237,10 +247,10 @@ class TestCalculateBackendTimeout(unittest.TestCase):
 class TestGetFeedbackConfig(unittest.TestCase):
     """测试 get_feedback_config() 函数"""
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_normal_config(self, mock_get_config):
         """测试正常配置获取"""
-        from server import get_feedback_config
+        from ai_intervention_agent.server import get_feedback_config
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {
@@ -258,10 +268,10 @@ class TestGetFeedbackConfig(unittest.TestCase):
         self.assertEqual(config.resubmit_prompt, "测试提示")
         self.assertEqual(config.prompt_suffix, "\n测试后缀")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_config_with_defaults(self, mock_get_config):
         """测试使用默认值"""
-        from server import (
+        from ai_intervention_agent.server import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
             FEEDBACK_TIMEOUT_DEFAULT,
             get_feedback_config,
@@ -276,10 +286,10 @@ class TestGetFeedbackConfig(unittest.TestCase):
         self.assertEqual(config.timeout, FEEDBACK_TIMEOUT_DEFAULT)
         self.assertEqual(config.auto_resubmit_timeout, AUTO_RESUBMIT_TIMEOUT_DEFAULT)
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_config_exception(self, mock_get_config):
         """测试配置异常时使用默认值"""
-        from server import (
+        from ai_intervention_agent.server import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
             FEEDBACK_TIMEOUT_DEFAULT,
             get_feedback_config,
@@ -296,10 +306,10 @@ class TestGetFeedbackConfig(unittest.TestCase):
 class TestGetFeedbackPrompts(unittest.TestCase):
     """测试 get_feedback_prompts() 函数（向后兼容）"""
 
-    @patch("server_config.get_feedback_config")
+    @patch("ai_intervention_agent.server_config.get_feedback_config")
     def test_returns_tuple(self, mock_get_feedback_config):
         """测试返回元组"""
-        from server import FeedbackConfig, get_feedback_prompts
+        from ai_intervention_agent.server import FeedbackConfig, get_feedback_prompts
 
         mock_get_feedback_config.return_value = FeedbackConfig(
             timeout=600,
@@ -321,49 +331,61 @@ class TestWebUIValidateAutoResubmitTimeout(unittest.TestCase):
 
     def test_zero_value(self):
         """测试值为 0（禁用）"""
-        from web_ui import validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import validate_auto_resubmit_timeout
 
         result = validate_auto_resubmit_timeout(0)
         self.assertEqual(result, 0)
 
     def test_negative_value(self):
         """测试负值（转换为禁用）"""
-        from web_ui import validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import validate_auto_resubmit_timeout
 
         result = validate_auto_resubmit_timeout(-10)
         self.assertEqual(result, 0)
 
     def test_below_min(self):
         """测试小于最小值（与 shared_types 对齐后 MIN=10）"""
-        from web_ui import AUTO_RESUBMIT_TIMEOUT_MIN, validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_MIN,
+            validate_auto_resubmit_timeout,
+        )
 
         result = validate_auto_resubmit_timeout(5)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MIN)
 
     def test_above_max(self):
         """测试大于最大值（与 shared_types 对齐后 MAX=3600）"""
-        from web_ui import AUTO_RESUBMIT_TIMEOUT_MAX, validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_MAX,
+            validate_auto_resubmit_timeout,
+        )
 
         result = validate_auto_resubmit_timeout(99999)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MAX)
 
     def test_normal_value(self):
         """测试正常值"""
-        from web_ui import validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import validate_auto_resubmit_timeout
 
         result = validate_auto_resubmit_timeout(120)
         self.assertEqual(result, 120)
 
     def test_boundary_min(self):
         """测试最小边界值"""
-        from web_ui import AUTO_RESUBMIT_TIMEOUT_MIN, validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_MIN,
+            validate_auto_resubmit_timeout,
+        )
 
         result = validate_auto_resubmit_timeout(AUTO_RESUBMIT_TIMEOUT_MIN)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MIN)
 
     def test_boundary_max(self):
         """测试最大边界值"""
-        from web_ui import AUTO_RESUBMIT_TIMEOUT_MAX, validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_MAX,
+            validate_auto_resubmit_timeout,
+        )
 
         result = validate_auto_resubmit_timeout(AUTO_RESUBMIT_TIMEOUT_MAX)
         self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_MAX)
@@ -374,22 +396,22 @@ class TestIntegration(unittest.TestCase):
 
     def test_server_and_webui_constants_match(self):
         """测试 server.py 和 web_ui.py 的常量一致性"""
-        from server import (
+        from ai_intervention_agent.server import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT as SERVER_DEFAULT,
         )
-        from server import (
+        from ai_intervention_agent.server import (
             AUTO_RESUBMIT_TIMEOUT_MAX as SERVER_MAX,
         )
-        from server import (
+        from ai_intervention_agent.server import (
             AUTO_RESUBMIT_TIMEOUT_MIN as SERVER_MIN,
         )
-        from web_ui import (
+        from ai_intervention_agent.web_ui import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT as WEBUI_DEFAULT,
         )
-        from web_ui import (
+        from ai_intervention_agent.web_ui import (
             AUTO_RESUBMIT_TIMEOUT_MAX as WEBUI_MAX,
         )
-        from web_ui import (
+        from ai_intervention_agent.web_ui import (
             AUTO_RESUBMIT_TIMEOUT_MIN as WEBUI_MIN,
         )
 
@@ -399,7 +421,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_timeout_calculation_consistency(self):
         """测试超时计算一致性"""
-        from server import (
+        from ai_intervention_agent.server import (
             calculate_backend_timeout,
         )
 

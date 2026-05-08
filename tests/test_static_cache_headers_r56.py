@@ -34,7 +34,7 @@ class _StaticHeaderTestBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="r56-static-cache-test", task_id="r56-base", port=cls._port

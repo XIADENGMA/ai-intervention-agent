@@ -52,8 +52,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import server_config
-import server_feedback
+import ai_intervention_agent.server_config as server_config
+import ai_intervention_agent.server_feedback as server_feedback
 
 
 class TestInteractiveFeedbackSignatureExposesDefaults(unittest.TestCase):

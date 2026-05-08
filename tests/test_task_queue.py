@@ -21,7 +21,7 @@ class TestTaskBasic(unittest.TestCase):
 
     def test_task_creation(self):
         """测试任务创建"""
-        from task_queue import Task
+        from ai_intervention_agent.task_queue import Task
 
         task = Task(task_id="task-1", prompt="测试提示")
 
@@ -32,7 +32,7 @@ class TestTaskBasic(unittest.TestCase):
 
     def test_task_with_options(self):
         """测试带选项的任务"""
-        from task_queue import Task
+        from ai_intervention_agent.task_queue import Task
 
         task = Task(
             task_id="task-1", prompt="测试提示", predefined_options=["选项1", "选项2"]
@@ -42,7 +42,7 @@ class TestTaskBasic(unittest.TestCase):
 
     def test_remaining_time(self):
         """测试剩余时间计算"""
-        from task_queue import Task
+        from ai_intervention_agent.task_queue import Task
 
         task = Task(task_id="task-1", prompt="测试提示", auto_resubmit_timeout=60)
 
@@ -53,7 +53,7 @@ class TestTaskBasic(unittest.TestCase):
 
     def test_completed_task_remaining_time(self):
         """测试已完成任务的剩余时间"""
-        from task_queue import Task
+        from ai_intervention_agent.task_queue import Task
 
         task = Task(task_id="task-1", prompt="测试提示")
         task.status = "completed"
@@ -64,7 +64,7 @@ class TestTaskBasic(unittest.TestCase):
 
     def test_timeout_zero_not_expired(self):
         """auto_resubmit_timeout=0 表示禁用，不应被判定为过期"""
-        from task_queue import Task
+        from ai_intervention_agent.task_queue import Task
 
         task = Task(task_id="task-1", prompt="测试提示", auto_resubmit_timeout=0)
         self.assertFalse(task.is_expired())
@@ -76,7 +76,7 @@ class TestTaskQueueBasic(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=5)
 
@@ -93,7 +93,7 @@ class TestTaskQueueBasic(unittest.TestCase):
 
     def test_add_task_clamps_timeout_min(self):
         """倒计时边界：auto_resubmit_timeout 小于 AUTO_RESUBMIT_TIMEOUT_MIN 时应被钳制到下限（0 例外）"""
-        from server_config import AUTO_RESUBMIT_TIMEOUT_MIN
+        from ai_intervention_agent.server_config import AUTO_RESUBMIT_TIMEOUT_MIN
 
         self.queue.add_task("task-1", "测试提示", auto_resubmit_timeout=1)
         task = self.queue.get_task("task-1")
@@ -207,7 +207,7 @@ class TestTaskQueueActiveTask(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=5)
 
@@ -290,7 +290,7 @@ class TestTaskQueueComplete(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=5)
 
@@ -335,7 +335,7 @@ class TestTaskQueueCleanup(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=5)
 
@@ -381,7 +381,7 @@ class TestTaskQueueThreadSafety(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=100)
         self.errors = []
@@ -458,7 +458,7 @@ class TestTaskQueueStatistics(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=10)
 
@@ -492,7 +492,7 @@ class TestTaskQueueEdgeCases(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=5)
 
@@ -597,7 +597,7 @@ class TestTaskQueueAdvanced(unittest.TestCase):
 
     def test_task_queue_add_get_remove(self):
         """测试任务队列基本操作"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue()
 
@@ -617,7 +617,7 @@ class TestTaskQueueAdvanced(unittest.TestCase):
 
     def test_task_queue_complete(self):
         """测试任务完成流程"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue()
 
@@ -628,7 +628,7 @@ class TestTaskQueueAdvanced(unittest.TestCase):
 
     def test_task_queue_statistics(self):
         """测试任务队列统计"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue()
 
@@ -646,7 +646,7 @@ class TestTaskQueueFinalPush(unittest.TestCase):
 
     def test_task_queue_stats(self):
         """测试任务队列统计"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue()
 
@@ -661,7 +661,7 @@ class TestTaskQueueFinalPush(unittest.TestCase):
 
     def test_task_queue_clear(self):
         """测试清空任务队列"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue()
 
@@ -682,7 +682,7 @@ class TestTaskQueueBoundary(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         self.queue = TaskQueue(max_tasks=5)
 
@@ -746,7 +746,7 @@ class TestCleanupThreadException(unittest.TestCase):
         """706-707: _cleanup_loop 中 cleanup_completed_tasks 抛异常被捕获"""
         from unittest.mock import patch as _patch
 
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         tq = TaskQueue()
         call_count = 0
@@ -777,7 +777,7 @@ class TestCleanupThreadException(unittest.TestCase):
         """line 705: cleaned > 0 时记录日志"""
         from unittest.mock import patch as _patch
 
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         tq = TaskQueue()
         wait_calls = 0
@@ -796,7 +796,7 @@ class TestTaskQueuePartialBranches(unittest.TestCase):
     """覆盖 task_queue.py 的部分分支"""
 
     def _make_tq(self, max_tasks: int = 10):
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         return TaskQueue(max_tasks=max_tasks)
 
@@ -860,7 +860,7 @@ class TestTaskQueuePartialBranches(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 边界路径补充（原 test_task_queue_extended.py）
 # ---------------------------------------------------------------------------
-from task_queue import Task, TaskQueue
+from ai_intervention_agent.task_queue import Task, TaskQueue
 
 
 class TestTaskDataclassEdges(unittest.TestCase):
@@ -885,7 +885,7 @@ class TestTaskDataclassEdges(unittest.TestCase):
         task.status = "active"
 
         with patch(
-            "task_queue.time.monotonic",
+            "ai_intervention_agent.task_queue.time.monotonic",
             side_effect=AssertionError("不应读取全局 monotonic"),
         ):
             self.assertEqual(task.get_remaining_time(now_monotonic=115.2), 44)
@@ -938,7 +938,7 @@ class TestAddTaskTimeoutEdge(unittest.TestCase):
         q.stop_cleanup()
 
     def test_timeout_small_positive_clamped(self):
-        from server_config import AUTO_RESUBMIT_TIMEOUT_MIN
+        from ai_intervention_agent.server_config import AUTO_RESUBMIT_TIMEOUT_MIN
 
         q = TaskQueue()
         q.add_task("t1", "p", auto_resubmit_timeout=1)

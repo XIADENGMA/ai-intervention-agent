@@ -37,8 +37,8 @@ import importlib
 import logging
 import unittest
 
-import enhanced_logging
-from enhanced_logging import (
+import ai_intervention_agent.enhanced_logging as enhanced_logging
+from ai_intervention_agent.enhanced_logging import (
     EnhancedLogger,
     InterceptHandler,
     SingletonLogManager,

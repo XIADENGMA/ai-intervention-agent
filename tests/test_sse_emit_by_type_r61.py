@@ -24,8 +24,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-import server
-from web_ui_routes.task import _SSEBus
+import ai_intervention_agent.server as server
+from ai_intervention_agent.web_ui_routes.task import _SSEBus
 
 
 class TestEmitByTypeBasics(unittest.TestCase):

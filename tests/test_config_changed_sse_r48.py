@@ -29,8 +29,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import web_ui
-import web_ui_config_sync
+import ai_intervention_agent.web_ui as web_ui
+import ai_intervention_agent.web_ui_config_sync as web_ui_config_sync
 
 # ============================================================================
 # 1. _emit_config_changed_to_sse_bus 行为契约
@@ -46,7 +46,7 @@ class TestEmitConfigChangedSendsSSEEvent(unittest.TestCase):
         web_ui_config_sync._last_emit_monotonic = 0.0
 
     def test_emit_is_called_with_event_type_and_payload(self) -> None:
-        with patch("web_ui_routes.task._sse_bus") as fake_bus:
+        with patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus:
             web_ui_config_sync._emit_config_changed_to_sse_bus()
         fake_bus.emit.assert_called_once()
         args, _kwargs = fake_bus.emit.call_args
@@ -61,7 +61,7 @@ class TestEmitConfigChangedSendsSSEEvent(unittest.TestCase):
 
     def test_payload_does_not_leak_config_values(self) -> None:
         """payload 不应包含任何敏感字段（``bark_url`` / ``device_key`` / 路径等）。"""
-        with patch("web_ui_routes.task._sse_bus") as fake_bus:
+        with patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus:
             web_ui_config_sync._emit_config_changed_to_sse_bus()
         args, _ = fake_bus.emit.call_args
         payload = args[1]
@@ -84,7 +84,7 @@ class TestEmitConfigChangedSendsSSEEvent(unittest.TestCase):
 
     def test_emit_failure_is_swallowed(self) -> None:
         """``_sse_bus.emit`` 抛异常时主流程不应崩（不阻塞其它 callback）。"""
-        with patch("web_ui_routes.task._sse_bus") as fake_bus:
+        with patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus:
             fake_bus.emit.side_effect = RuntimeError("simulated SSE bus down")
             try:
                 web_ui_config_sync._emit_config_changed_to_sse_bus()
@@ -109,7 +109,7 @@ class TestEnsureCallbackRegistration(unittest.TestCase):
 
     def test_first_call_registers_callback(self) -> None:
         fake_cfg = MagicMock()
-        with patch("web_ui.get_config", return_value=fake_cfg):
+        with patch("ai_intervention_agent.web_ui.get_config", return_value=fake_cfg):
             web_ui_config_sync._ensure_config_changed_sse_callback_registered()
         fake_cfg.register_config_change_callback.assert_called_once_with(
             web_ui_config_sync._emit_config_changed_to_sse_bus
@@ -118,7 +118,7 @@ class TestEnsureCallbackRegistration(unittest.TestCase):
 
     def test_repeat_call_is_no_op(self) -> None:
         fake_cfg = MagicMock()
-        with patch("web_ui.get_config", return_value=fake_cfg):
+        with patch("ai_intervention_agent.web_ui.get_config", return_value=fake_cfg):
             web_ui_config_sync._ensure_config_changed_sse_callback_registered()
             web_ui_config_sync._ensure_config_changed_sse_callback_registered()
             web_ui_config_sync._ensure_config_changed_sse_callback_registered()
@@ -126,7 +126,10 @@ class TestEnsureCallbackRegistration(unittest.TestCase):
         self.assertEqual(fake_cfg.register_config_change_callback.call_count, 1)
 
     def test_get_config_failure_keeps_flag_false_and_does_not_raise(self) -> None:
-        with patch("web_ui.get_config", side_effect=RuntimeError("no config")):
+        with patch(
+            "ai_intervention_agent.web_ui.get_config",
+            side_effect=RuntimeError("no config"),
+        ):
             try:
                 web_ui_config_sync._ensure_config_changed_sse_callback_registered()
             except Exception as exc:
@@ -160,16 +163,16 @@ class TestEndToEndCallbackChain(unittest.TestCase):
         用真实 ``ConfigManager`` 实例（不会触发 web_ui 子进程，是纯内存对象）
         加 fake SSE bus 来端到端验证。
         """
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         cfg = ConfigManager()
         try:
             # 把 web_ui.get_config 指向我们的测试实例
-            with patch("web_ui.get_config", return_value=cfg):
+            with patch("ai_intervention_agent.web_ui.get_config", return_value=cfg):
                 web_ui_config_sync._ensure_config_changed_sse_callback_registered()
 
             # 触发回调链
-            with patch("web_ui_routes.task._sse_bus") as fake_bus:
+            with patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus:
                 cfg._trigger_config_change_callbacks()
             fake_bus.emit.assert_called_once()
             self.assertEqual(fake_bus.emit.call_args[0][0], "config_changed")
@@ -186,9 +189,14 @@ class TestFrontendListenersExist(unittest.TestCase):
     """``static/js/multi_task.js`` 和 ``packages/vscode/extension.ts`` 必须监听 ``config_changed``。"""
 
     def test_multi_task_js_has_listener(self) -> None:
-        source = (REPO_ROOT / "static" / "js" / "multi_task.js").read_text(
-            encoding="utf-8"
-        )
+        source = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "multi_task.js"
+        ).read_text(encoding="utf-8")
         # 同时接受单/双引号字面量：测试锁住「listener 存在」语义，而不是引号风格。
         # Prettier 默认 `singleQuote: false` 会把整个文件改成双引号；当文件被
         # 大规模 reformat 时不应让本测试假阴。
@@ -199,9 +207,14 @@ class TestFrontendListenersExist(unittest.TestCase):
         )
 
     def test_multi_task_js_uses_existing_toast_helper(self) -> None:
-        source = (REPO_ROOT / "static" / "js" / "multi_task.js").read_text(
-            encoding="utf-8"
-        )
+        source = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "multi_task.js"
+        ).read_text(encoding="utf-8")
         # 锁住 "复用现有 toast helper" 这个不变量；
         # 既不要私自塞一个 alert()，也不要无声吞掉提示
         self.assertIn(
@@ -250,7 +263,9 @@ class TestWebUIBootupRegistersCallback(unittest.TestCase):
     """
 
     def test_web_ui_imports_helper(self) -> None:
-        source = (REPO_ROOT / "web_ui.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py").read_text(
+            encoding="utf-8"
+        )
         self.assertIn(
             "_ensure_config_changed_sse_callback_registered",
             source,
@@ -258,7 +273,9 @@ class TestWebUIBootupRegistersCallback(unittest.TestCase):
         )
 
     def test_web_ui_calls_helper_in_init(self) -> None:
-        source = (REPO_ROOT / "web_ui.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py").read_text(
+            encoding="utf-8"
+        )
         # 计数：import 1 处 + setup 阶段 1 处 = 至少 2 处
         occurrences = source.count("_ensure_config_changed_sse_callback_registered")
         self.assertGreaterEqual(

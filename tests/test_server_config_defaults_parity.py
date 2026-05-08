@@ -39,13 +39,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from server_config import (
+from ai_intervention_agent.server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     FEEDBACK_TIMEOUT_DEFAULT,
     PROMPT_SUFFIX_DEFAULT,
     RESUBMIT_PROMPT_DEFAULT,
 )
-from shared_types import SECTION_MODELS
+from ai_intervention_agent.shared_types import SECTION_MODELS
 
 
 class TestServerConfigDefaultsParity(unittest.TestCase):

@@ -6,7 +6,9 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MULTI_TASK_JS = REPO_ROOT / "static" / "js" / "multi_task.js"
+MULTI_TASK_JS = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "multi_task.js"
+)
 
 
 def _read_source() -> str:

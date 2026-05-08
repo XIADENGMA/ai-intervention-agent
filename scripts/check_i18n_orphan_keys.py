@@ -30,10 +30,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
-WEB_LOCALES_DIR = ROOT / "static" / "locales"
+WEB_LOCALES_DIR = ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 VSCODE_LOCALES_DIR = ROOT / "packages" / "vscode" / "locales"
-WEB_TEMPLATES_DIR = ROOT / "templates"
-WEB_JS_DIR = ROOT / "static" / "js"
+WEB_TEMPLATES_DIR = ROOT / "src" / "ai_intervention_agent" / "templates"
+WEB_JS_DIR = ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 VSCODE_PKG_DIR = ROOT / "packages" / "vscode"
 
 # Extraction regexes. Must stay in lockstep with

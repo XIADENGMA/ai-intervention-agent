@@ -44,7 +44,7 @@ class TestPersistFsyncContract(unittest.TestCase):
         self._tmp.cleanup()
 
     def _make_queue_with_one_task(self):
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         q = TaskQueue(persist_path=str(self.persist_path))
         q.add_task(task_id="t1", prompt="hello")
@@ -73,8 +73,10 @@ class TestPersistFsyncContract(unittest.TestCase):
             return real_replace(*args, **kwargs)
 
         with (
-            patch("task_queue.os.fsync", side_effect=trace_fsync),
-            patch("task_queue.os.replace", side_effect=trace_replace),
+            patch("ai_intervention_agent.task_queue.os.fsync", side_effect=trace_fsync),
+            patch(
+                "ai_intervention_agent.task_queue.os.replace", side_effect=trace_replace
+            ),
         ):
             q._persist()
 
@@ -126,8 +128,10 @@ class TestPersistFsyncContract(unittest.TestCase):
             return real_replace(*args, **kwargs)
 
         with (
-            patch("task_queue.os.fsync", side_effect=trace_fsync),
-            patch("task_queue.os.replace", side_effect=trace_replace),
+            patch("ai_intervention_agent.task_queue.os.fsync", side_effect=trace_fsync),
+            patch(
+                "ai_intervention_agent.task_queue.os.replace", side_effect=trace_replace
+            ),
         ):
             q._persist()
 
@@ -138,7 +142,7 @@ class TestPersistFsyncContract(unittest.TestCase):
         )
 
         # 静态部分：源文本里 flush() 必须早于 fsync(fileno())
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         src = inspect.getsource(TaskQueue._persist)
         self.assertIn("f.flush()", src, "_persist 源码中应显式调用 f.flush()")
@@ -166,7 +170,7 @@ class TestPersistFsyncContract(unittest.TestCase):
             从未落盘——比"两边都失败"更糟。fsync 是 fail-loud 的关键
             一环，必须让它的失败阻断后续切换。
         """
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         # 步骤 1：建立旧文件（默认 persist 路径成功）
         q = TaskQueue(persist_path=str(self.persist_path))
@@ -178,8 +182,11 @@ class TestPersistFsyncContract(unittest.TestCase):
         # 不通过 add_task 触发，因为 add_task 还会做内存层操作；我们只
         # 关心 _persist 自身在 fsync 失败时的 syscall 行为。
         with (
-            patch("task_queue.os.fsync", side_effect=OSError("simulated EIO")),
-            patch("task_queue.os.replace") as mock_replace,
+            patch(
+                "ai_intervention_agent.task_queue.os.fsync",
+                side_effect=OSError("simulated EIO"),
+            ),
+            patch("ai_intervention_agent.task_queue.os.replace") as mock_replace,
         ):
             q._persist()
 
@@ -205,10 +212,10 @@ class TestPersistAtomicWriteParity(unittest.TestCase):
     """
 
     # 仓库内所有声明走"原子写入"模式的函数定位
-    # （文件路径相对仓库根，函数限定名）
+    # （文件路径相对仓库根，函数限定名；R76 src/ layout 后路径加上包前缀）
     _ATOMIC_WRITE_TARGETS = (
-        ("task_queue.py", "TaskQueue._persist"),
-        ("config_manager.py", "_save_config_immediate"),
+        ("src/ai_intervention_agent/task_queue.py", "TaskQueue._persist"),
+        ("src/ai_intervention_agent/config_manager.py", "_save_config_immediate"),
         # io_operations / network_security 的 free-form 函数名容易漂移，
         # 改用 grep 全文文件确认
     )
@@ -274,7 +281,7 @@ class TestPersistAtomicWriteParity(unittest.TestCase):
         如果有人为了"参数化 fsync 行为"加了 ``no_fsync=True`` 参数，
         这层防线会立刻 fail，提醒 reviewer 这是反向走最佳实践。
         """
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         sig = inspect.signature(TaskQueue._persist)
         params = list(sig.parameters)

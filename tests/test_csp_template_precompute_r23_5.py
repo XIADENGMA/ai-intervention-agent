@@ -33,10 +33,10 @@ import re
 import unittest
 from pathlib import Path
 
-from web_ui_security import SecurityMixin
+from ai_intervention_agent.web_ui_security import SecurityMixin
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_UI_SECURITY_PY = REPO_ROOT / "web_ui_security.py"
+WEB_UI_SECURITY_PY = REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_security.py"
 
 
 # ---------------------------------------------------------------------------

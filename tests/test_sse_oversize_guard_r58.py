@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from web_ui_routes.task import _SSE_DISCONNECT_SENTINEL, _SSEBus
+from ai_intervention_agent.web_ui_routes.task import _SSE_DISCONNECT_SENTINEL, _SSEBus
 
 
 class TestOversizeThreshold(unittest.TestCase):

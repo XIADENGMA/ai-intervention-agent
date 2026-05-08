@@ -40,7 +40,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import web_ui_mdns_utils
+import ai_intervention_agent.web_ui_mdns_utils as web_ui_mdns_utils
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -172,11 +172,11 @@ class TestLazyImportRuntime(unittest.TestCase):
         return result.returncode, result.stdout, result.stderr
 
     def test_psutil_not_in_sys_modules_after_import(self) -> None:
-        """import web_ui_mdns_utils 不应触发 psutil 的预载（lazy 真的生效）。"""
+        """import ai_intervention_agent.web_ui_mdns_utils 不应触发 psutil 的预载（lazy 真的生效）。"""
         code = """
             import sys
             assert 'psutil' not in sys.modules, 'psutil 不应预先在 sys.modules（顶层 import）'
-            import web_ui_mdns_utils  # noqa: F401
+            import ai_intervention_agent.web_ui_mdns_utils as web_ui_mdns_utils  # noqa: F401
             if 'psutil' in sys.modules:
                 print('FAIL psutil_loaded_eagerly')
                 sys.exit(1)
@@ -194,7 +194,7 @@ class TestLazyImportRuntime(unittest.TestCase):
         """调用 _list_non_loopback_ipv4 后 psutil 必须出现在 sys.modules（lazy 触发）。"""
         code = """
             import sys
-            import web_ui_mdns_utils
+            import ai_intervention_agent.web_ui_mdns_utils as web_ui_mdns_utils
             assert 'psutil' not in sys.modules, 'psutil 不应在调用前已加载'
             _ = web_ui_mdns_utils._list_non_loopback_ipv4(prefer_physical=True)
             if 'psutil' not in sys.modules:

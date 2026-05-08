@@ -37,7 +37,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TEMPLATE_PATH = ROOT / "templates" / "web_ui.html"
+TEMPLATE_PATH = ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
 
 CJK_RE = re.compile(
     r"["

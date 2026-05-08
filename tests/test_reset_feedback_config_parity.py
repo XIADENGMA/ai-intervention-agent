@@ -40,9 +40,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from shared_types import SECTION_MODELS
+from ai_intervention_agent.shared_types import SECTION_MODELS
 
-ROUTE_FILE = REPO_ROOT / "web_ui_routes" / "notification.py"
+ROUTE_FILE = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "notification.py"
+)
 
 
 def _extract_reset_defaults_keys() -> set[str]:

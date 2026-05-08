@@ -12,7 +12,7 @@ import unittest
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
-from notification_manager import (
+from ai_intervention_agent.notification_manager import (
     NotificationConfig,
     NotificationEvent,
     NotificationTrigger,
@@ -35,7 +35,7 @@ class TestWebNotificationProvider(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import WebNotificationProvider
+        from ai_intervention_agent.notification_providers import WebNotificationProvider
 
         self.config = NotificationConfig()
         self.config.web_enabled = True
@@ -96,7 +96,9 @@ class TestSoundNotificationProvider(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import SoundNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SoundNotificationProvider,
+        )
 
         self.config = NotificationConfig()
         self.config.sound_enabled = True
@@ -135,7 +137,7 @@ class TestSoundNotificationProvider(unittest.TestCase):
     def test_volume_boundary(self):
         """测试音量边界值"""
         # 测试超出边界的音量值
-        with patch("config_utils.logger.warning") as mock_warning:
+        with patch("ai_intervention_agent.config_utils.logger.warning") as mock_warning:
             self.config.sound_volume = 1.5
         mock_warning.assert_called_once()
 
@@ -153,7 +155,9 @@ class TestBarkNotificationProvider(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         self.config = NotificationConfig()
         self.config.bark_enabled = True
@@ -210,7 +214,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
 
         self.assertFalse(result)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_send_success(self, mock_post):
         """测试成功发送（模拟 HTTP）"""
         mock_response = MagicMock()
@@ -224,7 +228,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertTrue(result)
         mock_post.assert_called_once()
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_send_uses_configured_timeout(self, mock_post):
         """应使用配置中的 bark_timeout 作为 httpx 超时参数"""
         mock_response = MagicMock()
@@ -240,7 +244,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         _, kwargs = mock_post.call_args
         self.assertEqual(kwargs.get("timeout"), 3)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_payload_no_action_field_when_none(self, mock_post):
         """bark_action=none 时不应发送 action/url/copy 字段（避免服务端 4xx）"""
         mock_response = MagicMock()
@@ -259,7 +263,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertNotIn("url", payload)
         self.assertNotIn("copy", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_payload_url_field_when_action_url(self, mock_post):
         """bark_action=url 时应使用 Bark 的 url 字段"""
         mock_response = MagicMock()
@@ -281,7 +285,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertEqual(payload.get("url"), "https://example.com")
         self.assertNotIn("action", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_payload_url_template_when_action_url_without_explicit_url(self, mock_post):
         """bark_action=url 且 metadata 无显式 URL 时，使用 bark_url_template 渲染"""
         mock_response = MagicMock()
@@ -309,7 +313,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         )
         self.assertNotIn("action", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_payload_url_template_does_not_override_explicit_url(self, mock_post):
         """metadata 显式 URL 优先于 bark_url_template"""
         mock_response = MagicMock()
@@ -335,8 +339,8 @@ class TestBarkNotificationProvider(unittest.TestCase):
         payload = kwargs.get("json", {})
         self.assertEqual(payload.get("url"), "https://example.com/explicit")
 
-    @patch("notification_providers.logger.warning")
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.logger.warning")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_payload_url_template_rejects_non_http_result(
         self, mock_post, _mock_warning
     ):
@@ -360,7 +364,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         payload = kwargs.get("json", {})
         self.assertNotIn("url", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_payload_copy_field_when_action_copy(self, mock_post):
         """bark_action=copy 时应使用 Bark 的 copy 字段"""
         mock_response = MagicMock()
@@ -378,7 +382,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
         self.assertEqual(payload.get("copy"), "测试消息")
         self.assertNotIn("action", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_send_http_error(self, mock_post):
         """测试 HTTP 错误"""
         mock_response = MagicMock()
@@ -392,7 +396,7 @@ class TestBarkNotificationProvider(unittest.TestCase):
 
         self.assertFalse(result)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_send_timeout(self, mock_post):
         """测试超时"""
         import httpx
@@ -411,7 +415,9 @@ class TestSystemNotificationProvider(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         self.config = NotificationConfig()
         self.config.web_timeout = 5000
@@ -439,8 +445,13 @@ class TestCreateNotificationProviders(unittest.TestCase):
 
     def test_create_all_providers(self):
         """测试创建所有提供者"""
-        from notification_manager import NotificationConfig, NotificationType
-        from notification_providers import create_notification_providers
+        from ai_intervention_agent.notification_manager import (
+            NotificationConfig,
+            NotificationType,
+        )
+        from ai_intervention_agent.notification_providers import (
+            create_notification_providers,
+        )
 
         config = NotificationConfig()
         config.web_enabled = True
@@ -455,8 +466,13 @@ class TestCreateNotificationProviders(unittest.TestCase):
 
     def test_create_disabled_providers(self):
         """测试创建禁用的提供者"""
-        from notification_manager import NotificationConfig, NotificationType
-        from notification_providers import create_notification_providers
+        from ai_intervention_agent.notification_manager import (
+            NotificationConfig,
+            NotificationType,
+        )
+        from ai_intervention_agent.notification_providers import (
+            create_notification_providers,
+        )
 
         config = NotificationConfig()
         config.web_enabled = False
@@ -476,8 +492,10 @@ class TestBarkProviderAdvanced(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationConfig
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         self.config = NotificationConfig()
         self.config.bark_enabled = True
@@ -490,7 +508,10 @@ class TestBarkProviderAdvanced(unittest.TestCase):
 
     def test_metadata_serialization(self):
         """测试元数据序列化"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
@@ -519,7 +540,10 @@ class TestBarkProviderAdvanced(unittest.TestCase):
 
     def test_reserved_keys_skipped(self):
         """测试保留键被跳过"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
@@ -550,10 +574,13 @@ class TestBarkProviderAdvanced(unittest.TestCase):
             # 原始标题应该保留
             self.assertEqual(json_data.get("title"), "标题")
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_all_2xx_success(self, mock_post):
         """测试所有 2xx 状态码都成功"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         for status_code in [200, 201, 202, 204]:
             mock_response = MagicMock()
@@ -578,8 +605,8 @@ class TestWebProviderAdvanced(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationConfig
-        from notification_providers import WebNotificationProvider
+        from ai_intervention_agent.notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_providers import WebNotificationProvider
 
         self.config = NotificationConfig()
         self.config.web_enabled = True
@@ -593,7 +620,10 @@ class TestWebProviderAdvanced(unittest.TestCase):
 
     def test_notification_data_structure(self):
         """测试通知数据结构"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         event = NotificationEvent(
             id="test-structure",
@@ -618,7 +648,10 @@ class TestWebProviderAdvanced(unittest.TestCase):
 
     def test_whitespace_trimming(self):
         """测试空白字符修剪"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         event = NotificationEvent(
             id="test-trim",
@@ -644,8 +677,10 @@ class TestSoundProviderAdvanced(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationConfig
-        from notification_providers import SoundNotificationProvider
+        from ai_intervention_agent.notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_providers import (
+            SoundNotificationProvider,
+        )
 
         self.config = NotificationConfig()
         self.config.sound_enabled = True
@@ -657,7 +692,10 @@ class TestSoundProviderAdvanced(unittest.TestCase):
 
     def test_sound_file_mapping(self):
         """测试声音文件映射"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         event = NotificationEvent(
             id="test-sound",
@@ -678,8 +716,13 @@ class TestSoundProviderAdvanced(unittest.TestCase):
 
     def test_unknown_sound_file_fallback(self):
         """测试未知声音文件回退到默认"""
-        from notification_manager import NotificationEvent, NotificationTrigger
-        from notification_providers import SoundNotificationProvider
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
+        from ai_intervention_agent.notification_providers import (
+            SoundNotificationProvider,
+        )
 
         self.config.sound_file = "unknown_sound"
         provider = SoundNotificationProvider(self.config)
@@ -708,8 +751,10 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationConfig
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         self.config = NotificationConfig()
         self.config.bark_enabled = True
@@ -720,7 +765,10 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
 
     def test_send_with_special_characters(self):
         """测试发送带特殊字符的通知"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
@@ -741,7 +789,10 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
 
     def test_send_with_unicode(self):
         """测试发送 Unicode 内容"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
@@ -762,7 +813,10 @@ class TestBarkProviderEdgeCases(unittest.TestCase):
 
     def test_send_with_empty_metadata(self):
         """测试发送空元数据"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         with patch.object(self.provider.session, "post") as mock_post:
             mock_response = MagicMock()
@@ -787,8 +841,8 @@ class TestWebProviderEdgeCases(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationConfig
-        from notification_providers import WebNotificationProvider
+        from ai_intervention_agent.notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_providers import WebNotificationProvider
 
         self.config = NotificationConfig()
         self.config.web_enabled = True
@@ -797,7 +851,10 @@ class TestWebProviderEdgeCases(unittest.TestCase):
 
     def test_send_with_long_title(self):
         """测试发送超长标题"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         event = NotificationEvent(
             id="test-long-title",
@@ -813,7 +870,10 @@ class TestWebProviderEdgeCases(unittest.TestCase):
 
     def test_send_with_long_message(self):
         """测试发送超长消息"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         event = NotificationEvent(
             id="test-long-message",
@@ -833,8 +893,10 @@ class TestSoundProviderEdgeCases(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationConfig
-        from notification_providers import SoundNotificationProvider
+        from ai_intervention_agent.notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_providers import (
+            SoundNotificationProvider,
+        )
 
         self.config = NotificationConfig()
         self.config.sound_enabled = True
@@ -845,7 +907,9 @@ class TestSoundProviderEdgeCases(unittest.TestCase):
 
     def test_volume_zero(self):
         """测试音量为 0"""
-        from notification_providers import SoundNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SoundNotificationProvider,
+        )
 
         self.config.sound_volume = 0.0
         provider = SoundNotificationProvider(self.config)
@@ -855,7 +919,9 @@ class TestSoundProviderEdgeCases(unittest.TestCase):
 
     def test_volume_max(self):
         """测试音量为最大"""
-        from notification_providers import SoundNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SoundNotificationProvider,
+        )
 
         self.config.sound_volume = 1.0
         provider = SoundNotificationProvider(self.config)
@@ -869,7 +935,7 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         self.config = NotificationConfig()
 
@@ -877,8 +943,13 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
         """测试 Bark 网络不可用"""
         import httpx
 
-        from notification_manager import NotificationEvent, NotificationTrigger
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         self.config.bark_enabled = True
         self.config.bark_url = "https://example.invalid/push"
@@ -895,7 +966,7 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
         )
 
         with patch(
-            "notification_providers.httpx.Client.post",
+            "ai_intervention_agent.notification_providers.httpx.Client.post",
             side_effect=httpx.HTTPError("network down"),
         ):
             result = provider.send(event)
@@ -903,8 +974,11 @@ class TestNotificationProvidersExceptions(unittest.TestCase):
 
     def test_web_provider_with_none_metadata(self):
         """测试 Web 提供者处理 None metadata"""
-        from notification_manager import NotificationEvent, NotificationTrigger
-        from notification_providers import WebNotificationProvider
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
+        from ai_intervention_agent.notification_providers import WebNotificationProvider
 
         provider = WebNotificationProvider(self.config)
 
@@ -935,7 +1009,7 @@ class TestBaseProviderClose(unittest.TestCase):
     """BaseNotificationProvider.close 默认实现"""
 
     def test_close_noop(self):
-        from notification_providers import WebNotificationProvider
+        from ai_intervention_agent.notification_providers import WebNotificationProvider
 
         config = NotificationConfig()
         config.web_enabled = True
@@ -947,7 +1021,9 @@ class TestBarkProviderClose(unittest.TestCase):
     """BarkNotificationProvider.close 和异常处理"""
 
     def test_close(self):
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.bark_enabled = True
@@ -957,7 +1033,9 @@ class TestBarkProviderClose(unittest.TestCase):
         provider.close()
 
     def test_close_after_session_error(self):
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.bark_enabled = True
@@ -972,12 +1050,16 @@ class TestBarkSanitizeErrorText(unittest.TestCase):
     """_sanitize_error_text 方法"""
 
     def test_empty_text(self):
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         self.assertEqual(BarkNotificationProvider._sanitize_error_text(""), "")
 
     def test_apns_url_redacted(self):
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         text = "Failed: https://api.push.apple.com/3/device/abcdef1234567890abcdef"
         result = BarkNotificationProvider._sanitize_error_text(text)
@@ -985,7 +1067,9 @@ class TestBarkSanitizeErrorText(unittest.TestCase):
         self.assertIn("<redacted>", result)
 
     def test_long_hex_redacted(self):
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         text = "Token: " + "a1" * 20
         result = BarkNotificationProvider._sanitize_error_text(text)
@@ -996,7 +1080,9 @@ class TestBarkSendEdgeCases(unittest.TestCase):
     """Bark send 边缘分支"""
 
     def _make_provider(self, **overrides):
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.bark_enabled = True
@@ -1014,7 +1100,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         event = create_event(title="T", message="M")
         self.assertFalse(provider.send(event))
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_action_url_no_url_in_metadata(self, mock_post):
         """bark_action=url 但 metadata 无 URL → 正常发送不带 url 字段"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -1024,7 +1110,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertNotIn("url", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_action_copy_with_metadata(self, mock_post):
         """bark_action=copy + metadata 有 copy_text → 使用 metadata 值"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -1036,7 +1122,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload["copy"], "custom copy")
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_action_unknown_as_url(self, mock_post):
         """bark_action 是一个 URL → 当作 url 字段"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -1046,11 +1132,11 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         payload = mock_post.call_args.kwargs["json"]
         self.assertEqual(payload.get("url"), "https://custom.action/")
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_action_unknown_non_url(self, mock_post):
         """bark_action 是未知非 URL 值 → 忽略"""
         mock_post.return_value = MagicMock(status_code=200)
-        with patch("config_utils.logger.warning") as mock_warning:
+        with patch("ai_intervention_agent.config_utils.logger.warning") as mock_warning:
             provider = self._make_provider(bark_action="some_random_value")
         mock_warning.assert_called_once()
         event = create_event(title="T", message="M")
@@ -1059,7 +1145,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertNotIn("url", payload)
         self.assertNotIn("action", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_metadata_complex_type_skipped(self, mock_post):
         """白名单内键的非基本类型值应被静默跳过，非白名单键也应被跳过"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -1079,7 +1165,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertNotIn("group", payload)
         self.assertNotIn("obj", payload)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_bark_timeout_invalid_fallback(self, mock_post):
         """bark_timeout 无效时回退到默认 10s"""
         mock_post.return_value = MagicMock(status_code=200)
@@ -1089,7 +1175,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertTrue(provider.send(event))
         self.assertEqual(mock_post.call_args.kwargs["timeout"], 10)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_http_error_json_parse_fails(self, mock_post):
         """HTTP 错误 + response.json() 抛异常 → 使用 response.text"""
         resp = MagicMock(status_code=500, text="raw error")
@@ -1099,7 +1185,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         event = create_event(title="T", message="M")
         self.assertFalse(provider.send(event))
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_http_error_debug_mode(self, mock_post):
         """debug=True 时 bark_error 写入 metadata"""
         resp = MagicMock(status_code=400, text="bad request")
@@ -1111,7 +1197,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertFalse(provider.send(event))
         self.assertIn("bark_error", event.metadata)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_http_error_test_event(self, mock_post):
         """test=True 的事件也写 bark_error"""
         resp = MagicMock(status_code=400, text="bad")
@@ -1122,7 +1208,7 @@ class TestBarkSendEdgeCases(unittest.TestCase):
         self.assertFalse(provider.send(event))
         self.assertIn("bark_error", event.metadata)
 
-    @patch("notification_providers.httpx.Client.post")
+    @patch("ai_intervention_agent.notification_providers.httpx.Client.post")
     def test_generic_exception(self, mock_post):
         """send 内部 generic Exception → False"""
         mock_post.side_effect = RuntimeError("unexpected")
@@ -1135,7 +1221,9 @@ class TestSoundProviderException(unittest.TestCase):
     """SoundNotificationProvider.send 异常处理"""
 
     def test_send_exception_in_sound_files(self):
-        from notification_providers import SoundNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SoundNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.sound_enabled = True
@@ -1152,7 +1240,9 @@ class TestSystemProviderSend(unittest.TestCase):
     """SystemNotificationProvider.send 各路径"""
 
     def test_send_supported_success(self):
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.web_timeout = 5000
@@ -1164,7 +1254,9 @@ class TestSystemProviderSend(unittest.TestCase):
         provider._notify.assert_called_once()
 
     def test_send_supported_exception(self):
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.web_timeout = 5000
@@ -1175,7 +1267,9 @@ class TestSystemProviderSend(unittest.TestCase):
         self.assertFalse(provider.send(event))
 
     def test_send_notify_none(self):
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.web_timeout = 5000
@@ -1192,7 +1286,9 @@ class TestSystemProviderSend(unittest.TestCase):
         send timeout，实际是 plyer 的 banner 显示时长）。提取成类常量
         ``_DISPLAY_DURATION_SECONDS`` 后必须保证 plyer 收到的就是这个值。
         """
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         config = NotificationConfig()
         config.web_timeout = 5000
@@ -1220,7 +1316,9 @@ class TestSystemProviderSend(unittest.TestCase):
         - ``== 0``：plyer 行为依平台而异（macOS = 永久；Linux = 立即）；
           会引入跨平台分歧。
         """
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         self.assertEqual(
             SystemNotificationProvider._DISPLAY_DURATION_SECONDS,
@@ -1237,7 +1335,9 @@ class TestInitializeNotificationSystem(unittest.TestCase):
     """initialize_notification_system 函数"""
 
     def test_initializes(self):
-        from notification_providers import initialize_notification_system
+        from ai_intervention_agent.notification_providers import (
+            initialize_notification_system,
+        )
 
         config = NotificationConfig()
         config.web_enabled = True
@@ -1251,7 +1351,7 @@ class TestWebProviderUnregisterNonexistent(unittest.TestCase):
     """unregister_client 对不存在的客户端"""
 
     def test_unregister_nonexistent(self):
-        from notification_providers import WebNotificationProvider
+        from ai_intervention_agent.notification_providers import WebNotificationProvider
 
         config = NotificationConfig()
         config.web_enabled = True
@@ -1262,8 +1362,8 @@ class TestWebProviderUnregisterNonexistent(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 边界路径补充（原 test_notification_providers_extended.py）
 # ---------------------------------------------------------------------------
-from notification_models import NotificationType
-from notification_providers import (
+from ai_intervention_agent.notification_models import NotificationType
+from ai_intervention_agent.notification_providers import (
     BarkNotificationProvider,
     create_notification_providers,
 )
@@ -1397,7 +1497,7 @@ class TestSystemProviderCreationException(unittest.TestCase):
             web_enabled=True, sound_enabled=False, bark_enabled=False
         )
         with patch(
-            "notification_providers.SystemNotificationProvider",
+            "ai_intervention_agent.notification_providers.SystemNotificationProvider",
             side_effect=RuntimeError("init failed"),
         ):
             providers = create_notification_providers(cfg)
@@ -1407,12 +1507,17 @@ class TestSystemProviderCreationException(unittest.TestCase):
 
 class TestSystemProviderPlyerImportSuccess(unittest.TestCase):
     def test_plyer_available(self):
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         cfg = _make_ext_config()
         mock_module = MagicMock()
         mock_module.notify = MagicMock()
-        with patch("notification_providers.find_spec", return_value=MagicMock()):
+        with patch(
+            "ai_intervention_agent.notification_providers.find_spec",
+            return_value=MagicMock(),
+        ):
             with patch.dict(
                 "sys.modules", {"plyer": MagicMock(), "plyer.notification": mock_module}
             ):
@@ -1423,10 +1528,15 @@ class TestSystemProviderPlyerImportSuccess(unittest.TestCase):
 
 class TestSystemProviderPlyerImportError(unittest.TestCase):
     def test_plyer_import_error_caught(self):
-        from notification_providers import SystemNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            SystemNotificationProvider,
+        )
 
         cfg = _make_ext_config()
-        with patch("notification_providers.find_spec", return_value=MagicMock()):
+        with patch(
+            "ai_intervention_agent.notification_providers.find_spec",
+            return_value=MagicMock(),
+        ):
             import builtins
 
             original_import = builtins.__import__
@@ -1450,7 +1560,7 @@ class TestCreateProvidersSystemSupported(unittest.TestCase):
         mock_provider = MagicMock()
         mock_provider.supported = True
         with patch(
-            "notification_providers.SystemNotificationProvider",
+            "ai_intervention_agent.notification_providers.SystemNotificationProvider",
             return_value=mock_provider,
         ):
             providers = create_notification_providers(cfg)

@@ -44,11 +44,15 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import server_feedback
+import ai_intervention_agent.server_feedback as server_feedback
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SERVER_FEEDBACK_PATH = REPO_ROOT / "server_feedback.py"
-MULTI_TASK_JS_PATH = REPO_ROOT / "static" / "js" / "multi_task.js"
+SERVER_FEEDBACK_PATH = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "server_feedback.py"
+)
+MULTI_TASK_JS_PATH = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "multi_task.js"
+)
 
 
 def _read_server_feedback_source() -> str:
@@ -350,11 +354,11 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
         client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         return client
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_completion_via_poll_still_works(self, mock_get_client, mock_get_cfg):
         """SSE 永远不连接（httpx blocked），poll 第二次拉到 completed → 正常返回。"""
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -387,15 +391,15 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
             get_side_effect=[in_progress, completed, completed]
         )
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(
                 server_feedback.wait_for_task_completion("t-poll", timeout=5)
             )
 
         self.assertEqual(result.get("user_input"), "ok-from-poll")
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_wait_path_reuses_config_and_async_client(
         self, mock_get_client, mock_get_cfg
     ):
@@ -406,7 +410,7 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
         都应复用它们。否则每个 poll 周期都会重复进入配置 TTL 锁和 client
         singleton lookup，SSE 故障场景下会把本来已经降低的轮询成本又加回来。
         """
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -448,11 +452,11 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
             "同一次 wait 应复用同一个 AsyncClient，而不是每条子路径重复 lookup",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_404_still_returns_resubmit(self, mock_get_client, mock_get_cfg):
         """既有契约：``_fetch_result`` 收到 404 → 立即返回 resubmit_response。"""
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -469,15 +473,15 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
         gone.status_code = 404
         mock_get_client.return_value = self._mock_async_client(get_return_value=gone)
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(
                 server_feedback.wait_for_task_completion("t-404", timeout=5)
             )
 
         self.assertIn("text", result)
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_poll_uses_fast_interval_when_sse_never_connects(
         self, mock_get_client, mock_get_cfg
     ):
@@ -487,7 +491,7 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
         预期：3 s 内至少完成一次 fetch + 一次 wait（2 s）= 至少 1-2 次 GET 调用，
         远小于 30s 节奏（那种情况下只会有 1 次 GET）。
         """
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -509,7 +513,7 @@ class TestPollFallbackBehaviorWithoutSSE(unittest.TestCase):
         client = self._mock_async_client(get_return_value=ticking)
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             asyncio.run(server_feedback.wait_for_task_completion("t-fast", timeout=3))
 
         # 3s timeout / 2s interval ≈ 1-2 次 GET（包括首次 + 1-2 次重试）

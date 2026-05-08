@@ -38,8 +38,8 @@ if str(REPO_ROOT) not in sys.path:
 import httpx  # noqa: E402
 from werkzeug.serving import make_server  # noqa: E402
 
-import web_ui_config_sync  # noqa: E402
-from web_ui import WebFeedbackUI  # noqa: E402
+import ai_intervention_agent.web_ui_config_sync as web_ui_config_sync  # noqa: E402
+from ai_intervention_agent.web_ui import WebFeedbackUI  # noqa: E402
 
 
 def _abort(reason: str) -> None:

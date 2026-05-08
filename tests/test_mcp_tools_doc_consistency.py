@@ -38,9 +38,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import server
-from server import mcp
-from server_config import MAX_MESSAGE_LENGTH, MAX_OPTION_LENGTH
+import ai_intervention_agent.server as server
+from ai_intervention_agent.server import mcp
+from ai_intervention_agent.server_config import MAX_MESSAGE_LENGTH, MAX_OPTION_LENGTH
 
 DOC_PATHS = (
     REPO_ROOT / "docs" / "mcp_tools.md",

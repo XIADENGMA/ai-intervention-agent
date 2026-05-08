@@ -18,7 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from task_queue import TaskQueue
+from ai_intervention_agent.task_queue import TaskQueue
 
 
 class _Recorder:

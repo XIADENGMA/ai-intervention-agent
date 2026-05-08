@@ -20,7 +20,8 @@ import vm from 'node:vm'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
-const WEB = path.join(ROOT, 'static', 'js', 'i18n.js')
+// R76 src/ layout：Web UI 的 i18n.js 已迁入 ``src/ai_intervention_agent/static/js/``。
+const WEB = path.join(ROOT, 'src', 'ai_intervention_agent', 'static', 'js', 'i18n.js')
 const VSC = path.join(ROOT, 'packages', 'vscode', 'i18n.js')
 const FAKE_NOW = 1_704_164_645_000
 

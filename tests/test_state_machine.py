@@ -13,7 +13,7 @@ import re
 import unittest
 from pathlib import Path
 
-from state_machine import (
+from ai_intervention_agent.state_machine import (
     ConnectionStatus,
     ContentStatus,
     InteractionPhase,
@@ -26,7 +26,9 @@ from state_machine import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_STATE_JS = REPO_ROOT / "static" / "js" / "state.js"
+WEB_STATE_JS = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "state.js"
+)
 VSCODE_STATE_JS = REPO_ROOT / "packages" / "vscode" / "webview-state.js"
 
 

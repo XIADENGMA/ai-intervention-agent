@@ -40,10 +40,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from task_queue import TaskQueue, TaskStatus
+from ai_intervention_agent.task_queue import TaskQueue, TaskStatus
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WEB_UI_TASK_ROUTE = REPO_ROOT / "web_ui_routes" / "task.py"
+WEB_UI_TASK_ROUTE = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "task.py"
+)
 
 
 class TestCleanupThrottle(unittest.TestCase):
@@ -108,7 +110,10 @@ class TestCleanupThrottle(unittest.TestCase):
         def fake_monotonic() -> float:
             return original_monotonic() + offset[0]
 
-        with patch("task_queue.time.monotonic", side_effect=fake_monotonic):
+        with patch(
+            "ai_intervention_agent.task_queue.time.monotonic",
+            side_effect=fake_monotonic,
+        ):
             # 立刻调用：在节流窗口内
             zero = self.queue.cleanup_completed_tasks_throttled(throttle_seconds=10.0)
             self.assertEqual(zero, 0)
@@ -167,7 +172,10 @@ class TestCleanupThrottle(unittest.TestCase):
 
         # 模拟系统时间倒退 1 小时（NTP 突然往回跳的极端场景）
         original_time = time.time
-        with patch("task_queue.time.time", side_effect=lambda: original_time() - 3600):
+        with patch(
+            "ai_intervention_agent.task_queue.time.time",
+            side_effect=lambda: original_time() - 3600,
+        ):
             # 节流仍然命中，不会因 wall clock 倒退而出现"负 elapsed"
             result = self.queue.cleanup_completed_tasks_throttled(throttle_seconds=60.0)
             self.assertEqual(
@@ -206,7 +214,10 @@ class TestCleanupThrottle(unittest.TestCase):
             return original_cleanup(*args, **kwargs)
 
         with (
-            patch("task_queue.time.monotonic", side_effect=fake_monotonic),
+            patch(
+                "ai_intervention_agent.task_queue.time.monotonic",
+                side_effect=fake_monotonic,
+            ),
             patch.object(
                 self.queue, "cleanup_completed_tasks", side_effect=spy_cleanup
             ),

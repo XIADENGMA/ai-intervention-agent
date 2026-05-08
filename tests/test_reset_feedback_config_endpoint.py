@@ -50,7 +50,7 @@ class _ResetFeedbackBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="reset-feedback-test", task_id="rt-reset", port=cls._port
@@ -61,7 +61,7 @@ class _ResetFeedbackBase(unittest.TestCase):
 
 
 class TestResetFeedbackConfig(_ResetFeedbackBase):
-    @patch("web_ui_routes.notification.get_config")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_success_returns_server_defaults(self, mock_get_cfg: MagicMock) -> None:
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {
@@ -72,7 +72,7 @@ class TestResetFeedbackConfig(_ResetFeedbackBase):
         }
         mock_get_cfg.return_value = mock_cfg
 
-        from server_config import (
+        from ai_intervention_agent.server_config import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
             PROMPT_SUFFIX_DEFAULT,
             RESUBMIT_PROMPT_DEFAULT,
@@ -90,7 +90,7 @@ class TestResetFeedbackConfig(_ResetFeedbackBase):
         self.assertEqual(defaults["resubmit_prompt"], RESUBMIT_PROMPT_DEFAULT)
         self.assertEqual(defaults["prompt_suffix"], PROMPT_SUFFIX_DEFAULT)
 
-    @patch("web_ui_routes.notification.get_config")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_preserves_unrelated_fields(self, mock_get_cfg: MagicMock) -> None:
         """Reset only touches three keys; every other ``feedback.*`` field
         must survive the round-trip."""
@@ -114,7 +114,7 @@ class TestResetFeedbackConfig(_ResetFeedbackBase):
         self.assertEqual(payload["custom_user_knob"], "preserve-me")
         self.assertEqual(payload["timeout"], 600)
 
-        from server_config import (
+        from ai_intervention_agent.server_config import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
             PROMPT_SUFFIX_DEFAULT,
             RESUBMIT_PROMPT_DEFAULT,
@@ -127,7 +127,7 @@ class TestResetFeedbackConfig(_ResetFeedbackBase):
         self.assertEqual(payload["prompt_suffix"], PROMPT_SUFFIX_DEFAULT)
 
     @patch(
-        "web_ui_routes.notification.get_config",
+        "ai_intervention_agent.web_ui_routes.notification.get_config",
         side_effect=RuntimeError("boom"),
     )
     def test_exception_returns_500(self, _mock: MagicMock) -> None:

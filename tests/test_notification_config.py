@@ -18,7 +18,7 @@ class TestNotificationConfigConstants(unittest.TestCase):
 
     def test_constants_defined(self):
         """测试常量定义"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         # 音量常量
         self.assertEqual(NotificationConfig.SOUND_VOLUME_MIN, 0.0)
@@ -33,7 +33,7 @@ class TestSoundVolumeValidation(unittest.TestCase):
 
     def test_valid_volume(self):
         """测试有效音量值"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(sound_volume=0.5)
         self.assertEqual(config.sound_volume, 0.5)
@@ -46,7 +46,7 @@ class TestSoundVolumeValidation(unittest.TestCase):
 
     def test_volume_below_min(self):
         """测试音量小于最小值"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(sound_volume=-0.5)
         self.assertEqual(config.sound_volume, NotificationConfig.SOUND_VOLUME_MIN)
@@ -56,7 +56,7 @@ class TestSoundVolumeValidation(unittest.TestCase):
 
     def test_volume_above_max(self):
         """测试音量大于最大值"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(sound_volume=1.5)
         self.assertEqual(config.sound_volume, NotificationConfig.SOUND_VOLUME_MAX)
@@ -70,7 +70,7 @@ class TestBarkActionValidation(unittest.TestCase):
 
     def test_valid_actions(self):
         """测试有效的 bark_action 值"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         for action in ("none", "url", "copy"):
             config = NotificationConfig(bark_action=action)
@@ -78,7 +78,7 @@ class TestBarkActionValidation(unittest.TestCase):
 
     def test_invalid_action(self):
         """测试无效的 bark_action 值"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(bark_action="invalid")
         self.assertEqual(config.bark_action, "none")
@@ -95,7 +95,7 @@ class TestBarkUrlValidation(unittest.TestCase):
 
     def test_valid_urls(self):
         """测试有效的 URL"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         valid_urls = [
             "https://api.day.app/push",
@@ -109,14 +109,14 @@ class TestBarkUrlValidation(unittest.TestCase):
 
     def test_empty_url(self):
         """测试空 URL"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(bark_url="")
         self.assertEqual(config.bark_url, "")
 
     def test_invalid_url_format(self):
         """测试无效的 URL 格式（仅警告，不修改）"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         invalid_urls = [
             "ftp://example.com/push",
@@ -135,7 +135,7 @@ class TestBarkEnabledValidation(unittest.TestCase):
 
     def test_bark_enabled_without_device_key(self):
         """测试 bark_enabled=True 但无 device_key（仅警告）"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         # 应该创建成功但产生警告
         config = NotificationConfig(bark_enabled=True, bark_device_key="")
@@ -144,7 +144,7 @@ class TestBarkEnabledValidation(unittest.TestCase):
 
     def test_bark_enabled_with_device_key(self):
         """测试 bark_enabled=True 且有 device_key"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(
             bark_enabled=True,
@@ -160,21 +160,21 @@ class TestIsValidUrl(unittest.TestCase):
 
     def test_http_url(self):
         """测试 HTTP URL"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         self.assertTrue(NotificationConfig._is_valid_url("http://example.com"))
         self.assertTrue(NotificationConfig._is_valid_url("http://localhost:8080"))
 
     def test_https_url(self):
         """测试 HTTPS URL"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         self.assertTrue(NotificationConfig._is_valid_url("https://example.com"))
         self.assertTrue(NotificationConfig._is_valid_url("https://api.day.app/push"))
 
     def test_invalid_protocol(self):
         """测试无效协议"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         self.assertFalse(NotificationConfig._is_valid_url("ftp://example.com"))
         self.assertFalse(NotificationConfig._is_valid_url("file:///path"))
@@ -184,11 +184,11 @@ class TestIsValidUrl(unittest.TestCase):
 class TestFromConfigFile(unittest.TestCase):
     """测试 from_config_file 方法"""
 
-    @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
-    @patch("notification_manager.get_config")
+    @patch("ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True)
+    @patch("ai_intervention_agent.notification_manager.get_config")
     def test_normal_config(self, mock_get_config):
         """测试正常配置加载"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {
@@ -210,11 +210,11 @@ class TestFromConfigFile(unittest.TestCase):
         self.assertEqual(config.bark_action, "url")
         self.assertEqual(config.bark_url_template, "{base_url}/?task_id={task_id}")
 
-    @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
-    @patch("notification_manager.get_config")
+    @patch("ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True)
+    @patch("ai_intervention_agent.notification_manager.get_config")
     def test_bool_string_values(self, mock_get_config):
         """测试布尔值字符串输入（避免 bool('false') == True 的误判）"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {
@@ -246,11 +246,11 @@ class TestFromConfigFile(unittest.TestCase):
         self.assertTrue(config.system_enabled)
         self.assertFalse(config.macos_native_enabled)
 
-    @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
-    @patch("notification_manager.get_config")
+    @patch("ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True)
+    @patch("ai_intervention_agent.notification_manager.get_config")
     def test_volume_boundary_conversion(self, mock_get_config):
         """测试音量边界转换"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         # 测试超出范围的音量
         mock_config_mgr = MagicMock()
@@ -262,11 +262,11 @@ class TestFromConfigFile(unittest.TestCase):
         config = NotificationConfig.from_config_file()
         self.assertEqual(config.sound_volume, 1.0)  # 限制为最大值
 
-    @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
-    @patch("notification_manager.get_config")
+    @patch("ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True)
+    @patch("ai_intervention_agent.notification_manager.get_config")
     def test_negative_volume(self, mock_get_config):
         """测试负数音量"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {
@@ -277,11 +277,11 @@ class TestFromConfigFile(unittest.TestCase):
         config = NotificationConfig.from_config_file()
         self.assertEqual(config.sound_volume, 0.0)  # 限制为最小值
 
-    @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
-    @patch("notification_manager.get_config")
+    @patch("ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True)
+    @patch("ai_intervention_agent.notification_manager.get_config")
     def test_invalid_volume_type(self, mock_get_config):
         """无效音量类型由 get_section() Pydantic ClampedInt 钳位为默认值 80"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {
@@ -292,11 +292,11 @@ class TestFromConfigFile(unittest.TestCase):
         config = NotificationConfig.from_config_file()
         self.assertEqual(config.sound_volume, 0.8)
 
-    @patch("notification_manager.CONFIG_FILE_AVAILABLE", True)
-    @patch("notification_manager.get_config")
+    @patch("ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True)
+    @patch("ai_intervention_agent.notification_manager.get_config")
     def test_invalid_bark_action(self, mock_get_config):
         """测试无效 bark_action"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.return_value = {
@@ -313,7 +313,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_combined_validation(self):
         """测试组合验证场景"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(
             sound_volume=1.5,  # 超出范围
@@ -329,7 +329,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_default_values(self):
         """测试默认值"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig()
 
@@ -345,7 +345,7 @@ class TestNotificationConfig(unittest.TestCase):
 
     def test_default_config(self):
         """测试默认配置"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig()
 
@@ -356,7 +356,7 @@ class TestNotificationConfig(unittest.TestCase):
 
     def test_from_config_file(self):
         """测试从配置文件加载"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         # from_config_file 是类方法，从实际配置文件加载
         # 我们测试它返回一个有效的配置对象
@@ -375,7 +375,10 @@ class TestNotificationEvent(unittest.TestCase):
 
     def test_event_creation(self):
         """测试事件创建"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         event = NotificationEvent(
             id="test-123",
@@ -392,7 +395,7 @@ class TestNotificationEvent(unittest.TestCase):
 
     def test_event_with_types(self):
         """测试事件指定类型"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationEvent,
             NotificationTrigger,
             NotificationType,
@@ -420,19 +423,19 @@ class TestNotificationTrigger(unittest.TestCase):
 
     def test_immediate_trigger(self):
         """测试立即触发"""
-        from notification_manager import NotificationTrigger
+        from ai_intervention_agent.notification_manager import NotificationTrigger
 
         self.assertEqual(NotificationTrigger.IMMEDIATE.value, "immediate")
 
     def test_delayed_trigger(self):
         """测试延迟触发"""
-        from notification_manager import NotificationTrigger
+        from ai_intervention_agent.notification_manager import NotificationTrigger
 
         self.assertEqual(NotificationTrigger.DELAYED.value, "delayed")
 
     def test_repeat_trigger(self):
         """测试重复触发"""
-        from notification_manager import NotificationTrigger
+        from ai_intervention_agent.notification_manager import NotificationTrigger
 
         self.assertEqual(NotificationTrigger.REPEAT.value, "repeat")
 
@@ -442,25 +445,25 @@ class TestNotificationType(unittest.TestCase):
 
     def test_web_type(self):
         """测试 Web 类型"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         self.assertEqual(NotificationType.WEB.value, "web")
 
     def test_sound_type(self):
         """测试声音类型"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         self.assertEqual(NotificationType.SOUND.value, "sound")
 
     def test_bark_type(self):
         """测试 Bark 类型"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         self.assertEqual(NotificationType.BARK.value, "bark")
 
     def test_system_type(self):
         """测试系统类型"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         self.assertEqual(NotificationType.SYSTEM.value, "system")
 
@@ -470,7 +473,7 @@ class TestNotificationEventAdvanced(unittest.TestCase):
 
     def test_event_with_all_fields(self):
         """测试完整字段的事件"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationEvent,
             NotificationTrigger,
             NotificationType,
@@ -496,7 +499,10 @@ class TestNotificationEventAdvanced(unittest.TestCase):
 
     def test_event_default_values(self):
         """测试事件默认值"""
-        from notification_manager import NotificationEvent, NotificationTrigger
+        from ai_intervention_agent.notification_manager import (
+            NotificationEvent,
+            NotificationTrigger,
+        )
 
         event = NotificationEvent(
             id="default-event",
@@ -520,28 +526,28 @@ class TestNotificationConfigValidation(unittest.TestCase):
 
     def test_config_sound_volume_boundary_low(self):
         """测试声音音量下边界"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(sound_volume=-10)
         self.assertEqual(config.sound_volume, 0.0)
 
     def test_config_sound_volume_boundary_high(self):
         """测试声音音量上边界"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(sound_volume=150)
         self.assertEqual(config.sound_volume, 1.0)
 
     def test_config_bark_action_invalid(self):
         """测试无效的 Bark 动作"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(bark_action="invalid_action")
         self.assertEqual(config.bark_action, "none")
 
     def test_config_bark_url_empty_when_enabled(self):
         """测试 Bark 启用但 URL 为空"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig(
             bark_enabled=True, bark_url="", bark_device_key="test_key"
@@ -556,7 +562,7 @@ class TestNotificationConfigAdvanced(unittest.TestCase):
 
     def test_config_all_fields(self):
         """测试所有配置字段"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig()
 
@@ -569,7 +575,7 @@ class TestNotificationConfigAdvanced(unittest.TestCase):
 
     def test_config_bark_fields(self):
         """测试 Bark 配置字段"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig()
 
@@ -588,7 +594,7 @@ class TestNotificationFinalPush(unittest.TestCase):
 
     def test_notification_config_attributes(self):
         """测试通知配置属性"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig()
 
@@ -609,7 +615,7 @@ class TestNotificationFinalPush(unittest.TestCase):
 
     def test_notification_types_all(self):
         """测试所有通知类型"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         types = [
             NotificationType.WEB,

@@ -14,7 +14,7 @@ import unittest
 from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
-from task_queue import Task
+from ai_intervention_agent.task_queue import Task
 
 
 # ---------------------------------------------------------------------------
@@ -29,7 +29,7 @@ class _RouteTestBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(prompt="route test", task_id="rt-base", port=cls._port)
         cls._ui.app.config["TESTING"] = True
@@ -53,7 +53,9 @@ class TestBarkTestEndpoint(_RouteTestBase):
         self.assertEqual(data["status"], "error")
         self.assertIn("Device Key", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", False
+    )
     def test_notification_unavailable_returns_500(self):
         resp = self._client.post(
             "/api/test-bark",
@@ -63,9 +65,11 @@ class TestBarkTestEndpoint(_RouteTestBase):
         data = resp.get_json()
         self.assertIn("unavailable", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_bark_send_success(self, mock_event_cls, mock_provider_cls):
         mock_provider = MagicMock()
         mock_provider.send.return_value = True
@@ -99,9 +103,11 @@ class TestBarkTestEndpoint(_RouteTestBase):
         # 的实现。
         self.assertEqual(event_kwargs["metadata"]["task_id"], "test-task-id")
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_bark_send_fail_no_error_detail(self, mock_event_cls, mock_provider_cls):
         mock_provider = MagicMock()
         mock_provider.send.return_value = False
@@ -116,9 +122,11 @@ class TestBarkTestEndpoint(_RouteTestBase):
         data = resp.get_json()
         self.assertIn("check configuration", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_bark_send_fail_with_error_detail(self, mock_event_cls, mock_provider_cls):
         mock_provider = MagicMock()
         mock_provider.send.return_value = False
@@ -136,9 +144,11 @@ class TestBarkTestEndpoint(_RouteTestBase):
         self.assertIn("HTTP 401", data["message"])
         self.assertIn("Invalid device key", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_bark_send_fail_with_detail_no_status_code(
         self, mock_event_cls, mock_provider_cls
     ):
@@ -156,9 +166,11 @@ class TestBarkTestEndpoint(_RouteTestBase):
         self.assertIn("timeout", data["message"])
         self.assertNotIn("HTTP", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch(
-        "web_ui_routes.notification.BarkNotificationProvider",
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider",
         side_effect=RuntimeError("boom"),
     )
     def test_bark_outer_exception_returns_500(self, _):
@@ -175,9 +187,11 @@ class TestBarkTestEndpoint(_RouteTestBase):
         )
         self.assertIn(resp.status_code, (400, 500))
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_bark_metadata_access_exception(self, mock_event_cls, mock_provider_cls):
         """metadata 访问异常时兜底返回通用错误"""
         mock_provider = MagicMock()
@@ -232,7 +246,9 @@ class TestNotifyNewTasks(_RouteTestBase):
         data = resp.get_json()
         self.assertEqual(data["status"], "skipped")
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", False
+    )
     def test_notification_unavailable_skipped(self):
         resp = self._client.post(
             "/api/notify-new-tasks", json={"count": 1, "taskIds": ["t1"]}
@@ -241,8 +257,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         self.assertEqual(data["status"], "skipped")
         self.assertIn("unavailable", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_config_disabled_skipped(self, mock_nm):
         mock_nm.config = MagicMock()
         mock_nm.config.enabled = False
@@ -255,8 +273,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         self.assertEqual(data["status"], "skipped")
         self.assertIn("master switch", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_bark_disabled_skipped(self, mock_nm):
         mock_nm.config = MagicMock()
         mock_nm.config.enabled = True
@@ -269,8 +289,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         data = resp.get_json()
         self.assertIn("Bark is disabled", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_bark_device_key_empty_skipped(self, mock_nm):
         mock_nm.config = MagicMock()
         mock_nm.config.enabled = True
@@ -282,8 +304,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         data = resp.get_json()
         self.assertIn("bark_device_key", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_send_success_single_task(self, mock_nm):
         mock_nm.config = MagicMock()
         mock_nm.config.enabled = True
@@ -301,8 +325,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         call_kwargs = mock_nm.send_notification.call_args
         self.assertIn("task-abc", call_kwargs.kwargs.get("message", ""))
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_send_success_multiple_tasks(self, mock_nm):
         mock_nm.config = MagicMock()
         mock_nm.config.enabled = True
@@ -319,8 +345,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         call_kwargs = mock_nm.send_notification.call_args
         self.assertIn("3 个新任务", call_kwargs.kwargs.get("message", ""))
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_send_returns_none_skipped(self, mock_nm):
         mock_nm.config = MagicMock()
         mock_nm.config.enabled = True
@@ -339,8 +367,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         self.assertIsNotNone(data, f"Not JSON: {resp.data}")
         self.assertEqual(data["status"], "skipped")
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_refresh_config_exception_ignored(self, mock_nm):
         mock_nm.refresh_config_from_file.side_effect = RuntimeError("fail")
         mock_nm.config = MagicMock()
@@ -355,9 +385,11 @@ class TestNotifyNewTasks(_RouteTestBase):
         data = resp.get_json()
         self.assertEqual(data["status"], "success")
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch(
-        "web_ui_routes.notification.notification_manager",
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.notification_manager",
         side_effect=AttributeError("boom"),
     )
     def test_outer_exception_returns_500(self, _):
@@ -385,8 +417,10 @@ class TestNotifyNewTasks(_RouteTestBase):
         data = resp.get_json()
         self.assertIn(data["status"], ("skipped", "success"))
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
     def test_no_config_attr_skipped(self, mock_nm):
         """notification_manager 无 config 属性时降级"""
         mock_nm.refresh_config_from_file = MagicMock()
@@ -405,7 +439,9 @@ class TestNotifyNewTasks(_RouteTestBase):
 class TestUpdateNotificationConfig(_RouteTestBase):
     _port = 19012
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", False
+    )
     def test_notification_unavailable_returns_500(self):
         resp = self._client.post(
             "/api/update-notification-config", json={"enabled": True}
@@ -414,9 +450,11 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         data = resp.get_json()
         self.assertIn("unavailable", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
-    @patch("web_ui_routes.notification.get_config")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_no_recognizable_fields(self, mock_get_cfg, mock_nm):
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"sound_volume": 80}
@@ -429,9 +467,11 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         self.assertEqual(data["status"], "success")
         self.assertIn("No notification config fields", data["message"])
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
-    @patch("web_ui_routes.notification.get_config")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_update_multiple_fields(self, mock_get_cfg, mock_nm):
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {
@@ -468,9 +508,11 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         mock_nm.update_config_without_save.assert_called_once()
         mock_cfg.update_section.assert_called_once()
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
-    @patch("web_ui_routes.notification.get_config")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_sound_volume_invalid_falls_back(self, mock_get_cfg, mock_nm):
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"sound_volume": 75}
@@ -483,9 +525,11 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         data = resp.get_json()
         self.assertEqual(data["status"], "success")
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.notification_manager")
-    @patch("web_ui_routes.notification.get_config")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.notification_manager")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_web_timeout_invalid_falls_back(self, mock_get_cfg, mock_nm):
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"web_timeout": 5000}
@@ -498,9 +542,11 @@ class TestUpdateNotificationConfig(_RouteTestBase):
         data = resp.get_json()
         self.assertEqual(data["status"], "success")
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
     @patch(
-        "web_ui_routes.notification.get_config",
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.get_config",
         side_effect=RuntimeError("config boom"),
     )
     def test_outer_exception_returns_500(self, _):
@@ -525,7 +571,7 @@ class TestUpdateNotificationConfig(_RouteTestBase):
 class TestGetNotificationConfig(_RouteTestBase):
     _port = 19013
 
-    @patch("web_ui_routes.notification.get_config")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_success(self, mock_get_cfg):
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"enabled": True, "bark_enabled": False}
@@ -538,7 +584,7 @@ class TestGetNotificationConfig(_RouteTestBase):
         self.assertTrue(data["config"]["enabled"])
 
     @patch(
-        "web_ui_routes.notification.get_config",
+        "ai_intervention_agent.web_ui_routes.notification.get_config",
         side_effect=RuntimeError("fail"),
     )
     def test_exception_returns_500(self, _):
@@ -551,7 +597,7 @@ class TestGetNotificationConfig(_RouteTestBase):
 class TestGetFeedbackPrompts(_RouteTestBase):
     _port = 19014
 
-    @patch("web_ui_routes.notification.get_config")
+    @patch("ai_intervention_agent.web_ui_routes.notification.get_config")
     def test_success(self, mock_get_cfg):
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {
@@ -570,7 +616,7 @@ class TestGetFeedbackPrompts(_RouteTestBase):
         self.assertIn("meta", data)
 
     @patch(
-        "web_ui_routes.notification.get_config",
+        "ai_intervention_agent.web_ui_routes.notification.get_config",
         side_effect=RuntimeError("fail"),
     )
     def test_exception_returns_500(self, _):
@@ -584,7 +630,7 @@ class TestGetFeedbackPrompts(_RouteTestBase):
 class TestSubmitFeedbackJSON(_RouteTestBase):
     _port = 19020
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_body_success(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="active-1")
@@ -599,7 +645,7 @@ class TestSubmitFeedbackJSON(_RouteTestBase):
         self.assertEqual(data["status"], "success")
         mock_tq.complete_task.assert_called_once()
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_with_task_id_not_found(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = None
@@ -611,7 +657,7 @@ class TestSubmitFeedbackJSON(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 404)
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_with_task_id_exists(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="existing-task")
@@ -624,7 +670,7 @@ class TestSubmitFeedbackJSON(_RouteTestBase):
         self.assertEqual(resp.status_code, 200)
         mock_tq.complete_task.assert_called_once_with("existing-task", ANY)
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_no_active_task(self, mock_get_tq):
         """无 task_id 且无活跃任务 → target_task_id 为空"""
         mock_tq = MagicMock()
@@ -639,7 +685,7 @@ class TestSubmitFeedbackJSON(_RouteTestBase):
 class TestSubmitFeedbackForm(_RouteTestBase):
     _port = 19021
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_form_data_with_invalid_json_options(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="a1")
@@ -655,7 +701,7 @@ class TestSubmitFeedbackForm(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_form_data_normal(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="a2")
@@ -675,8 +721,8 @@ class TestSubmitFeedbackForm(_RouteTestBase):
 class TestSubmitFeedbackMultipart(_RouteTestBase):
     _port = 19022
 
-    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_multipart_with_valid_image(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="multi-1")
@@ -700,8 +746,8 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_multipart_with_invalid_file(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="multi-2")
@@ -725,8 +771,8 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_multipart_with_validation_warnings(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="multi-3")
@@ -751,9 +797,10 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         self.assertEqual(resp.status_code, 200)
 
     @patch(
-        "web_ui_routes._upload_helpers.validate_uploaded_file", side_effect=RuntimeError
+        "ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file",
+        side_effect=RuntimeError,
     )
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_multipart_file_processing_exception(self, mock_get_tq, _):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="multi-4")
@@ -769,7 +816,7 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_multipart_invalid_json_options(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="multi-5")
@@ -785,7 +832,7 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_non_image_file_key_ignored(self, mock_get_tq):
         """键名非 image_ 前缀的文件被忽略"""
         mock_tq = MagicMock()
@@ -806,7 +853,7 @@ class TestSubmitFeedbackMultipart(_RouteTestBase):
 class TestSubmitFeedbackJSONParseFail(_RouteTestBase):
     _port = 19023
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_parse_fails_uses_defaults(self, mock_get_tq):
         """Content-Type 非 form/multipart 且 JSON 解析失败 → 默认值"""
         mock_tq = MagicMock()
@@ -996,7 +1043,7 @@ class TestGetFeedback(_RouteTestBase):
 class TestGetTasks(_RouteTestBase):
     _port = 19030
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_success_with_tasks(self, mock_get_tq):
         mock_tq = MagicMock()
         task = Task(
@@ -1036,7 +1083,7 @@ class TestGetTasks(_RouteTestBase):
         mock_tq.get_all_tasks.assert_not_called()
         mock_tq.get_task_count.assert_not_called()
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_list_uses_single_monotonic_snapshot(self, mock_get_tq):
         """GET /api/tasks 应在一次响应内复用同一个 monotonic 快照。"""
         mock_tq = MagicMock()
@@ -1063,7 +1110,10 @@ class TestGetTasks(_RouteTestBase):
         )
         mock_get_tq.return_value = mock_tq
 
-        with patch("web_ui_routes.task.time.monotonic", return_value=1234.5) as m:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.time.monotonic",
+            return_value=1234.5,
+        ) as m:
             resp = self._client.get("/api/tasks")
 
         self.assertEqual(resp.status_code, 200)
@@ -1071,7 +1121,10 @@ class TestGetTasks(_RouteTestBase):
         for task in tasks:
             task.get_remaining_time.assert_called_once_with(now_monotonic=1234.5)
 
-    @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+        side_effect=RuntimeError("boom"),
+    )
     def test_exception_returns_500(self, _):
         resp = self._client.get("/api/tasks")
         self.assertEqual(resp.status_code, 500)
@@ -1138,7 +1191,9 @@ class TestCreateTask(_RouteTestBase):
         self.assertEqual(resp.status_code, 400)
 
     def test_options_none_allowed(self):
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1186,7 +1241,7 @@ class TestCreateTask(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_create_success(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.add_task.return_value = True
@@ -1206,7 +1261,7 @@ class TestCreateTask(_RouteTestBase):
         self.assertTrue(data["success"])
         self.assertEqual(data["task_id"], "new-task")
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_create_fails_409(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.add_task.return_value = False
@@ -1218,7 +1273,10 @@ class TestCreateTask(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 409)
 
-    @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+        side_effect=RuntimeError("boom"),
+    )
     def test_create_exception_500(self, _):
         resp = self._client.post(
             "/api/tasks",
@@ -1228,7 +1286,9 @@ class TestCreateTask(_RouteTestBase):
 
     def test_alias_id_and_message(self):
         """使用 id/message 别名替代 task_id/prompt"""
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1241,7 +1301,9 @@ class TestCreateTask(_RouteTestBase):
 
     def test_alias_timeout(self):
         """使用 timeout 别名"""
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1254,7 +1316,9 @@ class TestCreateTask(_RouteTestBase):
 
     def test_options_with_empty_strings_cleaned(self):
         """空字符串选项被过滤"""
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1297,7 +1361,9 @@ class TestCreateTask(_RouteTestBase):
         - True / 1 / 1.0 / 'true' / 'yes' / 'on' / 'selected' → True
         - False / 0 / 0.0 / 'no' / 'off' / 'random' / None / list / dict → False
         """
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1340,7 +1406,9 @@ class TestCreateTask(_RouteTestBase):
 
     def test_options_defaults_too_long_truncated(self):
         """defaults 长度大于 options → 截断到 options 长度。"""
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1362,7 +1430,9 @@ class TestCreateTask(_RouteTestBase):
 
     def test_options_defaults_too_short_padded_with_false(self):
         """defaults 长度小于 options → 用 False 补足到 options 长度。"""
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1384,7 +1454,9 @@ class TestCreateTask(_RouteTestBase):
 
     def test_options_defaults_omitted_keeps_none(self):
         """``predefined_options_defaults`` 字段缺省 → 不传给 add_task（None）。"""
-        with patch("web_ui_routes.task.get_task_queue") as mock_get_tq:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue"
+        ) as mock_get_tq:
             mock_tq = MagicMock()
             mock_tq.add_task.return_value = True
             mock_get_tq.return_value = mock_tq
@@ -1410,7 +1482,7 @@ class TestCreateTask(_RouteTestBase):
 class TestGetTaskDetail(_RouteTestBase):
     _port = 19032
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_task_found(self, mock_get_tq):
         mock_tq = MagicMock()
         task = Task(
@@ -1431,7 +1503,7 @@ class TestGetTaskDetail(_RouteTestBase):
         self.assertIn("deadline", data["task"])
         self.assertIn("server_time", data)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_detail_uses_monotonic_snapshot(self, mock_get_tq):
         """GET /api/tasks/<id> 也应显式传入 monotonic 快照计算剩余时间。"""
         mock_tq = MagicMock()
@@ -1448,14 +1520,17 @@ class TestGetTaskDetail(_RouteTestBase):
         mock_tq.get_task.return_value = task
         mock_get_tq.return_value = mock_tq
 
-        with patch("web_ui_routes.task.time.monotonic", return_value=4321.0) as m:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.time.monotonic",
+            return_value=4321.0,
+        ) as m:
             resp = self._client.get("/api/tasks/detail-snapshot")
 
         self.assertEqual(resp.status_code, 200)
         m.assert_called_once()
         task.get_remaining_time.assert_called_once_with(now_monotonic=4321.0)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_task_not_found(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = None
@@ -1464,7 +1539,10 @@ class TestGetTaskDetail(_RouteTestBase):
         resp = self._client.get("/api/tasks/nonexistent")
         self.assertEqual(resp.status_code, 404)
 
-    @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+        side_effect=RuntimeError("boom"),
+    )
     def test_exception_returns_500(self, _):
         resp = self._client.get("/api/tasks/any-id")
         self.assertEqual(resp.status_code, 500)
@@ -1476,7 +1554,7 @@ class TestGetTaskDetail(_RouteTestBase):
 class TestActivateTask(_RouteTestBase):
     _port = 19033
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_activate_success(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.set_active_task.return_value = True
@@ -1488,7 +1566,7 @@ class TestActivateTask(_RouteTestBase):
         self.assertTrue(data["success"])
         self.assertEqual(data["active_task_id"], "task-1")
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_activate_fails_400(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.set_active_task.return_value = False
@@ -1497,7 +1575,10 @@ class TestActivateTask(_RouteTestBase):
         resp = self._client.post("/api/tasks/bad-task/activate")
         self.assertEqual(resp.status_code, 400)
 
-    @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+        side_effect=RuntimeError("boom"),
+    )
     def test_activate_exception_500(self, _):
         resp = self._client.post("/api/tasks/any/activate")
         self.assertEqual(resp.status_code, 500)
@@ -1515,7 +1596,7 @@ class TestCloseTask(_RouteTestBase):
 
     _port = 19035
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_close_success(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.remove_task.return_value = True
@@ -1527,7 +1608,7 @@ class TestCloseTask(_RouteTestBase):
         self.assertTrue(data["success"])
         mock_tq.remove_task.assert_called_once_with("task-x")
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_close_task_not_found_404(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.remove_task.return_value = False
@@ -1539,7 +1620,10 @@ class TestCloseTask(_RouteTestBase):
         self.assertFalse(data["success"])
         self.assertIn("不存在", data["error"])
 
-    @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+        side_effect=RuntimeError("boom"),
+    )
     def test_close_exception_500(self, _):
         resp = self._client.post("/api/tasks/any/close")
         self.assertEqual(resp.status_code, 500)
@@ -1552,7 +1636,7 @@ class TestCloseTask(_RouteTestBase):
 class TestSubmitTaskFeedback(_RouteTestBase):
     _port = 19034
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_task_not_found_404(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = None
@@ -1564,7 +1648,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 404)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_success_text_only(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="t1")
@@ -1579,7 +1663,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         self.assertTrue(data["success"])
         mock_tq.complete_task.assert_called_once()
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_invalid_selected_options_json(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="t2")
@@ -1591,7 +1675,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_selected_options_not_list(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="t3")
@@ -1603,7 +1687,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_selected_options_non_string_element(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="t4")
@@ -1615,8 +1699,8 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 400)
 
-    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_image_upload_success(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="t5")
@@ -1641,8 +1725,8 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         call_args = mock_tq.complete_task.call_args[0]
         self.assertIn("images", call_args[1])
 
-    @patch("web_ui_routes._upload_helpers.validate_uploaded_file")
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_image_validation_fail_skipped(self, mock_get_tq, mock_validate):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="t6")
@@ -1668,9 +1752,10 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         self.assertNotIn("images", call_args[1])
 
     @patch(
-        "web_ui_routes._upload_helpers.validate_uploaded_file", side_effect=RuntimeError
+        "ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file",
+        side_effect=RuntimeError,
     )
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_image_processing_exception(self, mock_get_tq, _):
         mock_tq = MagicMock()
         mock_tq.get_task.return_value = MagicMock(task_id="t7")
@@ -1686,7 +1771,10 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.task.get_task_queue", side_effect=RuntimeError("boom"))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+        side_effect=RuntimeError("boom"),
+    )
     def test_outer_exception_500(self, _):
         resp = self._client.post(
             "/api/tasks/any/submit",
@@ -1694,7 +1782,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 500)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_empty_options_cleaned(self, mock_get_tq):
         """空字符串选项被过滤"""
         mock_tq = MagicMock()
@@ -1710,7 +1798,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         )
         self.assertEqual(resp.status_code, 200)
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_non_image_file_field_skipped(self, mock_get_tq):
         """branch 441->440: 非 image_ 前缀的文件字段被跳过"""
         mock_tq = MagicMock()
@@ -1729,7 +1817,7 @@ class TestSubmitTaskFeedback(_RouteTestBase):
         call_args = mock_tq.complete_task.call_args[0]
         self.assertNotIn("images", call_args[1])
 
-    @patch("web_ui_routes.task.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_image_file_no_filename_skipped(self, mock_get_tq):
         """branch 443->440: image_ 前缀但无文件名的字段被跳过"""
         mock_tq = MagicMock()
@@ -1795,7 +1883,7 @@ class TestSubmitMultipartEdge(_RouteTestBase):
 
     _port = 19027
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_file_without_filename_skipped(self, mock_get_tq):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="multi-edge")
@@ -1904,7 +1992,10 @@ class TestStaticRoutesEdge(_RouteTestBase):
         mock_resp = Response(
             b"\x00\x00\x01\x00", content_type="application/octet-stream"
         )
-        with patch("web_ui_routes.static.send_from_directory", return_value=mock_resp):
+        with patch(
+            "ai_intervention_agent.web_ui_routes.static.send_from_directory",
+            return_value=mock_resp,
+        ):
             resp = self._client.get("/favicon.ico")
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.headers.get("Content-Type"), "image/x-icon")
@@ -1981,7 +2072,7 @@ class TestCapabilitiesEndpoint(_RouteTestBase):
     def test_build_id_reads_env(self):
         import os
 
-        import web_ui as web_ui_module
+        import ai_intervention_agent.web_ui as web_ui_module
 
         with patch.dict(os.environ, {"AIIA_BUILD_ID": "test-sha-abc"}):
             resp = self._client.get("/api/capabilities")
@@ -2020,7 +2111,9 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
         """``frontend_countdown=0`` 是「禁用前端倒计时」的特殊语义，
         必须原样落盘，不能被 ``clamp_value`` 提到 ``AUTO_RESUBMIT_TIMEOUT_MIN``。
         """
-        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.notification.get_config"
+        ) as mock_get_config:
             mock_mgr = MagicMock()
             mock_mgr.get_section.return_value = {}
             mock_get_config.return_value = mock_mgr
@@ -2039,7 +2132,9 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
 
     def test_only_resubmit_prompt_is_updated(self):
         """单字段更新：仅 ``resubmit_prompt``，不应同时改其它字段。"""
-        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.notification.get_config"
+        ) as mock_get_config:
             mock_mgr = MagicMock()
             mock_mgr.get_section.return_value = {"frontend_countdown": 60}
             mock_get_config.return_value = mock_mgr
@@ -2056,7 +2151,9 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
 
     def test_only_prompt_suffix_is_updated(self):
         """单字段更新：仅 ``prompt_suffix``。"""
-        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.notification.get_config"
+        ) as mock_get_config:
             mock_mgr = MagicMock()
             mock_mgr.get_section.return_value = {}
             mock_get_config.return_value = mock_mgr
@@ -2074,7 +2171,9 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
         """payload 里没有任何已知字段 → 200 + 「无可识别的更新字段」，
         不调用 ``update_section``。
         """
-        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.notification.get_config"
+        ) as mock_get_config:
             mock_mgr = MagicMock()
             mock_mgr.get_section.return_value = {}
             mock_get_config.return_value = mock_mgr
@@ -2092,7 +2191,9 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
 
     def test_non_dict_payload_treated_as_empty(self):
         """payload 不是 dict（如发了一个 list）→ 视为空 dict，回 200 + 提示。"""
-        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.notification.get_config"
+        ) as mock_get_config:
             mock_mgr = MagicMock()
             mock_mgr.get_section.return_value = {}
             mock_get_config.return_value = mock_mgr
@@ -2107,7 +2208,9 @@ class TestUpdateFeedbackConfigEndpoint(_RouteTestBase):
 
     def test_config_manager_exception_returns_500(self):
         """``update_section`` 抛异常 → 500 + 标准化错误（不泄漏 traceback）。"""
-        with patch("web_ui_routes.notification.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.notification.get_config"
+        ) as mock_get_config:
             mock_mgr = MagicMock()
             mock_mgr.get_section.return_value = {}
             mock_mgr.update_section.side_effect = OSError(

@@ -52,7 +52,7 @@ from fastmcp.server.middleware.logging import (
 )
 from fastmcp.server.middleware.timing import TimingMiddleware
 
-import server
+import ai_intervention_agent.server as server
 
 _EXPECTED_TIMING_LOGGER = "ai_intervention_agent.fastmcp_timing"
 _EXPECTED_LOGGING_LOGGER = "ai_intervention_agent.fastmcp_requests"
@@ -310,7 +310,7 @@ class TestServerInfoResourceRuntime(unittest.TestCase):
         """``is_web_service_running`` 抛异常时 ``web_ui`` 子字段仍含 host/port + probe_error，
         不向上冒。"""
 
-        from server_config import WebUIConfig
+        from ai_intervention_agent.server_config import WebUIConfig
 
         # WebUIConfig 必填字段 host / port；其它字段（language/timeout/...）有
         # 默认值。这里只关心 probe 异常的传播，host/port 用 loopback 占位。

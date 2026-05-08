@@ -25,7 +25,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LOCALE_DIRS: tuple[Path, ...] = (
-    ROOT / "static" / "locales",
+    ROOT / "src" / "ai_intervention_agent" / "static" / "locales",
     ROOT / "packages" / "vscode" / "locales",
 )
 

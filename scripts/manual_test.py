@@ -153,7 +153,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # 初始化增强日志系统
 test_logger: Any
 try:
-    from enhanced_logging import EnhancedLogger
+    from ai_intervention_agent.enhanced_logging import EnhancedLogger
 
     test_logger = EnhancedLogger("test")
     ENHANCED_LOGGING_AVAILABLE = True
@@ -707,7 +707,7 @@ def cleanup_services():
     - 异常隔离：不影响其他清理步骤
     """
     try:
-        from server import cleanup_services as server_cleanup
+        from ai_intervention_agent.server import cleanup_services as server_cleanup
 
         server_cleanup()
         log_debug("服务清理完成")
@@ -774,7 +774,7 @@ def format_mcp_return_content(feedback_result):
     try:
         from mcp.types import ImageContent, TextContent
 
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
     except Exception:
         return None
 
@@ -870,7 +870,7 @@ def test_config_validation():
     log_info("测试配置验证...", "🔧")
 
     try:
-        from server import get_web_ui_config, validate_input
+        from ai_intervention_agent.server import get_web_ui_config, validate_input
 
         # 测试正常配置
         config, auto_resubmit_timeout = get_web_ui_config()
@@ -924,7 +924,7 @@ def test_service_health():
     log_info("测试服务健康检查...", "🏥")
 
     try:
-        from server import (
+        from ai_intervention_agent.server import (
             get_web_ui_config,
             health_check_service,
             is_web_service_running,
@@ -1175,7 +1175,7 @@ def _launch_task_in_thread(prompt, options, feedback_timeout, task_id=None):
             - thread: 线程对象
             - result_container: 字典，包含 'result' 键用于存储结果
     """
-    from server import launch_feedback_ui
+    from ai_intervention_agent.server import launch_feedback_ui
 
     result_container = {"result": None}
 
@@ -1270,7 +1270,7 @@ def test_persistent_workflow(timeout=None):
     feedback_timeout = _calculate_feedback_timeout(timeout)
 
     try:
-        from server import get_web_ui_config, launch_feedback_ui
+        from ai_intervention_agent.server import get_web_ui_config, launch_feedback_ui
 
         config, auto_resubmit_timeout = get_web_ui_config()
         service_url = f"http://localhost:{config.port}{TestConfig.API_CONFIG_PATH}"
@@ -1383,7 +1383,7 @@ def test_web_ui_features():
     """
     # 从配置获取端口号
     try:
-        from server import get_web_ui_config
+        from ai_intervention_agent.server import get_web_ui_config
 
         config, _ = get_web_ui_config()
         port = config.port
@@ -1403,7 +1403,7 @@ def test_web_ui_features():
 
     # 使用交互MCP等待用户验证
     try:
-        from server import launch_feedback_ui
+        from ai_intervention_agent.server import launch_feedback_ui
 
         prompt = f"""## 🌐 第1轮：Web UI 功能验证
 
@@ -1478,7 +1478,7 @@ def test_multi_task_concurrent():
     """
     # 从配置获取端口号
     try:
-        from server import get_web_ui_config
+        from ai_intervention_agent.server import get_web_ui_config
 
         config, _ = get_web_ui_config()
         port = config.port
@@ -1496,7 +1496,7 @@ def test_multi_task_concurrent():
 
     # 使用交互MCP等待用户验证
     try:
-        from server import launch_feedback_ui
+        from ai_intervention_agent.server import launch_feedback_ui
 
         prompt = f"""## 🔄 第2轮：多任务并发功能验证
 
@@ -1587,7 +1587,7 @@ def test_parallel_tasks():
     try:
         import threading
 
-        from server import launch_feedback_ui
+        from ai_intervention_agent.server import launch_feedback_ui
 
         # 用于存储3个任务的结果
         task_results = {}
@@ -1647,7 +1647,7 @@ def test_parallel_tasks():
         log_info("📊 并行任务验证说明：", "ℹ️")
         # 从配置获取端口号
         try:
-            from server import get_web_ui_config
+            from ai_intervention_agent.server import get_web_ui_config
 
             config, _ = get_web_ui_config()
             port = config.port
@@ -1808,7 +1808,9 @@ def setup_test_environment(args):
             try:
                 import logging
 
-                from enhanced_logging import EnhancedLogger  # noqa: F401
+                from ai_intervention_agent.enhanced_logging import (
+                    EnhancedLogger,  # noqa: F401
+                )
 
                 # 设置全局日志级别为DEBUG
                 logging.getLogger().setLevel(logging.DEBUG)
@@ -1823,7 +1825,7 @@ def setup_test_environment(args):
         config_updated = False
 
         try:
-            from config_manager import get_config
+            from ai_intervention_agent.config_manager import get_config
 
             config_mgr = get_config()
         except ImportError:
@@ -1960,7 +1962,7 @@ def validate_args(args):
 def get_test_config(args):
     """获取测试配置信息"""
     try:
-        from server import get_feedback_prompts, get_web_ui_config
+        from ai_intervention_agent.server import get_feedback_prompts, get_web_ui_config
 
         config, auto_resubmit_timeout = get_web_ui_config()
         resubmit_prompt, prompt_suffix = get_feedback_prompts()

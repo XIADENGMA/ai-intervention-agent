@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from server_config import (
+from ai_intervention_agent.server_config import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
 )
@@ -63,7 +63,9 @@ class TestFrontendInputMaxParity(unittest.TestCase):
 
     def test_web_ui_html_input_max(self) -> None:
         """``templates/web_ui.html``: ``<input id="feedback-countdown" ... max="N">`` 的 N。"""
-        text = _read(REPO_ROOT / "templates" / "web_ui.html")
+        text = _read(
+            REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+        )
         # 多行匹配 input 块，捕获 max="..." 中的数字
         m = re.search(r'id="feedback-countdown"[^>]*max="(\d+)"', text, flags=re.DOTALL)
         self.assertIsNotNone(
@@ -81,7 +83,14 @@ class TestFrontendInputMaxParity(unittest.TestCase):
 
     def test_settings_manager_js_max_check(self) -> None:
         """``static/js/settings-manager.js``: ``val <= N`` 的 N。"""
-        text = _read(REPO_ROOT / "static" / "js" / "settings-manager.js")
+        text = _read(
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "settings-manager.js"
+        )
         m = re.search(r"val\s*<=\s*(\d+)", text)
         self.assertIsNotNone(m)
         assert m is not None
@@ -130,7 +139,14 @@ class TestFrontendCountdownFallbackDefault(unittest.TestCase):
 
     def setUp(self) -> None:
         self.expected = AUTO_RESUBMIT_TIMEOUT_DEFAULT  # 当前 = 240
-        self.text = _read(REPO_ROOT / "static" / "js" / "multi_task.js")
+        self.text = _read(
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "multi_task.js"
+        )
 
     def test_fallback_count_and_value(self) -> None:
         """所有 ``?? <int>`` 与 ``|| <int>`` 的非零 fallback 都必须 = DEFAULT。"""
@@ -197,7 +213,14 @@ class TestSettingsManagerFallbackDefault(unittest.TestCase):
 
     def setUp(self) -> None:
         self.expected = AUTO_RESUBMIT_TIMEOUT_DEFAULT  # 当前 = 240
-        self.text = _read(REPO_ROOT / "static" / "js" / "settings-manager.js")
+        self.text = _read(
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "settings-manager.js"
+        )
 
     def test_update_feedback_ui_countdown_fallback(self) -> None:
         """``fc.frontend_countdown ?? N`` 中的 ``N`` 必须 = ``DEFAULT``。"""

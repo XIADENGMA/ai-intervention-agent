@@ -16,7 +16,7 @@ import tomlkit
 from tomlkit.exceptions import TOMLKitError
 from tomlkit.items import Table
 
-from config_modules.toml_engine import TomlEngineMixin
+from ai_intervention_agent.config_modules.toml_engine import TomlEngineMixin
 
 
 class _Engine(TomlEngineMixin):

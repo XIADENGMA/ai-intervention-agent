@@ -28,7 +28,7 @@ import time
 import unittest
 from typing import cast
 
-import server
+import ai_intervention_agent.server as server
 
 
 class TestRuntimeBlockShape(unittest.TestCase):

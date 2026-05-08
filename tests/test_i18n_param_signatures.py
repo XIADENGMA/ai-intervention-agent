@@ -157,8 +157,8 @@ class TestScannerResilience:
         # Build a tiny fake tree with one t() call missing the `user`
         # param declared in the locale value.
         root = tmp_path
-        web_locales = root / "static" / "locales"
-        web_js = root / "static" / "js"
+        web_locales = root / "src" / "ai_intervention_agent" / "static" / "locales"
+        web_js = root / "src" / "ai_intervention_agent" / "static" / "js"
         web_locales.mkdir(parents=True)
         web_js.mkdir(parents=True)
         (web_locales / "en.json").write_text(
@@ -171,7 +171,9 @@ class TestScannerResilience:
         monkeypatch.setattr(CHK, "ROOT", root)
         monkeypatch.setattr(CHK, "WEB_LOCALES_DIR", web_locales)
         monkeypatch.setattr(CHK, "WEB_JS_DIR", web_js)
-        monkeypatch.setattr(CHK, "TEMPLATES_DIR", root / "templates")
+        monkeypatch.setattr(
+            CHK, "TEMPLATES_DIR", root / "src" / "ai_intervention_agent" / "templates"
+        )
         monkeypatch.setattr(
             CHK, "VSCODE_LOCALES_DIR", root / "packages" / "vscode" / "locales"
         )
@@ -190,8 +192,8 @@ class TestScannerResilience:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         root = tmp_path
-        web_locales = root / "static" / "locales"
-        web_js = root / "static" / "js"
+        web_locales = root / "src" / "ai_intervention_agent" / "static" / "locales"
+        web_js = root / "src" / "ai_intervention_agent" / "static" / "js"
         web_locales.mkdir(parents=True)
         web_js.mkdir(parents=True)
         (web_locales / "en.json").write_text(

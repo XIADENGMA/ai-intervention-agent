@@ -40,7 +40,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CSS_FILE = REPO_ROOT / "static" / "css" / "main.css"
+CSS_FILE = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css" / "main.css"
 
 _THEME_LIGHT_PREFIX = r"\[data-theme=['\"]light['\"]\]"
 _ORANGE_RGB = r"rgba?\s*\(\s*217\s*,\s*119\s*,\s*87"

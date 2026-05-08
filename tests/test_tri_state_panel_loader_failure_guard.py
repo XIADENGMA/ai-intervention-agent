@@ -59,11 +59,21 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOADER_SOURCES: tuple[Path, ...] = (
-    REPO_ROOT / "static" / "js" / "tri-state-panel-loader.js",
+    REPO_ROOT
+    / "src"
+    / "ai_intervention_agent"
+    / "static"
+    / "js"
+    / "tri-state-panel-loader.js",
     REPO_ROOT / "packages" / "vscode" / "tri-state-panel-loader.js",
 )
 BOOTSTRAP_SOURCES: tuple[Path, ...] = (
-    REPO_ROOT / "static" / "js" / "tri-state-panel-bootstrap.js",
+    REPO_ROOT
+    / "src"
+    / "ai_intervention_agent"
+    / "static"
+    / "js"
+    / "tri-state-panel-bootstrap.js",
     REPO_ROOT / "packages" / "vscode" / "tri-state-panel-bootstrap.js",
 )
 

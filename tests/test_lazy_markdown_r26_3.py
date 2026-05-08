@@ -36,7 +36,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_UI_PATH = REPO_ROOT / "web_ui.py"
+WEB_UI_PATH = REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py"
 
 
 def _strip_docstrings_and_comments(src: str) -> str:
@@ -80,7 +80,7 @@ class TestStaticSourceInvariants(unittest.TestCase):
     def test_render_markdown_body_has_lazy_import(self) -> None:
         """``render_markdown`` 函数体里必须有 ``import markdown``，
         且必须在 ``markdown.Markdown(...)`` 实例化**之前**。"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         src = inspect.getsource(WebFeedbackUI.render_markdown)
         # 剔除 docstring 后才查
@@ -107,7 +107,7 @@ class TestStaticSourceInvariants(unittest.TestCase):
     def test_setup_markdown_uses_none_sentinel(self) -> None:
         """``setup_markdown`` 体内必须有 ``self.md`` 起步为 ``None`` 的 sentinel
         赋值，**不能**直接 ``self.md = markdown.Markdown(...)``。"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         src = inspect.getsource(WebFeedbackUI.setup_markdown)
         src = _strip_docstrings_and_comments(src)
@@ -126,7 +126,7 @@ class TestStaticSourceInvariants(unittest.TestCase):
     def test_module_level_md_constants_exist(self) -> None:
         """``_MD_EXTENSIONS`` / ``_MD_EXTENSION_CONFIGS`` 必须在模块级声明，
         让 lazy-init 路径只是一行 ``markdown.Markdown(**kwargs)`` 简洁调用。"""
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         self.assertTrue(hasattr(web_ui, "_MD_EXTENSIONS"))
         self.assertTrue(hasattr(web_ui, "_MD_EXTENSION_CONFIGS"))
@@ -179,7 +179,7 @@ class TestRuntimeSysModulesInvariant(unittest.TestCase):
         在 ``sys.modules``——证明 R26.3 lazy-load 在 module-import 链路上有效。"""
         rc, out, err = self._run_subprocess_assert("""
             import sys
-            import web_ui  # noqa: F401
+            import ai_intervention_agent.web_ui as web_ui  # noqa: F401
             assert "markdown" not in sys.modules, (
                 "R26.3 regression: 'markdown' is in sys.modules after `import web_ui`"
             )
@@ -194,7 +194,7 @@ class TestRuntimeSysModulesInvariant(unittest.TestCase):
         构造 Markdown 实例。"""
         rc, out, err = self._run_subprocess_assert("""
             import sys
-            from web_ui import WebFeedbackUI
+            from ai_intervention_agent.web_ui import WebFeedbackUI
             ui = WebFeedbackUI(prompt='r26-3', port=0)
             assert "markdown" not in sys.modules, (
                 f"R26.3 regression: 'markdown' is in sys.modules after WebFeedbackUI(); "
@@ -212,7 +212,7 @@ class TestRuntimeSysModulesInvariant(unittest.TestCase):
         lazy-init 在使用点正确触发。"""
         rc, out, err = self._run_subprocess_assert("""
             import sys
-            from web_ui import WebFeedbackUI
+            from ai_intervention_agent.web_ui import WebFeedbackUI
             ui = WebFeedbackUI(prompt='r26-3', port=0)
             assert "markdown" not in sys.modules
             assert ui.md is None
@@ -242,7 +242,7 @@ class TestLazyInitThreadSafety(unittest.TestCase):
         的实例被 GC 回收，浪费 CPU 但功能仍正确）；本测试就是要保证
         「不浪费」这一性能不变量。
         """
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="thread-safe", port=0)
         # 用 monkey-patch 计数 ``markdown.Markdown`` 构造次数
@@ -294,7 +294,7 @@ class TestBackwardCompatibility(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.WebFeedbackUI = WebFeedbackUI
 

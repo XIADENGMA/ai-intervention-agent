@@ -33,8 +33,8 @@ if str(REPO_ROOT) not in sys.path:
 # 顶层 import 本身只构造 ``mcp`` 实例 + 注册中间件，不会触发 web_ui /
 # 通知线程池副作用，所以用不上这层 guard。
 
-import server
-import server_feedback
+import ai_intervention_agent.server as server
+import ai_intervention_agent.server_feedback as server_feedback
 
 
 class TestRateLimitingMiddlewareRegistered(unittest.TestCase):
@@ -71,12 +71,16 @@ class TestRateLimitingMiddlewareConfig(unittest.TestCase):
     def test_burst_capacity_documented_value(self) -> None:
         # 通过源码静态扫描 ``server.py`` 配置点而不是依赖 fastmcp 内部属性命名，
         # 防止 fastmcp 升级时字段重命名导致测试虚假失败。
-        src = (REPO_ROOT / "server.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "src" / "ai_intervention_agent" / "server.py").read_text(
+            encoding="utf-8"
+        )
         self.assertRegex(src, r"max_requests_per_second=10\.0")
         self.assertRegex(src, r"burst_capacity=20")
 
     def test_module_doc_explains_chain_position(self) -> None:
-        src = (REPO_ROOT / "server.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "src" / "ai_intervention_agent" / "server.py").read_text(
+            encoding="utf-8"
+        )
         # 文档应解释顺序为何 ``insert(1, ...)``
         self.assertIn("insert(1", src)
         self.assertIn("RateLimiting", src)
@@ -126,7 +130,9 @@ class TestServerInfoResourceR44ErrorIsolation(unittest.TestCase):
     def test_each_block_isolated_when_partial_failure(self) -> None:
         # 这里是结构性检测：扫描源码确认每个新增 ``info[...]`` 之前都有
         # 独立的 try/except，避免一个失败把整个 resource 弄崩。
-        src = (REPO_ROOT / "server.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "src" / "ai_intervention_agent" / "server.py").read_text(
+            encoding="utf-8"
+        )
         block_names = ("runtime_info", "fastmcp_info", "task_queue_info")
         for name in block_names:
             with self.subTest(block=name):
@@ -148,7 +154,9 @@ class TestInteractiveFeedbackContextSignatureSourceLevel(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        self.src = (REPO_ROOT / "server_feedback.py").read_text(encoding="utf-8")
+        self.src = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "server_feedback.py"
+        ).read_text(encoding="utf-8")
 
     def test_ctx_keyword_only_marker_present(self) -> None:
         # 必须有 ``*,`` 单独成行（标志后续参数都是 keyword-only）
@@ -227,7 +235,9 @@ class TestServerBootBannerR44(unittest.TestCase):
     """R44 banner 自动反映新中间件——验证 banner 字符串静态构造正确。"""
 
     def test_banner_uses_dynamic_middleware_list(self) -> None:
-        src = (REPO_ROOT / "server.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "src" / "ai_intervention_agent" / "server.py").read_text(
+            encoding="utf-8"
+        )
         # banner 行使用 ``middleware={','.join(middleware_names)}``
         self.assertRegex(src, r"middleware=\{','\.join\(middleware_names\)\}")
         # ``middleware_names`` 必须从 ``mcp.middleware`` 动态读取

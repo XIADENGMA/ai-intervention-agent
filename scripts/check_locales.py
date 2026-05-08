@@ -132,7 +132,7 @@ def main() -> int:
     all_errors: list[str] = []
 
     locale_dirs = [
-        (root / "static" / "locales", "Web UI"),
+        (root / "src" / "ai_intervention_agent" / "static" / "locales", "Web UI"),
         (root / "packages" / "vscode" / "locales", "VS Code Plugin"),
     ]
 
@@ -144,7 +144,7 @@ def main() -> int:
     if vscode_dir.exists():
         all_errors.extend(check_nls_pair(vscode_dir))
 
-    web_locales_dir = root / "static" / "locales"
+    web_locales_dir = root / "src" / "ai_intervention_agent" / "static" / "locales"
     vscode_locales_dir = root / "packages" / "vscode" / "locales"
     if web_locales_dir.exists() and vscode_locales_dir.exists():
         all_errors.extend(

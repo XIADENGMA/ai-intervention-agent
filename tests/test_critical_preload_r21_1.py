@@ -67,7 +67,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TEMPLATE_PATH = REPO_ROOT / "templates" / "web_ui.html"
+TEMPLATE_PATH = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -487,7 +489,14 @@ class TestPrismMinifiedSwitch:
         如果这个文件因为某次 ``rm`` 误删了，模板里的 preload 与 ``<script>`` 都会
         404，preload 反而变成 unused preload 警告。这条测试是 fail-loud 兜底。
         """
-        prism_min = REPO_ROOT / "static" / "js" / "prism.min.js"
+        prism_min = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "prism.min.js"
+        )
         assert prism_min.is_file(), (
             f"R27.1 物理文件不存在：``{prism_min}``。"
             "upstream Prism.js 自带 minified 版本，本项目不自动 minify 它（参见"
@@ -509,7 +518,9 @@ class TestPrismMinifiedSwitch:
         ``scripts/minify_assets.py`` 的语义一致：minify 产物与源文件并存，
         生产模板用 minified、本地调试可以临时 hack 模板看未压缩版。
         """
-        prism_unminified = REPO_ROOT / "static" / "js" / "prism.js"
+        prism_unminified = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "prism.js"
+        )
         assert prism_unminified.is_file(), (
             f"R27.1 文件被误删：``{prism_unminified}``。"
             "未压缩版 ``prism.js`` 是调试用源文件，应与 ``prism.min.js`` 并存。"
@@ -560,7 +571,7 @@ class TestCacheBustingVersionQueryParam:
         非空字符串——空字符串意味着 ``_compute_file_version`` 返回了 fallback ``"1"``
         或者变量根本没传，会让 cache key 退化。
         """
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="R27.2 cache-busting test",

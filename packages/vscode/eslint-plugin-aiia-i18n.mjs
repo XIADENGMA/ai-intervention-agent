@@ -20,8 +20,11 @@ import path from 'node:path'
 import url from 'node:url'
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
+// R76 src/ layout：Web UI 的 locales 已经迁入 ``src/ai_intervention_agent/static/locales/``；
+// 历史路径 ``static/locales/`` 仍保留兜底，便于在尚未 sync 的旧 working tree 上运行。
 const DEFAULT_LOCALE_PATHS = [
   path.resolve(__dirname, 'locales', 'en.json'),
+  path.resolve(__dirname, '..', '..', 'src', 'ai_intervention_agent', 'static', 'locales', 'en.json'),
   path.resolve(__dirname, '..', '..', 'static', 'locales', 'en.json')
 ]
 
@@ -87,7 +90,7 @@ function makeRule(name) {
       messages: {
         missing:
           `i18n key "{{key}}" not found in any loaded locale (${name}). ` +
-          'Add the key to static/locales/*.json or packages/vscode/locales/*.json, ' +
+          'Add the key to src/ai_intervention_agent/static/locales/*.json or packages/vscode/locales/*.json, ' +
           'or correct the typo.'
       }
     },

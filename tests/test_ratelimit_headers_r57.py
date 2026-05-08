@@ -29,7 +29,7 @@ class _LimiterHeaderTestBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="r57-ratelimit-test", task_id="r57-base", port=cls._port
@@ -166,7 +166,12 @@ class TestLimiterConfigSourceOfTruth(unittest.TestCase):
     def test_web_ui_source_enables_headers(self) -> None:
         import pathlib
 
-        src = pathlib.Path(__file__).resolve().parent.parent / "web_ui.py"
+        src = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "src"
+            / "ai_intervention_agent"
+            / "web_ui.py"
+        )
         text = src.read_text(encoding="utf-8")
         self.assertIn(
             "headers_enabled=True",

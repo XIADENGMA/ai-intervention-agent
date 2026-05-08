@@ -56,7 +56,7 @@ import re
 import time
 import unittest
 
-import web_ui
+import ai_intervention_agent.web_ui as web_ui
 
 
 class TestModuleLevelHotPathConstants(unittest.TestCase):
@@ -212,11 +212,13 @@ class TestHtmlDirBehavior(unittest.TestCase):
         mock_config = MagicMock()
         mock_config.get_section.return_value = {"language": lang}
         with (
-            patch("web_ui.get_config", return_value=mock_config),
+            patch("ai_intervention_agent.web_ui.get_config", return_value=mock_config),
             patch.object(
                 web_ui.WebFeedbackUI, "_get_csp_nonce", return_value="test-nonce"
             ),
-            patch("web_ui._compute_file_version", return_value="v1"),
+            patch(
+                "ai_intervention_agent.web_ui._compute_file_version", return_value="v1"
+            ),
         ):
             return self.ui._get_template_context()
 

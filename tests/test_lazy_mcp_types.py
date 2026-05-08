@@ -68,27 +68,27 @@ class TestImportDecoupling(unittest.TestCase):
     def test_loading_server_config_does_not_load_mcp_types(self) -> None:
         out = self._run_in_subprocess(
             "import sys\n"
-            "import server_config  # noqa: F401\n"
+            "import ai_intervention_agent.server_config  # noqa: F401\n"
             "print('LOADED' if 'mcp.types' in sys.modules else 'NOT_LOADED')\n"
         )
         last = out.splitlines()[-1] if out else ""
         self.assertEqual(
             last,
             "NOT_LOADED",
-            "import server_config 不应触发 mcp.types 加载（R20.9 lazy 化的全部价值）",
+            "import ai_intervention_agent.server_config 不应触发 mcp.types 加载（R20.9 lazy 化的全部价值）",
         )
 
     def test_loading_task_queue_does_not_load_mcp_types(self) -> None:
         out = self._run_in_subprocess(
             "import sys\n"
-            "import task_queue  # noqa: F401\n"
+            "import ai_intervention_agent.task_queue  # noqa: F401\n"
             "print('LOADED' if 'mcp.types' in sys.modules else 'NOT_LOADED')\n"
         )
         last = out.splitlines()[-1] if out else ""
         self.assertEqual(
             last,
             "NOT_LOADED",
-            "import task_queue 不应触发 mcp.types 加载——这是 web_ui 子进程"
+            "import ai_intervention_agent.task_queue 不应触发 mcp.types 加载——这是 web_ui 子进程"
             "启动延迟节省的核心",
         )
 
@@ -96,7 +96,7 @@ class TestImportDecoupling(unittest.TestCase):
         """lazy load 必须真的发生：调用 parse_structured_response 后 mcp.types 进入 sys.modules"""
         out = self._run_in_subprocess(
             "import sys\n"
-            "import server_config\n"
+            "from ai_intervention_agent import server_config\n"
             "before = 'mcp.types' in sys.modules\n"
             "result = server_config.parse_structured_response("
             "{'user_input': 'hi', 'selected_options': ['x']})\n"
@@ -116,7 +116,7 @@ class TestImportDecoupling(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════
 class TestLazyLoaderCache(unittest.TestCase):
     def test_repeated_calls_return_same_object(self) -> None:
-        from server_config import _lazy_mcp_types
+        from ai_intervention_agent.server_config import _lazy_mcp_types
 
         a = _lazy_mcp_types()
         b = _lazy_mcp_types()
@@ -125,7 +125,7 @@ class TestLazyLoaderCache(unittest.TestCase):
         self.assertIs(b, c)
 
     def test_returned_module_has_required_attributes(self) -> None:
-        from server_config import _lazy_mcp_types
+        from ai_intervention_agent.server_config import _lazy_mcp_types
 
         types_mod = _lazy_mcp_types()
         for attr_name in ("TextContent", "ImageContent", "ContentBlock"):
@@ -141,7 +141,10 @@ class TestLazyLoaderCache(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════
 class TestRuntimeBehaviorParity(unittest.TestCase):
     def test_parse_structured_response_returns_list_with_text_content(self) -> None:
-        from server_config import _lazy_mcp_types, parse_structured_response
+        from ai_intervention_agent.server_config import (
+            _lazy_mcp_types,
+            parse_structured_response,
+        )
 
         result = parse_structured_response(
             {"user_input": "hello", "selected_options": ["A", "B"]}
@@ -163,7 +166,10 @@ class TestRuntimeBehaviorParity(unittest.TestCase):
         self.assertIn("A", first.text)
 
     def test_make_resubmit_response_as_mcp_returns_list_of_textcontent(self) -> None:
-        from server_config import _lazy_mcp_types, _make_resubmit_response
+        from ai_intervention_agent.server_config import (
+            _lazy_mcp_types,
+            _make_resubmit_response,
+        )
 
         result = _make_resubmit_response(as_mcp=True)
         self.assertIsInstance(result, list)
@@ -172,7 +178,7 @@ class TestRuntimeBehaviorParity(unittest.TestCase):
         self.assertIsInstance(result[0], text_cls)
 
     def test_make_resubmit_response_as_dict_returns_plain_dict(self) -> None:
-        from server_config import _make_resubmit_response
+        from ai_intervention_agent.server_config import _make_resubmit_response
 
         result = _make_resubmit_response(as_mcp=False)
         self.assertIsInstance(result, dict)
@@ -185,7 +191,9 @@ class TestRuntimeBehaviorParity(unittest.TestCase):
 class TestSourceTextInvariants(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.src = (PROJECT_ROOT / "server_config.py").read_text(encoding="utf-8")
+        cls.src = (
+            PROJECT_ROOT / "src" / "ai_intervention_agent" / "server_config.py"
+        ).read_text(encoding="utf-8")
 
     def test_no_module_level_mcp_types_import(self) -> None:
         """source-text 层禁止把 mcp.types 拖回模块顶部 eager import"""
@@ -229,7 +237,7 @@ class TestSourceTextInvariants(unittest.TestCase):
 class TestAnnotationCompatibility(unittest.TestCase):
     def test_annotations_are_strings_after_pep563(self) -> None:
         """PEP 563 后所有注解都应该是字符串形式"""
-        from server_config import parse_structured_response
+        from ai_intervention_agent.server_config import parse_structured_response
 
         annotations = parse_structured_response.__annotations__
         self.assertIn("return", annotations)

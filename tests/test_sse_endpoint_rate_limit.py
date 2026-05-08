@@ -50,9 +50,9 @@ class TestSseEventsRateLimit(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.task_routes_src = (REPO_ROOT / "web_ui_routes" / "task.py").read_text(
-            encoding="utf-8"
-        )
+        cls.task_routes_src = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "task.py"
+        ).read_text(encoding="utf-8")
 
     def test_sse_events_function_exists(self) -> None:
         """``def sse_events`` 必须存在于 ``web_ui_routes/task.py``。"""

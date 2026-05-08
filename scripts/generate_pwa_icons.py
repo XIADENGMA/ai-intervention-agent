@@ -72,7 +72,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ICONS_DIR = REPO_ROOT / "icons"
+ICONS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "icons"
 SOURCE_SVG_ANY = ICONS_DIR / "icon.svg"
 SOURCE_SVG_MASKABLE = ICONS_DIR / "icon-maskable.svg"
 

@@ -58,7 +58,7 @@ class _RouteTestBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="bark sentinel test", task_id="rt-r63a", port=cls._port
@@ -71,9 +71,11 @@ class _RouteTestBase(unittest.TestCase):
 class TestTestBarkUrlTemplateAppendsSentinel(_RouteTestBase):
     """``/api/test-bark`` 给 ``bark_url_template`` 末尾自动追加 ``aiia_test=1``。"""
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_default_template_gets_sentinel_query_appended(
         self, _mock_event_cls, mock_provider_cls
     ):
@@ -100,9 +102,11 @@ class TestTestBarkUrlTemplateAppendsSentinel(_RouteTestBase):
         )
         self.assertIn("?", temp_config.bark_url_template)
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_template_without_query_string_uses_question_mark(
         self, _mock_event_cls, mock_provider_cls
     ):
@@ -129,9 +133,11 @@ class TestTestBarkUrlTemplateAppendsSentinel(_RouteTestBase):
             f"实际：{temp_config.bark_url_template!r}",
         )
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_idempotent_when_template_already_has_sentinel(
         self, _mock_event_cls, mock_provider_cls
     ):
@@ -158,9 +164,11 @@ class TestTestBarkUrlTemplateAppendsSentinel(_RouteTestBase):
             f"sentinel 必须幂等，实际：{temp_config.bark_url_template!r}",
         )
 
-    @patch("web_ui_routes.notification.NOTIFICATION_AVAILABLE", True)
-    @patch("web_ui_routes.notification.BarkNotificationProvider")
-    @patch("web_ui_routes.notification.NotificationEvent")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.notification.NOTIFICATION_AVAILABLE", True
+    )
+    @patch("ai_intervention_agent.web_ui_routes.notification.BarkNotificationProvider")
+    @patch("ai_intervention_agent.web_ui_routes.notification.NotificationEvent")
     def test_empty_template_does_not_get_sentinel(
         self, _mock_event_cls, mock_provider_cls
     ):
@@ -193,9 +201,14 @@ class TestFrontendDeepLinkSkipsAiiaTestSentinel(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.multi_task = (REPO_ROOT / "static" / "js" / "multi_task.js").read_text(
-            encoding="utf-8"
-        )
+        cls.multi_task = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "multi_task.js"
+        ).read_text(encoding="utf-8")
 
     def test_function_checks_aiia_test_query(self) -> None:
         """getDeepLinkedTaskIdFromUrl 必须读取 aiia_test query。"""

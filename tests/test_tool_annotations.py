@@ -18,7 +18,7 @@ import unittest
 
 from mcp.types import Tool, ToolAnnotations
 
-import server
+import ai_intervention_agent.server as server
 
 
 def _resolved_tool() -> Tool:

@@ -18,7 +18,7 @@ class _UpdateLanguageBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="update-language test", task_id="ul-test", port=19200
@@ -31,7 +31,7 @@ class _UpdateLanguageBase(unittest.TestCase):
 class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
     """成功路径：三种合法 language 都应被接受并写入配置。"""
 
-    @patch("web_ui.get_config")
+    @patch("ai_intervention_agent.web_ui.get_config")
     def test_zh_cn_accepted(self, mock_get_config) -> None:
         mock_mgr = MagicMock()
         mock_get_config.return_value = mock_mgr
@@ -44,7 +44,7 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
         self.assertEqual(data["language"], "zh-CN")
         mock_mgr.update_section.assert_called_once_with("web_ui", {"language": "zh-CN"})
 
-    @patch("web_ui.get_config")
+    @patch("ai_intervention_agent.web_ui.get_config")
     def test_en_accepted(self, mock_get_config) -> None:
         mock_mgr = MagicMock()
         mock_get_config.return_value = mock_mgr
@@ -54,7 +54,7 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["language"], "en")
 
-    @patch("web_ui.get_config")
+    @patch("ai_intervention_agent.web_ui.get_config")
     def test_auto_accepted(self, mock_get_config) -> None:
         mock_mgr = MagicMock()
         mock_get_config.return_value = mock_mgr
@@ -64,7 +64,7 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["language"], "auto")
 
-    @patch("web_ui.get_config")
+    @patch("ai_intervention_agent.web_ui.get_config")
     def test_empty_payload_defaults_to_auto(self, mock_get_config) -> None:
         """空 payload 应回退到默认值 ``auto``，不应 400/500。"""
         mock_mgr = MagicMock()
@@ -77,7 +77,7 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
 
     def test_unsupported_language_returns_400(self) -> None:
         """非白名单语言（如 ``fr``、空字符串）→ 400，不应触达 config_manager。"""
-        with patch("web_ui.get_config") as mock_get_config:
+        with patch("ai_intervention_agent.web_ui.get_config") as mock_get_config:
             resp = self._client.post("/api/update-language", json={"language": "fr"})
 
         self.assertEqual(resp.status_code, 400)
@@ -88,13 +88,13 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
 
     def test_unsupported_language_empty_string_returns_400(self) -> None:
         """空字符串不在白名单内 → 400。"""
-        with patch("web_ui.get_config") as mock_get_config:
+        with patch("ai_intervention_agent.web_ui.get_config") as mock_get_config:
             resp = self._client.post("/api/update-language", json={"language": ""})
 
         self.assertEqual(resp.status_code, 400)
         mock_get_config.assert_not_called()
 
-    @patch("web_ui.get_config")
+    @patch("ai_intervention_agent.web_ui.get_config")
     def test_config_manager_exception_returns_500(self, mock_get_config) -> None:
         """``update_section`` 抛异常 → 500，不应让 5xx 泄漏 traceback 给前端。"""
         mock_mgr = MagicMock()
@@ -110,7 +110,7 @@ class TestUpdateLanguageEndpoint(_UpdateLanguageBase):
 
     def test_extra_whitespace_is_stripped(self) -> None:
         """``" zh-CN "`` 应被 ``.strip()`` 后视为合法。"""
-        with patch("web_ui.get_config") as mock_get_config:
+        with patch("ai_intervention_agent.web_ui.get_config") as mock_get_config:
             mock_mgr = MagicMock()
             mock_get_config.return_value = mock_mgr
 

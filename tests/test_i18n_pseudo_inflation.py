@@ -22,8 +22,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-WEB_EN = ROOT / "static" / "locales" / "en.json"
-WEB_PSEUDO = ROOT / "static" / "locales" / "_pseudo" / "pseudo.json"
+WEB_EN = ROOT / "src" / "ai_intervention_agent" / "static" / "locales" / "en.json"
+WEB_PSEUDO = (
+    ROOT
+    / "src"
+    / "ai_intervention_agent"
+    / "static"
+    / "locales"
+    / "_pseudo"
+    / "pseudo.json"
+)
 VSCODE_EN = ROOT / "packages" / "vscode" / "locales" / "en.json"
 VSCODE_PSEUDO = ROOT / "packages" / "vscode" / "locales" / "_pseudo" / "pseudo.json"
 

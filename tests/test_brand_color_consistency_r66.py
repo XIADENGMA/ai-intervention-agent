@@ -116,7 +116,7 @@ class TestCliExitCodes(unittest.TestCase):
     """CLI ``main()`` 入口的退出码语义。"""
 
     def setUp(self) -> None:
-        self.css_dir = REPO_ROOT / "static" / "css"
+        self.css_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
         self.assertTrue(
             self.css_dir.exists(),
             "static/css 必须存在才能跑这个测试。",
@@ -197,7 +197,7 @@ class TestBaselineMatchesActualCount(unittest.TestCase):
     """
 
     def test_default_baseline_matches_main_css_count(self) -> None:
-        css_dir = REPO_ROOT / "static" / "css"
+        css_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
         total, _per_file = guard.scan_css_files(css_dir)
         self.assertEqual(
             total,

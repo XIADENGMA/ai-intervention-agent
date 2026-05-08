@@ -15,7 +15,7 @@ import base64
 import unittest
 from unittest.mock import patch
 
-from server_config import (
+from ai_intervention_agent.server_config import (
     BACKEND_MIN,
     FEEDBACK_TIMEOUT_DEFAULT,
     MAX_MESSAGE_LENGTH,
@@ -82,7 +82,7 @@ class TestFeedbackConfig(unittest.TestCase):
         self.assertEqual(cfg.timeout, 600)
 
     def test_clamp_timeout(self):
-        from server_config import FEEDBACK_TIMEOUT_MAX
+        from ai_intervention_agent.server_config import FEEDBACK_TIMEOUT_MAX
 
         cfg = FeedbackConfig(
             timeout=99999,
@@ -104,7 +104,7 @@ class TestFeedbackConfig(unittest.TestCase):
         self.assertEqual(cfg.auto_resubmit_timeout, 0)
 
     def test_long_prompt_truncated(self):
-        from server_config import PROMPT_MAX_LENGTH
+        from ai_intervention_agent.server_config import PROMPT_MAX_LENGTH
 
         long_prompt = "x" * (PROMPT_MAX_LENGTH + 500)
         cfg = FeedbackConfig(
@@ -125,12 +125,18 @@ class TestGetFeedbackConfig(unittest.TestCase):
         self.assertGreater(cfg.timeout, 0)
 
     def test_value_error_fallback(self):
-        with patch("server_config.get_config", side_effect=ValueError("bad")):
+        with patch(
+            "ai_intervention_agent.server_config.get_config",
+            side_effect=ValueError("bad"),
+        ):
             cfg = get_feedback_config()
             self.assertEqual(cfg.timeout, FEEDBACK_TIMEOUT_DEFAULT)
 
     def test_generic_error_fallback(self):
-        with patch("server_config.get_config", side_effect=RuntimeError("fail")):
+        with patch(
+            "ai_intervention_agent.server_config.get_config",
+            side_effect=RuntimeError("fail"),
+        ):
             cfg = get_feedback_config()
             self.assertEqual(cfg.timeout, FEEDBACK_TIMEOUT_DEFAULT)
 
@@ -258,7 +264,7 @@ class TestResolveExternalBaseUrl(unittest.TestCase):
         )
         self.assertEqual(resolve_external_base_url(cfg), "http://ai.local:8080")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_auto_mdns_for_non_loopback_bind(self, mock_get_config):
         mock_get_config.return_value.get_section.side_effect = lambda section: {
             "web_ui": {},
@@ -268,7 +274,7 @@ class TestResolveExternalBaseUrl(unittest.TestCase):
         cfg = WebUIConfig(host="0.0.0.0", port=8080)
         self.assertEqual(resolve_external_base_url(cfg), "http://ai.local:8080")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_falls_back_to_host_port_when_mdns_disabled(self, mock_get_config):
         mock_get_config.return_value.get_section.side_effect = lambda section: {
             "web_ui": {},
@@ -461,9 +467,12 @@ class TestAppendPromptSuffixEmpty(unittest.TestCase):
     """line 212: prompt_suffix 为空时直接返回"""
 
     def test_empty_suffix_returns_text_unchanged(self):
-        from server_config import _append_prompt_suffix
+        from ai_intervention_agent.server_config import _append_prompt_suffix
 
-        with patch("server_config.get_feedback_prompts", return_value=("resubmit", "")):
+        with patch(
+            "ai_intervention_agent.server_config.get_feedback_prompts",
+            return_value=("resubmit", ""),
+        ):
             result = _append_prompt_suffix("hello")
             self.assertEqual(result, "hello")
 
@@ -473,7 +482,8 @@ class TestParseStructuredResponseImageException(unittest.TestCase):
 
     def test_image_process_exception(self):
         with patch(
-            "server_config._process_image", side_effect=ValueError("decode fail")
+            "ai_intervention_agent.server_config._process_image",
+            side_effect=ValueError("decode fail"),
         ):
             result = parse_structured_response(
                 {"images": [{"data": "abc", "content_type": "image/png"}]}
@@ -491,10 +501,12 @@ class TestParseStructuredResponseUnknownType(unittest.TestCase):
         import logging
 
         with patch(
-            "server_config._process_image",
+            "ai_intervention_agent.server_config._process_image",
             return_value=(42, None),
         ):
-            with self.assertLogs("server_config", level=logging.DEBUG) as logs:
+            with self.assertLogs(
+                "ai_intervention_agent.server_config", level=logging.DEBUG
+            ) as logs:
                 parse_structured_response(
                     {"images": [{"data": "abc", "content_type": "image/png"}]}
                 )

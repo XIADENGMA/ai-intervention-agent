@@ -49,7 +49,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from config_manager import (
+from ai_intervention_agent.config_manager import (
     _is_isolated_install_runtime,
     _is_uvx_mode,
     _looks_like_repo_checkout,
@@ -89,18 +89,47 @@ class TestPathContainsSegment(unittest.TestCase):
 
 
 class TestLooksLikeRepoCheckout(unittest.TestCase):
-    def test_true_for_repo_root(self) -> None:
-        self.assertTrue(_looks_like_repo_checkout(REPO_ROOT))
+    """R76 src/ layout 改造之后的语义：
+
+    ``_looks_like_repo_checkout(module_dir)`` 现在要求：
+    1. ``module_dir`` 自身有 ``server.py``——即 ``src/ai_intervention_agent/``；
+    2. ``module_dir.parent.parent`` 有 ``pyproject.toml``——即 src layout 的仓库根。
+
+    旧契约（``module_dir`` 是 REPO_ROOT 且包含 ``pyproject.toml`` + ``server.py``）
+    在 R76 之后已不再适用：``server.py`` 移入了包内，``pyproject.toml`` 留在根。
+    """
+
+    def test_true_for_pkg_dir_in_src_layout(self) -> None:
+        # src/ai_intervention_agent/ 是新布局下的"模块目录"
+        pkg_dir = REPO_ROOT / "src" / "ai_intervention_agent"
+        self.assertTrue(_looks_like_repo_checkout(pkg_dir))
+
+    def test_false_for_repo_root_after_r76(self) -> None:
+        # R76 之后 REPO_ROOT 不再有 server.py，所以应当返回 False
+        self.assertFalse(_looks_like_repo_checkout(REPO_ROOT))
 
     def test_false_for_random_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             self.assertFalse(_looks_like_repo_checkout(Path(td)))
 
-    def test_false_when_only_one_marker_present(self) -> None:
+    def test_false_when_only_pkg_marker_present(self) -> None:
+        # 仅 server.py、缺 ../../pyproject.toml → 不是仓库
         with tempfile.TemporaryDirectory() as td:
-            (Path(td) / "pyproject.toml").write_text("")
-            # 缺 server.py
-            self.assertFalse(_looks_like_repo_checkout(Path(td)))
+            pkg_dir = Path(td) / "src" / "fake_pkg"
+            pkg_dir.mkdir(parents=True)
+            (pkg_dir / "server.py").write_text("")
+            # 父父目录（td）无 pyproject.toml
+            self.assertFalse(_looks_like_repo_checkout(pkg_dir))
+
+    def test_true_when_both_layered_markers_present(self) -> None:
+        # 模拟 src layout：<repo>/pyproject.toml + <repo>/src/<pkg>/server.py
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td)
+            (repo / "pyproject.toml").write_text("")
+            pkg_dir = repo / "src" / "fake_pkg"
+            pkg_dir.mkdir(parents=True)
+            (pkg_dir / "server.py").write_text("")
+            self.assertTrue(_looks_like_repo_checkout(pkg_dir))
 
 
 class TestPathUnder(unittest.TestCase):
@@ -135,14 +164,14 @@ class TestIsIsolatedInstallRuntimeUVTools(unittest.TestCase):
 
     def test_unix_uv_tools_path(self) -> None:
         with patch(
-            "config_manager.sys.executable",
+            "ai_intervention_agent.config_manager.sys.executable",
             "/Users/foo/.local/share/uv/tools/ai-intervention-agent/.venv/bin/python",
         ):
             self.assertTrue(_is_isolated_install_runtime())
 
     def test_windows_uv_tools_path(self) -> None:
         with patch(
-            "config_manager.sys.executable",
+            "ai_intervention_agent.config_manager.sys.executable",
             r"C:\Users\foo\AppData\Roaming\uv\tools\ai-intervention-agent\.venv\Scripts\python.exe",
         ):
             self.assertTrue(_is_isolated_install_runtime())
@@ -153,7 +182,7 @@ class TestIsIsolatedInstallRuntimeUvx(unittest.TestCase):
 
     def test_uvx_cache_path(self) -> None:
         with patch(
-            "config_manager.sys.executable",
+            "ai_intervention_agent.config_manager.sys.executable",
             "/Users/foo/.cache/uv/builds-v0/abcd1234/.venv/bin/python",
         ):
             self.assertTrue(_is_isolated_install_runtime())
@@ -161,7 +190,7 @@ class TestIsIsolatedInstallRuntimeUvx(unittest.TestCase):
     def test_legacy_uvx_path(self) -> None:
         # 老版 uv 的 uvx 路径直接含 ``/uvx/`` 字面量。
         with patch(
-            "config_manager.sys.executable",
+            "ai_intervention_agent.config_manager.sys.executable",
             "/Users/foo/.local/share/uvx/python3.11/bin/python",
         ):
             self.assertTrue(_is_isolated_install_runtime())
@@ -172,7 +201,7 @@ class TestIsIsolatedInstallRuntimePipx(unittest.TestCase):
 
     def test_pipx_venvs_path(self) -> None:
         with patch(
-            "config_manager.sys.executable",
+            "ai_intervention_agent.config_manager.sys.executable",
             "/Users/foo/.local/share/pipx/venvs/ai-intervention-agent/bin/python",
         ):
             self.assertTrue(_is_isolated_install_runtime())
@@ -183,14 +212,14 @@ class TestIsIsolatedInstallRuntimeSitePackages(unittest.TestCase):
 
     def test_module_in_site_packages(self) -> None:
         fake_module_path = "/some/venv/lib/python3.11/site-packages/ai_intervention_agent/config_manager.py"
-        with patch("config_manager.__file__", fake_module_path):
+        with patch("ai_intervention_agent.config_manager.__file__", fake_module_path):
             self.assertTrue(_is_isolated_install_runtime())
 
     def test_module_in_dist_packages(self) -> None:
         fake_module_path = (
             "/usr/lib/python3/dist-packages/ai_intervention_agent/config_manager.py"
         )
-        with patch("config_manager.__file__", fake_module_path):
+        with patch("ai_intervention_agent.config_manager.__file__", fake_module_path):
             self.assertTrue(_is_isolated_install_runtime())
 
 
@@ -204,7 +233,9 @@ class TestIsIsolatedInstallRuntimeEnvOverride(unittest.TestCase):
             tool_bin.parent.mkdir(parents=True)
             tool_bin.touch()
             with (
-                patch("config_manager.sys.executable", str(tool_bin)),
+                patch(
+                    "ai_intervention_agent.config_manager.sys.executable", str(tool_bin)
+                ),
                 patch.dict(os.environ, {"UV_TOOL_DIR": str(tool_dir)}, clear=False),
             ):
                 self.assertTrue(_is_isolated_install_runtime())
@@ -216,7 +247,9 @@ class TestIsIsolatedInstallRuntimeEnvOverride(unittest.TestCase):
             pipx_bin.parent.mkdir(parents=True)
             pipx_bin.touch()
             with (
-                patch("config_manager.sys.executable", str(pipx_bin)),
+                patch(
+                    "ai_intervention_agent.config_manager.sys.executable", str(pipx_bin)
+                ),
                 patch.dict(os.environ, {"PIPX_HOME": str(pipx_root)}, clear=False),
             ):
                 self.assertTrue(_is_isolated_install_runtime())
@@ -227,7 +260,7 @@ class TestIsIsolatedInstallRuntimeRepoVenv(unittest.TestCase):
 
     def test_repo_dot_venv_not_flagged(self) -> None:
         with patch(
-            "config_manager.sys.executable",
+            "ai_intervention_agent.config_manager.sys.executable",
             str(REPO_ROOT / ".venv" / "bin" / "python"),
         ):
             # 重要：仓库内 .venv 必须仍判为非 isolated（让上层 ``_is_uvx_mode``
@@ -238,7 +271,7 @@ class TestIsIsolatedInstallRuntimeRepoVenv(unittest.TestCase):
         # ``~/.local/share/uv/python/cpython-3.11.../bin/python`` 是 uv 给项目
         # 装的 Python 解释器本身，不代表项目已安装。
         with patch(
-            "config_manager.sys.executable",
+            "ai_intervention_agent.config_manager.sys.executable",
             "/Users/foo/.local/share/uv/python/cpython-3.11.15-macos-aarch64-none/bin/python3.11",
         ):
             self.assertFalse(_is_isolated_install_runtime())
@@ -256,7 +289,7 @@ class TestIsUvxModePriorityChain(unittest.TestCase):
         # 即使 sys.executable 在 isolated path 里，DEV_MODE=1 也强制开发模式。
         with (
             patch(
-                "config_manager.sys.executable",
+                "ai_intervention_agent.config_manager.sys.executable",
                 "/Users/foo/.local/share/uv/tools/aiia/.venv/bin/python",
             ),
             patch.dict(
@@ -293,7 +326,7 @@ class TestIsUvxModePriorityChain(unittest.TestCase):
     def test_isolated_runtime_triggers_user_mode(self) -> None:
         with (
             patch(
-                "config_manager.sys.executable",
+                "ai_intervention_agent.config_manager.sys.executable",
                 "/Users/foo/.local/share/pipx/venvs/aiia/bin/python",
             ),
             patch.dict(os.environ, {}, clear=False),
@@ -341,7 +374,7 @@ class TestIsUvxModeFalsyEnvValuesIgnored(unittest.TestCase):
     def test_zero_does_not_force_dev(self) -> None:
         with (
             patch(
-                "config_manager.sys.executable",
+                "ai_intervention_agent.config_manager.sys.executable",
                 "/Users/foo/.local/share/uv/tools/aiia/.venv/bin/python",
             ),
             patch.dict(
@@ -407,9 +440,14 @@ class TestFindConfigFileMultiFormatWarning(unittest.TestCase):
             try:
                 os.chdir(td)
                 with (
-                    patch("config_manager._is_uvx_mode", return_value=False),
+                    patch(
+                        "ai_intervention_agent.config_manager._is_uvx_mode",
+                        return_value=False,
+                    ),
                     patch.dict(os.environ, {}, clear=False),
-                    self.assertLogs("config_manager", level="WARNING") as captured,
+                    self.assertLogs(
+                        "ai_intervention_agent.config_manager", level="WARNING"
+                    ) as captured,
                 ):
                     os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
                     result = find_config_file("config.toml")
@@ -425,11 +463,21 @@ class TestFindConfigFileMultiFormatWarning(unittest.TestCase):
             (Path(td) / "config.toml").write_text("")
             (Path(td) / "config.json").write_text("{}")
             with (
-                patch("config_manager._is_uvx_mode", return_value=True),
-                patch("config_manager.user_config_dir", return_value=td),
-                patch("config_manager.PLATFORMDIRS_AVAILABLE", True),
+                patch(
+                    "ai_intervention_agent.config_manager._is_uvx_mode",
+                    return_value=True,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.user_config_dir",
+                    return_value=td,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", True
+                ),
                 patch.dict(os.environ, {}, clear=False),
-                self.assertLogs("config_manager", level="WARNING") as captured,
+                self.assertLogs(
+                    "ai_intervention_agent.config_manager", level="WARNING"
+                ) as captured,
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
                 result = find_config_file("config.toml")
@@ -449,8 +497,13 @@ class TestFindConfigFileBackwardCompat(unittest.TestCase):
             try:
                 os.chdir(cwd_dir)
                 with (
-                    patch("config_manager._is_uvx_mode", return_value=False),
-                    patch("config_manager.user_config_dir") as user_cfg,
+                    patch(
+                        "ai_intervention_agent.config_manager._is_uvx_mode",
+                        return_value=False,
+                    ),
+                    patch(
+                        "ai_intervention_agent.config_manager.user_config_dir"
+                    ) as user_cfg,
                     patch.dict(os.environ, {}, clear=False),
                 ):
                     os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -478,9 +531,18 @@ class TestFindConfigFileBackwardCompat(unittest.TestCase):
             try:
                 os.chdir(cwd_dir)
                 with (
-                    patch("config_manager._is_uvx_mode", return_value=True),
-                    patch("config_manager.user_config_dir", return_value=user_dir),
-                    patch("config_manager.PLATFORMDIRS_AVAILABLE", True),
+                    patch(
+                        "ai_intervention_agent.config_manager._is_uvx_mode",
+                        return_value=True,
+                    ),
+                    patch(
+                        "ai_intervention_agent.config_manager.user_config_dir",
+                        return_value=user_dir,
+                    ),
+                    patch(
+                        "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE",
+                        True,
+                    ),
                     patch.dict(os.environ, {}, clear=False),
                 ):
                     os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)

@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 import unittest
 
-import server
+import ai_intervention_agent.server as server
 
 
 class TestServerIdentity(unittest.TestCase):

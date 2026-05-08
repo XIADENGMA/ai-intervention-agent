@@ -18,7 +18,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_CSS = REPO_ROOT / "static" / "css" / "main.css"
+WEB_CSS = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css" / "main.css"
 VSCODE_CSS = REPO_ROOT / "packages" / "vscode" / "webview.css"
 
 TOKEN_RE = re.compile(

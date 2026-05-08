@@ -33,11 +33,11 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
-WEB_LOCALES_DIR = ROOT / "static" / "locales"
+WEB_LOCALES_DIR = ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 VSCODE_LOCALES_DIR = ROOT / "packages" / "vscode" / "locales"
-WEB_JS_DIR = ROOT / "static" / "js"
+WEB_JS_DIR = ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 VSCODE_PKG_DIR = ROOT / "packages" / "vscode"
-TEMPLATES_DIR = ROOT / "templates"
+TEMPLATES_DIR = ROOT / "src" / "ai_intervention_agent" / "templates"
 
 # 第三方/压缩 bundle，不扫
 VENDOR_JS = {

@@ -20,7 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WEBVIEW_TS = REPO_ROOT / "packages" / "vscode" / "webview.ts"
 WEBVIEW_UI_JS = REPO_ROOT / "packages" / "vscode" / "webview-ui.js"
-WEB_UI_HTML = REPO_ROOT / "templates" / "web_ui.html"
+WEB_UI_HTML = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
 NOISE_DOC = REPO_ROOT / "docs" / "noise-levels.zh-CN.md"
 
 

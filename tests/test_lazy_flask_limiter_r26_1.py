@@ -58,7 +58,7 @@ import subprocess
 import sys
 import unittest
 
-import web_ui
+import ai_intervention_agent.web_ui as web_ui
 
 
 class TestWebUiLazyFlaskLimiterStatic(unittest.TestCase):

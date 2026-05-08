@@ -53,7 +53,7 @@ from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
 from mcp import McpError
 from mcp.types import ErrorData
 
-import server
+import ai_intervention_agent.server as server
 
 _EXPECTED_LOGGER_NAME = "ai_intervention_agent.fastmcp_errors"
 

@@ -44,7 +44,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_UI_PY = REPO_ROOT / "web_ui.py"
+WEB_UI_PY = REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py"
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +57,7 @@ class TestEnvTruthyParsing(unittest.TestCase):
 
     @staticmethod
     def _check(value: str | None) -> bool:
-        from web_ui import _is_swagger_enabled_via_env
+        from ai_intervention_agent.web_ui import _is_swagger_enabled_via_env
 
         env = {**os.environ}
         env.pop("AI_AGENT_ENABLE_SWAGGER", None)
@@ -124,7 +124,7 @@ class TestDefaultDisabledPath(unittest.TestCase):
         self.addCleanup(_pop_flasgger)
 
     def _make_ui(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         # port 取一个不太可能冲突的高端口；__init__ 不会真的 listen
         return WebFeedbackUI(prompt="r23.3 test", host="127.0.0.1", port=18099)
@@ -177,7 +177,7 @@ class TestFallbackHtmlBody(unittest.TestCase):
         self._env_patch.start()
         self.addCleanup(self._env_patch.stop)
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.ui = WebFeedbackUI(prompt="r23.3 test", host="127.0.0.1", port=18097)
         self.client = self.ui.app.test_client()
@@ -236,7 +236,7 @@ class TestEnabledPath(unittest.TestCase):
         self.addCleanup(self._env_patch.stop)
 
     def _make_ui(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         return WebFeedbackUI(prompt="r23.3 test", host="127.0.0.1", port=18096)
 
@@ -294,7 +294,7 @@ class TestSourceContract(unittest.TestCase):
         """``_init_swagger_lazy`` 方法体内必须含 ``from flasgger import Swagger``。"""
         import inspect
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         src = inspect.getsource(WebFeedbackUI._init_swagger_lazy)
         # 去掉 docstring 后再搜，避免 docstring 里的 backtick 提及被命中
@@ -305,7 +305,7 @@ class TestSourceContract(unittest.TestCase):
         )
 
     def test_env_helper_exists_and_reads_env(self) -> None:
-        from web_ui import _is_swagger_enabled_via_env
+        from ai_intervention_agent.web_ui import _is_swagger_enabled_via_env
 
         self.assertTrue(callable(_is_swagger_enabled_via_env))
 

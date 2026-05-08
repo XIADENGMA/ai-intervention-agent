@@ -38,7 +38,7 @@ class TestConfigDefaultsConsistency(unittest.TestCase):
                 self._assert_dict_keys_recursive(a_val, b_val, path=next_path)
 
     def test_default_config_keys_match_template(self):
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         repo_root = Path(__file__).resolve().parents[1]
         template_path = repo_root / "config.toml.default"

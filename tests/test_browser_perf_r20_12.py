@@ -35,10 +35,12 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_UI_HTML = REPO_ROOT / "templates" / "web_ui.html"
-WEB_UI_PY = REPO_ROOT / "web_ui.py"
-IMAGE_UPLOAD_JS = REPO_ROOT / "static" / "js" / "image-upload.js"
-LOCALE_DIR = REPO_ROOT / "static" / "locales"
+WEB_UI_HTML = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+WEB_UI_PY = REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py"
+IMAGE_UPLOAD_JS = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "image-upload.js"
+)
+LOCALE_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 
 
 def _strip_html_comments(html: str) -> str:
@@ -124,13 +126,13 @@ class TestInlineLocaleReader(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        from web_ui import _read_inline_locale_json
+        from ai_intervention_agent.web_ui import _read_inline_locale_json
 
         # 清缓存，避免被前面的测试污染
         _read_inline_locale_json.cache_clear()
 
     def _read(self, path: str) -> str | None:
-        from web_ui import _read_inline_locale_json
+        from ai_intervention_agent.web_ui import _read_inline_locale_json
 
         return _read_inline_locale_json(path)
 
@@ -198,7 +200,7 @@ class TestInlineLocaleReader(unittest.TestCase):
 
     def test_lru_cache_hits_on_repeat_call(self) -> None:
         """同一路径多次调用应只读 1 次磁盘（LRU cache 命中）。"""
-        from web_ui import _read_inline_locale_json
+        from ai_intervention_agent.web_ui import _read_inline_locale_json
 
         _read_inline_locale_json.cache_clear()
         path = str(LOCALE_DIR / "en.json")
@@ -211,7 +213,7 @@ class TestInlineLocaleReader(unittest.TestCase):
 
     def test_lru_cache_capacity_at_least_two_locales(self) -> None:
         """LRU 缓存容量必须 ≥ 2，让 ``en`` + ``zh-CN`` 同时驻留不互相驱逐。"""
-        from web_ui import _read_inline_locale_json
+        from ai_intervention_agent.web_ui import _read_inline_locale_json
 
         info = _read_inline_locale_json.cache_info()
         self.assertGreaterEqual(
@@ -235,7 +237,7 @@ class TestTemplateContextInlineLocale(unittest.TestCase):
         """创建 WebFeedbackUI 实例 + mock 必需依赖，返回 ``_get_template_context()`` 输出。"""
         from unittest.mock import MagicMock, patch
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="bench",
@@ -252,13 +254,15 @@ class TestTemplateContextInlineLocale(unittest.TestCase):
         # 使用，但在热路径上被替换。这里 patch 模块级函数让所有 4 次调用都返回稳定值
         # 以便快照比较。
         with (
-            patch("web_ui.get_config", return_value=mock_config),
+            patch("ai_intervention_agent.web_ui.get_config", return_value=mock_config),
             patch.object(
                 WebFeedbackUI,
                 "_get_csp_nonce",
                 return_value="test-nonce",
             ),
-            patch("web_ui._compute_file_version", return_value="v1"),
+            patch(
+                "ai_intervention_agent.web_ui._compute_file_version", return_value="v1"
+            ),
         ):
             return ui._get_template_context()
 
@@ -354,7 +358,7 @@ class TestTemplateRendersInlineLocaleE2E(unittest.TestCase):
     def _render_root_html(self, language: str) -> str:
         from unittest.mock import MagicMock, patch
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="hello",
@@ -366,7 +370,7 @@ class TestTemplateRendersInlineLocaleE2E(unittest.TestCase):
         mock_config = MagicMock()
         mock_config.get_section.return_value = {"language": language}
 
-        with patch("web_ui.get_config", return_value=mock_config):
+        with patch("ai_intervention_agent.web_ui.get_config", return_value=mock_config):
             client = ui.app.test_client()
             response = client.get("/")
             self.assertEqual(response.status_code, 200)

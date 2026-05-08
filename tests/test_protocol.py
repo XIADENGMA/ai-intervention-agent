@@ -11,7 +11,11 @@ from __future__ import annotations
 import time
 import unittest
 
-from protocol import PROTOCOL_VERSION, get_capabilities, get_server_clock
+from ai_intervention_agent.protocol import (
+    PROTOCOL_VERSION,
+    get_capabilities,
+    get_server_clock,
+)
 
 
 class TestProtocolVersion(unittest.TestCase):

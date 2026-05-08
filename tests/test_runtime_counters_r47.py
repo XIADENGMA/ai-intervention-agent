@@ -32,9 +32,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import server
-import server_feedback
-from web_ui_routes.task import _sse_bus, _SSEBus
+import ai_intervention_agent.server as server
+import ai_intervention_agent.server_feedback as server_feedback
+from ai_intervention_agent.web_ui_routes.task import _sse_bus, _SSEBus
 
 # ============================================================================
 # 1. _SSEBus 计数器
@@ -363,9 +363,9 @@ class TestSSEStatsRouteRegistered(unittest.TestCase):
     """``/api/system/sse-stats`` 必须挂在 SystemRoutesMixin 上。"""
 
     def setUp(self) -> None:
-        self.source = (REPO_ROOT / "web_ui_routes" / "system.py").read_text(
-            encoding="utf-8"
-        )
+        self.source = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "system.py"
+        ).read_text(encoding="utf-8")
 
     def test_route_path_present(self) -> None:
         self.assertIn(
@@ -412,7 +412,9 @@ class TestSSEStatsRateLimited(unittest.TestCase):
     """``/api/system/sse-stats`` 走 ``self.limiter.limit("60 per minute")``。"""
 
     def test_endpoint_has_explicit_rate_limit(self) -> None:
-        source = (REPO_ROOT / "web_ui_routes" / "system.py").read_text(encoding="utf-8")
+        source = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "system.py"
+        ).read_text(encoding="utf-8")
         # 锁住"60 per minute"这个具体值，避免被改成 limiter.exempt
         # （exempt 会让恶意客户端无限刷接口拉取计数器流量）
         start = source.index('"/api/system/sse-stats"')

@@ -18,7 +18,7 @@ import unittest
 from typing import Any, cast
 from unittest.mock import patch
 
-import server
+import ai_intervention_agent.server as server
 
 
 class TestProcessBlockShape(unittest.TestCase):

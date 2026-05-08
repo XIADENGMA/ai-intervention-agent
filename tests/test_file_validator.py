@@ -18,7 +18,7 @@ class TestMagicNumberValidation(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         self.validator = FileValidator()
 
@@ -69,7 +69,7 @@ class TestMaliciousContentScan(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         self.validator = FileValidator()
 
@@ -123,7 +123,7 @@ class TestFilenameValidation(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         self.validator = FileValidator()
         # PNG 魔数
@@ -203,7 +203,7 @@ class TestFilenameValidation(unittest.TestCase):
         如果未来有人为了"统一处理"把 ``\x00`` 又塞回 frozenset，这个测试
         会立刻 fail，提醒：NUL 是 errors 而非 warnings。
         """
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         self.assertNotIn(
             "\x00",
@@ -218,7 +218,7 @@ class TestFileSizeValidation(unittest.TestCase):
 
     def test_empty_file(self):
         """测试空文件"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         validator = FileValidator()
         result = validator.validate_file(b"", "test.png")
@@ -228,7 +228,7 @@ class TestFileSizeValidation(unittest.TestCase):
 
     def test_oversized_file(self):
         """测试超大文件"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         # 设置较小的限制
         validator = FileValidator(max_file_size=1000)
@@ -246,7 +246,7 @@ class TestMimeConsistency(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         self.validator = FileValidator()
         self.png_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"\x00" * 100
@@ -277,7 +277,7 @@ class TestConvenienceFunctions(unittest.TestCase):
 
     def test_validate_uploaded_file(self):
         """测试 validate_uploaded_file 函数"""
-        from file_validator import validate_uploaded_file
+        from ai_intervention_agent.file_validator import validate_uploaded_file
 
         png_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"\x00" * 100
         result = validate_uploaded_file(png_data, "test.png")
@@ -286,7 +286,7 @@ class TestConvenienceFunctions(unittest.TestCase):
 
     def test_is_safe_image_file(self):
         """测试 is_safe_image_file 函数"""
-        from file_validator import is_safe_image_file
+        from ai_intervention_agent.file_validator import is_safe_image_file
 
         png_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"\x00" * 100
         result = is_safe_image_file(png_data, "test.png")
@@ -295,7 +295,7 @@ class TestConvenienceFunctions(unittest.TestCase):
 
     def test_is_safe_image_file_unsafe(self):
         """测试 is_safe_image_file 函数 - 不安全文件"""
-        from file_validator import is_safe_image_file
+        from ai_intervention_agent.file_validator import is_safe_image_file
 
         # 包含恶意代码
         malicious_data = (
@@ -311,7 +311,7 @@ class TestEdgeCases(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         self.validator = FileValidator()
 
@@ -323,7 +323,7 @@ class TestEdgeCases(unittest.TestCase):
 
     def test_invalid_max_file_size(self):
         """测试无效的最大文件大小"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         with self.assertRaises(ValueError):
             FileValidator(max_file_size=0)
@@ -341,7 +341,7 @@ class TestFileValidatorBoundary(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         self.validator = FileValidator()
 
@@ -384,7 +384,7 @@ class TestFileValidatorBoundary(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 边界路径补充（原 test_file_validator_extended.py）
 # ---------------------------------------------------------------------------
-from file_validator import FileValidator
+from ai_intervention_agent.file_validator import FileValidator
 
 
 class TestValidateFileException(unittest.TestCase):
@@ -408,7 +408,7 @@ class TestAdditionalCheckException(unittest.TestCase):
         validator = FileValidator()
         riff_data = b"\x52\x49\x46\x46" + b"\x00" * 4 + b"WEBP" + b"\x00" * 100
         with patch.dict(
-            "file_validator.IMAGE_MAGIC_NUMBERS",
+            "ai_intervention_agent.file_validator.IMAGE_MAGIC_NUMBERS",
             {
                 b"\x52\x49\x46\x46": {
                     "extension": ".webp",

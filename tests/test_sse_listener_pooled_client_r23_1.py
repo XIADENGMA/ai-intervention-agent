@@ -41,7 +41,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-import server_feedback
+import ai_intervention_agent.server_feedback as server_feedback
 
 
 def _read_sse_listener_source() -> str:
@@ -253,14 +253,14 @@ def _make_pooled_client_mock(
 class TestSseListenerCallsPooledClient(unittest.TestCase):
     """运行时验证：`_sse_listener` 真的命中 `service_manager.get_async_client`。"""
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_get_async_client_is_called_at_least_once(
         self, mock_get_client, mock_get_cfg
     ) -> None:
         """SSE 完成路径下，`get_async_client` 至少被命中一次（来自 SSE listener
         和/或 _fetch_result，关键是不再直接 new client）。"""
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -288,7 +288,7 @@ class TestSseListenerCallsPooledClient(unittest.TestCase):
         )
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(
                 server_feedback.wait_for_task_completion("t-spy", timeout=5)
             )
@@ -303,13 +303,13 @@ class TestSseListenerCallsPooledClient(unittest.TestCase):
             "service_manager.get_async_client 必须被 _sse_listener / _fetch_result 调用",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_stream_called_with_none_read_timeout(
         self, mock_get_client, mock_get_cfg
     ) -> None:
         """spy `stream(...)` 调用，验证 timeout kwarg 是 `Timeout(None, ...)`。"""
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -337,7 +337,7 @@ class TestSseListenerCallsPooledClient(unittest.TestCase):
         )
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             asyncio.run(
                 server_feedback.wait_for_task_completion("t-timeout", timeout=5)
             )
@@ -362,8 +362,8 @@ class TestSseListenerCallsPooledClient(unittest.TestCase):
             "connect timeout 不能是 None，避免 connect 阶段卡死",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_listener_does_not_construct_new_async_client(
         self, mock_get_client, mock_get_cfg
     ) -> None:
@@ -378,7 +378,7 @@ class TestSseListenerCallsPooledClient(unittest.TestCase):
         不会真的去 new。这样剩下的任何 `httpx.AsyncClient.__init__` 调用都
         是 listener 自己 new 出来的，必为 0。
         """
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -415,7 +415,7 @@ class TestSseListenerCallsPooledClient(unittest.TestCase):
 
         with (
             patch.object(httpx.AsyncClient, "__init__", _spy_init),
-            patch("server_config.BACKEND_MIN", 1),
+            patch("ai_intervention_agent.server_config.BACKEND_MIN", 1),
         ):
             asyncio.run(server_feedback.wait_for_task_completion("t-no-new", timeout=5))
 
@@ -434,13 +434,13 @@ class TestSseListenerCallsPooledClient(unittest.TestCase):
 class TestR22ContractsStillHold(unittest.TestCase):
     """R23.1 改 client 来源不能破坏 R22.1 的 SSE+poll 协同语义。"""
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_poll_fallback_when_sse_blocked(
         self, mock_get_client, mock_get_cfg
     ) -> None:
         """SSE 不可用 → poll 接管 → 在 active→completed 切换时拿到 result。"""
-        from service_manager import WebUIConfig
+        from ai_intervention_agent.service_manager import WebUIConfig
 
         cfg = WebUIConfig(
             host="127.0.0.1",
@@ -474,7 +474,7 @@ class TestR22ContractsStillHold(unittest.TestCase):
         )
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(
                 server_feedback.wait_for_task_completion("t-r23-regression", timeout=5)
             )

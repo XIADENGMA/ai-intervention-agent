@@ -31,7 +31,12 @@
 
 ### `_looks_like_repo_checkout(module_dir: Path) -> bool`
 
-模块目录是否是本仓库源码树（同级有 ``pyproject.toml`` + ``server.py``）。
+模块目录是否是本仓库源码树（``src/ai_intervention_agent/`` 形态）。
+
+判定条件（必须同时成立）：
+1. ``module_dir`` 内有 ``server.py`` —— 防止 site-packages 误命中；
+2. ``module_dir.parent.parent`` 有 ``pyproject.toml`` —— 表征真正
+   的 src layout 仓库根。
 
 抽出来方便单测 + 增强可读性。
 

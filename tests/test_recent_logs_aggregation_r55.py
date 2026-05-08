@@ -16,7 +16,7 @@ import unittest
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
-import server
+import ai_intervention_agent.server as server
 
 
 def _ok_resp(entries: list[dict] | None = None) -> MagicMock:
@@ -137,9 +137,12 @@ class TestServerInfoRecentLogsAggregation(unittest.TestCase):
 
     def test_mcp_only_when_web_ui_offline(self) -> None:
         with (
-            patch("server.is_web_service_running", return_value=False),
             patch(
-                "enhanced_logging.get_recent_logs",
+                "ai_intervention_agent.server.is_web_service_running",
+                return_value=False,
+            ),
+            patch(
+                "ai_intervention_agent.enhanced_logging.get_recent_logs",
                 return_value=[
                     {"level": "ERROR", "message": "mcp boom", "ts_unix": 100.0},
                 ],
@@ -174,9 +177,11 @@ class TestServerInfoRecentLogsAggregation(unittest.TestCase):
             )
 
         with (
-            patch("server.is_web_service_running", return_value=True),
             patch(
-                "enhanced_logging.get_recent_logs",
+                "ai_intervention_agent.server.is_web_service_running", return_value=True
+            ),
+            patch(
+                "ai_intervention_agent.enhanced_logging.get_recent_logs",
                 return_value=[
                     {"level": "ERROR", "message": "mcp-1", "ts_unix": 100.0},
                 ],
@@ -201,9 +206,11 @@ class TestServerInfoRecentLogsAggregation(unittest.TestCase):
             raise RuntimeError("net down")
 
         with (
-            patch("server.is_web_service_running", return_value=True),
             patch(
-                "enhanced_logging.get_recent_logs",
+                "ai_intervention_agent.server.is_web_service_running", return_value=True
+            ),
+            patch(
+                "ai_intervention_agent.enhanced_logging.get_recent_logs",
                 return_value=[
                     {"level": "ERROR", "message": "mcp-only", "ts_unix": 1.0},
                 ],

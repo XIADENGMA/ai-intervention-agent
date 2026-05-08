@@ -27,9 +27,11 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LOCALES_DIR = REPO_ROOT / "static" / "locales"
-STATIC_JS_DIR = REPO_ROOT / "static" / "js"
-TEMPLATE_PATH = REPO_ROOT / "templates" / "web_ui.html"
+LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
+STATIC_JS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
+TEMPLATE_PATH = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+)
 
 # Strip comments to avoid matching example keys inside /* ... */ or // docs.
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)

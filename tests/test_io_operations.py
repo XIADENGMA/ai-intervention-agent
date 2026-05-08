@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from config_manager import ConfigManager
+from ai_intervention_agent.config_manager import ConfigManager
 
 
 class TestImportConfig(unittest.TestCase):

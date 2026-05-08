@@ -30,7 +30,7 @@ import unittest
 from typing import cast
 from unittest.mock import patch
 
-import server
+import ai_intervention_agent.server as server
 
 
 class TestResolveBuildInfoBasic(unittest.TestCase):

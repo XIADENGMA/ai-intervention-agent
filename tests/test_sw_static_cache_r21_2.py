@@ -61,8 +61,22 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SW_PATH = REPO_ROOT / "static" / "js" / "notification-service-worker.js"
-NM_PATH = REPO_ROOT / "static" / "js" / "notification-manager.js"
+SW_PATH = (
+    REPO_ROOT
+    / "src"
+    / "ai_intervention_agent"
+    / "static"
+    / "js"
+    / "notification-service-worker.js"
+)
+NM_PATH = (
+    REPO_ROOT
+    / "src"
+    / "ai_intervention_agent"
+    / "static"
+    / "js"
+    / "notification-manager.js"
+)
 
 
 def _read(p: Path) -> str:

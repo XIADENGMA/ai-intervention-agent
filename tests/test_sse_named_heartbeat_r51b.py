@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from web_ui_routes import task as task_module
+from ai_intervention_agent.web_ui_routes import task as task_module
 
 
 class TestHeartbeatCounterShape(unittest.TestCase):
@@ -127,7 +127,14 @@ class TestFrontendHeartbeatListener(unittest.TestCase):
     """``static/js/multi_task.js`` 和 ``packages/vscode/extension.ts`` 都要注册 listener。"""
 
     def test_multi_task_js_has_heartbeat_listener(self) -> None:
-        path = REPO_ROOT / "static" / "js" / "multi_task.js"
+        path = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "multi_task.js"
+        )
         src = path.read_text(encoding="utf-8")
         # 引号风格无关：Prettier 默认双引号 + 项目内未强制 singleQuote。锁
         # 住「listener 存在」即可，避免 reformat 整个文件就让回归测假阴。

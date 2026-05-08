@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import task_queue
+import ai_intervention_agent.task_queue as task_queue
 
 WRITE_METHOD_LABEL_MAP = {
     "add_task": "add_task",

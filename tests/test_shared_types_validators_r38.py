@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import unittest
 
-from shared_types import (
+from ai_intervention_agent.shared_types import (
     _clamp_float,
     _clamp_int,
     _clamp_int_allow_zero,
@@ -307,7 +307,7 @@ class TestSectionModelsIntegration(unittest.TestCase):
     """
 
     def test_web_ui_section_clamps_port(self) -> None:
-        from shared_types import WebUISectionConfig
+        from ai_intervention_agent.shared_types import WebUISectionConfig
 
         cfg = WebUISectionConfig.model_validate({"port": "99999"})
         self.assertEqual(cfg.port, 65535, "字符串端口应被强转 + 钳位到 65535")
@@ -316,7 +316,7 @@ class TestSectionModelsIntegration(unittest.TestCase):
         self.assertEqual(cfg2.port, 8080, "无法解析的端口应回退到 default 8080")
 
     def test_feedback_section_allow_zero_for_countdown(self) -> None:
-        from shared_types import FeedbackSectionConfig
+        from ai_intervention_agent.shared_types import FeedbackSectionConfig
 
         cfg = FeedbackSectionConfig.model_validate({"frontend_countdown": 0})
         self.assertEqual(cfg.frontend_countdown, 0, "0 = 显式禁用，不能被钳位")
@@ -325,7 +325,7 @@ class TestSectionModelsIntegration(unittest.TestCase):
         self.assertEqual(cfg_neg.frontend_countdown, 0, "负值降级到 0（disable）")
 
     def test_notification_section_coerces_bool_strings(self) -> None:
-        from shared_types import NotificationSectionConfig
+        from ai_intervention_agent.shared_types import NotificationSectionConfig
 
         cfg = NotificationSectionConfig.model_validate({"enabled": "yes"})
         self.assertTrue(cfg.enabled)
@@ -334,7 +334,7 @@ class TestSectionModelsIntegration(unittest.TestCase):
         self.assertFalse(cfg_off.enabled)
 
     def test_web_ui_section_coerces_retry_delay_string(self) -> None:
-        from shared_types import WebUISectionConfig
+        from ai_intervention_agent.shared_types import WebUISectionConfig
 
         cfg = WebUISectionConfig.model_validate({"http_retry_delay": "2.5"})
         self.assertAlmostEqual(cfg.http_retry_delay, 2.5)

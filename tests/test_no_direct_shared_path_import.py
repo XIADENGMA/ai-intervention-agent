@@ -24,7 +24,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STATIC_JS_DIR = REPO_ROOT / "static" / "js"
+STATIC_JS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 VSCODE_DIR = REPO_ROOT / "packages" / "vscode"
 
 FORBIDDEN_PATHS = (

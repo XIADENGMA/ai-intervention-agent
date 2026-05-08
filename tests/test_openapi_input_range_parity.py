@@ -47,10 +47,10 @@ if str(REPO_ROOT) not in sys.path:
 
 import yaml
 
-from shared_types import SECTION_MODELS
+from ai_intervention_agent.shared_types import SECTION_MODELS
 from tests.test_config_docs_range_parity import _introspect_field_bounds
 
-ROUTES_DIR = REPO_ROOT / "web_ui_routes"
+ROUTES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes"
 
 # 这些字段在 OpenAPI input spec 中代表 feedback.frontend_countdown 的同义。
 # 加新别名时同步 ``server_config`` 的注释——它们都该走相同的 [0, 3600] 边界。

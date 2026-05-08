@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-TEMPLATE = ROOT / "templates" / "web_ui.html"
-WEB_I18N_JS = ROOT / "static" / "js" / "i18n.js"
+TEMPLATE = ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+WEB_I18N_JS = ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "i18n.js"
 VSCODE_I18N_JS = ROOT / "packages" / "vscode" / "i18n.js"
 VSCODE_WEBVIEW_TS = ROOT / "packages" / "vscode" / "webview.ts"
 
@@ -34,7 +34,9 @@ class TestTemplateDir:
 
     def test_web_ui_py_injects_html_dir_in_template_context(self):
         """web_ui.py::_get_template_context 必须把 html_dir 注入 Jinja 上下文。"""
-        src = (ROOT / "web_ui.py").read_text(encoding="utf-8")
+        src = (ROOT / "src" / "ai_intervention_agent" / "web_ui.py").read_text(
+            encoding="utf-8"
+        )
         assert '"html_dir"' in src, "_get_template_context 未向模板注入 html_dir"
         # 白名单必须覆盖主流 RTL 语言前缀（至少 ar/he/fa/ur）
         for prefix in ("ar", "he", "fa", "ur"):
@@ -113,7 +115,7 @@ class TestHtmlDirContextValues:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch):
         # 避免触碰全局 config；构造一个最小化 stub
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         class _StubConfig:
             def __init__(self, lang: str) -> None:
@@ -134,7 +136,7 @@ class TestHtmlDirContextValues:
     def _call(self, manager, lang: str) -> dict:
         """用 monkeypatch 切换 get_config().get_section('web_ui')['language']。"""
         # 直接复用模块内的 get_config
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original = web_ui.get_config
         stub = self._StubConfig(lang)

@@ -67,7 +67,7 @@ class TestMdnsThreadLifecycle(unittest.TestCase):
     """daemon thread 在 __init__ / run() / _stop_mdns 三阶段的状态转换"""
 
     def setUp(self) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.ui = WebFeedbackUI(
             prompt="lifecycle-test",
@@ -180,7 +180,7 @@ class TestAsyncMdnsRegisterBehavior(unittest.TestCase):
     """异步线程内执行 _start_mdns_if_needed 应与同步执行行为一致"""
 
     def setUp(self) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.ui = WebFeedbackUI(
             prompt="behavior-test",
@@ -238,8 +238,12 @@ class TestAsyncMdnsRegisterBehavior(unittest.TestCase):
 class TestSourceTextInvariants(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.web_ui_src = (PROJECT_ROOT / "web_ui.py").read_text(encoding="utf-8")
-        cls.mdns_src = (PROJECT_ROOT / "web_ui_mdns.py").read_text(encoding="utf-8")
+        cls.web_ui_src = (
+            PROJECT_ROOT / "src" / "ai_intervention_agent" / "web_ui.py"
+        ).read_text(encoding="utf-8")
+        cls.mdns_src = (
+            PROJECT_ROOT / "src" / "ai_intervention_agent" / "web_ui_mdns.py"
+        ).read_text(encoding="utf-8")
 
     def test_run_uses_thread_for_mdns(self) -> None:
         """run() 中必须用 Thread 异步发布 mDNS，禁止裸调用 _start_mdns_if_needed()"""
@@ -349,11 +353,15 @@ class TestEndToEndSpawnToListenLatency(unittest.TestCase):
         env = {**os.environ, "AI_INTERVENTION_AGENT_NO_BROWSER": "1"}
 
         t1 = time.monotonic()
+        # R76 src/ layout：``web_ui.py`` 已迁入 ``src/ai_intervention_agent/``，
+        # 直接以包内模块路径 ``-m ai_intervention_agent.web_ui`` 启动，避免依
+        # 赖仓库根 cwd（也保证子进程走 site-packages editable install）。
         proc = subprocess.Popen(
             [
                 sys.executable,
                 "-u",
-                "web_ui.py",
+                "-m",
+                "ai_intervention_agent.web_ui",
                 "--prompt",
                 "r20.11-int-test",
                 "--port",

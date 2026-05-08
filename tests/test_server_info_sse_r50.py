@@ -26,8 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import server
-import web_ui_config_sync
+import ai_intervention_agent.server as server
+import ai_intervention_agent.web_ui_config_sync as web_ui_config_sync
 
 # ============================================================================
 # A. server_info_resource 的 sse_bus 子块
@@ -57,7 +57,9 @@ class TestServerInfoSseBusWebUINotRunning(unittest.TestCase):
     def test_unavailable_when_web_ui_not_running(self) -> None:
         # 强制 web_ui_info["running"]=False：让上一段（web_ui block）
         # 探测端口失败。我们 mock is_web_service_running 返回 False。
-        with patch("server.is_web_service_running", return_value=False):
+        with patch(
+            "ai_intervention_agent.server.is_web_service_running", return_value=False
+        ):
             info = server.server_info_resource()
         block = cast(dict[str, Any], info["sse_bus"])
         self.assertIn(
@@ -91,7 +93,9 @@ class TestServerInfoSseBusWebUIRunningOK(unittest.TestCase):
             "history_size": 42,
         }
         with (
-            patch("server.is_web_service_running", return_value=True),
+            patch(
+                "ai_intervention_agent.server.is_web_service_running", return_value=True
+            ),
             patch("httpx.get", return_value=fake_resp),
         ):
             info = server.server_info_resource()
@@ -118,7 +122,9 @@ class TestServerInfoSseBusWebUIRunningFailureModes(unittest.TestCase):
         fake_resp = MagicMock()
         fake_resp.status_code = 500
         with (
-            patch("server.is_web_service_running", return_value=True),
+            patch(
+                "ai_intervention_agent.server.is_web_service_running", return_value=True
+            ),
             patch("httpx.get", return_value=fake_resp),
         ):
             info = server.server_info_resource()
@@ -128,7 +134,9 @@ class TestServerInfoSseBusWebUIRunningFailureModes(unittest.TestCase):
 
     def test_httpx_exception_falls_back_to_error(self) -> None:
         with (
-            patch("server.is_web_service_running", return_value=True),
+            patch(
+                "ai_intervention_agent.server.is_web_service_running", return_value=True
+            ),
             patch("httpx.get", side_effect=RuntimeError("simulated network error")),
         ):
             info = server.server_info_resource()
@@ -141,7 +149,9 @@ class TestServerInfoSseBusWebUIRunningFailureModes(unittest.TestCase):
         fake_resp.status_code = 200
         fake_resp.json.return_value = {"foo": "bar"}  # no "success"
         with (
-            patch("server.is_web_service_running", return_value=True),
+            patch(
+                "ai_intervention_agent.server.is_web_service_running", return_value=True
+            ),
             patch("httpx.get", return_value=fake_resp),
         ):
             info = server.server_info_resource()
@@ -169,7 +179,7 @@ class TestEmitConfigChangedDebounce(unittest.TestCase):
     def test_first_call_passes_through(self) -> None:
         with (
             patch("time.monotonic", side_effect=self._mono),
-            patch("web_ui_routes.task._sse_bus") as fake_bus,
+            patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus,
         ):
             web_ui_config_sync._emit_config_changed_to_sse_bus()
         fake_bus.emit.assert_called_once()
@@ -177,7 +187,7 @@ class TestEmitConfigChangedDebounce(unittest.TestCase):
     def test_second_call_within_window_is_suppressed(self) -> None:
         with (
             patch("time.monotonic", side_effect=self._mono),
-            patch("web_ui_routes.task._sse_bus") as fake_bus,
+            patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus,
         ):
             web_ui_config_sync._emit_config_changed_to_sse_bus()  # t=1000.0
             self._mono_value += 0.1  # 100ms 后
@@ -190,7 +200,7 @@ class TestEmitConfigChangedDebounce(unittest.TestCase):
     def test_call_after_window_passes_through(self) -> None:
         with (
             patch("time.monotonic", side_effect=self._mono),
-            patch("web_ui_routes.task._sse_bus") as fake_bus,
+            patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus,
         ):
             web_ui_config_sync._emit_config_changed_to_sse_bus()  # t=1000.0
             self._mono_value += 0.3  # 300ms 后（> 250ms 窗口）
@@ -201,7 +211,7 @@ class TestEmitConfigChangedDebounce(unittest.TestCase):
         """模拟 mtime 风暴：50 ms 内 10 次 callback。"""
         with (
             patch("time.monotonic", side_effect=self._mono),
-            patch("web_ui_routes.task._sse_bus") as fake_bus,
+            patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as fake_bus,
         ):
             for _ in range(10):
                 self._mono_value += 0.005  # 每 5ms 一次

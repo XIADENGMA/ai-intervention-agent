@@ -27,11 +27,11 @@ import time
 import unittest
 from pathlib import Path
 
-from config_manager import ReadWriteLock
-from task_queue import TaskQueue
+from ai_intervention_agent.config_manager import ReadWriteLock
+from ai_intervention_agent.task_queue import TaskQueue
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TASK_QUEUE_PY = REPO_ROOT / "task_queue.py"
+TASK_QUEUE_PY = REPO_ROOT / "src" / "ai_intervention_agent" / "task_queue.py"
 
 
 class _TaskQueueFixture(unittest.TestCase):
@@ -99,7 +99,7 @@ class TestSourceInvariants(unittest.TestCase):
 
     def test_imports_read_write_lock(self) -> None:
         self.assertIn(
-            "from config_manager import ReadWriteLock",
+            "from ai_intervention_agent.config_manager import ReadWriteLock",
             self.source,
             "R22.2 必须显式从 config_manager 导入 ReadWriteLock",
         )

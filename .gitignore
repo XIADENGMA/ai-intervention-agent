@@ -192,6 +192,11 @@ data/
 # 必须随仓库分发，否则 `scripts/perf_gate.py` 在新 clone 上会因缺失 baseline 直接失败。
 !tests/data/
 !tests/data/**
+# R76 src/ layout 后：包内 ``src/ai_intervention_agent/data/`` 是运行时持久化目录
+# （tasks.json 等），不是源码资源，必须忽略；同样 ``src/ai_intervention_agent/logs/``
+# 也是子进程运行日志输出目录。
+src/ai_intervention_agent/data/
+src/ai_intervention_agent/logs/
 pids
 *.pid
 *.seed
@@ -252,7 +257,12 @@ TODO.md
 specs/
 .coveragerc
 
-# 忽略压缩后的静态资源
+# 忽略压缩后的静态资源（R76 起静态资源迁入 ``src/ai_intervention_agent/static/``，
+# 旧路径 ``static/`` 仍保留作为防御以兼容历史 working tree）。
+src/ai_intervention_agent/static/css/*.min.css
+src/ai_intervention_agent/static/js/*.min.js
+!src/ai_intervention_agent/static/js/prism-components/
+!src/ai_intervention_agent/static/js/lottie.min.js
 static/css/*.min.css
 static/js/*.min.js
 !static/js/prism-components/

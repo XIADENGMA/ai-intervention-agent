@@ -27,7 +27,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_UI_HTML = REPO_ROOT / "templates" / "web_ui.html"
+WEB_UI_HTML = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
 VSCODE_WEBVIEW_TS = REPO_ROOT / "packages" / "vscode" / "webview.ts"
 
 EXPECTED_BARE_SPECIFIERS = {

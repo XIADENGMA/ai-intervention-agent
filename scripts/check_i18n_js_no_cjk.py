@@ -40,7 +40,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-_WEBUI_ROOT = ROOT / "static" / "js"
+_WEBUI_ROOT = ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 _VSCODE_ROOT = ROOT / "packages" / "vscode"
 
 SCOPES: dict[str, tuple[Path, ...]] = {

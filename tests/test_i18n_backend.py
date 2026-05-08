@@ -21,14 +21,15 @@ from pathlib import Path
 
 import pytest
 
-i18n = importlib.import_module("i18n")
+i18n = importlib.import_module("ai_intervention_agent.i18n")
 
 ROOT = Path(__file__).resolve().parent.parent
+PKG_ROOT = ROOT / "src" / "ai_intervention_agent"
 SERVER_PY_GLOB = [
-    ROOT / "web_ui.py",
-    ROOT / "web_ui_routes" / "feedback.py",
-    ROOT / "web_ui_routes" / "notification.py",
-    ROOT / "web_ui_routes" / "task.py",
+    PKG_ROOT / "web_ui.py",
+    PKG_ROOT / "web_ui_routes" / "feedback.py",
+    PKG_ROOT / "web_ui_routes" / "notification.py",
+    PKG_ROOT / "web_ui_routes" / "task.py",
 ]
 
 # Matches ``msg("x.y")`` and ``get_locale_message("x.y")`` across the
@@ -178,7 +179,9 @@ class TestBackendStaticStructure:
         # A small AST probe to catch accidental top-level statements
         # (e.g. a stray ``print(...)`` landing in the dict block)
         # without running the module.
-        src = (ROOT / "i18n.py").read_text(encoding="utf-8")
+        src = (ROOT / "src" / "ai_intervention_agent" / "i18n.py").read_text(
+            encoding="utf-8"
+        )
         tree = ast.parse(src)
         offenders = [
             ast.dump(node)

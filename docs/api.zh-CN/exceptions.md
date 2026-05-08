@@ -17,7 +17,7 @@
 
 用法::
 
-    from exceptions import make_error_response
+    from ai_intervention_agent.exceptions import make_error_response
     from flask import jsonify
     return jsonify(make_error_response("任务不存在", 404, code="not_found")[0]), 404
     # 或更简洁：

@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET_GLOBS = [
-    ROOT / "static" / "js",
+    ROOT / "src" / "ai_intervention_agent" / "static" / "js",
     ROOT / "packages" / "vscode",
 ]
 EXCLUDE_DIRS = {

@@ -85,46 +85,24 @@ Changelog = "https://github.com/xiadengma/ai-intervention-agent/blob/main/CHANGE
 "Release notes" = "https://github.com/xiadengma/ai-intervention-agent/releases"
 
 [project.scripts]
-ai-intervention-agent = "server:main"
+ai-intervention-agent = "ai_intervention_agent.server:main"
 
+# R76：迁入 src/ layout（PyPA / Hatch 推荐），让 editable install 与发布安装
+# 的 import 路径一致，避免开发环境靠 ``cwd`` 找模块。
+# - wheel: 单一包 ``ai_intervention_agent``，对应 ``src/ai_intervention_agent/``
+# - sdist: 显式 include 仍然在仓库根的 templates/static/sounds/icons/config 模板
+#   等运行时数据资产，源码部分由 hatch 默认沿 wheel.packages 自动包含
 [tool.hatch.build.targets.wheel]
-packages = ["."]
-exclude = ["/packages/vscode", "/packages/vscode/**"]
+packages = ["src/ai_intervention_agent"]
 
 [tool.hatch.build.targets.sdist]
+# R76 起所有运行时资产（``templates/`` ``static/`` ``icons/`` ``sounds/``）都迁入
+# ``src/ai_intervention_agent/`` 包内，会随 wheel.packages 自动随 sdist 一并打包；
+# 此处仅再列出仓库根的配置模板与说明文档。
 include = [
-    "/server.py",
-    "/server_feedback.py",
-    "/service_manager.py",
-    "/web_ui.py",
-    "/web_ui_validators.py",
-    "/web_ui_mdns_utils.py",
-    "/web_ui_config_sync.py",
-    "/web_ui_security.py",
-    "/web_ui_mdns.py",
-    "/config_manager.py",
-    "/config_utils.py",
-    "/enhanced_logging.py",
-    "/file_validator.py",
-    "/notification_models.py",
-    "/notification_manager.py",
-    "/notification_providers.py",
-    "/shared_types.py",
-    "/task_queue.py",
-    "/task_queue_singleton.py",
-    "/exceptions.py",
-    "/server_config.py",
-    "/i18n.py",
-    "/protocol.py",
-    "/state_machine.py",
-    "/config_modules",
-    "/web_ui_routes",
+    "/src/ai_intervention_agent",
     "/config.toml.default",
     "/config.jsonc.default",
-    "/templates",
-    "/static",
-    "/sounds",
-    "/icons",
     "/README.md",
     "/LICENSE",
 ]
@@ -172,6 +150,10 @@ dev = [
 ]
 
 [tool.coverage.run]
+# R76 src/ layout 改造后，测出 ai_intervention_agent.* 这些 import 名
+# 同时实际文件落在 src/ai_intervention_agent/ 下；显式列源码根，让
+# pytest-cov 在并行场景下正确归一覆盖率。
+source = ["src/ai_intervention_agent"]
 # 测试时排除一次性 / 离线脚本，避免被算进 fail_under 红线（它们独立跑）
 omit = [
     "scripts/*",
@@ -237,8 +219,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # 测试文件允许导入不在顶部（需要先修改 sys.path）
 "tests/*.py" = ["E402", "F841"]
-# server.py 特殊配置
-"server.py" = ["E402"]
+# server.py 特殊配置（R76 后 src layout 的入口模块）
+"src/ai_intervention_agent/server.py" = ["E402"]
 
 [tool.ruff.format]
 # 使用双引号

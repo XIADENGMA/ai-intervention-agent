@@ -28,7 +28,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-WEB_UI_PATH = Path(__file__).resolve().parent.parent / "web_ui.py"
+WEB_UI_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "src"
+    / "ai_intervention_agent"
+    / "web_ui.py"
+)
 
 
 class TestRenderMarkdownCacheCorrectness(unittest.TestCase):
@@ -36,7 +41,7 @@ class TestRenderMarkdownCacheCorrectness(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.WebFeedbackUI = WebFeedbackUI
 

@@ -34,7 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from enhanced_logging import LogSanitizer
+from ai_intervention_agent.enhanced_logging import LogSanitizer
 
 REDACTED = "***REDACTED***"
 
@@ -278,7 +278,7 @@ class TestSanitizerIsCalledByPatcher(unittest.TestCase):
     """``_sanitize_and_escape`` patcher 必须仍然走 ``_global_sanitizer``。"""
 
     def test_patcher_uses_global_sanitizer(self) -> None:
-        from enhanced_logging import _sanitize_and_escape
+        from ai_intervention_agent.enhanced_logging import _sanitize_and_escape
 
         token = "sk-proj-" + "Z" * 40
         record: dict[str, str] = {"message": f"key={token}"}
@@ -291,14 +291,17 @@ class TestRingBufferUsesNewSanitizer(unittest.TestCase):
     """R51-C 的 ring buffer 写入路径也走新脱敏。"""
 
     def setUp(self) -> None:
-        from enhanced_logging import clear_recent_logs
+        from ai_intervention_agent.enhanced_logging import clear_recent_logs
 
         clear_recent_logs()
 
     def test_record_to_ring_redacts_modern_key(self) -> None:
         import logging
 
-        from enhanced_logging import _record_to_ring, get_recent_logs
+        from ai_intervention_agent.enhanced_logging import (
+            _record_to_ring,
+            get_recent_logs,
+        )
 
         token = "sk-proj-" + "Y" * 40
         _record_to_ring(logging.WARNING, "test.logger", f"detected key={token}")

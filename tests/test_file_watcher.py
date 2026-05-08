@@ -17,7 +17,7 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
-from config_manager import ConfigManager
+from ai_intervention_agent.config_manager import ConfigManager
 
 
 class TestFileWatcherStartStop(unittest.TestCase):

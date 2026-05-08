@@ -27,8 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from web_ui_routes import _upload_helpers
-from web_ui_routes._upload_helpers import (
+from ai_intervention_agent.web_ui_routes import _upload_helpers
+from ai_intervention_agent.web_ui_routes._upload_helpers import (
     MAX_FILE_SIZE_BYTES,
     MAX_IMAGES_PER_REQUEST,
     MAX_TOTAL_UPLOAD_BYTES,
@@ -85,9 +85,14 @@ class TestUploadHelperConstants(unittest.TestCase):
 
     def test_max_images_matches_client(self) -> None:
         """``MAX_IMAGES_PER_REQUEST`` 与客户端 ``MAX_IMAGE_COUNT`` 对齐。"""
-        client_js = (REPO_ROOT / "static" / "js" / "image-upload.js").read_text(
-            encoding="utf-8"
-        )
+        client_js = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "image-upload.js"
+        ).read_text(encoding="utf-8")
         # 找 ``const MAX_IMAGE_COUNT = N``
         import re
 
@@ -211,9 +216,13 @@ class TestUploadHelperBoundaryNotes(unittest.TestCase):
     """
 
     def test_caps_use_continue_not_break(self) -> None:
-        src = (REPO_ROOT / "web_ui_routes" / "_upload_helpers.py").read_text(
-            encoding="utf-8"
-        )
+        src = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "web_ui_routes"
+            / "_upload_helpers.py"
+        ).read_text(encoding="utf-8")
         # 拉出 extract_uploaded_images 函数体
         import ast
 
@@ -259,7 +268,7 @@ class TestPerFileSizeCap(unittest.TestCase):
         """``MAX_FILE_SIZE_BYTES`` 必须与 ``file_validator.FileValidator``
         默认 ``max_file_size`` 一致 —— 否则两层 cap 出现 drift，攻击者能找
         到只过其中一层的口子。"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         validator = FileValidator()
         self.assertEqual(
@@ -299,7 +308,7 @@ class TestPerFileSizeCap(unittest.TestCase):
         from unittest.mock import patch
 
         with patch(
-            "web_ui_routes._upload_helpers.validate_uploaded_file"
+            "ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file"
         ) as mock_validate:
             result = extract_uploaded_images(request)
 
@@ -329,7 +338,7 @@ class TestPerFileSizeCap(unittest.TestCase):
         request = _make_mock_request({"image_0": at_cap_file})
 
         with patch(
-            "web_ui_routes._upload_helpers.validate_uploaded_file",
+            "ai_intervention_agent.web_ui_routes._upload_helpers.validate_uploaded_file",
             return_value={
                 "valid": False,
                 "errors": ["fake reject"],
@@ -404,7 +413,7 @@ class TestFlaskMaxContentLength(unittest.TestCase):
         在测试里调）。共享一个实例避免每条测试都重新初始化 Compress / Swagger 等
         重型组件。
         """
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(prompt="smoke-r17.6", task_id="r17-6-cap", port=0)
 
@@ -447,7 +456,7 @@ class TestFlaskMaxContentLength(unittest.TestCase):
         多个 dual-path drift bug 的根源）。"""
         import inspect
 
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         src = inspect.getsource(web_ui)
         # 必须出现 MAX_TOTAL_UPLOAD_BYTES 引用（无论是直接 import 还是
@@ -490,7 +499,7 @@ def _file_validator_sanity_check() -> None:
     如果未来 ``file_validator`` 加严了 PNG 校验导致 _TINY_PNG 不再 valid，
     本测试模块会在 import 阶段 fail 而不是在测试阶段 fail，便于排错。
     """
-    from file_validator import validate_uploaded_file
+    from ai_intervention_agent.file_validator import validate_uploaded_file
 
     result = validate_uploaded_file(_TINY_PNG, "smoke.png", "image/png")
     if not result["valid"]:

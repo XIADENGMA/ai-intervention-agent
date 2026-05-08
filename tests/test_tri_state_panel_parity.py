@@ -44,19 +44,39 @@ VSCODE_PKG_JSON = REPO_ROOT / "packages" / "vscode" / "package.json"
 # scripts/package_vscode_vsix.mjs::SHARED_TRI_STATE_PANEL_FILES.
 SHARED_PAIRS: tuple[tuple[Path, Path], ...] = (
     (
-        REPO_ROOT / "static" / "js" / "tri-state-panel.js",
+        REPO_ROOT
+        / "src"
+        / "ai_intervention_agent"
+        / "static"
+        / "js"
+        / "tri-state-panel.js",
         REPO_ROOT / "packages" / "vscode" / "tri-state-panel.js",
     ),
     (
-        REPO_ROOT / "static" / "js" / "tri-state-panel-loader.js",
+        REPO_ROOT
+        / "src"
+        / "ai_intervention_agent"
+        / "static"
+        / "js"
+        / "tri-state-panel-loader.js",
         REPO_ROOT / "packages" / "vscode" / "tri-state-panel-loader.js",
     ),
     (
-        REPO_ROOT / "static" / "js" / "tri-state-panel-bootstrap.js",
+        REPO_ROOT
+        / "src"
+        / "ai_intervention_agent"
+        / "static"
+        / "js"
+        / "tri-state-panel-bootstrap.js",
         REPO_ROOT / "packages" / "vscode" / "tri-state-panel-bootstrap.js",
     ),
     (
-        REPO_ROOT / "static" / "css" / "tri-state-panel.css",
+        REPO_ROOT
+        / "src"
+        / "ai_intervention_agent"
+        / "static"
+        / "css"
+        / "tri-state-panel.css",
         REPO_ROOT / "packages" / "vscode" / "tri-state-panel.css",
     ),
 )

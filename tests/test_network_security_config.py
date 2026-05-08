@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from config_manager import ConfigManager
+from ai_intervention_agent.config_manager import ConfigManager
 
 
 class TestValidateBindInterface(unittest.TestCase):
@@ -24,7 +24,7 @@ class TestValidateBindInterface(unittest.TestCase):
 
     def test_valid_special_values(self):
         """测试有效的特殊值"""
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         # 所有特殊值应该直接通过
         special_values = ["0.0.0.0", "127.0.0.1", "localhost", "::1", "::"]
@@ -34,7 +34,7 @@ class TestValidateBindInterface(unittest.TestCase):
 
     def test_valid_ip_addresses(self):
         """测试有效的 IP 地址"""
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         valid_ips = ["192.168.1.1", "10.0.0.1", "172.16.0.1", "::ffff:192.168.1.1"]
         for ip in valid_ips:
@@ -43,7 +43,7 @@ class TestValidateBindInterface(unittest.TestCase):
 
     def test_invalid_ip_addresses(self):
         """测试无效的 IP 地址"""
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         invalid_ips = ["invalid", "256.1.1.1", "192.168.1", "abc.def.ghi.jkl"]
         for ip in invalid_ips:
@@ -52,14 +52,14 @@ class TestValidateBindInterface(unittest.TestCase):
 
     def test_empty_value(self):
         """测试空值"""
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         self.assertEqual(validate_bind_interface(""), "127.0.0.1")
         self.assertEqual(validate_bind_interface(None), "127.0.0.1")
 
     def test_whitespace_handling(self):
         """测试空白字符处理"""
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         # 带空白的有效值应该被处理
         self.assertEqual(validate_bind_interface("  127.0.0.1  "), "127.0.0.1")
@@ -70,7 +70,7 @@ class TestValidateNetworkCidr(unittest.TestCase):
 
     def test_valid_cidr_ipv4(self):
         """测试有效的 IPv4 CIDR"""
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         valid_cidrs = [
             "192.168.0.0/16",
@@ -86,7 +86,7 @@ class TestValidateNetworkCidr(unittest.TestCase):
 
     def test_valid_cidr_ipv6(self):
         """测试有效的 IPv6 CIDR"""
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         valid_cidrs = ["::1/128", "fe80::/10", "2001:db8::/32"]
         for cidr in valid_cidrs:
@@ -96,7 +96,7 @@ class TestValidateNetworkCidr(unittest.TestCase):
 
     def test_valid_single_ip(self):
         """测试有效的单个 IP"""
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         valid_ips = ["192.168.1.1", "::1", "10.0.0.1"]
         for ip in valid_ips:
@@ -104,7 +104,7 @@ class TestValidateNetworkCidr(unittest.TestCase):
 
     def test_invalid_cidr(self):
         """测试无效的 CIDR"""
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         invalid_cidrs = [
             "192.168.0.0/33",  # 掩码过大
@@ -118,7 +118,7 @@ class TestValidateNetworkCidr(unittest.TestCase):
 
     def test_empty_value(self):
         """测试空值"""
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         self.assertFalse(validate_network_cidr(""))
         self.assertFalse(validate_network_cidr(None))
@@ -129,7 +129,7 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_valid_networks(self):
         """测试有效的网络列表"""
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         networks = ["192.168.0.0/16", "10.0.0.0/8", "127.0.0.0/8"]
         result = validate_allowed_networks(networks)
@@ -140,7 +140,7 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_filter_invalid_networks(self):
         """测试过滤无效网络"""
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         networks = ["192.168.0.0/16", "invalid", "10.0.0.0/8", "256.1.1.1/24"]
         result = validate_allowed_networks(networks)
@@ -152,7 +152,7 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_empty_list_protection(self):
         """测试空列表保护"""
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         result = validate_allowed_networks([])
 
@@ -162,7 +162,7 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_all_invalid_protection(self):
         """测试全部无效时的保护"""
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         result = validate_allowed_networks(["invalid1", "invalid2"])
 
@@ -172,7 +172,10 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_non_list_input(self):
         """测试非列表输入"""
-        from web_ui import DEFAULT_ALLOWED_NETWORKS, validate_allowed_networks
+        from ai_intervention_agent.web_ui import (
+            DEFAULT_ALLOWED_NETWORKS,
+            validate_allowed_networks,
+        )
 
         result = validate_allowed_networks("not a list")
 
@@ -180,7 +183,10 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
     def test_default_networks(self):
         """测试默认网络"""
-        from web_ui import DEFAULT_ALLOWED_NETWORKS, validate_allowed_networks
+        from ai_intervention_agent.web_ui import (
+            DEFAULT_ALLOWED_NETWORKS,
+            validate_allowed_networks,
+        )
 
         result = validate_allowed_networks(None)
 
@@ -192,7 +198,7 @@ class TestValidateBlockedIps(unittest.TestCase):
 
     def test_valid_ips(self):
         """测试有效的 IP 列表"""
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         ips = ["192.168.1.1", "10.0.0.1", "::1"]
         result = validate_blocked_ips(ips)
@@ -203,7 +209,7 @@ class TestValidateBlockedIps(unittest.TestCase):
 
     def test_filter_invalid_ips(self):
         """测试过滤无效 IP"""
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         ips = ["192.168.1.1", "invalid", "10.0.0.1", "256.1.1.1"]
         result = validate_blocked_ips(ips)
@@ -215,7 +221,7 @@ class TestValidateBlockedIps(unittest.TestCase):
 
     def test_empty_list(self):
         """测试空列表"""
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         result = validate_blocked_ips([])
 
@@ -223,7 +229,7 @@ class TestValidateBlockedIps(unittest.TestCase):
 
     def test_non_list_input(self):
         """测试非列表输入"""
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         result = validate_blocked_ips("not a list")
 
@@ -235,7 +241,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
 
     def test_complete_config(self):
         """测试完整配置"""
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         config = {
             "bind_interface": "192.168.1.1",
@@ -252,7 +258,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
 
     def test_empty_config(self):
         """测试空配置"""
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         result = validate_network_security_config({})
 
@@ -264,7 +270,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
 
     def test_partial_config(self):
         """测试部分配置"""
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         config = {"bind_interface": "127.0.0.1"}
         result = validate_network_security_config(config)
@@ -275,7 +281,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
 
     def test_access_control_enabled_conversion(self):
         """测试 access_control_enabled 布尔转换"""
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         # 真值
         config = {"access_control_enabled": "true"}
@@ -293,7 +299,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
 
     def test_non_dict_input(self):
         """测试非字典输入"""
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         result = validate_network_security_config("not a dict")
 
@@ -308,7 +314,7 @@ class TestLoadNetworkSecurityConfig(unittest.TestCase):
 
     def test_load_with_validation(self):
         """测试加载时验证"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="test",
@@ -336,7 +342,7 @@ class TestIsIpAllowed(unittest.TestCase):
 
     def test_access_control_disabled(self):
         """测试禁用访问控制"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="test",
@@ -353,7 +359,7 @@ class TestIsIpAllowed(unittest.TestCase):
 
     def test_blocked_ip(self):
         """测试黑名单 IP"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="test",
@@ -370,7 +376,7 @@ class TestIsIpAllowed(unittest.TestCase):
 
     def test_allowed_network(self):
         """测试允许的网络"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="test",
@@ -386,7 +392,7 @@ class TestIsIpAllowed(unittest.TestCase):
 
     def test_localhost(self):
         """测试本地回环地址"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="test",
@@ -402,7 +408,7 @@ class TestRequestClientIpResolution(unittest.TestCase):
     """测试请求来源 IP 解析与 before_request 访问控制"""
 
     def setUp(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.ui = WebFeedbackUI(
             prompt="test",
@@ -450,7 +456,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_constants_defined(self):
         """测试常量定义"""
-        from web_ui import (
+        from ai_intervention_agent.web_ui import (
             DEFAULT_ALLOWED_NETWORKS,
             VALID_BIND_INTERFACES,
         )
@@ -463,7 +469,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_validation_chain(self):
         """测试验证链"""
-        from web_ui import (
+        from ai_intervention_agent.web_ui import (
             validate_network_security_config,
         )
 
@@ -492,7 +498,7 @@ class TestValidateNetworkSecurityConfigMixin(unittest.TestCase):
     """测试 NetworkSecurityMixin._validate_network_security_config()"""
 
     def _get_manager(self):
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         return ConfigManager()
 
@@ -708,7 +714,7 @@ class TestUpdateNetworkSecurityMixin(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def _get_manager(self):
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         return ConfigManager(str(self._cfg_path))
 
@@ -1149,7 +1155,7 @@ class TestBlockedIpsAddressValueError(unittest.TestCase):
 
         mgr = ConfigManager()
         with patch(
-            "config_modules.network_security.ip_address",
+            "ai_intervention_agent.config_modules.network_security.ip_address",
             side_effect=AddressValueError("mock"),
         ):
             result = mgr._validate_network_security_config({"blocked_ips": ["1.2.3.4"]})

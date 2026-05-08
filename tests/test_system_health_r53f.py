@@ -25,7 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from web_ui_routes import system as system_module
+from ai_intervention_agent.web_ui_routes import system as system_module
 
 SOURCE = Path(system_module.__file__).read_text(encoding="utf-8")
 

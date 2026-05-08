@@ -28,7 +28,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEBUI_I18N = ROOT / "static" / "js" / "i18n.js"
+WEBUI_I18N = ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "i18n.js"
 VSCODE_I18N = ROOT / "packages" / "vscode" / "i18n.js"
 
 # 必须与两份 i18n.js 内常量一致；漂移则测试必须显式失败，而不是悄悄放宽上限

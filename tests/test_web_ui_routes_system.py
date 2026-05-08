@@ -28,7 +28,7 @@ class _SystemRouteBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="system route test", task_id="sys-rt", port=cls._port
@@ -46,7 +46,10 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
 
     def test_non_loopback_request_returns_403(self):
         """非 127.0.0.1 / ::1 来源的请求必须被拒绝（首层安全护栏）。"""
-        with patch("web_ui_routes.system._get_client_ip", return_value="192.168.1.5"):
+        with patch(
+            "ai_intervention_agent.web_ui_routes.system._get_client_ip",
+            return_value="192.168.1.5",
+        ):
             resp = self._client.post("/api/system/open-config-file", json={})
         self.assertEqual(resp.status_code, 403)
         data = resp.get_json()
@@ -84,8 +87,8 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 403)
         self.assertIn("allow-list", resp.get_json()["error"].lower())
 
-    @patch("web_ui_routes.system.subprocess.Popen")
-    @patch("web_ui_routes.system._detect_default_editor")
+    @patch("ai_intervention_agent.web_ui_routes.system.subprocess.Popen")
+    @patch("ai_intervention_agent.web_ui_routes.system._detect_default_editor")
     def test_default_path_with_detected_editor_returns_200(
         self, mock_detect, mock_popen
     ):
@@ -113,9 +116,9 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(argv[0], "/usr/local/bin/cursor")
         self.assertIn("--reuse-window", argv)
 
-    @patch("web_ui_routes.system.subprocess.Popen")
-    @patch("web_ui_routes.system._system_open_command")
-    @patch("web_ui_routes.system._detect_default_editor")
+    @patch("ai_intervention_agent.web_ui_routes.system.subprocess.Popen")
+    @patch("ai_intervention_agent.web_ui_routes.system._system_open_command")
+    @patch("ai_intervention_agent.web_ui_routes.system._detect_default_editor")
     def test_no_editor_falls_back_to_system_opener(
         self, mock_detect, mock_system, mock_popen
     ):
@@ -132,8 +135,14 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["editor"], "system")
 
-    @patch("web_ui_routes.system._system_open_command", return_value=None)
-    @patch("web_ui_routes.system._detect_default_editor", return_value=(None, []))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.system._system_open_command",
+        return_value=None,
+    )
+    @patch(
+        "ai_intervention_agent.web_ui_routes.system._detect_default_editor",
+        return_value=(None, []),
+    )
     def test_no_editor_no_system_fallback_returns_500(self, *_):
         """所有打开方式都不可用 → 500，且文案不暴露内部细节。"""
         resp = self._client.post(
@@ -144,8 +153,8 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 500)
         self.assertIn("editor", resp.get_json()["error"].lower())
 
-    @patch("web_ui_routes.system.subprocess.Popen")
-    @patch("web_ui_routes.system._detect_default_editor")
+    @patch("ai_intervention_agent.web_ui_routes.system.subprocess.Popen")
+    @patch("ai_intervention_agent.web_ui_routes.system._detect_default_editor")
     def test_unknown_editor_param_falls_back_to_auto_detect(
         self, mock_detect, mock_popen
     ):
@@ -161,8 +170,8 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["editor"], "code")
 
-    @patch("web_ui_routes.system.subprocess.Popen")
-    @patch("web_ui_routes.system.shutil.which")
+    @patch("ai_intervention_agent.web_ui_routes.system.subprocess.Popen")
+    @patch("ai_intervention_agent.web_ui_routes.system.shutil.which")
     def test_explicit_editor_in_allowlist_used(self, mock_which, mock_popen):
         """前端显式 editor=cursor + cursor 在 PATH → 用 cursor。"""
         mock_which.side_effect = (
@@ -180,14 +189,19 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         argv = mock_popen.call_args.args[0]
         self.assertEqual(argv[0], "/opt/cursor")
 
-    @patch("web_ui_routes.system._system_open_command")
-    @patch("web_ui_routes.system._detect_default_editor", return_value=(None, []))
+    @patch("ai_intervention_agent.web_ui_routes.system._system_open_command")
+    @patch(
+        "ai_intervention_agent.web_ui_routes.system._detect_default_editor",
+        return_value=(None, []),
+    )
     def test_explicit_system_editor_uses_fallback_directly(
         self, _mock_detect, mock_system
     ):
         """editor=system 即使有别的 IDE 也直接走系统 fallback。"""
         mock_system.return_value = ["/usr/bin/open", "/tmp/x"]
-        with patch("web_ui_routes.system.subprocess.Popen") as mock_popen:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.system.subprocess.Popen"
+        ) as mock_popen:
             mock_popen.return_value = MagicMock()
             resp = self._client.post(
                 "/api/system/open-config-file",
@@ -197,8 +211,8 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["editor"], "system")
 
-    @patch("web_ui_routes.system.subprocess.Popen")
-    @patch("web_ui_routes.system._detect_default_editor")
+    @patch("ai_intervention_agent.web_ui_routes.system.subprocess.Popen")
+    @patch("ai_intervention_agent.web_ui_routes.system._detect_default_editor")
     def test_popen_oserror_returns_500(self, mock_detect, mock_popen):
         """Popen 抛 OSError（如权限不足） → 500，错误信息不暴露 stderr。
 
@@ -230,8 +244,8 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
             "R72-B 契约：OSError 的原始 detail 不能泄漏给客户端",
         )
 
-    @patch("web_ui_routes.system.subprocess.Popen")
-    @patch("web_ui_routes.system._detect_default_editor")
+    @patch("ai_intervention_agent.web_ui_routes.system.subprocess.Popen")
+    @patch("ai_intervention_agent.web_ui_routes.system._detect_default_editor")
     def test_popen_filenotfound_returns_500(self, mock_detect, mock_popen):
         """Popen FileNotFoundError（探测和启动之间 binary 消失）→ 500。"""
         mock_detect.return_value = ("/opt/cursor", [])
@@ -245,7 +259,10 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 500)
         self.assertIn("vanish", resp.get_json()["error"].lower())
 
-    @patch("web_ui_routes.system._resolve_allowed_paths", return_value=[])
+    @patch(
+        "ai_intervention_agent.web_ui_routes.system._resolve_allowed_paths",
+        return_value=[],
+    )
     def test_no_allowed_paths_returns_400(self, _mock_resolve):
         """server 端解析不出任何配置路径 → 400 拦截。
 
@@ -262,7 +279,7 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertFalse(data["success"])
         self.assertIn("config file path", data["error"].lower())
 
-    @patch("web_ui_routes.system._resolve_allowed_paths")
+    @patch("ai_intervention_agent.web_ui_routes.system._resolve_allowed_paths")
     def test_default_target_does_not_exist_returns_400(self, mock_resolve):
         """默认 target 在磁盘上不存在 → 400，不应继续启动子进程。
 
@@ -282,9 +299,9 @@ class TestOpenConfigFileEndpoint(_SystemRouteBase):
         self.assertEqual(resp.status_code, 400)
         self.assertIn("does not exist", resp.get_json()["error"].lower())
 
-    @patch("web_ui_routes.system.subprocess.Popen")
-    @patch("web_ui_routes.system.shutil.which")
-    @patch("web_ui_routes.system._detect_default_editor")
+    @patch("ai_intervention_agent.web_ui_routes.system.subprocess.Popen")
+    @patch("ai_intervention_agent.web_ui_routes.system.shutil.which")
+    @patch("ai_intervention_agent.web_ui_routes.system._detect_default_editor")
     def test_explicit_editor_not_in_path_falls_back_to_auto_detect(
         self, mock_detect, mock_which, mock_popen
     ):
@@ -315,12 +332,15 @@ class TestOpenConfigFileInfoEndpoint(_SystemRouteBase):
     _port = 19111
 
     def test_non_loopback_returns_403(self):
-        with patch("web_ui_routes.system._get_client_ip", return_value="10.0.0.1"):
+        with patch(
+            "ai_intervention_agent.web_ui_routes.system._get_client_ip",
+            return_value="10.0.0.1",
+        ):
             resp = self._client.get("/api/system/open-config-file/info")
         self.assertEqual(resp.status_code, 403)
         self.assertFalse(resp.get_json()["success"])
 
-    @patch("web_ui_routes.system._detect_default_editor")
+    @patch("ai_intervention_agent.web_ui_routes.system._detect_default_editor")
     def test_loopback_with_editor_returns_full_info(self, mock_detect):
         mock_detect.return_value = ("/opt/cursor", ["--reuse-window"])
 
@@ -337,7 +357,10 @@ class TestOpenConfigFileInfoEndpoint(_SystemRouteBase):
         self.assertGreater(len(data["allowed_paths"]), 0)
         self.assertIsNotNone(data["primary_path"])
 
-    @patch("web_ui_routes.system._detect_default_editor", return_value=(None, []))
+    @patch(
+        "ai_intervention_agent.web_ui_routes.system._detect_default_editor",
+        return_value=(None, []),
+    )
     def test_loopback_without_editor_still_succeeds(self, _mock_detect):
         """探测不到 IDE 也不应返回错误，前端会用 system fallback 或禁用按钮。"""
         resp = self._client.get(
@@ -356,14 +379,14 @@ class TestOpenConfigFileInfoEndpoint(_SystemRouteBase):
 # ════════════════════════════════════════════════════════════════════════════
 class TestSystemHelpers(unittest.TestCase):
     def test_resolve_loopback_ips_covers_v4_and_v6(self):
-        from web_ui_routes.system import _resolve_loopback_ips
+        from ai_intervention_agent.web_ui_routes.system import _resolve_loopback_ips
 
         ips = _resolve_loopback_ips()
         self.assertIn("127.0.0.1", ips)
         self.assertIn("::1", ips)
 
     def test_detect_default_editor_respects_env_override(self):
-        from web_ui_routes import system as sys_mod
+        from ai_intervention_agent.web_ui_routes import system as sys_mod
 
         with patch.dict(
             "os.environ", {"AI_INTERVENTION_AGENT_OPEN_WITH": "cursor"}, clear=False
@@ -376,7 +399,7 @@ class TestSystemHelpers(unittest.TestCase):
 
     def test_detect_default_editor_skips_invalid_env(self):
         """AI_INTERVENTION_AGENT_OPEN_WITH 指向不存在的 binary → 走自动探测。"""
-        from web_ui_routes import system as sys_mod
+        from ai_intervention_agent.web_ui_routes import system as sys_mod
 
         which_calls: list[str] = []
 
@@ -396,7 +419,7 @@ class TestSystemHelpers(unittest.TestCase):
 
     def test_resolve_allowed_paths_includes_default_template(self):
         """白名单除当前配置外应至少含仓库内的 default 模板。"""
-        from web_ui_routes.system import _resolve_allowed_paths
+        from ai_intervention_agent.web_ui_routes.system import _resolve_allowed_paths
 
         paths = _resolve_allowed_paths()
         path_strs = {str(p) for p in paths}
@@ -408,7 +431,7 @@ class TestSystemHelpers(unittest.TestCase):
 
     def test_system_open_command_returns_argv_or_none(self):
         """_system_open_command 应返回可执行的 argv（list[str]） 或 None。"""
-        from web_ui_routes.system import _system_open_command
+        from ai_intervention_agent.web_ui_routes.system import _system_open_command
 
         result = _system_open_command(Path("/tmp/dummy.toml"))
         if result is not None:

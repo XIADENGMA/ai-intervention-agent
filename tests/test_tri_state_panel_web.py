@@ -31,13 +31,20 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_UI_HTML = REPO_ROOT / "templates" / "web_ui.html"
-STATIC_JS_DIR = REPO_ROOT / "static" / "js"
+WEB_UI_HTML = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+STATIC_JS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 TRI_STATE_PANEL_JS = STATIC_JS_DIR / "tri-state-panel.js"
 TRI_STATE_PANEL_LOADER_JS = STATIC_JS_DIR / "tri-state-panel-loader.js"
 TRI_STATE_PANEL_BOOTSTRAP_JS = STATIC_JS_DIR / "tri-state-panel-bootstrap.js"
-TRI_STATE_PANEL_CSS = REPO_ROOT / "static" / "css" / "tri-state-panel.css"
-MAIN_CSS = REPO_ROOT / "static" / "css" / "main.css"
+TRI_STATE_PANEL_CSS = (
+    REPO_ROOT
+    / "src"
+    / "ai_intervention_agent"
+    / "static"
+    / "css"
+    / "tri-state-panel.css"
+)
+MAIN_CSS = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css" / "main.css"
 
 EXPECTED_BRANCHES = ("skeleton", "loading", "empty", "error")
 EXPECTED_ERROR_DETAILS = ("network", "server_500", "timeout", "unknown")

@@ -30,7 +30,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STATIC_I18N = REPO_ROOT / "static" / "js" / "i18n.js"
+STATIC_I18N = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "i18n.js"
 VSCODE_I18N = REPO_ROOT / "packages" / "vscode" / "i18n.js"
 
 EXPECTED_TRANSLATE_SELECTORS = frozenset(

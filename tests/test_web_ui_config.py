@@ -25,7 +25,7 @@ class TestWebUIConfigConstants(unittest.TestCase):
 
     def test_constants_defined(self):
         """测试常量定义"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         # 端口常量
         self.assertEqual(WebUIConfig.PORT_MIN, 1)
@@ -46,7 +46,7 @@ class TestWebUIConfigPort(unittest.TestCase):
 
     def test_valid_port(self):
         """测试有效端口号"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         # 正常端口
         config = WebUIConfig(host="127.0.0.1", port=8080)
@@ -61,7 +61,7 @@ class TestWebUIConfigPort(unittest.TestCase):
 
     def test_invalid_port_zero(self):
         """测试无效端口号 0"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         with self.assertRaises(ValueError) as context:
             WebUIConfig(host="127.0.0.1", port=0)
@@ -70,21 +70,21 @@ class TestWebUIConfigPort(unittest.TestCase):
 
     def test_invalid_port_negative(self):
         """测试负数端口号"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         with self.assertRaises(ValueError):
             WebUIConfig(host="127.0.0.1", port=-1)
 
     def test_invalid_port_too_large(self):
         """测试超大端口号"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         with self.assertRaises(ValueError):
             WebUIConfig(host="127.0.0.1", port=65536)
 
     def test_privileged_port_warning(self):
         """测试特权端口警告"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         # 特权端口应该生成警告但不抛异常
         config = WebUIConfig(host="127.0.0.1", port=80)
@@ -99,7 +99,7 @@ class TestWebUIConfigTimeout(unittest.TestCase):
 
     def test_valid_timeout(self):
         """测试有效超时时间"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, timeout=30)
         self.assertEqual(config.timeout, 30)
@@ -113,7 +113,7 @@ class TestWebUIConfigTimeout(unittest.TestCase):
 
     def test_timeout_below_min(self):
         """测试超时时间小于最小值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, timeout=0)
         self.assertEqual(config.timeout, WebUIConfig.TIMEOUT_MIN)
@@ -123,7 +123,7 @@ class TestWebUIConfigTimeout(unittest.TestCase):
 
     def test_timeout_above_max(self):
         """测试超时时间大于最大值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, timeout=1000)
         self.assertEqual(config.timeout, WebUIConfig.TIMEOUT_MAX)
@@ -137,7 +137,7 @@ class TestWebUIConfigMaxRetries(unittest.TestCase):
 
     def test_valid_max_retries(self):
         """测试有效重试次数"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=3)
         self.assertEqual(config.max_retries, 3)
@@ -151,7 +151,7 @@ class TestWebUIConfigMaxRetries(unittest.TestCase):
 
     def test_max_retries_below_min(self):
         """测试重试次数小于最小值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=-1)
         self.assertEqual(config.max_retries, WebUIConfig.MAX_RETRIES_MIN)
@@ -161,7 +161,7 @@ class TestWebUIConfigMaxRetries(unittest.TestCase):
 
     def test_max_retries_above_max(self):
         """测试重试次数大于最大值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, max_retries=25)
         self.assertEqual(config.max_retries, WebUIConfig.MAX_RETRIES_MAX)
@@ -175,7 +175,7 @@ class TestWebUIConfigRetryDelay(unittest.TestCase):
 
     def test_valid_retry_delay(self):
         """测试有效重试延迟"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=1.0)
         self.assertEqual(config.retry_delay, 1.0)
@@ -189,7 +189,7 @@ class TestWebUIConfigRetryDelay(unittest.TestCase):
 
     def test_retry_delay_below_min(self):
         """测试重试延迟小于最小值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=-0.5)
         self.assertEqual(config.retry_delay, WebUIConfig.RETRY_DELAY_MIN)
@@ -199,7 +199,7 @@ class TestWebUIConfigRetryDelay(unittest.TestCase):
 
     def test_retry_delay_above_max(self):
         """测试重试延迟大于最大值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080, retry_delay=100.0)
         self.assertEqual(config.retry_delay, WebUIConfig.RETRY_DELAY_MAX)
@@ -213,7 +213,7 @@ class TestWebUIConfigCombined(unittest.TestCase):
 
     def test_all_defaults(self):
         """测试所有默认值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(host="127.0.0.1", port=8080)
 
@@ -225,7 +225,7 @@ class TestWebUIConfigCombined(unittest.TestCase):
 
     def test_all_custom_valid(self):
         """测试所有自定义有效值"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(
             host="0.0.0.0",
@@ -243,7 +243,7 @@ class TestWebUIConfigCombined(unittest.TestCase):
 
     def test_multiple_boundary_adjustments(self):
         """测试多个边界调整"""
-        from server import WebUIConfig
+        from ai_intervention_agent.server import WebUIConfig
 
         config = WebUIConfig(
             host="127.0.0.1",
@@ -261,11 +261,11 @@ class TestWebUIConfigCombined(unittest.TestCase):
 class TestGetWebUIConfig(unittest.TestCase):
     """测试 get_web_ui_config() 函数"""
 
-    @patch("service_manager.get_config")
+    @patch("ai_intervention_agent.service_manager.get_config")
     def test_load_config_success(self, mock_get_config):
         """测试成功加载配置"""
-        import service_manager
-        from server import WebUIConfig, get_web_ui_config
+        import ai_intervention_agent.service_manager as service_manager
+        from ai_intervention_agent.server import WebUIConfig, get_web_ui_config
 
         service_manager._config_cache["config"] = None
         service_manager._config_cache["timestamp"] = 0
@@ -289,11 +289,11 @@ class TestGetWebUIConfig(unittest.TestCase):
         self.assertEqual(config.port, 8080)
         self.assertEqual(auto_resubmit, 240)
 
-    @patch("service_manager.get_config")
+    @patch("ai_intervention_agent.service_manager.get_config")
     def test_load_config_with_defaults(self, mock_get_config):
         """测试使用默认值加载配置"""
-        import service_manager
-        from server import get_web_ui_config
+        import ai_intervention_agent.service_manager as service_manager
+        from ai_intervention_agent.server import get_web_ui_config
 
         service_manager._config_cache["config"] = None
         service_manager._config_cache["timestamp"] = 0
@@ -331,19 +331,19 @@ class TestGetWebUIConfigGenerationToken(unittest.TestCase):
     """
 
     def setUp(self) -> None:
-        import service_manager
+        import ai_intervention_agent.service_manager as service_manager
 
         service_manager._config_cache["config"] = None
         service_manager._config_cache["timestamp"] = 0
         service_manager._config_cache_generation = 0
 
-    @patch("service_manager.get_config")
+    @patch("ai_intervention_agent.service_manager.get_config")
     def test_invalidate_during_load_does_not_resurrect_stale_config(
         self, mock_get_config
     ):
         """load 期间 invalidate 触发 → load 完毕的结果不能写回 cache。"""
-        import service_manager
-        from server import get_web_ui_config
+        import ai_intervention_agent.service_manager as service_manager
+        from ai_intervention_agent.server import get_web_ui_config
 
         load_started = threading.Event()
         invalidate_done = threading.Event()
@@ -394,10 +394,10 @@ class TestGetWebUIConfigGenerationToken(unittest.TestCase):
             "load 期间被 invalidate 后，结果不应被写回 cache（否则旧值复活）",
         )
 
-    @patch("service_manager.get_config")
+    @patch("ai_intervention_agent.service_manager.get_config")
     def test_invalidate_increments_generation_token(self, mock_get_config):
         """``_invalidate_runtime_caches_on_config_change`` 必须自增 generation。"""
-        import service_manager
+        import ai_intervention_agent.service_manager as service_manager
 
         del mock_get_config  # 仅为 patch decorator 提供绑定，不使用
 
@@ -408,11 +408,11 @@ class TestGetWebUIConfigGenerationToken(unittest.TestCase):
         service_manager._invalidate_runtime_caches_on_config_change()
         self.assertEqual(service_manager._config_cache_generation, before + 2)
 
-    @patch("service_manager.get_config")
+    @patch("ai_intervention_agent.service_manager.get_config")
     def test_no_invalidate_during_load_writes_back_normally(self, mock_get_config):
         """无 invalidate race 的常规路径必须正常写回 cache（避免修复回退到永远不写）。"""
-        import service_manager
-        from server import get_web_ui_config
+        import ai_intervention_agent.service_manager as service_manager
+        from ai_intervention_agent.server import get_web_ui_config
 
         mock_config_mgr = MagicMock()
         mock_config_mgr.get_section.side_effect = lambda section: {
@@ -436,7 +436,7 @@ class TestWebUIFinalPush(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="最终冲刺",
@@ -491,7 +491,7 @@ class TestWebUITaskManagement(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="任务管理测试",
@@ -544,7 +544,7 @@ class TestWebUIStaticResources(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="静态资源测试", task_id="static-test", port=8979
@@ -579,7 +579,7 @@ class TestWebUIErrorHandling(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="错误处理测试", task_id="error-test", port=8978
@@ -624,7 +624,7 @@ class TestWebUIMultipleTasks(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="多任务测试", task_id="multi-task-test", port=8977
@@ -667,7 +667,7 @@ class TestWebUIHealthAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="API 测试", task_id="api-test", port=8965)
         cls.app = cls.web_ui.app
@@ -695,7 +695,7 @@ class TestWebUINotificationConfigAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="通知配置测试", task_id="notif-config-test", port=8964
@@ -727,7 +727,7 @@ class TestWebUIFeedbackPromptsAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="提示语测试", task_id="prompts-test", port=8963
@@ -751,7 +751,7 @@ class TestWebUIFeedbackAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="反馈测试", task_id="feedback-test", port=8962
@@ -774,7 +774,7 @@ class TestWebUITaskActivateAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="激活测试", task_id="activate-test", port=8961
@@ -819,7 +819,7 @@ class TestWebUITaskSubmitAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="提交测试", task_id="submit-test", port=8960)
         cls.app = cls.web_ui.app
@@ -827,7 +827,7 @@ class TestWebUITaskSubmitAPI(unittest.TestCase):
         cls.client = cls.app.test_client()
 
     def setUp(self):
-        from server import get_task_queue
+        from ai_intervention_agent.server import get_task_queue
 
         self.task_queue = get_task_queue()
         self.task_queue.clear_all_tasks()
@@ -917,7 +917,7 @@ class TestWebUIUpdateAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="更新测试", task_id="update-test", port=8959)
         cls.app = cls.web_ui.app
@@ -942,7 +942,7 @@ class TestWebUIStaticResourcesAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="静态资源测试", task_id="static-test", port=8958
@@ -977,7 +977,7 @@ class TestWebUICloseAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="关闭测试", task_id="close-test", port=8957)
         cls.app = cls.web_ui.app
@@ -1002,7 +1002,7 @@ class TestWebUIAdvancedAPIs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="深度测试",
@@ -1067,7 +1067,7 @@ class TestWebUINotificationAPIs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="通知测试", task_id="notif-test", port=8984)
         cls.app = cls.web_ui.app
@@ -1145,23 +1145,23 @@ def _make_zeroconf_module(
 
 class TestIsProbablyVirtualInterface(unittest.TestCase):
     def test_loopback(self):
-        from web_ui import _is_probably_virtual_interface
+        from ai_intervention_agent.web_ui import _is_probably_virtual_interface
 
         self.assertTrue(_is_probably_virtual_interface("lo"))
 
     def test_docker_bridge(self):
-        from web_ui import _is_probably_virtual_interface
+        from ai_intervention_agent.web_ui import _is_probably_virtual_interface
 
         self.assertTrue(_is_probably_virtual_interface("docker0"))
         self.assertTrue(_is_probably_virtual_interface("br-abc123"))
 
     def test_veth(self):
-        from web_ui import _is_probably_virtual_interface
+        from ai_intervention_agent.web_ui import _is_probably_virtual_interface
 
         self.assertTrue(_is_probably_virtual_interface("veth1234"))
 
     def test_vpn_tunnels(self):
-        from web_ui import _is_probably_virtual_interface
+        from ai_intervention_agent.web_ui import _is_probably_virtual_interface
 
         self.assertTrue(_is_probably_virtual_interface("tun0"))
         self.assertTrue(_is_probably_virtual_interface("utun3"))
@@ -1170,7 +1170,7 @@ class TestIsProbablyVirtualInterface(unittest.TestCase):
         self.assertTrue(_is_probably_virtual_interface("ppp0"))
 
     def test_virtual_bridges(self):
-        from web_ui import _is_probably_virtual_interface
+        from ai_intervention_agent.web_ui import _is_probably_virtual_interface
 
         self.assertTrue(_is_probably_virtual_interface("virbr0"))
         self.assertTrue(_is_probably_virtual_interface("vmnet8"))
@@ -1180,14 +1180,14 @@ class TestIsProbablyVirtualInterface(unittest.TestCase):
         self.assertTrue(_is_probably_virtual_interface("podman0"))
 
     def test_physical_interfaces(self):
-        from web_ui import _is_probably_virtual_interface
+        from ai_intervention_agent.web_ui import _is_probably_virtual_interface
 
         self.assertFalse(_is_probably_virtual_interface("en0"))
         self.assertFalse(_is_probably_virtual_interface("eth0"))
         self.assertFalse(_is_probably_virtual_interface("wlan0"))
 
     def test_empty_and_none(self):
-        from web_ui import _is_probably_virtual_interface
+        from ai_intervention_agent.web_ui import _is_probably_virtual_interface
 
         self.assertFalse(_is_probably_virtual_interface(""))
         self.assertFalse(_is_probably_virtual_interface(None))  # ty: ignore[invalid-argument-type]
@@ -1195,50 +1195,62 @@ class TestIsProbablyVirtualInterface(unittest.TestCase):
 
 class TestGetDefaultRouteIPv4(unittest.TestCase):
     def test_returns_ip(self):
-        from web_ui import _get_default_route_ipv4
+        from ai_intervention_agent.web_ui import _get_default_route_ipv4
 
         mock_sock = MagicMock()
         mock_sock.getsockname.return_value = ("192.168.1.100", 0)
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns_utils.socket.socket",
+            return_value=mock_sock,
+        ):
             result = _get_default_route_ipv4()
             self.assertEqual(result, "192.168.1.100")
 
     def test_loopback_returns_none(self):
-        from web_ui import _get_default_route_ipv4
+        from ai_intervention_agent.web_ui import _get_default_route_ipv4
 
         mock_sock = MagicMock()
         mock_sock.getsockname.return_value = ("127.0.0.1", 0)
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns_utils.socket.socket",
+            return_value=mock_sock,
+        ):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
     def test_link_local_returns_none(self):
-        from web_ui import _get_default_route_ipv4
+        from ai_intervention_agent.web_ui import _get_default_route_ipv4
 
         mock_sock = MagicMock()
         mock_sock.getsockname.return_value = ("169.254.1.1", 0)
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns_utils.socket.socket",
+            return_value=mock_sock,
+        ):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
     def test_os_error_returns_none(self):
-        from web_ui import _get_default_route_ipv4
+        from ai_intervention_agent.web_ui import _get_default_route_ipv4
 
         mock_sock = MagicMock()
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
         mock_sock.connect.side_effect = OSError("no route")
 
-        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns_utils.socket.socket",
+            return_value=mock_sock,
+        ):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
@@ -1251,7 +1263,7 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
         return SimpleNamespace(isup=isup)
 
     def test_returns_private_ips(self):
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {
             "en0": [self._snic("192.168.1.50")],
@@ -1268,7 +1280,7 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
             self.assertNotIn("127.0.0.1", result)
 
     def test_filters_virtual_interfaces(self):
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {
             "docker0": [self._snic("172.17.0.1")],
@@ -1285,7 +1297,7 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
             self.assertIn("10.0.0.5", result)
 
     def test_skips_down_interfaces(self):
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {"en0": [self._snic("10.0.0.1")]}
         stats = {"en0": self._stat(False)}
@@ -1298,7 +1310,7 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
             self.assertEqual(result, [])
 
     def test_skips_ipv6(self):
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {"en0": [self._snic("fe80::1", socket.AF_INET6)]}
         stats = {"en0": self._stat(True)}
@@ -1311,14 +1323,14 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
             self.assertEqual(result, [])
 
     def test_psutil_exception(self):
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         with patch("psutil.net_if_addrs", side_effect=RuntimeError("fail")):
             result = _list_non_loopback_ipv4()
             self.assertEqual(result, [])
 
     def test_dedup_and_sort(self):
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {
             "en0": [self._snic("192.168.1.1"), self._snic("192.168.1.1")],
@@ -1336,53 +1348,61 @@ class TestListNonLoopbackIPv4(unittest.TestCase):
 
 class TestDetectBestPublishIPv4(unittest.TestCase):
     def test_specific_bind_ip(self):
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         result = detect_best_publish_ipv4("192.168.1.100")
         self.assertEqual(result, "192.168.1.100")
 
     def test_loopback_bind_falls_through(self):
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         with (
             patch(
-                "web_ui_mdns_utils._list_non_loopback_ipv4", return_value=["10.0.0.1"]
+                "ai_intervention_agent.web_ui_mdns_utils._list_non_loopback_ipv4",
+                return_value=["10.0.0.1"],
             ),
-            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._get_default_route_ipv4",
+                return_value="10.0.0.1",
+            ),
         ):
             result = detect_best_publish_ipv4("127.0.0.1")
             self.assertEqual(result, "10.0.0.1")
 
     def test_route_ip_preferred(self):
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         with (
             patch(
-                "web_ui_mdns_utils._list_non_loopback_ipv4",
+                "ai_intervention_agent.web_ui_mdns_utils._list_non_loopback_ipv4",
                 return_value=["192.168.1.1", "10.0.0.1"],
             ),
-            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._get_default_route_ipv4",
+                return_value="10.0.0.1",
+            ),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "10.0.0.1")
 
     def test_route_ip_not_in_candidates(self):
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         with (
             patch(
-                "web_ui_mdns_utils._list_non_loopback_ipv4",
+                "ai_intervention_agent.web_ui_mdns_utils._list_non_loopback_ipv4",
                 return_value=["192.168.1.1"],
             ),
             patch(
-                "web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.99"
+                "ai_intervention_agent.web_ui_mdns_utils._get_default_route_ipv4",
+                return_value="10.0.0.99",
             ),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "192.168.1.1")
 
     def test_no_candidates_route_only(self):
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         call_count = [0]
 
@@ -1393,18 +1413,30 @@ class TestDetectBestPublishIPv4(unittest.TestCase):
             return []
 
         with (
-            patch("web_ui_mdns_utils._list_non_loopback_ipv4", side_effect=mock_list),
-            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._list_non_loopback_ipv4",
+                side_effect=mock_list,
+            ),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._get_default_route_ipv4",
+                return_value="10.0.0.1",
+            ),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "10.0.0.1")
 
     def test_no_ip_at_all(self):
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         with (
-            patch("web_ui_mdns_utils._list_non_loopback_ipv4", return_value=[]),
-            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value=None),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._list_non_loopback_ipv4",
+                return_value=[],
+            ),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._get_default_route_ipv4",
+                return_value=None,
+            ),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertIsNone(result)
@@ -1417,11 +1449,13 @@ class TestDetectBestPublishIPv4(unittest.TestCase):
 
 class TestGetProjectVersion(unittest.TestCase):
     def test_outer_exception_returns_unknown(self):
-        from web_ui import get_project_version
+        from ai_intervention_agent.web_ui import get_project_version
 
         get_project_version.cache_clear()
 
-        with patch("web_ui.Path", side_effect=RuntimeError("path broken")):
+        with patch(
+            "ai_intervention_agent.web_ui.Path", side_effect=RuntimeError("path broken")
+        ):
             result = get_project_version()
             self.assertIsInstance(result, str)
 
@@ -1429,7 +1463,7 @@ class TestGetProjectVersion(unittest.TestCase):
 
     def test_pyproject_not_exists_returns_unknown(self):
         """branch 71->91: pyproject.toml 不存在时返回 unknown"""
-        from web_ui import get_project_version
+        from ai_intervention_agent.web_ui import get_project_version
 
         get_project_version.cache_clear()
 
@@ -1454,18 +1488,18 @@ class TestGetProjectVersion(unittest.TestCase):
 
 class TestConfigCallbacks(unittest.TestCase):
     def test_sync_timeout_exception_silenced(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original = web_ui._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT
         with patch(
-            "web_ui._get_default_auto_resubmit_timeout_from_config",
+            "ai_intervention_agent.web_ui._get_default_auto_resubmit_timeout_from_config",
             side_effect=RuntimeError("fail"),
         ):
             web_ui._sync_existing_tasks_timeout_from_config()
         web_ui._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT = original
 
     def test_sync_timeout_updates_instance(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original = web_ui._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
@@ -1480,10 +1514,10 @@ class TestConfigCallbacks(unittest.TestCase):
 
         with (
             patch(
-                "web_ui._get_default_auto_resubmit_timeout_from_config",
+                "ai_intervention_agent.web_ui._get_default_auto_resubmit_timeout_from_config",
                 return_value=120,
             ),
-            patch("web_ui.get_task_queue") as mock_tq,
+            patch("ai_intervention_agent.web_ui.get_task_queue") as mock_tq,
         ):
             mock_tq.return_value.update_auto_resubmit_timeout_for_all.return_value = 2
             web_ui._sync_existing_tasks_timeout_from_config()
@@ -1494,7 +1528,7 @@ class TestConfigCallbacks(unittest.TestCase):
 
     def test_sync_timeout_no_lock_instance(self):
         """实例无 _state_lock 时直接赋值"""
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original = web_ui._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
@@ -1509,10 +1543,10 @@ class TestConfigCallbacks(unittest.TestCase):
 
         with (
             patch(
-                "web_ui._get_default_auto_resubmit_timeout_from_config",
+                "ai_intervention_agent.web_ui._get_default_auto_resubmit_timeout_from_config",
                 return_value=90,
             ),
-            patch("web_ui.get_task_queue") as mock_tq,
+            patch("ai_intervention_agent.web_ui.get_task_queue") as mock_tq,
         ):
             mock_tq.return_value.update_auto_resubmit_timeout_for_all.return_value = 0
             web_ui._sync_existing_tasks_timeout_from_config()
@@ -1522,7 +1556,7 @@ class TestConfigCallbacks(unittest.TestCase):
         web_ui._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT = original
 
     def test_sync_network_security_no_instance(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
         web_ui._CURRENT_WEB_UI_INSTANCE = None
@@ -1530,7 +1564,7 @@ class TestConfigCallbacks(unittest.TestCase):
         web_ui._CURRENT_WEB_UI_INSTANCE = original_inst
 
     def test_sync_network_security_no_loader(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
         web_ui._CURRENT_WEB_UI_INSTANCE = SimpleNamespace()
@@ -1538,7 +1572,7 @@ class TestConfigCallbacks(unittest.TestCase):
         web_ui._CURRENT_WEB_UI_INSTANCE = original_inst
 
     def test_sync_network_security_loader_not_dict(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
         inst = SimpleNamespace(_load_network_security_config=lambda: "not_dict")
@@ -1547,7 +1581,7 @@ class TestConfigCallbacks(unittest.TestCase):
         web_ui._CURRENT_WEB_UI_INSTANCE = original_inst
 
     def test_sync_network_security_with_lock(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
         new_cfg = {"bind_interface": "0.0.0.0"}
@@ -1562,7 +1596,7 @@ class TestConfigCallbacks(unittest.TestCase):
         web_ui._CURRENT_WEB_UI_INSTANCE = original_inst
 
     def test_sync_network_security_no_lock(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
         new_cfg = {"bind_interface": "127.0.0.1"}
@@ -1577,7 +1611,7 @@ class TestConfigCallbacks(unittest.TestCase):
         web_ui._CURRENT_WEB_UI_INSTANCE = original_inst
 
     def test_sync_network_security_exception_silenced(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
 
@@ -1590,34 +1624,43 @@ class TestConfigCallbacks(unittest.TestCase):
         web_ui._CURRENT_WEB_UI_INSTANCE = original_inst
 
     def test_ensure_network_callback_exception(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original = web_ui._NETWORK_SECURITY_CALLBACK_REGISTERED
         web_ui._NETWORK_SECURITY_CALLBACK_REGISTERED = False
 
-        with patch("web_ui.get_config", side_effect=RuntimeError("no config")):
+        with patch(
+            "ai_intervention_agent.web_ui.get_config",
+            side_effect=RuntimeError("no config"),
+        ):
             web_ui._ensure_network_security_hot_reload_callback_registered()
 
         web_ui._NETWORK_SECURITY_CALLBACK_REGISTERED = original
 
     def test_ensure_feedback_callback_exception(self):
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original = web_ui._FEEDBACK_TIMEOUT_CALLBACK_REGISTERED
         web_ui._FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = False
 
-        with patch("web_ui.get_config", side_effect=RuntimeError("no config")):
+        with patch(
+            "ai_intervention_agent.web_ui.get_config",
+            side_effect=RuntimeError("no config"),
+        ):
             web_ui._ensure_feedback_timeout_hot_reload_callback_registered()
 
         web_ui._FEEDBACK_TIMEOUT_CALLBACK_REGISTERED = original
 
     def test_get_default_timeout_exception(self):
-        from web_ui import (
+        from ai_intervention_agent.web_ui import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
             _get_default_auto_resubmit_timeout_from_config,
         )
 
-        with patch("web_ui.get_config", side_effect=RuntimeError("broken")):
+        with patch(
+            "ai_intervention_agent.web_ui.get_config",
+            side_effect=RuntimeError("broken"),
+        ):
             try:
                 result = _get_default_auto_resubmit_timeout_from_config()
             except Exception:
@@ -1633,7 +1676,7 @@ class TestConfigCallbacks(unittest.TestCase):
 class TestIsIpAllowed(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="IP test", port=18901)
 
@@ -1688,7 +1731,7 @@ class TestIsIpAllowed(unittest.TestCase):
         )
 
     def test_should_trust_forwarded_for_empty(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.assertFalse(WebFeedbackUI._should_trust_forwarded_for(""))
 
@@ -1705,12 +1748,15 @@ class TestIsIpAllowed(unittest.TestCase):
 class TestMdnsHelpers(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="mdns test", port=18902)
 
     def test_get_mdns_config_exception(self):
-        with patch("web_ui_mdns.get_config", side_effect=RuntimeError("fail")):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns.get_config",
+            side_effect=RuntimeError("fail"),
+        ):
             result = self.ui._get_mdns_config()
             self.assertEqual(result, {})
 
@@ -1726,7 +1772,10 @@ class TestMdnsHelpers(unittest.TestCase):
         self.ui.host = "0.0.0.0"
 
     def test_load_network_security_exception(self):
-        with patch("web_ui_security.get_config", side_effect=RuntimeError("fail")):
+        with patch(
+            "ai_intervention_agent.web_ui_security.get_config",
+            side_effect=RuntimeError("fail"),
+        ):
             result = self.ui._load_network_security_config()
             self.assertIn("bind_interface", result)
 
@@ -1739,7 +1788,7 @@ class TestMdnsHelpers(unittest.TestCase):
 class TestAPIRouteBranches(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="route test", task_id="rt-001", port=18903)
         cls.web_ui.app.config["TESTING"] = True
@@ -1747,7 +1796,10 @@ class TestAPIRouteBranches(unittest.TestCase):
 
     def test_config_exception_returns_500(self):
         """get_api_config 异常返回 500"""
-        with patch("web_ui.get_task_queue", side_effect=RuntimeError("boom")):
+        with patch(
+            "ai_intervention_agent.web_ui.get_task_queue",
+            side_effect=RuntimeError("boom"),
+        ):
             resp = self.client.get("/api/config")
             self.assertEqual(resp.status_code, 500)
             data = json.loads(resp.data)
@@ -1771,8 +1823,8 @@ class TestAPIRouteBranches(unittest.TestCase):
 class TestAIAgentErrorHandler(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from exceptions import AIAgentError
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.exceptions import AIAgentError
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="error test", port=18904)
 
@@ -1823,7 +1875,7 @@ class TestAIAgentErrorHandler(unittest.TestCase):
 class TestTemplateFallback(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="template test", port=18905)
 
@@ -1841,7 +1893,7 @@ class TestTemplateFallback(unittest.TestCase):
         self.assertEqual(result, "app.min.js")
 
     def test_blocked_ips_non_string(self):
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         result = validate_blocked_ips([123, "127.0.0.1", None])
         self.assertEqual(result, ["127.0.0.1"])
@@ -1855,7 +1907,7 @@ class TestTemplateFallback(unittest.TestCase):
 class TestStaticCacheHeaders(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="cache test", port=18906)
         cls.web_ui.app.config["TESTING"] = True
@@ -1876,22 +1928,22 @@ class TestStaticCacheHeaders(unittest.TestCase):
 
 class TestValidateBindInterface(unittest.TestCase):
     def test_none_returns_default(self):
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         self.assertEqual(validate_bind_interface(None), "127.0.0.1")
 
     def test_empty_string_returns_default(self):
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         self.assertEqual(validate_bind_interface(""), "127.0.0.1")
 
     def test_non_string_returns_default(self):
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         self.assertEqual(validate_bind_interface(123), "127.0.0.1")
 
     def test_valid_special_values(self):
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         self.assertEqual(validate_bind_interface("127.0.0.1"), "127.0.0.1")
         self.assertEqual(validate_bind_interface("0.0.0.0"), "0.0.0.0")
@@ -1899,34 +1951,40 @@ class TestValidateBindInterface(unittest.TestCase):
         self.assertEqual(validate_bind_interface("::1"), "::1")
 
     def test_custom_valid_ip(self):
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         self.assertEqual(validate_bind_interface("10.0.0.5"), "10.0.0.5")
 
     def test_invalid_ip_returns_default(self):
-        from web_ui import validate_bind_interface
+        from ai_intervention_agent.web_ui import validate_bind_interface
 
         self.assertEqual(validate_bind_interface("not_an_ip"), "127.0.0.1")
 
 
 class TestValidateAutoResubmitTimeout(unittest.TestCase):
     def test_zero_stays_zero(self):
-        from web_ui import validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import validate_auto_resubmit_timeout
 
         self.assertEqual(validate_auto_resubmit_timeout(0), 0)
 
     def test_negative_becomes_zero(self):
-        from web_ui import validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import validate_auto_resubmit_timeout
 
         self.assertEqual(validate_auto_resubmit_timeout(-10), 0)
 
     def test_below_min_clamped(self):
-        from web_ui import AUTO_RESUBMIT_TIMEOUT_MIN, validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_MIN,
+            validate_auto_resubmit_timeout,
+        )
 
         self.assertEqual(validate_auto_resubmit_timeout(5), AUTO_RESUBMIT_TIMEOUT_MIN)
 
     def test_above_max_clamped(self):
-        from web_ui import AUTO_RESUBMIT_TIMEOUT_MAX, validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import (
+            AUTO_RESUBMIT_TIMEOUT_MAX,
+            validate_auto_resubmit_timeout,
+        )
 
         # 与 shared_types 对齐后 MAX=3600，需要更大的越界值才能触发上限钳位
         self.assertEqual(
@@ -1934,7 +1992,7 @@ class TestValidateAutoResubmitTimeout(unittest.TestCase):
         )
 
     def test_within_range_unchanged(self):
-        from web_ui import validate_auto_resubmit_timeout
+        from ai_intervention_agent.web_ui import validate_auto_resubmit_timeout
 
         self.assertEqual(validate_auto_resubmit_timeout(120), 120)
 
@@ -1946,29 +2004,35 @@ class TestValidateAutoResubmitTimeout(unittest.TestCase):
 
 class TestNormalizeMdnsHostname(unittest.TestCase):
     def test_non_string(self):
-        from web_ui import MDNS_DEFAULT_HOSTNAME, normalize_mdns_hostname
+        from ai_intervention_agent.web_ui import (
+            MDNS_DEFAULT_HOSTNAME,
+            normalize_mdns_hostname,
+        )
 
         self.assertEqual(normalize_mdns_hostname(None), MDNS_DEFAULT_HOSTNAME)
         self.assertEqual(normalize_mdns_hostname(123), MDNS_DEFAULT_HOSTNAME)
 
     def test_empty_string(self):
-        from web_ui import MDNS_DEFAULT_HOSTNAME, normalize_mdns_hostname
+        from ai_intervention_agent.web_ui import (
+            MDNS_DEFAULT_HOSTNAME,
+            normalize_mdns_hostname,
+        )
 
         self.assertEqual(normalize_mdns_hostname(""), MDNS_DEFAULT_HOSTNAME)
         self.assertEqual(normalize_mdns_hostname("  "), MDNS_DEFAULT_HOSTNAME)
 
     def test_trailing_dot_removed(self):
-        from web_ui import normalize_mdns_hostname
+        from ai_intervention_agent.web_ui import normalize_mdns_hostname
 
         self.assertEqual(normalize_mdns_hostname("myhost.local."), "myhost.local")
 
     def test_short_name_appends_local(self):
-        from web_ui import normalize_mdns_hostname
+        from ai_intervention_agent.web_ui import normalize_mdns_hostname
 
         self.assertEqual(normalize_mdns_hostname("myhost"), "myhost.local")
 
     def test_full_hostname_unchanged(self):
-        from web_ui import normalize_mdns_hostname
+        from ai_intervention_agent.web_ui import normalize_mdns_hostname
 
         self.assertEqual(normalize_mdns_hostname("ai.example"), "ai.example")
 
@@ -1980,58 +2044,61 @@ class TestNormalizeMdnsHostname(unittest.TestCase):
 
 class TestValidateNetworkCidr(unittest.TestCase):
     def test_valid_cidr(self):
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         self.assertTrue(validate_network_cidr("192.168.0.0/16"))
 
     def test_valid_single_ip(self):
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         self.assertTrue(validate_network_cidr("10.0.0.1"))
 
     def test_invalid_string(self):
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         self.assertFalse(validate_network_cidr("bad"))
 
     def test_none_input(self):
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         self.assertFalse(validate_network_cidr(None))
 
     def test_empty_string(self):
-        from web_ui import validate_network_cidr
+        from ai_intervention_agent.web_ui import validate_network_cidr
 
         self.assertFalse(validate_network_cidr(""))
 
 
 class TestValidateAllowedNetworks(unittest.TestCase):
     def test_not_list_returns_default(self):
-        from web_ui import DEFAULT_ALLOWED_NETWORKS, validate_allowed_networks
+        from ai_intervention_agent.web_ui import (
+            DEFAULT_ALLOWED_NETWORKS,
+            validate_allowed_networks,
+        )
 
         result = validate_allowed_networks("not_a_list")
         self.assertEqual(result, DEFAULT_ALLOWED_NETWORKS)
 
     def test_invalid_entries_logged_and_skipped(self):
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         result = validate_allowed_networks(["bad", "10.0.0.0/8"])
         self.assertEqual(result, ["10.0.0.0/8"])
 
     def test_empty_list_gets_loopback(self):
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         result = validate_allowed_networks([])
         self.assertIn("127.0.0.0/8", result)
 
     def test_all_invalid_gets_loopback(self):
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         result = validate_allowed_networks(["bad1", "bad2"])
         self.assertIn("127.0.0.0/8", result)
 
     def test_valid_networks_preserved(self):
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         result = validate_allowed_networks(["10.0.0.0/8", "192.168.0.0/16"])
         self.assertEqual(result, ["10.0.0.0/8", "192.168.0.0/16"])
@@ -2043,7 +2110,7 @@ class TestValidateAllowedNetworks(unittest.TestCase):
         现有测试只覆盖了 try/except 抛异常的 invalid 路径；这条用例锁定
         「类型 / 真值早退」分支，避免后续重构时把这层兜底拆掉。
         """
-        from web_ui import validate_allowed_networks
+        from ai_intervention_agent.web_ui import validate_allowed_networks
 
         result = validate_allowed_networks([None, 0, "", 123, "10.0.0.0/8"])
         # 仅有效的 CIDR 进入返回值
@@ -2052,18 +2119,18 @@ class TestValidateAllowedNetworks(unittest.TestCase):
 
 class TestValidateBlockedIps(unittest.TestCase):
     def test_not_list_returns_empty(self):
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         self.assertEqual(validate_blocked_ips("bad"), [])
 
     def test_invalid_ip_string_logged(self):
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         result = validate_blocked_ips(["not_an_ip", "10.0.0.1"])
         self.assertEqual(result, ["10.0.0.1"])
 
     def test_valid_ips(self):
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         result = validate_blocked_ips(["10.0.0.1", "192.168.1.1"])
         self.assertEqual(result, ["10.0.0.1", "192.168.1.1"])
@@ -2075,7 +2142,7 @@ class TestValidateBlockedIps(unittest.TestCase):
         「主机位非零」的写法规范化成 `10.0.0.0/24`，避免存盘时同一段被记录
         两种形式。
         """
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         result = validate_blocked_ips(["10.0.0.1/24", "192.168.1.0/16"])
         self.assertEqual(result, ["10.0.0.0/24", "192.168.0.0/16"])
@@ -2087,7 +2154,7 @@ class TestValidateBlockedIps(unittest.TestCase):
         防止同一台设备的两种 IP 表示被各自登记到 blocklist，造成
         访问控制规则不一致。
         """
-        from web_ui import validate_blocked_ips
+        from ai_intervention_agent.web_ui import validate_blocked_ips
 
         result = validate_blocked_ips(["::ffff:10.0.0.1"])
         self.assertEqual(result, ["10.0.0.1"])
@@ -2095,7 +2162,7 @@ class TestValidateBlockedIps(unittest.TestCase):
 
 class TestValidateNetworkSecurityConfig(unittest.TestCase):
     def test_non_dict_uses_defaults(self):
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         result = validate_network_security_config("not_dict")
         self.assertIn("bind_interface", result)
@@ -2104,7 +2171,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
         self.assertIn("access_control_enabled", result)
 
     def test_dict_validates_fields(self):
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         result = validate_network_security_config(
             {
@@ -2120,7 +2187,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
         self.assertTrue(result["access_control_enabled"])
 
     def test_legacy_enable_access_control(self):
-        from web_ui import validate_network_security_config
+        from ai_intervention_agent.web_ui import validate_network_security_config
 
         result = validate_network_security_config({"enable_access_control": False})
         self.assertFalse(result["access_control_enabled"])
@@ -2134,7 +2201,7 @@ class TestValidateNetworkSecurityConfig(unittest.TestCase):
 class TestIsIpAllowedExtended(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="IP ext test", port=18907)
 
@@ -2173,7 +2240,7 @@ class TestIsIpAllowedExtended(unittest.TestCase):
 class TestGetRequestClientIp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="client ip test", port=18908)
 
@@ -2193,17 +2260,17 @@ class TestGetRequestClientIp(unittest.TestCase):
         self.assertEqual(self.ui._get_request_client_ip(environ), "127.0.0.1")
 
     def test_parse_forwarded_for_empty(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.assertEqual(WebFeedbackUI._parse_forwarded_for(""), "")
 
     def test_parse_forwarded_for_single(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.assertEqual(WebFeedbackUI._parse_forwarded_for("10.0.0.1"), "10.0.0.1")
 
     def test_parse_forwarded_for_multi(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         self.assertEqual(
             WebFeedbackUI._parse_forwarded_for("10.0.0.1, 10.0.0.2"), "10.0.0.1"
@@ -2218,7 +2285,7 @@ class TestGetRequestClientIp(unittest.TestCase):
 class TestGetTemplateContext(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="template test 2", port=18909)
 
@@ -2269,7 +2336,10 @@ class TestGetTemplateContext(unittest.TestCase):
         """配置读取失败时 language 回退为 auto"""
         with (
             self.web_ui.app.test_request_context("/"),
-            patch("web_ui.get_config", side_effect=RuntimeError("fail")),
+            patch(
+                "ai_intervention_agent.web_ui.get_config",
+                side_effect=RuntimeError("fail"),
+            ),
         ):
             ctx = self.web_ui._get_template_context()
         self.assertEqual(ctx["language"], "auto")
@@ -2283,7 +2353,7 @@ class TestGetTemplateContext(unittest.TestCase):
 class TestMdnsLifecycle(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="mdns lifecycle", port=18910)
 
@@ -2337,7 +2407,10 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value=None),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value=None,
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
         ):
             self.ui._start_mdns_if_needed()
@@ -2356,9 +2429,12 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
-            patch("web_ui_mdns.get_config") as mock_cfg,
+            patch("ai_intervention_agent.web_ui_mdns.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.config_file = "/tmp/config.toml"
             self.ui._start_mdns_if_needed()
@@ -2374,7 +2450,10 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
         ):
             self.ui._start_mdns_if_needed()
@@ -2389,7 +2468,10 @@ class TestMdnsLifecycle(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_zc_module}),
         ):
             self.ui._start_mdns_if_needed()
@@ -2428,7 +2510,7 @@ class TestMdnsLifecycle(unittest.TestCase):
 
 class TestRunMethod(unittest.TestCase):
     def test_run_returns_feedback_result(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="run test", port=18911)
         ui.feedback_result = {
@@ -2446,7 +2528,7 @@ class TestRunMethod(unittest.TestCase):
             self.assertEqual(result["user_input"], "hello")
 
     def test_run_returns_empty_when_no_feedback(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="run test 2", port=18912)
         ui.feedback_result = None
@@ -2460,7 +2542,7 @@ class TestRunMethod(unittest.TestCase):
             self.assertEqual(result["user_input"], "")
 
     def test_run_keyboard_interrupt(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="run test 3", port=18913)
         ui.feedback_result = {
@@ -2479,7 +2561,7 @@ class TestRunMethod(unittest.TestCase):
             self.assertEqual(result["user_input"], "interrupted")
 
     def test_run_0000_host_print(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="run test 4", host="0.0.0.0", port=18914)
         ui.feedback_result = None
@@ -2496,7 +2578,7 @@ class TestRunMethod(unittest.TestCase):
             self.assertTrue(any_ssh)
 
     def test_run_specific_host_print(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="run test 5", host="10.0.0.1", port=18915)
         ui.feedback_result = None
@@ -2521,7 +2603,7 @@ class TestRunMethod(unittest.TestCase):
 class TestApiConfigBranches(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="config branches", task_id="cb-001", port=18916
@@ -2547,7 +2629,7 @@ class TestApiConfigBranches(unittest.TestCase):
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = active
 
-        with patch("web_ui.get_task_queue", return_value=mock_tq):
+        with patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq):
             resp = self.client.get("/api/config")
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
@@ -2560,7 +2642,7 @@ class TestApiConfigBranches(unittest.TestCase):
         mock_tq.get_active_task.return_value = None
         mock_tq.get_all_tasks.return_value = [pending]
 
-        with patch("web_ui.get_task_queue", return_value=mock_tq):
+        with patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq):
             resp = self.client.get("/api/config")
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
@@ -2574,7 +2656,7 @@ class TestApiConfigBranches(unittest.TestCase):
         mock_tq.get_active_task.return_value = None
         mock_tq.get_all_tasks.return_value = [completed]
 
-        with patch("web_ui.get_task_queue", return_value=mock_tq):
+        with patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq):
             resp = self.client.get("/api/config")
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
@@ -2593,7 +2675,7 @@ class TestApiConfigBranches(unittest.TestCase):
         self.web_ui.current_auto_resubmit_timeout = 200
         self.web_ui._single_task_timeout_explicit = True
 
-        with patch("web_ui.get_task_queue", return_value=mock_tq):
+        with patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq):
             resp = self.client.get("/api/config")
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
@@ -2614,9 +2696,9 @@ class TestApiConfigBranches(unittest.TestCase):
         self.web_ui._single_task_timeout_explicit = False
 
         with (
-            patch("web_ui.get_task_queue", return_value=mock_tq),
+            patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq),
             patch(
-                "web_ui._get_default_auto_resubmit_timeout_from_config",
+                "ai_intervention_agent.web_ui._get_default_auto_resubmit_timeout_from_config",
                 return_value=150,
             ),
         ):
@@ -2640,9 +2722,9 @@ class TestApiConfigBranches(unittest.TestCase):
         self.web_ui.initial_empty = True
 
         with (
-            patch("web_ui.get_task_queue", return_value=mock_tq),
+            patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq),
             patch(
-                "web_ui._get_default_auto_resubmit_timeout_from_config",
+                "ai_intervention_agent.web_ui._get_default_auto_resubmit_timeout_from_config",
                 side_effect=RuntimeError("config fail"),
             ),
         ):
@@ -2660,7 +2742,7 @@ class TestApiConfigBranches(unittest.TestCase):
 class TestStaticCacheHeadersExtended(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="cache ext", port=18917)
         cls.web_ui.app.config["TESTING"] = True
@@ -2691,20 +2773,24 @@ class TestStaticCacheHeadersExtended(unittest.TestCase):
 class TestDetectBestPublishIPv4Edge(unittest.TestCase):
     def test_invalid_bind_ip_falls_through(self):
         """bind_interface 解析失败时进入通用探测"""
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         with (
             patch(
-                "web_ui_mdns_utils._list_non_loopback_ipv4", return_value=["10.0.0.1"]
+                "ai_intervention_agent.web_ui_mdns_utils._list_non_loopback_ipv4",
+                return_value=["10.0.0.1"],
             ),
-            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._get_default_route_ipv4",
+                return_value="10.0.0.1",
+            ),
         ):
             result = detect_best_publish_ipv4("not_an_ip")
             self.assertEqual(result, "10.0.0.1")
 
     def test_physical_fallback_has_candidates(self):
         """第二轮（无物理过滤）有候选"""
-        from web_ui import detect_best_publish_ipv4
+        from ai_intervention_agent.web_ui import detect_best_publish_ipv4
 
         call_count = [0]
 
@@ -2715,8 +2801,14 @@ class TestDetectBestPublishIPv4Edge(unittest.TestCase):
             return ["172.17.0.1"]
 
         with (
-            patch("web_ui_mdns_utils._list_non_loopback_ipv4", side_effect=mock_list),
-            patch("web_ui_mdns_utils._get_default_route_ipv4", return_value=None),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._list_non_loopback_ipv4",
+                side_effect=mock_list,
+            ),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils._get_default_route_ipv4",
+                return_value=None,
+            ),
         ):
             result = detect_best_publish_ipv4("0.0.0.0")
             self.assertEqual(result, "172.17.0.1")
@@ -2730,27 +2822,33 @@ class TestDetectBestPublishIPv4Edge(unittest.TestCase):
 class TestGetDefaultRouteIPv4Edge(unittest.TestCase):
     def test_loopback_ipv6_returns_none(self):
         """若路由返回回环 IPv6 地址则返回 None"""
-        from web_ui import _get_default_route_ipv4
+        from ai_intervention_agent.web_ui import _get_default_route_ipv4
 
         mock_sock = MagicMock()
         mock_sock.getsockname.return_value = ("::1", 0)
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns_utils.socket.socket",
+            return_value=mock_sock,
+        ):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
     def test_non_loopback_ipv6_returns_none(self):
         """line 389: 全局 IPv6 地址通过回环检查但被版本检查拦截"""
-        from web_ui import _get_default_route_ipv4
+        from ai_intervention_agent.web_ui import _get_default_route_ipv4
 
         mock_sock = MagicMock()
         mock_sock.getsockname.return_value = ("2001:db8::1", 0)
         mock_sock.__enter__ = MagicMock(return_value=mock_sock)
         mock_sock.__exit__ = MagicMock(return_value=False)
 
-        with patch("web_ui_mdns_utils.socket.socket", return_value=mock_sock):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns_utils.socket.socket",
+            return_value=mock_sock,
+        ):
             result = _get_default_route_ipv4()
             self.assertIsNone(result)
 
@@ -2769,7 +2867,7 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
 
     def test_invalid_address_skipped(self):
         """无效 IP 地址被跳过（AddressValueError 分支）"""
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {"en0": [self._snic("not_a_valid_ip")]}
         stats = {"en0": self._stat(True)}
@@ -2783,7 +2881,7 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
 
     def test_link_local_address_skipped(self):
         """链路本地地址被跳过"""
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {"en0": [self._snic("169.254.1.1")]}
         stats = {"en0": self._stat(True)}
@@ -2797,7 +2895,7 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
 
     def test_ipv6_mapped_address_filtered_by_version_check(self):
         """line 424: AF_INET 但 ip_address() 返回 version != 4 的对象时被过滤"""
-        from web_ui import _list_non_loopback_ipv4
+        from ai_intervention_agent.web_ui import _list_non_loopback_ipv4
 
         addrs = {"en0": [self._snic("::ffff:10.0.0.1")]}
         stats = {"en0": self._stat(True)}
@@ -2808,7 +2906,10 @@ class TestListNonLoopbackIPv4Edge(unittest.TestCase):
         with (
             patch("psutil.net_if_addrs", return_value=addrs),
             patch("psutil.net_if_stats", return_value=stats),
-            patch("web_ui_mdns_utils.ip_address", return_value=mock_ip),
+            patch(
+                "ai_intervention_agent.web_ui_mdns_utils.ip_address",
+                return_value=mock_ip,
+            ),
         ):
             result = _list_non_loopback_ipv4(prefer_physical=False)
             self.assertEqual(result, [])
@@ -2824,7 +2925,7 @@ class TestNetworkSecurityDCLInnerBranch(unittest.TestCase):
 
     def test_dcl_inner_branch_already_registered(self):
         """另一线程在锁等待期间完成注册，内层检查命中 return"""
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original_flag = web_ui._NETWORK_SECURITY_CALLBACK_REGISTERED
         original_lock = web_ui._NETWORK_SECURITY_CALLBACK_LOCK
@@ -2850,24 +2951,26 @@ class TestNetworkSecurityDCLInnerBranch(unittest.TestCase):
 class TestGetDefaultTimeoutConfig(unittest.TestCase):
     def test_int_conversion_fails(self):
         """raw_timeout 无法转为 int 时返回默认值"""
-        from web_ui import (
+        from ai_intervention_agent.web_ui import (
             AUTO_RESUBMIT_TIMEOUT_DEFAULT,
             _get_default_auto_resubmit_timeout_from_config,
         )
 
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"frontend_countdown": "not_a_number"}
-        with patch("web_ui.get_config", return_value=mock_cfg):
+        with patch("ai_intervention_agent.web_ui.get_config", return_value=mock_cfg):
             result = _get_default_auto_resubmit_timeout_from_config()
             self.assertEqual(result, AUTO_RESUBMIT_TIMEOUT_DEFAULT)
 
     def test_valid_config_value(self):
         """正常配置值"""
-        from web_ui import _get_default_auto_resubmit_timeout_from_config
+        from ai_intervention_agent.web_ui import (
+            _get_default_auto_resubmit_timeout_from_config,
+        )
 
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"frontend_countdown": "120"}
-        with patch("web_ui.get_config", return_value=mock_cfg):
+        with patch("ai_intervention_agent.web_ui.get_config", return_value=mock_cfg):
             result = _get_default_auto_resubmit_timeout_from_config()
             self.assertEqual(result, 120)
 
@@ -2879,10 +2982,10 @@ class TestGetDefaultTimeoutConfig(unittest.TestCase):
 
 class TestWebFeedbackUiFunction(unittest.TestCase):
     def test_returns_result_without_file(self):
-        from web_ui import web_feedback_ui
+        from ai_intervention_agent.web_ui import web_feedback_ui
 
         fake_result = {"user_input": "hi", "selected_options": [], "images": []}
-        with patch("web_ui.WebFeedbackUI") as MockUI:
+        with patch("ai_intervention_agent.web_ui.WebFeedbackUI") as MockUI:
             MockUI.return_value.run.return_value = fake_result
             result = web_feedback_ui("hello", port=18920)
             self.assertEqual(result, fake_result)
@@ -2890,11 +2993,11 @@ class TestWebFeedbackUiFunction(unittest.TestCase):
     def test_saves_to_file(self):
         import tempfile
 
-        from web_ui import web_feedback_ui
+        from ai_intervention_agent.web_ui import web_feedback_ui
 
         fake_result = {"user_input": "saved", "selected_options": [], "images": []}
         with (
-            patch("web_ui.WebFeedbackUI") as MockUI,
+            patch("ai_intervention_agent.web_ui.WebFeedbackUI") as MockUI,
             tempfile.TemporaryDirectory() as tmpdir,
         ):
             MockUI.return_value.run.return_value = fake_result
@@ -2909,9 +3012,9 @@ class TestWebFeedbackUiFunction(unittest.TestCase):
             self.assertEqual(saved["user_input"], "saved")
 
     def test_no_result_no_file(self):
-        from web_ui import web_feedback_ui
+        from ai_intervention_agent.web_ui import web_feedback_ui
 
-        with patch("web_ui.WebFeedbackUI") as MockUI:
+        with patch("ai_intervention_agent.web_ui.WebFeedbackUI") as MockUI:
             MockUI.return_value.run.return_value = None
             result = web_feedback_ui("hello", output_file="/tmp/nope.json", port=18922)
             self.assertIsNone(result)
@@ -2925,14 +3028,14 @@ class TestWebFeedbackUiFunction(unittest.TestCase):
 class TestGetProjectVersionRegexFallback(unittest.TestCase):
     def test_tomllib_fails_regex_succeeds(self):
         """tomllib 加载失败时回退到正则解析"""
-        from web_ui import get_project_version
+        from ai_intervention_agent.web_ui import get_project_version
 
         get_project_version.cache_clear()
 
         fake_toml = 'version = "9.8.7"\n[project]\nversion = "1.2.3"'
 
         with (
-            patch("web_ui.Path") as MockPath,
+            patch("ai_intervention_agent.web_ui.Path") as MockPath,
             patch("builtins.open") as mock_open_fn,
         ):
             mock_pyproject = MagicMock()
@@ -2972,7 +3075,7 @@ class TestGetProjectVersionRegexFallback(unittest.TestCase):
 class TestIpDeniedAbort403(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="403 test", port=18923)
         cls.web_ui.network_security_config = {
@@ -2999,7 +3102,7 @@ class TestIpDeniedAbort403(unittest.TestCase):
 
 class TestGetFileVersionOSError(unittest.TestCase):
     def test_oserror_returns_default(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="ver err", port=18924)
         result = ui._get_file_version("/nonexistent/path/file.css")
@@ -3015,7 +3118,7 @@ class TestGetMinifiedFileNotFound(unittest.TestCase):
     def test_no_minified_version(self):
         import tempfile
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="minified", port=18925)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3031,7 +3134,7 @@ class TestGetMinifiedFileNotFound(unittest.TestCase):
 class TestSyncTimeoutLockException(unittest.TestCase):
     def test_lock_enter_fails_fallback(self):
         """lock.__enter__ 抛异常时走 except 兜底分支"""
-        import web_ui
+        import ai_intervention_agent.web_ui as web_ui
 
         original = web_ui._LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT
         original_inst = web_ui._CURRENT_WEB_UI_INSTANCE
@@ -3050,10 +3153,10 @@ class TestSyncTimeoutLockException(unittest.TestCase):
 
         with (
             patch(
-                "web_ui._get_default_auto_resubmit_timeout_from_config",
+                "ai_intervention_agent.web_ui._get_default_auto_resubmit_timeout_from_config",
                 return_value=200,
             ),
-            patch("web_ui.get_task_queue") as mock_tq,
+            patch("ai_intervention_agent.web_ui.get_task_queue") as mock_tq,
         ):
             mock_tq.return_value.update_auto_resubmit_timeout_for_all.return_value = 0
             web_ui._sync_existing_tasks_timeout_from_config()
@@ -3073,9 +3176,12 @@ class TestShouldTrustForwardedForEdge(unittest.TestCase):
         """ip_address 抛出 AddressValueError 时返回 False"""
         from ipaddress import AddressValueError
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
-        with patch("web_ui_security.ip_address", side_effect=AddressValueError("bad")):
+        with patch(
+            "ai_intervention_agent.web_ui_security.ip_address",
+            side_effect=AddressValueError("bad"),
+        ):
             self.assertFalse(WebFeedbackUI._should_trust_forwarded_for("127.0.0.1"))
 
 
@@ -3086,22 +3192,26 @@ class TestShouldTrustForwardedForEdge(unittest.TestCase):
 
 class TestGetMdnsConfigCast(unittest.TestCase):
     def test_non_dict_section_returns_empty(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="mdns cfg", port=18926)
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = "not_a_dict"
-        with patch("web_ui_mdns.get_config", return_value=mock_cfg):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns.get_config", return_value=mock_cfg
+        ):
             result = ui._get_mdns_config()
             self.assertEqual(result, {})
 
     def test_dict_section_returned(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="mdns cfg 2", port=18927)
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {"enabled": True}
-        with patch("web_ui_mdns.get_config", return_value=mock_cfg):
+        with patch(
+            "ai_intervention_agent.web_ui_mdns.get_config", return_value=mock_cfg
+        ):
             result = ui._get_mdns_config()
             self.assertEqual(result, {"enabled": True})
 
@@ -3116,7 +3226,7 @@ class TestIsIpAllowedAddressValueError(unittest.TestCase):
         """强制触发 AddressValueError（非 ValueError）"""
         from ipaddress import AddressValueError
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="avr test", port=18928)
         ui.network_security_config = {
@@ -3125,7 +3235,8 @@ class TestIsIpAllowedAddressValueError(unittest.TestCase):
             "blocked_ips": [],
         }
         with patch(
-            "web_ui_security.ip_address", side_effect=AddressValueError("bad addr")
+            "ai_intervention_agent.web_ui_security.ip_address",
+            side_effect=AddressValueError("bad addr"),
         ):
             result = ui._is_ip_allowed("anything")
             self.assertFalse(result)
@@ -3138,7 +3249,7 @@ class TestIsIpAllowedAddressValueError(unittest.TestCase):
 
 class TestIsIpAllowedNetworkException(unittest.TestCase):
     def test_invalid_network_entry_skipped(self):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="net exc", port=18929)
         ui.network_security_config = {
@@ -3157,7 +3268,7 @@ class TestIsIpAllowedNetworkException(unittest.TestCase):
 class TestSingleTaskRenderMarkdownFails(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="md fail", port=18930)
         cls.web_ui.app.config["TESTING"] = True
@@ -3176,7 +3287,7 @@ class TestSingleTaskRenderMarkdownFails(unittest.TestCase):
         self.web_ui._single_task_timeout_explicit = True
 
         with (
-            patch("web_ui.get_task_queue", return_value=mock_tq),
+            patch("ai_intervention_agent.web_ui.get_task_queue", return_value=mock_tq),
             patch.object(
                 self.web_ui, "render_markdown", side_effect=RuntimeError("render fail")
             ),
@@ -3197,10 +3308,10 @@ class TestShutdownServer(unittest.TestCase):
         import os
         import signal
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="shutdown", port=18931)
-        with patch("web_ui.os.kill") as mock_kill:
+        with patch("ai_intervention_agent.web_ui.os.kill") as mock_kill:
             ui.shutdown_server()
             mock_kill.assert_called_once_with(os.getpid(), signal.SIGINT)
 
@@ -3213,7 +3324,7 @@ class TestShutdownServer(unittest.TestCase):
 class TestIsIpAllowedBlockedMulti(unittest.TestCase):
     def test_second_blocked_ip_matches(self):
         """多条黑名单时，不匹配的条目会继续循环"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="blocked multi", port=18932)
         ui.network_security_config = {
@@ -3235,7 +3346,7 @@ class TestIndexRenderTemplate(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="render tpl", port=18933)
         cls.web_ui.app.config["TESTING"] = True
@@ -3265,7 +3376,7 @@ class TestIndexRenderTemplate(unittest.TestCase):
     def test_template_not_found_returns_500(self):
         """模板文件缺失时 errorhandler 返回 500 降级页面"""
         with patch(
-            "web_ui.render_template",
+            "ai_intervention_agent.web_ui.render_template",
             side_effect=__import__("jinja2").TemplateNotFound("web_ui.html"),
         ):
             resp = self.client.get("/")
@@ -3285,7 +3396,7 @@ class TestIndexRenderTemplate(unittest.TestCase):
 class TestMdnsNonUniqueCleanup(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="mdns cleanup", port=18934)
 
@@ -3305,9 +3416,15 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui_mdns.get_config", side_effect=RuntimeError("no config")),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.get_config",
+                side_effect=RuntimeError("no config"),
+            ),
         ):
             self.ui._start_mdns_if_needed()
             self.assertIsNone(self.ui._mdns_zeroconf)
@@ -3325,9 +3442,12 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui_mdns.get_config") as mock_cfg,
+            patch("ai_intervention_agent.web_ui_mdns.get_config") as mock_cfg,
         ):
             mock_cfg.return_value.config_file = "/tmp/c.toml"
             self.ui._start_mdns_if_needed()
@@ -3345,7 +3465,10 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
         ):
             self.ui._start_mdns_if_needed()
@@ -3368,7 +3491,7 @@ class TestMdnsNonUniqueCleanup(unittest.TestCase):
 class TestMdnsConstructorFailures(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="mdns ctor", port=18937)
 
@@ -3390,7 +3513,10 @@ class TestMdnsConstructorFailures(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
         ):
             try:
@@ -3416,12 +3542,12 @@ class TestMdnsConstructorFailures(unittest.TestCase):
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
             patch(
-                "web_ui_mdns.detect_best_publish_ipv4",
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
                 return_value="not-an-ip",
             ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
             patch(
-                "web_ui_mdns.socket.inet_aton",
+                "ai_intervention_agent.web_ui_mdns.socket.inet_aton",
                 side_effect=OSError("illegal IP address string passed"),
             ),
         ):
@@ -3445,7 +3571,7 @@ class TestMdnsConstructorFailures(unittest.TestCase):
 class TestMdnsRegisterSignatureCompat(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(prompt="mdns sig", port=18935)
 
@@ -3468,9 +3594,15 @@ class TestMdnsRegisterSignatureCompat(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui_mdns.inspect.signature", return_value=mock_sig),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.inspect.signature",
+                return_value=mock_sig,
+            ),
         ):
             self.ui._start_mdns_if_needed()
             if self.ui._mdns_zeroconf is not None:
@@ -3491,9 +3623,15 @@ class TestMdnsRegisterSignatureCompat(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
-            patch("web_ui_mdns.inspect.signature", return_value=mock_sig),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.inspect.signature",
+                return_value=mock_sig,
+            ),
         ):
             self.ui._start_mdns_if_needed()
             if self.ui._mdns_zeroconf is not None:
@@ -3513,10 +3651,14 @@ class TestMdnsRegisterSignatureCompat(unittest.TestCase):
         with (
             patch.object(self.ui, "_get_mdns_config", return_value={}),
             patch.object(self.ui, "_should_enable_mdns", return_value=True),
-            patch("web_ui_mdns.detect_best_publish_ipv4", return_value="10.0.0.1"),
+            patch(
+                "ai_intervention_agent.web_ui_mdns.detect_best_publish_ipv4",
+                return_value="10.0.0.1",
+            ),
             patch.dict("sys.modules", {"zeroconf": mock_mod}),
             patch(
-                "web_ui_mdns.inspect.signature", side_effect=RuntimeError("sig fail")
+                "ai_intervention_agent.web_ui_mdns.inspect.signature",
+                side_effect=RuntimeError("sig fail"),
             ),
         ):
             self.ui._start_mdns_if_needed()

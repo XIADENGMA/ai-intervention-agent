@@ -229,7 +229,7 @@ def bench_html_render(iterations: int) -> list[float]:
     """In-process 调用 ``_get_template_context`` + ``render_template`` 一次。"""
     sys.path.insert(0, str(REPO_ROOT))
     try:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="perf-bench", port=0)
 

@@ -157,7 +157,7 @@ class TestLocaleShapeAgainstRealBundles(unittest.TestCase):
     """端到端：生产 locale bundle 必须形状干净，否则 ci_gate 失败。"""
 
     def test_static_locales_are_clean(self) -> None:
-        target = ROOT / "static" / "locales"
+        target = ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
         code, _, err = _run(["--locales-dir", str(target)])
         self.assertEqual(code, 0, err)
 

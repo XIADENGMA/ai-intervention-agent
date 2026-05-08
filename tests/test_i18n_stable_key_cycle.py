@@ -29,7 +29,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEBUI_I18N = ROOT / "static" / "js" / "i18n.js"
+WEBUI_I18N = ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "i18n.js"
 VSCODE_I18N = ROOT / "packages" / "vscode" / "i18n.js"
 
 

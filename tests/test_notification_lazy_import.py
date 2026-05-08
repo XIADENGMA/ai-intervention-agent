@@ -95,8 +95,8 @@ class TestImportDecoupling(unittest.TestCase):
     ) -> None:
         out = self._run_in_subprocess(
             "import sys\n"
-            "from web_ui_routes import notification  # noqa: F401\n"
-            "print('LOADED' if 'notification_manager' in sys.modules else 'NOT_LOADED')\n"
+            "from ai_intervention_agent.web_ui_routes import notification  # noqa: F401\n"
+            "print('LOADED' if 'ai_intervention_agent.notification_manager' in sys.modules else 'NOT_LOADED')\n"
         )
         last = out.splitlines()[-1] if out else ""
         self.assertEqual(
@@ -111,8 +111,8 @@ class TestImportDecoupling(unittest.TestCase):
     ) -> None:
         out = self._run_in_subprocess(
             "import sys\n"
-            "from web_ui_routes import notification  # noqa: F401\n"
-            "print('LOADED' if 'notification_providers' in sys.modules else 'NOT_LOADED')\n"
+            "from ai_intervention_agent.web_ui_routes import notification  # noqa: F401\n"
+            "print('LOADED' if 'ai_intervention_agent.notification_providers' in sys.modules else 'NOT_LOADED')\n"
         )
         last = out.splitlines()[-1] if out else ""
         self.assertEqual(
@@ -125,7 +125,7 @@ class TestImportDecoupling(unittest.TestCase):
         """httpx 是 R20.10 节省的最大单点（~22ms）——通过 notification_providers 拖入"""
         out = self._run_in_subprocess(
             "import sys\n"
-            "from web_ui_routes import notification  # noqa: F401\n"
+            "from ai_intervention_agent.web_ui_routes import notification  # noqa: F401\n"
             "print('LOADED' if 'httpx' in sys.modules else 'NOT_LOADED')\n"
         )
         last = out.splitlines()[-1] if out else ""
@@ -140,14 +140,14 @@ class TestImportDecoupling(unittest.TestCase):
         """导入 provider 模块本身不应加载 httpx；只有 Bark provider 首次使用才需要。"""
         out = self._run_in_subprocess(
             "import sys\n"
-            "import notification_providers  # noqa: F401\n"
+            "import ai_intervention_agent.notification_providers  # noqa: F401\n"
             "print('LOADED' if 'httpx' in sys.modules else 'NOT_LOADED')\n"
         )
         last = out.splitlines()[-1] if out else ""
         self.assertEqual(
             last,
             "NOT_LOADED",
-            "import notification_providers 不应立刻加载 httpx；Web/Sound/System "
+            "import ai_intervention_agent.notification_providers 不应立刻加载 httpx；Web/Sound/System "
             "provider 不需要 HTTP transport，Bark 首次使用时再加载即可",
         )
 
@@ -155,8 +155,8 @@ class TestImportDecoupling(unittest.TestCase):
         """访问 Bark provider 的 HTTP transport 时才真正加载 httpx。"""
         out = self._run_in_subprocess(
             "import sys\n"
-            "from notification_manager import NotificationConfig\n"
-            "from notification_providers import BarkNotificationProvider\n"
+            "from ai_intervention_agent.notification_manager import NotificationConfig\n"
+            "from ai_intervention_agent.notification_providers import BarkNotificationProvider\n"
             "before = 'httpx' in sys.modules\n"
             "provider = BarkNotificationProvider(NotificationConfig())\n"
             "after = 'httpx' in sys.modules\n"
@@ -170,14 +170,14 @@ class TestImportDecoupling(unittest.TestCase):
         """端到端验证：完整 import web_ui 也不应触发通知模块加载"""
         out = self._run_in_subprocess(
             "import sys\n"
-            "import web_ui  # noqa: F401\n"
-            "print('LOADED' if 'notification_manager' in sys.modules else 'NOT_LOADED')\n"
+            "import ai_intervention_agent.web_ui  # noqa: F401\n"
+            "print('LOADED' if 'ai_intervention_agent.notification_manager' in sys.modules else 'NOT_LOADED')\n"
         )
         last = out.splitlines()[-1] if out else ""
         self.assertEqual(
             last,
             "NOT_LOADED",
-            "import web_ui 不应触发 notification_manager 加载——这是 Web UI 子进程"
+            "import ai_intervention_agent.web_ui 不应触发 notification_manager 加载——这是 Web UI 子进程"
             "cold-start 节省 ~36ms（实测中位数）的端到端验证",
         )
 
@@ -189,7 +189,9 @@ class TestNotificationAvailableDetection(unittest.TestCase):
     """find_spec 探测必须在不加载模块的前提下正确返回 True/False"""
 
     def test_notification_available_is_true_in_dev_environment(self) -> None:
-        from web_ui_routes.notification import NOTIFICATION_AVAILABLE
+        from ai_intervention_agent.web_ui_routes.notification import (
+            NOTIFICATION_AVAILABLE,
+        )
 
         self.assertTrue(
             NOTIFICATION_AVAILABLE,
@@ -205,8 +207,8 @@ class TestNotificationAvailableDetection(unittest.TestCase):
                 "-c",
                 "import sys\n"
                 "from importlib.util import find_spec\n"
-                "spec = find_spec('notification_manager')\n"
-                "loaded = 'notification_manager' in sys.modules\n"
+                "spec = find_spec('ai_intervention_agent.notification_manager')\n"
+                "loaded = 'ai_intervention_agent.notification_manager' in sys.modules\n"
                 "print(f'spec={spec is not None} loaded={loaded}')\n",
             ],
             cwd=str(PROJECT_ROOT),
@@ -236,7 +238,7 @@ class TestGracefulDegradationParity(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="lazy-import-test",
@@ -247,7 +249,8 @@ class TestGracefulDegradationParity(unittest.TestCase):
         cls._client = cls._ui.app.test_client()
         # 持有模块对象以便测试中临时翻转 NOTIFICATION_AVAILABLE
         cls._notif_module = __import__(
-            "web_ui_routes.notification", fromlist=["NOTIFICATION_AVAILABLE"]
+            "ai_intervention_agent.web_ui_routes.notification",
+            fromlist=["NOTIFICATION_AVAILABLE"],
         )
 
     def _set_notification_available(self, value: bool) -> bool:
@@ -323,16 +326,20 @@ class TestGracefulDegradationParity(unittest.TestCase):
 class TestSourceTextInvariants(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.src = (PROJECT_ROOT / "web_ui_routes" / "notification.py").read_text(
-            encoding="utf-8"
-        )
+        cls.src = (
+            PROJECT_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "web_ui_routes"
+            / "notification.py"
+        ).read_text(encoding="utf-8")
 
     def test_no_module_level_notification_manager_import(self) -> None:
         """source-text 层禁止把 notification_manager 拖回模块顶部 eager import"""
         # 顶层 import 形式：行首 from / 行首 import（防止 docstring 里的字串误判）
         for forbidden in (
-            "\nfrom notification_manager import",
-            "\nimport notification_manager",
+            "\nfrom ai_intervention_agent.notification_manager import",
+            "\nimport ai_intervention_agent.notification_manager",
         ):
             # 容忍 docstring 里出现的提示文本（比如开头的"注意"段落），仅检查
             # 是否存在带前导换行 + 行首关键字的真实 Python 顶层 import 语句。
@@ -346,8 +353,8 @@ class TestSourceTextInvariants(unittest.TestCase):
 
     def test_no_module_level_notification_providers_import(self) -> None:
         for forbidden in (
-            "\nfrom notification_providers import",
-            "\nimport notification_providers",
+            "\nfrom ai_intervention_agent.notification_providers import",
+            "\nimport ai_intervention_agent.notification_providers",
         ):
             self.assertNotIn(
                 forbidden,
@@ -364,14 +371,14 @@ class TestSourceTextInvariants(unittest.TestCase):
             "web_ui_routes/notification.py 必须使用 find_spec 探测可用性",
         )
         self.assertIn(
-            'find_spec("notification_manager")',
+            'find_spec("ai_intervention_agent.notification_manager")',
             self.src,
-            "find_spec 必须探测 notification_manager",
+            "find_spec 必须探测 ai_intervention_agent.notification_manager",
         )
         self.assertIn(
-            'find_spec("notification_providers")',
+            'find_spec("ai_intervention_agent.notification_providers")',
             self.src,
-            "find_spec 必须探测 notification_providers",
+            "find_spec 必须探测 ai_intervention_agent.notification_providers",
         )
 
     def test_notification_available_constant_exists(self) -> None:
@@ -469,12 +476,12 @@ class TestLazyImportCachingSemantics(unittest.TestCase):
                 sys.executable,
                 "-c",
                 "import sys\n"
-                "import web_ui\n"
-                "before = 'notification_manager' in sys.modules\n"
+                "from ai_intervention_agent import web_ui\n"
+                "before = 'ai_intervention_agent.notification_manager' in sys.modules\n"
                 "ui = web_ui.WebFeedbackUI(prompt='lazy-test', task_id='lazy-test', port=18998)\n"
                 "client = ui.app.test_client()\n"
                 "rv = client.post('/api/test-bark', json={'bark_device_key': 'fake-key-for-test'})\n"
-                "after = 'notification_manager' in sys.modules\n"
+                "after = 'ai_intervention_agent.notification_manager' in sys.modules\n"
                 "print(f'BEFORE={before} AFTER={after}')\n",
             ],
             cwd=str(PROJECT_ROOT),

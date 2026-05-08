@@ -31,7 +31,7 @@ class TestUpdateAutoResubmitTimeoutPersistence(unittest.TestCase):
         self._tmp.cleanup()
 
     def _make_queue(self):
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         return TaskQueue(persist_path=str(self.persist_path))
 

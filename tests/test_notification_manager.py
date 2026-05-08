@@ -89,7 +89,7 @@ class TestNotificationManagerConfigRefresh(unittest.TestCase):
     def setUp(self):
         """每个测试前的准备"""
         # 导入需要在每次测试时重新导入，以确保单例状态正确
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
         # 强制刷新配置
@@ -161,7 +161,7 @@ class TestNotificationManagerTypeValidation(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
 
@@ -204,7 +204,7 @@ class TestNotificationManagerThreadSafety(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
         self.errors = []
@@ -292,7 +292,10 @@ class TestNotificationManagerBarkProvider(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import NotificationType, notification_manager
+        from ai_intervention_agent.notification_manager import (
+            NotificationType,
+            notification_manager,
+        )
 
         self.manager = notification_manager
         self.NotificationType = NotificationType
@@ -327,7 +330,7 @@ class TestNotificationManagerRetryAndStats(unittest.TestCase):
     """通知重试与可观测性：最小回归测试"""
 
     def setUp(self):
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationEvent,
             NotificationTrigger,
             NotificationType,
@@ -424,7 +427,7 @@ class TestNotificationManagerPerformance(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
 
@@ -460,7 +463,9 @@ class TestNotificationManagerPerformance(unittest.TestCase):
         class _StubStat:
             st_mtime = fixed_mtime
 
-        with patch("notification_manager.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.notification_manager.get_config"
+        ) as mock_get_config:
             mock_cfg = mock_get_config.return_value
             mock_cfg.config_file.stat.return_value = _StubStat()
             mock_cfg.get_section.return_value = {}
@@ -506,7 +511,9 @@ class TestNotificationManagerPerformance(unittest.TestCase):
         self.manager.refresh_config_from_file(force=True)
         cached_mtime = self.manager._config_file_mtime
 
-        with patch("notification_manager.get_config") as mock_get_config:
+        with patch(
+            "ai_intervention_agent.notification_manager.get_config"
+        ) as mock_get_config:
             mock_cfg = mock_get_config.return_value
             mock_cfg.get_section.return_value = {}
 
@@ -530,7 +537,7 @@ class TestNotificationManagerSendNotification(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
 
@@ -541,7 +548,7 @@ class TestNotificationManagerSendNotification(unittest.TestCase):
 
     def test_register_provider(self):
         """测试注册提供者"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         # 创建模拟提供者
         mock_provider = MagicMock()
@@ -565,7 +572,7 @@ class TestNotificationManagerSend(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
 
@@ -576,7 +583,7 @@ class TestNotificationManagerSend(unittest.TestCase):
         self.manager.config.enabled = False
 
         try:
-            from notification_manager import NotificationTrigger
+            from ai_intervention_agent.notification_manager import NotificationTrigger
 
             result = self.manager.send_notification(
                 title="测试", message="消息", trigger=NotificationTrigger.IMMEDIATE
@@ -589,7 +596,10 @@ class TestNotificationManagerSend(unittest.TestCase):
 
     def test_send_notification_immediate(self):
         """测试立即发送通知"""
-        from notification_manager import NotificationTrigger, NotificationType
+        from ai_intervention_agent.notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+        )
 
         # 确保通知启用
         original_enabled = self.manager.config.enabled
@@ -610,7 +620,10 @@ class TestNotificationManagerSend(unittest.TestCase):
 
     def test_send_notification_with_metadata(self):
         """测试带元数据的通知"""
-        from notification_manager import NotificationTrigger, NotificationType
+        from ai_intervention_agent.notification_manager import (
+            NotificationTrigger,
+            NotificationType,
+        )
 
         original_enabled = self.manager.config.enabled
         self.manager.config.enabled = True
@@ -634,7 +647,7 @@ class TestNotificationBoundaryConditions(unittest.TestCase):
 
     def test_empty_notification_title(self):
         """测试空标题通知"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationTrigger,
             NotificationType,
             notification_manager,
@@ -658,7 +671,7 @@ class TestNotificationBoundaryConditions(unittest.TestCase):
 
     def test_empty_notification_message(self):
         """测试空消息通知"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationTrigger,
             NotificationType,
             notification_manager,
@@ -682,7 +695,7 @@ class TestNotificationBoundaryConditions(unittest.TestCase):
 
     def test_very_long_notification(self):
         """测试超长通知"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationTrigger,
             NotificationType,
             notification_manager,
@@ -713,7 +726,7 @@ class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
 
     def test_send_notification_with_types(self):
         """测试指定类型发送通知"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationManager,
             NotificationTrigger,
             NotificationType,
@@ -734,7 +747,7 @@ class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
 
     def test_send_notification_delayed(self):
         """测试延迟触发通知"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationManager,
             NotificationTrigger,
         )
@@ -760,7 +773,7 @@ class TestNotificationManagerSendNotificationAdvanced(unittest.TestCase):
 
     def test_send_notification_all_types_enabled(self):
         """测试所有通知类型启用时的发送"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationManager,
             NotificationTrigger,
         )
@@ -786,7 +799,7 @@ class TestNotificationManagerProcessEvent(unittest.TestCase):
 
     def test_process_event_with_mock_provider(self):
         """测试事件处理与模拟提供者"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationEvent,
             NotificationManager,
             NotificationTrigger,
@@ -821,7 +834,7 @@ class TestNotificationEventQueue(unittest.TestCase):
 
     def test_event_queue_add(self):
         """测试向事件队列添加事件"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationEvent,
             NotificationManager,
             NotificationTrigger,
@@ -851,13 +864,13 @@ class TestNotificationManagerProvider(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
 
     def test_get_provider(self):
         """测试获取提供者"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         # 尝试获取提供者
         provider = self.manager._providers.get(NotificationType.WEB)
@@ -869,7 +882,7 @@ class TestNotificationManagerQueue(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
 
@@ -888,7 +901,7 @@ class TestBoundaryConditionsExtended(unittest.TestCase):
 
     def test_notification_with_html(self):
         """测试带 HTML 的通知"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationTrigger,
             NotificationType,
             notification_manager,
@@ -913,7 +926,7 @@ class TestBoundaryConditionsExtended(unittest.TestCase):
         """测试配置管理器并发访问"""
         import threading
 
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         results = []
 
@@ -932,7 +945,7 @@ class TestBoundaryConditionsExtended(unittest.TestCase):
 
     def test_task_queue_boundary_operations(self):
         """测试任务队列边界操作"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue()
 
@@ -952,7 +965,7 @@ class TestNotificationManagerBoundary(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         self.manager = notification_manager
 
@@ -981,7 +994,9 @@ class TestNotificationManagerBoundary(unittest.TestCase):
         self.manager.config.bark_device_key = "test"
 
         # 不应该崩溃
-        from notification_providers import BarkNotificationProvider
+        from ai_intervention_agent.notification_providers import (
+            BarkNotificationProvider,
+        )
 
         provider = BarkNotificationProvider(self.manager.config)
         self.assertIsNotNone(provider)
@@ -997,13 +1012,16 @@ class TestNotificationManagerInitEdge(unittest.TestCase):
 
     def test_from_config_exception_raises_notification_error(self):
         """lines 257-259: NotificationConfig.from_config_file 抛异常"""
-        from notification_manager import NotificationError, NotificationManager
+        from ai_intervention_agent.notification_manager import (
+            NotificationError,
+            NotificationManager,
+        )
 
         old_instance = NotificationManager._instance
         try:
             NotificationManager._instance = None
             with patch(
-                "notification_manager.NotificationConfig.from_config_file",
+                "ai_intervention_agent.notification_manager.NotificationConfig.from_config_file",
                 side_effect=RuntimeError("config broken"),
             ):
                 with self.assertRaises(NotificationError) as ctx:
@@ -1014,7 +1032,7 @@ class TestNotificationManagerInitEdge(unittest.TestCase):
 
     def test_debug_mode_init(self):
         """lines 320-321: config.debug=True 时的初始化"""
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         old_instance = NotificationManager._instance
         try:
@@ -1025,7 +1043,7 @@ class TestNotificationManagerInitEdge(unittest.TestCase):
             mock_config.delayed_notification_seconds = 5.0
             mock_config.max_retries = 3
             with patch(
-                "notification_manager.NotificationConfig.from_config_file",
+                "ai_intervention_agent.notification_manager.NotificationConfig.from_config_file",
                 return_value=mock_config,
             ):
                 mgr = NotificationManager()
@@ -1035,7 +1053,7 @@ class TestNotificationManagerInitEdge(unittest.TestCase):
 
     def test_bark_enabled_init(self):
         """lines 329-330: bark_enabled=True 时注册 provider"""
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         old_instance = NotificationManager._instance
         try:
@@ -1046,7 +1064,7 @@ class TestNotificationManagerInitEdge(unittest.TestCase):
             mock_config.delayed_notification_seconds = 5.0
             mock_config.max_retries = 3
             with patch(
-                "notification_manager.NotificationConfig.from_config_file",
+                "ai_intervention_agent.notification_manager.NotificationConfig.from_config_file",
                 return_value=mock_config,
             ):
                 mgr = NotificationManager()
@@ -1060,7 +1078,7 @@ class TestNotificationManagerDCLBranches(unittest.TestCase):
 
     def test_new_dcl_inner_branch_already_created(self):
         """239->242: __new__ 中另一个线程抢先创建了 _instance"""
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         old_instance = NotificationManager._instance
         old_lock = NotificationManager._lock
@@ -1088,7 +1106,7 @@ class TestNotificationManagerDCLBranches(unittest.TestCase):
 
     def test_init_dcl_inner_branch_already_initialized(self):
         """line 252: __init__ 中另一个线程抢先完成了初始化"""
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         old_instance = NotificationManager._instance
         old_lock = NotificationManager._lock
@@ -1100,7 +1118,7 @@ class TestNotificationManagerDCLBranches(unittest.TestCase):
             mock_config.delayed_notification_seconds = 5.0
             mock_config.max_retries = 3
             with patch(
-                "notification_manager.NotificationConfig.from_config_file",
+                "ai_intervention_agent.notification_manager.NotificationConfig.from_config_file",
                 return_value=mock_config,
             ):
                 mgr = NotificationManager()
@@ -1125,8 +1143,8 @@ class TestNotificationManagerDCLBranches(unittest.TestCase):
 
     def test_send_with_non_immediate_non_delayed_trigger(self):
         """452->473: trigger 不是 IMMEDIATE 也不是 DELAYED 时直通返回"""
-        from notification_manager import notification_manager
-        from notification_models import NotificationTrigger
+        from ai_intervention_agent.notification_manager import notification_manager
+        from ai_intervention_agent.notification_models import NotificationTrigger
 
         with patch.object(notification_manager, "_process_event"):
             event_id = notification_manager.send_notification(
@@ -1143,8 +1161,8 @@ class TestNotificationManagerDelayedShutdown(unittest.TestCase):
 
     def test_delayed_notify_skipped_mid_flight(self):
         """模拟：进入 send_notification 时未 shutdown，到 DELAYED 分支时已 shutdown"""
-        from notification_manager import notification_manager
-        from notification_models import NotificationTrigger
+        from ai_intervention_agent.notification_manager import notification_manager
+        from ai_intervention_agent.notification_models import NotificationTrigger
 
         class _DelayedTrue:
             """首次 bool 为 False（通过入口检查），第二次为 True（触发跳过）"""
@@ -1193,7 +1211,7 @@ def run_tests():
 # ---------------------------------------------------------------------------
 # 边界路径补充（原 test_notification_manager_extended.py）
 # ---------------------------------------------------------------------------
-from notification_models import (
+from ai_intervention_agent.notification_models import (
     NotificationEvent,
     NotificationPriority,
     NotificationTrigger,
@@ -1203,7 +1221,10 @@ from notification_models import (
 
 def _make_manager():
     """创建一个干净的 NotificationManager 实例（绕过单例）"""
-    from notification_manager import NotificationConfig, NotificationManager
+    from ai_intervention_agent.notification_manager import (
+        NotificationConfig,
+        NotificationManager,
+    )
 
     NotificationManager._instance = None
     mgr = NotificationManager.__new__(NotificationManager)
@@ -1264,37 +1285,37 @@ def _make_event(**kw) -> NotificationEvent:
 
 class TestNotificationConfigEdgeCases(unittest.TestCase):
     def test_retry_count_string_coerced(self):
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         cfg = NotificationConfig(retry_count="5")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.retry_count, 5)
 
     def test_retry_count_invalid_string(self):
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         cfg = NotificationConfig(retry_count="abc")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.retry_count, 3)
 
     def test_retry_delay_invalid(self):
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         cfg = NotificationConfig(retry_delay="bad")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.retry_delay, 2)
 
     def test_bark_timeout_invalid(self):
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         cfg = NotificationConfig(bark_timeout="x")  # ty: ignore[invalid-argument-type]
         self.assertEqual(cfg.bark_timeout, 10)
 
     def test_bark_action_invalid_enum(self):
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         cfg = NotificationConfig(bark_action="invalid_action")
         self.assertEqual(cfg.bark_action, "none")
 
     def test_bark_url_invalid_warns(self):
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         cfg = NotificationConfig(
             bark_url="ftp://bad", bark_enabled=True, bark_device_key="k"
@@ -1302,44 +1323,56 @@ class TestNotificationConfigEdgeCases(unittest.TestCase):
         self.assertEqual(cfg.bark_url, "ftp://bad")
 
     def test_bark_enabled_no_device_key_warns(self):
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         cfg = NotificationConfig(bark_enabled=True, bark_device_key="")
         self.assertTrue(cfg.bark_enabled)
 
     def test_from_config_file_unavailable(self):
-        from exceptions import NotificationError
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.exceptions import NotificationError
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
-        with patch("notification_manager.CONFIG_FILE_AVAILABLE", False):
+        with patch(
+            "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", False
+        ):
             self.assertRaises(NotificationError, NotificationConfig.from_config_file)
 
     def test_from_config_file_volume_default(self):
         """get_section() 通过 Pydantic ClampedInt 将无效值钳位为默认值 80"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_cfg = MagicMock()
         section = {"sound_volume": 80, "enabled": True}
         mock_cfg.get_section.return_value = section
 
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             cfg = NotificationConfig.from_config_file()
             self.assertAlmostEqual(cfg.sound_volume, 0.8, places=2)
 
     def test_from_config_file_type_coercion(self):
         """get_section() 已通过 Pydantic 段模型校验，值类型已正确强转"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_cfg = MagicMock()
         section = {"enabled": True, "debug": False, "sound_volume": 50}
         mock_cfg.get_section.return_value = section
 
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             cfg = NotificationConfig.from_config_file()
             self.assertTrue(cfg.enabled)
@@ -1362,12 +1395,12 @@ class TestRegisterProvider(unittest.TestCase):
         old.close.assert_called_once()
 
     def test_safe_close_provider_no_close(self):
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         NotificationManager._safe_close_provider(object())
 
     def test_safe_close_provider_exception(self):
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         p = MagicMock()
         p.close.side_effect = RuntimeError("fail")
@@ -1511,7 +1544,9 @@ class TestProcessEvent(unittest.TestCase):
 
         event = _make_event(max_retries=2)
         # 用 assertLogs 同时验证「retry warning 被打出」并捕获日志（避免污染 CI 输出）
-        with self.assertLogs("notification_manager", level="WARNING") as cm:
+        with self.assertLogs(
+            "ai_intervention_agent.notification_manager", level="WARNING"
+        ) as cm:
             mgr._process_event(event)
         self.assertEqual(event.retry_count, 1)
         self.assertTrue(any("发送失败" in m for m in cm.output))
@@ -1539,7 +1574,9 @@ class TestProcessEvent(unittest.TestCase):
 
         event = _make_event(max_retries=2)
         # provider.send 抛异常时也会走 retry warning 路径；用 assertLogs 静音
-        with self.assertLogs("notification_manager", level="WARNING") as cm:
+        with self.assertLogs(
+            "ai_intervention_agent.notification_manager", level="WARNING"
+        ) as cm:
             mgr._process_event(event)
         self.assertEqual(event.retry_count, 1)
         self.assertTrue(any("发送失败" in m or "crash" in m for m in cm.output))
@@ -1710,7 +1747,9 @@ class TestScheduleRetryJitter(unittest.TestCase):
         except Exception:
             mgr.config.__dict__["retry_delay"] = retry_delay_value
 
-        with patch("notification_manager.threading.Timer", _SpyTimer):
+        with patch(
+            "ai_intervention_agent.notification_manager.threading.Timer", _SpyTimer
+        ):
             mgr._schedule_retry(_make_event())
 
         return captured.get("delay", -1.0)
@@ -1760,7 +1799,7 @@ class TestScheduleRetryJitter(unittest.TestCase):
 
     def test_jitter_ratio_constant_value_locked(self):
         """反向锁：``_RETRY_DELAY_JITTER_RATIO`` 不能在没充分讨论的情况下被改。"""
-        from notification_manager import _RETRY_DELAY_JITTER_RATIO
+        from ai_intervention_agent.notification_manager import _RETRY_DELAY_JITTER_RATIO
 
         self.assertEqual(
             _RETRY_DELAY_JITTER_RATIO,
@@ -1818,7 +1857,9 @@ class TestShutdownRestart(unittest.TestCase):
 class TestRefreshConfig(unittest.TestCase):
     def test_no_config_available(self):
         mgr = _make_manager()
-        with patch("notification_manager.CONFIG_FILE_AVAILABLE", False):
+        with patch(
+            "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", False
+        ):
             mgr.refresh_config_from_file()
 
     def test_mtime_unchanged_skips(self):
@@ -1830,8 +1871,13 @@ class TestRefreshConfig(unittest.TestCase):
         mock_cfg.get_section.return_value = {}
 
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr._config_file_mtime = 1000.0
             mgr.refresh_config_from_file(force=False)
@@ -1848,8 +1894,13 @@ class TestRefreshConfig(unittest.TestCase):
         }
 
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr._config_file_mtime = 1000.0
             mgr.refresh_config_from_file(force=True)
@@ -1870,8 +1921,13 @@ class TestRefreshConfig(unittest.TestCase):
         }
 
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
             patch.object(mgr, "_update_bark_provider"),
         ):
             mgr.refresh_config_from_file(force=True)
@@ -1886,16 +1942,26 @@ class TestRefreshConfig(unittest.TestCase):
         mock_cfg.get_section.return_value = {"sound_volume": 80}
 
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr.refresh_config_from_file()
 
     def test_exception_in_refresh(self):
         mgr = _make_manager()
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", side_effect=RuntimeError("fail")),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                side_effect=RuntimeError("fail"),
+            ),
         ):
             mgr.refresh_config_from_file()
 
@@ -1971,7 +2037,7 @@ class TestUpdateBarkProvider(unittest.TestCase):
         with mgr._providers_lock:
             mgr._providers.pop(NotificationType.BARK, None)
         with patch(
-            "notification_manager.NotificationType",
+            "ai_intervention_agent.notification_manager.NotificationType",
             side_effect=ImportError("no module"),
         ):
             pass
@@ -1985,15 +2051,22 @@ class TestUpdateBarkProvider(unittest.TestCase):
 class TestSaveConfigToFile(unittest.TestCase):
     def test_config_unavailable(self):
         mgr = _make_manager()
-        with patch("notification_manager.CONFIG_FILE_AVAILABLE", False):
+        with patch(
+            "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", False
+        ):
             mgr._save_config_to_file()
 
     def test_save_success(self):
         mgr = _make_manager()
         mock_cfg = MagicMock()
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr._save_config_to_file()
             mock_cfg.update_section.assert_called_once()
@@ -2001,8 +2074,13 @@ class TestSaveConfigToFile(unittest.TestCase):
     def test_save_exception(self):
         mgr = _make_manager()
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", side_effect=RuntimeError("fail")),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                side_effect=RuntimeError("fail"),
+            ),
         ):
             mgr._save_config_to_file()
 
@@ -2012,8 +2090,13 @@ class TestSaveConfigToFile(unittest.TestCase):
         self.assertEqual(mgr.config.sound_volume, 1.0)
         mock_cfg = MagicMock()
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr._save_config_to_file()
             call_args = mock_cfg.update_section.call_args[0][1]
@@ -2080,15 +2163,21 @@ class TestGetStatus(unittest.TestCase):
 
 class TestGlobalShutdown(unittest.TestCase):
     def test_shutdown_function(self):
-        from notification_manager import _shutdown_global_notification_manager
+        from ai_intervention_agent.notification_manager import (
+            _shutdown_global_notification_manager,
+        )
 
         _shutdown_global_notification_manager()
 
     def test_shutdown_exception_silenced(self):
         """全局关闭函数异常不外抛"""
-        from notification_manager import _shutdown_global_notification_manager
+        from ai_intervention_agent.notification_manager import (
+            _shutdown_global_notification_manager,
+        )
 
-        with patch("notification_manager.notification_manager") as mock_nm:
+        with patch(
+            "ai_intervention_agent.notification_manager.notification_manager"
+        ) as mock_nm:
             mock_nm.shutdown.side_effect = RuntimeError("boom")
             _shutdown_global_notification_manager()
 
@@ -2101,7 +2190,7 @@ class TestGlobalShutdown(unittest.TestCase):
 class TestFromConfigFileSafeInt(unittest.TestCase):
     def test_safe_int_non_numeric_values(self):
         """safe_int 遇到非数字时回退默认值"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         mock_cfg = MagicMock()
         mock_cfg.get_section.return_value = {
@@ -2111,8 +2200,13 @@ class TestFromConfigFileSafeInt(unittest.TestCase):
             "sound_volume": 80,
         }
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             cfg = NotificationConfig.from_config_file()
             self.assertEqual(cfg.retry_count, 3)
@@ -2143,7 +2237,7 @@ class TestProcessEventTimeout(unittest.TestCase):
         mgr._executor.submit.side_effect = lambda fn, *a, **kw: next(futures_iter)
 
         with patch(
-            "notification_manager.as_completed",
+            "ai_intervention_agent.notification_manager.as_completed",
             side_effect=TimeoutError("timeout"),
         ):
             event = _make_event(
@@ -2175,7 +2269,10 @@ class TestProcessEventTimeout(unittest.TestCase):
             yield done_future
             raise TimeoutError("1 unfinished")
 
-        with patch("notification_manager.as_completed", side_effect=mock_as_completed):
+        with patch(
+            "ai_intervention_agent.notification_manager.as_completed",
+            side_effect=mock_as_completed,
+        ):
             event = _make_event(
                 types=[NotificationType.WEB, NotificationType.SOUND],
                 max_retries=0,
@@ -2220,7 +2317,10 @@ class TestProcessEventBarkTimeoutWindow(unittest.TestCase):
         mgr._executor = MagicMock()
         mgr._executor.submit.return_value = fake_future
 
-        with patch("notification_manager.as_completed", side_effect=_spy_as_completed):
+        with patch(
+            "ai_intervention_agent.notification_manager.as_completed",
+            side_effect=_spy_as_completed,
+        ):
             event = _make_event(
                 types=[NotificationType.WEB],
                 max_retries=0,
@@ -2266,7 +2366,9 @@ class TestProcessEventBarkTimeoutWindow(unittest.TestCase):
 
     def test_buffer_constant_value_locked(self):
         """反向锁：``_AS_COMPLETED_TIMEOUT_BUFFER_SECONDS`` 不能在没充分讨论的情况下被改。"""
-        from notification_manager import _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS
+        from ai_intervention_agent.notification_manager import (
+            _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS,
+        )
 
         self.assertEqual(
             _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS,
@@ -2489,7 +2591,9 @@ class TestShutdownGracePeriod(unittest.TestCase):
         """Reverse-lock：``_shutdown_global_notification_manager`` 必须给
         非零 grace_period，避免未来有人误删退化为 ``wait=False, grace=0``。
         """
-        from notification_manager import _ATEXIT_GRACE_PERIOD_SECONDS
+        from ai_intervention_agent.notification_manager import (
+            _ATEXIT_GRACE_PERIOD_SECONDS,
+        )
 
         self.assertGreater(
             _ATEXIT_GRACE_PERIOD_SECONDS,
@@ -2508,7 +2612,7 @@ class TestShutdownGracePeriod(unittest.TestCase):
         """Reverse-lock：签名必须有 ``grace_period`` 参数（不要被回退）。"""
         import inspect
 
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         sig = inspect.signature(NotificationManager.shutdown)
         self.assertIn(
@@ -2538,7 +2642,12 @@ class TestUpdateBarkProviderErrors(unittest.TestCase):
         real_import = builtins.__import__
 
         def fail_import(name, *args, **kwargs):
-            if name == "notification_providers":
+            # R76 后真实 import 路径变成 ``ai_intervention_agent.notification_providers``。
+            # 同时也保留旧名匹配以兼容回滚后的临时回退路径。
+            if name in {
+                "notification_providers",
+                "ai_intervention_agent.notification_providers",
+            }:
                 raise ImportError("mock: no notification_providers")
             return real_import(name, *args, **kwargs)
 
@@ -2556,7 +2665,7 @@ class TestUpdateBarkProviderErrors(unittest.TestCase):
             mgr._providers.pop(NotificationType.BARK, None)
 
         with patch(
-            "notification_providers.BarkNotificationProvider",
+            "ai_intervention_agent.notification_providers.BarkNotificationProvider",
             side_effect=RuntimeError("init failed"),
         ):
             mgr._update_bark_provider()
@@ -2584,8 +2693,13 @@ class TestRefreshSafeBoolBranches(unittest.TestCase):
             "sound_volume": 80,
         }
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr.refresh_config_from_file(force=True)
             self.assertTrue(mgr.config.enabled)
@@ -2607,8 +2721,13 @@ class TestRefreshSafeBoolBranches(unittest.TestCase):
             "sound_volume": 80,
         }
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr.refresh_config_from_file(force=True)
             self.assertTrue(mgr.config.enabled)
@@ -2627,8 +2746,13 @@ class TestRefreshSafeBoolBranches(unittest.TestCase):
         mock_cfg.get_section.return_value = {"sound_volume": 80}
 
         with (
-            patch("notification_manager.CONFIG_FILE_AVAILABLE", True),
-            patch("notification_manager.get_config", return_value=mock_cfg),
+            patch(
+                "ai_intervention_agent.notification_manager.CONFIG_FILE_AVAILABLE", True
+            ),
+            patch(
+                "ai_intervention_agent.notification_manager.get_config",
+                return_value=mock_cfg,
+            ),
         ):
             mgr.refresh_config_from_file(force=True)
             self.assertLessEqual(mgr.config.sound_volume, 1.0)
@@ -2690,7 +2814,10 @@ class TestProcessEventInnerFutureException(unittest.TestCase):
         def mock_as_completed(fs, timeout=None):
             yield from fs
 
-        with patch("notification_manager.as_completed", side_effect=mock_as_completed):
+        with patch(
+            "ai_intervention_agent.notification_manager.as_completed",
+            side_effect=mock_as_completed,
+        ):
             event = _make_event(types=[NotificationType.WEB], max_retries=0)
             mgr._process_event(event)
 
@@ -2872,8 +2999,10 @@ class TestWorkerCountMatchesNotificationTypes(unittest.TestCase):
 
     def test_worker_count_constant_equals_enum_size(self):
         """``_NOTIFICATION_WORKER_COUNT`` 必须等于 ``NotificationType`` 成员数。"""
-        from notification_manager import _NOTIFICATION_WORKER_COUNT
-        from notification_models import NotificationType
+        from ai_intervention_agent.notification_manager import (
+            _NOTIFICATION_WORKER_COUNT,
+        )
+        from ai_intervention_agent.notification_models import NotificationType
 
         self.assertEqual(
             _NOTIFICATION_WORKER_COUNT,
@@ -2889,7 +3018,9 @@ class TestWorkerCountMatchesNotificationTypes(unittest.TestCase):
         len()<4，全渠道用户的并发度回退是可观察的回归——这层防御
         让"删渠道"必须是有意识的决定，而不是悄无声息的退步。
         """
-        from notification_manager import _NOTIFICATION_WORKER_COUNT
+        from ai_intervention_agent.notification_manager import (
+            _NOTIFICATION_WORKER_COUNT,
+        )
 
         self.assertGreaterEqual(
             _NOTIFICATION_WORKER_COUNT,
@@ -2903,7 +3034,7 @@ class TestWorkerCountMatchesNotificationTypes(unittest.TestCase):
         ThreadPoolExecutor 暴露 ``_max_workers`` 属性（CPython 3.9+），
         是唯一无需改运行时行为就能验证容量的接口。
         """
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             _NOTIFICATION_WORKER_COUNT,
             NotificationManager,
         )
@@ -2927,7 +3058,7 @@ class TestWorkerCountMatchesNotificationTypes(unittest.TestCase):
 
     def test_restart_recreates_executor_with_same_capacity(self):
         """``restart()`` 后的新线程池必须保持同样容量——避免双路径漂移。"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             _NOTIFICATION_WORKER_COUNT,
             NotificationManager,
         )
@@ -2961,7 +3092,7 @@ class TestWorkerCountMatchesNotificationTypes(unittest.TestCase):
         import ast
         import inspect
 
-        from notification_manager import NotificationManager
+        from ai_intervention_agent.notification_manager import NotificationManager
 
         src = inspect.getsource(NotificationManager)
         tree = ast.parse(src)

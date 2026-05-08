@@ -14,10 +14,10 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WEB_LOCALES_DIR = REPO_ROOT / "static" / "locales"
+WEB_LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
 VSCODE_LOCALES_DIR = REPO_ROOT / "packages" / "vscode" / "locales"
-TEMPLATES_DIR = REPO_ROOT / "templates"
-STATIC_JS_DIR = REPO_ROOT / "static" / "js"
+TEMPLATES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "templates"
+STATIC_JS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 VSCODE_DIR = REPO_ROOT / "packages" / "vscode"
 
 
@@ -345,7 +345,7 @@ class TestConfigPropagation(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(
             prompt="配置传播测试",
@@ -450,11 +450,17 @@ _JINJA_TAG_RE = re.compile(r"\{\{[^}]+\}\}")
 
 
 def _resolve_web_asset_path(ref: str) -> Path:
-    """把浏览器路由引用映射回仓库实体文件路径。"""
+    """把浏览器路由引用映射回仓库实体文件路径。
+
+    R76 src/ layout 后所有静态资源（``/static/`` ``/icons/`` ``/sounds/``
+    ``/fonts/`` ``/manifest.webmanifest``）都迁入 ``src/ai_intervention_agent/``
+    包内；除 manifest 锚点外，统一在路由前面拼包前缀即可。
+    """
+    pkg_root = REPO_ROOT / "src" / "ai_intervention_agent"
     clean = _JINJA_TAG_RE.sub("", ref).rstrip("/")
     if clean == "/manifest.webmanifest":
-        return REPO_ROOT / "icons" / "manifest.webmanifest"
-    return REPO_ROOT / clean.lstrip("/")
+        return pkg_root / "icons" / "manifest.webmanifest"
+    return pkg_root / clean.lstrip("/")
 
 
 class TestStaticResourceIntegrity(unittest.TestCase):
@@ -484,7 +490,7 @@ class TestStaticResourceIntegrity(unittest.TestCase):
 
     def test_lottie_animation_resources_exist_and_valid(self):
         """Lottie 动画 JSON 文件必须存在且为有效 JSON"""
-        lottie_dir = REPO_ROOT / "static" / "lottie"
+        lottie_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "lottie"
         if not lottie_dir.exists():
             self.skipTest("static/lottie/ 不存在")
 
@@ -541,7 +547,7 @@ class TestAPIResponseSchema(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(
             prompt="API Schema 测试",
@@ -615,7 +621,7 @@ class TestFeedbackConfigRoundTrip(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(
             prompt="反馈配置回路测试",
@@ -666,7 +672,7 @@ class TestNotificationConfigRoundTrip(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(
             prompt="通知配置回路测试",
@@ -987,7 +993,7 @@ class TestI18nPlaceholderParity(unittest.TestCase):
 _CSS_VAR_USAGE_RE = re.compile(r"var\(--([a-zA-Z0-9_-]+)")
 _CSS_VAR_DEFINITION_RE = re.compile(r"--([a-zA-Z0-9_-]+)\s*:")
 
-CSS_DIR = REPO_ROOT / "static" / "css"
+CSS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
 
 
 class TestCSSVariableReferenceIntegrity(unittest.TestCase):
@@ -1057,7 +1063,7 @@ class TestClientServerRouteAlignment(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(
             prompt="路由对齐测试",
@@ -1209,7 +1215,7 @@ class TestJinja2TemplateVariableInjection(unittest.TestCase):
         used_vars.discard("g")
         used_vars.discard("url_for")
 
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="模板变量测试",

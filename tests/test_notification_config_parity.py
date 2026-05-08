@@ -51,8 +51,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from notification_manager import NotificationConfig
-from shared_types import SECTION_MODELS
+from ai_intervention_agent.notification_manager import NotificationConfig
+from ai_intervention_agent.shared_types import SECTION_MODELS
 from tests.test_config_docs_range_parity import _introspect_field_bounds
 
 

@@ -37,9 +37,9 @@ import unittest
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import server
-import server_feedback
-from enhanced_logging import EnhancedLogger
+import ai_intervention_agent.server as server
+import ai_intervention_agent.server_feedback as server_feedback
+from ai_intervention_agent.enhanced_logging import EnhancedLogger
 
 
 class TestEnhancedLoggerFormatEventValue(unittest.TestCase):
@@ -195,7 +195,7 @@ class TestInteractiveFeedbackEventLog(unittest.TestCase):
     def test_happy_path_emits_created_notified_completed(self) -> None:
         import asyncio
 
-        from server_config import WebUIConfig
+        from ai_intervention_agent.server_config import WebUIConfig
 
         cfg = WebUIConfig(host="127.0.0.1", port=12345)
         # client.post 返回 200 模拟 web_ui /api/tasks 接受任务
@@ -274,7 +274,7 @@ class TestInteractiveFeedbackEventLog(unittest.TestCase):
     def test_http_error_emits_task_failed_with_stage_notify(self) -> None:
         import asyncio
 
-        from server_config import WebUIConfig
+        from ai_intervention_agent.server_config import WebUIConfig
 
         cfg = WebUIConfig(host="127.0.0.1", port=12345)
         post_response = MagicMock()

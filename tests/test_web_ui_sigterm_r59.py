@@ -33,7 +33,9 @@ _REPO_ROOT = _THIS.parent.parent
 
 
 def _read_web_ui_source() -> str:
-    return (_REPO_ROOT / "web_ui.py").read_text(encoding="utf-8")
+    return (_REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py").read_text(
+        encoding="utf-8"
+    )
 
 
 class TestSourceContainsSigtermRegistration(unittest.TestCase):

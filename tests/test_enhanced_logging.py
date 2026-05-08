@@ -14,7 +14,7 @@ import logging
 import time
 import unittest
 
-from enhanced_logging import (
+from ai_intervention_agent.enhanced_logging import (
     EnhancedLogger,
     InterceptHandler,
     LogDeduplicator,
@@ -335,7 +335,7 @@ class TestLogDeduplicatorMonotonic(unittest.TestCase):
         """源码层面：``should_log`` 必须调 ``time.monotonic()``，不能用 ``time.time()``。"""
         import inspect
 
-        from enhanced_logging import LogDeduplicator as _LD
+        from ai_intervention_agent.enhanced_logging import LogDeduplicator as _LD
 
         src = inspect.getsource(_LD.should_log)
         self.assertIn(
@@ -533,7 +533,7 @@ class TestGetLogLevelFromConfig(unittest.TestCase):
     """get_log_level_from_config 函数"""
 
     def test_default_level(self):
-        from enhanced_logging import get_log_level_from_config
+        from ai_intervention_agent.enhanced_logging import get_log_level_from_config
 
         level = get_log_level_from_config()
         self.assertIn(
@@ -545,8 +545,14 @@ class TestGetLogLevelFromConfig(unittest.TestCase):
 
         mock_mgr = MagicMock()
         mock_mgr.get.return_value = {"log_level": "INVALID_LEVEL"}
-        with patch("enhanced_logging.config_manager", mock_mgr, create=True):
-            from enhanced_logging import get_log_level_from_config as fn
+        with patch(
+            "ai_intervention_agent.enhanced_logging.config_manager",
+            mock_mgr,
+            create=True,
+        ):
+            from ai_intervention_agent.enhanced_logging import (
+                get_log_level_from_config as fn,
+            )
 
             level = fn()
             self.assertEqual(level, logging.WARNING)
@@ -554,10 +560,10 @@ class TestGetLogLevelFromConfig(unittest.TestCase):
     def test_exception_returns_warning(self):
         from unittest.mock import patch
 
-        from enhanced_logging import get_log_level_from_config
+        from ai_intervention_agent.enhanced_logging import get_log_level_from_config
 
         with patch(
-            "enhanced_logging.config_manager",
+            "ai_intervention_agent.enhanced_logging.config_manager",
             side_effect=ImportError("no"),
             create=True,
         ):
@@ -569,7 +575,7 @@ class TestConfigureLoggingFromConfig(unittest.TestCase):
     """configure_logging_from_config 函数"""
 
     def test_configure(self):
-        from enhanced_logging import configure_logging_from_config
+        from ai_intervention_agent.enhanced_logging import configure_logging_from_config
 
         configure_logging_from_config()
 
@@ -603,8 +609,8 @@ class TestGetLogLevelEdgePaths(unittest.TestCase):
 
         mock_mgr = MagicMock()
         mock_mgr.get.return_value = {"log_level": "SUPER_INVALID"}
-        with _patch("config_manager.config_manager", mock_mgr):
-            from enhanced_logging import get_log_level_from_config
+        with _patch("ai_intervention_agent.config_manager.config_manager", mock_mgr):
+            from ai_intervention_agent.enhanced_logging import get_log_level_from_config
 
             level = get_log_level_from_config()
             self.assertEqual(level, logging.WARNING)
@@ -615,8 +621,8 @@ class TestGetLogLevelEdgePaths(unittest.TestCase):
 
         mock_mgr = MagicMock()
         mock_mgr.get.side_effect = RuntimeError("config broken")
-        with _patch("config_manager.config_manager", mock_mgr):
-            from enhanced_logging import get_log_level_from_config
+        with _patch("ai_intervention_agent.config_manager.config_manager", mock_mgr):
+            from ai_intervention_agent.enhanced_logging import get_log_level_from_config
 
             level = get_log_level_from_config()
             self.assertEqual(level, logging.WARNING)

@@ -30,10 +30,12 @@ from collections.abc import Iterable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ICONS_DIR = REPO_ROOT / "icons"
+ICONS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "icons"
 MANIFEST_PATH = ICONS_DIR / "manifest.webmanifest"
-TEMPLATE_PATH = REPO_ROOT / "templates" / "web_ui.html"
-STATIC_JS_DIR = REPO_ROOT / "static" / "js"
+TEMPLATE_PATH = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+)
+STATIC_JS_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
 VSCODE_PACKAGE_PATH = REPO_ROOT / "packages" / "vscode" / "package.json"
 NOTIFICATION_MANAGER_PATH = STATIC_JS_DIR / "notification-manager.js"
 
@@ -65,12 +67,17 @@ def _icons_path_from_src(src: str) -> Path:
 
 
 def _web_route_to_path(route: str) -> Path:
+    """把浏览器路由 ``/static/...`` ``/icons/...`` 映射回 src layout 内的实际路径。
+
+    R76 src/ layout 后所有静态资产都迁入 ``src/ai_intervention_agent/`` 包内，
+    所以路由前面统一拼包前缀。"""
+    pkg_root = REPO_ROOT / "src" / "ai_intervention_agent"
     clean = route.rstrip("/")
     if clean == "/manifest.webmanifest":
         return MANIFEST_PATH
     if clean == "/notification-service-worker.js":
         return STATIC_JS_DIR / "notification-service-worker.js"
-    return REPO_ROOT / clean.lstrip("/")
+    return pkg_root / clean.lstrip("/")
 
 
 def _production_web_sources() -> Iterable[Path]:
@@ -97,7 +104,7 @@ def _production_web_sources() -> Iterable[Path]:
         if path.name.endswith(".min.js"):
             continue
         yield path
-    static_css_dir = REPO_ROOT / "static" / "css"
+    static_css_dir = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
     if static_css_dir.is_dir():
         for path in sorted(static_css_dir.glob("*.css")):
             if path.name.endswith(".min.css"):
@@ -240,7 +247,7 @@ def test_vscode_package_literal_file_entries_exist() -> None:
 
 
 def test_default_notification_sound_asset_exists_and_is_wav() -> None:
-    sound_path = REPO_ROOT / "sounds" / "deng.wav"
+    sound_path = REPO_ROOT / "src" / "ai_intervention_agent" / "sounds" / "deng.wav"
     assert sound_path.is_file(), "默认通知声音 /sounds/deng.wav 必须随仓库发布"
     data = sound_path.read_bytes()
     assert data[:4] == b"RIFF" and data[8:12] == b"WAVE", (
@@ -550,7 +557,14 @@ def test_lottie_sprout_byte_parity_between_web_and_vscode() -> None:
     那种"声明对应正确、字节内容错位"的问题。
     """
 
-    web_lottie = REPO_ROOT / "static" / "lottie" / "sprout.json"
+    web_lottie = (
+        REPO_ROOT
+        / "src"
+        / "ai_intervention_agent"
+        / "static"
+        / "lottie"
+        / "sprout.json"
+    )
     vscode_lottie = REPO_ROOT / "packages" / "vscode" / "lottie" / "sprout.json"
     assert web_lottie.is_file(), f"missing: {web_lottie}"
     assert vscode_lottie.is_file(), f"missing: {vscode_lottie}"

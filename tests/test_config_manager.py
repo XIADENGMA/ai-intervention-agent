@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
-from exceptions import ConfigValidationError
+from ai_intervention_agent.exceptions import ConfigValidationError
 
 
 class TestJsoncParser(unittest.TestCase):
@@ -28,7 +28,7 @@ class TestJsoncParser(unittest.TestCase):
 
     def test_parse_simple_json(self):
         """测试简单 JSON 解析"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = '{"key": "value", "number": 42}'
         result = parse_jsonc(content)
@@ -38,7 +38,7 @@ class TestJsoncParser(unittest.TestCase):
 
     def test_parse_single_line_comment(self):
         """测试单行注释"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = """
         {
@@ -53,7 +53,7 @@ class TestJsoncParser(unittest.TestCase):
 
     def test_parse_multi_line_comment(self):
         """测试多行注释"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = """
         {
@@ -68,7 +68,7 @@ class TestJsoncParser(unittest.TestCase):
 
     def test_parse_comment_in_string(self):
         """测试字符串中的注释符号"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = '{"url": "http://example.com // not a comment"}'
         result = parse_jsonc(content)
@@ -77,7 +77,7 @@ class TestJsoncParser(unittest.TestCase):
 
     def test_parse_block_comment_markers_in_string(self):
         """测试字符串中的 /* */ 不应被当成注释"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = '{"message": "keep /* literal */ text"}'
         result = parse_jsonc(content)
@@ -112,7 +112,7 @@ class TestConfigManagerBasic(unittest.TestCase):
 
     def test_get_simple_key(self):
         """测试获取简单键"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -122,7 +122,7 @@ class TestConfigManagerBasic(unittest.TestCase):
 
     def test_get_nested_key(self):
         """测试获取嵌套键"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -131,7 +131,7 @@ class TestConfigManagerBasic(unittest.TestCase):
 
     def test_get_default_value(self):
         """测试默认值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -140,7 +140,7 @@ class TestConfigManagerBasic(unittest.TestCase):
 
     def test_set_value(self):
         """测试设置值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -151,7 +151,7 @@ class TestConfigManagerBasic(unittest.TestCase):
 
     def test_toml_save_does_not_cross_update_same_named_keys(self):
         """TOML 保留注释保存：同名键（如 enabled）不应跨 section 误更新"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         toml_content = """\
 # 通知配置
@@ -184,7 +184,7 @@ enabled = "auto"
 
     def test_get_section(self):
         """测试获取配置段"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -194,7 +194,7 @@ enabled = "auto"
 
     def test_get_section_cache_invalidation_on_set(self):
         """测试 set() 会失效 get_section() 的缓存，避免返回旧值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -211,7 +211,7 @@ enabled = "auto"
 
     def test_reload_invalid_toml_keeps_previous_config(self):
         """配置文件损坏/编辑中间态：reload 不应把内存配置回退到默认值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         test_content = """\
 [notification]
@@ -234,7 +234,7 @@ port = 18080
 
     def test_reload_duplicate_keys_toml_keeps_previous_config(self):
         """TOML 解析器会拒绝重复键，reload 后应保留上次成功配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         baseline = """\
 [notification]
@@ -269,7 +269,7 @@ class TestFindConfigFileOverride(unittest.TestCase):
 
     def test_override_dir_trailing_slash_appends_filename_even_if_missing(self):
         """环境变量指向目录（以 / 结尾）时应拼接 config.toml，即使目录尚不存在"""
-        from config_manager import find_config_file
+        from ai_intervention_agent.config_manager import find_config_file
 
         old = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
         try:
@@ -286,7 +286,7 @@ class TestFindConfigFileOverride(unittest.TestCase):
 
     def test_override_existing_dir_appends_filename(self):
         """环境变量指向已存在目录时应拼接 config.toml"""
-        from config_manager import find_config_file
+        from ai_intervention_agent.config_manager import find_config_file
 
         old = os.environ.get("AI_INTERVENTION_AGENT_CONFIG_FILE")
         try:
@@ -322,7 +322,7 @@ class TestConfigManagerThreadSafety(unittest.TestCase):
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(test_config, f)
 
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         self.mgr = ConfigManager(str(self.config_file))
         self.errors = []
@@ -385,7 +385,7 @@ class TestReadWriteLock(unittest.TestCase):
 
     def test_multiple_readers(self):
         """测试多读者并发"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
         results = []
@@ -409,7 +409,7 @@ class TestReadWriteLock(unittest.TestCase):
 
     def test_writer_exclusive(self):
         """测试写者独占"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
         shared_value = [0]
@@ -462,7 +462,7 @@ class TestNetworkSecurityConfig(unittest.TestCase):
 
     def test_network_security_not_in_memory(self):
         """测试 network_security 不加载到内存"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -472,7 +472,7 @@ class TestNetworkSecurityConfig(unittest.TestCase):
 
     def test_get_network_security_config(self):
         """测试获取 network_security 配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.config_file))
 
@@ -498,7 +498,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
 
     def test_jsonc_with_trailing_comma(self):
         """测试带尾随逗号的 JSONC — parse_jsonc 应正确处理"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         result = parse_jsonc('{"key": "value",}')
         self.assertEqual(result, {"key": "value"})
@@ -508,7 +508,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
 
     def test_update_method(self):
         """测试批量更新方法"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "update_test.json"
         with open(config_file, "w") as f:
@@ -524,7 +524,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
 
     def test_force_save(self):
         """测试强制保存"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "force_save_test.json"
         with open(config_file, "w") as f:
@@ -542,7 +542,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
 
     def test_reload_config(self):
         """测试配置重载"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "reload_test.json"
         with open(config_file, "w") as f:
@@ -562,7 +562,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
 
     def test_get_all_config(self):
         """测试获取所有配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "getall_test.json"
         with open(config_file, "w") as f:
@@ -576,7 +576,7 @@ class TestConfigManagerAdvanced(unittest.TestCase):
 
     def test_update_section(self):
         """测试更新配置段"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "section_test.json"
         with open(config_file, "w") as f:
@@ -611,7 +611,7 @@ class TestConfigManagerJsoncSave(unittest.TestCase):
         """测试 TOML 保存保留内容"""
         import tomlkit
 
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "preserve_test.toml"
         initial_content = """\
@@ -656,7 +656,7 @@ class TestConfigManagerDelayedSave(unittest.TestCase):
 
     def test_delayed_save(self):
         """测试延迟保存"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "delayed_save.json"
         with open(config_file, "w") as f:
@@ -692,7 +692,7 @@ class TestConfigManagerNestedConfig(unittest.TestCase):
 
     def test_nested_get(self):
         """测试嵌套获取"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "nested.json"
         with open(config_file, "w") as f:
@@ -707,7 +707,7 @@ class TestConfigManagerNestedConfig(unittest.TestCase):
 
     def test_nested_update(self):
         """测试嵌套更新"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "nested_update.json"
         with open(config_file, "w") as f:
@@ -728,7 +728,7 @@ class TestReadWriteLockContextManager(unittest.TestCase):
 
     def test_read_lock_context_manager(self):
         """测试读锁上下文管理器"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
 
@@ -742,7 +742,7 @@ class TestReadWriteLockContextManager(unittest.TestCase):
 
     def test_write_lock_context_manager(self):
         """测试写锁上下文管理器"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
 
@@ -753,7 +753,7 @@ class TestReadWriteLockContextManager(unittest.TestCase):
 
     def test_concurrent_read_context(self):
         """测试并发读（上下文管理器）"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
         results = []
@@ -778,7 +778,7 @@ class TestParseJsonc(unittest.TestCase):
 
     def test_single_line_comment(self):
         """测试单行注释"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = """
 {
@@ -791,7 +791,7 @@ class TestParseJsonc(unittest.TestCase):
 
     def test_multi_line_comment(self):
         """测试多行注释"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = """
 {
@@ -805,7 +805,7 @@ class TestParseJsonc(unittest.TestCase):
 
     def test_comment_in_string(self):
         """测试字符串中的注释符号"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = """
 {
@@ -831,7 +831,7 @@ class TestConfigManagerBoolConversion(unittest.TestCase):
 
     def test_bool_true_values(self):
         """测试各种真值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "bool_true.json"
         with open(config_file, "w") as f:
@@ -852,7 +852,7 @@ class TestConfigManagerBoolConversion(unittest.TestCase):
 
     def test_bool_false_values(self):
         """测试各种假值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "bool_false.json"
         with open(config_file, "w") as f:
@@ -875,7 +875,7 @@ class TestConfigManagerExportImportAdvanced(unittest.TestCase):
 
     def test_export_config_to_dict(self):
         """测试导出配置为字典"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         exported = config.export_config()
@@ -887,7 +887,7 @@ class TestConfigManagerExportImportAdvanced(unittest.TestCase):
 
     def test_import_config_merge_mode(self):
         """测试合并模式导入配置"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -904,7 +904,7 @@ class TestConfigManagerExportImportAdvanced(unittest.TestCase):
 
     def test_export_import_roundtrip(self):
         """测试导出-导入往返"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -922,7 +922,7 @@ class TestConfigManagerTypedGettersAdvanced(unittest.TestCase):
 
     def test_get_int_with_float(self):
         """测试从浮点数获取整数"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -938,7 +938,7 @@ class TestConfigManagerTypedGettersAdvanced(unittest.TestCase):
 
     def test_get_float_with_int(self):
         """测试从整数获取浮点数"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -954,7 +954,7 @@ class TestConfigManagerTypedGettersAdvanced(unittest.TestCase):
 
     def test_get_bool_with_int_zero(self):
         """测试从 0 获取布尔值"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -970,7 +970,7 @@ class TestConfigManagerTypedGettersAdvanced(unittest.TestCase):
 
     def test_get_str_with_number(self):
         """测试从数字获取字符串"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -994,7 +994,7 @@ class TestConfigManagerFileWatcherAdvanced(unittest.TestCase):
         import os
         import tempfile
 
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         # 使用临时配置文件，避免污染用户真实配置
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1039,7 +1039,7 @@ class TestConfigManagerNetworkSecurity(unittest.TestCase):
 
     def test_get_network_security_config(self):
         """测试获取网络安全配置"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         security_config = config_manager.get_network_security_config()
 
@@ -1048,7 +1048,7 @@ class TestConfigManagerNetworkSecurity(unittest.TestCase):
 
     def test_network_security_has_bind_interface(self):
         """测试网络安全配置包含绑定接口"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         security_config = config_manager.get_network_security_config()
 
@@ -1061,7 +1061,7 @@ class TestConfigManagerWebUI(unittest.TestCase):
 
     def test_get_web_ui_config(self):
         """测试获取 Web UI 配置"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         web_ui_config = config_manager.get_section("web_ui")
 
@@ -1073,7 +1073,7 @@ class TestConfigManagerNotificationSection(unittest.TestCase):
 
     def test_get_notification_section(self):
         """测试获取通知配置段"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         notification = config_manager.get_section("notification")
 
@@ -1086,7 +1086,7 @@ class TestConfigManagerDefaults(unittest.TestCase):
 
     def test_get_with_default(self):
         """测试获取不存在的键返回默认值"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         result = config_manager.get("nonexistent_key_12345", "default_value")
 
@@ -1094,7 +1094,7 @@ class TestConfigManagerDefaults(unittest.TestCase):
 
     def test_get_section_default(self):
         """测试获取不存在的配置段返回默认值"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         result = config_manager.get_section("nonexistent_section_12345")
 
@@ -1112,7 +1112,7 @@ class TestConfigManagerFinalPush(unittest.TestCase):
 
     def test_get_all_sections(self):
         """测试获取所有配置段"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         all_config = config_manager.get_all()
 
@@ -1121,7 +1121,7 @@ class TestConfigManagerFinalPush(unittest.TestCase):
 
     def test_get_multiple_sections(self):
         """测试获取多个配置段"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         # 获取多个配置段
         notification = config_manager.get_section("notification")
@@ -1136,7 +1136,7 @@ class TestConfigManagerTypedGetters(unittest.TestCase):
 
     def test_get_int_with_string_value(self):
         """测试 get_int 处理字符串值"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 获取不存在的键，使用默认值
@@ -1145,7 +1145,7 @@ class TestConfigManagerTypedGetters(unittest.TestCase):
 
     def test_get_float_with_string_value(self):
         """测试 get_float 处理字符串值"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         result = config.get_float("nonexistent.float.key", 3.14)
@@ -1153,7 +1153,7 @@ class TestConfigManagerTypedGetters(unittest.TestCase):
 
     def test_get_bool_with_string_true(self):
         """测试 get_bool 处理字符串 'true'"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 测试 notification.enabled 应该是布尔值
@@ -1162,7 +1162,7 @@ class TestConfigManagerTypedGetters(unittest.TestCase):
 
     def test_get_bool_with_string_false(self):
         """测试 get_bool 处理字符串 'false'"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         result = config.get_bool("nonexistent.bool.key", False)
@@ -1170,7 +1170,7 @@ class TestConfigManagerTypedGetters(unittest.TestCase):
 
     def test_get_str_truncation(self):
         """测试 get_str 截断功能"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 使用带最大长度的字符串获取
@@ -1183,7 +1183,7 @@ class TestConfigManagerFileWatcherBasic(unittest.TestCase):
 
     def test_update_file_mtime(self):
         """测试更新文件修改时间：调用后应与磁盘 mtime 一致"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         config._update_file_mtime()
@@ -1192,7 +1192,7 @@ class TestConfigManagerFileWatcherBasic(unittest.TestCase):
 
     def test_file_watcher_start_stop(self):
         """测试启动和停止文件监听器"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -1214,7 +1214,7 @@ class TestConfigManagerCallbacks(unittest.TestCase):
 
     def test_register_and_trigger_callback(self):
         """测试注册和触发回调"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         called = [False]
@@ -1230,7 +1230,7 @@ class TestConfigManagerCallbacks(unittest.TestCase):
 
     def test_callback_exception_handling(self):
         """测试回调异常处理"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -1253,7 +1253,7 @@ class TestConfigManagerReload(unittest.TestCase):
 
     def test_reload_config(self):
         """测试重新加载配置"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 记录当前配置
@@ -1290,7 +1290,7 @@ class TestReloadDiscardsPendingChanges(unittest.TestCase):
 
     def test_pending_changes_cleared_on_reload(self):
         """``cfg.set(..., save=True)`` → reload → pending 必须被清空"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.path))
         mgr.stop_file_watcher()
@@ -1309,7 +1309,7 @@ class TestReloadDiscardsPendingChanges(unittest.TestCase):
 
     def test_save_timer_cancelled_on_reload(self):
         """reload 必须取消 ``_save_timer``，timer 不能在 reload 后还能 fire"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.path))
         mgr.stop_file_watcher()
@@ -1328,7 +1328,7 @@ class TestReloadDiscardsPendingChanges(unittest.TestCase):
 
     def test_external_edit_wins_after_reload(self):
         """完整 race 重现：set → 模拟外部 edit → reload → disk 必须保留外部值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         mgr = ConfigManager(str(self.path))
         mgr.stop_file_watcher()
@@ -1365,7 +1365,7 @@ class TestReloadDiscardsPendingChanges(unittest.TestCase):
 
     def test_initial_load_does_not_warn_on_empty_pending(self):
         """``__init__`` 调用 ``_load_config`` 时 pending 必为空，no-op 路径不应报警"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         with self.assertNoLogs(level="WARNING"):
             mgr = ConfigManager(str(self.path))
@@ -1380,7 +1380,7 @@ class TestConfigManagerUpdate(unittest.TestCase):
 
     def test_update_batch(self):
         """测试批量更新配置"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -1395,7 +1395,7 @@ class TestConfigManagerUpdate(unittest.TestCase):
 
     def test_update_section(self):
         """测试更新配置段"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -1419,7 +1419,7 @@ class TestConfigManagerNetworkSecurityBasic(unittest.TestCase):
 
     def test_get_network_security_config(self):
         """测试获取网络安全配置"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         security_config = config.get_network_security_config()
@@ -1436,7 +1436,7 @@ class TestReadWriteLockStress(unittest.TestCase):
 
     def test_read_lock_reentrant(self):
         """测试读锁可重入性"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
 
@@ -1450,7 +1450,7 @@ class TestReadWriteLockStress(unittest.TestCase):
         import threading
         import time
 
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
         results = []
@@ -1484,7 +1484,7 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
     def test_export_config(self):
         """测试导出配置"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         export_data = config.export_config()
@@ -1497,7 +1497,7 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
     def test_export_config_with_network_security(self):
         """测试导出包含网络安全配置"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         export_data = config.export_config(include_network_security=True)
@@ -1507,7 +1507,7 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
     def test_import_config_merge(self):
         """测试合并模式导入配置"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -1528,7 +1528,7 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
     def test_import_config_invalid_data(self):
         """测试导入无效数据"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -1538,7 +1538,7 @@ class TestConfigManagerExportImport(unittest.TestCase):
 
     def test_deep_merge(self):
         """测试深度合并功能"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -1559,7 +1559,7 @@ class TestConfigManagerExportImport(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "test_config.toml"
@@ -1617,7 +1617,7 @@ class TestConfigManagerAdvancedFeatures(unittest.TestCase):
 
     def test_config_with_comments(self):
         """测试带注释的 TOML 配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "comments.toml"
         content = """\
@@ -1637,7 +1637,7 @@ key2 = "value2"
 
     def test_config_deep_nested(self):
         """测试深度嵌套配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "deep_nested.json"
         config = {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
@@ -1652,7 +1652,7 @@ key2 = "value2"
 
     def test_config_array_values(self):
         """测试数组值配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "array.json"
         config = {"items": ["item1", "item2", "item3"], "numbers": [1, 2, 3, 4, 5]}
@@ -1667,7 +1667,7 @@ key2 = "value2"
 
     def test_config_special_characters(self):
         """测试特殊字符配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "special.json"
         config = {
@@ -1690,7 +1690,7 @@ class TestConfigManagerNetworkSecurityAdvanced(unittest.TestCase):
 
     def test_get_network_security_config_full(self):
         """测试获取完整网络安全配置"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         security = config_manager.get_network_security_config()
 
@@ -1702,7 +1702,7 @@ class TestConfigManagerNetworkSecurityAdvanced(unittest.TestCase):
 
     def test_network_security_allowed_networks(self):
         """测试允许的网络列表"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         security = config_manager.get_network_security_config()
         allowed = security.get("allowed_networks", [])
@@ -1715,7 +1715,7 @@ class TestReadWriteLockDeep(unittest.TestCase):
 
     def test_write_lock_exclusive(self):
         """测试写锁独占"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
         results = []
@@ -1767,14 +1767,14 @@ class TestConfigManagerBoundary(unittest.TestCase):
 
     def test_parse_empty_jsonc(self):
         """测试解析空 JSONC"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         result = parse_jsonc("{}")
         self.assertEqual(result, {})
 
     def test_parse_only_comments(self):
         """测试只有注释的 JSONC"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         content = """
         // 这是注释
@@ -1786,7 +1786,7 @@ class TestConfigManagerBoundary(unittest.TestCase):
 
     def test_deeply_nested_config(self):
         """测试深度嵌套配置"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "nested.json"
         nested_config = {"level1": {"level2": {"level3": {"level4": {"value": 42}}}}}
@@ -1802,7 +1802,7 @@ class TestConfigManagerBoundary(unittest.TestCase):
 
     def test_unicode_config_values(self):
         """测试 Unicode 配置值"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "unicode.json"
         unicode_config = {
@@ -1822,7 +1822,7 @@ class TestConfigManagerBoundary(unittest.TestCase):
 
     def test_special_characters_in_value(self):
         """测试值中的特殊字符"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "special.json"
         special_config = {
@@ -1856,14 +1856,14 @@ class TestConfigManagerExceptions(unittest.TestCase):
 
     def test_malformed_json(self):
         """测试畸形 JSON"""
-        from config_manager import parse_jsonc
+        from ai_intervention_agent.config_manager import parse_jsonc
 
         with self.assertRaises(json.JSONDecodeError):
             parse_jsonc("{invalid json")
 
     def test_missing_config_file(self):
         """测试配置文件不存在"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         # 应该创建默认配置
         mgr = ConfigManager(str(Path(self.test_dir) / "nonexistent.json"))
@@ -1871,7 +1871,7 @@ class TestConfigManagerExceptions(unittest.TestCase):
 
     def test_permission_denied_simulation(self):
         """测试权限错误模拟"""
-        from config_manager import ConfigManager
+        from ai_intervention_agent.config_manager import ConfigManager
 
         config_file = Path(self.test_dir) / "test_perm.json"
         with open(config_file, "w") as f:
@@ -1906,7 +1906,7 @@ def run_tests():
 # ---------------------------------------------------------------------------
 
 
-from config_manager import (
+from ai_intervention_agent.config_manager import (
     ConfigManager,
     _get_user_config_dir_fallback,
     _is_uvx_mode,
@@ -1953,13 +1953,13 @@ class TestSanitizeConfigValue(unittest.TestCase):
 
 class TestIsUvxMode(unittest.TestCase):
     def test_uvx_in_executable(self):
-        with patch("config_manager.sys") as mock_sys:
+        with patch("ai_intervention_agent.config_manager.sys") as mock_sys:
             mock_sys.executable = "/home/user/.local/share/uvx/python3.11/bin/python"
             self.assertTrue(_is_uvx_mode())
 
     def test_uvx_project_env(self):
         with (
-            patch("config_manager.sys") as mock_sys,
+            patch("ai_intervention_agent.config_manager.sys") as mock_sys,
             patch.dict(os.environ, {"UVX_PROJECT": "ai-intervention-agent"}),
         ):
             mock_sys.executable = "/usr/bin/python3"
@@ -2010,14 +2010,20 @@ class TestFindConfigFile(unittest.TestCase):
 
 class TestGetUserConfigDirFallback(unittest.TestCase):
     def test_darwin(self):
-        with patch("config_manager.platform.system", return_value="Darwin"):
+        with patch(
+            "ai_intervention_agent.config_manager.platform.system",
+            return_value="Darwin",
+        ):
             result = _get_user_config_dir_fallback()
             self.assertIn("Library", str(result))
             self.assertTrue(str(result).endswith("ai-intervention-agent"))
 
     def test_windows_with_appdata(self):
         with (
-            patch("config_manager.platform.system", return_value="Windows"),
+            patch(
+                "ai_intervention_agent.config_manager.platform.system",
+                return_value="Windows",
+            ),
             patch.dict(os.environ, {"APPDATA": "/fake/appdata"}),
         ):
             result = _get_user_config_dir_fallback()
@@ -2027,7 +2033,10 @@ class TestGetUserConfigDirFallback(unittest.TestCase):
         env = os.environ.copy()
         env.pop("APPDATA", None)
         with (
-            patch("config_manager.platform.system", return_value="Windows"),
+            patch(
+                "ai_intervention_agent.config_manager.platform.system",
+                return_value="Windows",
+            ),
             patch.dict(os.environ, env, clear=True),
         ):
             result = _get_user_config_dir_fallback()
@@ -2035,7 +2044,10 @@ class TestGetUserConfigDirFallback(unittest.TestCase):
 
     def test_linux_with_xdg(self):
         with (
-            patch("config_manager.platform.system", return_value="Linux"),
+            patch(
+                "ai_intervention_agent.config_manager.platform.system",
+                return_value="Linux",
+            ),
             patch.dict(os.environ, {"XDG_CONFIG_HOME": "/xdg/config"}),
         ):
             result = _get_user_config_dir_fallback()
@@ -2045,7 +2057,10 @@ class TestGetUserConfigDirFallback(unittest.TestCase):
         env = os.environ.copy()
         env.pop("XDG_CONFIG_HOME", None)
         with (
-            patch("config_manager.platform.system", return_value="Linux"),
+            patch(
+                "ai_intervention_agent.config_manager.platform.system",
+                return_value="Linux",
+            ),
             patch.dict(os.environ, env, clear=True),
         ):
             result = _get_user_config_dir_fallback()
@@ -2467,7 +2482,7 @@ class TestCreateDefaultConfigFile(unittest.TestCase):
             mgr._original_content = None
             mgr._lock = __import__("threading").RLock()
 
-            with patch("config_manager.Path") as mock_path_cls:
+            with patch("ai_intervention_agent.config_manager.Path") as mock_path_cls:
                 template_mock = MagicMock()
                 template_mock.exists.return_value = False
 
@@ -2566,13 +2581,13 @@ class TestUpdateWithSave(unittest.TestCase):
 
 class TestGetConfig(unittest.TestCase):
     def test_returns_config_manager(self):
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         result = get_config()
         self.assertIsInstance(result, ConfigManager)
 
     def test_get_config_exception_safe(self):
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         with patch.object(
             ConfigManager, "start_file_watcher", side_effect=RuntimeError("fail")
@@ -2583,12 +2598,12 @@ class TestGetConfig(unittest.TestCase):
 
 class TestShutdownGlobal(unittest.TestCase):
     def test_shutdown_function_exists(self):
-        from config_manager import _shutdown_global_config_manager
+        from ai_intervention_agent.config_manager import _shutdown_global_config_manager
 
         _shutdown_global_config_manager()
 
     def test_shutdown_exception_safe(self):
-        from config_manager import _shutdown_global_config_manager
+        from ai_intervention_agent.config_manager import _shutdown_global_config_manager
 
         with patch.object(ConfigManager, "shutdown", side_effect=RuntimeError("fail")):
             _shutdown_global_config_manager()
@@ -2626,7 +2641,7 @@ class TestReadWriteLockWait(unittest.TestCase):
     def test_write_waits_for_readers(self):
         import threading
 
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         lock = ReadWriteLock()
         log: list[str] = []
@@ -2668,9 +2683,12 @@ class TestFindConfigFileDev(unittest.TestCase):
             cfg = Path(td) / "config.toml"
             cfg.write_text("[notification]\nenabled = true\n")
             with (
-                patch("config_manager._is_uvx_mode", return_value=False),
+                patch(
+                    "ai_intervention_agent.config_manager._is_uvx_mode",
+                    return_value=False,
+                ),
                 patch.dict(os.environ, {}, clear=False),
-                patch("config_manager.Path") as MockPath,
+                patch("ai_intervention_agent.config_manager.Path") as MockPath,
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
 
@@ -2703,14 +2721,16 @@ class TestFindConfigFileDev(unittest.TestCase):
     def test_dev_mode_json_fallback(self):
         """开发模式下，config.toml/jsonc 不存在但 config.json 存在时回退"""
         with (
-            patch("config_manager._is_uvx_mode", return_value=False),
+            patch(
+                "ai_intervention_agent.config_manager._is_uvx_mode", return_value=False
+            ),
             patch.dict(os.environ, {}, clear=False),
         ):
             os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
             with tempfile.TemporaryDirectory() as td:
                 json_file = Path(td) / "config.json"
                 json_file.write_text("{}")
-                with patch("config_manager.Path") as MockPath:
+                with patch("ai_intervention_agent.config_manager.Path") as MockPath:
                     mock_instance = MagicMock()
                     mock_instance.is_absolute.return_value = False
                     mock_instance.parent = Path(".")
@@ -2753,8 +2773,8 @@ class TestFindConfigFileDev(unittest.TestCase):
 class TestIsUvxModeException(unittest.TestCase):
     def test_exception_returns_true(self):
         with (
-            patch("config_manager.sys") as mock_sys,
-            patch("config_manager.Path") as MockPath,
+            patch("ai_intervention_agent.config_manager.sys") as mock_sys,
+            patch("ai_intervention_agent.config_manager.Path") as MockPath,
             patch.dict(os.environ, {}, clear=False),
         ):
             os.environ.pop("UVX_PROJECT", None)
@@ -2880,7 +2900,10 @@ class TestCreateDefaultConfigFallbackFailure(unittest.TestCase):
                 call_count += 1
                 raise PermissionError("can't copy")
 
-            with patch("config_manager.shutil.copy2", side_effect=failing_copy):
+            with patch(
+                "ai_intervention_agent.config_manager.shutil.copy2",
+                side_effect=failing_copy,
+            ):
                 mgr._create_default_config_file()
 
             self.assertTrue(cfg.exists())
@@ -2893,7 +2916,10 @@ class TestCreateDefaultConfigFallbackFailure(unittest.TestCase):
         mgr._lock = __import__("threading").RLock()
 
         with (
-            patch("config_manager.shutil.copy2", side_effect=PermissionError("no")),
+            patch(
+                "ai_intervention_agent.config_manager.shutil.copy2",
+                side_effect=PermissionError("no"),
+            ),
             patch("builtins.open", side_effect=PermissionError("no write")),
             self.assertRaises(PermissionError),
         ):
@@ -2907,8 +2933,8 @@ class TestCreateDefaultConfigFallbackFailure(unittest.TestCase):
 
 class TestGetConfigWatcherException(unittest.TestCase):
     def test_watcher_start_exception_returns_manager(self):
-        from config_manager import config_manager as global_mgr
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import config_manager as global_mgr
+        from ai_intervention_agent.config_manager import get_config
 
         global_mgr._file_watcher_running = False
         with patch.object(
@@ -2999,9 +3025,17 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
             cfg = Path(td) / "config.jsonc"
             cfg.write_text("{}")
             with (
-                patch("config_manager._is_uvx_mode", return_value=True),
-                patch("config_manager.user_config_dir", return_value=td),
-                patch("config_manager.PLATFORMDIRS_AVAILABLE", True),
+                patch(
+                    "ai_intervention_agent.config_manager._is_uvx_mode",
+                    return_value=True,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.user_config_dir",
+                    return_value=td,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", True
+                ),
                 patch.dict(os.environ, {}, clear=False),
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -3013,9 +3047,17 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
             json_f = Path(td) / "config.json"
             json_f.write_text("{}")
             with (
-                patch("config_manager._is_uvx_mode", return_value=True),
-                patch("config_manager.user_config_dir", return_value=td),
-                patch("config_manager.PLATFORMDIRS_AVAILABLE", True),
+                patch(
+                    "ai_intervention_agent.config_manager._is_uvx_mode",
+                    return_value=True,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.user_config_dir",
+                    return_value=td,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", True
+                ),
                 patch.dict(os.environ, {}, clear=False),
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -3027,9 +3069,17 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
             empty_dir = Path(td) / "empty"
             empty_dir.mkdir()
             with (
-                patch("config_manager._is_uvx_mode", return_value=True),
-                patch("config_manager.user_config_dir", return_value=str(empty_dir)),
-                patch("config_manager.PLATFORMDIRS_AVAILABLE", True),
+                patch(
+                    "ai_intervention_agent.config_manager._is_uvx_mode",
+                    return_value=True,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.user_config_dir",
+                    return_value=str(empty_dir),
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", True
+                ),
                 patch.dict(os.environ, {}, clear=False),
             ):
                 os.environ.pop("AI_INTERVENTION_AGENT_CONFIG_FILE", None)
@@ -3039,10 +3089,15 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
     def test_uvx_mode_platformdirs_unavailable(self):
         with tempfile.TemporaryDirectory() as td:
             with (
-                patch("config_manager._is_uvx_mode", return_value=True),
-                patch("config_manager.PLATFORMDIRS_AVAILABLE", False),
                 patch(
-                    "config_manager._get_user_config_dir_fallback",
+                    "ai_intervention_agent.config_manager._is_uvx_mode",
+                    return_value=True,
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", False
+                ),
+                patch(
+                    "ai_intervention_agent.config_manager._get_user_config_dir_fallback",
                     return_value=Path(td),
                 ),
                 patch.dict(os.environ, {}, clear=False),
@@ -3053,10 +3108,12 @@ class TestFindConfigFileUvxMode(unittest.TestCase):
 
     def test_uvx_mode_exception_fallback(self):
         with (
-            patch("config_manager._is_uvx_mode", return_value=True),
-            patch("config_manager.PLATFORMDIRS_AVAILABLE", False),
             patch(
-                "config_manager._get_user_config_dir_fallback",
+                "ai_intervention_agent.config_manager._is_uvx_mode", return_value=True
+            ),
+            patch("ai_intervention_agent.config_manager.PLATFORMDIRS_AVAILABLE", False),
+            patch(
+                "ai_intervention_agent.config_manager._get_user_config_dir_fallback",
                 side_effect=RuntimeError("fail"),
             ),
             patch.dict(os.environ, {}, clear=False),

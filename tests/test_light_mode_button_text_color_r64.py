@@ -41,8 +41,10 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CSS_FILE = REPO_ROOT / "static" / "css" / "main.css"
-TEMPLATE_FILE = REPO_ROOT / "templates" / "web_ui.html"
+CSS_FILE = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css" / "main.css"
+TEMPLATE_FILE = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+)
 
 # 容忍 single/double quote、theme attr 内随意空白
 _THEME_LIGHT_PREFIX = r"\[data-theme=['\"]light['\"]\]"

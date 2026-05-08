@@ -21,7 +21,7 @@ import unittest
 from typing import Any, ClassVar
 from unittest.mock import MagicMock, patch
 
-from web_ui_routes.feedback import _sanitize_selected_options
+from ai_intervention_agent.web_ui_routes.feedback import _sanitize_selected_options
 
 
 class TestSanitizeSelectedOptions(unittest.TestCase):
@@ -100,7 +100,7 @@ class _RouteTestBase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls._ui = WebFeedbackUI(
             prompt="p6y3 regression",
@@ -113,7 +113,7 @@ class _RouteTestBase(unittest.TestCase):
 
 
 class TestSubmitRejectsNonListSelectedOptions(_RouteTestBase):
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_selected_options_is_string_is_sanitized_to_empty(
         self, mock_get_tq
     ) -> None:
@@ -131,7 +131,7 @@ class TestSubmitRejectsNonListSelectedOptions(_RouteTestBase):
         _, result = mock_tq.complete_task.call_args.args
         self.assertEqual(result["selected_options"], [])
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_selected_options_is_dict_is_sanitized_to_empty(
         self, mock_get_tq
     ) -> None:
@@ -147,7 +147,7 @@ class TestSubmitRejectsNonListSelectedOptions(_RouteTestBase):
         _, result = mock_tq.complete_task.call_args.args
         self.assertEqual(result["selected_options"], [])
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_list_with_none_and_empty_is_cleaned(self, mock_get_tq) -> None:
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="active-3")
@@ -164,7 +164,7 @@ class TestSubmitRejectsNonListSelectedOptions(_RouteTestBase):
         _, result = mock_tq.complete_task.call_args.args
         self.assertEqual(result["selected_options"], ["alpha", "beta"])
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_form_selected_options_non_json_falls_back_to_empty(
         self, mock_get_tq
     ) -> None:
@@ -184,7 +184,7 @@ class TestSubmitRejectsNonListSelectedOptions(_RouteTestBase):
         _, result = mock_tq.complete_task.call_args.args
         self.assertEqual(result["selected_options"], [])
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_form_selected_options_valid_json_dict_sanitized(self, mock_get_tq) -> None:
         """表单字段传来的是合法 JSON，但反序列化结果不是 list（例如 {}）。"""
         mock_tq = MagicMock()
@@ -203,7 +203,7 @@ class TestSubmitRejectsNonListSelectedOptions(_RouteTestBase):
         _, result = mock_tq.complete_task.call_args.args
         self.assertEqual(result["selected_options"], [])
 
-    @patch("web_ui_routes.feedback.get_task_queue")
+    @patch("ai_intervention_agent.web_ui_routes.feedback.get_task_queue")
     def test_json_list_dedup_and_strip(self, mock_get_tq) -> None:
         mock_tq = MagicMock()
         mock_tq.get_active_task.return_value = MagicMock(task_id="active-6")

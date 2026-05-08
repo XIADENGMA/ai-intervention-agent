@@ -40,7 +40,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 
 LOCALE_DIRS: tuple[tuple[Path, str], ...] = (
-    (ROOT / "static" / "locales", "Web UI"),
+    (ROOT / "src" / "ai_intervention_agent" / "static" / "locales", "Web UI"),
     (ROOT / "packages" / "vscode" / "locales", "VSCode"),
 )
 

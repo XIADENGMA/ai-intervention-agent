@@ -2,7 +2,7 @@
 
 import unittest
 
-from exceptions import (
+from ai_intervention_agent.exceptions import (
     AIAgentError,
     ConfigError,
     ConfigFileNotFoundError,

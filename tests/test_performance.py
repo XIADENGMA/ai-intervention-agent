@@ -16,7 +16,7 @@ class TestConfigManagerPerformance(unittest.TestCase):
 
     def test_config_read_performance(self):
         """测试配置读取性能"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         start_time = time.time()
 
@@ -32,7 +32,7 @@ class TestConfigManagerPerformance(unittest.TestCase):
 
     def test_config_concurrent_read(self):
         """测试配置并发读取"""
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         results = []
 
@@ -62,7 +62,7 @@ class TestNotificationManagerPerformance(unittest.TestCase):
 
     def test_notification_send_performance(self):
         """测试通知发送性能"""
-        from notification_manager import (
+        from ai_intervention_agent.notification_manager import (
             NotificationTrigger,
             NotificationType,
             notification_manager,
@@ -98,7 +98,7 @@ class TestNotificationManagerPerformance(unittest.TestCase):
 
     def test_config_refresh_performance(self):
         """测试配置刷新性能"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         start_time = time.time()
 
@@ -118,7 +118,7 @@ class TestTaskQueuePerformance(unittest.TestCase):
 
     def setUp(self):
         """每个测试前的准备"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         # 性能测试要加 100 个任务（test_task_add_performance）和 50 个并发任务
         # （test_task_concurrent_operations），都超过 TaskQueue 默认 max_tasks=10
@@ -174,7 +174,7 @@ class TestLogDeduplicatorPerformance(unittest.TestCase):
 
     def test_dedup_performance(self):
         """测试去重性能"""
-        from enhanced_logging import LogDeduplicator
+        from ai_intervention_agent.enhanced_logging import LogDeduplicator
 
         dedup = LogDeduplicator(time_window=5.0)
 
@@ -196,7 +196,7 @@ class TestFileValidatorPerformance(unittest.TestCase):
 
     def test_validator_creation_performance(self):
         """测试验证器创建性能"""
-        from file_validator import FileValidator
+        from ai_intervention_agent.file_validator import FileValidator
 
         start_time = time.time()
 
@@ -217,7 +217,7 @@ class TestWebUIPerformance(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(prompt="性能测试", task_id="perf-test", port=8990)
         cls.app = cls.web_ui.app
@@ -268,7 +268,7 @@ class TestServerFunctionPerformance(unittest.TestCase):
 
     def test_validate_input_performance(self):
         """测试输入验证性能"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         start_time = time.time()
 
@@ -284,7 +284,7 @@ class TestServerFunctionPerformance(unittest.TestCase):
 
     def test_parse_response_performance(self):
         """测试响应解析性能"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {
             "user_input": "测试输入",
@@ -310,7 +310,7 @@ class TestHighConcurrency(unittest.TestCase):
 
     def test_task_queue_high_concurrency(self):
         """测试任务队列高并发"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue(max_tasks=1000)
         errors = []
@@ -341,7 +341,7 @@ class TestHighConcurrency(unittest.TestCase):
 
     def test_config_manager_concurrent_access(self):
         """测试配置管理器并发访问"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         errors = []
         iterations = 50
@@ -377,7 +377,7 @@ class TestHighConcurrency(unittest.TestCase):
 
     def test_file_validator_concurrent_validation(self):
         """测试文件验证器并发验证"""
-        from file_validator import validate_uploaded_file
+        from ai_intervention_agent.file_validator import validate_uploaded_file
 
         png_data = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a" + b"\x00" * 100
         errors = []

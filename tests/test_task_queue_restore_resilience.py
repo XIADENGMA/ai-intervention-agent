@@ -36,7 +36,7 @@ class TestRestoreResilience(unittest.TestCase):
         self._tmp.cleanup()
 
     def _make_queue(self):
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         return TaskQueue(persist_path=str(self.persist_path))
 
@@ -211,7 +211,7 @@ class TestCorruptPersistQuarantine(unittest.TestCase):
         self._tmp.cleanup()
 
     def _make_queue(self):
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         return TaskQueue(persist_path=str(self.persist_path))
 
@@ -345,7 +345,7 @@ class TestCorruptPersistQuarantine(unittest.TestCase):
         # 让 os.replace 在 quarantine 路径上抛 OSError（模拟权限不够 /
         # 磁盘满 / 跨设备 rename 失败）
         with patch(
-            "task_queue.os.replace",
+            "ai_intervention_agent.task_queue.os.replace",
             side_effect=OSError("simulated quarantine failure"),
         ):
             # 不应抛异常 —— 队列正常构造
@@ -370,7 +370,9 @@ class TestCorruptPersistQuarantine(unittest.TestCase):
 
         self.persist_path.write_text("not-valid-json", encoding="utf-8")
 
-        with patch("task_queue.TaskQueue._quarantine_corrupt_persist_file") as mock_q:
+        with patch(
+            "ai_intervention_agent.task_queue.TaskQueue._quarantine_corrupt_persist_file"
+        ) as mock_q:
             q = self._make_queue()
             try:
                 # quarantine 必须被调一次

@@ -29,7 +29,9 @@ import unittest
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_I18N_JS_STATIC = _PROJECT_ROOT / "static" / "js" / "i18n.js"
+_I18N_JS_STATIC = (
+    _PROJECT_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "i18n.js"
+)
 _I18N_JS_VSCODE = _PROJECT_ROOT / "packages" / "vscode" / "i18n.js"
 _RUN_NORMALIZE_HARNESS = """
 const fs = require('fs');

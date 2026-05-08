@@ -236,7 +236,13 @@ def _main_impl(argv: list[str]) -> int:
     # 通过 pytest 退出码和失败摘要体现。
     pytest_cmd = ["uv", "run", "pytest", "-q", "-o", "log_cli=false"]
     if args.with_coverage:
-        pytest_cmd += ["--cov=.", "--cov-report=xml", "--cov-report=term-missing"]
+        # R76 src/ layout：覆盖率只统计源码包 ``src/ai_intervention_agent``；
+        # ``scripts/`` 与 ``tests/`` 已在 ``[tool.coverage.run].omit`` 屏蔽。
+        pytest_cmd += [
+            "--cov=src/ai_intervention_agent",
+            "--cov-report=xml",
+            "--cov-report=term-missing",
+        ]
     _run(pytest_cmd)
 
     # P10·B1.5·H7：两份 i18n.js 的跨特性 red-team smoke。pytest 已覆盖

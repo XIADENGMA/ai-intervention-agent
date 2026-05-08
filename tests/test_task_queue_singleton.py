@@ -53,7 +53,7 @@ class TestSingletonBehavior(unittest.TestCase):
     """双重检查锁定 + 幂等 + persist 路径"""
 
     def setUp(self) -> None:
-        import task_queue_singleton
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
         self._mod = task_queue_singleton
         self._orig = task_queue_singleton._global_task_queue
@@ -118,7 +118,7 @@ class TestShutdownIdempotent(unittest.TestCase):
     """_shutdown_global_task_queue 必须幂等且吞异常"""
 
     def setUp(self) -> None:
-        import task_queue_singleton
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
         self._mod = task_queue_singleton
         self._orig = task_queue_singleton._global_task_queue
@@ -151,8 +151,8 @@ class TestServerReExportContract(unittest.TestCase):
     """server.{get_task_queue, _shutdown_global_task_queue} 必须是同一 callable"""
 
     def test_get_task_queue_is_re_export(self) -> None:
-        import server
-        import task_queue_singleton
+        import ai_intervention_agent.server as server
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
         self.assertIs(
             server.get_task_queue,
@@ -162,8 +162,8 @@ class TestServerReExportContract(unittest.TestCase):
         )
 
     def test_shutdown_is_re_export(self) -> None:
-        import server
-        import task_queue_singleton
+        import ai_intervention_agent.server as server
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
         self.assertIs(
             server._shutdown_global_task_queue,
@@ -197,7 +197,7 @@ class TestImportDecoupling(unittest.TestCase):
         """
         code = (
             "import sys\n"
-            "import task_queue_singleton  # noqa: F401\n"
+            "import ai_intervention_agent.task_queue_singleton  # noqa: F401\n"
             "leaked = [m for m in ('fastmcp',) if m in sys.modules]\n"
             "print('LEAKED:' + ','.join(leaked))\n"
         )
@@ -234,16 +234,24 @@ class TestSourceTextInvariants(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.singleton_src = (PROJECT_ROOT / "task_queue_singleton.py").read_text(
-            encoding="utf-8"
-        )
-        cls.server_src = (PROJECT_ROOT / "server.py").read_text(encoding="utf-8")
-        cls.web_ui_src = (PROJECT_ROOT / "web_ui.py").read_text(encoding="utf-8")
-        cls.task_route_src = (PROJECT_ROOT / "web_ui_routes" / "task.py").read_text(
-            encoding="utf-8"
-        )
+        cls.singleton_src = (
+            PROJECT_ROOT / "src" / "ai_intervention_agent" / "task_queue_singleton.py"
+        ).read_text(encoding="utf-8")
+        cls.server_src = (
+            PROJECT_ROOT / "src" / "ai_intervention_agent" / "server.py"
+        ).read_text(encoding="utf-8")
+        cls.web_ui_src = (
+            PROJECT_ROOT / "src" / "ai_intervention_agent" / "web_ui.py"
+        ).read_text(encoding="utf-8")
+        cls.task_route_src = (
+            PROJECT_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "task.py"
+        ).read_text(encoding="utf-8")
         cls.feedback_route_src = (
-            PROJECT_ROOT / "web_ui_routes" / "feedback.py"
+            PROJECT_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "web_ui_routes"
+            / "feedback.py"
         ).read_text(encoding="utf-8")
 
     def test_singleton_module_has_double_checked_locking(self) -> None:
@@ -288,18 +296,20 @@ class TestSourceTextInvariants(unittest.TestCase):
 
     def test_server_re_exports_singleton_api(self) -> None:
         """server.py 必须 re-export get_task_queue 与 _shutdown_global_task_queue"""
-        self.assertIn("from task_queue_singleton import", self.server_src)
+        self.assertIn(
+            "from ai_intervention_agent.task_queue_singleton import", self.server_src
+        )
         self.assertIn("get_task_queue", self.server_src)
         self.assertIn("_shutdown_global_task_queue", self.server_src)
 
     def test_web_ui_imports_from_singleton_not_server(self) -> None:
         """web_ui.py 必须直接从 task_queue_singleton 拿 get_task_queue"""
         self.assertIn(
-            "from task_queue_singleton import get_task_queue",
+            "from ai_intervention_agent.task_queue_singleton import get_task_queue",
             self.web_ui_src,
         )
         self.assertNotIn(
-            "from server import get_task_queue",
+            "from ai_intervention_agent.server import get_task_queue",
             self.web_ui_src,
             "web_ui.py 不允许 from server import get_task_queue—— "
             "这会让 web_ui 子进程白白加载 fastmcp/mcp",
@@ -307,21 +317,21 @@ class TestSourceTextInvariants(unittest.TestCase):
 
     def test_task_route_imports_from_singleton(self) -> None:
         self.assertIn(
-            "from task_queue_singleton import get_task_queue",
+            "from ai_intervention_agent.task_queue_singleton import get_task_queue",
             self.task_route_src,
         )
         self.assertNotIn(
-            "from server import get_task_queue",
+            "from ai_intervention_agent.server import get_task_queue",
             self.task_route_src,
         )
 
     def test_feedback_route_imports_from_singleton(self) -> None:
         self.assertIn(
-            "from task_queue_singleton import get_task_queue",
+            "from ai_intervention_agent.task_queue_singleton import get_task_queue",
             self.feedback_route_src,
         )
         self.assertNotIn(
-            "from server import get_task_queue",
+            "from ai_intervention_agent.server import get_task_queue",
             self.feedback_route_src,
         )
 
@@ -331,7 +341,7 @@ class TestSourceTextInvariants(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════
 class TestModuleStructure(unittest.TestCase):
     def test_module_has_expected_public_api(self) -> None:
-        import task_queue_singleton
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
         self.assertTrue(callable(task_queue_singleton.get_task_queue))
         self.assertTrue(callable(task_queue_singleton._shutdown_global_task_queue))
@@ -342,7 +352,7 @@ class TestModuleStructure(unittest.TestCase):
 
     def test_reload_does_not_create_duplicate_singleton(self) -> None:
         """importlib.reload 不应该让单例被错误重置（非常规场景，但防御性测试）"""
-        import task_queue_singleton
+        import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
         before = task_queue_singleton._global_task_queue
         importlib.reload(task_queue_singleton)

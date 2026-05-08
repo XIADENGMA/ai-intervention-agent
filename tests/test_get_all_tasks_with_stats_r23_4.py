@@ -29,11 +29,13 @@ import time
 import unittest
 from pathlib import Path
 
-from task_queue import TaskQueue
+from ai_intervention_agent.task_queue import TaskQueue
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TASK_QUEUE_PY = REPO_ROOT / "task_queue.py"
-TASK_ROUTE_PY = REPO_ROOT / "web_ui_routes" / "task.py"
+TASK_QUEUE_PY = REPO_ROOT / "src" / "ai_intervention_agent" / "task_queue.py"
+TASK_ROUTE_PY = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "task.py"
+)
 
 
 class _TaskQueueFixture(unittest.TestCase):

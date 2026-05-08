@@ -16,8 +16,18 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
+
+# R76 src/ layout 改造之后，让 ``import ai_intervention_agent.<module>`` 在
+# 不依赖 ``pip install -e .`` 的本地 / CI 测试环境也可以解析：把
+# ``<repo>/src`` 注入 ``sys.path[0]``。pytest 自身会把 ``tests/`` 注入但
+# 不会自动注入 ``src/``，所以这一行是必须的；若已注入则不重复添加。
+_REPO_ROOT_CONFTEST = Path(__file__).resolve().parent.parent
+_SRC_ROOT_CONFTEST = _REPO_ROOT_CONFTEST / "src"
+if _SRC_ROOT_CONFTEST.is_dir() and str(_SRC_ROOT_CONFTEST) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT_CONFTEST))
 
 # pytest 仅在测试运行时可用；conftest.py 只会被 pytest 加载
 import pytest
@@ -100,7 +110,7 @@ def _silence_loguru_sinks_during_tests():
         # 触发 enhanced_logging 加载（确保 sink 已注册），然后再 remove。
         from loguru import logger as _loguru_logger
 
-        import enhanced_logging  # noqa: F401
+        import ai_intervention_agent.enhanced_logging as enhanced_logging  # noqa: F401
 
         _loguru_logger.remove()
     except Exception:
@@ -119,7 +129,7 @@ def _isolate_config_and_notification_singletons():
 
     # 2) ConfigManager：如已导入，则强制重新加载并清缓存
     try:
-        from config_manager import config_manager
+        from ai_intervention_agent.config_manager import config_manager
 
         config_manager.reload()
     except Exception:
@@ -128,7 +138,10 @@ def _isolate_config_and_notification_singletons():
 
     # 3) NotificationManager：取消残留 Timer、确保线程池可用，并让 Bark provider 与配置一致
     try:
-        from notification_manager import NotificationType, notification_manager
+        from ai_intervention_agent.notification_manager import (
+            NotificationType,
+            notification_manager,
+        )
 
         # 清理上一个用例可能遗留的 timer/线程池（避免用例结束后继续重试打印日志）
         try:
@@ -163,7 +176,10 @@ def _isolate_config_and_notification_singletons():
 
     # 用例结束后再做一次“硬清理”，确保不会有后台重试/网络访问溜出 pytest 生命周期
     try:
-        from notification_manager import NotificationType, notification_manager
+        from ai_intervention_agent.notification_manager import (
+            NotificationType,
+            notification_manager,
+        )
 
         try:
             notification_manager.shutdown(wait=False)

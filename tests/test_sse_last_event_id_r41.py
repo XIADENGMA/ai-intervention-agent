@@ -48,7 +48,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from web_ui_routes.task import _SSEBus
+from ai_intervention_agent.web_ui_routes.task import _SSEBus
 
 
 class TestSSEBusSubscribeWithAfterId(unittest.TestCase):
@@ -191,9 +191,9 @@ class TestSseEventsRouteResumeContract(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.task_routes_src = (REPO_ROOT / "web_ui_routes" / "task.py").read_text(
-            encoding="utf-8"
-        )
+        cls.task_routes_src = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "task.py"
+        ).read_text(encoding="utf-8")
 
     def _get_sse_events_body(self) -> str:
         """切出 ``def sse_events`` 起到下一个 ``def`` 之间的源码。
@@ -276,9 +276,14 @@ class TestFrontendResumeLiterals(unittest.TestCase):
         cls.webview_ui = (
             REPO_ROOT / "packages" / "vscode" / "webview-ui.js"
         ).read_text(encoding="utf-8")
-        cls.multi_task = (REPO_ROOT / "static" / "js" / "multi_task.js").read_text(
-            encoding="utf-8"
-        )
+        cls.multi_task = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "multi_task.js"
+        ).read_text(encoding="utf-8")
         cls.extension_ts = (
             REPO_ROOT / "packages" / "vscode" / "extension.ts"
         ).read_text(encoding="utf-8")

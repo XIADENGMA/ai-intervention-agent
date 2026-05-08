@@ -17,15 +17,15 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import httpx
 from mcp.types import TextContent
 
-import server
-import service_manager
-from exceptions import (
+import ai_intervention_agent.server as server
+import ai_intervention_agent.service_manager as service_manager
+from ai_intervention_agent.exceptions import (
     ServiceConnectionError,
     ServiceTimeoutError,
     ServiceUnavailableError,
     ValidationError,
 )
-from server_config import WebUIConfig
+from ai_intervention_agent.server_config import WebUIConfig
 
 
 class TestValidateInput(unittest.TestCase):
@@ -33,7 +33,7 @@ class TestValidateInput(unittest.TestCase):
 
     def test_validate_normal_message(self):
         """测试正常消息验证"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         message, options = validate_input("正常消息", ["选项1", "选项2"])
 
@@ -42,7 +42,7 @@ class TestValidateInput(unittest.TestCase):
 
     def test_validate_empty_message(self):
         """测试空消息验证"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         message, options = validate_input("", [])
 
@@ -50,7 +50,7 @@ class TestValidateInput(unittest.TestCase):
 
     def test_validate_long_message_truncation(self):
         """测试长消息截断"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         long_message = "测" * 20000  # 超长消息
         message, options = validate_input(long_message, [])
@@ -60,7 +60,7 @@ class TestValidateInput(unittest.TestCase):
 
     def test_validate_options_filtering(self):
         """测试选项过滤"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         # 混合类型的选项
         mixed_options = ["有效选项", 123, None, "另一个选项"]
@@ -71,7 +71,7 @@ class TestValidateInput(unittest.TestCase):
 
     def test_validate_long_option_truncation(self):
         """测试长选项截断"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         long_option = "选" * 1000  # 超长选项
         message, options = validate_input("消息", [long_option])
@@ -88,7 +88,7 @@ class TestParseStructuredResponse(unittest.TestCase):
         """测试标准响应格式"""
         from mcp.types import TextContent
 
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {
             "user_input": "用户输入内容",
@@ -104,7 +104,7 @@ class TestParseStructuredResponse(unittest.TestCase):
 
     def test_parse_response_with_options_only(self):
         """测试仅有选项的响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {"user_input": "", "selected_options": ["确认"], "images": []}
 
@@ -116,7 +116,7 @@ class TestParseStructuredResponse(unittest.TestCase):
         """测试带图片的响应"""
         from mcp.types import ImageContent, TextContent
 
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {
             "user_input": "带图片的反馈",
@@ -141,7 +141,7 @@ class TestParseStructuredResponse(unittest.TestCase):
 
     def test_parse_empty_response(self):
         """测试空响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {"user_input": "", "selected_options": [], "images": []}
 
@@ -151,7 +151,7 @@ class TestParseStructuredResponse(unittest.TestCase):
 
     def test_parse_legacy_response(self):
         """测试旧格式响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {"interactive_feedback": "旧格式的反馈内容"}
 
@@ -166,7 +166,7 @@ class TestWaitForTaskCompletion(unittest.TestCase):
     def test_wait_for_task_completion_exists(self):
         """测试函数存在"""
         try:
-            from server import wait_for_task_completion
+            from ai_intervention_agent.server import wait_for_task_completion
 
             self.assertTrue(callable(wait_for_task_completion))
         except ImportError:
@@ -179,7 +179,7 @@ class TestEnsureWebUIRunning(unittest.TestCase):
     def test_ensure_web_ui_running_exists(self):
         """测试函数存在"""
         try:
-            from server import ensure_web_ui_running
+            from ai_intervention_agent.server import ensure_web_ui_running
 
             self.assertTrue(callable(ensure_web_ui_running))
         except ImportError:
@@ -191,19 +191,19 @@ class TestGetTargetHost(unittest.TestCase):
 
     def test_ipv4_any_to_localhost(self):
         """0.0.0.0 作为监听地址时，客户端应连接 localhost"""
-        from server import get_target_host
+        from ai_intervention_agent.server import get_target_host
 
         self.assertEqual(get_target_host("0.0.0.0"), "localhost")
 
     def test_ipv6_any_to_localhost(self):
         """:: 作为监听地址时，客户端应连接 localhost"""
-        from server import get_target_host
+        from ai_intervention_agent.server import get_target_host
 
         self.assertEqual(get_target_host("::"), "localhost")
 
     def test_normal_host_unchanged(self):
         """普通地址应保持不变"""
-        from server import get_target_host
+        from ai_intervention_agent.server import get_target_host
 
         self.assertEqual(get_target_host("127.0.0.1"), "127.0.0.1")
 
@@ -214,7 +214,7 @@ class TestLaunchFeedbackUI(unittest.TestCase):
     def test_launch_feedback_ui_exists(self):
         """测试函数存在"""
         try:
-            from server import launch_feedback_ui
+            from ai_intervention_agent.server import launch_feedback_ui
 
             self.assertTrue(callable(launch_feedback_ui))
         except ImportError:
@@ -227,7 +227,7 @@ class TestServerConstants(unittest.TestCase):
     def test_max_message_length(self):
         """测试最大消息长度常量"""
         try:
-            from server import MAX_MESSAGE_LENGTH
+            from ai_intervention_agent.server import MAX_MESSAGE_LENGTH
 
             self.assertIsInstance(MAX_MESSAGE_LENGTH, int)
             self.assertGreater(MAX_MESSAGE_LENGTH, 0)
@@ -237,7 +237,7 @@ class TestServerConstants(unittest.TestCase):
     def test_max_option_length(self):
         """测试最大选项长度常量"""
         try:
-            from server import MAX_OPTION_LENGTH
+            from ai_intervention_agent.server import MAX_OPTION_LENGTH
 
             self.assertIsInstance(MAX_OPTION_LENGTH, int)
             self.assertGreater(MAX_OPTION_LENGTH, 0)
@@ -251,7 +251,7 @@ class TestServerLogger(unittest.TestCase):
     def test_logger_exists(self):
         """测试日志器存在"""
         try:
-            from server import logger
+            from ai_intervention_agent.server import logger
 
             self.assertIsNotNone(logger)
         except ImportError:
@@ -264,7 +264,7 @@ class TestInteractiveFeedbackTool(unittest.TestCase):
     def test_interactive_feedback_exists(self):
         """测试 interactive_feedback 函数存在"""
         try:
-            from server import interactive_feedback
+            from ai_intervention_agent.server import interactive_feedback
 
             # interactive_feedback 可能是被 MCP 装饰器处理的异步函数
             self.assertIsNotNone(interactive_feedback)
@@ -299,7 +299,7 @@ class TestServerFinalPush(unittest.TestCase):
 
     def test_parse_response_only_options(self):
         """测试仅选项的响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {
             "user_input": "",
@@ -314,7 +314,7 @@ class TestServerFinalPush(unittest.TestCase):
 
     def test_validate_input_unicode(self):
         """测试 Unicode 输入验证"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         message = "中文 日本語 한국어 العربية"
         options = ["选项 🎉", "オプション 💡"]
@@ -329,7 +329,7 @@ class TestServerParseResponseAdvanced(unittest.TestCase):
 
     def test_parse_with_newlines(self):
         """测试带换行的响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {
             "user_input": "第一行\n第二行\n第三行",
@@ -343,7 +343,7 @@ class TestServerParseResponseAdvanced(unittest.TestCase):
 
     def test_parse_with_tabs(self):
         """测试带制表符的响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {"user_input": "列1\t列2\t列3", "selected_options": [], "images": []}
 
@@ -353,7 +353,7 @@ class TestServerParseResponseAdvanced(unittest.TestCase):
 
     def test_parse_mixed_content(self):
         """测试混合内容响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {
             "user_input": "Text with 中文 and émojis 🎉",
@@ -371,7 +371,7 @@ class TestServerValidateInputAdvanced(unittest.TestCase):
 
     def test_validate_with_empty_options(self):
         """测试空选项列表"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         message, options = validate_input("消息", [])
 
@@ -379,7 +379,7 @@ class TestServerValidateInputAdvanced(unittest.TestCase):
 
     def test_validate_with_none_message(self):
         """测试 None 消息"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         # None 应该抛出 ValueError
         with self.assertRaises(ValueError):
@@ -387,7 +387,7 @@ class TestServerValidateInputAdvanced(unittest.TestCase):
 
     def test_validate_with_numeric_option(self):
         """测试数字选项"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         message, options = validate_input("消息", [123, 456])
 
@@ -404,7 +404,7 @@ class TestServerAsyncFunctions(unittest.TestCase):
 
     def test_get_feedback_prompts(self):
         """测试获取反馈提示"""
-        from server import get_feedback_prompts
+        from ai_intervention_agent.server import get_feedback_prompts
 
         resubmit, suffix = get_feedback_prompts()
 
@@ -414,7 +414,7 @@ class TestServerAsyncFunctions(unittest.TestCase):
 
     def test_parse_structured_response_with_multiple_options(self):
         """测试解析多选项响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {
             "user_input": "测试多选项",
@@ -431,7 +431,7 @@ class TestServerAsyncFunctions(unittest.TestCase):
 
     def test_parse_structured_response_empty_input(self):
         """测试解析空输入响应"""
-        from server import parse_structured_response
+        from ai_intervention_agent.server import parse_structured_response
 
         response = {"user_input": "", "selected_options": [], "images": []}
 
@@ -441,7 +441,7 @@ class TestServerAsyncFunctions(unittest.TestCase):
 
     def test_validate_input_with_special_chars(self):
         """测试带特殊字符的输入验证"""
-        from server import validate_input
+        from ai_intervention_agent.server import validate_input
 
         message = "测试 <script>alert('xss')</script> & 特殊字符"
         options = ["选项 <b>粗体</b>", "选项 &amp;"]
@@ -457,14 +457,14 @@ class TestServerWebUIManagement(unittest.TestCase):
 
     def test_ensure_web_ui_running_callable(self):
         """测试确保 Web UI 运行函数可调用"""
-        from server import ensure_web_ui_running
+        from ai_intervention_agent.server import ensure_web_ui_running
 
         # 函数应该存在
         self.assertIsNotNone(ensure_web_ui_running)
 
     def test_wait_for_task_completion_callable(self):
         """测试等待任务完成函数可调用"""
-        from server import wait_for_task_completion
+        from ai_intervention_agent.server import wait_for_task_completion
 
         self.assertIsNotNone(wait_for_task_completion)
 
@@ -567,7 +567,10 @@ class TestEnsureConfigCallbacksRegistered(unittest.TestCase):
         service_manager._config_callbacks_registered = False
         try:
             mock_cfg = MagicMock()
-            with patch("service_manager.get_config", return_value=mock_cfg):
+            with patch(
+                "ai_intervention_agent.service_manager.get_config",
+                return_value=mock_cfg,
+            ):
                 service_manager._ensure_config_change_callbacks_registered()
                 self.assertTrue(service_manager._config_callbacks_registered)
                 mock_cfg.register_config_change_callback.assert_called_once()
@@ -588,7 +591,7 @@ class TestEnsureConfigCallbacksRegistered(unittest.TestCase):
         service_manager._config_callbacks_registered = False
         try:
             with patch(
-                "service_manager.get_config",
+                "ai_intervention_agent.service_manager.get_config",
                 side_effect=RuntimeError("no config"),
             ):
                 service_manager._ensure_config_change_callbacks_registered()
@@ -605,7 +608,7 @@ class TestEnsureConfigCallbacksRegistered(unittest.TestCase):
 #  公开 API 行为，并在 task_queue_singleton 模块上 patch 全局单例（不再
 #  存在 server._global_task_queue 这个模块变量）。
 # ═══════════════════════════════════════════════════════════════════════════
-import task_queue_singleton
+import ai_intervention_agent.task_queue_singleton as task_queue_singleton
 
 
 class TestGetTaskQueue(unittest.TestCase):
@@ -731,7 +734,10 @@ class TestServiceManager(unittest.TestCase):
         self.assertFalse(sm.is_process_running("error"))
         sm.unregister_process("error")
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_terminate_already_exited(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
@@ -744,7 +750,10 @@ class TestServiceManager(unittest.TestCase):
         self.assertTrue(sm.terminate_process("done"))
         self.assertIsNone(sm.get_process("done"))
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_terminate_graceful(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
@@ -757,7 +766,10 @@ class TestServiceManager(unittest.TestCase):
         self.assertTrue(sm.terminate_process("graceful", timeout=1.0))
         mock_proc.terminate.assert_called_once()
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_terminate_force_kill(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
@@ -776,7 +788,10 @@ class TestServiceManager(unittest.TestCase):
         sm = server.ServiceManager()
         self.assertTrue(sm.terminate_process("nobody"))
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_all_with_processes(self, _):
         sm = server.ServiceManager()
         for i in range(2):
@@ -815,7 +830,10 @@ class TestServiceManager(unittest.TestCase):
                 sm._signal_handler(2, None)
             self.assertTrue(sm._should_exit)
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_process_resources(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
@@ -829,28 +847,40 @@ class TestServiceManager(unittest.TestCase):
         mock_proc.stdout.close.assert_called_once()
         mock_proc.stderr.close.assert_called_once()
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_graceful_shutdown_timeout(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
         mock_proc.wait.side_effect = subprocess.TimeoutExpired("cmd", 1)
         self.assertFalse(sm._graceful_shutdown(mock_proc, "test", 0.1))
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_graceful_shutdown_exception(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
         mock_proc.terminate.side_effect = OSError("no process")
         self.assertFalse(sm._graceful_shutdown(mock_proc, "test", 0.1))
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_force_shutdown_timeout(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
         mock_proc.wait.side_effect = subprocess.TimeoutExpired("cmd", 2)
         self.assertFalse(sm._force_shutdown(mock_proc, "test"))
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_force_shutdown_exception(self, _):
         sm = server.ServiceManager()
         mock_proc = MagicMock(spec=subprocess.Popen)
@@ -872,8 +902,10 @@ class TestGetWebUIConfig(unittest.TestCase):
         with service_manager._config_cache_lock:
             service_manager._config_cache.update(self._orig_cache)
 
-    @patch("service_manager.get_config")
-    @patch("service_manager._ensure_config_change_callbacks_registered")
+    @patch("ai_intervention_agent.service_manager.get_config")
+    @patch(
+        "ai_intervention_agent.service_manager._ensure_config_change_callbacks_registered"
+    )
     def test_load_config_success(self, _, mock_get_cfg):
         mock_cfg = MagicMock()
         mock_cfg.get_section.side_effect = lambda sec: {
@@ -887,8 +919,10 @@ class TestGetWebUIConfig(unittest.TestCase):
         self.assertIsInstance(config, WebUIConfig)
         self.assertEqual(config.port, 8080)
 
-    @patch("service_manager.get_config")
-    @patch("service_manager._ensure_config_change_callbacks_registered")
+    @patch("ai_intervention_agent.service_manager.get_config")
+    @patch(
+        "ai_intervention_agent.service_manager._ensure_config_change_callbacks_registered"
+    )
     def test_cache_hit(self, _, mock_get_cfg):
         mock_cfg = MagicMock()
         mock_cfg.get_section.side_effect = lambda sec: {
@@ -903,14 +937,24 @@ class TestGetWebUIConfig(unittest.TestCase):
         self.assertEqual(cfg1.port, cfg2.port)
         self.assertEqual(mock_get_cfg.call_count, 1)
 
-    @patch("service_manager.get_config", side_effect=ValueError("bad config"))
-    @patch("service_manager._ensure_config_change_callbacks_registered")
+    @patch(
+        "ai_intervention_agent.service_manager.get_config",
+        side_effect=ValueError("bad config"),
+    )
+    @patch(
+        "ai_intervention_agent.service_manager._ensure_config_change_callbacks_registered"
+    )
     def test_value_error_raises(self, _, __):
         with self.assertRaises(ValueError):
             service_manager.get_web_ui_config()
 
-    @patch("service_manager.get_config", side_effect=RuntimeError("unexpected"))
-    @patch("service_manager._ensure_config_change_callbacks_registered")
+    @patch(
+        "ai_intervention_agent.service_manager.get_config",
+        side_effect=RuntimeError("unexpected"),
+    )
+    @patch(
+        "ai_intervention_agent.service_manager._ensure_config_change_callbacks_registered"
+    )
     def test_generic_error_raises(self, _, __):
         with self.assertRaises(ValueError):
             service_manager.get_web_ui_config()
@@ -958,14 +1002,14 @@ class TestIsWebServiceRunning(unittest.TestCase):
         self.assertFalse(server.is_web_service_running("localhost", 70000))
 
     @patch(
-        "service_manager.socket.getaddrinfo",
+        "ai_intervention_agent.service_manager.socket.getaddrinfo",
         side_effect=socket.gaierror("resolve fail"),
     )
     def test_dns_failure(self, _):
         self.assertFalse(server.is_web_service_running("bad.host", 8080))
 
-    @patch("service_manager.socket.getaddrinfo")
-    @patch("service_manager.socket.socket")
+    @patch("ai_intervention_agent.service_manager.socket.getaddrinfo")
+    @patch("ai_intervention_agent.service_manager.socket.socket")
     def test_connection_success(self, mock_sock_cls, mock_getaddr):
         mock_getaddr.return_value = [
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 8080))
@@ -978,8 +1022,8 @@ class TestIsWebServiceRunning(unittest.TestCase):
 
         self.assertTrue(server.is_web_service_running("127.0.0.1", 8080))
 
-    @patch("service_manager.socket.getaddrinfo")
-    @patch("service_manager.socket.socket")
+    @patch("ai_intervention_agent.service_manager.socket.getaddrinfo")
+    @patch("ai_intervention_agent.service_manager.socket.socket")
     def test_connection_refused(self, mock_sock_cls, mock_getaddr):
         mock_getaddr.return_value = [
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 8080))
@@ -992,8 +1036,8 @@ class TestIsWebServiceRunning(unittest.TestCase):
 
         self.assertFalse(server.is_web_service_running("127.0.0.1", 8080))
 
-    @patch("service_manager.socket.getaddrinfo")
-    @patch("service_manager.socket.socket")
+    @patch("ai_intervention_agent.service_manager.socket.getaddrinfo")
+    @patch("ai_intervention_agent.service_manager.socket.socket")
     def test_socket_oserror_fallback(self, mock_sock_cls, mock_getaddr):
         mock_getaddr.return_value = [
             (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 8080, 0, 0)),
@@ -1012,13 +1056,19 @@ class TestIsWebServiceRunning(unittest.TestCase):
 #  health_check_service
 # ═══════════════════════════════════════════════════════════════════════════
 class TestHealthCheckService(unittest.TestCase):
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_port_not_listening(self, _):
         cfg = _make_config()
         self.assertFalse(server.health_check_service(cfg))
 
-    @patch("service_manager.create_http_session")
-    @patch("service_manager.is_web_service_running", return_value=True)
+    @patch("ai_intervention_agent.service_manager.create_http_session")
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     def test_health_ok(self, _, mock_session_fn):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1028,8 +1078,11 @@ class TestHealthCheckService(unittest.TestCase):
 
         self.assertTrue(server.health_check_service(_make_config()))
 
-    @patch("service_manager.create_http_session")
-    @patch("service_manager.is_web_service_running", return_value=True)
+    @patch("ai_intervention_agent.service_manager.create_http_session")
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     def test_health_non_200(self, _, mock_session_fn):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1039,8 +1092,11 @@ class TestHealthCheckService(unittest.TestCase):
 
         self.assertFalse(server.health_check_service(_make_config()))
 
-    @patch("service_manager.create_http_session")
-    @patch("service_manager.is_web_service_running", return_value=True)
+    @patch("ai_intervention_agent.service_manager.create_http_session")
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     def test_request_exception(self, _, mock_session_fn):
         mock_session = MagicMock()
         mock_session.get.side_effect = httpx.ConnectError("fail")
@@ -1068,14 +1124,14 @@ class TestUpdateWebContent(unittest.TestCase):
             mock_session.post.return_value = mock_resp
         return mock_session
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_success(self, mock_create):
         mock_create.return_value = self._setup_session(
             200, {"status": "success", "message": "ok"}
         )
         server.update_web_content("hello", ["A"], "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_200_invalid_json(self, mock_create):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1084,32 +1140,32 @@ class TestUpdateWebContent(unittest.TestCase):
         mock_session.post.return_value = mock_resp
         mock_create.return_value = mock_session
 
-        from exceptions import ServiceConnectionError
+        from ai_intervention_agent.exceptions import ServiceConnectionError
 
         with self.assertRaises(ServiceConnectionError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_200_non_dict(self, mock_create):
         mock_create.return_value = self._setup_session(200, json_data="string")
 
-        from exceptions import ServiceConnectionError
+        from ai_intervention_agent.exceptions import ServiceConnectionError
 
         with self.assertRaises(ServiceConnectionError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_200_status_not_success(self, mock_create):
         mock_create.return_value = self._setup_session(
             200, {"status": "error", "error": "bad_field", "message": "invalid"}
         )
 
-        from exceptions import ServiceConnectionError
+        from ai_intervention_agent.exceptions import ServiceConnectionError
 
         with self.assertRaises(ServiceConnectionError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_400_json_response(self, mock_create):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1123,12 +1179,12 @@ class TestUpdateWebContent(unittest.TestCase):
         mock_session.post.return_value = mock_resp
         mock_create.return_value = mock_session
 
-        from exceptions import ValidationError
+        from ai_intervention_agent.exceptions import ValidationError
 
         with self.assertRaises(ValidationError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_400_non_json(self, mock_create):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1139,12 +1195,12 @@ class TestUpdateWebContent(unittest.TestCase):
         mock_session.post.return_value = mock_resp
         mock_create.return_value = mock_session
 
-        from exceptions import ValidationError
+        from ai_intervention_agent.exceptions import ValidationError
 
         with self.assertRaises(ValidationError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_429_rate_limited(self, mock_create):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1154,21 +1210,21 @@ class TestUpdateWebContent(unittest.TestCase):
         mock_session.post.return_value = mock_resp
         mock_create.return_value = mock_session
 
-        from exceptions import ServiceConnectionError
+        from ai_intervention_agent.exceptions import ServiceConnectionError
 
         with self.assertRaises(ServiceConnectionError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_404_endpoint_not_found(self, mock_create):
         mock_create.return_value = self._setup_session(404)
 
-        from exceptions import ServiceUnavailableError
+        from ai_intervention_agent.exceptions import ServiceUnavailableError
 
         with self.assertRaises(ServiceUnavailableError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_500_server_error(self, mock_create):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1178,12 +1234,12 @@ class TestUpdateWebContent(unittest.TestCase):
         mock_session.post.return_value = mock_resp
         mock_create.return_value = mock_session
 
-        from exceptions import ServiceConnectionError
+        from ai_intervention_agent.exceptions import ServiceConnectionError
 
         with self.assertRaises(ServiceConnectionError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_unexpected_status(self, mock_create):
         mock_session = MagicMock()
         mock_resp = MagicMock()
@@ -1193,40 +1249,40 @@ class TestUpdateWebContent(unittest.TestCase):
         mock_session.post.return_value = mock_resp
         mock_create.return_value = mock_session
 
-        from exceptions import ServiceConnectionError
+        from ai_intervention_agent.exceptions import ServiceConnectionError
 
         with self.assertRaises(ServiceConnectionError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_timeout_exception(self, mock_create):
         mock_create.return_value = self._setup_session(
             side_effect=httpx.TimeoutException("timed out")
         )
 
-        from exceptions import ServiceTimeoutError
+        from ai_intervention_agent.exceptions import ServiceTimeoutError
 
         with self.assertRaises(ServiceTimeoutError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_connection_error(self, mock_create):
         mock_create.return_value = self._setup_session(
             side_effect=httpx.ConnectError("refused")
         )
 
-        from exceptions import ServiceUnavailableError
+        from ai_intervention_agent.exceptions import ServiceUnavailableError
 
         with self.assertRaises(ServiceUnavailableError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_request_exception(self, mock_create):
         mock_create.return_value = self._setup_session(
             side_effect=httpx.HTTPError("generic")
         )
 
-        from exceptions import ServiceConnectionError
+        from ai_intervention_agent.exceptions import ServiceConnectionError
 
         with self.assertRaises(ServiceConnectionError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
@@ -1256,8 +1312,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
         mock_client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         return mock_client
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_task_completed(self, mock_get_client, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
 
@@ -1277,8 +1333,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
         result = asyncio.run(server.wait_for_task_completion("t1", timeout=5))
         self.assertEqual(result["user_input"], "done")
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_task_404_returns_resubmit(self, mock_get_client, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
 
@@ -1291,8 +1347,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
         result = asyncio.run(server.wait_for_task_completion("t-gone", timeout=5))
         self.assertIn("text", result)
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_timeout_returns_resubmit(self, mock_get_client, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
 
@@ -1306,12 +1362,12 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
         mock_get_client.return_value = self._mock_async_client(
             get_return_value=mock_resp
         )
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(server.wait_for_task_completion("t-slow", timeout=2))
             self.assertIn("text", result)
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_request_exception_continues(self, mock_get_client, mock_get_cfg):
         from unittest.mock import AsyncMock
 
@@ -1341,8 +1397,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
         result = asyncio.run(server.wait_for_task_completion("t-flaky", timeout=10))
         self.assertEqual(result.get("user_input"), "recovered")
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_non_200_continues(self, mock_get_client, mock_get_cfg):
         from unittest.mock import AsyncMock
 
@@ -1373,8 +1429,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
         result = asyncio.run(server.wait_for_task_completion("t-retry", timeout=10))
         self.assertEqual(result.get("user_input"), "ok")
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_invalid_json_continues(self, mock_get_client, mock_get_cfg):
         from unittest.mock import AsyncMock
 
@@ -1402,8 +1458,8 @@ class TestWaitForTaskCompletionExtended(unittest.TestCase):
         result = asyncio.run(server.wait_for_task_completion("t-json", timeout=10))
         self.assertEqual(result.get("user_input"), "ok")
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_non_dict_response_continues(self, mock_get_client, mock_get_cfg):
         from unittest.mock import AsyncMock
 
@@ -1465,8 +1521,8 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
         client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         return client, post_mock
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_timeout_path_calls_close_endpoint(self, mock_get_client, mock_get_cfg):
         """timeout 路径必须 POST /api/tasks/<id>/close 一次。"""
         mock_get_cfg.return_value = (_make_config(), 120)
@@ -1483,7 +1539,7 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
         client, post_mock = self._make_async_client(always_pending)
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(server.wait_for_task_completion("t-orphan", timeout=2))
 
         self.assertIn("text", result, "timeout 仍应返回 resubmit_response")
@@ -1500,8 +1556,8 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
             f"close URL 错误：{called_url}",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_completed_path_does_not_call_close(self, mock_get_client, mock_get_cfg):
         """正常完成路径必须**不**调 close（避免和 complete_task race）。"""
         mock_get_cfg.return_value = (_make_config(), 120)
@@ -1532,8 +1588,8 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
             f"实际调用次数: {post_mock.call_count}",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_404_path_does_not_call_close(self, mock_get_client, mock_get_cfg):
         """404 路径：web_ui 已经把 task 清掉了，再 close 没意义且会 spam log。"""
         mock_get_cfg.return_value = (_make_config(), 120)
@@ -1556,8 +1612,8 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
             f"实际调用次数: {post_mock.call_count}",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_close_endpoint_failure_does_not_propagate(
         self, mock_get_client, mock_get_cfg
     ):
@@ -1583,7 +1639,7 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
         client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(server.wait_for_task_completion("t-down", timeout=2))
 
         self.assertIn(
@@ -1596,11 +1652,15 @@ class TestGhostTaskCleanupOnTimeout(unittest.TestCase):
         """``CancelledError`` 必须 re-raise，不能被 best-effort except 吞掉。"""
         from unittest.mock import AsyncMock
 
-        from server_feedback import _close_orphan_task_best_effort
+        from ai_intervention_agent.server_feedback import _close_orphan_task_best_effort
 
         with (
-            patch("service_manager.get_web_ui_config") as mock_cfg,
-            patch("service_manager.get_async_client") as mock_client_factory,
+            patch(
+                "ai_intervention_agent.service_manager.get_web_ui_config"
+            ) as mock_cfg,
+            patch(
+                "ai_intervention_agent.service_manager.get_async_client"
+            ) as mock_client_factory,
         ):
             mock_cfg.return_value = (_make_config(), 120)
             client = MagicMock()
@@ -1645,8 +1705,8 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
         - 最终返回值是 retry 拿到的 result，不是 ``_make_resubmit_response``。
     """
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_retry_recovers_result_skips_close(self, mock_get_client, mock_get_cfg):
         """SSE 检测到 completed + 首次 fetch 抖动 → retry 成功 → 跳过 close。"""
         from unittest.mock import AsyncMock
@@ -1686,7 +1746,7 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
         client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(server.wait_for_task_completion("t-jitter", timeout=3))
 
         # 1) 最终拿到的是 retry 救回来的 result，不是 resubmit response
@@ -1711,8 +1771,8 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
             f"retry-before-close 必须确保至少 2 次 GET，实际：{call_log['get_count']}",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_retry_still_failing_falls_back_to_close(
         self, mock_get_client, mock_get_cfg
     ):
@@ -1739,7 +1799,7 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
         client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
-        with patch("server_config.BACKEND_MIN", 1):
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
             result = asyncio.run(
                 server.wait_for_task_completion("t-still-pending", timeout=2)
             )
@@ -1752,8 +1812,8 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
             "retry 失败时仍必须走 ghost-task close 路径以兼容 R13·B1",
         )
 
-    @patch("service_manager.get_web_ui_config")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_retry_does_not_fire_when_result_already_present(
         self, mock_get_client, mock_get_cfg
     ):
@@ -1797,7 +1857,7 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
 #  FeedbackServiceContext
 # ═══════════════════════════════════════════════════════════════════════════
 class TestFeedbackServiceContext(unittest.TestCase):
-    @patch("service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
     def test_enter_success(self, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
         ctx = server.FeedbackServiceContext()
@@ -1805,13 +1865,16 @@ class TestFeedbackServiceContext(unittest.TestCase):
         self.assertIs(result, ctx)
         self.assertIsNotNone(ctx.config)
 
-    @patch("service_manager.get_web_ui_config", side_effect=ValueError("bad"))
+    @patch(
+        "ai_intervention_agent.service_manager.get_web_ui_config",
+        side_effect=ValueError("bad"),
+    )
     def test_enter_failure(self, _):
         ctx = server.FeedbackServiceContext()
         with self.assertRaises(ValueError):
             ctx.__enter__()
 
-    @patch("service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
     def test_exit_normal(self, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
         ctx = server.FeedbackServiceContext()
@@ -1819,7 +1882,7 @@ class TestFeedbackServiceContext(unittest.TestCase):
         with patch.object(ctx.service_manager, "cleanup_all"):
             ctx.__exit__(None, None, None)
 
-    @patch("service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
     def test_exit_with_exception(self, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
         ctx = server.FeedbackServiceContext()
@@ -1827,7 +1890,7 @@ class TestFeedbackServiceContext(unittest.TestCase):
         with patch.object(ctx.service_manager, "cleanup_all"):
             ctx.__exit__(RuntimeError, RuntimeError("boom"), None)
 
-    @patch("service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
     def test_exit_with_keyboard_interrupt(self, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
         ctx = server.FeedbackServiceContext()
@@ -1835,7 +1898,7 @@ class TestFeedbackServiceContext(unittest.TestCase):
         with patch.object(ctx.service_manager, "cleanup_all"):
             ctx.__exit__(KeyboardInterrupt, KeyboardInterrupt(), None)
 
-    @patch("service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
     def test_exit_cleanup_error(self, mock_get_cfg):
         mock_get_cfg.return_value = (_make_config(), 120)
         ctx = server.FeedbackServiceContext()
@@ -1851,7 +1914,7 @@ class TestFeedbackServiceContext(unittest.TestCase):
 # ═══════════════════════════════════════════════════════════════════════════
 class TestCleanupServices(unittest.TestCase):
     def test_success(self):
-        with patch("server.ServiceManager") as MockSM:
+        with patch("ai_intervention_agent.server.ServiceManager") as MockSM:
             mock_sm = MagicMock()
             MockSM.return_value = mock_sm
             server.cleanup_services(shutdown_notification_manager=True)
@@ -1860,7 +1923,7 @@ class TestCleanupServices(unittest.TestCase):
             )
 
     def test_exception_suppressed(self):
-        with patch("server.ServiceManager") as MockSM:
+        with patch("ai_intervention_agent.server.ServiceManager") as MockSM:
             mock_sm = MagicMock()
             mock_sm.cleanup_all.side_effect = RuntimeError("fail")
             MockSM.return_value = mock_sm
@@ -1871,24 +1934,24 @@ class TestCleanupServices(unittest.TestCase):
 #  main() — 基本重试循环
 # ═══════════════════════════════════════════════════════════════════════════
 class TestMain(unittest.TestCase):
-    @patch("server.mcp")
-    @patch("server.cleanup_services")
+    @patch("ai_intervention_agent.server.mcp")
+    @patch("ai_intervention_agent.server.cleanup_services")
     def test_normal_exit(self, mock_cleanup, mock_mcp):
         mock_mcp.run.return_value = None
         server.main()
         mock_mcp.run.assert_called_once()
 
-    @patch("server.mcp")
-    @patch("server.cleanup_services")
+    @patch("ai_intervention_agent.server.mcp")
+    @patch("ai_intervention_agent.server.cleanup_services")
     def test_keyboard_interrupt(self, mock_cleanup, mock_mcp):
         mock_mcp.run.side_effect = KeyboardInterrupt
         server.main()
         mock_cleanup.assert_called_once()
 
-    @patch("server.sys.exit")
-    @patch("server.time.sleep")
-    @patch("server.mcp")
-    @patch("server.cleanup_services")
+    @patch("ai_intervention_agent.server.sys.exit")
+    @patch("ai_intervention_agent.server.time.sleep")
+    @patch("ai_intervention_agent.server.mcp")
+    @patch("ai_intervention_agent.server.cleanup_services")
     def test_retry_then_exit(self, mock_cleanup, mock_mcp, mock_sleep, mock_exit):
         mock_mcp.run.side_effect = RuntimeError("crash")
         server.main()
@@ -1912,7 +1975,8 @@ class TestServiceManagerDeep(unittest.TestCase):
         sm = server.ServiceManager()
         sm._cleanup_registered = False
         with patch(
-            "service_manager.signal.signal", side_effect=ValueError("not main thread")
+            "ai_intervention_agent.service_manager.signal.signal",
+            side_effect=ValueError("not main thread"),
         ):
             sm._register_cleanup()
         self.assertTrue(sm._cleanup_registered)
@@ -1924,8 +1988,14 @@ class TestServiceManagerDeep(unittest.TestCase):
         non_main = threading.Thread(target=lambda: None)
         with (
             patch.object(sm, "cleanup_all"),
-            patch("service_manager.threading.current_thread", return_value=non_main),
-            patch("server.threading.main_thread", return_value=threading.main_thread()),
+            patch(
+                "ai_intervention_agent.service_manager.threading.current_thread",
+                return_value=non_main,
+            ),
+            patch(
+                "ai_intervention_agent.server.threading.main_thread",
+                return_value=threading.main_thread(),
+            ),
         ):
             sm._signal_handler(signal.SIGINT, None)
         self.assertFalse(sm._should_exit)
@@ -1986,7 +2056,10 @@ class TestServiceManagerDeep(unittest.TestCase):
                 order.append("raise")
         self.assertEqual(order, ["cleanup", "raise"])
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_terminate_process_outer_exception(self, _):
         """terminate_process 内部 poll 抛出意外异常"""
         sm = server.ServiceManager()
@@ -2000,7 +2073,10 @@ class TestServiceManagerDeep(unittest.TestCase):
         result = sm.terminate_process("error")
         self.assertFalse(result)
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_process_resources_close_exceptions(self, _):
         """stdin/stdout/stderr 的 close() 各自抛出异常不影响整体"""
         sm = server.ServiceManager()
@@ -2013,29 +2089,39 @@ class TestServiceManagerDeep(unittest.TestCase):
         mock_proc.stderr.close.side_effect = OSError("stderr fail")
         sm._cleanup_process_resources("test", {"process": mock_proc})
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_process_resources_outer_exception(self, _):
         """process_info["process"] 访问失败的情况"""
         sm = server.ServiceManager()
         sm._cleanup_process_resources("test", {})
 
-    @patch("server.time.sleep")
+    @patch("ai_intervention_agent.server.time.sleep")
     @patch(
-        "service_manager.is_web_service_running", side_effect=[True, True, True, False]
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        side_effect=[True, True, True, False],
     )
     def test_wait_for_port_release_eventually(self, mock_running, mock_sleep):
         sm = server.ServiceManager()
         sm._wait_for_port_release("127.0.0.1", 8080)
         self.assertTrue(mock_sleep.call_count >= 1)
 
-    @patch("server.time.sleep")
-    @patch("service_manager.is_web_service_running", return_value=True)
+    @patch("ai_intervention_agent.server.time.sleep")
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     def test_wait_for_port_release_timeout(self, mock_running, mock_sleep):
         """端口始终占用超时"""
         sm = server.ServiceManager()
         sm._wait_for_port_release("127.0.0.1", 8080, timeout=0.001)
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_all_with_errors_and_remaining(self, _):
         """cleanup_all: terminate 失败 + 残留进程强制移除"""
         sm = server.ServiceManager()
@@ -2050,10 +2136,13 @@ class TestServiceManagerDeep(unittest.TestCase):
         with patch.object(sm, "terminate_process", return_value=False):
             sm.cleanup_all(shutdown_notification_manager=False)
 
-    @patch("service_manager.NOTIFICATION_AVAILABLE", True)
-    @patch("service_manager._notification_initialized", True)
-    @patch("service_manager._notification_manager_singleton")
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.service_manager._notification_initialized", True)
+    @patch("ai_intervention_agent.service_manager._notification_manager_singleton")
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_all_shutdown_notification_manager(self, _, mock_nm):
         """R25.2: cleanup_all 走「已加载过通知系统」路径时仍然 shutdown 单例。
 
@@ -2066,17 +2155,23 @@ class TestServiceManagerDeep(unittest.TestCase):
         sm.cleanup_all(shutdown_notification_manager=True)
         mock_nm.shutdown.assert_called_once()
 
-    @patch("service_manager.NOTIFICATION_AVAILABLE", True)
-    @patch("service_manager._notification_initialized", True)
-    @patch("service_manager._notification_manager_singleton")
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.service_manager._notification_initialized", True)
+    @patch("ai_intervention_agent.service_manager._notification_manager_singleton")
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_all_shutdown_notification_manager_failure(self, _, mock_nm):
         """R25.2: shutdown 抛错时 cleanup_all 仍然吞掉异常继续走完。"""
         mock_nm.shutdown.side_effect = RuntimeError("shutdown fail")
         sm = server.ServiceManager()
         sm.cleanup_all(shutdown_notification_manager=True)
 
-    @patch("service_manager.is_web_service_running", return_value=False)
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=False,
+    )
     def test_cleanup_all_terminate_exception(self, _):
         """cleanup_all: terminate_process 抛出异常"""
         sm = server.ServiceManager()
@@ -2139,7 +2234,7 @@ class TestGetAsyncClient(unittest.TestCase):
 #  cleanup_services — httpx 客户端关闭
 # ═══════════════════════════════════════════════════════════════════════════
 class TestCleanupServicesHttpx(unittest.TestCase):
-    @patch("service_manager.ServiceManager")
+    @patch("ai_intervention_agent.service_manager.ServiceManager")
     def test_closes_sync_client(self, mock_sm_cls):
         mock_sm_cls.return_value.cleanup_all.return_value = None
         mock_client = MagicMock()
@@ -2153,7 +2248,7 @@ class TestCleanupServicesHttpx(unittest.TestCase):
         self.assertIsNone(service_manager._sync_client)
         self.assertIsNone(service_manager._async_client)
 
-    @patch("service_manager.ServiceManager")
+    @patch("ai_intervention_agent.service_manager.ServiceManager")
     def test_close_exception_swallowed(self, mock_sm_cls):
         mock_sm_cls.return_value.cleanup_all.return_value = None
         mock_client = MagicMock()
@@ -2170,7 +2265,10 @@ class TestCleanupServicesHttpx(unittest.TestCase):
 #  is_web_service_running — 外层异常
 # ═══════════════════════════════════════════════════════════════════════════
 class TestIsWebServiceRunningDeep(unittest.TestCase):
-    @patch("service_manager.socket.getaddrinfo", side_effect=RuntimeError("unexpected"))
+    @patch(
+        "ai_intervention_agent.service_manager.socket.getaddrinfo",
+        side_effect=RuntimeError("unexpected"),
+    )
     def test_unexpected_exception_returns_false(self, _):
         self.assertFalse(server.is_web_service_running("localhost", 8080))
 
@@ -2179,8 +2277,11 @@ class TestIsWebServiceRunningDeep(unittest.TestCase):
 #  health_check_service — 非 RequestException 的异常
 # ═══════════════════════════════════════════════════════════════════════════
 class TestHealthCheckServiceDeep(unittest.TestCase):
-    @patch("service_manager.create_http_session")
-    @patch("service_manager.is_web_service_running", return_value=True)
+    @patch("ai_intervention_agent.service_manager.create_http_session")
+    @patch(
+        "ai_intervention_agent.service_manager.is_web_service_running",
+        return_value=True,
+    )
     def test_unexpected_exception(self, _, mock_session_fn):
         mock_session = MagicMock()
         mock_session.get.side_effect = RuntimeError("unexpected")
@@ -2192,7 +2293,7 @@ class TestHealthCheckServiceDeep(unittest.TestCase):
 #  update_web_content — 补充分支
 # ═══════════════════════════════════════════════════════════════════════════
 class TestUpdateWebContentDeep(unittest.TestCase):
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_400_with_non_dict_json(self, mock_create):
         """400 响应 JSON 不是 dict"""
         mock_session = MagicMock()
@@ -2207,7 +2308,7 @@ class TestUpdateWebContentDeep(unittest.TestCase):
         with self.assertRaises(ValidationError):
             server.update_web_content("hello", None, "t1", 120, _make_config())
 
-    @patch("service_manager.create_http_session")
+    @patch("ai_intervention_agent.service_manager.create_http_session")
     def test_unexpected_exception(self, mock_create):
         """非网络/已知异常"""
         mock_session = MagicMock()
@@ -2230,7 +2331,8 @@ class TestStartWebService(unittest.TestCase):
         # subprocess 错误路径"的测试因端口冲突提前 fail-fast 而误报。
         # 专门测 _is_port_available 行为的子测自己 stop() 这层 mock。
         self._port_patcher = patch(
-            "service_manager._is_port_available", return_value=True
+            "ai_intervention_agent.service_manager._is_port_available",
+            return_value=True,
         )
         self._port_patcher.start()
         self.addCleanup(self._port_patcher.stop)
@@ -2238,16 +2340,20 @@ class TestStartWebService(unittest.TestCase):
     def tearDown(self):
         server.ServiceManager._instance = None
 
-    @patch("service_manager.health_check_service", return_value=True)
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=True
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_already_running_via_health_check(self, mock_hc):
         """服务已在运行，直接返回"""
         cfg = _make_config()
         script_dir = _SERVER_DIR
         server.start_web_service(cfg, script_dir)
 
-    @patch("service_manager.health_check_service", return_value=False)
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_already_running_via_process_manager(self, mock_hc):
         """ServiceManager 中进程还在运行"""
         sm = server.ServiceManager()
@@ -2261,17 +2367,19 @@ class TestStartWebService(unittest.TestCase):
         script_dir = _SERVER_DIR
         server.start_web_service(cfg, script_dir)
 
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
-    @patch("service_manager.health_check_service", return_value=False)
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
     def test_web_ui_path_not_found(self, mock_hc):
         cfg = _make_config()
         with self.assertRaises(FileNotFoundError):
             server.start_web_service(cfg, Path("/nonexistent/dir"))
 
-    @patch("server.time.sleep")
-    @patch("service_manager.health_check_service")
-    @patch("service_manager.subprocess.Popen")
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server.time.sleep")
+    @patch("ai_intervention_agent.service_manager.health_check_service")
+    @patch("ai_intervention_agent.service_manager.subprocess.Popen")
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_success_start(self, mock_popen, mock_hc, mock_sleep):
         mock_proc = MagicMock()
         mock_proc.pid = 1000
@@ -2283,32 +2391,40 @@ class TestStartWebService(unittest.TestCase):
         server.start_web_service(cfg, script_dir)
         mock_popen.assert_called_once()
 
-    @patch("service_manager.health_check_service", return_value=False)
     @patch(
-        "service_manager.subprocess.Popen",
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
+    @patch(
+        "ai_intervention_agent.service_manager.subprocess.Popen",
         side_effect=FileNotFoundError("python not found"),
     )
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_popen_file_not_found(self, mock_popen, mock_hc):
         cfg = _make_config()
         script_dir = _SERVER_DIR
         with self.assertRaises(ServiceUnavailableError):
             server.start_web_service(cfg, script_dir)
 
-    @patch("service_manager.health_check_service", return_value=False)
     @patch(
-        "service_manager.subprocess.Popen", side_effect=PermissionError("access denied")
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
     )
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager.subprocess.Popen",
+        side_effect=PermissionError("access denied"),
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_popen_permission_error(self, mock_popen, mock_hc):
         cfg = _make_config()
         script_dir = _SERVER_DIR
         with self.assertRaises(ServiceUnavailableError):
             server.start_web_service(cfg, script_dir)
 
-    @patch("service_manager.health_check_service")
-    @patch("service_manager.subprocess.Popen", side_effect=OSError("disk full"))
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.service_manager.health_check_service")
+    @patch(
+        "ai_intervention_agent.service_manager.subprocess.Popen",
+        side_effect=OSError("disk full"),
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_popen_generic_error_service_already_running(self, mock_popen, mock_hc):
         """Popen 失败但 health_check 显示服务已在运行"""
         mock_hc.side_effect = [False, True]
@@ -2316,19 +2432,26 @@ class TestStartWebService(unittest.TestCase):
         script_dir = _SERVER_DIR
         server.start_web_service(cfg, script_dir)
 
-    @patch("service_manager.health_check_service", return_value=False)
-    @patch("service_manager.subprocess.Popen", side_effect=OSError("disk full"))
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
+    @patch(
+        "ai_intervention_agent.service_manager.subprocess.Popen",
+        side_effect=OSError("disk full"),
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_popen_generic_error_service_not_running(self, mock_popen, mock_hc):
         cfg = _make_config()
         script_dir = _SERVER_DIR
         with self.assertRaises(ServiceUnavailableError):
             server.start_web_service(cfg, script_dir)
 
-    @patch("server.time.sleep")
-    @patch("service_manager.health_check_service", return_value=False)
-    @patch("service_manager.subprocess.Popen")
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server.time.sleep")
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
+    @patch("ai_intervention_agent.service_manager.subprocess.Popen")
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_health_check_timeout_raises(self, mock_popen, mock_hc, mock_sleep):
         """健康检查始终失败，触发超时清理"""
         mock_proc = MagicMock()
@@ -2340,10 +2463,12 @@ class TestStartWebService(unittest.TestCase):
         with self.assertRaises(ServiceTimeoutError):
             server.start_web_service(cfg, script_dir)
 
-    @patch("server.time.sleep")
-    @patch("service_manager.health_check_service", return_value=False)
-    @patch("service_manager.subprocess.Popen")
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server.time.sleep")
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
+    @patch("ai_intervention_agent.service_manager.subprocess.Popen")
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_health_check_timeout_cleanup_failure(
         self, mock_popen, mock_hc, mock_sleep
     ):
@@ -2357,9 +2482,9 @@ class TestStartWebService(unittest.TestCase):
         with self.assertRaises(ServiceTimeoutError):
             server.start_web_service(cfg, script_dir)
 
-    @patch("server.time.sleep")
-    @patch("service_manager.health_check_service")
-    @patch("service_manager.subprocess.Popen")
+    @patch("ai_intervention_agent.server.time.sleep")
+    @patch("ai_intervention_agent.service_manager.health_check_service")
+    @patch("ai_intervention_agent.service_manager.subprocess.Popen")
     def test_notification_init_success(self, mock_popen, mock_hc, mock_sleep):
         """R25.2: 懒加载下，``start_web_service`` 通过 ``_ensure_notification_system_loaded``
         拿到 ``(nm_singleton, init_fn)`` 两个引用并调用 ``init_fn(nm_singleton.get_config())``。
@@ -2381,18 +2506,18 @@ class TestStartWebService(unittest.TestCase):
         cfg = _make_config()
         script_dir = _SERVER_DIR
         with (
-            patch("service_manager.NOTIFICATION_AVAILABLE", True),
+            patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", True),
             patch(
-                "service_manager._ensure_notification_system_loaded",
+                "ai_intervention_agent.service_manager._ensure_notification_system_loaded",
                 return_value=(mock_nm, mock_init_ns),
             ),
         ):
             server.start_web_service(cfg, script_dir)
         mock_init_ns.assert_called_once_with({})
 
-    @patch("server.time.sleep")
-    @patch("service_manager.health_check_service")
-    @patch("service_manager.subprocess.Popen")
+    @patch("ai_intervention_agent.server.time.sleep")
+    @patch("ai_intervention_agent.service_manager.health_check_service")
+    @patch("ai_intervention_agent.service_manager.subprocess.Popen")
     def test_notification_init_failure(self, mock_popen, mock_hc, mock_sleep):
         """R25.2: 通知系统初始化失败不影响服务启动（懒加载版）。
 
@@ -2411,9 +2536,9 @@ class TestStartWebService(unittest.TestCase):
         cfg = _make_config()
         script_dir = _SERVER_DIR
         with (
-            patch("service_manager.NOTIFICATION_AVAILABLE", True),
+            patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", True),
             patch(
-                "service_manager._ensure_notification_system_loaded",
+                "ai_intervention_agent.service_manager._ensure_notification_system_loaded",
                 return_value=(mock_nm, mock_init_ns),
             ),
         ):
@@ -2435,7 +2560,7 @@ class TestIsPortAvailable(unittest.TestCase):
 
     def test_returns_true_for_unbound_high_port(self):
         """随机高端口（OS 分配）必然可绑定。"""
-        from service_manager import _is_port_available
+        from ai_intervention_agent.service_manager import _is_port_available
 
         # bind 到 0 让 OS 选一个可用端口，关闭后立刻测试该端口仍可
         # bind（SO_REUSEADDR 让 TIME_WAIT 不算占用）。
@@ -2448,7 +2573,7 @@ class TestIsPortAvailable(unittest.TestCase):
 
     def test_returns_false_when_port_actually_bound(self):
         """端口被另一个 socket 持有时必须返回 False。"""
-        from service_manager import _is_port_available
+        from ai_intervention_agent.service_manager import _is_port_available
 
         # 故意持有一个端口模拟"另一个进程占着"
         holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -2471,7 +2596,7 @@ class TestIsPortAvailable(unittest.TestCase):
         """
         import os
 
-        from service_manager import _is_port_available
+        from ai_intervention_agent.service_manager import _is_port_available
 
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             self.skipTest("以 root 跑测试时低端口可绑定，无法验证 EACCES 路径")
@@ -2483,7 +2608,7 @@ class TestIsPortAvailable(unittest.TestCase):
 
     def test_returns_false_for_invalid_host(self):
         """无效 host 字面量（如不存在的网卡 IP）应返回 False 而非抛异常。"""
-        from service_manager import _is_port_available
+        from ai_intervention_agent.service_manager import _is_port_available
 
         # 192.0.2.0/24 是 RFC 5737 TEST-NET-1 文档保留段，本机一般
         # 不会有这个地址→bind 抛 EADDRNOTAVAIL，函数应 swallow。
@@ -2508,10 +2633,14 @@ class TestStartWebServicePortInUse(unittest.TestCase):
     def tearDown(self):
         server.ServiceManager._instance = None
 
-    @patch("service_manager._is_port_available", return_value=False)
-    @patch("service_manager.subprocess.Popen")
-    @patch("service_manager.health_check_service", return_value=False)
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager._is_port_available", return_value=False
+    )
+    @patch("ai_intervention_agent.service_manager.subprocess.Popen")
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_port_in_use_raises_fast_without_popen(
         self, mock_hc, mock_popen, mock_port
     ):
@@ -2530,9 +2659,13 @@ class TestStartWebServicePortInUse(unittest.TestCase):
         # fail-fast 契约：subprocess.Popen 一次都不该被调
         mock_popen.assert_not_called()
 
-    @patch("service_manager._is_port_available", return_value=False)
-    @patch("service_manager.health_check_service", return_value=False)
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager._is_port_available", return_value=False
+    )
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=False
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_port_in_use_message_mentions_host_and_port(self, mock_hc, mock_port):
         """异常消息应包含具体 host:port，方便用户定位。"""
         cfg = _make_config(host="127.0.0.1", port=18080)
@@ -2544,9 +2677,13 @@ class TestStartWebServicePortInUse(unittest.TestCase):
         self.assertIn("127.0.0.1", msg, f"异常消息应含 host：{msg}")
         self.assertIn("18080", msg, f"异常消息应含 port：{msg}")
 
-    @patch("service_manager._is_port_available", return_value=True)
-    @patch("service_manager.health_check_service", return_value=True)
-    @patch("service_manager.NOTIFICATION_AVAILABLE", False)
+    @patch(
+        "ai_intervention_agent.service_manager._is_port_available", return_value=True
+    )
+    @patch(
+        "ai_intervention_agent.service_manager.health_check_service", return_value=True
+    )
+    @patch("ai_intervention_agent.service_manager.NOTIFICATION_AVAILABLE", False)
     def test_health_check_pass_skips_port_check(self, mock_hc, mock_port):
         """health_check 通过（说明是我们自己的服务）→ pre-flight 不应执行。
 
@@ -2565,7 +2702,7 @@ class TestStartWebServicePortInUse(unittest.TestCase):
 #  ensure_web_ui_running (async)
 # ═══════════════════════════════════════════════════════════════════════════
 class TestEnsureWebUIRunningExtended(unittest.TestCase):
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_already_running(self, mock_get_client):
         from unittest.mock import AsyncMock
 
@@ -2578,7 +2715,7 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
 
         asyncio.run(server.ensure_web_ui_running(_make_config()))
 
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_uses_provided_async_client(self, mock_get_client):
         """调用方已持有 AsyncClient 时，健康检查不应重复 lookup singleton。"""
         from unittest.mock import AsyncMock
@@ -2594,8 +2731,8 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
         mock_get_client.assert_not_called()
         mock_client.get.assert_awaited_once()
 
-    @patch("service_manager.start_web_service")
-    @patch("service_manager.get_async_client")
+    @patch("ai_intervention_agent.service_manager.start_web_service")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
     def test_health_fail_starts_service(self, mock_get_client, mock_start):
         from unittest.mock import AsyncMock
 
@@ -2606,7 +2743,10 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
         async def _noop_sleep(_: float) -> None:
             pass
 
-        with patch("service_manager.asyncio.sleep", side_effect=_noop_sleep):
+        with patch(
+            "ai_intervention_agent.service_manager.asyncio.sleep",
+            side_effect=_noop_sleep,
+        ):
             asyncio.run(server.ensure_web_ui_running(_make_config()))
         mock_start.assert_called_once()
 
@@ -2615,10 +2755,13 @@ class TestEnsureWebUIRunningExtended(unittest.TestCase):
 #  launch_feedback_ui
 # ═══════════════════════════════════════════════════════════════════════════
 class TestLaunchFeedbackUIExtended(unittest.TestCase):
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-1")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-1",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_success_flow(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
 
@@ -2632,14 +2775,20 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
             None, {"user_input": "done", "selected_options": []}
         )
 
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "done")
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-2")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-2",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_api_non_200_dict_json(self, mock_tid, mock_cfg, mock_arun):
         """API 返回非 200 + dict JSON"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2653,14 +2802,20 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-3")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-3",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_api_non_200_non_dict_json(self, mock_tid, mock_cfg, mock_arun):
         """API 返回非 200 + 非 dict JSON"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2674,14 +2829,20 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-4")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-4",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_api_non_200_invalid_json(self, mock_tid, mock_cfg, mock_arun):
         """API 返回非 200 + 无效 JSON"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2695,31 +2856,43 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-5")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-5",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_api_connection_error(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
         mock_arun.side_effect = _mock_arun_closing(None)
 
         mock_client = MagicMock()
         mock_client.post.side_effect = httpx.ConnectError("refused")
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-6")
-    @patch("server_feedback.notification_manager")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-6",
+    )
+    @patch("ai_intervention_agent.server_feedback.notification_manager")
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", True)
     def test_notification_send_success(self, mock_nm, mock_tid, mock_cfg, mock_arun):
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         mock_cfg.return_value = (_make_config(), 120)
         mock_nm.send_notification.return_value = "event-1"
@@ -2732,7 +2905,10 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "ok")
         mock_nm.send_notification.assert_called_once()
@@ -2745,11 +2921,14 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         self.assertIn(NotificationType.SOUND, types)
         self.assertIn(NotificationType.BARK, types)
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-7")
-    @patch("server_feedback.notification_manager")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-7",
+    )
+    @patch("ai_intervention_agent.server_feedback.notification_manager")
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", True)
     def test_notification_send_failure(self, mock_nm, mock_tid, mock_cfg, mock_arun):
         """通知发送失败不影响任务创建"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2762,14 +2941,20 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "ok")
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-8")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-8",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_task_error_result(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
 
@@ -2780,7 +2965,10 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
@@ -2788,9 +2976,12 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         with self.assertRaises(ValidationError):
             server.launch_feedback_ui(123)  # ty: ignore[invalid-argument-type]
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-9")
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-9",
+    )
     def test_file_not_found(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
         mock_arun.side_effect = _mock_arun_closing(
@@ -2799,19 +2990,25 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
         with self.assertRaises(ServiceUnavailableError):
             server.launch_feedback_ui("hello")
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-10")
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-10",
+    )
     def test_generic_exception(self, mock_tid, mock_cfg, mock_arun):
         mock_cfg.return_value = (_make_config(), 120)
         mock_arun.side_effect = _mock_arun_closing(RuntimeError("unexpected"))
         with self.assertRaises(ServiceUnavailableError):
             server.launch_feedback_ui("hello")
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-11")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-11",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_timeout_ensures_minimum(self, mock_tid, mock_cfg, mock_arun):
         """timeout 小于 300 时会被提升到 300"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2823,14 +3020,20 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello", timeout=10)
         self.assertEqual(result["user_input"], "ok")
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-12")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-12",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_api_non_200_invalid_json_no_text(self, mock_tid, mock_cfg, mock_arun):
         """API 返回非 200 + 无效 JSON + response.text 读取失败"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2844,15 +3047,21 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertIn("error", result)
 
-    @patch("server_feedback.asyncio.run")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="test-task-13")
-    @patch("server_feedback.notification_manager")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.server_feedback.asyncio.run")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="test-task-13",
+    )
+    @patch("ai_intervention_agent.server_feedback.notification_manager")
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", True)
     def test_notification_send_returns_none(
         self, mock_nm, mock_tid, mock_cfg, mock_arun
     ):
@@ -2868,7 +3077,10 @@ class TestLaunchFeedbackUIExtended(unittest.TestCase):
 
         mock_client = MagicMock()
         mock_client.post.return_value = mock_resp
-        with patch("service_manager.get_sync_client", return_value=mock_client):
+        with patch(
+            "ai_intervention_agent.service_manager.get_sync_client",
+            return_value=mock_client,
+        ):
             result = server.launch_feedback_ui("hello")
         self.assertEqual(result["user_input"], "ok")
 
@@ -2893,13 +3105,19 @@ class TestInteractiveFeedback(unittest.TestCase):
             mock_client.post = AsyncMock(side_effect=side_effect)
         else:
             mock_client.post = AsyncMock(return_value=return_value)
-        return patch("service_manager.get_async_client", return_value=mock_client)
+        return patch(
+            "ai_intervention_agent.service_manager.get_async_client",
+            return_value=mock_client,
+        )
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-1")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-1",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_success_structured_response(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -2918,11 +3136,14 @@ class TestInteractiveFeedback(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertTrue(any(isinstance(c, TextContent) for c in result))
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-reuse")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-reuse",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_reuses_async_client_for_health_check_and_task_post(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -2939,7 +3160,10 @@ class TestInteractiveFeedback(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.post = AsyncMock(return_value=mock_resp)
 
-        with patch("service_manager.get_async_client", return_value=mock_client) as m:
+        with patch(
+            "ai_intervention_agent.service_manager.get_async_client",
+            return_value=mock_client,
+        ) as m:
             result = self._run("test prompt")
 
         self.assertIsInstance(result, list)
@@ -2948,11 +3172,14 @@ class TestInteractiveFeedback(unittest.TestCase):
         self.assertIs(mock_ensure.call_args.kwargs.get("client"), mock_client)
         mock_client.post.assert_awaited_once()
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-2")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-2",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_success_text_only_result(self, mock_tid, mock_cfg, mock_ensure, mock_wait):
         """wait_for_task_completion 返回 {"text": "..."} 降级格式"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2969,11 +3196,14 @@ class TestInteractiveFeedback(unittest.TestCase):
         self.assertIsInstance(result[0], TextContent)
         self.assertIn("请重新调用工具", result[0].text)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-3")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-3",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_success_legacy_format(self, mock_tid, mock_cfg, mock_ensure, mock_wait):
         """旧格式：interactive_feedback 字段"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -2988,11 +3218,14 @@ class TestInteractiveFeedback(unittest.TestCase):
         self.assertIsInstance(result[0], TextContent)
         self.assertIn("old response", result[0].text)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-4")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-4",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_success_fallback_dict(self, mock_tid, mock_cfg, mock_ensure, mock_wait):
         """未知 dict 格式的兜底"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -3006,11 +3239,14 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result[0], TextContent)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-5")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-5",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_success_string_result(self, mock_tid, mock_cfg, mock_ensure, mock_wait):
         """非 dict 字符串结果"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -3024,10 +3260,13 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result[0], TextContent)
 
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-6")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-6",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_add_task_non_200(self, mock_tid, mock_cfg, mock_ensure):
         """添加任务 API 返回非 200"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -3042,10 +3281,13 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-7")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-7",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_add_task_non_200_invalid_json_with_text(
         self, mock_tid, mock_cfg, mock_ensure
     ):
@@ -3062,10 +3304,13 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-8")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-8",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_add_task_connection_error(self, mock_tid, mock_cfg, mock_ensure):
         mock_cfg.return_value = (_make_config(), 120)
         mock_ensure.return_value = None
@@ -3074,17 +3319,20 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-9")
-    @patch("server_feedback.notification_manager")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-9",
+    )
+    @patch("ai_intervention_agent.server_feedback.notification_manager")
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", True)
     def test_notification_available_path(
         self, mock_nm, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
         """NOTIFICATION_AVAILABLE=True 时走通知分支"""
-        from notification_manager import NotificationType
+        from ai_intervention_agent.notification_manager import NotificationType
 
         mock_cfg.return_value = (_make_config(), 120)
         mock_ensure.return_value = None
@@ -3107,12 +3355,15 @@ class TestInteractiveFeedback(unittest.TestCase):
         self.assertIn(NotificationType.SOUND, types)
         self.assertIn(NotificationType.BARK, types)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-10")
-    @patch("server_feedback.notification_manager")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-10",
+    )
+    @patch("ai_intervention_agent.server_feedback.notification_manager")
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", True)
     def test_notification_failure(
         self, mock_nm, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -3129,11 +3380,14 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-11")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-11",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_task_error_returns_resubmit(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -3148,18 +3402,27 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("service_manager.ensure_web_ui_running", side_effect=RuntimeError("crash"))
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-12")
+    @patch(
+        "ai_intervention_agent.service_manager.ensure_web_ui_running",
+        side_effect=RuntimeError("crash"),
+    )
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-12",
+    )
     def test_generic_exception_returns_resubmit(self, mock_tid, mock_cfg, mock_ensure):
         mock_cfg.return_value = (_make_config(), 120)
         result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-13")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-13",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_add_task_non_200_non_dict_json(self, mock_tid, mock_cfg, mock_ensure):
         """添加任务 API 返回非 200 + 非 dict JSON"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -3174,11 +3437,14 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-14")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-14",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_success_with_images(self, mock_tid, mock_cfg, mock_ensure, mock_wait):
         """含图片的结构化响应"""
         mock_cfg.return_value = (_make_config(), 120)
@@ -3196,12 +3462,15 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-15")
-    @patch("server_feedback.notification_manager")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", True)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-15",
+    )
+    @patch("ai_intervention_agent.server_feedback.notification_manager")
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", True)
     def test_notification_send_returns_none(
         self, mock_nm, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -3219,11 +3488,14 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-16")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-16",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_long_message_truncated_for_notification(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -3239,10 +3511,13 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("A" * 200)
         self.assertIsInstance(result, list)
 
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-17")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-17",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_add_task_non_200_invalid_json_text_fail(
         self, mock_tid, mock_cfg, mock_ensure
     ):
@@ -3259,11 +3534,14 @@ class TestInteractiveFeedback(unittest.TestCase):
             result = self._run("test prompt")
         self.assertIsInstance(result, list)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="if-task-18")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="if-task-18",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_fallback_dict_with_text_field(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -3286,8 +3564,11 @@ class TestInteractiveFeedback(unittest.TestCase):
 #  FeedbackServiceContext.launch_feedback_ui_method (line 1617)
 # ═══════════════════════════════════════════════════════════════════════════
 class TestFeedbackServiceContextMethod(unittest.TestCase):
-    @patch("server_feedback.launch_feedback_ui", return_value={"user_input": "ok"})
-    @patch("service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_feedback.launch_feedback_ui",
+        return_value={"user_input": "ok"},
+    )
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
     def test_launch_delegates(self, mock_cfg, mock_launch):
         mock_cfg.return_value = (_make_config(), 120)
         ctx = server.FeedbackServiceContext()

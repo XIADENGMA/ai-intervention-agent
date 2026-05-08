@@ -31,14 +31,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import task_queue
+import ai_intervention_agent.task_queue as task_queue
 
 
 class TestWatchedWriteLockBookkeeping(unittest.TestCase):
     """``_watched_write_lock`` 进出会维护 ``_pending_acquisitions``。"""
 
     def test_record_added_inside_critical_section(self) -> None:
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         seen_count: list[int] = []
@@ -48,7 +48,7 @@ class TestWatchedWriteLockBookkeeping(unittest.TestCase):
         self.assertEqual(seen_count, [1])
 
     def test_record_removed_after_exit(self) -> None:
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         before = len(task_queue._pending_acquisitions)
@@ -58,7 +58,7 @@ class TestWatchedWriteLockBookkeeping(unittest.TestCase):
         self.assertEqual(before, after)
 
     def test_record_removed_even_when_critical_section_raises(self) -> None:
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         before = len(task_queue._pending_acquisitions)
@@ -69,7 +69,7 @@ class TestWatchedWriteLockBookkeeping(unittest.TestCase):
         self.assertEqual(before, after)
 
     def test_label_recorded_in_pending(self) -> None:
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         seen_labels: list[str] = []
@@ -155,7 +155,7 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
                     rec["dumped"] = False
 
     def test_scan_dumps_when_critical_section_held_too_long(self) -> None:
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         with patch.object(task_queue.logger, "error") as fake_err:
@@ -173,7 +173,7 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
 
     def test_dump_only_fires_once_per_record(self) -> None:
         """同一个 record 不会被反复 dump（``dumped`` flag 生效）。"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         with patch.object(task_queue.logger, "error") as fake_err:
@@ -191,7 +191,7 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
 
     def test_fast_critical_section_does_not_dump(self) -> None:
         """正常路径（< 阈值）扫描不应触发 dump。"""
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         with patch.object(task_queue.logger, "error") as fake_err:
@@ -212,7 +212,7 @@ class TestWatchdogDumpsOnSlowAcquire(unittest.TestCase):
         通过 ``finally`` 移除，再开 patch 扫一次」——本测的关注点就只是
         「临界区退出后不再 dump」，daemon 在临界区内的并发行为不在考察范围。
         """
-        from config_manager import ReadWriteLock
+        from ai_intervention_agent.config_manager import ReadWriteLock
 
         rwlock = ReadWriteLock()
         with task_queue._watched_write_lock(rwlock, "exited-test"):

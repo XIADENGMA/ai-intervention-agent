@@ -47,7 +47,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from web_ui_routes.task import (
+from ai_intervention_agent.web_ui_routes.task import (
     _SSE_DISCONNECT_SENTINEL,
     _on_task_status_change,
     _SSEBus,
@@ -343,8 +343,11 @@ class TestOnTaskStatusChangeEmbedsStats(unittest.TestCase):
             "total": 9,
             "max": 100,
         }
-        with patch("web_ui_routes.task.get_task_queue", return_value=mock_queue):
-            with patch("web_ui_routes.task._sse_bus") as mock_bus:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+            return_value=mock_queue,
+        ):
+            with patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as mock_bus:
                 _on_task_status_change("t1", "pending", "active")
 
         mock_bus.emit.assert_called_once()
@@ -363,8 +366,11 @@ class TestOnTaskStatusChangeEmbedsStats(unittest.TestCase):
         # 让旧 client 的 fetch fallback 路径生效，避免「空 stats → 显示 0」脏读
         mock_queue = MagicMock()
         mock_queue.get_task_count.side_effect = RuntimeError("boom")
-        with patch("web_ui_routes.task.get_task_queue", return_value=mock_queue):
-            with patch("web_ui_routes.task._sse_bus") as mock_bus:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue",
+            return_value=mock_queue,
+        ):
+            with patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as mock_bus:
                 _on_task_status_change("t1", None, "pending")
 
         call_args = mock_bus.emit.call_args
@@ -380,8 +386,10 @@ class TestOnTaskStatusChangeEmbedsStats(unittest.TestCase):
 
     def test_stats_omitted_when_queue_unavailable(self) -> None:
         # get_task_queue 返回 None 时（极早期，队列还没起来），不应 raise
-        with patch("web_ui_routes.task.get_task_queue", return_value=None):
-            with patch("web_ui_routes.task._sse_bus") as mock_bus:
+        with patch(
+            "ai_intervention_agent.web_ui_routes.task.get_task_queue", return_value=None
+        ):
+            with patch("ai_intervention_agent.web_ui_routes.task._sse_bus") as mock_bus:
                 _on_task_status_change("t1", None, "pending")
 
         call_args = mock_bus.emit.call_args
@@ -396,7 +404,9 @@ class TestSSEGeneratorConsumesPreSerialized(unittest.TestCase):
     用 Flask 的 test_client 起一个最小 app，emit 后立即 GET ``/api/events``。
     """
 
-    SCRIPT_PATH = REPO_ROOT / "web_ui_routes" / "task.py"
+    SCRIPT_PATH = (
+        REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "task.py"
+    )
 
     def test_generator_uses_serialized_field_in_yield(self) -> None:
         """源码不变量：``yield`` 那一行必须先取 ``event.get('_serialized')``。
@@ -509,7 +519,9 @@ class TestExtensionTsConsumesStats(unittest.TestCase):
 class TestSourceInvariants(unittest.TestCase):
     """``_SSEBus.emit`` 源码层不变量：锁外 put + 预序列化必须留存。"""
 
-    SCRIPT_PATH = REPO_ROOT / "web_ui_routes" / "task.py"
+    SCRIPT_PATH = (
+        REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "task.py"
+    )
 
     def setUp(self) -> None:
         self.src = self.SCRIPT_PATH.read_text(encoding="utf-8")

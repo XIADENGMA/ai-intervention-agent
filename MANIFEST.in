@@ -1,28 +1,13 @@
+# R76 起本项目使用 hatchling 构建（见 ``pyproject.toml`` 的
+# ``[tool.hatch.build.targets.{wheel,sdist}]``），hatchling 不读 MANIFEST.in。
+# 此文件仅为一些下游打包工具（setuptools fallback、gentoo / nixpkgs 自动检
+# 测脚本等）保留兼容声明：所有源码与资源都在 ``src/ai_intervention_agent/`` 下，
+# 配置模板留在仓库根。
 include README.md
 include LICENSE
-include server.py
-include server_feedback.py
-include service_manager.py
-include web_ui.py
-include config_manager.py
-include config_utils.py
-include enhanced_logging.py
-include file_validator.py
-include notification_manager.py
-include notification_models.py
-include notification_providers.py
-include shared_types.py
-include task_queue.py
-include exceptions.py
-include server_config.py
 include config.toml.default
 include config.jsonc.default
-recursive-include config_modules *.py
-recursive-include web_ui_routes *.py
-recursive-include templates *.html
-recursive-include static *
-recursive-include sounds *
-recursive-include icons *.svg *.ico
+recursive-include src/ai_intervention_agent *.py *.html *.json *.svg *.ico *.css *.js *.woff *.woff2 *.ttf *.png *.gif *.lottie *.wav *.mp3 *.webmanifest
 global-exclude __pycache__
 global-exclude *.py[co]
 global-exclude .DS_Store

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-APP_JS = REPO_ROOT / "static" / "js" / "app.js"
+APP_JS = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "app.js"
 
 
 def _extract_function_body(source: str, function_name: str) -> str:

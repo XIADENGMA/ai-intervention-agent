@@ -30,8 +30,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # 静态资源目录
-STATIC_JS_DIR = PROJECT_ROOT / "static" / "js"
-STATIC_CSS_DIR = PROJECT_ROOT / "static" / "css"
+STATIC_JS_DIR = PROJECT_ROOT / "src" / "ai_intervention_agent" / "static" / "js"
+STATIC_CSS_DIR = PROJECT_ROOT / "src" / "ai_intervention_agent" / "static" / "css"
 
 # 需要跳过的文件模式
 SKIP_PATTERNS = [

@@ -314,7 +314,7 @@ class TestParseAcceptEncoding:
 
     def setup_method(self) -> None:
         # 避免每个 test 都 import；这里 lazy import 保证 `static.py` 没问题
-        from web_ui_routes import static as static_mod
+        from ai_intervention_agent.web_ui_routes import static as static_mod
 
         self.parse = static_mod._parse_accept_encoding
 
@@ -371,7 +371,7 @@ class TestSendWithNegotiation:
     def setup_method(self) -> None:
         from flask import Flask
 
-        from web_ui_routes.static import _send_with_optional_gzip
+        from ai_intervention_agent.web_ui_routes.static import _send_with_optional_gzip
 
         self._send = _send_with_optional_gzip
 
@@ -468,7 +468,7 @@ class TestSendWithFallbackWhenSiblingMissing:
     def setup_method(self) -> None:
         from flask import Flask
 
-        from web_ui_routes.static import _send_with_optional_gzip
+        from ai_intervention_agent.web_ui_routes.static import _send_with_optional_gzip
 
         self._send = _send_with_optional_gzip
         self.tmp = Path(tempfile.mkdtemp(prefix="r21_4_test_"))
@@ -522,7 +522,9 @@ class TestStaticPySourceInvariants:
     """``web_ui_routes/static.py`` 的源文本 invariants ── 防止重构破坏 R21.4 协商。"""
 
     def setup_method(self) -> None:
-        self.text = (REPO_ROOT / "web_ui_routes" / "static.py").read_text()
+        self.text = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "static.py"
+        ).read_text()
 
     def test_brotli_check_present(self) -> None:
         """实现里必须有 brotli 协商分支。"""

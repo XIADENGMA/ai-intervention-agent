@@ -186,7 +186,9 @@ class TestSourceInvariants(unittest.TestCase):
     def test_repo_root_exposed(self) -> None:
         # REPO_ROOT 必须指向项目根（包含 web_ui.py）
         self.assertTrue(
-            (perf_bench.REPO_ROOT / "web_ui.py").exists(),
+            (
+                perf_bench.REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py"
+            ).exists(),
             f"REPO_ROOT={perf_bench.REPO_ROOT} 似乎不是项目根目录",
         )
 

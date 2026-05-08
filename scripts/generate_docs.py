@@ -29,6 +29,12 @@ from typing import Any
 # 项目根目录
 PROJECT_ROOT = Path(__file__).parent.parent
 
+# R76 src/ layout 改造后，源码顶层模块由 ``./*.py`` 迁移到
+# ``src/ai_intervention_agent/*.py``。所有"模块发现 / docstring 解析 /
+# 不变量校验"路径都以 ``PKG_ROOT`` 为根。文档输出目录依旧是
+# ``docs/api`` / ``docs/api.zh-CN``，向后兼容旧链接。
+PKG_ROOT = PROJECT_ROOT / "src" / "ai_intervention_agent"
+
 # 需要文档化的模块
 MODULES_TO_DOCUMENT = [
     "config_manager.py",
@@ -84,14 +90,14 @@ v1.5.x round-8 完成 7 个 docs-debt 模块的 graduation 之后，集合
 
 
 def _enumerate_top_level_python_modules() -> set[str]:
-    """项目根目录下所有 ``*.py`` 文件名（不含子目录、不含 ``__init__.py``）。
+    """``src/ai_intervention_agent/*.py`` 下所有顶层模块文件名（不含子包、不含 ``__init__.py``）。
 
     分类不变量的 LHS。集合语义；顺序不重要。
+    R76 src/ layout 改造之前的 LHS 是 ``PROJECT_ROOT.glob('*.py')``——
+    迁移之后所有源码移入 ``PKG_ROOT``，扫描入口同步切换。
     """
     return {
-        p.name
-        for p in PROJECT_ROOT.glob("*.py")
-        if p.is_file() and p.name != "__init__.py"
+        p.name for p in PKG_ROOT.glob("*.py") if p.is_file() and p.name != "__init__.py"
     }
 
 
@@ -559,7 +565,8 @@ def main() -> int:
     drift: list[Path] = []
 
     for module_file in MODULES_TO_DOCUMENT:
-        filepath = PROJECT_ROOT / module_file
+        # R76：模块源文件迁到 ``src/ai_intervention_agent/``，PKG_ROOT 已指向那里
+        filepath = PKG_ROOT / module_file
         if not filepath.exists():
             print(f"⚠️  跳过不存在的文件: {module_file}")
             continue

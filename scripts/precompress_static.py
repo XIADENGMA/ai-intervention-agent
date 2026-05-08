@@ -91,9 +91,9 @@ except ImportError:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_TARGET_DIRS = (
-    REPO_ROOT / "static" / "css",
-    REPO_ROOT / "static" / "js",
-    REPO_ROOT / "static" / "locales",
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "css",
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js",
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales",
 )
 
 # R20.14-D：阈值改 500 字节，对齐 flask-compress 的 ``COMPRESS_MIN_SIZE``

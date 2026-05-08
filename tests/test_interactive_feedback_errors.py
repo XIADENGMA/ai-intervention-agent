@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastmcp.exceptions import ToolError
 
-import server
-import server_config
-from server_config import WebUIConfig
+import ai_intervention_agent.server as server
+import ai_intervention_agent.server_config as server_config
+from ai_intervention_agent.server_config import WebUIConfig
 
 _interactive_feedback_fn = server.interactive_feedback
 
@@ -46,7 +46,10 @@ def _patch_async_post(*, return_value=None, side_effect=None):
         mock_client.post = AsyncMock(side_effect=side_effect)
     else:
         mock_client.post = AsyncMock(return_value=return_value)
-    return patch("service_manager.get_async_client", return_value=mock_client)
+    return patch(
+        "ai_intervention_agent.service_manager.get_async_client",
+        return_value=mock_client,
+    )
 
 
 class TestInteractiveFeedbackRaisesToolError(unittest.TestCase):
@@ -78,11 +81,14 @@ class TestInteractiveFeedbackResubmitPathPreserved(unittest.TestCase):
     这里的断言会立刻红灯，提醒重新评估。
     """
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="bm1-task-1")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="bm1-task-1",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_http_error_returns_resubmit_text_not_tool_error(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -98,11 +104,14 @@ class TestInteractiveFeedbackResubmitPathPreserved(unittest.TestCase):
         self.assertEqual(result, expected)
         mock_wait.assert_not_called()
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="bm1-task-2")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="bm1-task-2",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_task_error_returns_resubmit_text_not_tool_error(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -119,11 +128,14 @@ class TestInteractiveFeedbackResubmitPathPreserved(unittest.TestCase):
         expected = server_config._make_resubmit_response()
         self.assertEqual(result, expected)
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="bm1-task-3")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="bm1-task-3",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_unexpected_internal_error_returns_resubmit_text(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -146,11 +158,14 @@ class TestInteractiveFeedbackCompatAliases(unittest.TestCase):
     """跨工具兼容：当其它 feedback MCP 的参数（summary / project_directory 等）
     误传过来时，本工具应当正常解析而不是首次调用就失败（TODO #1）。"""
 
-    @patch("server_feedback.wait_for_task_completion")
-    @patch("service_manager.ensure_web_ui_running")
-    @patch("service_manager.get_web_ui_config")
-    @patch("server_config._generate_task_id", return_value="compat-task-1")
-    @patch("server_feedback.NOTIFICATION_AVAILABLE", False)
+    @patch("ai_intervention_agent.server_feedback.wait_for_task_completion")
+    @patch("ai_intervention_agent.service_manager.ensure_web_ui_running")
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch(
+        "ai_intervention_agent.server_config._generate_task_id",
+        return_value="compat-task-1",
+    )
+    @patch("ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False)
     def test_summary_alias_is_accepted_when_message_missing(
         self, mock_tid, mock_cfg, mock_ensure, mock_wait
     ):
@@ -182,13 +197,24 @@ class TestInteractiveFeedbackCompatAliases(unittest.TestCase):
     def test_unknown_compat_args_do_not_raise(self):
         """常见漂移字段不应触发 ToolError（与 TODO #1 报错对照）。"""
         with (
-            patch("server_feedback.wait_for_task_completion") as mock_wait,
-            patch("service_manager.ensure_web_ui_running", return_value=None),
             patch(
-                "service_manager.get_web_ui_config", return_value=(_make_config(), 120)
+                "ai_intervention_agent.server_feedback.wait_for_task_completion"
+            ) as mock_wait,
+            patch(
+                "ai_intervention_agent.service_manager.ensure_web_ui_running",
+                return_value=None,
             ),
-            patch("server_config._generate_task_id", return_value="compat-task-2"),
-            patch("server_feedback.NOTIFICATION_AVAILABLE", False),
+            patch(
+                "ai_intervention_agent.service_manager.get_web_ui_config",
+                return_value=(_make_config(), 120),
+            ),
+            patch(
+                "ai_intervention_agent.server_config._generate_task_id",
+                return_value="compat-task-2",
+            ),
+            patch(
+                "ai_intervention_agent.server_feedback.NOTIFICATION_AVAILABLE", False
+            ),
         ):
             mock_wait.return_value = {
                 "user_input": "ok",

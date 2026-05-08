@@ -36,7 +36,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SECURITY_MODULE = REPO_ROOT / "web_ui_security.py"
+SECURITY_MODULE = REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_security.py"
 
 
 class TestModernSecurityHeaders(unittest.TestCase):

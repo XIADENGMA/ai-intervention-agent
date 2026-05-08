@@ -33,7 +33,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from state_machine import (
+from ai_intervention_agent.state_machine import (
     TRANSITIONS,
     ConnectionStatus,
     ContentStatus,
@@ -133,7 +133,7 @@ class TestValidateTransitionTableErrors(unittest.TestCase):
         bad["connection"] = {
             "this_is_not_a_legal_state": (ConnectionStatus.IDLE,),
         }
-        with patch("state_machine.TRANSITIONS", bad):
+        with patch("ai_intervention_agent.state_machine.TRANSITIONS", bad):
             with self.assertRaises(RuntimeError) as ctx:
                 validate_transition_table()
         self.assertIn("起始态", str(ctx.exception))
@@ -144,7 +144,7 @@ class TestValidateTransitionTableErrors(unittest.TestCase):
         bad["connection"] = {
             ConnectionStatus.IDLE: ("ghost_target",),
         }
-        with patch("state_machine.TRANSITIONS", bad):
+        with patch("ai_intervention_agent.state_machine.TRANSITIONS", bad):
             with self.assertRaises(RuntimeError) as ctx:
                 validate_transition_table()
         self.assertIn("迁移目标", str(ctx.exception))

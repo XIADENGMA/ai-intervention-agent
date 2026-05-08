@@ -34,7 +34,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from web_ui import WebFeedbackUI
+from ai_intervention_agent.web_ui import WebFeedbackUI
 
 
 class TestCspNonceOutsideRequestContext(unittest.TestCase):
@@ -245,10 +245,10 @@ class TestNetworkSecurityConfigLoadFailure(unittest.TestCase):
         """``get_config()`` / ``get_section()`` 抛异常时必须落到默认安全配置
         而不是冒泡——这是 server 启动期 ConfigManager 还没就绪时的常见情况。"""
         with patch(
-            "web_ui_security.get_config",
+            "ai_intervention_agent.web_ui_security.get_config",
             side_effect=RuntimeError("config not initialized"),
         ):
-            from web_ui_security import SecurityMixin
+            from ai_intervention_agent.web_ui_security import SecurityMixin
 
             class _Stub(SecurityMixin):
                 pass

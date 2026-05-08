@@ -52,7 +52,14 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WEB_FILE = REPO_ROOT / "static" / "js" / "settings-manager.js"
+WEB_FILE = (
+    REPO_ROOT
+    / "src"
+    / "ai_intervention_agent"
+    / "static"
+    / "js"
+    / "settings-manager.js"
+)
 VSCODE_FILE = REPO_ROOT / "packages" / "vscode" / "webview-settings-ui.js"
 
 

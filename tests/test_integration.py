@@ -22,7 +22,7 @@ class TestWebFeedbackUICreation(unittest.TestCase):
 
     def test_create_web_ui(self):
         """测试创建 Web UI 实例"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(
             prompt="测试提示",
@@ -36,7 +36,7 @@ class TestWebFeedbackUICreation(unittest.TestCase):
 
     def test_web_ui_with_default_options(self):
         """测试默认选项的 Web UI"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="默认选项测试", port=8998)
 
@@ -49,7 +49,7 @@ class TestWebFeedbackUIFlaskApp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="Flask 测试",
@@ -237,7 +237,7 @@ class TestWebFeedbackUINotificationConfig(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="通知配置测试", task_id="notification-test", port=8996
@@ -358,7 +358,7 @@ class TestWebFeedbackUIImageUpload(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.web_ui = WebFeedbackUI(
             prompt="图片上传测试", task_id="image-upload-test", port=8995
@@ -442,7 +442,7 @@ class TestServerImport(unittest.TestCase):
     def test_import_parse_structured_response(self):
         """测试导入 parse_structured_response"""
         try:
-            from server import parse_structured_response
+            from ai_intervention_agent.server import parse_structured_response
 
             self.assertTrue(callable(parse_structured_response))
         except ImportError:
@@ -451,7 +451,7 @@ class TestServerImport(unittest.TestCase):
     def test_import_validate_input(self):
         """测试导入 validate_input"""
         try:
-            from server import validate_input
+            from ai_intervention_agent.server import validate_input
 
             self.assertTrue(callable(validate_input))
         except ImportError:
@@ -464,7 +464,7 @@ class TestParseStructuredResponse(unittest.TestCase):
     def test_parse_dict_response(self):
         """测试解析字典响应"""
         try:
-            from server import parse_structured_response
+            from ai_intervention_agent.server import parse_structured_response
 
             # 测试标准格式
             response = {
@@ -482,7 +482,7 @@ class TestParseStructuredResponse(unittest.TestCase):
     def test_parse_response_with_images(self):
         """测试带图片的响应"""
         try:
-            from server import parse_structured_response
+            from ai_intervention_agent.server import parse_structured_response
 
             response = {
                 "user_input": "带图片",
@@ -503,7 +503,7 @@ class TestValidateInput(unittest.TestCase):
     def test_validate_normal_input(self):
         """测试正常输入验证"""
         try:
-            from server import validate_input
+            from ai_intervention_agent.server import validate_input
 
             # validate_input 返回元组 (message, options)
             result = validate_input("正常输入", [])
@@ -516,7 +516,7 @@ class TestValidateInput(unittest.TestCase):
     def test_validate_empty_input(self):
         """测试空输入验证"""
         try:
-            from server import validate_input
+            from ai_intervention_agent.server import validate_input
 
             result = validate_input("", [])
 
@@ -535,22 +535,26 @@ class TestConfigIntegration(unittest.TestCase):
 
     def test_config_manager_singleton(self):
         """测试配置管理器单例"""
-        from config_manager import config_manager as cm1
-        from config_manager import config_manager as cm2
+        from ai_intervention_agent.config_manager import config_manager as cm1
+        from ai_intervention_agent.config_manager import config_manager as cm2
 
         self.assertIs(cm1, cm2)
 
     def test_notification_manager_singleton(self):
         """测试通知管理器单例"""
-        from notification_manager import notification_manager as nm1
-        from notification_manager import notification_manager as nm2
+        from ai_intervention_agent.notification_manager import (
+            notification_manager as nm1,
+        )
+        from ai_intervention_agent.notification_manager import (
+            notification_manager as nm2,
+        )
 
         self.assertIs(nm1, nm2)
 
     def test_config_notification_integration(self):
         """测试配置与通知集成"""
-        from config_manager import config_manager
-        from notification_manager import notification_manager
+        from ai_intervention_agent.config_manager import config_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         # 获取配置
         notification_config = config_manager.get_section("notification")
@@ -567,7 +571,7 @@ class TestTaskQueueIntegration(unittest.TestCase):
 
     def test_task_queue_from_web_ui(self):
         """测试从 Web UI 使用任务队列"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="任务队列测试", task_id="queue-test-001", port=8995)
 
@@ -589,7 +593,7 @@ class TestMultiTaskAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """测试类初始化"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         cls.ui = WebFeedbackUI(
             prompt="多任务 API 测试", task_id="api-test-001", port=8993
@@ -619,7 +623,7 @@ class TestMultiTaskAPI(unittest.TestCase):
     def test_tasks_api_includes_active_task(self):
         """测试任务列表包含活动任务"""
         # 先添加一个任务
-        from server import get_task_queue
+        from ai_intervention_agent.server import get_task_queue
 
         task_queue = get_task_queue()
         task_queue.add_task(
@@ -686,7 +690,7 @@ class TestCrossModuleIntegration(unittest.TestCase):
 
     def test_config_notification_sync(self):
         """测试配置与通知同步"""
-        from notification_manager import notification_manager
+        from ai_intervention_agent.notification_manager import notification_manager
 
         # 刷新配置
         notification_manager.refresh_config_from_file(force=True)
@@ -699,7 +703,7 @@ class TestCrossModuleIntegration(unittest.TestCase):
 
     def test_web_ui_task_queue_integration(self):
         """测试 Web UI 与任务队列集成"""
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         ui = WebFeedbackUI(prompt="集成测试", task_id="integration-001", port=8983)
 
@@ -708,7 +712,7 @@ class TestCrossModuleIntegration(unittest.TestCase):
 
     def test_notification_provider_config(self):
         """测试通知提供者配置"""
-        from notification_manager import NotificationConfig
+        from ai_intervention_agent.notification_manager import NotificationConfig
 
         config = NotificationConfig.from_config_file()
 
@@ -720,8 +724,8 @@ class TestModuleIntegration(unittest.TestCase):
 
     def test_notification_manager_with_config(self):
         """测试通知管理器与配置的集成"""
-        from config_manager import get_config
-        from notification_manager import notification_manager
+        from ai_intervention_agent.config_manager import get_config
+        from ai_intervention_agent.notification_manager import notification_manager
 
         # 从配置管理器获取配置
         config = get_config()
@@ -735,7 +739,7 @@ class TestModuleIntegration(unittest.TestCase):
 
     def test_task_queue_with_complete_workflow(self):
         """测试任务队列完整工作流"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue(max_tasks=10)
 
@@ -763,7 +767,7 @@ class TestModuleIntegration(unittest.TestCase):
 
     def test_file_validator_with_real_file(self):
         """测试文件验证器处理真实文件数据"""
-        from file_validator import validate_uploaded_file
+        from ai_intervention_agent.file_validator import validate_uploaded_file
 
         # 创建一个最小的有效 PNG 文件
         # PNG 最小头部 + IHDR + IEND

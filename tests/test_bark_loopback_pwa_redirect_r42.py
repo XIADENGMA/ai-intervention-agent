@@ -38,13 +38,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from notification_models import (
+from ai_intervention_agent.notification_models import (
     NotificationEvent,
     NotificationTrigger,
     NotificationType,
 )
-from notification_providers import BarkNotificationProvider
-from server_config import (
+from ai_intervention_agent.notification_providers import BarkNotificationProvider
+from ai_intervention_agent.server_config import (
     WebUIConfig,
     is_loopback_url,
     resolve_external_base_url,
@@ -115,7 +115,7 @@ class TestResolveExternalBaseUrlForExternalUse(unittest.TestCase):
 
         return _side_effect
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_loopback_explicit_external_base_url_returned_to_ui(
         self, mock_get_config: MagicMock
     ) -> None:
@@ -133,7 +133,7 @@ class TestResolveExternalBaseUrlForExternalUse(unittest.TestCase):
         cfg = WebUIConfig(host="127.0.0.1", port=9090)
         self.assertEqual(resolve_external_base_url(cfg), "http://127.0.0.1:9090")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_loopback_explicit_external_base_url_filtered_for_external_use(
         self, mock_get_config: MagicMock
     ) -> None:
@@ -150,7 +150,7 @@ class TestResolveExternalBaseUrlForExternalUse(unittest.TestCase):
         cfg = WebUIConfig(host="127.0.0.1", port=9090)
         self.assertEqual(resolve_external_base_url(cfg, for_external_use=True), "")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_default_loopback_filtered_for_external_use(
         self, mock_get_config: MagicMock
     ) -> None:
@@ -167,7 +167,7 @@ class TestResolveExternalBaseUrlForExternalUse(unittest.TestCase):
         )
         self.assertEqual(resolve_external_base_url(for_external_use=True), "")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_zero_bind_no_mdns_filtered_for_external_use(
         self, mock_get_config: MagicMock
     ) -> None:
@@ -191,7 +191,7 @@ class TestResolveExternalBaseUrlForExternalUse(unittest.TestCase):
         # 新语义：跨设备推送场景必须空串降级。
         self.assertEqual(resolve_external_base_url(cfg, for_external_use=True), "")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_lan_ip_bind_keeps_for_external_use(
         self, mock_get_config: MagicMock
     ) -> None:
@@ -213,7 +213,7 @@ class TestResolveExternalBaseUrlForExternalUse(unittest.TestCase):
             resolve_external_base_url(cfg, for_external_use=True), baseline
         )
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_zero_zero_zero_zero_bind_with_mdns_returns_mdns(
         self, mock_get_config: MagicMock
     ) -> None:
@@ -231,7 +231,7 @@ class TestResolveExternalBaseUrlForExternalUse(unittest.TestCase):
         url = resolve_external_base_url(cfg, for_external_use=True)
         self.assertEqual(url, "http://ai.local:8080")
 
-    @patch("server_config.get_config")
+    @patch("ai_intervention_agent.server_config.get_config")
     def test_mdns_url_is_not_filtered(self, mock_get_config: MagicMock) -> None:
         # mDNS hostname 在 ``ipaddress`` 解析中不算 loopback，必须放行。
         mock_get_config.return_value.get_section.side_effect = (
@@ -266,7 +266,7 @@ class TestSuggestLanBaseUrl(unittest.TestCase):
         # 让 ty 不在静态阶段拒绝调用。
         self.assertIsNone(suggest_lan_base_url(cast(Any, "not-an-int")))
 
-    @patch("web_ui_mdns_utils.detect_best_publish_ipv4")
+    @patch("ai_intervention_agent.web_ui_mdns_utils.detect_best_publish_ipv4")
     def test_lazy_imported_detection_returns_lan_url(
         self, mock_detect: MagicMock
     ) -> None:
@@ -275,12 +275,12 @@ class TestSuggestLanBaseUrl(unittest.TestCase):
         self.assertEqual(url, "http://192.168.1.42:8080")
         mock_detect.assert_called_once()
 
-    @patch("web_ui_mdns_utils.detect_best_publish_ipv4")
+    @patch("ai_intervention_agent.web_ui_mdns_utils.detect_best_publish_ipv4")
     def test_detection_returns_none_returns_none(self, mock_detect: MagicMock) -> None:
         mock_detect.return_value = None
         self.assertIsNone(suggest_lan_base_url(8080))
 
-    @patch("web_ui_mdns_utils.detect_best_publish_ipv4")
+    @patch("ai_intervention_agent.web_ui_mdns_utils.detect_best_publish_ipv4")
     def test_detection_raises_returns_none(self, mock_detect: MagicMock) -> None:
         mock_detect.side_effect = OSError("network unreachable")
         self.assertIsNone(suggest_lan_base_url(8080))
@@ -435,7 +435,9 @@ class TestNetworkBaseUrlStatusRouteContract(unittest.TestCase):
     """字面量锁定 endpoint 的 route 注册 + 关键字段拼装逻辑。"""
 
     def test_route_is_registered_and_returns_diagnostics(self) -> None:
-        source = (REPO_ROOT / "web_ui_routes" / "system.py").read_text(encoding="utf-8")
+        source = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "system.py"
+        ).read_text(encoding="utf-8")
         self.assertIn(
             '"/api/system/network-base-url-status"',
             source,
@@ -474,7 +476,9 @@ class TestServerFeedbackUsesForExternalUse(unittest.TestCase):
     def test_resolve_external_base_url_called_with_for_external_use_true(
         self,
     ) -> None:
-        source = (REPO_ROOT / "server_feedback.py").read_text(encoding="utf-8")
+        source = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "server_feedback.py"
+        ).read_text(encoding="utf-8")
         self.assertIn(
             "resolve_external_base_url(\n                            config, for_external_use=True\n                        )",
             source,
@@ -491,9 +495,14 @@ class TestFrontendDiagnosticsLiteralContract(unittest.TestCase):
     """前端字面量级别锁定 ID + API URL + i18n key，避免重构静默丢失。"""
 
     def test_pwa_settings_manager_calls_status_endpoint(self) -> None:
-        source = (REPO_ROOT / "static" / "js" / "settings-manager.js").read_text(
-            encoding="utf-8"
-        )
+        source = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "settings-manager.js"
+        ).read_text(encoding="utf-8")
         self.assertIn("/api/system/network-base-url-status", source)
         self.assertIn("initBarkBaseUrlStatus", source)
         self.assertIn("bark-base-url-status-item", source)
@@ -504,7 +513,9 @@ class TestFrontendDiagnosticsLiteralContract(unittest.TestCase):
         self.assertIn("settings.baseUrlCopied", source)
 
     def test_pwa_template_has_status_block(self) -> None:
-        source = (REPO_ROOT / "templates" / "web_ui.html").read_text(encoding="utf-8")
+        source = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
+        ).read_text(encoding="utf-8")
         self.assertIn('id="bark-base-url-status-item"', source)
         self.assertIn('id="bark-base-url-status-message"', source)
         self.assertIn('id="bark-base-url-copy-btn"', source)
@@ -541,9 +552,14 @@ class TestFrontendDiagnosticsLiteralContract(unittest.TestCase):
         # PWA locales：static/locales/{en,zh-CN}.json
         for lang in ("en", "zh-CN"):
             data = json.loads(
-                (REPO_ROOT / "static" / "locales" / f"{lang}.json").read_text(
-                    encoding="utf-8"
-                )
+                (
+                    REPO_ROOT
+                    / "src"
+                    / "ai_intervention_agent"
+                    / "static"
+                    / "locales"
+                    / f"{lang}.json"
+                ).read_text(encoding="utf-8")
             )
             settings_section = data.get("settings", {})
             for key in (
@@ -592,9 +608,9 @@ class TestFrontendDiagnosticsLiteralContract(unittest.TestCase):
         # 后端发的 recommendation 枚举（"ok" / "configure_external_base_url" /
         # "bind_lan_interface"）必须与前端 if-else 分支一致——只有两侧都改才会
         # 让所有三种状态展示正确文案。
-        backend = (REPO_ROOT / "web_ui_routes" / "system.py").read_text(
-            encoding="utf-8"
-        )
+        backend = (
+            REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "system.py"
+        ).read_text(encoding="utf-8")
         for value in (
             '"ok"',
             '"configure_external_base_url"',
@@ -602,9 +618,14 @@ class TestFrontendDiagnosticsLiteralContract(unittest.TestCase):
         ):
             self.assertIn(value, backend)
 
-        pwa_js = (REPO_ROOT / "static" / "js" / "settings-manager.js").read_text(
-            encoding="utf-8"
-        )
+        pwa_js = (
+            REPO_ROOT
+            / "src"
+            / "ai_intervention_agent"
+            / "static"
+            / "js"
+            / "settings-manager.js"
+        ).read_text(encoding="utf-8")
         self.assertRegex(
             pwa_js,
             r'recommendation\s*===\s*["\']ok["\']',
@@ -724,7 +745,9 @@ class TestLoopbackSuppressionLogsWarning(unittest.TestCase):
         provider.session.post.return_value = MagicMock(
             status_code=200, json=MagicMock(return_value={"code": 200})
         )
-        with patch("notification_providers.logger") as mock_logger:
+        with patch(
+            "ai_intervention_agent.notification_providers.logger"
+        ) as mock_logger:
             provider.send(event)
         warn_messages = [
             call.args[0] for call in mock_logger.warning.call_args_list if call.args
@@ -752,7 +775,9 @@ class TestLoopbackSuppressionLogsWarning(unittest.TestCase):
         provider.session.post.return_value = MagicMock(
             status_code=200, json=MagicMock(return_value={"code": 200})
         )
-        with patch("notification_providers.logger") as mock_logger:
+        with patch(
+            "ai_intervention_agent.notification_providers.logger"
+        ) as mock_logger:
             provider.send(event)
         warn_messages = [
             call.args[0] for call in mock_logger.warning.call_args_list if call.args
@@ -775,9 +800,14 @@ class TestI18nKeysMatchTemplatePlaceholders(unittest.TestCase):
     def test_pwa_locale_url_placeholder(self) -> None:
         for lang in ("en", "zh-CN"):
             data = json.loads(
-                (REPO_ROOT / "static" / "locales" / f"{lang}.json").read_text(
-                    encoding="utf-8"
-                )
+                (
+                    REPO_ROOT
+                    / "src"
+                    / "ai_intervention_agent"
+                    / "static"
+                    / "locales"
+                    / f"{lang}.json"
+                ).read_text(encoding="utf-8")
             )
             for key in ("baseUrlStatusOk", "baseUrlStatusLoopback"):
                 value = data["settings"][key]

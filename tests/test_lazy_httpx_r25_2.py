@@ -59,8 +59,8 @@ import sys
 import time
 import unittest
 
-import server_feedback
-import service_manager
+import ai_intervention_agent.server_feedback as server_feedback
+import ai_intervention_agent.service_manager as service_manager
 
 
 class TestServiceManagerLazyHttpxStatic(unittest.TestCase):

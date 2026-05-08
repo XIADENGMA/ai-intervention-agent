@@ -26,8 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import enhanced_logging
-import server
+import ai_intervention_agent.enhanced_logging as enhanced_logging
+import ai_intervention_agent.server as server
 
 
 class TestRingBufferLevelFiltering(unittest.TestCase):

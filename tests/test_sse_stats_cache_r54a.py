@@ -41,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import server
+import ai_intervention_agent.server as server
 
 
 def _reset_cache() -> None:
@@ -205,9 +205,11 @@ class TestServerInfoUsesCachedFetcher(unittest.TestCase):
         # 让 web_ui 探测器返回 running，使 sse_bus 块走 fetch 路径。
         # ``is_web_service_running`` 来自 service_manager。
         with (
-            patch("server.is_web_service_running", return_value=True),
             patch(
-                "server._fetch_sse_stats_cached",
+                "ai_intervention_agent.server.is_web_service_running", return_value=True
+            ),
+            patch(
+                "ai_intervention_agent.server._fetch_sse_stats_cached",
                 return_value={"emit_total": 1, "latest_event_id": 1},
             ) as fake_fetch,
         ):

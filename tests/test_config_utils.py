@@ -19,7 +19,7 @@ class TestClampValue(unittest.TestCase):
 
     def test_value_in_range(self):
         """测试值在范围内"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         self.assertEqual(clamp_value(50, 0, 100, "test"), 50)
         self.assertEqual(clamp_value(0, 0, 100, "test"), 0)
@@ -27,21 +27,21 @@ class TestClampValue(unittest.TestCase):
 
     def test_value_below_min(self):
         """测试值小于最小值"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         self.assertEqual(clamp_value(-10, 0, 100, "test"), 0)
         self.assertEqual(clamp_value(-100, 0, 100, "test"), 0)
 
     def test_value_above_max(self):
         """测试值大于最大值"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         self.assertEqual(clamp_value(150, 0, 100, "test"), 100)
         self.assertEqual(clamp_value(1000, 0, 100, "test"), 100)
 
     def test_float_values(self):
         """测试浮点数"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         self.assertEqual(clamp_value(0.5, 0.0, 1.0, "test"), 0.5)
         self.assertEqual(clamp_value(-0.1, 0.0, 1.0, "test"), 0.0)
@@ -49,7 +49,7 @@ class TestClampValue(unittest.TestCase):
 
     def test_log_warning_disabled(self):
         """测试禁用日志警告"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         # 不应引发异常
         result = clamp_value(-10, 0, 100, "test", log_warning=False)
@@ -61,7 +61,7 @@ class TestClampDataclassField(unittest.TestCase):
 
     def test_field_in_range(self):
         """测试字段值在范围内"""
-        from config_utils import clamp_dataclass_field
+        from ai_intervention_agent.config_utils import clamp_dataclass_field
 
         @dataclass
         class TestConfig:
@@ -73,7 +73,7 @@ class TestClampDataclassField(unittest.TestCase):
 
     def test_field_below_min(self):
         """测试字段值小于最小值"""
-        from config_utils import clamp_dataclass_field
+        from ai_intervention_agent.config_utils import clamp_dataclass_field
 
         @dataclass
         class TestConfig:
@@ -85,7 +85,7 @@ class TestClampDataclassField(unittest.TestCase):
 
     def test_field_above_max(self):
         """测试字段值大于最大值"""
-        from config_utils import clamp_dataclass_field
+        from ai_intervention_agent.config_utils import clamp_dataclass_field
 
         @dataclass
         class TestConfig:
@@ -101,7 +101,7 @@ class TestGetCompatConfig(unittest.TestCase):
 
     def test_new_key_exists(self):
         """测试新键存在"""
-        from config_utils import get_compat_config
+        from ai_intervention_agent.config_utils import get_compat_config
 
         config = {"http_request_timeout": 60}
         result = get_compat_config(config, "http_request_timeout", "timeout", 30)
@@ -109,7 +109,7 @@ class TestGetCompatConfig(unittest.TestCase):
 
     def test_old_key_fallback(self):
         """测试旧键回退"""
-        from config_utils import get_compat_config
+        from ai_intervention_agent.config_utils import get_compat_config
 
         config = {"timeout": 60}
         result = get_compat_config(config, "http_request_timeout", "timeout", 30)
@@ -117,7 +117,7 @@ class TestGetCompatConfig(unittest.TestCase):
 
     def test_default_value(self):
         """测试默认值"""
-        from config_utils import get_compat_config
+        from ai_intervention_agent.config_utils import get_compat_config
 
         config = {}
         result = get_compat_config(config, "http_request_timeout", "timeout", 30)
@@ -125,7 +125,7 @@ class TestGetCompatConfig(unittest.TestCase):
 
     def test_new_key_priority(self):
         """测试新键优先于旧键"""
-        from config_utils import get_compat_config
+        from ai_intervention_agent.config_utils import get_compat_config
 
         config = {"http_request_timeout": 120, "timeout": 60}
         result = get_compat_config(config, "http_request_timeout", "timeout", 30)
@@ -133,7 +133,7 @@ class TestGetCompatConfig(unittest.TestCase):
 
     def test_no_old_key(self):
         """测试无旧键"""
-        from config_utils import get_compat_config
+        from ai_intervention_agent.config_utils import get_compat_config
 
         config = {"new_key": 100}
         result = get_compat_config(config, "new_key", None, 50)
@@ -145,7 +145,7 @@ class TestGetTypedConfig(unittest.TestCase):
 
     def test_int_conversion(self):
         """测试整数转换"""
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         config = {"timeout": "30"}
         result = get_typed_config(config, "timeout", 60, int)
@@ -153,7 +153,7 @@ class TestGetTypedConfig(unittest.TestCase):
 
     def test_float_conversion(self):
         """测试浮点数转换"""
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         config = {"delay": "1.5"}
         result = get_typed_config(config, "delay", 1.0, float)
@@ -161,7 +161,7 @@ class TestGetTypedConfig(unittest.TestCase):
 
     def test_bool_conversion_string(self):
         """测试布尔值字符串转换"""
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         config = {"enabled": "true"}
         result = get_typed_config(config, "enabled", False, bool)
@@ -173,7 +173,7 @@ class TestGetTypedConfig(unittest.TestCase):
 
     def test_invalid_type_uses_default(self):
         """测试无效类型使用默认值"""
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         config = {"timeout": "invalid"}
         result = get_typed_config(config, "timeout", 60, int)
@@ -181,7 +181,7 @@ class TestGetTypedConfig(unittest.TestCase):
 
     def test_with_boundary(self):
         """测试带边界验证"""
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         config = {"timeout": "500"}
         result = get_typed_config(config, "timeout", 60, int, 1, 300)
@@ -189,7 +189,7 @@ class TestGetTypedConfig(unittest.TestCase):
 
     def test_with_old_key(self):
         """测试向后兼容"""
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         config = {"old_timeout": "120"}
         result = get_typed_config(
@@ -203,7 +203,7 @@ class TestValidateEnumValue(unittest.TestCase):
 
     def test_valid_value(self):
         """测试有效值"""
-        from config_utils import validate_enum_value
+        from ai_intervention_agent.config_utils import validate_enum_value
 
         valid = ("none", "url", "copy")
         self.assertEqual(validate_enum_value("url", valid, "action", "none"), "url")
@@ -212,7 +212,7 @@ class TestValidateEnumValue(unittest.TestCase):
 
     def test_invalid_value_uses_default(self):
         """测试无效值使用默认值"""
-        from config_utils import validate_enum_value
+        from ai_intervention_agent.config_utils import validate_enum_value
 
         valid = ("none", "url", "copy")
         self.assertEqual(
@@ -226,21 +226,21 @@ class TestTruncateString(unittest.TestCase):
 
     def test_string_in_range(self):
         """测试字符串在长度范围内"""
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         self.assertEqual(truncate_string("hello", 10, "test"), "hello")
         self.assertEqual(truncate_string("hello", 5, "test"), "hello")
 
     def test_string_too_long(self):
         """测试字符串过长"""
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         self.assertEqual(truncate_string("hello world", 5, "test"), "hello")
         self.assertEqual(truncate_string("abcdefghij", 3, "test"), "abc")
 
     def test_empty_string_with_default(self):
         """测试空字符串使用默认值"""
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         self.assertEqual(truncate_string("", 10, "test", default="default"), "default")
         self.assertEqual(
@@ -249,14 +249,14 @@ class TestTruncateString(unittest.TestCase):
 
     def test_empty_string_without_default(self):
         """测试空字符串无默认值"""
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         self.assertEqual(truncate_string("", 10, "test"), "")
         self.assertEqual(truncate_string("   ", 10, "test"), "   ")
 
     def test_none_value(self):
         """测试 None 值"""
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         self.assertEqual(truncate_string(None, 10, "test"), "")
         self.assertEqual(
@@ -269,7 +269,10 @@ class TestIntegration(unittest.TestCase):
 
     def test_combined_usage(self):
         """测试组合使用场景"""
-        from config_utils import get_typed_config, validate_enum_value
+        from ai_intervention_agent.config_utils import (
+            get_typed_config,
+            validate_enum_value,
+        )
 
         config = {
             "http_request_timeout": "500",  # 需要限制到 300
@@ -292,7 +295,10 @@ class TestIntegration(unittest.TestCase):
 
     def test_truncate_with_validation(self):
         """测试字符串截断与验证组合"""
-        from config_utils import truncate_string, validate_enum_value
+        from ai_intervention_agent.config_utils import (
+            truncate_string,
+            validate_enum_value,
+        )
 
         # 模拟配置场景
         long_prompt = "a" * 1000
@@ -309,7 +315,7 @@ class TestConfigManagerTypedMethods(unittest.TestCase):
 
     def test_get_int(self):
         """测试 get_int 方法"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 测试获取存在的整数配置
@@ -319,7 +325,7 @@ class TestConfigManagerTypedMethods(unittest.TestCase):
 
     def test_get_float(self):
         """测试 get_float 方法"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 测试获取不存在的配置使用默认值
@@ -329,7 +335,7 @@ class TestConfigManagerTypedMethods(unittest.TestCase):
 
     def test_get_bool(self):
         """测试 get_bool 方法"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 测试获取布尔配置
@@ -338,7 +344,7 @@ class TestConfigManagerTypedMethods(unittest.TestCase):
 
     def test_get_str(self):
         """测试 get_str 方法"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 测试获取字符串配置
@@ -347,7 +353,7 @@ class TestConfigManagerTypedMethods(unittest.TestCase):
 
     def test_get_str_with_max_length(self):
         """测试 get_str 带长度限制"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 测试带长度限制的字符串获取
@@ -356,7 +362,7 @@ class TestConfigManagerTypedMethods(unittest.TestCase):
 
     def test_get_typed_with_boundary(self):
         """测试 get_typed 边界验证"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         # 测试边界验证
@@ -369,7 +375,7 @@ class TestConfigManagerFileWatcher(unittest.TestCase):
 
     def test_start_stop_file_watcher(self):
         """测试启动和停止文件监听器"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -395,7 +401,7 @@ class TestConfigManagerFileWatcher(unittest.TestCase):
 
     def test_register_config_change_callback(self):
         """测试注册和取消配置变更回调"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
         callback_called = [False]
@@ -417,7 +423,7 @@ class TestConfigManagerFileWatcher(unittest.TestCase):
 
     def test_callback_error_handling(self):
         """测试回调错误处理"""
-        from config_manager import get_config
+        from ai_intervention_agent.config_manager import get_config
 
         config = get_config()
 
@@ -447,7 +453,7 @@ class TestTaskQueueStatusCallback(unittest.TestCase):
 
     def test_register_unregister_callback(self):
         """测试注册和取消回调"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue(max_tasks=5)
         status_changes = []
@@ -477,7 +483,7 @@ class TestTaskQueueStatusCallback(unittest.TestCase):
 
     def test_complete_task_callback(self):
         """测试任务完成时的回调"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue(max_tasks=5)
         status_changes = []
@@ -508,7 +514,7 @@ class TestTaskQueueStatusCallback(unittest.TestCase):
 
     def test_remove_task_callback(self):
         """测试任务移除时的回调"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue(max_tasks=5)
         status_changes = []
@@ -539,7 +545,7 @@ class TestTaskQueueStatusCallback(unittest.TestCase):
 
     def test_callback_error_handling(self):
         """测试回调错误处理"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue(max_tasks=5)
 
@@ -560,7 +566,7 @@ class TestTaskQueueStatusCallback(unittest.TestCase):
 
     def test_callback_can_reenter_queue_without_deadlock(self):
         """回调中重入调用 TaskQueue 方法不应导致死锁"""
-        from task_queue import TaskQueue
+        from ai_intervention_agent.task_queue import TaskQueue
 
         queue = TaskQueue(max_tasks=5)
         done = threading.Event()
@@ -592,28 +598,28 @@ class TestConfigUtilsAdvanced(unittest.TestCase):
 
     def test_clamp_value_normal(self):
         """测试 clamp_value 正常情况"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         result = clamp_value(50, 0, 100, "test_field")
         self.assertEqual(result, 50)
 
     def test_clamp_value_below_min(self):
         """测试 clamp_value 低于最小值"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         result = clamp_value(-10, 0, 100, "test_field")
         self.assertEqual(result, 0)
 
     def test_clamp_value_above_max(self):
         """测试 clamp_value 高于最大值"""
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         result = clamp_value(150, 0, 100, "test_field")
         self.assertEqual(result, 100)
 
     def test_validate_enum_value_valid(self):
         """测试 validate_enum_value 有效值"""
-        from config_utils import validate_enum_value
+        from ai_intervention_agent.config_utils import validate_enum_value
 
         # 签名: validate_enum_value(value, valid_values, field_name, default)
         result = validate_enum_value(
@@ -623,7 +629,7 @@ class TestConfigUtilsAdvanced(unittest.TestCase):
 
     def test_validate_enum_value_invalid(self):
         """测试 validate_enum_value 无效值"""
-        from config_utils import validate_enum_value
+        from ai_intervention_agent.config_utils import validate_enum_value
 
         # 签名: validate_enum_value(value, valid_values, field_name, default)
         result = validate_enum_value("invalid", ("a", "b", "c"), "test_field", "a")
@@ -631,14 +637,14 @@ class TestConfigUtilsAdvanced(unittest.TestCase):
 
     def test_truncate_string_normal(self):
         """测试 truncate_string 正常情况"""
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         result = truncate_string("hello", 100, "default")
         self.assertEqual(result, "hello")
 
     def test_truncate_string_long(self):
         """测试 truncate_string 截断长字符串"""
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         result = truncate_string("a" * 200, 100, "default")
         self.assertEqual(len(result), 100)
@@ -653,13 +659,13 @@ class TestClampValueSilent(unittest.TestCase):
     """branch 51->53: log_warning=False + value > max"""
 
     def test_clamp_above_max_no_warning(self):
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         result = clamp_value(200, 0, 100, "field", log_warning=False)
         self.assertEqual(result, 100)
 
     def test_clamp_below_min_no_warning(self):
-        from config_utils import clamp_value
+        from ai_intervention_agent.config_utils import clamp_value
 
         result = clamp_value(-5, 0, 100, "field", log_warning=False)
         self.assertEqual(result, 0)
@@ -669,7 +675,7 @@ class TestGetTypedConfigNonNumeric(unittest.TestCase):
     """branch 114->125: typed_value 非数值类型时跳过 clamp"""
 
     def test_string_type_skips_clamp(self):
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         result = get_typed_config(
             {"key": "hello"}, "key", "default", str, min_val=0, max_val=100
@@ -677,7 +683,7 @@ class TestGetTypedConfigNonNumeric(unittest.TestCase):
         self.assertEqual(result, "hello")
 
     def test_bool_type_skips_clamp(self):
-        from config_utils import get_typed_config
+        from ai_intervention_agent.config_utils import get_typed_config
 
         result = get_typed_config(
             {"key": "true"}, "key", False, bool, min_val=0, max_val=1
@@ -689,7 +695,7 @@ class TestTruncateStringSilent(unittest.TestCase):
     """branches 154->156 / 161->163: log_warning=False"""
 
     def test_empty_string_no_warning(self):
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         result = truncate_string(
             "", 100, "field", default="fallback", log_warning=False
@@ -697,7 +703,7 @@ class TestTruncateStringSilent(unittest.TestCase):
         self.assertEqual(result, "fallback")
 
     def test_long_string_no_warning(self):
-        from config_utils import truncate_string
+        from ai_intervention_agent.config_utils import truncate_string
 
         result = truncate_string("a" * 200, 50, "field", log_warning=False)
         self.assertEqual(len(result), 50)

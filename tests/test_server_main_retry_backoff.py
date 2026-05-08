@@ -33,7 +33,9 @@ if str(REPO_ROOT) not in sys.path:
 
 def _load_main_function_source() -> str:
     """提取 ``server.main`` 函数的源码字符串供静态断言用。"""
-    src = (REPO_ROOT / "server.py").read_text(encoding="utf-8")
+    src = (REPO_ROOT / "src" / "ai_intervention_agent" / "server.py").read_text(
+        encoding="utf-8"
+    )
     tree = ast.parse(src)
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef) and node.name == "main":
@@ -101,7 +103,7 @@ class TestMainRetryBackoffBehaviour(unittest.TestCase):
         self, *, run_exception: BaseException
     ) -> tuple[list[float], int | None]:
         """让 ``server.main()`` 跑完 max_retries 次失败循环，返回 (sleep 实参列表, exit code)。"""
-        import server
+        import ai_intervention_agent.server as server
 
         sleep_args: list[float] = []
         exit_code_box: list[int | None] = [None]
@@ -121,8 +123,8 @@ class TestMainRetryBackoffBehaviour(unittest.TestCase):
         with (
             patch.object(server, "mcp", mock_mcp),
             patch.object(server, "cleanup_services"),
-            patch("server.time.sleep", side_effect=fake_sleep),
-            patch("server.sys.exit", side_effect=fake_exit),
+            patch("ai_intervention_agent.server.time.sleep", side_effect=fake_sleep),
+            patch("ai_intervention_agent.server.sys.exit", side_effect=fake_exit),
         ):
             try:
                 server.main()

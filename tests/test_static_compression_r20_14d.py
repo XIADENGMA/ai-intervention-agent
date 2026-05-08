@@ -40,7 +40,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import scripts.precompress_static as precompress
-from web_ui_routes.static import (
+from ai_intervention_agent.web_ui_routes.static import (
     _client_accepts_gzip,
     _send_with_optional_gzip,
 )
@@ -392,7 +392,11 @@ class TestStaticRoutesIntegration(unittest.TestCase):
     def setUp(self) -> None:
         # 锁定 R20.14-D 实现成立的前提：``static/js/`` 至少要有一个 .gz 存在
         # （precompress_static.py 已跑过）。如果没有 .gz，整个测试族都没意义。
-        gz_files = sorted((REPO_ROOT / "static" / "js").glob("*.min.js.gz"))
+        gz_files = sorted(
+            (REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js").glob(
+                "*.min.js.gz"
+            )
+        )
         if not gz_files:
             self.skipTest(
                 "static/js/*.min.js.gz 缺失；先跑 "
@@ -404,7 +408,7 @@ class TestStaticRoutesIntegration(unittest.TestCase):
         self.sample_basename = self.sample_gz.name.removesuffix(".gz")
 
     def _make_ui(self) -> Any:
-        from web_ui import WebFeedbackUI
+        from ai_intervention_agent.web_ui import WebFeedbackUI
 
         return WebFeedbackUI(prompt="test", port=0)
 
@@ -436,7 +440,14 @@ class TestStaticRoutesIntegration(unittest.TestCase):
             )
         ) as resp:
             decompressed = gzip.decompress(resp.data)
-            original = (REPO_ROOT / "static" / "js" / self.sample_basename).read_bytes()
+            original = (
+                REPO_ROOT
+                / "src"
+                / "ai_intervention_agent"
+                / "static"
+                / "js"
+                / self.sample_basename
+            ).read_bytes()
             self.assertEqual(
                 decompressed,
                 original,
@@ -506,7 +517,9 @@ class TestStaticRoutesIntegration(unittest.TestCase):
 class TestSourceInvariants(unittest.TestCase):
     """源码不变量：避免后续重构悄悄打回这层优化。"""
 
-    STATIC_PATH = REPO_ROOT / "web_ui_routes" / "static.py"
+    STATIC_PATH = (
+        REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui_routes" / "static.py"
+    )
     PRECOMP_PATH = REPO_ROOT / "scripts" / "precompress_static.py"
 
     def test_static_uses_optional_gzip_helper(self) -> None:
@@ -587,7 +600,11 @@ class TestRepoBaselineGzPresence(unittest.TestCase):
     """
 
     def test_at_least_one_gz_in_static_js(self) -> None:
-        gz_files = list((REPO_ROOT / "static" / "js").glob("*.js.gz"))
+        gz_files = list(
+            (REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js").glob(
+                "*.js.gz"
+            )
+        )
         self.assertGreater(
             len(gz_files),
             0,
@@ -598,7 +615,11 @@ class TestRepoBaselineGzPresence(unittest.TestCase):
 
     def test_largest_gz_is_smaller_than_source(self) -> None:
         # 找 static/js/ 下最大的 .gz，断言它的大小确实小于源
-        gz_files = list((REPO_ROOT / "static" / "js").glob("*.js.gz"))
+        gz_files = list(
+            (REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js").glob(
+                "*.js.gz"
+            )
+        )
         if not gz_files:
             self.skipTest("没 .gz 可校验")
         for gz in gz_files:

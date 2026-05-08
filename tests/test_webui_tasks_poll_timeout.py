@@ -37,7 +37,9 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WEB_MULTI_TASK_JS = REPO_ROOT / "static" / "js" / "multi_task.js"
+WEB_MULTI_TASK_JS = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "js" / "multi_task.js"
+)
 VSCODE_WEBVIEW_UI_JS = REPO_ROOT / "packages" / "vscode" / "webview-ui.js"
 
 
