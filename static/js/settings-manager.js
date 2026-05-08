@@ -712,7 +712,9 @@ class SettingsManager {
   async initBarkBaseUrlStatus() {
     const item = document.getElementById("bark-base-url-status-item");
     const message = document.getElementById("bark-base-url-status-message");
-    const suggestion = document.getElementById("bark-base-url-status-suggestion");
+    const suggestion = document.getElementById(
+      "bark-base-url-status-suggestion",
+    );
     const copyBtn = document.getElementById("bark-base-url-copy-btn");
     const recheckBtn = document.getElementById("bark-base-url-recheck-btn");
 
