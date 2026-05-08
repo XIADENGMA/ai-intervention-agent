@@ -163,6 +163,127 @@ class TestBackendLookup:
         assert i18n.normalize_lang("") == i18n.DEFAULT_LANG
 
 
+class TestBackendDetectRequestLang:
+    """R78b：``detect_request_lang`` 三条 fallback 路径覆盖。
+
+    R76 之前未覆盖 Accept-Language 头解析（L100-105）+ config_manager
+    fallback（L112-114），导致 i18n.py 整体覆盖率只有 75.81%。本类把
+    三条路径 + 模板格式化失败兜底一并锁住。
+    """
+
+    def test_detect_lang_from_accept_language_header_zh(self) -> None:
+        """Accept-Language: zh-* → normalize 到 'zh-CN'。"""
+        from flask import Flask
+
+        app = Flask(__name__)
+        with app.test_request_context(headers={"Accept-Language": "zh-CN,en;q=0.7"}):
+            assert i18n.detect_request_lang() == "zh-CN"
+
+    def test_detect_lang_from_accept_language_header_en(self) -> None:
+        """Accept-Language: en-US → normalize 到 'en'。"""
+        from flask import Flask
+
+        app = Flask(__name__)
+        with app.test_request_context(headers={"Accept-Language": "en-US,en;q=0.5"}):
+            assert i18n.detect_request_lang() == "en"
+
+    def test_detect_lang_unknown_accept_language_normalizes_to_default(self) -> None:
+        """Accept-Language: fr-FR → ``normalize_lang`` 把它映射到 DEFAULT_LANG (en)。
+
+        说明：``detect_request_lang`` 不会因为 fr-FR 「不在支持集」就跳过
+        header 路径——``normalize_lang`` 设计上永远返回支持集中的值（zh/en/
+        DEFAULT_LANG），fr-FR 经 normalize 后是 'en'，header 路径直接命中
+        返回，不查 config。本测试锁住这个事实，防止未来引入 ``ja`` 等新
+        语言后 ``normalize_lang`` 改成可能返回非支持值时出现意外的 config
+        穿透行为。
+        """
+        from unittest.mock import MagicMock, patch
+
+        from flask import Flask
+
+        app = Flask(__name__)
+
+        fake_config = MagicMock()
+        fake_config.get_section.return_value = {"language": "zh-CN"}
+
+        with (
+            app.test_request_context(headers={"Accept-Language": "fr-FR"}),
+            patch(
+                "ai_intervention_agent.config_manager.get_config",
+                return_value=fake_config,
+            ) as mock_get_config,
+        ):
+            assert i18n.detect_request_lang() == "en"
+            # 关键断言：config 路径不应被触达——header 路径已经吃掉请求
+            mock_get_config.assert_not_called()
+
+    def test_detect_lang_no_request_context_uses_config(self) -> None:
+        """没有 Flask request context（``RuntimeError``）→ 直接走 config 路径。"""
+        from unittest.mock import MagicMock, patch
+
+        fake_config = MagicMock()
+        fake_config.get_section.return_value = {"language": "zh-CN"}
+
+        with patch(
+            "ai_intervention_agent.config_manager.get_config",
+            return_value=fake_config,
+        ):
+            assert i18n.detect_request_lang() == "zh-CN"
+
+    def test_detect_lang_config_auto_falls_through_to_default(self) -> None:
+        """config.web_ui.language == 'auto' → 跳过 config 路径，返回 DEFAULT_LANG。"""
+        from unittest.mock import MagicMock, patch
+
+        fake_config = MagicMock()
+        fake_config.get_section.return_value = {"language": "auto"}
+
+        with patch(
+            "ai_intervention_agent.config_manager.get_config",
+            return_value=fake_config,
+        ):
+            assert i18n.detect_request_lang() == i18n.DEFAULT_LANG
+
+    def test_detect_lang_returns_default_when_all_paths_fail(self) -> None:
+        """所有 fallback 都挂掉（Flask 没初始化 + config_manager 抛异常） → DEFAULT_LANG。"""
+        from unittest.mock import patch
+
+        with patch(
+            "ai_intervention_agent.config_manager.get_config",
+            side_effect=RuntimeError("config not initialized"),
+        ):
+            assert i18n.detect_request_lang() == i18n.DEFAULT_LANG
+
+    def test_get_locale_message_auto_detects_lang_when_none(self) -> None:
+        """``lang=None`` → 自动调用 ``detect_request_lang()``。
+
+        覆盖 ``get_locale_message`` 的 L131-132 分支：caller 不显式传 lang 时
+        应当走自动检测路径，返回应是检测出的语言对应的本地化值。
+        """
+        from unittest.mock import patch
+
+        with patch(
+            "ai_intervention_agent.i18n.detect_request_lang", return_value="zh-CN"
+        ):
+            out = i18n.get_locale_message("feedback.submitted")
+        assert out == "反馈已提交"
+
+    def test_format_error_falls_back_to_unformatted_template(self) -> None:
+        """``str.format`` 抛 ``KeyError`` 时静默返回原模板（不让上层 caller 崩）。
+
+        触发条件：caller 传了 kwargs（进入 ``if kwargs`` 分支），但模板里的
+        ``{detail}`` 占位符在 kwargs 里没有对应 key，``str.format`` 因此抛
+        ``KeyError: 'detail'``。规约：catch + 返回原模板字符串。
+        """
+        out = i18n.get_locale_message(
+            "notify.sendFailedDetail",
+            lang="en",
+            wrong_kwarg_name="this kwarg has nothing to do with {detail}",
+        )
+        assert "{detail}" in out, (
+            "模板里的 {detail} 未匹配 kwargs 时应原样返回，不抛 KeyError"
+        )
+
+
 class TestBackendStaticStructure:
     """Guard the shape of ``i18n.py`` itself so a future refactor
     can't silently drop ``_MESSAGES`` or change the public surface."""
