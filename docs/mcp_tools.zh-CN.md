@@ -9,7 +9,7 @@
 | 字段           | 内容                                                                                              | 用途                                                |
 | -------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `name`         | `AI Intervention Agent MCP`                                                                       | client 工具列表显示                                 |
-| `version`      | 当前包版本（从 `importlib.metadata` 自动读取，例如 `1.5.45`；未安装时回退 `0.0.0+local`）         | client 兼容性判断 / 故障排查                        |
+| `version`      | 当前包版本（从 `importlib.metadata` 自动读取，例如 `1.6.0`；未安装时回退 `0.0.0+local`）          | client 兼容性判断 / 故障排查                        |
 | `instructions` | 中文使用指引（适合 / 不适合调用的场景、行为约定等）                                               | 在 initialize 阶段下发给 LLM，作为工具选用的元规则  |
 | `website_url`  | `https://github.com/xiadengma/ai-intervention-agent`                                              | client UI 链接到项目主页                            |
 | `icons`        | 4 个 base64 data URI（32/192/512 PNG + SVG），server 启动时一次性嵌入                             | client 在 server 列表 UI 显示项目图标，self-contained 不依赖外部 CDN |

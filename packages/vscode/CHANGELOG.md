@@ -14,6 +14,32 @@ package, MCP server, Web UI internals), see the
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-05-08
+
+> Server-side cleanup + repo-shape release; no extension-facing
+> behaviour changes. Bumped to keep the VS Code extension version
+> in lockstep with the PyPI server package. Server-side closed 16
+> CodeQL alerts via a global `enhanced_logging` root
+> `InterceptHandler` (R72) plus 1 stack-trace exposure fix in
+> `web_ui_routes/system.py` (R72-B), relocated 4 governance docs
+> into `.github/` (R73), cleared a small zero-warning sprint of
+> `ty` / prettier / `ruff LOG` diagnostics (R74 / R74b / R74c /
+> R74d / R75), adopted the PyPA `src/` layout with
+> `src/ai_intervention_agent/` as the single source root and
+> dropped the deprecated `config.jsonc.default` template
+> (R76 / R76b), expanded `interactive_feedback`'s MCP signature
+> with cross-tool compat aliases `timeout_seconds` and `task_id`
+> for older client variants (R77), drove
+> `web_ui_routes/system.py` and `i18n.py` test coverage above
+> 84% / 98% (R78 / R79), shipped a markdown link-rot regression
+> guard plus 14 broken-link fixes inside `.github/` (R80),
+> backfilled the `[Unreleased]` section in the project changelog
+> for the R72 → R80 batch (R80b), and consolidated the cycle's
+> lessons in `docs/lessons-learned-r70s.md` (R81). The VS Code
+> webview HTML, settings UI, status-bar logic, OAuth flow, and
+> `webview-settings-ui.js` are unchanged. `package.json` /
+> `package-lock.json` bumped to `1.6.0` for store sync only.
+
 ## [1.5.45] — 2026-05-08
 
 > Server-side observability + safety release; no extension-facing

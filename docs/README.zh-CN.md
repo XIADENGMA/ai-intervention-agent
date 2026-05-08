@@ -79,15 +79,15 @@
 ---
 
 _新增 / 改名 docs 文件时同步更新本索引，避免索引说谎。最近一次
-更新对应 v1.5.46 / `[Unreleased]` 周期（R71 → R80b 批次：
-带审计轨迹的 CodeQL 分诊、治理文档迁入 `.github/`、清掉 4 条
-ruff-LOG / 2 条 ty / prettier / lockfile 诊断的零警告冲刺、
-PyPA `src/ai_intervention_agent/` 布局迁移并删除
-`config.jsonc.default`、为 `interactive_feedback` 添加跨工具
-兼容别名 `timeout_seconds` / `task_id`、`web_ui_routes/system.py`
-与 `i18n.py` 防御分支覆盖率冲刺、Markdown 链接腐烂护栏 + 修复
-`.github/` 内 14 条断链、`CHANGELOG.md [Unreleased]` 回填）。
-内部复盘见
+更新对应 v1.6.0（R71 → R82 批次：带审计轨迹的 CodeQL 分诊、
+治理文档迁入 `.github/`、清掉 4 条 ruff-LOG / 2 条 ty / prettier /
+lockfile 诊断的零警告冲刺、PyPA `src/ai_intervention_agent/`
+布局迁移并删除 `config.jsonc.default`、为 `interactive_feedback`
+添加跨工具兼容别名 `timeout_seconds` / `task_id`、
+`web_ui_routes/system.py` 与 `i18n.py` 防御分支覆盖率冲刺、
+Markdown 链接腐烂护栏 + 修复 `.github/` 内 14 条断链、
+`CHANGELOG.md` `[Unreleased]` 回填、把 `coverage.py` 并行模式
+中间文件挪到 `.coverage_data/`）。内部复盘见
 [`lessons-learned-r70s.md`](lessons-learned-r70s.md)。上一
 v1.5.45（R63 → R70 批次）复盘见
 [`lessons-learned-r60s.md`](lessons-learned-r60s.md)。更早的

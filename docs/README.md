@@ -88,17 +88,18 @@ avoid translation drift.
 ---
 
 _Refresh this file alongside any docs/ addition or rename so the
-index never lies. Last refreshed for the v1.5.46 /
-`[Unreleased]` cycle (R71 → R80b batch: CodeQL alert triage with
-audit trail, governance docs relocated to `.github/`,
-zero-warning sprint clearing 4 ruff-LOG / 2 ty / prettier /
-lockfile diagnostics, PyPA `src/ai_intervention_agent/` layout
-migration plus `config.jsonc.default` removal, MCP
+index never lies. Last refreshed for v1.6.0 (R71 → R82 batch:
+CodeQL alert triage with audit trail, governance docs relocated
+to `.github/`, zero-warning sprint clearing 4 ruff-LOG / 2 ty /
+prettier / lockfile diagnostics, PyPA `src/ai_intervention_agent/`
+layout migration plus `config.jsonc.default` removal, MCP
 `interactive_feedback` cross-tool compat aliases for
 `timeout_seconds` / `task_id`, defensive-branch coverage uplift on
 `web_ui_routes/system.py` and `i18n.py`, markdown link-rot
-guardrail with 14 broken-link fixes inside `.github/`, and
-`CHANGELOG.md [Unreleased]` backfill). Internal post-mortem at
+guardrail with 14 broken-link fixes inside `.github/`,
+`CHANGELOG.md` `[Unreleased]` backfill, and `coverage.py`
+parallel-run intermediate files relocated to `.coverage_data/`).
+Internal post-mortem at
 [`lessons-learned-r70s.md`](lessons-learned-r70s.md). Prior
 v1.5.45 (R63 → R70 batch) post-mortem at
 [`lessons-learned-r60s.md`](lessons-learned-r60s.md). Earlier

@@ -9,11 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-05-08
+
 > Round-72+ aggregate: a security-triage pass (R72 / R72-D), three
 > repo-shape refactors (R73 / R76 / R76b), four zero-warning
 > hardenings (R74 / R74b / R74c / R74d / R75), and an R77+ "what
 > still needs rounding-out" sweep covering MCP cross-tool compat,
-> low-coverage modules, and broken docs links.
+> low-coverage modules, broken docs links, internal post-mortem
+> docs, and `coverage.py` parallel-run filesystem hygiene.
 
 ### Security
 
