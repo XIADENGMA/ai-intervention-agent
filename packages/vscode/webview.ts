@@ -1159,8 +1159,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
    */
   _handleOpenExternal(message: WebviewMessage): void {
     try {
-      const rawUrl =
-        message && (message as Record<string, unknown>).url;
+      const rawUrl = message && (message as Record<string, unknown>).url;
       const url = typeof rawUrl === "string" ? rawUrl.trim() : "";
       if (!url) return;
 

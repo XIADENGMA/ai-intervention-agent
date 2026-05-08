@@ -1,352 +1,388 @@
-;(function () {
+(function () {
   // 设置面板 UI：仅在用户打开“通知设置”时按需加载，避免阻塞首屏
-  let vscode = null
+  let vscode = null;
   try {
     vscode =
-      typeof globalThis !== 'undefined' && globalThis && globalThis.__AIIA_VSCODE_API
+      typeof globalThis !== "undefined" &&
+      globalThis &&
+      globalThis.__AIIA_VSCODE_API
         ? globalThis.__AIIA_VSCODE_API
-        : null
+        : null;
   } catch (e) {
-    vscode = null
+    vscode = null;
   }
   if (!vscode) {
     try {
-      vscode = acquireVsCodeApi()
+      vscode = acquireVsCodeApi();
     } catch (e) {
-      vscode = null
+      vscode = null;
     }
   }
 
-  const cfgEl = typeof document !== 'undefined' ? document.getElementById('aiia-config') : null
+  const cfgEl =
+    typeof document !== "undefined"
+      ? document.getElementById("aiia-config")
+      : null;
   const SERVER_URL =
-    cfgEl && cfgEl.getAttribute('data-server-url')
-      ? String(cfgEl.getAttribute('data-server-url'))
-      : ''
+    cfgEl && cfgEl.getAttribute("data-server-url")
+      ? String(cfgEl.getAttribute("data-server-url"))
+      : "";
 
   function postMessage(message) {
     try {
-      if (vscode && typeof vscode.postMessage === 'function') {
-        vscode.postMessage(message)
-        return true
+      if (vscode && typeof vscode.postMessage === "function") {
+        vscode.postMessage(message);
+        return true;
       }
     } catch (e) {
       // 忽略：设置面板异常不应影响主 UI
     }
-    return false
+    return false;
   }
 
   function postNotificationEvent(event) {
-    postMessage({ type: 'notify', event: event || {} })
+    postMessage({ type: "notify", event: event || {} });
   }
 
   function postStatusInfo(message, options) {
     postNotificationEvent({
-      title: 'AI Intervention Agent',
-      message: String(message || ''),
-      trigger: 'immediate',
-      types: ['vscode'],
+      title: "AI Intervention Agent",
+      message: String(message || ""),
+      trigger: "immediate",
+      types: ["vscode"],
       metadata: Object.assign(
-        { presentation: 'statusBar', severity: 'info', timeoutMs: 3000 },
-        options || {}
+        { presentation: "statusBar", severity: "info", timeoutMs: 3000 },
+        options || {},
       ),
-      source: 'webview-settings-ui',
-      dedupeKey: message ? 'status:' + String(message).slice(0, 200) : ''
-    })
+      source: "webview-settings-ui",
+      dedupeKey: message ? "status:" + String(message).slice(0, 200) : "",
+    });
   }
 
   // 防御性 i18n 初始化（与 webview-ui.js 同步，确保懒加载时 locale 已注册）
-  ;(function ensureI18nReady() {
+  (function ensureI18nReady() {
     try {
       var i18n =
-        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
-        (typeof window !== 'undefined' && window.AIIA_I18N)
-      if (!i18n || typeof i18n.registerLocale !== 'function') return
-      var langs = typeof i18n.getAvailableLangs === 'function' ? i18n.getAvailableLangs() : []
-      if (langs.length > 0) return
-      var allLocales = (typeof window !== 'undefined' && window.__AIIA_I18N_ALL_LOCALES) || null
-      if (allLocales && typeof allLocales === 'object') {
-        var keys = Object.keys(allLocales)
+        (typeof globalThis !== "undefined" && globalThis.AIIA_I18N) ||
+        (typeof window !== "undefined" && window.AIIA_I18N);
+      if (!i18n || typeof i18n.registerLocale !== "function") return;
+      var langs =
+        typeof i18n.getAvailableLangs === "function"
+          ? i18n.getAvailableLangs()
+          : [];
+      if (langs.length > 0) return;
+      var allLocales =
+        (typeof window !== "undefined" && window.__AIIA_I18N_ALL_LOCALES) ||
+        null;
+      if (allLocales && typeof allLocales === "object") {
+        var keys = Object.keys(allLocales);
         for (var i = 0; i < keys.length; i++) {
-          if (allLocales[keys[i]] && typeof allLocales[keys[i]] === 'object') {
-            i18n.registerLocale(keys[i], allLocales[keys[i]])
+          if (allLocales[keys[i]] && typeof allLocales[keys[i]] === "object") {
+            i18n.registerLocale(keys[i], allLocales[keys[i]]);
           }
         }
       }
-      var loc = (typeof window !== 'undefined' && window.__AIIA_I18N_LOCALE) || null
-      var lang = (typeof window !== 'undefined' && window.__AIIA_I18N_LANG) || ''
-      if (loc && typeof loc === 'object' && lang) {
-        i18n.registerLocale(String(lang), loc)
-        if (typeof i18n.setLang === 'function') i18n.setLang(String(lang))
+      var loc =
+        (typeof window !== "undefined" && window.__AIIA_I18N_LOCALE) || null;
+      var lang =
+        (typeof window !== "undefined" && window.__AIIA_I18N_LANG) || "";
+      if (loc && typeof loc === "object" && lang) {
+        i18n.registerLocale(String(lang), loc);
+        if (typeof i18n.setLang === "function") i18n.setLang(String(lang));
       }
-    } catch (e) { /* 忽略 */ }
-  })()
+    } catch (e) {
+      /* 忽略 */
+    }
+  })();
 
   function t(key, params) {
     try {
       var i18n =
-        (typeof globalThis !== 'undefined' && globalThis.AIIA_I18N) ||
-        (typeof window !== 'undefined' && window.AIIA_I18N)
-      if (i18n && typeof i18n.t === 'function') return i18n.t(key, params)
+        (typeof globalThis !== "undefined" && globalThis.AIIA_I18N) ||
+        (typeof window !== "undefined" && window.AIIA_I18N);
+      if (i18n && typeof i18n.t === "function") return i18n.t(key, params);
     } catch (e) {
       // 忽略
     }
-    return key
+    return key;
   }
 
   function retranslateSettingsPanel() {
-    var panel = document.getElementById('settingsPanel')
-    if (!panel) return
-    var els = panel.querySelectorAll('[data-i18n]')
+    var panel = document.getElementById("settingsPanel");
+    if (!panel) return;
+    var els = panel.querySelectorAll("[data-i18n]");
     for (var i = 0; i < els.length; i++) {
-      var key = els[i].getAttribute('data-i18n')
-      if (!key) continue
-      var ver = els[i].getAttribute('data-i18n-version')
-      var val = ver ? t(key, { version: ver }) : t(key)
-      if (val && val !== key) els[i].textContent = val
+      var key = els[i].getAttribute("data-i18n");
+      if (!key) continue;
+      var ver = els[i].getAttribute("data-i18n-version");
+      var val = ver ? t(key, { version: ver }) : t(key);
+      if (val && val !== key) els[i].textContent = val;
     }
-    var titles = panel.querySelectorAll('[data-i18n-title]')
+    var titles = panel.querySelectorAll("[data-i18n-title]");
     for (var j = 0; j < titles.length; j++) {
-      var tKey = titles[j].getAttribute('data-i18n-title')
-      if (!tKey) continue
-      var tVal = t(tKey)
+      var tKey = titles[j].getAttribute("data-i18n-title");
+      if (!tKey) continue;
+      var tVal = t(tKey);
       if (tVal && tVal !== tKey) {
-        titles[j].setAttribute('title', tVal)
-        if (titles[j].hasAttribute('aria-label')) titles[j].setAttribute('aria-label', tVal)
+        titles[j].setAttribute("title", tVal);
+        if (titles[j].hasAttribute("aria-label"))
+          titles[j].setAttribute("aria-label", tVal);
       }
     }
-    var phs = panel.querySelectorAll('[data-i18n-placeholder]')
+    var phs = panel.querySelectorAll("[data-i18n-placeholder]");
     for (var k = 0; k < phs.length; k++) {
-      var phKey = phs[k].getAttribute('data-i18n-placeholder')
-      if (!phKey) continue
-      var phVal = t(phKey)
-      if (phVal && phVal !== phKey) phs[k].setAttribute('placeholder', phVal)
+      var phKey = phs[k].getAttribute("data-i18n-placeholder");
+      if (!phKey) continue;
+      var phVal = t(phKey);
+      if (phVal && phVal !== phKey) phs[k].setAttribute("placeholder", phVal);
     }
   }
-  try { globalThis.__AIIA_retranslateSettingsPanel = retranslateSettingsPanel } catch (e) { /* 忽略 */ }
+  try {
+    globalThis.__AIIA_retranslateSettingsPanel = retranslateSettingsPanel;
+  } catch (e) {
+    /* 忽略 */
+  }
 
   function getNotifyCore() {
     try {
       return globalThis && globalThis.AIIAWebviewNotifyCore
         ? globalThis.AIIAWebviewNotifyCore
-        : null
+        : null;
     } catch (e) {
       try {
-        return window && window.AIIAWebviewNotifyCore ? window.AIIAWebviewNotifyCore : null
+        return window && window.AIIAWebviewNotifyCore
+          ? window.AIIAWebviewNotifyCore
+          : null;
       } catch (_) {
-        return null
+        return null;
       }
     }
   }
 
   function computeHash(settings) {
     try {
-      return JSON.stringify(settings || {})
+      return JSON.stringify(settings || {});
     } catch (e) {
-      return String(Date.now())
+      return String(Date.now());
     }
   }
 
   // 通知设置热更新：当配置文件 / Web UI 修改后，设置面板自动同步（无需重启）
-  const SETTINGS_AUTO_REFRESH_MS = 2000
-  let settingsAutoRefreshTimer = null
-  let settingsDirty = false
-  let settingsRemoteChangedWhileDirty = false
-  let isPopulatingSettingsForm = false
-  let lastNotificationSettingsHash = ''
-  let settingsHintClearTimer = null
+  const SETTINGS_AUTO_REFRESH_MS = 2000;
+  let settingsAutoRefreshTimer = null;
+  let settingsDirty = false;
+  let settingsRemoteChangedWhileDirty = false;
+  let isPopulatingSettingsForm = false;
+  let lastNotificationSettingsHash = "";
+  let settingsHintClearTimer = null;
 
   // 设置自动保存：对齐原项目（修改即同步，无需手动点“保存”）
-  const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 500
-  const SETTINGS_AUTO_SAVE_TIMEOUT_MS = 3500
-  let settingsAutoSaveTimer = null
-  let settingsAutoSaveAbortController = null
-  let settingsAutoSaveInFlight = false
-  let settingsAutoSavePending = false
+  const SETTINGS_AUTO_SAVE_DEBOUNCE_MS = 500;
+  const SETTINGS_AUTO_SAVE_TIMEOUT_MS = 3500;
+  let settingsAutoSaveTimer = null;
+  let settingsAutoSaveAbortController = null;
+  let settingsAutoSaveInFlight = false;
+  let settingsAutoSavePending = false;
 
-  let uiInitialized = false
+  let uiInitialized = false;
 
   function setSettingsHint(message, isError, autoClearMs) {
-    const text = message ? String(message).trim() : ''
+    const text = message ? String(message).trim() : "";
 
     if (text) {
-      const toast = typeof globalThis !== 'undefined' && globalThis.__AIIA_showToast
+      const toast =
+        typeof globalThis !== "undefined" && globalThis.__AIIA_showToast;
       if (toast) {
         toast(text, {
-          kind: isError ? 'error' : 'success',
-          timeoutMs: isError ? 4000 : (autoClearMs || 1400),
-          dedupeKey: 'settings:' + (isError ? 'err:' : 'ok:') + text.slice(0, 40)
-        })
-        return
+          kind: isError ? "error" : "success",
+          timeoutMs: isError ? 4000 : autoClearMs || 1400,
+          dedupeKey:
+            "settings:" + (isError ? "err:" : "ok:") + text.slice(0, 40),
+        });
+        return;
       }
     }
 
-    const hint = document.getElementById('settingsHint')
-    if (!hint) return
-    hint.textContent = text
+    const hint = document.getElementById("settingsHint");
+    if (!hint) return;
+    hint.textContent = text;
     // CSP 收紧后禁止动态写入 inline style，这里改为 class 驱动
-    hint.classList.toggle('aiia-error', !!isError)
-    hint.classList.toggle('aiia-has-message', !!text)
+    hint.classList.toggle("aiia-error", !!isError);
+    hint.classList.toggle("aiia-has-message", !!text);
 
     // 自动清理：避免“已加载”这类状态常驻造成困惑
     if (settingsHintClearTimer) {
-      clearTimeout(settingsHintClearTimer)
-      settingsHintClearTimer = null
+      clearTimeout(settingsHintClearTimer);
+      settingsHintClearTimer = null;
     }
     if (!isError && text && autoClearMs && autoClearMs > 0) {
       settingsHintClearTimer = setTimeout(() => {
         try {
-          const overlay = document.getElementById('settingsOverlay')
+          const overlay = document.getElementById("settingsOverlay");
           // 面板已关闭则不需要再显示任何提示
-          if (!overlay || overlay.classList.contains('hidden')) return
-          setSettingsHint('', false)
+          if (!overlay || overlay.classList.contains("hidden")) return;
+          setSettingsHint("", false);
         } catch (e) {
           // 忽略
         }
-      }, autoClearMs)
+      }, autoClearMs);
     }
   }
 
   function isSettingsOverlayOpen() {
-    const overlay = document.getElementById('settingsOverlay')
-    return !!(overlay && !overlay.classList.contains('hidden'))
+    const overlay = document.getElementById("settingsOverlay");
+    return !!(overlay && !overlay.classList.contains("hidden"));
   }
 
   function populateSettingsForm(settings) {
-    isPopulatingSettingsForm = true
+    isPopulatingSettingsForm = true;
     try {
       const setChecked = (id, value) => {
-        const el = document.getElementById(id)
-        if (el) el.checked = !!value
-      }
+        const el = document.getElementById(id);
+        if (el) el.checked = !!value;
+      };
       const setValue = (id, value) => {
-        const el = document.getElementById(id)
-        if (el) el.value = value === undefined || value === null ? '' : String(value)
-      }
+        const el = document.getElementById(id);
+        if (el)
+          el.value = value === undefined || value === null ? "" : String(value);
+      };
 
-      const s = settings || {}
-      setChecked('notifyEnabled', s.enabled)
-      setChecked('notifyMacOSNativeEnabled', s.macosNativeEnabled)
+      const s = settings || {};
+      setChecked("notifyEnabled", s.enabled);
+      setChecked("notifyMacOSNativeEnabled", s.macosNativeEnabled);
 
-      setChecked('notifyBarkEnabled', s.barkEnabled)
-      setValue('notifyBarkUrl', s.barkUrl)
-      setValue('notifyBarkDeviceKey', s.barkDeviceKey)
-      setValue('notifyBarkIcon', s.barkIcon)
-      setValue('notifyBarkAction', s.barkAction)
-      setValue('notifyBarkUrlTemplate', s.barkUrlTemplate)
+      setChecked("notifyBarkEnabled", s.barkEnabled);
+      setValue("notifyBarkUrl", s.barkUrl);
+      setValue("notifyBarkDeviceKey", s.barkDeviceKey);
+      setValue("notifyBarkIcon", s.barkIcon);
+      setValue("notifyBarkAction", s.barkAction);
+      setValue("notifyBarkUrlTemplate", s.barkUrlTemplate);
     } finally {
-      isPopulatingSettingsForm = false
+      isPopulatingSettingsForm = false;
     }
   }
 
   function collectSettingsForm() {
-    const getChecked = id => {
-      const el = document.getElementById(id)
-      return !!(el && el.checked)
-    }
-    const getValue = id => {
-      const el = document.getElementById(id)
-      return el ? String(el.value || '') : ''
-    }
+    const getChecked = (id) => {
+      const el = document.getElementById(id);
+      return !!(el && el.checked);
+    };
+    const getValue = (id) => {
+      const el = document.getElementById(id);
+      return el ? String(el.value || "") : "";
+    };
 
     return {
-      enabled: getChecked('notifyEnabled'),
-      macosNativeEnabled: getChecked('notifyMacOSNativeEnabled'),
+      enabled: getChecked("notifyEnabled"),
+      macosNativeEnabled: getChecked("notifyMacOSNativeEnabled"),
 
-      barkEnabled: getChecked('notifyBarkEnabled'),
-      barkUrl: getValue('notifyBarkUrl') || 'https://api.day.app/push',
-      barkDeviceKey: getValue('notifyBarkDeviceKey'),
-      barkIcon: getValue('notifyBarkIcon'),
-      barkAction: getValue('notifyBarkAction') || 'none',
-      barkUrlTemplate: getValue('notifyBarkUrlTemplate') || '{base_url}/?task_id={task_id}'
-    }
+      barkEnabled: getChecked("notifyBarkEnabled"),
+      barkUrl: getValue("notifyBarkUrl") || "https://api.day.app/push",
+      barkDeviceKey: getValue("notifyBarkDeviceKey"),
+      barkIcon: getValue("notifyBarkIcon"),
+      barkAction: getValue("notifyBarkAction") || "none",
+      barkUrlTemplate:
+        getValue("notifyBarkUrlTemplate") || "{base_url}/?task_id={task_id}",
+    };
   }
 
   function markSettingsDirty() {
-    if (isPopulatingSettingsForm) return
-    settingsDirty = true
-    scheduleSettingsAutoSave()
+    if (isPopulatingSettingsForm) return;
+    settingsDirty = true;
+    scheduleSettingsAutoSave();
   }
 
   function scheduleSettingsAutoSave() {
-    if (!isSettingsOverlayOpen()) return
+    if (!isSettingsOverlayOpen()) return;
     if (settingsAutoSaveTimer) {
-      clearTimeout(settingsAutoSaveTimer)
-      settingsAutoSaveTimer = null
+      clearTimeout(settingsAutoSaveTimer);
+      settingsAutoSaveTimer = null;
     }
     settingsAutoSaveTimer = setTimeout(() => {
-      saveSettings({ silent: true })
-    }, SETTINGS_AUTO_SAVE_DEBOUNCE_MS)
+      saveSettings({ silent: true });
+    }, SETTINGS_AUTO_SAVE_DEBOUNCE_MS);
   }
 
   function stopSettingsAutoSave() {
     if (settingsAutoSaveTimer) {
-      clearTimeout(settingsAutoSaveTimer)
-      settingsAutoSaveTimer = null
+      clearTimeout(settingsAutoSaveTimer);
+      settingsAutoSaveTimer = null;
     }
-    settingsAutoSavePending = false
+    settingsAutoSavePending = false;
     try {
       if (
         settingsAutoSaveAbortController &&
-        typeof settingsAutoSaveAbortController.abort === 'function'
+        typeof settingsAutoSaveAbortController.abort === "function"
       ) {
-        settingsAutoSaveAbortController.abort()
+        settingsAutoSaveAbortController.abort();
       }
     } catch (e) {
       // 忽略
     } finally {
-      settingsAutoSaveAbortController = null
-      settingsAutoSaveInFlight = false
+      settingsAutoSaveAbortController = null;
+      settingsAutoSaveInFlight = false;
     }
   }
 
   function startSettingsAutoRefresh() {
-    if (settingsAutoRefreshTimer) return
+    if (settingsAutoRefreshTimer) return;
     settingsAutoRefreshTimer = setInterval(() => {
       // 静默刷新：失败不打扰用户；成功时仅在“未编辑”状态下自动同步表单
-      refreshNotificationSettingsFromServer({ force: false, silent: true })
-    }, SETTINGS_AUTO_REFRESH_MS)
+      refreshNotificationSettingsFromServer({ force: false, silent: true });
+    }, SETTINGS_AUTO_REFRESH_MS);
   }
 
   function stopSettingsAutoRefresh() {
     if (settingsAutoRefreshTimer) {
-      clearInterval(settingsAutoRefreshTimer)
-      settingsAutoRefreshTimer = null
+      clearInterval(settingsAutoRefreshTimer);
+      settingsAutoRefreshTimer = null;
     }
-    stopSettingsAutoSave()
-    settingsDirty = false
-    settingsRemoteChangedWhileDirty = false
+    stopSettingsAutoSave();
+    settingsDirty = false;
+    settingsRemoteChangedWhileDirty = false;
   }
 
   async function refreshNotificationSettingsFromServer({
     force = false,
     silent = false,
-    allowWhenClosed = false
+    allowWhenClosed = false,
   } = {}) {
-    const overlayOpen = isSettingsOverlayOpen()
+    const overlayOpen = isSettingsOverlayOpen();
     // 默认只在设置面板打开时刷新；allowWhenClosed=true 用于面板关闭时的“逻辑配置加载”（不渲染表单）
-    if (!overlayOpen && !allowWhenClosed) return false
+    if (!overlayOpen && !allowWhenClosed) return false;
 
-    const core = getNotifyCore()
-    if (!core || typeof core.refreshNotificationSettingsFromServer !== 'function') {
+    const core = getNotifyCore();
+    if (
+      !core ||
+      typeof core.refreshNotificationSettingsFromServer !== "function"
+    ) {
       if (!silent && overlayOpen) {
-        setSettingsHint(t('settings.hint.coreNotReady'), true)
+        setSettingsHint(t("settings.hint.coreNotReady"), true);
       }
-      return false
+      return false;
     }
 
-    let result = null
+    let result = null;
     try {
-      result = await core.refreshNotificationSettingsFromServer({ force, silent: true })
+      result = await core.refreshNotificationSettingsFromServer({
+        force,
+        silent: true,
+      });
     } catch (e) {
-      result = null
+      result = null;
     }
     if (!result || !result.ok) {
       if (!silent && overlayOpen) {
         const msg =
-          result && result.message ? String(result.message) : t('settings.hint.loadFailed')
-        setSettingsHint(t('settings.hint.loadFailedReason', { reason: msg }), true)
+          result && result.message
+            ? String(result.message)
+            : t("settings.hint.loadFailed");
+        setSettingsHint(
+          t("settings.hint.loadFailedReason", { reason: msg }),
+          true,
+        );
       }
-      return false
+      return false;
     }
 
     const next =
@@ -354,170 +390,183 @@
         ? result.settings
         : core.getCachedNotificationSettings
           ? core.getCachedNotificationSettings()
-          : null
-    const nextHash = computeHash(next)
-    const changed = !lastNotificationSettingsHash || nextHash !== lastNotificationSettingsHash
+          : null;
+    const nextHash = computeHash(next);
+    const changed =
+      !lastNotificationSettingsHash ||
+      nextHash !== lastNotificationSettingsHash;
 
     if (force || (!settingsDirty && changed)) {
-      lastNotificationSettingsHash = nextHash
-      settingsDirty = false
-      settingsRemoteChangedWhileDirty = false
+      lastNotificationSettingsHash = nextHash;
+      settingsDirty = false;
+      settingsRemoteChangedWhileDirty = false;
       if (overlayOpen) {
-        populateSettingsForm(next)
+        populateSettingsForm(next);
         if (!silent) {
           // 更清晰：表示“已从服务端同步”，并自动淡出
-          setSettingsHint(t('settings.hint.synced'), false, 1200)
+          setSettingsHint(t("settings.hint.synced"), false, 1200);
         }
       }
-      return true
+      return true;
     }
 
     if (changed && settingsDirty && !settingsRemoteChangedWhileDirty) {
-      settingsRemoteChangedWhileDirty = true
+      settingsRemoteChangedWhileDirty = true;
       if (!silent && overlayOpen) {
-        setSettingsHint(t('settings.hint.remoteChanged'), true)
+        setSettingsHint(t("settings.hint.remoteChanged"), true);
       }
     }
 
-    return true
+    return true;
   }
 
   function openSettingsOverlay() {
-    const overlay = document.getElementById('settingsOverlay')
-    if (overlay) overlay.classList.remove('hidden')
-    startSettingsAutoRefresh()
+    const overlay = document.getElementById("settingsOverlay");
+    if (overlay) overlay.classList.remove("hidden");
+    startSettingsAutoRefresh();
   }
 
   function closeSettingsOverlay() {
-    const overlay = document.getElementById('settingsOverlay')
-    if (overlay) overlay.classList.add('hidden')
-    stopSettingsAutoRefresh()
-    setSettingsHint('', false)
+    const overlay = document.getElementById("settingsOverlay");
+    if (overlay) overlay.classList.add("hidden");
+    stopSettingsAutoRefresh();
+    setSettingsHint("", false);
   }
 
   async function openSettings() {
-    initUiOnce()
-    openSettingsOverlay()
-    setSettingsHint(t('settings.hint.loading'), false)
+    initUiOnce();
+    openSettingsOverlay();
+    setSettingsHint(t("settings.hint.loading"), false);
 
     try {
-      await refreshNotificationSettingsFromServer({ force: true, silent: false })
+      await refreshNotificationSettingsFromServer({
+        force: true,
+        silent: false,
+      });
     } catch (e) {
       setSettingsHint(
-        t('settings.hint.loadFailedReason', { reason: e && e.message ? e.message : String(e) }),
-        true
-      )
+        t("settings.hint.loadFailedReason", {
+          reason: e && e.message ? e.message : String(e),
+        }),
+        true,
+      );
     }
-    loadFeedbackConfig()
+    loadFeedbackConfig();
   }
 
   async function saveSettings({ silent = false } = {}) {
-    if (!isSettingsOverlayOpen()) return
+    if (!isSettingsOverlayOpen()) return;
     if (!SERVER_URL) {
-      if (!silent) setSettingsHint(t('settings.hint.syncFailedNoUrl'), true)
-      return
+      if (!silent) setSettingsHint(t("settings.hint.syncFailedNoUrl"), true);
+      return;
     }
     if (settingsAutoSaveInFlight) {
       // 有请求在飞：标记 pending，等当前请求结束后再同步最新值
-      settingsAutoSavePending = true
-      return
+      settingsAutoSavePending = true;
+      return;
     }
-    settingsAutoSaveInFlight = true
+    settingsAutoSaveInFlight = true;
 
-    let timeoutId = null
+    let timeoutId = null;
     try {
-      const core = getNotifyCore()
-      const updates = collectSettingsForm()
+      const core = getNotifyCore();
+      const updates = collectSettingsForm();
       const base =
-        core && typeof core.getCachedNotificationSettings === 'function'
+        core && typeof core.getCachedNotificationSettings === "function"
           ? core.getCachedNotificationSettings() || {}
-          : {}
-      const mergedFull = Object.assign({}, base, updates)
-      const mergedHash = computeHash(mergedFull)
+          : {};
+      const mergedFull = Object.assign({}, base, updates);
+      const mergedHash = computeHash(mergedFull);
 
       if (mergedHash === lastNotificationSettingsHash) {
-        settingsDirty = false
-        settingsRemoteChangedWhileDirty = false
-        if (!silent) setSettingsHint(t('settings.hint.noChange'), false, 1200)
-        return
+        settingsDirty = false;
+        settingsRemoteChangedWhileDirty = false;
+        if (!silent) setSettingsHint(t("settings.hint.noChange"), false, 1200);
+        return;
       }
 
       if (!silent) {
-        setSettingsHint(t('settings.hint.syncing'), false)
+        setSettingsHint(t("settings.hint.syncing"), false);
       }
 
       try {
         if (
           settingsAutoSaveAbortController &&
-          typeof settingsAutoSaveAbortController.abort === 'function'
+          typeof settingsAutoSaveAbortController.abort === "function"
         ) {
-          settingsAutoSaveAbortController.abort()
+          settingsAutoSaveAbortController.abort();
         }
       } catch (e) {
         // 忽略
       }
 
       const fetchOptions = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         body: JSON.stringify(updates),
-        cache: 'no-store'
-      }
-      if (typeof AbortController !== 'undefined') {
-        settingsAutoSaveAbortController = new AbortController()
-        fetchOptions.signal = settingsAutoSaveAbortController.signal
+        cache: "no-store",
+      };
+      if (typeof AbortController !== "undefined") {
+        settingsAutoSaveAbortController = new AbortController();
+        fetchOptions.signal = settingsAutoSaveAbortController.signal;
         timeoutId = setTimeout(() => {
           try {
-            settingsAutoSaveAbortController.abort()
+            settingsAutoSaveAbortController.abort();
           } catch (e) {
             /* 忽略 */
           }
-        }, SETTINGS_AUTO_SAVE_TIMEOUT_MS)
+        }, SETTINGS_AUTO_SAVE_TIMEOUT_MS);
       } else {
-        settingsAutoSaveAbortController = null
+        settingsAutoSaveAbortController = null;
       }
 
-      const resp = await fetch(SERVER_URL + '/api/update-notification-config', fetchOptions)
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data || data.status !== 'success') {
+      const resp = await fetch(
+        SERVER_URL + "/api/update-notification-config",
+        fetchOptions,
+      );
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data || data.status !== "success") {
         const msg =
           data && data.message
             ? data.message
-            : t('settings.hint.syncFailedHttp', { status: resp.status })
-        setSettingsHint(msg, true)
-        return
+            : t("settings.hint.syncFailedHttp", { status: resp.status });
+        setSettingsHint(msg, true);
+        return;
       }
 
       try {
-        if (core && typeof core.setCachedNotificationSettings === 'function') {
-          core.setCachedNotificationSettings(mergedFull)
+        if (core && typeof core.setCachedNotificationSettings === "function") {
+          core.setCachedNotificationSettings(mergedFull);
         }
       } catch (e) {
         // 忽略
       }
 
-      lastNotificationSettingsHash = mergedHash
-      settingsDirty = false
-      settingsRemoteChangedWhileDirty = false
+      lastNotificationSettingsHash = mergedHash;
+      settingsDirty = false;
+      settingsRemoteChangedWhileDirty = false;
 
       // 同步成功：短暂提示后自动隐藏（避免常驻）
-      setSettingsHint(t('settings.hint.synced'), false, 1200)
+      setSettingsHint(t("settings.hint.synced"), false, 1200);
     } catch (e) {
       const msg =
-        e && e.name === 'AbortError'
-          ? t('settings.hint.timeout')
+        e && e.name === "AbortError"
+          ? t("settings.hint.timeout")
           : e && e.message
             ? e.message
-            : String(e)
-      setSettingsHint(t('settings.hint.syncFailed', { reason: msg }), true)
+            : String(e);
+      setSettingsHint(t("settings.hint.syncFailed", { reason: msg }), true);
     } finally {
-      if (timeoutId) clearTimeout(timeoutId)
-      settingsAutoSaveInFlight = false
+      if (timeoutId) clearTimeout(timeoutId);
+      settingsAutoSaveInFlight = false;
       if (settingsAutoSavePending) {
-        settingsAutoSavePending = false
+        settingsAutoSavePending = false;
         // 若期间仍有未同步修改，则再触发一次（debounce 复用，避免风暴）
         if (settingsDirty && isSettingsOverlayOpen()) {
-          scheduleSettingsAutoSave()
+          scheduleSettingsAutoSave();
         }
       }
     }
@@ -525,38 +574,44 @@
 
   function testMacOSNativeNotification() {
     try {
-      const updates = collectSettingsForm()
+      const updates = collectSettingsForm();
       if (updates && updates.enabled === false) {
-        setSettingsHint(t('settings.hint.notifyDisabled'), true)
-        return
+        setSettingsHint(t("settings.hint.notifyDisabled"), true);
+        return;
       }
       if (!updates || !updates.macosNativeEnabled) {
-        setSettingsHint(t('settings.hint.macosNotEnabled'), true, 2000)
+        setSettingsHint(t("settings.hint.macosNotEnabled"), true, 2000);
       } else {
-        setSettingsHint(t('settings.hint.macosTestTriggered'), false, 2000)
+        setSettingsHint(t("settings.hint.macosTestTriggered"), false, 2000);
       }
 
       const posted = postMessage({
-        type: 'notify',
+        type: "notify",
         event: {
-          title: t('settings.test.macosTitle'),
-          message: t('settings.test.macosMessage'),
-          trigger: 'immediate',
-          types: ['macos_native'],
-          metadata: { isTest: true, diagnostic: true, kind: 'test_macos_native' },
-          source: 'webview-settings-ui',
-          dedupeKey: 'test:macos_native'
-        }
-      })
+          title: t("settings.test.macosTitle"),
+          message: t("settings.test.macosMessage"),
+          trigger: "immediate",
+          types: ["macos_native"],
+          metadata: {
+            isTest: true,
+            diagnostic: true,
+            kind: "test_macos_native",
+          },
+          source: "webview-settings-ui",
+          dedupeKey: "test:macos_native",
+        },
+      });
       if (!posted) {
-        setSettingsHint(t('settings.hint.postFailed'), true)
-        return
+        setSettingsHint(t("settings.hint.postFailed"), true);
+        return;
       }
     } catch (e) {
       setSettingsHint(
-        t('settings.hint.testFailed', { reason: e && e.message ? e.message : String(e) }),
-        true
-      )
+        t("settings.hint.testFailed", {
+          reason: e && e.message ? e.message : String(e),
+        }),
+        true,
+      );
     }
   }
 
@@ -572,178 +627,202 @@
   // - 后端探测失败 / 离线 / 5xx → 隐藏整个区块，不打扰主设置面板。
   // - LAN IP 探测不到 → 显示 "no LAN" 提示，复制按钮隐藏。
   async function initBarkBaseUrlStatus() {
-    const item = document.getElementById('settingsBarkBaseUrlStatus')
-    const message = document.getElementById('settingsBarkBaseUrlMessage')
-    const suggestion = document.getElementById('settingsBarkBaseUrlSuggestion')
-    const copyBtn = document.getElementById('settingsBarkBaseUrlCopyBtn')
-    const recheckBtn = document.getElementById('settingsBarkBaseUrlRecheckBtn')
-    if (!item || !message || !suggestion) return
+    const item = document.getElementById("settingsBarkBaseUrlStatus");
+    const message = document.getElementById("settingsBarkBaseUrlMessage");
+    const suggestion = document.getElementById("settingsBarkBaseUrlSuggestion");
+    const copyBtn = document.getElementById("settingsBarkBaseUrlCopyBtn");
+    const recheckBtn = document.getElementById("settingsBarkBaseUrlRecheckBtn");
+    if (!item || !message || !suggestion) return;
 
     const renderStatus = async () => {
       if (!SERVER_URL) {
-        item.hidden = true
-        return
+        item.hidden = true;
+        return;
       }
       try {
-        const resp = await fetch(SERVER_URL + '/api/system/network-base-url-status', {
-          method: 'GET',
-          cache: 'no-store'
-        })
+        const resp = await fetch(
+          SERVER_URL + "/api/system/network-base-url-status",
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
         if (!resp.ok) {
-          item.hidden = true
-          return
+          item.hidden = true;
+          return;
         }
-        const data = await resp.json().catch(() => null)
+        const data = await resp.json().catch(() => null);
         if (!data || data.success === false) {
-          item.hidden = true
-          return
+          item.hidden = true;
+          return;
         }
 
-        const isLoopback = data.is_loopback === true
-        const effective = String(data.effective_base_url || '')
-        const suggested = String(data.suggested_lan_base_url || '')
-        const recommendation = String(data.recommendation || 'ok')
+        const isLoopback = data.is_loopback === true;
+        const effective = String(data.effective_base_url || "");
+        const suggested = String(data.suggested_lan_base_url || "");
+        const recommendation = String(data.recommendation || "ok");
 
-        if (recommendation === 'ok') {
+        if (recommendation === "ok") {
           // 单 brace ``{url}`` 不走 i18n 的 ICU/Mustache 引擎（ICU 用
           // ``{name, plural,...}`` / Mustache 用 ``{{name}}``）。这里手动 replace
           // 与 PWA settings-manager.js 保持一致，并通过
           // scripts/check_i18n_param_signatures.py 的 strict gate。
-          message.textContent = String(t('settings.bark.baseUrlStatusOk') || '').replace(
-            '{url}',
-            effective
-          )
-          suggestion.textContent = ''
-          if (copyBtn) copyBtn.hidden = true
-          item.hidden = false
-          return
+          message.textContent = String(
+            t("settings.bark.baseUrlStatusOk") || "",
+          ).replace("{url}", effective);
+          suggestion.textContent = "";
+          if (copyBtn) copyBtn.hidden = true;
+          item.hidden = false;
+          return;
         }
 
-        item.hidden = false
+        item.hidden = false;
         message.textContent =
           isLoopback && effective
-            ? String(t('settings.bark.baseUrlStatusLoopback') || '').replace(
-                '{url}',
-                effective
+            ? String(t("settings.bark.baseUrlStatusLoopback") || "").replace(
+                "{url}",
+                effective,
               )
-            : t('settings.bark.baseUrlStatusUnreachable')
+            : t("settings.bark.baseUrlStatusUnreachable");
 
         if (suggested) {
-          suggestion.textContent = t('settings.bark.baseUrlSuggestLan')
+          suggestion.textContent = t("settings.bark.baseUrlSuggestLan");
           if (copyBtn) {
-            copyBtn.hidden = false
-            copyBtn.dataset.lanUrl = suggested
-            copyBtn.title = suggested
+            copyBtn.hidden = false;
+            copyBtn.dataset.lanUrl = suggested;
+            copyBtn.title = suggested;
           }
         } else {
-          suggestion.textContent = t('settings.bark.baseUrlSuggestNoLan')
+          suggestion.textContent = t("settings.bark.baseUrlSuggestNoLan");
           if (copyBtn) {
-            copyBtn.hidden = true
-            copyBtn.dataset.lanUrl = ''
+            copyBtn.hidden = true;
+            copyBtn.dataset.lanUrl = "";
           }
         }
       } catch (_e) {
-        item.hidden = true
+        item.hidden = true;
       }
-    }
+    };
 
     if (recheckBtn) {
-      recheckBtn.addEventListener('click', () => {
-        renderStatus()
-      })
+      recheckBtn.addEventListener("click", () => {
+        renderStatus();
+      });
     }
     if (copyBtn) {
-      copyBtn.addEventListener('click', async () => {
-        const url = copyBtn.dataset && copyBtn.dataset.lanUrl ? copyBtn.dataset.lanUrl : ''
-        if (!url) return
+      copyBtn.addEventListener("click", async () => {
+        const url =
+          copyBtn.dataset && copyBtn.dataset.lanUrl
+            ? copyBtn.dataset.lanUrl
+            : "";
+        if (!url) return;
         try {
-          if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(url)
+          if (
+            navigator &&
+            navigator.clipboard &&
+            navigator.clipboard.writeText
+          ) {
+            await navigator.clipboard.writeText(url);
           } else {
-            const ta = document.createElement('textarea')
-            ta.value = url
-            ta.style.position = 'fixed'
-            ta.style.opacity = '0'
-            document.body.appendChild(ta)
-            ta.select()
+            const ta = document.createElement("textarea");
+            ta.value = url;
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+            document.body.appendChild(ta);
+            ta.select();
             try {
-              document.execCommand('copy')
+              document.execCommand("copy");
             } finally {
-              document.body.removeChild(ta)
+              document.body.removeChild(ta);
             }
           }
-          const original = copyBtn.textContent
-          copyBtn.textContent = t('settings.bark.baseUrlCopied')
+          const original = copyBtn.textContent;
+          copyBtn.textContent = t("settings.bark.baseUrlCopied");
           setTimeout(() => {
-            copyBtn.textContent = original
-          }, 1500)
+            copyBtn.textContent = original;
+          }, 1500);
         } catch (_e) {
           // 复制失败：webview clipboard 权限问题或 textarea fallback 失败，
           // 按 hint 提示用户手动复制即可。
         }
-      })
+      });
     }
 
-    await renderStatus()
+    await renderStatus();
   }
 
   async function testBark() {
     try {
       if (!SERVER_URL) {
-        setSettingsHint(t('settings.hint.testFailedNoUrl'), true)
-        return
+        setSettingsHint(t("settings.hint.testFailedNoUrl"), true);
+        return;
       }
 
-      const updates = collectSettingsForm()
-      setSettingsHint(t('settings.hint.testing'), false)
-      const resp = await fetch(SERVER_URL + '/api/test-bark', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      const updates = collectSettingsForm();
+      setSettingsHint(t("settings.hint.testing"), false);
+      const resp = await fetch(SERVER_URL + "/api/test-bark", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         body: JSON.stringify({
-          bark_url: updates.barkUrl || 'https://api.day.app/push',
-          bark_device_key: updates.barkDeviceKey || '',
-          bark_icon: updates.barkIcon || '',
-          bark_action: updates.barkAction || 'none',
-          bark_url_template: updates.barkUrlTemplate || '{base_url}/?task_id={task_id}'
+          bark_url: updates.barkUrl || "https://api.day.app/push",
+          bark_device_key: updates.barkDeviceKey || "",
+          bark_icon: updates.barkIcon || "",
+          bark_action: updates.barkAction || "none",
+          bark_url_template:
+            updates.barkUrlTemplate || "{base_url}/?task_id={task_id}",
         }),
-        cache: 'no-store'
-      })
+        cache: "no-store",
+      });
 
-      const data = await resp.json().catch(() => ({}))
-      if (!resp.ok || !data || data.status !== 'success') {
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data || data.status !== "success") {
         const msg =
           data && data.message
             ? data.message
-            : t('settings.hint.testFailedHttp', { status: resp.status })
-        setSettingsHint(msg, true)
-        return
+            : t("settings.hint.testFailedHttp", { status: resp.status });
+        setSettingsHint(msg, true);
+        return;
       }
 
-      setSettingsHint(data.message || t('settings.hint.barkTestSent'), false)
-      postStatusInfo(data.message || t('settings.hint.barkTestSent'))
+      setSettingsHint(data.message || t("settings.hint.barkTestSent"), false);
+      postStatusInfo(data.message || t("settings.hint.barkTestSent"));
     } catch (e) {
       setSettingsHint(
-        t('settings.hint.testFailed', { reason: e && e.message ? e.message : String(e) }),
-        true
-      )
+        t("settings.hint.testFailed", {
+          reason: e && e.message ? e.message : String(e),
+        }),
+        true,
+      );
     }
   }
 
   function initUiOnce() {
-    if (uiInitialized) return
-    uiInitialized = true
+    if (uiInitialized) return;
+    uiInitialized = true;
 
     try {
-      const settingsOverlay = document.getElementById('settingsOverlay')
-      const settingsPanel = document.getElementById('settingsPanel')
-      const settingsClose = document.getElementById('settingsClose')
-      const settingsTestNativeBtn = document.getElementById('settingsTestNativeBtn')
-      const settingsTestBarkBtn = document.getElementById('settingsTestBarkBtn')
+      const settingsOverlay = document.getElementById("settingsOverlay");
+      const settingsPanel = document.getElementById("settingsPanel");
+      const settingsClose = document.getElementById("settingsClose");
+      const settingsTestNativeBtn = document.getElementById(
+        "settingsTestNativeBtn",
+      );
+      const settingsTestBarkBtn = document.getElementById(
+        "settingsTestBarkBtn",
+      );
 
-      if (settingsClose) settingsClose.addEventListener('click', closeSettingsOverlay)
+      if (settingsClose)
+        settingsClose.addEventListener("click", closeSettingsOverlay);
       if (settingsTestNativeBtn)
-        settingsTestNativeBtn.addEventListener('click', testMacOSNativeNotification)
-      if (settingsTestBarkBtn) settingsTestBarkBtn.addEventListener('click', testBark)
+        settingsTestNativeBtn.addEventListener(
+          "click",
+          testMacOSNativeNotification,
+        );
+      if (settingsTestBarkBtn)
+        settingsTestBarkBtn.addEventListener("click", testBark);
 
       // Bark base_url 可达性诊断（TODO #3 / r42）：
       //   /api/system/network-base-url-status 给设置面板展示「是否回环」+
@@ -752,7 +831,7 @@
       //   把后端 5xx / 超时 倒灌成 UI 噪音。锁定行为见
       //   tests/test_bark_loopback_pwa_redirect_r42.py。
       try {
-        initBarkBaseUrlStatus()
+        initBarkBaseUrlStatus();
       } catch (_e) {
         // 忽略：诊断面板失败不应影响主设置面板渲染
       }
@@ -764,21 +843,21 @@
       // 锁定行为：packages/vscode/test/extension.test.js 中的字面量回归点
       // （选择器 / postMessage 类型 / host case / openExternal 调用 / 协议白名单）。
       const settingsFooterLinks = document.querySelectorAll(
-        '.settings-footer-link[target="_blank"]'
-      )
-      settingsFooterLinks.forEach(linkEl => {
-        linkEl.addEventListener('click', e => {
+        '.settings-footer-link[target="_blank"]',
+      );
+      settingsFooterLinks.forEach((linkEl) => {
+        linkEl.addEventListener("click", (e) => {
           try {
-            const href = linkEl.getAttribute('href') || ''
-            if (!/^https?:\/\//i.test(href)) return
-            e.preventDefault()
-            e.stopPropagation()
-            postMessage({ type: 'openExternal', url: href })
+            const href = linkEl.getAttribute("href") || "";
+            if (!/^https?:\/\//i.test(href)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            postMessage({ type: "openExternal", url: href });
           } catch (_e) {
             // 忽略：拦截失败时退化为浏览器默认行为，不影响主流程
           }
-        })
-      })
+        });
+      });
 
       // Debounce + accumulate：800ms 窗口内多个字段的修改必须合并保存。
       //
@@ -797,59 +876,60 @@
       // 修复：每次调用把 updates 合进 ``fbPendingUpdates``，timer 真正触发时
       // 一次性 POST。clearTimeout 只是「重新计时」，不再丢弃 payload。
       // 锁定行为：tests/test_webview_debounce_save_feedback.test.mjs。
-      let fbSaveTimer = null
-      let fbPendingUpdates = null
-      const debounceSaveFeedback = updates => {
-        if (fbSaveTimer) clearTimeout(fbSaveTimer)
-        fbPendingUpdates = Object.assign(fbPendingUpdates || {}, updates || {})
+      let fbSaveTimer = null;
+      let fbPendingUpdates = null;
+      const debounceSaveFeedback = (updates) => {
+        if (fbSaveTimer) clearTimeout(fbSaveTimer);
+        fbPendingUpdates = Object.assign(fbPendingUpdates || {}, updates || {});
         fbSaveTimer = setTimeout(() => {
-          const merged = fbPendingUpdates
-          fbPendingUpdates = null
-          fbSaveTimer = null
-          saveFeedbackConfig(merged)
-        }, 800)
-      }
-      const fbCountdown = document.getElementById('feedbackCountdown')
-      const fbPrompt = document.getElementById('feedbackResubmitPrompt')
-      const fbSuffix = document.getElementById('feedbackPromptSuffix')
+          const merged = fbPendingUpdates;
+          fbPendingUpdates = null;
+          fbSaveTimer = null;
+          saveFeedbackConfig(merged);
+        }, 800);
+      };
+      const fbCountdown = document.getElementById("feedbackCountdown");
+      const fbPrompt = document.getElementById("feedbackResubmitPrompt");
+      const fbSuffix = document.getElementById("feedbackPromptSuffix");
       if (fbCountdown) {
-        fbCountdown.addEventListener('change', () => {
-          const v = parseInt(fbCountdown.value, 10)
+        fbCountdown.addEventListener("change", () => {
+          const v = parseInt(fbCountdown.value, 10);
           // Range mirrors server_config.AUTO_RESUBMIT_TIMEOUT_MAX (3600s); 0
           // remains the "disabled" sentinel. Locked by
           // tests/test_frontend_input_range_parity.py.
-          if (!isNaN(v) && v >= 0 && v <= 3600) debounceSaveFeedback({ frontend_countdown: v })
-        })
+          if (!isNaN(v) && v >= 0 && v <= 3600)
+            debounceSaveFeedback({ frontend_countdown: v });
+        });
       }
       if (fbPrompt) {
-        fbPrompt.addEventListener('input', () =>
-          debounceSaveFeedback({ resubmit_prompt: fbPrompt.value })
-        )
+        fbPrompt.addEventListener("input", () =>
+          debounceSaveFeedback({ resubmit_prompt: fbPrompt.value }),
+        );
       }
       if (fbSuffix) {
-        fbSuffix.addEventListener('input', () =>
-          debounceSaveFeedback({ prompt_suffix: fbSuffix.value })
-        )
+        fbSuffix.addEventListener("input", () =>
+          debounceSaveFeedback({ prompt_suffix: fbSuffix.value }),
+        );
       }
 
       if (settingsOverlay) {
-        settingsOverlay.addEventListener('click', e => {
+        settingsOverlay.addEventListener("click", (e) => {
           if (e.target === settingsOverlay) {
-            closeSettingsOverlay()
+            closeSettingsOverlay();
           }
-        })
+        });
       }
       if (settingsPanel) {
-        settingsPanel.addEventListener('click', e => e.stopPropagation())
+        settingsPanel.addEventListener("click", (e) => e.stopPropagation());
         // 设置面板：用户编辑时标记 dirty（避免热更新覆盖用户未保存输入）
-        const maybeMarkDirty = e => {
-          const t = e && e.target
-          const id = t && t.id ? String(t.id) : ''
-          if (!id || !id.startsWith('notify')) return
-          markSettingsDirty()
-        }
-        settingsPanel.addEventListener('input', maybeMarkDirty)
-        settingsPanel.addEventListener('change', maybeMarkDirty)
+        const maybeMarkDirty = (e) => {
+          const t = e && e.target;
+          const id = t && t.id ? String(t.id) : "";
+          if (!id || !id.startsWith("notify")) return;
+          markSettingsDirty();
+        };
+        settingsPanel.addEventListener("input", maybeMarkDirty);
+        settingsPanel.addEventListener("change", maybeMarkDirty);
       }
     } catch (e) {
       // 忽略
@@ -857,24 +937,26 @@
   }
 
   async function loadFeedbackConfig() {
-    if (!SERVER_URL) return
+    if (!SERVER_URL) return;
     try {
-      const resp = await fetch(SERVER_URL + '/api/get-feedback-prompts', { cache: 'no-store' })
-      if (!resp.ok) return
-      const data = await resp.json()
-      if (data && data.status === 'success') {
+      const resp = await fetch(SERVER_URL + "/api/get-feedback-prompts", {
+        cache: "no-store",
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data && data.status === "success") {
         const el = (id, v) => {
-          const e = document.getElementById(id)
-          if (e) e.value = v == null ? '' : String(v)
-        }
+          const e = document.getElementById(id);
+          if (e) e.value = v == null ? "" : String(v);
+        };
         if (data.config) {
-          const c = data.config
-          el('feedbackCountdown', c.frontend_countdown ?? 240)
-          el('feedbackResubmitPrompt', c.resubmit_prompt ?? '')
-          el('feedbackPromptSuffix', c.prompt_suffix ?? '')
+          const c = data.config;
+          el("feedbackCountdown", c.frontend_countdown ?? 240);
+          el("feedbackResubmitPrompt", c.resubmit_prompt ?? "");
+          el("feedbackPromptSuffix", c.prompt_suffix ?? "");
         }
         if (data.meta && data.meta.config_file) {
-          el('settingsConfigPath', data.meta.config_file)
+          el("settingsConfigPath", data.meta.config_file);
         }
       }
     } catch (e) {
@@ -883,38 +965,42 @@
   }
 
   async function saveFeedbackConfig(updates) {
-    if (!SERVER_URL) return
+    if (!SERVER_URL) return;
     try {
-      const resp = await fetch(SERVER_URL + '/api/update-feedback-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      })
-      const data = await resp.json().catch(() => ({}))
-      if (resp.ok && data.status === 'success') {
-        setSettingsHint(t('settings.feedback.saved'), false, 1200)
+      const resp = await fetch(SERVER_URL + "/api/update-feedback-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data.status === "success") {
+        setSettingsHint(t("settings.feedback.saved"), false, 1200);
       } else {
-        var reason = data.message || 'HTTP ' + resp.status
-        setSettingsHint(t('settings.feedback.saveFailed') + ' (' + reason + ')', true)
+        var reason = data.message || "HTTP " + resp.status;
+        setSettingsHint(
+          t("settings.feedback.saveFailed") + " (" + reason + ")",
+          true,
+        );
       }
     } catch (e) {
       setSettingsHint(
-        t('settings.feedback.saveFailed') + (e && e.message ? ' (' + e.message + ')' : ''),
-        true
-      )
+        t("settings.feedback.saveFailed") +
+          (e && e.message ? " (" + e.message + ")" : ""),
+        true,
+      );
     }
   }
 
   function dispose() {
     try {
-      stopSettingsAutoRefresh()
+      stopSettingsAutoRefresh();
     } catch (e) {
       // 忽略
     }
     try {
       if (settingsHintClearTimer) {
-        clearTimeout(settingsHintClearTimer)
-        settingsHintClearTimer = null
+        clearTimeout(settingsHintClearTimer);
+        settingsHintClearTimer = null;
       }
     } catch (e) {
       // 忽略
@@ -925,16 +1011,16 @@
     openSettings,
     closeSettingsOverlay,
     refreshNotificationSettingsFromServer,
-    dispose
-  }
+    dispose,
+  };
 
   try {
-    globalThis.AIIAWebviewSettingsUi = api
+    globalThis.AIIAWebviewSettingsUi = api;
   } catch (e) {
     try {
-      window.AIIAWebviewSettingsUi = api
+      window.AIIAWebviewSettingsUi = api;
     } catch (_) {
       // 忽略
     }
   }
-})()
+})();

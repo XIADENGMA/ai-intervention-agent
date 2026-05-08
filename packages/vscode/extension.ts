@@ -1,27 +1,27 @@
-import * as vscode from 'vscode'
-import * as fs from 'fs'
-import * as path from 'path'
-import * as http from 'http'
-import * as https from 'https'
-import { WebviewProvider } from './webview'
-import { createLogger } from './logger'
+import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
+import * as http from "http";
+import * as https from "https";
+import { WebviewProvider } from "./webview";
+import { createLogger } from "./logger";
 // P9·L8：``i18n-keys.d.ts`` 由 ``scripts/gen_i18n_types.py`` 从
 // ``packages/vscode/locales/en.json`` 生成，导出 ``I18nKey`` literal-union，
 // 让 ``hostT('statusBar.unkown')`` 在 tsc 阶段就挂掉而不是静默回显原 key。
-import type { I18nKey } from './i18n-keys'
+import type { I18nKey } from "./i18n-keys";
 
 /**
  * AI Intervention Agent VSCode 扩展
  * iframe 模式 - 极简版本，仅显示服务器 Web UI
  */
-const DEFAULT_SERVER_URL = 'http://localhost:8080'
-let EXT_VERSION = '0.0.0'
+const DEFAULT_SERVER_URL = "http://localhost:8080";
+let EXT_VERSION = "0.0.0";
 try {
-  EXT_VERSION = require('./package.json').version || EXT_VERSION
+  EXT_VERSION = require("./package.json").version || EXT_VERSION;
 } catch {
   try {
-    const _pkgPath = require('path').resolve(__dirname, '..', 'package.json')
-    EXT_VERSION = require(_pkgPath).version || EXT_VERSION
+    const _pkgPath = require("path").resolve(__dirname, "..", "package.json");
+    EXT_VERSION = require(_pkgPath).version || EXT_VERSION;
   } catch {
     // 忽略：打包/测试环境下可能读取不到版本号
   }
@@ -52,131 +52,136 @@ try {
 // 出现 ``.git`` 目录。dev tree 的 ``__dirname`` = ``packages/vscode/``，上溯两级正好
 // 命中 repo root，``.git`` 存在。这套路径校验对 monorepo 化重构（packages/* 多走一
 // 层）也鲁棒：实在 ``.git`` 找不到就退回 ``'dev'``，无副作用。
-let _cachedBuildId: string | null = null
+let _cachedBuildId: string | null = null;
 
 function getBuildId(): string {
-  if (_cachedBuildId !== null) return _cachedBuildId
-  const stamp = '__BUILD_SHA__'
-  if (!stamp.startsWith('__')) {
-    _cachedBuildId = stamp
-    return stamp
+  if (_cachedBuildId !== null) return _cachedBuildId;
+  const stamp = "__BUILD_SHA__";
+  if (!stamp.startsWith("__")) {
+    _cachedBuildId = stamp;
+    return stamp;
   }
-  let isDevTree = false
+  let isDevTree = false;
   try {
-    isDevTree = fs.existsSync(path.join(__dirname, '..', '..', '.git'))
+    isDevTree = fs.existsSync(path.join(__dirname, "..", "..", ".git"));
   } catch {
-    isDevTree = false
+    isDevTree = false;
   }
   if (!isDevTree) {
-    _cachedBuildId = 'dev'
-    return 'dev'
+    _cachedBuildId = "dev";
+    return "dev";
   }
   try {
-    const out: string = require('child_process')
-      .execSync('git rev-parse --short HEAD', {
-        encoding: 'utf8',
+    const out: string = require("child_process")
+      .execSync("git rev-parse --short HEAD", {
+        encoding: "utf8",
         timeout: 2000,
         cwd: __dirname,
-        stdio: ['ignore', 'pipe', 'ignore']
+        stdio: ["ignore", "pipe", "ignore"],
       })
-      .trim()
-    const value = out || 'dev'
-    _cachedBuildId = value
-    return value
+      .trim();
+    const value = out || "dev";
+    _cachedBuildId = value;
+    return value;
   } catch {
-    _cachedBuildId = 'dev'
-    return 'dev'
+    _cachedBuildId = "dev";
+    return "dev";
   }
 }
 
-let deactivateHook: (() => void) | null = null
+let deactivateHook: (() => void) | null = null;
 
 function normalizeServerUrl(input: unknown): string {
   try {
-    const raw = (input ?? '').toString().trim()
-    if (!raw) return DEFAULT_SERVER_URL
+    const raw = (input ?? "").toString().trim();
+    if (!raw) return DEFAULT_SERVER_URL;
 
-    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw) ? raw : `http://${raw}`
-    const u = new URL(withScheme)
-    const protocol = String(u.protocol || '').toLowerCase()
-    if (protocol !== 'http:' && protocol !== 'https:') return DEFAULT_SERVER_URL
-    const host = String(u.hostname || '').toLowerCase()
-    if (host === '0.0.0.0' || host === '::') {
-      const port = u.port ? `:${u.port}` : ''
-      return `${protocol}//localhost${port}`
+    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)
+      ? raw
+      : `http://${raw}`;
+    const u = new URL(withScheme);
+    const protocol = String(u.protocol || "").toLowerCase();
+    if (protocol !== "http:" && protocol !== "https:")
+      return DEFAULT_SERVER_URL;
+    const host = String(u.hostname || "").toLowerCase();
+    if (host === "0.0.0.0" || host === "::") {
+      const port = u.port ? `:${u.port}` : "";
+      return `${protocol}//localhost${port}`;
     }
-    return u.origin
+    return u.origin;
   } catch {
-    return DEFAULT_SERVER_URL
+    return DEFAULT_SERVER_URL;
   }
 }
 
 function getConfiguredServerUrl(): string {
-  const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-  return normalizeServerUrl(cfg.get<string>('serverUrl', DEFAULT_SERVER_URL))
+  const cfg = vscode.workspace.getConfiguration("ai-intervention-agent");
+  return normalizeServerUrl(cfg.get<string>("serverUrl", DEFAULT_SERVER_URL));
 }
 
 interface StatusBarState {
-  connected?: boolean | null
-  active?: number
-  pending?: number
+  connected?: boolean | null;
+  active?: number;
+  pending?: number;
 }
 
 interface TaskData {
-  id: string
-  prompt: string
+  id: string;
+  prompt: string;
 }
 
 async function activate(context: vscode.ExtensionContext): Promise<void> {
-  let outputChannel: vscode.OutputChannel
+  let outputChannel: vscode.OutputChannel;
   try {
-    outputChannel = vscode.window.createOutputChannel('AI Intervention Agent', { log: true })
+    outputChannel = vscode.window.createOutputChannel("AI Intervention Agent", {
+      log: true,
+    });
   } catch {
-    outputChannel = vscode.window.createOutputChannel('AI Intervention Agent')
+    outputChannel = vscode.window.createOutputChannel("AI Intervention Agent");
   }
 
   const logger = createLogger(outputChannel, {
-    component: 'ext',
+    component: "ext",
     getLevel: () => {
       try {
-        const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-        return cfg.get<string>('logLevel', 'info') ?? 'info'
+        const cfg = vscode.workspace.getConfiguration("ai-intervention-agent");
+        return cfg.get<string>("logLevel", "info") ?? "info";
       } catch {
-        return 'info'
+        return "info";
       }
-    }
-  })
-  let serverUrl = getConfiguredServerUrl()
+    },
+  });
+  let serverUrl = getConfiguredServerUrl();
 
   try {
-    EXT_VERSION = context.extension.packageJSON.version || EXT_VERSION
+    EXT_VERSION = context.extension.packageJSON.version || EXT_VERSION;
   } catch {
     /* 忽略 */
   }
 
   try {
-    const cfg = vscode.workspace.getConfiguration('ai-intervention-agent')
-    const logLevel = cfg.get<string>('logLevel', 'info')
+    const cfg = vscode.workspace.getConfiguration("ai-intervention-agent");
+    const logLevel = cfg.get<string>("logLevel", "info");
     logger.event(
-      'ext.activate',
+      "ext.activate",
       {
         version: EXT_VERSION,
         buildId: getBuildId(),
         serverUrl,
-        logLevel
+        logLevel,
       },
-      { level: 'info' }
-    )
+      { level: "info" },
+    );
   } catch {
     logger.event(
-      'ext.activate',
+      "ext.activate",
       {
         version: EXT_VERSION,
         buildId: getBuildId(),
-        serverUrl
+        serverUrl,
       },
-      { level: 'info' }
-    )
+      { level: "info" },
+    );
   }
 
   // 扩展宿主 i18n：加载 locale 文件用于状态栏等 Host 侧 UI 翻译
@@ -197,26 +202,27 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   //     用 ``await Promise.all`` 串到所有 ``provider`` / ``statusBar`` 初始化
   //     之前，第一次 ``hostT`` 调用（line ~178 的 statusBar.tooltip）发生在
   //     await 之后，contract 仍然是同步可见的 locale 数据，无 race。
-  const hostLocales: Record<string, Record<string, unknown>> = {}
-  let hostLang = 'en'
+  const hostLocales: Record<string, Record<string, unknown>> = {};
+  let hostLang = "en";
   try {
-    const localesDir = path.join(context.extensionPath, 'locales')
+    const localesDir = path.join(context.extensionPath, "locales");
     await Promise.all(
-      ['en', 'zh-CN'].map(async loc => {
+      ["en", "zh-CN"].map(async (loc) => {
         try {
           const raw = await fs.promises.readFile(
             path.join(localesDir, `${loc}.json`),
-            'utf8'
-          )
-          if (raw) hostLocales[loc] = JSON.parse(raw) as Record<string, unknown>
+            "utf8",
+          );
+          if (raw)
+            hostLocales[loc] = JSON.parse(raw) as Record<string, unknown>;
         } catch {
           /* 忽略 */
         }
-      })
-    )
+      }),
+    );
     try {
-      const vsLang = vscode.env.language || ''
-      hostLang = vsLang.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+      const vsLang = vscode.env.language || "";
+      hostLang = vsLang.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
     } catch {
       /* 忽略 */
     }
@@ -226,207 +232,236 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
 
   const hostT = (key: I18nKey): string => {
     try {
-      const dict = hostLocales[hostLang] || hostLocales['en']
-      if (!dict) return key
-      const parts = key.split('.')
-      let node: unknown = dict
+      const dict = hostLocales[hostLang] || hostLocales["en"];
+      if (!dict) return key;
+      const parts = key.split(".");
+      let node: unknown = dict;
       for (const p of parts) {
-        if (node === null || node === undefined || typeof node !== 'object') return key
-        node = (node as Record<string, unknown>)[p]
+        if (node === null || node === undefined || typeof node !== "object")
+          return key;
+        node = (node as Record<string, unknown>)[p];
       }
-      return typeof node === 'string' ? node : key
+      return typeof node === "string" ? node : key;
     } catch {
-      return key
+      return key;
     }
-  }
+  };
 
-  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
-  statusBar.command = 'ai-intervention-agent.openPanel'
-  statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT('statusBar.language')}: ${hostLang}\n${hostT('statusBar.clickToOpen')}\n${hostT('statusBar.openSettings')}`
-  statusBar.text = '$(sparkle-filled) --'
-  statusBar.hide()
-  let statusBarShown = false
+  const statusBar = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    100,
+  );
+  statusBar.command = "ai-intervention-agent.openPanel";
+  statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT("statusBar.language")}: ${hostLang}\n${hostT("statusBar.clickToOpen")}\n${hostT("statusBar.openSettings")}`;
+  statusBar.text = "$(sparkle-filled) --";
+  statusBar.hide();
+  let statusBarShown = false;
 
   const setStatusBarShown = (shouldShow: boolean): void => {
-    const next = !!shouldShow
-    if (next === statusBarShown) return
-    statusBarShown = next
+    const next = !!shouldShow;
+    if (next === statusBarShown) return;
+    statusBarShown = next;
     if (next) {
-      statusBar.show()
+      statusBar.show();
     } else {
-      statusBar.hide()
+      statusBar.hide();
     }
-  }
+  };
 
-  let lastConnected: boolean | null = null
-  let lastActive: number | null = null
-  let lastPending: number | null = null
-  let lastPollAtMs = 0
-  let lastPollDurationMs: number | null = null
-  let lastPollHttpStatus: number | null = null
-  let lastPollErrorName = ''
-  let lastPollError = ''
+  let lastConnected: boolean | null = null;
+  let lastActive: number | null = null;
+  let lastPending: number | null = null;
+  let lastPollAtMs = 0;
+  let lastPollDurationMs: number | null = null;
+  let lastPollHttpStatus: number | null = null;
+  let lastPollErrorName = "";
+  let lastPollError = "";
 
-  let extKnownTaskIds = new Set<string>()
-  let extTaskTrackingInitialized = false
+  let extKnownTaskIds = new Set<string>();
+  let extTaskTrackingInitialized = false;
 
   const formatTotalCount = (n: unknown): string => {
-    const num = typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0
-    return num > 99 ? '99+' : String(num)
-  }
+    const num =
+      typeof n === "number" && Number.isFinite(n)
+        ? Math.max(0, Math.floor(n))
+        : 0;
+    return num > 99 ? "99+" : String(num);
+  };
 
-  const buildStatusBarTooltip = ({ connected, active, pending }: StatusBarState = {}): string => {
+  const buildStatusBarTooltip = ({
+    connected,
+    active,
+    pending,
+  }: StatusBarState = {}): string => {
     try {
       const statusText =
         connected === true
-          ? hostT('statusBar.connected')
+          ? hostT("statusBar.connected")
           : connected === false
-            ? hostT('statusBar.disconnected')
-            : hostT('statusBar.unknown')
-      const a = typeof active === 'number' && Number.isFinite(active) ? active : 0
-      const p = typeof pending === 'number' && Number.isFinite(pending) ? pending : 0
-      const total = a + p
+            ? hostT("statusBar.disconnected")
+            : hostT("statusBar.unknown");
+      const a =
+        typeof active === "number" && Number.isFinite(active) ? active : 0;
+      const p =
+        typeof pending === "number" && Number.isFinite(pending) ? pending : 0;
+      const total = a + p;
 
-      const lines: string[] = []
-      lines.push(`AI Intervention Agent（${statusText}）`)
+      const lines: string[] = [];
+      lines.push(`AI Intervention Agent（${statusText}）`);
       if (connected === true) {
-        lines.push(`${hostT('statusBar.tasks')}：Active ${a}  Pending ${p}  Total ${total}`)
+        lines.push(
+          `${hostT("statusBar.tasks")}：Active ${a}  Pending ${p}  Total ${total}`,
+        );
       } else {
-        lines.push(`${hostT('statusBar.tasks')}：--`)
+        lines.push(`${hostT("statusBar.tasks")}：--`);
       }
 
-      lines.push(`${hostT('statusBar.language')}: ${hostLang}`)
+      lines.push(`${hostT("statusBar.language")}: ${hostLang}`);
 
       if (connected === false || connected === null) {
-        lines.push(`serverUrl: ${serverUrl}`)
+        lines.push(`serverUrl: ${serverUrl}`);
       }
       if ((connected === false || connected === null) && lastPollError) {
-        const name = lastPollErrorName ? `${lastPollErrorName}: ` : ''
-        lines.push(`${hostT('statusBar.reason')}：${name}${lastPollError}`)
+        const name = lastPollErrorName ? `${lastPollErrorName}: ` : "";
+        lines.push(`${hostT("statusBar.reason")}：${name}${lastPollError}`);
       }
 
-      return lines.join('\n')
+      return lines.join("\n");
     } catch {
-      return `AI Intervention Agent\nserverUrl: ${serverUrl}`
+      return `AI Intervention Agent\nserverUrl: ${serverUrl}`;
     }
-  }
+  };
 
   const applyStatusBarPresentation = ({
     connected,
     active,
-    pending
+    pending,
   }: StatusBarState = {}): void => {
     try {
-      const a = typeof active === 'number' && Number.isFinite(active) ? active : 0
-      const p = typeof pending === 'number' && Number.isFinite(pending) ? pending : 0
-      const total = a + p
+      const a =
+        typeof active === "number" && Number.isFinite(active) ? active : 0;
+      const p =
+        typeof pending === "number" && Number.isFinite(pending) ? pending : 0;
+      const total = a + p;
 
       if (connected === true) {
-        statusBar.text = `$(sparkle-filled) ${formatTotalCount(total)}`
+        statusBar.text = `$(sparkle-filled) ${formatTotalCount(total)}`;
       } else if (connected === false) {
-        statusBar.text = vscode.l10n.t('$(sparkle-filled) Offline')
+        statusBar.text = vscode.l10n.t("$(sparkle-filled) Offline");
       } else {
-        statusBar.text = '$(sparkle-filled) --'
+        statusBar.text = "$(sparkle-filled) --";
       }
 
-      statusBar.tooltip = buildStatusBarTooltip({ connected, active: a, pending: p })
+      statusBar.tooltip = buildStatusBarTooltip({
+        connected,
+        active: a,
+        pending: p,
+      });
       try {
         statusBar.accessibilityInformation = {
           label:
             connected === true
-              ? vscode.l10n.t('AI Intervention Agent connected, {0} task(s) total', String(total))
+              ? vscode.l10n.t(
+                  "AI Intervention Agent connected, {0} task(s) total",
+                  String(total),
+                )
               : connected === false
-                ? vscode.l10n.t('AI Intervention Agent not connected')
-                : vscode.l10n.t('AI Intervention Agent status unknown'),
-          role: 'status'
-        }
+                ? vscode.l10n.t("AI Intervention Agent not connected")
+                : vscode.l10n.t("AI Intervention Agent status unknown"),
+          role: "status",
+        };
       } catch {
         // 忽略：不同宿主/版本下 accessibilityInformation 可能不可用
       }
     } catch {
       // 忽略
     }
-  }
+  };
 
   const updateStatusBarVisibility = (): void => {
-    setStatusBarShown(true)
-  }
+    setStatusBarShown(true);
+  };
 
-  updateStatusBarVisibility()
+  updateStatusBarVisibility();
 
   const updateStatusBar = async (): Promise<boolean | null> => {
-    if (typeof fetch !== 'function') {
-      lastPollAtMs = Date.now()
-      lastPollDurationMs = null
-      lastPollHttpStatus = null
-      lastPollErrorName = 'NoFetch'
+    if (typeof fetch !== "function") {
+      lastPollAtMs = Date.now();
+      lastPollDurationMs = null;
+      lastPollHttpStatus = null;
+      lastPollErrorName = "NoFetch";
       lastPollError = vscode.l10n.t(
-        'No fetch available in current runtime; cannot probe server status'
-      )
-      applyStatusBarPresentation({ connected: null, active: 0, pending: 0 })
-      setStatusBarShown(true)
-      return null
+        "No fetch available in current runtime; cannot probe server status",
+      );
+      applyStatusBarPresentation({ connected: null, active: 0, pending: 0 });
+      setStatusBarShown(true);
+      return null;
     }
 
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+    const controller =
+      typeof AbortController !== "undefined" ? new AbortController() : null;
     const timeoutId = controller
       ? setTimeout(() => {
           try {
-            controller.abort()
+            controller.abort();
           } catch {
             // 忽略：极少数环境 AbortController 可能不可用/不可中止
           }
         }, 1500)
-      : null
+      : null;
 
-    const requestId = `status_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`
-    const startedAt = Date.now()
-    const prevConnected = lastConnected
-    const prevActive = lastActive
-    const prevPending = lastPending
+    const requestId = `status_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 8)}`;
+    const startedAt = Date.now();
+    const prevConnected = lastConnected;
+    const prevActive = lastActive;
+    const prevPending = lastPending;
 
     try {
       const resp = await fetch(`${serverUrl}/api/tasks`, {
         signal: controller ? controller.signal : undefined,
-        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }
-      } as RequestInit)
+        headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+      } as RequestInit);
 
       if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`)
+        throw new Error(`HTTP ${resp.status}`);
       }
 
-      const data = (await resp.json()) as Record<string, unknown>
+      const data = (await resp.json()) as Record<string, unknown>;
       const stats =
-        data && data.stats && typeof data.stats === 'object'
+        data && data.stats && typeof data.stats === "object"
           ? (data.stats as Record<string, unknown>)
-          : {}
-      const active = stats && typeof stats.active === 'number' ? stats.active : 0
-      const pending = stats && typeof stats.pending === 'number' ? stats.pending : 0
-      const connected = !!(data && data.success)
-      const durationMs = Date.now() - startedAt
+          : {};
+      const active =
+        stats && typeof stats.active === "number" ? stats.active : 0;
+      const pending =
+        stats && typeof stats.pending === "number" ? stats.pending : 0;
+      const connected = !!(data && data.success);
+      const durationMs = Date.now() - startedAt;
       const changed =
-        connected !== prevConnected || active !== prevActive || pending !== prevPending
-      lastPollAtMs = Date.now()
-      lastPollDurationMs = durationMs
-      lastPollHttpStatus = resp.status
-      lastPollErrorName = ''
-      lastPollError = ''
+        connected !== prevConnected ||
+        active !== prevActive ||
+        pending !== prevPending;
+      lastPollAtMs = Date.now();
+      lastPollDurationMs = durationMs;
+      lastPollHttpStatus = resp.status;
+      lastPollErrorName = "";
+      lastPollError = "";
 
       if (changed) {
-        lastConnected = connected
-        lastActive = active
-        lastPending = pending
+        lastConnected = connected;
+        lastActive = active;
+        lastPending = pending;
 
-        applyStatusBarPresentation({ connected, active, pending })
+        applyStatusBarPresentation({ connected, active, pending });
 
         const level =
           connected === false && prevConnected === true
-            ? 'warn'
+            ? "warn"
             : connected === true && prevConnected === false
-              ? 'info'
-              : 'debug'
+              ? "info"
+              : "debug";
         logger.event(
-          'server.poll',
+          "server.poll",
           {
             requestId,
             ok: true,
@@ -434,126 +469,131 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
             connected,
             active,
             pending,
-            durationMs
+            durationMs,
           },
-          { level }
-        )
+          { level },
+        );
       }
       if (!changed && statusBarShown) {
-        applyStatusBarPresentation({ connected, active, pending })
+        applyStatusBarPresentation({ connected, active, pending });
       }
-      updateStatusBarVisibility()
+      updateStatusBarVisibility();
 
       if (connected && data && Array.isArray(data.tasks)) {
         try {
-          const currentIds = new Set<string>()
-          const newTaskData: TaskData[] = []
+          const currentIds = new Set<string>();
+          const newTaskData: TaskData[] = [];
           for (const t of data.tasks as Array<Record<string, unknown>>) {
-            if (!t || !t.task_id) continue
-            const taskId = String(t.task_id)
-            currentIds.add(taskId)
+            if (!t || !t.task_id) continue;
+            const taskId = String(t.task_id);
+            currentIds.add(taskId);
             if (extTaskTrackingInitialized && !extKnownTaskIds.has(taskId)) {
-              newTaskData.push({ id: taskId, prompt: String(t.prompt || '') })
+              newTaskData.push({ id: taskId, prompt: String(t.prompt || "") });
             }
           }
           if (newTaskData.length > 0 && extTaskTrackingInitialized) {
             if (
               provider &&
               typeof (provider as unknown as Record<string, unknown>)
-                .dispatchNewTaskNotification === 'function'
+                .dispatchNewTaskNotification === "function"
             ) {
               if (isViewVisible) {
                 logger.event(
-                  'ext.skip_dispatch_webview_visible',
-                  { ids: newTaskData.map(t => t.id) },
-                  { level: 'debug' }
-                )
+                  "ext.skip_dispatch_webview_visible",
+                  { ids: newTaskData.map((t) => t.id) },
+                  { level: "debug" },
+                );
               } else {
                 logger.event(
-                  'ext.dispatch_new_task',
-                  { ids: newTaskData.map(t => t.id), viewVisible: false },
-                  { level: 'info' }
-                )
-                ;(
+                  "ext.dispatch_new_task",
+                  { ids: newTaskData.map((t) => t.id), viewVisible: false },
+                  { level: "info" },
+                );
+                (
                   provider as unknown as {
-                    dispatchNewTaskNotification: (tasks: TaskData[]) => void
+                    dispatchNewTaskNotification: (tasks: TaskData[]) => void;
                   }
-                ).dispatchNewTaskNotification(newTaskData)
+                ).dispatchNewTaskNotification(newTaskData);
               }
             }
           }
-          extKnownTaskIds = currentIds
+          extKnownTaskIds = currentIds;
           if (!extTaskTrackingInitialized && connected) {
-            extTaskTrackingInitialized = true
+            extTaskTrackingInitialized = true;
             logger.event(
-              'ext.tracking_initialized',
+              "ext.tracking_initialized",
               { knownCount: currentIds.size },
-              { level: 'info' }
-            )
+              { level: "info" },
+            );
           }
         } catch {
           // 新任务检测失败不应影响状态栏轮询
         }
       }
 
-      return connected
+      return connected;
     } catch (e: unknown) {
-      const durationMs = Date.now() - startedAt
-      const errName = e instanceof Error ? e.name : ''
-      const errMsg = e instanceof Error ? e.message : String(e)
-      lastPollAtMs = Date.now()
-      lastPollDurationMs = durationMs
-      lastPollHttpStatus = null
-      lastPollErrorName = errName
-      lastPollError = errMsg
+      const durationMs = Date.now() - startedAt;
+      const errName = e instanceof Error ? e.name : "";
+      const errMsg = e instanceof Error ? e.message : String(e);
+      lastPollAtMs = Date.now();
+      lastPollDurationMs = durationMs;
+      lastPollHttpStatus = null;
+      lastPollErrorName = errName;
+      lastPollError = errMsg;
 
       if (lastConnected !== false) {
-        lastConnected = false
-        lastActive = null
-        lastPending = null
+        lastConnected = false;
+        lastActive = null;
+        lastPending = null;
       }
-      applyStatusBarPresentation({ connected: false, active: 0, pending: 0 })
+      applyStatusBarPresentation({ connected: false, active: 0, pending: 0 });
 
-      const level = prevConnected === true ? 'warn' : prevConnected === false ? 'debug' : 'debug'
+      const level =
+        prevConnected === true
+          ? "warn"
+          : prevConnected === false
+            ? "debug"
+            : "debug";
       logger.event(
-        'server.poll',
+        "server.poll",
         {
           requestId,
           ok: false,
           connected: false,
           durationMs,
           errorName: errName,
-          error: errMsg
+          error: errMsg,
         },
-        { level }
-      )
+        { level },
+      );
 
-      updateStatusBarVisibility()
-      return false
+      updateStatusBarVisibility();
+      return false;
     } finally {
-      if (timeoutId) clearTimeout(timeoutId)
+      if (timeoutId) clearTimeout(timeoutId);
     }
-  }
+  };
 
-  const STATUS_POLL_FAST_MS = 3000
-  const STATUS_POLL_SLOW_MS = 15000
-  const STATUS_POLL_SSE_FALLBACK_MS = 60000
-  const STATUS_POLL_MAX_MS = 60000
-  const WEBVIEW_STATS_FRESH_MS = 5000
-  let statusPollTimer: ReturnType<typeof setTimeout> | null = null
-  let statusPollBackoffMs = STATUS_POLL_FAST_MS
-  let statusPollInFlight = false
-  let statusPollDisposed = false
-  let isViewVisible = true
-  let isWindowFocused = vscode.window.state.focused
-  let lastWebviewStatsAtMs = 0
+  const STATUS_POLL_FAST_MS = 3000;
+  const STATUS_POLL_SLOW_MS = 15000;
+  const STATUS_POLL_SSE_FALLBACK_MS = 60000;
+  const STATUS_POLL_MAX_MS = 60000;
+  const WEBVIEW_STATS_FRESH_MS = 5000;
+  let statusPollTimer: ReturnType<typeof setTimeout> | null = null;
+  let statusPollBackoffMs = STATUS_POLL_FAST_MS;
+  let statusPollInFlight = false;
+  let statusPollDisposed = false;
+  let isViewVisible = true;
+  let isWindowFocused = vscode.window.state.focused;
+  let lastWebviewStatsAtMs = 0;
 
   // SSE 连接状态
-  let _sseReq: http.ClientRequest | null = null
-  let _sseConnected = false
-  let _sseReconnectTimer: ReturnType<typeof setTimeout> | null = null
-  let _sseReconnectDelay = 1000
-  let _sseDebounceTimer: ReturnType<typeof setTimeout> | null = null
+  let _sseReq: http.ClientRequest | null = null;
+  let _sseConnected = false;
+  let _sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let _sseReconnectDelay = 1000;
+  let _sseDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   // R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
   // 我们走的是 Node `http.get` 直连 + 手动重连 + 自带 buffer 解析（不是浏览器
   // EventSource），所以浏览器内置的 Last-Event-ID 自动补齐机制完全帮不上忙；
@@ -564,101 +604,105 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
   // 服务端 sse_events 路由 query > header 优先级解析，两边写一个不会冲突。
   // ``gap_warning`` (id=-1) 服务端故意不输出 ``id:`` 行，所以这里 _lastEventId
   // 不会被 -1 污染，避免重连时 after_id=-1 触发死循环。
-  let _lastEventId: string | null = null
+  let _lastEventId: string | null = null;
 
   const _connectSSE = (): void => {
-    if (statusPollDisposed) return
-    _disconnectSSE()
+    if (statusPollDisposed) return;
+    _disconnectSSE();
 
-    let sseUrl = `${serverUrl}/api/events`
+    let sseUrl = `${serverUrl}/api/events`;
     if (_lastEventId) {
-      const sep = sseUrl.indexOf('?') >= 0 ? '&' : '?'
-      sseUrl += `${sep}last_event_id=${encodeURIComponent(_lastEventId)}`
+      const sep = sseUrl.indexOf("?") >= 0 ? "&" : "?";
+      sseUrl += `${sep}last_event_id=${encodeURIComponent(_lastEventId)}`;
     }
     const parsed = (() => {
       try {
-        return new URL(sseUrl)
+        return new URL(sseUrl);
       } catch {
-        return null
+        return null;
       }
-    })()
-    if (!parsed) return
+    })();
+    if (!parsed) return;
 
-    const headers: Record<string, string> = { Accept: 'text/event-stream' }
+    const headers: Record<string, string> = { Accept: "text/event-stream" };
     if (_lastEventId) {
-      headers['Last-Event-ID'] = _lastEventId
+      headers["Last-Event-ID"] = _lastEventId;
     }
 
-    const httpMod = parsed.protocol === 'https:' ? https : http
-    const req = httpMod.get(sseUrl, { headers }, res => {
+    const httpMod = parsed.protocol === "https:" ? https : http;
+    const req = httpMod.get(sseUrl, { headers }, (res) => {
       if (_sseReq !== req) {
-        res.resume()
-        return
+        res.resume();
+        return;
       }
       if (res.statusCode !== 200) {
-        res.resume()
-        _handleSSEError()
-        return
+        res.resume();
+        _handleSSEError();
+        return;
       }
 
-      _sseConnected = true
-      _sseReconnectDelay = 1000
-      logger.event('sse.connected', {}, { level: 'debug' })
+      _sseConnected = true;
+      _sseReconnectDelay = 1000;
+      logger.event("sse.connected", {}, { level: "debug" });
 
       // R40-S2：跨 chunk 累积 ``id:`` / ``event:`` / ``data:`` 三类字段，
       // 在遇到空行（事件分隔符）时一次性 emit。原实现只看 ``data:`` 行，
       // 错过了 ``id:`` 用于 resume，也错过了 ``event:`` 用于按事件类型分发
       // （gap_warning 与 task_changed 不能再走同一条 ``new_status`` 路径）。
-      let buffer = ''
-      let pendingId: string | null = null
-      let pendingType: string | null = null
-      let pendingDataLines: string[] = []
+      let buffer = "";
+      let pendingId: string | null = null;
+      let pendingType: string | null = null;
+      let pendingDataLines: string[] = [];
 
       const flushPendingEvent = (): void => {
-        if (pendingDataLines.length === 0 && pendingType === null && pendingId === null) {
-          return
+        if (
+          pendingDataLines.length === 0 &&
+          pendingType === null &&
+          pendingId === null
+        ) {
+          return;
         }
         // SSE 规范：多行 data 用 ``\n`` 拼接；为 0 行时 data 视为空字符串。
-        const dataStr = pendingDataLines.join('\n')
-        const evType = pendingType || 'message'
+        const dataStr = pendingDataLines.join("\n");
+        const evType = pendingType || "message";
 
         // 仅为正整数 id 更新 _lastEventId（gap_warning id=-1 服务端不输出
         // ``id:`` 行，理论上 pendingId 永远不会是 -1，但这里多一道防御）。
-        if (pendingId !== null && pendingId !== '') {
-          const parsedId = Number(pendingId)
+        if (pendingId !== null && pendingId !== "") {
+          const parsedId = Number(pendingId);
           if (Number.isFinite(parsedId) && parsedId > 0) {
-            _lastEventId = String(parsedId)
+            _lastEventId = String(parsedId);
           }
         }
 
-        if (evType === 'gap_warning') {
+        if (evType === "gap_warning") {
           // history evict：服务端无法从 ring buffer 给我们补发完整事件序列；
           // 客户端必须主动 fetch 全量。这里立刻 trigger status poll 而不是
           // 等 80ms debounce——丢数据的窗口越短越好。
-          logger.event('sse.gap_warning', { dataStr }, { level: 'warn' })
-          if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+          logger.event("sse.gap_warning", { dataStr }, { level: "warn" });
+          if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
           _sseDebounceTimer = setTimeout(() => {
-            _sseDebounceTimer = null
-            scheduleStatusPoll(0)
-          }, 0)
-          pendingId = null
-          pendingType = null
-          pendingDataLines = []
-          return
+            _sseDebounceTimer = null;
+            scheduleStatusPoll(0);
+          }, 0);
+          pendingId = null;
+          pendingType = null;
+          pendingDataLines = [];
+          return;
         }
 
-        if (evType === 'config_changed') {
+        if (evType === "config_changed") {
           // R48：服务端检测到 config 文件变更，给运维 / 用户一个 toast 提示。
           // 状态栏侧不强制 fetch（config 多数字段已经走 ConfigManager 热更新
           // 静默生效；与 task 状态无关，不影响 status-bar 数字）。仅记录事件
           // + 弹一条非阻塞 information message，让用户知道"我刚改的 toml 被
           // server 看见了"。
-          logger.event('sse.config_changed', { dataStr }, { level: 'info' })
-          let hint = 'AI Intervention Agent: configuration file changed.'
+          logger.event("sse.config_changed", { dataStr }, { level: "info" });
+          let hint = "AI Intervention Agent: configuration file changed.";
           try {
-            const detail = JSON.parse(dataStr)
-            if (detail && typeof detail.hint === 'string' && detail.hint) {
-              hint = detail.hint
+            const detail = JSON.parse(dataStr);
+            if (detail && typeof detail.hint === "string" && detail.hint) {
+              hint = detail.hint;
             }
           } catch {
             /* fallback hint */
@@ -666,45 +710,49 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
           try {
             // ``vscode`` 模块在本文件顶部已 import；调用 setStatusBarMessage
             // 让通知出现在 VSCode status bar 区域 6 秒，不弹 modal。
-            vscode.window.setStatusBarMessage(`$(sync) ${hint}`, 6000)
+            vscode.window.setStatusBarMessage(`$(sync) ${hint}`, 6000);
           } catch {
             /* ignore: 在 unit-test 沙箱里 vscode.window 可能被 stub */
           }
-          pendingId = null
-          pendingType = null
-          pendingDataLines = []
-          return
+          pendingId = null;
+          pendingType = null;
+          pendingDataLines = [];
+          return;
         }
 
-        if (evType === 'heartbeat') {
+        if (evType === "heartbeat") {
           // R51-B：服务端每 25s 推一帧 named-event heartbeat 替代旧的 SSE comment。
           // 状态栏不需要任何视觉变化（heartbeat 是"连接还活着"的 keep-alive），
           // 仅做 trace log 让排查长连接断流问题时能看到 last-heartbeat 时间。
-          logger.event('sse.heartbeat', { dataStr }, { level: 'debug' })
-          pendingId = null
-          pendingType = null
-          pendingDataLines = []
-          return
+          logger.event("sse.heartbeat", { dataStr }, { level: "debug" });
+          pendingId = null;
+          pendingType = null;
+          pendingDataLines = [];
+          return;
         }
 
-        if (evType !== 'task_changed' && evType !== 'message') {
+        if (evType !== "task_changed" && evType !== "message") {
           // 未识别的事件类型：写一条 trace 日志便于排查，但不当 task_changed
           // 处理（避免误更新 status bar）。
-          logger.event('sse.unknown_event', { evType, dataStr }, { level: 'debug' })
-          pendingId = null
-          pendingType = null
-          pendingDataLines = []
-          return
+          logger.event(
+            "sse.unknown_event",
+            { evType, dataStr },
+            { level: "debug" },
+          );
+          pendingId = null;
+          pendingType = null;
+          pendingDataLines = [];
+          return;
         }
 
         try {
-          const ev = JSON.parse(dataStr)
+          const ev = JSON.parse(dataStr);
           if (ev && ev.new_status) {
             logger.event(
-              'sse.task_changed',
+              "sse.task_changed",
               { taskId: ev.task_id, status: ev.new_status },
-              { level: 'debug' }
-            )
+              { level: "debug" },
+            );
             // R20.14-C：optimistic status bar update from embedded stats
             // ----------------------------------------------------------
             // 服务端 R20.14-C 起在 task_changed 事件里直接 push
@@ -716,176 +764,183 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
             // tasks 数组，且 fetch 是 stats 的 canonical truth 来源。
             // 这里的 optimistic 路径只走「视觉反馈优先」语义。
             const optStats =
-              ev.stats && typeof ev.stats === 'object'
+              ev.stats && typeof ev.stats === "object"
                 ? (ev.stats as Record<string, unknown>)
-                : null
+                : null;
             if (optStats) {
               const optActive =
-                typeof optStats.active === 'number' ? optStats.active : 0
+                typeof optStats.active === "number" ? optStats.active : 0;
               const optPending =
-                typeof optStats.pending === 'number' ? optStats.pending : 0
+                typeof optStats.pending === "number" ? optStats.pending : 0;
               if (lastConnected !== false) {
-                lastActive = optActive
-                lastPending = optPending
+                lastActive = optActive;
+                lastPending = optPending;
                 applyStatusBarPresentation({
                   connected: true,
                   active: optActive,
-                  pending: optPending
-                })
+                  pending: optPending,
+                });
               }
             }
-            if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer)
+            if (_sseDebounceTimer) clearTimeout(_sseDebounceTimer);
             _sseDebounceTimer = setTimeout(() => {
-              _sseDebounceTimer = null
-              scheduleStatusPoll(0)
-            }, 80)
+              _sseDebounceTimer = null;
+              scheduleStatusPoll(0);
+            }, 80);
           }
         } catch {
           /* noop */
         }
-        pendingId = null
-        pendingType = null
-        pendingDataLines = []
-      }
+        pendingId = null;
+        pendingType = null;
+        pendingDataLines = [];
+      };
 
-      res.setEncoding('utf8')
-      res.on('data', (chunk: string) => {
-        if (_sseReq !== req) return
-        buffer += chunk
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => {
+        if (_sseReq !== req) return;
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
         for (const line of lines) {
-          if (line === '') {
+          if (line === "") {
             // 空行：事件结束，flush pending event
-            flushPendingEvent()
-            continue
+            flushPendingEvent();
+            continue;
           }
-          if (line.startsWith(':')) {
+          if (line.startsWith(":")) {
             // 注释行（含 heartbeat ``: heartbeat``）：忽略
-            continue
+            continue;
           }
-          if (line.startsWith('id:')) {
-            pendingId = line.slice(3).replace(/^\s+/, '')
-            continue
+          if (line.startsWith("id:")) {
+            pendingId = line.slice(3).replace(/^\s+/, "");
+            continue;
           }
-          if (line.startsWith('event:')) {
-            pendingType = line.slice(6).replace(/^\s+/, '')
-            continue
+          if (line.startsWith("event:")) {
+            pendingType = line.slice(6).replace(/^\s+/, "");
+            continue;
           }
-          if (line.startsWith('data:')) {
+          if (line.startsWith("data:")) {
             // SSE 规范：``data:`` 后允许有可选空格；多行 data 各自 strip
             // 一次前导空格后用 ``\n`` 拼接。
-            pendingDataLines.push(line.slice(5).replace(/^\s/, ''))
-            continue
+            pendingDataLines.push(line.slice(5).replace(/^\s/, ""));
+            continue;
           }
           // 其他字段（如 retry:）忽略：我们不暴露给 server 控制重连节奏。
         }
-      })
-      res.on('end', () => {
-        if (_sseReq === req) _handleSSEError()
-      })
-      res.on('error', () => {
-        if (_sseReq === req) _handleSSEError()
-      })
-    })
+      });
+      res.on("end", () => {
+        if (_sseReq === req) _handleSSEError();
+      });
+      res.on("error", () => {
+        if (_sseReq === req) _handleSSEError();
+      });
+    });
 
-    req.on('error', () => {
-      if (_sseReq === req) _handleSSEError()
-    })
-    _sseReq = req
-  }
+    req.on("error", () => {
+      if (_sseReq === req) _handleSSEError();
+    });
+    _sseReq = req;
+  };
 
   const _handleSSEError = (): void => {
-    _sseConnected = false
+    _sseConnected = false;
     if (_sseReq) {
       try {
-        _sseReq.destroy()
+        _sseReq.destroy();
       } catch {
         /* noop */
       }
-      _sseReq = null
+      _sseReq = null;
     }
-    if (statusPollDisposed) return
-    logger.event('sse.disconnected', { reconnectIn: _sseReconnectDelay }, { level: 'debug' })
-    if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer)
+    if (statusPollDisposed) return;
+    logger.event(
+      "sse.disconnected",
+      { reconnectIn: _sseReconnectDelay },
+      { level: "debug" },
+    );
+    if (_sseReconnectTimer) clearTimeout(_sseReconnectTimer);
     _sseReconnectTimer = setTimeout(() => {
-      _sseReconnectTimer = null
-      if (!statusPollDisposed) _connectSSE()
-    }, _sseReconnectDelay)
-    _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2)
-  }
+      _sseReconnectTimer = null;
+      if (!statusPollDisposed) _connectSSE();
+    }, _sseReconnectDelay);
+    _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2);
+  };
 
   const _disconnectSSE = (): void => {
     if (_sseReconnectTimer) {
-      clearTimeout(_sseReconnectTimer)
-      _sseReconnectTimer = null
+      clearTimeout(_sseReconnectTimer);
+      _sseReconnectTimer = null;
     }
     if (_sseDebounceTimer) {
-      clearTimeout(_sseDebounceTimer)
-      _sseDebounceTimer = null
+      clearTimeout(_sseDebounceTimer);
+      _sseDebounceTimer = null;
     }
     if (_sseReq) {
       try {
-        _sseReq.destroy()
+        _sseReq.destroy();
       } catch {
         /* noop */
       }
-      _sseReq = null
+      _sseReq = null;
     }
-    _sseConnected = false
-  }
+    _sseConnected = false;
+  };
 
   const isWebviewStatsFresh = (): boolean =>
     isViewVisible &&
     lastWebviewStatsAtMs > 0 &&
-    Date.now() - lastWebviewStatsAtMs < WEBVIEW_STATS_FRESH_MS
+    Date.now() - lastWebviewStatsAtMs < WEBVIEW_STATS_FRESH_MS;
 
   const computeBaseDelayMs = (): number => {
-    if (_sseConnected) return STATUS_POLL_SSE_FALLBACK_MS
-    if (isWebviewStatsFresh()) return STATUS_POLL_SLOW_MS
-    if (isViewVisible && isWindowFocused) return STATUS_POLL_FAST_MS
-    if (isWindowFocused) return STATUS_POLL_FAST_MS * 2
-    return STATUS_POLL_SLOW_MS
-  }
+    if (_sseConnected) return STATUS_POLL_SSE_FALLBACK_MS;
+    if (isWebviewStatsFresh()) return STATUS_POLL_SLOW_MS;
+    if (isViewVisible && isWindowFocused) return STATUS_POLL_FAST_MS;
+    if (isWindowFocused) return STATUS_POLL_FAST_MS * 2;
+    return STATUS_POLL_SLOW_MS;
+  };
   const computeNextDelayMs = (): number => {
-    const base = computeBaseDelayMs()
+    const base = computeBaseDelayMs();
     if (lastConnected === false) {
-      return Math.min(STATUS_POLL_MAX_MS, Math.max(base, statusPollBackoffMs))
+      return Math.min(STATUS_POLL_MAX_MS, Math.max(base, statusPollBackoffMs));
     }
-    return base
-  }
+    return base;
+  };
 
   const scheduleStatusPoll = (delayMs: number): void => {
-    if (statusPollDisposed) return
+    if (statusPollDisposed) return;
     if (statusPollTimer) {
-      clearTimeout(statusPollTimer)
-      statusPollTimer = null
+      clearTimeout(statusPollTimer);
+      statusPollTimer = null;
     }
-    statusPollTimer = setTimeout(runStatusPoll, Math.max(0, delayMs))
-  }
+    statusPollTimer = setTimeout(runStatusPoll, Math.max(0, delayMs));
+  };
 
   const runStatusPoll = async (): Promise<void> => {
-    if (statusPollDisposed) return
+    if (statusPollDisposed) return;
     if (statusPollInFlight) {
-      scheduleStatusPoll(computeNextDelayMs())
-      return
+      scheduleStatusPoll(computeNextDelayMs());
+      return;
     }
-    statusPollInFlight = true
+    statusPollInFlight = true;
     try {
-      const connected = await updateStatusBar()
+      const connected = await updateStatusBar();
       if (connected === true) {
-        statusPollBackoffMs = STATUS_POLL_FAST_MS
-        if (!_sseConnected && !_sseReq) _connectSSE()
+        statusPollBackoffMs = STATUS_POLL_FAST_MS;
+        if (!_sseConnected && !_sseReq) _connectSSE();
       } else if (connected === false) {
-        statusPollBackoffMs = Math.min(STATUS_POLL_MAX_MS, Math.round(statusPollBackoffMs * 1.7))
+        statusPollBackoffMs = Math.min(
+          STATUS_POLL_MAX_MS,
+          Math.round(statusPollBackoffMs * 1.7),
+        );
       }
     } finally {
-      statusPollInFlight = false
+      statusPollInFlight = false;
       if (!statusPollDisposed) {
-        scheduleStatusPoll(computeNextDelayMs())
+        scheduleStatusPoll(computeNextDelayMs());
       }
     }
-  }
+  };
 
   // R20.13-F：``EXT_VERSION`` 透传到 ``WebviewProvider`` 构造器，让 webview HTML
   // 渲染不必每次再调 ``vscode.extensions.getExtension('xiadengma.aia')`` 查表。
@@ -899,167 +954,200 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
     serverUrl,
     EXT_VERSION,
     (visible: boolean) => {
-      isViewVisible = !!visible
-      updateStatusBarVisibility()
-      scheduleStatusPoll(0)
+      isViewVisible = !!visible;
+      updateStatusBarVisibility();
+      scheduleStatusPoll(0);
     },
     ({ connected, active, pending }: StatusBarState = {}) => {
-      lastWebviewStatsAtMs = Date.now()
-      const c = connected === true
+      lastWebviewStatsAtMs = Date.now();
+      const c = connected === true;
       const a =
-        typeof active === 'number' && Number.isFinite(active) ? Math.max(0, Math.floor(active)) : 0
+        typeof active === "number" && Number.isFinite(active)
+          ? Math.max(0, Math.floor(active))
+          : 0;
       const p =
-        typeof pending === 'number' && Number.isFinite(pending)
+        typeof pending === "number" && Number.isFinite(pending)
           ? Math.max(0, Math.floor(pending))
-          : 0
+          : 0;
 
-      const changed = c !== lastConnected || a !== lastActive || p !== lastPending
+      const changed =
+        c !== lastConnected || a !== lastActive || p !== lastPending;
       if (changed) {
-        lastConnected = c
-        lastActive = a
-        lastPending = p
-        applyStatusBarPresentation({ connected: c, active: a, pending: p })
+        lastConnected = c;
+        lastActive = a;
+        lastPending = p;
+        applyStatusBarPresentation({ connected: c, active: a, pending: p });
       } else if (statusBarShown) {
-        applyStatusBarPresentation({ connected: c, active: a, pending: p })
+        applyStatusBarPresentation({ connected: c, active: a, pending: p });
       }
 
       if (c) {
-        statusPollBackoffMs = STATUS_POLL_FAST_MS
+        statusPollBackoffMs = STATUS_POLL_FAST_MS;
       } else {
-        statusPollBackoffMs = Math.min(STATUS_POLL_MAX_MS, Math.round(statusPollBackoffMs * 1.7))
+        statusPollBackoffMs = Math.min(
+          STATUS_POLL_MAX_MS,
+          Math.round(statusPollBackoffMs * 1.7),
+        );
       }
     },
     (taskIds: string[]) => {
-      if (!Array.isArray(taskIds)) return
+      if (!Array.isArray(taskIds)) return;
       for (const id of taskIds) {
-        if (id) extKnownTaskIds.add(String(id))
+        if (id) extKnownTaskIds.add(String(id));
       }
     },
     (lang: string) => {
-      if (!lang || lang === 'auto') return
-      const normalized = lang.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+      if (!lang || lang === "auto") return;
+      const normalized = lang.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
       if (normalized !== hostLang) {
-        hostLang = normalized
-        logger.event('i18n.hostLangChanged', { lang: hostLang }, { level: 'info' })
+        hostLang = normalized;
+        logger.event(
+          "i18n.hostLangChanged",
+          { lang: hostLang },
+          { level: "info" },
+        );
         applyStatusBarPresentation({
           connected: lastConnected,
           active: lastActive ?? undefined,
-          pending: lastPending ?? undefined
-        })
+          pending: lastPending ?? undefined,
+        });
       }
-    }
-  )
+    },
+  );
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('aiInterventionAgent.feedbackView', provider, {
-      webviewOptions: {
-        // VSCode 官方推荐：保留 Webview 上下文以消除重复 resolveWebviewView + 阻塞 await，
-        // 侧边栏在隐藏/collapse/切视图后恢复秒开。内存开销约 1~3MB（Lottie 去内联后更低）。
-        retainContextWhenHidden: true
-      }
-    })
-  )
+    vscode.window.registerWebviewViewProvider(
+      "aiInterventionAgent.feedbackView",
+      provider,
+      {
+        webviewOptions: {
+          // VSCode 官方推荐：保留 Webview 上下文以消除重复 resolveWebviewView + 阻塞 await，
+          // 侧边栏在隐藏/collapse/切视图后恢复秒开。内存开销约 1~3MB（Lottie 去内联后更低）。
+          retainContextWhenHidden: true,
+        },
+      },
+    ),
+  );
 
   context.subscriptions.push(
-    vscode.workspace.onDidChangeConfiguration(e => {
-      if (!e.affectsConfiguration('ai-intervention-agent.serverUrl')) return
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration("ai-intervention-agent.serverUrl")) return;
 
-      const next = getConfiguredServerUrl()
-      if (!next || next === serverUrl) return
+      const next = getConfiguredServerUrl();
+      if (!next || next === serverUrl) return;
 
-      const prev = serverUrl
-      serverUrl = next
-      logger.event('config.update', { key: 'serverUrl', prev, next: serverUrl }, { level: 'info' })
+      const prev = serverUrl;
+      serverUrl = next;
+      logger.event(
+        "config.update",
+        { key: "serverUrl", prev, next: serverUrl },
+        { level: "info" },
+      );
 
-      lastConnected = null
-      lastActive = null
-      lastPending = null
-      statusPollBackoffMs = STATUS_POLL_FAST_MS
-      extKnownTaskIds = new Set<string>()
-      extTaskTrackingInitialized = false
-      statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT('statusBar.language')}: ${hostLang}\n${hostT('statusBar.clickToOpen')}\n${hostT('statusBar.openSettings')}`
-      _connectSSE()
-      scheduleStatusPoll(0)
+      lastConnected = null;
+      lastActive = null;
+      lastPending = null;
+      statusPollBackoffMs = STATUS_POLL_FAST_MS;
+      extKnownTaskIds = new Set<string>();
+      extTaskTrackingInitialized = false;
+      statusBar.tooltip = `AI Intervention Agent\nserverUrl: ${serverUrl}\n${hostT("statusBar.language")}: ${hostLang}\n${hostT("statusBar.clickToOpen")}\n${hostT("statusBar.openSettings")}`;
+      _connectSSE();
+      scheduleStatusPoll(0);
 
       if (
         provider &&
-        typeof (provider as unknown as { updateServerUrl?: (url: string) => void })
-          .updateServerUrl === 'function'
+        typeof (
+          provider as unknown as { updateServerUrl?: (url: string) => void }
+        ).updateServerUrl === "function"
       ) {
-        ;(provider as unknown as { updateServerUrl: (url: string) => void }).updateServerUrl(
-          serverUrl
-        )
+        (
+          provider as unknown as { updateServerUrl: (url: string) => void }
+        ).updateServerUrl(serverUrl);
       }
-    })
-  )
+    }),
+  );
 
   context.subscriptions.push(
-    vscode.window.onDidChangeWindowState(state => {
-      isWindowFocused = !!state.focused
-      scheduleStatusPoll(isWindowFocused && isViewVisible ? 0 : computeNextDelayMs())
+    vscode.window.onDidChangeWindowState((state) => {
+      isWindowFocused = !!state.focused;
+      scheduleStatusPoll(
+        isWindowFocused && isViewVisible ? 0 : computeNextDelayMs(),
+      );
       try {
         if (
           provider &&
-          typeof (provider as unknown as { onWindowFocusChanged?: (focused: boolean) => void })
-            .onWindowFocusChanged === 'function'
+          typeof (
+            provider as unknown as {
+              onWindowFocusChanged?: (focused: boolean) => void;
+            }
+          ).onWindowFocusChanged === "function"
         ) {
-          ;(
-            provider as unknown as { onWindowFocusChanged: (focused: boolean) => void }
-          ).onWindowFocusChanged(isWindowFocused)
+          (
+            provider as unknown as {
+              onWindowFocusChanged: (focused: boolean) => void;
+            }
+          ).onWindowFocusChanged(isWindowFocused);
         }
       } catch {
         // 忽略：不同宿主/版本下 focus 事件不应影响主流程
       }
-    })
-  )
+    }),
+  );
 
-  _connectSSE()
-  scheduleStatusPoll(0)
+  _connectSSE();
+  scheduleStatusPoll(0);
 
   const openPanelDisposable = vscode.commands.registerCommand(
-    'ai-intervention-agent.openPanel',
+    "ai-intervention-agent.openPanel",
     async function () {
-      await vscode.commands.executeCommand('workbench.view.extension.aiInterventionAgent')
+      await vscode.commands.executeCommand(
+        "workbench.view.extension.aiInterventionAgent",
+      );
       try {
-        await vscode.commands.executeCommand('aiInterventionAgent.feedbackView.focus')
+        await vscode.commands.executeCommand(
+          "aiInterventionAgent.feedbackView.focus",
+        );
       } catch {
         // 忽略：不同宿主/版本下该 view id 可能不可用
       }
-    }
-  )
+    },
+  );
 
   const openSettingsDisposable = vscode.commands.registerCommand(
-    'ai-intervention-agent.openSettings',
+    "ai-intervention-agent.openSettings",
     async function () {
       try {
         await vscode.commands.executeCommand(
-          'workbench.action.openSettings',
-          'ai-intervention-agent.serverUrl'
-        )
+          "workbench.action.openSettings",
+          "ai-intervention-agent.serverUrl",
+        );
       } catch {
-        await vscode.commands.executeCommand('workbench.action.openSettingsJson')
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettingsJson",
+        );
       }
-    }
-  )
+    },
+  );
 
-  context.subscriptions.push(openPanelDisposable)
-  context.subscriptions.push(openSettingsDisposable)
-  context.subscriptions.push(outputChannel)
-  context.subscriptions.push(statusBar)
+  context.subscriptions.push(openPanelDisposable);
+  context.subscriptions.push(openSettingsDisposable);
+  context.subscriptions.push(outputChannel);
+  context.subscriptions.push(statusBar);
 
   const cleanup = (): void => {
     try {
-      statusPollDisposed = true
-      _disconnectSSE()
+      statusPollDisposed = true;
+      _disconnectSSE();
       if (statusPollTimer) {
-        clearTimeout(statusPollTimer)
-        statusPollTimer = null
+        clearTimeout(statusPollTimer);
+        statusPollTimer = null;
       }
       try {
         if (
           provider &&
-          typeof (provider as unknown as { dispose?: () => void }).dispose === 'function'
+          typeof (provider as unknown as { dispose?: () => void }).dispose ===
+            "function"
         ) {
-          ;(provider as unknown as { dispose: () => void }).dispose()
+          (provider as unknown as { dispose: () => void }).dispose();
         }
       } catch {
         // 忽略
@@ -1067,24 +1155,24 @@ async function activate(context: vscode.ExtensionContext): Promise<void> {
     } catch {
       // 忽略
     }
-  }
-  deactivateHook = cleanup
-  context.subscriptions.push({ dispose: cleanup })
+  };
+  deactivateHook = cleanup;
+  context.subscriptions.push({ dispose: cleanup });
 }
 
 function deactivate(): void {
   try {
-    if (deactivateHook && typeof deactivateHook === 'function') {
-      deactivateHook()
+    if (deactivateHook && typeof deactivateHook === "function") {
+      deactivateHook();
     }
   } catch {
     // 忽略
   } finally {
-    deactivateHook = null
+    deactivateHook = null;
   }
 }
 
 module.exports = {
   activate,
-  deactivate
-}
+  deactivate,
+};
