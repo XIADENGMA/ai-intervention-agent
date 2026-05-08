@@ -42,7 +42,7 @@ def _run_node(i18n_path: Path, body: str) -> tuple[int, str, str]:
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: 'en' };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, writable: true, configurable: true, enumerable: true });
         require(%(path)s);
         const api = globalThis.AIIA_I18N;
         const dbg = globalThis.AIIA_I18N__test;

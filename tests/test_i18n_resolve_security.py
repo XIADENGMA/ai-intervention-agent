@@ -36,7 +36,7 @@ def _probe(i18n_path: Path, locale_expr: str, key: str) -> str:
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: 'en' };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, writable: true, configurable: true, enumerable: true });
         require(%(path)s);
         const api = globalThis.AIIA_I18N;
         const data = %(locale)s;

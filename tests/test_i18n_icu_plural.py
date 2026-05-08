@@ -68,7 +68,7 @@ def _render_with_node(
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: %(lang_literal)s };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: %(lang_literal)s }, writable: true, configurable: true, enumerable: true });
         // Load the module (it IIFEs itself into globalThis.AIIA_I18N).
         require(%(path_literal)s);
         const api = globalThis.AIIA_I18N;

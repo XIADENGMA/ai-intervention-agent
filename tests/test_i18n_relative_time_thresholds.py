@@ -45,7 +45,7 @@ def _call_from_now(i18n_path: Path, delta_ms: int, lang: str = "en") -> str:
         globalThis.Date = FakeDate;
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: %(lang_literal)s };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: %(lang_literal)s }, writable: true, configurable: true, enumerable: true });
         require(%(path_literal)s);
         const api = globalThis.AIIA_I18N;
         api.registerLocale(%(lang_literal)s, {});
@@ -196,7 +196,7 @@ def _call_with_target_expr(i18n_path: Path, target_expr: str, lang: str = "en") 
         globalThis.Date = FakeDate;
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: %(lang_literal)s };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: %(lang_literal)s }, writable: true, configurable: true, enumerable: true });
         require(%(path_literal)s);
         const api = globalThis.AIIA_I18N;
         api.registerLocale(%(lang_literal)s, {});

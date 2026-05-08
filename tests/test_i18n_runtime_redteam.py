@@ -33,7 +33,7 @@ def _call_t(i18n_path: Path, template: str, params_json: str) -> str:
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: 'en' };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, writable: true, configurable: true, enumerable: true });
         require(%(path)s);
         const api = globalThis.AIIA_I18N;
         api.registerLocale('en', { m: %(tpl)s });
@@ -66,7 +66,7 @@ def _call_plural_burst(i18n_path: Path) -> int:
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: 'en' };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, writable: true, configurable: true, enumerable: true });
         require(%(path)s);
         const api = globalThis.AIIA_I18N;
         const dbg = globalThis.AIIA_I18N__test;

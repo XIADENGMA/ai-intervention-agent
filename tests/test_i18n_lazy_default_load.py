@@ -68,7 +68,7 @@ _HARNESS_PREFIX = textwrap.dedent(
     """
     globalThis.window = globalThis;
     globalThis.document = undefined;
-    globalThis.navigator = { language: 'zh-CN' };
+    Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-CN' }, writable: true, configurable: true, enumerable: true });
 
     // Stub fetch:
     //  * /loc/zh-CN.json → { "hello": "你好" }

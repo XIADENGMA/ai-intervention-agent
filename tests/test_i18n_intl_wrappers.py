@@ -56,7 +56,7 @@ def _call_api(
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: %(lang_literal)s };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: %(lang_literal)s }, writable: true, configurable: true, enumerable: true });
         require(%(path_literal)s);
         const api = globalThis.AIIA_I18N;
         api.registerLocale(%(lang_literal)s, {});
@@ -91,7 +91,7 @@ def _api_surface(i18n_path: Path) -> list[str]:
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: "en" };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: "en" }, writable: true, configurable: true, enumerable: true });
         require(%(path_literal)s);
         const keys = Object.keys(globalThis.AIIA_I18N).sort();
         process.stdout.write(JSON.stringify(keys));
@@ -236,7 +236,7 @@ class _WrapperTestsMixin(unittest.TestCase):
             """
             globalThis.window = globalThis;
             globalThis.document = undefined;
-            globalThis.navigator = { language: "en" };
+            Object.defineProperty(globalThis, 'navigator', { value: { language: "en" }, writable: true, configurable: true, enumerable: true });
             require(%(path_literal)s);
             const api = globalThis.AIIA_I18N;
             api.registerLocale("en", {});
@@ -265,7 +265,7 @@ class _WrapperTestsMixin(unittest.TestCase):
             """
             globalThis.window = globalThis;
             globalThis.document = undefined;
-            globalThis.navigator = { language: "en" };
+            Object.defineProperty(globalThis, 'navigator', { value: { language: "en" }, writable: true, configurable: true, enumerable: true });
             require(%(path_literal)s);
             const api = globalThis.AIIA_I18N;
             api.registerLocale("en", {});
@@ -297,7 +297,7 @@ class _WrapperTestsMixin(unittest.TestCase):
             """
             globalThis.window = globalThis;
             globalThis.document = undefined;
-            globalThis.navigator = { language: "en" };
+            Object.defineProperty(globalThis, 'navigator', { value: { language: "en" }, writable: true, configurable: true, enumerable: true });
             require(%(path_literal)s);
             const api = globalThis.AIIA_I18N;
             api.registerLocale("en", {});

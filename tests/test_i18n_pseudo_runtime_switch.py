@@ -54,11 +54,16 @@ def _harness(i18n_path: Path, body: str, *, with_location: str | None = None) ->
     """Load ``i18n.js`` under a simulated browser globals object and
     execute ``body``. Optionally inject a ``window.location`` stub so we
     can test the URL-based pseudo toggle."""
+    # Node 21+ 把 ``globalThis.navigator`` 变成只读 accessor property（getter-only），
+    # 直接 ``globalThis.navigator = ...`` 会被静默忽略，导致 mock 失效后 detectLang
+    # 仍然读到运行环境真实的 ``navigator.language`` (例如 ``'en-US'``)。统一用
+    # ``Object.defineProperty`` 把它重写为可写 data property，让单测里的 mock 不会
+    # 因为 Node 版本升级而失效。
     header = textwrap.dedent(
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: 'en' };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, writable: true, configurable: true, enumerable: true });
         globalThis.localStorage = {
           _m: Object.create(null),
           getItem(k) { return this._m[k] || null; },
@@ -136,7 +141,10 @@ class TestPseudoDetectLang(unittest.TestCase):
                 """
                 // Force navigator.language to something zh-shaped; should
                 // collapse to 'zh-CN'.
-                globalThis.navigator = { language: 'zh-HK' };
+                // Node 21+ treats globalThis.navigator as a read-only accessor,
+                // so plain assignment is silently dropped. defineProperty bypasses
+                // the read-only descriptor created by the harness header.
+                Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-HK' }, writable: true, configurable: true, enumerable: true });
                 process.stdout.write(api.detectLang());
                 """
             ).strip(),

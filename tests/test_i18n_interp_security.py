@@ -39,7 +39,7 @@ def _render(i18n_path: Path, template: str, params_json: str) -> str:
         """
         globalThis.window = globalThis;
         globalThis.document = undefined;
-        globalThis.navigator = { language: 'en' };
+        Object.defineProperty(globalThis, 'navigator', { value: { language: 'en' }, writable: true, configurable: true, enumerable: true });
         require(%(path)s);
         const api = globalThis.AIIA_I18N;
         api.registerLocale('en', { greet: %(tpl)s });

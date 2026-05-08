@@ -11,6 +11,64 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R91b** — patch Node 21+ `globalThis.navigator` read-only accessor
+  in 14 i18n test harnesses (1 real failure + 13 preventive). Node
+  v21 introduced `globalThis.navigator` as a built-in property; in
+  Node v22+ that property became a **read-only accessor**
+  (descriptor: `{ get: [fn], set: undefined, configurable: true }`)
+  which silently swallows the assignment `globalThis.navigator =
+  { language: 'X' }`. Effect on the project's i18n test corpus:
+
+  - Hard failure: `tests/test_i18n_pseudo_runtime_switch.py::TestPseudoDetectLang::test_navigator_language_still_works`
+    expected the harness body to override `navigator.language` to
+    `'zh-HK'` so `detectLang()` can collapse the BCP-47 zh tag to
+    `'zh-CN'`. Under Node 24.14.0 the assignment was a no-op,
+    `navigator.language` stayed at the platform default `'en-US'`,
+    `detectLang()` collapsed to `'en'`, and the assertion
+    `assertEqual(out, 'zh-CN')` flipped from green to
+    `AssertionError: 'en' != 'zh-CN'`. Discovered when running
+    `uv run python scripts/ci_gate.py` on a Node-24 dev machine
+    that previously was Node-20 (`fnm default v20.x`); CI was still
+    on Node-20 so green there, masking the regression.
+  - Latent / preventive: 13 other test files use the same harness
+    pattern `globalThis.navigator = { language: 'en' };`. None of
+    them currently fail because they either pass `lang: 'X'` to
+    `api.init()` explicitly (bypassing `detectLang`) or because
+    `'en'` happens to coincide with the Node platform default
+    (`'en-US'` collapses to `'en'`). But the moment any future test
+    in this group adds an assertion that depends on the mocked
+    `navigator.language` value (e.g. `'fr'` / `'zh-CN'` / `'pseudo'`
+    via navigator), it would fail silently and silently mis-route
+    the test through the wrong locale path.
+
+  Fix: replace every occurrence of `globalThis.navigator = { ... }`
+  with `Object.defineProperty(globalThis, 'navigator', { value: { ... },
+  writable: true, configurable: true, enumerable: true })`. The
+  defineProperty form bypasses the read-only descriptor by
+  redefining the property as a **data property** (writable: true)
+  whose value is fully under the harness's control. Identical
+  semantics on Node ≤ 20 (where the property was already
+  writable), bug-correct semantics on Node ≥ 22. 18 sites across
+  14 files, single-line form chosen for harness-internal `textwrap.dedent`
+  brevity (multi-line form would interact unpredictably with the
+  surrounding `%(lang_literal)s` % interpolation in
+  `test_i18n_relative_time_thresholds.py` / `test_i18n_intl_wrappers.py`
+  / `test_i18n_icu_plural.py`).
+
+  Why this didn't get caught earlier: Node v22 (April 2024) shipped
+  the read-only flag behind an experimental flag; v22.5 (July 2024)
+  promoted it to default-on; v24 (October 2025, current LTS) has
+  it permanently. The project's `package-lock.json` pins `"node":
+  ">=18.12"` (no upper bound), so any developer following the
+  documented `fnm default v24.14.0` workflow would hit it; CI's
+  `actions/setup-node@v4` defaults to the latest LTS (v24 since
+  Oct 2025), but our `vscode:check` mocha smoke uses the running
+  test extension's bundled Node which is older — explaining why
+  vscode test stayed green while the standalone harness flipped red.
+
+  Verified by `uv run pytest tests/ -k i18n -q` → 469 passed / 2
+  skipped, all 14 modified files included in the green set.
+
 - **R91** — fix two README image-render regressions plus the long
   tail of `icons/icon.svg` path drift left by R76. Two distinct
   failure modes had the same visible symptom ("repo landing page
