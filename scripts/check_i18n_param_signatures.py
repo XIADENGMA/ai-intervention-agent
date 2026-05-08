@@ -206,22 +206,36 @@ def _strip_source_comments(text: str) -> str:
     accurate and we don't false-positive on example snippets inside
     docstrings / contributor comments.
 
-    We replace with space so byte offsets are preserved exactly."""
+    Pass order matters: line comments are blanked **before** block
+    comments. Otherwise patterns like ``// see locales/*.json`` get
+    mis-parsed because the bare ``/*`` inside the *line* comment is read
+    as a block-comment opener that swallows hundreds of subsequent lines
+    of real code (observed live in ``static/js/app.js`` line 538: a comment
+    referring to ``locales/*.json`` ate 688 lines until the next ``*/``,
+    which silently hid 6 ``status.*`` keys from this scanner). Stripping
+    line comments first turns the whole ``//`` tail into spaces so the
+    orphan ``/*`` disappears with it.
+
+    Keep semantics aligned with ``check_i18n_orphan_keys.py``. We replace
+    with space so byte offsets are preserved exactly."""
 
     def _blank_block(m: re.Match[str]) -> str:
         s = m.group(0)
         return "".join("\n" if ch == "\n" else " " for ch in s)
 
-    without_block = _BLOCK_COMMENT_RE.sub(_blank_block, text)
     out_lines: list[str] = []
-    for line in without_block.split("\n"):
+    for line in text.split("\n"):
+        # 第一步：line comment（``//`` 之后）整段替成空格。
         # Naive `//` line-comment strip. It's imperfect for `//` that
         # appears inside strings, but none of our source files have
         # that in a `t(...)` call site — and the few that do (e.g.
         # URL literals in config) never hit the t() regex anyway.
         idx = line.find("//")
         out_lines.append(line if idx == -1 else line[:idx] + " " * (len(line) - idx))
-    return "\n".join(out_lines)
+    intermediate = "\n".join(out_lines)
+    # 第二步：剥 block comments。``//`` 已经被先剥光，所以
+    # ``// ... locales/*.json`` 这种伪 ``/*`` 不会再被当成 block 起点。
+    return _BLOCK_COMMENT_RE.sub(_blank_block, intermediate)
 
 
 def _iter_call_sites(path: Path) -> list[tuple[int, str, str | None]]:

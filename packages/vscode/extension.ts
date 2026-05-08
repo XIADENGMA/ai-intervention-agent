@@ -7,7 +7,13 @@ import { WebviewProvider } from "./webview";
 import { createLogger } from "./logger";
 // P9·L8：``i18n-keys.d.ts`` 由 ``scripts/gen_i18n_types.py`` 从
 // ``packages/vscode/locales/en.json`` 生成，导出 ``I18nKey`` literal-union，
-// 让 ``hostT('statusBar.unkown')`` 在 tsc 阶段就挂掉而不是静默回显原 key。
+// 让传入翻译 helper 的拼写错误（例如把 statusBar.unknown 打成
+// statusBar.unkown）在 tsc 阶段就挂掉，而不是让用户看到静默回显的原
+// key 字面量。
+// 注：本注释**刻意避免**写出 ``hostT(<quote><key><quote>)`` 这种调用形态——
+// 扫描脚本 ``scripts/check_i18n_orphan_keys.py`` 用正则匹配该形态收集
+// "实际引用的 key"，如果注释里写成调用形式会被当成真实引用，造成
+// ``used_keys > total_keys`` 的假信号（v1.5 历史上踩过）。
 import type { I18nKey } from "./i18n-keys";
 
 /**

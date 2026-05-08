@@ -11,6 +11,68 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R92** — repair `_strip_source_comments` line-comment / block-comment
+  ordering bug shared by `scripts/check_i18n_orphan_keys.py` and
+  `scripts/check_i18n_param_signatures.py`, plus eliminate one silent
+  i18n false-positive that the bug had been masking. Symptom thread:
+
+  - `uv run python scripts/check_i18n_orphan_keys.py` reported
+    `[vscode] 0 orphan key(s) (145 used / 144 total)`. The
+    `used > total` skew is **structurally impossible** for a healthy
+    scanner — used keys are a subset of locale keys.
+  - Tracked the extra "key" to `packages/vscode/extension.ts` line 10
+    banner comment `// 让 hostT('statusBar.unkown') 在 tsc 阶段就挂掉`
+    (a deliberately-misspelled example, paired with a TS literal-union
+    type that catches the typo at compile time). The orphan scanner's
+    `JS_T_CALL_RE` regex matched the comment string as if it were a
+    real call site, so the fake key `statusBar.unkown` got counted as
+    "used" while never appearing in the locale → `used = total + 1`.
+  - First fix: rewrote the banner so the example doesn't include a
+    full `hostT(<quote><key><quote>)` shape. Re-running the scanner
+    now yielded `144 used / 144 total`, **but** comparison with
+    `scripts/check_i18n_param_signatures.py` (which already ran
+    `_strip_source_comments` on every file before regex-matching)
+    revealed an architectural inconsistency: only one of two i18n
+    scanners stripped comments. Backported the helper to
+    `check_i18n_orphan_keys.py` for cross-scanner parity.
+  - Backporting immediately surfaced **17 new "orphans"** in
+    `static.js` (`status.copied` / `status.copyFailed` /
+    `status.submitting` / `status.submitFailed` / 13 others). Live
+    `t(...)` call sites at lines 539 / 554 / 1050 / 1124 should NOT
+    be invisible to the scanner. Bisecting found that
+    `_strip_source_comments` itself was buggy:
+    `_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)` matched
+    the bare `/*` **inside the line comment**
+    `// 走 locales/*.json 静态 key 且无参数` (line 538 of `app.js`),
+    treated it as a block-comment opener, and silently swallowed the
+    next 688 lines of real code until it found a `*/` further down
+    in the file. So 6 distinct `status.*` keys (and any `t(...)` call
+    in those 688 lines) were invisible to the scanner — a textbook
+    "scanner-rendered-blind-by-its-own-comment-handling" pre-existing
+    bug that was perfectly cancelled out by the *first* bug
+    (`statusBar.unkown` from the comment over-counted, `status.*` from
+    swallowed code under-counted, net delta happened to be `+1`,
+    looking deceptively like a single missing key).
+  - Real fix: invert the strip order — process **line** comments
+    first (turning the entire `//`-tail of each line into spaces),
+    **then** strip block comments on the result. With line comments
+    already neutralised, the orphan `/*` inside `// … /*.json …`
+    can no longer act as a block-comment opener. Applied identically
+    to both scanners (must stay in lockstep).
+  - Locked in by 5 new regression tests in
+    `tests/test_i18n_orphan_keys.py::TestStripSourceComments`:
+    `test_line_comment_t_call_is_stripped`,
+    `test_block_comment_t_call_is_stripped`,
+    `test_real_t_call_outside_comment_survives`,
+    `test_line_comment_with_slash_star_does_not_swallow_following_code`
+    (the canonical regression fixture for **this** bug),
+    `test_line_offsets_preserved`. Final state:
+    `[web] 0 orphan key(s) (217 used / 217 total)`,
+    `[vscode] 0 orphan key(s) (144 used / 144 total)`. Verified by
+    `uv run python scripts/ci_gate.py` (3837 passed, 3 skipped,
+    0 failed, 0 warnings) and `--with-vscode` (28 mocha tests + VSIX
+    package).
+
 - **R91c** — document the `/api/close` shutdown Timer's intentional
   non-daemon mode in `src/ai_intervention_agent/web_ui.py`. The
   endpoint kicks off `threading.Timer(0.5, self.shutdown_server)`

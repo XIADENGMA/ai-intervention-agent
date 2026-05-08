@@ -28,6 +28,7 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.check_i18n_orphan_keys import (
     JS_T_CALL_RE,
     _flatten_keys,
+    _strip_source_comments,
     main,
     scan,
 )
@@ -99,6 +100,65 @@ class TestRegexCoversAllWrappers(unittest.TestCase):
             with self.subTest(call=call):
                 matches = JS_T_CALL_RE.findall(call)
                 self.assertTrue(matches, f"compact-form regression: {call!r} unmatched")
+
+
+class TestStripSourceComments(unittest.TestCase):
+    """``_strip_source_comments`` 必须把注释里的 ``t('key')`` 字面量剥掉，
+    避免 banner / docstring / inline 注释里的示例被当成实际引用。
+
+    历史 bug：``packages/vscode/extension.ts`` banner 注释里写了
+    ``hostT('statusBar.unkown')``（故意拼错让 tsc 挂掉）；
+    扫描器把它当真实引用，输出 ``used > total`` 的假信号——直到 R92 才发现。
+    并且修复时还要避免把"line comment 里的 ``/*``"误判为 block comment 起点。
+    """
+
+    def test_line_comment_t_call_is_stripped(self) -> None:
+        src = "// see t('foo.bar') for the real key\nconst x = 1;"
+        out = _strip_source_comments(src)
+        self.assertNotIn("t('foo.bar')", out)
+        self.assertIn("const x = 1;", out)
+
+    def test_block_comment_t_call_is_stripped(self) -> None:
+        src = "/* example: hostT('statusBar.unkown') */\nconst x = 1;"
+        out = _strip_source_comments(src)
+        self.assertNotIn("hostT('statusBar.unkown')", out)
+        self.assertIn("const x = 1;", out)
+
+    def test_real_t_call_outside_comment_survives(self) -> None:
+        src = "// note: t('comment.key') is just an example\nbtn.html = t('real.key');"
+        out = _strip_source_comments(src)
+        # 注释内的不计
+        matches = JS_T_CALL_RE.findall(out)
+        self.assertNotIn("comment.key", matches)
+        # 真代码必须保留
+        self.assertIn("real.key", matches)
+
+    def test_line_comment_with_slash_star_does_not_swallow_following_code(self) -> None:
+        """关键回归：``// ... locales/*.json`` 这类 line comment 含字面 ``/*``，
+        不能被当成 block comment 起点而吞掉之后几百行真代码。
+
+        v1.5 实测：``static/js/app.js`` line 538 ``// 走 locales/*.json …`` 在
+        修复前让扫描器把后续 688 行（含 ``status.copied`` / ``status.copyFailed``
+        / ``status.submitting`` / ``status.submitFailed`` 等多个真实 ``t(...)``
+        调用）一并视作 block comment，触发 17 个假 orphan。
+        """
+        src = (
+            "// 走 locales/*.json 静态 key 且无参数。详见 docs/i18n.md\n"
+            "btn.html = t('status.copied');\n"
+            "btn.html = t('status.copyFailed');\n"
+        )
+        out = _strip_source_comments(src)
+        matches = set(JS_T_CALL_RE.findall(out))
+        self.assertIn("status.copied", matches, "block-comment-from-line-comment 回归")
+        self.assertIn(
+            "status.copyFailed", matches, "block-comment-from-line-comment 回归"
+        )
+
+    def test_line_offsets_preserved(self) -> None:
+        """剥注释必须保留行号，方便上层 ``find()`` 计算 lineno。"""
+        src = "line1\n// comment\nline3\n"
+        out = _strip_source_comments(src)
+        self.assertEqual(out.count("\n"), src.count("\n"))
 
 
 class TestFlatten(unittest.TestCase):

@@ -62,6 +62,50 @@ JS_T_CALL_RE = re.compile(
     r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
 )
 
+# 源码注释剥离：与 ``check_i18n_param_signatures.py::_strip_source_comments``
+# 保持语义一致（同一 i18n key 扫描族），避免一个脚本剥注释、另一个不剥
+# 造成同一份代码上 ``used_keys`` 数值漂移。历史教训：v1.5 时期
+# ``packages/vscode/extension.ts`` 的 banner 注释里写了示例 ``hostT('statusBar.unkown')``
+# （故意拼错让 tsc 挂掉），结果本扫描器把注释字符串当成真实引用，导致
+# ``used > total`` 的假信号——而 param_signatures 因为已经剥注释看到的是
+# 干净结果。两边修法 must stay in lockstep。
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def _strip_source_comments(text: str) -> str:
+    """Zero out ``//`` line comments and ``/* ... */`` block comments while
+    preserving line offsets so ``find()``-based offsets in callers stay
+    accurate. Keep semantics aligned with ``check_i18n_param_signatures.py``.
+
+    Pass order matters: line comments are blanked **before** block
+    comments. Otherwise patterns like ``// see locales/*.json`` get
+    mis-parsed because the bare ``/*`` inside the *line* comment is read
+    as a block-comment opener that swallows hundreds of subsequent lines.
+    Stripping line comments first turns the whole ``//`` tail into spaces
+    and the orphan ``/*`` disappears with it.
+
+    We replace with space so byte offsets are preserved exactly."""
+
+    def _blank_block(m: re.Match[str]) -> str:
+        s = m.group(0)
+        return "".join("\n" if ch == "\n" else " " for ch in s)
+
+    out_lines: list[str] = []
+    for line in text.split("\n"):
+        # 第一步：line comment（``//`` 之后）整段替成空格。
+        # Naive ``//`` line-comment strip. Imperfect when ``//`` appears
+        # inside string literals (e.g. URL literals), but those never
+        # also contain a ``t('key')`` shape so the regex misses them
+        # naturally — same trade-off ``check_i18n_param_signatures`` makes.
+        idx = line.find("//")
+        out_lines.append(line if idx == -1 else line[:idx] + " " * (len(line) - idx))
+    intermediate = "\n".join(out_lines)
+    # 第二步：剥 block comments。已经在前面剥了 line comments，所以
+    # ``// ... locales/*.json`` 这类伪 ``/*`` 起点被一并清空，不会再出现
+    # "block comment 跨吞数百行真代码" 的灾难。
+    return _BLOCK_COMMENT_RE.sub(_blank_block, intermediate)
+
+
 # Vendor / min'd JS that we don't own and don't want to treat as call sites.
 VENDOR_JS = {
     "mathjax-loader.js",
@@ -87,7 +131,12 @@ def _flatten_keys(data: Any, prefix: str = "") -> set[str]:
 
 
 def _collect_web_used() -> set[str]:
-    """Scan HTML templates + static JS for every referenced i18n key."""
+    """Scan HTML templates + static JS for every referenced i18n key.
+
+    HTML 不剥注释（``data-i18n="..."`` 不会出现在 ``<!-- ... -->`` 注释里
+    的 attribute slot；浏览器解析约束保证）；JS 先剥源码注释再扫，避免把
+    docstring/banner 里的示例当真实引用。
+    """
     used: set[str] = set()
     template = WEB_TEMPLATES_DIR / "web_ui.html"
     if template.is_file():
@@ -97,7 +146,9 @@ def _collect_web_used() -> set[str]:
         for js in sorted(WEB_JS_DIR.glob("*.js")):
             if ".min." in js.name or js.name in VENDOR_JS:
                 continue
-            src = js.read_text(encoding="utf-8", errors="ignore")
+            src = _strip_source_comments(
+                js.read_text(encoding="utf-8", errors="ignore")
+            )
             used.update(JS_T_CALL_RE.findall(src))
     return used
 
@@ -107,7 +158,11 @@ def _collect_vscode_used() -> set[str]:
 
     Only the specific surface files are scanned — avoid walking the
     whole directory, because it would false-positive on e.g. locale
-    JSON or build output and make the gate noisy."""
+    JSON or build output and make the gate noisy.
+
+    源码注释先被剥成空格再扫描，使 banner / docstring 里的示例（含故意
+    拼错的反例）不被当作真实引用——这与 ``check_i18n_param_signatures``
+    的语义保持一致。"""
     used: set[str] = set()
     targets = (
         "webview-ui.js",
@@ -121,7 +176,9 @@ def _collect_vscode_used() -> set[str]:
     for name in targets:
         path = VSCODE_PKG_DIR / name
         if path.is_file():
-            text = path.read_text(encoding="utf-8", errors="ignore")
+            text = _strip_source_comments(
+                path.read_text(encoding="utf-8", errors="ignore")
+            )
             used.update(JS_T_CALL_RE.findall(text))
     return used
 
