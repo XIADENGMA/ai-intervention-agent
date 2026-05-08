@@ -11,6 +11,78 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R101** — purge the same `if not <root>.exists(): return 0`
+  silent-skip anti-pattern from `check_i18n_ts_no_cjk.py` and
+  `check_i18n_js_no_cjk.py` that R88 had purged from the brand-
+  color guard and R100 had purged from the HTML coverage scanner.
+  Both i18n CJK-literal scanners had the same shape:
+
+  - `check_i18n_ts_no_cjk.py` — `_iter_ts_source_files()`
+    returned `[]` when `_VSCODE_ROOT` (= `packages/vscode`) didn't
+    exist, so `collect_violations()` saw zero files, `main()`
+    printed `OK` and returned 0. Any future refactor that moves
+    or deletes `packages/vscode` would silently neutralise the
+    extension-host CJK gate.
+  - `check_i18n_js_no_cjk.py` — `_iter_js_source_files()` did
+    `continue` on each missing root, so `--scope vscode` with a
+    drifted `packages/vscode` returned 0 with `OK`, and
+    `--scope all` with one of the two drifted roots only scanned
+    the surviving half (partial silent breakage). Either way the
+    gate looked green while covering nothing or only half.
+
+  This is latent — both `_VSCODE_ROOT` and `_WEBUI_ROOT` resolve
+  fine in the live tree today. But R76 (the `static/` → `src/`
+  reshuffle that originally produced R88's silent broken state)
+  proved that layout shifts happen, and the matching anti-
+  pattern in two more scanners was just one rename away from
+  silently degrading their coverage too.
+
+  Decision: copy R88/R100's exact pattern verbatim — `main()`
+  does a layer-0 path-drift sanity check up front (before any
+  scanning), and on missing root prints a multi-line stderr
+  diagnostic naming the resolved absolute path and pointing at
+  the constant to update, then `return 2`. For
+  `check_i18n_js_no_cjk.py`'s scope-aware setup the check
+  iterates over **all** roots in the chosen scope so partial
+  drift across `--scope all` also triggers fail-loud (not just
+  the all-roots-missing case). This avoids the "we still found
+  some files so it's fine" compromise that would mask half-
+  drifted layouts.
+
+  Fix:
+
+  - `scripts/check_i18n_ts_no_cjk.py::main()` — gated up-front by
+    `if not _VSCODE_ROOT.exists(): print(diagnostic); return 2`.
+    Updated docstring exit-code section adds R76/R88/R100
+    lineage so future readers connect the family.
+  - `scripts/check_i18n_js_no_cjk.py::main()` — gated up-front by
+    `missing = [r for r in SCOPES[args.scope] if not r.exists()]`,
+    fail-loud on any non-empty `missing`. Same docstring update.
+  - `tests/test_i18n_no_cjk_path_drift_r101.py` — new combined
+    regression suite covering both scanners with 6 cases:
+    + ts: missing `_VSCODE_ROOT` → exit 2 (with stderr keyword
+      check) + happy-path still works.
+    + js: missing webui root in `--scope webui` → exit 2.
+    + js: missing vscode root in `--scope vscode` → exit 2.
+    + js: partial drift in `--scope all` (one root present, one
+      missing) → exit 2 (the strongest contract — partial
+      coverage is silent breakage too).
+    + js: all three scopes against real roots return 0 or 1, not
+      2 — happy path doesn't regress.
+
+    Reverse-injection verified: revert both `main()` functions
+    back to their pre-R101 shape and 4 of 6 cases fail with
+    informative diagnostics (return code mismatch + stderr
+    keyword absence) while the 2 happy-path cases stay green.
+    Mirrors R100's verification pattern exactly.
+
+  Result: 6 tests pass (all R101), full ci_gate 3878 passed /
+  2 skipped / 0 warnings, ruff lint+format clean. R66/R88/R100/
+  R101 are now in lockstep — the silent-skip-on-path-drift
+  anti-pattern is purged from the brand-color guard, the HTML
+  template coverage scanner, and both i18n CJK literal scanners
+  (the four scripts that contained it).
+
 - **R100** — turn the `if not TEMPLATE_PATH.exists()` silent-skip
   in `scripts/check_i18n_html_coverage.py::main()` into a loud
   fail-with-exit-2 (configuration drift). Same silent-broken

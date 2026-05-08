@@ -29,6 +29,10 @@ locale 成为唯一真源、方便未来扩展更多语言，我们约束 JS 源
 ------
 - 0：所有 JS 源文件不包含硬编码 CJK 字符串字面量。
 - 1：至少有一个违反项；逐行输出位置与内容。
+- 2：配置错误（``--scope`` 对应的某个 scan root 解析后指向不存在的
+  目录）。R101 之前这条路径返回 0（silent skip），与 R76 重布局后
+  R88/R100 修过的同款 silent-broken 风险一致；改为 fail-loud 让
+  reviewer 立刻看到漂移。
 """
 
 from __future__ import annotations
@@ -210,6 +214,26 @@ def main(argv: list[str] | None = None) -> int:
         "all=两者合并。",
     )
     args = parser.parse_args(argv)
+
+    # R101：path-drift sanity check —— scope 对应的所有 root 必须真实存
+    # 在。``_iter_js_source_files`` 之前在 root 不存在时 ``continue`` 跳
+    # 过此 root 继续扫剩下的，main() 看到 0 violations 然后 print "OK"——
+    # silent skip 模式与 R76 重布局后 R88/R100/R101 修过的同款 silent-
+    # broken 风险一致。``packages/vscode`` 是 VS Code extension 核心面，
+    # ``static/js`` 是 Web UI 核心面，任一缺失都是配置漂移而非合法 skip。
+    expected_roots = SCOPES[args.scope]
+    missing = [r for r in expected_roots if not r.exists()]
+    if missing:
+        rels = [r.relative_to(ROOT).as_posix() for r in missing]
+        print(
+            f"ERROR: JS scan root(s) not found for scope={args.scope}: "
+            f"{', '.join(rels)}\n"
+            f"  Resolved absolute paths: {[str(p) for p in missing]}\n"
+            f"  This is a configuration drift, not 'OK' — failing loud "
+            f"(exit 2) instead of silently skipping (R101; matches R88/R100).",
+            file=sys.stderr,
+        )
+        return 2
 
     violations = collect_violations(args.scope)
     for path, line, literal in violations:

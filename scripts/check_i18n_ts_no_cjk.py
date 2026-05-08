@@ -30,6 +30,9 @@
 ------
 - 0：所有 TS 源文件不包含硬编码 CJK 字符串字面量。
 - 1：至少有一个违反项；逐行输出位置与内容。
+- 2：配置错误（``packages/vscode`` 解析后指向不存在的目录）。R101 之前
+  这条路径返回 0（silent skip），与 R76 重布局后 R88/R100 修过的同款
+  silent-broken 风险一致；改为 fail-loud 让 reviewer 立刻看到漂移。
 """
 
 from __future__ import annotations
@@ -182,6 +185,27 @@ def collect_violations() -> list[tuple[Path, int, str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # R101：path-drift sanity check —— ``packages/vscode`` 是项目核心组件
+    # （VS Code extension），不应缺失。R76 把 ``static/`` 挪进 ``src/``
+    # 包内时让 R66 brand-color guard silently broken（R88/R100 修过同款）。
+    # 这里 fail-loud 阻止 ``packages/vscode`` 路径未来漂移时让本扫描器
+    # silent no-op（``_iter_ts_source_files`` 之前在 root 不存在时 ``return
+    # []`` ——main() 看到 0 violations 然后 print "OK" 通过——这是
+    # 把"环境错"当"OK"的反模式）。
+    if not _VSCODE_ROOT.exists():
+        rel = _VSCODE_ROOT.relative_to(ROOT).as_posix()
+        print(
+            f"ERROR: VSCode extension root not found: {rel}\n"
+            f"  Resolved absolute path: {_VSCODE_ROOT}\n"
+            f"  This is a configuration drift, not 'OK' — packages/vscode is\n"
+            f"  the project's VS Code extension surface; it either moved\n"
+            f"  (update _VSCODE_ROOT in scripts/check_i18n_ts_no_cjk.py) or\n"
+            f"  got accidentally deleted. Failing loud (exit 2) instead of\n"
+            f"  silently skipping (R101; matches R88's brand-color and R100's\n"
+            f"  HTML-coverage fixes).",
+            file=sys.stderr,
+        )
+        return 2
     violations = collect_violations()
     for path, line, literal in violations:
         rel = path.relative_to(ROOT).as_posix()
