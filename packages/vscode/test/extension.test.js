@@ -142,7 +142,11 @@ suite('Extension Test Suite', () => {
     assert.ok(webviewUi.includes("type: 'notify'"))
     assert.ok(notifyCore.includes('macos_native'))
     // 设置面板：原生通知测试应为“手动触发”，不依赖复杂诊断链路
-    assert.ok(settingsUi.includes("kind: 'test_macos_native'"))
+    // Quote-agnostic：源码 prettier 切到 double-quote 后不能让单 quote 锁假 fail（与 145 行同一原因）
+    assert.ok(
+      settingsUi.includes("kind: 'test_macos_native'") ||
+        settingsUi.includes('kind: "test_macos_native"')
+    )
     // 轮询协同：Webview 上报 tasks stats（用于扩展状态栏降频）
     assert.ok(webviewUi.includes("type: 'tasksStats'"))
     // Quote-agnostic：编译产物随 prettier 切到 double-quote 后不能让源码级 lock 假 fail
@@ -182,7 +186,11 @@ suite('Extension Test Suite', () => {
       '_getHtmlContent 不应将 445KB Lottie JSON 内联进 HTML'
     )
     // 边界回归点：0.0.0.0/:: 仅适合作为监听地址，扩展侧应映射为 localhost（避免客户端无法访问）
-    assert.ok(extensionJs.includes("host === '0.0.0.0' || host === '::'"))
+    // Quote-agnostic：源码 prettier 切到 double-quote 后不能让 single-quote 断言假 fail
+    assert.ok(
+      extensionJs.includes("host === '0.0.0.0' || host === '::'") ||
+        extensionJs.includes('host === "0.0.0.0" || host === "::"')
+    )
     // 稳定性/解耦：MathJax 应优先走 VSIX 内置资源（由 meta 注入 URL）
     assert.ok(webviewJs.includes('data-mathjax-script-url'))
     assert.ok(webviewJs.includes('tex-mml-svg.js'))
