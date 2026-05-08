@@ -289,6 +289,15 @@ flowchart TD
   NOTIF_PROVIDERS -->|系统通知 / 声音 / Bark / Web 提示| USER
 ```
 
+> 上图刻意只画出顶层进程与最显眼的模块。内部辅助 —— 例如 `state_machine.py`
+> （单任务生命周期）、`web_ui_mdns.py`（局域网 mDNS 服务发现）、
+> `web_ui_security.py`（CSRF / origin / token 拦截）、
+> `task_queue_singleton.py`（单进程队列访问入口）、
+> `server_feedback.py`（`interactive_feedback` MCP 工具实现）、
+> `enhanced_logging.py`、`protocol.py` 等 —— 都属于上述两个进程，按模块在
+> [`docs/api.zh-CN/`](docs/api.zh-CN/index.md)（中文）与
+> [`docs/api/`](docs/api/index.md)（English）下提供详细 API 文档。
+
 ## 文档
 
 - **文档总索引**（按角色定位）：[`docs/README.zh-CN.md`](docs/README.zh-CN.md) · [`docs/README.md`](docs/README.md)

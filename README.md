@@ -288,6 +288,17 @@ flowchart TD
   NOTIF_PROVIDERS -->|system / sound / Bark / web hints| USER
 ```
 
+> The diagram intentionally shows top-level processes and the most
+> visible modules. Internal helpers — e.g. `state_machine.py` (per-task
+> lifecycle), `web_ui_mdns.py` (LAN service discovery via mDNS),
+> `web_ui_security.py` (CSRF / origin / token gates),
+> `task_queue_singleton.py` (single-process queue access),
+> `server_feedback.py` (the `interactive_feedback` MCP tool body),
+> `enhanced_logging.py`, `protocol.py`, etc. — live in the same two
+> processes and are documented per-module under
+> [`docs/api/`](docs/api/index.md) (English) and
+> [`docs/api.zh-CN/`](docs/api.zh-CN/index.md) (中文).
+
 ## Documentation
 
 - **Docs index** (by audience): [`docs/README.md`](docs/README.md) · [`docs/README.zh-CN.md`](docs/README.zh-CN.md)

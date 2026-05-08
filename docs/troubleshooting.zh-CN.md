@@ -186,6 +186,45 @@ export AI_INTERVENTION_AGENT_OPEN_WITH=cursor
 
 [bug]: https://github.com/xiadengma/ai-intervention-agent/issues/new?template=bug_report.yml
 
+## 10. 每个 PR 上的 `Dependency Review` 检查都报 "not supported on this repository"
+
+**症状**：每一个 PR（包括 dependabot 自动 PR）的 `Dependency Review`
+工作流都失败，日志里能看到这一行：
+
+```
+##[error]Dependency review is not supported on this repository.
+Please ensure that Dependency graph is enabled, see
+https://github.com/<owner>/<repo>/settings/security_analysis
+```
+
+其他 CI（`Tests`、`VSCode`、`CodeQL`、`actionlint`）可能全绿，
+**只有 `Dependency Review`** 是红的。
+
+**根因**：GitHub `actions/dependency-review-action` 依赖仓库的
+**Dependency graph** 功能。Dependency graph 在 **public** 仓库默认开启，
+但 **private** 仓库和 fork 默认关闭。如果仓库刚从 private 切到 public、
+或者你在 fork 上跑 workflow，这个开关可能没启用。
+
+**修复**（一次性，仓库 owner 操作）：
+
+1. 进入 `Settings` → `Code security`（或 `Security & analysis`，
+   取决于 GitHub 版本）。
+2. 在 **Dependency graph** 下点 **Enable**。同时可以一起启用
+   `Dependabot alerts` 和 `Dependabot security updates`。
+3. 回到 PR 的 `Checks` 选项卡，重跑失败的 `Dependency Review` job —
+   1 分钟内应该变绿。
+
+**用 API 验证**（不点 UI）：
+
+```bash
+gh api repos/<owner>/<repo>/vulnerability-alerts -i
+# 204 No Content → vulnerability alerts（含 dependency graph）已开
+# 404 Not Found  → 未开 — `Dependency Review` 会一直失败
+```
+
+启用之前，`Dependency Review` 的红灯纯属基础设施问题，**不代表**
+PR 依赖里真的有漏洞或 license 问题。
+
 ## 还是没解决？
 
 1. 看 [`SUPPORT.md`](../SUPPORT.md) 选合适渠道。

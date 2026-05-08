@@ -215,6 +215,49 @@ If none of the above explains it, capture the full output and open a
 
 [bug]: https://github.com/xiadengma/ai-intervention-agent/issues/new?template=bug_report.yml
 
+## 10. `Dependency Review` GitHub check fails on every PR with "not supported on this repository"
+
+**Symptom**: Every PR (including untouched dependabot PRs) reports
+the `Dependency Review` workflow as failing, with the log line:
+
+```
+##[error]Dependency review is not supported on this repository.
+Please ensure that Dependency graph is enabled, see
+https://github.com/<owner>/<repo>/settings/security_analysis
+```
+
+The other CI checks (`Tests`, `VSCode`, `CodeQL`, `actionlint`) may
+pass — only `Dependency Review` is red.
+
+**Root cause**: GitHub's `actions/dependency-review-action` requires
+the repository's **Dependency graph** feature to be enabled.
+Dependency graph is enabled by default for **public** repos but
+**disabled by default for private** repos and for forks. If you
+recently switched the repo from private → public, or if you are
+running the workflow on a fork, the feature may still be off.
+
+**Fix** (one-time, repo owner only):
+
+1. Go to `Settings` → `Code security` (or `Security & analysis`
+   depending on the GitHub UI version).
+2. Under **Dependency graph**, click **Enable**. This also unblocks
+   `Dependabot alerts` and `Dependabot security updates` if you
+   want those.
+3. Re-run the failing `Dependency Review` job from the PR's
+   "Checks" tab — it should now turn green within a minute.
+
+**How to verify with the API** (without the UI):
+
+```bash
+gh api repos/<owner>/<repo>/vulnerability-alerts -i
+# 204 No Content → vulnerability alerts (and dependency graph) ON
+# 404 Not Found  → OFF — `Dependency Review` will keep failing
+```
+
+Until this is enabled, the `Dependency Review` red check is purely
+infrastructural and **does not indicate** an actual vulnerability or
+license violation in the PR's dependencies.
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../SUPPORT.md) for the right channel.
