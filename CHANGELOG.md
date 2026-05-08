@@ -18,35 +18,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
-- **R57** — ``Limiter(headers_enabled=True)`` so every rate-limited
+- **R57** — `Limiter(headers_enabled=True)` so every rate-limited
   response now carries the IETF-draft / RFC-6585-aligned
-  ``X-RateLimit-Limit`` / ``X-RateLimit-Remaining`` /
-  ``X-RateLimit-Reset`` (and ``Retry-After`` on 429s). Pre-R57 the
+  `X-RateLimit-Limit` / `X-RateLimit-Remaining` /
+  `X-RateLimit-Reset` (and `Retry-After` on 429s). Pre-R57 the
   only signal a client got was a hard 429; with the headers exposed,
   SDKs / reverse proxies (HAProxy, Envoy, Traefik) / monitoring
   dashboards / fail2ban / mobile clients with adaptive backoff can
-  proactively slow down before the bucket empties. ``limiter.exempt``
+  proactively slow down before the bucket empties. `limiter.exempt`
   static-asset endpoints (every css/js/locale/font/icon/sound/lottie/
   manifest/favicon/SW) keep their behaviour: no headers leaked. 9
-  dedicated tests in ``tests/test_ratelimit_headers_r57.py``.
+  dedicated tests in `tests/test_ratelimit_headers_r57.py`.
 
-- **R58** — ``_SSEBus.emit`` now guards a 256 KB byte-size ceiling on
+- **R58** — `_SSEBus.emit` now guards a 256 KB byte-size ceiling on
   the JSON-serialized payload. When exceeded, the original payload is
-  **not** sent; a synthetic ``oversize_drop`` event is fan-out instead,
-  carrying ``original_event_type`` / ``size_bytes`` / ``limit_bytes``
-  metadata. The drop still consumes one ``_next_id`` slot (so
-  ``Last-Event-ID`` resume semantics aren't broken) and increments a
-  new ``oversize_drops`` counter exposed via ``stats_snapshot()`` →
-  ``/api/system/sse-stats`` → cross-process cache →
-  ``aiia://server/info``. Pre-R58, a single oversize payload (full
+  **not** sent; a synthetic `oversize_drop` event is fan-out instead,
+  carrying `original_event_type` / `size_bytes` / `limit_bytes`
+  metadata. The drop still consumes one `_next_id` slot (so
+  `Last-Event-ID` resume semantics aren't broken) and increments a
+  new `oversize_drops` counter exposed via `stats_snapshot()` →
+  `/api/system/sse-stats` → cross-process cache →
+  `aiia://server/info`. Pre-R58, a single oversize payload (full
   stderr blob, entire task-table dump, misencoded binary, etc.)
   could fan-out N× memory across all subscribers; now it's bounded
   to a tiny metadata replacement. Threshold chosen to clear nginx
-  default ``proxy_buffer_size`` (8 KB) by 32×, sit comfortably below
+  default `proxy_buffer_size` (8 KB) by 32×, sit comfortably below
   Cloudflare's recommended SSE-message ceiling (~1 MB), and stay 100×
   above legitimate traffic (task_changed 1-2 KB, config_changed
   < 500 B, gap_warning < 200 B). 13 dedicated tests in
-  ``tests/test_sse_oversize_guard_r58.py``.
+  `tests/test_sse_oversize_guard_r58.py`.
 
 ## [1.5.44] — 2026-05-08
 
@@ -56,31 +56,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
-- **R56** — static-asset ``Cache-Control`` is now consistent across
-  the ``add_security_headers`` after_request hook and the route-level
-  handlers. Pre-R56, ``serve_css`` / ``serve_js`` set
-  ``max-age=3600`` (1 h) at the route level, but the hook
-  unconditionally rewrote it to ``max-age=86400`` (1 d) — the
+- **R56** — static-asset `Cache-Control` is now consistent across
+  the `add_security_headers` after_request hook and the route-level
+  handlers. Pre-R56, `serve_css` / `serve_js` set
+  `max-age=3600` (1 h) at the route level, but the hook
+  unconditionally rewrote it to `max-age=86400` (1 d) — the
   docstring claimed "1 hour" but production was actually "1 day", a
-  silent drift. More impactful: ``/static/locales/*`` was **not**
+  silent drift. More impactful: `/static/locales/*` was **not**
   matched by any hook prefix, so the route-level 1 h was final, and
-  ``language='auto'`` clients (where R20.12-B's inline optimization
+  `language='auto'` clients (where R20.12-B's inline optimization
   doesn't apply) refetched ~11 KB of locale JSON every hour — 24×
   more often than every other static asset. Hook now matches
-  ``/static/locales/`` with the same v=hash / no-v split as js/css
+  `/static/locales/` with the same v=hash / no-v split as js/css
   (1 year immutable / 1 day); route-level handlers updated to write
   the same value the hook will overwrite with (belt-and-suspenders
   fallback); docstrings rewritten to truthfully describe the policy;
   hook gains an inline cache-policy table for at-a-glance audit.
-  Special-purpose endpoints (``manifest.webmanifest`` 1 h,
-  ``favicon.ico`` no-cache, notification SW no-cache) intentionally
+  Special-purpose endpoints (`manifest.webmanifest` 1 h,
+  `favicon.ico` no-cache, notification SW no-cache) intentionally
   keep their route-level headers because the hook's path prefixes
   don't match them, and their semantic short-cache values are correct.
   16 dedicated tests in
-  ``tests/test_static_cache_headers_r56.py`` verify hook coverage of
+  `tests/test_static_cache_headers_r56.py` verify hook coverage of
   all four prefix groups, special-path retention, ETag presence, and
   conditional-GET 304 Not Modified semantics — because
-  ``Cache-Control`` only saves bytes-not-sent, ETag is what saves
+  `Cache-Control` only saves bytes-not-sent, ETag is what saves
   bytes-not-downloaded after the cache stales.
 
 ## [1.5.43] — 2026-05-08
@@ -188,11 +188,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - `degraded` (HTTP 200) — all sub-checks ran but `backpressure_discards`
     or 5-min ERROR count > 0; alert without auto-restart;
   - `healthy` (HTTP 200) — all green.
-  Rate-limited at 120 / min (vs sse-stats 60 / min, recent-logs 30 / min)
-  to give two-replica K8s probe traffic 20× headroom. **No loopback
-  gate** — probes always come from the cluster network. Endpoint is
-  data-only (no `task.prompt`, no config values), safe to expose on
-  the same address as the Web UI without a separate auth boundary.
+    Rate-limited at 120 / min (vs sse-stats 60 / min, recent-logs 30 / min)
+    to give two-replica K8s probe traffic 20× headroom. **No loopback
+    gate** — probes always come from the cluster network. Endpoint is
+    data-only (no `task.prompt`, no config values), safe to expose on
+    the same address as the Web UI without a separate auth boundary.
 
 ## [1.5.40] — 2026-05-08
 
@@ -241,7 +241,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `latest_event_id` / `gap_warnings_emitted` / `backpressure_discards`
   / `subscriber_count` / `history_size` alongside the R47
   `interactive_feedback` totals. Degrades to `{available: false,
-  reason}` when the Web UI is offline and to `{error}` for any HTTP /
+reason}` when the Web UI is offline and to `{error}` for any HTTP /
   network failure — never raises, never starts the Web UI itself.
 - **R51-A** — `task_queue.add_task` now runs inside a deadlock-aware
   `_watched_write_lock(...)` wrapper. A shared
@@ -362,7 +362,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   loose for an interactive-blocking tool — they only fire when an LLM goes
   haywire and hammers `interactive_feedback` in a tight loop.
 - **R44** — `interactive_feedback` now accepts a keyword-only `ctx:
-  FastMCPContext | None = None` parameter so FastMCP auto-injects the request
+FastMCPContext | None = None` parameter so FastMCP auto-injects the request
   context. The new `_emit_ctx_info` helper forwards three structured progress
   events to the MCP client (`task.created` / `task.notified` / `task.completed`),
   letting Cursor / Claude Desktop / ChatGPT Desktop render a live "waiting for
@@ -464,7 +464,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ## [1.5.32] — 2026-05-05
 
 > Round-25 + early Round-26 (5 commits since v1.5.31 — R25.1 typecheck-tooling
-> upgrade + R25.2 lazy-httpx + R26.1 lazy-flask_limiter + R26.2 template-context
+> upgrade + R25.2 lazy-httpx + R26.1 lazy-flask*limiter + R26.2 template-context
 > hot path + R26.3 lazy-markdown): a **typecheck-tooling refresh** plus a
 > **second cold-start optimization wave** that systematically defers every
 > remaining heavy module-top import in the `service_manager` / `server_feedback`
@@ -525,7 +525,7 @@ plugins...])` instance construction inside `setup_markdown` to a single
 > warm-up (codehilite Pygments lexer + footnote AST + nl2br rewrite +
 > md_in_html sanitizer + table/toc/fenced_code/attr_list/def_list/abbr
 > regex compilation), with race-prevention via double-checked locking
-> (the _first_ thread to grab the lock pays the import + construct cost;
+> (the \_first* thread to grab the lock pays the import + construct cost;
 > subsequent threads see `self.md is not None` and skip), verified via a
 > 100-thread `threading.Barrier`-synchronized test that asserts exactly
 > 1 `Markdown(...)` constructor call across the contention window.
@@ -1929,8 +1929,8 @@ abs_floor_ms)` (defaults 30% pct + 5 ms floor; the 5 ms floor
      ~140 ms one-time lazy-load (subsequent calls 0 µs); since the user is
      already awaiting the full MCP tool round-trip on the first call, the
      +140 ms is unobservable. Thirteen new tests lock the contract:
-     three subprocess-isolated decoupling checks (server_config / task_queue
-     cold-load does _not_ import `mcp.types`; first call to
+     three subprocess-isolated decoupling checks (server*config / task_queue
+     cold-load does \_not* import `mcp.types`; first call to
      `parse_structured_response` _does_), lazy-loader cache-singleton
      identity, runtime-behavior parity on all three response builders,
      PEP-563 string-form annotation accessibility, and four source-text
@@ -2609,7 +2609,7 @@ OSError` ensures quarantine failure never raises into
   `_should_exit = True`, then _returned_. Once the handler
   returned the signal was "handled" from the kernel's POV and
   `mcp.run()`'s blocking stdio loop resumed waiting on stdin —
-  the web_ui subprocess and httpx clients had been torn down,
+  the web*ui subprocess and httpx clients had been torn down,
   but the parent process kept hanging at ~120 MB RSS until
   systemd's `TimeoutStopSec` SIGKILL'd it. Reproducer:
   `kill -TERM <pid>` against a stdio-mode server → child dies,
@@ -2623,7 +2623,7 @@ graceful shutdown")` from the main-thread branch. `server.main()`'s
   runs an idempotent second `cleanup_services()` (no-op because
   the first run already cleared everything), `break`s out of the
   retry loop, and `return`s — process exits with code 0 in
-  milliseconds. Cleanup deliberately runs _before_ the raise so
+  milliseconds. Cleanup deliberately runs \_before* the raise so
   resources release even if `KeyboardInterrupt` propagation
   encounters anything weird in the call chain. Cleanup-error
   path stays correct: a `RuntimeError` from `cleanup_all` is
@@ -2664,16 +2664,16 @@ graceful shutdown")` from the main-thread branch. `server.main()`'s
   `None` from its broad `except Exception` branch → `completion.set()`
   fires regardless → finally checks `result_box[0] is None` → True
   → `_close_orphan_task_best_effort()` POSTs `/api/tasks/<id>/close`
-  → web_ui `task_queue.remove_task` deletes the COMPLETED task
+  → web*ui `task_queue.remove_task` deletes the COMPLETED task
   **and its `result` payload** → user receives a `_make_resubmit_response`
-  back through the AI, with zero log signal that a result _did_
+  back through the AI, with zero log signal that a result \_did*
   exist briefly. Fix is a single retry hop in the same finally
   block: if `result_box[0] is None` after both SSE / poll tasks
   have been awaited, call `_fetch_result()` once more — transient
   failures typically clear in <1 s, so the retry recovers the
   result, fills `result_box[0]`, and the existing `if result_box[0]
 is None` close-guard short-circuits past the close call entirely.
-  If the retry _also_ fails (genuinely no result, web_ui truly
+  If the retry _also_ fails (genuinely no result, web*ui truly
   wedged), control flows into the original R13·B1 close path with
   behaviour bit-identical to pre-fix — no regression for the
   timeout / genuinely-stuck scenarios the original commit was
@@ -2687,7 +2687,7 @@ is None` close-guard short-circuits past the close call entirely.
   with a stateful `AsyncMock` GET (1st → 503, 2nd → completed
   result) and asserts (a) the return value is the recovered result
   not `_make_resubmit_response`, (b) `client.post` (close) is
-  called _zero_ times, (c) GET is called ≥ 2× to confirm the
+  called \_zero* times, (c) GET is called ≥ 2× to confirm the
   retry fired; `test_retry_still_failing_falls_back_to_close`
   preserves the always-pending case and confirms `client.post`
   _is_ called at least once;
@@ -3180,11 +3180,11 @@ max="250">`), VS Code webview HTML, and the two settings-
   walked up to `max="3600"` (mirroring
   `AUTO_RESUBMIT_TIMEOUT_MAX`); 13 user-facing copy lines
   saying "Range 30-250" refreshed across READMEs, OpenAPI
-  schemas, web_ui.py argparse help, and i18n locale files.
+  schemas, web*ui.py argparse help, and i18n locale files.
   Five `?? 250` / `|| 250` fallbacks in
   `static/js/multi_task.js` corrected to `?? 240` / `|| 240`
   (the actual `AUTO_RESUBMIT_TIMEOUT_DEFAULT`; 250 was the
-  historical _MAX_, not _DEFAULT_).
+  historical \_MAX*, not _DEFAULT_).
 - **`POST /api/reset-feedback-config` partial reset**: the
   endpoint backing the Web UI's "Reset feedback config to
   defaults" button only included 3 of 4 SECTION_MODELS::feedback
@@ -3758,7 +3758,7 @@ docs/api.zh-CN/index.md` showing identical structural skeletons.
     powering the Web UI; declaring it lets PyPI's faceted search
     surface the project under Flask's framework filter.
   - `Natural Language :: English` and `Natural Language :: Chinese
-  (Simplified)` — the project ships fully bilingual READMEs,
+(Simplified)` — the project ships fully bilingual READMEs,
     docs, locale bundles, and VS Code extension `package.nls.*`;
     declaring both Natural Language facets lets non-English Python
     devs find the package without guessing.

@@ -13,15 +13,15 @@ AI Intervention Agent 使用 **TOML** 配置文件，用于配置通知、Web UI
 
 查找策略会根据运行方式变化。检测顺序如下，**先匹配的赢**：
 
-| #  | 来源                                          | 模式            | 触发条件                                                                                |
-| -- | --------------------------------------------- | --------------- | --------------------------------------------------------------------------------------- |
-| 1  | `AI_INTERVENTION_AGENT_CONFIG_FILE` 环境变量  | （任意）        | 设置了任意值；支持绝对文件路径或目录                                                    |
-| 2  | `AI_INTERVENTION_AGENT_DEV_MODE=1`            | 强制 **dev**    | 在仓库内开发，希望即便从仓库外启动也使用 `./config.toml`                                |
-| 3  | `AI_INTERVENTION_AGENT_USER_MODE=1`           | 强制 **user**   | 虽然进程启动目录在仓库内，但希望以「用户安装」语义运行（例如 systemd 服务）             |
-| 4  | `UVX_PROJECT` 环境变量（旧）                  | 强制 **user**   | 部分老 uvx runner 会注入；保留向后兼容                                                  |
-| 5  | 自动检测的隔离运行时                          | **user**        | `sys.executable` 位于 `~/.local/share/uv/tools/…` / `~/.local/share/pipx/venvs/…` / `~/.cache/uv/builds-…` 或模块位于 `site-packages` / `dist-packages` |
-| 6  | 仓库 checkout 启发式                          | **dev**         | `pyproject.toml` + `server.py` 与 `config_manager.py` 同目录，**且**当前 shell `cwd` 在该目录树内 |
-| 7  | 默认                                          | **user**（安全）| 其他情况—永远不会在陌生人的 `cwd` 写入 `config.toml`                                    |
+| #   | 来源                                         | 模式             | 触发条件                                                                                                                                                |
+| --- | -------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `AI_INTERVENTION_AGENT_CONFIG_FILE` 环境变量 | （任意）         | 设置了任意值；支持绝对文件路径或目录                                                                                                                    |
+| 2   | `AI_INTERVENTION_AGENT_DEV_MODE=1`           | 强制 **dev**     | 在仓库内开发，希望即便从仓库外启动也使用 `./config.toml`                                                                                                |
+| 3   | `AI_INTERVENTION_AGENT_USER_MODE=1`          | 强制 **user**    | 虽然进程启动目录在仓库内，但希望以「用户安装」语义运行（例如 systemd 服务）                                                                             |
+| 4   | `UVX_PROJECT` 环境变量（旧）                 | 强制 **user**    | 部分老 uvx runner 会注入；保留向后兼容                                                                                                                  |
+| 5   | 自动检测的隔离运行时                         | **user**         | `sys.executable` 位于 `~/.local/share/uv/tools/…` / `~/.local/share/pipx/venvs/…` / `~/.cache/uv/builds-…` 或模块位于 `site-packages` / `dist-packages` |
+| 6   | 仓库 checkout 启发式                         | **dev**          | `pyproject.toml` + `server.py` 与 `config_manager.py` 同目录，**且**当前 shell `cwd` 在该目录树内                                                       |
+| 7   | 默认                                         | **user**（安全） | 其他情况—永远不会在陌生人的 `cwd` 写入 `config.toml`                                                                                                    |
 
 #### 强制指定（所有模式）
 
@@ -99,45 +99,45 @@ dev 模式内部优先级顺序：
 
 控制 Web/声音/系统通知/Bark 推送。
 
-| 配置项                    | 类型    | 默认值   | 说明                                               |
-| ------------------------- | ------- | -------- | -------------------------------------------------- |
-| `enabled`                 | boolean | `true`   | 通知总开关                                         |
-| `debug`                   | boolean | `false`  | 调试模式（仅影响通知模块的日志详细程度）           |
-| `web_enabled`             | boolean | `true`   | 浏览器通知                                         |
-| `auto_request_permission` | boolean | `true`   | 页面加载时自动请求通知权限                         |
-| `web_icon`                | string  | `"default"` | `"default"` 或自定义图标 URL                    |
-| `web_timeout`             | number  | `5000`   | Web 通知显示时长（毫秒），范围 `[1, 600000]`      |
-| `system_enabled`          | boolean | `false`  | 桌面系统通知（`plyer` 可选依赖）                   |
-| `macos_native_enabled`    | boolean | `true`   | macOS 原生通知（主要由 VS Code/Cursor 插件侧使用） |
-| `sound_enabled`           | boolean | `true`   | 声音通知                                           |
-| `sound_mute`              | boolean | `false`  | 静音                                               |
-| `sound_file`              | string  | `"default"` | 声音文件 key/name（例如 `"default"`、`"deng"`） |
-| `sound_volume`            | number  | `80`     | 范围 `[0, 100]`                                    |
-| `mobile_optimized`        | boolean | `true`   | 移动端优化                                         |
-| `mobile_vibrate`          | boolean | `true`   | 移动端震动（浏览器通常要求用户交互后才允许）       |
-| `bark_enabled`            | boolean | `false`  | 启用 Bark 推送                                     |
-| `bark_url`                | string  | `""`     | 必须以 `http://` 或 `https://` 开头                |
-| `bark_device_key`         | string  | `""`     | `bark_enabled=true` 时必填                         |
-| `bark_icon`               | string  | `""`     | 可选                                               |
-| `bark_action`             | string  | `"none"` | `none` / `url` / `copy`                            |
+| 配置项                    | 类型    | 默认值                            | 说明                                                                                        |
+| ------------------------- | ------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| `enabled`                 | boolean | `true`                            | 通知总开关                                                                                  |
+| `debug`                   | boolean | `false`                           | 调试模式（仅影响通知模块的日志详细程度）                                                    |
+| `web_enabled`             | boolean | `true`                            | 浏览器通知                                                                                  |
+| `auto_request_permission` | boolean | `true`                            | 页面加载时自动请求通知权限                                                                  |
+| `web_icon`                | string  | `"default"`                       | `"default"` 或自定义图标 URL                                                                |
+| `web_timeout`             | number  | `5000`                            | Web 通知显示时长（毫秒），范围 `[1, 600000]`                                                |
+| `system_enabled`          | boolean | `false`                           | 桌面系统通知（`plyer` 可选依赖）                                                            |
+| `macos_native_enabled`    | boolean | `true`                            | macOS 原生通知（主要由 VS Code/Cursor 插件侧使用）                                          |
+| `sound_enabled`           | boolean | `true`                            | 声音通知                                                                                    |
+| `sound_mute`              | boolean | `false`                           | 静音                                                                                        |
+| `sound_file`              | string  | `"default"`                       | 声音文件 key/name（例如 `"default"`、`"deng"`）                                             |
+| `sound_volume`            | number  | `80`                              | 范围 `[0, 100]`                                                                             |
+| `mobile_optimized`        | boolean | `true`                            | 移动端优化                                                                                  |
+| `mobile_vibrate`          | boolean | `true`                            | 移动端震动（浏览器通常要求用户交互后才允许）                                                |
+| `bark_enabled`            | boolean | `false`                           | 启用 Bark 推送                                                                              |
+| `bark_url`                | string  | `""`                              | 必须以 `http://` 或 `https://` 开头                                                         |
+| `bark_device_key`         | string  | `""`                              | `bark_enabled=true` 时必填                                                                  |
+| `bark_icon`               | string  | `""`                              | 可选                                                                                        |
+| `bark_action`             | string  | `"none"`                          | `none` / `url` / `copy`                                                                     |
 | `bark_url_template`       | string  | `"{base_url}/?task_id={task_id}"` | `bark_action="url"` 且事件没有显式 URL 时使用；支持 `{task_id}`、`{event_id}`、`{base_url}` |
-| `retry_count`             | number  | `3`      | 失败重试次数（不含首次），范围 `[0, 10]`           |
-| `retry_delay`             | number  | `2`      | 重试间隔秒数，范围 `[0, 60]`                       |
-| `bark_timeout`            | number  | `10`     | 请求超时秒数，范围 `[1, 300]`                      |
+| `retry_count`             | number  | `3`                               | 失败重试次数（不含首次），范围 `[0, 10]`                                                    |
+| `retry_delay`             | number  | `2`                               | 重试间隔秒数，范围 `[0, 60]`                                                                |
+| `bark_timeout`            | number  | `10`                              | 请求超时秒数，范围 `[1, 300]`                                                               |
 
 ### `web_ui`（Web UI）
 
 控制 Web UI 的监听与 HTTP 客户端行为。
 
-| 配置项                 | 类型    | 默认值      | 说明                                            |
-| ---------------------- | ------- | ----------- | ----------------------------------------------- |
-| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"` |
-| `host`                 | string  | `127.0.0.1` | 可能会被 `network_security.bind_interface` 覆盖 |
-| `port`                 | number  | `8080`      | 范围 `[1, 65535]`                               |
-| `debug`                | boolean | `false`     | 调试模式                                        |
-| `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`            |
-| `http_max_retries`     | number  | `3`         | HTTP 最大重试次数，范围 `[0, 20]`               |
-| `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`             |
+| 配置项                 | 类型    | 默认值      | 说明                                                                                                                                                  |
+| ---------------------- | ------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"`                             |
+| `host`                 | string  | `127.0.0.1` | 可能会被 `network_security.bind_interface` 覆盖                                                                                                       |
+| `port`                 | number  | `8080`      | 范围 `[1, 65535]`                                                                                                                                     |
+| `debug`                | boolean | `false`     | 调试模式                                                                                                                                              |
+| `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                  |
+| `http_max_retries`     | number  | `3`         | HTTP 最大重试次数，范围 `[0, 20]`                                                                                                                     |
+| `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`                                                                                                                   |
 | `external_base_url`    | string  | `""`        | 通知点击跳转使用的外部 Web UI 基地址，例如 `http://ai.local:8080`；留空时优先回退到 mDNS（`http://ai.local:{port}`），再回退到 `http://{host}:{port}` |
 
 ### `network_security`（网络安全）
@@ -159,11 +159,11 @@ dev 模式内部优先级顺序：
 
 用于通过 `ai.local` 访问，并让局域网工具发现服务（DNS-SD / `_http._tcp.local`）。
 
-| 配置项         | 类型             | 默认值                  | 说明                                                                         |
-| -------------- | ---------------- | ----------------------- | ---------------------------------------------------------------------------- |
-| `enabled`      | boolean / string | `"auto"`                | `true` 强制启用；`false` 强制禁用；`"auto"`（默认）= 自动检测                  |
-| `hostname`     | string           | `ai.local`              | mDNS 主机名（浏览器可直接访问 `http://ai.local:8080`）                       |
-| `service_name` | string           | `AI Intervention Agent` | DNS-SD 服务实例名（用于服务发现列表展示）                                    |
+| 配置项         | 类型             | 默认值                  | 说明                                                          |
+| -------------- | ---------------- | ----------------------- | ------------------------------------------------------------- |
+| `enabled`      | boolean / string | `"auto"`                | `true` 强制启用；`false` 强制禁用；`"auto"`（默认）= 自动检测 |
+| `hostname`     | string           | `ai.local`              | mDNS 主机名（浏览器可直接访问 `http://ai.local:8080`）        |
+| `service_name` | string           | `AI Intervention Agent` | DNS-SD 服务实例名（用于服务发现列表展示）                     |
 
 **默认启用策略**：
 
@@ -186,12 +186,12 @@ dev 模式内部优先级顺序：
 
 控制等待时间与自动重调提示语。
 
-| 配置项               | 类型   | 默认值                                      | 说明                                                 |
-| -------------------- | ------ | ------------------------------------------- | ---------------------------------------------------- |
-| `backend_max_wait`   | number | `600`                                       | 后端最大等待（秒），范围 `[10, 7200]`                            |
+| 配置项               | 类型   | 默认值                                      | 说明                                                                   |
+| -------------------- | ------ | ------------------------------------------- | ---------------------------------------------------------------------- |
+| `backend_max_wait`   | number | `600`                                       | 后端最大等待（秒），范围 `[10, 7200]`                                  |
 | `frontend_countdown` | number | `240`                                       | 前端自动重调倒计时（秒），范围 `[10, 3600]`；`0`（或任意非正整数）禁用 |
-| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`    | 错误/超时返回的引导语                                |
-| `prompt_suffix`      | string | `"\\n请积极调用 interactive_feedback 工具"` | 追加到用户反馈末尾的提示语                           |
+| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`    | 错误/超时返回的引导语                                                  |
+| `prompt_suffix`      | string | `"\\n请积极调用 interactive_feedback 工具"` | 追加到用户反馈末尾的提示语                                             |
 
 **超时规则**：
 
