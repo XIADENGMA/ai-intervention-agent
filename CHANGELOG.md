@@ -11,6 +11,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R87** — fix `static/locales/**` path-ignore drift in
+  `.github/workflows/codeql.yml`. R76 moved `static/` to
+  `src/ai_intervention_agent/static/`, but the CodeQL workflow's
+  `paths-ignore` glob still pointed at the old location, so any
+  pull request touching only locale JSON would silently
+  re-trigger the full CodeQL Python + JS/TS analysis (~6 min)
+  instead of being filtered out. Update both the `push:` and
+  `pull_request:` blocks to point at
+  `src/ai_intervention_agent/static/locales/**` and add a brief
+  reviewer comment explaining the rename so the next R76-class
+  refactor doesn't have to rediscover the linkage.
+
 - **R86** — refresh `.github/PULL_REQUEST_TEMPLATE.md` "Touched
   areas" checkboxes to reflect the post-R76 `src/` layout. The
   previous list pointed at `static/`, `templates/`, `web_ui*.py`,
