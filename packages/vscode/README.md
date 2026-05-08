@@ -60,7 +60,7 @@ The extension ships an internal AppleScript executor (`applescript-executor.ts`)
 If you want to disable the AppleScript path entirely, toggle macOS native notifications off in the panel's **Notification Settings** — the executor will not be invoked.
 
 > Reporting a security issue in this surface? Follow the
-> repository [`SECURITY.md`](../../SECURITY.md) — please use a
+> repository [`SECURITY.md`](../../.github/SECURITY.md) — please use a
 > private GitHub Security Advisory rather than a public issue.
 
 ## macOS native notifications

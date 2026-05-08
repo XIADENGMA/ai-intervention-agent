@@ -52,7 +52,7 @@ Find your role below to jump straight to the page you need.
 - [`security/AUDIT_2026-05-04.md`](security/AUDIT_2026-05-04.md) —
   most recent dependency-vulnerability audit (`pip-audit`) with
   the upgrade recipe and remaining-CVE rationale.
-- [`../SECURITY.md`](../SECURITY.md) — disclosure policy, supported
+- [`../.github/SECURITY.md`](../.github/SECURITY.md) — disclosure policy, supported
   versions, AppleScript executor security model.
 - [`lessons-learned-r60s.md`](lessons-learned-r60s.md) — internal
   post-mortem for the v1.5.45 R63 → R70 batch (light-mode iOS-blue

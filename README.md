@@ -304,7 +304,7 @@ flowchart TD
 - **Docs index** (by audience): [`docs/README.md`](docs/README.md) · [`docs/README.zh-CN.md`](docs/README.zh-CN.md)
 - **Scripts index** (CI gates / generators / QA): [`scripts/README.md`](scripts/README.md)
 - **Release notes**: [`CHANGELOG.md`](CHANGELOG.md) · VS Code marketplace listing: [`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
-- **Contributing**: [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+- **Contributing**: [`CONTRIBUTING.md`](.github/CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](.github/CODE_OF_CONDUCT.md)
 - **API docs index**: [`docs/api/index.md`](docs/api/index.md)
 - **API docs (简体中文)**: [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **MCP tool reference**: [`docs/mcp_tools.md`](docs/mcp_tools.md)

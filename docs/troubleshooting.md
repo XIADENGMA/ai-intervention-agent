@@ -3,7 +3,7 @@
 > 中文版：[`troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md)
 
 A focused FAQ for the most common deployment / runtime issues. If your
-question is not here, [`SUPPORT.md`](../SUPPORT.md) routes you to the
+question is not here, [`SUPPORT.md`](../.github/SUPPORT.md) routes you to the
 right channel.
 
 > Tip: most issues become diagnosable in seconds once you have logs.
@@ -117,7 +117,7 @@ does not show the task.
 **Symptom**: clicking "Open in IDE" on the settings page is silently
 ignored.
 
-**Why**: the endpoint enforces three guards (see `SECURITY.md`):
+**Why**: the endpoint enforces three guards (see `.github/SECURITY.md`):
 
 1. **Loopback only** — non-loopback origins are 403'd.
 2. **Path whitelist** — the only paths it will hand to a child
@@ -260,9 +260,9 @@ license violation in the PR's dependencies.
 
 ## Still stuck?
 
-1. Read [`SUPPORT.md`](../SUPPORT.md) for the right channel.
+1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.
 2. For security-related symptoms, **do not** open a public issue —
-   follow [`SECURITY.md`](../SECURITY.md).
+   follow [`SECURITY.md`](../.github/SECURITY.md).
 3. Open a [GitHub Discussion][disc] if you are not sure whether it's
    a bug, configuration, or environment problem.
 
