@@ -11,6 +11,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R85** — refresh `scripts/README.md` inventory: backfill 7
+  scripts that shipped between v1.5.22 and v1.6.0 but never
+  made it into the README index — `check_brand_color_consistency.py`
+  (R66 brand-color guardrail), `check_tag_push_safety.py`
+  (R19.1 push-tags-webhook three-tag limit), `generate_pwa_icons.py`
+  (PWA / favicon / `apple-touch-icon` family generator),
+  `perf_e2e_bench.py` + `perf_gate.py` (R20.14-A E2E perf
+  benchmark and regression gate), `precompress_static.py`
+  (R20.14-D / R21.4 gzip + Brotli pre-compression), and
+  `smoke_test_r50.py` (R50 SSE / `config_changed` debounce
+  smoke). Add a new "Visual / brand guardrails" section and a
+  "Performance" section so the index is grouped by job-to-be-done
+  instead of one flat list. Refresh the footer from "v1.5.22"
+  to "v1.6.0" so the staleness signal matches the rest of the
+  index.
+
 - **R84** — post-1.6.0 documentation drift cleanup: refresh the
   Supported-versions table in `.github/SECURITY.md` from
   `1.5.x` to `1.6.x`, retitle `docs/lessons-learned-r70s.md`

@@ -65,6 +65,16 @@ diverges.
 - [`check_locales.py`](check_locales.py) — minimal smoke (`en` +
   `zh-CN` parity), kept for legacy invocations.
 
+## Visual / brand guardrails
+
+- [`check_brand_color_consistency.py`](check_brand_color_consistency.py)
+  _(R66)_ — fail if `static/css/main.css` re-introduces the
+  iOS-system-blue `rgba(0, 122, 255, …)` family the project's
+  brand palette (dark-mode `#a855f7`, light-mode Anthropic
+  Orange `#d97757`) was meant to replace. Wired into
+  `pre-commit` so a single hardcoded blue cannot land on `main`
+  again.
+
 ## Generators
 
 - [`gen_pseudo_locale.py`](gen_pseudo_locale.py) — synthesise
@@ -79,17 +89,46 @@ diverges.
   detects drift without writing (exit 1 + drift list when
   out-of-sync); ideal as a pre-merge sanity check after
   signature edits.
+- [`generate_pwa_icons.py`](generate_pwa_icons.py) — build the
+  PWA / favicon / `apple-touch-icon` family from a single SVG
+  source so the multi-size `favicon.ico` (16/32/48/256), the
+  iOS opaque-background tile, and the maskable PWA icon stay in
+  sync. Run after editing `icons/icon.svg`.
 
 ## Asset / packaging pipeline
 
 - [`minify_assets.py`](minify_assets.py) — minify
   `static/js/*.js` and `static/css/*.css` via `rjsmin` + `rcssmin`.
   `--check` validates `.min` is in sync.
+- [`precompress_static.py`](precompress_static.py)
+  _(R20.14-D / R21.4)_ — pre-compress `static/**/*.{js,css,json}`
+  to `.gz` + `.br` siblings so the Flask static handler can
+  ship Brotli / gzip for `tex-mml-chtml.js` (1.1 MB),
+  `lottie.min.js` (300 KB), and the locale bundles without
+  burning CPU on every request.
 - [`package_vscode_vsix.mjs`](package_vscode_vsix.mjs) — build the
   VSCode `.vsix` package via `vsce`.
 - [`bump_version.py`](bump_version.py) — bump version across
   `pyproject.toml`, `package.json`, README badges, etc. `--check`
   validates cross-file consistency.
+- [`check_tag_push_safety.py`](check_tag_push_safety.py)
+  _(R19.1)_ — fail `make release-check` if more than three
+  unpushed `v*.*.*` tags exist locally. Works around an
+  undocumented GitHub rule that drops `push.tags` webhook events
+  when 4+ tags are pushed in one go, which would silently skip
+  the `release.yml` workflow.
+
+## Performance
+
+- [`perf_e2e_bench.py`](perf_e2e_bench.py) _(R20.14-A)_ — single
+  source of truth for "how fast is `interactive_feedback` →
+  Web-UI today?" Captures the four-stage E2E latency the R20.4
+  → R20.13 sprints drove from 1980 ms to 360 ms.
+- [`perf_gate.py`](perf_gate.py) _(R20.14-A)_ — regression gate
+  that compares a fresh `perf_e2e_bench.py` snapshot against the
+  committed baseline and fails CI if regressions exceed the
+  configured budget. Bench-and-gate are kept strictly separate;
+  the bench never bakes in thresholds.
 
 ## Tests / QA
 
@@ -98,6 +137,12 @@ diverges.
   theming). Used for pre-release real-machine verification.
 - [`test_mcp_client.py`](test_mcp_client.py) — MCP client
   regression for resubmit timer + image-return wire format.
+- [`smoke_test_r50.py`](smoke_test_r50.py) _(R50)_ — out-of-mock
+  smoke that boots a real server and asserts (1)
+  `/api/system/sse-stats` returns valid JSON,
+  (2) `_emit_config_changed_to_sse_bus` actually makes
+  `/api/events` emit `event: config_changed`, and (3) 5 emits
+  inside 250 ms collapse into 1 frame (R50-B debounce).
 - [`red_team_i18n_runtime.mjs`](red_team_i18n_runtime.mjs) —
   cross-feature red-team for both `i18n.js` copies (Web +
   VSCode) under a frozen `Date.now()`. Enforces ICU / apostrophe
@@ -113,4 +158,8 @@ diverges.
 ---
 
 _Refresh this file when you add or rename a script so the index
-never lies. Last refreshed for v1.5.22._
+never lies. Last refreshed for v1.6.0 (added 7 scripts that
+shipped between v1.5.22 and v1.6.0:
+`check_brand_color_consistency.py`, `check_tag_push_safety.py`,
+`generate_pwa_icons.py`, `perf_e2e_bench.py`, `perf_gate.py`,
+`precompress_static.py`, `smoke_test_r50.py`)._
