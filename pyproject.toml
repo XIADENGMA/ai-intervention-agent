@@ -164,6 +164,13 @@ omit = [
 ]
 # 让 pytest-xdist / xfail 等场景正确合并多次 run 的 .coverage 数据
 parallel = true
+# R82：把 ``parallel = true`` 在仓库根撒下的 ``.coverage.<host>.<pid>.<rand>``
+# 中间文件挪到 ``.coverage_data/`` 子目录，避免污染 CI 工作目录 / artifacts。
+# coverage.py 5.x 起会自动创建 data_file 的父目录，所以 CI 不需要 mkdir；
+# ``.coverage_data/`` 已纳入 .gitignore（v1.5.39+）。
+# 本地开发者的 ``.coveragerc``（git untracked）也独立配了同款路径，两边
+# 行为一致；不会出现"我本地干净 / CI 还是撒"的漂移。
+data_file = ".coverage_data/coverage"
 
 [tool.coverage.report]
 # 当前实测 ~90.96%（v1.5.22）；红线给 ~3% 退化容差，再低就阻塞 CI。

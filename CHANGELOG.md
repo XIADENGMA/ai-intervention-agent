@@ -112,6 +112,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   drift) plus cross-cutting takeaways. `docs/README.md`
   Reviewers section gains the new entry and the index footer
   is refreshed for the v1.5.46 cycle.
+- **R82** — relocate `coverage.py` parallel-run intermediate
+  files (`.coverage.<host>.<pid>.<rand>`) from repo root to
+  the `.coverage_data/` subdirectory via
+  `[tool.coverage.run].data_file = ".coverage_data/coverage"`
+  in `pyproject.toml`. Each `ci_gate --with-coverage` run used
+  to scatter ~50 intermediate files at the repo root before
+  `coverage combine` swept them into `.coverage`; the directory
+  tree pollution was visible in editors / `ls` / `find` even
+  though `.gitignore` already covered them. `.coverage_data/`
+  is automatically created by coverage.py ≥5.x and is already
+  gitignored. The merged `coverage.xml` artifact stays at the
+  repo root (consumed by `.github/workflows/test.yml`'s
+  `actions/upload-artifact` step). Local developer
+  `.coveragerc` (git-untracked, per-contributor) gets the same
+  `data_file` setting in lockstep so both CI and local runs
+  behave consistently.
 
 ### Fixed
 
