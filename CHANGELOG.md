@@ -11,6 +11,82 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R121-A** — `/api/system/health` endpoint **observability expansion**
+  for K8s liveness/readiness probes and monitoring dashboards. The
+  R53-F three-check baseline (sse_bus / task_queue / recent_errors)
+  was sufficient for "service alive?" but missed three signals that
+  on-call routinely needs: which version is running, has the process
+  just restarted, did the right config get loaded? R121-A adds these
+  without breaking any R53-F contract.
+
+  **What's new**:
+
+  1. **New `notification` sub-check** in `payload.checks.notification`:
+     `{ok, enabled, providers_count, queue_size,
+     delivery_success_rate, events_finalized, events_in_flight}`.
+     Source: extracted from `notification_manager.get_status()` via
+     `_safe_notification_summary()`, which **strips** the `config` /
+     `providers` / `stats` sub-trees (those carry tokens / Bark
+     secrets / latency histograms — not appropriate for a public
+     health endpoint).
+
+  2. **New top-level `version` field** — reads `pyproject.toml`
+     project.version via the existing `web_ui.get_project_version()`
+     `lru_cache`. Lets monitoring tell apart instances during a
+     rolling upgrade.
+
+  3. **New top-level `uptime_seconds` field** — derived from
+     `server._PROCESS_STARTED_AT_UNIX` (already tracked since R47).
+     Lets monitoring detect "process keeps restarting" /
+     "init phase hanging" without needing OS-level metrics.
+
+  4. **New top-level `config_file_path` field** — the absolute path
+     of the currently loaded config file (path only, **never values**).
+     Same data that `/api/system/open-config-file/info` already
+     exposes, surfaced here for monitoring to detect "wrong config
+     loaded" failures (typical: env var drift, mis-pointed mount).
+
+  5. **`status` decision evolves** — `degraded` is now also triggered
+     when notifications are enabled, have ≥30 finalized events
+     (sample-size guard against cold-start false positives), and
+     delivery success rate < 80% (empirical threshold balancing
+     sensitivity vs. flakiness).
+
+  **R53-F contract preservation**: The static test
+  `test_no_config_value_passthrough` (R53-F) asserts the handler
+  body does not literally contain `get_config()`. R121-A reads the
+  config file path via the module-level helper
+  `_safe_config_file_path()`, keeping the literal call out of the
+  handler. The original `test_payload_carries_no_sensitive_fields`
+  in `test_web_ui_routes_system.py` was updated from a strict
+  three-key set-equality assertion to a six-key whitelist subset
+  check + per-field non-sensitivity type assertions — **stronger**
+  (catches both unauthorized new fields and dict/list payloads
+  that could smuggle config values), not weaker.
+
+  **Why now**: After R47 (SSE stats), R52-B (recent-logs ring),
+  R53-F (system_health aggregator), R117-R119 (silent-failure
+  observability), the only remaining "what's the system doing
+  right now?" gap was the three signals R121-A adds. With this,
+  a single GET to `/api/system/health` returns enough metadata to
+  power a Datadog / Grafana single-pane dashboard without
+  per-instance polling of 5+ separate endpoints.
+
+  **Files**:
+  - `src/ai_intervention_agent/web_ui_routes/system.py` — 4 new
+    module-level `_safe_*()` helpers (each exception-safe with
+    None fallback) + extended `system_health()` handler + updated
+    OpenAPI docstring.
+  - `tests/test_system_health_r121.py` (NEW, 47 tests) — covers
+    new fields presence, helper unit tests (happy + 5 exception
+    paths), R53-F contract preservation, payload structure
+    contract.
+  - `tests/test_web_ui_routes_system.py` — `test_payload_carries_no_sensitive_fields`
+    evolved to allow R121-A schema while strengthening type assertions.
+
+  **Verification**: 4015 tests passed / 0 failed / 2 skipped,
+  ruff/ty clean.
+
 - **R120** — codify the R107 → R110 → R114 → R117 → R118 → R119
   silent-failure audit work as a **machine-executable regression
   guard**. Future `except Exception: pass` patterns introduced

@@ -619,16 +619,82 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
         self.assertFalse(body["checks"]["sse_bus"]["ok"])
 
     def test_payload_carries_no_sensitive_fields(self):
-        """规约：payload 必须不含 prompt 内容 / config 值（只有数值或 enum）。"""
+        """规约：payload 必须不含 prompt 内容 / config 值（只有数值/enum/路径）。
+
+        R121-A 扩展了顶层 schema，加入 ``version`` / ``uptime_seconds`` /
+        ``config_file_path`` 三个**显式非敏感**的诊断字段。本测试同步演进：
+        从"key set 必须严格等于 R53-F 的 3 个字段"改为"key set 必须是
+        R53-F + R121-A 的白名单子集"，并对每个新字段单独断言其类型 +
+        非敏感语义。这样既保留了"不允许偷偷加新字段"的回归保护，也允许
+        R121-A 这种 *显式* 演进。
+        """
         with patch(
             "ai_intervention_agent.enhanced_logging.get_recent_logs",
             return_value=[],
         ):
             resp = self._get()
         body = resp.get_json()
-        # 只允许的顶层字段
-        self.assertEqual(set(body.keys()), {"status", "ts_unix", "checks"})
+        # R53-F 原始字段 + R121-A 新增字段，且**只能是这些**
+        allowed_keys = {
+            # R53-F 原 schema
+            "status",
+            "ts_unix",
+            "checks",
+            # R121-A 新增（每个都有专项类型断言，确保不偷渡敏感字段）
+            "version",
+            "uptime_seconds",
+            "config_file_path",
+        }
+        actual_keys = set(body.keys())
+        self.assertTrue(
+            actual_keys.issubset(allowed_keys),
+            f"payload 多了未授权的顶层字段 {actual_keys - allowed_keys}，"
+            "新增任何顶层字段都必须先扩白名单 + 加专项类型断言",
+        )
         self.assertIsInstance(body["ts_unix"], int)
+
+        # R121-A 字段类型 + 非敏感性专项断言
+        # version 必须是 str 或 None（探测失败可降级），不允许 dict/list 等可
+        # 能携带 config 值的复合结构
+        if "version" in body:
+            self.assertTrue(
+                body["version"] is None or isinstance(body["version"], str),
+                "version 字段必须是字符串或 None",
+            )
+
+        # uptime_seconds 必须是数值或 None，不允许字符串（避免泄漏 ISO 时
+        # 间戳里的时区配置等）
+        if "uptime_seconds" in body:
+            self.assertTrue(
+                body["uptime_seconds"] is None
+                or isinstance(body["uptime_seconds"], int | float),
+                "uptime_seconds 字段必须是数值或 None",
+            )
+
+        # config_file_path 必须是字符串路径或 None；同时**不能**是绝对路径
+        # 之外的任何东西（防止泄漏 dict 化的 config 内容）
+        if "config_file_path" in body:
+            cfp = body["config_file_path"]
+            self.assertTrue(
+                cfp is None or isinstance(cfp, str),
+                "config_file_path 字段必须是字符串或 None",
+            )
+
+        # checks 必须是 dict，每个 sub-check 都是 dict 含 ok 字段
+        # 这是 R53-F 已有的 invariant；R121-A 加了 notification 子检查，
+        # 也必须满足同样形态
+        self.assertIsInstance(body["checks"], dict)
+        for check_name, check_value in body["checks"].items():
+            self.assertIsInstance(
+                check_value,
+                dict,
+                f"checks[{check_name!r}] 必须是 dict",
+            )
+            self.assertIn(
+                "ok",
+                check_value,
+                f"checks[{check_name!r}] 必须有 ok 字段",
+            )
 
 
 # ════════════════════════════════════════════════════════════════════════════

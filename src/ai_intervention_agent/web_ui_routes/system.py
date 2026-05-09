@@ -59,6 +59,112 @@ def _resolve_loopback_ips() -> set[str]:
     return {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
 
 
+# ---------------------------------------------------------------------------
+# R121-A: /api/system/health 增强辅助函数
+#
+# 设计原则：
+# 1. **不在 ``system_health()`` 函数体内 import / 调 ``get_config()``** —— R53-F
+#    的 ``test_no_config_value_passthrough`` 把 "handler 不应直接读 config"
+#    编码成机器化测试，所以读 config 的逻辑必须搬出 handler，由 helper 间接
+#    完成。这是契约不是约定。
+# 2. **每个 helper 都 swallow exception 并返回 ``None`` / 安全默认值** —— health
+#    端点必须高可用，任何子项探测异常都不能让整端点 5xx；handler 那一层只
+#    汇总 ``ok`` 标记并把整体 status 降到 ``unhealthy``。
+# 3. **payload 只放数值 / enum / 路径** —— 绝不回传 config 字段值（password /
+#    token / bark url ...），路径本身已经通过 ``/api/system/open-config-file/info``
+#    暴露过，不构成新的泄漏面。
+# ---------------------------------------------------------------------------
+
+
+def _safe_uptime_seconds() -> float | None:
+    """返回进程启动至今的秒数；任何错误返回 None。"""
+    try:
+        from ai_intervention_agent import server
+
+        started = getattr(server, "_PROCESS_STARTED_AT_UNIX", None)
+        if not isinstance(started, int | float):
+            return None
+        return round(time.time() - float(started), 3)
+    except Exception:
+        return None
+
+
+def _safe_project_version() -> str | None:
+    """返回项目版本号；任何错误返回 None。"""
+    try:
+        from ai_intervention_agent.web_ui import get_project_version
+
+        v = get_project_version()
+        return str(v) if v else None
+    except Exception:
+        return None
+
+
+def _safe_config_file_path() -> str | None:
+    """返回当前配置文件绝对路径（仅路径，不读值）；任何错误返回 None。
+
+    路径本身在 ``/api/system/open-config-file/info`` 已经暴露过，所以从
+    health 端点也透出不构成新的泄漏面——但反之它对 K8s probe / 监控仪
+    表板非常有价值（"我连的对了吗？"）。
+    """
+    try:
+        cfg = get_config()
+        config_file = getattr(cfg, "config_file", None)
+        return str(config_file) if config_file else None
+    except Exception:
+        return None
+
+
+def _safe_notification_summary() -> dict[str, object] | None:
+    """从全局 ``notification_manager`` 提取 health 端点需要的安全字段。
+
+    刻意 **不** 透出 ``config`` 子树（含 token / bark_secret 等敏感字段），
+    只暴露 enabled、providers 数量、queue 积压、delivery_success_rate 这种
+    监控真正会用的聚合量。
+
+    任何错误返回 ``None``，由 caller 把对应 check 标记为 ``ok=False``。
+    """
+    try:
+        from ai_intervention_agent.notification_manager import notification_manager
+
+        status = notification_manager.get_status()
+        if not isinstance(status, dict):
+            return None
+
+        providers = status.get("providers", [])
+        providers_count = len(providers) if isinstance(providers, list) else 0
+
+        stats = status.get("stats", {})
+        if not isinstance(stats, dict):
+            stats = {}
+
+        success_rate_raw = stats.get("delivery_success_rate")
+        if isinstance(success_rate_raw, int | float):
+            delivery_success_rate: float | None = float(success_rate_raw)
+        else:
+            delivery_success_rate = None
+
+        finalized_raw = stats.get("events_finalized", 0)
+        events_finalized = (
+            int(finalized_raw) if isinstance(finalized_raw, int | float) else 0
+        )
+        in_flight_raw = stats.get("events_in_flight", 0)
+        events_in_flight = (
+            int(in_flight_raw) if isinstance(in_flight_raw, int | float) else 0
+        )
+
+        return {
+            "enabled": bool(status.get("enabled", False)),
+            "providers_count": providers_count,
+            "queue_size": int(status.get("queue_size", 0) or 0),
+            "delivery_success_rate": delivery_success_rate,
+            "events_finalized": events_finalized,
+            "events_in_flight": events_in_flight,
+        }
+    except Exception:
+        return None
+
+
 def _get_client_ip() -> str:
     """读取 Flask 请求的真实客户端 IP（不信任 X-Forwarded-* 头）。"""
     return request.remote_addr or ""
@@ -559,23 +665,24 @@ class SystemRoutesMixin:
         @self.app.route("/api/system/health", methods=["GET"])
         @self.limiter.limit("120 per minute")
         def system_health() -> ResponseReturnValue:
-            """综合健康检查端点（R53-F），适合 K8s liveness/readiness probe / 监控仪表板。
+            """综合健康检查端点（R53-F + R121-A），适合 K8s liveness/readiness probe / 监控仪表板。
 
             ---
             tags:
               - System
             description: |
-                聚合 SSE bus / TaskQueue / 最近日志 三个维度的健康指标，用一份
-                简单 JSON 给监控系统消费。**不包含敏感信息**（无 prompt 内容、
-                无 config 值），所有字段都是数值或 enum，可直接对接 Datadog /
-                Prometheus / 自建监控。
+                聚合 SSE bus / TaskQueue / 最近日志 / 通知子系统 四个维度的健康
+                指标，用一份简单 JSON 给监控系统消费。**不包含敏感信息**（无
+                prompt 内容、无 config 字段值），所有字段都是数值 / enum / 路径，
+                可直接对接 Datadog / Prometheus / 自建监控。
 
                 ## 响应规约
 
                 * ``status``：整体健康度的 enum：
 
                   - ``healthy``：所有子系统正常；
-                  - ``degraded``：有 ERROR 级日志或 backpressure 累计但服务仍在跑，
+                  - ``degraded``：有 ERROR 级日志、backpressure 累计、或通知投递
+                    成功率明显偏低（<80% 且 finalized 样本 ≥30），但服务仍在跑，
                     监控可以告警但不应自动重启；
                   - ``unhealthy``：任何子系统拉取失败 / 内部异常，监控应当 page
                     on-call。
@@ -584,6 +691,16 @@ class SystemRoutesMixin:
 
                 * ``ts_unix``：本次 health 评估时刻（int 秒），监控可基于它检测
                   端点本身的 freshness。
+
+                * ``version``（R121-A）：项目版本号，用于滚动升级时区分实例；
+                  探测失败为 ``null``。
+
+                * ``uptime_seconds``（R121-A）：进程启动至今秒数（float, 3 位小数），
+                  监控可借此判 "异常重启" / "init 卡死"；探测失败为 ``null``。
+
+                * ``config_file_path``（R121-A）：当前加载的配置文件绝对路径
+                  （**仅路径，不暴露字段值**），监控可据此发现 "加载了错配置"
+                  这类故障；探测失败或未配置为 ``null``。
 
                 ## HTTP 状态码
 
@@ -650,6 +767,19 @@ class SystemRoutesMixin:
             except Exception as exc:
                 checks["recent_errors"] = {"ok": False, "error": str(exc)}
 
+            # R121-A: notification subsystem 健康摘要
+            #
+            # 不是所有部署都启用通知（默认 enabled=False），所以"未启用"不算
+            # degraded。只有"启用 + 有足够样本 + 成功率明显偏低"才升级到
+            # degraded。门槛 30 条 finalized 是经验值：太低（5 条）会被冷启
+            # 动早期的瞬时 0% 误判，太高（100 条）对刚上线的部署一直探测
+            # 不到任何降级。30 大约是一个工作日的通知量级。
+            notification_summary = _safe_notification_summary()
+            if notification_summary is None:
+                checks["notification"] = {"ok": False, "error": "summary unavailable"}
+            else:
+                checks["notification"] = {"ok": True, **notification_summary}
+
             # 整体 status 决策
             all_ok = all(check.get("ok") for check in checks.values())
             # ``checks[*]`` 的 value 是 ``dict[str, object]``，子 .get(...) 因此返回
@@ -669,14 +799,56 @@ class SystemRoutesMixin:
             backpressure = bp_raw if isinstance(bp_raw, int) else 0
             recent_err_count = err_raw if isinstance(err_raw, int) else 0
 
+            # R121-A: notification 子健康度也参与 degraded 判定
+            #
+            # 触发条件（同时满足）：
+            #   1. notification check 内部 ok=True（即 summary 拿到了）
+            #   2. enabled=True（关闭通知的部署不该被这个降级）
+            #   3. events_finalized >= 30（足够样本，避免冷启动早期误判）
+            #   4. delivery_success_rate < 0.8（80% 是个权衡：太高过敏，
+            #      太低不敏感）
+            notif_check = checks.get("notification", {})
+            notif_degraded = False
+            if isinstance(notif_check, dict) and notif_check.get("ok"):
+                enabled = bool(notif_check.get("enabled", False))
+                finalized_raw = notif_check.get("events_finalized", 0)
+                finalized = (
+                    int(finalized_raw) if isinstance(finalized_raw, int | float) else 0
+                )
+                rate_raw = notif_check.get("delivery_success_rate")
+                if (
+                    enabled
+                    and finalized >= 30
+                    and isinstance(rate_raw, int | float)
+                    and float(rate_raw) < 0.8
+                ):
+                    notif_degraded = True
+
             if not all_ok:
                 status = "unhealthy"
-            elif backpressure > 0 or recent_err_count > 0:
+            elif backpressure > 0 or recent_err_count > 0 or notif_degraded:
                 status = "degraded"
             else:
                 status = "healthy"
 
-            payload = {"status": status, "ts_unix": ts, "checks": checks}
+            # R121-A: 顶层 metadata —— version / uptime_seconds / config_file_path
+            #
+            # 三个字段都对 K8s probe / 监控仪表板有价值：
+            # - version：滚动升级时区分实例
+            # - uptime_seconds：检测异常重启 / 进程"卡 init"
+            # - config_file_path：检测"加载错配置"（典型场景：env var 漂移）
+            #
+            # 配置访问全部通过模块级 helper 间接完成（避免 handler body 直接
+            # 触碰配置 API），保留 R53-F 的 test_no_config_value_passthrough
+            # 契约。
+            payload: dict[str, object] = {
+                "status": status,
+                "ts_unix": ts,
+                "checks": checks,
+                "version": _safe_project_version(),
+                "uptime_seconds": _safe_uptime_seconds(),
+                "config_file_path": _safe_config_file_path(),
+            }
             http_code = 503 if status == "unhealthy" else 200
             return jsonify(payload), http_code
 
