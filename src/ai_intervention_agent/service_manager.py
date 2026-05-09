@@ -159,15 +159,39 @@ def _close_async_client_best_effort(client: httpx.AsyncClient | None) -> None:
 
 
 def _invalidate_runtime_caches_on_config_change() -> None:
-    """配置变更回调：清空配置缓存 + 关闭 httpx 客户端以便下次重建"""
+    """配置变更回调：清空配置缓存 + 关闭 httpx 客户端以便下次重建。
+
+    **R118**：原两条 ``except Exception: pass`` 把 cache invalidation
+    与 http-client teardown 的失败完全静默——这是配置热重载链路上**唯一**
+    把"新 config 写入" 推到 "运行时实际生效"的入口：
+
+    - 第一段失败 → ``_config_cache`` 仍指向旧 config，``get_config()``
+      返回 stale 值，热重载等于失效；
+    - 第二段失败 → ``_sync_client`` / ``_async_client`` 没被 close，
+      新请求继续走老 client（老 base_url / 老 timeout / 老 headers），
+      连接池资源也累积泄漏。
+
+    两种故障都没有任何日志信号，运维 / 维护者只能靠"用户 reload 后行为
+    没变"来反推。R118 跟 R114 / R117 同 spirit：保持 try/except（不让
+    callback 异常扩散给 ``ConfigManager`` 注册中心），但加 debug 级日志。
+
+    与项目 "fail-loud, no silent skips" 政策（cf. R107-R110 系列）一致。
+    """
     global _async_client, _sync_client, _config_cache_generation
     try:
         with _config_cache_lock:
             _config_cache["config"] = None
             _config_cache["timestamp"] = 0
             _config_cache_generation += 1
-    except Exception:
-        pass
+    except Exception as e:
+        # R118: 不扩散到 ConfigManager 回调注册中心（其他回调还要继续跑），
+        # 但留下 debug 痕迹，便于排查"reload 不生效"。
+        logger.debug(
+            "[R118] _invalidate_runtime_caches_on_config_change "
+            f"_config_cache_lock 段失败 (heat reload 可能不生效): "
+            f"{type(e).__name__}: {e}",
+            exc_info=True,
+        )
 
     try:
         with _http_client_lock:
@@ -177,8 +201,15 @@ def _invalidate_runtime_caches_on_config_change() -> None:
             old_async = _async_client
             _async_client = None
         _close_async_client_best_effort(old_async)
-    except Exception:
-        pass
+    except Exception as e:
+        # R118: 不扩散；但留下 debug 痕迹便于排查"reload 后请求仍走老 client"
+        # 与"连接池泄漏"两类用户可见症状的 root cause。
+        logger.debug(
+            "[R118] _invalidate_runtime_caches_on_config_change "
+            f"_http_client_lock 段失败 (新请求可能仍走老 client，连接池泄漏): "
+            f"{type(e).__name__}: {e}",
+            exc_info=True,
+        )
 
 
 def _ensure_config_change_callbacks_registered() -> None:
@@ -1079,14 +1110,34 @@ async def ensure_web_ui_running(
 
 
 def cleanup_http_clients() -> None:
-    """清理 HTTP 客户端（供 server.cleanup_services 调用）"""
+    """清理 HTTP 客户端（供 server.cleanup_services 调用）。
+
+    **R118**：原 ``except Exception: pass`` 把 ``_sync_client.close()``
+    异常完全静默——这是 ``server.cleanup_services()`` 路径上**唯一**
+    清理同步 HTTP client 连接池的入口，静默失败意味着 TCP socket /
+    keep-alive 连接 / HTTP/2 stream 状态有可能泄漏却没有任何信号
+    （症状：进程退出后 FD 仍未释放、kernel TIME_WAIT 堆积）。
+
+    与 R117 ``BarkNotificationProvider.close()`` 同一 spirit：保持
+    try/except 不让异常打断 cleanup chain（异步 client 还要继续清），
+    但 debug 日志便于排查 "为什么我的 ai-intervention-agent 进程退出
+    后 FD 不释放"。
+    """
     global _sync_client, _async_client
     with _http_client_lock:
         try:
             if _sync_client is not None and not _sync_client.is_closed:
                 _sync_client.close()
-        except Exception:
-            pass
+        except Exception as e:
+            # R118: 不扩散（async client 清理还要继续），但留下 debug 痕迹
+            # 便于排查连接池资源泄漏。注意 ``str(e)`` 不直接包含敏感数据
+            # （httpx.Client.close 异常通常只是 transport / pool 状态），
+            # 但 exc_info=True 仍可能在 traceback 暴露 URL，不打 traceback。
+            logger.debug(
+                "[R118] cleanup_http_clients _sync_client.close() raised "
+                "(suppressed to keep cleanup chain intact; FD may leak): "
+                f"{type(e).__name__}: {e}"
+            )
         _sync_client = None
         old_async = _async_client
         _async_client = None

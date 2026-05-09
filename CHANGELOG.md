@@ -11,6 +11,95 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R118** — extend the R117 silent-failure observability audit from
+  `notification_*` to `service_manager.py`, fixing the **3 of 4
+  genuinely-risky** `except Exception: pass` sites in the service /
+  HTTP-client lifecycle (the 4th is correctly silenced; see below).
+
+  Background: R117 audited `notification_providers.py` /
+  `notification_manager.py` and added debug logging to the highest-
+  impact silent failures. R118 continues the same pattern in
+  `service_manager.py`, which had 4 bare-except sites identified in
+  the original project-wide grep:
+
+  1. **`_invalidate_runtime_caches_on_config_change()` first segment**
+     (line 164–170) — the only path that invalidates `_config_cache`
+     on config hot-reload. Pre-R118: silent failure → `get_config()`
+     keeps returning stale config, hot-reload silently dies, no log
+     signal. **Real user symptom**: changing `config.toml` does
+     nothing, "must be a bug in ConfigManager" — actually a benign
+     race that hot-reload itself never logged.
+
+  2. **`_invalidate_runtime_caches_on_config_change()` second
+     segment** (line 172–181) — the only path that closes stale
+     httpx clients on config reload. Pre-R118: silent failure →
+     subsequent HTTP requests use old client (old `base_url`, old
+     `timeout`, old headers) **and** the old client's connection
+     pool resources leak (TCP sockets, keep-alive connections,
+     HTTP/2 stream state). **Real user symptom**: requests look
+     fine but use stale config; FD count grows over time.
+
+  3. **`cleanup_http_clients()`** (line 1085–1089) — the only path
+     in `server.cleanup_services()` that closes the synchronous
+     httpx client pool on shutdown. Pre-R118: silent failure → FD
+     leaks at process exit, kernel `TIME_WAIT` accumulation, "why
+     does my MCP process leave sockets open?" with no diagnostic.
+
+  All three follow the same R117 pattern: keep `try/except` (so the
+  exception doesn't break the cleanup chain or `ConfigManager`
+  callback registry), but add a `logger.debug` with `[R118]` marker
+  + the user-visible symptom that this silent failure would cause.
+  Normal-path runs stay quiet; when something actually breaks,
+  opening debug-level logging immediately surfaces the root cause
+  AND the symptom-to-cause mapping ("FD may leak" → check this log
+  line).
+
+  The **4th site** at `service_manager.py:505–508`
+  (`_cleanup_process_resources`'s per-handle `stdin`/`stdout`/
+  `stderr` close loop) is **deliberately preserved** as
+  `except Exception: pass` because:
+
+  - Each handle's close is **independent** (the next iteration
+    must continue regardless of this one's failure).
+  - The outer `for` loop is already wrapped in
+    `except Exception as e: logger.error(...)`, so any propagated
+    failure is observable.
+  - Adding per-handle debug logs would create N×3 noise per
+    process cleanup, drowning real signal in routine teardown.
+
+  This is the same "only add R-series debug log when there's no
+  upstream observability" principle from R117's design — symmetric
+  with how R114 chose to silence one specific RuntimeError class
+  while leaving other exceptions to the outer handler.
+
+  Test coverage: `tests/test_service_manager_silent_failure_r118.py`
+  adds 9 tests across 4 dimensions:
+
+  - **Exception-suppression invariant** (3 tests): verify each of
+    the 3 fixed sites doesn't propagate exceptions to upstream
+    (config callback registry / shutdown chain).
+  - **Debug-log invariant** (3 tests): verify each fix emits a
+    `[R118]`-marked debug log with: (a) function/segment name,
+    (b) user-visible symptom hint ("热重载可能不生效" / "新请求
+    可能仍走老 client" / "FD may leak"), (c) original exception
+    type — so triage flow is "see [R118] log → match symptom →
+    locate code path".
+  - **Negative path** (1 test): on the **happy path** no `[R118]`
+    debug log is emitted (avoids "every cleanup logs noise"
+    regression).
+  - **Source contract** (2 tests): grep `service_manager.py` for
+    `R118` marker + the three fix-point markers — locks the fixes
+    in so future refactors can't silently revert to
+    `except Exception: pass` without failing CI (same pattern as
+    R114 / R116 / R117 marker tests).
+
+  Verification:
+  - `uv run pytest tests/test_service_manager_silent_failure_r118.py
+    -v` → 9 passed
+  - Full `uv run pytest -q -W error::DeprecationWarning` →
+    3967 passed, 2 skipped, 0 failed, 0 deprecation warnings as
+    errors
+
 - **R117** — add **debug-level observability** to two highest-impact
   silent-failure sites in the notification subsystem so resource leaks
   and stats drift no longer fail invisibly.
