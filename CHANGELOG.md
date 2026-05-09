@@ -11,6 +11,145 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R119** — extend the R117 / R118 silent-failure observability audit
+  to the **third** cluster of bare-except sites (web routes / mDNS /
+  config_modules), fixing the **4 of 8** remaining genuinely-risky
+  `except Exception: pass` patterns and **explicitly documenting** the
+  4 intentionally-silenced ones.
+
+  Background: R117 covered `notification_*`, R118 covered
+  `service_manager.py`. R119 closes the loop by auditing the rest of
+  the project-wide grep result. Each site was classified by **user-
+  observable symptom** when the silent failure triggers; only sites
+  where the symptom is invisible-but-harmful got debug logs, sites
+  where the surrounding code already provides observability or where
+  the silence is semantically correct stay silent (with documentation
+  pointing future contributors at this CHANGELOG so they don't get
+  "fixed" by R-series momentum bias).
+
+  **Fixed (4 sites)**:
+
+  1. **`web_ui_routes/notification.py`** —
+     `/api/notification/test-bark` calls
+     `notification_manager.refresh_config_from_file()` to pick up the
+     latest TOML changes before sending the test push. Pre-R119
+     silent failure → user clicks "Test" after editing `bark_url` /
+     `bark_device_key`, the test fires against the **stale**
+     in-memory config, success/failure looks normal but uses
+     yesterday's URL. **Real user symptom**: "I changed bark_url and
+     hit Test and it worked, but my real notifications still use the
+     old endpoint" — actually the test silently fell back to
+     in-memory config because `refresh_config_from_file()` raised
+     (file lock contention, TOML parse error, permission
+     regression). R119 adds debug log so opening DEBUG-level logging
+     immediately reveals which read step failed.
+
+  2-3. **`web_ui_mdns.py` × 2** — the hostname-conflict path and the
+     general mDNS-publish-failure path both call `zc.close()` to
+     release the `zeroconf.Zeroconf` instance. Pre-R119 silent
+     failure → `zeroconf` UDP sockets, mDNS responder background
+     thread, and DNS cache state leak forever. **Real user symptom**:
+     `lsof -p <pid>` shows accumulating UDP sockets; second
+     `webui --advertise` invocation after a failed first one fails
+     to bind because the orphaned responder still holds the
+     conflicting hostname. R119 logs at debug level so the leak is
+     traceable; the surrounding `logger.warning(...)` for the main
+     mDNS failure stays unchanged (it was already observable, only
+     the cleanup leak was hidden).
+
+  4. **`config_modules/network_security.py`** —
+     `_save_network_security_config_immediate()` calls
+     `_create_default_config_file()` to bootstrap the file before
+     overwriting it with the network_security section. Pre-R119
+     silent failure → the next line's `read_text()` catches "file
+     doesn't exist" via its own try/except, so the user sees a
+     generic "config save failed" message but the **root cause**
+     (e.g. parent directory doesn't exist, permission denied,
+     read-only mount, disk full) is destroyed. R119 logs the actual
+     `_create_default_config_file()` exception so debug logging
+     reveals "ah, my config dir got chmod 444 by some other tool"
+     instead of "ConfigManager mysteriously can't write".
+
+  All four follow the same R117/R118 pattern: keep `try/except` (so
+  the upstream cleanup / fallback flow doesn't break), add
+  `logger.debug` with `[R119]` marker + user-visible symptom hint.
+  When the silent failure activates and a user reports the symptom,
+  enabling `logging.DEBUG` for the relevant module immediately
+  surfaces both the root cause AND the symptom-to-cause mapping.
+
+  **Intentionally silenced (4 sites — documented for future
+  contributors)**:
+
+  - **`i18n.py:103-105` + `i18n.py:113-114`** — bootstrap
+    fallback for language detection. Runs **before** ConfigManager
+    is initialized, so logging may not be configured yet; even if
+    it is, the i18n module is loaded by ~every other module and
+    must be unconditionally robust. Falls back to `"en"` and the
+    user gets English UI — fully graceful.
+
+  - **`config_manager.py:378`** —
+    `_is_running_as_uvx_or_isolated()` heuristic. One of several
+    detection signals; failure means this signal returns "not
+    isolated" and other heuristics still apply. Adding a debug log
+    would noise every config load on platforms where this branch
+    naturally raises.
+
+  - **`server_feedback.py:540-544`** — best-effort
+    `error_detail` enrichment when wrapping a downstream error.
+    The original error is already raised with full context; this
+    block only **augments** the exception's `error_detail` field,
+    so failure means slightly less helpful error details, never a
+    lost error. Logging the augmentation failure would be
+    counterproductive (you'd log noise about failed-to-format-an-
+    error-message right next to the real error).
+
+  - **`server_config.py:692-693`** — `mimetypes.guess_type()`
+    backup detection for static asset MIME types. Returning `None`
+    is a documented contract value meaning "unknown MIME type",
+    handled gracefully by the caller (falls back to
+    `application/octet-stream`). Logging would noise on every
+    request to a file with a non-standard extension.
+
+  Test coverage: `tests/test_silent_failure_audit_r119.py` adds 9
+  tests across 4 dimensions:
+
+  - **Marker-presence invariant** (3 tests): each of the 3
+    modified files contains the `R119` marker (so future grep can
+    locate the audit point).
+
+  - **Exception-suppression invariant** (1 test): the
+    `_create_default_config_file` PermissionError doesn't
+    propagate to the `_save_network_security_config_immediate`
+    caller (preserves the read-fallback flow).
+
+  - **Debug-log-emission invariant** (1 test): assertLogs
+    captures the `[R119]` marker AND the exception type when the
+    network_security create-default fails.
+
+  - **Source-pattern invariant** (3 tests): both `web_ui_mdns.py`
+    sites have their characteristic strings; `R119` markers are
+    in their `except Exception` blocks (grep-distance assertion
+    via line-window analysis); the fix doesn't get accidentally
+    refactored back to bare `pass`.
+
+  - **Reverse documentation invariant** (1 test): the 4
+    intentionally-silenced sites in `i18n.py`, `config_manager.py`,
+    `server_feedback.py`, `server_config.py` STILL contain the
+    `except Exception: pass` pattern. If a future contributor
+    "fixes" them along with R-series momentum, this test fails
+    and points at the CHANGELOG for the documented rationale.
+
+  Files changed:
+  - `src/ai_intervention_agent/web_ui_routes/notification.py`
+  - `src/ai_intervention_agent/web_ui_mdns.py`
+  - `src/ai_intervention_agent/config_modules/network_security.py`
+  - `tests/test_silent_failure_audit_r119.py` (NEW, 9 tests, all pass)
+
+  Cumulative impact (R107 → R110 → R114 → R117 → R118 → R119):
+  the project's `except Exception: pass` count is now down from
+  ~21 to ~11; the remaining 11 are all **documented** as
+  intentional via per-site comments referencing this CHANGELOG.
+
 - **R118** — extend the R117 silent-failure observability audit from
   `notification_*` to `service_manager.py`, fixing the **3 of 4
   genuinely-risky** `except Exception: pass` sites in the service /

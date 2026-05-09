@@ -198,8 +198,18 @@ class MdnsMixin:
                 print(f"   配置文件: {config_path}")
             try:
                 zc.close()
-            except Exception:
-                pass
+            except Exception as zc_err:
+                # **R119**：``zeroconf.Zeroconf.close()`` 失败会泄漏 UDP socket
+                # + mDNS responder 后台线程。这条 cleanup 紧跟在 hostname 冲突
+                # 错误路径上——pre-R119 完全静默，进程 exit 后还有 zeroconf
+                # 守护线程在跑、UDP 套接字未释放但用户完全看不到。R119 加
+                # debug 痕迹，开 debug 后就能区分 "mDNS 失败 + cleanup OK"
+                # vs "mDNS 失败 + cleanup 也失败导致资源泄漏"。
+                logger.debug(
+                    "[R119] hostname 冲突路径下 zc.close() 失败 "
+                    f"(zeroconf UDP socket 可能泄漏): "
+                    f"{type(zc_err).__name__}: {zc_err}"
+                )
             return
         except Exception as e:
             logger.warning(
@@ -208,8 +218,15 @@ class MdnsMixin:
             print(f"mDNS 发布失败：{e}（已降级为仅通过 IP/localhost 访问）。")
             try:
                 zc.close()
-            except Exception:
-                pass
+            except Exception as zc_err:
+                # **R119**：与上面 hostname 冲突路径同 spirit。这条 cleanup
+                # 紧跟在通用 mDNS 发布失败路径上，主异常已通过 logger.warning
+                # 记录；这里 debug 级补一条 cleanup 失败信号即可。
+                logger.debug(
+                    "[R119] mDNS 发布失败路径下 zc.close() 失败 "
+                    f"(zeroconf UDP socket 可能泄漏): "
+                    f"{type(zc_err).__name__}: {zc_err}"
+                )
             return
 
         self._mdns_zeroconf = zc

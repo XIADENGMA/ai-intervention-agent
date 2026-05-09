@@ -369,8 +369,19 @@ class NotificationRoutesMixin:
 
                 try:
                     notification_manager.refresh_config_from_file()
-                except Exception:
-                    pass
+                except Exception as e:
+                    # **R119**：Bark 测试端点点击 "Test" 时拉一次最新 config，
+                    # 失败则继续走当前 in-memory config——pre-R119 完全静默，
+                    # 用户体验是 "我刚改了 bark_url，点 Test 还是用老 URL"
+                    # 但找不到任何日志。R119 加 debug 痕迹，开 debug 后就能
+                    # 定位 "config 文件锁竞争 / TOML 解析错误 / 文件权限" 等
+                    # 真因。与 R117 / R118 同 spirit。
+                    import logging
+
+                    logging.getLogger(__name__).debug(
+                        "[R119] /api/notification/test-bark refresh_config_from_file "
+                        f"失败 (将继续用 in-memory config): {type(e).__name__}: {e}"
+                    )
 
                 cfg = getattr(notification_manager, "config", None)
                 if not cfg or not getattr(cfg, "enabled", True):

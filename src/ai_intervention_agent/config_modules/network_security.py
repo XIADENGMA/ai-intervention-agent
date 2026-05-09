@@ -183,12 +183,36 @@ class NetworkSecurityMixin:
             raise
 
     def _save_network_security_config_immediate(self, validated_ns: dict[str, Any]):
-        """将 network_security 原子写回配置文件（不走通用保存逻辑，避免被排除）"""
+        """将 network_security 原子写回配置文件（不走通用保存逻辑，避免被排除）。
+
+        **R119**：``_create_default_config_file()`` 失败原 ``except Exception:
+        pass`` 完全静默——下面 ``content = self.config_file.read_text()`` 的
+        ``except`` 会兜底（line 197），但用户看到的错误是「读不到 config
+        文件」，root cause（创建失败的具体原因）被吞掉，无法排查
+        「权限 / 父目录不存在 / 磁盘满」等真实问题。
+
+        与 R117 / R118 同 spirit：保持 try/except（不让 create 失败立刻
+        阻断 save 流程，让 read 兜底处理），但加 debug 痕迹便于排查。
+        """
         try:
             if not self.config_file.exists():
                 self._create_default_config_file()
-        except Exception:
-            pass
+        except Exception as e:
+            # R119: 不扩散（下面 read 会兜底处理 "config 文件不存在"），
+            # 但留 debug 痕迹便于排查 "为什么 create 失败"——典型 root
+            # cause 是父目录不存在、权限不够、磁盘满，pre-R119 全部静默。
+            try:
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    "[R119] _save_network_security_config_immediate "
+                    f"_create_default_config_file 失败 (将由后续 read 兜底): "
+                    f"{type(e).__name__}: {e}"
+                )
+            except Exception:
+                # logging 不能扩散——这是配置保存路径，logging 自己崩了
+                # 也不应该让保存流程跟着断
+                pass
 
         content = ""
         try:
