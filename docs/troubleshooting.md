@@ -260,6 +260,80 @@ Until this is enabled, the `Dependency Review` red check is purely
 infrastructural and **does not indicate** an actual vulnerability or
 license violation in the PR's dependencies.
 
+## 11. Cursor shows "Extension host terminated unexpectedly 3 times within the last 5 minutes"
+
+**Symptom**: Cursor surfaces a banner reading
+`Extension host terminated unexpectedly 3 times within the last 5
+minutes.` Sometimes the language drops to English even though you had
+configured Chinese; sometimes the banner only appears while
+`interactive_feedback` is mid-flight (waiting on a human reply).
+
+**Important upstream context**: this is a **Cursor IDE-side known
+issue**, not specifically caused by ai-intervention-agent. The
+[Cursor community forum thread][cursor-ext-host] reports the same
+banner appearing on Cursor 2.4.14 and earlier **even when every
+extension is disabled**. The "language reset" symptom is also a Cursor
+extension-host restart side effect (the language picker re-reads
+defaults after the host respawns).
+
+[cursor-ext-host]: https://forum.cursor.com/t/how-to-recover-from-extension-host-terminated-unexpectedly-3-times/148772
+
+**Defensive measures already in this project (so the banner is unlikely
+to come from ai-intervention-agent itself)**:
+
+- The MCP `interactive_feedback` tool **ignores** any caller-supplied
+  `timeout` / `timeout_seconds` argument, so it can never get stuck
+  with a too-small timeout (`timeout=1` is the well-known mcp-feedback-
+  enhanced regression and we are immune to it by design).
+- `wait_for_task_completion` clamps backend timeout via
+  `max(timeout, server_config.BACKEND_MIN=260)` and `calculate_backend_timeout`.
+- `server.py::main()` runs the MCP loop under a 3-retry harness with
+  `cleanup_services()` between attempts and `KeyboardInterrupt`-based
+  graceful shutdown.
+- R114 (notification manager) silences the benign atexit / shutdown
+  TOCTOU race, so the noisy `ERROR: 处理通知事件失败` log lines no
+  longer appear during host restart and can no longer be confused
+  with a genuine MCP-side fault.
+
+**Triage order**:
+
+1. **Confirm it really is the MCP server.** In Cursor, open the MCP
+   server panel (the one listing `ai-intervention-agent` and any
+   other MCP servers); the connection light should be **green**. If
+   it stays green throughout the banner, the crash is in some other
+   Cursor extension and the workaround below applies regardless.
+2. **Try Cursor's own recovery first.** `Cmd/Ctrl+Shift+P` →
+   `Developer: Restart Extension Host`. If the banner stops repeating,
+   the underlying state was transient.
+3. **Update Cursor.** The forum thread tracks a stream of fixes in
+   newer Cursor releases (post-2.4.14). Updating is the single highest-
+   leverage action.
+4. **Inspect the MCP server log** to rule out our side. With
+   `web_ui.log_level = "DEBUG"`, look in stderr for either:
+   - `处理通知事件失败` ERROR lines → if you see these on a current
+     release (post-R114), please [open an issue][bug] with the line.
+   - `[R114] _executor.submit 与 shutdown 竞态` DEBUG lines → these
+     are **expected** during shutdown / restart and can be ignored;
+     they are the post-R114 silenced form of the old ERROR.
+5. **If the banner only fires while** `interactive_feedback` **is
+   blocking on you**, you are seeing the long-poll (default
+   `frontend_countdown=240s` + `BACKEND_BUFFER=40s` ≈ 280s wait)
+   colliding with Cursor's extension-host watchdog. As of Cursor
+   2.4.14 there is no documented public knob to extend that watchdog
+   from the MCP server side, so the practical workaround is to keep
+   the Web UI / VS Code panel foregrounded and reply within the
+   countdown.
+
+If after the above the banner still reproduces and the MCP log is
+clean, please file the issue against
+[Cursor's tracker][cursor-bugs] (with your `ai-intervention-agent`
+version and the relevant `Help → Toggle Developer Tools → Console`
+trace) and cross-link it from a [GitHub Discussion][disc] here so we
+can mirror upstream progress.
+
+[cursor-bugs]: https://forum.cursor.com/c/bug-report/6
+[disc]: https://github.com/xiadengma/ai-intervention-agent/discussions
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.

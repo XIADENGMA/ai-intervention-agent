@@ -227,6 +227,67 @@ gh api repos/<owner>/<repo>/vulnerability-alerts -i
 启用之前，`Dependency Review` 的红灯纯属基础设施问题，**不代表**
 PR 依赖里真的有漏洞或 license 问题。
 
+## 11. Cursor 报 "Extension host terminated unexpectedly 3 times within the last 5 minutes"
+
+**症状**：Cursor 弹出横幅
+`Extension host terminated unexpectedly 3 times within the last 5
+minutes.`。有时还伴随原本配的中文界面被重置成英文；有时只在
+`interactive_feedback` 等待人类回复期间出现。
+
+**重要的上游背景**：这是 **Cursor IDE 自身的已知问题**，不一定由
+ai-intervention-agent 触发。[Cursor 社区论坛同主题][cursor-ext-host]
+有大量用户报告 Cursor 2.4.14 及更早版本即使**禁用所有插件也会出现
+同样的横幅**。"语言被重置"也是 Cursor extension host 重启的副作用
+（host 重启后 language picker 会重读默认值）。
+
+[cursor-ext-host]: https://forum.cursor.com/t/how-to-recover-from-extension-host-terminated-unexpectedly-3-times/148772
+
+**本项目侧已有的防御措施（所以横幅大概率不是我们的锅）**：
+
+- MCP `interactive_feedback` 工具**忽略**调用方传入的
+  `timeout` / `timeout_seconds` 参数，所以不会出现"timeout 太小直接
+  超时"的回归（`timeout=1` 是 mcp-feedback-enhanced 那条 issue 里的
+  典型坑，本项目从设计上不会踩中）。
+- `wait_for_task_completion` 用 `max(timeout, server_config.BACKEND_MIN=260)`
+  和 `calculate_backend_timeout` 钳位 backend 等待时长。
+- `server.py::main()` 把 MCP 主循环包在 3 次重试 + `cleanup_services()`
+  + `KeyboardInterrupt` 优雅退出的 harness 里。
+- R114（通知管理器）已经把 atexit / shutdown TOCTOU race 静默化，
+  老版本会在 host restart 期间打 `ERROR: 处理通知事件失败` 噪声日志，
+  容易被误判成 MCP 端故障；新版本不会再出。
+
+**排查顺序**：
+
+1. **先确认是不是 MCP server 的事**。在 Cursor 里打开 MCP server 面板
+   （列出 `ai-intervention-agent` 等所有 MCP server 那个面板），
+   连接灯应该是**绿的**。横幅出现期间灯一直绿，那 crash 在 Cursor 的
+   其他扩展上，下面的工作流照样适用。
+2. **先用 Cursor 自带的恢复机制**。`Cmd/Ctrl+Shift+P` →
+   `Developer: Restart Extension Host`。如果横幅停了，说明是瞬态状态。
+3. **升级 Cursor**。论坛主题里跟踪了 2.4.14 之后的一系列修复，
+   升级是单步杠杆最大的动作。
+4. **看 MCP server 日志确认我们这边干净**。把 `web_ui.log_level`
+   设成 `"DEBUG"`，在 stderr 里找：
+   - `处理通知事件失败` ERROR 行 → 在最新版本（R114 之后）还出现的话，
+     麻烦带上日志开个 [issue][bug]。
+   - `[R114] _executor.submit 与 shutdown 竞态` DEBUG 行 → 这条是
+     **预期**的 shutdown / restart 路径，可以忽略；它就是老版本
+     ERROR 在 R114 之后的静默版。
+5. **如果横幅只在** `interactive_feedback` **正在阻塞等你回复时弹出**，
+   就是长轮询（默认 `frontend_countdown=240s` + `BACKEND_BUFFER=40s`
+   ≈ 280s 等待）撞 Cursor extension host 的 watchdog。截止 Cursor
+   2.4.14 没有公开文档化的 MCP server 端 watchdog 延长开关，实际
+   绕开方法是把 Web UI / VS Code 面板放在前台、在倒计时之内回复。
+
+如果以上都试过、横幅仍稳定复现、MCP 日志干净，请把
+`ai-intervention-agent` 版本和
+`Help → Toggle Developer Tools → Console` 里的 trace 一起开
+[Cursor bug 跟踪 issue][cursor-bugs]，并在我们这边的
+[GitHub Discussion][disc] 里反向引用一下，让我们能镜像跟踪上游进展。
+
+[cursor-bugs]: https://forum.cursor.com/c/bug-report/6
+[disc]: https://github.com/xiadengma/ai-intervention-agent/discussions
+
 ## 还是没解决？
 
 1. 看 [`SUPPORT.md`](../.github/SUPPORT.md) 选合适渠道。

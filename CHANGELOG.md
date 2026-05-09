@@ -9,6 +9,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **R115** — document the upstream **Cursor "Extension host terminated
+  unexpectedly 3 times" interaction** with this MCP server in
+  `docs/troubleshooting.md` §11 / `docs/troubleshooting.zh-CN.md` §11.
+  Background: users hit the banner and reasonably wonder if
+  ai-intervention-agent triggered it. Investigation (Cursor community
+  forum threads 148772 / 116280, plus a static audit of our MCP
+  surface) shows:
+
+  1. The banner reproduces on Cursor 2.4.14 and earlier **with all
+     extensions disabled**, so it is an upstream IDE issue, not
+     specific to this project.
+  2. The well-known `mcp-feedback-enhanced` regression
+     (`timeout=1` causes the feedback flow to insta-timeout, see
+     Minidoracat/mcp-feedback-enhanced#212) **does not apply** to
+     this project: the `interactive_feedback` tool's `timeout` and
+     `timeout_seconds` parameters are accepted for compatibility but
+     **explicitly ignored**, the server's own
+     `calculate_backend_timeout` + `BACKEND_MIN=260` clamp is used.
+  3. R114 (notification shutdown TOCTOU) already silenced the most
+     plausible "MCP-side noise that gets blamed for the crash" log
+     pattern (`ERROR: 处理通知事件失败 - cannot schedule new futures
+     after shutdown`).
+
+  The new section gives a 5-step triage flow (confirm MCP green
+  light → `Developer: Restart Extension Host` → upgrade Cursor → grep
+  the MCP log for `处理通知事件失败` vs `[R114]` lines → recognise
+  the long-poll vs Cursor watchdog interaction). It also explicitly
+  cross-links the upstream Cursor forum issue and bug tracker so
+  affected users can mirror progress instead of opening duplicate
+  bugs against this repo.
+
 ### Fixed
 
 - **R114** — eliminate a **`NotificationManager` shutdown TOCTOU**
