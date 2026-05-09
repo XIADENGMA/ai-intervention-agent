@@ -51,6 +51,34 @@ Works with `Cursor`, `VS Code`, `Claude Code`, `Augment`, `Windsurf`, `Trae`, an
 
 ## Quick start
 
+### Quickest: ask your AI to install it for you
+
+If your IDE/CLI has an AI agent (Cursor, Claude Code, VS Code, Windsurf, Trae, Augment, ...), paste the prompt below in chat and let it write the config for you.
+
+<details>
+<summary>Click to copy the install prompt</summary>
+
+```text
+Please configure my IDE / AI tool to use the `ai-intervention-agent` MCP server:
+
+1. Locate the correct MCP config file for my current IDE
+   (e.g. `.cursor/mcp.json` or `~/.cursor/mcp.json` for Cursor,
+    `~/.claude.json` for Claude Code,
+    `.vscode/mcp.json` for VS Code).
+2. Add this entry under `mcpServers`:
+   - command: `uvx`
+   - args: `["ai-intervention-agent"]`
+   - timeout: 600
+   - autoApprove: `["interactive_feedback"]`
+3. Append the project's recommended prompt rules
+   (the "Prompt snippet (copy/paste)" block in this README)
+   to my agent rules / system prompt, so the agent always asks me
+   through `interactive_feedback` instead of ending tasks silently.
+4. Verify by listing MCP servers and confirming `ai-intervention-agent` is loaded.
+```
+
+</details>
+
 ### Option 1: Using `uvx` (Recommended)
 
 [<img src="https://img.shields.io/badge/Install%20Server-Cursor-black?style=flat-square" alt="Install in Cursor">](https://cursor.com/en/install-mcp?name=ai-intervention-agent&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJhaS1pbnRlcnZlbnRpb24tYWdlbnQiXSwidGltZW91dCI6NjAwLCJhdXRvQXBwcm92ZSI6WyJpbnRlcmFjdGl2ZV9mZWVkYmFjayJdfQ%3D%3D)
@@ -139,15 +167,15 @@ ai-intervention-agent usage details:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
-    <img alt="Desktop - feedback page" src=".github/assets/desktop_light_content.png" height="320" />
+    <img alt="Desktop - feedback page (multi-task tabs, code highlighting, predefined options)" src=".github/assets/desktop_light_content.png" width="600" height="501" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" height="320" />
+    <img alt="Mobile - feedback page" src=".github/assets/mobile_light_content.png" width="180" height="447" />
   </picture>
 </p>
 
-<p align="center"><sub>Feedback page (auto switches between dark/light)</sub></p>
+<p align="center"><sub>Feedback page · auto switches between dark/light · multi-task tabs with independent countdowns</sub></p>
 
 <details>
 <summary>More screenshots (empty state + settings)</summary>
@@ -155,22 +183,28 @@ ai-intervention-agent usage details:
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_no_content.png">
-    <img alt="Desktop - empty state" src=".github/assets/desktop_light_no_content.png" height="320" />
+    <img alt="Desktop - empty state" src=".github/assets/desktop_light_no_content.png" width="600" height="422" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_no_content.png">
-    <img alt="Mobile - empty state" src=".github/assets/mobile_light_no_content.png" height="320" />
+    <img alt="Mobile - empty state" src=".github/assets/mobile_light_no_content.png" width="180" height="390" />
   </picture>
 </p>
 
-<p align="center"><sub>Empty state (auto switches between dark/light)</sub></p>
+<p align="center"><sub>Empty state · waiting for the next interactive request</sub></p>
 
 <p align="center">
-  <img src=".github/assets/desktop_screenshot.png" alt="Desktop - settings" height="320" />
-  <img src=".github/assets/mobile_screenshot.png" alt="Mobile - settings" height="320" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_settings.png">
+    <img alt="Desktop - settings (notifications, Bark, feedback)" src=".github/assets/desktop_light_settings.png" width="600" height="422" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_settings.png">
+    <img alt="Mobile - settings" src=".github/assets/mobile_light_settings.png" width="180" height="390" />
+  </picture>
 </p>
 
-<p align="center"><sub>Settings (dark)</sub></p>
+<p align="center"><sub>Settings · notifications · Bark · sound · feedback countdown · auto switches between dark/light</sub></p>
 
 </details>
 

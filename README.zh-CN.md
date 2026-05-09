@@ -51,6 +51,34 @@
 
 ## 快速开始
 
+### 最快：让 AI 帮你完成配置
+
+如果你的 IDE/CLI 自带 AI 智能体（Cursor、Claude Code、VS Code、Windsurf、Trae、Augment 等），直接把下面这段提示词贴进对话框，让它帮你写好配置。
+
+<details>
+<summary>点击展开复制安装提示词</summary>
+
+```text
+请帮我把 `ai-intervention-agent` MCP 服务接入当前 IDE / AI 工具：
+
+1. 找到当前 IDE 对应的 MCP 配置文件
+   （Cursor: `.cursor/mcp.json` 或 `~/.cursor/mcp.json`；
+    Claude Code: `~/.claude.json`；
+    VS Code: `.vscode/mcp.json`）。
+2. 在 `mcpServers` 下加入这一项：
+   - command: `uvx`
+   - args: `["ai-intervention-agent"]`
+   - timeout: 600
+   - autoApprove: `["interactive_feedback"]`
+3. 把本 README 里的「提示词（可复制）」整段
+   追加到我的智能体规则 / 系统提示词，
+   让智能体始终通过 `interactive_feedback` 询问我，
+   而不是自行结束任务。
+4. 列出已加载的 MCP 服务并确认 `ai-intervention-agent` 已生效。
+```
+
+</details>
+
 ### 方式一：使用 `uvx` 启动（推荐）
 
 [<img src="https://img.shields.io/badge/Install%20Server-Cursor-black?style=flat-square" alt="一键添加至 Cursor">](https://cursor.com/en/install-mcp?name=ai-intervention-agent&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJhaS1pbnRlcnZlbnRpb24tYWdlbnQiXSwidGltZW91dCI6NjAwLCJhdXRvQXBwcm92ZSI6WyJpbnRlcmFjdGl2ZV9mZWVkYmFjayJdfQ%3D%3D)
@@ -138,15 +166,15 @@ ai-intervention-agent 工具使用细节：
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_content.png">
-    <img alt="桌面端 - 反馈页" src=".github/assets/desktop_light_content.png" height="320" />
+    <img alt="桌面端 - 反馈页（多任务标签、代码高亮、预设选项）" src=".github/assets/desktop_light_content.png" width="600" height="501" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_content.png">
-    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" height="320" />
+    <img alt="移动端 - 反馈页" src=".github/assets/mobile_light_content.png" width="180" height="447" />
   </picture>
 </p>
 
-<p align="center"><sub>反馈页（自动跟随深浅色）</sub></p>
+<p align="center"><sub>反馈页 · 自动跟随深浅色 · 多任务标签独立倒计时</sub></p>
 
 <details>
 <summary>更多截图（空状态 + 设置页）</summary>
@@ -154,22 +182,28 @@ ai-intervention-agent 工具使用细节：
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_no_content.png">
-    <img alt="桌面端 - 空状态" src=".github/assets/desktop_light_no_content.png" height="320" />
+    <img alt="桌面端 - 空状态" src=".github/assets/desktop_light_no_content.png" width="600" height="422" />
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_no_content.png">
-    <img alt="移动端 - 空状态" src=".github/assets/mobile_light_no_content.png" height="320" />
+    <img alt="移动端 - 空状态" src=".github/assets/mobile_light_no_content.png" width="180" height="390" />
   </picture>
 </p>
 
-<p align="center"><sub>空状态（自动跟随深浅色）</sub></p>
+<p align="center"><sub>空状态 · 等待下一次交互请求</sub></p>
 
 <p align="center">
-  <img src=".github/assets/desktop_screenshot.png" alt="桌面端 - 设置" height="320" />
-  <img src=".github/assets/mobile_screenshot.png" alt="移动端 - 设置" height="320" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/desktop_dark_settings.png">
+    <img alt="桌面端 - 设置（通知 / Bark / 反馈）" src=".github/assets/desktop_light_settings.png" width="600" height="422" />
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/mobile_dark_settings.png">
+    <img alt="移动端 - 设置" src=".github/assets/mobile_light_settings.png" width="180" height="390" />
+  </picture>
 </p>
 
-<p align="center"><sub>设置页（深色）</sub></p>
+<p align="center"><sub>设置页 · 通知 · Bark · 声音 · 反馈倒计时 · 自动跟随深浅色</sub></p>
 
 </details>
 
