@@ -294,11 +294,41 @@ class BarkNotificationProvider(BaseNotificationProvider):
         )
 
     def close(self) -> None:
-        """关闭 HTTP Session，释放连接池资源（幂等）。"""
+        """关闭 HTTP Session，释放连接池资源（幂等）。
+
+        **R117**：``httpx.Client.close()`` 抛异常曾经被 ``except Exception:
+        pass`` 完全静默——这是 ``shutdown()`` / ``atexit`` 路径上**唯一**
+        承担连接池清理的调用，静默失败意味着连接池资源（TCP socket、
+        keep-alive 连接、HTTP/2 stream 状态）有可能泄漏却没有任何信号
+        让运维 / 维护者察觉。
+
+        修复策略：保持 try/except 不让异常扩散打断 shutdown chain（其他
+        provider 的 close() 还要继续走），但把 exception 写到 debug 级
+        日志——正常运行时不噪音，需要排查"为什么我的 ai-intervention-agent
+        进程不释放连接 / FD"时打开 debug 立刻看到 root cause。
+
+        与项目"fail-loud, no silent skips"政策（cf. R107-R110 系列）一致：
+        资源清理失败比业务逻辑失败更隐蔽，更需要可观测性兜底。
+        """
         try:
             self.session.close()
-        except Exception:
-            pass
+        except Exception as e:
+            # R117: 不扩散异常（保持 shutdown chain 完整），但留下 debug
+            # 痕迹便于排查连接池资源泄漏。注意 ``_sanitize_error_text``
+            # 已经处理了 device token / APNs URL 等敏感数据脱敏。
+            #
+            # **故意不使用 exc_info=True**：Python ``logging`` 的 ``exc_info``
+            # 会把原始 traceback 字符串注入日志记录，traceback 里包含**未脱敏**
+            # 的原始 ``RuntimeError("closed with device_token=...")`` 等异常
+            # 消息，绕过了 ``_sanitize_error_text`` 的脱敏 —— 等于让安全脱敏
+            # 形同虚设。``type(e).__name__`` + sanitized ``str(e)`` 已经够
+            # debug 排查用，traceback 在 R114 / 普通 ``except Exception``
+            # 路径上才需要。
+            logger.debug(
+                "[R117] BarkNotificationProvider.close() httpx.Client.close() "
+                f"raised (suppressed to keep shutdown chain intact): "
+                f"{type(e).__name__}: {self._sanitize_error_text(str(e))}",
+            )
 
     def send(self, event: NotificationEvent) -> bool:
         """HTTP POST 发送通知到 Bark，返回成功与否"""

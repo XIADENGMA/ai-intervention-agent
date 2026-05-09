@@ -11,6 +11,98 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R117** — add **debug-level observability** to two highest-impact
+  silent-failure sites in the notification subsystem so resource leaks
+  and stats drift no longer fail invisibly.
+
+  Background: a project-wide grep for `except Exception:\n\s*pass`
+  found 22 instances across 9 files. Most are correctly-silenced
+  best-effort statistics increments (idiomatic for non-critical
+  observability hooks). But two stood out as **genuinely risky**
+  silent failures — failures that, when they occur, masked real
+  resource leaks / stats inconsistencies:
+
+  1. **`BarkNotificationProvider.close()`** (`notification_providers.py`)
+     — this is the **only** call site that closes the `httpx.Client`
+     connection pool during `shutdown()` / `atexit`. A silent
+     `httpx.Client.close()` exception means TCP sockets, keep-alive
+     connections, or HTTP/2 stream state can leak with no signal to
+     diagnose "why does my ai-intervention-agent process not release
+     file descriptors". Pre-R117: bare `except Exception: pass`.
+  2. **`NotificationManager._mark_event_finalized()`**
+     (`notification_manager.py`) — `self._stats["events_succeeded" /
+     "events_failed"]` and the `_finalized_event_ids` LRU set are the
+     **only** source of `get_stats()`'s `delivery_success_rate` /
+     `events_in_flight` calculations. A silent failure here (e.g.
+     `next(iter(_finalized_event_ids))` racing with a concurrent
+     mutation, or a deadlock-detector raising on lock acquire)
+     permanently skews observability without any signal.
+
+  Both fixes follow the same pattern: keep `try/except` (so the
+  exception doesn't propagate and break the shutdown chain or
+  `_process_event` flow), but log at `logger.debug` with an `[R117]`
+  marker. Normal-path runs stay quiet (no log noise); when a real
+  resource leak / stats drift is suspected, opening debug-level
+  logging immediately surfaces the root cause.
+
+  **Security subtlety**: `BarkNotificationProvider.close()` originally
+  used `exc_info=True` — but Python's `logging.exc_info` includes the
+  raw traceback string, which **bypasses** the existing
+  `_sanitize_error_text` redaction (designed for APNs device tokens,
+  long hex tokens, bracket-token patterns). If a user runs with
+  `bark_url` containing their device token and `httpx.Client.close()`
+  raises with that URL in the message, `exc_info=True` would leak
+  the unredacted token into debug logs (which often go to file or
+  centralized log aggregation). R117 deliberately uses
+  `type(e).__name__` + `_sanitize_error_text(str(e))` instead — the
+  type name + sanitized message is sufficient for diagnosis without
+  the leak risk. (`_mark_event_finalized` keeps `exc_info=True`
+  because its exceptions only contain lock/dict-state info, no user
+  data.)
+
+  Test coverage: `tests/test_silent_failure_debug_logging_r117.py`
+  adds 11 tests across 3 dimensions:
+
+  - **Exception suppression invariant** (2 tests): exceptions don't
+    propagate from `close()` / `_mark_event_finalized()` — same
+    behavioral contract as pre-R117, just with logging added.
+  - **Debug-log invariant** (4 tests): when an exception fires, a
+    debug log with `[R117]` marker is emitted, including the
+    function name, exception type, and (for
+    `_mark_event_finalized`) `event_id` + `succeeded` flag for
+    fast triage.
+  - **Token-leak prevention** (1 test): inject a long-hex
+    "device token" lookalike into the simulated httpx exception
+    message, verify the debug log contains `<redacted_hex>` and
+    **does not** contain the original token literal — locks down
+    the security subtlety described above.
+  - **Reverse / negative-path** (2 tests): on the **happy path** no
+    `[R117]` debug log is emitted (avoids "every shutdown / event
+    completion logs noise" regression).
+  - **End-to-end stats correctness** (1 test): drive
+    `_mark_event_finalized` past the LRU `_finalized_max_size`
+    boundary 5 times (succeeded=True for 3, False for 2), verify
+    `events_succeeded == 3` / `events_failed == 2` — proves R117
+    didn't accidentally change stats arithmetic, only added
+    observability.
+  - **Source contract** (2 tests): grep `notification_providers.py`
+    and `notification_manager.py` for `R117` marker + `logger.debug`
+    presence — locks the fix into source-level invariants so future
+    refactors can't silently revert to `except Exception: pass`
+    without failing CI (same pattern as R114 / R116 marker tests).
+
+  Verification:
+  - `uv run pytest tests/test_silent_failure_debug_logging_r117.py
+    -v` → 11 passed
+  - `uv run pytest tests/test_notification_providers.py
+    tests/test_notification_manager.py -v` → all existing
+    notification tests still pass (R117 preserves the
+    "exception-swallowed" behavioral contract that
+    `TestBarkCloseException::test_close_session_error_swallowed`
+    explicitly asserts)
+  - Full `uv run pytest -q` → 3947+ passed, 0 deprecation
+    warnings as errors
+
 - **R116** — un-break **4 of 5 end-to-end performance benchmarks** in
   `scripts/perf_e2e_bench.py` that have been silently failing since
   the **R76 PyPA `src/` layout migration** (commit `11abdad`, ~3

@@ -519,7 +519,24 @@ class NotificationManager:
         return event_id
 
     def _mark_event_finalized(self, event: NotificationEvent, succeeded: bool) -> None:
-        """标记事件完成状态用于统计去重"""
+        """标记事件完成状态用于统计去重。
+
+        **R117**：原 ``except Exception: pass`` 把 stats 一致性失败完全静默——
+        ``self._stats["events_succeeded" / "events_failed"]`` 与
+        ``self._finalized_event_ids`` 集合是 ``get_stats()`` 计算
+        ``delivery_success_rate`` / ``events_in_flight`` 的唯一来源，一旦
+        这里 raise（例如 LRU dict 内部状态被并发污染、或 ``next(iter())``
+        在罕见的 ``OrderedDict`` mutation race 下抛 ``StopIteration`` /
+        ``RuntimeError: dictionary changed size during iteration``），
+        统计数字会永久偏移，但运维 / 维护者完全看不见。
+
+        修复策略：保持 try/except 不让异常打断调用方（``_process_event``
+        在 success / failure 两路都调它，扩散异常会污染上层），但把
+        exception 写到 debug 级日志——和 ``BarkNotificationProvider.close()``
+        的 R117 修复同一 spirit，符合项目 "fail-loud, no silent skips"
+        政策（cf. R107-R110 系列），仅在排查"为什么 ``delivery_success_rate``
+        看起来不对"时打开 debug 即可定位 root cause。
+        """
         try:
             with self._stats_lock:
                 if event.id in self._finalized_event_ids:
@@ -533,8 +550,18 @@ class NotificationManager:
                     self._stats["events_succeeded"] += 1
                 else:
                     self._stats["events_failed"] += 1
-        except Exception:
-            pass
+        except Exception as e:
+            # R117: 不扩散异常（_process_event 调用方期望本函数 best-effort
+            # 即可），但留下 debug 痕迹便于排查 stats 偏移。注意只在 debug
+            # 级——这条失败本身不是用户可见的功能性 bug，warn / error 会
+            # 污染正常日志噪音预算（cf. R114 的同类降噪决策）。
+            logger.debug(
+                "[R117] _mark_event_finalized stats update raised "
+                f"(suppressed to keep _process_event flow intact): "
+                f"event_id={event.id} succeeded={succeeded} "
+                f"err={type(e).__name__}: {e}",
+                exc_info=True,
+            )
 
     def _schedule_retry(self, event: NotificationEvent) -> None:
         """使用 Timer 调度事件重试。
