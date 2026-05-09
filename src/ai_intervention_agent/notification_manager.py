@@ -595,12 +595,40 @@ class NotificationManager:
                 logger.debug(f"通知事件无指定类型，跳过: {event.id}")
                 return
 
+            # **R114**：``_shutdown_called`` 与 ``_executor.submit`` 之间存在
+            # TOCTOU 窗口——线程 A 在第 579 行已经检查 ``_shutdown_called=False``
+            # 进入本块，线程 B 同时调 ``shutdown()`` 把 ``_shutdown_called=True`` +
+            # ``_executor.shutdown(cancel_futures=True)``，此时线程 A 再调
+            # ``self._executor.submit(...)`` 会抛 ``RuntimeError: cannot schedule
+            # new futures after shutdown``。R114 之前这条 RuntimeError 由外层
+            # ``except Exception`` 兜底，被记成 ERROR 级 ``处理通知事件失败``
+            # 日志——日志归因不准（看上去像 provider 故障，实际是 atexit /
+            # restart / 显式 shutdown 引发的良性竞态），还会污染监控告警。
+            #
+            # 修复策略：把 submit 循环单独包一层 ``try/except RuntimeError``，
+            # 命中后识别为"shutdown 并发竞态"——和第 579 行的"shutdown 后跳过
+            # 事件"语义一致——降级为 DEBUG 日志并 return；不进入外层 except，
+            # 也不触发重试。注意只 catch ``RuntimeError`` 这一狭窄异常类型，
+            # 真正的 provider / 序列化异常仍由外层 except 兜底，可观测性不变。
             futures = {}
-            for notification_type in event.types:
-                future = self._executor.submit(
-                    self._send_single_notification, notification_type, event
-                )
-                futures[future] = notification_type
+            try:
+                for notification_type in event.types:
+                    future = self._executor.submit(
+                        self._send_single_notification, notification_type, event
+                    )
+                    futures[future] = notification_type
+            except RuntimeError as submit_err:
+                # 二次确认：``_shutdown_called`` 真为 True 时才走 R114 静默路径，
+                # 否则（比如 RuntimeError 来自其它原因）仍交给外层 except 处理。
+                if getattr(self, "_shutdown_called", False):
+                    logger.debug(
+                        f"[R114] _executor.submit 与 shutdown 竞态，跳过事件: "
+                        f"{event.id} (submitted={len(futures)}/{len(event.types)}, "
+                        f"reason={submit_err})"
+                    )
+                    # 已 submit 的 future 让 cancel_futures=True 自然取消即可。
+                    return
+                raise
 
             success_count = 0
             completed_count = 0

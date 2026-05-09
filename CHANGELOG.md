@@ -11,6 +11,60 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R114** — eliminate a **`NotificationManager` shutdown TOCTOU**
+  that turned a benign atexit-time race into a noisy `ERROR` log
+  every time another goroutine ran ``shutdown()`` while
+  ``_process_event`` was mid-flight. The race window:
+
+  1. ``_process_event`` reads ``self._shutdown_called`` (line 579)
+     and finds it ``False``, enters the main body.
+  2. Concurrently, ``shutdown()`` sets
+     ``_shutdown_called = True`` and calls
+     ``_executor.shutdown(cancel_futures=True)``.
+  3. ``_process_event`` then calls ``self._executor.submit(...)``
+     (line 600) → CPython raises
+     ``RuntimeError: cannot schedule new futures after shutdown``.
+
+  Pre-R114, this `RuntimeError` was caught by the generic
+  ``except Exception`` at line 685 and logged as
+  ``ERROR: 处理通知事件失败: <event_id> - cannot schedule new
+  futures after shutdown``. Two real consequences:
+
+  - **Wrong attribution.** The error log made it look like a
+    notification-provider failure (Bark / sound / Web), when the
+    actual cause was a benign shutdown race during ``atexit`` or
+    explicit restart paths. On-call would dig into provider code
+    and find nothing.
+  - **Spurious retry.** The same except branch incremented
+    ``retry_count`` and rescheduled via ``_schedule_retry`` — but
+    the timer's ``_process_event`` would re-enter the line 579
+    early-return and silently no-op, so the only visible effect
+    was a misleading ``WARNING: 处理通知事件异常，将在 Ns 后重试``
+    log spike during shutdown.
+
+  Fix: wrap **only the ``submit`` loop** in an inner
+  ``try/except RuntimeError``. On hit, **second-check**
+  ``_shutdown_called`` — if it really turned ``True`` between
+  line 579 and line 600, treat as a benign race (DEBUG log
+  ``[R114] _executor.submit 与 shutdown 竞态``, ``return``
+  without retry/fallback/error log). Any ``RuntimeError`` whose
+  ``_shutdown_called`` is still ``False`` is re-raised so the
+  outer ``except Exception`` keeps its diagnostic value for
+  genuine bugs. Already-submitted futures are cancelled
+  naturally by ``cancel_futures=True``, no leak, no
+  ``as_completed`` deadwait.
+
+  Tests: ``tests/test_notification_shutdown_race_r114.py`` (6
+  tests, including a real-time race triggered via a gated
+  executor wrapper that synchronously runs ``shutdown`` between
+  ``_process_event``'s check and submit, plus a reverse-injection
+  guard verifying the ``[R114]`` source marker survives future
+  refactors). Reverse-injection (revert the fix → 4/6 fail with
+  the exact "cannot schedule new futures after shutdown" trace
+  in `ERROR: 处理通知事件失败` form, confirming the test would
+  catch the regression). Full ``test_notification_manager.py``
+  suite (174 tests) still passes.
+
 - **R113** — close a **macOS user-config-path silent-divergence** that
   let `~/.config/ai-intervention-agent/config.toml` quietly persist on
   macOS machines and produce confusing "I edited my config but
