@@ -9,6 +9,82 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R116** — un-break **4 of 5 end-to-end performance benchmarks** in
+  `scripts/perf_e2e_bench.py` that have been silently failing since
+  the **R76 PyPA `src/` layout migration** (commit `11abdad`, ~3
+  months back). The benchmarks `import_web_ui`, `spawn_to_listen`,
+  `api_health_round_trip`, and `api_config_round_trip` all assumed
+  `web_ui.py` was at the repository root and either:
+
+  - ran `python -c "import web_ui; ..."` → `ModuleNotFoundError`
+    (`web_ui` is now a sub-module of `ai_intervention_agent`), or
+  - ran `subprocess.Popen([python, "web_ui.py", ...], cwd=REPO_ROOT)`
+    → `rc=2 can't open file 'web_ui.py'` (the file lives at
+    `src/ai_intervention_agent/web_ui.py` post-R76).
+
+  Both failure modes were swallowed by `run_all`'s
+  ``try/except Exception`` into an `error` field in the JSON payload,
+  and `perf_gate.py` (the regression detector) gracefully treated
+  `error` as "no data → skip". Worse, `perf_gate.py` was **never
+  wired into any GitHub workflow** (grep `.github/workflows` for
+  `perf_gate` / `perf_e2e_bench` returns zero hits), so the only
+  signal that 80% of perf coverage was dead came from `[perf_bench]
+  FAILED <name>` lines on stderr — which only humans running the
+  script manually would notice. This is exactly the silent-break
+  failure mode the project's "fail-loud, no silent skips" policy
+  exists to prevent (cf. R107–R110 series). 12 commits passed
+  through main between R76 and R116 with the perf coverage fully
+  blind.
+
+  Fix:
+
+  1. `bench_import_web_ui`: change `-c` payload from
+     `import web_ui; …` → `from ai_intervention_agent import web_ui; …`.
+  2. `bench_spawn_to_listen` + `_start_web_ui_subprocess`: change
+     argv from `[python, "-u", "web_ui.py", ...]` → `[python, "-u",
+     "-m", "ai_intervention_agent.web_ui", ...]` (re-uses the same
+     `if __name__ == "__main__":` entrypoint with full
+     `--prompt` / `--port` arg parity).
+  3. Refresh `tests/data/perf_e2e_baseline.json` with measurements
+     from the **now-runnable** benchmarks (post-fix all 5 produce
+     real `samples_ms` arrays; verified end-to-end against
+     `perf_gate.py --verbose` with PASS verdict).
+  4. **Add a regression-guard test** at
+     `tests/test_perf_e2e_bench_invocability_r116.py` covering
+     three layers:
+     - **AST source check** (3 tests): walk
+       `scripts/perf_e2e_bench.py`'s AST, verify every
+       `subprocess.{run,Popen}` call's argv contains
+       `"-m"` + `"ai_intervention_agent.web_ui"` and **does not
+       contain** `"web_ui.py"`; verify every `-c` payload imports
+       the qualified module path. AST-based assertion is precise —
+       it does not false-trigger on docstring / comment text that
+       mentions the historical broken state for context.
+     - **Functional subprocess check** (3 tests): actually run
+       `python scripts/perf_e2e_bench.py --quick`, parse stdout
+       JSON, assert all 5 expected benchmarks present **and** all 5
+       have non-empty `samples_ms` (no `error` fields anywhere).
+       This is the "did the fix actually work end-to-end" layer.
+     - **Baseline shape check** (1 test): assert
+       `tests/data/perf_e2e_baseline.json` parses as JSON and
+       contains all 5 benchmarks (so future drift between bench
+       names and baseline JSON also fails CI).
+
+  The new test runs through `pytest` → `ci_gate.py` → `test.yml`,
+  so any future silent break of the same family fails PR CI
+  immediately with a precise error message instead of degrading
+  perf coverage in the dark for months.
+
+  `perf_gate.py` itself is intentionally **not** wired into CI:
+  cross-hardware median comparison (maintainer's local Mac vs
+  GitHub `ubuntu-latest` runner, both with widely varying CPU
+  characteristics) would produce too many false positives at the
+  default 30% / 5ms threshold. R116 specifically targets the
+  **silent-break root cause**, not numeric regression-vs-baseline
+  (which remains a maintainer / pre-release manual concern).
+
 ### Documentation
 
 - **R115** — document the upstream **Cursor "Extension host terminated

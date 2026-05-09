@@ -128,14 +128,43 @@ def _summarize(samples_ms: list[float]) -> dict[str, Any]:
 
 
 def bench_import_web_ui(iterations: int) -> list[float]:
-    """每次起一个全新 Python 解释器，``import web_ui`` 计时。"""
+    """每次起一个全新 Python 解释器，``import ai_intervention_agent.web_ui`` 计时。
+
+    **R116** 修：本函数曾用 ``import web_ui``，那是 R76 之前 ``web_ui.py``
+    还在 REPO_ROOT 时的写法。R76 (`11abdad`) 把模块迁到
+    ``src/ai_intervention_agent/web_ui.py`` 后，``import web_ui`` 永远
+    抛 ``ModuleNotFoundError``——但失败被 ``run_all`` 的 try/except 吞成
+    一个 ``error`` 字段静默写进 results，``perf_gate`` 的回归判定
+    ``current_median - baseline_median`` 拿到 ``None`` 就跳过，于是 perf
+    gate 自 R76 起对这条 benchmark 的回归 **完全失明**。
+
+    并且 ``perf_gate.py`` 当时根本没在任何 CI workflow 里跑（grep 整个
+    ``.github/workflows`` 零命中），所以 R76 之后的所有 import 时长退化
+    都没人知道。
+
+    R116 修复策略（针对的是「silent-break 根因」而不是「数字回归」）：
+
+    1. 改字符串 ``import web_ui`` → ``from ai_intervention_agent import
+       web_ui`` —— benchmark 真的能跑了；
+    2. ``tests/test_perf_e2e_bench_invocability_r116.py`` 接进 pytest
+       （pytest 在 ``ci_gate.py`` 里跑、``ci_gate.py`` 在 ``test.yml``
+       里跑），CI 会硬卡 5 道 benchmark 必须全部 produce real samples，
+       任何一道再退化成 ``error`` 字段都会立刻 fail PR。
+
+    为什么不直接把 ``perf_gate.py`` 接进 CI（数字回归门）：跨硬件比较
+    没意义——baseline 在 maintainer 本地 Mac 测得，CI 是 Linux
+    ubuntu-latest 不同 CPU，30% 阈值在不同代号 runner 上会产生大量假
+    阳。``perf_gate.py`` 留作本地 / 发版前 maintainer 手动 review 用，
+    CI 只防最致命的 silent-break。
+    """
     samples: list[float] = []
     for _ in range(iterations):
         proc = subprocess.run(
             [
                 sys.executable,
                 "-c",
-                "import time; t=time.monotonic(); import web_ui; "
+                "import time; t=time.monotonic(); "
+                "from ai_intervention_agent import web_ui; "
                 "print(f'{(time.monotonic()-t)*1000:.3f}')",
             ],
             cwd=REPO_ROOT,
@@ -147,14 +176,15 @@ def bench_import_web_ui(iterations: int) -> list[float]:
         )
         if proc.returncode != 0:
             raise RuntimeError(
-                f"import web_ui subprocess failed: rc={proc.returncode}, "
-                f"stderr={proc.stderr[:500]}"
+                f"import ai_intervention_agent.web_ui subprocess failed: "
+                f"rc={proc.returncode}, stderr={proc.stderr[:500]}"
             )
         try:
             samples.append(float(proc.stdout.strip()))
         except ValueError as e:
             raise RuntimeError(
-                f"import web_ui subprocess produced unparseable stdout: {proc.stdout!r}"
+                f"import ai_intervention_agent.web_ui subprocess produced "
+                f"unparseable stdout: {proc.stdout!r}"
             ) from e
     return samples
 
@@ -165,7 +195,18 @@ def bench_import_web_ui(iterations: int) -> list[float]:
 
 
 def bench_spawn_to_listen(iterations: int) -> list[float]:
-    """``subprocess.Popen([python, web_ui.py, ...])`` 到 socket 可连接的 wall time。"""
+    """``subprocess.Popen([python, -m ai_intervention_agent.web_ui, ...])``
+    到 socket 可连接的 wall time。
+
+    **R116** 修：旧实现走 ``["web_ui.py", ...]`` + ``cwd=REPO_ROOT``，
+    R76 之后 ``web_ui.py`` 不在 REPO_ROOT 了，子进程立即 ``rc=2`` 退出
+    （``can't open file 'web_ui.py'``），原 wrapper 把这条错误转成
+    ``"Web UI subprocess exited before listening; rc=2"`` ——长得像"web
+    服务器自己崩了"，看不出来真因，于是 silent 滑过。换成
+    ``-m ai_intervention_agent.web_ui`` 才能复用 ``web_ui.py`` 顶层的
+    ``if __name__ == "__main__":`` 入口（已支持 ``--prompt`` /
+    ``--port`` 等参数）。
+    """
     samples: list[float] = []
     for _ in range(iterations):
         port = _free_port()
@@ -178,7 +219,8 @@ def bench_spawn_to_listen(iterations: int) -> list[float]:
             [
                 sys.executable,
                 "-u",
-                "web_ui.py",
+                "-m",
+                "ai_intervention_agent.web_ui",
                 "--prompt",
                 "perf-bench",
                 "--port",
@@ -271,7 +313,14 @@ def bench_html_render(iterations: int) -> list[float]:
 
 
 def _start_web_ui_subprocess(port: int) -> subprocess.Popen[bytes]:
-    """启动 Web UI 子进程，等到 socket 可连接才返回。"""
+    """启动 Web UI 子进程，等到 socket 可连接才返回。
+
+    **R116** 修：见 ``bench_spawn_to_listen`` 的 docstring；本函数与
+    ``bench_spawn_to_listen`` 的 subprocess 启动方式完全镜像（``-m
+    ai_intervention_agent.web_ui``），不能各写各的——``api_round_trip``
+    跟 ``spawn_to_listen`` 失败方式完全一致：``rc=2`` "Web UI subprocess
+    exited before listening"，原因都是找不到 ``web_ui.py``。
+    """
     env = {
         **os.environ,
         "AI_INTERVENTION_AGENT_NO_BROWSER": "1",
@@ -280,7 +329,8 @@ def _start_web_ui_subprocess(port: int) -> subprocess.Popen[bytes]:
         [
             sys.executable,
             "-u",
-            "web_ui.py",
+            "-m",
+            "ai_intervention_agent.web_ui",
             "--prompt",
             "perf-bench-api",
             "--port",
