@@ -78,6 +78,18 @@ dev 模式内部优先级顺序：
 - macOS：`~/Library/Application Support/ai-intervention-agent/`
 - Windows：`%APPDATA%/ai-intervention-agent/`
 
+> **macOS 上 `.config/` 残留兼容（R113）**
+>
+> 如果你的 macOS 上同时存在 `~/.config/ai-intervention-agent/config.toml`（可能是早期
+> 版本残留、跨平台 dotfiles 抄过来、或第三方安装脚本硬编码了 XDG 风格路径），agent 会：
+>
+> 1. **标准路径 + legacy 同时存在** → 使用标准 `~/Library/Application Support/...`，
+>    并打印 `WARNING` 日志说明 legacy 文件位置 + 给出 `rm -rf` 清理建议。
+> 2. **仅 legacy 存在** → 优先使用 legacy 路径以**避免静默丢失**你已有的配置，并打印
+>    强 `WARNING` 给出可一键复制的 `mkdir -p / mv / rmdir` 迁移脚本。
+>
+> Linux 用户不受影响——`~/.config/` 在 Linux 上是 XDG 标准，本检测仅 macOS 触发。
+
 ## 向后兼容
 
 项目会兼容旧版配置项（便于升级）：

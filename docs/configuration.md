@@ -90,6 +90,22 @@ If a `config.jsonc` or `config.json` file is found via auto-discovery (not expli
 - macOS: `~/Library/Application Support/ai-intervention-agent/`
 - Windows: `%APPDATA%/ai-intervention-agent/`
 
+> **macOS legacy `.config/` compatibility (R113)**
+>
+> If your macOS box also has `~/.config/ai-intervention-agent/config.toml` (left over from
+> early versions, cross-platform dotfiles, or third-party scripts that hard-coded the XDG
+> path), the agent will:
+>
+> 1. **Standard + legacy both present** → use the standard `~/Library/Application Support/...`
+>    path and emit a `WARNING` log naming the legacy file with an `rm -rf` cleanup
+>    suggestion.
+> 2. **Legacy-only** → use the legacy path so your existing config is **never silently lost**,
+>    and emit a strong `WARNING` with a copy-paste `mkdir -p / mv / rmdir` migration
+>    script.
+>
+> Linux users are not affected — `~/.config/` is the XDG standard there and the check is
+> macOS-specific.
+
 ## Backward compatibility
 
 This project keeps compatibility with older config keys:

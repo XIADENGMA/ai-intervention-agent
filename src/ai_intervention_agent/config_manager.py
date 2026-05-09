@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -398,6 +399,42 @@ def _is_uvx_mode() -> bool:
     return True
 
 
+def _macos_legacy_xdg_config_dir() -> Path | None:
+    """**R113** — 返回 macOS 上 ``~/.config/ai-intervention-agent/`` 残留目录。
+
+    macOS 用户配置的标准位置是 ``~/Library/Application Support/ai-intervention-agent/``
+    （Apple File System Programming Guide / platformdirs ``user_config_dir`` 的
+    macOS 实现都返回此路径）。但实际现场会出现 **macOS 上 `~/.config/ai-intervention-agent/`
+    被创建** 的情况，可能来源：
+
+    * **历史早期版本**：早期 ai-intervention-agent 或 platformdirs 早期版本可能
+      在 macOS 上误用 XDG 路径。
+    * **第三方安装脚本 / 跨平台 dotfiles**：用户从 Linux 迁移过来的 dotfiles
+      或者批量配置脚本可能假设 ``.config/`` 是跨平台的。
+    * **手动 mkdir + cp**：用户测试 / 调试时手动复制了 config。
+    * **进程在错误的 cwd 下启动**：某个调用方把 ``find_config_file`` 在
+      ``~/.config/ai-intervention-agent/`` 当 cwd 启动时，dev 模式分支会在该 cwd
+      创建 ``config.toml``。
+
+    R113 在 macOS 上探测此目录是否存在，以便：
+
+    1. **向后兼容**：标准路径还没有 config 但 ``.config/`` 已有 → 优先用 legacy
+       路径，避免用户的旧配置静默被新 default 覆盖。
+    2. **fail-loud warn**：标准路径和 legacy 同时存在 → warn 让用户知道有歧义；
+       仅 legacy 存在 → 强 warn 给出 ``mv`` 一键迁移命令。
+
+    返回：
+        macOS 上目录存在 → ``Path``；其他情况（非 macOS / 目录不存在）→ ``None``。
+    """
+    if platform.system().lower() != "darwin":
+        # 仅 macOS 触发；Linux 上 `.config/` 是标准（XDG），Windows 上根本不会有
+        return None
+    legacy_dir = Path.home() / ".config" / "ai-intervention-agent"
+    if not legacy_dir.is_dir():
+        return None
+    return legacy_dir
+
+
 def find_config_file(config_filename: str = "config.toml") -> Path:
     """查找配置文件路径，支持环境变量覆盖、uvx / 安装模式和开发模式。
 
@@ -423,6 +460,18 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
     * Linux：``$XDG_CONFIG_HOME/ai-intervention-agent`` 或 ``~/.config/ai-intervention-agent``
     * macOS：``~/Library/Application Support/ai-intervention-agent``
     * Windows：``%APPDATA%\\ai-intervention-agent``
+
+    macOS 兼容性（R113）
+    ----
+    在 macOS 上**额外**检查 ``~/.config/ai-intervention-agent/`` 是否有残留 config
+    （历史版本 / 第三方脚本 / 手动 mkdir 都可能创建）。规则：
+
+    * 标准路径 + ``.config/`` 都有 → 用标准路径，warn 提示 legacy 残留
+    * 仅 ``.config/`` 有 → **优先用 legacy**（不丢用户配置），强 warn 给出 ``mv``
+      迁移命令
+    * 仅标准路径或都没有 → 行为不变
+
+    Linux 上 ``.config/`` 是 XDG 标准，本逻辑不触发。
 
     错误处理
     ----
@@ -511,9 +560,39 @@ def find_config_file(config_filename: str = "config.toml") -> Path:
             user_config_dir_path = _get_user_config_dir_fallback()
 
         user_hit = _pick_existing(user_config_dir_path)
+
+        # R113: macOS 上额外探测 `~/.config/ai-intervention-agent/` 残留 config。
+        # 仅 macOS 触发；Linux 上 .config/ 已经是 XDG 标准（user_config_dir_path
+        # 本身就指向那里），不会进入此分支。
+        legacy_macos_dir = _macos_legacy_xdg_config_dir()
+        legacy_macos_hit = (
+            _pick_existing(legacy_macos_dir) if legacy_macos_dir is not None else None
+        )
+
         if user_hit is not None:
+            if legacy_macos_hit is not None:
+                logger.warning(
+                    "[R113] macOS 上检测到非标准 XDG 配置路径残留: "
+                    f"{legacy_macos_hit}。已使用标准路径 {user_hit}；"
+                    "建议删除非标准路径以避免歧义： "
+                    f"`rm -rf {legacy_macos_dir}`"
+                )
             logger.info(f"使用用户配置目录的配置文件: {user_hit}")
             return user_hit
+
+        if legacy_macos_hit is not None:
+            # 向后兼容：标准路径无 config 但 .config/ 有，用 .config/ 不丢用户配置；
+            # 强 warn 给出可一键复制的 mv 迁移命令。
+            logger.warning(
+                "[R113] macOS 上仅在非标准 XDG 路径找到配置: "
+                f"{legacy_macos_hit}。标准路径 {user_config_dir_path} 暂无配置。"
+                "已临时采用非标准路径以兼容历史用户；强烈建议立即迁移到标准位置：\n"
+                f"  mkdir -p {shlex.quote(str(user_config_dir_path))}\n"
+                f"  mv {shlex.quote(str(legacy_macos_hit))} "
+                f"{shlex.quote(str(user_config_dir_path) + '/')}\n"
+                f"  rmdir {shlex.quote(str(legacy_macos_dir))}"
+            )
+            return legacy_macos_hit
 
         # 都不存在，返回 TOML 路径（用于创建默认配置）
         user_config_file = user_config_dir_path / config_filename

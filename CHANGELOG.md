@@ -11,6 +11,94 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R113** — close a **macOS user-config-path silent-divergence** that
+  let `~/.config/ai-intervention-agent/config.toml` quietly persist on
+  macOS machines and produce confusing "I edited my config but
+  nothing changed" reports. The standard macOS config location is
+  `~/Library/Application Support/ai-intervention-agent/` (Apple File
+  System Programming Guide; `platformdirs.user_config_dir` returns
+  exactly that on Darwin), and the existing code in
+  `config_manager.py::_get_user_config_dir_fallback` /
+  `find_config_file` already pointed at the right place. But the
+  legacy XDG-style path `~/.config/ai-intervention-agent/` could
+  still end up populated on macOS via several real-world paths:
+
+  - **historical early versions** of ai-intervention-agent or
+    `platformdirs` may have used XDG on macOS;
+  - **cross-platform dotfiles** copied verbatim from a Linux setup;
+  - **third-party install scripts** that hard-code `.config/`
+    assuming it is portable;
+  - **dev-mode invocations with cwd === ~/.config/ai-intervention-agent/**
+    where `find_config_file` would create `config.toml` right in cwd.
+
+  Once one such legacy file existed, **the user could not tell which
+  copy was authoritative** — the agent would happily read from
+  `~/Library/Application Support/...` while the user kept editing
+  `~/.config/...`, leading to a silent edit-loss feedback loop with
+  no diagnostic emitted.
+
+  Real-world latent footprint observed on the maintainer's box:
+  three independent `config.toml` files (`~/Downloads/arch/<repo>/
+  config.toml`, `~/.config/ai-intervention-agent/config.toml`,
+  `~/Library/Application Support/ai-intervention-agent/config.toml`)
+  each with **different `bark_action` / `frontend_countdown` /
+  `log_level` values**, all reachable by different startup modes
+  (dev mode in repo cwd, uvx user mode, third-party recreation),
+  each producing different runtime behaviour with zero clue from
+  the agent that there were extra copies floating around.
+
+  Fix: add `_macos_legacy_xdg_config_dir()` (returns the legacy
+  path only on Darwin + only when the directory actually exists,
+  None on Linux/Windows or when absent), and integrate two new
+  branches into `find_config_file`'s user-config-dir resolution:
+
+  1. **standard + legacy both exist** → still use the standard
+     path (canonical), but emit a `WARNING` log naming the legacy
+     file with an `rm -rf` cleanup suggestion. The user no longer
+     unknowingly maintains two divergent copies.
+  2. **legacy exists but standard does not** → use the legacy
+     path (so existing user configuration is **never silently
+     lost**), but emit a strong `WARNING` log with a copy-paste
+     `mkdir -p / mv / rmdir` migration script. The user keeps
+     working immediately while being directed at the right path
+     for next time.
+
+  **Linux is explicitly excluded** from R113 — `~/.config/` is the
+  XDG-standard location there (`platformdirs.user_config_dir` on
+  Linux returns exactly that path), so warning Linux users would be
+  a 100% false-positive blast that would erode log signal. The
+  `platform.system().lower() != "darwin"` early-return guard at the
+  top of `_macos_legacy_xdg_config_dir()` is the load-bearing piece
+  of that contract; the `test_linux_with_xdg_dir_does_not_emit_r113_warn`
+  reverse test in the R113 suite locks it.
+
+  Tests: new `tests/test_macos_legacy_xdg_config_r113.py` (10
+  cases). Five unit tests on `_macos_legacy_xdg_config_dir`
+  (macOS+dir / macOS-no-dir / Linux-with-dir-must-not-flag /
+  Windows / `.config/ai-intervention-agent` is a file not a
+  directory). Five integration tests on `find_config_file`
+  exercising all four bucket combinations (standard+legacy both,
+  legacy-only, standard-only, neither) plus the Linux false-
+  positive guard. All tests use `tempfile.TemporaryDirectory` +
+  `Path.home` monkey-patch + `platform.system` monkey-patch +
+  `user_config_dir` monkey-patch so the same suite runs reliably
+  on macOS / Linux / Windows CI without depending on the host's
+  real filesystem layout.
+
+  Reverse-injection: `_macos_legacy_xdg_config_dir` patched to
+  `return None` at the top → 3 of 10 tests fail (the unit case
+  for the macOS-with-dir path; both integration cases that
+  require the R113 warn to be emitted), confirming the new
+  detection is the load-bearing defence — not coincidental
+  passes against an existing path.
+
+  End-to-end verified on the maintainer's actual box (Apple
+  Silicon M1 / macOS 25.4.0 / platformdirs 4.3.8 dev-tree +
+  4.9.6 uvx wheel): both warning branches fire with the right
+  log content + correct path selection; existing config files
+  on disk are untouched; full test suite (`pytest -W error`)
+  passes 3934 / 2 skipped / 0 failed / 0 warnings.
+
 - **R112** — close a **static-file-route information-disclosure silent-
   breakage**: `serve_fonts` (`/fonts/<filename>`) and `serve_icons`
   (`/icons/<filename>`) routes in `web_ui_routes/static.py` had **no**
