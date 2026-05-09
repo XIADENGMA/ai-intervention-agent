@@ -195,9 +195,21 @@ class StaticRoutesMixin:
                 - 已豁免（静态资源不做限流，避免首屏加载被 429 影响）
 
             注意事项：
+                - **R112**：仅允许 ``.woff / .woff2 / .ttf / .otf / .eot /
+                  .ttc`` 六种字体扩展名（与 ``/sounds/`` ``.mp3/.wav/.ogg``
+                  / ``/static/lottie/`` ``.json`` / ``/api/locales/``
+                  ``.json`` 的白名单防御同构）。意图：
+                  ``send_from_directory`` 仅防路径穿越，没有"只暴露字体"
+                  的语义保证；如果将来 ``fonts/`` 目录被误放入 ``.txt``
+                  README、``.bak`` backup、``.tmp`` 临时文件，扩展名白名
+                  单能继续把它们关在 404 后面，避免意外信息泄露。
                 - 使用send_from_directory防止路径遍历攻击
                 - 文件名自动清理，不支持../ 等危险路径
             """
+            if not filename or not str(filename).lower().endswith(
+                (".woff", ".woff2", ".ttf", ".otf", ".eot", ".ttc")
+            ):
+                abort(404)
             fonts_dir = self._project_root / "fonts"
             return send_from_directory(str(fonts_dir), filename)
 
@@ -219,9 +231,23 @@ class StaticRoutesMixin:
                 - 已豁免（静态资源不做限流，避免首屏加载被 429 影响）
 
             注意事项：
+                - **R112**：仅允许 ``.png / .ico / .svg / .webmanifest /
+                  .jpg / .jpeg / .gif`` 七种图像 + manifest 扩展名（与
+                  ``/sounds/`` ``/static/lottie/`` ``/api/locales/`` 同构
+                  的白名单防御）。意图：
+                  ``send_from_directory`` 仅防路径穿越，没有"只暴露图标
+                  / manifest"的语义保证；如果将来 ``icons/`` 目录被误放
+                  入 README / backup / tmp 文件，白名单兜底防止意外信息
+                  泄露。``manifest.webmanifest`` 单独有 ``/manifest.webmanifest``
+                  路由，但通过 ``/icons/manifest.webmanifest`` 直接拉也是
+                  现役支持模式（见 ``icons/manifest.webmanifest``）。
                 - 使用send_from_directory防止路径遍历攻击
                 - 文件名自动清理，不支持../ 等危险路径
             """
+            if not filename or not str(filename).lower().endswith(
+                (".png", ".ico", ".svg", ".webmanifest", ".jpg", ".jpeg", ".gif")
+            ):
+                abort(404)
             icons_dir = self._project_root / "icons"
             return send_from_directory(str(icons_dir), filename)
 

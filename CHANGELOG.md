@@ -11,12 +11,60 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R112** — close a **static-file-route information-disclosure silent-
+  breakage**: `serve_fonts` (`/fonts/<filename>`) and `serve_icons`
+  (`/icons/<filename>`) routes in `web_ui_routes/static.py` had **no**
+  file-extension whitelist, while their siblings `serve_sounds`
+  (whitelist `.mp3 / .wav / .ogg`), `serve_lottie` (whitelist `.json`),
+  and `serve_locale` (`/api/locales/`, whitelist `.json`) all enforced
+  one. `send_from_directory` only protects against path traversal
+  (`../`) — it has no semantic notion of "this directory should only
+  expose font/icon files". If anyone ever drops a `README.md`,
+  `config.bak`, `.tmp`, `notes.txt`, or worse a `.py` source file into
+  `fonts/` or `icons/`, the route would happily serve its bytes back
+  to anyone who guesses the URL.
+
+  Real-world risk surface (concrete): `icons/` already contains
+  `manifest.webmanifest` (which is whitelisted in R112) — proving the
+  directory is the actual mixed-content drop zone. A future refactor
+  that lands a `dev-notes.md` or `internal-icons-todo.txt` next to it
+  would silently leak. Same threat model as R56's `/api/locales/.json`
+  whitelist (CVE-style "any file in directory is a candidate").
+
+  Fix: enforce extension whitelists at route entry, mirroring the
+  sounds/lottie/locales pattern:
+  - fonts: `.woff / .woff2 / .ttf / .otf / .eot / .ttc` (the six
+    formats actually shipped to browsers in 2024-2026; legacy `.eot`
+    kept for IE compat per WOFF2 caniuse table).
+  - icons: `.png / .ico / .svg / .webmanifest / .jpg / .jpeg / .gif`
+    (covers all current `icons/icon*.png` + `icons/icon.svg` +
+    `favicon.ico` + the manifest.webmanifest dual-route, plus future
+    raster fallbacks).
+  - case-insensitive (`.lower()`); empty filename guard prevents
+    `/fonts/` exact match leaking dir listing.
+
+  Tests: new `tests/test_static_extension_whitelist_r112.py` (15
+  cases). Critical: tests use a `tempfile.TemporaryDirectory` +
+  `_project_root` monkey-patch to **actually create**
+  `fonts/leaked.txt`, `icons/script.py` and verify the route returns
+  404 + the response body does **not** contain the secret content.
+  Naive `assertEqual(404)` would have been a false-positive (the real
+  `fonts/` directory doesn't exist → 404 from `send_from_directory`,
+  indistinguishable from whitelist reject); R112 test design follows
+  R109's reverse-injection-must-actually-fail discipline.
+
+  Reverse-injection: delete the two `abort(404)` blocks → 7 of 15
+  tests fail with `200 != 404` (each leaked-file test reports the
+  secret string would have been served), confirming the whitelist is
+  the load-bearing defense. Cache-Control headers still set correctly
+  for 404 responses (verified by R56 test suite still passing).
+
 - **R111** — close a real **PII redaction silent-leak**: `LogSanitizer`
   in `enhanced_logging.py` (and its VS Code mirror `packages/vscode/
-  logger.ts::redactSensitive`) caught the legacy classic GitHub PAT
+logger.ts::redactSensitive`) caught the legacy classic GitHub PAT
   `ghp_[A-Za-z0-9]{36}` family R54-B introduced in 2022, but **never**
   caught the **fine-grained PAT** family `github_pat_<11 char ID>_
-  <82 char secret>` (≈ 93 chars total) that GitHub introduced in
+<82 char secret>` (≈ 93 chars total) that GitHub introduced in
   October 2022 and now defaults to for newly-created tokens.
 
   Real-world latent leak: any developer pasting a fine-grained PAT
@@ -40,7 +88,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Tests: new `TestGitHubFineGrainedPATR111` class (6 cases) locks
   typical 93-char form, mixed-case secret, leak via `curl -H
-  'Authorization: token <PAT>'` (the most common copy-paste leak
+'Authorization: token <PAT>'` (the most common copy-paste leak
   path — note **not** the URL-basic-auth form, which gets
   sanitized by the unrelated url-basic-auth regex and would mask
   R111 regression), classic `ghp_` still works (no ordering
@@ -62,7 +110,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   returns (R102 同款，与 R88/R100/R101/R102 在 brand-color guard /
   HTML coverage / ts/js no-cjk / locale shape 几个扫描器修过的
   silent-skip-on-missing-source 反模式同款):
-
   1. `_scan_web()`: `if not en.is_file(): return []` —
      `WEB_LOCALES_DIR/en.json` 缺失时静默返回空列表。
   2. `_scan_vscode()`: 同款 `VSCODE_LOCALES_DIR/en.json` 缺失静默路径。
@@ -103,9 +150,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   hex variants in `static/css/main.css` were sitting unprotected by
   the R66/R99 guardrail because they don't share the exact `#007aff`
   literal R99 indexed:
-
   1. `main.css::1020` — `.btn-primary-enabled { background-color:
-     #0a84ff; }` (iOS 13+ / macOS dark-mode systemBlue, the dark
+#0a84ff; }` (iOS 13+ / macOS dark-mode systemBlue, the dark
      counterpart to `#007aff`).
   2. `main.css::3982` — `.btn-primary:hover { background: #0056cc; }`
      (iOS-blue darker hover variant, ≈ 30 % darken of `#007aff`).
@@ -150,8 +196,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **R108** — final cleanup of the silent-path-skip family in
   `tests/`. Converts the last unconditional `pytest.skip` in
   `tests/test_i18n_ts_types_gen.py::TestHostTCallsAreTypeable::
-  test_all_hostt_keys_present_in_dts` to `pytest.fail`. The check
-  is the *only* thing pinning the three-way contract between
+test_all_hostt_keys_present_in_dts` to `pytest.fail`. The check
+  is the _only_ thing pinning the three-way contract between
   `packages/vscode/extension.ts` (call sites of `hostT(key)`),
   `packages/vscode/locales/en.json` (the runtime keys), and
   `packages/vscode/i18n-keys.d.ts` (the TypeScript literal union
@@ -165,7 +211,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Reverse-injection (point `EXTENSION_TS` at
   `/__definitely_not_existing__/extension.ts` and re-run the
   case) raises `pytest.fail.Exception` with `R108: extension.ts
-  missing: ...` diagnostic — confirming silent-skip purged.
+missing: ...` diagnostic — confirming silent-skip purged.
   Audited the remaining `pytest.skip` / `self.skipTest` callsites
   in `tests/`; the survivors (`test_vscode_vsix_size_budget.py:155`
   for "dev box hasn't packaged a `.vsix` yet, CI's `release.yml`
@@ -183,7 +229,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **R107** — convert three `pytest.skip("locale file ... not present")`
   paths in `tests/test_i18n_pseudo_locale.py` to `pytest.fail`. The
   three checked locale resources (`src/ai_intervention_agent/static/
-  locales/en.json`, `packages/vscode/locales/en.json`, and the
+locales/en.json`, `packages/vscode/locales/en.json`, and the
   paired `_pseudo/pseudo.json` outputs from `gen_pseudo_locale.py`)
   are i18n single-source-of-truth — same tier as the 6 core locale
   resources R102 already path-locked at `check_locales.py::main()`,
@@ -196,12 +242,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Implementation note: `pytest.fail` surfaces a known ty stub
   glitch — the type checker mis-resolves `pytest.fail(reason: str,
-  pytrace: bool, msg: object)` against multi-line f-strings or
+pytrace: bool, msg: object)` against multi-line f-strings or
   reassigned `reason` variables, reporting `Expected bool, found
-  str` for the first positional arg. The existing convention in
+str` for the first positional arg. The existing convention in
   this repo (`tests/test_critical_preload_r21_1.py:396, 413`) is
   to suppress the false-positive with `# ty:
-  ignore[invalid-argument-type]`. R107 follows the same suppression
+ignore[invalid-argument-type]`. R107 follows the same suppression
   pattern, with R107-tagged diagnostic strings explaining
   remediation (run `gen_pseudo_locale.py`, restore the file,
   update `WEB_EN`/`VSCODE_EN`/`WEB_PSEUDO`/`VSCODE_PSEUDO` constants).
@@ -211,10 +257,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   R107 tag in every case (3/3 verified, 0 silent skips remain).
 
 - **R106** — drop seven `try: from ai_intervention_agent.server
-  import X; except ImportError: self.skipTest(...)` blocks in
-  `tests/test_server_functions.py`. The pattern was redundant *and*
+import X; except ImportError: self.skipTest(...)` blocks in
+  `tests/test_server_functions.py`. The pattern was redundant _and_
   actively harmful:
-
   - **Redundant**: the test module already does
     `import ai_intervention_agent.server as server` at the top, so
     if the package fails to import the module won't even collect.
@@ -250,7 +295,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   silently `skipTest`'ing because `sandbox.window.AIIA_I18N` was
   the wrong export path). But R96 left two related silent-skip
   surfaces in `test_packages_vscode_i18n_consistency`:
-
   1. `if not _I18N_JS_VSCODE.exists(): self.skipTest(...)` — same
      R76-rearrange ⇒ silent-broken pattern that
      R88/R100/R101/R102/R104 already purged.
@@ -284,14 +328,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `src/ai_intervention_agent/static/css/main.css` (Web UI) and
   `packages/vscode/webview.css` (VS Code webview). Previous
   implementation had four silent-skip surfaces:
-
   1. `test_web_css_defines_all_expected_tokens` — `if not
-     WEB_CSS.exists(): self.skipTest(...)`.
+WEB_CSS.exists(): self.skipTest(...)`.
   2. `test_vscode_css_defines_all_expected_tokens` — same shape on
      `VSCODE_CSS`.
   3. `test_cross_platform_token_values_equal` — combined
      `if not WEB_CSS.exists() or not VSCODE_CSS.exists():
-     self.skipTest(...)`.
+self.skipTest(...)`.
   4. `test_transition_token_is_proper_shorthand` — per-end
      `if not path.exists(): continue` quietly drops half the
      coverage.
@@ -305,7 +348,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   in all four test cases. Adds a new `TestPathDriftR104` class
   with two layer-0 sanity tests (`WEB_CSS`/`VSCODE_CSS` resolve to
   existing files) so a path-constant drift is reported as the
-  *first* failure in CI output, not buried under cascading test
+  _first_ failure in CI output, not buried under cascading test
   errors. Reverse-injection (mock `WEB_CSS` or `VSCODE_CSS` to
   `/__definitely_not_existing__/missing.css`) yields **4 fails, 0
   skips** with R104 tag present in every fail message.
@@ -322,9 +365,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   drift _inside_ the pre-commit hook, but the script was **only**
   invoked from `.pre-commit-config.yaml` — not from
   `ci_gate.py --ci`. Three failure modes lined up:
-
   1. `test.yml` and `release.yml` only call `uv run python
-     scripts/ci_gate.py --ci` — never `pre-commit run --all-files`.
+scripts/ci_gate.py --ci` — never `pre-commit run --all-files`.
   2. The repo does not enforce `pre-commit install`; hooks live on
      each developer's machine, not in version control.
   3. The hook is staged-only with `files: ^src/.../static/css/.*\.css$`
@@ -342,11 +384,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `_run([..., "scripts/check_brand_color_consistency.py", "--quiet"])`
   call at the tail of the i18n drift-detector sequence in
   `_main_impl`, so every CI run (and every local `uv run python
-  scripts/ci_gate.py`) now exercises the baseline lock. `--quiet`
+scripts/ci_gate.py`) now exercises the baseline lock. `--quiet`
   matches the pre-commit hook's silent-on-pass contract. New
   `tests/test_ci_gate_brand_color_r103.py` (4 cases) regex-asserts
   the invocation, the `--quiet` flag, the position-after-`check_i18n_
-  locale_shape.py` ordering, and the script's continued existence.
+locale_shape.py` ordering, and the script's continued existence.
   Reverse-injection (delete the new `_run` line) → 3/4 fail with
   contract-violation messages, proving the guard catches future
   regressions.
@@ -356,13 +398,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   layered silent skips collapsed to `0` (= "OK") whenever any of 6
   core locale resources went missing, mirroring R76 → R88/R100/R101's
   pattern of "static rearrange ⇒ guard goes silently broken":
-
   - `for dir_path, label in locale_dirs: if dir_path.exists():` —
     web-side or vscode-side `locales/` directory drift skips both
     `check_locale_pair` calls.
   - `if vscode_dir.exists(): all_errors.extend(check_nls_pair(vscode_dir))`
     — and inside `check_nls_pair`, `if not en.exists() or not zh.exists():
-    return []` — `package.nls{,.zh-CN}.json` drift skips silently.
+return []` — `package.nls{,.zh-CN}.json` drift skips silently.
   - `if web_locales_dir.exists() and vscode_locales_dir.exists():` —
     cross-platform `aiia.*` parity skipped silently if either side moves.
 
@@ -372,22 +413,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   was the same latent breakage that bit R88. R102 hoists a layer-0
   sanity check at the top of `main()` listing all 6 required paths,
   prints a structured diagnostic to `stderr` (label + relative path
-  + absolute path + remediation pointer back to the path constants
-  in the script), and returns `2` — matching the `0/1/2` exit-code
-  convention R88/R100/R101 settled on (0=clean, 1=violations,
-  2=configuration error). Updated `tests/test_check_locales.py`
-  with a `TestMainPathDriftR102` class (5 tests) that monkey-patches
-  `Path.exists` to simulate each missing-resource scenario; reverse-
-  injection (revert R102 to silent-skip) caused 4/5 to fail with
-  `exit 0/1 != 2` and missing diagnostic strings, proving the
-  guards actually catch regressions.
+  - absolute path + remediation pointer back to the path constants
+    in the script), and returns `2` — matching the `0/1/2` exit-code
+    convention R88/R100/R101 settled on (0=clean, 1=violations,
+    2=configuration error). Updated `tests/test_check_locales.py`
+    with a `TestMainPathDriftR102` class (5 tests) that monkey-patches
+    `Path.exists` to simulate each missing-resource scenario; reverse-
+    injection (revert R102 to silent-skip) caused 4/5 to fail with
+    `exit 0/1 != 2` and missing diagnostic strings, proving the
+    guards actually catch regressions.
 
 - **R101** — purge the same `if not <root>.exists(): return 0`
   silent-skip anti-pattern from `check_i18n_ts_no_cjk.py` and
   `check_i18n_js_no_cjk.py` that R88 had purged from the brand-
   color guard and R100 had purged from the HTML coverage scanner.
   Both i18n CJK-literal scanners had the same shape:
-
   - `check_i18n_ts_no_cjk.py` — `_iter_ts_source_files()`
     returned `[]` when `_VSCODE_ROOT` (= `packages/vscode`) didn't
     exist, so `collect_violations()` saw zero files, `main()`
@@ -421,7 +461,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   drifted layouts.
 
   Fix:
-
   - `scripts/check_i18n_ts_no_cjk.py::main()` — gated up-front by
     `if not _VSCODE_ROOT.exists(): print(diagnostic); return 2`.
     Updated docstring exit-code section adds R76/R88/R100
@@ -431,14 +470,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     fail-loud on any non-empty `missing`. Same docstring update.
   - `tests/test_i18n_no_cjk_path_drift_r101.py` — new combined
     regression suite covering both scanners with 6 cases:
-    + ts: missing `_VSCODE_ROOT` → exit 2 (with stderr keyword
+    - ts: missing `_VSCODE_ROOT` → exit 2 (with stderr keyword
       check) + happy-path still works.
-    + js: missing webui root in `--scope webui` → exit 2.
-    + js: missing vscode root in `--scope vscode` → exit 2.
-    + js: partial drift in `--scope all` (one root present, one
+    - js: missing webui root in `--scope webui` → exit 2.
+    - js: missing vscode root in `--scope vscode` → exit 2.
+    - js: partial drift in `--scope all` (one root present, one
       missing) → exit 2 (the strongest contract — partial
       coverage is silent breakage too).
-    + js: all three scopes against real roots return 0 or 1, not
+    - js: all three scopes against real roots return 0 or 1, not
       2 — happy path doesn't regress.
 
     Reverse-injection verified: revert both `main()` functions
@@ -484,7 +523,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   shape immediately.
 
   Fix:
-
   - `scripts/check_i18n_html_coverage.py::main()` — replace
     `print("SKIP: ..."); return 0` with a multi-line stderr
     diagnostic and `return 2`. Update the docstring's exit code
@@ -492,14 +530,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     R76/R88 lineage.
   - `tests/test_i18n_html_template_coverage.py` — add
     `TestHtmlCoveragePathDriftR100` with three cases:
-    + `test_missing_template_returns_exit_2_not_silent_skip`
+    - `test_missing_template_returns_exit_2_not_silent_skip`
       monkey-patches `TEMPLATE_PATH` to a non-existent path and
       asserts `main()` returns 2 (not 0).
-    + `test_missing_template_emits_clear_stderr_diagnostic`
+    - `test_missing_template_emits_clear_stderr_diagnostic`
       asserts the stderr message contains both `ERROR` and
       `configuration drift` keywords so reviewers can't miss
       the diagnostic.
-    + `test_existing_template_still_works_normally` runs
+    - `test_existing_template_still_works_normally` runs
       `main()` against the real `TEMPLATE_PATH` and asserts the
       exit code is 0 or 1 (clean / violations) — never 2 — so
       R100 doesn't regress the happy path.
@@ -521,7 +559,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   developers writing the **same** color in hex form
   (`#007aff` / `#007AFF`) — and seven such hex hardcodes were
   already present (and silently uncovered) in `main.css`:
-
   - L2118 `linear-gradient(90deg, #007aff, ...)` — gradient stop
   - L2592, L2678 `border-color: #007aff` — focus borders
   - L3968 `background: #007aff` — solid blue backgrounds
@@ -544,10 +581,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   different commit moments — mixing them would distort the
   "refactor reduced baseline" warning signal). Net guard surface
   is `34 (rgba decimal) + 7 (hex) = 41` known iOS-blue hardcodes;
-  any *new* hardcode in either form fails the gate.
+  any _new_ hardcode in either form fails the gate.
 
   Decision history (mirrors R66's own design):
-
   - **Option A** — extend `_IOS_BLUE_RE` to also match hex,
     bumping baseline to 41. Rejected: muddles "rgba refactor
     progress" with "hex refactor progress" in the same number;
@@ -560,38 +596,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     moment evidence, refactor-progress-warnings stay separable.
   - **Option C** — only-no-new-hex policy, hex baseline dynamic
     (always == current count). Rejected: would never alert on
-    hex form *increases* via the baseline mechanism, only via
+    hex form _increases_ via the baseline mechanism, only via
     the running gate, which is opposite of how R66 operates and
     creates inconsistency between the two scanner forms.
 
   Fix:
-
   - `scripts/check_brand_color_consistency.py` —
-    + add `_IOS_BLUE_HEX_RE = re.compile(r"#007aff\b", re.IGNORECASE)`,
+    - add `_IOS_BLUE_HEX_RE = re.compile(r"#007aff\b", re.IGNORECASE)`,
       `count_ios_blue_hex()`, `find_ios_blue_hex_locations()`;
-    + `scan_css_files()` signature changes from 2-tuple to
+    - `scan_css_files()` signature changes from 2-tuple to
       4-tuple `(rgba_total, rgba_per_file, hex_total, hex_per_file)`;
-    + `main()` runs both gates independently, fails if either
+    - `main()` runs both gates independently, fails if either
       exceeds its baseline, prints separate warnings for either's
       reduction;
-    + `--quiet` now also suppresses ℹ️ "below baseline" warnings
+    - `--quiet` now also suppresses ℹ️ "below baseline" warnings
       (R66 original quiet only had ✅ to suppress because the
       below-baseline path didn't fire on the live tree; R99's
       double-baseline opens that path more easily so quiet mode
       needs to cover it too — preserves the pre-commit silent-
       success contract).
   - `tests/test_brand_color_consistency_r66.py` —
-    + 7 new `TestCountIosBlueHexR99` cases (lowercase / uppercase
+    - 7 new `TestCountIosBlueHexR99` cases (lowercase / uppercase
       / mixed case / multiple / non-iOS hex / word boundary /
       brand-color-must-not-false-match);
-    + 2 new `TestFindIosBlueHexLocationsR99` cases (line-number
-      + content / empty when no match);
-    + 2 new `TestScanCssFilesReturnsBothFormsR99` cases (4-tuple
+    - 2 new `TestFindIosBlueHexLocationsR99` cases (line-number
+      - content / empty when no match);
+    - 2 new `TestScanCssFilesReturnsBothFormsR99` cases (4-tuple
       shape contract + end-to-end fixture proving hex form
       actually gets scanned + comment-stripped);
-    + 1 new baseline-parity `test_default_hex_baseline_matches
-      _main_css_count` mirroring the rgba decimal one;
-    + adapt `test_default_baseline_matches_main_css_count` to
+    - 1 new baseline-parity `test_default_hex_baseline_matches
+_main_css_count` mirroring the rgba decimal one;
+    - adapt `test_default_baseline_matches_main_css_count` to
       the 4-tuple unpack.
 
     Reverse-injection verified: replace `_IOS_BLUE_HEX_RE` with a
@@ -620,7 +655,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   family still running `BLOCK_COMMENT_RE.sub` first.
 
   Empirical impact on the current tree:
-
   - `static/js/app.js:539-1201` — 509 lines silently blanked by the
     buggy strip pass before STRING_RE ever ran (triggered exactly
     by `app.js:538`, the very line R92's docstring named).
@@ -633,11 +667,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Decision history mirror R97 — token-level lex prototype rejected
   for the same RegExp-literal slash-ambiguity reason that
-  `webview.ts:575`'s `(html.match(/`/g) || [])` exposed in R97;
-  line-first workaround chosen for parity with the three already-
-  fixed siblings, with the `//` inside string literals trade-off
-  documented inline. Empirically `static/js/*.js` plus
-  `packages/vscode/*.js` contain 0 string literals that mix `//`
+  `webview.ts:575`'s `(html.match(/`/g) || [])`exposed in R97;
+line-first workaround chosen for parity with the three already-
+fixed siblings, with the`//`inside string literals trade-off
+documented inline. Empirically`static/js/_.js`plus`packages/vscode/_.js`contain 0 string literals that mix`//`
   with CJK, so the trade-off is academic for the current codebase.
 
   Diagnostic note: the initial R98 impact survey accidentally
@@ -655,7 +688,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   silently corrupt the regex.
 
   Fix:
-
   - `scripts/check_i18n_js_no_cjk.py::_strip_comments` — rewrite to
     line-first via `find("//")` plus a single block-comment regex
     pass, exactly matching the R97 implementation. Inline
@@ -702,7 +734,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   that gets added later) would slip past the gate untouched.
 
   Symptom thread (none visible until R97):
-
   - `python scripts/check_i18n_ts_no_cjk.py` was reporting
     `OK: no hardcoded CJK string literals` every run. True for
     the current tree, but not robust — the gate was passing for
@@ -726,7 +757,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   remained invisible.
 
   Considered fixes:
-
   - **Token-level lex** identifying line/block comments + three
     kinds of string literals in a single pass (so comment
     starters inside strings, and quote chars inside comments,
@@ -735,11 +765,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     URL-with-CJK case (`"https://中文.example.com"`), but
     immediately blew up on `webview.ts:575`
     `(html.match(/`/g) || []).length`: the bare backtick
-    inside a regex literal got mis-identified as a template
-    literal opener, swallowing 30+ subsequent lines and
-    producing 30 false positives. Full JavaScript regex
-    literal recognition needs to solve the slash-ambiguity
-    (`a/b/c` is division **or** a regex depending on context)
+inside a regex literal got mis-identified as a template
+literal opener, swallowing 30+ subsequent lines and
+producing 30 false positives. Full JavaScript regex
+literal recognition needs to solve the slash-ambiguity
+(`a/b/c` is division **or** a regex depending on context)
     and the engineering cost vs. payoff is way out of balance
     for a one-line scanner fix.
   - **Match R92 exactly** (chosen). Walk source line-by-line,
@@ -758,7 +788,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     cheapest safe fix.
 
   Fix:
-
   - `scripts/check_i18n_ts_no_cjk.py::_strip_comments` — rewrite
     to walk lines with `find("//")` first, then a single
     `/\*.*?\*/` block-comment regex pass. Replacement uses
@@ -798,12 +827,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `globalThis === sandbox` aliasing places the api at
   `sandbox.AIIA_I18N`, leaving `sandbox.window.AIIA_I18N` undefined
   and the harness short-circuited to `skipTest("doesn't expose
-  normalizeLang via window")`. So R72-D's "vscode mirror must keep
+normalizeLang via window")`. So R72-D's "vscode mirror must keep
   the same hardening" contract was a green test that never
   actually ran.
 
   Symptom thread:
-
   - `pytest -v -rs tests/test_i18n_normalize_lang_csrf_r72d.py`
     consistently reported the vscode parity case as `SKIPPED`
     with reason _"packages/vscode/i18n.js doesn't expose
@@ -835,7 +863,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   green while the actual contract eroded.
 
   Fix:
-
   1. **Harness**: extend the api lookup to
      `sandbox.window.AIIA_I18N || sandbox.AIIA_I18N`, with a
      comment naming both export shapes and the historical
@@ -844,7 +871,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      smoke (`evil/path → en`) with the same dual-set assertion
      `static/js/i18n.js` already gets:
      `_assert_known_canonical(_I18N_JS_VSCODE)` walks
-     `KNOWN_GOOD` (12 inputs incl. `zh-TW`, `xx-AC`, ` pseudo `)
+     `KNOWN_GOOD` (12 inputs incl. `zh-TW`, `xx-AC`, `pseudo`)
      and `_assert_default_lang(_I18N_JS_VSCODE)` walks
      `UNKNOWN_OR_HOSTILE` (13 inputs incl.
      `../../../etc/passwd`, `javascript:alert(1)`,
@@ -864,7 +891,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   test that now actually runs, no new skips). The two remaining
   skips are intentional (`test_pre_reserved_keys_not_yet_consumed`
   marks an unimplemented Future hook; `test_vsix_artifact_under_
-  fail_budget_if_present` is fixture-driven and only runs when a
+fail_budget_if_present` is fixture-driven and only runs when a
   prebuilt `.vsix` exists in-tree).
 
 - **R95** — fix a TOML-escape silent breakage in
@@ -877,7 +904,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (`tests/test_config_docs_string_default_roundtrip.py`).
 
   Symptom thread:
-
   - `config.toml.default` line 140:
     `prompt_suffix = "\n请积极调用 interactive_feedback 工具"` —
     TOML's basic-string `\n` is an escape sequence, parsed to byte
@@ -909,7 +935,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   backtick code in Markdown preserves backslashes verbatim, so the
   reader sees more backslashes than the canonical TOML actually
   contains. None of the existing parity gates ever cross-checked
-  the *parsed value* of the docs cell against the parsed value in
+  the _parsed value_ of the docs cell against the parsed value in
   `config.toml.default` — `test_config_docs_parity` only checks
   that the **key set** is identical between the table and the
   template; `test_config_docs_range_parity` only validates numeric
@@ -917,16 +943,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   invisible until a human reviewer (R95) caught it by eye.
 
   Fix:
-
   1. **Drop the extra backslash** in both translations:
      `docs/configuration.md` line 207 and
      `docs/configuration.zh-CN.md` line 195 now read
      `` `"\n请积极调用 interactive_feedback 工具"` `` (one backslash
-     + `n`), with an inline note clarifying that the leading `\n`
-     is a TOML-escaped newline that the parser turns back into a
-     real newline at load time. So a user copy-pasting the
-     rendered cell into `config.toml` gets the same parsed bytes
-     as the template default — round-trip identity restored.
+     - `n`), with an inline note clarifying that the leading `\n`
+       is a TOML-escaped newline that the parser turns back into a
+       real newline at load time. So a user copy-pasting the
+       rendered cell into `config.toml` gets the same parsed bytes
+       as the template default — round-trip identity restored.
   2. **Add a TOML-roundtrip parity gate**:
      `tests/test_config_docs_string_default_roundtrip.py` (2 tests,
      both green post-fix). It walks the table rows in both
@@ -959,11 +984,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (`tests/test_config_docs_inline_parity.py`) that scans every
   `docs/**/*.md` (except `configuration{,.zh-CN}.md` and `CHANGELOG.md`,
   both already covered by other gates) for backticked
-  ``<section>.<key>`` references and fails if the pair is not declared
+  `<section>.<key>` references and fails if the pair is not declared
   in `config.toml.default`.
 
   Symptom thread:
-
   - The "Mobile / tablet can't open `ai.local:8080`" recipe in
     `docs/troubleshooting.md` line 106 (and the Chinese mirror at
     `docs/troubleshooting.zh-CN.md` line 96) prescribed:
@@ -990,13 +1014,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `configuration.md` table), but a separate **prose recipe** in
   troubleshooting docs put the key in the wrong section. None of the
   existing parity gates inspected free-form docs for inline
-  ``section.key`` references — that surface had zero CI coverage. So
+  `section.key` references — that surface had zero CI coverage. So
   any docs author writing a quick recipe could land a section-name
   typo and only a real user trying the recipe would notice (and even
   then they'd most likely blame their own setup, not the docs).
 
   Fix:
-
   1. **Correct both translations**:
      `docs/troubleshooting.md` line 106 and
      `docs/troubleshooting.zh-CN.md` line 96 now say
@@ -1007,11 +1030,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   2. **Add a regression gate**:
      `tests/test_config_docs_inline_parity.py` (2 tests, both green
      post-fix). It walks `docs/**/*.md`, finds every backticked
-     ``<section>.<key>`` whose `section` is one of the live top-level
+     `<section>.<key>` whose `section` is one of the live top-level
      TOML sections, and asserts the `key` is declared there. On
-     mismatch the failure message points to the section that *actually*
+     mismatch the failure message points to the section that _actually_
      owns the key — so the next contributor who writes
-     ``feedback.bind_interface`` gets _"`bind_interface` is declared
+     `feedback.bind_interface` gets _"`bind_interface` is declared
      in `[network_security]`, write `network_security.bind_interface`
      instead"_ verbatim, no detective work required. False-positive
      suppression: file-suffix-shaped keys (`web_ui.py`, `server.py`,
@@ -1036,7 +1059,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   declared in `config.toml.default` or the configuration tables.
 
   Symptom thread:
-
   - `docs/troubleshooting.md` line 11 told users _"set
     `AI_INTERVENTION_AGENT_LOG_LEVEL=DEBUG` for the standalone server"_
     when reporting issues. `.github/SUPPORT.md` repeated the same
@@ -1062,7 +1084,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   fires. The env var was never declared anywhere except prose docs.
 
   Fix:
-
   1. **Implement the env var contract**: `enhanced_logging.py::get_log_level_from_config`
      now consults `os.environ["AI_INTERVENTION_AGENT_LOG_LEVEL"]`
      **first**, then falls back to `web_ui.log_level` from config,
@@ -1084,7 +1105,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      so concurrent test workers don't leak env state.
 
   Side effects:
-
   - `docs/api.zh-CN/enhanced_logging.md` regenerated by
     `scripts/generate_docs.py` because the function's Chinese
     docstring expanded to describe the new resolution order.
@@ -1096,13 +1116,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Verified by: `pytest -W error` 3842 passed (was 3837; +5),
   3 skipped, 0 failed, 0 warnings; `ci_gate.py` ALL RED-TEAM CASES
   PASS; `pre-commit run --all-files` 14/14 passed; `pytest tests/test_config_*parity*.py
-  tests/test_config_defaults_consistency.py` 6/6 passed.
+tests/test_config_defaults_consistency.py` 6/6 passed.
 
 - **R92** — repair `_strip_source_comments` line-comment / block-comment
   ordering bug shared by `scripts/check_i18n_orphan_keys.py` and
   `scripts/check_i18n_param_signatures.py`, plus eliminate one silent
   i18n false-positive that the bug had been masking. Symptom thread:
-
   - `uv run python scripts/check_i18n_orphan_keys.py` reported
     `[vscode] 0 orphan key(s) (145 used / 144 total)`. The
     `used > total` skew is **structurally impossible** for a healthy
@@ -1136,7 +1155,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     in the file. So 6 distinct `status.*` keys (and any `t(...)` call
     in those 688 lines) were invisible to the scanner — a textbook
     "scanner-rendered-blind-by-its-own-comment-handling" pre-existing
-    bug that was perfectly cancelled out by the *first* bug
+    bug that was perfectly cancelled out by the _first_ bug
     (`statusBar.unkown` from the comment over-counted, `status.*` from
     swallowed code under-counted, net delta happened to be `+1`,
     looking deceptively like a single missing key).
@@ -1191,8 +1210,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Node v22+ that property became a **read-only accessor**
   (descriptor: `{ get: [fn], set: undefined, configurable: true }`)
   which silently swallows the assignment `globalThis.navigator =
-  { language: 'X' }`. Effect on the project's i18n test corpus:
-
+{ language: 'X' }`. Effect on the project's i18n test corpus:
   - Hard failure: `tests/test_i18n_pseudo_runtime_switch.py::TestPseudoDetectLang::test_navigator_language_still_works`
     expected the harness body to override `navigator.language` to
     `'zh-HK'` so `detectLang()` can collapse the BCP-47 zh tag to
@@ -1217,7 +1235,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Fix: replace every occurrence of `globalThis.navigator = { ... }`
   with `Object.defineProperty(globalThis, 'navigator', { value: { ... },
-  writable: true, configurable: true, enumerable: true })`. The
+writable: true, configurable: true, enumerable: true })`. The
   defineProperty form bypasses the read-only descriptor by
   redefining the property as a **data property** (writable: true)
   whose value is fully under the harness's control. Identical
@@ -1233,7 +1251,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   the read-only flag behind an experimental flag; v22.5 (July 2024)
   promoted it to default-on; v24 (October 2025, current LTS) has
   it permanently. The project's `package-lock.json` pins `"node":
-  ">=18.12"` (no upper bound), so any developer following the
+">=18.12"` (no upper bound), so any developer following the
   documented `fnm default v24.14.0` workflow would hit it; CI's
   `actions/setup-node@v4` defaults to the latest LTS (v24 since
   Oct 2025), but our `vscode:check` mocha smoke uses the running
@@ -1247,7 +1265,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   tail of `icons/icon.svg` path drift left by R76. Two distinct
   failure modes had the same visible symptom ("repo landing page
   shows broken / oversized images"):
-
   1. **`<img style=...>` silently stripped by GitHub markdown
      sanitizer.** All six in-README screenshot tags carried
      `style="height: 320px; margin-right: 12px;"`, which works
@@ -1268,7 +1285,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      when it relocated the icon set from `icons/` (repo root) to
      `src/ai_intervention_agent/icons/`. The Flask `/icons/<filename>`
      route was already correct (it computes `_project_root /
-     "icons"` from `src/ai_intervention_agent/web_ui.py:413`,
+"icons"` from `src/ai_intervention_agent/web_ui.py:413`,
      which **is** the new location, so HTTP serving was unaffected),
      but five doc / docstring / comment references still pointed at
      the pre-R76 root path:
@@ -1451,13 +1468,13 @@ static/js/tri-state-panel.js`. The byte-parity test continued to
 - **R79** — 8 new tests in `tests/test_i18n_backend.py`
   (`TestBackendDetectRequestLang`) covering
   `detect_request_lang`'s three-stage fallback (Accept-Language
-  header → config_manager → DEFAULT_LANG) and the format-error
+  header → config*manager → DEFAULT_LANG) and the format-error
   branch in `get_locale_message`. The
   `test_detect_lang_unknown_accept_language_normalizes_to_default`
   case in particular captures a non-obvious property of the
   dispatch tree: `normalize_lang` always returns a value in
   `SUPPORTED_LANGS`, so unsupported headers like `fr-FR` are
-  mapped to `en` and the config branch is _never_ consulted —
+  mapped to `en` and the config branch is \_never* consulted —
   important to lock down before adding a third locale (e.g.
   `ja`). Coverage of `i18n.py` rises from 75.81% to 98.39%.
 - **R80** — `tests/test_docs_links_no_rot.py` link-rot regression
