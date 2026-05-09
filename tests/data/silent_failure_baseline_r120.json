@@ -1,0 +1,141 @@
+{
+  "_doc": "R120 silent-failure baseline — by-file 审计批准的 `except Exception: pass` 站点。**未在此列表的新 site 会让 tests/test_silent_failure_regression_guard_r120.py 失败**。新增条目须配套 R-series CHANGELOG 解释为什么这个 site 是 intentional silent。批准来源：R107-R110 / R114 / R117 / R118 / R119 audit + R120 baseline 初版（notification_manager stats 站点：外层 `except Exception as e: logger.error(...)` 已提供 observability，同 R118 4th-site 排除模式）。",
+  "_how_to_update": "本地跑 `uv run python scripts/silent_failure_audit.py update-baseline`；CI 不允许调此命令。新增条目必须对应 R-series commit 文档化的 intentional silence。",
+  "approved_sites": [
+    {
+      "file": "src/ai_intervention_agent/config_manager.py",
+      "lineno": 378,
+      "qualified_name": "_is_uvx_mode"
+    },
+    {
+      "file": "src/ai_intervention_agent/config_manager.py",
+      "lineno": 394,
+      "qualified_name": "_is_uvx_mode"
+    },
+    {
+      "file": "src/ai_intervention_agent/config_manager.py",
+      "lineno": 1602,
+      "qualified_name": "_shutdown_global_config_manager"
+    },
+    {
+      "file": "src/ai_intervention_agent/config_manager.py",
+      "lineno": 1617,
+      "qualified_name": "get_config"
+    },
+    {
+      "file": "src/ai_intervention_agent/config_modules/network_security.py",
+      "lineno": 212,
+      "qualified_name": "NetworkSecurityMixin._save_network_security_config_immediate"
+    },
+    {
+      "file": "src/ai_intervention_agent/enhanced_logging.py",
+      "lineno": 603,
+      "qualified_name": "_record_to_ring"
+    },
+    {
+      "file": "src/ai_intervention_agent/i18n.py",
+      "lineno": 113,
+      "qualified_name": "detect_request_lang"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 617,
+      "qualified_name": "NotificationManager._process_event"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 717,
+      "qualified_name": "NotificationManager._process_event"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 748,
+      "qualified_name": "NotificationManager._process_event"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 792,
+      "qualified_name": "NotificationManager._send_single_notification"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 816,
+      "qualified_name": "NotificationManager._send_single_notification"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 872,
+      "qualified_name": "NotificationManager._send_single_notification"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 900,
+      "qualified_name": "NotificationManager._send_single_notification"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 1214,
+      "qualified_name": "NotificationManager.get_status"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 1232,
+      "qualified_name": "NotificationManager.get_status"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 481,
+      "qualified_name": "NotificationManager.send_notification"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 949,
+      "qualified_name": "NotificationManager.shutdown"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 1281,
+      "qualified_name": "_shutdown_global_notification_manager"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_providers.py",
+      "lineno": 527,
+      "qualified_name": "BarkNotificationProvider.send"
+    },
+    {
+      "file": "src/ai_intervention_agent/server_config.py",
+      "lineno": 692,
+      "qualified_name": "_guess_mime_type_from_data"
+    },
+    {
+      "file": "src/ai_intervention_agent/server_feedback.py",
+      "lineno": 1033,
+      "qualified_name": "interactive_feedback"
+    },
+    {
+      "file": "src/ai_intervention_agent/server_feedback.py",
+      "lineno": 543,
+      "qualified_name": "launch_feedback_ui"
+    },
+    {
+      "file": "src/ai_intervention_agent/service_manager.py",
+      "lineno": 538,
+      "qualified_name": "ServiceManager._cleanup_process_resources"
+    },
+    {
+      "file": "src/ai_intervention_agent/state_machine.py",
+      "lineno": 197,
+      "qualified_name": "StateMachine.transition"
+    },
+    {
+      "file": "src/ai_intervention_agent/task_queue_singleton.py",
+      "lineno": 82,
+      "qualified_name": "_shutdown_global_task_queue"
+    },
+    {
+      "file": "src/ai_intervention_agent/web_ui.py",
+      "lineno": 984,
+      "qualified_name": "WebFeedbackUI.setup_routes.get_api_config"
+    }
+  ]
+}

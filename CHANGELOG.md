@@ -9,6 +9,98 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R120** — codify the R107 → R110 → R114 → R117 → R118 → R119
+  silent-failure audit work as a **machine-executable regression
+  guard**. Future `except Exception: pass` patterns introduced
+  anywhere in `src/` will fail CI unless the contributor:
+  (1) documents the rationale in a new R-series CHANGELOG entry;
+  (2) adds an inline `[R-XXX]` source marker; and
+  (3) explicitly regenerates `tests/data/silent_failure_baseline_r120.json`
+  via `uv run python scripts/silent_failure_audit.py update-baseline`.
+
+  Background: R107-R119 audited the project bare-except pattern by
+  hand (~21 → 27 documented intentional silences). Without machine
+  enforcement, the audit decays as contributors flow in/out — the
+  next "small fix" can re-introduce an undocumented silent failure
+  and nobody notices for months. R120 lifts the audit doctrine
+  from "memory" into "compile-time enforcement" so the R-series
+  investment compounds across years.
+
+  **Components**:
+
+  1. **`scripts/silent_failure_audit.py`** (NEW) — AST-based
+     scanner with three CLI commands:
+     - `list` — prints every `except Exception: pass` site in
+       `src/` (file:line + qualified name like
+       `ClassName.method_name`), for human audit.
+     - `check` — diffs current sites against the JSON baseline;
+       exits 1 if any site is added or removed.
+     - `update-baseline` — rewrites the JSON baseline from
+       current scan; intended for human-reviewed PR submission,
+       NOT for CI.
+
+  2. **`tests/data/silent_failure_baseline_r120.json`** (NEW) —
+     the approved baseline of 27 documented intentional silent-
+     failure sites (1 per `(file, qualified_name)` fingerprint
+     so adding a comment / reordering functions doesn't cause
+     false-positive diff). JSON format with `_doc` and
+     `_how_to_update` fields explaining the contract.
+
+  3. **`tests/test_silent_failure_regression_guard_r120.py`**
+     (NEW, 6 tests) — wires the scanner into CI:
+     - `test_baseline_file_exists_and_well_formed` — sanity:
+       baseline JSON loadable, has all required fields.
+     - `test_no_unapproved_silent_failures` — **CORE GUARD**:
+       diff current scan vs baseline; fail with detailed
+       remediation message if drift detected.
+     - `test_baseline_count_is_not_silently_growing` — soft
+       upper bound (≤30 sites); future audit policy violations
+       (a wave of new "intentional" silences) get visible.
+     - `test_scanner_handles_nested_except_handlers` — REGRESSION
+       guard for the R120 scanner's own bug fix: pre-fix the
+       scanner missed `except Exception: pass` nested inside
+       outer `except SomeOtherException:` blocks (5 sites
+       silently undercounted in R119's original 22 → 27 with
+       the fix).
+     - `test_scanner_excludes_pure_docstring_pattern` — REVERSE
+       invariant: scanner must NOT match the literal `except
+       Exception:\npass` string when it appears inside a
+       docstring (canonical false positive that grep would hit;
+       AST sees only real code nodes).
+     - `test_scanner_correctly_distinguishes_alias_form` —
+       defines the scanner's semantic edge: `except Exception:
+       pass` is matched, but `except Exception as e: pass` is
+       NOT (alias form usually carries `logger.error(..., e)`,
+       different anti-pattern not in scope of R120).
+
+  **AST-vs-grep design rationale**: R119's
+  `tests/test_silent_failure_audit_r119.py` already discovered
+  that `grep "except Exception: pass"` produces false positives
+  matching docstring text (R117/R118/R119 themselves include the
+  literal pattern in their explanation comments). R120 standardizes
+  on AST + qualified-name fingerprint to eliminate both grep noise
+  and lineno drift.
+
+  **Test status**:
+  - `tests/test_silent_failure_regression_guard_r120.py`: 6/6 passed
+  - Full suite: 3982 passed, 2 skipped, 0 warnings-as-errors
+  - ruff check: All checks passed (after one auto-fix for in-function
+    `import tempfile` placement)
+
+  **Cumulative R-series silent-failure audit milestone**:
+  - R107-R110: tests-layer silent-skip cleanup
+  - R114: notification-shutdown TOCTOU
+  - R117: notification_providers + notification_manager observability
+  - R118: service_manager observability (3 fixes + 1 documented exclusion)
+  - R119: web_routes / mDNS / network_security observability
+    (4 fixes + 4 documented intentional silences)
+  - **R120: machine enforcement of the audit policy itself**
+
+  Future R-series silent-failure work no longer needs project-wide
+  re-scans — the regression guard surfaces drift automatically.
+
 ### Fixed
 
 - **R119** — extend the R117 / R118 silent-failure observability audit
