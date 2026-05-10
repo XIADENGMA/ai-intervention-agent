@@ -1,6 +1,6 @@
 {
   "name": "ai-intervention-agent",
-  "displayName": "%displayName%",
+  "displayName": "AI Intervention Agent",
   "description": "%description%",
   "version": "1.6.1",
   "icon": "icon.png",
