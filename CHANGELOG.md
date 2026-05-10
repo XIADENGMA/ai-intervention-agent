@@ -179,6 +179,51 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R141** — **(Observability / Ops)** 通知系统 self-test endpoint
+  ``POST /api/system/notifications/test``——R141 之前要验证「线上
+  NotificationManager 配的 Bark / Web / Sound / System provider 真能投
+  得出去」只能：等真实任务触发（慢、不可控）、点设置面板「测试
+  Bark」（``/api/test-bark`` 是 **配置阶段** 验证：参数从 form 传，
+  不能验证当前生效配置）、SSH 上去 ``curl`` notification_manager
+  （运维不友好）。R141 落地一个 **运行阶段** 的 self-test：
+
+  - **路由**：``POST /api/system/notifications/test``，rate-limit
+    ``6 per minute``（防止被滥用做 push spam，但留够运维 / Sentry /
+    Datadog probe 的余地）。
+  - **请求体**（可选）：``{"provider": "all"|"bark"|"web"|"sound"|
+    "system", "title": "...", "message": "..."}``。``provider`` 缺
+    省 / 留空 / ``"all"`` 都触发当前已 enable 的全部 provider；
+    指定单一 provider 只触发该家。``provider`` 大小写不敏感、自动
+    trim。``title`` / ``message`` 可自定义；缺省 ``"System
+    self-test"`` + 带时间戳的 default body。
+  - **响应**：``{success, event_id, providers_dispatched, message}``。
+    ``providers_dispatched`` 是实际触发的 ``NotificationType.value``
+    list（如 ``["bark","web"]``）；调用方结合 ``GET /api/system/
+    health`` 的 ``checks.notification.stats`` 字段查看真实投递结果
+    （send_notification 是异步的，本 endpoint 不等结果）。
+  - **优雅降级**：``config.enabled=false`` / 指定 provider 未 enable
+    / 全部 provider 都关 → 200 + ``success=false`` +
+    ``providers_dispatched=[]`` + 解释 message，不调
+    ``send_notification`` 也不当作 5xx；``send_notification`` 抛异
+    常 → 500 + ``error="dispatch_failed"`` + i18n message（不外泄
+    堆栈）；``notification_manager`` 不可用 → 500 + ``error=
+    "notification_unavailable"``。
+  - **元数据 marker**：``send_notification`` 的 metadata 自动注入
+    ``{r141_self_test: true, provider_param: <raw>}``，下游 provider
+    可识别并区分 self-test 与真实任务通知（例如 Bark 端可在 title
+    上加 ``[selftest]`` tag、或跳过新任务 url 跳转逻辑）。
+  - **rate limit 选 6/min 而非更宽**：与 ``/api/test-bark``
+    （30/min，配置阶段需要快速试错）拉开档位。运维 / 监控 probe
+    实际跑 1/min 已经过度，6/min 留 6× 余量；同时阻断了「批量手
+    动测试 spam push」的脚本攻击面。
+  - **改动**：``src/ai_intervention_agent/web_ui_routes/
+    notification.py``（+~150 行）；``tests/
+    test_notification_self_test_r141.py``（27 cases，覆盖路由注册 /
+    缺省 all / 单 provider / 大小写归一 / 非法 provider 400 /
+    config.enabled=false / 单 provider 未 enable / 全关 / sound_mute
+    排除 / send 抛异常 500 / manager 不可用 500 / 自定义 title&
+    message 透传 / Swagger doc 字段）。
+
 - **R140** — **(UX)** 反馈提交模式切换（Ctrl+Enter vs Enter）——既
   有 ``app.js`` 的 keydown handler 把 ``Ctrl/Cmd+Enter`` 硬编码为提
   交快捷键，纯键盘党 + 短文本反馈用户在 Slack / Discord / Notion /

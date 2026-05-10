@@ -979,3 +979,173 @@ class NotificationRoutesMixin:
                 return jsonify(
                     {"status": "error", "message": msg("notify.updateFailed")}
                 ), 500
+
+        @self.app.route("/api/system/notifications/test", methods=["POST"])
+        @self.limiter.limit("6 per minute")
+        def system_notifications_test() -> ResponseReturnValue:
+            """R141: 系统级通知 self-test endpoint（运维 / 监控用）。
+
+            ``/api/test-bark`` 是 **配置阶段** 的 Bark 验证（参数从 form 传入），
+            而本端点是 **运行阶段** 的 self-test：用既有 NotificationManager 配置
+            触发一条测试通知到指定（或全部已启用的）provider，返回 ``event_id``
+            + 已 dispatch 的 provider 列表，调用方结合 ``GET /api/system/health``
+            的 ``checks.notification.stats`` 字段查看实际投递结果。
+            ---
+            tags:
+              - System
+            consumes:
+              - application/json
+            parameters:
+              - in: body
+                name: body
+                required: false
+                schema:
+                  type: object
+                  properties:
+                    provider:
+                      type: string
+                      enum: [all, bark, web, sound, system]
+                      default: all
+                      description: 指定触发的 provider；省略或 "all" 触发所有已启用的
+                    title:
+                      type: string
+                      description: 自定义标题（默认 "System self-test"）
+                    message:
+                      type: string
+                      description: 自定义正文（默认携带时间戳）
+            responses:
+              200:
+                description: 测试通知已 dispatch
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    event_id:
+                      type: string
+                      description: NotificationEvent ID；为空字符串表示无 provider 被触发
+                    providers_dispatched:
+                      type: array
+                      items:
+                        type: string
+                      description: 实际触发的 provider value 列表（如 ["bark","web"]）
+                    message:
+                      type: string
+              400:
+                description: provider 参数非法
+              500:
+                description: 通知系统不可用
+            """
+            _ensure_notification_loaded()
+            if notification_manager is None:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "notification_unavailable",
+                        "message": msg("notify.systemUnavailable"),
+                    }
+                ), 500
+
+            # 用 silent=True：调用方不带 Content-Type 也允许走默认 provider=all
+            data = request.get_json(silent=True) or {}
+            provider_raw = str(data.get("provider", "all") or "all").strip().lower()
+            valid_providers = {"all", "bark", "web", "sound", "system"}
+            if provider_raw not in valid_providers:
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "invalid_provider",
+                        "message": (
+                            f"provider 必须是 {sorted(valid_providers)} 之一，"
+                            f"当前传入 {provider_raw!r}"
+                        ),
+                    }
+                ), 400
+
+            cfg = notification_manager.config
+            enabled_map = {
+                "bark": (NotificationType.BARK, bool(cfg.bark_enabled)),
+                "web": (NotificationType.WEB, bool(cfg.web_enabled)),
+                "sound": (
+                    NotificationType.SOUND,
+                    bool(cfg.sound_enabled and not cfg.sound_mute),
+                ),
+                "system": (NotificationType.SYSTEM, bool(cfg.system_enabled)),
+            }
+
+            if provider_raw == "all":
+                types = [ntype for ntype, ok in enabled_map.values() if ok]
+            else:
+                ntype, ok = enabled_map[provider_raw]
+                types = [ntype] if ok else []
+
+            providers_dispatched = [t.value for t in types]
+
+            if not cfg.enabled:
+                return jsonify(
+                    {
+                        "success": False,
+                        "event_id": "",
+                        "providers_dispatched": [],
+                        "message": "通知功能在 config 中被禁用（notification.enabled=false）",
+                    }
+                )
+
+            if not types:
+                return jsonify(
+                    {
+                        "success": False,
+                        "event_id": "",
+                        "providers_dispatched": [],
+                        "message": (
+                            "没有可触发的 provider；请检查"
+                            " notification.{bark|web|sound|system}_enabled 配置"
+                        ),
+                    }
+                )
+
+            title = (
+                str(data.get("title") or "System self-test").strip()
+                or "System self-test"
+            )
+            default_msg = (
+                f"R141 self-test triggered at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                f" via /api/system/notifications/test"
+            )
+            message = str(data.get("message") or default_msg).strip() or default_msg
+
+            try:
+                event_id = notification_manager.send_notification(
+                    title=title,
+                    message=message,
+                    types=types,
+                    metadata={"r141_self_test": True, "provider_param": provider_raw},
+                    priority="normal",
+                )
+            except Exception as e:
+                logger.error(f"R141 self-test 触发失败: {e}", exc_info=True)
+                return jsonify(
+                    {
+                        "success": False,
+                        "error": "dispatch_failed",
+                        "message": msg("notify.testFailed"),
+                    }
+                ), 500
+
+            logger.info(
+                "R141 self-test event_id=%s provider=%s types=%s",
+                event_id,
+                provider_raw,
+                providers_dispatched,
+            )
+            return jsonify(
+                {
+                    "success": True,
+                    "event_id": event_id or "",
+                    "providers_dispatched": providers_dispatched,
+                    "message": (
+                        f"已触发 self-test 到 {len(providers_dispatched)} 个 provider；"
+                        f"投递结果请查看 /api/system/health 的 checks.notification 字段"
+                    ),
+                }
+            )
