@@ -179,6 +179,67 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R125c** — **(feature)** `GET /api/tasks/export` 增加
+  `?include_images={true|false|1|0|yes|no}` query 参数，让用户在
+  「需要 base64 图像作完整快照」与「只要文本、要小文件」两种典型
+  备份场景之间显式切换。
+
+  **背景**：R125 上线后第一个被反复提到的痛点是「JSON 文件太大」。
+  实测一个 4 张截图 + 5 个 task 的工作集，base64 化的
+  `result.images[].data` 把导出膨胀到 8-12MB，导致：
+
+  1. 浏览器从「保存对话框」到落盘有 1-2 秒可感知卡顿；
+  2. CI / 备份脚本周期性轮询 `/api/tasks/export` 时无谓占用磁盘；
+  3. 把导出贴进 chat / Slack / 邮件附件时频繁触发大小限制。
+
+  **设计决定**：
+
+  1. **query 参数而非新端点** — 不引入 `/api/tasks/export-light`
+     这种 path 二叉化，保持 REST 路由表收敛；语义只是「同一份快照
+     的不同投影」，符合 query 参数定位。
+  2. **默认 `true`** — 不破坏 R125 既有 curl / 自动化用户的字节级
+     输出，不需要改 client 代码就能继续拿到完整 base64。
+  3. **解析宽松、未识别值退回 default** — `_parse_bool_query`
+     接受 `true/1/yes/on` 与 `false/0/no/off`，写 `include_images=truee`
+     时不会触发 500，符合 query 参数 best-effort 习惯（与
+     `configparser.BOOLEAN_STATES` 一致）。
+  4. **保留图片元数据 + 顶层标记** — `include_images=false` 时
+     仅剥掉 `data` 字段，保留 `filename / size / content_type /
+     mime_type / mimeType`，并加 `images_stripped: true`，让消费方
+     一眼分辨「这次导出已经故意剥图」而不是「上传时就没图」。
+  5. **Markdown 模式同步生效** — Markdown 模式把 result 序列化成
+     JSON 块，复用同一份 `_strip_images_from_result`，避免「JSON
+     瘦了，Markdown 还胖」的不一致。
+  6. **顶层 payload 加 `include_images` 字段** — 让自动化下游能
+     从导出文件本身判断「这是 light 还是 full 快照」，避免靠文件
+     名 / mtime 推断的脆弱合同。
+
+  **实现**：
+
+  - `src/ai_intervention_agent/web_ui_routes/task.py` 新增 module-
+    级 `_TRUTHY_QUERY` / `_FALSY_QUERY` / `_parse_bool_query` /
+    `_strip_images_from_result` 工具，纯函数无副作用，便于直接
+    在测试里覆盖。
+  - `export_tasks()` 把 query 参数解析、result 净化、Swagger
+    parameter 描述全部插入到 R125 已有路径上，未碰原有 happy path
+    序列化逻辑；JSON 顶层 payload 增加 `include_images` 镜像值。
+  - Swagger spec 在 `parameters` 里登记 `include_images` enum，
+    `flasgger` 渲染 `/apidocs/` 时立刻可见。
+
+  **测试**（`tests/test_tasks_export_include_images_r125c.py`，14
+  例）：
+
+  - **Helper 单元**：`_parse_bool_query` 真值/假值/未识别/None
+    分支；`_strip_images_from_result` 在 `include_images=True` /
+    `result=None` / 无 `images` 字段 / 异常元素混入 / 多张图共存
+    场景下的预期行为。
+  - **HTTP 集成**：用真实 `WebFeedbackUI` + `complete_task` API
+    塞入带图任务，分别请求 `?include_images=true` / `=false`，
+    断言 `tasks[*].result.images[*]` 是否含 `data` / 是否带
+    `images_stripped` 标记 / 顶层 `include_images` 镜像正确。
+  - **Query 解析鲁棒性**：truthy / falsy alias 全集 + 拼错值
+    退回默认（`include_images=truee` 不 500）。
+
 - **R131** — **(feature)** Quick Phrases 面板补齐「编辑既有 phrase」+
   「光标位置插入」两块 R130 v1 的 UX 缺口（Code Review #2 标注的 P1
   follow-up）。

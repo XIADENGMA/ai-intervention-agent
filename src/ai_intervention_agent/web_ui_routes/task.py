@@ -62,6 +62,63 @@ class SSEBusStatsSnapshot(TypedDict):
 _SSE_DISCONNECT_SENTINEL = object()
 
 
+# R125c — 后端 export ``?include_images=...`` 解析工具。
+# truthy / falsy 同时接受常见英文 / 数值 / yes/no 形式（保持与
+# ``configparser`` BOOLEAN_STATES + Flask 生态社区惯例一致）；
+# 任何不在表里的字符串退回 ``default``，让用户拼错 (e.g.
+# ``include_images=truee``) 时不会触发 500，体感符合 query 参数的
+# best-effort 习惯。
+_TRUTHY_QUERY: frozenset[str] = frozenset({"true", "1", "yes", "on"})
+_FALSY_QUERY: frozenset[str] = frozenset({"false", "0", "no", "off"})
+
+
+def _parse_bool_query(raw: str | None, *, default: bool) -> bool:
+    """把 query 参数字符串解析成 bool，未识别值返回 ``default``。"""
+    if raw is None:
+        return default
+    norm = raw.strip().lower()
+    if norm in _TRUTHY_QUERY:
+        return True
+    if norm in _FALSY_QUERY:
+        return False
+    return default
+
+
+def _strip_images_from_result(
+    result: dict[str, Any] | None, include_images: bool
+) -> dict[str, Any] | None:
+    """根据 ``include_images`` 决定是否剥掉 ``result.images[].data``。
+
+    - ``include_images = True``（R125 默认）→ 直接返回原 ``result``，
+      零拷贝零开销；
+    - ``include_images = False`` → 浅拷贝 ``result``，把 ``images`` 数组
+      内每张图的 ``data`` 字段（base64 体）剔除，仅保留 ``filename`` /
+      ``size`` / ``content_type`` / ``mime_type`` / ``mimeType`` 这些元
+      数据，并在结果顶层加 ``images_stripped: true`` 让消费方一眼分辨
+      "这次导出已经故意剥过图"，避免下游误以为这就是用户原始 result。
+    - ``result`` 为 ``None`` / 没有 ``images`` 字段 / ``images`` 不是 list
+      → no-op，保留原样不冒"非典型 result 造成 KeyError"风险。
+    """
+    if include_images:
+        return result
+    if not isinstance(result, dict):
+        return result
+    images = result.get("images")
+    if not isinstance(images, list):
+        return result
+    stripped_images: list[dict[str, Any]] = []
+    for img in images:
+        if not isinstance(img, dict):
+            stripped_images.append(img)  # 异常体保持透传
+            continue
+        meta = {k: v for k, v in img.items() if k != "data"}
+        stripped_images.append(meta)
+    sanitized: dict[str, Any] = dict(result)
+    sanitized["images"] = stripped_images
+    sanitized["images_stripped"] = True
+    return sanitized
+
+
 class _SSEBus:
     """线程安全的 SSE 事件总线：TaskQueue 回调 → 所有已连接的 EventSource 客户端
 
@@ -734,6 +791,12 @@ class TaskRoutesMixin:
                 enum: [json, markdown]
                 default: json
                 description: 导出格式
+              - name: include_images
+                in: query
+                type: string
+                enum: ["true", "false", "1", "0", "yes", "no"]
+                default: "true"
+                description: 是否在 result.images 字段保留 base64 图像 data
             responses:
               200:
                 description: 任务快照文件（带 Content-Disposition 触发下载）
@@ -777,6 +840,18 @@ class TaskRoutesMixin:
                         400,
                     )
 
+                # R125c: ?include_images={true,false,1,0,yes,no} 控制是否在
+                # ``result.images`` 字段保留 base64 ``data`` 体。背景：单张
+                # 图片 base64 化后约 1.33x 原字节，多个 task 各带几张图常导
+                # 致 JSON 导出膨胀到几 MB。``include_images=false`` 时仅保
+                # 留每张图的 ``filename / size / content_type / mime_type``
+                # 元数据 + 顶层 ``images_stripped: true`` 标记，让"轻量
+                # 备份 / pure 文本同步"场景下载量降到 KB 级。默认 ``true``
+                # 与 R125 一致，向后兼容既有 curl 用户。
+                include_images = _parse_bool_query(
+                    request.args.get("include_images"), default=True
+                )
+
                 task_queue = get_task_queue()
                 tasks, stats = task_queue.get_all_tasks_with_stats()
                 server_time = time.time()
@@ -787,6 +862,9 @@ class TaskRoutesMixin:
                     remaining = task.get_remaining_time(now_monotonic=now_monotonic)
                     completed_at_iso = (
                         task.completed_at.isoformat() if task.completed_at else None
+                    )
+                    sanitized_result = _strip_images_from_result(
+                        task.result, include_images
                     )
                     exported.append(
                         {
@@ -802,7 +880,7 @@ class TaskRoutesMixin:
                             "deadline": server_time + remaining,
                             "created_at": task.created_at.isoformat(),
                             "completed_at": completed_at_iso,
-                            "result": task.result,
+                            "result": sanitized_result,
                         }
                     )
 
@@ -818,6 +896,7 @@ class TaskRoutesMixin:
                         "exported_at": _dt.now(UTC).isoformat(),
                         "server_time": server_time,
                         "stats": stats,
+                        "include_images": include_images,
                         "tasks": exported,
                     }
                     body = json.dumps(payload, ensure_ascii=False, indent=2)
