@@ -1449,6 +1449,51 @@
                     >
                   </button>
                 </div>
+                <!-- R146 — System self-test button (POST /api/system/notifications/test) -->
+                <div class="setting-item">
+                  <button
+                    class="btn btn-secondary"
+                    id="system-notification-test-btn"
+                  >
+                    <svg
+                      class="btn-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                    </svg>
+                    <span data-i18n="settings.testSystemBtn"
+                      >Send system self-test</span
+                    >
+                  </button>
+                  <div
+                    id="system-notification-test-status"
+                    class="setting-status-line"
+                    role="status"
+                    aria-live="polite"
+                    style="
+                      margin-top: 0.4rem;
+                      font-size: 0.82rem;
+                      color: var(--text-secondary);
+                      min-height: 1.2em;
+                    "
+                  ></div>
+                  <div
+                    style="
+                      margin-top: 0.3rem;
+                      color: var(--text-secondary);
+                      font-size: 0.78rem;
+                    "
+                    data-i18n="settings.testSystemHint"
+                  >
+                    Triggers a real notification through every enabled
+                    provider; cross-check delivery via /api/system/health.
+                  </div>
+                </div>
                 <div class="setting-item">
                   <button class="btn btn-secondary" id="reset-settings-btn">
                     <svg
@@ -1961,6 +2006,13 @@
     <script
       defer
       src="/static/js/keyboard_shortcut_help.js?v={{ keyboard_shortcut_help_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <!-- R146 — Settings UI button: trigger /api/system/notifications/test -->
+    <script
+      defer
+      src="/static/js/notification_test_button.js?v={{ notification_test_button_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

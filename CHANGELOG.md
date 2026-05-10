@@ -179,6 +179,104 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R146** — **(UX / Ops self-service)** Settings 面板 **Test functions**
+  分组新增 ``Send system self-test`` 按钮，把 R141-R145 整套通知可观测
+  能力从 ``curl`` only 升级为「点一下就能验证」。
+
+  **背景与缺口**：R141 把 ``POST /api/system/notifications/test`` 落成
+  endpoint；R142 / R143 / R145 在 ``GET /api/system/health`` 把 per-
+  provider stats / ``last_error_class`` / ``success_streak`` /
+  ``failure_streak`` 全部铺开。直到 R145 为止，唯一触发途径还是
+  ``curl /api/system/notifications/test``——运维 / Datadog dashboard
+  OK，但**用户改完 Bark / desktop / sound 配置后想"试一下"得开终端**，
+  体验断层。R146 闭口：在 settings 面板 Test functions 子组里加一个
+  ``Send system self-test`` 按钮，点击 → POST endpoint → 在按钮下方的
+  ``setting-status-line`` 实时显示结果。
+
+  **响应矩阵覆盖 7 路径**：
+
+  - 200 + ``success=true`` → ``"Triggered N provider(s): bark, web
+    (event_id=...)"``（绿色，``--success-500``）
+  - 200 + ``success=false`` + 含 ``disabled``/``enabled=false``/
+    ``notification.`` 关键字 → ``Notifications disabled in config:
+    {{reason}}``（橙色，``--warning-500``）
+  - 200 + ``success=false`` + 其他 → ``No providers enabled —
+    check notification.bark/web/sound/system_enabled``（橙色）
+  - 429 → ``Too many self-tests — please wait a minute``（橙色，
+    服务器 6/min Flask-Limiter 限流的客户端友好版本）
+  - 4xx 其他 → ``Self-test failed: {{error}}``（红色）
+  - 5xx + ``error=notification_unavailable`` → ``Notification system
+    unavailable``（红色）
+  - 5xx 其他 + 网络错误 / AbortError → ``Network error / Self-test
+    failed: {{error}}``（红色）
+
+  **i18n 路径**：所有 user-facing 字符串走 ``window.AIIA_I18N.t(key,
+  params)``——**`_classifyResponse` 内部每个分支都用字面量 key**
+  调用 ``_t(...)``，让 ``test_runtime_behavior.py::TestI18nDeadKeys`` 静
+  态分析能 grep 到（动态 key 派发会让所有 key 静默掉进 dead-key 黑
+  洞）。Provider 列表用 ``i18n.formatList`` 渲染，自动适配 locale 的
+  「and / 、」分隔符。
+
+  **PII / 安全**：
+
+  - 服务端 message 截断 200 字符；event_id 截断 64 字符——避免
+    runaway error string 撕破 status-line 布局。
+  - 只读 endpoint，不修改任何 config；6/min 限流来自 R141。
+  - 客户端 600 ms cooldown（``data-last-click-ts`` 时间戳挂在 DOM
+    上，节点 re-mount 也保留）+ ``button.disabled`` 双重防 double-click。
+  - 60 s ``AbortController`` 硬超时，避免 hung connection 永久禁用按钮。
+
+  **idempotent**：
+
+  - ``init`` 二次调用走 ``data-r146-bound`` sentinel attribute
+    short-circuit；handler 永远只挂一次。
+  - ``triggerSelfTest`` 进入时检查 ``button.disabled`` +
+    ``_isOnCooldown(button)``，flight 中的请求不会被打断。
+  - ``finally`` 块强制 ``button.disabled = false``——网络异常 /
+    AbortError / 服务器 500 后按钮一定能重新点击，永远不会卡死。
+
+  **改动**：
+
+  - ``src/ai_intervention_agent/static/js/notification_test_button.js``
+    （新增，~270 行）：常量 / ``_t`` / ``_formatProviderList`` /
+    ``_setStatus`` / ``_classifyResponse`` / ``_isOnCooldown`` /
+    ``_stampClick`` / ``triggerSelfTest`` / ``init``；window export
+    ``AIIA_NOTIFICATION_TEST_BUTTON``。
+  - ``src/ai_intervention_agent/templates/web_ui.html``：Test
+    functions 子组里 desktop notification 按钮之后插入 R146 按钮 +
+    ``aria-live="polite"`` 状态行 + i18n hint；``<script>`` 标签带
+    ``defer`` + ``nonce`` + ``?v={{ notification_test_button_version
+    }}``。
+  - ``src/ai_intervention_agent/web_ui.py``：
+    ``_get_template_context`` 加 ``notification_test_button_version``
+    走 ``_compute_file_version``。
+  - ``src/ai_intervention_agent/static/css/main.css``（+33 行）：
+    ``.setting-status-line`` 类系列（pending / success / warning /
+    error）颜色用 ``--success-500`` / ``--warning-500`` /
+    ``--error-500`` 项目语义 token，自动跟随 light/dark 主题。
+  - ``src/ai_intervention_agent/static/locales/{zh-CN,en}.json``：
+    10 个 keys（``settings.testSystemBtn`` / ``testSystemHint`` /
+    ``systemTestSending`` / ``systemTestSuccess`` /
+    ``systemTestNoProviders`` / ``systemTestDisabled`` /
+    ``systemTestRateLimited`` / ``systemTestUnavailable`` /
+    ``systemTestNetworkError`` / ``systemTestFailed``）；
+    ``systemTestSuccess`` 用 ICU plural（``{count, plural, one {#
+    provider} other {# providers}}``）保证英文不出 ``1 providers``。
+  - ``src/ai_intervention_agent/static/locales/_pseudo/pseudo.json``：
+    自动重新生成。
+  - 静态资源：JS minify 产物 + br/gz 预压缩自动重生。
+  - ``tests/test_notification_test_button_r146.py``（新增，54 cases）：
+    JS 文件 / 常量 / API surface / fetch 路径（POST + Content-Type
+    + body + credentials + AbortController + finally
+    button.disabled）/ classifyResponse 完整状态机矩阵 / HTML 集成 /
+    template_context 注入 / i18n 双 locale + pseudo / CSS 4 状态色
+    用 token / idempotent + cooldown 守卫。
+
+  **Verification**: 54 R146 tests passed + R140-R145 系列 242 个相关
+  测试全部回归 clean；``ci_gate.py`` exit 0；ruff / ty / dead-key /
+  param-signature linter 全绿。Cycle-6 进度 5/5（R142-R143-R145-R144-
+  R146 收口；R141 endpoint 真正 user-reachable）。
+
 - **R145** — **(Observability)** R142 ``per_provider`` 子结构再扩 2 个互
   斥连续计数字段：``success_streak`` / ``failure_streak``——把"上一次
   事件后到现在为止，这家 provider 连续成功 / 连续失败了多少次"显式

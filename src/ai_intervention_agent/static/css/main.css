@@ -8648,3 +8648,36 @@ code,
     font-size: 0.78rem;
   }
 }
+
+/* ========================================================================
+   R146 — Settings status line (system self-test feedback)
+   ----------------------------------------------------------------------
+   设置面板里挂在按钮下方的一行实时状态文字（"Sending…" / "Triggered
+   N providers" / "Network error" 等）。颜色直接复用项目的语义色 token
+   (--success-500 / --warning-500 / --error-500)，自动跟随 light/dark
+   主题切换。无 transition：状态切换需要立即可见，避免视觉延迟造成
+   "我点了按钮但没反应" 的错觉。
+   ======================================================================== */
+.setting-status-line {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.setting-status-line.setting-status-pending {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.setting-status-line.setting-status-success {
+  color: var(--success-500);
+}
+
+.setting-status-line.setting-status-warning {
+  color: var(--warning-500);
+}
+
+.setting-status-line.setting-status-error {
+  color: var(--error-500);
+}

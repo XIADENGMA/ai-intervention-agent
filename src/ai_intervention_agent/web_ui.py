@@ -1329,6 +1329,10 @@ class WebFeedbackUI(
             "keyboard_shortcut_help_version": _compute_file_version(
                 str(static_dir / "js" / "keyboard_shortcut_help.js")
             ),
+            # R146: notification self-test button 模块版本号
+            "notification_test_button_version": _compute_file_version(
+                str(static_dir / "js" / "notification_test_button.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 
