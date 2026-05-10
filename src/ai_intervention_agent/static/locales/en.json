@@ -97,6 +97,7 @@
     "systemTestFailed": "Self-test failed: {{error}}",
     "systemTestProbing": "Checking delivery via /api/system/health…",
     "systemTestProbeProviderSuccess": "{{provider}}: delivered ({{age_seconds}}s ago, streak={{streak}})",
+    "systemTestProbeProviderSuccessNoAge": "{{provider}}: delivered (streak={{streak}})",
     "systemTestProbeProviderFailure": "{{provider}}: failed ({{error_class}}, streak={{streak}})",
     "systemTestProbeProviderStale": "{{provider}}: stats stale — try again",
     "systemTestProbeProviderSkipped": "{{provider}}: skipped ({{reason}})",

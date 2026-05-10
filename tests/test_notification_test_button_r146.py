@@ -109,17 +109,15 @@ class TestJsFileExistsAndSize(unittest.TestCase):
         )
 
     def test_js_file_line_count_in_envelope(self) -> None:
-        # R146 落地时 ≈ 270 行；R147 在同一模块内追加 health-probe
-        # follow-up（_classifyProviderVerdict / _renderProviderVerdict /
-        # _probeHealthForProviders / _runProbe / _setProbe + 注释 + 双
-        # locale + module export 增量），整体上限放宽到 700 行；下限
-        # 提到 400 防误删 R147 部分。
+        # R146 落地 ≈ 270 行；R147 增 ~200 行 health-probe；R148 增
+        # ~150 行 baseline-delta 决策树。整体上限放到 900 行。
+        # 下限 400 防止 R147 / R148 部分被整段误删后还过测试。
         line_count = len(_read_js().splitlines())
         self.assertGreaterEqual(
-            line_count, 400, "notification_test_button.js 过短，疑似 R147 缺失"
+            line_count, 400, "notification_test_button.js 过短，疑似 R147/R148 缺失"
         )
         self.assertLessEqual(
-            line_count, 700, "notification_test_button.js 超出预期，疑似膨胀"
+            line_count, 900, "notification_test_button.js 超出预期，疑似膨胀"
         )
 
 

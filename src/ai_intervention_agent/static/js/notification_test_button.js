@@ -80,7 +80,27 @@
   // likely missed (or got rejected) and the stats we're showing
   // belong to an older event. Empirically tuned: PROBE_DELAY_MS +
   // 5s headroom for slow networks / paused tabs.
+  //
+  // R148: the threshold is now only the **fallback** (when the
+  // baseline snapshot is null / unreachable). With a baseline
+  // available, classification is delta-based — see
+  // ``_classifyProviderVerdict`` for the exact contract.
   var PROBE_STALE_THRESHOLD_S = 10;
+  // R148: tight timeout for the **baseline** snapshot taken right
+  // before the dispatch. We must not stall the user-visible
+  // dispatch action by more than ~1 second waiting for the
+  // baseline; on timeout we fall back to age-only classification
+  // (R147 behaviour) without breaking anything.
+  var BASELINE_TIMEOUT_MS = 1 * 1000;
+  // R148: provider keys the server's per_provider dict is keyed on
+  // — see ``_HEALTH_PER_PROVIDER_KEYS`` in
+  // ``web_ui_routes/system.py``. We baseline **all four** because
+  // we don't know yet which subset the dispatch will actually
+  // touch (server inspects config at dispatch time). Locking this
+  // tuple in source means a future server-side rename (e.g.
+  // adding a new "discord" provider) will fail loud here rather
+  // than silently degrading every probe to "stale".
+  var ALL_KNOWN_PROVIDERS = ["bark", "web", "sound", "system"];
 
   function _t(key, params) {
     try {
@@ -203,9 +223,10 @@
     };
   }
 
-  // R147: derive a per-provider verdict for the line we render
+  // R147 / R148: derive a per-provider verdict for the line we render
   // under the main status text.  Pure function over the per-provider
-  // stats blob (R142 / R143 / R145 contract).
+  // stats blob (R142 / R143 / R145 contract) plus an **optional**
+  // R148 baseline snapshot.
   //
   // The per-provider stats actually shipped by R142 are:
   //   - attempts / success / failure (counters)
@@ -214,20 +235,37 @@
   //   - last_error_present / last_error_class (R143)
   //   - success_streak / failure_streak (R145)
   //
-  // We pick the **most recent** of {success_age, failure_age} as the
-  // "last event age", because what the user pressed the button for
-  // was "did anything fire just now?" — not specifically a success.
+  // R148 — baseline-delta primary path:
   //
-  // Decision tree (verdict.kind):
-  //   - null stats / last_error_class === "not_registered"  → "skipped"
-  //   - both ages null / freshest age > stale threshold     → "stale"
-  //   - last event was a failure (failure_age <= success_age, OR
-  //     success_age is null)                                → "failure"
-  //     with streak = failure_streak, errorClass = last_error_class
-  //   - last event was a success (the converse)             → "success"
-  //     with streak = success_streak
-  //   - both ages 0 / both streaks 0 (defensive)            → "unknown"
-  function _classifyProviderVerdict(stats) {
+  // When ``baselineStats`` is provided (snapshot taken *before* the
+  // dispatch), we **delta-compare** the streak counters between
+  // baseline and current.  This rules out the "false-success" race
+  // where a recent (but unrelated) successful click wrote
+  // last_success_at within the stale threshold but the current
+  // dispatch hasn't actually completed yet:
+  //
+  //   - current.success_streak > baseline.success_streak  → "success"
+  //   - current.failure_streak > baseline.failure_streak  → "failure"
+  //   - neither delta (and last_error_class !== not_registered) → "stale"
+  //
+  // Both streaks are reset on each event (success → fail_streak=0;
+  // failure → succ_streak=0), so a single dispatch always increments
+  // exactly one counter.  Comparing ``current > baseline`` is robust to
+  // the streak being non-monotonic (success then failure resets succ
+  // to 0 in the meantime — but baseline was *also* 0 then, so there's
+  // no false positive).
+  //
+  // R147 — age-only fallback path:
+  //
+  // When ``baselineStats === null`` (baseline fetch failed / hadn't
+  // run yet / null path), we fall back to the original R147 logic:
+  // pick freshest of {success_age, failure_age}; > 10s → stale, < 10s
+  // + last-was-failure → failure, < 10s + last-was-success → success.
+  //
+  // Common branches (regardless of baseline availability):
+  //   - null stats / last_error_class === "not_registered" → "skipped"
+  //   - all defensive fallthroughs                         → "unknown"
+  function _classifyProviderVerdict(stats, baselineStats) {
     if (!stats || typeof stats !== "object") {
       return { kind: "skipped", reason: "no_stats" };
     }
@@ -241,7 +279,43 @@
       typeof sa === "number" && isFinite(sa) && sa >= 0 ? sa : null;
     var failureAge =
       typeof fa === "number" && isFinite(fa) && fa >= 0 ? fa : null;
-    // freshest = whichever is smaller (most recent)
+    var failureStreak = parseInt(stats.failure_streak, 10);
+    var successStreak = parseInt(stats.success_streak, 10);
+    if (!isFinite(failureStreak)) failureStreak = 0;
+    if (!isFinite(successStreak)) successStreak = 0;
+
+    // R148 — baseline-delta primary path
+    if (baselineStats && typeof baselineStats === "object") {
+      var bSucc = parseInt(baselineStats.success_streak, 10);
+      var bFail = parseInt(baselineStats.failure_streak, 10);
+      if (!isFinite(bSucc)) bSucc = 0;
+      if (!isFinite(bFail)) bFail = 0;
+      // last_*_age_seconds also flip a tick on each event; for "fresh"
+      // age we pick min(success, failure) post-dispatch.
+      var deltaSucc = successStreak - bSucc;
+      var deltaFail = failureStreak - bFail;
+      if (deltaSucc > 0) {
+        return {
+          kind: "success",
+          age: successAge,
+          streak: successStreak,
+          source: "delta",
+        };
+      }
+      if (deltaFail > 0) {
+        return {
+          kind: "failure",
+          age: failureAge,
+          streak: failureStreak,
+          errorClass: lastErrorClass || "unknown",
+          source: "delta",
+        };
+      }
+      // Neither streak advanced → dispatch hasn't landed (yet).
+      return { kind: "stale", age: null, source: "delta" };
+    }
+
+    // R147 — age-only fallback path (no baseline available)
     var freshest = null;
     var lastWas = null; // "success" | "failure"
     if (successAge !== null && failureAge !== null) {
@@ -260,39 +334,56 @@
       lastWas = "failure";
     }
     if (freshest === null || freshest > PROBE_STALE_THRESHOLD_S) {
-      return { kind: "stale", age: freshest };
+      return { kind: "stale", age: freshest, source: "age" };
     }
-    var failureStreak = parseInt(stats.failure_streak, 10);
-    var successStreak = parseInt(stats.success_streak, 10);
     if (lastWas === "failure") {
       return {
         kind: "failure",
         age: freshest,
-        streak: isFinite(failureStreak) ? failureStreak : 0,
+        streak: failureStreak,
         errorClass: lastErrorClass || "unknown",
+        source: "age",
       };
     }
     if (lastWas === "success") {
       return {
         kind: "success",
         age: freshest,
-        streak: isFinite(successStreak) ? successStreak : 0,
+        streak: successStreak,
+        source: "age",
       };
     }
-    return { kind: "unknown", age: freshest };
+    return { kind: "unknown", age: freshest, source: "age" };
   }
 
-  // R147: render a per-provider verdict tuple to a localised string
-  // fragment.  Each verdict gets its own i18n key so translators can
-  // reorder words / use locale-appropriate punctuation.
+  // R147 / R148: render a per-provider verdict tuple to a localised
+  // string fragment.  Each verdict gets its own i18n key so translators
+  // can reorder words / use locale-appropriate punctuation.
+  //
+  // R148 wrinkle: the baseline-delta path can produce verdicts where
+  // ``verdict.age`` is null (we know "the streak advanced" but not
+  // exactly how recently — the new last_*_at is fresh by definition,
+  // but we don't read that field separately).  When age is null we
+  // pick a substitute message that simply says "delivered" / "failed"
+  // without the seconds suffix, rather than rendering the
+  // word "null" into the localised string.  This keeps the i18n
+  // contract intact and the screen-reader announcement clean.
   function _renderProviderVerdict(provider, verdict) {
     if (!verdict) return null;
     var providerLabel = String(provider).slice(0, 32);
     if (verdict.kind === "success") {
-      return _t("settings.systemTestProbeProviderSuccess", {
+      var hasSuccessAge =
+        typeof verdict.age === "number" && isFinite(verdict.age);
+      if (hasSuccessAge) {
+        return _t("settings.systemTestProbeProviderSuccess", {
+          provider: providerLabel,
+          streak: verdict.streak,
+          age_seconds: verdict.age.toFixed(1),
+        });
+      }
+      return _t("settings.systemTestProbeProviderSuccessNoAge", {
         provider: providerLabel,
         streak: verdict.streak,
-        age_seconds: verdict.age.toFixed(1),
       });
     }
     if (verdict.kind === "failure") {
@@ -318,13 +409,22 @@
     });
   }
 
-  // R147: fetch /api/system/health and project per-provider stats
-  // for the providers we just dispatched. Returns null on any
-  // transport / parsing failure (caller treats null as "skip the
-  // probe line" — main success message stays visible, no scary
-  // error overlap).
-  async function _probeHealthForProviders(providers) {
+  // R147 / R148 shared helper: GET /api/system/health, project
+  // per-provider stats for the requested provider keys.  Returns
+  // null on any transport / parsing failure so callers treat the
+  // probe line as silent fallback (main message stays visible).
+  //
+  // R148: ``timeoutMs`` argument lets callers tune the per-call
+  // budget — the post-dispatch probe still uses PROBE_TIMEOUT_MS
+  // (5s, gives slow Bark room), but the **baseline** snapshot
+  // taken *before* dispatch uses BASELINE_TIMEOUT_MS (1s, tighter
+  // because the user clicked "do something" and we mustn't stall
+  // the dispatch waiting for a hung baseline fetch).
+  async function _fetchHealthSnapshot(providers, timeoutMs) {
     if (!Array.isArray(providers) || providers.length === 0) return null;
+    var t = typeof timeoutMs === "number" && timeoutMs > 0
+      ? timeoutMs
+      : PROBE_TIMEOUT_MS;
     var controller = null;
     var timeoutId = null;
     try {
@@ -336,7 +436,7 @@
           } catch (_e) {
             /* noop */
           }
-        }, PROBE_TIMEOUT_MS);
+        }, t);
       }
       var resp = await fetch(HEALTH_ENDPOINT, {
         method: "GET",
@@ -375,14 +475,29 @@
     }
   }
 
-  // R147: orchestrate the post-dispatch probe.  This runs **after**
-  // the main status line has already been written, so any failure /
-  // null result simply leaves the probe line empty (silent fallback,
-  // matching the project's "graceful degradation" pattern from R140
-  // / R146).  The probe line is rendered as separate <span> children
-  // joined by " · " so the screen-reader announcement reads like
-  // a list, not one giant blob.
-  async function _runProbe(providers, probeNode) {
+  // R147 backwards-compat alias — same name kept so external callers
+  // / tests don't churn.  Just delegates to the parameterised helper
+  // with the probe's longer timeout.
+  function _probeHealthForProviders(providers) {
+    return _fetchHealthSnapshot(providers, PROBE_TIMEOUT_MS);
+  }
+
+  // R147 / R148: orchestrate the post-dispatch probe.  This runs
+  // **after** the main status line has already been written, so any
+  // failure / null result simply leaves the probe line empty (silent
+  // fallback, matching the project's "graceful degradation" pattern
+  // from R140 / R146).  The probe line is rendered as separate
+  // <span> children joined by " · " so the screen-reader
+  // announcement reads like a list, not one giant blob.
+  //
+  // R148: ``baseline`` is the snapshot of per_provider stats taken
+  // *before* the dispatch (or null if that fetch failed). When
+  // available, it lets ``_classifyProviderVerdict`` switch from
+  // age-only heuristics to delta-based classification — solving the
+  // R147 false-success race where a previous successful click left
+  // last_success_age within the stale threshold while the current
+  // dispatch was still in flight.
+  async function _runProbe(providers, probeNode, baseline) {
     if (!probeNode) return;
     if (!Array.isArray(providers) || providers.length === 0) return;
     _setProbe(probeNode, "pending", _t("settings.systemTestProbing"));
@@ -401,7 +516,11 @@
     var anyStale = false;
     for (var i = 0; i < providers.length; i++) {
       var p = providers[i];
-      var verdict = _classifyProviderVerdict(statsByProvider[p]);
+      var baselineForProvider = (baseline && baseline[p]) || null;
+      var verdict = _classifyProviderVerdict(
+        statsByProvider[p],
+        baselineForProvider,
+      );
       var line = _renderProviderVerdict(p, verdict);
       if (line) fragments.push(line);
       if (verdict.kind === "failure") anyFailure = true;
@@ -459,6 +578,21 @@
     // user doesn't see "bark: success" left over from 2 minutes ago.
     if (probeNode) _setProbe(probeNode, "neutral", "");
 
+    // R148: take a baseline snapshot of per_provider stats **before**
+    // dispatching, so the post-dispatch probe can delta-compare
+    // streak counters and reliably tell "we just delivered" from
+    // "an old click delivered, current is still in flight". Tight
+    // 1s timeout — if /health is hung we fall back to age-only
+    // classification (R147 behaviour) rather than stalling the
+    // user-visible dispatch.
+    var baseline = null;
+    if (probeNode) {
+      baseline = await _fetchHealthSnapshot(
+        ALL_KNOWN_PROVIDERS,
+        BASELINE_TIMEOUT_MS,
+      );
+    }
+
     var controller = null;
     var timeoutId = null;
     try {
@@ -499,7 +633,7 @@
         Array.isArray(body.providers_dispatched) &&
         body.providers_dispatched.length > 0
       ) {
-        await _runProbe(body.providers_dispatched, probeNode);
+        await _runProbe(body.providers_dispatched, probeNode, baseline);
       }
     } catch (err) {
       // AbortError lands here as well — treat as a network-grade
@@ -570,11 +704,14 @@
     PROBE_DELAY_MS: PROBE_DELAY_MS,
     PROBE_TIMEOUT_MS: PROBE_TIMEOUT_MS,
     PROBE_STALE_THRESHOLD_S: PROBE_STALE_THRESHOLD_S,
+    BASELINE_TIMEOUT_MS: BASELINE_TIMEOUT_MS,
+    ALL_KNOWN_PROVIDERS: ALL_KNOWN_PROVIDERS,
     init: init,
     triggerSelfTest: triggerSelfTest,
     _classifyResponse: _classifyResponse,
     _classifyProviderVerdict: _classifyProviderVerdict,
     _renderProviderVerdict: _renderProviderVerdict,
+    _fetchHealthSnapshot: _fetchHealthSnapshot,
     _probeHealthForProviders: _probeHealthForProviders,
     _runProbe: _runProbe,
     _setProbe: _setProbe,

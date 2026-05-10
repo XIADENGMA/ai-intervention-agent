@@ -97,6 +97,7 @@
     "systemTestFailed": "[!! Šé·łƒ·-ŧ·éš·ŧ ƒ·áí·łé·đ:· {{error}} !!]",
     "systemTestProbing": "[!! Çĥ·éç·ķí·ñğ· đé·łí·ʋé·řý· ʋí·á /·áþ·í/·šý·šŧ·éɱ·/ĥ·éá·łŧ·ĥ…· !!]",
     "systemTestProbeProviderSuccess": "[!! {{provider}}: đ·éł·íʋ·éř·éđ· ({{age_seconds}}š á·ğö·, š·ŧř·éá·ķ=·{{streak}}) !!]",
+    "systemTestProbeProviderSuccessNoAge": "[!! {{provider}}: đ·éł·íʋ·éř·éđ· (š·ŧř·éá·ķ=·{{streak}}) !!]",
     "systemTestProbeProviderFailure": "[!! {{provider}}: ƒ·áí·łé·đ (·{{error_class}}, š·ŧř·éá·ķ=·{{streak}}) !!]",
     "systemTestProbeProviderStale": "[!! {{provider}}: š·ŧá·ŧš· šŧ·áł·é —· ŧř·ý á·ğá·íñ· !!]",
     "systemTestProbeProviderSkipped": "[!! {{provider}}: š·ķí·þþ·éđ· ({{reason}}) !!]",

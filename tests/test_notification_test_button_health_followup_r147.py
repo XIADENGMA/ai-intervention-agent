@@ -145,9 +145,11 @@ class TestR147ApiSurface(unittest.TestCase):
         self.js = _read_js()
 
     def test_classify_provider_verdict_function_present(self) -> None:
+        # R148 起签名扩展为 ``(stats, baselineStats)``；保留对 stats 入参
+        # 的强约束，第二参可有可无（兼容 R147 only 的调用方式）。
         self.assertRegex(
             self.js,
-            r"function\s+_classifyProviderVerdict\s*\(\s*stats\s*\)",
+            r"function\s+_classifyProviderVerdict\s*\(\s*stats(?:\s*,\s*\w+)?\s*\)",
         )
 
     def test_render_provider_verdict_function_present(self) -> None:
@@ -157,15 +159,19 @@ class TestR147ApiSurface(unittest.TestCase):
         )
 
     def test_probe_health_for_providers_function_present(self) -> None:
+        # R148 起把 fetch / abort 主体抽进 _fetchHealthSnapshot；
+        # _probeHealthForProviders 仍存在为 backwards-compat alias，
+        # 签名仍是 (providers)，但是函数声明不再是 async（thin delegate）。
         self.assertRegex(
             self.js,
-            r"async\s+function\s+_probeHealthForProviders\s*\(\s*providers\s*\)",
+            r"function\s+_probeHealthForProviders\s*\(\s*providers\s*\)",
         )
 
     def test_run_probe_function_present(self) -> None:
+        # R148 起加可选第三参 baseline；保留前两参强约束。
         self.assertRegex(
             self.js,
-            r"async\s+function\s+_runProbe\s*\(\s*providers\s*,\s*probeNode\s*\)",
+            r"async\s+function\s+_runProbe\s*\(\s*providers\s*,\s*probeNode(?:\s*,\s*\w+)?\s*\)",
         )
 
     def test_set_probe_function_present(self) -> None:
@@ -318,13 +324,15 @@ class TestR147DispatchProbeWiring(unittest.TestCase):
         self.js = _read_js()
 
     def test_run_probe_called_only_on_success_with_providers(self) -> None:
-        # 触发条件：kind === "success" + providers_dispatched 非空
+        # 触发条件：kind === "success" + providers_dispatched 非空。
+        # R148 起 _runProbe 多了第三参 baseline；这里放宽到允许尾部跟一
+        # 个标识符。
         self.assertRegex(
             self.js,
             (
                 r'verdict\.kind\s*===\s*"success"'
                 r"[\s\S]*?providers_dispatched"
-                r"[\s\S]*?_runProbe\(\s*body\.providers_dispatched\s*,\s*probeNode\s*\)"
+                r"[\s\S]*?_runProbe\(\s*body\.providers_dispatched\s*,\s*probeNode(?:\s*,\s*\w+)?\s*\)"
             ),
         )
 
@@ -388,13 +396,22 @@ class TestR147GracefulFailure(unittest.TestCase):
         self.assertNotIn("stats.per_provider", self.js)
 
     def test_probe_health_uses_abort_controller(self) -> None:
-        # /health 也用 AbortController，避免 hung server 卡死按钮
+        # /health 也用 AbortController，避免 hung server 卡死按钮。
+        # R148 起 _fetchHealthSnapshot 把 timeout 作为第二参 timeoutMs，
+        # 函数体里把 ``t = timeoutMs || PROBE_TIMEOUT_MS`` 局部缓存后
+        # 调 ``setTimeout(..., t)``——锁定 PROBE_TIMEOUT_MS 仍然是默认
+        # fallback 即可，不再要求 setTimeout 字面引用它。
         self.assertIn("PROBE_TIMEOUT_MS", self.js)
-        # 必须有第二个 setTimeout(_, PROBE_TIMEOUT_MS) 调 controller.abort
         self.assertRegex(
             self.js,
-            r"setTimeout\(\s*function\s*\(\s*\)\s*\{[\s\S]*?controller\.abort"
-            r"[\s\S]*?\}\s*,\s*PROBE_TIMEOUT_MS\s*\)",
+            r"setTimeout\(\s*function\s*\(\s*\)\s*\{[\s\S]*?controller\.abort",
+        )
+        # Default fallback in _fetchHealthSnapshot must reference
+        # PROBE_TIMEOUT_MS so callers w/o explicit timeout still get
+        # the original 5s budget (R147 contract).
+        self.assertRegex(
+            self.js,
+            r"timeoutMs\s*>\s*0\s*\?\s*timeoutMs\s*:\s*PROBE_TIMEOUT_MS",
         )
 
     def test_run_probe_silent_on_null_stats(self) -> None:

@@ -96,6 +96,7 @@
     "systemTestFailed": "自检失败：{{error}}",
     "systemTestProbing": "正在通过 /api/system/health 检查投递结果…",
     "systemTestProbeProviderSuccess": "{{provider}}：已送达（{{age_seconds}} 秒前，streak={{streak}}）",
+    "systemTestProbeProviderSuccessNoAge": "{{provider}}：已送达（streak={{streak}}）",
     "systemTestProbeProviderFailure": "{{provider}}：失败（{{error_class}}，streak={{streak}}）",
     "systemTestProbeProviderStale": "{{provider}}：统计陈旧 — 请重试",
     "systemTestProbeProviderSkipped": "{{provider}}：跳过（{{reason}}）",
