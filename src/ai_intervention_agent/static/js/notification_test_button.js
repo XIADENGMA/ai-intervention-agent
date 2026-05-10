@@ -101,6 +101,24 @@
   // adding a new "discord" provider) will fail loud here rather
   // than silently degrading every probe to "stale".
   var ALL_KNOWN_PROVIDERS = ["bark", "web", "sound", "system"];
+  // R150 — self-test history trail. Stored client-side in
+  // localStorage so it survives reloads; cap at HISTORY_MAX_ENTRIES
+  // entries (~200 bytes each → ~1 KiB total, well below the
+  // 5–10 MiB localStorage budget every browser ships). Schema
+  // versioned (``v: 1``) so a future R151 / R152 schema bump can
+  // reject + drop incompatible old payloads instead of crashing.
+  // Same competitive class as uptime-kuma / healthchecks.io
+  // (a "last 5 self-test results" list under the trigger button).
+  var HISTORY_LS_KEY = "aiia.self_test.history.v1";
+  var HISTORY_MAX_ENTRIES = 5;
+  var HISTORY_TOGGLE_ID = "system-notification-test-history-toggle";
+  var HISTORY_LIST_ID = "system-notification-test-history-list";
+  // Schema version embedded in every persisted entry. Bumping this
+  // forces ``_loadHistory`` to drop every entry whose ``v !== 1`` so
+  // a future shape change (extra field / renamed kind / etc.) can't
+  // crash the renderer with stale localStorage payloads from an
+  // older deploy.
+  var HISTORY_SCHEMA_VERSION = 1;
 
   function _t(key, params) {
     try {
@@ -546,6 +564,189 @@
     // line via the min-height: 0 rule on the empty-text case below.
   }
 
+  // R150: localStorage helpers for the self-test history trail.
+  // Defensive against three failure modes:
+  //   1. localStorage unavailable (Safari private mode, iframes
+  //      that block third-party storage, OAuth-callback contexts,
+  //      etc.) → return null and have callers fall through to
+  //      "no history" silently.
+  //   2. Quota exceeded (e.g. user has 5 MiB of other localStorage
+  //      data already) → swallow the setItem error.  The next
+  //      successful click will retry, and dropping the entry is
+  //      strictly better than a TypeError surfacing to the user.
+  //   3. Schema drift across deploys → ``_loadHistory`` filters by
+  //      ``v: HISTORY_SCHEMA_VERSION`` so an older version's
+  //      payload is silently discarded rather than rendered into
+  //      undefined fields.
+  function _readStorage() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return null;
+      // Probe write-access early; some sandboxed iframes throw
+      // on getItem/setItem rather than returning null.
+      var probeKey = "__aiia_probe_r150__";
+      localStorage.setItem(probeKey, "1");
+      localStorage.removeItem(probeKey);
+      return localStorage;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function _loadHistory() {
+    var storage = _readStorage();
+    if (!storage) return [];
+    try {
+      var raw = storage.getItem(HISTORY_LS_KEY);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      var clean = [];
+      for (var i = 0; i < parsed.length; i++) {
+        var e = parsed[i];
+        if (
+          e &&
+          typeof e === "object" &&
+          e.v === HISTORY_SCHEMA_VERSION &&
+          typeof e.ts === "number" &&
+          isFinite(e.ts) &&
+          e.ts > 0
+        ) {
+          clean.push(e);
+        }
+        if (clean.length >= HISTORY_MAX_ENTRIES) break;
+      }
+      return clean;
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  function _pushHistory(entry) {
+    var storage = _readStorage();
+    if (!storage) return;
+    if (!entry || typeof entry !== "object") return;
+    var providers = Array.isArray(entry.providers) ? entry.providers : [];
+    var safeProviders = [];
+    for (var i = 0; i < providers.length && i < 16; i++) {
+      var p = providers[i];
+      if (typeof p === "string") safeProviders.push(p.slice(0, 32));
+    }
+    var record = {
+      v: HISTORY_SCHEMA_VERSION,
+      ts: Date.now(),
+      verdict_kind: String(entry.verdict_kind || "unknown").slice(0, 16),
+      providers: safeProviders,
+      source: String(entry.source || "").slice(0, 16),
+      event_id: String(entry.event_id || "").slice(0, 64),
+    };
+    if (entry.error_class) {
+      record.error_class = String(entry.error_class).slice(0, 32);
+    }
+    var existing = _loadHistory();
+    var combined = [record].concat(existing).slice(0, HISTORY_MAX_ENTRIES);
+    try {
+      storage.setItem(HISTORY_LS_KEY, JSON.stringify(combined));
+    } catch (_e) {
+      /* quota exceeded / private mode — silent drop */
+    }
+  }
+
+  function _clearHistory() {
+    var storage = _readStorage();
+    if (!storage) return;
+    try {
+      storage.removeItem(HISTORY_LS_KEY);
+    } catch (_e) {
+      /* noop */
+    }
+  }
+
+  // Bucket the entry's age into "just now / Xs ago / Xm ago / Xh
+  // ago / Xd ago" so screen-reader announcements stay short and
+  // monitors get rough freshness without exposing sub-second wall
+  // time. Future-proof against negative diffs (clock skew /
+  // localStorage from a different browser session) by clamping at 0.
+  function _formatRelativeTime(ts) {
+    var nowMs = Date.now();
+    var diffSec = Math.max(0, Math.floor((nowMs - ts) / 1000));
+    if (diffSec < 5) return _t("settings.systemTestHistoryAgeJustNow");
+    if (diffSec < 60) {
+      return _t("settings.systemTestHistoryAgeSeconds", { seconds: diffSec });
+    }
+    if (diffSec < 3600) {
+      return _t("settings.systemTestHistoryAgeMinutes", {
+        minutes: Math.floor(diffSec / 60),
+      });
+    }
+    if (diffSec < 86400) {
+      return _t("settings.systemTestHistoryAgeHours", {
+        hours: Math.floor(diffSec / 3600),
+      });
+    }
+    return _t("settings.systemTestHistoryAgeDays", {
+      days: Math.floor(diffSec / 86400),
+    });
+  }
+
+  // Map verdict.kind ∈ {success, warning, error, pending, unknown}
+  // to a localized human label + a CSS suffix used in the entry
+  // row's class list.  ``pending`` is never persisted (we only
+  // record after the verdict resolves) but is mapped defensively
+  // so a future call site that pre-records can't render "undefined".
+  function _historyVerdictLabel(kind) {
+    if (kind === "success") return _t("settings.systemTestHistoryVerdictSuccess");
+    if (kind === "warning") return _t("settings.systemTestHistoryVerdictWarning");
+    if (kind === "error") return _t("settings.systemTestHistoryVerdictError");
+    return _t("settings.systemTestHistoryVerdictUnknown");
+  }
+
+  // Render the history list into ``node`` (a <ul>).  Always reads
+  // localStorage live so a foreign tab's update (via the storage
+  // event) just calls _renderHistory again and gets fresh data.
+  // Uses ``textContent`` exclusively — no innerHTML, no template
+  // strings — so persisted strings (event_id, providers) can never
+  // become a DOM-XSS surface even if a future rogue script writes
+  // attacker-controlled values into localStorage.
+  function _renderHistory(node) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
+    var entries = _loadHistory();
+    if (entries.length === 0) {
+      var empty = document.createElement("li");
+      empty.className = "self-test-history-empty";
+      empty.textContent = _t("settings.systemTestHistoryEmpty");
+      node.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var li = document.createElement("li");
+      li.className =
+        "self-test-history-entry self-test-history-" + e.verdict_kind;
+      var when = document.createElement("span");
+      when.className = "self-test-history-when";
+      when.textContent = _formatRelativeTime(e.ts);
+      li.appendChild(when);
+      var verdict = document.createElement("span");
+      verdict.className = "self-test-history-verdict";
+      verdict.textContent = _historyVerdictLabel(e.verdict_kind);
+      li.appendChild(verdict);
+      if (e.providers && e.providers.length > 0) {
+        var prov = document.createElement("span");
+        prov.className = "self-test-history-providers";
+        prov.textContent = _formatProviderList(e.providers);
+        li.appendChild(prov);
+      }
+      if (e.event_id) {
+        var eid = document.createElement("code");
+        eid.className = "self-test-history-eventid";
+        eid.textContent = e.event_id.slice(0, 8);
+        li.appendChild(eid);
+      }
+      node.appendChild(li);
+    }
+  }
+
   // Stamp the last-click time on the button so the cooldown survives
   // any rerender that swaps DOM nodes (defensive vs settings panel
   // re-mounts).  Stored as data attribute, not module variable.
@@ -622,6 +823,24 @@
       }
       var verdict = _classifyResponse(resp.status, body);
       _setStatus(statusNode, verdict.kind, verdict.text);
+      // R150 — record this dispatch in the history trail before the
+      // probe runs.  We record at "verdict resolved" (success /
+      // warning / error) rather than after the probe because the
+      // dispatch verdict is the user-facing source-of-truth; the
+      // probe is just observability.  If a future R-feature wants
+      // to also record the per-provider probe outcomes, that's a
+      // separate ``_pushHistory`` call after ``_runProbe`` returns.
+      _pushHistory({
+        verdict_kind: verdict.kind,
+        providers:
+          body && Array.isArray(body.providers_dispatched)
+            ? body.providers_dispatched
+            : [],
+        source: "dispatch",
+        event_id: body && body.event_id ? body.event_id : "",
+      });
+      var historyListNode = document.getElementById(HISTORY_LIST_ID);
+      if (historyListNode) _renderHistory(historyListNode);
       // R147: only probe when dispatch actually went out (not 4xx /
       // 5xx / config-disabled / no-providers).  Probe runs in the
       // background — we await it to keep button.disabled until probe
@@ -653,6 +872,19 @@
         fallbackText = _t("settings.systemTestNetworkError");
       }
       _setStatus(statusNode, "error", fallbackText);
+      // R150 — also record the failure in history. We don't have
+      // an event_id (server never accepted the request), so we
+      // surface the network-level error class instead. Distinct
+      // ``source: "network"`` so future analytics can tell
+      // dispatch-side failures from provider-side failures.
+      _pushHistory({
+        verdict_kind: "error",
+        providers: [],
+        source: "network",
+        error_class: err && err.name ? String(err.name) : "NetworkError",
+      });
+      var historyNetworkListNode = document.getElementById(HISTORY_LIST_ID);
+      if (historyNetworkListNode) _renderHistory(historyNetworkListNode);
     } finally {
       if (timeoutId) {
         try {
@@ -669,12 +901,20 @@
     var button = document.getElementById(BUTTON_ID);
     var statusNode = document.getElementById(STATUS_ID);
     var probeNode = document.getElementById(PROBE_ID);
+    var historyToggle = document.getElementById(HISTORY_TOGGLE_ID);
+    var historyList = document.getElementById(HISTORY_LIST_ID);
     if (!button) return null;
     // Idempotent: drop any existing handler before re-binding so a
     // second init() doesn't double-fire.  We use a sentinel attribute
     // because handler identity is captured in closure.
     if (button.getAttribute("data-r146-bound") === "1") {
-      return { button: button, statusNode: statusNode, probeNode: probeNode };
+      return {
+        button: button,
+        statusNode: statusNode,
+        probeNode: probeNode,
+        historyToggle: historyToggle,
+        historyList: historyList,
+      };
     }
     button.addEventListener("click", function () {
       // Defer to microtask queue so click handlers don't await
@@ -684,7 +924,40 @@
       });
     });
     button.setAttribute("data-r146-bound", "1");
-    return { button: button, statusNode: statusNode, probeNode: probeNode };
+
+    // R150 — wire up the history toggle / list.  The toggle is a
+    // semantic ``aria-expanded`` button; the list is hidden by
+    // default (``[hidden]`` attribute on the <ul>) so the settings
+    // panel stays clean for users who don't care about the trail.
+    if (historyToggle && historyList) {
+      _renderHistory(historyList);
+      historyToggle.addEventListener("click", function () {
+        var expanded = historyToggle.getAttribute("aria-expanded") === "true";
+        var nextExpanded = !expanded;
+        historyToggle.setAttribute("aria-expanded", String(nextExpanded));
+        if (nextExpanded) {
+          historyList.removeAttribute("hidden");
+          _renderHistory(historyList);
+        } else {
+          historyList.setAttribute("hidden", "");
+        }
+      });
+      // Multi-tab sync: another tab clicking the button writes to
+      // localStorage and fires a ``storage`` event in this tab.
+      if (typeof window !== "undefined" && window.addEventListener) {
+        window.addEventListener("storage", function (ev) {
+          if (ev && ev.key === HISTORY_LS_KEY) _renderHistory(historyList);
+        });
+      }
+    }
+
+    return {
+      button: button,
+      statusNode: statusNode,
+      probeNode: probeNode,
+      historyToggle: historyToggle,
+      historyList: historyList,
+    };
   }
 
   if (document.readyState === "loading") {
@@ -706,6 +979,11 @@
     PROBE_STALE_THRESHOLD_S: PROBE_STALE_THRESHOLD_S,
     BASELINE_TIMEOUT_MS: BASELINE_TIMEOUT_MS,
     ALL_KNOWN_PROVIDERS: ALL_KNOWN_PROVIDERS,
+    HISTORY_LS_KEY: HISTORY_LS_KEY,
+    HISTORY_MAX_ENTRIES: HISTORY_MAX_ENTRIES,
+    HISTORY_TOGGLE_ID: HISTORY_TOGGLE_ID,
+    HISTORY_LIST_ID: HISTORY_LIST_ID,
+    HISTORY_SCHEMA_VERSION: HISTORY_SCHEMA_VERSION,
     init: init,
     triggerSelfTest: triggerSelfTest,
     _classifyResponse: _classifyResponse,
@@ -717,5 +995,12 @@
     _setProbe: _setProbe,
     _formatProviderList: _formatProviderList,
     _isOnCooldown: _isOnCooldown,
+    _readStorage: _readStorage,
+    _loadHistory: _loadHistory,
+    _pushHistory: _pushHistory,
+    _clearHistory: _clearHistory,
+    _renderHistory: _renderHistory,
+    _formatRelativeTime: _formatRelativeTime,
+    _historyVerdictLabel: _historyVerdictLabel,
   };
 })();

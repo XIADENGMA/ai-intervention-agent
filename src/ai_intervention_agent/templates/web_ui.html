@@ -1499,6 +1499,46 @@
                       min-height: 0;
                     "
                   ></div>
+                  <!-- R150 — self-test history toggle + list. Defaults to
+                       collapsed; click toggles aria-expanded + the list's
+                       [hidden] attribute. List is role="log" so screen
+                       readers announce new entries (added at the top,
+                       index 0) when the user re-opens the panel. -->
+                  <button
+                    id="system-notification-test-history-toggle"
+                    type="button"
+                    class="btn btn-link btn-link-secondary"
+                    aria-controls="system-notification-test-history-list"
+                    aria-expanded="false"
+                    style="
+                      margin-top: 0.3rem;
+                      padding: 0;
+                      background: none;
+                      border: none;
+                      color: var(--text-secondary);
+                      font-size: 0.78rem;
+                      cursor: pointer;
+                      text-decoration: underline;
+                    "
+                  >
+                    <span data-i18n="settings.systemTestHistoryToggle"
+                      >History</span
+                    >
+                  </button>
+                  <ul
+                    id="system-notification-test-history-list"
+                    class="self-test-history"
+                    role="log"
+                    aria-live="polite"
+                    hidden
+                    style="
+                      margin: 0.4rem 0 0 0;
+                      padding: 0;
+                      list-style: none;
+                      font-size: 0.78rem;
+                      color: var(--text-secondary);
+                    "
+                  ></ul>
                   <div
                     style="
                       margin-top: 0.3rem;

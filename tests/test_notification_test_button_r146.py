@@ -110,14 +110,20 @@ class TestJsFileExistsAndSize(unittest.TestCase):
 
     def test_js_file_line_count_in_envelope(self) -> None:
         # R146 落地 ≈ 270 行；R147 增 ~200 行 health-probe；R148 增
-        # ~150 行 baseline-delta 决策树。整体上限放到 900 行。
-        # 下限 400 防止 R147 / R148 部分被整段误删后还过测试。
+        # ~150 行 baseline-delta 决策树；R150 增 ~200 行 history trail
+        # （helpers + render + i18n labels + init wiring）。整体上限放到
+        # 1100 行（与 R150 envelope test 一致）。下限 400 防止 R147 /
+        # R148 / R150 任意一段被整段误删后还过测试。
         line_count = len(_read_js().splitlines())
         self.assertGreaterEqual(
-            line_count, 400, "notification_test_button.js 过短，疑似 R147/R148 缺失"
+            line_count,
+            400,
+            "notification_test_button.js 过短，疑似 R147/R148/R150 缺失",
         )
         self.assertLessEqual(
-            line_count, 900, "notification_test_button.js 超出预期，疑似膨胀"
+            line_count,
+            1100,
+            "notification_test_button.js 超出预期，疑似膨胀（cap 与 R150 envelope 同步）",
         )
 
 

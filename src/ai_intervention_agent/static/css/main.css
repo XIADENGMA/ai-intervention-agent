@@ -8681,3 +8681,83 @@ code,
 .setting-status-line.setting-status-error {
   color: var(--error-500);
 }
+
+/* ========================================================================
+   R150 — self-test history trail
+   ------------------------------------------------------------------------
+   Renders the localStorage-backed last-N self-test entries underneath the
+   notification self-test button.  Each entry: relative time + verdict
+   chip (success/warning/error) + provider list + truncated event_id.
+   The verdict-kind colour mirrors `.setting-status-line.setting-status-*`
+   so the trail and the live status line speak the same colour vocabulary
+   without duplicating tokens (semantic colours come from `--success-500`
+   / `--warning-500` / `--error-500` in `_tokens.css`).
+   ======================================================================== */
+.self-test-history {
+  margin: 0.4rem 0 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.self-test-history-empty {
+  font-style: italic;
+  color: var(--text-secondary);
+  opacity: 0.75;
+}
+
+.self-test-history-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+  border-top: 1px dashed var(--border-secondary);
+}
+
+.self-test-history-entry:first-child {
+  border-top: 0;
+}
+
+.self-test-history-when {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+.self-test-history-verdict {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.self-test-history-success .self-test-history-verdict {
+  color: var(--success-500);
+}
+
+.self-test-history-warning .self-test-history-verdict {
+  color: var(--warning-500);
+}
+
+.self-test-history-error .self-test-history-verdict {
+  color: var(--error-500);
+}
+
+.self-test-history-providers {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.self-test-history-eventid {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  background: var(--bg-tertiary);
+  padding: 0 0.3em;
+  border-radius: 3px;
+}
