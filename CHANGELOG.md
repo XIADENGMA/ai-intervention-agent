@@ -9,6 +9,95 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R148** — Notification self-test button **baseline-delta probe**.
+  Root-cause fix for R147's "false-success" race: the user clicks at
+  T=0, the dispatch delivers (`last_success_age` becomes 0); 8 seconds
+  later they click again, the second dispatch is in flight, the probe
+  runs at T=9.5s.  R147's age-only logic saw `last_success_age = 9.5s
+  < 10s` and reported "delivered (9.5s ago, streak=N)" — but the
+  *second* dispatch hadn't actually completed.  R148 fixes this by
+  taking a **baseline snapshot** of per-provider stats *before* the
+  POST dispatch (separate `/api/system/health` GET, 1-second tight
+  timeout), then comparing post-dispatch streak counters against the
+  baseline.  Each event resets the *opposite* streak (success →
+  `failure_streak=0`; failure → `success_streak=0`), so a single
+  dispatch always increments exactly one streak counter — comparing
+  `current.success_streak > baseline.success_streak` is therefore a
+  reliable "did exactly one event happen between baseline and current?"
+  signal.  If the baseline fetch fails (network down / `/health` 5xx /
+  timeout), we silently fall back to R147's age-only path so the R147
+  contract is preserved.  `verdict.source ∈ {"delta", "age"}`
+  discriminator surfaces in the diagnostic blob for debug visibility.
+  23 new test cases across 8 classes lock all three delta branches
+  (success / failure / stale), the R147 fallback, the
+  `ALL_KNOWN_PROVIDERS == server-side _HEALTH_PER_PROVIDER_KEYS`
+  invariant, and the 1-second tight baseline timeout envelope.
+
+- **R150** — Notification self-test button **history trail**.  The
+  settings panel now records every dispatch (success / warning /
+  network-error) into a localStorage-backed "last 5 results" trail
+  under the existing status + probe lines, modelled on uptime-kuma /
+  healthchecks.io's "last N runs" UX.  Collapsed-by-default toggle
+  (`aria-expanded` button); expanded list is `role="log"` +
+  `aria-live="polite"` so screen readers announce new entries without
+  interrupting input.  Each entry: relative time bucket
+  ("just now / Xs ago / Xm ago / Xh ago / Xd ago"), verdict label
+  ("delivered / warning / failed / unknown" colour-coded from the
+  `--{success,warning,error}-500` semantic tokens), provider list,
+  and an 8-character `event_id` chip.  Schema-versioned storage key
+  (`aiia.self_test.history.v1`) so a future bump can drop incompatible
+  v1 payloads safely; defensive `_readStorage` write-probes localStorage
+  and falls through to "no history" on Safari private mode / sandboxed
+  iframes / quota-exceeded.  Multi-tab sync via the standard
+  `storage` event.  DOM-XSS-immune renderer
+  (`createElement` + `textContent`, no `innerHTML` paths).  41 new
+  test cases across 11 classes lock the schema, helper signatures,
+  exports, DOM safety, trigger wiring, init wiring, HTML a11y attrs,
+  i18n completeness across en + zh-CN + _pseudo, CSS class +
+  semantic-token contracts, and the JS file line-count envelope
+  (cap raised 900 → 1100 to fit ~150 LoC of helpers).
+
+### Changed
+
+- **R149** — `release.yml` now pins `ovsx@0.10.9` for both the
+  `verify-pat` and `publish` steps (was the floating `npx --yes ovsx`
+  tag).  The unpinned tag silently broke v1.6.1's Open VSX publish
+  between v1.6.0 (2026-05-08, succeeded) and v1.6.1 (2026-05-10, the
+  same code shape failed because ovsx tightened its
+  `displayName` ↔ `vsixmanifest` cross-check).  The displayName
+  content fix landed in v1.6.2; R149 closes the **toolchain** root
+  cause so a future ovsx tightening can't ship a green PR and a red
+  release tag at the same time.  Future upgrades go through a tracked
+  PR (bump the pin → re-run release on a tag → either publishes or
+  fails predictably).  5 new test cases (`tests/test_release_workflow_ovsx_pinned_r149.py`)
+  reject any `npx --yes ovsx publish` / `verify-pat` invocation, demand
+  strict semver pins, lockstep both invocations to the same version, and
+  require a nearby explanatory comment.
+
+- **R151** — Bumped `CLIENT_COOLDOWN_MS` 600 → 1500 in
+  `notification_test_button.js`.  After R147 + R148, the user-visible
+  dispatch path is `baseline fetch (1s) → dispatch (variable) →
+  probe wait (1.5s) → probe fetch (5s)` ≈ 4–8s wall-clock; the
+  600 ms client cooldown was effectively zero relative to the
+  `button.disabled = true` window already covering the same path.
+  1500 ms is the minimum useful budget that survives a panel re-mount
+  (where `button.disabled` resets but `data-last-click-ts` survives
+  via the DOM attribute round-trip), keeping the cooldown defensive
+  rather than decorative.  Drift guard
+  `tests/test_notification_test_button_r146.py` already requires
+  `CLIENT_COOLDOWN_MS >= 100`; the bump is in-range and forward-
+  compatible.
+
+- **R151** — `docs/troubleshooting.md` adds
+  §"Open VSX `displayName` mismatch / pinned `ovsx` upgrade"
+  documenting the manual upgrade flow for the R149 pin (run
+  `npx --yes ovsx@<new-version> publish ...` against a dry VSIX in a
+  scratch repo first; if it succeeds, bump both lines in `release.yml`
+  in lockstep; the matching-pins test in
+  `tests/test_release_workflow_ovsx_pinned_r149.py` catches any miss).
+
 ## [1.6.2] — 2026-05-10
 
 > Patch release on top of v1.6.1.  Adds R147 (notification self-test

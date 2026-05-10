@@ -58,7 +58,19 @@
   // Server's Flask-Limiter is 6/min on this route; we add a tiny
   // client-side cooldown to dampen accidental double-tap before the
   // server has a chance to 429.  AbortController on top of that.
-  var CLIENT_COOLDOWN_MS = 600;
+  //
+  // R151: bumped 600 → 1500. After R147 + R148, the user-visible
+  // dispatch path is roughly:
+  //   baseline fetch (≤1s) → POST dispatch (variable, often 1-2s)
+  //   → probe wait (1.5s) → probe fetch (≤5s)
+  //   ≈ 4-8s wall-clock total
+  // The previous 600 ms was effectively zero relative to the
+  // ``button.disabled = true`` window covering the same path. 1500 ms
+  // is the minimum useful budget that survives a settings-panel
+  // re-mount (where ``button.disabled`` resets but
+  // ``data-last-click-ts`` survives via the DOM attribute round-trip),
+  // keeping the cooldown defensive rather than decorative.
+  var CLIENT_COOLDOWN_MS = 1500;
   // 60s hard cap on the fetch — well above realistic Bark RTT (~2s)
   // but short enough that a hung connection doesn't keep the button
   // disabled forever.

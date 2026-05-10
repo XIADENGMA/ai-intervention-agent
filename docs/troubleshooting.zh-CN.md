@@ -288,6 +288,116 @@ ai-intervention-agent 触发。[Cursor 社区论坛同主题][cursor-ext-host]
 [cursor-bugs]: https://forum.cursor.com/c/bug-report/6
 [disc]: https://github.com/xiadengma/ai-intervention-agent/discussions
 
+## 12. Open VSX 发布步骤失败（`displayName` 不一致 / 锁定的 `ovsx` 升级）
+
+**症状**
+
+Release workflow 的 `open-vsx` job 退出，错误信息形如：
+
+```
+ERROR: Display name in extension.vsixmanifest and package.json does not match.
+ERROR: Description in extension.vsixmanifest and package.json does not match.
+ERROR: Categories in extension.vsixmanifest and package.json do not match.
+```
+
+—— 通常**只有** Open VSX job 报错；同一份 VSIX 上传到 Microsoft VS
+Code Marketplace 一切正常。
+
+### 为什么会这样
+
+`ovsx publish` 服务端校验器严格比较 `package.json`（NLS 占位符**未**
+解析）和 VSIX 内 `extension.vsixmanifest` 的字符串字段。NLS 占位符
+（如 `"%displayName%"`）在 `ovsx` 看来就是字面量字符串，不会展开后再
+比对——因此与 VSIX manifest 内被构建工具展开的字面值（如
+`"AI Intervention Agent"`）必然不等。Microsoft Marketplace 容忍这种
+差异；Open VSX（约 2026-05 起）不再容忍。
+
+历史上这个问题坑过 v1.6.1 —— 详情见
+[`CHANGELOG.md`](../CHANGELOG.md#162--2026-05-10) —— 当时 `npx --yes
+ovsx publish` 用的是浮动版本，v1.6.0（2026-05-08）发布时还能跑
+通，v1.6.1（2026-05-10）同一份代码因为上游 ovsx 在两天间收紧了校验
+规则就 fail 了。我们这边没改一行代码。
+
+### 修复 1 级 —— 字面量对齐
+
+把 `packages/vscode/package.json` 里出问题的字段从 `"%占位符键%"` 改
+成字面字符串：
+
+```diff
+- "displayName": "%displayName%",
++ "displayName": "AI Intervention Agent",
+```
+
+`displayName` 是 ASCII / 拉丁字符，本来就没用国际化的必要；其它真
+的需要按 locale 切换的字段（`activitybar.title`、`views.title`、
+`commands.title` 等）继续保留 NLS 占位符不动。
+
+防回归测试见
+[`tests/test_vscode_displayname_literal_for_ovsx.py`](../tests/test_vscode_displayname_literal_for_ovsx.py)
+—— 把 `displayName` 锁成字面量，并要求 NLS bundle 的 zh-CN / en
+两套同步对齐，下次再有人无意间换回占位符 CI 直接红，不等到 release
+tag。
+
+### 修复 2 级 —— 锁工具链版本（R149）
+
+光把内容字面量化还不够：万一未来某次 `ovsx` 又收紧校验，浮动 tag
+仍然能在我们没改一行代码的情况下让 release 红。R149 在
+`.github/workflows/release.yml` 里把两处 `ovsx` 调用都钉死到具体版
+本：
+
+```yaml
+- name: 发布到 Open VSX（从 VSIX 发布）
+  run: |
+    npx --yes ovsx@0.10.9 verify-pat xiadengma -p "$OVSX_TOKEN"
+    npx --yes ovsx@0.10.9 publish -p "$OVSX_TOKEN" vsix/*.vsix
+```
+
+[`tests/test_release_workflow_ovsx_pinned_r149.py`](../tests/test_release_workflow_ovsx_pinned_r149.py)
+强制：禁止 `npx --yes ovsx publish` / `verify-pat` 浮动调用、必须用
+严格 semver、`verify-pat` 与 `publish` 两行的版本必须一致、附近必
+须有解释 R149 历史的注释。
+
+### 升级钉死的 `ovsx` 版本（手动流程）
+
+工具链升级走 PR，不让浮动 tag 偷偷漂移：
+
+1. **先用 dry VSIX 在临时仓库验证新版本。**
+
+   ```sh
+   git clone --depth 1 https://github.com/xiadengma/ai-intervention-agent
+   cd ai-intervention-agent/packages/vscode
+   npm ci
+   npm run build:vscode      # 产出 dist/vsix/*.vsix
+   npx --yes ovsx@<新版>.<x>.<y> verify-pat xiadengma -p "$YOUR_OVSX_PAT"
+   ```
+
+   `verify-pat` 通过 → 新版接受现有 PAT 格式，可继续。
+
+2. **`release.yml` 两行同步 bump。** 两行 `ovsx@<X.Y.Z>` 必须完全
+   一致；matching-pins 测试（`test_publish_and_verify_use_same_pin`）
+   会兜底。
+
+3. **拿一个牺牲 tag 跑 release 验证**（例如打一个 `vX.Y.Z-rc1`，推
+   上去看 workflow 结果）。新版接受现有 VSIX → 下一个 PATCH / MINOR
+   release 正式上；新版还是拒绝 → 回滚到上一个能 work 的 pin，并去
+   [`eclipse-openvsx/cli`](https://github.com/eclipse/openvsx/issues)
+   开 upstream issue。
+
+4. **`release.yml` 注释更新**，让未来的维护者能看到每次 pin 是什么
+   时候验证过的：
+
+   ```yaml
+   # R149 —— pin ovsx version. <YYYY-MM-DD> 验证升到 <新版>.<x>.<y>
+   #     after <upstream changelog link>。
+   ```
+
+5. **本节文档同步更新**至当前 pin 的版本号。
+
+> **注意** —— `npx --yes ovsx@latest` 在 CI 里**永远不对**，哪怕只
+> 是临时也不行；那就是 v1.6.1 失败的根因。如果当前 pin 的 ovsx 有
+> 已知 bug 阻塞 release，回滚到**上一个**能 work 的 pin（在 `git log
+> release.yml` 里找），不要走浮动。
+
 ## 还是没解决？
 
 1. 看 [`SUPPORT.md`](../.github/SUPPORT.md) 选合适渠道。

@@ -334,6 +334,122 @@ can mirror upstream progress.
 [cursor-bugs]: https://forum.cursor.com/c/bug-report/6
 [disc]: https://github.com/xiadengma/ai-intervention-agent/discussions
 
+## 12. Open VSX publish step fails (`displayName` mismatch / pinned `ovsx` upgrade)
+
+**Symptom**
+
+Release workflow's `open-vsx` job exits with one of:
+
+```
+ERROR: Display name in extension.vsixmanifest and package.json does not match.
+ERROR: Description in extension.vsixmanifest and package.json does not match.
+ERROR: Categories in extension.vsixmanifest and package.json do not match.
+```
+
+— typically *only* the Open VSX job, with the same VSIX uploading
+fine to the Microsoft VS Code Marketplace.
+
+### Why this happens
+
+`ovsx publish`'s server-side validator strict-checks that string
+fields in `package.json` (after NLS placeholder resolution) literally
+match the corresponding fields in the VSIX's `extension.vsixmanifest`.
+NLS placeholders in `package.json` (e.g. `"%displayName%"`) are
+**not** resolved by `ovsx`; they're forwarded as-is and compared
+against the resolved manifest. The Microsoft Marketplace tolerates
+this; Open VSX (since ~2026-05) does not.
+
+This historically broke v1.6.1 — see
+[`CHANGELOG.md`](../CHANGELOG.md#162--2026-05-10) — when the floating
+`npx --yes ovsx publish` tag picked up a newly-strict version of
+ovsx between v1.6.0 (2026-05-08, succeeded) and v1.6.1 (2026-05-10,
+failed) without any code change on our side.
+
+### Fix tier 1 — match content literally
+
+Hard-code the affected field in `packages/vscode/package.json` to the
+literal string instead of `"%placeholderKey%"`:
+
+```diff
+- "displayName": "%displayName%",
++ "displayName": "AI Intervention Agent",
+```
+
+The field is ASCII / Latin so the localised look-up was buying us
+nothing; the other fields that *do* differ across locales
+(`activitybar.title`, `views.title`, `commands.title`) keep their
+NLS placeholders because those are user-visible strings that benefit
+from translation.
+
+The drift guard
+[`tests/test_vscode_displayname_literal_for_ovsx.py`](../tests/test_vscode_displayname_literal_for_ovsx.py)
+locks `displayName` as a literal and demands the NLS bundles
+agree, so a future regression fails CI rather than the next release.
+
+### Fix tier 2 — pin the toolchain (R149)
+
+Even with literal content, a future `ovsx` tightening could rebreak
+us silently if we kept the floating tag. R149 pins both invocations
+in `.github/workflows/release.yml`:
+
+```yaml
+- name: 发布到 Open VSX（从 VSIX 发布）
+  run: |
+    npx --yes ovsx@0.10.9 verify-pat xiadengma -p "$OVSX_TOKEN"
+    npx --yes ovsx@0.10.9 publish -p "$OVSX_TOKEN" vsix/*.vsix
+```
+
+[`tests/test_release_workflow_ovsx_pinned_r149.py`](../tests/test_release_workflow_ovsx_pinned_r149.py)
+rejects floating invocations and demands matching pins on both
+lines.
+
+### Upgrading the pinned `ovsx` version (manual ritual)
+
+Toolchain upgrades are deliberately tracked PRs, not silent drift:
+
+1. **Verify the new version against a dry VSIX first.**
+   In a scratch directory:
+
+   ```sh
+   git clone --depth 1 https://github.com/xiadengma/ai-intervention-agent
+   cd ai-intervention-agent/packages/vscode
+   npm ci
+   npm run build:vscode      # produces dist/vsix/*.vsix
+   npx --yes ovsx@<new>.<x>.<y> verify-pat xiadengma -p "$YOUR_OVSX_PAT"
+   ```
+
+   If `verify-pat` succeeds, `ovsx@<new>.<x>.<y>` accepts the same
+   PAT format. Move on.
+
+2. **Bump `release.yml` in lockstep.** Edit both lines so the
+   `ovsx@<X.Y.Z>` substring is identical. The matching-pins test
+   (`test_publish_and_verify_use_same_pin`) catches a one-line
+   bump.
+
+3. **Re-run release on a sacrificial tag** (e.g. tag a
+   `vX.Y.Z-rc1`, push it, watch the workflow). If the new ovsx
+   accepts the existing VSIX, ship for real on the next PATCH /
+   MINOR release. If it rejects, revert the pin to the previous
+   working version and file an upstream issue against
+   [`eclipse-openvsx/cli`](https://github.com/eclipse/openvsx/issues).
+
+4. **Update the inline comment in `release.yml`** so future
+   maintainers can see when each pin was last verified, e.g.
+
+   ```yaml
+   # R149 — pin ovsx version. Pinned to <new>.<x>.<y> on YYYY-MM-DD
+   # after verifying <upstream changelog link>.
+   ```
+
+5. **Update this section** to mention the new version.
+
+> **Note** — `npx --yes ovsx@latest` is **never** correct in a CI
+> workflow even as a "temporary" measure. It re-creates the same
+> drift that broke v1.6.1. If a release is blocked because the
+> currently-pinned ovsx has a known bug, revert to the *previous*
+> known-working pin (find it in `git log` for `release.yml`) rather
+> than going floating.
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.
