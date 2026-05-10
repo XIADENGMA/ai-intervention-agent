@@ -71,6 +71,9 @@
     "importSuccessReplace": "Replaced quick replies with {{count}} entries from file.",
     "chipShortcutTitle": "Click or press Alt+{{index}} to insert into feedback"
   },
+  "feedback": {
+    "charCounter": "{{count}} chars"
+  },
   "settings": {
     "main": "Settings",
     "notifications": "Notifications",

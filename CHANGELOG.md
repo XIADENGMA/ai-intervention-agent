@@ -179,6 +179,118 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R138** — **(UX)** 反馈 textarea 字符计数器——主输入框
+  ``#feedback-text`` 右下角浮动小标签实时显示当前字符数，三段阈值
+  变色（默认 → 橘 ``warn`` → 红 ``danger``），让"输入长度"这条不可
+  见维度变显式。``mcp-feedback-enhanced`` v2.4.x 把 character counter
+  列入版本 highlight 是因为长 prompt 用户在拼接多段 LLM 输出 / 复
+  制粘贴长技术文档时常常超出心理预期，counter 让其可观测，避免误
+  超出后端 / Bark 通知的隐性 size 约束。
+
+  **设计决策**：
+
+  1. **advisory 而非 enforced** — counter 仅做视觉提示，textarea 上
+     **不加 maxlength** 属性（避免截断用户内容造成数据丢失）；阈值
+     与项目内既有 ``feedback-resubmit-prompt`` / ``feedback-prompt-
+     suffix`` textarea 用的 ``maxlength="10000"`` 隐性约定对齐。
+  2. **三段阈值变色** — ``WARN_THRESHOLD=8000``（橘）/
+     ``DANGER_THRESHOLD=10000``（红）/ ``count == 0`` 时整体隐藏
+     （避免空 textarea 时显示 ``0`` 喧宾夺主）。色系走项目现有的
+     ``--warning-500`` / ``--error-500`` 色板 token，与 R66 品牌色
+     护栏一致，不引入硬编码 hex。
+  3. **空状态隐藏 + ``aria-live="polite"``** — count 0 时
+     ``hidden`` 属性原生隐藏（display: none 不占位）；非 0 时
+     polite live region 让屏幕阅读器只在用户停顿时念字数，不打断
+     主流程；不用 ``assertive`` 避免每次输入都触发朗读。
+  4. **input 事件 + 初始化双触发** — 监听 ``input`` 事件涵盖
+     paste / cut / drag / IME composition end 全场景；初始化时调
+     一次 ``updateCounter`` 应对 R137 height restore + 外部
+     setValue + 表单回填等非 input 事件路径下的非空初始值。
+  5. **``Intl.NumberFormat`` 千位分隔** — 8000 → ``8,000`` /
+     ``8 000`` 视 locale 适配；``Intl.NumberFormat`` 不可用 / 抛异
+     常时静默 fallback ``String(count)``，主路径不挂。
+  6. **``textarea.value.length``** — UTF-16 code unit 计数，与后
+     端 ``len(feedback_text)`` 计算口径一致；不做 grapheme cluster
+     split（即不引入 ``Intl.Segmenter`` 增加 polyfill 体积），对
+     warning 阈值精度无实质影响。
+  7. **i18n 走 ``_t`` 模块内 helper + 字面 key 调用** — 与
+     ``quick_phrases.js`` / ``app.js`` 同款实现，让 i18n orphan /
+     dead-key 扫描器（``scripts/check_i18n_orphan_keys.py::
+     JS_T_CALL_RE`` 用 ``(?<![.\w])(?:_?tl?|...)\(\s*['"]...``
+     regex）能匹配字面 key 调用，避免常量 ``I18N_KEY`` indirect
+     调用让扫描器漏识别造成 dead key 误报。FALLBACK_TEXT 用英文
+     与项目级 base locale 对齐（``test_i18n_js_no_hardcoded_cjk``
+     护栏：JS 内禁中文字面值，CJK 必须走 locale 文件）。
+  8. **``pointer-events: none`` + ``user-select: none``** — counter
+     不拦截 textarea 滚动 / 选区拖拽 / 自带 resize handle 等交互；
+     不可选中避免误复制计数器；``font-variant-numeric: tabular-
+     nums`` 等宽数字让计数跳秒不抖动。
+  9. **CSP nonce + ?v= cache busting** — 与 R47 / R74 / R137 同款
+     ``<script defer nonce={{ csp_nonce }} src=...?v={{ feedback_
+     char_counter_version }}>`` 节点，不违反项目级
+     ``script-src 'self' 'nonce-...'`` 策略；
+     ``_compute_file_version`` 让 immutable cache 在改 JS 后立即
+     失效。
+
+  **实现**：
+
+  - ``src/ai_intervention_agent/static/js/feedback_char_counter.js``
+    （NEW，~145 行）—— 7 个常量 + 6 个公共函数（``_formatCount`` /
+    ``_resolveLabel`` / ``_applyThresholdClass`` / ``updateCounter`` /
+    ``init`` + 模块内 ``_t`` helper），全 try/catch 兜底。
+  - ``src/ai_intervention_agent/templates/web_ui.html`` —— textarea-
+    container 内加 ``<span id="feedback-char-counter" aria-live=
+    "polite" hidden>`` + 文档底部新增 ``<script defer>`` 节点。
+  - ``src/ai_intervention_agent/static/css/main.css`` —— 加 ``.
+    feedback-char-counter`` 主选择器（绝对定位 right/bottom + 等宽
+    数字 + 半透明深底）+ ``.warn`` / ``.danger`` 阈值变色类，全用
+    ``var(--warning-*)`` / ``var(--error-*)`` token。
+  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_
+    context()`` 加 ``"feedback_char_counter_version"``。
+  - 三 locale ``feedback.charCounter`` key（``zh-CN.json`` /
+    ``en.json`` / ``_pseudo/pseudo.json``）含 ``{{count}}`` mustache
+    占位。
+
+  **测试**（``tests/test_feedback_char_counter_r138.py``，33 cases /
+  6 invariant classes）：
+
+  1. **JS 文件存在 + 体积合理** — 文件存在 / 100-180 行 envelope。
+  2. **常量值锁定** — 7 个常量（``TARGET_ID`` / ``COUNTER_ID`` /
+     ``WARN_THRESHOLD=8000`` / ``DANGER_THRESHOLD=10000`` /
+     ``WARN_CLASS`` / ``DANGER_CLASS`` / ``I18N_KEY``）+ 阈值递进
+     关系（WARN < DANGER）。
+  3. **API 函数签名** — 5 个公共函数 + ``window.AIIA_FEEDBACK_CHAR
+     _COUNTER`` export 全 12 个字段。
+  4. **graceful failure / fallback** — ``_formatCount`` try/catch
+     Intl.NumberFormat、``_t`` helper try/catch i18n runtime、
+     FALLBACK_TEXT 含英文兜底、mustache replacement、
+     ``_applyThresholdClass`` 处理 missing classList、
+     ``updateCounter`` count 0 时 hidden=true。
+  5. **HTML / context 集成** — ``<span>`` 在 textarea-container 内 /
+     ``aria-live="polite"`` / ``hidden`` 初始；``<script defer
+     nonce={{csp_nonce}} src=...?v={{feedback_char_counter_version}}>``；
+     ``_get_template_context`` 用 ``_compute_file_version``；CSS 三
+     选择器存在 / 用 ``var(--warning-*)`` + ``var(--error-*)`` token。
+  6. **i18n 三 locale 全覆盖** — ``feedback.charCounter`` key 在
+     ``zh-CN.json`` (``{{count}} 字符``) / ``en.json``
+     (``{{count}} chars``) / ``_pseudo/pseudo.json`` 同时存在，
+     mustache 占位被保留。
+
+  **验证**：33/33 R138 + 全工程 4346 passed + 2 skipped；
+  ``uv run python scripts/ci_gate.py`` exits 0；
+  ``test_i18n_js_no_hardcoded_cjk`` / ``test_i18n_orphan_keys`` /
+  ``test_web_locale_no_dead_keys`` / ``test_minified_source_file_sync``
+  四道护栏 first-pass 触发后全修，二次跑全清。
+
+  **后续 follow-up（不在 R138 范围内）**：
+  - **R138-A**：动态 maxlength 上限——后端通过 ``/api/config``
+    暴露 ``feedback_max_length``，前端拉取后调整阈值色板，让
+    counter 与服务端约束一致。
+  - **R138-B**：hover 提示——counter 鼠标悬浮时显示 ``X / 10000``
+    格式 tooltip 让 advisory 阈值显式。
+  - **R138-C**：超 ``DANGER_THRESHOLD`` 时按钮 disabled——把
+    advisory 升级为可选 enforced 模式（用户偏好开关）。
+
 - **R137** — **(UX)** 反馈 textarea 高度跨会话持久化——
   Web UI 上的 ``#feedback-text`` textarea 把用户拖拽调整后的高度写入
   ``localStorage``，下次加载（同浏览器同源）时自动复原。竞品

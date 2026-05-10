@@ -71,6 +71,9 @@
     "importSuccessReplace": "已用文件里的 {{count}} 条常用回复替换当前列表。",
     "chipShortcutTitle": "点击或按 Alt+{{index}} 插入到反馈框"
   },
+  "feedback": {
+    "charCounter": "{{count}} 字符"
+  },
   "settings": {
     "main": "设置",
     "notifications": "通知",

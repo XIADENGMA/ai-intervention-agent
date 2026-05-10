@@ -1313,6 +1313,10 @@ class WebFeedbackUI(
             "feedback_textarea_height_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_textarea_height.js")
             ),
+            # R138: feedback 字符计数器模块版本号
+            "feedback_char_counter_version": _compute_file_version(
+                str(static_dir / "js" / "feedback_char_counter.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 

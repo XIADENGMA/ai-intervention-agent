@@ -3786,6 +3786,53 @@ h1 {
 }
 
 /* ========================================================================
+   反馈字符计数器 (Feedback Character Counter, R138)
+
+   功能说明：
+     #feedback-text 实时字符数 advisory 显示，三段阈值变色：
+     默认 (text-secondary) → warn (橘) → danger (红)。
+
+   定位说明：
+     - .textarea-container 已 position: relative，counter 走
+       absolute right/bottom 浮在 textarea 右下角；
+     - z-index: 1 浮在 textarea 之上但低于 .drag-overlay (z-index 高)；
+     - pointer-events: none 让 counter 不拦截 textarea 滚动 / 选区
+       拖拽 / 自带 resize handle 等交互；
+     - aria-live="polite" 在 HTML 上声明，CSS 只管视觉。
+
+   兼容性说明：
+     - hidden 属性原生由浏览器隐藏（display: none），无需 CSS；
+     - 三阈值类 .warn / .danger 仅改 color，不动 layout 避免抖动。
+   ======================================================================== */
+.feedback-char-counter {
+  position: absolute;
+  right: 0.75rem; /* 12px 离右边缘 */
+  bottom: 0.5rem; /* 8px 离底部，避开 textarea 自带 resize handle */
+  font-size: 0.75rem; /* 12px 小字号，不喧宾夺主 */
+  font-variant-numeric: tabular-nums; /* 等宽数字，跳秒不抖动 */
+  color: var(--text-secondary); /* 默认：次级文本灰 */
+  background: rgba(0, 0, 0, 0.25); /* 半透明深底防止与文本撞色 */
+  padding: 0.125rem 0.4rem; /* 2/6.4px 内边距 */
+  border-radius: 0.625rem; /* 10px 圆角药丸 */
+  pointer-events: none; /* 不拦截 textarea 交互 */
+  user-select: none; /* 不可选中，避免误复制计数器 */
+  z-index: 1;
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.feedback-char-counter.warn {
+  color: var(--warning-500); /* 橘 #f59e0b */
+  background: var(--warning-bg);
+}
+
+.feedback-char-counter.danger {
+  color: var(--error-500); /* 红 #ef4444 */
+  background: var(--error-bg);
+}
+
+/* ========================================================================
    反馈按钮容器 (Feedback Button Container)
    ======================================================================== */
 

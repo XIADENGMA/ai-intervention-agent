@@ -860,6 +860,13 @@
               data-i18n-placeholder="page.feedbackPlaceholder"
               placeholder="Enter feedback…"
             ></textarea>
+            <!-- R138 — 反馈字符计数器（advisory，不强制 maxlength） -->
+            <span
+              id="feedback-char-counter"
+              class="feedback-char-counter"
+              aria-live="polite"
+              hidden
+            ></span>
           </div>
 
           <div class="button-container">
@@ -1889,6 +1896,13 @@
     <script
       defer
       src="/static/js/feedback_textarea_height.js?v={{ feedback_textarea_height_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <!-- R138 — Feedback textarea 字符计数器（三阈值变色 + i18n） -->
+    <script
+      defer
+      src="/static/js/feedback_char_counter.js?v={{ feedback_char_counter_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
