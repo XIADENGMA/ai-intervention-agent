@@ -88,6 +88,19 @@
   // the poll interval).  AbortController on top.
   var FETCH_TIMEOUT_MS = 4000;
 
+  // R153 — how many tail-most recent log entries we render under the
+  // ``logs`` row's expand control.  5 is the same magic number we use
+  // for R150's self-test history trail; same UX rationale (uptime-kuma
+  // / healthchecks.io ship "last 5" panels).  Each rendered entry is
+  // ~ 240 bytes after server-side ``LogSanitizer`` redaction + our own
+  // 128-char message slice, so 5 entries ≈ 1.2 KiB DOM — negligible.
+  var LOGS_TAIL_COUNT = 5;
+  // R153 — defensive per-entry message slice.  Server already caps
+  // each message at 500 chars (``enhanced_logging._LOG_MESSAGE_MAX``)
+  // but we further shrink to 256 to keep the inline expansion compact
+  // and avoid wrapping the row layout on a stack-trace one-liner.
+  var LOG_MESSAGE_SLICE = 256;
+
   // The list of "rows" (stat tiles) we render.  Each row maps an
   // id (used as React-style key + DOM id) to the i18n label and the
   // formatter that turns the latest value into a textContent string.
@@ -274,10 +287,25 @@
     });
   }
 
+  // R153 — return shape changed from ``string`` to
+  // ``{ summary: string, entries: [...] }`` so the logs row can render
+  // both a one-line summary and an expand-able inline list of the last
+  // ``LOGS_TAIL_COUNT`` entries.
+  //
+  // Bug fix vs R152: the server payload uses ``entries`` (matches
+  // ``web_ui_routes/system.py::recent_logs``), not ``logs``.  R152
+  // shipped with ``logs.logs`` which always returned null → the logs
+  // row was permanently marked ``stale`` whenever the endpoint
+  // responded.  Locked by a regression test in
+  // ``tests/test_activity_dashboard_r152_logs_bugfix_r153.py``.
   function _formatLogs(logs) {
-    if (!logs || typeof logs !== "object") return null;
-    var entries = logs.logs;
-    if (!Array.isArray(entries)) return null;
+    if (!logs || typeof logs !== "object") {
+      return { summary: null, entries: [] };
+    }
+    var entries = logs.entries;
+    if (!Array.isArray(entries)) {
+      return { summary: null, entries: [] };
+    }
     var warns = 0;
     var errors = 0;
     for (var i = 0; i < entries.length; i++) {
@@ -285,11 +313,18 @@
       if (lvl === "WARNING") warns += 1;
       else if (lvl === "ERROR") errors += 1;
     }
-    return _t("settings.activityDashboardLogsValue", {
+    var summary = _t("settings.activityDashboardLogsValue", {
       warnings: _fmtNum(warns),
       errors: _fmtNum(errors),
       total: _fmtNum(entries.length),
     });
+    // Take only the *tail* (most recent ``LOGS_TAIL_COUNT`` entries).
+    // The endpoint returns oldest → newest, so slicing from the end
+    // gives us the most recent N regardless of how many the server
+    // shipped.  Defensive caps on every per-entry field happen later
+    // inside ``_renderLogsRow``.
+    var tail = entries.slice(Math.max(0, entries.length - LOGS_TAIL_COUNT));
+    return { summary: summary, entries: tail };
   }
 
   // ---------- Renderer ------------------------------------------------------
@@ -359,7 +394,183 @@
         text: null,
         stale: true,
       };
-      _writeRow(row, entry.text, entry.stale);
+      if (def.id === "logs") {
+        // R153 — logs row uses a richer renderer that draws a summary
+        // line plus a collapsed-by-default sub-list of the most recent
+        // LOGS_TAIL_COUNT entries.  All other rows keep the simple
+        // ``_writeRow`` contract.
+        _renderLogsRow(row, entry);
+      } else {
+        _writeRow(row, entry.text, entry.stale);
+      }
+    }
+  }
+
+  // ---------- R153 logs sub-row -------------------------------------------
+
+  // Pure helper — returns one of three sentinel level CSS class
+  // suffixes (``warning`` / ``error`` / ``info``) so the renderer
+  // can colour-code WARNING / ERROR rows without depending on the
+  // server's full level enum.  ERROR-and-above (50 CRITICAL) all
+  // collapse onto ``error`` because the dashboard only colour-codes
+  // two buckets visually; the actual server-side ``level`` string
+  // is still rendered verbatim below.
+  function _logLevelClassSuffix(level) {
+    if (typeof level !== "string") return "info";
+    var upper = level.toUpperCase();
+    if (upper === "WARNING" || upper === "WARN") return "warning";
+    if (upper === "ERROR" || upper === "CRITICAL") return "error";
+    return "info";
+  }
+
+  // Pure helper — given an ISO-8601 timestamp string, return just the
+  // HH:MM:SS slice (UTC).  We render UTC time, not local; the dashboard
+  // is meant for ops debugging where wall-clock time across operators
+  // would only confuse "did this WARNING happen before or after the
+  // crash report I'm reading?".  Falls back to the raw string if the
+  // input doesn't look like an ISO timestamp.
+  function _logTimeShort(tsIso) {
+    if (typeof tsIso !== "string") return "—";
+    // ISO format is ``YYYY-MM-DDTHH:MM:SS.fffffffff+00:00`` (per
+    // ``enhanced_logging._build_entry``); slice "T" + 8 chars.
+    var t = tsIso.indexOf("T");
+    if (t === -1 || tsIso.length < t + 9) {
+      return tsIso.slice(0, 16);
+    }
+    return tsIso.slice(t + 1, t + 9);
+  }
+
+  // R153 — render the logs row.  Reuses ``_writeRow`` for the summary,
+  // then injects (or refreshes) a ``[expand]`` button + nested ``<ul>``
+  // that lists the most-recent ``LOGS_TAIL_COUNT`` entries.  Idempotent
+  // — re-renders by clearing the list and rebuilding it from scratch
+  // each tick.
+  function _renderLogsRow(row, entry) {
+    if (!row) return;
+    var value = row.querySelector(".activity-dashboard-value");
+    if (!value) return;
+    var stale = entry && entry.stale === true;
+    var formatted = (entry && entry.text) || {};
+    var summary = formatted && formatted.summary;
+    var entries = (formatted && formatted.entries) || [];
+    if (!Array.isArray(entries)) entries = [];
+
+    // Replace the summary text but preserve our expand-control children
+    // so a stale poll doesn't unhook the user's expanded state on
+    // every tick.  Strategy: find or create a ``<span>`` for summary,
+    // and find or create the controls (button + ul) as siblings.
+    var summarySpan = value.querySelector(".activity-dashboard-logs-summary");
+    if (!summarySpan) {
+      // Tear down whatever ``_writeRow`` might have left here on first
+      // mount (a single text node) and seed the structured layout.
+      while (value.firstChild) value.removeChild(value.firstChild);
+      summarySpan = document.createElement("span");
+      summarySpan.className = "activity-dashboard-logs-summary";
+      value.appendChild(summarySpan);
+    }
+    if (typeof summary !== "string" || summary.length === 0) {
+      summarySpan.textContent = "—";
+    } else {
+      summarySpan.textContent =
+        summary.length > LOG_MESSAGE_SLICE
+          ? summary.slice(0, LOG_MESSAGE_SLICE) + "…"
+          : summary;
+    }
+
+    // Update stale visual on the row container (consistent with the
+    // simple-row path).
+    if (stale) {
+      row.classList.add("activity-dashboard-stale");
+    } else {
+      row.classList.remove("activity-dashboard-stale");
+    }
+
+    // Find or create the expand control + list.  The control's
+    // ``aria-expanded`` state is preserved across re-renders.
+    var btn = value.querySelector(".activity-dashboard-logs-expand");
+    var list = value.querySelector("#activity-dashboard-logs-list");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "activity-dashboard-logs-expand";
+      btn.setAttribute("aria-controls", "activity-dashboard-logs-list");
+      btn.setAttribute("aria-expanded", "false");
+      btn.setAttribute("data-i18n", "settings.activityDashboardLogsExpand");
+      btn.textContent = _t("settings.activityDashboardLogsExpand");
+      btn.addEventListener("click", function () {
+        var expanded = btn.getAttribute("aria-expanded") === "true";
+        btn.setAttribute("aria-expanded", expanded ? "false" : "true");
+        if (list) {
+          if (expanded) list.setAttribute("hidden", "");
+          else list.removeAttribute("hidden");
+        }
+        btn.textContent = expanded
+          ? _t("settings.activityDashboardLogsExpand")
+          : _t("settings.activityDashboardLogsCollapse");
+        // Keep the ``data-i18n`` attribute pointing at the *currently
+        // displayed* key so a future runtime locale-switch re-translates
+        // it correctly.
+        btn.setAttribute(
+          "data-i18n",
+          expanded
+            ? "settings.activityDashboardLogsExpand"
+            : "settings.activityDashboardLogsCollapse",
+        );
+      });
+      value.appendChild(btn);
+    }
+    if (!list) {
+      list = document.createElement("ul");
+      list.id = "activity-dashboard-logs-list";
+      list.className = "activity-dashboard-logs-list";
+      list.setAttribute("role", "list");
+      list.setAttribute("aria-live", "polite");
+      list.setAttribute("hidden", "");
+      value.appendChild(list);
+    }
+
+    // Rebuild the list every tick.  Cheap (LOGS_TAIL_COUNT items) and
+    // avoids per-entry diff bookkeeping.
+    while (list.firstChild) list.removeChild(list.firstChild);
+    if (entries.length === 0) {
+      var emptyLi = document.createElement("li");
+      emptyLi.className = "activity-dashboard-logs-empty";
+      emptyLi.setAttribute("data-i18n", "settings.activityDashboardLogsEmpty");
+      emptyLi.textContent = _t("settings.activityDashboardLogsEmpty");
+      list.appendChild(emptyLi);
+      return;
+    }
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i] || {};
+      var level = typeof e.level === "string" ? e.level.slice(0, 16) : "INFO";
+      var ts = _logTimeShort(e.ts_iso);
+      var msg = typeof e.message === "string" ? e.message : "";
+      if (msg.length > LOG_MESSAGE_SLICE)
+        msg = msg.slice(0, LOG_MESSAGE_SLICE) + "…";
+
+      var li = document.createElement("li");
+      var levelSuffix = _logLevelClassSuffix(level);
+      li.className =
+        "activity-dashboard-log-entry " +
+        "activity-dashboard-log-" +
+        levelSuffix;
+
+      var levelSpan = document.createElement("span");
+      levelSpan.className = "activity-dashboard-log-level";
+      levelSpan.textContent = level;
+      li.appendChild(levelSpan);
+
+      var tsSpan = document.createElement("span");
+      tsSpan.className = "activity-dashboard-log-ts";
+      tsSpan.textContent = ts;
+      li.appendChild(tsSpan);
+
+      var msgSpan = document.createElement("span");
+      msgSpan.className = "activity-dashboard-log-message";
+      msgSpan.textContent = msg || "—";
+      li.appendChild(msgSpan);
+
+      list.appendChild(li);
     }
   }
 
@@ -554,6 +765,11 @@
     _writeRow: _writeRow,
     _renderAll: _renderAll,
     _labelForRow: _labelForRow,
+    _renderLogsRow: _renderLogsRow,
+    _logLevelClassSuffix: _logLevelClassSuffix,
+    _logTimeShort: _logTimeShort,
+    LOGS_TAIL_COUNT: LOGS_TAIL_COUNT,
+    LOG_MESSAGE_SLICE: LOG_MESSAGE_SLICE,
     _open: _open,
     _close: _close,
   };

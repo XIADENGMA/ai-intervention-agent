@@ -8816,3 +8816,83 @@ code,
   opacity: 0.55;
   font-style: italic;
 }
+
+/* R153 — logs row inline expansion.  The logs row's value cell now
+   houses three children: a summary span, an [expand] button (link
+   shape), and a hidden <ul> with the most recent 5 entries.  Lock
+   the visual contract so future tweaks stay scoped. */
+.activity-dashboard-logs-summary {
+  margin-right: 0.4em;
+}
+
+.activity-dashboard-logs-expand {
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--accent-500);
+  font-size: 0.76rem;
+  font-family: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.activity-dashboard-logs-expand:hover,
+.activity-dashboard-logs-expand:focus-visible {
+  outline: none;
+  filter: brightness(1.15);
+}
+
+.activity-dashboard-logs-list {
+  margin: 0.35rem 0 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.76rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.activity-dashboard-logs-list[hidden] {
+  display: none;
+}
+
+.activity-dashboard-logs-empty {
+  padding: 0.2rem 0;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.activity-dashboard-log-entry {
+  display: grid;
+  grid-template-columns: minmax(4rem, max-content) minmax(5rem, max-content) 1fr;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.15rem 0;
+  border-top: 1px dashed var(--border-secondary);
+}
+
+.activity-dashboard-log-entry:first-child {
+  border-top: none;
+}
+
+.activity-dashboard-log-level {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.activity-dashboard-log-warning .activity-dashboard-log-level {
+  color: var(--warning-500);
+}
+
+.activity-dashboard-log-error .activity-dashboard-log-level {
+  color: var(--error-500);
+}
+
+.activity-dashboard-log-ts {
+  opacity: 0.7;
+}
+
+.activity-dashboard-log-message {
+  word-break: break-word;
+  color: var(--text-primary);
+}

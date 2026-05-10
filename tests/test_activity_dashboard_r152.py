@@ -647,15 +647,22 @@ class TestR152CssDefinitions(unittest.TestCase):
 
 
 class TestR152FileSize(unittest.TestCase):
-    """JS 文件不能膨胀；R152 IIFE 应保持精炼."""
+    """JS 文件不能膨胀；R152 IIFE 应保持精炼.
 
-    def test_js_under_700_lines(self) -> None:
+    Envelope bumped from 700 → 900 in R153: the logs-row inline expand
+    feature legitimately added ~ 200 LoC (``_renderLogsRow`` +
+    ``_logLevelClassSuffix`` + ``_logTimeShort`` + bug-fix re-shape of
+    ``_formatLogs``).  Same growth pattern R150 → R151 followed on
+    ``notification_test_button.js`` (900 → 1100).  Keep the next bump
+    in lockstep with a real feature add and update this docstring."""
+
+    def test_js_under_900_lines(self) -> None:
         js = _read(JS_PATH)
         lines = js.count("\n") + 1
         self.assertLess(
             lines,
-            700,
-            f"activity_dashboard.js 必须 < 700 行（当前 {lines}）",
+            900,
+            f"activity_dashboard.js 必须 < 900 行（当前 {lines}）",
         )
 
 
