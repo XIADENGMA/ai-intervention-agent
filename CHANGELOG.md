@@ -59,6 +59,63 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   semantic-token contracts, and the JS file line-count envelope
   (cap raised 900 → 1100 to fit ~150 LoC of helpers).
 
+- **R152** — **Activity Dashboard** subsection in the settings panel.
+  Collapsed-by-default `aria-expanded` toggle reveals a six-row `<dl>`
+  aggregating live stats from four existing endpoints: ``/api/tasks``
+  (pending / active / completed / total), ``/api/system/sse-stats``
+  (emit_total / subscribers / heartbeat + P50/P95 emit→deliver latency),
+  ``/api/system/health`` (overall status + per-provider notification
+  streak summary), and ``/api/system/recent-logs?limit=5`` (warning /
+  error / total counts).  Same competitive class as
+  uptime-kuma / healthchecks.io / grafana status-page tiles — closes
+  the "I have to curl four endpoints to know if the agent is healthy"
+  gap left open by R141-R150's server-side work.  Polls every 5 s
+  while open; pauses on `document.hidden` (saves battery on suspended
+  laptops / backgrounded mobile tabs).  AbortController-aware fetches
+  fan out in parallel and fail per-row (other rows keep refreshing).
+  Toggle is a real `<button>` with `aria-controls` + `aria-expanded`;
+  rendered body is `role="region"` + `aria-labelledby` + `aria-live="polite"`.
+  DOM-XSS-immune renderer (only `createElement` + `textContent`,
+  per-field slice caps).  Full `en` / `zh-CN` / `_pseudo` i18n
+  coverage for 16 new keys.  52 new test cases across 11 classes
+  lock the DOM-id ↔ HTML alignment, endpoint paths, poll window
+  constants (default = 5 s, timeout = 4 s, min/max range = 1-60 s),
+  full API surface (`_fetchJson` / six `_format*` helpers /
+  `_render*` / `_ensureRow` / `_writeRow` / lifecycle), safety
+  defenses (same-origin / non-OK / abort signal / text caps),
+  HTML a11y attributes, i18n mustache-signature parity across
+  locales, CSS class definitions including a "no unbound CSS vars"
+  guard, and a < 900-line file-size envelope.
+
+- **R153** — Activity Dashboard logs row **inline expand** + R152
+  field-name bug fix.  R152's `_formatLogs` read the recent-logs
+  response under `logs.logs`, but `web_ui_routes/system.py::recent_logs`
+  ships the array under `entries` (R52-B contract:
+  `{"success": true, "count": N, "entries": [...]}`).  Net effect in
+  R152: the logs row was permanently `stale` whenever the endpoint
+  responded.  R153 corrects the field name (`logs.entries`) and
+  reshapes the formatter return value from a plain string to
+  `{ summary, entries }` so the row can render both the summary and
+  an inline expanded list.  Clicking the new `[expand]` link reveals
+  the last `LOGS_TAIL_COUNT` (= 5) entries with `level` (colour-coded
+  via `--warning-500` / `--error-500`), UTC `HH:MM:SS` (parsed via
+  `indexOf('T')`-anchored offsets so a non-standard ISO falls back
+  cleanly), and the message clipped to `LOG_MESSAGE_SLICE` (= 256)
+  chars.  Same a11y + DOM-XSS pattern as R146 / R150 / R152: real
+  `<button type="button">` with `aria-controls` + `aria-expanded`;
+  list `<ul>` is `role="list"` + `aria-live="polite"` + `[hidden]`.
+  Idempotent re-render — every poll tick clears + rebuilds the list
+  while preserving the user's expanded state.  Three new i18n keys
+  (`Expand` / `Collapse` / `Empty`) across `en` / `zh-CN` / `_pseudo`.
+  38 new test cases across 10 classes lock the field-name bug fix
+  (positive + negative assertions), the new return shape, the
+  constants, the level → CSS-class mapping for WARNING / WARN /
+  ERROR / CRITICAL / fallback → info, safety defenses (level slice,
+  message slice via `LOG_MESSAGE_SLICE`, no `innerHTML`, idempotent
+  list rebuild), a11y attribute set, i18n coverage, CSS class
+  definitions, `_renderAll` dispatch for the logs row, the
+  tail-slice expression, and the ISO timestamp slice expression.
+
 ### Changed
 
 - **R149** — `release.yml` now pins `ovsx@0.10.9` for both the
@@ -97,6 +154,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   scratch repo first; if it succeeds, bump both lines in `release.yml`
   in lockstep; the matching-pins test in
   `tests/test_release_workflow_ovsx_pinned_r149.py` catches any miss).
+
+- **R154** — **CR#9 lesson:** R152's `_formatLogs` field-name regression
+  motivated a new structural test suite —
+  `tests/test_system_endpoint_payload_contract_r154.py` — that locks
+  the four `/api/system/{health,sse-stats,recent-logs}` + `/api/tasks`
+  response field names against the consumers in
+  `static/js/activity_dashboard.js`.  Any future rename on either side
+  fails loudly at test-collection time rather than silently degrading
+  one dashboard row to permanently `stale` (which is exactly how the
+  R152 bug shipped past R152's own 52-case test suite).  Also adds the
+  troubleshooting §"Client/server payload field-name drift (R154
+  lesson)" so the next contributor reading
+  `docs/troubleshooting.md` knows why we lock both sides.
 
 ## [1.6.2] — 2026-05-10
 

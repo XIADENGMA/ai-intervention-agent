@@ -450,6 +450,49 @@ Toolchain upgrades are deliberately tracked PRs, not silent drift:
 > known-working pin (find it in `git log` for `release.yml`) rather
 > than going floating.
 
+## 13. Client/server payload field-name drift (R154 lesson)
+
+**Symptom** — A status indicator, dashboard row, or test self-check
+silently shows "stale" / "—" / "unknown" even though the underlying
+HTTP endpoint is healthy and returns data. Most often:
+
+- The Activity Dashboard's `Recent logs` row stays "—" while
+  `curl /api/system/recent-logs` returns entries.
+- A self-test verdict line stays "no verdict" while the dispatch
+  itself succeeded.
+- The settings UI shows "no provider stats" while
+  `curl /api/system/health` returns per-provider rows.
+
+**Root cause** — The server endpoint renamed a top-level JSON field
+(e.g. `entries → logs`, `stats → counters`) **or** the client JS
+reads under a different name than the server emits. The fetch
+succeeds, the JSON parses, but the consumer reads `undefined` and
+treats the row as "no data".
+
+R152's `_formatLogs` shipped with `var entries = logs.logs` while
+the server has always shipped `entries`. The dashboard's `Recent
+logs` row was permanently stale in production until R153 caught
+and fixed it.
+
+**What to do if you suspect drift**
+
+1. **Run** `uv run pytest tests/test_system_endpoint_payload_contract_r154.py -v`.
+   It locks the four `/api/system/...` + `/api/tasks` field surfaces
+   against the JS consumer; any miss surfaces as a clear failure.
+2. If the test passes but the symptom persists, **inspect the live
+   payload** with `curl -s http://localhost:8080/api/<endpoint> | jq`
+   and compare keys to the JS read-side in
+   `src/ai_intervention_agent/static/js/activity_dashboard.js`.
+3. **Add a new pin** to `tests/test_system_endpoint_payload_contract_r154.py`
+   for the newly-discovered field so the next regression is caught
+   structurally.
+
+**Prevention going forward** — Treat every endpoint's top-level
+field name as part of the public client contract. Renames must
+land on both sides in the same PR + the test must update in
+lockstep. Don't ship a "client first" rename hoping the server
+catches up — the dashboard will silently degrade in the interim.
+
 ## Still stuck?
 
 1. Read [`SUPPORT.md`](../.github/SUPPORT.md) for the right channel.

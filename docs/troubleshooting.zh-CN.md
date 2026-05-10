@@ -398,6 +398,44 @@ tag。
 > 已知 bug 阻塞 release，回滚到**上一个**能 work 的 pin（在 `git log
 > release.yml` 里找），不要走浮动。
 
+## 13. 客户端/服务端 payload 字段名漂移（R154 教训）
+
+**症状** —— 状态指示器、面板某一行、或自检结果在底层 HTTP 端点
+明明返回数据时仍然显示「stale」/「—」/「未知」。最常见的形态：
+
+- Activity Dashboard 的「近期日志」行一直显示「—」，但
+  `curl /api/system/recent-logs` 实际返回了 entries。
+- 自检 verdict 行一直是「无 verdict」，但 dispatch 本身确实成功。
+- 设置面板上「无 provider 统计」，但
+  `curl /api/system/health` 实际有 per-provider 行。
+
+**根因** —— 服务端 endpoint 改了顶层 JSON 字段名（例如
+`entries → logs`、`stats → counters`），或者客户端 JS
+读取的字段名跟服务端发出的字段名不一致。fetch 成功，JSON 解析正常，
+但消费者读到的是 `undefined`，整行就被当成「无数据」。
+
+R152 的 `_formatLogs` 写的是 `var entries = logs.logs`，而服务端
+一直在 `entries` 字段下发数组。在 R153 抓到并修复之前，
+Dashboard 的「近期日志」行在生产环境一直处于 stale 状态。
+
+**怀疑漂移时怎么处理**
+
+1. **跑** `uv run pytest tests/test_system_endpoint_payload_contract_r154.py -v`。
+   这套测试把四个 `/api/system/...` + `/api/tasks` 的字段面契约
+   双向锁住；任何 miss 都会以清晰的失败暴露。
+2. 测试通过但症状仍在，就**抓 live payload**：
+   `curl -s http://localhost:8080/api/<endpoint> | jq`，然后跟
+   `src/ai_intervention_agent/static/js/activity_dashboard.js` 里
+   的读取侧逐字段对照。
+3. 在 `tests/test_system_endpoint_payload_contract_r154.py` 里
+   **加新的 pin** 把刚发现的字段也固定下来，让下一次的回归被
+   结构化地抓到。
+
+**未来如何避免** —— 把每个 endpoint 的顶层字段名当成公开的客户端
+合约的一部分。重命名必须两侧同 PR 落地，并且这套测试同步更新；
+不要走「先改客户端，等服务端跟上」的路径，那段时间里 Dashboard
+会静默退化。
+
 ## 还是没解决？
 
 1. 看 [`SUPPORT.md`](../.github/SUPPORT.md) 选合适渠道。
