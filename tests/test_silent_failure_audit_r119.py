@@ -226,8 +226,11 @@ class TestNetworkSecurityCreateDefaultConfigR119(unittest.TestCase):
         host.config_file = MagicMock()
         host.config_file.exists = MagicMock(return_value=False)
 
-        # mock _create_default_config_file 抛异常
-        host._create_default_config_file = MagicMock(
+        # mock _create_default_config_file 抛异常。ty 会把这条赋值视为
+        # 类型违例（method bound method 类型 ≠ MagicMock instance 类型），
+        # 但 unittest.mock 的 monkey-patch 是 Python testing 标准做法，
+        # 显式 ignore 即可。
+        host._create_default_config_file = MagicMock(  # ty: ignore[invalid-assignment]
             side_effect=PermissionError("read-only mount")
         )
 
@@ -268,7 +271,10 @@ class TestNetworkSecurityCreateDefaultConfigR119(unittest.TestCase):
         host = _Host()
         host.config_file = MagicMock()
         host.config_file.exists = MagicMock(return_value=False)
-        host._create_default_config_file = MagicMock(side_effect=OSError("disk full"))
+        # ty: 同上方注释——unittest.mock monkey-patch 的标准用法。
+        host._create_default_config_file = MagicMock(  # ty: ignore[invalid-assignment]
+            side_effect=OSError("disk full")
+        )
         host.config_file.read_text = MagicMock(side_effect=OSError("not found"))
 
         with self.assertLogs(

@@ -20,6 +20,8 @@
 
 ### `_is_uvx_mode() -> bool`
 
+### `_macos_legacy_xdg_config_dir() -> Path | None`
+
 ### `find_config_file(config_filename: str = 'config.toml') -> Path`
 
 ### `_get_user_config_dir_fallback() -> Path`

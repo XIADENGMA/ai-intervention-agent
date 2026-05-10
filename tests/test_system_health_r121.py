@@ -186,6 +186,10 @@ class TestSafeUptimeSeconds(unittest.TestCase):
     def test_returns_float_when_healthy(self) -> None:
         result = system_module._safe_uptime_seconds()
         self.assertIsNotNone(result, "正常情况下应返回 float（进程已启动）")
+        # 让 ty narrow result 为 float（``assertIsNotNone`` 不更新 ty 的
+        # 类型推断，下方 ``assertGreater`` 会因 ``Optional[float]`` 与
+        # ``float`` 的 overload 不匹配报 no-matching-overload）。
+        assert result is not None
         self.assertIsInstance(result, float)
         self.assertGreater(result, 0.0, "uptime 必须 > 0（导入时已开始计时）")
 
@@ -206,7 +210,10 @@ class TestSafeUptimeSeconds(unittest.TestCase):
 
         original = server_module._PROCESS_STARTED_AT_UNIX
         try:
-            server_module._PROCESS_STARTED_AT_UNIX = "not a number"  # type: ignore[assignment]
+            # 故意赋 str 测 graceful 降级。原版用的 mypy ``type ignore``
+            # 注释 ty 不认（ty 仍报 invalid-assignment），改 ty 原生
+            # 语法。
+            server_module._PROCESS_STARTED_AT_UNIX = "not a number"  # ty: ignore[invalid-assignment]
             result = system_module._safe_uptime_seconds()
             self.assertIsNone(result, "类型不对时必须返回 None")
         finally:

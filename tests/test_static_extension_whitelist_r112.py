@@ -89,7 +89,6 @@ class _R112TestBase(unittest.TestCase):
             port=cls._port,
         )
         # monkey-patch project_root 指向 tmp，让路由读 tmp 文件
-        # ty: ignore[unresolved-attribute]
         cls._ui._project_root = cls._tmp_root
         cls._ui.app.config["TESTING"] = True
         cls._ui.limiter.enabled = False

@@ -70,7 +70,9 @@ class TestSilentFailureRegressionGuardR120(unittest.TestCase):
 
     def test_baseline_file_exists_and_well_formed(self) -> None:
         """baseline JSON 必须存在且能 load——pre-CI sanity。"""
-        from silent_failure_audit import BASELINE_PATH
+        # ty 看不到 ``sys.path.insert`` 后的运行时 search path，
+        # 所有从 scripts/ 进来的 import 都要 ignore unresolved-import。
+        from silent_failure_audit import BASELINE_PATH  # ty: ignore[unresolved-import]
 
         self.assertTrue(
             BASELINE_PATH.exists(),
@@ -110,7 +112,11 @@ class TestSilentFailureRegressionGuardR120(unittest.TestCase):
              commit** 里提交（或者加一个 follow-up commit，注明
              「baseline approval for R-XXX」）。
         """
-        from silent_failure_audit import diff_sites, load_baseline, scan_repo
+        from silent_failure_audit import (  # ty: ignore[unresolved-import]
+            diff_sites,
+            load_baseline,
+            scan_repo,
+        )
 
         current = scan_repo()
         baseline = load_baseline()
@@ -160,7 +166,7 @@ class TestSilentFailureRegressionGuardR120(unittest.TestCase):
         最近的 baseline diff，确认每条新增 site 都有 R-series CHANGELOG
         entry 论证。
         """
-        from silent_failure_audit import load_baseline
+        from silent_failure_audit import load_baseline  # ty: ignore[unresolved-import]
 
         baseline = load_baseline()
         self.assertLessEqual(
@@ -182,7 +188,7 @@ class TestSilentFailureRegressionGuardR120(unittest.TestCase):
         baseline 里必须有 ``server_feedback.py`` 的 ``launch_feedback_ui``
         条目；如果消失，说明 scanner 又被改回不递归的版本。
         """
-        from silent_failure_audit import load_baseline
+        from silent_failure_audit import load_baseline  # ty: ignore[unresolved-import]
 
         baseline = load_baseline()
         nested_known_sites = [
@@ -210,7 +216,7 @@ class TestSilentFailureRegressionGuardR120(unittest.TestCase):
         # 当成代码节点
         import tempfile
 
-        from silent_failure_audit import scan_file
+        from silent_failure_audit import scan_file  # ty: ignore[unresolved-import]
 
         sample = '''
 """Some docstring text that mentions::
@@ -256,7 +262,7 @@ def real_function() -> None:
         """
         import tempfile
 
-        from silent_failure_audit import scan_file
+        from silent_failure_audit import scan_file  # ty: ignore[unresolved-import]
 
         sample = """
 def f1() -> None:

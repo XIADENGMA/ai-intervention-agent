@@ -116,6 +116,20 @@ Bark iOS 推送 - 通过 HTTP POST 发送通知到 Bark 服务器。
 
 关闭 HTTP Session，释放连接池资源（幂等）。
 
+**R117**：``httpx.Client.close()`` 抛异常曾经被 ``except Exception:
+pass`` 完全静默——这是 ``shutdown()`` / ``atexit`` 路径上**唯一**
+承担连接池清理的调用，静默失败意味着连接池资源（TCP socket、
+keep-alive 连接、HTTP/2 stream 状态）有可能泄漏却没有任何信号
+让运维 / 维护者察觉。
+
+修复策略：保持 try/except 不让异常扩散打断 shutdown chain（其他
+provider 的 close() 还要继续走），但把 exception 写到 debug 级
+日志——正常运行时不噪音，需要排查"为什么我的 ai-intervention-agent
+进程不释放连接 / FD"时打开 debug 立刻看到 root cause。
+
+与项目"fail-loud, no silent skips"政策（cf. R107-R110 系列）一致：
+资源清理失败比业务逻辑失败更隐蔽，更需要可观测性兜底。
+
 ##### `send(self, event: NotificationEvent) -> bool`
 
 HTTP POST 发送通知到 Bark，返回成功与否
