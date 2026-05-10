@@ -1,6 +1,6 @@
 {
   "name": "ai-intervention-agent-root",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "AI Intervention Agent monorepo root: aggregates the PyPI MCP server, the VS Code / Open VSX extension under packages/vscode, and Web UI tooling. private:true; never published to npm.",
   "main": "index.js",
   "private": true,

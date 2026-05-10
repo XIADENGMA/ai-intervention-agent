@@ -9,6 +9,62 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.6.2] — 2026-05-10
+
+> Patch release on top of v1.6.1.  Adds R147 (notification self-test
+> button now probes `/api/system/health` post-dispatch and renders a
+> per-provider delivery verdict directly under the button — closes the
+> "triggered ≠ delivered" gap left open by R146) and ships the
+> displayName fix needed to unblock the Open VSX publish step (v1.6.1's
+> Open VSX job was rejected because `ovsx publish` started strict-
+> checking that `package.json.displayName` matches the resolved
+> `<DisplayName>` element inside `extension.vsixmanifest`; v1.6.0 was
+> fine, the toolchain shifted underneath us).
+>
+> No API changes.  4663 tests pass (2 skipped); ci_gate exit 0.
+
+### Added
+
+- **R147** — Notification self-test button **post-dispatch health
+  probe**.  Builds on R146: clicking *Send system self-test* still
+  triggers the R141 endpoint, but now — when the dispatch succeeds and
+  `providers_dispatched` is non-empty — the button waits 1.5 seconds
+  (Bark RTT headroom; local providers are microsec-fast) and then
+  fetches `GET /api/system/health` once with a 5-second timeout, reads
+  `body.checks.notification.per_provider`, and renders a verdict line
+  directly under the main status: ``bark: delivered (1.4s ago,
+  streak=3)`` / ``bark: failed (5xx_server_error, streak=1)`` /
+  ``sound: stats stale — try again`` / ``system: skipped
+  (not_registered)``.  Probe failures (network down / non-200 / non-
+  JSON / abort) silently clear the line so the main "triggered N
+  providers" message stays the user's source of truth.  The whole probe
+  is awaited so frantic re-clicks can't overrun an in-flight probe
+  (preserves R146's idempotent contract).
+
+  Decision tree picks the freshest of `last_success_age_seconds` /
+  `last_failure_age_seconds` so a dispatch that hit a 5xx is *not*
+  falsely reported "delivered".  6 new i18n keys (`systemTestProbing`
+  / `systemTestProbeProvider{Success,Failure,Stale,Skipped,Unknown}`)
+  with full `en` / `zh-CN` / `_pseudo` coverage.  Server contract
+  pinned in tests so a future `notification.stats.per_provider` rename
+  would fail loudly rather than silently degrade every probe to "stale".
+  41 new test cases across 8 classes.
+
+### Fixed
+
+- **VSCode extension Open VSX publish** — `package.json.displayName`
+  hard-coded to ``"AI Intervention Agent"`` (was the NLS placeholder
+  ``"%displayName%"``).  `ovsx publish`'s recent strict-check rejected
+  the placeholder vs the resolved value inside `extension.vsixmanifest`
+  ("Display name in extension.vsixmanifest and package.json does not
+  match"), which broke the v1.6.1 Open VSX publish job.  v1.6.0 had
+  been fine; the toolchain tightened between releases.  VS Code
+  Marketplace + the activity-bar / view-container / commands stay
+  localised because those still drive through `%key%` placeholders.
+  Drift guard `tests/test_vscode_displayname_literal_for_ovsx.py` locks
+  the literal in `package.json` + both NLS bundles + a defence-in-depth
+  scan that catches any future re-introduction.
+
 ## [1.6.1] — 2026-05-10
 
 > Cycle-3 → Cycle-6 round-up on top of v1.6.0: 4 new endpoints
