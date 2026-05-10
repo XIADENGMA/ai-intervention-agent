@@ -8417,14 +8417,54 @@ code,
   color: #1c1c1e;
 }
 
-/* 移动端：进一步收紧外边距 + 字号 */
+/* 移动端：进一步收紧外边距 + 字号 + header 按钮排版（R133）
+ *
+ * R130 v1 只动了 container margin / chip 字号；R131b 把 header 从「label
+ * + Add」扩到「label + Add + Export + Import」共 4 元素，在 < 480px
+ * 设备上很容易撞挤——按钮被挤压到 padding 完全消失、点击区域 < 32×32
+ * （iOS HIG 与 Material 都把 44/48px 视为最小可点目标）。
+ *
+ * R133 把 header 改为 flex-wrap，让按钮在空间不够时换行；同时收紧按钮
+ * padding 让单行优先；< 480px 进一步缩小 chip 最大宽度避免单 chip 撑爆
+ * 整行；保留所有触摸目标 ≥ 32px（高度走 padding + line-height 支撑）。
+ */
 @media (max-width: 768px) {
   .quick-phrases-container {
     margin: 0 1rem 0.5rem 1rem;
     padding: 0.5rem 0.75rem;
   }
+  .quick-phrases-header {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+  .quick-phrases-add-btn,
+  .quick-phrases-export-btn,
+  .quick-phrases-import-btn {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+  }
   .quick-phrase-chip {
     max-width: 10rem;
     font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .quick-phrases-label {
+    /* < 480px 下 label 不再独占左侧——4 元素需要并排，让 label 自动
+       推到下一行（flex-wrap 已经给行了），只去掉 margin-right: auto
+       的"撑满左侧"语义即可 */
+    margin-right: 0;
+    flex-basis: 100%;
+  }
+  .quick-phrases-add-btn,
+  .quick-phrases-export-btn,
+  .quick-phrases-import-btn {
+    /* 进一步收紧到 < 480px 设备的紧凑形态 */
+    padding: 0.28rem 0.55rem;
+    font-size: 0.74rem;
+  }
+  .quick-phrase-chip {
+    max-width: 8rem;
   }
 }

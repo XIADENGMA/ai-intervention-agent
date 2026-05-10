@@ -179,6 +179,64 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R133** — **(polish)** Quick Phrases 面板移动端响应式补齐 ≤768px /
+  ≤480px 两档 layout，R131b 加 Export/Import 按钮后窄屏不再撞挤。
+
+  **背景**：R130 v1 的 ``.quick-phrases-header`` 只有「label + Add」
+  两个元素，``@media (max-width: 768px)`` 下只动 container margin +
+  chip 字号就够。R131b 把 header 扩到 4 元素（label + Add + Export
+  + Import），在 < 480px 设备（iPhone SE / 老款 Android）上会撞挤——
+  按钮 padding 被压到 0、点击目标 < 32×32（iOS HIG 与 Material
+  Design 都把 44/48px 视为最小可点目标）、甚至按钮文字断行成两列。
+  在 R131b 上线后第一时间就该补齐这块——不引入新 i18n / 不动桌面
+  布局，颗粒小但 UX 收益大。
+
+  **设计决策**：
+
+  1. **断点扩成两档 768/480** — 桌面 ≥769px 保留 R131b 全宽布局；
+     ≤768px 加 ``flex-wrap`` 让按钮在空间紧张时换行；≤480px 进一步
+     强制 label 独占第一行（``flex-basis: 100%``），让按钮组在第
+     二行可用全宽。
+  2. **按钮 padding 阶梯收紧** — 桌面 0.25rem/0.85rem → 768px
+     0.3rem/0.7rem → 480px 0.28rem/0.55rem；字号同样阶梯收紧。每
+     一档都保证按钮高度（padding × 2 + line-height ≈ 1rem）≥ 32px
+     的可点目标。
+  3. **chip max-width 阶梯收紧** — 桌面 unset → 768px 10rem → 480px
+     8rem；避免单个 chip 撑爆整行让 layout 抖动。
+  4. **R131b 按钮共享 selector 模式扩展到 @media 块** — 桌面 selector
+     group ``.quick-phrases-{add,export,import}-btn`` 同款合并到
+     768px / 480px 块内，保证三个按钮永远视觉一致；与 R131b 的
+     selector group 锁配套。
+
+  **实现**：
+
+  - ``static/css/main.css`` 把原 ``@media (max-width: 768px)`` 的
+    Quick Phrases 块从 2 条规则扩到 4 条（加 ``.quick-phrases-header``
+    flex-wrap + 三类按钮共享 padding/font-size），并新增
+    ``@media (max-width: 480px)`` 块（4 条规则：label flex-basis +
+    三类按钮再收紧 + chip max-width 进一步降）。
+
+  **测试**（``tests/test_quick_phrases_mobile_responsive_r133.py``，
+  11 cases / 3 invariant classes）：
+
+  1. **断点存在性** — CSS 同时含 768px / 480px 两个 ``@media`` 块，
+     都覆盖 ``.quick-phrases-header`` / ``.quick-phrases-label``。
+  2. **flex-wrap + padding 收紧** — 768px 块含 ``flex-wrap: wrap``
+     + 三类按钮共享规则；480px 块含 ``flex-basis: 100%`` 强制独行
+     规则；480px chip max-width 数值显式比 768px 更紧（值-比较）。
+  3. **R130/R131b 桌面契约保留** — 桌面 ``.quick-phrases-header``
+     主规则（display:flex + gap:0.5rem）不被移走；R131b 的三类按钮
+     桌面 base selector group 完整；``.quick-phrases-label`` 桌面
+     仍 ``margin-right: auto``（R131b 设计）。
+
+  **辅助 helper**：``_extract_media_block(src, breakpoint_px)`` 用
+  brace counter 抽取 ``@media (max-width: <px>px)`` 块——CSS 嵌套
+  ``{}`` 里 ``flex-wrap`` 这种 property 含 ``-`` 不影响 brace 计数；
+  与 R131b/R131c 测试的 ``_extract_function_body`` 同款思路。
+
+  **验证**：11/11 R133 + 78/78 R130/R131/R131b/R131c = 89/89 quick-
+  phrases 全套零回归；``uv run python scripts/ci_gate.py`` exits 0。
+
 - **R132** — **(feature)** `GET /api/system/health` 顶层暴露 build info
   ``{git_commit, git_branch, git_dirty}``，复用 R63 既有的
   ``server._resolve_build_info()`` lazy cache。
