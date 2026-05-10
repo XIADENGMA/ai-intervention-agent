@@ -30,8 +30,18 @@ class ValidationUtils {
   // 静态配置常量
   // ========================================
 
-  /** 支持的图片MIME类型 */
-  static SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/bmp']
+  /** 支持的图片MIME类型（R122：与 image-upload.js / webview-ui.js / 后端
+   *  file_validator.py 三端对齐。SVG 因可携带 <script>/onload 而被三端统一
+   *  拒绝；jpg 与 jpeg 同义但少数浏览器/上传组件报 image/jpg，故同时收两
+   *  个 MIME，后端 magic-byte 仍按 image/jpeg 一种实际格式识别）。 */
+  static SUPPORTED_IMAGE_TYPES = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/bmp'
+  ]
 
   /** 最小文件大小（100字节） */
   static MIN_FILE_SIZE = 100

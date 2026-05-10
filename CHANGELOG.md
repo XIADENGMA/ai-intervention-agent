@@ -179,6 +179,78 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R122** — **(security + UX)** unify the three front-end
+  `SUPPORTED_IMAGE_TYPES` MIME whitelists and remove `image/svg+xml`
+  from all of them; bring `validation-utils.js` up to parity with
+  `image-upload.js` / `webview-ui.js` by adding `image/jpg` (the
+  legacy alias some Edge / Windows clipboard paths still emit).
+
+  **Background**: the front end has three independent upload-validation
+  sites (Web UI: `image-upload.js` + `validation-utils.js`; VS Code
+  extension: `webview-ui.js`), and all three carried slightly different
+  MIME whitelists pre-R122:
+
+  - `image-upload.js` allowed `image/svg+xml` and `image/jpg`
+  - `webview-ui.js` allowed `image/svg+xml` and `image/jpg`
+  - `validation-utils.js` allowed *neither* `image/svg+xml` *nor*
+    `image/jpg`
+
+  Meanwhile the back-end arbiter (`file_validator.IMAGE_MAGIC_NUMBERS`)
+  recognises *zero* SVG magic-bytes — SVG, being XML text, has no
+  binary magic — so any front-end-allowed SVG would inevitably be
+  rejected at `/api/submit` once the bytes hit the server. Two
+  separate failure modes:
+
+  1. **Security smell** — SVG can carry `<script>` / `onload=` / inline
+     `data:` URIs, classic XSS surface ([OWASP SVG security primer](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery_via_SVG_files)).
+     The front-end whitelist suggested SVG was supported, which would
+     mislead any future contributor adding a "render SVG inline"
+     feature into thinking the contract was already covered. R122
+     closes that gap before it gets exploited.
+  2. **UX break** — a user dragging a `.svg` into the Web UI / VS Code
+     panel would see the local validation green-light, confirm upload,
+     then watch the multipart POST fail at the server with "无法识别
+     的文件格式" — silent failure mode for anyone not watching the
+     network tab.
+
+  The `validation-utils.js` site is *especially* nasty because
+  `image-upload.js:75-80` defers to `ValidationUtils.validateImageFile`
+  when available — meaning the **stricter** of the two whitelists
+  actually applies in production, but the docstrings, type prompts,
+  and error messages all read off the **looser** `image-upload.js`
+  list. Inconsistent reality vs. apparent contract.
+
+  R122 picks the **strictest-safe** intersection: front-end three
+  sites = `{jpeg, jpg, png, gif, webp, bmp}` (six MIMEs, identical
+  ordering, byte-for-byte tied to back-end `IMAGE_MAGIC_NUMBERS`).
+  SVG is rejected at *every* layer — no surprise rejection, no
+  XSS surface to defend against because the bytes never get
+  accepted. Adding SVG support later requires (a) a server-side
+  SVG sanitizer (DOMPurify-equivalent), (b) CSP `img-src` review
+  for inline-`<svg>` injection paths, (c) sync update to all three
+  front-end sites, (d) deletion of the back-end reverse-lock test —
+  all of which are intentionally surfaced by the new test file
+  failing in (d) so a future contributor can't slip SVG support
+  in without getting four reviewers.
+
+  **Files**:
+  - `src/ai_intervention_agent/static/js/image-upload.js` — drop
+    `'image/svg+xml'` from `SUPPORTED_IMAGE_TYPES`, expand inline
+    comment to the back-end-parity rationale + cross-link.
+  - `src/ai_intervention_agent/static/js/validation-utils.js` — add
+    `'image/jpg'`, expand to a 6-MIME array with comment.
+  - `packages/vscode/webview-ui.js` — drop `'image/svg+xml'` and
+    update the comment block to point at `image-upload.js` as the
+    source of truth.
+  - `tests/test_image_mime_whitelist_r122.py` (NEW, 10 tests across
+    4 invariants) — three-site parity, three-site SVG rejection,
+    three-site `image/jpg` alias presence, back-end `IMAGE_MAGIC_NUMBERS`
+    SVG-rejection reverse-lock with explicit "if you want to add SVG,
+    here are the four prerequisites" docstring.
+
+  **Verification**: 10/10 new tests pass; existing test suite
+  (4015 tests) untouched.
+
 - **R119** — extend the R117 / R118 silent-failure observability audit
   to the **third** cluster of bare-except sites (web routes / mDNS /
   config_modules), fixing the **4 of 8** remaining genuinely-risky

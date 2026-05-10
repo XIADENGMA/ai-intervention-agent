@@ -52,15 +52,19 @@ function rafUpdate(callback) {
   }
 }
 
-// 支持的图片格式
+// 支持的图片格式（R122：与后端 file_validator.IMAGE_MAGIC_NUMBERS 严格对齐——
+// SVG 是 XML 文本，可携带 <script>/onload 实现 XSS，后端无 magic-byte 校验，
+// 默认拒绝；前端若放行只会让用户先选 SVG 再被后端 reject，UX 断裂兼安全
+// 隐患，因此前后端三端统一不收 SVG。jpg 与 jpeg 同义但少数浏览器/上传组件
+// 报 image/jpg，故在前端 MIME 白名单里同时收两个，后端 magic-byte 检测层
+// 仍按 image/jpeg 一种实际格式存在）。
 const SUPPORTED_IMAGE_TYPES = [
   'image/jpeg',
   'image/jpg',
   'image/png',
   'image/gif',
   'image/webp',
-  'image/bmp',
-  'image/svg+xml'
+  'image/bmp'
 ]
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024 // 10MB
 const MAX_IMAGE_COUNT = 10

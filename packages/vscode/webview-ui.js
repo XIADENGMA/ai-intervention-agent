@@ -4567,15 +4567,18 @@
     }
   }
 
-  // 图片上传/粘贴（对齐原项目 static/js/app.js 的默认参数）
+  // 图片上传/粘贴（对齐 src/ai_intervention_agent/static/js/image-upload.js 的
+  // 默认参数）。R122：SVG 已从白名单中移除——后端 file_validator 无 SVG
+  // magic-byte，且 SVG 是 XML 文本可携带 <script>/onload 实现 XSS，三端
+  // 统一拒绝；jpg 与 jpeg 同义但少数浏览器/上传组件报 image/jpg，故同时收
+  // 两个 MIME。
   const SUPPORTED_IMAGE_TYPES = [
     'image/jpeg',
     'image/jpg',
     'image/png',
     'image/gif',
     'image/webp',
-    'image/bmp',
-    'image/svg+xml'
+    'image/bmp'
   ]
   const MAX_IMAGE_SIZE = 10 * 1024 * 1024 // 10MB
   const MAX_IMAGE_COUNT = 10
