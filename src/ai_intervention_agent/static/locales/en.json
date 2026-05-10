@@ -40,6 +40,25 @@
     "copyFailed": "Copy failed",
     "skipToContent": "Skip to content"
   },
+  "quickPhrases": {
+    "label": "Quick replies",
+    "addBtn": "Add",
+    "addBtnAriaLabel": "Add quick reply",
+    "empty": "No quick replies yet. Click \"Add\" to create one.",
+    "disabled": "Local storage is unavailable; quick replies disabled.",
+    "formLabelPlaceholder": "Label (max 30 chars)",
+    "formTextPlaceholder": "Content (max 2000 chars)",
+    "formSave": "Save",
+    "formCancel": "Cancel",
+    "deleteBtnAriaLabel": "Delete quick reply",
+    "chipTitle": "Click to insert into feedback",
+    "errorLabelEmpty": "Label cannot be empty",
+    "errorTextEmpty": "Content cannot be empty",
+    "errorLabelTooLong": "Label is longer than 30 characters",
+    "errorTextTooLong": "Content is longer than 2000 characters",
+    "errorTooMany": "At most 20 quick replies can be saved",
+    "confirmDelete": "Delete '{{label}}'?"
+  },
   "settings": {
     "main": "Settings",
     "notifications": "Notifications",

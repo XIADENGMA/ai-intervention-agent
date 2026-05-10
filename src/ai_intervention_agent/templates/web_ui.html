@@ -788,6 +788,42 @@
             class="hidden"
           />
 
+          <!-- R130 — 常用回复 / Quick Phrases 面板（纯前端 + localStorage） -->
+          <div
+            class="quick-phrases-container"
+            id="quick-phrases-container"
+            role="region"
+            aria-label="Quick replies"
+            data-i18n-aria-label="quickPhrases.label"
+          >
+            <div class="quick-phrases-header">
+              <span
+                class="quick-phrases-label"
+                data-i18n="quickPhrases.label"
+                >Quick replies</span
+              >
+              <button
+                type="button"
+                class="quick-phrases-add-btn"
+                id="quick-phrases-add-btn"
+                data-i18n="quickPhrases.addBtn"
+                data-i18n-aria-label="quickPhrases.addBtnAriaLabel"
+                aria-label="Add quick reply"
+              >
+                Add
+              </button>
+            </div>
+            <div
+              class="quick-phrases-list"
+              id="quick-phrases-list"
+              role="list"
+            ></div>
+            <div
+              class="quick-phrases-form-host"
+              id="quick-phrases-form-host"
+            ></div>
+          </div>
+
           <div class="textarea-container">
             <textarea
               class="feedback-textarea"
@@ -1810,6 +1846,13 @@
     <script
       defer
       src="/static/js/app.js?v={{ app_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <!-- R130 — 常用回复 / Quick Phrases 模块（依赖：i18n.js / DOM 渲染） -->
+    <script
+      defer
+      src="/static/js/quick_phrases.js?v={{ quick_phrases_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

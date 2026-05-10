@@ -1306,6 +1306,9 @@ class WebFeedbackUI(
             "prism_min_js_version": _compute_file_version(
                 str(static_dir / "js" / "prism.min.js")
             ),
+            "quick_phrases_version": _compute_file_version(
+                str(static_dir / "js" / "quick_phrases.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 

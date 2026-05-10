@@ -8130,3 +8130,270 @@ code,
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ========================================================================
+   R130 — 常用回复 / Quick Phrases 面板
+   --------------------------------------------------------------------
+   位置：feedback textarea 之上、文件上传 input 之下。
+   视觉：与 .option-item / .feedback-textarea 同一视觉权重，但更紧凑——
+   chip 风格，一行可堆放多枚 phrase；空状态 / 禁用状态走低对比度灰
+   提示，避免视觉打架。
+   ======================================================================== */
+
+.quick-phrases-container {
+  margin: 0 1.5rem 0.75rem 1.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.quick-phrases-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.quick-phrases-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgba(245, 245, 247, 0.85);
+  letter-spacing: 0.02em;
+}
+
+.quick-phrases-add-btn {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f5f5f7;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.25rem 0.85rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.quick-phrases-add-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.quick-phrases-add-btn:focus-visible {
+  outline: 2px solid var(--primary-500, #8b5cf6);
+  outline-offset: 2px;
+}
+
+.quick-phrases-add-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.quick-phrases-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-height: 1.5rem;
+}
+
+.quick-phrases-empty {
+  font-size: 0.8rem;
+  color: rgba(245, 245, 247, 0.55);
+  font-style: italic;
+}
+
+.quick-phrase-chip-wrap {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 999px;
+  overflow: hidden;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.quick-phrase-chip-wrap:hover {
+  background: rgba(139, 92, 246, 0.22);
+  border-color: rgba(139, 92, 246, 0.55);
+}
+
+.quick-phrase-chip {
+  background: transparent;
+  border: none;
+  color: #f5f5f7;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-phrase-chip:focus-visible {
+  outline: 2px solid var(--primary-500, #8b5cf6);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.quick-phrase-chip-delete {
+  background: transparent;
+  border: none;
+  color: rgba(245, 245, 247, 0.55);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem 0.3rem 0.2rem;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.quick-phrase-chip-delete:hover {
+  color: rgba(255, 100, 100, 0.95);
+}
+
+.quick-phrase-chip-delete:focus-visible {
+  outline: 2px solid var(--primary-500, #8b5cf6);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.quick-phrases-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.quick-phrases-form-label,
+.quick-phrases-form-text {
+  background: rgba(0, 0, 0, 0.2);
+  color: #f5f5f7;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.875rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.quick-phrases-form-label:focus,
+.quick-phrases-form-text:focus {
+  outline: 2px solid var(--primary-500, #8b5cf6);
+  outline-offset: 1px;
+}
+
+.quick-phrases-form-error {
+  color: rgba(255, 100, 100, 0.95);
+  font-size: 0.8rem;
+  min-height: 1em;
+}
+
+.quick-phrases-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.quick-phrases-form-save,
+.quick-phrases-form-cancel {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 0.3rem 0.95rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.quick-phrases-form-save {
+  background: var(--primary-500, #8b5cf6);
+  color: #fff;
+  border-color: transparent;
+}
+
+.quick-phrases-form-save:hover {
+  background: var(--primary-600, #7c3aed);
+}
+
+.quick-phrases-form-cancel {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f5f5f7;
+}
+
+.quick-phrases-form-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 浅色主题：与设置 / 主题切换按钮的浅色块同色系 */
+:root[data-theme="light"] .quick-phrases-container,
+[data-theme="light"] .quick-phrases-container {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .quick-phrases-label,
+[data-theme="light"] .quick-phrases-label {
+  color: rgba(28, 28, 30, 0.85);
+}
+
+:root[data-theme="light"] .quick-phrases-add-btn,
+[data-theme="light"] .quick-phrases-add-btn {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1c1c1e;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="light"] .quick-phrases-add-btn:hover:not(:disabled),
+[data-theme="light"] .quick-phrases-add-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .quick-phrase-chip,
+[data-theme="light"] .quick-phrase-chip {
+  color: #1c1c1e;
+}
+
+:root[data-theme="light"] .quick-phrases-empty,
+[data-theme="light"] .quick-phrases-empty {
+  color: rgba(28, 28, 30, 0.55);
+}
+
+:root[data-theme="light"] .quick-phrases-form,
+[data-theme="light"] .quick-phrases-form {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="light"] .quick-phrases-form-label,
+:root[data-theme="light"] .quick-phrases-form-text,
+[data-theme="light"] .quick-phrases-form-label,
+[data-theme="light"] .quick-phrases-form-text {
+  background: rgba(255, 255, 255, 0.7);
+  color: #1c1c1e;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="light"] .quick-phrases-form-cancel,
+[data-theme="light"] .quick-phrases-form-cancel {
+  background: rgba(0, 0, 0, 0.04);
+  color: #1c1c1e;
+}
+
+/* 移动端：进一步收紧外边距 + 字号 */
+@media (max-width: 768px) {
+  .quick-phrases-container {
+    margin: 0 1rem 0.5rem 1rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .quick-phrase-chip {
+    max-width: 10rem;
+    font-size: 0.8rem;
+  }
+}

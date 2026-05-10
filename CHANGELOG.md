@@ -179,6 +179,126 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R130** — **(feature)** Web UI 反馈输入框上方新增「Quick Replies /
+  常用回复」面板：纯前端 + localStorage 持久化、单击 chip 即把内容
+  追加到反馈输入框，对齐 mcp-feedback-enhanced 的 "Quick Replies" 与
+  imhuso/cunzhi 的「常用回复和快捷面板」。
+
+  **背景**：本项目此前没有「常用片段」机制 —— 用户每次都要手敲
+  `继续` / `修复这个 bug` / `这个方案不错` / `请加上单元测试` 这类
+  高频回复，体感重复、易输错。竞品调研（GitHub / 爆款博客）显示：
+  - mcp-feedback-enhanced（v1.2.23, 2026-03）已经把 "Prompt
+    Management / Quick Replies" 作为核心生产力特性；
+  - cunzhi v0.4.0（imhuso，1280+ stars）的 README 第一屏就把
+    「常用回复和快捷面板」并列在「项目级记忆管理」、「智能拦截」之列。
+  R130 把这块短板补齐，但**不引入后端 API / 配置 schema / 跨进程
+  同步**——把复杂度天花板压到「单一 JS 文件 + 单一 localStorage key」。
+
+  **设计决策**（每条都有舍弃路径）：
+
+  1. **localStorage 而非后端 config**：常用回复本质是用户私有，不
+     应进 `config.toml`（同步给 MCP server 既无意义又有隐私漏洞）；
+     卸载后端不丢用户数据；零 API surface 即零回归风险。
+  2. **追加而非替换**：单击 chip 把内容追加到 textarea 末尾、必要
+     时前置换行——支持「组合多个常用片段」的工作流（如先「继续」
+     再「修复 bug」）。要替换的用户全选删除一次即可。
+  3. **内嵌 form 而非 modal**：避免新增焦点陷阱 / 全屏遮罩 / ESC
+     堆栈管理。`window.confirm` 用于删除二次确认（VSCode webview
+     已知不禁用 confirm，浏览器原生支持）。
+  4. **20 条容量上限**：localStorage 单 origin 共享 5 MB 配额；
+     20 × (30 char label + 2000 char text + JSON 包装) ≈ 50 KB，
+     远低于 1% 配额。命中上限时校验文案明确告警。
+  5. **零 innerHTML / 全 DOMSecurity 化**：所有 chip / 按钮 / 输入
+     框走 ``createElement + textContent``，符合项目 R71-CSP / dom-
+     security.js 防 XSS 基线；用户输入的 label 和 text 即使含
+     ``<script>`` 也不会被解析。
+  6. **failure-tolerant**：localStorage 不可用（隐身模式 / 配额满 /
+     浏览器禁用）→ 面板自动 disable + 显示「本地存储不可用」文案，
+     不抛 JS 异常炸面板。损坏数据（JSON 解析失败 / schema 不匹配）
+     → 自动回退到空数组，不向用户暴露报错。
+
+  **实现要点**：
+
+  - **新文件 `static/js/quick_phrases.js`** (~440 行)：
+    - 模块自封闭 IIFE，公开 API 挂在 `window.AIIA_QUICK_PHRASES`
+      （只暴露 ``loadPhrases`` / ``addPhrase`` / ``deletePhrase`` /
+      ``insertTextIntoFeedback`` / ``validatePhraseInput`` /
+      ``init`` 等，给测试 + 未来 R131 编辑功能复用）。
+    - localStorage key：`aiia.quickPhrases.v1`（带版本号，将来
+      schema 升级时改 v2 / v3 老 key 自动失效）。
+    - 数据 schema：`{schema_version: 1, phrases: [{id, label,
+      text, created_at}]}`，id 用 `qp_<ms>_<3 位 base36>` 防同毫秒
+      撞 id（不依赖 `crypto.randomUUID`，老浏览器 / webview 兼容）。
+    - `insertTextIntoFeedback` 触发原生 ``input`` Event，让
+      multi_task.js 的 `taskTextareaContents[activeTaskId] = ...`
+      autosave 链路自动跟上当前内容（避免切换任务后内容丢失）。
+    - i18n 走 `window.AIIA_I18N.t`，未就绪时回退到内置**英文**
+      FALLBACK_TEXT（受 `check_i18n_js_no_cjk.py` 守门），
+      `i18n.init()` 完成后由 `applyTranslationsToDOM()` 自动覆盖。
+
+  - **`templates/web_ui.html`**：在 `.textarea-container` 之上插入
+    `#quick-phrases-container`（label + add-btn + list + form-host
+    四块），`role="region"` + i18n aria-label；模板末尾新增
+    `<script defer src="/static/js/quick_phrases.js?v={{ quick_phrases_version }}">`
+    引用，依赖 `app.js` 之后加载（i18n / 状态机已就绪）。
+
+  - **`web_ui.py`**：`_get_template_context` 新增 `quick_phrases_version`
+    字段，让 `serve_js` 命中 1 年 immutable 缓存（与 R27.2 cache
+    contract 对齐）。
+
+  - **CSS（`static/css/main.css`）**：追加 `.quick-phrases-container`
+    及其子选择器（chip / chip-delete / form / form-save / form-
+    cancel），含浅色主题覆盖 + `@media (max-width: 768px)` 移动端
+    收紧。chip 用 primary-500 半透明紫底圆角风格，与项目主题
+    一致。
+
+  - **i18n（3 份 locale）**：`zh-CN.json` / `en.json` / 自动派生
+    `_pseudo/pseudo.json` 各新增 17 个 `quickPhrases.*` key
+    （label / addBtn / addBtnAriaLabel / empty / disabled /
+    formLabelPlaceholder / formTextPlaceholder / formSave /
+    formCancel / deleteBtnAriaLabel / chipTitle /
+    errorLabelEmpty / errorTextEmpty / errorLabelTooLong /
+    errorTextTooLong / errorTooMany / confirmDelete）。
+    `confirmDelete` 用 `{{label}}` 双花括号 Mustache（与
+    `static/js/i18n.js::_interpolateMustache` 契约一致——
+    `static/js/i18n.js` 不识别裸 `{name}` 单括号）。
+
+  **测试**：`tests/test_quick_phrases_panel_r130.py`（NEW，
+  19 cases / 6 invariant classes）：
+
+  - **HTML 结构**（4）：`#quick-phrases-container` 存在、4 个子节
+    点（label / add-btn / list / form-host）齐全、面板挂载在
+    `#feedback-text` **之前**（视觉位置锁定）、添加按钮带 i18n /
+    aria-label。
+  - **JS 模块**（3）：`window.AIIA_QUICK_PHRASES` 命名空间暴露、
+    `<script>` 标签在 `app.js` 之后加载、模块代码本体零
+    `innerHTML`（XSS 防御静态 lock）。
+  - **i18n 完备性**（3）：`zh-CN.json` / `en.json` /
+    `_pseudo/pseudo.json` 三份 locale 都包含 17 个
+    `quickPhrases.*` key 且非空。
+  - **CSS 样式**（3）：`.quick-phrases-container` /
+    `.quick-phrase-chip` / `.quick-phrase-chip-delete` /
+    `.quick-phrases-form` / `.quick-phrases-form-save` 五个核心
+    selector 出现；浅色主题覆盖到位。
+  - **localStorage schema 锁定**（3）：`STORAGE_KEY` /
+    `SCHEMA_VERSION` / `LABEL_MAX_LEN=30` / `TEXT_MAX_LEN=2000` /
+    `MAX_PHRASES=20` 数值 string-locked，防止意外漂移破坏既有
+    用户数据。
+  - **回归保护**（3）：`#feedback-text` textarea 仍存在、R125b 的
+    `#export-tasks-btn` 仍存在、`_get_template_context` 已填充
+    `quick_phrases_version`（不填 ?v= 渲成空串会让缓存策略从
+    immutable 降级到 1 天，性能回退）。
+
+  **验证**：19/19 新 R130 测试通过；`R125b / R125 / R22.3` 周边
+  46 用例零回归；`uv run python scripts/ci_gate.py` exits 0
+  （ty 静态检查 / ruff 格式 / 浅色主题视觉、`scripts/check_i18n_*`
+  四套 i18n 守门、locale parity 校验、HTML 模板零硬编码 CJK
+  + JS 源零硬编码 CJK 全部通过）。
+
+  **未来工作**：R131 计划补「编辑现有 phrase」（chip ✎ 按钮 →
+  内嵌编辑模式）+ 跨设备 sync（导出 / 导入 JSON）。当前 v1
+  的「删了重新加」是有意识的功能裁剪，让单 commit 颗粒可控。
+
 - **R125b** — **(feature)** Web UI 顶栏新增「Export Tasks」下载按钮，
   把 R125 后端导出 API 暴露给浏览器用户，无需 curl 即可一键备份当前
   会话快照。

@@ -40,6 +40,25 @@
     "copyFailed": "复制失败",
     "skipToContent": "跳转到内容"
   },
+  "quickPhrases": {
+    "label": "常用回复",
+    "addBtn": "添加",
+    "addBtnAriaLabel": "添加常用回复",
+    "empty": "暂无常用回复，点击「添加」创建一条",
+    "disabled": "本地存储不可用，常用回复已禁用",
+    "formLabelPlaceholder": "标签（最多 30 字）",
+    "formTextPlaceholder": "内容（最多 2000 字）",
+    "formSave": "保存",
+    "formCancel": "取消",
+    "deleteBtnAriaLabel": "删除常用回复",
+    "chipTitle": "点击插入到反馈框",
+    "errorLabelEmpty": "标签不能为空",
+    "errorTextEmpty": "内容不能为空",
+    "errorLabelTooLong": "标签长度超过 30 字",
+    "errorTextTooLong": "内容长度超过 2000 字",
+    "errorTooMany": "最多保存 20 条常用回复",
+    "confirmDelete": "确认删除「{{label}}」？"
+  },
   "settings": {
     "main": "设置",
     "notifications": "通知",
