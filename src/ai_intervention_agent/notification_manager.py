@@ -1038,12 +1038,20 @@ class NotificationManager:
                             "last_latency_ms": None,
                             "latency_ms_total": 0,
                             "latency_ms_count": 0,
+                            # R145: 连续成功 / 连续失败计数
+                            "success_streak": 0,
+                            "failure_streak": 0,
                         },
                     )
                     stats["attempts"] += 1
                     stats["failure"] += 1
                     stats["last_failure_at"] = time.time()
                     stats["last_error"] = "provider_not_registered"
+                    # R145: not_registered 视为失败，累加 failure_streak
+                    stats["failure_streak"] = (
+                        int(stats.get("failure_streak", 0) or 0) + 1
+                    )
+                    stats["success_streak"] = 0
             except Exception:
                 pass
             return False
@@ -1065,6 +1073,9 @@ class NotificationManager:
                             "last_latency_ms": None,
                             "latency_ms_total": 0,
                             "latency_ms_count": 0,
+                            # R145: 连续成功 / 连续失败计数
+                            "success_streak": 0,
+                            "failure_streak": 0,
                         },
                     )
                     stats["attempts"] += 1
@@ -1096,6 +1107,9 @@ class NotificationManager:
                             "last_latency_ms": None,
                             "latency_ms_total": 0,
                             "latency_ms_count": 0,
+                            # R145: 连续成功 / 连续失败计数
+                            "success_streak": 0,
+                            "failure_streak": 0,
                         },
                     )
                     now = time.time()
@@ -1110,6 +1124,12 @@ class NotificationManager:
                         stats["success"] += 1
                         stats["last_success_at"] = now
                         stats["last_error"] = None
+                        # R145: success_streak / failure_streak 维护——
+                        # 成功 → 累加 success_streak，failure_streak 归零
+                        stats["success_streak"] = (
+                            int(stats.get("success_streak", 0) or 0) + 1
+                        )
+                        stats["failure_streak"] = 0
                     else:
                         stats["failure"] += 1
                         stats["last_failure_at"] = now
@@ -1124,6 +1144,11 @@ class NotificationManager:
                         stats["last_error"] = (
                             str(last_error)[:800] if last_error is not None else None
                         )
+                        # R145: 失败 → 累加 failure_streak，success_streak 归零
+                        stats["failure_streak"] = (
+                            int(stats.get("failure_streak", 0) or 0) + 1
+                        )
+                        stats["success_streak"] = 0
             except Exception:
                 pass
 
@@ -1147,11 +1172,19 @@ class NotificationManager:
                             "last_latency_ms": None,
                             "latency_ms_total": 0,
                             "latency_ms_count": 0,
+                            # R145: 连续成功 / 连续失败计数
+                            "success_streak": 0,
+                            "failure_streak": 0,
                         },
                     )
                     stats["failure"] += 1
                     stats["last_failure_at"] = time.time()
                     stats["last_error"] = f"{type(e).__name__}: {e}"[:800]
+                    # R145: 异常路径视为失败，累加 failure_streak
+                    stats["failure_streak"] = (
+                        int(stats.get("failure_streak", 0) or 0) + 1
+                    )
+                    stats["success_streak"] = 0
             except Exception:
                 pass
 

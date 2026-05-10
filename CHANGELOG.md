@@ -179,6 +179,78 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R145** — **(Observability)** R142 ``per_provider`` 子结构再扩 2 个互
+  斥连续计数字段：``success_streak`` / ``failure_streak``——把"上一次
+  事件后到现在为止，这家 provider 连续成功 / 连续失败了多少次"显式
+  化。与 R142 ``success_rate`` / R143 ``last_error_class`` 形成完整可观
+  测三件套：成功率答"长期健康度"、last_error_class 答"挂在哪一类"、
+  streak 答"现在还在挂吗"。
+
+  **为什么需要 streak**：``success_rate`` 在样本足够大（≥30 events）
+  时才稳定，对"突发性 incident"（一家 provider 瞬间全挂）反应迟钝
+  ——成功率从 100% 掉到 80% 需要 6 次失败累积，这时候用户可能已经
+  错过 N 个通知。``failure_streak`` 是连续失败计数，**第一次失败立刻
+  +1**，监控对 ``failure_streak >= 3`` 直接 alert 比"15 分钟成功率
+  <X%"早 5-10 个 sample 识别故障。这是云原生告警的标准范式：
+  Prometheus ``increase()`` / Datadog ``count`` 都鼓励直接对 streak
+  做窗口聚合。
+
+  **互斥语义**（隐式契约）：
+
+  - 任何一次成功 → ``success_streak += 1``；``failure_streak = 0``
+  - 任何一次失败 → ``failure_streak += 1``；``success_streak = 0``
+  - 因此**同一 provider 同一时刻最多一个 streak > 0**——这让 dashboard
+    上"哪些 provider 处于异常状态"一眼就能看出（``failure_streak > 0``
+    那批就是）。
+
+  **失败覆盖范围**：
+
+  - 正常 ``ok=False`` 路径 → failure_streak ++
+  - ``provider_not_registered`` 路径 → failure_streak ++（与
+    ``last_error_class=not_registered`` 配套）
+  - ``provider.send()`` 抛 exception 被 except 兜住 → failure_streak ++
+  - 三条失败路径全覆盖，监控不会因为「这家 provider 还没注册」就
+    miss 掉 incident。
+
+  **PII / 安全边界**：streak 是**纯整数**，不含 ``last_error`` 字符串
+  / URL / device_key / token 等任何敏感信息——与 R142 / R143 的边界
+  保持一致。
+
+  **后向兼容**：``_safe_per_provider_snapshot`` 对**老版 stats**（没
+  有 streak 字段）默认返回 ``0 / 0``；对**非法类型**（字符串 /
+  list）走 ``try/except`` 兜底返回 ``0`` 而非 raise——保证 K8s liveness
+  探针在数据格式异常时也不 5xx。
+
+  **改动**：
+
+  - ``src/ai_intervention_agent/notification_manager.py``：
+    ``_send_single_notification`` 4 处 ``providers.setdefault(...)``
+    模板加 ``"success_streak": 0, "failure_streak": 0``；success/
+    failure/异常 3 条路径分别 ++ 自己的 streak 并把对方 = 0。
+  - ``src/ai_intervention_agent/web_ui_routes/system.py``：
+    ``_safe_per_provider_snapshot`` 暴露 streak 两字段（``try/except``
+    兜底非法值）；``system_health`` 的 OpenAPI docstring 增加 R145
+    字段说明（"streak 互斥 / 失败 3 路径覆盖 / 早期告警 vs 长期成
+    功率"）。
+  - ``tests/test_notification_health_streak_r145.py``（新增，
+    25 cases）：常量形状（streak 字段存在 + int 类型 + 非负）/
+    后向兼容（缺字段 / None / 非法类型 → 0 不 raise）/ 互斥语义 /
+    NotificationManager 真实 ``_send_single_notification`` 路径 5
+    种场景（连续成功 / 连续失败 / success → failure reset / 长波动
+    + recover / per-provider 互独立 / 异常路径计为失败 /
+    not_registered 计为失败）/ PII 安全（json.dumps 不含原文本） /
+    HTTP 集成（mock manager → ``_safe_notification_summary`` 返回
+    含 streak）/ Swagger doc 字段验证。
+  - ``tests/test_notification_health_per_provider_r142.py``：
+    ``expected_keys`` 从 9 → 11；``test_eight_keys_exact`` 重命名
+    ``test_keys_match_contract_exact`` 与 keys 数实际值脱钩。
+  - ``tests/test_notification_health_last_error_class_r143.py``：
+    R143 dict-shape 整合测试 expected keys 同步加 streak 两字段；
+    ``test_nine_keys_exact`` → ``test_eleven_keys_exact``。
+
+  **Verification**: 25 R145 tests passed + 294 涉及测试（R141/R142/
+  R143/R121/notification_manager）回归全 pass，ruff/ty clean。
+
 - **R144** — **(UX / Discoverability)** 键盘快捷键 cheatsheet 浮层
   ——把 R131d 的 ``Alt+1..9`` (Quick Phrases)、R140 的 ``Ctrl+Enter
   / Enter / Shift+Enter`` 等隐藏快捷键 discoverability 化。新用户

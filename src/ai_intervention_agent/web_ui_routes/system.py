@@ -319,6 +319,19 @@ def _safe_per_provider_snapshot(
             # 读 status 时已做 ``str(...)`` truncate；这里 defensive 兜底
             last_error_str = str(last_error_raw)
 
+        # R145: success_streak / failure_streak —— 连续成功 / 连续失败计数。
+        # 监控可以在 dashboard 上对 ``failure_streak >= N`` 直接 alert，
+        # 比"成功率< X%"更早发现「这家 provider 突然全挂」。
+        # 非法类型（字符串 / 列表 / None）→ 兜底 0，永不抛 exception。
+        try:
+            success_streak = int(pstats_raw.get("success_streak", 0) or 0)
+        except (TypeError, ValueError):
+            success_streak = 0
+        try:
+            failure_streak = int(pstats_raw.get("failure_streak", 0) or 0)
+        except (TypeError, ValueError):
+            failure_streak = 0
+
         out[ptype] = {
             "attempts": attempts,
             "success": success,
@@ -332,6 +345,9 @@ def _safe_per_provider_snapshot(
             # ``_classify_last_error``。``None`` 当且仅当
             # ``last_error_present=False``。
             "last_error_class": _classify_last_error(last_error_str),
+            # R145: 连续成功 / 连续失败计数（互斥 —— 同时只一个 > 0）。
+            "success_streak": success_streak,
+            "failure_streak": failure_streak,
         }
 
     return out
@@ -984,6 +1000,16 @@ class SystemRoutesMixin:
                   ``last_error_present=False``。所有取值都不含具体
                   URL / device_key / token / error message——PII 边界
                   与 R142 一致。
+
+                * ``success_streak`` / ``failure_streak``（R145）：连
+                  续成功 / 连续失败计数（互斥——同时只有一个 > 0）。
+                  比"成功率掉到 X% 之下"更早发现「这家 provider 突然
+                  全挂」型故障——监控对 ``failure_streak >= N`` 直接
+                  alert，避免等待 finalized sample 累积到 30 才识别异
+                  常。第一次成功 / 失败时分别累加自己的 streak，并把
+                  另一边 streak 归 0。``provider_not_registered``（route
+                  到 ``last_error_class=not_registered``）和异常路径
+                  都计为 failure，累加 failure_streak。
 
                 ## HTTP 状态码
 

@@ -193,6 +193,8 @@ class TestProviderDictShape(unittest.TestCase):
     # ``last_error`` 字符串归一成 ``client_error`` / ``server_error``
     # / ``network_error`` / ``timeout`` / ``not_registered`` / ``unknown``
     # / ``None`` 之一；与 ``last_error_present`` 互补，PII 边界保持。
+    # R145：再加 ``success_streak`` / ``failure_streak`` 互斥连续计数 ——
+    # 比"成功率<X%"更早识别"这家 provider 突然全挂"型故障。
     expected_keys = {
         "attempts",
         "success",
@@ -203,9 +205,15 @@ class TestProviderDictShape(unittest.TestCase):
         "last_failure_age_seconds",
         "last_error_present",
         "last_error_class",
+        "success_streak",
+        "failure_streak",
     }
 
-    def test_eight_keys_exact(self):
+    def test_keys_match_contract_exact(self):
+        # R145 之前 8 key、R143 加 ``last_error_class`` 变 9 key、R145 再
+        # 加 ``success_streak`` / ``failure_streak`` 变 11 key —— 监控
+        # dashboard 与 OpenAPI 客户端按这套 schema 生成代码，多一/少一
+        # 都需要主动 bump，直接 set-equal 不留尺度。
         snap = _safe_per_provider_snapshot(
             {"bark": _build_provider_stats(attempts=1, success=1)}, time.time()
         )

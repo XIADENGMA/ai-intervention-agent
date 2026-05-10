@@ -322,7 +322,7 @@ class TestSnapshotIntegration(unittest.TestCase):
         self.assertFalse(bark["last_error_present"])
         self.assertIsNone(bark["last_error_class"])
 
-    def test_nine_keys_exact(self):
+    def test_eleven_keys_exact(self):
         snap = _safe_per_provider_snapshot(
             {
                 "bark": {
@@ -338,6 +338,8 @@ class TestSnapshotIntegration(unittest.TestCase):
         )
         bark = snap["bark"]
         assert isinstance(bark, dict)
+        # R145：在 R143 9 个 key 上再加 success_streak / failure_streak
+        # 两个互斥连续计数 → 共 11 个 key。
         self.assertEqual(
             set(bark.keys()),
             {
@@ -350,6 +352,8 @@ class TestSnapshotIntegration(unittest.TestCase):
                 "last_failure_age_seconds",
                 "last_error_present",
                 "last_error_class",
+                "success_streak",
+                "failure_streak",
             },
         )
 
