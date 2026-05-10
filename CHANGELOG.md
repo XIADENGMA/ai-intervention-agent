@@ -179,6 +179,70 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R132** — **(feature)** `GET /api/system/health` 顶层暴露 build info
+  ``{git_commit, git_branch, git_dirty}``，复用 R63 既有的
+  ``server._resolve_build_info()`` lazy cache。
+
+  **背景**：R121-A 把 health 端点扩展为 K8s probe / 监控仪表板的命脉
+  字段，但只带 ``version`` / ``uptime_seconds`` / ``config_file_path``。
+  ``version`` 字符串（``v1.5.45``）可能对应过 100 个 commit，对监控
+  做 PR rollout 时仍不够精确——「新版本上线了吗 / 这个实例还在跑老
+  commit 吗 / 是 dirty 工作树吗」三个问题没法一眼回答。R63 早就在
+  ``server._resolve_build_info()`` 里 lazy 解析了 git_commit /
+  git_branch / git_dirty，但只用到 ``aiia://server/info`` MCP resource
+  上。
+
+  **设计决策**：
+
+  1. **复用 R63 既有 cache，不新开 git subprocess** —
+     ``_resolve_build_info`` 是 module-level cache + 双重检查锁，第
+     一次调 fork 3 个 ``git`` subprocess，后续都是 dict 浅拷贝。10s
+     K8s probe 周期性拉取 health 不会炸 fork 风暴。
+  2. **保留 R63 的"unknown 不是失败"契约** — pip / docker /
+     pyinstaller 部署没有 ``.git`` 时字段值是 ``"unknown"``，handler
+     仍返回 dict 而不是 None。监控不应当把 unknown 当告警。
+  3. **handler 不直接调 ``server._resolve_build_info``** — 走
+     ``_safe_build_info`` helper 包一层异常防御，与 ``_safe_uptime_seconds``
+     / ``_safe_project_version`` / ``_safe_config_file_path`` /
+     ``_safe_notification_summary`` 同款防御策略。R53-F 的「handler
+     不直接读 server module」契约就是为这种场景设的——任何 import
+     /调用异常都被吞掉，health 端点不会因此 5xx。
+  4. **dict shape 严格三字段** — helper 对 ``_resolve_build_info``
+     的返回做了显式 ``str()`` 转换、严格只取 ``git_commit / git_branch
+     / git_dirty`` 三个字段，防止 R63 未来加新字段时 health 顶层
+     payload 被无意扩张（监控仪表板对字段稳定性敏感）。
+
+  **实现**：
+
+  - ``web_ui_routes/system.py`` 模块级新增 ``_safe_build_info()`` 函
+    数（与其它 ``_safe_*`` helper 同位）；``system_health()`` payload
+    顶层加 ``"build": _safe_build_info()``；docstring 加 R132 字段
+    描述（``flasgger`` 自动 reflect 到 ``/apidocs/``）。
+  - ``tests/test_web_ui_routes_system.py::TestSystemHealthEndpoint::
+    test_payload_carries_no_sensitive_fields`` 把 ``"build"`` 加入
+    ``allowed_keys`` 白名单 + 加专项类型断言（dict / None；dict 时
+    严格仅 git_commit/git_branch/git_dirty 三键 + 全 str），与该测
+    试 R121-A 留下的「新增任何顶层字段都必须先扩白名单 + 加专项类
+    型断言」notes 一致。
+
+  **测试**（``tests/test_system_health_build_info_r132.py``，13 cases
+  / 3 invariant classes）：
+
+  1. **handler 顶层暴露** — payload 含 ``"build"``、调
+     ``_safe_build_info()`` helper、不直接调
+     ``server._resolve_build_info``、docstring 含 R132 字段标记。
+  2. **helper 行为契约** — module 级可调；正常返回严格三字段 dict
+     全 str；``_resolve_build_info`` 返回非 dict 时 helper 返回
+     None；``_resolve_build_info`` 抛异常时 helper 返回 None；
+     全 ``"unknown"`` 是合法值（pip 部署 fallback）helper 不当作
+     失败处理。
+  3. **R53-F / R121-A 回归保护** — 既有 ``version`` / ``uptime_seconds``
+     / ``config_file_path`` 字段仍在；handler 不引入新 ``get_config()``
+     调用；status enum 三值不变；503 ↔ unhealthy 决策完整。
+
+  **验证**：13/13 R132 + 既有 health 套件 R53-F / R121 / TestSystemHealthEndpoint
+  共 98/98 零回归；``uv run python scripts/ci_gate.py`` exits 0。
+
 - **R131c** — **(feature)** Quick Phrases 面板按使用频率排序，对齐
   ``mcp-feedback-enhanced`` Prompt Management 的「最近使用优先」体感。
 

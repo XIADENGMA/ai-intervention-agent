@@ -634,7 +634,7 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
         ):
             resp = self._get()
         body = resp.get_json()
-        # R53-F 原始字段 + R121-A 新增字段，且**只能是这些**
+        # R53-F 原始字段 + R121-A 新增字段 + R132 新增字段，且**只能是这些**
         allowed_keys = {
             # R53-F 原 schema
             "status",
@@ -644,6 +644,8 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
             "version",
             "uptime_seconds",
             "config_file_path",
+            # R132 新增：build info（git_commit / git_branch / git_dirty）
+            "build",
         }
         actual_keys = set(body.keys())
         self.assertTrue(
@@ -679,6 +681,26 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
                 cfp is None or isinstance(cfp, str),
                 "config_file_path 字段必须是字符串或 None",
             )
+
+        # R132：build 必须是 dict 或 None；dict 时严格仅含 git_commit /
+        # git_branch / git_dirty 三个字符串字段——绝不能允许 dict 透出
+        # 任何 config 值 / token / path 之外的复合结构
+        if "build" in body:
+            build = body["build"]
+            self.assertTrue(
+                build is None or isinstance(build, dict),
+                "build 字段必须是 dict 或 None",
+            )
+            if isinstance(build, dict):
+                self.assertEqual(
+                    set(build.keys()),
+                    {"git_commit", "git_branch", "git_dirty"},
+                    "build 字段必须严格仅含 git_commit / git_branch / git_dirty",
+                )
+                for k, v in build.items():
+                    self.assertIsInstance(
+                        v, str, f"build.{k} 必须是字符串（含 'unknown' 兜底）"
+                    )
 
         # checks 必须是 dict，每个 sub-check 都是 dict 含 ok 字段
         # 这是 R53-F 已有的 invariant；R121-A 加了 notification 子检查，

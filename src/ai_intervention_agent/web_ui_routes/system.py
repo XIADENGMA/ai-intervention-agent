@@ -115,6 +115,42 @@ def _safe_config_file_path() -> str | None:
         return None
 
 
+def _safe_build_info() -> dict[str, str] | None:
+    """返回 ``{git_commit, git_branch, git_dirty}`` build 元信息；失败返回 None。
+
+    R132：把 R63 已有的 ``server._resolve_build_info()`` 投影到 health
+    端点。比 ``version`` 字段精确（``v1.5.45`` 可能对应过 100 个 commit，
+    ``git_commit=fa6f49d`` 只对应一份代码）；监控做 PR rollout 时立刻
+    能区分「新版本上线了吗 / 这个实例还在跑老 commit 吗 / 是 dirty 工作
+    树吗」三个问题。
+
+    实现策略：
+    1. ``_resolve_build_info`` 是 lazy + module-level cache，第一次调
+       fork 3 个 ``git`` subprocess，后续只是 dict 浅拷贝——监控按
+       10 s 一次 K8s probe 拉这个端点，性能开销可忽略；
+    2. pip install / docker / pyinstaller 等没有 ``.git`` 的部署，
+       cache 里全是 ``"unknown"``，handler 仍然返回 dict 而不是
+       None——「unknown 不是失败」是 R63 的契约；只有 import 阶段
+       炸了（罕见）才返回 None；
+    3. 任何错误一律 swallow（与 ``_safe_notification_summary`` /
+       ``_safe_uptime_seconds`` / ``_safe_project_version`` 同款防
+       御策略）。
+    """
+    try:
+        from ai_intervention_agent import server
+
+        info = server._resolve_build_info()
+        if not isinstance(info, dict):
+            return None
+        return {
+            "git_commit": str(info.get("git_commit", "unknown")),
+            "git_branch": str(info.get("git_branch", "unknown")),
+            "git_dirty": str(info.get("git_dirty", "unknown")),
+        }
+    except Exception:
+        return None
+
+
 def _safe_notification_summary() -> dict[str, object] | None:
     """从全局 ``notification_manager`` 提取 health 端点需要的安全字段。
 
@@ -702,6 +738,14 @@ class SystemRoutesMixin:
                   （**仅路径，不暴露字段值**），监控可据此发现 "加载了错配置"
                   这类故障；探测失败或未配置为 ``null``。
 
+                * ``build``（R132）：``{git_commit, git_branch, git_dirty}`` 三
+                  字段元信息，比 ``version`` 字符串精确——``v1.5.45`` 可能对应
+                  过 100 个 commit，``git_commit`` 只对应一份代码。监控做 PR
+                  rollout 时可借此立刻区分"新版本上线了吗 / 这个实例还在跑老
+                  commit 吗 / 是 dirty 工作树吗"三个问题；pip install / docker /
+                  pyinstaller 等没有 ``.git`` 的部署里字段值是 ``"unknown"``，
+                  探测整体失败为 ``null``。
+
                 ## HTTP 状态码
 
                 * 200 — ``healthy`` / ``degraded``：服务可用；
@@ -848,6 +892,11 @@ class SystemRoutesMixin:
                 "version": _safe_project_version(),
                 "uptime_seconds": _safe_uptime_seconds(),
                 "config_file_path": _safe_config_file_path(),
+                # R132：build info（git commit / branch / dirty）。
+                # ``_safe_build_info`` 复用 R63 的 lazy cache，10 s K8s probe
+                # 周期性拉取 health 时不会炸 fork 风暴。pip 部署没 .git 时
+                # 字段全是 "unknown"，handler 不当作错误——保留 R63 契约。
+                "build": _safe_build_info(),
             }
             http_code = 503 if status == "unhealthy" else 200
             return jsonify(payload), http_code
