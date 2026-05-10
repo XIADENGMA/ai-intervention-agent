@@ -179,6 +179,107 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R131b** — **(feature)** Quick Phrases 面板补齐「JSON 导入 / 导出」
+  跨设备 / 跨浏览器迁移能力（Code Review #2 P1 follow-up，对齐
+  ``mcp-feedback-enhanced`` 的 Prompt Management 文件分发模式）。
+
+  **背景**：R130 把 quick phrases 持久化到 ``localStorage``，本质上
+  是「单设备 / 单浏览器」语义——用户在 A 机器整理好 20 条常用回复，
+  到 B 机器又得手敲一遍；切换浏览器（Chrome → Safari）数据也丢。
+  ``mcp-feedback-enhanced`` v1.2.23 + ``imhuso/cunzhi`` 都把 Prompt
+  / 常用回复以 JSON 文件形式分发，是基础生产力门槛。
+
+  **设计决策**：
+
+  1. **envelope schema 与 storage schema 解耦** — 导出文件用独立
+     ``EXPORT_SCHEMA_VERSION``（当前 1）+ ``signature``（魔术串
+     ``"ai-intervention-agent.quick-phrases"``）+ ``exported_at`` +
+     ``phrases``。让未来 storage schema 升级（v2 / v3）时不影响外部
+     文件兼容；让 import 校验有一行字符串可拒（防止用户错传别处
+     JSON）。
+  2. **默认 merge 而非 replace** — 体感最安全。merge 按
+     ``(label, text)`` 元组去重，每条新条目重新分配 ``id``，避免
+     与本地既有 phrase 撞键；merge 后超 ``MAX_PHRASES = 20`` 容量
+     的剩余条目静默跳过（在 result 里返回 ``skipped`` 计数让 UI 可
+     报告）。
+  3. **merge 全是 skip 时弹 confirm 走 replace** — 当用户文件全部
+     是「已经存在的常用回复」时，merge 没意义；提示一句"用文件里
+     的 N 条替换当前 M 条"让用户拍板。replace 模式下仍受 MAX_PHRASES
+     截断（防止文件被人为伪造大数据炸 storage）。
+  4. **下载用 ``Blob + URL.createObjectURL``，老 IE 兜底 ``data:``
+     URL** — Blob 路径在主流浏览器（Chrome / Firefox / Safari /
+     Edge）都是 first-class；data URL 让极简 webview / 老 IE 也能
+     工作。``revokeObjectURL`` 故意延迟 100ms，避免某些 Safari 版
+     本"过早 revoke 取消下载"的已知 bug。
+  5. **导入用 ``<input type="file" hidden>"`` + ``FileReader``** —
+     不需要弹 modal、不需要剪贴板权限、与 R125b 「Export tasks」
+     按钮的体感一致。``accept="application/json,.json"`` 仅是 UX
+     提示（OS 文件选择器过滤），真校验仍在 JS 解析层。
+  6. **错误路径与成功路径都走 ``alert``** — 不引入 toast 系统避免
+     与现有 UI 模块耦合；alert 在所有浏览器都立即可见，对低频
+     操作（导入 / 导出，每个用户每月 ≤ 1 次）足够。
+
+  **实现**：
+
+  - ``static/js/quick_phrases.js`` 新增 ~270 行：
+    - 常量 ``EXPORT_SCHEMA_VERSION = 1`` / ``EXPORT_SIGNATURE =
+      "ai-intervention-agent.quick-phrases"``。
+    - 6 个新函数：``buildExportEnvelope`` /
+      ``exportPhrasesAsJson`` / ``downloadPhrasesAsFile`` /
+      ``parseImportPayload`` / ``importPhrasesFromJson`` /
+      ``triggerImportFilePicker`` + 内部的
+      ``handleImportFileChange``。
+    - ``bindEventsOnce`` 扩展三个新事件源（``#quick-phrases-export-btn``
+      click / ``#quick-phrases-import-btn`` click /
+      ``#quick-phrases-import-file`` change）。
+    - ``window.AIIA_QUICK_PHRASES`` 暴露 6 个新公开函数 + 2 个新
+      常量，给测试 + 未来 R131c（按使用频率排序）复用。
+  - ``templates/web_ui.html`` quick-phrases header 内插入 Export /
+    Import 两个按钮 + 隐藏 ``<input type="file" accept="application/
+    json,.json">``，全部带 ``data-i18n`` / ``data-i18n-aria-label``。
+  - ``static/css/main.css`` 把 ``.quick-phrases-add-btn`` 的全部
+    base / hover / focus / disabled / light-theme override 规则
+    selector 扩展为 ``add | export | import`` 三个 class 共享，
+    保持视觉一致；header 改用 ``margin-right: auto`` 把 label 推
+    到左侧、3 个按钮挤右侧（替代之前的 ``space-between``）。
+  - ``static/locales/{en,zh-CN}.json`` + ``_pseudo/pseudo.json``
+    新增 10 条 ``quickPhrases.*`` i18n key（``exportBtn`` / 同
+    ariaLabel / ``importBtn`` / 同 ariaLabel / 三种 import 错误
+    + 一条 confirm + 两条成功提示），全部带 ``{{name}}`` Mustache
+    参数（替代 R130 v1 的单花括号）以兼容 i18n runtime。
+
+  **测试**（``tests/test_quick_phrases_import_export_r131b.py``，26
+  cases / 6 invariant classes）：
+
+  1. **JS API 扩展** — 6 个函数签名 + ``window.AIIA_QUICK_PHRASES``
+     暴露 6 个新 handle。
+  2. **导出 envelope schema** — 4 个顶层字段 + ``EXPORT_SIGNATURE``
+     与 ``EXPORT_SCHEMA_VERSION`` 常量值锁定 + 文件名前缀含
+     ``new Date().toISOString()``。
+  3. **HTML 结构** — Export / Import 按钮 + file input 都存在；
+     都带 ``data-i18n`` / ``data-i18n-aria-label``；按钮位于
+     ``#quick-phrases-list`` 之上。
+  4. **导入校验枝** — JSON 解析失败 / schema 不匹配 / 过滤后为空
+     / signature 防误导入 / replace 模式分支 / MAX_PHRASES 容量
+     约束。
+  5. **i18n 完备性** — 3 份 locale 都含 10 个新 key + 关键参数化
+     字符串（``importConfirmReplace`` / ``importSuccessMerge``）
+     的 Mustache 占位符锁定。
+  6. **CSS 样式合并** — 三类按钮 selector 出现在同一规则块的
+     selector group（防止未来误把 export / import 拆出去）。
+
+  助手用一个手写的 ``_extract_function_body`` brace counter
+  抽取嵌套 ``{}`` 的函数体（``parseImportPayload`` / ``importPhrasesFromJson``
+  含多层 try / forEach / object literal，朴素 ``.*?\}`` 非贪婪
+  正则停在第一个内层闭合 ``}``）。
+
+  **验证**：26/26 R131b + 19/19 R130 + 16/16 R131 = 64/64 quick-
+  phrases 全套零回归；``uv run python scripts/ci_gate.py`` exits 0。
+
+  **未来工作**：R131c「按使用频率排序」（chip 单击时记录
+  ``last_used_at`` / ``use_count``，渲染时按 ``last_used_at``
+  desc 主排 + ``use_count`` desc 二排）。
+
 - **R125c** — **(feature)** `GET /api/tasks/export` 增加
   `?include_images={true|false|1|0|yes|no}` query 参数，让用户在
   「需要 base64 图像作完整快照」与「只要文本、要小文件」两种典型

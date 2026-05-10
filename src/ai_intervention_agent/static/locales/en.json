@@ -58,7 +58,17 @@
     "errorLabelTooLong": "Label is longer than 30 characters",
     "errorTextTooLong": "Content is longer than 2000 characters",
     "errorTooMany": "At most 20 quick replies can be saved",
-    "confirmDelete": "Delete '{{label}}'?"
+    "confirmDelete": "Delete '{{label}}'?",
+    "exportBtn": "Export",
+    "exportBtnAriaLabel": "Export quick replies as a JSON file",
+    "importBtn": "Import",
+    "importBtnAriaLabel": "Import quick replies from a JSON file",
+    "importErrorInvalidJson": "Selected file is not valid JSON",
+    "importErrorSchema": "File does not look like a quick-replies export",
+    "importErrorEmpty": "File contains no valid quick replies",
+    "importConfirmReplace": "Replace all {{current}} current quick replies with {{count}} from file? This cannot be undone.",
+    "importSuccessMerge": "Merged {{added}} new quick replies (skipped {{skipped}} duplicates).",
+    "importSuccessReplace": "Replaced quick replies with {{count}} entries from file."
   },
   "settings": {
     "main": "Settings",

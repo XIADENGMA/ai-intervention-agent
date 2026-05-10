@@ -91,6 +91,20 @@
     "quickPhrases.errorTextTooLong": "Content is longer than 2000 characters",
     "quickPhrases.errorTooMany": "At most 20 quick replies can be saved",
     "quickPhrases.confirmDelete": "Delete '{{label}}'?",
+    "quickPhrases.exportBtn": "Export",
+    "quickPhrases.exportBtnAriaLabel": "Export quick replies as a JSON file",
+    "quickPhrases.importBtn": "Import",
+    "quickPhrases.importBtnAriaLabel": "Import quick replies from a JSON file",
+    "quickPhrases.importErrorInvalidJson": "Selected file is not valid JSON",
+    "quickPhrases.importErrorSchema":
+      "File does not look like a quick-replies export",
+    "quickPhrases.importErrorEmpty": "File contains no valid quick replies",
+    "quickPhrases.importConfirmReplace":
+      "Replace all {{current}} current quick replies with {{count}} from file? This cannot be undone.",
+    "quickPhrases.importSuccessMerge":
+      "Merged {{added}} new quick replies (skipped {{skipped}} duplicates).",
+    "quickPhrases.importSuccessReplace":
+      "Replaced quick replies with {{count}} entries from file.",
   };
 
   // 项目 i18n runtime 只识别 ``{{name}}`` 双花括号 Mustache 语法（详见
@@ -581,6 +595,282 @@
   }
 
   // ============================================================================
+  // R131b — 导入 / 导出 JSON（跨设备 / 跨浏览器迁移）
+  // ============================================================================
+
+  /**
+   * R131b 导出 envelope schema 版本号；与 STORAGE_KEY 内 ``schema_version``
+   * 解耦，让未来 storage schema 变化时仍能保持 export 兼容（导出层是
+   * 用户外部资产，越稳定越好）。当前与 storage 同为 1。
+   */
+  var EXPORT_SCHEMA_VERSION = 1;
+  /**
+   * 文件签名魔术串，写入 envelope ``signature`` 字段，让 import 时哪怕
+   * 用户拼错文件类型 / 误传了别处 JSON，也能用一行字符串校验拒绝，
+   * 而不是去匹配模糊 schema。竞品（mcp-feedback-enhanced）也用类似
+   * pattern。
+   */
+  var EXPORT_SIGNATURE = "ai-intervention-agent.quick-phrases";
+
+  /**
+   * 把当前 phrases 序列化成 envelope 对象（不直接转字符串，方便测试
+   * 直接断言字段；caller 自行 JSON.stringify）。
+   */
+  function buildExportEnvelope() {
+    return {
+      signature: EXPORT_SIGNATURE,
+      schema_version: EXPORT_SCHEMA_VERSION,
+      exported_at: Date.now(),
+      phrases: loadPhrases(),
+    };
+  }
+
+  /** 直接拿到导出的 JSON 文本（缩进 2，便于人类查看）。 */
+  function exportPhrasesAsJson() {
+    return JSON.stringify(buildExportEnvelope(), null, 2);
+  }
+
+  /**
+   * 触发浏览器下载 ``ai-intervention-agent-quick-phrases-<ISO8601>.json``。
+   * 用 ``URL.createObjectURL`` + 临时 ``<a>`` + ``revokeObjectURL`` 标准
+   * 套路；不支持 Blob 的老引擎走 fallback：用 data URL 直接打开新窗口。
+   */
+  function downloadPhrasesAsFile() {
+    var json = exportPhrasesAsJson();
+    var stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    var filename = "ai-intervention-agent-quick-phrases-" + stamp + ".json";
+
+    if (typeof window.Blob === "function" && typeof window.URL === "function" &&
+        typeof window.URL.createObjectURL === "function") {
+      var blob = new window.Blob([json], { type: "application/json" });
+      var url = window.URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      // R71-CSP：dispatch 一个 click 事件比 ``a.click()`` 更兼容老 Safari
+      // 且不会触发 popup blocker（同步用户手势链路上）
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // 100ms 后释放 URL；过早 revoke 在某些 Safari 版本会取消下载
+      window.setTimeout(function () {
+        try {
+          window.URL.revokeObjectURL(url);
+        } catch (_e) {
+          /* 忽略：浏览器自行 GC */
+        }
+      }, 100);
+      return true;
+    }
+    // 兜底：data URL（老 IE / 极简 webview）。RFC 2397 编码体大小约
+    // 1.33x，但 export 内容上限 20 phrase 不会超 100KB，可接受。
+    var dataUrl =
+      "data:application/json;charset=utf-8," + encodeURIComponent(json);
+    var fallback = document.createElement("a");
+    fallback.href = dataUrl;
+    fallback.download = filename;
+    document.body.appendChild(fallback);
+    fallback.click();
+    document.body.removeChild(fallback);
+    return true;
+  }
+
+  /**
+   * 解析 envelope JSON 字符串 → 返回 ``{ ok, phrases?, message? }``。
+   * 把所有「这不是合法 export」的失败枝集中在这里，让 caller（importPhrases
+   * + 测试）只需要看 ``ok`` flag。
+   *
+   * 校验维度：
+   * 1. JSON 解析失败 → ``importErrorInvalidJson``
+   * 2. 顶层不是 object / 缺 ``phrases`` 数组 → ``importErrorSchema``
+   * 3. ``signature`` 字段不匹配 → ``importErrorSchema``（防误导入）
+   * 4. ``phrases`` 内每条 phrase 走 storage 读路径同款 filter（id/label/
+   *    text 三个字段类型对、长度合法），失败的条目静默剔除而不是直接
+   *    Reject，让 import 行为容错（防止某条历史脏数据卡住整个文件）
+   * 5. 过滤后 phrase 数为 0 → ``importErrorEmpty``
+   */
+  function parseImportPayload(rawText) {
+    var parsed;
+    try {
+      parsed = JSON.parse(String(rawText));
+    } catch (_e) {
+      return {
+        ok: false,
+        message: _t("quickPhrases.importErrorInvalidJson"),
+      };
+    }
+    if (!parsed || typeof parsed !== "object") {
+      return { ok: false, message: _t("quickPhrases.importErrorSchema") };
+    }
+    if (parsed.signature && parsed.signature !== EXPORT_SIGNATURE) {
+      return { ok: false, message: _t("quickPhrases.importErrorSchema") };
+    }
+    if (!Array.isArray(parsed.phrases)) {
+      return { ok: false, message: _t("quickPhrases.importErrorSchema") };
+    }
+    var clean = [];
+    parsed.phrases.forEach(function (p) {
+      if (!p || typeof p !== "object") return;
+      if (typeof p.id !== "string" || !p.id) return;
+      if (typeof p.label !== "string") return;
+      if (typeof p.text !== "string") return;
+      var label = p.label.trim();
+      var text = p.text.trim();
+      if (!label || !text) return;
+      if (label.length > LABEL_MAX_LEN) return;
+      if (text.length > TEXT_MAX_LEN) return;
+      var createdAt =
+        typeof p.created_at === "number" && isFinite(p.created_at)
+          ? p.created_at
+          : Date.now();
+      clean.push({ id: p.id, label: label, text: text, created_at: createdAt });
+    });
+    if (clean.length === 0) {
+      return { ok: false, message: _t("quickPhrases.importErrorEmpty") };
+    }
+    return { ok: true, phrases: clean };
+  }
+
+  /**
+   * 把 parsed envelope 落到 storage。
+   *
+   * - ``mode === "replace"``：直接覆盖 storage（caller 应当先弹 confirm
+   *   提示用户「这是不可撤销的」）；超出 MAX_PHRASES 的尾部被截断。
+   * - ``mode === "merge"`` (默认)：按 ``(label, text)`` 元组去重，本地
+   *   已存在的 phrase 不重复加入；剩余空位（MAX_PHRASES - existing.length）
+   *   只接收 incoming 的前 N 条，超过的部分静默丢弃避免炸 storage。
+   *
+   * 返回 ``{ ok, added, skipped, total }``，方便 UI 显示「成功合并 X 条
+   * （跳过 Y 条重复）」。
+   */
+  function importPhrasesFromJson(rawText, mode) {
+    var parsed = parseImportPayload(rawText);
+    if (!parsed.ok) {
+      return { ok: false, message: parsed.message };
+    }
+    var incoming = parsed.phrases;
+    var actualMode = mode === "replace" ? "replace" : "merge";
+
+    if (actualMode === "replace") {
+      var truncated = incoming.slice(0, MAX_PHRASES);
+      var ok = savePhrases(truncated);
+      if (!ok) return { ok: false, message: _t("quickPhrases.importErrorEmpty") };
+      renderList();
+      return { ok: true, added: truncated.length, skipped: 0, total: truncated.length };
+    }
+
+    var existing = loadPhrases();
+    var existingKey = {};
+    existing.forEach(function (p) {
+      existingKey[p.label + "\u0000" + p.text] = true;
+    });
+    var added = 0;
+    var skipped = 0;
+    incoming.forEach(function (p) {
+      if (existing.length >= MAX_PHRASES) {
+        skipped += 1;
+        return;
+      }
+      var key = p.label + "\u0000" + p.text;
+      if (existingKey[key]) {
+        skipped += 1;
+        return;
+      }
+      existing.push({
+        id: generateId(),
+        label: p.label,
+        text: p.text,
+        created_at: p.created_at,
+      });
+      existingKey[key] = true;
+      added += 1;
+    });
+    var ok2 = savePhrases(existing);
+    if (!ok2) return { ok: false, message: _t("quickPhrases.importErrorEmpty") };
+    renderList();
+    return {
+      ok: true,
+      added: added,
+      skipped: skipped,
+      total: existing.length,
+    };
+  }
+
+  /**
+   * 触发隐藏的 ``<input type="file">`` 文件选择器；用户选完文件后回到
+   * ``handleImportFileChange`` 走 FileReader 读文本 → ``importPhrasesFromJson``。
+   */
+  function triggerImportFilePicker() {
+    var input = document.getElementById("quick-phrases-import-file");
+    if (!input) return false;
+    // 清空 value 以便用户连续选择同一文件也能触发 change 事件
+    input.value = "";
+    input.click();
+    return true;
+  }
+
+  /**
+   * file input 的 change 事件 handler。读文件 → 走 import；遇到与既有
+   * 数据冲突（merge 后 added=0 且 skipped>0）时改用 confirm 提示是否
+   * replace。
+   */
+  function handleImportFileChange(event) {
+    var input = event && event.target ? event.target : null;
+    if (!input || !input.files || input.files.length === 0) return;
+    var file = input.files[0];
+    if (typeof window.FileReader !== "function") return;
+    var reader = new window.FileReader();
+    reader.onload = function () {
+      var raw = reader.result;
+      // 默认 merge：体感最安全
+      var result = importPhrasesFromJson(raw, "merge");
+      if (!result.ok) {
+        if (typeof window.alert === "function") window.alert(result.message);
+        input.value = "";
+        return;
+      }
+      // 如果 merge 全是 skip（数据全部重复），提示用户是否 replace
+      if (result.added === 0 && result.skipped > 0) {
+        var parsed = parseImportPayload(raw);
+        if (parsed.ok) {
+          var confirmMsg = _t("quickPhrases.importConfirmReplace", {
+            current: loadPhrases().length,
+            count: parsed.phrases.length,
+          });
+          if (
+            typeof window.confirm === "function" &&
+            window.confirm(confirmMsg)
+          ) {
+            var replaced = importPhrasesFromJson(raw, "replace");
+            if (replaced.ok && typeof window.alert === "function") {
+              window.alert(
+                _t("quickPhrases.importSuccessReplace", {
+                  count: replaced.total,
+                })
+              );
+            }
+          }
+        }
+      } else if (typeof window.alert === "function") {
+        window.alert(
+          _t("quickPhrases.importSuccessMerge", {
+            added: result.added,
+            skipped: result.skipped,
+          })
+        );
+      }
+      input.value = "";
+    };
+    reader.onerror = function () {
+      if (typeof window.alert === "function") {
+        window.alert(_t("quickPhrases.importErrorInvalidJson"));
+      }
+      input.value = "";
+    };
+    reader.readAsText(file);
+  }
+
+  // ============================================================================
   // 初始化：DOMContentLoaded 之后挂事件 + 首次渲染
   // ============================================================================
 
@@ -592,6 +882,27 @@
         openAddForm();
       });
       addBtn.dataset.qpBound = "1";
+    }
+    var exportBtn = document.getElementById("quick-phrases-export-btn");
+    if (exportBtn && !exportBtn.dataset.qpBound) {
+      exportBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        downloadPhrasesAsFile();
+      });
+      exportBtn.dataset.qpBound = "1";
+    }
+    var importBtn = document.getElementById("quick-phrases-import-btn");
+    if (importBtn && !importBtn.dataset.qpBound) {
+      importBtn.addEventListener("click", function (e) {
+        e.preventDefault();
+        triggerImportFilePicker();
+      });
+      importBtn.dataset.qpBound = "1";
+    }
+    var importFile = document.getElementById("quick-phrases-import-file");
+    if (importFile && !importFile.dataset.qpBound) {
+      importFile.addEventListener("change", handleImportFileChange);
+      importFile.dataset.qpBound = "1";
     }
   }
 
@@ -630,6 +941,8 @@
   window.AIIA_QUICK_PHRASES = {
     STORAGE_KEY: STORAGE_KEY,
     SCHEMA_VERSION: SCHEMA_VERSION,
+    EXPORT_SCHEMA_VERSION: EXPORT_SCHEMA_VERSION,
+    EXPORT_SIGNATURE: EXPORT_SIGNATURE,
     LABEL_MAX_LEN: LABEL_MAX_LEN,
     TEXT_MAX_LEN: TEXT_MAX_LEN,
     MAX_PHRASES: MAX_PHRASES,
@@ -644,6 +957,12 @@
     openAddForm: openAddForm,
     openEditForm: openEditForm,
     closeAddForm: closeAddForm,
+    buildExportEnvelope: buildExportEnvelope,
+    exportPhrasesAsJson: exportPhrasesAsJson,
+    downloadPhrasesAsFile: downloadPhrasesAsFile,
+    parseImportPayload: parseImportPayload,
+    importPhrasesFromJson: importPhrasesFromJson,
+    triggerImportFilePicker: triggerImportFilePicker,
     init: init,
   };
 })();

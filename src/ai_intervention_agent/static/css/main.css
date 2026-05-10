@@ -8154,7 +8154,6 @@ code,
 .quick-phrases-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
 }
 
@@ -8163,9 +8162,12 @@ code,
   font-weight: 500;
   color: rgba(245, 245, 247, 0.85);
   letter-spacing: 0.02em;
+  margin-right: auto;
 }
 
-.quick-phrases-add-btn {
+.quick-phrases-add-btn,
+.quick-phrases-export-btn,
+.quick-phrases-import-btn {
   background: rgba(255, 255, 255, 0.06);
   color: #f5f5f7;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -8178,17 +8180,23 @@ code,
     border-color 0.15s ease;
 }
 
-.quick-phrases-add-btn:hover:not(:disabled) {
+.quick-phrases-add-btn:hover:not(:disabled),
+.quick-phrases-export-btn:hover:not(:disabled),
+.quick-phrases-import-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.22);
 }
 
-.quick-phrases-add-btn:focus-visible {
+.quick-phrases-add-btn:focus-visible,
+.quick-phrases-export-btn:focus-visible,
+.quick-phrases-import-btn:focus-visible {
   outline: 2px solid var(--primary-500, #8b5cf6);
   outline-offset: 2px;
 }
 
-.quick-phrases-add-btn:disabled {
+.quick-phrases-add-btn:disabled,
+.quick-phrases-export-btn:disabled,
+.quick-phrases-import-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
@@ -8359,14 +8367,22 @@ code,
 }
 
 :root[data-theme="light"] .quick-phrases-add-btn,
-[data-theme="light"] .quick-phrases-add-btn {
+:root[data-theme="light"] .quick-phrases-export-btn,
+:root[data-theme="light"] .quick-phrases-import-btn,
+[data-theme="light"] .quick-phrases-add-btn,
+[data-theme="light"] .quick-phrases-export-btn,
+[data-theme="light"] .quick-phrases-import-btn {
   background: rgba(0, 0, 0, 0.04);
   color: #1c1c1e;
   border-color: rgba(0, 0, 0, 0.12);
 }
 
 :root[data-theme="light"] .quick-phrases-add-btn:hover:not(:disabled),
-[data-theme="light"] .quick-phrases-add-btn:hover:not(:disabled) {
+:root[data-theme="light"] .quick-phrases-export-btn:hover:not(:disabled),
+:root[data-theme="light"] .quick-phrases-import-btn:hover:not(:disabled),
+[data-theme="light"] .quick-phrases-add-btn:hover:not(:disabled),
+[data-theme="light"] .quick-phrases-export-btn:hover:not(:disabled),
+[data-theme="light"] .quick-phrases-import-btn:hover:not(:disabled) {
   background: rgba(0, 0, 0, 0.08);
 }
 

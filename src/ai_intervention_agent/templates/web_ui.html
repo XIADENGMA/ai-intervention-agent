@@ -812,6 +812,35 @@
               >
                 Add
               </button>
+              <!-- R131b — JSON 导出 / 导入按钮（跨设备 / 跨浏览器迁移） -->
+              <button
+                type="button"
+                class="quick-phrases-export-btn"
+                id="quick-phrases-export-btn"
+                data-i18n="quickPhrases.exportBtn"
+                data-i18n-aria-label="quickPhrases.exportBtnAriaLabel"
+                aria-label="Export quick replies as a JSON file"
+              >
+                Export
+              </button>
+              <button
+                type="button"
+                class="quick-phrases-import-btn"
+                id="quick-phrases-import-btn"
+                data-i18n="quickPhrases.importBtn"
+                data-i18n-aria-label="quickPhrases.importBtnAriaLabel"
+                aria-label="Import quick replies from a JSON file"
+              >
+                Import
+              </button>
+              <input
+                type="file"
+                id="quick-phrases-import-file"
+                accept="application/json,.json"
+                class="hidden"
+                aria-hidden="true"
+                tabindex="-1"
+              />
             </div>
             <div
               class="quick-phrases-list"

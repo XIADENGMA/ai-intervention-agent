@@ -58,7 +58,17 @@
     "errorLabelTooLong": "标签长度超过 30 字",
     "errorTextTooLong": "内容长度超过 2000 字",
     "errorTooMany": "最多保存 20 条常用回复",
-    "confirmDelete": "确认删除「{{label}}」？"
+    "confirmDelete": "确认删除「{{label}}」？",
+    "exportBtn": "导出",
+    "exportBtnAriaLabel": "把常用回复导出为 JSON 文件",
+    "importBtn": "导入",
+    "importBtnAriaLabel": "从 JSON 文件导入常用回复",
+    "importErrorInvalidJson": "所选文件不是有效的 JSON",
+    "importErrorSchema": "文件不像是常用回复导出格式",
+    "importErrorEmpty": "文件中没有有效的常用回复",
+    "importConfirmReplace": "用文件里的 {{count}} 条常用回复替换当前 {{current}} 条？此操作不可撤销。",
+    "importSuccessMerge": "已合并 {{added}} 条新常用回复（跳过 {{skipped}} 条重复）。",
+    "importSuccessReplace": "已用文件里的 {{count}} 条常用回复替换当前列表。"
   },
   "settings": {
     "main": "设置",
