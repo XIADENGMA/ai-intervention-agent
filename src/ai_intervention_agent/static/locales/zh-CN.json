@@ -68,7 +68,8 @@
     "importErrorEmpty": "文件中没有有效的常用回复",
     "importConfirmReplace": "用文件里的 {{count}} 条常用回复替换当前 {{current}} 条？此操作不可撤销。",
     "importSuccessMerge": "已合并 {{added}} 条新常用回复（跳过 {{skipped}} 条重复）。",
-    "importSuccessReplace": "已用文件里的 {{count}} 条常用回复替换当前列表。"
+    "importSuccessReplace": "已用文件里的 {{count}} 条常用回复替换当前列表。",
+    "chipShortcutTitle": "点击或按 Alt+{{index}} 插入到反馈框"
   },
   "settings": {
     "main": "设置",

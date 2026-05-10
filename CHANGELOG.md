@@ -179,6 +179,111 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R131d** — **(feature)** Quick Phrases 面板键盘快捷键 `Alt+1..9`
+  快速插入前 9 条 chip，对齐 Slack/Discord 行业惯例的「常用片段
+  modifier+数字」体感，是 R130 → R131 → R131b → R131c 一路追下来给
+  熟练用户的最后一道生产力闭环。
+
+  **背景**：R131c 把 chip 排序按使用频率落地后，用户的「最常用」
+  20 条 phrase 自动沉到列表前列，但每次仍需鼠标移动到 chip 区点
+  击。Slack（`Alt+1..9` 切换 workspace）、Discord（`Alt+1..9` 切
+  换服务器）、IntelliJ IDEA（`Alt+1..9` 切换 tool window）都把
+  `Alt+数字` 锁死成「快速跳转 / 触发常用项」语义。竞品
+  `mcp-feedback-enhanced` v1.2.23 + `cunzhi` v0.4.x 都没做这个，
+  在「键盘党」用户体验上有空挡可补。
+
+  **设计决策**：
+
+  1. **修饰键选 `Alt` 而非 `Ctrl/Cmd`** — `Ctrl/Cmd+1..9` 在所有
+     主流浏览器（Chrome / Firefox / Safari / Edge）都被预占用作
+     「切换标签页 N」，``preventDefault()`` 也拦不住（浏览器层快
+     捷键优先级高于 page）。`Alt` 在 Chrome / Edge 是「打开主菜
+     单焦点」但 ``preventDefault`` 可拦；macOS `Option` 与 `Alt`
+     共享 ``event.altKey``，跨平台一致。
+  2. **范围锁 1..9，而非 0..9** — `Alt+0` 在 Chrome 是「重置缩放
+     到 100%」，与 ``Ctrl+0`` 一脉相承的语义；强行抢占体感差，且
+     即便允许覆盖也会与浏览器无障碍快捷键冲突。9 条对绝大多数熟
+     手用户已足够覆盖「日常 80%」用例。
+  3. **复用 R110 既有 ``window.KeyboardShortcuts``，回退到原生
+     ``keydown``** — R110 / R110-A 已构造好全局 shortcut 注册中
+     心 + ``allowInInputs`` / ``preventDefault`` / 修饰键归一化逻
+     辑。R131d 注册 9 条 ``alt+1`` … ``alt+9`` 即可；模块缺失时
+     fallback 到原生 ``keydown`` 监听并自检 ``modifierKey & numKey``
+     ``preventDefault``，兼容旧 web_ui.html 模板加载顺序异常。
+  4. **``allowInInputs: true`` 是必要的** — 主用户场景就是站在
+     ``feedback-text`` textarea 里打字、随手 ``Alt+3`` 插入第 3
+     条常用回复。R110 默认 ``allowInInputs: false`` 是保守策略
+     （怕快捷键打字干扰），但 quick phrases 场景反过来：必须穿透
+     input。每个 register 显式传 ``allowInInputs: true`` 做覆盖。
+  5. **form mode（add / edit form 弹出时）禁用快捷键** — 用户在
+     编辑 phrase 内容时按 ``Alt+3`` 应当属于「输入字符」而非
+     「插入第 3 条」。``_activateShortcut`` 入口先查
+     ``document.querySelector('.quick-phrases-form')`` 判断 form
+     是否打开，是则直接 return（让默认行为/原生 ``Alt+`` 字符流
+     接管）。
+  6. **chip 上 ``data-shortcut-index`` + 国际化 ``title``** —
+     前 9 条 chip 在 DOM 上加 ``data-shortcut-index="1..9"`` 数据
+     属性 + ``title="Alt+1 quick insert"`` 等价 i18n tooltip
+     （key ``quickPhrases.chipShortcutTitle``，含 ``{{shortcut}}``
+     插值）。让用户 hover 时看到提示而不必读文档；data 属性给未
+     来 a11y / 测试 / CSS 都留挂点。
+  7. **``recordPhraseUsage`` 与 chip click 同语义** —
+     ``_activateShortcut`` 在 ``insertTextIntoFeedback`` 之后调
+     ``recordPhraseUsage(id)``，与 R131c 的 chip click handler 完
+     全对齐：键盘触发与鼠标触发对排序的影响一致，符合「最近使用」
+     语义直觉。
+
+  **实现**：
+
+  - ``static/js/quick_phrases.js`` 模块顶部新增常量
+    ``SHORTCUT_INDICES = [1..9]`` + ``SHORTCUT_PREFIX = "alt+"``；
+    新增 ``_activateShortcut(index)`` 函数（``query .quick-phrases-form``
+    判 form mode → ``loadPhrases().then(_sortPhrasesByUsage)`` →
+    取第 N-1 条 → ``insertTextIntoFeedback(text)`` →
+    ``recordPhraseUsage(id)``）；新增 ``setupKeyboardShortcuts()``
+    函数（优先 ``window.KeyboardShortcuts.register({key, handler,
+    preventDefault: true, allowInInputs: true})``，缺失则 fallback
+    原生 ``keydown`` 监听 + 自检 ``altKey && numKey 1..9``）；
+    ``init()`` 末尾追加 ``setupKeyboardShortcuts()`` 调用。
+  - ``renderList()`` 在 chip ``forEach`` 内部对 ``idx <
+    SHORTCUT_INDICES.length`` 的元素加 ``setAttribute(
+    "data-shortcut-index", String(SHORTCUT_INDICES[idx]))`` +
+    i18n ``title``（``_t("quickPhrases.chipShortcutTitle",
+    {shortcut: "Alt+" + N})``）。
+  - ``window.AIIA_QUICK_PHRASES`` 暴露 ``setupKeyboardShortcuts``
+    + ``_activateShortcut``，给测试 + 调试 + 未来 a11y 框架接入用。
+  - ``static/locales/{en,zh-CN,_pseudo/pseudo}.json`` 新增
+    ``quickPhrases.chipShortcutTitle`` key（含 ``{{shortcut}}``
+    插值，与 R131 ``confirmDelete`` 同款 Mustache）。
+
+  **测试**（``tests/test_quick_phrases_keyboard_shortcuts_r131d.py``，
+  17 cases / 5 invariant classes）：
+
+  1. **JS API 扩展** — 两个函数签名（``setupKeyboardShortcuts`` /
+     ``_activateShortcut``）+ 公开 API 暴露 + ``SHORTCUT_INDICES``
+     / ``SHORTCUT_PREFIX`` 常量在 source 中可见。
+  2. **快捷键注册路径** — 优先尝试 ``window.KeyboardShortcuts``
+     正路径，每个 register 调用都带 ``allowInInputs: true`` +
+     ``preventDefault: true`` 选项（R110 默认相反，必须显式覆盖）；
+     fallback 原生 ``keydown`` 含 ``altKey`` 与 数字键归一化；
+     ``Alt+1..9`` 9 个 key 都覆盖。
+  3. **chip UI 提示** — ``renderList`` 对 ``idx <
+     SHORTCUT_INDICES.length`` 的 chip 加 ``data-shortcut-index``
+     属性 + i18n title；``idx >= 9`` 不加（不强行展示「Alt+10」
+     这种不存在的快捷键）。
+  4. **form mode 禁用 + 顺序契约** — ``_activateShortcut`` 入口
+     先查 ``.quick-phrases-form`` 短路返回；正常路径下
+     ``insertTextIntoFeedback`` 调用必须早于 ``recordPhraseUsage``
+     （正则 ``insertTextIntoFeedback[\s\S]+recordPhraseUsage``
+     单向匹配）。
+  5. **i18n 完整** — en / zh-CN / pseudo 三方都含
+     ``quickPhrases.chipShortcutTitle`` 且都用 ``{{shortcut}}``
+     Mustache 插值参数。
+
+  **验证**：17/17 R131d + 89/89 R130/R131/R131b/R131c/R133 = 106/106
+  quick-phrases 全套零回归；``uv run python scripts/ci_gate.py``
+  exits 0。
+
 - **R133** — **(polish)** Quick Phrases 面板移动端响应式补齐 ≤768px /
   ≤480px 两档 layout，R131b 加 Export/Import 按钮后窄屏不再撞挤。
 

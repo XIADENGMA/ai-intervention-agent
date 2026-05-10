@@ -68,7 +68,8 @@
     "importErrorEmpty": "File contains no valid quick replies",
     "importConfirmReplace": "Replace all {{current}} current quick replies with {{count}} from file? This cannot be undone.",
     "importSuccessMerge": "Merged {{added}} new quick replies (skipped {{skipped}} duplicates).",
-    "importSuccessReplace": "Replaced quick replies with {{count}} entries from file."
+    "importSuccessReplace": "Replaced quick replies with {{count}} entries from file.",
+    "chipShortcutTitle": "Click or press Alt+{{index}} to insert into feedback"
   },
   "settings": {
     "main": "Settings",

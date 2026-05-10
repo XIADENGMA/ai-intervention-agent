@@ -105,6 +105,8 @@
       "Merged {{added}} new quick replies (skipped {{skipped}} duplicates).",
     "quickPhrases.importSuccessReplace":
       "Replaced quick replies with {{count}} entries from file.",
+    "quickPhrases.chipShortcutTitle":
+      "Click or press Alt+{{index}} to insert into feedback",
   };
 
   // 项目 i18n runtime 只识别 ``{{name}}`` 双花括号 Mustache 语法（详见
@@ -367,12 +369,22 @@
     // R131c：渲染前按使用频率排序，让常用的 chip 出现在列表前列
     phrases = _sortPhrasesByUsage(phrases);
 
-    phrases.forEach(function (p) {
+    phrases.forEach(function (p, idx) {
       var chip = document.createElement("button");
       chip.type = "button";
       chip.className = "quick-phrase-chip";
       chip.setAttribute("data-phrase-id", p.id);
-      chip.setAttribute("title", _t("quickPhrases.chipTitle"));
+      // R131d：前 9 条 chip 标注 Alt+N 快捷键索引（1-based），让用户
+      // 知道可用键盘直接插入；不参与快捷键路径的 chip 仍走 chipTitle
+      var titleText = _t("quickPhrases.chipTitle");
+      if (idx < SHORTCUT_INDICES.length) {
+        var shortcutIdx = SHORTCUT_INDICES[idx];
+        chip.setAttribute("data-shortcut-index", String(shortcutIdx));
+        titleText =
+          _t("quickPhrases.chipShortcutTitle", { index: shortcutIdx }) ||
+          titleText;
+      }
+      chip.setAttribute("title", titleText);
       chip.textContent = p.label;
       chip.addEventListener("click", function (e) {
         e.preventDefault();
@@ -964,6 +976,92 @@
   }
 
   // ============================================================================
+  // R131d — Alt+1..Alt+9 键盘快捷键（熟手生产力）
+  // ============================================================================
+
+  /**
+   * R131d 快捷键键集合：``Alt+1`` … ``Alt+9``。
+   *
+   * 为何 Alt 而非 Ctrl/Cmd：``Ctrl+1..9`` / ``Cmd+1..9`` 在主流浏览器
+   * 是「切换到第 N 个 tab」的硬编码快捷键，``preventDefault`` 在多数
+   * 实现里**无法阻止**（浏览器在 dispatch 给 page 之前就拦下了）。
+   * Slack / Discord / Notion 都用 Alt+N（macOS 上 Option+N）解决这个
+   * 冲突。``KeyboardShortcuts`` 模块的 ``MODIFIER_KEYS`` 里 alt 与
+   * option 都映射到 ``altKey``，单一 ``alt+N`` 字符串在 macOS / Win /
+   * Linux 通用。
+   */
+  var SHORTCUT_INDICES = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  var SHORTCUT_PREFIX = "alt+";
+
+  /**
+   * 派发对应 index 的 phrase 插入。``index`` 是 1-based（与 ``Alt+1``
+   * 字面对齐）。命中条件：``loadPhrases()`` 经 ``_sortPhrasesByUsage``
+   * 排序后第 ``index - 1`` 项存在；否则静默 no-op，避免误响应空快
+   * 捷键。
+   */
+  function _activateShortcut(index) {
+    if (typeof index !== "number" || index < 1) return false;
+    // form 打开时禁用快捷键，避免与编辑模式 Esc/Enter 冲突
+    var formHost = document.getElementById("quick-phrases-form-host");
+    if (formHost && formHost.querySelector(".quick-phrases-form")) {
+      return false;
+    }
+    var phrases = _sortPhrasesByUsage(loadPhrases());
+    if (phrases.length < index) return false;
+    var p = phrases[index - 1];
+    insertTextIntoFeedback(p.text);
+    recordPhraseUsage(p.id);
+    return true;
+  }
+
+  /**
+   * 使用 ``window.KeyboardShortcuts`` API 注册 9 个 Alt+N 快捷键。
+   *
+   * - ``allowInInputs: true`` 让 Alt+N 即使在 ``#feedback-text``
+   *   textarea 焦点时也能触发——核心用户场景就是用户正在打字时
+   *   插入常用语，不能被 IGNORED_ELEMENTS 屏蔽。
+   * - ``preventDefault: true`` 防止 Alt+N 触发浏览器内置访问键
+   *   （Firefox / Edge 上 Alt+N 会聚焦地址栏 / 菜单栏）。
+   * - 模块未加载时（CSP 阻塞 / 静态资源 404 等罕见场景）走 fallback：
+   *   自挂 ``document.keydown`` listener，行为对齐。
+   */
+  function setupKeyboardShortcuts() {
+    if (
+      typeof window !== "undefined" &&
+      window.KeyboardShortcuts &&
+      typeof window.KeyboardShortcuts.register === "function"
+    ) {
+      SHORTCUT_INDICES.forEach(function (i) {
+        try {
+          window.KeyboardShortcuts.register(
+            SHORTCUT_PREFIX + String(i),
+            function () {
+              _activateShortcut(i);
+            },
+            { preventDefault: true, allowInInputs: true }
+          );
+        } catch (_e) {
+          /* register 失败（同名冲突 / 模块状态异常）静默忽略，
+             不让快捷键问题影响 chip 单击主路径 */
+        }
+      });
+      return true;
+    }
+    // Fallback：KeyboardShortcuts 不可用时自挂 keydown listener
+    document.addEventListener("keydown", function (e) {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      var idx = SHORTCUT_INDICES.indexOf(parseInt(e.key, 10));
+      if (idx === -1) return;
+      // SHORTCUT_INDICES 与 idx 同源；用 e.key 数字直接做 1-9 映射
+      var num = parseInt(e.key, 10);
+      if (_activateShortcut(num)) {
+        e.preventDefault();
+      }
+    });
+    return false;
+  }
+
+  // ============================================================================
   // 初始化：DOMContentLoaded 之后挂事件 + 首次渲染
   // ============================================================================
 
@@ -1019,6 +1117,9 @@
     }
     bindEventsOnce();
     renderList();
+    // R131d：在快捷键模块加载就绪后（DOMContentLoaded 已触发）注册
+    // Alt+1..9，让用户立即可用熟手快捷键
+    setupKeyboardShortcuts();
   }
 
   if (document.readyState === "loading") {
@@ -1045,6 +1146,8 @@
     deletePhrase: deletePhrase,
     editPhrase: editPhrase,
     recordPhraseUsage: recordPhraseUsage,
+    setupKeyboardShortcuts: setupKeyboardShortcuts,
+    _activateShortcut: _activateShortcut,
     insertTextIntoFeedback: insertTextIntoFeedback,
     validatePhraseInput: validatePhraseInput,
     renderList: renderList,
