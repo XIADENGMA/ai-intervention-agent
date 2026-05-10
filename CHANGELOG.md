@@ -179,6 +179,65 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R143** — **(Observability)** R142 ``per_provider`` 子结构新增第 9
+  字段 ``last_error_class``——把 NotificationManager 写入的 ``last_error``
+  字符串归一化成 6 个稳定字符串之一，与 ``last_error_present`` boolean
+  互补：boolean 答「上次最近一次失败有 / 没有 error 信息」，class 答
+  「是哪一类」。监控 dashboard 可基于此做 stack-bar：「这个 provider
+  最近 N 次失败，4xx / 5xx / network / timeout 各占多少」，比单 boolean
+  信号丰富 5 倍。
+
+  **6 类取值**（``_HEALTH_ERROR_CLASS_VALUES`` 常量）：
+  - ``client_error``：4xx HTTP / 设备密钥错 / 鉴权失败
+  - ``server_error``：5xx HTTP / Bark / 推送平台自身故障
+  - ``network_error``：connection refused / DNS 失败 / 网络中断
+  - ``timeout``：请求超时
+  - ``not_registered``：provider 没在 NotificationManager 注册（线上
+    line 1046 的固定哨兵）
+  - ``unknown``：无法归类的字符串（兜底）
+  - ``None``：当且仅当 ``last_error_present=False``
+
+  **优先级层次** —— 5xx > 4xx > timeout > network > not_registered >
+  unknown，避免一个 error 同时落多类。``"{'status_code': 504, 'detail':
+  'Gateway timeout'}"`` 即使含 timeout 字样仍归 ``server_error``，因为
+  HTTP layer 的明确信号比 transport layer 关键字更可信。
+
+  **PII 安全边界（继续）**：
+  - ``_classify_last_error`` 只检模式特征（HTTP status code regex /
+    关键字），返回的字符串永远是 6 个常量之一，**绝不返回 last_error
+    原文本片段**；
+  - 测试用 ``device_key=SECRET_KEY_DO_NOT_LEAK`` /
+    ``BARK_TOKEN_LEAKED`` / ``api.day.app/SOMETOKEN`` 等真实 PII 串作
+    回归断言，``last_error_class`` 输出永不含这些子串；
+  - 与 R142 的 ``last_error_present`` 共同维护"健康端点不漏 PII"的契约。
+
+  **Status code regex 设计**：
+  - 第一条：``'status_code': NNN`` —— Bark dict repr 的固定模式；
+  - 第二条：``HTTP NNN`` / ``http/1.1 NNN`` —— 自由文本中的明确 HTTP
+    上下文；
+  - 第三条：``^NNN <文字>`` 开头的 ``500 Internal Server Error`` 这种
+    常见格式；
+  - **不做** 裸 3 位数字搜——避免 ``"Connection refused on port 443"``
+    中的 ``443`` 被误判为 4xx。这是 R143 实施期间发现并修复的 false-
+    positive，回归测试 ``test_connection_refused_yields_network`` pin
+    住此契约。
+
+  **改动**：
+  - ``src/ai_intervention_agent/web_ui_routes/system.py``：新增常量
+    ``_HEALTH_ERROR_CLASS_VALUES``、helper ``_classify_last_error``；
+    扩 ``_safe_per_provider_snapshot`` 注入 ``last_error_class``；
+    health endpoint Swagger doc 加 R143 字段说明。
+  - ``tests/test_notification_health_per_provider_r142.py``：
+    ``expected_keys`` 加 ``last_error_class`` 变 9 个 key。
+  - ``tests/test_notification_health_last_error_class_r143.py``（新增，
+    37 cases）：常量值集合 / None 与空串 / HTTP status code 映射
+    （4xx → client / 5xx → server）/ provider_not_registered 哨兵 /
+    timeout 关键字 / network 关键字 / 优先级（5xx > timeout） / 无
+    法归类 → unknown / PII 边界（device_key / Bark URL / token） /
+    snapshot 集成（present=True ↔ class!=None；9-key 形状） /
+    health endpoint HTTP 集成（per_provider.last_error_class 取值范
+    围）/ Swagger doc 提及 R143 + 6 类标识 + 优先级。
+
 - **R142** — **(Observability)** ``/api/system/health`` 端点暴露
   per-provider stats 摘要 —— R141 的 self-test 触发后能"看到了"，但
   R121-A 只暴露了**全局** delivery_success_rate，故障定位时回答不出

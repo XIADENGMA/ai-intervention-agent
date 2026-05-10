@@ -189,6 +189,10 @@ class TestUnregisteredProviderIsNone(unittest.TestCase):
 class TestProviderDictShape(unittest.TestCase):
     """注册过的 provider，dict 形状 8 个 key 不多不少。"""
 
+    # R143：在 R142 8 个 key 基础上新增 ``last_error_class``——把
+    # ``last_error`` 字符串归一成 ``client_error`` / ``server_error``
+    # / ``network_error`` / ``timeout`` / ``not_registered`` / ``unknown``
+    # / ``None`` 之一；与 ``last_error_present`` 互补，PII 边界保持。
     expected_keys = {
         "attempts",
         "success",
@@ -198,6 +202,7 @@ class TestProviderDictShape(unittest.TestCase):
         "last_success_age_seconds",
         "last_failure_age_seconds",
         "last_error_present",
+        "last_error_class",
     }
 
     def test_eight_keys_exact(self):

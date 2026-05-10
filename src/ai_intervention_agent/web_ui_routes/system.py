@@ -156,6 +156,102 @@ def _safe_build_info() -> dict[str, str] | None:
 # 用 ``None`` 占位，方便监控用 stable 的 key 集合做 dashboard 模板。
 _HEALTH_PER_PROVIDER_KEYS: tuple[str, ...] = ("bark", "web", "sound", "system")
 
+# R143：last_error class normalization —— per_provider.last_error_class 的取值
+# 是 5 个稳定字符串之一，与 ``last_error_present`` boolean 互补：boolean 答
+# "上次最近一次失败有没有 error 信息"，class 答"是哪一类"。监控 dashboard
+# 可以做 stack-bar："这个 provider 最近 N 次失败，4xx 占多少 / 5xx 占多少
+# / network 占多少"，比单个 boolean 信号丰富 5 倍。
+#
+# 关键：所有取值都是 **泛化的错误类**，不含具体 URL / device_key / token /
+# error message —— PII 边界与 R142 一致。
+_HEALTH_ERROR_CLASS_VALUES: tuple[str, ...] = (
+    "client_error",  # 4xx HTTP / 设备密钥错 / 鉴权失败
+    "server_error",  # 5xx HTTP / Bark / 推送平台自身故障
+    "network_error",  # connection refused / DNS 失败 / 网络中断
+    "timeout",  # 请求超时
+    "not_registered",  # provider 没在 NotificationManager 注册
+    "unknown",  # 无法归类的字符串（兜底）
+)
+
+
+def _classify_last_error(last_error: str | None) -> str | None:
+    """R143：把 NotificationManager 写入的 ``last_error`` 字符串归一化成
+    一个稳定的错误类。
+
+    输入约定（来自 ``NotificationManager._send_to_provider`` line 1117-1126）：
+
+    * Bark：``str(dict)``，含 ``status_code`` / ``detail`` 子键，如
+      ``"{'status_code': 401, 'detail': 'Bark API returned 401...'}"``
+    * provider not registered：固定字符串 ``"provider_not_registered"``
+    * 其他 provider 暂未写 last_error，None / "" 都会回 None
+
+    设计契约：
+
+    * **永不暴露原文本** —— 只看模式特征 (HTTP status code / 关键字)，
+      返回 ``_HEALTH_ERROR_CLASS_VALUES`` 之一。
+    * **决定性** —— 同一 last_error 字符串在任何环境都返回同一类。
+    * **5xx > 4xx > timeout > network > not_registered > unknown** 的优先
+      级，避免一个 error 同时落到多类（如 "Connection timeout" 优先归
+      timeout 不是 network）。
+    * ``None`` / ``""`` → ``None`` —— 与 ``last_error_present`` 同语义。
+    """
+    if not last_error:
+        return None
+
+    s = str(last_error)
+    s_lower = s.lower()
+
+    if "provider_not_registered" in s_lower:
+        return "not_registered"
+
+    # 提取 HTTP status code —— 限定在明确的 HTTP 上下文里，不做裸数字
+    # 兜底（避免 "Connection refused on port 443" 中的 ``443`` 被误判为
+    # 4xx → client_error）。两条路径：
+    # 1. ``'status_code': NNN`` —— NotificationManager 写入 Bark dict
+    #    的固定 repr 模式
+    # 2. ``HTTP NNN`` / ``http nnn`` —— 自由文本中的 HTTP layer 标识
+    import re
+
+    sc_match = re.search(
+        r"(?:status[_\s]*code['\":\s]+|http\s+|http/[\d.]+\s+)(\d{3})", s_lower
+    )
+    if not sc_match:
+        # 第三条：以 ``NNN <文字>`` 开头的常见 HTTP 错误格式，如
+        # ``500 Internal Server Error from upstream``。只匹配 4xx/5xx
+        # 数字 + 空格 + 字母 + 字母/空格 这种结构，避免 ``443 port`` /
+        # ``80 abc`` 这种 port 编号被误判。
+        sc_match = re.match(r"\s*([4-5]\d\d)\s+[a-z][a-z ]+", s_lower)
+
+    if sc_match:
+        try:
+            sc = int(sc_match.group(1))
+        except (ValueError, IndexError):
+            sc = 0
+        if 500 <= sc < 600:
+            return "server_error"
+        if 400 <= sc < 500:
+            return "client_error"
+
+    # 没拿到 status code —— 按关键字匹配
+    if "timeout" in s_lower or "timed out" in s_lower:
+        return "timeout"
+
+    if any(
+        kw in s_lower
+        for kw in (
+            "connection refused",
+            "connectionerror",
+            "connecterror",
+            "network",
+            "dns",
+            "name resolution",
+            "unreachable",
+        )
+    ):
+        return "network_error"
+
+    return "unknown"
+
 
 def _safe_per_provider_snapshot(
     providers_stats: dict[str, Any], now: float
@@ -212,6 +308,17 @@ def _safe_per_provider_snapshot(
             else None
         )
 
+        last_error_raw = pstats_raw.get("last_error")
+        last_error_str: str | None
+        if isinstance(last_error_raw, str):
+            last_error_str = last_error_raw
+        elif last_error_raw is None:
+            last_error_str = None
+        else:
+            # NotificationManager line 1117-1126 写入的 last_error 是 dict，
+            # 读 status 时已做 ``str(...)`` truncate；这里 defensive 兜底
+            last_error_str = str(last_error_raw)
+
         out[ptype] = {
             "attempts": attempts,
             "success": success,
@@ -220,7 +327,11 @@ def _safe_per_provider_snapshot(
             "avg_latency_ms": avg_latency_ms,
             "last_success_age_seconds": last_success_age_seconds,
             "last_failure_age_seconds": last_failure_age_seconds,
-            "last_error_present": bool(pstats_raw.get("last_error")),
+            "last_error_present": bool(last_error_str),
+            # R143：把 last_error 字符串归一成 5 类之一；详见
+            # ``_classify_last_error``。``None`` 当且仅当
+            # ``last_error_present=False``。
+            "last_error_class": _classify_last_error(last_error_str),
         }
 
     return out
@@ -851,15 +962,28 @@ class SystemRoutesMixin:
                   ``web`` / ``sound`` / ``system`` 四家 provider 的独立摘要。
                   每家结构 ``{attempts, success, failure, success_rate,
                   avg_latency_ms, last_success_age_seconds,
-                  last_failure_age_seconds, last_error_present}``；从未
-                  尝试投递的 provider（也未注册）为 ``null``。
-                  ``last_error_present`` 是 boolean——刻意 **不** 暴露
-                  ``last_error`` 原始字符串（防 device_key / 服务器 URL 等
-                  PII 泄漏到公共健康端点）；详情仍然要回 logs 看。R142
-                  与 R141 的 ``POST /api/system/notifications/test`` 形成
-                  「触发 → 定位」闭环：self-test 跑完后立刻 GET 本端点
-                  就能知道哪家 provider 挂、最近一次失败距今多久、平均
-                  延迟漂没漂。
+                  last_failure_age_seconds, last_error_present,
+                  last_error_class}``；从未尝试投递的 provider（也未
+                  注册）为 ``null``。``last_error_present`` 是 boolean——
+                  刻意 **不** 暴露 ``last_error`` 原始字符串（防
+                  device_key / 服务器 URL 等 PII 泄漏到公共健康端点）；
+                  详情仍然要回 logs 看。R142 与 R141 的 ``POST
+                  /api/system/notifications/test`` 形成「触发 → 定位」
+                  闭环：self-test 跑完后立刻 GET 本端点就能知道哪家
+                  provider 挂、最近一次失败距今多久、平均延迟漂没漂。
+
+                * ``last_error_class``（R143）：把 ``last_error`` 归一化成
+                  一个稳定字符串（``client_error`` / ``server_error`` /
+                  ``network_error`` / ``timeout`` / ``not_registered`` /
+                  ``unknown``），与 ``last_error_present`` boolean 互
+                  补。监控可基于此做 stack-bar："这个 provider 最近
+                  N 次失败，4xx / 5xx / network / timeout 各占多少"，
+                  比单 boolean 信号丰富 5 倍。优先级 5xx > 4xx >
+                  timeout > network > not_registered > unknown 避免
+                  一个 error 同时落多类。``None`` 当且仅当
+                  ``last_error_present=False``。所有取值都不含具体
+                  URL / device_key / token / error message——PII 边界
+                  与 R142 一致。
 
                 ## HTTP 状态码
 
