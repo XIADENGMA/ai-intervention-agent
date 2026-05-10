@@ -179,6 +179,95 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R131** — **(feature)** Quick Phrases 面板补齐「编辑既有 phrase」+
+  「光标位置插入」两块 R130 v1 的 UX 缺口（Code Review #2 标注的 P1
+  follow-up）。
+
+  **背景**：R130 v1 上线后两个 UX 痛点立刻暴露：
+
+  1. **chip 不可编辑** — 拼错 label / 改一句话措辞，只能"删了重建"，
+     `created_at` 时间戳归零，未来基于使用频率排序的特性会被破坏。
+     mcp-feedback-enhanced 的 Prompt Management 一开始就支持原地
+     编辑，是基础生产力门槛。
+  2. **chip 单击只追加到 textarea 末尾** — 用户想"在段落中间补一句
+     常用语"时不方便（要手动复制粘贴 / 剪切），破坏选区上下文。
+     cunzhi 的「常用回复」与浏览器内置的「自动填充」都是「光标位置
+     插入」语义，R130 v1 的"末尾追加"是设计裁剪而不是用户期望。
+
+  **R131 修复**：
+
+  1. **chip 上的 ✎ 编辑按钮**（``.quick-phrase-chip-edit``）：
+     - U+270E 字符（pencil）+ ``aria-label`` + ``data-i18n-aria-label``
+       挂 ``quickPhrases.editBtnAriaLabel``，屏幕阅读器朗读「编辑常用
+       回复」/「Edit quick reply」。
+     - hover 时变 primary-500（紫色）与删除按钮的红色明确区分。
+     - 单击 → 调 ``openEditForm(p.id)`` 进入内嵌编辑模式（**不**触发
+       chip 主单击的"插入到 textarea"，靠 ``e.stopPropagation()``）。
+
+  2. **`_openForm(mode, phrase)` 共用渲染逻辑**：
+     - R130 的 ``openAddForm`` 拆成了 ``_openForm`` + 两个入口
+       ``openAddForm()`` / ``openEditForm(id)``，零重复代码。
+     - form 节点写 ``dataset.qpMode = "add" | "edit"`` +
+       ``dataset.qpEditId = <id>``，让重复触发能正确「同模式同条
+       phrase 复用、否则清空重建」，避免在用户双击 ✎ 时叠两层 form。
+     - ``edit`` 模式时光标停在 text 末尾（``setSelectionRange(len, len)``），
+       ``add`` 模式时 label input 自动 focus。
+     - ``edit`` 模式校验时**不计入** ``MAX_PHRASES`` 容量上限——替换
+       不增加条数，避免在已经 20 条满的情况下连编辑都不让。
+
+  3. **`editPhrase(id, label, text)` 新 CRUD 函数**：
+     - 仅替换同 id 条目的 ``label`` / ``text``，**保留** ``id`` /
+       ``created_at`` 不变（不调 ``generateId()`` / 不写 ``Date.now()``，
+       受静态测试锁定）。
+     - 走与 ``addPhrase`` / ``deletePhrase`` 同一 ``savePhrases`` +
+       ``renderList`` 链，保证 localStorage 写入的原子性 + UI 自动
+       刷新。
+
+  4. **光标位置插入**（``insertTextIntoFeedback`` 重写）：
+     - 标准 splice：``current.substring(0, start) + text +
+       current.substring(end)``，选中文本被替换、光标停在
+       ``start + text.length`` 即新插入文本之后。
+     - 老引擎 fallback：``selectionStart`` / ``selectionEnd`` 任一不
+       存在 → 走 R130 v1 的「末尾追加 + 必要换行」分支，向后兼容
+       绝对不破坏既有用户。
+     - 仍触发原生 ``input`` Event 让 multi_task.js 的
+       ``taskTextareaContents[activeTaskId]`` autosave 跟上。
+
+  5. **i18n（3 份 locale）**新增 ``quickPhrases.editBtnAriaLabel``：
+     - zh-CN: "编辑常用回复"
+     - en: "Edit quick reply"
+     - pseudo 由 ``scripts/gen_pseudo_locale.py`` 自动派生。
+
+  **公开 API 扩展** —— ``window.AIIA_QUICK_PHRASES`` 新增
+  ``editPhrase`` / ``openEditForm`` 两个函数，给测试 + 未来 R131b
+  导入导出功能复用。
+
+  **测试**：``tests/test_quick_phrases_edit_r131.py``（NEW，
+  16 cases / 5 invariant classes）：
+
+  - **JS API 扩展**（4）：``editPhrase(id,label,text)`` / ``openEditForm(id)``
+    函数签名锁定、公开 API 暴露、``editPhrase`` 不调 ``generateId()`` /
+    不写 ``created_at: Date.now()``（保留 id + 时间戳锁定）。
+  - **chip 编辑按钮**（5）：``renderList`` 创建
+    ``.quick-phrase-chip-edit``、用 ``\\u270e`` (✎)、挂正确
+    ``data-i18n-aria-label``、CSS 选择器存在、click → ``openEditForm(p.id)``。
+  - **form mode + dataset**（3）：``form.dataset.qpMode`` 写入、
+    ``form.dataset.qpEditId`` 写入、保存按钮按 mode 分流到
+    ``editPhrase`` / ``addPhrase``。
+  - **光标插入语义**（4）：读 ``selectionStart`` / ``selectionEnd``、
+    用 ``substring(0,start)+text+substring(end)`` 三段拼接、
+    ``hasSelectionApi`` 老引擎兜底分支存在、
+    ``newCursorPos = start + text.length`` 光标停留点正确。
+  - **i18n**（3）：3 份 locale 都包含 ``editBtnAriaLabel`` 且非空。
+
+  **验证**：16/16 新 R131 + 19/19 R130 + R125b/R125 周边 47 用例零
+  回归；``uv run python scripts/ci_gate.py`` exits 0。
+
+  **未来工作**：R131b 计划补「导入 / 导出全部 phrases 为 JSON」（剪贴
+  板 + 文件下载）实现跨设备 + 跨浏览器迁移；R131c 计划「按使用频率
+  排序」（chip 单击时记录 ``last_used_at`` / ``use_count``，渲染时按
+  这两个字段排序）。
+
 - **R130** — **(feature)** Web UI 反馈输入框上方新增「Quick Replies /
   常用回复」面板：纯前端 + localStorage 持久化、单击 chip 即把内容
   追加到反馈输入框，对齐 mcp-feedback-enhanced 的 "Quick Replies" 与

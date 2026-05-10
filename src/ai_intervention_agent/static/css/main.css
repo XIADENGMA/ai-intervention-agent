@@ -8242,21 +8242,36 @@ code,
   border-radius: 999px;
 }
 
+/* R131 — chip 上的 ✎ 编辑按钮：与 × 删除按钮共享视觉权重，但独立 hover 色 */
+.quick-phrase-chip-edit,
 .quick-phrase-chip-delete {
   background: transparent;
   border: none;
   color: rgba(245, 245, 247, 0.55);
-  font-size: 1rem;
   line-height: 1;
-  padding: 0.3rem 0.55rem 0.3rem 0.2rem;
   cursor: pointer;
   transition: color 0.15s ease;
+}
+
+.quick-phrase-chip-edit {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.25rem 0.3rem 0.15rem;
+}
+
+.quick-phrase-chip-delete {
+  font-size: 1rem;
+  padding: 0.3rem 0.55rem 0.3rem 0.2rem;
+}
+
+.quick-phrase-chip-edit:hover {
+  color: var(--primary-500, #8b5cf6);
 }
 
 .quick-phrase-chip-delete:hover {
   color: rgba(255, 100, 100, 0.95);
 }
 
+.quick-phrase-chip-edit:focus-visible,
 .quick-phrase-chip-delete:focus-visible {
   outline: 2px solid var(--primary-500, #8b5cf6);
   outline-offset: 2px;

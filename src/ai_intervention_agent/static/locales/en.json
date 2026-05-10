@@ -51,6 +51,7 @@
     "formSave": "Save",
     "formCancel": "Cancel",
     "deleteBtnAriaLabel": "Delete quick reply",
+    "editBtnAriaLabel": "Edit quick reply",
     "chipTitle": "Click to insert into feedback",
     "errorLabelEmpty": "Label cannot be empty",
     "errorTextEmpty": "Content cannot be empty",

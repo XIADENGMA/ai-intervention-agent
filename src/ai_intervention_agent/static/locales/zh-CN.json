@@ -51,6 +51,7 @@
     "formSave": "保存",
     "formCancel": "取消",
     "deleteBtnAriaLabel": "删除常用回复",
+    "editBtnAriaLabel": "编辑常用回复",
     "chipTitle": "点击插入到反馈框",
     "errorLabelEmpty": "标签不能为空",
     "errorTextEmpty": "内容不能为空",

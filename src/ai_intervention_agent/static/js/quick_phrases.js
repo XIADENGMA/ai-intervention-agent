@@ -83,6 +83,7 @@
     "quickPhrases.formSave": "Save",
     "quickPhrases.formCancel": "Cancel",
     "quickPhrases.deleteBtnAriaLabel": "Delete quick reply",
+    "quickPhrases.editBtnAriaLabel": "Edit quick reply",
     "quickPhrases.chipTitle": "Click to insert into feedback",
     "quickPhrases.errorLabelEmpty": "Label cannot be empty",
     "quickPhrases.errorTextEmpty": "Content cannot be empty",
@@ -234,27 +235,54 @@
   }
 
   // ============================================================================
-  // 文本插入：追加到 #feedback-text 末尾 + 触发 input 事件让 multi_task
-  // 的 taskTextareaContents 同步保存。
+  // 文本插入：在 #feedback-text 当前光标位置插入，选中文本会被替换；
+  // 触发 input 事件让 multi_task 的 taskTextareaContents 同步保存。
   // ============================================================================
 
   /**
-   * 把 text 追加到 ``#feedback-text`` 末尾，必要时前置换行让多次插入
-   * 不会粘成一行；触发 input 事件让 multi_task.js 的 textarea 自动
-   * 保存逻辑跟上当前内容。
+   * 把 text 插入到 ``#feedback-text`` 的当前光标位置；如果用户已经选
+   * 中一段文本（``selectionStart !== selectionEnd``），选区内的旧文本
+   * 会被新 text 替换；插入完成后光标停在新插入文本之后，方便继续输入。
    *
-   * 单击同一个 chip 多次，行为是「每次都追加」——这与 mcp-feedback-
-   * enhanced 的 Quick Replies 一致，方便组合多段常用语。
+   * R131 之前（R130 v1）的实现是无脑追加到末尾，破坏选区上下文。
+   * R131 改为「光标位置插入」更接近 mcp-feedback-enhanced 的
+   * Quick Replies 与 cunzhi「常用回复」的体验。
+   *
+   * 边界保护：
+   * - textarea 不存在 → no-op，返回 false（init 阶段防御）
+   * - 老浏览器不支持 ``selectionStart`` → fallback 到末尾追加 +
+   *   插入前后必要换行，与 R130 v1 行为一致
+   * - dispatchEvent ``new Event(...)`` 在 IE 等老引擎抛错 → fallback
+   *   到 ``document.createEvent``
    */
   function insertTextIntoFeedback(text) {
     var textarea = document.getElementById("feedback-text");
     if (!textarea) return false;
     var current = textarea.value || "";
-    var prefix = "";
-    if (current.length > 0 && !current.endsWith("\n")) {
-      prefix = "\n";
+
+    var hasSelectionApi =
+      typeof textarea.selectionStart === "number" &&
+      typeof textarea.selectionEnd === "number";
+
+    var newValue;
+    var newCursorPos;
+    if (hasSelectionApi) {
+      var start = textarea.selectionStart;
+      var end = textarea.selectionEnd;
+      newValue =
+        current.substring(0, start) + text + current.substring(end);
+      newCursorPos = start + text.length;
+    } else {
+      // 老引擎兜底：保留 R130 v1「追加到末尾」语义
+      var prefix = "";
+      if (current.length > 0 && !current.endsWith("\n")) {
+        prefix = "\n";
+      }
+      newValue = current + prefix + text;
+      newCursorPos = newValue.length;
     }
-    textarea.value = current + prefix + text;
+
+    textarea.value = newValue;
     var event;
     try {
       event = new Event("input", { bubbles: true });
@@ -265,8 +293,7 @@
     textarea.dispatchEvent(event);
     textarea.focus();
     try {
-      var endPos = textarea.value.length;
-      textarea.setSelectionRange(endPos, endPos);
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
     } catch (_e) {
       /* 老浏览器不支持 setSelectionRange，忽略 */
     }
@@ -310,6 +337,23 @@
         insertTextIntoFeedback(p.text);
       });
 
+      // R131 — chip 上的 ✎ 编辑按钮：进入内嵌编辑模式
+      var edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "quick-phrase-chip-edit";
+      edit.setAttribute("aria-label", _t("quickPhrases.editBtnAriaLabel"));
+      edit.setAttribute(
+        "data-i18n-aria-label",
+        "quickPhrases.editBtnAriaLabel"
+      );
+      edit.setAttribute("title", _t("quickPhrases.editBtnAriaLabel"));
+      edit.textContent = "\u270e"; // ✎ pencil — 不会被 check_i18n_js_no_cjk 误报，是 BMP 拉丁补充
+      edit.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openEditForm(p.id);
+      });
+
       var del = document.createElement("button");
       del.type = "button";
       del.className = "quick-phrase-chip-delete";
@@ -318,7 +362,7 @@
         "data-i18n-aria-label",
         "quickPhrases.deleteBtnAriaLabel"
       );
-      del.textContent = "×";
+      del.textContent = "\u00d7"; // × multiplication sign（与 page.removeImage 同款符号）
       del.addEventListener("click", function (e) {
         e.preventDefault();
         e.stopPropagation();
@@ -332,26 +376,47 @@
       var wrap = document.createElement("span");
       wrap.className = "quick-phrase-chip-wrap";
       wrap.appendChild(chip);
+      wrap.appendChild(edit);
       wrap.appendChild(del);
       listEl.appendChild(wrap);
     });
   }
 
   /**
-   * 渲染内嵌的「添加 phrase」表单（label input + text textarea + 保存 / 取消）。
-   * 同一时刻最多一个内嵌表单；重复点击「添加」按钮不会叠加。
+   * 公共 form 渲染：``mode = "add" | "edit"``。
+   *
+   * - ``add`` 模式：label / text 起始空白；保存时 push 一个新 phrase
+   *   （受 MAX_PHRASES 容量上限约束）。
+   * - ``edit`` 模式：label / text 起始填入既有 phrase；保存时
+   *   ``editPhrase`` 替换同 id 的 label / text，但保留 created_at /
+   *   id 不变（避免破坏未来排序逻辑）。
+   *
+   * 同一时刻最多一个内嵌 form——重复触发会复用既有 form 并
+   * focus 到 label input；切换 mode 时先 close 旧 form 再开新的。
    */
-  function openAddForm() {
+  function _openForm(mode, phrase) {
     var formHost = document.getElementById("quick-phrases-form-host");
     if (!formHost) return;
-    if (formHost.querySelector(".quick-phrases-form")) {
-      var existing = formHost.querySelector(".quick-phrases-form input");
-      if (existing) existing.focus();
-      return;
+    var existing = formHost.querySelector(".quick-phrases-form");
+    if (existing) {
+      // 同 mode + 同 phrase 复用；其他情况清空重建
+      var existingMode = existing.dataset.qpMode || "add";
+      var existingId = existing.dataset.qpEditId || "";
+      var nextId = phrase ? phrase.id : "";
+      if (existingMode === mode && existingId === nextId) {
+        var firstField = existing.querySelector("input, textarea");
+        if (firstField) firstField.focus();
+        return;
+      }
+      closeAddForm();
     }
 
     var form = document.createElement("div");
     form.className = "quick-phrases-form";
+    form.dataset.qpMode = mode;
+    if (mode === "edit" && phrase) {
+      form.dataset.qpEditId = phrase.id;
+    }
 
     var labelInput = document.createElement("input");
     labelInput.type = "text";
@@ -362,6 +427,7 @@
       "data-i18n-placeholder",
       "quickPhrases.formLabelPlaceholder"
     );
+    if (phrase) labelInput.value = phrase.label;
 
     var textInput = document.createElement("textarea");
     textInput.className = "quick-phrases-form-text";
@@ -372,6 +438,7 @@
       "data-i18n-placeholder",
       "quickPhrases.formTextPlaceholder"
     );
+    if (phrase) textInput.value = phrase.text;
 
     var error = document.createElement("div");
     error.className = "quick-phrases-form-error";
@@ -402,19 +469,33 @@
     formHost.appendChild(form);
 
     labelInput.focus();
+    if (mode === "edit") {
+      // 进入编辑时让光标停在 text 末尾，方便用户继续编辑
+      try {
+        textInput.setSelectionRange(textInput.value.length, textInput.value.length);
+      } catch (_e) {
+        /* 老浏览器忽略 */
+      }
+    }
 
     saveBtn.addEventListener("click", function () {
       error.textContent = "";
+      // edit 模式不计入容量上限校验（替换不增加条数）
+      var capCount = mode === "edit" ? 0 : loadPhrases().length;
       var validation = validatePhraseInput(
         labelInput.value,
         textInput.value,
-        loadPhrases().length
+        capCount
       );
       if (!validation.ok) {
         error.textContent = validation.message;
         return;
       }
-      addPhrase(validation.label, validation.text);
+      if (mode === "edit" && phrase) {
+        editPhrase(phrase.id, validation.label, validation.text);
+      } else {
+        addPhrase(validation.label, validation.text);
+      }
       closeAddForm();
     });
 
@@ -428,6 +509,18 @@
     textInput.addEventListener("keydown", function (e) {
       if (e.key === "Escape") closeAddForm();
     });
+  }
+
+  function openAddForm() {
+    _openForm("add", null);
+  }
+
+  function openEditForm(id) {
+    var phrase = loadPhrases().find(function (p) {
+      return p.id === id;
+    });
+    if (!phrase) return;
+    _openForm("edit", phrase);
   }
 
   function closeAddForm() {
@@ -461,6 +554,28 @@
     });
     if (filtered.length === phrases.length) return false;
     var ok = savePhrases(filtered);
+    if (ok) renderList();
+    return ok;
+  }
+
+  /**
+   * 替换同 id phrase 的 label / text（id 与 created_at 保持不变，
+   * 让"编辑"看起来像就地更新而不是删除重建）。caller 应当先走
+   * ``validatePhraseInput`` 校验过 label / text，本函数只负责存储。
+   */
+  function editPhrase(id, label, text) {
+    var phrases = loadPhrases();
+    var found = false;
+    for (var i = 0; i < phrases.length; i += 1) {
+      if (phrases[i].id === id) {
+        phrases[i].label = label;
+        phrases[i].text = text;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return false;
+    var ok = savePhrases(phrases);
     if (ok) renderList();
     return ok;
   }
@@ -522,10 +637,12 @@
     savePhrases: savePhrases,
     addPhrase: addPhrase,
     deletePhrase: deletePhrase,
+    editPhrase: editPhrase,
     insertTextIntoFeedback: insertTextIntoFeedback,
     validatePhraseInput: validatePhraseInput,
     renderList: renderList,
     openAddForm: openAddForm,
+    openEditForm: openEditForm,
     closeAddForm: closeAddForm,
     init: init,
   };
