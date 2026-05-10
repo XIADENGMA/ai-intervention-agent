@@ -2183,6 +2183,80 @@ async function closeTask(taskId) {
 // ==================== 独立倒计时管理 ====================
 
 /**
+ * R128 helper：visibility 切回 visible 时，立即强制同步所有活跃倒计时
+ * 的 UI（SVG 圆环 + 数字 + 主倒计时）。
+ *
+ * 由 ``startTaskCountdown`` 注册的 ``installCountdownVisibilitySyncHandlerOnce``
+ * 触发；hidden 期间 tick 跳过 DOM 写入，所以可见瞬间需要立即"补一帧"，
+ * 否则用户会看到"上次离开时残留的数字"停留 0-1s。
+ */
+function forceUpdateAllTaskCountdowns() {
+  if (typeof document === "undefined" || document.hidden) return;
+  if (!taskCountdowns || typeof taskCountdowns !== "object") return;
+
+  Object.keys(taskCountdowns).forEach((tid) => {
+    const entry = taskCountdowns[tid];
+    if (!entry || !entry.timer) return; // 已结束或未启动的不刷
+
+    const remaining = Math.max(0, Math.floor(entry.remaining || 0));
+    const total = entry.timeout || 240; // 与 setInterval body 同步
+    const progress = total > 0 ? remaining / total : 0;
+    const radius = 9;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference * (1 - progress);
+
+    const countdownRing = document.getElementById(`countdown-${tid}`);
+    if (countdownRing) {
+      const circle = countdownRing.querySelector("circle");
+      const numberSpan = countdownRing.querySelector(".countdown-number");
+      if (circle) circle.setAttribute("stroke-dashoffset", offset);
+      if (numberSpan) numberSpan.textContent = remaining;
+      countdownRing.title = _t("page.countdown", { seconds: remaining });
+    }
+
+    if (tid === activeTaskId) {
+      try {
+        updateCountdownDisplay(remaining);
+      } catch (err) {
+        // updateCountdownDisplay 内部已有兜底；这里只是防御未定义场景。
+        console.debug("forceUpdateAllTaskCountdowns: skip main display", err);
+      }
+    }
+  });
+}
+
+if (typeof window.tasksCountdownVisibilityHandlerInstalled === "undefined") {
+  // 与 ``tasksPollVisibilityHandlerInstalled`` 等其他幂等 flag 对称。
+  window.tasksCountdownVisibilityHandlerInstalled = false;
+}
+
+/**
+ * R128：装一次 visibility-aware countdown sync handler；幂等。
+ *
+ * 由首次 ``startTaskCountdown`` 调用触发。把 visibility -> visible 的
+ * 边沿事件接到 ``forceUpdateAllTaskCountdowns`` 上，让用户切回标签页
+ * 时 SVG 圆环 / 数字立刻 sync 到 deadline-derived 真值，避免"切回还
+ * 看到旧数字"的 0-1s UI 延迟。
+ *
+ * 不在 ``startTasksPolling`` 的 visibility handler 里 piggy-back，原
+ * 因：
+ *  - 倒计时与轮询是不同的语义维度（倒计时即使 polling 暂停也仍要本
+ *    地走 deadline），生命周期更长；
+ *  - 把两类逻辑解耦能让未来"只关 polling 不关 countdown"或反过来更
+ *    干净。
+ */
+function installCountdownVisibilitySyncHandlerOnce() {
+  if (typeof document === "undefined") return;
+  if (window.tasksCountdownVisibilityHandlerInstalled) return;
+  window.tasksCountdownVisibilityHandlerInstalled = true;
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) {
+      forceUpdateAllTaskCountdowns();
+    }
+  });
+}
+
+/**
  * 启动任务倒计时
  *
  * 为指定任务启动独立的倒计时计时器，支持自动提交。
@@ -2236,6 +2310,16 @@ function startTaskCountdown(taskId, remaining, total = null) {
     clearInterval(taskCountdowns[taskId].timer);
   }
 
+  // R128：在第一次启动倒计时时一次性安装 visibility-aware DOM 同步。
+  //
+  // why：tick callback 在 hidden 时跳过 DOM 写入（见下方注释），所以
+  // 用户切回标签页时 SVG 圆环 / 数字显示会停留在"切走那一刻"的状态，
+  // 等下一个 1Hz tick 才更新——肉眼可见的 0-1s 延迟。本 handler 在
+  // visible 分支立刻给所有 alive countdown timer 强制刷新一次 UI，
+  // 让用户切回的瞬间看到正确数字。``calculateRemainingFromDeadline``
+  // 仍然是 single source of truth，无须额外算账。
+  installCountdownVisibilitySyncHandlerOnce();
+
   // 初始化倒计时数据
   // remaining: 当前剩余秒数（可能是刷新后从服务器获取的）
   // timeout: 总超时时间（用于计算进度百分比）
@@ -2270,36 +2354,58 @@ function startTaskCountdown(taskId, remaining, total = null) {
     const newRemaining = calculateRemainingFromDeadline();
     taskCountdowns[taskId].remaining = newRemaining;
 
+    // R128：页面隐藏时跳过所有 DOM 写入，但仍保留 deadline 计算 +
+    // autoSubmit 触发逻辑。
+    //
+    // why：每个并发 task 的 1 Hz tick 都做 5+ 次 DOM 操作
+    // (`getElementById` / `querySelector` ×2 / `setAttribute` /
+    //  `textContent` / `_t(...)` / `title` setter)。在 N 个 task 并发
+    // + 用户切走标签页的场景，浏览器把 setInterval 节流到 ~1 Hz 但
+    // 不会停 callback——每次 tick 仍走 Layout phase。隐藏时 DOM 不
+    // 可见，做这些写入 100% 是浪费。把 DOM 更新框在 `if
+    // (!document.hidden)` 里能直接削掉这部分浪费，对长时间挂在后
+    // 台等待 AI 反馈的"侧边栏式" workflow 尤其有意义。
+    //
+    // 关键不变量：``calculateRemainingFromDeadline`` 必须在 hidden 时
+    // **仍然执行** ——deadline 是绝对时间，timeout=0 触发 autoSubmit
+    // 的判定不能依赖"DOM 是否已经渲染到 0"，否则隐藏期间到期的任务
+    // 会被推迟到可见时才提交，引入用户感知延迟。autoSubmit 分支保
+    // 持原有路径不动。
+    const documentHidden =
+      typeof document !== "undefined" && document.hidden;
+
     // 更新SVG圆环倒计时
-    const countdownRing = document.getElementById(`countdown-${taskId}`);
-    if (countdownRing) {
-      const remaining = taskCountdowns[taskId].remaining;
-      // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
-      // historical 250/290 were stale "MAX" values, not "DEFAULT".
-      const total = taskCountdowns[taskId].timeout || 240;
-      const progress = remaining / total; // 进度（0-1）
+    if (!documentHidden) {
+      const countdownRing = document.getElementById(`countdown-${taskId}`);
+      if (countdownRing) {
+        const remaining = taskCountdowns[taskId].remaining;
+        // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
+        // historical 250/290 were stale "MAX" values, not "DEFAULT".
+        const total = taskCountdowns[taskId].timeout || 240;
+        const progress = remaining / total; // 进度（0-1）
 
-      // 更新SVG circle的stroke-dashoffset
-      const radius = 9;
-      const circumference = 2 * Math.PI * radius;
-      const offset = circumference * (1 - progress);
+        // 更新SVG circle的stroke-dashoffset
+        const radius = 9;
+        const circumference = 2 * Math.PI * radius;
+        const offset = circumference * (1 - progress);
 
-      const circle = countdownRing.querySelector("circle");
-      const numberSpan = countdownRing.querySelector(".countdown-number");
+        const circle = countdownRing.querySelector("circle");
+        const numberSpan = countdownRing.querySelector(".countdown-number");
 
-      if (circle) {
-        circle.setAttribute("stroke-dashoffset", offset);
+        if (circle) {
+          circle.setAttribute("stroke-dashoffset", offset);
+        }
+        if (numberSpan) {
+          numberSpan.textContent = remaining;
+        }
+
+        countdownRing.title = _t("page.countdown", { seconds: remaining });
       }
-      if (numberSpan) {
-        numberSpan.textContent = remaining;
+
+      // 如果是活动任务，也更新主倒计时
+      if (taskId === activeTaskId) {
+        updateCountdownDisplay(taskCountdowns[taskId].remaining);
       }
-
-      countdownRing.title = _t("page.countdown", { seconds: remaining });
-    }
-
-    // 如果是活动任务，也更新主倒计时
-    if (taskId === activeTaskId) {
-      updateCountdownDisplay(taskCountdowns[taskId].remaining);
     }
 
     // 倒计时结束
@@ -2835,6 +2941,11 @@ if (typeof window !== "undefined") {
     // hot-reload 残留旧 interval 等问题。
     startTasksHealthCheck,
     stopTasksHealthCheck,
+    // R128：暴露 visibility-aware countdown sync 的一对辅助。``forceUpdate``
+    // 让单元测试能直接驱动 UI 同步路径而不必伪造 ``visibilitychange``；
+    // ``installOnce`` 让多任务模式与"轻量初始化模式"都能装一次（幂等）。
+    forceUpdateAllTaskCountdowns,
+    installCountdownVisibilitySyncHandlerOnce,
     get sseConnected() {
       return _sseConnected;
     },

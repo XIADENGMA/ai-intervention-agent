@@ -179,6 +179,96 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R128** — **(perf)** stop `startTaskCountdown`'s 1 Hz `setInterval`
+  callback from doing pointless DOM writes when the page is hidden,
+  and add a `visibilitychange` → `forceUpdateAllTaskCountdowns`
+  edge sync so users see the correct countdown numbers the
+  instant they switch back to the tab.
+
+  **Background**: each concurrent task installs a 1 Hz
+  `setInterval` that, every tick, does:
+  - `getElementById('countdown-${taskId}')`
+  - `.querySelector('circle')` + `.querySelector('.countdown-number')`
+  - `circle.setAttribute('stroke-dashoffset', offset)`
+  - `numberSpan.textContent = remaining`
+  - `countdownRing.title = _t('page.countdown', {seconds})`
+  - `updateCountdownDisplay(remaining)` for the active task
+
+  Browsers throttle hidden-tab `setInterval` to ~1 Hz on
+  Chromium / WebKit but **do not** halt the callback, so each
+  tick still walks the DOM and triggers Layout/Paint cost
+  recompute (even with no visible pixels — DOM mutation is
+  itself a reflow trigger). N concurrent tasks × user-tab-
+  hidden-for-5-min = N × 300 redundant DOM operations on a
+  long-lived "AI agent waits hours for human reply" sidebar.
+
+  R123 already nailed *health-check* and *task-polling*
+  visibility lifecycles; R128 closes the parallel gap on the
+  *task-countdown* timer.
+
+  **R128 fix**:
+  - In the per-task `setInterval` callback, gate **all DOM
+    writes** behind `if (!documentHidden) { ... }`.
+  - Keep `calculateRemainingFromDeadline()` running every tick
+    regardless of visibility (deadline is wall-clock; the
+    `remaining <= 0 → autoSubmitTask` branch must still fire on
+    schedule even if the tab is hidden — otherwise a task that
+    expires while the user is away gets quietly delayed by
+    however long they stay on another tab, breaking the
+    "auto-submit when no human reply" contract).
+  - The `remaining <= 0 → autoSubmitTask` branch lives **outside**
+    the hidden-guard for the same reason. Locked by a dedicated
+    test (`test_auto_submit_branch_not_inside_hidden_guard`).
+  - Add `forceUpdateAllTaskCountdowns()` helper: walks
+    `taskCountdowns`, force-syncs SVG ring + number + main
+    countdown UI for every alive timer in one shot.
+  - Add `installCountdownVisibilitySyncHandlerOnce()` (idempotent,
+    flag-guarded by `window.tasksCountdownVisibilityHandlerInstalled`):
+    attaches a single document-level `visibilitychange` listener
+    that calls `forceUpdateAllTaskCountdowns()` on the visible
+    edge, eliminating the "switch back to tab → see stale digit
+    for 0–1 s before next tick lands" UX seam.
+  - `startTaskCountdown` calls the install helper on first
+    invocation; downstream calls hit the flag-guard early-return.
+  - Export both helpers via `window.multiTaskModule` so test
+    harnesses / Storybook / SPA-embed scenarios can drive the
+    UI-sync path deterministically without faking DOM events.
+
+  **Why a separate visibility handler instead of piggybacking
+  on the polling one (R123)**:
+  - Countdown and polling are different lifetime axes: a
+    countdown still has to walk wall-clock locally even if
+    polling is paused (deadline-based auto-submit must fire
+    regardless).
+  - Decoupling lets future "pause polling but keep countdown"
+    or vice-versa stay clean; coupling them now would force a
+    refactor when one diverges.
+
+  **Tests**: `tests/test_task_countdown_hidden_tab_r128.py`
+  (NEW, 15 cases / 5 invariant classes):
+  - **`startTaskCountdown` hidden-skip** (3): body checks
+    `document.hidden`; DOM writes gated by `if (!documentHidden)`;
+    `calculateRemainingFromDeadline` runs *outside* the guard.
+  - **`autoSubmit` not gated** (1): the `remaining <= 0`
+    branch must lie strictly after the hidden-guard `}`,
+    locking the "expired-while-hidden still auto-submits" contract.
+  - **`forceUpdateAllTaskCountdowns` helper** (3): function
+    defined; early-returns when hidden; iterates
+    `Object.keys(taskCountdowns)`.
+  - **`installCountdownVisibilitySyncHandlerOnce` idempotency**
+    (5): function defined; uses the flag-guard;
+    `addEventListener('visibilitychange', …)`; visible branch
+    calls `forceUpdateAllTaskCountdowns`; the global flag is
+    initialised `= false`.
+  - **`startTaskCountdown` install path** (1): body calls
+    `installCountdownVisibilitySyncHandlerOnce()`.
+  - **Module export surface** (2): `window.multiTaskModule`
+    re-exports both helpers.
+
+  **Verification**: 15/15 new R128 tests pass; existing
+  R22.3 + R123 lifecycles untouched (10/10 + 8/8 still pass);
+  `uv run python scripts/ci_gate.py` exits 0.
+
 - **R123** — **(perf + correctness)** fix `multi_task.js` health-check
   `setInterval` orphan: assign the returned interval-id to
   `window.tasksHealthCheckTimer` and gate it through symmetric
