@@ -3,13 +3,17 @@
 采用单例模式，支持插件化提供者注册、事件队列、失败降级。线程安全。
 """
 
+import json
 import logging
+import os
 import random
 import threading
 import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -56,6 +60,52 @@ logger = EnhancedLogger(__name__)
 # DNS 解析（首次）合计 < 5s，所以这里 +5 既能屏蔽尾时延，又不会让健康的 Bark
 # 失败时 retry 拖太久。
 _AS_COMPLETED_TIMEOUT_BUFFER_SECONDS = 5
+
+
+# R136: 通知 in-flight 队列断电恢复
+# ----------------------------------------------------------------------------
+# 文件名 / schema_version / TTL 三个常量是公开契约；测试侧也读它们做断言，
+# 改动需要先写迁移逻辑（schema_version 升级）。
+#
+# **为什么要持久化**：
+# - ``_event_queue`` / ``_finalized_event_ids`` 都在内存里，进程异常退出
+#   （崩溃 / SIGKILL / OOM / 容器被驱逐）时彻底丢，运维侧完全看不到
+#   "上次重启时还有 N 条通知没投递"。
+# - 在分布式 worker / Cloud Native 部署中这是基础观察性盲点。
+#
+# **为什么不自动重发**：
+# - 用户关电脑回家睡觉，第二天开机重发昨天的 50 条通知 = 噪音灾难。
+# - 在 R136 范围内，仅做"持久化 + 启动时加载暴露给 stats"，把"是否
+#   重发"决策权让给将来的 R136-A（如果用户有需求）。
+#
+# **TTL = 5 分钟**：典型用户场景下，通知如果 5 分钟内没投递成功就基本
+# 失去时效（feedback 已经过期 / 用户已经看过了），保持文件长期不增长，
+# 重启后也只看最近 5 分钟内的真正"飞行中"事件。
+_INFLIGHT_FILE_NAME: str = "notification_inflight.json"
+_INFLIGHT_SCHEMA_VERSION: int = 1
+_INFLIGHT_TTL_SECONDS: int = 300  # 5 分钟
+
+
+def _get_inflight_file_dir() -> Path | None:
+    """R136 — 解析 in-flight 持久化文件所在目录。
+
+    优先复用 ``config_manager.get_config()`` 已经解析好的 config 文件路
+    径的 ``parent``——保证持久化文件与 config 文件同位（典型为
+    ``~/.config/ai-intervention-agent/`` on Linux 或
+    ``~/Library/Application Support/ai-intervention-agent/`` on macOS）。
+
+    若 config 模块不可用（e.g. 单元测试隔离场景），返回 ``None``——
+    callers 应当跳过持久化路径，避免污染 cwd。"""
+    if not CONFIG_FILE_AVAILABLE:
+        return None
+    try:
+        config_mgr = get_config()
+        path = getattr(config_mgr, "config_path", None)
+        if path is None:
+            return None
+        return Path(path).parent
+    except Exception:
+        return None
 
 
 # ``ThreadPoolExecutor`` worker 数 = 通知渠道总数。
@@ -354,6 +404,19 @@ class NotificationManager:
             self._finalized_event_ids: dict[str, None] = {}
             self._finalized_max_size: int = 500
 
+            # R136: in-flight 通知持久化追踪
+            # ``_inflight_persisted_ids``：当前已写入磁盘 inflight 文件的
+            # event id 集合；``_create_event`` 入队后 ``add()``，
+            # ``_mark_event_finalized`` 收尾时 ``discard()``；落盘文件 = 集
+            # 合内事件的 dump，原子替换。
+            #
+            # ``_inflight_seen_at_startup``：进程启动时一次性 load 的「上
+            # 次进程退出时还在 in-flight 的事件元数据」；TTL 过滤后剩下的
+            # 直接暴露给 ``get_status()``，给运维仪表板 / on-call 一个信
+            # 号——不会自动重发，避免「重启后用户被旧通知刷屏」尴尬。
+            self._inflight_persisted_ids: set[str] = set()
+            self._inflight_seen_at_startup: list[dict[str, Any]] = []
+
             # 初始化回调函数字典
             self._callbacks_lock = threading.Lock()
             self._callbacks: dict[str, list[Callable]] = {}
@@ -374,6 +437,25 @@ class NotificationManager:
             if self.config.bark_enabled:
                 self._update_bark_provider()
                 logger.info("已根据初始配置注册 Bark 通知提供者")
+
+            # R136: 启动时一次性恢复磁盘上的 in-flight 通知元数据。失败
+            # 不阻塞启动——磁盘问题 / JSON 损坏 / schema 不匹配都按"清
+            # 空"处理，不让单一文件错误把整个通知系统拖死。
+            try:
+                self._inflight_seen_at_startup = self._load_persisted_inflight_events()
+                if self._inflight_seen_at_startup:
+                    logger.info(
+                        "[R136] 加载到 %d 条上次未投递的 in-flight 通知"
+                        "（仅暴露给 stats，不自动重发）",
+                        len(self._inflight_seen_at_startup),
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[R136] 加载 inflight 持久化文件失败，跳过恢复: %s",
+                    exc,
+                    exc_info=True,
+                )
+                self._inflight_seen_at_startup = []
 
     def register_provider(
         self, notification_type: NotificationType, provider: Any
@@ -490,6 +572,17 @@ class NotificationManager:
             if len(self._event_queue) > max_keep:
                 self._event_queue = self._event_queue[-max_keep:]
 
+        # R136: 入队后立即记入 in-flight 持久化集合并落盘。失败不影响
+        # 主流程——磁盘满 / 权限错误时通知仍能正常投递。
+        try:
+            self._track_event_inflight(event)
+        except Exception as exc:
+            logger.debug(
+                "[R136] 持久化 inflight event %s 失败（不影响主流程）: %s",
+                event_id,
+                exc,
+            )
+
         logger.debug(f"通知事件已创建: {event_id} - {title}")
 
         # 立即处理或延迟处理
@@ -550,6 +643,17 @@ class NotificationManager:
                     self._stats["events_succeeded"] += 1
                 else:
                     self._stats["events_failed"] += 1
+            # R136: 事件最终化后从 in-flight 持久化集合摘除并刷盘。
+            # 锁外调用（_untrack_event_inflight 自带 _queue_lock 保护），
+            # 不污染 _stats_lock。失败不影响主流程。
+            try:
+                self._untrack_event_inflight(event.id)
+            except Exception as exc:
+                logger.debug(
+                    "[R136] 摘除 inflight event %s 失败（不影响主流程）: %s",
+                    event.id,
+                    exc,
+                )
         except Exception as e:
             # R117: 不扩散异常（_process_event 调用方期望本函数 best-effort
             # 即可），但留下 debug 痕迹便于排查 stats 偏移。注意只在 debug
@@ -599,6 +703,157 @@ class NotificationManager:
         with self._delayed_timers_lock:
             self._delayed_timers[timer_key] = timer
         timer.start()
+
+    # ------------------------------------------------------------------
+    # R136: in-flight 持久化辅助方法
+    # ------------------------------------------------------------------
+    #
+    # 设计要点：
+    # - 持久化文件 = 当前 ``_inflight_persisted_ids`` 集合内事件的 dump，
+    #   原子替换（写 .tmp → ``os.replace``）。
+    # - 入队 / 摘除两条路径都过 ``_queue_lock`` 保证集合一致性。
+    # - 序列化用 ``NotificationEvent.model_dump`` 以便复用 pydantic 校验
+    #   逻辑；启动 load 不重建 ``NotificationEvent`` 对象，仅返回原始
+    #   dict 给 ``get_status`` 使用——避免 enum 反序列化在 pydantic
+    #   v2 模式下的 strict mode 噪音。
+    # - 集合空时主动删除文件，避免长期保留空 envelope。
+    # - 任何 disk I/O 都包 try/except，磁盘满 / 权限错误 / 文件锁竞争
+    #   都不能让通知主路径挂掉。
+
+    def _inflight_file_path(self) -> Path | None:
+        """R136 — 返回 inflight 持久化文件绝对路径，或 ``None`` 表示
+        持久化不可用（无 config dir 时）。"""
+        base = _get_inflight_file_dir()
+        if base is None:
+            return None
+        return base / _INFLIGHT_FILE_NAME
+
+    def _track_event_inflight(self, event: NotificationEvent) -> None:
+        """R136 — 把事件 id 加入持久化集合并刷盘。
+
+        与 ``_create_event`` 入队后路径同步调用；自带 ``_queue_lock``
+        保护，复用既有锁避免引入新锁等级冲突。
+
+        ``getattr`` 兜底：兼容绕开 ``__init__`` 的测试 helper / 老调
+        用路径——首次访问时按需补建空集合，避免 ``AttributeError`` 把
+        通知主路径打挂。"""
+        with self._queue_lock:
+            ids = getattr(self, "_inflight_persisted_ids", None)
+            if ids is None:
+                self._inflight_persisted_ids = set()
+                ids = self._inflight_persisted_ids
+            ids.add(event.id)
+            # 把当前队列里 id 仍在集合内的事件序列化落盘
+            self._persist_inflight_unlocked()
+
+    def _untrack_event_inflight(self, event_id: str) -> None:
+        """R136 — 把事件 id 从持久化集合摘除并刷盘。
+
+        与 ``_mark_event_finalized`` 同步调用；最后一个 id 摘除后会主
+        动删除磁盘文件，避免长期保留空 envelope。"""
+        with self._queue_lock:
+            ids = getattr(self, "_inflight_persisted_ids", None)
+            if ids is None or event_id not in ids:
+                return
+            ids.discard(event_id)
+            self._persist_inflight_unlocked()
+
+    def _persist_inflight_unlocked(self) -> None:
+        """R136 — caller 持 ``_queue_lock`` 时写盘。
+
+        - 持久化集合空 → 删文件（不留空 envelope）；
+        - 否则 dump events 列表 → 写 ``.tmp`` → ``os.replace``。
+        - 失败仅 debug 日志，不抛异常（caller 期望 best-effort）。
+
+        ``getattr`` 兜底：与 ``_track_event_inflight`` 同款，绕开
+        ``__init__`` 的测试 helper 调用时不挂。"""
+        path = self._inflight_file_path()
+        if path is None:
+            return
+        ids = getattr(self, "_inflight_persisted_ids", set())
+        try:
+            if not ids:
+                # 空集合：删文件
+                if path.exists():
+                    try:
+                        path.unlink()
+                    except OSError:
+                        pass
+                return
+
+            # 从 _event_queue 里挑出 id 仍在持久化集合内的事件
+            events_to_save = [e for e in self._event_queue if e.id in ids]
+            payload: dict[str, Any] = {
+                "schema_version": _INFLIGHT_SCHEMA_VERSION,
+                "saved_at": datetime.now(UTC).isoformat(),
+                "events": [
+                    {
+                        # NotificationEvent.model_dump() 输出含 trigger /
+                        # types / priority 等 enum，pydantic v2 默认会
+                        # dump 成枚举值（str），重启读时直接 dict 暴露给
+                        # stats，不重建模型对象避免 strict mode 噪音
+                        **e.model_dump(mode="json"),
+                        "saved_at_ts": time.time(),
+                    }
+                    for e in events_to_save
+                ],
+            }
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+            os.replace(tmp, path)
+        except Exception as exc:
+            logger.debug(
+                "[R136] 持久化 inflight events 失败（不影响主流程）: %s",
+                exc,
+            )
+
+    def _load_persisted_inflight_events(self) -> list[dict[str, Any]]:
+        """R136 — 启动时从磁盘读 inflight events，返回 ``list[dict]``。
+
+        容错策略（任一失败都返回 ``[]`` 而不抛）：
+        - 文件不存在 → ``[]``；
+        - JSON 解析失败 → ``[]`` + warn；
+        - schema_version 不匹配 → ``[]`` + warn（未来加 migrator 时统一处理）；
+        - events 不是 list / 元素不是 dict → 跳过单元；
+        - ``saved_at_ts`` 距今超 ``_INFLIGHT_TTL_SECONDS`` → 过期丢弃；
+        - 文件权限 / I/O 错误 → ``[]`` + warn。"""
+        path = self._inflight_file_path()
+        if path is None:
+            return []
+        if not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("[R136] inflight 持久化文件损坏，跳过: %s", exc)
+            return []
+        if not isinstance(data, dict):
+            return []
+        if data.get("schema_version") != _INFLIGHT_SCHEMA_VERSION:
+            logger.warning(
+                "[R136] inflight 文件 schema_version 不匹配，跳过: %s",
+                data.get("schema_version"),
+            )
+            return []
+        events = data.get("events")
+        if not isinstance(events, list):
+            return []
+
+        now = time.time()
+        filtered: list[dict[str, Any]] = []
+        for entry in events:
+            if not isinstance(entry, dict):
+                continue
+            saved_at_ts = entry.get("saved_at_ts", 0)
+            if not isinstance(saved_at_ts, (int, float)):
+                continue
+            # TTL 过滤：超期事件直接丢，避免重启后看到一周前的 stale
+            # in-flight（典型场景：用户关电脑回家，第二天开机）
+            if now - saved_at_ts > _INFLIGHT_TTL_SECONDS:
+                continue
+            filtered.append(entry)
+        return filtered
 
     def _process_event(self, event: NotificationEvent):
         """并行发送通知到所有渠道，失败时重试或降级"""
@@ -1183,10 +1438,26 @@ class NotificationManager:
             logger.error(f"保存配置到文件失败: {e}", exc_info=True)
 
     def get_status(self) -> dict[str, Any]:
-        """返回管理器状态：enabled/providers/queue_size/config/stats"""
+        """返回管理器状态：enabled/providers/queue_size/config/stats。
+
+        R136：``status`` 增加两个字段：
+        - ``inflight_persisted_count``：当前进程持久化集合中的 inflight
+          事件数（与磁盘文件 events 列表长度一致，未过 TTL）。
+        - ``inflight_seen_at_startup``：本次进程启动时一次性 load 的
+          上次进程退出时还在 in-flight 的事件元数据列表（list[dict]，
+          每项 = 序列化的 NotificationEvent + ``saved_at_ts``）。该字
+          段仅"暴露给 stats"，进程不会自动重发——避免重启后用户被旧
+          通知刷屏；运维 / dashboard 可基于此发出 alarm。
+        """
         # 线程安全地获取队列大小
         with self._queue_lock:
             queue_size = len(self._event_queue)
+            # R136: getattr 兜底兼容绕开 __init__ 的测试 helper / 老调用
+            # 路径——这条路径不应该是常态，但 fail-soft 比 fail-hard 更
+            # 适合 status 端点（端点本身不应当因为内部字段缺失就 5xx）。
+            inflight_persisted_count = len(
+                getattr(self, "_inflight_persisted_ids", set())
+            )
 
         # 线程安全地获取统计快照
         try:
@@ -1252,6 +1523,14 @@ class NotificationManager:
                 "bark_timeout": self.config.bark_timeout,
             },
             "stats": stats_snapshot,
+            # R136: 当前进程持久化集合的 inflight 事件数（≥0）；
+            # 启动时一次性 load 的上次未投递事件元数据列表（list 副本，
+            # 防 caller 改写内部状态）。``getattr`` 兜底兼容绕开 __init__
+            # 的测试 helper / 老调用路径。
+            "inflight_persisted_count": inflight_persisted_count,
+            "inflight_seen_at_startup": list(
+                getattr(self, "_inflight_seen_at_startup", [])
+            ),
         }
 
 

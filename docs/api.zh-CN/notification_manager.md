@@ -8,6 +8,18 @@
 
 ## 函数
 
+### `_get_inflight_file_dir() -> Path | None`
+
+R136 — 解析 in-flight 持久化文件所在目录。
+
+优先复用 ``config_manager.get_config()`` 已经解析好的 config 文件路
+径的 ``parent``——保证持久化文件与 config 文件同位（典型为
+``~/.config/ai-intervention-agent/`` on Linux 或
+``~/Library/Application Support/ai-intervention-agent/`` on macOS）。
+
+若 config 模块不可用（e.g. 单元测试隔离场景），返回 ``None``——
+callers 应当跳过持久化路径，避免污染 cwd。
+
 ### `_shutdown_global_notification_manager()`
 
 ## 类
@@ -113,4 +125,13 @@ shutdown 后重建线程池
 
 ##### `get_status(self) -> dict[str, Any]`
 
-返回管理器状态：enabled/providers/queue_size/config/stats
+返回管理器状态：enabled/providers/queue_size/config/stats。
+
+R136：``status`` 增加两个字段：
+- ``inflight_persisted_count``：当前进程持久化集合中的 inflight
+  事件数（与磁盘文件 events 列表长度一致，未过 TTL）。
+- ``inflight_seen_at_startup``：本次进程启动时一次性 load 的
+  上次进程退出时还在 in-flight 的事件元数据列表（list[dict]，
+  每项 = 序列化的 NotificationEvent + ``saved_at_ts``）。该字
+  段仅"暴露给 stats"，进程不会自动重发——避免重启后用户被旧
+  通知刷屏；运维 / dashboard 可基于此发出 alarm。

@@ -179,6 +179,117 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R136** — **(feature)** 通知 in-flight 队列断电恢复持久化——
+  ``NotificationManager`` 把入队但还没投递成功的事件 atomic-write 到
+  ``notification_inflight.json``，进程重启后一次性 load 暴露给
+  ``get_status()``，让运维 / 监控仪表板第一时间看到「上次重启时还有
+  N 条通知没投递」。
+
+  **背景**：在 R136 之前，``_event_queue`` / ``_finalized_event_ids``
+  全在内存里。进程异常退出（崩溃 / SIGKILL / OOM / 容器被驱逐 /
+  ``systemctl restart``）时会彻底丢——运维侧完全看不到「上次重启时
+  还有 N 条通知没投递」，是基础观察性盲点。R136 把这个盲点补上。
+
+  **为什么不自动重发**：用户关电脑回家睡觉，第二天开机重发昨天 50
+  条通知 = 噪音灾难。R136 范围内仅做"持久化 + 启动时加载暴露给
+  stats"，把"是否重发"决策权让给将来的 R136-A（如果用户有需求）。
+
+  **设计决策**：
+
+  1. **持久化文件与 config 同位** — 路径 = ``_get_inflight_file_dir()``
+     即 ``config_manager.get_config().config_path.parent``，文件名
+     ``notification_inflight.json``（典型 ``~/.config/ai-intervention-
+     agent/notification_inflight.json`` on Linux 或
+     ``~/Library/Application Support/...`` on macOS）。复用 config 目
+     录的好处：用户已经习惯 backup 这个目录、容器卷已经 mount 这个目
+     录、平台目录解析逻辑已经在 ``platformdirs`` 里搞定。
+  2. **schema_version + signature envelope** — 顶层
+     ``schema_version: 1`` + ``saved_at: ISO`` + ``events: [...]``。
+     未来 schema 升级（v2 / v3）有个明确锚点；schema_version 不匹配
+     时 ``_load_persisted_inflight_events`` 直接返回 ``[]`` 而不挂，
+     给未来 migrator 留接入空间。
+  3. **Atomic write `.tmp → os.replace`** — POSIX rename atomic 保证
+     是 SSDb 写半截绕过的标准技巧：写 ``notification_inflight.json
+     .tmp`` 后 ``os.replace`` 换成正式名。崩溃在写 ``.tmp`` 中途时正
+     式文件不变；崩溃在 replace 时文件系统层保证要么还是老内容、要
+     么是新内容，永远不会读到半截 JSON。
+  4. **TTL = 5 分钟（300 秒）** — 典型用户场景下，通知如果 5 分钟内
+     没投递成功就基本失去时效（feedback 已经过期 / 用户已经看过了）。
+     这个 TTL 把「关电脑回家场景」隔离掉——重启后只看最近 5 分钟内的
+     真正"飞行中"事件，不被昨晚的 stale 数据污染。
+  5. **集合空时主动删文件** — 不留空 envelope；让运维在 ``ls`` 时
+     一眼看到「当前进程有没有 in-flight 通知积压」（文件不存在 = 干
+     净状态）。
+  6. **不引入新锁** — 复用 ``_queue_lock`` 保护
+     ``_inflight_persisted_ids`` 集合 + 写盘路径，与 ``_event_queue``
+     append / trim 同一锁等级，避免引入新的锁顺序冲突风险。
+  7. **入队 + 摘除两个挂点** — ``_create_event`` 入队后走
+     ``_track_event_inflight``（add id → 写盘）；``_mark_event_finalized``
+     收尾时走 ``_untrack_event_inflight``（discard id → 写盘 / 最后一
+     个时删文件）。两条路径都 try-except 包了 best-effort，磁盘满 /
+     权限错误 / 文件锁竞争都不会让通知主路径挂掉。
+  8. **getattr 兜底兼容老 helper** — ``get_status()`` /
+     ``_track_event_inflight`` / ``_untrack_event_inflight`` /
+     ``_persist_inflight_unlocked`` 都对 ``_inflight_persisted_ids``
+     用 ``getattr`` 兜底，让 ``test_notification_manager._make_manager()``
+     这种"绕开 ``__init__`` 手动构造"的老测试 helper 不挂。R136 加新
+     字段不应当让既有测试基础设施 fail。
+  9. **启动时一次性 load → 不自动重发** — ``__init__`` 末尾调
+     ``_load_persisted_inflight_events()`` 把数据存到
+     ``_inflight_seen_at_startup``，``get_status()`` 把它暴露给运维
+     仪表板。**不重新进队列、不调 ``_process_event``**——避免重启风
+     暴 / 用户被旧通知刷屏。
+
+  **实现**：
+
+  - ``notification_manager.py`` 模块级新增 3 个常量
+    （``_INFLIGHT_FILE_NAME`` / ``_INFLIGHT_SCHEMA_VERSION`` /
+    ``_INFLIGHT_TTL_SECONDS``）+ ``_get_inflight_file_dir()`` helper。
+  - ``NotificationManager.__init__`` 新增 ``_inflight_persisted_ids``
+    集合 + ``_inflight_seen_at_startup`` 列表；``__init__`` 末尾调
+    ``_load_persisted_inflight_events()`` 给 ``_inflight_seen_at_startup``
+    赋值，try/except 兜底失败不阻塞启动。
+  - 新增 5 个方法：``_inflight_file_path()`` / ``_track_event_inflight()`` /
+    ``_untrack_event_inflight()`` / ``_persist_inflight_unlocked()`` /
+    ``_load_persisted_inflight_events()``。
+  - ``send_notification`` 入队后 try-except 调 ``_track_event_inflight``；
+    ``_mark_event_finalized`` 收尾后 try-except 调 ``_untrack_event_inflight``。
+  - ``get_status()`` 顶层加 ``inflight_persisted_count`` (int) +
+    ``inflight_seen_at_startup`` (list[dict] 副本)。
+  - ``docs/api/notification_manager.md`` + ``docs/api.zh-CN/...`` 通过
+    ``scripts/generate_docs.py`` 自动重新生成（无需手改）。
+
+  **测试**（``tests/test_notification_inflight_persistence_r136.py``，
+  24 cases / 6 invariant classes）：
+
+  1. **常量** — 三个常量值锁定（``notification_inflight.json`` /
+     ``schema_version=1`` / ``TTL=300s``）。
+  2. **load 容错** — 缺文件 / JSON 损坏 / 顶层不是 dict / schema
+     不匹配 / events 不是 list / 元素不是 dict 全部返回 ``[]`` 不抛
+     异常。
+  3. **TTL 过滤** — fresh 事件保留；超期事件过滤；``saved_at_ts``
+     不是数字时被丢弃。
+  4. **persist 写盘** — 空集合 + 文件存在时删文件；空集合 + 无文件
+     no-op；非空时写 envelope 含 schema_version + saved_at + events；
+     atomic 写后无 ``.tmp`` 残留。
+  5. **track / untrack 行为** — track 后磁盘含事件；untrack 中间一
+     个后磁盘只剩另一个；最后一个 untrack 后文件被删；untrack 未知
+     id 静默 no-op。
+  6. **get_status R136 字段** — ``inflight_persisted_count`` 在；
+     反映当前集合大小；``inflight_seen_at_startup`` 是 list；外部修
+     改返回值不影响 manager 内部状态（深拷贝/list 副本）。
+
+  **验证**：24/24 R136 + 192/192 既有 notification 全套（含
+  ``test_notification_manager.py``，老 helper 走 getattr 兜底路径）+
+  其他周边 = 全工程 4290 passed + 2 skipped；
+  ``uv run python scripts/ci_gate.py`` exits 0。
+
+  **后续 follow-up（不在 R136 范围内）**：
+  - **R136-A**：基于 ``inflight_seen_at_startup`` 做"主动重发"决策
+    （需要更精细 TTL 策略 + 用户级开关，避免风暴）；
+  - **R136-B**：``/api/system/health`` payload 把 ``inflight_persisted_count``
+    暴露成顶层字段，让 K8s probe 能直接看到。
+
 - **R135** — **(feature)** `GET /api/tasks/export?since=<ISO>` 增量导出
   过滤器，CI / 备份脚本周期性同步只拿真正变化的 tasks，传输量从
   O(N×content) 降到 O(M×content)（M ≤ N）。

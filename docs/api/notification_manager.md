@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `_get_inflight_file_dir() -> Path | None`
+
 ### `_shutdown_global_notification_manager()`
 
 ## Classes
