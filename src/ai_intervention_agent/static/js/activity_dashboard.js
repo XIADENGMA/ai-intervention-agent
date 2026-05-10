@@ -101,6 +101,18 @@
   // and avoid wrapping the row layout on a stack-trace one-liner.
   var LOG_MESSAGE_SLICE = 256;
 
+  // R155 — localStorage-backed "remember whether the dashboard is
+  // expanded across page reloads" (closes CR#9 F-3).  Stored as a
+  // single boolean ``true|false`` under a schema-versioned key,
+  // mirroring R150's history-trail pattern so the same defensive
+  // ``_readStorageFlag`` / ``_writeStorageFlag`` shape can be reused
+  // by a future R-cycle that adds another remember-this affordance.
+  var EXPANDED_LS_KEY = "aiia.activity_dashboard.expanded.v1";
+  // Schema version embedded so a future R157 / R158 shape change
+  // (e.g. per-row expanded state, not just the top-level toggle) can
+  // bump and drop the older payload without crashing the renderer.
+  var EXPANDED_SCHEMA_VERSION = 1;
+
   // The list of "rows" (stat tiles) we render.  Each row maps an
   // id (used as React-style key + DOM id) to the i18n label and the
   // formatter that turns the latest value into a textContent string.
@@ -691,6 +703,59 @@
     }
   }
 
+  // ---------- R155 expanded-state persistence -----------------------------
+
+  // Safe localStorage read.  Returns the parsed payload object iff:
+  //   - localStorage is reachable (Safari private mode / sandboxed
+  //     iframe disable it),
+  //   - the stored value parses as JSON,
+  //   - the payload has the expected schema version (so a stale older
+  //     deploy's payload is silently discarded),
+  //   - the embedded ``expanded`` field is a boolean.
+  // Returns ``null`` on any failure.  Modelled on R150's
+  // ``_readStorage`` so the defensive contract is consistent across
+  // both dashboard sub-modules.
+  function _readExpandedFlag() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return null;
+      var raw = localStorage.getItem(EXPANDED_LS_KEY);
+      if (raw == null) return null;
+      var parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (_e) {
+        return null;
+      }
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        parsed.v === EXPANDED_SCHEMA_VERSION &&
+        typeof parsed.expanded === "boolean"
+      ) {
+        return parsed.expanded;
+      }
+      return null;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  // Safe localStorage write.  Wraps ``setItem`` in a try/catch so a
+  // quota-exceeded / disabled-storage / sandboxed-iframe scenario
+  // can't surface a TypeError to the user via the click handler.
+  function _writeExpandedFlag(expanded) {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return;
+      var payload = JSON.stringify({
+        v: EXPANDED_SCHEMA_VERSION,
+        expanded: expanded === true,
+      });
+      localStorage.setItem(EXPANDED_LS_KEY, payload);
+    } catch (_e) {
+      /* noop — defensive: quota-exceeded / read-only storage / etc. */
+    }
+  }
+
   // ---------- init ----------------------------------------------------------
 
   function init() {
@@ -702,10 +767,41 @@
     }
     toggleBtn.addEventListener("click", function () {
       var expanded = toggleBtn.getAttribute("aria-expanded") === "true";
-      if (expanded) _close(toggleBtn, body);
-      else _open(toggleBtn, body);
+      if (expanded) {
+        _close(toggleBtn, body);
+        _writeExpandedFlag(false);
+      } else {
+        _open(toggleBtn, body);
+        _writeExpandedFlag(true);
+      }
     });
     toggleBtn.setAttribute("data-r152-bound", "1");
+
+    // R155 — hydrate the persisted expanded state.  If the user had
+    // the dashboard open before they reloaded, re-open it for them.
+    // No-op if no flag was stored or the flag was ``false``.
+    if (_readExpandedFlag() === true) {
+      _open(toggleBtn, body);
+    }
+
+    // R155 — multi-tab sync via the standard ``storage`` event.  When
+    // another tab toggles the dashboard, this tab follows along.
+    // Defensive: only react to changes on *our* key with a parseable
+    // payload, ignore other keys and ignore null payloads (clears).
+    if (typeof window !== "undefined" && window.addEventListener) {
+      window.addEventListener("storage", function (event) {
+        if (!event || event.key !== EXPANDED_LS_KEY) return;
+        var newFlag = _readExpandedFlag();
+        var currentlyExpanded =
+          toggleBtn.getAttribute("aria-expanded") === "true";
+        if (newFlag === true && !currentlyExpanded) {
+          _open(toggleBtn, body);
+        } else if (newFlag === false && currentlyExpanded) {
+          _close(toggleBtn, body);
+        }
+      });
+    }
+
     return { toggleBtn: toggleBtn, body: body };
   }
 
@@ -772,5 +868,9 @@
     LOG_MESSAGE_SLICE: LOG_MESSAGE_SLICE,
     _open: _open,
     _close: _close,
+    EXPANDED_LS_KEY: EXPANDED_LS_KEY,
+    EXPANDED_SCHEMA_VERSION: EXPANDED_SCHEMA_VERSION,
+    _readExpandedFlag: _readExpandedFlag,
+    _writeExpandedFlag: _writeExpandedFlag,
   };
 })();

@@ -251,6 +251,46 @@ class TestR150LoadFiltersBadEntries(unittest.TestCase):
             "_loadHistory 必须用 HISTORY_SCHEMA_VERSION 过滤 entry",
         )
 
+    def test_schema_version_comparison_is_strict_equality_only(self) -> None:
+        """R155 / CR#9 F-5 — property pin: the only comparison shape on
+        ``HISTORY_SCHEMA_VERSION`` inside ``_loadHistory`` is strict
+        equality (``===``).  Weakening to ``>=`` / ``!==`` / ``<`` /
+        ``==`` would silently let an incompatible older / newer schema's
+        payload through and crash the renderer when the entry shape
+        doesn't match.
+
+        Implementation note: we grep every binary comparison literal
+        adjacent to ``HISTORY_SCHEMA_VERSION`` inside the function body
+        and assert the operator set is exactly ``{"==="}``.  Catches
+        e.g. a future refactor that decides ``e.v >= HISTORY_SCHEMA_VERSION``
+        for "forward compat" — wrong direction; the safe response to
+        an unknown version is to drop the entry."""
+        # Capture (operator) for every ``HISTORY_SCHEMA_VERSION`` adjacency.
+        # Match either ``HISTORY_SCHEMA_VERSION <op> X`` or ``X <op>
+        # HISTORY_SCHEMA_VERSION`` — both orders.
+        ops_after = re.findall(
+            r"HISTORY_SCHEMA_VERSION\s*(===|!==|==|!=|<=|>=|<|>)",
+            self.body,
+        )
+        ops_before = re.findall(
+            r"(===|!==|==|!=|<=|>=|<|>)\s*HISTORY_SCHEMA_VERSION",
+            self.body,
+        )
+        unique_ops = set(ops_after) | set(ops_before)
+        # ``===`` is the only acceptable shape.  Empty set (no comparison
+        # anywhere) would also indicate the filter degraded — assert
+        # at least one comparison exists.
+        self.assertTrue(
+            unique_ops,
+            "未在 _loadHistory body 内找到任何 HISTORY_SCHEMA_VERSION 比较，"
+            "schema 过滤可能已被移除",
+        )
+        self.assertEqual(
+            unique_ops,
+            {"==="},
+            f"HISTORY_SCHEMA_VERSION 必须只用 === 严格比较，发现 {unique_ops!r}",
+        )
+
     def test_caps_at_max_entries(self) -> None:
         self.assertRegex(
             self.body,
