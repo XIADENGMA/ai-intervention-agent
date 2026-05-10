@@ -52,7 +52,9 @@
 
   var BUTTON_ID = "system-notification-test-btn";
   var STATUS_ID = "system-notification-test-status";
+  var PROBE_ID = "system-notification-test-probe";
   var ENDPOINT = "/api/system/notifications/test";
+  var HEALTH_ENDPOINT = "/api/system/health";
   // Server's Flask-Limiter is 6/min on this route; we add a tiny
   // client-side cooldown to dampen accidental double-tap before the
   // server has a chance to 429.  AbortController on top of that.
@@ -61,6 +63,24 @@
   // but short enough that a hung connection doesn't keep the button
   // disabled forever.
   var FETCH_TIMEOUT_MS = 60 * 1000;
+  // R147: after a successful R141 dispatch, wait this long before
+  // probing /api/system/health so the backend's async send
+  // (Bark HTTP RTT ~1-2s, web/sound/system are local microsec) has
+  // a fair chance to update per-provider stats. 1.5s covers the
+  // typical Bark case; if the provider is slower, the probe simply
+  // shows a "stale" verdict and the user can re-click.
+  var PROBE_DELAY_MS = 1500;
+  // 5s hard cap on the health probe — well above realistic /health
+  // RTT (~10ms) but short enough that an unhealthy server doesn't
+  // strand the user looking at "Probing..." forever.
+  var PROBE_TIMEOUT_MS = 5 * 1000;
+  // R147: when judging "is this provider stats reflective of the
+  // self-test we just dispatched?", we look at last_event_age_seconds.
+  // If the last event happened more than 10s ago, the dispatch most
+  // likely missed (or got rejected) and the stats we're showing
+  // belong to an older event. Empirically tuned: PROBE_DELAY_MS +
+  // 5s headroom for slow networks / paused tabs.
+  var PROBE_STALE_THRESHOLD_S = 10;
 
   function _t(key, params) {
     try {
@@ -183,6 +203,230 @@
     };
   }
 
+  // R147: derive a per-provider verdict for the line we render
+  // under the main status text.  Pure function over the per-provider
+  // stats blob (R142 / R143 / R145 contract).
+  //
+  // The per-provider stats actually shipped by R142 are:
+  //   - attempts / success / failure (counters)
+  //   - success_rate / avg_latency_ms (aggregates)
+  //   - last_success_age_seconds / last_failure_age_seconds (since-times)
+  //   - last_error_present / last_error_class (R143)
+  //   - success_streak / failure_streak (R145)
+  //
+  // We pick the **most recent** of {success_age, failure_age} as the
+  // "last event age", because what the user pressed the button for
+  // was "did anything fire just now?" — not specifically a success.
+  //
+  // Decision tree (verdict.kind):
+  //   - null stats / last_error_class === "not_registered"  → "skipped"
+  //   - both ages null / freshest age > stale threshold     → "stale"
+  //   - last event was a failure (failure_age <= success_age, OR
+  //     success_age is null)                                → "failure"
+  //     with streak = failure_streak, errorClass = last_error_class
+  //   - last event was a success (the converse)             → "success"
+  //     with streak = success_streak
+  //   - both ages 0 / both streaks 0 (defensive)            → "unknown"
+  function _classifyProviderVerdict(stats) {
+    if (!stats || typeof stats !== "object") {
+      return { kind: "skipped", reason: "no_stats" };
+    }
+    var lastErrorClass = stats.last_error_class || null;
+    if (lastErrorClass === "not_registered") {
+      return { kind: "skipped", reason: "not_registered" };
+    }
+    var sa = stats.last_success_age_seconds;
+    var fa = stats.last_failure_age_seconds;
+    var successAge =
+      typeof sa === "number" && isFinite(sa) && sa >= 0 ? sa : null;
+    var failureAge =
+      typeof fa === "number" && isFinite(fa) && fa >= 0 ? fa : null;
+    // freshest = whichever is smaller (most recent)
+    var freshest = null;
+    var lastWas = null; // "success" | "failure"
+    if (successAge !== null && failureAge !== null) {
+      if (failureAge <= successAge) {
+        freshest = failureAge;
+        lastWas = "failure";
+      } else {
+        freshest = successAge;
+        lastWas = "success";
+      }
+    } else if (successAge !== null) {
+      freshest = successAge;
+      lastWas = "success";
+    } else if (failureAge !== null) {
+      freshest = failureAge;
+      lastWas = "failure";
+    }
+    if (freshest === null || freshest > PROBE_STALE_THRESHOLD_S) {
+      return { kind: "stale", age: freshest };
+    }
+    var failureStreak = parseInt(stats.failure_streak, 10);
+    var successStreak = parseInt(stats.success_streak, 10);
+    if (lastWas === "failure") {
+      return {
+        kind: "failure",
+        age: freshest,
+        streak: isFinite(failureStreak) ? failureStreak : 0,
+        errorClass: lastErrorClass || "unknown",
+      };
+    }
+    if (lastWas === "success") {
+      return {
+        kind: "success",
+        age: freshest,
+        streak: isFinite(successStreak) ? successStreak : 0,
+      };
+    }
+    return { kind: "unknown", age: freshest };
+  }
+
+  // R147: render a per-provider verdict tuple to a localised string
+  // fragment.  Each verdict gets its own i18n key so translators can
+  // reorder words / use locale-appropriate punctuation.
+  function _renderProviderVerdict(provider, verdict) {
+    if (!verdict) return null;
+    var providerLabel = String(provider).slice(0, 32);
+    if (verdict.kind === "success") {
+      return _t("settings.systemTestProbeProviderSuccess", {
+        provider: providerLabel,
+        streak: verdict.streak,
+        age_seconds: verdict.age.toFixed(1),
+      });
+    }
+    if (verdict.kind === "failure") {
+      return _t("settings.systemTestProbeProviderFailure", {
+        provider: providerLabel,
+        streak: verdict.streak,
+        error_class: String(verdict.errorClass).slice(0, 32),
+      });
+    }
+    if (verdict.kind === "stale") {
+      return _t("settings.systemTestProbeProviderStale", {
+        provider: providerLabel,
+      });
+    }
+    if (verdict.kind === "skipped") {
+      return _t("settings.systemTestProbeProviderSkipped", {
+        provider: providerLabel,
+        reason: String(verdict.reason || "").slice(0, 32),
+      });
+    }
+    return _t("settings.systemTestProbeProviderUnknown", {
+      provider: providerLabel,
+    });
+  }
+
+  // R147: fetch /api/system/health and project per-provider stats
+  // for the providers we just dispatched. Returns null on any
+  // transport / parsing failure (caller treats null as "skip the
+  // probe line" — main success message stays visible, no scary
+  // error overlap).
+  async function _probeHealthForProviders(providers) {
+    if (!Array.isArray(providers) || providers.length === 0) return null;
+    var controller = null;
+    var timeoutId = null;
+    try {
+      if (typeof AbortController !== "undefined") {
+        controller = new AbortController();
+        timeoutId = setTimeout(function () {
+          try {
+            controller.abort();
+          } catch (_e) {
+            /* noop */
+          }
+        }, PROBE_TIMEOUT_MS);
+      }
+      var resp = await fetch(HEALTH_ENDPOINT, {
+        method: "GET",
+        credentials: "same-origin",
+        signal: controller ? controller.signal : undefined,
+      });
+      if (!resp.ok) return null;
+      var body = await resp.json();
+      if (!body || typeof body !== "object") return null;
+      // Server contract (R142): /api/system/health returns
+      //   { checks: { notification: { per_provider: { bark: {...} | null, ... } } } }
+      // — no `.stats` intermediate wrapper.  `per_provider` itself
+      // is the dict keyed on NotificationType.value ∈ {bark, web,
+      // sound, system}, with each value either the R142 stats blob
+      // or `null` (provider not registered / never used).
+      var checks = body.checks || {};
+      var notif = checks.notification || {};
+      var perProvider = notif.per_provider || {};
+      var out = {};
+      for (var i = 0; i < providers.length; i++) {
+        var p = providers[i];
+        if (typeof p !== "string") continue;
+        out[p] = perProvider[p] || null;
+      }
+      return out;
+    } catch (_err) {
+      return null;
+    } finally {
+      if (timeoutId) {
+        try {
+          clearTimeout(timeoutId);
+        } catch (_e) {
+          /* noop */
+        }
+      }
+    }
+  }
+
+  // R147: orchestrate the post-dispatch probe.  This runs **after**
+  // the main status line has already been written, so any failure /
+  // null result simply leaves the probe line empty (silent fallback,
+  // matching the project's "graceful degradation" pattern from R140
+  // / R146).  The probe line is rendered as separate <span> children
+  // joined by " · " so the screen-reader announcement reads like
+  // a list, not one giant blob.
+  async function _runProbe(providers, probeNode) {
+    if (!probeNode) return;
+    if (!Array.isArray(providers) || providers.length === 0) return;
+    _setProbe(probeNode, "pending", _t("settings.systemTestProbing"));
+    await new Promise(function (r) {
+      setTimeout(r, PROBE_DELAY_MS);
+    });
+    var statsByProvider = await _probeHealthForProviders(providers);
+    if (statsByProvider === null) {
+      // fail-silent: clear pending text but don't surface an error
+      // (main message already says dispatch went out)
+      _setProbe(probeNode, "neutral", "");
+      return;
+    }
+    var fragments = [];
+    var anyFailure = false;
+    var anyStale = false;
+    for (var i = 0; i < providers.length; i++) {
+      var p = providers[i];
+      var verdict = _classifyProviderVerdict(statsByProvider[p]);
+      var line = _renderProviderVerdict(p, verdict);
+      if (line) fragments.push(line);
+      if (verdict.kind === "failure") anyFailure = true;
+      if (verdict.kind === "stale") anyStale = true;
+    }
+    var probeText = fragments.join(" · ");
+    var probeKind = "success";
+    if (anyFailure) probeKind = "error";
+    else if (anyStale) probeKind = "warning";
+    _setProbe(probeNode, probeKind, probeText);
+  }
+
+  function _setProbe(node, kind, text) {
+    if (!node) return;
+    node.textContent = text || "";
+    node.className = "setting-status-line";
+    if (kind === "pending") node.className += " setting-status-pending";
+    else if (kind === "success") node.className += " setting-status-success";
+    else if (kind === "warning") node.className += " setting-status-warning";
+    else if (kind === "error") node.className += " setting-status-error";
+    // "neutral" leaves the base class only (keeps default text
+    // colour, no visual highlight); empty strings will collapse the
+    // line via the min-height: 0 rule on the empty-text case below.
+  }
+
   // Stamp the last-click time on the button so the cooldown survives
   // any rerender that swaps DOM nodes (defensive vs settings panel
   // re-mounts).  Stored as data attribute, not module variable.
@@ -203,7 +447,7 @@
     }
   }
 
-  async function triggerSelfTest(button, statusNode) {
+  async function triggerSelfTest(button, statusNode, probeNode) {
     if (!button) return;
     if (button.disabled) return;
     if (_isOnCooldown(button)) return;
@@ -211,6 +455,9 @@
 
     button.disabled = true;
     _setStatus(statusNode, "pending", _t("settings.systemTestSending"));
+    // R147: clear any stale probe line from a previous run so the
+    // user doesn't see "bark: success" left over from 2 minutes ago.
+    if (probeNode) _setProbe(probeNode, "neutral", "");
 
     var controller = null;
     var timeoutId = null;
@@ -241,6 +488,19 @@
       }
       var verdict = _classifyResponse(resp.status, body);
       _setStatus(statusNode, verdict.kind, verdict.text);
+      // R147: only probe when dispatch actually went out (not 4xx /
+      // 5xx / config-disabled / no-providers).  Probe runs in the
+      // background — we await it to keep button.disabled until probe
+      // completes, so a frantic user mashing the button can't overrun
+      // a probe-in-flight (matches R146's idempotent contract).
+      if (
+        verdict.kind === "success" &&
+        body &&
+        Array.isArray(body.providers_dispatched) &&
+        body.providers_dispatched.length > 0
+      ) {
+        await _runProbe(body.providers_dispatched, probeNode);
+      }
     } catch (err) {
       // AbortError lands here as well — treat as a network-grade
       // failure from the user's POV (they pressed a button and got
@@ -274,22 +534,23 @@
   function init() {
     var button = document.getElementById(BUTTON_ID);
     var statusNode = document.getElementById(STATUS_ID);
+    var probeNode = document.getElementById(PROBE_ID);
     if (!button) return null;
     // Idempotent: drop any existing handler before re-binding so a
     // second init() doesn't double-fire.  We use a sentinel attribute
     // because handler identity is captured in closure.
     if (button.getAttribute("data-r146-bound") === "1") {
-      return { button: button, statusNode: statusNode };
+      return { button: button, statusNode: statusNode, probeNode: probeNode };
     }
     button.addEventListener("click", function () {
       // Defer to microtask queue so click handlers don't await
       // inline (keeps browser responsive on slow mobiles).
       Promise.resolve().then(function () {
-        triggerSelfTest(button, statusNode);
+        triggerSelfTest(button, statusNode, probeNode);
       });
     });
     button.setAttribute("data-r146-bound", "1");
-    return { button: button, statusNode: statusNode };
+    return { button: button, statusNode: statusNode, probeNode: probeNode };
   }
 
   if (document.readyState === "loading") {
@@ -301,12 +562,22 @@
   window.AIIA_NOTIFICATION_TEST_BUTTON = {
     BUTTON_ID: BUTTON_ID,
     STATUS_ID: STATUS_ID,
+    PROBE_ID: PROBE_ID,
     ENDPOINT: ENDPOINT,
+    HEALTH_ENDPOINT: HEALTH_ENDPOINT,
     CLIENT_COOLDOWN_MS: CLIENT_COOLDOWN_MS,
     FETCH_TIMEOUT_MS: FETCH_TIMEOUT_MS,
+    PROBE_DELAY_MS: PROBE_DELAY_MS,
+    PROBE_TIMEOUT_MS: PROBE_TIMEOUT_MS,
+    PROBE_STALE_THRESHOLD_S: PROBE_STALE_THRESHOLD_S,
     init: init,
     triggerSelfTest: triggerSelfTest,
     _classifyResponse: _classifyResponse,
+    _classifyProviderVerdict: _classifyProviderVerdict,
+    _renderProviderVerdict: _renderProviderVerdict,
+    _probeHealthForProviders: _probeHealthForProviders,
+    _runProbe: _runProbe,
+    _setProbe: _setProbe,
     _formatProviderList: _formatProviderList,
     _isOnCooldown: _isOnCooldown,
   };

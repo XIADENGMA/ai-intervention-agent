@@ -1482,6 +1482,23 @@
                       min-height: 1.2em;
                     "
                   ></div>
+                  <!-- R147 — health probe line: shows per-provider verdict
+                       after the dispatch (success/failure/stale/skipped)
+                       sourced from GET /api/system/health.  aria-live so
+                       screen readers announce the eventual delivery result
+                       a couple of seconds after the dispatch event. -->
+                  <div
+                    id="system-notification-test-probe"
+                    class="setting-status-line"
+                    role="status"
+                    aria-live="polite"
+                    style="
+                      margin-top: 0.2rem;
+                      font-size: 0.78rem;
+                      color: var(--text-secondary);
+                      min-height: 0;
+                    "
+                  ></div>
                   <div
                     style="
                       margin-top: 0.3rem;

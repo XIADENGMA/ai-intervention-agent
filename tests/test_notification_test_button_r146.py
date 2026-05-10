@@ -109,9 +109,18 @@ class TestJsFileExistsAndSize(unittest.TestCase):
         )
 
     def test_js_file_line_count_in_envelope(self) -> None:
+        # R146 落地时 ≈ 270 行；R147 在同一模块内追加 health-probe
+        # follow-up（_classifyProviderVerdict / _renderProviderVerdict /
+        # _probeHealthForProviders / _runProbe / _setProbe + 注释 + 双
+        # locale + module export 增量），整体上限放宽到 700 行；下限
+        # 提到 400 防误删 R147 部分。
         line_count = len(_read_js().splitlines())
-        self.assertGreaterEqual(line_count, 200, "R146 JS 模块过短，疑似空壳")
-        self.assertLessEqual(line_count, 360, "R146 JS 模块超出预期，疑似膨胀")
+        self.assertGreaterEqual(
+            line_count, 400, "notification_test_button.js 过短，疑似 R147 缺失"
+        )
+        self.assertLessEqual(
+            line_count, 700, "notification_test_button.js 超出预期，疑似膨胀"
+        )
 
 
 # ----------------------------------------------------------------------
@@ -170,10 +179,12 @@ class TestApiSurface(unittest.TestCase):
         self.assertRegex(self.js, r"function\s+init\s*\(\s*\)")
 
     def test_trigger_self_test_function_present(self) -> None:
-        # 必须是 async（fetch await）
+        # 必须是 async（fetch await）。R147 起追加可选 probeNode 参数；R146
+        # 时代签名是 ``(button, statusNode)``，这里放宽匹配——保留 button +
+        # statusNode 的强约束，但允许尾部追加任意命名参数。
         self.assertRegex(
             self.js,
-            r"async\s+function\s+triggerSelfTest\s*\(\s*button\s*,\s*statusNode\s*\)",
+            r"async\s+function\s+triggerSelfTest\s*\(\s*button\s*,\s*statusNode(?:\s*,\s*\w+)?\s*\)",
         )
 
     def test_classify_response_function_present(self) -> None:
@@ -555,11 +566,12 @@ class TestIdempotencyAndCooldown(unittest.TestCase):
 
     def test_settle_promise_microtask_in_click_handler(self) -> None:
         # click handler 走 Promise.resolve().then 把 await 推到 microtask
-        # 队列，避免阻塞渲染
+        # 队列，避免阻塞渲染。R147 起 triggerSelfTest 多了第三个 probeNode
+        # 入参，这里放宽匹配——保留 button + statusNode 顺序的强约束。
         self.assertRegex(
             self.js,
             r"Promise\.resolve\(\)\.then\(\s*function\s*\(\)\s*\{\s*"
-            r"triggerSelfTest\(button,\s*statusNode\)",
+            r"triggerSelfTest\(button,\s*statusNode(?:\s*,\s*\w+)?\)",
         )
 
 
