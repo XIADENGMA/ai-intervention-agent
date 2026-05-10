@@ -244,9 +244,19 @@ jobs:
         if: env.OVSX_TOKEN != ''
         env:
           OVSX_TOKEN: ${{ secrets.OPEN_VSX_TOKEN }}
+        # R149 — pin ovsx version. 2026-05-08 v1.6.0 release passed
+        # with the floating "ovsx" tag; 2026-05-10 v1.6.1 release with
+        # the same code shape failed because the floating tag picked
+        # up a newer ovsx that strict-checked package.json
+        # displayName vs vsixmanifest. Pinning to 0.10.9 (current
+        # latest at time of R149) makes the publish step
+        # deterministic and lets us upgrade ovsx via a tracked PR
+        # rather than having silent toolchain drift break a release.
+        # Bump this with R149 follow-up after verifying the new
+        # ovsx version still publishes.
         run: |
-          npx --yes ovsx verify-pat xiadengma -p "$OVSX_TOKEN"
-          npx --yes ovsx publish -p "$OVSX_TOKEN" vsix/*.vsix
+          npx --yes ovsx@0.10.9 verify-pat xiadengma -p "$OVSX_TOKEN"
+          npx --yes ovsx@0.10.9 publish -p "$OVSX_TOKEN" vsix/*.vsix
 
       - name: 跳过（OPEN_VSX_TOKEN 未配置）
         if: env.OVSX_TOKEN == ''
