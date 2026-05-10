@@ -1906,6 +1906,13 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
+    <!-- R139 — Feedback per-task 草稿持久化（autosave + hydrate） -->
+    <script
+      defer
+      src="/static/js/feedback_drafts.js?v={{ feedback_drafts_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
     <!-- T1 · C10b: @aiia/tri-state-panel via Import Maps
          importmap 必须出现在所有 <script type="module"> 之前（浏览器规范）。
          业务代码通过 bare specifier `@aiia/tri-state-panel` 消费，Web UI 与 VSCode

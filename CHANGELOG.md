@@ -179,6 +179,110 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R139** — **(UX)** 反馈 textarea per-task 草稿持久化（autosave）——
+  项目内已存在 ``window.taskTextareaContents`` 内存字典（``multi_
+  task.js`` 维护，多任务并发场景下用户切换 task 时保留 textarea 内
+  容不丢），但**仅在内存里**。一旦用户刷新页面 / 关闭浏览器 / 进
+  程崩溃，所有 draft 全部丢失。``mcp-feedback-enhanced`` v2.4.x 把
+  "Auto-save drafts" 列入版本 highlight 是因为长 prompt 用户在拼接
+  多段 LLM 输出 / 复制粘贴长技术文档时最怕 30 分钟手敲被刷新一键
+  清零，autosave 让内容不再因刷新 / 崩溃而消失。
+
+  **设计决策**：
+
+  1. **不侵入 multi_task.js / app.js** — R139 走外挂监听（textarea
+     ``input`` 事件 + ``setInterval`` 周期 reconcile），既有代码零
+     改动，避免 1300 行 ``switchTask()`` / submit handler 引入回归
+     风险。R139 模块仅追加，不修改任何 prod 路径函数体。
+  2. **TTL 7 天 + LRU 50 task 双重容量约束** — draft 内容可能含敏感
+     信息（API key / 密码 / 私聊片段），TTL 7 天让 stale draft 自
+     动 expire；LRU 50 task 防止 storage 无界增长（典型用户 1-2 周
+     内活跃 task ≤30，50 留充足缓冲）。``saved_at < cutoff`` 时
+     hydrate 跳过；超出 ``MAX_DRAFTS`` 时按 ``saved_at desc`` evict
+     最旧。
+  3. **input 事件 debounce 500ms 写盘 + 周期 30s reconcile** —
+     ``input`` 事件 debounce 500ms 让用户输入后立即持久化（感知
+     `<1s` 即落盘）；周期 30s ``reconcileMemoryToStorage`` 兜底程
+     序赋值 / clear / submit 后清空等非 input 路径——避免漏一些
+     ``textarea.value = ""`` 这种程序性 mutate（不触发 input 事
+     件）。两路双写让 storage 与内存最终一致。
+  4. **hydrate 不覆盖既存 entry** — ``hydrateMemoryCache`` 在
+     DOMContentLoaded 触发时把 storage drafts merge 到 ``window.
+     taskTextareaContents``，但用 ``hasOwnProperty`` 检查跳过既存
+     项——避免与 ``multi_task.js`` 初始化阶段已经填充的 active task
+     race。
+  5. **schema_version envelope** — 与 R130 quick_phrases / R137
+     textarea-height / R138 char-counter 同款 ``aiia.<feature>.
+     v<schema>`` 命名约定（``aiia.feedbackDrafts.v1``），未来 schema
+     升级有迁移空间；schema_version 不匹配时 ``_readEnvelope`` 直
+     接返回 null 给未来 v2 migrator 留接入空间。
+  6. **空 text 自动 delete entry** — ``saveDraft(taskId, "")`` 不
+     写空 text 占用 storage，而是从字典 delete；``reconcileMemory
+     ToStorage`` 也跳过 text 空字符串——只持久化非空 draft。
+  7. **CSP nonce + ?v= cache busting** — 与 R47 / R74 / R137 / R138
+     同款 ``<script defer nonce={{ csp_nonce }} src=...?v={{
+     feedback_drafts_version }}>`` 节点，不违反项目级
+     ``script-src 'self' 'nonce-...'`` 策略。
+
+  **实现**：
+
+  - ``src/ai_intervention_agent/static/js/feedback_drafts.js``
+    （NEW，~270 行）—— 7 个常量 + 8 个公共函数 + 6 个内部 helper：
+    ``loadAllDrafts`` / ``getDraft`` / ``saveDraft`` / ``clearDraft`` /
+    ``clearAllDrafts`` / ``hydrateMemoryCache`` /
+    ``reconcileMemoryToStorage`` / ``init`` / 内部 ``_now`` /
+    ``_isStorageAvailable`` / ``_readEnvelope`` / ``_writeEnvelope`` /
+    ``_normalizeDraft`` / ``_applyTtlAndLru`` / ``_getActiveTaskId`` /
+    ``setupInputListener`` / ``setupPeriodicSync``，全 try/catch 兜底。
+  - ``src/ai_intervention_agent/templates/web_ui.html`` —— 文档底部
+    新增 ``<script defer src="/static/js/feedback_drafts.js?v={{
+    feedback_drafts_version }}" nonce="{{ csp_nonce }}">`` 节点。
+  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_
+    context()`` 加 ``"feedback_drafts_version": _compute_file_
+    version(...)``。
+
+  **测试**（``tests/test_feedback_drafts_r139.py``，35 cases /
+  6 invariant classes）：
+
+  1. **JS 文件存在 + 体积合理** — 文件存在 / 200-330 行 envelope。
+  2. **常量值锁定** — 7 个常量（``STORAGE_KEY`` / ``SCHEMA_VERSION`` /
+     ``TARGET_ID`` / ``TTL_MS = 7*24*60*60*1000`` / ``MAX_DRAFTS = 50`` /
+     ``INPUT_DEBOUNCE_MS = 500`` / ``SYNC_INTERVAL_MS = 30*1000``）；
+     TTL_MS 与 SYNC_INTERVAL_MS 写成乘法表达式让 reviewer 一眼看到
+     "7 天" / "30s" 约束。
+  3. **API 函数签名** — 8 个公共函数 + ``window.AIIA_FEEDBACK_DRAFTS``
+     全 16 字段 export。
+  4. **graceful failure / fallback** — ``_isStorageAvailable`` 用 set/
+     remove probe + try/catch；``_readEnvelope`` / ``_writeEnvelope`` /
+     ``clearAllDrafts`` 全 try/catch；``_readEnvelope`` 校验
+     ``schema_version``；``init`` 在 storage 不可用时 return null。
+  5. **核心逻辑边界** — ``_normalizeDraft`` 处理 non-object / 非
+     string text / saved_at 缺失（默认 0 让 TTL 命中淘汰）；
+     ``_applyTtlAndLru`` 先 TTL 过滤后 LRU 排序截 ``MAX_DRAFTS``；
+     ``hydrateMemoryCache`` 用 ``hasOwnProperty`` 不覆盖既存项；
+     ``saveDraft("")`` 从字典 delete；``reconcileMemoryToStorage``
+     跳过 empty text；``setupInputListener`` 用 ``setTimeout(...,
+     INPUT_DEBOUNCE_MS)`` debounce。
+  6. **HTML / context 集成** — ``<script defer nonce src=...?v=...>`` /
+     ``_get_template_context`` 用 ``_compute_file_version``。
+
+  **验证**：35/35 R139 + 全工程 4381 passed + 2 skipped；
+  ``uv run python scripts/ci_gate.py`` exits 0；与 R138 同样 6 个
+  静态资产文件（``.js`` + ``.br`` + ``.gz`` + ``.min.br`` +
+  ``.min.gz``，``.min.js`` 由 ``.gitignore`` 排除）由
+  ``scripts/minify_assets.py`` + ``scripts/precompress_static.py``
+  自动生成。
+
+  **后续 follow-up（不在 R139 范围内）**：
+  - **R139-A**：UI 显示恢复提示——load draft 时在 textarea 上方显
+    示一个 dismissible toast "已恢复上次保存的内容（保存时间：YYYY-
+    MM-DD HH:mm）"，让用户知道这是历史 draft 而非新输入。
+  - **R139-B**：手动清除按钮——quick_phrases 区域加 "清除全部草稿"
+    按钮调 ``clearAllDrafts()``，应对用户主动想清掉所有持久化痕迹
+    的场景。
+  - **R139-C**：跨浏览器同步——通过 ``user_settings`` 后端 schema
+    把 drafts 同步到服务端，让用户多设备 / 多浏览器场景一致。
+
 - **R138** — **(UX)** 反馈 textarea 字符计数器——主输入框
   ``#feedback-text`` 右下角浮动小标签实时显示当前字符数，三段阈值
   变色（默认 → 橘 ``warn`` → 红 ``danger``），让"输入长度"这条不可

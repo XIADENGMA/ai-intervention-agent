@@ -1317,6 +1317,10 @@ class WebFeedbackUI(
             "feedback_char_counter_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_char_counter.js")
             ),
+            # R139: feedback per-task 草稿持久化模块版本号
+            "feedback_drafts_version": _compute_file_version(
+                str(static_dir / "js" / "feedback_drafts.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 
