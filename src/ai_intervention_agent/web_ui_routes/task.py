@@ -7,6 +7,8 @@ import json
 import queue
 import threading
 import time
+from datetime import UTC
+from datetime import datetime as _dt
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from flask import Response, jsonify, request
@@ -717,6 +719,191 @@ class TaskRoutesMixin:
             except Exception as e:
                 logger.error(f"获取任务列表失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
+        @self.app.route("/api/tasks/export", methods=["GET"])
+        @self.limiter.limit("30 per minute")
+        def export_tasks() -> ResponseReturnValue:
+            """导出当前任务快照（JSON 或 Markdown）。
+            ---
+            tags:
+              - Tasks
+            parameters:
+              - name: format
+                in: query
+                type: string
+                enum: [json, markdown]
+                default: json
+                description: 导出格式
+            responses:
+              200:
+                description: 任务快照文件（带 Content-Disposition 触发下载）
+              400:
+                description: 不支持的 format 参数
+              500:
+                description: 服务器内部错误
+            """
+            # R125 实现说明：
+            # - 输出 ``Content-Disposition: attachment`` 触发浏览器下载，避免
+            #   inline 渲染干扰快照真实性；
+            # - 文件名形如 ``ai-intervention-agent-tasks-{ISO8601}.{ext}``，
+            #   让用户机器上的导出文件可按时间排序，避免覆盖；
+            # - JSON 模式给完整字段（prompt 全文 + 选项 + result + 时间戳），
+            #   Markdown 模式按"会话日志"排版供人类阅读；
+            # - 纯读快照；与 ``/api/tasks`` 共用 ``get_all_tasks_with_stats``
+            #   一次读锁原子快照，避免与 SSE 事件流出现"半态导出"。
+            #
+            # 隐私 / 安全边界：
+            # - JSON 含 ``result.images``（base64）；项目默认 loopback 绑定，
+            #   不暴露公网；
+            # - 限速 30/min（与 ``update_feedback_config`` 同档），保留人为
+            #   批量备份能力但拒绝爬虫式抓取。
+            #
+            # docstring 注意事项：以上"实现说明"/"隐私边界"段必须留在 docstring
+            # 之外（用普通 ``#`` 注释），因为 ``flasgger`` 把整个 docstring 当
+            # YAML 解析，散文里的 ``Content-Disposition: attachment`` /
+            # ``- ...：`` 等会被识别成非法的 mapping key 触发 ``ScannerError``。
+            # 由 ``test_enabled_apispec_returns_json`` 锁定该不变量。
+            try:
+                fmt = (request.args.get("format") or "json").lower().strip()
+                if fmt not in ("json", "markdown"):
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "unsupported_format",
+                                "message": "format 必须是 json 或 markdown",
+                            }
+                        ),
+                        400,
+                    )
+
+                task_queue = get_task_queue()
+                tasks, stats = task_queue.get_all_tasks_with_stats()
+                server_time = time.time()
+                now_monotonic = time.monotonic()
+
+                exported: list[dict[str, Any]] = []
+                for task in tasks:
+                    remaining = task.get_remaining_time(now_monotonic=now_monotonic)
+                    completed_at_iso = (
+                        task.completed_at.isoformat() if task.completed_at else None
+                    )
+                    exported.append(
+                        {
+                            "task_id": task.task_id,
+                            "status": task.status,
+                            "prompt": task.prompt,
+                            "predefined_options": task.predefined_options,
+                            "predefined_options_defaults": (
+                                task.predefined_options_defaults
+                            ),
+                            "auto_resubmit_timeout": task.auto_resubmit_timeout,
+                            "remaining_time": remaining,
+                            "deadline": server_time + remaining,
+                            "created_at": task.created_at.isoformat(),
+                            "completed_at": completed_at_iso,
+                            "result": task.result,
+                        }
+                    )
+
+                # ISO8601 时间戳作为文件名时间分量。冒号在 Windows 文件名里
+                # 非法，所以用 ``%Y%m%dT%H%M%SZ`` 紧凑格式（只含数字 + T/Z）。
+                stamp = _dt.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                base_name = f"ai-intervention-agent-tasks-{stamp}"
+
+                if fmt == "json":
+                    payload = {
+                        "success": True,
+                        "schema_version": 1,
+                        "exported_at": _dt.now(UTC).isoformat(),
+                        "server_time": server_time,
+                        "stats": stats,
+                        "tasks": exported,
+                    }
+                    body = json.dumps(payload, ensure_ascii=False, indent=2)
+                    response = Response(body, mimetype="application/json")
+                    response.headers["Content-Disposition"] = (
+                        f'attachment; filename="{base_name}.json"'
+                    )
+                    return response
+
+                # Markdown: human-friendly transcript
+                lines: list[str] = []
+                lines.append("# AI Intervention Agent · Task Export")
+                lines.append("")
+                lines.append(f"- Exported at: `{_dt.now(UTC).isoformat()}`")
+                lines.append(f"- Server time: `{server_time}`")
+                lines.append(
+                    f"- Stats: total={stats.get('total', 0)} "
+                    f"pending={stats.get('pending', 0)} "
+                    f"active={stats.get('active', 0)} "
+                    f"completed={stats.get('completed', 0)}"
+                )
+                lines.append("")
+                lines.append("---")
+                lines.append("")
+                if not exported:
+                    lines.append("_(No tasks in queue.)_")
+                else:
+                    for t in exported:
+                        lines.append(f"## Task `{t['task_id']}` — `{t['status']}`")
+                        lines.append("")
+                        lines.append(f"- Created: `{t['created_at']}`")
+                        if t["completed_at"]:
+                            lines.append(f"- Completed: `{t['completed_at']}`")
+                        lines.append(
+                            f"- Remaining: `{t['remaining_time']}`s "
+                            f"/ Deadline epoch `{t['deadline']}` "
+                            f"/ Auto-resubmit `{t['auto_resubmit_timeout']}`s"
+                        )
+                        lines.append("")
+                        lines.append("### Prompt")
+                        lines.append("")
+                        # 防止 prompt 内含 ``` 破坏栅栏；在 4 个反引号外层包裹
+                        # 是 GitHub Flavored Markdown 习惯做法。
+                        lines.append("````markdown")
+                        lines.append(t["prompt"] or "")
+                        lines.append("````")
+                        lines.append("")
+                        if t["predefined_options"]:
+                            lines.append("### Predefined options")
+                            lines.append("")
+                            defaults = t["predefined_options_defaults"] or []
+                            for idx, opt in enumerate(t["predefined_options"]):
+                                checked = (
+                                    bool(defaults[idx])
+                                    if idx < len(defaults)
+                                    else False
+                                )
+                                marker = "[x]" if checked else "[ ]"
+                                lines.append(f"- {marker} {opt}")
+                            lines.append("")
+                        if t["result"]:
+                            lines.append("### Result (feedback)")
+                            lines.append("")
+                            lines.append("````json")
+                            lines.append(
+                                json.dumps(t["result"], ensure_ascii=False, indent=2)
+                            )
+                            lines.append("````")
+                            lines.append("")
+                        lines.append("---")
+                        lines.append("")
+
+                body = "\n".join(lines).rstrip() + "\n"
+                # text/markdown 浏览器多数会渲染或下载；强制 attachment 让
+                # 用户体验"另存为"而非内联渲染（防止 URL 渲染干扰快照真实性）。
+                response = Response(body, mimetype="text/markdown; charset=utf-8")
+                response.headers["Content-Disposition"] = (
+                    f'attachment; filename="{base_name}.md"'
+                )
+                return response
+            except Exception as e:
+                logger.error(f"导出任务失败: {e}", exc_info=True)
+                return (
+                    jsonify({"success": False, "error": "服务器内部错误"}),
+                    500,
+                )
 
         @self.app.route("/api/tasks", methods=["POST"])
         @self.limiter.limit("60 per minute")

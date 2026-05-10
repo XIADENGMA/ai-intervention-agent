@@ -177,6 +177,114 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Future R-series silent-failure work no longer needs project-wide
   re-scans — the regression guard surfaces drift automatically.
 
+### Added
+
+- **R125** — **(feature)** new `GET /api/tasks/export?format={json,markdown}`
+  endpoint for full-fidelity session-history export.
+
+  **Background**: pre-R125 the project had three task-related read
+  endpoints — `GET /api/tasks` (lightweight list, prompt truncated
+  to 100 chars), `GET /api/tasks/<id>` (single-task detail, but
+  requires knowing the id list up-front), and `GET /api/feedback`
+  (read-once feedback channel). None of them serves the
+  "back up everything from this session for audit / sharing /
+  later review" use case. With the TaskQueue cleanup window of
+  10 s for completed tasks, users (or the AI agent itself, via
+  curl) had a very narrow window to capture a snapshot before it
+  was gone.
+
+  **R125 fix**: ship a dedicated read-only export endpoint with
+  two formats:
+
+  - `GET /api/tasks/export?format=json` →
+    `application/json` body with:
+      - `schema_version: 1` (locked-by-test, future-proofed)
+      - `exported_at` (ISO 8601 UTC)
+      - `server_time` (epoch float)
+      - `stats` (pending / active / completed counts)
+      - `tasks[]` with **full** prompts (no truncation), all
+        predefined options + defaults, full `result` payload
+        including `images` base64, monotonic + wall-clock
+        timestamps.
+  - `GET /api/tasks/export?format=markdown` →
+    `text/markdown; charset=utf-8` body styled as a session
+    transcript:
+      - H1 title + stats summary header.
+      - One section per task with status, timestamps, prompt
+        block, options checklist (`- [x]` / `- [ ]` reflecting
+        `predefined_options_defaults`), and a JSON-fenced
+        result block when present.
+      - Prompt body wrapped in **4-backtick** GFM fences
+        (```` ```` ```` `markdown` ```` ```` ````) so prompts
+        containing their own \`\`\` fences don't break
+        rendering.
+
+  **Common contract**:
+  - `Content-Disposition: attachment; filename="ai-intervention-agent-tasks-YYYYMMDDTHHMMSSZ.{ext}"`
+    so browsers download the snapshot rather than render it
+    inline (preserves snapshot fidelity + enables time-sorted
+    archives on the user's machine; the `T...Z` form avoids
+    Windows-illegal `:` chars in filenames).
+  - Default `format=json`; case-insensitive parsing
+    (`format=JSON` works); whitespace-tolerant
+    (`format=%20markdown%20` works).
+  - Unsupported `format` → 400 with
+    `{"success":false,"error":"unsupported_format","message":"format 必须是 json 或 markdown"}`.
+  - Read-only — does **not** mutate task state, completion
+    timestamps, or queue order. Shares the
+    `get_all_tasks_with_stats()` single-RWLock atomic snapshot
+    with `GET /api/tasks` to avoid "half-state" exports that
+    catch the queue mid-mutation.
+  - Rate-limited 30/min (matched to `update_feedback_config`),
+    permitting hand batch backups but rejecting crawler-style
+    scraping.
+
+  **docstring constraint** (locked by an existing R23.3 test):
+  the endpoint's docstring keeps all human prose (implementation
+  notes, privacy boundary) **outside** the `---` YAML block
+  using ordinary `#` comments. `flasgger` parses the full
+  docstring as YAML and would `ScannerError` on free-form
+  Chinese sentences containing `:`/`-` lookalikes
+  (`Content-Disposition: attachment` would be read as a YAML
+  mapping). Discovered the hard way during R125 implementation;
+  guard rail is `test_enabled_apispec_returns_json`.
+
+  **Tests**: `tests/test_tasks_export_endpoint_r125.py` (NEW,
+  20 cases / 5 invariant classes):
+  - **JSON contract** (8): endpoint exists, default & explicit
+    `format=json` both work, `schema_version=1` locked,
+    top-level fields present (`success`/`schema_version`/
+    `exported_at`/`server_time`/`stats`/`tasks`), full-prompt
+    fidelity (no 100-char truncation), all task fields present
+    in each item, completed-task `result` round-trips through
+    export.
+  - **Markdown contract** (6): explicit `format=markdown`
+    works, filename has `.md` extension, header + stats summary
+    rendered, 4-backtick fences used for prompts, options
+    rendered as `[x]` / `[ ]` checklist matching
+    `predefined_options_defaults`, completed result rendered as
+    JSON-fenced block.
+  - **format param** (3): unsupported value returns 400 with
+    structured error, case-insensitive accept, whitespace-tolerant.
+  - **Empty + boundary** (2): empty queue still returns 200
+    with `(No tasks in queue.)` Markdown marker / empty `tasks`
+    array; consecutive exports do not modify the queue
+    (read-only verification via before/after `/api/tasks`
+    diff).
+  - **Filename** (1): ISO 8601 timestamp `YYYYMMDDTHHMMSSZ`
+    format locked.
+
+  **Future work**: a follow-up R125b will surface this endpoint
+  in the Web UI (download button in the settings panel +
+  i18n strings + VS Code extension parity) so users get the
+  feature without needing to know about curl/browser direct
+  access.
+
+  **Verification**: 20/20 new R125 tests pass; existing 4055
+  test suite untouched; `flasgger` swagger spec generation
+  (R23.3 invariant) confirmed unaffected by the new endpoint;
+  `uv run python scripts/ci_gate.py` exits 0.
+
 ### Fixed
 
 - **R129** — **(readability)** purge dead-code tombstone comments
