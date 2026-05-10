@@ -179,6 +179,101 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R137** — **(UX)** 反馈 textarea 高度跨会话持久化——
+  Web UI 上的 ``#feedback-text`` textarea 把用户拖拽调整后的高度写入
+  ``localStorage``，下次加载（同浏览器同源）时自动复原。竞品
+  ``mcp-feedback-enhanced`` 的 "Input Height Memory" 是高频用户痛点
+  feature——长输入用户每次刷新都得重新拖大输入框很折磨——R137 把这
+  个体验补齐而又不引入服务端状态。
+
+  **设计决策**：
+
+  1. **纯前端 localStorage** — 不上服务端、不进 ``user_settings``，
+     避免「设置同步」这条新轴的复杂度。窗口/浏览器维度持久化，单用
+     户多浏览器场景天然解耦。Storage key
+     ``aiia.feedbackTextareaHeight.v1``（带 ``.v1`` 锚点 + envelope
+     ``schema_version: 1`` 双锁，未来 schema 升级有迁移空间）。
+  2. **ResizeObserver 主路径 + ``mouseup``/``touchend`` fallback** —
+     ``ResizeObserver`` 是浏览器原生最优 API（debounced batch、不挂
+     ``layout`` 主线程），但少数老浏览器（IE / 早期 Safari）没有；
+     fallback 到 ``mouseup``/``touchend`` 监听 textarea 拖动结束事件。
+     ``setupResizeObserver()`` 返回 ``{observer, mode}``，
+     ``mode in {"resize_observer", "mouseup_fallback"}``，供 hook /
+     测试断言。
+  3. **min / max clamp** — ``MIN_HEIGHT_PX=100`` /
+     ``MAX_HEIGHT_PX=800``。``_clamp(value)`` 在 read / persist 两个
+     方向都跑一次，保证用户 dev tools 直接改 localStorage 注 -1 / NaN
+     / 9999 也只 apply 合法值；CSS 的 ``min-height: 180px``（desktop）/
+     ``max-height: 25vh``（mobile）对 inline ``height`` 仍有 final
+     clamp 权（CSS spec：computed height = clamp(min, height, max)），
+     JS ↔ CSS 双层兜底永远不会让 textarea 缩到 0 高度搞坏 layout、也
+     不会撑出屏幕。
+  4. **``DEBOUNCE_MS=150``** — 拖动过程中 ``ResizeObserver`` 会高频
+     触发（~60Hz），一律 ``setTimeout`` 合并最后一帧再写盘，
+     localStorage 一次写盘耗时 ~1-3ms 主线程阻塞，debounce 把累积写
+     盘从「~60 次/秒」压到「~7 次/秒」（debounce + 拖完之后停手才
+     真正落盘），平衡延迟感与写盘开销。
+  5. **graceful degradation** — ``readPersistedHeight()`` /
+     ``persistHeight()`` 全部 try-catch，``localStorage`` 不可用
+     （Safari 隐私模式 / quota 满 / cookie 禁用）时自动 no-op，不
+     污染主路径。返回 ``null`` 时 ``applyPersistedHeight()`` 走 CSS
+     默认高度。
+  6. **CSP nonce 集成** — 新加的 ``<script>`` 标签携带
+     ``nonce="{{ csp_nonce }}"``，与既有 R47 / R74 等模块同款，避免
+     违反项目级 CSP ``script-src 'self' 'nonce-...'`` 策略。
+  7. **版本化 cache busting** — ``?v={{ feedback_textarea_height_version
+     }}`` 复用 ``_compute_file_version(...)``（基于文件 mtime + size
+     hash），让 immutable cache 也能在改 JS 后立即失效，不用等浏览器
+     缓存 TTL 过期。
+
+  **实现**：
+
+  - ``src/ai_intervention_agent/static/js/feedback_textarea_height.js``
+    （NEW，~140 行）—— 5 个公共函数：``readPersistedHeight()`` /
+    ``persistHeight(px)`` / ``applyPersistedHeight()`` /
+    ``setupResizeObserver()`` / ``init()``。
+  - ``src/ai_intervention_agent/templates/web_ui.html`` —— 新增一
+    个 ``<script defer>`` 节点，``nonce`` + ``?v=`` 双 hook 齐备。
+  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_context()``
+    加 ``"feedback_textarea_height_version": _compute_file_version(...)``
+    一行。
+  - ``window.AIIA_FEEDBACK_TEXTAREA_HEIGHT`` 全局对象暴露所有公共
+    函数 + ``_clamp`` / 5 个常量（测试 / 调试用）。
+
+  **测试**（``tests/test_feedback_textarea_height_r137.py``，
+  23 cases / 6 invariant classes）：
+
+  1. **JS 文件存在 + 体积合理** — 文件存在 / 在 80-200 行之间，避
+     免误删除或意外膨胀。
+  2. **常量值锁定** — ``STORAGE_KEY`` / ``SCHEMA_VERSION`` /
+     ``MIN_HEIGHT_PX`` / ``MAX_HEIGHT_PX`` / ``DEBOUNCE_MS`` /
+     ``TARGET_ID`` 字面值。
+  3. **API 函数签名** — 5 个公共函数都在；``window.AIIA_FEEDBACK_
+     TEXTAREA_HEIGHT`` 暴露完整 API。
+  4. **``_clamp`` 行为** — 低于 min / 高于 max / NaN / null /
+     undefined / 字符串 都返回合法值。
+  5. **graceful failure** — ``readPersistedHeight`` / ``persistHeight``
+     try-catch 包了 localStorage 调用；返回值符合契约。
+  6. **HTML / context 集成** — ``<script>`` 标签存在 / 带
+     ``nonce={{ csp_nonce }}`` / 带 ``?v={{ feedback_textarea_
+     height_version }}`` / ``defer``；``_get_template_context``
+     里 ``feedback_textarea_height_version`` 走 ``_compute_file_
+     version(...)``。
+  7. **ResizeObserver 主路径 + fallback** — ``setupResizeObserver``
+     在 ``window.ResizeObserver`` 存在时返回 ``{mode:
+     "resize_observer"}``；不存在时返回 ``{mode: "mouseup_fallback"}``；
+     fallback 路径监听 ``mouseup``/``touchend``。
+
+  **验证**：23/23 R137 + 全工程 4313 passed + 2 skipped；
+  ``uv run python scripts/ci_gate.py`` exits 0；CSP nonce / version
+  cache busting 在浏览器 devtools 实测可见。
+
+  **后续 follow-up（不在 R137 范围内）**：
+  - **R137-A**：textarea 宽度持久化（如果用户也想拖宽）。当前 CSS
+    用 ``width: 100%`` 没有横向 resize handle，留空间。
+  - **R137-B**：服务端同步（用户多设备同步偏好）—— 等 ``user_settings``
+    后端 schema 落地后再说。
+
 - **R136** — **(feature)** 通知 in-flight 队列断电恢复持久化——
   ``NotificationManager`` 把入队但还没投递成功的事件 atomic-write 到
   ``notification_inflight.json``，进程重启后一次性 load 暴露给

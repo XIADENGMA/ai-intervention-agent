@@ -1309,6 +1309,10 @@ class WebFeedbackUI(
             "quick_phrases_version": _compute_file_version(
                 str(static_dir / "js" / "quick_phrases.js")
             ),
+            # R137: feedback textarea 高度持久化模块版本号
+            "feedback_textarea_height_version": _compute_file_version(
+                str(static_dir / "js" / "feedback_textarea_height.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 
