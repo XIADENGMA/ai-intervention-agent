@@ -151,6 +151,81 @@ def _safe_build_info() -> dict[str, str] | None:
         return None
 
 
+# R142：health 端点暴露 4 家 provider 的 per-provider 统计快照。
+# 顺序固定，与 ``NotificationType`` 同源；缺失的 provider（既未注册也没失败计数）
+# 用 ``None`` 占位，方便监控用 stable 的 key 集合做 dashboard 模板。
+_HEALTH_PER_PROVIDER_KEYS: tuple[str, ...] = ("bark", "web", "sound", "system")
+
+
+def _safe_per_provider_snapshot(
+    providers_stats: dict[str, Any], now: float
+) -> dict[str, dict[str, object] | None]:
+    """R142：把 ``stats.providers`` 整理成「监控/dashboard 友好」的安全摘要。
+
+    输入是 ``notification_manager.get_status()['stats']['providers']``——
+    每个 provider 已经是 dict（包含 attempts/success/failure/last_*_at 等）。
+    本函数刻意 **不** 透出 ``last_error`` 原始字符串：
+
+    * Bark 的 ``last_error`` 来自 BarkProvider 写到 ``event.metadata
+      ["bark_error"]`` 的运行时错误（虽然已经在 NotificationManager 内
+      truncate 到 800 字符，但仍可能含有 device_key / 服务器 URL 这种
+      不希望出现在 ``/api/system/health`` 公共端点的 PII）。
+    * 改成 ``last_error_present: bool``——告诉调用方"最近一次失败有没
+      有 error 信息"，详情仍然要回 logs 看。
+
+    其他字段都已经是聚合量或时间戳，直接转为 ``last_*_age_seconds``
+    （相对 ``now``）暴露，而不是绝对时间——绝对时间在跨机器/跨时区
+    的多副本场景里没意义，age 是更稳定的语义。
+    """
+    out: dict[str, dict[str, object] | None] = {}
+    for ptype in _HEALTH_PER_PROVIDER_KEYS:
+        pstats_raw = providers_stats.get(ptype)
+        if not isinstance(pstats_raw, dict):
+            out[ptype] = None
+            continue
+
+        attempts = int(pstats_raw.get("attempts", 0) or 0)
+        success = int(pstats_raw.get("success", 0) or 0)
+        failure = int(pstats_raw.get("failure", 0) or 0)
+
+        success_rate_raw = pstats_raw.get("success_rate")
+        success_rate = (
+            float(success_rate_raw)
+            if isinstance(success_rate_raw, int | float)
+            else None
+        )
+        avg_latency_raw = pstats_raw.get("avg_latency_ms")
+        avg_latency_ms = (
+            float(avg_latency_raw) if isinstance(avg_latency_raw, int | float) else None
+        )
+
+        last_success_at = pstats_raw.get("last_success_at")
+        last_failure_at = pstats_raw.get("last_failure_at")
+        last_success_age_seconds = (
+            round(max(now - float(last_success_at), 0.0), 2)
+            if isinstance(last_success_at, int | float) and last_success_at
+            else None
+        )
+        last_failure_age_seconds = (
+            round(max(now - float(last_failure_at), 0.0), 2)
+            if isinstance(last_failure_at, int | float) and last_failure_at
+            else None
+        )
+
+        out[ptype] = {
+            "attempts": attempts,
+            "success": success,
+            "failure": failure,
+            "success_rate": success_rate,
+            "avg_latency_ms": avg_latency_ms,
+            "last_success_age_seconds": last_success_age_seconds,
+            "last_failure_age_seconds": last_failure_age_seconds,
+            "last_error_present": bool(pstats_raw.get("last_error")),
+        }
+
+    return out
+
+
 def _safe_notification_summary() -> dict[str, object] | None:
     """从全局 ``notification_manager`` 提取 health 端点需要的安全字段。
 
@@ -158,7 +233,11 @@ def _safe_notification_summary() -> dict[str, object] | None:
     只暴露 enabled、providers 数量、queue 积压、delivery_success_rate 这种
     监控真正会用的聚合量。
 
-    任何错误返回 ``None``，由 caller 把对应 check 标记为 ``ok=False``。
+    R142：增加 ``per_provider`` 字段——bark/web/sound/system 各自的
+    attempts/success/failure/success_rate/avg_latency_ms/last_*_age_seconds
+    /last_error_present 摘要，让 K8s 探针/Datadog/Grafana 能 **定位**
+    具体哪家 provider 在故障，而不仅"全局成功率掉了"。``last_error``
+    原文本不暴露（防 PII），只暴露 boolean。
     """
     try:
         from ai_intervention_agent.notification_manager import notification_manager
@@ -189,6 +268,11 @@ def _safe_notification_summary() -> dict[str, object] | None:
             int(in_flight_raw) if isinstance(in_flight_raw, int | float) else 0
         )
 
+        providers_stats_raw = stats.get("providers", {})
+        if not isinstance(providers_stats_raw, dict):
+            providers_stats_raw = {}
+        per_provider = _safe_per_provider_snapshot(providers_stats_raw, time.time())
+
         return {
             "enabled": bool(status.get("enabled", False)),
             "providers_count": providers_count,
@@ -196,6 +280,7 @@ def _safe_notification_summary() -> dict[str, object] | None:
             "delivery_success_rate": delivery_success_rate,
             "events_finalized": events_finalized,
             "events_in_flight": events_in_flight,
+            "per_provider": per_provider,
         }
     except Exception:
         return None
@@ -761,6 +846,20 @@ class SystemRoutesMixin:
                   commit 吗 / 是 dirty 工作树吗"三个问题；pip install / docker /
                   pyinstaller 等没有 ``.git`` 的部署里字段值是 ``"unknown"``，
                   探测整体失败为 ``null``。
+
+                * ``checks.notification.per_provider``（R142）：``bark`` /
+                  ``web`` / ``sound`` / ``system`` 四家 provider 的独立摘要。
+                  每家结构 ``{attempts, success, failure, success_rate,
+                  avg_latency_ms, last_success_age_seconds,
+                  last_failure_age_seconds, last_error_present}``；从未
+                  尝试投递的 provider（也未注册）为 ``null``。
+                  ``last_error_present`` 是 boolean——刻意 **不** 暴露
+                  ``last_error`` 原始字符串（防 device_key / 服务器 URL 等
+                  PII 泄漏到公共健康端点）；详情仍然要回 logs 看。R142
+                  与 R141 的 ``POST /api/system/notifications/test`` 形成
+                  「触发 → 定位」闭环：self-test 跑完后立刻 GET 本端点
+                  就能知道哪家 provider 挂、最近一次失败距今多久、平均
+                  延迟漂没漂。
 
                 ## HTTP 状态码
 

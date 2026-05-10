@@ -179,6 +179,62 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R142** — **(Observability)** ``/api/system/health`` 端点暴露
+  per-provider stats 摘要 —— R141 的 self-test 触发后能"看到了"，但
+  R121-A 只暴露了**全局** delivery_success_rate，故障定位时回答不出
+  "是 Bark 挂还是 Web 挂"。R142 把 NotificationManager 内部已经按
+  provider 维度记录的 ``stats.providers.{type}`` 在保留同款安全边界
+  的前提下重新放出，与 R141 形成「触发 → 定位」闭环。
+
+  **新增字段** `checks.notification.per_provider`（dict, 4 个 stable
+  key：bark/web/sound/system）：
+
+  - 每家 provider 的结构 ``{attempts, success, failure, success_rate,
+    avg_latency_ms, last_success_age_seconds,
+    last_failure_age_seconds, last_error_present}``；
+  - 未注册 / 没投递过的 provider 返回 ``None``，dashboard 用 stable
+    key 集合不会有 KeyError；
+  - ``success_rate`` / ``avg_latency_ms`` 透传 NotificationManager 已
+    经计算好的浮点；attempts=0 / latency_count=0 时是 ``None``；
+  - ``last_*_age_seconds`` 用 ``now - last_*_at`` 算 age，避免绝对时
+    间戳跨副本/跨时区无意义；时钟回拨 → clamp 0 不出现负值。
+
+  **PII 安全边界（必须）**：``last_error`` 原文本 **绝不暴露**。Bark
+  的 ``last_error`` 来自 BarkProvider 写到 ``event.metadata
+  ["bark_error"]`` 的运行时字符串，虽然 NotificationManager 内已
+  truncate 到 800 字符，但仍可能含 device_key / 服务器 URL / Bark
+  token 这种不希望出现在公共健康端点的内容。R142 改成
+  ``last_error_present: bool`` —— 告诉调用方"最近一次失败有没有
+  error 信息"，详情仍然要回 logs 看。``test_last_error_string_not_in_output``
+  以 ``device_key=SECRET_KEY_123`` / ``BARK_TOKEN_X`` /
+  ``api.day.app`` 等真实 PII 串作回归断言，整个 health 返回值
+  stringify 后的任何片段都不应含有这些子串。
+
+  **设计决策**：
+  1. **不引入新 stats 字段**——所有数据 NotificationManager 内已经在
+     算（line 1488-1502 的 success_rate / avg_latency_ms 派生），R142
+     只是 health 端点的 read-side projection。零新 lock / 零新写路径
+     / 零额外存储开销。
+  2. **stable 4 key 而非动态 list**——监控 dashboard 写模板时按 key
+     固定列布局更稳；如果 NotificationType 未来新增第 5 家（如
+     Telegram / Slack），加 ``_HEALTH_PER_PROVIDER_KEYS`` 常量即可，
+     不破老 dashboard。
+  3. **age 而非绝对时间戳**——多副本部署里绝对时间戳因机器时钟漂移
+     不可比，age 是更稳定的语义。
+  4. **rate-limit 不变**——120/min 已经够 K8s probe 用，不上调。
+
+  **改动**：
+  - ``src/ai_intervention_agent/web_ui_routes/system.py``（+~80 行）：
+    新增 ``_HEALTH_PER_PROVIDER_KEYS`` 常量、``_safe_per_provider_snapshot``
+    helper；扩 ``_safe_notification_summary`` 注入 ``per_provider``；
+    health endpoint Swagger doc 加 R142 字段说明。
+  - ``tests/test_notification_health_per_provider_r142.py``（新增，
+    29 cases）：keys/shape / 未注册→None / 8-key 形状 / success_rate
+    与 avg_latency_ms 计算 / age 单调性 / 时钟回拨 clamp 0 / PII 安
+    全边界（device_key / 服务器 URL / token 不泄漏）/ 异常 stats 类
+    型 fallback / health endpoint HTTP 集成 / Swagger doc 提及 R142
+    + per_provider + last_error_present + PII 字样 + 常量名。
+
 - **R141** — **(Observability / Ops)** 通知系统 self-test endpoint
   ``POST /api/system/notifications/test``——R141 之前要验证「线上
   NotificationManager 配的 Bark / Web / Sound / System provider 真能投

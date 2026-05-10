@@ -272,6 +272,10 @@ class TestSafeNotificationSummary(unittest.TestCase):
         result = system_module._safe_notification_summary()
         if result is None:
             self.skipTest("notification_manager 不可用，跳过 shape 检查")
+        # R142：在 R121-A 的 6 字段基础上加 ``per_provider``——bark/web/
+        # sound/system 四家 provider 的 attempts/success/failure/...
+        # 摘要。R121-A 锁住的「不暴露 config 子树」继续生效（``per_provider``
+        # 同样不含 ``last_error`` 原文本，只有 ``last_error_present`` boolean）。
         expected_keys = {
             "enabled",
             "providers_count",
@@ -279,6 +283,7 @@ class TestSafeNotificationSummary(unittest.TestCase):
             "delivery_success_rate",
             "events_finalized",
             "events_in_flight",
+            "per_provider",
         }
         actual_keys = set(result.keys())
         self.assertEqual(
