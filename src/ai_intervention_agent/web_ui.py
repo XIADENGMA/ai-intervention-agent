@@ -1325,6 +1325,10 @@ class WebFeedbackUI(
             "feedback_submit_mode_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_submit_mode.js")
             ),
+            # R144: 快捷键 cheatsheet overlay 模块版本号
+            "keyboard_shortcut_help_version": _compute_file_version(
+                str(static_dir / "js" / "keyboard_shortcut_help.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 

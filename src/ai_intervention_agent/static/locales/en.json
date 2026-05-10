@@ -251,6 +251,8 @@
   },
   "shortcuts": {
     "helpTitle": "Keyboard shortcuts",
+    "helpSubtitle": "Press ? anywhere outside an input to open this panel",
+    "helpEscHint": "Press Esc or click outside to close",
     "submitFeedback": "Submit feedback",
     "openSettings": "Open settings",
     "showHelp": "Show this help",
@@ -258,6 +260,10 @@
     "nextTask": "Next task",
     "prevTask": "Previous task",
     "closeModal": "Close modal/panel",
+    "quickPhrase": "Insert Quick Phrase chip 1..9 (R131d)",
+    "submitCtrlEnter": "Submit feedback (default mode)",
+    "submitEnter": "Submit feedback (when Enter mode is selected)",
+    "newline": "Insert newline (when Enter mode is selected)",
     "notifyTitle": "Keyboard shortcuts",
     "notifyBody": "{{mod}}+Enter submit | T toggle theme | Esc close modal"
   },

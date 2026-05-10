@@ -251,6 +251,8 @@
   },
   "shortcuts": {
     "helpTitle": "键盘快捷键帮助",
+    "helpSubtitle": "在任意 input/textarea 之外按 ? 即可打开本面板",
+    "helpEscHint": "按 Esc 或点击空白处关闭",
     "submitFeedback": "提交反馈",
     "openSettings": "打开设置",
     "showHelp": "显示此帮助",
@@ -258,6 +260,10 @@
     "nextTask": "下一个任务",
     "prevTask": "上一个任务",
     "closeModal": "关闭弹窗/面板",
+    "quickPhrase": "插入第 1..9 条 Quick Phrase chip（R131d）",
+    "submitCtrlEnter": "提交反馈（默认模式）",
+    "submitEnter": "提交反馈（Enter 模式启用时）",
+    "newline": "插入换行（Enter 模式启用时）",
     "notifyTitle": "快捷键",
     "notifyBody": "{{mod}}+Enter 提交 | T 切换主题 | Esc 关闭弹窗"
   },

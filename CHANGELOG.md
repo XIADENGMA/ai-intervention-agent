@@ -179,6 +179,84 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R144** — **(UX / Discoverability)** 键盘快捷键 cheatsheet 浮层
+  ——把 R131d 的 ``Alt+1..9`` (Quick Phrases)、R140 的 ``Ctrl+Enter
+  / Enter / Shift+Enter`` 等隐藏快捷键 discoverability 化。新用户
+  不需要打开 source / changelog 也能看到「这个软件支持什么键」。
+  与 GitHub / GitLab / Linear 的 ``?`` cheatsheet 是同一行业范式。
+
+  **触发约束**：
+  - 在任意 ``input`` / ``textarea`` / ``select`` / ``contenteditable``
+    都 **不 focus** 时按 ``?`` (Shift+/) 才弹浮层；textarea 里 ``?``
+    仍然是字符（不打扰键盘党正常输入）；
+  - 修饰键过滤：``Ctrl+?`` / ``Cmd+?`` / ``Alt+?`` 都不触发（避免
+    与系统 / 浏览器既有快捷键冲突）；
+  - 浮层打开后：``Esc`` 关闭 / 点击半透明遮罩关闭 / 卡片内点击不冒泡
+    （防误关）。
+
+  **架构**：
+  - 与 R140 / R131d 同款 capture-phase keydown listener
+    （``addEventListener("keydown", ..., true)``），让本拦截器先拿到
+    事件；
+  - 6 条静态 SHORTCUTS 表（``? / Esc / Alt+1-9 / Ctrl+Enter / Enter
+    / Shift+Enter``）；后续要加新快捷键直接扩 SHORTCUTS 数组 + i18n
+    key；
+  - 不依赖 localStorage（无状态 UI，每次都重新渲染）；可选未来扩
+    "用户已看过 N 次"hint。
+
+  **CSP / XSS 安全**：全部 ``createElement`` + ``textContent``，零
+  ``innerHTML`` / ``insertAdjacentHTML``，与 R130 quick_phrases / R138
+  charCounter 同款基线。
+
+  **i18n / 复用既有 key**：
+  - 复用：``shortcuts.helpTitle`` / ``shortcuts.showHelp`` /
+    ``shortcuts.closeModal``（既有）；
+  - 新增 6 个：``shortcuts.helpSubtitle`` /
+    ``shortcuts.helpEscHint`` / ``shortcuts.quickPhrase`` /
+    ``shortcuts.submitCtrlEnter`` / ``shortcuts.submitEnter`` /
+    ``shortcuts.newline``——zh-CN + en + pseudo locale 全覆盖。
+
+  **CSS 复用既有变量**：
+  - ``var(--bg-secondary, ...)`` / ``var(--text-primary, ...)`` /
+    ``var(--border-primary, ...)`` 等，与项目 R66 brand-color 护栏
+    一致；
+  - 480px 断点收紧 padding / key 字号，与 quick-phrases-mobile-r133
+    同款响应式骨架。
+
+  **改动**：
+  - ``src/ai_intervention_agent/static/js/keyboard_shortcut_help.js``
+    （新增，~280 行）：IIFE 模块；``OVERLAY_ID``、``TRIGGER_KEY``、
+    ``SHORTCUTS`` 三个常量；``_t`` / ``_resolveShortcutLabel``
+    / ``_renderShortcutRow`` / ``_buildOverlayDom`` 几个 helper；
+    ``showOverlay`` / ``hideOverlay`` / ``isOverlayOpen`` /
+    ``_shouldTriggerHelp`` / ``_isTypingTarget`` 5 个公开 API
+    （挂在 ``window.AIIA_KEYBOARD_SHORTCUT_HELP``，方便单测）；
+    capture-phase keydown listener。
+  - ``src/ai_intervention_agent/templates/web_ui.html``：加 R144
+    ``<script>`` 块（``defer + nonce + ?v={{
+    keyboard_shortcut_help_version }}``）。
+  - ``src/ai_intervention_agent/web_ui.py``：``_get_template_context``
+    新增 ``keyboard_shortcut_help_version`` 字段。
+  - ``src/ai_intervention_agent/static/css/main.css``：~120 行新样
+    式，覆盖 overlay / card / kbd 显示 / 480px 响应式。
+  - ``src/ai_intervention_agent/static/locales/{zh-CN,en}.json``：
+    新增 6 个 ``shortcuts.*`` key；pseudo locale 已 regen。
+  - ``tests/test_keyboard_shortcut_help_r144.py``（新增，31 cases）：
+    JS 文件 / 常量 / API surface / HTML 集成（defer + nonce + 路径）
+    / web_ui.py 上下文字段 / CSS 选择器（含 fallback 模式 + 480px
+    响应式）/ i18n 全覆盖（新键 + 既有键复用） / 触发逻辑语义
+    （input/textarea/select/contenteditable 都视为 typing；ctrl/
+    cmd/alt 修饰键过滤）/ DOM 安全（无 innerHTML / insertAdjacentHTML
+    + ≥5 个 createElement）/ i18n graceful degradation（缺 t() /
+    抛错走 fallback；t 返回 key 自身视为缺失）/ capture phase 监听。
+
+  **R144 实施期间发现并修复的细节**：
+  - CSS 初稿用 ``var(--border-color, ...)`` —— 项目里没定义这个变量
+    （只有 ``--border-primary`` / ``--border-secondary`` 等）。
+    ``test_runtime_behavior.py::test_css_self_referencing_vars_defined``
+    回归测试立刻 catch 到，改用 ``--border-primary`` 后修复。这条
+    case 印证了 R66 / runtime CSS 整合性测试的价值。
+
 - **R143** — **(Observability)** R142 ``per_provider`` 子结构新增第 9
   字段 ``last_error_class``——把 NotificationManager 写入的 ``last_error``
   字符串归一化成 6 个稳定字符串之一，与 ``last_error_present`` boolean
