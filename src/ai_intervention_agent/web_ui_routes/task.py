@@ -98,6 +98,58 @@ def _parse_bool_query(raw: str | None, *, default: bool) -> bool:
     return default
 
 
+def _parse_since_iso(raw: str | None) -> tuple[_dt | None, str | None]:
+    """R135 — 解析 ``?since=<ISO>`` 参数为 UTC ``datetime``。
+
+    返回 ``(parsed_dt, error)``：
+    - ``raw`` 缺失 / 空字符串 → ``(None, None)``，调用方走全量导出。
+    - 合法 ISO（带或不带时区）→ ``(<aware datetime>, None)``；不带时区
+      时按 ``UTC`` 处理，与 ``Task.created_at`` 全部 UTC-aware 的契约
+      保持一致。
+    - 不可解析 → ``(None, <human msg>)``，调用方应当返回 400。
+
+    `_dt.fromisoformat` 在 Python 3.11+ 接受 ``2024-01-15T00:00:00Z``
+    形式（直接消化 ``Z`` 后缀）；3.10 及之前不接受 ``Z``，所以本
+    helper 在解析前显式把单字符 ``Z`` 替换成 ``+00:00`` 兜底。"""
+    if raw is None:
+        return None, None
+    norm = raw.strip()
+    if not norm:
+        return None, None
+    # ``Z`` ↔ ``+00:00`` 兼容兜底（Python 3.10 兼容；3.11+ fromisoformat
+    # 已原生支持，但替换无害）
+    if norm.endswith("Z"):
+        norm = norm[:-1] + "+00:00"
+    try:
+        parsed = _dt.fromisoformat(norm)
+    except ValueError:
+        return None, "since 必须是 ISO 8601 时间戳（如 2024-01-15T00:00:00Z）"
+    if parsed.tzinfo is None:
+        # naive → 按 UTC 处理（与 Task.created_at 都 UTC-aware 一致）
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed, None
+
+
+def _task_modified_since(task: Any, since: _dt) -> bool:
+    """R135 — 判断 task 是否在 ``since`` 之后变化过。
+
+    "变化" = 「创建于 since 之后」或「完成于 since 之后」。pending →
+    active 状态切换没有独立时间戳（``Task`` 模型只暴露 ``created_at``
+    + ``completed_at``），对增量导出而言无影响——active 化只改变 task
+    的 ``status`` enum，下次全量同步时自然消化。
+
+    边界：
+    - ``task.created_at`` 永远是 ``datetime``（UTC-aware），无需 None 处理。
+    - ``task.completed_at`` 可能 None（未完成），其语义是「尚未变化到
+      completed」，不进 since 滤布。
+    - ``since`` 必须 UTC-aware（由 ``_parse_since_iso`` 保证）。"""
+    created_at = getattr(task, "created_at", None)
+    if created_at is not None and created_at >= since:
+        return True
+    completed_at = getattr(task, "completed_at", None)
+    return completed_at is not None and completed_at >= since
+
+
 def _strip_images_from_result(
     result: dict[str, Any] | None, include_images: bool
 ) -> dict[str, Any] | None:
@@ -894,11 +946,20 @@ class TaskRoutesMixin:
                 enum: ["true", "false", "1", "0", "yes", "no"]
                 default: "true"
                 description: 是否在 result.images 字段保留 base64 图像 data
+              - name: since
+                in: query
+                type: string
+                format: date-time
+                description: |
+                  R135 增量导出过滤器——只导出 created_at 或 completed_at
+                  晚于此 ISO 8601 时间戳的任务。缺失则全量导出（与 R125
+                  行为一致）。例：since=2024-01-15T00:00:00Z 或
+                  since=2024-01-15T08:00:00+00:00。
             responses:
               200:
                 description: 任务快照文件（带 Content-Disposition 触发下载）
               400:
-                description: 不支持的 format 参数
+                description: 不支持的 format 参数 / since 不是合法 ISO 8601
               500:
                 description: 服务器内部错误
             """
@@ -949,10 +1010,34 @@ class TaskRoutesMixin:
                     request.args.get("include_images"), default=True
                 )
 
+                # R135: ?since=<ISO> 增量导出过滤器。CI / 备份脚本周期性
+                # 拉 ``/api/tasks/export`` 时，绝大多数任务自上次同步后
+                # 没变化——全量传输是 O(N×content) 浪费。``since`` 把过
+                # 滤交给服务端，downstream 只拿真正动过的 tasks，传输量
+                # 落到 O(M×content)（M ≤ N）。
+                # 非法 ISO 直接 400，与 ``unsupported_format`` 同款返回
+                # 结构（``error: invalid_since``）。``since`` 缺失或空字
+                # 符串走全量路径，与 R125 行为一致，向后兼容既有调用方。
+                since_dt, since_err = _parse_since_iso(request.args.get("since"))
+                if since_err is not None:
+                    return (
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "invalid_since",
+                                "message": since_err,
+                            }
+                        ),
+                        400,
+                    )
+
                 task_queue = get_task_queue()
                 tasks, stats = task_queue.get_all_tasks_with_stats()
                 server_time = time.time()
                 now_monotonic = time.monotonic()
+
+                if since_dt is not None:
+                    tasks = [t for t in tasks if _task_modified_since(t, since_dt)]
 
                 exported: list[dict[str, Any]] = []
                 for task in tasks:
@@ -994,6 +1079,15 @@ class TaskRoutesMixin:
                         "server_time": server_time,
                         "stats": stats,
                         "include_images": include_images,
+                        # R135: 增量导出元数据。``since`` 字段直接 echo
+                        # 用户传入的 ISO 字符串（解析后）；``incremental``
+                        # 是 bool 让消费方一眼分辨「全量导出」vs「自上次
+                        # 同步以来的变更集」，避免误把增量当全量回放。
+                        # ``stats`` 仍为全局 stats（不局部化到过滤后的
+                        # tasks）：监控 dashboard 关心整体队列健康度，
+                        # 局部化反而误导。
+                        "since": since_dt.isoformat() if since_dt is not None else None,
+                        "incremental": since_dt is not None,
                         "tasks": exported,
                     }
                     body = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -1009,6 +1103,10 @@ class TaskRoutesMixin:
                 lines.append("")
                 lines.append(f"- Exported at: `{_dt.now(UTC).isoformat()}`")
                 lines.append(f"- Server time: `{server_time}`")
+                if since_dt is not None:
+                    # R135: 增量导出标记，让人类读快照时知道这是「自 X 以来
+                    # 变化的子集」而不是全量
+                    lines.append(f"- Filtered since: `{since_dt.isoformat()}`")
                 lines.append(
                     f"- Stats: total={stats.get('total', 0)} "
                     f"pending={stats.get('pending', 0)} "

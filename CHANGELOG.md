@@ -179,6 +179,96 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R135** — **(feature)** `GET /api/tasks/export?since=<ISO>` 增量导出
+  过滤器，CI / 备份脚本周期性同步只拿真正变化的 tasks，传输量从
+  O(N×content) 降到 O(M×content)（M ≤ N）。
+
+  **背景**：R125 / R125c 的导出端点全量导出整个 ``TaskQueue`` 快照。
+  在 CI / 备份脚本周期性拉 ``/api/tasks/export`` 的真实场景里，绝大
+  多数任务自上次同步后没动过——全量传输是 O(N×content) 浪费（含
+  base64 image data 时尤甚）。R125c 的 ``include_images=false`` 已经
+  把单条 task 的体积压缩 90%+，但还是「全量」语义。R135 引入
+  ``?since=<ISO>`` 把过滤交给服务端，downstream 只拿真正变化的
+  tasks。
+
+  **设计决策**：
+
+  1. **过滤维度选「task 最后变化时间」** — ``Task`` 模型暴露
+     ``created_at`` + ``completed_at`` 两个时间戳，``pending → active``
+     状态切换没独立时间戳但也不影响导出内容（status enum 下一次全
+     量同步时自然消化）。「``created_at >= since`` 或 ``completed_at >=
+     since``」就是「task 自 since 之后变化」最自然的语义。
+  2. **ISO 解析复用 ``datetime.fromisoformat``** — Python 3.11+ 原生
+     支持 ``Z`` 后缀，3.10 及之前不支持但 helper 显式 ``Z → +00:00``
+     替换兜底。naive datetime（不带时区）按 UTC 处理，与
+     ``Task.created_at`` 全 UTC-aware 的契约保持一致。
+  3. **缺省走全量、错误走 400** — ``?since`` 缺失或空字符串走全量路
+     径，与 R125 行为完全一致（向后兼容既有 curl / CI 用户）；非法
+     ISO（``2024/01/15`` / ``not an iso`` / ``2024-13-99``）返回 400
+     ``error: invalid_since``，与 ``unsupported_format`` 同款返回
+     结构。
+  4. **JSON payload 加 ``since`` 字段 + ``incremental: bool``** —
+     ``since`` echo 用户传入的 ISO 字符串（解析后规范化时区段，e.g.
+     ``Z`` → ``+00:00``），让消费方知道服务端到底过滤到哪个时刻；
+     ``incremental`` 是 bool 让 dashboard 一眼分辨「全量」vs「增量」，
+     避免误把增量当全量回放。
+  5. **``stats`` 字段保持全局不局部化** — 监控 dashboard 关心整体队
+     列健康度（pending / active / completed 总量），按 since 过滤
+     局部化反而误导。``tasks`` 列表过滤了，``stats`` 不动。
+  6. **Markdown 模式同款对齐** — Markdown header 在 since 触发时插
+     一行 ``- Filtered since: \`<ISO>\```，让人类读快照时一眼知道
+     「这是自 X 以来变化的子集」而不是全量。
+  7. **三参数组合可正交** — ``since`` + ``format=json|markdown`` +
+     ``include_images={true,false}`` 三个参数互不冲突，filter 是 first
+     pass（在序列化之前），include_images 是 result 内部裁剪
+     （在 sanitize 阶段），format 是输出阶段。
+
+  **实现**：
+
+  - ``web_ui_routes/task.py`` 模块级新增 ``_parse_since_iso(raw)``
+    helper（``Z`` 后缀替换 + ``ValueError`` 捕获 + naive→UTC 兜底；
+    返回 ``(parsed_dt, error_msg)`` 元组）+ ``_task_modified_since(
+    task, since)`` helper（``getattr`` duck-typing，对 ``Task`` 和
+    单元测试桩对象同样工作）。``export_tasks`` handler 加一段 since
+    解析与 400 路径，过滤 ``tasks`` 列表，JSON payload 加 ``since`` /
+    ``incremental`` 字段，Markdown header 加 ``Filtered since:`` 行。
+  - ``export_tasks`` Swagger ``parameters`` 加 ``since`` 描述
+    （``format: date-time``）+ ``responses.400`` 描述补充 since 错
+    误模式。
+
+  **测试**（``tests/test_tasks_export_since_r135.py``，22 cases /
+  5 invariant classes）：
+
+  1. **``_parse_since_iso`` helper** — None / 空 / 仅空白 → no-op；
+     ``+00:00`` 显式时区 / ``Z`` 后缀 / naive 三种合法形式都返回
+     UTC-aware datetime；非法 ``not an iso`` / ``2024/01/15`` /
+     ``2024-13-99T99:99:99`` 都返回 ``(None, error_msg)``。
+  2. **``_task_modified_since`` helper** — created_at >= since →
+     True；created_at == since 边界 → True（``>=``）；
+     completed_at >= since 但 created_at < since → True；created_at
+     < since 且 completed_at None → False；created_at < since 且
+     completed_at < since → False。
+  3. **HTTP 默认行为不变** — ``?since`` 缺省时全量返回；空字符串
+     ``?since=`` 同款全量；``since: None`` / ``incremental: false``。
+  4. **HTTP ``?since`` 增量路径** — 过滤生效（用 fixture 把一个
+     task ``created_at`` backdate 1h，midpoint 30min ago 过滤后只剩
+     新的）；Z 后缀同样 work；future since 返回 ``tasks: []`` +
+     ``incremental: true``；``stats`` 仍是全队列基线 ``total = 2``
+     不被局部化；Markdown 模式 header 含 ``Filtered since:`` 行。
+  5. **HTTP 错误路径与组合** — 非法 ISO 返回 400 ``invalid_since``
+     （format=json / markdown 两路径都 400 不半态）；三参数组合
+     ``since + format=json + include_images=false`` 三个 invariant
+     都生效。
+
+  **辅助 helper**：``_iso_for_query(dt)`` 把 ``datetime`` 转 query-safe
+  ISO 字符串（``urllib.parse.quote(safe="")`` percent-encode ``+`` /
+  ``:`` 防止 query parser 把 ``+`` 当空格）。这是 R135 专属测试侧
+  helper，与生产代码无关——但是排查"为什么 ``+00:00`` 后缀的 ISO
+  在 query 里 fails parse"花的时间值得记录。
+
+  **验证**：22/22 R135 + 50/50 R125/R125b/R125c 既有套件 = 72/72
+  export 全套零回归；``uv run python scripts/ci_gate.py`` exits 0。
+
 - **R134** — **(feature)** SSE bus emit→deliver 延迟分布量化（P50 / P95 /
   count），把 R47 的「事件量」维度补齐成「延迟分布」维度，让运维 dashboard
   / SLO 告警能直接对线上 SSE 推送质量。
