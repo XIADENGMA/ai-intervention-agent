@@ -680,6 +680,22 @@ class SystemRoutesMixin:
                     history_size:
                       type: integer
                       description: 当前 history deque 长度（瞬时值，≤ _HISTORY_MAXLEN）
+                    latency_ms:
+                      type: object
+                      description: |
+                        R134：emit→deliver 延迟分布快照（基于 ring buffer
+                        最近 ≤512 个样本）。p50_ms / p95_ms 是 ms float（2
+                        位小数），count == 0 时两者均为 null（刚启动还没数据）。
+                      properties:
+                        p50_ms:
+                          type: number
+                          description: 50 分位延迟（ms, float）
+                        p95_ms:
+                          type: number
+                          description: 95 分位延迟（ms, float）
+                        count:
+                          type: integer
+                          description: 当前 ring buffer 实际样本数
             """
             try:
                 from ai_intervention_agent.web_ui_routes.task import _sse_bus

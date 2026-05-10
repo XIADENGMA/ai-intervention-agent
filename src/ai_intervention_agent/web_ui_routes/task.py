@@ -28,8 +28,21 @@ if TYPE_CHECKING:
 logger = EnhancedLogger(__name__)
 
 
+class SSELatencySnapshot(TypedDict):
+    """R134：emit→deliver 延迟分布快照。
+
+    P50 / P95 单位是 **毫秒**（float, 2 位小数），count 是当前 ring
+    buffer 实际样本数；``count == 0`` 时 p50 / p95 都是 ``None``，让
+    monitoring caller 一眼分辨"刚启动还没数据"和"延迟为零"。
+    """
+
+    p50_ms: float | None
+    p95_ms: float | None
+    count: int
+
+
 class SSEBusStatsSnapshot(TypedDict):
-    """``_SSEBus.stats_snapshot`` 返回值结构（R47 + R51-B + R58 + R61）。
+    """``_SSEBus.stats_snapshot`` 返回值结构（R47 + R51-B + R58 + R61 + R134）。
 
     用 TypedDict 而不是裸 ``dict[str, int | dict[str, int]]`` 是为了让
     caller 拿到键时能正确推断到具体类型——caller 几乎都是 ``after["emit_total"]
@@ -47,6 +60,7 @@ class SSEBusStatsSnapshot(TypedDict):
     heartbeat_total: int
     oversize_drops: int
     emit_by_type: dict[str, int]
+    latency_ms: SSELatencySnapshot
 
 
 # Sentinel：当 ``_SSEBus`` 因 backpressure 把订阅者从 ``_subscribers`` 集合里
@@ -161,6 +175,18 @@ class _SSEBus:
     # - 256 KB = 262144 B。``json.dumps`` 后 UTF-8 编码字节计数。
     _OVERSIZE_LIMIT_BYTES: int = 256 * 1024
 
+    # R134：emit→deliver 延迟样本环形缓冲区长度。
+    # - 单元 = 1 个 int（ns），CPython int 体积 ~28B，512 个 ≈ 14KB / 实例，
+    #   不足以构成内存压力（与 _HISTORY_MAXLEN=128 的 ~32KB 同数量级）。
+    # - 512 给 P95 留 25 个样本（512 × 5% ≈ 25），足以让分布在毫秒抖动下
+    #   稳定到 ±1ms 量级；P50 留 256 个样本，统计噪声远低于真实延迟波动。
+    # - 每条 SSE deliver 1 个样本；100 个连接 × 10 events/s = 1000 samples/s
+    #   场景下，512 条样本相当于 0.5 秒滑动窗口，对运维「现在的延迟」体感
+    #   最准——比 1024 / 2048 那种"几秒 ago 的均值"对告警决策更直接。
+    # - 排序成本：512 个 int 排序 ~50µs（CPython timsort），sse-stats 端点
+    #   60/min 调用，总成本 ≤ 50µs × 1/s = 0.005% CPU，可忽略。
+    _LATENCY_SAMPLES_MAXLEN: int = 512
+
     def __init__(self) -> None:
         self._subscribers: set[queue.Queue] = set()
         self._lock = threading.Lock()
@@ -209,6 +235,15 @@ class _SSEBus:
         # 保护，``stats_snapshot`` 返回时也走锁内 ``dict(...)`` 浅拷贝避免
         # 并发改写。
         self._emit_by_type: collections.Counter[str] = collections.Counter()
+        # R134：emit→deliver 延迟样本环形缓冲。emit 时把 ``time.monotonic_ns()``
+        # 写进 payload 的 ``_emit_ts_ns``；generator 真正 yield 给客户端那
+        # 一瞬间再算 ``time.monotonic_ns() - _emit_ts_ns`` 推进缓冲。
+        # 单位 ns（int），算 P50/P95 时除 1e6 输出 ms（float 2 位小数）。
+        # 用 ``deque(maxlen=...)`` 自带 O(1) FIFO evict；追加 + 读取都过
+        # ``self._lock``。
+        self._latency_samples_ns: collections.deque[int] = collections.deque(
+            maxlen=self._LATENCY_SAMPLES_MAXLEN
+        )
 
     def subscribe(self, after_id: int | None = None) -> queue.Queue:
         """订阅 SSE 事件流；可选 ``after_id`` 触发缺失事件回放。
@@ -335,6 +370,12 @@ class _SSEBus:
                 except (TypeError, ValueError):
                     serialized_data = None
 
+        # R134：emit 时间戳。``time.monotonic_ns()`` 不受系统时钟跳变影响，
+        # 是 emit→deliver 延迟测量的正确时基（``time.time()`` 在 NTP 校
+        # 时回拨时会算出负 latency）。在 ``_lock`` 之外取，避免持锁等待
+        # 让本身要测的延迟变长。
+        emit_ts_ns = time.monotonic_ns()
+
         with self._lock:
             self._next_id += 1
             self._emit_total += 1
@@ -350,6 +391,10 @@ class _SSEBus:
                 "type": event_type,
                 "data": data or {},
                 "_serialized": serialized_data,
+                # R134：generator yield 之前算 monotonic_ns - _emit_ts_ns。
+                # 字段名带下划线，与 ``_serialized`` 同一约定：
+                # 内部 metadata，不应序列化给客户端，由 generator 消费。
+                "_emit_ts_ns": emit_ts_ns,
             }
             self._history.append((event_id, payload))
 
@@ -437,6 +482,44 @@ class _SSEBus:
         with self._lock:
             self._heartbeat_total += 1
 
+    def record_emit_to_deliver_latency_ns(self, latency_ns: int) -> None:
+        """R134：把一条 emit→deliver 延迟样本（ns）追加到环形缓冲。
+
+        - generator 在真正 yield 给 SSE 客户端那一瞬间调用，输入是
+          ``time.monotonic_ns() - payload['_emit_ts_ns']``。
+        - 负数（极罕见，monotonic_ns 理论上不会回拨，但单元测试里 mock
+          时可能凑出）静默丢弃，避免污染 P50/P95 统计。
+        - ``deque(maxlen=...)`` 自带 evict，无需手动管理容量。
+        - 持 ``self._lock``，与 ``stats_snapshot`` 读取互斥。"""
+        if latency_ns < 0:
+            return
+        with self._lock:
+            self._latency_samples_ns.append(latency_ns)
+
+    def _compute_latency_snapshot(self) -> SSELatencySnapshot:
+        """R134：基于当前 ``_latency_samples_ns`` 算 P50/P95（ms, 2 位小数）。
+
+        必须在持 ``self._lock`` 时调用，因为内部读 ``_latency_samples_ns``
+        快照是 ``list(self._latency_samples_ns)``——deque 在多线程并发
+        ``append`` 时遍历会抛 ``RuntimeError: deque mutated during iteration``。
+        - 算法：nearest-rank percentile（``sorted[int(N * pct)]``，pct ∈
+          [0,1)）。N=512 时 P95 索引 = 486，P50 = 256；nearest-rank 比
+          线性插值简单稳定，监控用 ±1ms 精度足够。
+        - count = 0 时 p50/p95 全 None；count == 1 时 p50 = p95 = 唯一
+          样本。
+        """
+        samples = list(self._latency_samples_ns)
+        count = len(samples)
+        if count == 0:
+            return {"p50_ms": None, "p95_ms": None, "count": 0}
+        samples.sort()
+        # nearest-rank with cap 防止 index == count（pct=1.0 时会越界）
+        p50_idx = min(count - 1, int(count * 0.50))
+        p95_idx = min(count - 1, int(count * 0.95))
+        p50_ms = round(samples[p50_idx] / 1_000_000.0, 2)
+        p95_ms = round(samples[p95_idx] / 1_000_000.0, 2)
+        return {"p50_ms": p50_ms, "p95_ms": p95_ms, "count": count}
+
     def stats_snapshot(self) -> SSEBusStatsSnapshot:
         """返回 SSE 总线的运行时计数器快照（R47 + R51-B）。
 
@@ -470,6 +553,9 @@ class _SSEBus:
                 # R61：每事件类型的 emit 计数。返回 dict 浅拷贝，调用方外部
                 # 修改不影响内部 Counter；UI 想出 top-N 自行 ``Counter(...).most_common(n)``。
                 "emit_by_type": dict(self._emit_by_type),
+                # R134：emit→deliver 延迟分布。``_compute_latency_snapshot``
+                # 在锁内读 ``_latency_samples_ns``，输出 ms 单位。
+                "latency_ms": self._compute_latency_snapshot(),
             }
 
 
@@ -638,6 +724,17 @@ class TaskRoutesMixin:
                         )
                         if serialized is None:
                             serialized = json.dumps(event["data"], ensure_ascii=False)
+                        # R134：emit→deliver 延迟采样。``_emit_ts_ns`` 由 emit
+                        # 写入 payload；缺失（gap_warning 由 subscribe 直接塞入
+                        # queue 不走 emit）则跳过——只测真实的 emit→deliver 路径。
+                        # ``time.monotonic_ns`` 单调递增，差值永远 ≥ 0；
+                        # ``record_emit_to_deliver_latency_ns`` 自带负数防御。
+                        if isinstance(event, dict):
+                            emit_ts_ns = event.get("_emit_ts_ns")
+                            if isinstance(emit_ts_ns, int):
+                                _sse_bus.record_emit_to_deliver_latency_ns(
+                                    time.monotonic_ns() - emit_ts_ns
+                                )
                         # R40-S2：合法事件输出 ``id: N`` 行让浏览器
                         # ``EventSource`` 维护 ``e.lastEventId``，重连时自动
                         # 把它带回 ``Last-Event-ID`` header；客户端断线

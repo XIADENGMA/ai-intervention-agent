@@ -179,6 +179,110 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R134** — **(feature)** SSE bus emit→deliver 延迟分布量化（P50 / P95 /
+  count），把 R47 的「事件量」维度补齐成「延迟分布」维度，让运维 dashboard
+  / SLO 告警能直接对线上 SSE 推送质量。
+
+  **背景**：R47 / R51-B / R58 / R61 已经把 ``_emit_total`` /
+  ``backpressure_discards`` / ``heartbeat_total`` / ``oversize_drops`` /
+  ``emit_by_type`` 五张表暴露在 ``/api/system/sse-stats``，但全是「事件
+  量」维度的累计指标。线上 QoS 真正的盲点是「emit 之后客户端多久才
+  真的拿到数据」——这才决定用户 UI 的实时感、决定 ``task_changed`` 事
+  件是不是能驱动状态栏跳变。Datadog / Grafana 团队的 SSE 监控最佳实践
+  里 P50 / P95 是必看项，没有这两个数字就只能盯着平均值（Average is
+  a Lie）。
+
+  **设计决策**：
+
+  1. **测量点选 emit→generator yield，而不是端到端 RTT** — 真正的
+     emit→deliver 延迟在我们这里有两段：「emit lock + put_nowait」+
+     「Flask generator 拿到 queue 元素 + yield 给 WSGI 写网络」。我们
+     在 generator yield 之前用 ``time.monotonic_ns() - payload['_emit_ts_ns']``
+     算这两段的总和，覆盖了 server-side 全部可控延迟。client-side
+     RTT 包含 TCP / 反向代理 / 浏览器 EventSource buffer，与服务端
+     性能不直接相关，应该交给 ``X-Server-Time`` 之类 client metric
+     单独测，不混进同一个柱。
+  2. **``time.monotonic_ns`` 而非 ``time.time``** — ``time.time`` 在
+     NTP 校时回拨（typical：DST 切换、NTP 大跳）时会算出负 latency，
+     污染 P50/P95；``monotonic_ns`` 单调递增设计成永不回拨，正是测
+     elapsed 的标准时基。POSIX ``CLOCK_MONOTONIC`` 同款语义。
+  3. **环形缓冲选 deque(maxlen=512)** — 单元 = ``int`` (CPython ~28B)，
+     512 个 ≈ 14KB / 实例，与 ``_HISTORY_MAXLEN=128`` (~32KB) 同数量
+     级；P95 留 25 个样本（512 × 5%）足以让分布在毫秒抖动下稳定到
+     ±1ms 量级；512 条对 100 个连接 × 10 events/s 场景相当于 0.5 秒
+     滑动窗口，比 1024/2048 那种"几秒 ago 的均值"对告警决策更直接。
+  4. **算法选 nearest-rank percentile** — ``sorted_samples[int(N * pct)]``
+     比线性插值算法（如 R / numpy 默认）简单稳定，对监控用场景 ±1ms
+     精度完全够；512 个 int 排序成本 ~50µs（CPython timsort），
+     ``stats_snapshot`` 60/min 调用时占 0.005% CPU 可忽略。
+  5. **count == 0 时 p50 / p95 用 None 而非 0** — 让监控 caller 一眼
+     分辨「刚启动还没数据」（None）和「延迟为零」（0.0）。Datadog /
+     Prometheus 都把 None 当 missing 处理，0 当真实零值，区分至关重要。
+  6. **``_emit_ts_ns`` 字段挂在 payload 上而不是单独传** — 与
+     ``_serialized`` / ``id`` / ``type`` / ``data`` 同款命名（``_`` 前
+     缀 = generator 私有 metadata），不进 SSE wire format（generator
+     只把 ``serialized`` 和 ``event_id`` 拼到 ``data:`` / ``id:`` 行）。
+     缺失（如 ``gap_warning`` 由 ``subscribe`` 直接塞进 queue 不走 emit）
+     时 generator 静默跳过 latency 采样——只测真实的 emit→deliver 路径。
+  7. **接口契约：``latency_ms`` 顶层独立 dict，不混进 emit_by_type** —
+     ``emit_by_type`` 是 ``dict[str, int]`` 桶，``latency_ms`` 是
+     ``{p50_ms: float|None, p95_ms: float|None, count: int}``。两组语
+     义不一样，平铺会让 dashboard 难写。R47 的 TypedDict 加一个
+     ``SSELatencySnapshot`` 子类型锁定 shape，IDE 一眼可推断字段类型。
+  8. **正负数值防御** — ``record_emit_to_deliver_latency_ns(ns)`` 入
+     口对 ``ns < 0`` 静默丢弃；理论上 ``monotonic_ns`` 不会回拨，但
+     单元测试 mock 时可能凑负值，加防御让样本始终非负。
+
+  **实现**：
+
+  - ``web_ui_routes/task.py`` 顶部新增 ``SSELatencySnapshot`` TypedDict；
+    ``SSEBusStatsSnapshot`` 加 ``latency_ms`` 字段；
+    ``_SSEBus._LATENCY_SAMPLES_MAXLEN = 512`` 类常量 +
+    ``_latency_samples_ns: deque[int]`` 实例字段；新增
+    ``record_emit_to_deliver_latency_ns(ns: int)`` 持锁追加；新增
+    ``_compute_latency_snapshot()`` 持锁排序 + nearest-rank P50/P95；
+    ``emit()`` 在 lock 外取 ``emit_ts_ns = time.monotonic_ns()`` 后写进
+    payload ``_emit_ts_ns``；``stats_snapshot()`` 返回值加
+    ``"latency_ms": self._compute_latency_snapshot()``；
+    SSE generator 在 yield 之前从 payload 读 ``_emit_ts_ns``，缺失则跳
+    过，存在则调 ``_sse_bus.record_emit_to_deliver_latency_ns(...)``。
+  - ``web_ui_routes/system.py`` ``/api/system/sse-stats`` Swagger 文档
+    在 schema.properties 加 ``latency_ms`` 嵌套对象描述 + 三字段
+    （p50_ms / p95_ms / count）说明。
+
+  **测试**（``tests/test_sse_emit_to_deliver_latency_r134.py``，20 cases /
+  6 invariant classes）：
+
+  1. **常量与 init** — ``_LATENCY_SAMPLES_MAXLEN`` = 512；deque 初始
+     empty + maxlen 字段 = 512。
+  2. **采样 API** — ``record(...)`` 正常追加；负数静默丢；0ns 接受；
+     超 maxlen 时最旧 evict（触发条件 maxlen + 50 个样本写入）。
+  3. **percentile 计算** — empty → 全 None + count = 0；count = 1 →
+     p50 = p95 = 唯一样本；构造 100 个 1..100ms 样本，断言 P50 = 51ms
+     / P95 = 96ms（nearest-rank 索引 = int(N×pct)）；加大尾样本后 P95
+     单调不降；5.123ms 样本 round 到 5.12（2 位小数）。
+  4. **emit 注入与 generator 消费** — ``emit()`` 后 history payload 含
+     ``_emit_ts_ns`` 字段且 > 0；source 内 ``def generate(`` 函数体含
+     ``record_emit_to_deliver_latency_ns(`` 调用（防 generator 集成被
+     回滚）。
+  5. **stats_snapshot + TypedDict** — 返回 dict 含 ``latency_ms`` 键 +
+     三字段（p50_ms/p95_ms/count，初值 count=0）；R47 / R51-B / R58 /
+     R61 既有 9 个键全部仍在；TypedDict 注解锁定。
+  6. **Swagger 文档** — ``system.py`` 含 ``R134`` 标记 + ``latency_ms``
+     / ``p50_ms`` / ``p95_ms`` 字段名（caller-facing 文档契约）。
+
+  **验证**：20/20 R134 + 78/78 R47/R51-B/R58/R61/R50/R52b/R55/R39 +
+  20 system 端点既有 = 138/138 SSE/system 全套零回归；
+  ``uv run python scripts/ci_gate.py`` exits 0；全工程
+  4244 passed + 2 skipped，与提交 R131d 时 4207 passed 加 17 (R131d)
+  加 20 (R134) = 4244 完美吻合。
+
+  **后续 follow-up（不在 R134 范围内）**：``subscribe(after_id)`` 走
+  history replay 时给客户端补发的 payload 也含 ``_emit_ts_ns``（emit
+  时刻），导致 reconnect 风暴下 P95 会被 reconnect lag 拉高。这其实
+  是「reconnect lag」也有意义的指标，留作未来 R-series 评估是否需要
+  分桶（latency_ms vs replay_lag_ms）。
+
 - **R131d** — **(feature)** Quick Phrases 面板键盘快捷键 `Alt+1..9`
   快速插入前 9 条 chip，对齐 Slack/Discord 行业惯例的「常用片段
   modifier+数字」体感，是 R130 → R131 → R131b → R131c 一路追下来给
