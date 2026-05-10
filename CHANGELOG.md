@@ -179,6 +179,121 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R140** — **(UX)** 反馈提交模式切换（Ctrl+Enter vs Enter）——既
+  有 ``app.js`` 的 keydown handler 把 ``Ctrl/Cmd+Enter`` 硬编码为提
+  交快捷键，纯键盘党 + 短文本反馈用户在 Slack / Discord / Notion /
+  Telegram 等 IM 工具里用 Enter 提交是默认习惯，每次切回本应用都得
+  "记住"用 Ctrl+Enter，认知负担非零。R140 在 settings 面板加一个偏
+  好开关：
+
+  - ``ctrl_enter``（默认，与现状一致）：``Ctrl/Cmd+Enter`` 提交，
+    ``Enter`` 换行；
+  - ``enter``：``Enter`` 提交，``Shift+Enter`` 换行（IM 模式）；
+    ``Ctrl/Cmd+Enter`` 仍然能提交（保留熟悉路径）。
+
+  **设计决策**：
+
+  1. **纯前端 localStorage** — 与 R137 / R138 / R139 同款架构，不
+     上服务端 ``user_settings``，多设备不同步是合理边界（submit
+     mode 是纯客户端 UX 偏好）。Storage key
+     ``aiia.submitMode.v1``，envelope ``{ schema_version, mode,
+     saved_at }``，未来 schema 升级有迁移空间。
+  2. **不替换既有 keydown handler** — R140 在 ``#feedback-text``
+     textarea 上挂独立 capture-phase listener（``addEventListener
+     ("keydown", handler, true)`` 第三参数 true）。``ctrl_enter``
+     模式下 listener 直接 return，不拦截让既有 ``document.
+     addEventListener("keydown", ...)`` 处理；``enter`` 模式下
+     ``preventDefault`` 阻止 textarea 默认换行 + 调
+     ``#submit-btn.click()`` 触发提交，不直接访问 ``submitFeedback``
+     函数引用避免硬耦合。capture phase 让本拦截器先于 document-
+     level keydown 跑，确保 ``preventDefault`` 在浏览器 newline 默
+     认行为前生效。
+  3. **IME composition 安全** — ``_shouldSubmitOnEnter`` 按
+     ``event.isComposing`` + ``keyCode === 229`` 双重判断，让中日韩
+     输入法 / emoji picker 用户在选词阶段按 Enter 不会误提交（IME
+     选词 Enter 是确认候选，不是提交反馈）。``isComposing`` 在某些
+     老浏览器 / 边缘 IME 上不可靠，``keyCode 229`` 是浏览器对 IME
+     composition 的 fallback 标志。
+  4. **修饰键放行** — Shift+Enter / Alt+Enter / Ctrl+Enter /
+     Cmd+Enter 一律不命中 ``_shouldSubmitOnEnter``：单 Shift 是默
+     认换行 / 标准；Alt 是常用快捷键修饰符（Alt+1..9 来自 R131d）；
+     Ctrl/Cmd+Enter 让既有 handler 处理（保留熟悉路径）。
+  5. **disabled 守卫** — ``_triggerSubmit`` 检查 ``btn.disabled``
+     避免在加载 / 提交进行时重复触发；submit 按钮 disabled 状态由
+     既有 app.js 维护，R140 复用不引入新状态机。
+  6. **设置面板内联** — ``<select id="feedback-submit-mode-
+     select">`` 放在 settings panel 的 Feedback section 内，与既
+     有 countdown / resubmit / suffix 设置项同级，select 切换后
+     立即 ``setMode(next)`` 写盘，无需重新加载页面（既有 listener
+     走 ``getMode()`` 实时读，不缓存模块状态）。
+  7. **graceful failure** — ``_isStorageAvailable`` 用 set/remove
+     probe 检测；``getMode`` 在 storage 不可用 / corrupt JSON /
+     schema_version 不匹配 / mode 非法（不在 ``VALID_MODES`` 中）
+     时全部 fallback 到 ``DEFAULT_MODE = "ctrl_enter"``，主路径不
+     挂；``setMode`` 拒绝非 ``VALID_MODES`` 输入避免污染存储。
+  8. **CSP nonce + ?v= cache busting** — 与 R47 / R74 / R137 / R138
+     / R139 同款 ``<script defer nonce={{ csp_nonce }} src=...?v=
+     {{ feedback_submit_mode_version }}>`` 节点。
+
+  **实现**：
+
+  - ``src/ai_intervention_agent/static/js/feedback_submit_mode.js``
+    （NEW，~165 行）—— 6 个常量（``STORAGE_KEY`` /
+    ``SCHEMA_VERSION`` / ``DEFAULT_MODE`` / ``VALID_MODES`` /
+    ``TARGET_ID`` / ``SUBMIT_BTN_ID``）+ 8 个公共 / 内部函数
+    （``getMode`` / ``setMode`` / ``_shouldSubmitOnEnter`` /
+    ``_triggerSubmit`` / ``_isStorageAvailable`` /
+    ``setupKeydownInterceptor`` / ``setupSelectListener`` /
+    ``init``），全 try/catch 兜底。
+  - ``src/ai_intervention_agent/templates/web_ui.html`` —— settings
+    panel 的 feedback section 内 ``feedback-resubmit-prompt`` 之
+    后、``feedback-prompt-suffix`` 之前新增一个 ``<div class=
+    "setting-item">`` 含 ``<select id="feedback-submit-mode-
+    select">`` + 两个 option（``ctrl_enter`` / ``enter``）+ hint 描
+    述；文档底部 R139 之后新增 ``<script defer>`` 节点。
+  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_
+    context()`` 加 ``"feedback_submit_mode_version"``。
+  - 三 locale 加 ``settings.submitMode`` /
+    ``settings.submitModeCtrlEnter`` / ``settings.submitModeEnter`` /
+    ``settings.submitModeHint`` 共 4 个 key（zh-CN / en /
+    _pseudo/pseudo.json，pseudo 自动重生成）。
+
+  **测试**（``tests/test_feedback_submit_mode_r140.py``，39 cases /
+  6 invariant classes）：
+
+  1. **JS 文件存在 + 体积合理** — 文件存在 / 130-220 行 envelope。
+  2. **常量值锁定** — 6 个常量字面值 + ``VALID_MODES = ["ctrl_
+     enter", "enter"]`` 数组顺序锁定。
+  3. **API 函数签名** — 8 个函数 + ``window.AIIA_FEEDBACK_SUBMIT_
+     MODE`` 全 14 字段 export。
+  4. **graceful failure / fallback** — ``getMode`` try/catch +
+     schema_version 校验 + ``VALID_MODES.indexOf`` 校验，全部
+     fallback ``DEFAULT_MODE``；``setMode`` 拒绝非法输入；
+     ``_isStorageAvailable`` set/remove probe + try/catch。
+  5. **keydown 拦截边界** — ``_shouldSubmitOnEnter`` 排除 non-
+     Enter / Shift / Alt / Ctrl / Cmd / IME (``isComposing`` +
+     ``keyCode 229``)；``setupKeydownInterceptor`` 用 capture
+     phase（第三参数 ``true``）；``ctrl_enter`` 模式下 listener
+     直接 return；命中条件后 ``preventDefault`` + ``_triggerSubmit``；
+     ``_triggerSubmit`` 检查 ``btn.disabled``。
+  6. **HTML / context 集成 + i18n** — settings panel 含
+     ``<select id="feedback-submit-mode-select">`` + 两个 option
+     带 ``data-i18n`` / ``<script defer nonce src=...?v=...>`` /
+     ``_get_template_context`` 注入 version / 三 locale 4 个 key
+     全覆盖。
+
+  **验证**：39/39 R140 + 全工程 4420 passed + 2 skipped；
+  ``uv run python scripts/ci_gate.py`` exits 0；与 R138 / R139 同样
+  6 个静态资产文件由 ``scripts/minify_assets.py`` +
+  ``scripts/precompress_static.py`` 自动生成。
+
+  **后续 follow-up（不在 R140 范围内）**：
+  - **R140-A**：键盘提示在 textarea 周围动态显示当前 mode 的
+    shortcut（如右下角 ``⌘+Enter`` 或 ``Enter`` chip），让用户一
+    眼看到当前状态。
+  - **R140-B**：服务端同步——通过 ``user_settings`` 后端 schema
+    把 mode 同步到服务端，让用户多设备 / 多浏览器场景一致。
+
 - **R139** — **(UX)** 反馈 textarea per-task 草稿持久化（autosave）——
   项目内已存在 ``window.taskTextareaContents`` 内存字典（``multi_
   task.js`` 维护，多任务并发场景下用户切换 task 时保留 textarea 内

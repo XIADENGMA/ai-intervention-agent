@@ -1637,6 +1637,43 @@
                   chars).
                 </div>
               </div>
+              <!-- R140 — 提交模式切换（Ctrl+Enter vs Enter） -->
+              <div class="setting-item">
+                <label class="setting-label has-input">
+                  <span class="setting-title" data-i18n="settings.submitMode"
+                    >Submit mode</span
+                  >
+                  <select
+                    id="feedback-submit-mode-select"
+                    class="setting-input"
+                    style="max-width: 240px"
+                  >
+                    <option
+                      value="ctrl_enter"
+                      data-i18n="settings.submitModeCtrlEnter"
+                    >
+                      Ctrl/Cmd+Enter to submit
+                    </option>
+                    <option
+                      value="enter"
+                      data-i18n="settings.submitModeEnter"
+                    >
+                      Enter to submit (Shift+Enter newline)
+                    </option>
+                  </select>
+                </label>
+                <div
+                  style="
+                    margin-top: 0.3rem;
+                    color: var(--text-secondary);
+                    font-size: 0.82rem;
+                  "
+                  data-i18n="settings.submitModeHint"
+                >
+                  Choose how Enter behaves in the feedback input. The setting
+                  is stored locally per browser.
+                </div>
+              </div>
               <div class="setting-item">
                 <label class="setting-label has-input">
                   <span class="setting-title" data-i18n="settings.promptSuffix"
@@ -1910,6 +1947,13 @@
     <script
       defer
       src="/static/js/feedback_drafts.js?v={{ feedback_drafts_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <!-- R140 — Feedback 提交模式切换（Ctrl+Enter vs Enter） -->
+    <script
+      defer
+      src="/static/js/feedback_submit_mode.js?v={{ feedback_submit_mode_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

@@ -1321,6 +1321,10 @@ class WebFeedbackUI(
             "feedback_drafts_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_drafts.js")
             ),
+            # R140: feedback 提交模式切换模块版本号
+            "feedback_submit_mode_version": _compute_file_version(
+                str(static_dir / "js" / "feedback_submit_mode.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 
