@@ -9,6 +9,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-05-10
+
+> Cycle-3 → Cycle-6 round-up on top of v1.6.0: 4 new endpoints
+> (R125 export / R141 self-test / R132 build-info / R134 latency),
+> 9 new UI modules (R130-R131d quick-phrases / R125b export
+> button / R137-R140 textarea polish / R144 cheatsheet / R146
+> notification self-test button), R141-R145 full notification
+> observability triad (per_provider stats + 6-class
+> last_error_class + success/failure streaks), 15-commit silent-
+> failure audit batch (R107-R120), and 3 security fixes (R111
+> GitHub PAT scrubbing / R112 static-route ext whitelist / R122
+> image MIME unification).
+>
+> No removed APIs.  All R53-F / R72 / R76 / R77 contracts
+> preserved.  4621 tests pass (2 skipped); ci_gate exit 0;
+> ruff / ty / dead-key / param-signature linters all clean.
+
 ### Added
 
 - **R121-A** — `/api/system/health` endpoint **observability expansion**
