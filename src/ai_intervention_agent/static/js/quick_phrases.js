@@ -176,15 +176,41 @@
     if (!parsed || typeof parsed !== "object") return [];
     if (parsed.schema_version !== SCHEMA_VERSION) return [];
     if (!Array.isArray(parsed.phrases)) return [];
-    return parsed.phrases.filter(function (p) {
-      return (
-        p &&
-        typeof p === "object" &&
-        typeof p.id === "string" &&
-        typeof p.label === "string" &&
-        typeof p.text === "string"
-      );
-    });
+    return parsed.phrases
+      .filter(function (p) {
+        return (
+          p &&
+          typeof p === "object" &&
+          typeof p.id === "string" &&
+          typeof p.label === "string" &&
+          typeof p.text === "string"
+        );
+      })
+      .map(function (p) {
+        // R131c：``last_used_at`` / ``use_count`` 是 v1 内的可选字段，
+        // 老数据可能没有 → 兜底 0，让排序逻辑统一处理「从未用过」的
+        // phrase（沉到列表尾部）。SCHEMA_VERSION 不变，无需 migrator。
+        var lastUsed =
+          typeof p.last_used_at === "number" && isFinite(p.last_used_at)
+            ? p.last_used_at
+            : 0;
+        var useCount =
+          typeof p.use_count === "number" && isFinite(p.use_count)
+            ? p.use_count
+            : 0;
+        var createdAt =
+          typeof p.created_at === "number" && isFinite(p.created_at)
+            ? p.created_at
+            : 0;
+        return {
+          id: p.id,
+          label: p.label,
+          text: p.text,
+          created_at: createdAt,
+          last_used_at: lastUsed,
+          use_count: useCount,
+        };
+      });
   }
 
   /**
@@ -338,6 +364,8 @@
       listEl.appendChild(empty);
       return;
     }
+    // R131c：渲染前按使用频率排序，让常用的 chip 出现在列表前列
+    phrases = _sortPhrasesByUsage(phrases);
 
     phrases.forEach(function (p) {
       var chip = document.createElement("button");
@@ -348,7 +376,9 @@
       chip.textContent = p.label;
       chip.addEventListener("click", function (e) {
         e.preventDefault();
+        // 先插入文本 → 再记录使用（记录失败也不影响插入主路径）
         insertTextIntoFeedback(p.text);
+        recordPhraseUsage(p.id);
       });
 
       // R131 — chip 上的 ✎ 编辑按钮：进入内嵌编辑模式
@@ -555,6 +585,8 @@
       label: label,
       text: text,
       created_at: Date.now(),
+      last_used_at: 0,
+      use_count: 0,
     });
     var ok = savePhrases(phrases);
     if (ok) renderList();
@@ -592,6 +624,64 @@
     var ok = savePhrases(phrases);
     if (ok) renderList();
     return ok;
+  }
+
+  /**
+   * R131c：chip 单击时记录使用情况，让「常用的越用越靠前」。
+   *
+   * 副作用：把对应 phrase 的 ``last_used_at`` 设为 ``Date.now()``、
+   * ``use_count`` 自增 1，并 savePhrases；renderList 之后按
+   * ``last_used_at`` desc 排序，保证用户最近用过的 chip 出现在列
+   * 表前列。
+   *
+   * 失败语义：phrase id 不存在 → 静默 return false（防止竞态：
+   * 用户在删除按钮上同时点击两次时，第二次不会炸面板）。
+   * savePhrases 失败 → 同样静默，UI 主路径不受影响（chip click
+   * 的核心语义是"插入文本"，记录使用是 nice-to-have）。
+   */
+  function recordPhraseUsage(id) {
+    var phrases = loadPhrases();
+    var found = false;
+    for (var i = 0; i < phrases.length; i += 1) {
+      if (phrases[i].id === id) {
+        phrases[i].last_used_at = Date.now();
+        phrases[i].use_count = (phrases[i].use_count || 0) + 1;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return false;
+    var ok = savePhrases(phrases);
+    if (ok) renderList();
+    return ok;
+  }
+
+  /**
+   * R131c 排序函数：``last_used_at`` desc 主排（最近用过的最先），
+   * ``use_count`` desc 二排（同一时间戳里用得多的优先），
+   * ``created_at`` desc 三排（都没用过时新建的优先），最后用 ``id``
+   * 兜底保证稳定排序（同 created_at 时不抖）。
+   *
+   * 从未用过的 phrase（``last_used_at = 0``）会沉到列表尾部，符合
+   * "常用的越用越靠前、新增的初始还在中段、长期不用的沉底" 的预期。
+   */
+  function _sortPhrasesByUsage(phrases) {
+    return phrases.slice().sort(function (a, b) {
+      if (a.last_used_at !== b.last_used_at) {
+        return b.last_used_at - a.last_used_at;
+      }
+      if (a.use_count !== b.use_count) {
+        return b.use_count - a.use_count;
+      }
+      if (a.created_at !== b.created_at) {
+        return b.created_at - a.created_at;
+      }
+      // 字符串 id 兜底；两个 id 相等几乎不可能（generateId 自带毫秒
+      // + 3 位 base36 后缀）
+      if (a.id < b.id) return 1;
+      if (a.id > b.id) return -1;
+      return 0;
+    });
   }
 
   // ============================================================================
@@ -781,6 +871,9 @@
         label: p.label,
         text: p.text,
         created_at: p.created_at,
+        // R131c 字段：导入的 phrase 视为「未在本设备用过」
+        last_used_at: 0,
+        use_count: 0,
       });
       existingKey[key] = true;
       added += 1;
@@ -951,6 +1044,7 @@
     addPhrase: addPhrase,
     deletePhrase: deletePhrase,
     editPhrase: editPhrase,
+    recordPhraseUsage: recordPhraseUsage,
     insertTextIntoFeedback: insertTextIntoFeedback,
     validatePhraseInput: validatePhraseInput,
     renderList: renderList,

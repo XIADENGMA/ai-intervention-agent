@@ -179,6 +179,75 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R131c** — **(feature)** Quick Phrases 面板按使用频率排序，对齐
+  ``mcp-feedback-enhanced`` Prompt Management 的「最近使用优先」体感。
+
+  **背景**：R130 v1 的 chip 渲染顺序是天然的「插入顺序」。当用户
+  保存到 10-20 条 phrase 时，每次扫到熟悉的 chip 都要花眼睛。竞品
+  ``mcp-feedback-enhanced`` v1.2.23 的 Prompt Management 明确按
+  「最近使用」排序——是熟手用户体感差异最大的一项。R131c 在
+  **不破坏 storage schema_version** 的前提下补齐这块。
+
+  **设计决策**：
+
+  1. **schema_version 不动 (仍 1)** — R131c 引入的两个字段
+     ``last_used_at`` / ``use_count`` 是 v1 内的**可选字段**，
+     ``loadPhrases`` 给老数据兜底 0；R131b 导入路径里 import 进来
+     的 phrase 也默认 0。彻底回避「写 migrator」+ 老用户数据失效
+     的风险。
+  2. **排序键三层** — ``last_used_at`` desc 主排（最近用过最先），
+     ``use_count`` desc 二排（同毫秒里用得多的优先），``created_at``
+     desc 三排（都没用过时新建优先），``id`` 字符串兜底（保证稳定
+     排序）。从未用过的 phrase 沉到列表尾。
+  3. **chip click 先插入再记录** — ``insertTextIntoFeedback`` 的
+     文本插入是核心副作用，``recordPhraseUsage`` 是 nice-to-have，
+     必须按这个顺序，让记录失败（storage 配额满 / 浏览器隐身模式）
+     不影响用户的核心诉求。
+  4. **renderList 内排序、不改 storage 顺序** — ``loadPhrases``
+     仍按 storage 落盘顺序返回，``_sortPhrasesByUsage`` 是渲染前
+     的 ``slice().sort(...)`` 纯函数 view。这保留了「迁移到外部
+     工具时仍能拿到原始顺序」的语义，也避免了反复重写 storage
+     带来的写放大。
+  5. **导入 / 编辑路径同步对齐** — ``addPhrase`` 显式写
+     ``last_used_at: 0, use_count: 0``；``parseImportPayload`` 接
+     收的字段不含两个新字段时由 ``loadPhrases`` 后续兜底；
+     ``editPhrase`` 不动这两个字段（编辑 label/text 不应清零使用
+     记录）。
+
+  **实现**：
+
+  - ``static/js/quick_phrases.js`` 新增 ``recordPhraseUsage(id)``
+    + ``_sortPhrasesByUsage(phrases)``，``loadPhrases`` 末尾追加
+    ``.map`` 给老数据兜底字段，``addPhrase`` / ``importPhrasesFromJson``
+    显式写入两个 0 值字段，``renderList`` 在 ``forEach`` 之前调
+    ``_sortPhrasesByUsage``，chip click handler 在
+    ``insertTextIntoFeedback`` 之后追加 ``recordPhraseUsage(p.id)``。
+  - ``window.AIIA_QUICK_PHRASES`` 暴露 ``recordPhraseUsage``，
+    给测试 + 调试用。
+
+  **测试**（``tests/test_quick_phrases_usage_sort_r131c.py``，14
+  cases / 5 invariant classes）：
+
+  1. **JS API 扩展** — 两个函数签名 + 公开 API 暴露
+     ``recordPhraseUsage``。
+  2. **schema 字段兼容** — ``loadPhrases`` 兜底 typeof 检查存在；
+     ``addPhrase`` 显式写两个 0；``recordPhraseUsage`` 用
+     ``Date.now()`` 与 ``use_count || 0) + 1`` 自增。
+  3. **chip click 顺序** — ``renderList`` chip click handler 同
+     时含 ``insertTextIntoFeedback`` + ``recordPhraseUsage``，
+     前者位置必须在后者之前。
+  4. **排序键** — ``_sortPhrasesByUsage`` 用 ``b.X - a.X`` 形态
+     的 desc 比较锁三层主键 + ``renderList`` 在 forEach 之前调用
+     排序函数。
+  5. **schema 不破裂** — ``STORAGE_KEY = "aiia.quickPhrases.v1"``
+     + ``SCHEMA_VERSION = 1`` 锁定；``loadPhrases`` 返回对象包含
+     6 个字段（id / label / text / created_at / last_used_at /
+     use_count）。
+
+  **验证**：14/14 R131c + 26/26 R131b + 16/16 R131 + 19/19 R130
+  + 3 共享 = 78/78 quick-phrases 全套零回归；
+  ``uv run python scripts/ci_gate.py`` exits 0。
+
 - **R131b** — **(feature)** Quick Phrases 面板补齐「JSON 导入 / 导出」
   跨设备 / 跨浏览器迁移能力（Code Review #2 P1 follow-up，对齐
   ``mcp-feedback-enhanced`` 的 Prompt Management 文件分发模式）。
