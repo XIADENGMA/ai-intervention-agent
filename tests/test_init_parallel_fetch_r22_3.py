@@ -320,6 +320,21 @@ class TestRuntimeBehavior(unittest.TestCase):
                   calls.push({ fn: 'startTasksPolling', enter: Date.now() });
                 }
 
+                // R123：``initMultiTaskSupport`` 在 R22.3 之后又新增了一处
+                // ``startTasksHealthCheck()`` 调用（取代了原来的裸
+                // ``setInterval(..., 30000)``）。R22.3 的 harness 只关心
+                // ``Promise.all([fetchFeedbackPromptsFresh, refreshTasksList])``
+                // 是否被并行派发，而不关心健康检查 timer 的语义，因此这里
+                // 提供一个 no-op stub，避免 ``ReferenceError`` 把整个 harness
+                // 打挂。``startTasksHealthCheck`` 的运行时不变量由
+                // ``test_tasks_health_check_lifecycle_r123.py`` 单独覆盖。
+                function startTasksHealthCheck() {
+                  calls.push({ fn: 'startTasksHealthCheck', enter: Date.now() });
+                }
+                function stopTasksHealthCheck() {
+                  calls.push({ fn: 'stopTasksHealthCheck', enter: Date.now() });
+                }
+
                 // 兼容 init body 内可能引用的浏览器 API
                 // 把 console 静默掉：init body 里 ``console.log('Initializing…')``
                 // 会污染 stdout，让父进程拿不到干净 JSON。warn / error 也吞掉，

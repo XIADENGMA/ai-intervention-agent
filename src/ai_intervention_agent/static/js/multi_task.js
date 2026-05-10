@@ -85,6 +85,19 @@ if (typeof window.pendingNewTaskCount === "undefined") {
 if (typeof window.newTaskHintTimer === "undefined") {
   window.newTaskHintTimer = null; // 通知合并定时器
 }
+// R123：健康检查 interval 句柄。``initMultiTaskSupport`` 历史上无脑
+// ``setInterval(..., 30000)`` 但不保存 id，导致：
+// (a) 永远无法 ``clearInterval``，``stopTasksPolling`` 也无从清理；
+// (b) 一旦未来出现"reconnect 后重新 init"或"测试 reset 后重启"等
+//     场景，会创建第二/第三个并行的 30s 健康检查 interval，每个
+//     都自带独立的 startTasksPolling / _connectSSE 触发逻辑——逻辑
+//     正确但浪费 CPU/网络配额，且彼此竞态。
+// 把句柄挂到 window，让 ``startTasksHealthCheck`` 可以幂等启动、
+// ``stopTasksHealthCheck`` 可以显式清理（visibility hidden /
+// beforeunload 路径都需要）。
+if (typeof window.tasksHealthCheckTimer === "undefined") {
+  window.tasksHealthCheckTimer = null;
+}
 if (typeof window.hasLoadedTaskSnapshot === "undefined") {
   window.hasLoadedTaskSnapshot = false; // 首次任务快照仅用于建立基线，不触发系统通知
 }
@@ -824,13 +837,20 @@ function startTasksPolling() {
     tasksPollVisibilityHandlerInstalled = true;
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) {
+        // R123：visibility 隐藏时同步停健康检查，让后台 30s tick
+        // 完全静止；可见时重新拉起（``startTasksHealthCheck`` 幂等）。
         stopTasksPolling();
+        stopTasksHealthCheck();
       } else {
         startTasksPolling();
+        startTasksHealthCheck();
       }
     });
     window.addEventListener("beforeunload", function () {
       stopTasksPolling();
+      // R123：unload 路径同样回收健康检查 timer（避免 testing 环境
+      // 复用 window 时残留 timer ref 跨页面 leak）。
+      stopTasksHealthCheck();
     });
   }
 
@@ -879,6 +899,37 @@ function stopTasksPolling() {
   }
 
   _disconnectSSE();
+}
+
+// R123：tasks polling 的健康检查（独立于轮询本身，30s 兜底重启）。
+// pre-R123 的 ``setInterval(..., 30000)`` 调用没保存 id，永远无法
+// ``clearInterval``——本对实现把启动/停止解耦成幂等函数，让
+// ``visibilitychange`` 隐藏与 ``beforeunload`` 路径都能彻底回收。
+function startTasksHealthCheck() {
+  // 幂等：已有 timer 不再创建第二个，避免"页面 visibility 切换或
+  // 测试 reset 触发重复 init"导致并行 30s tick 两组逻辑。
+  if (window.tasksHealthCheckTimer) {
+    return;
+  }
+  window.tasksHealthCheckTimer = setInterval(function () {
+    // 页面隐藏时直接 return，让 visibilitychange handler 在隐藏路径
+    // 显式 stop 以彻底回收 CPU/调度配额；这里只是兜底避免 race。
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (!tasksPollingTimer) {
+      console.warn("Task polling stopped; auto-restarting");
+      startTasksPolling();
+    }
+    if (!_sseConnected && !_sseReconnectTimer) {
+      _connectSSE();
+    }
+  }, 30000);
+}
+
+function stopTasksHealthCheck() {
+  if (window.tasksHealthCheckTimer) {
+    clearInterval(window.tasksHealthCheckTimer);
+    window.tasksHealthCheckTimer = null;
+  }
 }
 
 // ==================== 任务列表更新 ====================
@@ -2676,17 +2727,13 @@ async function initMultiTaskSupport() {
   // 启动定时轮询
   startTasksPolling();
 
-  // 健康检查：每 30s 确保轮询/SSE 仍在运行
-  setInterval(function () {
-    if (typeof document !== "undefined" && document.hidden) return;
-    if (!tasksPollingTimer) {
-      console.warn("Task polling stopped; auto-restarting");
-      startTasksPolling();
-    }
-    if (!_sseConnected && !_sseReconnectTimer) {
-      _connectSSE();
-    }
-  }, 30000);
+  // R123：健康检查每 30s 跑一次，确保轮询/SSE 仍在运行。改造为
+  // ``startTasksHealthCheck`` 幂等函数 + ``stopTasksHealthCheck``
+  // 显式清理，让 visibilitychange / beforeunload 路径能彻底关闭
+  // 后台 timer，避免页面隐藏后仍周期性消耗 CPU + 不必要的 SSE
+  // reconnect 触发（pre-R123 的裸 timer 调用永远不被回收）。详见
+  // ``tests/test_tasks_health_check_lifecycle_r123.py``。
+  startTasksHealthCheck();
 
   // 【新增】实时保存 textarea 和选项状态
   // 监听 input 事件，每次输入都保存，避免轮询导致内容丢失
@@ -2783,6 +2830,11 @@ if (typeof window !== "undefined") {
     closeTask,
     initMultiTaskSupport,
     refreshTasksList,
+    // R123：暴露健康检查的启停 API，让 testing / 嵌入场景能显式
+    // 控制后台 timer 生命周期，避免 jsdom 测试 leak、Storybook
+    // hot-reload 残留旧 interval 等问题。
+    startTasksHealthCheck,
+    stopTasksHealthCheck,
     get sseConnected() {
       return _sseConnected;
     },

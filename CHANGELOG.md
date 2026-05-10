@@ -179,6 +179,95 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R123** — **(perf + correctness)** fix `multi_task.js` health-check
+  `setInterval` orphan: assign the returned interval-id to
+  `window.tasksHealthCheckTimer` and gate it through symmetric
+  `startTasksHealthCheck` / `stopTasksHealthCheck` lifecycle
+  functions; wire `visibilitychange` (hidden) and `beforeunload`
+  to also call `stopTasksHealthCheck` so the 30 s health-check
+  tick can actually be reclaimed.
+
+  **Background**: pre-R123 `initMultiTaskSupport` ended with
+  `setInterval(function () { ... }, 30000)` whose return value
+  was never bound. That made the timer **structurally
+  unreclaimable** — `clearInterval` requires the id, and there
+  was none to pass.
+
+  Two failure modes followed:
+
+  1. **Background tab CPU/scheduler waste** — `visibilitychange`
+     stopped polling but the 30 s health-check timer kept
+     ticking; macOS / iOS Safari throttles hidden-tab
+     `setInterval` to ~1 Hz but does *not* halt it, so each tick
+     still cost a callback dispatch + `if (document.hidden)
+     return` early-out. On a long-lived sidebar (typical for
+     "AI agent waits 4 hours for human reply" workflows) this
+     adds up. More importantly, the "early-out" branch hides
+     the symptom from any developer who only checks "did the
+     UI freeze?".
+  2. **Latent leak when `initMultiTaskSupport` is called more
+     than once** — the `app.js` `loadConfig().then(...)` /
+     `.catch(setTimeout(...))` shape is mutex today, but any
+     future "reconnect → re-init" path (already partly
+     contemplated by R20.11 mDNS-async-publish + the new
+     SSE/poll fallback machinery) would silently spawn a second
+     30 s timer that would **also** call `startTasksPolling` /
+     `_connectSSE` on its own ticks — racing with the originals
+     and eventually reaching a steady state of "polling +
+     SSE-reconnect chatter doubles every reload of
+     `initMultiTaskSupport`". Hard to debug because each tick
+     looks correct in isolation.
+
+  **R123 fix**:
+  - Add `window.tasksHealthCheckTimer = null` to the file-top
+    `if (typeof window... === "undefined")` block, parallel to
+    `tasksPollingTimer` / `newTaskHintTimer`.
+  - Extract two top-level functions:
+    - `startTasksHealthCheck()` — early-return if a timer
+      already exists (idempotent), otherwise
+      `window.tasksHealthCheckTimer = setInterval(...)`.
+    - `stopTasksHealthCheck()` —
+      `clearInterval(window.tasksHealthCheckTimer)` + assign
+      `null` (idempotent).
+  - Replace the inline `setInterval(...)` in
+    `initMultiTaskSupport` with a call to
+    `startTasksHealthCheck()`.
+  - In the `visibilitychange` handler, call
+    `stopTasksHealthCheck()` on the `hidden` branch and
+    `startTasksHealthCheck()` on the visible branch (matching
+    the existing `stopTasksPolling` / `startTasksPolling`
+    pair).
+  - In `beforeunload`, call `stopTasksHealthCheck()` after
+    `stopTasksPolling()` to avoid timer-ref leaks in jsdom /
+    SPA-embed scenarios where the same `window` outlives the
+    page.
+  - Export `startTasksHealthCheck` / `stopTasksHealthCheck`
+    from `window.multiTaskModule` so testing harnesses /
+    Storybook can drive the lifecycle deterministically.
+
+  **Tests**: `tests/test_tasks_health_check_lifecycle_r123.py`
+  (NEW, 8 cases across 5 invariants):
+   - **Timer-handle binding** — `setInterval` return value
+     must be assigned to `window.tasksHealthCheckTimer`;
+     `stopTasksHealthCheck` must `clearInterval` and re-assign
+     null; the global must have a default `= null`
+     initialisation.
+   - **`visibilitychange` hidden-branch** — must call
+     `stopTasksHealthCheck()` (regression-lock against
+     "stopped polling but forgot health-check").
+   - **`beforeunload` handler** — must call both
+     `stopTasksPolling()` and `stopTasksHealthCheck()`.
+   - **Export surface** — `multiTaskModule` must export both
+     `startTasksHealthCheck` and `stopTasksHealthCheck`.
+   - **No-bare-setInterval-in-init** — reverse-lock: scan
+     `initMultiTaskSupport` body, fail if any literal
+     `setInterval(` call is present (forces all health-check
+     setup to route through the named function).
+
+  **Verification**: 8/8 new tests pass; 4015 existing tests
+  pass; `uv run python scripts/ci_gate.py` exits 0 (still
+  green after the R-PRE prereq commit unblocked the pipeline).
+
 - **R122** — **(security + UX)** unify the three front-end
   `SUPPORTED_IMAGE_TYPES` MIME whitelists and remove `image/svg+xml`
   from all of them; bring `validation-utils.js` up to parity with
