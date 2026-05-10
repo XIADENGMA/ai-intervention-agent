@@ -8761,3 +8761,58 @@ code,
   padding: 0 0.3em;
   border-radius: 3px;
 }
+
+/* R152 — Activity dashboard subsection in settings.
+   Collapsed by default (toggle button hides ``#activity-dashboard-body``);
+   when expanded we render a ``<dl>`` with one ``<div>`` per stat row,
+   styled as a two-column grid (label / value).  Same visual language as
+   ``.self-test-history`` so the two subsections feel like one settings
+   panel. */
+.activity-dashboard-body {
+  margin: 0.5rem 0 0 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-secondary);
+  border-radius: 6px;
+}
+
+.activity-dashboard-body[hidden] {
+  display: none;
+}
+
+.activity-dashboard-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 0.6rem;
+  padding: 0.2rem 0;
+  align-items: baseline;
+}
+
+.activity-dashboard-row + .activity-dashboard-row {
+  border-top: 1px dashed var(--border-secondary);
+}
+
+.activity-dashboard-label {
+  margin: 0;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.activity-dashboard-value {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+/* Stale rows: the corresponding fetch failed this poll cycle.  Dim the
+   value and add a subtle "(stale)" affordance via the ``::after``
+   pseudo-element so screen-readers still hear the actual value. */
+.activity-dashboard-stale .activity-dashboard-value {
+  opacity: 0.55;
+  font-style: italic;
+}

@@ -1333,6 +1333,10 @@ class WebFeedbackUI(
             "notification_test_button_version": _compute_file_version(
                 str(static_dir / "js" / "notification_test_button.js")
             ),
+            # R152: activity dashboard 模块版本号
+            "activity_dashboard_version": _compute_file_version(
+                str(static_dir / "js" / "activity_dashboard.js")
+            ),
             "inline_locale_json": inline_locale_json,
         }
 

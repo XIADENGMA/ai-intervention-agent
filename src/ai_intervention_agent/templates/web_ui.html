@@ -1551,6 +1551,58 @@
                     provider; cross-check delivery via /api/system/health.
                   </div>
                 </div>
+                <!-- R152 — Activity dashboard subsection: aggregates
+                     /api/system/health + /api/system/sse-stats +
+                     /api/tasks + /api/system/recent-logs into a
+                     glanceable settings tile.  Collapsed by default
+                     (aria-expanded="false" + [hidden] on body); when
+                     opened, polls every POLL_MS_DEFAULT (5s) and
+                     pauses on document.hidden. -->
+                <div class="setting-item" id="activity-dashboard">
+                  <button
+                    id="activity-dashboard-toggle"
+                    type="button"
+                    class="btn btn-secondary"
+                    aria-controls="activity-dashboard-body"
+                    aria-expanded="false"
+                  >
+                    <svg
+                      class="btn-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <path d="M3 3v18h18" />
+                      <path d="M7 14l4-4 4 4 6-6" />
+                    </svg>
+                    <span data-i18n="settings.activityDashboardToggle"
+                      >Activity dashboard</span
+                    >
+                  </button>
+                  <dl
+                    id="activity-dashboard-body"
+                    class="activity-dashboard-body"
+                    role="region"
+                    aria-labelledby="activity-dashboard-toggle"
+                    aria-live="polite"
+                    hidden
+                  ></dl>
+                  <div
+                    style="
+                      margin-top: 0.3rem;
+                      color: var(--text-secondary);
+                      font-size: 0.78rem;
+                    "
+                    data-i18n="settings.activityDashboardHint"
+                  >
+                    Live snapshot of task queue, SSE bus, notification
+                    health, and recent logs.  Polls every 5 seconds while
+                    open; pauses when the tab is in the background.
+                  </div>
+                </div>
                 <div class="setting-item">
                   <button class="btn btn-secondary" id="reset-settings-btn">
                     <svg
@@ -2070,6 +2122,14 @@
     <script
       defer
       src="/static/js/notification_test_button.js?v={{ notification_test_button_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <!-- R152 — Activity dashboard subsection: aggregate / poll
+         server stats endpoints into a settings-panel tile. -->
+    <script
+      defer
+      src="/static/js/activity_dashboard.js?v={{ activity_dashboard_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
