@@ -1200,40 +1200,16 @@ function refreshPageSafely() {
   }
 }
 
-// ==================================================================
-// 内容轮询 - 已停用
-// ==================================================================
+// R129：``stopContentPolling`` 是历史遗留 API 的"安全空实现"——
+//   - 内容轮询已迁移到 ``multi_task.js`` 的任务轮询；
+//   - ``closeInterface()`` 仍然在调用本函数，删除会引入 ReferenceError。
 //
-// 说明：
-//   内容轮询功能已完全由 multi_task.js 的任务轮询接管。
-//   此处仅保留空实现，防止被其他代码调用时报错。
-//
-// 历史原因：
-//   原设计中 app.js 负责轮询 /api/config 检测内容变化，
-//   但与 multi_task.js 的 /api/tasks 轮询存在冲突，
-//   导致 textarea 内容被意外清空。
-//
-// 解决方案：
-//   1. 停用 app.js 轮询，由 multi_task.js 统一管理
-//   2. multi_task.js 实现了实时保存机制
-// ==================================================================
-
-/**
- * 停止内容轮询（空实现）
- *
- * 保留此函数是因为 closeInterface() 会调用它。
- * 实际轮询由 multi_task.js 的 stopTasksPolling() 管理。
- */
+// 因此保留 no-op 函数本体作为"调用合约稳定层"，但把
+// pre-R129 的两段超长 banner 注释（"内容轮询-已停用"+"updatePageContent
+// 已删除"）合并成这条 5 行说明，避免 30+ 行的"墓碑"持续干扰阅读。
 function stopContentPolling() {
-  // 轮询已停用，此函数不执行任何操作
   console.log("[app.js] stopContentPolling called, but polling is disabled");
 }
-
-// updatePageContent() 已删除
-// 页面内容更新现在完全由 multi_task.js 的以下函数处理：
-//   - loadTaskDetails(): 加载任务详情
-//   - updateDescriptionDisplay(): 更新描述区域
-//   - updateOptionsDisplay(): 更新选项区域
 
 // NotificationManager 已拆分到 notification-manager.js
 // 全局实例 notificationManager 由该文件创建
@@ -1351,23 +1327,19 @@ function initializeApp() {
         prompt_length: config.prompt ? config.prompt.length : 0,
       });
 
-      // 【优化】停用 app.js 内容轮询，使用 multi_task.js 的任务轮询统一管理
-      // 原因：两个轮询系统会导致 textarea 内容被意外清空
-      // startContentPolling() // 已停用
-
-      // 初始化多任务支持（内含任务轮询）
+      // R129：本路径只调用 ``initMultiTaskSupport``——legacy 的
+      // ``app.js`` 内容轮询已迁移到 ``multi_task.js``；保留 catch
+      // 兜底是为了配置加载失败时仍能初始化任务面板（用 setTimeout
+      // 给浏览器留出 console.error 渲染窗口，让用户先看到错误再看
+      // 到面板，避免错误瞬间被覆盖）。
       if (typeof initMultiTaskSupport === "function") {
         initMultiTaskSupport();
       }
     })
     .catch((error) => {
       console.error("Config load failed:", error);
-      // 即使配置加载失败，也尝试初始化多任务支持
       setTimeout(() => {
         console.log("Config load failed, delayed multi-task init…");
-        // startContentPolling() // 已停用
-
-        // 初始化多任务支持（内含任务轮询）
         if (typeof initMultiTaskSupport === "function") {
           initMultiTaskSupport();
         }

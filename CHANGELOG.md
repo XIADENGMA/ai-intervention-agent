@@ -179,6 +179,67 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R129** — **(readability)** purge dead-code tombstone comments
+  from `static/js/app.js` while keeping all live behaviour intact.
+
+  **Background**: `app.js` accumulated three classes of "RIP"
+  scaffolding from earlier refactors:
+
+  1. **A 28-line banner block** announcing "内容轮询 - 已停用"
+     (lines 1203–1219 pre-R129) explaining why `stopContentPolling`
+     became a no-op. Useful once; thereafter pure noise on every
+     read.
+  2. **A "updatePageContent() 已删除" stub comment** (lines
+     1232–1236 pre-R129) listing the three `multi_task.js`
+     functions that replaced it. Anyone who needs that mapping
+     today can `git log -S updatePageContent` in 2 s.
+  3. **Two duplicated `// startContentPolling() // 已停用`
+     drop-stubs** in the `loadConfig().then()` (line 1356 pre-R129)
+     and `.catch()` (line 1368 pre-R129) paths — explicitly
+     showing a function call that *isn't being made*. Negative
+     evidence rarely belongs in production source.
+
+  **R129 fix**:
+  - Replace the 28-line banner with a **5-line explanation**
+    pinned directly above `function stopContentPolling()` —
+    keeping the *one* genuinely useful invariant ("function
+    must remain because `closeInterface()` calls it") and
+    dropping the historical narrative.
+  - Delete the `updatePageContent() 已删除` stub block entirely.
+  - Replace both `// startContentPolling() // 已停用` lines with
+    a positive-form note explaining what *is* happening: the
+    `loadConfig` chain delegates init to `multi_task.js`, with a
+    3 s `setTimeout` in the catch branch giving the browser
+    `console.error` a render window before the panel renders.
+  - **Crucially**: keep `function stopContentPolling()` itself
+    intact — `closeInterface()` (line ~1151) still calls it; if
+    we drop the function we get
+    `ReferenceError: stopContentPolling is not defined` mid-
+    close-flow. R129 is about killing tombstones, not behaviour.
+
+  **Tests**: `tests/test_app_js_dead_comment_purge_r129.py`
+  (NEW, 7 cases / 4 invariant classes — all *reverse-locks*):
+  - **No `startContentPolling()` tombstone form** (2): the
+    literal `// startContentPolling() // 已停用` regex must not
+    match anywhere; the bare token `startContentPolling` may
+    appear at most once in the file (allowing a future R129
+    revisit comment to mention it without breaking the lock).
+  - **No `updatePageContent` tombstone** (2): same shape — the
+    `// updatePageContent() 已删除` regex banned, token count
+    capped at 1.
+  - **No 3+ consecutive `// ====...` lines** (1): historical
+    pre-R129 banner notes used 3-line `// === / // === foo / // ===`
+    layouts. Capping consecutive banner lines at 2 prevents
+    fresh tombstones from sneaking in via copy-paste.
+  - **Close-flow contract preserved** (2): `function stopContentPolling()`
+    still defined; `closeInterface()` still calls it. If a future
+    contributor drops either, this test fires before they ship
+    the broken close-button.
+
+  **Verification**: 7/7 new R129 tests pass; existing R22.3,
+  R123, R128 tests pass; full `uv run python scripts/ci_gate.py`
+  exits 0.
+
 - **R128** — **(perf)** stop `startTaskCountdown`'s 1 Hz `setInterval`
   callback from doing pointless DOM writes when the page is hidden,
   and add a `visibilitychange` → `forceUpdateAllTaskCountdowns`
