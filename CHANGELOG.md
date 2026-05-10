@@ -179,6 +179,86 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R125b** — **(feature)** Web UI 顶栏新增「Export Tasks」下载按钮，
+  把 R125 后端导出 API 暴露给浏览器用户，无需 curl 即可一键备份当前
+  会话快照。
+
+  **背景**：R125 已经实现 `GET /api/tasks/export?format={json,markdown}`
+  并在 CHANGELOG 中预告 "follow-up R125b will surface this endpoint
+  in the Web UI"。在 R125b 之前，桌面端用户必须手动拼接 URL 才能下
+  载快照——和"Multi-Task / Settings 都是按钮一键调用"的产品基线
+  不一致；并且 TaskQueue 完成态保留窗口只有 10 s，错过窗口快照就
+  消失了。R125b 把按钮放到顶栏 `header-actions` 内、theme toggle
+  和 settings 之间的固定位置，让操作路径和「切主题」、「打开设置」
+  保持同样的肌肉记忆。
+
+  **实现要点**：
+
+  1. **HTML（`templates/web_ui.html`）** — 用 `<a download
+     href="/api/tasks/export?format=markdown">` 而不是 `<button>`：
+     原生 `download` 属性让浏览器尊重后端的
+     `Content-Disposition: attachment; filename=...` 响应头，
+     不需要任何 JS 也能正常落盘；`href` 默认指向
+     `?format=markdown`，因为 Markdown 形态对人类阅读和分享更
+     友好（JSON 形态由 curl/CLI 用户继续直访）。
+     按钮内嵌一个下载箭头 SVG（`viewBox="0 0 24 24"`，
+     `currentColor` 着色，与 settings/theme 图标视觉权重一致），
+     并通过 `data-i18n-aria-label` / `data-i18n-title` 把所有文案
+     都纳入现有的 i18n 管线。
+
+  2. **i18n（3 份 locale）** — 同时更新 `zh-CN.json`、`en.json`
+     和自动派生的 `_pseudo/pseudo.json`：
+     - `exportTasksBtn`: 中文 `导出任务`、英文 `Export Tasks`、
+       pseudo 自动生成。
+     - `exportTasksBtnAriaLabel`: 中文 `导出当前会话任务为 Markdown
+       文件`、英文 `Export current session tasks as a Markdown
+       file`、pseudo 自动生成。
+     更新后由 `scripts/gen_pseudo_locale.py` 重新生成 `_pseudo`
+     locale，保证 `scripts/ci_gate.py` 的
+     `--check` 不再报 `stale pseudo.json`。
+
+  3. **CSS（`static/css/main.css`）** — 把 `.export-btn` 选择器
+     合并进所有现有 settings/theme 按钮的 selector list，
+     **零新增样式块**就拿到完整的 hover / active / focus / 浅色
+     主题适配。同时显式覆盖 `:visited`：
+     ```css
+     .export-btn:visited { color: inherit; text-decoration: none; }
+     ```
+     原因——`<a>` 默认 `:visited` 是紫色 + 下划线，导致下载过
+     一次后按钮颜色和图标都会变 ugly；显式重置确保按钮永远
+     和它旁边的 `<button>` 视觉一致。
+
+  4. **预压缩静态资源（`.gz`/`.br`）** — `main.css.gz`、
+     `main.css.br`、`main.min.css.gz/.br`、`zh-CN.json.gz/.br`、
+     `en.json.gz/.br`、`_pseudo/pseudo.json.gz/.br` 全部通过
+     现有 build pipeline 重新打包，避免 `Content-Encoding:
+     gzip|br` 响应路径返回旧版资产。
+
+  **测试**：`tests/test_export_button_ui_r125b.py`（NEW，
+  16 cases / 5 invariant classes）：
+  - **HTML 结构**（5）：
+    `id="export-tasks-btn"` 存在、`<a download>` 标签使用
+    （非 `<button>`、非空 `download`）、`href` 指向
+    `/api/tasks/export?format=markdown`、内嵌 SVG 图标存在、
+    按钮挂在 `header-actions` 内 theme toggle 之后 settings 之前。
+  - **i18n 完整性**（3）：`zh-CN.json` / `en.json` /
+    `_pseudo/pseudo.json` 三份 locale 都包含
+    `exportTasksBtn` 和 `exportTasksBtnAriaLabel` 两个键。
+  - **CSS 视觉对齐**（3）：`.export-btn` 出现在 settings/theme
+    现有 selector list 中、`.export-btn:visited` 重置规则
+    存在、浅色主题选择器 list 也包含 `.export-btn`。
+  - **i18n 标记**（2）：HTML 中按钮节点带
+    `data-i18n-aria-label="exportTasksBtnAriaLabel"` 与
+    `data-i18n-title="exportTasksBtn"` 标记，确保运行时切换语言
+    时按钮文案能被 `i18n.applyTranslationsToDOM()` 替换。
+  - **回归保护**（3）：theme toggle 按钮仍然存在、settings
+    按钮仍然存在、`.settings-btn` 的样式块没有被合并破坏。
+
+  **验证**：16/16 新 R125b 测试通过；既有 4055 用例零回归；
+  `uv run python scripts/ci_gate.py` exits 0；浏览器手动验证
+  确认点击按钮即触发原生下载、浏览过的状态颜色与 settings
+  按钮一致、深浅主题切换无视觉脱节。
+
 - **R125** — **(feature)** new `GET /api/tasks/export?format={json,markdown}`
   endpoint for full-fidelity session-history export.
 

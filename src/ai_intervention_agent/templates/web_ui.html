@@ -314,6 +314,37 @@
               />
             </svg>
           </button>
+          <a
+            class="export-btn"
+            id="export-tasks-btn"
+            href="/api/tasks/export?format=markdown"
+            download
+            data-i18n-title="page.exportTasksBtn"
+            data-i18n-aria-label="page.exportTasksBtnAriaLabel"
+            title="Export tasks (Markdown)"
+            aria-label="Download current task list as a Markdown file"
+            role="button"
+          >
+            <!-- R125b 下载图标：方向向下的箭头 + 横线（"download to"），
+                 与 header-actions 内 theme-toggle / settings 视觉权重对齐：
+                 1.5 stroke-width，currentColor 跟随主题，无填充。 -->
+            <svg
+              class="btn-icon"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </a>
           <button
             class="settings-btn"
             id="settings-btn"

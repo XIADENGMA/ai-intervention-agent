@@ -17,6 +17,8 @@
     "themeToggle": "切换主题",
     "settingsBtn": "通知设置",
     "settingsBtnAriaLabel": "打开通知设置",
+    "exportTasksBtn": "导出任务（Markdown）",
+    "exportTasksBtnAriaLabel": "下载当前任务列表为 Markdown 文件",
     "taskList": "任务列表",
     "closeWebUI": "关闭 Web UI",
     "clearAllImages": "清除所有图片",

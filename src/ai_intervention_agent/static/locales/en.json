@@ -17,6 +17,8 @@
     "themeToggle": "Toggle theme",
     "settingsBtn": "Notification settings",
     "settingsBtnAriaLabel": "Open notification settings",
+    "exportTasksBtn": "Export tasks (Markdown)",
+    "exportTasksBtnAriaLabel": "Download current task list as a Markdown file",
     "taskList": "Task list",
     "closeWebUI": "Close Web UI",
     "clearAllImages": "Clear all images",
