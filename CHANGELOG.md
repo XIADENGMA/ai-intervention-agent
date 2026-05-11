@@ -11,6 +11,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R170** — **`check_i18n_duplicate_values.py` allowlist 收录 `"Cancel"`,
+  把唯一一条 informational WARN 收口到 0**。脚本本身 exit 0 不阻断 CI，
+  但终端输出"1 duplicate value group(s) found above MIN_LEN=6"会被本仓
+  "0 warning / 0 error" QA 原则计为污染。`page.cancel`（通用对话框「取消」）
+  和 `quickPhrases.formCancel`（Quick Phrases feature form 内「取消编辑」）
+  属于不同 feature 命名空间 —— 完美匹配 ALLOWLIST_VALUES 现有设计意图
+  （"按 feature 而非 ui-element 命名" intlpull.com 2026 规约）。合并到
+  单一 `common.cancel` 会让 Quick Phrases form 改 button 文案时必须改全 app
+  的「取消」对话框，违反封装原则。落地：
+  - `scripts/check_i18n_duplicate_values.py` `ALLOWLIST_VALUES` 集合加入
+    `"Cancel"`，并附 11 行注释解释为什么不合并到 `common.cancel`。
+  - `python3 scripts/check_i18n_duplicate_values.py` 现在输出
+    `OK: no duplicate locale values above threshold`，0 WARN。
+  - `test_i18n_duplicate_values.py` 7 个测试照常通过，证明 allowlist
+    机制本身（`test_allowlist_suppresses_warning`）依然按预期工作。
+  - 工程口径：项目维护"0 warning / 0 error"输出洁净度，让真信号不被
+    噪声淹没。R170 这种"无功能改动、纯 lint allowlist 调整"也走 CHANGELOG
+    + R-tag，是 v1.5.x 系列的一致约定。
+
 - **R169** — **精简 README，把"工作原理 / 架构图 / 中间件 / 自检 resource /
   MCP 协议规范支持"等技术深细节迁移到 `docs/api{,.zh-CN}/index.md`**。
   TODO 任务 5 要求："`README.md` 主要特性内容太杂，技术细节下沉到 docs"。

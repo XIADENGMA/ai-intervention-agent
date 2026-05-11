@@ -52,6 +52,13 @@ MIN_LEN = 6
 # - 合并这些 key 会破坏 intlpull.com 命名规约（feature.component.modifier）
 ALLOWLIST_VALUES: frozenset[str] = frozenset(
     {
+        # Web UI: page 通用对话框「取消」按钮（``page.cancel``） vs
+        # quickPhrases feature form 内的「取消编辑」按钮
+        # （``quickPhrases.formCancel``）。两条 key 同 feature 演进路径独立，
+        # 合并到单一 ``common.cancel`` 会让 quickPhrases form 改 button
+        # 文案时必须改全 app 的「取消」对话框——违反 intlpull.com 2026
+        # "feature-namespaced over ui-element-namespaced" 命名规约。
+        "Cancel",
         # Web UI: status 与 page 两个命名空间下的通用动作反馈
         "Copied",
         "Copy failed",
