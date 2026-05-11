@@ -9,6 +9,77 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.6.3] — 2026-05-12
+
+> Patch release on top of v1.6.2. Headline content (sorted by user
+> impact):
+>
+> * **Reliability** — R165 fixes a 7-month-old feedback-loss footgun
+>   in `wait_for_task_completion` (TimeoutError + `return` inside
+>   `except` blocked `finally` retry-before-close from overriding
+>   the resubmit response). Five-stage exponential-backoff retry
+>   (0/100/250/500/1000 ms) now lets real user feedback always win
+>   over the timeout fallback. Plus R165's web-side counterpart:
+>   `/api/tasks/<id>/close` returns `skipped: True` on COMPLETED
+>   tasks instead of deleting the result.
+>
+> * **Limits** — R166 raises message / prompt / option length caps
+>   from the pre-R166 numbers (10000 / 10000 / 500) to (100000 /
+>   1_000_000 / 10000). Hand-input, auto-submit, and prompt-suffix
+>   all share the higher ceiling; everywhere the limit is surfaced
+>   to humans (textarea `maxlength`, i18n hints, schema docstrings,
+>   `data-i18n-html` fallback text, LRU-cache docstrings) was
+>   tracked down and synced.
+>
+> * **MCP API simplification** — R167 removes the legacy
+>   `predefined_options_defaults` parallel-array shape; consumers
+>   should pass `list[dict]` of `{label, default}` (or `list[str]`
+>   when no recommendation is needed). R173 adds an 11-case smoke
+>   test that locks parsing-parity between the MCP path and the
+>   HTTP path so the dual-input design doesn't drift.
+>
+> * **README polish** — R168 standardises `*.tmp.md` for single-
+>   cycle code-review artifacts; R169 sinks five "how it works /
+>   architecture / production-grade middleware / server self-info /
+>   MCP-spec compliance" sections from README into
+>   `docs/api(.zh-CN)/index.md` (cleaner top page for new users);
+>   R170 allowlists the legitimate "Cancel" i18n duplicate;
+>   R171 trims README header badges 10 → 5 with logos and
+>   relocates the rest to topical sections.
+>
+> * **Internationalisation completeness** — R175 splits all five
+>   `.github/` governance docs into EN / zh-CN pairs by the README
+>   pattern; R176 adds the missing `docs/noise-levels.md` English
+>   mirror (last orphan-Chinese doc closed).
+>
+> * **Guardrails + zero-warning sprint** — R174 lands a CSS quote-
+>   consistency baseline guard (main.css 0-baseline); R177 fixes
+>   the link-rot guard to skip inline + fenced code-block markdown
+>   examples; R178 expands the CSS quote guard to
+>   `tri-state-panel.css` (CR#11 §F-3 closeout); R179 closes three
+>   `ci_gate.py` footguns in one commit — generator index drift
+>   (the R169 hand-authored prefix was being silently regarded as
+>   "drift" for ~7 months because doc-only commits skip the
+>   `paths-ignore: docs/**` CI matrix), five `ty` diagnostics, and
+>   a single-quote-bound regex assertion from R125b. This release
+>   is the **first time post-R76 (`src/` layout migration) that
+>   `uv run python scripts/ci_gate.py` runs to clean SUCCESS** —
+>   zero warning, zero error, 4972 passed + 2 skipped under
+>   `pytest -W error`.
+>
+> * **Reviewer discipline** — CR#10 (R155 → R172), CR#11
+>   (R173 → R176), and CR#12 (R177 → R179) doc artifacts each
+>   close their own follow-up items within the same cycle they
+>   were opened. CR#12 in particular closes CR#11 §F-1 (R177) and
+>   §F-3 (R178) immediately, plus CR#12's own §F-1 (audit) and
+>   §F-2 (escape hatch) before tagging.
+>
+> No breaking API changes for end-users. The MCP schema change
+> (R167) is documented and the migration is "use `list[dict]`
+> instead of the parallel array" — clients that still send the
+> removed field will receive a clear `additionalProperties: false`
+> ToolError from FastMCP.
+
 ### Added
 
 - **CR#12** — **Code Review #12 (post-R177 → R179 + 2 chores)** 文档落地，
