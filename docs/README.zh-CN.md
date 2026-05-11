@@ -39,9 +39,9 @@
 
 ## 运维 · 在真实机器上跑
 
-- [`noise-levels.zh-CN.md`](noise-levels.zh-CN.md) — aria-live /
-  toast / 日志 / 状态栏「四通道广播级别」约定。新增事件该用什么
-  级别（quiet / assert / polite）前必读。
+- [`noise-levels.zh-CN.md`](noise-levels.zh-CN.md) · [`noise-levels.md`](noise-levels.md)
+  — aria-live / toast / 日志 / 状态栏「四通道广播级别」约定。新增事件该用
+  什么级别（quiet / assert / polite）前必读。
 
 ## 审计者 · 审安全或发布
 

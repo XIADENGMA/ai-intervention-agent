@@ -42,10 +42,10 @@ Find your role below to jump straight to the page you need.
 
 ## Operators · running it on a real machine
 
-- [`noise-levels.zh-CN.md`](noise-levels.zh-CN.md) — broadcast-level
-  contract for aria-live / toast / log / status-bar. Required
-  reading before you decide whether a new event should be `quiet` /
-  `assert` / `polite`.
+- [`noise-levels.md`](noise-levels.md) · [`noise-levels.zh-CN.md`](noise-levels.zh-CN.md)
+  — broadcast-level contract for aria-live / toast / log / status-bar.
+  Required reading before you decide whether a new event should be
+  `quiet` / `assert` / `polite`.
 
 ## Reviewers · auditing security or releases
 
