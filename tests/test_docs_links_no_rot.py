@@ -35,6 +35,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 用 negative-lookbehind ``(?<!!)`` 排除 ``!`` 前缀的图片语法。
 _MD_LINK_RE = re.compile(r"(?<!!)\[(?P<label>[^\]]*)\]\((?P<target>[^)]+)\)")
 
+# R177 / CR#11 F-1：strip 掉 inline code（单反引号 ``...``）防止形如
+# ``[label](./xxx.zh-CN.md)`` 的示例占位符被误识别为真实 link。Markdown 渲染
+# 时反引号内的内容是字面 code，不会被解析成 link；本测试 line-by-line 扫描
+# 时缺乏这种上下文，需要主动剥掉。
+#
+# 模式：``[^`]*`` 匹配反引号之间的任意非反引号内容（典型场景：``[xxx](yyy)``
+# 占位符整体被一对反引号包裹）。不处理 escape 后的反引号 ``\``\` —— 项目里
+# 没有这种用法。
+_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+
 # 不需要 fs 校验的 link target 前缀
 _EXTERNAL_PREFIXES: tuple[str, ...] = (
     "http://",
@@ -120,10 +130,27 @@ def _extract_local_targets(md_file: Path) -> list[tuple[int, str]]:
     1. 外部 URL（http://、mailto: 等前缀）
     2. 纯 fragment（``#section``）
     3. 不像路径的目标（regex 字面量、变量占位符等 false positive）
+    4. **R177 / CR#11 F-1**：fenced code block（``` ``` ``` ```）与 inline
+       code（``` `...` ```）内的 markdown-link-shape 字符串 —— 这些是文档
+       的「示例占位符」，markdown 渲染时不会解析成真实 link；本测试也应该
+       同步忽略。
     """
     targets: list[tuple[int, str]] = []
     text = md_file.read_text(encoding="utf-8")
-    for line_no, line in enumerate(text.splitlines(), start=1):
+    in_fence = False  # 状态机：当前是否在 fenced code block 内
+    for line_no, raw_line in enumerate(text.splitlines(), start=1):
+        # R177 状态机：fenced code block 用 ``` ``` 三连反引号定界。简化处
+        # 理：以 ``` ``` 开头的行（前缀空白可选）整段开关 fence。markdown
+        # 规范允许 fence 内嵌空格 + 语言标签（```python），都是合法 fence。
+        stripped = raw_line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        # 行内 inline code 剥掉（``...``）—— 这样 ``[label](./xxx.md)`` 这种
+        # 占位符整体被反引号包裹时不会进 _MD_LINK_RE。
+        line = _INLINE_CODE_RE.sub("", raw_line)
         for match in _MD_LINK_RE.finditer(line):
             target = match.group("target").strip()
             if not target:
@@ -182,6 +209,80 @@ class TestDocsLinksDoNotRot(unittest.TestCase):
                 f"修复方法：核对每个 target 的实际路径；如果是已重命名 / "
                 f"已删除文件，更新 md 引用或保留一个 stub 重定向。"
             )
+
+    def test_inline_code_link_is_ignored(self) -> None:
+        """R177 / CR#11 F-1：``[label](./xxx.md)`` 在 inline code 内不被检查。
+
+        Markdown 渲染时反引号包裹的内容是字面 code，浏览器不会跳转。本测
+        试也应该同步忽略 —— 否则 CHANGELOG / code-review doc 写 markdown 链
+        接占位符示例时会被误报为 broken link。
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_md = Path(tmp) / "test_inline_code.md"
+            tmp_md.write_text(
+                "Examples of fake links inside inline code:\n"
+                "* `[demo](./nonexistent.md)` — should NOT be checked\n"
+                "* `[xxx](./xxx.zh-CN.md)` — should NOT be checked either\n",
+                encoding="utf-8",
+            )
+            targets = _extract_local_targets(tmp_md)
+        self.assertEqual(
+            targets,
+            [],
+            "inline code 内的 markdown 链接占位符不应进入校验队列",
+        )
+
+    def test_fenced_code_block_link_is_ignored(self) -> None:
+        """R177 / CR#11 F-1：``[label](./xxx.md)`` 在 fenced code block 内不被检查。
+
+        三连反引号开 / 关 fence；fence 内是字面 code，含 markdown link
+        语法的字符串不会被渲染成 link，本测试也跳过。
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_md = Path(tmp) / "test_fenced_code.md"
+            tmp_md.write_text(
+                "Real link: [README](./README.md)\n"
+                "Fenced example:\n"
+                "```\n"
+                "[demo](./nonexistent.md)\n"
+                "[other](./also-nonexistent.zh-CN.md)\n"
+                "```\n"
+                "More prose here.\n",
+                encoding="utf-8",
+            )
+            targets = _extract_local_targets(tmp_md)
+        # 只有 fence 外的 [README](./README.md) 应被提取
+        self.assertEqual(
+            [t for _, t in targets],
+            ["./README.md"],
+            "fenced code block 内的 markdown 链接占位符不应进入校验队列",
+        )
+
+    def test_real_link_outside_inline_code_is_still_checked(self) -> None:
+        """R177 / CR#11 F-1：剥 inline code 不影响行内同段的真实链接。
+
+        典型场景：一行里既有 ``[real](./foo.md)`` 真实 link，又有
+        ``[fake](./xxx.md)`` 占位符 —— 真实 link 仍要被检查。
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_md = Path(tmp) / "test_mixed.md"
+            tmp_md.write_text(
+                "Example: real link [README](./README.md) coexists with "
+                "`[demo](./nonexistent.md)` placeholder on the same line.\n",
+                encoding="utf-8",
+            )
+            targets = _extract_local_targets(tmp_md)
+        self.assertEqual(
+            [t for _, t in targets],
+            ["./README.md"],
+            "剥 inline code 后真实 link 仍应被提取",
+        )
 
     def test_scan_covers_at_least_known_files(self) -> None:
         """白名单关键文档必须被扫到，防止 _SCAN_DIRS 配置漂移。"""

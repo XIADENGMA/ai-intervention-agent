@@ -44,6 +44,55 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R177** — **CR#11 F-1 落地：link-rot guard 跳过 inline code + fenced
+  code block 内的伪 markdown link**。R175 / R176 落地过程两次踩到同一个
+  trap：CHANGELOG / code-review doc 里写形如 ``[label](./xxx.zh-CN.md)``
+  的 markdown-link 占位符示例时，``tests/test_docs_links_no_rot.py`` 的
+  ``_MD_LINK_RE`` 正则不区分代码块与正文，把示例当真 link 校验、CI 红。
+  之前 R175 / chore-`1b96a47` 用"改示例写法"绕过，但 hidden footgun
+  仍在 —— CR#11 F-1 标记了这条尾巴，本提交把它一次性根治：
+  - 新增 ``_INLINE_CODE_RE`` 单反引号剥离正则（``` `[^`]*` ```），每行
+    先 ``sub`` 掉所有 inline code 段，再喂 ``_MD_LINK_RE``；
+  - ``_extract_local_targets`` 新增 fenced code block 状态机：检测以
+    ``` ``` ``` 开头的行作为开关，fence 内整段跳过 link 校验；
+  - 新增 3 个回归测试 ``test_inline_code_link_is_ignored`` /
+    ``test_fenced_code_block_link_is_ignored`` /
+    ``test_real_link_outside_inline_code_is_still_checked``，分别锁住：
+    inline code 占位符不进 queue / fence 内 link 不进 queue / 但行内
+    真实 link 仍能被提取。
+  价值：与 R66 brand color / R174 quote consistency 同模式，"防漂移成
+  本接近 0，可观察价值高"。未来任何 CHANGELOG / code-review doc 可以
+  自由地用 ``[label](./path.md)`` 格式举例 markdown link，不必担心 R80
+  link-rot guard 误伤。
+
+- **CR#11** — **Code Review #11 (post-R173 → R176)** 文档落地，跟踪
+  R173-R176 + 1 个 CHANGELOG-link-rot chore 共 5 个 commit 的整体质量评
+  估。沿用 R168 ``.tmp.md`` 命名规约（单次产物，非长期设计文档），路径
+  ``docs/code-review-r173-r176-cr11.tmp.md``。内容覆盖：
+  - **Cycle summary 表**：5 行（R173 F-3 follow-up / R174 F-1 follow-up /
+    R175 .github 拆分 / chore 1b96a47 link-rot 修复 / R176 noise-levels EN）
+    的 hash + one-liner。
+  - **Strengths 段**：列出本批次 5 大亮点 —— CR#10 follow-up 一周内
+    100% 关闭（F-1 + F-3 DONE）/ defensive testing 模式（R173 把"design
+    decision"锁在 test 里而非 refactor 共享代码）/ 引号一致性最小可行护栏
+    （R174 vs full prettier 的 cost/benefit 决策）/ TODO 长期未完成项被
+    R175 解锁 / 最后一个 orphan-Chinese 文档关闭（R176 后 README + docs +
+    .github 全部 EN-default + optional zh-CN）。
+  - **Risks 段**：4 条需要警惕的尾巴 —— EN/zh-CN 长文档翻译漂移（R176
+    §5 anchor 表的 line-number 同步未自动化）/ CHANGELOG markdown-link
+    example 是 hidden footgun（chore 1b96a47 抓到一次，下次还可能重蹈）/
+    .github/PULL_REQUEST_TEMPLATE.zh-CN.md 默认不可见（仅 query 切换）/
+    R174 baseline guard 当前只覆盖 main.css，tri-state-panel.css 未来若
+    成熟需扩展。
+  - **Follow-up 表**：F-1 ~ F-4 共 4 个 work item，每个标 Severity +
+    Owner suggestion，让 CR#12 可以直接 pick up。
+  - **Test posture 表**：列出 6 个 cycle-critical 测试 surface 的覆盖
+    率：dual-path parity (11) / CSS quote (28) / docs link rot (2,
+    must_cover 扩到 12) / noise-levels anchors (6) / locale parity / pre-
+    commit chain；全部 0 issue。
+  - **Ready-to-tag posture 段**：4 个 ✓ checkmark 表明可以 clear for
+    v1.6.4 / v1.7.0 tagging，所有 CR#10 follow-up 都已闭环。
+
 - **R176** — **`docs/noise-levels`：补齐英文版，关闭"孤儿中文文档"漏洞**。
   R175 把 `.github/` 治理文档按 README 模式拆成 EN/zh-CN 后，`docs/` 下还
   剩一个 **唯一的孤儿中文文档**：`docs/noise-levels.zh-CN.md`（362 行的
