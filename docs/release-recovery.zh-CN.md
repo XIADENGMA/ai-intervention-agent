@@ -185,6 +185,44 @@ Issue 跟踪器发条简报：
 - `scripts/bump_version.py` —— 跨 `pyproject.toml`、`package.json`、
   `uv.lock`、`package-lock.json`、`packages/vscode/package.json`、
   `CITATION.cff`、`.github/ISSUE_TEMPLATE/bug_report.yml` 的程序化
-  版本同步。
+  版本同步。**R183**：bump 时若 `CHANGELOG.md [Unreleased]` 看起来
+  为空会打 WARNING（`--warn-empty-unreleased` 默认开启；
+  `--no-warn-empty-unreleased` 抑制）。
 - `docs/troubleshooting.zh-CN.md` §12（R151） —— Open VSX
   displayName + ovsx pin 升级仪式。
+- `.github/dependabot.yml` + `automated-security-fixes`
+  （仓库级开关，**R184** 已启用）—— CVE 披露后 Dependabot 自动
+  开 PR。配合 `dependabot-auto-merge.yml` 的链路是：CVE 落地 →
+  Dependabot 开 patch-bump PR → patch/minor 自动合并 → 下个发布
+  自动带上修复。主版本仍走人工审阅（见
+  `dependabot-auto-merge.yml`）。
+
+## 安全发布捷径（R184）
+
+Dependabot 在运行时依赖上报 CVE 时，发布流程就是常规流程的
+压缩版：
+
+```bash
+# 1. 识别（Dependabot UI 或 `gh api`）：
+gh api repos/$OWNER/$REPO/dependabot/alerts --jq \
+  '.[] | select(.state == "open") | {pkg: .security_vulnerability.package.name, severity: .security_vulnerability.severity, ghsa: .security_advisory.ghsa_id}'
+
+# 2. 升依赖：
+uv lock --upgrade-package <pkg>
+# 直接依赖的话先改 pyproject.toml：
+# "foo>=X.Y.Z"  # security: GHSA-...
+
+# 3. 验证：
+uv sync --dev
+uv run pytest -W error -q
+uv run python scripts/ci_gate.py
+
+# 4. 落地 + bump：
+git commit -m ":lock: security(deps-rNNN): bump <pkg> ..."
+git push origin main
+uv run python scripts/bump_version.py X.Y.<Z+1>
+```
+
+🔒 emoji + `security(deps-...)` commit 前缀让 CVE patch 在
+`git log` 里可 grep。CHANGELOG 里的 `### Security` 区段（Keep-a-
+Changelog 约定）也让披露对下游消费者可发现。

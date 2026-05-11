@@ -9,6 +9,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R184 setup** — 在 GitHub 仓库设置启用
+  `automated-security-fixes`（之前 `disabled`）。配合
+  `dependabot-auto-merge.yml` 形成完整 CVE 响应链路：CVE 披露 →
+  Dependabot 自动 PR → patch/minor 自动合并 → 下个发布自动带
+  修复。`docs/release-recovery.{md,zh-CN.md}` 加入 "Security
+  release shortcut" 段落，把这套自动化流程文档化（含 dependabot
+  alerts 的 `gh api` 一行命令、commit 消息约定、`### Security`
+  CHANGELOG 区段约定）。
+
 ### Security
 
 - **R184** — 修复 5 个 Dependabot 上报的 CVE，全部为依赖升级

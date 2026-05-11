@@ -198,6 +198,46 @@ move?" detective work in future bisect sessions.
 - `scripts/bump_version.py` — programmatic version sync across
   `pyproject.toml`, `package.json`, `uv.lock`, `package-lock.json`,
   `packages/vscode/package.json`, `CITATION.cff`,
-  `.github/ISSUE_TEMPLATE/bug_report.yml`.
+  `.github/ISSUE_TEMPLATE/bug_report.yml`. **R183**: now also warns
+  if `CHANGELOG.md [Unreleased]` looks empty at bump time
+  (`--warn-empty-unreleased` default-on; `--no-warn-empty-unreleased`
+  suppresses).
 - `docs/troubleshooting.md` §12 (R151) — Open VSX displayName +
   ovsx pin upgrade ritual.
+- `.github/dependabot.yml` + `automated-security-fixes`
+  (repo-level toggle, **R184**: enabled) — auto-PR for CVE
+  disclosures. Combined with `dependabot-auto-merge.yml`, the
+  flow is: CVE drops → Dependabot opens patch-bump PR →
+  patch/minor auto-merge → next release picks up the fix. Major
+  bumps still go to human review (per dependabot-auto-merge.yml).
+
+## Security release shortcut (R184)
+
+When Dependabot reports a CVE on a runtime dependency, the
+release process is the standard cycle compressed:
+
+```bash
+# 1. Identify (Dependabot UI or `gh api`):
+gh api repos/$OWNER/$REPO/dependabot/alerts --jq \
+  '.[] | select(.state == "open") | {pkg: .security_vulnerability.package.name, severity: .security_vulnerability.severity, ghsa: .security_advisory.ghsa_id}'
+
+# 2. Bump the dependency:
+uv lock --upgrade-package <pkg>
+# or if it's a direct dep, edit pyproject.toml first:
+# "foo>=X.Y.Z"  # security: GHSA-...
+
+# 3. Verify:
+uv sync --dev
+uv run pytest -W error -q
+uv run python scripts/ci_gate.py
+
+# 4. Land + bump:
+git commit -m ":lock: security(deps-rNNN): bump <pkg> ..."
+git push origin main
+uv run python scripts/bump_version.py X.Y.<Z+1>
+```
+
+The "lock" emoji + `security(deps-...)` commit prefix makes the
+CVE patch grep-able in `git log`. The `### Security` section in
+CHANGELOG (Keep-a-Changelog convention) keeps the disclosure
+discoverable for downstream consumers.
