@@ -9,6 +9,19 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **CR#13** — `docs/code-review-r180-r181-cr13.tmp.md`: code-review
+  artefact for the v1.6.3 release-lifecycle rescue cycle (R180 +
+  R181). Covers the failed attempt-1 (R151 fossilisation) → clean
+  abort → R180 + R181 fixes → successful attempt-2 (5 jobs ✓:
+  PyPI, Open VSX, Marketplace skip, GitHub Release, artefacts).
+  4 follow-up items (F-1 release-recovery playbook, F-2 codeql/
+  vscode workflow audit, F-3 `bump_version.py
+  --warn-empty-unreleased`, F-4 doc-anchored→assertion-anchored
+  R181 6th-test promotion). Single-cycle `*.tmp.md` artefact per
+  R168 naming convention.
+
 ### Changed
 
 - **R181** — `.github/workflows/test.yml` no longer ignores `**/*.md`
