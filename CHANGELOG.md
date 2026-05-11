@@ -9,8 +9,82 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.6.4] — 2026-05-12
+
+> Security + release-lifecycle hardening patch on top of v1.6.3.
+> Headline content (sorted by user impact):
+>
+> * **Security** — R184 clears 5 Dependabot-reported CVEs (1 high,
+>   4 medium) by bumping `pytest 8.4.0 → 9.0.3` (GHSA-6w46-j5rx-g56g
+>   tmpdir hardening) and `mistune 3.2.0 → 3.2.1` (4 advisories:
+>   ReDoS in `LINK_TITLE_RE`, Heading ID XSS, figure XSS, math
+>   plugin XSS). Exploit path is zero in our setup (mistune is a
+>   transitive flasgger dep that only renders our own docstrings,
+>   pytest is dev-only), but every flagged advisory is now out of
+>   range. Also enables repo-level `automated-security-fixes` so
+>   future CVE disclosures land as auto-PRs.
+>
+> * **Release lifecycle resilience** — R180 + R181 (already
+>   covered in the v1.6.3 rescue story) are now formally
+>   captured in `docs/release-recovery.{md,zh-CN.md}` — a
+>   bilingual playbook for the 3 `release.yml` failure
+>   patterns, with a "Security release shortcut" runbook that
+>   condenses this R184 cycle into 4 commands. R182 wires the
+>   playbook into all four primary docs indexes (`README.md`,
+>   `README.zh-CN.md`, `docs/README.md`, `docs/README.zh-CN.md`)
+>   so future-comers find it within two clicks. R181 also
+>   removes the `paths-ignore` `**/*.md` / `docs/**` entries
+>   from `test.yml`, so the full ~5-min CI matrix now runs on
+>   doc-only commits (preventing the failure mode that bit
+>   v1.6.3 attempt #1).
+>
+> * **Developer experience** — R183 adds
+>   `bump_version.py --warn-empty-unreleased` (default-on soft
+>   guard): bump-time WARNING to stderr if `CHANGELOG.md
+>   [Unreleased]` looks empty, with `--no-warn-empty-unreleased`
+>   escape hatch for chore-only patch releases. 15-test
+>   contract covers the seven `[Unreleased]`-emptiness edge
+>   cases plus four end-to-end `main()` flows.
+>
+> * **Test infrastructure** — R180 re-anchors
+>   `test_housekeeping_r151` from the volatile `[Unreleased]`
+>   section to the persistent whole-changelog invariant (R-feature
+>   persistence under any Keep-a-Changelog category). Same three
+>   tests, root cause once. pytest 9 bonus: 620 subtests
+>   automatically detected (no new code, just better reporting).
+>
+> See `docs/code-review-r180-r181-cr13.tmp.md` (CR#13 — v1.6.3
+> release-lifecycle rescue) and `docs/code-review-r182-r184-cr14.tmp.md`
+> (CR#14 — this cycle wrap) for the full reasoning + follow-up
+> closure trail (4/4 follow-ups across two adjacent cycles).
+
 ### Changed
 
+- **CR#13 F-4** —
+  `tests/test_workflow_paths_ignore_r181.py:test_codeql_and_vscode_workflows_dont_run_doc_guards`:
+  promoted from doc-anchored `assertTrue(True)` to real assertion.
+  Asserts neither `codeql.yml` nor `vscode.yml` invokes `pytest`,
+  `ci_gate.py`, or any of 7 doc-aware test scripts
+  (`test_housekeeping`, `test_docs_links`, `test_changelog`,
+  `test_readme`, `test_generate_docs`, `check_i18n`,
+  `check_locales`). Trips if a future maintainer adds a doc-aware
+  step to those workflows, prompting them to revisit R181's
+  scope. Same 6 cases, same file, no test-count delta.
+- **R181** — `.github/workflows/test.yml` no longer ignores `**/*.md`
+  or `docs/**` in its `paths-ignore`. Originally a CI-time-saving
+  optimisation, it concealed a structural footgun: every guard the
+  repo ships for doc surfaces (`test_housekeeping_r151`,
+  `test_docs_links_no_rot`, `test_generate_docs_index_prefix_r178`,
+  README/CHANGELOG-aware tests, etc.) was inert against doc-only
+  commits. v1.6.3's release-tag CI was the canary — the bump touched
+  *only* CHANGELOG / version-strings, so `test.yml` skipped, the bug
+  rode the `v1.6.3` tag straight into `release.yml`, and the Build
+  job failed at `ci_gate.py`. Removing the blanket ignore lets
+  doc-only commits run the full ~5-min matrix; `LICENSE` and
+  `.github/ISSUE_TEMPLATE/**` (no pytest guard reads them) stay
+  ignored. New regression test
+  `tests/test_workflow_paths_ignore_r181.py` (6 cases) locks the
+  posture.
 - **R184 setup** — 在 GitHub 仓库设置启用
   `automated-security-fixes`（之前 `disabled`）。配合
   `dependabot-auto-merge.yml` 形成完整 CVE 响应链路：CVE 披露 →
@@ -84,34 +158,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   result: codeql.yml legitimate / vscode.yml uses paths: allow-
   list), F-3 (deferred to v1.7.x), F-4 (DONE, see below). Single-
   cycle `*.tmp.md` artefact per R168 naming convention.
-
-### Changed
-
-- **CR#13 F-4** —
-  `tests/test_workflow_paths_ignore_r181.py:test_codeql_and_vscode_workflows_dont_run_doc_guards`:
-  promoted from doc-anchored `assertTrue(True)` to real assertion.
-  Asserts neither `codeql.yml` nor `vscode.yml` invokes `pytest`,
-  `ci_gate.py`, or any of 7 doc-aware test scripts
-  (`test_housekeeping`, `test_docs_links`, `test_changelog`,
-  `test_readme`, `test_generate_docs`, `check_i18n`,
-  `check_locales`). Trips if a future maintainer adds a doc-aware
-  step to those workflows, prompting them to revisit R181's
-  scope. Same 6 cases, same file, no test-count delta.
-- **R181** — `.github/workflows/test.yml` no longer ignores `**/*.md`
-  or `docs/**` in its `paths-ignore`. Originally a CI-time-saving
-  optimisation, it concealed a structural footgun: every guard the
-  repo ships for doc surfaces (`test_housekeeping_r151`,
-  `test_docs_links_no_rot`, `test_generate_docs_index_prefix_r178`,
-  README/CHANGELOG-aware tests, etc.) was inert against doc-only
-  commits. v1.6.3's release-tag CI was the canary — the bump touched
-  *only* CHANGELOG / version-strings, so `test.yml` skipped, the bug
-  rode the `v1.6.3` tag straight into `release.yml`, and the Build
-  job failed at `ci_gate.py`. Removing the blanket ignore lets
-  doc-only commits run the full ~5-min matrix; `LICENSE` and
-  `.github/ISSUE_TEMPLATE/**` (no pytest guard reads them) stay
-  ignored. New regression test
-  `tests/test_workflow_paths_ignore_r181.py` (6 cases) locks the
-  posture.
 
 ### Fixed
 
