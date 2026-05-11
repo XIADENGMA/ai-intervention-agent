@@ -1561,6 +1561,16 @@ class TaskRoutesMixin:
         @self.limiter.limit("30 per minute")
         def close_task(task_id: str) -> ResponseReturnValue:
             """关闭（移除）指定任务
+
+            R165 反馈丢失防御要点（详见 ``server_feedback.py`` 的
+            ``wait_for_task_completion`` docstring）：
+
+            - COMPLETED 状态的任务在此端点 short-circuit，不真正 remove，
+              避免 MCP retry-before-close race 把带 user feedback 的 task
+              误删。COMPLETED 是终态，等同已关闭语义。
+            - 仅 ACTIVE / PENDING 任务真正走 ``remove_task``（兼容
+              R13·B1 ghost-task cleanup）。
+            - 响应包含 ``skipped``/``reason`` 字段标识 short-circuit 行为。
             ---
             tags:
               - Tasks
@@ -1571,12 +1581,18 @@ class TaskRoutesMixin:
                 required: true
             responses:
               200:
-                description: 任务已移除
+                description: 任务已关闭（COMPLETED 任务会 short-circuit 跳过删除）
                 schema:
                   type: object
                   properties:
                     success:
                       type: boolean
+                    skipped:
+                      type: boolean
+                      description: True 表示因任务已 COMPLETED 而跳过删除
+                    reason:
+                      type: string
+                      description: 当 skipped 为 True 时给出原因（如 task_completed）
               404:
                 description: 任务不存在
               500:
@@ -1584,6 +1600,24 @@ class TaskRoutesMixin:
             """
             try:
                 task_queue = get_task_queue()
+
+                existing = task_queue.get_task(task_id)
+                if existing is None:
+                    return jsonify({"success": False, "error": "任务不存在"}), 404
+
+                if existing.status == "completed":
+                    logger.info(
+                        f"任务 {task_id} 已 COMPLETED，跳过 close 删除"
+                        "（保留 result 以避免反馈丢失，后台清理线程会自动回收）"
+                    )
+                    return jsonify(
+                        {
+                            "success": True,
+                            "skipped": True,
+                            "reason": "task_completed",
+                        }
+                    )
+
                 removed = task_queue.remove_task(task_id)
 
                 if not removed:

@@ -1766,7 +1766,12 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
     def test_retry_still_failing_falls_back_to_close(
         self, mock_get_client, mock_get_cfg
     ):
-        """retry 也失败 → 走原 R13·B1 close 路径，行为完全等价于修复前。"""
+        """retry 也失败 → 走原 R13·B1 close 路径，行为完全等价于修复前。
+
+        R165：把 retry backoff 序列 patch 成 (0.0,) 一次性 retry，让本测试在
+        ~2s（外层 timeout）内完成，不需要额外等 R165 引入的 ~1.85s 退避总长。
+        语义不变：retry 仍失败 → close 路径仍被走。
+        """
         from unittest.mock import AsyncMock
 
         mock_get_cfg.return_value = (_make_config(), 120)
@@ -1789,7 +1794,12 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
         client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
         mock_get_client.return_value = client
 
-        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
+        with (
+            patch("ai_intervention_agent.server_config.BACKEND_MIN", 1),
+            patch(
+                "ai_intervention_agent.server_feedback._FETCH_RETRY_BACKOFF_S", (0.0,)
+            ),
+        ):
             result = asyncio.run(
                 server.wait_for_task_completion("t-still-pending", timeout=2)
             )
@@ -1841,6 +1851,131 @@ class TestRetryFetchBeforeClose(unittest.TestCase):
 
         self.assertEqual(result, completed_result)
         self.assertEqual(post_mock.call_count, 0, "完成路径不应触发 close（不变契约）")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  R165 — 多次指数退避 retry-before-close，覆盖更长的网络抖动窗口
+# ═══════════════════════════════════════════════════════════════════════════
+class TestRetryBackoffSequenceR165(unittest.TestCase):
+    """R165 扩展 R17.4 的单次 retry 为指数退避多次 retry。
+
+    历史 R17.4 测试覆盖的是"首次抖动 + 立即恢复"的 race；R165 测试覆盖更
+    严苛的场景：网络抖动持续若干次，必须靠多次 retry 才能拿回 result。
+    """
+
+    def setUp(self):
+        # 每条测试用例都把 backoff 序列 patch 成全 0 加快测试运行；序列本身
+        # 是 module-level 常量，patch 局部生效。
+        self._backoff_patcher = patch(
+            "ai_intervention_agent.server_feedback._FETCH_RETRY_BACKOFF_S",
+            (0.0, 0.0, 0.0, 0.0, 0.0),  # 5 次 retry，仍然测覆盖率
+        )
+        self._backoff_patcher.start()
+        self.addCleanup(self._backoff_patcher.stop)
+
+    @patch("ai_intervention_agent.service_manager.get_web_ui_config")
+    @patch("ai_intervention_agent.service_manager.get_async_client")
+    def test_retry_recovers_after_multiple_jitters(self, mock_get_client, mock_get_cfg):
+        """连续 3 次抖动 + 第 4 次恢复：R165 多次 retry 必须救回 result。
+
+        R17.4 单次 retry 无法覆盖这种持续抖动；R165 改成 5 次退避 retry 后
+        覆盖到典型的 TLS 重协商 / cellular handoff 等持续 ~1s 的抖动窗口。
+        """
+        from unittest.mock import AsyncMock
+
+        mock_get_cfg.return_value = (_make_config(), 120)
+
+        completed_result = {
+            "user_input": "持续抖动后救回的反馈",
+            "selected_options": [],
+        }
+        call_log = {"get_count": 0}
+
+        async def jittery_then_recover(*_args, **_kwargs):
+            call_log["get_count"] += 1
+            # 前 3 次抖动，第 4 次开始成功
+            # 注意：第 1 次 GET 由 _poll_fallback 触发，后续是 retry 路径
+            if call_log["get_count"] <= 3:
+                resp = MagicMock()
+                resp.status_code = 503
+                resp.json.side_effect = ValueError("transient jitter")
+                return resp
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "task": {"status": "completed", "result": completed_result},
+            }
+            return resp
+
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=jittery_then_recover)
+        post_mock = AsyncMock()
+        post_mock.return_value = MagicMock(status_code=200)
+        client.post = post_mock
+        client.stream = MagicMock(side_effect=RuntimeError("SSE blocked in test"))
+        mock_get_client.return_value = client
+
+        with patch("ai_intervention_agent.server_config.BACKEND_MIN", 1):
+            result = asyncio.run(
+                server.wait_for_task_completion("t-r165-jitter", timeout=3)
+            )
+
+        # 必须救回 result（不能因为单次 retry 不够就丢数据）
+        self.assertEqual(
+            result,
+            completed_result,
+            f"R165 多次 retry 必须能救回持续抖动后的 result，实际：{result}",
+        )
+        # close 绝对不应该被调
+        self.assertEqual(
+            post_mock.call_count,
+            0,
+            "持续抖动后 retry 救回 result，绝不能误删 COMPLETED task；"
+            f"实际 close 次数：{post_mock.call_count}",
+        )
+        # GET 次数至少 4 次（1 次首次 + 3 次抖动 retry）
+        self.assertGreaterEqual(
+            call_log["get_count"],
+            4,
+            f"R165 必须做至少 4 次 GET 才能覆盖持续抖动，实际：{call_log['get_count']}",
+        )
+
+    def test_backoff_sequence_starts_with_zero(self):
+        """R165 退避序列第 0 项必须是 0（立即重试一次），覆盖单次 TCP RST 重连。
+
+        没有这个"立即试一次"，第一次抖动后还要等 100ms 才重试，对快速恢
+        复的瞬时故障不友好。这条 invariant 测试守住设计意图。
+        """
+
+        # patch 影响 setUp 里的，这里直接 import 原始值需要 stop patcher
+        self._backoff_patcher.stop()
+        try:
+            from ai_intervention_agent.server_feedback import (
+                _FETCH_RETRY_BACKOFF_S as real_backoff,
+            )
+
+            self.assertGreater(len(real_backoff), 0, "退避序列不能为空")
+            self.assertEqual(
+                real_backoff[0],
+                0.0,
+                "R165 第 0 项必须是 0（立即重试），覆盖单次 TCP RST 等瞬时故障",
+            )
+            self.assertGreaterEqual(
+                len(real_backoff),
+                3,
+                "R165 必须有至少 3 次 retry 才能覆盖典型抖动窗口",
+            )
+            # 后续项必须递增（指数退避语义）
+            for i in range(1, len(real_backoff)):
+                self.assertGreater(
+                    real_backoff[i],
+                    real_backoff[i - 1],
+                    f"退避序列第 {i} 项 ({real_backoff[i]}) 必须大于第 {i - 1} 项 "
+                    f"({real_backoff[i - 1]})，违反指数退避语义",
+                )
+        finally:
+            self._backoff_patcher.start()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

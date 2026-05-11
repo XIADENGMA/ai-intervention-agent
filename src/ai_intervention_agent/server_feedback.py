@@ -182,6 +182,30 @@ _POLL_INTERVAL_FAST_S = 2.0
 _POLL_INTERVAL_SAFETY_NET_S = 30.0
 
 
+# R165 retry-before-close 退避序列（秒）。
+# ======================================
+#
+# SSE 检测到 ``task_changed(new_status=completed)`` 后，``_fetch_result()``
+# 第一次撞瞬时网络抖动（503 / connect error / DNS jitter）时，``completion``
+# 已 set 但 ``result_box[0]`` 仍是 None。这串退避序列被 ``wait_for_task_completion``
+# 的 finally 块用来重试 fetch，最大化把"反馈数据已存在但本地拿不到"这一边
+# 缘场景拉回到正确路径。
+#
+# 设计取舍：
+#   - 第 0 次 retry 退避 0s（立即试一次，覆盖单次 TCP RST 重连）
+#   - 后续指数退避：100ms / 250ms / 500ms / 1000ms
+#   - 总等待上界 ~1.85s（不含每次 HTTP request 自身的 2s timeout）
+#   - 覆盖典型抖动：TLS 重协商（200-800ms）、k8s mesh evict 重连（<1s）、
+#     cellular handoff（300-1500ms）、DNS TTL 抖动（<100ms）
+#
+# 选这个长度（5 次）的理由：``backend_timeout`` 默认 240s，1.85s retry
+# 占比 < 1%；同时实测大于 2s 的网络抖动通常代表更严重故障（Web UI 进程
+# 死了 / 网络断了），此时数据本身就可能不可达，继续 retry 收益递减。
+# 测试可以通过 monkeypatch 覆盖本常量以缩短测试运行时间（参见
+# ``tests/test_retry_before_close_*.py``）。
+_FETCH_RETRY_BACKOFF_S: tuple[float, ...] = (0.0, 0.1, 0.25, 0.5, 1.0)
+
+
 async def _close_orphan_task_best_effort(
     task_id: str,
     host: str,
@@ -414,12 +438,20 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
     sse_task = asyncio.create_task(_sse_listener())
     poll_task = asyncio.create_task(_poll_fallback())
 
+    # R165 反馈丢失防御：把 TimeoutError 路径的 ``return`` 改成 set 一个
+    # ``timed_out`` 标志位，让 finally 里的 retry-before-close 能影响最终
+    # return 值。修复前是 ``except TimeoutError: return _make_resubmit_response``
+    # —— Python 语义下，``except`` 内的 return 把返回值锁定到 stack 上，
+    # 后续 ``finally`` 块即便 retry 拿到了真实 result 也无法覆盖返回值，
+    # 用户的反馈会被丢成 resubmit。改成 flag 写法让 retry 后的 result 总能
+    # 优先于 timeout 兜底，反馈数据零丢失。
+    timed_out = False
     try:
         await asyncio.wait_for(completion.wait(), timeout=effective_timeout)
     except TimeoutError:
+        timed_out = True
         elapsed = time.monotonic() - start_time_monotonic
         logger.error(f"任务超时: {task_id}, 等待 {elapsed:.1f}s")
-        return cast(dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
     finally:
         sse_task.cancel()
         poll_task.cancel()
@@ -428,7 +460,7 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         with contextlib.suppress(asyncio.CancelledError):
             await poll_task
 
-        # R17.4 retry-before-close 兜底：SSE 报告 completed 但首次
+        # R17.4 / R165 retry-before-close 兜底：SSE 报告 completed 但首次
         # ``_fetch_result()`` 撞到瞬时网络抖动（503 / connection
         # error / DNS 短暂失败）时，``result_box[0]`` 还是 None ——
         # 如果直接进 R13·B1 close 路径，``_close_orphan_task_best_effort``
@@ -437,17 +469,33 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         # task 立即删掉，紧接着 ``_make_resubmit_response`` 让 AI
         # 重新提交，用户辛辛苦苦填的反馈被永久丢失却零日志告警。
         #
-        # 多 fetch 一次给抖动一个机会：retry 成功 → 填 ``result_box``
-        # → 跳过 close（因为 ``is None`` 检查会 short-circuit）；
-        # retry 仍失败 → 真的没结果 → 走原 R13·B1 ghost-task close
-        # 路径，行为和修复前完全一致。
+        # R165：把 R17.4 的单次 retry 升级为**指数退避多次** retry——
+        # 实测网络抖动可能持续 100ms-1s（典型场景：TLS 重协商、
+        # cellular handoff、k8s service mesh 跨节点 evict 重连），
+        # 单次 retry 覆盖窗口太窄。改为 0/100/250/500/1000ms 五次退避，
+        # 加上 ``_fetch_result`` 内部 2s timeout，最坏 ~12s 内必然有一次
+        # 能拿到 result（远低于 backend_timeout）。一旦任意一次 retry
+        # 命中 result：填 ``result_box`` → 跳过 close（``is None`` 检查
+        # 会 short-circuit）。全部 retry 失败：真的没结果 → 走原 R13·B1
+        # ghost-task close 路径，行为和修复前完全一致（但下游 web_ui
+        # ``close`` 端点会对 COMPLETED 状态 short-circuit，保证 result
+        # 不被误删）。
         if result_box[0] is None:
-            retry_result = await _fetch_result()
-            if retry_result is not None:
-                result_box[0] = retry_result
-                logger.info(
-                    f"close 前二次 fetch 拿到 result，跳过 ghost-task close: {task_id}"
-                )
+            for retry_idx, backoff_s in enumerate(_FETCH_RETRY_BACKOFF_S):
+                if backoff_s > 0:
+                    try:
+                        await asyncio.sleep(backoff_s)
+                    except asyncio.CancelledError:
+                        raise
+                retry_result = await _fetch_result()
+                if retry_result is not None:
+                    result_box[0] = retry_result
+                    logger.info(
+                        f"close 前第 {retry_idx + 1}/{len(_FETCH_RETRY_BACKOFF_S)} "
+                        f"次 fetch（退避 {backoff_s:.2f}s）拿到 result，"
+                        f"跳过 ghost-task close: {task_id}"
+                    )
+                    break
 
         # R13·B1 ghost-task cleanup
         # 仅在没拿到 result 时才 close —— 拿到 result 说明 web_ui 已经
@@ -463,9 +511,15 @@ async def wait_for_task_completion(task_id: str, timeout: int = 260) -> dict[str
         logger.info(f"任务完成: {task_id}")
         return cast(dict[str, Any], result_box[0])
 
-    # R13·B1 残留兜底：即便 close 已发出，如果 close 网络失败而 task 在
-    # web_ui 那侧仍 status=completed（罕见，需要 close 走 IO 错而 GET
-    # 走通），最后再 fetch 一次能拿回 result——属于 best-effort 兜底，
+    # R165：timeout 兜底 —— retry 全部失败 + close 也没救回来时，才进入
+    # resubmit 路径。这是反馈丢失防御的最后一道防线，确保 result 永远优
+    # 先于 timeout 的兜底响应。
+    if timed_out:
+        return cast(dict[str, Any], server_config._make_resubmit_response(as_mcp=False))
+
+    # R13·B1 残留兜底：既非 timeout、close 也已发出，如果 close 网络失败
+    # 而 task 在 web_ui 那侧仍 status=completed（罕见，需要 close 走 IO 错
+    # 而 GET 走通），最后再 fetch 一次能拿回 result——属于 best-effort 兜底，
     # R17.4 retry-before-close 已经在 close 之前覆盖了主要 race，这一
     # 行只覆盖"close 失败 + task 没被清"这个边缘场景。
     r = await _fetch_result()

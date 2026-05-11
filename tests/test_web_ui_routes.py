@@ -1592,6 +1592,10 @@ class TestCloseTask(_RouteTestBase):
 
     它是用户在多任务面板里手动关闭某个反馈任务的入口；若静默坏掉，
     任务会一直停留在 SSE 列表里无法清理。
+
+    R165 反馈丢失防御：``close_task`` 端点现在会检查 task 状态——
+    已 COMPLETED 的任务**不**真正 remove，避免 MCP wait_for_task_completion
+    的 retry-before-close race 把带着 user feedback 的 task 误删除。
     """
 
     _port = 19035
@@ -1599,6 +1603,9 @@ class TestCloseTask(_RouteTestBase):
     @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_close_success(self, mock_get_tq):
         mock_tq = MagicMock()
+        existing_task = MagicMock()
+        existing_task.status = "active"
+        mock_tq.get_task.return_value = existing_task
         mock_tq.remove_task.return_value = True
         mock_get_tq.return_value = mock_tq
 
@@ -1606,12 +1613,15 @@ class TestCloseTask(_RouteTestBase):
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertTrue(data["success"])
+        # R165：非 COMPLETED 状态必须真正 remove
         mock_tq.remove_task.assert_called_once_with("task-x")
+        # 不应携带 skipped 字段
+        self.assertNotIn("skipped", data)
 
     @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
     def test_close_task_not_found_404(self, mock_get_tq):
         mock_tq = MagicMock()
-        mock_tq.remove_task.return_value = False
+        mock_tq.get_task.return_value = None
         mock_get_tq.return_value = mock_tq
 
         resp = self._client.post("/api/tasks/ghost/close")
@@ -1619,6 +1629,33 @@ class TestCloseTask(_RouteTestBase):
         data = resp.get_json()
         self.assertFalse(data["success"])
         self.assertIn("不存在", data["error"])
+        # R165：not-found 时不应再尝试 remove_task
+        mock_tq.remove_task.assert_not_called()
+
+    @patch("ai_intervention_agent.web_ui_routes.task.get_task_queue")
+    def test_close_completed_task_skips_remove(self, mock_get_tq):
+        """R165：COMPLETED 状态的任务 short-circuit，不真正 remove。
+
+        这是反馈丢失防御的最后一道防线——即使 MCP `wait_for_task_completion`
+        因网络抖动重试全部失败并误调 ``_close_orphan_task_best_effort``，
+        本端点会拒绝删除带着 user feedback 的 COMPLETED task，保留 result
+        直到后台 cleanup 线程在 10s 内自然清理。
+        """
+        mock_tq = MagicMock()
+        existing_task = MagicMock()
+        existing_task.status = "completed"
+        mock_tq.get_task.return_value = existing_task
+        mock_get_tq.return_value = mock_tq
+
+        resp = self._client.post("/api/tasks/completed-task/close")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        # short-circuit 标识
+        self.assertTrue(data.get("skipped"))
+        self.assertEqual(data.get("reason"), "task_completed")
+        # **关键** 断言：COMPLETED 任务的 remove_task 绝对不能被调用
+        mock_tq.remove_task.assert_not_called()
 
     @patch(
         "ai_intervention_agent.web_ui_routes.task.get_task_queue",
