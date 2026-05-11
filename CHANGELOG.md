@@ -11,6 +11,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R174** — **CR#10 F-1 落地：CSS 字符串引号一致性守门 hook**。
+  R169 commit ``73d9980`` 用 prettier 把 ``main.css`` 的字符串引号一次性收敛
+  到 double-quote 一致风格，但仓库没有 prettier 配置，靠人工运行 —— Code
+  Review #10 F-1 标记了风险：后续 PR 可能再次引入 single-quote 字符串让
+  CSS 整洁度悄悄退化。本提交按 R66 brand color 同模式新增防漂移护栏：
+  - 新增 ``scripts/check_css_quote_consistency.py``（约 200 行 + 充分 docstring）：
+    扫 ``main.css``，统计"裸露"的 single-quote 字符串字面量（跳过 ``url(...)``
+    内嵌 SVG xmlns 和 ``/* ... */`` 注释里的字符串），baseline = 0；
+  - 新增 ``.pre-commit-config.yaml`` 里 ``check-css-quote-consistency`` local
+    hook，``files`` glob 只匹配 ``main\.css`` —— ``prism.css`` 是 vendor 代码、
+    ``tri-state-panel.css`` 未被 R169 prettier 接管，明确不纳入守门范围；
+  - 新增 ``tests/test_css_quote_consistency_r174.py`` 共 28 个测试覆盖
+    ``_strip_comments_and_url_blocks`` / ``count_naked_single_quotes`` /
+    ``find_naked_single_quotes_with_lines`` / ``scan_files`` / CLI 三分支退出
+    码 / ``main.css`` baseline 同步 / pre-commit 配置正确性。
+  价值：把"CSS 整洁度漂移"成本从"人工运行 prettier"降到"pre-commit 自动卡
+  住"。完整 prettier 引入（需要 ``.prettierrc`` + Node 依赖 + CI 矩阵改动）
+  价值有限、维护负担大，本 baseline-style 护栏是"防漂移成本接近 0、覆盖 80%
+  价值"的最小可行方案。脚本 docstring 明确说明未来若决定上 prettier 可无缝
+  退役（baseline 调 0 + 撤掉 hook 即可）。
+
 - **R173** — **CR#10 F-3 落地：MCP-path / HTTP-path predefined_options 解析 parity smoke**。
   新增 ``tests/test_predefined_options_dual_path_parity_cr10_f3.py`` 共 11 个
   断言场景，锁住「MCP 路径 `list[dict]`」与「HTTP 路径 `(list[str], list[bool])`

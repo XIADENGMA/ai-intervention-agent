@@ -75,3 +75,26 @@ repos:
         pass_filenames: false
         files: ^src/ai_intervention_agent/static/css/.*\.css$
         exclude: \.min\.css$
+
+  # R174 / CR#10 F-1：CSS 字符串引号一致性漂移检测（local hook）。
+  #
+  # 背景：R169 commit ``73d9980`` 用 prettier 把 ``main.css`` 的字符串引号
+  # 一次性收敛到 double-quote 一致风格。但仓库没有 prettier 配置，靠人工
+  # 运行（一次性）。Code Review #10 F-1 标记了风险：后续 PR 可能再次引入
+  # single-quote 字符串（``[data-theme='dark']`` / ``content: 'hello'`` 等）
+  # 让 CSS 整洁度悄悄退化。
+  #
+  # 当前 baseline ``0`` 处违规 —— ``main.css`` 已经完全 double-quote。
+  # 任何新增的"裸露" single-quote 字符串会 fail，强迫开发者用 double-quote
+  # 写新代码（详见 scripts/check_css_quote_consistency.py 的 docstring）。
+  #
+  # 只守 ``main.css`` 一个文件：``prism.css`` 是 vendor 代码、
+  # ``tri-state-panel.css`` 未被 R169 prettier 接管，都暂不纳入守门范围。
+  - repo: local
+    hooks:
+      - id: check-css-quote-consistency
+        name: CSS 字符串引号一致性漂移检测（R174 护栏）
+        entry: uv run python scripts/check_css_quote_consistency.py --quiet
+        language: system
+        pass_filenames: false
+        files: ^src/ai_intervention_agent/static/css/main\.css$
