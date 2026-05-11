@@ -11,6 +11,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R182** — wire the new `docs/release-recovery.{md,zh-CN.md}`
+  pair into the documentation index. Added cross-references in
+  `docs/README.md` (Reviewers section), `docs/README.zh-CN.md`
+  (审计者 section), `README.md` (Documentation section), and
+  `README.zh-CN.md` (文档 section). Without this, F-1 would have
+  been a hidden artefact — discoverability is what makes docs
+  useful.
 - **CR#13 F-1** — bilingual `docs/release-recovery.md` (EN) +
   `docs/release-recovery.zh-CN.md` (zh-CN): release-recovery
   playbook covering 3 failure patterns (Build fails → safe

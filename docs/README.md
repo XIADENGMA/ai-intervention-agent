@@ -49,6 +49,14 @@ Find your role below to jump straight to the page you need.
 
 ## Reviewers · auditing security or releases
 
+- [`release-recovery.md`](release-recovery.md) · [`release-recovery.zh-CN.md`](release-recovery.zh-CN.md)
+  — runbook for the three `release.yml` failure patterns: (1)
+  Build job fails before any Publish ran → clean abort + re-tag
+  safe; (2) Build ✓ + some Publish ✗ → never re-use burned
+  PyPI/Open VSX version (rerun --failed / manual publish / patch-
+  bump); (3) all Publish ✓ + Create GitHub Release ✗ → manual
+  `gh release create`. Closes CR#13 §F-1. Required reading before
+  any release-tag push, or before triaging a failed release run.
 - [`security/AUDIT_2026-05-04.md`](security/AUDIT_2026-05-04.md) —
   most recent dependency-vulnerability audit (`pip-audit`) with
   the upgrade recipe and remaining-CVE rationale.

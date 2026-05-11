@@ -252,6 +252,7 @@ ai-intervention-agent 工具使用细节：
 - **MCP 工具说明（英文）**：[`docs/mcp_tools.md`](docs/mcp_tools.md)
 - **MCP 工具说明（简体中文）**：[`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)
 - **故障排查 / FAQ**：[`docs/troubleshooting.zh-CN.md`](docs/troubleshooting.zh-CN.md) · [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- **Release 恢复 runbook**：[`docs/release-recovery.zh-CN.md`](docs/release-recovery.zh-CN.md) · [`docs/release-recovery.md`](docs/release-recovery.md)
 - **i18n 贡献指南（英文）**：[`docs/i18n.md`](docs/i18n.md)
 - **DeepWiki 问答**——AI 辅助的仓库智能问答入口：<a href="https://deepwiki.com/xiadengma/ai-intervention-agent"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" valign="middle" /></a>
 

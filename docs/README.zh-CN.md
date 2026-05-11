@@ -45,6 +45,14 @@
 
 ## 审计者 · 审安全或发布
 
+- [`release-recovery.md`](release-recovery.md) · [`release-recovery.zh-CN.md`](release-recovery.zh-CN.md)
+  — `release.yml` 三种失败模式的恢复 runbook：(1) Build job
+  在任何 Publish 之前失败 → clean abort + 重新打 tag 安全；
+  (2) Build ✓ + 部分 Publish ✗ → 永远不要复用已燃烧的
+  PyPI/Open VSX 版本号（rerun --failed / 手动 publish /
+  patch bump）；(3) 全部 Publish ✓ + Create GitHub Release ✗
+  → 手动 `gh release create`。关闭 CR#13 §F-1。任何 release-tag
+  推送前、或分诊失败的 release run 前必读。
 - [`security/AUDIT_2026-05-04.md`](security/AUDIT_2026-05-04.md) —
   最近一次依赖漏洞审计（`pip-audit`），含升级配方与残留 CVE
   说明。
