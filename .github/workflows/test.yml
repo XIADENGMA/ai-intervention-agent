@@ -5,17 +5,20 @@ on:
     branches:
       - main
       - develop
+    # R181 — 删除 docs/** 与 **/*.md 的 paths-ignore：
+    # 这两条原本是 "doc-only commits 不跑 CI" 的优化，但 v1.6.3 release
+    # 失败暴露了一个隐藏成本：CHANGELOG.md 改动可以破坏 test_housekeeping_r151
+    # / test_changelog_* 等 doc-aware guards，docs/*.md 改动可以破坏
+    # test_docs_links_no_rot / test_generate_docs_index_prefix_r178 等。让
+    # doc-only commit 仍跑完整 ci_gate.py（5 min / matrix）。LICENSE 与
+    # ISSUE_TEMPLATE 没有 pytest guard，继续 ignore。
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
       - "LICENSE"
   pull_request:
     branches:
       - main
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
       - ".github/ISSUE_TEMPLATE/**"
       - "LICENSE"
   workflow_dispatch:

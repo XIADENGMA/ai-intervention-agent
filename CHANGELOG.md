@@ -9,6 +9,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R181** — `.github/workflows/test.yml` no longer ignores `**/*.md`
+  or `docs/**` in its `paths-ignore`. Originally a CI-time-saving
+  optimisation, it concealed a structural footgun: every guard the
+  repo ships for doc surfaces (`test_housekeeping_r151`,
+  `test_docs_links_no_rot`, `test_generate_docs_index_prefix_r178`,
+  README/CHANGELOG-aware tests, etc.) was inert against doc-only
+  commits. v1.6.3's release-tag CI was the canary — the bump touched
+  *only* CHANGELOG / version-strings, so `test.yml` skipped, the bug
+  rode the `v1.6.3` tag straight into `release.yml`, and the Build
+  job failed at `ci_gate.py`. Removing the blanket ignore lets
+  doc-only commits run the full ~5-min matrix; `LICENSE` and
+  `.github/ISSUE_TEMPLATE/**` (no pytest guard reads them) stay
+  ignored. New regression test
+  `tests/test_workflow_paths_ignore_r181.py` (6 cases) locks the
+  posture.
+
 ### Fixed
 
 - **R180** — `tests/test_housekeeping_r151.py::TestR151ChangelogUnreleased`
