@@ -231,8 +231,20 @@ class Task(BaseModel):
     task_id: str
     prompt: str
     predefined_options: list[str] | None = None
-    # TODO #3：每个预定义选项的"默认是否选中"。可省略；省略时等价于全 False。
+    # 每个预定义选项的"默认是否选中"。可省略；省略时等价于全 False。
     # 长度若与 predefined_options 不一致，前端按位置逐一对应、缺失项视为 False。
+    #
+    # R167 后语义稳定：
+    # - LLM → MCP ``interactive_feedback``：禁止用 parallel-array 形态
+    #   （顶层参数已移除），必须用 ``predefined_options=[{label, default}]``
+    #   的 dict 形态。``server_feedback`` 内部会把 dict 形态拆成
+    #   ``predefined_options`` (list[str]) + ``predefined_options_defaults``
+    #   (list[bool]) 再调本字段；
+    # - 外部 HTTP ``POST /api/tasks``（VS Code 插件 / 自动化脚本路径）：
+    #   仍然支持显式传 parallel-array 形态，``web_ui_routes/task.py``
+    #   会做长度校验和 bool normalization；
+    # - 本字段是上述两条路径的统一内部表示，前端 ``multi_task.js`` 渲染
+    #   单选/多选 chip 默认勾选状态时直接读它。
     predefined_options_defaults: list[bool] | None = None
     auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

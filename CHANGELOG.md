@@ -11,6 +11,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R172** — **代码注释清理**：`task_queue.py::Task.predefined_options_defaults`
+  字段上方注释从「TODO #3：每个预定义选项的"默认是否选中"」改成正式契约说明。
+  - 背景：R167 把 LLM → MCP 这一侧的 ``predefined_options_defaults`` 顶层
+    参数移除（统一收敛到 ``predefined_options=[{label, default}]`` dict 形态），
+    但 ``task_queue.Task`` 这个**内部 ORM 模型**字段仍然保留——它现在是
+    LLM → MCP（被 ``server_feedback`` 拆 dict 后传入）与外部 HTTP → POST
+    /api/tasks（VS Code 插件 / 自动化脚本路径）两条路径的统一内部表示。
+  - 旧注释"TODO #3：…"误导阅读者以为这还是个未完成的待办；R172 改成 13
+    行的正式契约说明：LLM 路径"禁止"、外部 HTTP "支持"、前端"直接读"。
+  - 零功能改动，纯文档增强。``test_task_queue.py`` /
+    ``test_predefined_options_shape_r167.py`` / ``test_interactive_feedback_errors.py``
+    共 103 个测试照常通过；R167 已存在的"传旧 ``predefined_options_defaults``
+    顶层参数触发 TypeError"测试仍然防漂移。
+
 - **R171** — **README badge 精简到 2026 最佳实践（3-5 个 header badge）**。
   TODO "README badge 有点多，样式不太好" 任务。R171 处理：
   - **顶部 header badges**：10 个 → **5 个**（符合 shields.io / daily.dev 2026
