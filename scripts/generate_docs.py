@@ -417,6 +417,30 @@ def generate_index(
     * ``--check`` 模式下：手工块改动不再触发 drift，仅当 modules 列表
       或 quick-navigation 与代码不同步时才报告 drift（这正是 ci_gate
       最初想守的 invariant）。
+
+    Force-regenerate the manual prefix (CR#12 §F-2 escape hatch)
+    ------------------------------------------------------------
+
+    如果某个 R-cycle 因为架构改动 / 模块改名 / 中间件链改动需要**主动
+    重写**前置手工块（例如 R200 把 ``Production-grade middleware``
+    section 完全废弃），preservation 逻辑会"贴心"地保留旧文案 ——
+    这是 silent staleness footgun。escape hatch：
+
+    1. ``git rm docs/api/index.md docs/api.zh-CN/index.md``（或手工
+       删除两个文件，下一段 ``generate_docs.py`` 看不到旧文件 →
+       走 first-time fresh 路径）；
+    2. ``uv run python scripts/generate_docs.py --lang en`` 然后
+       ``--lang zh-CN``——产生干净的 signatures-only 模板；
+    3. **手工**把新的"How it works / Architecture / 你想要的新
+       section"重新插入到 ``## Modules`` / ``## 模块列表`` 标题之
+       前；
+    4. 提交（一次性，本周期之后又回到 preservation 模式）。
+
+    或者更小步：直接编辑 index.md 顶部、删 / 改 / 加 section，下次
+    ``--check`` 仍然 pass（preservation 只看 modules-heading 之
+    后的字节），新内容就成了下一周期的 "permanent prefix"。这是
+    日常迭代的推荐路径——只在大重写时才走 "rm + regen + manual"
+    escape hatch。
     """
     _assert_quick_nav_covers_all_modules(modules)
     _assert_top_level_modules_classified()
