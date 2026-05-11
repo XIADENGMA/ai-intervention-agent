@@ -211,7 +211,7 @@ R26.3 lazy-init 行为：
 缓存语义
 --------
 - **key**：完整 prompt 字符串（避免 hash 冲突；prompt 长度受
-  ``PROMPT_MAX_LENGTH`` 上限保护，单条最多 ~50KB）。
+  ``PROMPT_MAX_LENGTH`` 上限保护，R166 起单条最多 ~100KB）。
 - **value**：渲染后的 HTML 字符串。
 - **容量**：16 条（远大于 ``max_tasks=10``，合理场景命中率 ~100%）。
 - **LRU 实现**：``dict`` 插入顺序保证（Python 3.7+），命中时
