@@ -68,7 +68,7 @@
    单一真源为 static/css/tri-state-panel.css；VSCode webview 打包时拷贝同一份文件，
    通过 sha256 字节一致性测试（tests/test_tri_state_panel_parity.py，C10c 落地）守护。
    自带 @layer components 声明，层级由本文件顶部的声明顺序统一排序。 */
-@import url('./tri-state-panel.css');
+@import url("./tri-state-panel.css");
 
 /* [hidden] 属性全局兜底：放在任何 @layer 之外，优先级最高；
    即使后续规则用 display:flex/grid 覆盖，也能被 !important 强制隐藏。 */
@@ -118,11 +118,12 @@
 
   /* 字体（合规：仅使用系统默认字体栈，避免打包第三方字体引发版权风险） */
   --font-sans:
-    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji", sans-serif;
   --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 
   /* 边框色 */
   --border-primary: rgba(255, 255, 255, 0.15); /* 主边框 */
@@ -176,7 +177,8 @@
   --transition-slow: 0.4s ease;
 
   /* 主题切换过渡 */
-  --theme-transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  --theme-transition:
+    background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 
   /*
    * 三态面板（Loading / Empty / Error）共享 token —— 服务 T1（C10a）。
@@ -198,7 +200,7 @@
 }
 
 /* 亮色主题 - Anthropic 官方品牌配色方案（优化版） */
-[data-theme='light'] {
+[data-theme="light"] {
   /*
    * 基于 Anthropic Brand Guidelines - 优化层次感
    * - Dark: #141413 - 主要文本
@@ -252,10 +254,14 @@
   --info-bg: rgba(106, 155, 204, 0.1);
 
   /* 精致阴影 - 基于 Dark 色调 */
-  --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.05), 0 1px 3px rgba(20, 20, 19, 0.08);
-  --shadow-md: 0 2px 4px rgba(20, 20, 19, 0.06), 0 4px 8px rgba(20, 20, 19, 0.1);
-  --shadow-lg: 0 4px 8px rgba(20, 20, 19, 0.08), 0 8px 16px rgba(20, 20, 19, 0.12);
-  --shadow-xl: 0 8px 16px rgba(20, 20, 19, 0.1), 0 16px 32px rgba(20, 20, 19, 0.14);
+  --shadow-sm:
+    0 1px 2px rgba(20, 20, 19, 0.05), 0 1px 3px rgba(20, 20, 19, 0.08);
+  --shadow-md:
+    0 2px 4px rgba(20, 20, 19, 0.06), 0 4px 8px rgba(20, 20, 19, 0.1);
+  --shadow-lg:
+    0 4px 8px rgba(20, 20, 19, 0.08), 0 8px 16px rgba(20, 20, 19, 0.12);
+  --shadow-xl:
+    0 8px 16px rgba(20, 20, 19, 0.1), 0 16px 32px rgba(20, 20, 19, 0.14);
 }
 
 /* 自动跟随系统主题 - Anthropic 官方品牌色（优化版） */
@@ -294,10 +300,14 @@
     --primary-600: #c56a4c;
 
     /* 阴影 */
-    --shadow-sm: 0 1px 2px rgba(20, 20, 19, 0.05), 0 1px 3px rgba(20, 20, 19, 0.08);
-    --shadow-md: 0 2px 4px rgba(20, 20, 19, 0.06), 0 4px 8px rgba(20, 20, 19, 0.1);
-    --shadow-lg: 0 4px 8px rgba(20, 20, 19, 0.08), 0 8px 16px rgba(20, 20, 19, 0.12);
-    --shadow-xl: 0 8px 16px rgba(20, 20, 19, 0.1), 0 16px 32px rgba(20, 20, 19, 0.14);
+    --shadow-sm:
+      0 1px 2px rgba(20, 20, 19, 0.05), 0 1px 3px rgba(20, 20, 19, 0.08);
+    --shadow-md:
+      0 2px 4px rgba(20, 20, 19, 0.06), 0 4px 8px rgba(20, 20, 19, 0.1);
+    --shadow-lg:
+      0 4px 8px rgba(20, 20, 19, 0.08), 0 8px 16px rgba(20, 20, 19, 0.12);
+    --shadow-xl:
+      0 8px 16px rgba(20, 20, 19, 0.1), 0 16px 32px rgba(20, 20, 19, 0.14);
   }
 }
 
@@ -486,7 +496,7 @@ body.no-content-mode .container {
  *   - 渐变色：transparent → rgba(255, 255, 255, 0.1) → transparent
  */
 .container::before {
-  content: ''; /* 必需，否则伪元素不显示 */
+  content: ""; /* 必需，否则伪元素不显示 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -552,7 +562,7 @@ body.no-content-mode .container {
  *   - 渐变色：transparent → rgba(255, 255, 255, 0.2) → transparent
  */
 .header::after {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   bottom: 0; /* 底部对齐 */
   left: 1.75rem; /* 左边留白 */
@@ -1575,7 +1585,7 @@ h1 {
  *   - 渐变色：transparent → rgba(255, 255, 255, 0.2) → transparent
  */
 .settings-content::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -1704,7 +1714,7 @@ h1 {
  *   - 渐变色：transparent → rgba(255, 255, 255, 0.15) → transparent
  */
 .settings-header::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -1729,7 +1739,7 @@ h1 {
  *   - 渐变色：transparent → rgba(0, 122, 255, 0.3) → transparent
  */
 .settings-header::after {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   bottom: 0; /* 底部对齐 */
   left: 2.5rem; /* 左边留白2.5rem */
@@ -1840,7 +1850,7 @@ h1 {
  *   - 圆角：1px
  */
 .settings-close-btn::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 50%; /* 垂直居中（起点） */
   left: 50%; /* 水平居中（起点） */
@@ -1868,7 +1878,7 @@ h1 {
  *   - 圆角：1px
  */
 .settings-close-btn::after {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 50%; /* 垂直居中（起点） */
   left: 50%; /* 水平居中（起点） */
@@ -1964,7 +1974,11 @@ h1 {
   padding: 2rem; /* 内边距 */
   max-height: calc(85vh - 140px); /* 最大高度（视口高度85% - 头部高度） */
   overflow-y: auto; /* 垂直滚动 */
-  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.005)); /* 渐变背景 */
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(255, 255, 255, 0.005)
+  ); /* 渐变背景 */
 }
 
 /**
@@ -2044,7 +2058,7 @@ h1 {
  *   - 圆角：16px 16px 0 0（顶部圆角，与容器圆角匹配）
  */
 .setting-group::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -2100,7 +2114,11 @@ h1 {
   margin: 0 0 1.5rem 0; /* 外边距（下边距1.5rem） */
   padding-bottom: 0.75rem; /* 内边距底部 */
   border-bottom: 1px solid rgba(255, 255, 255, 0.15); /* 底部边框 */
-  background: linear-gradient(135deg, #f5f5f7, rgba(0, 122, 255, 0.8)); /* 渐变背景 */
+  background: linear-gradient(
+    135deg,
+    #f5f5f7,
+    rgba(0, 122, 255, 0.8)
+  ); /* 渐变背景 */
   -webkit-background-clip: text; /* WebKit前缀：背景裁剪到文字 */
   -webkit-text-fill-color: transparent; /* WebKit前缀：文字颜色透明 */
   background-clip: text; /* 标准语法：背景裁剪到文字 */
@@ -2124,7 +2142,7 @@ h1 {
  *   - 圆角：1px
  */
 .setting-group-title::after {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   bottom: 0; /* 底部对齐 */
   left: 0; /* 左对齐 */
@@ -2286,7 +2304,7 @@ h1 {
  *   - accent-color：Chrome 93+、Firefox 92+、Safari 15.4+
  *   - 不支持的浏览器将使用默认复选框样式
  */
-.setting-label input[type='checkbox'] {
+.setting-label input[type="checkbox"] {
   width: 20px; /* 固定宽度 */
   height: 20px; /* 固定高度 */
   accent-color: #5a8dbf; /* 复选框主题色（深色模式：深蓝色，确保勾勾为白色） */
@@ -2303,7 +2321,7 @@ h1 {
  *   - 放大1.1倍（transform: scale(1.1)）
  *   - 添加蓝色发光阴影（0 0 10px rgba(0, 122, 255, 0.3)）
  */
-.setting-label input[type='checkbox']:checked {
+.setting-label input[type="checkbox"]:checked {
   transform: scale(1.1); /* 放大1.1倍 */
   box-shadow: 0 0 10px rgba(90, 141, 191, 0.4); /* 深蓝色发光阴影 */
 }
@@ -2462,7 +2480,11 @@ h1 {
   width: 16px; /* 固定宽度 */
   height: 16px; /* 固定高度 */
   margin-top: -5px; /* 垂直居中：(轨道高度6px - 球高度16px) / 2 = -5px */
-  background: linear-gradient(135deg, #5a8dbf, #4a7daf); /* 渐变背景（深蓝色） */
+  background: linear-gradient(
+    135deg,
+    #5a8dbf,
+    #4a7daf
+  ); /* 渐变背景（深蓝色） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
@@ -2512,7 +2534,11 @@ h1 {
 .volume-slider::-moz-range-thumb {
   width: 16px; /* 固定宽度 */
   height: 16px; /* 固定高度 */
-  background: linear-gradient(135deg, #5a8dbf, #4a7daf); /* 渐变背景（深蓝色） */
+  background: linear-gradient(
+    135deg,
+    #5a8dbf,
+    #4a7daf
+  ); /* 渐变背景（深蓝色） */
   border-radius: 50%; /* 圆形 */
   cursor: pointer; /* 可点击 */
   border: none; /* 移除边框 */
@@ -2546,7 +2572,11 @@ h1 {
   font-weight: 700; /* 粗体 */
   min-width: 50px; /* 最小宽度 */
   text-align: right; /* 文字右对齐 */
-  background: linear-gradient(135deg, #5a8dbf, rgba(90, 141, 191, 0.8)); /* 渐变背景（深蓝色） */
+  background: linear-gradient(
+    135deg,
+    #5a8dbf,
+    rgba(90, 141, 191, 0.8)
+  ); /* 渐变背景（深蓝色） */
   -webkit-background-clip: text; /* WebKit前缀：背景裁剪到文字 */
   -webkit-text-fill-color: transparent; /* WebKit前缀：文字颜色透明 */
   background-clip: text; /* 标准语法：背景裁剪到文字 */
@@ -2971,7 +3001,7 @@ h1 {
  *   - 圆角：16px 16px 0 0（顶部圆角，与容器圆角匹配）
  */
 .status-info::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -3070,7 +3100,7 @@ h1 {
 .version-number {
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.4); /* 更浅的半透明白色 */
-  font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace; /* 等宽字体 */
+  font-family: "SF Mono", Monaco, Menlo, Consolas, monospace; /* 等宽字体 */
 }
 
 /* GitHub 链接按钮 */
@@ -3440,7 +3470,7 @@ h1 {
  *   - 圆角：24px 24px 0 0（顶部圆角，与容器圆角匹配）
  */
 .description::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -3525,7 +3555,7 @@ h1 {
  *   - 圆角：20px 20px 0 0（顶部圆角，与容器圆角匹配）
  */
 .option-item::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -3570,7 +3600,7 @@ h1 {
  *   - 边框使用更深的颜色以提高可见度
  *   - 阴影使用更明显的效果
  */
-[data-theme='light'] .option-item {
+[data-theme="light"] .option-item {
   background: linear-gradient(
     135deg,
     rgba(20, 20, 19, 0.03) 0%,
@@ -3581,7 +3611,7 @@ h1 {
   box-shadow: 0 2px 4px rgba(20, 20, 19, 0.06); /* 更轻的阴影 */
 }
 
-[data-theme='light'] .option-item::before {
+[data-theme="light"] .option-item::before {
   background: linear-gradient(
     90deg,
     transparent,
@@ -3590,7 +3620,7 @@ h1 {
   ); /* Mid Gray 装饰线 */
 }
 
-[data-theme='light'] .option-item:hover {
+[data-theme="light"] .option-item:hover {
   background: linear-gradient(
     135deg,
     rgba(20, 20, 19, 0.05) 0%,
@@ -3601,7 +3631,7 @@ h1 {
   box-shadow: 0 4px 8px rgba(20, 20, 19, 0.1); /* 增强阴影 */
 }
 
-[data-theme='light'] .option-item input[type='checkbox'] {
+[data-theme="light"] .option-item input[type="checkbox"] {
   accent-color: #d97757; /* Orange - 与品牌色一致 */
 }
 
@@ -3621,7 +3651,7 @@ h1 {
  * 交互效果：
  *   - cursor: pointer（可点击）
  */
-.option-item input[type='checkbox'] {
+.option-item input[type="checkbox"] {
   margin-right: 1rem; /* 右外边距（与标签分离） */
   width: 18px; /* 固定宽度 */
   height: 18px; /* 固定高度 */
@@ -3917,7 +3947,7 @@ h1 {
  *   - 圆角：20px 20px 0 0（顶部圆角，与按钮圆角匹配）
  */
 .btn::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -3951,7 +3981,7 @@ h1 {
  *   - 悬停时透明度变为1（由:hover规则控制）
  */
 .btn::after {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -4119,7 +4149,7 @@ h1 {
  *   - 圆角：12px 12px 0 0（顶部圆角，与容器圆角匹配）
  */
 .status-message::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 0; /* 顶部对齐 */
   left: 0; /* 左边对齐 */
@@ -4340,7 +4370,8 @@ h1 {
   -moz-osx-font-smoothing: grayscale; /* 抗锯齿（macOS Firefox） */
   text-rendering: optimizeLegibility; /* 优化可读性 */
   font-family:
-    'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace; /* 等宽字体 */
+    "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New",
+    monospace; /* 等宽字体 */
   backdrop-filter: blur(16px) saturate(1.2); /* 毛玻璃效果 */
   -webkit-backdrop-filter: blur(16px) saturate(1.2); /* Safari支持 */
 }
@@ -4381,7 +4412,7 @@ h1 {
  *   - 悬停时显示（由:hover规则控制）
  */
 .shortcut-hint::before {
-  content: ''; /* 必需 */
+  content: ""; /* 必需 */
   position: absolute; /* 绝对定位 */
   top: 100%; /* 位于父元素下方 */
   left: 16px; /* 左偏移16px */
@@ -4971,8 +5002,8 @@ h1 {
   background: rgba(255, 255, 255, 0.03);
   color: #f5f5f7;
   font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
   font-size: 13px;
   line-height: 1.6;
   resize: vertical;
@@ -5656,7 +5687,7 @@ h1 {
 
 /** 强制覆盖代码高亮背景：确保语法高亮插件不覆盖背景 */
 .markdown-content .highlight,
-.markdown-content div[style*='background'] {
+.markdown-content div[style*="background"] {
   background: transparent !important; /* 透明背景 */
 }
 
@@ -5752,7 +5783,11 @@ code,
  * 交互：悬停时向上平移1px、阴影增强、边框变深
  */
 .language-label {
-  background: linear-gradient(135deg, rgba(0, 122, 255, 0.25), rgba(88, 86, 214, 0.2));
+  background: linear-gradient(
+    135deg,
+    rgba(0, 122, 255, 0.25),
+    rgba(88, 86, 214, 0.2)
+  );
   border: 1px solid rgba(0, 122, 255, 0.4);
   border-radius: 8px;
   padding: 5px 10px;
@@ -5783,7 +5818,11 @@ code,
  * 状态：.copied类时变绿色
  */
 .copy-button {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.08)
+  );
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 10px;
   padding: 7px 12px;
@@ -5810,7 +5849,11 @@ code,
 }
 /** 复制按钮悬停效果 */
 .copy-button:hover {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.08)
+  );
   border-color: rgba(255, 255, 255, 0.25);
   color: rgba(255, 255, 255, 0.9);
   transform: none;
@@ -5823,7 +5866,11 @@ code,
 }
 /** 复制按钮已复制状态 */
 .copy-button.copied {
-  background: linear-gradient(135deg, rgba(52, 199, 89, 0.25), rgba(52, 199, 89, 0.15));
+  background: linear-gradient(
+    135deg,
+    rgba(52, 199, 89, 0.25),
+    rgba(52, 199, 89, 0.15)
+  );
   border-color: rgba(52, 199, 89, 0.5);
   color: #4caf50;
   box-shadow: 0 4px 12px rgba(52, 199, 89, 0.3);
@@ -5996,7 +6043,7 @@ code,
     margin-bottom: 0.5rem;
   }
   /** option-item checkbox：宽高20px，右外边距0.75rem */
-  .option-item input[type='checkbox'] {
+  .option-item input[type="checkbox"] {
     width: 20px;
     height: 20px;
     margin-right: 0.75rem;
@@ -6250,7 +6297,7 @@ code,
     min-height: 40px;
   }
   /** setting-label checkbox：宽高18px */
-  .setting-label input[type='checkbox'] {
+  .setting-label input[type="checkbox"] {
     width: 18px;
     height: 18px;
   }
@@ -6533,7 +6580,7 @@ code,
     padding: 0;
   }
   /** setting-label checkbox：宽高20px（触摸友好） */
-  .setting-label input[type='checkbox'] {
+  .setting-label input[type="checkbox"] {
     width: 20px;
     height: 20px;
     min-width: 20px;
@@ -6948,260 +6995,260 @@ code,
  *   - 边框颜色：rgba(255, 255, 255, 0.x) → var(--border-primary)
  */
 
-[data-theme='light'] body,
-[data-theme='light'] .container,
-[data-theme='light'] h1,
-[data-theme='light'] h2,
-[data-theme='light'] h3,
-[data-theme='light'] h4,
-[data-theme='light'] h5,
-[data-theme='light'] h6,
-[data-theme='light'] p,
-[data-theme='light'] span,
-[data-theme='light'] label,
-[data-theme='light'] input,
-[data-theme='light'] textarea,
-[data-theme='light'] select,
-[data-theme='light'] button,
-[data-theme='light'] .header-title,
-[data-theme='light'] .settings-title,
-[data-theme='light'] .settings-subtitle,
-[data-theme='light'] .settings-item-label,
-[data-theme='light'] .settings-item-value,
-[data-theme='light'] .markdown-content,
-[data-theme='light'] .code-block,
-[data-theme='light'] .status-text,
-[data-theme='light'] .task-tab,
-[data-theme='light'] .task-tab-label,
-[data-theme='light'] .countdown-text,
-[data-theme='light'] .option-btn,
-[data-theme='light'] .message-content,
-[data-theme='light'] .feedback-textarea,
-[data-theme='light'] .submit-btn,
-[data-theme='light'] .action-btn,
-[data-theme='light'] .notification-toast {
+[data-theme="light"] body,
+[data-theme="light"] .container,
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4,
+[data-theme="light"] h5,
+[data-theme="light"] h6,
+[data-theme="light"] p,
+[data-theme="light"] span,
+[data-theme="light"] label,
+[data-theme="light"] input,
+[data-theme="light"] textarea,
+[data-theme="light"] select,
+[data-theme="light"] button,
+[data-theme="light"] .header-title,
+[data-theme="light"] .settings-title,
+[data-theme="light"] .settings-subtitle,
+[data-theme="light"] .settings-item-label,
+[data-theme="light"] .settings-item-value,
+[data-theme="light"] .markdown-content,
+[data-theme="light"] .code-block,
+[data-theme="light"] .status-text,
+[data-theme="light"] .task-tab,
+[data-theme="light"] .task-tab-label,
+[data-theme="light"] .countdown-text,
+[data-theme="light"] .option-btn,
+[data-theme="light"] .message-content,
+[data-theme="light"] .feedback-textarea,
+[data-theme="light"] .submit-btn,
+[data-theme="light"] .action-btn,
+[data-theme="light"] .notification-toast {
   color: var(--text-primary);
 }
 
 /* 浅色主题 - 次级文本颜色 */
-[data-theme='light'] .text-secondary,
-[data-theme='light'] .hint,
-[data-theme='light'] .placeholder,
-[data-theme='light'] .muted,
-[data-theme='light'] ::placeholder {
+[data-theme="light"] .text-secondary,
+[data-theme="light"] .hint,
+[data-theme="light"] .placeholder,
+[data-theme="light"] .muted,
+[data-theme="light"] ::placeholder {
   color: var(--text-secondary);
 }
 
 /* 浅色主题 - 背景颜色 */
-[data-theme='light'] body {
+[data-theme="light"] body {
   background: var(--bg-primary); /* Light Gray #e8e6dc - 页面底层 */
 }
 
-[data-theme='light'] .container {
+[data-theme="light"] .container {
   background: var(--bg-secondary); /* Light #faf9f5 - 温暖内容卡片 */
   border-color: var(--border-primary);
   box-shadow: var(--shadow-lg); /* 精致阴影让内容浮出 */
 }
 
-[data-theme='light'] .header {
+[data-theme="light"] .header {
   background: var(--bg-tertiary); /* #f2f1ec - Header */
   border-color: var(--border-primary);
 }
 
-[data-theme='light'] .settings-panel-content {
+[data-theme="light"] .settings-panel-content {
   background: var(--bg-elevated);
   border-color: var(--border-primary);
 }
 
-[data-theme='light'] .settings-item {
+[data-theme="light"] .settings-item {
   border-color: var(--border-secondary);
 }
 
-[data-theme='light'] .settings-item:hover {
+[data-theme="light"] .settings-item:hover {
   background: var(--bg-hover);
 }
 
-[data-theme='light'] .feedback-textarea,
-[data-theme='light'] textarea.feedback-textarea {
+[data-theme="light"] .feedback-textarea,
+[data-theme="light"] textarea.feedback-textarea {
   background: var(--bg-input, #e8e6dc) !important; /* Light Gray - 有区分度 */
   border-color: var(--border-primary) !important; /* Mid Gray 边框 */
   color: var(--text-primary) !important; /* Dark 文字 */
 }
 
-[data-theme='light'] .feedback-textarea::placeholder,
-[data-theme='light'] textarea::placeholder {
+[data-theme="light"] .feedback-textarea::placeholder,
+[data-theme="light"] textarea::placeholder {
   color: #91918d !important; /* Cloud Medium 占位符 */
 }
 
-[data-theme='light'] .option-btn {
+[data-theme="light"] .option-btn {
   background: var(--accent-secondary); /* Kraft 米黄棕 */
   border-color: var(--accent-primary); /* Book Cloth 边框 */
   color: var(--text-primary);
 }
 
-[data-theme='light'] .option-btn:hover {
+[data-theme="light"] .option-btn:hover {
   background: var(--accent-hover); /* 稍深的 Book Cloth */
   border-color: var(--accent-primary);
   color: #fff;
 }
 
-[data-theme='light'] .option-btn.selected {
+[data-theme="light"] .option-btn.selected {
   background: var(--accent-primary); /* Book Cloth 选中 */
   border-color: var(--accent-primary);
   color: #fff;
 }
 
-[data-theme='light'] .action-btn {
+[data-theme="light"] .action-btn {
   background: var(--accent-secondary); /* Kraft 米黄棕 */
   border-color: var(--accent-primary); /* Book Cloth 边框 */
   color: var(--text-primary);
 }
 
-[data-theme='light'] .action-btn:hover {
+[data-theme="light"] .action-btn:hover {
   background: var(--accent-hover); /* 稍深的 Book Cloth */
   border-color: var(--accent-primary);
   color: #fff;
 }
 
 /* 浅色主题 - 标签栏容器 */
-[data-theme='light'] .task-tabs-container {
+[data-theme="light"] .task-tabs-container {
   background: var(--bg-secondary); /* 浅色背景 */
   border-bottom-color: var(--border-primary);
 }
 
 /* 浅色主题 - 标签栏滚动条 */
-[data-theme='light'] .task-tabs::-webkit-scrollbar-track {
+[data-theme="light"] .task-tabs::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.05);
 }
 
-[data-theme='light'] .task-tabs::-webkit-scrollbar-thumb {
+[data-theme="light"] .task-tabs::-webkit-scrollbar-thumb {
   background: var(--text-muted);
 }
 
-[data-theme='light'] .task-tabs::-webkit-scrollbar-thumb:hover {
+[data-theme="light"] .task-tabs::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
 }
 
 /* 浅色主题 - 任务标签页 */
-[data-theme='light'] .task-tab {
+[data-theme="light"] .task-tab {
   background: var(--bg-secondary);
   border-color: var(--border-primary);
   color: var(--text-primary);
 }
 
-[data-theme='light'] .task-tab:hover {
+[data-theme="light"] .task-tab:hover {
   background: var(--bg-hover);
   border-color: var(--border-hover);
 }
 
-[data-theme='light'] .task-tab.active {
+[data-theme="light"] .task-tab.active {
   background: var(--accent-primary); /* Book Cloth 棕色 */
   border-color: var(--accent-primary);
   color: white;
 }
 
 /* 浅色主题 - 标签关闭按钮 */
-[data-theme='light'] .task-tab-close {
+[data-theme="light"] .task-tab-close {
   color: var(--text-secondary);
 }
 
-[data-theme='light'] .task-tab-close:hover {
+[data-theme="light"] .task-tab-close:hover {
   color: #ef4444; /* 红色 */
 }
 
-[data-theme='light'] .task-tab.active .task-tab-close {
+[data-theme="light"] .task-tab.active .task-tab-close {
   color: rgba(255, 255, 255, 0.8);
 }
 
-[data-theme='light'] .task-tab.active .task-tab-close:hover {
+[data-theme="light"] .task-tab.active .task-tab-close:hover {
   color: #ffffff;
 }
 
 /* 浅色主题 - 倒计时圆环（非激活标签） */
-[data-theme='light'] .countdown-ring svg circle {
+[data-theme="light"] .countdown-ring svg circle {
   stroke: #d4a27f; /* Kraft 米黄棕色 */
   stroke-opacity: 1;
 }
 
 /* 浅色主题 - 倒计时圆环（激活标签） */
-[data-theme='light'] .task-tab.active .countdown-ring svg circle {
+[data-theme="light"] .task-tab.active .countdown-ring svg circle {
   stroke: #fafaf7; /* Ivory Light 象牙白 */
   stroke-opacity: 1;
 }
 
 /* 浅色主题 - 倒计时数字（非激活标签） */
-[data-theme='light'] .countdown-ring .countdown-number {
+[data-theme="light"] .countdown-ring .countdown-number {
   color: #d4a27f; /* Kraft 米黄棕色，与圆环颜色一致 */
   font-weight: 600;
 }
 
 /* 浅色主题 - 倒计时数字（激活标签） */
-[data-theme='light'] .task-tab.active .countdown-ring .countdown-number {
+[data-theme="light"] .task-tab.active .countdown-ring .countdown-number {
   color: #fafaf7; /* Ivory Light 象牙白 */
   font-weight: 600;
 }
 
 /* 浅色主题 - 新任务按钮 */
-[data-theme='light'] .task-tab-new {
+[data-theme="light"] .task-tab-new {
   background: var(--bg-tertiary);
   border-color: var(--border-primary);
   color: var(--text-secondary);
 }
 
-[data-theme='light'] .task-tab-new:hover {
+[data-theme="light"] .task-tab-new:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
 /* 浅色主题 - Markdown 内容 */
-[data-theme='light'] .markdown-content {
+[data-theme="light"] .markdown-content {
   color: var(--text-primary);
 }
 
 /* 浅色主题 - Markdown 标题（覆盖基础样式中的硬编码颜色） */
-[data-theme='light'] .markdown-content h1,
-[data-theme='light'] .markdown-content h2,
-[data-theme='light'] .markdown-content h3,
-[data-theme='light'] .markdown-content h4,
-[data-theme='light'] .markdown-content h5,
-[data-theme='light'] .markdown-content h6 {
+[data-theme="light"] .markdown-content h1,
+[data-theme="light"] .markdown-content h2,
+[data-theme="light"] .markdown-content h3,
+[data-theme="light"] .markdown-content h4,
+[data-theme="light"] .markdown-content h5,
+[data-theme="light"] .markdown-content h6 {
   color: var(--text-primary);
 }
 
 /* 浅色主题 - Markdown 段落 */
-[data-theme='light'] .markdown-content p {
+[data-theme="light"] .markdown-content p {
   color: var(--text-primary);
 }
 
 /* 浅色主题 - Markdown 列表 */
-[data-theme='light'] .markdown-content ul,
-[data-theme='light'] .markdown-content ol {
+[data-theme="light"] .markdown-content ul,
+[data-theme="light"] .markdown-content ol {
   color: var(--text-primary);
 }
 
-[data-theme='light'] .markdown-content li {
+[data-theme="light"] .markdown-content li {
   color: var(--text-primary);
 }
 
 /* 浅色主题 - Markdown 列表标记 */
-[data-theme='light'] .markdown-content ul li::marker,
-[data-theme='light'] .markdown-content ol li::marker {
+[data-theme="light"] .markdown-content ul li::marker,
+[data-theme="light"] .markdown-content ol li::marker {
   color: var(--text-secondary);
 }
 
-[data-theme='light'] .markdown-content a {
+[data-theme="light"] .markdown-content a {
   color: var(--primary-600);
 }
 
 /* 浅色主题 - 内联代码：使用 Anthropic 品牌色 */
-[data-theme='light'] .markdown-content code {
+[data-theme="light"] .markdown-content code {
   background: var(--bg-tertiary);
   color: #c7442a; /* Anthropic 品牌 Orange/红色，适合内联代码 */
   border: 1px solid var(--border-primary);
 }
 
 /* 浅色主题 - 代码块 pre (浅色背景) */
-[data-theme='light'] .markdown-content pre {
+[data-theme="light"] .markdown-content pre {
   background: #f5f2e9 !important; /* Anthropic Light - 温暖的米白色 */
   border: 1px solid var(--border-primary);
 }
@@ -7221,7 +7268,7 @@ code,
  * 注意事项：
  *   使用 !important 确保覆盖基础样式和内联样式
  */
-[data-theme='light'] .markdown-content pre code {
+[data-theme="light"] .markdown-content pre code {
   background: transparent !important;
   color: #141413 !important; /* 默认深色文字 */
   border: none !important;
@@ -7229,45 +7276,45 @@ code,
 }
 
 /* 浅色主题 - 代码块容器内的 code 标签 */
-[data-theme='light'] .code-block-container code {
+[data-theme="light"] .code-block-container code {
   background: transparent !important;
   color: #141413 !important;
   border: none !important;
 }
 
-[data-theme='light'] .markdown-content blockquote {
+[data-theme="light"] .markdown-content blockquote {
   border-left-color: var(--primary-500);
   background: var(--bg-secondary);
   color: var(--text-secondary);
 }
 
-[data-theme='light'] .markdown-content table {
+[data-theme="light"] .markdown-content table {
   border-color: var(--border-primary);
 }
 
-[data-theme='light'] .markdown-content th,
-[data-theme='light'] .markdown-content td {
+[data-theme="light"] .markdown-content th,
+[data-theme="light"] .markdown-content td {
   border-color: var(--border-primary);
   color: var(--text-primary);
 }
 
 /* 浅色主题表格表头 - 使用品牌强调色作为背景 */
-[data-theme='light'] .markdown-content th {
+[data-theme="light"] .markdown-content th {
   background: rgba(217, 119, 87, 0.12); /* Orange 淡化作为背景 */
   color: var(--text-primary);
   font-weight: 600;
 }
 
 /* 浅色主题删除线 - 使用深色确保可见 */
-[data-theme='light'] .markdown-content del,
-[data-theme='light'] .markdown-content s,
-[data-theme='light'] .markdown-content .strikethrough {
+[data-theme="light"] .markdown-content del,
+[data-theme="light"] .markdown-content s,
+[data-theme="light"] .markdown-content .strikethrough {
   color: var(--text-tertiary); /* Mid Gray - 淡化文字 */
   text-decoration-color: var(--text-secondary); /* 深色删除线 */
 }
 
 /* 浅色主题 - 代码块容器 (浅色背景) */
-[data-theme='light'] .code-block-container {
+[data-theme="light"] .code-block-container {
   background: #f5f2e9 !important; /* Anthropic Light - 温暖的米白色 */
   border: 1px solid var(--border-primary);
   box-shadow:
@@ -7275,39 +7322,39 @@ code,
     0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
-[data-theme='light'] .code-block-container:hover {
+[data-theme="light"] .code-block-container:hover {
   box-shadow:
     0 6px 16px rgba(0, 0, 0, 0.08),
     0 3px 8px rgba(0, 0, 0, 0.05);
 }
 
-[data-theme='light'] .code-block {
+[data-theme="light"] .code-block {
   background: var(--bg-tertiary);
   border-color: var(--border-primary);
 }
 
-[data-theme='light'] .code-toolbar {
+[data-theme="light"] .code-toolbar {
   /* 移除工具栏背景，避免语言标签与复制按钮之间出现“透明黑块”视觉瑕疵 */
   background: transparent;
   border-color: var(--border-primary);
   color: var(--text-secondary);
 }
 
-[data-theme='light'] .code-toolbar .lang-label {
+[data-theme="light"] .code-toolbar .lang-label {
   color: var(--text-secondary);
 }
 
-[data-theme='light'] .code-toolbar .copy-btn {
+[data-theme="light"] .code-toolbar .copy-btn {
   color: var(--text-secondary);
 }
 
-[data-theme='light'] .code-toolbar .copy-btn:hover {
+[data-theme="light"] .code-toolbar .copy-btn:hover {
   color: var(--text-primary);
   background: rgba(0, 0, 0, 0.05);
 }
 
 /* 浅色主题 - 通知 Toast */
-[data-theme='light'] .notification-toast {
+[data-theme="light"] .notification-toast {
   background: var(--bg-elevated);
   border-color: var(--border-primary);
   color: var(--text-primary);
@@ -7315,47 +7362,47 @@ code,
 }
 
 /* 浅色主题 - 设置按钮、主题按钮、导出按钮（R125b） */
-[data-theme='light'] .settings-btn,
-[data-theme='light'] .theme-toggle-btn,
-[data-theme='light'] .export-btn {
+[data-theme="light"] .settings-btn,
+[data-theme="light"] .theme-toggle-btn,
+[data-theme="light"] .export-btn {
   background: var(--bg-secondary);
   border-color: var(--border-primary);
   color: var(--text-primary);
 }
 
-[data-theme='light'] .settings-btn:hover,
-[data-theme='light'] .theme-toggle-btn:hover,
-[data-theme='light'] .export-btn:hover {
+[data-theme="light"] .settings-btn:hover,
+[data-theme="light"] .theme-toggle-btn:hover,
+[data-theme="light"] .export-btn:hover {
   background: var(--bg-hover);
   border-color: var(--border-hover);
 }
 
 /* 浅色主题 - 滚动条 */
-[data-theme='light'] ::-webkit-scrollbar-thumb {
+[data-theme="light"] ::-webkit-scrollbar-thumb {
   background: var(--text-muted);
 }
 
-[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
 }
 
 /* 浅色主题 - 输入框焦点状态 */
-[data-theme='light'] input:focus,
-[data-theme='light'] textarea:focus,
-[data-theme='light'] select:focus {
+[data-theme="light"] input:focus,
+[data-theme="light"] textarea:focus,
+[data-theme="light"] select:focus {
   border-color: var(--primary-500);
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
 }
 
 /* 浅色主题 - 状态栏 */
-[data-theme='light'] .status-bar {
+[data-theme="light"] .status-bar {
   background: var(--bg-secondary);
   border-color: var(--border-primary);
   color: var(--text-secondary);
 }
 
 /* 浅色主题 - 进度条 */
-[data-theme='light'] .progress-bar {
+[data-theme="light"] .progress-bar {
   background: var(--bg-tertiary);
 }
 
@@ -7373,7 +7420,7 @@ code,
  *   深色模式使用渐变背景和内阴影创造凹陷效果，
  *   浅色模式使用扁平化设计，与整体浅色风格一致。
  */
-[data-theme='light'] .no-content-progress {
+[data-theme="light"] .no-content-progress {
   box-shadow: none; /* 去除内阴影，保持扁平化设计 */
   background: rgba(0, 0, 0, 0.05); /* 极浅灰色背景 */
 }
@@ -7383,7 +7430,7 @@ code,
    ========================================================================
    颜色：#E3DACC（奶油米色）- 与整体浅色主题协调
    ======================================================================== */
-[data-theme='light'] .no-content-progress-bar {
+[data-theme="light"] .no-content-progress-bar {
   background: #e3dacc; /* 奶油米色 - Claude 调色板的温暖色调 */
 }
 
@@ -7398,16 +7445,16 @@ code,
    注意：accent-color 决定复选框的填充色，
          浏览器会自动计算勾勾颜色以确保对比度。
    ======================================================================== */
-[data-theme='light'] .setting-label input[type='checkbox'] {
+[data-theme="light"] .setting-label input[type="checkbox"] {
   accent-color: #e3dacc; /* 奶油米色 - 与浅色主题协调 */
 }
 
-[data-theme='light'] .setting-label input[type='checkbox']:checked {
+[data-theme="light"] .setting-label input[type="checkbox"]:checked {
   box-shadow: 0 0 10px rgba(227, 218, 204, 0.4); /* 选中时奶油色发光阴影 */
 }
 
 /* 浅色主题 - 选项列表复选框（与设置面板复选框保持一致） */
-[data-theme='light'] .option-item input[type='checkbox'] {
+[data-theme="light"] .option-item input[type="checkbox"] {
   accent-color: #e3dacc; /* 奶油米色 */
 }
 
@@ -7430,12 +7477,12 @@ code,
    ======================================================================== */
 
 /* 浅色主题 - 音量滑块轨道（使用原生 accent-color 实现颜色区分） */
-[data-theme='light'] .volume-slider {
+[data-theme="light"] .volume-slider {
   accent-color: #d4a27f; /* Kraft 色 - 浏览器自动处理已填充/未填充轨道颜色 */
 }
 
 /* 浅色主题 - 音量滑块滑块（WebKit 浏览器） */
-[data-theme='light'] .volume-slider::-webkit-slider-thumb {
+[data-theme="light"] .volume-slider::-webkit-slider-thumb {
   background: linear-gradient(135deg, #d4a27f, #c89b70); /* Kraft 渐变 */
   box-shadow:
     0 2px 8px rgba(212, 162, 127, 0.4),
@@ -7443,7 +7490,7 @@ code,
 }
 
 /* 浅色主题 - 音量滑块滑块悬停效果（WebKit） */
-[data-theme='light'] .volume-slider::-webkit-slider-thumb:hover {
+[data-theme="light"] .volume-slider::-webkit-slider-thumb:hover {
   box-shadow:
     0 4px 15px rgba(212, 162, 127, 0.5),
     /* 增强主阴影 */ 0 0 0 3px rgba(0, 0, 0, 0.05),
@@ -7451,16 +7498,20 @@ code,
 }
 
 /* 浅色主题 - 音量滑块滑块（Firefox 浏览器） */
-[data-theme='light'] .volume-slider::-moz-range-thumb {
+[data-theme="light"] .volume-slider::-moz-range-thumb {
   background: linear-gradient(135deg, #d4a27f, #c89b70); /* Kraft 渐变 */
   border: none;
   box-shadow: 0 2px 8px rgba(212, 162, 127, 0.4); /* 主阴影 */
 }
 
 /* 浅色主题 - 音量值百分比显示 */
-[data-theme='light'] .volume-value {
+[data-theme="light"] .volume-value {
   color: #b0aea5; /* Mid Gray - 柔和的灰色 */
-  background: linear-gradient(135deg, #b0aea5, rgba(176, 174, 165, 0.8)); /* 灰色渐变 */
+  background: linear-gradient(
+    135deg,
+    #b0aea5,
+    rgba(176, 174, 165, 0.8)
+  ); /* 灰色渐变 */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -7481,49 +7532,49 @@ code,
      - GitHub 链接：rgba(20, 20, 19, 0.6)
    ======================================================================== */
 
-[data-theme='light'] .version-info {
+[data-theme="light"] .version-info {
   border-top-color: rgba(0, 0, 0, 0.08); /* 浅色分隔线 */
 }
 
-[data-theme='light'] .version-name {
+[data-theme="light"] .version-name {
   color: rgba(20, 20, 19, 0.6); /* 半透明深色 */
 }
 
-[data-theme='light'] .version-number {
+[data-theme="light"] .version-number {
   color: rgba(20, 20, 19, 0.5); /* 更浅的半透明深色 */
 }
 
-[data-theme='light'] .github-link {
+[data-theme="light"] .github-link {
   background: rgba(0, 0, 0, 0.03); /* 浅色背景 */
   color: rgba(20, 20, 19, 0.6); /* 半透明深色文字 */
   border-color: rgba(0, 0, 0, 0.08); /* 浅色边框 */
   text-decoration: none;
 }
 
-[data-theme='light'] .github-link:hover {
+[data-theme="light"] .github-link:hover {
   background: rgba(0, 0, 0, 0.06); /* 悬停：加深背景 */
   color: rgba(20, 20, 19, 0.9); /* 悬停：加深文字 */
   border-color: rgba(0, 0, 0, 0.12);
   text-decoration: none;
 }
 
-[data-theme='light'] .github-link:focus,
-[data-theme='light'] .github-link:active {
+[data-theme="light"] .github-link:focus,
+[data-theme="light"] .github-link:active {
   text-decoration: none;
   outline: none;
 }
 
 /* 浅色主题 - 倒计时 */
-[data-theme='light'] .countdown-ring {
+[data-theme="light"] .countdown-ring {
   stroke: var(--border-primary);
 }
 
-[data-theme='light'] .countdown-text {
+[data-theme="light"] .countdown-text {
   color: var(--text-primary);
 }
 
 /* 浅色主题 - 按钮组件 (btn 系列) */
-[data-theme='light'] .btn {
+[data-theme="light"] .btn {
   color: #fff; /* 统一白色文字 */
 }
 
@@ -7544,15 +7595,15 @@ code,
  *
  * 验证：tests/test_light_mode_button_text_color_r64.py / chrome-devtools 实测。
  */
-[data-theme='light'] .btn,
-[data-theme='light'] .btn-secondary,
-[data-theme='light'] .btn-primary {
+[data-theme="light"] .btn,
+[data-theme="light"] .btn-secondary,
+[data-theme="light"] .btn-primary {
   color: #fff;
 }
 
-[data-theme='light'] .btn span,
-[data-theme='light'] .btn-secondary span,
-[data-theme='light'] .btn-primary span {
+[data-theme="light"] .btn span,
+[data-theme="light"] .btn-secondary span,
+[data-theme="light"] .btn-primary span {
   color: inherit;
 }
 
@@ -7562,14 +7613,14 @@ code,
  *   3. 关闭 ``.btn::after`` 白色发光层（在棕红背景上会变「褪色」感）。
  * 深色模式不受影响——这里只用 [data-theme='light'] 收紧 specificity。
  */
-[data-theme='light'] .btn:hover,
-[data-theme='light'] .btn-secondary:hover,
-[data-theme='light'] .btn-primary:hover {
+[data-theme="light"] .btn:hover,
+[data-theme="light"] .btn-secondary:hover,
+[data-theme="light"] .btn-primary:hover {
   transform: none;
   box-shadow: 0 2px 6px rgba(217, 119, 87, 0.25);
 }
 
-[data-theme='light'] .btn:hover::after {
+[data-theme="light"] .btn:hover::after {
   opacity: 0;
 }
 
@@ -7602,21 +7653,21 @@ code,
    ======================================================================== */
 
 /* R65-1：反馈文本框聚焦 — 把蓝色边框/外轮廓换成 Anthropic Orange */
-[data-theme='light'] .feedback-textarea:focus {
+[data-theme="light"] .feedback-textarea:focus {
   border-color: rgba(217, 119, 87, 0.5);
   box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3);
 }
 
 /* R65-2：按钮按下瞬间不再闪 iOS 蓝（保留橙色主调） */
-[data-theme='light'] .btn:active,
-[data-theme='light'] .btn-primary:active,
-[data-theme='light'] .btn-secondary:active {
+[data-theme="light"] .btn:active,
+[data-theme="light"] .btn-primary:active,
+[data-theme="light"] .btn-secondary:active {
   background: #c56a4c;
   border-color: #c56a4c;
 }
 
 /* R65-3：问题描述容器 — 蓝紫渐变背景换成温暖 Orange/Cream 渐变 */
-[data-theme='light'] .description {
+[data-theme="light"] .description {
   background: linear-gradient(
     135deg,
     rgba(217, 119, 87, 0.08) 0%,
@@ -7629,7 +7680,7 @@ code,
 }
 
 /* R65-3b：description 顶部装饰线在浅色模式上需要可见的细线 */
-[data-theme='light'] .description::before {
+[data-theme="light"] .description::before {
   background: linear-gradient(
     90deg,
     transparent,
@@ -7639,28 +7690,28 @@ code,
 }
 
 /* R65-4：拖图到反馈文本框时的高亮（!important 是源规则用的） */
-[data-theme='light'] .textarea-drag-over {
+[data-theme="light"] .textarea-drag-over {
   border-color: rgba(217, 119, 87, 0.6) !important;
   background: rgba(217, 119, 87, 0.05) !important;
   box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3) !important;
 }
 
 /* R65-5：拖图到页面其他位置时的覆盖层 */
-[data-theme='light'] .drag-overlay-content {
+[data-theme="light"] .drag-overlay-content {
   border: 2px dashed rgba(217, 119, 87, 0.5);
   background: rgba(217, 119, 87, 0.1);
   color: var(--text-primary);
 }
 
 /* R65-6：设置面板输入框聚焦 — 蓝色 → Orange */
-[data-theme='light'] .setting-input:focus {
+[data-theme="light"] .setting-input:focus {
   border-color: #d97757;
   background: var(--bg-elevated);
   box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.1);
 }
 
 /* R65-7：设置按钮 focus 阴影（无障碍要求保留聚焦轮廓） */
-[data-theme='light'] .settings-btn:focus {
+[data-theme="light"] .settings-btn:focus {
   box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.3);
 }
 
@@ -7683,37 +7734,61 @@ code,
 
 /* 深色模式 - 插入代码按钮 - 灰白色（最低优先级辅助功能） */
 #insert-code-btn {
-  background: linear-gradient(135deg, #cacadb, #babacb) !important; /* 灰白色渐变 */
+  background: linear-gradient(
+    135deg,
+    #cacadb,
+    #babacb
+  ) !important; /* 灰白色渐变 */
   border-color: #cacadb !important;
   color: #1a1a1c !important; /* 深色文字确保对比度，符合 WCAG 标准 */
 }
 
 #insert-code-btn:hover {
-  background: linear-gradient(135deg, #dadaeb, #cacadb) !important; /* 悬停：整体提亮 */
+  background: linear-gradient(
+    135deg,
+    #dadaeb,
+    #cacadb
+  ) !important; /* 悬停：整体提亮 */
   border-color: #dadaeb !important;
 }
 
 /* 深色模式 - 上传图片按钮 - 灰蓝色（中等优先级辅助功能） */
 #upload-image-btn {
-  background: linear-gradient(135deg, #99b6d3, #89a6c3) !important; /* 灰蓝色渐变 */
+  background: linear-gradient(
+    135deg,
+    #99b6d3,
+    #89a6c3
+  ) !important; /* 灰蓝色渐变 */
   border-color: #99b6d3 !important;
   color: #1a1a1c !important; /* 深色文字确保对比度 */
 }
 
 #upload-image-btn:hover {
-  background: linear-gradient(135deg, #a9c6e3, #99b6d3) !important; /* 悬停：整体提亮 */
+  background: linear-gradient(
+    135deg,
+    #a9c6e3,
+    #99b6d3
+  ) !important; /* 悬停：整体提亮 */
   border-color: #a9c6e3 !important;
 }
 
 /* 深色模式 - 发送请求按钮 - 亮蓝色（最高优先级主要操作） */
 #submit-btn {
-  background: linear-gradient(135deg, #61aaf2, #519ae2) !important; /* 亮蓝色渐变，强调主要操作 */
+  background: linear-gradient(
+    135deg,
+    #61aaf2,
+    #519ae2
+  ) !important; /* 亮蓝色渐变，强调主要操作 */
   border-color: #61aaf2 !important;
   color: #fff !important; /* 白色文字确保可读性 */
 }
 
 #submit-btn:hover {
-  background: linear-gradient(135deg, #71baf2, #61aaf2) !important; /* 悬停：整体提亮 */
+  background: linear-gradient(
+    135deg,
+    #71baf2,
+    #61aaf2
+  ) !important; /* 悬停：整体提亮 */
   border-color: #71baf2 !important;
 }
 
@@ -7734,102 +7809,102 @@ code,
    ======================================================================== */
 
 /* 浅色模式 - 插入代码按钮 - Mid Gray（柔和辅助功能） */
-[data-theme='light'] #insert-code-btn {
+[data-theme="light"] #insert-code-btn {
   background: #b0aea5 !important; /* Mid Gray - 与浅色主题协调 */
   border-color: #b0aea5 !important;
   color: #fff !important; /* 白色文字 */
 }
 
-[data-theme='light'] #insert-code-btn:hover {
+[data-theme="light"] #insert-code-btn:hover {
   background: #9a9890 !important; /* 悬停：加深约 10% */
   border-color: #9a9890 !important;
 }
 
 /* 浅色模式 - 上传图片按钮 - Blue（清爽辅助功能） */
-[data-theme='light'] #upload-image-btn {
+[data-theme="light"] #upload-image-btn {
   background: #6a9bcc !important; /* Blue - 与浅色主题形成对比 */
   border-color: #6a9bcc !important;
   color: #fff !important; /* 白色文字 */
 }
 
-[data-theme='light'] #upload-image-btn:hover {
+[data-theme="light"] #upload-image-btn:hover {
   background: #5a8bbc !important; /* 悬停：加深约 10% */
   border-color: #5a8bbc !important;
 }
 
 /* 浅色模式 - 发送请求按钮 - Orange（温暖的主要 CTA） */
-[data-theme='light'] #submit-btn {
+[data-theme="light"] #submit-btn {
   background: #d97757 !important; /* Orange - 作为主要 CTA 引人注目 */
   border-color: #d97757 !important;
   color: #fff !important; /* 白色文字 */
 }
 
-[data-theme='light'] #submit-btn:hover {
+[data-theme="light"] #submit-btn:hover {
   background: #c56a4c !important; /* 悬停：加深为更深的橙色 */
   border-color: #c56a4c !important;
 }
 
 /* 浅色主题 - 次级按钮通用样式（Book Cloth 棕红色） */
-[data-theme='light'] .btn-secondary {
+[data-theme="light"] .btn-secondary {
   background: #cc785c; /* Book Cloth - Claude 调色板的温暖棕红色 */
   border-color: #cc785c;
   color: #fff; /* 白色文字 */
 }
 
-[data-theme='light'] .btn-secondary:hover {
+[data-theme="light"] .btn-secondary:hover {
   background: #b86a50; /* 悬停：加深约 10% */
   border-color: #b86a50;
 }
 
 /* 浅色主题 - 主按钮使用 Orange */
-[data-theme='light'] .btn-primary {
+[data-theme="light"] .btn-primary {
   background: #d97757; /* Orange */
   border-color: #d97757;
   color: #fff;
 }
 
-[data-theme='light'] .btn-primary:hover {
+[data-theme="light"] .btn-primary:hover {
   background: #c56a4c; /* 深 Orange */
   border-color: #c56a4c;
 }
 
 /* 浅色主题 - 代码标签 */
-[data-theme='light'] code {
+[data-theme="light"] code {
   background: var(--bg-tertiary, #e8e6dc) !important; /* Light Gray */
   color: var(--accent-primary, #d97757) !important; /* Orange 文字 */
   border-color: var(--border-primary) !important;
 }
 
 /* 浅色主题 - 内容卡片区域 */
-[data-theme='light'] .container {
+[data-theme="light"] .container {
   background: var(--bg-secondary) !important; /* 纯白 - 干净明亮 */
   border-color: var(--border-primary) !important;
   box-shadow: var(--shadow-lg) !important; /* 精致阴影 */
 }
 
-[data-theme='light'] .message-content,
-[data-theme='light'] .markdown-content {
+[data-theme="light"] .message-content,
+[data-theme="light"] .markdown-content {
   background: #f2f1ec !important; /* 介于 Light 和 Light Gray 之间 */
   border-color: var(--border-primary) !important;
 }
 
 /* 浅色主题 - 设置按钮和主题按钮 */
-[data-theme='light'] .settings-btn,
-[data-theme='light'] .theme-toggle-btn {
+[data-theme="light"] .settings-btn,
+[data-theme="light"] .theme-toggle-btn {
   background: var(--bg-tertiary, #e8e6dc) !important; /* Light Gray */
   border-color: var(--border-primary) !important;
   color: var(--text-primary, #141413) !important; /* Dark */
 }
 
-[data-theme='light'] .settings-btn:hover,
-[data-theme='light'] .theme-toggle-btn:hover {
+[data-theme="light"] .settings-btn:hover,
+[data-theme="light"] .theme-toggle-btn:hover {
   background: var(--bg-hover) !important; /* Orange 淡化 */
   border-color: var(--border-hover) !important;
 }
 
 /* 浅色主题 - 标题栏/标签栏 */
-[data-theme='light'] .header,
-[data-theme='light'] header {
+[data-theme="light"] .header,
+[data-theme="light"] header {
   background: var(--bg-tertiary) !important; /* Light Gray #e8e6dc - 微妙分隔 */
   border-color: var(--border-primary) !important;
 }
@@ -7858,50 +7933,50 @@ code,
  * 选择器说明：
  *   - span[style]：选择所有带有内联样式的 span（语法高亮 token）
  */
-[data-theme='light'] .markdown-content pre code span[style],
-[data-theme='light'] .code-block-container pre code span[style] {
+[data-theme="light"] .markdown-content pre code span[style],
+[data-theme="light"] .code-block-container pre code span[style] {
   text-shadow: none !important; /* 浅色模式移除文字阴影，提升可读性 */
 }
 
 /* 关键字 (def, return, if, else 等) - Book Cloth 棕红色 */
-[data-theme='light'] .markdown-content pre code span[style*='66D9EF'],
-[data-theme='light'] .code-block-container pre code span[style*='66D9EF'] {
+[data-theme="light"] .markdown-content pre code span[style*="66D9EF"],
+[data-theme="light"] .code-block-container pre code span[style*="66D9EF"] {
   color: #cc785c !important; /* Book Cloth */
 }
 
 /* 函数名 - Blue */
-[data-theme='light'] .markdown-content pre code span[style*='A6E22E'],
-[data-theme='light'] .code-block-container pre code span[style*='A6E22E'] {
+[data-theme="light"] .markdown-content pre code span[style*="A6E22E"],
+[data-theme="light"] .code-block-container pre code span[style*="A6E22E"] {
   color: #0066cc !important; /* Blue - 函数名 */
 }
 
 /* 字符串 - Green */
-[data-theme='light'] .markdown-content pre code span[style*='E6DB74'],
-[data-theme='light'] .code-block-container pre code span[style*='E6DB74'] {
+[data-theme="light"] .markdown-content pre code span[style*="E6DB74"],
+[data-theme="light"] .code-block-container pre code span[style*="E6DB74"] {
   color: #2e7d32 !important; /* Green - 字符串 */
 }
 
 /* 数字 - Purple */
-[data-theme='light'] .markdown-content pre code span[style*='AE81FF'],
-[data-theme='light'] .code-block-container pre code span[style*='AE81FF'] {
+[data-theme="light"] .markdown-content pre code span[style*="AE81FF"],
+[data-theme="light"] .code-block-container pre code span[style*="AE81FF"] {
   color: #8b5cf6 !important; /* Purple - 数字 */
 }
 
 /* 注释 - Cloud Medium 灰色 */
-[data-theme='light'] .markdown-content pre code span[style*='75715E'],
-[data-theme='light'] .code-block-container pre code span[style*='75715E'] {
+[data-theme="light"] .markdown-content pre code span[style*="75715E"],
+[data-theme="light"] .code-block-container pre code span[style*="75715E"] {
   color: #6a737d !important; /* 注释灰色 */
 }
 
 /* 普通文字/标点 - Dark */
-[data-theme='light'] .markdown-content pre code span[style*='F8F8F2'],
-[data-theme='light'] .code-block-container pre code span[style*='F8F8F2'] {
+[data-theme="light"] .markdown-content pre code span[style*="F8F8F2"],
+[data-theme="light"] .code-block-container pre code span[style*="F8F8F2"] {
   color: #24292e !important; /* Dark - 普通文字 */
 }
 
 /* 运算符 - Orange */
-[data-theme='light'] .markdown-content pre code span[style*='F92672'],
-[data-theme='light'] .code-block-container pre code span[style*='F92672'] {
+[data-theme="light"] .markdown-content pre code span[style*="F92672"],
+[data-theme="light"] .code-block-container pre code span[style*="F92672"] {
   color: #d97757 !important; /* Orange - 运算符 */
 }
 
@@ -7924,112 +7999,112 @@ code,
  */
 
 /* 关键字 (class, function, return, if, else, const, let, var, async, await 等) */
-[data-theme='light'] .token.keyword {
+[data-theme="light"] .token.keyword {
   color: #cc785c !important; /* Book Cloth 棕红色 */
 }
 
 /* 函数名 */
-[data-theme='light'] .token.function {
+[data-theme="light"] .token.function {
   color: #0066cc !important; /* Blue */
 }
 
 /* 类名 */
-[data-theme='light'] .token.class-name {
+[data-theme="light"] .token.class-name {
   color: #8b5cf6 !important; /* Purple */
 }
 
 /* 字符串 */
-[data-theme='light'] .token.string {
+[data-theme="light"] .token.string {
   color: #2e7d32 !important; /* Green */
 }
 
 /* 模板字符串 */
-[data-theme='light'] .token.template-string {
+[data-theme="light"] .token.template-string {
   color: #2e7d32 !important; /* Green */
 }
 
 /* 数字 */
-[data-theme='light'] .token.number {
+[data-theme="light"] .token.number {
   color: #8b5cf6 !important; /* Purple */
 }
 
 /* 布尔值 */
-[data-theme='light'] .token.boolean {
+[data-theme="light"] .token.boolean {
   color: #8b5cf6 !important; /* Purple */
 }
 
 /* 注释 */
-[data-theme='light'] .token.comment {
+[data-theme="light"] .token.comment {
   color: #6a737d !important; /* 注释灰色 */
 }
 
 /* 标点符号 (括号、花括号、分号、冒号等) */
-[data-theme='light'] .token.punctuation {
+[data-theme="light"] .token.punctuation {
   color: #141413 !important; /* Dark - 深色，确保可见 */
 }
 
 /* 运算符 (=, +, -, *, /, >, <, 等) */
-[data-theme='light'] .token.operator {
+[data-theme="light"] .token.operator {
   color: #d97757 !important; /* Orange */
 }
 
 /* 参数 */
-[data-theme='light'] .token.parameter {
+[data-theme="light"] .token.parameter {
   color: #141413 !important; /* Dark */
 }
 
 /* 属性 */
-[data-theme='light'] .token.property {
+[data-theme="light"] .token.property {
   color: #0066cc !important; /* Blue */
 }
 
 /* 正则表达式 */
-[data-theme='light'] .token.regex {
+[data-theme="light"] .token.regex {
   color: #d97757 !important; /* Orange */
 }
 
 /* 变量 */
-[data-theme='light'] .token.variable {
+[data-theme="light"] .token.variable {
   color: #141413 !important; /* Dark */
 }
 
 /* 常量 */
-[data-theme='light'] .token.constant {
+[data-theme="light"] .token.constant {
   color: #8b5cf6 !important; /* Purple */
 }
 
 /* 符号 */
-[data-theme='light'] .token.symbol {
+[data-theme="light"] .token.symbol {
   color: #d97757 !important; /* Orange */
 }
 
 /* 标签 */
-[data-theme='light'] .token.tag {
+[data-theme="light"] .token.tag {
   color: #cc785c !important; /* Book Cloth */
 }
 
 /* 属性名 */
-[data-theme='light'] .token.attr-name {
+[data-theme="light"] .token.attr-name {
   color: #0066cc !important; /* Blue */
 }
 
 /* 属性值 */
-[data-theme='light'] .token.attr-value {
+[data-theme="light"] .token.attr-value {
   color: #2e7d32 !important; /* Green */
 }
 
 /* 内置对象 */
-[data-theme='light'] .token.builtin {
+[data-theme="light"] .token.builtin {
   color: #8b5cf6 !important; /* Purple */
 }
 
 /* 选择器 (CSS) */
-[data-theme='light'] .token.selector {
+[data-theme="light"] .token.selector {
   color: #cc785c !important; /* Book Cloth */
 }
 
 /* 重要标记 */
-[data-theme='light'] .token.important {
+[data-theme="light"] .token.important {
   color: #d97757 !important; /* Orange */
 }
 
@@ -8044,7 +8119,7 @@ code,
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-[data-theme='light'] .code-block-container:hover {
+[data-theme="light"] .code-block-container:hover {
   transform: none;
   /* 保持与浅色主题默认状态一致（不增强/不减弱） */
   box-shadow:
