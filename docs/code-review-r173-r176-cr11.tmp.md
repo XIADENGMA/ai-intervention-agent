@@ -136,14 +136,16 @@ brand-colour guard and the new R174 quote-consistency guard.**
   Tracking as F-2 of CR#11; recommend option 1 as the lower-risk
   starting point.
 
-- **R174 baseline guard scope is intentionally narrow.** Only
-  `main.css` is enforced; `tri-state-panel.css` (project-owned but
-  not prettier'd) currently has 21 single-quote strings and could
-  diverge further as the tri-state UI evolves in v1.7.x.  If the
-  tri-state panel matures into a stable surface, consider extending
-  the guard to it in a future R-cycle (~5 minutes' work: add the
-  path to `DEFAULT_TARGETS`, set baseline to the current count,
-  watch for regressions).
+- **R174 baseline guard scope was intentionally narrow.** Originally
+  only `main.css` was enforced; `tri-state-panel.css` (project-owned
+  but not prettier'd) had 21 single-quote attribute-selector values
+  drifting from main.css's double-quote style.
+  **Closed in R178** (same cycle): `tri-state-panel.css` 21 single
+  quotes were collapsed to double quotes, `DEFAULT_TARGETS` extended
+  to cover both files, and the pre-commit `files` glob updated to
+  `^.../(main|tri-state-panel)\.css$`. `prism.css` (vendor) remains
+  the only documented exception. No further action required for this
+  cycle.
 
 ## Cross-cutting follow-ups (Code Review #11 work items)
 
@@ -151,7 +153,7 @@ brand-colour guard and the new R174 quote-consistency guard.**
 | ---- | ------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | F-1  | Low          | CHANGELOG markdown-link example trap (chore `1b96a47`): make `_MD_LINK_RE` backtick-aware or document the convention.        | **DONE in R177** — landed inline-code stripping + fenced-code-block state machine in `tests/test_docs_links_no_rot.py::_extract_local_targets`, plus 3 regression tests covering placeholder ignore + real link preservation. |
 | F-2  | Informational | Promote `?template=PULL_REQUEST_TEMPLATE.zh-CN.md` discoverability.                                                          | Track over the next 2 weeks via PR-create traffic; if zero Chinese PRs come through, move to option-1 inline link.                                                              |
-| F-3  | Low          | Extend R174 CSS quote guard to `tri-state-panel.css` once the tri-state UI surface stabilises.                               | Track separately; ~5 min in a future R-cycle.                                                                                                                                   |
+| F-3  | Low          | Extend R174 CSS quote guard to `tri-state-panel.css` once the tri-state UI surface stabilises.                               | **DONE in R178** (same cycle) — 21 single-quote attribute-selector values converted to double-quote; `DEFAULT_TARGETS` extended to cover `main.css` + `tri-state-panel.css`; pre-commit `files` glob synced; `prism.css` vendor file remains the only documented exception. |
 | F-4  | Low          | Detect line-number drift between `docs/noise-levels.md` (EN) §5 anchor table and the actual `webview-ui.js` / `extension.ts`. | Defer to v1.7.x P1 / P3 consumption — those changes will naturally rewrite the anchor table and force both copies to update.                                                    |
 
 ## Test posture
@@ -182,6 +184,12 @@ plus the link-rot chore.
 ✓ All 4 follow-ups from CR#10 are accounted for: F-1 / F-3 DONE in
 R174 / R173; F-2 / F-4 explicitly observation / deferred (no action
 required for tag).
+
+✓ CR#11 F-1 / F-3 closed inside the same cycle (R177 link-rot guard
++ R178 CSS quote guard extension).  F-2 (PR-template discoverability)
+is observational; F-4 (anchor-line drift) deferred to v1.7.x P1/P3
+work which will naturally rewrite the anchor table.  No CR#11 follow-
+up is left in "Low priority" purgatory at tag time.
 
 ✓ Both README.md (English) and README.zh-CN.md (Simplified Chinese)
 mirror each other after R175 governance docs split.  `.github/`

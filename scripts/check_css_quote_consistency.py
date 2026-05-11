@@ -72,21 +72,25 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_TARGETS: tuple[str, ...] = ("src/ai_intervention_agent/static/css/main.css",)
-"""默认守门文件列表。
+DEFAULT_TARGETS: tuple[str, ...] = (
+    "src/ai_intervention_agent/static/css/main.css",
+    "src/ai_intervention_agent/static/css/tri-state-panel.css",
+)
+"""默认守门文件列表（项目自有 CSS）。
 
 为什么不是整个 ``static/css/`` 目录？
 ----------------------------------
 
 * ``main.css`` 是 R169 commit ``73d9980`` 用 prettier 收敛过的文件，0 处
-  "裸露"single-quote —— 适合上守门；
+  "裸露"single-quote —— 适合上守门。
+* ``tri-state-panel.css`` 在 R178 的 follow-up 里被同步收敛到 double-quote
+  风格（21 处 attribute-selector 单引号一次性改完），同样 0 处违规，纳入
+  守门让 feature-scoped CSS 和 main.css 共享同一基线。
 * ``prism.css`` 是上游 prism.js 项目的 vendor 代码（``'Andale Mono'`` 等
-  字体名用 single-quote 是其原始风格），**不能改**；
-* ``tri-state-panel.css`` 没被 R169 prettier 接管，目前 21 处 single-quote
-  是合理状态（feature-scoped CSS，独立于 main.css 风格基线）。
+  字体名用 single-quote 是其原始风格），**不能改**，故仍排除在外。
 
-未来如果其他 CSS 文件也想纳入守门，把路径加进 ``DEFAULT_TARGETS`` 即可，
-不需要改 logic。
+未来如果新增项目自有 CSS（例如 ``components/foo.css``），把路径加进
+``DEFAULT_TARGETS`` 即可，不需要改 logic。
 """
 
 DEFAULT_BASELINE = 0

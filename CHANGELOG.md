@@ -11,6 +11,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R178** — **R174 CSS quote-consistency guard 扩展到 `tri-state-panel.css`**
+  （CR#11 F-4 / Risks§R174-scope follow-up）。
+  CR#11 §Risks 列了一条尾巴：R174 baseline guard 只覆盖 `main.css`，
+  `tri-state-panel.css`（feature-scoped CSS，159 行）当时仍有 21 处
+  attribute-selector single-quote（`[data-state='ready']` 等），与
+  `main.css` 100+ 处 `[data-xxx="..."]` 的 double-quote 风格漂移。
+  本提交一次性收敛：
+  - 把 `tri-state-panel.css` 里 21 处单引号 attribute-selector 值改成双
+    引号（`[data-state="ready"]` 等），banner 注释里的 prose
+    `host's real content region` apostrophe 不动；
+  - `scripts/check_css_quote_consistency.py` 的 `DEFAULT_TARGETS` 从
+    1 个文件扩成 2 个（main + tri-state-panel），同步更新 docstring
+    解释为什么 `prism.css` vendor 文件继续排除；
+  - `.pre-commit-config.yaml` 的 hook `files` glob 从
+    `^.../main\.css$` 改成 `^.../(main|tri-state-panel)\.css$`；
+  - `tests/test_css_quote_consistency_r174.py` 新增
+    `test_default_targets_cover_project_owned_css`（验证 main +
+    tri-state-panel 在 DEFAULT_TARGETS 内，prism 必须排除），并把旧测试
+    `test_hook_files_glob_targets_main_css` 改名为
+    `test_hook_files_glob_targets_project_owned_css` 同步更新断言；
+  - hook 跑全套：2 个文件 = 0 violation，baseline 仍 0，无回归。
+  价值：项目自有 CSS 现在共享同一个 quote-style 基线；CR#11 §Risks
+  R174-scope 条目可关。`prism.css` 因为是 vendor / 第三方原始风格保持
+  豁免，作为 documented exception 在 docstring 里说明。
+
 - **R175** — **`.github/` 治理文档按 README 模式拆 EN / zh-CN**。
   TODO.md 长期未完成项："`.github` 下面的文档应该分开中文版和英文版，默认英
   文版，参考 README 模式"。`.github/` 下原本的 `CONTRIBUTING.md` /

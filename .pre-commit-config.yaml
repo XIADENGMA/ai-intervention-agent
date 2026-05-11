@@ -88,8 +88,10 @@ repos:
   # 任何新增的"裸露" single-quote 字符串会 fail，强迫开发者用 double-quote
   # 写新代码（详见 scripts/check_css_quote_consistency.py 的 docstring）。
   #
-  # 只守 ``main.css`` 一个文件：``prism.css`` 是 vendor 代码、
-  # ``tri-state-panel.css`` 未被 R169 prettier 接管，都暂不纳入守门范围。
+  # 守门范围：``main.css`` + ``tri-state-panel.css``（R178 follow-up 把
+  # tri-state-panel.css 21 处 attribute-selector 单引号收敛到双引号后，
+  # 与 main.css 共享同一基线）。``prism.css`` 是上游 vendor 代码，
+  # 始终排除在外。
   - repo: local
     hooks:
       - id: check-css-quote-consistency
@@ -97,4 +99,4 @@ repos:
         entry: uv run python scripts/check_css_quote_consistency.py --quiet
         language: system
         pass_filenames: false
-        files: ^src/ai_intervention_agent/static/css/main\.css$
+        files: ^src/ai_intervention_agent/static/css/(main|tri-state-panel)\.css$

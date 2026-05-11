@@ -272,20 +272,43 @@ class TestPreCommitConfig(unittest.TestCase):
             config_text,
         )
 
-    def test_hook_files_glob_targets_main_css(self) -> None:
-        """files glob 必须明确指到 main.css 而不是整个 css/ 目录。
+    def test_hook_files_glob_targets_project_owned_css(self) -> None:
+        """files glob 必须明确指到项目自有 CSS（main + tri-state-panel）。
 
-        这是 R174 / CR#10 F-1 设计的关键决策（详见脚本 docstring）：
-        prism.css 是 vendor 代码、tri-state-panel.css 未被 prettier 接管，
-        都暂不纳入守门范围。如果未来扩展，需要同步改 DEFAULT_TARGETS 与
-        files glob。
+        这是 R174 / CR#10 F-1 + R178 follow-up 的关键决策：
+        ``prism.css`` 是 vendor 代码，**始终**排除在外；``main.css`` 和
+        ``tri-state-panel.css`` 都已经收敛到 double-quote 基线，纳入守门。
+        如果未来再加项目自有 CSS（例如 ``components/foo.css``），需要同步
+        改 ``DEFAULT_TARGETS`` 与 files glob。
         """
         config_path = REPO_ROOT / ".pre-commit-config.yaml"
         config_text = config_path.read_text(encoding="utf-8")
-        # 找到我们的 hook block
         self.assertIn(
-            "files: ^src/ai_intervention_agent/static/css/main\\.css$",
+            "files: ^src/ai_intervention_agent/static/css/(main|tri-state-panel)\\.css$",
             config_text,
+        )
+
+    def test_default_targets_cover_project_owned_css(self) -> None:
+        """``DEFAULT_TARGETS`` 必须涵盖项目自有 CSS（main + tri-state-panel）。
+
+        R178 follow-up 把 tri-state-panel.css 收敛到 double-quote 后，
+        DEFAULT_TARGETS 同步扩展。这条测试防止后续重构悄悄把它从默认目标
+        里删掉，让守门覆盖范围缩水。
+        """
+        from scripts.check_css_quote_consistency import DEFAULT_TARGETS
+
+        self.assertIn(
+            "src/ai_intervention_agent/static/css/main.css",
+            DEFAULT_TARGETS,
+        )
+        self.assertIn(
+            "src/ai_intervention_agent/static/css/tri-state-panel.css",
+            DEFAULT_TARGETS,
+        )
+        # vendor 代码必须保持排除
+        self.assertNotIn(
+            "src/ai_intervention_agent/static/css/prism.css",
+            DEFAULT_TARGETS,
         )
 
 
