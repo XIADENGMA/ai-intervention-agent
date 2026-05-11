@@ -197,7 +197,18 @@ class TestDocsLinksDoNotRot(unittest.TestCase):
             "docs/api/index.md",
             "docs/api.zh-CN/index.md",
             "docs/workflow.md",
+            # R175：``.github/`` 四组 governance docs 按 README 模式拆 EN /
+            # zh-CN，两套必须始终在场 —— 否则 README / 文档里的 link 会变 404。
             ".github/SECURITY.md",
+            ".github/SECURITY.zh-CN.md",
+            ".github/CONTRIBUTING.md",
+            ".github/CONTRIBUTING.zh-CN.md",
+            ".github/CODE_OF_CONDUCT.md",
+            ".github/CODE_OF_CONDUCT.zh-CN.md",
+            ".github/SUPPORT.md",
+            ".github/SUPPORT.zh-CN.md",
+            ".github/PULL_REQUEST_TEMPLATE.md",
+            ".github/PULL_REQUEST_TEMPLATE.zh-CN.md",
         )
         missing = [name for name in must_cover if name not in rels]
         self.assertEqual(

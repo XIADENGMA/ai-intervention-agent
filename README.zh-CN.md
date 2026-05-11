@@ -246,7 +246,7 @@ ai-intervention-agent 工具使用细节：
 - **文档总索引**（按角色定位）：[`docs/README.zh-CN.md`](docs/README.zh-CN.md) · [`docs/README.md`](docs/README.md)
 - **脚本索引**（CI 门禁 / 生成器 / QA）：[`scripts/README.md`](scripts/README.md)
 - **发布说明**：[`CHANGELOG.md`](CHANGELOG.md) · VS Code 插件 marketplace 专属：[`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md)
-- **贡献指南**：[`CONTRIBUTING.md`](.github/CONTRIBUTING.md) · [`CODE_OF_CONDUCT.md`](.github/CODE_OF_CONDUCT.md)
+- **贡献指南**：[`CONTRIBUTING.zh-CN.md`](.github/CONTRIBUTING.zh-CN.md) · [`CODE_OF_CONDUCT.zh-CN.md`](.github/CODE_OF_CONDUCT.zh-CN.md)
 - **API 文档（英文）**：[`docs/api/index.md`](docs/api/index.md)
 - **API 文档（简体中文）**：[`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md)
 - **MCP 工具说明（英文）**：[`docs/mcp_tools.md`](docs/mcp_tools.md)

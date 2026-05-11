@@ -48,7 +48,7 @@
 - [`security/AUDIT_2026-05-04.md`](security/AUDIT_2026-05-04.md) —
   最近一次依赖漏洞审计（`pip-audit`），含升级配方与残留 CVE
   说明。
-- [`../.github/SECURITY.md`](../.github/SECURITY.md) — 漏洞披露政策、受支持版本、
+- [`../.github/SECURITY.zh-CN.md`](../.github/SECURITY.zh-CN.md) — 漏洞披露政策、受支持版本、
   AppleScript executor 安全模型。
 - [`lessons-learned-css-and-options.md`](lessons-learned-css-and-options.md) — v1.5.45
   批次的内部复盘（浅色模式 iOS 蓝泄漏、MCP 工具描述漂

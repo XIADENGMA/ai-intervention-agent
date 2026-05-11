@@ -9,6 +9,38 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R175** — **`.github/` 治理文档按 README 模式拆 EN / zh-CN**。
+  TODO.md 长期未完成项："`.github` 下面的文档应该分开中文版和英文版，默认英
+  文版，参考 README 模式"。`.github/` 下原本的 `CONTRIBUTING.md` /
+  `CODE_OF_CONDUCT.md` / `SUPPORT.md` / `SECURITY.md` /
+  `PULL_REQUEST_TEMPLATE.md` 5 份治理文档全是中英文 inline 混排（行内
+  `English · 中文` 形式，或块级分段交错），让英语 reader 必须忽略一半内容、
+  中文 reader 同理 —— 体验差且与 README 的纯净分文件模式不一致。
+  本提交把 5 份治理文档全部按 `README.md` / `README.zh-CN.md` 模式拆开：
+  - `CONTRIBUTING.md`（英文默认）+ 新增 `CONTRIBUTING.zh-CN.md`；
+  - `CODE_OF_CONDUCT.md`（英文，对齐 Contributor Covenant 2.1 原文）+ 新增
+    `CODE_OF_CONDUCT.zh-CN.md`（中文译本，正式约束以英文为准）；
+  - `SUPPORT.md`（英文）+ 新增 `SUPPORT.zh-CN.md`；
+  - `SECURITY.md`（英文）+ 新增 `SECURITY.zh-CN.md`；
+  - `PULL_REQUEST_TEMPLATE.md`（英文默认）+ 新增
+    `PULL_REQUEST_TEMPLATE.zh-CN.md` —— GitHub 默认弹出英文模板，中文用户
+    在 PR URL 末尾追加 `?template=PULL_REQUEST_TEMPLATE.zh-CN.md` 切换。
+  每个文件顶部按 README 模式加 ``English | [简体中文](./xxx.zh-CN.md)``
+  形式的语言切换 banner。同步更新所有引用：
+  - `README.zh-CN.md` → `CONTRIBUTING.zh-CN.md` / `CODE_OF_CONDUCT.zh-CN.md`
+  - `docs/README.zh-CN.md` → `.github/SECURITY.zh-CN.md`
+  - `docs/troubleshooting.zh-CN.md` → `.github/SUPPORT.zh-CN.md` × 2 处 +
+    `.github/SECURITY.zh-CN.md` × 2 处
+  - `packages/vscode/README.zh-CN.md` → `.github/SECURITY.zh-CN.md`
+  英文文档保持原 `.md` 链接不变（默认即英文版）；历史文档
+  `docs/lessons-learned-silent-decay.md` 内的旧引用是讲过去事件，**不动**。
+  测试守门：`tests/test_docs_links_no_rot.py::test_scan_covers_at_least_known_files`
+  的 `must_cover` 列表从 1 个 `.github/SECURITY.md` 扩到 10 个（5 对 EN +
+  zh-CN），任何未来 PR 误删某个文档都会立即被锁住。R80 docs link-rot 全量
+  扫描仍保持 0 broken link。
+
 ### Added
 
 - **R174** — **CR#10 F-1 落地：CSS 字符串引号一致性守门 hook**。

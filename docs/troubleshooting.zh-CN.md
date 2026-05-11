@@ -3,7 +3,7 @@
 > English version: [`troubleshooting.md`](troubleshooting.md)
 
 针对最常见的部署 / 运行时问题的精简 FAQ。如果你的问题不在这里，
-请参考 [`SUPPORT.md`](../.github/SUPPORT.md) 选择合适渠道。
+请参考 [`SUPPORT.zh-CN.md`](../.github/SUPPORT.zh-CN.md) 选择合适渠道。
 
 > 提示：拿到日志后绝大多数问题都能秒级定位。在 `config.toml` 里
 > 设 `web_ui.log_level = "DEBUG"`（或独立 server 用环境变量
@@ -108,7 +108,7 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 
 **症状**：设置页点 "Open in IDE" 后无任何动静。
 
-**为什么这么严**：这个端点强制三道 guard（见 `.github/SECURITY.md`）：
+**为什么这么严**：这个端点强制三道 guard（见 `.github/SECURITY.zh-CN.md`）：
 
 1. **仅 loopback** —— 非 loopback 源直接 403。
 2. **路径白名单** —— 只允许打开"当前生效配置文件" + `config.toml.default`，
@@ -438,9 +438,9 @@ Dashboard 的「近期日志」行在生产环境一直处于 stale 状态。
 
 ## 还是没解决？
 
-1. 看 [`SUPPORT.md`](../.github/SUPPORT.md) 选合适渠道。
+1. 看 [`SUPPORT.zh-CN.md`](../.github/SUPPORT.zh-CN.md) 选合适渠道。
 2. 安全相关症状**不要**开公开 issue，按
-   [`SECURITY.md`](../.github/SECURITY.md) 走私有公告。
+   [`SECURITY.zh-CN.md`](../.github/SECURITY.zh-CN.md) 走私有公告。
 3. 不确定是 bug、配置、还是环境问题，就开
    [GitHub Discussion][disc]。
 
