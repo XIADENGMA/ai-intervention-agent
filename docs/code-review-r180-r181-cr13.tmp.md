@@ -157,10 +157,10 @@ downstream had consumed v1.6.3 yet).
 
 | ID    | Severity | Item                                                                                                                                  | Owner suggestion                                                                                                                                  |
 | ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F-1   | Medium   | Document a release-recovery playbook (`docs/release-recovery.md`) covering: (a) clean abort when Build fails (re-tag safe); (b) partial-publish recovery when some Publish jobs succeed (PyPI version rejected re-upload); (c) downstream user comms if a tag had to be force-deleted. | Open as a follow-up in a future R-cycle. ~30 min write. Add `[Unreleased]` entry once written.                                                  |
-| F-2   | Low      | Audit `codeql.yml` and `vscode.yml` for the same `paths-ignore: docs/**` posture. If either ever starts running doc-aware checks, expand R181 guard to cover them. | Track in the 6th R181 test case docstring; revisit only when adding doc-aware steps. Today both workflows are safely ignoring docs.             |
-| F-3   | Low      | Consider a `bump_version.py --warn-empty-unreleased` flag that prints a warning (not error) when bumping with an empty `[Unreleased]`. Helps catch "forgot to backfill entries" mistakes during active development. | v1.7.x roadmap. Not a regression — empty post-bump is correct; warning is for the bump-attempt path only.                                       |
-| F-4   | Medium   | `tests/test_workflow_paths_ignore_r181.py:test_no_other_workflow_silently_re_ignores_docs` is doc-anchored only. If we agree codeql / vscode shouldn't re-add `docs/**`, expand to assert that posture too. | Cleanly separates "docs-aware workflows" from "build-aware workflows". Defer until F-2 forces the issue.                                          |
+| F-1   | Medium   | Document a release-recovery playbook (`docs/release-recovery.md`) covering: (a) clean abort when Build fails (re-tag safe); (b) partial-publish recovery when some Publish jobs succeed (PyPI version rejected re-upload); (c) downstream user comms if a tag had to be force-deleted. | **DONE in CR#13 follow-up** — landed bilingual `docs/release-recovery.md` (EN) + `docs/release-recovery.zh-CN.md` (zh-CN), covering all 3 failure patterns plus a communication template plus a "what R180+R181 prevent" cross-reference table. ≈ 200 lines each. |
+| F-2   | Low      | Audit `codeql.yml` and `vscode.yml` for the same `paths-ignore: docs/**` posture. If either ever starts running doc-aware checks, expand R181 guard to cover them. | **DONE in CR#13 audit pass** — codeql.yml: legitimate `paths-ignore` (CodeQL is code-analysis-only, no doc surface). vscode.yml: uses `paths:` allow-list (no `paths-ignore`), inherently excludes docs/. Neither runs pytest / ci_gate.py / doc-aware guards. R181 footgun is **scope-limited to test.yml**; F-4 promoted to assert this posture. |
+| F-3   | Low      | Consider a `bump_version.py --warn-empty-unreleased` flag that prints a warning (not error) when bumping with an empty `[Unreleased]`. Helps catch "forgot to backfill entries" mistakes during active development. | v1.7.x roadmap. Not a regression — empty post-bump is correct; warning is for the bump-attempt path only. Defer.                                  |
+| F-4   | Medium   | `tests/test_workflow_paths_ignore_r181.py:test_no_other_workflow_silently_re_ignores_docs` is doc-anchored only. If we agree codeql / vscode shouldn't re-add `docs/**`, expand to assert that posture too. | **DONE in CR#13 follow-up** — promoted to `test_codeql_and_vscode_workflows_dont_run_doc_guards`: asserts neither workflow invokes `pytest`, `ci_gate.py`, or any of the 7 doc-aware test scripts. A future contributor adding a doc-aware step to codeql/vscode trips this and revisits R181's scope. |
 
 ## Test posture
 
@@ -220,10 +220,18 @@ prevention** for the next 50 cycles.
 
 Next R-cycle should consume one of:
 
-1. **F-1** — write `docs/release-recovery.md` (highest user value).
-2. Pick a new latent defect from the R-cycle backlog (e.g. CR#10
+1. ~~**F-1** — write `docs/release-recovery.md` (highest user
+   value).~~ **DONE in CR#13 same-cycle close.**
+2. ~~**F-2** — audit codeql/vscode workflows.~~ **DONE in CR#13
+   same-cycle close (no footgun).**
+3. ~~**F-4** — promote R181 6th test from doc-anchor to
+   assertion.~~ **DONE in CR#13 same-cycle close.**
+4. **F-3** — `bump_version.py --warn-empty-unreleased` (deferred
+   to v1.7.x roadmap).
+5. Pick a new latent defect from the R-cycle backlog (e.g. CR#10
    F-4 anchor-line drift, CR#11 F-2 PR-template discoverability).
-3. Address a v1.7.x roadmap item.
+6. Address a v1.7.x roadmap item.
 
 End-state: v1.6.3 shipped clean, R180 + R181 added permanent
-guardrails, project is in a release-ready state.
+guardrails, CR#13 F-1/F-2/F-4 closed in-cycle (only F-3 deferred),
+project is in a release-ready state.

@@ -11,16 +11,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **CR#13 F-1** — bilingual `docs/release-recovery.md` (EN) +
+  `docs/release-recovery.zh-CN.md` (zh-CN): release-recovery
+  playbook covering 3 failure patterns (Build fails → safe
+  re-tag; some Publish ✓/✗ → never re-use burned version; only
+  `Create GitHub Release` fails → manual `gh release create`).
+  Includes a "what R180+R181 prevent" cross-reference table, a
+  communication template, and links to related guards
+  (R149/R180/R181 + bump_version.py + tag_push_safety.py).
+  ≈ 200 lines / 200 行 each.
 - **CR#13** — `docs/code-review-r180-r181-cr13.tmp.md`: code-review
   artefact for the v1.6.3 release-lifecycle rescue cycle (R180 +
   R181). Covers the failed attempt-1 (R151 fossilisation) → clean
   abort → R180 + R181 fixes → successful attempt-2 (5 jobs ✓:
   PyPI, Open VSX, Marketplace skip, GitHub Release, artefacts).
-  4 follow-up items (F-1 release-recovery playbook, F-2 codeql/
-  vscode workflow audit, F-3 `bump_version.py
-  --warn-empty-unreleased`, F-4 doc-anchored→assertion-anchored
-  R181 6th-test promotion). Single-cycle `*.tmp.md` artefact per
-  R168 naming convention.
+  4 follow-up items: F-1 (DONE, this entry), F-2 (DONE, audit
+  result: codeql.yml legitimate / vscode.yml uses paths: allow-
+  list), F-3 (deferred to v1.7.x), F-4 (DONE, see below). Single-
+  cycle `*.tmp.md` artefact per R168 naming convention.
+
+### Changed
+
+- **CR#13 F-4** —
+  `tests/test_workflow_paths_ignore_r181.py:test_codeql_and_vscode_workflows_dont_run_doc_guards`:
+  promoted from doc-anchored `assertTrue(True)` to real assertion.
+  Asserts neither `codeql.yml` nor `vscode.yml` invokes `pytest`,
+  `ci_gate.py`, or any of 7 doc-aware test scripts
+  (`test_housekeeping`, `test_docs_links`, `test_changelog`,
+  `test_readme`, `test_generate_docs`, `check_i18n`,
+  `check_locales`). Trips if a future maintainer adds a doc-aware
+  step to those workflows, prompting them to revisit R181's
+  scope. Same 6 cases, same file, no test-count delta.
 
 ### Changed
 

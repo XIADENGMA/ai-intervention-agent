@@ -165,18 +165,54 @@ class TestR181WorkflowPathsIgnore(unittest.TestCase):
             "R181 注释必须解释具体风险 (CHANGELOG / docs / guard)",
         )
 
-    def test_no_other_workflow_silently_re_ignores_docs(self) -> None:
-        """Defensive: other workflows (codeql / vscode) historically
-        also had ``docs/**`` paths-ignore. We don't *require* them to
-        match test.yml's posture (codeql is for code analysis only;
-        vscode build doesn't read CHANGELOG.md guards), but if they
-        ever start running pytest-like guards, this test should be
-        expanded — flag the assumption explicitly so a future
-        reviewer sees it."""
-        # No assertion — this is a documentation-anchored test.
-        # The body's existence + the docstring above are the
-        # signal. Pytest will record the test name in CI logs.
-        self.assertTrue(True)
+    def test_codeql_and_vscode_workflows_dont_run_doc_guards(self) -> None:
+        """CR#13 §F-4 — promote former doc-anchor to assertion.
+
+        F-2 audit (CR#13) confirmed:
+
+        * ``codeql.yml`` analyses code only (steps: ``checkout``,
+          ``codeql/init``, ``codeql/analyze``). Its
+          ``paths-ignore: [docs/**, '**/*.md', ...]`` is *legitimate*
+          optimisation — CodeQL has no reason to look at docs.
+        * ``vscode.yml`` uses ``paths:`` (allow-list), not
+          ``paths-ignore:``. Its allow-list (``packages/vscode/**``,
+          ``scripts/package_vscode_vsix.mjs``, ``package*.json``,
+          ``.github/workflows/vscode.yml``) excludes docs/ by
+          construction. Its steps are ``npm ci`` + ``vscode:lint``
+          + ``vscode:test`` + ``vscode:package`` — no pytest, no
+          ci_gate.py, no doc-aware guard.
+
+        The R181 footgun only matters for workflows that *run
+        doc-aware checks* but *also* skip on doc-only commits. This
+        test locks the absence of pytest / ci_gate.py invocations
+        in codeql + vscode so a future maintainer adding a
+        doc-aware step trips this assertion and revisits R181's
+        scope.
+        """
+        forbidden_invocations = (
+            "pytest",
+            "ci_gate.py",
+            "test_housekeeping",
+            "test_docs_links",
+            "test_changelog",
+            "test_readme",
+            "test_generate_docs",
+            "check_i18n",
+            "check_locales",
+        )
+        workflow_dir = ROOT / ".github/workflows"
+        for name in ("codeql.yml", "vscode.yml"):
+            wf = workflow_dir / name
+            self.assertTrue(wf.exists(), f"{name} 必须存在")
+            text = wf.read_text(encoding="utf-8")
+            for needle in forbidden_invocations:
+                self.assertNotIn(
+                    needle,
+                    text,
+                    f".github/workflows/{name} 不应调用 {needle!r} —— "
+                    "若加入 doc-aware 检查，需要先重审 R181 paths-ignore "
+                    "posture（CR#13 §F-4 通告）。",
+                )
 
 
 if __name__ == "__main__":
