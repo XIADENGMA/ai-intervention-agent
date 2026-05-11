@@ -54,24 +54,24 @@ Request **interactive user feedback** through the Web UI (browser or VS Code Web
   - Max length: **1000000** characters (extra content will be truncated). The
     10 MB byte hard limit in `task_queue` still applies as a DoS guard.
 - `predefined_options` (array, optional)
-  - Predefined choices the user can pick from. **Three input shapes are accepted** (v1.5.20+):
-    1. `list[str]` — simple labels, all initially unchecked
-    2. `list[dict]` — objects of shape `{ "label": str, "default": bool }`,
-       so the recommended choice can be pre-selected without an extra parameter
-    3. `list[str]` paired with `predefined_options_defaults` — see below
-  - Each option max length: **10000** characters
-  - Non-string / non-`{label,...}` items are ignored
+  - Predefined choices the user can pick from. **Two canonical input shapes** (v1.6.0+):
+    1. **RECOMMENDED** `list[dict]` — objects of shape
+       `{ "label": str, "default": bool }`. Mark the recommended option with
+       `default: true` to get a real pre-checked checkbox in the UI. Field
+       aliases accepted: `label` / `text` / `value`,
+       `default` / `selected` / `checked`.
+    2. `list[str]` — simple labels, all initially unchecked. Use this only
+       when no recommendation is needed.
+  - Each option max length: **10000** characters (overflow truncated)
+  - Non-string / non-`{label,...}` items are silently dropped
   - `null` / missing / `[]` means no predefined options
-- `predefined_options_defaults` (array of bool, optional, v1.5.20+)
-  - Sibling array to the simple `list[str]` form: which checkbox should start
-    pre-checked. Lenient normalisation:
-    - Truthy aliases: `True` / `1` / `1.0` / `"true"` / `"yes"` / `"on"` /
-      `"selected"` (case-insensitive, trimmed)
-    - Everything else (including `None`, `0`, lists, dicts) → `False`
-  - Length reconciliation:
-    - longer than `predefined_options` → silently truncated
-    - shorter → padded with `False`
-  - Ignored when `predefined_options` already uses the `{label, default}` form
+  - **Removed in R167 (v1.6.0+)**: the legacy parallel-array shape
+    `predefined_options_defaults` (sibling boolean array) has been removed —
+    use the `list[dict]` shape above to express "recommended" options.
+    Clients still sending `predefined_options_defaults` will get a clear
+    `ToolError` from FastMCP's strict schema (`additionalProperties: false`),
+    which is intentional: silent acceptance would let LLMs keep sampling the
+    obsolete parallel-array shape without learning.
 
 #### Returns
 
@@ -118,13 +118,7 @@ panel.
 
 #### Examples
 
-Simple prompt:
-
-```text
-interactive_feedback(message="Please confirm the next step.")
-```
-
-Prompt with options:
+Simple prompt (no recommended option needed — `list[str]`):
 
 ```text
 interactive_feedback(
@@ -133,7 +127,8 @@ interactive_feedback(
 )
 ```
 
-Prompt with a recommended option pre-selected (object form):
+Prompt with a **recommended** option pre-selected (use the recommended
+`list[dict]` shape):
 
 ```text
 interactive_feedback(
@@ -146,12 +141,8 @@ interactive_feedback(
 )
 ```
 
-Equivalent using the parallel-array form:
+Simple prompt without options:
 
 ```text
-interactive_feedback(
-  message="Choose the rollout plan:",
-  predefined_options=["Rebase", "Merge", "Defer"],
-  predefined_options_defaults=[true, false, false]
-)
+interactive_feedback(message="Please confirm the next step.")
 ```

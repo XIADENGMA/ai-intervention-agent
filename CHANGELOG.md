@@ -11,6 +11,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R167** — **predefined_options 形态收敛到 list[dict] 推荐写法，移除并行
+  数组形态**。`predefined_options` 之前支持 3 种输入形态：
+  - `list[str]`（A）；
+  - `list[dict]`（B，``[{label, default}]`` 对象数组）；
+  - `list[str] + predefined_options_defaults`（C，并行布尔数组）。
+  其中 B 与 C 功能完全等价，但 C 是经典反模式（并行数组对齐 bug、API 表面
+  冗余、JSON Schema 难以 enforce 位置约束、LLM-unfriendly）。业界主流
+  （HTML ``<option selected>``、React selectable array、JSON Schema
+  ``enum`` + ``default``）也都是对象式表达。R167 收敛到 A + B 两种形态：
+  - **移除** ``predefined_options_defaults`` 顶层 MCP 参数（FastMCP
+    ``additionalProperties: false`` 会让旧调用方收到清晰的 ToolError）；
+  - **移除** ``server_feedback.interactive_feedback`` 中的 parallel-array
+    合并逻辑（"detect list + zip into dict form"，约 30 行删除）；
+  - **强化** ``predefined_options`` description 主动推荐 ``list[dict]``
+    形态（带 RECOMMENDED 字眼、明示 R167 已移除 C 形态、移除 ``[Recommended]``
+    文本前缀 hack 的提及）；
+  - **保留** ``validate_input_with_defaults`` 的 dict 形态解析能力——前端
+    HTTP ``POST /api/tasks`` 仍接受 ``predefined_options_defaults`` 字段
+    （VS Code 插件 / 外部脚本路径），但 LLM MCP 调用必须用 dict 形态。
+  - 文档 ``docs/mcp_tools{,.zh-CN}.md`` 已同步精简（从 3 形态变 2 形态，
+    多了一段"R167 移除说明"）；老测试 ``test_predefined_options_defaults_
+    in_signature_r63b.py`` 被替换为 ``test_predefined_options_shape_r167.py``
+    （锁住"参数已移除 + dict 形态正向行为"）；``test_interactive_feedback_
+    errors.py::test_v1_5_36_drift_args_do_not_raise`` 迁移到 list[dict]
+    写法，并新增 ``test_predefined_options_defaults_now_raises_r167`` 锁
+    "传 R167 已移除参数会触发 TypeError"。
+  - 全测试 4904 passed 0 failed。
+
 - **R166** — **放宽三块字数软上限，与 LLM 长上下文场景对齐**。原项目里
   存在 3 处"软"字符上限互不一致地夹击了合法长 prompt 场景（LLM 长
   context 拼接、技术文档粘贴、长 review feedback）：

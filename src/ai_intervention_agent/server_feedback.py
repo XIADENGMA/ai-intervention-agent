@@ -744,41 +744,27 @@ async def interactive_feedback(
         description=(
             "Optional list of predefined choices the user can pick from "
             "(rendered as multi-select checkboxes alongside a free-text reply). "
-            "Three input shapes are accepted (v1.5.20+): "
-            "(a) list[str] — simple labels, all initially unchecked; "
-            "(b) list[dict] of shape "
-            '{"label": str, "default": bool} — let the recommended option '
-            "start pre-checked without any extra param "
-            '(aliases: "label"/"text"/"value", "default"/"selected"/"checked"); '
-            "(c) list[str] paired with the sibling param "
-            "`predefined_options_defaults` (parallel boolean array). "
+            "Two canonical input shapes (v1.6.0+ — the legacy parallel-array "
+            "shape `predefined_options_defaults` was removed in R167; use the "
+            "dict form below to mark recommended options): "
+            "(a) **RECOMMENDED** list[dict] of shape "
+            '{"label": str, "default": bool} — mark the recommended option '
+            "with `default: true` so the UI shows a pre-checked checkbox "
+            "(field aliases accepted: "
+            '"label"/"text"/"value", "default"/"selected"/"checked"); '
+            "(b) list[str] — simple labels, all initially unchecked "
+            "(use this when no recommendation is needed). "
             "Non-string and non-{label,...} items are silently dropped. "
-            "Each option max length: 500 characters (longer items are truncated). "
+            "Each option max length: 10000 characters (longer items truncated). "
             "Tips: "
             "(1) keep options short, action-oriented and mutually distinguishable; "
-            "(2) prefer the dict form "
-            '`{"label": "Apply", "default": true}` to mark the '
-            "recommended/default answer — the UI now renders real pre-checked "
-            "checkboxes, so do NOT rely on text-prefix hacks for marking "
-            "recommended options; "
+            "(2) PREFER the dict form for ANY recommended option — "
+            '`{"label": "Apply", "default": true}`. The UI renders real '
+            "pre-checked checkboxes, so do NOT use text-prefix hacks "
+            "(adding marker words to the label) for marking recommendations; "
             "(3) the user may also ignore options and reply with free text. "
             "If omitted, the server falls back to `options` for "
             "cross-tool compatibility."
-        ),
-    ),
-    predefined_options_defaults: list | None = Field(
-        default=None,
-        description=(
-            "Optional sibling array (v1.5.20+) for the `list[str]` shape of "
-            "`predefined_options`: each element decides whether the "
-            "corresponding checkbox starts pre-checked. "
-            "Truthy aliases (case-insensitive, trimmed): "
-            'True / 1 / 1.0 / "true" / "yes" / "on" / "selected"; '
-            "everything else (including None / 0 / lists / dicts) → False. "
-            "Length is silently truncated when longer than `predefined_options` "
-            "and padded with False when shorter. "
-            "Ignored when `predefined_options` already uses the "
-            '{"label", "default"} dict form (which takes precedence).'
         ),
     ),
     summary: str | None = Field(
@@ -929,35 +915,18 @@ async def interactive_feedback(
         )
         resolved_options = options
 
-    # R63b：parallel array 形态——把 ``predefined_options_defaults`` 合并进
-    # ``resolved_options``，统一走 dict 形态后再交给
-    # ``validate_input_with_defaults``。这样上层 LLM 既可以用 dict 形态
-    # ``[{"label": ..., "default": true}]``，也可以用平行数组形态
-    # ``predefined_options=[...] + predefined_options_defaults=[...]``，与
-    # ``docs/mcp_tools.md`` v1.5.20+ 公开 API 对齐。
-    # 注意：dict 形态中的 ``default`` 字段优先级高于这里的 parallel 数组——
-    # 当某项已经是 dict 时跳过合并，保持调用方的原始意图。
-    if (
-        isinstance(predefined_options_defaults, list)
-        and isinstance(resolved_options, list)
-        and resolved_options
-    ):
-        merged_options: list[Any] = []
-        for idx, opt in enumerate(resolved_options):
-            if isinstance(opt, str):
-                # 仅当 opt 是纯字符串时才注入 default；超长 defaults 静默截
-                # 断、过短自动 pad False（``_normalize_option_default`` 处理
-                # 不可解释的值）
-                default_raw = (
-                    predefined_options_defaults[idx]
-                    if idx < len(predefined_options_defaults)
-                    else False
-                )
-                merged_options.append({"label": opt, "default": default_raw})
-            else:
-                # dict / list-pair 形态：保持原样，避免覆盖调用方显式 default
-                merged_options.append(opt)
-        resolved_options = merged_options
+    # R167：移除了 v1.5.20 的 ``predefined_options_defaults`` 并行数组形态
+    # （任务 3 的"功能去重"）。LLM 应当统一使用 list[dict] 形态
+    # （``[{"label": ..., "default": true}]``）来表达"推荐项"——它单形态、
+    # 无并行数组对齐 bug、与业界主流（HTML <option selected>、React selectable
+    # array、JSON Schema enum+default）一致、且对将来扩展（icon / hint /
+    # disabled / value 等字段）友好。
+    #
+    # 兼容性：FastMCP 默认 ``additionalProperties: false``——客户端如果还在
+    # 传 ``predefined_options_defaults`` 会被 ToolError 拒掉并附 schema 错
+    # 误，提示迁移到 list[dict] 形态。这是有意为之的 hard deprecation：
+    # silent accept + 静默忽略 会让 LLM 持续 sample 错形态，硬错才能反馈
+    # 给 client 端 LLM 做自我纠正。
 
     # 仅在调试场景下记录被忽略的兼容参数（INFO 级别会在生产中产生噪音，因此用 debug）。
     # NOTE: `timeout_seconds` 是 `timeout` 的兼容别名（有些客户端显式带单位后缀），
