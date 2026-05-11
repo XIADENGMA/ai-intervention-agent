@@ -27,8 +27,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - `PULL_REQUEST_TEMPLATE.md`（英文默认）+ 新增
     `PULL_REQUEST_TEMPLATE.zh-CN.md` —— GitHub 默认弹出英文模板，中文用户
     在 PR URL 末尾追加 `?template=PULL_REQUEST_TEMPLATE.zh-CN.md` 切换。
-  每个文件顶部按 README 模式加 ``English | [简体中文](./xxx.zh-CN.md)``
-  形式的语言切换 banner。同步更新所有引用：
+  每个文件顶部按 README 模式加 "English | 简体中文" 双链接形式的语言切换
+  banner（点 zh-CN 链接跳中文版，中文版同样加反向链接跳英文版）。同步更新
+  所有引用：
   - `README.zh-CN.md` → `CONTRIBUTING.zh-CN.md` / `CODE_OF_CONDUCT.zh-CN.md`
   - `docs/README.zh-CN.md` → `.github/SECURITY.zh-CN.md`
   - `docs/troubleshooting.zh-CN.md` → `.github/SUPPORT.zh-CN.md` × 2 处 +
