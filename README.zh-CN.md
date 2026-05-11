@@ -215,18 +215,10 @@ ai-intervention-agent 工具使用细节：
 - **自动重调**：倒计时到点自动提交，减少会话超时中断
 - **通知**：Web UI / 声音 / 系统通知 / Bark（loopback URL 自动过滤；设置面板会推荐对应的 LAN IP）
 - **SSH / 局域网友好**：适配 SSH 端口转发；本地网络支持时会通过 mDNS 自动发布 `<host>.local` 入口
-- **Server 自检 resource**（`aiia://server/info`）：实时报当前 runtime / fastmcp 版本 / 中间件链 / 任务队列快照，便于跨 client 诊断
-- **MCP 协议规范**（2025-11-25）：工具注解 + Server 身份元数据 + 自包含图标，让 ChatGPT Desktop / Claude Desktop / Cursor 原生识别工具语义，不再每次弹「危险操作」二次确认
-- **生产级中间件**：`ErrorHandling` + `RateLimiting`（10 req/s，burst 20）+ `Timing` + `Logging` 四层链路，并通过 `ctx.info` 把 `task.created` / `task.completed` 等结构化事件回送 MCP client chat sidebar
 
-## 工作原理
-
-1. AI 客户端调用 MCP 工具 `interactive_feedback`。
-2. MCP 服务进程确保 Web UI 子进程可用，然后通过 HTTP 创建任务（`POST /api/tasks`）。
-3. 浏览器（或 VS Code Webview）使用**双通道**渲染任务：SSE（`GET /api/events`，支持 `Last-Event-ID` 断线续传）做实时推送，HTTP 轮询作为 SSE 掉线时的安全网。
-4. 你提交反馈后，Web UI 会在任务队列中完成对应任务。
-5. MCP 服务进程通过 SSE + 低频 HTTP 轮询（`GET /api/tasks/{task_id}`）等待，再把反馈（文本 + 图片）返回给 AI 客户端。
-6. （可选）MCP 服务进程会按配置触发通知（Bark / 系统通知 / 声音 / Web 提示）。Bark 推送会自动过滤 loopback 地址（`localhost` / `127.x.x.x` / `::1`），并在 Web UI 设置面板里推荐对应的 LAN IP 写入 `external_base_url`。
+> 工作原理、架构图、生产级中间件、Server 自检 resource、MCP 协议规范支持
+> 等技术细节请参考 [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md) 与
+> [`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)。
 
 ## VS Code 插件（可选）
 
@@ -251,84 +243,6 @@ ai-intervention-agent 工具使用细节：
 | Linux    | `~/.config/ai-intervention-agent/`                     |
 | macOS    | `~/Library/Application Support/ai-intervention-agent/` |
 | Windows  | `%APPDATA%/ai-intervention-agent/`                     |
-
-## 架构
-
-```mermaid
-flowchart TD
-  subgraph CLIENTS["AI 客户端"]
-    AI_CLIENT["AI CLI / IDE<br/>(Cursor, VS Code, Claude Code, ...)"]
-  end
-
-  subgraph MCP_PROC["MCP 服务进程（Python）"]
-    MCP_SRV["ai-intervention-agent<br/>(server.py / FastMCP)"]
-    MCP_TOOL["MCP 工具<br/>interactive_feedback"]
-    SVC_MGR["服务管理<br/>(ServiceManager)"]
-    CFG_MGR_MCP["配置管理<br/>(config_manager.py)"]
-    NOTIF_MGR["通知管理<br/>(notification_manager.py)"]
-    NOTIF_PROVIDERS["Providers<br/>(notification_providers.py)"]
-    MCP_SRV --> MCP_TOOL
-    MCP_SRV --> CFG_MGR_MCP
-    MCP_SRV --> NOTIF_MGR
-    NOTIF_MGR --> NOTIF_PROVIDERS
-  end
-
-  subgraph WEB_PROC["Web UI 进程（Python / Flask）"]
-    WEB_SRV["Web UI 服务<br/>(web_ui.py / Flask)"]
-    WEB_CFG_MGR["配置管理<br/>(config_manager.py)"]
-    HTTP_API["HTTP API<br/>(/api/*)"]
-    TASK_Q["任务队列<br/>(task_queue.py)"]
-    WEB_FRONTEND["浏览器前端<br/>(static/js/app.js + multi_task.js)"]
-    WEB_SRV --> HTTP_API
-    WEB_SRV --> TASK_Q
-    WEB_SRV --> WEB_CFG_MGR
-    WEB_FRONTEND <-->|"SSE /api/events + 轮询 /api/tasks"| HTTP_API
-    WEB_FRONTEND -->|提交反馈| HTTP_API
-  end
-
-  subgraph VSCODE_PROC["VS Code 插件（Node）"]
-    VSCODE_EXT["扩展宿主<br/>(packages/vscode/extension.ts)"]
-    VSCODE_WEBVIEW["Webview 前端<br/>(webview.ts + webview-ui.js<br/>+ webview-notify-core.js + webview-settings-ui.js<br/>+ tri-state-panel.js)"]
-    VSCODE_EXT --> VSCODE_WEBVIEW
-    VSCODE_WEBVIEW <-->|"SSE /api/events + 轮询 /api/tasks"| HTTP_API
-    VSCODE_WEBVIEW -->|提交反馈| HTTP_API
-  end
-
-  subgraph USER_UI["用户界面"]
-    BROWSER["浏览器<br/>(桌面/移动端)"]
-    VSCODE["VS Code<br/>(侧边栏面板)"]
-    USER["用户"]
-  end
-
-  CFG_FILE["config.toml<br/>(用户配置目录)"]
-
-  AI_CLIENT -->|MCP 调用| MCP_TOOL
-  MCP_TOOL -->|启动/检查 Web UI| SVC_MGR
-  SVC_MGR -->|spawn/monitor| WEB_SRV
-
-  USER -->|输入/点击| WEB_FRONTEND
-  USER -->|输入/点击| VSCODE_WEBVIEW
-  BROWSER -->|加载界面| WEB_FRONTEND
-  VSCODE -->|渲染界面| VSCODE_WEBVIEW
-
-  MCP_TOOL -->|"HTTP POST /api/tasks"| HTTP_API
-  MCP_TOOL -->|"HTTP GET /api/tasks/{task_id}"| HTTP_API
-
-  WEB_CFG_MGR <-->|读写 + watcher| CFG_FILE
-  CFG_MGR_MCP <-->|读写 + watcher| CFG_FILE
-
-  MCP_TOOL -->|触发通知| NOTIF_MGR
-  NOTIF_PROVIDERS -->|系统通知 / 声音 / Bark / Web 提示| USER
-```
-
-> 上图刻意只画出顶层进程与最显眼的模块。内部辅助 —— 例如 `state_machine.py`
-> （单任务生命周期）、`web_ui_mdns.py`（局域网 mDNS 服务发现）、
-> `web_ui_security.py`（CSRF / origin / token 拦截）、
-> `task_queue_singleton.py`（单进程队列访问入口）、
-> `server_feedback.py`（`interactive_feedback` MCP 工具实现）、
-> `enhanced_logging.py`、`protocol.py` 等 —— 都属于上述两个进程，按模块在
-> [`docs/api.zh-CN/`](docs/api.zh-CN/index.md)（中文）与
-> [`docs/api/`](docs/api/index.md)（English）下提供详细 API 文档。
 
 ## 文档
 

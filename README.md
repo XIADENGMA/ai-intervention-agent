@@ -216,18 +216,11 @@ ai-intervention-agent usage details:
 - **Auto re-submit**: keep sessions alive by auto-submitting at timeout
 - **Notifications**: web / sound / system / Bark (loopback URLs auto-suppressed; LAN-IP suggestion surfaced in settings)
 - **SSH / LAN friendly**: works behind port forwarding; mDNS publishes a `<host>.local` URL when the local network supports it
-- **Server self-info resource** (`aiia://server/info`): live runtime / fastmcp version / middleware chain / task-queue snapshot for cross-tool diagnostics
-- **MCP-spec compliant** (2025-11-25 protocol): tool annotations, server identity, and self-contained icons let ChatGPT Desktop / Claude Desktop / Cursor render the server natively without nagging "destructive operation" confirmations
-- **Production-grade middleware**: `ErrorHandling` + `RateLimiting` (10 req/s, burst 20) + `Timing` + `Logging` chain, with structured `task.created` / `task.completed` events forwarded to the MCP client via `ctx.info`
 
-## How it works
-
-1. Your AI client calls the MCP tool `interactive_feedback`.
-2. The MCP server ensures the Web UI process is running, then creates a task via HTTP (`POST /api/tasks`).
-3. The browser (or VS Code Webview) renders the task using a **dual-channel** transport: SSE (`GET /api/events`, with `Last-Event-ID` resume) for real-time updates, and HTTP polling as a safety net when SSE drops.
-4. When you submit feedback, the Web UI completes the task in the task queue.
-5. The MCP server waits via SSE + a low-frequency HTTP poll (`GET /api/tasks/{task_id}`), then returns your feedback (text + images) back to the AI client.
-6. Optionally, the MCP server triggers notifications (Bark / system / sound / web hints) based on your config. Bark URLs that resolve to loopback addresses are automatically suppressed and the Web UI surfaces a LAN-IP suggestion in the settings panel.
+> Architecture diagram, "how it works" flow, production middleware chain,
+> server self-info resource, and MCP-spec compliance details live under
+> [`docs/api/index.md`](docs/api/index.md) and
+> [`docs/mcp_tools.md`](docs/mcp_tools.md).
 
 ## VS Code extension (optional)
 
@@ -252,86 +245,6 @@ ai-intervention-agent usage details:
 | Linux   | `~/.config/ai-intervention-agent/`                     |
 | macOS   | `~/Library/Application Support/ai-intervention-agent/` |
 | Windows | `%APPDATA%/ai-intervention-agent/`                     |
-
-## Architecture
-
-```mermaid
-flowchart TD
-  subgraph CLIENTS["AI clients"]
-    AI_CLIENT["AI CLI / IDE<br/>(Cursor, VS Code, Claude Code, ...)"]
-  end
-
-  subgraph MCP_PROC["MCP server process (Python)"]
-    MCP_SRV["ai-intervention-agent<br/>(server.py / FastMCP)"]
-    MCP_TOOL["MCP tool<br/>interactive_feedback"]
-    SVC_MGR["Service manager<br/>(ServiceManager)"]
-    CFG_MGR_MCP["Config manager<br/>(config_manager.py)"]
-    NOTIF_MGR["Notification manager<br/>(notification_manager.py)"]
-    NOTIF_PROVIDERS["Providers<br/>(notification_providers.py)"]
-    MCP_SRV --> MCP_TOOL
-    MCP_SRV --> CFG_MGR_MCP
-    MCP_SRV --> NOTIF_MGR
-    NOTIF_MGR --> NOTIF_PROVIDERS
-  end
-
-  subgraph WEB_PROC["Web UI process (Python / Flask)"]
-    WEB_SRV["Web UI service<br/>(web_ui.py / Flask)"]
-    WEB_CFG_MGR["Config manager<br/>(config_manager.py)"]
-    HTTP_API["HTTP API<br/>(/api/*)"]
-    TASK_Q["Task queue<br/>(task_queue.py)"]
-    WEB_FRONTEND["Browser frontend<br/>(static/js/app.js + multi_task.js)"]
-    WEB_SRV --> HTTP_API
-    WEB_SRV --> TASK_Q
-    WEB_SRV --> WEB_CFG_MGR
-    WEB_FRONTEND <-->|"SSE /api/events + poll /api/tasks"| HTTP_API
-    WEB_FRONTEND -->|submit feedback| HTTP_API
-  end
-
-  subgraph VSCODE_PROC["VS Code extension (Node)"]
-    VSCODE_EXT["Extension host<br/>(packages/vscode/extension.ts)"]
-    VSCODE_WEBVIEW["Webview frontend<br/>(webview.ts + webview-ui.js<br/>+ webview-notify-core.js + webview-settings-ui.js<br/>+ tri-state-panel.js)"]
-    VSCODE_EXT --> VSCODE_WEBVIEW
-    VSCODE_WEBVIEW <-->|"SSE /api/events + poll /api/tasks"| HTTP_API
-    VSCODE_WEBVIEW -->|submit feedback| HTTP_API
-  end
-
-  subgraph USER_UI["User interfaces"]
-    BROWSER["Browser<br/>(desktop/mobile)"]
-    VSCODE["VS Code<br/>(sidebar panel)"]
-    USER["User"]
-  end
-
-  CFG_FILE["config.toml<br/>(user config directory)"]
-
-  AI_CLIENT -->|MCP call| MCP_TOOL
-  MCP_TOOL -->|start/check Web UI| SVC_MGR
-  SVC_MGR -->|spawn/monitor| WEB_SRV
-
-  USER -->|input / click| WEB_FRONTEND
-  USER -->|input / click| VSCODE_WEBVIEW
-  BROWSER -->|load UI| WEB_FRONTEND
-  VSCODE -->|render UI| VSCODE_WEBVIEW
-
-  MCP_TOOL -->|"HTTP POST /api/tasks"| HTTP_API
-  MCP_TOOL -->|"HTTP GET /api/tasks/{task_id}"| HTTP_API
-
-  WEB_CFG_MGR <-->|read/write + watcher| CFG_FILE
-  CFG_MGR_MCP <-->|read/write + watcher| CFG_FILE
-
-  MCP_TOOL -->|trigger notifications| NOTIF_MGR
-  NOTIF_PROVIDERS -->|system / sound / Bark / web hints| USER
-```
-
-> The diagram intentionally shows top-level processes and the most
-> visible modules. Internal helpers — e.g. `state_machine.py` (per-task
-> lifecycle), `web_ui_mdns.py` (LAN service discovery via mDNS),
-> `web_ui_security.py` (CSRF / origin / token gates),
-> `task_queue_singleton.py` (single-process queue access),
-> `server_feedback.py` (the `interactive_feedback` MCP tool body),
-> `enhanced_logging.py`, `protocol.py`, etc. — live in the same two
-> processes and are documented per-module under
-> [`docs/api/`](docs/api/index.md) (English) and
-> [`docs/api.zh-CN/`](docs/api.zh-CN/index.md) (中文).
 
 ## Documentation
 

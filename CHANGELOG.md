@@ -11,6 +11,50 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R169** — **精简 README，把"工作原理 / 架构图 / 中间件 / 自检 resource /
+  MCP 协议规范支持"等技术深细节迁移到 `docs/api{,.zh-CN}/index.md`**。
+  TODO 任务 5 要求："`README.md` 主要特性内容太杂，技术细节下沉到 docs"。
+  R169 处理：
+  - **`README.md` / `README.zh-CN.md`**：
+    - 在「Key features / 主要特性」清单里移除 3 条偏服务端实现细节的项目：
+      *Server self-info resource*、*MCP protocol specification*、
+      *Production-grade middleware* （这些是给"想看怎么实现"的开发者看的，
+      不是"决定要不要用"的卖点）。
+    - 删除整段 `## How it works` / `## 工作原理`（HTTP / SSE / polling 时序
+      细节、Bark loopback 等运行时机制）。
+    - 删除整段 `## Architecture` / `## 架构` 含 Mermaid flowchart（节点 13 个、
+      边 18 条），README 长度 ~80 行下降。
+    - 在「Key features / 主要特性」末尾追加一段 callout：把读者**主动**引到
+      `docs/api{,.zh-CN}/index.md` 与 `docs/mcp_tools{,.zh-CN}.md`，避免
+      "想看细节的人找不到入口"。
+  - **`docs/api/index.md` / `docs/api.zh-CN/index.md`**（迁移目的地，无丢失）：
+    - 在「Modules / 模块列表」**之前**插入 5 个新章节，按"先体感、再细节、
+      再合规性"顺序铺排：
+      1. ``## How it works`` / ``## 工作原理`` —— 完整保留 6 步时序；
+      2. ``## Architecture`` / ``## 架构`` —— Mermaid flowchart 完整迁入
+         （CLIENTS / MCP_PROC / WEB_PROC / VSCODE_PROC / USER_UI 五个 subgraph
+         全部保留），其后保留"内部 helper 模块在下方模块列表"的指引；
+      3. ``## Production-grade middleware`` / ``## 生产级中间件`` —— 四级中间件
+         链 + ``task.created`` / ``task.notified`` / ``task.completed`` 三个
+         结构化事件；
+      4. ``## Server self-info resource`` / ``## Server 自检 resource`` ——
+         ``aiia://server/info`` 字段清单；
+      5. ``## MCP-spec compliance (2025-11-25 protocol)`` / ``## MCP 协议
+         规范支持（2025-11-25 协议）`` —— 工具 annotation + FastMCP tag +
+         server identity 三层规范支持，给 ChatGPT Desktop / Claude Desktop /
+         Cursor 等客户端的渲染兜底。
+  - **设计哲学**：README 是"决定要不要用"的第一面（卖点 + 截图 + 安装），
+    docs/api/index.md 是"决定怎么集成 + 排障"的第二面（架构 + 协议合规性
+    + 模块 API）。R169 之前 README 把两层混在一起，让首次访问者既看不到
+    清晰的卖点、又被一大段 Mermaid 图吓退；R169 后两层职责清晰、相互引用。
+    跨文档 markdown link 没有遗漏（``docs/mcp_tools{,.zh-CN}.md`` 入口、
+    模块列表里的 ``state_machine.py`` / ``server_feedback.py`` 等历史引用
+    都保留）。
+  - 全测试 4904 passed 2 skipped 0 failed；
+    ``test_docs_links_no_rot.py`` / ``test_docs_module_classification_parity.py``
+    / ``test_mcp_tools_doc_consistency.py`` 全绿，证明跨文档链接、模块分类
+    invariant、文档 ↔ code 字段一致性都没被破坏。
+
 - **R168** — **docs 重命名：去掉 R-cycle 标识，按主题或 `.tmp.md` 归档**。
   TODO 任务 4 要求："docs 里 r99 类文档让用户觉得项目不完善"。R168 按
   以下规则统一处理 8 个带 R-cycle 标签的 docs：

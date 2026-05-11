@@ -4,6 +4,130 @@ English API reference (signatures-focused).
 
 - Chinese version: [`docs/api.zh-CN/index.md`](../api.zh-CN/index.md)
 
+## How it works
+
+1. Your AI client calls the MCP tool `interactive_feedback`.
+2. The MCP server ensures the Web UI process is running, then creates a task
+   via HTTP (`POST /api/tasks`).
+3. The browser (or VS Code Webview) renders the task using a **dual-channel**
+   transport: SSE (`GET /api/events`, with `Last-Event-ID` resume) for
+   real-time updates, and HTTP polling as a safety net when SSE drops.
+4. When you submit feedback, the Web UI completes the task in the task queue.
+5. The MCP server waits via SSE + a low-frequency HTTP poll
+   (`GET /api/tasks/{task_id}`), then returns your feedback (text + images)
+   back to the AI client.
+6. Optionally, the MCP server triggers notifications (Bark / system / sound /
+   web hints) based on your config. Bark URLs that resolve to loopback
+   addresses are automatically suppressed and the Web UI surfaces a LAN-IP
+   suggestion in the settings panel.
+
+## Architecture
+
+```mermaid
+flowchart TD
+  subgraph CLIENTS["AI clients"]
+    AI_CLIENT["AI CLI / IDE<br/>(Cursor, VS Code, Claude Code, ...)"]
+  end
+
+  subgraph MCP_PROC["MCP server process (Python)"]
+    MCP_SRV["ai-intervention-agent<br/>(server.py / FastMCP)"]
+    MCP_TOOL["MCP tool<br/>interactive_feedback"]
+    SVC_MGR["Service manager<br/>(ServiceManager)"]
+    CFG_MGR_MCP["Config manager<br/>(config_manager.py)"]
+    NOTIF_MGR["Notification manager<br/>(notification_manager.py)"]
+    NOTIF_PROVIDERS["Providers<br/>(notification_providers.py)"]
+    MCP_SRV --> MCP_TOOL
+    MCP_SRV --> CFG_MGR_MCP
+    MCP_SRV --> NOTIF_MGR
+    NOTIF_MGR --> NOTIF_PROVIDERS
+  end
+
+  subgraph WEB_PROC["Web UI process (Python / Flask)"]
+    WEB_SRV["Web UI service<br/>(web_ui.py / Flask)"]
+    WEB_CFG_MGR["Config manager<br/>(config_manager.py)"]
+    HTTP_API["HTTP API<br/>(/api/*)"]
+    TASK_Q["Task queue<br/>(task_queue.py)"]
+    WEB_FRONTEND["Browser frontend<br/>(static/js/app.js + multi_task.js)"]
+    WEB_SRV --> HTTP_API
+    WEB_SRV --> TASK_Q
+    WEB_SRV --> WEB_CFG_MGR
+    WEB_FRONTEND <-->|"SSE /api/events + poll /api/tasks"| HTTP_API
+    WEB_FRONTEND -->|submit feedback| HTTP_API
+  end
+
+  subgraph VSCODE_PROC["VS Code extension (Node)"]
+    VSCODE_EXT["Extension host<br/>(packages/vscode/extension.ts)"]
+    VSCODE_WEBVIEW["Webview frontend<br/>(webview.ts + webview-ui.js<br/>+ webview-notify-core.js + webview-settings-ui.js<br/>+ tri-state-panel.js)"]
+    VSCODE_EXT --> VSCODE_WEBVIEW
+    VSCODE_WEBVIEW <-->|"SSE /api/events + poll /api/tasks"| HTTP_API
+    VSCODE_WEBVIEW -->|submit feedback| HTTP_API
+  end
+
+  subgraph USER_UI["User interfaces"]
+    BROWSER["Browser<br/>(desktop/mobile)"]
+    VSCODE["VS Code<br/>(sidebar panel)"]
+    USER["User"]
+  end
+
+  CFG_FILE["config.toml<br/>(user config directory)"]
+
+  AI_CLIENT -->|MCP call| MCP_TOOL
+  MCP_TOOL -->|start/check Web UI| SVC_MGR
+  SVC_MGR -->|spawn/monitor| WEB_SRV
+
+  USER -->|input / click| WEB_FRONTEND
+  USER -->|input / click| VSCODE_WEBVIEW
+  BROWSER -->|load UI| WEB_FRONTEND
+  VSCODE -->|render UI| VSCODE_WEBVIEW
+
+  MCP_TOOL -->|"HTTP POST /api/tasks"| HTTP_API
+  MCP_TOOL -->|"HTTP GET /api/tasks/{task_id}"| HTTP_API
+
+  WEB_CFG_MGR <-->|read/write + watcher| CFG_FILE
+  CFG_MGR_MCP <-->|read/write + watcher| CFG_FILE
+
+  MCP_TOOL -->|trigger notifications| NOTIF_MGR
+  NOTIF_PROVIDERS -->|system / sound / Bark / web hints| USER
+```
+
+> The diagram intentionally shows top-level processes and the most visible
+> modules. Internal helpers — e.g. `state_machine.py` (per-task lifecycle),
+> `web_ui_mdns.py` (LAN service discovery via mDNS), `web_ui_security.py`
+> (CSRF / origin / token gates), `task_queue_singleton.py` (single-process
+> queue access), `server_feedback.py` (the `interactive_feedback` MCP tool
+> body), `enhanced_logging.py`, `protocol.py`, etc. — live in the same two
+> processes and are documented per-module below.
+
+## Production-grade middleware
+
+Tool invocations are wrapped by a four-stage middleware chain:
+`ErrorHandling` → `RateLimiting` (10 req/s, burst 20) → `Timing` →
+`Logging`. Structured `task.created` / `task.notified` / `task.completed`
+events are forwarded to the MCP client via `ctx.info` so chat-style clients
+(Cursor / Claude Desktop / ChatGPT Desktop) can render a live progress
+entry in the sidebar.
+
+## Server self-info resource
+
+Clients can read `aiia://server/info` (MIME `application/json`, tags
+`diagnostics` / `self-info`) for a JSON snapshot of the running server:
+`name` / `version` / `transport` / `runtime` (Python version + executable +
+platform) / `fastmcp.version` / `middleware` chain / `error_stats` /
+`web_ui` (host + port + reachability) / `task_queue` (initialized + size +
+pending). The resource is side-effect free — safe to poll from a status
+panel.
+
+## MCP-spec compliance (2025-11-25 protocol)
+
+`interactive_feedback` exposes the full MCP tool annotations (`title`,
+`readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=false`,
+`openWorldHint=true`) plus FastMCP tags
+(`human-in-the-loop` / `feedback` / `approval`) and server identity metadata
+(`name` / `version` / `instructions` / `website_url` / `icons`). Clients like
+ChatGPT Desktop / Claude Desktop / Cursor render the server natively without
+nagging "destructive operation" confirmations. See
+[`docs/mcp_tools.md`](../mcp_tools.md) for the full annotation table.
+
 ## Modules
 
 - [config_manager](config_manager.md)
