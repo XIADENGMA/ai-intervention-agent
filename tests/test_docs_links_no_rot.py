@@ -35,15 +35,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 用 negative-lookbehind ``(?<!!)`` 排除 ``!`` 前缀的图片语法。
 _MD_LINK_RE = re.compile(r"(?<!!)\[(?P<label>[^\]]*)\]\((?P<target>[^)]+)\)")
 
-# R177 / CR#11 F-1：strip 掉 inline code（单反引号 ``...``）防止形如
-# ``[label](./xxx.zh-CN.md)`` 的示例占位符被误识别为真实 link。Markdown 渲染
-# 时反引号内的内容是字面 code，不会被解析成 link；本测试 line-by-line 扫描
-# 时缺乏这种上下文，需要主动剥掉。
+# R177 / CR#11 F-1：strip 掉 inline code 防止形如 ``[label](./xxx.zh-CN.md)``
+# 的示例占位符被误识别为真实 link。Markdown 渲染时反引号内的内容是字面 code，
+# 不会被解析成 link；本测试 line-by-line 扫描时缺乏这种上下文，需要主动剥掉。
 #
-# 模式：``[^`]*`` 匹配反引号之间的任意非反引号内容（典型场景：``[xxx](yyy)``
-# 占位符整体被一对反引号包裹）。不处理 escape 后的反引号 ``\``\` —— 项目里
-# 没有这种用法。
-_INLINE_CODE_RE = re.compile(r"`[^`]*`")
+# Markdown inline code 有两种合法形态：
+# - 单反引号：``` `code` ``` — 用于不含反引号的内容
+# - 双反引号：``` ``code with `backtick` inside`` ``` — 当内容自身含反引号
+#   时用双反引号包外层（CommonMark 规范允许 1..N 反引号对称）。
+# 项目中两种都在使用（CHANGELOG.md 倾向双反引号包裹 markdown link 示例，
+# code review doc 倾向单反引号），所以本测试两种都剥。
+#
+# 实现：用 ``(`{1,2})...\1`` 反向引用确保 open/close 长度对称；middle 部分
+# ``([^`]|(?!\1)`)*?`` 在双反引号上下文允许单个内嵌反引号，但 lazy + 反向
+# 引用守住"不能跨段"。简化版本：``(`{2}.+?`{2}|`[^`]+?`)`` 优先匹配双反引号
+# 段，再匹配单反引号段，两者都用非贪心防止跨段吃太多。
+_INLINE_CODE_RE = re.compile(r"`{2}.+?`{2}|`[^`]+?`")
 
 # 不需要 fs 校验的 link target 前缀
 _EXTERNAL_PREFIXES: tuple[str, ...] = (
@@ -232,6 +239,29 @@ class TestDocsLinksDoNotRot(unittest.TestCase):
             targets,
             [],
             "inline code 内的 markdown 链接占位符不应进入校验队列",
+        )
+
+    def test_double_backtick_inline_code_is_ignored(self) -> None:
+        """R177 / CR#11 F-1 双反引号变体：``[label](./xxx.md)`` 也被剥。
+
+        CommonMark 规范允许 1..N 反引号对称包 inline code；本项目 CHANGELOG.md
+        惯用双反引号包 markdown link 占位符示例（避免和正文里的单反引号短代码
+        混淆）。锁住这一形态防止 R177 regex 漂回单反引号 only。
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_md = Path(tmp) / "test_double_backtick.md"
+            tmp_md.write_text(
+                "示例：``[demo](./nonexistent.md)`` —— 双反引号 inline code\n"
+                "再来一行：``[xxx](./xxx.zh-CN.md)`` —— 也应该被忽略\n",
+                encoding="utf-8",
+            )
+            targets = _extract_local_targets(tmp_md)
+        self.assertEqual(
+            targets,
+            [],
+            "双反引号 inline code 内的 markdown 链接占位符不应进入校验队列",
         )
 
     def test_fenced_code_block_link_is_ignored(self) -> None:
