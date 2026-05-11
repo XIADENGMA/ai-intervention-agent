@@ -197,6 +197,11 @@ class TestDocsLinksDoNotRot(unittest.TestCase):
             "docs/api/index.md",
             "docs/api.zh-CN/index.md",
             "docs/workflow.md",
+            # R176：``docs/noise-levels`` 按 README 模式补齐 EN / zh-CN —— 此前
+            # 是孤儿中文文档（违反"默认英文版"约定）。两套都要存在，删任意一份
+            # 都会让本测试红。
+            "docs/noise-levels.md",
+            "docs/noise-levels.zh-CN.md",
             # R175：``.github/`` 四组 governance docs 按 README 模式拆 EN /
             # zh-CN，两套必须始终在场 —— 否则 README / 文档里的 link 会变 404。
             ".github/SECURITY.md",

@@ -44,6 +44,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R176** — **`docs/noise-levels`：补齐英文版，关闭"孤儿中文文档"漏洞**。
+  R175 把 `.github/` 治理文档按 README 模式拆成 EN/zh-CN 后，`docs/` 下还
+  剩一个 **唯一的孤儿中文文档**：`docs/noise-levels.zh-CN.md`（362 行的
+  IG-6 噪音等级规范）—— 它没有对应的英文版，违反了项目"默认英文版 + 可选
+  zh-CN"约定。本提交：
+  - 新增 `docs/noise-levels.md`（英文版，420 行），完整翻译 §1-§12 含 5
+    个表格、3 段代码引用、6 条 anchor 断言映射；术语对齐项目其他英文文档
+    （"channel" / "circuit-breaker" / "anti-pattern" 等）。
+  - `docs/noise-levels.zh-CN.md` 顶部加 "English / 简体中文" 双链接形式
+    的语言切换 banner，末尾"变更历史"表追加 R176 entry。
+  - `docs/noise-levels.md` 顶部加对称的 banner。
+  - `tests/test_docs_links_no_rot.py::test_scan_covers_at_least_known_files`
+    的 `must_cover` 列表追加 `docs/noise-levels.md` +
+    `docs/noise-levels.zh-CN.md`，把 noise-levels 双语对纳入守门 —— 任何
+    一份意外被删都会让 CI 红。
+  - `tests/test_noise_levels.py` 的 T6 锚点断言（中文版含
+    `critical/important/quiet` 关键词）**保持不变** —— 测试仍然只
+    锁中文版作为单一 source of truth，避免在两份文档间维护双重断言；英文
+    版是"翻译镜像"，由 R80 link-rot guard 兜底保证其与中文版的存在性同步。
+  - 顶层 README 没有引用 `docs/noise-levels.md` —— 这份文档是给 maintainer
+    / contributor 看的开发规范，按"开发者文档"惯例不进 README links。
+
 - **R174** — **CR#10 F-1 落地：CSS 字符串引号一致性守门 hook**。
   R169 commit ``73d9980`` 用 prettier 把 ``main.css`` 的字符串引号一次性收敛
   到 double-quote 一致风格，但仓库没有 prettier 配置，靠人工运行 —— Code
