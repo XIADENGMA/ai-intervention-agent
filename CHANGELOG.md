@@ -9,6 +9,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R180** — `tests/test_housekeeping_r151.py::TestR151ChangelogUnreleased`
+  fossilised on the rolling `[Unreleased]` section: when R179's
+  v1.6.3 bump correctly migrated R148-R151 entries into the
+  persistent `[1.6.3]` section per Keep-a-Changelog, the three
+  guards (`test_unreleased_not_empty`, `test_mentions_each_r_feature`,
+  `test_categorized_under_added_or_changed`) all flipped red.
+  Rescued by renaming the class to `TestR151ChangelogPersistence`
+  and re-anchoring the invariant on the **whole** changelog under
+  any real release-flavour heading (Added / Changed / Fixed). The
+  `[Unreleased]` anchor itself is now only required to *exist* (may
+  be empty post-bump). One bug, three tests, root cause once.
+
 ## [1.6.3] — 2026-05-12
 
 > Patch release on top of v1.6.2. Headline content (sorted by user

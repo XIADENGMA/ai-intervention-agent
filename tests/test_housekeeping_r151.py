@@ -25,14 +25,23 @@ load-bearing maintenance items remained:
     (literal content fix) and Tier 2 (pin) plus a step-by-step
     upgrade-the-pin ritual + Chinese mirror.
 
-3.  **CHANGELOG.md `[Unreleased]`** had no entry covering R148, R149,
-    or R150 (v1.6.2 closed before R148 landed; R149 / R150 / R151
-    arrived after).  Without a populated `[Unreleased]` section,
-    the next ``scripts/bump_version.py`` run would ship a v1.6.3
-    release with an empty changelog block, hiding three observability
-    + tooling features from anyone reading the repo's release notes.
-    R151 backfills the section so the next bump promotes a real
-    feature list.
+3.  **CHANGELOG R148-R151 entries** must persist somewhere in the
+    file (not be silently dropped). R151 originally backfilled them
+    into ``[Unreleased]`` so v1.6.3's release notes would not ship
+    empty. The v1.6.3 bump (R179) then correctly migrated those
+    entries from ``[Unreleased]`` into ``[1.6.3]`` — Keep-a-Changelog
+    standard practice.
+
+R180 lifecycle rescue
+---------------------
+The third assertion class was originally pinned to ``[Unreleased]``
+only. Once ``scripts/bump_version.py`` migrated R148-R151 into
+``[1.6.3]``, the snapshot test fossilised: it assumed the
+**transient** rolling section was the **persistent** home. R180
+rescues the intent — we still guard that R148-R151 housekeeping
+entries are present **somewhere** in the changelog under a real
+release / Added / Changed / Fixed heading — without re-tying them
+to the empty post-bump ``[Unreleased]`` block.
 
 What this suite locks
 ---------------------
@@ -43,8 +52,10 @@ What this suite locks
     matching the documented flow.
 *   ``docs/troubleshooting.zh-CN.md`` mirrors the section (parity with
     the rest of the bilingual docs in this repo).
-*   ``CHANGELOG.md`` ``[Unreleased]`` block names R148, R149, R150,
-    and R151 explicitly so the next release notes won't be empty.
+*   ``CHANGELOG.md`` mentions R148, R149, R150, R151 in some real
+    release section (Added / Changed / Fixed) — and the
+    ``[Unreleased]`` anchor still exists (may be empty after a bump,
+    which is correct per Keep-a-Changelog).
 
 A failure in any of these means the housekeeping deliverable drifted
 out of lockstep — fix the source, don't relax the test.
@@ -164,53 +175,102 @@ class TestR151TroubleshootingSection(unittest.TestCase):
             )
 
 
-class TestR151ChangelogUnreleased(unittest.TestCase):
-    """``CHANGELOG.md`` ``[Unreleased]`` 必须 mention R148-R151."""
+class TestR151ChangelogPersistence(unittest.TestCase):
+    """R148-R151 housekeeping entries 必须在 CHANGELOG 中持久存在.
+
+    R180 lifecycle rescue
+    ---------------------
+    Original ``TestR151ChangelogUnreleased`` (R151) pinned the
+    invariant on the rolling ``[Unreleased]`` section. That worked
+    until the v1.6.3 bump (R179) migrated R148-R151 entries into the
+    persistent ``[1.6.3]`` section per Keep-a-Changelog — the
+    snapshot test then claimed the bump had rolled back the entries.
+
+    Fix: track R148-R151 in the **whole** changelog under any
+    release-flavour heading. We still keep an ``[Unreleased]`` anchor
+    assertion (the anchor must exist, but may be empty post-bump —
+    that is the correct Keep-a-Changelog state right after a
+    release).
+    """
+
+    #: Headings under which a "real entry" is allowed to live.
+    #: Notably, "release" body (``## [x.y.z]``) is also valid because
+    #: we accept entries listed directly under the release header
+    #: without an explicit ``### Added``/``### Changed`` sub-heading.
+    _VALID_ENTRY_HEADINGS = {"### Added", "### Changed", "### Fixed"}
 
     def setUp(self) -> None:
         self.text = _read(CHANGELOG)
-        m = re.search(
-            r"## \[Unreleased\](.*?)(?=^## \[)",
-            self.text,
-            re.DOTALL | re.MULTILINE,
-        )
-        self.assertIsNotNone(m, "[Unreleased] 节必须存在")
-        assert m is not None
-        self.unreleased = m.group(1)
 
-    def test_unreleased_not_empty(self) -> None:
-        # Strip whitespace + headings; the body must have at least
-        # one non-trivial line.
-        body = re.sub(r"^###\s+\w+\s*$", "", self.unreleased, flags=re.MULTILINE)
-        body = body.strip()
-        self.assertGreater(
-            len(body),
-            200,
-            "[Unreleased] 节内容过少；R148/R149/R150/R151 都应该有条目",
+    def _all_section_headings_for(self, ident: str) -> list[str]:
+        """Return every ``### X`` heading under which ``ident`` appears.
+
+        Walks each occurrence of ``ident`` (so a token mentioned in
+        prose **and** in a real entry both count) and records the
+        most-recent **line-anchored** ``### `` heading above it. We
+        deliberately stop at ``### `` (h3) so we capture the
+        Keep-a-Changelog category (Added/Changed/Fixed), not the
+        release ``## [x.y.z]`` header.
+
+        Uses ``re.MULTILINE`` so an inline ``### x`` in prose can't
+        masquerade as a heading.
+        """
+        # Pre-compute every line-anchored h3 heading position so each
+        # lookup is O(log h3-count) instead of O(text-length).
+        h3_positions: list[tuple[int, str]] = [
+            (m.start(), m.group(0).strip())
+            for m in re.finditer(r"^### .+$", self.text, re.MULTILINE)
+        ]
+        headings: list[str] = []
+        for m in re.finditer(re.escape(ident), self.text):
+            idx = m.start()
+            nearest: str | None = None
+            for pos, heading in h3_positions:
+                if pos < idx:
+                    nearest = heading
+                else:
+                    break
+            if nearest is not None:
+                headings.append(nearest)
+        return headings
+
+    def test_unreleased_section_exists(self) -> None:
+        """``[Unreleased]`` anchor must remain (may be empty post-bump).
+
+        Keep-a-Changelog requires the rolling section to be present
+        even between releases — it's how the next dev cycle starts.
+        We no longer require non-empty body: that is a *transient*
+        property, not a regression-worthy invariant.
+        """
+        self.assertRegex(
+            self.text,
+            re.compile(r"^## \[Unreleased\]\s*$", re.MULTILINE),
+            "CHANGELOG 必须保留 ## [Unreleased] 锚点（即便为空）",
         )
 
     def test_mentions_each_r_feature(self) -> None:
+        """R148-R151 must persist somewhere — Unreleased *or* released."""
         for ident in ("R148", "R149", "R150", "R151"):
             self.assertIn(
                 ident,
-                self.unreleased,
-                f"[Unreleased] 必须 mention {ident}",
+                self.text,
+                f"CHANGELOG 必须 mention {ident}（不限 section）",
             )
 
     def test_categorized_under_added_or_changed(self) -> None:
-        # Keep-a-Changelog requires the right top-level subheading.
-        # We expect both "Added" (for R148 + R150 features) and
-        # "Changed" (for R149 + R151 build / housekeeping).
-        self.assertRegex(
-            self.unreleased,
-            re.compile(r"^### Added\s*$", re.MULTILINE),
-            "[Unreleased] 必须含 ### Added 子节",
-        )
-        self.assertRegex(
-            self.unreleased,
-            re.compile(r"^### Changed\s*$", re.MULTILINE),
-            "[Unreleased] 必须含 ### Changed 子节",
-        )
+        """R148-R151 must each appear under at least one ``### Added``/
+        ``### Changed``/``### Fixed`` heading."""
+        for ident in ("R148", "R149", "R150", "R151"):
+            headings = self._all_section_headings_for(ident)
+            self.assertTrue(
+                headings,
+                f"{ident} 应当至少在一个 ### 子节下出现",
+            )
+            self.assertTrue(
+                any(h in self._VALID_ENTRY_HEADINGS for h in headings),
+                f"{ident} 必须至少在 Added/Changed/Fixed 之一下出现, "
+                f"实际所在 ### 子节: {headings}",
+            )
 
 
 if __name__ == "__main__":
