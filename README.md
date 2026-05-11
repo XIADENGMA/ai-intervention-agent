@@ -9,34 +9,19 @@
 
   <p>
     <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/test.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/test.yml?branch=main&style=flat-square" alt="Tests" />
-    </a>
-    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/scorecard.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/scorecard.yml?branch=main&label=OpenSSF%20Scorecard&style=flat-square" alt="OpenSSF Scorecard" />
-    </a>
-    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/codeql.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/codeql.yml?branch=main&label=CodeQL&style=flat-square" alt="CodeQL" />
+      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/test.yml?branch=main&label=tests&style=flat-square&logo=github" alt="Tests" />
     </a>
     <a href="https://pypi.org/project/ai-intervention-agent/">
-      <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=flat-square" alt="PyPI" />
+      <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=flat-square&logo=pypi&logoColor=white" alt="PyPI" />
     </a>
     <a href="https://www.python.org/downloads/">
-      <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent?style=flat-square" alt="Python Versions" />
+      <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent?style=flat-square&logo=python&logoColor=white" alt="Python versions" />
     </a>
-    <a href="https://open-vsx.org/extension/xiadengma/ai-intervention-agent">
-      <img src="https://img.shields.io/open-vsx/v/xiadengma/ai-intervention-agent?label=Open%20VSX&style=flat-square" alt="Open VSX" />
-    </a>
-    <a href="https://open-vsx.org/extension/xiadengma/ai-intervention-agent">
-      <img src="https://img.shields.io/open-vsx/dt/xiadengma/ai-intervention-agent?label=Open%20VSX%20downloads&style=flat-square" alt="Open VSX Downloads" />
-    </a>
-    <a href="https://open-vsx.org/extension/xiadengma/ai-intervention-agent">
-      <img src="https://img.shields.io/open-vsx/rating/xiadengma/ai-intervention-agent?label=Open%20VSX%20rating&style=flat-square" alt="Open VSX Rating" />
-    </a>
-    <a href="https://deepwiki.com/xiadengma/ai-intervention-agent">
-      <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" />
+    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/scorecard.yml">
+      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/scorecard.yml?branch=main&label=OpenSSF&style=flat-square&logo=securityscorecard&logoColor=white" alt="OpenSSF Scorecard" />
     </a>
     <a href="https://github.com/xiadengma/ai-intervention-agent/blob/main/LICENSE">
-      <img src="https://img.shields.io/github/license/xiadengma/ai-intervention-agent?style=flat-square" alt="License" />
+      <img src="https://img.shields.io/github/license/xiadengma/ai-intervention-agent?style=flat-square&color=success" alt="License" />
     </a>
   </p>
 
@@ -224,6 +209,18 @@ ai-intervention-agent usage details:
 
 ## VS Code extension (optional)
 
+<p>
+  <a href="https://open-vsx.org/extension/xiadengma/ai-intervention-agent">
+    <img src="https://img.shields.io/open-vsx/v/xiadengma/ai-intervention-agent?label=Open%20VSX&style=flat-square&logo=eclipseide&logoColor=white" alt="Open VSX version" />
+  </a>
+  <a href="https://open-vsx.org/extension/xiadengma/ai-intervention-agent">
+    <img src="https://img.shields.io/open-vsx/dt/xiadengma/ai-intervention-agent?label=downloads&style=flat-square" alt="Open VSX downloads" />
+  </a>
+  <a href="https://open-vsx.org/extension/xiadengma/ai-intervention-agent">
+    <img src="https://img.shields.io/open-vsx/rating/xiadengma/ai-intervention-agent?label=rating&style=flat-square" alt="Open VSX rating" />
+  </a>
+</p>
+
 | Item                           | Value                                                                                                                                                                                                                                                               |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Purpose                        | Embed the interaction panel into VS Code’s sidebar to avoid switching to a browser.                                                                                                                                                                                 |
@@ -258,7 +255,7 @@ ai-intervention-agent usage details:
 - **MCP 工具说明**: [`docs/mcp_tools.zh-CN.md`](docs/mcp_tools.zh-CN.md)
 - **Troubleshooting / FAQ**: [`docs/troubleshooting.md`](docs/troubleshooting.md) · [`docs/troubleshooting.zh-CN.md`](docs/troubleshooting.zh-CN.md)
 - **i18n contributor guide**: [`docs/i18n.md`](docs/i18n.md)
-- **DeepWiki**: [deepwiki.com/xiadengma/ai-intervention-agent](https://deepwiki.com/xiadengma/ai-intervention-agent)
+- **DeepWiki Q&A** — AI-augmented Q&A over the repo: <a href="https://deepwiki.com/xiadengma/ai-intervention-agent"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" valign="middle" /></a>
 
 ## Related projects
 

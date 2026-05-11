@@ -11,6 +11,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R171** — **README badge 精简到 2026 最佳实践（3-5 个 header badge）**。
+  TODO "README badge 有点多，样式不太好" 任务。R171 处理：
+  - **顶部 header badges**：10 个 → **5 个**（符合 shields.io / daily.dev 2026
+    "best practices for github markdown badges" 推荐的 3-5 个上限）：
+    1. Tests workflow（项目健康 — 必备）
+    2. PyPI version（release 状态 — 必备）
+    3. Python versions（兼容性 — 必备）
+    4. OpenSSF Scorecard（安全 / supply-chain — 已聚合了 CodeQL 信号）
+    5. License（MIT — 合规）
+  - **删除**：
+    - CodeQL badge —— OpenSSF Scorecard 已经把 CodeQL 当成 Security-Policy
+      子项聚合进总分，再单独挂 CodeQL badge 重复展示。
+  - **重定位（信息不丢失）**：
+    - 3 个 Open VSX badge（version / downloads / rating）→ 移到「VS Code
+      extension（可选）」章节顶部，与 VS Code 插件相关内容聚合，对照浏览
+      Open VSX Marketplace 时一目了然。
+    - DeepWiki badge → 移到「Documentation / 文档」章节末尾，加上「AI 辅
+      助的仓库智能问答入口」描述，给读者一个明确的"什么时候用 DeepWiki"
+      reasoning，而不是顶部抽象的 logo。
+  - **样式升级**：所有保留 badge 增加 ``logo=...`` 参数（GitHub Tests 配
+    GitHub 图标 / PyPI 配 pypi 蓝白 / Python 配 python 黄白 / OpenSSF 配
+    securityscorecard 图标 / License 加 ``color=success`` 绿色）。视觉上从
+    "灰底文字" 升级到"图标 + 标签"现代极简风格，与 shadcn-style shieldcn
+    的现代极简审美对齐，同时不引入第三方 badge 服务依赖（继续走 shields.io）。
+  - 中英文 README 同步处理。docs link rot 守卫
+    （``test_docs_links_no_rot.py``）通过——VS Code / Documentation 章节
+    内的 badge 链接全部指向已知存在的 Open VSX / DeepWiki 公网入口。
+  - 不引入第三方 badge 服务：所有 badge 仍走 ``shields.io`` (PyPI / Python /
+    OpenSSF / License) + ``deepwiki.com/badge.svg`` (DeepWiki 自家)。零
+    外部依赖、零 broken-link 风险。
+
 - **R170** — **`check_i18n_duplicate_values.py` allowlist 收录 `"Cancel"`,
   把唯一一条 informational WARN 收口到 0**。脚本本身 exit 0 不阻断 CI，
   但终端输出"1 duplicate value group(s) found above MIN_LEN=6"会被本仓
