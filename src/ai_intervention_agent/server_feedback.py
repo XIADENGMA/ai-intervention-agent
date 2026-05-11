@@ -732,7 +732,9 @@ async def interactive_feedback(
             "Question, summary, or proposal to display to the human user. "
             "MUST be a non-empty string. Supports CommonMark / GitHub-Flavored Markdown "
             "(headings, lists, tables, fenced code blocks, links, inline code). "
-            "Recommended length: 1-2000 characters; hard limit 10000 (longer input is truncated). "
+            "Recommended length: 1-2000 characters; soft cap 1,000,000 characters "
+            "(~1 MB UTF-8, R166); inputs longer than the cap are truncated with a "
+            "trailing ellipsis marker. "
             "Best practices: (1) state the question clearly in the first line; "
             "(2) include the recommended/default answer when proposing options; "
             '(3) escape special characters properly in JSON (use \\" for quotes, \\n for newlines). '

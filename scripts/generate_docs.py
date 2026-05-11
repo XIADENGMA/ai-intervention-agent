@@ -381,8 +381,43 @@ def _assert_quick_nav_covers_all_modules(modules: list[str]) -> None:
         )
 
 
-def generate_index(modules: list[str], *, lang: str, output_dir_display: str) -> str:
-    """生成文档索引"""
+def generate_index(
+    modules: list[str],
+    *,
+    lang: str,
+    output_dir_display: str,
+    existing_path: Path | None = None,
+) -> str:
+    """生成文档索引。
+
+    Custom prefix preservation (R178 follow-up)
+    -------------------------------------------
+
+    R169 把 README 的"How it works / Architecture / Production-grade
+    middleware / Server self-info / MCP-spec compliance"5 个 section
+    手工插入到 ``docs/api/index.md`` 与 ``docs/api.zh-CN/index.md``
+    的 ``## Modules`` / ``## 模块列表`` 标题**之前**。这是 R169 提交
+    时的设计决策：README 面向使用者（保持简洁），技术细节下沉到 docs
+    并优先展示在 API index 顶部，让点进来的读者第一眼就能看懂工具
+    的工作原理与中间件链。
+
+    然而 ``generate_docs.py`` 在 R76 之后会按"signatures-only"模板
+    完全重写 index.md，运行 ``--check`` 会把 R169 手工块当成 drift —
+    这是个真实存在的 CI footgun，已经在 ``scripts/ci_gate.py:222-235``
+    挂着两条 ``generate_docs.py --check`` gate。
+
+    本函数现在支持 ``existing_path``：如果指向的 index.md 已存在且包含
+    ``## Modules`` / ``## 模块列表`` 标题，则**保留该标题之前的所有
+    内容**（前置手工块），只重写从 modules-heading 开始到文件末尾的
+    自动生成部分（modules list + quick navigation + footer）。这样：
+
+    * 首次生成时：和老行为完全一致（不存在文件 → 全文写入）。
+    * 后续重生时：手工块永久保留，generator 仅维护其声称负责的"模块
+      列表 + 分类导航"部分。
+    * ``--check`` 模式下：手工块改动不再触发 drift，仅当 modules 列表
+      或 quick-navigation 与代码不同步时才报告 drift（这正是 ci_gate
+      最初想守的 invariant）。
+    """
     _assert_quick_nav_covers_all_modules(modules)
     _assert_top_level_modules_classified()
     if lang == "en":
@@ -495,7 +530,22 @@ def generate_index(modules: list[str], *, lang: str, output_dir_display: str) ->
             ]
         )
 
-    return "\n".join(lines) + "\n"
+    fresh = "\n".join(lines) + "\n"
+
+    # Custom prefix preservation (R178 follow-up).
+    #
+    # 如果目标文件已存在且包含 modules-heading，保留 heading 之前的所有
+    # 内容（前置手工块），仅替换 heading 起始的自动生成部分。详细动机
+    # 见本函数 docstring。
+    if existing_path is not None and existing_path.exists():
+        modules_heading = "## Modules" if lang == "en" else "## 模块列表"
+        existing_text = existing_path.read_text(encoding="utf-8")
+        if modules_heading in existing_text and modules_heading in fresh:
+            existing_prefix, _ = existing_text.split(modules_heading, 1)
+            _, fresh_suffix = fresh.split(modules_heading, 1)
+            return existing_prefix + modules_heading + fresh_suffix
+
+    return fresh
 
 
 def _write_or_check(path: Path, content: str, *, check: bool, drift: list[Path]) -> str:
@@ -597,10 +647,13 @@ def main() -> int:
             print(f"   ❌ 错误: {e}")
 
     if generated_modules:
-        index_content = generate_index(
-            generated_modules, lang=args.lang, output_dir_display=args.output
-        )
         index_file = output_dir / "index.md"
+        index_content = generate_index(
+            generated_modules,
+            lang=args.lang,
+            output_dir_display=args.output,
+            existing_path=index_file,
+        )
         status = _write_or_check(
             index_file, index_content, check=args.check, drift=drift
         )

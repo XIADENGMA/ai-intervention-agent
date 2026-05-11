@@ -51,13 +51,13 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from ai_intervention_agent.notification_manager import (  # ty: ignore[unresolved-import]
+from ai_intervention_agent.notification_manager import (
     _INFLIGHT_FILE_NAME,
     _INFLIGHT_SCHEMA_VERSION,
     _INFLIGHT_TTL_SECONDS,
     NotificationManager,
 )
-from ai_intervention_agent.notification_models import (  # ty: ignore[unresolved-import]
+from ai_intervention_agent.notification_models import (
     NotificationEvent,
     NotificationPriority,
     NotificationTrigger,

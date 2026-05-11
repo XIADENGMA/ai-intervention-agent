@@ -46,7 +46,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 
-from ai_intervention_agent.web_ui_routes.task import (  # ty: ignore[unresolved-import]
+from ai_intervention_agent.web_ui_routes.task import (
     _parse_bool_query,
     _strip_images_from_result,
 )

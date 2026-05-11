@@ -311,7 +311,7 @@ class TestInteractiveFeedbackCompatAliases(unittest.TestCase):
                 _interactive_feedback_fn(
                     "Continue?",
                     ["A", "B"],
-                    predefined_options_defaults=[False, True],
+                    predefined_options_defaults=[False, True],  # ty: ignore[unknown-argument]
                 )
             )
         self.assertIn("predefined_options_defaults", str(ctx.exception))

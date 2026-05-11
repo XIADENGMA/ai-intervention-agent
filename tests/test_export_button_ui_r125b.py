@@ -251,10 +251,16 @@ class TestCssStyleAlignment(unittest.TestCase):
         )
 
     def test_export_btn_in_light_theme_block(self) -> None:
-        """浅色主题 selector 必须把 ``.export-btn`` 也包含进来。"""
+        """浅色主题 selector 必须把 ``.export-btn`` 也包含进来。
+
+        R169 / chore ``73d9980`` 后 main.css 全部 attribute-selector 收敛
+        到 double-quote，所以这里同时接受 ``[data-theme='light']`` 与
+        ``[data-theme="light"]`` 两种写法 —— 测试关心的是"浅色主题
+        selector 包含 .export-btn"这个语义不变量，不是引号风格。
+        """
         self.assertRegex(
             self.css,
-            r"\[data-theme='light'\][\s\S]{0,80}\.export-btn",
+            r"""\[data-theme=['"]light['"]\][\s\S]{0,80}\.export-btn""",
             "浅色主题的 ``.settings-btn / .theme-toggle-btn`` selector 必须把 "
             "``.export-btn`` 也加进去，否则浅色模式下背景对比度会出戏",
         )
