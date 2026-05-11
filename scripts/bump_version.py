@@ -239,6 +239,42 @@ def _extract_citation_version(text: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _changelog_unreleased_section(text: str) -> tuple[int, int] | None:
+    """返回 ``[Unreleased]`` 区段在 ``text`` 中的 ``(start, end)`` 字节索引。
+
+    - ``start``：``## [Unreleased]`` 标题行之后的第一个字符
+    - ``end``：下一个 ``## [`` 行的起始（或文末）
+
+    没有 ``## [Unreleased]`` 标题时返回 ``None``。
+    """
+    head = re.search(r"^## \[Unreleased\]\s*$", text, re.MULTILINE)
+    if head is None:
+        return None
+    start = head.end()
+    next_release = re.search(r"^## \[", text[start:], re.MULTILINE)
+    end = start + next_release.start() if next_release else len(text)
+    return (start, end)
+
+
+def _unreleased_section_is_empty(text: str) -> bool:
+    """``CHANGELOG.md [Unreleased]`` 是否为空（无任何 bullet 条目）。
+
+    "为空" 的定义 = 在 ``## [Unreleased]`` 标题与下一个 ``## [`` 发布标题
+    之间，找不到任何 ``- xxx`` / ``* xxx`` 形式的列表项。这里**不计**
+    ``### Added`` / ``### Changed`` / ``### Fixed`` 这样的脚手架子标题
+    ——它们是格式占位，光留下空标题不算"已 backfill 入口"。
+
+    用途：R183 在 ``bump_version.py`` bump 流程里检查这一条件，
+    给出 WARNING（不报错）提示用户可能忘了补 changelog。
+    """
+    span = _changelog_unreleased_section(text)
+    if span is None:
+        return True
+    start, end = span
+    section = text[start:end]
+    return re.search(r"^\s*[-*]\s+\S", section, re.MULTILINE) is None
+
+
 def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=_repo_root(), check=True)
 
@@ -280,6 +316,16 @@ def main(argv: list[str]) -> int:
         "--with-vscode",
         action="store_true",
         help="配合 --ci-gate：包含 npm run vscode:check（默认不包含）",
+    )
+    parser.add_argument(
+        "--warn-empty-unreleased",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "R183：bump 时若 CHANGELOG.md [Unreleased] 看起来为空，"
+            "打印 WARNING 到 stderr（仍继续 bump）。"
+            "防止『忘记 backfill 入口』导致空 changelog 发布。默认开启。"
+        ),
     )
     args = parser.parse_args(argv)
 
@@ -573,6 +619,25 @@ def main(argv: list[str]) -> int:
 
         print("OK：所有目标文件版本号一致。")
         return 0
+
+    # R183：bump 前轻量检查 CHANGELOG.md [Unreleased] 是否被遗忘。
+    # 不报错（不阻断 bump），只打 WARNING——这是 "soft guard"，
+    # 因为偶尔可能有正当理由发空 changelog 的版本（如纯 chore release）。
+    # 用户可显式传 `--no-warn-empty-unreleased` 抑制。
+    if args.warn_empty_unreleased:
+        changelog_path = root / "CHANGELOG.md"
+        if changelog_path.exists():
+            try:
+                cl_text = _read_text(changelog_path)
+            except OSError:
+                cl_text = None
+            if cl_text is not None and _unreleased_section_is_empty(cl_text):
+                print(
+                    "WARNING (R183): CHANGELOG.md [Unreleased] 看起来为空——"
+                    "是否忘了把本次 bump 的发布说明落到该区段？"
+                    "（继续 bump；通过 --no-warn-empty-unreleased 关闭此提示）",
+                    file=sys.stderr,
+                )
 
     # 读取并（可选）检查
     pending_writes: list[tuple[Path, str]] = []

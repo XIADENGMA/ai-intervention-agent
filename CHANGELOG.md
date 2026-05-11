@@ -11,6 +11,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R183** — `scripts/bump_version.py` 新增 `--warn-empty-unreleased`
+  软警告（默认开启），bump 前轻量扫描 `CHANGELOG.md [Unreleased]`
+  是否被遗忘。空时打 WARNING 到 stderr（不阻断 bump，仍可显式
+  `--no-warn-empty-unreleased` 抑制）。闭合 CR#13 §F-3。三层
+  契约由 `tests/test_bump_version_warn_empty_unreleased_r183.py`
+  保护（15 用例）：
+    - 纯函数 `_unreleased_section_is_empty` 的边界 —— 无标题 /
+      只有子标题 / 有 bullet / `*` 替代符 / 文件结尾无下一个 release /
+      上一个 release 有 bullet 但本区段空 等 7 个 case；
+    - `_changelog_unreleased_section` 端点切分（不能溢出到下一个
+      release）3 个 case；
+    - argparse `BooleanOptionalAction` 暴露 `--warn-empty-unreleased`
+      + `--no-warn-empty-unreleased` 双极性；
+    - end-to-end `main()`：空 → WARNING；非空 → 无 WARNING；
+      `--no-warn-empty-unreleased` 抑制；CHANGELOG.md 不存在不破坏 bump。
 - **R182** — wire the new `docs/release-recovery.{md,zh-CN.md}`
   pair into the documentation index. Added cross-references in
   `docs/README.md` (Reviewers section), `docs/README.zh-CN.md`
