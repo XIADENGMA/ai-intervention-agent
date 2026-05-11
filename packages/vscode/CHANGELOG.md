@@ -35,7 +35,7 @@ package, MCP server, Web UI internals), see the
 > guard plus 14 broken-link fixes inside `.github/` (R80),
 > backfilled the `[Unreleased]` section in the project changelog
 > for the R72 → R80 batch (R80b), and consolidated the cycle's
-> lessons in `docs/lessons-learned-r70s.md` (R81). The VS Code
+> lessons in `docs/lessons-learned-silent-decay.md` (R81). The VS Code
 > webview HTML, settings UI, status-bar logic, OAuth flow, and
 > `webview-settings-ui.js` are unchanged. `package.json` /
 > `package-lock.json` bumped to `1.6.0` for store sync only.

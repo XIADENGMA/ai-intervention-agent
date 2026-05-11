@@ -1,6 +1,6 @@
 # R20.x 性能优化路线图
 
-> English: [`perf-r20-roadmap.md`](perf-r20-roadmap.md)
+> English: [`perf-mcp-cold-start.md`](perf-mcp-cold-start.md)
 
 本文档汇总 **R20.x 性能优化批次**（R20.4 → R20.14）的设计依据、测量数据
 和取舍记录。这一批改造把"AI agent 调用 `interactive_feedback` → 用户看到

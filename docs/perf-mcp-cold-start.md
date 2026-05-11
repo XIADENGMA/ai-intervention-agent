@@ -1,6 +1,6 @@
 # R20.x Performance Roadmap
 
-> 中文版：[`perf-r20-roadmap.zh-CN.md`](perf-r20-roadmap.zh-CN.md)
+> 中文版：[`perf-mcp-cold-start.zh-CN.md`](perf-mcp-cold-start.zh-CN.md)
 
 This document captures the design rationale, measurements, and trade-offs of
 the **R20.x performance optimization batch** (R20.4 → R20.14), which took the

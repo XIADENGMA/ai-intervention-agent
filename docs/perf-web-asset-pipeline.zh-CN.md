@@ -1,6 +1,6 @@
 # R21.x 性能路线图
 
-> English: [`perf-r21-roadmap.md`](perf-r21-roadmap.md)
+> English: [`perf-web-asset-pipeline.md`](perf-web-asset-pipeline.md)
 
 本文档记录 **R21.x 性能优化批次**（R21.1 → R21.4）的设计动因、测量数据
 与权衡取舍。R21.x 关注的是**浏览器侧网络/缓存层**——介于已优化好的服务端
@@ -428,7 +428,7 @@ uv run python scripts/precompress_static.py          # 按需重生成
 ## 交叉引用
 
 - 第 1-4 层 baseline 由 R20.x 确立：
-  [`docs/perf-r20-roadmap.zh-CN.md`](perf-r20-roadmap.zh-CN.md);
+  [`docs/perf-mcp-cold-start.zh-CN.md`](perf-mcp-cold-start.zh-CN.md);
 - End-to-end perf bench：
   [`scripts/perf_e2e_bench.py`](../scripts/perf_e2e_bench.py);
 - 回归 gate：

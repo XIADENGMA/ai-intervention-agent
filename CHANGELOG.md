@@ -11,6 +11,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R168** — **docs 重命名：去掉 R-cycle 标识，按主题或 `.tmp.md` 归档**。
+  TODO 任务 4 要求："docs 里 r99 类文档让用户觉得项目不完善"。R168 按
+  以下规则统一处理 8 个带 R-cycle 标签的 docs：
+
+  | 旧文件名 | 新文件名 | 处理 |
+  |---------|----------|------|
+  | `docs/perf-r20-roadmap.md` (+ `.zh-CN`) | `docs/perf-mcp-cold-start.md` (+ `.zh-CN`) | 改主题命名（性能文档 = MCP 冷启动批次） |
+  | `docs/perf-r21-roadmap.md` (+ `.zh-CN`) | `docs/perf-web-asset-pipeline.md` (+ `.zh-CN`) | 改主题命名（性能文档 = Web 静态资源管线） |
+  | `docs/lessons-learned-r60s.md` | `docs/lessons-learned-css-and-options.md` | 改主题命名（教训 = CSS + MCP options） |
+  | `docs/lessons-learned-r70s.md` | `docs/lessons-learned-silent-decay.md` | 改主题命名（教训 = "silent decay" 模式） |
+  | `docs/code-review-r150-r154-cr9.md` | `docs/code-review-r150-r154-cr9.tmp.md` | 单次产物 → `.tmp.md` 后缀（按用户要求） |
+  | `docs/security-triage-r72.md` | `docs/security-triage-r72.tmp.md` | 单次产物 → `.tmp.md` 后缀 |
+
+  - 所有跨文档 markdown link 已同步更新（``docs/README{,.zh-CN}.md`` /
+    ``docs/lessons-learned-silent-decay.md`` / `perf-*.md` 互相引用 /
+    ``packages/vscode/i18n.js`` 行内注释 / ``packages/vscode/CHANGELOG.md``）。
+  - ``docs/README{,.zh-CN}.md`` 列表里的描述文字也去掉了"R63 → R70 batch"
+    这种 cycle 标签，改用"v1.5.45 批次"等版本号锚点。
+  - **CHANGELOG.md 的历史段落** 保留对旧文件名的引用（4694 / 4700 / 4727 /
+    4805 / 4807 / 6322 / 6323 / 6561 / 6562 行）：CHANGELOG 是历史记录，
+    那些条目对应的 commit 当时确实就叫旧文件名，不应该回写。
+  - 全测试 4904 passed 0 failed。
+
 - **R167** — **predefined_options 形态收敛到 list[dict] 推荐写法，移除并行
   数组形态**。`predefined_options` 之前支持 3 种输入形态：
   - `list[str]`（A）；

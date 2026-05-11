@@ -54,21 +54,21 @@ Find your role below to jump straight to the page you need.
   the upgrade recipe and remaining-CVE rationale.
 - [`../.github/SECURITY.md`](../.github/SECURITY.md) — disclosure policy, supported
   versions, AppleScript executor security model.
-- [`lessons-learned-r60s.md`](lessons-learned-r60s.md) — internal
-  post-mortem for the v1.5.45 R63 → R70 batch (light-mode iOS-blue
+- [`lessons-learned-css-and-options.md`](lessons-learned-css-and-options.md) — internal
+  post-mortem for the v1.5.45 batch (light-mode iOS-blue
   leakage, MCP-tool-description drift, Bark deep-link sentinel,
   build-info diagnostic, Prettier rollout, Dependabot major-bump
   triage, README architecture completeness). Required reading
   before adding a new CSS theme variant or a new MCP tool field.
-- [`lessons-learned-r70s.md`](lessons-learned-r70s.md) — internal
-  post-mortem for the v1.6.0 R71 → R82 batch (CodeQL triage
+- [`lessons-learned-silent-decay.md`](lessons-learned-silent-decay.md) — internal
+  post-mortem for the v1.6.0 batch (CodeQL triage
   discipline, governance-doc relocation, zero-warning sprint,
   PyPA `src/` layout migration, cross-MCP compat aliases,
   defensive-branch coverage, markdown link-rot guardrail,
   CHANGELOG backfill, coverage-data-file relocation). Required
   reading before any big-bang reorganisation, accept-but-ignore
   alias, or `git mv` of a `.md` file.
-- [`security-triage-r72.md`](security-triage-r72.md) — line-by-line
+- [`security-triage-r72.tmp.md`](security-triage-r72.tmp.md) — line-by-line
   disposition of every GitHub code-scanning alert open as of the
   May 2026 sweep. Documents the R72-A (15 × log-injection via
   global root InterceptHandler) and R72-B (1 × stack-trace exposure
@@ -100,9 +100,9 @@ guardrail with 14 broken-link fixes inside `.github/`,
 `CHANGELOG.md` `[Unreleased]` backfill, and `coverage.py`
 parallel-run intermediate files relocated to `.coverage_data/`).
 Internal post-mortem at
-[`lessons-learned-r70s.md`](lessons-learned-r70s.md). Prior
+[`lessons-learned-silent-decay.md`](lessons-learned-silent-decay.md). Prior
 v1.5.45 (R63 → R70 batch) post-mortem at
-[`lessons-learned-r60s.md`](lessons-learned-r60s.md). Earlier
+[`lessons-learned-css-and-options.md`](lessons-learned-css-and-options.md). Earlier
 R57 / R58 work (Flask-Limiter `headers_enabled=True` + 256 KB SSE
 oversize guard) remains captured in v1.5.44; older R56 → R50 in
 v1.5.43 → v1.5.39._

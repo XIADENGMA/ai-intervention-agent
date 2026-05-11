@@ -1,6 +1,6 @@
 # R21.x Performance Roadmap
 
-> 中文版：[`perf-r21-roadmap.zh-CN.md`](perf-r21-roadmap.zh-CN.md)
+> 中文版：[`perf-web-asset-pipeline.zh-CN.md`](perf-web-asset-pipeline.zh-CN.md)
 
 This document captures the design rationale, measurements, and trade-offs of
 the **R21.x performance optimization batch** (R21.1 → R21.4), which closes
@@ -476,7 +476,7 @@ perpetuates rather than decays.
 ## Cross-references
 
 - Layer 1-4 baseline established in R20.x:
-  [`docs/perf-r20-roadmap.md`](perf-r20-roadmap.md);
+  [`docs/perf-mcp-cold-start.md`](perf-mcp-cold-start.md);
 - End-to-end perf bench:
   [`scripts/perf_e2e_bench.py`](../scripts/perf_e2e_bench.py);
 - Regression gate:

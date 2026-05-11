@@ -2,8 +2,8 @@
 
 > Internal post-mortem for the v1.6.0 batch (R71 → R82). Reviewers
 > auditing the next release should read this alongside
-> [`lessons-learned-r60s.md`](lessons-learned-r60s.md) and
-> [`security-triage-r72.md`](security-triage-r72.md). Cross-link from
+> [`lessons-learned-css-and-options.md`](lessons-learned-css-and-options.md) and
+> [`security-triage-r72.tmp.md`](security-triage-r72.tmp.md). Cross-link from
 > `CHANGELOG.md` for the bullet version.
 
 This batch shipped twelve base `R` numbers (eighteen counting the
@@ -59,7 +59,7 @@ no root handler that ran the sanitizer.
 - **R72-C** (23 dismissals) and **R72-D** (9 dismissals + 1 locale
   CSRF fix) walked through every remaining alert with `gh api ... -X
   PATCH state=dismissed reason=... comment=...`, leaving an audit
-  trail in `docs/security-triage-r72.md`.
+  trail in `docs/security-triage-r72.tmp.md`.
 - **R72 tests** — `tests/test_root_logger_intercept_r72a.py`
   (14 assertions) covers idempotency, repeat `importlib.reload`,
   CRLF / null-byte escaping, PII redaction, no double-emit on managed
@@ -67,7 +67,7 @@ no root handler that ran the sanitizer.
 
 ### What contributors should do next time
 
-1. **Read `docs/security-triage-r72.md` before opening alerts in the
+1. **Read `docs/security-triage-r72.tmp.md` before opening alerts in the
    GitHub UI.** Every disposition has a justification; do not
    re-dismiss / re-fix what is already covered.
 2. **Treat code-scanning alerts as a triage queue, not a TODO list.**
@@ -568,7 +568,7 @@ reading a release-notes blog post.
   `config.jsonc.default` without re-flattening the layout.
 - **Schema-as-contract applies to internal interfaces too.** R77's
   cross-MCP-tool compat aliases are the same lesson as R63b's MCP
-  tool description (covered in `lessons-learned-r60s.md` Root
+  tool description (covered in `lessons-learned-css-and-options.md` Root
   cause 2): once an external client pins to a shape, your tool's
   parameter list becomes a public API. The same logic applies to
   the auto-generated `docs/api/` reference, the public Python

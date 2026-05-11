@@ -50,19 +50,19 @@
   说明。
 - [`../.github/SECURITY.md`](../.github/SECURITY.md) — 漏洞披露政策、受支持版本、
   AppleScript executor 安全模型。
-- [`lessons-learned-r60s.md`](lessons-learned-r60s.md) — v1.5.45
-  R63 → R70 批次的内部复盘（浅色模式 iOS 蓝泄漏、MCP 工具描述漂
+- [`lessons-learned-css-and-options.md`](lessons-learned-css-and-options.md) — v1.5.45
+  批次的内部复盘（浅色模式 iOS 蓝泄漏、MCP 工具描述漂
   移、Bark 深链接 sentinel、build-info 诊断块、Prettier 收尾、
   Dependabot major-bump 分诊、README 架构完整性）。新增 CSS 主
   题变体或 MCP 工具字段前必读。
-- [`lessons-learned-r70s.md`](lessons-learned-r70s.md) —
-  v1.6.0 R71 → R82 批次的内部复盘（CodeQL 警告分诊、治理文档
+- [`lessons-learned-silent-decay.md`](lessons-learned-silent-decay.md) —
+  v1.6.0 批次的内部复盘（CodeQL 警告分诊、治理文档
   迁入 `.github/`、零警告冲刺、PyPA `src/` 布局迁移、跨 MCP
   兼容别名、防御分支覆盖率冲刺、Markdown 链接腐烂护栏、
   CHANGELOG 回填、coverage 数据文件改写位置）。任何大型重组、
   accept-but-ignore 兼容字段、或 `git mv` 任意 `.md` 文件之
   前必读。
-- [`security-triage-r72.md`](security-triage-r72.md) — 2026 年 5
+- [`security-triage-r72.tmp.md`](security-triage-r72.tmp.md) — 2026 年 5
   月对全部 GitHub code-scanning 警告的逐条分诊。包含 R72-A（15 ×
   log-injection 通过全局 root InterceptHandler 一次性修掉）+
   R72-B（1 × `open-config-file` stack-trace 泄漏）的代码修复、20
@@ -88,9 +88,9 @@ lockfile 诊断的零警告冲刺、PyPA `src/ai_intervention_agent/`
 Markdown 链接腐烂护栏 + 修复 `.github/` 内 14 条断链、
 `CHANGELOG.md` `[Unreleased]` 回填、把 `coverage.py` 并行模式
 中间文件挪到 `.coverage_data/`）。内部复盘见
-[`lessons-learned-r70s.md`](lessons-learned-r70s.md)。上一
+[`lessons-learned-silent-decay.md`](lessons-learned-silent-decay.md)。上一
 v1.5.45（R63 → R70 批次）复盘见
-[`lessons-learned-r60s.md`](lessons-learned-r60s.md)。更早的
+[`lessons-learned-css-and-options.md`](lessons-learned-css-and-options.md)。更早的
 R57 / R58（Flask-Limiter `headers_enabled=True` + 256 KB SSE
 oversize 护栏）记录在 v1.5.44；R56 → R50 在 v1.5.43 →
 v1.5.39。_
