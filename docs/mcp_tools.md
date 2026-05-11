@@ -51,14 +51,15 @@ Request **interactive user feedback** through the Web UI (browser or VS Code Web
 
 - `message` (string, required)
   - The prompt shown to the user (Markdown supported)
-  - Max length: **10000** characters (extra content will be truncated)
+  - Max length: **1000000** characters (extra content will be truncated). The
+    10 MB byte hard limit in `task_queue` still applies as a DoS guard.
 - `predefined_options` (array, optional)
   - Predefined choices the user can pick from. **Three input shapes are accepted** (v1.5.20+):
     1. `list[str]` — simple labels, all initially unchecked
     2. `list[dict]` — objects of shape `{ "label": str, "default": bool }`,
        so the recommended choice can be pre-selected without an extra parameter
     3. `list[str]` paired with `predefined_options_defaults` — see below
-  - Each option max length: **500** characters
+  - Each option max length: **10000** characters
   - Non-string / non-`{label,...}` items are ignored
   - `null` / missing / `[]` means no predefined options
 - `predefined_options_defaults` (array of bool, optional, v1.5.20+)

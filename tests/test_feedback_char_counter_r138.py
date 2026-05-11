@@ -98,10 +98,12 @@ class TestConstantsLocked(unittest.TestCase):
         self.assertIn('COUNTER_ID = "feedback-char-counter"', self.js)
 
     def test_warn_threshold_constant(self) -> None:
-        self.assertIn("WARN_THRESHOLD = 8000", self.js)
+        # R166：WARN/DANGER 阈值随 ``MAX_MESSAGE_LENGTH`` 抬升到 ~1MB 量级，
+        # 避免在合法长 prompt（LLM 长上下文 / 长技术文档粘贴）下提前标红。
+        self.assertIn("WARN_THRESHOLD = 800_000", self.js)
 
     def test_danger_threshold_constant(self) -> None:
-        self.assertIn("DANGER_THRESHOLD = 10000", self.js)
+        self.assertIn("DANGER_THRESHOLD = 1_000_000", self.js)
 
     def test_warn_class_constant(self) -> None:
         self.assertIn('WARN_CLASS = "warn"', self.js)
@@ -113,10 +115,11 @@ class TestConstantsLocked(unittest.TestCase):
         self.assertIn('I18N_KEY = "feedback.charCounter"', self.js)
 
     def test_threshold_ordering(self) -> None:
-        # WARN < DANGER 是阈值变色逻辑前提；硬数字关系也写成测试防退化
+        # WARN < DANGER 是阈值变色逻辑前提；R166 后两者抬升到 800k / 1M
+        # 字符，仍保留 80% / 100% 的递进关系。
         self.assertLess(
-            8000,
-            10000,
+            800_000,
+            1_000_000,
             "WARN_THRESHOLD 必须 < DANGER_THRESHOLD（变色递进顺序）",
         )
 

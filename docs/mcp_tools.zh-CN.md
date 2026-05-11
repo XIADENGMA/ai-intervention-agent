@@ -48,14 +48,14 @@
 
 - `message`（string，必填）
   - 展示给用户的问题/提示（支持 Markdown）
-  - 最大长度：**10000** 字符（超出会截断）
+  - 最大长度：**1000000** 字符（超出会截断；`task_queue` 仍保留 10 MB 字节硬上限作为 DoS 防御）
 - `predefined_options`（array，可选）
   - 预定义选项列表，用户可选择其一或多项（以实际前端交互为准）。**接受三种输入形态**（v1.5.20+）：
     1. `list[str]` —— 纯字符串数组，所有选项默认未勾选
     2. `list[dict]` —— `{ "label": str, "default": bool }` 对象数组，
        让推荐选项自带「初始勾选」状态，无需额外参数
     3. `list[str]` 配合 `predefined_options_defaults` —— 见下
-  - 单个选项最大长度：**500** 字符
+  - 单个选项最大长度：**10000** 字符
   - 非字符串 / 非 `{label,...}` 元素会被忽略
   - `null` / 不传 / `[]` 表示无预定义选项
 - `predefined_options_defaults`（array of bool，可选，v1.5.20+）
@@ -109,7 +109,7 @@ JSON 快照：`name` / `version` / `transport` / `runtime`（Python 版本 +
 `interactive_feedback` 设计为**长时间运行**工具。
 
 - 前端倒计时由 `feedback.frontend_countdown` 控制（默认 **240s**，范围 **[10, 3600]s**；`0` 或任何非正整数表示关闭倒计时）。
-- 后端等待时长（`feedback.backend_max_wait`，范围 **[10, 7200]s**）由“前端倒计时 + 缓冲”推导（精确规则见 `docs/configuration.zh-CN.md`）。
+- 后端等待时长（`feedback.backend_max_wait`，范围 **[10, 7200]s**）由"前端倒计时 + 缓冲"推导（精确规则见 `docs/configuration.zh-CN.md`）。
 
 #### 示例
 

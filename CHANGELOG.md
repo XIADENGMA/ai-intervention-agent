@@ -9,75 +9,135 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R166** — **放宽三块字数软上限，与 LLM 长上下文场景对齐**。原项目里
+  存在 3 处"软"字符上限互不一致地夹击了合法长 prompt 场景（LLM 长
+  context 拼接、技术文档粘贴、长 review feedback）：
+  - ``server_config.MAX_MESSAGE_LENGTH``: 10_000 → **1_000_000**（约 1MB
+    UTF-8 字符，仍远低于 ``task_queue._PROMPT_REJECT_BYTES = 10MB``
+    字节级 DoS 防御，留 ~3-10× 字节安全裕度）；
+  - ``server_config.MAX_OPTION_LENGTH``: 500 → **10_000**（单个
+    ``predefined_options`` 选项上限，让"短段技术说明"或"完整
+    docstring 摘要"都能作为选项 label）；
+  - ``server_config.PROMPT_MAX_LENGTH``: 10_000 → **100_000**（设置
+    项级 prompt：``resubmit_prompt`` / ``prompt_suffix``，允许嵌入
+    较长的元规则 / 工作流约束 prompt）。
+  - 同步：``web_ui_routes/feedback.py::_sanitize_selected_options`` 把
+    硬编码 500 改为引用 ``MAX_OPTION_LENGTH``；``/api/update`` 截断也
+    跟 ``MAX_MESSAGE_LENGTH`` 走；前端 ``feedback_char_counter.js`` 把
+    视觉阈值抬到 ``WARN=800_000`` / ``DANGER=1_000_000``，避免合法长
+    prompt 被 counter 提前标红；``templates/web_ui.html`` 设置项 textarea
+    的 ``maxlength`` 改成 ``100000``（同 ``PROMPT_MAX_LENGTH``）；i18n
+    提示语跟着同步。
+  - 设计哲学：**软上限只 warn 不阻断；DoS 防御只在字节级硬上限处
+    一刀切**（``task_queue.add_task`` 的 10MB 字节级 reject）。这样：
+    (a) 用户体验上没有"莫名其妙超长被截断"的小坑；(b) 仍有可证明
+    的上界让 enqueue / serialize / notification payload 不会爆掉。
+  - 文档同步：``docs/mcp_tools{,.zh-CN}.md`` 已同步更新，由
+    ``test_mcp_tools_doc_consistency`` 锁死 docs ↔ code 数字对齐。
+  - 测试更新：所有相关测试改为相对常量构造超长输入（不再硬编码
+    "20000" / "1000" / "10001" 类魔数），未来再调常量也不会失效。
+    全测试 4898 passed 0 failed。
+
+### Fixed
+
+- **R165** — **反馈丢失防御双重保护**：MCP `wait_for_task_completion` 在
+  SSE 检测到 `task_changed(new_status=completed)` 后，本地 `_fetch_result()`
+  撞瞬时网络抖动（503 / connection error / DNS jitter / TLS 重协商 /
+  cellular handoff）→ R17.4 单次 retry 也失败 → `_close_orphan_task_best_effort`
+  把已 COMPLETED 且带 user feedback 的 task 永久删除 → 用户辛辛苦苦填的
+  反馈 / 选项 / 图片全部丢失，零日志告警。R165 修复双层防御：
+  - **服务端**：`POST /api/tasks/<id>/close` 检查 task 状态，已 COMPLETED
+    的任务 short-circuit 返回 `{success: True, skipped: True,
+    reason: "task_completed"}`，不调用 `remove_task`。让后台清理线程在
+    10s 内自然回收任务，user feedback `result` 永远不会被这条路径误删。
+    `test_close_completed_task_skips_remove` 锁住语义。
+  - **客户端**：把 R17.4 的单次 retry 升级为指数退避多次 retry——
+    `_FETCH_RETRY_BACKOFF_S = (0.0, 0.1, 0.25, 0.5, 1.0)`——覆盖典型的
+    100ms-1s 网络抖动窗口。一旦任意一次 retry 命中 result：填 `result_box`
+    → 跳过 close。全部 retry 失败：仍走原 R13·B1 ghost-task close 路径
+    （但因服务端 short-circuit 保护，COMPLETED task 不会被误删）。
+  - **同时修复**：`wait_for_task_completion` 把 TimeoutError 路径的
+    `return` 改成 `timed_out` 标志位，避免 Python `try/except return`
+    + `finally retry` 控制流陷阱（Python 语义下 except 的 return 把返回
+    值锁定到 stack 上，finally 里的 retry 即便拿到真实 result 也无法
+    覆盖返回值，用户反馈会被丢成 resubmit）。R165 写法让 retry 后的
+    result 总能优先于 timeout 兜底响应。
+  - 新增 `TestRetryBackoffSequenceR165`（2 个测试）覆盖多次抖动后救回
+    result、退避序列结构 invariant；既有 `TestRetryFetchBeforeClose`
+    + `TestCloseTask` 测试全部通过（共 9 个相关测试）；全测试 4898 passed
+    0 failed。
+
 ### Added
 
 - **R148** — Notification self-test button **baseline-delta probe**.
   Root-cause fix for R147's "false-success" race: the user clicks at
   T=0, the dispatch delivers (`last_success_age` becomes 0); 8 seconds
   later they click again, the second dispatch is in flight, the probe
-  runs at T=9.5s.  R147's age-only logic saw `last_success_age = 9.5s
-  < 10s` and reported "delivered (9.5s ago, streak=N)" — but the
-  *second* dispatch hadn't actually completed.  R148 fixes this by
-  taking a **baseline snapshot** of per-provider stats *before* the
+  runs at T=9.5s. R147's age-only logic saw `last_success_age = 9.5s
+< 10s` and reported "delivered (9.5s ago, streak=N)" — but the
+  _second_ dispatch hadn't actually completed. R148 fixes this by
+  taking a **baseline snapshot** of per-provider stats _before_ the
   POST dispatch (separate `/api/system/health` GET, 1-second tight
   timeout), then comparing post-dispatch streak counters against the
-  baseline.  Each event resets the *opposite* streak (success →
+  baseline. Each event resets the _opposite_ streak (success →
   `failure_streak=0`; failure → `success_streak=0`), so a single
   dispatch always increments exactly one streak counter — comparing
   `current.success_streak > baseline.success_streak` is therefore a
   reliable "did exactly one event happen between baseline and current?"
-  signal.  If the baseline fetch fails (network down / `/health` 5xx /
+  signal. If the baseline fetch fails (network down / `/health` 5xx /
   timeout), we silently fall back to R147's age-only path so the R147
-  contract is preserved.  `verdict.source ∈ {"delta", "age"}`
+  contract is preserved. `verdict.source ∈ {"delta", "age"}`
   discriminator surfaces in the diagnostic blob for debug visibility.
   23 new test cases across 8 classes lock all three delta branches
   (success / failure / stale), the R147 fallback, the
   `ALL_KNOWN_PROVIDERS == server-side _HEALTH_PER_PROVIDER_KEYS`
   invariant, and the 1-second tight baseline timeout envelope.
 
-- **R150** — Notification self-test button **history trail**.  The
+- **R150** — Notification self-test button **history trail**. The
   settings panel now records every dispatch (success / warning /
   network-error) into a localStorage-backed "last 5 results" trail
   under the existing status + probe lines, modelled on uptime-kuma /
-  healthchecks.io's "last N runs" UX.  Collapsed-by-default toggle
+  healthchecks.io's "last N runs" UX. Collapsed-by-default toggle
   (`aria-expanded` button); expanded list is `role="log"` +
   `aria-live="polite"` so screen readers announce new entries without
-  interrupting input.  Each entry: relative time bucket
+  interrupting input. Each entry: relative time bucket
   ("just now / Xs ago / Xm ago / Xh ago / Xd ago"), verdict label
   ("delivered / warning / failed / unknown" colour-coded from the
   `--{success,warning,error}-500` semantic tokens), provider list,
-  and an 8-character `event_id` chip.  Schema-versioned storage key
+  and an 8-character `event_id` chip. Schema-versioned storage key
   (`aiia.self_test.history.v1`) so a future bump can drop incompatible
   v1 payloads safely; defensive `_readStorage` write-probes localStorage
   and falls through to "no history" on Safari private mode / sandboxed
-  iframes / quota-exceeded.  Multi-tab sync via the standard
-  `storage` event.  DOM-XSS-immune renderer
-  (`createElement` + `textContent`, no `innerHTML` paths).  41 new
+  iframes / quota-exceeded. Multi-tab sync via the standard
+  `storage` event. DOM-XSS-immune renderer
+  (`createElement` + `textContent`, no `innerHTML` paths). 41 new
   test cases across 11 classes lock the schema, helper signatures,
   exports, DOM safety, trigger wiring, init wiring, HTML a11y attrs,
-  i18n completeness across en + zh-CN + _pseudo, CSS class +
+  i18n completeness across en + zh-CN + \_pseudo, CSS class +
   semantic-token contracts, and the JS file line-count envelope
   (cap raised 900 → 1100 to fit ~150 LoC of helpers).
 
 - **R152** — **Activity Dashboard** subsection in the settings panel.
   Collapsed-by-default `aria-expanded` toggle reveals a six-row `<dl>`
-  aggregating live stats from four existing endpoints: ``/api/tasks``
-  (pending / active / completed / total), ``/api/system/sse-stats``
+  aggregating live stats from four existing endpoints: `/api/tasks`
+  (pending / active / completed / total), `/api/system/sse-stats`
   (emit_total / subscribers / heartbeat + P50/P95 emit→deliver latency),
-  ``/api/system/health`` (overall status + per-provider notification
-  streak summary), and ``/api/system/recent-logs?limit=5`` (warning /
-  error / total counts).  Same competitive class as
+  `/api/system/health` (overall status + per-provider notification
+  streak summary), and `/api/system/recent-logs?limit=5` (warning /
+  error / total counts). Same competitive class as
   uptime-kuma / healthchecks.io / grafana status-page tiles — closes
   the "I have to curl four endpoints to know if the agent is healthy"
-  gap left open by R141-R150's server-side work.  Polls every 5 s
+  gap left open by R141-R150's server-side work. Polls every 5 s
   while open; pauses on `document.hidden` (saves battery on suspended
-  laptops / backgrounded mobile tabs).  AbortController-aware fetches
+  laptops / backgrounded mobile tabs). AbortController-aware fetches
   fan out in parallel and fail per-row (other rows keep refreshing).
   Toggle is a real `<button>` with `aria-controls` + `aria-expanded`;
   rendered body is `role="region"` + `aria-labelledby` + `aria-live="polite"`.
   DOM-XSS-immune renderer (only `createElement` + `textContent`,
-  per-field slice caps).  Full `en` / `zh-CN` / `_pseudo` i18n
-  coverage for 16 new keys.  52 new test cases across 11 classes
+  per-field slice caps). Full `en` / `zh-CN` / `_pseudo` i18n
+  coverage for 16 new keys. 52 new test cases across 11 classes
   lock the DOM-id ↔ HTML alignment, endpoint paths, poll window
   constants (default = 5 s, timeout = 4 s, min/max range = 1-60 s),
   full API surface (`_fetchJson` / six `_format*` helpers /
@@ -88,24 +148,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   guard, and a < 900-line file-size envelope.
 
 - **R153** — Activity Dashboard logs row **inline expand** + R152
-  field-name bug fix.  R152's `_formatLogs` read the recent-logs
+  field-name bug fix. R152's `_formatLogs` read the recent-logs
   response under `logs.logs`, but `web_ui_routes/system.py::recent_logs`
   ships the array under `entries` (R52-B contract:
-  `{"success": true, "count": N, "entries": [...]}`).  Net effect in
+  `{"success": true, "count": N, "entries": [...]}`). Net effect in
   R152: the logs row was permanently `stale` whenever the endpoint
-  responded.  R153 corrects the field name (`logs.entries`) and
+  responded. R153 corrects the field name (`logs.entries`) and
   reshapes the formatter return value from a plain string to
   `{ summary, entries }` so the row can render both the summary and
-  an inline expanded list.  Clicking the new `[expand]` link reveals
+  an inline expanded list. Clicking the new `[expand]` link reveals
   the last `LOGS_TAIL_COUNT` (= 5) entries with `level` (colour-coded
   via `--warning-500` / `--error-500`), UTC `HH:MM:SS` (parsed via
   `indexOf('T')`-anchored offsets so a non-standard ISO falls back
   cleanly), and the message clipped to `LOG_MESSAGE_SLICE` (= 256)
-  chars.  Same a11y + DOM-XSS pattern as R146 / R150 / R152: real
+  chars. Same a11y + DOM-XSS pattern as R146 / R150 / R152: real
   `<button type="button">` with `aria-controls` + `aria-expanded`;
   list `<ul>` is `role="list"` + `aria-live="polite"` + `[hidden]`.
   Idempotent re-render — every poll tick clears + rebuilds the list
-  while preserving the user's expanded state.  Three new i18n keys
+  while preserving the user's expanded state. Three new i18n keys
   (`Expand` / `Collapse` / `Empty`) across `en` / `zh-CN` / `_pseudo`.
   38 new test cases across 10 classes lock the field-name bug fix
   (positive + negative assertions), the new return shape, the
@@ -120,29 +180,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - **R149** — `release.yml` now pins `ovsx@0.10.9` for both the
   `verify-pat` and `publish` steps (was the floating `npx --yes ovsx`
-  tag).  The unpinned tag silently broke v1.6.1's Open VSX publish
+  tag). The unpinned tag silently broke v1.6.1's Open VSX publish
   between v1.6.0 (2026-05-08, succeeded) and v1.6.1 (2026-05-10, the
   same code shape failed because ovsx tightened its
-  `displayName` ↔ `vsixmanifest` cross-check).  The displayName
+  `displayName` ↔ `vsixmanifest` cross-check). The displayName
   content fix landed in v1.6.2; R149 closes the **toolchain** root
   cause so a future ovsx tightening can't ship a green PR and a red
-  release tag at the same time.  Future upgrades go through a tracked
+  release tag at the same time. Future upgrades go through a tracked
   PR (bump the pin → re-run release on a tag → either publishes or
-  fails predictably).  5 new test cases (`tests/test_release_workflow_ovsx_pinned_r149.py`)
+  fails predictably). 5 new test cases (`tests/test_release_workflow_ovsx_pinned_r149.py`)
   reject any `npx --yes ovsx publish` / `verify-pat` invocation, demand
   strict semver pins, lockstep both invocations to the same version, and
   require a nearby explanatory comment.
 
 - **R151** — Bumped `CLIENT_COOLDOWN_MS` 600 → 1500 in
-  `notification_test_button.js`.  After R147 + R148, the user-visible
+  `notification_test_button.js`. After R147 + R148, the user-visible
   dispatch path is `baseline fetch (1s) → dispatch (variable) →
-  probe wait (1.5s) → probe fetch (5s)` ≈ 4–8s wall-clock; the
+probe wait (1.5s) → probe fetch (5s)` ≈ 4–8s wall-clock; the
   600 ms client cooldown was effectively zero relative to the
   `button.disabled = true` window already covering the same path.
   1500 ms is the minimum useful budget that survives a panel re-mount
   (where `button.disabled` resets but `data-last-click-ts` survives
   via the DOM attribute round-trip), keeping the cooldown defensive
-  rather than decorative.  Drift guard
+  rather than decorative. Drift guard
   `tests/test_notification_test_button_r146.py` already requires
   `CLIENT_COOLDOWN_MS >= 100`; the bump is in-range and forward-
   compatible.
@@ -160,17 +220,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `tests/test_system_endpoint_payload_contract_r154.py` — that locks
   the four `/api/system/{health,sse-stats,recent-logs}` + `/api/tasks`
   response field names against the consumers in
-  `static/js/activity_dashboard.js`.  Any future rename on either side
+  `static/js/activity_dashboard.js`. Any future rename on either side
   fails loudly at test-collection time rather than silently degrading
   one dashboard row to permanently `stale` (which is exactly how the
-  R152 bug shipped past R152's own 52-case test suite).  Also adds the
+  R152 bug shipped past R152's own 52-case test suite). Also adds the
   troubleshooting §"Client/server payload field-name drift (R154
   lesson)" so the next contributor reading
   `docs/troubleshooting.md` knows why we lock both sides.
 
 ## [1.6.2] — 2026-05-10
 
-> Patch release on top of v1.6.1.  Adds R147 (notification self-test
+> Patch release on top of v1.6.1. Adds R147 (notification self-test
 > button now probes `/api/system/health` post-dispatch and renders a
 > per-provider delivery verdict directly under the button — closes the
 > "triggered ≠ delivered" gap left open by R146) and ships the
@@ -180,31 +240,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > `<DisplayName>` element inside `extension.vsixmanifest`; v1.6.0 was
 > fine, the toolchain shifted underneath us).
 >
-> No API changes.  4663 tests pass (2 skipped); ci_gate exit 0.
+> No API changes. 4663 tests pass (2 skipped); ci_gate exit 0.
 
 ### Added
 
 - **R147** — Notification self-test button **post-dispatch health
-  probe**.  Builds on R146: clicking *Send system self-test* still
+  probe**. Builds on R146: clicking _Send system self-test_ still
   triggers the R141 endpoint, but now — when the dispatch succeeds and
   `providers_dispatched` is non-empty — the button waits 1.5 seconds
   (Bark RTT headroom; local providers are microsec-fast) and then
   fetches `GET /api/system/health` once with a 5-second timeout, reads
   `body.checks.notification.per_provider`, and renders a verdict line
-  directly under the main status: ``bark: delivered (1.4s ago,
-  streak=3)`` / ``bark: failed (5xx_server_error, streak=1)`` /
-  ``sound: stats stale — try again`` / ``system: skipped
-  (not_registered)``.  Probe failures (network down / non-200 / non-
+  directly under the main status: `bark: delivered (1.4s ago,
+streak=3)` / `bark: failed (5xx_server_error, streak=1)` /
+  `sound: stats stale — try again` / `system: skipped
+(not_registered)`. Probe failures (network down / non-200 / non-
   JSON / abort) silently clear the line so the main "triggered N
-  providers" message stays the user's source of truth.  The whole probe
+  providers" message stays the user's source of truth. The whole probe
   is awaited so frantic re-clicks can't overrun an in-flight probe
   (preserves R146's idempotent contract).
 
   Decision tree picks the freshest of `last_success_age_seconds` /
-  `last_failure_age_seconds` so a dispatch that hit a 5xx is *not*
-  falsely reported "delivered".  6 new i18n keys (`systemTestProbing`
+  `last_failure_age_seconds` so a dispatch that hit a 5xx is _not_
+  falsely reported "delivered". 6 new i18n keys (`systemTestProbing`
   / `systemTestProbeProvider{Success,Failure,Stale,Skipped,Unknown}`)
-  with full `en` / `zh-CN` / `_pseudo` coverage.  Server contract
+  with full `en` / `zh-CN` / `_pseudo` coverage. Server contract
   pinned in tests so a future `notification.stats.per_provider` rename
   would fail loudly rather than silently degrade every probe to "stale".
   41 new test cases across 8 classes.
@@ -212,12 +272,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Fixed
 
 - **VSCode extension Open VSX publish** — `package.json.displayName`
-  hard-coded to ``"AI Intervention Agent"`` (was the NLS placeholder
-  ``"%displayName%"``).  `ovsx publish`'s recent strict-check rejected
+  hard-coded to `"AI Intervention Agent"` (was the NLS placeholder
+  `"%displayName%"`). `ovsx publish`'s recent strict-check rejected
   the placeholder vs the resolved value inside `extension.vsixmanifest`
   ("Display name in extension.vsixmanifest and package.json does not
-  match"), which broke the v1.6.1 Open VSX publish job.  v1.6.0 had
-  been fine; the toolchain tightened between releases.  VS Code
+  match"), which broke the v1.6.1 Open VSX publish job. v1.6.0 had
+  been fine; the toolchain tightened between releases. VS Code
   Marketplace + the activity-bar / view-container / commands stay
   localised because those still drive through `%key%` placeholders.
   Drift guard `tests/test_vscode_displayname_literal_for_ovsx.py` locks
@@ -237,8 +297,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > GitHub PAT scrubbing / R112 static-route ext whitelist / R122
 > image MIME unification).
 >
-> No removed APIs.  All R53-F / R72 / R76 / R77 contracts
-> preserved.  4621 tests pass (2 skipped); ci_gate exit 0;
+> No removed APIs. All R53-F / R72 / R76 / R77 contracts
+> preserved. 4621 tests pass (2 skipped); ci_gate exit 0;
 > ruff / ty / dead-key / param-signature linters all clean.
 
 ### Added
@@ -252,10 +312,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   without breaking any R53-F contract.
 
   **What's new**:
-
   1. **New `notification` sub-check** in `payload.checks.notification`:
      `{ok, enabled, providers_count, queue_size,
-     delivery_success_rate, events_finalized, events_in_flight}`.
+delivery_success_rate, events_finalized, events_in_flight}`.
      Source: extracted from `notification_manager.get_status()` via
      `_safe_notification_summary()`, which **strips** the `config` /
      `providers` / `stats` sub-trees (those carry tokens / Bark
@@ -337,7 +396,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   investment compounds across years.
 
   **Components**:
-
   1. **`scripts/silent_failure_audit.py`** (NEW) — AST-based
      scanner with three CLI commands:
      - `list` — prints every `except Exception: pass` site in
@@ -374,12 +432,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
        the fix).
      - `test_scanner_excludes_pure_docstring_pattern` — REVERSE
        invariant: scanner must NOT match the literal `except
-       Exception:\npass` string when it appears inside a
+Exception:\npass` string when it appears inside a
        docstring (canonical false positive that grep would hit;
        AST sees only real code nodes).
      - `test_scanner_correctly_distinguishes_alias_form` —
        defines the scanner's semantic edge: `except Exception:
-       pass` is matched, but `except Exception as e: pass` is
+pass` is matched, but `except Exception as e: pass` is
        NOT (alias form usually carries `logger.error(..., e)`,
        different anti-pattern not in scope of R120).
 
@@ -412,304 +470,297 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Added
 
 - **R146** — **(UX / Ops self-service)** Settings 面板 **Test functions**
-  分组新增 ``Send system self-test`` 按钮，把 R141-R145 整套通知可观测
-  能力从 ``curl`` only 升级为「点一下就能验证」。
+  分组新增 `Send system self-test` 按钮，把 R141-R145 整套通知可观测
+  能力从 `curl` only 升级为「点一下就能验证」。
 
-  **背景与缺口**：R141 把 ``POST /api/system/notifications/test`` 落成
-  endpoint；R142 / R143 / R145 在 ``GET /api/system/health`` 把 per-
-  provider stats / ``last_error_class`` / ``success_streak`` /
-  ``failure_streak`` 全部铺开。直到 R145 为止，唯一触发途径还是
-  ``curl /api/system/notifications/test``——运维 / Datadog dashboard
+  **背景与缺口**：R141 把 `POST /api/system/notifications/test` 落成
+  endpoint；R142 / R143 / R145 在 `GET /api/system/health` 把 per-
+  provider stats / `last_error_class` / `success_streak` /
+  `failure_streak` 全部铺开。直到 R145 为止，唯一触发途径还是
+  `curl /api/system/notifications/test`——运维 / Datadog dashboard
   OK，但**用户改完 Bark / desktop / sound 配置后想"试一下"得开终端**，
   体验断层。R146 闭口：在 settings 面板 Test functions 子组里加一个
-  ``Send system self-test`` 按钮，点击 → POST endpoint → 在按钮下方的
-  ``setting-status-line`` 实时显示结果。
+  `Send system self-test` 按钮，点击 → POST endpoint → 在按钮下方的
+  `setting-status-line` 实时显示结果。
 
   **响应矩阵覆盖 7 路径**：
-
-  - 200 + ``success=true`` → ``"Triggered N provider(s): bark, web
-    (event_id=...)"``（绿色，``--success-500``）
-  - 200 + ``success=false`` + 含 ``disabled``/``enabled=false``/
-    ``notification.`` 关键字 → ``Notifications disabled in config:
-    {{reason}}``（橙色，``--warning-500``）
-  - 200 + ``success=false`` + 其他 → ``No providers enabled —
-    check notification.bark/web/sound/system_enabled``（橙色）
-  - 429 → ``Too many self-tests — please wait a minute``（橙色，
+  - 200 + `success=true` → `"Triggered N provider(s): bark, web
+(event_id=...)"`（绿色，`--success-500`）
+  - 200 + `success=false` + 含 `disabled`/`enabled=false`/
+    `notification.` 关键字 → `Notifications disabled in config:
+{{reason}}`（橙色，`--warning-500`）
+  - 200 + `success=false` + 其他 → `No providers enabled —
+check notification.bark/web/sound/system_enabled`（橙色）
+  - 429 → `Too many self-tests — please wait a minute`（橙色，
     服务器 6/min Flask-Limiter 限流的客户端友好版本）
-  - 4xx 其他 → ``Self-test failed: {{error}}``（红色）
-  - 5xx + ``error=notification_unavailable`` → ``Notification system
-    unavailable``（红色）
-  - 5xx 其他 + 网络错误 / AbortError → ``Network error / Self-test
-    failed: {{error}}``（红色）
+  - 4xx 其他 → `Self-test failed: {{error}}`（红色）
+  - 5xx + `error=notification_unavailable` → `Notification system
+unavailable`（红色）
+  - 5xx 其他 + 网络错误 / AbortError → `Network error / Self-test
+failed: {{error}}`（红色）
 
-  **i18n 路径**：所有 user-facing 字符串走 ``window.AIIA_I18N.t(key,
-  params)``——**`_classifyResponse` 内部每个分支都用字面量 key**
-  调用 ``_t(...)``，让 ``test_runtime_behavior.py::TestI18nDeadKeys`` 静
+  **i18n 路径**：所有 user-facing 字符串走 `window.AIIA_I18N.t(key,
+params)`——**`_classifyResponse` 内部每个分支都用字面量 key**
+  调用 `_t(...)`，让 `test_runtime_behavior.py::TestI18nDeadKeys` 静
   态分析能 grep 到（动态 key 派发会让所有 key 静默掉进 dead-key 黑
-  洞）。Provider 列表用 ``i18n.formatList`` 渲染，自动适配 locale 的
+  洞）。Provider 列表用 `i18n.formatList` 渲染，自动适配 locale 的
   「and / 、」分隔符。
 
   **PII / 安全**：
-
   - 服务端 message 截断 200 字符；event_id 截断 64 字符——避免
     runaway error string 撕破 status-line 布局。
   - 只读 endpoint，不修改任何 config；6/min 限流来自 R141。
-  - 客户端 600 ms cooldown（``data-last-click-ts`` 时间戳挂在 DOM
-    上，节点 re-mount 也保留）+ ``button.disabled`` 双重防 double-click。
-  - 60 s ``AbortController`` 硬超时，避免 hung connection 永久禁用按钮。
+  - 客户端 600 ms cooldown（`data-last-click-ts` 时间戳挂在 DOM
+    上，节点 re-mount 也保留）+ `button.disabled` 双重防 double-click。
+  - 60 s `AbortController` 硬超时，避免 hung connection 永久禁用按钮。
 
   **idempotent**：
-
-  - ``init`` 二次调用走 ``data-r146-bound`` sentinel attribute
+  - `init` 二次调用走 `data-r146-bound` sentinel attribute
     short-circuit；handler 永远只挂一次。
-  - ``triggerSelfTest`` 进入时检查 ``button.disabled`` +
-    ``_isOnCooldown(button)``，flight 中的请求不会被打断。
-  - ``finally`` 块强制 ``button.disabled = false``——网络异常 /
+  - `triggerSelfTest` 进入时检查 `button.disabled` +
+    `_isOnCooldown(button)`，flight 中的请求不会被打断。
+  - `finally` 块强制 `button.disabled = false`——网络异常 /
     AbortError / 服务器 500 后按钮一定能重新点击，永远不会卡死。
 
   **改动**：
-
-  - ``src/ai_intervention_agent/static/js/notification_test_button.js``
-    （新增，~270 行）：常量 / ``_t`` / ``_formatProviderList`` /
-    ``_setStatus`` / ``_classifyResponse`` / ``_isOnCooldown`` /
-    ``_stampClick`` / ``triggerSelfTest`` / ``init``；window export
-    ``AIIA_NOTIFICATION_TEST_BUTTON``。
-  - ``src/ai_intervention_agent/templates/web_ui.html``：Test
+  - `src/ai_intervention_agent/static/js/notification_test_button.js`
+    （新增，~270 行）：常量 / `_t` / `_formatProviderList` /
+    `_setStatus` / `_classifyResponse` / `_isOnCooldown` /
+    `_stampClick` / `triggerSelfTest` / `init`；window export
+    `AIIA_NOTIFICATION_TEST_BUTTON`。
+  - `src/ai_intervention_agent/templates/web_ui.html`：Test
     functions 子组里 desktop notification 按钮之后插入 R146 按钮 +
-    ``aria-live="polite"`` 状态行 + i18n hint；``<script>`` 标签带
-    ``defer`` + ``nonce`` + ``?v={{ notification_test_button_version
-    }}``。
-  - ``src/ai_intervention_agent/web_ui.py``：
-    ``_get_template_context`` 加 ``notification_test_button_version``
-    走 ``_compute_file_version``。
-  - ``src/ai_intervention_agent/static/css/main.css``（+33 行）：
-    ``.setting-status-line`` 类系列（pending / success / warning /
-    error）颜色用 ``--success-500`` / ``--warning-500`` /
-    ``--error-500`` 项目语义 token，自动跟随 light/dark 主题。
-  - ``src/ai_intervention_agent/static/locales/{zh-CN,en}.json``：
-    10 个 keys（``settings.testSystemBtn`` / ``testSystemHint`` /
-    ``systemTestSending`` / ``systemTestSuccess`` /
-    ``systemTestNoProviders`` / ``systemTestDisabled`` /
-    ``systemTestRateLimited`` / ``systemTestUnavailable`` /
-    ``systemTestNetworkError`` / ``systemTestFailed``）；
-    ``systemTestSuccess`` 用 ICU plural（``{count, plural, one {#
-    provider} other {# providers}}``）保证英文不出 ``1 providers``。
-  - ``src/ai_intervention_agent/static/locales/_pseudo/pseudo.json``：
+    `aria-live="polite"` 状态行 + i18n hint；`<script>` 标签带
+    `defer` + `nonce` + `?v={{ notification_test_button_version
+}}`。
+  - `src/ai_intervention_agent/web_ui.py`：
+    `_get_template_context` 加 `notification_test_button_version`
+    走 `_compute_file_version`。
+  - `src/ai_intervention_agent/static/css/main.css`（+33 行）：
+    `.setting-status-line` 类系列（pending / success / warning /
+    error）颜色用 `--success-500` / `--warning-500` /
+    `--error-500` 项目语义 token，自动跟随 light/dark 主题。
+  - `src/ai_intervention_agent/static/locales/{zh-CN,en}.json`：
+    10 个 keys（`settings.testSystemBtn` / `testSystemHint` /
+    `systemTestSending` / `systemTestSuccess` /
+    `systemTestNoProviders` / `systemTestDisabled` /
+    `systemTestRateLimited` / `systemTestUnavailable` /
+    `systemTestNetworkError` / `systemTestFailed`）；
+    `systemTestSuccess` 用 ICU plural（`{count, plural, one {#
+provider} other {# providers}}`）保证英文不出 `1 providers`。
+  - `src/ai_intervention_agent/static/locales/_pseudo/pseudo.json`：
     自动重新生成。
   - 静态资源：JS minify 产物 + br/gz 预压缩自动重生。
-  - ``tests/test_notification_test_button_r146.py``（新增，54 cases）：
+  - `tests/test_notification_test_button_r146.py`（新增，54 cases）：
     JS 文件 / 常量 / API surface / fetch 路径（POST + Content-Type
-    + body + credentials + AbortController + finally
-    button.disabled）/ classifyResponse 完整状态机矩阵 / HTML 集成 /
-    template_context 注入 / i18n 双 locale + pseudo / CSS 4 状态色
-    用 token / idempotent + cooldown 守卫。
+    - body + credentials + AbortController + finally
+      button.disabled）/ classifyResponse 完整状态机矩阵 / HTML 集成 /
+      template_context 注入 / i18n 双 locale + pseudo / CSS 4 状态色
+      用 token / idempotent + cooldown 守卫。
 
   **Verification**: 54 R146 tests passed + R140-R145 系列 242 个相关
-  测试全部回归 clean；``ci_gate.py`` exit 0；ruff / ty / dead-key /
+  测试全部回归 clean；`ci_gate.py` exit 0；ruff / ty / dead-key /
   param-signature linter 全绿。Cycle-6 进度 5/5（R142-R143-R145-R144-
   R146 收口；R141 endpoint 真正 user-reachable）。
 
-- **R145** — **(Observability)** R142 ``per_provider`` 子结构再扩 2 个互
-  斥连续计数字段：``success_streak`` / ``failure_streak``——把"上一次
+- **R145** — **(Observability)** R142 `per_provider` 子结构再扩 2 个互
+  斥连续计数字段：`success_streak` / `failure_streak`——把"上一次
   事件后到现在为止，这家 provider 连续成功 / 连续失败了多少次"显式
-  化。与 R142 ``success_rate`` / R143 ``last_error_class`` 形成完整可观
+  化。与 R142 `success_rate` / R143 `last_error_class` 形成完整可观
   测三件套：成功率答"长期健康度"、last_error_class 答"挂在哪一类"、
   streak 答"现在还在挂吗"。
 
-  **为什么需要 streak**：``success_rate`` 在样本足够大（≥30 events）
+  **为什么需要 streak**：`success_rate` 在样本足够大（≥30 events）
   时才稳定，对"突发性 incident"（一家 provider 瞬间全挂）反应迟钝
   ——成功率从 100% 掉到 80% 需要 6 次失败累积，这时候用户可能已经
-  错过 N 个通知。``failure_streak`` 是连续失败计数，**第一次失败立刻
-  +1**，监控对 ``failure_streak >= 3`` 直接 alert 比"15 分钟成功率
+  错过 N 个通知。`failure_streak` 是连续失败计数，**第一次失败立刻
+  +1**，监控对 `failure_streak >= 3` 直接 alert 比"15 分钟成功率
   <X%"早 5-10 个 sample 识别故障。这是云原生告警的标准范式：
-  Prometheus ``increase()`` / Datadog ``count`` 都鼓励直接对 streak
+  Prometheus `increase()` / Datadog `count` 都鼓励直接对 streak
   做窗口聚合。
 
   **互斥语义**（隐式契约）：
-
-  - 任何一次成功 → ``success_streak += 1``；``failure_streak = 0``
-  - 任何一次失败 → ``failure_streak += 1``；``success_streak = 0``
+  - 任何一次成功 → `success_streak += 1`；`failure_streak = 0`
+  - 任何一次失败 → `failure_streak += 1`；`success_streak = 0`
   - 因此**同一 provider 同一时刻最多一个 streak > 0**——这让 dashboard
-    上"哪些 provider 处于异常状态"一眼就能看出（``failure_streak > 0``
+    上"哪些 provider 处于异常状态"一眼就能看出（`failure_streak > 0`
     那批就是）。
 
   **失败覆盖范围**：
-
-  - 正常 ``ok=False`` 路径 → failure_streak ++
-  - ``provider_not_registered`` 路径 → failure_streak ++（与
-    ``last_error_class=not_registered`` 配套）
-  - ``provider.send()`` 抛 exception 被 except 兜住 → failure_streak ++
+  - 正常 `ok=False` 路径 → failure_streak ++
+  - `provider_not_registered` 路径 → failure_streak ++（与
+    `last_error_class=not_registered` 配套）
+  - `provider.send()` 抛 exception 被 except 兜住 → failure_streak ++
   - 三条失败路径全覆盖，监控不会因为「这家 provider 还没注册」就
     miss 掉 incident。
 
-  **PII / 安全边界**：streak 是**纯整数**，不含 ``last_error`` 字符串
+  **PII / 安全边界**：streak 是**纯整数**，不含 `last_error` 字符串
   / URL / device_key / token 等任何敏感信息——与 R142 / R143 的边界
   保持一致。
 
-  **后向兼容**：``_safe_per_provider_snapshot`` 对**老版 stats**（没
-  有 streak 字段）默认返回 ``0 / 0``；对**非法类型**（字符串 /
-  list）走 ``try/except`` 兜底返回 ``0`` 而非 raise——保证 K8s liveness
+  **后向兼容**：`_safe_per_provider_snapshot` 对**老版 stats**（没
+  有 streak 字段）默认返回 `0 / 0`；对**非法类型**（字符串 /
+  list）走 `try/except` 兜底返回 `0` 而非 raise——保证 K8s liveness
   探针在数据格式异常时也不 5xx。
 
   **改动**：
-
-  - ``src/ai_intervention_agent/notification_manager.py``：
-    ``_send_single_notification`` 4 处 ``providers.setdefault(...)``
-    模板加 ``"success_streak": 0, "failure_streak": 0``；success/
+  - `src/ai_intervention_agent/notification_manager.py`：
+    `_send_single_notification` 4 处 `providers.setdefault(...)`
+    模板加 `"success_streak": 0, "failure_streak": 0`；success/
     failure/异常 3 条路径分别 ++ 自己的 streak 并把对方 = 0。
-  - ``src/ai_intervention_agent/web_ui_routes/system.py``：
-    ``_safe_per_provider_snapshot`` 暴露 streak 两字段（``try/except``
-    兜底非法值）；``system_health`` 的 OpenAPI docstring 增加 R145
+  - `src/ai_intervention_agent/web_ui_routes/system.py`：
+    `_safe_per_provider_snapshot` 暴露 streak 两字段（`try/except`
+    兜底非法值）；`system_health` 的 OpenAPI docstring 增加 R145
     字段说明（"streak 互斥 / 失败 3 路径覆盖 / 早期告警 vs 长期成
     功率"）。
-  - ``tests/test_notification_health_streak_r145.py``（新增，
+  - `tests/test_notification_health_streak_r145.py`（新增，
     25 cases）：常量形状（streak 字段存在 + int 类型 + 非负）/
     后向兼容（缺字段 / None / 非法类型 → 0 不 raise）/ 互斥语义 /
-    NotificationManager 真实 ``_send_single_notification`` 路径 5
+    NotificationManager 真实 `_send_single_notification` 路径 5
     种场景（连续成功 / 连续失败 / success → failure reset / 长波动
-    + recover / per-provider 互独立 / 异常路径计为失败 /
-    not_registered 计为失败）/ PII 安全（json.dumps 不含原文本） /
-    HTTP 集成（mock manager → ``_safe_notification_summary`` 返回
-    含 streak）/ Swagger doc 字段验证。
-  - ``tests/test_notification_health_per_provider_r142.py``：
-    ``expected_keys`` 从 9 → 11；``test_eight_keys_exact`` 重命名
-    ``test_keys_match_contract_exact`` 与 keys 数实际值脱钩。
-  - ``tests/test_notification_health_last_error_class_r143.py``：
+    - recover / per-provider 互独立 / 异常路径计为失败 /
+      not_registered 计为失败）/ PII 安全（json.dumps 不含原文本） /
+      HTTP 集成（mock manager → `_safe_notification_summary` 返回
+      含 streak）/ Swagger doc 字段验证。
+  - `tests/test_notification_health_per_provider_r142.py`：
+    `expected_keys` 从 9 → 11；`test_eight_keys_exact` 重命名
+    `test_keys_match_contract_exact` 与 keys 数实际值脱钩。
+  - `tests/test_notification_health_last_error_class_r143.py`：
     R143 dict-shape 整合测试 expected keys 同步加 streak 两字段；
-    ``test_nine_keys_exact`` → ``test_eleven_keys_exact``。
+    `test_nine_keys_exact` → `test_eleven_keys_exact`。
 
   **Verification**: 25 R145 tests passed + 294 涉及测试（R141/R142/
   R143/R121/notification_manager）回归全 pass，ruff/ty clean。
 
 - **R144** — **(UX / Discoverability)** 键盘快捷键 cheatsheet 浮层
-  ——把 R131d 的 ``Alt+1..9`` (Quick Phrases)、R140 的 ``Ctrl+Enter
-  / Enter / Shift+Enter`` 等隐藏快捷键 discoverability 化。新用户
+  ——把 R131d 的 `Alt+1..9` (Quick Phrases)、R140 的 `Ctrl+Enter
+/ Enter / Shift+Enter` 等隐藏快捷键 discoverability 化。新用户
   不需要打开 source / changelog 也能看到「这个软件支持什么键」。
-  与 GitHub / GitLab / Linear 的 ``?`` cheatsheet 是同一行业范式。
+  与 GitHub / GitLab / Linear 的 `?` cheatsheet 是同一行业范式。
 
   **触发约束**：
-  - 在任意 ``input`` / ``textarea`` / ``select`` / ``contenteditable``
-    都 **不 focus** 时按 ``?`` (Shift+/) 才弹浮层；textarea 里 ``?``
+  - 在任意 `input` / `textarea` / `select` / `contenteditable`
+    都 **不 focus** 时按 `?` (Shift+/) 才弹浮层；textarea 里 `?`
     仍然是字符（不打扰键盘党正常输入）；
-  - 修饰键过滤：``Ctrl+?`` / ``Cmd+?`` / ``Alt+?`` 都不触发（避免
+  - 修饰键过滤：`Ctrl+?` / `Cmd+?` / `Alt+?` 都不触发（避免
     与系统 / 浏览器既有快捷键冲突）；
-  - 浮层打开后：``Esc`` 关闭 / 点击半透明遮罩关闭 / 卡片内点击不冒泡
+  - 浮层打开后：`Esc` 关闭 / 点击半透明遮罩关闭 / 卡片内点击不冒泡
     （防误关）。
 
   **架构**：
   - 与 R140 / R131d 同款 capture-phase keydown listener
-    （``addEventListener("keydown", ..., true)``），让本拦截器先拿到
+    （`addEventListener("keydown", ..., true)`），让本拦截器先拿到
     事件；
-  - 6 条静态 SHORTCUTS 表（``? / Esc / Alt+1-9 / Ctrl+Enter / Enter
-    / Shift+Enter``）；后续要加新快捷键直接扩 SHORTCUTS 数组 + i18n
+  - 6 条静态 SHORTCUTS 表（`? / Esc / Alt+1-9 / Ctrl+Enter / Enter
+/ Shift+Enter`）；后续要加新快捷键直接扩 SHORTCUTS 数组 + i18n
     key；
   - 不依赖 localStorage（无状态 UI，每次都重新渲染）；可选未来扩
     "用户已看过 N 次"hint。
 
-  **CSP / XSS 安全**：全部 ``createElement`` + ``textContent``，零
-  ``innerHTML`` / ``insertAdjacentHTML``，与 R130 quick_phrases / R138
+  **CSP / XSS 安全**：全部 `createElement` + `textContent`，零
+  `innerHTML` / `insertAdjacentHTML`，与 R130 quick_phrases / R138
   charCounter 同款基线。
 
   **i18n / 复用既有 key**：
-  - 复用：``shortcuts.helpTitle`` / ``shortcuts.showHelp`` /
-    ``shortcuts.closeModal``（既有）；
-  - 新增 6 个：``shortcuts.helpSubtitle`` /
-    ``shortcuts.helpEscHint`` / ``shortcuts.quickPhrase`` /
-    ``shortcuts.submitCtrlEnter`` / ``shortcuts.submitEnter`` /
-    ``shortcuts.newline``——zh-CN + en + pseudo locale 全覆盖。
+  - 复用：`shortcuts.helpTitle` / `shortcuts.showHelp` /
+    `shortcuts.closeModal`（既有）；
+  - 新增 6 个：`shortcuts.helpSubtitle` /
+    `shortcuts.helpEscHint` / `shortcuts.quickPhrase` /
+    `shortcuts.submitCtrlEnter` / `shortcuts.submitEnter` /
+    `shortcuts.newline`——zh-CN + en + pseudo locale 全覆盖。
 
   **CSS 复用既有变量**：
-  - ``var(--bg-secondary, ...)`` / ``var(--text-primary, ...)`` /
-    ``var(--border-primary, ...)`` 等，与项目 R66 brand-color 护栏
+  - `var(--bg-secondary, ...)` / `var(--text-primary, ...)` /
+    `var(--border-primary, ...)` 等，与项目 R66 brand-color 护栏
     一致；
   - 480px 断点收紧 padding / key 字号，与 quick-phrases-mobile-r133
     同款响应式骨架。
 
   **改动**：
-  - ``src/ai_intervention_agent/static/js/keyboard_shortcut_help.js``
-    （新增，~280 行）：IIFE 模块；``OVERLAY_ID``、``TRIGGER_KEY``、
-    ``SHORTCUTS`` 三个常量；``_t`` / ``_resolveShortcutLabel``
-    / ``_renderShortcutRow`` / ``_buildOverlayDom`` 几个 helper；
-    ``showOverlay`` / ``hideOverlay`` / ``isOverlayOpen`` /
-    ``_shouldTriggerHelp`` / ``_isTypingTarget`` 5 个公开 API
-    （挂在 ``window.AIIA_KEYBOARD_SHORTCUT_HELP``，方便单测）；
+  - `src/ai_intervention_agent/static/js/keyboard_shortcut_help.js`
+    （新增，~280 行）：IIFE 模块；`OVERLAY_ID`、`TRIGGER_KEY`、
+    `SHORTCUTS` 三个常量；`_t` / `_resolveShortcutLabel`
+    / `_renderShortcutRow` / `_buildOverlayDom` 几个 helper；
+    `showOverlay` / `hideOverlay` / `isOverlayOpen` /
+    `_shouldTriggerHelp` / `_isTypingTarget` 5 个公开 API
+    （挂在 `window.AIIA_KEYBOARD_SHORTCUT_HELP`，方便单测）；
     capture-phase keydown listener。
-  - ``src/ai_intervention_agent/templates/web_ui.html``：加 R144
-    ``<script>`` 块（``defer + nonce + ?v={{
-    keyboard_shortcut_help_version }}``）。
-  - ``src/ai_intervention_agent/web_ui.py``：``_get_template_context``
-    新增 ``keyboard_shortcut_help_version`` 字段。
-  - ``src/ai_intervention_agent/static/css/main.css``：~120 行新样
+  - `src/ai_intervention_agent/templates/web_ui.html`：加 R144
+    `<script>` 块（`defer + nonce + ?v={{
+keyboard_shortcut_help_version }}`）。
+  - `src/ai_intervention_agent/web_ui.py`：`_get_template_context`
+    新增 `keyboard_shortcut_help_version` 字段。
+  - `src/ai_intervention_agent/static/css/main.css`：~120 行新样
     式，覆盖 overlay / card / kbd 显示 / 480px 响应式。
-  - ``src/ai_intervention_agent/static/locales/{zh-CN,en}.json``：
-    新增 6 个 ``shortcuts.*`` key；pseudo locale 已 regen。
-  - ``tests/test_keyboard_shortcut_help_r144.py``（新增，31 cases）：
+  - `src/ai_intervention_agent/static/locales/{zh-CN,en}.json`：
+    新增 6 个 `shortcuts.*` key；pseudo locale 已 regen。
+  - `tests/test_keyboard_shortcut_help_r144.py`（新增，31 cases）：
     JS 文件 / 常量 / API surface / HTML 集成（defer + nonce + 路径）
     / web_ui.py 上下文字段 / CSS 选择器（含 fallback 模式 + 480px
     响应式）/ i18n 全覆盖（新键 + 既有键复用） / 触发逻辑语义
     （input/textarea/select/contenteditable 都视为 typing；ctrl/
     cmd/alt 修饰键过滤）/ DOM 安全（无 innerHTML / insertAdjacentHTML
-    + ≥5 个 createElement）/ i18n graceful degradation（缺 t() /
-    抛错走 fallback；t 返回 key 自身视为缺失）/ capture phase 监听。
+    - ≥5 个 createElement）/ i18n graceful degradation（缺 t() /
+      抛错走 fallback；t 返回 key 自身视为缺失）/ capture phase 监听。
 
   **R144 实施期间发现并修复的细节**：
-  - CSS 初稿用 ``var(--border-color, ...)`` —— 项目里没定义这个变量
-    （只有 ``--border-primary`` / ``--border-secondary`` 等）。
-    ``test_runtime_behavior.py::test_css_self_referencing_vars_defined``
-    回归测试立刻 catch 到，改用 ``--border-primary`` 后修复。这条
+  - CSS 初稿用 `var(--border-color, ...)` —— 项目里没定义这个变量
+    （只有 `--border-primary` / `--border-secondary` 等）。
+    `test_runtime_behavior.py::test_css_self_referencing_vars_defined`
+    回归测试立刻 catch 到，改用 `--border-primary` 后修复。这条
     case 印证了 R66 / runtime CSS 整合性测试的价值。
 
-- **R143** — **(Observability)** R142 ``per_provider`` 子结构新增第 9
-  字段 ``last_error_class``——把 NotificationManager 写入的 ``last_error``
-  字符串归一化成 6 个稳定字符串之一，与 ``last_error_present`` boolean
+- **R143** — **(Observability)** R142 `per_provider` 子结构新增第 9
+  字段 `last_error_class`——把 NotificationManager 写入的 `last_error`
+  字符串归一化成 6 个稳定字符串之一，与 `last_error_present` boolean
   互补：boolean 答「上次最近一次失败有 / 没有 error 信息」，class 答
   「是哪一类」。监控 dashboard 可基于此做 stack-bar：「这个 provider
   最近 N 次失败，4xx / 5xx / network / timeout 各占多少」，比单 boolean
   信号丰富 5 倍。
 
-  **6 类取值**（``_HEALTH_ERROR_CLASS_VALUES`` 常量）：
-  - ``client_error``：4xx HTTP / 设备密钥错 / 鉴权失败
-  - ``server_error``：5xx HTTP / Bark / 推送平台自身故障
-  - ``network_error``：connection refused / DNS 失败 / 网络中断
-  - ``timeout``：请求超时
-  - ``not_registered``：provider 没在 NotificationManager 注册（线上
+  **6 类取值**（`_HEALTH_ERROR_CLASS_VALUES` 常量）：
+  - `client_error`：4xx HTTP / 设备密钥错 / 鉴权失败
+  - `server_error`：5xx HTTP / Bark / 推送平台自身故障
+  - `network_error`：connection refused / DNS 失败 / 网络中断
+  - `timeout`：请求超时
+  - `not_registered`：provider 没在 NotificationManager 注册（线上
     line 1046 的固定哨兵）
-  - ``unknown``：无法归类的字符串（兜底）
-  - ``None``：当且仅当 ``last_error_present=False``
+  - `unknown`：无法归类的字符串（兜底）
+  - `None`：当且仅当 `last_error_present=False`
 
   **优先级层次** —— 5xx > 4xx > timeout > network > not_registered >
-  unknown，避免一个 error 同时落多类。``"{'status_code': 504, 'detail':
-  'Gateway timeout'}"`` 即使含 timeout 字样仍归 ``server_error``，因为
+  unknown，避免一个 error 同时落多类。`"{'status_code': 504, 'detail':
+'Gateway timeout'}"` 即使含 timeout 字样仍归 `server_error`，因为
   HTTP layer 的明确信号比 transport layer 关键字更可信。
 
   **PII 安全边界（继续）**：
-  - ``_classify_last_error`` 只检模式特征（HTTP status code regex /
+  - `_classify_last_error` 只检模式特征（HTTP status code regex /
     关键字），返回的字符串永远是 6 个常量之一，**绝不返回 last_error
     原文本片段**；
-  - 测试用 ``device_key=SECRET_KEY_DO_NOT_LEAK`` /
-    ``BARK_TOKEN_LEAKED`` / ``api.day.app/SOMETOKEN`` 等真实 PII 串作
-    回归断言，``last_error_class`` 输出永不含这些子串；
-  - 与 R142 的 ``last_error_present`` 共同维护"健康端点不漏 PII"的契约。
+  - 测试用 `device_key=SECRET_KEY_DO_NOT_LEAK` /
+    `BARK_TOKEN_LEAKED` / `api.day.app/SOMETOKEN` 等真实 PII 串作
+    回归断言，`last_error_class` 输出永不含这些子串；
+  - 与 R142 的 `last_error_present` 共同维护"健康端点不漏 PII"的契约。
 
   **Status code regex 设计**：
-  - 第一条：``'status_code': NNN`` —— Bark dict repr 的固定模式；
-  - 第二条：``HTTP NNN`` / ``http/1.1 NNN`` —— 自由文本中的明确 HTTP
+  - 第一条：`'status_code': NNN` —— Bark dict repr 的固定模式；
+  - 第二条：`HTTP NNN` / `http/1.1 NNN` —— 自由文本中的明确 HTTP
     上下文；
-  - 第三条：``^NNN <文字>`` 开头的 ``500 Internal Server Error`` 这种
+  - 第三条：`^NNN <文字>` 开头的 `500 Internal Server Error` 这种
     常见格式；
-  - **不做** 裸 3 位数字搜——避免 ``"Connection refused on port 443"``
-    中的 ``443`` 被误判为 4xx。这是 R143 实施期间发现并修复的 false-
-    positive，回归测试 ``test_connection_refused_yields_network`` pin
+  - **不做** 裸 3 位数字搜——避免 `"Connection refused on port 443"`
+    中的 `443` 被误判为 4xx。这是 R143 实施期间发现并修复的 false-
+    positive，回归测试 `test_connection_refused_yields_network` pin
     住此契约。
 
   **改动**：
-  - ``src/ai_intervention_agent/web_ui_routes/system.py``：新增常量
-    ``_HEALTH_ERROR_CLASS_VALUES``、helper ``_classify_last_error``；
-    扩 ``_safe_per_provider_snapshot`` 注入 ``last_error_class``；
+  - `src/ai_intervention_agent/web_ui_routes/system.py`：新增常量
+    `_HEALTH_ERROR_CLASS_VALUES`、helper `_classify_last_error`；
+    扩 `_safe_per_provider_snapshot` 注入 `last_error_class`；
     health endpoint Swagger doc 加 R143 字段说明。
-  - ``tests/test_notification_health_per_provider_r142.py``：
-    ``expected_keys`` 加 ``last_error_class`` 变 9 个 key。
-  - ``tests/test_notification_health_last_error_class_r143.py``（新增，
+  - `tests/test_notification_health_per_provider_r142.py`：
+    `expected_keys` 加 `last_error_class` 变 9 个 key。
+  - `tests/test_notification_health_last_error_class_r143.py`（新增，
     37 cases）：常量值集合 / None 与空串 / HTTP status code 映射
     （4xx → client / 5xx → server）/ provider_not_registered 哨兵 /
     timeout 关键字 / network 关键字 / 优先级（5xx > timeout） / 无
@@ -718,35 +769,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     health endpoint HTTP 集成（per_provider.last_error_class 取值范
     围）/ Swagger doc 提及 R143 + 6 类标识 + 优先级。
 
-- **R142** — **(Observability)** ``/api/system/health`` 端点暴露
+- **R142** — **(Observability)** `/api/system/health` 端点暴露
   per-provider stats 摘要 —— R141 的 self-test 触发后能"看到了"，但
   R121-A 只暴露了**全局** delivery_success_rate，故障定位时回答不出
   "是 Bark 挂还是 Web 挂"。R142 把 NotificationManager 内部已经按
-  provider 维度记录的 ``stats.providers.{type}`` 在保留同款安全边界
+  provider 维度记录的 `stats.providers.{type}` 在保留同款安全边界
   的前提下重新放出，与 R141 形成「触发 → 定位」闭环。
 
   **新增字段** `checks.notification.per_provider`（dict, 4 个 stable
   key：bark/web/sound/system）：
-
-  - 每家 provider 的结构 ``{attempts, success, failure, success_rate,
-    avg_latency_ms, last_success_age_seconds,
-    last_failure_age_seconds, last_error_present}``；
-  - 未注册 / 没投递过的 provider 返回 ``None``，dashboard 用 stable
+  - 每家 provider 的结构 `{attempts, success, failure, success_rate,
+avg_latency_ms, last_success_age_seconds,
+last_failure_age_seconds, last_error_present}`；
+  - 未注册 / 没投递过的 provider 返回 `None`，dashboard 用 stable
     key 集合不会有 KeyError；
-  - ``success_rate`` / ``avg_latency_ms`` 透传 NotificationManager 已
-    经计算好的浮点；attempts=0 / latency_count=0 时是 ``None``；
-  - ``last_*_age_seconds`` 用 ``now - last_*_at`` 算 age，避免绝对时
+  - `success_rate` / `avg_latency_ms` 透传 NotificationManager 已
+    经计算好的浮点；attempts=0 / latency_count=0 时是 `None`；
+  - `last_*_age_seconds` 用 `now - last_*_at` 算 age，避免绝对时
     间戳跨副本/跨时区无意义；时钟回拨 → clamp 0 不出现负值。
 
-  **PII 安全边界（必须）**：``last_error`` 原文本 **绝不暴露**。Bark
-  的 ``last_error`` 来自 BarkProvider 写到 ``event.metadata
-  ["bark_error"]`` 的运行时字符串，虽然 NotificationManager 内已
+  **PII 安全边界（必须）**：`last_error` 原文本 **绝不暴露**。Bark
+  的 `last_error` 来自 BarkProvider 写到 `event.metadata
+["bark_error"]` 的运行时字符串，虽然 NotificationManager 内已
   truncate 到 800 字符，但仍可能含 device_key / 服务器 URL / Bark
   token 这种不希望出现在公共健康端点的内容。R142 改成
-  ``last_error_present: bool`` —— 告诉调用方"最近一次失败有没有
-  error 信息"，详情仍然要回 logs 看。``test_last_error_string_not_in_output``
-  以 ``device_key=SECRET_KEY_123`` / ``BARK_TOKEN_X`` /
-  ``api.day.app`` 等真实 PII 串作回归断言，整个 health 返回值
+  `last_error_present: bool` —— 告诉调用方"最近一次失败有没有
+  error 信息"，详情仍然要回 logs 看。`test_last_error_string_not_in_output`
+  以 `device_key=SECRET_KEY_123` / `BARK_TOKEN_X` /
+  `api.day.app` 等真实 PII 串作回归断言，整个 health 返回值
   stringify 后的任何片段都不应含有这些子串。
 
   **设计决策**：
@@ -756,276 +806,268 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      / 零额外存储开销。
   2. **stable 4 key 而非动态 list**——监控 dashboard 写模板时按 key
      固定列布局更稳；如果 NotificationType 未来新增第 5 家（如
-     Telegram / Slack），加 ``_HEALTH_PER_PROVIDER_KEYS`` 常量即可，
+     Telegram / Slack），加 `_HEALTH_PER_PROVIDER_KEYS` 常量即可，
      不破老 dashboard。
   3. **age 而非绝对时间戳**——多副本部署里绝对时间戳因机器时钟漂移
      不可比，age 是更稳定的语义。
   4. **rate-limit 不变**——120/min 已经够 K8s probe 用，不上调。
 
   **改动**：
-  - ``src/ai_intervention_agent/web_ui_routes/system.py``（+~80 行）：
-    新增 ``_HEALTH_PER_PROVIDER_KEYS`` 常量、``_safe_per_provider_snapshot``
-    helper；扩 ``_safe_notification_summary`` 注入 ``per_provider``；
+  - `src/ai_intervention_agent/web_ui_routes/system.py`（+~80 行）：
+    新增 `_HEALTH_PER_PROVIDER_KEYS` 常量、`_safe_per_provider_snapshot`
+    helper；扩 `_safe_notification_summary` 注入 `per_provider`；
     health endpoint Swagger doc 加 R142 字段说明。
-  - ``tests/test_notification_health_per_provider_r142.py``（新增，
+  - `tests/test_notification_health_per_provider_r142.py`（新增，
     29 cases）：keys/shape / 未注册→None / 8-key 形状 / success_rate
     与 avg_latency_ms 计算 / age 单调性 / 时钟回拨 clamp 0 / PII 安
     全边界（device_key / 服务器 URL / token 不泄漏）/ 异常 stats 类
     型 fallback / health endpoint HTTP 集成 / Swagger doc 提及 R142
-    + per_provider + last_error_present + PII 字样 + 常量名。
+    - per_provider + last_error_present + PII 字样 + 常量名。
 
 - **R141** — **(Observability / Ops)** 通知系统 self-test endpoint
-  ``POST /api/system/notifications/test``——R141 之前要验证「线上
+  `POST /api/system/notifications/test`——R141 之前要验证「线上
   NotificationManager 配的 Bark / Web / Sound / System provider 真能投
   得出去」只能：等真实任务触发（慢、不可控）、点设置面板「测试
-  Bark」（``/api/test-bark`` 是 **配置阶段** 验证：参数从 form 传，
-  不能验证当前生效配置）、SSH 上去 ``curl`` notification_manager
+  Bark」（`/api/test-bark` 是 **配置阶段** 验证：参数从 form 传，
+  不能验证当前生效配置）、SSH 上去 `curl` notification_manager
   （运维不友好）。R141 落地一个 **运行阶段** 的 self-test：
-
-  - **路由**：``POST /api/system/notifications/test``，rate-limit
-    ``6 per minute``（防止被滥用做 push spam，但留够运维 / Sentry /
+  - **路由**：`POST /api/system/notifications/test`，rate-limit
+    `6 per minute`（防止被滥用做 push spam，但留够运维 / Sentry /
     Datadog probe 的余地）。
-  - **请求体**（可选）：``{"provider": "all"|"bark"|"web"|"sound"|
-    "system", "title": "...", "message": "..."}``。``provider`` 缺
-    省 / 留空 / ``"all"`` 都触发当前已 enable 的全部 provider；
-    指定单一 provider 只触发该家。``provider`` 大小写不敏感、自动
-    trim。``title`` / ``message`` 可自定义；缺省 ``"System
-    self-test"`` + 带时间戳的 default body。
-  - **响应**：``{success, event_id, providers_dispatched, message}``。
-    ``providers_dispatched`` 是实际触发的 ``NotificationType.value``
-    list（如 ``["bark","web"]``）；调用方结合 ``GET /api/system/
-    health`` 的 ``checks.notification.stats`` 字段查看真实投递结果
+  - **请求体**（可选）：`{"provider": "all"|"bark"|"web"|"sound"|
+"system", "title": "...", "message": "..."}`。`provider` 缺
+    省 / 留空 / `"all"` 都触发当前已 enable 的全部 provider；
+    指定单一 provider 只触发该家。`provider` 大小写不敏感、自动
+    trim。`title` / `message` 可自定义；缺省 `"System
+self-test"` + 带时间戳的 default body。
+  - **响应**：`{success, event_id, providers_dispatched, message}`。
+    `providers_dispatched` 是实际触发的 `NotificationType.value`
+    list（如 `["bark","web"]`）；调用方结合 `GET /api/system/
+health` 的 `checks.notification.stats` 字段查看真实投递结果
     （send_notification 是异步的，本 endpoint 不等结果）。
-  - **优雅降级**：``config.enabled=false`` / 指定 provider 未 enable
-    / 全部 provider 都关 → 200 + ``success=false`` +
-    ``providers_dispatched=[]`` + 解释 message，不调
-    ``send_notification`` 也不当作 5xx；``send_notification`` 抛异
-    常 → 500 + ``error="dispatch_failed"`` + i18n message（不外泄
-    堆栈）；``notification_manager`` 不可用 → 500 + ``error=
-    "notification_unavailable"``。
-  - **元数据 marker**：``send_notification`` 的 metadata 自动注入
-    ``{r141_self_test: true, provider_param: <raw>}``，下游 provider
+  - **优雅降级**：`config.enabled=false` / 指定 provider 未 enable
+    / 全部 provider 都关 → 200 + `success=false` +
+    `providers_dispatched=[]` + 解释 message，不调
+    `send_notification` 也不当作 5xx；`send_notification` 抛异
+    常 → 500 + `error="dispatch_failed"` + i18n message（不外泄
+    堆栈）；`notification_manager` 不可用 → 500 + `error=
+"notification_unavailable"`。
+  - **元数据 marker**：`send_notification` 的 metadata 自动注入
+    `{r141_self_test: true, provider_param: <raw>}`，下游 provider
     可识别并区分 self-test 与真实任务通知（例如 Bark 端可在 title
-    上加 ``[selftest]`` tag、或跳过新任务 url 跳转逻辑）。
-  - **rate limit 选 6/min 而非更宽**：与 ``/api/test-bark``
+    上加 `[selftest]` tag、或跳过新任务 url 跳转逻辑）。
+  - **rate limit 选 6/min 而非更宽**：与 `/api/test-bark`
     （30/min，配置阶段需要快速试错）拉开档位。运维 / 监控 probe
     实际跑 1/min 已经过度，6/min 留 6× 余量；同时阻断了「批量手
     动测试 spam push」的脚本攻击面。
-  - **改动**：``src/ai_intervention_agent/web_ui_routes/
-    notification.py``（+~150 行）；``tests/
-    test_notification_self_test_r141.py``（27 cases，覆盖路由注册 /
+  - **改动**：`src/ai_intervention_agent/web_ui_routes/
+notification.py`（+~150 行）；`tests/
+test_notification_self_test_r141.py`（27 cases，覆盖路由注册 /
     缺省 all / 单 provider / 大小写归一 / 非法 provider 400 /
     config.enabled=false / 单 provider 未 enable / 全关 / sound_mute
     排除 / send 抛异常 500 / manager 不可用 500 / 自定义 title&
     message 透传 / Swagger doc 字段）。
 
 - **R140** — **(UX)** 反馈提交模式切换（Ctrl+Enter vs Enter）——既
-  有 ``app.js`` 的 keydown handler 把 ``Ctrl/Cmd+Enter`` 硬编码为提
+  有 `app.js` 的 keydown handler 把 `Ctrl/Cmd+Enter` 硬编码为提
   交快捷键，纯键盘党 + 短文本反馈用户在 Slack / Discord / Notion /
   Telegram 等 IM 工具里用 Enter 提交是默认习惯，每次切回本应用都得
   "记住"用 Ctrl+Enter，认知负担非零。R140 在 settings 面板加一个偏
   好开关：
-
-  - ``ctrl_enter``（默认，与现状一致）：``Ctrl/Cmd+Enter`` 提交，
-    ``Enter`` 换行；
-  - ``enter``：``Enter`` 提交，``Shift+Enter`` 换行（IM 模式）；
-    ``Ctrl/Cmd+Enter`` 仍然能提交（保留熟悉路径）。
+  - `ctrl_enter`（默认，与现状一致）：`Ctrl/Cmd+Enter` 提交，
+    `Enter` 换行；
+  - `enter`：`Enter` 提交，`Shift+Enter` 换行（IM 模式）；
+    `Ctrl/Cmd+Enter` 仍然能提交（保留熟悉路径）。
 
   **设计决策**：
-
   1. **纯前端 localStorage** — 与 R137 / R138 / R139 同款架构，不
-     上服务端 ``user_settings``，多设备不同步是合理边界（submit
+     上服务端 `user_settings`，多设备不同步是合理边界（submit
      mode 是纯客户端 UX 偏好）。Storage key
-     ``aiia.submitMode.v1``，envelope ``{ schema_version, mode,
-     saved_at }``，未来 schema 升级有迁移空间。
-  2. **不替换既有 keydown handler** — R140 在 ``#feedback-text``
-     textarea 上挂独立 capture-phase listener（``addEventListener
-     ("keydown", handler, true)`` 第三参数 true）。``ctrl_enter``
-     模式下 listener 直接 return，不拦截让既有 ``document.
-     addEventListener("keydown", ...)`` 处理；``enter`` 模式下
-     ``preventDefault`` 阻止 textarea 默认换行 + 调
-     ``#submit-btn.click()`` 触发提交，不直接访问 ``submitFeedback``
+     `aiia.submitMode.v1`，envelope `{ schema_version, mode,
+saved_at }`，未来 schema 升级有迁移空间。
+  2. **不替换既有 keydown handler** — R140 在 `#feedback-text`
+     textarea 上挂独立 capture-phase listener（`addEventListener
+("keydown", handler, true)` 第三参数 true）。`ctrl_enter`
+     模式下 listener 直接 return，不拦截让既有 `document.
+addEventListener("keydown", ...)` 处理；`enter` 模式下
+     `preventDefault` 阻止 textarea 默认换行 + 调
+     `#submit-btn.click()` 触发提交，不直接访问 `submitFeedback`
      函数引用避免硬耦合。capture phase 让本拦截器先于 document-
-     level keydown 跑，确保 ``preventDefault`` 在浏览器 newline 默
+     level keydown 跑，确保 `preventDefault` 在浏览器 newline 默
      认行为前生效。
-  3. **IME composition 安全** — ``_shouldSubmitOnEnter`` 按
-     ``event.isComposing`` + ``keyCode === 229`` 双重判断，让中日韩
+  3. **IME composition 安全** — `_shouldSubmitOnEnter` 按
+     `event.isComposing` + `keyCode === 229` 双重判断，让中日韩
      输入法 / emoji picker 用户在选词阶段按 Enter 不会误提交（IME
-     选词 Enter 是确认候选，不是提交反馈）。``isComposing`` 在某些
-     老浏览器 / 边缘 IME 上不可靠，``keyCode 229`` 是浏览器对 IME
+     选词 Enter 是确认候选，不是提交反馈）。`isComposing` 在某些
+     老浏览器 / 边缘 IME 上不可靠，`keyCode 229` 是浏览器对 IME
      composition 的 fallback 标志。
   4. **修饰键放行** — Shift+Enter / Alt+Enter / Ctrl+Enter /
-     Cmd+Enter 一律不命中 ``_shouldSubmitOnEnter``：单 Shift 是默
+     Cmd+Enter 一律不命中 `_shouldSubmitOnEnter`：单 Shift 是默
      认换行 / 标准；Alt 是常用快捷键修饰符（Alt+1..9 来自 R131d）；
      Ctrl/Cmd+Enter 让既有 handler 处理（保留熟悉路径）。
-  5. **disabled 守卫** — ``_triggerSubmit`` 检查 ``btn.disabled``
+  5. **disabled 守卫** — `_triggerSubmit` 检查 `btn.disabled`
      避免在加载 / 提交进行时重复触发；submit 按钮 disabled 状态由
      既有 app.js 维护，R140 复用不引入新状态机。
-  6. **设置面板内联** — ``<select id="feedback-submit-mode-
-     select">`` 放在 settings panel 的 Feedback section 内，与既
+  6. **设置面板内联** — `<select id="feedback-submit-mode-
+select">` 放在 settings panel 的 Feedback section 内，与既
      有 countdown / resubmit / suffix 设置项同级，select 切换后
-     立即 ``setMode(next)`` 写盘，无需重新加载页面（既有 listener
-     走 ``getMode()`` 实时读，不缓存模块状态）。
-  7. **graceful failure** — ``_isStorageAvailable`` 用 set/remove
-     probe 检测；``getMode`` 在 storage 不可用 / corrupt JSON /
-     schema_version 不匹配 / mode 非法（不在 ``VALID_MODES`` 中）
-     时全部 fallback 到 ``DEFAULT_MODE = "ctrl_enter"``，主路径不
-     挂；``setMode`` 拒绝非 ``VALID_MODES`` 输入避免污染存储。
+     立即 `setMode(next)` 写盘，无需重新加载页面（既有 listener
+     走 `getMode()` 实时读，不缓存模块状态）。
+  7. **graceful failure** — `_isStorageAvailable` 用 set/remove
+     probe 检测；`getMode` 在 storage 不可用 / corrupt JSON /
+     schema_version 不匹配 / mode 非法（不在 `VALID_MODES` 中）
+     时全部 fallback 到 `DEFAULT_MODE = "ctrl_enter"`，主路径不
+     挂；`setMode` 拒绝非 `VALID_MODES` 输入避免污染存储。
   8. **CSP nonce + ?v= cache busting** — 与 R47 / R74 / R137 / R138
-     / R139 同款 ``<script defer nonce={{ csp_nonce }} src=...?v=
-     {{ feedback_submit_mode_version }}>`` 节点。
+     / R139 同款 `<script defer nonce={{ csp_nonce }} src=...?v=
+{{ feedback_submit_mode_version }}>` 节点。
 
   **实现**：
+  - `src/ai_intervention_agent/static/js/feedback_submit_mode.js`
+    （NEW，~165 行）—— 6 个常量（`STORAGE_KEY` /
+    `SCHEMA_VERSION` / `DEFAULT_MODE` / `VALID_MODES` /
+    `TARGET_ID` / `SUBMIT_BTN_ID`）+ 8 个公共 / 内部函数
+    （`getMode` / `setMode` / `_shouldSubmitOnEnter` /
+    `_triggerSubmit` / `_isStorageAvailable` /
+    `setupKeydownInterceptor` / `setupSelectListener` /
+    `init`），全 try/catch 兜底。
+  - `src/ai_intervention_agent/templates/web_ui.html` —— settings
+    panel 的 feedback section 内 `feedback-resubmit-prompt` 之
+    后、`feedback-prompt-suffix` 之前新增一个 `<div class=
+"setting-item">` 含 `<select id="feedback-submit-mode-
+select">` + 两个 option（`ctrl_enter` / `enter`）+ hint 描
+    述；文档底部 R139 之后新增 `<script defer>` 节点。
+  - `src/ai_intervention_agent/web_ui.py` —— `_get_template_
+context()` 加 `"feedback_submit_mode_version"`。
+  - 三 locale 加 `settings.submitMode` /
+    `settings.submitModeCtrlEnter` / `settings.submitModeEnter` /
+    `settings.submitModeHint` 共 4 个 key（zh-CN / en /
+    \_pseudo/pseudo.json，pseudo 自动重生成）。
 
-  - ``src/ai_intervention_agent/static/js/feedback_submit_mode.js``
-    （NEW，~165 行）—— 6 个常量（``STORAGE_KEY`` /
-    ``SCHEMA_VERSION`` / ``DEFAULT_MODE`` / ``VALID_MODES`` /
-    ``TARGET_ID`` / ``SUBMIT_BTN_ID``）+ 8 个公共 / 内部函数
-    （``getMode`` / ``setMode`` / ``_shouldSubmitOnEnter`` /
-    ``_triggerSubmit`` / ``_isStorageAvailable`` /
-    ``setupKeydownInterceptor`` / ``setupSelectListener`` /
-    ``init``），全 try/catch 兜底。
-  - ``src/ai_intervention_agent/templates/web_ui.html`` —— settings
-    panel 的 feedback section 内 ``feedback-resubmit-prompt`` 之
-    后、``feedback-prompt-suffix`` 之前新增一个 ``<div class=
-    "setting-item">`` 含 ``<select id="feedback-submit-mode-
-    select">`` + 两个 option（``ctrl_enter`` / ``enter``）+ hint 描
-    述；文档底部 R139 之后新增 ``<script defer>`` 节点。
-  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_
-    context()`` 加 ``"feedback_submit_mode_version"``。
-  - 三 locale 加 ``settings.submitMode`` /
-    ``settings.submitModeCtrlEnter`` / ``settings.submitModeEnter`` /
-    ``settings.submitModeHint`` 共 4 个 key（zh-CN / en /
-    _pseudo/pseudo.json，pseudo 自动重生成）。
-
-  **测试**（``tests/test_feedback_submit_mode_r140.py``，39 cases /
+  **测试**（`tests/test_feedback_submit_mode_r140.py`，39 cases /
   6 invariant classes）：
-
   1. **JS 文件存在 + 体积合理** — 文件存在 / 130-220 行 envelope。
-  2. **常量值锁定** — 6 个常量字面值 + ``VALID_MODES = ["ctrl_
-     enter", "enter"]`` 数组顺序锁定。
-  3. **API 函数签名** — 8 个函数 + ``window.AIIA_FEEDBACK_SUBMIT_
-     MODE`` 全 14 字段 export。
-  4. **graceful failure / fallback** — ``getMode`` try/catch +
-     schema_version 校验 + ``VALID_MODES.indexOf`` 校验，全部
-     fallback ``DEFAULT_MODE``；``setMode`` 拒绝非法输入；
-     ``_isStorageAvailable`` set/remove probe + try/catch。
-  5. **keydown 拦截边界** — ``_shouldSubmitOnEnter`` 排除 non-
-     Enter / Shift / Alt / Ctrl / Cmd / IME (``isComposing`` +
-     ``keyCode 229``)；``setupKeydownInterceptor`` 用 capture
-     phase（第三参数 ``true``）；``ctrl_enter`` 模式下 listener
-     直接 return；命中条件后 ``preventDefault`` + ``_triggerSubmit``；
-     ``_triggerSubmit`` 检查 ``btn.disabled``。
+  2. **常量值锁定** — 6 个常量字面值 + `VALID_MODES = ["ctrl_
+enter", "enter"]` 数组顺序锁定。
+  3. **API 函数签名** — 8 个函数 + `window.AIIA_FEEDBACK_SUBMIT_
+MODE` 全 14 字段 export。
+  4. **graceful failure / fallback** — `getMode` try/catch +
+     schema_version 校验 + `VALID_MODES.indexOf` 校验，全部
+     fallback `DEFAULT_MODE`；`setMode` 拒绝非法输入；
+     `_isStorageAvailable` set/remove probe + try/catch。
+  5. **keydown 拦截边界** — `_shouldSubmitOnEnter` 排除 non-
+     Enter / Shift / Alt / Ctrl / Cmd / IME (`isComposing` +
+     `keyCode 229`)；`setupKeydownInterceptor` 用 capture
+     phase（第三参数 `true`）；`ctrl_enter` 模式下 listener
+     直接 return；命中条件后 `preventDefault` + `_triggerSubmit`；
+     `_triggerSubmit` 检查 `btn.disabled`。
   6. **HTML / context 集成 + i18n** — settings panel 含
-     ``<select id="feedback-submit-mode-select">`` + 两个 option
-     带 ``data-i18n`` / ``<script defer nonce src=...?v=...>`` /
-     ``_get_template_context`` 注入 version / 三 locale 4 个 key
+     `<select id="feedback-submit-mode-select">` + 两个 option
+     带 `data-i18n` / `<script defer nonce src=...?v=...>` /
+     `_get_template_context` 注入 version / 三 locale 4 个 key
      全覆盖。
 
   **验证**：39/39 R140 + 全工程 4420 passed + 2 skipped；
-  ``uv run python scripts/ci_gate.py`` exits 0；与 R138 / R139 同样
-  6 个静态资产文件由 ``scripts/minify_assets.py`` +
-  ``scripts/precompress_static.py`` 自动生成。
+  `uv run python scripts/ci_gate.py` exits 0；与 R138 / R139 同样
+  6 个静态资产文件由 `scripts/minify_assets.py` +
+  `scripts/precompress_static.py` 自动生成。
 
   **后续 follow-up（不在 R140 范围内）**：
   - **R140-A**：键盘提示在 textarea 周围动态显示当前 mode 的
-    shortcut（如右下角 ``⌘+Enter`` 或 ``Enter`` chip），让用户一
+    shortcut（如右下角 `⌘+Enter` 或 `Enter` chip），让用户一
     眼看到当前状态。
-  - **R140-B**：服务端同步——通过 ``user_settings`` 后端 schema
+  - **R140-B**：服务端同步——通过 `user_settings` 后端 schema
     把 mode 同步到服务端，让用户多设备 / 多浏览器场景一致。
 
 - **R139** — **(UX)** 反馈 textarea per-task 草稿持久化（autosave）——
-  项目内已存在 ``window.taskTextareaContents`` 内存字典（``multi_
-  task.js`` 维护，多任务并发场景下用户切换 task 时保留 textarea 内
+  项目内已存在 `window.taskTextareaContents` 内存字典（`multi_
+task.js` 维护，多任务并发场景下用户切换 task 时保留 textarea 内
   容不丢），但**仅在内存里**。一旦用户刷新页面 / 关闭浏览器 / 进
-  程崩溃，所有 draft 全部丢失。``mcp-feedback-enhanced`` v2.4.x 把
+  程崩溃，所有 draft 全部丢失。`mcp-feedback-enhanced` v2.4.x 把
   "Auto-save drafts" 列入版本 highlight 是因为长 prompt 用户在拼接
   多段 LLM 输出 / 复制粘贴长技术文档时最怕 30 分钟手敲被刷新一键
   清零，autosave 让内容不再因刷新 / 崩溃而消失。
 
   **设计决策**：
-
   1. **不侵入 multi_task.js / app.js** — R139 走外挂监听（textarea
-     ``input`` 事件 + ``setInterval`` 周期 reconcile），既有代码零
-     改动，避免 1300 行 ``switchTask()`` / submit handler 引入回归
+     `input` 事件 + `setInterval` 周期 reconcile），既有代码零
+     改动，避免 1300 行 `switchTask()` / submit handler 引入回归
      风险。R139 模块仅追加，不修改任何 prod 路径函数体。
   2. **TTL 7 天 + LRU 50 task 双重容量约束** — draft 内容可能含敏感
      信息（API key / 密码 / 私聊片段），TTL 7 天让 stale draft 自
      动 expire；LRU 50 task 防止 storage 无界增长（典型用户 1-2 周
-     内活跃 task ≤30，50 留充足缓冲）。``saved_at < cutoff`` 时
-     hydrate 跳过；超出 ``MAX_DRAFTS`` 时按 ``saved_at desc`` evict
+     内活跃 task ≤30，50 留充足缓冲）。`saved_at < cutoff` 时
+     hydrate 跳过；超出 `MAX_DRAFTS` 时按 `saved_at desc` evict
      最旧。
   3. **input 事件 debounce 500ms 写盘 + 周期 30s reconcile** —
-     ``input`` 事件 debounce 500ms 让用户输入后立即持久化（感知
-     `<1s` 即落盘）；周期 30s ``reconcileMemoryToStorage`` 兜底程
+     `input` 事件 debounce 500ms 让用户输入后立即持久化（感知
+     `<1s` 即落盘）；周期 30s `reconcileMemoryToStorage` 兜底程
      序赋值 / clear / submit 后清空等非 input 路径——避免漏一些
-     ``textarea.value = ""`` 这种程序性 mutate（不触发 input 事
+     `textarea.value = ""` 这种程序性 mutate（不触发 input 事
      件）。两路双写让 storage 与内存最终一致。
-  4. **hydrate 不覆盖既存 entry** — ``hydrateMemoryCache`` 在
-     DOMContentLoaded 触发时把 storage drafts merge 到 ``window.
-     taskTextareaContents``，但用 ``hasOwnProperty`` 检查跳过既存
-     项——避免与 ``multi_task.js`` 初始化阶段已经填充的 active task
+  4. **hydrate 不覆盖既存 entry** — `hydrateMemoryCache` 在
+     DOMContentLoaded 触发时把 storage drafts merge 到 `window.
+taskTextareaContents`，但用 `hasOwnProperty` 检查跳过既存
+     项——避免与 `multi_task.js` 初始化阶段已经填充的 active task
      race。
   5. **schema_version envelope** — 与 R130 quick_phrases / R137
-     textarea-height / R138 char-counter 同款 ``aiia.<feature>.
-     v<schema>`` 命名约定（``aiia.feedbackDrafts.v1``），未来 schema
-     升级有迁移空间；schema_version 不匹配时 ``_readEnvelope`` 直
+     textarea-height / R138 char-counter 同款 `aiia.<feature>.
+v<schema>` 命名约定（`aiia.feedbackDrafts.v1`），未来 schema
+     升级有迁移空间；schema_version 不匹配时 `_readEnvelope` 直
      接返回 null 给未来 v2 migrator 留接入空间。
-  6. **空 text 自动 delete entry** — ``saveDraft(taskId, "")`` 不
-     写空 text 占用 storage，而是从字典 delete；``reconcileMemory
-     ToStorage`` 也跳过 text 空字符串——只持久化非空 draft。
+  6. **空 text 自动 delete entry** — `saveDraft(taskId, "")` 不
+     写空 text 占用 storage，而是从字典 delete；`reconcileMemory
+ToStorage` 也跳过 text 空字符串——只持久化非空 draft。
   7. **CSP nonce + ?v= cache busting** — 与 R47 / R74 / R137 / R138
-     同款 ``<script defer nonce={{ csp_nonce }} src=...?v={{
-     feedback_drafts_version }}>`` 节点，不违反项目级
-     ``script-src 'self' 'nonce-...'`` 策略。
+     同款 `<script defer nonce={{ csp_nonce }} src=...?v={{
+feedback_drafts_version }}>` 节点，不违反项目级
+     `script-src 'self' 'nonce-...'` 策略。
 
   **实现**：
-
-  - ``src/ai_intervention_agent/static/js/feedback_drafts.js``
+  - `src/ai_intervention_agent/static/js/feedback_drafts.js`
     （NEW，~270 行）—— 7 个常量 + 8 个公共函数 + 6 个内部 helper：
-    ``loadAllDrafts`` / ``getDraft`` / ``saveDraft`` / ``clearDraft`` /
-    ``clearAllDrafts`` / ``hydrateMemoryCache`` /
-    ``reconcileMemoryToStorage`` / ``init`` / 内部 ``_now`` /
-    ``_isStorageAvailable`` / ``_readEnvelope`` / ``_writeEnvelope`` /
-    ``_normalizeDraft`` / ``_applyTtlAndLru`` / ``_getActiveTaskId`` /
-    ``setupInputListener`` / ``setupPeriodicSync``，全 try/catch 兜底。
-  - ``src/ai_intervention_agent/templates/web_ui.html`` —— 文档底部
-    新增 ``<script defer src="/static/js/feedback_drafts.js?v={{
-    feedback_drafts_version }}" nonce="{{ csp_nonce }}">`` 节点。
-  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_
-    context()`` 加 ``"feedback_drafts_version": _compute_file_
-    version(...)``。
+    `loadAllDrafts` / `getDraft` / `saveDraft` / `clearDraft` /
+    `clearAllDrafts` / `hydrateMemoryCache` /
+    `reconcileMemoryToStorage` / `init` / 内部 `_now` /
+    `_isStorageAvailable` / `_readEnvelope` / `_writeEnvelope` /
+    `_normalizeDraft` / `_applyTtlAndLru` / `_getActiveTaskId` /
+    `setupInputListener` / `setupPeriodicSync`，全 try/catch 兜底。
+  - `src/ai_intervention_agent/templates/web_ui.html` —— 文档底部
+    新增 `<script defer src="/static/js/feedback_drafts.js?v={{
+feedback_drafts_version }}" nonce="{{ csp_nonce }}">` 节点。
+  - `src/ai_intervention_agent/web_ui.py` —— `_get_template_
+context()` 加 `"feedback_drafts_version": _compute_file_
+version(...)`。
 
-  **测试**（``tests/test_feedback_drafts_r139.py``，35 cases /
+  **测试**（`tests/test_feedback_drafts_r139.py`，35 cases /
   6 invariant classes）：
-
   1. **JS 文件存在 + 体积合理** — 文件存在 / 200-330 行 envelope。
-  2. **常量值锁定** — 7 个常量（``STORAGE_KEY`` / ``SCHEMA_VERSION`` /
-     ``TARGET_ID`` / ``TTL_MS = 7*24*60*60*1000`` / ``MAX_DRAFTS = 50`` /
-     ``INPUT_DEBOUNCE_MS = 500`` / ``SYNC_INTERVAL_MS = 30*1000``）；
+  2. **常量值锁定** — 7 个常量（`STORAGE_KEY` / `SCHEMA_VERSION` /
+     `TARGET_ID` / `TTL_MS = 7*24*60*60*1000` / `MAX_DRAFTS = 50` /
+     `INPUT_DEBOUNCE_MS = 500` / `SYNC_INTERVAL_MS = 30*1000`）；
      TTL_MS 与 SYNC_INTERVAL_MS 写成乘法表达式让 reviewer 一眼看到
      "7 天" / "30s" 约束。
-  3. **API 函数签名** — 8 个公共函数 + ``window.AIIA_FEEDBACK_DRAFTS``
+  3. **API 函数签名** — 8 个公共函数 + `window.AIIA_FEEDBACK_DRAFTS`
      全 16 字段 export。
-  4. **graceful failure / fallback** — ``_isStorageAvailable`` 用 set/
-     remove probe + try/catch；``_readEnvelope`` / ``_writeEnvelope`` /
-     ``clearAllDrafts`` 全 try/catch；``_readEnvelope`` 校验
-     ``schema_version``；``init`` 在 storage 不可用时 return null。
-  5. **核心逻辑边界** — ``_normalizeDraft`` 处理 non-object / 非
+  4. **graceful failure / fallback** — `_isStorageAvailable` 用 set/
+     remove probe + try/catch；`_readEnvelope` / `_writeEnvelope` /
+     `clearAllDrafts` 全 try/catch；`_readEnvelope` 校验
+     `schema_version`；`init` 在 storage 不可用时 return null。
+  5. **核心逻辑边界** — `_normalizeDraft` 处理 non-object / 非
      string text / saved_at 缺失（默认 0 让 TTL 命中淘汰）；
-     ``_applyTtlAndLru`` 先 TTL 过滤后 LRU 排序截 ``MAX_DRAFTS``；
-     ``hydrateMemoryCache`` 用 ``hasOwnProperty`` 不覆盖既存项；
-     ``saveDraft("")`` 从字典 delete；``reconcileMemoryToStorage``
-     跳过 empty text；``setupInputListener`` 用 ``setTimeout(...,
-     INPUT_DEBOUNCE_MS)`` debounce。
-  6. **HTML / context 集成** — ``<script defer nonce src=...?v=...>`` /
-     ``_get_template_context`` 用 ``_compute_file_version``。
+     `_applyTtlAndLru` 先 TTL 过滤后 LRU 排序截 `MAX_DRAFTS`；
+     `hydrateMemoryCache` 用 `hasOwnProperty` 不覆盖既存项；
+     `saveDraft("")` 从字典 delete；`reconcileMemoryToStorage`
+     跳过 empty text；`setupInputListener` 用 `setTimeout(...,
+INPUT_DEBOUNCE_MS)` debounce。
+  6. **HTML / context 集成** — `<script defer nonce src=...?v=...>` /
+     `_get_template_context` 用 `_compute_file_version`。
 
   **验证**：35/35 R139 + 全工程 4381 passed + 2 skipped；
-  ``uv run python scripts/ci_gate.py`` exits 0；与 R138 同样 6 个
-  静态资产文件（``.js`` + ``.br`` + ``.gz`` + ``.min.br`` +
-  ``.min.gz``，``.min.js`` 由 ``.gitignore`` 排除）由
-  ``scripts/minify_assets.py`` + ``scripts/precompress_static.py``
+  `uv run python scripts/ci_gate.py` exits 0；与 R138 同样 6 个
+  静态资产文件（`.js` + `.br` + `.gz` + `.min.br` +
+  `.min.gz`，`.min.js` 由 `.gitignore` 排除）由
+  `scripts/minify_assets.py` + `scripts/precompress_static.py`
   自动生成。
 
   **后续 follow-up（不在 R139 范围内）**：
@@ -1033,227 +1075,221 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     示一个 dismissible toast "已恢复上次保存的内容（保存时间：YYYY-
     MM-DD HH:mm）"，让用户知道这是历史 draft 而非新输入。
   - **R139-B**：手动清除按钮——quick_phrases 区域加 "清除全部草稿"
-    按钮调 ``clearAllDrafts()``，应对用户主动想清掉所有持久化痕迹
+    按钮调 `clearAllDrafts()`，应对用户主动想清掉所有持久化痕迹
     的场景。
-  - **R139-C**：跨浏览器同步——通过 ``user_settings`` 后端 schema
+  - **R139-C**：跨浏览器同步——通过 `user_settings` 后端 schema
     把 drafts 同步到服务端，让用户多设备 / 多浏览器场景一致。
 
 - **R138** — **(UX)** 反馈 textarea 字符计数器——主输入框
-  ``#feedback-text`` 右下角浮动小标签实时显示当前字符数，三段阈值
-  变色（默认 → 橘 ``warn`` → 红 ``danger``），让"输入长度"这条不可
-  见维度变显式。``mcp-feedback-enhanced`` v2.4.x 把 character counter
+  `#feedback-text` 右下角浮动小标签实时显示当前字符数，三段阈值
+  变色（默认 → 橘 `warn` → 红 `danger`），让"输入长度"这条不可
+  见维度变显式。`mcp-feedback-enhanced` v2.4.x 把 character counter
   列入版本 highlight 是因为长 prompt 用户在拼接多段 LLM 输出 / 复
   制粘贴长技术文档时常常超出心理预期，counter 让其可观测，避免误
   超出后端 / Bark 通知的隐性 size 约束。
 
   **设计决策**：
-
   1. **advisory 而非 enforced** — counter 仅做视觉提示，textarea 上
      **不加 maxlength** 属性（避免截断用户内容造成数据丢失）；阈值
-     与项目内既有 ``feedback-resubmit-prompt`` / ``feedback-prompt-
-     suffix`` textarea 用的 ``maxlength="10000"`` 隐性约定对齐。
-  2. **三段阈值变色** — ``WARN_THRESHOLD=8000``（橘）/
-     ``DANGER_THRESHOLD=10000``（红）/ ``count == 0`` 时整体隐藏
-     （避免空 textarea 时显示 ``0`` 喧宾夺主）。色系走项目现有的
-     ``--warning-500`` / ``--error-500`` 色板 token，与 R66 品牌色
+     与项目内既有 `feedback-resubmit-prompt` / `feedback-prompt-
+suffix` textarea 用的 `maxlength="10000"` 隐性约定对齐。
+  2. **三段阈值变色** — `WARN_THRESHOLD=8000`（橘）/
+     `DANGER_THRESHOLD=10000`（红）/ `count == 0` 时整体隐藏
+     （避免空 textarea 时显示 `0` 喧宾夺主）。色系走项目现有的
+     `--warning-500` / `--error-500` 色板 token，与 R66 品牌色
      护栏一致，不引入硬编码 hex。
-  3. **空状态隐藏 + ``aria-live="polite"``** — count 0 时
-     ``hidden`` 属性原生隐藏（display: none 不占位）；非 0 时
+  3. **空状态隐藏 + `aria-live="polite"`** — count 0 时
+     `hidden` 属性原生隐藏（display: none 不占位）；非 0 时
      polite live region 让屏幕阅读器只在用户停顿时念字数，不打断
-     主流程；不用 ``assertive`` 避免每次输入都触发朗读。
-  4. **input 事件 + 初始化双触发** — 监听 ``input`` 事件涵盖
+     主流程；不用 `assertive` 避免每次输入都触发朗读。
+  4. **input 事件 + 初始化双触发** — 监听 `input` 事件涵盖
      paste / cut / drag / IME composition end 全场景；初始化时调
-     一次 ``updateCounter`` 应对 R137 height restore + 外部
+     一次 `updateCounter` 应对 R137 height restore + 外部
      setValue + 表单回填等非 input 事件路径下的非空初始值。
-  5. **``Intl.NumberFormat`` 千位分隔** — 8000 → ``8,000`` /
-     ``8 000`` 视 locale 适配；``Intl.NumberFormat`` 不可用 / 抛异
-     常时静默 fallback ``String(count)``，主路径不挂。
-  6. **``textarea.value.length``** — UTF-16 code unit 计数，与后
-     端 ``len(feedback_text)`` 计算口径一致；不做 grapheme cluster
-     split（即不引入 ``Intl.Segmenter`` 增加 polyfill 体积），对
+  5. **`Intl.NumberFormat` 千位分隔** — 8000 → `8,000` /
+     `8 000` 视 locale 适配；`Intl.NumberFormat` 不可用 / 抛异
+     常时静默 fallback `String(count)`，主路径不挂。
+  6. **`textarea.value.length`** — UTF-16 code unit 计数，与后
+     端 `len(feedback_text)` 计算口径一致；不做 grapheme cluster
+     split（即不引入 `Intl.Segmenter` 增加 polyfill 体积），对
      warning 阈值精度无实质影响。
-  7. **i18n 走 ``_t`` 模块内 helper + 字面 key 调用** — 与
-     ``quick_phrases.js`` / ``app.js`` 同款实现，让 i18n orphan /
-     dead-key 扫描器（``scripts/check_i18n_orphan_keys.py::
-     JS_T_CALL_RE`` 用 ``(?<![.\w])(?:_?tl?|...)\(\s*['"]...``
-     regex）能匹配字面 key 调用，避免常量 ``I18N_KEY`` indirect
+  7. **i18n 走 `_t` 模块内 helper + 字面 key 调用** — 与
+     `quick_phrases.js` / `app.js` 同款实现，让 i18n orphan /
+     dead-key 扫描器（`scripts/check_i18n_orphan_keys.py::
+JS_T_CALL_RE` 用 `(?<![.\w])(?:_?tl?|...)\(\s*['"]...`
+     regex）能匹配字面 key 调用，避免常量 `I18N_KEY` indirect
      调用让扫描器漏识别造成 dead key 误报。FALLBACK_TEXT 用英文
-     与项目级 base locale 对齐（``test_i18n_js_no_hardcoded_cjk``
+     与项目级 base locale 对齐（`test_i18n_js_no_hardcoded_cjk`
      护栏：JS 内禁中文字面值，CJK 必须走 locale 文件）。
-  8. **``pointer-events: none`` + ``user-select: none``** — counter
+  8. **`pointer-events: none` + `user-select: none`** — counter
      不拦截 textarea 滚动 / 选区拖拽 / 自带 resize handle 等交互；
-     不可选中避免误复制计数器；``font-variant-numeric: tabular-
-     nums`` 等宽数字让计数跳秒不抖动。
+     不可选中避免误复制计数器；`font-variant-numeric: tabular-
+nums` 等宽数字让计数跳秒不抖动。
   9. **CSP nonce + ?v= cache busting** — 与 R47 / R74 / R137 同款
-     ``<script defer nonce={{ csp_nonce }} src=...?v={{ feedback_
-     char_counter_version }}>`` 节点，不违反项目级
-     ``script-src 'self' 'nonce-...'`` 策略；
-     ``_compute_file_version`` 让 immutable cache 在改 JS 后立即
+     `<script defer nonce={{ csp_nonce }} src=...?v={{ feedback_
+char_counter_version }}>` 节点，不违反项目级
+     `script-src 'self' 'nonce-...'` 策略；
+     `_compute_file_version` 让 immutable cache 在改 JS 后立即
      失效。
 
   **实现**：
-
-  - ``src/ai_intervention_agent/static/js/feedback_char_counter.js``
-    （NEW，~145 行）—— 7 个常量 + 6 个公共函数（``_formatCount`` /
-    ``_resolveLabel`` / ``_applyThresholdClass`` / ``updateCounter`` /
-    ``init`` + 模块内 ``_t`` helper），全 try/catch 兜底。
-  - ``src/ai_intervention_agent/templates/web_ui.html`` —— textarea-
-    container 内加 ``<span id="feedback-char-counter" aria-live=
-    "polite" hidden>`` + 文档底部新增 ``<script defer>`` 节点。
-  - ``src/ai_intervention_agent/static/css/main.css`` —— 加 ``.
-    feedback-char-counter`` 主选择器（绝对定位 right/bottom + 等宽
-    数字 + 半透明深底）+ ``.warn`` / ``.danger`` 阈值变色类，全用
-    ``var(--warning-*)`` / ``var(--error-*)`` token。
-  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_
-    context()`` 加 ``"feedback_char_counter_version"``。
-  - 三 locale ``feedback.charCounter`` key（``zh-CN.json`` /
-    ``en.json`` / ``_pseudo/pseudo.json``）含 ``{{count}}`` mustache
+  - `src/ai_intervention_agent/static/js/feedback_char_counter.js`
+    （NEW，~145 行）—— 7 个常量 + 6 个公共函数（`_formatCount` /
+    `_resolveLabel` / `_applyThresholdClass` / `updateCounter` /
+    `init` + 模块内 `_t` helper），全 try/catch 兜底。
+  - `src/ai_intervention_agent/templates/web_ui.html` —— textarea-
+    container 内加 `<span id="feedback-char-counter" aria-live=
+"polite" hidden>` + 文档底部新增 `<script defer>` 节点。
+  - `src/ai_intervention_agent/static/css/main.css` —— 加 `.
+feedback-char-counter` 主选择器（绝对定位 right/bottom + 等宽
+    数字 + 半透明深底）+ `.warn` / `.danger` 阈值变色类，全用
+    `var(--warning-*)` / `var(--error-*)` token。
+  - `src/ai_intervention_agent/web_ui.py` —— `_get_template_
+context()` 加 `"feedback_char_counter_version"`。
+  - 三 locale `feedback.charCounter` key（`zh-CN.json` /
+    `en.json` / `_pseudo/pseudo.json`）含 `{{count}}` mustache
     占位。
 
-  **测试**（``tests/test_feedback_char_counter_r138.py``，33 cases /
+  **测试**（`tests/test_feedback_char_counter_r138.py`，33 cases /
   6 invariant classes）：
-
   1. **JS 文件存在 + 体积合理** — 文件存在 / 100-180 行 envelope。
-  2. **常量值锁定** — 7 个常量（``TARGET_ID`` / ``COUNTER_ID`` /
-     ``WARN_THRESHOLD=8000`` / ``DANGER_THRESHOLD=10000`` /
-     ``WARN_CLASS`` / ``DANGER_CLASS`` / ``I18N_KEY``）+ 阈值递进
+  2. **常量值锁定** — 7 个常量（`TARGET_ID` / `COUNTER_ID` /
+     `WARN_THRESHOLD=8000` / `DANGER_THRESHOLD=10000` /
+     `WARN_CLASS` / `DANGER_CLASS` / `I18N_KEY`）+ 阈值递进
      关系（WARN < DANGER）。
-  3. **API 函数签名** — 5 个公共函数 + ``window.AIIA_FEEDBACK_CHAR
-     _COUNTER`` export 全 12 个字段。
-  4. **graceful failure / fallback** — ``_formatCount`` try/catch
-     Intl.NumberFormat、``_t`` helper try/catch i18n runtime、
+  3. **API 函数签名** — 5 个公共函数 + `window.AIIA_FEEDBACK_CHAR
+_COUNTER` export 全 12 个字段。
+  4. **graceful failure / fallback** — `_formatCount` try/catch
+     Intl.NumberFormat、`_t` helper try/catch i18n runtime、
      FALLBACK_TEXT 含英文兜底、mustache replacement、
-     ``_applyThresholdClass`` 处理 missing classList、
-     ``updateCounter`` count 0 时 hidden=true。
-  5. **HTML / context 集成** — ``<span>`` 在 textarea-container 内 /
-     ``aria-live="polite"`` / ``hidden`` 初始；``<script defer
-     nonce={{csp_nonce}} src=...?v={{feedback_char_counter_version}}>``；
-     ``_get_template_context`` 用 ``_compute_file_version``；CSS 三
-     选择器存在 / 用 ``var(--warning-*)`` + ``var(--error-*)`` token。
-  6. **i18n 三 locale 全覆盖** — ``feedback.charCounter`` key 在
-     ``zh-CN.json`` (``{{count}} 字符``) / ``en.json``
-     (``{{count}} chars``) / ``_pseudo/pseudo.json`` 同时存在，
+     `_applyThresholdClass` 处理 missing classList、
+     `updateCounter` count 0 时 hidden=true。
+  5. **HTML / context 集成** — `<span>` 在 textarea-container 内 /
+     `aria-live="polite"` / `hidden` 初始；`<script defer
+nonce={{csp_nonce}} src=...?v={{feedback_char_counter_version}}>`；
+     `_get_template_context` 用 `_compute_file_version`；CSS 三
+     选择器存在 / 用 `var(--warning-*)` + `var(--error-*)` token。
+  6. **i18n 三 locale 全覆盖** — `feedback.charCounter` key 在
+     `zh-CN.json` (`{{count}} 字符`) / `en.json`
+     (`{{count}} chars`) / `_pseudo/pseudo.json` 同时存在，
      mustache 占位被保留。
 
   **验证**：33/33 R138 + 全工程 4346 passed + 2 skipped；
-  ``uv run python scripts/ci_gate.py`` exits 0；
-  ``test_i18n_js_no_hardcoded_cjk`` / ``test_i18n_orphan_keys`` /
-  ``test_web_locale_no_dead_keys`` / ``test_minified_source_file_sync``
+  `uv run python scripts/ci_gate.py` exits 0；
+  `test_i18n_js_no_hardcoded_cjk` / `test_i18n_orphan_keys` /
+  `test_web_locale_no_dead_keys` / `test_minified_source_file_sync`
   四道护栏 first-pass 触发后全修，二次跑全清。
 
   **后续 follow-up（不在 R138 范围内）**：
-  - **R138-A**：动态 maxlength 上限——后端通过 ``/api/config``
-    暴露 ``feedback_max_length``，前端拉取后调整阈值色板，让
+  - **R138-A**：动态 maxlength 上限——后端通过 `/api/config`
+    暴露 `feedback_max_length`，前端拉取后调整阈值色板，让
     counter 与服务端约束一致。
-  - **R138-B**：hover 提示——counter 鼠标悬浮时显示 ``X / 10000``
+  - **R138-B**：hover 提示——counter 鼠标悬浮时显示 `X / 10000`
     格式 tooltip 让 advisory 阈值显式。
-  - **R138-C**：超 ``DANGER_THRESHOLD`` 时按钮 disabled——把
+  - **R138-C**：超 `DANGER_THRESHOLD` 时按钮 disabled——把
     advisory 升级为可选 enforced 模式（用户偏好开关）。
 
 - **R137** — **(UX)** 反馈 textarea 高度跨会话持久化——
-  Web UI 上的 ``#feedback-text`` textarea 把用户拖拽调整后的高度写入
-  ``localStorage``，下次加载（同浏览器同源）时自动复原。竞品
-  ``mcp-feedback-enhanced`` 的 "Input Height Memory" 是高频用户痛点
+  Web UI 上的 `#feedback-text` textarea 把用户拖拽调整后的高度写入
+  `localStorage`，下次加载（同浏览器同源）时自动复原。竞品
+  `mcp-feedback-enhanced` 的 "Input Height Memory" 是高频用户痛点
   feature——长输入用户每次刷新都得重新拖大输入框很折磨——R137 把这
   个体验补齐而又不引入服务端状态。
 
   **设计决策**：
-
-  1. **纯前端 localStorage** — 不上服务端、不进 ``user_settings``，
+  1. **纯前端 localStorage** — 不上服务端、不进 `user_settings`，
      避免「设置同步」这条新轴的复杂度。窗口/浏览器维度持久化，单用
      户多浏览器场景天然解耦。Storage key
-     ``aiia.feedbackTextareaHeight.v1``（带 ``.v1`` 锚点 + envelope
-     ``schema_version: 1`` 双锁，未来 schema 升级有迁移空间）。
-  2. **ResizeObserver 主路径 + ``mouseup``/``touchend`` fallback** —
-     ``ResizeObserver`` 是浏览器原生最优 API（debounced batch、不挂
-     ``layout`` 主线程），但少数老浏览器（IE / 早期 Safari）没有；
-     fallback 到 ``mouseup``/``touchend`` 监听 textarea 拖动结束事件。
-     ``setupResizeObserver()`` 返回 ``{observer, mode}``，
-     ``mode in {"resize_observer", "mouseup_fallback"}``，供 hook /
+     `aiia.feedbackTextareaHeight.v1`（带 `.v1` 锚点 + envelope
+     `schema_version: 1` 双锁，未来 schema 升级有迁移空间）。
+  2. **ResizeObserver 主路径 + `mouseup`/`touchend` fallback** —
+     `ResizeObserver` 是浏览器原生最优 API（debounced batch、不挂
+     `layout` 主线程），但少数老浏览器（IE / 早期 Safari）没有；
+     fallback 到 `mouseup`/`touchend` 监听 textarea 拖动结束事件。
+     `setupResizeObserver()` 返回 `{observer, mode}`，
+     `mode in {"resize_observer", "mouseup_fallback"}`，供 hook /
      测试断言。
-  3. **min / max clamp** — ``MIN_HEIGHT_PX=100`` /
-     ``MAX_HEIGHT_PX=800``。``_clamp(value)`` 在 read / persist 两个
+  3. **min / max clamp** — `MIN_HEIGHT_PX=100` /
+     `MAX_HEIGHT_PX=800`。`_clamp(value)` 在 read / persist 两个
      方向都跑一次，保证用户 dev tools 直接改 localStorage 注 -1 / NaN
-     / 9999 也只 apply 合法值；CSS 的 ``min-height: 180px``（desktop）/
-     ``max-height: 25vh``（mobile）对 inline ``height`` 仍有 final
+     / 9999 也只 apply 合法值；CSS 的 `min-height: 180px`（desktop）/
+     `max-height: 25vh`（mobile）对 inline `height` 仍有 final
      clamp 权（CSS spec：computed height = clamp(min, height, max)），
      JS ↔ CSS 双层兜底永远不会让 textarea 缩到 0 高度搞坏 layout、也
      不会撑出屏幕。
-  4. **``DEBOUNCE_MS=150``** — 拖动过程中 ``ResizeObserver`` 会高频
-     触发（~60Hz），一律 ``setTimeout`` 合并最后一帧再写盘，
+  4. **`DEBOUNCE_MS=150`** — 拖动过程中 `ResizeObserver` 会高频
+     触发（~60Hz），一律 `setTimeout` 合并最后一帧再写盘，
      localStorage 一次写盘耗时 ~1-3ms 主线程阻塞，debounce 把累积写
      盘从「~60 次/秒」压到「~7 次/秒」（debounce + 拖完之后停手才
      真正落盘），平衡延迟感与写盘开销。
-  5. **graceful degradation** — ``readPersistedHeight()`` /
-     ``persistHeight()`` 全部 try-catch，``localStorage`` 不可用
+  5. **graceful degradation** — `readPersistedHeight()` /
+     `persistHeight()` 全部 try-catch，`localStorage` 不可用
      （Safari 隐私模式 / quota 满 / cookie 禁用）时自动 no-op，不
-     污染主路径。返回 ``null`` 时 ``applyPersistedHeight()`` 走 CSS
+     污染主路径。返回 `null` 时 `applyPersistedHeight()` 走 CSS
      默认高度。
-  6. **CSP nonce 集成** — 新加的 ``<script>`` 标签携带
-     ``nonce="{{ csp_nonce }}"``，与既有 R47 / R74 等模块同款，避免
-     违反项目级 CSP ``script-src 'self' 'nonce-...'`` 策略。
-  7. **版本化 cache busting** — ``?v={{ feedback_textarea_height_version
-     }}`` 复用 ``_compute_file_version(...)``（基于文件 mtime + size
+  6. **CSP nonce 集成** — 新加的 `<script>` 标签携带
+     `nonce="{{ csp_nonce }}"`，与既有 R47 / R74 等模块同款，避免
+     违反项目级 CSP `script-src 'self' 'nonce-...'` 策略。
+  7. **版本化 cache busting** — `?v={{ feedback_textarea_height_version
+}}` 复用 `_compute_file_version(...)`（基于文件 mtime + size
      hash），让 immutable cache 也能在改 JS 后立即失效，不用等浏览器
      缓存 TTL 过期。
 
   **实现**：
-
-  - ``src/ai_intervention_agent/static/js/feedback_textarea_height.js``
-    （NEW，~140 行）—— 5 个公共函数：``readPersistedHeight()`` /
-    ``persistHeight(px)`` / ``applyPersistedHeight()`` /
-    ``setupResizeObserver()`` / ``init()``。
-  - ``src/ai_intervention_agent/templates/web_ui.html`` —— 新增一
-    个 ``<script defer>`` 节点，``nonce`` + ``?v=`` 双 hook 齐备。
-  - ``src/ai_intervention_agent/web_ui.py`` —— ``_get_template_context()``
-    加 ``"feedback_textarea_height_version": _compute_file_version(...)``
+  - `src/ai_intervention_agent/static/js/feedback_textarea_height.js`
+    （NEW，~140 行）—— 5 个公共函数：`readPersistedHeight()` /
+    `persistHeight(px)` / `applyPersistedHeight()` /
+    `setupResizeObserver()` / `init()`。
+  - `src/ai_intervention_agent/templates/web_ui.html` —— 新增一
+    个 `<script defer>` 节点，`nonce` + `?v=` 双 hook 齐备。
+  - `src/ai_intervention_agent/web_ui.py` —— `_get_template_context()`
+    加 `"feedback_textarea_height_version": _compute_file_version(...)`
     一行。
-  - ``window.AIIA_FEEDBACK_TEXTAREA_HEIGHT`` 全局对象暴露所有公共
-    函数 + ``_clamp`` / 5 个常量（测试 / 调试用）。
+  - `window.AIIA_FEEDBACK_TEXTAREA_HEIGHT` 全局对象暴露所有公共
+    函数 + `_clamp` / 5 个常量（测试 / 调试用）。
 
-  **测试**（``tests/test_feedback_textarea_height_r137.py``，
+  **测试**（`tests/test_feedback_textarea_height_r137.py`，
   23 cases / 6 invariant classes）：
-
   1. **JS 文件存在 + 体积合理** — 文件存在 / 在 80-200 行之间，避
      免误删除或意外膨胀。
-  2. **常量值锁定** — ``STORAGE_KEY`` / ``SCHEMA_VERSION`` /
-     ``MIN_HEIGHT_PX`` / ``MAX_HEIGHT_PX`` / ``DEBOUNCE_MS`` /
-     ``TARGET_ID`` 字面值。
-  3. **API 函数签名** — 5 个公共函数都在；``window.AIIA_FEEDBACK_
-     TEXTAREA_HEIGHT`` 暴露完整 API。
-  4. **``_clamp`` 行为** — 低于 min / 高于 max / NaN / null /
+  2. **常量值锁定** — `STORAGE_KEY` / `SCHEMA_VERSION` /
+     `MIN_HEIGHT_PX` / `MAX_HEIGHT_PX` / `DEBOUNCE_MS` /
+     `TARGET_ID` 字面值。
+  3. **API 函数签名** — 5 个公共函数都在；`window.AIIA_FEEDBACK_
+TEXTAREA_HEIGHT` 暴露完整 API。
+  4. **`_clamp` 行为** — 低于 min / 高于 max / NaN / null /
      undefined / 字符串 都返回合法值。
-  5. **graceful failure** — ``readPersistedHeight`` / ``persistHeight``
+  5. **graceful failure** — `readPersistedHeight` / `persistHeight`
      try-catch 包了 localStorage 调用；返回值符合契约。
-  6. **HTML / context 集成** — ``<script>`` 标签存在 / 带
-     ``nonce={{ csp_nonce }}`` / 带 ``?v={{ feedback_textarea_
-     height_version }}`` / ``defer``；``_get_template_context``
-     里 ``feedback_textarea_height_version`` 走 ``_compute_file_
-     version(...)``。
-  7. **ResizeObserver 主路径 + fallback** — ``setupResizeObserver``
-     在 ``window.ResizeObserver`` 存在时返回 ``{mode:
-     "resize_observer"}``；不存在时返回 ``{mode: "mouseup_fallback"}``；
-     fallback 路径监听 ``mouseup``/``touchend``。
+  6. **HTML / context 集成** — `<script>` 标签存在 / 带
+     `nonce={{ csp_nonce }}` / 带 `?v={{ feedback_textarea_
+height_version }}` / `defer`；`_get_template_context`
+     里 `feedback_textarea_height_version` 走 `_compute_file_
+version(...)`。
+  7. **ResizeObserver 主路径 + fallback** — `setupResizeObserver`
+     在 `window.ResizeObserver` 存在时返回 `{mode:
+"resize_observer"}`；不存在时返回 `{mode: "mouseup_fallback"}`；
+     fallback 路径监听 `mouseup`/`touchend`。
 
   **验证**：23/23 R137 + 全工程 4313 passed + 2 skipped；
-  ``uv run python scripts/ci_gate.py`` exits 0；CSP nonce / version
+  `uv run python scripts/ci_gate.py` exits 0；CSP nonce / version
   cache busting 在浏览器 devtools 实测可见。
 
   **后续 follow-up（不在 R137 范围内）**：
   - **R137-A**：textarea 宽度持久化（如果用户也想拖宽）。当前 CSS
-    用 ``width: 100%`` 没有横向 resize handle，留空间。
-  - **R137-B**：服务端同步（用户多设备同步偏好）—— 等 ``user_settings``
+    用 `width: 100%` 没有横向 resize handle，留空间。
+  - **R137-B**：服务端同步（用户多设备同步偏好）—— 等 `user_settings`
     后端 schema 落地后再说。
 
 - **R136** — **(feature)** 通知 in-flight 队列断电恢复持久化——
-  ``NotificationManager`` 把入队但还没投递成功的事件 atomic-write 到
-  ``notification_inflight.json``，进程重启后一次性 load 暴露给
-  ``get_status()``，让运维 / 监控仪表板第一时间看到「上次重启时还有
+  `NotificationManager` 把入队但还没投递成功的事件 atomic-write 到
+  `notification_inflight.json`，进程重启后一次性 load 暴露给
+  `get_status()`，让运维 / 监控仪表板第一时间看到「上次重启时还有
   N 条通知没投递」。
 
-  **背景**：在 R136 之前，``_event_queue`` / ``_finalized_event_ids``
+  **背景**：在 R136 之前，`_event_queue` / `_finalized_event_ids`
   全在内存里。进程异常退出（崩溃 / SIGKILL / OOM / 容器被驱逐 /
-  ``systemctl restart``）时会彻底丢——运维侧完全看不到「上次重启时
+  `systemctl restart`）时会彻底丢——运维侧完全看不到「上次重启时
   还有 N 条通知没投递」，是基础观察性盲点。R136 把这个盲点补上。
 
   **为什么不自动重发**：用户关电脑回家睡觉，第二天开机重发昨天 50
@@ -1261,291 +1297,282 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   stats"，把"是否重发"决策权让给将来的 R136-A（如果用户有需求）。
 
   **设计决策**：
-
-  1. **持久化文件与 config 同位** — 路径 = ``_get_inflight_file_dir()``
-     即 ``config_manager.get_config().config_path.parent``，文件名
-     ``notification_inflight.json``（典型 ``~/.config/ai-intervention-
-     agent/notification_inflight.json`` on Linux 或
-     ``~/Library/Application Support/...`` on macOS）。复用 config 目
+  1. **持久化文件与 config 同位** — 路径 = `_get_inflight_file_dir()`
+     即 `config_manager.get_config().config_path.parent`，文件名
+     `notification_inflight.json`（典型 `~/.config/ai-intervention-
+agent/notification_inflight.json` on Linux 或
+     `~/Library/Application Support/...` on macOS）。复用 config 目
      录的好处：用户已经习惯 backup 这个目录、容器卷已经 mount 这个目
-     录、平台目录解析逻辑已经在 ``platformdirs`` 里搞定。
+     录、平台目录解析逻辑已经在 `platformdirs` 里搞定。
   2. **schema_version + signature envelope** — 顶层
-     ``schema_version: 1`` + ``saved_at: ISO`` + ``events: [...]``。
+     `schema_version: 1` + `saved_at: ISO` + `events: [...]`。
      未来 schema 升级（v2 / v3）有个明确锚点；schema_version 不匹配
-     时 ``_load_persisted_inflight_events`` 直接返回 ``[]`` 而不挂，
+     时 `_load_persisted_inflight_events` 直接返回 `[]` 而不挂，
      给未来 migrator 留接入空间。
   3. **Atomic write `.tmp → os.replace`** — POSIX rename atomic 保证
-     是 SSDb 写半截绕过的标准技巧：写 ``notification_inflight.json
-     .tmp`` 后 ``os.replace`` 换成正式名。崩溃在写 ``.tmp`` 中途时正
+     是 SSDb 写半截绕过的标准技巧：写 `notification_inflight.json
+.tmp` 后 `os.replace` 换成正式名。崩溃在写 `.tmp` 中途时正
      式文件不变；崩溃在 replace 时文件系统层保证要么还是老内容、要
      么是新内容，永远不会读到半截 JSON。
   4. **TTL = 5 分钟（300 秒）** — 典型用户场景下，通知如果 5 分钟内
      没投递成功就基本失去时效（feedback 已经过期 / 用户已经看过了）。
      这个 TTL 把「关电脑回家场景」隔离掉——重启后只看最近 5 分钟内的
      真正"飞行中"事件，不被昨晚的 stale 数据污染。
-  5. **集合空时主动删文件** — 不留空 envelope；让运维在 ``ls`` 时
+  5. **集合空时主动删文件** — 不留空 envelope；让运维在 `ls` 时
      一眼看到「当前进程有没有 in-flight 通知积压」（文件不存在 = 干
      净状态）。
-  6. **不引入新锁** — 复用 ``_queue_lock`` 保护
-     ``_inflight_persisted_ids`` 集合 + 写盘路径，与 ``_event_queue``
+  6. **不引入新锁** — 复用 `_queue_lock` 保护
+     `_inflight_persisted_ids` 集合 + 写盘路径，与 `_event_queue`
      append / trim 同一锁等级，避免引入新的锁顺序冲突风险。
-  7. **入队 + 摘除两个挂点** — ``_create_event`` 入队后走
-     ``_track_event_inflight``（add id → 写盘）；``_mark_event_finalized``
-     收尾时走 ``_untrack_event_inflight``（discard id → 写盘 / 最后一
+  7. **入队 + 摘除两个挂点** — `_create_event` 入队后走
+     `_track_event_inflight`（add id → 写盘）；`_mark_event_finalized`
+     收尾时走 `_untrack_event_inflight`（discard id → 写盘 / 最后一
      个时删文件）。两条路径都 try-except 包了 best-effort，磁盘满 /
      权限错误 / 文件锁竞争都不会让通知主路径挂掉。
-  8. **getattr 兜底兼容老 helper** — ``get_status()`` /
-     ``_track_event_inflight`` / ``_untrack_event_inflight`` /
-     ``_persist_inflight_unlocked`` 都对 ``_inflight_persisted_ids``
-     用 ``getattr`` 兜底，让 ``test_notification_manager._make_manager()``
-     这种"绕开 ``__init__`` 手动构造"的老测试 helper 不挂。R136 加新
+  8. **getattr 兜底兼容老 helper** — `get_status()` /
+     `_track_event_inflight` / `_untrack_event_inflight` /
+     `_persist_inflight_unlocked` 都对 `_inflight_persisted_ids`
+     用 `getattr` 兜底，让 `test_notification_manager._make_manager()`
+     这种"绕开 `__init__` 手动构造"的老测试 helper 不挂。R136 加新
      字段不应当让既有测试基础设施 fail。
-  9. **启动时一次性 load → 不自动重发** — ``__init__`` 末尾调
-     ``_load_persisted_inflight_events()`` 把数据存到
-     ``_inflight_seen_at_startup``，``get_status()`` 把它暴露给运维
-     仪表板。**不重新进队列、不调 ``_process_event``**——避免重启风
+  9. **启动时一次性 load → 不自动重发** — `__init__` 末尾调
+     `_load_persisted_inflight_events()` 把数据存到
+     `_inflight_seen_at_startup`，`get_status()` 把它暴露给运维
+     仪表板。**不重新进队列、不调 `_process_event`**——避免重启风
      暴 / 用户被旧通知刷屏。
 
   **实现**：
-
-  - ``notification_manager.py`` 模块级新增 3 个常量
-    （``_INFLIGHT_FILE_NAME`` / ``_INFLIGHT_SCHEMA_VERSION`` /
-    ``_INFLIGHT_TTL_SECONDS``）+ ``_get_inflight_file_dir()`` helper。
-  - ``NotificationManager.__init__`` 新增 ``_inflight_persisted_ids``
-    集合 + ``_inflight_seen_at_startup`` 列表；``__init__`` 末尾调
-    ``_load_persisted_inflight_events()`` 给 ``_inflight_seen_at_startup``
+  - `notification_manager.py` 模块级新增 3 个常量
+    （`_INFLIGHT_FILE_NAME` / `_INFLIGHT_SCHEMA_VERSION` /
+    `_INFLIGHT_TTL_SECONDS`）+ `_get_inflight_file_dir()` helper。
+  - `NotificationManager.__init__` 新增 `_inflight_persisted_ids`
+    集合 + `_inflight_seen_at_startup` 列表；`__init__` 末尾调
+    `_load_persisted_inflight_events()` 给 `_inflight_seen_at_startup`
     赋值，try/except 兜底失败不阻塞启动。
-  - 新增 5 个方法：``_inflight_file_path()`` / ``_track_event_inflight()`` /
-    ``_untrack_event_inflight()`` / ``_persist_inflight_unlocked()`` /
-    ``_load_persisted_inflight_events()``。
-  - ``send_notification`` 入队后 try-except 调 ``_track_event_inflight``；
-    ``_mark_event_finalized`` 收尾后 try-except 调 ``_untrack_event_inflight``。
-  - ``get_status()`` 顶层加 ``inflight_persisted_count`` (int) +
-    ``inflight_seen_at_startup`` (list[dict] 副本)。
-  - ``docs/api/notification_manager.md`` + ``docs/api.zh-CN/...`` 通过
-    ``scripts/generate_docs.py`` 自动重新生成（无需手改）。
+  - 新增 5 个方法：`_inflight_file_path()` / `_track_event_inflight()` /
+    `_untrack_event_inflight()` / `_persist_inflight_unlocked()` /
+    `_load_persisted_inflight_events()`。
+  - `send_notification` 入队后 try-except 调 `_track_event_inflight`；
+    `_mark_event_finalized` 收尾后 try-except 调 `_untrack_event_inflight`。
+  - `get_status()` 顶层加 `inflight_persisted_count` (int) +
+    `inflight_seen_at_startup` (list[dict] 副本)。
+  - `docs/api/notification_manager.md` + `docs/api.zh-CN/...` 通过
+    `scripts/generate_docs.py` 自动重新生成（无需手改）。
 
-  **测试**（``tests/test_notification_inflight_persistence_r136.py``，
+  **测试**（`tests/test_notification_inflight_persistence_r136.py`，
   24 cases / 6 invariant classes）：
-
-  1. **常量** — 三个常量值锁定（``notification_inflight.json`` /
-     ``schema_version=1`` / ``TTL=300s``）。
+  1. **常量** — 三个常量值锁定（`notification_inflight.json` /
+     `schema_version=1` / `TTL=300s`）。
   2. **load 容错** — 缺文件 / JSON 损坏 / 顶层不是 dict / schema
-     不匹配 / events 不是 list / 元素不是 dict 全部返回 ``[]`` 不抛
+     不匹配 / events 不是 list / 元素不是 dict 全部返回 `[]` 不抛
      异常。
-  3. **TTL 过滤** — fresh 事件保留；超期事件过滤；``saved_at_ts``
+  3. **TTL 过滤** — fresh 事件保留；超期事件过滤；`saved_at_ts`
      不是数字时被丢弃。
   4. **persist 写盘** — 空集合 + 文件存在时删文件；空集合 + 无文件
      no-op；非空时写 envelope 含 schema_version + saved_at + events；
-     atomic 写后无 ``.tmp`` 残留。
+     atomic 写后无 `.tmp` 残留。
   5. **track / untrack 行为** — track 后磁盘含事件；untrack 中间一
      个后磁盘只剩另一个；最后一个 untrack 后文件被删；untrack 未知
      id 静默 no-op。
-  6. **get_status R136 字段** — ``inflight_persisted_count`` 在；
-     反映当前集合大小；``inflight_seen_at_startup`` 是 list；外部修
+  6. **get_status R136 字段** — `inflight_persisted_count` 在；
+     反映当前集合大小；`inflight_seen_at_startup` 是 list；外部修
      改返回值不影响 manager 内部状态（深拷贝/list 副本）。
 
   **验证**：24/24 R136 + 192/192 既有 notification 全套（含
-  ``test_notification_manager.py``，老 helper 走 getattr 兜底路径）+
+  `test_notification_manager.py`，老 helper 走 getattr 兜底路径）+
   其他周边 = 全工程 4290 passed + 2 skipped；
-  ``uv run python scripts/ci_gate.py`` exits 0。
+  `uv run python scripts/ci_gate.py` exits 0。
 
   **后续 follow-up（不在 R136 范围内）**：
-  - **R136-A**：基于 ``inflight_seen_at_startup`` 做"主动重发"决策
+  - **R136-A**：基于 `inflight_seen_at_startup` 做"主动重发"决策
     （需要更精细 TTL 策略 + 用户级开关，避免风暴）；
-  - **R136-B**：``/api/system/health`` payload 把 ``inflight_persisted_count``
+  - **R136-B**：`/api/system/health` payload 把 `inflight_persisted_count`
     暴露成顶层字段，让 K8s probe 能直接看到。
 
 - **R135** — **(feature)** `GET /api/tasks/export?since=<ISO>` 增量导出
   过滤器，CI / 备份脚本周期性同步只拿真正变化的 tasks，传输量从
   O(N×content) 降到 O(M×content)（M ≤ N）。
 
-  **背景**：R125 / R125c 的导出端点全量导出整个 ``TaskQueue`` 快照。
-  在 CI / 备份脚本周期性拉 ``/api/tasks/export`` 的真实场景里，绝大
+  **背景**：R125 / R125c 的导出端点全量导出整个 `TaskQueue` 快照。
+  在 CI / 备份脚本周期性拉 `/api/tasks/export` 的真实场景里，绝大
   多数任务自上次同步后没动过——全量传输是 O(N×content) 浪费（含
-  base64 image data 时尤甚）。R125c 的 ``include_images=false`` 已经
+  base64 image data 时尤甚）。R125c 的 `include_images=false` 已经
   把单条 task 的体积压缩 90%+，但还是「全量」语义。R135 引入
-  ``?since=<ISO>`` 把过滤交给服务端，downstream 只拿真正变化的
+  `?since=<ISO>` 把过滤交给服务端，downstream 只拿真正变化的
   tasks。
 
   **设计决策**：
-
-  1. **过滤维度选「task 最后变化时间」** — ``Task`` 模型暴露
-     ``created_at`` + ``completed_at`` 两个时间戳，``pending → active``
+  1. **过滤维度选「task 最后变化时间」** — `Task` 模型暴露
+     `created_at` + `completed_at` 两个时间戳，`pending → active`
      状态切换没独立时间戳但也不影响导出内容（status enum 下一次全
-     量同步时自然消化）。「``created_at >= since`` 或 ``completed_at >=
-     since``」就是「task 自 since 之后变化」最自然的语义。
-  2. **ISO 解析复用 ``datetime.fromisoformat``** — Python 3.11+ 原生
-     支持 ``Z`` 后缀，3.10 及之前不支持但 helper 显式 ``Z → +00:00``
+     量同步时自然消化）。「`created_at >= since` 或 `completed_at >=
+since`」就是「task 自 since 之后变化」最自然的语义。
+  2. **ISO 解析复用 `datetime.fromisoformat`** — Python 3.11+ 原生
+     支持 `Z` 后缀，3.10 及之前不支持但 helper 显式 `Z → +00:00`
      替换兜底。naive datetime（不带时区）按 UTC 处理，与
-     ``Task.created_at`` 全 UTC-aware 的契约保持一致。
-  3. **缺省走全量、错误走 400** — ``?since`` 缺失或空字符串走全量路
+     `Task.created_at` 全 UTC-aware 的契约保持一致。
+  3. **缺省走全量、错误走 400** — `?since` 缺失或空字符串走全量路
      径，与 R125 行为完全一致（向后兼容既有 curl / CI 用户）；非法
-     ISO（``2024/01/15`` / ``not an iso`` / ``2024-13-99``）返回 400
-     ``error: invalid_since``，与 ``unsupported_format`` 同款返回
+     ISO（`2024/01/15` / `not an iso` / `2024-13-99`）返回 400
+     `error: invalid_since`，与 `unsupported_format` 同款返回
      结构。
-  4. **JSON payload 加 ``since`` 字段 + ``incremental: bool``** —
-     ``since`` echo 用户传入的 ISO 字符串（解析后规范化时区段，e.g.
-     ``Z`` → ``+00:00``），让消费方知道服务端到底过滤到哪个时刻；
-     ``incremental`` 是 bool 让 dashboard 一眼分辨「全量」vs「增量」，
+  4. **JSON payload 加 `since` 字段 + `incremental: bool`** —
+     `since` echo 用户传入的 ISO 字符串（解析后规范化时区段，e.g.
+     `Z` → `+00:00`），让消费方知道服务端到底过滤到哪个时刻；
+     `incremental` 是 bool 让 dashboard 一眼分辨「全量」vs「增量」，
      避免误把增量当全量回放。
-  5. **``stats`` 字段保持全局不局部化** — 监控 dashboard 关心整体队
+  5. **`stats` 字段保持全局不局部化** — 监控 dashboard 关心整体队
      列健康度（pending / active / completed 总量），按 since 过滤
-     局部化反而误导。``tasks`` 列表过滤了，``stats`` 不动。
+     局部化反而误导。`tasks` 列表过滤了，`stats` 不动。
   6. **Markdown 模式同款对齐** — Markdown header 在 since 触发时插
      一行 ``- Filtered since: \`<ISO>\```，让人类读快照时一眼知道
      「这是自 X 以来变化的子集」而不是全量。
-  7. **三参数组合可正交** — ``since`` + ``format=json|markdown`` +
-     ``include_images={true,false}`` 三个参数互不冲突，filter 是 first
+  7. **三参数组合可正交** — `since` + `format=json|markdown` +
+     `include_images={true,false}` 三个参数互不冲突，filter 是 first
      pass（在序列化之前），include_images 是 result 内部裁剪
      （在 sanitize 阶段），format 是输出阶段。
 
   **实现**：
-
-  - ``web_ui_routes/task.py`` 模块级新增 ``_parse_since_iso(raw)``
-    helper（``Z`` 后缀替换 + ``ValueError`` 捕获 + naive→UTC 兜底；
-    返回 ``(parsed_dt, error_msg)`` 元组）+ ``_task_modified_since(
-    task, since)`` helper（``getattr`` duck-typing，对 ``Task`` 和
-    单元测试桩对象同样工作）。``export_tasks`` handler 加一段 since
-    解析与 400 路径，过滤 ``tasks`` 列表，JSON payload 加 ``since`` /
-    ``incremental`` 字段，Markdown header 加 ``Filtered since:`` 行。
-  - ``export_tasks`` Swagger ``parameters`` 加 ``since`` 描述
-    （``format: date-time``）+ ``responses.400`` 描述补充 since 错
+  - `web_ui_routes/task.py` 模块级新增 `_parse_since_iso(raw)`
+    helper（`Z` 后缀替换 + `ValueError` 捕获 + naive→UTC 兜底；
+    返回 `(parsed_dt, error_msg)` 元组）+ `_task_modified_since(
+task, since)` helper（`getattr` duck-typing，对 `Task` 和
+    单元测试桩对象同样工作）。`export_tasks` handler 加一段 since
+    解析与 400 路径，过滤 `tasks` 列表，JSON payload 加 `since` /
+    `incremental` 字段，Markdown header 加 `Filtered since:` 行。
+  - `export_tasks` Swagger `parameters` 加 `since` 描述
+    （`format: date-time`）+ `responses.400` 描述补充 since 错
     误模式。
 
-  **测试**（``tests/test_tasks_export_since_r135.py``，22 cases /
+  **测试**（`tests/test_tasks_export_since_r135.py`，22 cases /
   5 invariant classes）：
-
-  1. **``_parse_since_iso`` helper** — None / 空 / 仅空白 → no-op；
-     ``+00:00`` 显式时区 / ``Z`` 后缀 / naive 三种合法形式都返回
-     UTC-aware datetime；非法 ``not an iso`` / ``2024/01/15`` /
-     ``2024-13-99T99:99:99`` 都返回 ``(None, error_msg)``。
-  2. **``_task_modified_since`` helper** — created_at >= since →
-     True；created_at == since 边界 → True（``>=``）；
+  1. **`_parse_since_iso` helper** — None / 空 / 仅空白 → no-op；
+     `+00:00` 显式时区 / `Z` 后缀 / naive 三种合法形式都返回
+     UTC-aware datetime；非法 `not an iso` / `2024/01/15` /
+     `2024-13-99T99:99:99` 都返回 `(None, error_msg)`。
+  2. **`_task_modified_since` helper** — created_at >= since →
+     True；created_at == since 边界 → True（`>=`）；
      completed_at >= since 但 created_at < since → True；created_at
      < since 且 completed_at None → False；created_at < since 且
      completed_at < since → False。
-  3. **HTTP 默认行为不变** — ``?since`` 缺省时全量返回；空字符串
-     ``?since=`` 同款全量；``since: None`` / ``incremental: false``。
-  4. **HTTP ``?since`` 增量路径** — 过滤生效（用 fixture 把一个
-     task ``created_at`` backdate 1h，midpoint 30min ago 过滤后只剩
-     新的）；Z 后缀同样 work；future since 返回 ``tasks: []`` +
-     ``incremental: true``；``stats`` 仍是全队列基线 ``total = 2``
-     不被局部化；Markdown 模式 header 含 ``Filtered since:`` 行。
-  5. **HTTP 错误路径与组合** — 非法 ISO 返回 400 ``invalid_since``
+  3. **HTTP 默认行为不变** — `?since` 缺省时全量返回；空字符串
+     `?since=` 同款全量；`since: None` / `incremental: false`。
+  4. **HTTP `?since` 增量路径** — 过滤生效（用 fixture 把一个
+     task `created_at` backdate 1h，midpoint 30min ago 过滤后只剩
+     新的）；Z 后缀同样 work；future since 返回 `tasks: []` +
+     `incremental: true`；`stats` 仍是全队列基线 `total = 2`
+     不被局部化；Markdown 模式 header 含 `Filtered since:` 行。
+  5. **HTTP 错误路径与组合** — 非法 ISO 返回 400 `invalid_since`
      （format=json / markdown 两路径都 400 不半态）；三参数组合
-     ``since + format=json + include_images=false`` 三个 invariant
+     `since + format=json + include_images=false` 三个 invariant
      都生效。
 
-  **辅助 helper**：``_iso_for_query(dt)`` 把 ``datetime`` 转 query-safe
-  ISO 字符串（``urllib.parse.quote(safe="")`` percent-encode ``+`` /
-  ``:`` 防止 query parser 把 ``+`` 当空格）。这是 R135 专属测试侧
-  helper，与生产代码无关——但是排查"为什么 ``+00:00`` 后缀的 ISO
+  **辅助 helper**：`_iso_for_query(dt)` 把 `datetime` 转 query-safe
+  ISO 字符串（`urllib.parse.quote(safe="")` percent-encode `+` /
+  `:` 防止 query parser 把 `+` 当空格）。这是 R135 专属测试侧
+  helper，与生产代码无关——但是排查"为什么 `+00:00` 后缀的 ISO
   在 query 里 fails parse"花的时间值得记录。
 
   **验证**：22/22 R135 + 50/50 R125/R125b/R125c 既有套件 = 72/72
-  export 全套零回归；``uv run python scripts/ci_gate.py`` exits 0。
+  export 全套零回归；`uv run python scripts/ci_gate.py` exits 0。
 
 - **R134** — **(feature)** SSE bus emit→deliver 延迟分布量化（P50 / P95 /
   count），把 R47 的「事件量」维度补齐成「延迟分布」维度，让运维 dashboard
   / SLO 告警能直接对线上 SSE 推送质量。
 
-  **背景**：R47 / R51-B / R58 / R61 已经把 ``_emit_total`` /
-  ``backpressure_discards`` / ``heartbeat_total`` / ``oversize_drops`` /
-  ``emit_by_type`` 五张表暴露在 ``/api/system/sse-stats``，但全是「事件
+  **背景**：R47 / R51-B / R58 / R61 已经把 `_emit_total` /
+  `backpressure_discards` / `heartbeat_total` / `oversize_drops` /
+  `emit_by_type` 五张表暴露在 `/api/system/sse-stats`，但全是「事件
   量」维度的累计指标。线上 QoS 真正的盲点是「emit 之后客户端多久才
-  真的拿到数据」——这才决定用户 UI 的实时感、决定 ``task_changed`` 事
+  真的拿到数据」——这才决定用户 UI 的实时感、决定 `task_changed` 事
   件是不是能驱动状态栏跳变。Datadog / Grafana 团队的 SSE 监控最佳实践
   里 P50 / P95 是必看项，没有这两个数字就只能盯着平均值（Average is
   a Lie）。
 
   **设计决策**：
-
   1. **测量点选 emit→generator yield，而不是端到端 RTT** — 真正的
      emit→deliver 延迟在我们这里有两段：「emit lock + put_nowait」+
      「Flask generator 拿到 queue 元素 + yield 给 WSGI 写网络」。我们
-     在 generator yield 之前用 ``time.monotonic_ns() - payload['_emit_ts_ns']``
+     在 generator yield 之前用 `time.monotonic_ns() - payload['_emit_ts_ns']`
      算这两段的总和，覆盖了 server-side 全部可控延迟。client-side
      RTT 包含 TCP / 反向代理 / 浏览器 EventSource buffer，与服务端
-     性能不直接相关，应该交给 ``X-Server-Time`` 之类 client metric
+     性能不直接相关，应该交给 `X-Server-Time` 之类 client metric
      单独测，不混进同一个柱。
-  2. **``time.monotonic_ns`` 而非 ``time.time``** — ``time.time`` 在
+  2. **`time.monotonic_ns` 而非 `time.time`** — `time.time` 在
      NTP 校时回拨（typical：DST 切换、NTP 大跳）时会算出负 latency，
-     污染 P50/P95；``monotonic_ns`` 单调递增设计成永不回拨，正是测
-     elapsed 的标准时基。POSIX ``CLOCK_MONOTONIC`` 同款语义。
-  3. **环形缓冲选 deque(maxlen=512)** — 单元 = ``int`` (CPython ~28B)，
-     512 个 ≈ 14KB / 实例，与 ``_HISTORY_MAXLEN=128`` (~32KB) 同数量
+     污染 P50/P95；`monotonic_ns` 单调递增设计成永不回拨，正是测
+     elapsed 的标准时基。POSIX `CLOCK_MONOTONIC` 同款语义。
+  3. **环形缓冲选 deque(maxlen=512)** — 单元 = `int` (CPython ~28B)，
+     512 个 ≈ 14KB / 实例，与 `_HISTORY_MAXLEN=128` (~32KB) 同数量
      级；P95 留 25 个样本（512 × 5%）足以让分布在毫秒抖动下稳定到
      ±1ms 量级；512 条对 100 个连接 × 10 events/s 场景相当于 0.5 秒
      滑动窗口，比 1024/2048 那种"几秒 ago 的均值"对告警决策更直接。
-  4. **算法选 nearest-rank percentile** — ``sorted_samples[int(N * pct)]``
+  4. **算法选 nearest-rank percentile** — `sorted_samples[int(N * pct)]`
      比线性插值算法（如 R / numpy 默认）简单稳定，对监控用场景 ±1ms
      精度完全够；512 个 int 排序成本 ~50µs（CPython timsort），
-     ``stats_snapshot`` 60/min 调用时占 0.005% CPU 可忽略。
+     `stats_snapshot` 60/min 调用时占 0.005% CPU 可忽略。
   5. **count == 0 时 p50 / p95 用 None 而非 0** — 让监控 caller 一眼
      分辨「刚启动还没数据」（None）和「延迟为零」（0.0）。Datadog /
      Prometheus 都把 None 当 missing 处理，0 当真实零值，区分至关重要。
-  6. **``_emit_ts_ns`` 字段挂在 payload 上而不是单独传** — 与
-     ``_serialized`` / ``id`` / ``type`` / ``data`` 同款命名（``_`` 前
+  6. **`_emit_ts_ns` 字段挂在 payload 上而不是单独传** — 与
+     `_serialized` / `id` / `type` / `data` 同款命名（`_` 前
      缀 = generator 私有 metadata），不进 SSE wire format（generator
-     只把 ``serialized`` 和 ``event_id`` 拼到 ``data:`` / ``id:`` 行）。
-     缺失（如 ``gap_warning`` 由 ``subscribe`` 直接塞进 queue 不走 emit）
+     只把 `serialized` 和 `event_id` 拼到 `data:` / `id:` 行）。
+     缺失（如 `gap_warning` 由 `subscribe` 直接塞进 queue 不走 emit）
      时 generator 静默跳过 latency 采样——只测真实的 emit→deliver 路径。
-  7. **接口契约：``latency_ms`` 顶层独立 dict，不混进 emit_by_type** —
-     ``emit_by_type`` 是 ``dict[str, int]`` 桶，``latency_ms`` 是
-     ``{p50_ms: float|None, p95_ms: float|None, count: int}``。两组语
+  7. **接口契约：`latency_ms` 顶层独立 dict，不混进 emit_by_type** —
+     `emit_by_type` 是 `dict[str, int]` 桶，`latency_ms` 是
+     `{p50_ms: float|None, p95_ms: float|None, count: int}`。两组语
      义不一样，平铺会让 dashboard 难写。R47 的 TypedDict 加一个
-     ``SSELatencySnapshot`` 子类型锁定 shape，IDE 一眼可推断字段类型。
-  8. **正负数值防御** — ``record_emit_to_deliver_latency_ns(ns)`` 入
-     口对 ``ns < 0`` 静默丢弃；理论上 ``monotonic_ns`` 不会回拨，但
+     `SSELatencySnapshot` 子类型锁定 shape，IDE 一眼可推断字段类型。
+  8. **正负数值防御** — `record_emit_to_deliver_latency_ns(ns)` 入
+     口对 `ns < 0` 静默丢弃；理论上 `monotonic_ns` 不会回拨，但
      单元测试 mock 时可能凑负值，加防御让样本始终非负。
 
   **实现**：
-
-  - ``web_ui_routes/task.py`` 顶部新增 ``SSELatencySnapshot`` TypedDict；
-    ``SSEBusStatsSnapshot`` 加 ``latency_ms`` 字段；
-    ``_SSEBus._LATENCY_SAMPLES_MAXLEN = 512`` 类常量 +
-    ``_latency_samples_ns: deque[int]`` 实例字段；新增
-    ``record_emit_to_deliver_latency_ns(ns: int)`` 持锁追加；新增
-    ``_compute_latency_snapshot()`` 持锁排序 + nearest-rank P50/P95；
-    ``emit()`` 在 lock 外取 ``emit_ts_ns = time.monotonic_ns()`` 后写进
-    payload ``_emit_ts_ns``；``stats_snapshot()`` 返回值加
-    ``"latency_ms": self._compute_latency_snapshot()``；
-    SSE generator 在 yield 之前从 payload 读 ``_emit_ts_ns``，缺失则跳
-    过，存在则调 ``_sse_bus.record_emit_to_deliver_latency_ns(...)``。
-  - ``web_ui_routes/system.py`` ``/api/system/sse-stats`` Swagger 文档
-    在 schema.properties 加 ``latency_ms`` 嵌套对象描述 + 三字段
+  - `web_ui_routes/task.py` 顶部新增 `SSELatencySnapshot` TypedDict；
+    `SSEBusStatsSnapshot` 加 `latency_ms` 字段；
+    `_SSEBus._LATENCY_SAMPLES_MAXLEN = 512` 类常量 +
+    `_latency_samples_ns: deque[int]` 实例字段；新增
+    `record_emit_to_deliver_latency_ns(ns: int)` 持锁追加；新增
+    `_compute_latency_snapshot()` 持锁排序 + nearest-rank P50/P95；
+    `emit()` 在 lock 外取 `emit_ts_ns = time.monotonic_ns()` 后写进
+    payload `_emit_ts_ns`；`stats_snapshot()` 返回值加
+    `"latency_ms": self._compute_latency_snapshot()`；
+    SSE generator 在 yield 之前从 payload 读 `_emit_ts_ns`，缺失则跳
+    过，存在则调 `_sse_bus.record_emit_to_deliver_latency_ns(...)`。
+  - `web_ui_routes/system.py` `/api/system/sse-stats` Swagger 文档
+    在 schema.properties 加 `latency_ms` 嵌套对象描述 + 三字段
     （p50_ms / p95_ms / count）说明。
 
-  **测试**（``tests/test_sse_emit_to_deliver_latency_r134.py``，20 cases /
+  **测试**（`tests/test_sse_emit_to_deliver_latency_r134.py`，20 cases /
   6 invariant classes）：
-
-  1. **常量与 init** — ``_LATENCY_SAMPLES_MAXLEN`` = 512；deque 初始
+  1. **常量与 init** — `_LATENCY_SAMPLES_MAXLEN` = 512；deque 初始
      empty + maxlen 字段 = 512。
-  2. **采样 API** — ``record(...)`` 正常追加；负数静默丢；0ns 接受；
+  2. **采样 API** — `record(...)` 正常追加；负数静默丢；0ns 接受；
      超 maxlen 时最旧 evict（触发条件 maxlen + 50 个样本写入）。
   3. **percentile 计算** — empty → 全 None + count = 0；count = 1 →
      p50 = p95 = 唯一样本；构造 100 个 1..100ms 样本，断言 P50 = 51ms
      / P95 = 96ms（nearest-rank 索引 = int(N×pct)）；加大尾样本后 P95
      单调不降；5.123ms 样本 round 到 5.12（2 位小数）。
-  4. **emit 注入与 generator 消费** — ``emit()`` 后 history payload 含
-     ``_emit_ts_ns`` 字段且 > 0；source 内 ``def generate(`` 函数体含
-     ``record_emit_to_deliver_latency_ns(`` 调用（防 generator 集成被
+  4. **emit 注入与 generator 消费** — `emit()` 后 history payload 含
+     `_emit_ts_ns` 字段且 > 0；source 内 `def generate(` 函数体含
+     `record_emit_to_deliver_latency_ns(` 调用（防 generator 集成被
      回滚）。
-  5. **stats_snapshot + TypedDict** — 返回 dict 含 ``latency_ms`` 键 +
+  5. **stats_snapshot + TypedDict** — 返回 dict 含 `latency_ms` 键 +
      三字段（p50_ms/p95_ms/count，初值 count=0）；R47 / R51-B / R58 /
      R61 既有 9 个键全部仍在；TypedDict 注解锁定。
-  6. **Swagger 文档** — ``system.py`` 含 ``R134`` 标记 + ``latency_ms``
-     / ``p50_ms`` / ``p95_ms`` 字段名（caller-facing 文档契约）。
+  6. **Swagger 文档** — `system.py` 含 `R134` 标记 + `latency_ms`
+     / `p50_ms` / `p95_ms` 字段名（caller-facing 文档契约）。
 
   **验证**：20/20 R134 + 78/78 R47/R51-B/R58/R61/R50/R52b/R55/R39 +
   20 system 端点既有 = 138/138 SSE/system 全套零回归；
-  ``uv run python scripts/ci_gate.py`` exits 0；全工程
+  `uv run python scripts/ci_gate.py` exits 0；全工程
   4244 passed + 2 skipped，与提交 R131d 时 4207 passed 加 17 (R131d)
   加 20 (R134) = 4244 完美吻合。
 
-  **后续 follow-up（不在 R134 范围内）**：``subscribe(after_id)`` 走
-  history replay 时给客户端补发的 payload 也含 ``_emit_ts_ns``（emit
+  **后续 follow-up（不在 R134 范围内）**：`subscribe(after_id)` 走
+  history replay 时给客户端补发的 payload 也含 `_emit_ts_ns`（emit
   时刻），导致 reconnect 风暴下 P95 会被 reconnect lag 拉高。这其实
   是「reconnect lag」也有意义的指标，留作未来 R-series 评估是否需要
   分桶（latency_ms vs replay_lag_ms）。
@@ -1564,114 +1591,110 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   在「键盘党」用户体验上有空挡可补。
 
   **设计决策**：
-
   1. **修饰键选 `Alt` 而非 `Ctrl/Cmd`** — `Ctrl/Cmd+1..9` 在所有
      主流浏览器（Chrome / Firefox / Safari / Edge）都被预占用作
-     「切换标签页 N」，``preventDefault()`` 也拦不住（浏览器层快
+     「切换标签页 N」，`preventDefault()` 也拦不住（浏览器层快
      捷键优先级高于 page）。`Alt` 在 Chrome / Edge 是「打开主菜
-     单焦点」但 ``preventDefault`` 可拦；macOS `Option` 与 `Alt`
-     共享 ``event.altKey``，跨平台一致。
+     单焦点」但 `preventDefault` 可拦；macOS `Option` 与 `Alt`
+     共享 `event.altKey`，跨平台一致。
   2. **范围锁 1..9，而非 0..9** — `Alt+0` 在 Chrome 是「重置缩放
-     到 100%」，与 ``Ctrl+0`` 一脉相承的语义；强行抢占体感差，且
+     到 100%」，与 `Ctrl+0` 一脉相承的语义；强行抢占体感差，且
      即便允许覆盖也会与浏览器无障碍快捷键冲突。9 条对绝大多数熟
      手用户已足够覆盖「日常 80%」用例。
-  3. **复用 R110 既有 ``window.KeyboardShortcuts``，回退到原生
-     ``keydown``** — R110 / R110-A 已构造好全局 shortcut 注册中
-     心 + ``allowInInputs`` / ``preventDefault`` / 修饰键归一化逻
-     辑。R131d 注册 9 条 ``alt+1`` … ``alt+9`` 即可；模块缺失时
-     fallback 到原生 ``keydown`` 监听并自检 ``modifierKey & numKey``
-     ``preventDefault``，兼容旧 web_ui.html 模板加载顺序异常。
-  4. **``allowInInputs: true`` 是必要的** — 主用户场景就是站在
-     ``feedback-text`` textarea 里打字、随手 ``Alt+3`` 插入第 3
-     条常用回复。R110 默认 ``allowInInputs: false`` 是保守策略
+  3. **复用 R110 既有 `window.KeyboardShortcuts`，回退到原生
+     `keydown`** — R110 / R110-A 已构造好全局 shortcut 注册中
+     心 + `allowInInputs` / `preventDefault` / 修饰键归一化逻
+     辑。R131d 注册 9 条 `alt+1` … `alt+9` 即可；模块缺失时
+     fallback 到原生 `keydown` 监听并自检 `modifierKey & numKey`
+     `preventDefault`，兼容旧 web_ui.html 模板加载顺序异常。
+  4. **`allowInInputs: true` 是必要的** — 主用户场景就是站在
+     `feedback-text` textarea 里打字、随手 `Alt+3` 插入第 3
+     条常用回复。R110 默认 `allowInInputs: false` 是保守策略
      （怕快捷键打字干扰），但 quick phrases 场景反过来：必须穿透
-     input。每个 register 显式传 ``allowInInputs: true`` 做覆盖。
+     input。每个 register 显式传 `allowInInputs: true` 做覆盖。
   5. **form mode（add / edit form 弹出时）禁用快捷键** — 用户在
-     编辑 phrase 内容时按 ``Alt+3`` 应当属于「输入字符」而非
-     「插入第 3 条」。``_activateShortcut`` 入口先查
-     ``document.querySelector('.quick-phrases-form')`` 判断 form
-     是否打开，是则直接 return（让默认行为/原生 ``Alt+`` 字符流
+     编辑 phrase 内容时按 `Alt+3` 应当属于「输入字符」而非
+     「插入第 3 条」。`_activateShortcut` 入口先查
+     `document.querySelector('.quick-phrases-form')` 判断 form
+     是否打开，是则直接 return（让默认行为/原生 `Alt+` 字符流
      接管）。
-  6. **chip 上 ``data-shortcut-index`` + 国际化 ``title``** —
-     前 9 条 chip 在 DOM 上加 ``data-shortcut-index="1..9"`` 数据
-     属性 + ``title="Alt+1 quick insert"`` 等价 i18n tooltip
-     （key ``quickPhrases.chipShortcutTitle``，含 ``{{shortcut}}``
+  6. **chip 上 `data-shortcut-index` + 国际化 `title`** —
+     前 9 条 chip 在 DOM 上加 `data-shortcut-index="1..9"` 数据
+     属性 + `title="Alt+1 quick insert"` 等价 i18n tooltip
+     （key `quickPhrases.chipShortcutTitle`，含 `{{shortcut}}`
      插值）。让用户 hover 时看到提示而不必读文档；data 属性给未
      来 a11y / 测试 / CSS 都留挂点。
-  7. **``recordPhraseUsage`` 与 chip click 同语义** —
-     ``_activateShortcut`` 在 ``insertTextIntoFeedback`` 之后调
-     ``recordPhraseUsage(id)``，与 R131c 的 chip click handler 完
+  7. **`recordPhraseUsage` 与 chip click 同语义** —
+     `_activateShortcut` 在 `insertTextIntoFeedback` 之后调
+     `recordPhraseUsage(id)`，与 R131c 的 chip click handler 完
      全对齐：键盘触发与鼠标触发对排序的影响一致，符合「最近使用」
      语义直觉。
 
   **实现**：
+  - `static/js/quick_phrases.js` 模块顶部新增常量
+    `SHORTCUT_INDICES = [1..9]` + `SHORTCUT_PREFIX = "alt+"`；
+    新增 `_activateShortcut(index)` 函数（`query .quick-phrases-form`
+    判 form mode → `loadPhrases().then(_sortPhrasesByUsage)` →
+    取第 N-1 条 → `insertTextIntoFeedback(text)` →
+    `recordPhraseUsage(id)`）；新增 `setupKeyboardShortcuts()`
+    函数（优先 `window.KeyboardShortcuts.register({key, handler,
+preventDefault: true, allowInInputs: true})`，缺失则 fallback
+    原生 `keydown` 监听 + 自检 `altKey && numKey 1..9`）；
+    `init()` 末尾追加 `setupKeyboardShortcuts()` 调用。
+  - `renderList()` 在 chip `forEach` 内部对 `idx <
+SHORTCUT_INDICES.length` 的元素加 `setAttribute(
+"data-shortcut-index", String(SHORTCUT_INDICES[idx]))` +
+    i18n `title`（`_t("quickPhrases.chipShortcutTitle",
+{shortcut: "Alt+" + N})`）。
+  - `window.AIIA_QUICK_PHRASES` 暴露 `setupKeyboardShortcuts`
+    - `_activateShortcut`，给测试 + 调试 + 未来 a11y 框架接入用。
+  - `static/locales/{en,zh-CN,_pseudo/pseudo}.json` 新增
+    `quickPhrases.chipShortcutTitle` key（含 `{{shortcut}}`
+    插值，与 R131 `confirmDelete` 同款 Mustache）。
 
-  - ``static/js/quick_phrases.js`` 模块顶部新增常量
-    ``SHORTCUT_INDICES = [1..9]`` + ``SHORTCUT_PREFIX = "alt+"``；
-    新增 ``_activateShortcut(index)`` 函数（``query .quick-phrases-form``
-    判 form mode → ``loadPhrases().then(_sortPhrasesByUsage)`` →
-    取第 N-1 条 → ``insertTextIntoFeedback(text)`` →
-    ``recordPhraseUsage(id)``）；新增 ``setupKeyboardShortcuts()``
-    函数（优先 ``window.KeyboardShortcuts.register({key, handler,
-    preventDefault: true, allowInInputs: true})``，缺失则 fallback
-    原生 ``keydown`` 监听 + 自检 ``altKey && numKey 1..9``）；
-    ``init()`` 末尾追加 ``setupKeyboardShortcuts()`` 调用。
-  - ``renderList()`` 在 chip ``forEach`` 内部对 ``idx <
-    SHORTCUT_INDICES.length`` 的元素加 ``setAttribute(
-    "data-shortcut-index", String(SHORTCUT_INDICES[idx]))`` +
-    i18n ``title``（``_t("quickPhrases.chipShortcutTitle",
-    {shortcut: "Alt+" + N})``）。
-  - ``window.AIIA_QUICK_PHRASES`` 暴露 ``setupKeyboardShortcuts``
-    + ``_activateShortcut``，给测试 + 调试 + 未来 a11y 框架接入用。
-  - ``static/locales/{en,zh-CN,_pseudo/pseudo}.json`` 新增
-    ``quickPhrases.chipShortcutTitle`` key（含 ``{{shortcut}}``
-    插值，与 R131 ``confirmDelete`` 同款 Mustache）。
-
-  **测试**（``tests/test_quick_phrases_keyboard_shortcuts_r131d.py``，
+  **测试**（`tests/test_quick_phrases_keyboard_shortcuts_r131d.py`，
   17 cases / 5 invariant classes）：
-
-  1. **JS API 扩展** — 两个函数签名（``setupKeyboardShortcuts`` /
-     ``_activateShortcut``）+ 公开 API 暴露 + ``SHORTCUT_INDICES``
-     / ``SHORTCUT_PREFIX`` 常量在 source 中可见。
-  2. **快捷键注册路径** — 优先尝试 ``window.KeyboardShortcuts``
-     正路径，每个 register 调用都带 ``allowInInputs: true`` +
-     ``preventDefault: true`` 选项（R110 默认相反，必须显式覆盖）；
-     fallback 原生 ``keydown`` 含 ``altKey`` 与 数字键归一化；
-     ``Alt+1..9`` 9 个 key 都覆盖。
-  3. **chip UI 提示** — ``renderList`` 对 ``idx <
-     SHORTCUT_INDICES.length`` 的 chip 加 ``data-shortcut-index``
-     属性 + i18n title；``idx >= 9`` 不加（不强行展示「Alt+10」
+  1. **JS API 扩展** — 两个函数签名（`setupKeyboardShortcuts` /
+     `_activateShortcut`）+ 公开 API 暴露 + `SHORTCUT_INDICES`
+     / `SHORTCUT_PREFIX` 常量在 source 中可见。
+  2. **快捷键注册路径** — 优先尝试 `window.KeyboardShortcuts`
+     正路径，每个 register 调用都带 `allowInInputs: true` +
+     `preventDefault: true` 选项（R110 默认相反，必须显式覆盖）；
+     fallback 原生 `keydown` 含 `altKey` 与 数字键归一化；
+     `Alt+1..9` 9 个 key 都覆盖。
+  3. **chip UI 提示** — `renderList` 对 `idx <
+SHORTCUT_INDICES.length` 的 chip 加 `data-shortcut-index`
+     属性 + i18n title；`idx >= 9` 不加（不强行展示「Alt+10」
      这种不存在的快捷键）。
-  4. **form mode 禁用 + 顺序契约** — ``_activateShortcut`` 入口
-     先查 ``.quick-phrases-form`` 短路返回；正常路径下
-     ``insertTextIntoFeedback`` 调用必须早于 ``recordPhraseUsage``
-     （正则 ``insertTextIntoFeedback[\s\S]+recordPhraseUsage``
+  4. **form mode 禁用 + 顺序契约** — `_activateShortcut` 入口
+     先查 `.quick-phrases-form` 短路返回；正常路径下
+     `insertTextIntoFeedback` 调用必须早于 `recordPhraseUsage`
+     （正则 `insertTextIntoFeedback[\s\S]+recordPhraseUsage`
      单向匹配）。
   5. **i18n 完整** — en / zh-CN / pseudo 三方都含
-     ``quickPhrases.chipShortcutTitle`` 且都用 ``{{shortcut}}``
+     `quickPhrases.chipShortcutTitle` 且都用 `{{shortcut}}`
      Mustache 插值参数。
 
   **验证**：17/17 R131d + 89/89 R130/R131/R131b/R131c/R133 = 106/106
-  quick-phrases 全套零回归；``uv run python scripts/ci_gate.py``
+  quick-phrases 全套零回归；`uv run python scripts/ci_gate.py`
   exits 0。
 
 - **R133** — **(polish)** Quick Phrases 面板移动端响应式补齐 ≤768px /
   ≤480px 两档 layout，R131b 加 Export/Import 按钮后窄屏不再撞挤。
 
-  **背景**：R130 v1 的 ``.quick-phrases-header`` 只有「label + Add」
-  两个元素，``@media (max-width: 768px)`` 下只动 container margin +
+  **背景**：R130 v1 的 `.quick-phrases-header` 只有「label + Add」
+  两个元素，`@media (max-width: 768px)` 下只动 container margin +
   chip 字号就够。R131b 把 header 扩到 4 元素（label + Add + Export
-  + Import），在 < 480px 设备（iPhone SE / 老款 Android）上会撞挤——
-  按钮 padding 被压到 0、点击目标 < 32×32（iOS HIG 与 Material
-  Design 都把 44/48px 视为最小可点目标）、甚至按钮文字断行成两列。
-  在 R131b 上线后第一时间就该补齐这块——不引入新 i18n / 不动桌面
-  布局，颗粒小但 UX 收益大。
+  - Import），在 < 480px 设备（iPhone SE / 老款 Android）上会撞挤——
+    按钮 padding 被压到 0、点击目标 < 32×32（iOS HIG 与 Material
+    Design 都把 44/48px 视为最小可点目标）、甚至按钮文字断行成两列。
+    在 R131b 上线后第一时间就该补齐这块——不引入新 i18n / 不动桌面
+    布局，颗粒小但 UX 收益大。
 
   **设计决策**：
-
   1. **断点扩成两档 768/480** — 桌面 ≥769px 保留 R131b 全宽布局；
-     ≤768px 加 ``flex-wrap`` 让按钮在空间紧张时换行；≤480px 进一步
-     强制 label 独占第一行（``flex-basis: 100%``），让按钮组在第
+     ≤768px 加 `flex-wrap` 让按钮在空间紧张时换行；≤480px 进一步
+     强制 label 独占第一行（`flex-basis: 100%`），让按钮组在第
      二行可用全宽。
   2. **按钮 padding 阶梯收紧** — 桌面 0.25rem/0.85rem → 768px
      0.3rem/0.7rem → 480px 0.28rem/0.55rem；字号同样阶梯收紧。每
@@ -1680,272 +1703,261 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   3. **chip max-width 阶梯收紧** — 桌面 unset → 768px 10rem → 480px
      8rem；避免单个 chip 撑爆整行让 layout 抖动。
   4. **R131b 按钮共享 selector 模式扩展到 @media 块** — 桌面 selector
-     group ``.quick-phrases-{add,export,import}-btn`` 同款合并到
+     group `.quick-phrases-{add,export,import}-btn` 同款合并到
      768px / 480px 块内，保证三个按钮永远视觉一致；与 R131b 的
      selector group 锁配套。
 
   **实现**：
-
-  - ``static/css/main.css`` 把原 ``@media (max-width: 768px)`` 的
-    Quick Phrases 块从 2 条规则扩到 4 条（加 ``.quick-phrases-header``
+  - `static/css/main.css` 把原 `@media (max-width: 768px)` 的
+    Quick Phrases 块从 2 条规则扩到 4 条（加 `.quick-phrases-header`
     flex-wrap + 三类按钮共享 padding/font-size），并新增
-    ``@media (max-width: 480px)`` 块（4 条规则：label flex-basis +
+    `@media (max-width: 480px)` 块（4 条规则：label flex-basis +
     三类按钮再收紧 + chip max-width 进一步降）。
 
-  **测试**（``tests/test_quick_phrases_mobile_responsive_r133.py``，
+  **测试**（`tests/test_quick_phrases_mobile_responsive_r133.py`，
   11 cases / 3 invariant classes）：
-
-  1. **断点存在性** — CSS 同时含 768px / 480px 两个 ``@media`` 块，
-     都覆盖 ``.quick-phrases-header`` / ``.quick-phrases-label``。
-  2. **flex-wrap + padding 收紧** — 768px 块含 ``flex-wrap: wrap``
-     + 三类按钮共享规则；480px 块含 ``flex-basis: 100%`` 强制独行
-     规则；480px chip max-width 数值显式比 768px 更紧（值-比较）。
-  3. **R130/R131b 桌面契约保留** — 桌面 ``.quick-phrases-header``
+  1. **断点存在性** — CSS 同时含 768px / 480px 两个 `@media` 块，
+     都覆盖 `.quick-phrases-header` / `.quick-phrases-label`。
+  2. **flex-wrap + padding 收紧** — 768px 块含 `flex-wrap: wrap`
+     - 三类按钮共享规则；480px 块含 `flex-basis: 100%` 强制独行
+       规则；480px chip max-width 数值显式比 768px 更紧（值-比较）。
+  3. **R130/R131b 桌面契约保留** — 桌面 `.quick-phrases-header`
      主规则（display:flex + gap:0.5rem）不被移走；R131b 的三类按钮
-     桌面 base selector group 完整；``.quick-phrases-label`` 桌面
-     仍 ``margin-right: auto``（R131b 设计）。
+     桌面 base selector group 完整；`.quick-phrases-label` 桌面
+     仍 `margin-right: auto`（R131b 设计）。
 
-  **辅助 helper**：``_extract_media_block(src, breakpoint_px)`` 用
-  brace counter 抽取 ``@media (max-width: <px>px)`` 块——CSS 嵌套
-  ``{}`` 里 ``flex-wrap`` 这种 property 含 ``-`` 不影响 brace 计数；
-  与 R131b/R131c 测试的 ``_extract_function_body`` 同款思路。
+  **辅助 helper**：`_extract_media_block(src, breakpoint_px)` 用
+  brace counter 抽取 `@media (max-width: <px>px)` 块——CSS 嵌套
+  `{}` 里 `flex-wrap` 这种 property 含 `-` 不影响 brace 计数；
+  与 R131b/R131c 测试的 `_extract_function_body` 同款思路。
 
   **验证**：11/11 R133 + 78/78 R130/R131/R131b/R131c = 89/89 quick-
-  phrases 全套零回归；``uv run python scripts/ci_gate.py`` exits 0。
+  phrases 全套零回归；`uv run python scripts/ci_gate.py` exits 0。
 
 - **R132** — **(feature)** `GET /api/system/health` 顶层暴露 build info
-  ``{git_commit, git_branch, git_dirty}``，复用 R63 既有的
-  ``server._resolve_build_info()`` lazy cache。
+  `{git_commit, git_branch, git_dirty}`，复用 R63 既有的
+  `server._resolve_build_info()` lazy cache。
 
   **背景**：R121-A 把 health 端点扩展为 K8s probe / 监控仪表板的命脉
-  字段，但只带 ``version`` / ``uptime_seconds`` / ``config_file_path``。
-  ``version`` 字符串（``v1.5.45``）可能对应过 100 个 commit，对监控
+  字段，但只带 `version` / `uptime_seconds` / `config_file_path`。
+  `version` 字符串（`v1.5.45`）可能对应过 100 个 commit，对监控
   做 PR rollout 时仍不够精确——「新版本上线了吗 / 这个实例还在跑老
   commit 吗 / 是 dirty 工作树吗」三个问题没法一眼回答。R63 早就在
-  ``server._resolve_build_info()`` 里 lazy 解析了 git_commit /
-  git_branch / git_dirty，但只用到 ``aiia://server/info`` MCP resource
+  `server._resolve_build_info()` 里 lazy 解析了 git_commit /
+  git_branch / git_dirty，但只用到 `aiia://server/info` MCP resource
   上。
 
   **设计决策**：
-
   1. **复用 R63 既有 cache，不新开 git subprocess** —
-     ``_resolve_build_info`` 是 module-level cache + 双重检查锁，第
-     一次调 fork 3 个 ``git`` subprocess，后续都是 dict 浅拷贝。10s
+     `_resolve_build_info` 是 module-level cache + 双重检查锁，第
+     一次调 fork 3 个 `git` subprocess，后续都是 dict 浅拷贝。10s
      K8s probe 周期性拉取 health 不会炸 fork 风暴。
   2. **保留 R63 的"unknown 不是失败"契约** — pip / docker /
-     pyinstaller 部署没有 ``.git`` 时字段值是 ``"unknown"``，handler
+     pyinstaller 部署没有 `.git` 时字段值是 `"unknown"`，handler
      仍返回 dict 而不是 None。监控不应当把 unknown 当告警。
-  3. **handler 不直接调 ``server._resolve_build_info``** — 走
-     ``_safe_build_info`` helper 包一层异常防御，与 ``_safe_uptime_seconds``
-     / ``_safe_project_version`` / ``_safe_config_file_path`` /
-     ``_safe_notification_summary`` 同款防御策略。R53-F 的「handler
+  3. **handler 不直接调 `server._resolve_build_info`** — 走
+     `_safe_build_info` helper 包一层异常防御，与 `_safe_uptime_seconds`
+     / `_safe_project_version` / `_safe_config_file_path` /
+     `_safe_notification_summary` 同款防御策略。R53-F 的「handler
      不直接读 server module」契约就是为这种场景设的——任何 import
      /调用异常都被吞掉，health 端点不会因此 5xx。
-  4. **dict shape 严格三字段** — helper 对 ``_resolve_build_info``
-     的返回做了显式 ``str()`` 转换、严格只取 ``git_commit / git_branch
-     / git_dirty`` 三个字段，防止 R63 未来加新字段时 health 顶层
+  4. **dict shape 严格三字段** — helper 对 `_resolve_build_info`
+     的返回做了显式 `str()` 转换、严格只取 `git_commit / git_branch
+/ git_dirty` 三个字段，防止 R63 未来加新字段时 health 顶层
      payload 被无意扩张（监控仪表板对字段稳定性敏感）。
 
   **实现**：
-
-  - ``web_ui_routes/system.py`` 模块级新增 ``_safe_build_info()`` 函
-    数（与其它 ``_safe_*`` helper 同位）；``system_health()`` payload
-    顶层加 ``"build": _safe_build_info()``；docstring 加 R132 字段
-    描述（``flasgger`` 自动 reflect 到 ``/apidocs/``）。
-  - ``tests/test_web_ui_routes_system.py::TestSystemHealthEndpoint::
-    test_payload_carries_no_sensitive_fields`` 把 ``"build"`` 加入
-    ``allowed_keys`` 白名单 + 加专项类型断言（dict / None；dict 时
+  - `web_ui_routes/system.py` 模块级新增 `_safe_build_info()` 函
+    数（与其它 `_safe_*` helper 同位）；`system_health()` payload
+    顶层加 `"build": _safe_build_info()`；docstring 加 R132 字段
+    描述（`flasgger` 自动 reflect 到 `/apidocs/`）。
+  - `tests/test_web_ui_routes_system.py::TestSystemHealthEndpoint::
+test_payload_carries_no_sensitive_fields` 把 `"build"` 加入
+    `allowed_keys` 白名单 + 加专项类型断言（dict / None；dict 时
     严格仅 git_commit/git_branch/git_dirty 三键 + 全 str），与该测
     试 R121-A 留下的「新增任何顶层字段都必须先扩白名单 + 加专项类
     型断言」notes 一致。
 
-  **测试**（``tests/test_system_health_build_info_r132.py``，13 cases
+  **测试**（`tests/test_system_health_build_info_r132.py`，13 cases
   / 3 invariant classes）：
-
-  1. **handler 顶层暴露** — payload 含 ``"build"``、调
-     ``_safe_build_info()`` helper、不直接调
-     ``server._resolve_build_info``、docstring 含 R132 字段标记。
+  1. **handler 顶层暴露** — payload 含 `"build"`、调
+     `_safe_build_info()` helper、不直接调
+     `server._resolve_build_info`、docstring 含 R132 字段标记。
   2. **helper 行为契约** — module 级可调；正常返回严格三字段 dict
-     全 str；``_resolve_build_info`` 返回非 dict 时 helper 返回
-     None；``_resolve_build_info`` 抛异常时 helper 返回 None；
-     全 ``"unknown"`` 是合法值（pip 部署 fallback）helper 不当作
+     全 str；`_resolve_build_info` 返回非 dict 时 helper 返回
+     None；`_resolve_build_info` 抛异常时 helper 返回 None；
+     全 `"unknown"` 是合法值（pip 部署 fallback）helper 不当作
      失败处理。
-  3. **R53-F / R121-A 回归保护** — 既有 ``version`` / ``uptime_seconds``
-     / ``config_file_path`` 字段仍在；handler 不引入新 ``get_config()``
+  3. **R53-F / R121-A 回归保护** — 既有 `version` / `uptime_seconds`
+     / `config_file_path` 字段仍在；handler 不引入新 `get_config()`
      调用；status enum 三值不变；503 ↔ unhealthy 决策完整。
 
   **验证**：13/13 R132 + 既有 health 套件 R53-F / R121 / TestSystemHealthEndpoint
-  共 98/98 零回归；``uv run python scripts/ci_gate.py`` exits 0。
+  共 98/98 零回归；`uv run python scripts/ci_gate.py` exits 0。
 
 - **R131c** — **(feature)** Quick Phrases 面板按使用频率排序，对齐
-  ``mcp-feedback-enhanced`` Prompt Management 的「最近使用优先」体感。
+  `mcp-feedback-enhanced` Prompt Management 的「最近使用优先」体感。
 
   **背景**：R130 v1 的 chip 渲染顺序是天然的「插入顺序」。当用户
   保存到 10-20 条 phrase 时，每次扫到熟悉的 chip 都要花眼睛。竞品
-  ``mcp-feedback-enhanced`` v1.2.23 的 Prompt Management 明确按
+  `mcp-feedback-enhanced` v1.2.23 的 Prompt Management 明确按
   「最近使用」排序——是熟手用户体感差异最大的一项。R131c 在
   **不破坏 storage schema_version** 的前提下补齐这块。
 
   **设计决策**：
-
   1. **schema_version 不动 (仍 1)** — R131c 引入的两个字段
-     ``last_used_at`` / ``use_count`` 是 v1 内的**可选字段**，
-     ``loadPhrases`` 给老数据兜底 0；R131b 导入路径里 import 进来
+     `last_used_at` / `use_count` 是 v1 内的**可选字段**，
+     `loadPhrases` 给老数据兜底 0；R131b 导入路径里 import 进来
      的 phrase 也默认 0。彻底回避「写 migrator」+ 老用户数据失效
      的风险。
-  2. **排序键三层** — ``last_used_at`` desc 主排（最近用过最先），
-     ``use_count`` desc 二排（同毫秒里用得多的优先），``created_at``
-     desc 三排（都没用过时新建优先），``id`` 字符串兜底（保证稳定
+  2. **排序键三层** — `last_used_at` desc 主排（最近用过最先），
+     `use_count` desc 二排（同毫秒里用得多的优先），`created_at`
+     desc 三排（都没用过时新建优先），`id` 字符串兜底（保证稳定
      排序）。从未用过的 phrase 沉到列表尾。
-  3. **chip click 先插入再记录** — ``insertTextIntoFeedback`` 的
-     文本插入是核心副作用，``recordPhraseUsage`` 是 nice-to-have，
+  3. **chip click 先插入再记录** — `insertTextIntoFeedback` 的
+     文本插入是核心副作用，`recordPhraseUsage` 是 nice-to-have，
      必须按这个顺序，让记录失败（storage 配额满 / 浏览器隐身模式）
      不影响用户的核心诉求。
-  4. **renderList 内排序、不改 storage 顺序** — ``loadPhrases``
-     仍按 storage 落盘顺序返回，``_sortPhrasesByUsage`` 是渲染前
-     的 ``slice().sort(...)`` 纯函数 view。这保留了「迁移到外部
+  4. **renderList 内排序、不改 storage 顺序** — `loadPhrases`
+     仍按 storage 落盘顺序返回，`_sortPhrasesByUsage` 是渲染前
+     的 `slice().sort(...)` 纯函数 view。这保留了「迁移到外部
      工具时仍能拿到原始顺序」的语义，也避免了反复重写 storage
      带来的写放大。
-  5. **导入 / 编辑路径同步对齐** — ``addPhrase`` 显式写
-     ``last_used_at: 0, use_count: 0``；``parseImportPayload`` 接
-     收的字段不含两个新字段时由 ``loadPhrases`` 后续兜底；
-     ``editPhrase`` 不动这两个字段（编辑 label/text 不应清零使用
+  5. **导入 / 编辑路径同步对齐** — `addPhrase` 显式写
+     `last_used_at: 0, use_count: 0`；`parseImportPayload` 接
+     收的字段不含两个新字段时由 `loadPhrases` 后续兜底；
+     `editPhrase` 不动这两个字段（编辑 label/text 不应清零使用
      记录）。
 
   **实现**：
-
-  - ``static/js/quick_phrases.js`` 新增 ``recordPhraseUsage(id)``
-    + ``_sortPhrasesByUsage(phrases)``，``loadPhrases`` 末尾追加
-    ``.map`` 给老数据兜底字段，``addPhrase`` / ``importPhrasesFromJson``
-    显式写入两个 0 值字段，``renderList`` 在 ``forEach`` 之前调
-    ``_sortPhrasesByUsage``，chip click handler 在
-    ``insertTextIntoFeedback`` 之后追加 ``recordPhraseUsage(p.id)``。
-  - ``window.AIIA_QUICK_PHRASES`` 暴露 ``recordPhraseUsage``，
+  - `static/js/quick_phrases.js` 新增 `recordPhraseUsage(id)`
+    - `_sortPhrasesByUsage(phrases)`，`loadPhrases` 末尾追加
+      `.map` 给老数据兜底字段，`addPhrase` / `importPhrasesFromJson`
+      显式写入两个 0 值字段，`renderList` 在 `forEach` 之前调
+      `_sortPhrasesByUsage`，chip click handler 在
+      `insertTextIntoFeedback` 之后追加 `recordPhraseUsage(p.id)`。
+  - `window.AIIA_QUICK_PHRASES` 暴露 `recordPhraseUsage`，
     给测试 + 调试用。
 
-  **测试**（``tests/test_quick_phrases_usage_sort_r131c.py``，14
+  **测试**（`tests/test_quick_phrases_usage_sort_r131c.py`，14
   cases / 5 invariant classes）：
-
   1. **JS API 扩展** — 两个函数签名 + 公开 API 暴露
-     ``recordPhraseUsage``。
-  2. **schema 字段兼容** — ``loadPhrases`` 兜底 typeof 检查存在；
-     ``addPhrase`` 显式写两个 0；``recordPhraseUsage`` 用
-     ``Date.now()`` 与 ``use_count || 0) + 1`` 自增。
-  3. **chip click 顺序** — ``renderList`` chip click handler 同
-     时含 ``insertTextIntoFeedback`` + ``recordPhraseUsage``，
+     `recordPhraseUsage`。
+  2. **schema 字段兼容** — `loadPhrases` 兜底 typeof 检查存在；
+     `addPhrase` 显式写两个 0；`recordPhraseUsage` 用
+     `Date.now()` 与 `use_count || 0) + 1` 自增。
+  3. **chip click 顺序** — `renderList` chip click handler 同
+     时含 `insertTextIntoFeedback` + `recordPhraseUsage`，
      前者位置必须在后者之前。
-  4. **排序键** — ``_sortPhrasesByUsage`` 用 ``b.X - a.X`` 形态
-     的 desc 比较锁三层主键 + ``renderList`` 在 forEach 之前调用
+  4. **排序键** — `_sortPhrasesByUsage` 用 `b.X - a.X` 形态
+     的 desc 比较锁三层主键 + `renderList` 在 forEach 之前调用
      排序函数。
-  5. **schema 不破裂** — ``STORAGE_KEY = "aiia.quickPhrases.v1"``
-     + ``SCHEMA_VERSION = 1`` 锁定；``loadPhrases`` 返回对象包含
-     6 个字段（id / label / text / created_at / last_used_at /
-     use_count）。
+  5. **schema 不破裂** — `STORAGE_KEY = "aiia.quickPhrases.v1"`
+     - `SCHEMA_VERSION = 1` 锁定；`loadPhrases` 返回对象包含
+       6 个字段（id / label / text / created_at / last_used_at /
+       use_count）。
 
   **验证**：14/14 R131c + 26/26 R131b + 16/16 R131 + 19/19 R130
-  + 3 共享 = 78/78 quick-phrases 全套零回归；
-  ``uv run python scripts/ci_gate.py`` exits 0。
+  - 3 共享 = 78/78 quick-phrases 全套零回归；
+    `uv run python scripts/ci_gate.py` exits 0。
 
 - **R131b** — **(feature)** Quick Phrases 面板补齐「JSON 导入 / 导出」
   跨设备 / 跨浏览器迁移能力（Code Review #2 P1 follow-up，对齐
-  ``mcp-feedback-enhanced`` 的 Prompt Management 文件分发模式）。
+  `mcp-feedback-enhanced` 的 Prompt Management 文件分发模式）。
 
-  **背景**：R130 把 quick phrases 持久化到 ``localStorage``，本质上
+  **背景**：R130 把 quick phrases 持久化到 `localStorage`，本质上
   是「单设备 / 单浏览器」语义——用户在 A 机器整理好 20 条常用回复，
   到 B 机器又得手敲一遍；切换浏览器（Chrome → Safari）数据也丢。
-  ``mcp-feedback-enhanced`` v1.2.23 + ``imhuso/cunzhi`` 都把 Prompt
+  `mcp-feedback-enhanced` v1.2.23 + `imhuso/cunzhi` 都把 Prompt
   / 常用回复以 JSON 文件形式分发，是基础生产力门槛。
 
   **设计决策**：
-
   1. **envelope schema 与 storage schema 解耦** — 导出文件用独立
-     ``EXPORT_SCHEMA_VERSION``（当前 1）+ ``signature``（魔术串
-     ``"ai-intervention-agent.quick-phrases"``）+ ``exported_at`` +
-     ``phrases``。让未来 storage schema 升级（v2 / v3）时不影响外部
+     `EXPORT_SCHEMA_VERSION`（当前 1）+ `signature`（魔术串
+     `"ai-intervention-agent.quick-phrases"`）+ `exported_at` +
+     `phrases`。让未来 storage schema 升级（v2 / v3）时不影响外部
      文件兼容；让 import 校验有一行字符串可拒（防止用户错传别处
      JSON）。
   2. **默认 merge 而非 replace** — 体感最安全。merge 按
-     ``(label, text)`` 元组去重，每条新条目重新分配 ``id``，避免
-     与本地既有 phrase 撞键；merge 后超 ``MAX_PHRASES = 20`` 容量
-     的剩余条目静默跳过（在 result 里返回 ``skipped`` 计数让 UI 可
+     `(label, text)` 元组去重，每条新条目重新分配 `id`，避免
+     与本地既有 phrase 撞键；merge 后超 `MAX_PHRASES = 20` 容量
+     的剩余条目静默跳过（在 result 里返回 `skipped` 计数让 UI 可
      报告）。
   3. **merge 全是 skip 时弹 confirm 走 replace** — 当用户文件全部
      是「已经存在的常用回复」时，merge 没意义；提示一句"用文件里
      的 N 条替换当前 M 条"让用户拍板。replace 模式下仍受 MAX_PHRASES
      截断（防止文件被人为伪造大数据炸 storage）。
-  4. **下载用 ``Blob + URL.createObjectURL``，老 IE 兜底 ``data:``
+  4. **下载用 `Blob + URL.createObjectURL`，老 IE 兜底 `data:`
      URL** — Blob 路径在主流浏览器（Chrome / Firefox / Safari /
      Edge）都是 first-class；data URL 让极简 webview / 老 IE 也能
-     工作。``revokeObjectURL`` 故意延迟 100ms，避免某些 Safari 版
+     工作。`revokeObjectURL` 故意延迟 100ms，避免某些 Safari 版
      本"过早 revoke 取消下载"的已知 bug。
-  5. **导入用 ``<input type="file" hidden>"`` + ``FileReader``** —
+  5. **导入用 `<input type="file" hidden>"` + `FileReader`** —
      不需要弹 modal、不需要剪贴板权限、与 R125b 「Export tasks」
-     按钮的体感一致。``accept="application/json,.json"`` 仅是 UX
+     按钮的体感一致。`accept="application/json,.json"` 仅是 UX
      提示（OS 文件选择器过滤），真校验仍在 JS 解析层。
-  6. **错误路径与成功路径都走 ``alert``** — 不引入 toast 系统避免
+  6. **错误路径与成功路径都走 `alert`** — 不引入 toast 系统避免
      与现有 UI 模块耦合；alert 在所有浏览器都立即可见，对低频
      操作（导入 / 导出，每个用户每月 ≤ 1 次）足够。
 
   **实现**：
-
-  - ``static/js/quick_phrases.js`` 新增 ~270 行：
-    - 常量 ``EXPORT_SCHEMA_VERSION = 1`` / ``EXPORT_SIGNATURE =
-      "ai-intervention-agent.quick-phrases"``。
-    - 6 个新函数：``buildExportEnvelope`` /
-      ``exportPhrasesAsJson`` / ``downloadPhrasesAsFile`` /
-      ``parseImportPayload`` / ``importPhrasesFromJson`` /
-      ``triggerImportFilePicker`` + 内部的
-      ``handleImportFileChange``。
-    - ``bindEventsOnce`` 扩展三个新事件源（``#quick-phrases-export-btn``
-      click / ``#quick-phrases-import-btn`` click /
-      ``#quick-phrases-import-file`` change）。
-    - ``window.AIIA_QUICK_PHRASES`` 暴露 6 个新公开函数 + 2 个新
+  - `static/js/quick_phrases.js` 新增 ~270 行：
+    - 常量 `EXPORT_SCHEMA_VERSION = 1` / `EXPORT_SIGNATURE =
+"ai-intervention-agent.quick-phrases"`。
+    - 6 个新函数：`buildExportEnvelope` /
+      `exportPhrasesAsJson` / `downloadPhrasesAsFile` /
+      `parseImportPayload` / `importPhrasesFromJson` /
+      `triggerImportFilePicker` + 内部的
+      `handleImportFileChange`。
+    - `bindEventsOnce` 扩展三个新事件源（`#quick-phrases-export-btn`
+      click / `#quick-phrases-import-btn` click /
+      `#quick-phrases-import-file` change）。
+    - `window.AIIA_QUICK_PHRASES` 暴露 6 个新公开函数 + 2 个新
       常量，给测试 + 未来 R131c（按使用频率排序）复用。
-  - ``templates/web_ui.html`` quick-phrases header 内插入 Export /
-    Import 两个按钮 + 隐藏 ``<input type="file" accept="application/
-    json,.json">``，全部带 ``data-i18n`` / ``data-i18n-aria-label``。
-  - ``static/css/main.css`` 把 ``.quick-phrases-add-btn`` 的全部
+  - `templates/web_ui.html` quick-phrases header 内插入 Export /
+    Import 两个按钮 + 隐藏 `<input type="file" accept="application/
+json,.json">`，全部带 `data-i18n` / `data-i18n-aria-label`。
+  - `static/css/main.css` 把 `.quick-phrases-add-btn` 的全部
     base / hover / focus / disabled / light-theme override 规则
-    selector 扩展为 ``add | export | import`` 三个 class 共享，
-    保持视觉一致；header 改用 ``margin-right: auto`` 把 label 推
-    到左侧、3 个按钮挤右侧（替代之前的 ``space-between``）。
-  - ``static/locales/{en,zh-CN}.json`` + ``_pseudo/pseudo.json``
-    新增 10 条 ``quickPhrases.*`` i18n key（``exportBtn`` / 同
-    ariaLabel / ``importBtn`` / 同 ariaLabel / 三种 import 错误
-    + 一条 confirm + 两条成功提示），全部带 ``{{name}}`` Mustache
-    参数（替代 R130 v1 的单花括号）以兼容 i18n runtime。
+    selector 扩展为 `add | export | import` 三个 class 共享，
+    保持视觉一致；header 改用 `margin-right: auto` 把 label 推
+    到左侧、3 个按钮挤右侧（替代之前的 `space-between`）。
+  - `static/locales/{en,zh-CN}.json` + `_pseudo/pseudo.json`
+    新增 10 条 `quickPhrases.*` i18n key（`exportBtn` / 同
+    ariaLabel / `importBtn` / 同 ariaLabel / 三种 import 错误
+    - 一条 confirm + 两条成功提示），全部带 `{{name}}` Mustache
+      参数（替代 R130 v1 的单花括号）以兼容 i18n runtime。
 
-  **测试**（``tests/test_quick_phrases_import_export_r131b.py``，26
+  **测试**（`tests/test_quick_phrases_import_export_r131b.py`，26
   cases / 6 invariant classes）：
-
-  1. **JS API 扩展** — 6 个函数签名 + ``window.AIIA_QUICK_PHRASES``
+  1. **JS API 扩展** — 6 个函数签名 + `window.AIIA_QUICK_PHRASES`
      暴露 6 个新 handle。
-  2. **导出 envelope schema** — 4 个顶层字段 + ``EXPORT_SIGNATURE``
-     与 ``EXPORT_SCHEMA_VERSION`` 常量值锁定 + 文件名前缀含
-     ``new Date().toISOString()``。
+  2. **导出 envelope schema** — 4 个顶层字段 + `EXPORT_SIGNATURE`
+     与 `EXPORT_SCHEMA_VERSION` 常量值锁定 + 文件名前缀含
+     `new Date().toISOString()`。
   3. **HTML 结构** — Export / Import 按钮 + file input 都存在；
-     都带 ``data-i18n`` / ``data-i18n-aria-label``；按钮位于
-     ``#quick-phrases-list`` 之上。
+     都带 `data-i18n` / `data-i18n-aria-label`；按钮位于
+     `#quick-phrases-list` 之上。
   4. **导入校验枝** — JSON 解析失败 / schema 不匹配 / 过滤后为空
      / signature 防误导入 / replace 模式分支 / MAX_PHRASES 容量
      约束。
   5. **i18n 完备性** — 3 份 locale 都含 10 个新 key + 关键参数化
-     字符串（``importConfirmReplace`` / ``importSuccessMerge``）
+     字符串（`importConfirmReplace` / `importSuccessMerge`）
      的 Mustache 占位符锁定。
   6. **CSS 样式合并** — 三类按钮 selector 出现在同一规则块的
      selector group（防止未来误把 export / import 拆出去）。
 
-  助手用一个手写的 ``_extract_function_body`` brace counter
-  抽取嵌套 ``{}`` 的函数体（``parseImportPayload`` / ``importPhrasesFromJson``
-  含多层 try / forEach / object literal，朴素 ``.*?\}`` 非贪婪
-  正则停在第一个内层闭合 ``}``）。
+  助手用一个手写的 `_extract_function_body` brace counter
+  抽取嵌套 `{}` 的函数体（`parseImportPayload` / `importPhrasesFromJson`
+  含多层 try / forEach / object literal，朴素 `.*?\}` 非贪婪
+  正则停在第一个内层闭合 `}`）。
 
   **验证**：26/26 R131b + 19/19 R130 + 16/16 R131 = 64/64 quick-
-  phrases 全套零回归；``uv run python scripts/ci_gate.py`` exits 0。
+  phrases 全套零回归；`uv run python scripts/ci_gate.py` exits 0。
 
   **未来工作**：R131c「按使用频率排序」（chip 单击时记录
-  ``last_used_at`` / ``use_count``，渲染时按 ``last_used_at``
-  desc 主排 + ``use_count`` desc 二排）。
+  `last_used_at` / `use_count`，渲染时按 `last_used_at`
+  desc 主排 + `use_count` desc 二排）。
 
 - **R125c** — **(feature)** `GET /api/tasks/export` 增加
   `?include_images={true|false|1|0|yes|no}` query 参数，让用户在
@@ -1955,13 +1967,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   **背景**：R125 上线后第一个被反复提到的痛点是「JSON 文件太大」。
   实测一个 4 张截图 + 5 个 task 的工作集，base64 化的
   `result.images[].data` 把导出膨胀到 8-12MB，导致：
-
   1. 浏览器从「保存对话框」到落盘有 1-2 秒可感知卡顿；
   2. CI / 备份脚本周期性轮询 `/api/tasks/export` 时无谓占用磁盘；
   3. 把导出贴进 chat / Slack / 邮件附件时频繁触发大小限制。
 
   **设计决定**：
-
   1. **query 参数而非新端点** — 不引入 `/api/tasks/export-light`
      这种 path 二叉化，保持 REST 路由表收敛；语义只是「同一份快照
      的不同投影」，符合 query 参数定位。
@@ -1973,7 +1983,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      `configparser.BOOLEAN_STATES` 一致）。
   4. **保留图片元数据 + 顶层标记** — `include_images=false` 时
      仅剥掉 `data` 字段，保留 `filename / size / content_type /
-     mime_type / mimeType`，并加 `images_stripped: true`，让消费方
+mime_type / mimeType`，并加 `images_stripped: true`，让消费方
      一眼分辨「这次导出已经故意剥图」而不是「上传时就没图」。
   5. **Markdown 模式同步生效** — Markdown 模式把 result 序列化成
      JSON 块，复用同一份 `_strip_images_from_result`，避免「JSON
@@ -1983,7 +1993,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      名 / mtime 推断的脆弱合同。
 
   **实现**：
-
   - `src/ai_intervention_agent/web_ui_routes/task.py` 新增 module-
     级 `_TRUTHY_QUERY` / `_FALSY_QUERY` / `_parse_bool_query` /
     `_strip_images_from_result` 工具，纯函数无副作用，便于直接
@@ -1996,7 +2005,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   **测试**（`tests/test_tasks_export_include_images_r125c.py`，14
   例）：
-
   - **Helper 单元**：`_parse_bool_query` 真值/假值/未识别/None
     分支；`_strip_images_from_result` 在 `include_images=True` /
     `result=None` / 无 `images` 字段 / 异常元素混入 / 多张图共存
@@ -2013,7 +2021,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   follow-up）。
 
   **背景**：R130 v1 上线后两个 UX 痛点立刻暴露：
-
   1. **chip 不可编辑** — 拼错 label / 改一句话措辞，只能"删了重建"，
      `created_at` 时间戳归零，未来基于使用频率排序的特性会被破坏。
      mcp-feedback-enhanced 的 Prompt Management 一开始就支持原地
@@ -2024,77 +2031,75 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      插入」语义，R130 v1 的"末尾追加"是设计裁剪而不是用户期望。
 
   **R131 修复**：
-
-  1. **chip 上的 ✎ 编辑按钮**（``.quick-phrase-chip-edit``）：
-     - U+270E 字符（pencil）+ ``aria-label`` + ``data-i18n-aria-label``
-       挂 ``quickPhrases.editBtnAriaLabel``，屏幕阅读器朗读「编辑常用
+  1. **chip 上的 ✎ 编辑按钮**（`.quick-phrase-chip-edit`）：
+     - U+270E 字符（pencil）+ `aria-label` + `data-i18n-aria-label`
+       挂 `quickPhrases.editBtnAriaLabel`，屏幕阅读器朗读「编辑常用
        回复」/「Edit quick reply」。
      - hover 时变 primary-500（紫色）与删除按钮的红色明确区分。
-     - 单击 → 调 ``openEditForm(p.id)`` 进入内嵌编辑模式（**不**触发
-       chip 主单击的"插入到 textarea"，靠 ``e.stopPropagation()``）。
+     - 单击 → 调 `openEditForm(p.id)` 进入内嵌编辑模式（**不**触发
+       chip 主单击的"插入到 textarea"，靠 `e.stopPropagation()`）。
 
   2. **`_openForm(mode, phrase)` 共用渲染逻辑**：
-     - R130 的 ``openAddForm`` 拆成了 ``_openForm`` + 两个入口
-       ``openAddForm()`` / ``openEditForm(id)``，零重复代码。
-     - form 节点写 ``dataset.qpMode = "add" | "edit"`` +
-       ``dataset.qpEditId = <id>``，让重复触发能正确「同模式同条
+     - R130 的 `openAddForm` 拆成了 `_openForm` + 两个入口
+       `openAddForm()` / `openEditForm(id)`，零重复代码。
+     - form 节点写 `dataset.qpMode = "add" | "edit"` +
+       `dataset.qpEditId = <id>`，让重复触发能正确「同模式同条
        phrase 复用、否则清空重建」，避免在用户双击 ✎ 时叠两层 form。
-     - ``edit`` 模式时光标停在 text 末尾（``setSelectionRange(len, len)``），
-       ``add`` 模式时 label input 自动 focus。
-     - ``edit`` 模式校验时**不计入** ``MAX_PHRASES`` 容量上限——替换
+     - `edit` 模式时光标停在 text 末尾（`setSelectionRange(len, len)`），
+       `add` 模式时 label input 自动 focus。
+     - `edit` 模式校验时**不计入** `MAX_PHRASES` 容量上限——替换
        不增加条数，避免在已经 20 条满的情况下连编辑都不让。
 
   3. **`editPhrase(id, label, text)` 新 CRUD 函数**：
-     - 仅替换同 id 条目的 ``label`` / ``text``，**保留** ``id`` /
-       ``created_at`` 不变（不调 ``generateId()`` / 不写 ``Date.now()``，
+     - 仅替换同 id 条目的 `label` / `text`，**保留** `id` /
+       `created_at` 不变（不调 `generateId()` / 不写 `Date.now()`，
        受静态测试锁定）。
-     - 走与 ``addPhrase`` / ``deletePhrase`` 同一 ``savePhrases`` +
-       ``renderList`` 链，保证 localStorage 写入的原子性 + UI 自动
+     - 走与 `addPhrase` / `deletePhrase` 同一 `savePhrases` +
+       `renderList` 链，保证 localStorage 写入的原子性 + UI 自动
        刷新。
 
-  4. **光标位置插入**（``insertTextIntoFeedback`` 重写）：
-     - 标准 splice：``current.substring(0, start) + text +
-       current.substring(end)``，选中文本被替换、光标停在
-       ``start + text.length`` 即新插入文本之后。
-     - 老引擎 fallback：``selectionStart`` / ``selectionEnd`` 任一不
+  4. **光标位置插入**（`insertTextIntoFeedback` 重写）：
+     - 标准 splice：`current.substring(0, start) + text +
+current.substring(end)`，选中文本被替换、光标停在
+       `start + text.length` 即新插入文本之后。
+     - 老引擎 fallback：`selectionStart` / `selectionEnd` 任一不
        存在 → 走 R130 v1 的「末尾追加 + 必要换行」分支，向后兼容
        绝对不破坏既有用户。
-     - 仍触发原生 ``input`` Event 让 multi_task.js 的
-       ``taskTextareaContents[activeTaskId]`` autosave 跟上。
+     - 仍触发原生 `input` Event 让 multi_task.js 的
+       `taskTextareaContents[activeTaskId]` autosave 跟上。
 
-  5. **i18n（3 份 locale）**新增 ``quickPhrases.editBtnAriaLabel``：
+  5. **i18n（3 份 locale）**新增 `quickPhrases.editBtnAriaLabel`：
      - zh-CN: "编辑常用回复"
      - en: "Edit quick reply"
-     - pseudo 由 ``scripts/gen_pseudo_locale.py`` 自动派生。
+     - pseudo 由 `scripts/gen_pseudo_locale.py` 自动派生。
 
-  **公开 API 扩展** —— ``window.AIIA_QUICK_PHRASES`` 新增
-  ``editPhrase`` / ``openEditForm`` 两个函数，给测试 + 未来 R131b
+  **公开 API 扩展** —— `window.AIIA_QUICK_PHRASES` 新增
+  `editPhrase` / `openEditForm` 两个函数，给测试 + 未来 R131b
   导入导出功能复用。
 
-  **测试**：``tests/test_quick_phrases_edit_r131.py``（NEW，
+  **测试**：`tests/test_quick_phrases_edit_r131.py`（NEW，
   16 cases / 5 invariant classes）：
-
-  - **JS API 扩展**（4）：``editPhrase(id,label,text)`` / ``openEditForm(id)``
-    函数签名锁定、公开 API 暴露、``editPhrase`` 不调 ``generateId()`` /
-    不写 ``created_at: Date.now()``（保留 id + 时间戳锁定）。
-  - **chip 编辑按钮**（5）：``renderList`` 创建
-    ``.quick-phrase-chip-edit``、用 ``\\u270e`` (✎)、挂正确
-    ``data-i18n-aria-label``、CSS 选择器存在、click → ``openEditForm(p.id)``。
-  - **form mode + dataset**（3）：``form.dataset.qpMode`` 写入、
-    ``form.dataset.qpEditId`` 写入、保存按钮按 mode 分流到
-    ``editPhrase`` / ``addPhrase``。
-  - **光标插入语义**（4）：读 ``selectionStart`` / ``selectionEnd``、
-    用 ``substring(0,start)+text+substring(end)`` 三段拼接、
-    ``hasSelectionApi`` 老引擎兜底分支存在、
-    ``newCursorPos = start + text.length`` 光标停留点正确。
-  - **i18n**（3）：3 份 locale 都包含 ``editBtnAriaLabel`` 且非空。
+  - **JS API 扩展**（4）：`editPhrase(id,label,text)` / `openEditForm(id)`
+    函数签名锁定、公开 API 暴露、`editPhrase` 不调 `generateId()` /
+    不写 `created_at: Date.now()`（保留 id + 时间戳锁定）。
+  - **chip 编辑按钮**（5）：`renderList` 创建
+    `.quick-phrase-chip-edit`、用 `\\u270e` (✎)、挂正确
+    `data-i18n-aria-label`、CSS 选择器存在、click → `openEditForm(p.id)`。
+  - **form mode + dataset**（3）：`form.dataset.qpMode` 写入、
+    `form.dataset.qpEditId` 写入、保存按钮按 mode 分流到
+    `editPhrase` / `addPhrase`。
+  - **光标插入语义**（4）：读 `selectionStart` / `selectionEnd`、
+    用 `substring(0,start)+text+substring(end)` 三段拼接、
+    `hasSelectionApi` 老引擎兜底分支存在、
+    `newCursorPos = start + text.length` 光标停留点正确。
+  - **i18n**（3）：3 份 locale 都包含 `editBtnAriaLabel` 且非空。
 
   **验证**：16/16 新 R131 + 19/19 R130 + R125b/R125 周边 47 用例零
-  回归；``uv run python scripts/ci_gate.py`` exits 0。
+  回归；`uv run python scripts/ci_gate.py` exits 0。
 
   **未来工作**：R131b 计划补「导入 / 导出全部 phrases 为 JSON」（剪贴
   板 + 文件下载）实现跨设备 + 跨浏览器迁移；R131c 计划「按使用频率
-  排序」（chip 单击时记录 ``last_used_at`` / ``use_count``，渲染时按
+  排序」（chip 单击时记录 `last_used_at` / `use_count`，渲染时按
   这两个字段排序）。
 
 - **R130** — **(feature)** Web UI 反馈输入框上方新增「Quick Replies /
@@ -2109,11 +2114,10 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     Management / Quick Replies" 作为核心生产力特性；
   - cunzhi v0.4.0（imhuso，1280+ stars）的 README 第一屏就把
     「常用回复和快捷面板」并列在「项目级记忆管理」、「智能拦截」之列。
-  R130 把这块短板补齐，但**不引入后端 API / 配置 schema / 跨进程
-  同步**——把复杂度天花板压到「单一 JS 文件 + 单一 localStorage key」。
+    R130 把这块短板补齐，但**不引入后端 API / 配置 schema / 跨进程
+    同步**——把复杂度天花板压到「单一 JS 文件 + 单一 localStorage key」。
 
   **设计决策**（每条都有舍弃路径）：
-
   1. **localStorage 而非后端 config**：常用回复本质是用户私有，不
      应进 `config.toml`（同步给 MCP server 既无意义又有隐私漏洞）；
      卸载后端不丢用户数据；零 API surface 即零回归风险。
@@ -2127,27 +2131,26 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      20 × (30 char label + 2000 char text + JSON 包装) ≈ 50 KB，
      远低于 1% 配额。命中上限时校验文案明确告警。
   5. **零 innerHTML / 全 DOMSecurity 化**：所有 chip / 按钮 / 输入
-     框走 ``createElement + textContent``，符合项目 R71-CSP / dom-
+     框走 `createElement + textContent`，符合项目 R71-CSP / dom-
      security.js 防 XSS 基线；用户输入的 label 和 text 即使含
-     ``<script>`` 也不会被解析。
+     `<script>` 也不会被解析。
   6. **failure-tolerant**：localStorage 不可用（隐身模式 / 配额满 /
      浏览器禁用）→ 面板自动 disable + 显示「本地存储不可用」文案，
      不抛 JS 异常炸面板。损坏数据（JSON 解析失败 / schema 不匹配）
      → 自动回退到空数组，不向用户暴露报错。
 
   **实现要点**：
-
   - **新文件 `static/js/quick_phrases.js`** (~440 行)：
     - 模块自封闭 IIFE，公开 API 挂在 `window.AIIA_QUICK_PHRASES`
-      （只暴露 ``loadPhrases`` / ``addPhrase`` / ``deletePhrase`` /
-      ``insertTextIntoFeedback`` / ``validatePhraseInput`` /
-      ``init`` 等，给测试 + 未来 R131 编辑功能复用）。
+      （只暴露 `loadPhrases` / `addPhrase` / `deletePhrase` /
+      `insertTextIntoFeedback` / `validatePhraseInput` /
+      `init` 等，给测试 + 未来 R131 编辑功能复用）。
     - localStorage key：`aiia.quickPhrases.v1`（带版本号，将来
       schema 升级时改 v2 / v3 老 key 自动失效）。
     - 数据 schema：`{schema_version: 1, phrases: [{id, label,
-      text, created_at}]}`，id 用 `qp_<ms>_<3 位 base36>` 防同毫秒
+text, created_at}]}`，id 用 `qp_<ms>_<3 位 base36>` 防同毫秒
       撞 id（不依赖 `crypto.randomUUID`，老浏览器 / webview 兼容）。
-    - `insertTextIntoFeedback` 触发原生 ``input`` Event，让
+    - `insertTextIntoFeedback` 触发原生 `input` Event，让
       multi_task.js 的 `taskTextareaContents[activeTaskId] = ...`
       autosave 链路自动跟上当前内容（避免切换任务后内容丢失）。
     - i18n 走 `window.AIIA_I18N.t`，未就绪时回退到内置**英文**
@@ -2183,7 +2186,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   **测试**：`tests/test_quick_phrases_panel_r130.py`（NEW，
   19 cases / 6 invariant classes）：
-
   - **HTML 结构**（4）：`#quick-phrases-container` 存在、4 个子节
     点（label / add-btn / list / form-host）齐全、面板挂载在
     `#feedback-text` **之前**（视觉位置锁定）、添加按钮带 i18n /
@@ -2211,7 +2213,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   46 用例零回归；`uv run python scripts/ci_gate.py` exits 0
   （ty 静态检查 / ruff 格式 / 浅色主题视觉、`scripts/check_i18n_*`
   四套 i18n 守门、locale parity 校验、HTML 模板零硬编码 CJK
-  + JS 源零硬编码 CJK 全部通过）。
+  - JS 源零硬编码 CJK 全部通过）。
 
   **未来工作**：R131 计划补「编辑现有 phrase」（chip ✎ 按钮 →
   内嵌编辑模式）+ 跨设备 sync（导出 / 导入 JSON）。当前 v1
@@ -2231,9 +2233,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   保持同样的肌肉记忆。
 
   **实现要点**：
-
   1. **HTML（`templates/web_ui.html`）** — 用 `<a download
-     href="/api/tasks/export?format=markdown">` 而不是 `<button>`：
+href="/api/tasks/export?format=markdown">` 而不是 `<button>`：
      原生 `download` 属性让浏览器尊重后端的
      `Content-Disposition: attachment; filename=...` 响应头，
      不需要任何 JS 也能正常落盘；`href` 默认指向
@@ -2249,19 +2250,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      - `exportTasksBtn`: 中文 `导出任务`、英文 `Export Tasks`、
        pseudo 自动生成。
      - `exportTasksBtnAriaLabel`: 中文 `导出当前会话任务为 Markdown
-       文件`、英文 `Export current session tasks as a Markdown
-       file`、pseudo 自动生成。
-     更新后由 `scripts/gen_pseudo_locale.py` 重新生成 `_pseudo`
-     locale，保证 `scripts/ci_gate.py` 的
-     `--check` 不再报 `stale pseudo.json`。
+  文件`、英文 `Export current session tasks as a Markdown
+  file`、pseudo 自动生成。
+       更新后由 `scripts/gen_pseudo_locale.py` 重新生成 `_pseudo`
+       locale，保证 `scripts/ci_gate.py` 的
+       `--check` 不再报 `stale pseudo.json`。
 
   3. **CSS（`static/css/main.css`）** — 把 `.export-btn` 选择器
      合并进所有现有 settings/theme 按钮的 selector list，
      **零新增样式块**就拿到完整的 hover / active / focus / 浅色
      主题适配。同时显式覆盖 `:visited`：
+
      ```css
-     .export-btn:visited { color: inherit; text-decoration: none; }
+     .export-btn:visited {
+       color: inherit;
+       text-decoration: none;
+     }
      ```
+
      原因——`<a>` 默认 `:visited` 是紫色 + 下划线，导致下载过
      一次后按钮颜色和图标都会变 ugly；显式重置确保按钮永远
      和它旁边的 `<button>` 视觉一致。
@@ -2270,7 +2276,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      `main.css.br`、`main.min.css.gz/.br`、`zh-CN.json.gz/.br`、
      `en.json.gz/.br`、`_pseudo/pseudo.json.gz/.br` 全部通过
      现有 build pipeline 重新打包，避免 `Content-Encoding:
-     gzip|br` 响应路径返回旧版资产。
+gzip|br` 响应路径返回旧版资产。
 
   **测试**：`tests/test_export_button_ui_r125b.py`（NEW，
   16 cases / 5 invariant classes）：
@@ -2313,29 +2319,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   **R125 fix**: ship a dedicated read-only export endpoint with
   two formats:
-
   - `GET /api/tasks/export?format=json` →
     `application/json` body with:
-      - `schema_version: 1` (locked-by-test, future-proofed)
-      - `exported_at` (ISO 8601 UTC)
-      - `server_time` (epoch float)
-      - `stats` (pending / active / completed counts)
-      - `tasks[]` with **full** prompts (no truncation), all
-        predefined options + defaults, full `result` payload
-        including `images` base64, monotonic + wall-clock
-        timestamps.
+    - `schema_version: 1` (locked-by-test, future-proofed)
+    - `exported_at` (ISO 8601 UTC)
+    - `server_time` (epoch float)
+    - `stats` (pending / active / completed counts)
+    - `tasks[]` with **full** prompts (no truncation), all
+      predefined options + defaults, full `result` payload
+      including `images` base64, monotonic + wall-clock
+      timestamps.
   - `GET /api/tasks/export?format=markdown` →
     `text/markdown; charset=utf-8` body styled as a session
     transcript:
-      - H1 title + stats summary header.
-      - One section per task with status, timestamps, prompt
-        block, options checklist (`- [x]` / `- [ ]` reflecting
-        `predefined_options_defaults`), and a JSON-fenced
-        result block when present.
-      - Prompt body wrapped in **4-backtick** GFM fences
-        (```` ```` ```` `markdown` ```` ```` ````) so prompts
-        containing their own \`\`\` fences don't break
-        rendering.
+    - H1 title + stats summary header.
+    - One section per task with status, timestamps, prompt
+      block, options checklist (`- [x]` / `- [ ]` reflecting
+      `predefined_options_defaults`), and a JSON-fenced
+      result block when present.
+    - Prompt body wrapped in **4-backtick** GFM fences
+      (` ` `` `markdown` `` ` `) so prompts
+      containing their own \`\`\` fences don't break
+      rendering.
 
   **Common contract**:
   - `Content-Disposition: attachment; filename="ai-intervention-agent-tasks-YYYYMMDDTHHMMSSZ.{ext}"`
@@ -2410,7 +2415,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   **Background**: `app.js` accumulated three classes of "RIP"
   scaffolding from earlier refactors:
-
   1. **A 28-line banner block** announcing "内容轮询 - 已停用"
      (lines 1203–1219 pre-R129) explaining why `stopContentPolling`
      became a no-op. Useful once; thereafter pure noise on every
@@ -2422,18 +2426,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   3. **Two duplicated `// startContentPolling() // 已停用`
      drop-stubs** in the `loadConfig().then()` (line 1356 pre-R129)
      and `.catch()` (line 1368 pre-R129) paths — explicitly
-     showing a function call that *isn't being made*. Negative
+     showing a function call that _isn't being made_. Negative
      evidence rarely belongs in production source.
 
   **R129 fix**:
   - Replace the 28-line banner with a **5-line explanation**
     pinned directly above `function stopContentPolling()` —
-    keeping the *one* genuinely useful invariant ("function
+    keeping the _one_ genuinely useful invariant ("function
     must remain because `closeInterface()` calls it") and
     dropping the historical narrative.
   - Delete the `updatePageContent() 已删除` stub block entirely.
   - Replace both `// startContentPolling() // 已停用` lines with
-    a positive-form note explaining what *is* happening: the
+    a positive-form note explaining what _is_ happening: the
     `loadConfig` chain delegates init to `multi_task.js`, with a
     3 s `setTimeout` in the catch branch giving the browser
     `console.error` a render window before the panel renders.
@@ -2444,7 +2448,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     close-flow. R129 is about killing tombstones, not behaviour.
 
   **Tests**: `tests/test_app_js_dead_comment_purge_r129.py`
-  (NEW, 7 cases / 4 invariant classes — all *reverse-locks*):
+  (NEW, 7 cases / 4 invariant classes — all _reverse-locks_):
   - **No `startContentPolling()` tombstone form** (2): the
     literal `// startContentPolling() // 已停用` regex must not
     match anywhere; the bare token `startContentPolling` may
@@ -2489,9 +2493,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   hidden-for-5-min = N × 300 redundant DOM operations on a
   long-lived "AI agent waits hours for human reply" sidebar.
 
-  R123 already nailed *health-check* and *task-polling*
+  R123 already nailed _health-check_ and _task-polling_
   visibility lifecycles; R128 closes the parallel gap on the
-  *task-countdown* timer.
+  _task-countdown_ timer.
 
   **R128 fix**:
   - In the per-task `setInterval` callback, gate **all DOM
@@ -2535,7 +2539,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (NEW, 15 cases / 5 invariant classes):
   - **`startTaskCountdown` hidden-skip** (3): body checks
     `document.hidden`; DOM writes gated by `if (!documentHidden)`;
-    `calculateRemainingFromDeadline` runs *outside* the guard.
+    `calculateRemainingFromDeadline` runs _outside_ the guard.
   - **`autoSubmit` not gated** (1): the `remaining <= 0`
     branch must lie strictly after the hidden-guard `}`,
     locking the "expired-while-hidden still auto-submits" contract.
@@ -2571,13 +2575,12 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   was none to pass.
 
   Two failure modes followed:
-
   1. **Background tab CPU/scheduler waste** — `visibilitychange`
      stopped polling but the 30 s health-check timer kept
      ticking; macOS / iOS Safari throttles hidden-tab
-     `setInterval` to ~1 Hz but does *not* halt it, so each tick
+     `setInterval` to ~1 Hz but does _not_ halt it, so each tick
      still cost a callback dispatch + `if (document.hidden)
-     return` early-out. On a long-lived sidebar (typical for
+return` early-out. On a long-lived sidebar (typical for
      "AI agent waits 4 hours for human reply" workflows) this
      adds up. More importantly, the "early-out" branch hides
      the symptom from any developer who only checks "did the
@@ -2624,22 +2627,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   **Tests**: `tests/test_tasks_health_check_lifecycle_r123.py`
   (NEW, 8 cases across 5 invariants):
-   - **Timer-handle binding** — `setInterval` return value
-     must be assigned to `window.tasksHealthCheckTimer`;
-     `stopTasksHealthCheck` must `clearInterval` and re-assign
-     null; the global must have a default `= null`
-     initialisation.
-   - **`visibilitychange` hidden-branch** — must call
-     `stopTasksHealthCheck()` (regression-lock against
-     "stopped polling but forgot health-check").
-   - **`beforeunload` handler** — must call both
-     `stopTasksPolling()` and `stopTasksHealthCheck()`.
-   - **Export surface** — `multiTaskModule` must export both
-     `startTasksHealthCheck` and `stopTasksHealthCheck`.
-   - **No-bare-setInterval-in-init** — reverse-lock: scan
-     `initMultiTaskSupport` body, fail if any literal
-     `setInterval(` call is present (forces all health-check
-     setup to route through the named function).
+  - **Timer-handle binding** — `setInterval` return value
+    must be assigned to `window.tasksHealthCheckTimer`;
+    `stopTasksHealthCheck` must `clearInterval` and re-assign
+    null; the global must have a default `= null`
+    initialisation.
+  - **`visibilitychange` hidden-branch** — must call
+    `stopTasksHealthCheck()` (regression-lock against
+    "stopped polling but forgot health-check").
+  - **`beforeunload` handler** — must call both
+    `stopTasksPolling()` and `stopTasksHealthCheck()`.
+  - **Export surface** — `multiTaskModule` must export both
+    `startTasksHealthCheck` and `stopTasksHealthCheck`.
+  - **No-bare-setInterval-in-init** — reverse-lock: scan
+    `initMultiTaskSupport` body, fail if any literal
+    `setInterval(` call is present (forces all health-check
+    setup to route through the named function).
 
   **Verification**: 8/8 new tests pass; 4015 existing tests
   pass; `uv run python scripts/ci_gate.py` exits 0 (still
@@ -2655,18 +2658,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   sites (Web UI: `image-upload.js` + `validation-utils.js`; VS Code
   extension: `webview-ui.js`), and all three carried slightly different
   MIME whitelists pre-R122:
-
   - `image-upload.js` allowed `image/svg+xml` and `image/jpg`
   - `webview-ui.js` allowed `image/svg+xml` and `image/jpg`
-  - `validation-utils.js` allowed *neither* `image/svg+xml` *nor*
+  - `validation-utils.js` allowed _neither_ `image/svg+xml` _nor_
     `image/jpg`
 
   Meanwhile the back-end arbiter (`file_validator.IMAGE_MAGIC_NUMBERS`)
-  recognises *zero* SVG magic-bytes — SVG, being XML text, has no
+  recognises _zero_ SVG magic-bytes — SVG, being XML text, has no
   binary magic — so any front-end-allowed SVG would inevitably be
   rejected at `/api/submit` once the bytes hit the server. Two
   separate failure modes:
-
   1. **Security smell** — SVG can carry `<script>` / `onload=` / inline
      `data:` URIs, classic XSS surface ([OWASP SVG security primer](https://owasp.org/www-community/attacks/Server_Side_Request_Forgery_via_SVG_files)).
      The front-end whitelist suggested SVG was supported, which would
@@ -2679,7 +2680,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      的文件格式" — silent failure mode for anyone not watching the
      network tab.
 
-  The `validation-utils.js` site is *especially* nasty because
+  The `validation-utils.js` site is _especially_ nasty because
   `image-upload.js:75-80` defers to `ValidationUtils.validateImageFile`
   when available — meaning the **stricter** of the two whitelists
   actually applies in production, but the docstrings, type prompts,
@@ -2689,7 +2690,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   R122 picks the **strictest-safe** intersection: front-end three
   sites = `{jpeg, jpg, png, gif, webp, bmp}` (six MIMEs, identical
   ordering, byte-for-byte tied to back-end `IMAGE_MAGIC_NUMBERS`).
-  SVG is rejected at *every* layer — no surprise rejection, no
+  SVG is rejected at _every_ layer — no surprise rejection, no
   XSS surface to defend against because the bytes never get
   accepted. Adding SVG support later requires (a) a server-side
   SVG sanitizer (DOMPurify-equivalent), (b) CSP `img-src` review
@@ -2734,7 +2735,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   "fixed" by R-series momentum bias).
 
   **Fixed (4 sites)**:
-
   1. **`web_ui_routes/notification.py`** —
      `/api/notification/test-bark` calls
      `notification_manager.refresh_config_from_file()` to pick up the
@@ -2751,18 +2751,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      immediately reveals which read step failed.
 
   2-3. **`web_ui_mdns.py` × 2** — the hostname-conflict path and the
-     general mDNS-publish-failure path both call `zc.close()` to
-     release the `zeroconf.Zeroconf` instance. Pre-R119 silent
-     failure → `zeroconf` UDP sockets, mDNS responder background
-     thread, and DNS cache state leak forever. **Real user symptom**:
-     `lsof -p <pid>` shows accumulating UDP sockets; second
-     `webui --advertise` invocation after a failed first one fails
-     to bind because the orphaned responder still holds the
-     conflicting hostname. R119 logs at debug level so the leak is
-     traceable; the surrounding `logger.warning(...)` for the main
-     mDNS failure stays unchanged (it was already observable, only
-     the cleanup leak was hidden).
-
+  general mDNS-publish-failure path both call `zc.close()` to
+  release the `zeroconf.Zeroconf` instance. Pre-R119 silent
+  failure → `zeroconf` UDP sockets, mDNS responder background
+  thread, and DNS cache state leak forever. **Real user symptom**:
+  `lsof -p <pid>` shows accumulating UDP sockets; second
+  `webui --advertise` invocation after a failed first one fails
+  to bind because the orphaned responder still holds the
+  conflicting hostname. R119 logs at debug level so the leak is
+  traceable; the surrounding `logger.warning(...)` for the main
+  mDNS failure stays unchanged (it was already observable, only
+  the cleanup leak was hidden).
   4. **`config_modules/network_security.py`** —
      `_save_network_security_config_immediate()` calls
      `_create_default_config_file()` to bootstrap the file before
@@ -2785,7 +2784,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   **Intentionally silenced (4 sites — documented for future
   contributors)**:
-
   - **`i18n.py:103-105` + `i18n.py:113-114`** — bootstrap
     fallback for language detection. Runs **before** ConfigManager
     is initialized, so logging may not be configured yet; even if
@@ -2818,7 +2816,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Test coverage: `tests/test_silent_failure_audit_r119.py` adds 9
   tests across 4 dimensions:
-
   - **Marker-presence invariant** (3 tests): each of the 3
     modified files contains the `R119` marker (so future grep can
     locate the audit point).
@@ -2866,7 +2863,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   impact silent failures. R118 continues the same pattern in
   `service_manager.py`, which had 4 bare-except sites identified in
   the original project-wide grep:
-
   1. **`_invalidate_runtime_caches_on_config_change()` first segment**
      (line 164–170) — the only path that invalidates `_config_cache`
      on config hot-reload. Pre-R118: silent failure → `get_config()`
@@ -2893,17 +2889,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   All three follow the same R117 pattern: keep `try/except` (so the
   exception doesn't break the cleanup chain or `ConfigManager`
   callback registry), but add a `logger.debug` with `[R118]` marker
-  + the user-visible symptom that this silent failure would cause.
-  Normal-path runs stay quiet; when something actually breaks,
-  opening debug-level logging immediately surfaces the root cause
-  AND the symptom-to-cause mapping ("FD may leak" → check this log
-  line).
+  - the user-visible symptom that this silent failure would cause.
+    Normal-path runs stay quiet; when something actually breaks,
+    opening debug-level logging immediately surfaces the root cause
+    AND the symptom-to-cause mapping ("FD may leak" → check this log
+    line).
 
   The **4th site** at `service_manager.py:505–508`
   (`_cleanup_process_resources`'s per-handle `stdin`/`stdout`/
   `stderr` close loop) is **deliberately preserved** as
   `except Exception: pass` because:
-
   - Each handle's close is **independent** (the next iteration
     must continue regardless of this one's failure).
   - The outer `for` loop is already wrapped in
@@ -2919,7 +2914,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Test coverage: `tests/test_service_manager_silent_failure_r118.py`
   adds 9 tests across 4 dimensions:
-
   - **Exception-suppression invariant** (3 tests): verify each of
     the 3 fixed sites doesn't propagate exceptions to upstream
     (config callback registry / shutdown chain).
@@ -2940,7 +2934,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Verification:
   - `uv run pytest tests/test_service_manager_silent_failure_r118.py
-    -v` → 9 passed
+-v` → 9 passed
   - Full `uv run pytest -q -W error::DeprecationWarning` →
     3967 passed, 2 skipped, 0 failed, 0 deprecation warnings as
     errors
@@ -2955,7 +2949,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   observability hooks). But two stood out as **genuinely risky**
   silent failures — failures that, when they occur, masked real
   resource leaks / stats inconsistencies:
-
   1. **`BarkNotificationProvider.close()`** (`notification_providers.py`)
      — this is the **only** call site that closes the `httpx.Client`
      connection pool during `shutdown()` / `atexit`. A silent
@@ -2965,7 +2958,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      file descriptors". Pre-R117: bare `except Exception: pass`.
   2. **`NotificationManager._mark_event_finalized()`**
      (`notification_manager.py`) — `self._stats["events_succeeded" /
-     "events_failed"]` and the `_finalized_event_ids` LRU set are the
+"events_failed"]` and the `_finalized_event_ids` LRU set are the
      **only** source of `get_stats()`'s `delivery_success_rate` /
      `events_in_flight` calculations. A silent failure here (e.g.
      `next(iter(_finalized_event_ids))` racing with a concurrent
@@ -2996,7 +2989,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Test coverage: `tests/test_silent_failure_debug_logging_r117.py`
   adds 11 tests across 3 dimensions:
-
   - **Exception suppression invariant** (2 tests): exceptions don't
     propagate from `close()` / `_mark_event_finalized()` — same
     behavioral contract as pre-R117, just with logging added.
@@ -3027,9 +3019,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Verification:
   - `uv run pytest tests/test_silent_failure_debug_logging_r117.py
-    -v` → 11 passed
+-v` → 11 passed
   - `uv run pytest tests/test_notification_providers.py
-    tests/test_notification_manager.py -v` → all existing
+tests/test_notification_manager.py -v` → all existing
     notification tests still pass (R117 preserves the
     "exception-swallowed" behavioral contract that
     `TestBarkCloseException::test_close_session_error_swallowed`
@@ -3043,7 +3035,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   months back). The benchmarks `import_web_ui`, `spawn_to_listen`,
   `api_health_round_trip`, and `api_config_round_trip` all assumed
   `web_ui.py` was at the repository root and either:
-
   - ran `python -c "import web_ui; ..."` → `ModuleNotFoundError`
     (`web_ui` is now a sub-module of `ai_intervention_agent`), or
   - ran `subprocess.Popen([python, "web_ui.py", ...], cwd=REPO_ROOT)`
@@ -3051,13 +3042,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     `src/ai_intervention_agent/web_ui.py` post-R76).
 
   Both failure modes were swallowed by `run_all`'s
-  ``try/except Exception`` into an `error` field in the JSON payload,
+  `try/except Exception` into an `error` field in the JSON payload,
   and `perf_gate.py` (the regression detector) gracefully treated
   `error` as "no data → skip". Worse, `perf_gate.py` was **never
   wired into any GitHub workflow** (grep `.github/workflows` for
   `perf_gate` / `perf_e2e_bench` returns zero hits), so the only
   signal that 80% of perf coverage was dead came from `[perf_bench]
-  FAILED <name>` lines on stderr — which only humans running the
+FAILED <name>` lines on stderr — which only humans running the
   script manually would notice. This is exactly the silent-break
   failure mode the project's "fail-loud, no silent skips" policy
   exists to prevent (cf. R107–R110 series). 12 commits passed
@@ -3065,12 +3056,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   blind.
 
   Fix:
-
   1. `bench_import_web_ui`: change `-c` payload from
      `import web_ui; …` → `from ai_intervention_agent import web_ui; …`.
   2. `bench_spawn_to_listen` + `_start_web_ui_subprocess`: change
      argv from `[python, "-u", "web_ui.py", ...]` → `[python, "-u",
-     "-m", "ai_intervention_agent.web_ui", ...]` (re-uses the same
+"-m", "ai_intervention_agent.web_ui", ...]` (re-uses the same
      `if __name__ == "__main__":` entrypoint with full
      `--prompt` / `--port` arg parity).
   3. Refresh `tests/data/perf_e2e_baseline.json` with measurements
@@ -3120,7 +3110,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   ai-intervention-agent triggered it. Investigation (Cursor community
   forum threads 148772 / 116280, plus a static audit of our MCP
   surface) shows:
-
   1. The banner reproduces on Cursor 2.4.14 and earlier **with all
      extensions disabled**, so it is an upstream IDE issue, not
      specific to this project.
@@ -3134,7 +3123,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   3. R114 (notification shutdown TOCTOU) already silenced the most
      plausible "MCP-side noise that gets blamed for the crash" log
      pattern (`ERROR: 处理通知事件失败 - cannot schedule new futures
-     after shutdown`).
+after shutdown`).
 
   The new section gives a 5-step triage flow (confirm MCP green
   light → `Developer: Restart Extension Host` → upgrade Cursor → grep
@@ -3148,56 +3137,54 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - **R114** — eliminate a **`NotificationManager` shutdown TOCTOU**
   that turned a benign atexit-time race into a noisy `ERROR` log
-  every time another goroutine ran ``shutdown()`` while
-  ``_process_event`` was mid-flight. The race window:
-
-  1. ``_process_event`` reads ``self._shutdown_called`` (line 579)
-     and finds it ``False``, enters the main body.
-  2. Concurrently, ``shutdown()`` sets
-     ``_shutdown_called = True`` and calls
-     ``_executor.shutdown(cancel_futures=True)``.
-  3. ``_process_event`` then calls ``self._executor.submit(...)``
+  every time another goroutine ran `shutdown()` while
+  `_process_event` was mid-flight. The race window:
+  1. `_process_event` reads `self._shutdown_called` (line 579)
+     and finds it `False`, enters the main body.
+  2. Concurrently, `shutdown()` sets
+     `_shutdown_called = True` and calls
+     `_executor.shutdown(cancel_futures=True)`.
+  3. `_process_event` then calls `self._executor.submit(...)`
      (line 600) → CPython raises
-     ``RuntimeError: cannot schedule new futures after shutdown``.
+     `RuntimeError: cannot schedule new futures after shutdown`.
 
   Pre-R114, this `RuntimeError` was caught by the generic
-  ``except Exception`` at line 685 and logged as
-  ``ERROR: 处理通知事件失败: <event_id> - cannot schedule new
-  futures after shutdown``. Two real consequences:
-
+  `except Exception` at line 685 and logged as
+  `ERROR: 处理通知事件失败: <event_id> - cannot schedule new
+futures after shutdown`. Two real consequences:
   - **Wrong attribution.** The error log made it look like a
     notification-provider failure (Bark / sound / Web), when the
-    actual cause was a benign shutdown race during ``atexit`` or
+    actual cause was a benign shutdown race during `atexit` or
     explicit restart paths. On-call would dig into provider code
     and find nothing.
   - **Spurious retry.** The same except branch incremented
-    ``retry_count`` and rescheduled via ``_schedule_retry`` — but
-    the timer's ``_process_event`` would re-enter the line 579
+    `retry_count` and rescheduled via `_schedule_retry` — but
+    the timer's `_process_event` would re-enter the line 579
     early-return and silently no-op, so the only visible effect
-    was a misleading ``WARNING: 处理通知事件异常，将在 Ns 后重试``
+    was a misleading `WARNING: 处理通知事件异常，将在 Ns 后重试`
     log spike during shutdown.
 
-  Fix: wrap **only the ``submit`` loop** in an inner
-  ``try/except RuntimeError``. On hit, **second-check**
-  ``_shutdown_called`` — if it really turned ``True`` between
+  Fix: wrap **only the `submit` loop** in an inner
+  `try/except RuntimeError`. On hit, **second-check**
+  `_shutdown_called` — if it really turned `True` between
   line 579 and line 600, treat as a benign race (DEBUG log
-  ``[R114] _executor.submit 与 shutdown 竞态``, ``return``
-  without retry/fallback/error log). Any ``RuntimeError`` whose
-  ``_shutdown_called`` is still ``False`` is re-raised so the
-  outer ``except Exception`` keeps its diagnostic value for
+  `[R114] _executor.submit 与 shutdown 竞态`, `return`
+  without retry/fallback/error log). Any `RuntimeError` whose
+  `_shutdown_called` is still `False` is re-raised so the
+  outer `except Exception` keeps its diagnostic value for
   genuine bugs. Already-submitted futures are cancelled
-  naturally by ``cancel_futures=True``, no leak, no
-  ``as_completed`` deadwait.
+  naturally by `cancel_futures=True`, no leak, no
+  `as_completed` deadwait.
 
-  Tests: ``tests/test_notification_shutdown_race_r114.py`` (6
+  Tests: `tests/test_notification_shutdown_race_r114.py` (6
   tests, including a real-time race triggered via a gated
-  executor wrapper that synchronously runs ``shutdown`` between
-  ``_process_event``'s check and submit, plus a reverse-injection
-  guard verifying the ``[R114]`` source marker survives future
+  executor wrapper that synchronously runs `shutdown` between
+  `_process_event`'s check and submit, plus a reverse-injection
+  guard verifying the `[R114]` source marker survives future
   refactors). Reverse-injection (revert the fix → 4/6 fail with
   the exact "cannot schedule new futures after shutdown" trace
   in `ERROR: 处理通知事件失败` form, confirming the test would
-  catch the regression). Full ``test_notification_manager.py``
+  catch the regression). Full `test_notification_manager.py`
   suite (174 tests) still passes.
 
 - **R113** — close a **macOS user-config-path silent-divergence** that
@@ -3211,7 +3198,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `find_config_file` already pointed at the right place. But the
   legacy XDG-style path `~/.config/ai-intervention-agent/` could
   still end up populated on macOS via several real-world paths:
-
   - **historical early versions** of ai-intervention-agent or
     `platformdirs` may have used XDG on macOS;
   - **cross-platform dotfiles** copied verbatim from a Linux setup;
@@ -3228,7 +3214,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
   Real-world latent footprint observed on the maintainer's box:
   three independent `config.toml` files (`~/Downloads/arch/<repo>/
-  config.toml`, `~/.config/ai-intervention-agent/config.toml`,
+config.toml`, `~/.config/ai-intervention-agent/config.toml`,
   `~/Library/Application Support/ai-intervention-agent/config.toml`)
   each with **different `bark_action` / `frontend_countdown` /
   `log_level` values**, all reachable by different startup modes
@@ -3240,7 +3226,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   path only on Darwin + only when the directory actually exists,
   None on Linux/Windows or when absent), and integrate two new
   branches into `find_config_file`'s user-config-dir resolution:
-
   1. **standard + legacy both exist** → still use the standard
      path (canonical), but emit a `WARNING` log naming the legacy
      file with an `rm -rf` cleanup suggestion. The user no longer
@@ -3892,26 +3877,20 @@ return []` — `package.nls{,.zh-CN}.json` drift skips silently.
       double-baseline opens that path more easily so quiet mode
       needs to cover it too — preserves the pre-commit silent-
       success contract).
-  - `tests/test_brand_color_consistency_r66.py` —
-    - 7 new `TestCountIosBlueHexR99` cases (lowercase / uppercase
-      / mixed case / multiple / non-iOS hex / word boundary /
-      brand-color-must-not-false-match);
-    - 2 new `TestFindIosBlueHexLocationsR99` cases (line-number
-      - content / empty when no match);
-    - 2 new `TestScanCssFilesReturnsBothFormsR99` cases (4-tuple
-      shape contract + end-to-end fixture proving hex form
-      actually gets scanned + comment-stripped);
-    - 1 new baseline-parity `test_default_hex_baseline_matches
-_main_css_count` mirroring the rgba decimal one;
-    - adapt `test_default_baseline_matches_main_css_count` to
-      the 4-tuple unpack.
+  - `tests/test_brand_color_consistency_r66.py` — - 7 new `TestCountIosBlueHexR99` cases (lowercase / uppercase
+    / mixed case / multiple / non-iOS hex / word boundary /
+    brand-color-must-not-false-match); - 2 new `TestFindIosBlueHexLocationsR99` cases (line-number - content / empty when no match); - 2 new `TestScanCssFilesReturnsBothFormsR99` cases (4-tuple
+    shape contract + end-to-end fixture proving hex form
+    actually gets scanned + comment-stripped); - 1 new baseline-parity `test_default_hex_baseline_matches
+_main_css_count` mirroring the rgba decimal one; - adapt `test_default_baseline_matches_main_css_count` to
+    the 4-tuple unpack.
 
-    Reverse-injection verified: replace `_IOS_BLUE_HEX_RE` with a
-    regex that never matches and 8 of the 35 cases fail with
-    informative diagnostics covering both the unit-level
-    contract and the live-tree baseline (the reverse-injection
-    also caught and prompted the `--quiet` fix above — testing
-    paid back its own rent).
+        Reverse-injection verified: replace `_IOS_BLUE_HEX_RE` with a
+        regex that never matches and 8 of the 35 cases fail with
+        informative diagnostics covering both the unit-level
+        contract and the live-tree baseline (the reverse-injection
+        also caught and prompted the `--quiet` fix above — testing
+        paid back its own rent).
 
   Result: 35 tests pass (22 existing + 13 new), full ci_gate
   3869 passed / 2 skipped / 0 warnings, ruff lint+format clean.
@@ -4565,20 +4544,16 @@ writable: true, configurable: true, enumerable: true })`. The
 "icons"` from `src/ai_intervention_agent/web_ui.py:413`,
      which **is** the new location, so HTTP serving was unaffected),
      but five doc / docstring / comment references still pointed at
-     the pre-R76 root path:
-     - `README.md:3` and `README.zh-CN.md:3` — repo logo `<img src>`
-       (loaded by GitHub from the relative path → 404 on landing
-       page until refreshed)
-     - `scripts/README.md` and `scripts/generate_pwa_icons.py`
-       module docstring — "Run after editing `icons/icon.svg`" mis-
-       documents the contributor workflow
-     - `src/ai_intervention_agent/icons/icon-maskable.svg` SVG
-       comment — references its sibling at the wrong path
-     - `tests/test_pwa_icon_assets.py` docstrings (3 sites)
-       mis-state the locked file path; the test logic itself was
-       fine because it dereferences `ICONS_DIR` (already updated
-       to the post-R76 path), but copy-paste from the docstring
-       would lead future maintainers to the wrong file.
+     the pre-R76 root path: - `README.md:3` and `README.zh-CN.md:3` — repo logo `<img src>`
+     (loaded by GitHub from the relative path → 404 on landing
+     page until refreshed) - `scripts/README.md` and `scripts/generate_pwa_icons.py`
+     module docstring — "Run after editing `icons/icon.svg`" mis-
+     documents the contributor workflow - `src/ai_intervention_agent/icons/icon-maskable.svg` SVG
+     comment — references its sibling at the wrong path - `tests/test_pwa_icon_assets.py` docstrings (3 sites)
+     mis-state the locked file path; the test logic itself was
+     fine because it dereferences `ICONS_DIR` (already updated
+     to the post-R76 path), but copy-paste from the docstring
+     would lead future maintainers to the wrong file.
 
   Both classes of fix are pure docs / markup; there is no code or
   runtime behaviour change. The `.vsix` manifest, the

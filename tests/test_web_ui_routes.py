@@ -907,12 +907,17 @@ class TestUpdateContent(_RouteTestBase):
         self.assertEqual(data["error"], "invalid_field_type")
 
     def test_prompt_too_long_truncated(self):
-        long_prompt = "x" * 10001
+        # R166：/api/update prompt 截断上限从 10000 提升到 MAX_MESSAGE_LENGTH。
+        # 测试相对常量构造超长 prompt，避免数字漂移。
+        from ai_intervention_agent.server_config import MAX_MESSAGE_LENGTH
+
+        long_prompt = "x" * (MAX_MESSAGE_LENGTH + 1)
         resp = self._client.post("/api/update", json={"prompt": long_prompt})
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertTrue(data["prompt"].endswith("..."))
-        self.assertEqual(len(data["prompt"]), 10003)
+        # 截断后长度 = MAX_MESSAGE_LENGTH + len("...")
+        self.assertEqual(len(data["prompt"]), MAX_MESSAGE_LENGTH + 3)
 
     def test_options_none_treated_as_empty(self):
         resp = self._client.post(

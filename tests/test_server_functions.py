@@ -49,14 +49,14 @@ class TestValidateInput(unittest.TestCase):
         self.assertEqual(message, "")
 
     def test_validate_long_message_truncation(self):
-        """测试长消息截断"""
-        from ai_intervention_agent.server import validate_input
+        """测试长消息截断（R166：相对 MAX_MESSAGE_LENGTH 测试，避免硬编码漂移）"""
+        from ai_intervention_agent.server import MAX_MESSAGE_LENGTH, validate_input
 
-        long_message = "测" * 20000  # 超长消息
+        long_message = "测" * (MAX_MESSAGE_LENGTH + 1000)
         message, options = validate_input(long_message, [])
 
         # 应该被截断（可能包含截断提示，所以留一些余量）
-        self.assertLess(len(message), 20000)
+        self.assertLess(len(message), MAX_MESSAGE_LENGTH + 1000)
 
     def test_validate_options_filtering(self):
         """测试选项过滤"""
@@ -70,15 +70,14 @@ class TestValidateInput(unittest.TestCase):
         self.assertIsInstance(options, list)
 
     def test_validate_long_option_truncation(self):
-        """测试长选项截断"""
-        from ai_intervention_agent.server import validate_input
+        """测试长选项截断（R166：相对 MAX_OPTION_LENGTH，避免硬编码漂移）"""
+        from ai_intervention_agent.server import MAX_OPTION_LENGTH, validate_input
 
-        long_option = "选" * 1000  # 超长选项
-        message, options = validate_input("消息", [long_option])
+        long_option = "x" * (MAX_OPTION_LENGTH + 500)
+        message, options = validate_input("msg", [long_option])
 
-        # 选项应该被截断（可能包含截断提示）
         if options:
-            self.assertLess(len(options[0]), 1000)
+            self.assertLess(len(options[0]), MAX_OPTION_LENGTH + 500)
 
 
 class TestParseStructuredResponse(unittest.TestCase):

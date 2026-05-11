@@ -38,12 +38,19 @@ def _sanitize_selected_options(raw: Any) -> list[str]:
     规则：
       1. 非 list → 空列表
       2. list 中的每个元素：非字符串则先用 str() 转；然后 strip；
-         过滤掉空字符串和超过 500 字符的异常长串；
+         过滤掉空字符串和超过 ``MAX_OPTION_LENGTH``（R166：10000 字符）
+         的异常长串；
       3. 去重但保持顺序；
       4. 最多保留 50 项（上层 UI 一般也就几项，这里只做兜底防滥用）。
+
+    R166：单项长度上限从硬编码 500 → 引用 ``MAX_OPTION_LENGTH`` 常量
+    （当前 10000，对齐服务端 ``validate_input_with_defaults``），避免软
+    上限不一致让"前端提交"和"后端 schema 校验"两套数值漂移。
     """
     if not isinstance(raw, list):
         return []
+
+    from ai_intervention_agent.server_config import MAX_OPTION_LENGTH
 
     seen: set[str] = set()
     cleaned: list[str] = []
@@ -58,7 +65,7 @@ def _sanitize_selected_options(raw: Any) -> list[str]:
         item = item.strip()
         if not item:
             continue
-        if len(item) > 500:
+        if len(item) > MAX_OPTION_LENGTH:
             continue
         if item in seen:
             continue
@@ -372,11 +379,17 @@ class FeedbackRoutesMixin:
                 )
             new_prompt = new_prompt_raw
 
-            if len(new_prompt) > 10000:
+            # R166：把硬编码的 10000 上限替换为 ``MAX_MESSAGE_LENGTH`` 常量
+            # （当前 1_000_000，约 1MB UTF-8），与服务端 ``validate_input_with_defaults``
+            # 对齐。任何更大的 prompt 应在 ``task_queue.add_task`` 的 10MB 字节
+            # 硬上限处被拒绝（DoS 防御），而不是被静默截断为 "...".
+            from ai_intervention_agent.server_config import MAX_MESSAGE_LENGTH
+
+            if len(new_prompt) > MAX_MESSAGE_LENGTH:
                 logger.warning(
-                    f"/api/update prompt 过长：{len(new_prompt)}，将截断到 10000"
+                    f"/api/update prompt 过长：{len(new_prompt)}，将截断到 {MAX_MESSAGE_LENGTH}"
                 )
-                new_prompt = new_prompt[:10000] + "..."
+                new_prompt = new_prompt[:MAX_MESSAGE_LENGTH] + "..."
 
             new_options_raw = data.get("predefined_options", [])
             if new_options_raw is None:

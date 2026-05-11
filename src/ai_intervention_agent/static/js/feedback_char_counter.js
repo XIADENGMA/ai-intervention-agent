@@ -9,16 +9,16 @@
  * 显式，避免误超出后端 / Bark 通知的隐性 size 约束。
  *
  * 项目里既有 ``feedback-resubmit-prompt`` / ``feedback-prompt-suffix``
- * textarea 已经用 ``maxlength="10000"`` 做硬约束——R138 把同一阈值
- * 用作主输入框 (#feedback-text) 的 advisory warning，不强加
- * maxlength（避免截断用户内容造成数据丢失），仅做视觉提示。
+ * textarea 已经用 ``maxlength="100000"`` 做硬约束（R166 与 ``PROMPT_MAX_LENGTH``
+ * 对齐）——R138 把视觉警告阈值用作主输入框 (#feedback-text) 的 advisory
+ * warning，不强加 maxlength（避免截断用户内容造成数据丢失），仅做视觉提示。
  *
  * 设计原则
  * --------
  * - 纯前端、无服务端状态、无 localStorage（不污染用户痕迹）。
  * - count == 0 时隐藏 counter（避免空 textarea 时显示 ``0`` 喧宾夺主）。
  * - 三段阈值变色：默认 → ``warn`` (橘) → ``danger`` (红)，提供视觉
- *   渐进信号；阈值与项目内既有 maxlength=10000 约定对齐。
+ *   渐进信号；R166 后阈值与服务端 ``MAX_MESSAGE_LENGTH=1_000_000`` 软上限对齐。
  * - 监听 ``input`` 事件涵盖 paste / cut / drag / IME composition end
  *   全场景；初始化时算一次，应对 R137 height restore + 外部
  *   setValue 等非 input 事件的初始化路径。
@@ -35,8 +35,13 @@
 
   const TARGET_ID = "feedback-text";
   const COUNTER_ID = "feedback-char-counter";
-  const WARN_THRESHOLD = 8000;
-  const DANGER_THRESHOLD = 10000;
+  // R166：与服务端 ``MAX_MESSAGE_LENGTH`` 软上限对齐。
+  // 旧值 WARN=8000 / DANGER=10000 已经低于 LLM 长上下文 / 用户粘贴长技术
+  // 文档的合理上限；按 R166 把后端软上限抬到 1_000_000 字符（~1MB UTF-8），
+  // 前端 counter 也跟随放大到同量级，避免出现"还远没到后端硬上限就被
+  // counter 标红"的误导。视觉阈值仍按 80% / 100% 比例分段，给用户渐进信号。
+  const WARN_THRESHOLD = 800_000;
+  const DANGER_THRESHOLD = 1_000_000;
   const WARN_CLASS = "warn";
   const DANGER_CLASS = "danger";
   const I18N_KEY = "feedback.charCounter";

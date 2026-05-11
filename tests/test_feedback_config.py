@@ -43,8 +43,9 @@ class TestFeedbackConfigConstants(unittest.TestCase):
         # 验证缓冲和最低值
         self.assertEqual(BACKEND_BUFFER, 40)  # 【优化】从60改为40
         self.assertEqual(BACKEND_MIN, 260)  # 【优化】从300改为260，预留40秒安全余量
-        # TODO #5：从 500 提升到 10000，配合 web_ui_routes/notification.py 的同步更新
-        self.assertEqual(PROMPT_MAX_LENGTH, 10000)
+        # R166：从 10_000 提升到 100_000 字符，匹配长 resubmit prompt / suffix 的合理上限。
+        # 字节级 DoS 防御依然由 task_queue ``_PROMPT_REJECT_BYTES=10MB`` 兜底。
+        self.assertEqual(PROMPT_MAX_LENGTH, 100_000)
 
 
 class TestFeedbackConfigDataclass(unittest.TestCase):

@@ -3,8 +3,8 @@ r"""防回归：``docs/mcp_tools{,.zh-CN}.md`` 中的硬编码上限必须 = ``s
 历史背景
 ---------
 ``docs/mcp_tools{,.zh-CN}.md`` 是 LLM-facing 工具文档，其中明确写出
-``MAX_MESSAGE_LENGTH`` / ``MAX_OPTION_LENGTH`` 的具体数值（``10000`` /
-``500``）作为开发者契约。这两个数字最初由 ``server_config.py`` 顶层
+``MAX_MESSAGE_LENGTH`` / ``MAX_OPTION_LENGTH`` 的具体数值（R166 调整为
+``1_000_000`` / ``10_000``）作为开发者契约。这两个数字最初由 ``server_config.py`` 顶层
 常量定义；早期版本其中一个曾被改过（``MAX_OPTION_LENGTH`` 250 → 500
 的扩张），但 docs 没跟上。最终是一次 issue 反馈才发现"文档说 250、
 代码允许 500，所以用户的合法选项被误以为超长"。本测试是同类漂移的
@@ -88,20 +88,21 @@ class TestMcpToolsDocLimitsMatchCode(unittest.TestCase):
         import re
 
         # 当前项目允许在 docs/mcp_tools 中加粗出现的"长度类"整数：
-        #   10000 = MAX_MESSAGE_LENGTH
-        #   500   = MAX_OPTION_LENGTH
+        #   1000000 = MAX_MESSAGE_LENGTH (R166: 10000 -> 1_000_000)
+        #   10000   = MAX_OPTION_LENGTH  (R166: 500   -> 10_000)
         # 注：240 / 250 / 3600 / 7200 (秒级 timeout) 也是合法 token，但它们
         #   也都跟其他真实常量绑定（feedback.frontend_countdown / backend_max_wait
         #   范围），所以一并白名单化。
         allowed = {
-            str(MAX_MESSAGE_LENGTH),  # 10000
-            str(MAX_OPTION_LENGTH),  # 500
+            str(MAX_MESSAGE_LENGTH),  # 1000000
+            str(MAX_OPTION_LENGTH),  # 10000
             "240",  # frontend_countdown 默认值
             "3600",  # frontend_countdown 上限
             "7200",  # backend_max_wait 上限
             "10",  # frontend / backend 下限
         }
-        bold_int_re = re.compile(r"\*\*(\d{2,5})\*\*")
+        # R166：放宽正则匹配 2-7 位整数（旧版只到 5 位，新 MAX_MESSAGE_LENGTH=1_000_000 有 7 位）
+        bold_int_re = re.compile(r"\*\*(\d{2,7})\*\*")
         for path in DOC_PATHS:
             text = path.read_text(encoding="utf-8")
             unexpected = [m for m in bold_int_re.findall(text) if m not in allowed]

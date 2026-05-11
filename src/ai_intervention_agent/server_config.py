@@ -85,12 +85,30 @@ AUTO_RESUBMIT_TIMEOUT_MAX = 3600  # 前端最大倒计时（秒，1 小时；与
 BACKEND_BUFFER = 40  # 后端缓冲时间（秒，前端+缓冲=后端最小）
 BACKEND_MIN = 260  # 后端最低等待时间（秒，预留安全余量避免 MCPHub 300秒硬超时）
 
-PROMPT_MAX_LENGTH = 10000  # 提示语最大长度（resubmit_prompt / prompt_suffix）
+# R166: 大幅放宽文本长度限制（"手动输入 / 自动返回 / 额外附加"三块均收敛到
+# 远超正常使用的软上限）。背景：之前 10000 字符的硬截断会让"LLM 输出长上
+# 下文 / 用户粘贴长技术文档"的合法场景被默默截断 + "..."，反馈数据丢失却
+# 零日志告警。R166 把软上限抬高 ~10-100×，让正常使用永远不被截断，同时
+# 保留 task_queue.add_task 的 10MB 字节硬上限作为唯一的 DoS 防御：
+#
+#   软上限（本文件）─┐
+#                   ├──→ "warn but never block" 语义，方便日志诊断异常 caller
+#   硬上限（task_queue ─┘    10MB 字节）：拒绝级，唯一的"反 DoS"护栏
+#
+# 软上限阈值参考：
+#   * 100MB-1MB ASCII / 3MB UTF-8 中文 → 远超合理 prompt + LLM 输出场景
+#   * 仍远低于 10MB 字节硬上限（保留 ~3-10× 余量）
+#   * 截断时仍保留原 "+ ..." 行为以保持向后兼容（测试断言依赖此前缀）
+PROMPT_MAX_LENGTH = 100_000  # 提示语最大长度（resubmit_prompt / prompt_suffix）
 RESUBMIT_PROMPT_DEFAULT = "请立即调用 interactive_feedback 工具"
 PROMPT_SUFFIX_DEFAULT = "\n请积极调用 interactive_feedback 工具"
 
-MAX_MESSAGE_LENGTH = 10000  # 用户输入/提示文本最大长度
-MAX_OPTION_LENGTH = 500  # 单个预定义选项最大长度
+MAX_MESSAGE_LENGTH = (
+    1_000_000  # 用户输入/提示文本最大长度（约 1MB UTF-8，远低于 10MB 硬上限）
+)
+MAX_OPTION_LENGTH = (
+    10_000  # 单个预定义选项最大长度（防 UI 渲染异常用，正常 option 不会超过 200）
+)
 
 
 # ============================================================================
