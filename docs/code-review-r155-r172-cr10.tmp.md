@@ -120,7 +120,7 @@ all green with 0 warning.**
 |---|---|---|---|
 | F-1 | Low | Land a CSS / Markdown formatter pre-commit hook to prevent the prettier-reflow situation R73d9980 cleaned up from re-accumulating. | Next housekeeping batch (CR#10 follow-up). |
 | F-2 | Low | If extension install rate dips post-R171, revisit Open VSX header badge placement. | Track via [Open VSX](https://open-vsx.org/extension/xiadengma/ai-intervention-agent) downloads over the next 2 weeks. |
-| F-3 | Low | Add a smoke test enforcing parity between MCP `interactive_feedback` ``predefined_options=[{label, default}]`` shape parsing and HTTP ``POST /api/tasks`` parallel-array shape parsing. | When the next option-shape change lands. |
+| F-3 | Low | Add a smoke test enforcing parity between MCP `interactive_feedback` ``predefined_options=[{label, default}]`` shape parsing and HTTP ``POST /api/tasks`` parallel-array shape parsing. | **DONE in R173** — landed `tests/test_predefined_options_dual_path_parity_cr10_f3.py` (11 cases covering label aliases + default aliases + mixed-form + truthy-bool normalisation + HTTP-side dict-rejection enforcement). |
 | F-4 | Informational | The CSS file (`main.css`) is now > 9000 lines.  Not blocking, but consider whether to split into per-feature files in v1.7.x. | Tracked separately under perf / asset-pipeline roadmap. |
 
 ## Test posture

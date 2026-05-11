@@ -11,6 +11,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R173** — **CR#10 F-3 落地：MCP-path / HTTP-path predefined_options 解析 parity smoke**。
+  新增 ``tests/test_predefined_options_dual_path_parity_cr10_f3.py`` 共 11 个
+  断言场景，锁住「MCP 路径 `list[dict]`」与「HTTP 路径 `(list[str], list[bool])`
+  parallel-array」在所有合法输入上殊途同归到同一组 ``(labels, defaults)`` 内
+  部表示：
+  - ``test_simple_dict_form_matches_parallel_array``：单 dict 形态等价 1 元素 parallel-array
+  - ``test_multi_dict_mixed_defaults_match_parallel_array``：3 选项混合 default
+  - ``test_dict_without_default_falls_to_false``：dict 形态省略 default 字段 → False
+  - ``test_text_alias_for_label_matches_parallel_array`` / ``test_value_alias_for_label_matches_parallel_array``：``text`` / ``value`` 为 ``label`` 的 alias
+  - ``test_selected_alias_for_default_matches_parallel_array`` / ``test_checked_alias_for_default_matches_parallel_array``：``selected`` / ``checked`` 为 ``default`` 的 alias
+  - ``test_pure_string_form_matches_all_false_parallel_array``：纯 list[str] → defaults=[False, ...]
+  - ``test_mixed_str_and_dict_form_normalises_consistently``：同一 list 混 str + dict
+  - ``test_truthy_default_values_normalise_to_bool``：int/string truthy 字符串归一（覆盖 ``"true"``/``"1"``/``"yes"``/``"y"``/``"on"``/``"selected"``）
+  - ``TestHttpSideStrictlyRejectsDictForm.test_post_handler_rejects_non_string_options``：源码级别断言 ``web_ui_routes/task.py`` 里"元素必须是字符串"的 400 分支仍然存在，
+    防止未来误把 HTTP-side 改成"也接受 list[dict]"破坏 dual-path 分工。
+  这条 F-3 的价值：未来如果在 MCP-side 加新的 ``label`` alias（例如 ``"caption"``）
+  但忘了在 HTTP-side 补对应兼容逻辑，本测试会失败提醒。这样把 R167 设计的双
+  入口分工从「文档口头约定」升级到「编译时强制」。
+
 - **CR#10** — **Code Review #10 (post-R155 → R172)** 文档落地，跟踪
   R155-R172 11 个提交的整体质量评估。同时**修正 ``.gitignore``** 让
   ``docs/**/*.tmp.md`` 显式不被忽略——R168 引入 ``.tmp.md``
