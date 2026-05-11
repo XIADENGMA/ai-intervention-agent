@@ -74,6 +74,16 @@
   var ENDPOINT_HEALTH = "/api/system/health";
   var ENDPOINT_SSE_STATS = "/api/system/sse-stats";
   var ENDPOINT_TASKS = "/api/tasks";
+  // R156 — base path only.  ``_pollOnce`` appends
+  // ``"?limit=" + _state.logsLimit`` so the toggle below can switch
+  // between LOGS_LIMIT_DEFAULT (= 5) and LOGS_LIMIT_EXPANDED (= 50)
+  // without rewriting the URL constant.  The R152 / R154 path-prefix
+  // contract is preserved (server matches on the path, ignores query).
+  var ENDPOINT_RECENT_LOGS_BASE = "/api/system/recent-logs";
+  // Backward-compatible alias still emitted by R152 / R154 contracts
+  // (some tests assert the exact ``?limit=5`` literal).  Kept in
+  // lockstep with LOGS_LIMIT_DEFAULT so the URL string and the
+  // numerical default can't drift apart silently.
   var ENDPOINT_RECENT_LOGS = "/api/system/recent-logs?limit=5";
 
   // 5 s poll keeps the dashboard live without hammering anything.  Each
@@ -113,6 +123,21 @@
   // bump and drop the older payload without crashing the renderer.
   var EXPANDED_SCHEMA_VERSION = 1;
 
+  // R156 — logs row's optional "show more" toggle (closes CR#9 F-4).
+  // Default value matches R153's LOGS_TAIL_COUNT so the URL and the
+  // numerical default can't drift apart.  ``LOGS_LIMIT_EXPANDED`` is
+  // 50 because the ``/api/system/recent-logs`` ring buffer caps at
+  // 200 in production and 50 is a comfortable middle ground:
+  // - 50 entries × ~ 240 bytes per redacted entry ≈ 12 KiB / fetch.
+  // - 5 s poll × 12 KiB ≈ 144 KiB / minute when the user explicitly
+  //   asks for the full view.  Closes "I have to curl recent-logs to
+  //   read the full WARN list" without changing the default poll
+  //   load.
+  var LOGS_LIMIT_DEFAULT = 5;
+  var LOGS_LIMIT_EXPANDED = 50;
+  var LOGS_LIMIT_LS_KEY = "aiia.activity_dashboard.logs_limit.v1";
+  var LOGS_LIMIT_SCHEMA_VERSION = 1;
+
   // The list of "rows" (stat tiles) we render.  Each row maps an
   // id (used as React-style key + DOM id) to the i18n label and the
   // formatter that turns the latest value into a textContent string.
@@ -138,6 +163,10 @@
     isOpen: false,
     visibilityHandler: null,
     lastRender: {},
+    // R156 — currently requested ``?limit=N`` on
+    // ``/api/system/recent-logs``.  Either LOGS_LIMIT_DEFAULT (5) or
+    // LOGS_LIMIT_EXPANDED (50); init() hydrates from localStorage.
+    logsLimit: LOGS_LIMIT_DEFAULT,
   };
 
   // ---------- i18n / number formatting --------------------------------------
@@ -330,12 +359,15 @@
       errors: _fmtNum(errors),
       total: _fmtNum(entries.length),
     });
-    // Take only the *tail* (most recent ``LOGS_TAIL_COUNT`` entries).
-    // The endpoint returns oldest → newest, so slicing from the end
-    // gives us the most recent N regardless of how many the server
-    // shipped.  Defensive caps on every per-entry field happen later
-    // inside ``_renderLogsRow``.
-    var tail = entries.slice(Math.max(0, entries.length - LOGS_TAIL_COUNT));
+    // Take only the *tail* (most recent N entries).  ``N`` matches
+    // the current ``_state.logsLimit`` so R156's "show 50" toggle
+    // surfaces 50 entries when expanded and just LOGS_TAIL_COUNT
+    // (= LOGS_LIMIT_DEFAULT = 5) when collapsed.  The endpoint
+    // returns oldest → newest, so slicing from the end gives us the
+    // most recent regardless of how many the server shipped.
+    // Defensive caps on every per-entry field happen later inside
+    // ``_renderLogsRow``.
+    var tail = entries.slice(Math.max(0, entries.length - _state.logsLimit));
     return { summary: summary, entries: tail };
   }
 
@@ -350,8 +382,7 @@
   function _labelForRow(rowId) {
     if (rowId === "tasks") return _t("settings.activityDashboardRowTasks");
     if (rowId === "sse") return _t("settings.activityDashboardRowSse");
-    if (rowId === "latency")
-      return _t("settings.activityDashboardRowLatency");
+    if (rowId === "latency") return _t("settings.activityDashboardRowLatency");
     if (rowId === "notif") return _t("settings.activityDashboardRowNotif");
     if (rowId === "health") return _t("settings.activityDashboardRowHealth");
     if (rowId === "logs") return _t("settings.activityDashboardRowLogs");
@@ -501,6 +532,12 @@
     // ``aria-expanded`` state is preserved across re-renders.
     var btn = value.querySelector(".activity-dashboard-logs-expand");
     var list = value.querySelector("#activity-dashboard-logs-list");
+    // R156 — sibling "show 50" / "show 5" toggle.  Lives next to
+    // the expand button so it's discoverable whether the list is
+    // open or closed; toggles the in-flight ``?limit=N`` on the
+    // next poll cycle (no manual re-fetch — the dashboard's 5 s
+    // poll picks up the new state).
+    var moreBtn = value.querySelector(".activity-dashboard-logs-show-more");
     if (!btn) {
       btn = document.createElement("button");
       btn.type = "button";
@@ -539,6 +576,42 @@
       list.setAttribute("aria-live", "polite");
       list.setAttribute("hidden", "");
       value.appendChild(list);
+    }
+    if (!moreBtn) {
+      // Create the "show 50" toggle once.  It only appears after
+      // ``btn`` (expand) so the visual order is summary | expand |
+      // show-50 — the more advanced control sits last.
+      moreBtn = document.createElement("button");
+      moreBtn.type = "button";
+      moreBtn.className = "activity-dashboard-logs-show-more";
+      // Initial label tracks the *current* state: if we're already
+      // on the expanded limit, the button offers to go back.
+      var initiallyExpanded = _state.logsLimit === LOGS_LIMIT_EXPANDED;
+      moreBtn.setAttribute("data-i18n", _showMoreKey(initiallyExpanded));
+      moreBtn.textContent = _showMoreLabel(initiallyExpanded);
+      moreBtn.addEventListener("click", function () {
+        var nowExpanded = _state.logsLimit === LOGS_LIMIT_EXPANDED;
+        _state.logsLimit = nowExpanded
+          ? LOGS_LIMIT_DEFAULT
+          : LOGS_LIMIT_EXPANDED;
+        _writeLogsLimit(_state.logsLimit);
+        // Refresh the label immediately so the affordance reflects
+        // the new state without waiting for the next poll.  After
+        // the flip, ``nowExpanded`` is the *prior* state, so the
+        // *new* expanded flag is ``!nowExpanded``.
+        var flipped = !nowExpanded;
+        moreBtn.setAttribute("data-i18n", _showMoreKey(flipped));
+        moreBtn.textContent = _showMoreLabel(flipped);
+        // Kick a microtask poll so the user sees the new limit
+        // applied within ~ 0 ms rather than waiting up to 5 s for
+        // the next setInterval tick.  No throttle here — the click
+        // is human-driven and the AbortController on the existing
+        // in-flight batch will cancel any conflicting prior fetch.
+        if (_state.isOpen) {
+          Promise.resolve().then(_pollOnce);
+        }
+      });
+      value.appendChild(moreBtn);
     }
 
     // Rebuild the list every tick.  Cheap (LOGS_TAIL_COUNT items) and
@@ -605,7 +678,12 @@
     var p1 = _fetchJson(ENDPOINT_TASKS, controller, FETCH_TIMEOUT_MS);
     var p2 = _fetchJson(ENDPOINT_SSE_STATS, controller, FETCH_TIMEOUT_MS);
     var p3 = _fetchJson(ENDPOINT_HEALTH, controller, FETCH_TIMEOUT_MS);
-    var p4 = _fetchJson(ENDPOINT_RECENT_LOGS, controller, FETCH_TIMEOUT_MS);
+    // R156 — append ``?limit=N`` from state so the user's "show 50"
+    // toggle takes effect on the next poll without rewriting the URL
+    // constant.
+    var recentLogsUrl =
+      ENDPOINT_RECENT_LOGS_BASE + "?limit=" + _state.logsLimit;
+    var p4 = _fetchJson(recentLogsUrl, controller, FETCH_TIMEOUT_MS);
 
     var results = await Promise.all([p1, p2, p3, p4]);
     var tasks = results[0];
@@ -703,6 +781,34 @@
     }
   }
 
+  // R156 — static label registry for the logs-row "show more / show
+  // default" toggle.  Mirrors the ``_labelForRow`` pattern so each
+  // i18n key shows up as a direct translate-with-literal call that
+  // ``scripts/check_i18n_orphan_keys.py`` (and ``test_runtime_behavior``'s
+  // dead-key analyser) can grep — a ternary embedded inside the
+  // translate-call argument list would otherwise hide the key
+  // strings behind the conditional and the analyser's regex (which
+  // only matches the direct translate-with-literal shape) would
+  // miss both keys, falsely marking them as orphans.
+  function _showMoreLabel(currentlyExpanded) {
+    if (currentlyExpanded) {
+      return _t("settings.activityDashboardLogsShowDefault");
+    }
+    return _t("settings.activityDashboardLogsShowMore");
+  }
+
+  // Returns the matching ``data-i18n`` key for the current state so
+  // the attribute and the rendered text stay in lockstep (used by a
+  // future runtime locale-switch that needs to re-translate the
+  // button label).  Strict ``=== LOGS_LIMIT_EXPANDED`` check so the
+  // function can't accidentally flip on a stale numeric value.
+  function _showMoreKey(currentlyExpanded) {
+    if (currentlyExpanded) {
+      return "settings.activityDashboardLogsShowDefault";
+    }
+    return "settings.activityDashboardLogsShowMore";
+  }
+
   // ---------- R155 expanded-state persistence -----------------------------
 
   // Safe localStorage read.  Returns the parsed payload object iff:
@@ -756,6 +862,58 @@
     }
   }
 
+  // ---------- R156 logs-limit persistence ---------------------------------
+
+  // Read the persisted ``?limit=N`` for the recent-logs endpoint.
+  // Returns ``LOGS_LIMIT_DEFAULT`` or ``LOGS_LIMIT_EXPANDED`` if a
+  // valid schema-versioned payload exists; ``null`` otherwise.
+  // Defensive contract identical to ``_readExpandedFlag`` —
+  // unknown-version payloads are silently dropped (CR#9 F-5 lesson).
+  function _readLogsLimit() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return null;
+      var raw = localStorage.getItem(LOGS_LIMIT_LS_KEY);
+      if (raw == null) return null;
+      var parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (_e) {
+        return null;
+      }
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        parsed.v === LOGS_LIMIT_SCHEMA_VERSION &&
+        typeof parsed.limit === "number" &&
+        (parsed.limit === LOGS_LIMIT_DEFAULT ||
+          parsed.limit === LOGS_LIMIT_EXPANDED)
+      ) {
+        return parsed.limit;
+      }
+      return null;
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  // Write the requested limit.  Coerces invalid input back to the
+  // default so a future call site that passes a stale number can't
+  // poison the storage payload.
+  function _writeLogsLimit(limit) {
+    var safe =
+      limit === LOGS_LIMIT_EXPANDED ? LOGS_LIMIT_EXPANDED : LOGS_LIMIT_DEFAULT;
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return;
+      var payload = JSON.stringify({
+        v: LOGS_LIMIT_SCHEMA_VERSION,
+        limit: safe,
+      });
+      localStorage.setItem(LOGS_LIMIT_LS_KEY, payload);
+    } catch (_e) {
+      /* noop — defensive: quota-exceeded / read-only storage / etc. */
+    }
+  }
+
   // ---------- init ----------------------------------------------------------
 
   function init() {
@@ -782,6 +940,15 @@
     // No-op if no flag was stored or the flag was ``false``.
     if (_readExpandedFlag() === true) {
       _open(toggleBtn, body);
+    }
+
+    // R156 — hydrate the persisted recent-logs limit so the user's
+    // "show 50" preference survives a reload.  Falls back to the
+    // default if no payload, parse failure, schema-version mismatch,
+    // or non-allowlisted value.
+    var savedLimit = _readLogsLimit();
+    if (savedLimit === LOGS_LIMIT_EXPANDED) {
+      _state.logsLimit = LOGS_LIMIT_EXPANDED;
     }
 
     // R155 — multi-tab sync via the standard ``storage`` event.  When
@@ -872,5 +1039,12 @@
     EXPANDED_SCHEMA_VERSION: EXPANDED_SCHEMA_VERSION,
     _readExpandedFlag: _readExpandedFlag,
     _writeExpandedFlag: _writeExpandedFlag,
+    LOGS_LIMIT_DEFAULT: LOGS_LIMIT_DEFAULT,
+    LOGS_LIMIT_EXPANDED: LOGS_LIMIT_EXPANDED,
+    LOGS_LIMIT_LS_KEY: LOGS_LIMIT_LS_KEY,
+    LOGS_LIMIT_SCHEMA_VERSION: LOGS_LIMIT_SCHEMA_VERSION,
+    ENDPOINT_RECENT_LOGS_BASE: ENDPOINT_RECENT_LOGS_BASE,
+    _readLogsLimit: _readLogsLimit,
+    _writeLogsLimit: _writeLogsLimit,
   };
 })();

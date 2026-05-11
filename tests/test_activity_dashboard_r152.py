@@ -649,20 +649,23 @@ class TestR152CssDefinitions(unittest.TestCase):
 class TestR152FileSize(unittest.TestCase):
     """JS 文件不能膨胀；R152 IIFE 应保持精炼.
 
-    Envelope bumped from 700 → 900 in R153: the logs-row inline expand
-    feature legitimately added ~ 200 LoC (``_renderLogsRow`` +
-    ``_logLevelClassSuffix`` + ``_logTimeShort`` + bug-fix re-shape of
-    ``_formatLogs``).  Same growth pattern R150 → R151 followed on
-    ``notification_test_button.js`` (900 → 1100).  Keep the next bump
-    in lockstep with a real feature add and update this docstring."""
+    Envelope bumped 700 → 900 in R153 (logs-row inline expand:
+    ``_renderLogsRow`` + ``_logLevelClassSuffix`` + ``_logTimeShort``
+    + ``_formatLogs`` reshape ≈ 200 LoC).  Bumped 900 → 1200 in R155
+    + R156: R155 added storage helpers + init hydrate + multi-tab
+    sync (≈ 70 LoC); R156 added logs-limit storage helpers + show-50
+    toggle + dynamic URL builder (≈ 90 LoC).  Same growth pattern
+    R150 → R151 followed on ``notification_test_button.js``
+    (900 → 1100).  Keep the next bump in lockstep with a real feature
+    add and update this docstring."""
 
-    def test_js_under_900_lines(self) -> None:
+    def test_js_under_1200_lines(self) -> None:
         js = _read(JS_PATH)
         lines = js.count("\n") + 1
         self.assertLess(
             lines,
-            900,
-            f"activity_dashboard.js 必须 < 900 行（当前 {lines}）",
+            1200,
+            f"activity_dashboard.js 必须 < 1200 行（当前 {lines}）",
         )
 
 

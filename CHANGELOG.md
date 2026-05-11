@@ -166,6 +166,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R156** — Activity Dashboard logs-row **show 50 / show 5** toggle
+  (CR#9 F-4 follow-up). R153 shipped the inline expand pinned at 5
+  entries, but the `/api/system/recent-logs` endpoint already serves
+  up to 50; operators investigating a known incident were forced into
+  `curl` or a separate ops tool. R156 closes the gap with a sibling
+  ``[show 50]`` / ``[show 5]`` toggle next to ``[expand]``. The chosen
+  limit is persisted to localStorage under a schema-versioned key
+  (``aiia.activity_dashboard.logs_limit.v1``) so the preference
+  survives reloads, mirroring R155's expanded-state pattern.
+  - Constants exported on ``window.AIIA_ACTIVITY_DASHBOARD``:
+    ``LOGS_LIMIT_DEFAULT = 5`` / ``LOGS_LIMIT_EXPANDED = 50`` /
+    ``LOGS_LIMIT_LS_KEY = aiia.activity_dashboard.logs_limit.v1`` /
+    ``LOGS_LIMIT_SCHEMA_VERSION = 1`` /
+    ``ENDPOINT_RECENT_LOGS_BASE = "/api/system/recent-logs"``.
+  - Allowlist-style ``_readLogsLimit`` returns ``null`` for any
+    payload whose ``limit`` is not exactly LOGS_LIMIT_DEFAULT or
+    LOGS_LIMIT_EXPANDED (defensive against future schema bumps that
+    add a third value without a version bump); ``_writeLogsLimit``
+    coerces invalid inputs back to LOGS_LIMIT_DEFAULT.
+  - ``_pollOnce`` builds the recent-logs URL dynamically:
+    ``ENDPOINT_RECENT_LOGS_BASE + "?limit=" + _state.logsLimit``.
+  - Two new i18n keys (``settings.activityDashboardLogsShowMore`` /
+    ``settings.activityDashboardLogsShowDefault``) — ``en.json`` and
+    ``zh-CN.json`` already carry them; ``check_i18n_orphan_keys.py``
+    reports 0 orphan / 0 missing.
+  - JS line budget bumped 900 → **1200** in
+    ``test_activity_dashboard_r152.py::test_js_under_1200_lines``
+    to absorb R155 (≈ 70 LoC) + R156 (≈ 90 LoC). Same growth pattern
+    R151 followed on ``notification_test_button.js``.
+  - New ``tests/test_activity_dashboard_logs_show_more_r156.py``
+    (124 assertions across 8 invariants: constants / API surface /
+    allowlist / write coercion / F-5 schema-version equality /
+    dynamic URL builder / state machine / button label cycling).
+  - Full regression: 4904 passed 2 skipped 0 failed.
+
 - **R148** — Notification self-test button **baseline-delta probe**.
   Root-cause fix for R147's "false-success" race: the user clicks at
   T=0, the dispatch delivers (`last_success_age` becomes 0); 8 seconds

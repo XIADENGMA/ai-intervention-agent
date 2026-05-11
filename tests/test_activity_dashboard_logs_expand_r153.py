@@ -401,11 +401,21 @@ class TestR153FormatLogsTailCap(unittest.TestCase):
         self.js = _read(JS_PATH)
 
     def test_tail_slice_present(self) -> None:
-        # tail = entries.slice(Math.max(0, entries.length - LOGS_TAIL_COUNT))
-        self.assertRegex(
-            self.js,
+        # tail = entries.slice(Math.max(0, entries.length - N))
+        # 锁形式 — N 可以是 LOGS_TAIL_COUNT（R153 原始） 或
+        # _state.logsLimit（R156 起的动态形式）；两种 shape 都接受。
+        match_tail_count = re.search(
             r"entries\.slice\(\s*Math\.max\(\s*0,\s*entries\.length\s*-\s*LOGS_TAIL_COUNT\s*\)\s*\)",
-            "_formatLogs 必须 tail-slice 最近 LOGS_TAIL_COUNT 条",
+            self.js,
+        )
+        match_state_limit = re.search(
+            r"entries\.slice\(\s*Math\.max\(\s*0,\s*entries\.length\s*-\s*_state\.logsLimit\s*\)\s*\)",
+            self.js,
+        )
+        self.assertTrue(
+            match_tail_count or match_state_limit,
+            "_formatLogs 必须 tail-slice 最近 N 条"
+            "（N = LOGS_TAIL_COUNT 或 _state.logsLimit）",
         )
 
 

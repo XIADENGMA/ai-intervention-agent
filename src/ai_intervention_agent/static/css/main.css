@@ -8918,6 +8918,27 @@ code,
   filter: brightness(1.15);
 }
 
+/* R156 — sibling "show 50" / "show 5" toggle.  Same visual shape as
+   the expand button (link-style) but in a slightly more muted colour
+   so the expand control remains the primary affordance. */
+.activity-dashboard-logs-show-more {
+  margin: 0 0 0 0.5em;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-family: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.activity-dashboard-logs-show-more:hover,
+.activity-dashboard-logs-show-more:focus-visible {
+  outline: none;
+  color: var(--accent-500);
+}
+
 .activity-dashboard-logs-list {
   margin: 0.35rem 0 0 0;
   padding: 0;
