@@ -9,6 +9,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Security
+
+- **R184** — 修复 5 个 Dependabot 上报的 CVE，全部为依赖升级
+  （无源码受影响代码路径）：
+    - `pytest` 8.4.0 → 9.0.3：修复 GHSA-6w46-j5rx-g56g
+      （vulnerable tmpdir handling，symlink attack 风险）。
+      本仓所有测试已经在用 `tmp_path` 现代 fixture，破坏面
+      不大，但仍紧跟最新 LTS。9.x 唯一 breaking 变更是私有
+      `config.inicfg`（9.0.2 已加兼容 shim），本仓无引用。
+      bonus：pytest 9 启用原生 subtests，跑下来多识别出 620
+      个 subtests。
+    - `mistune` 3.2.0 → 3.2.1：修复 2 个 CVE，
+      GHSA-8mp2-v27r-99xp（high，ReDoS in `LINK_TITLE_RE`）+
+      GHSA-v87v-83h2-53w7（medium，Heading ID XSS）。
+      `mistune` 是 `flasgger` 的传递依赖，仅用于渲染我们的
+      docstring，不接受用户输入；exploit 路径在本仓为
+      0——但仍紧贴 patch 版本。
+    - 余下 2 个 mistune 中危 CVE（GHSA-58cw-g322-p94v figure
+      XSS、GHSA-8g87-j6q8-g93x math plugin XSS）upstream 尚无
+      patch；同样不影响本仓（不接受用户 markdown 输入）。
+      Dependabot 会在 patch 发布后自动 PR。
+
 ### Added
 
 - **R183** — `scripts/bump_version.py` 新增 `--warn-empty-unreleased`

@@ -75,7 +75,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pre-commit>=4.0.0",
-    "pytest>=8.4.0",
+    # R184：pytest >= 9.0.3 修复 CVE GHSA-6w46-j5rx-g56g（tmp_path
+    # symlink attack）。本仓所有测试已经在用 ``tmp_path`` 现代
+    # fixture（不是 ``tmpdir``），破坏面不大；但仍紧跟最新 LTS。
+    # 9.x 唯一 breaking 变更是私有 ``config.inicfg``（9.0.2 已加
+    # 兼容 shim），本仓无引用，安全升级。
+    "pytest>=9.0.3",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.0",
     "ruff>=0.8.0",
@@ -149,7 +154,9 @@ ignore_missing_imports = true
 [dependency-groups]
 dev = [
     "pre-commit>=4.0.0",
-    "pytest>=8.4.0",
+    # R184：与 ``[project.optional-dependencies].dev`` 同步——
+    # pytest 9.0.3 修复 GHSA-6w46-j5rx-g56g。
+    "pytest>=9.0.3",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.0",
     "rcssmin>=1.1.2",
