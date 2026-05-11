@@ -49,9 +49,6 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `check_locales`). Trips if a future maintainer adds a doc-aware
   step to those workflows, prompting them to revisit R181's
   scope. Same 6 cases, same file, no test-count delta.
-
-### Changed
-
 - **R181** — `.github/workflows/test.yml` no longer ignores `**/*.md`
   or `docs/**` in its `paths-ignore`. Originally a CI-time-saving
   optimisation, it concealed a structural footgun: every guard the
