@@ -9,7 +9,86 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **CR#12** — **Code Review #12 (post-R177 → R179 + 2 chores)** 文档落地，
+  跟踪 R177 hotfix（CR#11 F-1 double-backtick fix）+ R176 docs-index follow-up
+  + R178 (CR#11 F-3 closeout) + R179 (3 ci_gate footguns) + 1 precompress
+  refresh chore 共 5 个 commit 的整体质量评估。沿用 R168 ``.tmp.md`` 命名
+  规约（单次产物），路径 ``docs/code-review-r177-r179-cr12.tmp.md``。内容
+  覆盖：
+  - **Cycle summary 表**：5 行（chore-R177-followup / R176-docs-index /
+    R178 / R179 / chore-static-precompress）的 hash + one-liner。
+  - **里程碑结论**：自 R76 (src/ layout 迁移) 以来**第一次** `ci_gate.py`
+    全程通过、0 warning / 0 error。CR#11 §Strengths 提到 "zero-warning
+    sprint" 是目标，CR#12 是它真正达成的那一次。
+  - **Strengths 段**：5 条 — CR#11 follow-up F-3 / F-1 一周内闭环 / R179
+    "10+ cycle 内最高杠杆 cleanup"（一次 commit 关 4 个 latent defect）/
+    诚实的 chore commit 模式 / 生成器 keyword-only kwarg 严格向后兼容 /
+    8 测试矩阵的回归保险。
+  - **Risks 段**：4 条 — ``ci_gate.py`` 是 load-bearing 但可能未被 GitHub
+    workflow 端到端调用（F-1）/ ``existing_path`` 是单向 escape hatch（F-2）/
+    R174 默认目标硬编码（F-3）/ git 仓库继续提交预压缩 artifact 的
+    repo-size 债（F-4）。
+  - **Follow-up 表**：F-1 ~ F-4 共 4 个 work item，每个标 Severity +
+    Owner suggestion，让 CR#13 可以直接 pick up。
+  - **Test posture 表**：列出 6 个 cycle-critical 测试 surface 的覆盖
+    率：`test_generate_docs_index_prefix_r178` (8) / R174 quote (29) /
+    R80 link-rot (6) / export-button (16, 现在 16/16 而不是 15/16) /
+    R173 dual-path (11) / 全套 ci-gate (4974 collected → 4972 + 2
+    skipped passes)。
+  - **Release readiness checklist**：7 条全勾 — 包括 "CI-gate footgun-4
+    close" 意味着 ``--ignore=tests/test_export_button_ui_r125b.py``
+    hack 终于可以从开发者命令行里删掉。
+
 ### Changed
+
+- **R179** — **三个 ci_gate footgun 一次性收口（generator index drift +
+  stale ty:ignore + main.css quote drift）**。本提交把 ``scripts/ci_gate.py``
+  从 "结构性必 fail" 拉回到 "稳定全绿"，是 R76 (src/ layout 迁移) 后第
+  一次真正实现 CR#11 §Strengths 提到的 "zero-warning sprint" 目标。同时
+  落地 R178 直接 follow-up（generator 的 R169 hidden footgun）+ message
+  description 字数限制漂移修复。
+  - **Footgun 1**：``generate_docs.py`` 每次 ``--check`` 都把 R169 手工
+    插入到 ``docs/api/index.md`` 顶部的 5 个 section（How it works /
+    Architecture / Production-grade middleware / Server self-info /
+    MCP-spec compliance）误判为 drift，让 ``ci_gate.py:222-235`` 结构性
+    必红。修复：``generate_index`` 新增 ``existing_path: Path | None =
+    None`` keyword-only 参数；当指向的 index.md 已存在且含 modules-heading
+    时，保留 heading 之前的所有内容（手工块）只重写 generator-owned 后缀
+    （modules list + quick navigation + footer）。``existing_path=None`` 保
+    持历史 byte-identical 行为。
+  - **Footgun 2**：``message`` field description 在 R166 把 ``MAX_MESSAGE_
+    LENGTH`` 提到 1_000_000 之后仍写 "Recommended length: 1-2000 characters;
+    hard limit 10000"。这是 MCP tools/list 暴露给 LLM 的 schema description
+    —— 模型 ~3 个月一直在 undersell 实际允许的 payload size。修复为 "soft
+    cap 1,000,000 characters (~1 MB UTF-8, R166)"。
+  - **Footgun 3**：``ty`` (Python static checker) 5 条 diagnostic 一次性
+    清空：``test_notification_inflight_persistence_r136.py``（2 处 stale
+    unresolved-import ignore）/ ``test_tasks_export_include_images_r125c.py``
+    / ``test_tasks_export_since_r135.py``（各 1 处 stale ignore）以及
+    ``test_interactive_feedback_errors.py:314`` 真实 ``unknown-argument``
+    error（测试故意传 R167 已移除的 ``predefined_options_defaults`` 验
+    证 raise，加 narrow ``# ty: ignore[unknown-argument]`` 让 ty 不把
+    deliberate misuse 当作 check error）。
+  - **Footgun 4**：``tests/test_export_button_ui_r125b.py::
+    test_export_btn_in_light_theme_block`` 硬编码 ``[data-theme='light']``
+    单引号正则，而 R169 chore ``73d9980`` 已把 ``main.css`` 全部
+    attribute-selector 收敛到双引号。这条测试自 R169 起一直 fail，被
+    ``--ignore=tests/test_export_button_ui_r125b.py`` 在 full-regression
+    命令行里 mask 了 ~10 个 cycle。修复：把 regex 从
+    ``[data-theme='light']`` 放宽到 ``[data-theme=['"]light['"]]`` —— 测
+    试关心的是 light-theme selector 包含 ``.export-btn`` 这个语义不变
+    量，不是引号风格。16/16 cases pass 后，``--ignore`` hack 可以从
+    开发者命令行里删掉。
+  - 新增 ``tests/test_generate_docs_index_prefix_r178.py``（8 测试）锁
+    ``generate_index`` 的 ``existing_path`` 契约：None / 不存在路径 /
+    无 modules-heading / 有 modules-heading / zh-CN 用 ``## 模块列表``
+    anchor / 真实仓库 EN index 必含 R169 5 个 section / 真实仓库
+    zh-CN index 同样 / 函数签名 keyword-only + default None。
+  - Test posture: ``uv run python scripts/ci_gate.py`` 全程 PASS / 0
+    warning / 0 error；``uv run ty check .`` → ``All checks passed!``
+    (5 → 0)；``uv run pytest -W error`` → 4972 passed + 2 skipped。
 
 - **R178** — **R174 CSS quote-consistency guard 扩展到 `tri-state-panel.css`**
   （CR#11 F-4 / Risks§R174-scope follow-up）。
