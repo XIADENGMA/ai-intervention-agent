@@ -114,16 +114,20 @@ with a full `ci_gate` run, not just `pytest`.
 
 ## Risks (what to watch in the next cycle)
 
-- **`scripts/ci_gate.py` is the load-bearing CI surface, but it's
-  not run from CI itself.** R179 closed the latent CI break, but
-  `.github/workflows/*.yml` (if any) doesn't invoke `ci_gate.py`
-  end-to-end — only individual subcommands (`pytest`, `ruff`).
-  This means: if someone re-introduces a `--check` drift on
-  `generate_docs.py`, GitHub CI might still go green while
-  developers running `ci_gate.py` locally see red.  **Risk
-  rating: Medium**.  Action: audit `.github/workflows/` to
-  confirm whether `ci_gate.py` is invoked verbatim or whether
-  CI only runs a subset of gates.
+- **`scripts/ci_gate.py` IS run from CI** (audited in CR#12 §F-1
+  closeout).  `.github/workflows/test.yml:75-76` invokes
+  ``uv run python scripts/ci_gate.py --ci --with-coverage`` as
+  the main gate step.  **However**: the workflow has
+  ``paths-ignore: ["**/*.md", "docs/**", ...]`` —— so doc-only
+  commits (R169, R175, R176, etc.) don't trigger CI, which is
+  exactly why the R169 generator-drift footgun could rot for ~7
+  months without surfacing on GitHub Actions while developers
+  running ``ci_gate.py`` locally would see red.  **Risk rating:
+  Low** post-audit — the build-system structure is sound, but
+  the next code-touching PR after a long doc-only stretch can
+  inherit accumulated CI debt.  Mitigation: maintainers should
+  run ``ci_gate.py`` locally before tagging doc-heavy releases,
+  not assume the green-on-main signal reflects all states.
 
 - **Generator `existing_path` is a one-way escape hatch.** If a
   future R-cycle wants to **regenerate the manual prefix** (e.g.
@@ -164,7 +168,7 @@ with a full `ci_gate` run, not just `pytest`.
 
 | ID   | Severity     | Item                                                                                                                          | Owner suggestion                                                                                                                                                                |
 | ---- | ------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F-1  | Medium       | Confirm `.github/workflows/*.yml` invokes `scripts/ci_gate.py` end-to-end (not just a subset).                               | One PR to either (a) audit existing workflow YAMLs and document which gates are remote vs local, or (b) add a single `ci_gate.py` step to the main workflow.                  |
+| F-1  | Medium       | Confirm `.github/workflows/*.yml` invokes `scripts/ci_gate.py` end-to-end (not just a subset).                               | **DONE in CR#12 audit pass** — `.github/workflows/test.yml:75-76` already runs `uv run python scripts/ci_gate.py --ci --with-coverage` on every push/PR to main.  Caveat: workflow uses `paths-ignore: ["**/*.md", "docs/**", ...]` so doc-only commits skip CI; risk downgraded to Low — call out in `lessons-learned-silent-decay.md` instead. |
 | F-2  | Low          | Document a one-shot "force regenerate manual prefix" workflow for `docs/api(.zh-CN)/index.md` so future architecture rewrites don't get silently stale-preserved. | Add a 10-line "Force regenerate the manual prefix" subsection to `scripts/generate_docs.py` docstring; no code change needed.                                                  |
 | F-3  | Low          | Consider switching R174 CSS guard from `DEFAULT_TARGETS` allow-list to `EXCLUDE_TARGETS` deny-list once project-owned CSS files grow past ~5. | Track separately; ~10 min in a future R-cycle. Note: the docstring already mentions this as a long-term retirement path.                                                       |
 | F-4  | Medium       | Stop committing precompressed `.br` / `.gz` artifacts to git (or split them into a separate orphan branch).                  | Defer to v1.7.x major as a deliberate trade-off decision (repo-size vs cold-startup).  Add to `docs/lessons-learned-silent-decay.md` as a long-term debt item.                  |
