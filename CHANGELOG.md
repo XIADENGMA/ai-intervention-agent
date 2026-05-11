@@ -9,6 +9,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **CR#10** — **Code Review #10 (post-R155 → R172)** 文档落地，跟踪
+  R155-R172 11 个提交的整体质量评估。同时**修正 ``.gitignore``** 让
+  ``docs/**/*.tmp.md`` 显式不被忽略——R168 引入 ``.tmp.md``
+  命名规约时只把 git 已 tracked 的旧文件 grandfathered 进库（``code-review-
+  r150-r154-cr9.tmp.md`` / ``security-triage-r72.tmp.md``），新增的同名
+  规约文件被 ``.gitignore`` 第 253 行 ``*.tmp.md`` 拦截。R168/CR#10
+  例外 ``!docs/**/*.tmp.md`` 把 ``docs/`` 下的 ``.tmp.md``（按 R168
+  规约归档的 single-cycle artefact）从仓库根的"个人笔记 / 草稿"
+  忽略规则里挖出来。沿用 R168 ``.tmp.md`` 命名规约
+  （单次产物，非长期设计文档），路径 ``docs/code-review-r155-r172-cr10.tmp.md``。
+  内容覆盖：
+  - **Cycle summary 表**：11 行（10 个 R-tag + 1 个 css-prettier chore）
+    的 hash + one-liner，让后续 maintainer 一眼看清这一批次的边界。
+  - **Strengths 段**：列出本批次 5 大亮点 —— 数据完整性双重防护
+    (R165 try/except/finally 控制流陷阱解读) / API 收敛 (R167
+    predefined_options 3 形态 → 2 形态) / README 右尺寸 (R169 + R171
+    分而治之) / Lint floor 可观测性 (R170 + R172 文档化) / 功能对等性
+    (R155 + R156 关闭 CR#9 F-3 / F-4 / F-5 follow-up)。
+  - **Risks 段**：4 条需要警惕的尾巴 —— soft-limit ↔ hard-limit 余量
+    (R166 emoji 突发 worst-case 评估) / CSS 重格式化是一次性的 (没有
+    formatter pre-commit hook) / Open VSX badges 移到 below-the-fold
+    可能影响 install rate (R171 需 2 周观察) / R167 移除 30 行后两条
+    HTTP 入口路径缺 parity smoke。
+  - **Follow-up 表**：F-1 ~ F-4 共 4 个 work item，每个标 Severity +
+    Owner suggestion，让 CR#11 可以直接 pick up。
+  - **Test posture 表**：列出 6 个 cycle-critical 测试 surface 的覆盖
+    率：activity dashboard (108+62+34=204 tests) / predefined_options
+    shape (14+16) / feedback-loss defense (9+3) / soft-limit
+    relaxation / docs link rot / locale parity；全部 0 issue。
+  - **Ready-to-tag posture 段**：4 个 ✓ checkmark 表明可以 clear for
+    v1.6.4 / v1.7.0 tagging，没有 blocking issue。
+
 ### Changed
 
 - **R172** — **代码注释清理**：`task_queue.py::Task.predefined_options_defaults`

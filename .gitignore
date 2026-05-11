@@ -251,6 +251,11 @@ config.json.bak
 TODO.md
 # 临时规划 / 草稿（文件名以 .tmp.md 结尾即被忽略）
 *.tmp.md
+# R168/CR#10 例外：docs/ 下的 *.tmp.md 是按 R168 命名规约归档的
+# single-cycle artefact（code review / security triage 等"做完就过期"
+# 但要留版本可追溯的产物），明确不忽略，让 docs/code-review-*.tmp.md
+# / docs/security-triage-*.tmp.md 可以 ``git add`` 进库。
+!docs/**/*.tmp.md
 
 # 已移除的项目管理与覆盖率配置
 .specify/
