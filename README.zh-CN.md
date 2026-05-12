@@ -5,23 +5,17 @@
 
   <h2>AI Intervention Agent</h2>
 
-  <p><strong>让 MCP 智能体支持“实时人工介入”。</strong></p>
+  <p><strong>给 MCP 智能体加上“实时人工介入” —— 暂停、纠偏、继续。</strong></p>
 
   <p>
-    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/test.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/test.yml?branch=main&label=tests&style=flat-square&logo=github" alt="Tests" />
-    </a>
     <a href="https://pypi.org/project/ai-intervention-agent/">
-      <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=flat-square&logo=pypi&logoColor=white" alt="PyPI" />
+      <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=for-the-badge&logo=pypi&logoColor=white&color=a855f7&label=PyPI" alt="PyPI" />
     </a>
-    <a href="https://www.python.org/downloads/">
-      <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent?style=flat-square&logo=python&logoColor=white" alt="Python versions" />
-    </a>
-    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/scorecard.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/scorecard.yml?branch=main&label=OpenSSF&style=flat-square&logo=securityscorecard&logoColor=white" alt="OpenSSF Scorecard" />
+    <a href="https://modelcontextprotocol.io">
+      <img src="https://img.shields.io/badge/MCP-Compatible-d97757?style=for-the-badge&logo=anthropic&logoColor=white" alt="MCP Compatible" />
     </a>
     <a href="https://github.com/xiadengma/ai-intervention-agent/blob/main/LICENSE">
-      <img src="https://img.shields.io/github/license/xiadengma/ai-intervention-agent?style=flat-square&color=success" alt="License" />
+      <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="License: MIT" />
     </a>
   </p>
 
@@ -30,7 +24,9 @@
   </p>
 </div>
 
-使用 AI CLI/IDE 时，经常会出现偏离预期的情况。这个项目提供一种简单方式：在关键节点**干预智能体**，通过 Web UI 展示上下文，并用 `interactive_feedback` 收集你的输入/选择/图片，让 AI 以你最新的要求继续任务。
+---
+
+AI 助手在执行任务时是不是经常自顾自跑偏？AI Intervention Agent 让它**在关键节点先停一下**：弹出 Web UI，让你看清它即将做什么、补一句指示、贴一张截图，然后让它带着你最新的想法继续 —— 全程通过 MCP `interactive_feedback` 工具完成，**不用结束会话**。
 
 支持 `Cursor`、`VS Code`、`Claude Code`、`Augment`、`Windsurf`、`Trae` 等。
 
@@ -194,12 +190,12 @@ ai-intervention-agent 工具使用细节：
 
 ## 主要特性
 
-- **实时介入**：AI 在关键节点暂停，等待你的指示
-- **Web UI**：Markdown / 代码高亮 / 数学公式渲染
-- **多任务**：多任务标签页切换，每个任务独立倒计时
-- **自动重调**：倒计时到点自动提交，减少会话超时中断
-- **通知**：Web UI / 声音 / 系统通知 / Bark（loopback URL 自动过滤；设置面板会推荐对应的 LAN IP）
-- **SSH / 局域网友好**：适配 SSH 端口转发；本地网络支持时会通过 mDNS 自动发布 `<host>.local` 入口
+- ⚡ **实时介入** —— AI 在关键节点暂停，等待你的指示（通过 `interactive_feedback`）
+- 🖥️ **Web UI** —— Markdown / 代码高亮 / 数学公式开箱即用
+- 🗂️ **多任务标签页** —— 多个并发请求各自独立倒计时
+- 🔁 **自动重调** —— 倒计时到点自动提交，保持长会话不被客户端硬超时切断
+- 🔔 **通知** —— Web UI / 声音 / 系统通知 / Bark（loopback URL 自动过滤；设置面板会推荐对应的 LAN IP）
+- 🌐 **SSH / 局域网友好** —— 适配 SSH 端口转发；本地网络支持时会通过 mDNS 自动发布 `<host>.local` 入口
 
 > 工作原理、架构图、生产级中间件、Server 自检 resource、MCP 协议规范支持
 > 等技术细节请参考 [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md) 与
@@ -270,3 +266,28 @@ ai-intervention-agent 工具使用细节：
 ## 开源协议
 
 MIT 许可证
+
+---
+
+<details>
+<summary><strong>质量与安全（Quality & Security）</strong></summary>
+
+<br />
+
+<p>
+  <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/test.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/test.yml?branch=main&label=tests&style=flat-square&logo=github" alt="Tests" />
+  </a>
+  <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/scorecard.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/scorecard.yml?branch=main&label=OpenSSF&style=flat-square&logo=securityscorecard&logoColor=white" alt="OpenSSF Scorecard" />
+  </a>
+  <a href="https://www.python.org/downloads/">
+    <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent?style=flat-square&logo=python&logoColor=white" alt="Python versions" />
+  </a>
+</p>
+
+- **Tests** —— GitHub Actions 测试 workflow 状态（每次 push / PR 触发）
+- **OpenSSF Scorecard** —— 供应链安全评分
+- **Python versions** —— 支持的运行时版本（声明在 `pyproject.toml`）
+
+</details>

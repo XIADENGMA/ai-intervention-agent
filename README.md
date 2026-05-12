@@ -5,23 +5,17 @@
 
   <h2>AI Intervention Agent</h2>
 
-  <p><strong>Real-time user intervention for MCP agents.</strong></p>
+  <p><strong>Real-time user intervention for MCP agents — pause, course-correct, resume.</strong></p>
 
   <p>
-    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/test.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/test.yml?branch=main&label=tests&style=flat-square&logo=github" alt="Tests" />
-    </a>
     <a href="https://pypi.org/project/ai-intervention-agent/">
-      <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=flat-square&logo=pypi&logoColor=white" alt="PyPI" />
+      <img src="https://img.shields.io/pypi/v/ai-intervention-agent?style=for-the-badge&logo=pypi&logoColor=white&color=a855f7&label=PyPI" alt="PyPI" />
     </a>
-    <a href="https://www.python.org/downloads/">
-      <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent?style=flat-square&logo=python&logoColor=white" alt="Python versions" />
-    </a>
-    <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/scorecard.yml">
-      <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/scorecard.yml?branch=main&label=OpenSSF&style=flat-square&logo=securityscorecard&logoColor=white" alt="OpenSSF Scorecard" />
+    <a href="https://modelcontextprotocol.io">
+      <img src="https://img.shields.io/badge/MCP-Compatible-d97757?style=for-the-badge&logo=anthropic&logoColor=white" alt="MCP Compatible" />
     </a>
     <a href="https://github.com/xiadengma/ai-intervention-agent/blob/main/LICENSE">
-      <img src="https://img.shields.io/github/license/xiadengma/ai-intervention-agent?style=flat-square&color=success" alt="License" />
+      <img src="https://img.shields.io/badge/License-MIT-22c55e?style=for-the-badge" alt="License: MIT" />
     </a>
   </p>
 
@@ -30,7 +24,9 @@
   </p>
 </div>
 
-When using AI CLIs/IDEs, agents can drift from your intent. This project gives you a simple way to **intervene** at key moments, review context in a Web UI, and send your latest instructions via `interactive_feedback` so the agent can continue on track.
+---
+
+Ever had your AI agent confidently walk off in the wrong direction mid-task? AI Intervention Agent gives you a Web UI to **pause** the agent at key moments, review what it's about to do, type a course-correction, attach screenshots, and **resume** — all through the MCP `interactive_feedback` tool, without ending the conversation.
 
 Works with `Cursor`, `VS Code`, `Claude Code`, `Augment`, `Windsurf`, `Trae`, and more.
 
@@ -195,12 +191,12 @@ ai-intervention-agent usage details:
 
 ## Key features
 
-- **Real-time intervention**: the agent pauses and waits for your input via `interactive_feedback`
-- **Web UI**: Markdown, code highlighting, and math rendering
-- **Multi-task**: tab switching with independent countdown timers
-- **Auto re-submit**: keep sessions alive by auto-submitting at timeout
-- **Notifications**: web / sound / system / Bark (loopback URLs auto-suppressed; LAN-IP suggestion surfaced in settings)
-- **SSH / LAN friendly**: works behind port forwarding; mDNS publishes a `<host>.local` URL when the local network supports it
+- ⚡ **Real-time intervention** — the agent pauses and waits for your input via `interactive_feedback`
+- 🖥️ **Web UI** — Markdown, code highlighting, and math rendering out of the box
+- 🗂️ **Multi-task tabs** — switch between concurrent requests, each with its own countdown
+- 🔁 **Auto re-submit** — keep long-running sessions alive past client hard timeouts
+- 🔔 **Notifications** — web / sound / system / Bark (loopback URLs auto-suppressed; LAN-IP suggestion in settings)
+- 🌐 **SSH / LAN friendly** — works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
 
 > Architecture diagram, "how it works" flow, production middleware chain,
 > server self-info resource, and MCP-spec compliance details live under
@@ -272,3 +268,28 @@ This project's heritage traces back to **Fábio Ferreira** (2024) and **Pau Oliv
 ## License
 
 MIT License
+
+---
+
+<details>
+<summary><strong>Quality & Security</strong></summary>
+
+<br />
+
+<p>
+  <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/test.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/test.yml?branch=main&label=tests&style=flat-square&logo=github" alt="Tests" />
+  </a>
+  <a href="https://github.com/xiadengma/ai-intervention-agent/actions/workflows/scorecard.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/xiadengma/ai-intervention-agent/scorecard.yml?branch=main&label=OpenSSF&style=flat-square&logo=securityscorecard&logoColor=white" alt="OpenSSF Scorecard" />
+  </a>
+  <a href="https://www.python.org/downloads/">
+    <img src="https://img.shields.io/pypi/pyversions/ai-intervention-agent?style=flat-square&logo=python&logoColor=white" alt="Python versions" />
+  </a>
+</p>
+
+- **Tests** — GitHub Actions test workflow status (runs on every push / PR)
+- **OpenSSF Scorecard** — supply-chain security posture
+- **Python versions** — supported runtime compatibility (declared in `pyproject.toml`)
+
+</details>
