@@ -9,6 +9,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **`/api/system/health` exposes `web_ui_env_overrides` field** — completes
+  the loop opened in CR#15 by giving K8s probes / monitoring dashboards
+  / `curl health | jq` a single-source-of-truth answer to *"is this
+  process running with `AI_INTERVENTION_AGENT_WEB_UI_*` env overrides?"*
+  Field semantics: `{}` = no env override (values come from
+  `config.toml`/defaults), `{env_name: value, ...}` = active overrides
+  (plaintext values — host/port/language are non-sensitive, same trust
+  level as the existing `config_file_path` field), `null` = probe
+  failure. The helper `_safe_web_ui_env_overrides()` enforces a strict
+  3-name whitelist (`HOST` / `PORT` / `LANGUAGE`), so adding future env
+  overrides will not silently widen this surface to secrets/tokens. Test
+  coverage: `tests/test_health_env_overrides.py` adds 11 cases (empty
+  state, whitespace handling, hit reflection, whitespace trimming,
+  whitelist enforcement against unrelated `AI_INTERVENTION_AGENT_*`
+  vars, key-name parity with `service_manager` constants, source-level
+  `try/except` guard, runtime `os.environ` failure handling, payload
+  field presence, helper wiring). `tests/test_web_ui_routes_system.py`
+  also gains a payload-schema invariant: the new field is added to the
+  allowed top-level key whitelist plus a dedicated type assertion (dict
+  with whitelisted env-var keys → string values, or `None`). Field is
+  documented in the `/api/system/health` Swagger docstring alongside
+  `config_file_path` / `build`.
+
 ### Tests
 
 - **Console-script entry-point wiring guard** — `pyproject.toml

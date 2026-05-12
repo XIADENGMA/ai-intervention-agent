@@ -646,6 +646,8 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
             "config_file_path",
             # R132 新增：build info（git_commit / git_branch / git_dirty）
             "build",
+            # CR#15 续：web_ui env override 名单（host/port/language 白名单）
+            "web_ui_env_overrides",
         }
         actual_keys = set(body.keys())
         self.assertTrue(
@@ -700,6 +702,33 @@ class TestSystemHealthEndpoint(_SystemRouteBase):
                 for k, v in build.items():
                     self.assertIsInstance(
                         v, str, f"build.{k} 必须是字符串（含 'unknown' 兜底）"
+                    )
+
+        # CR#15 续：web_ui_env_overrides 必须是 dict 或 None；dict 时严格
+        # 仅允许 web_ui 三个白名单 env var key，**绝不**接受任意 key——避
+        # 免未来加新 env override 时悄悄扩面到敏感字段。
+        if "web_ui_env_overrides" in body:
+            overrides = body["web_ui_env_overrides"]
+            self.assertTrue(
+                overrides is None or isinstance(overrides, dict),
+                "web_ui_env_overrides 字段必须是 dict 或 None",
+            )
+            if isinstance(overrides, dict):
+                allowed_env_keys = {
+                    "AI_INTERVENTION_AGENT_WEB_UI_HOST",
+                    "AI_INTERVENTION_AGENT_WEB_UI_PORT",
+                    "AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE",
+                }
+                self.assertTrue(
+                    set(overrides.keys()).issubset(allowed_env_keys),
+                    f"web_ui_env_overrides 出现白名单外 key："
+                    f"{set(overrides.keys()) - allowed_env_keys}",
+                )
+                for k, v in overrides.items():
+                    self.assertIsInstance(
+                        v,
+                        str,
+                        f"web_ui_env_overrides[{k}] 必须是字符串值",
                     )
 
         # checks 必须是 dict，每个 sub-check 都是 dict 含 ok 字段

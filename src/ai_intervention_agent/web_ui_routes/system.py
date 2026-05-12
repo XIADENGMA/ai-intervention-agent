@@ -115,6 +115,58 @@ def _safe_config_file_path() -> str | None:
         return None
 
 
+def _safe_web_ui_env_overrides() -> dict[str, str] | None:
+    """返回当前生效的 ``web_ui`` env override 名单（含值），便于运维 / K8s
+    probe 一眼看出 "这个进程的 host/port/language 是不是被 env 覆盖了"。
+
+    使用场景
+    ----
+    * 用户在 systemd unit 里写错 ``AI_INTERVENTION_AGENT_WEB_UI_PORT=80``
+      （非数字 / 越界），server 会 fallback 到 ``config.toml`` 值——监控
+      仪表板看 ``port`` 字段以为正常，但用户实际期望 80。本端点的
+      ``web_ui_env_overrides`` 字段会让运维立刻看到 "env 设了，但 fallback
+      了"——配合 stderr WARNING 形成双重证据链。
+    * 多实例滚动升级：``config.toml`` 一致但 env vars 不同时，本字段帮
+      仪表板区分实例。
+
+    返回语义
+    ----
+    * ``{}``（空 dict）：当前进程**无** web_ui env override 生效，所有
+      值来自 ``config.toml`` / 默认值；
+    * ``{env_name: value, ...}``：当前生效的 env var 名 + 字符串值（明文
+      暴露——host/port/language 都不是敏感信息，与 ``config_file_path``
+      的暴露层级一致）；
+    * ``None``：探测失败（``service_manager`` 模块异常 / ``os.environ``
+      访问异常等）。
+
+    安全
+    ----
+    * 仅暴露 web_ui 三个明确白名单 env var（HOST/PORT/LANGUAGE），不会
+      泄漏 secret / token 类敏感 env vars；
+    * 仅读 env，**不**触碰 ``config.toml`` 真实值——与 R53-F
+      ``test_no_config_value_passthrough`` 契约一致。
+    """
+    try:
+        from ai_intervention_agent import service_manager as _sm
+
+        active: dict[str, str] = {}
+        # 白名单：仅 web_ui 三个 env override，避免悄悄扩面到敏感 env
+        for env_name in (
+            _sm._ENV_WEB_UI_HOST,
+            _sm._ENV_WEB_UI_PORT,
+            _sm._ENV_WEB_UI_LANGUAGE,
+        ):
+            raw = os.environ.get(env_name)
+            if raw is None:
+                continue
+            stripped = raw.strip()
+            if stripped:
+                active[env_name] = stripped
+        return active
+    except Exception:
+        return None
+
+
 def _safe_build_info() -> dict[str, str] | None:
     """返回 ``{git_commit, git_branch, git_dirty}`` build 元信息；失败返回 None。
 
@@ -966,6 +1018,14 @@ class SystemRoutesMixin:
                   （**仅路径，不暴露字段值**），监控可据此发现 "加载了错配置"
                   这类故障；探测失败或未配置为 ``null``。
 
+                * ``web_ui_env_overrides``（CR#15 续）：当前生效的 web_ui
+                  env override 名单。``{}`` = 无 env 覆盖（值来自
+                  ``config.toml`` / 默认值）；``{env_name: value, ...}`` =
+                  有 env 覆盖（明文值，host/port/language 都不敏感）；
+                  ``null`` = 探测失败。配合 ``AI_INTERVENTION_AGENT_WEB_UI_*``
+                  env vars，让运维一眼看出 "为什么 port 不是 config.toml
+                  里写的那个"。
+
                 * ``build``（R132）：``{git_commit, git_branch, git_dirty}`` 三
                   字段元信息，比 ``version`` 字符串精确——``v1.5.45`` 可能对应
                   过 100 个 commit，``git_commit`` 只对应一份代码。监控做 PR
@@ -1147,6 +1207,12 @@ class SystemRoutesMixin:
             # - uptime_seconds：检测异常重启 / 进程"卡 init"
             # - config_file_path：检测"加载错配置"（典型场景：env var 漂移）
             #
+            # CR#15 续：再加一个 web_ui_env_overrides 字段——配合本周期新增
+            # 的 ``AI_INTERVENTION_AGENT_WEB_UI_HOST/PORT/LANGUAGE`` env
+            # override，让 K8s probe / 仪表板能立刻看出"port 字段是 8080
+            # 因为 env=8080，还是 config.toml 写的"。空 dict {} 表示无
+            # override（正常状态）；非空 dict 是 env var 名 → 字符串值。
+            #
             # 配置访问全部通过模块级 helper 间接完成（避免 handler body 直接
             # 触碰配置 API），保留 R53-F 的 test_no_config_value_passthrough
             # 契约。
@@ -1157,6 +1223,7 @@ class SystemRoutesMixin:
                 "version": _safe_project_version(),
                 "uptime_seconds": _safe_uptime_seconds(),
                 "config_file_path": _safe_config_file_path(),
+                "web_ui_env_overrides": _safe_web_ui_env_overrides(),
                 # R132：build info（git commit / branch / dirty）。
                 # ``_safe_build_info`` 复用 R63 的 lazy cache，10 s K8s probe
                 # 周期性拉取 health 时不会炸 fork 风暴。pip 部署没 .git 时
