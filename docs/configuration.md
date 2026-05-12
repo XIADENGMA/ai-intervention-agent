@@ -76,6 +76,42 @@ Priority order inside dev mode:
 > and the agent emits a `WARNING` log line listing the ignored siblings. Delete or rename the
 > stale formats once you've migrated.
 
+### Environment-variable overrides
+
+For `uvx`, Docker, systemd and other "I can't easily edit `config.toml` here"
+runtimes, the following env vars override the matching `config.toml` values at
+process startup. They're applied inside `get_web_ui_config()` and cached for
+the 10-second TTL like any other value.
+
+| Env var                                 | Overrides         | Type / range           | Notes                                                                                          |
+| --------------------------------------- | ----------------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                 | Typical values: `127.0.0.1` (loopback) or `0.0.0.0` (LAN / SSH-remote access)                  |
+| `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int, `[1, 65535]`      | Out-of-range / non-numeric values are warned and ignored (server keeps using `config.toml`)    |
+| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN`| Forces the Web UI language regardless of OS locale or saved preference                         |
+
+Non-matching values are **warned, not fatal**: env overrides are a convenience
+path, so a typo in your shell profile shouldn't keep the MCP server from
+starting. The original `config.toml` value is preserved and a `WARNING` line
+is logged to stderr so you can find the typo there.
+
+#### Example: SSH-remote bind on a non-default port
+
+```bash
+export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0
+export AI_INTERVENTION_AGENT_WEB_UI_PORT=18080
+uvx ai-intervention-agent
+```
+
+#### Other env vars (already documented elsewhere)
+
+- `AI_INTERVENTION_AGENT_LOG_LEVEL` — overrides `web_ui.log_level` (standalone
+  server only). VS Code extension users tune `ai-intervention-agent.logLevel`
+  in VS Code settings instead.
+- `AI_INTERVENTION_AGENT_OPEN_WITH` — picks the IDE used by the "Open config
+  in IDE" action. See [`docs/troubleshooting.md`](troubleshooting.md).
+- Discovery env vars (`AI_INTERVENTION_AGENT_CONFIG_FILE`, `*_DEV_MODE`,
+  `*_USER_MODE`, `UVX_PROJECT`) — see the [lookup table](#config-file-location--lookup-order) above.
+
 ### Auto-migration
 
 If a `config.jsonc` or `config.json` file is found via auto-discovery (not explicitly specified), it will be automatically migrated to `config.toml`:

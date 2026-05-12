@@ -72,6 +72,39 @@ dev 模式内部优先级顺序：
 > 同一目录如果同时存在 `config.toml` 和 `config.jsonc`（或 `config.json`），TOML 优先；
 > agent 启动时会打印 `WARNING` 列出被忽略的旧格式文件。迁移完成后请删除或重命名旧文件。
 
+### 环境变量覆盖
+
+为方便 `uvx`、Docker、systemd 等「难以直接修改 `config.toml`」的运行场景，
+以下 env vars 会在进程启动时一次性覆盖对应的 `config.toml` 值（在
+`get_web_ui_config()` 内应用，并随 10 秒 TTL 缓存一同保留）。
+
+| 环境变量                                | 覆盖项            | 类型 / 范围              | 说明                                                                                                |
+| --------------------------------------- | ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
+| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                   | 典型值：`127.0.0.1`（loopback）/ `0.0.0.0`（局域网 / SSH 远程访问）                                 |
+| `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int，`[1, 65535]`        | 越界或非数字会记 WARNING 并忽略，server 继续用 `config.toml` 中的值                                 |
+| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN`  | 强制设置 Web UI 语言，忽略系统 locale 与已保存的偏好                                                |
+
+非法值**仅 WARNING，不抛异常**：env override 是「便利路径」，shell profile 里
+打错一个字符不应该让 MCP server 起不来。原 `config.toml` 值会保留，且 WARNING
+行会写到 stderr，让你能在日志反查 typo。
+
+#### 示例：SSH 远程绑定到非默认端口
+
+```bash
+export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0
+export AI_INTERVENTION_AGENT_WEB_UI_PORT=18080
+uvx ai-intervention-agent
+```
+
+#### 其他 env vars（已在别处文档化）
+
+- `AI_INTERVENTION_AGENT_LOG_LEVEL` —— 覆盖 `web_ui.log_level`（仅独立服务端）。
+  VS Code 插件用户改 VS Code 设置里的 `ai-intervention-agent.logLevel`。
+- `AI_INTERVENTION_AGENT_OPEN_WITH` —— 决定「用 IDE 打开配置文件」按钮调用的
+  IDE，详见 [`docs/troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md)。
+- 路径探测类 env vars（`AI_INTERVENTION_AGENT_CONFIG_FILE`、`*_DEV_MODE`、
+  `*_USER_MODE`、`UVX_PROJECT`）—— 详见上面的查找顺序表格。
+
 ### 跨平台用户配置目录
 
 - Linux：`~/.config/ai-intervention-agent/`

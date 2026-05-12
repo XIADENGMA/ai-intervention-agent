@@ -9,6 +9,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Environment-variable overrides for Web UI bootstrap** —
+  `AI_INTERVENTION_AGENT_WEB_UI_HOST` / `_PORT` / `_LANGUAGE` now override
+  `config.toml`'s `web_ui.host` / `web_ui.port` / `web_ui.language` at
+  process startup, applied inside `get_web_ui_config()` and cached for the
+  existing 10-second TTL. Targets the "I can't easily edit `config.toml`
+  here" runtimes — `uvx`, Docker, systemd unit drop-ins, SSH-remote sessions
+  — and mirrors what competitor MCP servers (`mcp-feedback-enhanced`)
+  expose via `MCP_WEB_HOST` / `MCP_WEB_PORT` / `MCP_LANGUAGE`, but reuses
+  this project's existing `AI_INTERVENTION_AGENT_*` prefix
+  (consistent with `AI_INTERVENTION_AGENT_CONFIG_FILE` and
+  `AI_INTERVENTION_AGENT_LOG_LEVEL`). Port range is `[1, 65535]`; out-of-range
+  / non-numeric values log a `WARNING` and fall back to `config.toml` so a
+  shell-profile typo never blocks server startup. New 20-case unit suite
+  (`tests/test_service_manager_env_override.py`) covers the
+  `_coerce_env_str` / `_coerce_env_int` helpers (5 + 6 cases) plus 9
+  end-to-end `get_web_ui_config()` paths: unset / valid / invalid / out-of-range
+  / empty / combined / info-log assertions. Docs cross-linked in
+  [`docs/configuration.{md,zh-CN.md}`](docs/configuration.md#environment-variable-overrides)
+  with an SSH-remote bind example.
+
 ## [1.6.4] — 2026-05-12
 
 > Security + release-lifecycle hardening patch on top of v1.6.3.

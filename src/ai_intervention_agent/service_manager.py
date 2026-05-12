@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import contextlib
+import os
 import signal
 import socket
 import subprocess
@@ -136,6 +137,68 @@ _config_cache_generation: int = 0
 
 _config_callbacks_registered: bool = False
 _config_callbacks_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# 环境变量覆盖（env override）：让 uvx / Docker / systemd 等"无法直接编辑
+# config.toml"的运行场景能在进程启动时一次性覆盖 `web_ui.host` /
+# `web_ui.port` / `web_ui.language`，无需再 cd 到用户配置目录改文件。
+#
+# 设计动机
+# ----
+# mcp-feedback-enhanced 等同类 MCP 产品广泛支持 `MCP_WEB_HOST` /
+# `MCP_WEB_PORT` / `MCP_LANGUAGE` 风格的 env vars，已经形成事实标准。
+# 我们沿用项目现有的 `AI_INTERVENTION_AGENT_*` 命名前缀（与
+# `AI_INTERVENTION_AGENT_CONFIG_FILE` / `AI_INTERVENTION_AGENT_LOG_LEVEL`
+# 一致），既保持内部一致性，又为来自竞品的用户提供等价能力。
+#
+# 行为契约
+# ----
+# - env override 在 :func:`get_web_ui_config` 内 `WebUIConfig` 构造前应用
+#   一次，结果随 10s TTL 缓存（进程内一致，不会被 config.toml 热重载抹掉）。
+# - 非法值（int 解析失败 / 越界 / 空白）记 ``logger.warning`` 并 fallback
+#   到 config.toml 或默认值，**不抛异常**——env override 是便利路径，
+#   错值不应让 server 启动失败。
+# - 命中 override 时记 ``logger.info``（含原值与新值），运维能在 stderr
+#   反查"为什么端口不是 config.toml 里写的那个"。
+# - 端口范围 [1, 65535] 与 Pydantic ``WebUISectionConfig.port`` clamp 一致。
+# ---------------------------------------------------------------------------
+_ENV_WEB_UI_HOST = "AI_INTERVENTION_AGENT_WEB_UI_HOST"
+_ENV_WEB_UI_PORT = "AI_INTERVENTION_AGENT_WEB_UI_PORT"
+_ENV_WEB_UI_LANGUAGE = "AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE"
+
+
+def _coerce_env_str(env_name: str) -> str | None:
+    """从环境变量读取非空字符串。未设置或仅空白时返回 None。"""
+    raw = os.environ.get(env_name)
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return stripped or None
+
+
+def _coerce_env_int(env_name: str, lo: int, hi: int) -> int | None:
+    """从环境变量读取 int（带边界校验）。
+
+    返回 None 的三种情形：env 未设置 / 解析失败 / 越界。后两种会记
+    ``logger.warning`` 让运维能在日志反查，调用方按 None 走 fallback 路径。
+    """
+    raw = _coerce_env_str(env_name)
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            f"环境变量 {env_name}={raw!r} 不是合法整数，忽略 override（fallback 到 config.toml）"
+        )
+        return None
+    if not (lo <= value <= hi):
+        logger.warning(
+            f"环境变量 {env_name}={value} 超出合法范围 [{lo}, {hi}]，忽略 override"
+        )
+        return None
+    return value
 
 
 def _close_async_client_best_effort(client: httpx.AsyncClient | None) -> None:
@@ -690,6 +753,29 @@ def get_web_ui_config() -> tuple[WebUIConfig, int]:
         )
 
         language = str(web_ui_config.get("language", "auto"))
+
+        # 环境变量覆盖（uvx / Docker / systemd 友好的"无需改 config.toml"路径）。
+        # env 命中时记 info 让运维能反查；非法值记 warning 并 fallback（不阻断启动）。
+        env_host = _coerce_env_str(_ENV_WEB_UI_HOST)
+        if env_host:
+            logger.info(
+                f"环境变量 {_ENV_WEB_UI_HOST} 覆盖 web_ui.host: {host!r} -> {env_host!r}"
+            )
+            host = env_host
+
+        env_port = _coerce_env_int(_ENV_WEB_UI_PORT, 1, 65535)
+        if env_port is not None:
+            logger.info(
+                f"环境变量 {_ENV_WEB_UI_PORT} 覆盖 web_ui.port: {port} -> {env_port}"
+            )
+            port = env_port
+
+        env_language = _coerce_env_str(_ENV_WEB_UI_LANGUAGE)
+        if env_language:
+            logger.info(
+                f"环境变量 {_ENV_WEB_UI_LANGUAGE} 覆盖 web_ui.language: {language!r} -> {env_language!r}"
+            )
+            language = env_language
 
         config = WebUIConfig(
             host=host,
