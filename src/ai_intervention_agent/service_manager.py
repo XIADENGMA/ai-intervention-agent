@@ -918,10 +918,24 @@ def start_web_service(config: WebUIConfig, script_dir: Path) -> None:
     #   2. 没有任何 Web UI（包括外部）在监听该端口（health_check=False）
     # 那么端口若不可 bind，必定是另一个非我们的进程占着。
     if not _is_port_available(config.host, config.port):
+        # 友好 error message：内联可执行的解决方案，让用户不用翻
+        # docs/troubleshooting.md 就能立刻修。
+        #
+        # 设计要点：
+        # 1. 第一行含 host:port（兼容 ``test_port_in_use_message_mentions_host_and_port``
+        #    等已有测试断言）；
+        # 2. 列出 3 条 actionable 路径，**env override** 是第一推荐——它
+        #    与本项目新增的 ``AI_INTERVENTION_AGENT_WEB_UI_PORT`` 形成闭环，
+        #    用户不用改 ``config.toml``、不用重启 IDE 就能换端口；
+        # 3. 错误码保持 ``port_in_use``，不破坏上层 monitoring / VS Code
+        #    插件的精确文案路径（见 ``test_port_in_use_raises_fast_without_popen``）。
         msg = (
-            f"端口 {config.host}:{config.port} 已被占用，但 health-check "
-            f"未识别为本服务。请检查是否有其他进程占用该端口，"
-            f"或在配置中改用其他端口。"
+            f"端口 {config.host}:{config.port} 已被占用（health-check 未识别为本服务）。"
+            "常见解决方案："
+            f"(1) 临时换端口：export AI_INTERVENTION_AGENT_WEB_UI_PORT=<新端口>；"
+            f"(2) 永久换端口：编辑 config.toml [web_ui] port=<新端口>；"
+            f"(3) 查看占用进程：lsof -nP -iTCP:{config.port} -sTCP:LISTEN；"
+            "详见 docs/troubleshooting.md#1。"
         )
         logger.error(msg)
         raise ServiceUnavailableError(msg, code="port_in_use")

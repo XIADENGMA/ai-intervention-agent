@@ -49,6 +49,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `sys.argv` doesn't trip up the entire test suite. `pyproject.toml`
   `[project.scripts]` flipped from `:main` to `:_cli_main`.
 
+### Changed
+
+- **`port_in_use` error message inlines actionable fixes** — the
+  `ServiceUnavailableError(code="port_in_use")` raised by
+  `start_web_service()` used to read "请检查是否有其他进程占用该端口，或
+  在配置中改用其他端口" — accurate but inactionable; the user had to go
+  read `docs/troubleshooting.md#1` to learn the recovery commands. The
+  message now inlines three executable paths: (1) `export
+  AI_INTERVENTION_AGENT_WEB_UI_PORT=<new>` (the new env override path,
+  zero file edits), (2) edit `config.toml [web_ui] port=<new>`, (3)
+  `lsof -nP -iTCP:<port> -sTCP:LISTEN` to discover the squatter, plus a
+  link to the doc for the deep dive. Error `code` is unchanged
+  (`port_in_use`) so the existing VS Code extension precise-text path
+  and any monitoring / log alerts that match on code keep working.
+  `docs/troubleshooting.{md,zh-CN.md}` Issue #1 ("Web UI does not start
+  / port already in use") rewritten in matching three-option layout
+  (env override → config.toml → `pkill` / `lsof`) so doc and runtime
+  message stay in lockstep. New 9-case unit suite
+  (`tests/test_port_in_use_friendly_message.py`) guards: error code
+  stays `port_in_use`, host:port still present (legacy contract from
+  `test_server_functions::test_port_in_use_message_mentions_host_and_port`),
+  message contains env-override hint, contains `config.toml` hint,
+  contains `lsof` hint with the actual port (not a hard-coded `8080`),
+  links to `docs/troubleshooting.md`, message is single-string (no
+  newlines so loggers / Sentry render compactly), and works for IPv6
+  hosts (`::`). Total 12 cases when combined with the 3 historical
+  `TestStartWebServicePortInUse` cases.
+
 ## [1.6.4] — 2026-05-12
 
 > Security + release-lifecycle hardening patch on top of v1.6.3.

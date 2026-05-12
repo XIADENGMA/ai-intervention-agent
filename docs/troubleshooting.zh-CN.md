@@ -21,22 +21,34 @@
 之前残留的 `ai-intervention-agent` 进程、其他本地开发服务器、
 开机时被某个系统服务抢占。
 
-**修复**：
+**修复**（按速度从快到慢）：
 
 ```bash
-# 1. 杀掉残留 agent（macOS / Linux）：
+# 方案 A —— 临时换端口（不动 config.toml，重启 IDE 即可生效）
+#
+# 下次 MCP server 启动时立刻命中新端口。当前 shell session 内一直有效，
+# 登出后失效，适合"先用着、回头再改 config.toml"的场景。
+export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181
+# 重启 AI 客户端（Cursor / VS Code），让 MCP 进程重新读 env var。
+# 详见 docs/configuration.zh-CN.md#环境变量覆盖。
+
+# 方案 B —— 永久换端口（编辑 config.toml）
+#
+# 找配置文件位置：
+#   ai-intervention-agent --help  # 看版本 / 二进制路径
+#   uvx ai-intervention-agent     # 启动 banner 含 "config_file_path=..."
+#
+# 然后编辑：
+#   [web_ui]
+#   port = 8181
+
+# 方案 C —— 不换端口，把占用进程腾出来
 pkill -f ai-intervention-agent || true
 lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
-
-# 2. 或者改端口（编辑 config.toml）：
-# [web_ui]
-# port = 8181
-
-# 3. 重启 AI 客户端（Cursor / VS Code），让 MCP 进程重新解析端口。
 ```
 
-如果改了端口，VS Code 的 `ai-intervention-agent.serverUrl` 也要跟着
-改（如 `http://localhost:8181`）。
+如果改了端口（方案 A 或 B），VS Code 的 `ai-intervention-agent.serverUrl`
+也要跟着改（如 `http://localhost:8181`）。
 
 ## 2. VS Code 面板空白 / 一直 "Loading..."
 

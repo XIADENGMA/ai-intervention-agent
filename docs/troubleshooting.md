@@ -23,23 +23,35 @@ right channel.
 process, another local dev server, or a system service that grabbed
 the port at boot.
 
-**Fix**:
+**Fix** (sorted from fastest to slowest):
 
 ```bash
-# 1. Find and kill any prior agent (macOS / Linux):
+# Option A — Temporary override (no file edits, IDE restart only)
+#
+# Lands the new port immediately the next time the MCP server starts.
+# Survives the current shell session but resets on logout.
+export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181
+# Restart your AI client (Cursor / VS Code) so the MCP process
+# re-resolves the env var. See docs/configuration.md#environment-variable-overrides.
+
+# Option B — Permanent change (edit config.toml)
+#
+# Locate the file with:
+#   ai-intervention-agent --help  # version + bin path
+#   uvx ai-intervention-agent     # then check banner: "config_file_path=..."
+#
+# Then edit:
+#   [web_ui]
+#   port = 8181
+
+# Option C — Free the port instead of changing it
 pkill -f ai-intervention-agent || true
 lsof -nP -iTCP:8080 -sTCP:LISTEN  # confirm it's clear
-
-# 2. Or change the port in config.toml:
-# [web_ui]
-# port = 8181
-
-# 3. Restart your AI client (Cursor / VS Code) so the MCP process
-#    re-resolves the new port.
 ```
 
-If you change the port, also update `ai-intervention-agent.serverUrl`
-in VS Code settings (e.g. `http://localhost:8181`).
+If you change the port (Option A or B), also update
+`ai-intervention-agent.serverUrl` in VS Code settings
+(e.g. `http://localhost:8181`).
 
 ## 2. VS Code panel is blank / shows "Loading..." forever
 
