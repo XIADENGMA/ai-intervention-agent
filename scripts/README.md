@@ -120,11 +120,24 @@ diverges.
   `pyproject.toml`, `package.json`, README badges, etc. `--check`
   validates cross-file consistency.
 - [`check_tag_push_safety.py`](check_tag_push_safety.py)
-  _(R19.1)_ — fail `make release-check` if more than three
+  _(R19.1 + R185)_ — fail `make release-check` if more than three
   unpushed `v*.*.*` tags exist locally. Works around an
   undocumented GitHub rule that drops `push.tags` webhook events
   when 4+ tags are pushed in one go, which would silently skip
   the `release.yml` workflow.
+  **R185 extends with an opt-in `--check-cve` CVE gate**: when
+  passed, queries `gh api repos/{owner}/{repo}/dependabot/alerts`
+  and fails the check if ≥ 1 open Dependabot alert at
+  `critical`/`high` severity exists. Tune with `--cve-severity
+  {critical,high,medium,low}` (repeatable, defaults to
+  `{critical,high}`) or emergency-bypass with `--allow-cve`
+  (emits `WARNING (R185)` to stderr, recommend recording rationale
+  in the commit message). Default is OFF — adding the gate to a
+  release pipeline is opt-in, so existing callers stay
+  byte-identical. Failure modes (missing `gh` CLI, `gh` not logged
+  in, Dependabot disabled, non-GitHub remote) degrade gracefully:
+  pass with a log line, never hard-fail, so contributor onboarding
+  doesn't regress.
 
 ## Performance
 
@@ -170,4 +183,6 @@ never lies. Last refreshed for v1.6.0 (added 7 scripts that
 shipped between v1.5.22 and v1.6.0:
 `check_brand_color_consistency.py`, `check_tag_push_safety.py`,
 `generate_pwa_icons.py`, `perf_e2e_bench.py`, `perf_gate.py`,
-`precompress_static.py`, `smoke_test_r50.py`)._
+`precompress_static.py`, `smoke_test_r50.py`).
+v1.6.5: `check_tag_push_safety.py` gained R185 opt-in
+`--check-cve` Dependabot gate (description updated above)._

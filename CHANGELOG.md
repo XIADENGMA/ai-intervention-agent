@@ -11,6 +11,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R185 docs sync** — every entry point that mentions
+  `check_tag_push_safety.py` now also documents the new `--check-cve`
+  gate so the feature isn't orphaned. (1) `Makefile` gains a
+  `release-check-cve` convenience target (column-aligned in `make
+  help`); (2) `scripts/README.md` updates the
+  `check_tag_push_safety.py` index entry with the full R185 flag
+  surface (`--check-cve`, `--cve-severity`, `--allow-cve`) and its
+  graceful-degradation contract; (3) bilingual
+  `docs/release-recovery.{md,zh-CN.md}` both call out the new flag
+  + `release-check-cve` shortcut in their recovery playbook (step 5)
+  and reference list. Guarded by `tests/test_r185_docs_sync.py` (8
+  cases): `.PHONY` declaration, target body wiring, `make help`
+  visibility, `scripts/README.md` mentions `R185` + `--check-cve`,
+  English/Chinese release-recovery parity. Future renames /
+  removals of any of these three entry points will fail
+  `pytest` so the "code exists but docs don't mention it" failure
+  mode is eliminated.
+
 - **R185 · `check_tag_push_safety.py --check-cve` Dependabot CVE gate** —
   `scripts/check_tag_push_safety.py` learns an **opt-in** pre-tag CVE
   gate that blocks `make release-check` when the repository has ≥ 1

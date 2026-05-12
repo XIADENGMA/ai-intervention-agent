@@ -14,7 +14,7 @@
 # Discoverability:
 #   `make` (no args) → renders the help table; same as `make help`.
 
-.PHONY: help install lint test ci coverage docs docs-check vscode-check pre-commit release-check clean
+.PHONY: help install lint test ci coverage docs docs-check vscode-check pre-commit release-check release-check-cve clean
 
 # Default goal: print the help table so a fresh checkout's `make` is informative
 # instead of surprising. Pinning this is more robust than relying on Make's
@@ -24,17 +24,19 @@
 help:
 	@echo "AI Intervention Agent · Makefile entry points"
 	@echo ""
-	@echo "  make install        install dev deps via uv (--all-groups)"
-	@echo "  make lint           ruff format + check + ty type-check"
-	@echo "  make test           pytest only (no i18n / minify gates)"
-	@echo "  make ci             full CI Gate (ruff + ty + 8x i18n + minify + pytest + red-team)"
-	@echo "  make coverage       full CI Gate + coverage XML / term-missing report"
-	@echo "  make docs           regenerate docs/api/ + docs/api.zh-CN/ from Python source"
-	@echo "  make docs-check     verify docs/api/ + docs/api.zh-CN/ are in sync (no writes)"
-	@echo "  make vscode-check   full CI Gate + VS Code extension test + VSIX build"
-	@echo "  make pre-commit     run all pre-commit hooks against all files"
-	@echo "  make release-check  verify <=3 unpushed v*.*.* tags before 'git push --follow-tags'"
-	@echo "  make clean          remove generated build / coverage / lint artefacts"
+	@echo "  make install           install dev deps via uv (--all-groups)"
+	@echo "  make lint              ruff format + check + ty type-check"
+	@echo "  make test              pytest only (no i18n / minify gates)"
+	@echo "  make ci                full CI Gate (ruff + ty + 8x i18n + minify + pytest + red-team)"
+	@echo "  make coverage          full CI Gate + coverage XML / term-missing report"
+	@echo "  make docs              regenerate docs/api/ + docs/api.zh-CN/ from Python source"
+	@echo "  make docs-check        verify docs/api/ + docs/api.zh-CN/ are in sync (no writes)"
+	@echo "  make vscode-check      full CI Gate + VS Code extension test + VSIX build"
+	@echo "  make pre-commit        run all pre-commit hooks against all files"
+	@echo "  make release-check     verify <=3 unpushed v*.*.* tags before 'git push --follow-tags'"
+	@echo "  make release-check-cve same as release-check, plus R185 Dependabot CVE gate"
+	@echo "                         (requires 'gh' CLI logged in; blocks on critical/high open alerts)"
+	@echo "  make clean             remove generated build / coverage / lint artefacts"
 	@echo ""
 	@echo "All targets are thin wrappers; the source of truth lives in"
 	@echo "scripts/ci_gate.py and friends. See scripts/README.md for the index."
@@ -72,6 +74,14 @@ pre-commit:
 
 release-check:
 	uv run python scripts/check_tag_push_safety.py
+
+# R185: opt-in CVE gate variant — same tag-count check, plus Dependabot
+# alerts at critical/high severity become release blockers. Requires
+# `gh` CLI logged in. Use this from CI / before tagging a release; the
+# default `release-check` target stays byte-identical so existing
+# pipelines aren't disrupted.
+release-check-cve:
+	uv run python scripts/check_tag_push_safety.py --check-cve
 
 clean:
 	rm -rf build dist *.egg-info

@@ -60,7 +60,9 @@ git tag -d v1.6.3
 # 4. Re-tag on the new HEAD (which contains the fix).
 git tag -a v1.6.3 -m "release v1.6.3 (re-shot after attempt-1 CI failure)"
 
-# 5. Sanity-check push safety.
+# 5. Sanity-check push safety. (Add --check-cve for R185 Dependabot
+#    CVE gate; requires `gh auth login` + Dependabot enabled on the repo.
+#    Or use `make release-check-cve` shortcut.)
 uv run python scripts/check_tag_push_safety.py
 
 # 6. Push the new tag — triggers release.yml.
@@ -195,6 +197,9 @@ move?" detective work in future bisect sessions.
   pin guard (related: prevents floating-tag toolchain drift).
 - `scripts/check_tag_push_safety.py` — pre-push safety check
   (warns if you're pushing more than 3 unpushed tags at once).
+  **R185 extension**: `--check-cve` flag blocks the release if
+  ≥ 1 open Dependabot alert at `critical`/`high` exists; opt-in,
+  default OFF. `make release-check-cve` is the convenience target.
 - `scripts/bump_version.py` — programmatic version sync across
   `pyproject.toml`, `package.json`, `uv.lock`, `package-lock.json`,
   `packages/vscode/package.json`, `CITATION.cff`,

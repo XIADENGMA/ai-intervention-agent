@@ -57,7 +57,9 @@ git tag -d v1.6.3
 # 4. 在含修复的新 HEAD 上重打 tag。
 git tag -a v1.6.3 -m "release v1.6.3 (re-shot after attempt-1 CI failure)"
 
-# 5. 推前安全检查。
+# 5. 推前安全检查。（加 --check-cve 启用 R185 Dependabot CVE 闸门；
+#    需要 `gh auth login` + 仓库已启用 Dependabot。或用快捷目标
+#    `make release-check-cve`。）
 uv run python scripts/check_tag_push_safety.py
 
 # 6. push 新 tag —— 触发 release.yml。
@@ -181,7 +183,9 @@ Issue 跟踪器发条简报：
 - `tests/test_release_workflow_ovsx_pinned_r149.py` —— R149 ovsx
   pin guard（相关：防止 floating-tag toolchain drift）。
 - `scripts/check_tag_push_safety.py` —— push 前安全检查（一次推
-  超过 3 个未推 tag 会告警）。
+  超过 3 个未推 tag 会告警）。**R185 扩展**：`--check-cve` 标志在
+  仓库存在 ≥ 1 个 `critical`/`high` 级 Dependabot 开放告警时阻止
+  发布；opt-in，默认 OFF。`make release-check-cve` 是便利目标。
 - `scripts/bump_version.py` —— 跨 `pyproject.toml`、`package.json`、
   `uv.lock`、`package-lock.json`、`packages/vscode/package.json`、
   `CITATION.cff`、`.github/ISSUE_TEMPLATE/bug_report.yml` 的程序化
