@@ -116,6 +116,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   documented in the `/api/system/health` Swagger docstring alongside
   `config_file_path` / `build`.
 
+### Documentation
+
+- **Code Review #16 archived** —
+  [`docs/code-review-v1.6.4-followups-cr16.tmp.md`](docs/code-review-v1.6.4-followups-cr16.tmp.md)
+  captures the cycle-2 review covering 5 commits (`36cdc72` →
+  `246accc`): the env-override → CLI → health-endpoint observability
+  triangle closure, R185 (Dependabot CVE gate) landing + bilingual
+  docs sync, `--print-config` introduction, and a same-cycle hotfix
+  restoring R120 baseline. 5 follow-ups identified (F-1
+  `--print-config` covering all non-sensitive sections, F-2 R185
+  rate-limit test documentation, F-3 `using_defaults` flag, F-4
+  pre-commit governance for CHANGELOG diff size, F-5 public
+  `invalidate_web_ui_config_cache()` helper). Versioning
+  recommendation: bump to **v1.7.0** to signal that env-vars + CLI
+  flags + health-endpoint field constitute a coherent public
+  surface expansion.
+
 ### Tests
 
 - **Console-script entry-point wiring guard** — `pyproject.toml
