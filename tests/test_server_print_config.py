@@ -197,12 +197,11 @@ class TestPrintConfigReflectsEnvOverrides(unittest.TestCase):
 
     @staticmethod
     def _invalidate_sm_cache() -> None:
-        """直接重置 service_manager 的 web_ui 配置 TTL 缓存。"""
+        """CR#16 F-5：调 public helper 而不是 reach 到 ``_config_cache``
+        private dict——保护测试不被未来 cache shape 变更打挂。"""
         from ai_intervention_agent import service_manager as _sm
 
-        with _sm._config_cache_lock:
-            _sm._config_cache["config"] = None
-            _sm._config_cache["timestamp"] = 0.0
+        _sm.invalidate_web_ui_config_cache()
 
     def _run_and_parse(self) -> dict:
         # env patch 后必须再次 invalidate，否则 _print_effective_config

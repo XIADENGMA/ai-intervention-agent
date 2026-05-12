@@ -151,6 +151,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   preservation, 1 end-to-end regression for the bark_device_key
   redaction). Bilingual READMEs updated.
 
+### Tests
+
+- **CR#16 F-5 · public `invalidate_web_ui_config_cache()` helper** —
+  `service_manager` gains a public, no-arg, no-return-value helper
+  that clears just the `get_web_ui_config()` TTL cache. Tests
+  (especially `tests/test_server_print_config.py::
+  TestPrintConfigReflectsEnvOverrides`) previously reached into the
+  `_config_cache` private dict to do this; future shape changes
+  would have silently broken them. The new helper is intentionally
+  narrower than `_invalidate_runtime_caches_on_config_change`
+  (which also resets http clients and bumps the cache generation
+  counter) and is verified by `tests/test_service_manager_cache_
+  helpers.py` (8 cases): public-API contract (no underscore prefix,
+  no args, returns None), behaviour (clears `config` / `timestamp`
+  fields, does not bump `_config_cache_generation`), and AST-based
+  side-effect scope check (helper source references neither
+  `_sync_client`/`_async_client`/`_config_cache_generation` — the
+  test parses ast.Name nodes to ignore docstring string mentions).
+
 ### Security
 
 - **Hardening guidance for non-loopback deployments** — discovered during

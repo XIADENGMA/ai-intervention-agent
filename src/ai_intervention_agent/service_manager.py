@@ -691,6 +691,33 @@ class ServiceManager:
 # ---------------------------------------------------------------------------
 
 
+def invalidate_web_ui_config_cache() -> None:
+    """CR#16 F-5：清空 ``get_web_ui_config()`` 的 TTL 缓存（public helper）。
+
+    用途
+    ----
+    * **测试**：单测里改了 env 或 config 后想立刻看到新值，调一次本函数比
+      reach 到 ``_config_cache`` private dict 更稳——后者一旦改 shape
+      （比如加新字段），所有测试都得改；
+    * **运行时**：custom hot-reload flow / 外部脚本写完 config.toml 后
+      想强制 next call 重读，比起 ``_invalidate_runtime_caches_on_config_change``
+      副作用面更小（不重置 http client / 不 ``_config_cache_generation += 1``，
+      只是让下一次 ``get_web_ui_config()`` cache miss 重新 load）。
+
+    线程安全：仍走 ``_config_cache_lock``——与 ``get_web_ui_config()``
+    的写路径一致，绝不和并发读者打架。
+
+    向后兼容
+    ----
+    本函数不替换 ``_invalidate_runtime_caches_on_config_change``；它是更
+    窄的工具，只动 web_ui config cache 一项。需要清空 http client / 触发
+    generation bump 时仍调原 helper。
+    """
+    with _config_cache_lock:
+        _config_cache["config"] = None
+        _config_cache["timestamp"] = 0.0
+
+
 def get_web_ui_config() -> tuple[WebUIConfig, int]:
     """加载 Web UI 配置（带 10s TTL 缓存），返回 (WebUIConfig, auto_resubmit_timeout)。
 
