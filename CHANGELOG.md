@@ -31,6 +31,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   [`docs/configuration.{md,zh-CN.md}`](docs/configuration.md#environment-variable-overrides)
   with an SSH-remote bind example.
 
+- **CLI `--version` / `--help` support** — `ai-intervention-agent
+  --version` (or `-V`) now prints `ai-intervention-agent <version>` and
+  exits `0`; `--help` / `-h` shows usage + an epilog pointing at config
+  surfaces. Before this change, any unrecognised flag would be silently
+  ignored and the binary would fall straight into the MCP stdio loop,
+  hanging on `stdin` until the user noticed and `Ctrl+C`-ed — the same
+  PyPI footgun that `pip`, `ruff`, `uv`, and `black` all guard against
+  with their first-line `--version` flag. New `_cli_main()` console-script
+  entry point reads `sys.argv[1:]` and forwards to `main(argv)`; `main()`
+  itself keeps its zero-argument contract (= jump to stdio loop) so the
+  ~5000 existing tests that call `main()` without args continue to pass.
+  New 20-case unit suite (`tests/test_server_cli_argparse.py`) guards
+  four invariants: (1) `--version` / `-V` exit 0 + print to stdout;
+  (2) `--help` / `-h` exit 0 + show usage; (3) unknown flag → exit 2 +
+  error on stderr; (4) `main(None)` *must* skip argparse so pytest's own
+  `sys.argv` doesn't trip up the entire test suite. `pyproject.toml`
+  `[project.scripts]` flipped from `:main` to `:_cli_main`.
+
 ## [1.6.4] — 2026-05-12
 
 > Security + release-lifecycle hardening patch on top of v1.6.3.

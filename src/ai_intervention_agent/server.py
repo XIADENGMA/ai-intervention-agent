@@ -19,6 +19,7 @@ __all__ = [
     "ServiceManager",
     "WebUIConfig",
     "_append_prompt_suffix",
+    "_cli_main",
     "_ensure_config_change_callbacks_registered",
     "_format_file_size",
     "_generate_task_id",
@@ -53,6 +54,7 @@ __all__ = [
     "wait_for_task_completion",
 ]
 
+import argparse
 import atexit  # noqa: F401  (kept for test-suite compatibility: tests patch server.atexit)
 import io
 import os
@@ -1072,17 +1074,75 @@ def cleanup_services(shutdown_notification_manager: bool = True) -> None:
         logger.error(f"服务清理失败: {e}", exc_info=True)
 
 
-def main() -> None:
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """构造 ``ai-intervention-agent`` 的 CLI 解析器。
+
+    设计目标
+    ----
+    符合 PyPI CLI 事实标准（pip / ruff / uv / black 等）：
+    ``--version`` / ``--help`` 必须可用，否则 ``uvx ai-intervention-agent
+    --version`` 会卡进 MCP stdio loop 永远 hang，用户得 Ctrl+C 才能退。
+
+    向后兼容
+    ----
+    无任何参数时（``argv == []``），parser 不报错，调用方继续走原
+    ``mcp.run(transport="stdio")`` 路径——这是 MCP client (Cursor /
+    Claude Desktop / mcp-cli) 调起 server 的默认调用形态。
+
+    扩展点
+    ----
+    后续若要加 ``--log-level`` / ``--config-file`` 等运行时 flag，在此添加
+    ``parser.add_argument`` 即可；但请注意：相同配置项已经有 env vars
+    （``AI_INTERVENTION_AGENT_LOG_LEVEL`` / ``_CONFIG_FILE``）和
+    ``config.toml`` 两条路径，加 CLI 会形成 3 套并存——增加用户认知
+    负担。除非有强需求，否则避免重复造轮子。
+    """
+    parser = argparse.ArgumentParser(
+        prog="ai-intervention-agent",
+        description=(
+            "MCP server providing the interactive_feedback tool — lets AI "
+            "agents pause to ask humans for clarification, decisions, or "
+            "sign-off via a local Web UI."
+        ),
+        epilog=(
+            "Run without arguments to start the MCP stdio server (the "
+            "default way Cursor / Claude Desktop / mcp-cli invoke this "
+            "binary). Configure host/port/language via "
+            "AI_INTERVENTION_AGENT_WEB_UI_HOST/PORT/LANGUAGE env vars or "
+            "your config.toml. See docs/configuration.md for the full "
+            "configuration surface."
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"%(prog)s {_resolve_server_version()}",
+        help="Print version and exit.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
     """
     MCP 服务器主入口函数
 
     功能
     ----
-    配置日志级别并启动 FastMCP 服务器，使用 stdio 传输协议与 AI 助手通信。
-    包含自动重试机制，提高服务稳定性。
+    解析 CLI（``--version`` / ``--help``）后启动 FastMCP 服务器，使用 stdio
+    传输协议与 AI 助手通信。包含自动重试机制，提高服务稳定性。
+
+    参数
+    ----
+    argv : list[str] | None
+        CLI 参数列表（不含 prog name）。默认 ``None`` 时 argparse 自动从
+        ``sys.argv[1:]`` 取，与 console_script 入口的零参数调用契约一致。
+        测试可以传 ``["--version"]`` / ``["-V"]`` / ``["--help"]`` /
+        ``[]`` 等显式 argv 走分支。
 
     运行流程
     --------
+    0. 解析 CLI 参数（``--version`` 会直接 ``sys.exit(0)``，不进入下面）
     1. 降低 mcp 和 fastmcp 日志级别为 WARNING（避免污染 stdio）
     2. 调用 mcp.run(transport="stdio") 启动 MCP 服务器
     3. 服务器持续运行，监听 stdio 上的 MCP 协议消息
@@ -1119,6 +1179,7 @@ def main() -> None:
     --------
     - 直接运行: python server.py
     - 作为 MCP 服务器被 AI 助手调用
+    - CLI 自省: ``ai-intervention-agent --version`` / ``--help``
 
     注意事项
     --------
@@ -1126,7 +1187,28 @@ def main() -> None:
     - 所有日志输出重定向到 stderr
     - 服务进程由 ServiceManager 管理，退出时自动清理
     - 重试机制可以自动恢复临时性错误
+    - ``argparse`` 的 ``--version`` / ``--help`` 用 ``sys.exit(0)``
+      退出，**绝不**会进入 stdio loop——避免 ``uvx
+      ai-intervention-agent --version`` hang 死的常见 PyPI CLI footgun。
+
+    向后兼容契约
+    ------------
+    **``argv is None`` 时跳过 CLI 解析**，直接走 stdio loop。这是为了
+    保留 ``main()`` 零参数调用契约——历史上 ``test_server_functions``
+    / ``test_server_main_retry_backoff`` / ``test_diagnostic_event_log_r40``
+    都用 ``main()`` 不传 argv 来直接测试 stdio loop 启动行为，
+    PyPA console_script wrapper 也是零参数调用 ``main()``。如果默认
+    fallback 到 ``sys.argv[1:]``，pytest 自己的 ``sys.argv`` 会被错当
+    成 server CLI flag，整套测试都会炸 ``argparse.SystemExit(2)``。
+
+    需要 CLI 解析时（如 ``ai-intervention-agent --version``），由
+    ``_cli_main()`` console_script 入口或 ``__main__`` 块显式传
+    ``sys.argv[1:]`` 调用。
     """
+    # ``argv is not None`` 才解析；保护 ``main()`` 零参数老契约。
+    if argv is not None:
+        _build_arg_parser().parse_args(argv)
+
     # 配置日志级别（在重试循环外，只配置一次）
     mcp_logger = _stdlib_logging.getLogger("mcp")
     mcp_logger.setLevel(_stdlib_logging.WARNING)
@@ -1214,5 +1296,25 @@ def main() -> None:
                 sys.exit(1)
 
 
+def _cli_main() -> None:
+    """PyPA console_script 入口（``[project.scripts]`` 注册到此函数）。
+
+    setuptools / hatchling 生成的 console_script wrapper 等价于：
+
+        from ai_intervention_agent.server import _cli_main
+        sys.exit(_cli_main())
+
+    **不会**把 ``sys.argv`` 传给入口函数（这是 PyPA 标准行为，与
+    ``argparse.ArgumentParser().parse_args()`` 默认从 sys.argv 读的
+    自动行为耦合）。本 wrapper 显式从 ``sys.argv[1:]`` 抽取 CLI argv
+    后调 ``main(argv)``，让 ``main()`` 自己的零参数调用契约
+    （= 直接走 stdio loop）不被破坏——见 ``main()`` docstring 里的
+    「向后兼容契约」段落。
+    """
+    main(sys.argv[1:])
+
+
 if __name__ == "__main__":
-    main()
+    # 显式 sys.argv[1:] 让 ``python -m ai_intervention_agent.server --version``
+    # 与 ``ai-intervention-agent --version`` 走完全相同的 argparse 路径。
+    _cli_main()

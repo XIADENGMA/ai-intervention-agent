@@ -99,7 +99,11 @@ Changelog = "https://github.com/xiadengma/ai-intervention-agent/blob/main/CHANGE
 "Release notes" = "https://github.com/xiadengma/ai-intervention-agent/releases"
 
 [project.scripts]
-ai-intervention-agent = "ai_intervention_agent.server:main"
+# 入口指向 ``_cli_main``（不是 ``main``）：前者负责把 ``sys.argv[1:]``
+# 显式传给 ``main()``，让 argparse 解析 ``--version`` / ``--help``；
+# ``main()`` 自身保留"无参数调用 = 直接 stdio loop"的老契约，方便
+# 历史测试套件和 ``python -m ai_intervention_agent.server`` 用法。
+ai-intervention-agent = "ai_intervention_agent.server:_cli_main"
 
 # R76：迁入 src/ layout（PyPA / Hatch 推荐），让 editable install 与发布安装
 # 的 import 路径一致，避免开发环境靠 ``cwd`` 找模块。
