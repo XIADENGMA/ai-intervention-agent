@@ -9,7 +9,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Tests
+
+- **Console-script entry-point wiring guard** — `pyproject.toml
+  [project.scripts] ai-intervention-agent = ":_cli_main"` is now
+  asserted in unit tests via `importlib.metadata.entry_points`. A
+  single typo there (e.g. reverting back to `:main`) would silently
+  re-introduce the "`ai-intervention-agent --version` hangs on stdio"
+  bug without breaking any existing test (they all import
+  `server.main` / `server._cli_main` directly and skip wheel
+  metadata). Two new cases in
+  `tests/test_server_cli_argparse.py::TestConsoleScriptEntryPointWiring`
+  cover (1) the entry-point string points to `_cli_main`, and (2) it
+  resolves to a callable. CR#15 F-3 recommendation, landed in the
+  same cycle.
+
 ### Documentation
+
+- **Code Review #15 archived** —
+  [`docs/code-review-v1.6.4-followups-cr15.tmp.md`](docs/code-review-v1.6.4-followups-cr15.tmp.md)
+  reviews the 5-commit user-onboarding loop cycle on top of v1.6.4.
+  Covers the three-commit env-override → CLI → friendly-error UX
+  story, the backward-compat redesign that prevented 6 regression
+  failures in `218b72f`, bilingual doc lockstep, and 5 follow-up
+  proposals (F-1..F-5) with one (F-3 entry-point guard) implemented
+  in the same cycle.
 
 - **README surfaces the new env override + CLI inspection paths** —
   added a "Quick overrides (no file edits required)" subsection under

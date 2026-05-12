@@ -289,6 +289,56 @@ class TestMainCliBackwardCompat(unittest.TestCase):
         )
 
 
+class TestConsoleScriptEntryPointWiring(unittest.TestCase):
+    """``pyproject.toml [project.scripts]`` 必须把 ``ai-intervention-agent``
+    指向 ``_cli_main``——CR#15 F-3 提案的护栏。
+
+    单 typo（如 reset 回 ``:main``）会让 ``ai-intervention-agent --version``
+    重新回到 stdio hang 老 bug 路径，但**不会**让本目录里任何其他测试 fail
+    （它们都直接 import ``server.main`` / ``server._cli_main`` 跳过 wheel
+    metadata）。本测试通过查 installed package 的 ``entry_points``
+    metadata 守住「wheel → console_script wrapper → _cli_main」这条链。
+    """
+
+    def test_console_script_points_to_cli_main(self) -> None:
+        """``[project.scripts] ai-intervention-agent`` 必须指向
+        ``ai_intervention_agent.server:_cli_main``。"""
+        import importlib.metadata
+
+        eps = importlib.metadata.entry_points(group="console_scripts")
+        matches = [ep for ep in eps if ep.name == "ai-intervention-agent"]
+
+        self.assertEqual(
+            len(matches),
+            1,
+            f"应当恰好 1 个 console_script 注册到 ai-intervention-agent，"
+            f"实际：{len(matches)}（{[ep.value for ep in matches]!r}）",
+        )
+        self.assertEqual(
+            matches[0].value,
+            "ai_intervention_agent.server:_cli_main",
+            f"console_script 入口必须是 _cli_main 而非 main，"
+            f"否则 ``ai-intervention-agent --version`` 会重新 hang。"
+            f"实际：{matches[0].value!r}",
+        )
+
+    def test_console_script_resolves_to_callable(self) -> None:
+        """entry point 必须能 load 成可调用对象——避免 ``_cli_main`` 被
+        rename / delete 后 wheel 仍能 build 但 ``ai-intervention-agent``
+        命令一调就 ``AttributeError``。"""
+        import importlib.metadata
+
+        eps = importlib.metadata.entry_points(group="console_scripts")
+        matches = [ep for ep in eps if ep.name == "ai-intervention-agent"]
+        self.assertEqual(len(matches), 1)
+
+        loaded = matches[0].load()
+        self.assertTrue(
+            callable(loaded),
+            f"entry point 必须 load 成 callable，实际：{type(loaded)!r}",
+        )
+
+
 class TestCliMainConsoleScriptEntry(unittest.TestCase):
     """``_cli_main()``：PyPA console_script 入口，显式读 sys.argv[1:] 后调
     ``main(argv)``。"""
