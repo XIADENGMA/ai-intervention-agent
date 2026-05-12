@@ -260,9 +260,18 @@ for the full surface (timeouts, log level, etc.).
 ### CLI inspection
 
 ```bash
-ai-intervention-agent --version    # or -V — print version and exit
-ai-intervention-agent --help       # or -h — show usage + config hints
+ai-intervention-agent --version       # or -V — print version and exit
+ai-intervention-agent --help          # or -h — show usage + config hints
+ai-intervention-agent --print-config  # dump effective merged config + env overrides
 ```
+
+`--print-config` answers _"is my port 8181 because of env, or `config.toml`?"_
+in one shell pipeline — output is JSON (`jq` friendly), shows
+`config_file_path`, the resolved `web_ui` host/port/language, and any
+active `AI_INTERVENTION_AGENT_WEB_UI_*` env overrides. `network_security`
+details are omitted (sensitive); the surface mirrors
+[`/api/system/health`](docs/configuration.md#environment-variable-overrides)
+so monitoring and CLI tell the same story.
 
 ## Documentation
 

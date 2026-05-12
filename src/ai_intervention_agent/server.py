@@ -26,6 +26,7 @@ __all__ = [
     "_guess_mime_type_from_data",
     "_invalidate_runtime_caches_on_config_change",
     "_make_resubmit_response",
+    "_print_effective_config",
     "_process_image",
     "calculate_backend_timeout",
     "cleanup_http_clients",
@@ -1120,7 +1121,111 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {_resolve_server_version()}",
         help="Print version and exit.",
     )
+    parser.add_argument(
+        "--print-config",
+        action="store_true",
+        default=False,
+        help=(
+            "Print the effective merged config (config.toml + env "
+            "overrides) as JSON to stdout, then exit 0. Useful for "
+            "debugging 'why does my port show 8181 instead of 8080?' "
+            "— the output includes config_file_path, web_ui resolved "
+            "host/port/language, and the active "
+            "AI_INTERVENTION_AGENT_WEB_UI_* env overrides. "
+            "network_security details are omitted (sensitive)."
+        ),
+    )
     return parser
+
+
+def _print_effective_config() -> int:
+    """实现 ``--print-config``：dump merged config 到 stdout 后退出。
+
+    输出内容
+    --------
+    一个 JSON object 含三个 top-level key：
+
+    * ``config_file_path``：当前 ConfigManager 加载的文件绝对路径
+      （与 ``/api/system/health`` 的同名字段、``find_config_file()``
+      返回值一致）；
+    * ``web_ui``：调用 ``service_manager.get_web_ui_config()`` 拿到
+      的 **已 merge env override** 的 host / port / language——也就
+      是进程实际会绑的地址，不是 ``config.toml`` 写的原值；
+    * ``env_overrides``：当前生效的 web_ui env vars 名单（与
+      ``/api/system/health`` 的 ``web_ui_env_overrides`` 字段语义
+      一致）。
+
+    R53-F 契约
+    ----------
+    与 health endpoint 同样的安全契约——``network_security`` 整段被
+    ``ConfigManager.get_all()`` 显式过滤，**不会**dump 出 IP 白名单
+    / CIDR / token 类敏感信息。
+
+    返回码：0 = 成功打印，1 = 探测失败（仍输出一个 JSON object 带
+    ``error`` 字段，让脚本能机器解析）。
+    """
+    import json as _json
+
+    from ai_intervention_agent import service_manager as _sm
+    from ai_intervention_agent.config_manager import get_config
+
+    payload: dict[str, object] = {}
+    try:
+        cfg = get_config()
+        config_file = getattr(cfg, "config_file", None)
+        payload["config_file_path"] = str(config_file) if config_file else None
+        all_config = cfg.get_all()
+        web_ui_section = (
+            dict(all_config.get("web_ui", {}))
+            if isinstance(all_config.get("web_ui"), dict)
+            else {}
+        )
+    except Exception as exc:
+        print(
+            _json.dumps(
+                {"error": f"config probe failed: {exc!r}"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            flush=True,
+        )
+        return 1
+
+    try:
+        merged_tuple = _sm.get_web_ui_config()
+        # service_manager.get_web_ui_config() 历史签名是 (WebUIConfig, timeout)；
+        # 我们只关心 WebUIConfig，timeout 单独看（多取一个字段不破坏向前兼容）
+        merged = merged_tuple[0] if isinstance(merged_tuple, tuple) else merged_tuple
+        web_ui_section.update(
+            {
+                "host": merged.host,
+                "port": merged.port,
+                "language": merged.language,
+            }
+        )
+    except Exception:
+        pass
+    payload["web_ui"] = web_ui_section
+
+    active_env: dict[str, str] = {}
+    try:
+        for env_name in (
+            _sm._ENV_WEB_UI_HOST,
+            _sm._ENV_WEB_UI_PORT,
+            _sm._ENV_WEB_UI_LANGUAGE,
+        ):
+            raw = os.environ.get(env_name)
+            if raw is None:
+                continue
+            stripped = raw.strip()
+            if stripped:
+                active_env[env_name] = stripped
+    except Exception:
+        pass
+    payload["env_overrides"] = active_env
+
+    print(_json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -1207,7 +1312,12 @@ def main(argv: list[str] | None = None) -> None:
     """
     # ``argv is not None`` 才解析；保护 ``main()`` 零参数老契约。
     if argv is not None:
-        _build_arg_parser().parse_args(argv)
+        ns = _build_arg_parser().parse_args(argv)
+        # ``--print-config`` 是 dump-and-exit 操作（与 ``--version`` 同性
+        # 质），所以在进入 stdio loop 前用 ``sys.exit`` 立即退出，避免
+        # 把 dump 出来的 JSON 当成 MCP protocol 输出污染 stdio。
+        if getattr(ns, "print_config", False):
+            sys.exit(_print_effective_config())
 
     # 配置日志级别（在重试循环外，只配置一次）
     mcp_logger = _stdlib_logging.getLogger("mcp")

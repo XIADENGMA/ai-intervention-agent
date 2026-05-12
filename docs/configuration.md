@@ -102,6 +102,24 @@ export AI_INTERVENTION_AGENT_WEB_UI_PORT=18080
 uvx ai-intervention-agent
 ```
 
+#### Verifying the effective config
+
+Two complementary observability surfaces tell the same story:
+
+```bash
+# Local CLI: dump merged config + active env overrides as JSON
+ai-intervention-agent --print-config | jq
+
+# Running process: same fields exposed by the health endpoint
+curl -s http://127.0.0.1:8080/api/system/health | jq '{config_file_path, web_ui_env_overrides}'
+```
+
+Both routes deliberately omit the `network_security` section (sensitive)
+and report **post-merge** values — i.e. what the process actually
+bound to, not the raw `config.toml` contents. If the two views disagree
+the CLI is the right answer for "next-restart behaviour" and the health
+endpoint for "current process behaviour"; in steady state they match.
+
 #### Other env vars (already documented elsewhere)
 
 - `AI_INTERVENTION_AGENT_LOG_LEVEL` — overrides `web_ui.log_level` (standalone

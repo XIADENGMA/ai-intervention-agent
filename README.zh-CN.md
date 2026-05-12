@@ -256,9 +256,18 @@ uvx ai-intervention-agent
 ### CLI 自省
 
 ```bash
-ai-intervention-agent --version    # 或 -V —— 打印版本号后退出
-ai-intervention-agent --help       # 或 -h —— 显示用法 + 配置提示
+ai-intervention-agent --version       # 或 -V —— 打印版本号后退出
+ai-intervention-agent --help          # 或 -h —— 显示用法 + 配置提示
+ai-intervention-agent --print-config  # dump 当前生效的 merged 配置 + env 覆盖
 ```
+
+`--print-config` 用一条 shell 命令回答 _"我的 port 是 8181，到底是
+env 覆盖了，还是 `config.toml` 写的？"_ —— 输出 JSON（`jq` 友好），
+含 `config_file_path`、resolved 的 web_ui host/port/language、以及当前
+生效的 `AI_INTERVENTION_AGENT_WEB_UI_*` env 覆盖。`network_security`
+详情不会暴露（敏感）；输出表面与
+[`/api/system/health`](docs/configuration.zh-CN.md#环境变量覆盖)
+镜像一致——监控仪表板和 CLI 看到的是同一份事实。
 
 ## 文档
 

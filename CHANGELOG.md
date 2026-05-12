@@ -11,6 +11,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **CLI `--print-config` flag** — dumps the *effective merged* config
+  (post-`config.toml` + env-override resolution) as JSON to stdout,
+  then exits 0. Closes the introspection loop opened by the new
+  `web_ui_env_overrides` health field: monitoring dashboards and CLI
+  users now see the same three top-level fields
+  (`config_file_path`, `web_ui` with resolved host/port/language,
+  `env_overrides`). Output is `jq`-friendly so debugging
+  *"why is my port 8181 instead of 8080?"* becomes a one-liner:
+  `ai-intervention-agent --print-config | jq .env_overrides`. The
+  `network_security` section is filtered out at the
+  `ConfigManager.get_all()` boundary (R53-F trust level — same as
+  `/api/system/health`), so secrets/tokens never leak even if added
+  later. Failure modes return exit 1 with a JSON `{"error": ...}`
+  payload so shell pipelines can branch on the result. Wired through
+  `main()` via a `sys.exit(_print_effective_config())` short-circuit
+  *before* the MCP stdio loop, mirroring `--version`'s exit pattern.
+  Test coverage: `tests/test_server_print_config.py` adds 11 cases
+  (argparse registration, `main()` clean-exit + no stdio invocation,
+  JSON shape: top-level keys / web_ui resolved fields / `env_overrides`
+  dict type, env-override reflection: empty state / port env →
+  `web_ui.port=int(value)` parity, language env → resolved
+  `web_ui.language`, network_security filtering, failure-mode JSON
+  envelope). README (en + zh) and `docs/configuration.{md,zh-CN.md}`
+  document the new flag side-by-side with the equivalent `curl
+  /api/system/health | jq` invocation, so the two surfaces stay
+  intentionally redundant.
+
 - **R185 docs sync** — every entry point that mentions
   `check_tag_push_safety.py` now also documents the new `--check-cve`
   gate so the feature isn't orphaned. (1) `Makefile` gains a

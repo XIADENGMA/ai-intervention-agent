@@ -96,6 +96,23 @@ export AI_INTERVENTION_AGENT_WEB_UI_PORT=18080
 uvx ai-intervention-agent
 ```
 
+#### 验证当前生效的配置
+
+两条互补的可观测路径会告诉你同一件事：
+
+```bash
+# 本地 CLI：把 merged 配置 + 活跃 env 覆盖 dump 成 JSON
+ai-intervention-agent --print-config | jq
+
+# 运行中进程：通过 health 端点暴露的同一组字段
+curl -s http://127.0.0.1:8080/api/system/health | jq '{config_file_path, web_ui_env_overrides}'
+```
+
+两条路径都刻意省略 `network_security` 段（敏感字段），返回的是 **merge 后**
+的值——即进程实际绑定的，而不是 `config.toml` 里写的原值。如果两者
+不一致，那 CLI 回答的是"下一次重启的行为"，health 端点回答的是
+"当前进程的行为"；正常情况下两者一致。
+
 #### 其他 env vars（已在别处文档化）
 
 - `AI_INTERVENTION_AGENT_LOG_LEVEL` —— 覆盖 `web_ui.log_level`（仅独立服务端）。
