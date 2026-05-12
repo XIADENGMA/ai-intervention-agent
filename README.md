@@ -239,6 +239,31 @@ ai-intervention-agent usage details:
 | macOS   | `~/Library/Application Support/ai-intervention-agent/` |
 | Windows | `%APPDATA%/ai-intervention-agent/`                     |
 
+### Quick overrides (no file edits required)
+
+For `uvx`, Docker, systemd, or SSH-remote runtimes where editing
+`config.toml` is awkward, the most-used `web_ui` settings can be
+overridden by env var at process startup:
+
+```bash
+export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # default 127.0.0.1
+export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181         # default 8080, range [1, 65535]
+export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=en       # auto / en / zh-CN
+uvx ai-intervention-agent
+```
+
+Invalid values log a `WARNING` and fall back to `config.toml`/defaults
+so a typo never blocks server startup. See
+[`docs/configuration.md#environment-variable-overrides`](docs/configuration.md#environment-variable-overrides)
+for the full surface (timeouts, log level, etc.).
+
+### CLI inspection
+
+```bash
+ai-intervention-agent --version    # or -V — print version and exit
+ai-intervention-agent --help       # or -h — show usage + config hints
+```
+
 ## Documentation
 
 - **Docs index** (by audience): [`docs/README.md`](docs/README.md) · [`docs/README.zh-CN.md`](docs/README.zh-CN.md)

@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **README surfaces the new env override + CLI inspection paths** —
+  added a "Quick overrides (no file edits required)" subsection under
+  Configuration with a copy-pasteable `export AI_INTERVENTION_AGENT_WEB_UI_*`
+  block plus a typo-recovery note, and a "CLI inspection" subsection
+  showing `--version` / `--help`. Without this, the two recent features
+  (`web_ui` env overrides + CLI argparse) were invisible to anyone
+  reading the README — only `docs/configuration.md` had the full
+  surface. Bilingual: same structure in `README.zh-CN.md`. No
+  functional code changes.
+
 ### Added
 
 - **Environment-variable overrides for Web UI bootstrap** —

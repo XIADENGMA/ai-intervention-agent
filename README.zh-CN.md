@@ -237,6 +237,29 @@ ai-intervention-agent 工具使用细节：
 | macOS    | `~/Library/Application Support/ai-intervention-agent/` |
 | Windows  | `%APPDATA%/ai-intervention-agent/`                     |
 
+### 快速覆盖（无需编辑文件）
+
+`uvx`、Docker、systemd、SSH 远程等场景下编辑 `config.toml` 不方便时，
+最常用的 `web_ui` 配置可以用环境变量在进程启动时一次性覆盖：
+
+```bash
+export AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0      # 默认 127.0.0.1
+export AI_INTERVENTION_AGENT_WEB_UI_PORT=8181         # 默认 8080，范围 [1, 65535]
+export AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE=zh-CN    # auto / en / zh-CN
+uvx ai-intervention-agent
+```
+
+非法值会记 `WARNING` 并 fallback 到 `config.toml` / 默认值——typo
+不会阻断 server 启动。完整列表（含超时、log level 等）见
+[`docs/configuration.zh-CN.md#环境变量覆盖`](docs/configuration.zh-CN.md#环境变量覆盖)。
+
+### CLI 自省
+
+```bash
+ai-intervention-agent --version    # 或 -V —— 打印版本号后退出
+ai-intervention-agent --help       # 或 -h —— 显示用法 + 配置提示
+```
+
 ## 文档
 
 - **文档总索引**（按角色定位）：[`docs/README.zh-CN.md`](docs/README.zh-CN.md) · [`docs/README.md`](docs/README.md)
