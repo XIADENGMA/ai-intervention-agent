@@ -9,6 +9,61 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [1.7.0] — 2026-05-13
+
+> 🎯 **Headline release: the observability triangle is closed.** This
+> minor bump consolidates 15 commits (CR#15 + CR#16 + CR#17) of v1.6.4
+> follow-up work into a single coherent public-surface expansion. The
+> theme: **answer the user's actual question** ("why is my port 8181
+> instead of 8080?") at every entry-point.
+>
+> **Three env vars + three CLI flags + one health field + four
+> release-check flags**, all landing on a default behaviour identical
+> to v1.6.4 — every new surface is opt-in or additive.
+>
+> 1. **Env-var overrides** (`AI_INTERVENTION_AGENT_WEB_UI_{HOST,PORT,LANGUAGE}`)
+>    let `uvx` / Docker / systemd users bypass `config.toml` for the
+>    same `web_ui.*` fields without bind-mounting or building images.
+>    Out-of-range values WARN + fall back instead of crashing startup.
+> 2. **CLI introspection** (`--version` / `--help` / `--print-config`)
+>    transforms `ai-intervention-agent` from a "stdio-only black box"
+>    into a standard PyPI tool that matches `pip` / `ruff` / `uv`
+>    UX conventions. `--print-config` dumps the *effective merged*
+>    config as JSON to stdout, with automatic secret-redaction of
+>    `bark_device_key` / `api_key` / `token` / `password` / etc. so
+>    the output is safe to paste in bug reports.
+> 3. **Health-endpoint field** (`/api/system/health.web_ui_env_overrides`)
+>    exposes the same env-override picture to monitoring dashboards
+>    and `curl | jq` debugging, completing the env→CLI→health
+>    observability triangle.
+> 4. **R185 Dependabot CVE gate** (`check_tag_push_safety.py
+>    --check-cve`) is an opt-in pre-tag block on open
+>    high/critical CVEs sourced from the repo's Dependabot alerts.
+>    Default behaviour is unchanged (gate off), opt in via
+>    `make release-check-cve`.
+>
+> Plus a security hardening pass: `bark_device_key` would have leaked
+> through the new `--print-config` output if not for an inline
+> recursive secret-redaction walker discovered during F-1 dry-run
+> (never made it to a release). Non-loopback deployments get a
+> three-layer hardening recipe in `.github/SECURITY.{md,zh-CN.md}`.
+>
+> Governance bonus: `check_changelog_diff_scope.py` is now a
+> pre-commit hook, blocking >100-line changes to non-`[Unreleased]`
+> CHANGELOG regions inside feature commits (motivated by R185 in
+> v1.6.4 conflating 645 lines of markdownlint normalization with the
+> actual CVE-gate diff).
+>
+> **Migration**: zero required. No flags or env vars change behaviour
+> by default. Recommended: try `ai-intervention-agent --print-config |
+> jq` after upgrading to inspect what's actually loaded.
+>
+> Detailed CR archive: [`docs/code-review-v1.6.4-followups-cr15.tmp.md`](docs/code-review-v1.6.4-followups-cr15.tmp.md),
+> [`docs/code-review-v1.6.4-followups-cr16.tmp.md`](docs/code-review-v1.6.4-followups-cr16.tmp.md),
+> [`docs/code-review-v1.6.4-followups-cr17.tmp.md`](docs/code-review-v1.6.4-followups-cr17.tmp.md).
+
 ### Added
 
 - **CLI `--print-config` flag** — dumps the *effective merged* config
