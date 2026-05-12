@@ -11,6 +11,43 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R185 · `check_tag_push_safety.py --check-cve` Dependabot CVE gate** —
+  `scripts/check_tag_push_safety.py` learns an **opt-in** pre-tag CVE
+  gate that blocks `make release-check` when the repository has ≥ 1
+  open Dependabot alert at `critical` or `high` severity. Three new
+  CLI flags: (1) `--check-cve` / `--no-check-cve`
+  (`argparse.BooleanOptionalAction`, default `OFF` — adding the gate
+  to a release pipeline is opt-in so existing `make release-check`
+  callers are byte-identical), (2) `--cve-severity {critical,high,
+  medium,low}` (`action="append"`, defaults to `{critical, high}` per
+  OWASP/NIST "patch immediately" guidance; `medium`/`low` left out
+  because R184 showed upstream-no-patch long tails would block
+  legitimate releases), (3) `--allow-cve` (emergency bypass that
+  emits a `WARNING (R185)` to stderr and recommends recording the
+  bypass rationale in the commit message). Implementation: parses
+  `git remote get-url origin` into `(owner, repo)` supporting both
+  SSH (`git@github.com:OWNER/REPO.git`) and HTTPS
+  (`https://github.com/OWNER/REPO[.git]`) forms; queries
+  `gh api repos/{owner}/{repo}/dependabot/alerts?state=open`; renders
+  each blocker as `#NUM [severity] package: GHSA — summary` plus a
+  three-line remediation block (`uv lock --upgrade-package`, `uv sync
+  --dev`, `uv run pytest -W error -q`). Failure modes are
+  conservatively non-blocking: missing `gh` CLI, `gh` not logged in,
+  Dependabot disabled on the repo, non-GitHub remotes, malformed
+  JSON, and unknown alert states all log an explanation and pass
+  (rationale: a hard requirement on `gh auth login` for every
+  contributor would be a CI/UX regression versus the pre-R185
+  baseline). Test coverage: 32 cases in
+  `tests/test_check_tag_push_safety_cve_gate_r185.py` covering the
+  remote-URL parser (SSH/HTTPS variants, malformed inputs, `.git`
+  suffix optionality), `gh` availability detection, alert filtering
+  by severity allowlist, alert-state filtering (`open` vs
+  `auto_dismissed`/`fixed`/`dismissed`), graceful degradation
+  (network failure, `gh` missing, non-GitHub remote, JSON parse
+  errors), CLI flag wiring (`--check-cve` default off, custom
+  `--cve-severity` filter, `--allow-cve` bypass exit-code semantics),
+  and end-to-end `main()` integration with mocked subprocess.
+
 - **`/api/system/health` exposes `web_ui_env_overrides` field** — completes
   the loop opened in CR#15 by giving K8s probes / monitoring dashboards
   / `curl health | jq` a single-source-of-truth answer to *"is this
@@ -143,7 +180,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > Security + release-lifecycle hardening patch on top of v1.6.3.
 > Headline content (sorted by user impact):
 >
-> * **Security** — R184 clears 5 Dependabot-reported CVEs (1 high,
+> - **Security** — R184 clears 5 Dependabot-reported CVEs (1 high,
 >   4 medium) by bumping `pytest 8.4.0 → 9.0.3` (GHSA-6w46-j5rx-g56g
 >   tmpdir hardening) and `mistune 3.2.0 → 3.2.1` (4 advisories:
 >   ReDoS in `LINK_TITLE_RE`, Heading ID XSS, figure XSS, math
@@ -152,8 +189,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 >   pytest is dev-only), but every flagged advisory is now out of
 >   range. Also enables repo-level `automated-security-fixes` so
 >   future CVE disclosures land as auto-PRs.
->
-> * **Release lifecycle resilience** — R180 + R181 (already
+> - **Release lifecycle resilience** — R180 + R181 (already
 >   covered in the v1.6.3 rescue story) are now formally
 >   captured in `docs/release-recovery.{md,zh-CN.md}` — a
 >   bilingual playbook for the 3 `release.yml` failure
@@ -166,16 +202,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 >   from `test.yml`, so the full ~5-min CI matrix now runs on
 >   doc-only commits (preventing the failure mode that bit
 >   v1.6.3 attempt #1).
->
-> * **Developer experience** — R183 adds
+> - **Developer experience** — R183 adds
 >   `bump_version.py --warn-empty-unreleased` (default-on soft
 >   guard): bump-time WARNING to stderr if `CHANGELOG.md
->   [Unreleased]` looks empty, with `--no-warn-empty-unreleased`
+[Unreleased]` looks empty, with `--no-warn-empty-unreleased`
 >   escape hatch for chore-only patch releases. 15-test
 >   contract covers the seven `[Unreleased]`-emptiness edge
 >   cases plus four end-to-end `main()` flows.
->
-> * **Test infrastructure** — R180 re-anchors
+> - **Test infrastructure** — R180 re-anchors
 >   `test_housekeeping_r151` from the volatile `[Unreleased]`
 >   section to the persistent whole-changelog invariant (R-feature
 >   persistence under any Keep-a-Changelog category). Same three
@@ -206,7 +240,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `test_docs_links_no_rot`, `test_generate_docs_index_prefix_r178`,
   README/CHANGELOG-aware tests, etc.) was inert against doc-only
   commits. v1.6.3's release-tag CI was the canary — the bump touched
-  *only* CHANGELOG / version-strings, so `test.yml` skipped, the bug
+  _only_ CHANGELOG / version-strings, so `test.yml` skipped, the bug
   rode the `v1.6.3` tag straight into `release.yml`, and the Build
   job failed at `ci_gate.py`. Removing the blanket ignore lets
   doc-only commits run the full ~5-min matrix; `LICENSE` and
@@ -227,23 +261,23 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - **R184** — 修复 5 个 Dependabot 上报的 CVE，全部为依赖升级
   （无源码受影响代码路径）：
-    - `pytest` 8.4.0 → 9.0.3：修复 GHSA-6w46-j5rx-g56g
-      （vulnerable tmpdir handling，symlink attack 风险）。
-      本仓所有测试已经在用 `tmp_path` 现代 fixture，破坏面
-      不大，但仍紧跟最新 LTS。9.x 唯一 breaking 变更是私有
-      `config.inicfg`（9.0.2 已加兼容 shim），本仓无引用。
-      bonus：pytest 9 启用原生 subtests，跑下来多识别出 620
-      个 subtests。
-    - `mistune` 3.2.0 → 3.2.1：修复 2 个 CVE，
-      GHSA-8mp2-v27r-99xp（high，ReDoS in `LINK_TITLE_RE`）+
-      GHSA-v87v-83h2-53w7（medium，Heading ID XSS）。
-      `mistune` 是 `flasgger` 的传递依赖，仅用于渲染我们的
-      docstring，不接受用户输入；exploit 路径在本仓为
-      0——但仍紧贴 patch 版本。
-    - 余下 2 个 mistune 中危 CVE（GHSA-58cw-g322-p94v figure
-      XSS、GHSA-8g87-j6q8-g93x math plugin XSS）upstream 尚无
-      patch；同样不影响本仓（不接受用户 markdown 输入）。
-      Dependabot 会在 patch 发布后自动 PR。
+  - `pytest` 8.4.0 → 9.0.3：修复 GHSA-6w46-j5rx-g56g
+    （vulnerable tmpdir handling，symlink attack 风险）。
+    本仓所有测试已经在用 `tmp_path` 现代 fixture，破坏面
+    不大，但仍紧跟最新 LTS。9.x 唯一 breaking 变更是私有
+    `config.inicfg`（9.0.2 已加兼容 shim），本仓无引用。
+    bonus：pytest 9 启用原生 subtests，跑下来多识别出 620
+    个 subtests。
+  - `mistune` 3.2.0 → 3.2.1：修复 2 个 CVE，
+    GHSA-8mp2-v27r-99xp（high，ReDoS in `LINK_TITLE_RE`）+
+    GHSA-v87v-83h2-53w7（medium，Heading ID XSS）。
+    `mistune` 是 `flasgger` 的传递依赖，仅用于渲染我们的
+    docstring，不接受用户输入；exploit 路径在本仓为
+    0——但仍紧贴 patch 版本。
+  - 余下 2 个 mistune 中危 CVE（GHSA-58cw-g322-p94v figure
+    XSS、GHSA-8g87-j6q8-g93x math plugin XSS）upstream 尚无
+    patch；同样不影响本仓（不接受用户 markdown 输入）。
+    Dependabot 会在 patch 发布后自动 PR。
 
 ### Added
 
@@ -253,15 +287,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `--no-warn-empty-unreleased` 抑制）。闭合 CR#13 §F-3。三层
   契约由 `tests/test_bump_version_warn_empty_unreleased_r183.py`
   保护（15 用例）：
-    - 纯函数 `_unreleased_section_is_empty` 的边界 —— 无标题 /
-      只有子标题 / 有 bullet / `*` 替代符 / 文件结尾无下一个 release /
-      上一个 release 有 bullet 但本区段空 等 7 个 case；
-    - `_changelog_unreleased_section` 端点切分（不能溢出到下一个
-      release）3 个 case；
-    - argparse `BooleanOptionalAction` 暴露 `--warn-empty-unreleased`
-      + `--no-warn-empty-unreleased` 双极性；
-    - end-to-end `main()`：空 → WARNING；非空 → 无 WARNING；
-      `--no-warn-empty-unreleased` 抑制；CHANGELOG.md 不存在不破坏 bump。
+  - 纯函数 `_unreleased_section_is_empty` 的边界 —— 无标题 /
+    只有子标题 / 有 bullet / `*` 替代符 / 文件结尾无下一个 release /
+    上一个 release 有 bullet 但本区段空 等 7 个 case；
+  - `_changelog_unreleased_section` 端点切分（不能溢出到下一个
+    release）3 个 case；
+  - argparse `BooleanOptionalAction` 暴露 `--warn-empty-unreleased`
+    - `--no-warn-empty-unreleased` 双极性；
+  - end-to-end `main()`：空 → WARNING；非空 → 无 WARNING；
+    `--no-warn-empty-unreleased` 抑制；CHANGELOG.md 不存在不破坏 bump。
 - **R182** — wire the new `docs/release-recovery.{md,zh-CN.md}`
   pair into the documentation index. Added cross-references in
   `docs/README.md` (Reviewers section), `docs/README.zh-CN.md`
@@ -299,7 +333,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   Rescued by renaming the class to `TestR151ChangelogPersistence`
   and re-anchoring the invariant on the **whole** changelog under
   any real release-flavour heading (Added / Changed / Fixed). The
-  `[Unreleased]` anchor itself is now only required to *exist* (may
+  `[Unreleased]` anchor itself is now only required to _exist_ (may
   be empty post-bump). One bug, three tests, root cause once.
 
 ## [1.6.3] — 2026-05-12
@@ -307,7 +341,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > Patch release on top of v1.6.2. Headline content (sorted by user
 > impact):
 >
-> * **Reliability** — R165 fixes a 7-month-old feedback-loss footgun
+> - **Reliability** — R165 fixes a 7-month-old feedback-loss footgun
 >   in `wait_for_task_completion` (TimeoutError + `return` inside
 >   `except` blocked `finally` retry-before-close from overriding
 >   the resubmit response). Five-stage exponential-backoff retry
@@ -315,23 +349,20 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 >   over the timeout fallback. Plus R165's web-side counterpart:
 >   `/api/tasks/<id>/close` returns `skipped: True` on COMPLETED
 >   tasks instead of deleting the result.
->
-> * **Limits** — R166 raises message / prompt / option length caps
+> - **Limits** — R166 raises message / prompt / option length caps
 >   from the pre-R166 numbers (10000 / 10000 / 500) to (100000 /
 >   1_000_000 / 10000). Hand-input, auto-submit, and prompt-suffix
 >   all share the higher ceiling; everywhere the limit is surfaced
 >   to humans (textarea `maxlength`, i18n hints, schema docstrings,
 >   `data-i18n-html` fallback text, LRU-cache docstrings) was
 >   tracked down and synced.
->
-> * **MCP API simplification** — R167 removes the legacy
+> - **MCP API simplification** — R167 removes the legacy
 >   `predefined_options_defaults` parallel-array shape; consumers
 >   should pass `list[dict]` of `{label, default}` (or `list[str]`
 >   when no recommendation is needed). R173 adds an 11-case smoke
 >   test that locks parsing-parity between the MCP path and the
 >   HTTP path so the dual-input design doesn't drift.
->
-> * **README polish** — R168 standardises `*.tmp.md` for single-
+> - **README polish** — R168 standardises `*.tmp.md` for single-
 >   cycle code-review artifacts; R169 sinks five "how it works /
 >   architecture / production-grade middleware / server self-info /
 >   MCP-spec compliance" sections from README into
@@ -339,13 +370,11 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 >   R170 allowlists the legitimate "Cancel" i18n duplicate;
 >   R171 trims README header badges 10 → 5 with logos and
 >   relocates the rest to topical sections.
->
-> * **Internationalisation completeness** — R175 splits all five
+> - **Internationalisation completeness** — R175 splits all five
 >   `.github/` governance docs into EN / zh-CN pairs by the README
 >   pattern; R176 adds the missing `docs/noise-levels.md` English
 >   mirror (last orphan-Chinese doc closed).
->
-> * **Guardrails + zero-warning sprint** — R174 lands a CSS quote-
+> - **Guardrails + zero-warning sprint** — R174 lands a CSS quote-
 >   consistency baseline guard (main.css 0-baseline); R177 fixes
 >   the link-rot guard to skip inline + fenced code-block markdown
 >   examples; R178 expands the CSS quote guard to
@@ -359,8 +388,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 >   `uv run python scripts/ci_gate.py` runs to clean SUCCESS** —
 >   zero warning, zero error, 4972 passed + 2 skipped under
 >   `pytest -W error`.
->
-> * **Reviewer discipline** — CR#10 (R155 → R172), CR#11
+> - **Reviewer discipline** — CR#10 (R155 → R172), CR#11
 >   (R173 → R176), and CR#12 (R177 → R179) doc artifacts each
 >   close their own follow-up items within the same cycle they
 >   were opened. CR#12 in particular closes CR#11 §F-1 (R177) and
@@ -377,82 +405,82 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - **CR#12** — **Code Review #12 (post-R177 → R179 + 2 chores)** 文档落地，
   跟踪 R177 hotfix（CR#11 F-1 double-backtick fix）+ R176 docs-index follow-up
-  + R178 (CR#11 F-3 closeout) + R179 (3 ci_gate footguns) + 1 precompress
-  refresh chore 共 5 个 commit 的整体质量评估。沿用 R168 ``.tmp.md`` 命名
-  规约（单次产物），路径 ``docs/code-review-r177-r179-cr12.tmp.md``。内容
-  覆盖：
-  - **Cycle summary 表**：5 行（chore-R177-followup / R176-docs-index /
+  - R178 (CR#11 F-3 closeout) + R179 (3 ci_gate footguns) + 1 precompress
+    refresh chore 共 5 个 commit 的整体质量评估。沿用 R168 `.tmp.md` 命名
+    规约（单次产物），路径 `docs/code-review-r177-r179-cr12.tmp.md`。内容
+    覆盖：
+  * **Cycle summary 表**：5 行（chore-R177-followup / R176-docs-index /
     R178 / R179 / chore-static-precompress）的 hash + one-liner。
-  - **里程碑结论**：自 R76 (src/ layout 迁移) 以来**第一次** `ci_gate.py`
+  * **里程碑结论**：自 R76 (src/ layout 迁移) 以来**第一次** `ci_gate.py`
     全程通过、0 warning / 0 error。CR#11 §Strengths 提到 "zero-warning
     sprint" 是目标，CR#12 是它真正达成的那一次。
-  - **Strengths 段**：5 条 — CR#11 follow-up F-3 / F-1 一周内闭环 / R179
+  * **Strengths 段**：5 条 — CR#11 follow-up F-3 / F-1 一周内闭环 / R179
     "10+ cycle 内最高杠杆 cleanup"（一次 commit 关 4 个 latent defect）/
     诚实的 chore commit 模式 / 生成器 keyword-only kwarg 严格向后兼容 /
     8 测试矩阵的回归保险。
-  - **Risks 段**：4 条 — ``ci_gate.py`` 是 load-bearing 但可能未被 GitHub
-    workflow 端到端调用（F-1）/ ``existing_path`` 是单向 escape hatch（F-2）/
+  * **Risks 段**：4 条 — `ci_gate.py` 是 load-bearing 但可能未被 GitHub
+    workflow 端到端调用（F-1）/ `existing_path` 是单向 escape hatch（F-2）/
     R174 默认目标硬编码（F-3）/ git 仓库继续提交预压缩 artifact 的
     repo-size 债（F-4）。
-  - **Follow-up 表**：F-1 ~ F-4 共 4 个 work item，每个标 Severity +
+  * **Follow-up 表**：F-1 ~ F-4 共 4 个 work item，每个标 Severity +
     Owner suggestion，让 CR#13 可以直接 pick up。
-  - **Test posture 表**：列出 6 个 cycle-critical 测试 surface 的覆盖
+  * **Test posture 表**：列出 6 个 cycle-critical 测试 surface 的覆盖
     率：`test_generate_docs_index_prefix_r178` (8) / R174 quote (29) /
     R80 link-rot (6) / export-button (16, 现在 16/16 而不是 15/16) /
     R173 dual-path (11) / 全套 ci-gate (4974 collected → 4972 + 2
     skipped passes)。
-  - **Release readiness checklist**：7 条全勾 — 包括 "CI-gate footgun-4
-    close" 意味着 ``--ignore=tests/test_export_button_ui_r125b.py``
+  * **Release readiness checklist**：7 条全勾 — 包括 "CI-gate footgun-4
+    close" 意味着 `--ignore=tests/test_export_button_ui_r125b.py`
     hack 终于可以从开发者命令行里删掉。
 
 ### Changed
 
 - **R179** — **三个 ci_gate footgun 一次性收口（generator index drift +
-  stale ty:ignore + main.css quote drift）**。本提交把 ``scripts/ci_gate.py``
+  stale ty:ignore + main.css quote drift）**。本提交把 `scripts/ci_gate.py`
   从 "结构性必 fail" 拉回到 "稳定全绿"，是 R76 (src/ layout 迁移) 后第
   一次真正实现 CR#11 §Strengths 提到的 "zero-warning sprint" 目标。同时
   落地 R178 直接 follow-up（generator 的 R169 hidden footgun）+ message
   description 字数限制漂移修复。
-  - **Footgun 1**：``generate_docs.py`` 每次 ``--check`` 都把 R169 手工
-    插入到 ``docs/api/index.md`` 顶部的 5 个 section（How it works /
+  - **Footgun 1**：`generate_docs.py` 每次 `--check` 都把 R169 手工
+    插入到 `docs/api/index.md` 顶部的 5 个 section（How it works /
     Architecture / Production-grade middleware / Server self-info /
-    MCP-spec compliance）误判为 drift，让 ``ci_gate.py:222-235`` 结构性
-    必红。修复：``generate_index`` 新增 ``existing_path: Path | None =
-    None`` keyword-only 参数；当指向的 index.md 已存在且含 modules-heading
+    MCP-spec compliance）误判为 drift，让 `ci_gate.py:222-235` 结构性
+    必红。修复：`generate_index` 新增 `existing_path: Path | None =
+None` keyword-only 参数；当指向的 index.md 已存在且含 modules-heading
     时，保留 heading 之前的所有内容（手工块）只重写 generator-owned 后缀
-    （modules list + quick navigation + footer）。``existing_path=None`` 保
+    （modules list + quick navigation + footer）。`existing_path=None` 保
     持历史 byte-identical 行为。
-  - **Footgun 2**：``message`` field description 在 R166 把 ``MAX_MESSAGE_
-    LENGTH`` 提到 1_000_000 之后仍写 "Recommended length: 1-2000 characters;
+  - **Footgun 2**：`message` field description 在 R166 把 `MAX_MESSAGE_
+LENGTH` 提到 1_000_000 之后仍写 "Recommended length: 1-2000 characters;
     hard limit 10000"。这是 MCP tools/list 暴露给 LLM 的 schema description
     —— 模型 ~3 个月一直在 undersell 实际允许的 payload size。修复为 "soft
     cap 1,000,000 characters (~1 MB UTF-8, R166)"。
-  - **Footgun 3**：``ty`` (Python static checker) 5 条 diagnostic 一次性
-    清空：``test_notification_inflight_persistence_r136.py``（2 处 stale
-    unresolved-import ignore）/ ``test_tasks_export_include_images_r125c.py``
-    / ``test_tasks_export_since_r135.py``（各 1 处 stale ignore）以及
-    ``test_interactive_feedback_errors.py:314`` 真实 ``unknown-argument``
-    error（测试故意传 R167 已移除的 ``predefined_options_defaults`` 验
-    证 raise，加 narrow ``# ty: ignore[unknown-argument]`` 让 ty 不把
+  - **Footgun 3**：`ty` (Python static checker) 5 条 diagnostic 一次性
+    清空：`test_notification_inflight_persistence_r136.py`（2 处 stale
+    unresolved-import ignore）/ `test_tasks_export_include_images_r125c.py`
+    / `test_tasks_export_since_r135.py`（各 1 处 stale ignore）以及
+    `test_interactive_feedback_errors.py:314` 真实 `unknown-argument`
+    error（测试故意传 R167 已移除的 `predefined_options_defaults` 验
+    证 raise，加 narrow `# ty: ignore[unknown-argument]` 让 ty 不把
     deliberate misuse 当作 check error）。
-  - **Footgun 4**：``tests/test_export_button_ui_r125b.py::
-    test_export_btn_in_light_theme_block`` 硬编码 ``[data-theme='light']``
-    单引号正则，而 R169 chore ``73d9980`` 已把 ``main.css`` 全部
+  - **Footgun 4**：`tests/test_export_button_ui_r125b.py::
+test_export_btn_in_light_theme_block` 硬编码 `[data-theme='light']`
+    单引号正则，而 R169 chore `73d9980` 已把 `main.css` 全部
     attribute-selector 收敛到双引号。这条测试自 R169 起一直 fail，被
-    ``--ignore=tests/test_export_button_ui_r125b.py`` 在 full-regression
+    `--ignore=tests/test_export_button_ui_r125b.py` 在 full-regression
     命令行里 mask 了 ~10 个 cycle。修复：把 regex 从
-    ``[data-theme='light']`` 放宽到 ``[data-theme=['"]light['"]]`` —— 测
-    试关心的是 light-theme selector 包含 ``.export-btn`` 这个语义不变
-    量，不是引号风格。16/16 cases pass 后，``--ignore`` hack 可以从
+    `[data-theme='light']` 放宽到 `[data-theme=['"]light['"]]` —— 测
+    试关心的是 light-theme selector 包含 `.export-btn` 这个语义不变
+    量，不是引号风格。16/16 cases pass 后，`--ignore` hack 可以从
     开发者命令行里删掉。
-  - 新增 ``tests/test_generate_docs_index_prefix_r178.py``（8 测试）锁
-    ``generate_index`` 的 ``existing_path`` 契约：None / 不存在路径 /
-    无 modules-heading / 有 modules-heading / zh-CN 用 ``## 模块列表``
+  - 新增 `tests/test_generate_docs_index_prefix_r178.py`（8 测试）锁
+    `generate_index` 的 `existing_path` 契约：None / 不存在路径 /
+    无 modules-heading / 有 modules-heading / zh-CN 用 `## 模块列表`
     anchor / 真实仓库 EN index 必含 R169 5 个 section / 真实仓库
     zh-CN index 同样 / 函数签名 keyword-only + default None。
-  - Test posture: ``uv run python scripts/ci_gate.py`` 全程 PASS / 0
-    warning / 0 error；``uv run ty check .`` → ``All checks passed!``
-    (5 → 0)；``uv run pytest -W error`` → 4972 passed + 2 skipped。
+  - Test posture: `uv run python scripts/ci_gate.py` 全程 PASS / 0
+    warning / 0 error；`uv run ty check .` → `All checks passed!`
+    (5 → 0)；`uv run pytest -W error` → 4972 passed + 2 skipped。
 
 - **R178** — **R174 CSS quote-consistency guard 扩展到 `tri-state-panel.css`**
   （CR#11 F-4 / Risks§R174-scope follow-up）。
@@ -475,9 +503,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     `test_hook_files_glob_targets_main_css` 改名为
     `test_hook_files_glob_targets_project_owned_css` 同步更新断言；
   - hook 跑全套：2 个文件 = 0 violation，baseline 仍 0，无回归。
-  价值：项目自有 CSS 现在共享同一个 quote-style 基线；CR#11 §Risks
-  R174-scope 条目可关。`prism.css` 因为是 vendor / 第三方原始风格保持
-  豁免，作为 documented exception 在 docstring 里说明。
+    价值：项目自有 CSS 现在共享同一个 quote-style 基线；CR#11 §Risks
+    R174-scope 条目可关。`prism.css` 因为是 vendor / 第三方原始风格保持
+    豁免，作为 documented exception 在 docstring 里说明。
 
 - **R175** — **`.github/` 治理文档按 README 模式拆 EN / zh-CN**。
   TODO.md 长期未完成项："`.github` 下面的文档应该分开中文版和英文版，默认英
@@ -495,48 +523,48 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - `PULL_REQUEST_TEMPLATE.md`（英文默认）+ 新增
     `PULL_REQUEST_TEMPLATE.zh-CN.md` —— GitHub 默认弹出英文模板，中文用户
     在 PR URL 末尾追加 `?template=PULL_REQUEST_TEMPLATE.zh-CN.md` 切换。
-  每个文件顶部按 README 模式加 "English | 简体中文" 双链接形式的语言切换
-  banner（点 zh-CN 链接跳中文版，中文版同样加反向链接跳英文版）。同步更新
-  所有引用：
+    每个文件顶部按 README 模式加 "English | 简体中文" 双链接形式的语言切换
+    banner（点 zh-CN 链接跳中文版，中文版同样加反向链接跳英文版）。同步更新
+    所有引用：
   - `README.zh-CN.md` → `CONTRIBUTING.zh-CN.md` / `CODE_OF_CONDUCT.zh-CN.md`
   - `docs/README.zh-CN.md` → `.github/SECURITY.zh-CN.md`
   - `docs/troubleshooting.zh-CN.md` → `.github/SUPPORT.zh-CN.md` × 2 处 +
     `.github/SECURITY.zh-CN.md` × 2 处
   - `packages/vscode/README.zh-CN.md` → `.github/SECURITY.zh-CN.md`
-  英文文档保持原 `.md` 链接不变（默认即英文版）；历史文档
-  `docs/lessons-learned-silent-decay.md` 内的旧引用是讲过去事件，**不动**。
-  测试守门：`tests/test_docs_links_no_rot.py::test_scan_covers_at_least_known_files`
-  的 `must_cover` 列表从 1 个 `.github/SECURITY.md` 扩到 10 个（5 对 EN +
-  zh-CN），任何未来 PR 误删某个文档都会立即被锁住。R80 docs link-rot 全量
-  扫描仍保持 0 broken link。
+    英文文档保持原 `.md` 链接不变（默认即英文版）；历史文档
+    `docs/lessons-learned-silent-decay.md` 内的旧引用是讲过去事件，**不动**。
+    测试守门：`tests/test_docs_links_no_rot.py::test_scan_covers_at_least_known_files`
+    的 `must_cover` 列表从 1 个 `.github/SECURITY.md` 扩到 10 个（5 对 EN +
+    zh-CN），任何未来 PR 误删某个文档都会立即被锁住。R80 docs link-rot 全量
+    扫描仍保持 0 broken link。
 
 ### Added
 
 - **R177** — **CR#11 F-1 落地：link-rot guard 跳过 inline code + fenced
   code block 内的伪 markdown link**。R175 / R176 落地过程两次踩到同一个
-  trap：CHANGELOG / code-review doc 里写形如 ``[label](./xxx.zh-CN.md)``
-  的 markdown-link 占位符示例时，``tests/test_docs_links_no_rot.py`` 的
-  ``_MD_LINK_RE`` 正则不区分代码块与正文，把示例当真 link 校验、CI 红。
+  trap：CHANGELOG / code-review doc 里写形如 `[label](./xxx.zh-CN.md)`
+  的 markdown-link 占位符示例时，`tests/test_docs_links_no_rot.py` 的
+  `_MD_LINK_RE` 正则不区分代码块与正文，把示例当真 link 校验、CI 红。
   之前 R175 / chore-`1b96a47` 用"改示例写法"绕过，但 hidden footgun
   仍在 —— CR#11 F-1 标记了这条尾巴，本提交把它一次性根治：
-  - 新增 ``_INLINE_CODE_RE`` 单反引号剥离正则（``` `[^`]*` ```），每行
-    先 ``sub`` 掉所有 inline code 段，再喂 ``_MD_LINK_RE``；
-  - ``_extract_local_targets`` 新增 fenced code block 状态机：检测以
-    ``` ``` ``` 开头的行作为开关，fence 内整段跳过 link 校验；
-  - 新增 3 个回归测试 ``test_inline_code_link_is_ignored`` /
-    ``test_fenced_code_block_link_is_ignored`` /
-    ``test_real_link_outside_inline_code_is_still_checked``，分别锁住：
+  - 新增 `_INLINE_CODE_RE` 单反引号剥离正则（`` `[^`]*` ``），每行
+    先 `sub` 掉所有 inline code 段，再喂 `_MD_LINK_RE`；
+  - `_extract_local_targets` 新增 fenced code block 状态机：检测以
+    ` ` ``` 开头的行作为开关，fence 内整段跳过 link 校验；
+  - 新增 3 个回归测试 `test_inline_code_link_is_ignored` /
+    `test_fenced_code_block_link_is_ignored` /
+    `test_real_link_outside_inline_code_is_still_checked`，分别锁住：
     inline code 占位符不进 queue / fence 内 link 不进 queue / 但行内
     真实 link 仍能被提取。
-  价值：与 R66 brand color / R174 quote consistency 同模式，"防漂移成
-  本接近 0，可观察价值高"。未来任何 CHANGELOG / code-review doc 可以
-  自由地用 ``[label](./path.md)`` 格式举例 markdown link，不必担心 R80
-  link-rot guard 误伤。
+    价值：与 R66 brand color / R174 quote consistency 同模式，"防漂移成
+    本接近 0，可观察价值高"。未来任何 CHANGELOG / code-review doc 可以
+    自由地用 `[label](./path.md)` 格式举例 markdown link，不必担心 R80
+    link-rot guard 误伤。
 
 - **CR#11** — **Code Review #11 (post-R173 → R176)** 文档落地，跟踪
   R173-R176 + 1 个 CHANGELOG-link-rot chore 共 5 个 commit 的整体质量评
-  估。沿用 R168 ``.tmp.md`` 命名规约（单次产物，非长期设计文档），路径
-  ``docs/code-review-r173-r176-cr11.tmp.md``。内容覆盖：
+  估。沿用 R168 `.tmp.md` 命名规约（单次产物，非长期设计文档），路径
+  `docs/code-review-r173-r176-cr11.tmp.md`。内容覆盖：
   - **Cycle summary 表**：5 行（R173 F-3 follow-up / R174 F-1 follow-up /
     R175 .github 拆分 / chore 1b96a47 link-rot 修复 / R176 noise-levels EN）
     的 hash + one-liner。
@@ -584,55 +612,55 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     / contributor 看的开发规范，按"开发者文档"惯例不进 README links。
 
 - **R174** — **CR#10 F-1 落地：CSS 字符串引号一致性守门 hook**。
-  R169 commit ``73d9980`` 用 prettier 把 ``main.css`` 的字符串引号一次性收敛
+  R169 commit `73d9980` 用 prettier 把 `main.css` 的字符串引号一次性收敛
   到 double-quote 一致风格，但仓库没有 prettier 配置，靠人工运行 —— Code
   Review #10 F-1 标记了风险：后续 PR 可能再次引入 single-quote 字符串让
   CSS 整洁度悄悄退化。本提交按 R66 brand color 同模式新增防漂移护栏：
-  - 新增 ``scripts/check_css_quote_consistency.py``（约 200 行 + 充分 docstring）：
-    扫 ``main.css``，统计"裸露"的 single-quote 字符串字面量（跳过 ``url(...)``
-    内嵌 SVG xmlns 和 ``/* ... */`` 注释里的字符串），baseline = 0；
-  - 新增 ``.pre-commit-config.yaml`` 里 ``check-css-quote-consistency`` local
-    hook，``files`` glob 只匹配 ``main\.css`` —— ``prism.css`` 是 vendor 代码、
-    ``tri-state-panel.css`` 未被 R169 prettier 接管，明确不纳入守门范围；
-  - 新增 ``tests/test_css_quote_consistency_r174.py`` 共 28 个测试覆盖
-    ``_strip_comments_and_url_blocks`` / ``count_naked_single_quotes`` /
-    ``find_naked_single_quotes_with_lines`` / ``scan_files`` / CLI 三分支退出
-    码 / ``main.css`` baseline 同步 / pre-commit 配置正确性。
-  价值：把"CSS 整洁度漂移"成本从"人工运行 prettier"降到"pre-commit 自动卡
-  住"。完整 prettier 引入（需要 ``.prettierrc`` + Node 依赖 + CI 矩阵改动）
-  价值有限、维护负担大，本 baseline-style 护栏是"防漂移成本接近 0、覆盖 80%
-  价值"的最小可行方案。脚本 docstring 明确说明未来若决定上 prettier 可无缝
-  退役（baseline 调 0 + 撤掉 hook 即可）。
+  - 新增 `scripts/check_css_quote_consistency.py`（约 200 行 + 充分 docstring）：
+    扫 `main.css`，统计"裸露"的 single-quote 字符串字面量（跳过 `url(...)`
+    内嵌 SVG xmlns 和 `/* ... */` 注释里的字符串），baseline = 0；
+  - 新增 `.pre-commit-config.yaml` 里 `check-css-quote-consistency` local
+    hook，`files` glob 只匹配 `main\.css` —— `prism.css` 是 vendor 代码、
+    `tri-state-panel.css` 未被 R169 prettier 接管，明确不纳入守门范围；
+  - 新增 `tests/test_css_quote_consistency_r174.py` 共 28 个测试覆盖
+    `_strip_comments_and_url_blocks` / `count_naked_single_quotes` /
+    `find_naked_single_quotes_with_lines` / `scan_files` / CLI 三分支退出
+    码 / `main.css` baseline 同步 / pre-commit 配置正确性。
+    价值：把"CSS 整洁度漂移"成本从"人工运行 prettier"降到"pre-commit 自动卡
+    住"。完整 prettier 引入（需要 `.prettierrc` + Node 依赖 + CI 矩阵改动）
+    价值有限、维护负担大，本 baseline-style 护栏是"防漂移成本接近 0、覆盖 80%
+    价值"的最小可行方案。脚本 docstring 明确说明未来若决定上 prettier 可无缝
+    退役（baseline 调 0 + 撤掉 hook 即可）。
 
 - **R173** — **CR#10 F-3 落地：MCP-path / HTTP-path predefined_options 解析 parity smoke**。
-  新增 ``tests/test_predefined_options_dual_path_parity_cr10_f3.py`` 共 11 个
+  新增 `tests/test_predefined_options_dual_path_parity_cr10_f3.py` 共 11 个
   断言场景，锁住「MCP 路径 `list[dict]`」与「HTTP 路径 `(list[str], list[bool])`
-  parallel-array」在所有合法输入上殊途同归到同一组 ``(labels, defaults)`` 内
+  parallel-array」在所有合法输入上殊途同归到同一组 `(labels, defaults)` 内
   部表示：
-  - ``test_simple_dict_form_matches_parallel_array``：单 dict 形态等价 1 元素 parallel-array
-  - ``test_multi_dict_mixed_defaults_match_parallel_array``：3 选项混合 default
-  - ``test_dict_without_default_falls_to_false``：dict 形态省略 default 字段 → False
-  - ``test_text_alias_for_label_matches_parallel_array`` / ``test_value_alias_for_label_matches_parallel_array``：``text`` / ``value`` 为 ``label`` 的 alias
-  - ``test_selected_alias_for_default_matches_parallel_array`` / ``test_checked_alias_for_default_matches_parallel_array``：``selected`` / ``checked`` 为 ``default`` 的 alias
-  - ``test_pure_string_form_matches_all_false_parallel_array``：纯 list[str] → defaults=[False, ...]
-  - ``test_mixed_str_and_dict_form_normalises_consistently``：同一 list 混 str + dict
-  - ``test_truthy_default_values_normalise_to_bool``：int/string truthy 字符串归一（覆盖 ``"true"``/``"1"``/``"yes"``/``"y"``/``"on"``/``"selected"``）
-  - ``TestHttpSideStrictlyRejectsDictForm.test_post_handler_rejects_non_string_options``：源码级别断言 ``web_ui_routes/task.py`` 里"元素必须是字符串"的 400 分支仍然存在，
+  - `test_simple_dict_form_matches_parallel_array`：单 dict 形态等价 1 元素 parallel-array
+  - `test_multi_dict_mixed_defaults_match_parallel_array`：3 选项混合 default
+  - `test_dict_without_default_falls_to_false`：dict 形态省略 default 字段 → False
+  - `test_text_alias_for_label_matches_parallel_array` / `test_value_alias_for_label_matches_parallel_array`：`text` / `value` 为 `label` 的 alias
+  - `test_selected_alias_for_default_matches_parallel_array` / `test_checked_alias_for_default_matches_parallel_array`：`selected` / `checked` 为 `default` 的 alias
+  - `test_pure_string_form_matches_all_false_parallel_array`：纯 list[str] → defaults=[False, ...]
+  - `test_mixed_str_and_dict_form_normalises_consistently`：同一 list 混 str + dict
+  - `test_truthy_default_values_normalise_to_bool`：int/string truthy 字符串归一（覆盖 `"true"`/`"1"`/`"yes"`/`"y"`/`"on"`/`"selected"`）
+  - `TestHttpSideStrictlyRejectsDictForm.test_post_handler_rejects_non_string_options`：源码级别断言 `web_ui_routes/task.py` 里"元素必须是字符串"的 400 分支仍然存在，
     防止未来误把 HTTP-side 改成"也接受 list[dict]"破坏 dual-path 分工。
-  这条 F-3 的价值：未来如果在 MCP-side 加新的 ``label`` alias（例如 ``"caption"``）
-  但忘了在 HTTP-side 补对应兼容逻辑，本测试会失败提醒。这样把 R167 设计的双
-  入口分工从「文档口头约定」升级到「编译时强制」。
+    这条 F-3 的价值：未来如果在 MCP-side 加新的 `label` alias（例如 `"caption"`）
+    但忘了在 HTTP-side 补对应兼容逻辑，本测试会失败提醒。这样把 R167 设计的双
+    入口分工从「文档口头约定」升级到「编译时强制」。
 
 - **CR#10** — **Code Review #10 (post-R155 → R172)** 文档落地，跟踪
-  R155-R172 11 个提交的整体质量评估。同时**修正 ``.gitignore``** 让
-  ``docs/**/*.tmp.md`` 显式不被忽略——R168 引入 ``.tmp.md``
-  命名规约时只把 git 已 tracked 的旧文件 grandfathered 进库（``code-review-
-  r150-r154-cr9.tmp.md`` / ``security-triage-r72.tmp.md``），新增的同名
-  规约文件被 ``.gitignore`` 第 253 行 ``*.tmp.md`` 拦截。R168/CR#10
-  例外 ``!docs/**/*.tmp.md`` 把 ``docs/`` 下的 ``.tmp.md``（按 R168
+  R155-R172 11 个提交的整体质量评估。同时**修正 `.gitignore`** 让
+  `docs/**/*.tmp.md` 显式不被忽略——R168 引入 `.tmp.md`
+  命名规约时只把 git 已 tracked 的旧文件 grandfathered 进库（`code-review-
+r150-r154-cr9.tmp.md` / `security-triage-r72.tmp.md`），新增的同名
+  规约文件被 `.gitignore` 第 253 行 `*.tmp.md` 拦截。R168/CR#10
+  例外 `!docs/**/*.tmp.md` 把 `docs/` 下的 `.tmp.md`（按 R168
   规约归档的 single-cycle artefact）从仓库根的"个人笔记 / 草稿"
-  忽略规则里挖出来。沿用 R168 ``.tmp.md`` 命名规约
-  （单次产物，非长期设计文档），路径 ``docs/code-review-r155-r172-cr10.tmp.md``。
+  忽略规则里挖出来。沿用 R168 `.tmp.md` 命名规约
+  （单次产物，非长期设计文档），路径 `docs/code-review-r155-r172-cr10.tmp.md`。
   内容覆盖：
   - **Cycle summary 表**：11 行（10 个 R-tag + 1 个 css-prettier chore）
     的 hash + one-liner，让后续 maintainer 一眼看清这一批次的边界。
@@ -659,16 +687,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - **R172** — **代码注释清理**：`task_queue.py::Task.predefined_options_defaults`
   字段上方注释从「TODO #3：每个预定义选项的"默认是否选中"」改成正式契约说明。
-  - 背景：R167 把 LLM → MCP 这一侧的 ``predefined_options_defaults`` 顶层
-    参数移除（统一收敛到 ``predefined_options=[{label, default}]`` dict 形态），
-    但 ``task_queue.Task`` 这个**内部 ORM 模型**字段仍然保留——它现在是
-    LLM → MCP（被 ``server_feedback`` 拆 dict 后传入）与外部 HTTP → POST
+  - 背景：R167 把 LLM → MCP 这一侧的 `predefined_options_defaults` 顶层
+    参数移除（统一收敛到 `predefined_options=[{label, default}]` dict 形态），
+    但 `task_queue.Task` 这个**内部 ORM 模型**字段仍然保留——它现在是
+    LLM → MCP（被 `server_feedback` 拆 dict 后传入）与外部 HTTP → POST
     /api/tasks（VS Code 插件 / 自动化脚本路径）两条路径的统一内部表示。
   - 旧注释"TODO #3：…"误导阅读者以为这还是个未完成的待办；R172 改成 13
     行的正式契约说明：LLM 路径"禁止"、外部 HTTP "支持"、前端"直接读"。
-  - 零功能改动，纯文档增强。``test_task_queue.py`` /
-    ``test_predefined_options_shape_r167.py`` / ``test_interactive_feedback_errors.py``
-    共 103 个测试照常通过；R167 已存在的"传旧 ``predefined_options_defaults``
+  - 零功能改动，纯文档增强。`test_task_queue.py` /
+    `test_predefined_options_shape_r167.py` / `test_interactive_feedback_errors.py`
+    共 103 个测试照常通过；R167 已存在的"传旧 `predefined_options_defaults`
     顶层参数触发 TypeError"测试仍然防漂移。
 
 - **R171** — **README badge 精简到 2026 最佳实践（3-5 个 header badge）**。
@@ -690,16 +718,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     - DeepWiki badge → 移到「Documentation / 文档」章节末尾，加上「AI 辅
       助的仓库智能问答入口」描述，给读者一个明确的"什么时候用 DeepWiki"
       reasoning，而不是顶部抽象的 logo。
-  - **样式升级**：所有保留 badge 增加 ``logo=...`` 参数（GitHub Tests 配
+  - **样式升级**：所有保留 badge 增加 `logo=...` 参数（GitHub Tests 配
     GitHub 图标 / PyPI 配 pypi 蓝白 / Python 配 python 黄白 / OpenSSF 配
-    securityscorecard 图标 / License 加 ``color=success`` 绿色）。视觉上从
+    securityscorecard 图标 / License 加 `color=success` 绿色）。视觉上从
     "灰底文字" 升级到"图标 + 标签"现代极简风格，与 shadcn-style shieldcn
     的现代极简审美对齐，同时不引入第三方 badge 服务依赖（继续走 shields.io）。
   - 中英文 README 同步处理。docs link rot 守卫
-    （``test_docs_links_no_rot.py``）通过——VS Code / Documentation 章节
+    （`test_docs_links_no_rot.py`）通过——VS Code / Documentation 章节
     内的 badge 链接全部指向已知存在的 Open VSX / DeepWiki 公网入口。
-  - 不引入第三方 badge 服务：所有 badge 仍走 ``shields.io`` (PyPI / Python /
-    OpenSSF / License) + ``deepwiki.com/badge.svg`` (DeepWiki 自家)。零
+  - 不引入第三方 badge 服务：所有 badge 仍走 `shields.io` (PyPI / Python /
+    OpenSSF / License) + `deepwiki.com/badge.svg` (DeepWiki 自家)。零
     外部依赖、零 broken-link 风险。
 
 - **R170** — **`check_i18n_duplicate_values.py` allowlist 收录 `"Cancel"`,
@@ -719,7 +747,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     机制本身（`test_allowlist_suppresses_warning`）依然按预期工作。
   - 工程口径：项目维护"0 warning / 0 error"输出洁净度，让真信号不被
     噪声淹没。R170 这种"无功能改动、纯 lint allowlist 调整"也走 CHANGELOG
-    + R-tag，是 v1.5.x 系列的一致约定。
+    - R-tag，是 v1.5.x 系列的一致约定。
 
 - **R169** — **精简 README，把"工作原理 / 架构图 / 中间件 / 自检 resource /
   MCP 协议规范支持"等技术深细节迁移到 `docs/api{,.zh-CN}/index.md`**。
@@ -727,8 +755,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   R169 处理：
   - **`README.md` / `README.zh-CN.md`**：
     - 在「Key features / 主要特性」清单里移除 3 条偏服务端实现细节的项目：
-      *Server self-info resource*、*MCP protocol specification*、
-      *Production-grade middleware* （这些是给"想看怎么实现"的开发者看的，
+      _Server self-info resource_、_MCP protocol specification_、
+      _Production-grade middleware_ （这些是给"想看怎么实现"的开发者看的，
       不是"决定要不要用"的卖点）。
     - 删除整段 `## How it works` / `## 工作原理`（HTTP / SSE / polling 时序
       细节、Bark loopback 等运行时机制）。
@@ -740,48 +768,47 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - **`docs/api/index.md` / `docs/api.zh-CN/index.md`**（迁移目的地，无丢失）：
     - 在「Modules / 模块列表」**之前**插入 5 个新章节，按"先体感、再细节、
       再合规性"顺序铺排：
-      1. ``## How it works`` / ``## 工作原理`` —— 完整保留 6 步时序；
-      2. ``## Architecture`` / ``## 架构`` —— Mermaid flowchart 完整迁入
+      1. `## How it works` / `## 工作原理` —— 完整保留 6 步时序；
+      2. `## Architecture` / `## 架构` —— Mermaid flowchart 完整迁入
          （CLIENTS / MCP_PROC / WEB_PROC / VSCODE_PROC / USER_UI 五个 subgraph
          全部保留），其后保留"内部 helper 模块在下方模块列表"的指引；
-      3. ``## Production-grade middleware`` / ``## 生产级中间件`` —— 四级中间件
-         链 + ``task.created`` / ``task.notified`` / ``task.completed`` 三个
+      3. `## Production-grade middleware` / `## 生产级中间件` —— 四级中间件
+         链 + `task.created` / `task.notified` / `task.completed` 三个
          结构化事件；
-      4. ``## Server self-info resource`` / ``## Server 自检 resource`` ——
-         ``aiia://server/info`` 字段清单；
-      5. ``## MCP-spec compliance (2025-11-25 protocol)`` / ``## MCP 协议
-         规范支持（2025-11-25 协议）`` —— 工具 annotation + FastMCP tag +
+      4. `## Server self-info resource` / `## Server 自检 resource` ——
+         `aiia://server/info` 字段清单；
+      5. `## MCP-spec compliance (2025-11-25 protocol)` / `## MCP 协议
+规范支持（2025-11-25 协议）` —— 工具 annotation + FastMCP tag +
          server identity 三层规范支持，给 ChatGPT Desktop / Claude Desktop /
          Cursor 等客户端的渲染兜底。
   - **设计哲学**：README 是"决定要不要用"的第一面（卖点 + 截图 + 安装），
     docs/api/index.md 是"决定怎么集成 + 排障"的第二面（架构 + 协议合规性
-    + 模块 API）。R169 之前 README 把两层混在一起，让首次访问者既看不到
-    清晰的卖点、又被一大段 Mermaid 图吓退；R169 后两层职责清晰、相互引用。
-    跨文档 markdown link 没有遗漏（``docs/mcp_tools{,.zh-CN}.md`` 入口、
-    模块列表里的 ``state_machine.py`` / ``server_feedback.py`` 等历史引用
-    都保留）。
+    - 模块 API）。R169 之前 README 把两层混在一起，让首次访问者既看不到
+      清晰的卖点、又被一大段 Mermaid 图吓退；R169 后两层职责清晰、相互引用。
+      跨文档 markdown link 没有遗漏（`docs/mcp_tools{,.zh-CN}.md` 入口、
+      模块列表里的 `state_machine.py` / `server_feedback.py` 等历史引用
+      都保留）。
   - 全测试 4904 passed 2 skipped 0 failed；
-    ``test_docs_links_no_rot.py`` / ``test_docs_module_classification_parity.py``
-    / ``test_mcp_tools_doc_consistency.py`` 全绿，证明跨文档链接、模块分类
+    `test_docs_links_no_rot.py` / `test_docs_module_classification_parity.py`
+    / `test_mcp_tools_doc_consistency.py` 全绿，证明跨文档链接、模块分类
     invariant、文档 ↔ code 字段一致性都没被破坏。
 
 - **R168** — **docs 重命名：去掉 R-cycle 标识，按主题或 `.tmp.md` 归档**。
   TODO 任务 4 要求："docs 里 r99 类文档让用户觉得项目不完善"。R168 按
   以下规则统一处理 8 个带 R-cycle 标签的 docs：
 
-  | 旧文件名 | 新文件名 | 处理 |
-  |---------|----------|------|
-  | `docs/perf-r20-roadmap.md` (+ `.zh-CN`) | `docs/perf-mcp-cold-start.md` (+ `.zh-CN`) | 改主题命名（性能文档 = MCP 冷启动批次） |
+  | 旧文件名                                | 新文件名                                       | 处理                                      |
+  | --------------------------------------- | ---------------------------------------------- | ----------------------------------------- |
+  | `docs/perf-r20-roadmap.md` (+ `.zh-CN`) | `docs/perf-mcp-cold-start.md` (+ `.zh-CN`)     | 改主题命名（性能文档 = MCP 冷启动批次）   |
   | `docs/perf-r21-roadmap.md` (+ `.zh-CN`) | `docs/perf-web-asset-pipeline.md` (+ `.zh-CN`) | 改主题命名（性能文档 = Web 静态资源管线） |
-  | `docs/lessons-learned-r60s.md` | `docs/lessons-learned-css-and-options.md` | 改主题命名（教训 = CSS + MCP options） |
-  | `docs/lessons-learned-r70s.md` | `docs/lessons-learned-silent-decay.md` | 改主题命名（教训 = "silent decay" 模式） |
-  | `docs/code-review-r150-r154-cr9.md` | `docs/code-review-r150-r154-cr9.tmp.md` | 单次产物 → `.tmp.md` 后缀（按用户要求） |
-  | `docs/security-triage-r72.md` | `docs/security-triage-r72.tmp.md` | 单次产物 → `.tmp.md` 后缀 |
-
-  - 所有跨文档 markdown link 已同步更新（``docs/README{,.zh-CN}.md`` /
-    ``docs/lessons-learned-silent-decay.md`` / `perf-*.md` 互相引用 /
-    ``packages/vscode/i18n.js`` 行内注释 / ``packages/vscode/CHANGELOG.md``）。
-  - ``docs/README{,.zh-CN}.md`` 列表里的描述文字也去掉了"R63 → R70 batch"
+  | `docs/lessons-learned-r60s.md`          | `docs/lessons-learned-css-and-options.md`      | 改主题命名（教训 = CSS + MCP options）    |
+  | `docs/lessons-learned-r70s.md`          | `docs/lessons-learned-silent-decay.md`         | 改主题命名（教训 = "silent decay" 模式）  |
+  | `docs/code-review-r150-r154-cr9.md`     | `docs/code-review-r150-r154-cr9.tmp.md`        | 单次产物 → `.tmp.md` 后缀（按用户要求）   |
+  | `docs/security-triage-r72.md`           | `docs/security-triage-r72.tmp.md`              | 单次产物 → `.tmp.md` 后缀                 |
+  - 所有跨文档 markdown link 已同步更新（`docs/README{,.zh-CN}.md` /
+    `docs/lessons-learned-silent-decay.md` / `perf-*.md` 互相引用 /
+    `packages/vscode/i18n.js` 行内注释 / `packages/vscode/CHANGELOG.md`）。
+  - `docs/README{,.zh-CN}.md` 列表里的描述文字也去掉了"R63 → R70 batch"
     这种 cycle 标签，改用"v1.5.45 批次"等版本号锚点。
   - **CHANGELOG.md 的历史段落** 保留对旧文件名的引用（4694 / 4700 / 4727 /
     4805 / 4807 / 6322 / 6323 / 6561 / 6562 行）：CHANGELOG 是历史记录，
@@ -791,56 +818,56 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **R167** — **predefined_options 形态收敛到 list[dict] 推荐写法，移除并行
   数组形态**。`predefined_options` 之前支持 3 种输入形态：
   - `list[str]`（A）；
-  - `list[dict]`（B，``[{label, default}]`` 对象数组）；
+  - `list[dict]`（B，`[{label, default}]` 对象数组）；
   - `list[str] + predefined_options_defaults`（C，并行布尔数组）。
-  其中 B 与 C 功能完全等价，但 C 是经典反模式（并行数组对齐 bug、API 表面
-  冗余、JSON Schema 难以 enforce 位置约束、LLM-unfriendly）。业界主流
-  （HTML ``<option selected>``、React selectable array、JSON Schema
-  ``enum`` + ``default``）也都是对象式表达。R167 收敛到 A + B 两种形态：
-  - **移除** ``predefined_options_defaults`` 顶层 MCP 参数（FastMCP
-    ``additionalProperties: false`` 会让旧调用方收到清晰的 ToolError）；
-  - **移除** ``server_feedback.interactive_feedback`` 中的 parallel-array
+    其中 B 与 C 功能完全等价，但 C 是经典反模式（并行数组对齐 bug、API 表面
+    冗余、JSON Schema 难以 enforce 位置约束、LLM-unfriendly）。业界主流
+    （HTML `<option selected>`、React selectable array、JSON Schema
+    `enum` + `default`）也都是对象式表达。R167 收敛到 A + B 两种形态：
+  - **移除** `predefined_options_defaults` 顶层 MCP 参数（FastMCP
+    `additionalProperties: false` 会让旧调用方收到清晰的 ToolError）；
+  - **移除** `server_feedback.interactive_feedback` 中的 parallel-array
     合并逻辑（"detect list + zip into dict form"，约 30 行删除）；
-  - **强化** ``predefined_options`` description 主动推荐 ``list[dict]``
-    形态（带 RECOMMENDED 字眼、明示 R167 已移除 C 形态、移除 ``[Recommended]``
+  - **强化** `predefined_options` description 主动推荐 `list[dict]`
+    形态（带 RECOMMENDED 字眼、明示 R167 已移除 C 形态、移除 `[Recommended]`
     文本前缀 hack 的提及）；
-  - **保留** ``validate_input_with_defaults`` 的 dict 形态解析能力——前端
-    HTTP ``POST /api/tasks`` 仍接受 ``predefined_options_defaults`` 字段
+  - **保留** `validate_input_with_defaults` 的 dict 形态解析能力——前端
+    HTTP `POST /api/tasks` 仍接受 `predefined_options_defaults` 字段
     （VS Code 插件 / 外部脚本路径），但 LLM MCP 调用必须用 dict 形态。
-  - 文档 ``docs/mcp_tools{,.zh-CN}.md`` 已同步精简（从 3 形态变 2 形态，
-    多了一段"R167 移除说明"）；老测试 ``test_predefined_options_defaults_
-    in_signature_r63b.py`` 被替换为 ``test_predefined_options_shape_r167.py``
-    （锁住"参数已移除 + dict 形态正向行为"）；``test_interactive_feedback_
-    errors.py::test_v1_5_36_drift_args_do_not_raise`` 迁移到 list[dict]
-    写法，并新增 ``test_predefined_options_defaults_now_raises_r167`` 锁
+  - 文档 `docs/mcp_tools{,.zh-CN}.md` 已同步精简（从 3 形态变 2 形态，
+    多了一段"R167 移除说明"）；老测试 `test_predefined_options_defaults_
+in_signature_r63b.py` 被替换为 `test_predefined_options_shape_r167.py`
+    （锁住"参数已移除 + dict 形态正向行为"）；`test_interactive_feedback_
+errors.py::test_v1_5_36_drift_args_do_not_raise` 迁移到 list[dict]
+    写法，并新增 `test_predefined_options_defaults_now_raises_r167` 锁
     "传 R167 已移除参数会触发 TypeError"。
   - 全测试 4904 passed 0 failed。
 
 - **R166** — **放宽三块字数软上限，与 LLM 长上下文场景对齐**。原项目里
   存在 3 处"软"字符上限互不一致地夹击了合法长 prompt 场景（LLM 长
   context 拼接、技术文档粘贴、长 review feedback）：
-  - ``server_config.MAX_MESSAGE_LENGTH``: 10_000 → **1_000_000**（约 1MB
-    UTF-8 字符，仍远低于 ``task_queue._PROMPT_REJECT_BYTES = 10MB``
+  - `server_config.MAX_MESSAGE_LENGTH`: 10_000 → **1_000_000**（约 1MB
+    UTF-8 字符，仍远低于 `task_queue._PROMPT_REJECT_BYTES = 10MB`
     字节级 DoS 防御，留 ~3-10× 字节安全裕度）；
-  - ``server_config.MAX_OPTION_LENGTH``: 500 → **10_000**（单个
-    ``predefined_options`` 选项上限，让"短段技术说明"或"完整
+  - `server_config.MAX_OPTION_LENGTH`: 500 → **10_000**（单个
+    `predefined_options` 选项上限，让"短段技术说明"或"完整
     docstring 摘要"都能作为选项 label）；
-  - ``server_config.PROMPT_MAX_LENGTH``: 10_000 → **100_000**（设置
-    项级 prompt：``resubmit_prompt`` / ``prompt_suffix``，允许嵌入
+  - `server_config.PROMPT_MAX_LENGTH`: 10_000 → **100_000**（设置
+    项级 prompt：`resubmit_prompt` / `prompt_suffix`，允许嵌入
     较长的元规则 / 工作流约束 prompt）。
-  - 同步：``web_ui_routes/feedback.py::_sanitize_selected_options`` 把
-    硬编码 500 改为引用 ``MAX_OPTION_LENGTH``；``/api/update`` 截断也
-    跟 ``MAX_MESSAGE_LENGTH`` 走；前端 ``feedback_char_counter.js`` 把
-    视觉阈值抬到 ``WARN=800_000`` / ``DANGER=1_000_000``，避免合法长
-    prompt 被 counter 提前标红；``templates/web_ui.html`` 设置项 textarea
-    的 ``maxlength`` 改成 ``100000``（同 ``PROMPT_MAX_LENGTH``）；i18n
+  - 同步：`web_ui_routes/feedback.py::_sanitize_selected_options` 把
+    硬编码 500 改为引用 `MAX_OPTION_LENGTH`；`/api/update` 截断也
+    跟 `MAX_MESSAGE_LENGTH` 走；前端 `feedback_char_counter.js` 把
+    视觉阈值抬到 `WARN=800_000` / `DANGER=1_000_000`，避免合法长
+    prompt 被 counter 提前标红；`templates/web_ui.html` 设置项 textarea
+    的 `maxlength` 改成 `100000`（同 `PROMPT_MAX_LENGTH`）；i18n
     提示语跟着同步。
   - 设计哲学：**软上限只 warn 不阻断；DoS 防御只在字节级硬上限处
-    一刀切**（``task_queue.add_task`` 的 10MB 字节级 reject）。这样：
+    一刀切**（`task_queue.add_task` 的 10MB 字节级 reject）。这样：
     (a) 用户体验上没有"莫名其妙超长被截断"的小坑；(b) 仍有可证明
     的上界让 enqueue / serialize / notification payload 不会爆掉。
-  - 文档同步：``docs/mcp_tools{,.zh-CN}.md`` 已同步更新，由
-    ``test_mcp_tools_doc_consistency`` 锁死 docs ↔ code 数字对齐。
+  - 文档同步：`docs/mcp_tools{,.zh-CN}.md` 已同步更新，由
+    `test_mcp_tools_doc_consistency` 锁死 docs ↔ code 数字对齐。
   - 测试更新：所有相关测试改为相对常量构造超长输入（不再硬编码
     "20000" / "1000" / "10001" 类魔数），未来再调常量也不会失效。
     全测试 4898 passed 0 failed。
@@ -855,7 +882,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   反馈 / 选项 / 图片全部丢失，零日志告警。R165 修复双层防御：
   - **服务端**：`POST /api/tasks/<id>/close` 检查 task 状态，已 COMPLETED
     的任务 short-circuit 返回 `{success: True, skipped: True,
-    reason: "task_completed"}`，不调用 `remove_task`。让后台清理线程在
+reason: "task_completed"}`，不调用 `remove_task`。让后台清理线程在
     10s 内自然回收任务，user feedback `result` 永远不会被这条路径误删。
     `test_close_completed_task_skips_remove` 锁住语义。
   - **客户端**：把 R17.4 的单次 retry 升级为指数退避多次 retry——
@@ -865,14 +892,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     （但因服务端 short-circuit 保护，COMPLETED task 不会被误删）。
   - **同时修复**：`wait_for_task_completion` 把 TimeoutError 路径的
     `return` 改成 `timed_out` 标志位，避免 Python `try/except return`
-    + `finally retry` 控制流陷阱（Python 语义下 except 的 return 把返回
-    值锁定到 stack 上，finally 里的 retry 即便拿到真实 result 也无法
-    覆盖返回值，用户反馈会被丢成 resubmit）。R165 写法让 retry 后的
-    result 总能优先于 timeout 兜底响应。
+    - `finally retry` 控制流陷阱（Python 语义下 except 的 return 把返回
+      值锁定到 stack 上，finally 里的 retry 即便拿到真实 result 也无法
+      覆盖返回值，用户反馈会被丢成 resubmit）。R165 写法让 retry 后的
+      result 总能优先于 timeout 兜底响应。
   - 新增 `TestRetryBackoffSequenceR165`（2 个测试）覆盖多次抖动后救回
     result、退避序列结构 invariant；既有 `TestRetryFetchBeforeClose`
-    + `TestCloseTask` 测试全部通过（共 9 个相关测试）；全测试 4898 passed
-    0 failed。
+    - `TestCloseTask` 测试全部通过（共 9 个相关测试）；全测试 4898 passed
+      0 failed。
 
 ### Added
 
@@ -881,31 +908,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   entries, but the `/api/system/recent-logs` endpoint already serves
   up to 50; operators investigating a known incident were forced into
   `curl` or a separate ops tool. R156 closes the gap with a sibling
-  ``[show 50]`` / ``[show 5]`` toggle next to ``[expand]``. The chosen
+  `[show 50]` / `[show 5]` toggle next to `[expand]`. The chosen
   limit is persisted to localStorage under a schema-versioned key
-  (``aiia.activity_dashboard.logs_limit.v1``) so the preference
+  (`aiia.activity_dashboard.logs_limit.v1`) so the preference
   survives reloads, mirroring R155's expanded-state pattern.
-  - Constants exported on ``window.AIIA_ACTIVITY_DASHBOARD``:
-    ``LOGS_LIMIT_DEFAULT = 5`` / ``LOGS_LIMIT_EXPANDED = 50`` /
-    ``LOGS_LIMIT_LS_KEY = aiia.activity_dashboard.logs_limit.v1`` /
-    ``LOGS_LIMIT_SCHEMA_VERSION = 1`` /
-    ``ENDPOINT_RECENT_LOGS_BASE = "/api/system/recent-logs"``.
-  - Allowlist-style ``_readLogsLimit`` returns ``null`` for any
-    payload whose ``limit`` is not exactly LOGS_LIMIT_DEFAULT or
+  - Constants exported on `window.AIIA_ACTIVITY_DASHBOARD`:
+    `LOGS_LIMIT_DEFAULT = 5` / `LOGS_LIMIT_EXPANDED = 50` /
+    `LOGS_LIMIT_LS_KEY = aiia.activity_dashboard.logs_limit.v1` /
+    `LOGS_LIMIT_SCHEMA_VERSION = 1` /
+    `ENDPOINT_RECENT_LOGS_BASE = "/api/system/recent-logs"`.
+  - Allowlist-style `_readLogsLimit` returns `null` for any
+    payload whose `limit` is not exactly LOGS_LIMIT_DEFAULT or
     LOGS_LIMIT_EXPANDED (defensive against future schema bumps that
-    add a third value without a version bump); ``_writeLogsLimit``
+    add a third value without a version bump); `_writeLogsLimit`
     coerces invalid inputs back to LOGS_LIMIT_DEFAULT.
-  - ``_pollOnce`` builds the recent-logs URL dynamically:
-    ``ENDPOINT_RECENT_LOGS_BASE + "?limit=" + _state.logsLimit``.
-  - Two new i18n keys (``settings.activityDashboardLogsShowMore`` /
-    ``settings.activityDashboardLogsShowDefault``) — ``en.json`` and
-    ``zh-CN.json`` already carry them; ``check_i18n_orphan_keys.py``
+  - `_pollOnce` builds the recent-logs URL dynamically:
+    `ENDPOINT_RECENT_LOGS_BASE + "?limit=" + _state.logsLimit`.
+  - Two new i18n keys (`settings.activityDashboardLogsShowMore` /
+    `settings.activityDashboardLogsShowDefault`) — `en.json` and
+    `zh-CN.json` already carry them; `check_i18n_orphan_keys.py`
     reports 0 orphan / 0 missing.
   - JS line budget bumped 900 → **1200** in
-    ``test_activity_dashboard_r152.py::test_js_under_1200_lines``
+    `test_activity_dashboard_r152.py::test_js_under_1200_lines`
     to absorb R155 (≈ 70 LoC) + R156 (≈ 90 LoC). Same growth pattern
-    R151 followed on ``notification_test_button.js``.
-  - New ``tests/test_activity_dashboard_logs_show_more_r156.py``
+    R151 followed on `notification_test_button.js`.
+  - New `tests/test_activity_dashboard_logs_show_more_r156.py`
     (124 assertions across 8 invariants: constants / API surface /
     allowlist / write coercion / F-5 schema-version equality /
     dynamic URL builder / state machine / button label cycling).
@@ -1255,31 +1282,25 @@ delivery_success_rate, events_finalized, events_in_flight}`.
      `_how_to_update` fields explaining the contract.
 
   3. **`tests/test_silent_failure_regression_guard_r120.py`**
-     (NEW, 6 tests) — wires the scanner into CI:
-     - `test_baseline_file_exists_and_well_formed` — sanity:
-       baseline JSON loadable, has all required fields.
-     - `test_no_unapproved_silent_failures` — **CORE GUARD**:
-       diff current scan vs baseline; fail with detailed
-       remediation message if drift detected.
-     - `test_baseline_count_is_not_silently_growing` — soft
-       upper bound (≤30 sites); future audit policy violations
-       (a wave of new "intentional" silences) get visible.
-     - `test_scanner_handles_nested_except_handlers` — REGRESSION
-       guard for the R120 scanner's own bug fix: pre-fix the
-       scanner missed `except Exception: pass` nested inside
-       outer `except SomeOtherException:` blocks (5 sites
-       silently undercounted in R119's original 22 → 27 with
-       the fix).
-     - `test_scanner_excludes_pure_docstring_pattern` — REVERSE
-       invariant: scanner must NOT match the literal `except
+     (NEW, 6 tests) — wires the scanner into CI: - `test_baseline_file_exists_and_well_formed` — sanity:
+     baseline JSON loadable, has all required fields. - `test_no_unapproved_silent_failures` — **CORE GUARD**:
+     diff current scan vs baseline; fail with detailed
+     remediation message if drift detected. - `test_baseline_count_is_not_silently_growing` — soft
+     upper bound (≤30 sites); future audit policy violations
+     (a wave of new "intentional" silences) get visible. - `test_scanner_handles_nested_except_handlers` — REGRESSION
+     guard for the R120 scanner's own bug fix: pre-fix the
+     scanner missed `except Exception: pass` nested inside
+     outer `except SomeOtherException:` blocks (5 sites
+     silently undercounted in R119's original 22 → 27 with
+     the fix). - `test_scanner_excludes_pure_docstring_pattern` — REVERSE
+     invariant: scanner must NOT match the literal `except
 Exception:\npass` string when it appears inside a
-       docstring (canonical false positive that grep would hit;
-       AST sees only real code nodes).
-     - `test_scanner_correctly_distinguishes_alias_form` —
-       defines the scanner's semantic edge: `except Exception:
+     docstring (canonical false positive that grep would hit;
+     AST sees only real code nodes). - `test_scanner_correctly_distinguishes_alias_form` —
+     defines the scanner's semantic edge: `except Exception:
 pass` is matched, but `except Exception as e: pass` is
-       NOT (alias form usually carries `logger.error(..., e)`,
-       different anti-pattern not in scope of R120).
+     NOT (alias form usually carries `logger.error(..., e)`,
+     different anti-pattern not in scope of R120).
 
   **AST-vs-grep design rationale**: R119's
   `tests/test_silent_failure_audit_r119.py` already discovered
@@ -2741,19 +2762,15 @@ test_payload_carries_no_sensitive_fields` 把 `"build"` 加入
      操作（导入 / 导出，每个用户每月 ≤ 1 次）足够。
 
   **实现**：
-  - `static/js/quick_phrases.js` 新增 ~270 行：
-    - 常量 `EXPORT_SCHEMA_VERSION = 1` / `EXPORT_SIGNATURE =
-"ai-intervention-agent.quick-phrases"`。
-    - 6 个新函数：`buildExportEnvelope` /
-      `exportPhrasesAsJson` / `downloadPhrasesAsFile` /
-      `parseImportPayload` / `importPhrasesFromJson` /
-      `triggerImportFilePicker` + 内部的
-      `handleImportFileChange`。
-    - `bindEventsOnce` 扩展三个新事件源（`#quick-phrases-export-btn`
-      click / `#quick-phrases-import-btn` click /
-      `#quick-phrases-import-file` change）。
-    - `window.AIIA_QUICK_PHRASES` 暴露 6 个新公开函数 + 2 个新
-      常量，给测试 + 未来 R131c（按使用频率排序）复用。
+  - `static/js/quick_phrases.js` 新增 ~270 行：- 常量 `EXPORT_SCHEMA_VERSION = 1` / `EXPORT_SIGNATURE =
+"ai-intervention-agent.quick-phrases"`。- 6 个新函数：`buildExportEnvelope` /
+    `exportPhrasesAsJson` / `downloadPhrasesAsFile` /
+    `parseImportPayload` / `importPhrasesFromJson` /
+    `triggerImportFilePicker` + 内部的
+    `handleImportFileChange`。- `bindEventsOnce` 扩展三个新事件源（`#quick-phrases-export-btn`
+    click / `#quick-phrases-import-btn` click /
+    `#quick-phrases-import-file` change）。- `window.AIIA_QUICK_PHRASES` 暴露 6 个新公开函数 + 2 个新
+    常量，给测试 + 未来 R131c（按使用频率排序）复用。
   - `templates/web_ui.html` quick-phrases header 内插入 Export /
     Import 两个按钮 + 隐藏 `<input type="file" accept="application/
 json,.json">`，全部带 `data-i18n` / `data-i18n-aria-label`。
@@ -2898,15 +2915,12 @@ mime_type / mimeType`，并加 `images_stripped: true`，让消费方
        `renderList` 链，保证 localStorage 写入的原子性 + UI 自动
        刷新。
 
-  4. **光标位置插入**（`insertTextIntoFeedback` 重写）：
-     - 标准 splice：`current.substring(0, start) + text +
+  4. **光标位置插入**（`insertTextIntoFeedback` 重写）：- 标准 splice：`current.substring(0, start) + text +
 current.substring(end)`，选中文本被替换、光标停在
-       `start + text.length` 即新插入文本之后。
-     - 老引擎 fallback：`selectionStart` / `selectionEnd` 任一不
-       存在 → 走 R130 v1 的「末尾追加 + 必要换行」分支，向后兼容
-       绝对不破坏既有用户。
-     - 仍触发原生 `input` Event 让 multi_task.js 的
-       `taskTextareaContents[activeTaskId]` autosave 跟上。
+     `start + text.length` 即新插入文本之后。- 老引擎 fallback：`selectionStart` / `selectionEnd` 任一不
+     存在 → 走 R130 v1 的「末尾追加 + 必要换行」分支，向后兼容
+     绝对不破坏既有用户。- 仍触发原生 `input` Event 让 multi_task.js 的
+     `taskTextareaContents[activeTaskId]` autosave 跟上。
 
   5. **i18n（3 份 locale）**新增 `quickPhrases.editBtnAriaLabel`：
      - zh-CN: "编辑常用回复"
@@ -2980,22 +2994,17 @@ current.substring(end)`，选中文本被替换、光标停在
      → 自动回退到空数组，不向用户暴露报错。
 
   **实现要点**：
-  - **新文件 `static/js/quick_phrases.js`** (~440 行)：
-    - 模块自封闭 IIFE，公开 API 挂在 `window.AIIA_QUICK_PHRASES`
-      （只暴露 `loadPhrases` / `addPhrase` / `deletePhrase` /
-      `insertTextIntoFeedback` / `validatePhraseInput` /
-      `init` 等，给测试 + 未来 R131 编辑功能复用）。
-    - localStorage key：`aiia.quickPhrases.v1`（带版本号，将来
-      schema 升级时改 v2 / v3 老 key 自动失效）。
-    - 数据 schema：`{schema_version: 1, phrases: [{id, label,
+  - **新文件 `static/js/quick_phrases.js`** (~440 行)：- 模块自封闭 IIFE，公开 API 挂在 `window.AIIA_QUICK_PHRASES`
+    （只暴露 `loadPhrases` / `addPhrase` / `deletePhrase` /
+    `insertTextIntoFeedback` / `validatePhraseInput` /
+    `init` 等，给测试 + 未来 R131 编辑功能复用）。- localStorage key：`aiia.quickPhrases.v1`（带版本号，将来
+    schema 升级时改 v2 / v3 老 key 自动失效）。- 数据 schema：`{schema_version: 1, phrases: [{id, label,
 text, created_at}]}`，id 用 `qp_<ms>_<3 位 base36>` 防同毫秒
-      撞 id（不依赖 `crypto.randomUUID`，老浏览器 / webview 兼容）。
-    - `insertTextIntoFeedback` 触发原生 `input` Event，让
-      multi_task.js 的 `taskTextareaContents[activeTaskId] = ...`
-      autosave 链路自动跟上当前内容（避免切换任务后内容丢失）。
-    - i18n 走 `window.AIIA_I18N.t`，未就绪时回退到内置**英文**
-      FALLBACK_TEXT（受 `check_i18n_js_no_cjk.py` 守门），
-      `i18n.init()` 完成后由 `applyTranslationsToDOM()` 自动覆盖。
+    撞 id（不依赖 `crypto.randomUUID`，老浏览器 / webview 兼容）。- `insertTextIntoFeedback` 触发原生 `input` Event，让
+    multi_task.js 的 `taskTextareaContents[activeTaskId] = ...`
+    autosave 链路自动跟上当前内容（避免切换任务后内容丢失）。- i18n 走 `window.AIIA_I18N.t`，未就绪时回退到内置**英文**
+    FALLBACK_TEXT（受 `check_i18n_js_no_cjk.py` 守门），
+    `i18n.init()` 完成后由 `applyTranslationsToDOM()` 自动覆盖。
 
   - **`templates/web_ui.html`**：在 `.textarea-container` 之上插入
     `#quick-phrases-container`（label + add-btn + list + form-host
@@ -3090,8 +3099,8 @@ href="/api/tasks/export?format=markdown">` 而不是 `<button>`：
      - `exportTasksBtn`: 中文 `导出任务`、英文 `Export Tasks`、
        pseudo 自动生成。
      - `exportTasksBtnAriaLabel`: 中文 `导出当前会话任务为 Markdown
-  文件`、英文 `Export current session tasks as a Markdown
-  file`、pseudo 自动生成。
+文件`、英文 `Export current session tasks as a Markdown
+file`、pseudo 自动生成。
        更新后由 `scripts/gen_pseudo_locale.py` 重新生成 `_pseudo`
        locale，保证 `scripts/ci_gate.py` 的
        `--check` 不再报 `stale pseudo.json`。
@@ -3601,19 +3610,18 @@ return` early-out. On a long-lived sidebar (typical for
   conflicting hostname. R119 logs at debug level so the leak is
   traceable; the surrounding `logger.warning(...)` for the main
   mDNS failure stays unchanged (it was already observable, only
-  the cleanup leak was hidden).
-  4. **`config_modules/network_security.py`** —
-     `_save_network_security_config_immediate()` calls
-     `_create_default_config_file()` to bootstrap the file before
-     overwriting it with the network_security section. Pre-R119
-     silent failure → the next line's `read_text()` catches "file
-     doesn't exist" via its own try/except, so the user sees a
-     generic "config save failed" message but the **root cause**
-     (e.g. parent directory doesn't exist, permission denied,
-     read-only mount, disk full) is destroyed. R119 logs the actual
-     `_create_default_config_file()` exception so debug logging
-     reveals "ah, my config dir got chmod 444 by some other tool"
-     instead of "ConfigManager mysteriously can't write".
+  the cleanup leak was hidden). 4. **`config_modules/network_security.py`** —
+  `_save_network_security_config_immediate()` calls
+  `_create_default_config_file()` to bootstrap the file before
+  overwriting it with the network_security section. Pre-R119
+  silent failure → the next line's `read_text()` catches "file
+  doesn't exist" via its own try/except, so the user sees a
+  generic "config save failed" message but the **root cause**
+  (e.g. parent directory doesn't exist, permission denied,
+  read-only mount, disk full) is destroyed. R119 logs the actual
+  `_create_default_config_file()` exception so debug logging
+  reveals "ah, my config dir got chmod 444 by some other tool"
+  instead of "ConfigManager mysteriously can't write".
 
   All four follow the same R117/R118 pattern: keep `try/except` (so
   the upstream cleanup / fallback flow doesn't break), add
@@ -4725,12 +4733,12 @@ return []` — `package.nls{,.zh-CN}.json` drift skips silently.
 _main_css_count` mirroring the rgba decimal one; - adapt `test_default_baseline_matches_main_css_count` to
     the 4-tuple unpack.
 
-        Reverse-injection verified: replace `_IOS_BLUE_HEX_RE` with a
-        regex that never matches and 8 of the 35 cases fail with
-        informative diagnostics covering both the unit-level
-        contract and the live-tree baseline (the reverse-injection
-        also caught and prompted the `--quiet` fix above — testing
-        paid back its own rent).
+            Reverse-injection verified: replace `_IOS_BLUE_HEX_RE` with a
+            regex that never matches and 8 of the 35 cases fail with
+            informative diagnostics covering both the unit-level
+            contract and the live-tree baseline (the reverse-injection
+            also caught and prompted the `--quiet` fix above — testing
+            paid back its own rent).
 
   Result: 35 tests pass (22 existing + 13 new), full ci_gate
   3869 passed / 2 skipped / 0 warnings, ruff lint+format clean.
