@@ -1203,8 +1203,14 @@ def _print_effective_config() -> int:
                 "language": merged.language,
             }
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # 故意继续渲染 partial payload —— 前面 get_config() 已经做了 hard-fail
+        # 兜底，这里只是 service_manager 的 cache / merge layer 软失败，给
+        # 用户 best-effort 输出仍然有用（至少能看到 config_file_path）。
+        # 不算 silent failure：debug log 留下证据，运维能 grep。
+        logger.debug(
+            f"--print-config: get_web_ui_config 失败，跳过 merge overlay: {exc!r}"
+        )
     payload["web_ui"] = web_ui_section
 
     active_env: dict[str, str] = {}
@@ -1220,8 +1226,11 @@ def _print_effective_config() -> int:
             stripped = raw.strip()
             if stripped:
                 active_env[env_name] = stripped
-    except Exception:
-        pass
+    except Exception as exc:
+        # 极端罕见：chroot / sandbox 让 os.environ 抛异常。继续输出空 dict
+        # 比整体崩好——env_overrides={} 与 health endpoint 的 fail-safe
+        # 语义一致（参考 `_safe_web_ui_env_overrides`）。
+        logger.debug(f"--print-config: os.environ 访问失败: {exc!r}")
     payload["env_overrides"] = active_env
 
     print(_json.dumps(payload, ensure_ascii=False, indent=2), flush=True)
