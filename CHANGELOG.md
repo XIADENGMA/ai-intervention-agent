@@ -151,6 +151,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   preservation, 1 end-to-end regression for the bark_device_key
   redaction). Bilingual READMEs updated.
 
+### Documentation
+
+- **Code Review #17 archived** —
+  [`docs/code-review-v1.6.4-followups-cr17.tmp.md`](docs/code-review-v1.6.4-followups-cr17.tmp.md)
+  captures cycle-3 of the v1.6.4 follow-up chain: 5 commits
+  (`d1f2ee9` → `981117b`, +1317 lines net) that **fully drained**
+  the CR#16 §6 follow-up queue (F-1 sections coverage, F-2 R185
+  rate-limit guard tests, F-3 `using_defaults` flag, F-4 CHANGELOG
+  diff-scope governance hook, F-5 public invalidate helper) **plus**
+  an unplanned secret-redaction walker discovered during F-1 dry-run
+  that would have leaked `bark_device_key` to stdout. Final suite
+  **5141 passed, 2 skipped, 620 subtests** in 137.96s (was 5107
+  pre-cycle, +34 new tests). 5 cycle-4 follow-ups enumerated
+  (F-1' alphabetical sort for `sections`, F-2' R185 test name
+  canonicalization, F-3' `importlib.resources`-based default
+  detection, F-4' adversarial CHANGELOG parser tests, F-5'
+  async-aware docstring) totalling ~2h estimated work, none urgent.
+  Versioning recommendation reinforced: cut **`v1.7.0`** once cycle-3
+  changes are reviewed — cumulative public-surface across CR#15 +
+  CR#16 + CR#17 (3 env vars, 3 CLI flags, 1 health-field, 4
+  release-check flags, sections/using_defaults output expansion,
+  redaction primitive, governance hook) is clearly MINOR by SemVer.
+  Archive the `.tmp.md` file at v1.7.0 cut, mirroring CR#15 /
+  CR#16 archival pattern.
+
 ### Tests
 
 - **CR#16 F-4 · `check_changelog_diff_scope.py` pre-commit governance** —
