@@ -160,6 +160,50 @@ class TestR185QueryOpenAlerts(unittest.TestCase):
                 M._query_open_alerts("owner", "repo", frozenset({"high"}))
             )
 
+    def test_gh_api_rate_limit_returns_none(self) -> None:
+        """CR#16 F-2：``gh api`` 命中 GitHub API rate-limit 时 (HTTP 403,
+        ``X-RateLimit-Remaining: 0``) 返回非 0 退出码，subprocess.run 抛
+        ``CalledProcessError``——本测试 documents 这条 path 也走 fail-safe
+        return None，让 main() 把 "未知" 当 ``(2, None)`` 处理，输出
+        WARNING 后 fail-open 放行。
+
+        Rationale: 我们刻意**不**区分 "rate-limit / 网络 / gh 未登录 /
+        Dependabot 关闭" 这几种 None-return 子情况——所有"无法判断" 都
+        归一处理成 "warn + pass"，让 CI 不因为外部依赖抖动而误阻发布。
+        """
+        # gh CLI 在 rate-limit 时 stderr 含 "API rate limit exceeded" + 退出 1
+        rate_limit_err = subprocess.CalledProcessError(
+            returncode=1,
+            cmd="gh",
+            stderr="HTTP 403: API rate limit exceeded for installation ID 12345",
+        )
+        with self._patch_subprocess(side_effect=rate_limit_err):
+            result = M._query_open_alerts(
+                "owner", "repo", frozenset({"high", "critical"})
+            )
+            self.assertIsNone(
+                result,
+                "rate-limit 必须走 fail-safe None return（与其它 gh 失败"
+                "情况共享 path），让上层 fail-open 输出 WARNING 后放行",
+            )
+
+    def test_gh_api_unauthorized_returns_none(self) -> None:
+        """CR#16 F-2 续：``gh`` 未 ``gh auth login`` 时 401/403，同样走
+        None return path——不阻断发布，仅 WARN。
+        """
+        not_logged_in_err = subprocess.CalledProcessError(
+            returncode=1,
+            cmd="gh",
+            stderr=(
+                "gh: To use GitHub CLI in a GitHub Actions workflow, "
+                "set the GH_TOKEN environment variable."
+            ),
+        )
+        with self._patch_subprocess(side_effect=not_logged_in_err):
+            self.assertIsNone(
+                M._query_open_alerts("owner", "repo", frozenset({"high"}))
+            )
+
     def test_timeout_returns_none(self) -> None:
         with self._patch_subprocess(side_effect=subprocess.TimeoutExpired("gh", 30)):
             self.assertIsNone(

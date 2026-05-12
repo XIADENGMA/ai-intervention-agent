@@ -153,6 +153,17 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **CR#16 F-2 · R185 `gh api` rate-limit + auth-failure explicit guard** —
+  `tests/test_check_tag_push_safety_cve_gate_r185.py` gains two
+  documentation-quality test cases that prove rate-limit
+  (`HTTP 403: API rate limit exceeded`) and unauthorized
+  (`gh auth login required`) outcomes both flow through the same
+  `CalledProcessError → return None` path as other gh failures.
+  Behavior was already correct, but no test pinned the contract;
+  future "let's special-case rate-limit retry" refactors will now
+  fail-fast with a clear test name pointing at the failure mode
+  description. Total R185 test count: 32 → 34.
+
 - **CR#16 F-5 · public `invalidate_web_ui_config_cache()` helper** —
   `service_manager` gains a public, no-arg, no-return-value helper
   that clears just the `get_web_ui_config()` TTL cache. Tests
