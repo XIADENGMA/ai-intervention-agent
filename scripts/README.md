@@ -119,6 +119,16 @@ diverges.
 - [`bump_version.py`](bump_version.py) — bump version across
   `pyproject.toml`, `package.json`, README badges, etc. `--check`
   validates cross-file consistency.
+- [`check_changelog_diff_scope.py`](check_changelog_diff_scope.py)
+  _(CR#16 F-4)_ — pre-commit governance. Fails the commit if
+  `CHANGELOG.md` has > 100 lines of changes outside the
+  `[Unreleased]` section. Catches "I accidentally rolled in
+  markdownlint normalization of historical release sections"
+  before code review. Default threshold tunable via
+  `--threshold N`; emergency escape hatch
+  `--allow-massive-changelog-rewrite` for the rare case of
+  intentional history cleanup (emits WARNING to stderr).
+
 - [`check_tag_push_safety.py`](check_tag_push_safety.py)
   _(R19.1 + R185)_ — fail `make release-check` if more than three
   unpushed `v*.*.*` tags exist locally. Works around an

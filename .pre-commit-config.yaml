@@ -100,3 +100,23 @@ repos:
         language: system
         pass_filenames: false
         files: ^src/ai_intervention_agent/static/css/(main|tri-state-panel)\.css$
+
+  # CR#16 F-4：CHANGELOG.md 非-Unreleased 区段大幅 diff 检测。
+  #
+  # 背景：CR#16 期间发现 ``a37e17d`` 把 645 行的 markdownlint 自动格式化
+  # 卷进 R185 feature commit，code review 时很难分辨 "feature 改动 vs
+  # 历史段落 lint 重写"。本 hook 把这种"误捎带"在 pre-commit 阶段就拦住，
+  # 强迫贡献者把格式化拆成独立 commit。
+  #
+  # 默认阈值 100 行；紧急绕过开关：脚本自身的 --allow-massive-changelog-
+  # rewrite（不在 hook 里启用——commit message 中需要说明绕过理由时，
+  # 维护者本地 ``git -c pre-commit.hook-args=...`` 或直接 ``--no-verify``
+  # 同 commit message 解释）。
+  - repo: local
+    hooks:
+      - id: check-changelog-diff-scope
+        name: CHANGELOG.md 非-Unreleased 区段大幅 diff 检测（CR#16 F-4 护栏）
+        entry: uv run python scripts/check_changelog_diff_scope.py
+        language: system
+        pass_filenames: false
+        files: ^CHANGELOG\.md$

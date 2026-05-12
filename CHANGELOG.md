@@ -153,6 +153,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Tests
 
+- **CR#16 F-4 · `check_changelog_diff_scope.py` pre-commit governance** —
+  new local `pre-commit` hook + standalone script that fails the
+  commit if `CHANGELOG.md` accumulates > 100 lines of changes outside
+  the `[Unreleased]` section. Motivation: CR#16 caught
+  `a37e17d` rolling 645 lines of `*` → `-` markdownlint
+  normalization of historical release regions into a feature commit,
+  making the actual R185 diff hard to spot in review. The hook
+  parses `git diff --cached --unified=0`, walks `## [Unreleased]` /
+  `## [vX.Y.Z]` headers in the staged file, classifies each `+`/`-`
+  line by section, and only counts hits outside `unreleased`. CHANGELOG.md
+  not staged → short-circuit exit 0 (zero-cost no-op). Includes
+  `--threshold N` for projects that prefer a different limit,
+  `--allow-massive-changelog-rewrite` for intentional history-cleanup
+  commits (still emits stderr WARNING so reviewers see the bypass),
+  and rejects negative thresholds with exit 2. Test coverage:
+  `tests/test_check_changelog_diff_scope.py` adds 13 cases
+  (section parsing, line classification, line-counting semantics,
+  CLI flow: short-circuit / under-threshold / above-threshold-fails /
+  emergency-override / negative-threshold rejection). The new hook
+  registered in `.pre-commit-config.yaml` so every future
+  `CHANGELOG.md` commit goes through the guard automatically.
+
 - **CR#16 F-2 · R185 `gh api` rate-limit + auth-failure explicit guard** —
   `tests/test_check_tag_push_safety_cve_gate_r185.py` gains two
   documentation-quality test cases that prove rate-limit
