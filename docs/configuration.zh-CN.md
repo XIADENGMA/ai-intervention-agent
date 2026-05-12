@@ -96,6 +96,22 @@ export AI_INTERVENTION_AGENT_WEB_UI_PORT=18080
 uvx ai-intervention-agent
 ```
 
+> **安全提示 —— 绑定非 loopback 地址时。** 设置
+> `AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0`（或任何非 `127.0.0.1`
+> 地址）会把 `/api/get-notification-config` 之类的端点暴露给同网段所有
+> 机器。这些响应包含 `notification.bark_device_key` 等 user-specific
+> 凭证。绑定到 loopback 之外时建议的加固：
+>
+> 1. 在 `config.toml` 把 `network_security.allowed_networks` 设置为你
+>    实际信任的最小 CIDR（例如 `["192.168.1.0/24"]`）。默认值
+>    （`["127.0.0.0/8"]`，仅 loopback）**不会**被 `*_WEB_UI_HOST` env
+>    var 覆盖——它们是相互独立的两层。
+> 2. 优先考虑 `ssh -L 18080:127.0.0.1:18080` 隧道，而不是直接 bind
+>    `0.0.0.0`——从远端机器上访问的体验一样，端口却完全不暴露。
+> 3. `ai-intervention-agent --print-config` 会自动 redact 敏感 key，
+>    但运行中的 HTTP API **不会**——边界 redaction 故意没启用，否
+>    则 settings 面板就没法 round-trip 已有配置值。
+
 #### 验证当前生效的配置
 
 两条互补的可观测路径会告诉你同一件事：

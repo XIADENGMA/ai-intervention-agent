@@ -102,6 +102,26 @@ export AI_INTERVENTION_AGENT_WEB_UI_PORT=18080
 uvx ai-intervention-agent
 ```
 
+> **Security note — binding to non-loopback.** Setting
+> `AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0` (or any non-`127.0.0.1`
+> address) exposes endpoints like `/api/get-notification-config` to
+> anyone on the same network. Those responses include user-specific
+> credentials such as `notification.bark_device_key`. Recommended
+> hardening when binding outside loopback:
+>
+> 1. Set `network_security.allowed_networks` in `config.toml` to the
+>    minimal CIDR you actually trust (e.g. `["192.168.1.0/24"]`).
+>    The default (`["127.0.0.0/8"]`) is loopback-only and is **not**
+>    overridden by the `*_WEB_UI_HOST` env var — they're independent
+>    layers.
+> 2. Consider an `--ssh -L 18080:127.0.0.1:18080` SSH tunnel instead
+>    of binding to `0.0.0.0` — it gives the same UX from your remote
+>    machine without exposing the port at all.
+> 3. The CLI `ai-intervention-agent --print-config` auto-redacts
+>    secret-like keys, but the live HTTP API does not — secret
+>    redaction at the API boundary is intentionally not enabled so
+>    the settings panel can round-trip existing values.
+
 #### Verifying the effective config
 
 Two complementary observability surfaces tell the same story:

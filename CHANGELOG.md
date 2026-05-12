@@ -151,6 +151,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   preservation, 1 end-to-end regression for the bark_device_key
   redaction). Bilingual READMEs updated.
 
+### Security
+
+- **Hardening guidance for non-loopback deployments** — discovered during
+  the CR#16 F-1 implementation review that endpoints like
+  `/api/get-notification-config` round-trip raw `bark_device_key` /
+  saved-prompt content to the HTTP boundary so the built-in Settings
+  panel can edit existing values. Default deployment is loopback-only so
+  this isn't a leak, but anyone setting
+  `AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0` for SSH-remote / LAN access
+  needs to compensate elsewhere. Three-layer hardening recipe added to
+  `.github/SECURITY.{md,zh-CN.md}` and `docs/configuration.{md,zh-CN.md}`:
+  (1) tighten `network_security.allowed_networks` to a minimal CIDR
+  (still loopback-only by default — env-host does **not** override it),
+  (2) prefer `ssh -L` tunnels over `0.0.0.0` binds, (3) use the CLI
+  `--print-config` (which auto-redacts) for ad-hoc inspection instead of
+  the HTTP API. Also documents the explicit design decision: API-boundary
+  redaction is intentionally not enabled because it would break the
+  round-trip Settings flow — opens an "open discussion before adding
+  per-endpoint redaction" line so users with kiosk-style deployments can
+  request the stricter mode without breaking existing flows.
+
 ### Documentation
 
 - **Code Review #16 archived** —
