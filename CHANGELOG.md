@@ -116,6 +116,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   documented in the `/api/system/health` Swagger docstring alongside
   `config_file_path` / `build`.
 
+### Added
+
+- **CR#16 F-1 + F-3 + secret-redaction · `--print-config` polish** —
+  the CLI dump introduced in `cf2555c` learns three new behaviours:
+  (1) **F-1 sections coverage**: a new top-level `sections` field
+  dumps **all** non-sensitive config sections (`web_ui` / `mdns` /
+  `feedback` / `notification`) so users can debug *"why doesn't
+  mDNS work"* / *"which notification backend is enabled"* without
+  poking at the TOML file; (2) **F-3 `using_defaults` flag**: a
+  bool top-level field that's `true` when `ConfigManager` is
+  running on the bundled default `config.toml` (typical *"fresh
+  install, no user config yet"* state), `false` when a user-owned
+  config is loaded. Helps fresh contributors realize they're seeing
+  defaults rather than their own values. (3) **Secret redaction**:
+  during F-1 implementation I found that `notification.bark_device_key`
+  was about to be dumped in plaintext — never made it to a release
+  but landed inline a `_redact_sensitive()` walker that recursively
+  matches dict keys against a whitelist of secret-name substrings
+  (`*_device_key`, `*_token`, `*_secret`, `password`, `*_api_key`,
+  `webhook_url`, etc., normalized to lowercase + stripped `_-` so
+  `BarkDeviceKey`/`bark-device-key`/`bark_device_key` all match)
+  and replaces values with `***REDACTED***`. This walker is now the
+  data sanitizer for `--print-config` and is unit-tested
+  independently so future fields like
+  `notification.slack_webhook_url` are protected by default.
+  Top-level `web_ui` field is preserved for backward compatibility
+  (existing `jq .web_ui.port` pipelines stay valid).
+  Test coverage: `tests/test_server_print_config.py` gains 12 new
+  cases (3 for sections coverage / network_security filter /
+  using_defaults bool, 8 for the redact helpers covering pattern
+  detection / case-insensitivity / non-sensitive passthrough /
+  recursive dict + list walking / input non-mutation / atomic
+  preservation, 1 end-to-end regression for the bark_device_key
+  redaction). Bilingual READMEs updated.
+
 ### Documentation
 
 - **Code Review #16 archived** —

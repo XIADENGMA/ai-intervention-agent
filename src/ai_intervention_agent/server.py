@@ -25,9 +25,12 @@ __all__ = [
     "_generate_task_id",
     "_guess_mime_type_from_data",
     "_invalidate_runtime_caches_on_config_change",
+    "_is_sensitive_key",
+    "_is_using_default_config",
     "_make_resubmit_response",
     "_print_effective_config",
     "_process_image",
+    "_redact_sensitive",
     "calculate_backend_timeout",
     "cleanup_http_clients",
     "cleanup_services",
@@ -1138,19 +1141,155 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# CR#16 F-1 安全护栏：``--print-config`` 既然要 dump 所有非敏感 sections，
+# 就必须保证「非敏感」是个白名单匹配，而不是 "我以为不敏感"。下面这个
+# pattern 列表对照 ``enhanced_logging`` 里 LogSanitizer 用的同类正则做了
+# 收敛——所有 key 名匹配 (case-insensitive) 任何一个 pattern 的字段，值
+# 都被替换成 ``***REDACTED***``，绝不进 stdout。
+#
+# 不放进 enhanced_logging：那边是 message body 级别的字符串匹配，本处
+# 是 dict 字段名匹配，两者关注的层级不同，强行复用反而增加耦合。
+_SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
+    "device_key",
+    "device-key",
+    "api_key",
+    "api-key",
+    "apikey",
+    "auth_token",
+    "auth-token",
+    "token",
+    "password",
+    "passwd",
+    "secret",
+    "private_key",
+    "private-key",
+    "client_secret",
+    "client-secret",
+    "webhook_url",
+    "webhook-url",
+    "bot_token",
+    "bot-token",
+    "session_key",
+    "session-key",
+    "credential",
+)
+_REDACTED_VALUE = "***REDACTED***"
+
+
+def _is_sensitive_key(key: str) -> bool:
+    """匹配规则：key 名 normalized 后包含任意 ``_SENSITIVE_KEY_SUBSTRINGS`` 子串。
+
+    Normalization
+    -------------
+    1. 转小写——``Bark_Device_Key`` → ``bark_device_key``；
+    2. 去掉 ``_`` 和 ``-``——``bark_device_key`` → ``barkdevicekey``，
+       这样既兼容 snake_case (``device_key``)、kebab-case
+       (``device-key``)、又兼容驼峰 (``BarkDeviceKey`` → ``barkdevicekey``）；
+    3. 与 substrings 一一比对（substrings 自己保留 ``_-`` 用于注释可读，
+       匹配时同样 normalize 一次）。
+
+    用 substring + normalization 而不是正则：
+    - 实际配置项命名风格不统一（``bark_device_key`` vs ``deviceKey`` vs
+      ``X-Auth-Token``），normalized substring 一次性覆盖三种风格；
+    - 维护成本低：将来新增敏感字段只需在 ``_SENSITIVE_KEY_SUBSTRINGS``
+      列表加一个串即可。
+    """
+
+    def _norm(s: str) -> str:
+        return s.lower().replace("_", "").replace("-", "")
+
+    normalized = _norm(key)
+    return any(_norm(needle) in normalized for needle in _SENSITIVE_KEY_SUBSTRINGS)
+
+
+def _redact_sensitive(value: object) -> object:
+    """递归扫一棵 config 子树，把敏感字段的值替换成 ``***REDACTED***``。
+
+    递归规则
+    --------
+    * ``dict`` → 对每个 ``(k, v)``：如果 ``k`` 匹配
+      ``_is_sensitive_key``，直接把 v 替换；否则继续递归 v；
+    * ``list`` / ``tuple`` → 对每个元素递归（元素本身可能是 dict）；
+    * 其他原子类型 → 原样返回。
+
+    不会原地修改输入——返回新的 dict / list；调用方可以安全地共享原配置
+    （ConfigManager.get_all() 返回的已经是 deepcopy，但这里再加一层
+    immutability 防御纯属保险）。
+    """
+    if isinstance(value, dict):
+        out: dict[object, object] = {}
+        for k, v in value.items():
+            if isinstance(k, str) and _is_sensitive_key(k):
+                out[k] = _REDACTED_VALUE
+            else:
+                out[k] = _redact_sensitive(v)
+        return out
+    if isinstance(value, (list, tuple)):
+        return [_redact_sensitive(item) for item in value]
+    return value
+
+
+def _is_using_default_config(config_file_path: object) -> bool:
+    """CR#16 F-3：判断 ``config_file_path`` 是否指向项目 bundled 默认配置。
+
+    用途
+    ----
+    给 ``--print-config`` 输出的 ``using_defaults`` 字段提供布尔判断。
+    ``True`` 表示 ConfigManager fallback 到了仓内 bundled ``config.toml``
+    （fresh install / 用户没创建自己的配置文件）；``False`` 表示用户
+    确实有一份独立的 config。
+
+    判定规则
+    --------
+    1. ``config_file_path is None`` / 非 str → 视作 default（保守）；
+    2. 解析为绝对路径后，前缀是 ``<package_root>/`` → 是 default；
+    3. 其它情况（绝对路径在 ``~/.config`` / ``~/Library/Application Support``
+       / ``%APPDATA%`` 等用户目录下，或显式 ``AI_INTERVENTION_AGENT_CONFIG_FILE``）
+       → 不是 default。
+
+    安全
+    ----
+    只读 ``__file__`` 和路径前缀比较——不读文件内容、不调用 ConfigManager
+    其它 API，所以本函数自身从不抛异常。万一路径解析失败也走 fail-safe
+    分支返回 ``False``（保守：宁可显示 "用户配置"，避免错误地说用户在跑
+    默认值；用户看到自己 config.toml 文件路径会立即意识到这是错报）。
+    """
+    if not isinstance(config_file_path, str) or not config_file_path:
+        return True
+    try:
+        from pathlib import Path
+
+        cfg_path = Path(config_file_path).resolve()
+        pkg_root = Path(__file__).resolve().parent.parent.parent
+        return str(cfg_path).startswith(str(pkg_root) + os.sep) or str(cfg_path) == str(
+            pkg_root / "config.toml"
+        )
+    except Exception as exc:
+        logger.debug(f"--print-config: using_defaults 判定失败: {exc!r}")
+        return False
+
+
 def _print_effective_config() -> int:
     """实现 ``--print-config``：dump merged config 到 stdout 后退出。
 
     输出内容
     --------
-    一个 JSON object 含三个 top-level key：
+    一个 JSON object 含四个 top-level key：
 
     * ``config_file_path``：当前 ConfigManager 加载的文件绝对路径
       （与 ``/api/system/health`` 的同名字段、``find_config_file()``
       返回值一致）；
-    * ``web_ui``：调用 ``service_manager.get_web_ui_config()`` 拿到
-      的 **已 merge env override** 的 host / port / language——也就
-      是进程实际会绑的地址，不是 ``config.toml`` 写的原值；
+    * ``using_defaults``（CR#16 F-3）：bool，表示 ``config_file_path``
+      指向的是项目 bundled 默认 config（``True``）还是用户自己创建的
+      文件（``False``）。``True`` 时往往意味着 "我还没创建
+      ``~/.config/ai-intervention-agent/config.toml``" —— 一眼看出
+      "我在跑 built-in 默认值"，对 fresh install 调试非常有用。
+    * ``sections``（CR#16 F-1）：dict，**所有非敏感配置 section** 的
+      原始值（``ConfigManager.get_all()`` 已过滤 ``network_security``）。
+      包含 ``web_ui`` / ``mdns`` / ``feedback`` / ``notification`` 等，
+      给用户排查 "为什么 mDNS 不工作" / "通知 backend 选了什么" 这类
+      问题一个完整视图。``web_ui`` 子树是已 merge env override 的版本
+      （host/port/language 反映进程实际绑定值）。
     * ``env_overrides``：当前生效的 web_ui env vars 名单（与
       ``/api/system/health`` 的 ``web_ui_env_overrides`` 字段语义
       一致）。
@@ -1175,6 +1314,10 @@ def _print_effective_config() -> int:
         config_file = getattr(cfg, "config_file", None)
         payload["config_file_path"] = str(config_file) if config_file else None
         all_config = cfg.get_all()
+        # CR#16 F-1: dump 所有非敏感 sections（get_all() 已过滤 network_security）
+        sections_full: dict[str, object] = {
+            k: v for k, v in all_config.items() if isinstance(v, dict)
+        }
         web_ui_section = (
             dict(all_config.get("web_ui", {}))
             if isinstance(all_config.get("web_ui"), dict)
@@ -1190,6 +1333,9 @@ def _print_effective_config() -> int:
             flush=True,
         )
         return 1
+
+    # CR#16 F-3: 显式标注是否在跑 built-in 默认值
+    payload["using_defaults"] = _is_using_default_config(payload["config_file_path"])
 
     try:
         merged_tuple = _sm.get_web_ui_config()
@@ -1211,7 +1357,19 @@ def _print_effective_config() -> int:
         logger.debug(
             f"--print-config: get_web_ui_config 失败，跳过 merge overlay: {exc!r}"
         )
+    # CR#16 F-1：把 merged web_ui 写回 sections 字典，让 sections.web_ui
+    # 也反映 env override 后的 effective 值（而不是原始 config.toml 值）
+    sections_full["web_ui"] = web_ui_section
+    # 向后兼容：保留顶层 web_ui 字段，让 CR#16 前的 jq pipeline 不破
     payload["web_ui"] = web_ui_section
+    # 安全护栏：所有非敏感 sections 在 dump 前必须经过 _redact_sensitive，
+    # 避免像 ``notification.bark_device_key`` 这种 user-specific token 进
+    # stdout（health endpoint 不会有这问题——它返回的是 NotificationOrchestrator
+    # 的摘要指标，不是 raw config）。
+    payload["sections"] = _redact_sensitive(sections_full)
+    # 同样 redact 顶层 web_ui（虽然 web_ui 当前无敏感字段，但未来加了 OAuth
+    # token / signed_url 之类一并兜住）
+    payload["web_ui"] = _redact_sensitive(web_ui_section)
 
     active_env: dict[str, str] = {}
     try:

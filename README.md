@@ -266,11 +266,21 @@ ai-intervention-agent --print-config  # dump effective merged config + env overr
 ```
 
 `--print-config` answers _"is my port 8181 because of env, or `config.toml`?"_
-in one shell pipeline — output is JSON (`jq` friendly), shows
-`config_file_path`, the resolved `web_ui` host/port/language, and any
-active `AI_INTERVENTION_AGENT_WEB_UI_*` env overrides. `network_security`
-details are omitted (sensitive); the surface mirrors
-[`/api/system/health`](docs/configuration.md#environment-variable-overrides)
+in one shell pipeline — output is JSON (`jq` friendly):
+
+- `config_file_path` — absolute path of the loaded TOML
+- `using_defaults` — `true` if the loaded file is the bundled default
+  (i.e. you haven't created your own `config.toml` yet)
+- `web_ui` — resolved host / port / language (back-compat top-level)
+- `sections` — every non-sensitive section
+  (`web_ui` / `mdns` / `feedback` / `notification`); secret-like
+  fields (`*_device_key`, `*_token`, `*_secret`, `password`,
+  `*_api_key`, …) auto-redacted to `***REDACTED***`
+- `env_overrides` — active `AI_INTERVENTION_AGENT_WEB_UI_*` env vars
+
+`network_security` is filtered out at the `ConfigManager.get_all()`
+boundary (same trust level as
+[`/api/system/health`](docs/configuration.md#environment-variable-overrides)),
 so monitoring and CLI tell the same story.
 
 ## Documentation

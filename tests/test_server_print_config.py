@@ -106,13 +106,51 @@ class TestPrintConfigOutputShape(unittest.TestCase):
         return json.loads(raw)
 
     def test_top_level_keys(self) -> None:
+        """CR#16 F-1 + F-3：payload 至少含 5 个 top-level key。"""
         payload = self._run()
-        for key in ("config_file_path", "web_ui", "env_overrides"):
+        for key in (
+            "config_file_path",
+            "using_defaults",  # F-3
+            "web_ui",  # 向后兼容
+            "sections",  # F-1
+            "env_overrides",
+        ):
             self.assertIn(
                 key,
                 payload,
                 f"payload 必须含 {key} top-level key（自省/监控/CI 都依赖）",
             )
+
+    def test_sections_includes_all_non_sensitive(self) -> None:
+        """CR#16 F-1：sections 必须含 web_ui / mdns / feedback / notification。"""
+        payload = self._run()
+        sections = payload.get("sections", {})
+        self.assertIsInstance(sections, dict)
+        for required_section in ("web_ui", "mdns", "feedback", "notification"):
+            self.assertIn(
+                required_section,
+                sections,
+                f"sections 必须含 {required_section}——F-1 要求覆盖所有非敏感",
+            )
+
+    def test_sections_does_not_include_network_security(self) -> None:
+        """sections 顶层不能含 network_security——R53-F 同信任级。"""
+        payload = self._run()
+        sections = payload.get("sections", {})
+        self.assertNotIn(
+            "network_security",
+            sections,
+            "sections.network_security 必须被 ConfigManager.get_all() 过滤",
+        )
+
+    def test_using_defaults_is_bool(self) -> None:
+        """CR#16 F-3：``using_defaults`` 必须是 bool 类型。"""
+        payload = self._run()
+        self.assertIsInstance(
+            payload.get("using_defaults"),
+            bool,
+            "using_defaults 必须是 bool（None/字符串/数字都不合契约）",
+        )
 
     def test_web_ui_section_has_resolved_fields(self) -> None:
         """``web_ui`` 必须含 host/port/language——这是 effective merged 值，
@@ -227,6 +265,145 @@ class TestPrintConfigDoesNotLeakNetworkSecurity(unittest.TestCase):
             web_ui,
             "web_ui 子树也不应含 network_security",
         )
+
+
+class TestRedactSensitiveHelpers(unittest.TestCase):
+    """``_redact_sensitive`` / ``_is_sensitive_key`` 单元测试。
+
+    设计目标：CR#16 F-1 让 ``--print-config`` 暴露所有非敏感 sections——
+    这是个双刃剑，notification 段里有 ``bark_device_key`` 这样的 user-
+    specific token。本类守护：
+
+    1. ``_is_sensitive_key`` 对常见敏感字段名都返回 True；
+    2. ``_redact_sensitive`` 递归 dict / list，匹配的字段值替换为 ``***REDACTED***``；
+    3. 非敏感字段保留原值；
+    4. 大小写不敏感（``Bark_Device_Key`` 与 ``bark_device_key`` 等价）。
+    """
+
+    def test_is_sensitive_key_detects_common_patterns(self) -> None:
+        for sensitive in (
+            "bark_device_key",
+            "device_key",
+            "api_key",
+            "apikey",
+            "auth_token",
+            "token",
+            "password",
+            "secret",
+            "private_key",
+            "client_secret",
+            "webhook_url",
+            "bot_token",
+            "session_key",
+            "credential",
+        ):
+            self.assertTrue(
+                server._is_sensitive_key(sensitive),
+                f"{sensitive!r} 必须被识别为敏感字段名",
+            )
+
+    def test_is_sensitive_key_case_insensitive(self) -> None:
+        for variant in (
+            "Bark_Device_Key",
+            "BARK_DEVICE_KEY",
+            "BarkDeviceKey",
+        ):
+            self.assertTrue(
+                server._is_sensitive_key(variant),
+                f"{variant!r} 大小写变体也必须被识别",
+            )
+
+    def test_is_sensitive_key_non_sensitive_passes(self) -> None:
+        """常见非敏感字段不应被误伤。"""
+        for not_sensitive in (
+            "host",
+            "port",
+            "language",
+            "log_level",
+            "enabled",
+            "retry_count",
+            "timeout",
+            "hostname",  # 不含 'host_name'，仅是 hostname——不敏感
+        ):
+            self.assertFalse(
+                server._is_sensitive_key(not_sensitive),
+                f"{not_sensitive!r} 不应被识别为敏感",
+            )
+
+    def test_redact_sensitive_replaces_value_in_dict(self) -> None:
+        out = server._redact_sensitive(
+            {"bark_device_key": "real_token_xyz", "host": "127.0.0.1"}
+        )
+        self.assertEqual(out["bark_device_key"], "***REDACTED***")
+        self.assertEqual(out["host"], "127.0.0.1")
+
+    def test_redact_sensitive_recursive_into_nested_dict(self) -> None:
+        out = server._redact_sensitive(
+            {
+                "notification": {
+                    "enabled": True,
+                    "bark_device_key": "real_token",
+                    "bark_url": "https://example.com/",
+                },
+                "web_ui": {"host": "0.0.0.0", "port": 8080},
+            }
+        )
+        self.assertEqual(out["notification"]["bark_device_key"], "***REDACTED***")
+        self.assertEqual(out["notification"]["enabled"], True)
+        self.assertEqual(out["web_ui"]["host"], "0.0.0.0")
+
+    def test_redact_sensitive_recursive_into_list(self) -> None:
+        out = server._redact_sensitive(
+            [
+                {"api_key": "k1"},
+                {"name": "alice", "token": "t1"},
+            ]
+        )
+        self.assertEqual(out[0]["api_key"], "***REDACTED***")
+        self.assertEqual(out[1]["token"], "***REDACTED***")
+        self.assertEqual(out[1]["name"], "alice")
+
+    def test_redact_sensitive_does_not_mutate_input(self) -> None:
+        """输入不应被原地修改——返回的是新的 dict。"""
+        original = {"bark_device_key": "real"}
+        out = server._redact_sensitive(original)
+        self.assertEqual(original["bark_device_key"], "real")
+        self.assertEqual(out["bark_device_key"], "***REDACTED***")
+
+    def test_redact_sensitive_preserves_atomic_types(self) -> None:
+        for atomic in (None, True, False, 42, 3.14, "hello"):
+            self.assertEqual(
+                server._redact_sensitive(atomic),
+                atomic,
+                f"原子类型 {atomic!r} 应原样返回",
+            )
+
+
+class TestPrintConfigRedactsBarkDeviceKey(unittest.TestCase):
+    """E2E：``--print-config`` stdout 必须不含真实 bark_device_key。
+
+    这是 CR#16 F-1 实施过程中发现的实际 bug：扩展 sections dump 后，
+    notification.bark_device_key 直接进了 stdout。本类是回归 guard。
+    """
+
+    def test_real_bark_device_key_redacted_in_stdout(self) -> None:
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = server._print_effective_config()
+        self.assertEqual(rc, 0)
+        raw = buf.getvalue()
+        # 解析 JSON，找 notification.bark_device_key 字段
+        payload = json.loads(raw)
+        notif = payload.get("sections", {}).get("notification", {})
+        device_key = notif.get("bark_device_key")
+        # 用户的 config.toml 里 bark_device_key 是 "uvMegCBMH9PQ8M2gDMpC4A"
+        # （真实 device token）。本测试断言它**绝不**进 stdout。
+        if device_key is not None:
+            self.assertEqual(
+                device_key,
+                "***REDACTED***",
+                f"bark_device_key 必须被 redact，实际：{device_key!r}",
+            )
 
 
 class TestPrintConfigFailureMode(unittest.TestCase):
