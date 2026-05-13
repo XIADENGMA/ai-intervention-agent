@@ -65,6 +65,67 @@ log 行。
 
 根据配置设置 root logger 和所有 handler 的级别
 
+### `get_current_log_level() -> dict[str, str]`
+
+返回当前运行时日志级别快照（root + ai_intervention_agent 命名空间）。
+
+给 ``GET /api/system/log-level`` 端点 + 测试断言用。
+
+返回字段：
+
+- ``root_level``：``logging.getLogger()`` 当前 effective level 名（如
+  ``"INFO"`` / ``"WARNING"``）。
+- ``aiia_level``：``ai_intervention_agent`` 命名空间当前 effective
+  level 名——子 logger 如果没显式 setLevel，会继承 root 的 effective
+  level（``logging.NOTSET`` 时向上查找）。
+- ``valid_levels``：5 个允许值供 client UI 渲染下拉菜单。
+
+设计：返回字典字段都是字符串（不返回 int），让 JSON 序列化结果对
+人类直接可读，不需要 client 自己 reverse-lookup logging.getLevelName。
+
+### `apply_runtime_log_level(level: str) -> dict[str, str]`
+
+运行时把 root logger + 所有 handler 的级别切到 ``level``。
+
+用途
+----
+R188 / T3 ``POST /api/system/log-level`` 端点的核心 helper——让运维
+在不重启 server 的情况下：
+
+* 调高 level → 临时调试某次反馈或某个 bug，``DEBUG`` 把 SSE / queue /
+  notification 全开；
+* 调低 level → 排查完后立刻关回 ``WARNING``，避免 stderr 爆量；
+* 与 ``AI_INTERVENTION_AGENT_LOG_LEVEL`` env var 的关系：env var 控制
+  **下次启动**，本 API 控制**当前进程**。两者不互相覆盖；env var 在
+  下次 ``main()`` 入口生效。
+
+设计约束
+--------
+- **只接受 5 个 enum 值**：``DEBUG`` / ``INFO`` / ``WARNING`` /
+  ``ERROR`` / ``CRITICAL``（大小写不敏感）。其他值 raise ``ValueError``，
+  handler 转 400 给 client；
+- **只改 root logger + handler**：不接受任意 logger 名参数——攻击面
+  最小，避免远程把 ``zeroconf`` / ``httpx`` 调成 DEBUG 让日志爆量；
+- **失败原子化**：先验证 level 合法再 setLevel，validation 失败时不
+  留半改半未改的状态；
+- **不持久化**：只改运行时；下次启动仍走 env var / config 路径。这是
+  故意的——运行时旋钮不应该意外覆盖 config，避免运维忘记关回去。
+
+参数
+----
+``level``：``DEBUG`` / ``INFO`` / ``WARNING`` / ``ERROR`` /
+``CRITICAL`` 之一，大小写不敏感。
+
+返回
+----
+``{"old_level": str, "new_level": str, "logger": "root"}`` —— 三个
+字段都用 string level name（``logging.getLevelName(...)``）便于 JSON
+序列化。
+
+异常
+----
+``ValueError``：``level`` 不在 ``VALID_LOG_LEVELS`` 内。
+
 ### `_record_to_ring(level_no: int, name: str, message: str) -> None`
 
 把一条日志推入 ring buffer，自带 level 过滤 + 脱敏 + 长度截断。

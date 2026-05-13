@@ -63,6 +63,16 @@ callers 应当跳过持久化路径，避免污染 cwd。
 
 注册通知提供者（需实现 send(event) -> bool）
 
+##### `get_provider_latency_histograms_snapshot(self) -> dict[str, dict[str, Any]]`
+
+返回 provider latency histogram 快照（深 copy）。
+
+形态与 ``mcp_tool_call_metrics.get_mcp_tool_call_latency_snapshot``
+对齐——``buckets`` 字典自动附加 ``float("inf")`` 键，值 == count。
+若某 provider 还从未发送过，**不**出现在返回字典里。
+
+返回值是新建 dict，调用者修改不会污染内部状态。
+
 ##### `add_callback(self, event_name: str, callback: Callable) -> None`
 
 添加事件回调（如 notification_sent, notification_fallback）

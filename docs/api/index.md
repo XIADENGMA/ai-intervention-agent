@@ -142,6 +142,7 @@ nagging "destructive operation" confirmations. See
 - [server_config](server_config.md)
 - [service_manager](service_manager.md)
 - [shared_types](shared_types.md)
+- [sse_event_schemas](sse_event_schemas.md)
 - [notification_manager](notification_manager.md)
 - [notification_models](notification_models.md)
 - [notification_providers](notification_providers.md)
@@ -181,6 +182,7 @@ nagging "destructive operation" confirmations. See
 - **i18n**: Lightweight back-end i18n (request-language detection + locale-keyed message lookup)
 - **mcp_tool_call_metrics**: MCP tool call counter middleware (R187 / T2) — feeds `aiia_mcp_tool_calls_total{tool,status}` Prometheus metric in `/api/system/metrics`
 - **shared_types**: Shared TypedDict definitions
+- **sse_event_schemas**: SSE event schema registry (R198 / Cycle 7) — central definition of every known SSE `event_type` + payload field set; tests assert every `_sse_bus.emit("<literal>", ...)` call site has a matching schema
 - **notification_models**: Notification data models
 - **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)
 - **file_validator**: File validation

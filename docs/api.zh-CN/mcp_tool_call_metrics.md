@@ -71,10 +71,13 @@ PII 边界
 
 ### `reset_mcp_tool_call_stats() -> None`
 
-清零所有累计计数（仅供测试 / 运维 reset 使用）。
+清零所有累计计数 **和** latency histogram（仅供测试 / 运维 reset 使用）。
 
 生产路径**不应**调用此函数——计数器在 server 整个生命周期内累计，
 重启即归零。测试 / 调试时为了 isolation 才需要显式 reset。
+
+R190 起本函数同时清空 ``_latency_state``——避免「counter reset 了
+但 histogram 还残留上次测试数据」的状态污染。
 
 ### `get_mcp_tool_call_stats() -> dict[str, dict[str, int]]`
 
@@ -85,6 +88,45 @@ PII 边界
 ``success + failure`` 的便捷投影——避免每个调用方各自再算一遍。
 
 若某 tool 还从未被调用，**不会**出现在返回字典里（避免 noise）。
+
+### `_record_latency(tool_name: str, status: str, duration_seconds: float) -> None`
+
+内部 helper：把一次工具调用的耗时写入 histogram。
+
+调用约定：必须**在已持锁**或**线程独占**条件下被调用。本函数自身
+不重新拿 ``_counter_lock`` ——middleware 在 success/failure 分支里
+已经拿了锁同时写 counter，再嵌套锁会增加死锁面。
+
+边界处理：
+- ``duration_seconds`` < 0（``time.monotonic()`` 退化，仅理论上）→
+  静默丢弃，避免污染 sum；
+- ``status`` 不是 ``success`` / ``failure`` → 静默接受（让未来加
+  ``timeout`` / ``rate_limited`` 等档不需要回头改本函数）；
+- bucket 比较用 ``<=``（Prom histogram 标准约定，``le="..."``）。
+
+### `get_mcp_tool_call_latency_snapshot() -> dict[tuple[str, str], dict[str, Any]]`
+
+返回 latency histogram 状态深 copy。
+
+返回形态：
+
+.. code-block:: python
+
+    {
+        ("interactive_feedback", "success"): {
+            "count": 42,
+            "sum_seconds": 187.4,
+            "buckets": {0.1: 1, 0.5: 5, 1.0: 12, ..., float("inf"): 42},
+        },
+        ...
+    }
+
+关键性质：
+
+- 返回字典是新建的，调用者修改不会污染内部状态；
+- ``buckets`` 字典自带 ``float("inf")`` 这个键，值 == ``count``（因为
+  所有观测必然 ≤ +Inf）——caller 直接 emit ``le="+Inf"`` bucket 即可；
+- 若某 ``(tool, status)`` 还从未被记录，**不会**出现在返回字典里。
 
 ## 类
 

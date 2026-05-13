@@ -8,6 +8,10 @@
 
 ### `get_mcp_tool_call_stats() -> dict[str, dict[str, int]]`
 
+### `_record_latency(tool_name: str, status: str, duration_seconds: float) -> None`
+
+### `get_mcp_tool_call_latency_snapshot() -> dict[tuple[str, str], dict[str, Any]]`
+
 ## Classes
 
 ### `class ToolCallCounterMiddleware`

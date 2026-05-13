@@ -36,6 +36,8 @@
 
 ##### `register_provider(self, notification_type: NotificationType, provider: Any) -> None`
 
+##### `get_provider_latency_histograms_snapshot(self) -> dict[str, dict[str, Any]]`
+
 ##### `add_callback(self, event_name: str, callback: Callable) -> None`
 
 ##### `trigger_callbacks(self, event_name: str) -> None`

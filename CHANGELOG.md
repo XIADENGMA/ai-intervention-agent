@@ -9,6 +9,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R198 / Cycle 7: SSE event schema registry
+  (`ai_intervention_agent/sse_event_schemas.py`)** — CR#19 §4.3 后续。
+  Project 的 SSE bus (`web_ui_routes/task.py::_SSEBus`) 接受 free-form
+  `(event_type: str, data: dict | None)` 参数——任何模块都能
+  `_sse_bus.emit("anything", whatever)`，bus 本身不验证。设计上保留这
+  种灵活度，但 *前端订阅方* (Activity dashboard JS / VSCode webview)
+  没有 source-of-truth 可参考——只能靠 grep + commit 历史试错，
+  容易 silent drift。
+
+  R198 把所有已知 event types + payload schema 集中定义在新模块:
+
+  - `EventSchema` dataclass: `(name, required_fields, optional_fields,
+    description, emitted_by)` —— frozen + frozenset 让 schema 对象本身
+    hashable + immutable；
+  - 当前注册 **4 个** event types: `task_changed` / `config_changed` /
+    `log_level_changed` / `oversize_drop`；
+  - Public API: `EVENT_SCHEMAS`, `get_known_event_types()`,
+    `get_schema(event_type)`, `validate_payload(event_type, payload)`；
+  - **不引入运行时验证**: emit() 在 `_lock` 临界区里跑，添加 schema
+    check 会拖慢 fan-out throughput。验证只在 test-time / IDE-time
+    通过 `validate_payload` API 暴露。
+
+  **Test coverage** (`tests/test_sse_event_schemas_r198.py`,
+  18 cases / 5 invariant classes):
+
+  - **Registry well-formedness** (4): schema 是 EventSchema 实例 /
+    name == registry key / required+optional 是 frozenset / 两个字段
+    集 disjoint；
+  - **Validation API correctness** (5): valid payload → empty; missing
+    required → flag; unexpected field → flag; unknown event_type →
+    flag; valid + optional 也 OK；
+  - **Public API contract** (2): `get_known_event_types` 返回 sorted
+    tuple; `get_schema(unknown)` → None；
+  - **Source-coverage AST guard** (4): 整 `src/` 下所有
+    `_sse_bus.emit("<literal>", ...)` 调用的 event_type literal **必须**
+    在 EVENT_SCHEMAS。加新 event type 而忘了注册的 commit 在这里
+    fail-fast。同时检查 emit-site module path 出现在 schema 的
+    `emitted_by` tuple 里——防止 emit 站点搬家而忘了同步注册表。
+    Variable event_type 形式只允许 bus 自身的 oversize_drop 替换路径；
+  - **emit-site payload coverage** (3): 已知 dict-literal emit
+    (`config_changed`, `log_level_changed`, `oversize_drop` 内置替换)
+    的 payload 字段 ⊆ schema.required ∪ schema.optional, 且 ⊇ required。
+
+  顺带 sync `scripts/generate_docs.py` 的 `MODULES_TO_DOCUMENT` +
+  `QUICK_NAV_UTILITY` + EN/zh-CN module description; `docs/api/` +
+  `docs/api.zh-CN/` 重新生成包含新的 `sse_event_schemas.md` 以及
+  `enhanced_logging.md` / `mcp_tool_call_metrics.md` /
+  `notification_manager.md` 三处遗留 sync (R188 / R187 / R191 新增
+  helper 此前漏在 docs)。
+
 ### Tests
 
 - **R197 / Cycle 7: latency stats invariant guard
