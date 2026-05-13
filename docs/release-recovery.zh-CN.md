@@ -14,7 +14,7 @@ job 失败 / 部分发布时的人类可读 runbook**。
 2. **Publish to PyPI (Trusted Publisher)** —— 将 `dist/*` 上传到
    PyPI，附带 sigstore attestations。
 3. **Publish VSCode Extension to Open VSX** —— `npx --yes
-   ovsx@0.10.9 publish ...`（R149 pin）。
+ovsx@0.10.9 publish ...`（R149 pin）。
 4. **Publish VSCode Extension to VS Code Marketplace** —— 若配置
    了 `VSCE_PAT` secret 则 `vsce publish`；否则优雅 skip。
 5. **Create GitHub Release** —— 把 sdist/wheel/vsix 作为 release
@@ -68,7 +68,7 @@ git push origin v1.6.3
 
 **为何安全**：没有任何外部镜像（PyPI / Open VSX / GitHub Release）
 接收 artefact。唯一"漏出去"的就是 tag 本身，我们已经删掉。同名重打
-是从消费者角度看的 tag *move*，不是 tag *rewrite*（没人消费过）。
+是从消费者角度看的 tag _move_，不是 tag _rewrite_（没人消费过）。
 
 **注意**：如果在 push 与 delete 之间任何开发者 / CI / 镜像 poll 过
 tag，它们可能缓存了被抛弃的 commit hash。如果怀疑有外部消费者，在
@@ -150,12 +150,12 @@ gh release create v1.6.3 \
 
 ## R180 + R181 阻止了什么
 
-| R180 + R181 之前                                       | R180 + R181 之后                                       |
-| ------------------------------------------------------ | ------------------------------------------------------ |
-| `[Unreleased]` snapshot 测试在 bump 时 fossilise       | snapshot 测试重新 anchor 在整个 CHANGELOG              |
-| CHANGELOG / docs commits 静默跳过 `test.yml`           | CHANGELOG / docs commits 跑完整 `ci_gate.py` matrix    |
-| 潜在 test 回退在 tag-push 才暴露                       | 潜在 test 回退在 PR-push 就暴露                        |
-| 失败模式 1 是 tag-push 的**主要**危险                  | 失败模式 1 现在罕见多了                                |
+| R180 + R181 之前                                 | R180 + R181 之后                                    |
+| ------------------------------------------------ | --------------------------------------------------- |
+| `[Unreleased]` snapshot 测试在 bump 时 fossilise | snapshot 测试重新 anchor 在整个 CHANGELOG           |
+| CHANGELOG / docs commits 静默跳过 `test.yml`     | CHANGELOG / docs commits 跑完整 `ci_gate.py` matrix |
+| 潜在 test 回退在 tag-push 才暴露                 | 潜在 test 回退在 PR-push 就暴露                     |
+| 失败模式 1 是 tag-push 的**主要**危险            | 失败模式 1 现在罕见多了                             |
 
 本手册对失败模式 2、3 仍然适用；失败模式 1 在它**罕见**漏过的情
 况下（例如 PR-merge 与 tag-push 之间上游 toolchain 变更）也仍然

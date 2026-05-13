@@ -6,6 +6,10 @@
 
 ### `_ensure_notification_system_loaded() -> tuple[Any, Any]`
 
+### `_coerce_env_str(env_name: str) -> str | None`
+
+### `_coerce_env_int(env_name: str, lo: int, hi: int) -> int | None`
+
 ### `_close_async_client_best_effort(client: httpx.AsyncClient | None) -> None`
 
 ### `_invalidate_runtime_caches_on_config_change() -> None`
@@ -21,6 +25,8 @@
 ### `is_web_service_running(host: str, port: int, timeout: float = 2.0) -> bool`
 
 ### `health_check_service(config: WebUIConfig) -> bool`
+
+### `invalidate_web_ui_config_cache() -> None`
 
 ### `get_web_ui_config() -> tuple[WebUIConfig, int]`
 

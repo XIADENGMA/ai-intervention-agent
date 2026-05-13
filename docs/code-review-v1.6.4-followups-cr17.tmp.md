@@ -8,13 +8,13 @@
 
 ## 1 Commits at a glance
 
-| #   | SHA       | Type            | Lines      | Purpose                                                                                                                       |
-| --- | --------- | --------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `d1f2ee9` | `:sparkles:`    | +406 / -16 | CR#16 **F-1 + F-3 + (security)**: `--print-config` gains `sections`/`using_defaults` + recursive secret-redaction walker     |
-| 2   | `d8f0e4f` | `:lock:`        | +120 / -0  | **Security hardening doc**: three-layer recipe for non-loopback deployments (`SECURITY.md` + `configuration.md` × 2 langs)    |
-| 3   | `884a313` | `:recycle:`     | +197 / -4  | CR#16 **F-5**: public `invalidate_web_ui_config_cache()` helper + AST-based shape-contract test                                |
-| 4   | `58441c6` | `:white_check_mark:` | +55 / -0  | CR#16 **F-2**: explicit rate-limit + auth-failure guard tests for R185 (32 → 34 cases)                                        |
-| 5   | `981117b` | `:police_car:`  | +539 / -0  | CR#16 **F-4**: pre-commit governance hook for "large diff in non-`[Unreleased]` CHANGELOG region" + 13 guard tests           |
+| #   | SHA       | Type                 | Lines      | Purpose                                                                                                                    |
+| --- | --------- | -------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `d1f2ee9` | `:sparkles:`         | +406 / -16 | CR#16 **F-1 + F-3 + (security)**: `--print-config` gains `sections`/`using_defaults` + recursive secret-redaction walker   |
+| 2   | `d8f0e4f` | `:lock:`             | +120 / -0  | **Security hardening doc**: three-layer recipe for non-loopback deployments (`SECURITY.md` + `configuration.md` × 2 langs) |
+| 3   | `884a313` | `:recycle:`          | +197 / -4  | CR#16 **F-5**: public `invalidate_web_ui_config_cache()` helper + AST-based shape-contract test                            |
+| 4   | `58441c6` | `:white_check_mark:` | +55 / -0   | CR#16 **F-2**: explicit rate-limit + auth-failure guard tests for R185 (32 → 34 cases)                                     |
+| 5   | `981117b` | `:police_car:`       | +539 / -0  | CR#16 **F-4**: pre-commit governance hook for "large diff in non-`[Unreleased]` CHANGELOG region" + 13 guard tests         |
 
 Total: ~1.3k lines net (`+1317 / -20`). Tests added across the
 cycle: **34** (12 + 0 + 8 + 2 + 13 [#1 had 12 new sub-cases for the
@@ -175,7 +175,7 @@ Two options:
 
 (a) Alphabetical-sort section keys before serializing.
 (b) Document the current order as "follows config.toml schema
-    order" (web_ui → mdns → feedback → notification).
+order" (web_ui → mdns → feedback → notification).
 
 (a) is more robust to schema changes; (b) is more readable in
 hand-written `--print-config | head` outputs. **Recommended (a)
@@ -273,16 +273,16 @@ Documentation-only. **5min change**; flag for cycle 4.
 
 Re-verified the R-series contracts touched by this cycle:
 
-| Contract                                | Status                      | Evidence                                                                                                                                                            |
-| --------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **R53-F** "no config-value passthrough" | ✅ preserved                | `_print_effective_config` is a CLI dump (not HTTP handler), can read `os.environ` directly; redaction walker doesn't break the contract                              |
-| **R120** silent-failure baseline        | ✅ baseline=27 (unchanged)  | No new bare `except: pass` introduced; F-1's redaction walker uses explicit `isinstance` checks rather than try/except                                                |
-| **R121-A** health payload whitelist     | ✅ unchanged                | No health-payload changes this cycle                                                                                                                                |
-| **R178** docs i18n lockstep             | ✅ both pairs synced        | `SECURITY.md` + `SECURITY.zh-CN.md` (commit #2); `configuration.{md,zh-CN.md}` (commit #2)                                                                          |
-| **R19.1** tag-push safety               | ✅ unchanged                | No changes to `check_tag_push_safety.py` core flow this cycle; F-2 only added test coverage                                                                          |
-| **CR#15 F-3** entry-point wiring        | ✅ unchanged                | `_cli_main` still parses `--print-config` correctly; F-1 expansion to `sections` is purely an output-layer change                                                    |
-| **(NEW) Sensitive-key redaction**       | ✅ established               | `_is_sensitive_key` + `_redact_sensitive` defined in `server.py`; 8-case unit test suite + E2E `bark_device_key` regression test in `test_server_print_config.py`     |
-| **(NEW) CHANGELOG diff scope**          | ✅ established               | New pre-commit hook + 13 guard tests; threshold default = 100 lines; `--allow-massive-changelog-rewrite` escape hatch                                                 |
+| Contract                                | Status                     | Evidence                                                                                                                                                          |
+| --------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **R53-F** "no config-value passthrough" | ✅ preserved               | `_print_effective_config` is a CLI dump (not HTTP handler), can read `os.environ` directly; redaction walker doesn't break the contract                           |
+| **R120** silent-failure baseline        | ✅ baseline=27 (unchanged) | No new bare `except: pass` introduced; F-1's redaction walker uses explicit `isinstance` checks rather than try/except                                            |
+| **R121-A** health payload whitelist     | ✅ unchanged               | No health-payload changes this cycle                                                                                                                              |
+| **R178** docs i18n lockstep             | ✅ both pairs synced       | `SECURITY.md` + `SECURITY.zh-CN.md` (commit #2); `configuration.{md,zh-CN.md}` (commit #2)                                                                        |
+| **R19.1** tag-push safety               | ✅ unchanged               | No changes to `check_tag_push_safety.py` core flow this cycle; F-2 only added test coverage                                                                       |
+| **CR#15 F-3** entry-point wiring        | ✅ unchanged               | `_cli_main` still parses `--print-config` correctly; F-1 expansion to `sections` is purely an output-layer change                                                 |
+| **(NEW) Sensitive-key redaction**       | ✅ established             | `_is_sensitive_key` + `_redact_sensitive` defined in `server.py`; 8-case unit test suite + E2E `bark_device_key` regression test in `test_server_print_config.py` |
+| **(NEW) CHANGELOG diff scope**          | ✅ established             | New pre-commit hook + 13 guard tests; threshold default = 100 lines; `--allow-massive-changelog-rewrite` escape hatch                                             |
 
 ## 6 CHANGELOG audit
 
@@ -310,7 +310,7 @@ Cycle 4 candidate work, ranked by user-visible impact:
 3. **F-2'** — rename R185 graceful-degradation tests to canonical
    `test_<failure_mode>_returns_none` pattern. _est. 15m, pure cosmetic_
 4. **F-4'** — `tests/test_check_changelog_diff_scope.py::
-   TestSectionParserRobust` adversarial-input cases. _est. 45m,
+TestSectionParserRobust` adversarial-input cases. _est. 45m,
    future-proofing_
 5. **F-5'** — docstring comment on `invalidate_web_ui_config_cache`
    re: async-aware future. _est. 5m, documentation_

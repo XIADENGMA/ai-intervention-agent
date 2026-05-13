@@ -139,7 +139,7 @@ diverges.
   passed, queries `gh api repos/{owner}/{repo}/dependabot/alerts`
   and fails the check if ≥ 1 open Dependabot alert at
   `critical`/`high` severity exists. Tune with `--cve-severity
-  {critical,high,medium,low}` (repeatable, defaults to
+{critical,high,medium,low}` (repeatable, defaults to
   `{critical,high}`) or emergency-bypass with `--allow-cve`
   (emits `WARNING (R185)` to stderr, recommend recording rationale
   in the commit message). Default is OFF — adding the gate to a

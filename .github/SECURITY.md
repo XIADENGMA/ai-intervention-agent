@@ -8,10 +8,10 @@ Only the **latest minor** on the `main` branch receives security fixes. Older
 minors are end-of-life the moment a new minor is published on PyPI / Open VSX /
 VS Code Marketplace.
 
-| Version | Status          |
-| ------- | --------------- |
-| 1.6.x   | ✅ Supported     |
-| < 1.6   | ❌ End-of-life   |
+| Version | Status         |
+| ------- | -------------- |
+| 1.6.x   | ✅ Supported   |
+| < 1.6   | ❌ End-of-life |
 
 If you need a backport to an older line, open a discussion first — we evaluate
 case by case based on CVSS and exposure.

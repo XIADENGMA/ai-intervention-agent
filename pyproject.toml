@@ -176,12 +176,7 @@ dev = [
 # pytest-cov 在并行场景下正确归一覆盖率。
 source = ["src/ai_intervention_agent"]
 # 测试时排除一次性 / 离线脚本，避免被算进 fail_under 红线（它们独立跑）
-omit = [
-    "scripts/*",
-    "tests/*",
-    "*/test_*.py",
-    "manual_test.py",
-]
+omit = ["scripts/*", "tests/*", "*/test_*.py", "manual_test.py"]
 # 让 pytest-xdist / xfail 等场景正确合并多次 run 的 .coverage 数据
 parallel = true
 # R82：把 ``parallel = true`` 在仓库根撒下的 ``.coverage.<host>.<pid>.<rand>``
@@ -227,8 +222,8 @@ select = [
     "PIE",  # flake8-pie — 各种微小优化
     "PERF", # perflint — 性能反模式检测
     "LOG",  # flake8-logging — 抓 root-logger 直调 / exc_info 误用，配合 R72-A
-            # 的 InterceptHandler 防回归
-    "RUF",  # Ruff 自有规则
+    # 的 InterceptHandler 防回归
+    "RUF", # Ruff 自有规则
 ]
 ignore = [
     "E501",    # 行长度由 formatter 处理

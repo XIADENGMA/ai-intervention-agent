@@ -9,6 +9,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R196 / Cycle 6: notification-specific latency buckets (50 ms – 10 s,
+  dense)** — R191 起步实现复用了
+  `mcp_tool_call_metrics._DEFAULT_LATENCY_BUCKETS`
+  (`0.1 / 0.5 / 1 / 5 / 30 / 120 / 300 / 600` 秒)，逻辑上同属「人机交互
+  延迟」语义；但实测分布差异极大：MCP tool 调用以「人工思考 + 打字」
+  主导（典型 10 – 300 秒，最长 600 秒 = `auto_resubmit_timeout` 触发
+  边界），notification 发送以「网络往返 + provider 端处理」主导（典型
+  50 ms – 500 ms，极端尾部 ≲ 10 秒）。共用 bucket schema 让 dashboard
+  模板得跟着 `__name__` 切换 axis，CR#19 §4.1 flag 为运维认知负担。R196
+  在 `NotificationManager._DEFAULT_LATENCY_BUCKETS_SECONDS` 上单独定义
+  `(0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)`，让
+  `histogram_quantile(0.95,
+  rate(aiia_notification_send_duration_seconds_bucket[5m]))` 在常见
+  延迟范围内得到 < 100 ms 精度的 P95 估计。`+Inf` 仍由 snapshot helper
+  动态追加，不在元组里——避免 caller 误以为 `+Inf` 是真实采样上限。
+
+  **Test coverage** (`tests/test_notification_latency_histogram_r191.py`,
+  16 cases preserved across 5 invariant classes): bucket schema 变化
+  后两个测试 (`test_cumulative_buckets_increment_correctly`、
+  `test_multiple_recordings_same_provider_accumulate`) 改用动态读
+  `notification_manager._DEFAULT_LATENCY_BUCKETS_SECONDS` 而不是
+  hardcoded constants —— invariant 是「duration d 让所有 `upper >= d`
+  的桶 +1」，与具体桶值解耦。后续如再调整 bucket 分布也不必连带改
+  测试。
+
 ### Added
 
 - **R195 / Cycle 5: `POST /api/system/rotate-api-token` admin endpoint**

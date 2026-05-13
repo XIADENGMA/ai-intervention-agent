@@ -15,9 +15,9 @@ The six release jobs of `release.yml` (in execution order):
 2. **Publish to PyPI (Trusted Publisher)** — uploads `dist/*` to
    PyPI with sigstore attestations.
 3. **Publish VSCode Extension to Open VSX** — `npx --yes
-   ovsx@0.10.9 publish ...` (pinned per R149).
+ovsx@0.10.9 publish ...` (pinned per R149).
 4. **Publish VSCode Extension to VS Code Marketplace** — `vsce
-   publish` if `VSCE_PAT` secret is set; gracefully skips otherwise.
+publish` if `VSCE_PAT` secret is set; gracefully skips otherwise.
 5. **Create GitHub Release** — uploads sdist/wheel/vsix as
    release assets + auto-generated release notes from CHANGELOG.
 
@@ -25,7 +25,7 @@ A failure in **any** job leaves the project in a partial state.
 This playbook describes how to recover for each failure pattern,
 and **the one rule that everything hinges on**:
 
-> Once a Publish job has *succeeded* (PyPI / Open VSX / Marketplace
+> Once a Publish job has _succeeded_ (PyPI / Open VSX / Marketplace
 > accepted the artefact), the version number is **permanently
 > burned**. PyPI explicitly refuses re-upload of the same version,
 > even after `yank`. Open VSX is the same. **Never re-use a burned
@@ -72,7 +72,7 @@ git push origin v1.6.3
 **Why this is safe**: No external mirror (PyPI / Open VSX / GitHub
 Release) accepted anything. The only "leaked" artefact was the
 tag itself, which we deleted. Re-tagging the same name is a tag
-*move*, not a tag *rewrite* from the consumer's perspective
+_move_, not a tag _rewrite_ from the consumer's perspective
 (nothing consumed it yet).
 
 **Watchpoint**: if any developer / CI / mirror polled the tag
@@ -131,7 +131,7 @@ broken artefact is the VSIX. Options:
    only on PyPI; VSIX users see v1.6.2 → v1.6.4 directly."
 2. **Even VSIX users need this fix**: bump to v1.6.4, fix the
    VSIX bug, re-tag. Both `pip install
-   ai-intervention-agent==1.6.4` and the v1.6.4 VSIX ship. v1.6.3
+ai-intervention-agent==1.6.4` and the v1.6.4 VSIX ship. v1.6.3
    becomes a "PyPI-only release" historical artefact.
 
 This is a value-judgement call. Prefer option 1 if the VSIX bug
@@ -162,12 +162,12 @@ run rerun <run-id> --job <job-id>` if the cause was transient.
 
 ## What R180 + R181 prevent
 
-| Before R180 + R181                                  | After R180 + R181                                    |
-| --------------------------------------------------- | ---------------------------------------------------- |
-| Snapshot test on `[Unreleased]` fossilised on bump  | Snapshot test re-anchored on whole CHANGELOG         |
+| Before R180 + R181                                  | After R180 + R181                                     |
+| --------------------------------------------------- | ----------------------------------------------------- |
+| Snapshot test on `[Unreleased]` fossilised on bump  | Snapshot test re-anchored on whole CHANGELOG          |
 | CHANGELOG / docs commits silently skip `test.yml`   | CHANGELOG / docs commits run full `ci_gate.py` matrix |
-| Latent test regressions surface at tag-push time    | Latent test regressions surface at PR-push time      |
-| Failure pattern 1 was the *primary* tag-push danger | Failure pattern 1 is now much rarer                  |
+| Latent test regressions surface at tag-push time    | Latent test regressions surface at PR-push time       |
+| Failure pattern 1 was the _primary_ tag-push danger | Failure pattern 1 is now much rarer                   |
 
 This playbook still applies to failure patterns 2 and 3, and to
 failure pattern 1 in the rare case it slips through (e.g.

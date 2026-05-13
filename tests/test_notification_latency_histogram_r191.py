@@ -75,34 +75,55 @@ class TestRecordProviderLatencyBucket(unittest.TestCase):
         self.assertAlmostEqual(snap["bark"]["sum_seconds"], 0.5)
 
     def test_cumulative_buckets_increment_correctly(self) -> None:
-        # 0.5s 应该进 0.5 桶（≤ 0.5），同时 cumulative 进所有更高桶
+        # 关键不变量：duration d 应该让所有 ``upper >= d`` 的 bucket +1。
+        # **不**硬编码具体桶值（R196 改动会调整 notification provider
+        # 桶分布），改用 ``_DEFAULT_LATENCY_BUCKETS_SECONDS`` 模板读取。
+        bucket_template = notification_manager._DEFAULT_LATENCY_BUCKETS_SECONDS
+        # 选用一个落在桶模板某个桶里的 duration——找中位桶
+        sample_duration = bucket_template[len(bucket_template) // 2]
         with notification_manager._stats_lock:
-            notification_manager._record_provider_latency_bucket("bark", 0.5)
+            notification_manager._record_provider_latency_bucket(
+                "bark", sample_duration
+            )
         snap = notification_manager.get_provider_latency_histograms_snapshot()
         bk = snap["bark"]["buckets"]
-        # 0.1 桶：0.5 > 0.1 → 0
-        self.assertEqual(bk[0.1], 0)
-        # 0.5 桶：0.5 <= 0.5 → 1
-        self.assertEqual(bk[0.5], 1)
-        # 后续桶 cumulative：1.0/5.0/.../+Inf 都 1
-        for upper in (1.0, 5.0, 30.0, 120.0, 300.0, 600.0, float("inf")):
-            self.assertEqual(bk[upper], 1, f"bucket {upper} mismatch")
+
+        # 对每个桶 upper 检查 cumulative 行为
+        for upper in bucket_template:
+            expected = 1 if sample_duration <= upper else 0
+            self.assertEqual(
+                bk[upper],
+                expected,
+                f"bucket {upper}: duration {sample_duration} expected count={expected}, got {bk[upper]}",
+            )
+        # +Inf 桶 = count = 1
+        self.assertEqual(bk[float("inf")], 1)
 
     def test_multiple_recordings_same_provider_accumulate(self) -> None:
+        # 选三个 duration：分别落在桶模板的不同段位
+        bucket_template = notification_manager._DEFAULT_LATENCY_BUCKETS_SECONDS
+        # d1 < bucket[0] → 进所有桶
+        # d2 中段
+        # d3 大于所有有限桶 → 仅 +Inf
+        d1 = bucket_template[0] / 2.0  # 比最小桶还小
+        d2 = bucket_template[len(bucket_template) // 2]
+        d3 = bucket_template[-1] + 1.0  # 比最大桶还大
         with notification_manager._stats_lock:
-            notification_manager._record_provider_latency_bucket("bark", 0.05)
-            notification_manager._record_provider_latency_bucket("bark", 0.5)
-            notification_manager._record_provider_latency_bucket("bark", 5.0)
+            for d in (d1, d2, d3):
+                notification_manager._record_provider_latency_bucket("bark", d)
         snap = notification_manager.get_provider_latency_histograms_snapshot()
         bk = snap["bark"]["buckets"]
         self.assertEqual(snap["bark"]["count"], 3)
-        self.assertAlmostEqual(snap["bark"]["sum_seconds"], 5.55)
-        # 0.1 桶：仅 0.05 ≤ 0.1 → 1
-        self.assertEqual(bk[0.1], 1)
-        # 0.5 桶：0.05 + 0.5 ≤ 0.5 → 2
-        self.assertEqual(bk[0.5], 2)
-        # 5.0 桶：所有 3 个 ≤ 5.0 → 3
-        self.assertEqual(bk[5.0], 3)
+        self.assertAlmostEqual(snap["bark"]["sum_seconds"], d1 + d2 + d3)
+
+        # d1 ≤ 第一个桶 → 至少进第一个桶 (累计计数 1)
+        self.assertEqual(bk[bucket_template[0]], 1)
+        # d2 落在中间 → 至少 d1 + d2 = 2 落在中间桶
+        self.assertEqual(bk[d2], 2)
+        # d3 超出所有有限桶 → 最大有限桶仅捕获 d1 + d2 = 2
+        self.assertEqual(bk[bucket_template[-1]], 2)
+        # +Inf 桶捕获全部 3 个
+        self.assertEqual(bk[float("inf")], 3)
 
     def test_multiple_providers_independent_state(self) -> None:
         with notification_manager._stats_lock:

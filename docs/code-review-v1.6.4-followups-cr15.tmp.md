@@ -10,29 +10,29 @@
 ## Scope
 
 Five-commit post-release polish cycle, driven by the maintainer's
-"what's *still* missing as a complete project, especially performance,
+"what's _still_ missing as a complete project, especially performance,
 latent bugs, and feature absorption from sibling projects" prompt.
 The dominant theme is **closing the user-onboarding loop** — every
 commit reduces friction for first-time `uvx ai-intervention-agent`
 users:
 
-| Commit    | Theme         | One-liner                                                                                                                                              |
-| --------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `444af4c` | README polish | Trim hero badges to 3 `for-the-badge`, lift `cunzhi`-style pain-point lead, emoji feature anchors.                                                     |
-| `900d2bb` | Feature       | `AI_INTERVENTION_AGENT_WEB_UI_HOST/PORT/LANGUAGE` env overrides (no file edits for `uvx` / Docker / systemd / SSH-remote).                             |
-| `218b72f` | Feature       | CLI `--version` / `--help` via argparse + `_cli_main` console-script entry (fix "hangs forever on unknown flag" PyPI footgun).                         |
+| Commit    | Theme         | One-liner                                                                                                                                                       |
+| --------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `444af4c` | README polish | Trim hero badges to 3 `for-the-badge`, lift `cunzhi`-style pain-point lead, emoji feature anchors.                                                              |
+| `900d2bb` | Feature       | `AI_INTERVENTION_AGENT_WEB_UI_HOST/PORT/LANGUAGE` env overrides (no file edits for `uvx` / Docker / systemd / SSH-remote).                                      |
+| `218b72f` | Feature       | CLI `--version` / `--help` via argparse + `_cli_main` console-script entry (fix "hangs forever on unknown flag" PyPI footgun).                                  |
 | `ced2373` | UX            | `port_in_use` `ServiceUnavailableError` message inlines three executable fixes (env override → `config.toml` → `lsof`), bilingual `troubleshooting.md` rewrite. |
-| `2db38d2` | Docs          | Surface the env-override + CLI inspection paths in `README.{md,zh-CN.md}` Configuration section so first-time readers actually see them.               |
+| `2db38d2` | Docs          | Surface the env-override + CLI inspection paths in `README.{md,zh-CN.md}` Configuration section so first-time readers actually see them.                        |
 
 ## Commits in chronological order
 
-| #   | SHA       | Subject                                                                                                                                                              |
-| --- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `444af4c` | `:lipstick: docs(readme): trim hero badges to 3 for-the-badge + cunzhi-style pain-point lead + emoji feature anchors`                                                |
-| 2   | `900d2bb` | `:sparkles: feat(service-manager): env overrides for web_ui host/port/language`                                                                                      |
-| 3   | `218b72f` | `:sparkles: feat(cli): --version / --help via argparse + _cli_main entry`                                                                                            |
-| 4   | `ced2373` | `:art: ux(service-manager): inline actionable fixes into port_in_use error`                                                                                          |
-| 5   | `2db38d2` | `:memo: docs(readme): surface env override + CLI inspection paths`                                                                                                   |
+| #   | SHA       | Subject                                                                                                               |
+| --- | --------- | --------------------------------------------------------------------------------------------------------------------- |
+| 1   | `444af4c` | `:lipstick: docs(readme): trim hero badges to 3 for-the-badge + cunzhi-style pain-point lead + emoji feature anchors` |
+| 2   | `900d2bb` | `:sparkles: feat(service-manager): env overrides for web_ui host/port/language`                                       |
+| 3   | `218b72f` | `:sparkles: feat(cli): --version / --help via argparse + _cli_main entry`                                             |
+| 4   | `ced2373` | `:art: ux(service-manager): inline actionable fixes into port_in_use error`                                           |
+| 5   | `2db38d2` | `:memo: docs(readme): surface env override + CLI inspection paths`                                                    |
 
 ## Findings — what went well
 
@@ -89,7 +89,7 @@ fail with a docstring explaining why.
 ### 3. Test investment that locks UX text without freezing wording (`ced2373`)
 
 `test_port_in_use_friendly_message.py` (9 cases) does not assert
-"the message is *exactly* this string" — it asserts:
+"the message is _exactly_ this string" — it asserts:
 
 - contains `AI_INTERVENTION_AGENT_WEB_UI_PORT` (env override path);
 - contains `config.toml` (file-edit path);
@@ -161,11 +161,12 @@ feature loop.
 
 The maintainer was in parallel working on R185
 (`scripts/check_tag_push_safety.py` + `tests/test_check_tag_push_safety_cve_gate_r185.py`
-+ CHANGELOG markdown-style normalization). Every commit in this
-cycle had to:
+
+- CHANGELOG markdown-style normalization). Every commit in this
+  cycle had to:
 
 1. `git stash push CHANGELOG.md` to isolate R185's `* → -` + `*foo*
-   → _foo_` reformat;
+→ _foo_` reformat;
 2. write the cycle's `[Unreleased]` entry into a clean CHANGELOG;
 3. commit;
 4. `git stash pop` to restore R185's reformat to the working tree.
@@ -263,15 +264,15 @@ in 1.6.3 / 1.6.4 sections).
 
 ## Static guards
 
-| Guard                                                        | Status     |
-| ------------------------------------------------------------ | ---------- |
-| `ruff check src/ tests/`                                     | ✓ All passed |
-| `ruff format --check` (this cycle's files only)              | ✓ 285 files clean (`tests/test_check_tag_push_safety_cve_gate_r185.py` is R185-in-progress, not this cycle) |
-| `ty check src/`                                              | ✓ All checks passed |
-| `pytest tests/` (full suite, 5074 cases, 620 subtests)       | ✓ 0 failed, 0 error, 0 warning; 5074 passed + 2 skipped |
-| `pytest tests/test_housekeeping_r151.py`                     | ✓ 8/8 passed (`[Unreleased]` exists, R148-R151 persistent) |
-| Cycle-specific tests (49 new cases across 3 files)           | ✓ 49/49 passed |
-| `pre-commit run` (auto-ran on each commit via hook)          | ✓ ruff / trailing-ws / EOF / TOML / merge-conflict / large-file / line-ending / debug-statements / shebang — all passed |
+| Guard                                                  | Status                                                                                                                  |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `ruff check src/ tests/`                               | ✓ All passed                                                                                                            |
+| `ruff format --check` (this cycle's files only)        | ✓ 285 files clean (`tests/test_check_tag_push_safety_cve_gate_r185.py` is R185-in-progress, not this cycle)             |
+| `ty check src/`                                        | ✓ All checks passed                                                                                                     |
+| `pytest tests/` (full suite, 5074 cases, 620 subtests) | ✓ 0 failed, 0 error, 0 warning; 5074 passed + 2 skipped                                                                 |
+| `pytest tests/test_housekeeping_r151.py`               | ✓ 8/8 passed (`[Unreleased]` exists, R148-R151 persistent)                                                              |
+| Cycle-specific tests (49 new cases across 3 files)     | ✓ 49/49 passed                                                                                                          |
+| `pre-commit run` (auto-ran on each commit via hook)    | ✓ ruff / trailing-ws / EOF / TOML / merge-conflict / large-file / line-ending / debug-statements / shebang — all passed |
 
 ## Closing remarks
 
@@ -298,4 +299,4 @@ itself is small and the framing shifts to "user-onboarding
 features".
 
 — Reviewer: Claude Opus 4.7 working alongside `xiadengma`,
-  session on 2026-05-12.
+session on 2026-05-12.

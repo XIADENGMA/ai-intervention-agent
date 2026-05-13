@@ -20,4 +20,16 @@
 
 ### `cleanup_services(shutdown_notification_manager: bool = True) -> None`
 
-### `main() -> None`
+### `_build_arg_parser() -> argparse.ArgumentParser`
+
+### `_is_sensitive_key(key: str) -> bool`
+
+### `_redact_sensitive(value: object) -> object`
+
+### `_is_using_default_config(config_file_path: object) -> bool`
+
+### `_print_effective_config() -> int`
+
+### `main(argv: list[str] | None = None) -> None`
+
+### `_cli_main() -> None`

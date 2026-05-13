@@ -497,18 +497,38 @@ class NotificationManager:
     # -----------------------------------------------------------------
 
     _DEFAULT_LATENCY_BUCKETS_SECONDS: tuple[float, ...] = (
+        0.05,
         0.1,
+        0.25,
         0.5,
         1.0,
+        2.5,
         5.0,
-        30.0,
-        120.0,
-        300.0,
-        600.0,
+        10.0,
     )
-    """provider-side 通知发送的 latency 桶（秒）。与 ``mcp_tool_call_metrics``
-    的桶定义对齐——同样是「人机交互延迟」语义。``+Inf`` 由 snapshot helper
-    动态追加，不在元组里——避免 caller 误以为 ``+Inf`` 是真实采样上限。"""
+    """provider-side 通知发送的 latency 桶（秒）—— R196 / Cycle 6 重新调
+    优。
+
+    R191 起步实现复用了 ``mcp_tool_call_metrics._DEFAULT_LATENCY_BUCKETS``
+    （0.1 / 0.5 / 1 / 5 / 30 / 120 / 300 / 600）——逻辑上同属「人机交互延
+    迟」语义。**但**实测分布完全不同：
+
+    - **MCP tool 调用**延迟由「人类阅读问题 + 思考 + 打字」主导，典型分
+      布在 10 - 300 秒，最长可达 600 秒（``auto_resubmit_timeout`` 触发
+      边界）；
+    - **Notification 发送**延迟由「网络往返 + provider 端处理」主导，典
+      型分布在 50ms - 500ms（Bark / Pushover / system notif），极端尾部
+      也不会超过 ~10 秒（超过基本是 ``http_timeout`` 配置上限）。
+
+    CR#19 §4.1 指出：用同一组桶让两边的 cumulative distribution 看起来
+    很不同——dashboard 模板得跟着 metric name 不同切换桶 axis，给运维
+    平添 cognitive load。R196 拆出 notification-specific 桶 (50ms - 10s
+    密集采样)，让 ``histogram_quantile(0.95, …{__name__=~"aiia_notif.*"})``
+    在常见范围内得到 < 100ms 精度的 P95 估计。
+
+    ``+Inf`` 由 snapshot helper 动态追加，不在元组里——避免 caller 误
+    以为 ``+Inf`` 是真实采样上限。
+    """
 
     def _record_provider_latency_bucket(
         self, provider_name: str, duration_seconds: float

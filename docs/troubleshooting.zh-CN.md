@@ -90,12 +90,12 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN  # 确认端口已空闲
 
 ## 4. 通知没响（Web / 声音 / 系统 / Bark）
 
-| 渠道 | 最常见原因 | 修复 |
-| --- | --- | --- |
-| **Web** | 浏览器 tab 在后台 + 系统拒绝授权 | 页面右上角铃铛 → "允许通知"。Safari 还要去 系统设置 → 通知 → Safari 单独允许。 |
-| **声音** | `notifications.sound_mute = true` 或音量 0 | 设置页 → 声音 → 关闭"静音"，调高音量。iOS / iPadOS 需要每次会话至少把页面置前一次。 |
-| **系统（plyer）** | macOS 缺 `pyobjus`（**有意跳过**） | macOS 通过 plyer 走的系统通知有意跳过；项目改用 `macos_native_enabled = true`（基于 `osascript`）。Linux 需要 `libnotify`；Windows 走 Toast。 |
-| **Bark** | device key 错 / 推送服务不可达 / `bark_url` 没指向你自建实例 | 用 `curl -v "$BARK_URL/$DEVICE_KEY/test"` 单测。设 `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` 做点击直达。**如果解析出来的 URL 是 loopback 地址**（`localhost` / `127.x.x.x` / `::1`），agent 现在会在服务端直接过滤——手机不会再收到一个无法点击打开的 URL；同时 Web UI 的 Bark 设置面板会推荐对应的 LAN IP（`http://<lan-ip>:<port>`）让你一键复制并写入 `web_ui.external_base_url`（或开 mDNS）后重试。 |
+| 渠道              | 最常见原因                                                   | 修复                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web**           | 浏览器 tab 在后台 + 系统拒绝授权                             | 页面右上角铃铛 → "允许通知"。Safari 还要去 系统设置 → 通知 → Safari 单独允许。                                                                                                                                                                                                                                                                                                                                                               |
+| **声音**          | `notifications.sound_mute = true` 或音量 0                   | 设置页 → 声音 → 关闭"静音"，调高音量。iOS / iPadOS 需要每次会话至少把页面置前一次。                                                                                                                                                                                                                                                                                                                                                          |
+| **系统（plyer）** | macOS 缺 `pyobjus`（**有意跳过**）                           | macOS 通过 plyer 走的系统通知有意跳过；项目改用 `macos_native_enabled = true`（基于 `osascript`）。Linux 需要 `libnotify`；Windows 走 Toast。                                                                                                                                                                                                                                                                                                |
+| **Bark**          | device key 错 / 推送服务不可达 / `bark_url` 没指向你自建实例 | 用 `curl -v "$BARK_URL/$DEVICE_KEY/test"` 单测。设 `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` 做点击直达。**如果解析出来的 URL 是 loopback 地址**（`localhost` / `127.x.x.x` / `::1`），agent 现在会在服务端直接过滤——手机不会再收到一个无法点击打开的 URL；同时 Web UI 的 Bark 设置面板会推荐对应的 LAN IP（`http://<lan-ip>:<port>`）让你一键复制并写入 `web_ui.external_base_url`（或开 mDNS）后重试。 |
 
 ## 5. mDNS（`ai.local`）局域网解析不出来
 
@@ -263,7 +263,7 @@ ai-intervention-agent 触发。[Cursor 社区论坛同主题][cursor-ext-host]
 - `wait_for_task_completion` 用 `max(timeout, server_config.BACKEND_MIN=260)`
   和 `calculate_backend_timeout` 钳位 backend 等待时长。
 - `server.py::main()` 把 MCP 主循环包在 3 次重试 + `cleanup_services()`
-  + `KeyboardInterrupt` 优雅退出的 harness 里。
+  - `KeyboardInterrupt` 优雅退出的 harness 里。
 - R114（通知管理器）已经把 atexit / shutdown TOCTOU race 静默化，
   老版本会在 host restart 期间打 `ERROR: 处理通知事件失败` 噪声日志，
   容易被误判成 MCP 端故障；新版本不会再出。
@@ -408,7 +408,7 @@ tag。
 > **注意** —— `npx --yes ovsx@latest` 在 CI 里**永远不对**，哪怕只
 > 是临时也不行；那就是 v1.6.1 失败的根因。如果当前 pin 的 ovsx 有
 > 已知 bug 阻塞 release，回滚到**上一个**能 work 的 pin（在 `git log
-> release.yml` 里找），不要走浮动。
+release.yml` 里找），不要走浮动。
 
 ## 13. 客户端/服务端 payload 字段名漂移（R154 教训）
 

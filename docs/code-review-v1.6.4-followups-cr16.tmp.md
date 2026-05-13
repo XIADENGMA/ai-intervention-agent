@@ -9,13 +9,13 @@
 
 ## 1 Commits at a glance
 
-| #   | SHA       | Type       | Lines  | Purpose                                                                    |
-| --- | --------- | ---------- | ------ | -------------------------------------------------------------------------- |
-| 1   | `36cdc72` | `:sparkles:` | +400   | `/api/system/health` adds `web_ui_env_overrides` field + 11 guard tests   |
-| 2   | `a37e17d` | `:sparkles:` | +950   | R185 opt-in Dependabot CVE gate (`--check-cve`/`--cve-severity`/`--allow-cve`) + 32 tests + markdownlint cleanup of CHANGELOG R184 region |
-| 3   | `288b7fb` | `:memo:`   | +206   | R185 docs sync: Makefile `release-check-cve` target, `scripts/README.md` index entry, bilingual `docs/release-recovery.{md,zh-CN.md}`, 8 guard tests |
-| 4   | `cf2555c` | `:sparkles:` | +448   | CLI `--print-config` flag + 11 guard tests + bilingual README & docs/configuration updates |
-| 5   | `246accc` | `:wrench:` | +13/-4 | Hotfix: downgrade two `except Exception: pass` in `_print_effective_config` to `logger.debug(...)` to satisfy R120 baseline (5106 passed) |
+| #   | SHA       | Type         | Lines  | Purpose                                                                                                                                              |
+| --- | --------- | ------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `36cdc72` | `:sparkles:` | +400   | `/api/system/health` adds `web_ui_env_overrides` field + 11 guard tests                                                                              |
+| 2   | `a37e17d` | `:sparkles:` | +950   | R185 opt-in Dependabot CVE gate (`--check-cve`/`--cve-severity`/`--allow-cve`) + 32 tests + markdownlint cleanup of CHANGELOG R184 region            |
+| 3   | `288b7fb` | `:memo:`     | +206   | R185 docs sync: Makefile `release-check-cve` target, `scripts/README.md` index entry, bilingual `docs/release-recovery.{md,zh-CN.md}`, 8 guard tests |
+| 4   | `cf2555c` | `:sparkles:` | +448   | CLI `--print-config` flag + 11 guard tests + bilingual README & docs/configuration updates                                                           |
+| 5   | `246accc` | `:wrench:`   | +13/-4 | Hotfix: downgrade two `except Exception: pass` in `_print_effective_config` to `logger.debug(...)` to satisfy R120 baseline (5106 passed)            |
 
 Total: ~2.0k lines net (`+2017 / -342` if I subtract the markdownlint
 normalization from R184 region in `a37e17d`). Tests added across the
@@ -108,7 +108,7 @@ run. The fix was landed **inside the same cycle** (commit #5) with:
   fallback is safe (per R-series doctrine "every silent except
   documents its rationale"),
 - verified `silent_failure_audit.py check` returns to baseline-27
-  + same-cycle full-suite (5106 passed).
+  - same-cycle full-suite (5106 passed).
 
 This is the textbook outcome for a regression: caught by guard, fixed
 inside the cycle, doesn't bleed into the next CR.
@@ -147,7 +147,7 @@ benefit from seeing `mdns.enabled` / `mdns.hostname` too. Two
 options:
 
 (a) Expand `--print-config` to include all non-sensitive sections
-    (`web_ui`, `mdns`, `feedback`, `notification`).
+(`web_ui`, `mdns`, `feedback`, `notification`).
 (b) Add a `--print-config <section>` arg variant.
 
 (a) is simpler and consistent with `ConfigManager.get_all()` already
@@ -217,14 +217,14 @@ changes.
 Re-verified the R-series contracts that this cycle's changes
 touch:
 
-| Contract                          | Status      | Evidence                                                                                          |
-| --------------------------------- | ----------- | ------------------------------------------------------------------------------------------------- |
-| **R53-F** "no config-value passthrough in health handler"   | ✅ preserved | `system_health()` only calls `_safe_*` helpers; new `_safe_web_ui_env_overrides()` follows pattern |
-| **R120** silent-failure baseline   | ✅ baseline=27 (was 27 pre-cycle) | commit #5 hotfix returns to baseline                                                              |
-| **R121-A** health payload field whitelist | ✅ expanded with type assertions | `tests/test_web_ui_routes_system.py::TestSystemHealthEndpoint::test_payload_carries_no_sensitive_fields` adds dict[str,str] guard for `web_ui_env_overrides` |
-| **R178** docs i18n lockstep        | ✅ all 3 doc pairs synced | `tests/test_r185_docs_sync.py::TestReleaseRecoveryBilingualSync` enforces                          |
-| **R19.1** tag-push safety          | ✅ unchanged default behaviour | `--check-cve` default OFF; bytes-identical to pre-R185                                              |
-| **CR#15 F-3** entry-point wiring   | ✅ unchanged | `_cli_main` still the `console_script` target; new `--print-config` flag is parsed *inside* `main()` |
+| Contract                                                  | Status                            | Evidence                                                                                                                                                     |
+| --------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **R53-F** "no config-value passthrough in health handler" | ✅ preserved                      | `system_health()` only calls `_safe_*` helpers; new `_safe_web_ui_env_overrides()` follows pattern                                                           |
+| **R120** silent-failure baseline                          | ✅ baseline=27 (was 27 pre-cycle) | commit #5 hotfix returns to baseline                                                                                                                         |
+| **R121-A** health payload field whitelist                 | ✅ expanded with type assertions  | `tests/test_web_ui_routes_system.py::TestSystemHealthEndpoint::test_payload_carries_no_sensitive_fields` adds dict[str,str] guard for `web_ui_env_overrides` |
+| **R178** docs i18n lockstep                               | ✅ all 3 doc pairs synced         | `tests/test_r185_docs_sync.py::TestReleaseRecoveryBilingualSync` enforces                                                                                    |
+| **R19.1** tag-push safety                                 | ✅ unchanged default behaviour    | `--check-cve` default OFF; bytes-identical to pre-R185                                                                                                       |
+| **CR#15 F-3** entry-point wiring                          | ✅ unchanged                      | `_cli_main` still the `console_script` target; new `--print-config` flag is parsed _inside_ `main()`                                                         |
 
 ## 6 Suggested follow-ups (ordered)
 

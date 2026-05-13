@@ -37,6 +37,17 @@ Returns:
     ``(notification_manager_singleton, initialize_notification_system_fn)``，
     加载失败时返回 ``(None, None)``。
 
+### `_coerce_env_str(env_name: str) -> str | None`
+
+从环境变量读取非空字符串。未设置或仅空白时返回 None。
+
+### `_coerce_env_int(env_name: str, lo: int, hi: int) -> int | None`
+
+从环境变量读取 int（带边界校验）。
+
+返回 None 的三种情形：env 未设置 / 解析失败 / 越界。后两种会记
+``logger.warning`` 让运维能在日志反查，调用方按 None 走 fallback 路径。
+
 ### `_close_async_client_best_effort(client: httpx.AsyncClient | None) -> None`
 
 在同步上下文中尽力关闭异步 HTTP 客户端的连接池。
@@ -104,6 +115,29 @@ R25.2: ``except httpx.HTTPError`` 在函数体内引用 ``httpx``，但走到这
 并写入 ``sys.modules``——异常处理器读取 ``httpx.HTTPError`` 时模块全局命名空间
 走 LEGB 查询，``httpx`` 是模块级名（来自 ``TYPE_CHECKING`` block 在运行期不存在），
 所以这里需要再次本地 import 把 ``httpx`` 引入函数局部命名空间。
+
+### `invalidate_web_ui_config_cache() -> None`
+
+CR#16 F-5：清空 ``get_web_ui_config()`` 的 TTL 缓存（public helper）。
+
+用途
+----
+* **测试**：单测里改了 env 或 config 后想立刻看到新值，调一次本函数比
+  reach 到 ``_config_cache`` private dict 更稳——后者一旦改 shape
+  （比如加新字段），所有测试都得改；
+* **运行时**：custom hot-reload flow / 外部脚本写完 config.toml 后
+  想强制 next call 重读，比起 ``_invalidate_runtime_caches_on_config_change``
+  副作用面更小（不重置 http client / 不 ``_config_cache_generation += 1``，
+  只是让下一次 ``get_web_ui_config()`` cache miss 重新 load）。
+
+线程安全：仍走 ``_config_cache_lock``——与 ``get_web_ui_config()``
+的写路径一致，绝不和并发读者打架。
+
+向后兼容
+----
+本函数不替换 ``_invalidate_runtime_caches_on_config_change``；它是更
+窄的工具，只动 web_ui config cache 一项。需要清空 http client / 触发
+generation bump 时仍调原 helper。
 
 ### `get_web_ui_config() -> tuple[WebUIConfig, int]`
 

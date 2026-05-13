@@ -100,12 +100,12 @@ does not show the task.
 
 ## 4. No notifications arrive (Web / sound / system / Bark)
 
-| Channel | Most common cause | Fix |
-| --- | --- | --- |
-| **Web** | Browser tab is in the background and OS denied permission | Click the bell icon on the page → "Allow notifications". On Safari, also enable in System Settings → Notifications → Safari. |
-| **Sound** | `notifications.sound_mute = true` or volume = 0 | Settings page → Sound → toggle "Mute" off, raise volume. iOS / iPadOS require the page to be foregrounded once per session. |
-| **System (plyer)** | macOS missing `pyobjus` (intentional skip) | macOS native notifications via plyer are intentionally skipped; the project relies on `macos_native_enabled = true` (`osascript`-based) instead. Linux requires `libnotify`; Windows uses Toast. |
-| **Bark** | Wrong device key, push server unreachable, or `bark_url` not pointing at your self-hosted instance | Test the URL with `curl -v "$BARK_URL/$DEVICE_KEY/test"`. Set `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` for a click-through deep link. **If the URL would resolve to a loopback address** (`localhost` / `127.x.x.x` / `::1`) the agent now suppresses it server-side — the phone never gets a useless click target — and the Web UI Bark settings panel surfaces a copy-pasteable LAN-IP suggestion (`http://<lan-ip>:<port>`). Apply that to `web_ui.external_base_url` (or expose mDNS) and re-trigger. |
+| Channel            | Most common cause                                                                                  | Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Web**            | Browser tab is in the background and OS denied permission                                          | Click the bell icon on the page → "Allow notifications". On Safari, also enable in System Settings → Notifications → Safari.                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Sound**          | `notifications.sound_mute = true` or volume = 0                                                    | Settings page → Sound → toggle "Mute" off, raise volume. iOS / iPadOS require the page to be foregrounded once per session.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **System (plyer)** | macOS missing `pyobjus` (intentional skip)                                                         | macOS native notifications via plyer are intentionally skipped; the project relies on `macos_native_enabled = true` (`osascript`-based) instead. Linux requires `libnotify`; Windows uses Toast.                                                                                                                                                                                                                                                                                                                                               |
+| **Bark**           | Wrong device key, push server unreachable, or `bark_url` not pointing at your self-hosted instance | Test the URL with `curl -v "$BARK_URL/$DEVICE_KEY/test"`. Set `bark_action = "url"` + `bark_url_template = "{base_url}/?task_id={task_id}"` for a click-through deep link. **If the URL would resolve to a loopback address** (`localhost` / `127.x.x.x` / `::1`) the agent now suppresses it server-side — the phone never gets a useless click target — and the Web UI Bark settings panel surfaces a copy-pasteable LAN-IP suggestion (`http://<lan-ip>:<port>`). Apply that to `web_ui.external_base_url` (or expose mDNS) and re-trigger. |
 
 ## 5. mDNS (`ai.local`) does not resolve on the LAN
 
@@ -182,7 +182,7 @@ AI Intervention Agent feedback page.
    the `bark-r42` round). Loopback URLs cannot route from a phone back
    to your laptop's `localhost`; sending them would always fail.
 2. **`bark_action` is set to a value other than `"url"`** — `bark_action
-   = "default"` lets the user tap to dismiss; only `"url"` (or any
+= "default"` lets the user tap to dismiss; only `"url"` (or any
    absolute http/https URL) makes the Bark app deep-link.
 
 **Fix**:
@@ -358,7 +358,7 @@ ERROR: Description in extension.vsixmanifest and package.json does not match.
 ERROR: Categories in extension.vsixmanifest and package.json do not match.
 ```
 
-— typically *only* the Open VSX job, with the same VSIX uploading
+— typically _only_ the Open VSX job, with the same VSIX uploading
 fine to the Microsoft VS Code Marketplace.
 
 ### Why this happens
@@ -388,7 +388,7 @@ literal string instead of `"%placeholderKey%"`:
 ```
 
 The field is ASCII / Latin so the localised look-up was buying us
-nothing; the other fields that *do* differ across locales
+nothing; the other fields that _do_ differ across locales
 (`activitybar.title`, `views.title`, `commands.title`) keep their
 NLS placeholders because those are user-visible strings that benefit
 from translation.
@@ -458,7 +458,7 @@ Toolchain upgrades are deliberately tracked PRs, not silent drift:
 > **Note** — `npx --yes ovsx@latest` is **never** correct in a CI
 > workflow even as a "temporary" measure. It re-creates the same
 > drift that broke v1.6.1. If a release is blocked because the
-> currently-pinned ovsx has a known bug, revert to the *previous*
+> currently-pinned ovsx has a known bug, revert to the _previous_
 > known-working pin (find it in `git log` for `release.yml`) rather
 > than going floating.
 

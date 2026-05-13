@@ -7,10 +7,10 @@
 只有 `main` 上的 **最新 minor** 会收到安全修复。新的 minor 一旦发布到 PyPI /
 Open VSX / VS Code Marketplace，旧 minor 立即 EOL。
 
-| 版本    | 状态     |
-| ------- | -------- |
-| 1.6.x   | ✅ 支持  |
-| < 1.6   | ❌ EOL   |
+| 版本  | 状态    |
+| ----- | ------- |
+| 1.6.x | ✅ 支持 |
+| < 1.6 | ❌ EOL  |
 
 需要向旧线回移补丁？先开 discussion，我们按 CVSS 与暴露面逐例评估。
 
