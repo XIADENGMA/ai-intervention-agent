@@ -221,6 +221,29 @@ class NetworkSecurityMixin:
                 f"（{type(rotated_at_raw).__name__}），已视作未设置"
             )
 
+        # R200 / Cycle 8 · F-199-1 from CR#20 §4.1：「stale ghost」cascade-clear
+        # ----------------------------------------------------------------
+        # 如果 api_token 已经被清空（管理员手动撤销 / config drift / write
+        # error 后 reset），但 api_token_rotated_at 仍然指向上一次 rotation
+        # 时间戳——`GET /api/system/api-token-info` 会返回 ``has_token=false``
+        # 但 ``age_seconds`` 非 ``null`` 的 misleading 状态，让 dashboard 误
+        # 报「token 60 天未轮换」（实际 token 已经被撤销）。
+        #
+        # Sanitize 策略：发现这种不一致 → log warning + 把 rotated_at 清空，
+        # 保证「token 在 → rotated_at 存在；token 不在 → rotated_at 也不
+        # 在」的双向不变量在 normalize 后总是成立。
+        #
+        # 注意只对「validate 走完后」的最终值做这道清理，**不**修改 caller
+        # 传入的 raw dict（避免影响后续 write-path 决策）。
+        if not api_token and rotated_at:
+            logger.warning(
+                "network_security.api_token 已被撤销（空串）但 api_token_rotated_at"
+                f" 仍存在 ({rotated_at!r}); 已自动 cascade-clear 时间戳避免"
+                " stale ghost 状态。如果需要保留历史 rotation 记录请使用外部"
+                " audit log。"
+            )
+            rotated_at = ""
+
         return {
             "bind_interface": bind,
             "allowed_networks": allowed_list,

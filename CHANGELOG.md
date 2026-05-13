@@ -9,6 +9,66 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R200 / Cycle 8: stale ghost cascade-clear for `api_token_rotated_at`**
+  (CR#20 §4.1 / F-199-1). R199 持久化 ``api_token_rotated_at`` 进 config
+  后留了一个微妙不变量：admin 手动 edit ``config.toml`` 把 ``api_token =
+  ""`` 撤销 token 时，**没有**任何机制同步清空 ``api_token_rotated_at``。
+  结果 ``GET /api/system/api-token-info`` 会返回:
+
+  - ``has_token = false``（token 已撤销）
+  - ``rotated_at = "2026-04-02T..."``（指向上次 rotation）
+  - ``age_seconds = ~5.2M``（≈ 60 天）
+
+  Dashboard 按 NIST SP 800-63B 90 天规则会误报「token 60 天未轮换」——
+  但实际 token 早已不存在。这是 **"stale ghost" rotation 提醒**。
+
+  R200 在 ``_validate_network_security_config`` 走完所有字段 normalize
+  之后加一道 sanity check: 如果 ``api_token`` 经过 normalize 为空（包括
+  显式 ``""`` / < 16 字符被丢弃 / 全空白被清洗）但 ``api_token_rotated_at``
+  非空 → log warning + cascade-clear 时间戳为空串。**不变量**: normalize
+  完成后 ``api_token`` 在 ⇔ ``api_token_rotated_at`` 在（empty/empty
+  也满足）。
+
+  这道 sanitize 是**幂等**的 (cascade-clear 后再调一次 normalize 仍是
+  一致状态)，自动覆盖三条路径:
+
+  - **直接 normalize**: ``_validate_network_security_config(raw)`` 单独
+    调用就会 cascade（如 ``set_network_security_config`` / 文件 first-load
+    走的就是这条）；
+  - **incremental update**: ``update_network_security_config({"api_token":
+    ""})`` 不传 ``rotated_at`` 时，merged dict 进 validate → cascade 自动
+    触发 → 写回 config；
+  - **R199 端点**: ``GET /api/system/api-token-info`` 读 cache 看到的
+    永远是 cascade 之后的一致状态。
+
+  **Test coverage** (`tests/test_api_token_cascade_clear_r200.py`,
+  13 cases / 4 invariant classes):
+
+  - **Direct normalize path** (5): ghost state cascades; short token (<16)
+    cascades; whitespace-only token cascades; valid token+rotated_at
+    untouched; empty+empty no-warning (避免日志 noise);
+  - **Incremental update path** (3): explicit clear cascades; explicit
+    both-clear no-ghost; set short token cascades；
+  - **R199 endpoint interaction** (3): cascade → endpoint 立刻看到一致
+    状态; R195 rotate → admin clear → 一致; R195 rotate 不被 cascade
+    误伤；
+  - **Invariant + idempotency** (2): 二次 normalize 不再触发 warning;
+    warning text 含 ``'cascade-clear'`` / ``'stale ghost'`` 字符串用于
+    audit grep。
+
+  **Test infrastructure note**: ai_intervention_agent 用自定义
+  ``EnhancedLogger``（loguru 后端 + ``propagate=False``），``assertLogs``
+  拿不到 named-logger 消息。R200 测试套引入轻量 ``capture_ns_warnings``
+  上下文管理器（patch 模块级 ``logger.warning``）替代 ``assertLogs``
+  ——可复用模式, 适用于其他「期望特定 marker 出现在 warning」的测试。
+
+  **Test**: R200 + R199 + R195 + R193 + R189 + ns_config 全跑 → 182/182
+  PASSED; ruff check 无报错。
+
+  Refs: CR#20 §4.1 (F-199-1, Important / R200 candidate).
+
 ### Docs
 
 - **CR#20 / Cycle 7 review archived** (`docs/code-reviews/cr20.md`).
