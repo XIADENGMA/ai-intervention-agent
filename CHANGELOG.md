@@ -9,6 +9,24 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Docs
+
+- **CR#20 / Cycle 7 review archived** (`docs/code-reviews/cr20.md`).
+  Reviews the 4 commits landed since CR#19 (R196 notification buckets,
+  R197 latency invariant, R198 SSE schema registry, R199 API token info)
+  + lists follow-up candidates ranked by severity:
+  - F-199-1 (important, R200 candidate): auto-clear `api_token_rotated_at`
+    when `api_token` becomes `""` to avoid "stale ghost" rotation state;
+  - F-196-1 / F-197-1 / F-199-3 (docs batch): cross-references + 3-line
+    docstring header on AST guard test class + R195 docstring sync;
+  - F-198-1 / F-198-2 / F-199-2 (nice-to-have): schema `field_types`,
+    deep payload validation, `recommended_rotation_age_days` config.
+  Verdict: ✅ healthy cycle, no critical issues, all features carry
+  AST-level / source-level guards against silent decay (the cycle-7
+  signature pattern). Recommends R200 priorities and notes schema-driven
+  evolution beyond SSE (provider types, CLI commands, metric families)
+  as a parking-lot direction for future cycles.
+
 ### Added
 
 - **R199 / Cycle 7: API token age + last-rotated tracking
