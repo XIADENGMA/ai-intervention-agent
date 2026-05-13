@@ -124,6 +124,14 @@ access_control_enabled = true
 # preventing local admins from being locked out.
 api_token = ""
 
+# R199 / Cycle 7: api_token_rotated_at — ISO-8601 UTC timestamp of the
+# last `POST /api/system/rotate-api-token` invocation. Written automatically
+# by the rotation endpoint; read by `GET /api/system/api-token-info` to
+# compute "token age" for dashboard alerts (NIST SP 800-63B recommends
+# 30-90 day rotation). Empty string == never rotated / field unset. Don't
+# edit by hand — the rotation endpoint owns this field.
+api_token_rotated_at = ""
+
 # ──────────────────────────────────────────────
 # mDNS 配置 / mDNS Settings (for ai.local access & LAN service discovery)
 # ──────────────────────────────────────────────

@@ -11,6 +11,78 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R199 / Cycle 7: API token age + last-rotated tracking
+  (`GET /api/system/api-token-info`)** — CR#18 §4.4 follow-up extension.
+  R195 (`POST /api/system/rotate-api-token`) 让 admin 通过 HTTP rotation
+  无需重启，但**没有**任何方式查询「上次什么时候轮换的」。Admin 想做
+  「90 天没轮换就 alert」（NIST SP 800-63B 推荐 30-90 天轮换周期）只能
+  自己维护 rotation 时间戳，重启就丢——这跟 R195 把 rotation 从「编辑
+  config + restart」简化为「HTTP 一调用」的初衷矛盾。
+
+  R199 的两段改造：
+
+  1. **持久化 rotation 时间戳进 config**:
+     - 新 config field
+       `[network_security].api_token_rotated_at: str = ""`（ISO-8601 UTC，
+       如 `2026-05-13T16:00:00Z`）。
+     - R195 endpoint 改造：generation 时间戳生成**前移**到
+       `update_network_security_config` 调用**之前**——同一个 ISO 字符串
+       同时写进 config 和 response，让磁盘里的 `rotated_at` 跟 client
+       拿到的字符串**完全一致**，后续 GET 算 age 就是准确的。
+     - `_validate_network_security_config` 强校验：必须以 `Z`/`+00:00`
+       结尾且能被 `datetime.fromisoformat` 解析；脏数据 → 空串 + warning。
+
+  2. **新端点 `GET /api/system/api-token-info`**:
+     - **Loopback-only** (复用 R195 同款 gate)——token age 不是 secret
+       但仍敏感（攻击者据此预测下次 rotation 窗口）；
+     - Rate-limit `30 per minute`（admin 工具 poll-friendly + 防滥用）；
+     - Response: `{success, has_token, token_length, rotated_at,
+       age_seconds}`。`has_token` 是 `bool`（token 已配置 + 长度 ≥ 16）；
+       `token_length` 为 `int | None`；`rotated_at` 是 ISO-8601 字符串
+       或空串；`age_seconds` 是 `int | None`（未配置 / 解析失败 / 时钟
+       跳变到未来 → `null`，**不**返回 0——0 会误导 dashboard 当成
+       「刚轮换」）；
+     - **绝不**返回 `api_token` 明文——rotation endpoint 是唯一发放
+       明文 token 的时机。
+
+  **设计权衡**:
+
+  - **为何把 timestamp 也持久化进 TOML**: 之前 R195 只把 token 写进 config
+    （`rotated_at` 只在 response 里出现一次），admin 必须自己存。R199 改造
+    后任意时刻都能查 token age，不依赖 admin 工具自己维护状态。
+  - **为何不返回 token**: 把 token info endpoint 和 rotation endpoint 拆
+    成两个不同 contract——info 是「频繁 poll」, rotation 是「偶尔触发」。
+    info 不返回 token 让它**可以**被频繁 poll 而不增加密文 expose 面。
+  - **未来时间戳 / 时钟跳变 → null**: 如果 admin 手动改了 config 把
+    timestamp 改成未来（或 NTP 跳变），`age_seconds` 会变成 0 或负数。
+    Endpoint 把 < 0 显式映射为 `null`，避免 dashboard 看到 `age_seconds: 0`
+    误判为「刚刚轮换」。
+
+  **Test coverage** (`tests/test_api_token_info_r199.py`,
+  15 cases / 5 invariant classes):
+
+  - **Loopback gate** (2): non-loopback → 403; loopback → 200；
+  - **Response schema** (5): 必有 5 字段; no-token shape; **token 永不
+    leak（最关键的安全不变量，扫所有 string 字段）**; long-enough token
+    → has_token=True + length; too-short → has_token=False + null length；
+  - **age_seconds calculation** (4): empty → null; recent → 接近实时;
+    90 天 → ~7,776,000 秒 ±60s; future → null（不是 0）; malformed → null；
+  - **Rotation → info E2E** (2): R195 写 → R199 读 `rotated_at` 应完全
+    一致 + age ≈ 0; token_length 匹配；
+  - **Source-level guards** (1): rate-limit `30 per minute` 装饰器存在 +
+    endpoint 函数体里**绝不**出现 `"api_token":` 字面量（防后续 refactor
+    误加 `api_token` 进 response）。
+
+  顺带 sync `tests/test_network_security_config.py::test_output_structure`
+  把 `api_token_rotated_at` 加入预期 schema keys (R189 schema invariant
+  test 扩张)；`docs/configuration.md` + `docs/configuration.zh-CN.md`
+  network_security 表格加新行；`config.toml.default` 加默认值 + 注释
+  描述「rotation endpoint owns this field; don't edit by hand」。
+
+  **Test**: R197 + R198 + R199 + R195 + R193 + R189 + network_security
+  config 全跑 → 197/197 PASSED；全 suite → 5366/5366 PASSED；
+  ruff check 无报错。
+
 - **R198 / Cycle 7: SSE event schema registry
   (`ai_intervention_agent/sse_event_schemas.py`)** — CR#19 §4.3 后续。
   Project 的 SSE bus (`web_ui_routes/task.py::_SSEBus`) 接受 free-form

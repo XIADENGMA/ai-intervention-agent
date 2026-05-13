@@ -274,6 +274,7 @@ Controls which interfaces the Web UI binds to and which networks can access it.
 | `blocked_ips`            | string[] | `[]`           | Explicit deny list                                       |
 | `access_control_enabled` | boolean  | `true`         | Enable allow/deny checks                                 |
 | `api_token`              | string   | `""`           | Optional API token (R189 / T4). Empty = loopback-only writes (default). When set, non-loopback callers can authenticate via `Authorization: Bearer <token>` or `X-API-Token: <token>` to access write-mutation endpoints (`POST /api/system/log-level`, `POST /api/system/open-config-file`). Loopback always passes; token is an additional path, not a replacement. Min 16 chars (shorter values are dropped with a warning). Generate via `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `api_token_rotated_at`   | string   | `""`           | R199 / Cycle 7. ISO-8601 UTC timestamp of the last `POST /api/system/rotate-api-token` invocation. Written **automatically** by the rotation endpoint; read by `GET /api/system/api-token-info` to compute "token age" for dashboards (NIST SP 800-63B recommends 30–90 day rotation). Empty string = never rotated. **Do not edit by hand**—the rotation endpoint owns this field. Malformed values (not ISO-8601, missing `Z`/`+00:00` suffix) are dropped to empty with a warning. |
 
 **Host selection rule**:
 

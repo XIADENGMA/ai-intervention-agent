@@ -233,6 +233,15 @@ class NetworkSecuritySectionConfig(BaseModel):
     # 这里的 model 仅声明字段、不做长度校验——保持 pydantic schema 与
     # toml 默认值一致即可。
     api_token: SafeStr = ""
+    # R199 / Cycle 7: API token 上次轮换的 ISO-8601 UTC 时间戳（``Z`` 或
+    # ``+00:00`` 结尾）。由 ``POST /api/system/rotate-api-token``（R195）
+    # 在轮换时自动写入；``GET /api/system/api-token-info``（R199 新增）
+    # 读取后计算 token age。空串 = 从未轮换或字段未配置。格式校验由
+    # ``NetworkSecurityMixin._validate_network_security_config`` 强制执行
+    # —— 非法格式回退为空串。这个字段是**元数据**，不影响 token 鉴权
+    # 本身；只是给 admin 工具一个「该 token 多久没换了」的信号源，
+    # 配合 NIST SP 800-63B 30-90 天轮换建议做 dashboard alert。
+    api_token_rotated_at: SafeStr = ""
 
 
 class FeedbackSectionConfig(BaseModel):

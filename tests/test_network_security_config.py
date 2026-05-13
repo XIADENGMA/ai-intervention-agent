@@ -686,7 +686,9 @@ class TestValidateNetworkSecurityConfigMixin(unittest.TestCase):
         self.assertTrue(result["access_control_enabled"])
 
     def test_output_structure(self):
-        """输出字典应包含且仅包含 5 个预期字段（R189 新增 api_token）"""
+        """输出字典应包含且仅包含预期字段（R189 新增 api_token；R199 新增
+        api_token_rotated_at）。任何字段增删都要同步更新这个 invariant
+        test——schema 变更是 breaking change 候选。"""
         mgr = self._get_manager()
         result = mgr._validate_network_security_config({})
         self.assertEqual(
@@ -697,6 +699,7 @@ class TestValidateNetworkSecurityConfigMixin(unittest.TestCase):
                 "blocked_ips",
                 "access_control_enabled",
                 "api_token",
+                "api_token_rotated_at",
             },
         )
 

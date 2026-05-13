@@ -183,12 +183,51 @@ class NetworkSecurityMixin:
                 f"network_security.api_token 不是字符串（{type(api_token_raw).__name__}），已视作未配置"
             )
 
+        # R199 / Cycle 7: api_token_rotated_at —— rotation 元数据
+        # 时间戳，ISO-8601 UTC 格式（"YYYY-MM-DDTHH:MM:SS{.fff}+00:00" 或
+        # "...Z"）。非法格式 → 视作未设置（空串）。**不**做时区转换、
+        # **不**做格式 normalization——按 R195 endpoint 写入的格式原样
+        # 存储。读端 ``GET /api/system/api-token-info``（R199）自己处理
+        # parse + age 计算。
+        rotated_at_raw = raw.get(
+            "api_token_rotated_at", default_ns.get("api_token_rotated_at", "")
+        )
+        rotated_at = ""
+        if isinstance(rotated_at_raw, str):
+            ts = rotated_at_raw.strip()
+            if ts:
+                # 轻量格式校验：必须以 ``Z`` 或 ``+00:00`` 结尾（UTC 标识）；
+                # 且能被 ``datetime.fromisoformat`` 解析。任何 fail → 丢弃。
+                if not ts.endswith(("Z", "+00:00")):
+                    logger.warning(
+                        f"network_security.api_token_rotated_at 不是 UTC 时间戳"
+                        f" (应以 'Z' 或 '+00:00' 结尾)，已视作未设置: {ts!r}"
+                    )
+                else:
+                    try:
+                        from datetime import datetime as _dt
+
+                        _dt.fromisoformat(ts.replace("Z", "+00:00"))
+                        rotated_at = ts
+                    except (ValueError, TypeError) as exc:
+                        logger.warning(
+                            f"network_security.api_token_rotated_at 不是合法"
+                            f" ISO-8601 时间戳，已视作未设置: {ts!r}"
+                            f" ({type(exc).__name__})"
+                        )
+        elif rotated_at_raw not in (None, ""):
+            logger.warning(
+                f"network_security.api_token_rotated_at 不是字符串"
+                f"（{type(rotated_at_raw).__name__}），已视作未设置"
+            )
+
         return {
             "bind_interface": bind,
             "allowed_networks": allowed_list,
             "blocked_ips": blocked_list,
             "access_control_enabled": access_enabled,
             "api_token": api_token,
+            "api_token_rotated_at": rotated_at,
         }
 
     def _atomic_write_config(self, new_content: str) -> None:
@@ -325,7 +364,13 @@ class NetworkSecurityMixin:
         merged = dict(current)
 
         for k, v in updates.items():
-            if k in ("bind_interface", "allowed_networks", "blocked_ips", "api_token"):
+            if k in (
+                "bind_interface",
+                "allowed_networks",
+                "blocked_ips",
+                "api_token",
+                "api_token_rotated_at",
+            ):
                 merged[k] = v
             elif k in ("access_control_enabled", "enable_access_control"):
                 merged["access_control_enabled"] = v

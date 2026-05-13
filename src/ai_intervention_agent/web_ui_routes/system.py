@@ -2396,9 +2396,19 @@ class SystemRoutesMixin:
                 )
 
             new_token = secrets.token_urlsafe(32)
+            # R199 / Cycle 7：rotation 时间戳，写入 config + 响应同步
+            # 返回。在调用 update_network_security_config **之前**生成
+            # （而不是之后），让磁盘里的 rotated_at 跟响应里的字符串
+            # 完全一致——后续 GET /api/system/api-token-info 读取 config
+            # 时就能算出准确的 age。
+            from datetime import UTC, datetime
+
+            rotated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
             try:
                 cfg = get_config()
-                cfg.update_network_security_config({"api_token": new_token})
+                cfg.update_network_security_config(
+                    {"api_token": new_token, "api_token_rotated_at": rotated_at}
+                )
             except Exception as exc:
                 logger.error(
                     f"rotate-api-token 写入 config 失败: {type(exc).__name__}: {exc}"
@@ -2417,9 +2427,6 @@ class SystemRoutesMixin:
                     500,
                 )
 
-            from datetime import UTC, datetime
-
-            rotated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
             return jsonify(
                 {
                     "success": True,
@@ -2428,6 +2435,134 @@ class SystemRoutesMixin:
                     "rotated_at": rotated_at,
                 }
             ), 200
+
+        @self.app.route("/api/system/api-token-info", methods=["GET"])
+        @self.limiter.limit("30 per minute")
+        def api_token_info() -> ResponseReturnValue:
+            """R199 / Cycle 7：返回 API token 的**元数据**（不含 token 本身）。
+
+            ---
+            tags:
+              - System
+            description: |
+                给 admin 工具 / dashboard 查询 token age 信息，配合
+                NIST SP 800-63B 推荐的 30-90 天轮换周期发 alert。
+
+                **响应字段**：
+
+                - ``has_token``: ``bool`` —— config 里 ``api_token`` 是否已
+                  设置（非空 + 长度 ≥ 16）。
+                - ``token_length``: ``int | None`` —— token 字符长度，
+                  ``has_token=false`` 时为 ``null``。
+                - ``rotated_at``: ``str`` —— 上次轮换的 ISO-8601 UTC 时间戳
+                  （由 ``POST /api/system/rotate-api-token`` 写入），从未
+                  轮换则为空串。
+                - ``age_seconds``: ``int | None`` —— 当前时刻 -
+                  ``rotated_at`` 的秒差。``rotated_at`` 为空 → ``null``。
+
+                **安全约束**：
+
+                * **仅 loopback 来源**——跟 ``rotate-api-token`` 同款。
+                  虽然本端点**不**透出 token，但 token age 仍是敏感信息
+                  （攻击者知道 token 已经用了 89 天可以预测下次 rotation
+                  时机）。
+                * **rate-limit 30/min**：admin 工具可能 poll，单端点
+                  30/min 足够 + 防滥用。
+
+                **不会返回 token 本身**——rotation 端点是唯一返回明文
+                token 的时机。如果你忘了存上次返回的 token，唯一恢复
+                路径是 ``POST /api/system/rotate-api-token`` 再轮换一次。
+            responses:
+              200:
+                description: token 元数据
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    has_token:
+                      type: boolean
+                    token_length:
+                      type: integer
+                    rotated_at:
+                      type: string
+                    age_seconds:
+                      type: integer
+              403:
+                description: 非 loopback 来源
+            """
+            # 跟 rotate-api-token 同款 loopback gate（token age 是元数据
+            # 不是 secret 但仍敏感, 保持与 rotation 一致的访问门槛）
+            if not _is_loopback_request():
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": (
+                                "API token info endpoint requires loopback "
+                                "caller (127.0.0.1 / ::1). Token age is "
+                                "sensitive metadata."
+                            ),
+                        }
+                    ),
+                    403,
+                )
+
+            try:
+                cfg = get_config()
+                ns = cfg.get_network_security_config()
+            except Exception as exc:
+                logger.error(
+                    f"api-token-info 读取 config 失败: {type(exc).__name__}: {exc}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Failed to read network_security config.",
+                        }
+                    ),
+                    500,
+                )
+
+            token = ns.get("api_token", "") if isinstance(ns, dict) else ""
+            has_token = bool(token) and len(token) >= 16
+            token_length = len(token) if has_token else None
+            rotated_at = (
+                ns.get("api_token_rotated_at", "") if isinstance(ns, dict) else ""
+            )
+
+            age_seconds: int | None = None
+            if isinstance(rotated_at, str) and rotated_at:
+                try:
+                    from datetime import UTC, datetime
+
+                    ts = rotated_at.replace("Z", "+00:00")
+                    rotated_dt = datetime.fromisoformat(ts)
+                    age_seconds = int((datetime.now(UTC) - rotated_dt).total_seconds())
+                    if age_seconds < 0:
+                        # 时钟跳变 / config 里时间戳来自未来 → 视作未知
+                        # （0 也不合适, dashboard 看到 0 会误以为刚轮换）
+                        age_seconds = None
+                except (ValueError, TypeError) as exc:
+                    logger.debug(
+                        f"api-token-info 解析 rotated_at 失败 (config 里可能是脏数据): "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    age_seconds = None
+
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "has_token": has_token,
+                        "token_length": token_length,
+                        "rotated_at": rotated_at if isinstance(rotated_at, str) else "",
+                        "age_seconds": age_seconds,
+                    }
+                ),
+                200,
+            )
 
         @self.app.route("/api/system/recent-logs", methods=["GET"])
         @self.limiter.limit("30 per minute")

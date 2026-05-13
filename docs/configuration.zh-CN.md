@@ -249,6 +249,7 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 | `blocked_ips`            | string[] | `[]`       | IP 黑名单                              |
 | `access_control_enabled` | boolean  | `true`     | 是否启用访问控制                       |
 | `api_token`              | string   | `""`       | 可选 API token 认证（R189 / T4）。空串=未配置（仅 loopback 来源能调用敏感写入端点，与默认行为一致）。配置后 non-loopback 客户端可通过 ``Authorization: Bearer <token>`` 或 ``X-API-Token: <token>`` 头携带 token 调用 ``POST /api/system/log-level`` / ``POST /api/system/open-config-file`` 等写入端点。Loopback 来源始终通过——token 是**额外**通道，不是替代。最少 16 字符（短于此长度静默视作未配置并打 warning）。生成方式：``python -c "import secrets; print(secrets.token_urlsafe(32))"`` |
+| `api_token_rotated_at`   | string   | `""`       | R199 / Cycle 7。上次 ``POST /api/system/rotate-api-token`` 调用的 ISO-8601 UTC 时间戳。由 rotation 端点**自动**写入；``GET /api/system/api-token-info`` 读取后计算「token age」用于 dashboard alert（NIST SP 800-63B 建议 30-90 天轮换）。空串 = 从未轮换。**禁止手动编辑**——这是 rotation 端点的 owned field。非法格式（不是 ISO-8601、或缺少 ``Z``/``+00:00`` 后缀）会被静默丢弃并打 warning。 |
 
 **Host 选择规则**：
 
