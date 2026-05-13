@@ -2315,6 +2315,120 @@ class SystemRoutesMixin:
 
             return jsonify({"success": True, **result}), 200
 
+        @self.app.route("/api/system/rotate-api-token", methods=["POST"])
+        @self.limiter.limit("5 per hour")
+        def rotate_api_token() -> ResponseReturnValue:
+            """R195 / Cycle 5：本机管理员请求**轮换** ``api_token``（用于
+            常规凭据 rotation，符合 NIST SP 800-63B 推荐的 30-90 天周期）。
+
+            ---
+            tags:
+              - System
+            description: |
+                生成新的 32-byte URL-safe random token（约 43 字符），写入
+                ``config.toml`` 的 ``[network_security].api_token`` 字段
+                （保留注释 + 原子替换），并通过响应体返回**一次**新 token。
+
+                **安全约束**：
+
+                * **仅 loopback 来源**（``127.0.0.1`` / ``::1``）允许调用。
+                  ``_is_authorized()`` 用「loopback OR token」复合鉴权 ——
+                  但这个端点**强制**要求 loopback。**不能**用旧 token 直
+                  接换新 token，避免「token 已经泄漏 → 攻击者自动续期」
+                  这条攻击路径（业界普遍叫做 「token rotation hijacking」）。
+                * **rate-limit 5/hour**：admin 工具偶尔调，攻击者高频尝试
+                  立即被限流。
+                * **响应体含明文 token**：这是 rotation 端点的**唯一**返
+                  回时机——admin 必须当场把它复制到 secret manager。后续
+                  ``GET /api/system/...`` 端点**都不**再透出 token。
+                * **R53-F 契约自动覆盖**：``network_security`` 段已经在
+                  ``ConfigManager.get_all()`` 边界被过滤，rotation 写入
+                  后 ``/api/system/health`` / ``--print-config`` 都不会
+                  暴露新 token。
+                * **R193 即时生效**：写入触发 ``invalidate_all_caches()``，
+                  下一次 ``_is_authorized()`` 就**只**接受新 token（旧
+                  token 立刻失效，与传统 rotation 「new token starts
+                  working at T+0，old token stops at T+0」一致）。
+
+                **失败兜底**：写入失败（磁盘满 / 权限错 / config 文件不
+                可写）时返回 500 + ``error`` 字段，旧 token 仍然有效，
+                不会让管理员被锁在门外。
+            responses:
+              200:
+                description: 轮换成功，响应体含新 token（仅此一次返回明文）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    api_token:
+                      type: string
+                      description: 新生成的 token；**立即记录到 secret manager**
+                    token_length:
+                      type: integer
+                    rotated_at:
+                      type: string
+                      description: ISO-8601 UTC timestamp
+              403:
+                description: 非 loopback 来源（rotation 强制只允许本机）
+              500:
+                description: 写入 config 失败
+              429:
+                description: 速率超限（5/hour）
+            """
+            # 注意：本端点**不**用 ``_is_authorized()``——后者允许 token
+            # 通过鉴权，但 rotation 必须强制 loopback only（见 docstring
+            # 「token rotation hijacking」段落）。
+            if not _is_loopback_request():
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": (
+                                "API token rotation requires loopback caller "
+                                "(127.0.0.1 / ::1). Token-based auth is "
+                                "deliberately rejected here to prevent "
+                                "token-rotation-hijacking attacks."
+                            ),
+                        }
+                    ),
+                    403,
+                )
+
+            new_token = secrets.token_urlsafe(32)
+            try:
+                cfg = get_config()
+                cfg.update_network_security_config({"api_token": new_token})
+            except Exception as exc:
+                logger.error(
+                    f"rotate-api-token 写入 config 失败: {type(exc).__name__}: {exc}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": (
+                                "Failed to persist new token; old token "
+                                "remains active. Check disk space / file "
+                                "permissions / config.toml writability."
+                            ),
+                        }
+                    ),
+                    500,
+                )
+
+            from datetime import UTC, datetime
+
+            rotated_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            return jsonify(
+                {
+                    "success": True,
+                    "api_token": new_token,
+                    "token_length": len(new_token),
+                    "rotated_at": rotated_at,
+                }
+            ), 200
+
         @self.app.route("/api/system/recent-logs", methods=["GET"])
         @self.limiter.limit("30 per minute")
         def recent_logs() -> ResponseReturnValue:

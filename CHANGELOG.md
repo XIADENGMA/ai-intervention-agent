@@ -11,6 +11,82 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R195 / Cycle 5: `POST /api/system/rotate-api-token` admin endpoint**
+  — closes CR#18 §7 item 7 (the "low priority" `api_token` rotation
+  follow-up). R189 introduced static `api_token` configuration; without
+  R195 the only rotation path was "edit `config.toml` + restart server",
+  which disrupts in-flight feedback tasks and is incompatible with
+  routine 30-90 day rotation as recommended by NIST SP 800-63B.
+
+  - **Loopback-only enforcement**: the endpoint uses
+    `_is_loopback_request()` directly (not `_is_authorized()`) — token
+    rotation **must** be invoked from the local machine, never via the
+    existing token. Defeats "token-rotation-hijacking": an attacker
+    who has captured the current token cannot use it to mint a new
+    long-lived one. They must already have local-machine access, in
+    which case the threat surface is much wider than a stolen API
+    token alone.
+  - **`secrets.token_urlsafe(32)`**: generates ~43-char URL-safe
+    random tokens (192 bits of entropy, NIST SP 800-63B "high-entropy
+    secret" tier; R189's 16-char minimum is the floor for human-typed
+    tokens, R195's machine-generated tokens easily exceed it).
+  - **Single-response disclosure**: the new token is returned in the
+    response body **exactly once** — the admin must immediately record
+    it to a secret manager. Subsequent `GET` endpoints continue to
+    redact the field (R53-F + the `token` substring entry in the
+    server-side `_SENSITIVE_KEY_SUBSTRINGS` list).
+  - **Hot-reload synergy with R193**: writing the new token through
+    `ConfigManager.update_network_security_config()` triggers
+    `invalidate_all_caches()`, which clears `_network_security_cache`
+    immediately. The very next `_is_authorized()` call uses the new
+    token — old token stops working at T+0, new token starts working
+    at T+0. Verified by
+    `test_cache_invalidated_so_is_authorized_uses_new_token`.
+  - **Rate-limit 5/hour**: admin operation, not a hot path. Defends
+    against attackers who somehow get loopback (via SSRF, etc.) from
+    spam-rotating to cause config-file thrashing.
+  - **Fail-safe on persist failure**: if the disk write fails (disk
+    full, permission error, config.toml not writable), the endpoint
+    returns 500 with a message explicitly stating "old token remains
+    active". The new generated token is **not** included in the 500
+    response — avoiding the "token leaked but old still active"
+    confusion. Local admin never gets locked out by a transient
+    persist failure.
+
+  **Response example** (success):
+
+  ```json
+  {
+    "success": true,
+    "api_token": "<43-char URL-safe token>",
+    "token_length": 43,
+    "rotated_at": "2026-05-13T14:35:22Z"
+  }
+  ```
+
+  **Test coverage** (`tests/test_rotate_api_token_r195.py`, 13 cases
+  across 4 invariant classes):
+
+  - Loopback gate — 3 cases (non-loopback returns 403, **non-loopback
+    + valid token still 403** (key R195 differentiator), loopback
+    returns 200);
+  - Token generation contract — 4 cases (response contains `api_token`,
+    `len >= 32` minimum, two rotations produce different tokens,
+    `rotated_at` is ISO-8601 UTC);
+  - Config persistence — 3 cases (`update_network_security_config`
+    called with new token, end-to-end persist read-back, cache
+    invalidated so next auth uses new token);
+  - Failure boundary — 3 cases (persist failure → 500, persist failure
+    response does **not** contain new token, rate-limit decorator
+    present at source level).
+
+  Files touched: `src/ai_intervention_agent/web_ui_routes/system.py`
+  (+`rotate_api_token` endpoint), `tests/test_rotate_api_token_r195.py`
+  (new).
+
+  Final suite: 5310 passed, 2 skipped, 620 subtests passed (no
+  regressions).
+
 - **R192 / Cycle 5: `log_level_changed` SSE event** — closes the
   "silent system-wide mutation" gap that CR#18 §4.3 flagged for R188's
   runtime log-level dial. Before R192, the only way to discover that
