@@ -1799,6 +1799,173 @@ class SystemRoutesMixin:
                 mimetype="text/plain; version=0.0.4; charset=utf-8",
             )
 
+        @self.app.route("/api/system/log-level", methods=["GET"])
+        @self.limiter.limit("60 per minute")
+        def system_log_level_get() -> ResponseReturnValue:
+            """T3 (cycle 4) / R188：查询当前运行时日志级别。
+
+            ---
+            tags:
+              - System
+            description: |
+                返回 root logger + ``ai_intervention_agent`` 命名空间的当前
+                有效日志级别，以及可被 ``POST`` 接受的 enum 值清单（让 client
+                UI 渲染下拉菜单时不用硬编码）。
+
+                **任意来源** 的请求都允许查询——返回的只是 enum + level 名，
+                没有 PII / 敏感信息。rate-limit 60/min 比 POST 宽松（查询无副
+                作用），但仍设了下限避免被滥用做 health-probe substitute。
+            responses:
+              200:
+                description: 当前日志级别快照
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    root_level:
+                      type: string
+                      description: root logger 的 effective level（如 "INFO"）
+                    aiia_level:
+                      type: string
+                      description: ai_intervention_agent 命名空间的 effective level
+                    valid_levels:
+                      type: array
+                      description: POST 接受的 5 个 enum 值
+                      items:
+                        type: string
+            """
+            try:
+                from ai_intervention_agent.enhanced_logging import (
+                    get_current_log_level,
+                )
+
+                snapshot = get_current_log_level()
+            except Exception as exc:
+                logger.error(
+                    f"GET /api/system/log-level 内部错误: {type(exc).__name__}: {exc}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": f"internal error: {type(exc).__name__}",
+                        }
+                    ),
+                    500,
+                )
+            return jsonify({"success": True, **snapshot}), 200
+
+        @self.app.route("/api/system/log-level", methods=["POST"])
+        @self.limiter.limit("30 per minute")
+        def system_log_level_post() -> ResponseReturnValue:
+            """T3 (cycle 4) / R188：运行时修改 root logger 日志级别。
+
+            ---
+            tags:
+              - System
+            description: |
+                让运维 / 调试场景下不重启 server 就能临时把日志级别拉高
+                （``DEBUG`` 排查具体问题）或拉低（事后恢复 ``WARNING`` 避免
+                stderr 爆量）。
+
+                **安全约束**：
+
+                * 仅 ``loopback`` 来源（``127.0.0.1`` / ``::1``）允许调用——
+                  与 ``open-config-file`` 同档安全级别，避免远程主机通过
+                  web UI 把日志炸到磁盘满；
+                * 只接受 ``DEBUG`` / ``INFO`` / ``WARNING`` / ``ERROR`` /
+                  ``CRITICAL`` 5 个 enum 值（大小写不敏感）；其他值返回 400；
+                * 只改 root logger + 所有 handler 级别——**不接受**任意
+                  ``logger_name`` 参数（攻击面最小化）；
+                * 修改**不持久化**：只影响当前进程，重启后回到 env var /
+                  config 控制的初始级别。运维忘记关回去也不会污染 config。
+
+                rate-limit 30/min（与 ``recent-logs`` 同档）—— 这是一个
+                "偶尔切换" 而不是 "高频调用" 的运维端点。
+            parameters:
+              - in: body
+                name: body
+                required: true
+                schema:
+                  type: object
+                  required:
+                    - level
+                  properties:
+                    level:
+                      type: string
+                      description: 目标日志级别，5 个 enum 值之一
+                      enum: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+            responses:
+              200:
+                description: 修改成功
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    old_level:
+                      type: string
+                    new_level:
+                      type: string
+                    logger:
+                      type: string
+                      description: 始终为 "root"（本端点只支持 root logger）
+              400:
+                description: payload 无效或 level 不在 enum 内
+              403:
+                description: 非 loopback 来源
+            """
+            if not _is_loopback_request():
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "log-level changes require loopback client",
+                        }
+                    ),
+                    403,
+                )
+
+            payload: dict[str, Any] = request.get_json(silent=True) or {}
+            level = payload.get("level")
+            if not isinstance(level, str):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "missing or non-string `level` field",
+                        }
+                    ),
+                    400,
+                )
+
+            try:
+                from ai_intervention_agent.enhanced_logging import (
+                    apply_runtime_log_level,
+                )
+
+                result = apply_runtime_log_level(level)
+            except ValueError as exc:
+                return (
+                    jsonify({"success": False, "error": str(exc)}),
+                    400,
+                )
+            except Exception as exc:
+                logger.error(
+                    f"POST /api/system/log-level 内部错误: {type(exc).__name__}: {exc}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": f"internal error: {type(exc).__name__}",
+                        }
+                    ),
+                    500,
+                )
+            return jsonify({"success": True, **result}), 200
+
         @self.app.route("/api/system/recent-logs", methods=["GET"])
         @self.limiter.limit("30 per minute")
         def recent_logs() -> ResponseReturnValue:

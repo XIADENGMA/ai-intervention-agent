@@ -395,9 +395,12 @@ class TestSSEStatsRouteRegistered(unittest.TestCase):
         通过验证 endpoint 函数体里没有出现 loopback 判断字符串来锁定行为。
         如果未来真的要加 loopback gate，必须先开协商：这是设计约定，不是 bug。
         """
-        # 找出 sse_stats 函数体的范围（粗略方式：到下一个 @self.app.route 为止）
+        # 找出 sse_stats 函数体的范围（到 sse_stats **紧邻**的下一个端点
+        # ``/api/system/health`` 为止——R188 起 sse_stats 之后陆续插入了
+        # ``log-level`` 等含 loopback gate 的端点，end_marker 不能跨越它们，
+        # 否则 regex 会把不相关端点的 ``_is_loopback_request()`` 误匹配）。
         start_marker = '"/api/system/sse-stats"'
-        end_marker = '"/api/system/open-config-file/info"'
+        end_marker = '"/api/system/health"'
         start = self.source.index(start_marker)
         end = self.source.index(end_marker)
         body = self.source[start:end]

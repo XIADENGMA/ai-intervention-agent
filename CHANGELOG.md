@@ -11,6 +11,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R188 / T3: `GET/POST /api/system/log-level` runtime log-level dial** —
+  closes the "have to restart server to change log verbosity" gap left
+  by R93's startup-only `AI_INTERVENTION_AGENT_LOG_LEVEL` env var. Ops
+  can now flip root logger level live (`DEBUG` for a one-off bug repro,
+  back to `WARNING` afterwards) without losing in-flight feedback tasks.
+
+  - **GET `/api/system/log-level`**: any-source, rate-limit 60/min,
+    returns `{root_level, aiia_level, valid_levels}` with all level
+    fields as strings (no `logging.getLevelName` reverse-lookup needed
+    by clients). Lets dashboards / VS Code status panel show the dial
+    state without scraping logs.
+  - **POST `/api/system/log-level`**: loopback-only (`127.0.0.1` / `::1`),
+    rate-limit 30/min, accepts `{"level": "DEBUG|INFO|WARNING|ERROR|CRITICAL"}`
+    (case-insensitive). Returns `{success, old_level, new_level, logger}`.
+
+  **Security boundary** (same tier as `open-config-file`):
+  - Loopback-only on the mutating verb — no remote-via-Web-UI log-bomb
+    attacks; LAN PWA users can still query via GET because the GET
+    payload contains zero PII.
+  - **Five-enum allow-list** — does not accept arbitrary `logger_name`
+    parameters; attackers can't dial `zeroconf` / `httpx` / Flask
+    sub-loggers to `DEBUG` to flood stderr and exhaust disk.
+  - **No persistence** — runtime override never writes to `config.toml`
+    nor env vars; restart restores config-controlled initial level.
+    Intentional — runtime dials should not silently override config.
+  - **Atomic validation** — `apply_runtime_log_level()` validates the
+    enum value before calling `setLevel()`, so a bad request never
+    leaves the logger in a partially-changed state.
+
+  **New helpers in `enhanced_logging.py`**:
+  - `get_current_log_level() -> dict[str, str]`: snapshot returning
+    `{root_level, aiia_level, valid_levels}`.
+  - `apply_runtime_log_level(level: str) -> dict[str, str]`: mutates
+    root logger + all handlers, returns `{old_level, new_level, logger}`.
+
+  **Test coverage**: `tests/test_system_log_level_runtime_r188.py`
+  (21 cases) — `get_current_log_level` shape (three required fields,
+  string types, all 5 enums present), `apply_runtime_log_level` behaviour
+  (uppercase / case-insensitive / invalid raises / non-string raises /
+  return shape / immediate effect on root logger), GET endpoint
+  contract (any-source 200, payload shape, no body required), POST
+  endpoint contract (loopback 200 + immediate effect, non-loopback 403,
+  missing level 400, non-string level 400, invalid enum 400 with valid
+  hint), source-level regressions (`_is_loopback_request()` present on
+  POST, rate-limit decorators on both methods, R188/T3 docstring marker).
+
+  Also updates `tests/test_runtime_counters_r47.py::test_route_does_not_gate_on_loopback`
+  so the `sse-stats` end-marker now points at `/api/system/health`
+  (its immediate next neighbour); the previous `open-config-file/info`
+  marker spanned multiple newly-inserted endpoints that legitimately
+  call `_is_loopback_request()`.
+
 - **R187 / T2: MCP tool call counter middleware** — adds the missing
   positive-side counterpart to R37's `get_mcp_error_stats()` (which only
   exposes negative `{error_type}:{method}` counts). The new
