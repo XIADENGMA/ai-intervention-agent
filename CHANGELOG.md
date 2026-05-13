@@ -9,6 +9,76 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R192 / Cycle 5: `log_level_changed` SSE event** — closes the
+  "silent system-wide mutation" gap that CR#18 §4.3 flagged for R188's
+  runtime log-level dial. Before R192, the only way to discover that
+  someone flipped the root logger level was (a) actively poll
+  `GET /api/system/log-level`, or (b) read stderr — neither workable
+  for multi-operator deployments where Op-A's "I'll bump DEBUG briefly
+  to repro the bug" silently lingers and Op-B sees a stderr flood
+  with no context.
+
+  R192 has the `POST /api/system/log-level` handler emit a
+  `log_level_changed` event on the existing `_sse_bus` (the same bus
+  that already carries `task_changed` / `config_changed`). Payload:
+
+  ```json
+  {
+      "old_level": "INFO",
+      "new_level": "DEBUG",
+      "logger": "root",
+      "changed_by": "127.0.0.1"
+  }
+  ```
+
+  Subscribers (activity dashboard / PWA status bar / VS Code webview)
+  can render a banner like "Log level changed to DEBUG by 127.0.0.1 at
+  14:35:22". The frontend banner work is out of scope for R192 — the
+  event surface lands first so PWA/dashboard PRs land on a stable
+  contract.
+
+  **Design boundary**:
+
+  - **Fail-open**: if `_sse_bus.emit` raises (bus down, backpressure
+    storm, etc.), the POST handler **still returns 200** — the log
+    level was already changed; failing the response would mask a
+    successful mutation as a failure, which is worse than missing a
+    banner. A debug-level log line records the SSE failure for
+    diagnostic context (the explicit-log body keeps the new `except`
+    block out of R120 silent-failure-baseline territory).
+  - **No new SSE event-type registration plumbing** — the existing
+    `_sse_bus.emit(event_type, payload)` API is free-form by design;
+    R192 just reuses it. SSE bus core isn't touched.
+  - **PII control**: `changed_by` is the client IP (same PII tier
+    as R47's SSE stats endpoint). Token strings, request bodies, and
+    Authorization headers do **not** enter the payload.
+  - **No emit on 400 validation failure**: a bad `level` value or
+    missing field bypasses the SSE emit entirely (verified by
+    `test_emit_not_called_on_400_validation_failure`). Only successful
+    mutations broadcast.
+
+  **Test coverage** (`tests/test_log_level_sse_event_r192.py`, 10
+  cases across 3 invariant classes):
+
+  - Happy path emit — 4 cases (emit called once on success, event
+    type is `log_level_changed`, payload has all 4 fields, `new_level`
+    matches `apply_runtime_log_level` result);
+  - Fail-open — 3 cases (POST returns 200 when emit raises, log level
+    actually changed despite emit failure, emit exception debug-logged
+    once);
+  - PII / security — 3 cases (`changed_by` is client IP, payload
+    excludes submitted token string, emit not called on 400 validation
+    failure).
+
+  Files touched: `src/ai_intervention_agent/web_ui_routes/system.py`
+  (+SSE emit after `apply_runtime_log_level()` success),
+  `tests/test_log_level_sse_event_r192.py` (new).
+
+  Final suite: 5297 passed, 2 skipped, 620 subtests passed (no
+  regressions).
+
 ### Tests
 
 - **R193 / Cycle 5: Hot-reload `network_security` cache invalidation

@@ -2286,6 +2286,33 @@ class SystemRoutesMixin:
                     ),
                     500,
                 )
+
+            # R192 / Cycle 5：把变更广播到 SSE bus，让 activity dashboard /
+            # PWA 状态栏 / 监控仪表板能实时看到「root logger 从 INFO 切到
+            # DEBUG by 127.0.0.1 at 14:35:22」。多操作员部署场景下尤其
+            # 重要——操作员 A 切到 DEBUG 排查问题忘了切回，操作员 B
+            # 看到 stderr 爆量但不知道是「正常排查」还是「有 bug」。
+            # 失败兜底：SSE 推送故障**不影响** 200 响应——日志级别已经
+            # 改成功，配套通知失败只是降级到「无横幅展示」，没有数据丢失。
+            try:
+                from ai_intervention_agent.web_ui_routes.task import _sse_bus
+
+                _sse_bus.emit(
+                    "log_level_changed",
+                    {
+                        "old_level": result.get("old_level"),
+                        "new_level": result.get("new_level"),
+                        "logger": result.get("logger", "root"),
+                        "changed_by": _get_client_ip() or "unknown",
+                    },
+                )
+            except Exception as exc:  # [R-192]
+                # SSE bus 不可用 / emit raise → 安静降级，
+                # log 一行 debug 方便定位但**不**让端点失败。
+                logger.debug(
+                    f"log_level_changed SSE emit failed: {type(exc).__name__}: {exc}"
+                )
+
             return jsonify({"success": True, **result}), 200
 
         @self.app.route("/api/system/recent-logs", methods=["GET"])
