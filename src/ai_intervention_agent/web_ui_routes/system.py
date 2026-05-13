@@ -591,6 +591,90 @@ def _format_prom_metric_family(
     return "".join(out_lines)
 
 
+def _format_prom_histogram_family(
+    name: str,
+    *,
+    help_text: str,
+    observations: list[
+        tuple[
+            dict[str, str] | None,  # base labels (e.g. {"tool": ..., "status": ...})
+            dict[float, int],  # cumulative buckets: {0.1: n, ..., float("inf"): n}
+            int,  # count（== buckets[+Inf]，作为冗余校验显式传入）
+            float,  # sum_seconds
+        ]
+    ],
+) -> str:
+    """渲染同一 metric name 的 histogram family（R190 foundational）。
+
+    Prometheus histogram exposition format 规约（见
+    https://prometheus.io/docs/concepts/metric_types/#histogram）：
+
+    .. code-block:: text
+
+        # HELP <name> <help_text>
+        # TYPE <name> histogram
+        <name>_bucket{le="0.1",<other_labels>} 1
+        <name>_bucket{le="0.5",<other_labels>} 5
+        <name>_bucket{le="1.0",<other_labels>} 12
+        ...
+        <name>_bucket{le="+Inf",<other_labels>} 42
+        <name>_sum{<other_labels>} 187.4
+        <name>_count{<other_labels>} 42
+
+    关键约束：
+
+    - ``HELP`` / ``TYPE`` 在 family 内**只出现一次**（与 counter family
+      同理，R187 已经踩过这个坑）；
+    - ``_bucket`` 行必须按 ``le`` 升序，``+Inf`` 在末尾；
+    - 同一 (其他 labels) 组合的 ``_bucket`` / ``_sum`` / ``_count`` 三个
+      子指标的非-le 标签必须**完全一致**；
+    - ``_count`` 必然 == 最后一个 ``_bucket`` (le="+Inf") 的值——本函数
+      接受冗余 ``count`` 参数作为 caller-side sanity check，**不**自动
+      推断，避免渲染时静默修复数据 bug。
+
+    ``observations``：每个元组对应一个独立的「label 组合 + 直方图」。空
+    列表返回空串（与 ``_format_prom_metric_family`` 行为一致）。
+
+    本函数为 R190 / R191 / R192 / 未来所有 histogram 类指标共享。
+    """
+    if not observations:
+        return ""
+    out_lines: list[str] = [
+        f"# HELP {name} {help_text}\n",
+        f"# TYPE {name} histogram\n",
+    ]
+    for base_labels, buckets, count, sum_value in observations:
+        # bucket 排序：有限值升序 + +Inf 在末尾。``float("inf")`` 在
+        # Python ``sorted()`` 下天然排在所有有限数之后，所以一次排序
+        # 即可，但我们显式校验「最后一个 key 就是 +Inf」避免 caller
+        # 漏传 +Inf 桶导致 metric 不完整。
+        sorted_keys = sorted(buckets.keys())
+        if not sorted_keys or sorted_keys[-1] != float("inf"):
+            # caller bug：缺 +Inf 桶。补上一个等于 count 的 +Inf 桶，
+            # 保证渲染出的 metric 仍然形式合法；strict parser 不会因
+            # 此 reject。本路径走不到时只能说明本函数 caller 提交的
+            # data 已经 violate 了 docstring 约定——log 不在这里发，由
+            # caller 端的契约测试守护。
+            buckets = dict(buckets)
+            buckets[float("inf")] = count
+            sorted_keys = sorted(buckets.keys())
+
+        for le in sorted_keys:
+            le_label_value = "+Inf" if le == float("inf") else f"{le}"
+            merged_labels = {"le": le_label_value, **(base_labels or {})}
+            label_str = _format_prom_labels(merged_labels)
+            out_lines.append(
+                f"{name}_bucket{label_str} {_format_prom_value(buckets[le])}\n"
+            )
+
+        base_label_str = _format_prom_labels(base_labels)
+        out_lines.append(
+            f"{name}_sum{base_label_str} {_format_prom_value(sum_value)}\n"
+        )
+        out_lines.append(f"{name}_count{base_label_str} {_format_prom_value(count)}\n")
+    return "".join(out_lines)
+
+
 def _render_prometheus_metrics() -> str:
     """收集所有可观测指标并按 Prometheus 0.0.4 exposition format 渲染。
 
@@ -966,6 +1050,61 @@ def _render_prometheus_metrics() -> str:
                     ),
                     metric_type="counter",
                     samples=mcp_samples,
+                )
+            )
+
+    # R190 / Cycle 5 · MCP tool 调用耗时 histogram
+    # ----------------------------------------------------------------
+    # ``aiia_mcp_tool_call_duration_seconds{tool,status}`` 让监控能画
+    # 「P95 工具耗时」、「按 tool 拆分的耗时分布」、「success vs failure
+    # 耗时对比」等仪表板（CR#18 §4.1 → §7 item 2 deliverable）。R187
+    # 的 counter 是分子分母，R190 的 histogram 是 SLO 延迟侧——两者
+    # 合在一起才是完整的 RED（Rate / Errors / Duration）三件套。
+    try:
+        from ai_intervention_agent.mcp_tool_call_metrics import (
+            get_mcp_tool_call_latency_snapshot,
+        )
+
+        tool_latency = get_mcp_tool_call_latency_snapshot()
+    except Exception:
+        # [R-187] 与上面的 stats 路径同档容错——histogram 故障不应让
+        # /metrics 5xx；丢失一行 latency 比 Prometheus 把整个 target
+        # 标 red 更可接受。
+        tool_latency = {}
+
+    if isinstance(tool_latency, dict) and tool_latency:
+        hist_observations: list[
+            tuple[dict[str, str] | None, dict[float, int], int, float]
+        ] = []
+        for (tool_name, status), state in tool_latency.items():
+            if not isinstance(tool_name, str) or not isinstance(state, dict):
+                continue
+            buckets = state.get("buckets")
+            count = state.get("count", 0)
+            sum_seconds = state.get("sum_seconds", 0.0)
+            if not isinstance(buckets, dict) or not isinstance(count, int):
+                continue
+            if not isinstance(sum_seconds, int | float):
+                continue
+            hist_observations.append(
+                (
+                    {"tool": tool_name, "status": status},
+                    buckets,
+                    count,
+                    float(sum_seconds),
+                )
+            )
+        if hist_observations:
+            lines.append(
+                _format_prom_histogram_family(
+                    "aiia_mcp_tool_call_duration_seconds",
+                    help_text=(
+                        "MCP tool invocation duration distribution by tool name "
+                        "and outcome (R190 / Cycle 5). Buckets chosen for "
+                        "human-in-the-loop feedback latency: 0.1s (instant) "
+                        "→ 600s (long research round)."
+                    ),
+                    observations=hist_observations,
                 )
             )
 

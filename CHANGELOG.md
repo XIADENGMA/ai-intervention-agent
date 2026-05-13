@@ -11,6 +11,96 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R190 / Cycle 5 foundational: Prometheus Histogram exposition +
+  `aiia_mcp_tool_call_duration_seconds`** — closes the foundational
+  gap flagged in CR#18 §4.6 ("`_format_prom_metric_family` doesn't
+  support histogram type"), which was blocking all latency / size /
+  depth distribution metrics. CR#18 ranked this as cycle 5 #1
+  priority because R191 / R192 (notification latency, queue depth
+  distribution) and any future SLO dashboard work all depend on it.
+
+  - **`_format_prom_histogram_family()` helper** (in
+    `web_ui_routes/system.py`, sibling to `_format_prom_metric_family`):
+    renders Prometheus 0.0.4 histogram exposition format
+    (`<name>_bucket{le="…"}` cumulative rows + `<name>_sum` +
+    `<name>_count`). HELP/TYPE emitted exactly once per family
+    (same de-duplication invariant as R187 counter family).
+    Bucket ordering: finite values ascending + `+Inf` last. Auto-
+    repairs caller-side `+Inf` bucket omission (caller bug,
+    permanent regression guard in
+    `test_inf_bucket_auto_added_if_missing`).
+  - **`aiia_mcp_tool_call_duration_seconds{tool,status}`**:
+    `ToolCallCounterMiddleware.on_call_tool` now wraps `call_next`
+    in `time.monotonic()` (not `time.time()` — defends against
+    NTP / DST clock jumps producing negative durations). Both
+    success and failure paths record latency; downstream operators
+    can now distinguish "failure was slow vs failure was an instant
+    reject" via `histogram_quantile(0.95, ...{status="failure"})`.
+  - **Bucket selection** (chosen for human-in-the-loop semantics,
+    not generic web service): `(0.1, 0.5, 1.0, 5.0, 30.0, 120.0,
+    300.0, 600.0)` seconds + implicit `+Inf`. Covers "user typed
+    a fast reply" (≤ 1s) → "user wrote a paragraph" (≤ 30s) →
+    "long research roundtrip" (≤ 600s) → "exceeded `auto_resubmit
+    _timeout`" (`+Inf`). Bucket count = 9, well below the
+    Prometheus-recommended ≤ 10 ceiling per histogram family.
+  - **Storage model**: no raw observations retained. Each
+    `(tool_name, status)` keeps ~80 bytes of state (cumulative
+    bucket counts + count + sum). Memory cost is O(distinct (tool,
+    status) pairs), independent of call volume.
+  - **No `prometheus_client` library dependency**: the project's
+    existing `_format_prom_*` minimal renderer was extended in
+    ~120 LOC rather than pulling in the ~2k LOC client library,
+    which would have required solving multiprocess collector
+    state-sharing (the web_ui subprocess cannot share
+    `prometheus_client`'s process-level `_Counter` registry).
+    The local implementation has zero such concerns.
+
+  **Test coverage** (`tests/test_prom_histogram_r190.py`, 24
+  cases across 5 invariant classes):
+
+  - `_format_prom_histogram_family` helper — 8 cases (empty input,
+    HELP/TYPE de-dup, bucket ordering, `_sum`/`_count` per
+    observation, `+Inf` auto-repair, `le` label merge);
+  - `ToolCallCounterMiddleware` latency recording — 4 cases
+    (success, failure, multi-call accumulate, failure-with-delay
+    still counted);
+  - `get_mcp_tool_call_latency_snapshot` shape — 4 cases (empty,
+    `+Inf` key present, `buckets[+Inf] == count` invariant, deep-
+    copy independence);
+  - `_record_latency` edge cases — 4 cases (negative duration
+    silently dropped, zero in smallest bucket, unknown status
+    accepted, large duration only `+Inf`);
+  - End-to-end `/metrics` integration — 4 cases (no output when
+    empty, output appears after recording, HELP/TYPE unique in
+    full output, graceful degradation on snapshot failure).
+
+  Files touched: `src/ai_intervention_agent/mcp_tool_call_metrics.py`
+  (+`_DEFAULT_LATENCY_BUCKETS`, `_latency_state`, `_record_latency`,
+  `get_mcp_tool_call_latency_snapshot`; `reset_mcp_tool_call_stats`
+  now clears latency too; middleware writes latency on both paths),
+  `src/ai_intervention_agent/web_ui_routes/system.py`
+  (+`_format_prom_histogram_family`, integration in
+  `_render_prometheus_metrics`), `tests/test_prom_histogram_r190.py`.
+
+  **Operator-facing impact**: with this change, the Prometheus
+  scrape now includes everything needed for a complete RED dashboard
+  (Rate from R187 counter, Errors from R187 status label, Duration
+  from R190 histogram). Example PromQL:
+
+  ```promql
+  # P95 latency for interactive_feedback over last 5min
+  histogram_quantile(0.95, sum by (le) (rate(
+    aiia_mcp_tool_call_duration_seconds_bucket{tool="interactive_feedback"}[5m]
+  )))
+
+  # Error ratio
+  sum(rate(aiia_mcp_tool_calls_total{status="failure"}[5m]))
+    / sum(rate(aiia_mcp_tool_calls_total[5m]))
+  ```
+
+  Final suite: 5260 passed, 2 skipped, 620 subtests passed (no
+  regressions).
+
 - **R189 / T4: Optional API token authentication (paired with non-loopback
   hardening)** — closes the "reverse proxy / LAN PWA can't reach mutation
   endpoints without disabling `access_control_enabled`" gap left by R188's

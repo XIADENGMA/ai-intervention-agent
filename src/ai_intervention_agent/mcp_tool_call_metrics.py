@@ -67,6 +67,7 @@ PII 边界
 from __future__ import annotations
 
 import threading
+import time
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -92,14 +93,70 @@ _counter: Counter[tuple[str, str]] = Counter()
 _counter_lock: threading.Lock = threading.Lock()
 
 
+# ---------------------------------------------------------------------------
+# R190 / latency histogram state（Cycle 5 / CR#19 foundational）
+# ---------------------------------------------------------------------------
+#
+# 设计目标：暴露 ``aiia_mcp_tool_call_duration_seconds`` Prometheus
+# histogram，让监控仪表板能画出「P95 工具调用耗时随时间漂移」、告警
+# 「P99 > 30s 持续 5 分钟」等 SLO 类指标。R187 的纯 counter 只能算
+# success rate（成功率），算不了延迟分布——这是 CR#18 §4.1 / §4.2 / §4.6
+# 已经标注的「foundational gap」。
+#
+# 数据形态：
+#   _latency_state[(tool_name, status)] = {
+#       "count": int,           # 观测次数
+#       "sum_seconds": float,   # 累计耗时（Prom histogram _sum）
+#       "buckets": {0.1: int, 0.5: int, ..., math.inf: int},  # cumulative
+#   }
+#
+# 注意 ``buckets`` 是 **cumulative**（Prom histogram 约定）：``buckets[1.0]``
+# 表示「耗时 ≤ 1.0s 的观测数」，包含所有 ≤ 0.5s / ≤ 0.1s 的样本。最后一
+# 个 bucket 是 ``+Inf``，必然 == count。
+#
+# 桶选择哲学：本项目场景是「人机交互 feedback 循环」——
+#   * < 0.5s：localhost / 高速 LAN PWA 内部即时反馈（罕见，"用户秒回"）；
+#   * 0.5-5s：典型「读完问题→点选项」窗口；
+#   * 5-30s：人写一段反馈文字；
+#   * 30-120s：人去查文档 / 试代码再回来；
+#   * 120-600s：长任务（multi-round 调研）；
+#   * > 600s：分钟级以上等待，往往是触发 ``auto_resubmit_timeout`` 边界。
+#
+# 不用 prometheus_client 库的 ``Histogram``：项目自己有
+# ``_format_prom_metric_family`` 的极简渲染器（R187），引入 prometheus_client
+# 只为 histogram 显得过重，而且要解决 multiprocess collector 问题（web_ui
+# 子进程不能共享 prometheus_client 的进程级 _Counter）。手写一份本地实现
+# 反而干净——所有状态在父进程，子进程不写 histogram。
+_DEFAULT_LATENCY_BUCKETS: tuple[float, ...] = (
+    0.1,
+    0.5,
+    1.0,
+    5.0,
+    30.0,
+    120.0,
+    300.0,
+    600.0,
+)
+"""默认延迟桶（秒）。``+Inf`` 桶由 ``get_mcp_tool_call_latency_snapshot()``
+自动追加，不在这个元组里——避免 caller 误以为 ``+Inf`` 是真实采样上限。"""
+
+_latency_state: dict[tuple[str, str], dict[str, Any]] = {}
+"""每个 ``(tool_name, status)`` 一份独立的 histogram 状态。读写均需持
+``_counter_lock``——为避免双锁死锁，本模块复用 counter 锁。"""
+
+
 def reset_mcp_tool_call_stats() -> None:
-    """清零所有累计计数（仅供测试 / 运维 reset 使用）。
+    """清零所有累计计数 **和** latency histogram（仅供测试 / 运维 reset 使用）。
 
     生产路径**不应**调用此函数——计数器在 server 整个生命周期内累计，
     重启即归零。测试 / 调试时为了 isolation 才需要显式 reset。
+
+    R190 起本函数同时清空 ``_latency_state``——避免「counter reset 了
+    但 histogram 还残留上次测试数据」的状态污染。
     """
     with _counter_lock:
         _counter.clear()
+        _latency_state.clear()
 
 
 def get_mcp_tool_call_stats() -> dict[str, dict[str, int]]:
@@ -122,6 +179,77 @@ def get_mcp_tool_call_stats() -> dict[str, dict[str, int]]:
         elif status == "failure":
             result[tool_name]["failure"] = value
         result[tool_name]["total"] += value
+    return result
+
+
+def _record_latency(tool_name: str, status: str, duration_seconds: float) -> None:
+    """内部 helper：把一次工具调用的耗时写入 histogram。
+
+    调用约定：必须**在已持锁**或**线程独占**条件下被调用。本函数自身
+    不重新拿 ``_counter_lock`` ——middleware 在 success/failure 分支里
+    已经拿了锁同时写 counter，再嵌套锁会增加死锁面。
+
+    边界处理：
+    - ``duration_seconds`` < 0（``time.monotonic()`` 退化，仅理论上）→
+      静默丢弃，避免污染 sum；
+    - ``status`` 不是 ``success`` / ``failure`` → 静默接受（让未来加
+      ``timeout`` / ``rate_limited`` 等档不需要回头改本函数）；
+    - bucket 比较用 ``<=``（Prom histogram 标准约定，``le="..."``）。
+    """
+    if duration_seconds < 0:
+        return
+
+    key = (tool_name, status)
+    state = _latency_state.get(key)
+    if state is None:
+        state = {
+            "count": 0,
+            "sum_seconds": 0.0,
+            "buckets": dict.fromkeys(_DEFAULT_LATENCY_BUCKETS, 0),
+        }
+        _latency_state[key] = state
+
+    state["count"] += 1
+    state["sum_seconds"] += duration_seconds
+    # cumulative bucket 写法：所有 ``upper >= duration`` 的 bucket 都 +1
+    for upper in _DEFAULT_LATENCY_BUCKETS:
+        if duration_seconds <= upper:
+            state["buckets"][upper] += 1
+
+
+def get_mcp_tool_call_latency_snapshot() -> dict[tuple[str, str], dict[str, Any]]:
+    """返回 latency histogram 状态深 copy。
+
+    返回形态：
+
+    .. code-block:: python
+
+        {
+            ("interactive_feedback", "success"): {
+                "count": 42,
+                "sum_seconds": 187.4,
+                "buckets": {0.1: 1, 0.5: 5, 1.0: 12, ..., float("inf"): 42},
+            },
+            ...
+        }
+
+    关键性质：
+
+    - 返回字典是新建的，调用者修改不会污染内部状态；
+    - ``buckets`` 字典自带 ``float("inf")`` 这个键，值 == ``count``（因为
+      所有观测必然 ≤ +Inf）——caller 直接 emit ``le="+Inf"`` bucket 即可；
+    - 若某 ``(tool, status)`` 还从未被记录，**不会**出现在返回字典里。
+    """
+    with _counter_lock:
+        result: dict[tuple[str, str], dict[str, Any]] = {}
+        for key, state in _latency_state.items():
+            buckets_copy = dict(state["buckets"])
+            buckets_copy[float("inf")] = state["count"]
+            result[key] = {
+                "count": state["count"],
+                "sum_seconds": state["sum_seconds"],
+                "buckets": buckets_copy,
+            }
     return result
 
 
@@ -153,15 +281,22 @@ class ToolCallCounterMiddleware(Middleware):
         # ``context.message.name`` 是 tool 名（如 ``"interactive_feedback"``）；
         # FastMCP 已经做过基础 schema 校验，到这里 name 一定是 str 非空。
         tool_name = context.message.name
+        # R190：用 ``time.monotonic()``（不是 ``time.time()``）测耗时，避
+        # 免系统时钟跳变（NTP / 夏令时）让 latency 出现负值。
+        start = time.monotonic()
         try:
             result = await call_next(context)
         except Exception:
             # failure 计数 + 把异常透传给外层 ErrorHandlingMiddleware，
             # 由它转 MCP 标准错误码。本中间件**不吞**异常。
+            duration = time.monotonic() - start
             with _counter_lock:
                 _counter[(tool_name, "failure")] += 1
+                _record_latency(tool_name, "failure", duration)
             raise
         else:
+            duration = time.monotonic() - start
             with _counter_lock:
                 _counter[(tool_name, "success")] += 1
+                _record_latency(tool_name, "success", duration)
             return result
