@@ -70,7 +70,7 @@
   CHANGELOG 回填、coverage 数据文件改写位置）。任何大型重组、
   accept-but-ignore 兼容字段、或 `git mv` 任意 `.md` 文件之
   前必读。
-- [`security-triage-r72.tmp.md`](security-triage-r72.tmp.md) — 2026 年 5
+- [`triage/security-r72.md`](triage/security-r72.md) — 2026 年 5
   月对全部 GitHub code-scanning 警告的逐条分诊。包含 R72-A（15 ×
   log-injection 通过全局 root InterceptHandler 一次性修掉）+
   R72-B（1 × `open-config-file` stack-trace 泄漏）的代码修复、20

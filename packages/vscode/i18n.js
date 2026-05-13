@@ -509,7 +509,7 @@
   // R72-D · CodeQL js/client-side-request-forgery 修复：未知 lang 一律
   // 折叠到 DEFAULT_LANG，禁止未知字符串透传到任何 fetch URL。和
   // static/js/i18n.js::normalizeLang 行为保持一致；详见
-  // docs/security-triage-r72.tmp.md row 35。
+  // docs/triage/security-r72.md row 35。
   function normalizeLang(raw) {
     var s = String(raw || '')
       .trim()

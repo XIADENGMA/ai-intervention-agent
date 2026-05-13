@@ -11,6 +11,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **`*.tmp.*` 全局忽略生效；CR / triage 归档迁移到稳定路径**（TODO.md
+  line 4 收尾）— `.gitignore` 第 254 行原有的 `*.tmp.*` 通用忽略叠加
+  R168/CR#10 引入的 `!docs/**/*.tmp.md` 例外，造成「docs 下 .tmp.md
+  既被忽略又被强制入库」的语义重影；同时 maintainer TODO 明确「任何
+  目录下的 *.tmp.* 都不应该进 git」。本次清理：
+  - 把 12 个 single-cycle artefact 用 `git mv` 迁出 `.tmp.md` 名命：
+    `docs/code-review-*-cr<N>.tmp.md` → `docs/code-reviews/cr<N>.md`
+    （cr9 – cr19，11 个），`docs/security-triage-r72.tmp.md` →
+    `docs/triage/security-r72.md`；
+  - 撤回 `.gitignore` 第 261 行的 `!docs/**/*.tmp.md` 例外，让
+    `*.tmp.*` 成为**无例外**铁律；
+  - 同步 17 处引用：CHANGELOG.md / `docs/code-reviews/cr13-15.md` 互
+    引、`docs/README.{md,zh-CN.md}` 索引、`docs/lessons-learned-
+    silent-decay.md` 3 处引用、`packages/vscode/i18n.js` 注释。
+  - 后续新 CR 应直接落 `docs/code-reviews/cr<N>.md`（无 `.tmp` 后
+    缀），三方 triage 落 `docs/triage/<topic>-r<N>.md`。
+  - 历史 R168 narrative（CHANGELOG / cr10/11/12/18 inside 段）保留
+    描述 `*.tmp.md` 当时规约，不做改写——它们是项目演进史，不是 link
+    target。
+  - 测试覆盖：`pytest tests/test_docs_links_no_rot.py` → 6/6 PASSED
+    确认 markdown 链接零腐烂；`pytest -q` 全量 → 5310 passed / 2
+    skipped。
+
 - **R196 / Cycle 6: notification-specific latency buckets (50 ms – 10 s,
   dense)** — R191 起步实现复用了
   `mcp_tool_call_metrics._DEFAULT_LATENCY_BUCKETS`
@@ -736,9 +759,9 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 > by default. Recommended: try `ai-intervention-agent --print-config |
 > jq` after upgrading to inspect what's actually loaded.
 >
-> Detailed CR archive: [`docs/code-review-v1.6.4-followups-cr15.tmp.md`](docs/code-review-v1.6.4-followups-cr15.tmp.md),
-> [`docs/code-review-v1.6.4-followups-cr16.tmp.md`](docs/code-review-v1.6.4-followups-cr16.tmp.md),
-> [`docs/code-review-v1.6.4-followups-cr17.tmp.md`](docs/code-review-v1.6.4-followups-cr17.tmp.md).
+> Detailed CR archive: [`docs/code-reviews/cr15.md`](docs/code-reviews/cr15.md),
+> [`docs/code-reviews/cr16.md`](docs/code-reviews/cr16.md),
+> [`docs/code-reviews/cr17.md`](docs/code-reviews/cr17.md).
 
 ### Added
 
@@ -885,7 +908,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Documentation
 
 - **Code Review #17 archived** —
-  [`docs/code-review-v1.6.4-followups-cr17.tmp.md`](docs/code-review-v1.6.4-followups-cr17.tmp.md)
+  [`docs/code-reviews/cr17.md`](docs/code-reviews/cr17.md)
   captures cycle-3 of the v1.6.4 follow-up chain: 5 commits
   (`d1f2ee9` → `981117b`, +1317 lines net) that **fully drained**
   the CR#16 §6 follow-up queue (F-1 sections coverage, F-2 R185
@@ -983,7 +1006,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Documentation
 
 - **Code Review #16 archived** —
-  [`docs/code-review-v1.6.4-followups-cr16.tmp.md`](docs/code-review-v1.6.4-followups-cr16.tmp.md)
+  [`docs/code-reviews/cr16.md`](docs/code-reviews/cr16.md)
   captures the cycle-2 review covering 5 commits (`36cdc72` →
   `246accc`): the env-override → CLI → health-endpoint observability
   triangle closure, R185 (Dependabot CVE gate) landing + bilingual
@@ -1015,7 +1038,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Documentation
 
 - **Code Review #15 archived** —
-  [`docs/code-review-v1.6.4-followups-cr15.tmp.md`](docs/code-review-v1.6.4-followups-cr15.tmp.md)
+  [`docs/code-reviews/cr15.md`](docs/code-reviews/cr15.md)
   reviews the 5-commit user-onboarding loop cycle on top of v1.6.4.
   Covers the three-commit env-override → CLI → friendly-error UX
   story, the backward-compat redesign that prevented 6 regression
@@ -1142,8 +1165,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 >   tests, root cause once. pytest 9 bonus: 620 subtests
 >   automatically detected (no new code, just better reporting).
 >
-> See `docs/code-review-r180-r181-cr13.tmp.md` (CR#13 — v1.6.3
-> release-lifecycle rescue) and `docs/code-review-r182-r184-cr14.tmp.md`
+> See `docs/code-reviews/cr13.md` (CR#13 — v1.6.3
+> release-lifecycle rescue) and `docs/code-reviews/cr14.md`
 > (CR#14 — this cycle wrap) for the full reasoning + follow-up
 > closure trail (4/4 follow-ups across two adjacent cycles).
 
@@ -1238,7 +1261,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   communication template, and links to related guards
   (R149/R180/R181 + bump_version.py + tag_push_safety.py).
   ≈ 200 lines / 200 行 each.
-- **CR#13** — `docs/code-review-r180-r181-cr13.tmp.md`: code-review
+- **CR#13** — `docs/code-reviews/cr13.md`: code-review
   artefact for the v1.6.3 release-lifecycle rescue cycle (R180 +
   R181). Covers the failed attempt-1 (R151 fossilisation) → clean
   abort → R180 + R181 fixes → successful attempt-2 (5 jobs ✓:
@@ -1333,7 +1356,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   跟踪 R177 hotfix（CR#11 F-1 double-backtick fix）+ R176 docs-index follow-up
   - R178 (CR#11 F-3 closeout) + R179 (3 ci_gate footguns) + 1 precompress
     refresh chore 共 5 个 commit 的整体质量评估。沿用 R168 `.tmp.md` 命名
-    规约（单次产物），路径 `docs/code-review-r177-r179-cr12.tmp.md`。内容
+    规约（单次产物），路径 `docs/code-reviews/cr12.md`。内容
     覆盖：
   * **Cycle summary 表**：5 行（chore-R177-followup / R176-docs-index /
     R178 / R179 / chore-static-precompress）的 hash + one-liner。
@@ -1490,7 +1513,7 @@ test_export_btn_in_light_theme_block` 硬编码 `[data-theme='light']`
 - **CR#11** — **Code Review #11 (post-R173 → R176)** 文档落地，跟踪
   R173-R176 + 1 个 CHANGELOG-link-rot chore 共 5 个 commit 的整体质量评
   估。沿用 R168 `.tmp.md` 命名规约（单次产物，非长期设计文档），路径
-  `docs/code-review-r173-r176-cr11.tmp.md`。内容覆盖：
+  `docs/code-reviews/cr11.md`。内容覆盖：
   - **Cycle summary 表**：5 行（R173 F-3 follow-up / R174 F-1 follow-up /
     R175 .github 拆分 / chore 1b96a47 link-rot 修复 / R176 noise-levels EN）
     的 hash + one-liner。
@@ -1586,7 +1609,7 @@ r150-r154-cr9.tmp.md` / `security-triage-r72.tmp.md`），新增的同名
   例外 `!docs/**/*.tmp.md` 把 `docs/` 下的 `.tmp.md`（按 R168
   规约归档的 single-cycle artefact）从仓库根的"个人笔记 / 草稿"
   忽略规则里挖出来。沿用 R168 `.tmp.md` 命名规约
-  （单次产物，非长期设计文档），路径 `docs/code-review-r155-r172-cr10.tmp.md`。
+  （单次产物，非长期设计文档），路径 `docs/code-reviews/cr10.md`。
   内容覆盖：
   - **Cycle summary 表**：11 行（10 个 R-tag + 1 个 css-prettier chore）
     的 hash + one-liner，让后续 maintainer 一眼看清这一批次的边界。
@@ -1729,8 +1752,8 @@ r150-r154-cr9.tmp.md` / `security-triage-r72.tmp.md`），新增的同名
   | `docs/perf-r21-roadmap.md` (+ `.zh-CN`) | `docs/perf-web-asset-pipeline.md` (+ `.zh-CN`) | 改主题命名（性能文档 = Web 静态资源管线） |
   | `docs/lessons-learned-r60s.md`          | `docs/lessons-learned-css-and-options.md`      | 改主题命名（教训 = CSS + MCP options）    |
   | `docs/lessons-learned-r70s.md`          | `docs/lessons-learned-silent-decay.md`         | 改主题命名（教训 = "silent decay" 模式）  |
-  | `docs/code-review-r150-r154-cr9.md`     | `docs/code-review-r150-r154-cr9.tmp.md`        | 单次产物 → `.tmp.md` 后缀（按用户要求）   |
-  | `docs/security-triage-r72.md`           | `docs/security-triage-r72.tmp.md`              | 单次产物 → `.tmp.md` 后缀                 |
+  | `docs/code-review-r150-r154-cr9.md`     | `docs/code-reviews/cr9.md`        | 单次产物 → `.tmp.md` 后缀（按用户要求）   |
+  | `docs/security-triage-r72.md`           | `docs/triage/security-r72.md`              | 单次产物 → `.tmp.md` 后缀                 |
   - 所有跨文档 markdown link 已同步更新（`docs/README{,.zh-CN}.md` /
     `docs/lessons-learned-silent-decay.md` / `perf-*.md` 互相引用 /
     `packages/vscode/i18n.js` 行内注释 / `packages/vscode/CHANGELOG.md`）。

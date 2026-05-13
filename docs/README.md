@@ -76,7 +76,7 @@ Find your role below to jump straight to the page you need.
   CHANGELOG backfill, coverage-data-file relocation). Required
   reading before any big-bang reorganisation, accept-but-ignore
   alias, or `git mv` of a `.md` file.
-- [`security-triage-r72.tmp.md`](security-triage-r72.tmp.md) — line-by-line
+- [`triage/security-r72.md`](triage/security-r72.md) — line-by-line
   disposition of every GitHub code-scanning alert open as of the
   May 2026 sweep. Documents the R72-A (15 × log-injection via
   global root InterceptHandler) and R72-B (1 × stack-trace exposure
