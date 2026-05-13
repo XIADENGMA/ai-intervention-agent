@@ -526,6 +526,39 @@ _RATE_LIMITING_MIDDLEWARE: RateLimitingMiddleware = RateLimitingMiddleware(
 mcp.middleware.insert(1, _RATE_LIMITING_MIDDLEWARE)
 
 
+# R187 / T2: MCP tool call counter middleware
+# ===================================================
+#
+# 把每个 tool 的 success / failure 累计计数暴露给 R186 / T1 ``/metrics``
+# 端点（``aiia_mcp_tool_calls_total{tool=...,status=success|failure}``）。
+# 与 R37 ``get_mcp_error_stats()``（按 ``{error_type}:{method}`` 计数）
+# 互补——前者是负向 error rate 诊断，后者是正向 throughput 指标。
+#
+# 注册位置 ``insert(2, ...)``——``RateLimiting``（位置 1）之后、
+# ``DereferenceRefs`` / ``Timing`` / ``Logging`` 之前：
+#   * 被 ``RateLimiting`` 拦截的请求**不计数**（合理：未进入 tool handler）；
+#   * 业务异常先被本中间件标 ``failure``，再由 ``ErrorHandling`` 转 MCP
+#     标准错误码——两道计数互不污染。
+#
+# 模块化原因：单独放 ``mcp_tool_call_metrics.py`` 而不堆在 ``server.py``，
+# 让 ``web_ui_routes/system.py`` 的 prom 渲染器一行 import 就能拉到数据，
+# 详见该模块 docstring 的「为什么单独一个模块」段。
+# ``get_mcp_tool_call_stats`` re-exported for parity with R37
+# ``get_mcp_error_stats``——operations / tests reading ``server.<helper>``
+# shouldn't need to know whether the helper lives in ``server.py`` or in
+# ``mcp_tool_call_metrics.py``. ``F401`` silences "unused import" since
+# the symbol is part of the module-level public API surface.
+from ai_intervention_agent.mcp_tool_call_metrics import (
+    ToolCallCounterMiddleware,
+)
+from ai_intervention_agent.mcp_tool_call_metrics import (
+    get_mcp_tool_call_stats as get_mcp_tool_call_stats,
+)
+
+_TOOL_CALL_COUNTER_MIDDLEWARE: ToolCallCounterMiddleware = ToolCallCounterMiddleware()
+mcp.middleware.insert(2, _TOOL_CALL_COUNTER_MIDDLEWARE)
+
+
 # R40 FastMCP 最佳实践：暴露 server 自检 resource
 # ===================================================
 #

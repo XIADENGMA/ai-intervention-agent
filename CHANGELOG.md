@@ -11,6 +11,63 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R187 / T2: MCP tool call counter middleware** — adds the missing
+  positive-side counterpart to R37's `get_mcp_error_stats()` (which only
+  exposes negative `{error_type}:{method}` counts). The new
+  `ToolCallCounterMiddleware` (registered at `mcp.middleware` position 2,
+  after `ErrorHandling` + `RateLimiting`, before `DereferenceRefs` /
+  `Timing` / `Logging`) tracks `{tool_name, status: success|failure}`
+  per call and exposes the data through `get_mcp_tool_call_stats()` /
+  `reset_mcp_tool_call_stats()`. The R186 / T1 Prometheus endpoint now
+  emits the new `aiia_mcp_tool_calls_total{tool=...,status=success|failure}`
+  counter so monitoring dashboards can compute SLO success ratios
+  (`success / (success + failure)`) and cross-reference them with
+  R37's error-type breakdown for two-dimensional drill-down.
+
+  **Design points**:
+  - **Module isolation** — lives in a new `src/ai_intervention_agent/mcp_tool_call_metrics.py`
+    (~150 LoC); `server.py` only imports the middleware class + re-exports
+    `get_mcp_tool_call_stats`. Keeps server.py from creeping toward 1700+
+    LoC and makes the counter directly importable from
+    `web_ui_routes/system.py`'s prom renderer without circular import.
+  - **Thread safety** — module-level `Counter` + `threading.Lock` for the
+    streamable-http future and concurrent prom-render-vs-tool-call paths.
+  - **Re-raise on failure** — middleware bumps the `failure` counter then
+    re-raises so the outer `ErrorHandlingMiddleware` can still translate
+    business exceptions to standard MCP error codes; the counter is not
+    a swallow-and-hide replacement for proper error propagation.
+  - **PII boundary** — counter keys are tool names (public metadata),
+    never argument values; `get_mcp_tool_call_stats()` returns deep
+    copies so callers cannot pollute internal state.
+
+  **R186 follow-up bug fix bundled in this commit**: the original
+  `_render_prometheus_metrics()` emitted per-sample `# HELP` + `# TYPE`
+  lines for `aiia_notification_*` per-provider metrics — strict
+  Prometheus parsers (VictoriaMetrics / Cortex / latest prom) reject
+  this with "second TYPE for metric". Introduced a new helper
+  `_format_prom_metric_family(name, *, help_text, metric_type, samples)`
+  that emits a single HELP/TYPE block + N value rows. Both
+  notification per-provider and the new MCP tool counter now go
+  through this helper, with regression guarded by
+  `tests/test_mcp_tool_call_metrics_r187.py::TestPromOutputNoDuplicateHelpType`
+  (5 cases, including "every metric name's HELP/TYPE appears exactly
+  once across the full payload").
+
+  **Test coverage**: `tests/test_mcp_tool_call_metrics_r187.py`
+  (17 cases) — counter behaviour (initial empty, success/failure
+  increments, multi-tool isolation, reset, returned-dict-is-copy),
+  middleware behaviour (success-path success counter, exception-path
+  failure counter + re-raise, server.py registration at position 2),
+  `_format_prom_metric_family` helper (empty / single / multi-sample,
+  label escaping), and the no-duplicate-HELP/TYPE invariant.
+
+  **Docs sync**: `scripts/generate_docs.py` registers
+  `mcp_tool_call_metrics.py` in `MODULES_TO_DOCUMENT` + `QUICK_NAV_UTILITY`,
+  plus a one-line bilingual entry in the Quick navigation index.
+  `docs/api/mcp_tool_call_metrics.md` (en signature-only) +
+  `docs/api.zh-CN/mcp_tool_call_metrics.md` (zh-CN with docstring) are
+  auto-generated.
+
 - **R186 / T1: `GET /api/system/metrics` Prometheus exposition endpoint** —
   closes the "JSON dashboard ↔ Prometheus scrape" gap left after R132
   (the `/api/system/health` JSON endpoint). Same data sources

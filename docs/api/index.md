@@ -134,6 +134,7 @@ nagging "destructive operation" confirmations. See
 - [config_utils](config_utils.md)
 - [exceptions](exceptions.md)
 - [i18n](i18n.md)
+- [mcp_tool_call_metrics](mcp_tool_call_metrics.md)
 - [protocol](protocol.md)
 - [state_machine](state_machine.md)
 - [server](server.md)
@@ -178,6 +179,7 @@ nagging "destructive operation" confirmations. See
 
 - **config_utils**: Configuration utility helpers
 - **i18n**: Lightweight back-end i18n (request-language detection + locale-keyed message lookup)
+- **mcp_tool_call_metrics**: MCP tool call counter middleware (R187 / T2) — feeds `aiia_mcp_tool_calls_total{tool,status}` Prometheus metric in `/api/system/metrics`
 - **shared_types**: Shared TypedDict definitions
 - **notification_models**: Notification data models
 - **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)

@@ -513,6 +513,24 @@ def _format_prom_labels(labels: dict[str, str] | None) -> str:
     return "{" + ",".join(parts) + "}"
 
 
+def _format_prom_value(value: int | float) -> str:
+    """把单个数值渲染成 Prometheus 接受的字符串。
+
+    ``int`` 直接 str()；``float`` 用 repr() 避免 ``str(0.1+0.2)`` 那种精度
+    损失；``inf`` / ``nan`` 渲染为 Prometheus 标准的 ``+Inf`` / ``-Inf`` /
+    ``NaN``。
+    """
+    if isinstance(value, float):
+        if value != value:
+            return "NaN"
+        if value == float("inf"):
+            return "+Inf"
+        if value == float("-inf"):
+            return "-Inf"
+        return repr(value)
+    return str(int(value))
+
+
 def _format_prom_metric(
     name: str,
     value: int | float,
@@ -527,27 +545,49 @@ def _format_prom_metric(
     本项目当前只用 counter + gauge；histogram/summary 需要 _bucket / _sum /
     _count 配套，暂不实现以保持手写格式化器的简单性。
 
-    ``value``：``int`` 直接 str()；``float`` 用 repr() 避免 ``str(0.1+0.2)``
-    那种精度损失；``inf`` / ``nan`` 渲染为 Prometheus 接受的 ``+Inf`` /
-    ``NaN``。
+    **同一 metric name 多 label 场景**：用 :func:`_format_prom_metric_family`
+    一次性发完整的「family」（HELP/TYPE 各只出现一次 + 多个 value 行），
+    避免严格 Prometheus parser 因为「second TYPE for metric」报错。本函数
+    只适合「一个 metric name 只发一个 value」的场景。
     """
     label_str = _format_prom_labels(labels)
-    if isinstance(value, float):
-        if value != value:
-            value_str = "NaN"
-        elif value == float("inf"):
-            value_str = "+Inf"
-        elif value == float("-inf"):
-            value_str = "-Inf"
-        else:
-            value_str = repr(value)
-    else:
-        value_str = str(int(value))
+    value_str = _format_prom_value(value)
     return (
         f"# HELP {name} {help_text}\n"
         f"# TYPE {name} {metric_type}\n"
         f"{name}{label_str} {value_str}\n"
     )
+
+
+def _format_prom_metric_family(
+    name: str,
+    *,
+    help_text: str,
+    metric_type: str,
+    samples: list[tuple[dict[str, str] | None, int | float]],
+) -> str:
+    """渲染同一 metric name 的 family（HELP + TYPE 各只出现一次 + N 个 value 行）。
+
+    Prometheus exposition format 规约：**同一个 metric name 的 HELP/TYPE
+    最多出现一次**——重复 TYPE 行会让 strict parser（VictoriaMetrics、
+    Cortex、最新版 prom）报 ``second TYPE for metric`` 错误。R186 初版
+    在 ``aiia_notification_*`` per-provider 循环里对每条样本都 emit
+    HELP+TYPE，是一个 latent bug，本函数在 R187 follow-up 修掉。
+
+    ``samples``：``[(labels, value), ...]``。``labels=None`` 视作无 label
+    样本（一个 family 内一般不混用，但允许）。空 samples 列表返回空串。
+    """
+    if not samples:
+        return ""
+    out_lines: list[str] = [
+        f"# HELP {name} {help_text}\n",
+        f"# TYPE {name} {metric_type}\n",
+    ]
+    for labels, value in samples:
+        label_str = _format_prom_labels(labels)
+        value_str = _format_prom_value(value)
+        out_lines.append(f"{name}{label_str} {value_str}\n")
+    return "".join(out_lines)
 
 
 def _render_prometheus_metrics() -> str:
@@ -803,56 +843,68 @@ def _render_prometheus_metrics() -> str:
             )
 
         # per_provider metrics（每个 provider 一行，用 provider 标签区分）
+        #
+        # R187 follow-up bug fix：旧实现对每个 (provider, metric_suffix)
+        # 单独调 ``_format_prom_metric``，让同一 ``aiia_notification_<suffix>``
+        # name 的 HELP / TYPE 行重复出现 N 次（N = provider 数），strict
+        # Prometheus parser（VictoriaMetrics / Cortex / 最新 prom）会报
+        # ``second TYPE for metric`` 错误。改用 ``_format_prom_metric_family``
+        # 一次性发完整 family：HELP/TYPE 各一行 + N 个 value 行。
         per_provider = notif.get("per_provider")
         if isinstance(per_provider, dict):
-            for provider_name, stats in per_provider.items():
-                if not isinstance(stats, dict):
-                    continue
-                labels = {"provider": provider_name}
-                for metric_suffix, key, help_text, metric_type in (
-                    (
-                        "attempts_total",
-                        "attempts",
-                        "Notification attempts per provider.",
-                        "counter",
-                    ),
-                    (
-                        "success_total",
-                        "success",
-                        "Notification successful deliveries per provider.",
-                        "counter",
-                    ),
-                    (
-                        "failure_total",
-                        "failure",
-                        "Notification failed deliveries per provider.",
-                        "counter",
-                    ),
-                    (
-                        "success_rate",
-                        "success_rate",
-                        "Per-provider notification delivery success rate (0.0–1.0).",
-                        "gauge",
-                    ),
-                    (
-                        "avg_latency_ms",
-                        "avg_latency_ms",
-                        "Per-provider average notification delivery latency in ms.",
-                        "gauge",
-                    ),
-                    (
-                        "success_streak",
-                        "success_streak",
-                        "Consecutive successful deliveries per provider (R145).",
-                        "gauge",
-                    ),
-                    (
-                        "failure_streak",
-                        "failure_streak",
-                        "Consecutive failed deliveries per provider (R145).",
-                        "gauge",
-                    ),
-                ):
+            # 字段定义：(metric_suffix, source_key, help_text, metric_type)
+            _per_provider_field_specs: tuple[tuple[str, str, str, str], ...] = (
+                (
+                    "attempts_total",
+                    "attempts",
+                    "Notification attempts per provider.",
+                    "counter",
+                ),
+                (
+                    "success_total",
+                    "success",
+                    "Notification successful deliveries per provider.",
+                    "counter",
+                ),
+                (
+                    "failure_total",
+                    "failure",
+                    "Notification failed deliveries per provider.",
+                    "counter",
+                ),
+                (
+                    "success_rate",
+                    "success_rate",
+                    "Per-provider notification delivery success rate (0.0–1.0).",
+                    "gauge",
+                ),
+                (
+                    "avg_latency_ms",
+                    "avg_latency_ms",
+                    "Per-provider average notification delivery latency in ms.",
+                    "gauge",
+                ),
+                (
+                    "success_streak",
+                    "success_streak",
+                    "Consecutive successful deliveries per provider (R145).",
+                    "gauge",
+                ),
+                (
+                    "failure_streak",
+                    "failure_streak",
+                    "Consecutive failed deliveries per provider (R145).",
+                    "gauge",
+                ),
+            )
+            for metric_suffix, key, help_text, metric_type in _per_provider_field_specs:
+                # 为这一个 metric name 收集所有 provider 的 sample
+                samples: list[tuple[dict[str, str] | None, int | float]] = []
+                for provider_name, stats in per_provider.items():
+                    if not isinstance(provider_name, str) or not isinstance(
+                        stats, dict
+                    ):
+                        continue
                     raw = stats.get(key)
                     if isinstance(raw, int | float):
                         value: int | float = (
@@ -861,15 +913,60 @@ def _render_prometheus_metrics() -> str:
                             and metric_suffix in ("success_rate", "avg_latency_ms")
                             else int(raw)
                         )
-                        lines.append(
-                            _format_prom_metric(
-                                f"aiia_notification_{metric_suffix}",
-                                value,
-                                help_text=help_text,
-                                metric_type=metric_type,
-                                labels=labels,
-                            )
+                        samples.append(({"provider": provider_name}, value))
+                if samples:
+                    lines.append(
+                        _format_prom_metric_family(
+                            f"aiia_notification_{metric_suffix}",
+                            help_text=help_text,
+                            metric_type=metric_type,
+                            samples=samples,
                         )
+                    )
+
+    # --- R187 / T2: MCP tool call counter ---
+    # ``aiia_mcp_tool_calls_total{tool,status}`` 给监控仪表板做
+    # request_rate / error_rate / SLO success_ratio = success / (success +
+    # failure) 的分子分母——配合 R37 ``get_mcp_error_stats()`` 的
+    # ``{error_type}:{method}`` 计数可以做"哪类 tool 错最多 + 错的是
+    # 什么类型"的二维下钻。
+    try:
+        from ai_intervention_agent.mcp_tool_call_metrics import (
+            get_mcp_tool_call_stats,
+        )
+
+        tool_stats = get_mcp_tool_call_stats()
+    except Exception:
+        # [R-187] mcp_tool_call_metrics 任何 import / 调用异常都不应让
+        # /metrics 5xx——丢失一行 tool counter 比让 Prometheus 把整个
+        # ai-intervention-agent target 标 red 更可接受（与其他子系统
+        # block 的优雅降级模式一致）。
+        tool_stats = {}
+
+    if isinstance(tool_stats, dict) and tool_stats:
+        mcp_samples: list[tuple[dict[str, str] | None, int | float]] = []
+        for tool_name, statuses in tool_stats.items():
+            if not isinstance(tool_name, str) or not isinstance(statuses, dict):
+                continue
+            for status in ("success", "failure"):
+                raw = statuses.get(status)
+                if isinstance(raw, int | float):
+                    mcp_samples.append(
+                        ({"tool": tool_name, "status": status}, int(raw))
+                    )
+        if mcp_samples:
+            lines.append(
+                _format_prom_metric_family(
+                    "aiia_mcp_tool_calls_total",
+                    help_text=(
+                        "Total MCP tool invocations by tool name and outcome "
+                        "(R187 / T2; partner of get_mcp_error_stats's "
+                        "error_type:method breakdown)."
+                    ),
+                    metric_type="counter",
+                    samples=mcp_samples,
+                )
+            )
 
     return "".join(lines)
 
