@@ -103,6 +103,26 @@ allowed_networks = [
 blocked_ips = []
 # 访问控制开关 / Access control switch
 access_control_enabled = true
+# R189 / T4: 可选 API token 认证 / Optional API token authentication
+#
+# 默认空字符串 = 关闭认证（仅 loopback 来源能访问敏感写入端点，与既有行为一致）。
+# 配置后：non-loopback 客户端可通过 Header 提交 token 通过认证：
+#   - ``Authorization: Bearer <token>``（IETF RFC 6750 标准）
+#   - ``X-API-Token: <token>``（curl / PWA 友好）
+# Loopback 来源始终通过，token 只是为 non-loopback / 反向代理 / LAN PWA
+# 场景提供的额外认证通道——避免本机管理员被锁在门外。
+#
+# 生成强 token: ``python -c "import secrets; print(secrets.token_urlsafe(32))"``
+# 长度要求：≥ 16 字符（< 16 会被静默视作未配置，并在 stderr 打警告）。
+# 不要把 token 提交到公开 git 仓库；建议结合 ``${VAR}`` env 引用或 ``$(cat
+# /path/to/secret)`` 通过 systemd / docker secret 注入。
+#
+# Default empty string = authentication disabled (loopback-only writes,
+# matches existing behavior). When set, non-loopback clients can authenticate
+# via header (Bearer or X-API-Token). Loopback always passes; token only adds
+# an *additional* path for non-loopback / reverse proxy / LAN PWA scenarios,
+# preventing local admins from being locked out.
+api_token = ""
 
 # ──────────────────────────────────────────────
 # mDNS 配置 / mDNS Settings (for ai.local access & LAN service discovery)

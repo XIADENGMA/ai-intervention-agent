@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -981,6 +982,104 @@ def _is_loopback_request() -> bool:
     return _get_client_ip() in _resolve_loopback_ips()
 
 
+# ---------------------------------------------------------------------------
+# R189 / T4: 可选 API token 认证（配合 non-loopback hardening）
+# ---------------------------------------------------------------------------
+
+
+_API_TOKEN_HEADER = "X-API-Token"
+"""项目自定义 header，与 Bearer token 互补。``Authorization: Bearer <token>``
+是 IETF 标准，但 ``X-API-Token: <token>`` 让 ``curl -H "X-API-Token: ..."``
+书写更直观，PWA fetch 也省一道 ``Authorization`` 的 cors preflight 路径。"""
+
+_MIN_API_TOKEN_LEN = 16
+"""配置侧已经强制 ≥ 16 char（见 ``_validate_network_security_config``），
+本常量是 endpoint 侧的 belt-and-suspenders 复查——一旦 config validator
+被未来 refactor 出 bug 让短 token 漏过，endpoint 仍然不接受弱 token。"""
+
+
+def _get_configured_api_token() -> str:
+    """读取 ``network_security.api_token``——空字符串表示未配置（关闭认证）。
+
+    config 加载失败时返回空串，与「未配置」等价；不让 config 故障扩大成
+    端点 500 错误。Token 字符串本身仅在 endpoint 路径内对比，**不**写日志、
+    **不**写错误响应（避免被 stderr / response body 泄漏到 PII 通道）。
+    """
+    try:
+        cfg = get_config()
+        ns = cfg.get_network_security_config()
+    except Exception:
+        return ""
+    if not isinstance(ns, dict):
+        return ""
+    raw = ns.get("api_token", "")
+    return str(raw) if isinstance(raw, str) else ""
+
+
+def _extract_request_api_token() -> str:
+    """从当前 Flask 请求里提取 client 提交的 API token。
+
+    优先级（first-match-wins）：
+
+    1. ``Authorization: Bearer <token>``——IETF RFC 6750 标准格式，监控
+       仪表板 / 第三方工具默认走这条；
+    2. ``X-API-Token: <token>``——curl / Postman 手写更直观，PWA 走
+       ``fetch`` 时也可以省掉 ``Authorization`` 的 CORS preflight 开销。
+
+    返回空串表示没附带 token；不引发异常，让 caller 决定 401 / 403 / 200。
+    """
+    auth = request.headers.get("Authorization", "").strip()
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return request.headers.get(_API_TOKEN_HEADER, "").strip()
+
+
+def _is_api_token_authorized() -> bool:
+    """当请求附带与 config 一致的 API token 时返回 True。
+
+    使用 :func:`secrets.compare_digest` 做 constant-time 比较，避免按字符串
+    timing 推断 token 前缀（Web 上有公开 PoC 演示 1-byte 累计时间差能推
+    50 字节 token）。
+
+    返回 False 的情形：
+    - config 未配置 token（``api_token == ""``）—— 此时本函数不能授权任何
+      请求，调用者需要回退到 loopback gate；
+    - client 没附带 token；
+    - client 附带的 token 与 config 不匹配。
+
+    本函数**不**记日志，避免错误的 token 字符串被脱敏器漏过进 stderr。
+    """
+    configured = _get_configured_api_token()
+    if not configured or len(configured) < _MIN_API_TOKEN_LEN:
+        return False
+    presented = _extract_request_api_token()
+    if not presented:
+        return False
+    # constant-time compare；compare_digest 对长度不同的输入会 fast-fail，
+    # 不会泄漏长度差异
+    return secrets.compare_digest(configured, presented)
+
+
+def _is_authorized() -> bool:
+    """统一的「敏感端点准入」判定：loopback 来源 **或** 带有效 API token。
+
+    设计原则：
+
+    - 默认行为不变：``api_token`` 未配置时，仅 loopback 通过——所有现有
+      loopback-only 端点的语义完全保留；
+    - 配置 ``api_token`` 后**叠加**而不是**替换** loopback——本机用户不
+      被迫在 curl 里粘 token，反向代理 / LAN PWA 等 non-loopback 场景拿
+      token 即可通过；
+    - 不引入「token-only 模式」：避免 fail-closed 配置错误把本机管理员
+      锁在门外。如果未来确实需要严格 token-only，再加新字段
+      ``api_token_strict = true`` 显式 opt-in。
+
+    用法：所有原本 ``if not _is_loopback_request(): return 403`` 的端点
+    都换成 ``if not _is_authorized(): return 403``。
+    """
+    return _is_loopback_request() or _is_api_token_authorized()
+
+
 def _resolve_allowed_paths() -> list[Path]:
     """生成本次请求允许打开的配置文件路径白名单。"""
     candidates: list[Path] = []
@@ -1116,15 +1215,19 @@ class SystemRoutesMixin:
               500:
                 description: 启动子进程失败
             """
-            if not _is_loopback_request():
+            if not _is_authorized():
                 logger.warning(
-                    f"open-config-file 拒绝非环回请求: client={_get_client_ip()!r}"
+                    f"open-config-file 拒绝未授权请求: client={_get_client_ip()!r}"
                 )
                 return (
                     jsonify(
                         {
                             "success": False,
-                            "error": "Only loopback (127.0.0.1) callers are allowed.",
+                            "error": (
+                                "Only loopback callers or requests with a valid "
+                                "API token (Authorization: Bearer / X-API-Token) "
+                                "are allowed."
+                            ),
                         }
                     ),
                     403,
@@ -1916,12 +2019,15 @@ class SystemRoutesMixin:
               403:
                 description: 非 loopback 来源
             """
-            if not _is_loopback_request():
+            if not _is_authorized():
                 return (
                     jsonify(
                         {
                             "success": False,
-                            "error": "log-level changes require loopback client",
+                            "error": (
+                                "log-level changes require loopback caller or "
+                                "valid API token (Authorization: Bearer / X-API-Token)"
+                            ),
                         }
                     ),
                     403,
@@ -2068,12 +2174,15 @@ class SystemRoutesMixin:
 
             前端用这个 endpoint 决定按钮是否可点、是否提示用户配置环境变量。
             """
-            if not _is_loopback_request():
+            if not _is_authorized():
                 return (
                     jsonify(
                         {
                             "success": False,
-                            "error": "Only loopback (127.0.0.1) callers are allowed.",
+                            "error": (
+                                "Only loopback callers or requests with a valid "
+                                "API token are allowed."
+                            ),
                         }
                     ),
                     403,

@@ -273,6 +273,7 @@ Controls which interfaces the Web UI binds to and which networks can access it.
 | `allowed_networks`       | string[] | (see template) | CIDR allowlist                                           |
 | `blocked_ips`            | string[] | `[]`           | Explicit deny list                                       |
 | `access_control_enabled` | boolean  | `true`         | Enable allow/deny checks                                 |
+| `api_token`              | string   | `""`           | Optional API token (R189 / T4). Empty = loopback-only writes (default). When set, non-loopback callers can authenticate via `Authorization: Bearer <token>` or `X-API-Token: <token>` to access write-mutation endpoints (`POST /api/system/log-level`, `POST /api/system/open-config-file`). Loopback always passes; token is an additional path, not a replacement. Min 16 chars (shorter values are dropped with a warning). Generate via `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
 
 **Host selection rule**:
 

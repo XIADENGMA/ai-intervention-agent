@@ -227,6 +227,12 @@ class NetworkSecuritySectionConfig(BaseModel):
     ]
     blocked_ips: list[str] = []
     access_control_enabled: SafeBool = True
+    # R189 / T4: 可选 API token 认证。空串=未配置（loopback-only）。
+    # 长度约束（< 16 视作未配置；> 256 截断；含空白清洗）由
+    # ``NetworkSecurityMixin._validate_network_security_config`` 强制执行；
+    # 这里的 model 仅声明字段、不做长度校验——保持 pydantic schema 与
+    # toml 默认值一致即可。
+    api_token: SafeStr = ""
 
 
 class FeedbackSectionConfig(BaseModel):

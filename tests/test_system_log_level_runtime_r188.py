@@ -291,8 +291,10 @@ class TestSourceLevelRegressions(unittest.TestCase):
         self._source = Path(system_module.__file__).read_text(encoding="utf-8")
 
     def test_post_endpoint_has_loopback_check(self) -> None:
-        # POST handler 内必须显式调 _is_loopback_request() —— 否则任何远
-        # 程主机都能修改日志策略
+        # POST handler 内必须显式调安全网关 helper（``_is_loopback_request()``
+        # 或 R189 之后的 ``_is_authorized()`` 复合 helper），否则任何远程主
+        # 机都能修改日志策略。本测试同时接受两种 helper 命名，让 T4 / R189
+        # 的「loopback OR API token」升级不需要再回头改本断言。
         import re
 
         match = re.search(
@@ -302,10 +304,12 @@ class TestSourceLevelRegressions(unittest.TestCase):
         self.assertIsNotNone(match)
         assert match is not None
         body = match.group(0)
-        self.assertIn(
-            "_is_loopback_request()",
-            body,
-            "POST /api/system/log-level 必须调 _is_loopback_request() 做安全护栏",
+        # 接受 ``_is_loopback_request()``（R188 起步实现）或 ``_is_authorized()``
+        # （R189 复合实现）任一形式
+        has_gate = "_is_loopback_request()" in body or "_is_authorized()" in body
+        self.assertTrue(
+            has_gate,
+            "POST /api/system/log-level 必须有安全门控（_is_loopback_request() 或 _is_authorized()）",
         )
 
     def test_post_endpoint_has_rate_limit_decorator(self) -> None:

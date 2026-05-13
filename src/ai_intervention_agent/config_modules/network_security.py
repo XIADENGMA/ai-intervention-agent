@@ -145,11 +145,50 @@ class NetworkSecurityMixin:
             default=True,
         )
 
+        # R189 / T4：可选 API token（与 loopback gate 共存的认证副通道）。
+        # 校验规则：
+        # - 缺省 / 非字符串 / 空字符串 → 视作未配置（关闭认证）；
+        # - 配置了但长度 < 16 字符 → 警告并视作未配置（防 brute-force：
+        #   16 字符 ≈ 96 bit entropy 是 NIST SP 800-63B 推荐的 secret
+        #   最小熵下限）；
+        # - 长度 > 256 字符 → 警告并截断为前 256 字符（header 总长度有限）；
+        # - 含 whitespace / control char → 警告并清洗，避免无意中粘贴的
+        #   换行 / tab 让 ``compare_digest`` 永远 False。
+        api_token_raw = raw.get("api_token", default_ns.get("api_token", ""))
+        api_token = ""
+        if isinstance(api_token_raw, str):
+            cleaned = api_token_raw.strip()
+            if cleaned and any(ch.isspace() or ord(ch) < 0x20 for ch in cleaned):
+                logger.warning(
+                    "network_security.api_token 含空白 / 控制字符，已清洗（强烈建议"
+                    "重新生成一个 base64url / hex 安全 token）"
+                )
+                cleaned = "".join(
+                    ch for ch in cleaned if not (ch.isspace() or ord(ch) < 0x20)
+                )
+            if cleaned and len(cleaned) < 16:
+                logger.warning(
+                    "network_security.api_token 长度 < 16 字符不安全；已视作未配置。"
+                    '建议生成 ``python -c "import secrets; print(secrets.token_urlsafe(32))"``'
+                )
+                cleaned = ""
+            if len(cleaned) > 256:
+                logger.warning(
+                    "network_security.api_token 长度 > 256 字符，已截断为前 256（header 限制）"
+                )
+                cleaned = cleaned[:256]
+            api_token = cleaned
+        elif api_token_raw not in (None, ""):
+            logger.warning(
+                f"network_security.api_token 不是字符串（{type(api_token_raw).__name__}），已视作未配置"
+            )
+
         return {
             "bind_interface": bind,
             "allowed_networks": allowed_list,
             "blocked_ips": blocked_list,
             "access_control_enabled": access_enabled,
+            "api_token": api_token,
         }
 
     def _atomic_write_config(self, new_content: str) -> None:
@@ -286,7 +325,7 @@ class NetworkSecurityMixin:
         merged = dict(current)
 
         for k, v in updates.items():
-            if k in ("bind_interface", "allowed_networks", "blocked_ips"):
+            if k in ("bind_interface", "allowed_networks", "blocked_ips", "api_token"):
                 merged[k] = v
             elif k in ("access_control_enabled", "enable_access_control"):
                 merged["access_control_enabled"] = v

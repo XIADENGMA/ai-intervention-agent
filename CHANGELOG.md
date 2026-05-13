@@ -11,6 +11,101 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R189 / T4: Optional API token authentication (paired with non-loopback
+  hardening)** — closes the "reverse proxy / LAN PWA can't reach mutation
+  endpoints without disabling `access_control_enabled`" gap left by R188's
+  loopback-only `POST /api/system/log-level` and the pre-existing
+  loopback-only `open-config-file` POST / GET-info trio. Before R189 the
+  only options for non-loopback admins were (a) tunneling via SSH /
+  `kubectl port-forward`, or (b) loosening IP-level allowlists wholesale
+  — neither of which constitutes *real* authentication. Now you can keep
+  the IP allowlist tight **and** authenticate writes per-request with a
+  Bearer token.
+
+  - **`[network_security].api_token` config field**: empty string =
+    unconfigured (legacy loopback-only behavior, zero migration risk).
+    Set to a ≥ 16-char token to enable. Generate via
+    ``python -c "import secrets; print(secrets.token_urlsafe(32))"``.
+  - **`_is_authorized()` composite gate** (helper in
+    `web_ui_routes/system.py`): replaces the previous
+    `_is_loopback_request()` calls on the three mutation/info-leak
+    endpoints. Returns `True` iff the caller is loopback **OR** presents
+    a matching API token via `Authorization: Bearer <token>` (IETF
+    RFC 6750) or `X-API-Token: <token>` (project-custom, curl/PWA
+    friendly). Loopback always passes — token is an *additional* path,
+    not a replacement, so local admins can never lock themselves out.
+  - **Endpoints upgraded** to `_is_authorized()`:
+    - `POST /api/system/open-config-file` (was loopback-only since R166)
+    - `POST /api/system/log-level` (was loopback-only since R188)
+    - `GET /api/system/open-config-file/info` (was loopback-only since
+      R166; reveals editor availability)
+
+  **Security boundary**:
+
+  - **`secrets.compare_digest` constant-time comparison** — defeats
+    1-byte timing side-channel attacks that could otherwise leak token
+    prefix bytes (public PoC: 50-byte tokens recovered in ~600 requests
+    with naive `==` comparison on slow CPUs).
+  - **Authorization > X-API-Token priority** — when both headers present,
+    `Authorization: Bearer` wins. Matches IETF convention and avoids
+    confusion when proxies inject their own `X-API-Token`.
+  - **Config-side validation**:
+    - Length < 16 chars → silently dropped + warning (< 96 bits entropy
+      is below NIST SP 800-63B's minimum recommendation for shared
+      secrets);
+    - Length > 256 chars → truncated to 256 + warning (HTTP header
+      length practical limits);
+    - Whitespace / control chars stripped + warning (prevents the
+      common "I accidentally pasted a `\n`" footgun where
+      `compare_digest` then *always* returns False).
+  - **No log / response leakage** — token strings never appear in
+    `logger.warning()` messages, error response bodies, or stderr.
+    Wrong-token requests log only `client={ip!r}` + an opaque "denied"
+    reason.
+  - **R53-F boundary auto-covers `api_token`** — `ConfigManager.get_all()`
+    already filters out the entire `network_security` section, so
+    `api_token` *cannot* appear in `/api/system/health`, `--print-config`,
+    or the activity dashboard. Belt-and-suspenders: `token` is already
+    in the global `_SENSITIVE_KEY_SUBSTRINGS` redact list (`server.py`).
+  - **No `api_token_strict` mode** — intentionally not implementing a
+    "token-only, reject loopback" toggle. Defends against the
+    "fail-closed footgun" where a typo in the token locks the local
+    admin out of the very UI they need to fix the typo. If a future user
+    legitimately needs strict mode, it should be an explicit opt-in
+    field with a clear warning, not the default.
+
+  **Test coverage** (`tests/test_system_api_token_r189.py`, 28 cases):
+
+  - `_get_configured_api_token()` — 3 cases (unset/configured/raises);
+  - `_extract_request_api_token()` — 5 cases (Bearer, case-insensitive
+    Bearer, X-API-Token, neither, priority);
+  - `_is_api_token_authorized()` — 5 cases (unconfigured, short, missing,
+    mismatch, match);
+  - `_is_authorized()` composite — 5 cases (4 IP × token matrix +
+    loopback-with-wrong-token-still-passes invariant);
+  - Config validation — 5 cases (empty, short, > 256 truncate,
+    whitespace strip, non-string drop);
+  - R53-F boundary — 2 cases (`get_all()` filters `network_security` +
+    `token` in sensitive-key substring list);
+  - End-to-end HTTP — 3 cases (non-loopback + valid → 200, +
+    no-token → 403, + wrong-token → 403).
+
+  **Docs** — `docs/configuration{,.zh-CN}.md` updated with the new
+  `api_token` row in the `[network_security]` table, including the
+  16-char minimum, Bearer/X-API-Token header reminder, and the "loopback
+  always passes" semantic. `config.toml.default` includes an inline
+  bilingual block explaining when (and why) to enable the field.
+
+  Files touched: `src/ai_intervention_agent/web_ui_routes/system.py`
+  (+ `secrets` import, +5 token-related helpers, 3 endpoint gates
+  swapped), `src/ai_intervention_agent/config_modules/network_security.py`
+  (validation + update-merge whitelist), `src/ai_intervention_agent/shared_types.py`
+  (pydantic field), `config.toml.default` (default empty + doc block),
+  `docs/configuration{,.zh-CN}.md`, `tests/test_system_api_token_r189.py`,
+  `tests/test_network_security_config.py` (output-structure expects 5
+  fields), `tests/test_system_log_level_runtime_r188.py` (regex now
+  accepts both `_is_loopback_request()` and `_is_authorized()` gates).
+
 - **R188 / T3: `GET/POST /api/system/log-level` runtime log-level dial** —
   closes the "have to restart server to change log verbosity" gap left
   by R93's startup-only `AI_INTERVENTION_AGENT_LOG_LEVEL` env var. Ops
