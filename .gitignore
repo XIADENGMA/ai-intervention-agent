@@ -249,12 +249,15 @@ config.json.bak
 
 # 个人笔记 / 待办
 TODO.md
-# 临时规划 / 草稿（文件名以 .tmp.md 结尾即被忽略）
-*.tmp.md
+# 临时规划 / 草稿 / 一次性产物（文件名包含 .tmp. 中缀即被忽略，
+# 涵盖 *.tmp.md / *.tmp.py / *.tmp.json / *.tmp.yaml 等所有后缀）
+*.tmp.*
 # R168/CR#10 例外：docs/ 下的 *.tmp.md 是按 R168 命名规约归档的
 # single-cycle artefact（code review / security triage 等"做完就过期"
 # 但要留版本可追溯的产物），明确不忽略，让 docs/code-review-*.tmp.md
 # / docs/security-triage-*.tmp.md 可以 ``git add`` 进库。
+# 注意：例外仅覆盖 docs/ 下 *.tmp.md；其他后缀（*.tmp.py 等）即使在 docs/
+# 下也保持忽略，避免误把临时脚本/数据归档入库。
 !docs/**/*.tmp.md
 
 # 已移除的项目管理与覆盖率配置

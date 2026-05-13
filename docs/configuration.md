@@ -83,11 +83,11 @@ runtimes, the following env vars override the matching `config.toml` values at
 process startup. They're applied inside `get_web_ui_config()` and cached for
 the 10-second TTL like any other value.
 
-| Env var                                 | Overrides         | Type / range           | Notes                                                                                          |
-| --------------------------------------- | ----------------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
-| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                 | Typical values: `127.0.0.1` (loopback) or `0.0.0.0` (LAN / SSH-remote access)                  |
-| `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int, `[1, 65535]`      | Out-of-range / non-numeric values are warned and ignored (server keeps using `config.toml`)    |
-| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN`| Forces the Web UI language regardless of OS locale or saved preference                         |
+| Env var                                 | Overrides         | Type / range            | Notes                                                                                       |
+| --------------------------------------- | ----------------- | ----------------------- | ------------------------------------------------------------------------------------------- |
+| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                  | Typical values: `127.0.0.1` (loopback) or `0.0.0.0` (LAN / SSH-remote access)               |
+| `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int, `[1, 65535]`       | Out-of-range / non-numeric values are warned and ignored (server keeps using `config.toml`) |
+| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN` | Forces the Web UI language regardless of OS locale or saved preference                      |
 
 Non-matching values are **warned, not fatal**: env overrides are a convenience
 path, so a typo in your shell profile shouldn't keep the MCP server from
@@ -139,6 +139,26 @@ and report **post-merge** values — i.e. what the process actually
 bound to, not the raw `config.toml` contents. If the two views disagree
 the CLI is the right answer for "next-restart behaviour" and the health
 endpoint for "current process behaviour"; in steady state they match.
+
+For **Prometheus / Grafana / Datadog OpenMetrics** ingestion, the same
+data is also exposed in Prometheus 0.0.4 exposition format at
+`/api/system/metrics` (R186):
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: ai-intervention-agent
+    metrics_path: /api/system/metrics
+    static_configs:
+      - targets: ["localhost:8080"]
+    scrape_interval: 15s
+```
+
+All metrics are prefixed `aiia_*` (process / SSE / TaskQueue / errors /
+notification per-provider). Any subsystem probe failure drops the
+affected metric lines but keeps the endpoint 200, so a Prometheus target
+stays "up" with metric staleness rather than flipping to "red" on a
+transient internal error.
 
 #### Other env vars (already documented elsewhere)
 
@@ -231,17 +251,17 @@ Controls web/sound/system/Bark notifications.
 
 Controls the Web UI server and HTTP client behavior.
 
-| Key                    | Type    | Default     | Notes                                                                                                                                                                           |
-| ---------------------- | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `language`             | string  | `"auto"`    | UI language. `"auto"` auto-detects (browser `navigator.language` / VS Code `vscode.env.language`); set explicitly to `"en"` or `"zh-CN"` to force a locale                      |
-| `host`                 | string  | `127.0.0.1` | May be overridden by `network_security.bind_interface`                                                                                                                          |
-| `port`                 | number  | `8080`      | Range `[1, 65535]`                                                                                                                                                              |
-| `debug`                | boolean | `false`     | Debug mode                                                                                                                                                                      |
-| `http_request_timeout` | number  | `30`        | Seconds, range `[1, 600]`                                                                                                                                                       |
-| `http_max_retries`     | number  | `3`         | Range `[0, 20]`                                                                                                                                                                 |
-| `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0, 60]`                                                                                                                                                        |
+| Key                    | Type    | Default     | Notes                                                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `language`             | string  | `"auto"`    | UI language. `"auto"` auto-detects (browser `navigator.language` / VS Code `vscode.env.language`); set explicitly to `"en"` or `"zh-CN"` to force a locale                                                                                                                                                                  |
+| `host`                 | string  | `127.0.0.1` | May be overridden by `network_security.bind_interface`                                                                                                                                                                                                                                                                      |
+| `port`                 | number  | `8080`      | Range `[1, 65535]`                                                                                                                                                                                                                                                                                                          |
+| `debug`                | boolean | `false`     | Debug mode                                                                                                                                                                                                                                                                                                                  |
+| `http_request_timeout` | number  | `30`        | Seconds, range `[1, 600]`                                                                                                                                                                                                                                                                                                   |
+| `http_max_retries`     | number  | `3`         | Range `[0, 20]`                                                                                                                                                                                                                                                                                                             |
+| `http_retry_delay`     | number  | `1.0`       | Seconds, range `[0, 60]`                                                                                                                                                                                                                                                                                                    |
 | `log_level`            | string  | `"WARNING"` | Standalone-server enhanced_logging level. Case-insensitive; valid: `"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`. Override at runtime with env var `AI_INTERVENTION_AGENT_LOG_LEVEL` (env wins). VS Code extension users tune `ai-intervention-agent.logLevel` in VS Code settings instead (separate axis). |
-| `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to mDNS (`http://ai.local:{port}`) when enabled, then `http://{host}:{port}` |
+| `external_base_url`    | string  | `""`        | Public Web UI base URL for notification click links, e.g. `http://ai.local:8080`. Empty falls back to mDNS (`http://ai.local:{port}`) when enabled, then `http://{host}:{port}`                                                                                                                                             |
 
 ### `network_security`
 
@@ -289,12 +309,12 @@ Used for `ai.local` access and LAN service discovery (DNS-SD / `_http._tcp.local
 
 Controls timeouts and auto re-submit prompts.
 
-| Key                  | Type   | Default                                     | Notes                                                                                                    |
-| -------------------- | ------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `backend_max_wait`   | number | `600`                                       | Backend maximum wait (seconds), range `[10, 7200]`                                                       |
-| `frontend_countdown` | number | `240`                                       | Frontend auto-submit countdown (seconds), range `[10, 3600]`; `0` (or any non-positive integer) disables |
-| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`    | Returned on error/timeout to encourage re-calling the tool                                               |
-| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"`  | Appended to the user feedback text. Leading `\n` is a TOML-escaped newline; copy-paste verbatim into `config.toml` (the TOML parser unescapes it back to a real newline at load time). |
+| Key                  | Type   | Default                                    | Notes                                                                                                                                                                                  |
+| -------------------- | ------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend_max_wait`   | number | `600`                                      | Backend maximum wait (seconds), range `[10, 7200]`                                                                                                                                     |
+| `frontend_countdown` | number | `240`                                      | Frontend auto-submit countdown (seconds), range `[10, 3600]`; `0` (or any non-positive integer) disables                                                                               |
+| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`   | Returned on error/timeout to encourage re-calling the tool                                                                                                                             |
+| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"` | Appended to the user feedback text. Leading `\n` is a TOML-escaped newline; copy-paste verbatim into `config.toml` (the TOML parser unescapes it back to a real newline at load time). |
 
 **Timeout rule**:
 

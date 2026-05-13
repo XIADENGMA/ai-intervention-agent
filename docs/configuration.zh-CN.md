@@ -78,11 +78,11 @@ dev 模式内部优先级顺序：
 以下 env vars 会在进程启动时一次性覆盖对应的 `config.toml` 值（在
 `get_web_ui_config()` 内应用，并随 10 秒 TTL 缓存一同保留）。
 
-| 环境变量                                | 覆盖项            | 类型 / 范围              | 说明                                                                                                |
-| --------------------------------------- | ----------------- | ------------------------ | --------------------------------------------------------------------------------------------------- |
-| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                   | 典型值：`127.0.0.1`（loopback）/ `0.0.0.0`（局域网 / SSH 远程访问）                                 |
-| `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int，`[1, 65535]`        | 越界或非数字会记 WARNING 并忽略，server 继续用 `config.toml` 中的值                                 |
-| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN`  | 强制设置 Web UI 语言，忽略系统 locale 与已保存的偏好                                                |
+| 环境变量                                | 覆盖项            | 类型 / 范围             | 说明                                                                |
+| --------------------------------------- | ----------------- | ----------------------- | ------------------------------------------------------------------- |
+| `AI_INTERVENTION_AGENT_WEB_UI_HOST`     | `web_ui.host`     | string                  | 典型值：`127.0.0.1`（loopback）/ `0.0.0.0`（局域网 / SSH 远程访问） |
+| `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int，`[1, 65535]`       | 越界或非数字会记 WARNING 并忽略，server 继续用 `config.toml` 中的值 |
+| `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN` | 强制设置 Web UI 语言，忽略系统 locale 与已保存的偏好                |
 
 非法值**仅 WARNING，不抛异常**：env override 是「便利路径」，shell profile 里
 打错一个字符不应该让 MCP server 起不来。原 `config.toml` 值会保留，且 WARNING
@@ -128,6 +128,25 @@ curl -s http://127.0.0.1:8080/api/system/health | jq '{config_file_path, web_ui_
 的值——即进程实际绑定的，而不是 `config.toml` 里写的原值。如果两者
 不一致，那 CLI 回答的是"下一次重启的行为"，health 端点回答的是
 "当前进程的行为"；正常情况下两者一致。
+
+要把同一组数据接入 **Prometheus / Grafana / Datadog OpenMetrics** 监控栈，
+另有 `/api/system/metrics` 端点以 Prometheus 0.0.4 exposition format 输出
+（R186）：
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: ai-intervention-agent
+    metrics_path: /api/system/metrics
+    static_configs:
+      - targets: ["localhost:8080"]
+    scrape_interval: 15s
+```
+
+所有 metric 都以 `aiia_*` 前缀命名（process / SSE / TaskQueue / 错误 /
+notification per-provider）。任何子系统探测失败仅会让对应 metric 行缺失，
+端点本身永远 200——监控会通过 metric staleness 自动 alert，而不会因为
+某次内部 transient 错误把整个 target 标 red。
 
 #### 其他 env vars（已在别处文档化）
 
@@ -207,17 +226,17 @@ curl -s http://127.0.0.1:8080/api/system/health | jq '{config_file_path, web_ui_
 
 控制 Web UI 的监听与 HTTP 客户端行为。
 
-| 配置项                 | 类型    | 默认值      | 说明                                                                                                                                                  |
-| ---------------------- | ------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"`                             |
-| `host`                 | string  | `127.0.0.1` | 可能会被 `network_security.bind_interface` 覆盖                                                                                                       |
-| `port`                 | number  | `8080`      | 范围 `[1, 65535]`                                                                                                                                     |
-| `debug`                | boolean | `false`     | 调试模式                                                                                                                                              |
-| `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                  |
-| `http_max_retries`     | number  | `3`         | HTTP 最大重试次数，范围 `[0, 20]`                                                                                                                     |
-| `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`                                                                                                                   |
+| 配置项                 | 类型    | 默认值      | 说明                                                                                                                                                                                                                                                                                   |
+| ---------------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `language`             | string  | `"auto"`    | 界面语言；`"auto"` 自动检测（浏览器 `navigator.language` / VS Code `vscode.env.language`），可显式设为 `"en"` / `"zh-CN"`                                                                                                                                                              |
+| `host`                 | string  | `127.0.0.1` | 可能会被 `network_security.bind_interface` 覆盖                                                                                                                                                                                                                                        |
+| `port`                 | number  | `8080`      | 范围 `[1, 65535]`                                                                                                                                                                                                                                                                      |
+| `debug`                | boolean | `false`     | 调试模式                                                                                                                                                                                                                                                                               |
+| `http_request_timeout` | number  | `30`        | HTTP 请求超时（秒），范围 `[1, 600]`                                                                                                                                                                                                                                                   |
+| `http_max_retries`     | number  | `3`         | HTTP 最大重试次数，范围 `[0, 20]`                                                                                                                                                                                                                                                      |
+| `http_retry_delay`     | number  | `1.0`       | HTTP 重试间隔（秒），范围 `[0, 60]`                                                                                                                                                                                                                                                    |
 | `log_level`            | string  | `"WARNING"` | 独立服务端 enhanced_logging 模块日志级别，大小写不敏感，有效值：`"DEBUG"` / `"INFO"` / `"WARNING"` / `"ERROR"` / `"CRITICAL"`。可被环境变量 `AI_INTERVENTION_AGENT_LOG_LEVEL` 覆盖（env 优先）。VS Code 扩展使用方应改 VS Code 设置里的 `ai-intervention-agent.logLevel`（独立维度）。 |
-| `external_base_url`    | string  | `""`        | 通知点击跳转使用的外部 Web UI 基地址，例如 `http://ai.local:8080`；留空时优先回退到 mDNS（`http://ai.local:{port}`），再回退到 `http://{host}:{port}` |
+| `external_base_url`    | string  | `""`        | 通知点击跳转使用的外部 Web UI 基地址，例如 `http://ai.local:8080`；留空时优先回退到 mDNS（`http://ai.local:{port}`），再回退到 `http://{host}:{port}`                                                                                                                                  |
 
 ### `network_security`（网络安全）
 
@@ -265,12 +284,12 @@ curl -s http://127.0.0.1:8080/api/system/health | jq '{config_file_path, web_ui_
 
 控制等待时间与自动重调提示语。
 
-| 配置项               | 类型   | 默认值                                      | 说明                                                                   |
-| -------------------- | ------ | ------------------------------------------- | ---------------------------------------------------------------------- |
-| `backend_max_wait`   | number | `600`                                       | 后端最大等待（秒），范围 `[10, 7200]`                                  |
-| `frontend_countdown` | number | `240`                                       | 前端自动重调倒计时（秒），范围 `[10, 3600]`；`0`（或任意非正整数）禁用 |
-| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`    | 错误/超时返回的引导语                                                  |
-| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"`  | 追加到用户反馈末尾的提示语。开头的 `\n` 是 TOML 转义的换行符；原样复制到 `config.toml` 即可（加载时 TOML 解析器会把它还原成真实换行）。 |
+| 配置项               | 类型   | 默认值                                     | 说明                                                                                                                                    |
+| -------------------- | ------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `backend_max_wait`   | number | `600`                                      | 后端最大等待（秒），范围 `[10, 7200]`                                                                                                   |
+| `frontend_countdown` | number | `240`                                      | 前端自动重调倒计时（秒），范围 `[10, 3600]`；`0`（或任意非正整数）禁用                                                                  |
+| `resubmit_prompt`    | string | `"请立即调用 interactive_feedback 工具"`   | 错误/超时返回的引导语                                                                                                                   |
+| `prompt_suffix`      | string | `"\n请积极调用 interactive_feedback 工具"` | 追加到用户反馈末尾的提示语。开头的 `\n` 是 TOML 转义的换行符；原样复制到 `config.toml` 即可（加载时 TOML 解析器会把它还原成真实换行）。 |
 
 **超时规则**：
 

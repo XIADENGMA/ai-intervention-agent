@@ -465,6 +465,415 @@ def _safe_notification_summary() -> dict[str, object] | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# T1 (cycle 4): Prometheus exposition format helpers for /api/system/metrics
+#
+# 设计要点（与 /api/system/health JSON 端点互补）：
+# 1. **零新依赖**：手写 prom 0.0.4 exposition format，不引入 prometheus_client
+#    库（避免增加 4 MB+ 的额外 wheel 体积 + multiprocess registry 这种本项目
+#    用不上的复杂度）。
+# 2. **复用现有 _safe_* helper**：所有数据源都走已经存在的安全收集函数
+#    （_safe_uptime_seconds / _safe_build_info / _safe_notification_summary
+#    / _sse_bus.stats_snapshot），保证与 /api/system/health 同步 + 一旦
+#    R53-F 契约更新两个端点一起改。
+# 3. **命名规约**：``aiia_<subsystem>_<name>[_unit][_total]`` 前缀。监控
+#    系统看到 ``aiia_*`` 就知道是本项目暴露的指标，避免命名冲突；
+#    ``_total`` 后缀仅 counter 用，遵循 OpenMetrics / Prometheus 官方指南。
+# 4. **PII 边界**：与 /api/system/health 一致——只暴露数值 / enum / 路径，
+#    绝不透出 config 字段值（password / token / device_key）；
+#    last_error 原文本不出现。
+# 5. **失败优雅降级**：任何子项探测失败都跳过对应 metric 行，不让整个
+#    端点 5xx；最坏情况返回空 payload（监控仪表板会自动忽略 stale）。
+# ---------------------------------------------------------------------------
+
+
+# Prometheus exposition format spec：label value 内字符需 escape 反斜杠、
+# 双引号、换行。详见 https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md
+_PROM_LABEL_ESCAPES = (("\\", "\\\\"), ('"', '\\"'), ("\n", "\\n"))
+
+
+def _escape_prom_label_value(value: str) -> str:
+    """转义 Prometheus label value 中的反斜杠 / 双引号 / 换行。"""
+    out = value
+    for old, new in _PROM_LABEL_ESCAPES:
+        out = out.replace(old, new)
+    return out
+
+
+def _format_prom_labels(labels: dict[str, str] | None) -> str:
+    """把 ``{k: v, ...}`` 渲染成 ``{k="v",k2="v2"}``；空 dict → 空串。
+
+    label 键顺序按字典插入顺序（Python 3.7+ 有序）—— caller 想要稳定
+    顺序就传入有序 dict，本函数不做隐式排序，避免每次 scrape 输出
+    抖动让 diff 工具误判。
+    """
+    if not labels:
+        return ""
+    parts = [f'{k}="{_escape_prom_label_value(str(v))}"' for k, v in labels.items()]
+    return "{" + ",".join(parts) + "}"
+
+
+def _format_prom_metric(
+    name: str,
+    value: int | float,
+    *,
+    help_text: str,
+    metric_type: str,
+    labels: dict[str, str] | None = None,
+) -> str:
+    """渲染单条 Prometheus metric（含 HELP / TYPE / 值行三行）。
+
+    ``metric_type``：``counter`` / ``gauge`` / ``histogram`` / ``summary``。
+    本项目当前只用 counter + gauge；histogram/summary 需要 _bucket / _sum /
+    _count 配套，暂不实现以保持手写格式化器的简单性。
+
+    ``value``：``int`` 直接 str()；``float`` 用 repr() 避免 ``str(0.1+0.2)``
+    那种精度损失；``inf`` / ``nan`` 渲染为 Prometheus 接受的 ``+Inf`` /
+    ``NaN``。
+    """
+    label_str = _format_prom_labels(labels)
+    if isinstance(value, float):
+        if value != value:
+            value_str = "NaN"
+        elif value == float("inf"):
+            value_str = "+Inf"
+        elif value == float("-inf"):
+            value_str = "-Inf"
+        else:
+            value_str = repr(value)
+    else:
+        value_str = str(int(value))
+    return (
+        f"# HELP {name} {help_text}\n"
+        f"# TYPE {name} {metric_type}\n"
+        f"{name}{label_str} {value_str}\n"
+    )
+
+
+def _render_prometheus_metrics() -> str:
+    """收集所有可观测指标并按 Prometheus 0.0.4 exposition format 渲染。
+
+    返回 ``str``（``text/plain; version=0.0.4; charset=utf-8``）。任何子项
+    探测失败都被跳过——caller 应当把整体 payload 直接当响应体回，不要再
+    包装 JSON envelope。
+    """
+    lines: list[str] = []
+
+    # --- 进程级 ---
+    uptime = _safe_uptime_seconds()
+    if uptime is not None:
+        lines.append(
+            _format_prom_metric(
+                "aiia_uptime_seconds",
+                uptime,
+                help_text="Process uptime in seconds since the AI Intervention Agent server started.",
+                metric_type="gauge",
+            )
+        )
+
+    version = _safe_project_version()
+    build = _safe_build_info()
+    if version or build:
+        labels: dict[str, str] = {}
+        if version:
+            labels["version"] = version
+        if build:
+            labels["git_commit"] = build.get("git_commit", "unknown")
+            labels["git_branch"] = build.get("git_branch", "unknown")
+            labels["git_dirty"] = build.get("git_dirty", "unknown")
+        lines.append(
+            _format_prom_metric(
+                "aiia_build_info",
+                1,
+                help_text="Static labels carrying build metadata; value is always 1 (info-style gauge).",
+                metric_type="gauge",
+                labels=labels,
+            )
+        )
+
+    # --- SSE bus ---
+    try:
+        from ai_intervention_agent.web_ui_routes.task import _sse_bus
+
+        snap = _sse_bus.stats_snapshot()
+    except Exception:
+        snap = None
+
+    if isinstance(snap, dict):
+        sse_counter_fields = (
+            ("aiia_sse_emit_total", "emit_total", "Total SSE events emitted."),
+            (
+                "aiia_sse_gap_warnings_total",
+                "gap_warnings_emitted",
+                "Total gap_warning events sent because subscribe(after_id=...) was past the history window.",
+            ),
+            (
+                "aiia_sse_backpressure_discards_total",
+                "backpressure_discards",
+                "Total times emit() dropped a subscriber due to queue Full / backlog over threshold.",
+            ),
+            (
+                "aiia_sse_heartbeat_total",
+                "heartbeat_total",
+                'Total SSE heartbeat (": heartbeat\\n\\n") frames pushed.',
+            ),
+            (
+                "aiia_sse_oversize_drops_total",
+                "oversize_drops",
+                "Total events dropped because their serialized payload exceeded the per-event size cap.",
+            ),
+        )
+        for prom_name, key, help_text in sse_counter_fields:
+            raw = snap.get(key)
+            if isinstance(raw, int | float):
+                lines.append(
+                    _format_prom_metric(
+                        prom_name,
+                        int(raw),
+                        help_text=help_text,
+                        metric_type="counter",
+                    )
+                )
+
+        sse_gauge_fields = (
+            (
+                "aiia_sse_subscriber_count",
+                "subscriber_count",
+                "Current active SSE subscribers (instantaneous).",
+            ),
+            (
+                "aiia_sse_history_size",
+                "history_size",
+                "Current SSE history deque length (instantaneous, ≤ _HISTORY_MAXLEN).",
+            ),
+            (
+                "aiia_sse_latest_event_id",
+                "latest_event_id",
+                "Monotonically increasing ID of the last SSE event emitted.",
+            ),
+        )
+        for prom_name, key, help_text in sse_gauge_fields:
+            raw = snap.get(key)
+            if isinstance(raw, int | float):
+                lines.append(
+                    _format_prom_metric(
+                        prom_name,
+                        int(raw),
+                        help_text=help_text,
+                        metric_type="gauge",
+                    )
+                )
+
+        # R134 latency snapshot → prom summary-style 用 quantile 标签的 gauge
+        # （不是 prom 的 summary type，因为没有 _sum/_count 配套；用 gauge
+        # 加 quantile label 是 prom 社区广泛接受的"approximation"模式）。
+        latency = snap.get("latency_ms")
+        if isinstance(latency, dict):
+            for quantile_key, quantile_label in (
+                ("p50_ms", "0.5"),
+                ("p95_ms", "0.95"),
+            ):
+                raw = latency.get(quantile_key)
+                if isinstance(raw, int | float):
+                    lines.append(
+                        _format_prom_metric(
+                            "aiia_sse_emit_to_deliver_ms",
+                            float(raw),
+                            help_text="emit→deliver latency snapshot in ms (gauge with quantile label; R134 ring buffer ≤512 samples).",
+                            metric_type="gauge",
+                            labels={"quantile": quantile_label},
+                        )
+                    )
+
+    # --- TaskQueue ---
+    try:
+        from ai_intervention_agent.task_queue_singleton import get_task_queue
+
+        tq = get_task_queue()
+        count_dict = tq.get_task_count()
+        total = count_dict.get("total")
+        if isinstance(total, int | float):
+            lines.append(
+                _format_prom_metric(
+                    "aiia_task_queue_size",
+                    int(total),
+                    help_text="Current TaskQueue size (instantaneous, includes pending + active + completed-not-yet-evicted).",
+                    metric_type="gauge",
+                )
+            )
+        max_tasks = getattr(tq, "max_tasks", None)
+        if isinstance(max_tasks, int | float):
+            lines.append(
+                _format_prom_metric(
+                    "aiia_task_queue_max",
+                    int(max_tasks),
+                    help_text="Configured TaskQueue capacity (max_tasks).",
+                    metric_type="gauge",
+                )
+            )
+    except Exception:
+        # [R-186] /metrics 是 monitoring scrape 路径，TaskQueue 子系统任何
+        # 内部异常（singleton 还未初始化、attr 缺失、import 死循环）都不
+        # 应该让整端点 5xx——监控会通过 staleness 自动 alert。
+        pass
+
+    # --- 最近 5 分钟 ERROR 日志计数 ---
+    try:
+        from ai_intervention_agent.enhanced_logging import get_recent_logs
+
+        cutoff = time.time() - 300
+        recent = get_recent_logs()
+        error_count = sum(
+            1
+            for entry in recent
+            if entry.get("level_no", 0) >= 40 and entry.get("ts_unix", 0) >= cutoff
+        )
+        lines.append(
+            _format_prom_metric(
+                "aiia_recent_errors_5min",
+                error_count,
+                help_text="Number of ERROR/CRITICAL log entries in the last 5 minutes (rolling).",
+                metric_type="gauge",
+            )
+        )
+    except Exception:
+        # [R-186] enhanced_logging.get_recent_logs() 任何内部异常（环形
+        # 缓冲读取冲突、字段缺失、Timestamp 解析失败）都不应让 /metrics
+        # 整端点 5xx；丢失一行 ``aiia_recent_errors_5min`` gauge 比让
+        # Prometheus scrape 失败把整个 ai-intervention-agent target 标
+        # red 更可接受。
+        pass
+
+    # --- Notification 子系统（含 per-provider 标签） ---
+    # R186 fix：与其他子系统保持一致，整体包 try/except，
+    # 防止 notification_manager 内部任何异常（包括 _safe_notification_summary
+    # 自身、provider 字典 iteration、未预期的字段类型）让 /metrics 5xx。
+    try:
+        notif = _safe_notification_summary()
+    except Exception:
+        notif = None
+    if isinstance(notif, dict):
+        lines.append(
+            _format_prom_metric(
+                "aiia_notification_enabled",
+                1 if notif.get("enabled") else 0,
+                help_text="Whether the notification subsystem is enabled (1) or disabled (0).",
+                metric_type="gauge",
+            )
+        )
+        queue_size_raw = notif.get("queue_size")
+        if isinstance(queue_size_raw, int | float):
+            lines.append(
+                _format_prom_metric(
+                    "aiia_notification_queue_size",
+                    int(queue_size_raw),
+                    help_text="Current backlog size of the notification delivery queue.",
+                    metric_type="gauge",
+                )
+            )
+        success_rate_raw = notif.get("delivery_success_rate")
+        if isinstance(success_rate_raw, int | float):
+            lines.append(
+                _format_prom_metric(
+                    "aiia_notification_delivery_success_rate",
+                    float(success_rate_raw),
+                    help_text="Aggregated notification delivery success rate (0.0–1.0).",
+                    metric_type="gauge",
+                )
+            )
+        finalized = notif.get("events_finalized")
+        if isinstance(finalized, int | float):
+            lines.append(
+                _format_prom_metric(
+                    "aiia_notification_events_finalized_total",
+                    int(finalized),
+                    help_text="Total notification events that have reached a terminal state (success or final failure).",
+                    metric_type="counter",
+                )
+            )
+        in_flight = notif.get("events_in_flight")
+        if isinstance(in_flight, int | float):
+            lines.append(
+                _format_prom_metric(
+                    "aiia_notification_events_in_flight",
+                    int(in_flight),
+                    help_text="Notification events currently in flight (between submit and terminal state).",
+                    metric_type="gauge",
+                )
+            )
+
+        # per_provider metrics（每个 provider 一行，用 provider 标签区分）
+        per_provider = notif.get("per_provider")
+        if isinstance(per_provider, dict):
+            for provider_name, stats in per_provider.items():
+                if not isinstance(stats, dict):
+                    continue
+                labels = {"provider": provider_name}
+                for metric_suffix, key, help_text, metric_type in (
+                    (
+                        "attempts_total",
+                        "attempts",
+                        "Notification attempts per provider.",
+                        "counter",
+                    ),
+                    (
+                        "success_total",
+                        "success",
+                        "Notification successful deliveries per provider.",
+                        "counter",
+                    ),
+                    (
+                        "failure_total",
+                        "failure",
+                        "Notification failed deliveries per provider.",
+                        "counter",
+                    ),
+                    (
+                        "success_rate",
+                        "success_rate",
+                        "Per-provider notification delivery success rate (0.0–1.0).",
+                        "gauge",
+                    ),
+                    (
+                        "avg_latency_ms",
+                        "avg_latency_ms",
+                        "Per-provider average notification delivery latency in ms.",
+                        "gauge",
+                    ),
+                    (
+                        "success_streak",
+                        "success_streak",
+                        "Consecutive successful deliveries per provider (R145).",
+                        "gauge",
+                    ),
+                    (
+                        "failure_streak",
+                        "failure_streak",
+                        "Consecutive failed deliveries per provider (R145).",
+                        "gauge",
+                    ),
+                ):
+                    raw = stats.get(key)
+                    if isinstance(raw, int | float):
+                        value: int | float = (
+                            float(raw)
+                            if metric_type == "gauge"
+                            and metric_suffix in ("success_rate", "avg_latency_ms")
+                            else int(raw)
+                        )
+                        lines.append(
+                            _format_prom_metric(
+                                f"aiia_notification_{metric_suffix}",
+                                value,
+                                help_text=help_text,
+                                metric_type=metric_type,
+                                labels=labels,
+                            )
+                        )
+
+    return "".join(lines)
+
+
 def _get_client_ip() -> str:
     """读取 Flask 请求的真实客户端 IP（不信任 X-Forwarded-* 头）。"""
     return request.remote_addr or ""
@@ -1232,6 +1641,66 @@ class SystemRoutesMixin:
             }
             http_code = 503 if status == "unhealthy" else 200
             return jsonify(payload), http_code
+
+        @self.app.route("/api/system/metrics", methods=["GET"])
+        @self.limiter.limit("120 per minute")
+        def system_metrics() -> ResponseReturnValue:
+            """T1 (cycle 4)：Prometheus exposition format `/metrics` 端点。
+
+            ---
+            tags:
+              - System
+            produces:
+              - text/plain
+            description: |
+                Prometheus 0.0.4 exposition format 输出，与 ``/api/system/health``
+                JSON 端点同一份数据，**面向 monitoring scrape**（Prometheus / Grafana
+                Agent / VictoriaMetrics / Datadog OpenMetrics ingestor 等都直接吃这种
+                格式）。
+
+                **使用**：在 Prometheus ``scrape_configs:`` 加一条：
+
+                ```yaml
+                - job_name: ai-intervention-agent
+                  metrics_path: /api/system/metrics
+                  static_configs:
+                    - targets: ['localhost:8765']
+                  scrape_interval: 15s
+                ```
+
+                **暴露的 metric 类别**（HELP 字符串带具体含义）：
+
+                * 进程：``aiia_uptime_seconds``，``aiia_build_info{version,git_*}``
+                * SSE：``aiia_sse_emit_total`` / ``aiia_sse_subscriber_count`` /
+                  ``aiia_sse_emit_to_deliver_ms{quantile=0.5|0.95}`` 等 8 个
+                * TaskQueue：``aiia_task_queue_size`` / ``aiia_task_queue_max``
+                * 错误日志：``aiia_recent_errors_5min``
+                * Notification：``aiia_notification_enabled`` /
+                  ``aiia_notification_attempts_total{provider="bark|web|sound|system"}``
+                  及 success/failure/streak 配套
+
+                **PII 边界**：与 ``/api/system/health`` 一致——所有 metric 值
+                都是数值或 enum，绝不暴露 config 字段值 / token / device_key /
+                last_error 原始字符串。
+
+                **失败优雅降级**：任何子项探测失败，对应 metric 直接被跳过；
+                整端点永远 200，最坏情况返回空 body 让监控发现 "metric 消失"
+                而不是 5xx 拖累 scrape budget。
+
+                rate-limit 120/min（与 health 端点同档），覆盖 Prometheus 默认
+                15 s 抓取 + 多副本余量。
+            responses:
+              200:
+                description: Prometheus exposition format（``text/plain; version=0.0.4``）
+            """
+            from flask import Response
+
+            payload = _render_prometheus_metrics()
+            return Response(
+                payload,
+                status=200,
+                mimetype="text/plain; version=0.0.4; charset=utf-8",
+            )
 
         @self.app.route("/api/system/recent-logs", methods=["GET"])
         @self.limiter.limit("30 per minute")

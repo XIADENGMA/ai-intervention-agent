@@ -9,7 +9,81 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+
+- **R186 / T1: `GET /api/system/metrics` Prometheus exposition endpoint** —
+  closes the "JSON dashboard ↔ Prometheus scrape" gap left after R132
+  (the `/api/system/health` JSON endpoint). Same data sources
+  (`_safe_uptime_seconds` / `_safe_build_info` / `_sse_bus.stats_snapshot` /
+  notification summary / TaskQueue / recent ERROR log count), but rendered
+  in **Prometheus 0.0.4 exposition format** so monitoring stacks
+  (Prometheus / Grafana Agent / VictoriaMetrics / Datadog OpenMetrics) can
+  scrape directly without a sidecar exporter. Wire it up with a single
+  `scrape_configs` entry: `metrics_path: /api/system/metrics`.
+
+  **Metric inventory** (all `aiia_*` prefixed for namespace isolation,
+  counters carry `_total` suffix per OpenMetrics convention):
+  - Process: `aiia_uptime_seconds`, `aiia_build_info{version,git_*}`
+  - SSE bus: `aiia_sse_emit_total`, `aiia_sse_gap_warnings_total`,
+    `aiia_sse_backpressure_discards_total`, `aiia_sse_heartbeat_total`,
+    `aiia_sse_oversize_drops_total`, `aiia_sse_subscriber_count`,
+    `aiia_sse_history_size`, `aiia_sse_latest_event_id`,
+    `aiia_sse_emit_to_deliver_ms{quantile=0.5|0.95}` (R134 latency snapshot)
+  - TaskQueue: `aiia_task_queue_size`, `aiia_task_queue_max`
+  - Errors: `aiia_recent_errors_5min` (rolling 5-min ERROR/CRITICAL count)
+  - Notification: `aiia_notification_enabled`, `aiia_notification_queue_size`,
+    `aiia_notification_delivery_success_rate`, `aiia_notification_events_*`,
+    plus per-provider `aiia_notification_{attempts,success,failure}_total{provider}`
+    + `success_rate` / `avg_latency_ms` / `success_streak` / `failure_streak`
+    (R142/R143/R145 per-provider stats projected to Prometheus labels)
+
+  **Design constraints**:
+  - **Zero new deps** — hand-written 0.0.4 exposition format (avoids the
+    4 MB+ `prometheus_client` wheel + multiprocess registry complexity
+    we don't need)
+  - **PII boundary** — same as `/api/system/health`: only numeric / enum /
+    path values; never `bark_device_key` / `api_key` / `token` / `password` /
+    `last_error` raw text. Enforced by `tests/test_system_metrics_prometheus_r186.py::test_payload_does_not_leak_pii_keys`
+  - **Graceful degradation** — any subsystem probe failure (SSE / Notification /
+    TaskQueue / recent-logs) drops the affected metric lines but keeps the
+    endpoint 200, so a Prometheus target stays "up" with metric staleness
+    rather than flipping to "red" on a transient internal error
+  - **Rate limit 120/min** — matches `/api/system/health`, covers Prometheus
+    default 15 s scrape interval + multi-replica headroom
+
+  **Test coverage**: `tests/test_system_metrics_prometheus_r186.py` (29 cases) —
+  Prometheus format helpers (escape backslash/quote/newline, label dict
+  rendering, HELP/TYPE/value three-line shape, int / float / `+Inf` / `-Inf` /
+  `NaN` special values), full-payload behaviour (non-empty by default,
+  `aiia_` namespace consistency, HELP↔TYPE pairing, subsystem-failure
+  resilience, PII keyword absence), HTTP endpoint contract (200,
+  `text/plain; version=0.0.4`, no JSON envelope), and source-level
+  regressions (R186/T1 docstring marker, no `prometheus_client` import,
+  `120 per minute` rate-limit decorator).
+
+  Also surfaces and fixes a latent bug in the original
+  `_render_prometheus_metrics`: the notification subsystem block lacked
+  the `try/except` wrapper that every other subsystem block had, so
+  `notification_manager` raising would have 5xx'd the whole `/metrics`
+  endpoint (regression-guarded by
+  `test_render_does_not_explode_when_subsystem_fails`).
+
+  Two new `except Exception: pass` sites (TaskQueue + recent-logs blocks)
+  are added to the R120 silent-failure baseline (`tests/data/silent_failure_baseline_r120.json`,
+  29 → 31 sites) with explicit `[R-186]` markers per R120 doctrine.
+
+### Fixed
+
+- **R186 follow-up: `*.tmp.*` gitignore hardening** — broaden the
+  `*.tmp.md`-only ignore rule to `*.tmp.*` so any temp suffix
+  (`.tmp.py`, `.tmp.json`, `.tmp.yaml`, etc.) is automatically excluded
+  from accidental `git add`. The existing R168/CR#10 `!docs/**/*.tmp.md`
+  exception is preserved so `docs/code-review-*.tmp.md` /
+  `docs/security-triage-*.tmp.md` single-cycle archives still flow
+  through code review. Note: the exception is intentionally scoped to
+  `.tmp.md` only — `*.tmp.py` and other suffixes under `docs/` stay
+  ignored, blocking accidental commits of temporary scripts or data
+  files even when authored there.
 
 ## [1.7.0] — 2026-05-13
 
