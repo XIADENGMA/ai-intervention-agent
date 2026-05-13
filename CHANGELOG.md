@@ -9,6 +9,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Tests
+
+- **R197 / Cycle 7: latency stats invariant guard
+  (`tests/test_latency_invariant_r197.py`)** — CR#19 §4.2 后续。
+  `NotificationManager._send_single_notification` 在同一 `_stats_lock`
+  临界区内对同一个 `latency_ms` sample 同时做两件事：
+  - R142 path：`stats["latency_ms_total"] += int(latency_ms)` /
+    `stats["latency_ms_count"] += 1`（毫秒整数累加）；
+  - R191 path：`self._record_provider_latency_bucket(provider,
+    latency_ms / 1000.0)`（秒级 float 累加进 histogram）。
+
+  两条 path 都喂同一 sample，应保持 running totals 一致：
+  `latency_ms_count == histogram[provider]["count"]` 且
+  `latency_ms_total / 1000.0 ≈ histogram[provider]["sum_seconds"]`。如果
+  未来 refactor 把两条 path 错开（async fan-out / 不同 lock 区 / 条件
+  分支只跑一条），dashboard 上 R142 average 跟 R191 histogram-derived
+  average 会出现 divergence——这种问题**不**会被现有任一单元测试
+  发现，因为 R191 / R142 各自的累加逻辑测试都在自己的 scope 内。
+
+  R197 补这条 caller-side invariant：10 cases 跨 4 个 invariant class
+  （数学一致性 3 + multi-provider 隔离 2 + 源码 AST guard 3 + 边界
+  0-sample / 高频累加 2）。同时把 `notification_manager.py` 第 407–410
+  行 R191 时代的 stale 注释（说「桶设计跟 mcp tool 复用同一组」）
+  更新为 R196 后的实际状态。
+
+  **Test**: 全套 R197 + R191 + 既有 notification_manager 测试一起跑
+  → 194/194 PASSED；ruff check + linter 无报错。
+
 ### Changed
 
 - **`*.tmp.*` 全局忽略生效；CR / triage 归档迁移到稳定路径**（TODO.md

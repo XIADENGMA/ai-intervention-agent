@@ -404,10 +404,12 @@ class NotificationManager:
             # 与 ``_stats[providers][...]["latency_ms_total"]`` 互补：那边只
             # 能算 average，histogram 才能算 P95/P99 percentile。
             #
-            # 桶设计：和 mcp_tool_call_metrics ``_DEFAULT_LATENCY_BUCKETS``
-            # **复用同一组**（0.1 / 0.5 / 1 / 5 / 30 / 120 / 300 / 600 秒）——
-            # 通知发送和工具调用都是「人机交互延迟」语义，没必要分两套桶
-            # 让监控仪表板模板分裂。
+            # 桶设计：见 ``_DEFAULT_LATENCY_BUCKETS_SECONDS``——R196 / Cycle 6
+            # 起改为 notification-specific 桶（50 ms – 10 s 密集采样），不再
+            # 与 ``mcp_tool_call_metrics`` 共用。两者的实测延迟分布差异极大
+            # （tool 调用：10 – 300 s 人工思考主导；notification：50 ms –
+            # 500 ms 网络往返主导），同桶会让 dashboard 切 axis 增加运维
+            # 认知负担。
             #
             # 状态形态：{provider_name: {count, sum_seconds, buckets: {le: cumulative_count}}}
             # 锁：复用 _stats_lock 避免双锁死锁（histogram 写入是 latency
