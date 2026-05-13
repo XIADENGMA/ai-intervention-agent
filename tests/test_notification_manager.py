@@ -1255,6 +1255,13 @@ def _make_manager():
         "last_event_at": None,
         "providers": {},
     }
+    # R191 / Cycle 5：与生产 ``__init__`` 同步初始化 provider latency
+    # histogram 字段。如果遗漏，``_send_single_notification`` 内部的
+    # ``self._record_provider_latency_bucket()`` 会 AttributeError 被外
+    # 层 try/except 吞掉，导致 provider stats 字典从未更新——
+    # ``test_provider_success_records_stats`` / ``test_bark_error_in_metadata``
+    # 即此故障的回归触发器。
+    mgr._provider_latency_histograms = {}
     mgr._finalized_event_ids = {}
     mgr._finalized_max_size = 500
     mgr._callbacks_lock = threading.Lock()

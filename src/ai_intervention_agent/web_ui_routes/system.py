@@ -406,6 +406,36 @@ def _safe_per_provider_snapshot(
     return out
 
 
+def _safe_notification_latency_histograms() -> dict[str, dict[str, Any]]:
+    """R191 / Cycle 5：从全局 ``notification_manager`` 提取 provider latency
+    histogram 状态。
+
+    与 ``_safe_notification_summary`` 同款防御策略：任何错误（import 失败、
+    单例还没初始化、histogram 字段不存在）一律 swallow + 返回空 dict。让
+    /metrics 端点宁可少一组 metrics 也不要 5xx。
+
+    返回形态与 ``get_provider_latency_histograms_snapshot()`` 完全对齐：
+
+    .. code-block:: python
+
+        {
+            "bark": {
+                "count": 42,
+                "sum_seconds": 187.4,
+                "buckets": {0.1: 5, 0.5: 18, ..., float("inf"): 42},
+            },
+            ...
+        }
+    """
+    try:
+        from ai_intervention_agent.notification_manager import notification_manager
+
+        snap = notification_manager.get_provider_latency_histograms_snapshot()
+        return snap if isinstance(snap, dict) else {}
+    except Exception:
+        return {}
+
+
 def _safe_notification_summary() -> dict[str, object] | None:
     """从全局 ``notification_manager`` 提取 health 端点需要的安全字段。
 
@@ -1008,6 +1038,53 @@ def _render_prometheus_metrics() -> str:
                             samples=samples,
                         )
                     )
+
+    # --- R191 / Cycle 5: Notification send duration histogram (per-provider) ---
+    # ``aiia_notification_send_duration_seconds{provider}`` 让运维仪表板能
+    # 画「provider P95 send 耗时」「按 provider 拆分的耗时分布」。R142
+    # 的 ``last_latency_ms`` + ``latency_ms_total`` / ``count`` 只能算最近
+    # 一次 + 平均；histogram 才能算 percentile。
+    try:
+        provider_latencies = _safe_notification_latency_histograms()
+    except Exception:
+        # [R-191] 与上面的 stats 路径同档容错——provider histogram 故障
+        # 不应让 /metrics 5xx。
+        provider_latencies = {}
+    if isinstance(provider_latencies, dict) and provider_latencies:
+        notif_hist_observations: list[
+            tuple[dict[str, str] | None, dict[float, int], int, float]
+        ] = []
+        for provider_name, state in provider_latencies.items():
+            if not isinstance(provider_name, str) or not isinstance(state, dict):
+                continue
+            buckets = state.get("buckets")
+            count = state.get("count", 0)
+            sum_seconds = state.get("sum_seconds", 0.0)
+            if not isinstance(buckets, dict) or not isinstance(count, int):
+                continue
+            if not isinstance(sum_seconds, int | float):
+                continue
+            notif_hist_observations.append(
+                (
+                    {"provider": provider_name},
+                    buckets,
+                    count,
+                    float(sum_seconds),
+                )
+            )
+        if notif_hist_observations:
+            lines.append(
+                _format_prom_histogram_family(
+                    "aiia_notification_send_duration_seconds",
+                    help_text=(
+                        "Notification send duration distribution per provider "
+                        "(R191 / Cycle 5). Buckets aligned with MCP tool "
+                        "latency: 0.1s → 600s, covers human-in-the-loop "
+                        "feedback semantics."
+                    ),
+                    observations=notif_hist_observations,
+                )
+            )
 
     # --- R187 / T2: MCP tool call counter ---
     # ``aiia_mcp_tool_calls_total{tool,status}`` 给监控仪表板做

@@ -400,6 +400,19 @@ class NotificationManager:
                 "last_event_at": None,
                 "providers": {},  # {type: {attempts/success/failure/last_error/...}}
             }
+            # R191 / Cycle 5：provider 级 latency histogram（per-provider 一份）。
+            # 与 ``_stats[providers][...]["latency_ms_total"]`` 互补：那边只
+            # 能算 average，histogram 才能算 P95/P99 percentile。
+            #
+            # 桶设计：和 mcp_tool_call_metrics ``_DEFAULT_LATENCY_BUCKETS``
+            # **复用同一组**（0.1 / 0.5 / 1 / 5 / 30 / 120 / 300 / 600 秒）——
+            # 通知发送和工具调用都是「人机交互延迟」语义，没必要分两套桶
+            # 让监控仪表板模板分裂。
+            #
+            # 状态形态：{provider_name: {count, sum_seconds, buckets: {le: cumulative_count}}}
+            # 锁：复用 _stats_lock 避免双锁死锁（histogram 写入是 latency
+            # 记录路径的下游，本来就持 _stats_lock）。
+            self._provider_latency_histograms: dict[str, dict[str, Any]] = {}
             # 记录已“最终完成”的事件，避免重试场景重复计数
             self._finalized_event_ids: dict[str, None] = {}
             self._finalized_max_size: int = 500
@@ -478,6 +491,78 @@ class NotificationManager:
                 close()
         except Exception as e:
             logger.debug(f"关闭通知提供者资源失败（忽略）: {e}")
+
+    # -----------------------------------------------------------------
+    # R191 / Cycle 5 · Provider latency histogram instrumentation
+    # -----------------------------------------------------------------
+
+    _DEFAULT_LATENCY_BUCKETS_SECONDS: tuple[float, ...] = (
+        0.1,
+        0.5,
+        1.0,
+        5.0,
+        30.0,
+        120.0,
+        300.0,
+        600.0,
+    )
+    """provider-side 通知发送的 latency 桶（秒）。与 ``mcp_tool_call_metrics``
+    的桶定义对齐——同样是「人机交互延迟」语义。``+Inf`` 由 snapshot helper
+    动态追加，不在元组里——避免 caller 误以为 ``+Inf`` 是真实采样上限。"""
+
+    def _record_provider_latency_bucket(
+        self, provider_name: str, duration_seconds: float
+    ) -> None:
+        """把一次 provider 发送耗时写入 latency histogram。
+
+        约定：**必须**在 ``self._stats_lock`` 已持有的临界区内调用——本
+        方法不重新加锁，避免双锁死锁。调用点（``_send_single_notification``
+        的 latency 记录块）天然持锁，零额外开销。
+
+        边界处理：
+
+        - ``duration_seconds`` < 0（时钟跳变，仅理论上）→ 静默丢弃；
+        - 不存在的 provider → 自动初始化空状态；
+        - 桶比较用 ``<=``（Prom histogram 标准约定 ``le="..."``）。
+        """
+        if duration_seconds < 0:
+            return
+        state = self._provider_latency_histograms.get(provider_name)
+        if state is None:
+            state = {
+                "count": 0,
+                "sum_seconds": 0.0,
+                "buckets": dict.fromkeys(self._DEFAULT_LATENCY_BUCKETS_SECONDS, 0),
+            }
+            self._provider_latency_histograms[provider_name] = state
+        state["count"] += 1
+        state["sum_seconds"] += duration_seconds
+        for upper in self._DEFAULT_LATENCY_BUCKETS_SECONDS:
+            if duration_seconds <= upper:
+                state["buckets"][upper] += 1
+
+    def get_provider_latency_histograms_snapshot(
+        self,
+    ) -> dict[str, dict[str, Any]]:
+        """返回 provider latency histogram 快照（深 copy）。
+
+        形态与 ``mcp_tool_call_metrics.get_mcp_tool_call_latency_snapshot``
+        对齐——``buckets`` 字典自动附加 ``float("inf")`` 键，值 == count。
+        若某 provider 还从未发送过，**不**出现在返回字典里。
+
+        返回值是新建 dict，调用者修改不会污染内部状态。
+        """
+        with self._stats_lock:
+            result: dict[str, dict[str, Any]] = {}
+            for provider_name, state in self._provider_latency_histograms.items():
+                buckets_copy = dict(state["buckets"])
+                buckets_copy[float("inf")] = state["count"]
+                result[provider_name] = {
+                    "count": state["count"],
+                    "sum_seconds": state["sum_seconds"],
+                    "buckets": buckets_copy,
+                }
+        return result
 
     def add_callback(self, event_name: str, callback: Callable) -> None:
         """添加事件回调（如 notification_sent, notification_fallback）"""
@@ -1119,6 +1204,14 @@ class NotificationManager:
                     ) + int(latency_ms)
                     stats["latency_ms_count"] = (
                         int(stats.get("latency_ms_count", 0) or 0) + 1
+                    )
+                    # R191：同步写入 provider latency histogram。已经
+                    # 在 ``_stats_lock`` 内，``_record_provider_latency_bucket``
+                    # 不重复加锁。``latency_ms`` 是 int 毫秒，换算成秒
+                    # 才是 Prom histogram ``aiia_notification_send_duration
+                    # _seconds`` 的单位。
+                    self._record_provider_latency_bucket(
+                        notification_type.value, latency_ms / 1000.0
                     )
                     if ok:
                         stats["success"] += 1

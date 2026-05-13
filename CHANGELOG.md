@@ -11,6 +11,100 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R191 / Cycle 5: `aiia_notification_send_duration_seconds`
+  per-provider Histogram** — extends the foundational histogram
+  exposition shipped in R190 to the notification subsystem. R142
+  added `last_latency_ms` / `latency_ms_total` / `latency_ms_count`
+  to per-provider stats which let operators compute **average**
+  latency, but not P95 / P99 — the standard SLO percentile metrics.
+  R191 closes that gap by recording cumulative bucket counts in
+  parallel with the existing `latency_ms_*` fields.
+
+  - **`NotificationManager._record_provider_latency_bucket(name,
+    duration_seconds)`** — new instance method, called from the
+    existing `_send_single_notification` latency block (inside the
+    already-held `_stats_lock`, so no extra lock acquisition).
+    Bucket definition reuses the same `(0.1, 0.5, 1.0, 5.0, 30.0,
+    120.0, 300.0, 600.0)` seconds tuple as
+    `mcp_tool_call_metrics._DEFAULT_LATENCY_BUCKETS` — both are
+    human-in-the-loop latency, no point in two parallel dashboard
+    templates for the same semantic.
+  - **`NotificationManager.get_provider_latency_histograms_snapshot()`**
+    — new instance method, returns a deep-copy snapshot in the same
+    shape as `get_mcp_tool_call_latency_snapshot()` (`+Inf` bucket
+    auto-appended, `buckets[+Inf] == count` invariant). Empty dict
+    when no provider has ever sent.
+  - **`_safe_notification_latency_histograms()` defensive wrapper**
+    in `web_ui_routes/system.py` — mirrors the existing
+    `_safe_notification_summary` / `_safe_uptime_seconds`
+    "swallow-everything + return safe default" pattern. Notification
+    histogram failures *cannot* trigger a 5xx on `/metrics`; the
+    metric family is simply omitted while everything else keeps
+    rendering.
+  - **`aiia_notification_send_duration_seconds{provider}` metric**
+    in `/metrics` output — uses the R190
+    `_format_prom_histogram_family` helper, so HELP/TYPE de-dup
+    invariants (R187 latent-bug fix) are inherited for free.
+
+  **Operator impact**: with this change the same RED dashboard
+  template that works for MCP tool latency now works for notification
+  send latency. Example PromQL:
+
+  ```promql
+  # P95 send latency by provider over last 15min
+  histogram_quantile(0.95, sum by (le, provider) (rate(
+    aiia_notification_send_duration_seconds_bucket[15m]
+  )))
+
+  # Average send latency (still derivable from R142 fields, but now
+  # we also have percentiles for SLO alerting)
+  rate(aiia_notification_send_duration_seconds_sum[5m])
+    / rate(aiia_notification_send_duration_seconds_count[5m])
+  ```
+
+  **Companion fix**: `tests/test_notification_manager.py::_make_manager`
+  needed `_provider_latency_histograms = {}` in its bypassed-`__init__`
+  stub-builder; without it, the new
+  `_record_provider_latency_bucket()` call inside
+  `_send_single_notification` raised `AttributeError` (silently
+  swallowed by the surrounding `try/except`), which left provider
+  stats dicts never updated. Surfaced by
+  `test_provider_success_records_stats` /
+  `test_bark_error_in_metadata` — both passing post-fix. This is
+  exactly the kind of latent-bug surfacing CR#18 §3.2 highlighted
+  about R186 / R187: same-commit fixes preferred over deferred
+  follow-ups.
+
+  **Test coverage** (`tests/test_notification_latency_histogram_r191.py`,
+  16 cases across 4 invariant classes):
+
+  - `_record_provider_latency_bucket` accumulator — 5 cases (single
+    recording, cumulative buckets, multi-recording, multi-provider
+    independence, negative duration dropped);
+  - `get_provider_latency_histograms_snapshot` shape — 4 cases
+    (empty, `+Inf` key present, `[+Inf] == count`, deep-copy
+    independence);
+  - `_safe_notification_latency_histograms` defensive — 3 cases
+    (manager-works, method-raises → empty, non-dict-returned →
+    empty);
+  - `_render_prometheus_metrics` integration — 4 cases (no output
+    when empty, output after recording, HELP/TYPE unique for multi-
+    provider, graceful degradation on safe-wrapper failure).
+
+  Files touched: `src/ai_intervention_agent/notification_manager.py`
+  (+`_provider_latency_histograms`, +`_DEFAULT_LATENCY_BUCKETS_SECONDS`,
+  +`_record_provider_latency_bucket`,
+  +`get_provider_latency_histograms_snapshot`, wired into existing
+  latency block of `_send_single_notification`),
+  `src/ai_intervention_agent/web_ui_routes/system.py`
+  (+`_safe_notification_latency_histograms`, integration in
+  `_render_prometheus_metrics`),
+  `tests/test_notification_latency_histogram_r191.py` (new),
+  `tests/test_notification_manager.py` (stub-builder fix).
+
+  Final suite: 5276 passed, 2 skipped, 620 subtests passed (no
+  regressions).
+
 - **R190 / Cycle 5 foundational: Prometheus Histogram exposition +
   `aiia_mcp_tool_call_duration_seconds`** — closes the foundational
   gap flagged in CR#18 §4.6 ("`_format_prom_metric_family` doesn't
