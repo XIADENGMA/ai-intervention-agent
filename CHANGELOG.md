@@ -9,6 +9,47 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Tests
+
+- **R193 / Cycle 5: Hot-reload `network_security` cache invalidation
+  contract locked in** — CR#18 §4.5 + §4.4(a) hypothesized a 30-second
+  "token rotation overlap window" where `ConfigManager._network_security
+  _cache`'s 30s TTL would let the old `api_token` keep working for up to
+  30 seconds after a `config.toml` edit. Investigation showed the
+  hypothesis was **wrong**:
+
+  - `ConfigManager.reload()` already calls `invalidate_all_caches()`,
+    which explicitly clears `_network_security_cache` (line 1423 of
+    `config_manager.py`);
+  - `FileWatcherMixin._file_watcher_loop()` polls `mtime` every 2 seconds
+    (default `_file_watcher_interval`) and immediately calls
+    `self.reload()` on change;
+  - Real window: **≤ 2 seconds**, not 30. No overlap-style vulnerability.
+
+  R193's work collapses to locking the implicit contract in tests so a
+  future refactor that removes `invalidate_all_caches()` from `reload()`,
+  or that moves `_network_security_cache` out of
+  `invalidate_all_caches()`'s clearing scope, turns this 0-bug into a
+  real bug *immediately* in CI rather than silently in production.
+
+  **Test coverage** (`tests/test_hot_reload_network_security_r193.py`,
+  11 cases across 3 invariant classes):
+
+  - `invalidate_all_caches()` field coverage — 3 cases (clears
+    `_network_security_cache`, resets `_network_security_cache_time`,
+    clears `_section_cache`);
+  - `reload()` invalidates cache — 4 cases (reload sets cache to None,
+    `api_token` change takes effect, `bind_interface` change takes
+    effect, **token rotation produces no overlap window**);
+  - `_file_watcher_loop()` call-chain integrity — 4 cases (source-level:
+    `_file_watcher_loop` calls `self.reload()`, `reload()` is called
+    *before* `_trigger_config_change_callbacks()` (so callbacks see
+    fresh state, not cached), `reload()` doesn't raise on valid config,
+    registered callbacks fire after reload).
+
+  No production code changed; pure verification + regression-guard.
+  Closes CR#18 §4.5 + §4.4(a) follow-up items.
+
 ### Added
 
 - **R191 / Cycle 5: `aiia_notification_send_duration_seconds`
