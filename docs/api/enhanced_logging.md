@@ -12,7 +12,7 @@
 
 ### `configure_logging_from_config() -> None`
 
-### `get_current_log_level() -> dict[str, str]`
+### `get_current_log_level() -> dict[str, str | list[str]]`
 
 ### `apply_runtime_log_level(level: str) -> dict[str, str]`
 

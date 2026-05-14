@@ -65,7 +65,7 @@ log 行。
 
 根据配置设置 root logger 和所有 handler 的级别
 
-### `get_current_log_level() -> dict[str, str]`
+### `get_current_log_level() -> dict[str, str | list[str]]`
 
 返回当前运行时日志级别快照（root + ai_intervention_agent 命名空间）。
 
