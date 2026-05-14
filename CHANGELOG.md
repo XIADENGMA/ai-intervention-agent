@@ -9,6 +9,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R232 / Cycle 14 · F-cycle13-4: icon-only buttons must
+  carry `aria-label` invariant**. R230 hid every decorative
+  `<svg>` from assistive technology, which means **icon-only**
+  buttons (no text sibling) now expose nothing but a bare
+  `"button"` announcement to screen readers — unusable. Per
+  WCAG 2.1 SC 4.1.2 (Name, Role, Value), every interactive
+  control must have an accessible name. R232 audit found 28
+  `<button>` + 1 `<a role="button">` in `web_ui.html` and
+  zero icon-only ones missing `aria-label` (discipline was
+  already perfect because R125b / R230 contributors knew the
+  rule). R232 commits the audit result as a permanent guard.
+  Guarded by
+  `tests/test_icon_only_buttons_aria_label_invariant_r232.py`
+  (3 cases / 3 subtests): every `<button>` and `<a
+  role="button">` whose inner text (after stripping `<svg>`
+  blocks + HTML comments) is empty MUST have `aria-label` or
+  `aria-labelledby` + total button count stays ≥ 20 (sanity
+  baseline) + 3 known icon-only buttons (`theme-toggle-btn`,
+  `settings-btn`, `export-tasks-btn`) are explicitly locked
+  to preserve their `aria-label` as regression anchors.
+
 ## [1.7.6] - 2026-05-14
 
 Supersedes the abandoned `v1.7.5` tag. `v1.7.5` was tagged but
