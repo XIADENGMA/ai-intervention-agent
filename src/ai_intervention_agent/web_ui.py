@@ -1384,49 +1384,87 @@ class WebFeedbackUI(
         else:
             logger.info("内容已清空，显示无有效内容页面")
 
+    _stale_minified_warned: set[str] = set()
+
     def _get_minified_file(
         self, directory: str | Path, filename: str, extension: str
     ) -> str:
-        """获取压缩版本的文件名（如存在）
+        """获取压缩版本的文件名（如存在且新鲜）。
 
-        功能说明：
-            自动检测并优先使用压缩版本的静态资源文件。
+        功能说明
+            自动检测并优先使用压缩版本的静态资源文件，但**仅在压缩
+            版本不晚于源文件时才使用**——避免 R242 surfaced 的「修改
+            源文件后, 浏览器仍看到旧 minified 代码」沉默 bug。
 
-        参数说明：
+        参数说明
             directory: 文件所在目录的绝对路径
             filename: 原始请求的文件名
             extension: 文件扩展名（如 ".js" 或 ".css"）
 
-        返回值：
+        返回值
             str: 实际使用的文件名（压缩版本或原始版本）
 
-        处理逻辑：
-            1. 如果请求的已是 .min.* 文件，直接返回
-            2. 检查对应的 .min.* 文件是否存在
-            3. 如存在压缩版本，优先使用压缩版本
-            4. 否则返回原始文件名
+        处理逻辑
+            1. 如果请求的已是 ``.min.*`` 文件，直接返回（caller 是
+               显式指名, 不做猜测）
+            2. 检查对应的 ``.min.*`` 文件是否存在
+            3. 如存在且 ``mtime(.min) >= mtime(source)`` → 用压缩版本
+            4. 如存在但 stale（``mtime(.min) < mtime(source)``） →
+               降级到源文件 + WARN 一次（防止刷屏，按文件名 dedupe）
+            5. 不存在 → 直接返回源文件名
 
-        示例：
-            - 请求 multi_task.js，若 multi_task.min.js 存在，则返回 multi_task.min.js
-            - 请求 multi_task.min.js，直接返回 multi_task.min.js
-            - 请求 prism-xxx.js（外部库），直接返回原文件
+        示例
+            - 请求 ``multi_task.js``，若 ``multi_task.min.js`` 存在且新鲜
+              → 返回 ``multi_task.min.js``
+            - 请求 ``multi_task.js``，若 ``multi_task.min.js`` 存在但
+              旧于源 → 返回 ``multi_task.js`` + log WARN
+            - 请求 ``multi_task.min.js`` → 原样返回（caller 显式选了）
+            - 请求 ``prism-xxx.js``（外部库, 没 .min.* counterpart）
+              → 返回 ``prism-xxx.js``
+
+        R243 / Cycle 16 · F-cycle16-staleness 防御链
+            - R242 (pre-commit hook) 在 commit 时挡住产生 stale .min
+            - R243 (本函数 mtime check) 在运行时挡住 serve stale .min
+            - 两层 belt-and-suspenders: pre-commit 可被 ``--no-verify``
+              绕过 / 历史 stale .min 未被 R242 commit 触及; 运行时检查
+              覆盖这些缝隙。
+            - 额外成本: 每请求多一次 ``stat()``（~10μs SSD）, 对 static
+              资源 hot path 可接受（Flask ``send_from_directory`` 本身
+              就 stat 多次）。
         """
-        # 已经是压缩版本，直接返回
         if f".min{extension}" in filename:
             return filename
 
-        # 构建压缩版本的文件名
         base_name = filename.replace(extension, "")
         minified_name = f"{base_name}.min{extension}"
         dir_path = Path(directory)
         minified_path = dir_path / minified_name
+        source_path = dir_path / filename
 
-        # 检查压缩版本是否存在
-        if minified_path.exists():
-            return minified_name
+        try:
+            if not minified_path.exists():
+                return filename
+            min_mtime = minified_path.stat().st_mtime
+            src_mtime = source_path.stat().st_mtime if source_path.exists() else 0.0
+        except OSError:
+            return filename
 
-        # 压缩版本不存在，返回原始文件名
-        return filename
+        if min_mtime < src_mtime:
+            warn_key = str(minified_path)
+            if warn_key not in self._stale_minified_warned:
+                self._stale_minified_warned.add(warn_key)
+                logger.warning(
+                    "R243 stale minified asset: %s mtime=%.0f < source %s mtime=%.0f → "
+                    "falling back to source. 修复: 运行 `uv run python "
+                    "scripts/minify_assets.py` 重生 .min 文件。",
+                    minified_path.name,
+                    min_mtime,
+                    filename,
+                    src_mtime,
+                )
+            return filename
+
+        return minified_name
 
     def _get_file_version(self, file_path: str | Path) -> str:
         """获取文件版本号（基于修改时间）。

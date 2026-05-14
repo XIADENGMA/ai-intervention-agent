@@ -11,6 +11,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R243 / Cycle 16 · runtime defense-in-depth for R242**:
+  `_get_minified_file()` now stat-checks the candidate `.min.*`
+  against the source `.{js,css}` and **rejects** it (falls back
+  to the source filename + `logger.warning` once per file pair)
+  when `mtime(.min) < mtime(source)`. R242 only prevents *new*
+  stale .min files from being committed; it does **not** catch:
+  (a) `git commit --no-verify` bypass, or (b) pre-existing
+  stale `.min` files whose source isn't touched in the current
+  commit (R242's `files:` filter scopes only to changed files).
+  R243 closes both gaps with a per-request runtime check. Cost:
+  one extra `stat()` per static asset request (~10 µs SSD, much
+  cheaper than Flask's `send_from_directory`'s own stat calls).
+  Behaviour preserved for: explicit `.min.*` requests (caller
+  picked, no second-guessing), missing `.min.*` (fall back),
+  and `OSError` from `stat()` (fall back, never crash the
+  endpoint). Guarded by `tests/test_get_minified_file_freshness_r243.py`
+  (5 classes / 7 cases) — end-to-end behavioural test with real
+  tempdir files, **not** static grep: fresh-min chosen,
+  stale-min rejected, WARN dedup per-file (different files warn
+  independently), explicit `.min` passes through, missing
+  `.min` falls back, `OSError` doesn't crash. Bilingual
+  catalogue (§6) updated. Together R242 (commit-time) + R243
+  (request-time) form a complete defense matrix on the
+  `.min.{js,css}` chain, mirroring the R226 ↔ runtime-
+  `.br`/`.gz` selection logic on the precompress chain.
+
 - **R242 / Cycle 16 · F-cycle15-9: silent stale `.min.js` /
   `.min.css` served to local dev** — discovered via R241 audit.
   Runtime helper `_get_minified_file()` (web_ui.py L1387-1429)

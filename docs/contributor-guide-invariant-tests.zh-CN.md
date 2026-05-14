@@ -333,6 +333,7 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R240    | `tests/test_modal_inert_background_invariant_r240.py`                  | 模式 B          | 两个模态打开函数（`showSettings`、`openCodePasteModal`）必须把 `.container`（`role="main"` 容器）标为 `inert`，对应关闭函数清除；两处都用 `try { el.inert = … } catch { setAttribute("inert", …) }` 防御性写法。与 R237 (ARIA) + R238 (焦点陷阱) 组成 a11y 第 4 波三件套：模态打开时鼠标、键盘、AT 都不能再到达背景。 |
 | R241    | `tests/test_inert_helper_dry_invariant_r241.py`                        | 模式 B          | `_safelySetInert(el, value)` DRY 辅助函数在 `app.js`（top-level 函数）和 `settings-manager.js`（class method）都存在并具备相同分支行为；调用点必须用 helper —— helper 定义外不能再有 `container.inert = …` inline 赋值。关闭 CR#28 的 F-cycle15-2（抽取 R240 的 4× 重复 try/catch）。 |
 | R242    | `tests/test_minify_precommit_hook_invariant_r242.py`                   | 模式 B          | `check-static-minified-fresh` pre-commit hook 必须存在，entry 真正调用 `scripts/minify_assets.py --check`，files filter 匹配 `static/(css\|js)`，hook 不被流放到 `manual`/`pre-push`，配套脚本依然存在并保留 `--check` 旗标。R242 关闭 R234/R238/R240/R241 暴露出的"修改 .js/.css 后 Flask 仍 serve 旧 .min 文件"沉默 bug —— 与 R226（precompress 新鲜度）同构问题，在第二条构建产物链上补齐。 |
+| R243    | `tests/test_get_minified_file_freshness_r243.py`                       | 模式 A（运行时） | `_get_minified_file()` 在请求时拒绝 stale `.min`（mtime < source → fallback 到 source 并 WARN 每文件一次）。端到端行为测试，用真实 tempdir 文件：fresh-min 仍选用、stale-min 被拒、WARN 按文件名独立 dedup（不同文件互不影响）、显式请求 `.min` 仍直通、缺失 `.min` 仍 fallback、`stat()` 抛 `OSError` 时 static 端点不崩。R243 是 R242 commit-time 防御的运行时配套层，覆盖 `--no-verify` 与 hook 未触及的 pre-existing stale 文件。 |
 
 ## 7. 进一步阅读
 
