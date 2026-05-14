@@ -496,6 +496,56 @@ def _safe_notification_summary() -> dict[str, object] | None:
         return None
 
 
+def _safe_token_age_seconds() -> int | None:
+    """读 ``[network_security].api_token_rotated_at`` 计算当前 token age (秒)。
+
+    R204 / Cycle 9 · F-203-1 (CR#21 §4.3) 新增。**逻辑契约与 R199
+    ``GET /api/system/api-token-info`` endpoint 的 ``age_seconds`` 字段
+    完全一致**：
+
+    - 无 token (``api_token`` 缺失 / 长度 < 16) → ``None`` (Prom 端
+      不输出 metric，与 ``_safe_uptime_seconds`` 等 helper 同款契约);
+    - 无 ``api_token_rotated_at`` (R199 之前的旧 config / 已被 R200
+      cascade-clear) → ``None``;
+    - ``rotated_at`` 解析失败 (脏数据) → ``None``;
+    - ``age`` 计算结果 < 0 (系统时钟跳变 / config 里时间戳来自未来)
+      → ``None`` (0 也不合适, dashboard 看到 0 会误以为刚轮换);
+    - 正常情况 → ``int`` (秒, ≥ 0).
+
+    本函数与 R199 endpoint inline 逻辑刻意 duplicated 而非提到 module
+    level 共享 helper, 因为 endpoint inline 已被 R199 测试覆盖 5+ case,
+    重构有 backward-compat 风险 + endpoint 返回 dict (多字段) vs 本函数
+    返回 int | None (单值), 抽象层不对齐. R205+ 可以考虑统一. 当前两份
+    实现的算法是 verbatim 复制粘贴, 任何 bug fix 必须同步 (见
+    test_token_age_seconds_metric_r204 invariant 守护)。
+    """
+    try:
+        cfg = get_config()
+        ns = cfg.get_network_security_config()
+    except Exception:
+        return None
+    if not isinstance(ns, dict):
+        return None
+    token = ns.get("api_token", "")
+    if not (isinstance(token, str) and token and len(token) >= 16):
+        return None
+    rotated_at = ns.get("api_token_rotated_at", "")
+    if not (isinstance(rotated_at, str) and rotated_at):
+        return None
+    try:
+        from datetime import UTC, datetime
+
+        ts = rotated_at.replace("Z", "+00:00")
+        rotated_dt = datetime.fromisoformat(ts)
+        age = int((datetime.now(UTC) - rotated_dt).total_seconds())
+        if age < 0:
+            return None
+    except (ValueError, TypeError):
+        return None
+    else:
+        return age
+
+
 # ---------------------------------------------------------------------------
 # T1 (cycle 4): Prometheus exposition format helpers for /api/system/metrics
 #
@@ -874,6 +924,27 @@ def _render_prometheus_metrics() -> str:
                             labels={"quantile": quantile_label},
                         )
                     )
+
+    # --- Security / API token age (R204 / Cycle 9 · F-203-1) ---
+    token_age = _safe_token_age_seconds()
+    if token_age is not None:
+        lines.append(
+            _format_prom_metric(
+                "aiia_token_age_seconds",
+                token_age,
+                help_text=(
+                    "Seconds since the API token "
+                    "(network_security.api_token) was last rotated; mirrors "
+                    "GET /api/system/api-token-info age_seconds field "
+                    "(R204 / Cycle 9 · F-203-1). Omitted when no token is "
+                    "configured or api_token_rotated_at is unparseable / "
+                    "in the future; use for alertmanager rules like "
+                    "'aiia_token_age_seconds > 90 * 86400' for stale-token "
+                    "detection per NIST SP 800-63B rotation guidance."
+                ),
+                metric_type="gauge",
+            )
+        )
 
     # --- TaskQueue ---
     try:
@@ -2139,6 +2210,15 @@ class SystemRoutesMixin:
                   次数，与未标签化的 ``aiia_sse_emit_total`` 并存（向后兼
                   容 + 提供 per-type breakdown），不变量 ``sum(by_type) ==
                   overall``
+                * Security：``aiia_token_age_seconds``（R204 / Cycle 9 · F-203-1）
+                  ——当前 API token 自上次 rotation 经过的秒数，mirror
+                  ``GET /api/system/api-token-info`` 的 ``age_seconds``
+                  字段，让 alertmanager 不必 scrape JSON 即可设阈值告
+                  警（如 ``aiia_token_age_seconds > 90 * 86400`` 提醒
+                  rotation per NIST SP 800-63B）。无 token / rotated_at
+                  解析失败时该 metric 不出现（与 ``aiia_uptime_seconds``
+                  等其他 ``_safe_*`` helper 同款契约，让 Grafana 显示
+                  "no data" 触发不同告警策略）
                 * TaskQueue：``aiia_task_queue_size`` / ``aiia_task_queue_max``
                 * 错误日志：``aiia_recent_errors_5min``
                 * Notification：``aiia_notification_enabled`` /

@@ -11,6 +11,68 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R204 / Cycle 9 · F-203-1 (CR#21 §4.3): `aiia_token_age_seconds`
+  Prometheus gauge**. R199 把 token rotation 时间戳暴露到 ``GET
+  /api/system/api-token-info`` endpoint 的 ``age_seconds`` 字段，但
+  alertmanager 想做「90 天没轮换 → alert」必须**自己 scrape JSON**——
+  绕开 Prometheus scrape 的标准方式，运维链路变长 + 多一份配置。
+  R204 把同一份数据 mirror 到 Prometheus exposition ``aiia_token_age_
+  seconds`` gauge，让 alertmanager 用标准 PromQL 直接写规则（如
+  ``aiia_token_age_seconds > 90 * 86400`` per NIST SP 800-63B
+  rotation guidance）。
+
+  **实现** (``web_ui_routes/system.py``)：
+
+  - 新增 module-level helper ``_safe_token_age_seconds() -> int | None``
+    (~30 行)。**逻辑契约与 R199 endpoint inline 完全一致**: no token
+    / no rotated_at / 解析失败 / future timestamp 全部 → None；正常情
+    况 → int (秒, ≥ 0)。
+  - 在 ``_render_prometheus_metrics`` 加新 Security section, gauge
+    metric (~18 行包含详细 HELP)。
+  - 更新 ``/api/system/metrics`` endpoint description docstring 提及
+    新 metric + 失败时 omit 契约（与 ``aiia_uptime_seconds`` 同款）。
+
+  **设计决策 · 失败时 omit metric vs NaN**：
+
+  Prometheus exposition 允许 NaN 值表示 "unavailable", 但 omit metric
+  让 Grafana 显示 "no data" + 让 alertmanager 用 ``absent(...)``
+  rule 触发分级告警 (no-token vs token-stale 是两类问题, 用 absent /
+  threshold 分别处理), 与 ``aiia_uptime_seconds`` / ``aiia_build_info``
+  等其他 ``_safe_*`` helper 同款契约，对齐项目一致性。
+
+  **R199 endpoint inline 与 R204 helper 刻意 duplicated**：
+
+  endpoint inline 已被 R199 测试覆盖 5+ case，重构有 backward-compat
+  风险；endpoint 返回 dict (多字段) vs helper 返回 int | None (单值)，
+  抽象层不对齐。两份实现是 verbatim 复制粘贴，任何 bug fix 必须同步
+  ——本 cycle 的 ``TestEndpointMetricParity`` invariant 在同一份 config
+  + 同一时间点下抽样验证两路 age 一致（容差 ≤ 2 秒，覆盖 clock
+  granularity + 测试运行时间）。R205+ 可考虑统一抽象层。
+
+  **测试 (11 cases / 4 invariant class)** ——
+  ``tests/test_token_age_seconds_metric_r204.py``:
+
+  1. **TestSafeTokenAgeHelper** (6): no token / token < 16 char /
+     no rotated_at / malformed rotated_at / future timestamp / valid
+     recent rotation → None / None / None / None / None / positive int;
+  2. **TestPrometheusMetricRendering** (3): token + recent rotation
+     → metric line 出现 + 无 token → metric 不出现 + 45-day-old token
+     (NIST 30-90 中点) 渲染正确 age (容差 ±60 秒);
+  3. **TestEndpointMetricParity** (1 · **核心契约**): 同一份 config 下
+     ``GET /api/system/api-token-info`` 的 ``age_seconds`` 与
+     ``/api/system/metrics`` 的 ``aiia_token_age_seconds`` 值差异
+     ≤ 2 秒——防止 R199 endpoint 与 R204 helper 实现 drift;
+  4. **TestPrometheusOutputFormat** (1): HELP / TYPE / value 行格式
+     合规 + HELP 含 R204 / F-203-1 / "rotated" 关键字。
+
+  **验证**: R204 11 cases PASS；``uv run ty check . → All checks
+  passed!``；``uv run ruff check . && ruff format --check . → All
+  passed!``；完整 ``pytest`` **5399 passed / 2 skipped / 628 subtests
+  passed in 163s** (R203 baseline 5388 → 5399, 净增 +11 from R204)；
+  ``scripts/generate_docs.py --check`` 两份语言 26/26 一致；R199
+  + R203 完整测试套 (15 + 10 cases + 4 subtests) 仍 PASS（向后兼容
+  + 不变量验证）。
+
 - **R203 / Cycle 9 · F-202-1 (CR#21 §4.2): `_SSEBus._emit_by_type`
   cardinality cap + overflow bucket + WARN-once**. R202 把
   ``_emit_by_type: Counter[str]`` 暴露到 Prometheus
