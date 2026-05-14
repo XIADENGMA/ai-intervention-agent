@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.5] - 2026-05-14
+
+Cycle 13 catch-up release packing R226–R230 + CR#26. Pure
+additive cycle: pre-commit guardrail (R226), bilingual
+contributor docs (R227), two UX bug fixes (R228 + R229),
+WCAG 1.1.1 a11y coverage (R230). No breaking changes; no
+public API surface changes. v1.7.4 → v1.7.5 is a patch bump.
+
 ### Documentation
 
 - **CR#26 — Cycle 13 code review (R226 → R230) archived**.
