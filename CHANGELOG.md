@@ -9,6 +9,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **R231 / Cycle 14 · F-cycle13-1: invariant-test guide
+  catalogue auto-staleness guard + R224 / R229 / R230
+  backfill**. CR#26 §3 flagged the catalogue staleness risk —
+  R227's original test only validated "entries point to real
+  files" but never caught *missing* entries, so R230 silently
+  shipped without a catalogue row. R231 adds
+  `TestRecentInvariantsCataloged` to
+  `tests/test_invariant_test_guide_catalogue_r227.py`: scans
+  `tests/test_*_invariant_r*.py` filename pattern, derives the
+  current highest R-number, and fails if any invariant test
+  within the last `MAX_R_LAG` = 10 R-numbers is missing from
+  the EN catalogue. The 10-cycle window gives in-cycle commits
+  breathing room (1 R-cycle ≈ 5 commits, so window covers
+  ~2 cycles) while still forcing refresh by the next code-
+  review boundary. Also backfills R224 (per-provider Grafana
+  dashboard, Pattern B), R229 (submit-btn disabled visual,
+  Pattern A + C), and R230 (decorative SVG aria-hidden,
+  Pattern A) into both the EN and zh-CN catalogue tables
+  (R227-R230 catalogue staleness fully cleared).
+
 ## [1.7.5] - 2026-05-14
 
 Cycle 13 catch-up release packing R226–R230 + CR#26. Pure
