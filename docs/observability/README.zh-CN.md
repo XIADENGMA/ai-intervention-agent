@@ -86,10 +86,37 @@ groups:
   调用。这就是 silent-decay 防护——如果未来 refactor 在 `system.py`
   里改名了某个 metric 而忘了同步仪表盘，CI 会立刻吵。
 
+## 配套仪表盘
+
+### 按 provider 钻取的通知子系统 (R224)
+
+`grafana-dashboard-notification-providers.json` 是一份配套的钻取
+仪表盘，专注于通知子系统 (R142 + R145 + R191) 的 per-provider 视角。
+导入步骤与概览仪表盘完全一致 (`uid: aiia-notification-providers-r224`，
+标题 *AI Intervention Agent — Notification Providers Drill-down*)。
+使用场景：当概览仪表盘的 **Notification Subsystem — Success Rate**
+面板变红时，用它定位**具体是哪个 provider** 在掉链子。
+
+| # | 面板 | 起源 spec | 查询 | 备注 |
+|---|---|---|---|---|
+| 1 | Per-Provider Attempts Rate | R142 | `sum by (provider) (rate(aiia_notification_attempts_total[5m]))` | 各 provider 的 attempts rate 之和等于概览仪表盘里的聚合 attempts rate。 |
+| 2 | Per-Provider Success Rate | R142 | `aiia_notification_success_rate` | 阈值绿/黄/红 = 0.95 / 0.90。R142 本身就按 provider 输出 gauge，本面板只是把每个 label 渲染成一条线。 |
+| 3 | Per-Provider Average Latency | R142 | `aiia_notification_avg_latency_ms` | 来自滑动窗口的最近一次延迟样本。需要 percentile 稳定性时改看面板 4。 |
+| 4 | Per-Provider Send Duration P95 | R191 | `histogram_quantile(0.95, sum by (le, provider) (rate(aiia_notification_send_duration_seconds_bucket[5m])))` | 来自 histogram 计算。在突发流量下不会被 avg_latency_ms 那样平滑掉。 |
+| 5 | Per-Provider Failure Streak | R145 | `aiia_notification_failure_streak` | step-line 渲染。持续 > 5 适合做告警阈值。 |
+| 6 | Per-Provider Success Streak | R145 | `aiia_notification_success_streak` | 骤降到 0 表示某个 provider 刚刚翻车。 |
+
+钻取仪表盘自带 invariant 测试
+(`tests/test_grafana_dashboard_notif_providers_invariant_r224.py`)，
+沿用 R220 的 silent-decay 防护套路：每个面板 expr 里的 `aiia_*`
+指标名必须在 `system.py` 中子串存在，且每个面板必须按 `provider`
+label 拆分（否则仪表盘会悄悄退化成概览的复制品）。
+
 ## 相关文档
 
 - `docs/configuration.zh-CN.md` — `AIIA_SSE_SCHEMA_VALIDATE` 环境
   变量 (R205) 及其与 `aiia_sse_schema_violation_total` 的互动。
 - `src/ai_intervention_agent/web_ui_routes/system.py` — 权威的
   `/metrics` 暴露逻辑。
-- `docs/code-reviews/cr23.md` — F-cycle10-4 backlog 项的起源。
+- `docs/code-reviews/cr23.md` — F-cycle10-4 backlog 项的起源（概览仪表盘 R220）。
+- `docs/code-reviews/cr24.md` — F-cycle11-3 backlog 项的起源（per-provider 钻取 R224）。

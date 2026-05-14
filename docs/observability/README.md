@@ -92,6 +92,34 @@ groups:
   metric in `system.py` without updating the dashboard, CI fails
   loudly.
 
+## Companion dashboards
+
+### Per-provider notification drill-down (R224)
+
+`grafana-dashboard-notification-providers.json` is a companion
+drill-down focused entirely on the notification subsystem (R142 +
+R145 + R191). Import path is identical to the overview
+(`uid: aiia-notification-providers-r224`, title *AI Intervention
+Agent — Notification Providers Drill-down*). Use it when the
+overview's **Notification Subsystem — Success Rate** panel turns
+red and you need to identify *which* provider is at fault.
+
+| # | Panel | Origin spec | Query | Notes |
+|---|---|---|---|---|
+| 1 | Per-Provider Attempts Rate | R142 | `sum by (provider) (rate(aiia_notification_attempts_total[5m]))` | Sum across legend entries equals overview's aggregate attempts rate. |
+| 2 | Per-Provider Success Rate | R142 | `aiia_notification_success_rate` | Thresholded green/yellow/red at 0.95 / 0.90. R142 emits the gauge per provider already, so the panel just renders one series per label. |
+| 3 | Per-Provider Average Latency | R142 | `aiia_notification_avg_latency_ms` | Last-sample latency from the moving window. For percentile-stable views see panel 4. |
+| 4 | Per-Provider Send Duration P95 | R191 | `histogram_quantile(0.95, sum by (le, provider) (rate(aiia_notification_send_duration_seconds_bucket[5m])))` | Histogram-derived. Stable under burst load (avg_latency_ms gets smeared). |
+| 5 | Per-Provider Failure Streak | R145 | `aiia_notification_failure_streak` | Step-line chart. Sustained values > 5 are alert candidates. |
+| 6 | Per-Provider Success Streak | R145 | `aiia_notification_success_streak` | Sudden drops to 0 signal a provider just transitioned to failure. |
+
+The drill-down has its own invariant test
+(`tests/test_grafana_dashboard_notif_providers_invariant_r224.py`)
+mirroring R220's silent-decay shield: each `aiia_*` metric in any
+panel target must substring-exist in `system.py`, and each panel
+must break down by the `provider` label (otherwise the dashboard
+silently degrades into a duplicate of the overview).
+
 ## See also
 
 - `docs/configuration.md` — `AIIA_SSE_SCHEMA_VALIDATE` env var
@@ -99,4 +127,6 @@ groups:
 - `src/ai_intervention_agent/web_ui_routes/system.py` —
   authoritative `/metrics` exposition logic.
 - `docs/code-reviews/cr23.md` — origin of the F-cycle10-4 backlog
-  item.
+  item (overview dashboard, R220).
+- `docs/code-reviews/cr24.md` — origin of the F-cycle11-3 backlog
+  item (per-provider drill-down, R224).

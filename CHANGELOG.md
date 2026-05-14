@@ -11,6 +11,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R224 / Cycle 12 · F-cycle11-3: per-provider notification
+  drill-down Grafana dashboard**. R220 shipped the overview
+  dashboard with a single aggregate Notification panel
+  (`aiia_notification_delivery_success_rate` + `_queue_size`); the
+  overview is great for "is the notification subsystem healthy?"
+  but useless for "*which* provider is broken right now?". R224
+  fills that gap with
+  `docs/observability/grafana-dashboard-notification-providers.json`
+  (6 panels, schemaVersion 38, uid `aiia-notification-providers-r224`):
+  attempts rate per provider · success rate (thresholded
+  green/yellow/red at 0.95/0.90) · average latency · histogram-
+  derived P95 send duration (R191) · consecutive failure streak
+  (R145, step-line + red threshold at 5) · consecutive success
+  streak. All panels break down by the `provider` label. Bundled
+  docs in `docs/observability/README{,.zh-CN}.md` (companion table
+  mirroring R220's overview table, with the same per-panel
+  rationale columns). Guarded by
+  `tests/test_grafana_dashboard_notif_providers_invariant_r224.py`
+  (14 cases / 26 subtests): JSON parses + schemaVersion in
+  `[38,40]` + uid + title + 6 unique-titled panels + datasource
+  template variable binding + every panel target uses
+  `${DS_PROMETHEUS}` + metric name parity with `system.py` (with
+  smart fallback for f-string-assembled per-provider families
+  like `aiia_notification_success_rate`) + every panel proves it
+  breaks down by `provider` (either `sum by (provider)` aggregation
+  or `{{provider}}` legend), preventing silent degradation into
+  a duplicate of R220's overview + bilingual README cross-
+  references mention the new dashboard filename and uid.
+
 - **R223 / Cycle 12: discoverability hint for full keyboard
   shortcut help in Web UI settings panel**. The settings panel's
   "Common shortcuts" section showed only 5 input-workflow
