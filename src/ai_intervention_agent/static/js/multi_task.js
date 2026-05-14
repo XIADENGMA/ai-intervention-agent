@@ -335,7 +335,7 @@ function tryApplyDeepLinkedTask(tasks) {
     return true;
   }
 
-  console.log(`Deep link target task detected: ${targetTaskId}`);
+  _debugLog(`Deep link target task detected: ${targetTaskId}`);
   setTimeout(() => {
     switchTask(targetTaskId).catch((error) => {
       console.error("Deep link task switch failed:", error);
@@ -690,7 +690,7 @@ async function fetchAndApplyTasks(reason) {
         window.serverTimeOffset = data.server_time - localTime;
         // 仅在偏移量较大时记录日志（避免日志刷屏）
         if (Math.abs(window.serverTimeOffset) > 1) {
-          console.log(
+          _debugLog(
             `Server time offset: ${window.serverTimeOffset.toFixed(2)}s`,
           );
         }
@@ -820,7 +820,7 @@ function scheduleNextTasksPoll(delayMs) {
  */
 function startTasksPolling() {
   if (typeof document !== "undefined" && document.hidden) {
-    console.log("Page hidden; skip starting task polling");
+    _debugLog("Page hidden; skip starting task polling");
     return;
   }
 
@@ -854,7 +854,7 @@ function startTasksPolling() {
     });
   }
 
-  console.log("Task polling started (SSE preferred + polling safety-net)");
+  _debugLog("Task polling started (SSE preferred + polling safety-net)");
 }
 
 /**
@@ -1004,7 +1004,7 @@ function updateTasksList(tasks) {
   // 检测新任务
   const addedTasks = newTaskIds.filter((id) => !oldTaskIds.includes(id));
   if (addedTasks.length > 0) {
-    console.log(`Detected ${addedTasks.length} new task(s)`);
+    _debugLog(`Detected ${addedTasks.length} new task(s)`);
 
     if (!isInitialTaskSnapshot) {
       // 如果当前有活动任务，使用合并机制避免短时间内频繁弹出多个通知
@@ -1048,7 +1048,7 @@ function updateTasksList(tasks) {
             timeout,
             task.auto_resubmit_timeout || 240,
           );
-          console.log(
+          _debugLog(
             `Started countdown for new task: ${task.task_id}, remaining ${timeout}s`,
           );
         }
@@ -1058,12 +1058,12 @@ function updateTasksList(tasks) {
   // 检测已删除的任务并清理倒计时
   const removedTasks = oldTaskIds.filter((id) => !newTaskIds.includes(id));
   if (removedTasks.length > 0) {
-    console.log(`Detected ${removedTasks.length} removed task(s)`);
+    _debugLog(`Detected ${removedTasks.length} removed task(s)`);
     removedTasks.forEach((taskId) => {
       if (taskCountdowns[taskId]) {
         clearInterval(taskCountdowns[taskId].timer);
         delete taskCountdowns[taskId];
-        console.log(`Cleared countdown for task ${taskId}`);
+        _debugLog(`Cleared countdown for task ${taskId}`);
       }
       // 【优化】清理任务截止时间缓存，防止内存泄漏
       if (window.taskDeadlines[taskId] !== undefined) {
@@ -1143,7 +1143,7 @@ function updateTasksList(tasks) {
   if (activeTask && activeTask.task_id !== activeTaskId) {
     const oldActiveTaskId = activeTaskId;
     activeTaskId = activeTask.task_id;
-    console.log(`Sync activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`);
+    _debugLog(`Sync activeTaskId: ${oldActiveTaskId} -> ${activeTaskId}`);
 
     // 更新圆环颜色
     updateCountdownRingColors(oldActiveTaskId, activeTaskId);
@@ -1153,12 +1153,12 @@ function updateTasksList(tasks) {
     const firstIncompleteTask = tasks.find((t) => t.status !== "completed");
     if (firstIncompleteTask) {
       activeTaskId = firstIncompleteTask.task_id;
-      console.log(`Auto-set first incomplete task as active: ${activeTaskId}`);
+      _debugLog(`Auto-set first incomplete task as active: ${activeTaskId}`);
     } else {
-      console.log("All tasks completed; not setting activeTaskId");
+      _debugLog("All tasks completed; not setting activeTaskId");
     }
   } else if (tasks.length === 0 && activeTaskId) {
-    console.log(
+    _debugLog(
       `Task list cleared; reset activeTaskId: ${activeTaskId} -> null`,
     );
     activeTaskId = null;
@@ -1174,7 +1174,7 @@ function updateTasksList(tasks) {
 
   if (hasActiveTasks && isShowingNoContent) {
     // 有任务但显示的是无内容页面，切换到内容页面
-    console.log(
+    _debugLog(
       "Tasks present but showing no-content page; switching to content page",
     );
     if (typeof showContentPage === "function") {
@@ -1186,7 +1186,7 @@ function updateTasksList(tasks) {
     contentContainer.style.display === "block"
   ) {
     // 无任务但显示的是内容页面，切换到无内容页面
-    console.log(
+    _debugLog(
       "No tasks but showing content page; switching to no-content page",
     );
     if (typeof showNoContentPage === "function") {
@@ -1317,7 +1317,7 @@ function renderTaskTabs() {
       const retryContainer = document.getElementById("task-tabs-container");
       const retryTabsContainer = document.getElementById("task-tabs");
       if (retryContainer && retryTabsContainer) {
-        console.log("Retry succeeded; rendering tab bar");
+        _debugLog("Retry succeeded; rendering tab bar");
         renderTaskTabs();
       } else {
         console.error("Retry failed; tab bar container still missing");
@@ -1612,7 +1612,7 @@ async function switchTask(taskId) {
     const textarea = document.getElementById("feedback-text");
     if (textarea) {
       taskTextareaContents[activeTaskId] = textarea.value;
-      console.log(`Saved textarea content for task ${activeTaskId}`);
+      _debugLog(`Saved textarea content for task ${activeTaskId}`);
     }
 
     // 保存选项勾选状态
@@ -1626,7 +1626,7 @@ async function switchTask(taskId) {
         optionsStates[index] = checkbox.checked;
       });
       taskOptionsStates[activeTaskId] = optionsStates;
-      console.log(`Saved option selection state for task ${activeTaskId}`);
+      _debugLog(`Saved option selection state for task ${activeTaskId}`);
     }
 
     // 保存图片列表（深拷贝，避免引用问题）
@@ -1635,7 +1635,7 @@ async function switchTask(taskId) {
       ...img,
       // 保留所有字段，包括 blob URL（每个任务独立管理）
     }));
-    console.log(
+    _debugLog(
       `Saved image list for task ${activeTaskId} (${selectedImages.length} images)`,
     );
   }
@@ -1659,7 +1659,7 @@ async function switchTask(taskId) {
   // 立即从 currentTasks 获取任务信息并更新内容（不等待 API）
   const cachedTask = currentTasks.find((t) => t.task_id === taskId);
   if (cachedTask && cachedTask.prompt) {
-    console.log(`Updating UI from cached task info immediately: ${taskId}`);
+    _debugLog(`Updating UI from cached task info immediately: ${taskId}`);
 
     // 内联 updateTaskIdDisplay 逻辑（避免函数未定义错误）
     const taskIdContainer = document.getElementById("task-id-container");
@@ -1691,7 +1691,7 @@ async function switchTask(taskId) {
         if (!data.success) {
           console.error("Activate task failed:", data.error);
         } else {
-          console.log(`Task activated: ${taskId}`);
+          _debugLog(`Task activated: ${taskId}`);
         }
       })
       .catch((err) => console.error("Activate task failed:", err));
@@ -1717,7 +1717,7 @@ async function switchTask(taskId) {
       window.dispatchEvent(
         new CustomEvent("taskSwitchComplete", { detail: { taskId } }),
       );
-      console.log("Task switch lock released; polling resumed");
+      _debugLog("Task switch lock released; polling resumed");
     }, 200);
   }
 }
@@ -1812,7 +1812,7 @@ async function loadTaskDetails(taskId) {
 
     // 检查任务是否仍然是当前活动任务
     if (taskId !== activeTaskId) {
-      console.log(
+      _debugLog(
         `Skipping stale task details: ${taskId} (active: ${activeTaskId})`,
       );
       return;
@@ -1844,7 +1844,7 @@ async function loadTaskDetails(taskId) {
       const textarea = document.getElementById("feedback-text");
       if (textarea && taskTextareaContents[taskId] !== undefined) {
         textarea.value = taskTextareaContents[taskId];
-        console.log(`Restored textarea content for task ${taskId}`);
+        _debugLog(`Restored textarea content for task ${taskId}`);
       }
       // 如果之前没有保存过内容，保持当前值（避免在用户正在输入时被轮询调用清空）
 
@@ -1862,7 +1862,7 @@ async function loadTaskDetails(taskId) {
           updateImageCounter();
           updateImagePreviewVisibility();
         }
-        console.log(
+        _debugLog(
           `Restored image list for task ${taskId} (${selectedImages.length} images)`,
         );
       }
@@ -1875,14 +1875,14 @@ async function loadTaskDetails(taskId) {
         const remaining = task.remaining_time ?? task.auto_resubmit_timeout;
         const total = task.auto_resubmit_timeout;
         startTaskCountdown(task.task_id, remaining, total);
-        console.log(
+        _debugLog(
           `First-time countdown start: ${taskId}, remaining ${remaining}s / total ${total}s`,
         );
       } else {
-        console.log(`Countdown already exists; not resetting: ${taskId}`);
+        _debugLog(`Countdown already exists; not resetting: ${taskId}`);
       }
 
-      console.log(`Task details loaded: ${taskId}`);
+      _debugLog(`Task details loaded: ${taskId}`);
     } else {
       console.error("Load task details failed:", data.error);
     }
@@ -1950,7 +1950,7 @@ async function updateDescriptionDisplay(prompt) {
       processStrikethrough(descriptionElement);
     }
 
-    console.log("Synchronous Markdown render complete");
+    _debugLog("Synchronous Markdown render complete");
 
     // MathJax 数学公式渲染（按需加载，不阻塞）
     // 注意：不能只在 MathJax 已加载时 typeset，否则“首次出现公式”的内容会一直不渲染
@@ -2017,7 +2017,7 @@ function updateOptionsDisplay(options, optionDefaults) {
   if (activeTaskId && taskOptionsStates[activeTaskId]) {
     selectedStates = taskOptionsStates[activeTaskId];
     hasUserInteraction = true;
-    console.log(`Restored option selection state for task ${activeTaskId}`);
+    _debugLog(`Restored option selection state for task ${activeTaskId}`);
   } else {
     // 如果没有保存的状态，尝试保存当前状态（用于同一任务内的更新）
     const existingCheckboxes = optionsContainer.querySelectorAll(
@@ -2171,7 +2171,7 @@ async function closeTask(taskId) {
       }
     }
 
-    console.log(`Closed task: ${taskId}`);
+    _debugLog(`Closed task: ${taskId}`);
   } catch (error) {
     console.error("Close task failed:", error);
     if (typeof showStatus === "function") {
@@ -2429,12 +2429,12 @@ function startTaskCountdown(taskId, remaining, total = null) {
         // 非激活任务超时：检查是否真的没有用户活动
         // 如果当前没有任何激活任务，说明用户完全无响应，也自动提交
         if (!activeTaskId) {
-          console.log(
+          _debugLog(
             `Non-active task ${taskId} timed out with no active task; auto-submitting`,
           );
           autoSubmitTask(taskId);
         } else {
-          console.log(
+          _debugLog(
             `Task ${taskId} timed out but user is working on ${activeTaskId}; deferring auto-submit`,
           );
         }
@@ -2442,7 +2442,7 @@ function startTaskCountdown(taskId, remaining, total = null) {
     }
   }, 1000);
 
-  console.log(
+  _debugLog(
     `Started task countdown: ${taskId}, remaining ${remaining}s / total ${timeout}s`,
   );
 }
@@ -2517,7 +2517,7 @@ async function autoSubmitTask(taskId) {
   } catch (e) {
     // 忽略：退避记录失败不应阻塞自动提交
   }
-  console.log(`Task ${taskId} countdown ended; auto-submitting`);
+  _debugLog(`Task ${taskId} countdown ended; auto-submitting`);
   // 使用配置的提示语（运行中热更新）：自动提交前实时拉取一次
   // 若后端未提供（如网络故障），退出而不是发送硬编码字符串，由下一轮轮询/用户手动触发重试
   const prompts = await fetchFeedbackPromptsFresh();
@@ -2592,7 +2592,7 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
     const data = await response.json();
 
     if (data.success) {
-      console.log(`Task ${taskId} submitted successfully`);
+      _debugLog(`Task ${taskId} submitted successfully`);
       // 停止该任务的倒计时
       if (taskCountdowns[taskId]) {
         clearInterval(taskCountdowns[taskId].timer);
@@ -2601,15 +2601,15 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
       // 清除该任务保存的所有状态
       if (taskTextareaContents[taskId] !== undefined) {
         delete taskTextareaContents[taskId];
-        console.log(`Cleared saved textarea content for task ${taskId}`);
+        _debugLog(`Cleared saved textarea content for task ${taskId}`);
       }
       if (taskOptionsStates[taskId] !== undefined) {
         delete taskOptionsStates[taskId];
-        console.log(`Cleared saved option selection state for task ${taskId}`);
+        _debugLog(`Cleared saved option selection state for task ${taskId}`);
       }
       if (taskImages[taskId] !== undefined) {
         delete taskImages[taskId];
-        console.log(`Cleared saved image list for task ${taskId}`);
+        _debugLog(`Cleared saved image list for task ${taskId}`);
       }
 
       // SSE 会在 complete_task 后 ~80ms 内自动触发 fetchAndApplyTasks，
@@ -2621,10 +2621,10 @@ async function submitTaskFeedback(taskId, feedbackText, selectedOptions) {
             (t) => t.task_id !== taskId && t.status !== "completed",
           );
           if (nextTask) {
-            console.log(`Auto-switching to next task: ${nextTask.task_id}`);
+            _debugLog(`Auto-switching to next task: ${nextTask.task_id}`);
             switchTask(nextTask.task_id);
           } else {
-            console.log("All tasks completed");
+            _debugLog("All tasks completed");
           }
         }, 200);
       }
@@ -2730,7 +2730,7 @@ function showNewTaskVisualHint(count) {
     }
   }, 3000);
 
-  console.log(`显示新任务视觉提示: ${count} 个新任务`);
+  _debugLog(`显示新任务视觉提示: ${count} 个新任务`);
 }
 
 /**
@@ -2814,7 +2814,7 @@ function showNewTaskNotification(count, taskIds) {
  * - 依赖DOM已加载
  */
 async function initMultiTaskSupport() {
-  console.log("Initializing multi-task support…");
+  _debugLog("Initializing multi-task support…");
 
   // R22.3：冷启关键路径并行化。
   // why：`fetchFeedbackPromptsFresh()` (`GET /api/get-feedback-prompts`) 与
@@ -2850,7 +2850,7 @@ async function initMultiTaskSupport() {
         taskTextareaContents[activeTaskId] = textarea.value;
       }
     });
-    console.log("Enabled real-time textarea autosave");
+    _debugLog("Enabled real-time textarea autosave");
   }
 
   // 监听选项变化
@@ -2869,10 +2869,10 @@ async function initMultiTaskSupport() {
         taskOptionsStates[activeTaskId] = states;
       }
     });
-    console.log("Enabled real-time option-state autosave");
+    _debugLog("Enabled real-time option-state autosave");
   }
 
-  console.log(
+  _debugLog(
     "Multi-task support initialized (with polling health-check and real-time autosave)",
   );
 }
@@ -2915,7 +2915,7 @@ async function refreshTasksList() {
   const ok = await fetchAndApplyTasks("manual");
   if (ok) {
     tasksPollBackoffMs = TASKS_POLL_BASE_MS;
-    console.log("Task list refreshed manually");
+    _debugLog("Task list refreshed manually");
   }
 
   // 手动刷新后确保轮询处于运行态（页面可见时）

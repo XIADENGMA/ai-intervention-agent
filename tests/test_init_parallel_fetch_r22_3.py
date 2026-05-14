@@ -340,6 +340,16 @@ class TestRuntimeBehavior(unittest.TestCase):
                 // 会污染 stdout，让父进程拿不到干净 JSON。warn / error 也吞掉，
                 // 因为 multi_task.js 在 stub 化之后某些 fallback 路径会 warn 出来。
                 globalThis.console = { log: () => {}, warn: () => {}, error: () => {}, info: () => {}, debug: () => {} };
+
+                // R218 (Cycle 11): multi_task.js 内 console.log → _debugLog
+                // (定义在文件顶部, harness 只 inject init body 不带 helper)。
+                // 提供 no-op stub 让 init body 内的 _debugLog 引用不抛
+                // ReferenceError。_debugLog 的真正语义 (window.AIIA_DEBUG
+                // gate + console.debug 委派 + typeof guard) 由
+                // ``test_multi_task_sse_console_noise.py::
+                // test_debug_log_handles_missing_console_without_reference_error``
+                // 单独覆盖。
+                globalThis._debugLog = () => {};
                 globalThis.setInterval = () => 0;
                 globalThis.document = {
                   hidden: false,

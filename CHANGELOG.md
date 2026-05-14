@@ -11,6 +11,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R218 / Cycle 11 · F-cycle10-1 (multi_task migration): migrate
+  multi_task.js 46 `console.log` → `_debugLog` helper**. Completes the
+  R216/R217 console-noise reduction trifecta by migrating the last
+  remaining INFO-level surface — `multi_task.js`'s 46 `console.log`
+  calls in deep link / polling / SSE / task add/remove/sync / retry /
+  countdown / tab bar render paths. Different strategy from R216/R217
+  (which used pure `console.log` → `console.debug` rename) because
+  `multi_task.js` already has a dedicated `_debugLog()` helper at file
+  line ~119: `function _debugLog() { if (!window.AIIA_DEBUG || typeof
+  console === "undefined" || typeof console.debug !== "function")
+  return; try { console.debug.apply(console, arguments); } catch (_)
+  {} }`. The helper provides **stronger** noise suppression than
+  raw `console.debug` because it requires opt-in via `window.AIIA_DEBUG
+  = true` (default false → fully silent even in DevTools Verbose);
+  developers debugging multi-task state changes flip the flag and get
+  full diagnostic stream. R218 R217 invariant test (`test_static_js_
+  console_log_demotion_invariant_r217.py`) was updated in the same
+  commit: `MULTI_TASK_BUDGET` tightened from 50 → 0, added a new
+  `test_multi_task_js_uses_debug_log_helper` invariant asserting
+  `_debugLog(` count ≥ 45 (proves R218 migration really happened, not
+  "deleted all log lines"). Also fixed a cross-cycle dependency:
+  `tests/test_init_parallel_fetch_r22_3.py`'s Node harness now injects
+  a `globalThis._debugLog = () => {}` no-op stub since R22.3's harness
+  only loads `initMultiTaskSupport` body without the helper definition,
+  and `init_body` now references `_debugLog` instead of `console.log`.
+  Cumulative R216+R217+R218 = **117 console.log demotions** across 11
+  project-owned JS files; the `static/js/` console-noise surface area
+  is now defensively bounded with three invariant test files locking
+  down the patterns (R216 for notification-manager, R217 for the rest,
+  R218 piggybacks on R217's MULTI_TASK_DEBUGLOG_MIN). `console.warn`
+  / `console.error` channels deliberately untouched (real signals
+  must remain visible).
+
 - **R217 / Cycle 11 · F-cycle10-1 (propagation): demote
   `console.log` → `console.debug` across remaining 9 project-owned
   static/js/ files**. Extends R216's notification-manager.js

@@ -91,8 +91,16 @@ VENDOR_FILES = (
 MULTI_TASK_FILE = "multi_task.js"
 DOM_SECURITY_FILE = "dom-security.js"
 
-MULTI_TASK_BUDGET = 50  # R218 之前允许接近 baseline 46
+# R218 完成 multi_task.js 的 console.log → _debugLog migration 后, budget
+# 从 50 收紧到 0 — 该文件应 zero console.log( 调用 (改用 _debugLog
+# 通过 window.AIIA_DEBUG flag 控制是否真正输出)。
+MULTI_TASK_BUDGET = 0  # R218 完成后收紧 (R217 当时是 50, R218 = 0)
 DOM_SECURITY_BUDGET = 3  # JSDoc 示例 budget
+
+# R218: multi_task.js 应有充足的 _debugLog 调用证明 migration 真发生
+# (R218 前已有少量 _debugLog 在 _connectSSE 体内, R218 把全文 46 个
+# console.log → _debugLog, baseline 约 ≥ 50)
+MULTI_TASK_DEBUGLOG_MIN = 45
 
 
 class TestR217DemotedFilesZeroConsoleLog(unittest.TestCase):
@@ -149,7 +157,7 @@ class TestSpecialBudgetFiles(unittest.TestCase):
     """multi_task.js + dom-security.js 单独 budget 守 (前者 R218 处理, 后者 JSDoc 示例)。"""
 
     def test_multi_task_js_under_budget(self) -> None:
-        """multi_task.js console.log( count ≤ MULTI_TASK_BUDGET (R218 之前 baseline)。"""
+        """multi_task.js console.log( count ≤ MULTI_TASK_BUDGET (R218 已收紧到 0)。"""
         path = STATIC_JS_DIR / MULTI_TASK_FILE
         src = path.read_text(encoding="utf-8")
         count = src.count("console.log(")
@@ -157,8 +165,22 @@ class TestSpecialBudgetFiles(unittest.TestCase):
             count,
             MULTI_TASK_BUDGET,
             f"{MULTI_TASK_FILE} console.log( = {count}, 超过 budget {MULTI_TASK_BUDGET}。"
-            "R218 应当把这些 demote 为 _debugLog (multi_task.js 已有 _debugLog helper); "
-            "在 R218 落地前不要新加 console.log( 到此文件。",
+            "R218 已完成 multi_task.js 的全部 console.log → _debugLog migration, "
+            "此文件应 zero console.log( 调用。新加 console.log 请改用 _debugLog (定义在文件开头)。",
+        )
+
+    def test_multi_task_js_uses_debug_log_helper(self) -> None:
+        """multi_task.js 应有 ≥ MULTI_TASK_DEBUGLOG_MIN 个 _debugLog( 调用证明 R218 migration 真发生。"""
+        path = STATIC_JS_DIR / MULTI_TASK_FILE
+        src = path.read_text(encoding="utf-8")
+        count = src.count("_debugLog(")
+        self.assertGreaterEqual(
+            count,
+            MULTI_TASK_DEBUGLOG_MIN,
+            f"{MULTI_TASK_FILE} _debugLog( = {count}, 少于 R218 baseline {MULTI_TASK_DEBUGLOG_MIN}。"
+            "可能 (a) 有人把 _debugLog 改回 console.log; (b) 误删大量诊断 log。"
+            "请审查 git diff 找回根因。R218 后 multi_task.js 应有充足 _debugLog 调用 "
+            "(被 window.AIIA_DEBUG flag 门控, 默认 production silent)。",
         )
 
     def test_dom_security_js_under_jsdoc_budget(self) -> None:
