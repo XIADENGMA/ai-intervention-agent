@@ -24,6 +24,12 @@
 - [`i18n.md`](i18n.md) — i18n 唯一权威：`t()` 运行时合约、每条
   `check_i18n_*.py` 门禁的执行边界、如何新增 locale 或扩展
   pseudo locale。
+- [`contributor-guide-invariant-tests.zh-CN.md`](contributor-guide-invariant-tests.zh-CN.md) · [`contributor-guide-invariant-tests.md`](contributor-guide-invariant-tests.md)
+  — `tests/test_*_invariant_*.py` 这一类测试的模式手册：决策树
+  （§2）、五种常见模式（§3：静态源串、AST 扫描、JSON/YAML 结构
+  化检查、双语 locale 平价、跨工具字节平价）、应回避的反模式
+  （§4），以及当前仓库锁定的全部不变量的总览（§6）。在写或删
+  不变量测试之前必读。
 - [`api.zh-CN/index.md`](api.zh-CN/index.md) · [`api/index.md`](api/index.md)
   — 自动生成的 Python 公共表面模块参考：核心契约模块
   （`config_manager`、`notification_*`、`task_queue`、`protocol`、

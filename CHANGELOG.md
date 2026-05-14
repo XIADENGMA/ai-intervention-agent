@@ -11,6 +11,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R227 / Cycle 13 · F-cycle12-4: contributor guide for the
+  invariant-test pattern (bilingual)**. CR#25 §7 follow-up. The
+  repo had accumulated 12+ invariant tests across cycles 9–13 but
+  no central documentation explaining the pattern, when to write
+  one, how to choose between sub-patterns, or what anti-patterns
+  to avoid. New
+  `docs/contributor-guide-invariant-tests{,.zh-CN}.md` ships:
+  (§1) what an invariant test is with three concrete examples
+  from the repo (R220 dashboard parity, R217 byte-twin parity,
+  R215 smoke test scalar parity); (§2) a 5-question decision tree
+  for "is this worth an invariant?"; (§3) five recurring patterns
+  with copy-paste recipes: static-source string-presence check
+  (R216), AST-based call-site enumeration (R198 SSE scanner),
+  JSON/YAML structural (R220 Grafana), bilingual locale parity
+  (R214), cross-tool byte parity (R217 state.js ↔ webview-state.js);
+  (§4) five anti-patterns to avoid; (§5) end-to-end workflow for
+  adding a new invariant; (§6) catalogue of all 12 invariants
+  currently locked in the repo with R-cycle, file path, pattern
+  tag, and what each locks; (§7) further reading cross-links to
+  the silent-decay lessons-learned + code-reviews + release-recovery
+  docs. Linked from both `docs/README{,.zh-CN}.md`. Guarded by
+  `tests/test_invariant_test_guide_catalogue_r227.py` (10 cases /
+  14 subtests): both guide files exist; §6 catalogue lists ≥ 8
+  test files; every referenced test path actually exists on disk;
+  every referenced test parses as valid Python (catches stale
+  paths to deleted files); bilingual catalogue references the
+  same set of files (catalogue rows are data, not prose); both
+  guides cross-link each other so a reader landing on either
+  always finds the other.
+
 - **R226 / Cycle 13 · F-cycle12-2: pre-commit hook for static
   asset precompress freshness**. CR#25 §3 flagged that R223 added
   a new i18n key to `en.json` / `zh-CN.json` but did NOT regenerate

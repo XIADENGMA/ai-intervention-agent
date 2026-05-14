@@ -26,6 +26,13 @@ Find your role below to jump straight to the page you need.
 - [`i18n.md`](i18n.md) — single source of truth for everything i18n:
   how `t()` works at runtime, what each `check_i18n_*.py` gate
   enforces, how to add a new locale or extend the pseudo locale.
+- [`contributor-guide-invariant-tests.md`](contributor-guide-invariant-tests.md) · [`contributor-guide-invariant-tests.zh-CN.md`](contributor-guide-invariant-tests.zh-CN.md)
+  — pattern catalogue for the `tests/test_*_invariant_*.py` family,
+  with a decision tree (§2), five recurring patterns (§3 — static
+  source check, AST scan, JSON/YAML structural, bilingual locale
+  parity, cross-tool byte parity), anti-patterns to avoid (§4),
+  and the repo-wide catalogue of every invariant currently locked
+  (§6). Read this before writing or deleting an invariant test.
 - [`api/index.md`](api/index.md) · [`api.zh-CN/index.md`](api.zh-CN/index.md)
   — auto-generated module reference for the public Python surface:
   core contract modules (`config_manager`, `notification_*`,
