@@ -11,6 +11,57 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R210 / Cycle 10 · F-205-1 (CR#22 §4 Important): `AIIA_SSE_SCHEMA_
+  VALIDATE` env-var docs sync into `docs/configuration.{md,zh-CN.md}`**.
+  R205 (Cycle 9) 引入 ``AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict`` 运
+  行时 SSE schema 验证开关，但 ``docs/configuration.md`` /
+  ``configuration.zh-CN.md`` 没有同步——fresh contributor / 运维
+  ``grep AIIA_`` 找环境变量时根本找不到该 env var 的说明。CR#22 §4
+  把这个 docs-sync miss 列为 Important 级别 follow-up (F-205-1)，
+  R210 收尾该 follow-up。
+
+  **实现 (2 文件 + 1 测试)**:
+
+  - ``docs/configuration.md`` 在 §"Auto-migration" 之前新增子节
+    "Ops / debug env vars"，完整说明 ``AIIA_SSE_SCHEMA_VALIDATE``：
+    ``off`` (默认，零开销) / ``warn`` (违规 WARNING + counter +1) /
+    ``strict`` (违规 ERROR + counter +1，**不抛异常**——``_SSEBus.
+    emit()`` fire-and-forget 契约不变); 无效值 fall back ``off`` +
+    启动 ``WARNING`` 一次; **Twelve-Factor sticky 读取** (启动后改
+    env var 必须重启生效); 计数器双通道暴露 (``/api/system/stats``
+    JSON ``schema_violation_total`` + ``/api/system/metrics``
+    Prometheus ``aiia_sse_schema_violation_total`` counter，与 R207
+    omit-when-off 契约一致); 单 emit 多字段错只算 1 次 violation
+    (噪声抑制)。
+  - ``docs/configuration.zh-CN.md`` 同步双语 lockstep (沿用 R178 /
+    R185 / R206 / R209 i18n 契约)。
+  - ``tests/test_configuration_env_var_docs_r210.py`` (NEW, 6 cases /
+    2 invariant class) 守结构性契约：双语都含 env var 名 + 3 mode
+    名 + R205 / R207 / F-204-1 / Twelve-Factor / omit-when-off /
+    fire-and-forget 关键 design keyword (让 ops grep 能定位完整背景)。
+
+  **设计取舍 · 放 "Ops / debug env vars" 子节 vs 塞 Settings 表**:
+
+  - "Ops / debug env vars" 子节: env var 本质是**运行时 toggle**, 不
+    是 user-facing config (默认 off, 普通用户不需要碰), 与现有
+    §"Path discovery env vars" 风格一致；
+  - 塞 Settings 表 (``[ui]`` / ``[security]`` 那种): 会让普通配置者
+    误以为是常规 setting, 但实际它没有 ``config.toml`` 字段对应。
+
+  → "Ops / debug env vars" 子节胜出（独立段落 + 明确 "ops only"
+  signal）。
+
+  **沿用 R185 + R206 + R209 静态字符串匹配 + 双语 lockstep 模式**
+  — 不深入语义校验文档措辞, 留出 wording polish 空间, 只锁结构性契
+  约 (env var 名 + 3 mode 名 + 关键 design keyword)。
+
+  **验证**: R210 6 cases PASS; ``uv run ty check . → All checks
+  passed!``; ``uv run ruff check . && ruff format --check . →
+  All passed!``; 完整 ``pytest`` baseline 5461 → 5467 (净增 +6
+  from R210); ``scripts/generate_docs.py --check`` 两份语言 26/26 一
+  致 (docs/configuration.{md,zh-CN.md} 是 prose docs, 不在
+  ``MODULES_TO_DOCUMENT``)。
+
 - **R209 / Cycle 10 · F-release-2 (CR#22 §4 Important): pre-commit
   pre-push hook for `check_tag_push_safety.py` enforcement**. R206
   (cycle 9) 把 v1.7.2 docs-sync miss 经验固化成 13 步本地预飞行清

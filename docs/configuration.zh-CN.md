@@ -157,6 +157,26 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 - 路径探测类 env vars（`AI_INTERVENTION_AGENT_CONFIG_FILE`、`*_DEV_MODE`、
   `*_USER_MODE`、`UVX_PROJECT`）—— 详见上面的查找顺序表格。
 
+#### 运维 / 调试 env vars
+
+- `AIIA_SSE_SCHEMA_VALIDATE`（R205 / Cycle 9 · F-204-1；R210 文档）
+  —— SSE bus emit-site schema 验证 opt-in 开关。取值：`off`
+  （默认 —— 零开销，与 R198 历史行为一致），`warn`（每次 emit
+  都验证，违规走 `WARNING` log + `_schema_violation_total` 计
+  数器累加；emit 仍 fanout 不阻塞），`strict`（同 warn 但违规
+  走 `ERROR` log 让 alertmanager 按 severity 区分路由；**不抛异
+  常**——`_SSEBus.emit()` 是 fire-and-forget 契约, 多数 emit-site
+  无 `try/except` 包裹，raise 会让 production 挂掉）。无效值
+  → fall back `off` + 启动 `WARNING` 一次。**进程启动时读一次**
+  （Twelve-Factor sticky），启动后改 env var 不生效，必须重启。
+  计数器通过 `/api/system/stats` JSON
+  （`stats_snapshot()['schema_violation_total']`）与 `/api/system/
+metrics` Prometheus `aiia_sse_schema_violation_total` counter
+  （R207 / Cycle 10 · F-205-2，**omit-when-off** —— 用 `absent(
+aiia_sse_schema_violation_total)` 可分清「监控关闭」vs「监控开
+  启且 0 violation」两类 ops 状态）暴露。一条 emit 多字段错只算
+  1 次 violation（避免噪声膨胀）。
+
 ### 跨平台用户配置目录
 
 - Linux：`~/.config/ai-intervention-agent/`
@@ -242,14 +262,14 @@ notification per-provider）。任何子系统探测失败仅会让对应 metric
 
 控制 Web UI 绑定网卡与访问控制。
 
-| 配置项                   | 类型     | 默认值     | 说明                                   |
-| ------------------------ | -------- | ---------- | -------------------------------------- |
-| `bind_interface`         | string   | `0.0.0.0`  | `127.0.0.1` 仅本机；`0.0.0.0` 所有接口 |
-| `allowed_networks`       | string[] | （见模板） | CIDR 白名单                            |
-| `blocked_ips`            | string[] | `[]`       | IP 黑名单                              |
-| `access_control_enabled` | boolean  | `true`     | 是否启用访问控制                       |
-| `api_token`              | string   | `""`       | 可选 API token 认证（R189 / T4）。空串=未配置（仅 loopback 来源能调用敏感写入端点，与默认行为一致）。配置后 non-loopback 客户端可通过 ``Authorization: Bearer <token>`` 或 ``X-API-Token: <token>`` 头携带 token 调用 ``POST /api/system/log-level`` / ``POST /api/system/open-config-file`` 等写入端点。Loopback 来源始终通过——token 是**额外**通道，不是替代。最少 16 字符（短于此长度静默视作未配置并打 warning）。生成方式：``python -c "import secrets; print(secrets.token_urlsafe(32))"`` |
-| `api_token_rotated_at`   | string   | `""`       | R199 / Cycle 7。上次 ``POST /api/system/rotate-api-token`` 调用的 ISO-8601 UTC 时间戳。由 rotation 端点**自动**写入；``GET /api/system/api-token-info`` 读取后计算「token age」用于 dashboard alert（NIST SP 800-63B 建议 30-90 天轮换）。空串 = 从未轮换。**禁止手动编辑**——这是 rotation 端点的 owned field。非法格式（不是 ISO-8601、或缺少 ``Z``/``+00:00`` 后缀）会被静默丢弃并打 warning。 |
+| 配置项                   | 类型     | 默认值     | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------ | -------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bind_interface`         | string   | `0.0.0.0`  | `127.0.0.1` 仅本机；`0.0.0.0` 所有接口                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `allowed_networks`       | string[] | （见模板） | CIDR 白名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `blocked_ips`            | string[] | `[]`       | IP 黑名单                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `access_control_enabled` | boolean  | `true`     | 是否启用访问控制                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `api_token`              | string   | `""`       | 可选 API token 认证（R189 / T4）。空串=未配置（仅 loopback 来源能调用敏感写入端点，与默认行为一致）。配置后 non-loopback 客户端可通过 `Authorization: Bearer <token>` 或 `X-API-Token: <token>` 头携带 token 调用 `POST /api/system/log-level` / `POST /api/system/open-config-file` 等写入端点。Loopback 来源始终通过——token 是**额外**通道，不是替代。最少 16 字符（短于此长度静默视作未配置并打 warning）。生成方式：`python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `api_token_rotated_at`   | string   | `""`       | R199 / Cycle 7。上次 `POST /api/system/rotate-api-token` 调用的 ISO-8601 UTC 时间戳。由 rotation 端点**自动**写入；`GET /api/system/api-token-info` 读取后计算「token age」用于 dashboard alert（NIST SP 800-63B 建议 30-90 天轮换）。空串 = 从未轮换。**禁止手动编辑**——这是 rotation 端点的 owned field。非法格式（不是 ISO-8601、或缺少 `Z`/`+00:00` 后缀）会被静默丢弃并打 warning。                                                                                               |
 
 **Host 选择规则**：
 

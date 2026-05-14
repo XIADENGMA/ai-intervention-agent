@@ -170,6 +170,27 @@ transient internal error.
 - Discovery env vars (`AI_INTERVENTION_AGENT_CONFIG_FILE`, `*_DEV_MODE`,
   `*_USER_MODE`, `UVX_PROJECT`) — see the [lookup table](#config-file-location--lookup-order) above.
 
+#### Ops / debug env vars
+
+- `AIIA_SSE_SCHEMA_VALIDATE` (R205 / Cycle 9 · F-204-1; R210 docs)
+  — opt-in toggle for SSE bus emit-site schema validation. Accepted
+  values: `off` (default — zero overhead, R198 historical behavior),
+  `warn` (validate every emit, log violations at `WARNING` level +
+  bump `_schema_violation_total` counter; emit still fanouts non-
+  blocking), `strict` (same as `warn` but log violations at `ERROR`
+  level so alertmanager can route severity differently; **does NOT
+  raise** — `_SSEBus.emit()` is fire-and-forget and most emit-sites
+  have no `try/except`). Invalid values fall back to `off` with a
+  startup `WARNING`. Read **once at process startup** (Twelve-Factor
+  sticky); changing the env var after start does not take effect
+  until restart. Counter exposed via `/api/system/stats` JSON
+  (`stats_snapshot()['schema_violation_total']`) and `/api/system/
+metrics` Prometheus `aiia_sse_schema_violation_total` counter
+  (R207 / Cycle 10 · F-205-2, **omit-when-off** — use `absent(
+aiia_sse_schema_violation_total)` to distinguish "monitoring
+  off" from "monitoring on with 0 violations"). Multi-field
+  violation on one emit counts as 1 (no noise inflation).
+
 ### Auto-migration
 
 If a `config.jsonc` or `config.json` file is found via auto-discovery (not explicitly specified), it will be automatically migrated to `config.toml`:
@@ -267,14 +288,14 @@ Controls the Web UI server and HTTP client behavior.
 
 Controls which interfaces the Web UI binds to and which networks can access it.
 
-| Key                      | Type     | Default        | Notes                                                    |
-| ------------------------ | -------- | -------------- | -------------------------------------------------------- |
-| `bind_interface`         | string   | `0.0.0.0`      | `127.0.0.1` for local-only; `0.0.0.0` for all interfaces |
-| `allowed_networks`       | string[] | (see template) | CIDR allowlist                                           |
-| `blocked_ips`            | string[] | `[]`           | Explicit deny list                                       |
-| `access_control_enabled` | boolean  | `true`         | Enable allow/deny checks                                 |
+| Key                      | Type     | Default        | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------ | -------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bind_interface`         | string   | `0.0.0.0`      | `127.0.0.1` for local-only; `0.0.0.0` for all interfaces                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `allowed_networks`       | string[] | (see template) | CIDR allowlist                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `blocked_ips`            | string[] | `[]`           | Explicit deny list                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `access_control_enabled` | boolean  | `true`         | Enable allow/deny checks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `api_token`              | string   | `""`           | Optional API token (R189 / T4). Empty = loopback-only writes (default). When set, non-loopback callers can authenticate via `Authorization: Bearer <token>` or `X-API-Token: <token>` to access write-mutation endpoints (`POST /api/system/log-level`, `POST /api/system/open-config-file`). Loopback always passes; token is an additional path, not a replacement. Min 16 chars (shorter values are dropped with a warning). Generate via `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
-| `api_token_rotated_at`   | string   | `""`           | R199 / Cycle 7. ISO-8601 UTC timestamp of the last `POST /api/system/rotate-api-token` invocation. Written **automatically** by the rotation endpoint; read by `GET /api/system/api-token-info` to compute "token age" for dashboards (NIST SP 800-63B recommends 30–90 day rotation). Empty string = never rotated. **Do not edit by hand**—the rotation endpoint owns this field. Malformed values (not ISO-8601, missing `Z`/`+00:00` suffix) are dropped to empty with a warning. |
+| `api_token_rotated_at`   | string   | `""`           | R199 / Cycle 7. ISO-8601 UTC timestamp of the last `POST /api/system/rotate-api-token` invocation. Written **automatically** by the rotation endpoint; read by `GET /api/system/api-token-info` to compute "token age" for dashboards (NIST SP 800-63B recommends 30–90 day rotation). Empty string = never rotated. **Do not edit by hand**—the rotation endpoint owns this field. Malformed values (not ISO-8601, missing `Z`/`+00:00` suffix) are dropped to empty with a warning.                       |
 
 **Host selection rule**:
 
