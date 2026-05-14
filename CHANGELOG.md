@@ -11,6 +11,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R215 / Cycle 10 · F-205-4: smoke_test_r50 forward-compat field
+  parity with `SSEBusStatsSnapshot`**. `scripts/smoke_test_r50.py`'s
+  `_check_stats_endpoint()` hardcoded a `needed` tuple of SSE-stats
+  fields when written for the R47/R50 cycle, but never synced when
+  R51-B added `heartbeat_total`, R61 added `oversize_drops`, R205 added
+  `schema_validate_mode` + `schema_violation_total`. Silent decay risk
+  (CR#10 lessons-learned root cause 3, same pattern as R213): an
+  operator runs `python scripts/smoke_test_r50.py` to verify
+  "the R205 schema-validation feature is alive in production",
+  smoke goes all green via the stale `needed` list while
+  `sse_stats` route may have silently dropped those fields after a
+  refactor — R205 invisible in production but smoke reports OK, and
+  alertmanager loses its `aiia_sse_schema_violation_total` data
+  source. Fix: extend `needed` to include all 4 historically-added
+  scalar fields (`heartbeat_total`, `oversize_drops`,
+  `schema_validate_mode`, `schema_violation_total`). 5 invariant tests
+  + 2 subtests in
+  `tests/test_smoke_test_r50_field_drift_invariant_r215.py` AST-parse
+  both the smoke `needed` tuple and the `SSEBusStatsSnapshot` TypedDict
+  to lock down: R205 keys hard-coded in `needed` (negative regression
+  guard for both keys), TypedDict scalar parity (any future scalar
+  added to `SSEBusStatsSnapshot` must be added to smoke `needed` or
+  this test fails — found 2 pre-existing drifts the first time it
+  ran), R47 head-of-line keys (`emit_total` / `latest_event_id`)
+  retained, and `needed` structural integrity (literal `tuple[str,
+  ...]`, no dynamic construction). Bonus: zero new code in the smoke
+  script's runtime logic — the change is purely "extend the
+  hardcoded whitelist", so existing R50 debounce / streaming
+  assertions remain byte-identical.
+
 - **R214 / Cycle 10 · F-notif-fallback-1: friendly visible fallback toast
   when system notification permission denied / unavailable**. Pre-R214,
   `notification-manager.js`'s `showFallbackNotification()` called

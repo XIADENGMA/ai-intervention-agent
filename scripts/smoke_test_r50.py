@@ -73,6 +73,14 @@ def _check_stats_endpoint(host: str, port: int) -> dict[str, Any]:
     body = resp.json()
     if not body.get("success"):
         _abort(f"sse-stats 返回 success=False：{body!r}")
+    # R215 / Cycle 10 · F-205-4: needed 列表必须与 _SSEBus.stats_snapshot()
+    # 暴露的字段集合保持 forward-compat parity——历史教训：本列表为 R47/R50
+    # cycle 写定后, R205 (cycle 9) 加 `schema_validate_mode` /
+    # `schema_violation_total` 时 smoke test 没同步, 导致一旦运维跑 smoke
+    # 验证生产部署「R205 schema validation feature 还活着吗」时, smoke 显
+    # 示「全绿」但实际上 schema_validate_mode 字段被 route 误 strip 也不
+    # 会报。`tests/test_smoke_test_r50_field_drift_invariant_r215.py` 守
+    # 该列表必须涵盖 stats_snapshot keys 的核心子集 (含 R205 新字段)。
     needed = (
         "emit_total",
         "latest_event_id",
@@ -80,6 +88,14 @@ def _check_stats_endpoint(host: str, port: int) -> dict[str, Any]:
         "backpressure_discards",
         "subscriber_count",
         "history_size",
+        # R51-B: SSE keepalive 心跳累计 (debug long-lived connection 用)
+        "heartbeat_total",
+        # R61: emit() 单条事件超 size 上限被 drop 的累计计数
+        "oversize_drops",
+        # R205 (cycle 9) · AIIA_SSE_SCHEMA_VALIDATE: 暴露当前 sticky mode
+        "schema_validate_mode",
+        # R205 (cycle 9) · 违规累计 counter (R207 mirror 到 Prometheus)
+        "schema_violation_total",
     )
     for key in needed:
         if key not in body:
