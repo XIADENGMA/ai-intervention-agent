@@ -9,6 +9,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R226 / Cycle 13 · F-cycle12-2: pre-commit hook for static
+  asset precompress freshness**. CR#25 §3 flagged that R223 added
+  a new i18n key to `en.json` / `zh-CN.json` but did NOT regenerate
+  the precompressed `.br` / `.gz` mirrors — `ci_gate.py` caught
+  the drift on the next run, but the 1-commit lag meant a server
+  hot-reloading the JSON would briefly serve the old precompressed
+  string until the catch-up. R226 promotes the freshness check
+  from `ci_gate.py` into `.pre-commit-config.yaml` as a new local
+  hook (`check-static-precompress-fresh`) gated on changes under
+  `src/ai_intervention_agent/static/(css|js|locales)/`. The hook
+  invokes `scripts/precompress_static.py --check` (`pass_filenames:
+  false`, `language: system` to inherit the project's uv env) and
+  exits non-zero if any `.br` / `.gz` mirror's decompressed bytes
+  don't match the source file. Failure mode points users at the
+  fix command (`uv run python scripts/precompress_static.py` —
+  no `--check`) and then `git add src/ai_intervention_agent/static/`
+  for re-commit. Guarded by
+  `tests/test_precompress_pre_commit_hook_invariant_r226.py`
+  (10 cases / 3 subtests): config file exists + hook id present
+  + entry invokes the right script + files pattern covers the
+  three asset subdirs (css / js / locales) + `pass_filenames:
+  false` + `language: system` + R226 / F-cycle12-2 provenance
+  documented in a hook comment + the target script exists and
+  advertises `--check` in its `--help` output. Saves the
+  push → CI → catch-up cycle that R223 → R224 needed.
+
 ## [1.7.4] — 2026-05-14
 
 > Cycle 12 release packing R221–R225. Pure additive cycle:

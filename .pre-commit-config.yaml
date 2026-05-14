@@ -167,3 +167,34 @@ repos:
         language: system
         pass_filenames: false
         files: ^CHANGELOG\.md$
+
+  # R226 / Cycle 13 · F-cycle12-2 护栏：locale precompress 副本新鲜度。
+  #
+  # 背景：``src/ai_intervention_agent/static/locales/*.json`` 修改后必须
+  # 同步重新生成对应的 ``.gz`` / ``.br`` 预压缩副本（``scripts/precompress_static.py``），
+  # 否则生产服务器会继续 serve 旧版本字符串（Flask 优先服务 ``.br`` →
+  # ``.gz``）。R223 在 ``fd2c069`` 给 ``settings.shortcutsFullHelpHint``
+  # 加了新 i18n key 但**没有**重生预压缩副本——CI gate 捕获了漂移并在
+  # R224 ``e8c9b94`` commit 顺手 bundle 回去。CR#25 §3 把该 footgun 标
+  # 注为 F-cycle12-2 importance follow-up。
+  #
+  # 本 hook 把 ``precompress_static.py --check`` 提到 pre-commit 阶段：
+  # 当 staged diff 触及任意 ``static/`` 资源（含 locale JSON）时立即
+  # fail-closed，逼用户在 commit 前先跑 ``uv run python
+  # scripts/precompress_static.py`` 同步副本。比"提交后等 ci_gate 抓"
+  # 节省一次 push / CI roundtrip 时间。
+  #
+  # 性能：``--check`` 只读 + 解压 + byte 比较，不写盘；约 50–200 ms,
+  # 与其他 hook 同档。
+  #
+  # 失败修复方式：脚本输出会提示运行 ``uv run python
+  # scripts/precompress_static.py``（不带 ``--check``）来重生副本，
+  # 然后 ``git add src/ai_intervention_agent/static/`` 重新 commit。
+  - repo: local
+    hooks:
+      - id: check-static-precompress-fresh
+        name: locale / 静态资源预压缩副本新鲜度（R226 / F-cycle12-2 护栏）
+        entry: uv run python scripts/precompress_static.py --check
+        language: system
+        pass_filenames: false
+        files: ^src/ai_intervention_agent/static/(css|js|locales)/
