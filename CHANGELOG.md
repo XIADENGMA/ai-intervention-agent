@@ -9,6 +9,68 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R208 / Cycle 10 · F-204-2 (CR#22 §4 Important): unify token age
+  computation into shared `_compute_age_seconds_from_iso` helper**.
+  R199 ``GET /api/system/api-token-info`` endpoint inline 与 R204
+  ``_safe_token_age_seconds()`` 之前各自维护一份**完全相同**的 age
+  计算（``rotated_at.replace("Z", "+00:00")`` + ``fromisoformat`` +
+  clock-skew negative check），任何 bug fix 都必须同步两处, 仅靠
+  R204 ``TestEndpointMetricParity`` invariant 在运行时验证一致。
+
+  R208 把算法抽到 module-level ``_compute_age_seconds_from_iso(rotated
+  _at: object) -> int | None`` 共享 helper, 两处调用同一份实现 →
+  **source-level drift 风险消失**, R204 parity invariant 退化为
+  defensive belt-and-suspenders 守护。
+
+  **设计契约严格保持与原两份实现一致** (validated by R208 +
+  preserved R199 + R204 测试套):
+
+  - 输入非 ``str`` / 空串 → ``None``;
+  - ``rotated_at`` 解析失败 (ValueError / TypeError) → ``None``;
+  - ``age < 0`` (系统时钟跳变 / 未来时间戳) → ``None``;
+  - 正常情况 → ``int`` (秒, ≥ 0)。
+
+  **重构细节**:
+
+  - 新 helper signature 用 ``object`` (而非 ``str``) — caller 不必预
+    先 isinstance check, helper 内部统一处理 (R199 endpoint + R204
+    helper 调用点都简化了)。
+  - helper 是 **pure function**: 无 log、无 I/O。R199 endpoint 原有
+    的 ``logger.debug("解析 rotated_at 失败")`` **删除** — debug log
+    不是公共契约的一部分 (R199 测试不依赖); helper silent 与
+    ``_safe_uptime_seconds`` 等其他 ``_safe_*`` helper 风格一致。
+  - R204 ``_safe_token_age_seconds`` 重构后**只**负责 config 读取 +
+    token validity 检查 (长度 ≥ 16), age 计算委托 helper。
+  - R199 endpoint inline 重构后 age 计算一行调用, 删 18 行 inline
+    fromisoformat 逻辑。
+
+  **测试 (15 cases / 4 invariant class)** ——
+  ``tests/test_compute_age_seconds_from_iso_r208.py``:
+
+  1. **TestNonStringInput** (3): None / int / dict → None;
+  2. **TestEmptyString** (1): "" → None;
+  3. **TestMalformedTimestamp** (3): 随机串 / 月份 13 / 字母混入 →
+     None (ValueError 被 catch);
+  4. **TestValidTimestamp** (6): UTC Z 后缀 / +00:00 offset / 45 天前
+     (NIST 30-90 中点) / 刚刚 / int return type 契约 / 微秒精度时间
+     戳 → 正确 int;
+  5. **TestFutureTimestamp** (2): 未来 1 秒 / 1 天 → None (clock skew
+     防御)。
+
+  **regression 验证**: R199 (15 cases) + R200 (13 cases) + R204 (10
+  cases) + R195 (14 cases) **共 52 cases PASS** 全部不动 — endpoint
+  / metric 行为对外完全一致, F-204-2 是 **pure refactor** 不引入新
+  behavior。
+
+  **验证**: R208 15 cases PASS; R199/R200/R204/R195 完整 52 cases
+  regression PASS; ``uv run ty check . → All checks passed!``;
+  ``uv run ruff check . && ruff format --check . → All passed!``;
+  完整 ``pytest`` **5453 passed / 2 skipped / 646 subtests passed
+  in 160s** (R207 baseline 5438 → 5453, 净增 +15 from R208);
+  ``scripts/generate_docs.py --check`` 两份语言 26/26 一致。
+
 ### Added
 
 - **R207 / Cycle 10 · F-205-2 (CR#22 §4 Important): `aiia_sse_schema_

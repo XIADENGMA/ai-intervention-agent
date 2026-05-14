@@ -496,6 +496,52 @@ def _safe_notification_summary() -> dict[str, object] | None:
         return None
 
 
+def _compute_age_seconds_from_iso(rotated_at: object) -> int | None:
+    """计算给定 ISO8601 时间戳到现在的秒数；失败 / 异常 → ``None``。
+
+    R208 / Cycle 10 · F-204-2 (CR#22 §4 Important) 新增。**统一两处
+    verbatim duplicated 的 token age 计算**:
+
+    1. R199 ``GET /api/system/api-token-info`` endpoint 的 ``age_seconds`` 字段;
+    2. R204 ``_safe_token_age_seconds()`` helper (Prom gauge 数据源)。
+
+    在 R208 之前，两处都各自 ``rotated_at.replace("Z", "+00:00")`` +
+    ``fromisoformat`` + clock skew 检查，bug fix 必须同步 (R204
+    ``TestEndpointMetricParity`` invariant 在运行时验证两路结果一致)。
+    R208 把算法提到 module-level 单一 helper，消除 source-level
+    drift 风险。**契约严格保持与原两份实现一致**:
+
+    - 输入非 ``str`` / 空串 → ``None``;
+    - ``rotated_at`` 解析失败 (脏数据) → ``None``;
+    - ``age`` < 0 (系统时钟跳变 / config 里时间戳来自未来) → ``None``
+      (0 也不合适, dashboard 看到 0 会误以为刚轮换);
+    - 正常情况 → ``int`` (秒, ≥ 0)。
+
+    helper 是 **pure function** (无 log、无 I/O), 让 caller 自由决定
+    是否在 None 时记 log / 返回 fallback。R199 endpoint 在 R208 重构
+    时一并删除 ``logger.debug`` (debug log 不是公共契约的一部分; helper
+    silent 与 ``_safe_uptime_seconds`` 等其他 ``_safe_*`` helper 风格
+    一致)。
+
+    Args:
+        rotated_at: ISO8601 时间戳字符串 (典型: ``"2026-01-15T00:00:00Z"``)，
+            非 str / 空串 → 返回 None。**注意** 类型签名是 ``object``,
+            让 caller 不必预先 isinstance check (helper 内部统一处理),
+            R199 endpoint + R204 helper 调用点都简化。
+    """
+    if not isinstance(rotated_at, str) or not rotated_at:
+        return None
+    try:
+        from datetime import UTC, datetime
+
+        ts = rotated_at.replace("Z", "+00:00")
+        rotated_dt = datetime.fromisoformat(ts)
+        age = int((datetime.now(UTC) - rotated_dt).total_seconds())
+    except (ValueError, TypeError):
+        return None
+    return age if age >= 0 else None
+
+
 def _safe_token_age_seconds() -> int | None:
     """读 ``[network_security].api_token_rotated_at`` 计算当前 token age (秒)。
 
@@ -505,19 +551,13 @@ def _safe_token_age_seconds() -> int | None:
 
     - 无 token (``api_token`` 缺失 / 长度 < 16) → ``None`` (Prom 端
       不输出 metric，与 ``_safe_uptime_seconds`` 等 helper 同款契约);
-    - 无 ``api_token_rotated_at`` (R199 之前的旧 config / 已被 R200
-      cascade-clear) → ``None``;
-    - ``rotated_at`` 解析失败 (脏数据) → ``None``;
-    - ``age`` 计算结果 < 0 (系统时钟跳变 / config 里时间戳来自未来)
-      → ``None`` (0 也不合适, dashboard 看到 0 会误以为刚轮换);
-    - 正常情况 → ``int`` (秒, ≥ 0).
+    - 无 / 解析失败 / 未来时间戳的 ``api_token_rotated_at`` → ``None`` (
+      详见 ``_compute_age_seconds_from_iso`` docstring)。
 
-    本函数与 R199 endpoint inline 逻辑刻意 duplicated 而非提到 module
-    level 共享 helper, 因为 endpoint inline 已被 R199 测试覆盖 5+ case,
-    重构有 backward-compat 风险 + endpoint 返回 dict (多字段) vs 本函数
-    返回 int | None (单值), 抽象层不对齐. R205+ 可以考虑统一. 当前两份
-    实现的算法是 verbatim 复制粘贴, 任何 bug fix 必须同步 (见
-    test_token_age_seconds_metric_r204 invariant 守护)。
+    R208 / Cycle 10 · F-204-2 把算法部分抽到 ``_compute_age_seconds_
+    from_iso`` 共享 helper，与 R199 endpoint 共用同一份实现, 消除
+    verbatim duplicated drift 风险。本函数现仅负责 config 读取 + token
+    validity check, age 计算委托 helper。
     """
     try:
         cfg = get_config()
@@ -529,21 +569,7 @@ def _safe_token_age_seconds() -> int | None:
     token = ns.get("api_token", "")
     if not (isinstance(token, str) and token and len(token) >= 16):
         return None
-    rotated_at = ns.get("api_token_rotated_at", "")
-    if not (isinstance(rotated_at, str) and rotated_at):
-        return None
-    try:
-        from datetime import UTC, datetime
-
-        ts = rotated_at.replace("Z", "+00:00")
-        rotated_dt = datetime.fromisoformat(ts)
-        age = int((datetime.now(UTC) - rotated_dt).total_seconds())
-        if age < 0:
-            return None
-    except (ValueError, TypeError):
-        return None
-    else:
-        return age
+    return _compute_age_seconds_from_iso(ns.get("api_token_rotated_at", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -2729,24 +2755,12 @@ class SystemRoutesMixin:
                 ns.get("api_token_rotated_at", "") if isinstance(ns, dict) else ""
             )
 
-            age_seconds: int | None = None
-            if isinstance(rotated_at, str) and rotated_at:
-                try:
-                    from datetime import UTC, datetime
-
-                    ts = rotated_at.replace("Z", "+00:00")
-                    rotated_dt = datetime.fromisoformat(ts)
-                    age_seconds = int((datetime.now(UTC) - rotated_dt).total_seconds())
-                    if age_seconds < 0:
-                        # 时钟跳变 / config 里时间戳来自未来 → 视作未知
-                        # （0 也不合适, dashboard 看到 0 会误以为刚轮换）
-                        age_seconds = None
-                except (ValueError, TypeError) as exc:
-                    logger.debug(
-                        f"api-token-info 解析 rotated_at 失败 (config 里可能是脏数据): "
-                        f"{type(exc).__name__}: {exc}"
-                    )
-                    age_seconds = None
+            # R208 / Cycle 10 · F-204-2: 共享 helper 算 age, 与 R204
+            # `_safe_token_age_seconds` / `aiia_token_age_seconds` Prom
+            # gauge 同一份实现. helper silent, 无脏数据 debug log——R199
+            # 测试不依赖该 log; pure function 风格与 _safe_uptime_seconds
+            # 等保持一致.
+            age_seconds = _compute_age_seconds_from_iso(rotated_at)
 
             return (
                 jsonify(
