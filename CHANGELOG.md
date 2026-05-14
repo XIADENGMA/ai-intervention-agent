@@ -11,6 +11,42 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R244 / Cycle 16 · fix R240 modal-cascade-self-inert bug
+  (silent UX-killer present since Cycle 15)**. Both modals
+  (`#code-paste-panel` at HTML L713, `#settings-panel` at
+  L976) live **inside** `.container`. R240's
+  `container.inert = true` propagated `inert` through the
+  HTML5 cascade to the modal's own subtree, making the
+  modal itself uninteractive — clicks blocked, focus
+  blocked, AT removed — while still being **visually
+  rendered**. Net user experience: modal pops up, user
+  cannot type or click anything in it, has to refresh the
+  page. The bug persisted 4 cycles (R240 → R243)
+  undetected because every guard so far was Pattern B
+  (static-grep) rather than Pattern A (real DOM cascade
+  behaviour). **Fix**: replace `container.inert = true`
+  with new helper `_setContainerSiblingsInert(openModalEl,
+  value)` that iterates `container.children` and inert-s
+  every child *except* the open modal. Result: the modal
+  stays interactive, every sibling (header, main, image-
+  modal, the *other* dialog, footer) goes inert. The
+  helper lives in both `app.js` (top-level function) and
+  `settings-manager.js` (class method); all four modal
+  open/close paths now call it. Updated R240 + R241
+  invariant tests to recognise the new helper as a valid
+  inert-setting pattern (avoids false-positive failures).
+  Discovered while auditing aria-hidden / inert overlap
+  for F-cycle15-8 — Cycle 16 audit doctrine "always trace
+  cascade, not just call site" justified itself
+  immediately. Guarded by
+  `tests/test_modal_not_self_inert_invariant_r244.py` (4
+  classes / 10 cases): helper present in both files,
+  helper iterates children, helper skips open modal,
+  all 4 paths call helper, regression guard forbids any
+  `container.inert = …` or
+  `_safelySetInert(document.querySelector(".container"),
+  …)` in modal paths. Bilingual catalogue (§6) updated.
+
 - **R243 / Cycle 16 · runtime defense-in-depth for R242**:
   `_get_minified_file()` now stat-checks the candidate `.min.*`
   against the source `.{js,css}` and **rejects** it (falls back

@@ -91,12 +91,14 @@ _OPEN_INERT_PATTERNS = (
     re.compile(r"container\.inert\s*=\s*true"),
     re.compile(r"setAttribute\([\"']inert[\"']"),
     re.compile(r"(?:this\.)?_safelySetInert\([^,]+,\s*true\s*\)"),
+    re.compile(r"(?:this\.)?_setContainerSiblingsInert\([^,]+,\s*true\s*\)"),
 )
 
 _CLOSE_INERT_PATTERNS = (
     re.compile(r"container\.inert\s*=\s*false"),
     re.compile(r"removeAttribute\([\"']inert[\"']"),
     re.compile(r"(?:this\.)?_safelySetInert\([^,]+,\s*false\s*\)"),
+    re.compile(r"(?:this\.)?_setContainerSiblingsInert\([^,]+,\s*false\s*\)"),
 )
 
 
@@ -110,22 +112,15 @@ class TestSettingsOpenSetsInert(unittest.TestCase):
         match = re.search(r"showSettings\s*\([^)]*\)\s*\{(.+?)\n  \}", src, re.DOTALL)
         assert match is not None
         body = match.group(1)
-        self.assertIn(
-            ".container",
-            body,
-            msg=(
-                "R240 invariant: showSettings 必须触碰 .container 元素 (role=main "
-                "wrapper)。如果 selector 变了, 请同步本测试。"
-            ),
-        )
         self.assertTrue(
             _any_match(body, _OPEN_INERT_PATTERNS),
             msg=(
-                "R240 invariant: showSettings 必须把 .container 标记为 inert "
-                "(``container.inert = true``, setAttribute('inert', ''), 或 R241 "
-                "helper ``this._safelySetInert(container, true)``)。没有 inert "
-                "时背景仍可被鼠标点击, 失去 modal 隔离 (R238 焦点陷阱只挡键盘, "
-                "不挡鼠标)。"
+                "R240 invariant: showSettings 必须把背景标记为 inert (任一形式: "
+                "``container.inert = true``, setAttribute('inert', ''), R241 "
+                "helper ``this._safelySetInert(container, true)``, 或 R244 "
+                "siblings helper ``this._setContainerSiblingsInert(panel, true)``). "
+                "没有 inert 时背景仍可被鼠标点击, 失去 modal 隔离 (R238 焦点陷阱"
+                "只挡键盘, 不挡鼠标)。"
             ),
         )
 
@@ -149,12 +144,14 @@ class TestCodePasteOpenSetsInert(unittest.TestCase):
     def test_open_code_paste_sets_inert(self) -> None:
         src = _read(APP_JS)
         body = _extract_function_body(src, r"function\s+openCodePasteModal\s*\([^)]*\)")
-        self.assertIn(
-            ".container",
-            body,
-            msg="R240 invariant: openCodePasteModal 必须触碰 .container",
+        self.assertTrue(
+            _any_match(body, _OPEN_INERT_PATTERNS),
+            msg=(
+                "R240 invariant: openCodePasteModal 必须把背景 inert (任一形式: "
+                "inline container.inert=, _safelySetInert(container, true), "
+                "或 R244 _setContainerSiblingsInert(panel, true))。"
+            ),
         )
-        self.assertTrue(_any_match(body, _OPEN_INERT_PATTERNS))
 
 
 class TestCodePasteCloseClearsInert(unittest.TestCase):

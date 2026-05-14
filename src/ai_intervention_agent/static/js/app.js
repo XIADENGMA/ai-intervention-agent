@@ -960,7 +960,7 @@ function openCodePasteModal(error) {
   panel.classList.remove("hidden");
   panel.classList.add("show");
 
-  _safelySetInert(document.querySelector(".container"), true);
+  _setContainerSiblingsInert(panel, true);
 
   // iOS 上需要在用户手势链路内尽快 focus，才能弹出键盘与“粘贴”菜单
   setTimeout(() => {
@@ -983,7 +983,7 @@ function closeCodePasteModal() {
   panel.classList.remove("show");
   panel.classList.add("hidden");
 
-  _safelySetInert(document.querySelector(".container"), false);
+  _setContainerSiblingsInert(panel, false);
 
   if (textarea) {
     textarea.value = "";
@@ -993,6 +993,37 @@ function closeCodePasteModal() {
 
   const feedbackTextarea = document.getElementById("feedback-text");
   if (feedbackTextarea) feedbackTextarea.focus();
+}
+
+/**
+ * R244 / Cycle 16 · F-cycle16-modal-self-inert: open dialogs live INSIDE
+ * `.container` (HTML L713 + L976), so the naive R240 implementation
+ * (which set inert on the container itself) propagated inert to the
+ * dialog and silently broke modal interaction — clicks/focus inside the
+ * dialog were blocked because the dialog inherited the parent's inert
+ * state from the DOM cascade. The bug was undetected for 4 cycles
+ * because R240's test was Pattern B (static grep), not Pattern A
+ * (runtime DOM behavior).
+ *
+ * Correct pattern: iterate `.container > *`, set `inert` on every direct
+ * child EXCEPT the open dialog. The dialog stays interactive; everything
+ * else in `.container` (header, main content, footer, image-modal, the
+ * other dialog) becomes inert. The .container itself is NOT inert, so
+ * inert does NOT propagate through it to the open dialog's subtree.
+ *
+ * This matches the recommended HTML5 modal pattern for non-`<dialog>`
+ * implementations: https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/inert
+ *
+ * @param {HTMLElement} openModalEl - the dialog that should stay interactive
+ * @param {boolean} value - true to inert siblings, false to clear
+ */
+function _setContainerSiblingsInert(openModalEl, value) {
+  const container = document.querySelector(".container");
+  if (!container) return;
+  for (const child of container.children) {
+    if (child === openModalEl) continue;
+    _safelySetInert(child, value);
+  }
 }
 
 function _safelySetInert(el, value) {

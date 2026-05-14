@@ -857,7 +857,7 @@ class SettingsManager {
       const container = document.querySelector(".container");
       if (container) {
         container.style.overflow = "visible";
-        this._safelySetInert(container, true);
+        this._setContainerSiblingsInert(panel, true);
       }
 
       panel.classList.remove("hidden");
@@ -987,6 +987,24 @@ class SettingsManager {
     }
   }
 
+  /**
+   * R244: iterate `.container > *`, set inert on every child except
+   * the open dialog. See app.js `_setContainerSiblingsInert` doc for
+   * the full rationale (R240 was buggy — dialog inside .container
+   * inherited inert and became uninteractive).
+   *
+   * @param {HTMLElement} openModalEl - dialog that stays interactive
+   * @param {boolean} value - true to inert siblings, false to clear
+   */
+  _setContainerSiblingsInert(openModalEl, value) {
+    const container = document.querySelector(".container");
+    if (!container) return;
+    for (const child of container.children) {
+      if (child === openModalEl) continue;
+      this._safelySetInert(child, value);
+    }
+  }
+
   _safelySetInert(el, value) {
     if (!el) return;
     try {
@@ -1028,7 +1046,7 @@ class SettingsManager {
       const container = document.querySelector(".container");
       if (container) {
         container.style.overflow = "";
-        this._safelySetInert(container, false);
+        this._setContainerSiblingsInert(panel, false);
       }
 
       panel.classList.add("hidden");
