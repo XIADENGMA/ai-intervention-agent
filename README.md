@@ -300,10 +300,16 @@ so monitoring and CLI tell the same story.
 
 ## Related projects
 
-- [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp)
-- [mcp-feedback-enhanced](https://github.com/Minidoracat/mcp-feedback-enhanced)
-- [cunzhi](https://github.com/imhuso/cunzhi)
-- [other interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp)
+| Project | Stars (approx.) | Focus |
+| --- | --- | --- |
+| [mcp-feedback-enhanced](https://github.com/Minidoracat/mcp-feedback-enhanced) (Minidoracat) | ~3.8k | Largest sibling. Dual-interface (Web UI + Tauri desktop app), auto-command execution, intelligent SSH Remote / WSL detection. Supports Cursor / Cline / Windsurf / Augment / Trae. |
+| [cunzhi](https://github.com/imhuso/cunzhi) (imhuso) | ~1.4k | Chinese-language project focused on preventing premature task completion ("告别 AI 提前终止烦恼"). |
+| [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (rebased from noopstudios original — see Acknowledgements below); minimal Python MCP, single feedback dialog. |
+| [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
+
+**Where AIIA sits on the spectrum**: AIIA targets the operationally deep end — Web UI + VS Code extension sharing the same backend, production-grade observability (`/metrics` Prometheus endpoint + a [reference Grafana dashboard](docs/observability/README.md), SSE schema validation toggle), bilingual i18n + docs, strict invariant test discipline (5,500+ tests + ~700 subtests), pre-push tag-safety hook, and a 6-job release pipeline. If you want the smallest possible drop-in, poliva's fork; if you want a polished desktop app, mcp-feedback-enhanced; if you want full-stack operational integration, AIIA.
+
+> Star counts are approximate snapshots (last reviewed 2026-05); check each upstream for current numbers. Submit a PR if you'd like another related project listed.
 
 ## Acknowledgements
 

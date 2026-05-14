@@ -9,6 +9,42 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R222 / Cycle 12 · F-cycle11-4: expand `README` "Related
+  projects" sections from bare bullet lists into bilingual
+  comparison tables with positioning paragraph and observability
+  cross-link**. CR#24 flagged `F-cycle11-4` because the existing
+  `## Related projects` / `## 同类产品` sections in `README.md` /
+  `README.zh-CN.md` were 4-link bullet lists with no description,
+  no comparative positioning, and no cross-link to the R220
+  Grafana dashboard — useless to a new user evaluating whether
+  AIIA fits their stack. R222 rewrites both sections into 4-row
+  comparison tables (project · star count · focus), adds a "Where
+  AIIA sits on the spectrum" positioning paragraph that
+  recommends the right sibling project for different use cases
+  (poliva for minimal drop-in, mcp-feedback-enhanced for desktop
+  app, AIIA for full-stack ops integration), and cross-links the
+  bilingual `docs/observability/README.md` / `README.zh-CN.md`
+  (R220 Grafana dashboard). The 4 sibling projects covered:
+  Minidoracat's `mcp-feedback-enhanced` (~3.8k stars, dual Web +
+  Tauri desktop UI), imhuso's `cunzhi` (~1.4k stars, Chinese
+  project focused on preventing premature task completion),
+  poliva's `interactive-feedback-mcp` (~310 stars, direct
+  ancestor fork from noopstudios — heritage preserved in
+  Acknowledgements), Pursue-LLL's smaller-scale
+  `interactive-feedback-mcp` fork (~30 stars). Guarded by
+  `tests/test_readme_related_projects_invariant_r222.py` (8
+  cases / 12 subtests): both READMEs declare the canonical
+  section anchor; project URL set parity across en + zh-CN (set
+  equality, ordering free); every English row carries a `~Xk` or
+  `~XXX` star approximation marker (loose regex tolerates future
+  format tweaks like `~5k+`); "Where AIIA sits" positioning
+  paragraph keywords locked in both languages; observability
+  dashboard README cross-link present in both. Star counts noted
+  as "approximate, last reviewed 2026-05" so future readers know
+  to verify upstream. Closes CR#24 F-cycle11-4.
+
 ### Added
 
 - **R221 / Cycle 12 · F-cycle11-1: invariant test guarding
