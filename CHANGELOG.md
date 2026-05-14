@@ -9,6 +9,14 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.9] - 2026-05-15
+
+Cycle 16 (R241 → R245) release. The defining theme is
+**"audit cascades, not just call sites"**: two production-shape
+bugs that escaped 4 cycles each got caught + fixed + future-proofed
+during what started as a routine R241 DRY cleanup. See CR#29 for
+the full review.
+
 ### Added
 
 - **R245 / Cycle 16 · HTML cascade-aware modal-inert
