@@ -11,6 +11,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R239 / Cycle 15 · F-cycle14-4 (was F-cycle13-6):
+  README star-count snapshot freshness guard**. Both EN +
+  ZH READMEs end their "Related projects" section with a
+  disclaimer "Star counts are approximate snapshots (last
+  reviewed YYYY-MM); …" / "上面的 stars 是粗略快照（最近
+  核对：YYYY-MM）…". Without a guard, that date drifts
+  silently — at v1.7.7 the "~3.8k", "~1.4k", "~310", "~30"
+  figures become unverifiable claims, and first-time readers
+  who trust the date as a freshness signal infer accuracy
+  that isn't there. R239 adds an invariant that fails if the
+  date is unparseable, in the future, older than 12 months
+  from today, or inconsistent across EN+ZH. Recovery: re-check
+  each upstream's GitHub star count, update `~Nk`/`~NNN`
+  figures, and bump the YYYY-MM date in both READMEs.
+  Emergency override: env `R239_STAR_COUNT_MAX_AGE_MONTHS=N`.
+  Guarded by `tests/test_star_counts_freshness_invariant_r239.py`
+  (4 classes / 7 cases): date extractable from both READMEs +
+  not in the future + within freshness window + EN/ZH parity.
+  Pattern D drift-detection sister to R231 (catalogue lag) +
+  R233 (README factual claims).
+
 - **R238 / Cycle 15: Tab focus trap + focus restore for both
   modal dialogs (a11y wave 4 imperative companion to R237)**.
   R237 locked the **declarative** ARIA contract (aria-modal,
