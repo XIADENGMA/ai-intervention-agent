@@ -758,13 +758,22 @@ function enableSubmitButton() {
 }
 
 // 显示状态消息
+//
+// R214 / Cycle 10 · F-notif-fallback-1: type 'warning' 也走 content-page
+// toast，否则 notification-manager 的 showFallbackNotification (R214 后
+// 用 'warning' 类型) 在 content page 上完全 silent —— 用户看不到任何视
+// 觉反馈，浏览器拒绝通知权限时只能 console.log。修前: 仅 'success' /
+// 'error' 在 content page 可见; 修后: 'success' / 'warning' / 'error'
+// 都可见 ('info' 仍 silent 以维持 R214 之前的 INFO 噪声水位)。
 function showStatus(message, type) {
   const noContentContainer = document.getElementById("no-content-container");
   const isNoContentPage =
     noContentContainer && noContentContainer.style.display === "flex";
 
   if (!isNoContentPage && type !== "error") {
-    if (type === "success") {
+    // R214: success / warning 走 toast (warning 是降级通知的合理 level);
+    // info 维持 silent (大量内部状态变化用 info，不该到处 toast)。
+    if (type === "success" || type === "warning") {
       _showToast(message);
     }
     return;
@@ -780,8 +789,15 @@ function showStatus(message, type) {
   statusElement.className = `status-message status-${type}`;
   statusElement.style.display = "block";
 
+  // R214: warning 自动消失 5s (介于 success 3s 与 error 10s 之间)。
   const autoDismissMs =
-    type === "success" ? 3000 : type === "error" ? 10000 : 0;
+    type === "success"
+      ? 3000
+      : type === "warning"
+        ? 5000
+        : type === "error"
+          ? 10000
+          : 0;
   if (autoDismissMs > 0) {
     setTimeout(() => {
       statusElement.style.display = "none";

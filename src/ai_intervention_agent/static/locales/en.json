@@ -249,7 +249,12 @@
     "batchComplete": "Processed: {{successful}}/{{total}} files successful",
     "fileProcessSuccess": "Processed {{filename}}",
     "fileProcessFailed": "Failed to process {{filename}}: {{reason}}",
-    "confirmCloseTask": "Close task {{taskId}}?"
+    "confirmCloseTask": "Close task {{taskId}}?",
+    "notifFallbackPermDenied": "Notification permission denied; using in-page hint instead. Enable system notifications in your browser settings to receive desktop alerts.",
+    "notifFallbackPermDefault": "Notification permission not yet granted; showing in-page hint. Click the bell icon or any UI element to grant permission.",
+    "notifFallbackPermDisabled": "System notifications disabled in settings; using in-page hint. Re-enable via the settings panel.",
+    "notifFallbackUnsupported": "This browser does not support system notifications; using in-page hint as fallback.",
+    "notifFallbackInsecure": "Notifications require HTTPS or localhost; current page is insecure context, falling back to in-page hint."
   },
   "validation": {
     "invalidFile": "Invalid file object",

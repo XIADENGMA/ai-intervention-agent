@@ -9,6 +9,48 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R214 / Cycle 10 · F-notif-fallback-1: friendly visible fallback toast
+  when system notification permission denied / unavailable**. Pre-R214,
+  `notification-manager.js`'s `showFallbackNotification()` called
+  `showStatus(..., 'info')`, but `app.js`'s `showStatus()` on a content
+  page (i.e. while the user is looking at a feedback request) silently
+  dropped every non-`'success'` / non-`'error'` type — the `'info'`
+  fallback toast was rendered nowhere; the user only got a hidden
+  `console.log` + title flash (often invisible while the tab is
+  focused). Net effect: user looks at an open feedback panel, browser
+  blocks notifications, **zero visual signal arrives** that the page
+  even tried to notify. Fix: (a) extend `app.js showStatus()` to also
+  toast `'warning'` type on content pages with a 5 s auto-dismiss
+  (sweet spot between success's 3 s and error's 10 s; `'info'` stays
+  silent to avoid noise from frequent internal state updates); (b)
+  switch `showFallbackNotification()` to `type='warning'` so the toast
+  is actually rendered; (c) append a reason-aware i18n hint
+  (`permission_denied` → "enable system notifications in your browser
+  settings", `unsupported` → "this browser does not support system
+  notifications", `insecure_context` → "notifications require HTTPS or
+  localhost", `permission_default` → "click the bell icon to grant
+  permission", `permission_disabled` → "re-enable via settings panel")
+  so the toast is actionable rather than just "title: message". Reason
+  → hint mapping uses callback values (`() => t('status.notifFallback*')`)
+  so `scripts/check_i18n_orphan_keys.py` literal-call scanner can see
+  each i18n key reference; underlying low-level reasons
+  (`system_notification_failed` / `show_notification_exception`) deliber-
+  ately do not append a hint — user cannot fix them immediately, no
+  point spamming. 10 invariant tests in
+  `tests/test_notification_fallback_toast_invariant_r214.py` lock down:
+  showStatus's `'success' || 'warning'` toast branch presence,
+  `warning ? 5000` autodismiss branch, `showStatus(..., 'warning')`
+  call in `showFallbackNotification()` (+ negative regression test that
+  `showStatus(..., 'info')` no longer appears in its body), all 5
+  `reason` keys + 5 `status.notifFallback*` i18n keys referenced,
+  bilingual lockstep (en + zh-CN), actionable-words presence
+  (`enable` / `browser` / `settings` / `fallback` / `hint` / `permission`
+  for en; `通知` / `降级` / `浏览器` / `设置` / `提示` / `权限` for zh),
+  and en/zh length ratio bounds (0.3 ≤ zh/en ≤ 2.0) to catch
+  truncation / mis-translation.
+
 ### Added
 
 - **R213 / Cycle 10 · F-21.4-1: production static-assets precompress

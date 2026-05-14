@@ -249,7 +249,12 @@
     "batchComplete": "完成处理：{{successful}}/{{total}} 个文件成功",
     "fileProcessSuccess": "已处理 {{filename}}",
     "fileProcessFailed": "处理 {{filename}} 失败：{{reason}}",
-    "confirmCloseTask": "确定要关闭任务 {{taskId}} 吗？"
+    "confirmCloseTask": "确定要关闭任务 {{taskId}} 吗？",
+    "notifFallbackPermDenied": "通知权限已被拒绝；已改用页面内提示。请在浏览器设置中重新开启系统通知后即可收到桌面提醒。",
+    "notifFallbackPermDefault": "尚未授予通知权限；当前改用页面内提示。可点击右上角铃铛图标或页面任意可交互元素来触发浏览器权限授权请求。",
+    "notifFallbackPermDisabled": "系统通知已在设置中关闭；当前显示页面内提示。可在设置面板重新开启。",
+    "notifFallbackUnsupported": "当前浏览器不支持系统通知；已改用页面内提示作为降级方案。",
+    "notifFallbackInsecure": "通知功能需要 HTTPS 或 localhost；当前页面为不安全上下文，已降级为页面内提示。"
   },
   "validation": {
     "invalidFile": "无效的文件对象",

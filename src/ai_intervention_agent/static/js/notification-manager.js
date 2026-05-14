@@ -736,9 +736,37 @@ class NotificationManager {
     console.log(`Fallback notification: ${title} - ${message}`)
     const reason = options && typeof options === 'object' ? options.reason || 'unknown' : 'unknown'
 
-    // 1. 尝试使用页面状态消息
+    // R214 / Cycle 10 · F-notif-fallback-1: 降级通知改用 type='warning'
+    // 而非 'info'，让 content-page 上的 toast 真的可见 (修前 'info' 类
+    // 型在 content page 上被 silently dropped, 见 app.js showStatus
+    // R214 注释)。同时根据 reason 追加 i18n 化的 hint 让用户知道为何
+    // 降级——单纯的 "标题: 消息" 不够 actionable, 用户不会去检查通知权限。
+    // reason -> i18n hint 映射 (用 callback 而非字符串 lookup, 让
+    // scripts/check_i18n_orphan_keys.py 的 literal-call 扫描器能识别
+    // 每个 i18n key 都被引用, 否则会被报为 orphan)。
+    // 其他/未知 reason (system_notification_failed / show_notification_exception
+    // 等底层异常) 不追加 hint, 用户不能立即修复, 不打扰。
+    const reasonHintMap = {
+      permission_denied: () => t('status.notifFallbackPermDenied'),
+      permission_default: () => t('status.notifFallbackPermDefault'),
+      permission_disabled: () => t('status.notifFallbackPermDisabled'),
+      unsupported: () => t('status.notifFallbackUnsupported'),
+      insecure_context: () => t('status.notifFallbackInsecure')
+    }
+    let toastMessage = `${title}: ${message}`
+    const hintFn = reasonHintMap[reason]
+    if (typeof hintFn === 'function') {
+      const hint = hintFn()
+      // i18n 未加载时 t() 会原样返回 'status.notifFallback*' key,
+      // 此时不要把 ugly key 追加到 toast (检查包含 dot 的 key prefix)
+      if (hint && !hint.startsWith('status.notifFallback')) {
+        toastMessage = `${title}: ${message} — ${hint}`
+      }
+    }
+
+    // 1. 尝试使用页面状态消息 (warning level, R214 后 content page 可见)
     if (typeof showStatus === 'function') {
-      showStatus(`${title}: ${message}`, 'info')
+      showStatus(toastMessage, 'warning')
     }
 
     // 2. 尝试使用浏览器标题闪烁
