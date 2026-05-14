@@ -9,6 +9,31 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.3] — 2026-05-14
+
+> Catch-up release packing Cycle 9 (R203-R206) + Cycle 10 (R207-R215) +
+> Cycle 11 (R216-R220). Per CR#22 / CR#23 / CR#24 versioning analyses,
+> all 17 commits are individually backward-compatible (R203 defensive
+> cap, R204/R207 new Prometheus metrics, R205 opt-in env-var toggle,
+> R206 docs, R208 pure refactor, R209 opt-in pre-push hook, R210/R211
+> docs/CHANGELOG, R212/R213/R215 test-only invariants, R214 UI bug fix,
+> R216-R218 console-noise cosmetic, R219 lint guard, R220 docs + tests
+> + sample Grafana dashboard). Combined cycle-level highlights:
+>
+> * **Observability**: aiia_token_age_seconds (R204), aiia_sse_schema_
+>   violation_total (R207), sample Grafana dashboard with 7 panels +
+>   metric-name parity invariant against /metrics impl (R220).
+> * **Security / safety**: SSE schema validation opt-in toggle (R205),
+>   emit-by-type cardinality cap (R203), pre-push hook enforcement
+>   for tag-push safety (R209).
+> * **Quality / hygiene**: 117 console.log demotions across 11
+>   project-owned JS files (R216-R218), CHANGELOG inline-code lint
+>   guard (R219), denied-permission notification fallback toast
+>   visibility fix (R214).
+> * **Backlog discipline**: 5/9 Cycle 10 commits + 2/5 Cycle 11
+>   commits explicitly closed prior-cycle CR follow-ups; the cycle
+>   ended with a leaner backlog than it started.
+
 ### Added
 
 - **R220 / Cycle 11 · F-cycle10-4: sample Grafana dashboard JSON
