@@ -11,6 +11,71 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R203 / Cycle 9 · F-202-1 (CR#21 §4.2): `_SSEBus._emit_by_type`
+  cardinality cap + overflow bucket + WARN-once**. R202 把
+  ``_emit_by_type: Counter[str]`` 暴露到 Prometheus
+  ``aiia_sse_emit_by_type_total{event_type="..."}``，但 Counter 本身
+  没有 key 数上限——如果上游 emit 不慎用动态字符串当 event_type（R198
+  AST guard 已卡 source-level，但 ``oversize_drop`` 替换路径 + 未来代
+  码误用 / 测试残留是真实 attack/bug surface），Counter 会无限增长，
+  造成 memory leak + Prometheus exposition payload 膨胀 + Grafana
+  cardinality 爆炸 + counter pollution 让 top-N 视图全是噪声。
+
+  **R203 防御实现**（``web_ui_routes/task.py::_SSEBus`` ~30 行）：
+
+  - 类常量 ``_EMIT_BY_TYPE_MAX_CARDINALITY = 100`` (R198 4 schema
+    event + ~10× 未来扩展 + ~10× ``oversize_drop`` 替换余量；对应
+    exposition payload ~10 KB << Prometheus 默认 100 KB scrape 配额)；
+  - 类常量 ``_EMIT_BY_TYPE_OVERFLOW_BUCKET = "__other__"``；
+  - 实例 flag ``_emit_by_type_cap_hit_warned: bool``（``__init__``
+    初始 ``False``）；
+  - ``emit()`` 累加分支 cap-check：``event_type`` 不在 Counter 且
+    ``len(Counter) >= cap`` → 路由到 overflow 桶 + 全进程首次 WARN log
+    + 设置 flag；之后所有 overflow emit 继续走 ``__other__`` 桶累加，
+    **不**重复 WARN（防日志风暴）。
+
+  **设计契约**：
+
+  - **R202 sum 不变量保持**: 即使 cap 触发，``sum(by_type) == emit
+    _total`` 仍然 hold，因为 overflow emit 走 ``__other__`` 桶累加而
+    非 silently drop；Grafana 上 ``__other__`` series 立刻可见，运维
+    一眼能识别 "low-frequency or capped-out event types"；
+  - **R198 4 个 schema event 永远不会落到 ``__other__``**: 因为它们
+    是 first-class events，在 cap 之前就已经在 Counter 里，cap-check
+    `event_type not in self._emit_by_type` 分支不会命中它们；
+  - **WARN-once policy**: 全进程只 WARN 一次（``_emit_by_type_cap_hit
+    _warned`` flag），WARN 内容含 cap 值 + 首个 overflow event_type +
+    "考虑提高 cap 或审计 emit-site code" 行动建议。
+
+  **测试 (10 cases / 5 invariant class + 4 subtests)** ——
+  ``tests/test_sse_emit_by_type_cardinality_cap_r203.py``:
+
+  1. **TestBelowCardinalityCap** (2): 单 type / 多 type < cap → 无
+     overflow 桶、无 WARN flag set；
+  2. **TestAtCardinalityCapTrigger** (3): 第 cap+1 个 emit 路由到
+     ``__other__`` + WARN 触发 + 重复 overflow emit 不重复 WARN；
+  3. **TestKnownTypesNotAffectedByCap** (2 + 4 subtests): cap 触发
+     后老 type 仍累加 + R198 4 个 schema event 全部 immune（subtests
+     覆盖 task_changed / config_changed / log_level_changed /
+     oversize_drop）；
+  4. **TestSumInvariantUnderCap** (1): **R203 核心契约**——cap 触发
+     场景下 ``sum(by_type) == emit_total`` 严格成立；
+  5. **TestCardinalityCapLockColocation** (2 · **AST guard**):
+     ``_SSEBus.emit`` 源码 cap-check（``len(self._emit_by_type) >=
+     self._EMIT_BY_TYPE_MAX_CARDINALITY``）+ overflow 桶累加
+     (``self._emit_by_type[self._EMIT_BY_TYPE_OVERFLOW_BUCKET] +=
+     1``) 必须都在 ``with self._lock:`` 块内。runtime 测试 race
+     window ("``len()`` 读到 ≥ cap，但还没 ``+= 1``" 之间另一线程
+     插队让 cap 实际超过 1-2 个) 难触发，AST guard 在 source-level
+     锁定结构。沿用 R197 / R202 同款 AST guard 模式。
+
+  **验证**: R203 10 cases + 4 subtests PASS；``uv run ty check . →
+  All checks passed!``；``uv run ruff check . && ruff format --check
+  . → All passed!``；完整 ``pytest`` **5388 passed / 2 skipped /
+  628 subtests passed in 162s** (R202 baseline 5378 → 5388, 净增
+  +10 from R203)；``scripts/generate_docs.py --check`` 两份语言全
+  过；R202 完整测试套 (12 cases + 4 subtests) 也 PASS（向后兼容验证）。
+
 - **R202 / Cycle 8: `aiia_sse_emit_by_type_total{event_type="..."}`
   Prometheus counter (方案 B · 向后兼容新增)**. SSE bus 在 R198 已经维护
   per-type 计数 ``_SSEBus._emit_by_type``（``stats_snapshot()["emit_by_type"]``

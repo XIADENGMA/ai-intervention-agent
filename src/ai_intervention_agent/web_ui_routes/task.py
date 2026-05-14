@@ -238,6 +238,28 @@ class _SSEBus:
     # - 排序成本：512 个 int 排序 ~50µs（CPython timsort），sse-stats 端点
     #   60/min 调用，总成本 ≤ 50µs × 1/s = 0.005% CPU，可忽略。
     _LATENCY_SAMPLES_MAXLEN: int = 512
+    # R203 / Cycle 9 · F-202-1（CR#21 §4.2）防御性常量：
+    # ``_emit_by_type`` 是 ``Counter[str]``，理论上 key 数没上限。如果
+    # 上游 emit 把动态字符串当 event_type（已被 R198 AST guard 卡死，但
+    # ``oversize_drop`` 替换路径 + 未来误用是真实 attack/bug surface），
+    # Counter 会无限增长 → ``stats_snapshot()["emit_by_type"]`` 越来越大
+    # → Prometheus ``aiia_sse_emit_by_type_total`` exposition payload 拖
+    # 慢 scrape + Grafana cardinality 爆炸。
+    #
+    # cap 触发后：
+    # 1. 未见过的新 ``event_type`` **不**新增 key；
+    # 2. 这条 emit 转记到 ``__other__`` 桶（保 R202 不变量
+    #    ``sum(by_type) == emit_total``）；
+    # 3. 全进程只 WARN 一次（``_emit_by_type_cap_hit_warned`` flag），避
+    #    免日志风暴；
+    # 4. 旧 ``event_type`` 计数照常累加，不受影响。
+    #
+    # 100 是 R198 4 个 schema event + ~10 倍未来扩展余量 + ~10 倍
+    # ``oversize_drop`` 替换路径下可能 emit 的特殊 type 余量；对应
+    # exposition payload ~100 × 100 bytes ≈ 10 KB，远小于 Prometheus
+    # 默认 100 KB/scrape 配额。
+    _EMIT_BY_TYPE_MAX_CARDINALITY: int = 100
+    _EMIT_BY_TYPE_OVERFLOW_BUCKET: str = "__other__"
 
     def __init__(self) -> None:
         self._subscribers: set[queue.Queue] = set()
@@ -287,6 +309,9 @@ class _SSEBus:
         # 保护，``stats_snapshot`` 返回时也走锁内 ``dict(...)`` 浅拷贝避免
         # 并发改写。
         self._emit_by_type: collections.Counter[str] = collections.Counter()
+        # R203 / Cycle 9 · F-202-1：cap 命中后 WARN-once flag，避免日志
+        # 风暴。同样走 ``self._lock`` 保护（emit 持锁时读写）。
+        self._emit_by_type_cap_hit_warned: bool = False
         # R134：emit→deliver 延迟样本环形缓冲。emit 时把 ``time.monotonic_ns()``
         # 写进 payload 的 ``_emit_ts_ns``；generator 真正 yield 给客户端那
         # 一瞬间再算 ``time.monotonic_ns() - _emit_ts_ns`` 推进缓冲。
@@ -436,7 +461,28 @@ class _SSEBus:
             # 是我们想看到的——dashboard 能直接观测到"这一桶 oversize 事件
             # 实际上来自哪个上游 type"，因为替换后的 ``data["original_event_type"]``
             # 仍然保留了原 type 名。
-            self._emit_by_type[event_type] += 1
+            if (
+                event_type not in self._emit_by_type
+                and len(self._emit_by_type) >= self._EMIT_BY_TYPE_MAX_CARDINALITY
+            ):
+                # R203 cap-hit 路径：未见过的新 event_type 落到 overflow
+                # 桶，保 sum 不变量；只 WARN 一次。
+                if not self._emit_by_type_cap_hit_warned:
+                    logger.warning(
+                        "R203: SSE _emit_by_type cap (%d distinct event_type) "
+                        "hit; further new event_type emits will be accumulated "
+                        "under %r bucket. First overflow event_type: %r. "
+                        "Consider raising _EMIT_BY_TYPE_MAX_CARDINALITY or "
+                        "auditing emit-site code for runaway dynamic "
+                        "event_type strings.",
+                        self._EMIT_BY_TYPE_MAX_CARDINALITY,
+                        self._EMIT_BY_TYPE_OVERFLOW_BUCKET,
+                        event_type,
+                    )
+                    self._emit_by_type_cap_hit_warned = True
+                self._emit_by_type[self._EMIT_BY_TYPE_OVERFLOW_BUCKET] += 1
+            else:
+                self._emit_by_type[event_type] += 1
             event_id = self._next_id
             payload = {
                 "id": event_id,
