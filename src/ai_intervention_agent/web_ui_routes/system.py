@@ -790,6 +790,41 @@ def _render_prometheus_metrics() -> str:
                     )
                 )
 
+        emit_by_type_raw = snap.get("emit_by_type")
+        if isinstance(emit_by_type_raw, dict) and emit_by_type_raw:
+            # R202 / Cycle 8 · 方案 B：新增「按 event_type 维度」counter
+            # ``aiia_sse_emit_by_type_total{event_type="..."}``，与现有未
+            # 标签化的 ``aiia_sse_emit_total`` 并存（**不**用 label 覆盖原
+            # metric——Prometheus 不允许同一 name 在不同 series 间切换
+            # label set，会破坏 Grafana 历史曲线 + 触发 strict parser 的
+            # ``inconsistent labels for metric family`` 错误）。
+            #
+            # 不变量：``sum(aiia_sse_emit_by_type_total) == aiia_sse_emit_total``，
+            # 由 ``_SSEBus.emit()`` 同一锁内 ``_emit_total += 1`` 与
+            # ``_emit_by_type[event_type] += 1`` 紧贴保证，AST guard 在
+            # ``tests/test_sse_emit_by_type_counter_r202.py`` 锁结构。
+            #
+            # event_type 按字符串字典序排序，让 exposition 输出 deterministic
+            # ——Prometheus parser 不要求顺序，但 deterministic 输出方便
+            # smoke test 直接 string-equality assertion + diff-friendly。
+            emit_by_type_samples: list[tuple[dict[str, str] | None, int | float]] = [
+                ({"event_type": str(et)}, int(count))
+                for et, count in sorted(emit_by_type_raw.items())
+                if isinstance(count, int | float)
+            ]
+            if emit_by_type_samples:
+                lines.append(
+                    _format_prom_metric_family(
+                        "aiia_sse_emit_by_type_total",
+                        help_text=(
+                            "Total SSE events emitted, partitioned by event_type "
+                            "(sum of all event_type series equals aiia_sse_emit_total)."
+                        ),
+                        metric_type="counter",
+                        samples=emit_by_type_samples,
+                    )
+                )
+
         sse_gauge_fields = (
             (
                 "aiia_sse_subscriber_count",
@@ -2096,7 +2131,14 @@ class SystemRoutesMixin:
 
                 * 进程：``aiia_uptime_seconds``，``aiia_build_info{version,git_*}``
                 * SSE：``aiia_sse_emit_total`` / ``aiia_sse_subscriber_count`` /
-                  ``aiia_sse_emit_to_deliver_ms{quantile=0.5|0.95}`` 等 8 个
+                  ``aiia_sse_emit_to_deliver_ms{quantile=0.5|0.95}`` 等 8 个，
+                  外加 **R202 / Cycle 8** 新增的 ``aiia_sse_emit_by_type_total
+                  {event_type="..."}`` 按 R198 schema 4 个 event_type
+                  (``task_changed`` / ``config_changed`` /
+                  ``log_level_changed`` / ``oversize_drop``) 维度统计 emit
+                  次数，与未标签化的 ``aiia_sse_emit_total`` 并存（向后兼
+                  容 + 提供 per-type breakdown），不变量 ``sum(by_type) ==
+                  overall``
                 * TaskQueue：``aiia_task_queue_size`` / ``aiia_task_queue_max``
                 * 错误日志：``aiia_recent_errors_5min``
                 * Notification：``aiia_notification_enabled`` /

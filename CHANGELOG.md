@@ -9,6 +9,80 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R202 / Cycle 8: `aiia_sse_emit_by_type_total{event_type="..."}`
+  Prometheus counter (方案 B · 向后兼容新增)**. SSE bus 在 R198 已经维护
+  per-type 计数 ``_SSEBus._emit_by_type``（``stats_snapshot()["emit_by_type"]``
+  暴露），但**之前未在 Prometheus exposition** 中渲染。R202 把这份数据
+  按 ``aiia_sse_emit_by_type_total{event_type="task_changed"} N`` 形式渲
+  染到 ``/api/system/metrics``，方便 Grafana 拉 per-event_type breakdown
+  仪表盘（cycle 8 observability 主线 R196 → R197 → R198 的自然收尾）。
+
+  **设计权衡 · 方案 B vs A**
+
+  方案 A 是给现有 ``aiia_sse_emit_total`` 加 ``event_type`` label——直接
+  在原 metric 上 partition。但 Prometheus exposition format 规约（见
+  https://prometheus.io/docs/concepts/data_model/）**不允许同一 metric
+  name 在不同 scrape 间切换 label set**：已有未标签化 series
+  ``aiia_sse_emit_total 42`` 直接加 label 后变成 ``aiia_sse_emit_total
+  {event_type="..."} N``，strict parser（VictoriaMetrics、Cortex、最新
+  版 Prom）会报 ``inconsistent labels for metric family``；Grafana 老
+  dashboard 的历史曲线会断在升级时间点。
+
+  方案 B（**本 R202 采用**）：新增独立 metric ``aiia_sse_emit_by_type_total
+  {event_type="..."}``，与原 ``aiia_sse_emit_total``（无 label）并存。
+
+  - 优点：100% 向后兼容；Grafana 老 dashboard 不变；新 dashboard 可用
+    per-type breakdown；不变量 ``sum(aiia_sse_emit_by_type_total series)
+    == aiia_sse_emit_total`` 让 metric correctness 显式可验证（test 锁定）。
+  - 缺点：metric 数量 +1 family + N series（N == event_type 数 == 当前 4）；
+    Prometheus storage 微增（4 series × 16 bytes ≈ 64 bytes/scrape，可
+    忽略）。
+
+  实现细节（``web_ui_routes/system.py::_render_prometheus_metrics`` SSE
+  bus section 新增 ~35 行）：
+
+  - 复用既有 ``_format_prom_metric_family`` (R187/R190 共享 helper)，**HELP
+    / TYPE 各只出现一次**，避免 R187 踩过的 ``second TYPE for metric`` 坑；
+  - ``event_type`` 标签值按字典序排序，让 exposition 输出 deterministic
+    （Prometheus parser 不要求顺序，但 diff-friendly + smoke test 易写）；
+  - 零 emit 时**不**输出 family（避免空 ``# HELP/# TYPE`` 污染 exposition）；
+  - 失败优雅降级：``snap.get("emit_by_type")`` 不是 dict 或为空 → silently
+    跳过，与 R197 / R198 同档防御。
+
+  **测试 (12 cases / 5 invariant class + 4 subtests)** ——
+  ``tests/test_sse_emit_by_type_counter_r202.py``：
+
+  1. **TestSseEmitByTypeCounterRendering** (4 cases): 单 type / 多 type
+     独立 series / 零 emit 不出 family / exposition 格式合规（HELP/TYPE
+     各 1 次 + label 引号 + 排序确定性）；
+  2. **TestSseEmitByTypeSumInvariant** (2 cases): 同步 ``sum(by_type) ==
+     emit_total`` + 8 线程 × 50 emit 并发压测下 sum 不变量仍严格成立；
+  3. **TestSseEmitByTypeSchemaCoverage** (2 cases / 4 subtests): R198
+     注册的 4 个 event_type 全部可渲染（subtests 覆盖 task_changed /
+     config_changed / log_level_changed / oversize_drop）+ 未注册 type
+     也能正常渲染（defensive，防 silently drop）；
+  4. **TestSseEmitCounterLockColocation** (2 cases · **AST guard**):
+     ``_SSEBus.emit`` 源码 ``self._emit_total += 1`` 与
+     ``self._emit_by_type[event_type] += 1`` 必须在**同一**
+     ``with self._lock:`` 块内紧贴 + 无 orphan ``_emit_by_type`` 累加
+     出现在锁外——这是 sum 不变量 atomicity 的 source-level 守护，
+     runtime 并发测试 race window 太窄 catch 不到，必须 AST 锁结构（见
+     class docstring 详述「为什么 runtime test 不够」，沿用 R197 ``Test
+     SourceLevelLatencyPathColocation`` 同款思路 + CR#16 §3.5 论述）；
+  5. **TestBackwardCompatibility** (2 cases): 原 ``aiia_sse_emit_total``
+     仍以**无 label** 形式存在（保 Grafana 老 dashboard）+ 新旧两个
+     metric family 完全独立（HELP/TYPE 各 1 次）。
+
+  **验证**: R202 12 cases + 4 subtests PASS；``uv run ty check . → All
+  checks passed!``；``uv run ruff check . && ruff format --check . → All
+  passed!``；完整 ``pytest`` 5378 passed / 2 skipped / 624 subtests
+  PASS in 159s（v1.7.2 baseline 5366 → 5378, 净增 +12 from R202）；
+  ``scripts/generate_docs.py --check`` 两份语言全过（system.py 改的是
+  endpoint description docstring，会被 docs/api 抓到，本地预 regen 验证
+  parity）。
+
 ## [1.7.2] — 2026-05-14
 
 ### Dependencies
