@@ -6,6 +6,30 @@
  *
  * 依赖: dom-security.js (DOMSecurity), i18n.js (t())
  * 暴露: window.notificationManager (NotificationManager 实例)
+ *
+ * ──────────────────────────────────────────────────────────────────
+ * R216 / Cycle 11 · F-cycle10-1 · console noise demotion
+ * ──────────────────────────────────────────────────────────────────
+ * 本模块原有 27 个 ``console.log`` 调用 (init / config-change /
+ * 每次播放声音 / 每次降级通知 等)，对于通知频繁的会话, 浏览器
+ * Console 会被刷屏, 真正的 ``console.warn`` / ``console.error``
+ * (29 处) 被淹没在 INFO-级日志里, 用户难以发现 actionable 问题。
+ *
+ * R216 把所有 27 个 ``console.log`` 统一 demote 为 ``console.debug``
+ * (Chrome DevTools 默认在 Console 顶部 filter 里关掉 Verbose / Debug
+ * 级别——非开发者打开 DevTools 时不会看到这些; 开发者主动开启
+ * Verbose 即可看到全部历史) ——零 helper / 零运行时开销, 纯方法
+ * 名 rename, ``console.debug.apply(console, [...args])`` 与
+ * ``console.log.apply(console, [...args])`` 在所有现代浏览器
+ * (Chrome / Firefox / Safari / Edge) 行为完全一致, 只是 level
+ * 不同。``console.warn`` / ``console.error`` 保留, 它们是真正
+ * 应当被看见的信号。
+ *
+ * 守护: ``tests/test_notification_manager_console_noise_invariant_r216.py``
+ * 字面 substring 检查源码不再出现带括号的 console.log 调用, 防止
+ * 未来 contributor 不知道这条约定又加回 INFO 级日志。invariant 也
+ * 守 console.debug 至少 ≥ 20 (证明真的发生了 demotion, 不是把 log
+ * 全删光)。
  */
 
 function t(key, params) {
@@ -57,7 +81,7 @@ class NotificationManager {
     }
 
     this.initPromise = (async () => {
-      console.log('Initializing notification manager…')
+      console.debug('Initializing notification manager…')
       try {
         const hostname =
           window.location && typeof window.location.hostname === 'string'
@@ -69,7 +93,7 @@ class NotificationManager {
             : ''
         const secureContext =
           typeof window.isSecureContext === 'boolean' ? window.isSecureContext : null
-        console.log(
+        console.debug(
           '[notification env] hostname:',
           hostname,
           'isSecureContext:',
@@ -101,7 +125,7 @@ class NotificationManager {
       await this.registerServiceWorker()
 
       await this.initAudio()
-      console.log('Notification manager initialized')
+      console.debug('Notification manager initialized')
     })()
 
     return this.initPromise
@@ -135,7 +159,7 @@ class NotificationManager {
     try {
       await navigator.serviceWorker.register('/notification-service-worker.js')
       this.serviceWorkerRegistration = await navigator.serviceWorker.ready
-      console.log('Notification service worker registered')
+      console.debug('Notification service worker registered')
       return this.serviceWorkerRegistration
     } catch (error) {
       console.warn('Notification service worker registration failed:', error)
@@ -245,7 +269,7 @@ class NotificationManager {
           })
         }
 
-        console.log(`Notification permission state: ${this.permission}`)
+        console.debug(`Notification permission state: ${this.permission}`)
         window.dispatchEvent(
           new CustomEvent('notification-permission-changed', {
             detail: { permission: this.permission }
@@ -284,7 +308,7 @@ class NotificationManager {
         this._synthBuffer = this._createSynthNotificationBuffer()
       }
 
-      console.log('Audio system initialized')
+      console.debug('Audio system initialized')
     } catch (error) {
       console.warn('Audio system initialization failed:', error)
       // 降级：禁用音频功能
@@ -300,7 +324,7 @@ class NotificationManager {
       const arrayBuffer = await response.arrayBuffer()
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
       this.audioBuffers.set(name, audioBuffer)
-      console.log(`Audio file loaded: ${name}`)
+      console.debug(`Audio file loaded: ${name}`)
       return true
     } catch (error) {
       console.warn(`Audio file load failed ${name}:`, error)
@@ -310,7 +334,7 @@ class NotificationManager {
 
   async showNotification(title, message, options = {}) {
     if (!this.config.enabled || !this.config.webEnabled) {
-      console.log('Web notifications disabled')
+      console.debug('Web notifications disabled')
       return null
     }
 
@@ -397,7 +421,7 @@ class NotificationManager {
         return null
       }
 
-      console.log('System notification shown:', title)
+      console.debug('System notification shown:', title)
       return notification
     } catch (error) {
       console.error('Show notification failed:', error)
@@ -455,7 +479,7 @@ class NotificationManager {
 
   async playSound(soundName = 'default', volume = null, retryCount = 0) {
     if (!this.config.enabled || !this.config.soundEnabled || this.config.soundMute) {
-      console.log('Sound notifications disabled')
+      console.debug('Sound notifications disabled')
       return false
     }
 
@@ -469,7 +493,7 @@ class NotificationManager {
     if (this.audioContext.state === 'suspended') {
       try {
         await this.audioContext.resume()
-        console.log('Audio context resumed')
+        console.debug('Audio context resumed')
       } catch (error) {
         console.warn('Resume audio context failed:', error)
         this.recordFallbackEvent('audio', {
@@ -486,7 +510,7 @@ class NotificationManager {
       console.warn(`Audio file not found: ${soundName}`)
       // 尝试加载默认音频文件
       if (soundName !== 'default') {
-        console.log('Trying default audio file')
+        console.debug('Trying default audio file')
         return this.playSound('default', volume, retryCount)
       }
       this.recordFallbackEvent('audio', { reason: 'buffer_not_found', soundName })
@@ -507,7 +531,7 @@ class NotificationManager {
 
       // 添加错误处理
       source.addEventListener('ended', () => {
-        console.log(`Sound playback finished: ${soundName}`)
+        console.debug(`Sound playback finished: ${soundName}`)
       })
 
       source.addEventListener('error', error => {
@@ -520,7 +544,7 @@ class NotificationManager {
       })
 
       source.start(0)
-      console.log(`Playing sound: ${soundName}`)
+      console.debug(`Playing sound: ${soundName}`)
       return true
     } catch (error) {
       console.error('Play sound failed:', error)
@@ -532,7 +556,7 @@ class NotificationManager {
 
       // 重试机制
       if (retryCount < 2) {
-        console.log(`Retry play sound (${retryCount + 1}/2): ${soundName}`)
+        console.debug(`Retry play sound (${retryCount + 1}/2): ${soundName}`)
         await new Promise(resolve => setTimeout(resolve, 500)) // 等待500ms后重试
         return this.playSound(soundName, volume, retryCount + 1)
       }
@@ -567,7 +591,7 @@ class NotificationManager {
   }
 
   playSoundFallback(soundName) {
-    console.log(`Using audio fallback: ${soundName}`)
+    console.debug(`Using audio fallback: ${soundName}`)
 
     if (this.audioContext && this._synthBuffer) {
       try {
@@ -579,7 +603,7 @@ class NotificationManager {
         gain.connect(this.audioContext.destination)
         gain.gain.value = Math.max(0, Math.min(1, this.config.soundVolume))
         src.start(0)
-        console.log('Synth notification sound played successfully')
+        console.debug('Synth notification sound played successfully')
         return true
       } catch (e) {
         console.warn('Synth notification sound failed:', e)
@@ -606,14 +630,14 @@ class NotificationManager {
     if (this.config.mobileVibrate && 'vibrate' in navigator) {
       try {
         navigator.vibrate([200, 100, 200]) // 振动模式：200ms振动，100ms停止，200ms振动
-        console.log('Using vibration alert')
+        console.debug('Using vibration alert')
         return true
       } catch (error) {
         console.warn('Vibration alert failed:', error)
       }
     }
 
-    console.log('All audio fallbacks failed')
+    console.debug('All audio fallbacks failed')
     return false
   }
 
@@ -733,7 +757,7 @@ class NotificationManager {
 
   showFallbackNotification(title, message, options = {}) {
     // 增强的降级方案：使用多种方式确保用户能收到通知
-    console.log(`Fallback notification: ${title} - ${message}`)
+    console.debug(`Fallback notification: ${title} - ${message}`)
     const reason = options && typeof options === 'object' ? options.reason || 'unknown' : 'unknown'
 
     // R214 / Cycle 10 · F-notif-fallback-1: 降级通知改用 type='warning'
@@ -778,8 +802,8 @@ class NotificationManager {
     }
 
     // 4. 尝试使用控制台样式输出
-    console.log(`%c[notification] ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
-    console.log(`%c${message}`, 'color: #666; font-size: 12px;')
+    console.debug(`%c[notification] ${title}`, 'color: #0084ff; font-weight: bold; font-size: 14px;')
+    console.debug(`%c${message}`, 'color: #666; font-size: 12px;')
 
     // 5. 记录降级事件用于统计
     this.recordFallbackEvent('notification', {
@@ -810,7 +834,7 @@ class NotificationManager {
     this.config = { ...this.config, ...newConfig }
     this.syncPermissionState()
     this.bindAutoPermissionRequest()
-    console.log('Notification config updated:', this.config)
+    console.debug('Notification config updated:', this.config)
   }
 
   getStatus() {
@@ -945,7 +969,7 @@ class NotificationManager {
     }
 
     if (this.config.debug) {
-      console.log('Fallback event recorded:', event)
+      console.debug('Fallback event recorded:', event)
     }
   }
 
@@ -963,7 +987,7 @@ class NotificationManager {
         }
 
         if (this.config.debug) {
-          console.log(`localStorage event records size: ${sizeInKB}KB`)
+          console.debug(`localStorage event records size: ${sizeInKB}KB`)
         }
       }
     } catch (error) {
@@ -987,13 +1011,13 @@ class NotificationManager {
       }
 
       localStorage.setItem(storageKey, JSON.stringify(recentEvents))
-      console.log(`localStorage pruning complete; kept ${recentEvents.length} events`)
+      console.debug(`localStorage pruning complete; kept ${recentEvents.length} events`)
     } catch (error) {
       console.error('localStorage pruning failed:', error)
       // 最后手段：清空事件记录
       try {
         localStorage.removeItem('ai-intervention-fallback-events')
-        console.log('localStorage event records cleared')
+        console.debug('localStorage event records cleared')
       } catch (clearError) {
         console.error('Cannot clear localStorage:', clearError)
       }

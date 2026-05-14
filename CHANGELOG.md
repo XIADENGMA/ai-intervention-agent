@@ -9,6 +9,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R216 / Cycle 11 · F-cycle10-1: demote notification-manager.js
+  `console.log` to `console.debug` for production console noise
+  reduction**. `src/ai_intervention_agent/static/js/notification-manager.js`
+  shipped with 27 `console.log` calls covering init / config-change /
+  every sound playback / every fallback notification — frequent-
+  notification sessions would flood the browser Console with INFO-
+  level lines, drowning out the 29 legitimate `console.warn` /
+  `console.error` signals (e.g. permission denied, SW registration
+  failure) that ops / users actually need to see. R216 mechanically
+  renames all 27 `console.log(` → `console.debug(` (Chrome / Firefox /
+  Safari / Edge DevTools default-hide Verbose/Debug level; non-
+  developers see clean Console; developers can enable Verbose filter
+  to inspect full history). Zero helper / zero runtime cost, pure
+  method rename — `console.debug.apply(console, [...args])` is
+  byte-for-byte equivalent to `console.log.apply(...)` except for
+  the log level. `console.warn` / `console.error` deliberately
+  preserved (these are the actually-actionable signals; demoting
+  them would let Sentry/Datadog Browser RUM lose error coverage).
+  7 invariant tests in
+  `tests/test_notification_manager_console_noise_invariant_r216.py`
+  lock down: zero `console.log(` calls remaining (positive contract +
+  comment-vs-call distinction), `console.debug(` count ≥ 20 (proves
+  the demotion happened, not "log statements all deleted"),
+  `console.warn(` ≥ 10 + `console.error(` ≥ 3 preserved (negative
+  regression guard against accidental demote of these channels),
+  and file-header banner contains `R216` + `console` + `debug` /
+  `demote` keywords so future contributors grep'ing the convention
+  source can find it. Sibling pattern to `multi_task.js`'s existing
+  `_debugLog` helper (guarded by
+  `tests/test_multi_task_sse_console_noise.py`); R216 takes the
+  simpler "rename method" approach instead of introducing another
+  wrapper since the demotion is monolithic and one-shot.
+
 ### Fixed
 
 - **R215 / Cycle 10 · F-205-4: smoke_test_r50 forward-compat field
