@@ -509,7 +509,8 @@ class NotificationManager:
         10.0,
     )
     """provider-side 通知发送的 latency 桶（秒）—— R196 / Cycle 6 重新调
-    优。
+    优 (CR#19 §4.1 「R190' · histogram bucket selection per-metric vs
+    project-wide」follow-up)。
 
     R191 起步实现复用了 ``mcp_tool_call_metrics._DEFAULT_LATENCY_BUCKETS``
     （0.1 / 0.5 / 1 / 5 / 30 / 120 / 300 / 600）——逻辑上同属「人机交互延

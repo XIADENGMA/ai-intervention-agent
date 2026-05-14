@@ -2329,6 +2329,19 @@ class SystemRoutesMixin:
                 ``config.toml`` 的 ``[network_security].api_token`` 字段
                 （保留注释 + 原子替换），并通过响应体返回**一次**新 token。
 
+                **同步写入 ``api_token_rotated_at``**（R199 / Cycle 7 起）：
+                同一次 ``update_network_security_config`` 调用里把
+                ``[network_security].api_token_rotated_at`` 设为本次 rotation
+                的 ISO-8601 UTC 时间戳（``...Z`` 后缀，与响应体 ``rotated_at``
+                完全一致——见函数体内的「先生成时间戳再写 config」注释）。
+                ``GET /api/system/api-token-info`` 端点（R199）从 config
+                读取这个字段，配合 wall-clock 算出 token age，用于驱动
+                dashboard 按 NIST SP 800-63B 30-90 天周期发轮换告警。
+                如果 admin 后续手动把 ``api_token`` 清空（撤销），R200
+                cascade-clear 会**自动**同步清空 ``api_token_rotated_at``，
+                避免「has_token=false 但 rotated_at 仍是上次时间戳」的
+                「stale ghost」状态。
+
                 **安全约束**：
 
                 * **仅 loopback 来源**（``127.0.0.1`` / ``::1``）允许调用。

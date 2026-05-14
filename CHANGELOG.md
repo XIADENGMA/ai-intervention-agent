@@ -9,6 +9,47 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Docs
+
+- **R201 / Cycle 8: CR#20 §4.3 docs polish batch** (F-196-1 + F-197-1 +
+  F-199-3). 三处零行为变更的文档加注，配合 cycle 7 / 8 已落地的代码改动：
+
+  - **F-196-1**: ``notification_manager._DEFAULT_LATENCY_BUCKETS_SECONDS``
+    的 docstring header 加 ``(CR#19 §4.1 「R190' · histogram bucket
+    selection per-metric vs project-wide」follow-up)`` inline marker。
+    原 docstring 段落里有 "CR#19 §4.1 指出..." 引用，但 header 没有
+    显式 cross-reference，maintainer 浏览 attribute 列表时不易看到
+    R196 的来源——补这个 marker 让 "为什么这组桶长这样" 的源头一眼
+    可见，与 R200 注释的 ``R200 / Cycle 8 · F-199-1 from CR#20 §4.1``
+    风格对齐；
+  - **F-197-1**: ``TestSourceLevelLatencyPathColocation`` class docstring
+    扩 12 行 ``**为什么用 AST guard 而不是 runtime test**`` 段落，
+    引用 CR#16 §3.5 「structural invariants vs runtime tests」。原 3 行
+    docstring 只说了 "两路必须紧贴" + "防 refactor 错开"，没解释「为
+    什么 runtime test 抓不到」——补充说明 R142 ``latency_ms_total`` 与
+    R191 ``_record_provider_latency_bucket`` 共用同一份 ``latency_ms``
+    采样，refactor 把两者挪到不同 lock 块时 runtime test 仍然全 PASS
+    但 dashboard 上 ``avg`` 跟 ``P95`` 会悄悄走偏，只有 parse AST 锁
+    "同一 ``with self._stats_lock:`` 块内" 这条结构性约束才能捕获；
+  - **F-199-3**: ``POST /api/system/rotate-api-token`` (R195) docstring
+    description 段加段说明同时写入 ``api_token_rotated_at``——R199 引入
+    了这个字段，但 R195 docstring 没同步说明 rotation 时除了 ``api_token``
+    还更新 ``api_token_rotated_at``，仅 schema 部分提了 ``rotated_at``
+    响应字段。补段同时点名 R200 cascade-clear 在 admin 后续撤销 token
+    时会同步清空时间戳，让 admin 读 docstring 就理解 R195 → R199 → R200
+    的完整 lifecycle，不必跨多个文件追源码。
+
+  **Test**: R191 + R195 + R197 + R199 + R200 + docs-parity 全跑 → 67/67
+  + 41/41 PASS；ruff lint + format 全通过；scripts/generate_docs.py 重跑
+  无 diff（这些 docstring 都是 attribute / class / closure level，不会被
+  ``MODULES_TO_DOCUMENT`` 抽到 ``docs/api/`` 顶层 .md）；完整 5366/5366
+  test suite PASS (163s)。
+
+  零行为变更——纯 documentation polish，CR#20 §4.3 列为 "Docs / R200
+  trivial-fixes batch candidate"。
+
+  Refs: CR#20 §4.3 (F-196-1 + F-197-1 + F-199-3).
+
 ## [1.7.1] — 2026-05-13
 
 ### Fixed

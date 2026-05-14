@@ -263,7 +263,21 @@ class TestLatencyStatsMultiProviderIsolation(unittest.TestCase):
 class TestSourceLevelLatencyPathColocation(unittest.TestCase):
     """``_send_single_notification`` 源码里 R142 latency 记录块 + R191
     histogram 记录调用必须紧贴在一起 (同 ``_stats_lock`` 块内, R191
-    紧跟 R142 自增后), 防止未来 refactor 把两路错开。"""
+    紧跟 R142 自增后), 防止未来 refactor 把两路错开。
+
+    **为什么用 AST guard 而不是 runtime test** (CR#20 §4.3 F-197-1 /
+    CR#16 §3.5 「structural invariants vs runtime tests」):
+    R142 的 ``latency_ms_total`` 累加 和 R191 的 ``_record_provider_
+    latency_bucket`` 共用同一个 ``latency_ms`` 采样, 但**单独**给每
+    条 counter 写 runtime test 是抓不到 silent drift 的——把两条更新
+    挪到**不同** lock 块 (或一条放 fast-path / 一条放 slow-path /
+    一条被 ``if cond:`` 条件跳过) 时, 每个 counter 各自看仍然「值
+    对得上」, 但 dashboard 上 ``avg_latency_ms = total / count`` 跟
+    ``histogram_quantile(0.95, …)`` 算出的 P95 会悄悄走偏 (R142 漏
+    采样而 R191 没漏, 或反过来). 结构性不变量 (「同一 ``with self.
+    _stats_lock:`` 块内 + 单位换算正确 + 没有备用 emit 路径绕过 lock」)
+    只能 parse 源码 AST 才锁得住, 不能靠 input/output 黑盒测试.
+    """
 
     def setUp(self) -> None:
         self.src = Path(nm_module.__file__).read_text(encoding="utf-8")
