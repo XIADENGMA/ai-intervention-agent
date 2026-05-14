@@ -365,6 +365,7 @@ docstring template.
 | R234    | `tests/test_feedback_textarea_disabled_css_invariant_r234.py`          | Pattern A              | `.feedback-textarea:disabled` CSS rule exists for both themes with all 4 visual cues (background/color/cursor/border-color) + light rule uses `!important`; companion JS-inline-removed assertion lives in R229 test file |
 | R235    | `tests/test_form_inputs_accessible_name_invariant_r235.py`             | Pattern A              | Every `<input>` (non-hidden/submit/button/reset/image) + every `<textarea>` has accessible name via wrapping `<label>` / `<label for>` / `aria-label` / `aria-labelledby` / `aria-hidden=true + tabindex=-1` (a11y / WCAG 4.1.2, post-R230/R232 follow-up) |
 | R236    | `tests/test_ty_precommit_hook_invariant_r236.py`                       | Pattern B + Pattern A  | `ty-check` hook stays in `.pre-commit-config.yaml` at default `[pre-commit]` stage with `ty check` entry filtering `*.py`; `ci_gate.py` still invokes `ty` (pre-commit is fast shadow, CI is source of truth). Prevents v1.7.5-style abandoned release. |
+| R237    | `tests/test_dialog_aria_compliance_invariant_r237.py`                  | Pattern A              | Every `role="dialog"` element has `aria-modal="true"` + (`aria-labelledby` referencing an existing id, or `aria-label`) + starts hidden (class `hidden` / `[hidden]` attr). WAI-ARIA 1.2 + WCAG 4.1.2 lock. Cycle 14 a11y wave 4 (R230→R232→R235 was about controls; R237 covers the modal layer). |
 
 ## 7. Further reading
 

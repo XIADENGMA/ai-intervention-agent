@@ -11,6 +11,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R237 / Cycle 15: dialog/modal ARIA compliance invariant
+  (a11y wave 4)**. Cycle 14's WCAG 4.1.2 sweep (R230
+  decorative SVGs → R232 icon-only buttons → R235 form
+  inputs) covered the **control** layer. R237 covers the
+  **modal** layer: every `role="dialog"` element in
+  `web_ui.html` (currently `#code-paste-panel` +
+  `#settings-panel`) must have `aria-modal="true"` (WAI-ARIA
+  1.2: tells AT this is a true modal, focus should not
+  escape) and `aria-labelledby` (referencing an *existing*
+  id in the document — dangling references are explicitly
+  flagged) or `aria-label` (WCAG 4.1.2 accessible name).
+  Audit found the existing 2 dialogs **already** meet all
+  3 requirements — R237 is a "lock current good state"
+  invariant in the same spirit as R232. Adds a sanity check
+  that dialogs start hidden via `class="hidden"` or `[hidden]`
+  attribute (otherwise page-load would immediately trap
+  focus). Guarded by
+  `tests/test_dialog_aria_compliance_invariant_r237.py`
+  (4 cases): aria-modal=true + aria-labelledby/label
+  present + labelledby target id exists + starts hidden.
+  Out of scope (deliberate, F-cycle15-1 follow-up): actual
+  Tab/Shift-Tab focus-trap behavior + focus restore on
+  close + `inert` on background.
+
 - **R236 / Cycle 15 · F-cycle14-1: `ty` static type-checker
   now runs as a pre-commit hook** (mirrors R226's promotion
   of precompress-freshness from CI to pre-commit). Root
