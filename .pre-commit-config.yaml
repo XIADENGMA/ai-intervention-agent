@@ -168,6 +168,43 @@ repos:
         pass_filenames: false
         files: ^CHANGELOG\.md$
 
+  # R236 / Cycle 15 · F-cycle14-1 护栏：ty 静态类型检查。
+  #
+  # 背景：``ty`` (astral-sh, mypy-spirit type checker) 之前只在 CI 跑
+  # (``scripts/ci_gate.py`` 第 148 行)。v1.7.5 release (Cycle 13) 在
+  # ``Release.yml`` 步骤 53 触发 ``ci_gate.py --ci`` 时被 ``ty`` 卡住——
+  # ``tests/test_submit_btn_disabled_visible_invariant_r229.py`` 用了
+  # ``self.assertIsNotNone(match)``, runtime 上完全正确, 但 ``ty`` (与
+  # ``mypy``) **不识别**它做类型收缩 (type narrowing on ``re.Match | None``),
+  # 报 ``unresolved-attribute``。导致 v1.7.5 tag 必须废弃 + v1.7.6
+  # supersede + 浪费一次 release roundtrip。
+  #
+  # 根因分析: ``ty check`` 不在本地开发 loop 内, 开发者依赖 CI 抓 —— 但
+  # CI 离 commit 已远, 反馈链很长 (5 min CI vs <1s 本地)。R226 已经把
+  # precompress freshness 从 CI 提到 pre-commit, R236 复用同样模式把 ``ty``
+  # 提到 pre-commit, 让所有 ``ty`` 错误在 ``git commit`` 时立刻 fail-closed
+  # 而不是等 push → CI → 失败 → 反应。
+  #
+  # 性能: ``uv run ty check .`` 在当前代码量 (~50k LoC Python + tests) 约
+  # 800-1200 ms (与 ruff 同档), 可接受。``ty`` 自带增量缓存, 二次更快。
+  #
+  # 触发: 任何 ``.py`` 改动 → 检查整个项目 (Python 模块互依赖, partial
+  # 检查不可靠)。``pass_filenames: false`` 因 ``ty check .`` 已扫全部。
+  #
+  # 失败修复: 按 ``ty`` 输出修复类型错误。常见 footgun: 用
+  # ``self.assertIsNotNone(x)`` (unittest) 而非 ``assert x is not None``
+  # (PEP 484 标准 narrower), 后者 ty/mypy/pyright 都认。
+  #
+  # 绕过开关: ``git commit --no-verify`` (与其他 hook 同款 escape hatch)。
+  - repo: local
+    hooks:
+      - id: ty-check
+        name: ty 静态类型检查（R236 / F-cycle14-1 护栏，防 v1.7.5-style release 失败）
+        entry: uv run ty check .
+        language: system
+        pass_filenames: false
+        files: \.py$
+
   # R226 / Cycle 13 · F-cycle12-2 护栏：locale precompress 副本新鲜度。
   #
   # 背景：``src/ai_intervention_agent/static/locales/*.json`` 修改后必须

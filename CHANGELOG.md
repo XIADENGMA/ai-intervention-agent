@@ -9,6 +9,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R236 / Cycle 15 · F-cycle14-1: `ty` static type-checker
+  now runs as a pre-commit hook** (mirrors R226's promotion
+  of precompress-freshness from CI to pre-commit). Root
+  cause for promotion: v1.7.5 release (Cycle 13) was
+  abandoned because `ty` caught an `unresolved-attribute`
+  type-narrowing error on `re.Match | None` (using
+  `self.assertIsNotNone(match)` instead of PEP 484 standard
+  `assert match is not None`) **only in release CI**,
+  forcing v1.7.6 supersession + wasted release roundtrip.
+  R236 fix: add `ty-check` hook to
+  `.pre-commit-config.yaml` running `uv run ty check .` on
+  any `*.py` change (~800-1200 ms with incremental cache,
+  same tier as ruff). Now `ty` errors fail-closed at
+  `git commit` time instead of after push → CI → 5-min
+  feedback loop. **Important**: `ci_gate.py` still invokes
+  `ty` as the source-of-truth (pre-commit is a fast shadow
+  for developer speed; CI is the contract for `--no-verify`
+  or unhooked checkouts). Guarded by
+  `tests/test_ty_precommit_hook_invariant_r236.py` (5 cases):
+  hook exists in `.pre-commit-config.yaml` + entry actually
+  runs `ty check` (not no-op rename) + files filter matches
+  `*.py` + hook runs at default `[pre-commit]` stage (not
+  moved to manual/pre-push) + `ci_gate.py` still invokes
+  `ty`. Removing this hook requires explicit owner approval
+  via `ai-intervention-agent` (documented in the test
+  docstring).
+
 ## [1.7.7] - 2026-05-14
 
 > Cycle 14 release. **Theme: accessibility wave + drift guards.**
