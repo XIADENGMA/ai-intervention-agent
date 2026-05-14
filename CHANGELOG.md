@@ -9,6 +9,18 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.7] - 2026-05-14
+
+> Cycle 14 release. **Theme: accessibility wave + drift guards.**
+> Three-stage WCAG 4.1.2 sweep on top of Cycle 13's R230 SVG fix:
+> R232 (icon-only buttons), R235 (form inputs + textareas). Plus
+> two drift-detection guards (R231 invariant-catalogue staleness,
+> R233 README factual claims) and a UI/UX consistency follow-up
+> (R234 textarea disabled visual to CSS, parallel to R229 buttons).
+> 5,670 tests + 816 subtests all green, all 8 drift guards
+> (brand-color, CHANGELOG-lint, precompress, catalogue, ty, ruff,
+> i18n parity, README claims) green.
+
 ### Documentation
 
 - **CR#27 / Cycle 14 code review** (`docs/code-reviews/cr27.md`).
