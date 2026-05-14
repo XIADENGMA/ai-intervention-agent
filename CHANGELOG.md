@@ -9,6 +9,22 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **CR#28 / Cycle 15 code review** (`docs/code-reviews/cr28.md`).
+  Covers R236→R240 + 67aa190 R231 catalogue backfill (6 commits
+  since v1.7.7). Two themes: (1) **post-release reflection /
+  process upgrade** (R236 ty pre-commit hook closes v1.7.5
+  failure root cause); (2) **a11y wave 4 modal trilogy** (R237
+  declarative ARIA + R238 keyboard focus trap + R240 mouse/AT
+  `inert` background — modal interaction barrier now complete
+  in all 3 input modalities). Plus R239 README star-count
+  freshness Pattern D guard. Per-commit audit + health verdict
+  (EXCELLENT) + F-cycle15 backlog (8 candidates, with
+  F-cycle15-3 Playwright e2e for modal a11y recommended first
+  to confirm Pattern B text invariants behave at runtime).
+  Release recommendation: **v1.7.8** packing R236-R240.
+
 ### Added
 
 - **R240 / Cycle 15: open modals mark `.container` as
