@@ -11,6 +11,89 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R205 / Cycle 9 · F-204-1 (CR#21 §4.3): SSE schema runtime
+  validation toggle**. R198 把 ``EVENT_SCHEMAS`` + ``validate_payload``
+  API 暴露好了, 但**故意不在 production emit 路径调用**（hot path 性能
+  优先, 见 ``sse_event_schemas.py`` 模块 docstring "设计取舍"）。R205
+  加 env-var ``AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict`` toggle, 让
+  运维 / 调试期可以选择性开启 emit-site 验证, 不污染 default zero-
+  overhead 行为：
+
+  - ``off`` (default): emit() 不调 ``validate_payload``, 0 开销, 与
+    R198 现状完全一致;
+  - ``warn``: 调 ``validate_payload``, violations → ``logger.warning``
+    + ``_schema_violation_total`` 计数器累加, 但 emit 仍 fanout 不阻
+    塞 (一条 emit 多字段错只算 1 次, 避免噪声膨胀);
+  - ``strict``: 同 warn, 但 violations 走 ``logger.error`` (alertmanager
+    路由不同 severity), 仍 fanout, **不**抛异常。
+
+  **设计契约 · strict 为何不 raise**: emit() 是 fire-and-forget, 大部
+  分 emit-site 没 try/except 包裹 (例如 ``_on_task_status_change`` /
+  ``web_ui_config_sync.py`` 等)。raise 会让 production 挂掉, 违反
+  R198 "bus 不验证 event_type" 的原 design rationale; strict 与 warn
+  的唯一差异是 log level, 方便 alertmanager 配 "ERROR severity →
+  page on-call" 让 strict 真有 op effect。
+
+  **实现** (``web_ui_routes/task.py``, ~80 行):
+
+  - 模块顶端：``_SSE_SCHEMA_VALIDATE_ENV_VAR`` / ``_SSE_SCHEMA_VALIDATE_
+    DEFAULT_MODE`` / ``_SSE_SCHEMA_VALIDATE_VALID_MODES`` 三个常量 +
+    ``_read_sse_schema_validate_mode()`` helper (env-var sticky 读取);
+  - ``_SSEBus.__init__``: 一次性读 env var (Twelve-Factor 风格 sticky)
+    → invalid 值 → fall back ``off`` + startup WARN 一次 (避免运维
+    以为开了实际没生效); mode != off → startup INFO 一次告知;
+  - ``_SSEBus.emit`` 最早期 (serialize / oversize 替换之前) 加 mode-
+    check + validate 调用; off 是单 attribute compare 零开销;
+  - ``SSEBusStatsSnapshot`` TypedDict 新增 ``schema_validate_mode`` +
+    ``schema_violation_total`` 两个 key;
+  - ``stats_snapshot`` 返回 dict 加同样 2 个 key (运维可通过
+    ``/api/system/stats`` 或 ``aiia_sse_*`` 暴露 alertmanager 监控)。
+
+  **测试 (24 cases / 8 invariant class + 12 subtests)** ——
+  ``tests/test_sse_schema_validate_toggle_r205.py``:
+
+  1. **TestSseSchemaValidateModeOff** (3): default + 空字符串 → off,
+     **零开销契约** (spy 验证 validate_payload 在 100 次 invalid emit
+     下 call_count == 0);
+  2. **TestSseSchemaValidateModeWarn** (5): mode value + 合法/非法
+     payload 行为 + 一条 emit 多字段错只算 1 次 + emit 仍 fanout 给
+     subscriber (不阻塞);
+  3. **TestSseSchemaValidateModeStrict** (4): mode value + log.error
+     (与 warn 区分) + **不 raise 契约** (4 种 invalid input + None
+     payload + 非 dict + missing required + unknown event_type 全部
+     emit 不抛) + emit 仍 fanout;
+  4. **TestSseSchemaValidateEnvVarParsing** (4 + 5 + 5 subtests): 大
+     小写 normalize + whitespace trim + 无效值 fall-back off + startup
+     WARN + helper 默认值返回;
+  5. **TestSseSchemaValidateRegisteredEventsRoundTrip** (1 + 4 sub-
+     tests): R198 注册的 4 个 schema event 正确 payload → warn mode 0
+     violation (subtests 覆盖 task_changed / config_changed / log_
+     level_changed / oversize_drop, 端到端可用性证明);
+  6. **TestSseSchemaValidateStatsSnapshot** (3): mode + total 暴露 +
+     incrementing + off mode 在 50 次 invalid emit 下仍 total == 0;
+  7. **TestModuleLevelConstants** (3): default mode + env var name +
+     valid mode set 三个常量值锁定 (公共 contract);
+  8. **TestStrictModeNoRaiseUnderConcurrency** (1 · **核心安全契
+     约**): 4 thread × 20 emit 并发 invalid payload strict mode 不
+     crash, 80 violations 累加正确, fire-and-forget 契约硬性 lock。
+
+  **测试设计 · dedup cache 清理**: ``EnhancedLogger`` 内置 5 秒消息去
+  重 cache 防日志风暴, 但跨 test 共享 state 会让 ``assertLogs`` 抓不
+  到「重复 violation message」。R205 测试在 setUp + subTest 内部清
+  ``task_module.logger.deduplicator.cache``, 确保每条 R205 log 都能被
+  抓到 (production 行为不变, 仅是 test 隔离的工程实践)。
+
+  **验证**: R205 24 cases + 12 subtests PASS；``uv run ty check . →
+  All checks passed!``（含 1 处 ``# ty: ignore[invalid-argument-type]``
+  on 故意非 dict payload, 测的就是 emit 对 caller 误用的 robust 处
+  理）；``uv run ruff check . && ruff format --check . → All passed!``；
+  完整 ``pytest`` **5428 passed / 2 skipped / 640 subtests passed in
+  165s** (R206 baseline 5404 → 5428, 净增 +24 from R205)；``scripts/
+  generate_docs.py --check`` 两份语言 26/26 一致（task.py 不在
+  ``MODULES_TO_DOCUMENT`` 列表）；R198 / R202 / R203 完整测试套
+  64 cases + 20 subtests PASS（向后兼容验证, 新 toggle 在 default
+  off 下与历史行为完全一致）。
+
 - **R206 / Cycle 9 · F-release-1 (CR#21 §4.4): pre-tag-push checklist
   + retag safety window docs**. v1.7.2 的 docs-sync miss 暴露了一个
   长期被忽视的 surface：``release.yml`` 失败模式都是 publish-job

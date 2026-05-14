@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import collections
 import json
+import os
 import queue
 import threading
 import time
@@ -17,6 +18,11 @@ from flask.typing import ResponseReturnValue
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.i18n import msg
 
+# R205 / F-204-1: SSE schema runtime validation API. ``validate_payload``
+# 由 R198 已暴露但 production hot path 不调用——本 cycle 把它装在
+# ``_SSEBus.emit`` 入口由环境变量开关启用。
+from ai_intervention_agent.sse_event_schemas import validate_payload
+
 # R20.8: 直接 import task_queue_singleton 避免拖入 fastmcp/mcp（详见模块注释）。
 from ai_intervention_agent.task_queue_singleton import get_task_queue
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
@@ -26,6 +32,45 @@ if TYPE_CHECKING:
     from flask_limiter import Limiter
 
 logger = EnhancedLogger(__name__)
+
+# R205 / Cycle 9 · F-204-1 (CR#21 §4.3): SSE schema runtime validation
+# toggle. R198 把 ``validate_payload`` API 暴露好了但**故意不在 production
+# emit 路径调用**（hot path 性能优先, 见 sse_event_schemas.py 模块
+# docstring "设计取舍" 章节）。F-204-1 加一个 env-var 控制的 toggle, 让
+# 运维 / 调试期可以选择性开启验证, 不污染 default zero-overhead 行为:
+#
+# - ``off`` (default): emit() 不调 validate_payload, 0 开销, 与 R198 现状
+#   完全一致;
+# - ``warn``: emit() 调 validate_payload, violations → logger.warning +
+#   ``_schema_violation_total`` 计数器累加, 但 emit 继续 fanout (不阻塞);
+# - ``strict``: 同 warn, 但 violations 走 logger.error (运维更易 alert)
+#   且 emit 继续 fanout。**不**抛异常——emit 是 fire-and-forget, 大部分
+#   emit-site 没 try/except 包裹, raise 会让 production 挂。strict 与
+#   warn 的唯一差异是 log level, 方便 alertmanager / on-call 路由不同
+#   severity 到不同 channel。
+#
+# 取值合法性：unknown / typo (e.g. "STRICT" / "yes") → fall back 到 off
+# + 启动 log.warning 一次, 避免 silently 不验证 让运维以为开了实际没生效。
+_SSE_SCHEMA_VALIDATE_ENV_VAR: str = "AIIA_SSE_SCHEMA_VALIDATE"
+_SSE_SCHEMA_VALIDATE_DEFAULT_MODE: str = "off"
+_SSE_SCHEMA_VALIDATE_VALID_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
+
+
+def _read_sse_schema_validate_mode() -> str:
+    """读 ``AIIA_SSE_SCHEMA_VALIDATE`` 环境变量, 返回合法的 mode。
+
+    Twelve-Factor 风格 sticky 读取——production 单例 ``_sse_bus`` 在 module
+    load 时初始化, 启动后改 env var **不会** 生效（这是 acceptable, 与项目
+    其他 ``AIIA_*`` env-var toggle 行为一致）。
+
+    无效值 → fall back ``off`` + WARN 一次 (在 ``_SSEBus.__init__`` 里 log)。
+    """
+    raw = os.environ.get(_SSE_SCHEMA_VALIDATE_ENV_VAR, "").strip().lower()
+    if not raw:
+        return _SSE_SCHEMA_VALIDATE_DEFAULT_MODE
+    if raw in _SSE_SCHEMA_VALIDATE_VALID_MODES:
+        return raw
+    return _SSE_SCHEMA_VALIDATE_DEFAULT_MODE
 
 
 class SSELatencySnapshot(TypedDict):
@@ -42,7 +87,7 @@ class SSELatencySnapshot(TypedDict):
 
 
 class SSEBusStatsSnapshot(TypedDict):
-    """``_SSEBus.stats_snapshot`` 返回值结构（R47 + R51-B + R58 + R61 + R134）。
+    """``_SSEBus.stats_snapshot`` 返回值结构（R47 + R51-B + R58 + R61 + R134 + R205）。
 
     用 TypedDict 而不是裸 ``dict[str, int | dict[str, int]]`` 是为了让
     caller 拿到键时能正确推断到具体类型——caller 几乎都是 ``after["emit_total"]
@@ -61,6 +106,11 @@ class SSEBusStatsSnapshot(TypedDict):
     oversize_drops: int
     emit_by_type: dict[str, int]
     latency_ms: SSELatencySnapshot
+    # R205 / Cycle 9 · F-204-1: schema validation toggle 状态。``mode``
+    # ∈ {off, warn, strict}; ``total`` 单调累加 emit() 检测到的违规次数
+    # (一条 emit 多个字段错也只算 1 次)。
+    schema_validate_mode: str
+    schema_violation_total: int
 
 
 # Sentinel：当 ``_SSEBus`` 因 backpressure 把订阅者从 ``_subscribers`` 集合里
@@ -312,6 +362,35 @@ class _SSEBus:
         # R203 / Cycle 9 · F-202-1：cap 命中后 WARN-once flag，避免日志
         # 风暴。同样走 ``self._lock`` 保护（emit 持锁时读写）。
         self._emit_by_type_cap_hit_warned: bool = False
+        # R205 / Cycle 9 · F-204-1: SSE schema validation toggle 状态。
+        # 读 env var 一次, sticky 到 instance lifetime; 无效值 → off + WARN。
+        # ``_schema_violation_total`` 累计 emit() 检测到的 schema violation
+        # 次数 (一条 emit 多个字段错也只算 1 次), 走 ``self._lock`` 保护
+        # 与 ``_emit_total`` 同款。
+        raw_mode = os.environ.get(_SSE_SCHEMA_VALIDATE_ENV_VAR, "").strip().lower()
+        if raw_mode and raw_mode not in _SSE_SCHEMA_VALIDATE_VALID_MODES:
+            logger.warning(
+                "R205: %s=%r is not a valid mode (expected one of %s); "
+                "falling back to %r. Set the env var before process start "
+                "to take effect.",
+                _SSE_SCHEMA_VALIDATE_ENV_VAR,
+                raw_mode,
+                sorted(_SSE_SCHEMA_VALIDATE_VALID_MODES),
+                _SSE_SCHEMA_VALIDATE_DEFAULT_MODE,
+            )
+        self._schema_validate_mode: str = _read_sse_schema_validate_mode()
+        self._schema_violation_total: int = 0
+        if self._schema_validate_mode != _SSE_SCHEMA_VALIDATE_DEFAULT_MODE:
+            # 启动时 log 一次告诉运维 "schema validation 已开启", 方便审计 +
+            # 防止 silently 啃 emit 性能而无人知晓。
+            logger.info(
+                "R205: SSE schema validation enabled at mode=%r via %s. "
+                "Violations will be logged at level=%s; counter exposed as "
+                "stats_snapshot()['schema_violation_total'].",
+                self._schema_validate_mode,
+                _SSE_SCHEMA_VALIDATE_ENV_VAR,
+                "ERROR" if self._schema_validate_mode == "strict" else "WARNING",
+            )
         # R134：emit→deliver 延迟样本环形缓冲。emit 时把 ``time.monotonic_ns()``
         # 写进 payload 的 ``_emit_ts_ns``；generator 真正 yield 给客户端那
         # 一瞬间再算 ``time.monotonic_ns() - _emit_ts_ns`` 推进缓冲。
@@ -418,6 +497,30 @@ class _SSEBus:
         # 入的订阅者不会收到本条事件」语义保持不变；新订阅者拿不到这条 emit
         # 对应的 payload，但能通过 ``subscribe(after_id=...)`` 在下一次重连时
         # 从 history 里拿回——这正是 Last-Event-ID resume 的用途。
+        #
+        # R205 / Cycle 9 · F-204-1: 可选 schema validation。放在 emit 入口
+        # 最早期 (serialize / oversize 替换之前), 验证 caller 真实传入的
+        # event_type + payload, 不被 bus 内部替换路径污染。off mode 是
+        # 单 attribute compare, 0 开销; warn/strict mode 调 validate_payload
+        # (μs 级 dict 字段检查) + 失败 log + 计数, 但 emit 仍照常 fanout
+        # (不 raise——见 module-level _SSE_SCHEMA_VALIDATE_* 注释)。
+        if self._schema_validate_mode != _SSE_SCHEMA_VALIDATE_DEFAULT_MODE:
+            violations = validate_payload(event_type, data)
+            if violations:
+                log_fn = (
+                    logger.error
+                    if self._schema_validate_mode == "strict"
+                    else logger.warning
+                )
+                for v in violations:
+                    log_fn(
+                        "R205 SSE schema %s violation: %s",
+                        self._schema_validate_mode,
+                        v,
+                    )
+                with self._lock:
+                    self._schema_violation_total += 1
+
         try:
             serialized_data = json.dumps(data or {}, ensure_ascii=False)
         except (TypeError, ValueError):
@@ -654,6 +757,13 @@ class _SSEBus:
                 # R134：emit→deliver 延迟分布。``_compute_latency_snapshot``
                 # 在锁内读 ``_latency_samples_ns``，输出 ms 单位。
                 "latency_ms": self._compute_latency_snapshot(),
+                # R205 / Cycle 9 · F-204-1: SSE schema validation 状态 +
+                # 累计 violation 计数。``schema_validate_mode`` ∈ {off, warn,
+                # strict}, sticky 到进程 lifetime; ``schema_violation_total``
+                # 单调累加, 一条 emit 多个字段错也只算 1 次（emit() 入口在
+                # validate 失败 case 下 += 1 一次）。
+                "schema_validate_mode": self._schema_validate_mode,
+                "schema_violation_total": self._schema_violation_total,
             }
 
 
