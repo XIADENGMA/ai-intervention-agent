@@ -9,6 +9,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R245 / Cycle 16 · HTML cascade-aware modal-inert
+  structural invariant (Pattern A++)**. R244 fixed a
+  specific instance of the cascade bug, but its tests
+  (verifying call sites) are still Pattern B (static-grep)
+  and cannot catch the *next* modal added inside an inerted
+  ancestor. R245 closes that generalisation gap with a
+  three-stage cascade model: (1) parse `web_ui.html` to
+  enumerate every `role="dialog"` element and its ancestor
+  chain to `<body>`; (2) parse `app.js` +
+  `settings-manager.js` to extract DANGEROUS direct-inert
+  selectors (the patterns that propagate via HTML5
+  cascade); (3) fail if any dialog ancestor matches any
+  dangerous selector — UNLESS the JS uses the R244 sibling-
+  iteration helper that explicitly skips the open dialog.
+  Verified to catch the original R240 buggy pattern (see
+  test docstring's manual confirmation snippet). Net effect:
+  adding `<div role="dialog">` inside `.container` without
+  also routing it through `_setContainerSiblingsInert` will
+  fail this test at commit time, regardless of whether
+  anyone remembers R244. Limitations explicitly documented:
+  static-only (no runtime DOM mutation modelling) — true
+  dynamic-modal coverage still depends on F-cycle16-
+  playwright. Guarded by
+  `tests/test_dialog_not_in_inert_subtree_invariant_r245.py`
+  (2 classes / 3 cases): cascade detection across all
+  dialogs, safe-helper allowlist consistency between R244
+  and R245 (so renaming the helper trips both tests in
+  sync). Pioneers a new "Pattern A++" category in our
+  taxonomy: not full runtime, but cross-file structural
+  reasoning beyond pure grep. Bilingual catalogue (§6)
+  updated.
+
 ### Fixed
 
 - **R244 / Cycle 16 · fix R240 modal-cascade-self-inert bug
