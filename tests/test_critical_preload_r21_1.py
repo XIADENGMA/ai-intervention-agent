@@ -393,7 +393,7 @@ class TestPreloadDoesNotIncludeAntiPattern:
                     " main.css 已经是 head 内 ``<link rel='stylesheet'>`` 同步加载，"
                     "再 preload 一次会触发 Chrome ``Resource was preloaded but used twice`` 警告。"
                 )
-                pytest.fail(msg)  # ty: ignore[invalid-argument-type]
+                pytest.fail(msg)
 
     def test_mathjax_loader_not_preloaded(self) -> None:
         head = _extract_head(_read_template())
@@ -410,7 +410,7 @@ class TestPreloadDoesNotIncludeAntiPattern:
                     " 它在 head 早期就 ``<script defer>``，浏览器扫到 head 时已经"
                     "在并行下载，再加 preload 没有增量收益。"
                 )
-                pytest.fail(msg)  # ty: ignore[invalid-argument-type]
+                pytest.fail(msg)
 
 
 # ---------------------------------------------------------------------------

@@ -47,6 +47,7 @@ import json
 import os
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from typing import Any, cast
 from unittest.mock import patch
 
 from ai_intervention_agent import server
@@ -330,33 +331,44 @@ class TestRedactSensitiveHelpers(unittest.TestCase):
             )
 
     def test_redact_sensitive_replaces_value_in_dict(self) -> None:
-        out = server._redact_sensitive(
-            {"bark_device_key": "real_token_xyz", "host": "127.0.0.1"}
+        out = cast(
+            "dict[str, Any]",
+            server._redact_sensitive(
+                {"bark_device_key": "real_token_xyz", "host": "127.0.0.1"}
+            ),
         )
         self.assertEqual(out["bark_device_key"], "***REDACTED***")
         self.assertEqual(out["host"], "127.0.0.1")
 
     def test_redact_sensitive_recursive_into_nested_dict(self) -> None:
-        out = server._redact_sensitive(
-            {
-                "notification": {
-                    "enabled": True,
-                    "bark_device_key": "real_token",
-                    "bark_url": "https://example.com/",
-                },
-                "web_ui": {"host": "0.0.0.0", "port": 8080},
-            }
+        out = cast(
+            "dict[str, Any]",
+            server._redact_sensitive(
+                {
+                    "notification": {
+                        "enabled": True,
+                        "bark_device_key": "real_token",
+                        "bark_url": "https://example.com/",
+                    },
+                    "web_ui": {"host": "0.0.0.0", "port": 8080},
+                }
+            ),
         )
-        self.assertEqual(out["notification"]["bark_device_key"], "***REDACTED***")
-        self.assertEqual(out["notification"]["enabled"], True)
-        self.assertEqual(out["web_ui"]["host"], "0.0.0.0")
+        notification = cast("dict[str, Any]", out["notification"])
+        self.assertEqual(notification["bark_device_key"], "***REDACTED***")
+        self.assertEqual(notification["enabled"], True)
+        web_ui = cast("dict[str, Any]", out["web_ui"])
+        self.assertEqual(web_ui["host"], "0.0.0.0")
 
     def test_redact_sensitive_recursive_into_list(self) -> None:
-        out = server._redact_sensitive(
-            [
-                {"api_key": "k1"},
-                {"name": "alice", "token": "t1"},
-            ]
+        out = cast(
+            "list[dict[str, Any]]",
+            server._redact_sensitive(
+                [
+                    {"api_key": "k1"},
+                    {"name": "alice", "token": "t1"},
+                ]
+            ),
         )
         self.assertEqual(out[0]["api_key"], "***REDACTED***")
         self.assertEqual(out[1]["token"], "***REDACTED***")
@@ -365,7 +377,7 @@ class TestRedactSensitiveHelpers(unittest.TestCase):
     def test_redact_sensitive_does_not_mutate_input(self) -> None:
         """输入不应被原地修改——返回的是新的 dict。"""
         original = {"bark_device_key": "real"}
-        out = server._redact_sensitive(original)
+        out = cast("dict[str, Any]", server._redact_sensitive(original))
         self.assertEqual(original["bark_device_key"], "real")
         self.assertEqual(out["bark_device_key"], "***REDACTED***")
 

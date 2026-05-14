@@ -295,6 +295,7 @@ class TestSourceLevelLatencyPathColocation(unittest.TestCase):
         self.assertIsNotNone(
             match, "couldn't isolate _send_single_notification body in source"
         )
+        assert match is not None  # ty narrow: 上一行 assertIsNotNone 已挡 None
         body = match.group(1)
         # 找到第一个 latency 记录的 `with self._stats_lock:` 块
         # (函数内可能有多个 lock 区段)
@@ -352,6 +353,7 @@ class TestSourceLevelLatencyPathColocation(unittest.TestCase):
             call_match,
             "no `self._record_provider_latency_bucket(...)` call site found",
         )
+        assert call_match is not None  # ty narrow: 上一行 assertIsNotNone 已挡 None
         args = call_match.group(1).strip()
         # args 形如: ``notification_type.value, latency_ms / 1000.0``
         # 第二个参数 (split-comma 取最后一段) 应含 "1000" (单位换算)

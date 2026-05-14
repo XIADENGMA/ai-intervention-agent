@@ -550,7 +550,7 @@ def configure_logging_from_config() -> None:
 # ========================================================================
 
 
-def get_current_log_level() -> dict[str, str]:
+def get_current_log_level() -> dict[str, str | list[str]]:
     """返回当前运行时日志级别快照（root + ai_intervention_agent 命名空间）。
 
     给 ``GET /api/system/log-level`` 端点 + 测试断言用。

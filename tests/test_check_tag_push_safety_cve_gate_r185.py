@@ -117,7 +117,7 @@ class TestR185QueryOpenAlerts(unittest.TestCase):
         *,
         stdout: str = "",
         returncode: int = 0,
-        side_effect: Exception | None = None,
+        side_effect: Exception | type[Exception] | None = None,
     ) -> mock._patch[mock.MagicMock]:
         if side_effect is not None:
             return mock.patch("subprocess.run", side_effect=side_effect)

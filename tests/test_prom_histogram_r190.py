@@ -238,7 +238,7 @@ class TestMiddlewareLatencyRecording(unittest.IsolatedAsyncioTestCase):
             return "ok"
 
         mw = mtcm.ToolCallCounterMiddleware()
-        await mw.on_call_tool(_FakeContext("t1"), call_next)
+        await mw.on_call_tool(_FakeContext("t1"), call_next)  # ty: ignore[invalid-argument-type]
         snap = mtcm.get_mcp_tool_call_latency_snapshot()
         self.assertIn(("t1", "success"), snap)
         self.assertEqual(snap[("t1", "success")]["count"], 1)
@@ -249,7 +249,7 @@ class TestMiddlewareLatencyRecording(unittest.IsolatedAsyncioTestCase):
 
         mw = mtcm.ToolCallCounterMiddleware()
         with self.assertRaises(RuntimeError):
-            await mw.on_call_tool(_FakeContext("t2"), call_next)
+            await mw.on_call_tool(_FakeContext("t2"), call_next)  # ty: ignore[invalid-argument-type]
         snap = mtcm.get_mcp_tool_call_latency_snapshot()
         self.assertIn(("t2", "failure"), snap)
         self.assertEqual(snap[("t2", "failure")]["count"], 1)
@@ -260,7 +260,7 @@ class TestMiddlewareLatencyRecording(unittest.IsolatedAsyncioTestCase):
 
         mw = mtcm.ToolCallCounterMiddleware()
         for _ in range(5):
-            await mw.on_call_tool(_FakeContext("t3"), call_next)
+            await mw.on_call_tool(_FakeContext("t3"), call_next)  # ty: ignore[invalid-argument-type]
         snap = mtcm.get_mcp_tool_call_latency_snapshot()
         state = snap[("t3", "success")]
         self.assertEqual(state["count"], 5)
@@ -277,7 +277,7 @@ class TestMiddlewareLatencyRecording(unittest.IsolatedAsyncioTestCase):
 
         mw = mtcm.ToolCallCounterMiddleware()
         with self.assertRaises(ValueError):
-            await mw.on_call_tool(_FakeContext("t4"), call_next)
+            await mw.on_call_tool(_FakeContext("t4"), call_next)  # ty: ignore[invalid-argument-type]
         snap = mtcm.get_mcp_tool_call_latency_snapshot()
         state = snap[("t4", "failure")]
         self.assertEqual(state["count"], 1)

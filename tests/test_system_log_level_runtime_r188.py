@@ -153,9 +153,9 @@ class TestApplyRuntimeLogLevel(unittest.TestCase):
 
     def test_non_string_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):
-            apply_runtime_log_level(123)  # type: ignore[arg-type]
+            apply_runtime_log_level(123)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         with self.assertRaises(ValueError):
-            apply_runtime_log_level(None)  # type: ignore[arg-type]
+            apply_runtime_log_level(None)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     def test_returns_old_and_new_level_names(self) -> None:
         apply_runtime_log_level("WARNING")

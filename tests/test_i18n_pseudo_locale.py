@@ -169,7 +169,7 @@ class TestPseudoStructuralParity:
                 f"  update WEB_EN/VSCODE_EN at top of "
                 f"tests/test_i18n_pseudo_locale.py."
             )
-            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
+            pytest.fail(reason)
         assert pseudo_path.is_file(), (
             f"Missing {pseudo_path}. Run gen_pseudo_locale.py."
         )
@@ -198,7 +198,7 @@ class TestEveryLeafTransformed:
                 f"_pseudo/pseudo.json\n"
                 f"  while leaving en.json fresh — this whole test class would no-op."
             )
-            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
+            pytest.fail(reason)
         leaves = _flatten(json.loads(pseudo_path.read_text(encoding="utf-8")))
         broken: list[tuple[str, str]] = []
         for k, v in leaves.items():
@@ -225,7 +225,7 @@ class TestEveryLeafTransformed:
                 f"  Restore the missing files or fix the path constants in "
                 f"tests/test_i18n_pseudo_locale.py."
             )
-            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
+            pytest.fail(reason)
         en_leaves = _flatten(json.loads(en_path.read_text(encoding="utf-8")))
         ps_leaves = _flatten(json.loads(pseudo_path.read_text(encoding="utf-8")))
         missing: list[str] = []

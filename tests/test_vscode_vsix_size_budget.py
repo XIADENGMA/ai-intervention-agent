@@ -152,7 +152,7 @@ class TestExistingVsixWithinBudget:
                 "packages/vscode/*.vsix 不存在（dev 机器尚未打包），跳过尺寸软 check。"
                 "CI 在 release.yml 里会主动跑 npm run package，触发硬 check。"
             )
-            pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]
+            pytest.skip(msg)
         fail_mb = _extract_default_mb("FAIL_PACKED_MB_DEFAULT")
         fail_bytes = fail_mb * 1024 * 1024
         for vsix in candidates:

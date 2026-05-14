@@ -70,7 +70,7 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from fastmcp.server.middleware import Middleware
 
@@ -202,11 +202,19 @@ def _record_latency(tool_name: str, status: str, duration_seconds: float) -> Non
     key = (tool_name, status)
     state = _latency_state.get(key)
     if state is None:
-        state = {
-            "count": 0,
-            "sum_seconds": 0.0,
-            "buckets": dict.fromkeys(_DEFAULT_LATENCY_BUCKETS, 0),
-        }
+        # ty 0.0.34: dict literal 字面量推导会把 value type union 化
+        # （int | float | dict[float, int]），导致下面 ``state["count"] += 1``
+        # 落到 ty 认为不能 += 的分支。``cast`` 把 state 强制窄化回模块声明
+        # 的 ``dict[str, Any]`` 类型——这跟 ``_latency_state`` value type 一
+        # 致，是 type-safe narrow，不是 silent ignore。
+        state = cast(
+            "dict[str, Any]",
+            {
+                "count": 0,
+                "sum_seconds": 0.0,
+                "buckets": dict.fromkeys(_DEFAULT_LATENCY_BUCKETS, 0),
+            },
+        )
         _latency_state[key] = state
 
     state["count"] += 1
@@ -277,7 +285,14 @@ class ToolCallCounterMiddleware(Middleware):
         call_next: Callable[
             [MiddlewareContext[mt.CallToolRequestParams]], Awaitable[Any]
         ],
-    ) -> CallToolResult:
+    ) -> CallToolResult:  # ty: ignore[invalid-method-override]
+        # 上一行 ignore 原因: fastmcp ``Middleware.on_call_tool`` 父类签名
+        # ``context: MiddlewareContext`` 不带 Generic 参数, 子类把它窄
+        # 化到 ``MiddlewareContext[CallToolRequestParams]`` 是 fastmcp
+        # 推荐的 type-narrow pattern (让 IDE hover ``context.message.name``
+        # 拿到 ``str`` 而不是 ``Any``). ty 0.0.34 把这种 covariant
+        # parameter override 标为 invalid override; 待 ty 支持 generic
+        # parameter narrowing 后即可移除 (跟踪: astral-sh/ty issues).
         # ``context.message.name`` 是 tool 名（如 ``"interactive_feedback"``）；
         # FastMCP 已经做过基础 schema 校验，到这里 name 一定是 str 非空。
         tool_name = context.message.name

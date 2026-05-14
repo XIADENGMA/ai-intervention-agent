@@ -199,6 +199,7 @@ class TestSafeWebUiEnvOverridesWhitelisted(unittest.TestCase):
             clear=False,
         ):
             result = system_module._safe_web_ui_env_overrides()
+        assert result is not None  # ty narrow: None 分支由其他 test 覆盖
         self.assertEqual(
             set(result.keys()),
             {

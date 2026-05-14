@@ -278,6 +278,7 @@ class TestSourceCoverageAstGuard(unittest.TestCase):
             self.assertIsNotNone(
                 schema, f"unregistered event {literal!r} (covered by other test)"
             )
+            assert schema is not None  # ty narrow: 上一行 assertIsNotNone 已挡 None
             self.assertIn(
                 file_path,
                 schema.emitted_by,

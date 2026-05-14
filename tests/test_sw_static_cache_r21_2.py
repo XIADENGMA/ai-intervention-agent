@@ -304,7 +304,7 @@ class TestRegisterServiceWorkerDecoupledFromNotification:
                     "init() 结构与预期不一致，无法做严格断言；R21.2 主体已 commit，"
                     "这条测试做软兜底。"
                 )
-                pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]
+                pytest.skip(msg)
             return
 
         else_body = m.group(1)

@@ -107,7 +107,7 @@ class TestInvalidateAllCachesFieldCoverage(unittest.TestCase):
     def test_invalidates_section_cache(self) -> None:
         # 触发 section cache 填充（web_ui section 是常用读 path）
         try:
-            self._cfg.get_web_ui_config()
+            self._cfg.get_section("web_ui")
         except Exception:
             pass  # 缺字段是预期的，重点是 cache 被填充
         # 直接 inspect cache state——具体填了什么不重要

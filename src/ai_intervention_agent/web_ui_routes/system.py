@@ -21,7 +21,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
@@ -1020,7 +1020,15 @@ def _render_prometheus_metrics() -> str:
                         stats, dict
                     ):
                         continue
-                    raw = stats.get(key)
+                    # ty 0.0.34: ``per_provider = notif.get("per_provider")``
+                    # 把 ``stats`` 推为 ``Any``, isinstance(stats, dict) narrow
+                    # 之后变 ``dict[Never, Never]``——``stats.get(key)`` 拿
+                    # ``Literal["attempts" | ...]`` 当 key 就报 invalid-
+                    # argument-type。``cast`` 把 narrow 后的 stats 重新声
+                    # 明为 ``dict[str, Any]`` (这正是 R142 _safe_per_provider_
+                    # snapshot 的实际输出类型, 见 system.py:309).
+                    stats_typed = cast("dict[str, Any]", stats)
+                    raw = stats_typed.get(key)
                     if isinstance(raw, int | float):
                         value: int | float = (
                             float(raw)

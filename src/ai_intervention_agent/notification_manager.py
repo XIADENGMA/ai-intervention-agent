@@ -14,7 +14,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -552,11 +552,19 @@ class NotificationManager:
             return
         state = self._provider_latency_histograms.get(provider_name)
         if state is None:
-            state = {
-                "count": 0,
-                "sum_seconds": 0.0,
-                "buckets": dict.fromkeys(self._DEFAULT_LATENCY_BUCKETS_SECONDS, 0),
-            }
+            # ty 0.0.34: dict 字面量推导把 value union 化 (``int | float |
+            # dict[float, int]``), 让下面 ``state["count"] += 1`` 落入 ty
+            # 认为不能 += 的分支。``cast`` 强制窄化回 attribute 声明的
+            # ``dict[str, Any]`` 类型 (line 417), 与 mcp_tool_call_metrics
+            # 同款 type-safe narrow 模式。
+            state = cast(
+                "dict[str, Any]",
+                {
+                    "count": 0,
+                    "sum_seconds": 0.0,
+                    "buckets": dict.fromkeys(self._DEFAULT_LATENCY_BUCKETS_SECONDS, 0),
+                },
+            )
             self._provider_latency_histograms[provider_name] = state
         state["count"] += 1
         state["sum_seconds"] += duration_seconds

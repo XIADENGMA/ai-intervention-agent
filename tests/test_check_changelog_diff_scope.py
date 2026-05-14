@@ -38,7 +38,7 @@ SCRIPTS = REPO_ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import check_changelog_diff_scope as M
+import check_changelog_diff_scope as M  # ty: ignore[unresolved-import]
 
 # ---------------------------------------------------------------------------
 # 1. _release_sections_in_staged_file: 区段切分

@@ -143,7 +143,7 @@ class TestHostTCallsAreTypeable:
                 f"  Either restore the file or update EXTENSION_TS at top of\n"
                 f"  tests/test_i18n_ts_types_gen.py."
             )
-            pytest.fail(reason)  # ty: ignore[invalid-argument-type]
+            pytest.fail(reason)
         text = self._strip_comments(EXTENSION_TS.read_text(encoding="utf-8"))
         used = set(self._HOST_T_RE.findall(text))
         assert used, "expected at least one hostT('key') call"

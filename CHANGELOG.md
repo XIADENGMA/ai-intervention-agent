@@ -9,10 +9,90 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.2] — 2026-05-14
+
+### Dependencies
+
+- **authlib 1.7.0 → 1.7.1** (Dependabot #39, commit `83c2bf7`). Patch
+  release，无 breaking change，主要是 JWT validation 性能微调，无需测试
+  / 调用方调整。
+
+### Fixed
+
+- **CI · `Tests` workflow green-build restore** (commit `83c2bf7` aftermath,
+  RCA 见下). 修 `uv run ty check .` 在 CI 报的 38 个 type-check diagnostics
+  (31 errors + 7 unused-ignore warnings)——分布在 4 个 source + 12 个 test
+  files。**根因不是** dependabot 的 ``authlib 1.7.0 → 1.7.1`` bump，而是
+  ``v1.7.1`` 发布时 Astral `ty 0.0.34` 走得比之前严格，把一批长期潜伏的
+  type 不严谨写法暴露出来；`83c2bf7` 只是触发了再跑 CI 才看到 ``Tests``
+  红。修复策略遵循「最小侵入 + 不改 runtime 行为」：
+
+  - **Source · 7 errors**
+    - ``enhanced_logging.get_current_log_level`` 返回类型从
+      ``dict[str, str]`` 修正成 ``dict[str, str | list[str]]``——之前签名
+      与 ``valid_levels`` 字段的实际 ``list[str]`` 值不一致，是真实 bug；
+    - ``mcp_tool_call_metrics._latency_state`` / ``notification_manager.``
+      ``_provider_latency_histograms[key]`` 两处 dict-literal 初始化加
+      ``cast("dict[str, Any]", ...)``，因为 ty 0.0.34 把 ``{"count": 0,
+      "sum_seconds": 0.0}`` narrow 成 ``dict[str, int | float]`` 后再做
+      ``state["count"] += 1`` 报 ``unsupported-operator``——cast 一次告诉
+      ty「这个 state 是异构 value bag」就 unblock；
+    - ``mcp_tool_call_metrics.ToolCallCounterMiddleware.on_call_tool``
+      加 ``# ty: ignore[invalid-method-override]``——fastmcp 父类
+      ``Middleware.on_call_tool`` 的 ``context`` 参数没带 generic, 子类把
+      它窄化到 ``MiddlewareContext[CallToolRequestParams]`` 是 fastmcp
+      ``server/middleware.py`` docstring 推荐的 type-narrow pattern (让
+      IDE hover ``context.message.name`` 拿到 ``str``)，ty 现版本对这种
+      covariant parameter override 还不能识别，等 ``ty`` 支持后可移除；
+    - ``web_ui_routes/system._render_prometheus_metrics`` 在 ``isinstance(
+      stats, dict)`` 之后加 ``stats_typed = cast("dict[str, Any]", stats)``，
+      ty 在 isinstance narrow 之后把 dict 推成 ``dict[Never, Never]``，
+      ``.get(key)`` 报 ``invalid-argument-type``——cast 是当前唯一无副作用
+      的解决方案 (assert isinstance 不能再窄化 generic 参数)。
+
+  - **Tests · 24 errors + 7 unused-ignore**
+    - ``test_server_print_config`` 4 处 ``_redact_sensitive`` 调用全部
+      改用 ``cast("dict[str, Any]", ...)`` / ``cast("list[dict[str, Any]]",
+      ...)`` 替代 ``isinstance`` 断言——ty 对 narrow 后 generic dict 的
+      ``Unknown`` key 类型推不出 ``Literal[str]`` 兼容，cast 是 idiomatic 解；
+    - ``test_latency_invariant_r197`` / ``test_sse_event_schemas_r198``
+      / ``test_health_env_overrides`` 在 ``assertIsNotNone`` 之后补
+      ``assert x is not None`` 做 ty narrow——unittest 的 assertX 不是
+      ``ty`` 识别的 narrowing form，得用 ``assert`` 显式 narrow；
+    - ``test_check_changelog_diff_scope`` 的 ``check_changelog_diff_scope``
+      import 加 ``# ty: ignore[unresolved-import]``——该脚本通过
+      ``sys.path.insert(0, "scripts/")`` 注入，ty 静态 resolve 不到；
+    - ``test_check_tag_push_safety_cve_gate_r185._patch_subprocess`` 的
+      ``side_effect`` 参数类型从 ``Exception | None`` 扩到 ``Exception |
+      type[Exception] | None``——mock 框架确实支持 class 或 instance；
+    - ``test_critical_preload_r21_1`` / ``test_i18n_pseudo_locale`` /
+      ``test_i18n_ts_types_gen`` 五处 ``pytest.fail(reason)  # ty:
+      ignore[invalid-argument-type]`` 把 ``# ty: ignore`` 删掉——``ty``
+      已识别 ``pytest.fail(str)``，ignore 变成 unused warning；
+    - ``test_hot_reload_network_security_r193`` 把
+      ``ConfigManager.get_web_ui_config()`` 改成 ``get_section("web_ui")``
+      ——前者从未存在，是 ty 之前漏报的 typo；
+    - ``test_prom_histogram_r190`` 四处 ``await mw.on_call_tool(_Fake
+      Context(...), call_next)`` 加 ``# ty: ignore[invalid-argument-
+      type]``——``_FakeContext`` 是测试用 minimal fake，刻意不实现完整
+      ``MiddlewareContext`` Protocol；
+    - ``test_sw_static_cache_r21_2`` / ``test_vscode_vsix_size_budget``
+      两处 ``pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]``
+      把 ``# ty: ignore`` 删掉——同样是 ty 0.0.34 已正确处理；
+    - ``test_system_log_level_runtime_r188`` 两处 ``apply_runtime_log_level
+      (123)`` / ``(None)`` 在原有 ``# type: ignore[arg-type]`` (mypy)
+      后追加 ``# ty: ignore[invalid-argument-type]``——故意传非法值测
+      ``ValueError``，是 deliberate type violation。
+
+  **验证**: ``uv run ty check . → All checks passed!`` (从 38 → 0 diagnostics);
+  ``uv run ruff check . && ruff format --check . → All checks passed!``;
+  完整 ``pytest`` 5366 passed / 2 skipped / 620 subtests passed in 147.88s
+  (跟 v1.7.1 的 5366 数完全一致, 零 test 被破坏)。
+
 ### Docs
 
 - **R201 / Cycle 8: CR#20 §4.3 docs polish batch** (F-196-1 + F-197-1 +
-  F-199-3). 三处零行为变更的文档加注，配合 cycle 7 / 8 已落地的代码改动：
+  F-199-3, commit `7ec8d91`). 三处零行为变更的文档加注，配合 cycle 7 / 8 已落地的代码改动：
 
   - **F-196-1**: ``notification_manager._DEFAULT_LATENCY_BUCKETS_SECONDS``
     的 docstring header 加 ``(CR#19 §4.1 「R190' · histogram bucket
