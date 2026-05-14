@@ -13,29 +13,29 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 - **R210 / Cycle 10 · F-205-1 (CR#22 §4 Important): `AIIA_SSE_SCHEMA_
   VALIDATE` env-var docs sync into `docs/configuration.{md,zh-CN.md}`**.
-  R205 (Cycle 9) 引入 ``AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict`` 运
-  行时 SSE schema 验证开关，但 ``docs/configuration.md`` /
-  ``configuration.zh-CN.md`` 没有同步——fresh contributor / 运维
-  ``grep AIIA_`` 找环境变量时根本找不到该 env var 的说明。CR#22 §4
+  R205 (Cycle 9) 引入 `AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict` 运
+  行时 SSE schema 验证开关，但 `docs/configuration.md` /
+  `configuration.zh-CN.md` 没有同步——fresh contributor / 运维
+  `grep AIIA_` 找环境变量时根本找不到该 env var 的说明。CR#22 §4
   把这个 docs-sync miss 列为 Important 级别 follow-up (F-205-1)，
   R210 收尾该 follow-up。
 
   **实现 (2 文件 + 1 测试)**:
 
-  - ``docs/configuration.md`` 在 §"Auto-migration" 之前新增子节
-    "Ops / debug env vars"，完整说明 ``AIIA_SSE_SCHEMA_VALIDATE``：
-    ``off`` (默认，零开销) / ``warn`` (违规 WARNING + counter +1) /
-    ``strict`` (违规 ERROR + counter +1，**不抛异常**——``_SSEBus.
-    emit()`` fire-and-forget 契约不变); 无效值 fall back ``off`` +
-    启动 ``WARNING`` 一次; **Twelve-Factor sticky 读取** (启动后改
-    env var 必须重启生效); 计数器双通道暴露 (``/api/system/stats``
-    JSON ``schema_violation_total`` + ``/api/system/metrics``
-    Prometheus ``aiia_sse_schema_violation_total`` counter，与 R207
+  - `docs/configuration.md` 在 §"Auto-migration" 之前新增子节
+    "Ops / debug env vars"，完整说明 `AIIA_SSE_SCHEMA_VALIDATE`：
+    `off` (默认，零开销) / `warn` (违规 WARNING + counter +1) /
+    `strict` (违规 ERROR + counter +1，**不抛异常**——`_SSEBus.
+    emit()` fire-and-forget 契约不变); 无效值 fall back `off` +
+    启动 `WARNING` 一次; **Twelve-Factor sticky 读取** (启动后改
+    env var 必须重启生效); 计数器双通道暴露 (`/api/system/stats`
+    JSON `schema_violation_total` + `/api/system/metrics`
+    Prometheus `aiia_sse_schema_violation_total` counter，与 R207
     omit-when-off 契约一致); 单 emit 多字段错只算 1 次 violation
     (噪声抑制)。
-  - ``docs/configuration.zh-CN.md`` 同步双语 lockstep (沿用 R178 /
+  - `docs/configuration.zh-CN.md` 同步双语 lockstep (沿用 R178 /
     R185 / R206 / R209 i18n 契约)。
-  - ``tests/test_configuration_env_var_docs_r210.py`` (NEW, 6 cases /
+  - `tests/test_configuration_env_var_docs_r210.py` (NEW, 6 cases /
     2 invariant class) 守结构性契约：双语都含 env var 名 + 3 mode
     名 + R205 / R207 / F-204-1 / Twelve-Factor / omit-when-off /
     fire-and-forget 关键 design keyword (让 ops grep 能定位完整背景)。
@@ -45,8 +45,8 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - "Ops / debug env vars" 子节: env var 本质是**运行时 toggle**, 不
     是 user-facing config (默认 off, 普通用户不需要碰), 与现有
     §"Path discovery env vars" 风格一致；
-  - 塞 Settings 表 (``[ui]`` / ``[security]`` 那种): 会让普通配置者
-    误以为是常规 setting, 但实际它没有 ``config.toml`` 字段对应。
+  - 塞 Settings 表 (`[ui]` / `[security]` 那种): 会让普通配置者
+    误以为是常规 setting, 但实际它没有 `config.toml` 字段对应。
 
   → "Ops / debug env vars" 子节胜出（独立段落 + 明确 "ops only"
   signal）。
@@ -55,49 +55,49 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   — 不深入语义校验文档措辞, 留出 wording polish 空间, 只锁结构性契
   约 (env var 名 + 3 mode 名 + 关键 design keyword)。
 
-  **验证**: R210 6 cases PASS; ``uv run ty check . → All checks
-  passed!``; ``uv run ruff check . && ruff format --check . →
-  All passed!``; 完整 ``pytest`` baseline 5461 → 5467 (净增 +6
-  from R210); ``scripts/generate_docs.py --check`` 两份语言 26/26 一
+  **验证**: R210 6 cases PASS; `uv run ty check . → All checks
+  passed!`; `uv run ruff check . && ruff format --check . →
+  All passed!`; 完整 `pytest` baseline 5461 → 5467 (净增 +6
+  from R210); `scripts/generate_docs.py --check` 两份语言 26/26 一
   致 (docs/configuration.{md,zh-CN.md} 是 prose docs, 不在
-  ``MODULES_TO_DOCUMENT``)。
+  `MODULES_TO_DOCUMENT`)。
 
 - **R209 / Cycle 10 · F-release-2 (CR#22 §4 Important): pre-commit
   pre-push hook for `check_tag_push_safety.py` enforcement**. R206
   (cycle 9) 把 v1.7.2 docs-sync miss 经验固化成 13 步本地预飞行清
   单，但所有 13 步都靠**人**记得跑——一旦忘了步骤 6
-  (``scripts/check_tag_push_safety.py``)，4+ 个未推送 ``v*.*.*``
-  tag 累积时 ``git push --follow-tags`` 会静默触发 GitHub webhook
+  (`scripts/check_tag_push_safety.py`)，4+ 个未推送 `v*.*.*`
+  tag 累积时 `git push --follow-tags` 会静默触发 GitHub webhook
   屏蔽 (R19.1，v1.5.24 真实复现)，release.yml 一个 job 都不跑。
 
-  R209 把 ``check_tag_push_safety.py`` 装到 pre-commit framework 的
+  R209 把 `check_tag_push_safety.py` 装到 pre-commit framework 的
   **pre-push** stage——push 触发时**自动跑**，把 R206 §1 step 6
   从"人记忆"提升到"代码强制"，与现有 R66/R174/CR#16-F-4 三个
   pre-commit hook 一致风格。
 
   **实现 (3 文件 + 1 测试)**:
 
-  - ``.pre-commit-config.yaml`` 新增 ``check-tag-push-safety``
-    hook entry，``stages: [pre-push]`` + ``always_run: true``，调
-    用 ``uv run python scripts/check_tag_push_safety.py``（无新
+  - `.pre-commit-config.yaml` 新增 `check-tag-push-safety`
+    hook entry，`stages: [pre-push]` + `always_run: true`，调
+    用 `uv run python scripts/check_tag_push_safety.py`（无新
     script，复用 R185 已有）；
-  - ``Makefile`` 新增 ``install-hooks`` PHONY target，调
-    ``pre-commit install --hook-type pre-commit --hook-type pre-push``
+  - `Makefile` 新增 `install-hooks` PHONY target，调
+    `pre-commit install --hook-type pre-commit --hook-type pre-push`
     一次性安装两个 hook chain；help 表列出让 fresh contributor 能
     发现；
-  - ``docs/release-recovery.{md,zh-CN.md}`` 在 R206 Pre-tag-push
+  - `docs/release-recovery.{md,zh-CN.md}` 在 R206 Pre-tag-push
     checklist 段顶部加 R209 automation 注释（双语 lockstep, 沿用
     R178 / R185 / R206 i18n 契约），明确：
     1. hook 是 R206 manual checklist 的**补充**, 不是替代；
     2. 只拦截最危险的单一失败模式（≥ 4 unpushed tag），不跑全 13 步；
-    3. escape hatch: ``git push --no-verify`` (与 pre-commit 同款)；
+    3. escape hatch: `git push --no-verify` (与 pre-commit 同款)；
     4. 失败时按 script 输出按 tag 名升序逐个 push 修复。
 
   **设计取舍 · pre-commit framework vs native .githooks/pre-push**:
 
-  - pre-commit framework: 用户已在用，零新依赖，``pre-commit
-    install --hook-type pre-push`` 一行接入；
-  - native .githooks: 需要 ``git config core.hooksPath .githooks``
+  - pre-commit framework: 用户已在用，零新依赖，`pre-commit
+    install --hook-type pre-push` 一行接入；
+  - native .githooks: 需要 `git config core.hooksPath .githooks`
     引入新 framework 路径，配置点变多。
 
   → pre-commit framework 胜出。
@@ -112,66 +112,66 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   enforcement) 可考虑加 lightweight 强制。
 
   **测试 (8 cases / 3 invariant class)** ——
-  ``tests/test_pre_push_hook_install_r209.py``:
+  `tests/test_pre_push_hook_install_r209.py`:
 
   1. **TestPreCommitConfigHasPrePushHook** (3): hook id 声明 + stages
      含 pre-push + entry 指向 check_tag_push_safety.py；
   2. **TestMakefileInstallHooksTarget** (3): .PHONY 列 install-hooks
-     + body 含 ``--hook-type pre-push`` + help 列出；
+     + body 含 `--hook-type pre-push` + help 列出；
   3. **TestDocsMentionAutomation** (2): 双语 release-recovery 都含
      R209 / install-hooks / pre-push 关键词 (沿用 R185 双语 lockstep)。
 
-  **沿用 R185 ``TestMakefileReleaseCheckCveTarget`` + R206
-  ``TestReleaseRecoveryPreTagChecklistBilingual`` 静态字符串匹配模
+  **沿用 R185 `TestMakefileReleaseCheckCveTarget` + R206
+  `TestReleaseRecoveryPreTagChecklistBilingual` 静态字符串匹配模
   式** — 不深入语义校验文档，留出 wording polish 空间，只锁结构。
 
-  **验证**: R209 8 cases PASS；``uv run ty check . → All checks
-  passed!``；``uv run ruff check . && ruff format --check . →
-  All passed!``；完整 ``pytest`` **5461 passed / 2 skipped / 646
+  **验证**: R209 8 cases PASS；`uv run ty check . → All checks
+  passed!`；`uv run ruff check . && ruff format --check . →
+  All passed!`；完整 `pytest` **5461 passed / 2 skipped / 646
   subtests passed in 167s** (R208 baseline 5453 → 5461, 净增 +8
-  from R209)；``scripts/generate_docs.py --check`` 两份语言 26/26
+  from R209)；`scripts/generate_docs.py --check` 两份语言 26/26
   一致 (.pre-commit-config.yaml / Makefile / release-recovery.md 都
-  不在 ``MODULES_TO_DOCUMENT``)。
+  不在 `MODULES_TO_DOCUMENT`)。
 
 ### Changed
 
 - **R208 / Cycle 10 · F-204-2 (CR#22 §4 Important): unify token age
   computation into shared `_compute_age_seconds_from_iso` helper**.
-  R199 ``GET /api/system/api-token-info`` endpoint inline 与 R204
-  ``_safe_token_age_seconds()`` 之前各自维护一份**完全相同**的 age
-  计算（``rotated_at.replace("Z", "+00:00")`` + ``fromisoformat`` +
+  R199 `GET /api/system/api-token-info` endpoint inline 与 R204
+  `_safe_token_age_seconds()` 之前各自维护一份**完全相同**的 age
+  计算（`rotated_at.replace("Z", "+00:00")` + `fromisoformat` +
   clock-skew negative check），任何 bug fix 都必须同步两处, 仅靠
-  R204 ``TestEndpointMetricParity`` invariant 在运行时验证一致。
+  R204 `TestEndpointMetricParity` invariant 在运行时验证一致。
 
-  R208 把算法抽到 module-level ``_compute_age_seconds_from_iso(rotated
-  _at: object) -> int | None`` 共享 helper, 两处调用同一份实现 →
+  R208 把算法抽到 module-level `_compute_age_seconds_from_iso(rotated
+  _at: object) -> int | None` 共享 helper, 两处调用同一份实现 →
   **source-level drift 风险消失**, R204 parity invariant 退化为
   defensive belt-and-suspenders 守护。
 
   **设计契约严格保持与原两份实现一致** (validated by R208 +
   preserved R199 + R204 测试套):
 
-  - 输入非 ``str`` / 空串 → ``None``;
-  - ``rotated_at`` 解析失败 (ValueError / TypeError) → ``None``;
-  - ``age < 0`` (系统时钟跳变 / 未来时间戳) → ``None``;
-  - 正常情况 → ``int`` (秒, ≥ 0)。
+  - 输入非 `str` / 空串 → `None`;
+  - `rotated_at` 解析失败 (ValueError / TypeError) → `None`;
+  - `age < 0` (系统时钟跳变 / 未来时间戳) → `None`;
+  - 正常情况 → `int` (秒, ≥ 0)。
 
   **重构细节**:
 
-  - 新 helper signature 用 ``object`` (而非 ``str``) — caller 不必预
+  - 新 helper signature 用 `object` (而非 `str`) — caller 不必预
     先 isinstance check, helper 内部统一处理 (R199 endpoint + R204
     helper 调用点都简化了)。
   - helper 是 **pure function**: 无 log、无 I/O。R199 endpoint 原有
-    的 ``logger.debug("解析 rotated_at 失败")`` **删除** — debug log
+    的 `logger.debug("解析 rotated_at 失败")` **删除** — debug log
     不是公共契约的一部分 (R199 测试不依赖); helper silent 与
-    ``_safe_uptime_seconds`` 等其他 ``_safe_*`` helper 风格一致。
-  - R204 ``_safe_token_age_seconds`` 重构后**只**负责 config 读取 +
+    `_safe_uptime_seconds` 等其他 `_safe_*` helper 风格一致。
+  - R204 `_safe_token_age_seconds` 重构后**只**负责 config 读取 +
     token validity 检查 (长度 ≥ 16), age 计算委托 helper。
   - R199 endpoint inline 重构后 age 计算一行调用, 删 18 行 inline
     fromisoformat 逻辑。
 
   **测试 (15 cases / 4 invariant class)** ——
-  ``tests/test_compute_age_seconds_from_iso_r208.py``:
+  `tests/test_compute_age_seconds_from_iso_r208.py`:
 
   1. **TestNonStringInput** (3): None / int / dict → None;
   2. **TestEmptyString** (1): "" → None;
@@ -189,58 +189,58 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   behavior。
 
   **验证**: R208 15 cases PASS; R199/R200/R204/R195 完整 52 cases
-  regression PASS; ``uv run ty check . → All checks passed!``;
-  ``uv run ruff check . && ruff format --check . → All passed!``;
-  完整 ``pytest`` **5453 passed / 2 skipped / 646 subtests passed
+  regression PASS; `uv run ty check . → All checks passed!`;
+  `uv run ruff check . && ruff format --check . → All passed!`;
+  完整 `pytest` **5453 passed / 2 skipped / 646 subtests passed
   in 160s** (R207 baseline 5438 → 5453, 净增 +15 from R208);
-  ``scripts/generate_docs.py --check`` 两份语言 26/26 一致。
+  `scripts/generate_docs.py --check` 两份语言 26/26 一致。
 
 ### Added
 
 - **R207 / Cycle 10 · F-205-2 (CR#22 §4 Important): `aiia_sse_schema_
   violation_total` Prometheus counter**. R205 (cycle 9) 把 SSE schema
-  validation 装在 ``AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict`` 环境变量
-  后, ``_schema_violation_total`` 计数器只通过 ``stats_snapshot()`` JSON
+  validation 装在 `AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict` 环境变量
+  后, `_schema_violation_total` 计数器只通过 `stats_snapshot()` JSON
   暴露——alertmanager 想 watch 必须 scrape JSON, 绕开 Prometheus scrape
   的标准方式。R207 把这份数据 mirror 到 Prometheus exposition
-  ``aiia_sse_schema_violation_total`` counter, 让 alertmanager 用标准
-  PromQL 即可写规则（如 ``rate(aiia_sse_schema_violation_total[5m])
-  > 0`` 检测新违规出现）。
+  `aiia_sse_schema_violation_total` counter, 让 alertmanager 用标准
+  PromQL 即可写规则（如 `rate(aiia_sse_schema_violation_total[5m])
+  > 0` 检测新违规出现）。
 
   **设计契约 · omit-when-off 而非 always-emit-with-zero**：
 
-  R207 选 **omit when mode == "off"** (与 R204 ``aiia_token_age_
-  seconds`` 同款 omit-vs-NaN 哲学)：
+  R207 选 **omit when mode == "off"** (与 R204 `aiia_token_age_
+  seconds` 同款 omit-vs-NaN 哲学)：
 
-  - mode == "off"：metric **不出现** → alertmanager 用 ``absent(
-    aiia_sse_schema_violation_total)`` 即可分清「validation off」
+  - mode == "off"：metric **不出现** → alertmanager 用 `absent(
+    aiia_sse_schema_violation_total)` 即可分清「validation off」
     （不在监控）vs「validation on with 0 violations」（监控中但无违
     规），两类 ops 状态走不同 alert 路由；
   - mode in {warn, strict}：metric 出现 (value ≥ 0)，可用
-    ``rate(...)`` / ``aiia_sse_schema_violation_total > N`` 等阈值告
+    `rate(...)` / `aiia_sse_schema_violation_total > N` 等阈值告
     警。
 
   反方案「always-emit-with-zero」：metric 永远存在 = 0 也输出，看似简单
   但让 ops 无法分辨「运维忘了开 validation」与「validation 开着无违
   规」，两者都是 0，alertmanager 写不出区分 rule —— R207 拒绝该方案。
 
-  **实现** (``web_ui_routes/system.py::_render_prometheus_metrics`` SSE
+  **实现** (`web_ui_routes/system.py::_render_prometheus_metrics` SSE
   bus section 新增 ~30 行)：
 
   - 在 SSE 块 latency snapshot 之后新增 R207 section；
-  - 读 ``snap.get("schema_validate_mode")`` + ``snap.get(
-    "schema_violation_total")``，验证类型 + mode in {warn, strict}
+  - 读 `snap.get("schema_validate_mode")` + `snap.get(
+    "schema_violation_total")`，验证类型 + mode in {warn, strict}
     才 emit；off mode silently 跳过；
   - HELP 字符串含 R207 / F-205-2 / AIIA_SSE_SCHEMA_VALIDATE / absent
     / "Multi-field" 关键字让运维 grep 可定位 + 理解 omit-when-off 契约；
-  - metric_type = counter (与 R205 ``_schema_violation_total`` 单调累
+  - metric_type = counter (与 R205 `_schema_violation_total` 单调累
     加 semantics 一致)；
-  - 更新 ``/api/system/metrics`` 端点 description docstring 提及 R207 +
-    omit-when-off 契约 + ``absent(...)`` alertmanager 用法 (与 R204
+  - 更新 `/api/system/metrics` 端点 description docstring 提及 R207 +
+    omit-when-off 契约 + `absent(...)` alertmanager 用法 (与 R204
     docstring 同款形式)。
 
   **测试 (10 cases / 5 invariant class + 6 subtests)** ——
-  ``tests/test_sse_schema_violation_metric_r207.py``：
+  `tests/test_sse_schema_violation_metric_r207.py`：
 
   1. **TestOffModeOmitContract** (2): mode == "off" + 0 / 50 violation
      全部 omit metric；
@@ -252,66 +252,66 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      warn 唯一行为差异是 log level, metric 一致)；
   4. **TestEndpointMetricParity** (1 + 6 subtests · **核心契约**):
      2 mode × 3 violation count {0, 1, 5} 笛卡尔积, snapshot
-     ``schema_violation_total`` == metric value 必须严格相等
+     `schema_violation_total` == metric value 必须严格相等
      (R207 渲染层不引入新计数逻辑, 严格 mirror)；
   5. **TestPrometheusOutputFormat** (2): HELP 含必备关键词 + TYPE
      声明 counter (而非 gauge——_schema_violation_total 是 monotonic
      累加, semantically counter)。
 
-  **测试 helper · `_render_with_bus`**: 用 ``unittest.mock.patch.object``
-  把 ``task_module._sse_bus`` 临时替换成 test bus 实例，render 后还原。
-  这是测试 ``_render_prometheus_metrics`` 与 specific bus state 的标
+  **测试 helper · `_render_with_bus`**: 用 `unittest.mock.patch.object`
+  把 `task_module._sse_bus` 临时替换成 test bus 实例，render 后还原。
+  这是测试 `_render_prometheus_metrics` 与 specific bus state 的标
   准 pattern (避免污染 module-level singleton)。
 
   **验证**: R207 10 cases + 6 subtests PASS；R202/R204/R205 完整测
-  试套 57 cases + 22 subtests PASS（向后兼容验证）；``uv run ty
-  check . → All checks passed!``；``uv run ruff check . && ruff
-  format --check . → All passed!``；完整 ``pytest`` **5438 passed
+  试套 57 cases + 22 subtests PASS（向后兼容验证）；`uv run ty
+  check . → All checks passed!`；`uv run ruff check . && ruff
+  format --check . → All passed!`；完整 `pytest` **5438 passed
   / 2 skipped / 646 subtests passed in 167s** (R205 baseline 5428
-  → 5438, 净增 +10 from R207)；``scripts/generate_docs.py --check``
+  → 5438, 净增 +10 from R207)；`scripts/generate_docs.py --check`
   两份语言全过（system.py 改的是 endpoint description docstring,
   会被 docs/api 抓到, 本地预 regen 验证 parity）。
 
 - **R205 / Cycle 9 · F-204-1 (CR#21 §4.3): SSE schema runtime
-  validation toggle**. R198 把 ``EVENT_SCHEMAS`` + ``validate_payload``
+  validation toggle**. R198 把 `EVENT_SCHEMAS` + `validate_payload`
   API 暴露好了, 但**故意不在 production emit 路径调用**（hot path 性能
-  优先, 见 ``sse_event_schemas.py`` 模块 docstring "设计取舍"）。R205
-  加 env-var ``AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict`` toggle, 让
+  优先, 见 `sse_event_schemas.py` 模块 docstring "设计取舍"）。R205
+  加 env-var `AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict` toggle, 让
   运维 / 调试期可以选择性开启 emit-site 验证, 不污染 default zero-
   overhead 行为：
 
-  - ``off`` (default): emit() 不调 ``validate_payload``, 0 开销, 与
+  - `off` (default): emit() 不调 `validate_payload`, 0 开销, 与
     R198 现状完全一致;
-  - ``warn``: 调 ``validate_payload``, violations → ``logger.warning``
-    + ``_schema_violation_total`` 计数器累加, 但 emit 仍 fanout 不阻
+  - `warn`: 调 `validate_payload`, violations → `logger.warning`
+    + `_schema_violation_total` 计数器累加, 但 emit 仍 fanout 不阻
     塞 (一条 emit 多字段错只算 1 次, 避免噪声膨胀);
-  - ``strict``: 同 warn, 但 violations 走 ``logger.error`` (alertmanager
+  - `strict`: 同 warn, 但 violations 走 `logger.error` (alertmanager
     路由不同 severity), 仍 fanout, **不**抛异常。
 
   **设计契约 · strict 为何不 raise**: emit() 是 fire-and-forget, 大部
-  分 emit-site 没 try/except 包裹 (例如 ``_on_task_status_change`` /
-  ``web_ui_config_sync.py`` 等)。raise 会让 production 挂掉, 违反
+  分 emit-site 没 try/except 包裹 (例如 `_on_task_status_change` /
+  `web_ui_config_sync.py` 等)。raise 会让 production 挂掉, 违反
   R198 "bus 不验证 event_type" 的原 design rationale; strict 与 warn
   的唯一差异是 log level, 方便 alertmanager 配 "ERROR severity →
   page on-call" 让 strict 真有 op effect。
 
-  **实现** (``web_ui_routes/task.py``, ~80 行):
+  **实现** (`web_ui_routes/task.py`, ~80 行):
 
-  - 模块顶端：``_SSE_SCHEMA_VALIDATE_ENV_VAR`` / ``_SSE_SCHEMA_VALIDATE_
-    DEFAULT_MODE`` / ``_SSE_SCHEMA_VALIDATE_VALID_MODES`` 三个常量 +
-    ``_read_sse_schema_validate_mode()`` helper (env-var sticky 读取);
-  - ``_SSEBus.__init__``: 一次性读 env var (Twelve-Factor 风格 sticky)
-    → invalid 值 → fall back ``off`` + startup WARN 一次 (避免运维
+  - 模块顶端：`_SSE_SCHEMA_VALIDATE_ENV_VAR` / `_SSE_SCHEMA_VALIDATE_
+    DEFAULT_MODE` / `_SSE_SCHEMA_VALIDATE_VALID_MODES` 三个常量 +
+    `_read_sse_schema_validate_mode()` helper (env-var sticky 读取);
+  - `_SSEBus.__init__`: 一次性读 env var (Twelve-Factor 风格 sticky)
+    → invalid 值 → fall back `off` + startup WARN 一次 (避免运维
     以为开了实际没生效); mode != off → startup INFO 一次告知;
-  - ``_SSEBus.emit`` 最早期 (serialize / oversize 替换之前) 加 mode-
+  - `_SSEBus.emit` 最早期 (serialize / oversize 替换之前) 加 mode-
     check + validate 调用; off 是单 attribute compare 零开销;
-  - ``SSEBusStatsSnapshot`` TypedDict 新增 ``schema_validate_mode`` +
-    ``schema_violation_total`` 两个 key;
-  - ``stats_snapshot`` 返回 dict 加同样 2 个 key (运维可通过
-    ``/api/system/stats`` 或 ``aiia_sse_*`` 暴露 alertmanager 监控)。
+  - `SSEBusStatsSnapshot` TypedDict 新增 `schema_validate_mode` +
+    `schema_violation_total` 两个 key;
+  - `stats_snapshot` 返回 dict 加同样 2 个 key (运维可通过
+    `/api/system/stats` 或 `aiia_sse_*` 暴露 alertmanager 监控)。
 
   **测试 (24 cases / 8 invariant class + 12 subtests)** ——
-  ``tests/test_sse_schema_validate_toggle_r205.py``:
+  `tests/test_sse_schema_validate_toggle_r205.py`:
 
   1. **TestSseSchemaValidateModeOff** (3): default + 空字符串 → off,
      **零开销契约** (spy 验证 validate_payload 在 100 次 invalid emit
@@ -338,28 +338,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      约**): 4 thread × 20 emit 并发 invalid payload strict mode 不
      crash, 80 violations 累加正确, fire-and-forget 契约硬性 lock。
 
-  **测试设计 · dedup cache 清理**: ``EnhancedLogger`` 内置 5 秒消息去
-  重 cache 防日志风暴, 但跨 test 共享 state 会让 ``assertLogs`` 抓不
+  **测试设计 · dedup cache 清理**: `EnhancedLogger` 内置 5 秒消息去
+  重 cache 防日志风暴, 但跨 test 共享 state 会让 `assertLogs` 抓不
   到「重复 violation message」。R205 测试在 setUp + subTest 内部清
-  ``task_module.logger.deduplicator.cache``, 确保每条 R205 log 都能被
+  `task_module.logger.deduplicator.cache`, 确保每条 R205 log 都能被
   抓到 (production 行为不变, 仅是 test 隔离的工程实践)。
 
-  **验证**: R205 24 cases + 12 subtests PASS；``uv run ty check . →
-  All checks passed!``（含 1 处 ``# ty: ignore[invalid-argument-type]``
+  **验证**: R205 24 cases + 12 subtests PASS；`uv run ty check . →
+  All checks passed!`（含 1 处 `# ty: ignore[invalid-argument-type]`
   on 故意非 dict payload, 测的就是 emit 对 caller 误用的 robust 处
-  理）；``uv run ruff check . && ruff format --check . → All passed!``；
-  完整 ``pytest`` **5428 passed / 2 skipped / 640 subtests passed in
-  165s** (R206 baseline 5404 → 5428, 净增 +24 from R205)；``scripts/
-  generate_docs.py --check`` 两份语言 26/26 一致（task.py 不在
-  ``MODULES_TO_DOCUMENT`` 列表）；R198 / R202 / R203 完整测试套
+  理）；`uv run ruff check . && ruff format --check . → All passed!`；
+  完整 `pytest` **5428 passed / 2 skipped / 640 subtests passed in
+  165s** (R206 baseline 5404 → 5428, 净增 +24 from R205)；`scripts/
+  generate_docs.py --check` 两份语言 26/26 一致（task.py 不在
+  `MODULES_TO_DOCUMENT` 列表）；R198 / R202 / R203 完整测试套
   64 cases + 20 subtests PASS（向后兼容验证, 新 toggle 在 default
   off 下与历史行为完全一致）。
 
 - **R206 / Cycle 9 · F-release-1 (CR#21 §4.4): pre-tag-push checklist
   + retag safety window docs**. v1.7.2 的 docs-sync miss 暴露了一个
-  长期被忽视的 surface：``release.yml`` 失败模式都是 publish-job
+  长期被忽视的 surface：`release.yml` 失败模式都是 publish-job
   级（PyPI / Open VSX / Marketplace），但 **tag push 触发的 main
-  分支 ``Tests`` workflow** 失败时，tag 会停在 CI 红的 commit 上、
+  分支 `Tests` workflow** 失败时，tag 会停在 CI 红的 commit 上、
   publish job 一个都不跑，需要 force-retag 才能恢复（v1.7.2 5 分钟
   内 retag `36222a3` → `35f9671`）。
 
@@ -376,16 +376,16 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - "Tag-was-moved history" 历史表：v1.6.3 + v1.7.2 两次 retag
     原因 + 旧/新 SHA，强化「retag 不是单次事件」+ 帮助 future
     maintainer 看到「为什么需要这份 checklist」的具体动机；
-  - 两份语言 (``release-recovery.md`` + ``release-recovery.zh-
-    CN.md``) lockstep 同步，沿用 R178 / R185 双语契约。
+  - 两份语言 (`release-recovery.md` + `release-recovery.zh-
+    CN.md`) lockstep 同步，沿用 R178 / R185 双语契约。
 
-  **新增 R206 test** (``tests/test_release_recovery_pre_tag_
-  checklist_r206.py``, 5 cases · 沿用 R185
-  ``TestReleaseRecoveryBilingualSync`` 思路): "Pre-tag-push
+  **新增 R206 test** (`tests/test_release_recovery_pre_tag_
+  checklist_r206.py`, 5 cases · 沿用 R185
+  `TestReleaseRecoveryBilingualSync` 思路): "Pre-tag-push
   checklist" / "Tag 推送前清单" 段标题存在 + v1.7.2 retag 案例
   (含 SHA 36222a3 / 35f9671) + v1.6.3 retag 历史 + F-release-1
   label + retag 窗口 30 minutes / 30 分钟数值一致。这是 R185
-  ``TestReleaseRecoveryBilingualSync`` 的姊妹守护，防止两份文档
+  `TestReleaseRecoveryBilingualSync` 的姊妹守护，防止两份文档
   漂移。
 
   **设计权衡 · 测试做 static string 匹配而非语义校验**：
@@ -393,54 +393,54 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   test 断言「关键 keyword 出现过」，留出 wording polish 空间。
 
   **验证**: R206 5 cases PASS；R185 8 cases regression PASS；
-  ``uv run ty check . → All checks passed!``；``uv run ruff
-  check . && ruff format --check . → All passed!``；完整
-  ``pytest`` **5404 passed / 2 skipped / 628 subtests passed
+  `uv run ty check . → All checks passed!`；`uv run ruff
+  check . && ruff format --check . → All passed!`；完整
+  `pytest` **5404 passed / 2 skipped / 628 subtests passed
   in 163s** (R204 baseline 5399 → 5404, 净增 +5 from R206)；
-  ``scripts/generate_docs.py --check`` 两份语言 26/26 一致
-  （release-recovery 不在 ``MODULES_TO_DOCUMENT`` 内，但 R206
-  docs 改动不会影响 ``docs/api/`` source-derived 文档）。
+  `scripts/generate_docs.py --check` 两份语言 26/26 一致
+  （release-recovery 不在 `MODULES_TO_DOCUMENT` 内，但 R206
+  docs 改动不会影响 `docs/api/` source-derived 文档）。
 
 - **R204 / Cycle 9 · F-203-1 (CR#21 §4.3): `aiia_token_age_seconds`
-  Prometheus gauge**. R199 把 token rotation 时间戳暴露到 ``GET
-  /api/system/api-token-info`` endpoint 的 ``age_seconds`` 字段，但
+  Prometheus gauge**. R199 把 token rotation 时间戳暴露到 `GET
+  /api/system/api-token-info` endpoint 的 `age_seconds` 字段，但
   alertmanager 想做「90 天没轮换 → alert」必须**自己 scrape JSON**——
   绕开 Prometheus scrape 的标准方式，运维链路变长 + 多一份配置。
-  R204 把同一份数据 mirror 到 Prometheus exposition ``aiia_token_age_
-  seconds`` gauge，让 alertmanager 用标准 PromQL 直接写规则（如
-  ``aiia_token_age_seconds > 90 * 86400`` per NIST SP 800-63B
+  R204 把同一份数据 mirror 到 Prometheus exposition `aiia_token_age_
+  seconds` gauge，让 alertmanager 用标准 PromQL 直接写规则（如
+  `aiia_token_age_seconds > 90 * 86400` per NIST SP 800-63B
   rotation guidance）。
 
-  **实现** (``web_ui_routes/system.py``)：
+  **实现** (`web_ui_routes/system.py`)：
 
-  - 新增 module-level helper ``_safe_token_age_seconds() -> int | None``
+  - 新增 module-level helper `_safe_token_age_seconds() -> int | None`
     (~30 行)。**逻辑契约与 R199 endpoint inline 完全一致**: no token
     / no rotated_at / 解析失败 / future timestamp 全部 → None；正常情
     况 → int (秒, ≥ 0)。
-  - 在 ``_render_prometheus_metrics`` 加新 Security section, gauge
+  - 在 `_render_prometheus_metrics` 加新 Security section, gauge
     metric (~18 行包含详细 HELP)。
-  - 更新 ``/api/system/metrics`` endpoint description docstring 提及
-    新 metric + 失败时 omit 契约（与 ``aiia_uptime_seconds`` 同款）。
+  - 更新 `/api/system/metrics` endpoint description docstring 提及
+    新 metric + 失败时 omit 契约（与 `aiia_uptime_seconds` 同款）。
 
   **设计决策 · 失败时 omit metric vs NaN**：
 
   Prometheus exposition 允许 NaN 值表示 "unavailable", 但 omit metric
-  让 Grafana 显示 "no data" + 让 alertmanager 用 ``absent(...)``
+  让 Grafana 显示 "no data" + 让 alertmanager 用 `absent(...)`
   rule 触发分级告警 (no-token vs token-stale 是两类问题, 用 absent /
-  threshold 分别处理), 与 ``aiia_uptime_seconds`` / ``aiia_build_info``
-  等其他 ``_safe_*`` helper 同款契约，对齐项目一致性。
+  threshold 分别处理), 与 `aiia_uptime_seconds` / `aiia_build_info`
+  等其他 `_safe_*` helper 同款契约，对齐项目一致性。
 
   **R199 endpoint inline 与 R204 helper 刻意 duplicated**：
 
   endpoint inline 已被 R199 测试覆盖 5+ case，重构有 backward-compat
   风险；endpoint 返回 dict (多字段) vs helper 返回 int | None (单值)，
   抽象层不对齐。两份实现是 verbatim 复制粘贴，任何 bug fix 必须同步
-  ——本 cycle 的 ``TestEndpointMetricParity`` invariant 在同一份 config
+  ——本 cycle 的 `TestEndpointMetricParity` invariant 在同一份 config
   + 同一时间点下抽样验证两路 age 一致（容差 ≤ 2 秒，覆盖 clock
   granularity + 测试运行时间）。R205+ 可考虑统一抽象层。
 
   **测试 (11 cases / 4 invariant class)** ——
-  ``tests/test_token_age_seconds_metric_r204.py``:
+  `tests/test_token_age_seconds_metric_r204.py`:
 
   1. **TestSafeTokenAgeHelper** (6): no token / token < 16 char /
      no rotated_at / malformed rotated_at / future timestamp / valid
@@ -449,154 +449,154 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
      → metric line 出现 + 无 token → metric 不出现 + 45-day-old token
      (NIST 30-90 中点) 渲染正确 age (容差 ±60 秒);
   3. **TestEndpointMetricParity** (1 · **核心契约**): 同一份 config 下
-     ``GET /api/system/api-token-info`` 的 ``age_seconds`` 与
-     ``/api/system/metrics`` 的 ``aiia_token_age_seconds`` 值差异
+     `GET /api/system/api-token-info` 的 `age_seconds` 与
+     `/api/system/metrics` 的 `aiia_token_age_seconds` 值差异
      ≤ 2 秒——防止 R199 endpoint 与 R204 helper 实现 drift;
   4. **TestPrometheusOutputFormat** (1): HELP / TYPE / value 行格式
      合规 + HELP 含 R204 / F-203-1 / "rotated" 关键字。
 
-  **验证**: R204 11 cases PASS；``uv run ty check . → All checks
-  passed!``；``uv run ruff check . && ruff format --check . → All
-  passed!``；完整 ``pytest`` **5399 passed / 2 skipped / 628 subtests
+  **验证**: R204 11 cases PASS；`uv run ty check . → All checks
+  passed!`；`uv run ruff check . && ruff format --check . → All
+  passed!`；完整 `pytest` **5399 passed / 2 skipped / 628 subtests
   passed in 163s** (R203 baseline 5388 → 5399, 净增 +11 from R204)；
-  ``scripts/generate_docs.py --check`` 两份语言 26/26 一致；R199
+  `scripts/generate_docs.py --check` 两份语言 26/26 一致；R199
   + R203 完整测试套 (15 + 10 cases + 4 subtests) 仍 PASS（向后兼容
   + 不变量验证）。
 
 - **R203 / Cycle 9 · F-202-1 (CR#21 §4.2): `_SSEBus._emit_by_type`
   cardinality cap + overflow bucket + WARN-once**. R202 把
-  ``_emit_by_type: Counter[str]`` 暴露到 Prometheus
-  ``aiia_sse_emit_by_type_total{event_type="..."}``，但 Counter 本身
+  `_emit_by_type: Counter[str]` 暴露到 Prometheus
+  `aiia_sse_emit_by_type_total{event_type="..."}`，但 Counter 本身
   没有 key 数上限——如果上游 emit 不慎用动态字符串当 event_type（R198
-  AST guard 已卡 source-level，但 ``oversize_drop`` 替换路径 + 未来代
+  AST guard 已卡 source-level，但 `oversize_drop` 替换路径 + 未来代
   码误用 / 测试残留是真实 attack/bug surface），Counter 会无限增长，
   造成 memory leak + Prometheus exposition payload 膨胀 + Grafana
   cardinality 爆炸 + counter pollution 让 top-N 视图全是噪声。
 
-  **R203 防御实现**（``web_ui_routes/task.py::_SSEBus`` ~30 行）：
+  **R203 防御实现**（`web_ui_routes/task.py::_SSEBus` ~30 行）：
 
-  - 类常量 ``_EMIT_BY_TYPE_MAX_CARDINALITY = 100`` (R198 4 schema
-    event + ~10× 未来扩展 + ~10× ``oversize_drop`` 替换余量；对应
+  - 类常量 `_EMIT_BY_TYPE_MAX_CARDINALITY = 100` (R198 4 schema
+    event + ~10× 未来扩展 + ~10× `oversize_drop` 替换余量；对应
     exposition payload ~10 KB << Prometheus 默认 100 KB scrape 配额)；
-  - 类常量 ``_EMIT_BY_TYPE_OVERFLOW_BUCKET = "__other__"``；
-  - 实例 flag ``_emit_by_type_cap_hit_warned: bool``（``__init__``
-    初始 ``False``）；
-  - ``emit()`` 累加分支 cap-check：``event_type`` 不在 Counter 且
-    ``len(Counter) >= cap`` → 路由到 overflow 桶 + 全进程首次 WARN log
-    + 设置 flag；之后所有 overflow emit 继续走 ``__other__`` 桶累加，
+  - 类常量 `_EMIT_BY_TYPE_OVERFLOW_BUCKET = "__other__"`；
+  - 实例 flag `_emit_by_type_cap_hit_warned: bool`（`__init__`
+    初始 `False`）；
+  - `emit()` 累加分支 cap-check：`event_type` 不在 Counter 且
+    `len(Counter) >= cap` → 路由到 overflow 桶 + 全进程首次 WARN log
+    + 设置 flag；之后所有 overflow emit 继续走 `__other__` 桶累加，
     **不**重复 WARN（防日志风暴）。
 
   **设计契约**：
 
-  - **R202 sum 不变量保持**: 即使 cap 触发，``sum(by_type) == emit
-    _total`` 仍然 hold，因为 overflow emit 走 ``__other__`` 桶累加而
-    非 silently drop；Grafana 上 ``__other__`` series 立刻可见，运维
+  - **R202 sum 不变量保持**: 即使 cap 触发，`sum(by_type) == emit
+    _total` 仍然 hold，因为 overflow emit 走 `__other__` 桶累加而
+    非 silently drop；Grafana 上 `__other__` series 立刻可见，运维
     一眼能识别 "low-frequency or capped-out event types"；
-  - **R198 4 个 schema event 永远不会落到 ``__other__``**: 因为它们
+  - **R198 4 个 schema event 永远不会落到 `__other__`**: 因为它们
     是 first-class events，在 cap 之前就已经在 Counter 里，cap-check
     `event_type not in self._emit_by_type` 分支不会命中它们；
-  - **WARN-once policy**: 全进程只 WARN 一次（``_emit_by_type_cap_hit
-    _warned`` flag），WARN 内容含 cap 值 + 首个 overflow event_type +
+  - **WARN-once policy**: 全进程只 WARN 一次（`_emit_by_type_cap_hit
+    _warned` flag），WARN 内容含 cap 值 + 首个 overflow event_type +
     "考虑提高 cap 或审计 emit-site code" 行动建议。
 
   **测试 (10 cases / 5 invariant class + 4 subtests)** ——
-  ``tests/test_sse_emit_by_type_cardinality_cap_r203.py``:
+  `tests/test_sse_emit_by_type_cardinality_cap_r203.py`:
 
   1. **TestBelowCardinalityCap** (2): 单 type / 多 type < cap → 无
      overflow 桶、无 WARN flag set；
   2. **TestAtCardinalityCapTrigger** (3): 第 cap+1 个 emit 路由到
-     ``__other__`` + WARN 触发 + 重复 overflow emit 不重复 WARN；
+     `__other__` + WARN 触发 + 重复 overflow emit 不重复 WARN；
   3. **TestKnownTypesNotAffectedByCap** (2 + 4 subtests): cap 触发
      后老 type 仍累加 + R198 4 个 schema event 全部 immune（subtests
      覆盖 task_changed / config_changed / log_level_changed /
      oversize_drop）；
   4. **TestSumInvariantUnderCap** (1): **R203 核心契约**——cap 触发
-     场景下 ``sum(by_type) == emit_total`` 严格成立；
+     场景下 `sum(by_type) == emit_total` 严格成立；
   5. **TestCardinalityCapLockColocation** (2 · **AST guard**):
-     ``_SSEBus.emit`` 源码 cap-check（``len(self._emit_by_type) >=
-     self._EMIT_BY_TYPE_MAX_CARDINALITY``）+ overflow 桶累加
-     (``self._emit_by_type[self._EMIT_BY_TYPE_OVERFLOW_BUCKET] +=
-     1``) 必须都在 ``with self._lock:`` 块内。runtime 测试 race
-     window ("``len()`` 读到 ≥ cap，但还没 ``+= 1``" 之间另一线程
+     `_SSEBus.emit` 源码 cap-check（`len(self._emit_by_type) >=
+     self._EMIT_BY_TYPE_MAX_CARDINALITY`）+ overflow 桶累加
+     (`self._emit_by_type[self._EMIT_BY_TYPE_OVERFLOW_BUCKET] +=
+     1`) 必须都在 `with self._lock:` 块内。runtime 测试 race
+     window ("`len()` 读到 ≥ cap，但还没 `+= 1`" 之间另一线程
      插队让 cap 实际超过 1-2 个) 难触发，AST guard 在 source-level
      锁定结构。沿用 R197 / R202 同款 AST guard 模式。
 
-  **验证**: R203 10 cases + 4 subtests PASS；``uv run ty check . →
-  All checks passed!``；``uv run ruff check . && ruff format --check
-  . → All passed!``；完整 ``pytest`` **5388 passed / 2 skipped /
+  **验证**: R203 10 cases + 4 subtests PASS；`uv run ty check . →
+  All checks passed!`；`uv run ruff check . && ruff format --check
+  . → All passed!`；完整 `pytest` **5388 passed / 2 skipped /
   628 subtests passed in 162s** (R202 baseline 5378 → 5388, 净增
-  +10 from R203)；``scripts/generate_docs.py --check`` 两份语言全
+  +10 from R203)；`scripts/generate_docs.py --check` 两份语言全
   过；R202 完整测试套 (12 cases + 4 subtests) 也 PASS（向后兼容验证）。
 
 - **R202 / Cycle 8: `aiia_sse_emit_by_type_total{event_type="..."}`
   Prometheus counter (方案 B · 向后兼容新增)**. SSE bus 在 R198 已经维护
-  per-type 计数 ``_SSEBus._emit_by_type``（``stats_snapshot()["emit_by_type"]``
+  per-type 计数 `_SSEBus._emit_by_type`（`stats_snapshot()["emit_by_type"]`
   暴露），但**之前未在 Prometheus exposition** 中渲染。R202 把这份数据
-  按 ``aiia_sse_emit_by_type_total{event_type="task_changed"} N`` 形式渲
-  染到 ``/api/system/metrics``，方便 Grafana 拉 per-event_type breakdown
+  按 `aiia_sse_emit_by_type_total{event_type="task_changed"} N` 形式渲
+  染到 `/api/system/metrics`，方便 Grafana 拉 per-event_type breakdown
   仪表盘（cycle 8 observability 主线 R196 → R197 → R198 的自然收尾）。
 
   **设计权衡 · 方案 B vs A**
 
-  方案 A 是给现有 ``aiia_sse_emit_total`` 加 ``event_type`` label——直接
+  方案 A 是给现有 `aiia_sse_emit_total` 加 `event_type` label——直接
   在原 metric 上 partition。但 Prometheus exposition format 规约（见
   https://prometheus.io/docs/concepts/data_model/）**不允许同一 metric
   name 在不同 scrape 间切换 label set**：已有未标签化 series
-  ``aiia_sse_emit_total 42`` 直接加 label 后变成 ``aiia_sse_emit_total
-  {event_type="..."} N``，strict parser（VictoriaMetrics、Cortex、最新
-  版 Prom）会报 ``inconsistent labels for metric family``；Grafana 老
+  `aiia_sse_emit_total 42` 直接加 label 后变成 `aiia_sse_emit_total
+  {event_type="..."} N`，strict parser（VictoriaMetrics、Cortex、最新
+  版 Prom）会报 `inconsistent labels for metric family`；Grafana 老
   dashboard 的历史曲线会断在升级时间点。
 
-  方案 B（**本 R202 采用**）：新增独立 metric ``aiia_sse_emit_by_type_total
-  {event_type="..."}``，与原 ``aiia_sse_emit_total``（无 label）并存。
+  方案 B（**本 R202 采用**）：新增独立 metric `aiia_sse_emit_by_type_total
+  {event_type="..."}`，与原 `aiia_sse_emit_total`（无 label）并存。
 
   - 优点：100% 向后兼容；Grafana 老 dashboard 不变；新 dashboard 可用
-    per-type breakdown；不变量 ``sum(aiia_sse_emit_by_type_total series)
-    == aiia_sse_emit_total`` 让 metric correctness 显式可验证（test 锁定）。
+    per-type breakdown；不变量 `sum(aiia_sse_emit_by_type_total series)
+    == aiia_sse_emit_total` 让 metric correctness 显式可验证（test 锁定）。
   - 缺点：metric 数量 +1 family + N series（N == event_type 数 == 当前 4）；
     Prometheus storage 微增（4 series × 16 bytes ≈ 64 bytes/scrape，可
     忽略）。
 
-  实现细节（``web_ui_routes/system.py::_render_prometheus_metrics`` SSE
+  实现细节（`web_ui_routes/system.py::_render_prometheus_metrics` SSE
   bus section 新增 ~35 行）：
 
-  - 复用既有 ``_format_prom_metric_family`` (R187/R190 共享 helper)，**HELP
-    / TYPE 各只出现一次**，避免 R187 踩过的 ``second TYPE for metric`` 坑；
-  - ``event_type`` 标签值按字典序排序，让 exposition 输出 deterministic
+  - 复用既有 `_format_prom_metric_family` (R187/R190 共享 helper)，**HELP
+    / TYPE 各只出现一次**，避免 R187 踩过的 `second TYPE for metric` 坑；
+  - `event_type` 标签值按字典序排序，让 exposition 输出 deterministic
     （Prometheus parser 不要求顺序，但 diff-friendly + smoke test 易写）；
-  - 零 emit 时**不**输出 family（避免空 ``# HELP/# TYPE`` 污染 exposition）；
-  - 失败优雅降级：``snap.get("emit_by_type")`` 不是 dict 或为空 → silently
+  - 零 emit 时**不**输出 family（避免空 `# HELP/# TYPE` 污染 exposition）；
+  - 失败优雅降级：`snap.get("emit_by_type")` 不是 dict 或为空 → silently
     跳过，与 R197 / R198 同档防御。
 
   **测试 (12 cases / 5 invariant class + 4 subtests)** ——
-  ``tests/test_sse_emit_by_type_counter_r202.py``：
+  `tests/test_sse_emit_by_type_counter_r202.py`：
 
   1. **TestSseEmitByTypeCounterRendering** (4 cases): 单 type / 多 type
      独立 series / 零 emit 不出 family / exposition 格式合规（HELP/TYPE
      各 1 次 + label 引号 + 排序确定性）；
-  2. **TestSseEmitByTypeSumInvariant** (2 cases): 同步 ``sum(by_type) ==
-     emit_total`` + 8 线程 × 50 emit 并发压测下 sum 不变量仍严格成立；
+  2. **TestSseEmitByTypeSumInvariant** (2 cases): 同步 `sum(by_type) ==
+     emit_total` + 8 线程 × 50 emit 并发压测下 sum 不变量仍严格成立；
   3. **TestSseEmitByTypeSchemaCoverage** (2 cases / 4 subtests): R198
      注册的 4 个 event_type 全部可渲染（subtests 覆盖 task_changed /
      config_changed / log_level_changed / oversize_drop）+ 未注册 type
      也能正常渲染（defensive，防 silently drop）；
   4. **TestSseEmitCounterLockColocation** (2 cases · **AST guard**):
-     ``_SSEBus.emit`` 源码 ``self._emit_total += 1`` 与
-     ``self._emit_by_type[event_type] += 1`` 必须在**同一**
-     ``with self._lock:`` 块内紧贴 + 无 orphan ``_emit_by_type`` 累加
+     `_SSEBus.emit` 源码 `self._emit_total += 1` 与
+     `self._emit_by_type[event_type] += 1` 必须在**同一**
+     `with self._lock:` 块内紧贴 + 无 orphan `_emit_by_type` 累加
      出现在锁外——这是 sum 不变量 atomicity 的 source-level 守护，
      runtime 并发测试 race window 太窄 catch 不到，必须 AST 锁结构（见
-     class docstring 详述「为什么 runtime test 不够」，沿用 R197 ``Test
-     SourceLevelLatencyPathColocation`` 同款思路 + CR#16 §3.5 论述）；
-  5. **TestBackwardCompatibility** (2 cases): 原 ``aiia_sse_emit_total``
+     class docstring 详述「为什么 runtime test 不够」，沿用 R197 `Test
+     SourceLevelLatencyPathColocation` 同款思路 + CR#16 §3.5 论述）；
+  5. **TestBackwardCompatibility** (2 cases): 原 `aiia_sse_emit_total`
      仍以**无 label** 形式存在（保 Grafana 老 dashboard）+ 新旧两个
      metric family 完全独立（HELP/TYPE 各 1 次）。
 
-  **验证**: R202 12 cases + 4 subtests PASS；``uv run ty check . → All
-  checks passed!``；``uv run ruff check . && ruff format --check . → All
-  passed!``；完整 ``pytest`` 5378 passed / 2 skipped / 624 subtests
+  **验证**: R202 12 cases + 4 subtests PASS；`uv run ty check . → All
+  checks passed!`；`uv run ruff check . && ruff format --check . → All
+  passed!`；完整 `pytest` 5378 passed / 2 skipped / 624 subtests
   PASS in 159s（v1.7.2 baseline 5366 → 5378, 净增 +12 from R202）；
-  ``scripts/generate_docs.py --check`` 两份语言全过（system.py 改的是
+  `scripts/generate_docs.py --check` 两份语言全过（system.py 改的是
   endpoint description docstring，会被 docs/api 抓到，本地预 regen 验证
   parity）。
 
@@ -613,71 +613,71 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **CI · `Tests` workflow green-build restore** (commit `83c2bf7` aftermath,
   RCA 见下). 修 `uv run ty check .` 在 CI 报的 38 个 type-check diagnostics
   (31 errors + 7 unused-ignore warnings)——分布在 4 个 source + 12 个 test
-  files。**根因不是** dependabot 的 ``authlib 1.7.0 → 1.7.1`` bump，而是
-  ``v1.7.1`` 发布时 Astral `ty 0.0.34` 走得比之前严格，把一批长期潜伏的
-  type 不严谨写法暴露出来；`83c2bf7` 只是触发了再跑 CI 才看到 ``Tests``
+  files。**根因不是** dependabot 的 `authlib 1.7.0 → 1.7.1` bump，而是
+  `v1.7.1` 发布时 Astral `ty 0.0.34` 走得比之前严格，把一批长期潜伏的
+  type 不严谨写法暴露出来；`83c2bf7` 只是触发了再跑 CI 才看到 `Tests`
   红。修复策略遵循「最小侵入 + 不改 runtime 行为」：
 
   - **Source · 7 errors**
-    - ``enhanced_logging.get_current_log_level`` 返回类型从
-      ``dict[str, str]`` 修正成 ``dict[str, str | list[str]]``——之前签名
-      与 ``valid_levels`` 字段的实际 ``list[str]`` 值不一致，是真实 bug；
-    - ``mcp_tool_call_metrics._latency_state`` / ``notification_manager.``
-      ``_provider_latency_histograms[key]`` 两处 dict-literal 初始化加
-      ``cast("dict[str, Any]", ...)``，因为 ty 0.0.34 把 ``{"count": 0,
-      "sum_seconds": 0.0}`` narrow 成 ``dict[str, int | float]`` 后再做
-      ``state["count"] += 1`` 报 ``unsupported-operator``——cast 一次告诉
+    - `enhanced_logging.get_current_log_level` 返回类型从
+      `dict[str, str]` 修正成 `dict[str, str | list[str]]`——之前签名
+      与 `valid_levels` 字段的实际 `list[str]` 值不一致，是真实 bug；
+    - `mcp_tool_call_metrics._latency_state` / `notification_manager.`
+      `_provider_latency_histograms[key]` 两处 dict-literal 初始化加
+      `cast("dict[str, Any]", ...)`，因为 ty 0.0.34 把 `{"count": 0,
+      "sum_seconds": 0.0}` narrow 成 `dict[str, int | float]` 后再做
+      `state["count"] += 1` 报 `unsupported-operator`——cast 一次告诉
       ty「这个 state 是异构 value bag」就 unblock；
-    - ``mcp_tool_call_metrics.ToolCallCounterMiddleware.on_call_tool``
-      加 ``# ty: ignore[invalid-method-override]``——fastmcp 父类
-      ``Middleware.on_call_tool`` 的 ``context`` 参数没带 generic, 子类把
-      它窄化到 ``MiddlewareContext[CallToolRequestParams]`` 是 fastmcp
-      ``server/middleware.py`` docstring 推荐的 type-narrow pattern (让
-      IDE hover ``context.message.name`` 拿到 ``str``)，ty 现版本对这种
-      covariant parameter override 还不能识别，等 ``ty`` 支持后可移除；
-    - ``web_ui_routes/system._render_prometheus_metrics`` 在 ``isinstance(
-      stats, dict)`` 之后加 ``stats_typed = cast("dict[str, Any]", stats)``，
-      ty 在 isinstance narrow 之后把 dict 推成 ``dict[Never, Never]``，
-      ``.get(key)`` 报 ``invalid-argument-type``——cast 是当前唯一无副作用
+    - `mcp_tool_call_metrics.ToolCallCounterMiddleware.on_call_tool`
+      加 `# ty: ignore[invalid-method-override]`——fastmcp 父类
+      `Middleware.on_call_tool` 的 `context` 参数没带 generic, 子类把
+      它窄化到 `MiddlewareContext[CallToolRequestParams]` 是 fastmcp
+      `server/middleware.py` docstring 推荐的 type-narrow pattern (让
+      IDE hover `context.message.name` 拿到 `str`)，ty 现版本对这种
+      covariant parameter override 还不能识别，等 `ty` 支持后可移除；
+    - `web_ui_routes/system._render_prometheus_metrics` 在 `isinstance(
+      stats, dict)` 之后加 `stats_typed = cast("dict[str, Any]", stats)`，
+      ty 在 isinstance narrow 之后把 dict 推成 `dict[Never, Never]`，
+      `.get(key)` 报 `invalid-argument-type`——cast 是当前唯一无副作用
       的解决方案 (assert isinstance 不能再窄化 generic 参数)。
 
   - **Tests · 24 errors + 7 unused-ignore**
-    - ``test_server_print_config`` 4 处 ``_redact_sensitive`` 调用全部
-      改用 ``cast("dict[str, Any]", ...)`` / ``cast("list[dict[str, Any]]",
-      ...)`` 替代 ``isinstance`` 断言——ty 对 narrow 后 generic dict 的
-      ``Unknown`` key 类型推不出 ``Literal[str]`` 兼容，cast 是 idiomatic 解；
-    - ``test_latency_invariant_r197`` / ``test_sse_event_schemas_r198``
-      / ``test_health_env_overrides`` 在 ``assertIsNotNone`` 之后补
-      ``assert x is not None`` 做 ty narrow——unittest 的 assertX 不是
-      ``ty`` 识别的 narrowing form，得用 ``assert`` 显式 narrow；
-    - ``test_check_changelog_diff_scope`` 的 ``check_changelog_diff_scope``
-      import 加 ``# ty: ignore[unresolved-import]``——该脚本通过
-      ``sys.path.insert(0, "scripts/")`` 注入，ty 静态 resolve 不到；
-    - ``test_check_tag_push_safety_cve_gate_r185._patch_subprocess`` 的
-      ``side_effect`` 参数类型从 ``Exception | None`` 扩到 ``Exception |
-      type[Exception] | None``——mock 框架确实支持 class 或 instance；
-    - ``test_critical_preload_r21_1`` / ``test_i18n_pseudo_locale`` /
-      ``test_i18n_ts_types_gen`` 五处 ``pytest.fail(reason)  # ty:
-      ignore[invalid-argument-type]`` 把 ``# ty: ignore`` 删掉——``ty``
-      已识别 ``pytest.fail(str)``，ignore 变成 unused warning；
-    - ``test_hot_reload_network_security_r193`` 把
-      ``ConfigManager.get_web_ui_config()`` 改成 ``get_section("web_ui")``
+    - `test_server_print_config` 4 处 `_redact_sensitive` 调用全部
+      改用 `cast("dict[str, Any]", ...)` / `cast("list[dict[str, Any]]",
+      ...)` 替代 `isinstance` 断言——ty 对 narrow 后 generic dict 的
+      `Unknown` key 类型推不出 `Literal[str]` 兼容，cast 是 idiomatic 解；
+    - `test_latency_invariant_r197` / `test_sse_event_schemas_r198`
+      / `test_health_env_overrides` 在 `assertIsNotNone` 之后补
+      `assert x is not None` 做 ty narrow——unittest 的 assertX 不是
+      `ty` 识别的 narrowing form，得用 `assert` 显式 narrow；
+    - `test_check_changelog_diff_scope` 的 `check_changelog_diff_scope`
+      import 加 `# ty: ignore[unresolved-import]`——该脚本通过
+      `sys.path.insert(0, "scripts/")` 注入，ty 静态 resolve 不到；
+    - `test_check_tag_push_safety_cve_gate_r185._patch_subprocess` 的
+      `side_effect` 参数类型从 `Exception | None` 扩到 `Exception |
+      type[Exception] | None`——mock 框架确实支持 class 或 instance；
+    - `test_critical_preload_r21_1` / `test_i18n_pseudo_locale` /
+      `test_i18n_ts_types_gen` 五处 `pytest.fail(reason)  # ty:
+      ignore[invalid-argument-type]` 把 `# ty: ignore` 删掉——`ty`
+      已识别 `pytest.fail(str)`，ignore 变成 unused warning；
+    - `test_hot_reload_network_security_r193` 把
+      `ConfigManager.get_web_ui_config()` 改成 `get_section("web_ui")`
       ——前者从未存在，是 ty 之前漏报的 typo；
-    - ``test_prom_histogram_r190`` 四处 ``await mw.on_call_tool(_Fake
-      Context(...), call_next)`` 加 ``# ty: ignore[invalid-argument-
-      type]``——``_FakeContext`` 是测试用 minimal fake，刻意不实现完整
-      ``MiddlewareContext`` Protocol；
-    - ``test_sw_static_cache_r21_2`` / ``test_vscode_vsix_size_budget``
-      两处 ``pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]``
-      把 ``# ty: ignore`` 删掉——同样是 ty 0.0.34 已正确处理；
-    - ``test_system_log_level_runtime_r188`` 两处 ``apply_runtime_log_level
-      (123)`` / ``(None)`` 在原有 ``# type: ignore[arg-type]`` (mypy)
-      后追加 ``# ty: ignore[invalid-argument-type]``——故意传非法值测
-      ``ValueError``，是 deliberate type violation。
+    - `test_prom_histogram_r190` 四处 `await mw.on_call_tool(_Fake
+      Context(...), call_next)` 加 `# ty: ignore[invalid-argument-
+      type]`——`_FakeContext` 是测试用 minimal fake，刻意不实现完整
+      `MiddlewareContext` Protocol；
+    - `test_sw_static_cache_r21_2` / `test_vscode_vsix_size_budget`
+      两处 `pytest.skip(msg)  # ty: ignore[too-many-positional-arguments]`
+      把 `# ty: ignore` 删掉——同样是 ty 0.0.34 已正确处理；
+    - `test_system_log_level_runtime_r188` 两处 `apply_runtime_log_level
+      (123)` / `(None)` 在原有 `# type: ignore[arg-type]` (mypy)
+      后追加 `# ty: ignore[invalid-argument-type]`——故意传非法值测
+      `ValueError`，是 deliberate type violation。
 
-  **验证**: ``uv run ty check . → All checks passed!`` (从 38 → 0 diagnostics);
-  ``uv run ruff check . && ruff format --check . → All checks passed!``;
-  完整 ``pytest`` 5366 passed / 2 skipped / 620 subtests passed in 147.88s
+  **验证**: `uv run ty check . → All checks passed!` (从 38 → 0 diagnostics);
+  `uv run ruff check . && ruff format --check . → All checks passed!`;
+  完整 `pytest` 5366 passed / 2 skipped / 620 subtests passed in 147.88s
   (跟 v1.7.1 的 5366 数完全一致, 零 test 被破坏)。
 
 ### Docs
@@ -685,27 +685,27 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **R201 / Cycle 8: CR#20 §4.3 docs polish batch** (F-196-1 + F-197-1 +
   F-199-3, commit `7ec8d91`). 三处零行为变更的文档加注，配合 cycle 7 / 8 已落地的代码改动：
 
-  - **F-196-1**: ``notification_manager._DEFAULT_LATENCY_BUCKETS_SECONDS``
-    的 docstring header 加 ``(CR#19 §4.1 「R190' · histogram bucket
-    selection per-metric vs project-wide」follow-up)`` inline marker。
+  - **F-196-1**: `notification_manager._DEFAULT_LATENCY_BUCKETS_SECONDS`
+    的 docstring header 加 `(CR#19 §4.1 「R190' · histogram bucket
+    selection per-metric vs project-wide」follow-up)` inline marker。
     原 docstring 段落里有 "CR#19 §4.1 指出..." 引用，但 header 没有
     显式 cross-reference，maintainer 浏览 attribute 列表时不易看到
     R196 的来源——补这个 marker 让 "为什么这组桶长这样" 的源头一眼
-    可见，与 R200 注释的 ``R200 / Cycle 8 · F-199-1 from CR#20 §4.1``
+    可见，与 R200 注释的 `R200 / Cycle 8 · F-199-1 from CR#20 §4.1`
     风格对齐；
-  - **F-197-1**: ``TestSourceLevelLatencyPathColocation`` class docstring
-    扩 12 行 ``**为什么用 AST guard 而不是 runtime test**`` 段落，
+  - **F-197-1**: `TestSourceLevelLatencyPathColocation` class docstring
+    扩 12 行 `**为什么用 AST guard 而不是 runtime test**` 段落，
     引用 CR#16 §3.5 「structural invariants vs runtime tests」。原 3 行
     docstring 只说了 "两路必须紧贴" + "防 refactor 错开"，没解释「为
-    什么 runtime test 抓不到」——补充说明 R142 ``latency_ms_total`` 与
-    R191 ``_record_provider_latency_bucket`` 共用同一份 ``latency_ms``
+    什么 runtime test 抓不到」——补充说明 R142 `latency_ms_total` 与
+    R191 `_record_provider_latency_bucket` 共用同一份 `latency_ms`
     采样，refactor 把两者挪到不同 lock 块时 runtime test 仍然全 PASS
-    但 dashboard 上 ``avg`` 跟 ``P95`` 会悄悄走偏，只有 parse AST 锁
-    "同一 ``with self._stats_lock:`` 块内" 这条结构性约束才能捕获；
-  - **F-199-3**: ``POST /api/system/rotate-api-token`` (R195) docstring
-    description 段加段说明同时写入 ``api_token_rotated_at``——R199 引入
-    了这个字段，但 R195 docstring 没同步说明 rotation 时除了 ``api_token``
-    还更新 ``api_token_rotated_at``，仅 schema 部分提了 ``rotated_at``
+    但 dashboard 上 `avg` 跟 `P95` 会悄悄走偏，只有 parse AST 锁
+    "同一 `with self._stats_lock:` 块内" 这条结构性约束才能捕获；
+  - **F-199-3**: `POST /api/system/rotate-api-token` (R195) docstring
+    description 段加段说明同时写入 `api_token_rotated_at`——R199 引入
+    了这个字段，但 R195 docstring 没同步说明 rotation 时除了 `api_token`
+    还更新 `api_token_rotated_at`，仅 schema 部分提了 `rotated_at`
     响应字段。补段同时点名 R200 cascade-clear 在 admin 后续撤销 token
     时会同步清空时间戳，让 admin 读 docstring 就理解 R195 → R199 → R200
     的完整 lifecycle，不必跨多个文件追源码。
@@ -713,7 +713,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   **Test**: R191 + R195 + R197 + R199 + R200 + docs-parity 全跑 → 67/67
   + 41/41 PASS；ruff lint + format 全通过；scripts/generate_docs.py 重跑
   无 diff（这些 docstring 都是 attribute / class / closure level，不会被
-  ``MODULES_TO_DOCUMENT`` 抽到 ``docs/api/`` 顶层 .md）；完整 5366/5366
+  `MODULES_TO_DOCUMENT` 抽到 `docs/api/` 顶层 .md）；完整 5366/5366
   test suite PASS (163s)。
 
   零行为变更——纯 documentation polish，CR#20 §4.3 列为 "Docs / R200
@@ -726,35 +726,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 ### Fixed
 
 - **R200 / Cycle 8: stale ghost cascade-clear for `api_token_rotated_at`**
-  (CR#20 §4.1 / F-199-1). R199 持久化 ``api_token_rotated_at`` 进 config
-  后留了一个微妙不变量：admin 手动 edit ``config.toml`` 把 ``api_token =
-  ""`` 撤销 token 时，**没有**任何机制同步清空 ``api_token_rotated_at``。
-  结果 ``GET /api/system/api-token-info`` 会返回:
+  (CR#20 §4.1 / F-199-1). R199 持久化 `api_token_rotated_at` 进 config
+  后留了一个微妙不变量：admin 手动 edit `config.toml` 把 `api_token =
+  ""` 撤销 token 时，**没有**任何机制同步清空 `api_token_rotated_at`。
+  结果 `GET /api/system/api-token-info` 会返回:
 
-  - ``has_token = false``（token 已撤销）
-  - ``rotated_at = "2026-04-02T..."``（指向上次 rotation）
-  - ``age_seconds = ~5.2M``（≈ 60 天）
+  - `has_token = false`（token 已撤销）
+  - `rotated_at = "2026-04-02T..."`（指向上次 rotation）
+  - `age_seconds = ~5.2M`（≈ 60 天）
 
   Dashboard 按 NIST SP 800-63B 90 天规则会误报「token 60 天未轮换」——
   但实际 token 早已不存在。这是 **"stale ghost" rotation 提醒**。
 
-  R200 在 ``_validate_network_security_config`` 走完所有字段 normalize
-  之后加一道 sanity check: 如果 ``api_token`` 经过 normalize 为空（包括
-  显式 ``""`` / < 16 字符被丢弃 / 全空白被清洗）但 ``api_token_rotated_at``
+  R200 在 `_validate_network_security_config` 走完所有字段 normalize
+  之后加一道 sanity check: 如果 `api_token` 经过 normalize 为空（包括
+  显式 `""` / < 16 字符被丢弃 / 全空白被清洗）但 `api_token_rotated_at`
   非空 → log warning + cascade-clear 时间戳为空串。**不变量**: normalize
-  完成后 ``api_token`` 在 ⇔ ``api_token_rotated_at`` 在（empty/empty
+  完成后 `api_token` 在 ⇔ `api_token_rotated_at` 在（empty/empty
   也满足）。
 
   这道 sanitize 是**幂等**的 (cascade-clear 后再调一次 normalize 仍是
   一致状态)，自动覆盖三条路径:
 
-  - **直接 normalize**: ``_validate_network_security_config(raw)`` 单独
-    调用就会 cascade（如 ``set_network_security_config`` / 文件 first-load
+  - **直接 normalize**: `_validate_network_security_config(raw)` 单独
+    调用就会 cascade（如 `set_network_security_config` / 文件 first-load
     走的就是这条）；
-  - **incremental update**: ``update_network_security_config({"api_token":
-    ""})`` 不传 ``rotated_at`` 时，merged dict 进 validate → cascade 自动
+  - **incremental update**: `update_network_security_config({"api_token":
+    ""})` 不传 `rotated_at` 时，merged dict 进 validate → cascade 自动
     触发 → 写回 config；
-  - **R199 端点**: ``GET /api/system/api-token-info`` 读 cache 看到的
+  - **R199 端点**: `GET /api/system/api-token-info` 读 cache 看到的
     永远是 cascade 之后的一致状态。
 
   **Test coverage** (`tests/test_api_token_cascade_clear_r200.py`,
@@ -769,13 +769,13 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
     状态; R195 rotate → admin clear → 一致; R195 rotate 不被 cascade
     误伤；
   - **Invariant + idempotency** (2): 二次 normalize 不再触发 warning;
-    warning text 含 ``'cascade-clear'`` / ``'stale ghost'`` 字符串用于
+    warning text 含 `'cascade-clear'` / `'stale ghost'` 字符串用于
     audit grep。
 
   **Test infrastructure note**: ai_intervention_agent 用自定义
-  ``EnhancedLogger``（loguru 后端 + ``propagate=False``），``assertLogs``
-  拿不到 named-logger 消息。R200 测试套引入轻量 ``capture_ns_warnings``
-  上下文管理器（patch 模块级 ``logger.warning``）替代 ``assertLogs``
+  `EnhancedLogger`（loguru 后端 + `propagate=False`），`assertLogs`
+  拿不到 named-logger 消息。R200 测试套引入轻量 `capture_ns_warnings`
+  上下文管理器（patch 模块级 `logger.warning`）替代 `assertLogs`
   ——可复用模式, 适用于其他「期望特定 marker 出现在 warning」的测试。
 
   **Test**: R200 + R199 + R195 + R193 + R189 + ns_config 全跑 → 182/182
@@ -1390,7 +1390,7 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   - **`[network_security].api_token` config field**: empty string =
     unconfigured (legacy loopback-only behavior, zero migration risk).
     Set to a ≥ 16-char token to enable. Generate via
-    ``python -c "import secrets; print(secrets.token_urlsafe(32))"``.
+    `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
   - **`_is_authorized()` composite gate** (helper in
     `web_ui_routes/system.py`): replaces the previous
     `_is_loopback_request()` calls on the three mutation/info-leak
