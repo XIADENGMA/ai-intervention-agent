@@ -9,6 +9,79 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R209 / Cycle 10 · F-release-2 (CR#22 §4 Important): pre-commit
+  pre-push hook for `check_tag_push_safety.py` enforcement**. R206
+  (cycle 9) 把 v1.7.2 docs-sync miss 经验固化成 13 步本地预飞行清
+  单，但所有 13 步都靠**人**记得跑——一旦忘了步骤 6
+  (``scripts/check_tag_push_safety.py``)，4+ 个未推送 ``v*.*.*``
+  tag 累积时 ``git push --follow-tags`` 会静默触发 GitHub webhook
+  屏蔽 (R19.1，v1.5.24 真实复现)，release.yml 一个 job 都不跑。
+
+  R209 把 ``check_tag_push_safety.py`` 装到 pre-commit framework 的
+  **pre-push** stage——push 触发时**自动跑**，把 R206 §1 step 6
+  从"人记忆"提升到"代码强制"，与现有 R66/R174/CR#16-F-4 三个
+  pre-commit hook 一致风格。
+
+  **实现 (3 文件 + 1 测试)**:
+
+  - ``.pre-commit-config.yaml`` 新增 ``check-tag-push-safety``
+    hook entry，``stages: [pre-push]`` + ``always_run: true``，调
+    用 ``uv run python scripts/check_tag_push_safety.py``（无新
+    script，复用 R185 已有）；
+  - ``Makefile`` 新增 ``install-hooks`` PHONY target，调
+    ``pre-commit install --hook-type pre-commit --hook-type pre-push``
+    一次性安装两个 hook chain；help 表列出让 fresh contributor 能
+    发现；
+  - ``docs/release-recovery.{md,zh-CN.md}`` 在 R206 Pre-tag-push
+    checklist 段顶部加 R209 automation 注释（双语 lockstep, 沿用
+    R178 / R185 / R206 i18n 契约），明确：
+    1. hook 是 R206 manual checklist 的**补充**, 不是替代；
+    2. 只拦截最危险的单一失败模式（≥ 4 unpushed tag），不跑全 13 步；
+    3. escape hatch: ``git push --no-verify`` (与 pre-commit 同款)；
+    4. 失败时按 script 输出按 tag 名升序逐个 push 修复。
+
+  **设计取舍 · pre-commit framework vs native .githooks/pre-push**:
+
+  - pre-commit framework: 用户已在用，零新依赖，``pre-commit
+    install --hook-type pre-push`` 一行接入；
+  - native .githooks: 需要 ``git config core.hooksPath .githooks``
+    引入新 framework 路径，配置点变多。
+
+  → pre-commit framework 胜出。
+
+  **设计取舍 · 只 hook check_tag_push_safety vs full R206 13-step**:
+
+  R206 13 步里 ruff / ty / pytest 都已在 commit 阶段 (pre-commit hook)
+  跑过, push 时再跑浪费; docs-parity / pytest 太慢 (~3 min full
+  pytest, 不接受在 push 时 block)。check_tag_push_safety 是 push
+  专属 + 50-500 ms (1 次 git ls-remote), 是 perfect-fit pre-push hook。
+  其余 step 留给 manual checklist + 未来 F-release-3 (tag-CHANGELOG
+  enforcement) 可考虑加 lightweight 强制。
+
+  **测试 (8 cases / 3 invariant class)** ——
+  ``tests/test_pre_push_hook_install_r209.py``:
+
+  1. **TestPreCommitConfigHasPrePushHook** (3): hook id 声明 + stages
+     含 pre-push + entry 指向 check_tag_push_safety.py；
+  2. **TestMakefileInstallHooksTarget** (3): .PHONY 列 install-hooks
+     + body 含 ``--hook-type pre-push`` + help 列出；
+  3. **TestDocsMentionAutomation** (2): 双语 release-recovery 都含
+     R209 / install-hooks / pre-push 关键词 (沿用 R185 双语 lockstep)。
+
+  **沿用 R185 ``TestMakefileReleaseCheckCveTarget`` + R206
+  ``TestReleaseRecoveryPreTagChecklistBilingual`` 静态字符串匹配模
+  式** — 不深入语义校验文档，留出 wording polish 空间，只锁结构。
+
+  **验证**: R209 8 cases PASS；``uv run ty check . → All checks
+  passed!``；``uv run ruff check . && ruff format --check . →
+  All passed!``；完整 ``pytest`` **5461 passed / 2 skipped / 646
+  subtests passed in 167s** (R208 baseline 5453 → 5461, 净增 +8
+  from R209)；``scripts/generate_docs.py --check`` 两份语言 26/26
+  一致 (.pre-commit-config.yaml / Makefile / release-recovery.md 都
+  不在 ``MODULES_TO_DOCUMENT``)。
+
 ### Changed
 
 - **R208 / Cycle 10 · F-204-2 (CR#22 §4 Important): unify token age

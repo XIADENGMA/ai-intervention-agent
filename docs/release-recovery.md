@@ -231,7 +231,18 @@ The list below is **what to run locally** before pushing any
 `v*.*.*` tag. Together with the existing `scripts/check_tag_push_
 safety.py` (cf. §"Related guards") and the `Tests` workflow's
 CHANGELOG-non-Unreleased pre-commit guard (R180 + R181), these are
-the **three concentric belts** that catch tag-push-time mistakes:
+the **three concentric belts** that catch tag-push-time mistakes.
+
+> **R209 (cycle 10 · F-release-2) automation**: step 6 below
+> (`check_tag_push_safety.py`) is now also wired into a Git
+> `pre-push` hook via pre-commit. Install once with
+> `make install-hooks` (or `pre-commit install --hook-type
+> pre-commit --hook-type pre-push`) and the hook will refuse
+> the push if ≥ 4 `v*.*.*` tags are unpushed (R19.1 GitHub
+> webhook throttle). The hook is **complementary** to the
+> manual checklist — it catches the most dangerous single
+> failure mode at the latest possible moment, not all 13 steps.
+> Escape hatch: `git push --no-verify`.
 
 1. **Local pre-flight** (this checklist) — catches mistakes _before_
    `git push --follow-tags`.

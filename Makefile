@@ -14,7 +14,7 @@
 # Discoverability:
 #   `make` (no args) → renders the help table; same as `make help`.
 
-.PHONY: help install lint test ci coverage docs docs-check vscode-check pre-commit release-check release-check-cve clean
+.PHONY: help install install-hooks lint test ci coverage docs docs-check vscode-check pre-commit release-check release-check-cve clean
 
 # Default goal: print the help table so a fresh checkout's `make` is informative
 # instead of surprising. Pinning this is more robust than relying on Make's
@@ -25,6 +25,7 @@ help:
 	@echo "AI Intervention Agent · Makefile entry points"
 	@echo ""
 	@echo "  make install           install dev deps via uv (--all-groups)"
+	@echo "  make install-hooks     install pre-commit + pre-push git hooks (R209 / F-release-2)"
 	@echo "  make lint              ruff format + check + ty type-check"
 	@echo "  make test              pytest only (no i18n / minify gates)"
 	@echo "  make ci                full CI Gate (ruff + ty + 8x i18n + minify + pytest + red-team)"
@@ -43,6 +44,13 @@ help:
 
 install:
 	uv sync --all-groups
+
+# R209 / Cycle 10 · F-release-2: install both pre-commit and pre-push
+# git hooks so the R206 13-step pre-flight checklist's automation-able
+# steps (step 6: check_tag_push_safety.py) are enforced rather than
+# memory-dependent. Idempotent — safe to re-run after `make install`.
+install-hooks:
+	uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 
 lint:
 	uv run ruff format .

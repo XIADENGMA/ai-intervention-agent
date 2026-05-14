@@ -214,7 +214,16 @@ Issue 跟踪器发条简报：
 下面的清单是 **push 任何 `v*.*.*` tag 之前本地要跑的步骤**。配合
 现有的 `scripts/check_tag_push_safety.py`（见上文「相关守护」）
 与 `Tests` workflow 的 CHANGELOG-非-Unreleased pre-commit guard
-（R180 + R181），这是接 tag-push-time 失误的 **三层保险**：
+（R180 + R181），这是接 tag-push-time 失误的 **三层保险**。
+
+> **R209（cycle 10 · F-release-2）自动化**：下面第 6 步
+> （`check_tag_push_safety.py`）现已通过 pre-commit framework
+> 接入 Git `pre-push` hook。一次性安装：`make install-hooks`
+> （或 `pre-commit install --hook-type pre-commit --hook-type
+> pre-push`），之后 ≥ 4 个 `v*.*.*` tag 未推送时 hook 会
+> 拒绝 push（防 R19.1 GitHub webhook 屏蔽）。该 hook 与人工
+> 清单是**互补关系**——只拦截最危险的单一失败模式，不是全
+> 13 步。绕过开关：`git push --no-verify`。
 
 1. **本地预飞行**（本清单）—— 在 `git push --follow-tags` **之前**
    抓失误。

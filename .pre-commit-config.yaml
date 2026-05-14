@@ -101,6 +101,37 @@ repos:
         pass_filenames: false
         files: ^src/ai_intervention_agent/static/css/(main|tri-state-panel)\.css$
 
+  # R209 / Cycle 10 · F-release-2 (CR#22 §4 Important): pre-push hook
+  # for release-tag-safety enforcement。
+  #
+  # 背景：R206 (cycle 9) 把 v1.7.2 docs-sync miss 经验固化成 13 步本地
+  # 预飞行清单 + retag safety window 文档，但所有 13 步都靠**人**记得跑
+  # ——一旦忘了步骤 6 (``scripts/check_tag_push_safety.py``), 4+ 个未推
+  # 送 ``v*.*.*`` tag 累积时 ``git push --follow-tags`` 会静默触发
+  # GitHub webhook 屏蔽 (R19.1, v1.5.24 真实复现), release.yml 一个 job
+  # 都不跑。
+  #
+  # R209 把 ``check_tag_push_safety.py`` 装到 pre-push 阶段, push 触发
+  # 时**自动跑** —— 这是 "用代码强制 R206 §1 step 6" 的工程化。开发者
+  # 安装一次 (``make install-hooks`` 或 ``pre-commit install --hook-type
+  # pre-push``)，后续 ``git push`` 都自动验证, 无需记得手跑。
+  #
+  # 性能：``check_tag_push_safety.py`` 1 次 ``git ls-remote`` (~50-500 ms
+  # 视网络), 比 pytest / ruff 都快, 不影响 push 体验。
+  #
+  # 失败优雅降级：hook fail (exit 1) 时 push 被 abort, 开发者按脚本输出
+  # 提示 (按 tag 名升序逐个 ``git push origin <tag>``) 修复后重试。绕过
+  # 开关：``git push --no-verify`` (与 pre-commit 同款 escape hatch)。
+  - repo: local
+    hooks:
+      - id: check-tag-push-safety
+        name: Tag 推送前安全检查（R209 / F-release-2 护栏）
+        entry: uv run python scripts/check_tag_push_safety.py
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+        always_run: true
+
   # CR#16 F-4：CHANGELOG.md 非-Unreleased 区段大幅 diff 检测。
   #
   # 背景：CR#16 期间发现 ``a37e17d`` 把 645 行的 markdownlint 自动格式化
