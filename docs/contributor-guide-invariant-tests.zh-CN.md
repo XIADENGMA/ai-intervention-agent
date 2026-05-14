@@ -328,6 +328,7 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R235    | `tests/test_form_inputs_accessible_name_invariant_r235.py`             | 模式 A          | 每个 `<input>`（非 hidden/submit/button/reset/image）+ 每个 `<textarea>` 必须有 accessible name（包裹 `<label>` / `<label for>` / `aria-label` / `aria-labelledby` / `aria-hidden=true + tabindex=-1`）(a11y / WCAG 4.1.2, R230/R232 后续锁定) |
 | R236    | `tests/test_ty_precommit_hook_invariant_r236.py`                       | 模式 B + 模式 A | `.pre-commit-config.yaml` 必须保留 `ty-check` hook（默认 `[pre-commit]` 阶段、运行 `ty check`、filter `*.py`），`ci_gate.py` 仍要调用 `ty`（pre-commit 是 fast shadow，CI 是契约）。防止 v1.7.5-style 废弃 release。 |
 | R237    | `tests/test_dialog_aria_compliance_invariant_r237.py`                  | 模式 A          | 每个 `role="dialog"` 元素必须有 `aria-modal="true"` + (`aria-labelledby` 指向真实存在的 id 或 `aria-label`) + 默认隐藏 (class `hidden` 或 `[hidden]` 属性)。WAI-ARIA 1.2 + WCAG 4.1.2 锁定。Cycle 14 a11y 第 4 波（R230→R232→R235 是控件，R237 是模态层）。 |
+| R238    | `tests/test_modal_focus_trap_invariant_r238.py`                        | 模式 B          | 两个模态对话框（`#code-paste-panel` + `#settings-panel`）实现 Tab / Shift-Tab 焦点陷阱（`app.js` 的 `_modalFocusTrap` + `settings-manager.js` 的 `_settingsFocusTrap`），使用 W3C 标准的可聚焦选择器 + `offsetParent !== null` 可见性过滤；关闭处理把焦点还给打开者（`#feedback-text` / `#settings-btn`）。是 R237 声明性 ARIA 契约的命令式焦点管理伙伴。 |
 
 ## 7. 进一步阅读
 

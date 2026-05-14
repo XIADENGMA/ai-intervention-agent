@@ -11,6 +11,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R238 / Cycle 15: Tab focus trap + focus restore for both
+  modal dialogs (a11y wave 4 imperative companion to R237)**.
+  R237 locked the **declarative** ARIA contract (aria-modal,
+  aria-labelledby); R238 closes the **imperative** focus
+  management gap. Before R238 both dialogs (`#code-paste-panel`
+  + `#settings-panel`) implemented Escape-to-close and
+  initial-focus (`hideSettings` even restored focus to
+  `#settings-btn`) but neither trapped Tab — keyboard users
+  tabbing inside an open modal could land on background
+  controls, breaking modal isolation. R238 adds:
+  - `_modalFocusTrap(panel, event)` helper in `app.js`
+    (~12 lines, queries standard W3C focusable selector,
+    filters by `offsetParent !== null` + `!aria-hidden`,
+    wraps Tab at last → first and Shift-Tab at first → last).
+  - `handleCodePasteModalKeydown` now calls `_modalFocusTrap`
+    after Escape check.
+  - `_settingsFocusTrap` method on the settings class with
+    identical logic.
+  - `_settingsEscHandler` extended to call the trap on
+    `Tab` key.
+  - `closeCodePasteModal` already restored focus to
+    `#feedback-text` (was correct); `hideSettings` already
+    restored to `#settings-btn` (was correct). R238 locks
+    these patterns with explicit invariants so they cannot
+    silently regress.
+  Guarded by `tests/test_modal_focus_trap_invariant_r238.py`
+  (3 classes / 8 cases): code-paste handler covers Tab not
+  just Escape + focus-trap helper uses standard selector +
+  close restores focus to `#feedback-text`; settings handler
+  covers Tab + `_settingsFocusTrap` method exists with
+  standard selector + close restores to `#settings-btn`;
+  both trap helpers filter hidden elements via `offsetParent`.
+
 - **R237 / Cycle 15: dialog/modal ARIA compliance invariant
   (a11y wave 4)**. Cycle 14's WCAG 4.1.2 sweep (R230
   decorative SVGs → R232 icon-only buttons → R235 form

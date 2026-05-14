@@ -991,10 +991,35 @@ function closeCodePasteModal() {
   if (feedbackTextarea) feedbackTextarea.focus();
 }
 
+function _modalFocusTrap(panel, event) {
+  if (event.key !== "Tab" || !panel) return;
+  const focusables = panel.querySelectorAll(
+    'button:not([disabled]),[href],input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+  );
+  const visible = Array.prototype.filter.call(
+    focusables,
+    (el) => el.offsetParent !== null && !el.hasAttribute("aria-hidden"),
+  );
+  if (visible.length === 0) return;
+  const first = visible[0];
+  const last = visible[visible.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && active === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function handleCodePasteModalKeydown(event) {
   if (event.key === "Escape") {
     closeCodePasteModal();
+    return;
   }
+  const panel = document.getElementById("code-paste-panel");
+  _modalFocusTrap(panel, event);
 }
 
 // 首次加载时缓存 submit 按钮的原始 innerHTML（含 SVG + data-i18n span），

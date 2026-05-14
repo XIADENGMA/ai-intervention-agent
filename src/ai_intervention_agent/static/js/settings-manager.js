@@ -866,7 +866,11 @@ class SettingsManager {
       this.applySettingsTheme();
 
       this._settingsEscHandler = (e) => {
-        if (e.key === "Escape") this.hideSettings();
+        if (e.key === "Escape") {
+          this.hideSettings();
+          return;
+        }
+        if (e.key === "Tab") this._settingsFocusTrap(panel, e);
       };
       document.addEventListener("keydown", this._settingsEscHandler);
 
@@ -980,6 +984,28 @@ class SettingsManager {
         }
       `;
       document.head.appendChild(style);
+    }
+  }
+
+  _settingsFocusTrap(panel, event) {
+    if (!panel) return;
+    const focusables = panel.querySelectorAll(
+      'button:not([disabled]),[href],input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    );
+    const visible = Array.prototype.filter.call(
+      focusables,
+      (el) => el.offsetParent !== null && !el.hasAttribute("aria-hidden"),
+    );
+    if (visible.length === 0) return;
+    const first = visible[0];
+    const last = visible[visible.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
     }
   }
 
