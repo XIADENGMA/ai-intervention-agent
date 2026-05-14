@@ -11,6 +11,81 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R207 / Cycle 10 · F-205-2 (CR#22 §4 Important): `aiia_sse_schema_
+  violation_total` Prometheus counter**. R205 (cycle 9) 把 SSE schema
+  validation 装在 ``AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict`` 环境变量
+  后, ``_schema_violation_total`` 计数器只通过 ``stats_snapshot()`` JSON
+  暴露——alertmanager 想 watch 必须 scrape JSON, 绕开 Prometheus scrape
+  的标准方式。R207 把这份数据 mirror 到 Prometheus exposition
+  ``aiia_sse_schema_violation_total`` counter, 让 alertmanager 用标准
+  PromQL 即可写规则（如 ``rate(aiia_sse_schema_violation_total[5m])
+  > 0`` 检测新违规出现）。
+
+  **设计契约 · omit-when-off 而非 always-emit-with-zero**：
+
+  R207 选 **omit when mode == "off"** (与 R204 ``aiia_token_age_
+  seconds`` 同款 omit-vs-NaN 哲学)：
+
+  - mode == "off"：metric **不出现** → alertmanager 用 ``absent(
+    aiia_sse_schema_violation_total)`` 即可分清「validation off」
+    （不在监控）vs「validation on with 0 violations」（监控中但无违
+    规），两类 ops 状态走不同 alert 路由；
+  - mode in {warn, strict}：metric 出现 (value ≥ 0)，可用
+    ``rate(...)`` / ``aiia_sse_schema_violation_total > N`` 等阈值告
+    警。
+
+  反方案「always-emit-with-zero」：metric 永远存在 = 0 也输出，看似简单
+  但让 ops 无法分辨「运维忘了开 validation」与「validation 开着无违
+  规」，两者都是 0，alertmanager 写不出区分 rule —— R207 拒绝该方案。
+
+  **实现** (``web_ui_routes/system.py::_render_prometheus_metrics`` SSE
+  bus section 新增 ~30 行)：
+
+  - 在 SSE 块 latency snapshot 之后新增 R207 section；
+  - 读 ``snap.get("schema_validate_mode")`` + ``snap.get(
+    "schema_violation_total")``，验证类型 + mode in {warn, strict}
+    才 emit；off mode silently 跳过；
+  - HELP 字符串含 R207 / F-205-2 / AIIA_SSE_SCHEMA_VALIDATE / absent
+    / "Multi-field" 关键字让运维 grep 可定位 + 理解 omit-when-off 契约；
+  - metric_type = counter (与 R205 ``_schema_violation_total`` 单调累
+    加 semantics 一致)；
+  - 更新 ``/api/system/metrics`` 端点 description docstring 提及 R207 +
+    omit-when-off 契约 + ``absent(...)`` alertmanager 用法 (与 R204
+    docstring 同款形式)。
+
+  **测试 (10 cases / 5 invariant class + 6 subtests)** ——
+  ``tests/test_sse_schema_violation_metric_r207.py``：
+
+  1. **TestOffModeOmitContract** (2): mode == "off" + 0 / 50 violation
+     全部 omit metric；
+  2. **TestWarnModeEmitContract** (3): mode == "warn" + 0 violation
+     → metric value 0 emit / N violation → value N / metric 行格式
+     合规 (HELP/TYPE 各 1 次 + counter type)；
+  3. **TestStrictModeEmitContract** (2): mode == "strict" + N
+     violation → value N (与 warn mode 同款 emit, R205 strict 与
+     warn 唯一行为差异是 log level, metric 一致)；
+  4. **TestEndpointMetricParity** (1 + 6 subtests · **核心契约**):
+     2 mode × 3 violation count {0, 1, 5} 笛卡尔积, snapshot
+     ``schema_violation_total`` == metric value 必须严格相等
+     (R207 渲染层不引入新计数逻辑, 严格 mirror)；
+  5. **TestPrometheusOutputFormat** (2): HELP 含必备关键词 + TYPE
+     声明 counter (而非 gauge——_schema_violation_total 是 monotonic
+     累加, semantically counter)。
+
+  **测试 helper · `_render_with_bus`**: 用 ``unittest.mock.patch.object``
+  把 ``task_module._sse_bus`` 临时替换成 test bus 实例，render 后还原。
+  这是测试 ``_render_prometheus_metrics`` 与 specific bus state 的标
+  准 pattern (避免污染 module-level singleton)。
+
+  **验证**: R207 10 cases + 6 subtests PASS；R202/R204/R205 完整测
+  试套 57 cases + 22 subtests PASS（向后兼容验证）；``uv run ty
+  check . → All checks passed!``；``uv run ruff check . && ruff
+  format --check . → All passed!``；完整 ``pytest`` **5438 passed
+  / 2 skipped / 646 subtests passed in 167s** (R205 baseline 5428
+  → 5438, 净增 +10 from R207)；``scripts/generate_docs.py --check``
+  两份语言全过（system.py 改的是 endpoint description docstring,
+  会被 docs/api 抓到, 本地预 regen 验证 parity）。
+
 - **R205 / Cycle 9 · F-204-1 (CR#21 §4.3): SSE schema runtime
   validation toggle**. R198 把 ``EVENT_SCHEMAS`` + ``validate_payload``
   API 暴露好了, 但**故意不在 production emit 路径调用**（hot path 性能

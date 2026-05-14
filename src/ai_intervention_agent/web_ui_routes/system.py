@@ -925,6 +925,48 @@ def _render_prometheus_metrics() -> str:
                         )
                     )
 
+        # R207 / Cycle 10 · F-205-2: SSE schema validation violation counter.
+        # Mirrors stats_snapshot()['schema_violation_total'] (set by R205
+        # _SSEBus.emit() when AIIA_SSE_SCHEMA_VALIDATE=warn|strict).
+        #
+        # Omit-when-off contract（与 R204 `aiia_token_age_seconds` 同款
+        # omit-vs-NaN philosophy）：
+        # - mode == "off"：metric **不出现** → alertmanager 用 `absent(
+        #   aiia_sse_schema_violation_total)` 即可分清 "validation off"
+        #   vs "validation on with 0 violations"，两类 ops 状态用不同
+        #   alert 路由处理；
+        # - mode in {warn, strict}：metric 出现 (value ≥ 0)，alertmanager
+        #   用 `rate(aiia_sse_schema_violation_total[5m]) > 0` 检测新
+        #   violation 出现，或 `aiia_sse_schema_violation_total{...} > 100`
+        #   检测违规累积超阈值。
+        #
+        # Sum invariant 与 R205 一致：一条 emit 多字段错也只算 1 次
+        # violation（matches _schema_violation_total += 1 once per emit，
+        # 无论 violations list 长度）——避免噪声膨胀。
+        mode_raw = snap.get("schema_validate_mode")
+        violation_raw = snap.get("schema_violation_total")
+        if (
+            isinstance(mode_raw, str)
+            and mode_raw in {"warn", "strict"}
+            and isinstance(violation_raw, int)
+        ):
+            lines.append(
+                _format_prom_metric(
+                    "aiia_sse_schema_violation_total",
+                    violation_raw,
+                    help_text=(
+                        "Total SSE emit payload schema violations detected "
+                        "by R205 AIIA_SSE_SCHEMA_VALIDATE=warn|strict "
+                        "toggle (R207 / Cycle 10 · F-205-2). Omitted when "
+                        "toggle is off — use 'absent(...)' rule to "
+                        "distinguish 'monitoring off' vs 'monitoring on "
+                        "with 0 violations'. Multi-field violations on "
+                        "one emit count as 1."
+                    ),
+                    metric_type="counter",
+                )
+            )
+
     # --- Security / API token age (R204 / Cycle 9 · F-203-1) ---
     token_age = _safe_token_age_seconds()
     if token_age is not None:
@@ -2219,6 +2261,18 @@ class SystemRoutesMixin:
                   解析失败时该 metric 不出现（与 ``aiia_uptime_seconds``
                   等其他 ``_safe_*`` helper 同款契约，让 Grafana 显示
                   "no data" 触发不同告警策略）
+                * SSE schema 验证（R207 / Cycle 10 · F-205-2）：
+                  ``aiia_sse_schema_violation_total`` counter ——
+                  R205 ``AIIA_SSE_SCHEMA_VALIDATE=warn|strict`` 开关检测到
+                  的 emit-site schema 违规累计次数（mirror
+                  ``stats_snapshot()['schema_violation_total']``）。**omit
+                  when off**：开关 == "off" 时 metric **不出现**，
+                  alertmanager 用 ``absent(aiia_sse_schema_violation_total)``
+                  可分清"validation off"（不在监控）vs "validation on with
+                  0 violations"（监控中但无违规），两类 ops 状态走不同
+                  alert 路由处理；warn/strict mode 时 metric 出现 (value ≥ 0)。
+                  一条 emit 多字段错只算 1 次违规（matches R205 不噪声
+                  膨胀契约）。
                 * TaskQueue：``aiia_task_queue_size`` / ``aiia_task_queue_max``
                 * 错误日志：``aiia_recent_errors_5min``
                 * Notification：``aiia_notification_enabled`` /
