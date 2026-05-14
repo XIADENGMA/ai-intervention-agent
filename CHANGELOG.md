@@ -9,6 +9,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **CR#27 / Cycle 14 code review** (`docs/code-reviews/cr27.md`).
+  Covers R231→R235 + v1.7.5/v1.7.6 release-supersession event
+  (6 commits since CR#26). Theme: **three-wave WCAG 4.1.2
+  accessibility sweep** (R230 decorative SVGs → R232 icon-only
+  buttons → R235 form inputs) plus drift-detection guards
+  (R231 catalogue, R233 README factual claims) and a UI/UX
+  disabled-state consistency follow-up (R234 textarea
+  parallel to R229 buttons). Per-commit audit + health
+  verdict (HEALTHY) + F-cycle14 backlog (7 candidates, with
+  F-cycle14-1 `ty` to main-branch CI recommended first for
+  Cycle 15). Release recommendation: **v1.7.7** packing
+  R231–R235.
+
 ### Fixed
 
 - **R235 / Cycle 14 · F-cycle13-2 follow-up: form inputs +
