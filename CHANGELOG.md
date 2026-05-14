@@ -9,6 +9,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.4] — 2026-05-14
+
+> Cycle 12 release packing R221–R225. Pure additive cycle:
+> 1 new module (`remote_environment.py` for SSH/WSL detection),
+> 1 new Grafana dashboard (per-provider notification drill-down),
+> 1 new Web UI hint, 2 expanded READMEs (Related-projects
+> comparison table), and 5 new invariant test files (~54 cases /
+> ~78 subtests). No breaking changes, no API surface changes
+> beyond the additive detector module. The cycle closed CR#24
+> follow-ups F-cycle11-1 / F-cycle11-3 / F-cycle11-4 and
+> discovered + closed F-cycle12-* new follow-ups for R226+
+> (see `docs/code-reviews/cr25.md`).
+
+Cycle 12 highlights:
+
+- **Competitive feature absorption end-to-end**: R222 introduced
+  the bilingual Related-projects comparison table, R225 closed
+  the SSH/WSL detection gap that `mcp-feedback-enhanced`
+  advertises — same-cycle close on a gap surfaced by AIIA's
+  own honest competitive positioning.
+- **Observability drill-down**: R224 added the per-provider
+  notification dashboard companion to R220's overview, with
+  f-string-aware metric parity invariant covering both static
+  and dynamically-emitted metric families.
+- **VSCode webview console-log invariant lock**: R221 inverted
+  the F-cycle11-1 finding (no debt found) into a forward-compat
+  invariant to prevent future regression.
+- **Web UI keyboard shortcuts discoverability**: R223 surfaced
+  the existing `Ctrl+/` help binding via a one-line settings
+  panel hint, with i18n parity locked in both languages.
+
 ### Added
 
 - **R225 / Cycle 12: SSH / WSL remote-environment detection +
