@@ -317,6 +317,8 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R223    | `tests/test_settings_shortcuts_full_help_hint_invariant_r223.py` | 模式 D   | 设置面板键盘快捷键提示的 i18n 平价                                            |
 | R225    | `tests/test_remote_environment_detector_r225.py`              | 混合 (A+D)  | SSH/WSL 探测器契约 + `web_ui.py` 集成守门                                     |
 | R226    | `tests/test_precompress_pre_commit_hook_invariant_r226.py`    | 模式 C      | `.pre-commit-config.yaml` 中预压缩新鲜度 hook 已注册且配置正确                |
+| R227    | `tests/test_invariant_test_guide_catalogue_r227.py`           | 模式 C + D  | 本目录引用的测试文件都真实存在 + 双语平价                                     |
+| R228    | `tests/test_shortcuts_notification_body_completeness_invariant_r228.py` | 模式 D + 跨文件 | `Ctrl+/` 通知 body 列出每一个快捷键 + 交叉校验 `keyboard-shortcuts.js`     |
 
 ## 7. 进一步阅读
 

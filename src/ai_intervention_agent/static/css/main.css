@@ -7792,6 +7792,34 @@ code,
   border-color: #71baf2 !important;
 }
 
+/* 深色模式 - 按钮禁用状态（R229 / Cycle 13）
+ *
+ * 修前: #submit-btn / #insert-code-btn 的 !important 渐变背景规则适用于
+ * 所有状态（无 :not(:disabled) 限定）, 而 app.js 的 disableSubmitButton()
+ * 用 .style.backgroundColor 设置灰色降级背景——但 !important 永远赢过
+ * inline non-important, 导致禁用按钮视觉上与启用状态完全一致, 用户唯一
+ * 能察觉到的提示只剩 cursor: not-allowed (CSS 没有 !important 这条线),
+ * 实质构成"按了没反应"的 UX 暗坑。
+ *
+ * 修后: 直接在 CSS 层用 :disabled 锁定降级视觉,
+ * 1. 用 rgba 半透明背景而非 brand-color hex, 与 .btn:disabled 通用规则
+ *    (line ~4096) 同源, 避免再引入新硬编码触发 R66 漂移检测;
+ * 2. opacity 0.6 + cursor: not-allowed 双重明确提示, 即便配色被未来定制
+ *    主题覆盖也仍能感知;
+ * 3. 加 !important 是因为 #submit-btn / #insert-code-btn 的启用规则用了
+ *    !important, 不加无法 override (CSS 优先级: !important 选择器之间比
+ *    specificity, 这里相同 specificity, 后定义胜出——理论上不加 !important
+ *    且放在启用规则之后也能赢, 但为防未来代码顺序漂移而显式加 important)。
+ */
+#submit-btn:disabled,
+#insert-code-btn:disabled {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(245, 245, 247, 0.4) !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
+}
+
 /* ========================================================================
    浅色主题按钮颜色配置
    ========================================================================
@@ -7842,6 +7870,22 @@ code,
 [data-theme="light"] #submit-btn:hover {
   background: #c56a4c !important; /* 悬停：加深为更深的橙色 */
   border-color: #c56a4c !important;
+}
+
+/* 浅色模式 - 按钮禁用状态（R229 / Cycle 13）
+ *
+ * 与上方深色模式 #submit-btn:disabled 规则配对。浅色主题用 rgba(0,0,0,*)
+ * 半透明灰避免 brand-color 漂移; 同样用 !important 因为
+ * [data-theme="light"] #submit-btn { background: #d97757 !important }
+ * 不加 !important 无法 override。
+ */
+[data-theme="light"] #submit-btn:disabled,
+[data-theme="light"] #insert-code-btn:disabled {
+  background: rgba(0, 0, 0, 0.05) !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  color: rgba(0, 0, 0, 0.4) !important;
+  cursor: not-allowed !important;
+  opacity: 0.6;
 }
 
 /* 浅色主题 - 次级按钮通用样式（Book Cloth 棕红色） */

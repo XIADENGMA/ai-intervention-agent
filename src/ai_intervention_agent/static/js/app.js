@@ -705,24 +705,22 @@ function showContentPage() {
   enableSubmitButton();
 }
 
-// 禁用提交按钮
+// R229 / Cycle 13: 修前 disableSubmitButton/enableSubmitButton 给 #submit-btn
+// 和 #insert-code-btn 写 inline .style.backgroundColor/.color/.cursor, 但 CSS
+// 用 !important 渐变写在 #submit-btn { background: ... !important } 这条
+// 通用规则上 (无 :disabled 限定), 所以 inline non-important 永远输给 CSS
+// !important——禁用按钮视觉与启用一致, 用户被坑过。R229 在 CSS 加
+// #submit-btn:disabled / #insert-code-btn:disabled 规则 (深+浅两套), JS
+// 这里只剩 `disabled` 属性切换, 让 CSS 接管视觉降级。feedback-text 仍
+// 走 inline 是因为它的 CSS 没用 !important, JS inline 真能生效, 不属于
+// R229 修复范围 (textarea 的禁用视觉本身正常)。
 function disableSubmitButton() {
   const submitBtn = document.getElementById("submit-btn");
   const insertBtn = document.getElementById("insert-code-btn");
   const feedbackText = document.getElementById("feedback-text");
 
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.style.backgroundColor = "#3a3a3c";
-    submitBtn.style.color = "#8e8e93";
-    submitBtn.style.cursor = "not-allowed";
-  }
-  if (insertBtn) {
-    insertBtn.disabled = true;
-    insertBtn.style.backgroundColor = "#3a3a3c";
-    insertBtn.style.color = "#8e8e93";
-    insertBtn.style.cursor = "not-allowed";
-  }
+  if (submitBtn) submitBtn.disabled = true;
+  if (insertBtn) insertBtn.disabled = true;
   if (feedbackText) {
     feedbackText.disabled = true;
     feedbackText.style.backgroundColor = "#2c2c2e";
@@ -731,24 +729,13 @@ function disableSubmitButton() {
   }
 }
 
-// 启用提交按钮
 function enableSubmitButton() {
   const submitBtn = document.getElementById("submit-btn");
   const insertBtn = document.getElementById("insert-code-btn");
   const feedbackText = document.getElementById("feedback-text");
 
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.style.backgroundColor = "#0a84ff";
-    submitBtn.style.color = "#ffffff";
-    submitBtn.style.cursor = "pointer";
-  }
-  if (insertBtn) {
-    insertBtn.disabled = false;
-    insertBtn.style.backgroundColor = "#48484a";
-    insertBtn.style.color = "#ffffff";
-    insertBtn.style.cursor = "pointer";
-  }
+  if (submitBtn) submitBtn.disabled = false;
+  if (insertBtn) insertBtn.disabled = false;
   if (feedbackText) {
     feedbackText.disabled = false;
     feedbackText.style.backgroundColor = "rgba(255, 255, 255, 0.03)";

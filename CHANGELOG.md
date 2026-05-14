@@ -11,6 +11,40 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R229 / Cycle 13: `#submit-btn` and `#insert-code-btn` now
+  visually reflect their disabled state**. UX bug discovered
+  while auditing `app.js` for theme-token compliance: when the
+  page was waiting for a response (between user submit and
+  server ACK) or busy with another task, the two action buttons
+  were correctly set to `disabled` (so clicks were no-ops), but
+  visually they looked identical to their enabled state. The
+  only cue was `cursor: not-allowed`, which is invisible until
+  the user moves the pointer over them. Users routinely
+  double-clicked submit, then noticed nothing happened, then
+  blamed the network. Root cause: `main.css` defines the brand
+  gradient on `#submit-btn { background: linear-gradient(...)
+  !important }` with no `:not(:disabled)` guard, and `app.js`'s
+  `disableSubmitButton()` writes inline
+  `style.backgroundColor = "#3a3a3c"` — but per the W3C CSS
+  cascade spec, author `!important` always wins over inline
+  non-`!important`, so the gray was silently overridden. R229
+  sinks the disabled-state visuals to CSS (`#submit-btn:disabled`
+  + `#insert-code-btn:disabled` rules for both dark and light
+  themes, with `!important` matching the enabled rule, plus
+  `opacity: 0.6` as a second cue) and strips the dead inline-
+  color writes from JS, keeping only the `disabled` attribute
+  toggle. `feedback-text` (textarea) is unaffected because its
+  CSS does not use `!important` and the inline override actually
+  worked. Bilingual themes verified. Guarded by
+  `tests/test_submit_btn_disabled_visible_invariant_r229.py`
+  (13 cases): both themes have `:disabled` selectors for both
+  buttons + the rules use `!important` to win the cascade + JS
+  no longer writes inline color/background/cursor for the two
+  buttons + JS still flips the `.disabled` attribute (otherwise
+  CSS `:disabled` doesn't fire and we'd lose both visual AND
+  functional disability) + textarea inline styling is
+  intentionally preserved (defensive lock against bulk cleanup).
+
 - **R228 / Cycle 13: `Ctrl+/` notification body now lists every
   registered keyboard shortcut**. UX gap discovered while writing
   the R227 invariant-test guide: pressing `Ctrl+/` (`Cmd+/` on

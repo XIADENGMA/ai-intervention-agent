@@ -355,6 +355,8 @@ docstring template.
 | R223    | `tests/test_settings_shortcuts_full_help_hint_invariant_r223.py` | Pattern D   | Settings panel keyboard shortcut hint i18n parity                              |
 | R225    | `tests/test_remote_environment_detector_r225.py`              | Mixed (A + D)  | SSH/WSL detector contract + `web_ui.py` integration guards                     |
 | R226    | `tests/test_precompress_pre_commit_hook_invariant_r226.py`    | Pattern C      | `.pre-commit-config.yaml` precompress freshness hook is registered + correct   |
+| R227    | `tests/test_invariant_test_guide_catalogue_r227.py`            | Pattern C + D  | This very catalogue references only real test files + bilingual parity         |
+| R228    | `tests/test_shortcuts_notification_body_completeness_invariant_r228.py` | Pattern D + cross-file | `Ctrl+/` notification body lists every shortcut + cross-checks `keyboard-shortcuts.js` |
 
 ## 7. Further reading
 
