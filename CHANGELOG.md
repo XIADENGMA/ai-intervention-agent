@@ -11,6 +11,63 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R213 / Cycle 10 · F-21.4-1: production static-assets precompress
+  completeness invariant test**. R20.14-D (gzip) + R21.4 (brotli)
+  precompress pipeline produces `.gz` / `.br` siblings for
+  `static/{css,js,locales}/*` resources, but `precompress_static.py
+  --check` only runs at build-time. No pytest-level signal guards
+  "production static assets actually HAVE complete `.br` + `.gz`
+  siblings" — silent decay risk (CR#10 lessons-learned root cause 3
+  same pattern): if brotli dep is accidentally removed, or
+  `DEFAULT_TARGET_DIRS` paths drift after a refactor, or someone bumps
+  a CSS bundle past `MIN_SIZE_BYTES` without re-running precompress,
+  pytest stays green while production silently loses 17-23% bandwidth
+  win.
+
+  **Implementation (1 test file, zero source code changes)**:
+  - `tests/test_static_precompress_production_invariant_r213.py` (NEW,
+    9 cases / 4 invariant class + 10 subtests):
+    1. **TestProductionGzipCompleteness** (3): every source ≥
+       `MIN_SIZE_BYTES` and not in `SKIP_EXTENSIONS` HAS `.gz`
+       sibling + `.gz` strictly smaller than source + `.gz`
+       decompresses byte-equal to source (5-file sample, sanity
+       check, not exhaustive).
+    2. **TestProductionBrotliCompleteness** (3, skipped when brotli
+       unavailable): same as gzip but `.br` + `.br` size ≤ `.gz` ×
+       1.05 (5% tolerance for rare entropy-saturated edge cases
+       where gzip narrowly wins). If `.br > .gz * 1.05`, fail —
+       suggests precompress `skipped_no_gain` reverse check is
+       bypassed.
+    3. **TestProductionTargetDirsRegistered** (2): `DEFAULT_TARGET_
+       DIRS` must contain `css` / `js` / `locales` subdirs + every
+       dir exists on disk. Guards against R76-style refactor
+       (moved `static/` into `src/ai_intervention_agent/` package)
+       where `DEFAULT_TARGET_DIRS` would drift silently.
+    4. **TestPrecompressCheckExitsCleanInProduction** (1): runs
+       `subprocess.run(precompress_static.py --check)` and
+       asserts exit 0. Redundant with `ci_gate.py` invocation but
+       gives local `uv run pytest` immediate feedback on stale
+       state without waiting for CI Gate run.
+
+  **Design choice — runtime invariant test vs build-script trust**:
+  - Runtime test: pytest itself enforces; works regardless of CI
+    pipeline order; closes gap if some future contributor runs
+    `pytest` standalone without ci_gate.
+  - Build-script trust: assume `precompress --check` always runs
+    before merge; depends on CI orchestration discipline. Higher
+    drift risk over years.
+
+  → Runtime test wins (same philosophy as R212 contract bridge).
+
+  **Tolerance 5% for br ≤ gz × 1.05**: rare cases where brotli
+  marginally loses to gzip exist (highly repetitive ASCII patterns
+  with low complexity), and `compress_file_br` already has
+  `skipped_no_gain` reverse check (br ≥ raw → skip). 5% buffer
+  allows tested-and-valid edge cases without false-positive fails.
+
+  **Verified**: 9 cases / 10 subtests PASS; full pytest baseline
+  5477 → 5486 (net +9 cases, +10 subtests); ty/ruff/format clean.
+
 - **R212 / Cycle 10 · F-205-3 (R210 follow-up): SSE schema validation
   contract bridge invariants for AIIA_SSE_SCHEMA_VALIDATE**. R210
   closed F-205-1 (docs sync), but R210 tests only verify docs string
