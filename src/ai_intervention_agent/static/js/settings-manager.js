@@ -56,7 +56,7 @@ class SettingsManager {
     this.initOpenConfigFileButton();
     this.initBarkBaseUrlStatus();
     this.initialized = true;
-    console.log("SettingsManager initialized");
+    console.debug("SettingsManager initialized");
   }
 
   async loadSettings() {
@@ -99,7 +99,7 @@ class SettingsManager {
               serverConfig.bark_url_template ??
               this.defaultSettings.barkUrlTemplate,
           };
-          console.log("Loaded settings from server");
+          console.debug("Loaded settings from server");
           return settings;
         }
       }
@@ -126,7 +126,7 @@ class SettingsManager {
   saveSettings() {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify(this.settings));
-      console.log("Settings saved");
+      console.debug("Settings saved");
     } catch (error) {
       console.error("Save settings failed:", error);
     }
@@ -136,7 +136,7 @@ class SettingsManager {
     this.settings[key] = value;
     this.saveSettings();
     this.applySettings();
-    console.log(`Setting updated: ${key} = ${value}`);
+    console.debug(`Setting updated: ${key} = ${value}`);
   }
 
   applySettings(options = {}) {
@@ -179,7 +179,7 @@ class SettingsManager {
 
       const result = await response.json();
       if (response.ok && result.status === "success") {
-        console.log("Notification config synced to server");
+        console.debug("Notification config synced to server");
       } else {
         console.warn(
           "Sync notification config to server failed:",
@@ -196,7 +196,7 @@ class SettingsManager {
     this.saveSettings();
     this.updateUI();
     this.applySettings();
-    console.log("Settings reset to defaults");
+    console.debug("Settings reset to defaults");
   }
 
   updateUI() {
@@ -1057,7 +1057,7 @@ class SettingsManager {
 
       if (response.ok && result.status === "success") {
         showStatus(result.message, "success");
-        console.log("Bark notification sent:", result);
+        console.debug("Bark notification sent:", result);
       } else {
         showStatus(result.message || t("status.barkFailed"), "error");
         console.error("Bark notification send failed:", result);

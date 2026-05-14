@@ -11,6 +11,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R217 / Cycle 11 · F-cycle10-1 (propagation): demote
+  `console.log` → `console.debug` across remaining 9 project-owned
+  static/js/ files**. Extends R216's notification-manager.js
+  demotion pattern to the rest of the project-owned JS surface:
+  `app.js` (17), `image-upload.js` (8), `settings-manager.js` (7),
+  `keyboard-shortcuts.js` (3), `theme.js` (3), `mathjax-loader.js`
+  (3), `validation-utils.js` (1), `mathjax-config.js` (1), and
+  `state.js` (1, JSDoc example). 44 demotions total; cumulative
+  R216+R217 = 71 demotions across 10 files. Rationale identical to
+  R216 — Chrome / Firefox / Safari / Edge DevTools default-hide
+  Verbose / Debug filter, INFO-level browser logs no longer drown
+  out real `console.warn` / `console.error` signals; pure method
+  rename, zero helper, zero runtime cost. `multi_task.js` (46
+  remaining `console.log`) and vendor files (`tex-mml-chtml.js` /
+  `prism.js` / `marked.js` / `lottie.min.js`) deliberately
+  untouched: the former has an existing `_debugLog` helper that
+  should be reused via case-by-case migration (deferred to a future
+  cycle); the latter is third-party code. `dom-security.js` keeps
+  2 `console.log` references in JSDoc examples (API documentation).
+  Also synced `packages/vscode/webview-state.js` to maintain
+  byte-parity with `static/js/state.js` (guarded by
+  `tests/test_state_machine.py::TestJsSync::test_two_js_files_are_byte_identical`).
+  6 invariant tests + 13 subtests in
+  `tests/test_static_js_console_log_demotion_invariant_r217.py`
+  lock down: (a) all 9 R217-demoted files have zero `console.log(`
+  calls (per-file subtest reporting plus a global aggregate
+  assertion), (b) vendor allow-list is structurally distinct from
+  R217 list (no typo crossover) and contains the 4 known third-
+  party libs, (c) `multi_task.js` stays under a 50 console.log
+  budget (R218-pending) and `dom-security.js` stays under a 3
+  JSDoc-example budget, (d) forward-compat orphan scan — any
+  newly-added `static/js/*.js` file (excluding `.min.js` build
+  artifacts) that is neither in R217 list nor vendor nor special-
+  budget will fail this test with a clear actionable error message
+  if it contains any `console.log(`, forcing future contributors
+  to either demote, vendor-classify, or add explicit budget. Sets
+  up R218 to be a focused `multi_task.js console.log → _debugLog`
+  migration without scope-creep risk.
+
 - **R216 / Cycle 11 · F-cycle10-1: demote notification-manager.js
   `console.log` to `console.debug` for production console noise
   reduction**. `src/ai_intervention_agent/static/js/notification-manager.js`

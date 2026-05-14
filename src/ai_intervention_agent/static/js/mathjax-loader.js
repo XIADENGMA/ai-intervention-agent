@@ -44,7 +44,7 @@ window.MathJax = {
   },
   startup: {
     ready: () => {
-      console.log('MathJax loaded')
+      console.debug('MathJax loaded')
       MathJax.startup.defaultReady()
       if (window._mathJaxPendingElements) {
         window._mathJaxPendingElements.forEach(el => {
@@ -112,7 +112,7 @@ window.loadMathJaxIfNeeded = function (element, text) {
 
   // 开始加载 MathJax 脚本
   window._mathJaxLoading = true
-  console.log('MathJax: math content detected, loading MathJax (~1.17MB)…')
+  console.debug('MathJax: math content detected, loading MathJax (~1.17MB)…')
 
   // 动态创建 <script> 元素加载 MathJax
   const script = document.createElement('script')
@@ -121,7 +121,7 @@ window.loadMathJaxIfNeeded = function (element, text) {
   script.src = '/static/js/tex-mml-chtml.js' // 本地托管的 MathJax 脚本
   script.onload = function () {
     window._mathJaxLoaded = true
-    console.log('MathJax script loaded')
+    console.debug('MathJax script loaded')
   }
   script.onerror = function () {
     console.error('MathJax script load failed')

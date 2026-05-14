@@ -8,7 +8,7 @@
  *
  * 使用：
  *   var conn = window.AIIAState.createMachine('connection', 'idle')
- *   conn.onChange(function(prev, next){ console.log(prev, '->', next) })
+ *   conn.onChange(function(prev, next){ console.debug(prev, '->', next) })
  *   conn.transition('connecting')
  *   conn.is('connected')       // boolean
  *   conn.status                // 当前状态字符串

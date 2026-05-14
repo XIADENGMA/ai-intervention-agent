@@ -766,7 +766,7 @@ class LazyLoader {
 
     // 保存观察器引用
     this._observer = observer
-    console.log(`Lazy loader initialized, watching ${document.querySelectorAll(selector).length} images`)
+    console.debug(`Lazy loader initialized, watching ${document.querySelectorAll(selector).length} images`)
   }
 
   /**

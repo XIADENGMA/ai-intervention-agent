@@ -298,7 +298,7 @@ function _createLottieAnimation(container) {
       renderSproutFallback(container);
       container.style.opacity = "1";
     });
-    console.log("Sprout animation initialized (lazy load)");
+    console.debug("Sprout animation initialized (lazy load)");
   } catch (error) {
     console.error("Lottie animation init failed:", error);
     renderSproutFallback(container);
@@ -762,7 +762,7 @@ function enableSubmitButton() {
 // R214 / Cycle 10 · F-notif-fallback-1: type 'warning' 也走 content-page
 // toast，否则 notification-manager 的 showFallbackNotification (R214 后
 // 用 'warning' 类型) 在 content page 上完全 silent —— 用户看不到任何视
-// 觉反馈，浏览器拒绝通知权限时只能 console.log。修前: 仅 'success' /
+// 觉反馈，浏览器拒绝通知权限时只能 console.debug。修前: 仅 'success' /
 // 'error' 在 content page 可见; 修后: 'success' / 'warning' / 'error'
 // 都可见 ('info' 仍 silent 以维持 R214 之前的 INFO 噪声水位)。
 function showStatus(message, type) {
@@ -1084,7 +1084,7 @@ async function submitFeedback() {
     const submitUrl = currentTaskId
       ? `/api/tasks/${currentTaskId}/submit`
       : "/api/submit";
-    console.log(`Using submit endpoint: ${submitUrl}`);
+    console.debug(`Using submit endpoint: ${submitUrl}`);
 
     const response = await fetchWithTimeout(
       submitUrl,
@@ -1126,13 +1126,13 @@ async function submitFeedback() {
 
       // 立即刷新任务列表（由 multi_task.js 处理页面状态切换）
       if (typeof refreshTasksList === "function") {
-        console.log("Invoking refreshTasksList to refresh task list...");
+        console.debug("Invoking refreshTasksList to refresh task list...");
         await refreshTasksList();
       } else {
         // 兼容旧模式：如果没有多任务支持，显示无内容页面
         if (config) {
           config.has_content = false;
-          console.log("Feedback submitted; local state updated to empty");
+          console.debug("Feedback submitted; local state updated to empty");
         }
         showNoContentPage();
       }
@@ -1196,7 +1196,7 @@ async function closeInterface() {
 
 // 安全刷新页面函数
 function refreshPageSafely() {
-  console.log("Reloading page…");
+  console.debug("Reloading page…");
   try {
     window.location.reload();
   } catch (reloadError) {
@@ -1224,7 +1224,7 @@ function refreshPageSafely() {
 // pre-R129 的两段超长 banner 注释（"内容轮询-已停用"+"updatePageContent
 // 已删除"）合并成这条 5 行说明，避免 30+ 行的"墓碑"持续干扰阅读。
 function stopContentPolling() {
-  console.log("[app.js] stopContentPolling called, but polling is disabled");
+  console.debug("[app.js] stopContentPolling called, but polling is disabled");
 }
 
 // NotificationManager 已拆分到 notification-manager.js
@@ -1298,11 +1298,11 @@ function initializeShortcutTooltip() {
   if (!isMobileDevice()) {
     const platform = detectPlatform();
     updateShortcutDisplay(platform);
-    console.log(
+    console.debug(
       `Desktop platform detected: ${platform}, shortcut hints applied`,
     );
   } else {
-    console.log("Mobile device detected, shortcut hints hidden");
+    console.debug("Mobile device detected, shortcut hints hidden");
   }
 }
 
@@ -1336,8 +1336,8 @@ function initializeApp() {
   loadConfig()
     .then(() => {
       // 配置加载完成
-      console.log("Config loaded");
-      console.log("Current config:", {
+      console.debug("Config loaded");
+      console.debug("Current config:", {
         has_content: config.has_content,
         persistent: config.persistent,
         prompt_length: config.prompt ? config.prompt.length : 0,
@@ -1355,7 +1355,7 @@ function initializeApp() {
     .catch((error) => {
       console.error("Config load failed:", error);
       setTimeout(() => {
-        console.log("Config load failed, delayed multi-task init…");
+        console.debug("Config load failed, delayed multi-task init…");
         if (typeof initMultiTaskSupport === "function") {
           initMultiTaskSupport();
         }
@@ -1379,7 +1379,7 @@ function initializeApp() {
       return notificationManager.init();
     })
     .then(() => {
-      console.log("Notification manager initialized");
+      console.debug("Notification manager initialized");
     })
     .catch((error) => {
       console.warn("Settings or notification manager init failed:", error);
@@ -1442,20 +1442,20 @@ function initializeApp() {
       insertCodeFromClipboard();
     } else if (ctrlOrCmd && event.key === "v") {
       // Ctrl/Cmd+V 粘贴图片 - 浏览器默认处理，我们只在paste事件中处理
-      console.log(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+V paste`);
+      console.debug(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+V paste`);
     } else if (ctrlOrCmd && event.key === "u") {
       event.preventDefault();
       document.getElementById("upload-image-btn").click();
-      console.log(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+U upload image`);
+      console.debug(`Shortcut: ${isMac ? "Cmd" : "Ctrl"}+U upload image`);
     } else if (event.key === "Delete" && selectedImages.length > 0) {
       event.preventDefault();
       clearAllImages();
-      console.log("Shortcut: Delete clear all images");
+      console.debug("Shortcut: Delete clear all images");
     } else if (ctrlOrCmd && event.shiftKey && event.key === "N") {
       // Ctrl+Shift+N 测试通知
       event.preventDefault();
       testNotification();
-      console.log(
+      console.debug(
         `Shortcut: ${isMac ? "Cmd" : "Ctrl"}+Shift+N test notification`,
       );
     }
@@ -1489,7 +1489,7 @@ function initializeApp() {
       notificationManager.audioContext
         .resume()
         .then(() => {
-          console.log("Audio context enabled");
+          console.debug("Audio context enabled");
         })
         .catch((error) => {
           console.warn("Enable audio context failed:", error);

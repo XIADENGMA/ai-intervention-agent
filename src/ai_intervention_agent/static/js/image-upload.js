@@ -173,7 +173,7 @@ function revokeObjectURL(url) {
 
 // 清理所有Object URLs
 function cleanupAllObjectURLs() {
-  console.log(`Cleaning up ${objectURLs.size} object URLs`)
+  console.debug(`Cleaning up ${objectURLs.size} object URLs`)
   const startTime = performance.now()
 
   objectURLs.forEach(url => {
@@ -188,7 +188,7 @@ function cleanupAllObjectURLs() {
   urlCreationTime.clear()
 
   const endTime = performance.now()
-  console.log(`Object URL cleanup done in ${(endTime - startTime).toFixed(2)}ms`)
+  console.debug(`Object URL cleanup done in ${(endTime - startTime).toFixed(2)}ms`)
 }
 
 // 定期清理过期的URL对象（每5分钟检查一次）
@@ -206,7 +206,7 @@ function startPeriodicCleanup() {
       })
 
       if (expiredUrls.length > 0) {
-        console.log(`Periodic cleanup: ${expiredUrls.length} expired object URLs`)
+        console.debug(`Periodic cleanup: ${expiredUrls.length} expired object URLs`)
         expiredUrls.forEach(url => revokeObjectURL(url))
       }
     },
@@ -424,7 +424,7 @@ async function compressImage(file) {
     const logCompression = (blob, finalName) => {
       try {
         const ratio = ((1 - blob.size / file.size) * 100).toFixed(1)
-        console.log(
+        console.debug(
           `Image compression: ${file.name} ${(file.size / 1024).toFixed(2)}KB → ${(
             blob.size / 1024
           ).toFixed(2)}KB (ratio: ${ratio}%) out: ${finalName}`
@@ -594,7 +594,7 @@ async function addImageToList(file) {
     // 更新预览
     renderImagePreview(imageItem, false)
 
-    console.log('Image added:', file.name, `(${(imageItem.size / 1024).toFixed(2)}KB)`)
+    console.debug('Image added:', file.name, `(${(imageItem.size / 1024).toFixed(2)}KB)`)
     return true
   } catch (error) {
     console.error('Image processing failed:', error)
@@ -712,7 +712,7 @@ function clearAllImages() {
     setTimeout(() => window.gc(), 1000)
   }
 
-  console.log('All images cleared; memory released')
+  console.debug('All images cleared; memory released')
 }
 
 // 页面卸载时的清理
@@ -1109,7 +1109,7 @@ function checkBrowserCompatibility() {
     clipboard: !!(navigator.clipboard && navigator.clipboard.read)
   }
 
-  console.log('Browser compatibility check:', features)
+  console.debug('Browser compatibility check:', features)
 
   // 关键功能检查
   if (!features.fileAPI) {
@@ -1180,7 +1180,7 @@ function initializeImageFeatures() {
       clearBtn.addEventListener('click', clearAllImages)
     }
 
-    console.log('Image features initialized')
+    console.debug('Image features initialized')
   } catch (error) {
     console.error('Image features init failed:', error)
     showStatus(t('status.imageInitFailed'), 'error')

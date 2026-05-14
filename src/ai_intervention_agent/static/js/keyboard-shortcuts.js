@@ -185,7 +185,7 @@ const KeyboardShortcuts = (function () {
       // 注册默认快捷键
       this.registerDefaults();
 
-      console.log('[KeyboardShortcuts] initialized');
+      console.debug('[KeyboardShortcuts] initialized');
     },
 
     /**
@@ -347,7 +347,7 @@ const KeyboardShortcuts = (function () {
         '╚══════════════════════════════════════╝'
       ].join('\n');
 
-      console.log(helpText);
+      console.debug(helpText);
 
       if (typeof notificationManager !== 'undefined') {
         notificationManager.sendNotification(
@@ -373,7 +373,7 @@ const KeyboardShortcuts = (function () {
       document.removeEventListener('keydown', handleKeydown);
       shortcuts.clear();
       initialized = false;
-      console.log('[KeyboardShortcuts] destroyed');
+      console.debug('[KeyboardShortcuts] destroyed');
     }
   };
 })();

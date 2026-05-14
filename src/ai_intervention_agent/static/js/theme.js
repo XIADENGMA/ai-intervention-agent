@@ -68,7 +68,7 @@ const ThemeManager = (function () {
 
     const handleChange = (e) => {
       systemPreference = e.matches ? THEMES.LIGHT : THEMES.DARK;
-      console.log('System theme preference changed:', systemPreference);
+      console.debug('System theme preference changed:', systemPreference);
 
       // 无条件刷新按钮标签：在 auto 模式下，切换系统偏好也需要同步 aria-label/title
       // 与 .is-light 类，避免按钮显示与真实主题不一致（P7 yellow finding）
@@ -120,7 +120,7 @@ const ThemeManager = (function () {
       detail: { theme: effectiveTheme, mode: theme }
     }));
 
-    console.log('Theme applied:', effectiveTheme, '(mode:', theme + ')');
+    console.debug('Theme applied:', effectiveTheme, '(mode:', theme + ')');
   }
 
   /**
@@ -262,7 +262,7 @@ const ThemeManager = (function () {
       // 为已存在的按钮绑定点击事件
       bindExistingButtons();
 
-      console.log('Theme manager initialized:', currentTheme);
+      console.debug('Theme manager initialized:', currentTheme);
     },
 
     /**
