@@ -9,6 +9,28 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.6] - 2026-05-14
+
+Supersedes the abandoned `v1.7.5` tag. `v1.7.5` was tagged but
+the Release CI workflow failed at the `ci_gate.py` (`ty` type
+checker) step before any build artefacts were produced; no
+PyPI / npm / GitHub Release / VSCode Marketplace publication
+ever happened. `v1.7.6` ships the same R226–R230 payload plus
+R231 (catalogue staleness guard) plus the ty-narrowing fix
+for `tests/test_submit_btn_disabled_visible_invariant_r229.py`.
+
+### Fixed
+
+- **`tests/test_submit_btn_disabled_visible_invariant_r229.py`
+  ty static-check failure**. R229's tests used
+  `self.assertIsNotNone(match)` to guard `re.search(...).group(1)`
+  access, but `ty` (and `mypy`) do not model unittest assert
+  methods as type-narrowing operations, producing 5
+  `unresolved-attribute` errors on `Match[str] | None`. Replaced
+  with the standard `assert match is not None` pattern which
+  both checkers recognize as narrowing. Pure test-quality fix;
+  no behaviour change.
+
 ### Documentation
 
 - **R231 / Cycle 14 · F-cycle13-1: invariant-test guide
