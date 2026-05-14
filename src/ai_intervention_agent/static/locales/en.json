@@ -14,6 +14,8 @@
     "codePastePlaceholder": "Paste code here…",
     "codePasteHint": "Due to browser security restrictions, clipboard cannot be read automatically. Please paste code below (iOS: long-press → paste), then click \"Insert\".",
     "feedbackPlaceholder": "Enter feedback…",
+    "feedbackTextareaAriaLabel": "Feedback message",
+    "codePasteTextareaAriaLabel": "Paste code to insert",
     "themeToggle": "Toggle theme",
     "settingsBtn": "Notification settings",
     "settingsBtnAriaLabel": "Open notification settings",

@@ -14,6 +14,8 @@
     "codePastePlaceholder": "在此粘贴代码…",
     "codePasteHint": "由于浏览器安全限制无法自动读取剪贴板，请在下方粘贴代码（iOS 可长按 → 粘贴），然后点击「插入」。",
     "feedbackPlaceholder": "请输入反馈内容…",
+    "feedbackTextareaAriaLabel": "反馈内容",
+    "codePasteTextareaAriaLabel": "粘贴要插入的代码",
     "themeToggle": "切换主题",
     "settingsBtn": "通知设置",
     "settingsBtnAriaLabel": "打开通知设置",

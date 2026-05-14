@@ -11,6 +11,37 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R235 / Cycle 14 · F-cycle13-2 follow-up: form inputs +
+  textareas now uniformly expose an accessible name (WCAG
+  4.1.2 enforcement)**. Audit run after R230 (decorative
+  SVGs) + R232 (icon-only buttons) found that the form-input
+  side still had three a11y gaps in `web_ui.html`:
+  (1) `#feedback-text` (the **primary** feedback textarea
+  R234 just refactored) had `placeholder` but no `aria-label`
+  — screen reader users heard "edit, blank" with no purpose;
+  (2) `#code-paste-textarea` (the iOS clipboard-fallback
+  paste pad) had the same issue; (3) `#file-upload-input` was
+  hidden via `class="hidden"` but lacked `aria-hidden="true"`
+  + `tabindex="-1"`, meaning keyboard users could land on an
+  invisible focus target (`#quick-phrases-import-file` next
+  to it already had the correct pattern — inconsistent).
+  Fix adds `data-i18n-aria-label` + initial `aria-label` to
+  both textareas (with new bilingual i18n keys
+  `page.feedbackTextareaAriaLabel` = "Feedback message" /
+  "反馈内容" and `page.codePasteTextareaAriaLabel` =
+  "Paste code to insert" / "粘贴要插入的代码"), and aligns
+  `#file-upload-input` with the existing
+  `aria-hidden="true" tabindex="-1"` pattern. Guarded by
+  `tests/test_form_inputs_accessible_name_invariant_r235.py`
+  (3 cases, scanning all `<input>` + `<textarea>` in
+  `web_ui.html`): every form control must have an accessible
+  name via wrapping `<label>`, `<label for>`, `aria-label`,
+  `aria-labelledby`, **or** the hidden-pattern
+  `aria-hidden=true + tabindex=-1`; all hidden file inputs
+  must use the consistent pattern; total input count must
+  stay in the [18, 40] sanity window. Closes the WCAG 4.1.2
+  loop opened by Cycle 13's a11y sweep.
+
 - **R234 / Cycle 14 · F-cycle13-2: `.feedback-textarea`
   disabled visual now lives in CSS, not JS inline (light-theme
   bug parallel to R229)**. R229 fixed the same class of bug

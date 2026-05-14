@@ -767,6 +767,8 @@
                     class="code-paste-textarea"
                     data-i18n-placeholder="page.codePastePlaceholder"
                     placeholder="Paste code here…"
+                    data-i18n-aria-label="page.codePasteTextareaAriaLabel"
+                    aria-label="Paste code to insert"
                     spellcheck="false"
                     autocapitalize="off"
                     autocomplete="off"
@@ -795,13 +797,18 @@
             </div>
           </div>
 
-          <!-- 隐藏的文件上传input -->
+          <!-- 隐藏的文件上传input (R235 / Cycle 14: 与 #quick-phrases-import-file
+               L852 一样标 aria-hidden=true + tabindex=-1, 防止键盘 Tab 落焦
+               到不可见 input, 也防止屏幕阅读器读出无名字的 "file upload" 控件;
+               实际操作通过 #upload-image-btn 按钮触发 .click() 把焦点路由过来。) -->
           <input
             type="file"
             id="file-upload-input"
             multiple
             accept="image/*"
             class="hidden"
+            aria-hidden="true"
+            tabindex="-1"
           />
 
           <!-- R130 — 常用回复 / Quick Phrases 面板（纯前端 + localStorage） -->
@@ -875,6 +882,8 @@
               id="feedback-text"
               data-i18n-placeholder="page.feedbackPlaceholder"
               placeholder="Enter feedback…"
+              data-i18n-aria-label="page.feedbackTextareaAriaLabel"
+              aria-label="Feedback message"
             ></textarea>
             <!-- R138 — 反馈字符计数器（advisory，不强制 maxlength） -->
             <span
