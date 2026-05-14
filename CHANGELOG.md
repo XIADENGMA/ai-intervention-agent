@@ -11,6 +11,35 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R240 / Cycle 15: open modals mark `.container` as
+  `inert` (completes a11y wave 4 trilogy)**. R237 locked
+  the declarative ARIA, R238 added Tab focus-trap (keyboard
+  only). R240 closes the **mouse** + **programmatic-focus**
+  gap with HTML5 `inert`: while either modal (`#settings-panel`
+  or `#code-paste-panel`) is open, the `.container`
+  (`role="main"` wrapper) becomes `inert` — cannot receive
+  focus, cannot be clicked, removed from a11y tree. Without
+  this, R238's keyboard trap let a determined mouse click on
+  a background button leak through; AT users could swipe to
+  unrelated content. Why `inert` over alternatives:
+  - `aria-hidden` alone hides from AT but allows mouse +
+    Tab focus.
+  - `tabindex="-1"` on every focusable scales poorly.
+  - CSS `pointer-events: none` blocks mouse but not keyboard
+    or AT. Only `inert` is the canonical "this subtree is
+    inactive" HTML5 attribute (Chrome 102+, Firefox 112+,
+    Safari 15.5+, stable since 2022). Both open + close
+    paths use defensive `try { el.inert = … } catch { …
+    setAttribute(…) }` so older engines / polyfill-shadowed
+    setters still get the attribute applied. Guarded by
+    `tests/test_modal_inert_background_invariant_r240.py`
+    (5 classes / 6 cases): showSettings sets container.inert
+    + hideSettings clears it; openCodePasteModal sets +
+    closeCodePasteModal clears; both files use try/catch
+    defensive pattern. With R237+R238+R240 the modal
+    interaction barrier is now complete in all three input
+    modalities (touch/mouse, keyboard, AT).
+
 - **R239 / Cycle 15 · F-cycle14-4 (was F-cycle13-6):
   README star-count snapshot freshness guard**. Both EN +
   ZH READMEs end their "Related projects" section with a

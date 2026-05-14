@@ -854,10 +854,14 @@ class SettingsManager {
 
     const panel = document.getElementById("settings-panel");
     if (panel) {
-      // 临时移除 container 的 overflow: hidden，以便设置面板可以覆盖整个屏幕
       const container = document.querySelector(".container");
       if (container) {
         container.style.overflow = "visible";
+        try {
+          container.inert = true;
+        } catch (_e) {
+          container.setAttribute("inert", "");
+        }
       }
 
       panel.classList.remove("hidden");
@@ -1015,6 +1019,11 @@ class SettingsManager {
       const container = document.querySelector(".container");
       if (container) {
         container.style.overflow = "";
+        try {
+          container.inert = false;
+        } catch (_e) {
+          container.removeAttribute("inert");
+        }
       }
 
       panel.classList.add("hidden");
