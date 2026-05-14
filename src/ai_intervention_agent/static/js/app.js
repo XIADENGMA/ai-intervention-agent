@@ -705,15 +705,17 @@ function showContentPage() {
   enableSubmitButton();
 }
 
-// R229 / Cycle 13: 修前 disableSubmitButton/enableSubmitButton 给 #submit-btn
-// 和 #insert-code-btn 写 inline .style.backgroundColor/.color/.cursor, 但 CSS
-// 用 !important 渐变写在 #submit-btn { background: ... !important } 这条
-// 通用规则上 (无 :disabled 限定), 所以 inline non-important 永远输给 CSS
-// !important——禁用按钮视觉与启用一致, 用户被坑过。R229 在 CSS 加
-// #submit-btn:disabled / #insert-code-btn:disabled 规则 (深+浅两套), JS
-// 这里只剩 `disabled` 属性切换, 让 CSS 接管视觉降级。feedback-text 仍
-// 走 inline 是因为它的 CSS 没用 !important, JS inline 真能生效, 不属于
-// R229 修复范围 (textarea 的禁用视觉本身正常)。
+// R229 / R234 / Cycle 13-14: 全部 3 个元素 (submit-btn, insert-code-btn,
+// feedback-text) 的禁用视觉降级统一下沉到 CSS :disabled。
+//
+// R229 修了 #submit-btn / #insert-code-btn——它们的启用规则用了
+// !important，inline non-important 永远输，所以加 CSS :disabled 接管。
+// 当时 feedback-text 没改是因为它的 CSS 没用 !important, inline 真能生效,
+// 但走 inline 的代价是: 两套 hex 配色全是 dark-theme 值
+// (#2c2c2e / #8e8e93 / rgba(255,255,255,0.03) / #f5f5f7), 浅色主题切到时
+// textarea 的禁用视觉是错的 (深色背景显示在浅色页面上, 字体颜色对比度反
+// 转)。R234 把 textarea 也下沉到 CSS, 浅+深两套主题正确, 同时这里 JS 只
+// 剩 disabled 属性切换, 三个元素同模式同纪律。
 function disableSubmitButton() {
   const submitBtn = document.getElementById("submit-btn");
   const insertBtn = document.getElementById("insert-code-btn");
@@ -721,12 +723,7 @@ function disableSubmitButton() {
 
   if (submitBtn) submitBtn.disabled = true;
   if (insertBtn) insertBtn.disabled = true;
-  if (feedbackText) {
-    feedbackText.disabled = true;
-    feedbackText.style.backgroundColor = "#2c2c2e";
-    feedbackText.style.color = "#8e8e93";
-    feedbackText.style.cursor = "not-allowed";
-  }
+  if (feedbackText) feedbackText.disabled = true;
 }
 
 function enableSubmitButton() {
@@ -736,12 +733,7 @@ function enableSubmitButton() {
 
   if (submitBtn) submitBtn.disabled = false;
   if (insertBtn) insertBtn.disabled = false;
-  if (feedbackText) {
-    feedbackText.disabled = false;
-    feedbackText.style.backgroundColor = "rgba(255, 255, 255, 0.03)";
-    feedbackText.style.color = "#f5f5f7";
-    feedbackText.style.cursor = "text";
-  }
+  if (feedbackText) feedbackText.disabled = false;
 }
 
 // 显示状态消息

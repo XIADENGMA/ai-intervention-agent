@@ -232,29 +232,70 @@ class TestJsStillTogglesDisabledAttribute(unittest.TestCase):
         self.assertRegex(body, r"insertBtn\.disabled\s*=\s*false")
 
 
-class TestFeedbackTextareaInlineStyleKept(unittest.TestCase):
-    """feedback-text 的 inline styling 故意保留——R229 不该误伤无关代码。"""
+class TestFeedbackTextareaInlineStyleRemovedByR234(unittest.TestCase):
+    """R234 follow-up: textarea 的 inline styling 已下沉到 CSS, JS 不应再写。
 
-    def test_disable_keeps_feedback_text_inline_styling(self) -> None:
+    R229 当时定的 "故意保留 textarea inline" 现在被 R234 反转——textarea
+    虽然 CSS 没用 !important, inline 能生效, 但 R229 写死的 4 个 hex
+    (#2c2c2e / #8e8e93 / rgba(255,255,255,0.03) / #f5f5f7) 全是 dark-theme
+    色, 浅色主题 textarea 禁用视觉错位。R234 给浅+深两套主题加 CSS
+    :disabled 规则后, JS inline 反而成了多余的死代码。
+    """
+
+    def _function_body(self, name: str) -> str:
         js = _read(APP_JS_PATH)
         match = re.search(
-            r"function disableSubmitButton\(\)\s*\{(.*?)\n\}",
+            rf"function {re.escape(name)}\(\)\s*\{{(.*?)\n\}}",
             js,
             re.DOTALL,
         )
         assert match is not None
-        body = match.group(1)
-        # textarea 的 CSS 没用 !important, 所以 inline backgroundColor 真能生效,
-        # R229 修的是 button 不是 textarea。保留这条断言防止后续无差别清理误删。
+        return match.group(1)
+
+    def test_disable_does_not_inline_feedback_text_color(self) -> None:
+        body = self._function_body("disableSubmitButton")
+        forbidden = [
+            r"feedbackText\.style\.backgroundColor",
+            r"feedbackText\.style\.color",
+            r"feedbackText\.style\.cursor",
+        ]
+        for pat in forbidden:
+            self.assertNotRegex(
+                body,
+                pat,
+                msg=(
+                    f"R234 invariant: disableSubmitButton 不能再写 inline {pat}——"
+                    "R234 已把 textarea 的禁用视觉下沉到 CSS .feedback-textarea:disabled "
+                    "(深+浅两套), inline 写法会引入 dark-theme-only hex 在浅色主题"
+                    "下错位, 等价于 R229 修过的同一类型 bug。"
+                ),
+            )
+
+    def test_enable_does_not_inline_feedback_text_color(self) -> None:
+        body = self._function_body("enableSubmitButton")
+        forbidden = [
+            r"feedbackText\.style\.backgroundColor",
+            r"feedbackText\.style\.color",
+            r"feedbackText\.style\.cursor",
+        ]
+        for pat in forbidden:
+            self.assertNotRegex(body, pat)
+
+    def test_disable_still_sets_disabled_attribute(self) -> None:
+        body = self._function_body("disableSubmitButton")
         self.assertRegex(
             body,
-            r"feedbackText\.style\.backgroundColor",
+            r"feedbackText\.disabled\s*=\s*true",
             msg=(
-                "R229 invariant: feedback-text 的 inline backgroundColor 故意保留 "
-                "(textarea 的 CSS 没用 !important, inline 能赢)。若未来要把 textarea "
-                "也下沉到 CSS :disabled，请同步更新此测试，但不要静默删掉。"
+                "R234 invariant: disableSubmitButton 必须仍切换 feedbackText.disabled = "
+                "true, 否则 CSS :disabled pseudo-class 不会激活, 用户能继续往禁用 "
+                "textarea 里打字, 后端不知情。"
             ),
         )
+
+    def test_enable_still_sets_disabled_false(self) -> None:
+        body = self._function_body("enableSubmitButton")
+        self.assertRegex(body, r"feedbackText\.disabled\s*=\s*false")
 
 
 if __name__ == "__main__":

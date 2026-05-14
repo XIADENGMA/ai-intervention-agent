@@ -11,6 +11,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R234 / Cycle 14 · F-cycle13-2: `.feedback-textarea`
+  disabled visual now lives in CSS, not JS inline (light-theme
+  bug parallel to R229)**. R229 fixed the same class of bug
+  for `#submit-btn` + `#insert-code-btn` (CSS `!important`
+  silently overriding JS inline color) but explicitly left
+  `feedback-text` (the textarea) alone with a defensive
+  invariant on the rationale that `.feedback-textarea` CSS
+  did not use `!important`, so JS inline writes actually took
+  effect. R234 reverses that decision after noticing the JS
+  inline values were **all dark-theme-only hex codes**
+  (`#2c2c2e` / `#8e8e93` / `rgba(255,255,255,0.03)` /
+  `#f5f5f7`). On light theme the disabled textarea was
+  rendered with dark colors over a beige page — same class of
+  theme-incorrect-inline-override bug R229 fixed, just for a
+  different element. Sinks the styling to CSS
+  `.feedback-textarea:disabled` (dark) +
+  `[data-theme="light"] .feedback-textarea:disabled` (light,
+  with `!important` to win the cascade against the enabled
+  rule's `!important`). JS now only flips the `disabled`
+  attribute for all 3 elements (submit-btn, insert-code-btn,
+  feedback-text) — consistent pattern. Guarded by
+  `tests/test_feedback_textarea_disabled_css_invariant_r234.py`
+  (7 cases): both themes have `:disabled` selectors + light
+  rule uses `!important` + both rules declare all 4 visual
+  cue properties (`background`, `color`, `cursor`,
+  `border-color`) + both rules use `rgba(...)` half-transparent
+  values to avoid R66 brand-color drift. R229's invariant
+  test updated: `TestFeedbackTextareaInlineStyleKept` (which
+  defensively locked the inline styling) replaced with
+  `TestFeedbackTextareaInlineStyleRemovedByR234` (which now
+  locks the *absence* of inline writes). Brand-color
+  baselines unchanged (34 rgba decimal + 9 hex).
+
 - **R233 / Cycle 14: README positioning paragraph's three
   factual claims now match reality + invariant guards them
   against future drift**. Audit found stale numbers in both

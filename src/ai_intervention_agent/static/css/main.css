@@ -3815,6 +3815,36 @@ h1 {
   font-weight: 400; /* 正常字重 */
 }
 
+/**
+ * 反馈文本区域禁用状态（.feedback-textarea:disabled）（R234 / Cycle 14）：
+ *
+ * 修前 app.js 的 disableSubmitButton 写 inline:
+ *   feedbackText.style.backgroundColor = "#2c2c2e";   // dark-only hex
+ *   feedbackText.style.color = "#8e8e93";             // dark-only hex
+ *   feedbackText.style.cursor = "not-allowed";
+ *
+ * inline 真能生效是因为 .feedback-textarea 的启用规则没用 !important
+ * (与 R229 修的 #submit-btn / #insert-code-btn 不同), 但代价是 4 个 hex
+ * 写死的全是 dark-theme 色, 浅色主题下用户看到 "深色背景 textarea 显示
+ * 在米色页面上 + 字体对比度反转" 的视觉错位 (R234 之前从未被人提过, 因
+ * 为浅色主题用户少, 但 R230 a11y 审计推动了对所有 inline-color 写法的
+ * 全面整改)。
+ *
+ * R234 下沉到 CSS 后:
+ * 1. 浅+深两套主题独立配色, 不再依赖 JS hardcode 单一主题色;
+ * 2. 与 .btn:disabled (line ~4096) 和 #submit-btn:disabled (R229,
+ *    line ~7793) 的样式范式同源, 维护者一处理解处处适用;
+ * 3. 不用 !important 因为启用规则也没用——所以 :disabled 自然 override
+ *    (.feedback-textarea 是单一选择器, .feedback-textarea:disabled 加
+ *    pseudo-class 提升 specificity 自动赢)。
+ */
+.feedback-textarea:disabled {
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(245, 245, 247, 0.35);
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
 /* ========================================================================
    反馈字符计数器 (Feedback Character Counter, R138)
 
@@ -7073,6 +7103,18 @@ code,
   background: var(--bg-input, #e8e6dc) !important; /* Light Gray - 有区分度 */
   border-color: var(--border-primary) !important; /* Mid Gray 边框 */
   color: var(--text-primary) !important; /* Dark 文字 */
+}
+
+/* 浅色模式 - 反馈文本区域禁用状态 (R234 / Cycle 14) - 与上方深色模式
+ * .feedback-textarea:disabled 规则配对。需要 !important 是因为上方启用
+ * 规则也用了 !important; 不加无法 override。
+ */
+[data-theme="light"] .feedback-textarea:disabled,
+[data-theme="light"] textarea.feedback-textarea:disabled {
+  background: rgba(0, 0, 0, 0.04) !important;
+  color: rgba(0, 0, 0, 0.35) !important;
+  cursor: not-allowed !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
 }
 
 [data-theme="light"] .feedback-textarea::placeholder,
