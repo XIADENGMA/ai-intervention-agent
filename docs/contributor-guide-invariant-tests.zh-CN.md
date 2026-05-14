@@ -322,6 +322,10 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R228    | `tests/test_shortcuts_notification_body_completeness_invariant_r228.py` | 模式 D + 跨文件 | `Ctrl+/` 通知 body 列出每一个快捷键 + 交叉校验 `keyboard-shortcuts.js`     |
 | R229    | `tests/test_submit_btn_disabled_visible_invariant_r229.py`             | 模式 A + 模式 C | 深浅两套主题的 `:disabled` CSS 规则存在 + JS 不再给 submit 按钮写 inline 颜色 |
 | R230    | `tests/test_decorative_svgs_aria_hidden_invariant_r230.py`             | 模式 A          | `web_ui.html` 每一个 `<svg>` 都有 `aria-hidden="true"` + `focusable="false"` (a11y / WCAG 1.1.1) |
+| R232    | `tests/test_icon_only_buttons_aria_label_invariant_r232.py`            | 模式 A          | 每个 icon-only `<button>` / `<a role=button>` 必须有非空 `aria-label` / `aria-labelledby` (a11y / WCAG 4.1.2, R230 后续锁定) |
+| R233    | `tests/test_readme_factual_claims_invariant_r233.py`                   | 模式 B + 模式 D | README 量化 claim（测试数、subtest 数、release pipeline job 数）保持在与正典源（`release.yml` / `pytest --collect-only`）的容差范围内 |
+| R234    | `tests/test_feedback_textarea_disabled_css_invariant_r234.py`          | 模式 A          | `.feedback-textarea:disabled` 在深/浅两个主题都存在, 都声明 4 个视觉提示 (background/color/cursor/border-color), 浅色用 `!important`; JS 不写 inline 的伴随断言放在 R229 测试文件 |
+| R235    | `tests/test_form_inputs_accessible_name_invariant_r235.py`             | 模式 A          | 每个 `<input>`（非 hidden/submit/button/reset/image）+ 每个 `<textarea>` 必须有 accessible name（包裹 `<label>` / `<label for>` / `aria-label` / `aria-labelledby` / `aria-hidden=true + tabindex=-1`）(a11y / WCAG 4.1.2, R230/R232 后续锁定) |
 
 ## 7. 进一步阅读
 

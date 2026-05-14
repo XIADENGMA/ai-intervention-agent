@@ -360,6 +360,10 @@ docstring template.
 | R228    | `tests/test_shortcuts_notification_body_completeness_invariant_r228.py` | Pattern D + cross-file | `Ctrl+/` notification body lists every shortcut + cross-checks `keyboard-shortcuts.js` |
 | R229    | `tests/test_submit_btn_disabled_visible_invariant_r229.py`             | Pattern A + Pattern C  | CSS `:disabled` rule exists for both themes + JS no longer writes inline color for the submit button |
 | R230    | `tests/test_decorative_svgs_aria_hidden_invariant_r230.py`             | Pattern A              | Every `<svg>` in `web_ui.html` has `aria-hidden="true"` + `focusable="false"` (a11y / WCAG 1.1.1) |
+| R232    | `tests/test_icon_only_buttons_aria_label_invariant_r232.py`            | Pattern A              | Every icon-only `<button>` / `<a role=button>` has non-empty `aria-label` / `aria-labelledby` (a11y / WCAG 4.1.2, post-R230 follow-up) |
+| R233    | `tests/test_readme_factual_claims_invariant_r233.py`                   | Pattern B + Pattern D  | README factual claims (test count, subtest count, release-pipeline job count) stay within tolerance of canonical sources (`release.yml`, `pytest --collect-only`) |
+| R234    | `tests/test_feedback_textarea_disabled_css_invariant_r234.py`          | Pattern A              | `.feedback-textarea:disabled` CSS rule exists for both themes with all 4 visual cues (background/color/cursor/border-color) + light rule uses `!important`; companion JS-inline-removed assertion lives in R229 test file |
+| R235    | `tests/test_form_inputs_accessible_name_invariant_r235.py`             | Pattern A              | Every `<input>` (non-hidden/submit/button/reset/image) + every `<textarea>` has accessible name via wrapping `<label>` / `<label for>` / `aria-label` / `aria-labelledby` / `aria-hidden=true + tabindex=-1` (a11y / WCAG 4.1.2, post-R230/R232 follow-up) |
 
 ## 7. Further reading
 
