@@ -9,6 +9,43 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R221 / Cycle 12 · F-cycle11-1: invariant test guarding
+  `packages/vscode/` project-owned JS files at zero
+  `console.log`**. CR#24 flagged `F-cycle11-1` as a VSCode
+  webview console.* audit follow-up to Cycle 11's R216/R217/R218
+  trifecta. R221 Discovery (2026-05-14) revealed that the VSCode
+  webview surface (`packages/vscode/`) **already had zero
+  `console.log` calls** in all 10 project-owned `.js` files
+  (`i18n.js`, `tri-state-panel-bootstrap.js`,
+  `tri-state-panel-loader.js`, `tri-state-panel.js`,
+  `webview-state.js`, plus 5 zero-console-call helpers) — likely
+  because `webview-state.js` is the byte-twin of R217-cleaned
+  `state.js` and the `tri-state-panel-*` series was authored
+  with proper `console.error` / `console.warn` / `console.debug`
+  three-tier discipline from the start. **But no invariant test
+  locked this good state.** R221 adds
+  `tests/test_vscode_webview_console_noise_invariant_r221.py`
+  (6 cases / 24 subtests) replicating R217's
+  PROJECT_OWNED / VENDOR_ALLOW two-list pattern: each of the 10
+  project-owned files asserted individually at zero
+  `console.log`; 4 vendor allow-list files (`lottie.min.js`,
+  `marked.min.js`, `mathjax/tex-mml-svg.js`, `prism.min.js`)
+  must continue to exist; forward-compat test fails CI on any
+  new `packages/vscode/*.js` file not yet classified as
+  project-owned or vendor; `.vscode-test/` /
+  `node_modules/` / `dist/` / `out/` / `test/` paths skipped
+  (fixtures + build artifacts + unit tests should not be
+  subject to webview discipline). Skip-logic self-test ensures
+  no PROJECT_OWNED file accidentally falls through skip
+  fragments, and that fixtures don't leak through. Cumulative
+  console-noise invariant surface now spans **3 test files
+  across 2 directories** (R216 notification-manager focused,
+  R217 static-js wide net, R221 vscode webview), totaling **15
+  cases / ~60 subtests** of forward-compat protection. Closes
+  CR#24 F-cycle11-1.
+
 ## [1.7.3] — 2026-05-14
 
 > Catch-up release packing Cycle 9 (R203-R206) + Cycle 10 (R207-R215) +
