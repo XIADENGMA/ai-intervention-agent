@@ -9,6 +9,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+## [1.7.8] - 2026-05-14
+
+> Cycle 15 release. **Theme: release-discipline upgrade +
+> a11y wave 4 modal trilogy.**
+>
+> Process upgrade: R236 promotes `ty` static type-check from
+> CI-only to a `.pre-commit-config.yaml` hook, closing the
+> v1.7.5 release-abandonment root cause (a `ty` type-narrowing
+> error caught too late in release CI). Now every local
+> `git commit` runs `ty check .` (~1s).
+>
+> A11y wave 4 trilogy: R237 (declarative ARIA contract on
+> `role="dialog"`) + R238 (Tab focus trap helper + focus
+> restore lock for both modal dialogs) + R240 (HTML5 `inert`
+> on `.container` while modal open). Modal interaction barrier
+> now complete in all 3 input modalities (touch/mouse,
+> keyboard, AT). Browser baseline: Chrome 102+, Firefox 112+,
+> Safari 15.5+ for full `inert` support.
+>
+> Drift detection: R239 README "Related projects" star-count
+> snapshot date freshness window (12 months, EN/ZH parity,
+> env override `R239_STAR_COUNT_MAX_AGE_MONTHS`).
+>
+> 5,700 tests + 821 subtests all green (vs 5,670 + 816 at
+> v1.7.7). All 8 drift guards green. Main-branch CI clean
+> since R236.
+
 ### Documentation
 
 - **CR#28 / Cycle 15 code review** (`docs/code-reviews/cr28.md`).
