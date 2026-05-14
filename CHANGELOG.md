@@ -9,6 +9,36 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **R241 / Cycle 16 · F-cycle15-2: `_safelySetInert(el, value)`
+  DRY helper replaces R240's 4× duplicated try/catch**. R240
+  introduced `inert` background toggling on modal open/close,
+  with the defensive `try { el.inert = … } catch { … }`
+  pattern duplicated 4 times (open+close × code-paste +
+  settings). CR#28's F-cycle15-2 flagged this as cleanup
+  candidate. R241 extracts the pattern to:
+  - `app.js`: top-level `function _safelySetInert(el, value)`
+    — used by `openCodePasteModal` + `closeCodePasteModal`.
+  - `settings-manager.js`: `SettingsManager.prototype._safelySetInert`
+    method — used by `showSettings` + `hideSettings` via
+    `this._safelySetInert(container, true/false)`.
+  Both helpers branch on `value`: set IDL property in `try`,
+  fall back to `setAttribute("inert", "")` / `removeAttribute("inert")`
+  in `catch`. Net code: −16 lines duplicated, +12 lines helper
+  = −4 lines, cleaner call sites. Why **not** a shared
+  `static/js/a11y-helpers.js` module: a 5-line helper × 2
+  files saves only 10 lines but adds ~50 lines of script-tag
+  wiring + precompress entry + cross-file test surface. If
+  a 3rd consumer ever lands (locked as F-cycle16-1), extract
+  to module then. Guarded by `tests/test_inert_helper_dry_invariant_r241.py`
+  (3 classes / 6 cases): helper exists in both files + helper
+  has correct branch behavior (IDL setter + setAttribute
+  fallback + try/catch) + call sites use the helper (no
+  `container.inert = …` inline writes outside the helper
+  definition). R240 test updated to accept *either* inline or
+  helper-call pattern, ensuring backward compatibility.
+
 ## [1.7.8] - 2026-05-14
 
 > Cycle 15 release. **Theme: release-discipline upgrade +

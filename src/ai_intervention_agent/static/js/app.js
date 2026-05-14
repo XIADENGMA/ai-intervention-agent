@@ -960,14 +960,7 @@ function openCodePasteModal(error) {
   panel.classList.remove("hidden");
   panel.classList.add("show");
 
-  const container = document.querySelector(".container");
-  if (container) {
-    try {
-      container.inert = true;
-    } catch (_e) {
-      container.setAttribute("inert", "");
-    }
-  }
+  _safelySetInert(document.querySelector(".container"), true);
 
   // iOS 上需要在用户手势链路内尽快 focus，才能弹出键盘与“粘贴”菜单
   setTimeout(() => {
@@ -990,14 +983,7 @@ function closeCodePasteModal() {
   panel.classList.remove("show");
   panel.classList.add("hidden");
 
-  const container = document.querySelector(".container");
-  if (container) {
-    try {
-      container.inert = false;
-    } catch (_e) {
-      container.removeAttribute("inert");
-    }
-  }
+  _safelySetInert(document.querySelector(".container"), false);
 
   if (textarea) {
     textarea.value = "";
@@ -1007,6 +993,19 @@ function closeCodePasteModal() {
 
   const feedbackTextarea = document.getElementById("feedback-text");
   if (feedbackTextarea) feedbackTextarea.focus();
+}
+
+function _safelySetInert(el, value) {
+  if (!el) return;
+  try {
+    el.inert = value;
+  } catch (_e) {
+    if (value) {
+      el.setAttribute("inert", "");
+    } else {
+      el.removeAttribute("inert");
+    }
+  }
 }
 
 function _modalFocusTrap(panel, event) {

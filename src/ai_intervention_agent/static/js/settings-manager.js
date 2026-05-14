@@ -857,11 +857,7 @@ class SettingsManager {
       const container = document.querySelector(".container");
       if (container) {
         container.style.overflow = "visible";
-        try {
-          container.inert = true;
-        } catch (_e) {
-          container.setAttribute("inert", "");
-        }
+        this._safelySetInert(container, true);
       }
 
       panel.classList.remove("hidden");
@@ -991,6 +987,19 @@ class SettingsManager {
     }
   }
 
+  _safelySetInert(el, value) {
+    if (!el) return;
+    try {
+      el.inert = value;
+    } catch (_e) {
+      if (value) {
+        el.setAttribute("inert", "");
+      } else {
+        el.removeAttribute("inert");
+      }
+    }
+  }
+
   _settingsFocusTrap(panel, event) {
     if (!panel) return;
     const focusables = panel.querySelectorAll(
@@ -1019,11 +1028,7 @@ class SettingsManager {
       const container = document.querySelector(".container");
       if (container) {
         container.style.overflow = "";
-        try {
-          container.inert = false;
-        } catch (_e) {
-          container.removeAttribute("inert");
-        }
+        this._safelySetInert(container, false);
       }
 
       panel.classList.add("hidden");

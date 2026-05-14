@@ -331,6 +331,7 @@ Code 跑不了？" 几小时的 debug 节约多了。
 | R238    | `tests/test_modal_focus_trap_invariant_r238.py`                        | 模式 B          | 两个模态对话框（`#code-paste-panel` + `#settings-panel`）实现 Tab / Shift-Tab 焦点陷阱（`app.js` 的 `_modalFocusTrap` + `settings-manager.js` 的 `_settingsFocusTrap`），使用 W3C 标准的可聚焦选择器 + `offsetParent !== null` 可见性过滤；关闭处理把焦点还给打开者（`#feedback-text` / `#settings-btn`）。是 R237 声明性 ARIA 契约的命令式焦点管理伙伴。 |
 | R239    | `tests/test_star_counts_freshness_invariant_r239.py`                   | 模式 D          | README "Related projects" 表的 star 数快照日期（"last reviewed YYYY-MM" / "最近核对：YYYY-MM"）必须可解析、不在未来、距今 ≤ 12 个月（可通过环境变量 `R239_STAR_COUNT_MAX_AGE_MONTHS` 覆盖），并且 EN + ZH 两份 README 日期一致。模式 D 漂移检测。 |
 | R240    | `tests/test_modal_inert_background_invariant_r240.py`                  | 模式 B          | 两个模态打开函数（`showSettings`、`openCodePasteModal`）必须把 `.container`（`role="main"` 容器）标为 `inert`，对应关闭函数清除；两处都用 `try { el.inert = … } catch { setAttribute("inert", …) }` 防御性写法。与 R237 (ARIA) + R238 (焦点陷阱) 组成 a11y 第 4 波三件套：模态打开时鼠标、键盘、AT 都不能再到达背景。 |
+| R241    | `tests/test_inert_helper_dry_invariant_r241.py`                        | 模式 B          | `_safelySetInert(el, value)` DRY 辅助函数在 `app.js`（top-level 函数）和 `settings-manager.js`（class method）都存在并具备相同分支行为；调用点必须用 helper —— helper 定义外不能再有 `container.inert = …` inline 赋值。关闭 CR#28 的 F-cycle15-2（抽取 R240 的 4× 重复 try/catch）。 |
 
 ## 7. 进一步阅读
 
