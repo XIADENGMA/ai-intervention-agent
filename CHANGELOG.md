@@ -11,6 +11,42 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **R230 / Cycle 13: every decorative `<svg>` in the Web UI now
+  carries `aria-hidden="true"` + `focusable="false"`**.
+  Accessibility audit triggered by R229's button-state work:
+  `web_ui.html` had 31 SVG icons but only 2 were properly
+  hidden from assistive technology. The other 29 (button icons,
+  section-header icons, theme-toggle sun/moon, GitHub link icon,
+  product logo) were exposed to screen readers as `"graphic"`,
+  which meant a user pressing the submit button heard `"graphic
+  Submit feedback button"` — the leading `"graphic"` adds zero
+  information but consumes listening time, and any nested
+  `<title>` / `<desc>` elements would be read out on top of the
+  text label, producing severe noise. WCAG 2.1 SC 1.1.1
+  explicitly allows decorative content to be skipped by AT, and
+  the project already had the correct pattern in two places
+  (`export-tasks-btn` SVG at L340, `multi-task copy-link` SVG
+  at L1687). R230 completes the coverage uniformly across all
+  three icon families (`btn-icon`, `section-icon`, `theme-icon`)
+  plus the logo and the GitHub-link icon. Always pairs
+  `aria-hidden="true"` with `focusable="false"` to defuse IE /
+  legacy Edge's "SVG is focusable by default → AT reads it
+  even after aria-hidden" footgun, which is the SVG-icon
+  industry-standard belt-and-suspenders pattern. Bulk edit
+  applied via one-shot helper `scripts/_r230_add_svg_aria.py`
+  (kept in-tree as audit trail). No visual change; no
+  functional change. Guarded by
+  `tests/test_decorative_svgs_aria_hidden_invariant_r230.py`
+  (4 cases): every `<svg>` in `web_ui.html` must have
+  `aria-hidden="true"` (allowlist `MEANINGFUL_SVG_CLASSES` is
+  empty by design — if a future icon needs to be semantically
+  meaningful, the contributor must explicitly add it to the
+  allowlist AND give it `role="img"` + `aria-label`) + every
+  `<svg>` must have `focusable="false"` + at least 2 SVGs keep
+  the existing reference pattern (defensive lock against
+  someone half-reverting R230) + total SVG count stays at or
+  above 25 (sanity check against accidental template deletion).
+
 - **R229 / Cycle 13: `#submit-btn` and `#insert-code-btn` now
   visually reflect their disabled state**. UX bug discovered
   while auditing `app.js` for theme-token compliance: when the
