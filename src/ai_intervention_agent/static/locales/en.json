@@ -320,7 +320,7 @@
     "submitEnter": "Submit feedback (when Enter mode is selected)",
     "newline": "Insert newline (when Enter mode is selected)",
     "notifyTitle": "Keyboard shortcuts",
-    "notifyBody": "{{mod}}+Enter submit | T toggle theme | Esc close modal"
+    "notifyBody": "{{mod}}+Enter submit · {{mod}}+, settings · {{mod}}+/ help · T theme · Tab/Shift+Tab tasks · Esc close (full table in DevTools console)"
   },
   "aiia": {
     "state": {

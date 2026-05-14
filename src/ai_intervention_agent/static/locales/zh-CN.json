@@ -320,7 +320,7 @@
     "submitEnter": "提交反馈（Enter 模式启用时）",
     "newline": "插入换行（Enter 模式启用时）",
     "notifyTitle": "快捷键",
-    "notifyBody": "{{mod}}+Enter 提交 | T 切换主题 | Esc 关闭弹窗"
+    "notifyBody": "{{mod}}+Enter 提交 · {{mod}}+, 设置 · {{mod}}+/ 帮助 · T 主题 · Tab/Shift+Tab 任务 · Esc 关闭（完整表格在浏览器 DevTools 控制台）"
   },
   "aiia": {
     "state": {

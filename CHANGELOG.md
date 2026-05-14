@@ -9,6 +9,39 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R228 / Cycle 13: `Ctrl+/` notification body now lists every
+  registered keyboard shortcut**. UX gap discovered while writing
+  the R227 invariant-test guide: pressing `Ctrl+/` (`Cmd+/` on
+  macOS) wrote the full 8-line help table to the browser console
+  AND sent a web notification, but the notification body
+  (`shortcuts.notifyBody`) only mentioned 3 of the 7 registered
+  shortcuts (`Enter` / `T` / `Esc`). For users with notifications
+  enabled but DevTools closed — the most common configuration —
+  the notification was the *only* visible cue and silently lied
+  by omission, suggesting those were the full shortcut set. R223
+  partially mitigated this by adding a settings-panel hint
+  pointing users at the console for the full reference, but the
+  notification itself still misrepresented the surface. R228
+  rewrites the body to cover every binding compactly
+  (`{{mod}}+Enter submit · {{mod}}+, settings · {{mod}}+/ help ·
+  T theme · Tab/Shift+Tab tasks · Esc close`) and appends an
+  explicit `(full table in DevTools console)` qualifier so users
+  who want the full table know where to look. Bilingual update
+  (en.json + zh-CN.json) with pseudo locale regeneration.
+  Guarded by
+  `tests/test_shortcuts_notification_body_completeness_invariant_r228.py`
+  (11 cases): both locale bodies non-empty + mention every
+  registered binding (`Enter`, `,`, `/`, `T`, `Tab`, `Esc`) +
+  mention `console` / `控制台` to set expectation + length ≤ 250
+  chars so OS notification widgets don't truncate + keep the
+  `{{mod}}` ICU placeholder (otherwise the `mod` parameter passed
+  by `showHelp()` is wasted and the body reads as a hardcoded
+  modifier key) + `keyboard-shortcuts.js` still calls
+  `sendNotification` with `shortcuts.notifyBody` (otherwise the
+  body change here would be invisible).
+
 ### Added
 
 - **R227 / Cycle 13 · F-cycle12-4: contributor guide for the
