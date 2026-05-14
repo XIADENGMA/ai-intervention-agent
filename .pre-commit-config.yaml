@@ -235,3 +235,53 @@ repos:
         language: system
         pass_filenames: false
         files: ^src/ai_intervention_agent/static/(css|js|locales)/
+
+  # R242 / Cycle 16 · F-cycle15-9 护栏：``.min.js`` / ``.min.css``
+  # 与源 ``.js`` / ``.css`` 内容漂移检测。
+  #
+  # 背景：``_get_minified_file()`` (web_ui.py L1387-1429) **优先 serve**
+  # 同目录下的 ``.min.js`` / ``.min.css``（如果存在），意图是给本地开发
+  # / VSCode extension 提供 parse-time 优化。但该函数只判定 "minified
+  # 文件是否存在"，**不判定其新鲜度**：
+  #
+  #   - 开发者修改 ``app.js`` 之后, 如果不手动跑 ``minify_assets.py``,
+  #     ``app.min.js`` 仍是修改前的旧内容
+  #   - Flask 还是 serve 旧的 ``app.min.js`` (因为存在 → 选它)
+  #   - 浏览器看到的是**旧代码**, 与 ``app.js`` 当前内容不一致
+  #   - 在 R234/R238/R240/R241 实际命中过——开发本地一直跑着旧 a11y
+  #     代码而不自知, 直到 R242 audit 才暴露
+  #
+  # 这与 R226 (precompress freshness) 是**同构**问题：
+  #
+  #   | 构建产物          | 出处                       | freshness 守护                  |
+  #   | --------------- | ------------------------ | ----------------------------- |
+  #   | ``.gz`` / ``.br`` | ``precompress_static.py`` | R226 pre-commit hook ✓        |
+  #   | ``.min.js`` / ``.min.css`` | ``minify_assets.py``    | R242 pre-commit hook (本 hook) |
+  #
+  # 为什么 R226 当时漏了这个：R226 关注的是 "Flask 运行时优先 ``.br``
+  # over ``.js``" 这条链路, 不知道还有第二条链路 "Flask 优先 ``.min.js``
+  # over ``.js``" 也会复制同样的 footgun。R242 是 R226 的姊妹篇。
+  #
+  # ``.gitignore`` L267-274 把 ``*.min.js`` / ``*.min.css`` 排除在
+  # tracked 文件之外, 所以 production fresh checkout 不存在 .min 文件
+  # → ``_get_minified_file()`` fallback 回 ``.js``, 不受此 bug 影响。
+  # **本 hook 主要保护开发者本地 dev loop**, 避免 "明明改了代码,
+  # 浏览器 reload 看不到效果, 然后浪费半小时 debug"。
+  #
+  # 性能：``minify_assets.py --check`` 用 ``content_drifts()`` 内容比较
+  # (避开 mtime 不稳定), 约 40-60 ms (rjsmin / rcssmin 都是 pure-Python
+  # fast minifier), 比 R226 还快。
+  #
+  # 失败修复方式：脚本输出会提示运行 ``uv run python
+  # scripts/minify_assets.py`` (不带 ``--check``) 来重生 .min 文件,
+  # 然后 ``git add src/ai_intervention_agent/static/`` 重新 commit。
+  #
+  # 绕过开关：``git commit --no-verify``。
+  - repo: local
+    hooks:
+      - id: check-static-minified-fresh
+        name: 静态资源 .min.js / .min.css 新鲜度（R242 / F-cycle15-9 护栏）
+        entry: uv run python scripts/minify_assets.py --check
+        language: system
+        pass_filenames: false
+        files: ^src/ai_intervention_agent/static/(css|js)/.*\.(css|js)$

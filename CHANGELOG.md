@@ -9,6 +9,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R242 / Cycle 16 · F-cycle15-9: silent stale `.min.js` /
+  `.min.css` served to local dev** — discovered via R241 audit.
+  Runtime helper `_get_minified_file()` (web_ui.py L1387-1429)
+  prefers same-directory `.min.js`/`.min.css` when they exist
+  as a parse-time optimisation, but the predicate is only
+  `minified_path.exists()` — there is **no** content / mtime
+  comparison to the source. Consequence: a developer edits
+  `app.js` without re-running `minify_assets.py`, and Flask
+  serves the **previous-revision** `app.min.js` while the
+  source is current. Audit found that R234 (textarea disabled
+  CSS), R238 (modal focus trap), R240 (inert background) and
+  R241 (DRY inert helper) **all** silently shipped to local
+  dev with stale minified copies — 4 cycles of "runs locally,
+  looks broken in browser" risk. `.gitignore` excludes
+  `*.min.{js,css}` so production fresh checkouts are
+  unaffected (`_get_minified_file()` falls back to source),
+  but local dev + VSCode-extension developers were the
+  primary blast radius. **Fix**: promote
+  `scripts/minify_assets.py --check` to a pre-commit hook
+  (`check-static-minified-fresh`), structurally identical to
+  R226 (precompress freshness on the parallel `.gz`/`.br`
+  chain). The hook is content-aware via `content_drifts()`
+  (mtime is unreliable on fresh clones / CI runners), runs in
+  ~50 ms, and refuses to write — failures point developers at
+  `uv run python scripts/minify_assets.py`. As a side-effect
+  of fixing, the R234/R238/R240/R241 minified mirrors were
+  regenerated (one-shot catch-up). Guarded by
+  `tests/test_minify_precommit_hook_invariant_r242.py` (7
+  cases / 3 classes): hook presence, `--check` flag in entry,
+  files filter covers both `.css` and `.js`, hook isn't
+  relegated to `manual`/`pre-push`, companion script + flag
+  still exist. Bilingual catalogue (§6) updated.
+
 ### Changed
 
 - **R241 / Cycle 16 · F-cycle15-2: `_safelySetInert(el, value)`
