@@ -11,6 +11,41 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Changed
 
+- **R219 / Cycle 11 · F-cycle10-3: pre-commit lint guard for
+  `CHANGELOG.md` inline-code style (prevents R211 regression)**.
+  R211 (Cycle 10) was a one-shot normalization of 363
+  reStructuredText-style double-backtick inline-code patterns in
+  `CHANGELOG.md` to Markdown single-backtick form (preserving 18
+  legitimate double-backtick spans where the wrapped content
+  itself contains a literal backtick). But without an enforcing
+  hook the cleanup silently decays the next time anyone
+  copy-pastes RST-style fragments or runs a prettier-like
+  formatter. CR#23 explicitly flagged this as `F-cycle10-3`.
+  R219 closes the loop by adding a new pre-commit hook
+  `check-changelog-inline-code-style` scoped to `CHANGELOG.md`
+  only, powered by a tiny stdlib-only script
+  `scripts/check_changelog_inline_code_style.py` that is
+  fence-aware (skips content inside triple-backtick fenced code
+  blocks), zero-false-positive (matches only double-backtick spans
+  whose wrapped content contains no backtick — i.e. cases that
+  can safely collapse to single-backtick form), and provides an
+  actionable error message with line number, the matched
+  substring, and a suggested single-backtick replacement; running
+  with `--fix` performs in-place normalization. The hook fires
+  only on `CHANGELOG.md` changes (`files: ^CHANGELOG\.md$`), so
+  cold-start cost is negligible. Guarded by
+  `tests/test_changelog_inline_code_lint_r219.py` (7 cases / 3
+  subtests): script exists / has shebang / is executable; hook
+  `id` registered; hook `entry` points at the script; hook
+  `files` regex restricted to `CHANGELOG.md`; current
+  `CHANGELOG.md` passes lint with **zero** violations (proves
+  R211 cleanup is still intact); self-test of `find_violations()`
+  correctness on synthetic fixtures (simple violation, fence
+  skipping, triple-backtick safety, idempotency of `fix_text()`).
+  Future PRs reintroducing RST-style double-backtick patterns
+  will now fail pre-commit with a clear suggestion, eliminating
+  the silent-decay vector entirely.
+
 - **R218 / Cycle 11 · F-cycle10-1 (multi_task migration): migrate
   multi_task.js 46 `console.log` → `_debugLog` helper**. Completes the
   R216/R217 console-noise reduction trifecta by migrating the last
