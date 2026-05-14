@@ -11,6 +11,66 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R212 / Cycle 10 · F-205-3 (R210 follow-up): SSE schema validation
+  contract bridge invariants for AIIA_SSE_SCHEMA_VALIDATE**. R210
+  closed F-205-1 (docs sync), but R210 tests only verify docs string
+  presence; R205 tests cover 8 invariant classes / 14 cases of runtime
+  behavior but **don't lock the bridge** between R210 docs phrasing
+  and R205 implementation contracts. R212 adds the cross-file invariant
+  bridge that catches docs ↔ code drift in either direction.
+
+  **Implementation (1 test file, zero source code changes)**:
+  - `tests/test_sse_schema_validate_contract_r212.py` (NEW, 10 cases /
+    4 invariant class) covering 4 gaps in R205's test surface:
+    1. **TestStickyReadInvariant** (3): Twelve-Factor sticky contract
+       — bus created with one mode, env var post-init change MUST NOT
+       affect `bus._schema_validate_mode` / log level / counter
+       behavior. R205 tests `__init__`-time env var read but never
+       tested post-init immutability; a future refactor moving env
+       var read into `emit()` (tempted by "hot reload" feature)
+       would silently break R210's docs promise.
+    2. **TestStatsEndpointJsonRoundTrip** (3): HTTP boundary
+       `GET /api/system/sse-stats` MUST expose
+       `schema_validate_mode` + `schema_violation_total` JSON fields.
+       R205 covers `bus.stats_snapshot()` Python dict only; R207
+       covers Prometheus `/api/system/metrics` only — this is the
+       JSON endpoint gap. Endpoint must reflect post-emit counter
+       updates (not stale cache).
+    3. **TestR210DocsKeywordInR205Code** (2): R210 docs use
+       distinctive design keywords (`Twelve-Factor` / `fire-and-
+       forget`) — these must also appear in R205 source code
+       comments in `task.py`, so fresh contributors / reviewers
+       grepping the codebase can locate the design rationale.
+       Bidirectional drift guard.
+    4. **TestCounterTypeStability** (2): `_schema_violation_total`
+       MUST always be `int` (excluding `bool` subclass) — guards
+       against future perf refactor swapping in `collections.
+       Counter` / `itertools.count` iterator / `float` (EWMA-decayed)
+       which would silently break R207's `isinstance(violation_raw,
+       int)` Prometheus type gate and R210's "counter +1" docs
+       semantics.
+
+  **Design choice — invariant bridge tests vs adding sticky comment
+  in source**: R212 could also have ADDED "Twelve-Factor sticky"
+  comment in source to make `test_twelve_factor_keyword_in_r205_
+  source` pass — but R205 source already HAS the keyword
+  ("Twelve-Factor 风格 sticky 读取"). R212's gap is not "code missing
+  keyword", but "no test ENSURES the keyword stays". This is the
+  same lesson as CR#10 lessons-learned-css-and-options.md root cause
+  3: feature works, but invariant unprotected → silent decay over
+  cycles. R212 promotes "implicit contract" to "explicit
+  test-enforced contract".
+
+  **Test helpers shared with R205**: `_make_bus_with_env()` /
+  `_clear_log_dedup_cache()` duplicated from R205 test file (each
+  test file owns its helper, no cross-file dependency — easier to
+  refactor R205 helpers without breaking R212).
+
+  **Verified**: R212 10 cases PASS; R205 14 cases regression PASS;
+  R210 6 cases regression PASS; `uv run ty check . → All checks
+  passed!`; `uv run ruff check . && ruff format --check . →
+  All passed!`; full pytest baseline 5467 → 5477 (net +10 from R212).
+
 - **R210 / Cycle 10 · F-205-1 (CR#22 §4 Important): `AIIA_SSE_SCHEMA_
   VALIDATE` env-var docs sync into `docs/configuration.{md,zh-CN.md}`**.
   R205 (Cycle 9) 引入 `AIIA_SSE_SCHEMA_VALIDATE=off|warn|strict` 运
