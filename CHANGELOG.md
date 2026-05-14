@@ -9,6 +9,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **R233 / Cycle 14: README positioning paragraph's three
+  factual claims now match reality + invariant guards them
+  against future drift**. Audit found stale numbers in both
+  EN + zh-CN READMEs' "Where AIIA sits on the spectrum"
+  paragraph: "5,500+ tests + ~700 subtests" (actual: 5,643 +
+  809 at v1.7.6) and "6-job release pipeline" (actual: 5
+  jobs after a workflow refactor consolidated two). Updated
+  both READMEs to "5,600+ tests + ~800 subtests" and "5-job
+  release pipeline". Guarded by
+  `tests/test_readme_factual_claims_invariant_r233.py`
+  (11 cases): release-job count is exact-match to
+  `.github/workflows/release.yml` (since jobs can be added OR
+  consolidated, non-monotonic); test-count claim must be ≤
+  reality (the "+" means floor) AND reality must not lead
+  claim by more than `MAX_LAG_TESTS` = 500 (forces refresh
+  before release-time review); subtest count uses a
+  heuristic-estimated runtime count (static `subTest()` call
+  sites × empirical loop-factor of 9, calibrated against
+  v1.7.6 observed 89 sites → 809 runtime executions) with
+  `MAX_LAG_SUBTESTS` = 200 tolerance; EN and zh-CN claims
+  must match each other across locales. Pattern: this is a
+  "doc claim does not silently rot" guard; same family as
+  F-cycle12-1 (star-count freshness, still backlog).
+
 ### Added
 
 - **R232 / Cycle 14 · F-cycle13-4: icon-only buttons must
