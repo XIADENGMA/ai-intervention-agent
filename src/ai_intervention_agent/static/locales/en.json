@@ -186,6 +186,7 @@
     "shortcutPasteImage": "Paste image:",
     "shortcutUploadImage": "Upload image:",
     "shortcutClearImage": "Clear images:",
+    "shortcutsFullHelpHint": "Press Ctrl+/ (or Cmd+/) anywhere to print the full keyboard shortcut reference to the browser console.",
     "feedbackTitle": "Feedback",
     "autoResubmitTimeout": "Auto-reschedule countdown (seconds)",
     "autoResubmitTimeoutHint": "Automatically resubmit feedback request when countdown expires. Range 10-3600 seconds, set to 0 to disable.",

@@ -9,6 +9,33 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R223 / Cycle 12: discoverability hint for full keyboard
+  shortcut help in Web UI settings panel**. The settings panel's
+  "Common shortcuts" section showed only 5 input-workflow
+  shortcuts (Submit / Insert code / Paste image / Upload image /
+  Clear images) but **never told users about the 7 navigation
+  shortcuts** registered in `keyboard-shortcuts.js`'s
+  `showHelp()` (`Ctrl+,` settings · `Ctrl+/` help · `T` theme ·
+  `Tab` next-task · `Shift+Tab` prev-task · `Escape` close-modal
+  · `Mod+Enter` submit). Classic discoverability gap — power-user
+  shortcuts existed in code but were invisible in the UI. R223
+  adds a one-line hint beneath the shortcuts list pointing users
+  at `Ctrl+/` (or `Cmd+/` on macOS) for the full reference,
+  noting the output lands in the browser DevTools console.
+  Bilingual i18n via new key `settings.shortcutsFullHelpHint`
+  (en.json + zh-CN.json synced; pseudo locale regenerated).
+  Guarded by `tests/test_settings_shortcuts_full_help_hint_
+  invariant_r223.py` (7 cases): i18n key present + non-empty
+  in both locales; `data-i18n` attribute references it in
+  `web_ui.html`; hint message mentions actual shortcut binding
+  (`Ctrl+/` in EN, `Ctrl+/` or `Cmd+/` in zh-CN); hint
+  mentions output location (`console` in EN, `控制台` in zh-CN
+  — without this users press the key and see no effect because
+  output is hidden in DevTools). Closes a small UX gap with low
+  surface change.
+
 ### Changed
 
 - **R222 / Cycle 12 · F-cycle11-4: expand `README` "Related
