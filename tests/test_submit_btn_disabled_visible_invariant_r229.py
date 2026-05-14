@@ -99,17 +99,13 @@ class TestCssDisabledRuleHasOverride(unittest.TestCase):
 
     def test_dark_disabled_rule_uses_important(self) -> None:
         css = _read(CSS_PATH)
-        # 抓 #submit-btn:disabled,\n#insert-code-btn:disabled { ... } 这块
         match = re.search(
             r"#submit-btn:disabled,?\s*\n?\s*#insert-code-btn:disabled\s*\{([^}]+)\}",
             css,
         )
-        self.assertIsNotNone(
-            match,
-            msg=(
-                "R229 invariant: 期望深色模式合并了 #submit-btn:disabled + "
-                "#insert-code-btn:disabled 一条规则；如果未来拆开，请同步更新此测试。"
-            ),
+        assert match is not None, (
+            "R229 invariant: 期望深色模式合并了 #submit-btn:disabled + "
+            "#insert-code-btn:disabled 一条规则；如果未来拆开，请同步更新此测试。"
         )
         block = match.group(1)
         self.assertIn(
@@ -130,7 +126,7 @@ class TestCssDisabledRuleHasOverride(unittest.TestCase):
             r"\s*\{([^}]+)\}",
             css,
         )
-        self.assertIsNotNone(match)
+        assert match is not None
         block = match.group(1)
         self.assertIn("!important", block)
 
@@ -140,13 +136,12 @@ class TestJsDoesNotInlineColorForButtons(unittest.TestCase):
 
     def _function_body(self, name: str) -> str:
         js = _read(APP_JS_PATH)
-        # 简单匹配 function name() { ... } 到下一个顶层 function 之前
         match = re.search(
             rf"function {re.escape(name)}\(\)\s*\{{(.*?)\n\}}",
             js,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, f"无法在 app.js 找到函数 {name}")
+        assert match is not None, f"无法在 app.js 找到函数 {name}"
         return match.group(1)
 
     def test_disable_does_not_set_submit_btn_inline_color(self) -> None:
@@ -209,7 +204,7 @@ class TestJsStillTogglesDisabledAttribute(unittest.TestCase):
             js,
             re.DOTALL,
         )
-        self.assertIsNotNone(match)
+        assert match is not None
         return match.group(1)
 
     def test_disable_sets_submit_disabled_true(self) -> None:
@@ -247,7 +242,7 @@ class TestFeedbackTextareaInlineStyleKept(unittest.TestCase):
             js,
             re.DOTALL,
         )
-        self.assertIsNotNone(match)
+        assert match is not None
         body = match.group(1)
         # textarea 的 CSS 没用 !important, 所以 inline backgroundColor 真能生效,
         # R229 修的是 button 不是 textarea。保留这条断言防止后续无差别清理误删。
