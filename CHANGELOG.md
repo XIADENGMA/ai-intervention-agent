@@ -9,6 +9,42 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Added
+
+- **R220 / Cycle 11 · F-cycle10-4: sample Grafana dashboard JSON
+  for the `/metrics` endpoint, with metric-name parity invariant
+  test against `system.py`**. CR#23 explicitly flagged that
+  R207's `aiia_sse_schema_violation_total` and R204's
+  `aiia_token_age_seconds` were never documented in a
+  ready-to-import Grafana panel. R220 ships
+  `docs/observability/grafana-dashboard.json` (Grafana 10.x
+  `schemaVersion: 38`, `uid: aiia-overview-r220`) bundling 7
+  high-signal panels: SSE Schema Violation Rate (R207), API
+  Token Age Days (R204) with NIST SP 800-63B-aligned 60d/90d
+  thresholds, SSE Emit Rate by event_type (R202), SSE
+  emit→deliver p50/p95 latency (R134), SSE Backpressure +
+  Oversize Drops rate (R51-B + R61), Recent ERROR Logs (R-186),
+  Notification Subsystem success rate + queue size (R142). The
+  dashboard declares a `DS_PROMETHEUS` datasource template
+  variable so users can re-bind on import without editing JSON.
+  Companion bilingual `docs/observability/README.md` +
+  `README.zh-CN.md` documents import steps, per-panel metric
+  rationale, and a sample alertmanager ruleset
+  (schema-violation-rate / 90-day-token / recent-errors). The
+  silent-decay shield is `tests/test_grafana_dashboard_invariant
+  _r220.py` (14 cases / 24 subtests): JSON parses; schemaVersion
+  in `[38, 39, 40]`; uid stable; title mentions project name;
+  panel count locked at 7; every panel title non-empty + unique;
+  every panel has ≥ 1 target; every target uses
+  `${DS_PROMETHEUS}` (no hardcoded datasource UID); **core
+  invariant** — every `aiia_*` metric name referenced by panel
+  target exprs must substring-appear in `system.py`'s
+  `_render_prometheus_metrics` source (catches future
+  rename-without-dashboard-update drift); ≥ 7 distinct metric
+  series covered (keeps dashboard "overview" substantive);
+  bilingual README files exist + reference dashboard filename +
+  uid. Closes CR#23 F-cycle10-4.
+
 ### Changed
 
 - **R219 / Cycle 11 · F-cycle10-3: pre-commit lint guard for
