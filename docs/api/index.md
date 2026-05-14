@@ -136,6 +136,7 @@ nagging "destructive operation" confirmations. See
 - [i18n](i18n.md)
 - [mcp_tool_call_metrics](mcp_tool_call_metrics.md)
 - [protocol](protocol.md)
+- [remote_environment](remote_environment.md)
 - [state_machine](state_machine.md)
 - [server](server.md)
 - [server_feedback](server_feedback.md)
@@ -187,6 +188,7 @@ nagging "destructive operation" confirmations. See
 - **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)
 - **file_validator**: File validation
 - **enhanced_logging**: Logging enhancements
+- **remote_environment**: SSH / WSL remote-environment detection (R225) — pure-function probes used by the Web UI startup banner to surface actionable port-forwarding hints when bound to loopback on a remote host
 - **web_ui_config_sync**: Hot-reload callbacks — propagate `feedback.auto_resubmit_timeout` and network-security config changes into running tasks / Web UI instances
 - **web_ui_mdns**: mDNS / DNS-SD lifecycle mixin — service discovery, registration, deregistration
 - **web_ui_mdns_utils**: mDNS pure helpers — hostname normalisation, virtual-NIC filtering, IPv4 detection

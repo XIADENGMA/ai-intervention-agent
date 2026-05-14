@@ -11,6 +11,45 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R225 / Cycle 12: SSH / WSL remote-environment detection +
+  actionable startup banner hints**. Closed a real UX gap
+  highlighted by the README's `Related projects` comparison —
+  `mcp-feedback-enhanced` advertises "intelligent SSH Remote /
+  WSL detection" while AIIA's startup just printed
+  `请在浏览器中打开: http://127.0.0.1:8080` on default bind, which
+  is **unreachable** from a user's local browser when the
+  process is running on an SSH-attached remote host. New module
+  `src/ai_intervention_agent/remote_environment.py` provides
+  `detect_remote_environment()` returning a `RemoteEnvironment`
+  TypedDict (`is_ssh` + `is_wsl` + `ssh_source` + `wsl_source`).
+  Detection probes `SSH_CONNECTION` then `SSH_CLIENT` (skipping
+  empty / whitespace-only values), and `WSL_DISTRO_NAME` /
+  `WSL_INTEROP` env vars plus `/proc/version` containing
+  `microsoft` (case-insensitive) as a WSL1 fallback. Probes are
+  fully wrapped — `FileNotFoundError` / `PermissionError` /
+  `UnicodeDecodeError` from `/proc/version` silently degrade to
+  "not detected" so the detector can never crash startup. The
+  `web_ui.py` startup banner now calls the detector and appends
+  one actionable hint when `host in ("127.0.0.1", "localhost")`:
+  for SSH, it suggests the exact `ssh -L PORT:127.0.0.1:PORT
+  user@remote_host` recipe plus the alternative
+  `AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0`; for WSL it notes
+  WSL2's automatic localhost forwarding and the WSL1 caveat.
+  Behavior is purely additive — we never auto-rewrite `host` or
+  auto-forward ports (would be a footgun for LAN-only and mDNS
+  setups). Guarded by
+  `tests/test_remote_environment_detector_r225.py` (19 cases):
+  13 SSH / WSL detection matrix cases (clean baseline · both
+  vars precedence · empty / whitespace strings rejected · WSL1
+  `/proc/version` probe with mixed-case "Microsoft" + WSL2
+  env-var path · silent degrade on missing / unreadable /
+  malformed `/proc/version`); 2 schema invariants (returned keys
+  match `RemoteEnvironment` TypedDict; SSH+WSL can coexist for
+  the SSH-into-WSL exotic case); 1 real-process smoke ensures
+  the detector survives whatever shape the CI host actually has;
+  3 `web_ui.py` integration guards (import line present;
+  detector called; hint mentions `ssh -L`).
+
 - **R224 / Cycle 12 · F-cycle11-3: per-provider notification
   drill-down Grafana dashboard**. R220 shipped the overview
   dashboard with a single aggregate Notification panel

@@ -63,6 +63,7 @@ from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.protocol import get_capabilities, get_server_clock
+from ai_intervention_agent.remote_environment import detect_remote_environment
 
 # R20.8: 直接 import 自 task_queue_singleton 模块，避免拖入 fastmcp/mcp 依赖链
 # （web_ui.py 是子进程入口，不需要 MCP server 能力，详见 task_queue_singleton.py 注释）。
@@ -1501,6 +1502,37 @@ class WebFeedbackUI(
             )
         else:
             print(f"请在浏览器中打开: http://{self.host}:{self.port}")
+
+        # R225 / Cycle 12: SSH / WSL 远程环境探测。当 host=127.0.0.1 时, 远程
+        # 会话的本地浏览器**无法直接访问** 上面打印的 URL — 静默打印
+        # "请在浏览器中打开 http://127.0.0.1:8080" 让用户白浪费几分钟排查
+        # 网络问题。本块仅当真的检测到远程环境且 bind 是回环时才追加
+        # 一句可操作提示, 不替换原有打印, 不改变实际行为。
+        if self.host in ("127.0.0.1", "localhost"):
+            env_info = detect_remote_environment()
+            if env_info["is_ssh"]:
+                print(
+                    f"⚠ 检测到 SSH 会话 (source={env_info['ssh_source']}) "
+                    "且 host=127.0.0.1。本地浏览器无法直接访问上面的 URL。"
+                )
+                print(
+                    f"  方案 A (推荐): 在本地机器执行 "
+                    f"`ssh -L {self.port}:127.0.0.1:{self.port} "
+                    "user@remote_host` 后访问 "
+                    f"http://localhost:{self.port}"
+                )
+                print(
+                    "  方案 B: 重启时设置 "
+                    "`AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0` "
+                    "(注意暴露给远程主机的所有网卡, 仅在已信任的网络下使用)"
+                )
+            elif env_info["is_wsl"]:
+                print(
+                    f"ℹ 检测到 WSL 环境 (source={env_info['wsl_source']})。"
+                    "Windows 宿主机的浏览器一般可直接打开上面的 URL "
+                    "(WSL2 自动 localhost 转发); WSL1 用户请改用 "
+                    "`AI_INTERVENTION_AGENT_WEB_UI_HOST=0.0.0.0`。"
+                )
 
         # mDNS 发布（默认：bind_interface 不是 127.0.0.1 时启用）
         # R20.11：异步发布以避免 zeroconf.register_service 的 ~1.7s mDNS conflict-probe
