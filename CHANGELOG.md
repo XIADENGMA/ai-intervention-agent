@@ -9,6 +9,15 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **CR#26 — Cycle 13 code review (R226 → R230) archived**.
+  Single-file `docs/code-reviews/cr26.md` covering 5 commits
+  (DX guardrail R226, contributor docs R227, UX-bug R228 +
+  R229, a11y R230), per-commit audit, health verdict,
+  8 follow-up candidates (4 new in CR#26 + 4 carried from
+  CR#25), v1.7.5 release packaging recommendation.
+
 ### Fixed
 
 - **R230 / Cycle 13: every decorative `<svg>` in the Web UI now
