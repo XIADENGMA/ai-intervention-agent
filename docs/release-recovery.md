@@ -216,6 +216,174 @@ move?" detective work in future bisect sessions.
   patch/minor auto-merge → next release picks up the fix. Major
   bumps still go to human review (per dependabot-auto-merge.yml).
 
+## Pre-tag-push checklist (R206 / Cycle 9 · F-release-1)
+
+> **Why this section exists**: in addition to the six `release.yml`
+> failure patterns above (which fire **after** `git push v*.*.*`), the
+> `Tests` workflow on `main` also runs on tag-push and can leave the
+> tag pointing at a **CI-red commit** without any Publish job running.
+> v1.7.2 hit exactly this: the initial tag commit (`36222a3`) missed a
+> `docs/api/enhanced_logging.md` regen, the docs-parity gate inside
+> `Tests` flagged it, and the v1.7.2 tag had to be force-retagged 5
+> minutes later to a docs-sync commit (`35f9671`).
+
+The list below is **what to run locally** before pushing any
+`v*.*.*` tag. Together with the existing `scripts/check_tag_push_
+safety.py` (cf. §"Related guards") and the `Tests` workflow's
+CHANGELOG-non-Unreleased pre-commit guard (R180 + R181), these are
+the **three concentric belts** that catch tag-push-time mistakes:
+
+1. **Local pre-flight** (this checklist) — catches mistakes _before_
+   `git push --follow-tags`.
+2. **`Tests` workflow on `main`** (R180 + R181 + CHANGELOG drift
+   guard) — catches mistakes _after_ tag-push but _before_
+   `release.yml` Publish jobs fire.
+3. **`release.yml` six-job pipeline** (failure patterns 1-3 above)
+   — catches per-job artefact / publish failures.
+
+```bash
+# === Pre-tag-push checklist (cycle 9 / F-release-1) =====================
+
+# 1. Sync with remote main, ensure linear history.
+git fetch --all --tags --prune
+git checkout main
+git pull --ff-only origin main
+git status --short                          # must be empty
+
+# 2. Static checks (ruff + ty) — the hard gates.
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check .                           # All checks passed!
+
+# 3. API docs parity — both languages. v1.7.2 missed this and CI failed.
+uv run python scripts/generate_docs.py --lang en --check
+uv run python scripts/generate_docs.py --lang zh-CN --check
+
+# 4. Full pytest. Counts: any drop vs. last release is suspicious.
+uv run pytest -q                            # 5xxx passed expected
+
+# 5. Lockfile consistency.
+uv lock --check                             # Resolved N packages in Xs
+npm install --prefer-offline --no-audit > /dev/null  # if package.json touched
+
+# 6. Release safety check (existing, R185).
+uv run python scripts/check_tag_push_safety.py
+# (R185 strict mode if you want CVE gate)
+make release-check-cve
+
+# 7. CHANGELOG sanity: [Unreleased] must NOT be empty (or you're
+#    shipping a no-op release).
+rg -n -A1 '^## \[Unreleased\]' CHANGELOG.md | head -5
+
+# 8. Bump version + sync ALL version-bearing files (R183).
+uv run python scripts/bump_version.py X.Y.Z
+
+# 9. Final pre-commit gate (lets pre-commit hooks normalise EOL / trim
+#    whitespace before the bump-commit lands).
+git add -A
+pre-commit run --all-files
+git commit -m ":bookmark: chore(release): vX.Y.Z"
+# (Or amend the previous bump-commit if hooks modified files — only if
+# the commit hasn't been pushed yet.)
+
+# 10. Tag with annotation. **Do NOT use lightweight tags** (`git tag X`
+#     without `-a`) — release.yml expects annotated tags and skips body
+#     auto-summarisation on lightweight ones.
+git tag -a vX.Y.Z -m "vX.Y.Z: <one-line summary>
+
+<2-4 bullet detail per CR review>"
+
+# 11. ONE final dry-run before push — catch the misspelled tag name now.
+git log --oneline -1 vX.Y.Z
+git show vX.Y.Z --stat | head -30
+
+# 12. Push branch + tag in one shot.
+git push --follow-tags origin main
+
+# 13. Watch CI live. Don't walk away until Tests + release.yml all green.
+gh run watch  # or: gh run list --branch main --limit 5
+```
+
+### Retag safety window (Lessons from v1.7.2)
+
+If the `Tests` workflow fails on the tag commit **and** the
+`release.yml` Publish jobs have **not yet** started (or have skipped
+because `Tests` is a required dep), force-retagging to a fix-up commit
+is **safe** within a short window. v1.7.2 retagged from `36222a3`
+→ `35f9671` 5 minutes after the initial push.
+
+**Safe-to-retag conditions** (all must be true):
+
+- No PyPI / Open VSX / Marketplace publish has succeeded (check
+  `release.yml` run-page or PyPI page directly);
+- No GitHub Release has been created yet (or you can delete it);
+- < 30 minutes since the failed tag push (statistical: typical
+  external fork/clone latency window — beyond this, assume someone
+  has a frozen reference).
+
+**Retag procedure** (mirrors v1.7.2's recovery):
+
+```bash
+# A. Land the fix on main first.
+git checkout main
+# ... fix the docs / test / lockfile / whatever ...
+git commit -m ":memo: docs(api): regenerate XXX for return-type widen in vX.Y.Z"
+git push origin main
+
+# B. Delete the broken tag on both sides.
+git tag -d vX.Y.Z
+git push origin :refs/tags/vX.Y.Z
+
+# C. Re-tag on the fix commit with an updated annotation explicitly
+#    mentioning the retag (CR#21 §3.2: future maintainers must know).
+git tag -a vX.Y.Z <fix-commit-sha> -m "vX.Y.Z: <summary>
+
+Note: tag was force-retagged from <broken-sha> to <fix-sha> within
+5 minutes of initial push due to <reason>. No external consumers
+saw the broken tag. The CHANGELOG [vX.Y.Z] entry documents this
+recovery."
+
+# D. Re-push.
+git push origin vX.Y.Z
+
+# E. Sanity-check release.yml fires on the new tag.
+gh run watch
+```
+
+### Beyond the retag window
+
+If a tag has been out for > 30 minutes, OR if any Publish job has
+already succeeded, the version is **burned**. Bump to the next patch
+(e.g. v1.7.2 → v1.7.3) and ship the fix there. Document the burned
+version in `CHANGELOG.md`:
+
+```markdown
+## [1.7.3] — YYYY-MM-DD
+
+### Fixed
+
+- v1.7.2 was tagged with [...broken thing...]; v1.7.3 ships the fix.
+  Users on v1.7.2 should upgrade.
+```
+
+See also the "Communication template" section above — same
+principles apply, scaled up for burned-version disclosure.
+
+### Tag-was-moved history
+
+Historical tag retags this checklist is designed to prevent:
+
+| Tag    | Old SHA   | New SHA   | Why                                                                  |
+| ------ | --------- | --------- | -------------------------------------------------------------------- |
+| v1.6.3 | `a5c12b0` | `72b0ae1` | R180 R151 fossilisation broke Python CI Gate on tag-commit           |
+| v1.7.2 | `36222a3` | `35f9671` | docs/api parity drift missed `enhanced_logging.md` regen (R204 era)  |
+
+Both incidents → CHANGELOG entry + tag annotation explicitly note
+the retag, per "Communication template" above. **If your retag count
+ever exceeds 3-4 per year, the pre-flight checklist needs a new
+gate**: file a follow-up like F-release-2 to identify which step
+missed the latest miss.
+
 ## Security release shortcut (R184)
 
 When Dependabot reports a CVE on a runtime dependency, the

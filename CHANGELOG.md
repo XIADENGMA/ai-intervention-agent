@@ -11,6 +11,52 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Added
 
+- **R206 / Cycle 9 · F-release-1 (CR#21 §4.4): pre-tag-push checklist
+  + retag safety window docs**. v1.7.2 的 docs-sync miss 暴露了一个
+  长期被忽视的 surface：``release.yml`` 失败模式都是 publish-job
+  级（PyPI / Open VSX / Marketplace），但 **tag push 触发的 main
+  分支 ``Tests`` workflow** 失败时，tag 会停在 CI 红的 commit 上、
+  publish job 一个都不跑，需要 force-retag 才能恢复（v1.7.2 5 分钟
+  内 retag `36222a3` → `35f9671`）。
+
+  R206 把这次经验固化进文档：
+
+  - 新增 "Pre-tag-push checklist" section (13 步本地预飞行)：
+    `git pull --ff-only` + ruff + ty + 双语 docs parity + full
+    pytest + uv lock + `check_tag_push_safety.py` + CHANGELOG
+    sanity + `bump_version.py` + annotated tag + `gh run watch`；
+  - "Retag safety window" 子段：5 分钟 / 30 分钟两档（"no Publish
+    succeeded yet" + "< 30 min since broken push" + "no GitHub
+    Release yet"），明确**何时可以 force-retag、何时必须 bump
+    patch**；
+  - "Tag-was-moved history" 历史表：v1.6.3 + v1.7.2 两次 retag
+    原因 + 旧/新 SHA，强化「retag 不是单次事件」+ 帮助 future
+    maintainer 看到「为什么需要这份 checklist」的具体动机；
+  - 两份语言 (``release-recovery.md`` + ``release-recovery.zh-
+    CN.md``) lockstep 同步，沿用 R178 / R185 双语契约。
+
+  **新增 R206 test** (``tests/test_release_recovery_pre_tag_
+  checklist_r206.py``, 5 cases · 沿用 R185
+  ``TestReleaseRecoveryBilingualSync`` 思路): "Pre-tag-push
+  checklist" / "Tag 推送前清单" 段标题存在 + v1.7.2 retag 案例
+  (含 SHA 36222a3 / 35f9671) + v1.6.3 retag 历史 + F-release-1
+  label + retag 窗口 30 minutes / 30 分钟数值一致。这是 R185
+  ``TestReleaseRecoveryBilingualSync`` 的姊妹守护，防止两份文档
+  漂移。
+
+  **设计权衡 · 测试做 static string 匹配而非语义校验**：
+  与 R185 思路一致——文档总会小调整，过严的字符串匹配会自伤；
+  test 断言「关键 keyword 出现过」，留出 wording polish 空间。
+
+  **验证**: R206 5 cases PASS；R185 8 cases regression PASS；
+  ``uv run ty check . → All checks passed!``；``uv run ruff
+  check . && ruff format --check . → All passed!``；完整
+  ``pytest`` **5404 passed / 2 skipped / 628 subtests passed
+  in 163s** (R204 baseline 5399 → 5404, 净增 +5 from R206)；
+  ``scripts/generate_docs.py --check`` 两份语言 26/26 一致
+  （release-recovery 不在 ``MODULES_TO_DOCUMENT`` 内，但 R206
+  docs 改动不会影响 ``docs/api/`` source-derived 文档）。
+
 - **R204 / Cycle 9 · F-203-1 (CR#21 §4.3): `aiia_token_age_seconds`
   Prometheus gauge**. R199 把 token rotation 时间戳暴露到 ``GET
   /api/system/api-token-info`` endpoint 的 ``age_seconds`` 字段，但

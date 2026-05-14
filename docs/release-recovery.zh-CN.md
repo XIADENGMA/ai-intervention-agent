@@ -201,6 +201,167 @@ Issue 跟踪器发条简报：
   自动带上修复。主版本仍走人工审阅（见
   `dependabot-auto-merge.yml`）。
 
+## Tag 推送前清单（R206 / Cycle 9 · F-release-1）
+
+> **本节存在的理由**：除了上面六种 `release.yml` 失败模式（都在
+> `git push v*.*.*` **之后** 触发），`main` 上的 `Tests` workflow
+> 在 tag-push 时也会跑——它失败会让 tag 停在 **CI 红的 commit**
+> 上，而 Publish job 一个都不跑。v1.7.2 正好踩中：初始 tag commit
+> （`36222a3`）漏了 `docs/api/enhanced_logging.md` 的 regen，`Tests`
+> workflow 里的 docs-parity gate 标红，v1.7.2 tag 不得不在 5 分钟
+> 后 force-retag 到 docs-sync commit（`35f9671`）。
+
+下面的清单是 **push 任何 `v*.*.*` tag 之前本地要跑的步骤**。配合
+现有的 `scripts/check_tag_push_safety.py`（见上文「相关守护」）
+与 `Tests` workflow 的 CHANGELOG-非-Unreleased pre-commit guard
+（R180 + R181），这是接 tag-push-time 失误的 **三层保险**：
+
+1. **本地预飞行**（本清单）—— 在 `git push --follow-tags` **之前**
+   抓失误。
+2. **`main` 上的 `Tests` workflow**（R180 + R181 + CHANGELOG drift
+   守护）—— 在 tag-push **之后**、`release.yml` Publish job **之前**
+   抓失误。
+3. **`release.yml` 六个 job 流水线**（上面失败模式 1-3）—— 抓单 job
+   artefact / publish 级失败。
+
+```bash
+# === Tag 推送前清单（cycle 9 / F-release-1） ===========================
+
+# 1. 与远端 main 同步，保持 linear history。
+git fetch --all --tags --prune
+git checkout main
+git pull --ff-only origin main
+git status --short                          # 必须为空
+
+# 2. 静态检查（ruff + ty）—— 硬 gate。
+uv run ruff check .
+uv run ruff format --check .
+uv run ty check .                           # All checks passed!
+
+# 3. API docs parity —— 两份语言。v1.7.2 漏了这个 CI 才挂。
+uv run python scripts/generate_docs.py --lang en --check
+uv run python scripts/generate_docs.py --lang zh-CN --check
+
+# 4. 完整 pytest。case 总数与上一个 release 相比若有下降是可疑的。
+uv run pytest -q                            # 预期 5xxx passed
+
+# 5. Lockfile 一致性。
+uv lock --check                             # Resolved N packages in Xs
+npm install --prefer-offline --no-audit > /dev/null  # 若动了 package.json
+
+# 6. Release 安全检查（已有，R185）。
+uv run python scripts/check_tag_push_safety.py
+# （R185 严格模式想用 CVE gate）
+make release-check-cve
+
+# 7. CHANGELOG sanity：[Unreleased] **不能** 是空的（否则你在发空
+#    release）。
+rg -n -A1 '^## \[Unreleased\]' CHANGELOG.md | head -5
+
+# 8. Bump 版本 + 同步所有 version-bearing 文件（R183）。
+uv run python scripts/bump_version.py X.Y.Z
+
+# 9. 最后一道 pre-commit gate（让 pre-commit hooks 在 bump-commit
+#    落盘前 normalise EOL / trim whitespace）。
+git add -A
+pre-commit run --all-files
+git commit -m ":bookmark: chore(release): vX.Y.Z"
+# （或在 hooks 改了文件时 amend 上一个 bump-commit —— 仅限尚未 push。）
+
+# 10. 打 annotated tag。**不要用 lightweight tag**（不带 `-a` 的
+#     `git tag X`）—— release.yml 期望 annotated tag，lightweight
+#     tag 的 body 自动汇总会被跳过。
+git tag -a vX.Y.Z -m "vX.Y.Z: <一行总结>
+
+<每个 CR review 2-4 个 bullet 细节>"
+
+# 11. push 前最后 dry-run —— 现在抓拼错的 tag 名。
+git log --oneline -1 vX.Y.Z
+git show vX.Y.Z --stat | head -30
+
+# 12. branch + tag 一次性 push。
+git push --follow-tags origin main
+
+# 13. 看 CI live。在 Tests + release.yml 都绿之前别走。
+gh run watch  # 或：gh run list --branch main --limit 5
+```
+
+### Retag 安全窗口（v1.7.2 经验）
+
+如果 `Tests` workflow 在 tag commit 上失败、**而且** `release.yml`
+Publish job 还没启动（或者因为 `Tests` 是必需依赖被 skip 了），
+force-retag 到修复 commit 在**短窗口内是安全的**。v1.7.2 在初始
+push 5 分钟后 retag `36222a3` → `35f9671`。
+
+**安全 retag 条件**（全部满足）：
+
+- PyPI / Open VSX / Marketplace 没有任何 publish 成功（查
+  `release.yml` run page 或直接看 PyPI 页面）；
+- GitHub Release 还没创建（或者你能删掉它）；
+- 距离失败的 tag push < 30 分钟（统计上典型 fork/clone 延迟窗口
+  —— 超过这个时间，要假设有人有 frozen reference 了）。
+
+**Retag 步骤**（镜像 v1.7.2 的恢复）：
+
+```bash
+# A. 先在 main 上落修复。
+git checkout main
+# ... 修 docs / test / lockfile / 啥的 ...
+git commit -m ":memo: docs(api): regenerate XXX for return-type widen in vX.Y.Z"
+git push origin main
+
+# B. 两边删坏 tag。
+git tag -d vX.Y.Z
+git push origin :refs/tags/vX.Y.Z
+
+# C. 在修复 commit 上重打 tag，annotation **明确说明** retag 这件事
+#    （CR#21 §3.2：未来的维护者必须知道）。
+git tag -a vX.Y.Z <fix-commit-sha> -m "vX.Y.Z: <summary>
+
+Note: tag was force-retagged from <broken-sha> to <fix-sha> within
+5 minutes of initial push due to <reason>. No external consumers
+saw the broken tag. The CHANGELOG [vX.Y.Z] entry documents this
+recovery."
+
+# D. 再 push。
+git push origin vX.Y.Z
+
+# E. 看 release.yml 在新 tag 上跑起来。
+gh run watch
+```
+
+### 超过 retag 窗口之后
+
+如果 tag 已经出去 > 30 分钟，或者任何一个 Publish job 已经成功，
+该版本就**已经燃烧**了。Bump 到下一个 patch（如 v1.7.2 → v1.7.3）
+在新版本里 ship 修复。在 `CHANGELOG.md` 里记录被燃烧的版本：
+
+```markdown
+## [1.7.3] — YYYY-MM-DD
+
+### Fixed
+
+- v1.7.2 was tagged with [...broken thing...]; v1.7.3 ships the fix.
+  Users on v1.7.2 should upgrade.
+```
+
+见上面「Communication template」section —— 同样的原则，scale 到燃
+烧版本的 disclosure。
+
+### Tag-was-moved 历史
+
+本清单旨在防止的历史性 tag retag：
+
+| Tag    | 旧 SHA    | 新 SHA    | 原因                                                                 |
+| ------ | --------- | --------- | -------------------------------------------------------------------- |
+| v1.6.3 | `a5c12b0` | `72b0ae1` | R180 R151 fossilisation 让 Python CI Gate 在 tag-commit 失败         |
+| v1.7.2 | `36222a3` | `35f9671` | docs/api parity drift 漏了 `enhanced_logging.md` regen（R204 时期）  |
+
+两次事故 → CHANGELOG entry + tag annotation 都明确写明 retag，
+遵循上面「Communication template」。**如果你的 retag 次数超过
+一年 3-4 次，pre-flight 清单需要加新 gate**：起一个 F-release-2
+follow-up，识别最近一次 miss 漏了哪一步。
+
 ## 安全发布捷径（R184）
 
 Dependabot 在运行时依赖上报 CVE 时，发布流程就是常规流程的
