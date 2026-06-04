@@ -66,9 +66,12 @@ class TestFacadeSingleThreadedSemantics(unittest.TestCase):
             "extend_task_deadline 必须可调用",
         )
 
+    # cr32 §3.3 low fix：max_extends/min_seconds/max_seconds 不再有默认值
+    EXT_KW = {"max_extends": 3, "min_seconds": 10, "max_seconds": 300}
+
     def test_success_returns_full_tuple(self) -> None:
         success, error_code, extends_used, timeout_after = self.q.extend_task_deadline(
-            "t-base", 60
+            "t-base", 60, **self.EXT_KW
         )
         self.assertTrue(success)
         self.assertIsNone(error_code)
@@ -77,7 +80,7 @@ class TestFacadeSingleThreadedSemantics(unittest.TestCase):
 
     def test_unknown_task_returns_task_not_found(self) -> None:
         success, error_code, extends_used, timeout_after = self.q.extend_task_deadline(
-            "no-such-task", 60
+            "no-such-task", 60, **self.EXT_KW
         )
         self.assertFalse(success)
         self.assertEqual(error_code, "task_not_found")
@@ -88,6 +91,7 @@ class TestFacadeSingleThreadedSemantics(unittest.TestCase):
         success, error_code, extends_used, timeout_after = self.q.extend_task_deadline(
             "t-base",
             5,  # below min_seconds=10
+            **self.EXT_KW,
         )
         self.assertFalse(success)
         self.assertEqual(error_code, "invalid_seconds")
@@ -97,11 +101,12 @@ class TestFacadeSingleThreadedSemantics(unittest.TestCase):
 
     def test_limit_reached_returns_limit_error(self) -> None:
         # max_extends=2，第三次必须返回 extends_limit_reached
+        kw_max2 = {**self.EXT_KW, "max_extends": 2}
         for _ in range(2):
-            success, _, _, _ = self.q.extend_task_deadline("t-base", 60, max_extends=2)
+            success, _, _, _ = self.q.extend_task_deadline("t-base", 60, **kw_max2)
             self.assertTrue(success)
         success, error_code, extends_used, timeout_after = self.q.extend_task_deadline(
-            "t-base", 60, max_extends=2
+            "t-base", 60, **kw_max2
         )
         self.assertFalse(success)
         self.assertEqual(error_code, "extends_limit_reached")
@@ -117,13 +122,17 @@ class TestFacadeSingleThreadedSemantics(unittest.TestCase):
             auto_resubmit_timeout=0,
         )
         self.assertTrue(ok)
-        success, error_code, _, _ = self.q.extend_task_deadline("t-disabled", 60)
+        success, error_code, _, _ = self.q.extend_task_deadline(
+            "t-disabled", 60, **self.EXT_KW
+        )
         self.assertFalse(success)
         self.assertEqual(error_code, "auto_resubmit_disabled")
 
     def test_completed_task_returns_completed_error(self) -> None:
         self.q.complete_task("t-base", {"feedback": "done"})
-        success, error_code, _, _ = self.q.extend_task_deadline("t-base", 60)
+        success, error_code, _, _ = self.q.extend_task_deadline(
+            "t-base", 60, **self.EXT_KW
+        )
         self.assertFalse(success)
         self.assertEqual(error_code, "task_completed")
 

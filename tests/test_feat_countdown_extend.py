@@ -112,10 +112,14 @@ class TestTaskExtendBehavior(unittest.TestCase):
 
         self.Task = Task
 
+    # cr32 §3.3 low fix：所有调用强制传 max_extends/min/max；这里集中给
+    # 测试用一份默认 keyword，避免每个 case 重复书写。
+    EXT_KW = {"max_extends": 3, "min_seconds": 10, "max_seconds": 300}
+
     def test_extend_increases_timeout_and_used(self) -> None:
         t = self.Task(task_id="t1", prompt="hello", auto_resubmit_timeout=120)
         self.assertEqual(t.extends_used, 0)
-        ok, err = t.extend_deadline(60)
+        ok, err = t.extend_deadline(60, **self.EXT_KW)
         self.assertTrue(ok)
         self.assertIsNone(err)
         self.assertEqual(t.auto_resubmit_timeout, 180)
@@ -124,10 +128,10 @@ class TestTaskExtendBehavior(unittest.TestCase):
     def test_extend_respects_max_extends(self) -> None:
         t = self.Task(task_id="t1", prompt="hi", auto_resubmit_timeout=120)
         for _ in range(3):
-            ok, _err = t.extend_deadline(60, max_extends=3)
+            ok, _err = t.extend_deadline(60, **self.EXT_KW)
             self.assertTrue(ok)
         # 第 4 次应该被拒
-        ok, err = t.extend_deadline(60, max_extends=3)
+        ok, err = t.extend_deadline(60, **self.EXT_KW)
         self.assertFalse(ok)
         self.assertEqual(err, "extends_limit_reached")
         self.assertEqual(t.extends_used, 3, "上限后 extends_used 不应再 +1")
@@ -141,20 +145,20 @@ class TestTaskExtendBehavior(unittest.TestCase):
             auto_resubmit_timeout=120,
             status=TaskStatus.COMPLETED,
         )
-        ok, err = t.extend_deadline(60)
+        ok, err = t.extend_deadline(60, **self.EXT_KW)
         self.assertFalse(ok)
         self.assertEqual(err, "task_completed")
 
     def test_extend_rejects_disabled_auto_resubmit(self) -> None:
         t = self.Task(task_id="t1", prompt="hi", auto_resubmit_timeout=0)
-        ok, err = t.extend_deadline(60)
+        ok, err = t.extend_deadline(60, **self.EXT_KW)
         self.assertFalse(ok)
         self.assertEqual(err, "auto_resubmit_disabled")
 
     def test_extend_rejects_seconds_out_of_range(self) -> None:
         t = self.Task(task_id="t1", prompt="hi", auto_resubmit_timeout=120)
         for bad in (5, 301, 0, -10):
-            ok, err = t.extend_deadline(bad, min_seconds=10, max_seconds=300)
+            ok, err = t.extend_deadline(bad, **self.EXT_KW)
             self.assertFalse(ok, f"seconds={bad} 应被拒")
             self.assertEqual(err, "invalid_seconds")
 
@@ -162,11 +166,28 @@ class TestTaskExtendBehavior(unittest.TestCase):
         """``get_remaining_time`` 应反映新的 auto_resubmit_timeout。"""
         t = self.Task(task_id="t1", prompt="hi", auto_resubmit_timeout=120)
         before = t.get_remaining_time()
-        ok, _err = t.extend_deadline(60)
+        ok, _err = t.extend_deadline(60, **self.EXT_KW)
         self.assertTrue(ok)
         after = t.get_remaining_time()
         # 时间精度可能差 ±1s，所以用 >= before + 59 防止 race
         self.assertGreaterEqual(after, before + 59)
+
+    def test_extend_keyword_only_enforced(self) -> None:
+        """cr32 §3.3 low fix invariant：max_extends/min_seconds/max_seconds
+        是 keyword-only **且必填**，不能用 positional 也不能省略 → 让
+        ``server_config.COUNTDOWN_*`` 调整后不会出现"路由侧改了但有遗漏
+        的调用点仍用旧默认值 3 / 10 / 300"漂移。
+
+        故意走 ``cast(Any, ...)`` 让 ty/mypy 不在 IDE / pre-commit 阶段
+        拦截 — 我们就是要测**运行时** ``TypeError``。
+        """
+        from typing import Any, cast
+
+        t = self.Task(task_id="t1", prompt="hi", auto_resubmit_timeout=120)
+        with self.assertRaises(TypeError):
+            cast(Any, t).extend_deadline(60)
+        with self.assertRaises(TypeError):
+            cast(Any, t).extend_deadline(60, max_extends=3, min_seconds=10)
 
 
 # ============================================================

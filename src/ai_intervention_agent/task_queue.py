@@ -302,13 +302,17 @@ class Task(BaseModel):
             return False
         return time.monotonic() > self.get_deadline_monotonic()
 
+    # cr32 §3.3 low fix：删掉硬编码 max_extends=3 默认值，强制 caller 显式
+    # 传入。route 层从 server_config.COUNTDOWN_EXTENDS_MAX 读，避免单元
+    # 测试 / 脚本不慎用 3 但 prod 配置改了之后两边漂移。同时 min/max
+    # seconds 也走必填，逻辑上 caller 总是应该明确语义。
     def extend_deadline(
         self,
         seconds: int,
         *,
-        max_extends: int = 3,
-        min_seconds: int = 10,
-        max_seconds: int = 300,
+        max_extends: int,
+        min_seconds: int,
+        max_seconds: int,
     ) -> tuple[bool, str | None]:
         """feat-countdown-extend (§3.2): 用户主动延长 task 的 auto-resubmit
         倒计时。
@@ -745,14 +749,17 @@ class TaskQueue:
                 return self._tasks.get(self._active_task_id)
             return None
 
+    # cr32 §3.3 low fix：与 ``Task.extend_deadline`` 一致，强制 caller 显式
+    # 传 max_extends / min_seconds / max_seconds，避免 server_config 改了之
+    # 后 facade 默认值还停留在旧值。
     def extend_task_deadline(
         self,
         task_id: str,
         seconds: int,
         *,
-        max_extends: int = 3,
-        min_seconds: int = 10,
-        max_seconds: int = 300,
+        max_extends: int,
+        min_seconds: int,
+        max_seconds: int,
     ) -> tuple[bool, str | None, int, int]:
         """cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语。
 
