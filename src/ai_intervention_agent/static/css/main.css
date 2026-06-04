@@ -7006,6 +7006,29 @@ code,
   font-weight: 600;
 }
 
+/* mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip) —
+ * ≤16-char chip 渲染在 task-id-container 内，紧邻 task ID 之后。
+ * 视觉：圆角 pill / 主色 outline / 小字号；不抢眼但易识别。
+ * 设计原则：与 task-id-text 同行，不挤倒计时 ring。
+ */
+.task-header-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--primary-700, #1d4ed8);
+  background: var(--primary-50, rgba(29, 78, 216, 0.08));
+  border: 1px solid var(--primary-200, rgba(29, 78, 216, 0.25));
+  border-radius: 9999px;
+  white-space: nowrap;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  user-select: text; /* user 应能复制 chip 内容 */
+}
+
 /* mining-2 §3.1 cycle-3 polish — Export task history row in
  * settings panel. 触发 GET /api/tasks/export?format=...
  * 走原生 <a download>，不引入 JS-driven fetch。 */

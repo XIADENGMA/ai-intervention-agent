@@ -2336,6 +2336,9 @@ async function switchTask(taskId) {
     // mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno):
     // 切换任务时立即应用 question_type 决定 textarea / yesno UI
     updateYesnoButtonGroup(cachedTask.question_type);
+    // mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip):
+    // 切换任务时立即应用 header_label
+    updateHeaderChip(cachedTask.header_label);
   }
 
   try {
@@ -2499,6 +2502,8 @@ async function loadTaskDetails(taskId) {
       updateFeedbackPlaceholder(task.feedback_placeholder);
       // mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno):
       updateYesnoButtonGroup(task.question_type);
+      // mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip):
+      updateHeaderChip(task.header_label);
 
       // 恢复该任务之前保存的textarea内容
       const textarea = document.getElementById("feedback-text");
@@ -2664,6 +2669,31 @@ async function updateDescriptionDisplay(prompt) {
  * - 容器不存在时会跳过
  * - 选项数组为空时显示空列表
  */
+/**
+ * mining-cycle-3 §2.1 borrow #1 (gemini-cli ``ask_user.header``) —
+ * 在 task pane prompt 之上渲染一个短标签 chip (≤16 chars)。
+ *
+ * 行为：
+ *   - 非空 string → 显示 chip，textContent = label
+ *   - None/empty → 移除 chip（如果有）
+ *
+ * 渲染锚点：``#task-header-chip``，由 HTML 模板预留位置。如果模板
+ * 不包含该 anchor，helper silent no-op（不抛错）。
+ */
+function updateHeaderChip(label) {
+  var chip = document.getElementById("task-header-chip");
+  if (!chip) return;
+  if (typeof label === "string" && label.trim() !== "") {
+    chip.textContent = label.trim().slice(0, 16);
+    chip.style.display = "";
+    chip.setAttribute("aria-label", label.trim().slice(0, 16));
+  } else {
+    chip.textContent = "";
+    chip.style.display = "none";
+    chip.removeAttribute("aria-label");
+  }
+}
+
 /**
  * mining-cycle-3 §2.1 borrow #2 (gemini-cli ``ask_user.yesno``) —
  * 根据 ``task.question_type`` 在 textarea 主体上方渲染一行 Yes/No

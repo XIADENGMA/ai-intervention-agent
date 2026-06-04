@@ -81,6 +81,12 @@ literal 200 — route handler 也引用此常量，避免双处 drift。
 理由：textarea ``placeholder`` 是单行 hint，超过 200 chars 会被截断
 显示，多行 placeholder 违反 a11y。"""
 
+HEADER_LABEL_MAX_LENGTH: int = 16
+"""mining-cycle-3 §2.1 borrow #1 — header chip clamp。
+源自 gemini-cli ``ask_user.header`` 设计（≤16 chars, "chip/tag" 显示）。
+理由：chip 必须能在 multi-task pane 顶部窄横条内 fit；长 label
+会折行或被截断，反而损害"快速识别领域"的本意。"""
+
 
 _LOCK_WATCHDOG_TIMEOUT_S: float = 30.0
 """单次 ``_watched_write_lock`` 的 acquire+hold 上限。超过这个时长 watchdog
@@ -282,6 +288,13 @@ class Task(BaseModel):
     # 未来 future type 可加: "choice"（radio 单选）/ "rating"（1-5 star）
     # 等，目前只 ship "yesno"（最高频用例）。
     question_type: str | None = None
+    # mining-cycle-3 §2.1 borrow #1 (gemini-cli ``ask_user.header``)：
+    # 短标签 chip（≤16 chars），渲染在 task pane prompt 之上，让用户
+    # 在 multi-task 场景立刻看到当前任务的"领域"——例：``Auth``/``DB``/
+    # ``Layout``/``CSS``/``i18n``等。提升上下文可识别度。
+    # 设计点：clamp 16 chars；为何不放 task tab —— tab 已挤
+    # (id + ring)；task pane 顶部空间充裕且与 prompt 视觉相邻。
+    header_label: str | None = None
 
     def get_remaining_time(self, now_monotonic: float | None = None) -> int:
         """计算剩余倒计时（使用单调时间）。
@@ -565,6 +578,7 @@ class TaskQueue:
         predefined_options_defaults: list[bool] | None = None,
         feedback_placeholder: str | None = None,
         question_type: str | None = None,
+        header_label: str | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         # R53-A：在拿写锁之前先做 prompt size 校验。锁外校验有两个好处：
@@ -633,6 +647,15 @@ class TaskQueue:
             if isinstance(question_type, str) and question_type.strip() == "yesno":
                 normalized_question_type = "yesno"
 
+            # mining-cycle-3 §2.1 borrow #1: clamp header_label
+            # 16-char chip：与 ``feedback_placeholder`` 路径同质处理
+            # — strip → 空归 None → 截断到 ``HEADER_LABEL_MAX_LENGTH``。
+            normalized_header_label: str | None = None
+            if isinstance(header_label, str):
+                s = header_label.strip()
+                if s:
+                    normalized_header_label = s[:HEADER_LABEL_MAX_LENGTH]
+
             task = Task(
                 task_id=task_id,
                 prompt=prompt,
@@ -641,6 +664,7 @@ class TaskQueue:
                 auto_resubmit_timeout=auto_resubmit_timeout,
                 feedback_placeholder=normalized_placeholder,
                 question_type=normalized_question_type,
+                header_label=normalized_header_label,
             )
 
             # 【性能优化】直接添加到字典，Python 3.7+ 保持插入顺序
@@ -1553,6 +1577,7 @@ class TaskQueue:
                             "status": task.status,
                             "feedback_placeholder": task.feedback_placeholder,
                             "question_type": task.question_type,
+                            "header_label": task.header_label,
                         }
                     )
                 active_id = self._active_task_id
@@ -1677,6 +1702,14 @@ class TaskQueue:
                     else:
                         restored_qt = None
 
+                    # mining-cycle-3 §2.1 borrow #1: header_label round-trip
+                    restored_header = item.get("header_label")
+                    if isinstance(restored_header, str):
+                        s = restored_header.strip()
+                        restored_header = s[:HEADER_LABEL_MAX_LENGTH] if s else None
+                    else:
+                        restored_header = None
+
                     task = Task(
                         task_id=task_id,
                         prompt=prompt,
@@ -1690,6 +1723,7 @@ class TaskQueue:
                         status=TaskStatus.PENDING,
                         feedback_placeholder=restored_placeholder,
                         question_type=restored_qt,
+                        header_label=restored_header,
                     )
                 except Exception as task_err:
                     skipped += 1

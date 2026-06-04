@@ -207,9 +207,9 @@ completion) and **one** decision point per task.
 
 | Source | Idiom | Decision | ROI | Cycle |
 |---|---|---|---|---|
-| gemini-cli | `header` chip (≤16 chars) | **borrow** | high (UX context) | cycle-3 ship |
-| gemini-cli | `yesno` question type | **borrow** | medium (semantic) | cycle-3 ship if time |
-| gemini-cli | `placeholder` text hint | **borrow** | low-LoC freebie | cycle-3 ship |
+| gemini-cli | `header` chip (≤16 chars) | **borrow** | high (UX context) | cycle-3 **shipped** R295 |
+| gemini-cli | `yesno` question type | **borrow** | medium (semantic) | cycle-3 **shipped** R294 |
+| gemini-cli | `placeholder` text hint | **borrow** | low-LoC freebie | cycle-3 **shipped** R290 |
 | gemini-cli | multi-question 1-4 per call | **anti-pattern** | n/a | document only |
 | gemini-cli | multiSelect + "All the above" | **anti-pattern** | n/a | document only |
 | claude-code | `additionalContext` template vars | **maybe** | medium | cycle-4 (eval needed) |
@@ -312,7 +312,7 @@ Original plan:
 | Track B claude-code survey | **done** | cycle-3 | 0 borrow + 1 maybe + 1 defer + 1 anti-idiom |
 | gemini-cli `placeholder` per-task | **shipped** (cycle-3, commit `2db6eaa`) | full stack; 20 invariant tests; 200-char clamp + `placeholder_truncated` response field (cr36 §8 #2, commit `ec70124`) |
 | gemini-cli `yesno` type | **shipped** (cycle-3, commit `565d6e2`) | full stack; 25 invariant tests; whitelist normalization + forward-compat for future types; 44px WCAG touch target |
-| gemini-cli `header` chip ≤16 chars | open | cycle-4 | tab UI crowded; needs design |
+| gemini-cli `header` chip ≤16 chars | **shipped** | cycle-3 | placed inside task-id-container, not in tab; pill style |
 | CHANGELOG anti-pattern fix (auto-sync) | open | cycle-3 if time | low priority; flagged for "doc-drift gate" CI |
 | `additionalContext` template vars (claude-code idea) | maybe | cycle-4 | needs eval |
 | cr35 §8 #3 miss-rate tracking | **observed** | cycle-3 | new §0 caught 0 misses; methodology working |

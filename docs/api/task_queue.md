@@ -38,7 +38,7 @@
 
 ##### `clear_all_tasks(self) -> int`
 
-##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, question_type: str | None = None) -> bool`
+##### `add_task(self, task_id: str, prompt: str, predefined_options: list[str] | None = None, auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT, predefined_options_defaults: list[bool] | None = None, feedback_placeholder: str | None = None, question_type: str | None = None, header_label: str | None = None) -> bool`
 
 ##### `get_task(self, task_id: str) -> Task | None`
 

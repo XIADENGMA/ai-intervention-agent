@@ -1108,6 +1108,8 @@ class TestGetTasks(_RouteTestBase):
             task.feedback_placeholder = None
             # mining-cycle-3 §2.1 borrow #2: question_type 同理
             task.question_type = None
+            # mining-cycle-3 §2.1 borrow #1: header_label 同理
+            task.header_label = None
             tasks.append(task)
 
         mock_tq.get_all_tasks_with_stats.return_value = (
@@ -1533,6 +1535,8 @@ class TestGetTaskDetail(_RouteTestBase):
         task.feedback_placeholder = None
         # mining-cycle-3 §2.1 borrow #2: jsonify 需要这个字段
         task.question_type = None
+        # mining-cycle-3 §2.1 borrow #1: jsonify 需要这个字段
+        task.header_label = None
         mock_tq.get_task.return_value = task
         mock_get_tq.return_value = mock_tq
 

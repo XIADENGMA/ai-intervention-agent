@@ -608,6 +608,17 @@
                 <span data-i18n="page.taskLabel">Task:</span>
               </span>
               <span class="task-id-text" id="task-id-text"></span>
+              <!--
+                mining-cycle-3 §2.1 borrow #1 (gemini-cli ask_user.header)：
+                ≤16-char 短标签 chip，由 JS ``updateHeaderChip`` 控制显示。
+                默认 display:none，agent 提供 header_label 时 expose。
+              -->
+              <span
+                class="task-header-chip"
+                id="task-header-chip"
+                style="display: none"
+                role="status"
+              ></span>
             </div>
 
             <div class="countdown-container hidden" id="countdown-container">

@@ -837,6 +837,20 @@ async def interactive_feedback(
             "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
         ),
     ),
+    header_label: str | None = Field(
+        default=None,
+        description=(
+            "Optional short chip / tag rendered above the prompt in the task "
+            "pane to give a one-word context cue (e.g. 'Auth', 'DB', 'Layout', "
+            "'CSS', 'i18n'). Length: clamped to 16 characters server-side; "
+            "single-word recommendation, no spaces if avoidable. Especially "
+            "useful in multi-task mode where the user juggles 3+ concurrent "
+            "feedback requests — the chip lets them visually distinguish "
+            "task domains at a glance. If omitted or empty, no chip is shown "
+            "(default existing layout). "
+            "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user.header`` schema.)"
+        ),
+    ),
     feedback_type: str | None = Field(
         default=None,
         description="Accepted for compatibility; ignored by this server.",
@@ -1068,6 +1082,7 @@ async def interactive_feedback(
                     "auto_resubmit_timeout": auto_resubmit_timeout,
                     "feedback_placeholder": feedback_placeholder,
                     "question_type": question_type,
+                    "header_label": header_label,
                 },
                 timeout=5,
             )

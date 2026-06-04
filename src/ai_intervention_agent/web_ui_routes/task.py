@@ -1098,6 +1098,8 @@ class TaskRoutesMixin:
                             "feedback_placeholder": task.feedback_placeholder,
                             # mining-cycle-3 §2.1 borrow #2: question_type
                             "question_type": task.question_type,
+                            # mining-cycle-3 §2.1 borrow #1: header chip
+                            "header_label": task.header_label,
                         }
                     )
 
@@ -1261,6 +1263,8 @@ class TaskRoutesMixin:
                             "feedback_placeholder": task.feedback_placeholder,
                             # mining-cycle-3 §2.1 borrow #2: question_type
                             "question_type": task.question_type,
+                            # mining-cycle-3 §2.1 borrow #1: header chip
+                            "header_label": task.header_label,
                             "created_at": task.created_at.isoformat(),
                             "completed_at": completed_at_iso,
                             "result": sanitized_result,
@@ -1484,6 +1488,10 @@ class TaskRoutesMixin:
             # 接受 question_type；白名单校验交给 ``add_task``。
             qt_raw = data.get("question_type")
             question_type: str | None = qt_raw if isinstance(qt_raw, str) else None
+            # mining-cycle-3 §2.1 borrow #1 (gemini-cli header chip)：
+            # 接受 header_label（≤16 chars clamp 由 add_task 做）。
+            hl_raw = data.get("header_label")
+            header_label: str | None = hl_raw if isinstance(hl_raw, str) else None
 
             if not isinstance(task_id_raw, str) or not task_id_raw.strip():
                 return (
@@ -1615,6 +1623,7 @@ class TaskRoutesMixin:
                     auto_resubmit_timeout=auto_resubmit_timeout,
                     feedback_placeholder=feedback_placeholder,
                     question_type=question_type,
+                    header_label=header_label,
                 )
             except Exception as e:
                 logger.error(f"创建任务失败: {e}", exc_info=True)
@@ -1746,6 +1755,8 @@ class TaskRoutesMixin:
                             "feedback_placeholder": task.feedback_placeholder,
                             # mining-cycle-3 §2.1 borrow #2: question_type
                             "question_type": task.question_type,
+                            # mining-cycle-3 §2.1 borrow #1: header chip
+                            "header_label": task.header_label,
                         },
                     }
                 )
