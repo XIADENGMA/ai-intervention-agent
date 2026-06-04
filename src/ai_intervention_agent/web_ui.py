@@ -124,13 +124,44 @@ GITHUB_URL = "https://github.com/XIADENGMA/ai-intervention-agent"
 
 @lru_cache(maxsize=1)
 def get_project_version() -> str:
-    """从 pyproject.toml 读取版本号，缓存结果"""
-    version = "unknown"
+    """读取本包版本号，结果用 ``lru_cache`` 缓存。
+
+    BUG3 修复 — 历史实现把 ``pyproject.toml`` 拼成
+    ``src/ai_intervention_agent/pyproject.toml``（与 ``__file__`` 同目录），
+    但仓库实际只有 ``<repo-root>/pyproject.toml``；开发模式 / pip 安装下都
+    找不到文件，函数永远返回 ``"unknown"``，前端拼 ``v`` 前缀后渲染为
+    ``vunknown``。
+
+    新实现的多层兜底：
+        1. ``importlib.metadata.version("ai-intervention-agent")`` — 标准
+           PEP 566 dist-info 元数据读取，pip / uv / editable install 全
+           覆盖；这是 Python 3.8+ 唯一稳定的运行时版本号获取方式。
+        2. ``<repo-root>/pyproject.toml`` 解析 — 开发模式下若包还没安装
+           dist-info（罕见，但 ``python -m`` 直接跑源码会命中）的兜底。
+           ``Path(__file__).parents[2]`` 才是仓库根（parent 是 module
+           dir、parent.parent 是 src/、parent.parent.parent 是 repo root）。
+        3. 返回 ``"unknown"`` — 上述两层全失败时的最终兜底，前端会自行
+           隐藏版本号或显示为 ``vunknown``（仍可用，但代表上游真异常）。
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return version("ai-intervention-agent")
+    except PackageNotFoundError:
+        # 包尚未通过 pip / uv 安装；走开发模式 pyproject.toml 解析路径。
+        pass
+    except Exception as e:
+        logger.warning(
+            f"importlib.metadata 读取版本号失败，尝试 pyproject.toml 兜底：{e}",
+            exc_info=True,
+        )
 
     try:
-        # 获取 pyproject.toml 路径
-        current_dir = Path(__file__).resolve().parent
-        pyproject_path = current_dir / "pyproject.toml"
+        # __file__ 是 src/ai_intervention_agent/web_ui.py：
+        #   parents[0] = src/ai_intervention_agent/
+        #   parents[1] = src/
+        #   parents[2] = <repo-root>/
+        pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
         if pyproject_path.exists():
             try:
@@ -139,20 +170,18 @@ def get_project_version() -> str:
                 with open(pyproject_path, "rb") as f:
                     data = tomllib.load(f)
                 raw_version: Any = data.get("project", {}).get("version", "unknown")
-                version = (
-                    raw_version if isinstance(raw_version, str) else str(raw_version)
-                )
+                return raw_version if isinstance(raw_version, str) else str(raw_version)
             except Exception:
-                # 回退到正则表达式
+                # 兜底：正则提取 version = "X.Y.Z" 那一行
                 with open(pyproject_path, encoding="utf-8") as f:
                     content = f.read()
                 match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
                 if match:
-                    version = match.group(1)
+                    return match.group(1)
     except Exception as e:
-        logger.warning(f"读取版本号失败: {e}", exc_info=True)
+        logger.warning(f"读取 pyproject.toml 版本号失败：{e}", exc_info=True)
 
-    return version
+    return "unknown"
 
 
 @lru_cache(maxsize=8)

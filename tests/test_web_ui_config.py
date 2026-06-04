@@ -1462,7 +1462,16 @@ class TestGetProjectVersion(unittest.TestCase):
         get_project_version.cache_clear()
 
     def test_pyproject_not_exists_returns_unknown(self):
-        """branch 71->91: pyproject.toml 不存在时返回 unknown"""
+        """BUG3 修复后：importlib.metadata + pyproject.toml 全失败时返回 unknown。
+
+        历史含义：pyproject.toml 不存在时返回 unknown。
+        BUG3 修复后实现优先走 importlib.metadata.version()，所以单独 mock
+        Path.exists=False 已经无法触发 fallback 路径。此处显式 mock
+        importlib.metadata 抛 PackageNotFoundError，让控制流落到 pyproject
+        路径，再 mock Path.exists=False 覆盖最终 unknown 兜底。
+        """
+        from importlib.metadata import PackageNotFoundError
+
         from ai_intervention_agent.web_ui import get_project_version
 
         get_project_version.cache_clear()
@@ -1474,7 +1483,13 @@ class TestGetProjectVersion(unittest.TestCase):
                 return False
             return _orig_exists(self)
 
-        with patch.object(Path, "exists", _mock_exists):
+        with (
+            patch(
+                "importlib.metadata.version",
+                side_effect=PackageNotFoundError("ai-intervention-agent"),
+            ),
+            patch.object(Path, "exists", _mock_exists),
+        ):
             result = get_project_version()
             self.assertEqual(result, "unknown")
 
@@ -3027,7 +3042,15 @@ class TestWebFeedbackUiFunction(unittest.TestCase):
 
 class TestGetProjectVersionRegexFallback(unittest.TestCase):
     def test_tomllib_fails_regex_succeeds(self):
-        """tomllib 加载失败时回退到正则解析"""
+        """BUG3 修复后：tomllib 加载失败时回退到正则解析（pyproject 路径内部分支）。
+
+        历史含义：模块同目录的 pyproject.toml 解析失败时走正则兜底。
+        BUG3 修复后实现优先走 importlib.metadata.version()，所以要先 mock
+        它抛 PackageNotFoundError 让控制流落到 pyproject.toml 路径；同时把
+        路径推导固定到一个假 Path，让 tomllib 抛错触发 regex 分支。
+        """
+        from importlib.metadata import PackageNotFoundError
+
         from ai_intervention_agent.web_ui import get_project_version
 
         get_project_version.cache_clear()
@@ -3035,17 +3058,25 @@ class TestGetProjectVersionRegexFallback(unittest.TestCase):
         fake_toml = 'version = "9.8.7"\n[project]\nversion = "1.2.3"'
 
         with (
+            patch(
+                "importlib.metadata.version",
+                side_effect=PackageNotFoundError("ai-intervention-agent"),
+            ),
             patch("ai_intervention_agent.web_ui.Path") as MockPath,
             patch("builtins.open") as mock_open_fn,
         ):
             mock_pyproject = MagicMock()
             mock_pyproject.exists.return_value = True
 
-            mock_parent = MagicMock()
-            mock_parent.__truediv__ = MagicMock(return_value=mock_pyproject)
-            mock_resolve = MagicMock()
-            mock_resolve.parent = mock_parent
-            MockPath.return_value.resolve.return_value = mock_resolve
+            # BUG3 修复后路径推导：parents[2] / "pyproject.toml"，
+            # 用一个支持 ``parents[i]`` 索引的 fake resolve() 返回值。
+            class _FakeResolved:
+                parents = [MagicMock(), MagicMock(), MagicMock()]
+
+            _FakeResolved.parents[2].__truediv__ = MagicMock(
+                return_value=mock_pyproject
+            )
+            MockPath.return_value.resolve.return_value = _FakeResolved()
 
             call_count = [0]
 
