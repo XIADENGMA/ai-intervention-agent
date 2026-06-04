@@ -238,6 +238,7 @@ function buildTaskDeepLink(taskId, base) {
  */
 async function copyTaskIdToClipboard(taskId) {
   const ok = await _writeToClipboard(taskId);
+  _flashCopyOnSourceElement(taskId, ok);
   try {
     if (typeof showStatus === "function" && typeof t === "function") {
       showStatus(
@@ -252,6 +253,41 @@ async function copyTaskIdToClipboard(taskId) {
 }
 
 /**
+ * cr34 §8 #1 fix — 复制时给来源 textSpan 加 600ms 视觉反馈。
+ *
+ * 走 ``data-copyable-task-id`` 属性查找来源元素（每个 task tab 上的
+ * textSpan 都已有该属性，cycle-2 §3.4 ship）。
+ *
+ * 为什么用 ``classList`` 而不是 inline style：让 CSS 决定具体动画
+ * （flash、check icon、bg color 等）；当前实现仅添加 class，CSS
+ * fallback 在 main.css 内一行 transition + bg。respect ``prefers-
+ * reduced-motion`` (CSS 侧 media query 兜底，JS 层不感知)。
+ */
+function _flashCopyOnSourceElement(taskId, ok) {
+  try {
+    const elements = document.querySelectorAll(
+      `[data-copyable-task-id="${CSS.escape(String(taskId || ""))}"]`,
+    );
+    elements.forEach((el) => {
+      const cls = ok ? "copy-flash-ok" : "copy-flash-err";
+      el.classList.remove("copy-flash-ok", "copy-flash-err");
+      // 强制 reflow 让 transition 重新触发
+      void el.offsetWidth;
+      el.classList.add(cls);
+      setTimeout(() => {
+        try {
+          el.classList.remove(cls);
+        } catch (_e) {
+          // ignore
+        }
+      }, 600);
+    });
+  } catch (_e) {
+    // CSS.escape 不可用 / querySelector 异常时静默；不影响主功能
+  }
+}
+
+/**
  * mining-cycle-2 §3.2 — 把 task deep-link URL 复制到剪贴板。
  *
  * 使用场景：与同事 IM 分享某个 task；切到另一个浏览器 / 设备打开同一
@@ -263,6 +299,7 @@ async function copyTaskIdToClipboard(taskId) {
 async function copyTaskLinkToClipboard(taskId) {
   const url = buildTaskDeepLink(taskId);
   if (!url) {
+    _flashCopyOnSourceElement(taskId, false);
     try {
       if (typeof showStatus === "function" && typeof t === "function") {
         showStatus(t("status.copyFailed"), "error");
@@ -273,6 +310,7 @@ async function copyTaskLinkToClipboard(taskId) {
     return false;
   }
   const ok = await _writeToClipboard(url);
+  _flashCopyOnSourceElement(taskId, ok);
   try {
     if (typeof showStatus === "function" && typeof t === "function") {
       showStatus(

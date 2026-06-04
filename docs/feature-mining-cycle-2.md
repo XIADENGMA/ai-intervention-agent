@@ -312,9 +312,18 @@ to learn from:
   **Not urgent**; flag in next perf-audit cycle.
 - **ESC shortcut removed (v2.5.5)** competitor removed ESC to
   prevent accidental window close. Confirm our keyboard
-  shortcuts don't have a similar trap. **Action**: grep our
-  `keyboard-shortcuts.js` for any destructive single-key bind
-  next perf-audit cycle.
+  shortcuts don't have a similar trap.
+  **Verified safe** (cr34 cycle, grep on
+  `src/ai_intervention_agent/static/js`): ESC is bound in 5
+  places (`keyboard-shortcuts.js::registerDefaults`,
+  `settings-manager.js`, `image-upload.js`,
+  `keyboard_shortcut_help.js`, `quick_phrases.js`), **all** of
+  them limited to "close current modal / overlay / settings
+  panel / inline add-form". None close the page, kill a task,
+  or otherwise destructively interact with data. The trap that
+  bit competitor (ESC = close desktop window) does not apply
+  to us — we have no window-level ESC handler at all. **No
+  action**.
 
 ---
 

@@ -86,6 +86,14 @@ guardrail. The right fix was to switch from `var(--color-primary,
 #007aff)` to the project's actual design token `--primary-500`,
 not to suppress the lint.
 
+<!--
+Editor note: the `16dbc34` reference above is the cr33 commit
+documenting this exact case. It is **illustrative**: feel free
+to replace it with a more recent or canonical example when one
+appears, but keep the underlying rule unchanged.
+-->
+
+
 ---
 
 ## 3. Commit style

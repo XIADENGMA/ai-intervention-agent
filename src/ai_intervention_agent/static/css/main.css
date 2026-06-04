@@ -6989,6 +6989,33 @@ code,
   box-shadow: none;
   transition: all 0.2s;
 }
+/* cr34 §8 #1 fix — task tab dblclick/Shift+dblclick 复制后 600ms
+ * 视觉反馈。``copy-flash-ok`` / ``copy-flash-err`` 由 multi_task.js 的
+ * ``_flashCopyOnSourceElement`` 临时添加。
+ * 走项目 design token，不硬编码 hex；prefers-reduced-motion 兜底。
+ */
+.task-tab-text.copy-flash-ok {
+  background: var(--primary-500);
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.task-tab-text.copy-flash-err {
+  background: #c33d3d;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-tab-text.copy-flash-ok,
+  .task-tab-text.copy-flash-err {
+    transition: none;
+  }
+}
 /** task-tab悬停：背景变亮，边框变紫，文字变深 */
 .task-tab:hover {
   background: rgba(50, 50, 65, 0.5);

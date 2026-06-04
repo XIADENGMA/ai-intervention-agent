@@ -142,5 +142,59 @@ class TestAntiRegression(unittest.TestCase):
         )
 
 
+class TestVisualFlashFeedback(unittest.TestCase):
+    """cr34 §8 #1 — 复制后给来源 textSpan 加 600ms 视觉反馈。"""
+
+    src = MULTI_TASK_JS.read_text(encoding="utf-8")
+
+    def test_flash_helper_defined(self) -> None:
+        self.assertRegex(
+            self.src,
+            r"function _flashCopyOnSourceElement\(\s*taskId\s*,\s*ok\s*\)",
+            "必须定义 _flashCopyOnSourceElement(taskId, ok)",
+        )
+
+    def test_flash_helper_called_on_id_copy(self) -> None:
+        m = re.search(
+            r"async function copyTaskIdToClipboard\(\s*taskId\s*\)\s*\{([\s\S]*?)\n\}",
+            self.src,
+        )
+        self.assertIsNotNone(m)
+        assert m is not None
+        self.assertIn(
+            "_flashCopyOnSourceElement(taskId,",
+            m.group(1),
+            "copyTaskIdToClipboard 应该调 _flashCopyOnSourceElement",
+        )
+
+    def test_flash_helper_called_on_link_copy(self) -> None:
+        m = re.search(
+            r"async function copyTaskLinkToClipboard\(\s*taskId\s*\)\s*\{([\s\S]*?)\n\}",
+            self.src,
+        )
+        self.assertIsNotNone(m)
+        assert m is not None
+        body = m.group(1)
+        self.assertGreaterEqual(
+            body.count("_flashCopyOnSourceElement"),
+            2,
+            "copyTaskLinkToClipboard 应在 invalid-url 和 写完后 两个分支调 flash",
+        )
+
+    def test_flash_uses_dataset_query(self) -> None:
+        self.assertIn(
+            "data-copyable-task-id=",
+            self.src,
+            "_flashCopyOnSourceElement 必须用 data-copyable-task-id 查找来源元素",
+        )
+
+    def test_flash_uses_css_escape(self) -> None:
+        self.assertIn(
+            "CSS.escape(",
+            self.src,
+            "querySelector 必须用 CSS.escape 防止 task_id 含特殊字符注入 selector",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
