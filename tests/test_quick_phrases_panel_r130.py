@@ -330,12 +330,16 @@ class TestNotBreakingExisting(unittest.TestCase):
             "feedback textarea 必须仍然存在（R130 不能破坏 R0 输入框）",
         )
 
-    def test_export_button_still_present(self) -> None:
-        # R125b 的导出按钮不能因为 R130 改版被误删
-        self.assertIn(
+    def test_export_button_removed_per_feat_remove_download(self) -> None:
+        # 历史：R125b 在 header-actions 引入 #export-tasks-btn 下载按钮。
+        # 现状：feat-remove-download 按用户偏好移除该按钮（后端 API 保留）。
+        # 本用例从"必须存在"反转为"必须缺席"，锁住 R130 quick-phrases 面板
+        # 改版不会"恢复"该按钮。详细回归契约见
+        # ``tests/test_feat_remove_download_button.py``。
+        self.assertNotIn(
             'id="export-tasks-btn"',
             self.html,
-            "R125b 的 #export-tasks-btn 必须仍然存在",
+            "#export-tasks-btn 已被 feat-remove-download 移除，不应再出现在模板中",
         )
 
     def test_template_context_carries_quick_phrases_version(self) -> None:

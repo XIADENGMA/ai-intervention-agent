@@ -740,8 +740,7 @@ h1 {
  *   - 毛玻璃效果：backdrop-filter: blur(8px)
  *   - 阴影：0 2px 8px rgba(0, 0, 0, 0.1)
  */
-.settings-btn,
-.export-btn {
+.settings-btn {
   background: rgba(255, 255, 255, 0.1); /* 半透明白色背景 */
   border: 1px solid rgba(255, 255, 255, 0.2); /* 边框 */
   border-radius: 10px; /* 圆角 */
@@ -761,17 +760,6 @@ h1 {
   z-index: 11; /* 确保在其他元素之上 */
 }
 
-/* R125b：``.export-btn`` 是一个 ``<a download>`` 元素，浏览器默认会
-   给它一个底色 + 文字下划线 + 蓝色 visited 颜色——把这些视觉债务
-   清掉，让它在 ``.header-actions`` 里跟 ``.settings-btn`` 视觉对齐。 */
-.export-btn,
-.export-btn:visited,
-.export-btn:hover,
-.export-btn:active {
-  text-decoration: none;
-  color: inherit;
-}
-
 /**
  * 设置按钮悬停效果（.settings-btn:hover）：
  *
@@ -781,8 +769,7 @@ h1 {
  *   - 向上位移1px（transform: translateY(-1px)）
  *   - 增强阴影（0 4px 12px）
  */
-.settings-btn:hover,
-.export-btn:hover {
+.settings-btn:hover {
   background: rgba(255, 255, 255, 0.15); /* 背景变亮 */
   border-color: rgba(255, 255, 255, 0.3); /* 边框变亮 */
   transform: translateY(-1px); /* 向上位移 */
@@ -797,8 +784,7 @@ h1 {
  *   - 取消位移（transform: translateY(0)）
  *   - 背景变暗（0.08透明度）
  */
-.settings-btn:active,
-.export-btn:active {
+.settings-btn:active {
   transform: translateY(0); /* 取消位移 */
   background: rgba(255, 255, 255, 0.08); /* 背景变暗 */
 }
@@ -811,8 +797,7 @@ h1 {
  *   - 添加自定义蓝色阴影边框
  *   - 阴影：0 0 0 2px rgba(0, 122, 255, 0.3)
  */
-.settings-btn:focus,
-.export-btn:focus {
+.settings-btn:focus {
   outline: none; /* 移除默认outline */
   box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3); /* 蓝色聚焦边框 */
 }
@@ -1080,8 +1065,7 @@ h1 {
 }
 
 /* 设置按钮中的图标（无文字） */
-.settings-btn .btn-icon,
-.export-btn .btn-icon {
+.settings-btn .btn-icon {
   width: 1.2rem;
   height: 1.2rem;
   margin-right: 0;
@@ -7375,18 +7359,16 @@ code,
   box-shadow: var(--shadow-lg);
 }
 
-/* 浅色主题 - 设置按钮、主题按钮、导出按钮（R125b） */
+/* 浅色主题 - 设置按钮、主题按钮 */
 [data-theme="light"] .settings-btn,
-[data-theme="light"] .theme-toggle-btn,
-[data-theme="light"] .export-btn {
+[data-theme="light"] .theme-toggle-btn {
   background: var(--bg-secondary);
   border-color: var(--border-primary);
   color: var(--text-primary);
 }
 
 [data-theme="light"] .settings-btn:hover,
-[data-theme="light"] .theme-toggle-btn:hover,
-[data-theme="light"] .export-btn:hover {
+[data-theme="light"] .theme-toggle-btn:hover {
   background: var(--bg-hover);
   border-color: var(--border-hover);
 }

@@ -137,7 +137,7 @@ class TestEveryIconOnlyButtonHasAriaLabel(unittest.TestCase):
                 f"(line, kind, id): {offenders}。修复：给该元素加 "
                 'aria-label="<语义化标签>" + data-i18n-aria-label="<i18n key>" '
                 "实现 i18n。范例参考 web_ui.html 中 #theme-toggle-btn / "
-                "#settings-btn / #export-tasks-btn 三个 icon-only 按钮的已有写法。"
+                "#settings-btn 等 icon-only 按钮的已有写法。"
             ),
         )
 
@@ -169,7 +169,9 @@ class TestKnownIconOnlyButtonsAriaLabelPresent(unittest.TestCase):
     KNOWN_ICON_ONLY_BUTTON_IDS = (
         "theme-toggle-btn",
         "settings-btn",
-        "export-tasks-btn",
+        # ``export-tasks-btn`` 在 feat-remove-download 中按用户要求从前端
+        # 移除（``/api/tasks/export`` 后端 API 保留供 CI / 备份脚本调用）。
+        # 历史 R125b/R232 invariant 锚点已转移到剩余两个按钮。
     )
 
     def test_each_known_icon_only_button_has_aria_label(self) -> None:
