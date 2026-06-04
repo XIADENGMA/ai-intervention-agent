@@ -141,9 +141,79 @@ asks for it. **Logged as cycle-5 candidate.**
 |---|---|---|
 | cr38 cycle open | mining-4 kickoff doc | this file |
 | cr39 cycle | Track A claude-code docs review | **not-borrow** — 0 ROI after mapping; logged 1 adjacent candidate (`once: true` hook → `auto_resubmit.once`) for cycle-5 |
-| _TBD_ | Track B mcp-feedback-enhanced HEAD compare | _TBD_ |
+| cr39 cycle | Track B mcp-feedback-enhanced HEAD re-baseline | **2 candidates** — v2.6.0 still latest release (cycle-3 baseline holds), but **PR #207** (`penn201500`, Jan 2026) introduces session-scoped routes + session-not-found UX + multi-session concurrency at WebUIManager level. **independent convergence** with our mining-2 §3.2 session-link copy (parallel evolution = strong signal). Also: **Starlette 1.0 breaking-change bug** (`Issue #213`, Mar 2026) still open — competitor is **broken on default install** for ~2 months. We use Flask, immune. → **README marketing opportunity** + **borrow #1 session-not-found 404 page polish** (low LoC). |
 | _TBD_ | Track C gemini-cli sibling-tool survey | _TBD_ |
 | _TBD_ | Track D aider/sweep interaction survey | _TBD_ |
+
+## §4.5 Track B detailed findings (`mcp-feedback-enhanced` HEAD)
+
+### B.1 Survey
+
+Searched: GitHub Releases (latest tag), GitHub Issues (open),
+GitHub PRs (open + recent merged), CHANGELOG drift check.
+
+### B.2 Findings
+
+**Stable channel** (releases tab):
+- Latest release: **v2.6.0** (Jun 2025) — **0 new releases**
+  since cycle-3 Track A baseline (cycle-3 also 0 new).
+- 35 historical releases unchanged.
+
+**Main branch** (PRs / commits since 2025-06-28):
+
+| PR | Author | Topic | Status | Date |
+|---|---|---|---|---|
+| #207 | `penn201500` | session-scoped routes `/feedback/{session_id}` + WS `?session_id=...` + multi-session concurrency + session-not-found UX + i18n | open | 2026-01-15 |
+| #215 | `bitxel` | bump_starlette (fix Starlette 1.0 breaking change) | unmerged | 2026-03 |
+
+**Open critical bug**:
+- **Issue #213** (Mar 2026) — `uvx mcp-feedback-enhanced@latest`
+  fails to start because Starlette 1.0 broke its dependency
+  pinning. **Workaround**: pin `starlette<1.0` or use the
+  `bump_starlette` fork branch. Still unmerged as of HEAD.
+
+### B.3 Mapping to our project
+
+| Their item | Our equivalent | Decision |
+|---|---|---|
+| session-scoped routes `/feedback/{session_id}` | URL hash `#task-tab=<id>` (mining-2 §3.4) | **independent convergence** — they go for path-level routing, we use hash. Hash is simpler (no server route table change). **Not borrowing path-level** — overlapping value, additional infrastructure cost. |
+| session-not-found pretty UX | plain 404 (Flask default) | **borrow #1 candidate** — pretty page improves debugging when user clicks stale link. Low LoC. Includes i18n. |
+| multi-session concurrency at WebUIManager | our `TaskQueue` already supports multi-task | n/a — pre-shipped |
+| Starlette 1.0 broke install | we use Flask 3.x | **README opportunity** — surface "stable install, immune to Starlette breakage" as a competitive differentiator |
+
+### B.4 Borrow / not-borrow decisions
+
+- **borrow #1**: session-not-found pretty page (currently
+  plain Flask 404). **ROI**: medium (improves stale-link UX +
+  reduces "is the server broken?" support burden). **LoC**:
+  ~80 (Flask `@app.errorhandler(404)` + template + 2 i18n
+  keys).
+- **not-borrow**: session-scoped path-level routes. Reason:
+  overlapping value with mining-2 §3.4 hash routing; cost-to-
+  benefit ratio doesn't justify route table redesign.
+- **not-borrow** (anti-pattern): Starlette pinning fragility.
+  We're already on Flask 3.x; mention competitor's bug in
+  README to highlight stability as a differentiator.
+
+### B.5 Independent convergence signal (meta-observation)
+
+Both projects independently shipped session-link copy/share UX
+within ~5 months of each other (us mining-2 §3.4 → cr35; them
+PR #207). This is the **3rd** instance of cycle-N converging on
+the same idiom as a competitor independently:
+
+1. cycle-1: smart-sort. They already had R131c by the time we
+   surveyed. We re-built independently, then noticed.
+2. cycle-2: session export (JSON/Markdown). Both projects
+   shipped roughly simultaneously.
+3. cycle-3: session-link copy. We shipped (mining-2 §3.2)
+   ~3 months before their PR #207.
+
+**Interpretation**: convergent evolution indicates the idiom
+is **canonical for the problem space**. New idioms not yet
+surfaced by either project are increasingly rare. Future
+mining cycles may need to expand source diversity (Tracks C/D
+in this cycle do that).
 
 ## §5 Closeout criteria
 
