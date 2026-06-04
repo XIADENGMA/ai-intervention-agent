@@ -681,6 +681,7 @@ class SettingsManager {
         else if (code === "read_failed") msgKey = "settings.customSound.errors.readFailed";
         else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
         else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
+        else if (code === "duration_too_long") msgKey = "settings.customSound.errors.durationTooLong";
         statusEl.textContent = t(msgKey);
         statusEl.setAttribute("data-status", "error");
       }

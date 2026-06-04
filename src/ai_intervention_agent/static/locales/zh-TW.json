@@ -128,7 +128,8 @@
         "tooLarge": "音訊檔案过大（最大 700 KB）。",
         "readFailed": "音訊檔案讀取失敗，請重試。",
         "storageFailed": "瀏覽器儲存空間無法使用或已满，無法儲存音訊。",
-        "decodeFailed": "無法解码此音訊檔案。"
+        "decodeFailed": "無法解码此音訊檔案。",
+        "durationTooLong": "音訊時長过長（最大 30 秒）。"
       }
     },
     "mobileOptimize": "行動裝置优化",

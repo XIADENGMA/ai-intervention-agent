@@ -123,7 +123,8 @@
         "tooLarge": "音频文件过大（最大 700 KB）。",
         "readFailed": "音频文件读取失败，请重试。",
         "storageFailed": "浏览器存储不可用或已满，无法保存音频。",
-        "decodeFailed": "无法解码此音频文件。"
+        "decodeFailed": "无法解码此音频文件。",
+        "durationTooLong": "音频时长过长（最大 30 秒）。"
       }
     },
     "mobileOptimize": "移动设备优化",

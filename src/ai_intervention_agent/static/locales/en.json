@@ -123,7 +123,8 @@
         "tooLarge": "Audio file too large (max 700 KB).",
         "readFailed": "Failed to read audio file. Please try again.",
         "storageFailed": "Browser storage full or disabled; cannot save audio.",
-        "decodeFailed": "Could not decode this audio file."
+        "decodeFailed": "Could not decode this audio file.",
+        "durationTooLong": "Audio is too long (max 30 seconds)."
       }
     },
     "mobileOptimize": "Mobile device optimization",

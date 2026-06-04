@@ -71,6 +71,12 @@ const DEFAULT_NOTIFICATION_SOUND_URL = '/sounds/deng.wav'
 // 其它 MIME 一律拒绝，避免用户上传 .midi / .au / 视频被假冒为音频。
 const CUSTOM_SOUND_LS_KEY = 'aiia.notif.customSound.v1'
 const CUSTOM_SOUND_MAX_BYTES = 700 * 1024 // 700KB，base64 ~ 933KB，留 4MB+ 余量
+// cr33 §8 #1 fix：上限 30s 时长。理论上 700KB 已经 cap 了文件大小，但
+// 低比特率（如 32kbps mono ogg）可以塞进 30 分钟音频；decode 后 PCM
+// 1.4MB/分钟 (44.1kHz mono) → 30 分钟 = ~40MB；stereo 双倍 → 80MB；
+// 完全是真实 foot-gun。改在 ``saveCustomSoundFromFile`` 写 localStorage
+// **之前**做 ``decodeAudioData → duration`` 检查，超过阈值直接拒绝。
+const CUSTOM_SOUND_MAX_DURATION_S = 30
 const CUSTOM_SOUND_ALLOWED_MIMES = [
   'audio/mpeg',
   'audio/wav',
@@ -450,7 +456,7 @@ class NotificationManager {
    * @param {File} file 来自 ``<input type="file" accept="audio/*">``
    * @returns {Promise<{success: boolean, error?: string, meta?: object}>}
    *   error code ∈ {'no_file', 'invalid_mime', 'too_large', 'read_failed',
-   *                  'storage_failed'}
+   *                  'storage_failed', 'decode_failed', 'duration_too_long'}
    */
   async saveCustomSoundFromFile(file) {
     if (!file || typeof file !== 'object') {
@@ -483,6 +489,30 @@ class NotificationManager {
     if (!dataUri || !dataUri.startsWith('data:')) {
       return { success: false, error: 'read_failed' }
     }
+    // cr33 §8 #1 fix：在 setItem 之前先 decode + 检查 duration。
+    // why pre-storage：失败时 localStorage 完全没被污染，调用方不用做
+    // commit-then-rollback；且失败的 file 不会触发 ``decoded ===
+    // audioBuffers['custom']``，保留了已有 custom 音效。
+    // why duration check：700KB 大小 cap 仍然能塞 30 分钟 lo-bitrate 音频；
+    // 解码后 PCM 几十 MB，是真实内存 foot-gun。
+    if (this.audioContext) {
+      let preflightBuffer = null
+      try {
+        const r = await fetch(dataUri)
+        const ab = await r.arrayBuffer()
+        preflightBuffer = await this.audioContext.decodeAudioData(ab)
+      } catch (e) {
+        return { success: false, error: 'decode_failed', detail: String(e && e.message ? e.message : e) }
+      }
+      if (preflightBuffer.duration > CUSTOM_SOUND_MAX_DURATION_S) {
+        return {
+          success: false,
+          error: 'duration_too_long',
+          duration: preflightBuffer.duration,
+          maxDuration: CUSTOM_SOUND_MAX_DURATION_S
+        }
+      }
+    }
     const meta = {
       name: String(file.name || 'custom'),
       mime,
@@ -495,12 +525,12 @@ class NotificationManager {
         JSON.stringify({ ...meta, dataUri })
       )
     } catch (e) {
-      // localStorage quota exceeded / 隐私模式 / disabled cookies
       return { success: false, error: 'storage_failed', detail: e.message }
     }
     const decoded = await this.loadCustomSoundFromStorage()
     if (!decoded) {
-      // decode 失败：清掉 localStorage entry，告诉用户文件本身有问题
+      // 兜底：理论上不会到这里（preflight 已通过）；如果 audioContext
+      // 在两次 decode 之间出问题，清掉 localStorage 让用户知道。
       this.clearCustomSound()
       return { success: false, error: 'decode_failed', meta }
     }

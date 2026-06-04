@@ -133,12 +133,50 @@ class TestSaveErrorCodes(unittest.TestCase):
             "read_failed",
             "storage_failed",
             "decode_failed",
+            # cr33 §8 #1 fix：duration > 30s 内存 foot-gun
+            "duration_too_long",
         ):
             self.assertIn(
                 f"'{code}'",
                 body,
                 f"saveCustomSoundFromFile 必须能返回 error code {code!r}",
             )
+
+    def test_duration_check_constant_and_callsite(self) -> None:
+        """cr33 §8 #1 invariant：必须存在 CUSTOM_SOUND_MAX_DURATION_S = 30
+        常量；必须在 ``saveCustomSoundFromFile`` 写 localStorage **之前**
+        做 duration check。这条 invariant 防止未来 refactor 漏掉 pre-flight
+        decode 又把 duration check 退化成"已经污染 storage 后再回滚"模式。
+        """
+        body = self.src
+        self.assertRegex(
+            body,
+            r"CUSTOM_SOUND_MAX_DURATION_S\s*=\s*30",
+            "必须定义 CUSTOM_SOUND_MAX_DURATION_S = 30",
+        )
+        # 必须在 ``localStorage.setItem`` **之前**出现 ``duration`` 检查。
+        # 简化判断：在 saveCustomSoundFromFile body 内，
+        # ``preflightBuffer.duration`` 必须出现在 ``localStorage.setItem`` 之前。
+        save_fn_match = re.search(
+            r"async saveCustomSoundFromFile\(file\)\s*\{([\s\S]*?)\n  \}\n",
+            body,
+        )
+        self.assertIsNotNone(save_fn_match, "找不到 saveCustomSoundFromFile body")
+        assert save_fn_match is not None  # for type narrowing
+        fn_body = save_fn_match.group(1)
+        duration_pos = fn_body.find(".duration")
+        setitem_pos = fn_body.find("localStorage.setItem")
+        self.assertGreater(
+            duration_pos, -1, "saveCustomSoundFromFile 必须做 .duration 检查"
+        )
+        self.assertGreater(
+            setitem_pos, -1, "saveCustomSoundFromFile 必须 localStorage.setItem"
+        )
+        self.assertLess(
+            duration_pos,
+            setitem_pos,
+            "cr33 §8 #1 invariant: duration check 必须在 localStorage.setItem 之前",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +388,8 @@ class TestCssAndLocales(unittest.TestCase):
             '"tooLarge"',
             '"storageFailed"',
             '"decodeFailed"',
+            # cr33 §8 #1 fix：duration foot-gun 用户 facing 错误
+            '"durationTooLong"',
         ):
             self.assertIn(err, en, f"en.json::settings.customSound.errors 必须含 {err}")
 
@@ -360,6 +400,8 @@ class TestCssAndLocales(unittest.TestCase):
         self.assertIn('"invalidMime"', zh)
         self.assertIn('"tooLarge"', zh)
         self.assertIn('"decodeFailed"', zh)
+        # cr33 §8 #1 fix：duration foot-gun 用户 facing 错误
+        self.assertIn('"durationTooLong"', zh)
 
 
 if __name__ == "__main__":
