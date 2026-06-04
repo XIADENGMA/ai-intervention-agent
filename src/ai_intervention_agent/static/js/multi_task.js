@@ -2125,7 +2125,17 @@ function createTaskTab(task) {
   }
 
   textSpan.textContent = displayName;
-  textSpan.title = task.task_id; // 悬停显示完整ID
+  // cr35 §8 #1 fix — 把"双击复制 ID / Shift+双击复制深链"两条 modifier
+  // 提示一并写到 native ``title`` tooltip，让 keyboard-savvy 用户不需要
+  // 翻文档就能发现 Shift modifier。
+  const tooltipSuffix =
+    (typeof window !== "undefined" &&
+      window.AIIA_I18N &&
+      typeof window.AIIA_I18N.t === "function" &&
+      window.AIIA_I18N.t("page.taskTabCopyHint")) ||
+    "Double-click to copy ID · Shift+double-click to copy link";
+  textSpan.title = `${task.task_id}\n${tooltipSuffix}`;
+  textSpan.setAttribute("data-copy-hint-suffix", tooltipSuffix);
   // mining-cycle-2 §3.4: dblclick → 复制完整 task_id.
   // mining-cycle-2 §3.2: Shift+dblclick → 复制 task deep-link URL.
   // why dblclick：单击保留给 "切换任务"（现有交互）；shift modifier

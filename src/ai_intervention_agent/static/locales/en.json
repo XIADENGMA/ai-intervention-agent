@@ -20,6 +20,7 @@
     "settingsBtn": "Notification settings",
     "settingsBtnAriaLabel": "Open notification settings",
     "taskList": "Task list",
+    "taskTabCopyHint": "Double-click to copy ID · Shift+double-click to copy link",
     "closeWebUI": "Close Web UI",
     "clearAllImages": "Clear all images",
     "clearAllShort": "Clear all",

@@ -2547,7 +2547,7 @@ h1 {
   font-weight: 500;
 }
 .custom-sound-status[data-status="error"] {
-  color: #c33d3d;
+  color: var(--error-500);
   font-style: normal;
 }
 .custom-sound-controls {
@@ -2604,7 +2604,7 @@ h1 {
   cursor: not-allowed;
 }
 .custom-sound-btn-danger {
-  background: #c33d3d;
+  background: var(--error-500);
 }
 @media (prefers-reduced-motion: reduce) {
   .upload-btn-label,
@@ -7024,7 +7024,7 @@ code,
   transition: background 0.18s ease, color 0.18s ease;
 }
 .task-tab-text.copy-flash-err {
-  background: #c33d3d;
+  background: var(--error-500);
   color: #fff;
   border-radius: 4px;
   padding: 1px 4px;

@@ -25,6 +25,7 @@
     "settingsBtn": "通知設定",
     "settingsBtnAriaLabel": "打开通知設定",
     "taskList": "任務列表",
+    "taskTabCopyHint": "雙擊複製 ID · Shift+雙擊複製連結",
     "closeWebUI": "關閉 Web UI",
     "clearAllImages": "清除所有圖片",
     "clearAllShort": "清除全部",
