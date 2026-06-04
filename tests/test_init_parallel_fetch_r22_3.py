@@ -50,6 +50,49 @@ MULTI_TASK_PATH = (
 )
 
 
+def _strip_js_comments(source: str) -> str:
+    """剥离 JS 单行/块注释，避免静态扫描误命中文档字面量（BUG5 修复后必备）。"""
+    out: list[str] = []
+    i = 0
+    n = len(source)
+    in_string: str | None = None
+    in_line = False
+    in_block = False
+    while i < n:
+        ch = source[i]
+        nxt = source[i + 1] if i + 1 < n else ""
+        if in_line:
+            if ch == "\n":
+                in_line = False
+                out.append(ch)
+        elif in_block:
+            if ch == "*" and nxt == "/":
+                in_block = False
+                i += 1
+        elif in_string is not None:
+            out.append(ch)
+            if ch == "\\":
+                if i + 1 < n:
+                    out.append(source[i + 1])
+                    i += 1
+            elif ch == in_string:
+                in_string = None
+        else:
+            if ch == "/" and nxt == "/":
+                in_line = True
+                i += 1
+            elif ch == "/" and nxt == "*":
+                in_block = True
+                i += 1
+            elif ch in ('"', "'", "`"):
+                in_string = ch
+                out.append(ch)
+            else:
+                out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _node_available() -> bool:
     return shutil.which("node") is not None
 
@@ -162,23 +205,34 @@ class TestSourceInvariants(unittest.TestCase):
         )
 
     def test_promise_all_includes_both_targets(self) -> None:
-        """``Promise.all([...])`` 数组里必须同时引用两个目标函数。"""
+        """``Promise.all([...])`` / ``Promise.allSettled([...])`` 数组里必须同时引用两个目标函数。
+
+        BUG5 修复将 ``Promise.all`` 升级为 ``Promise.allSettled`` 以提供容错
+        （任一 reject 不阻塞另一个）。R22.3 的"并行 fetch"契约不变，但
+        允许同名族（all / allSettled）。
+
+        BUG5 注释里出现 ``Promise.all([...])`` 字面（解释历史代码问题），
+        需先剥离注释再做 regex search 才能避免误命中。
+        """
+        clean = _strip_js_comments(self.init_body)
         match = re.search(
-            r"Promise\.all\s*\(\s*\[(?P<inner>[\s\S]*?)\]\s*\)",
-            self.init_body,
+            r"Promise\.(?:all|allSettled)\s*\(\s*\[(?P<inner>[\s\S]*?)\]\s*\)",
+            clean,
         )
-        self.assertIsNotNone(match, "找不到 Promise.all([...]) 调用")
+        self.assertIsNotNone(
+            match, "找不到 Promise.all([...]) 或 Promise.allSettled([...]) 调用"
+        )
         assert match is not None
         inner = match.group("inner")
         self.assertIn(
             "fetchFeedbackPromptsFresh",
             inner,
-            "Promise.all 数组必须包含 fetchFeedbackPromptsFresh()",
+            "Promise.all/allSettled 数组必须包含 fetchFeedbackPromptsFresh()",
         )
         self.assertIn(
             "refreshTasksList",
             inner,
-            "Promise.all 数组必须包含 refreshTasksList()",
+            "Promise.all/allSettled 数组必须包含 refreshTasksList()",
         )
 
     def test_no_legacy_serial_awaits(self) -> None:
@@ -195,34 +249,45 @@ class TestSourceInvariants(unittest.TestCase):
         )
 
     def test_promise_all_is_awaited(self) -> None:
-        """``Promise.all([...])`` 必须被 ``await``，否则后续 ``startTasksPolling`` 会先跑。"""
-        # 简单宽松匹配：函数体里出现 `await Promise.all(`
+        """``Promise.all([...])`` / ``Promise.allSettled([...])`` 必须被 ``await``。
+
+        BUG5 升级后允许 allSettled；无论哪种都必须 await，否则后续
+        ``startTasksPolling`` 会与 fire-and-forget 的 fetch 交错。
+        """
         self.assertRegex(
             self.init_body,
-            r"await\s+Promise\.all\s*\(",
-            "Promise.all 必须被 await，否则 fire-and-forget 会与后续语句交错",
+            r"await\s+Promise\.(?:all|allSettled)\s*\(",
+            "Promise.all/allSettled 必须被 await，否则 fire-and-forget 会与后续语句交错",
         )
 
     def test_start_tasks_polling_after_promise_all(self) -> None:
         """``startTasksPolling()`` 必须出现在 ``await Promise.all(...)`` 之后。"""
-        all_idx = self.init_body.find("Promise.all(")
+        # BUG5：allSettled 含子串 "Promise.all"，find 命中前者即可
+        all_idx = self.init_body.find("Promise.all")
         polling_idx = self.init_body.find("startTasksPolling()")
-        self.assertGreater(all_idx, -1, "找不到 Promise.all 调用位置")
+        self.assertGreater(all_idx, -1, "找不到 Promise.all/allSettled 调用位置")
         self.assertGreater(polling_idx, -1, "找不到 startTasksPolling 调用")
         self.assertGreater(
             polling_idx,
             all_idx,
-            "startTasksPolling 必须在 Promise.all 之后调用，否则两者关系反转",
+            "startTasksPolling 必须在 Promise.all/allSettled 之后调用，否则两者关系反转",
         )
 
     def test_only_one_promise_all_in_init(self) -> None:
-        """``initMultiTaskSupport`` 当前只需要一处 ``Promise.all``；多了就要解释。"""
-        count = self.init_body.count("Promise.all(")
+        """``initMultiTaskSupport`` 函数体内只应有一次 ``await Promise.{all,allSettled}(`` 真实调用。
+
+        BUG5 把 Promise.all 替换成了 Promise.allSettled；本测试改成只数实际 await
+        调用次数，并忽略注释中的对比说明（注释里会出现多次 "Promise.all" 字样）。
+        """
+        # 只数实际 await 触发，不数注释（``await`` 前缀让我们能精确定位真实调用）。
+        count = len(
+            re.findall(r"await\s+Promise\.(?:all|allSettled)\s*\(", self.init_body)
+        )
         self.assertEqual(
             count,
             1,
-            f"initMultiTaskSupport 内只允许一个 Promise.all（实际 {count} 个），"
-            "如需新增请同步更新这条不变量与 docstring",
+            f"initMultiTaskSupport 内只允许一次 await Promise.{{all,allSettled}}(...) 调用，"
+            f"实际 {count} 次；如需新增请同步更新这条不变量与 docstring",
         )
 
 

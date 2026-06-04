@@ -81,7 +81,7 @@ class TestMultiTaskExposesSuppressionHelper(unittest.TestCase):
             self.source,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, "无法定位 config_changed SSE handler；测试需要更新")
+        assert match is not None, "无法定位 config_changed SSE handler；测试需要更新"
         body = match.group("body")
         self.assertIn(
             "_isConfigChangedToastSuppressed()",
@@ -113,7 +113,7 @@ class TestMultiTaskExposesSuppressionHelper(unittest.TestCase):
             self.source,
             re.DOTALL,
         )
-        self.assertIsNotNone(match)
+        assert match is not None, "无法定位 suppressLocalConfigChangedEcho helper"
         body = match.group("body")
         self.assertTrue(
             "Math.max" in body or "until > _suppressConfigChangedToastUntilMs" in body,

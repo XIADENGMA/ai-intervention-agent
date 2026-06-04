@@ -50,6 +50,7 @@ class TestLocaleKeysPresent(unittest.TestCase):
         data = _load_locale(locale_path)
         status = data.get("status")
         self.assertIsInstance(status, dict, f"{locale_path} 应该有 status section")
+        assert isinstance(status, dict)
         value = status.get(I18N_KEY)
         self.assertIsInstance(
             value,
@@ -176,10 +177,9 @@ class TestMultiTaskUsesI18nForHint(unittest.TestCase):
         i18n_match = re.search(r"_t\(['\"]status\.configChangedReload['\"]\)", body)
         # 匹配真正的兜底代码（不是注释里的提示）。同时接受单/双引号字面量。
         hint_match = re.search(r"typeof\s+detail\.hint\s*===\s*['\"]string['\"]", body)
-        self.assertIsNotNone(i18n_match, "缺少 _t('status.configChangedReload')")
-        self.assertIsNotNone(
-            hint_match,
-            "缺少 typeof detail.hint === 'string' 的兜底（多层 fallback 才稳）",
+        assert i18n_match is not None, "缺少 _t('status.configChangedReload')"
+        assert hint_match is not None, (
+            "缺少 typeof detail.hint === 'string' 的兜底（多层 fallback 才稳）"
         )
         self.assertLess(
             i18n_match.start(),

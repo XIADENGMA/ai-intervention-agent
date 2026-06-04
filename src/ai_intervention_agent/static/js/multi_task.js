@@ -941,6 +941,34 @@ function startTasksPolling() {
       // 复用 window 时残留 timer ref 跨页面 leak）。
       stopTasksHealthCheck();
     });
+    // BUG5 鲁棒性修复：监听浏览器 ``online`` 事件，网络从离线变在线时
+    // 立即触发一次重连，不必等下一个 30s 健康检查 tick。
+    //
+    // 触发场景：
+    //   - 笔记本休眠唤醒后重新连网；
+    //   - WiFi 切换 / 移动数据切换；
+    //   - 后端服务从外部断电恢复后重连。
+    //
+    // VSCode webview-ui.js 已有同样监听（``packages/vscode/webview-ui.js``
+    // 第 715 行附近），web 端补齐以保持双端 UX 一致：网络恢复后无需
+    // 用户手动刷新页面就能看到任务列表。
+    //
+    // 兜底：window.addEventListener('online', ...) 在某些极简浏览器 stub
+    // / 测试环境下可能抛错，整段包在 try/catch 内确保 init 主流程不破。
+    try {
+      if (typeof window !== "undefined" && window.addEventListener) {
+        window.addEventListener("online", function () {
+          if (typeof document !== "undefined" && document.hidden) return;
+          _debugLog(
+            "Browser back online; restarting polling + SSE for fast recovery",
+          );
+          startTasksPolling();
+          startTasksHealthCheck();
+        });
+      }
+    } catch (_e) {
+      /* 忽略：online 事件监听失败不应阻塞 init */
+    }
   }
 
   _debugLog("Task polling started (SSE preferred + polling safety-net)");
@@ -2902,11 +2930,29 @@ async function initMultiTaskSupport() {
   // 于把两个独立的网络往返叠加成 2× RTT；改 `Promise.all` 后两个请求在
   // 同一个事件循环 tick 内并行下发，关键路径压到 max(RTT_a, RTT_b)，
   // 在典型 LAN/loopback 上节省 ~5-15 ms 的 user-perceived TTI 延迟。
-  // 失败兜底：两个调用各自内部已经 try/catch 退化（前者保留默认 prompt，
-  // 后者由 polling 健康检查回收），所以单个 reject 不会掀翻另一个；用
-  // `Promise.all` 是安全的——任何一个 rejection 仍会向上抛，但目前两个
-  // 函数都是 swallow-and-fallback 风格，事实上不会 reject。
-  await Promise.all([fetchFeedbackPromptsFresh(), refreshTasksList()]);
+  //
+  // BUG5 鲁棒性修复：
+  // 历史代码裸 await ``Promise.all([...])`` —— 注释里乐观地写 "两个函数
+  // 都是 swallow-and-fallback 风格，事实上不会 reject"，但任何一处 lazy
+  // import 失败 / unexpected exception 都会让 Promise.all reject → init
+  // 函数提前抛出 → **后续 ``startTasksPolling`` + ``startTasksHealthCheck``
+  // 永远不会被调用** → 页面卡在初始 loading 状态，即便后端恢复也不会
+  // 自动重连（无 polling、无健康检查、无 SSE）。用户表现："后台仍在运行
+  // 但 web 页面无法显示，需要硬刷新"。
+  //
+  // 改用 ``Promise.allSettled`` + try/catch 双层兜底：
+  //   - 任何一个 reject 都不阻塞另一个完成；
+  //   - 整体被 try/catch 包裹，即便 Promise.allSettled 本身因某种环境
+  //     问题失败，仍会进入下面的轮询启动路径。
+  // 这样 init 始终能跑到健康检查启动那一步，保证后端恢复后页面能自愈。
+  try {
+    await Promise.allSettled([fetchFeedbackPromptsFresh(), refreshTasksList()]);
+  } catch (e) {
+    console.warn(
+      "Initial parallel fetch failed (will still start polling + health check):",
+      e,
+    );
+  }
 
   // 启动定时轮询
   startTasksPolling();

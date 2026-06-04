@@ -16,13 +16,17 @@
  */
 function __vuT(key, params) {
   try {
-    if (typeof window !== 'undefined'
-      && window.AIIA_I18N
-      && typeof window.AIIA_I18N.t === 'function') {
-      return window.AIIA_I18N.t(key, params)
+    if (
+      typeof window !== "undefined" &&
+      window.AIIA_I18N &&
+      typeof window.AIIA_I18N.t === "function"
+    ) {
+      return window.AIIA_I18N.t(key, params);
     }
-  } catch (_e) { /* noop */ }
-  return key
+  } catch (_e) {
+    /* noop */
+  }
+  return key;
 }
 
 class ValidationUtils {
@@ -35,49 +39,49 @@ class ValidationUtils {
    *  拒绝；jpg 与 jpeg 同义但少数浏览器/上传组件报 image/jpg，故同时收两
    *  个 MIME，后端 magic-byte 仍按 image/jpeg 一种实际格式识别）。 */
   static SUPPORTED_IMAGE_TYPES = [
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/gif',
-    'image/webp',
-    'image/bmp'
-  ]
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+  ];
 
   /** 最小文件大小（100字节） */
-  static MIN_FILE_SIZE = 100
+  static MIN_FILE_SIZE = 100;
 
   /** 最大文件大小（10MB） */
-  static MAX_FILE_SIZE = 10 * 1024 * 1024
+  static MAX_FILE_SIZE = 10 * 1024 * 1024;
 
   /** 最大文件名长度 */
-  static MAX_FILENAME_LENGTH = 255
+  static MAX_FILENAME_LENGTH = 255;
 
   /** 可疑文件扩展名（安全黑名单） */
   static SUSPICIOUS_EXTENSIONS = [
-    '.exe',
-    '.bat',
-    '.cmd',
-    '.scr',
-    '.com',
-    '.pif',
-    '.vbs',
-    '.js',
-    '.jar',
-    '.msi',
-    '.dll',
-    '.ps1'
-  ]
+    ".exe",
+    ".bat",
+    ".cmd",
+    ".scr",
+    ".com",
+    ".pif",
+    ".vbs",
+    ".js",
+    ".jar",
+    ".msi",
+    ".dll",
+    ".ps1",
+  ];
 
   /** 文件名中禁止的字符 */
-  static FORBIDDEN_FILENAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/g
+  static FORBIDDEN_FILENAME_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
 
   /** XSS危险字符模式 */
   static XSS_PATTERNS = [
     /<script\b[^>]*>/gi,
     /javascript:/gi,
     /on\w+\s*=/gi,
-    /data:\s*text\/html/gi
-  ]
+    /data:\s*text\/html/gi,
+  ];
 
   // ========================================
   // 文件验证方法
@@ -96,47 +100,52 @@ class ValidationUtils {
    * }
    */
   static validateImageFile(file) {
-    const errors = []
+    const errors = [];
 
     // 基础检查
     if (!file) {
-      errors.push(__vuT('validation.invalidFile'))
-      return { valid: false, errors }
+      errors.push(__vuT("validation.invalidFile"));
+      return { valid: false, errors };
     }
 
     if (!file.type) {
-      errors.push(__vuT('validation.invalidFile'))
-      return { valid: false, errors }
+      errors.push(__vuT("validation.invalidFile"));
+      return { valid: false, errors };
     }
 
     // 类型验证
     if (!this.SUPPORTED_IMAGE_TYPES.includes(file.type)) {
-      errors.push(__vuT('validation.unsupportedFormat', { type: file.type }))
+      errors.push(__vuT("validation.unsupportedFormat", { type: file.type }));
     }
 
     // 大小验证
     if (file.size < this.MIN_FILE_SIZE) {
-      errors.push(__vuT('validation.fileTooSmall', { size: file.size }))
+      errors.push(__vuT("validation.fileTooSmall", { size: file.size }));
     }
 
     if (file.size > this.MAX_FILE_SIZE) {
-      const sizeMB = (file.size / 1024 / 1024).toFixed(2)
-      const limitMB = (this.MAX_FILE_SIZE / 1024 / 1024).toFixed(0)
-      errors.push(__vuT('validation.fileSizeExceeded', { actual: sizeMB, limit: limitMB }))
+      const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+      const limitMB = (this.MAX_FILE_SIZE / 1024 / 1024).toFixed(0);
+      errors.push(
+        __vuT("validation.fileSizeExceeded", {
+          actual: sizeMB,
+          limit: limitMB,
+        }),
+      );
     }
 
     // 文件名验证
-    const filenameErrors = this.validateFilename(file.name)
-    errors.push(...filenameErrors)
+    const filenameErrors = this.validateFilename(file.name);
+    errors.push(...filenameErrors);
 
     // 安全检查
-    const securityErrors = this.checkFileSecurity(file)
-    errors.push(...securityErrors)
+    const securityErrors = this.checkFileSecurity(file);
+    errors.push(...securityErrors);
 
     return {
       valid: errors.length === 0,
-      errors
-    }
+      errors,
+    };
   }
 
   /**
@@ -146,33 +155,37 @@ class ValidationUtils {
    * @returns {string[]} 错误信息数组
    */
   static validateFilename(filename) {
-    const errors = []
+    const errors = [];
 
     if (!filename) {
-      errors.push(__vuT('validation.filenameEmpty'))
-      return errors
+      errors.push(__vuT("validation.filenameEmpty"));
+      return errors;
     }
 
     // 长度检查
     if (filename.length > this.MAX_FILENAME_LENGTH) {
       errors.push(
-        __vuT('validation.fileNameTooLong')
-        + ` (${filename.length} > ${this.MAX_FILENAME_LENGTH})`
-      )
+        __vuT("validation.fileNameTooLong") +
+          ` (${filename.length} > ${this.MAX_FILENAME_LENGTH})`,
+      );
     }
 
     // 危险字符检查（重置 lastIndex 以防 /g 标志累积状态）
-    this.FORBIDDEN_FILENAME_CHARS.lastIndex = 0
+    this.FORBIDDEN_FILENAME_CHARS.lastIndex = 0;
     if (this.FORBIDDEN_FILENAME_CHARS.test(filename)) {
-      errors.push(__vuT('validation.filenameIllegalChars'))
+      errors.push(__vuT("validation.filenameIllegalChars"));
     }
 
     // 路径遍历检查
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      errors.push(__vuT('validation.filenamePathTraversal'))
+    if (
+      filename.includes("..") ||
+      filename.includes("/") ||
+      filename.includes("\\")
+    ) {
+      errors.push(__vuT("validation.filenamePathTraversal"));
     }
 
-    return errors
+    return errors;
   }
 
   /**
@@ -182,27 +195,27 @@ class ValidationUtils {
    * @returns {string[]} 安全警告数组
    */
   static checkFileSecurity(file) {
-    const errors = []
-    const filename = file.name?.toLowerCase() || ''
+    const errors = [];
+    const filename = file.name?.toLowerCase() || "";
 
     // 可疑扩展名检查
     for (const ext of this.SUSPICIOUS_EXTENSIONS) {
       if (filename.endsWith(ext)) {
-        errors.push(__vuT('validation.suspiciousExt', { ext }))
-        break
+        errors.push(__vuT("validation.suspiciousExt", { ext }));
+        break;
       }
     }
 
     // 双扩展名检查（如 image.jpg.exe）
-    const parts = filename.split('.')
+    const parts = filename.split(".");
     if (parts.length > 2) {
-      const lastExt = '.' + parts[parts.length - 1]
+      const lastExt = "." + parts[parts.length - 1];
       if (this.SUSPICIOUS_EXTENSIONS.includes(lastExt)) {
-        errors.push(__vuT('validation.maskedExecutable'))
+        errors.push(__vuT("validation.maskedExecutable"));
       }
     }
 
-    return errors
+    return errors;
   }
 
   // ========================================
@@ -221,39 +234,54 @@ class ValidationUtils {
    * @returns {Object} { valid: boolean, errors: string[], sanitized: string }
    */
   static validateTextInput(text, options = {}) {
-    const { minLength = 0, maxLength = 10000, allowEmpty = true, sanitize = true } = options
+    const {
+      minLength = 0,
+      maxLength = 10000,
+      allowEmpty = true,
+      sanitize = true,
+    } = options;
 
-    const errors = []
-    let sanitized = text || ''
+    const errors = [];
+    let sanitized = text || "";
 
     // 空值检查
-    if (!text || text.trim() === '') {
+    if (!text || text.trim() === "") {
       if (!allowEmpty) {
-        errors.push(__vuT('validation.emptyField'))
+        errors.push(__vuT("validation.emptyField"));
       }
-      return { valid: allowEmpty, errors, sanitized: '' }
+      return { valid: allowEmpty, errors, sanitized: "" };
     }
 
     // 长度检查
     if (text.length < minLength) {
-      errors.push(__vuT('validation.inputTooShort', { length: text.length, min: minLength }))
+      errors.push(
+        __vuT("validation.inputTooShort", {
+          length: text.length,
+          min: minLength,
+        }),
+      );
     }
 
     if (text.length > maxLength) {
-      errors.push(__vuT('validation.inputTooLong', { length: text.length, max: maxLength }))
-      sanitized = text.substring(0, maxLength)
+      errors.push(
+        __vuT("validation.inputTooLong", {
+          length: text.length,
+          max: maxLength,
+        }),
+      );
+      sanitized = text.substring(0, maxLength);
     }
 
     // XSS清理
     if (sanitize) {
-      sanitized = this.sanitizeText(sanitized)
+      sanitized = this.sanitizeText(sanitized);
     }
 
     return {
       valid: errors.length === 0,
       errors,
-      sanitized
-    }
+      sanitized,
+    };
   }
 
   /**
@@ -263,24 +291,24 @@ class ValidationUtils {
    * @returns {string} 清理后的文本
    */
   static sanitizeText(text) {
-    if (!text) return ''
+    if (!text) return "";
 
-    let sanitized = text
+    let sanitized = text;
 
     // 移除XSS危险模式
     for (const pattern of this.XSS_PATTERNS) {
-      sanitized = sanitized.replace(pattern, '')
+      sanitized = sanitized.replace(pattern, "");
     }
 
     // HTML实体编码
     sanitized = sanitized
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;')
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#x27;");
 
-    return sanitized
+    return sanitized;
   }
 
   /**
@@ -291,14 +319,14 @@ class ValidationUtils {
    * @returns {string} 清理后的安全文件名
    */
   static sanitizeFilename(filename, maxLength = 100) {
-    if (!filename) return ''
+    if (!filename) return "";
 
     return filename
-      .replace(this.FORBIDDEN_FILENAME_CHARS, '')
-      .replace(/\s+/g, '_')
-      .replace(/\.{2,}/g, '.') // 移除连续点
+      .replace(this.FORBIDDEN_FILENAME_CHARS, "")
+      .replace(/\s+/g, "_")
+      .replace(/\.{2,}/g, ".") // 移除连续点
       .trim()
-      .substring(0, maxLength)
+      .substring(0, maxLength);
   }
 
   // ========================================
@@ -315,38 +343,38 @@ class ValidationUtils {
    * @returns {Object} { valid: boolean, value: number, error: string }
    */
   static validateNumberRange(value, min, max, fieldName) {
-    const num = Number(value)
-    const name = fieldName || __vuT('validation.defaultFieldName')
+    const num = Number(value);
+    const name = fieldName || __vuT("validation.defaultFieldName");
 
     if (isNaN(num)) {
       return {
         valid: false,
         value: min,
-        error: __vuT('validation.notANumber', { field: name })
-      }
+        error: __vuT("validation.notANumber", { field: name }),
+      };
     }
 
     if (num < min) {
       return {
         valid: false,
         value: min,
-        error: __vuT('validation.numberBelowMin', { field: name, min })
-      }
+        error: __vuT("validation.numberBelowMin", { field: name, min }),
+      };
     }
 
     if (num > max) {
       return {
         valid: false,
         value: max,
-        error: __vuT('validation.numberAboveMax', { field: name, max })
-      }
+        error: __vuT("validation.numberAboveMax", { field: name, max }),
+      };
     }
 
     return {
       valid: true,
       value: num,
-      error: null
-    }
+      error: null,
+    };
   }
 
   /**
@@ -358,9 +386,9 @@ class ValidationUtils {
    * @returns {number} 限制后的数值
    */
   static clampValue(value, min, max) {
-    const num = Number(value)
-    if (isNaN(num)) return min
-    return Math.max(min, Math.min(max, num))
+    const num = Number(value);
+    if (isNaN(num)) return min;
+    return Math.max(min, Math.min(max, num));
   }
 }
 
@@ -375,8 +403,8 @@ class ValidationUtils {
 
 class APICache {
   constructor(defaultTTL = 30000) {
-    this.cache = new Map()
-    this.defaultTTL = defaultTTL // 默认缓存时间（毫秒）
+    this.cache = new Map();
+    this.defaultTTL = defaultTTL; // 默认缓存时间（毫秒）
   }
 
   /**
@@ -386,15 +414,15 @@ class APICache {
    * @returns {*} 缓存的值，不存在或已过期返回 null
    */
   get(key) {
-    const entry = this.cache.get(key)
-    if (!entry) return null
+    const entry = this.cache.get(key);
+    if (!entry) return null;
 
     if (Date.now() > entry.expiry) {
-      this.cache.delete(key)
-      return null
+      this.cache.delete(key);
+      return null;
     }
 
-    return entry.value
+    return entry.value;
   }
 
   /**
@@ -407,8 +435,8 @@ class APICache {
   set(key, value, ttl = this.defaultTTL) {
     this.cache.set(key, {
       value,
-      expiry: Date.now() + ttl
-    })
+      expiry: Date.now() + ttl,
+    });
   }
 
   /**
@@ -417,24 +445,24 @@ class APICache {
    * @param {string} key - 缓存键
    */
   delete(key) {
-    this.cache.delete(key)
+    this.cache.delete(key);
   }
 
   /**
    * 清空所有缓存
    */
   clear() {
-    this.cache.clear()
+    this.cache.clear();
   }
 
   /**
    * 清理过期缓存
    */
   cleanup() {
-    const now = Date.now()
+    const now = Date.now();
     for (const [key, entry] of this.cache.entries()) {
       if (now > entry.expiry) {
-        this.cache.delete(key)
+        this.cache.delete(key);
       }
     }
   }
@@ -445,7 +473,7 @@ class APICache {
    * @returns {number} 缓存条目数
    */
   get size() {
-    return this.cache.size
+    return this.cache.size;
   }
 
   /**
@@ -462,53 +490,55 @@ class APICache {
    * @returns {Promise<*>} 响应数据
    */
   async fetchWithCache(url, options = {}, cacheTTL = this.defaultTTL) {
-    const parseJsonOrThrow = async response => {
-      const contentType = (response.headers.get('content-type') || '').toLowerCase()
-      if (!contentType.includes('application/json')) {
+    const parseJsonOrThrow = async (response) => {
+      const contentType = (
+        response.headers.get("content-type") || ""
+      ).toLowerCase();
+      if (!contentType.includes("application/json")) {
         throw new Error(
-          `APICache.fetchWithCache: expected JSON response, got "${contentType || 'unknown'}" (url=${url})`
-        )
+          `APICache.fetchWithCache: expected JSON response, got "${contentType || "unknown"}" (url=${url})`,
+        );
       }
-      return response.json()
-    }
+      return response.json();
+    };
 
     // 只缓存 GET 请求
-    const method = options.method?.toUpperCase() || 'GET'
-    if (method !== 'GET') {
-      const response = await fetch(url, options)
-      return parseJsonOrThrow(response)
+    const method = options.method?.toUpperCase() || "GET";
+    if (method !== "GET") {
+      const response = await fetch(url, options);
+      return parseJsonOrThrow(response);
     }
 
     // 检查缓存
-    const cacheKey = `${method}:${url}`
-    const cached = this.get(cacheKey)
+    const cacheKey = `${method}:${url}`;
+    const cached = this.get(cacheKey);
     if (cached !== null) {
-      return cached
+      return cached;
     }
 
     // 发起请求
-    const response = await fetch(url, options)
-    const data = await parseJsonOrThrow(response)
+    const response = await fetch(url, options);
+    const data = await parseJsonOrThrow(response);
 
     // 存入缓存
     if (response.ok) {
-      this.set(cacheKey, data, cacheTTL)
+      this.set(cacheKey, data, cacheTTL);
     }
 
-    return data
+    return data;
   }
 }
 
 // 创建全局缓存实例
-const apiCache = new APICache(30000) // 30秒默认缓存
+const apiCache = new APICache(30000); // 30秒默认缓存
 
 // 定期清理过期缓存（每5分钟）
 setInterval(
   () => {
-    apiCache.cleanup()
+    apiCache.cleanup();
   },
-  5 * 60 * 1000
-)
+  5 * 60 * 1000,
+);
 
 // ========================================
 // 性能优化工具：去抖动与节流
@@ -531,48 +561,48 @@ setInterval(
  * input.addEventListener('input', debouncedSave);
  */
 function debounce(func, wait = 300, immediate = false) {
-  let timeout = null
-  let result = null
+  let timeout = null;
+  let result = null;
 
   const debounced = function (...args) {
-    const context = this
-    const callNow = immediate && !timeout
+    const context = this;
+    const callNow = immediate && !timeout;
 
     // 清除之前的定时器
     if (timeout) {
-      clearTimeout(timeout)
+      clearTimeout(timeout);
     }
 
     timeout = setTimeout(() => {
-      timeout = null
+      timeout = null;
       if (!immediate) {
-        result = func.apply(context, args)
+        result = func.apply(context, args);
       }
-    }, wait)
+    }, wait);
 
     // 立即执行模式
     if (callNow) {
-      result = func.apply(context, args)
+      result = func.apply(context, args);
     }
 
-    return result
-  }
+    return result;
+  };
 
   // 取消去抖动
   debounced.cancel = function () {
     if (timeout) {
-      clearTimeout(timeout)
-      timeout = null
+      clearTimeout(timeout);
+      timeout = null;
     }
-  }
+  };
 
   // 立即执行
   debounced.flush = function (...args) {
-    debounced.cancel()
-    return func.apply(this, args)
-  }
+    debounced.cancel();
+    return func.apply(this, args);
+  };
 
-  return debounced
+  return debounced;
 }
 
 /**
@@ -594,49 +624,49 @@ function debounce(func, wait = 300, immediate = false) {
  * window.addEventListener('scroll', throttledScroll);
  */
 function throttle(func, wait = 200, options = {}) {
-  let timeout = null
-  let previous = 0
-  const { leading = true, trailing = true } = options
+  let timeout = null;
+  let previous = 0;
+  const { leading = true, trailing = true } = options;
 
   const throttled = function (...args) {
-    const context = this
-    const now = Date.now()
+    const context = this;
+    const now = Date.now();
 
     // 首次调用时，如果不允许 leading，设置 previous 为当前时间
     if (!previous && !leading) {
-      previous = now
+      previous = now;
     }
 
-    const remaining = wait - (now - previous)
+    const remaining = wait - (now - previous);
 
     if (remaining <= 0 || remaining > wait) {
       // 到达执行时间
       if (timeout) {
-        clearTimeout(timeout)
-        timeout = null
+        clearTimeout(timeout);
+        timeout = null;
       }
-      previous = now
-      func.apply(context, args)
+      previous = now;
+      func.apply(context, args);
     } else if (!timeout && trailing) {
       // 设置尾部执行定时器
       timeout = setTimeout(() => {
-        previous = leading ? Date.now() : 0
-        timeout = null
-        func.apply(context, args)
-      }, remaining)
+        previous = leading ? Date.now() : 0;
+        timeout = null;
+        func.apply(context, args);
+      }, remaining);
     }
-  }
+  };
 
   // 取消节流
   throttled.cancel = function () {
     if (timeout) {
-      clearTimeout(timeout)
-      timeout = null
+      clearTimeout(timeout);
+      timeout = null;
     }
-    previous = 0
-  }
+    previous = 0;
+  };
 
-  return throttled
+  return throttled;
 }
 
 /**
@@ -650,7 +680,7 @@ function throttle(func, wait = 200, options = {}) {
  */
 class RequestDeduplicator {
   constructor() {
-    this.pendingRequests = new Map()
+    this.pendingRequests = new Map();
   }
 
   /**
@@ -663,17 +693,17 @@ class RequestDeduplicator {
   async dedupe(key, asyncFn) {
     // 如果已有相同请求在进行中，返回该请求的 Promise
     if (this.pendingRequests.has(key)) {
-      console.debug(`[RequestDeduplicator] deduped request: ${key}`)
-      return this.pendingRequests.get(key)
+      console.debug(`[RequestDeduplicator] deduped request: ${key}`);
+      return this.pendingRequests.get(key);
     }
 
     // 创建新请求
     const promise = asyncFn().finally(() => {
-      this.pendingRequests.delete(key)
-    })
+      this.pendingRequests.delete(key);
+    });
 
-    this.pendingRequests.set(key, promise)
-    return promise
+    this.pendingRequests.set(key, promise);
+    return promise;
   }
 
   /**
@@ -683,19 +713,19 @@ class RequestDeduplicator {
    * @returns {boolean}
    */
   isPending(key) {
-    return this.pendingRequests.has(key)
+    return this.pendingRequests.has(key);
   }
 
   /**
    * 清除所有待处理请求
    */
   clear() {
-    this.pendingRequests.clear()
+    this.pendingRequests.clear();
   }
 }
 
 // 创建全局请求去重器实例
-const requestDeduplicator = new RequestDeduplicator()
+const requestDeduplicator = new RequestDeduplicator();
 
 // ========================================
 // 性能优化工具：图片懒加载
@@ -720,12 +750,12 @@ class LazyLoader {
    * 配置选项
    */
   static defaultOptions = {
-    rootMargin: '50px 0px', // 提前 50px 开始加载
+    rootMargin: "50px 0px", // 提前 50px 开始加载
     threshold: 0.01, // 1% 可见即触发
-    loadingClass: 'lazy-loading',
-    loadedClass: 'lazy-loaded',
-    errorClass: 'lazy-error'
-  }
+    loadingClass: "lazy-loading",
+    loadedClass: "lazy-loaded",
+    errorClass: "lazy-error",
+  };
 
   /**
    * 初始化懒加载
@@ -733,40 +763,44 @@ class LazyLoader {
    * @param {string} [selector='.lazy-image'] - 图片选择器
    * @param {Object} [options] - 配置选项
    */
-  static init(selector = '.lazy-image', options = {}) {
-    const config = { ...this.defaultOptions, ...options }
+  static init(selector = ".lazy-image", options = {}) {
+    const config = { ...this.defaultOptions, ...options };
 
     // 检查浏览器支持
-    if (!('IntersectionObserver' in window)) {
-      console.warn('IntersectionObserver not supported, falling back to eager load')
-      this.loadAllImages(selector)
-      return
+    if (!("IntersectionObserver" in window)) {
+      console.warn(
+        "IntersectionObserver not supported, falling back to eager load",
+      );
+      this.loadAllImages(selector);
+      return;
     }
 
     // 创建观察器
     const observer = new IntersectionObserver(
       (entries, obs) => {
-        entries.forEach(entry => {
+        entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            this.loadImage(entry.target, config)
-            obs.unobserve(entry.target)
+            this.loadImage(entry.target, config);
+            obs.unobserve(entry.target);
           }
-        })
+        });
       },
       {
         rootMargin: config.rootMargin,
-        threshold: config.threshold
-      }
-    )
+        threshold: config.threshold,
+      },
+    );
 
     // 观察所有懒加载图片
-    document.querySelectorAll(selector).forEach(img => {
-      observer.observe(img)
-    })
+    document.querySelectorAll(selector).forEach((img) => {
+      observer.observe(img);
+    });
 
     // 保存观察器引用
-    this._observer = observer
-    console.debug(`Lazy loader initialized, watching ${document.querySelectorAll(selector).length} images`)
+    this._observer = observer;
+    console.debug(
+      `Lazy loader initialized, watching ${document.querySelectorAll(selector).length} images`,
+    );
   }
 
   /**
@@ -776,29 +810,29 @@ class LazyLoader {
    * @param {Object} config - 配置选项
    */
   static loadImage(img, config = this.defaultOptions) {
-    const src = img.dataset.src
-    if (!src) return
+    const src = img.dataset.src;
+    if (!src) return;
 
     // 添加加载中状态
-    img.classList.add(config.loadingClass)
+    img.classList.add(config.loadingClass);
 
     // 预加载图片
-    const tempImg = new Image()
+    const tempImg = new Image();
 
     tempImg.onload = () => {
-      img.src = src
-      img.classList.remove(config.loadingClass)
-      img.classList.add(config.loadedClass)
-      img.removeAttribute('data-src')
-    }
+      img.src = src;
+      img.classList.remove(config.loadingClass);
+      img.classList.add(config.loadedClass);
+      img.removeAttribute("data-src");
+    };
 
     tempImg.onerror = () => {
-      img.classList.remove(config.loadingClass)
-      img.classList.add(config.errorClass)
-      console.warn(`Image load failed: ${src}`)
-    }
+      img.classList.remove(config.loadingClass);
+      img.classList.add(config.errorClass);
+      console.warn(`Image load failed: ${src}`);
+    };
 
-    tempImg.src = src
+    tempImg.src = src;
   }
 
   /**
@@ -807,9 +841,9 @@ class LazyLoader {
    * @param {string} selector - 图片选择器
    */
   static loadAllImages(selector) {
-    document.querySelectorAll(selector).forEach(img => {
-      this.loadImage(img)
-    })
+    document.querySelectorAll(selector).forEach((img) => {
+      this.loadImage(img);
+    });
   }
 
   /**
@@ -818,10 +852,11 @@ class LazyLoader {
    * @param {HTMLImageElement|string} target - 图片元素或选择器
    */
   static load(target) {
-    const img = typeof target === 'string' ? document.querySelector(target) : target
+    const img =
+      typeof target === "string" ? document.querySelector(target) : target;
 
     if (img) {
-      this.loadImage(img)
+      this.loadImage(img);
     }
   }
 
@@ -832,7 +867,7 @@ class LazyLoader {
    */
   static observe(img) {
     if (this._observer && img) {
-      this._observer.observe(img)
+      this._observer.observe(img);
     }
   }
 
@@ -841,8 +876,8 @@ class LazyLoader {
    */
   static disconnect() {
     if (this._observer) {
-      this._observer.disconnect()
-      this._observer = null
+      this._observer.disconnect();
+      this._observer = null;
     }
   }
 }
@@ -866,37 +901,38 @@ class VirtualScroller {
    * @param {Object} options - 配置选项
    */
   constructor(container, options = {}) {
-    this.container = container
-    this.itemHeight = options.itemHeight || 50
-    this.buffer = options.buffer || 5
-    this.items = []
+    this.container = container;
+    this.itemHeight = options.itemHeight || 50;
+    this.buffer = options.buffer || 5;
+    this.items = [];
     // 默认渲染：对 item 做最小 XSS 清理后再拼接 HTML（避免误用导致注入）
     this.renderItem =
       options.renderItem ||
-      (item => `<div>${ValidationUtils.sanitizeText(String(item ?? ''))}</div>`)
+      ((item) =>
+        `<div>${ValidationUtils.sanitizeText(String(item ?? ""))}</div>`);
 
-    this.init()
+    this.init();
   }
 
   init() {
     // 创建内部结构
-    this.wrapper = document.createElement('div')
-    this.wrapper.className = 'virtual-scroll-wrapper'
-    this.wrapper.style.position = 'relative'
+    this.wrapper = document.createElement("div");
+    this.wrapper.className = "virtual-scroll-wrapper";
+    this.wrapper.style.position = "relative";
 
-    this.content = document.createElement('div')
-    this.content.className = 'virtual-scroll-content'
-    this.wrapper.appendChild(this.content)
+    this.content = document.createElement("div");
+    this.content.className = "virtual-scroll-content";
+    this.wrapper.appendChild(this.content);
 
-    this.container.appendChild(this.wrapper)
+    this.container.appendChild(this.wrapper);
 
     // 绑定滚动事件（使用节流）
     this.container.addEventListener(
-      'scroll',
-      typeof throttle !== 'undefined'
+      "scroll",
+      typeof throttle !== "undefined"
         ? throttle(() => this.render(), 16) // ~60fps
-        : () => this.render()
-    )
+        : () => this.render(),
+    );
   }
 
   /**
@@ -905,30 +941,33 @@ class VirtualScroller {
    * @param {Array} items - 列表数据
    */
   setItems(items) {
-    this.items = items
-    this.wrapper.style.height = `${items.length * this.itemHeight}px`
-    this.render()
+    this.items = items;
+    this.wrapper.style.height = `${items.length * this.itemHeight}px`;
+    this.render();
   }
 
   /**
    * 渲染可见项
    */
   render() {
-    const scrollTop = this.container.scrollTop
-    const containerHeight = this.container.clientHeight
+    const scrollTop = this.container.scrollTop;
+    const containerHeight = this.container.clientHeight;
 
-    const startIndex = Math.max(0, Math.floor(scrollTop / this.itemHeight) - this.buffer)
+    const startIndex = Math.max(
+      0,
+      Math.floor(scrollTop / this.itemHeight) - this.buffer,
+    );
     const endIndex = Math.min(
       this.items.length,
-      Math.ceil((scrollTop + containerHeight) / this.itemHeight) + this.buffer
-    )
+      Math.ceil((scrollTop + containerHeight) / this.itemHeight) + this.buffer,
+    );
 
-    const visibleItems = this.items.slice(startIndex, endIndex)
+    const visibleItems = this.items.slice(startIndex, endIndex);
 
-    this.content.style.transform = `translateY(${startIndex * this.itemHeight}px)`
+    this.content.style.transform = `translateY(${startIndex * this.itemHeight}px)`;
     this.content.innerHTML = visibleItems
       .map((item, i) => this.renderItem(item, startIndex + i))
-      .join('')
+      .join("");
   }
 
   /**
@@ -937,19 +976,19 @@ class VirtualScroller {
    * @param {number} index - 项索引
    */
   scrollToIndex(index) {
-    this.container.scrollTop = index * this.itemHeight
+    this.container.scrollTop = index * this.itemHeight;
   }
 
   /**
    * 销毁
    */
   destroy() {
-    this.container.removeChild(this.wrapper)
+    this.container.removeChild(this.wrapper);
   }
 }
 
 // 导出（兼容不同的模块系统）
-if (typeof module !== 'undefined' && module.exports) {
+if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     ValidationUtils,
     APICache,
@@ -959,6 +998,6 @@ if (typeof module !== 'undefined' && module.exports) {
     RequestDeduplicator,
     requestDeduplicator,
     LazyLoader,
-    VirtualScroller
-  }
+    VirtualScroller,
+  };
 }

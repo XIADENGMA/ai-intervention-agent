@@ -451,9 +451,9 @@ class TestImageUploadCreateImageBitmapInvariants(unittest.TestCase):
             body,
             msg="decodeImageSource 必须先尝试 createImageBitmap（R20.12-C 主路径）",
         )
-        self.assertIn(
-            "typeof createImageBitmap === 'function'",
+        self.assertRegex(
             body,
+            r"typeof\s+createImageBitmap\s*===\s*['\"]function['\"]",
             msg="必须先 typeof 检测 createImageBitmap，避免老浏览器抛 ReferenceError",
         )
 

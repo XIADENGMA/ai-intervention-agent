@@ -285,3 +285,64 @@ repos:
         language: system
         pass_filenames: false
         files: ^src/ai_intervention_agent/static/(css|js)/.*\.(css|js)$
+
+  # R246 / Cycle 17 · F-cycle16-build-artifact-uniform-guard 护栏：
+  # 所有 generator 脚本的 ``--check`` flag 都提到 pre-commit 阶段。
+  #
+  # 背景：R226 (precompress freshness) + R242 (minify freshness) 之后,
+  # ``ci_gate.py`` 里其实还有 3 个 ``--check``: ``gen_i18n_types``,
+  # ``gen_pseudo_locale``, ``generate_docs``。它们都能 detect 同样形态的
+  # "源改了 → generator 输出没跟上" stale-build 问题, 但只在 CI 阶段跑
+  # 意味着每个开发者都要 push → 等 5 min → CI fail → 看 log → 跑脚本 →
+  # 重 commit → 再 push。R226/R242 把这个 roundtrip 缩短到 commit 前
+  # 立即 fail。R246 把同样的策略覆盖到剩下 4 个 generator——确保 build-
+  # artifact freshness 矩阵 **完整 + 一致**。
+  #
+  # 矩阵 (after R246, 完整态):
+  #
+  #   | Generator script        | Producer output                          | pre-commit hook                 |
+  #   | ----------------------- | ---------------------------------------- | ------------------------------- |
+  #   | precompress_static.py   | ``static/**/*.{br,gz}``                  | R226 ``check-static-precompress-fresh`` ✓ |
+  #   | minify_assets.py        | ``static/**/*.min.{js,css}``             | R242 ``check-static-minified-fresh`` ✓ |
+  #   | gen_i18n_types.py       | ``packages/vscode/i18n-keys.d.ts``       | R246 ``check-i18n-types-fresh`` ✓ |
+  #   | gen_pseudo_locale.py    | ``**/locales/_pseudo/pseudo.json``       | R246 ``check-pseudo-locale-fresh`` ✓ |
+  #   | generate_docs.py        | ``docs/api/*.md`` + ``docs/api.zh-CN/*.md`` | R246 ``check-generated-docs-fresh`` ✓ |
+  #   | generate_pwa_icons.py   | ``icons/*.png`` + ``icons/*.ico``        | R246 ``check-pwa-icons-fresh`` ✓ |
+  #
+  # 性能：4 个 hook 总耗时 ~900ms（gen_i18n_types ~40ms +
+  # gen_pseudo_locale ~40ms + generate_docs en+zh ~180ms +
+  # generate_pwa_icons ~620ms）。与 R236 ``ty check`` 同档可接受。
+  #
+  # 失败修复模式：每个 hook 失败消息会指向具体重生命令。
+  - repo: local
+    hooks:
+      - id: check-i18n-types-fresh
+        name: i18n TypeScript .d.ts 新鲜度（R246 / F-cycle16-build-artifact 矩阵）
+        entry: uv run python scripts/gen_i18n_types.py --check
+        language: system
+        pass_filenames: false
+        files: ^packages/vscode/locales/en\.json$
+      - id: check-pseudo-locale-fresh
+        name: pseudo locale 新鲜度（R246 / F-cycle16-build-artifact 矩阵）
+        entry: uv run python scripts/gen_pseudo_locale.py --check
+        language: system
+        pass_filenames: false
+        files: ^(src/ai_intervention_agent/static/locales|packages/vscode/locales)/.*\.json$
+      - id: check-generated-docs-en-fresh
+        name: 自动生成 API docs (en) 新鲜度（R246 / F-cycle16-build-artifact 矩阵）
+        entry: uv run python scripts/generate_docs.py --lang en --check
+        language: system
+        pass_filenames: false
+        files: ^src/ai_intervention_agent/.*\.py$
+      - id: check-generated-docs-zh-fresh
+        name: 自动生成 API docs (zh-CN) 新鲜度（R246 / F-cycle16-build-artifact 矩阵）
+        entry: uv run python scripts/generate_docs.py --lang zh-CN --check
+        language: system
+        pass_filenames: false
+        files: ^src/ai_intervention_agent/.*\.py$
+      - id: check-pwa-icons-fresh
+        name: PWA icons (PNG/ICO) 与源 SVG 新鲜度（R246 / F-cycle16-build-artifact 矩阵）
+        entry: uv run python scripts/generate_pwa_icons.py --check
+        language: system
+        pass_filenames: false
+        files: ^icons/

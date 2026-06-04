@@ -105,9 +105,7 @@ class TestServiceWorkerOfflineResilient(unittest.TestCase):
             self.source,
             re.DOTALL,
         )
-        self.assertIsNotNone(
-            match, "无法定位 handleCacheFirst 函数体；测试需要更新正则"
-        )
+        assert match is not None, "无法定位 handleCacheFirst 函数体；测试需要更新正则"
         body = match.group("body")
         # 锁住关键模式：try { networkResponse = await fetch(request) }
         self.assertRegex(
@@ -130,7 +128,7 @@ class TestServiceWorkerOfflineResilient(unittest.TestCase):
             self.source,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, "找不到 makeOfflineResponse 函数定义")
+        assert match is not None, "找不到 makeOfflineResponse 函数定义"
         body = match.group("body")
         self.assertIn(
             "status: 503",
