@@ -202,6 +202,7 @@ ai-intervention-agent usage details:
 - 🌏 **i18n** — Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW` (plus pseudo-locale for translation coverage testing)
 - ⏱️ **Countdown extension** — `+60s` button to delay auto-resubmit when you need a bit more thinking time
 - 🟢 **SSE liveness indicator** — 3-state corner badge (good / degraded / offline) so you always know whether the page is in sync with the backend
+- 🛡️ **Stable install** — built on Flask 3.x with conservative dependency pins; immune to the [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) that left several MCP feedback servers broken-on-default-install in early 2026
 
 > Architecture diagram, "how it works" flow, production middleware chain,
 > server self-info resource, and MCP-spec compliance details live under

@@ -201,6 +201,7 @@ ai-intervention-agent 工具使用细节：
 - 🌏 **i18n** —— Web UI + VS Code 插件原生支持 `en` / `zh-CN` / `zh-TW` 三语；另含 pseudo-locale 用于翻译覆盖测试
 - ⏱️ **倒计时延长** —— 一键 `+60s` 按钮，让你需要多想一会儿时不必慌张
 - 🟢 **SSE 实时状态指示** —— 角落 3 态徽章（绿/橙/红）提示与后端的同步状况
+- 🛡️ **稳定安装** —— 基于 Flask 3.x + 保守的依赖锁版，免疫 2026 年初 [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) —— 该 bug 让若干 MCP feedback 同类项目 `uvx ...@latest` 默认安装即报错
 
 > 工作原理、架构图、生产级中间件、Server 自检 resource、MCP 协议规范支持
 > 等技术细节请参考 [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md) 与
