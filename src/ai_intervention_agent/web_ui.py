@@ -1359,14 +1359,12 @@ class WebFeedbackUI(
             "keyboard_shortcut_help_version": _compute_file_version(
                 str(static_dir / "js" / "keyboard_shortcut_help.js")
             ),
-            # R146: notification self-test button 模块版本号
-            "notification_test_button_version": _compute_file_version(
-                str(static_dir / "js" / "notification_test_button.js")
-            ),
-            # R152: activity dashboard 模块版本号
-            "activity_dashboard_version": _compute_file_version(
-                str(static_dir / "js" / "activity_dashboard.js")
-            ),
+            # ``notification_test_button_version`` / ``activity_dashboard_version``
+            # 已随 feat-remove-test 移除：用户不再使用设置页的"发送系统自检通知"
+            # 与"活动面板"两个 UI 入口，对应 JS 模块也已经删除。
+            # 后端 ``/api/system/notifications/test``、``/api/system/health``、
+            # ``/api/system/sse-stats``、``/api/system/recent-logs`` API 保留供
+            # CI / 监控脚本独立调用。
             "inline_locale_json": inline_locale_json,
         }
 

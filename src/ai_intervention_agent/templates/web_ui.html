@@ -1490,164 +1490,18 @@
                     >
                   </button>
                 </div>
-                <!-- R146 — System self-test button (POST /api/system/notifications/test) -->
-                <div class="setting-item">
-                  <button
-                    class="btn btn-secondary"
-                    id="system-notification-test-btn"
-                  >
-                    <svg
-                      class="btn-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                    </svg>
-                    <span data-i18n="settings.testSystemBtn"
-                      >Send system self-test</span
-                    >
-                  </button>
-                  <div
-                    id="system-notification-test-status"
-                    class="setting-status-line"
-                    role="status"
-                    aria-live="polite"
-                    style="
-                      margin-top: 0.4rem;
-                      font-size: 0.82rem;
-                      color: var(--text-secondary);
-                      min-height: 1.2em;
-                    "
-                  ></div>
-                  <!-- R147 — health probe line: shows per-provider verdict
-                       after the dispatch (success/failure/stale/skipped)
-                       sourced from GET /api/system/health.  aria-live so
-                       screen readers announce the eventual delivery result
-                       a couple of seconds after the dispatch event. -->
-                  <div
-                    id="system-notification-test-probe"
-                    class="setting-status-line"
-                    role="status"
-                    aria-live="polite"
-                    style="
-                      margin-top: 0.2rem;
-                      font-size: 0.78rem;
-                      color: var(--text-secondary);
-                      min-height: 0;
-                    "
-                  ></div>
-                  <!-- R150 — self-test history toggle + list. Defaults to
-                       collapsed; click toggles aria-expanded + the list's
-                       [hidden] attribute. List is role="log" so screen
-                       readers announce new entries (added at the top,
-                       index 0) when the user re-opens the panel. -->
-                  <button
-                    id="system-notification-test-history-toggle"
-                    type="button"
-                    class="btn btn-link btn-link-secondary"
-                    aria-controls="system-notification-test-history-list"
-                    aria-expanded="false"
-                    style="
-                      margin-top: 0.3rem;
-                      padding: 0;
-                      background: none;
-                      border: none;
-                      color: var(--text-secondary);
-                      font-size: 0.78rem;
-                      cursor: pointer;
-                      text-decoration: underline;
-                    "
-                  >
-                    <span data-i18n="settings.systemTestHistoryToggle"
-                      >History</span
-                    >
-                  </button>
-                  <ul
-                    id="system-notification-test-history-list"
-                    class="self-test-history"
-                    role="log"
-                    aria-live="polite"
-                    hidden
-                    style="
-                      margin: 0.4rem 0 0 0;
-                      padding: 0;
-                      list-style: none;
-                      font-size: 0.78rem;
-                      color: var(--text-secondary);
-                    "
-                  ></ul>
-                  <div
-                    style="
-                      margin-top: 0.3rem;
-                      color: var(--text-secondary);
-                      font-size: 0.78rem;
-                    "
-                    data-i18n="settings.testSystemHint"
-                  >
-                    Triggers a real notification through every enabled
-                    provider; cross-check delivery via /api/system/health.
-                  </div>
-                </div>
-                <!-- R152 — Activity dashboard subsection: aggregates
-                     /api/system/health + /api/system/sse-stats +
-                     /api/tasks + /api/system/recent-logs into a
-                     glanceable settings tile.  Collapsed by default
-                     (aria-expanded="false" + [hidden] on body); when
-                     opened, polls every POLL_MS_DEFAULT (5s) and
-                     pauses on document.hidden. -->
-                <div class="setting-item" id="activity-dashboard">
-                  <button
-                    id="activity-dashboard-toggle"
-                    type="button"
-                    class="btn btn-secondary"
-                    aria-controls="activity-dashboard-body"
-                    aria-expanded="false"
-                  >
-                    <svg
-                      class="btn-icon"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      aria-hidden="true"
-                      focusable="false"
-                    >
-                      <path d="M3 3v18h18" />
-                      <path d="M7 14l4-4 4 4 6-6" />
-                    </svg>
-                    <span data-i18n="settings.activityDashboardToggle"
-                      >Activity dashboard</span
-                    >
-                  </button>
-                  <dl
-                    id="activity-dashboard-body"
-                    class="activity-dashboard-body"
-                    role="region"
-                    aria-labelledby="activity-dashboard-toggle"
-                    aria-live="polite"
-                    hidden
-                  ></dl>
-                  <div
-                    style="
-                      margin-top: 0.3rem;
-                      color: var(--text-secondary);
-                      font-size: 0.78rem;
-                    "
-                    data-i18n="settings.activityDashboardHint"
-                  >
-                    Live snapshot of task queue, SSE bus, notification
-                    health, and recent logs.  Polls every 5 seconds while
-                    open; pauses when the tab is in the background.
-                  </div>
-                </div>
+                <!-- ``#system-notification-test-btn``（R146/R147/R150）与
+                     ``#activity-dashboard``（R152/R153/R156）两个设置 UI 已按
+                     用户偏好（feat-remove-test）移除。
+
+                     **后端 API 全部保留**，CI / 监控脚本仍可独立调用：
+                       - POST /api/system/notifications/test  （触发自检通知）
+                       - GET  /api/system/health              （投递状态 probe）
+                       - GET  /api/system/sse-stats           （SSE 总线指标）
+                       - GET  /api/system/recent-logs         （近期日志快照）
+
+                     历史不变量 / 回归契约统一迁移到
+                     ``tests/test_feat_remove_test_uis_removed.py``。 -->
                 <div class="setting-item">
                   <button class="btn btn-secondary" id="reset-settings-btn">
                     <svg
@@ -2180,20 +2034,9 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- R146 — Settings UI button: trigger /api/system/notifications/test -->
-    <script
-      defer
-      src="/static/js/notification_test_button.js?v={{ notification_test_button_version }}"
-      nonce="{{ csp_nonce }}"
-    ></script>
-
-    <!-- R152 — Activity dashboard subsection: aggregate / poll
-         server stats endpoints into a settings-panel tile. -->
-    <script
-      defer
-      src="/static/js/activity_dashboard.js?v={{ activity_dashboard_version }}"
-      nonce="{{ csp_nonce }}"
-    ></script>
+    <!-- ``notification_test_button.js`` / ``activity_dashboard.js`` 已随
+         feat-remove-test 一并移除（UI 入口已下线）。后端 API 见同名 setting
+         区注释。回归契约见 ``tests/test_feat_remove_test_uis_removed.py``。 -->
 
     <!-- T1 · C10b: @aiia/tri-state-panel via Import Maps
          importmap 必须出现在所有 <script type="module"> 之前（浏览器规范）。
