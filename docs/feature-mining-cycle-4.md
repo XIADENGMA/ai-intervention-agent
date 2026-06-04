@@ -41,70 +41,106 @@ recent reviews.
 | v1.8.0 release plan | cr37 §8 #6 | info | [Unreleased] already ~140 lines / 50+ commits since v1.7.9 — likely time to cut tag |
 | e2e harness for `placeholder` + `yesno` + `header_label` UI | cr37 §8 #7 | defer | needs Playwright/Selenium infra; major investment |
 
-## §3 Track A — `claude-code` `additionalContext` template variables (planned)
+## §3 Track A — `claude-code` `additionalContext` template variables (DONE — not borrowing)
 
-### 3.1 What is it?
+### 3.1 Survey findings (cr39 cycle desk-research)
 
-`claude-code` hooks expose template variables in the
-`additionalContext` field of certain hook payloads. Variables
-allow the user to interpolate runtime context (file paths, tool
-names, working directory, etc.) into static templates without
-writing code.
+**Method**: Read `code.claude.com/docs/en/hooks` (official) +
+`buildingbetter.tech` source-code dive + 3 third-party guides
+(claudefa.st / smartscope / morphllm). Identified the exact
+template-variable surface.
 
-Adjacent to our `feedback_suffix` MCP option, which is currently
-**static** — agent passes a fixed string that gets appended to
-feedback. If we add **template variables**, agents could write:
+**What `additionalContext` actually does**:
+- Hook outputs JSON `{ "hookSpecificOutput": { "additionalContext": "<string>" } }`
+- Claude Code wraps the string in a system-reminder and injects
+  into context at hook fire point — **invisible to user**
+- Used to surface project state (e.g. `git branch`, recent
+  changes) so the model sees it on its next turn
 
-```
-feedback_suffix: "Continue when ready. Current working dir: {cwd}"
-```
+**The "template variables" misconception**:
+What we called "template variables" in cycle-3 are actually two
+**separate** mechanisms:
 
-…and the Web UI / VSCode extension would expand `{cwd}` based on
-the active task's context at render time.
+1. **Path placeholders** like `${CLAUDE_PROJECT_DIR}`,
+   `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` — these are
+   substituted by claude-code **before spawning the hook
+   process**, in the `command` / `args` / `headers` fields. Not
+   in `additionalContext` output.
+2. **Environment variables** like `$CLAUDE_PROJECT_DIR` (always
+   set), `$CLAUDE_ENV_FILE` (SessionStart/Setup only),
+   `$CLAUDE_CODE_REMOTE`, `$CLAUDE_EFFORT` — available to the
+   hook **process** at runtime via the standard env API.
+3. `additionalContext` itself is a **plain string** — no
+   templating engine. Any dynamic content comes from the hook
+   doing shell substitution (`$(git branch --show-current)`) in
+   its own command. **The expansion lives in the hook author's
+   shell script**, not in claude-code.
 
-### 3.2 Survey TODO (cr38 / cr39 cycle)
+### 3.2 Mapping to our `feedback_suffix`
 
-- [ ] Read `claude-code` hooks docs — enumerate full template
-  variable list (need official source, GitHub repo, or release
-  notes).
-- [ ] Determine which variables are agent-side (resolved by
-  claude-code itself) vs user-side (must be resolved by hook).
-- [ ] Map each to potential equivalent in our context:
-  - `{task_id}` — already exposed as URL hash
-  - `{cwd}` — needs MCP server to expose `os.getcwd()` or read
-    config workspace path
-  - `{lang}` — needs i18n state from frontend (round-trip via SSE?)
-  - `{user}` — needs OS user; trivial
-  - `{timestamp}` — render-time; trivial
-- [ ] Decide which 2-3 variables have **high enough** ROI to
-  justify the schema + render-pipeline change.
+| Variable | claude-code path | Our equivalent | Useful? |
+|---|---|---|---|
+| `$CLAUDE_PROJECT_DIR` | injected to hook process env | agent already knows cwd | ❌ |
+| `$CLAUDE_ENV_FILE` | hook-only persist mechanism | n/a (we don't spawn hooks) | ❌ |
+| `$CLAUDE_CODE_REMOTE` | "true" if web | n/a (we are always remote) | ❌ |
+| `$CLAUDE_EFFORT` | model effort level | n/a (we don't expose model) | ❌ |
+| `${CLAUDE_PROJECT_DIR}` | path placeholder | agent already knows cwd | ❌ |
+| _custom shell substitution_ | hook author writes `$(git ...)` | agent can compose own string | ❌ |
 
-### 3.3 Decision criteria
+### 3.3 Decision: **not-borrow**
 
-Borrow ✅ if:
-- ≥ 3 distinct use cases where the template variable removes
-  ambiguity from agent-side `feedback_suffix` string composition
-- Variable can be resolved **server-side** (no frontend
-  round-trip needed) — avoids latency / out-of-sync state
-- Total LoC budget ≤ 150 (proportional to other §2.1 borrows)
+**Rationale**:
 
-Anti-pattern 🚫 if:
-- Variable requires frontend round-trip (e.g. `{lang}` needs
-  page state)
-- Resolved at agent-side already (no benefit to add on our side)
-- Encourages complex templating syntax that competes with
-  Markdown / Jinja in feedback render path
+1. **No additional value over agent-side string composition.**
+   Our MCP tool is invoked by an agent that already has access
+   to `cwd`, `timestamp`, `task_id`, etc. via its own runtime
+   context. Agent can compose `feedback_suffix` with f-string /
+   template literal at call time. Server-side templating would
+   only repeat capability the agent already has.
 
-Maybe 🤔 if:
-- High ROI but requires architecture change (e.g. moving
-  `feedback_suffix` render to client side)
+2. **Server-side render state is already exposed via UI**, not
+   via templating. `task_id` is in URL hash; countdown timer
+   shows task age; SSE indicator shows backend liveness; chip
+   shows `header_label`. Adding `{var}` substitution to
+   `feedback_suffix` would surface the *same* state through a
+   *second* channel — clutter, not value.
+
+3. **The asymmetry with claude-code is structural**: claude-code
+   spawns user hooks (no agent in the loop for state collection),
+   so `additionalContext` is the **only** state-injection path
+   from hook → model. Our agent **is** the loop; it doesn't need
+   us to template state for it.
+
+4. **Borrow criterion fails**: we required "≥ 3 distinct use
+   cases where the variable removes ambiguity from agent-side
+   composition." After mapping (§3.2), **0 such cases exist**.
+   Anti-pattern criterion "resolved at agent-side already" hits
+   for every variable.
+
+5. **Anti-bonus**: avoid introducing a tiny templating language
+   that competes with Markdown / Jinja in the feedback render
+   path (mining-4 §3.2 #3 anti-criterion).
+
+**Result classification**: Track A → **not-borrow, completed**.
+Status: 0 borrow / 1 anti-pattern recorded. Saved ~150 LoC of
+schema + render pipeline + tests.
+
+### 3.4 Adjacent insight (carry into future cycles)
+
+`once: true` (mining-4 source-code-dive finding) is a hook
+config field for SessionStart hooks. When set, the hook fires
+exactly once per session, then auto-removes. **Adjacent**: our
+auto-resubmit could expose `auto_resubmit: { once: true }` —
+single-shot vs. perpetual. Currently `auto_resubmit_timeout` is
+the only knob. Worth a cycle-5 investigation if user feedback
+asks for it. **Logged as cycle-5 candidate.**
 
 ## §4 Forward log (will fill as survey progresses)
 
 | Date | Activity | Outcome |
 |---|---|---|
 | cr38 cycle open | mining-4 kickoff doc | this file |
-| _TBD_ | Track A claude-code docs review | _TBD_ |
+| cr39 cycle | Track A claude-code docs review | **not-borrow** — 0 ROI after mapping; logged 1 adjacent candidate (`once: true` hook → `auto_resubmit.once`) for cycle-5 |
 | _TBD_ | Track B mcp-feedback-enhanced HEAD compare | _TBD_ |
 | _TBD_ | Track C gemini-cli sibling-tool survey | _TBD_ |
 | _TBD_ | Track D aider/sweep interaction survey | _TBD_ |
