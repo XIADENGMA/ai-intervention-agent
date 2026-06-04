@@ -24,6 +24,34 @@ function _tl(key, fallback) {
   return fallback;
 }
 
+// BUG1：主动写配置前，调用 multi_task.js 暴露的 ``suppressLocalConfigChangedEcho``
+// 设置短期静音窗口，避免后端 file watcher 触发的 SSE ``config_changed`` 事件
+// 在当前 client 上再弹一条"Configuration file changed. Reload..." toast。
+// 详细动机见 multi_task.js 中 ``_suppressConfigChangedToastUntilMs`` 注释。
+//
+// 设计取舍：
+// - 把"是否暴露 helper"的判断放在调用方而非 multi_task.js 是因为
+//   settings-manager.js 可能在 multi_task.js 之前加载（理论上 HTML
+//   load order 决定，但保险起见各模块都自我兜底）。
+// - 静音 5000ms 是经验值：覆盖后端 R50-B 的 250ms debounce + Flask
+//   响应延迟 + 网络抖动 + 浏览器调度。窗口越长越不会"漏掉"自己的回响，
+//   但代价是别人在窗口内改配置时本 client 看不到 toast；按使用场景，
+//   多 client 同时改同一份配置概率极低，5s 是合理上限。
+// - 不依赖 multi_task.js 必然存在：若 helper 不可用就静默 noop，保证
+//   主流程（保存配置）不会因此 break。
+function _suppressConfigChangedEchoIfAvailable(ms) {
+  try {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.suppressLocalConfigChangedEcho === "function"
+    ) {
+      window.suppressLocalConfigChangedEcho(typeof ms === "number" ? ms : 5000);
+    }
+  } catch (_e) {
+    // helper 抛错绝不能影响主流程（保存配置）。
+  }
+}
+
 // 设置管理器
 class SettingsManager {
   constructor() {
@@ -169,6 +197,7 @@ class SettingsManager {
 
   async syncConfigToBackend() {
     try {
+      _suppressConfigChangedEchoIfAvailable();
       const response = await fetch("/api/update-notification-config", {
         method: "POST",
         headers: {
@@ -495,6 +524,7 @@ class SettingsManager {
         }
 
         try {
+          _suppressConfigChangedEchoIfAvailable();
           await fetch("/api/update-language", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1162,6 +1192,7 @@ class SettingsManager {
 
   async saveFeedbackConfig(updates) {
     try {
+      _suppressConfigChangedEchoIfAvailable();
       const resp = await fetch("/api/update-feedback-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1187,6 +1218,7 @@ class SettingsManager {
     // 真源：调用后端 /api/reset-feedback-config，避免前端硬编码中文默认值。
     // 若后端不可用，回退到重新读取当前配置；不再吞掉错误，好让用户知道发生了什么。
     try {
+      _suppressConfigChangedEchoIfAvailable();
       const resp = await fetch("/api/reset-feedback-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

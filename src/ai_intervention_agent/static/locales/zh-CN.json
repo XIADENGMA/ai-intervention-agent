@@ -257,7 +257,8 @@
     "notifFallbackPermDefault": "尚未授予通知权限；当前改用页面内提示。可点击右上角铃铛图标或页面任意可交互元素来触发浏览器权限授权请求。",
     "notifFallbackPermDisabled": "系统通知已在设置中关闭；当前显示页面内提示。可在设置面板重新开启。",
     "notifFallbackUnsupported": "当前浏览器不支持系统通知；已改用页面内提示作为降级方案。",
-    "notifFallbackInsecure": "通知功能需要 HTTPS 或 localhost；当前页面为不安全上下文，已降级为页面内提示。"
+    "notifFallbackInsecure": "通知功能需要 HTTPS 或 localhost；当前页面为不安全上下文，已降级为页面内提示。",
+    "configChangedReload": "配置文件已更新，刷新页面可看到最新值。"
   },
   "validation": {
     "invalidFile": "无效的文件对象",

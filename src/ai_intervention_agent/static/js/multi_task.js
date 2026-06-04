@@ -438,6 +438,65 @@ var _sseSource = null;
 var _sseConnected = false;
 var _sseReconnectTimer = null;
 var _sseReconnectDelay = 1000;
+
+// BUG1：本地保存回响静音窗口（local-save echo suppression window）
+//
+// 设计动机：当用户通过 Web UI 主动保存配置（feedback / notification /
+// language 等）时，后端会写 config.toml → file watcher 检测到 mtime
+// 变化 → 通过 ``_emit_config_changed_to_sse_bus`` 广播 ``config_changed``
+// SSE 事件给所有 client（包括发起者自己）。这会让发起者同时看到：
+//   1. API 200 OK → ``showStatus("反馈配置已保存", "success")`` 一条 toast
+//   2. SSE config_changed → ``_showToast("Configuration file changed...")``
+//      又一条 toast（覆盖第一条，UX 表现为"两条通知闪过"）
+//
+// 第 2 条对发起者是冗余且误导的：用户被告诉"reload 页面"，但保存的
+// 字段已通过 hot-reload 即时生效，无需 reload。
+//
+// 解决方式：settings-manager.js 等模块在主动写配置 fetch **之前** 调用
+// ``window.suppressLocalConfigChangedEcho(ms)``，将一个未来时间戳写入
+// 本变量；SSE handler 收到 ``config_changed`` 时若当前时间仍在窗口内，
+// 仅记 debug log，不显示 toast。窗口外（外部 CLI / IDE 编辑 config.toml）
+// 的事件继续正常 toast 提示。
+//
+// 边界场景：
+// - 多个 client 同时改同一份配置：窗口内的本地 client 会"漏看"别人改
+//   的提示（一次 toast），但配置仍会被 hot-reload 真实生效，影响很小。
+// - 窗口取 5s 是经验值，覆盖 R50-B 的 250ms debounce + 网络/调度抖动。
+// - 模块在 reset / page reload 时窗口自然失效（变量回到 0）。
+var _suppressConfigChangedToastUntilMs = 0;
+
+function _isConfigChangedToastSuppressed() {
+  if (
+    !_suppressConfigChangedToastUntilMs ||
+    typeof Date === "undefined" ||
+    typeof Date.now !== "function"
+  ) {
+    return false;
+  }
+  return Date.now() < _suppressConfigChangedToastUntilMs;
+}
+
+// 暴露给 settings-manager.js / 测试用：调用方在"主动写配置"fetch 前调用，
+// 设置一个 ``ms`` 毫秒长度的静音窗口（默认 5000ms）。多次调用以最大窗口
+// 为准（``Math.max``），不会缩短已设置的窗口。
+//
+// 返回新的截止时间戳（毫秒），便于测试断言；不可用环境下返回 0。
+if (typeof window !== "undefined") {
+  window.suppressLocalConfigChangedEcho = function (ms) {
+    if (typeof Date === "undefined" || typeof Date.now !== "function") return 0;
+    var durationMs = typeof ms === "number" && ms > 0 ? ms : 5000;
+    var until = Date.now() + durationMs;
+    if (until > _suppressConfigChangedToastUntilMs) {
+      _suppressConfigChangedToastUntilMs = until;
+    }
+    return _suppressConfigChangedToastUntilMs;
+  };
+
+  // 内部 helper：测试 / 复位用。生产代码不需要直接调用。
+  window.__aiiaResetConfigChangedSuppression = function () {
+    _suppressConfigChangedToastUntilMs = 0;
+  };
+}
 // R40-S2：客户端持有的最后已收 event id（来自 SSE ``id:`` 行）。
 // 浏览器 EventSource 自动填 ``e.lastEventId``，但因为我们的 onerror →
 // close → new EventSource 走主动重连路径（不是浏览器 retry），自带的
@@ -528,18 +587,48 @@ function _connectSSE() {
   // SSE 事件。前端不强制 reload —— 已经热更新的字段（feedback / network_security）
   // 是无感生效的；其它字段的影响只能等下次 server 重启，reload 页面也无济于事。
   // 我们这里只做一行 toast 提示，让用户知道 "你的修改被服务端看到了"。
+  //
+  // BUG1 修复：当 toast 由"当前客户端自己主动保存配置"触发时（在线编辑反馈/
+  // 通知/语言配置），用户已经能看到 API 成功提示（如"反馈配置已保存"），
+  // 再额外弹一条通用提示是冗余且误导的（用户被告诉"reload 页面"，但其实
+  // 已经热更新生效且无需 reload）。settings-manager.js 在主动写配置 fetch
+  // 前会调用 ``window.suppressLocalConfigChangedEcho(ms)`` 设置短期静音窗口，
+  // 窗口内的 SSE config_changed 事件仅 debug log，不显示 toast；窗口外
+  // （外部 CLI / IDE 编辑 config.toml）行为不受影响。
   source.addEventListener("config_changed", function (e) {
     if (_sseSource !== source) return;
     _debugLog("SSE config_changed received");
-    var hint =
+    // BUG2 修复：服务端在 SSE detail 里硬编码英文 hint（i18n 上下文是
+    // per-client 的，后端无法替每个 client 选语言）。前端优先用
+    // ``status.configChangedReload`` 的本地化文案；缺失时回退到 detail.hint
+    // （兜底，老 backend 兼容）；再缺失时回退到英文硬编码。
+    var fallbackHint =
       "Configuration file changed. Reload the page to see the latest values.";
+    var hint = _t("status.configChangedReload");
+    if (!hint || hint === "status.configChangedReload") {
+      hint = fallbackHint;
+    }
     try {
       var detail = JSON.parse(e && e.data ? e.data : "{}");
       _debugLog("SSE config_changed detail:", detail);
-      if (detail && typeof detail.hint === "string" && detail.hint)
+      // 仅当前端 i18n 也拿不到本地化文案（仍是 fallback）时，才采纳后端 hint。
+      // 这样既能给出本地化体验，又不会丢失老 backend 的兜底能力。
+      if (
+        hint === fallbackHint &&
+        detail &&
+        typeof detail.hint === "string" &&
+        detail.hint
+      ) {
         hint = detail.hint;
+      }
     } catch (_) {
       /* noop：detail 解析失败 → 用 fallback hint */
+    }
+    if (_isConfigChangedToastSuppressed()) {
+      _debugLog(
+        "SSE config_changed toast suppressed (local-save echo window active)",
+      );
+      return;
     }
     // 用项目内既有的 ``_showToast`` helper（``static/js/app.js``）。它把消息渲染为
     // 顶部居中、带过渡动画的非阻塞 toast，自动 1.8s 消失，符合"提示但不打断"

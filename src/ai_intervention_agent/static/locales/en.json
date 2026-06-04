@@ -257,7 +257,8 @@
     "notifFallbackPermDefault": "Notification permission not yet granted; showing in-page hint. Click the bell icon or any UI element to grant permission.",
     "notifFallbackPermDisabled": "System notifications disabled in settings; using in-page hint. Re-enable via the settings panel.",
     "notifFallbackUnsupported": "This browser does not support system notifications; using in-page hint as fallback.",
-    "notifFallbackInsecure": "Notifications require HTTPS or localhost; current page is insecure context, falling back to in-page hint."
+    "notifFallbackInsecure": "Notifications require HTTPS or localhost; current page is insecure context, falling back to in-page hint.",
+    "configChangedReload": "Configuration file changed. Reload the page to see the latest values."
   },
   "validation": {
     "invalidFile": "Invalid file object",
