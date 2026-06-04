@@ -1613,7 +1613,21 @@ class TaskRoutesMixin:
 
             if success:
                 logger.info(f"任务已通过API添加到队列: {task_id}")
-                return jsonify({"success": True, "task_id": task_id})
+                # cr36 §8 #2 fix — 当 server-side 200-char clamp 真切到了
+                # placeholder，把 ``placeholder_truncated`` + 原长度 + 上限
+                # 一起回 MCP，让 agent 能 surface 给用户（避免 silent
+                # truncation 隐藏关键提示）。
+                resp: dict[str, object] = {"success": True, "task_id": task_id}
+                if (
+                    isinstance(feedback_placeholder, str)
+                    and len(feedback_placeholder.strip()) > 200
+                ):
+                    resp["placeholder_truncated"] = True
+                    resp["placeholder_original_length"] = len(
+                        feedback_placeholder.strip()
+                    )
+                    resp["placeholder_max_length"] = 200
+                return jsonify(resp)
 
             logger.error(f"添加任务失败: {task_id}")
             return (
