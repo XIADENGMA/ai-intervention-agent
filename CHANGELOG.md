@@ -9,16 +9,32 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ## [Unreleased]
 
-> Cycles 17–19 (CR#30 → CR#36). The defining theme is
-> **"close the user-reported UX backlog, then run three
-> rounds of structured competitive-feature mining"**. Six
-> BUG fixes + UX cleanups landed first (BUG1–BUG6 from
-> TODO.md, plus VSCode/Web length-limit parity), unlocking a
-> three-cycle mining program against `mcp-feedback-enhanced`
-> v2.6.x and (cycle-3) `gemini-cli` + `claude-code`. See
-> `docs/code-reviews/cr30.md` … `cr36.md` for per-cycle
-> reviews and `docs/feature-mining-cycle-{1,2,3}.md` for the
-> mining backlog.
+_Reserved for the next release cycle. Work items land here
+before being promoted to a versioned section._
+
+### Added
+
+- _(Next release placeholder — items will be filled in as
+  cycle-5+ ship work lands.)_
+
+## [1.7.10] - 2026-06-07
+
+> Cycles 17–21 (CR#30 → CR#39). The defining theme is
+> **"close the user-reported UX backlog, then run four
+> rounds of structured competitive-feature mining + cut a
+> minor release"**. Six BUG fixes + UX cleanups landed first
+> (BUG1–BUG6 from TODO.md, plus VSCode/Web length-limit
+> parity), unlocking a four-cycle mining program against
+> `mcp-feedback-enhanced` v2.6.x + HEAD (cycles 1, 2, 4),
+> `gemini-cli` `ask_user` schema + `claude-code` hooks
+> (cycle 3), with §0 methodology hardened twice (cycle-2 v2
+> added `rg + git log` evidence; cycle-4 v3 added subject-
+> type classification after catching a categorization error).
+> See `docs/code-reviews/cr30.md` … `cr39.md` for per-cycle
+> reviews and `docs/feature-mining-cycle-{1,2,3,4}.md` for
+> the mining backlog. Minor bump justified by 3 additive MCP
+> schema fields (`feedback_placeholder`, `question_type`,
+> `header_label`) + 10 user-facing UX features.
 
 ### Added
 
@@ -100,13 +116,30 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 - **Footer "AI Intervention Agent x.y.z" GitHub link** —
   Web UI footer + VSCode extension footer both merged into
   a single clickable link with matching style. (UX cleanup)
-- **`docs/feature-mining-cycle-{1,2,3}.md`** — three rounds
-  of competitive analysis against `mcp-feedback-enhanced`
-  + (cycle-3) `gemini-cli` `ask_user` schema +
-  `claude-code` hooks. Hardened §0 methodology in cycle-2
-  (mandatory `rg` + `git log --grep` evidence per item)
-  after 3 survey misses; cycle-3 first run under new rules
-  produced 0 misses.
+- **`docs/feature-mining-cycle-{1,2,3,4}.md`** — four rounds
+  of competitive analysis. Cycles 1, 2, 4 against
+  `mcp-feedback-enhanced` v2.6.x + HEAD. Cycle 3 added
+  `gemini-cli` `ask_user` schema + `claude-code` hooks.
+  Hardened §0 methodology in cycle-2 (mandatory `rg` + `git
+  log --grep` evidence per item) after 3 survey misses;
+  cycle-3 first run under new rules produced 0 misses.
+  Cycle-4 caught a categorization error (gemini-cli is an
+  MCP client, not server) and hardened to **v3 methodology**
+  for cycle-5 (added "subject type" classification column).
+- **Pretty 404 page** — mining-4 §2.1 borrow #1 from
+  `mcp-feedback-enhanced` PR #207 session-not-found UX.
+  Flask `@app.errorhandler(404)` returns themed HTML page
+  for HTML clients (with inline CSS to survive even when
+  static assets are broken; `prefers-color-scheme` dark
+  support) and JSON `{"success": false, "error":
+  "not_found"}` for API clients via `Accept`-header
+  branching. Replaces plain Flask 404 that confused users
+  after task TTL expiry / server restart.
+- **README "Stable install" differentiator** — surfaces
+  Flask 3.x foundation + conservative dependency pinning as
+  a competitive note vs `mcp-feedback-enhanced` which broke
+  on default install for ~2 months due to Starlette 1.0
+  upgrade (their Issue #213, PR #215 unmerged).
 - **`docs/zhconv-eval.md`** — investigation artifact for
   cr33 §8 #2: 297-string diff of `zhconv.convert(...,
   'zh-tw')` vs inline `CHAR_MAP_v2` shows 34.3 % match.
@@ -169,6 +202,25 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
 
 ### Fixed
 
+- **cr40 cycle health-fix sweep (4 latent regressions)** —
+  full-suite test run on `[Unreleased]` snapshot caught 4
+  module-level issues invisible to per-module runs: (1)
+  `test_feat_remove_download_button.py` invariant too strict
+  (allowed mining-2 §3.1 polish re-introducing settings-panel
+  export link; updated to region-scope check on
+  `header-actions`); (2) `test_feat_mining3_header_chip.py
+  TestRoute` polluted by module-level `TaskQueue` singleton
+  10-task limit in full-suite runs; switched to text-level
+  src checks + unit test using TaskQueue directly; (3)
+  `test_lock_watchdog_full_coverage_r52a.py` missing
+  `extend_task_deadline` in expected label set (drifted from
+  cr32 §3.1 ship); (4) i18n dead-key detection regex missed
+  `window.AIIA_I18N.t(...)` namespaced calls + dynamic-key
+  `let msgKey = "..."` pattern in `customSound.errors.*`;
+  fixed by adding `AIIA_I18N.t` branch to `_JS_T_CALL_RE` and
+  adding 8 customSound keys to `_PRE_RESERVED_KEYS` (synced
+  across both `tests/test_runtime_behavior.py` and
+  `scripts/check_i18n_orphan_keys.py`).
 - **CR32 §3.1 [medium] Race condition in `extend_deadline`**
   — `TaskQueue.extend_task_deadline` facade serializes the
   extend operation under `_watched_write_lock`.
