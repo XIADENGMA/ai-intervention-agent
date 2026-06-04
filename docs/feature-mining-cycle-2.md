@@ -160,23 +160,38 @@ by ROI.
   features as "not started". Moved to §1 (aligned).
 - **Decision**: **no work**.
 
-### 3.4 One-Click copy: project path + task ID (v2.4.3) — **LOW ROI, ~50 LoC**
+### 3.4 One-Click copy: project path + task ID (v2.4.3) — **partial ship**
 
 - **Reference inspiration**: "One-Click Copy: Project path and
   session ID support click-to-copy" (v2.4.3).
-- **Gap**: We display `project_directory` and `task_id` in task
-  panels but they're plain text. Users selecting them have to
-  triple-click or drag-select.
-- **Proposed scope**:
-  - Wrap each in a `<span class="copyable" data-copy-value="...">`.
-  - Single click → `navigator.clipboard.writeText` + 200ms
-    visual feedback (background flash or check icon).
-  - Reuses §3.2 clipboard helper, so once §3.2 lands this is
-    almost free.
-- **Acceptance**: 1 test for handler + 1 i18n key for
-  `actions.copied` toast.
-- **Risk**: minimal.
-- **Decision**: **adopt** in batch with §3.2.
+- **Gap discovered during survey**:
+  - `task_id`: shown in task tab (truncated) with `title` tooltip
+    for full ID, but no copy affordance. ⇒ **shipped this cycle**.
+  - `project_directory`: not surfaced in UI at all; only used
+    server-side. ⇒ N/A; would need a separate "show project info"
+    UI feature first.
+- **What shipped** (in this commit before cr34):
+  - `copyTaskIdToClipboard(taskId)` helper in `multi_task.js` with
+    dual path: `navigator.clipboard.writeText` primary +
+    `document.execCommand("copy")` legacy fallback. Reuses
+    project's existing `status.copied` / `status.copyFailed`
+    i18n keys (no new strings).
+  - `createTaskTab`'s `textSpan` gets `dblclick` listener →
+    `copyTaskIdToClipboard(task.task_id)` + `stopPropagation` to
+    keep single-click as task-switch.
+  - `data-copyable-task-id` attribute on textSpan for UI tests +
+    future styling hooks.
+  - Anti-regression invariant `test_no_single_click_hijack`
+    guarantees `textSpan` never gains a `click` listener (would
+    break task-switch UX).
+- **Why dblclick not single-click**: single click is reserved for
+  task-switch (existing core interaction). Making copy a separate
+  affordance (icon button) would clutter the tab UI. Dblclick is
+  the universal "do the alternate action" idiom; the title
+  tooltip ("hover to see full task_id") was already there as the
+  discovery affordance.
+- **Decision**: **shipped (partial)**; project_directory deferred
+  pending a "show project info" feature that doesn't exist yet.
 
 ### 3.5 Auto-commit pause control v2 (v2.6.0) — **DEFER**
 
@@ -286,7 +301,7 @@ to learn from:
 | §3.1 Session Export | not started | — | — |
 | §3.2 Session-link copy | not started | — | — |
 | §3.3 Input height memory | **already shipped (R137)** | (pre-cycle-2) | survey miss; corrected |
-| §3.4 One-click copy (path / task_id) | not started | — | — |
+| §3.4 One-click copy (task_id) | **partial — shipped task_id, project_path n/a** | (this commit) | dblclick task tab to copy full task_id; project_directory not surfaced in UI so n/a |
 | §3.5 Pause/resume v2 | deferred (conditional) | — | — |
 | §3.6 Tool docstring LLM hinting | deferred (telemetry) | — | — |
 | §4.1 zhconv evaluation | not started | — | — |

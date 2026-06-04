@@ -149,6 +149,73 @@ if (typeof window.autoSubmitAttempted === "undefined") {
   window.autoSubmitAttempted = {}; // task_id -> lastAttemptAt(ms)
 }
 
+// ============================================================
+// mining-cycle-2 §3.4 — Task ID one-click copy helper
+// ============================================================
+/**
+ * 把任务 ID 复制到剪贴板。
+ *
+ * 双 path：
+ * - 现代浏览器 + secure context: ``navigator.clipboard.writeText`` (async)
+ * - 旧浏览器 / http loopback / iOS Safari old: ``document.execCommand
+ *   ("copy")`` fallback (sync, 已被 W3C deprecate 但实战仍可用)
+ *
+ * UX：调 ``showStatus(t("status.copied" | "status.copyFailed"), ...)`` 复用
+ * 项目已有的 toast 系统；不引入新 i18n key。
+ *
+ * @param {string} taskId 完整 task_id
+ * @returns {Promise<boolean>} 成功与否
+ */
+async function copyTaskIdToClipboard(taskId) {
+  const text = String(taskId || "");
+  if (!text) return false;
+  let ok = false;
+  try {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === "function"
+    ) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch (_e) {
+    ok = false;
+  }
+  if (!ok) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      ta.style.left = "-1000px";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch (_e2) {
+      ok = false;
+    }
+  }
+  try {
+    if (typeof showStatus === "function" && typeof t === "function") {
+      if (ok) {
+        showStatus(t("status.copied"), "success");
+      } else {
+        showStatus(t("status.copyFailed"), "error");
+      }
+    }
+  } catch (_e3) {
+    // showStatus / t 不可用时不报错；helper 主体已成功
+  }
+  return ok;
+}
+// 暴露给测试 / 外部调用
+if (typeof window !== "undefined") {
+  window.copyTaskIdToClipboard = copyTaskIdToClipboard;
+}
+
 // ==================== marked.js 安全配置 ====================
 // 多任务模块可能会在 app.js 之前触发 Markdown 渲染，因此需要在此处提前完成安全配置：
 // - 禁用 Markdown 原生 HTML 渲染（避免 <style>/<iframe> 等注入造成 UI 污染）
@@ -1944,6 +2011,16 @@ function createTaskTab(task) {
 
   textSpan.textContent = displayName;
   textSpan.title = task.task_id; // 悬停显示完整ID
+  // mining-cycle-2 §3.4: dblclick on task tab text → copy full task_id.
+  // why dblclick：单击保留给 "切换任务"（现有交互），双击解决"复制完整 ID
+  // 来粘贴到日志 / 链接 / SSE event 查询"的高频小痛点。
+  textSpan.style.cursor = "pointer";
+  textSpan.setAttribute("data-copyable-task-id", task.task_id);
+  textSpan.addEventListener("dblclick", function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    copyTaskIdToClipboard(task.task_id);
+  });
 
   // 先添加文本（左边）
   tab.appendChild(textSpan);
