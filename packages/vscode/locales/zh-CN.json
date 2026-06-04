@@ -77,8 +77,8 @@
       "macosMessage": "这是一个 macOS 原生通知测试，如果收到此消息，说明配置正确。"
     },
     "footer": {
-      "version": "v{{version}}",
-      "github": "GitHub"
+      "versionLink": "AI Intervention Agent {{version}}",
+      "versionLinkTitle": "在 GitHub 打开 AI Intervention Agent"
     }
   },
   "statusBar": {

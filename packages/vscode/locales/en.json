@@ -77,8 +77,8 @@
       "macosMessage": "This is a macOS native notification test. If you see this, the config is correct."
     },
     "footer": {
-      "version": "v{{version}}",
-      "github": "GitHub"
+      "versionLink": "AI Intervention Agent {{version}}",
+      "versionLinkTitle": "Open AI Intervention Agent on GitHub"
     }
   },
   "statusBar": {

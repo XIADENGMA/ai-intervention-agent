@@ -1669,7 +1669,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     // HTML render (before ``i18n.js`` finishes loading and can retranslate
     // via ``translateDOM``). Supports Mustache ``{{name}}`` substitution
     // to mirror the runtime API in ``packages/vscode/i18n.js``, so call
-    // sites like ``tl('settings.footer.version', { version })`` produce
+    // sites like ``tl('settings.footer.versionLink', { version })`` produce
     // the same output both pre- and post-hydration.
     const tl = (
       key: string,
@@ -2001,9 +2001,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                         <span class="settings-auto-save" title="${tl("settings.autoSaveTooltip")}" data-i18n="settings.autoSave" data-i18n-title="settings.autoSaveTooltip">${tl("settings.autoSave")}</span>
                     </div>
                 </div>
+                <!-- feat-footer-link-plugin: align with web UI footer.
+                     Merge "v1.7.X" text + standalone "GitHub" link into a
+                     single clickable anchor "AI Intervention Agent X.Y.Z".
+                     data-i18n-version lets i18n.js re-interpolate the
+                     extensionVersion on language switch (kept in sync with
+                     the pre-paint tl(...) result). Note: backticks are
+                     intentionally avoided in this comment because the
+                     surrounding TypeScript template literal would otherwise
+                     terminate early. -->
                 <div class="settings-footer" id="settingsFooter">
-                    <span class="settings-footer-version" data-i18n="settings.footer.version" data-i18n-version="${extensionVersion}">${tl("settings.footer.version", { version: extensionVersion })}</span>
-                    <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer" data-i18n="settings.footer.github">${tl("settings.footer.github")}</a>
+                    <a class="settings-footer-link" href="${githubUrl}" target="_blank" rel="noopener noreferrer" data-i18n="settings.footer.versionLink" data-i18n-version="${extensionVersion}" data-i18n-title="settings.footer.versionLinkTitle" title="${tl("settings.footer.versionLinkTitle")}">${tl("settings.footer.versionLink", { version: extensionVersion })}</a>
                 </div>
                 <div class="settings-hint" id="settingsHint"></div>
             </div>

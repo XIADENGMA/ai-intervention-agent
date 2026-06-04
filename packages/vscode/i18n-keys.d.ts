@@ -58,8 +58,8 @@ export type I18nKey =
   | "settings.feedback.saveFailed"
   | "settings.feedback.saved"
   | "settings.feedback.title"
-  | "settings.footer.github"
-  | "settings.footer.version"
+  | "settings.footer.versionLink"
+  | "settings.footer.versionLinkTitle"
   | "settings.hint.barkTestSent"
   | "settings.hint.coreNotReady"
   | "settings.hint.loadFailed"
@@ -204,8 +204,8 @@ export const I18N_KEYS: readonly I18nKey[] = [
   "settings.feedback.saveFailed",
   "settings.feedback.saved",
   "settings.feedback.title",
-  "settings.footer.github",
-  "settings.footer.version",
+  "settings.footer.versionLink",
+  "settings.footer.versionLinkTitle",
   "settings.hint.barkTestSent",
   "settings.hint.coreNotReady",
   "settings.hint.loadFailed",

@@ -841,9 +841,15 @@ suite('Extension Test Suite', () => {
     assert.ok(i18n)
     i18n.setLang('en')
 
-    // settings.footer.version template is "v{{version}}"
-    const versioned = i18n.t('settings.footer.version', { version: '1.5.0' })
-    assert.strictEqual(versioned, 'v1.5.0', 'param interpolation must replace {{version}}')
+    // feat-footer-link-plugin: settings.footer.versionLink template is
+    // "AI Intervention Agent {{version}}" — single clickable footer link
+    // replaces the old "v{{version}} · GitHub" two-tone footer.
+    const versioned = i18n.t('settings.footer.versionLink', { version: '1.5.0' })
+    assert.strictEqual(
+      versioned,
+      'AI Intervention Agent 1.5.0',
+      'param interpolation must replace {{version}}',
+    )
 
     // ui.countdown.remaining 模板为 "{{seconds}}s remaining"
     const countdown = i18n.t('ui.countdown.remaining', { seconds: 42 })
