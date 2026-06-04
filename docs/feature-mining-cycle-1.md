@@ -41,7 +41,7 @@ These features exist in `mcp-feedback-enhanced` **and** in
 | I18n | ✅ en / zh-TW / zh-CN | ✅ en / zh-CN | We do not yet ship zh-TW; see §3 |
 | System notifications | ✅ "v2.6.0 system-level alerts" | ✅ system / web / sound / Bark | Ours covers a wider channel matrix |
 | Sound notifications | ✅ built-in sounds + custom upload | ✅ built-in only | Custom upload missing; see §3 |
-| Quick phrases / prompt management | ✅ "CRUD + sort + usage stats" | ✅ quick_phrases.js (R131 series) | Comparable; ours lacks usage-stat sorting |
+| Quick phrases / prompt management | ✅ "CRUD + sort + usage stats" | ✅ quick_phrases.js (R131 series incl. R131c) | At parity; R131c added `last_used_at` + `use_count` + `_sortPhrasesByUsage` |
 | Auto-detect environment | ✅ SSH / WSL detection | ✅ Loopback URL suggestion + LAN-IP suggestion | |
 | Shortcut: submit | ✅ Ctrl+Enter / Cmd+Enter | ✅ R140 (with Enter-mode toggle) | We additionally let user pick Enter-mode |
 | Shortcut: paste image | ✅ Ctrl+V / Cmd+V | ✅ image-upload.js paste handler | |
@@ -220,15 +220,30 @@ can pull off the top of the queue.
   storage cleanup on settings reset. Worth it only if user demand
   shows up in issues.
 
-### 3.5 Prompt usage statistics + smart sort (LOW ROI, ~100 LoC)
+### 3.5 Prompt usage statistics + smart sort (**already shipped**, R131c)
 
 - **Reference inspiration**: "Prompt Management: CRUD operations
   for common prompts, usage statistics, intelligent sorting".
-- **Gap**: Our quick phrases are insertion-ordered; recently/often
-  used aren't promoted.
-- **Proposed scope**: Increment per-phrase use-count in localStorage
-  when chip inserted; secondary sort key.
-- **Risk**: Low. But minor UX value compared to §3.1 / §3.2.
+- **Status**: **Not actually a gap.** Discovered during cycle-1
+  loop work that R131c already ships `recordPhraseUsage(id)` +
+  `_sortPhrasesByUsage(phrases)` in `static/js/quick_phrases.js`
+  (lines 654-697), with regression coverage in
+  `tests/test_quick_phrases_usage_sort_r131c.py` (14 cases /
+  5 invariant classes).
+- **What R131c shipped**:
+  - Each phrase gains optional `last_used_at` (ms epoch) + `use_count`
+    fields (v1 schema, forward-compatible bootstrap on old data).
+  - Chip click handler calls `insertTextIntoFeedback` then
+    `recordPhraseUsage` (insert-first, record-second so insertion
+    failure doesn't gate the user's primary action).
+  - `renderList()` sorts via `_sortPhrasesByUsage` before `forEach`:
+    primary `last_used_at` desc → secondary `use_count` desc →
+    tertiary `created_at` desc → quaternary `id` lexical for
+    stability.
+- **Why I missed it in the original cycle-1 survey**: scanned
+  by feature name ("smart sort") and matched only file names,
+  not the R131c history. Forward log corrected — this row is
+  here as a doc fix so future cycles don't re-investigate.
 
 ## §4. Forward log
 
@@ -242,7 +257,7 @@ authoritative — same discipline as `docs/code-reviews/cr*.md`.
 | §3.2 Countdown +60s extend (MVP, not pause/resume) | **resolved** | `fcdbc2d` | 2026-06-04 |
 | §3.3 zh-TW locale (MVP, dev-script derived, awaiting native polish) | **resolved** | `c7bac5f` | 2026-06-05 |
 | §3.4 Custom audio upload | not started | — | — |
-| §3.5 Quick-phrase usage sort | not started | — | — |
+| §3.5 Quick-phrase usage sort | **already shipped** (R131c) | (pre-cycle-1, retroactive) | (existed) |
 
 ## §5. Survey methodology + reproducibility
 
