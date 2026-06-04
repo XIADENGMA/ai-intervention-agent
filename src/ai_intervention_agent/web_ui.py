@@ -1167,7 +1167,7 @@ class WebFeedbackUI(
                 data = request.json or {}
                 lang = str(data.get("language", "auto")).strip()
 
-                supported = ("auto", "en", "zh-CN")
+                supported = ("auto", "en", "zh-CN", "zh-TW")
                 if lang not in supported:
                     return jsonify(
                         {"status": "error", "message": f"不支持的语言: {lang}"}

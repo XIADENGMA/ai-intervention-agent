@@ -627,7 +627,27 @@
       .trim()
       .toLowerCase()
     if (s === 'pseudo' || s === 'xx-ac' || s === 'xx') return 'pseudo'
-    if (s.indexOf('zh') === 0) return 'zh-CN'
+    // feat-zhtw-locale (§3.3)：识别 zh-TW / zh-Hant 系并 normalize 到
+    // ``zh-TW``。BCP-47 中 ``zh-Hant``（traditional script）涵盖了 zh-TW
+    // / zh-HK / zh-MO；这里把 ``zh-hk`` / ``zh-mo`` 也折叠到 zh-TW，因为
+    // 台湾繁体翻译对香港/澳门用户已经远比简体可读。``zh-hans`` 一族（hans
+    // / cn / sg / my）继续走 zh-CN。
+    //
+    // R72-D CodeQL 修复仍然保留：所有未识别的 zh-* 标签 fallback 到 zh-CN，
+    // 而不是原样回传到 fetch URL（避免 attacker-controlled lang 字段
+    // 产生 ``<base>/evil/path.json`` 的 SSRF 路径）。
+    if (s.indexOf('zh') === 0) {
+      if (
+        s === 'zh-tw' ||
+        s === 'zh-hk' ||
+        s === 'zh-mo' ||
+        s === 'zh-hant' ||
+        s.indexOf('zh-hant-') === 0
+      ) {
+        return 'zh-TW'
+      }
+      return 'zh-CN'
+    }
     if (s.indexOf('en') === 0) return 'en'
     return DEFAULT_LANG
   }
@@ -650,9 +670,11 @@
     currentLang = normalizeLang(lang)
     try {
       var docEl = document.documentElement
-      // 当前只支持 en / zh-CN（都是 LTR），但 <html dir> 必须始终显式，未来新增
-      // RTL 语言时只需扩 langToDir 白名单即可随 setLang 自动切换方向。
-      docEl.lang = currentLang === 'zh-CN' ? 'zh-CN' : currentLang === 'en' ? 'en' : currentLang
+      // 当前支持 en / zh-CN / zh-TW（都是 LTR），但 <html dir> 必须始终
+      // 显式，未来新增 RTL 语言时只需扩 langToDir 白名单即可随 setLang
+      // 自动切换方向。``<html lang>`` 直接复用 normalize 结果，避免对每
+      // 一个新增 locale 加一行 ternary。
+      docEl.lang = currentLang
       docEl.dir = langToDir(currentLang)
     } catch (e) {
       /* noop */

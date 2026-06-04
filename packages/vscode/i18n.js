@@ -515,7 +515,22 @@
       .trim()
       .toLowerCase()
     if (s === 'pseudo' || s === 'xx-ac' || s === 'xx') return 'pseudo'
-    if (s.indexOf('zh') === 0) return 'zh-CN'
+    // feat-zhtw-locale (§3.3)：与 ``static/js/i18n.js`` 保持一致 ——
+    // zh-TW / zh-HK / zh-MO / zh-Hant* 折叠到 ``zh-TW``；其他 zh-* 继续走
+    // ``zh-CN``。R72-D CSRF/SSRF 加固契约不变：未知 lang fallback 到
+    // DEFAULT_LANG 而不是原样回传到 fetch URL。
+    if (s.indexOf('zh') === 0) {
+      if (
+        s === 'zh-tw' ||
+        s === 'zh-hk' ||
+        s === 'zh-mo' ||
+        s === 'zh-hant' ||
+        s.indexOf('zh-hant-') === 0
+      ) {
+        return 'zh-TW'
+      }
+      return 'zh-CN'
+    }
     if (s.indexOf('en') === 0) return 'en'
     return DEFAULT_LANG
   }
@@ -538,7 +553,9 @@
     try {
       if (typeof document !== 'undefined' && document.documentElement) {
         var docEl = document.documentElement
-        docEl.lang = currentLang === 'zh-CN' ? 'zh-CN' : currentLang === 'en' ? 'en' : currentLang
+        // feat-zhtw-locale (§3.3): 与 static/js/i18n.js 一致直接复用 normalize
+        // 结果，避免对每个新增 locale 都加一行 ternary。
+        docEl.lang = currentLang
         docEl.dir = langToDir(currentLang)
       }
     } catch (e) {

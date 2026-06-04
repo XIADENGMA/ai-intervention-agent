@@ -135,16 +135,20 @@ class TestPseudoDetectLang(unittest.TestCase):
 
     def test_navigator_language_still_works(self) -> None:
         # Without ?lang= or localStorage, navigator.language wins.
+        # feat-zhtw-locale (§3.3): 历史断言用 'zh-HK' 验证 zh-* 折叠到
+        # 'zh-CN'；现在 zh-HK / zh-MO / zh-TW / zh-Hant* 折叠到 'zh-TW'，
+        # 'zh-Hans' / 'zh-SG' / 'zh-MY' / 'zh-CN' 才继续走 'zh-CN'。
+        # 改用 'zh-Hans-CN' 走 navigator.language → zh-CN 的语义。
         out = _harness(
             WEBUI_I18N,
             textwrap.dedent(
                 """
-                // Force navigator.language to something zh-shaped; should
-                // collapse to 'zh-CN'.
+                // Force navigator.language to a zh-Hans-shaped tag; should
+                // collapse to 'zh-CN' (not 'zh-TW').
                 // Node 21+ treats globalThis.navigator as a read-only accessor,
                 // so plain assignment is silently dropped. defineProperty bypasses
                 // the read-only descriptor created by the harness header.
-                Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-HK' }, writable: true, configurable: true, enumerable: true });
+                Object.defineProperty(globalThis, 'navigator', { value: { language: 'zh-Hans-CN' }, writable: true, configurable: true, enumerable: true });
                 process.stdout.write(api.detectLang());
                 """
             ).strip(),

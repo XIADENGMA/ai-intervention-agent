@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_LANGS = ("en", "zh-CN")
+SUPPORTED_LANGS = ("en", "zh-CN", "zh-TW")
 DEFAULT_LANG = "en"
 
 _MESSAGES: dict[str, dict[str, str]] = {
@@ -77,13 +77,53 @@ _MESSAGES: dict[str, dict[str, str]] = {
         "notify.updateFailed": "更新失败",
         "notify.getFailed": "获取配置失败",
     },
+    # feat-zhtw-locale (§3.3): 繁體中文（台灣）。term sweep 与
+    # static/locales/zh-TW.json 保持一致：設定 / 軟體 / 介面 / 影片 /
+    # 檔案 / 即時 / 連線 / 回饋 / 程式碼 / 預設 等。
+    "zh-TW": {
+        "feedback.submitted": "回饋已提交",
+        "feedback.bodyMustBeJson": "要求主體必須是 JSON（object）",
+        "feedback.bodyMustBeObject": "要求主體必須是 JSON object",
+        "feedback.missingPrompt": "缺少欄位：prompt",
+        "feedback.promptMustBeString": "欄位 prompt 必須是字串",
+        "feedback.optionsMustBeArray": "欄位 predefined_options 必須是陣列",
+        "feedback.timeoutMustBeInt": "欄位 auto_resubmit_timeout 必須是整數（秒）",
+        "feedback.contentUpdated": "內容已更新",
+        "feedback.serverError": "伺服器內部錯誤",
+        "server.shuttingDown": "服務即將關閉",
+        "notify.testSuccess": "Bark 測試通知傳送成功！請檢查裝置",
+        "notify.deviceKeyEmpty": "Device Key 不能為空",
+        "notify.sendFailedDetail": "Bark 通知傳送失敗：{detail}",
+        "notify.sendFailedConfig": "Bark 通知傳送失敗，請檢查設定",
+        "notify.systemUnavailable": "通知系統無法使用",
+        "notify.testFailed": "測試失敗",
+        "notify.countZero": "count=0，已忽略",
+        "notify.systemDegraded": "通知系統無法使用，已降級",
+        "notify.globalOff": "通知總開關未開啟，已忽略",
+        "notify.barkDisabled": "Bark 未啟用，已忽略",
+        "notify.barkKeyEmpty": "bark_device_key 為空，已忽略",
+        "notify.notTriggered": "通知未觸發（可能已停用）",
+        "notify.triggerFailed": "觸發失敗",
+        "notify.configUpdated": "通知設定已更新",
+        "notify.noUpdateFields": "未偵測到需要更新的通知設定欄位",
+        "notify.configUnavailable": "設定系統無法使用",
+        "notify.updateFailed": "更新失敗",
+        "notify.getFailed": "取得設定失敗",
+    },
 }
 
 
 def normalize_lang(raw: str) -> str:
-    """将语言标识归一化为支持的语言代码。"""
+    """将语言标识归一化为支持的语言代码。
+
+    feat-zhtw-locale (§3.3): 与 ``static/js/i18n.js`` 的 ``normalizeLang``
+    保持一致 —— zh-TW / zh-HK / zh-MO / zh-Hant* 折叠为 ``zh-TW``，其他
+    zh-* (zh-CN / zh-Hans / zh-SG / zh-MY) 继续走 ``zh-CN``。
+    """
     s = (raw or "").strip().lower()
     if s.startswith("zh"):
+        if s in {"zh-tw", "zh-hk", "zh-mo", "zh-hant"} or s.startswith("zh-hant-"):
+            return "zh-TW"
         return "zh-CN"
     if s.startswith("en"):
         return "en"

@@ -157,7 +157,15 @@ class TestBackendLookup:
         assert "timeout" in out
 
     def test_normalize_lang_collapses_variants(self) -> None:
-        assert i18n.normalize_lang("zh-HK") == "zh-CN"
+        # feat-zhtw-locale (§3.3): zh-TW / zh-HK / zh-MO / zh-Hant* 折叠到
+        # ``zh-TW``；其他 zh-* (zh-CN / zh-Hans / zh-SG / zh-MY) 走 ``zh-CN``。
+        # 与 ``static/js/i18n.js`` ``normalizeLang`` 行为对齐。
+        assert i18n.normalize_lang("zh-HK") == "zh-TW"
+        assert i18n.normalize_lang("zh-MO") == "zh-TW"
+        assert i18n.normalize_lang("zh-Hant") == "zh-TW"
+        assert i18n.normalize_lang("zh-Hant-TW") == "zh-TW"
+        assert i18n.normalize_lang("zh-SG") == "zh-CN"
+        assert i18n.normalize_lang("zh-Hans") == "zh-CN"
         assert i18n.normalize_lang("en-GB") == "en"
         assert i18n.normalize_lang("fr") == i18n.DEFAULT_LANG
         assert i18n.normalize_lang("") == i18n.DEFAULT_LANG

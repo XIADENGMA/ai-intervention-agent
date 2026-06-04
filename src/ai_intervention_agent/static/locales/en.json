@@ -138,6 +138,7 @@
     "language": "Interface language",
     "langAuto": "Auto-detect",
     "langZhCN": "简体中文",
+    "langZhTW": "繁體中文",
     "configPath": "Current config file path",
     "openConfigInIde": "Open config file in IDE",
     "openConfigInIdeReady": "Open with {editor}",

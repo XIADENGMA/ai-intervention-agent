@@ -135,7 +135,7 @@ class WebUIConfig(BaseModel):
     RETRY_DELAY_MIN: ClassVar[float] = 0.0
     RETRY_DELAY_MAX: ClassVar[float] = 60.0
 
-    SUPPORTED_LANGS: ClassVar[tuple] = ("auto", "en", "zh-CN")
+    SUPPORTED_LANGS: ClassVar[tuple] = ("auto", "en", "zh-CN", "zh-TW")
 
     host: str
     port: int

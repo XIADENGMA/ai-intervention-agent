@@ -86,9 +86,19 @@ class TestNormalizeLangCsrfHardening(unittest.TestCase):
 
     KNOWN_GOOD = (
         # (input, expected canonical)
+        # feat-zhtw-locale (§3.3): zh-TW / zh-HK / zh-MO / zh-Hant* 折叠到
+        # ``zh-TW``；其他 zh-* 继续走 ``zh-CN``。CSRF/SSRF 加固语义不变 ——
+        # 未知 lang 仍走 DEFAULT_LANG (en) 而不是原样回传到 fetch URL。
         ("zh-CN", "zh-CN"),
         ("zh-cn", "zh-CN"),
-        ("zh-TW", "zh-CN"),  # 当前实现把所有 zh* 都折叠到 zh-CN
+        ("zh-TW", "zh-TW"),
+        ("zh-tw", "zh-TW"),
+        ("zh-HK", "zh-TW"),
+        ("zh-MO", "zh-TW"),
+        ("zh-Hant", "zh-TW"),
+        ("zh-Hant-TW", "zh-TW"),
+        ("zh-Hans", "zh-CN"),
+        ("zh-SG", "zh-CN"),
         ("ZH", "zh-CN"),
         ("en", "en"),
         ("en-US", "en"),
@@ -256,13 +266,36 @@ class TestNormalizeLangSourceContract(unittest.TestCase):
         )
 
     def test_normalize_lang_returns_default_for_unknown(self) -> None:
-        """函数体里必须出现 ``return DEFAULT_LANG`` 作为 fallback。"""
+        """函数体里必须出现 ``return DEFAULT_LANG`` 作为 fallback。
+
+        feat-zhtw-locale (§3.3) 之后函数体含嵌套 ``if (s.indexOf('zh')...) {
+        if (...) return 'zh-TW'; return 'zh-CN'; }``——老 regex
+        ``\\{[^}]*?return\\s+DEFAULT_LANG`` 在嵌套右大括号处提前结束。
+        改用 brace-counting 切出完整函数体，独立于缩进层级。
+        """
         text = _I18N_JS_STATIC.read_text(encoding="utf-8")
-        # normalizeLang 函数体里必须明确 fallback 到 DEFAULT_LANG
-        # （白名单语义）
-        self.assertRegex(
-            text,
-            r"function\s+normalizeLang\s*\([^)]*\)\s*\{[^}]*?return\s+DEFAULT_LANG",
+        # 找到 ``function normalizeLang(...) {`` 的起点
+        anchor = text.find("function normalizeLang")
+        self.assertNotEqual(anchor, -1, "未找到 normalizeLang 函数定义")
+        # 找到 ``{`` 后的位置，然后用大括号配对扫描到匹配的 ``}``
+        brace_open = text.find("{", anchor)
+        self.assertNotEqual(brace_open, -1, "normalizeLang 函数体应以 ``{`` 开始")
+        depth = 1
+        i = brace_open + 1
+        while i < len(text) and depth > 0:
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        self.assertEqual(depth, 0, "normalizeLang 函数体大括号未配对")
+        body = text[brace_open + 1 : i]
+        self.assertIn(
+            "return DEFAULT_LANG",
+            body,
             "normalizeLang 必须显式 fallback 到 DEFAULT_LANG（R72-D 契约）",
         )
 
