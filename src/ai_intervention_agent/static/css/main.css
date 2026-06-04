@@ -3492,6 +3492,80 @@ h1 {
 }
 
 /* ========================================================================
+   feat-countdown-extend (§3.2): +60s 倒计时延长按钮
+   对标 mcp-feedback-enhanced 的 "Auto-commit pause/resume" 控制
+   ======================================================================== */
+
+/**
+ * +60s 延长按钮（.countdown-extend-btn）：
+ *
+ * 设计要点：
+ *   - 视觉上紧贴倒计时文字右侧，gap 6px，确保是同一"控件组"
+ *   - 默认 .hidden 隐藏；JS 在 task 有 auto_resubmit_timeout > 0 +
+ *     extends_used < extends_max 时移除 hidden
+ *   - disabled 状态：opacity 降低 + cursor: not-allowed，hover 不变色
+ *   - hover/focus 状态：背景色变化提示可交互，与 .settings-btn 风格一致
+ *   - margin-left: 6px 让按钮与 countdown-text 视觉分组（共享 ⏰ 锚点）
+ */
+.countdown-extend-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 150, 150, 0.4);
+  border-radius: 10px;
+  background-color: rgba(255, 150, 150, 0.08);
+  color: rgba(255, 150, 150, 0.95);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+  /* 防止 click 时按钮抖动；保持与 settings-btn 一致的 200ms 过渡 */
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    opacity 200ms ease;
+}
+
+.countdown-extend-btn:hover:not(:disabled) {
+  background-color: rgba(255, 150, 150, 0.15);
+  border-color: rgba(255, 150, 150, 0.55);
+}
+
+.countdown-extend-btn:focus-visible {
+  outline: 2px solid rgba(255, 150, 150, 0.55);
+  outline-offset: 2px;
+}
+
+.countdown-extend-btn:active:not(:disabled) {
+  background-color: rgba(255, 150, 150, 0.22);
+}
+
+.countdown-extend-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.countdown-extend-btn.hidden {
+  display: none;
+}
+
+/* 浅色主题适配：调亮文字 + 用更可读的边框 */
+[data-theme="light"] .countdown-extend-btn {
+  border-color: rgba(217, 119, 87, 0.45);
+  background-color: rgba(217, 119, 87, 0.08);
+  color: rgba(180, 83, 9, 1);
+}
+[data-theme="light"] .countdown-extend-btn:hover:not(:disabled) {
+  background-color: rgba(217, 119, 87, 0.16);
+  border-color: rgba(217, 119, 87, 0.65);
+}
+
+/* ========================================================================
    问题描述和选项容器 (Description & Options Container)
    ======================================================================== */
 

@@ -55,6 +55,27 @@ _SSE_SCHEMA_VALIDATE_ENV_VAR: str = "AIIA_SSE_SCHEMA_VALIDATE"
 _SSE_SCHEMA_VALIDATE_DEFAULT_MODE: str = "off"
 _SSE_SCHEMA_VALIDATE_VALID_MODES: frozenset[str] = frozenset({"off", "warn", "strict"})
 
+# feat-countdown-extend (§3.2)：用户主动 +60s 扩展倒计时的相关配置。
+# 这些常量同时被 ``POST /api/tasks/<task_id>/extend`` 路由 + ``GET
+# /api/tasks`` 路由（``extends_max`` 字段）+ ``GET /api/tasks/export``
+# 路由共同使用。
+#
+# 安全保护理由（为什么不让用户无限延长）：
+#   - ``COUNTDOWN_EXTENDS_MAX = 3``：每个 task 最多 3 次扩展，避免用户
+#     绕开 auto-resubmit 自动恢复机制把任务永久挂着；
+#   - ``COUNTDOWN_EXTEND_SECONDS_MIN/MAX = [10, 300]``：单次扩展 [10,
+#     300] 秒，避免 "+1s spam" 或 "+3600s 一次性架空"；
+#   - ``COUNTDOWN_EXTEND_DEFAULT_SECONDS = 60``：前端默认按钮 +60s，
+#     与同类产品惯例（GitHub PR review reminder、Slack snooze）对齐。
+#
+# 配置位置取舍：暂时硬编码模块级常量。未来若需要让 ops 不重启地调，
+# 可以迁到 ``server_config.toml`` 的 ``[feedback]`` 段，但当前 3 个
+# 数字稳定性高、用户无需自定义 → 硬编码降低配置复杂度。
+COUNTDOWN_EXTENDS_MAX: int = 3
+COUNTDOWN_EXTEND_DEFAULT_SECONDS: int = 60
+COUNTDOWN_EXTEND_SECONDS_MIN: int = 10
+COUNTDOWN_EXTEND_SECONDS_MAX: int = 300
+
 
 def _read_sse_schema_validate_mode() -> str:
     """读 ``AIIA_SSE_SCHEMA_VALIDATE`` 环境变量, 返回合法的 mode。
@@ -1067,6 +1088,12 @@ class TaskRoutesMixin:
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
                             "remaining_time": remaining,
                             "deadline": server_time + remaining,
+                            # feat-countdown-extend (§3.2)：前端用
+                            # ``extends_used`` 计算 +60s 按钮是否还可点击
+                            # （>= extends_max 时按钮 disabled），用
+                            # ``extends_max`` 显示"剩余 N 次"提示。
+                            "extends_used": task.extends_used,
+                            "extends_max": COUNTDOWN_EXTENDS_MAX,
                         }
                     )
 
@@ -1221,6 +1248,11 @@ class TaskRoutesMixin:
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
                             "remaining_time": remaining,
                             "deadline": server_time + remaining,
+                            # feat-countdown-extend (§3.2)：export 也包含
+                            # ``extends_used`` 字段便于 audit / backup
+                            # 还原后保留扩展次数。
+                            "extends_used": task.extends_used,
+                            "extends_max": COUNTDOWN_EXTENDS_MAX,
                             "created_at": task.created_at.isoformat(),
                             "completed_at": completed_at_iso,
                             "result": sanitized_result,
@@ -1675,6 +1707,130 @@ class TaskRoutesMixin:
                 )
             except Exception as e:
                 logger.error(f"获取任务失败: {e}", exc_info=True)
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
+        @self.app.route("/api/tasks/<task_id>/extend", methods=["POST"])
+        @self.limiter.limit("10 per minute")
+        def extend_task_deadline(task_id: str) -> ResponseReturnValue:
+            """feat-countdown-extend (§3.2): 用户主动延长 task 的
+            auto-resubmit 倒计时。
+            ---
+            tags:
+              - Tasks
+            parameters:
+              - name: task_id
+                in: path
+                type: string
+                required: true
+              - name: body
+                in: body
+                required: false
+                schema:
+                  type: object
+                  properties:
+                    seconds:
+                      type: integer
+                      description: |
+                        要延长的秒数；缺省走 COUNTDOWN_EXTEND_DEFAULT_SECONDS
+                        (60)。范围 [10, 300]。
+                      example: 60
+            responses:
+              200:
+                description: 延长成功（task_updated 事件已通过 SSE 广播）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    extends_used:
+                      type: integer
+                    extends_max:
+                      type: integer
+                    new_remaining_time:
+                      type: integer
+                    new_auto_resubmit_timeout:
+                      type: integer
+              400:
+                description: |
+                  请求体无效（seconds 超出 [10, 300] / JSON 解析失败 /
+                  task 已完成 / task 禁用了 auto-resubmit）
+              404:
+                description: task 不存在
+              422:
+                description: |
+                  延长上限已达（extends_used >= COUNTDOWN_EXTENDS_MAX）。
+                  前端按钮应根据 ``extends_used`` 字段提前 disabled，正常
+                  路径不会走到 422，但保留作为防御性校验。
+              500:
+                description: 服务器内部错误
+            """
+            try:
+                task_queue = get_task_queue()
+                task = task_queue.get_task(task_id)
+                if task is None:
+                    return jsonify({"success": False, "error": "任务不存在"}), 404
+
+                # 请求体：seconds 可选，缺省 60。
+                # request.get_json(silent=True) 在空 body / 错误 JSON 时返回 None
+                # 而不是抛 400，让我们走自定义的 400 / 默认值路径。
+                payload = request.get_json(silent=True) or {}
+                requested_seconds = payload.get(
+                    "seconds", COUNTDOWN_EXTEND_DEFAULT_SECONDS
+                )
+                if not isinstance(requested_seconds, int) or isinstance(
+                    requested_seconds, bool
+                ):
+                    # bool 是 int 的子类，必须显式排除（True == 1 会通过 int 检查）
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": "seconds 必须是整数",
+                            "code": "invalid_seconds",
+                        }
+                    ), 400
+
+                success, error_code = task.extend_deadline(
+                    requested_seconds,
+                    max_extends=COUNTDOWN_EXTENDS_MAX,
+                    min_seconds=COUNTDOWN_EXTEND_SECONDS_MIN,
+                    max_seconds=COUNTDOWN_EXTEND_SECONDS_MAX,
+                )
+                if not success:
+                    # 422 仅留给"上限已达"；其他错误码是输入/状态错误 → 400
+                    status_code = 422 if error_code == "extends_limit_reached" else 400
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": error_code,
+                            "code": error_code,
+                            "extends_used": task.extends_used,
+                            "extends_max": COUNTDOWN_EXTENDS_MAX,
+                        }
+                    ), status_code
+
+                # 成功路径：直接走 HTTP response 把新 deadline + extends_used
+                # 返回给发起者；其他 client 通过下一次 GET /api/tasks 轮询
+                # 自动同步（既有 5s polling）。**故意不**新增 SSE 事件类型
+                # （避免引入 task_updated 类型需要的 schema 校验 + 前端事件
+                # 监听器 + sse_event_schemas.py 改动），扩展是单用户操作，
+                # 多 client 间秒级延迟可接受。
+                now_monotonic = time.monotonic()
+                new_remaining = task.get_remaining_time(now_monotonic=now_monotonic)
+                logger.info(
+                    f"task_id={task_id} 倒计时延长 +{requested_seconds}s "
+                    f"(extends_used={task.extends_used}/{COUNTDOWN_EXTENDS_MAX})"
+                )
+                return jsonify(
+                    {
+                        "success": True,
+                        "extends_used": task.extends_used,
+                        "extends_max": COUNTDOWN_EXTENDS_MAX,
+                        "new_remaining_time": new_remaining,
+                        "new_auto_resubmit_timeout": task.auto_resubmit_timeout,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"延长任务倒计时失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
         @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])

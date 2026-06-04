@@ -32,6 +32,13 @@
       "reconnecting": "正在重连…",
       "disconnected": "已断开 — 每 30 秒重试"
     },
+    "extendCountdown": {
+      "label": "+60秒",
+      "title": "延长倒计时 60 秒（每个任务最多 3 次）",
+      "ariaLabel": "延长倒计时 60 秒",
+      "limitReached": "本任务延长次数已达上限",
+      "networkError": "延长倒计时失败 — 请重试"
+    },
     "taskLabel": "任务：",
     "imageCountPrefix": "已选择",
     "imageCountSuffix": "张图片",

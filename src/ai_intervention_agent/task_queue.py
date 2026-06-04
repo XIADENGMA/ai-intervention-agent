@@ -252,6 +252,12 @@ class Task(BaseModel):
     status: str = TaskStatus.PENDING
     result: dict[str, Any] | None = None
     completed_at: datetime | None = None
+    # feat-countdown-extend (§3.2)：用户主动扩展过倒计时的次数。
+    # 每次扩展 = ``auto_resubmit_timeout += extend_seconds``。
+    # 上限由 ``Task.extend_deadline`` 的 ``max_extends`` 参数控制（路由层
+    # 从 server_config 读，默认 3 次），防止用户无限拖时间绕开 auto-resubmit。
+    # 0 = 从未扩展，前端按钮可点击；>= max_extends 时按钮 disabled。
+    extends_used: int = 0
 
     def get_remaining_time(self, now_monotonic: float | None = None) -> int:
         """计算剩余倒计时（使用单调时间）。
@@ -295,6 +301,62 @@ class Task(BaseModel):
         if self.auto_resubmit_timeout <= 0:
             return False
         return time.monotonic() > self.get_deadline_monotonic()
+
+    def extend_deadline(
+        self,
+        seconds: int,
+        *,
+        max_extends: int = 3,
+        min_seconds: int = 10,
+        max_seconds: int = 300,
+    ) -> tuple[bool, str | None]:
+        """feat-countdown-extend (§3.2): 用户主动延长 task 的 auto-resubmit
+        倒计时。
+
+        实现方式：直接增加 ``auto_resubmit_timeout`` 而不是修改
+        ``created_at_monotonic``。后者是真实创建时间快照，不应被业务
+        逻辑改动。``get_remaining_time`` = ``auto_resubmit_timeout -
+        elapsed``，所以增加 timeout 等价于把 deadline 往后推。
+
+        典型用户场景：写超长反馈时不想被 240s 倒计时压力 →
+        点击 +60s 按钮 → 后端调用本方法 → SSE 广播 task_updated →
+        前端通过既有 updateTasksList 路径自动刷新 UI（不需要专门 fetch）。
+
+        参数
+        ----
+        seconds:
+            要延长的秒数（必须在 [min_seconds, max_seconds] 内）。
+        max_extends:
+            该 task 允许的总延长次数（来自 server_config，默认 3）。
+            达到上限时本调用失败，前端按钮置 disabled。
+        min_seconds / max_seconds:
+            单次延长的合理范围；默认 [10, 300]，避免用户 +1s spam 或
+            一口气 +3600s 把 auto-resubmit 实际功能架空。
+
+        返回
+        ----
+        (success, error_code)：
+            - (True, None) 成功
+            - (False, "task_completed") task 已完成，不能再延长
+            - (False, "auto_resubmit_disabled") task 没有 auto-resubmit
+              （``auto_resubmit_timeout <= 0``），无延长意义
+            - (False, "extends_limit_reached") 已达 max_extends 上限
+            - (False, "invalid_seconds") seconds 超出 [min, max] 范围
+        """
+        if self.status == TaskStatus.COMPLETED:
+            return False, "task_completed"
+        if self.auto_resubmit_timeout <= 0:
+            return False, "auto_resubmit_disabled"
+        if self.extends_used >= max_extends:
+            return False, "extends_limit_reached"
+        if not (min_seconds <= seconds <= max_seconds):
+            return False, "invalid_seconds"
+        # 同时改两个字段；validate_assignment=True 让 pydantic 在不合理
+        # 的极端情况下抛错（auto_resubmit_timeout 是 int 不会有 overflow，
+        # 但保留 invariant 给未来的字段约束变更）。
+        self.auto_resubmit_timeout = self.auto_resubmit_timeout + seconds
+        self.extends_used = self.extends_used + 1
+        return True, None
 
 
 class TaskQueue:

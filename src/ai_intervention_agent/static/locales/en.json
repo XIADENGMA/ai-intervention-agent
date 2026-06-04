@@ -32,6 +32,13 @@
       "reconnecting": "Reconnecting…",
       "disconnected": "Disconnected — retrying every 30s"
     },
+    "extendCountdown": {
+      "label": "+60s",
+      "title": "Extend countdown by 60 seconds (max 3 times per task)",
+      "ariaLabel": "Extend countdown by 60 seconds",
+      "limitReached": "Extension limit reached for this task",
+      "networkError": "Failed to extend countdown — please retry"
+    },
     "taskLabel": "Task:",
     "imageCountPrefix": "Selected",
     "imageCountSuffix": "images",

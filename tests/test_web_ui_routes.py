@@ -1101,6 +1101,9 @@ class TestGetTasks(_RouteTestBase):
             task.created_at.isoformat.return_value = f"2026-01-01T00:00:0{idx}+00:00"
             task.auto_resubmit_timeout = 120
             task.get_remaining_time.return_value = 100 - idx
+            # feat-countdown-extend：新增字段需 JSON-serializable，否则
+            # jsonify 会失败导致路由返回 500。
+            task.extends_used = 0
             tasks.append(task)
 
         mock_tq.get_all_tasks_with_stats.return_value = (

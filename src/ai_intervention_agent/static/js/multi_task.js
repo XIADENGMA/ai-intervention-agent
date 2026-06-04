@@ -488,6 +488,196 @@ var SSE_STATUS_DISCONNECTED_DELAY_MS = 30000;
 // 复用它即可让 3 个 literal key 被扫描器识别 + 翻译路径与既有 i18n 一致。
 // 注意 ``_t`` 在 i18n 不可用时返回 key 自身（truthy），所以必须显式
 // 比较 ``=== key`` 才能 fallback 到英文兜底。
+// feat-countdown-extend (§3.2): +60s 按钮逻辑。同 _resolveSseStatusLabel
+// 的 i18n key-equality 模式 —— ``_t`` 在 i18n 不可用时返回 key 自身，
+// 必须显式 ``=== key`` 比较才能 fallback 英文。
+function _resolveExtendCountdownLabel(state) {
+  var key;
+  var fallback;
+  if (state === "ariaLabel") {
+    key = "page.extendCountdown.ariaLabel";
+    fallback = "Extend countdown by 60 seconds";
+  } else if (state === "title") {
+    key = "page.extendCountdown.title";
+    fallback = "Extend countdown by 60 seconds (max 3 times per task)";
+  } else if (state === "limitReached") {
+    key = "page.extendCountdown.limitReached";
+    fallback = "Extension limit reached";
+  } else if (state === "label") {
+    key = "page.extendCountdown.label";
+    fallback = "+60s";
+  } else {
+    key = "page.extendCountdown.networkError";
+    fallback = "Failed to extend countdown";
+  }
+  var v;
+  if (key === "page.extendCountdown.ariaLabel") {
+    v = _t("page.extendCountdown.ariaLabel");
+  } else if (key === "page.extendCountdown.title") {
+    v = _t("page.extendCountdown.title");
+  } else if (key === "page.extendCountdown.limitReached") {
+    v = _t("page.extendCountdown.limitReached");
+  } else if (key === "page.extendCountdown.label") {
+    v = _t("page.extendCountdown.label");
+  } else {
+    v = _t("page.extendCountdown.networkError");
+  }
+  return typeof v === "string" && v.length > 0 && v !== key ? v : fallback;
+}
+
+// 同步 +60s 按钮的可见性 + disabled 状态。task 参数取自最新
+// /api/tasks 响应；缺字段时按 backward-compat 路径处理（旧 backend 不
+// 返回 extends_used → 按钮保持隐藏，避免 UI 出现但点击 404）。
+function updateCountdownExtendButton(task) {
+  if (typeof document === "undefined") return;
+  var btn = document.getElementById("countdown-extend-btn");
+  if (!btn) return;
+  if (
+    !task ||
+    typeof task.extends_used !== "number" ||
+    typeof task.extends_max !== "number" ||
+    task.status === "completed" ||
+    (task.auto_resubmit_timeout || 0) <= 0
+  ) {
+    btn.classList.add("hidden");
+    btn.disabled = true;
+    return;
+  }
+  btn.classList.remove("hidden");
+  var atLimit = task.extends_used >= task.extends_max;
+  btn.disabled = atLimit;
+  if (atLimit) {
+    btn.setAttribute("title", _resolveExtendCountdownLabel("limitReached"));
+    btn.setAttribute(
+      "aria-label",
+      _resolveExtendCountdownLabel("limitReached"),
+    );
+  } else {
+    btn.setAttribute("title", _resolveExtendCountdownLabel("title"));
+    btn.setAttribute("aria-label", _resolveExtendCountdownLabel("ariaLabel"));
+  }
+}
+
+// 点击 +60s 按钮的 handler：POST → 拿到 new_remaining_time + extends_used →
+// 更新本地 deadline 缓存让圆环立刻 jump 而不是等下次 polling。
+function handleExtendCountdownClick() {
+  if (typeof document === "undefined" || typeof fetch === "undefined") return;
+  var btn = document.getElementById("countdown-extend-btn");
+  if (!btn || btn.disabled) return;
+  var taskId = window.activeTaskId;
+  if (!taskId) return;
+  btn.disabled = true;
+  try {
+    fetch("/api/tasks/" + encodeURIComponent(taskId) + "/extend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seconds: 60 }),
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          return { ok: resp.ok, data: data };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok || !res.data || !res.data.success) {
+          var code = (res.data && res.data.code) || "unknown";
+          console.warn("Extend countdown failed:", code);
+          if (typeof window.showInPageMessage === "function") {
+            try {
+              window.showInPageMessage(
+                _resolveExtendCountdownLabel("networkError"),
+                "error",
+              );
+            } catch (_e) {
+              /* ignore: toast helper failed, console warn already covers it */
+            }
+          }
+          // 即便失败也要重新计算 disabled 状态（可能是上限触发的 422）
+          if (res.data && typeof res.data.extends_used === "number") {
+            var task = (window.currentTasks || []).find(function (t) {
+              return t.task_id === taskId;
+            });
+            if (task) {
+              task.extends_used = res.data.extends_used;
+              task.extends_max = res.data.extends_max || task.extends_max;
+              updateCountdownExtendButton(task);
+            }
+          } else {
+            btn.disabled = false;
+          }
+          return;
+        }
+        // 成功路径：用响应里的 new_remaining_time + new_auto_resubmit_timeout
+        // 立刻更新前端 deadline 缓存，让圆环数字 jump 而不必等下次轮询。
+        var data = res.data;
+        var newRemaining = data.new_remaining_time;
+        var newTimeout = data.new_auto_resubmit_timeout;
+        // 更新 deadline（taskDeadlines 是单调时间基线 + auto_resubmit_timeout 的
+        // 衍生量；同 startTaskCountdown 路径，用 server_time_offset 算回 deadline）。
+        var adjustedNow =
+          Date.now() / 1000 + (window.serverTimeOffset || 0);
+        if (typeof window.taskDeadlines === "object" && window.taskDeadlines) {
+          window.taskDeadlines[taskId] = adjustedNow + newRemaining;
+        }
+        // 更新 taskCountdowns 内的 remaining + timeout，让下一 tick 渲染正确数字。
+        if (typeof window.taskCountdowns === "object" && window.taskCountdowns) {
+          var cd = window.taskCountdowns[taskId];
+          if (cd) {
+            cd.remaining = newRemaining;
+            cd.timeout = newTimeout;
+          }
+        }
+        // 同步 currentTasks 数据让 updateCountdownExtendButton 立即生效。
+        var task = (window.currentTasks || []).find(function (t) {
+          return t.task_id === taskId;
+        });
+        if (task) {
+          task.extends_used = data.extends_used;
+          task.extends_max = data.extends_max;
+          task.auto_resubmit_timeout = newTimeout;
+          task.remaining_time = newRemaining;
+          updateCountdownExtendButton(task);
+        }
+        // 立刻刷新主倒计时 UI（圆环 + 数字）
+        if (typeof window.updateCountdownDisplay === "function") {
+          window.updateCountdownDisplay(newRemaining);
+        }
+      })
+      .catch(function (e) {
+        console.warn("Extend countdown network error:", e);
+        btn.disabled = false;
+      });
+  } catch (e) {
+    console.warn("Extend countdown invocation failed:", e);
+    btn.disabled = false;
+  }
+}
+
+// 模块加载时一次性绑定 click handler（idempotent：重复加载也不会重复绑）。
+if (
+  typeof document !== "undefined" &&
+  !window.__aiiaExtendBtnBound
+) {
+  window.__aiiaExtendBtnBound = true;
+  document.addEventListener("DOMContentLoaded", function () {
+    var btn = document.getElementById("countdown-extend-btn");
+    if (btn) {
+      btn.addEventListener("click", handleExtendCountdownClick);
+    }
+  });
+  // 兼容已 DOMContentLoaded 后才加载本脚本的场景（test fixture / 慢解析）。
+  if (
+    document.readyState === "interactive" ||
+    document.readyState === "complete"
+  ) {
+    var btnNow = document.getElementById("countdown-extend-btn");
+    if (btnNow && !btnNow.__aiiaExtendBound) {
+      btnNow.__aiiaExtendBound = true;
+      btnNow.addEventListener("click", handleExtendCountdownClick);
+    }
+  }
+}
+
 function _resolveSseStatusLabel(state) {
   var key;
   var fallback;
@@ -1341,6 +1531,7 @@ function updateTasksList(tasks) {
     tasks.length > 0 && tasks.some((t) => t.status !== "completed");
 
   currentTasks = tasks;
+  window.currentTasks = tasks;
   hasLoadedTaskSnapshot = true;
   window.hasLoadedTaskSnapshot = true;
 
@@ -1412,6 +1603,17 @@ function updateTasksList(tasks) {
       `Task list cleared; reset activeTaskId: ${activeTaskId} -> null`,
     );
     activeTaskId = null;
+  }
+
+  // feat-countdown-extend (§3.2): 每次任务列表更新（轮询 / SSE / 手动 fetch）
+  // 都让 +60s 按钮根据 active task 的最新 extends_used / extends_max /
+  // status / auto_resubmit_timeout 同步可见性与可点击状态。**不**专门
+  // hook task_changed SSE 事件，因为 SSE 接收路径下游也走 updateTasksList。
+  if (typeof updateCountdownExtendButton === "function") {
+    var _activeTask = tasks.find(function (t) {
+      return t.task_id === activeTaskId;
+    });
+    updateCountdownExtendButton(_activeTask);
   }
 
   // 确保页面状态与任务状态一致

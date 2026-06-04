@@ -618,6 +618,29 @@
                 data-i18n="page.countdown"
                 >0s until auto-reschedule</span
               >
+              <!-- feat-countdown-extend (§3.2): +60s 扩展按钮，靠在
+                   countdown text 右侧。默认 disabled + 隐藏，由
+                   ``updateCountdownExtendButton(task)`` 在 task 数据变
+                   化时同步可点击状态。点击触发
+                   POST /api/tasks/<task_id>/extend，成功后自动 refresh
+                   倒计时 + extends_used 计数。 -->
+              <button
+                type="button"
+                id="countdown-extend-btn"
+                class="countdown-extend-btn hidden"
+                aria-controls="countdown-text"
+                data-i18n-title="page.extendCountdown.title"
+                data-i18n-aria-label="page.extendCountdown.ariaLabel"
+                title="Extend countdown by 60 seconds (max 3 times per task)"
+                aria-label="Extend countdown by 60 seconds"
+                disabled
+              >
+                <span
+                  class="countdown-extend-label"
+                  data-i18n="page.extendCountdown.label"
+                  >+60s</span
+                >
+              </button>
             </div>
           </div>
 

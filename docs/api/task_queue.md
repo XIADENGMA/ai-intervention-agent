@@ -28,6 +28,8 @@
 
 ##### `is_expired(self) -> bool`
 
+##### `extend_deadline(self, seconds: int) -> tuple[bool, str | None]`
+
 ### `class TaskQueue`
 
 #### Methods
