@@ -2333,6 +2333,9 @@ async function switchTask(taskId) {
     // mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder):
     // 切换任务时立即应用 task-specific placeholder
     updateFeedbackPlaceholder(cachedTask.feedback_placeholder);
+    // mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno):
+    // 切换任务时立即应用 question_type 决定 textarea / yesno UI
+    updateYesnoButtonGroup(cachedTask.question_type);
   }
 
   try {
@@ -2494,6 +2497,8 @@ async function loadTaskDetails(taskId) {
       // mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder):
       // 异步详情回来后再次同步（cache 路径可能取到旧 placeholder）
       updateFeedbackPlaceholder(task.feedback_placeholder);
+      // mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno):
+      updateYesnoButtonGroup(task.question_type);
 
       // 恢复该任务之前保存的textarea内容
       const textarea = document.getElementById("feedback-text");
@@ -2659,6 +2664,90 @@ async function updateDescriptionDisplay(prompt) {
  * - 容器不存在时会跳过
  * - 选项数组为空时显示空列表
  */
+/**
+ * mining-cycle-3 §2.1 borrow #2 (gemini-cli ``ask_user.yesno``) —
+ * 根据 ``task.question_type`` 在 textarea 主体上方渲染一行 Yes/No
+ * button group；点击直接提交对应 "yes" / "no" 字面 feedback。
+ *
+ * 行为：
+ *   - question_type === "yesno" → 渲染 button group，隐藏 textarea
+ *   - 其他值 → 移除 button group（如果有），恢复 textarea 显示
+ *
+ * 为什么不替换 textarea 而是 hide/show：user 切换任务时如果新任务
+ * 不是 yesno 类型，textarea 必须秒回。重建 DOM 慢且会丢失任何
+ * task-scope textarea 内容（taskTextareaContents 映射）。
+ *
+ * i18n: ``page.yesnoYes`` / ``page.yesnoNo`` + 英文 fallback。
+ */
+function updateYesnoButtonGroup(questionType) {
+  var feedbackTextarea = document.getElementById("feedback-text");
+  var existingGroup = document.getElementById("yesno-button-group");
+  var t =
+    typeof window !== "undefined" &&
+    window.AIIA_I18N &&
+    typeof window.AIIA_I18N.t === "function"
+      ? window.AIIA_I18N.t.bind(window.AIIA_I18N)
+      : function () {
+          return null;
+        };
+
+  if (questionType !== "yesno") {
+    if (existingGroup) existingGroup.remove();
+    if (feedbackTextarea) feedbackTextarea.style.display = "";
+    return;
+  }
+
+  if (feedbackTextarea) feedbackTextarea.style.display = "none";
+
+  if (existingGroup) {
+    return;
+  }
+  if (!feedbackTextarea || !feedbackTextarea.parentNode) return;
+
+  var group = document.createElement("div");
+  group.id = "yesno-button-group";
+  group.className = "yesno-button-group";
+
+  var yesLabel = t("page.yesnoYes") || "Yes";
+  var noLabel = t("page.yesnoNo") || "No";
+
+  var yesBtn = document.createElement("button");
+  yesBtn.type = "button";
+  yesBtn.className = "btn btn-primary yesno-btn yesno-btn-yes";
+  yesBtn.textContent = yesLabel;
+  yesBtn.setAttribute("data-yesno-value", "yes");
+
+  var noBtn = document.createElement("button");
+  noBtn.type = "button";
+  noBtn.className = "btn btn-secondary yesno-btn yesno-btn-no";
+  noBtn.textContent = noLabel;
+  noBtn.setAttribute("data-yesno-value", "no");
+
+  function _submit(literal) {
+    var ta = document.getElementById("feedback-text");
+    if (ta) ta.value = literal;
+    var form = document.getElementById("feedback-form");
+    if (form && typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+    } else if (form) {
+      form.submit();
+    } else {
+      var submitBtn = document.getElementById("submit-btn");
+      if (submitBtn) submitBtn.click();
+    }
+  }
+  yesBtn.addEventListener("click", function () {
+    _submit("yes");
+  });
+  noBtn.addEventListener("click", function () {
+    _submit("no");
+  });
+
+  group.appendChild(yesBtn);
+  group.appendChild(noBtn);
+  feedbackTextarea.parentNode.insertBefore(group, feedbackTextarea);
+}
+
 /**
  * mining-cycle-3 §2.1 borrow #3 (gemini-cli `placeholder`) —
  * 把 per-task ``feedback_placeholder`` 同步到 ``#feedback-text``。

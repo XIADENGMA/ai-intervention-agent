@@ -814,8 +814,26 @@ async def interactive_feedback(
             "Examples: 'Paste the error stack trace', 'Describe the visual glitch', "
             "'Reply 'ok' to approve or 'no' + reason to reject'. "
             "Length: clamped to 200 characters server-side (single-line "
-            "placeholders only; longer text is silently truncated). "
+            "placeholders only; longer text is silently truncated; the response "
+            "includes ``placeholder_truncated: true`` + ``placeholder_original_length`` "
+            "+ ``placeholder_max_length`` when clamping activates so callers can "
+            "warn). "
             "If omitted or empty, the UI uses its default i18n placeholder. "
+            "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
+        ),
+    ),
+    question_type: str | None = Field(
+        default=None,
+        description=(
+            "Optional UI mode hint: when ``'yesno'``, the frontend hides the "
+            "free-text textarea and renders a single-row Yes/No button pair. "
+            "User's click submits the literal string 'yes' or 'no' as the "
+            "feedback result — saves typing + Submit-button click for binary "
+            "decisions (approve/reject, proceed/abort, etc.). "
+            "Allowed values: ``'yesno'`` (current) or ``None`` (default: keep "
+            "textarea + optional ``predefined_options`` checkboxes). Unknown "
+            "values silently treated as None (forward-compat for future types "
+            "like ``'choice'`` / ``'rating'`` once the frontend supports them). "
             "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
         ),
     ),
@@ -1049,6 +1067,7 @@ async def interactive_feedback(
                     "predefined_options_defaults": predefined_options_defaults,
                     "auto_resubmit_timeout": auto_resubmit_timeout,
                     "feedback_placeholder": feedback_placeholder,
+                    "question_type": question_type,
                 },
                 timeout=5,
             )

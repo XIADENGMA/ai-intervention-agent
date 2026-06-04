@@ -266,6 +266,14 @@ class Task(BaseModel):
     # 设计点：长度软上限 200 chars（textarea placeholder 超过 1 行就
     # 失去意义）；None = 走 i18n 默认值。
     feedback_placeholder: str | None = None
+    # mining-cycle-3 §2.1 borrow #2 (gemini-cli ``ask_user`` yesno type)：
+    # 当 agent 只想要二元决策（approve / reject / proceed / abort）时，
+    # 设置 question_type="yesno"，前端隐藏 textarea + 显示一行 Yes/No
+    # 2-button。一击直接提交，省 textarea-typing + submit 两步。
+    # 默认 None = textarea 主体保留（既有交互不变）；"yesno" = 切换。
+    # 未来 future type 可加: "choice"（radio 单选）/ "rating"（1-5 star）
+    # 等，目前只 ship "yesno"（最高频用例）。
+    question_type: str | None = None
 
     def get_remaining_time(self, now_monotonic: float | None = None) -> int:
         """计算剩余倒计时（使用单调时间）。
@@ -548,6 +556,7 @@ class TaskQueue:
         auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
         predefined_options_defaults: list[bool] | None = None,
         feedback_placeholder: str | None = None,
+        question_type: str | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         # R53-A：在拿写锁之前先做 prompt size 校验。锁外校验有两个好处：
@@ -605,6 +614,15 @@ class TaskQueue:
                 if s:
                     normalized_placeholder = s[:200]
 
+            # mining-cycle-3 §2.1 borrow #2: validate question_type
+            # 白名单：目前只 ship "yesno"；其他值（包括无效字符串）
+            # 静默归 None，等价 "走原 textarea 主体"。这是 forward-compat
+            # 策略：未来添加 "choice" / "rating" 等不需要改 schema，前端
+            # 升级后自动 enable；当前前端只识 "yesno"。
+            normalized_question_type: str | None = None
+            if isinstance(question_type, str) and question_type.strip() == "yesno":
+                normalized_question_type = "yesno"
+
             task = Task(
                 task_id=task_id,
                 prompt=prompt,
@@ -612,6 +630,7 @@ class TaskQueue:
                 predefined_options_defaults=predefined_options_defaults,
                 auto_resubmit_timeout=auto_resubmit_timeout,
                 feedback_placeholder=normalized_placeholder,
+                question_type=normalized_question_type,
             )
 
             # 【性能优化】直接添加到字典，Python 3.7+ 保持插入顺序
@@ -1523,6 +1542,7 @@ class TaskQueue:
                             "created_at": task.created_at.isoformat(),
                             "status": task.status,
                             "feedback_placeholder": task.feedback_placeholder,
+                            "question_type": task.question_type,
                         }
                     )
                 active_id = self._active_task_id
@@ -1640,6 +1660,13 @@ class TaskQueue:
                     else:
                         restored_placeholder = None
 
+                    # mining-cycle-3 §2.1 borrow #2: question_type round-trip
+                    restored_qt = item.get("question_type")
+                    if isinstance(restored_qt, str) and restored_qt.strip() == "yesno":
+                        restored_qt = "yesno"
+                    else:
+                        restored_qt = None
+
                     task = Task(
                         task_id=task_id,
                         prompt=prompt,
@@ -1652,6 +1679,7 @@ class TaskQueue:
                         created_at_monotonic=time.monotonic() - age_since_creation,
                         status=TaskStatus.PENDING,
                         feedback_placeholder=restored_placeholder,
+                        question_type=restored_qt,
                     )
                 except Exception as task_err:
                     skipped += 1

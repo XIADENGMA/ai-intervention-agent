@@ -6989,6 +6989,23 @@ code,
   box-shadow: none;
   transition: all 0.2s;
 }
+/* mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno) —
+ * 1-row Yes / No button group when task.question_type === "yesno".
+ * 行内布局：两按钮平分宽度，gap 12px；移动端折行。
+ * 不引入新设计 token；走现有 .btn-primary / .btn-secondary 色。
+ */
+.yesno-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0;
+}
+.yesno-btn {
+  flex: 1 1 140px;
+  min-height: 44px; /* a11y: 44x44 minimum touch target */
+  font-weight: 600;
+}
+
 /* mining-2 §3.1 cycle-3 polish — Export task history row in
  * settings panel. 触发 GET /api/tasks/export?format=...
  * 走原生 <a download>，不引入 JS-driven fetch。 */

@@ -1096,6 +1096,8 @@ class TaskRoutesMixin:
                             "extends_max": COUNTDOWN_EXTENDS_MAX,
                             # mining-cycle-3 §2.1 borrow #3: per-task placeholder
                             "feedback_placeholder": task.feedback_placeholder,
+                            # mining-cycle-3 §2.1 borrow #2: question_type
+                            "question_type": task.question_type,
                         }
                     )
 
@@ -1257,6 +1259,8 @@ class TaskRoutesMixin:
                             "extends_max": COUNTDOWN_EXTENDS_MAX,
                             # mining-cycle-3 §2.1 borrow #3: per-task placeholder
                             "feedback_placeholder": task.feedback_placeholder,
+                            # mining-cycle-3 §2.1 borrow #2: question_type
+                            "question_type": task.question_type,
                             "created_at": task.created_at.isoformat(),
                             "completed_at": completed_at_iso,
                             "result": sanitized_result,
@@ -1476,6 +1480,10 @@ class TaskRoutesMixin:
             feedback_placeholder: str | None = (
                 placeholder_raw if isinstance(placeholder_raw, str) else None
             )
+            # mining-cycle-3 §2.1 borrow #2 (gemini-cli yesno type)：
+            # 接受 question_type；白名单校验交给 ``add_task``。
+            qt_raw = data.get("question_type")
+            question_type: str | None = qt_raw if isinstance(qt_raw, str) else None
 
             if not isinstance(task_id_raw, str) or not task_id_raw.strip():
                 return (
@@ -1606,6 +1614,7 @@ class TaskRoutesMixin:
                     predefined_options_defaults=predefined_options_defaults,
                     auto_resubmit_timeout=auto_resubmit_timeout,
                     feedback_placeholder=feedback_placeholder,
+                    question_type=question_type,
                 )
             except Exception as e:
                 logger.error(f"创建任务失败: {e}", exc_info=True)
@@ -1732,6 +1741,8 @@ class TaskRoutesMixin:
                             "result": task.result,
                             # mining-cycle-3 §2.1 borrow #3: per-task placeholder
                             "feedback_placeholder": task.feedback_placeholder,
+                            # mining-cycle-3 §2.1 borrow #2: question_type
+                            "question_type": task.question_type,
                         },
                     }
                 )
