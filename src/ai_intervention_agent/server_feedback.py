@@ -805,6 +805,20 @@ async def interactive_feedback(
             "timeout and auto-resubmit countdown."
         ),
     ),
+    feedback_placeholder: str | None = Field(
+        default=None,
+        description=(
+            "Optional textarea placeholder hint shown to the user when waiting "
+            "for free-text feedback. Per-task override of the global "
+            "``page.feedbackPlaceholder`` i18n string. "
+            "Examples: 'Paste the error stack trace', 'Describe the visual glitch', "
+            "'Reply 'ok' to approve or 'no' + reason to reject'. "
+            "Length: clamped to 200 characters server-side (single-line "
+            "placeholders only; longer text is silently truncated). "
+            "If omitted or empty, the UI uses its default i18n placeholder. "
+            "(mining-cycle-3 §2.1 — borrowed from gemini-cli ``ask_user`` schema.)"
+        ),
+    ),
     feedback_type: str | None = Field(
         default=None,
         description="Accepted for compatibility; ignored by this server.",
@@ -1034,6 +1048,7 @@ async def interactive_feedback(
                     "predefined_options": predefined_options_list,
                     "predefined_options_defaults": predefined_options_defaults,
                     "auto_resubmit_timeout": auto_resubmit_timeout,
+                    "feedback_placeholder": feedback_placeholder,
                 },
                 timeout=5,
             )

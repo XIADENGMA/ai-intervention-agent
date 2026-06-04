@@ -1094,6 +1094,8 @@ class TaskRoutesMixin:
                             # ``extends_max`` 显示"剩余 N 次"提示。
                             "extends_used": task.extends_used,
                             "extends_max": COUNTDOWN_EXTENDS_MAX,
+                            # mining-cycle-3 §2.1 borrow #3: per-task placeholder
+                            "feedback_placeholder": task.feedback_placeholder,
                         }
                     )
 
@@ -1253,6 +1255,8 @@ class TaskRoutesMixin:
                             # 还原后保留扩展次数。
                             "extends_used": task.extends_used,
                             "extends_max": COUNTDOWN_EXTENDS_MAX,
+                            # mining-cycle-3 §2.1 borrow #3: per-task placeholder
+                            "feedback_placeholder": task.feedback_placeholder,
                             "created_at": task.created_at.isoformat(),
                             "completed_at": completed_at_iso,
                             "result": sanitized_result,
@@ -1463,6 +1467,15 @@ class TaskRoutesMixin:
             options_raw = data.get("predefined_options", data.get("options"))
             options_defaults_raw = data.get("predefined_options_defaults")
             timeout_raw = data.get("auto_resubmit_timeout", data.get("timeout"))
+            # mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder)：
+            # 接受可选的 ``feedback_placeholder`` per-task 提示。
+            # 类型校验宽松：非 str 静默丢弃（与 ``project_directory`` 等
+            # compat-only 字段同等待遇）；server-side clamp 在
+            # ``task_queue.add_task`` 中做。
+            placeholder_raw = data.get("feedback_placeholder")
+            feedback_placeholder: str | None = (
+                placeholder_raw if isinstance(placeholder_raw, str) else None
+            )
 
             if not isinstance(task_id_raw, str) or not task_id_raw.strip():
                 return (
@@ -1592,6 +1605,7 @@ class TaskRoutesMixin:
                     predefined_options=predefined_options,
                     predefined_options_defaults=predefined_options_defaults,
                     auto_resubmit_timeout=auto_resubmit_timeout,
+                    feedback_placeholder=feedback_placeholder,
                 )
             except Exception as e:
                 logger.error(f"创建任务失败: {e}", exc_info=True)
@@ -1702,6 +1716,8 @@ class TaskRoutesMixin:
                             "remaining_time": remaining,
                             "deadline": server_time + remaining,
                             "result": task.result,
+                            # mining-cycle-3 §2.1 borrow #3: per-task placeholder
+                            "feedback_placeholder": task.feedback_placeholder,
                         },
                     }
                 )

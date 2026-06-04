@@ -1104,6 +1104,8 @@ class TestGetTasks(_RouteTestBase):
             # feat-countdown-extend：新增字段需 JSON-serializable，否则
             # jsonify 会失败导致路由返回 500。
             task.extends_used = 0
+            # mining-cycle-3 §2.1 borrow #3: feedback_placeholder 同理
+            task.feedback_placeholder = None
             tasks.append(task)
 
         mock_tq.get_all_tasks_with_stats.return_value = (
@@ -1525,6 +1527,8 @@ class TestGetTaskDetail(_RouteTestBase):
         task.auto_resubmit_timeout = 120
         task.result = None
         task.get_remaining_time.return_value = 77
+        # mining-cycle-3 §2.1 borrow #3: jsonify 需要这个字段
+        task.feedback_placeholder = None
         mock_tq.get_task.return_value = task
         mock_get_tq.return_value = mock_tq
 

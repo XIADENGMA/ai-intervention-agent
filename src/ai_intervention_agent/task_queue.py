@@ -258,6 +258,14 @@ class Task(BaseModel):
     # 从 server_config 读，默认 3 次），防止用户无限拖时间绕开 auto-resubmit。
     # 0 = 从未扩展，前端按钮可点击；>= max_extends 时按钮 disabled。
     extends_used: int = 0
+    # mining-cycle-3 §2.1 borrow #3 (gemini-cli ``ask_user`` placeholder)：
+    # 每个 task 可选的 textarea placeholder，覆盖全局 i18n
+    # ``page.feedbackPlaceholder``。让 agent 在调 MCP 工具时为不同任务
+    # 提示用户具体应该填什么（"Paste the error stack trace" /
+    # "Describe the visual glitch" / etc）。
+    # 设计点：长度软上限 200 chars（textarea placeholder 超过 1 行就
+    # 失去意义）；None = 走 i18n 默认值。
+    feedback_placeholder: str | None = None
 
     def get_remaining_time(self, now_monotonic: float | None = None) -> int:
         """计算剩余倒计时（使用单调时间）。
@@ -539,6 +547,7 @@ class TaskQueue:
         predefined_options: list[str] | None = None,
         auto_resubmit_timeout: int = AUTO_RESUBMIT_TIMEOUT_DEFAULT,
         predefined_options_defaults: list[bool] | None = None,
+        feedback_placeholder: str | None = None,
     ) -> bool:
         """添加任务，无活动任务时自动激活"""
         # R53-A：在拿写锁之前先做 prompt size 校验。锁外校验有两个好处：
@@ -587,12 +596,22 @@ class TaskQueue:
                 logger.warning(f"任务ID已存在: {task_id}")
                 return False
 
+            # mining-cycle-3 §2.1 borrow #3: clamp placeholder to 200 chars
+            # 单行 placeholder 超过 200 chars 在 textarea 中会被截断显示，
+            # 即使 i18n 翻译后变长也仍然 fit；多行 placeholder 无意义。
+            normalized_placeholder: str | None = None
+            if isinstance(feedback_placeholder, str):
+                s = feedback_placeholder.strip()
+                if s:
+                    normalized_placeholder = s[:200]
+
             task = Task(
                 task_id=task_id,
                 prompt=prompt,
                 predefined_options=predefined_options,
                 predefined_options_defaults=predefined_options_defaults,
                 auto_resubmit_timeout=auto_resubmit_timeout,
+                feedback_placeholder=normalized_placeholder,
             )
 
             # 【性能优化】直接添加到字典，Python 3.7+ 保持插入顺序
@@ -1503,6 +1522,7 @@ class TaskQueue:
                             "auto_resubmit_timeout": task.auto_resubmit_timeout,
                             "created_at": task.created_at.isoformat(),
                             "status": task.status,
+                            "feedback_placeholder": task.feedback_placeholder,
                         }
                     )
                 active_id = self._active_task_id
@@ -1609,6 +1629,17 @@ class TaskQueue:
                         datetime.now(UTC) - created_at
                     ).total_seconds()
 
+                    # mining-cycle-3 §2.1 borrow #3: 持久化恢复时也要回灌
+                    # placeholder。旧版 snapshot 不存在该 key，``item.get``
+                    # 返回 None，等价于 "use i18n default"，符合 backward
+                    # compatibility 预期。
+                    restored_placeholder = item.get("feedback_placeholder")
+                    if isinstance(restored_placeholder, str):
+                        s = restored_placeholder.strip()
+                        restored_placeholder = s[:200] if s else None
+                    else:
+                        restored_placeholder = None
+
                     task = Task(
                         task_id=task_id,
                         prompt=prompt,
@@ -1620,6 +1651,7 @@ class TaskQueue:
                         created_at=created_at,
                         created_at_monotonic=time.monotonic() - age_since_creation,
                         status=TaskStatus.PENDING,
+                        feedback_placeholder=restored_placeholder,
                     )
                 except Exception as task_err:
                     skipped += 1

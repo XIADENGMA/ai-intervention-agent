@@ -2330,6 +2330,9 @@ async function switchTask(taskId) {
         cachedTask.predefined_options_defaults,
       );
     }
+    // mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder):
+    // 切换任务时立即应用 task-specific placeholder
+    updateFeedbackPlaceholder(cachedTask.feedback_placeholder);
   }
 
   try {
@@ -2488,6 +2491,9 @@ async function loadTaskDetails(taskId) {
         task.predefined_options,
         task.predefined_options_defaults,
       );
+      // mining-cycle-3 §2.1 borrow #3 (gemini-cli placeholder):
+      // 异步详情回来后再次同步（cache 路径可能取到旧 placeholder）
+      updateFeedbackPlaceholder(task.feedback_placeholder);
 
       // 恢复该任务之前保存的textarea内容
       const textarea = document.getElementById("feedback-text");
@@ -2653,6 +2659,36 @@ async function updateDescriptionDisplay(prompt) {
  * - 容器不存在时会跳过
  * - 选项数组为空时显示空列表
  */
+/**
+ * mining-cycle-3 §2.1 borrow #3 (gemini-cli `placeholder`) —
+ * 把 per-task ``feedback_placeholder`` 同步到 ``#feedback-text``。
+ *
+ * 行为：
+ *   - 传入 truthy 字符串 → 设为 textarea 的 ``placeholder``
+ *   - 传入 null/undefined/空 → 走 i18n 默认占位（即把 placeholder
+ *     交还给 i18n.js 由 ``data-i18n-placeholder`` 重新设置）
+ *
+ * Why "交还给 i18n.js"：textarea 上同时挂着 ``data-i18n-placeholder=
+ * "page.feedbackPlaceholder"``。如果直接 setAttribute('placeholder',
+ * '')，下一次 ``setLang`` 会立刻被覆盖回 i18n 默认值，看起来没 bug；
+ * 但若直接清掉 ``data-i18n-placeholder``，再切回无 placeholder 的
+ * task 时就丢了默认占位。所以我们只动 ``placeholder`` 而不动
+ * ``data-i18n-placeholder``，让两者各管各的：i18n 管 fallback、本
+ * 函数管 task 覆盖。
+ */
+function updateFeedbackPlaceholder(placeholder) {
+  var textarea = document.getElementById("feedback-text");
+  if (!textarea) return;
+  if (typeof placeholder === "string" && placeholder.trim() !== "") {
+    textarea.setAttribute("placeholder", placeholder);
+  } else if (typeof window !== "undefined" && window.AIIA_I18N && typeof window.AIIA_I18N.t === "function") {
+    var defaultText = window.AIIA_I18N.t("page.feedbackPlaceholder");
+    if (typeof defaultText === "string" && defaultText) {
+      textarea.setAttribute("placeholder", defaultText);
+    }
+  }
+}
+
 function updateOptionsDisplay(options, optionDefaults) {
   const optionsContainer = document.getElementById("options-container");
   if (!optionsContainer) return;
