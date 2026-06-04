@@ -706,8 +706,11 @@ class SettingsManager {
         return;
       }
       // 成功：把后端返回的实际路径回填到输入框（确保前后端视角一致）
+      // BUG6：同时移除 ``data-i18n-value``，否则 i18n re-translate（语言切换或
+      // ensureDefaultLocale 完成）会把真实路径覆盖回 ``page.loading`` 的翻译值。
       if (pathInput && data.path) {
         pathInput.value = data.path;
+        pathInput.removeAttribute("data-i18n-value");
       }
       if (status) {
         status.classList.add("is-success");

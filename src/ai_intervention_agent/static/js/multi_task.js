@@ -364,10 +364,27 @@ async function fetchFeedbackPromptsFresh() {
       feedbackPrompts = window.feedbackPrompts;
 
       // 同步“当前实际使用的配置文件路径”到设置面板（如果存在对应DOM）
+      //
+      // BUG6 修复：必须在写入真实路径**同时**移除 ``data-i18n-value``。
+      // why：``<input id="config-file-path" value="Loading…"
+      // data-i18n-value="page.loading">`` 的设计是首屏占位文案能跟着
+      // i18n 翻译（中文显示"加载中…"）。但 ``i18n.js`` 的 init 链路是：
+      //
+      //   1. ``await loadLocale(currentLang)`` → translateDOM()
+      //      —— 此时输入框可能已经被 fetchFeedbackPromptsFresh 写入真实路径
+      //   2. ``ensureDefaultLocale()`` (fire-and-forget) 完成 → translateDOM()
+      //      —— 再次扫描所有 ``data-i18n-value``，把 ``el.value`` **覆盖**
+      //      回 ``t("page.loading")`` 的翻译值，吞掉真实路径。
+      //
+      // 用户表现："Web 设置页`当前配置文件路径`显示为空但点击按钮可打开"
+      // ——按钮能打开是因为后端用自己的 config_file 路径，与前端输入框
+      // 显示无关；显示为空（或"加载中…"）是因为 i18n 异步 retranslate
+      // 覆盖了真实值。移除 ``data-i18n-value`` 一次性切断这条覆盖链。
       if (data.meta && data.meta.config_file) {
         const el = document.getElementById("config-file-path");
         if (el) {
           el.value = data.meta.config_file;
+          el.removeAttribute("data-i18n-value");
         }
       }
       return window.feedbackPrompts;
