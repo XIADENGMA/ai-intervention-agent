@@ -53,6 +53,7 @@ them.
 | System-level notifications (v2.6.0) | shipped (Bark + Web Notifications API) | dual-channel |
 | Session-scoped settings (v2.5.6) | shipped (per-task state in TaskQueue) | architectural difference; we don't need session URLs because tasks ARE sessions |
 | AI work summary Markdown rendering (v2.5.0) | shipped (`marked.js` + DOMPurify path) | unified rendering pipeline |
+| Input height memory (v2.4.3) | **shipped** (R137 `feedback_textarea_height.js`) | full schema-v1 localStorage envelope + clamp + ResizeObserver primary + mouseup/touchend fallback + 150ms debounce. cycle-2 survey初次漏认；类似 cycle-1 §3.5 R131c 智能排序漂移，列入 process-learning |
 
 ---
 
@@ -142,22 +143,22 @@ by ROI.
 - **Decision**: **adopt** — small, high-polish, doesn't disrupt
   existing UX.
 
-### 3.3 Input height memory (v2.4.3) — **LOW ROI, ~30 LoC**
+### 3.3 Input height memory (v2.4.3) — **already shipped (R137); doc corrected post-survey**
 
-- **Reference inspiration**: "Input Height Memory: Automatically
-  save and restore textarea input height settings" (v2.4.3).
-- **Gap**: Our feedback textarea is fixed at `rows="6"`; user-
-  resized height (drag the corner handle) is lost on reload.
-- **Proposed scope**:
-  - Save `textarea.scrollHeight` to localStorage on `resize`
-    event (or `mouseup` after drag).
-  - Restore on init: read localStorage → `el.style.height`.
-- **Acceptance**: 1 unit test (save / restore round-trip) +
-  invariant test (localStorage key follows `aiia.*.v1`
-  convention).
-- **Risk**: minimal; localStorage write on every resize could
-  spam — debounce 200ms.
-- **Decision**: **adopt** in next quick-win batch.
+- **Survey misread**: initially classified as adoptable backlog.
+  Post-survey grep on `localStorage` + `feedback-text` discovered
+  `feedback_textarea_height.js` (R137), which already does:
+  - `aiia.feedbackTextareaHeight.v1` storage key
+  - `schema_version` envelope (compatible with future migrators)
+  - `clamp(100, 800)` against extreme drag
+  - `ResizeObserver` primary, `mouseup` / `touchend` fallback
+  - 150ms debounce on write
+  - silent fail on quota / private browsing
+- **Process learning**: same class of mining miss as cycle-1 §3.5
+  (R131c quick-phrase smart sort). Mining surveys must grep
+  `git log --grep` + raw filesystem scan **before** classifying
+  features as "not started". Moved to §1 (aligned).
+- **Decision**: **no work**.
 
 ### 3.4 One-Click copy: project path + task ID (v2.4.3) — **LOW ROI, ~50 LoC**
 
@@ -284,7 +285,7 @@ to learn from:
 |---|---|---|---|
 | §3.1 Session Export | not started | — | — |
 | §3.2 Session-link copy | not started | — | — |
-| §3.3 Input height memory | not started | — | — |
+| §3.3 Input height memory | **already shipped (R137)** | (pre-cycle-2) | survey miss; corrected |
 | §3.4 One-click copy (path / task_id) | not started | — | — |
 | §3.5 Pause/resume v2 | deferred (conditional) | — | — |
 | §3.6 Tool docstring LLM hinting | deferred (telemetry) | — | — |
@@ -295,9 +296,9 @@ to learn from:
 
 ## 7. Suggested ordering for cycle-3
 
-1. **Batch A (low-risk batch)**: §3.2 + §3.4 + §3.3 — share the
-   clipboard helper, share the localStorage `aiia.*.v1` pattern.
-   ~3 small commits + 1 batched test file. Plan ~0.5 day.
+1. **Batch A (low-risk batch)**: §3.2 + §3.4 — share the
+   clipboard helper. §3.3 dropped (already shipped). ~2 small
+   commits + 1 batched test file. Plan ~0.5 day.
 2. **Batch B (medium item)**: §3.1 Session Export — separate
    commit due to streaming + format-format dispatch + auth
    considerations. Plan ~1 day.
