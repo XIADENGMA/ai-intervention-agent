@@ -2693,11 +2693,23 @@ function updateYesnoButtonGroup(questionType) {
 
   if (questionType !== "yesno") {
     if (existingGroup) existingGroup.remove();
-    if (feedbackTextarea) feedbackTextarea.style.display = "";
+    if (feedbackTextarea) {
+      feedbackTextarea.style.display = "";
+      // cr37 §8 #3 [info]: 恢复 textarea 时清除 a11y 隐藏标记
+      feedbackTextarea.removeAttribute("aria-hidden");
+      feedbackTextarea.removeAttribute("tabindex");
+    }
     return;
   }
 
-  if (feedbackTextarea) feedbackTextarea.style.display = "none";
+  if (feedbackTextarea) {
+    feedbackTextarea.style.display = "none";
+    // cr37 §8 #3 [info]: display=none 已经让屏幕阅读器跳过，但
+    // ``aria-hidden=true`` + ``tabindex=-1`` 双保险防止某些 AT 把
+    // 隐藏 textarea 误暴露给 user（Safari + VoiceOver 旧版有此问题）。
+    feedbackTextarea.setAttribute("aria-hidden", "true");
+    feedbackTextarea.setAttribute("tabindex", "-1");
+  }
 
   if (existingGroup) {
     return;

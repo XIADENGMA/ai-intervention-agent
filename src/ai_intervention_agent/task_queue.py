@@ -73,6 +73,14 @@ _PROMPT_REJECT_BYTES: int = 10 * 1024 * 1024  # 10 MB
 """``add_task`` 收到的 prompt 超过此值时直接 ``return False``，不进队列。
 保护进程内存 + SSE history deque + 跨进程 IPC payload。"""
 
+PLACEHOLDER_MAX_LENGTH: int = 200
+"""mining-cycle-3 §2.1 borrow #3 single source of truth for the
+``feedback_placeholder`` clamp. cr37 §8 #1 提取自原 ``add_task`` 内嵌
+literal 200 — route handler 也引用此常量，避免双处 drift。
+
+理由：textarea ``placeholder`` 是单行 hint，超过 200 chars 会被截断
+显示，多行 placeholder 违反 a11y。"""
+
 
 _LOCK_WATCHDOG_TIMEOUT_S: float = 30.0
 """单次 ``_watched_write_lock`` 的 acquire+hold 上限。超过这个时长 watchdog
@@ -605,14 +613,16 @@ class TaskQueue:
                 logger.warning(f"任务ID已存在: {task_id}")
                 return False
 
-            # mining-cycle-3 §2.1 borrow #3: clamp placeholder to 200 chars
-            # 单行 placeholder 超过 200 chars 在 textarea 中会被截断显示，
-            # 即使 i18n 翻译后变长也仍然 fit；多行 placeholder 无意义。
+            # mining-cycle-3 §2.1 borrow #3: clamp placeholder using
+            # ``PLACEHOLDER_MAX_LENGTH`` module constant (cr37 §8 #1)
+            # 单行 placeholder 超过该长度在 textarea 中会被截断显示；
+            # 多行 placeholder 违反 a11y。同样常量被 web_ui_routes/task.py
+            # 引用以判断是否需要返回 ``placeholder_truncated`` 响应。
             normalized_placeholder: str | None = None
             if isinstance(feedback_placeholder, str):
                 s = feedback_placeholder.strip()
                 if s:
-                    normalized_placeholder = s[:200]
+                    normalized_placeholder = s[:PLACEHOLDER_MAX_LENGTH]
 
             # mining-cycle-3 §2.1 borrow #2: validate question_type
             # 白名单：目前只 ship "yesno"；其他值（包括无效字符串）
@@ -1656,7 +1666,7 @@ class TaskQueue:
                     restored_placeholder = item.get("feedback_placeholder")
                     if isinstance(restored_placeholder, str):
                         s = restored_placeholder.strip()
-                        restored_placeholder = s[:200] if s else None
+                        restored_placeholder = s[:PLACEHOLDER_MAX_LENGTH] if s else None
                     else:
                         restored_placeholder = None
 
