@@ -50,6 +50,8 @@
 
 ##### `get_active_task(self) -> Task | None`
 
+##### `extend_task_deadline(self, task_id: str, seconds: int) -> tuple[bool, str | None, int, int]`
+
 ##### `set_active_task(self, task_id: str) -> bool`
 
 ##### `complete_task(self, task_id: str, result: dict[str, Any]) -> bool`

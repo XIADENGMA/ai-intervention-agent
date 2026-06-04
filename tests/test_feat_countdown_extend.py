@@ -231,12 +231,14 @@ class TestBackendEndpoint(unittest.TestCase):
         self.assertIsNotNone(m)
         assert m is not None
         body = m.group(0)
-        # ``re.DOTALL`` 让 ``.`` 跨换行；视图函数里 "task is None" → "404"
-        # 之间可能因为换行/缩进而距离很大。
+        # cr32 §3.1 fix 之后改走 ``TaskQueue.extend_task_deadline`` facade，
+        # task 不存在时 facade 返回 ``error_code == "task_not_found"``，
+        # route 据此返回 404。``re.DOTALL`` 让 ``.`` 跨换行；视图函数里
+        # ``"task_not_found"`` → ``404`` 之间可能因为换行/缩进而距离很大。
         self.assertRegex(
             body,
-            r"task\s*is\s*None[\s\S]*?404",
-            "task 不存在时必须返回 404",
+            r'"task_not_found"[\s\S]*?404',
+            "task 不存在时（facade 返回 task_not_found）必须返回 404",
         )
 
     def test_extend_handles_422_for_limit_reached(self) -> None:

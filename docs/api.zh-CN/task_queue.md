@@ -320,6 +320,50 @@ Returns:
 
 获取当前活动任务
 
+##### `extend_task_deadline(self, task_id: str, seconds: int) -> tuple[bool, str | None, int, int]`
+
+cr32 §3.1 fix：在写锁内执行 ``Task.extend_deadline`` 的读改写原语。
+
+## 为什么需要这个 facade？
+
+``Task.extend_deadline`` 内部做 ``read extends_used → compare → write
+extends_used+1`` 的三步操作，Python 的 GIL 只保证单 bytecode 原子，
+不保证多语句原子。两个 HTTP 请求若同时落到同一 task 上，可能：
+
+    T1: read extends_used=2 → check 2<3=True
+    T2: read extends_used=2 → check 2<3=True
+    T1: write extends_used=3 ← 现在不在锁内，T2 没看到
+    T2: write extends_used=3 ← 实际累计了两次扩展但只计数一次
+
+最终 ``extends_used=3``（看起来对），但 ``auto_resubmit_timeout`` 已
+被 ``+= seconds`` 两次。用户得到一次免费扩展。
+
+## 修复
+
+把读改写放在 ``self._lock`` 的 write_lock 内串行化。HTTP 路由调用此
+facade 而不是直接 ``task.extend_deadline``，并发竞态消失。
+
+Args:
+    task_id: 任务 ID。
+    seconds: 要扩展的秒数（必须在 ``[min_seconds, max_seconds]`` 内）。
+    max_extends: 该任务最多可扩展次数。默认 3，路由层覆盖为
+        ``COUNTDOWN_EXTENDS_MAX``。
+    min_seconds / max_seconds: ``seconds`` 的硬范围（默认 [10, 300]）。
+
+Returns:
+    ``(success, error_code, extends_used_after, auto_resubmit_timeout_after)``
+    - success=True 时 error_code=None；新 ``extends_used`` 与
+      ``auto_resubmit_timeout`` 字段对应的值。
+    - success=False 时 error_code ∈
+      {"task_not_found", "task_completed", "auto_resubmit_disabled",
+       "extends_limit_reached", "invalid_seconds"}；后两个字段反映
+      **当前** task 状态（用于让前端立即同步按钮 disabled 状态）。
+
+Thread-safety:
+    写锁串行化整个读改写过程。对外的 ``task.extend_deadline`` 仍可
+    直接调用（单线程脚本 / 单元测试），但在多线程上下文中**必须**
+    走这个 facade。
+
 ##### `set_active_task(self, task_id: str) -> bool`
 
 手动切换活动任务

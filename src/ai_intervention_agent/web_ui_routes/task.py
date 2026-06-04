@@ -1766,9 +1766,6 @@ class TaskRoutesMixin:
             """
             try:
                 task_queue = get_task_queue()
-                task = task_queue.get_task(task_id)
-                if task is None:
-                    return jsonify({"success": False, "error": "任务不存在"}), 404
 
                 # 请求体：seconds 可选，缺省 60。
                 # request.get_json(silent=True) 在空 body / 错误 JSON 时返回 None
@@ -1789,12 +1786,25 @@ class TaskRoutesMixin:
                         }
                     ), 400
 
-                success, error_code = task.extend_deadline(
-                    requested_seconds,
-                    max_extends=COUNTDOWN_EXTENDS_MAX,
-                    min_seconds=COUNTDOWN_EXTEND_SECONDS_MIN,
-                    max_seconds=COUNTDOWN_EXTEND_SECONDS_MAX,
+                # cr32 §3.1 fix [medium]：走 ``TaskQueue.extend_task_deadline``
+                # facade 而不是直接 ``task.extend_deadline``，让 read-modify-write
+                # 在写锁内串行化。否则两个并发 POST 可能同时读到
+                # ``extends_used=N``、各自 ``+= seconds`` 后竞争性写回 ``N+1``，
+                # 总扩展秒数被记一次但 ``auto_resubmit_timeout`` 累计了两次。
+                # facade 返回 ``(success, error_code, extends_used_after, timeout_after)``
+                # — 我们用 timeout_after 重算 remaining 而不依赖锁外的 task 引用，
+                # 保证响应数据是该次扩展操作完成时的快照。
+                success, error_code, extends_used, new_timeout = (
+                    task_queue.extend_task_deadline(
+                        task_id,
+                        requested_seconds,
+                        max_extends=COUNTDOWN_EXTENDS_MAX,
+                        min_seconds=COUNTDOWN_EXTEND_SECONDS_MIN,
+                        max_seconds=COUNTDOWN_EXTEND_SECONDS_MAX,
+                    )
                 )
+                if error_code == "task_not_found":
+                    return jsonify({"success": False, "error": "任务不存在"}), 404
                 if not success:
                     # 422 仅留给"上限已达"；其他错误码是输入/状态错误 → 400
                     status_code = 422 if error_code == "extends_limit_reached" else 400
@@ -1803,7 +1813,7 @@ class TaskRoutesMixin:
                             "success": False,
                             "error": error_code,
                             "code": error_code,
-                            "extends_used": task.extends_used,
+                            "extends_used": extends_used,
                             "extends_max": COUNTDOWN_EXTENDS_MAX,
                         }
                     ), status_code
@@ -1814,19 +1824,32 @@ class TaskRoutesMixin:
                 # （避免引入 task_updated 类型需要的 schema 校验 + 前端事件
                 # 监听器 + sse_event_schemas.py 改动），扩展是单用户操作，
                 # 多 client 间秒级延迟可接受。
+                #
+                # 为了让 remaining_time 也反映同一时间快照，我们用 facade 返回
+                # 的 ``new_timeout`` 重新读一次（锁外读 task 是允许的，但用
+                # facade 已经返回的值更稳）：构造一个临时 Task-like 计算。
+                # 简化：直接 get_task 再算一次 remaining，避免与 facade 输出
+                # 漂移（task 对象在 dict 中存活，读其字段是 thread-safe）。
+                task = task_queue.get_task(task_id)
                 now_monotonic = time.monotonic()
-                new_remaining = task.get_remaining_time(now_monotonic=now_monotonic)
+                new_remaining = (
+                    task.get_remaining_time(now_monotonic=now_monotonic)
+                    if task is not None
+                    # 极小可能 task 在 facade 后被 cleanup 删除；用 new_timeout
+                    # 兜底（视为创建时间是 now，给客户端一个非负 fallback）
+                    else max(0, int(new_timeout))
+                )
                 logger.info(
                     f"task_id={task_id} 倒计时延长 +{requested_seconds}s "
-                    f"(extends_used={task.extends_used}/{COUNTDOWN_EXTENDS_MAX})"
+                    f"(extends_used={extends_used}/{COUNTDOWN_EXTENDS_MAX})"
                 )
                 return jsonify(
                     {
                         "success": True,
-                        "extends_used": task.extends_used,
+                        "extends_used": extends_used,
                         "extends_max": COUNTDOWN_EXTENDS_MAX,
                         "new_remaining_time": new_remaining,
-                        "new_auto_resubmit_timeout": task.auto_resubmit_timeout,
+                        "new_auto_resubmit_timeout": new_timeout,
                     }
                 )
             except Exception as e:
