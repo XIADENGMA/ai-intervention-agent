@@ -715,6 +715,113 @@ h1 {
 }
 
 /* ========================================================================
+   SSE 连接状态指示器 (feat-sse-status-indicator §3.1)
+   对标 mcp-feedback-enhanced 的 Connection Monitoring
+   ======================================================================== */
+
+/**
+ * 设计原则：**非侵入式 + 注意力守门员**
+ *
+ *   - 健康路径（``data-sse-state="connected"``）→ 完全隐藏，零打扰；
+ *   - 异常路径（``reconnecting`` / ``disconnected``）→ 显示一个带颜色
+ *     圆点 + 文案的胶囊，让用户立刻知道"为什么任务列表没在动"；
+ *   - 永远保留 ``aria-live="polite"`` 让屏幕阅读器可以察觉状态变化。
+ *
+ * 为什么不用"全部状态都显示绿点"路径：
+ *   - 用户对"连接 OK"是默认假设，绿点是冗余视觉噪声；
+ *   - 只在异常时 surfacing 状态符合 "Don't make me think" 原则；
+ *   - 减少视觉竞争（header 已有 theme-toggle + settings-btn）。
+ */
+.sse-status-indicator {
+  display: none; /* 默认隐藏，靠 data-sse-state 切换显示 */
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+  cursor: default;
+  /* 与 header 其他按钮高度对齐（settings-btn 高度 ~32px，胶囊 ~24px
+     居中视觉锚点） */
+  height: 24px;
+  /* 切换动画：浏览器节流时也优雅；使用 opacity + transform 走 GPU 合成 */
+  transition:
+    opacity 200ms ease-in,
+    transform 200ms ease-out;
+  opacity: 0;
+  transform: scale(0.9);
+}
+
+.sse-status-indicator[data-sse-state="reconnecting"],
+.sse-status-indicator[data-sse-state="disconnected"] {
+  display: inline-flex;
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 圆点本体：6px 直径，配合状态颜色 */
+.sse-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background-color: currentColor;
+}
+
+/* 状态颜色：disconnect 红 / reconnecting 黄 / connected 绿（hidden 不可见） */
+.sse-status-indicator[data-sse-state="connected"] {
+  /* 即便 display:none，也定义 color 以备屏幕阅读器辅助技术读取 */
+  color: rgba(46, 160, 67, 0.95);
+}
+.sse-status-indicator[data-sse-state="reconnecting"] {
+  color: rgba(187, 128, 9, 1);
+  background-color: rgba(187, 128, 9, 0.12);
+}
+.sse-status-indicator[data-sse-state="disconnected"] {
+  color: rgba(218, 54, 51, 1);
+  background-color: rgba(218, 54, 51, 0.12);
+}
+
+/* 重连中圆点呼吸动画：让"我正在干活"显式可见 */
+.sse-status-indicator[data-sse-state="reconnecting"] .sse-status-dot {
+  animation: sseStatusPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes sseStatusPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* 浅色主题下保持颜色对比度（CSS 自带的 RGB 在浅色背景上已足够，
+   留 hook 给后续主题深度定制） */
+[data-theme="light"] .sse-status-indicator[data-sse-state="reconnecting"] {
+  background-color: rgba(187, 128, 9, 0.16);
+}
+[data-theme="light"] .sse-status-indicator[data-sse-state="disconnected"] {
+  background-color: rgba(218, 54, 51, 0.16);
+}
+
+/* 用户偏好"减少动画"时关闭呼吸效果（a11y） */
+@media (prefers-reduced-motion: reduce) {
+  .sse-status-indicator {
+    transition: none;
+  }
+  .sse-status-indicator[data-sse-state="reconnecting"] .sse-status-dot {
+    animation: none;
+  }
+}
+
+/* ========================================================================
    设置按钮和面板控制 (Settings Button & Panel)
    ======================================================================== */
 

@@ -26,6 +26,12 @@
     "closeCodePaste": "Close",
     "closeSettings": "Close settings",
     "versionLinkTitle": "Open AI Intervention Agent on GitHub",
+    "sseStatus": {
+      "label": "Live",
+      "connected": "Connected — live updates active",
+      "reconnecting": "Reconnecting…",
+      "disconnected": "Disconnected — retrying every 30s"
+    },
     "taskLabel": "Task:",
     "imageCountPrefix": "Selected",
     "imageCountSuffix": "images",

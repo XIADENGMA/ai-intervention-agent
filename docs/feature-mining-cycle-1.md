@@ -206,7 +206,7 @@ authoritative — same discipline as `docs/code-reviews/cr*.md`.
 
 | Item | Status | Commit | Date |
 |---|---|---|---|
-| §3.1 SSE status indicator | not started | — | — |
+| §3.1 SSE status indicator | **resolved** | (this cycle, after feature-mining-cycle-1.md) | 2026-06-04 |
 | §3.2 Countdown pause / extend | not started | — | — |
 | §3.3 zh-TW locale | not started | — | — |
 | §3.4 Custom audio upload | not started | — | — |

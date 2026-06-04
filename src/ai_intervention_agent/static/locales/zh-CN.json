@@ -26,6 +26,12 @@
     "closeCodePaste": "关闭",
     "closeSettings": "关闭设置",
     "versionLinkTitle": "在 GitHub 打开 AI Intervention Agent",
+    "sseStatus": {
+      "label": "实时",
+      "connected": "已连接 — 实时更新中",
+      "reconnecting": "正在重连…",
+      "disconnected": "已断开 — 每 30 秒重试"
+    },
     "taskLabel": "任务：",
     "imageCountPrefix": "已选择",
     "imageCountSuffix": "张图片",

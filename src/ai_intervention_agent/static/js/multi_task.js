@@ -456,6 +456,73 @@ var _sseConnected = false;
 var _sseReconnectTimer = null;
 var _sseReconnectDelay = 1000;
 
+// feat-sse-status-indicator (§3.1)：把 ``_sseConnected`` 的内部 boolean
+// 翻译成 3 态语义（connected / reconnecting / disconnected），并写入
+// ``#sse-status-indicator`` 的 ``data-sse-state`` 属性。CSS 根据属性
+// 切换可见性 + 颜色 + 动画；JS 端不直接操纵任何样式。
+//
+// 状态语义：
+//   - ``connected``：SSE 当前已建立（``_sseSource.readyState === OPEN``
+//     且 ``_sseConnected === true``）。UI 完全隐藏。
+//   - ``reconnecting``：SSE 刚断 + ``_sseReconnectTimer`` 已 scheduled，
+//     用户感知到的是"短暂闪断"。UI 显示黄色胶囊 + 呼吸动画。
+//   - ``disconnected``：SSE 持续无法连接（``_sseReconnectDelay`` 已退到
+//     最大值 30s，或 >= 3 次重连仍失败）。UI 显示红色胶囊。
+//
+// 设计：纯 hook，不引入新计时器。状态切换由 ``_setSseStatus`` 在
+// ``onopen`` / ``onerror`` / 重连 setTimeout 内调用即可。
+var SSE_STATUS_CONNECTED = "connected";
+var SSE_STATUS_RECONNECTING = "reconnecting";
+var SSE_STATUS_DISCONNECTED = "disconnected";
+// 当 reconnect delay 退到此阈值 (=30s 上限)，认为已进入"持续断开"语义。
+// 该值与 _sseReconnectDelay 的上限 (Math.min(30000, ...) ) 一致，
+// 任何下调上限都需要同步该常量。
+var SSE_STATUS_DISCONNECTED_DELAY_MS = 30000;
+
+// i18n 静态分析器只识别 ``_t`` / ``t`` / ``tl`` / ``_tl`` / ``hostT`` /
+// ``__vuT`` / ``__domSecT`` / ``__ncT`` 这几个 wrapper 名 —— 直接调
+// ``window.AIIA_I18N.t(...)`` 会被 negative lookbehind 排除，导致动态
+// 拼接的 sse status key 被误判为 orphan。
+//
+// 本模块**已经**有一个 ``_t(key, params)`` 函数（line 108）做 ICU 插值，
+// 复用它即可让 3 个 literal key 被扫描器识别 + 翻译路径与既有 i18n 一致。
+// 注意 ``_t`` 在 i18n 不可用时返回 key 自身（truthy），所以必须显式
+// 比较 ``=== key`` 才能 fallback 到英文兜底。
+function _resolveSseStatusLabel(state) {
+  var key;
+  var fallback;
+  if (state === SSE_STATUS_CONNECTED) {
+    key = "page.sseStatus.connected";
+    fallback = "Connected";
+  } else if (state === SSE_STATUS_RECONNECTING) {
+    key = "page.sseStatus.reconnecting";
+    fallback = "Reconnecting…";
+  } else {
+    key = "page.sseStatus.disconnected";
+    fallback = "Disconnected";
+  }
+  var v;
+  if (key === "page.sseStatus.connected") {
+    v = _t("page.sseStatus.connected");
+  } else if (key === "page.sseStatus.reconnecting") {
+    v = _t("page.sseStatus.reconnecting");
+  } else {
+    v = _t("page.sseStatus.disconnected");
+  }
+  return typeof v === "string" && v.length > 0 && v !== key ? v : fallback;
+}
+
+function _setSseStatus(state) {
+  if (typeof document === "undefined") return;
+  var el = document.getElementById("sse-status-indicator");
+  if (!el) return;
+  el.setAttribute("data-sse-state", state);
+  // 同步 title / aria-label，让 hover tooltip + 屏幕阅读器报当前状态。
+  var label = _resolveSseStatusLabel(state);
+  el.setAttribute("title", label);
+  el.setAttribute("aria-label", label);
+}
+
 // BUG1：本地保存回响静音窗口（local-save echo suppression window）
 //
 // 设计动机：当用户通过 Web UI 主动保存配置（feedback / notification /
@@ -554,6 +621,8 @@ function _connectSSE() {
       clearTimeout(tasksPollingTimer);
       scheduleNextTasksPoll(TASKS_POLL_SSE_FALLBACK_MS);
     }
+    // feat-sse-status-indicator: 连接成功 → 隐藏 UI 胶囊
+    _setSseStatus(SSE_STATUS_CONNECTED);
   };
 
   var _sseDebounceTimer = null;
@@ -703,6 +772,16 @@ function _connectSSE() {
       if (typeof document !== "undefined" && document.hidden) return;
       _connectSSE();
     }, _sseReconnectDelay);
+    // feat-sse-status-indicator: 区分"短暂闪断"vs"持续断开"
+    //   - 当 _sseReconnectDelay 还未退到 30s 上限 → reconnecting
+    //     （用户视为"网络正常但暂时丢连接，正在重试"）
+    //   - 已退到 30s（说明 >= 5 次失败 = 2^5 * 1000ms 已超过 30s）
+    //     → disconnected（用户视为"真的断了"）
+    _setSseStatus(
+      _sseReconnectDelay >= SSE_STATUS_DISCONNECTED_DELAY_MS
+        ? SSE_STATUS_DISCONNECTED
+        : SSE_STATUS_RECONNECTING,
+    );
     _sseReconnectDelay = Math.min(30000, _sseReconnectDelay * 2);
   };
 }
@@ -721,6 +800,11 @@ function _disconnectSSE() {
     _sseSource = null;
   }
   _sseConnected = false;
+  // feat-sse-status-indicator: 主动关闭（页面 hidden / unload）→ 恢复
+  // 到 "connected"（即隐藏 UI）。等到重新 connect 才会进入异常态。
+  // 不写 disconnected 的原因：disconnected 是"想连但连不上"的语义，
+  // 主动 disconnect 没有那种焦虑。
+  _setSseStatus(SSE_STATUS_CONNECTED);
 }
 
 function getNextBackoffMs(currentMs) {

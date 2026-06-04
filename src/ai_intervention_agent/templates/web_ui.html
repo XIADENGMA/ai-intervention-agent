@@ -284,6 +284,31 @@
           AI Intervention Agent
         </h1>
         <div class="header-actions">
+          <!-- §3.1 SSE 连接状态指示器（feat-sse-status-indicator）
+               对标 mcp-feedback-enhanced 的 Connection Monitoring。
+               设计原则：**非侵入式** —— 默认（已连接）隐藏，仅在
+               reconnecting / disconnected 状态可见，零打扰健康路径。
+
+               状态由 multi_task.js 通过 ``setSseStatus(state)``
+               切换 ``data-sse-state`` 属性；CSS 根据属性切换可见性
+               + 颜色 + 动画。无 JS 模块加载时元素保持隐藏，不破坏
+               legacy 路径。 -->
+          <span
+            id="sse-status-indicator"
+            class="sse-status-indicator"
+            data-sse-state="connected"
+            role="status"
+            aria-live="polite"
+            data-i18n-title="page.sseStatus.connected"
+            data-i18n-aria-label="page.sseStatus.connected"
+            title="Connected"
+            aria-label="Connected"
+          >
+            <span class="sse-status-dot" aria-hidden="true"></span>
+            <span class="sse-status-label" data-i18n="page.sseStatus.label"
+              >Live</span
+            >
+          </span>
           <button
             class="theme-toggle-btn"
             id="theme-toggle-btn"
