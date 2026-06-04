@@ -187,7 +187,8 @@ GitHub PRs (open + recent merged), CHANGELOG drift check.
   plain Flask 404). **ROI**: medium (improves stale-link UX +
   reduces "is the server broken?" support burden). **LoC**:
   ~80 (Flask `@app.errorhandler(404)` + template + 2 i18n
-  keys).
+  keys). **SHIPPED** in cr39 cycle — see `templates/
+  not_found.html` + 11 invariant tests.
 - **not-borrow**: session-scoped path-level routes. Reason:
   overlapping value with mining-2 §3.4 hash routing; cost-to-
   benefit ratio doesn't justify route table redesign.

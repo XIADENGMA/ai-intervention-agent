@@ -1228,6 +1228,44 @@ class WebFeedbackUI(
             )
             return jsonify(body), status
 
+        # mining-cycle-4 §4.5 B.4 borrow #1 — pretty 404 page for
+        # stale/broken UI navigation. 借鉴 mcp-feedback-enhanced PR #207
+        # session-not-found UX。Plain Flask 404 confuses user (especially
+        # after server restart or task TTL expiry); pretty page gives a
+        # clear "task not found" message + Home link + i18n.
+        #
+        # 仅对 HTML 请求（``Accept: text/html``）生效；JSON API 路由
+        # 走 AIAgentError("not_found") 已有的 JSON 路径。
+        @self.app.errorhandler(404)
+        def handle_404(exc: object) -> ResponseReturnValue:
+            from flask import render_template
+            from flask import request as _request
+
+            wants_html = "text/html" in (_request.accept_mimetypes.best or "")
+            if not wants_html:
+                return jsonify({"success": False, "error": "not_found"}), 404
+            try:
+                return (
+                    render_template(
+                        "not_found.html",
+                        request_path=_request.path,
+                    ),
+                    404,
+                )
+            except Exception:
+                # fallback: 模板不存在或渲染失败 → 简洁 inline HTML
+                from markupsafe import escape
+
+                return (
+                    '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
+                    "<title>Task / page not found</title></head><body>"
+                    "<h1>404 — page or task not found</h1>"
+                    f"<p>Path: <code>{escape(_request.path)}</code></p>"
+                    '<p><a href="/">Return to home</a></p>'
+                    "</body></html>",
+                    404,
+                )
+
     def shutdown_server(self) -> None:
         """优雅关闭Flask服务器
 

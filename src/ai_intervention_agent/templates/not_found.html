@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>404 — Task or page not found · AI Intervention Agent</title>
+    <style>
+      /* mining-cycle-4 §4.5 B.4 borrow #1 — session-not-found pretty page.
+         Inline styles (no external CSS) so 404 is rendered even if static
+         asset routes are also broken. Minimal palette: matches main UI
+         primary-500 + a soft surface tone. */
+      :root {
+        color-scheme: light dark;
+        --bg: #f9fafb;
+        --fg: #111827;
+        --muted: #6b7280;
+        --primary: #d97757;
+        --primary-hover: #b85e3f;
+        --border: #e5e7eb;
+        --code-bg: #f3f4f6;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111827;
+          --fg: #f9fafb;
+          --muted: #9ca3af;
+          --primary: #d97757;
+          --primary-hover: #f9a880;
+          --border: #374151;
+          --code-bg: #1f2937;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.6;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1rem;
+      }
+      .card {
+        max-width: 520px;
+        width: 100%;
+        text-align: center;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 2.5rem 2rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      }
+      .icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        line-height: 1;
+      }
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.5rem;
+        font-weight: 700;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 1.5rem;
+        font-size: 0.95rem;
+      }
+      .path {
+        background: var(--code-bg);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        margin: 1rem 0;
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+          monospace;
+        font-size: 0.85rem;
+        word-break: break-all;
+        text-align: left;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin: 1.5rem 0;
+        text-align: left;
+      }
+      .hint ul {
+        padding-left: 1.25rem;
+        margin: 0.5rem 0;
+      }
+      .actions {
+        margin-top: 1.5rem;
+      }
+      .btn {
+        display: inline-block;
+        padding: 0.625rem 1.5rem;
+        background: var(--primary);
+        color: white;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: background-color 0.15s ease;
+      }
+      .btn:hover {
+        background: var(--primary-hover);
+      }
+      .btn:focus-visible {
+        outline: 3px solid currentColor;
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card" role="main" aria-labelledby="title">
+      <div class="icon" aria-hidden="true">🔍</div>
+      <h1 id="title">404 — Task or page not found</h1>
+      <p class="subtitle">
+        We couldn't find what you were looking for. Common causes:
+      </p>
+      <div class="path" role="region" aria-label="Requested path">
+        {{ request_path }}
+      </div>
+      <div class="hint">
+        <ul>
+          <li>The task may have already completed or been removed.</li>
+          <li>The link may be outdated after a server restart.</li>
+          <li>The URL may contain a typo.</li>
+        </ul>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/" aria-label="Return to home page">Return to home</a>
+      </div>
+    </main>
+  </body>
+</html>
