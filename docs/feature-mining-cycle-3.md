@@ -310,8 +310,9 @@ Original plan:
 | Track A re-baseline | **done** | cycle-3 | 0 new releases since cycle-2; anti-pattern surfaced |
 | Track B gemini-cli survey | **done** | cycle-3 | 3 borrow + 2 anti-idiom |
 | Track B claude-code survey | **done** | cycle-3 | 0 borrow + 1 maybe + 1 defer + 1 anti-idiom |
-| gemini-cli `header` chip + `placeholder` | open | cycle-3 | top ROI ship target |
-| gemini-cli `yesno` type | open | cycle-3 if time | semantic clarity |
+| gemini-cli `placeholder` per-task | **shipped** (cycle-3, commit `2db6eaa`) | full stack: Task model + MCP schema + REST API + frontend helper + persistence round-trip; 20 invariant tests; 200-char clamp |
+| gemini-cli `header` chip ≤16 chars | open | cycle-4 | tab UI crowded; needs design |
+| gemini-cli `yesno` type | open | cycle-4 | needs frontend component |
 | CHANGELOG anti-pattern fix (auto-sync) | open | cycle-3 if time | low priority; flagged for "doc-drift gate" CI |
 | `additionalContext` template vars (claude-code idea) | maybe | cycle-4 | needs eval |
 | cr35 §8 #3 miss-rate tracking | **observed** | cycle-3 | new §0 caught 0 misses; methodology working |
