@@ -986,6 +986,38 @@ function startTasksPolling() {
     } catch (_e) {
       /* 忽略：online 事件监听失败不应阻塞 init */
     }
+
+    // perf-bfcache 修复：监听 ``pageshow`` 事件，处理 BFCache 恢复。
+    //
+    // 背景：Safari (iOS) 默认启用 BFCache；Chrome 96+ / Firefox 也默认启用。
+    // 用户从其他 tab / 页面 / 前后退 navigation 返回本页时，JS 状态
+    // 整体被冻结再解冻 —— 但既不会触发 ``online`` 事件，也可能
+    // 不会触发 ``visibilitychange``（取决于浏览器实现）。
+    //
+    // 这是 BUG5 的姊妹症状：BUG5 修"网络从离线恢复"，本修补修
+    // "页面从 BFCache 恢复"。两者都让用户看到的是过期数据 + 静止 timer
+    // 链，只能 ``Cmd+R`` 硬刷新。
+    //
+    // 触发条件：``event.persisted === true`` 表示页面是从 BFCache
+    // 还原而不是新加载；非持久化的 navigation（普通刷新 / 首次访问）
+    // 不进入此分支，让 init 路径自己处理。
+    //
+    // 兜底：同 ``online`` 监听，包 try/catch 确保 init 主流程不破。
+    try {
+      if (typeof window !== "undefined" && window.addEventListener) {
+        window.addEventListener("pageshow", function (e) {
+          if (!e || !e.persisted) return;
+          if (typeof document !== "undefined" && document.hidden) return;
+          _debugLog(
+            "Page restored from BFCache; restarting polling + SSE for fast recovery",
+          );
+          startTasksPolling();
+          startTasksHealthCheck();
+        });
+      }
+    } catch (_e) {
+      /* 忽略：pageshow 事件监听失败不应阻塞 init */
+    }
   }
 
   _debugLog("Task polling started (SSE preferred + polling safety-net)");
