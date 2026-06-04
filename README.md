@@ -197,6 +197,11 @@ ai-intervention-agent usage details:
 - 🔁 **Auto re-submit** — keep long-running sessions alive past client hard timeouts
 - 🔔 **Notifications** — web / sound / system / Bark (loopback URLs auto-suppressed; LAN-IP suggestion in settings)
 - 🌐 **SSH / LAN friendly** — works behind port forwarding; mDNS publishes a `<host>.local` URL when supported
+- 🏷️ **Header chips & Yes/No buttons** — agents can attach a ≤16-char `header_label` chip ("Auth", "DB", "i18n") for instant context, or set `question_type='yesno'` to render a one-click binary decision instead of a free-text textarea (borrowed from `gemini-cli` `ask_user`)
+- 🎨 **Custom placeholder hints** — per-task `feedback_placeholder` lets agents pre-fill the textarea hint (200-char clamp, falls back to i18n default)
+- 🌏 **i18n** — Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW` (plus pseudo-locale for translation coverage testing)
+- ⏱️ **Countdown extension** — `+60s` button to delay auto-resubmit when you need a bit more thinking time
+- 🟢 **SSE liveness indicator** — 3-state corner badge (good / degraded / offline) so you always know whether the page is in sync with the backend
 
 > Architecture diagram, "how it works" flow, production middleware chain,
 > server self-info resource, and MCP-spec compliance details live under

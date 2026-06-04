@@ -196,6 +196,11 @@ ai-intervention-agent 工具使用细节：
 - 🔁 **自动重调** —— 倒计时到点自动提交，保持长会话不被客户端硬超时切断
 - 🔔 **通知** —— Web UI / 声音 / 系统通知 / Bark（loopback URL 自动过滤；设置面板会推荐对应的 LAN IP）
 - 🌐 **SSH / 局域网友好** —— 适配 SSH 端口转发；本地网络支持时会通过 mDNS 自动发布 `<host>.local` 入口
+- 🏷️ **Header 标签 & Yes/No 按钮** —— Agent 可以为任务附加 ≤16 字符的 `header_label` 短标签（如 "Auth"/"DB"/"i18n"）提供上下文 cue；或者用 `question_type='yesno'` 让 UI 渲染一键确认/拒绝按钮（代替长文本框）。来自 `gemini-cli` `ask_user` 模式借鉴
+- 🎨 **自定义占位提示** —— 每个任务可以由 Agent 指定 `feedback_placeholder`（200 字符上限），覆盖默认 i18n 占位文本
+- 🌏 **i18n** —— Web UI + VS Code 插件原生支持 `en` / `zh-CN` / `zh-TW` 三语；另含 pseudo-locale 用于翻译覆盖测试
+- ⏱️ **倒计时延长** —— 一键 `+60s` 按钮，让你需要多想一会儿时不必慌张
+- 🟢 **SSE 实时状态指示** —— 角落 3 态徽章（绿/橙/红）提示与后端的同步状况
 
 > 工作原理、架构图、生产级中间件、Server 自检 resource、MCP 协议规范支持
 > 等技术细节请参考 [`docs/api.zh-CN/index.md`](docs/api.zh-CN/index.md) 与
