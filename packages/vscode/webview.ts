@@ -326,9 +326,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
       this._cachedStaticAssets = { activityIconSvg: svgText, lottieData };
     };
 
+    // cr32 §3.2 fix [medium]：补 zh-TW.json 预加载。否则用户系统
+    // 语言是 zh-TW / zh-HK / zh-Hant* 时，``normalizeLang`` 已 fold 到
+    // ``zh-TW``（feat-zhtw-locale §3.3），但 ``_cachedLocales['zh-TW']``
+    // 不存在 → webview-ui.js 的 ``ensureLocaleRegistered`` 找不到 locale
+    // → ``_t()`` 静默 fallback 到 en，台湾用户体感是"插件忽略我的语言设置"。
+    // 预加载放在并行 ``Promise.all`` 内，~50 µs 额外 IO；如果文件缺失走
+    // 同一 ``try { fs.readFile } catch { fs.readFileSync }`` fallback 链。
     await Promise.all([
       loadLocale("en"),
       loadLocale("zh-CN"),
+      loadLocale("zh-TW"),
       loadStaticAssets(),
     ]);
   }
@@ -1602,8 +1610,19 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     const allLocales: Record<string, Record<string, unknown>> = {
       ...this._cachedLocales,
     };
-    if (!allLocales["en"] || !allLocales["zh-CN"]) {
-      for (const loc of ["en", "zh-CN"]) {
+    // cr32 §3.2 fix [medium]：把 zh-TW 也加入 fallback 列表。预加载链路
+    // (``_preloadResources``) 通常已经把它填入 ``_cachedLocales``，但若
+    // ``vscode.workspace.fs`` async + 同步 fs fallback 都失败（典型场景：
+    // 文件刚被安装但 readFile 路径还没 settled），这里二次同步兜底，保证
+    // ``allLocales['zh-TW']`` 一定可用。否则 zh-TW 用户走 webview-ui 时
+    // ``registerLocale`` 拿不到数据 → ``_t()`` 静默 fallback 到 'en'，
+    // 体感与 web UI 不一致。
+    if (
+      !allLocales["en"] ||
+      !allLocales["zh-CN"] ||
+      !allLocales["zh-TW"]
+    ) {
+      for (const loc of ["en", "zh-CN", "zh-TW"]) {
         if (allLocales[loc]) continue;
         try {
           const text = safeReadTextFile(

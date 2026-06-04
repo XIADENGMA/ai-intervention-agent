@@ -1,0 +1,213 @@
+{
+  "_meta": {
+    "translationNote": "Auto-derived from zh-CN.json by scripts/gen_zhtw_from_zhcn.py (feat-zhtw-locale §3.3 MVP). Quality is best-effort; native zh-TW review welcome via PR to refine specific keys.",
+    "derivedFrom": "zh-CN",
+    "source": "scripts/gen_zhtw_from_zhcn.py"
+  },
+  "settings": {
+    "title": "通知設定",
+    "close": "關閉",
+    "enabled": "啟用通知",
+    "macosNative": "macOS 原生通知",
+    "autoSave": "自動儲存",
+    "autoSaveTooltip": "修改後会自動同步到伺服器端",
+    "testNative": "測試原生通知",
+    "testBark": "測試 Bark",
+    "feedback": {
+      "title": "回饋",
+      "countdown": "自動重新調用倒數計時（秒）",
+      "countdownHint": "倒數結束後自動重新提交。範圍 10-3600 秒，0 為停用。",
+      "resubmitPrompt": "重新調用提示語",
+      "resubmitPromptPlaceholder": "倒數結束後自動提交的提示內容",
+      "promptSuffix": "回饋後綴",
+      "promptSuffixPlaceholder": "追加到每次回饋末尾",
+      "saved": "回饋設定已儲存",
+      "saveFailed": "回饋設定儲存失敗"
+    },
+    "bark": {
+      "enabled": "Bark 通知",
+      "url": "Bark URL",
+      "urlPlaceholder": "https://api.day.app/push",
+      "deviceKey": "Bark Device Key",
+      "deviceKeyPlaceholder": "必填（測試需要）",
+      "icon": "Bark Icon",
+      "iconPlaceholder": "選用",
+      "action": "Bark Action",
+      "actionNone": "無動作",
+      "actionUrl": "打开連結",
+      "actionCopy": "複製內容",
+      "urlTemplate": "點擊跳轉 URL 模板",
+      "urlTemplatePlaceholder": "http://ai.local:8080/?task_id={task_id}",
+      "urlTemplateHint": "Bark Action 為“打开連結”且事件未提供具体 URL 時生效。支援 {task_id}、{event_id}、{base_url}。",
+      "baseUrlStatusTitle": "對外可達基地址",
+      "baseUrlStatusOk": "目前 base_url：{url}（手机端 Bark 點擊通知可正常跳轉）",
+      "baseUrlStatusLoopback": "目前 base_url 是回送地址（{url}），手机端點擊 Bark 通知会指向手机自身、無法打开 Web UI。",
+      "baseUrlStatusUnreachable": "未检測到可對外访問的 base_url，Bark 通知點擊将不附 url 欄位。",
+      "baseUrlSuggestLan": "推薦設定：複製下方 LAN 地址到 web_ui.external_base_url，或将 web_ui.host 改為 0.0.0.0/LAN IP。",
+      "baseUrlSuggestNoLan": "未探測到可用 LAN 網路卡（可能是离線或被 VPN 隔离）。可手動将 web_ui.external_base_url 设為可访問的 URL。",
+      "baseUrlCopyLan": "複製 LAN 地址",
+      "baseUrlCopied": "已複製",
+      "baseUrlRecheck": "重新检測"
+    },
+    "config": {
+      "title": "設定",
+      "path": "目前設定檔案路径",
+      "pathPlaceholder": "載入中…"
+    },
+    "hint": {
+      "loading": "載入中…",
+      "synced": "已同步",
+      "syncing": "同步中…",
+      "syncFailed": "同步失敗：{{reason}}",
+      "syncFailedNoUrl": "同步失敗：serverUrl 為空",
+      "syncFailedHttp": "同步失敗（HTTP {{status}}）",
+      "noChange": "無需同步（未变更）",
+      "loadFailed": "載入失敗",
+      "loadFailedReason": "載入失敗：{{reason}}",
+      "coreNotReady": "載入失敗：通知核心模區塊未就绪",
+      "remoteChanged": "检測到設定已更新（目前有未儲存修改），為避免覆寫，本次未自動同步",
+      "notifyDisabled": "通知已關閉：請先开启「啟用通知」",
+      "macosNotEnabled": "提示：目前未開啟「macOS 原生通知」，仍将執行一次測試用於排查…",
+      "macosTestTriggered": "已触发測試通知：請留意系統通知",
+      "postFailed": "傳送失敗：VS Code Webview API 無法使用（請尝試關閉/重新打开面板或重载視窗）",
+      "testFailed": "測試失敗：{{reason}}",
+      "testFailedNoUrl": "測試失敗：serverUrl 為空",
+      "testFailedHttp": "測試失敗（HTTP {{status}}）",
+      "testing": "測試中…",
+      "timeout": "要求逾時",
+      "barkTestSent": "測試通知已傳送，請檢查裝置"
+    },
+    "test": {
+      "macosTitle": "AI Intervention Agent 測試",
+      "macosMessage": "這是一個 macOS 原生通知測試，如果收到此消息，說明設定正确。"
+    },
+    "footer": {
+      "versionLink": "AI Intervention Agent {{version}}",
+      "versionLinkTitle": "在 GitHub 打开 AI Intervention Agent"
+    }
+  },
+  "statusBar": {
+    "connected": "已連線",
+    "disconnected": "未連線",
+    "unknown": "未知",
+    "tasks": "任務",
+    "reason": "原因",
+    "clickToOpen": "點擊打开面板",
+    "openSettings": "命令：AI Intervention Agent: 打开設定（serverUrl）",
+    "language": "語言"
+  },
+  "ui": {
+    "settingsBtn": "通知設定",
+    "connecting": "正在連線伺服器…",
+    "noContent": {
+      "title": "暫無交互回饋要求",
+      "connecting": "連線中…",
+      "waiting": "等待中"
+    },
+    "form": {
+      "optionsLabel": "選項（可多選）",
+      "placeholder": "請輸入回饋內容（支援貼上圖片）…",
+      "insertCode": "插入程式碼（从剪貼簿）",
+      "uploadImage": "上傳圖片",
+      "submit": "提交回饋"
+    },
+    "toast": {
+      "configFallback": "設定載入失敗，已使用任務详情兜底",
+      "configFallbackReason": "設定載入失敗，已使用任務详情兜底（{{reason}}）"
+    },
+    "status": {
+      "connected": "已連線",
+      "disconnected": "未連線",
+      "disconnectedRetrying": "連線中斷，正在重試…",
+      "serverConnected": "伺服器已連線",
+      "serverDisconnected": "伺服器連線中斷",
+      "serverStatus": "伺服器連線狀態"
+    },
+    "countdown": {
+      "remaining": "{seconds, plural, other {剩餘 # 秒}}"
+    },
+    "task": {
+      "switchedTo": "切換到任務: {{id}}",
+      "switchFailed": "切換任務失敗：{{reason}}",
+      "activateTimeoutCheckServer": "激活任務逾時：請檢查伺服器端是否可用"
+    },
+    "clipboard": {
+      "empty": "剪貼簿為空，請先複製一區段程式碼。",
+      "noCode": "插入失敗：未检測到有效程式碼",
+      "inserted": "已插入剪貼簿內容",
+      "insertFailed": "插入程式碼失敗：{{reason}}"
+    },
+    "settingsPanel": {
+      "loadFailed": "設定模區塊載入失敗",
+      "unavailable": "設定模區塊無法使用",
+      "openFailed": "打开設定失敗：{{reason}}"
+    },
+    "copy": {
+      "label": "複製",
+      "success": "已複製",
+      "failed": "複製失敗"
+    },
+    "submit": {
+      "label": "提交回饋",
+      "submitting": "正在提交…",
+      "rateLimited": "提交过於频繁，請等待 {seconds, plural, other {# 秒}}",
+      "rateLimited429": "提交过於频繁（HTTP 429）{{hint}}",
+      "rateLimitHint": "，建議等待 {seconds, plural, other {# 秒}}後再試",
+      "failed": "提交失敗（HTTP {{status}}）",
+      "failedReason": "提交失敗：{{reason}}",
+      "timeoutCheckServer": "提交逾時：請檢查伺服器端是否可用",
+      "success": "回饋已提交"
+    },
+    "image": {
+      "readFailed": "讀取圖片失敗",
+      "decodeFailed": "圖片解码失敗",
+      "invalid": "無效的圖片檔案",
+      "unsupportedFormat": "不支援的圖片格式：{{type}}",
+      "tooLarge": "圖片过大：{{size}}MB > 10MB",
+      "tooManyFiles": "最多只能上傳 {count, plural, other {# 张圖片}}",
+      "processingFailedReason": "圖片處理失敗：{{reason}}"
+    },
+    "notification": {
+      "title": "AI 交互回饋",
+      "newTask": "新任務已新增: {{id}}",
+      "newTasks": "收到 {count, plural, other {# 個新任務}}",
+      "taskCountSuffix": "（共 {count, plural, other {# 個任務}}）"
+    }
+  },
+  "notify": {
+    "hint": {
+      "serverUrlMissing": "通知設定获取失敗：serverUrl 為空",
+      "loadFailedHttp": "通知設定載入失敗（HTTP {{status}}）",
+      "requestTimeout": "通知設定要求逾時"
+    }
+  },
+  "aiia": {
+    "state": {
+      "loading": {
+        "title": "載入中…",
+        "message": "正在获取最新內容…"
+      },
+      "empty": {
+        "title": "暫無內容",
+        "message": {
+          "default": "等待下一個回饋要求。",
+          "filtered": "目前筛選条件下没有匹配結果。"
+        }
+      },
+      "error": {
+        "title": "出現問題",
+        "message": {
+          "network": "網路無法使用，請檢查網路連線。",
+          "server_500": "伺服器返回錯誤，請稍後重試。",
+          "timeout": "要求逾時，伺服器可能正忙。",
+          "unknown": "出現了未知錯誤。"
+        },
+        "action": {
+          "retry": "重試",
+          "open_log": "打开日志",
+          "copy_diagnostics": "複製診断訊息"
+        }
+      }
+    }
+  }
+}

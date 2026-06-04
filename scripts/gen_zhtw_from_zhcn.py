@@ -43,9 +43,30 @@ from pathlib import Path
 # 配置
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
-ZH_CN_PATH = LOCALES_DIR / "zh-CN.json"
-ZH_TW_PATH = LOCALES_DIR / "zh-TW.json"
+
+# 默认 target：web UI 的 locales 目录。
+# cr32 §3.2 fix 之后引入第二个 target（VSCode 插件 locales 目录），
+# 通过 ``--variant`` 在 web / vscode 之间切换；保持 zero-config 默认行为
+# = 跑 ``python scripts/gen_zhtw_from_zhcn.py`` 生成 web 端 zh-TW.json。
+_WEB_LOCALES_DIR = REPO_ROOT / "src" / "ai_intervention_agent" / "static" / "locales"
+_VSCODE_LOCALES_DIR = REPO_ROOT / "packages" / "vscode" / "locales"
+
+_VARIANTS: dict[str, tuple[Path, Path]] = {
+    "web": (
+        _WEB_LOCALES_DIR / "zh-CN.json",
+        _WEB_LOCALES_DIR / "zh-TW.json",
+    ),
+    "vscode": (
+        _VSCODE_LOCALES_DIR / "zh-CN.json",
+        _VSCODE_LOCALES_DIR / "zh-TW.json",
+    ),
+}
+
+# 默认（无 --variant 参数）走 web；下面模块级别名保留旧 import 路径
+# 兼容（外部脚本 / 测试有可能 ``from gen_zhtw_from_zhcn import ZH_CN_PATH``）。
+LOCALES_DIR = _WEB_LOCALES_DIR
+ZH_CN_PATH = _VARIANTS["web"][0]
+ZH_TW_PATH = _VARIANTS["web"][1]
 
 # 词组替换表（按 length desc 应用，避免短词组先 hit 把长词组拆开）。
 # Key 是简体 phrase，Value 是繁体 phrase。
@@ -387,6 +408,11 @@ CHAR_MAP_v2: dict[str, str] = {
     "课": "課",
     "调": "調",
     "诗": "詩",
+    "测": "測",
+    "缀": "綴",
+    # "内"/"內" 在 Unicode 是不同 codepoint（U+5185 大陆字形 vs U+5167 台湾字形）。
+    # GUI 上字体能补差但 codepoint 严谨度上仍应统一到台湾标准字形。
+    "内": "內",
     "认": "認",
     "诚": "誠",
     "谈": "談",
@@ -834,31 +860,37 @@ def _dump_json(path: Path, obj: dict) -> None:
     path.write_text(text + "\n", encoding="utf-8")
 
 
-def _generate() -> None:
-    src = _load_json(ZH_CN_PATH)
+def _generate(variant: str = "web") -> None:
+    src_path, dst_path = _VARIANTS[variant]
+    if not src_path.is_file():
+        print(f"[ERR] source 不存在：{src_path}")
+        raise SystemExit(2)
+    src = _load_json(src_path)
     converted = _convert_value(src)
     converted_with_meta = _inject_meta(converted)
-    _dump_json(ZH_TW_PATH, converted_with_meta)
-    print(f"[OK] wrote {ZH_TW_PATH}")
+    _dump_json(dst_path, converted_with_meta)
+    print(f"[OK] wrote {dst_path} (variant={variant})")
 
 
-def _check() -> int:
+def _check(variant: str = "web") -> int:
     """schema diff（不覆盖）：报告 zh-CN 中存在但 zh-TW 缺失的 key。"""
-    if not ZH_TW_PATH.exists():
+    src_path, dst_path = _VARIANTS[variant]
+    if not dst_path.exists():
         print(
-            f"[ERR] {ZH_TW_PATH} 不存在；先跑 ``python scripts/gen_zhtw_from_zhcn.py``"
+            f"[ERR] {dst_path} 不存在；先跑 "
+            f"``python scripts/gen_zhtw_from_zhcn.py --variant {variant}``"
         )
         return 1
-    cn = _load_json(ZH_CN_PATH)
-    tw = _load_json(ZH_TW_PATH)
-    missing = []
+    cn = _load_json(src_path)
+    tw = _load_json(dst_path)
+    missing: list[str] = []
     _diff_keys(cn, tw, prefix="", missing=missing)
     if missing:
-        print("[WARN] 以下 zh-CN keys 在 zh-TW 中缺失：")
+        print(f"[WARN] 以下 zh-CN keys 在 zh-TW({variant}) 中缺失：")
         for k in missing:
             print(f"  - {k}")
         return 1
-    print("[OK] zh-TW.json schema 与 zh-CN.json 同构")
+    print(f"[OK] zh-TW.json schema 与 zh-CN.json 同构 (variant={variant})")
     return 0
 
 
@@ -882,10 +914,33 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="Schema diff only; do not overwrite zh-TW.json",
     )
+    parser.add_argument(
+        "--variant",
+        choices=sorted(_VARIANTS.keys()),
+        default="web",
+        help=(
+            "Locale target. 'web' = src/.../static/locales/ (default). "
+            "'vscode' = packages/vscode/locales/ (cr32 §3.2 fix, extension's "
+            "zh-CN.json → zh-TW.json with the same PHRASE/CHAR mapping)."
+        ),
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Generate (or --check) all variants in one run.",
+    )
     args = parser.parse_args(argv)
+
+    variants = list(_VARIANTS.keys()) if args.all else [args.variant]
+
     if args.check:
-        return _check()
-    _generate()
+        rc = 0
+        for v in variants:
+            rc = _check(v) or rc
+        return rc
+
+    for v in variants:
+        _generate(v)
     return 0
 
 
