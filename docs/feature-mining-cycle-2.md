@@ -357,7 +357,7 @@ to learn from:
 | §3.4 One-click copy (task_id) | **partial — shipped task_id, project_path n/a** | (this commit) | dblclick task tab to copy full task_id; project_directory not surfaced in UI so n/a |
 | §3.5 Pause/resume v2 | deferred (conditional) | — | — |
 | §3.6 Tool docstring LLM hinting | deferred (telemetry) | — | — |
-| §4.1 zhconv evaluation | not started | — | — |
+| §4.1 zhconv evaluation | **done — not adopting** | (this commit, `docs/zhconv-eval.md`) | 34.3% string-level match; zhconv 字符层覆盖虽好但 phrase 风格不本地化；inline 增长亚线性可控；hybrid 留作 future track |
 | §4.3 gemini-cli / claude-code survey | not started | — | — |
 
 ---
