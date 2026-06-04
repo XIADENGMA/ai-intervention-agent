@@ -1322,24 +1322,13 @@ function updateTasksList(tasks) {
  * - 可以安全调用
  * - 不影响性能
  */
-function updateTasksStats(stats) {
-  // 任务计数徽章已从UI中移除，此函数不再执行任何操作
-  // 保留此函数是为了避免其他代码调用时出错
+function updateTasksStats(_stats) {
+  // BUG4 修复：彻底清理 task-count-badge 残留。
+  // 历史：徽章曾用红色 +1/+N 数字 + pulse 动画提示新任务，但 UX 评估后
+  // 移除（视觉噪声 + 与 task tabs 列表重复）。此函数保留作为兼容 stub，
+  // 防止上游 ``fetchAndApplyTasks`` 等调用方挂掉，未来若彻底确认无调用
+  // 方可安全删除。参数 ``_stats`` 加下划线前缀表示"已知未使用"。
   return;
-
-  /* 旧代码已注释（徽章功能已移除）
-  const badge = document.getElementById('task-count-badge')
-  if (!badge) {
-    console.warn('任务计数徽章元素未找到')
-    return
-  }
-  if (stats.pending > 0) {
-    badge.textContent = stats.pending
-    badge.classList.remove('hidden')
-  } else {
-    badge.classList.add('hidden')
-  }
-  */
 }
 
 // ==================== 标签页渲染 ====================

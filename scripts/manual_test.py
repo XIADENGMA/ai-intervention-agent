@@ -1511,7 +1511,6 @@ def test_multi_task_concurrent():
 2. **UI元素检查**
    - [ ] task-tabs-container 元素存在
    - [ ] task-tabs 元素存在且可见
-   - [ ] task-count-badge 元素存在
 
 3. **JavaScript模块**
    - [ ] multi_task.js 脚本已加载

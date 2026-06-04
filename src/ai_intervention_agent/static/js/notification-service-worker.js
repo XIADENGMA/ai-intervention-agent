@@ -125,14 +125,29 @@ self.addEventListener('fetch', event => {
   event.respondWith(handleCacheFirst(request))
 })
 
-/* cache-first 策略：先查 cache，命中直接返回；未命中走网络并异步写 cache。 */
+/* cache-first 策略：先查 cache，命中直接返回；未命中走网络并异步写 cache。
+ *
+ * BUG4 修复（offline-resilient）：
+ * 历史实现里 ``const networkResponse = await fetch(request)`` 在后端服务
+ * 中断时直接抛 NetworkError，整个 ``handleCacheFirst`` promise reject →
+ * ``event.respondWith`` reject → 浏览器认为该资源请求失败 → 之后即使
+ * 后端恢复了，浏览器也不会主动重试（直到 Cmd+Shift+R 绕过 SW）。
+ * 用户表现：后台中断恢复后图标不显示，必须硬刷新才能恢复。
+ *
+ * 新逻辑：
+ *   1. 优先走 cache 命中（既有行为）；
+ *   2. 未命中时尝试网络，但 fetch 抛错时再退化查一次 cache（即便没命中），
+ *      返回一个非 OK Response（503）而不是 reject promise；
+ *   3. 503 Response 让浏览器知道"这次拿不到，但不要把资源永久标记为坏的"，
+ *      下次后端恢复后浏览器仍会重新请求。
+ */
 async function handleCacheFirst(request) {
   let cache
   try {
     cache = await caches.open(STATIC_CACHE_NAME)
   } catch (e) {
     // 完全失败时让浏览器走默认网络路径
-    return fetch(request)
+    return fetch(request).catch(() => makeOfflineResponse(request))
   }
 
   try {
@@ -143,7 +158,23 @@ async function handleCacheFirst(request) {
   }
 
   // 未命中：网络拉取 + 异步写 cache
-  const networkResponse = await fetch(request)
+  let networkResponse
+  try {
+    networkResponse = await fetch(request)
+  } catch (e) {
+    // 网络失败（后台离线 / DNS 故障 / 浏览器 abort）：
+    // 1. 再查一次 cache，捞 stale 副本（即便上面 cache.match 已查过，
+    //    此处的二次尝试主要是兜底"cache.match 抛错被 swallow"的极端情况）；
+    // 2. 都没命中 → 返回 503 而不是 reject promise，避免浏览器把资源
+    //    标记为"加载失败"而停止重试。
+    try {
+      const stale = await cache.match(request)
+      if (stale) return stale
+    } catch (_e) {
+      /* 忽略二次 cache.match 失败 */
+    }
+    return makeOfflineResponse(request)
+  }
 
   // 只缓存 200 OK 响应。redirect / 4xx / 5xx 都不该写 cache。
   // ``response.type === 'basic'`` 是同源响应；我们已经在 fetch handler 里
@@ -169,6 +200,22 @@ async function handleCacheFirst(request) {
   }
 
   return networkResponse
+}
+
+/* BUG4：构造一个用于离线兜底的 Response。
+ * 用 503 而非 504/404 的原因：
+ *   - 503 (Service Unavailable) 语义上表达"暂时不可用"，浏览器会在后续
+ *     访问中重试；
+ *   - 404 会让浏览器把资源标记为"永久缺失"（特别是 favicon），后端恢复
+ *     后仍不重试；
+ *   - 504 (Gateway Timeout) 一般用于代理超时，语义不匹配。
+ */
+function makeOfflineResponse(request) {
+  return new Response('', {
+    status: 503,
+    statusText: 'Service Unavailable (offline)',
+    headers: { 'Content-Type': 'text/plain', 'X-AIIA-SW-Offline': '1' }
+  })
 }
 
 /* FIFO 淘汰：cache 超过 MAX_ENTRIES 时，删掉最早写入的 entry。 */

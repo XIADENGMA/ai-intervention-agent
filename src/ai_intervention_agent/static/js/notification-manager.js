@@ -387,17 +387,26 @@ class NotificationManager {
         url,
         data: extraData,
         icon,
-        badge,
+        badge, // BUG4：保留解构以便外部传入的 badge 仍可被 spread 覆盖；默认不写到 notificationOptions（见下）
         tag,
         requireInteraction,
         silent,
         ...restOptions
       } = options
 
+      // BUG4 修复：去除默认 badge 字段。
+      //
+      // 历史代码默认 ``badge: badge || this.config.icon`` —— Android Chrome
+      // 会在通知中心和状态栏显示一个等价大小的小图标（"角标"），用户表示
+      // 不喜欢这种视觉噪声。桌面浏览器多数会忽略该字段，所以删除它在桌面
+      // 端无视觉变化；移动端则会回到"无 badge 的纯文字通知"。
+      //
+      // 仍允许调用方主动传 ``options.badge`` 覆盖（罕见用法），通过 ``...
+      // restOptions`` 不会带回 badge —— 因为它已经被解构出去 —— 所以只在
+      // 调用方显式传 badge 时才会写入 notificationOptions。
       const notificationOptions = {
         body: message,
         icon: icon || this.config.icon,
-        badge: badge || this.config.icon,
         tag: tag || 'ai-intervention-agent',
         requireInteraction: requireInteraction || false,
         silent: silent || false,
@@ -406,6 +415,10 @@ class NotificationManager {
           ...extraData
         },
         ...restOptions
+      }
+      if (typeof badge === 'string' && badge) {
+        // 调用方显式传入非空字符串时才尊重；空字符串 / undefined / null 都视为"不要 badge"。
+        notificationOptions.badge = badge
       }
 
       const notification = await this.showSystemNotification(title, notificationOptions, {

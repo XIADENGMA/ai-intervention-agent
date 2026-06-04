@@ -6839,40 +6839,12 @@ code,
   color: rgba(245, 245, 247, 0.8);
 }
 
-/**
- * 任务计数徽章（.task-count-badge）：
- * 功能：显示任务数量的红色徽章，带脉冲动画
- * 布局：绝对定位，顶部-4px右侧-4px，最小宽18px高18px，内边距0 4px，圆角9px，flex居中
- * 视觉：红色背景，白色文字，字号11px，粗体
- * 动画：pulse-badge 2s无限循环（0%/100%缩放1，50%缩放1.1）
- */
-.task-count-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  background: #dc3545;
-  color: white;
-  border-radius: 9px;
-  font-size: 11px;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: pulse-badge 2s infinite;
-}
-/** 脉冲徽章动画：0%/100%缩放1，50%缩放1.1 */
-@keyframes pulse-badge {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
-  }
-}
+/* BUG4 修复：移除遗留的任务计数徽章 (.task-count-badge) CSS 与
+ * pulse-badge keyframes。
+ * 历史背景：multi_task.js 中相关 JS 逻辑早已被注释（"徽章功能已移除"），
+ * HTML 模板也不再渲染 ``#task-count-badge`` 元素，但 CSS 选择器与
+ * keyframes 仍留在 main.css，构成 dead code（增加文件体积、混淆维护者）。
+ * 本次清理仅删除 CSS，不引入任何视觉变化（DOM 中已无对应元素）。 */
 
 /**
  * 倒计时圆环（.countdown-ring）：

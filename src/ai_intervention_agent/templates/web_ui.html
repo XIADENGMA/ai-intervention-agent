@@ -14,25 +14,41 @@
       - 16/32 PNG 给老旧浏览器和 Windows 任务栏
       - 180 PNG 是 iOS Safari「添加到主屏幕」必需（iOS 不读 SVG）
       - manifest 中再列 192/512/maskable，安装为 PWA 时图标才正确
+
+      BUG4 修复：所有 icon URL 带 ``?v={{ version }}`` cache-busting query。
+      理由：service worker 走 cache-first（``notification-service-worker.js``
+      的 ``/icons/`` 白名单），版本号变化时 SW cache key 自然失效，浏览器
+      会重新拉取最新图标。配合 SW 的 offline-resilient fallback（fetch
+      失败时返回 503 而非 reject），后台中断恢复后图标能自动重新加载，
+      不再需要 Cmd+Shift+R 硬刷新。
     -->
-    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" sizes="any" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/icons/icon.svg?v={{ version }}"
+      sizes="any"
+    />
     <link
       rel="icon"
       type="image/png"
       sizes="32x32"
-      href="/icons/favicon-32.png"
+      href="/icons/favicon-32.png?v={{ version }}"
     />
     <link
       rel="icon"
       type="image/png"
       sizes="16x16"
-      href="/icons/favicon-16.png"
+      href="/icons/favicon-16.png?v={{ version }}"
     />
-    <link rel="mask-icon" href="/icons/icon.svg" color="#8B5CF6" />
+    <link
+      rel="mask-icon"
+      href="/icons/icon.svg?v={{ version }}"
+      color="#8B5CF6"
+    />
     <link
       rel="apple-touch-icon"
       sizes="180x180"
-      href="/icons/apple-touch-icon.png"
+      href="/icons/apple-touch-icon.png?v={{ version }}"
     />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#8B5CF6" />

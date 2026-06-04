@@ -174,8 +174,11 @@ def test_web_ui_icon_links_reference_existing_assets() -> None:
     assert hrefs, "web_ui.html 应声明 favicon / apple-touch-icon / mask-icon"
 
     for href in hrefs:
-        assert _icons_path_from_src(href).is_file(), (
-            f"HTML 引用的图标文件不存在：{href}"
+        # BUG4 修复后 icon URL 带 ``?v={{ version }}`` cache-busting query；
+        # 测试只关心物理文件是否存在，需要剥掉 query string + Jinja2 模板片段。
+        pure_path = href.split("?", 1)[0]
+        assert _icons_path_from_src(pure_path).is_file(), (
+            f"HTML 引用的图标文件不存在：{href}（剥离 query 后路径：{pure_path}）"
         )
 
 
