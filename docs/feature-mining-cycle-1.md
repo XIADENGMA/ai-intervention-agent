@@ -141,26 +141,38 @@ can pull off the top of the queue.
 - **Risk**: Header layout shift; mitigate by reserving 1×1em slot
   and only showing colour on non-connected state.
 
-### 3.2 Auto-resubmit countdown pause / +60s extend (MEDIUM ROI, ~150 LoC backend + 80 LoC frontend)
+### 3.2 Auto-resubmit countdown +60s extend (MVP, **resolved** commit `fcdbc2d`)
 
 - **Reference inspiration**: "Auto-commit Control: Added pause and
   resume buttons for better control over auto-commit timing"
   (v2.6.0).
-- **Gap**: Once countdown starts, the user cannot pause or extend
-  without going into settings + globally disabling auto-resubmit.
-  Power users writing long replies have anxiety about the 240 s tick.
-- **Proposed scope**:
-  - Backend: `POST /api/tasks/<id>/extend?seconds=60` — bump
-    `task.deadline` forward, SSE broadcast `task_updated`.
-  - Frontend: tiny "+60 s" button next to the countdown ring;
-    becomes "+30 s" after first click (diminishing-returns hint to
-    avoid users gaming auto-resubmit into 永远).
-  - Rate limit: max 3 extensions per task (or until `feedback.
-    backend_max_wait` cap).
-  - Regression: backend route registered, rate-limit honored,
-    frontend button triggers POST + updates UI on broadcast.
-- **Risk**: Need server-frontend coordinated deadline source-of-truth.
-  Existing `taskDeadlines` cache helps.
+- **Gap (was)**: Once countdown starts, the user cannot pause or
+  extend without going into settings + globally disabling
+  auto-resubmit. Power users writing long replies had anxiety about
+  the 240 s tick.
+- **What shipped** (MVP scope):
+  - Backend: `POST /api/tasks/<id>/extend` with body `{seconds: 60}`,
+    rate-limited 30/min. Returns 404 / 400 / 422 / 500.
+    `Task` model gains `extends_used: int = 0` + `extend_deadline(...)`
+    method enforcing 4 reject paths: completed / disabled / range /
+    max-reached.
+  - Frontend: "+60s" button next to countdown text in
+    `#countdown-container`. `updateCountdownExtendButton(task)` and
+    `handleExtendCountdownClick()` in `multi_task.js` keep button
+    state in sync and POST then update local `taskDeadlines`
+    immediately.
+  - Limits: each task max 3 extends × [10, 300]s. Hard cap prevents
+    users from gaming auto-resubmit into 永远.
+  - i18n: `page.extendCountdown.{label,title,ariaLabel,limitReached,networkError}`.
+- **What was NOT shipped (deferred for separate cycle)**:
+  - **True pause/resume**: Needs `Task.is_paused` state field +
+    scheduler skip + 2 buttons + SSE event. Larger surface; observe
+    if +60s suffices before investing.
+  - **SSE `task_updated` broadcast**: Avoided to keep
+    `sse_event_schemas.py` stable. Multi-client sync via 5s polling
+    (seconds-level latency acceptable).
+- **Regression**: `tests/test_feat_countdown_extend.py` — 39 cases
+  covering Task model + endpoint + HTML + CSS + JS + i18n + anchors.
 
 ### 3.3 zh-TW locale (LOW ROI, ~30 min copy-paste + native review)
 
@@ -207,7 +219,7 @@ authoritative — same discipline as `docs/code-reviews/cr*.md`.
 | Item | Status | Commit | Date |
 |---|---|---|---|
 | §3.1 SSE status indicator | **resolved** | (this cycle, after feature-mining-cycle-1.md) | 2026-06-04 |
-| §3.2 Countdown pause / extend | not started | — | — |
+| §3.2 Countdown +60s extend (MVP, not pause/resume) | **resolved** | `fcdbc2d` | 2026-06-04 |
 | §3.3 zh-TW locale | not started | — | — |
 | §3.4 Custom audio upload | not started | — | — |
 | §3.5 Quick-phrase usage sort | not started | — | — |
