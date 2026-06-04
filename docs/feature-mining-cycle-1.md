@@ -174,20 +174,40 @@ can pull off the top of the queue.
 - **Regression**: `tests/test_feat_countdown_extend.py` — 39 cases
   covering Task model + endpoint + HTML + CSS + JS + i18n + anchors.
 
-### 3.3 zh-TW locale (LOW ROI, ~30 min copy-paste + native review)
+### 3.3 zh-TW locale (MVP, **resolved** commit `c7bac5f`)
 
 - **Reference inspiration**: They ship zh-TW (their primary, since
   fork origin is Taiwan).
-- **Gap**: We ship en + zh-CN only. Some zh-TW users prefer not to
-  read zh-CN and end up using en.
-- **Proposed scope**:
-  - Copy `zh-CN.json` → `zh-TW.json`, swap obvious lexical/wording
-    differences (`视频→影片`, `档→檔`, `配置→設定`, etc.).
-  - Add locale to `LOCALE_REGISTRY` + locale picker.
-  - Pseudo-locale regen.
-- **Risk**: Without a zh-TW native speaker, machine-translated zh-TW
-  is worse than letting users fall back to zh-CN. Defer until a
-  native contributor offers to take it on.
+- **Gap (was)**: We shipped en + zh-CN only. zh-TW / zh-HK / zh-MO /
+  zh-Hant* BCP-47 tags were all collapsed to ``zh-CN`` by
+  ``normalizeLang`` (R72-D SSRF hardening side-effect).
+- **What shipped** (MVP scope):
+  - Dev-only script ``scripts/gen_zhtw_from_zhcn.py`` derives
+    ``static/locales/zh-TW.json`` from ``zh-CN.json`` via two-layer
+    PHRASE_MAP (~160 GUI 高频词组) + CHAR_MAP_v2 (~445 单字 fallback).
+    No new runtime dependency (avoids OpenCC license / size cost).
+  - ``_meta.translationNote`` injected at JSON top-level inviting
+    native PR polish; invariant tests treat ``_meta`` as metadata
+    (excluded from key parity check via ``_flatten_paths`` ignore).
+  - Frontend + backend ``normalizeLang`` aligned to fold
+    ``zh-TW / zh-HK / zh-MO / zh-Hant*`` → ``zh-TW``, and
+    ``zh-CN / zh-Hans / zh-SG / zh-MY`` → ``zh-CN``. Unknown tags
+    still fall back to DEFAULT_LANG (R72-D preserved).
+  - ``i18n.py._MESSAGES["zh-TW"]`` with 28 backend notification
+    strings (config saved / language updated / validation errors).
+  - ``server_config.WebUIConfig.SUPPORTED_LANGS`` + ``/api/update-language``
+    whitelist + ``web_ui.html`` ``<option value="zh-TW">`` all wired.
+  - en + zh-CN gain ``settings.langZhTW`` (endonym "繁體中文").
+- **What was NOT shipped (deferred)**:
+  - **Native zh-TW review polish** of single keys (PRs welcome via
+    the ``_meta.translationNote`` channel).
+  - **VSCode extension** ``packages/vscode/locales/zh-TW.json``
+    (extension i18n is mirrored separately; defer to next cycle).
+  - **README zh-TW** translation (lowest priority).
+- **Regression**: ``tests/test_feat_zhtw_locale.py`` — 25 cases
+  covering script + _meta + schema parity + content sanity +
+  normalizeLang + i18n.py + server_config + web_ui whitelist + HTML
+  option + i18n keys + SSRF hardening preservation.
 
 ### 3.4 Custom notification sound upload (LOW ROI, ~120 LoC)
 
@@ -220,7 +240,7 @@ authoritative — same discipline as `docs/code-reviews/cr*.md`.
 |---|---|---|---|
 | §3.1 SSE status indicator | **resolved** | (this cycle, after feature-mining-cycle-1.md) | 2026-06-04 |
 | §3.2 Countdown +60s extend (MVP, not pause/resume) | **resolved** | `fcdbc2d` | 2026-06-04 |
-| §3.3 zh-TW locale | not started | — | — |
+| §3.3 zh-TW locale (MVP, dev-script derived, awaiting native polish) | **resolved** | `c7bac5f` | 2026-06-05 |
 | §3.4 Custom audio upload | not started | — | — |
 | §3.5 Quick-phrase usage sort | not started | — | — |
 
