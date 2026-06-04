@@ -1082,6 +1082,11 @@ class TaskRoutesMixin:
                 logger.error(f"获取任务列表失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
+        # NOTE(feat-remove-download): web 右上角"下载任务"按钮已下线（见
+        # ``templates/web_ui.html`` 中说明注释 + ``tests/test_feat_remove_download_button.py``）。
+        # 此 endpoint 仍**保留**供以下非 UI 消费者继续调用：CI 烟测脚本、
+        # 用户手动备份（``curl /api/tasks/export?format=markdown > backup.md``）、
+        # 第三方监控集成。删除前请先 grep 项目外的 ``/api/tasks/export`` 引用。
         @self.app.route("/api/tasks/export", methods=["GET"])
         @self.limiter.limit("30 per minute")
         def export_tasks() -> ResponseReturnValue:

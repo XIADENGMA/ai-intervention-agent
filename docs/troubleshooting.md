@@ -462,48 +462,67 @@ Toolchain upgrades are deliberately tracked PRs, not silent drift:
 > known-working pin (find it in `git log` for `release.yml`) rather
 > than going floating.
 
-## 13. Client/server payload field-name drift (R154 lesson)
+## 13. Backend `/api/system/*` payload field stability (R154 lesson, post-feat-remove-test)
 
-**Symptom** — A status indicator, dashboard row, or test self-check
-silently shows "stale" / "—" / "unknown" even though the underlying
-HTTP endpoint is healthy and returns data. Most often:
+> **Status note (feat-remove-test)** — The original UI consumers of
+> these endpoints (settings page's "Send system self-test" button +
+> "Activity dashboard" panel) were **removed**. The R154 client-side
+> JS contract (`activity_dashboard.js`) and the in-suite
+> `test_system_endpoint_payload_contract_r154.py` were pruned in the
+> same cycle. **The lesson is still relevant** — just retargeted at
+> remaining backend consumers (CI smoke tests, Prometheus exporter,
+> k8s liveness probes, ad-hoc `curl` debugging) rather than in-app UI
+> indicators.
 
-- The Activity Dashboard's `Recent logs` row stays "—" while
-  `curl /api/system/recent-logs` returns entries.
-- A self-test verdict line stays "no verdict" while the dispatch
-  itself succeeded.
-- The settings UI shows "no provider stats" while
-  `curl /api/system/health` returns per-provider rows.
+**Symptom** — A monitoring dashboard row, CI assertion, or `curl | jq`
+pipeline silently shows "stale" / "—" / missing fields even though the
+endpoint returns 200 with a JSON body.
+
+- `curl /api/system/recent-logs | jq '.entries | length'` returns
+  `null` (was reading `.logs`).
+- `curl /api/system/health | jq '.checks.notification.status'` returns
+  `undefined` (field renamed under the hood).
+- Prometheus exporter shows no per-provider streak metrics even
+  though the JSON contains them.
 
 **Root cause** — The server endpoint renamed a top-level JSON field
-(e.g. `entries → logs`, `stats → counters`) **or** the client JS
-reads under a different name than the server emits. The fetch
-succeeds, the JSON parses, but the consumer reads `undefined` and
-treats the row as "no data".
+(e.g. `entries → logs`, `stats → counters`) **or** the consumer reads
+under a different name than the server emits. The fetch succeeds, the
+JSON parses, but the consumer reads `undefined` and treats it as "no
+data".
 
-R152's `_formatLogs` shipped with `var entries = logs.logs` while
-the server has always shipped `entries`. The dashboard's `Recent
-logs` row was permanently stale in production until R153 caught
-and fixed it.
+R152's `_formatLogs` shipped with `var entries = logs.logs` while the
+server has always shipped `entries`; the bug persisted until R153
+caught it. The class of bug doesn't go away just because the UI
+consumer did — every off-process consumer has the same brittleness.
 
 **What to do if you suspect drift**
 
-1. **Run** `uv run pytest tests/test_system_endpoint_payload_contract_r154.py -v`.
-   It locks the four `/api/system/...` + `/api/tasks` field surfaces
-   against the JS consumer; any miss surfaces as a clear failure.
-2. If the test passes but the symptom persists, **inspect the live
-   payload** with `curl -s http://localhost:8080/api/<endpoint> | jq`
-   and compare keys to the JS read-side in
-   `src/ai_intervention_agent/static/js/activity_dashboard.js`.
-3. **Add a new pin** to `tests/test_system_endpoint_payload_contract_r154.py`
-   for the newly-discovered field so the next regression is caught
-   structurally.
+1. **Inspect the live payload** with
+   `curl -s http://localhost:8080/api/system/<endpoint> | jq` and
+   compare its top-level keys to whatever your consumer is reading
+   (CI test, monitoring scrape config, Grafana dashboard JSON).
+2. **Diff against `_get_template_context` history**: the affected
+   route view function (in `web_ui_routes/system.py` /
+   `web_ui_routes/notification.py`) commits often label field renames
+   in their messages — `git log --follow -p` on the view function
+   surfaces the change.
+3. **Pin the field structurally** in your own consumer-side test
+   suite (CI smoke / monitoring config schema test) so a future
+   server-side rename trips your tests first.
 
-**Prevention going forward** — Treat every endpoint's top-level
-field name as part of the public client contract. Renames must
-land on both sides in the same PR + the test must update in
-lockstep. Don't ship a "client first" rename hoping the server
-catches up — the dashboard will silently degrade in the interim.
+**Prevention going forward** — Treat every endpoint's top-level field
+name as part of the **public** API contract — even with no in-app UI
+consumer, off-process consumers depend on it. Renames must:
+
+- update inline route docstring (so `docs/api*/` regen catches it);
+- bump a documented API version note if the rename is breaking;
+- ideally land alongside a deprecation alias period.
+
+Don't ship a "no UI consumer left, so I can rename freely" PR — the
+absence of an in-app consumer makes silent regressions **harder**, not
+easier, to notice. UI dashboard rows go to "—" loudly; a CI scrape
+job goes to "0 metrics" silently.
 
 ## Still stuck?
 

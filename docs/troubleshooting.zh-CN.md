@@ -410,43 +410,63 @@ tag。
 > 已知 bug 阻塞 release，回滚到**上一个**能 work 的 pin（在 `git log
 release.yml` 里找），不要走浮动。
 
-## 13. 客户端/服务端 payload 字段名漂移（R154 教训）
+## 13. 后端 `/api/system/*` payload 字段稳定性（R154 教训，feat-remove-test 后）
 
-**症状** —— 状态指示器、面板某一行、或自检结果在底层 HTTP 端点
-明明返回数据时仍然显示「stale」/「—」/「未知」。最常见的形态：
+> **状态说明（feat-remove-test）** —— 这些 endpoint 原本的 UI 消费者
+> （设置页"发送系统自检通知"按钮 + "活动面板"）已经**移除**；R154
+> 客户端契约（`activity_dashboard.js`）以及 in-suite 的
+> `test_system_endpoint_payload_contract_r154.py` 也在同周期 prune。
+> **教训本身仍然适用** —— 只是消费者重新定位到剩余的"非 UI"消费者
+> （CI 烟测、Prometheus exporter、k8s liveness probe、ad-hoc curl 调试），
+> 而不再针对 in-app UI 指示器。
 
-- Activity Dashboard 的「近期日志」行一直显示「—」，但
-  `curl /api/system/recent-logs` 实际返回了 entries。
-- 自检 verdict 行一直是「无 verdict」，但 dispatch 本身确实成功。
-- 设置面板上「无 provider 统计」，但
-  `curl /api/system/health` 实际有 per-provider 行。
+**症状** —— 监控面板某一行、CI 断言、或 `curl | jq` 管道一直显示
+"stale" / "—" / 缺字段，但 endpoint 实际返回 200 + 合法 JSON。
+
+- `curl /api/system/recent-logs | jq '.entries | length'` 返回 `null`
+  （实际读成了 `.logs`）。
+- `curl /api/system/health | jq '.checks.notification.status'` 返回
+  `undefined`（字段被悄悄重命名）。
+- Prometheus exporter 抓不到 per-provider streak 指标，尽管 JSON
+  里明明有。
 
 **根因** —— 服务端 endpoint 改了顶层 JSON 字段名（例如
-`entries → logs`、`stats → counters`），或者客户端 JS
-读取的字段名跟服务端发出的字段名不一致。fetch 成功，JSON 解析正常，
-但消费者读到的是 `undefined`，整行就被当成「无数据」。
+`entries → logs`、`stats → counters`），或者消费者读取的字段名跟
+服务端发出的不一致。fetch 成功、JSON 解析正常，但消费者读到 `undefined`，
+就当成"无数据"处理。
 
 R152 的 `_formatLogs` 写的是 `var entries = logs.logs`，而服务端
-一直在 `entries` 字段下发数组。在 R153 抓到并修复之前，
-Dashboard 的「近期日志」行在生产环境一直处于 stale 状态。
+一直在 `entries` 字段下发数组。在 R153 抓到并修复之前，Dashboard
+的"近期日志"行在生产环境一直处于 stale 状态。即使 UI 消费者被
+移除，**同一类 bug 也不会消失** —— 每个 off-process 消费者都有
+同样的脆性。
 
 **怀疑漂移时怎么处理**
 
-1. **跑** `uv run pytest tests/test_system_endpoint_payload_contract_r154.py -v`。
-   这套测试把四个 `/api/system/...` + `/api/tasks` 的字段面契约
-   双向锁住；任何 miss 都会以清晰的失败暴露。
-2. 测试通过但症状仍在，就**抓 live payload**：
-   `curl -s http://localhost:8080/api/<endpoint> | jq`，然后跟
-   `src/ai_intervention_agent/static/js/activity_dashboard.js` 里
-   的读取侧逐字段对照。
-3. 在 `tests/test_system_endpoint_payload_contract_r154.py` 里
-   **加新的 pin** 把刚发现的字段也固定下来，让下一次的回归被
-   结构化地抓到。
+1. **抓 live payload**：
+   `curl -s http://localhost:8080/api/system/<endpoint> | jq`，然后
+   把顶层 keys 跟你的消费者（CI 测试、监控 scrape config、Grafana
+   dashboard JSON）实际读取的字段名逐个对照。
+2. **沿 view function 历史 diff**：受影响的 route view function
+   （在 `web_ui_routes/system.py` / `web_ui_routes/notification.py`）
+   的 commit message 通常会标注字段重命名 —— `git log --follow -p`
+   能把变更面摊开。
+3. **在你的消费者侧测试套件**里**结构化 pin 该字段**（CI 烟测 /
+   监控 config schema 测试），让下次服务端重命名先在你这里红，
+   再传播到生产。
 
-**未来如何避免** —— 把每个 endpoint 的顶层字段名当成公开的客户端
-合约的一部分。重命名必须两侧同 PR 落地，并且这套测试同步更新；
-不要走「先改客户端，等服务端跟上」的路径，那段时间里 Dashboard
-会静默退化。
+**未来如何避免** —— 把每个 endpoint 的顶层字段名当成**公开** API
+合约的一部分 —— 即便没有 in-app UI 消费者，off-process 消费者也
+依赖它。重命名必须：
+
+- 同步更新 route 的 inline docstring（这样 `docs/api*/` 重生成时
+  能抓到）；
+- 如果是破坏性重命名，bump 一个 documented API version note；
+- 理想情况下伴随一段 deprecation alias 期。
+
+**不要**因为"已经没有 UI 消费者了，可以随便改名"就 ship —— in-app
+消费者缺席会让静默回归**更难**、而非更容易被发现。UI 面板掉成 "—"
+是显式的；CI scrape job 静默掉成 0 metric 才是真坑。
 
 ## 还是没解决？
 

@@ -980,6 +980,12 @@ class NotificationRoutesMixin:
                     {"status": "error", "message": msg("notify.updateFailed")}
                 ), 500
 
+        # NOTE(feat-remove-test): 设置页"发送系统自检通知"按钮已下线
+        # （见 ``templates/web_ui.html`` 中说明注释 + ``tests/test_feat_remove_test_uis_removed.py``）。
+        # 此 endpoint 仍**保留**供以下非 UI 消费者继续调用：CI 烟测脚本、
+        # 用户支持工单手动 trigger（``curl -X POST /api/system/notifications/test``）、
+        # 外部健康检查集成（验证通知通道是否真的能投递）。删除前请先 grep
+        # 项目外的 ``/api/system/notifications/test`` 引用。
         @self.app.route("/api/system/notifications/test", methods=["POST"])
         @self.limiter.limit("6 per minute")
         def system_notifications_test() -> ResponseReturnValue:

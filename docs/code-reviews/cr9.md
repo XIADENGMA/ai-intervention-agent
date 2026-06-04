@@ -4,6 +4,26 @@
 > commit `5158d1e` (R154 housekeeping).  Reviewers preparing the
 > v1.6.3 release should walk this list before tagging.
 
+> **⚠️ Historical context — UI scope removed in `feat-remove-test`
+> (commit `faad96a`, cycle covered by CR#30)**: the R150 self-test
+> history trail, R152 activity dashboard subsection, R153 logs-row
+> inline expand, R155 expanded-state persistence, and R156 show-more
+> toggle were **all deleted** in a later cycle following user
+> preference. The associated JS modules (`notification_test_button.js`,
+> `activity_dashboard.js`), CSS rules (`.self-test-history*`,
+> `.activity-dashboard-*`), locale keys (`systemTest*`, `activityDashboard*`),
+> and 9 in-suite invariant tests (`test_activity_dashboard_*_r{152,153,155,156}.py`,
+> `test_notification_test_button_*_r{146,147,148,150}.py`, `test_housekeeping_r151.py`,
+> `test_system_endpoint_payload_contract_r154.py`) were pruned in
+> lockstep. **The R150-R154 narrative below is preserved as
+> historical record** — these features no longer exist in the
+> running product. The backend `/api/system/{health,sse-stats,
+> recent-logs,notifications/test}` endpoints **are still registered**
+> for off-process consumers (CI / monitoring / curl debugging); see
+> `tests/test_feat_remove_test_uis_removed.py` for the post-removal
+> regression contract and `docs/troubleshooting.{md,zh-CN.md}` § 13
+> for the rewritten "backend-only" version of the R154 lesson.
+
 ## Cycle summary
 
 | Tag | Hash | One-liner |

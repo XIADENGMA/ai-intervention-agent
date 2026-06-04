@@ -1909,6 +1909,10 @@ class SystemRoutesMixin:
                     500,
                 )
 
+        # NOTE(feat-remove-test): 设置页"活动面板"已下线（见 ``templates/web_ui.html``
+        # 中说明注释 + ``tests/test_feat_remove_test_uis_removed.py``）。
+        # 此 endpoint 仍**保留**供性能基线脚本、dev 调试、监控 dashboards
+        # 程序化拉取 SSE 总线指标。删除前请先 grep ``/api/system/sse-stats``。
         @self.app.route("/api/system/sse-stats", methods=["GET"])
         @self.limiter.limit("60 per minute")
         def sse_stats() -> ResponseReturnValue:
@@ -1985,6 +1989,10 @@ class SystemRoutesMixin:
                     500,
                 )
 
+        # NOTE(feat-remove-test): 设置页"活动面板"已下线（同上）。
+        # 此 endpoint 仍**保留** —— 实际 release 必备：Prometheus exporter /
+        # k8s liveness probe / 通知自检结果 probe（POST /api/system/notifications/test
+        # 之后的二次校验）都依赖它。**绝不可** 因为 UI 下线就删该 route。
         @self.app.route("/api/system/health", methods=["GET"])
         @self.limiter.limit("120 per minute")
         def system_health() -> ResponseReturnValue:
@@ -2775,6 +2783,9 @@ class SystemRoutesMixin:
                 200,
             )
 
+        # NOTE(feat-remove-test): 设置页"活动面板"已下线（同上）。
+        # 此 endpoint 仍**保留**供 CI 调试、用户支持工单时手动 curl 查看
+        # 最近日志（``curl /api/system/recent-logs?limit=50``）。
         @self.app.route("/api/system/recent-logs", methods=["GET"])
         @self.limiter.limit("30 per minute")
         def recent_logs() -> ResponseReturnValue:
