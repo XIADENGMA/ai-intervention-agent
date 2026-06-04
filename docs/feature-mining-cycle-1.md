@@ -209,16 +209,51 @@ can pull off the top of the queue.
   normalizeLang + i18n.py + server_config + web_ui whitelist + HTML
   option + i18n keys + SSRF hardening preservation.
 
-### 3.4 Custom notification sound upload (LOW ROI, ~120 LoC)
+### 3.4 Custom notification sound upload (**resolved** commit `0e6b1fa`)
 
 - **Reference inspiration**: "Built-in multiple sound effects,
   custom audio upload support, volume control".
-- **Gap**: We ship built-in sounds but no user-upload path.
-- **Proposed scope**: Settings page → file picker → store base64 in
-  localStorage → wire into `notification-manager.js` playback path.
-- **Risk**: localStorage 5 MB quota; need MIME / size validation;
-  storage cleanup on settings reset. Worth it only if user demand
-  shows up in issues.
+- **Gap (was)**: Built-in `/sounds/deng.wav` + synth fallback only;
+  no user-upload path. Users wanting their own notification sound
+  had to monkey-patch.
+- **What shipped**:
+  - **NotificationManager API**: `hasCustomSound() / getCustomSoundMeta() /
+    loadCustomSoundFromStorage() / saveCustomSoundFromFile(file) /
+    clearCustomSound()` 5-method surface. `saveCustomSoundFromFile`
+    returns `{success, error, ...}` with 6 distinct error codes
+    (`no_file / invalid_mime / too_large / read_failed /
+    storage_failed / decode_failed`) for precise UI messaging.
+  - **`playSound()` default-param dispatch**: changed signature from
+    `playSound('default', ...)` to `playSound(null, ...)`; when null,
+    dispatches to `'custom'` if `audioBuffers.has('custom')` else
+    `'default'`. Explicit `playSound('default')` (used by the Test
+    button) preserves original semantics.
+  - **Settings UI**: file input + Test + Remove buttons + live status
+    string. Wire via `settings-manager.js::_wireCustomSoundControls`.
+    Settings reset also calls `clearCustomSound()` to honour
+    "reset = factory default" semantics.
+  - **Limits**: `CUSTOM_SOUND_LS_KEY = 'aiia.notif.customSound.v1'`
+    (versioned for future schema migrations), 700KB max (~933KB
+    base64, leaves 4MB+ in 5MB localStorage quota), 9-MIME whitelist
+    (mp3/wav/ogg/webm/aac/m4a/flac).
+  - **a11y**: hidden `<input type=file>` with `<label for>` trigger
+    (keyboard navigable), `prefers-reduced-motion` disables button
+    transition, `data-i18n-aria-label` for SR users.
+  - **i18n**: `settings.customSound.{label, upload, uploadTitle, test,
+    clear, uploaded, notUploaded, errors.{generic, invalidMime,
+    tooLarge, readFailed, storageFailed, decodeFailed}}` × 4 locales.
+  - **CSS**: walks project's `--primary-500` design token (no hex
+    fallback; passes R66 brand-colour drift guardrail).
+- **What was NOT shipped (deferred)**:
+  - **Multi-slot sound management**: competitor also single-slot; not
+    worth complexity until user demand observed.
+  - **Server-side upload endpoint**: would add SSRF / storage attack
+    surface; localStorage roundtrip is sufficient and per-device.
+  - **Built-in sound pack**: needs license-clear audio assets;
+    deferred to a future content-curation cycle.
+- **Regression**: `tests/test_feat_custom_sound.py` 17 cases / 7
+  classes covering API surface, error codes, dispatch logic,
+  initAudio integration, HTML controls, settings wiring, CSS+i18n.
 
 ### 3.5 Prompt usage statistics + smart sort (**already shipped**, R131c)
 
@@ -256,7 +291,7 @@ authoritative — same discipline as `docs/code-reviews/cr*.md`.
 | §3.1 SSE status indicator | **resolved** | (this cycle, after feature-mining-cycle-1.md) | 2026-06-04 |
 | §3.2 Countdown +60s extend (MVP, not pause/resume) | **resolved** | `fcdbc2d` | 2026-06-04 |
 | §3.3 zh-TW locale (MVP, dev-script derived, awaiting native polish) | **resolved** | `c7bac5f` | 2026-06-05 |
-| §3.4 Custom audio upload | not started | — | — |
+| §3.4 Custom audio upload | **resolved** | `0e6b1fa` | 2026-06-05 |
 | §3.5 Quick-phrase usage sort | **already shipped** (R131c) | (pre-cycle-1, retroactive) | (existed) |
 
 ## §5. Survey methodology + reproducibility
