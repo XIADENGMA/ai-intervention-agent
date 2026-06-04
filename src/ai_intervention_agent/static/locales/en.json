@@ -86,6 +86,8 @@
     "testDesktopBtn": "Test desktop notification",
     "testBarkBtn": "Test Bark notification",
     "resetBtn": "Reset settings",
+    "resetConfirm": "Reset all local notification settings to defaults? Your overrides will be lost (server-stored feedback config is not affected).",
+    "resetCancelled": "Settings reset cancelled by user",
     "configSection": "Configuration",
     "shortcutsSection": "Common shortcuts",
     "enableNotify": "Enable notifications",

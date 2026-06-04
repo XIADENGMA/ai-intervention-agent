@@ -220,7 +220,35 @@ class SettingsManager {
     }
   }
 
+  // feat-reset-confirm：
+  // 重置设置是破坏性操作（一键覆盖本地 + 同步推回后端），用户曾反馈"误点
+  // 完成只能手工逐项再调一遍"。改为弹原生 ``window.confirm`` 二次确认，
+  // 取消则直接 noop，保留全部既有偏好。
+  //
+  // 选型理由：
+  // - 与 ``quick_phrases.js`` 的删除短语 / 全量替换确认走同一套范式，
+  //   不引入额外 modal 组件，最小变更面 + 行为一致。
+  // - i18n key ``settings.resetConfirm`` / ``settings.resetCancelled``
+  //   覆盖 en / zh-CN / pseudo；缺 key 时退到内置英文 fallback，与
+  //   其它 ``_tl`` 调用站对齐。
+  // - 在浏览器禁用 ``window.confirm``（极少见，如自动化测试 / 某些
+  //   嵌入场景）的环境下，行为退化为"不再二次确认、直接重置"，
+  //   而不是"重置永远点不动"——后者会让用户更困惑。
   resetSettings() {
+    var confirmMsg = _tl(
+      "settings.resetConfirm",
+      "Reset all local notification settings to defaults? Your overrides will be lost (server-stored feedback config is not affected).",
+    );
+    if (
+      typeof window !== "undefined" &&
+      typeof window.confirm === "function" &&
+      !window.confirm(confirmMsg)
+    ) {
+      console.debug(
+        _tl("settings.resetCancelled", "Settings reset cancelled by user"),
+      );
+      return;
+    }
     this.settings = { ...this.defaultSettings };
     this.saveSettings();
     this.updateUI();

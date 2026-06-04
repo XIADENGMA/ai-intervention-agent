@@ -86,6 +86,8 @@
     "testDesktopBtn": "测试桌面通知",
     "testBarkBtn": "测试 Bark 通知",
     "resetBtn": "重置设置",
+    "resetConfirm": "确定要把所有本地通知设置恢复为默认值吗？你自定义的偏好会被全部覆盖（服务端保存的反馈配置不受影响）。",
+    "resetCancelled": "已取消重置设置",
     "configSection": "配置",
     "shortcutsSection": "常用快捷键",
     "enableNotify": "启用通知功能",
