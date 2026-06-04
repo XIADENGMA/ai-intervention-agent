@@ -120,28 +120,52 @@ by ROI.
   ephemeral; UI needs "confirm + scope picker" before download.
 - **Decision**: **adopt**, plan as cycle-3 ship item.
 
-### 3.2 Session-link copy + open-session UI (v2.6.1 PR #207) — **LOW-MEDIUM ROI, ~80 LoC**
+### 3.2 Session-link copy + open-session UI (v2.6.1 PR #207) — **shipped this cycle**
 
 - **Reference inspiration**: "Session manager UI: open session +
   copy session link" (PR #207).
-- **Gap analysis**: We have task-id-keyed URLs implicitly
+- **Gap (was)**: We have task-id-keyed URLs implicitly
   (`?task_id=X`), but no explicit UI affordance for "copy a link
   that opens this specific task". Currently URL changes on task
   switch but users don't know they can copy the URL bar contents.
-- **Proposed scope**:
-  - Task tabs: add a small "copy link" icon next to each task
-    title.
-  - Click → write `${origin}${pathname}?task_id=${id}` to
-    clipboard with `navigator.clipboard.writeText`.
-  - Toast on success / fallback to `prompt()` if Clipboard API
-    unavailable.
-- **Acceptance**: regression test for icon presence + handler
-  wiring + i18n key; manual smoke on Firefox / Safari (Clipboard
-  API quirks).
-- **Risk**: Clipboard API requires user gesture + secure context;
-  fallback path well-tested.
-- **Decision**: **adopt** — small, high-polish, doesn't disrupt
-  existing UX.
+- **What shipped**:
+  - **`buildTaskDeepLink(taskId, base?)` helper**: uses the
+    standard `URL` API (not string concat) to correctly handle
+    pre-existing query strings, hash fragments, and origin /
+    pathname extraction. `searchParams.set("task_id", id)`
+    overrides any stale `task_id` in the base URL. Returns empty
+    string on invalid input or `URL` constructor throw.
+  - **`copyTaskLinkToClipboard(taskId)` helper**: composes the
+    link via `buildTaskDeepLink` and writes via the shared
+    low-level `_writeToClipboard` helper.
+  - **`_writeToClipboard(text)` extraction**: the dual-path
+    clipboard logic (Clipboard API primary + `execCommand`
+    fallback) that previously lived inline in
+    `copyTaskIdToClipboard` is now a separate function; both
+    `copyTaskIdToClipboard` and `copyTaskLinkToClipboard` call
+    it. This avoids the duplicate-execCommand smell that would
+    otherwise appear from this commit, and the regression test
+    `test_no_duplicated_execcommand` asserts the count stays at
+    exactly **1**.
+  - **`Shift+dblclick` modifier on task tab textSpan**: same
+    handler as the cycle-2 §3.4 dblclick, now branches on
+    `e.shiftKey` — Shift+dblclick → link copy; plain dblclick →
+    id copy. The modifier-driven design is the universal
+    "alternate variant" idiom (cf. shift-click multi-select in
+    IDEs, shift-arrow extend selection).
+- **What was NOT shipped (deferred)**:
+  - **Dedicated "copy link" icon button**: would clutter the task
+    tab UI; for a power-user feature the Shift+dblclick gesture
+    is sufficient. The existing `title` tooltip already telegraphs
+    that the textSpan has special interaction (it shows the full
+    `task_id` on hover).
+  - **"Open session in new window/tab"** affordance: browsers
+    already let users do this with Ctrl+Click on the URL bar
+    after copying; we don't add value by re-implementing it.
+- **Regression**: `tests/test_feat_mining2_session_link_copy.py`
+  with 5 test classes / ~12 cases, covering helper definitions,
+  URL API usage, low-level helper extraction (anti-duplication),
+  Shift+dblclick wiring, and window exposure.
 
 ### 3.3 Input height memory (v2.4.3) — **already shipped (R137); doc corrected post-survey**
 
@@ -299,7 +323,7 @@ to learn from:
 | Item | Status | Commit | Date |
 |---|---|---|---|
 | §3.1 Session Export | not started | — | — |
-| §3.2 Session-link copy | not started | — | — |
+| §3.2 Session-link copy | **shipped** | (this commit) | Shift+dblclick task tab; reuses extracted `_writeToClipboard` helper |
 | §3.3 Input height memory | **already shipped (R137)** | (pre-cycle-2) | survey miss; corrected |
 | §3.4 One-click copy (task_id) | **partial — shipped task_id, project_path n/a** | (this commit) | dblclick task tab to copy full task_id; project_directory not surfaced in UI so n/a |
 | §3.5 Pause/resume v2 | deferred (conditional) | — | — |

@@ -153,12 +153,82 @@ if (typeof window.autoSubmitAttempted === "undefined") {
 // mining-cycle-2 §3.4 — Task ID one-click copy helper
 // ============================================================
 /**
- * 把任务 ID 复制到剪贴板。
+ * 内部低阶 clipboard writer（dual path），不做 i18n / toast。
  *
  * 双 path：
  * - 现代浏览器 + secure context: ``navigator.clipboard.writeText`` (async)
  * - 旧浏览器 / http loopback / iOS Safari old: ``document.execCommand
  *   ("copy")`` fallback (sync, 已被 W3C deprecate 但实战仍可用)
+ *
+ * @param {string} text 待复制的字符串
+ * @returns {Promise<boolean>} 成功与否
+ */
+async function _writeToClipboard(text) {
+  const s = String(text || "");
+  if (!s) return false;
+  try {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === "function"
+    ) {
+      await navigator.clipboard.writeText(s);
+      return true;
+    }
+  } catch (_e) {
+    // fall through to legacy path
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = s;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.left = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_e2) {
+    return false;
+  }
+}
+
+/**
+ * mining-cycle-2 §3.2 — 为某个 task 构造 deep-link URL。
+ *
+ * 走 ``URL`` API 让我们正确处理：
+ * - 已有 query string（pres/erve & override task_id key）
+ * - hash fragment（保留）
+ * - origin + pathname（不要带其他敏感 query 入 URL）
+ *
+ * @param {string} taskId
+ * @param {Location | URL | string} [base] 默认 ``window.location``
+ * @returns {string} 完整 URL
+ */
+function buildTaskDeepLink(taskId, base) {
+  const id = String(taskId || "");
+  if (!id) return "";
+  try {
+    const baseUrl =
+      base && typeof base === "object" && typeof base.href === "string"
+        ? base.href
+        : typeof base === "string"
+          ? base
+          : typeof window !== "undefined" && window.location
+            ? window.location.href
+            : "http://localhost/";
+    const u = new URL(baseUrl);
+    u.searchParams.set("task_id", id);
+    return u.toString();
+  } catch (_e) {
+    return "";
+  }
+}
+
+/**
+ * 把任务 ID 复制到剪贴板。
  *
  * UX：调 ``showStatus(t("status.copied" | "status.copyFailed"), ...)`` 复用
  * 项目已有的 toast 系统；不引入新 i18n key。
@@ -167,53 +237,60 @@ if (typeof window.autoSubmitAttempted === "undefined") {
  * @returns {Promise<boolean>} 成功与否
  */
 async function copyTaskIdToClipboard(taskId) {
-  const text = String(taskId || "");
-  if (!text) return false;
-  let ok = false;
-  try {
-    if (
-      typeof navigator !== "undefined" &&
-      navigator.clipboard &&
-      typeof navigator.clipboard.writeText === "function"
-    ) {
-      await navigator.clipboard.writeText(text);
-      ok = true;
-    }
-  } catch (_e) {
-    ok = false;
-  }
-  if (!ok) {
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.top = "-1000px";
-      ta.style.left = "-1000px";
-      document.body.appendChild(ta);
-      ta.select();
-      ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-    } catch (_e2) {
-      ok = false;
-    }
-  }
+  const ok = await _writeToClipboard(taskId);
   try {
     if (typeof showStatus === "function" && typeof t === "function") {
-      if (ok) {
-        showStatus(t("status.copied"), "success");
-      } else {
-        showStatus(t("status.copyFailed"), "error");
-      }
+      showStatus(
+        ok ? t("status.copied") : t("status.copyFailed"),
+        ok ? "success" : "error",
+      );
     }
-  } catch (_e3) {
-    // showStatus / t 不可用时不报错；helper 主体已成功
+  } catch (_e) {
+    // showStatus / t 不可用时不报错
   }
   return ok;
 }
+
+/**
+ * mining-cycle-2 §3.2 — 把 task deep-link URL 复制到剪贴板。
+ *
+ * 使用场景：与同事 IM 分享某个 task；切到另一个浏览器 / 设备打开同一
+ * task 继续看 feedback。
+ *
+ * @param {string} taskId 完整 task_id
+ * @returns {Promise<boolean>} 成功与否
+ */
+async function copyTaskLinkToClipboard(taskId) {
+  const url = buildTaskDeepLink(taskId);
+  if (!url) {
+    try {
+      if (typeof showStatus === "function" && typeof t === "function") {
+        showStatus(t("status.copyFailed"), "error");
+      }
+    } catch (_e) {
+      // ignore
+    }
+    return false;
+  }
+  const ok = await _writeToClipboard(url);
+  try {
+    if (typeof showStatus === "function" && typeof t === "function") {
+      showStatus(
+        ok ? t("status.copied") : t("status.copyFailed"),
+        ok ? "success" : "error",
+      );
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return ok;
+}
+
 // 暴露给测试 / 外部调用
 if (typeof window !== "undefined") {
   window.copyTaskIdToClipboard = copyTaskIdToClipboard;
+  window.copyTaskLinkToClipboard = copyTaskLinkToClipboard;
+  window.buildTaskDeepLink = buildTaskDeepLink;
 }
 
 // ==================== marked.js 安全配置 ====================
@@ -2011,15 +2088,21 @@ function createTaskTab(task) {
 
   textSpan.textContent = displayName;
   textSpan.title = task.task_id; // 悬停显示完整ID
-  // mining-cycle-2 §3.4: dblclick on task tab text → copy full task_id.
-  // why dblclick：单击保留给 "切换任务"（现有交互），双击解决"复制完整 ID
-  // 来粘贴到日志 / 链接 / SSE event 查询"的高频小痛点。
+  // mining-cycle-2 §3.4: dblclick → 复制完整 task_id.
+  // mining-cycle-2 §3.2: Shift+dblclick → 复制 task deep-link URL.
+  // why dblclick：单击保留给 "切换任务"（现有交互）；shift modifier
+  // 是通用 "alternate variant" idiom（IDE 中 shift-click 多选、文本编辑
+  // shift-arrow 扩选区等）。
   textSpan.style.cursor = "pointer";
   textSpan.setAttribute("data-copyable-task-id", task.task_id);
   textSpan.addEventListener("dblclick", function (e) {
     e.preventDefault();
     e.stopPropagation();
-    copyTaskIdToClipboard(task.task_id);
+    if (e.shiftKey) {
+      copyTaskLinkToClipboard(task.task_id);
+    } else {
+      copyTaskIdToClipboard(task.task_id);
+    }
   });
 
   // 先添加文本（左边）
