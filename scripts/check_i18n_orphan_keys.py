@@ -59,7 +59,11 @@ DATA_I18N_RE = re.compile(
 # orphans and producing false positives in the strict gate. Must stay
 # in sync with ``tests/test_runtime_behavior.py::_JS_T_CALL_RE``.
 JS_T_CALL_RE = re.compile(
-    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
+    # cr40 cycle health-fix #3：加 ``AIIA_I18N.t(...)`` 命名空间识别
+    # ——同 ``tests/test_runtime_behavior.py::_JS_T_CALL_RE`` 同步更新。
+    # multi_task.js 用 ``window.AIIA_I18N.t("page.taskTabCopyHint")``
+    # 调用 i18n，原正则因 ``(?<![.\w])`` 排除 dot-access 而漏识别。
+    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
 )
 
 # 源码注释剥离：与 ``check_i18n_param_signatures.py::_strip_source_comments``
@@ -193,6 +197,21 @@ def scan() -> dict[str, dict]:
           'vscode': { 'orphans': [...], 'total_keys': N, 'used_keys': M },
         }
     """
+    # cr40 cycle health-fix #3 — dynamic-key 豁免集合。同步 tests/
+    # test_runtime_behavior.py::TestI18nDeadKeys._PRE_RESERVED_KEYS。
+    # 这些 keys 在代码里以 ``let msgKey = "..."``变量赋值方式构造，
+    # 后面 ``t(msgKey)`` 才用 — 正则无法 trace dynamic key。
+    _WEB_RESERVED_DYNAMIC: set[str] = {
+        "settings.customSound.errors.generic",
+        "settings.customSound.errors.invalidMime",
+        "settings.customSound.errors.tooLarge",
+        "settings.customSound.errors.readFailed",
+        "settings.customSound.errors.storageFailed",
+        "settings.customSound.errors.decodeFailed",
+        "settings.customSound.errors.durationTooLong",
+        "settings.customSound.uploaded",
+    }
+
     report: dict[str, dict] = {}
 
     web_used = _collect_web_used()
@@ -200,7 +219,7 @@ def scan() -> dict[str, dict]:
     if web_en.is_file():
         web_total = _flatten_keys(_load_json(web_en))
         report["web"] = {
-            "orphans": sorted(web_total - web_used),
+            "orphans": sorted(web_total - web_used - _WEB_RESERVED_DYNAMIC),
             "total_keys": len(web_total),
             "used_keys": len(web_used),
         }

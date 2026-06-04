@@ -126,7 +126,13 @@ _JS_T_CALL_RE = re.compile(
     # 切成多行后第一参数前会带 ``\n      `` 缩进，旧正则 silent miss → 4 个
     # 真在用的 key 被误判 dead；锁在 R18.3。必须与
     # ``scripts/check_i18n_orphan_keys.py::JS_T_CALL_RE`` 同步。
-    r"""(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
+    #
+    # cr40 cycle health-fix #3：新增 ``AIIA_I18N.t(...)`` 命名空间调用
+    # 识别 — 多任务模块 ``multi_task.js`` 用 ``window.AIIA_I18N.t("...")``
+    # 调用 i18n，原正则因 ``(?<![.\w])`` 排除 dot-access 而漏识别，导致
+    # ``page.taskTabCopyHint`` 等被误判 dead。新增 ``|AIIA_I18N\.t``
+    # 旁支允许该 namespace。同步到 scripts/check_i18n_orphan_keys.py。
+    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
 )
 
 
@@ -739,7 +745,23 @@ class TestI18nDeadKeys(unittest.TestCase):
     # 标记为 vscode 已消费），双端皆已消费 → 反向闸门移除豁免，普通 dead-key
     # 检查接管。如果未来又新增"短期单端豁免"，再按 T1 v3 §4 的 dict[str, frozenset[str]]
     # 形态填回；空字典 + skipTest 是常态。
-    _PRE_RESERVED_KEYS: dict[str, frozenset[str]] = {}
+    #
+    # cr40 cycle health-fix #3：customSound.errors.* 系列 keys 用
+    # **dynamic-key 模式** 由 ``settings-manager.js`` 通过 ``let msgKey =
+    # "..."`` 变量赋值后用 ``t(msgKey)`` 调用，正则无法 trace 到字面 key。
+    # 全部 7 个 keys 加入 reserved set，避免 dead-key check 误报。
+    _PRE_RESERVED_KEYS: dict[str, frozenset[str]] = {
+        "settings.customSound.errors.generic": frozenset({"web"}),
+        "settings.customSound.errors.invalidMime": frozenset({"web"}),
+        "settings.customSound.errors.tooLarge": frozenset({"web"}),
+        "settings.customSound.errors.readFailed": frozenset({"web"}),
+        "settings.customSound.errors.storageFailed": frozenset({"web"}),
+        "settings.customSound.errors.decodeFailed": frozenset({"web"}),
+        "settings.customSound.errors.durationTooLong": frozenset({"web"}),
+        # cr40 cycle health-fix #3 — ``settings.customSound.uploaded`` 是
+        # 上传成功提示，通过 i18n setter 路径触发；同 dynamic 模式。
+        "settings.customSound.uploaded": frozenset({"web"}),
+    }
 
     @classmethod
     def _pre_reserved_key_set(cls) -> set[str]:

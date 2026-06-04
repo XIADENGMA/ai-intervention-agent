@@ -31,6 +31,10 @@ WRITE_METHOD_LABEL_MAP = {
     "remove_task": "remove_task",
     "clear_completed_tasks": "clear_completed_tasks",
     "cleanup_completed_tasks": "cleanup_completed_tasks",
+    # cr32 §3.1 fix [medium] — mining-1 §3.2 +60s extend race-safety
+    # facade。原 race-prone implementation 改为 ``_watched_write_lock``
+    # 包装，label 加入 expected set 锁住 invariant。
+    "extend_task_deadline": "extend_task_deadline",
 }
 
 

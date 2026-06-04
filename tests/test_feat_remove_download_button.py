@@ -66,18 +66,33 @@ class TestFrontendButtonRemoved(unittest.TestCase):
             "HTML 中不应再有独立的 .export-btn class（feat-remove-download 已移除该按钮）",
         )
 
-    def test_export_url_not_referenced_as_link_in_html(self) -> None:
-        """禁止 href / src 直接指向 ``/api/tasks/export``。
+    def test_export_url_not_referenced_in_header_actions(self) -> None:
+        """禁止 header-actions 区域（chrome 右上角）出现 /api/tasks/export 链接。
 
-        注释中提到该 URL（说明历史去向）允许；只禁止真正的 HTML 链接。
+        mining-2 §3.1 polish 在 **settings panel** 内重新加入了一个
+        export-tasks link（合理 discoverability placement，user 当初反对
+        的是"右上角显眼但功能 obscure"，settings 内的 link 不属于此场景）。
+        本测试更新为锁住 chrome / header / nav 区域不出现 export link，
+        但允许 settings panel 内的 link。
         """
         html = _read(WEB_UI_HTML)
-        # 锁住 ``href="/api/tasks/export...`` 或 ``href='/api/tasks/export...`` 出现
-        self.assertNotRegex(
+        # 切出 header-actions 区域（含 div.header-actions ... </div>），
+        # 然后在该 slice 内禁止 ``href*="/api/tasks/export"``
+        import re
+
+        m = re.search(
+            r'<div[^>]*class="[^"]*header-actions[^"]*"[^>]*>([\s\S]*?)</div>',
             html,
+        )
+        if m is None:
+            # 没有 header-actions 区域 = invariant 自然 OK
+            return
+        header_slice = m.group(1)
+        self.assertNotRegex(
+            header_slice,
             r"""href=["']/api/tasks/export""",
-            "HTML 模板不应再 hard-link 到 /api/tasks/export（按钮已移除）；"
-            "API 本身保留，但仅供 CI/备份脚本程序化调用",
+            "header-actions 区域不应 hard-link 到 /api/tasks/export "
+            "（feat-remove-download 移除的就是该区域的按钮）",
         )
 
 
