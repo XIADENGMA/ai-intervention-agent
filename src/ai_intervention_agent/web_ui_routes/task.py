@@ -24,6 +24,7 @@ from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.sse_event_schemas import validate_payload
 
 # R20.8: 直接 import task_queue_singleton 避免拖入 fastmcp/mcp（详见模块注释）。
+from ai_intervention_agent.task_queue import PLACEHOLDER_MAX_LENGTH
 from ai_intervention_agent.task_queue_singleton import get_task_queue
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
@@ -1631,13 +1632,8 @@ class TaskRoutesMixin:
 
             if success:
                 logger.info(f"任务已通过API添加到队列: {task_id}")
-                # cr36 §8 #2 + cr37 §8 #1 — 用 ``PLACEHOLDER_MAX_LENGTH``
-                # 而非 inline literal 200，避免与 ``task_queue.add_task``
-                # 内 clamp 值 drift。
-                from ai_intervention_agent.task_queue import (
-                    PLACEHOLDER_MAX_LENGTH,
-                )
-
+                # cr36 §8 #2 + cr37 §8 #1 + cr38 §8 #1 — ``PLACEHOLDER_MAX_LENGTH``
+                # 现在 module-level import（见文件顶端），消除 inline import。
                 resp: dict[str, object] = {"success": True, "task_id": task_id}
                 if (
                     isinstance(feedback_placeholder, str)
