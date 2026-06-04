@@ -49,6 +49,40 @@ function isMobileDevice() {
 
 const DEFAULT_NOTIFICATION_SOUND_URL = '/sounds/deng.wav'
 
+// ============================================================================
+// feat-custom-sound (mining-cycle-1 §3.4) — 自定义通知音效
+// ============================================================================
+//
+// 存储模型：单一 localStorage key 持久化用户上传的 1 个自定义音效。
+// 选择 "single slot" 而不是 multi-slot 的理由：
+//   - 5MB localStorage 配额；单个音效 base64 后 ~1.3x 实际字节，给单个
+//     ~700KB 的 ogg/mp3 留充足余量
+//   - 多 slot 引入命名 / 管理 UI 复杂度，竞品 mcp-feedback-enhanced 也
+//     只支持单个 custom slot
+//
+// MIME 白名单：浏览器 ``decodeAudioData`` 真正能解的格式
+//   - audio/mpeg (mp3)
+//   - audio/wav / audio/wave / audio/x-wav (wav)
+//   - audio/ogg (ogg vorbis / opus)
+//   - audio/webm (webm)
+//   - audio/aac (aac)
+//   - audio/mp4 (m4a)
+//   - audio/flac
+// 其它 MIME 一律拒绝，避免用户上传 .midi / .au / 视频被假冒为音频。
+const CUSTOM_SOUND_LS_KEY = 'aiia.notif.customSound.v1'
+const CUSTOM_SOUND_MAX_BYTES = 700 * 1024 // 700KB，base64 ~ 933KB，留 4MB+ 余量
+const CUSTOM_SOUND_ALLOWED_MIMES = [
+  'audio/mpeg',
+  'audio/wav',
+  'audio/wave',
+  'audio/x-wav',
+  'audio/ogg',
+  'audio/webm',
+  'audio/aac',
+  'audio/mp4',
+  'audio/flac'
+]
+
 // 通知管理系统
 class NotificationManager {
   constructor() {
@@ -308,12 +342,182 @@ class NotificationManager {
         this._synthBuffer = this._createSynthNotificationBuffer()
       }
 
+      // feat-custom-sound (§3.4): 如果用户之前上传过自定义音效，
+      // 同步 decode 它到 audioBuffers['custom']。这样 ``playSound()``
+      // (无参) 会自动 dispatch 到 'custom'（如果 hasCustomSound() 为 true）。
+      // 失败时静默：用户上传时如果文件就是坏的，错误已经在上传时报过；
+      // init 阶段不应该 spam 用户控制台。
+      await this.loadCustomSoundFromStorage()
+
       console.debug('Audio system initialized')
     } catch (error) {
       console.warn('Audio system initialization failed:', error)
       // 降级：禁用音频功能
       this.config.soundEnabled = false
     }
+  }
+
+  // ==========================================================================
+  // feat-custom-sound (§3.4): 自定义音效上传 / 加载 / 清理
+  // ==========================================================================
+
+  /**
+   * 检查 localStorage 是否有用户上传的自定义音效（不解码，只看 key 存在）。
+   * 用于 playSound() 路由决策 + Settings UI 显示状态。
+   * @returns {boolean}
+   */
+  hasCustomSound() {
+    try {
+      const raw = localStorage.getItem(CUSTOM_SOUND_LS_KEY)
+      return Boolean(raw)
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * 读取用户当前上传的自定义音效元数据（不返回 dataUri 主体）。
+   * @returns {{name: string, mime: string, size: number}|null}
+   */
+  getCustomSoundMeta() {
+    try {
+      const raw = localStorage.getItem(CUSTOM_SOUND_LS_KEY)
+      if (!raw) return null
+      const obj = JSON.parse(raw)
+      if (!obj || typeof obj !== 'object') return null
+      return {
+        name: String(obj.name || 'custom'),
+        mime: String(obj.mime || ''),
+        size: Number(obj.size || 0)
+      }
+    } catch (e) {
+      return null
+    }
+  }
+
+  /**
+   * 从 localStorage 取自定义音效 dataUri，fetch + decode 到 audioBuffers['custom']。
+   * @returns {Promise<boolean>} true=加载成功
+   */
+  async loadCustomSoundFromStorage() {
+    if (!this.audioContext) return false
+    let raw
+    try {
+      raw = localStorage.getItem(CUSTOM_SOUND_LS_KEY)
+    } catch (e) {
+      // localStorage 可能在 Safari 隐私模式 / quota exceeded 时抛
+      return false
+    }
+    if (!raw) {
+      // 没有自定义音效；确保 audioBuffers 里也没有 stale 'custom' buffer
+      this.audioBuffers.delete('custom')
+      return false
+    }
+    let obj
+    try {
+      obj = JSON.parse(raw)
+    } catch (e) {
+      console.warn('Custom sound localStorage entry not valid JSON; clearing')
+      this.clearCustomSound()
+      return false
+    }
+    if (!obj || typeof obj.dataUri !== 'string') {
+      this.clearCustomSound()
+      return false
+    }
+    try {
+      const response = await fetch(obj.dataUri)
+      const arrayBuffer = await response.arrayBuffer()
+      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer)
+      this.audioBuffers.set('custom', audioBuffer)
+      console.debug(`Custom sound loaded: ${obj.name || '(unnamed)'}`)
+      return true
+    } catch (error) {
+      // decode 失败：把 stale entry 也清掉，避免每次启动都 retry 同一个坏文件。
+      console.warn('Custom sound decode failed:', error)
+      this.audioBuffers.delete('custom')
+      return false
+    }
+  }
+
+  /**
+   * 用户上传自定义音效。
+   *
+   * 副作用：
+   *   - 校验 MIME / size；失败时返回 {success: false, error}
+   *   - 成功时写 localStorage + 触发 loadCustomSoundFromStorage 让新音效立即可用
+   *
+   * @param {File} file 来自 ``<input type="file" accept="audio/*">``
+   * @returns {Promise<{success: boolean, error?: string, meta?: object}>}
+   *   error code ∈ {'no_file', 'invalid_mime', 'too_large', 'read_failed',
+   *                  'storage_failed'}
+   */
+  async saveCustomSoundFromFile(file) {
+    if (!file || typeof file !== 'object') {
+      return { success: false, error: 'no_file' }
+    }
+    const mime = String(file.type || '').toLowerCase()
+    if (!CUSTOM_SOUND_ALLOWED_MIMES.includes(mime)) {
+      return { success: false, error: 'invalid_mime', mime }
+    }
+    if (typeof file.size !== 'number' || file.size > CUSTOM_SOUND_MAX_BYTES) {
+      return {
+        success: false,
+        error: 'too_large',
+        size: file.size,
+        maxBytes: CUSTOM_SOUND_MAX_BYTES
+      }
+    }
+    // 读 dataURI（include base64 prefix），用 FileReader 而不是 arrayBuffer
+    // 因为 localStorage 只能存字符串，base64 是最方便的 round-trip 编码。
+    const dataUri = await new Promise((resolve, reject) => {
+      try {
+        const fr = new FileReader()
+        fr.onload = () => resolve(String(fr.result || ''))
+        fr.onerror = () => reject(fr.error || new Error('FileReader error'))
+        fr.readAsDataURL(file)
+      } catch (e) {
+        reject(e)
+      }
+    }).catch(() => null)
+    if (!dataUri || !dataUri.startsWith('data:')) {
+      return { success: false, error: 'read_failed' }
+    }
+    const meta = {
+      name: String(file.name || 'custom'),
+      mime,
+      size: Number(file.size || 0),
+      uploadedAt: Date.now()
+    }
+    try {
+      localStorage.setItem(
+        CUSTOM_SOUND_LS_KEY,
+        JSON.stringify({ ...meta, dataUri })
+      )
+    } catch (e) {
+      // localStorage quota exceeded / 隐私模式 / disabled cookies
+      return { success: false, error: 'storage_failed', detail: e.message }
+    }
+    const decoded = await this.loadCustomSoundFromStorage()
+    if (!decoded) {
+      // decode 失败：清掉 localStorage entry，告诉用户文件本身有问题
+      this.clearCustomSound()
+      return { success: false, error: 'decode_failed', meta }
+    }
+    return { success: true, meta }
+  }
+
+  /**
+   * 清除自定义音效（localStorage + audioBuffers）。
+   * 设置 reset / Clear 按钮使用。
+   */
+  clearCustomSound() {
+    try {
+      localStorage.removeItem(CUSTOM_SOUND_LS_KEY)
+    } catch (e) {
+      // 忽略：清不掉就清不掉
+    }
+    this.audioBuffers.delete('custom')
   }
 
   async loadAudioFile(name, url) {
@@ -490,10 +694,18 @@ class NotificationManager {
     }
   }
 
-  async playSound(soundName = 'default', volume = null, retryCount = 0) {
+  async playSound(soundName = null, volume = null, retryCount = 0) {
     if (!this.config.enabled || !this.config.soundEnabled || this.config.soundMute) {
       console.debug('Sound notifications disabled')
       return false
+    }
+
+    // feat-custom-sound (§3.4): 默认 dispatch —— 如果用户上传了 custom
+    // 音效，没有显式指定 soundName 时优先 'custom'；否则 fallback 'default'。
+    // 既保留显式 ``playSound('default')`` 的语义（默认音效测试按钮用），
+    // 又让常规通知路径自动 honor 用户偏好。
+    if (soundName === null || soundName === undefined) {
+      soundName = this.audioBuffers.has('custom') ? 'custom' : 'default'
     }
 
     if (!this.audioContext) {

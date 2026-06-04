@@ -253,6 +253,15 @@ class SettingsManager {
     this.saveSettings();
     this.updateUI();
     this.applySettings();
+    // feat-custom-sound (§3.4): reset 也要清掉自定义音效 localStorage entry
+    // + audioBuffers['custom']，否则 "重置到默认" 的语义就有窟窿（用户期望
+    // reset = "完全回到出厂默认"）。
+    try {
+      notificationManager.clearCustomSound();
+      this._wireCustomSoundControls(); // 刷新 status / disabled 状态
+    } catch (_e) {
+      // 静默：reset 主路径已经完成，custom sound 清理失败不应 gate UX
+    }
     console.debug("Settings reset to defaults");
   }
 
@@ -606,6 +615,89 @@ class SettingsManager {
     window.addEventListener("notification-permission-changed", () => {
       this.updateStatus();
     });
+
+    // feat-custom-sound (§3.4): 自定义通知音效上传/测试/清除
+    this._wireCustomSoundControls();
+  }
+
+  /**
+   * feat-custom-sound (§3.4): 把自定义音效相关的 3 个 control 接到
+   * notificationManager 的对应方法上。
+   *
+   * 行为：
+   *   - file picker: ``change`` → saveCustomSoundFromFile → 刷新 status
+   *   - test 按钮: ``click`` → playSound('custom') 显式（无 fallback）
+   *   - clear 按钮: ``click`` → clearCustomSound → 刷新 status
+   *
+   * 错误处理：MIME/size/decode 失败以 i18n 翻译过的字符串显示在 status 行；
+   * 不弹 alert，不写 toast — 用户已经在看着 settings 面板，inline status
+   * 反馈足够。
+   */
+  _wireCustomSoundControls() {
+    const fileInput = document.getElementById("custom-sound-input");
+    const testBtn = document.getElementById("custom-sound-test");
+    const clearBtn = document.getElementById("custom-sound-clear");
+    const statusEl = document.getElementById("custom-sound-status");
+    if (!fileInput || !testBtn || !clearBtn || !statusEl) return;
+
+    const t =
+      typeof window !== "undefined" && window.AIIA_I18N && typeof window.AIIA_I18N.t === "function"
+        ? window.AIIA_I18N.t
+        : (k) => k;
+
+    const refresh = () => {
+      const meta = notificationManager.getCustomSoundMeta();
+      if (meta) {
+        const kb = Math.round((meta.size || 0) / 1024);
+        statusEl.textContent = `${meta.name} (${kb} KB)`;
+        statusEl.setAttribute("data-status", "uploaded");
+        testBtn.disabled = false;
+        clearBtn.disabled = false;
+      } else {
+        statusEl.textContent = t("settings.customSound.notUploaded");
+        statusEl.setAttribute("data-status", "empty");
+        testBtn.disabled = true;
+        clearBtn.disabled = true;
+      }
+    };
+
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const result = await notificationManager.saveCustomSoundFromFile(file);
+      if (result.success) {
+        refresh();
+        // 立即播放一次让用户听到效果（同时也确认 decode 真的 OK）
+        try {
+          await notificationManager.playSound("custom");
+        } catch (_e) {
+          // 静默：上传成功 + decode 成功就够了，自动 play 失败不算 error
+        }
+      } else {
+        const code = String(result.error || "unknown");
+        let msgKey = "settings.customSound.errors.generic";
+        if (code === "invalid_mime") msgKey = "settings.customSound.errors.invalidMime";
+        else if (code === "too_large") msgKey = "settings.customSound.errors.tooLarge";
+        else if (code === "read_failed") msgKey = "settings.customSound.errors.readFailed";
+        else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
+        else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
+        statusEl.textContent = t(msgKey);
+        statusEl.setAttribute("data-status", "error");
+      }
+      // reset input so re-selecting the same file re-triggers ``change``
+      e.target.value = "";
+    });
+
+    testBtn.addEventListener("click", () => {
+      notificationManager.playSound("custom").catch(() => {});
+    });
+
+    clearBtn.addEventListener("click", () => {
+      notificationManager.clearCustomSound();
+      refresh();
+    });
+
+    refresh();
   }
 
   // ==================== 配置文件路径：用 IDE 打开按钮（TODO #4） ====================

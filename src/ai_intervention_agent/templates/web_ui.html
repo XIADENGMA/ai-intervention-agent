@@ -1200,6 +1200,69 @@
                     <span class="volume-value">80%</span>
                   </label>
                 </div>
+                <!--
+                  feat-custom-sound (mining-cycle-1 §3.4): 用户上传自定义
+                  通知音效（localStorage backed, 单 slot, MIME 白名单, ≤700KB）。
+                  - 上传后立即写 localStorage + decode 到 audioBuffers['custom']
+                  - playSound() 无参时自动 dispatch 到 'custom' (如果有 buffer)
+                  - Test/Clear/Default 三按钮覆盖完整生命周期
+                  详见 src/.../static/js/notification-manager.js::saveCustomSoundFromFile
+                -->
+                <div class="setting-item custom-sound-row">
+                  <div class="setting-label">
+                    <span
+                      class="setting-title"
+                      data-i18n="settings.customSound.label"
+                      >Custom notification sound</span
+                    >
+                    <span
+                      id="custom-sound-status"
+                      class="custom-sound-status"
+                      data-i18n="settings.customSound.notUploaded"
+                      data-status="empty"
+                      >No custom sound uploaded</span
+                    >
+                  </div>
+                  <div class="custom-sound-controls">
+                    <label
+                      class="upload-btn-label"
+                      for="custom-sound-input"
+                      data-i18n="settings.customSound.upload"
+                      data-i18n-title="settings.customSound.uploadTitle"
+                      title="Upload an audio file (≤ 700 KB, mp3/wav/ogg/m4a/flac)"
+                      >Upload audio</label
+                    >
+                    <input
+                      type="file"
+                      id="custom-sound-input"
+                      accept="audio/*"
+                      class="custom-sound-input"
+                      aria-describedby="custom-sound-status"
+                    />
+                    <button
+                      type="button"
+                      id="custom-sound-test"
+                      class="custom-sound-btn"
+                      data-i18n="settings.customSound.test"
+                      data-i18n-aria-label="settings.customSound.test"
+                      aria-label="Test custom sound"
+                      disabled
+                    >
+                      Test
+                    </button>
+                    <button
+                      type="button"
+                      id="custom-sound-clear"
+                      class="custom-sound-btn custom-sound-btn-danger"
+                      data-i18n="settings.customSound.clear"
+                      data-i18n-aria-label="settings.customSound.clear"
+                      aria-label="Remove custom sound"
+                      disabled
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <!-- 移动设备通知设置 -->

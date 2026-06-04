@@ -2518,6 +2518,101 @@ h1 {
  *   - outline: none（移除焦点outline）
  *   - 过渡动画：all 0.3s ease
  */
+
+/* ============================================================================
+ * feat-custom-sound (mining-cycle-1 §3.4) — 自定义通知音效上传区
+ * ============================================================================
+ *
+ * 设计原则：
+ *   - 跟通知设置 section 其它 row 视觉对齐（同 padding / gap / typography）
+ *   - 危险按钮（Remove）走 ``btn-danger`` style 让 user 一眼分清楚
+ *   - 隐藏 native ``<input type=file>``，用 ``<label for>`` 当 trigger，
+ *     既能 keyboard navigate 又能自由设计外观
+ *   - status 文字根据 data-status 切色：empty(默认灰) / uploaded(主题色) /
+ *     error(警告红)
+ */
+.custom-sound-row {
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 8px;
+}
+.custom-sound-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.custom-sound-status[data-status="uploaded"] {
+  color: var(--text-primary);
+  font-style: normal;
+  font-weight: 500;
+}
+.custom-sound-status[data-status="error"] {
+  color: #c33d3d;
+  font-style: normal;
+}
+.custom-sound-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.custom-sound-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.upload-btn-label,
+.custom-sound-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  /* 主色走项目 design token ``--primary-500`` (紫色), 不写 hex fallback
+     以遵守 R66 品牌色硬编码护栏 + 自动响应 light/dark 主题切换。 */
+  background: var(--primary-500);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.05s ease;
+  text-decoration: none;
+  user-select: none;
+}
+.upload-btn-label:hover,
+.custom-sound-btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+.upload-btn-label:active,
+.custom-sound-btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+.upload-btn-label:focus-visible,
+.custom-sound-btn:focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+}
+.custom-sound-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.custom-sound-btn-danger {
+  background: #c33d3d;
+}
+@media (prefers-reduced-motion: reduce) {
+  .upload-btn-label,
+  .custom-sound-btn {
+    transition: none;
+  }
+}
+
 .volume-slider {
   flex: 1; /* 占据剩余空间 */
   margin: 0 1rem; /* 左右外边距 */

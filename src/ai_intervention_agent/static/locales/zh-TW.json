@@ -114,6 +114,23 @@
     "soundNotify": "聲音通知",
     "muteMode": "靜音模式",
     "volumeControl": "音量調節",
+    "customSound": {
+      "label": "自訂通知音效",
+      "upload": "上傳音訊",
+      "uploadTitle": "上傳音訊檔案（≤ 700 KB，支援 mp3/wav/ogg/m4a/flac）",
+      "test": "試聽",
+      "clear": "移除",
+      "uploaded": "自訂音效已啟用",
+      "notUploaded": "未上傳自訂音效",
+      "errors": {
+        "generic": "音訊上傳失敗，請换一個檔案再試。",
+        "invalidMime": "不支援的音訊格式。請使用 mp3、wav、ogg、m4a 或 flac。",
+        "tooLarge": "音訊檔案过大（最大 700 KB）。",
+        "readFailed": "音訊檔案讀取失敗，請重試。",
+        "storageFailed": "瀏覽器儲存空間無法使用或已满，無法儲存音訊。",
+        "decodeFailed": "無法解码此音訊檔案。"
+      }
+    },
     "mobileOptimize": "行動裝置优化",
     "vibration": "震動提醒",
     "enableBark": "啟用 Bark 通知",

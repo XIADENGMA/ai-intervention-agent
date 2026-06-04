@@ -109,6 +109,23 @@
     "soundNotify": "Sound notification",
     "muteMode": "Mute mode",
     "volumeControl": "Volume control",
+    "customSound": {
+      "label": "Custom notification sound",
+      "upload": "Upload audio",
+      "uploadTitle": "Upload an audio file (≤ 700 KB, mp3/wav/ogg/m4a/flac)",
+      "test": "Test",
+      "clear": "Remove",
+      "uploaded": "Custom sound active",
+      "notUploaded": "No custom sound uploaded",
+      "errors": {
+        "generic": "Failed to upload audio. Please try a different file.",
+        "invalidMime": "Unsupported audio format. Use mp3, wav, ogg, m4a, or flac.",
+        "tooLarge": "Audio file too large (max 700 KB).",
+        "readFailed": "Failed to read audio file. Please try again.",
+        "storageFailed": "Browser storage full or disabled; cannot save audio.",
+        "decodeFailed": "Could not decode this audio file."
+      }
+    },
     "mobileOptimize": "Mobile device optimization",
     "vibration": "Vibration alert",
     "enableBark": "Enable Bark notification",
