@@ -132,6 +132,13 @@
         "durationTooLong": "音訊時長过長（最大 30 秒）。"
       }
     },
+    "exportTasks": {
+      "label": "匯出任務歷史",
+      "formatLabel": "匯出格式",
+      "json": "JSON",
+      "markdown": "Markdown",
+      "download": "下載"
+    },
     "mobileOptimize": "行動裝置优化",
     "vibration": "震動提醒",
     "enableBark": "啟用 Bark 通知",

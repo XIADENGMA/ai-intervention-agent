@@ -127,6 +127,13 @@
         "durationTooLong": "Audio is too long (max 30 seconds)."
       }
     },
+    "exportTasks": {
+      "label": "Export task history",
+      "formatLabel": "Export format",
+      "json": "JSON",
+      "markdown": "Markdown",
+      "download": "Download"
+    },
     "mobileOptimize": "Mobile device optimization",
     "vibration": "Vibration alert",
     "enableBark": "Enable Bark notification",

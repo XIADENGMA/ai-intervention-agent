@@ -618,6 +618,35 @@ class SettingsManager {
 
     // feat-custom-sound (§3.4): 自定义通知音效上传/测试/清除
     this._wireCustomSoundControls();
+
+    // mining-2 §3.1 (cycle-3 polish): Settings UI 触发 GET /api/tasks/export
+    // 后端 endpoint 早 ship (R125 / R125c / R135)；这里只补 UI 入口。
+    this._wireExportTasksControls();
+  }
+
+  /**
+   * mining-2 §3.1 cycle-3 polish — 把 export-tasks-format select 的值
+   * 同步到 export-tasks-link 的 href，让 ``<a download>`` 浏览器原生
+   * 下载触发器拿到正确的 ?format= query。
+   *
+   * 不引入任何 JS-driven fetch：依然走浏览器 anchor 下载，让用户能
+   * 获得标准 progress bar / 大文件 streaming / 文件保存对话框等浏
+   * 览器原生体验。
+   */
+  _wireExportTasksControls() {
+    const select = document.getElementById("export-tasks-format");
+    const link = document.getElementById("export-tasks-link");
+    if (!select || !link) return;
+    const sync = () => {
+      const fmt = String(select.value || "json").toLowerCase();
+      const safe = fmt === "markdown" ? "markdown" : "json";
+      link.setAttribute(
+        "href",
+        "/api/tasks/export?format=" + encodeURIComponent(safe),
+      );
+    };
+    select.addEventListener("change", sync);
+    sync();
   }
 
   /**

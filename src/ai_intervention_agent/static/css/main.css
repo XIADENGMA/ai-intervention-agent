@@ -6989,6 +6989,27 @@ code,
   box-shadow: none;
   transition: all 0.2s;
 }
+/* mining-2 §3.1 cycle-3 polish — Export task history row in
+ * settings panel. 触发 GET /api/tasks/export?format=...
+ * 走原生 <a download>，不引入 JS-driven fetch。 */
+.export-tasks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.export-tasks-label {
+  flex: 1 1 auto;
+  min-width: 140px;
+}
+.export-tasks-format {
+  flex: 0 0 auto;
+  min-width: 100px;
+}
+.export-tasks-btn {
+  flex: 0 0 auto;
+}
+
 /* cr34 §8 #1 fix — task tab dblclick/Shift+dblclick 复制后 600ms
  * 视觉反馈。``copy-flash-ok`` / ``copy-flash-err`` 由 multi_task.js 的
  * ``_flashCopyOnSourceElement`` 临时添加。

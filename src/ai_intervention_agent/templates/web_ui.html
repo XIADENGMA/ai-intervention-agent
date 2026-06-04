@@ -1635,6 +1635,42 @@
                     <span data-i18n="settings.resetBtn">Reset settings</span>
                   </button>
                 </div>
+                <!-- mining-2 §3.1 cycle-3 polish — Export task history UI.
+                     Backend endpoint /api/tasks/export 早已 ship (R125 / R125c /
+                     R135)；这里只补一个 settings 入口让用户可发现。 -->
+                <div class="setting-item export-tasks-row">
+                  <label
+                    for="export-tasks-format"
+                    class="export-tasks-label"
+                    data-i18n="settings.exportTasks.label"
+                    >Export task history</label
+                  >
+                  <select
+                    id="export-tasks-format"
+                    class="export-tasks-format"
+                    data-i18n-aria-label="settings.exportTasks.formatLabel"
+                  >
+                    <option value="json" data-i18n="settings.exportTasks.json">
+                      JSON
+                    </option>
+                    <option
+                      value="markdown"
+                      data-i18n="settings.exportTasks.markdown"
+                    >
+                      Markdown
+                    </option>
+                  </select>
+                  <a
+                    id="export-tasks-link"
+                    class="btn btn-secondary export-tasks-btn"
+                    href="/api/tasks/export?format=json"
+                    download
+                    rel="noopener"
+                    data-i18n="settings.exportTasks.download"
+                    data-i18n-aria-label="settings.exportTasks.download"
+                    >Download</a
+                  >
+                </div>
               </div>
             </div>
 

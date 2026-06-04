@@ -127,6 +127,13 @@
         "durationTooLong": "音频时长过长（最大 30 秒）。"
       }
     },
+    "exportTasks": {
+      "label": "导出任务历史",
+      "formatLabel": "导出格式",
+      "json": "JSON",
+      "markdown": "Markdown",
+      "download": "下载"
+    },
     "mobileOptimize": "移动设备优化",
     "vibration": "震动提醒",
     "enableBark": "启用 Bark 通知",
