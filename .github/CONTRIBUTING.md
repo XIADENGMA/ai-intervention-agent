@@ -59,6 +59,33 @@ Requirement: **0 warning · 0 error · all tests green**.
 > `scripts/ci_gate.py`.  See the _Makefile shortcuts_ table in
 > [`scripts/README.md`](../scripts/README.md) for the mapping.
 
+### 2.1 Pre-commit hooks — fix root cause, never `--no-verify`
+
+When a `git commit` is rejected by a pre-commit hook (build artifact
+freshness, lint, type-check, locale parity, brand-color guardrails,
+etc.), the **only** acceptable response is to **fix the underlying
+cause** and re-commit:
+
+- ❌ `git commit --no-verify -m "..."` — bypasses every hook, hides
+  real problems from review.
+- ❌ `SKIP=hook-id git commit -m "..."` — skips one hook, often masks
+  a real freshness drift.
+- ✅ Read the hook's error message → run the suggested regen script
+  (`scripts/minify_assets.py` / `scripts/precompress_static.py` /
+  `scripts/gen_pseudo_locale.py` / etc.) → `git add -A` → re-commit.
+- ✅ If you genuinely believe the hook is wrong, update the hook
+  itself or its config, **not** the commit that triggered it.
+
+The narrow exception is **rebase-in-progress** scenarios where you've
+already verified the artifacts manually; in those cases bypass needs
+explicit reviewer sign-off in the PR description.
+
+This rule was strengthened after cr33 cycle (`16dbc34` review),
+where a custom-sound CSS change initially hit the R66 brand-color
+guardrail. The right fix was to switch from `var(--color-primary,
+#007aff)` to the project's actual design token `--primary-500`,
+not to suppress the lint.
+
 ---
 
 ## 3. Commit style

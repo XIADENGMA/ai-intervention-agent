@@ -176,7 +176,14 @@ class TestExtendDeadlineRaceEliminated(unittest.TestCase):
         barrier = threading.Barrier(self.N_THREADS)
 
         def worker() -> None:
-            barrier.wait()  # 让所有线程尽可能同时进入 facade
+            # ``threading.Barrier(N).wait()`` 是这条 race 测试的**唯一**同步
+            # 原语：所有 N 个线程都到 barrier 后才一起放行，最大化让它们
+            # 同时进入 ``extend_task_deadline`` 的写锁竞争窗口。这比 ``time.
+            # sleep`` 之类的随机 sleep "race-amplifier" 更可靠，因为 sleep
+            # 在不同 CI runner 调度下会产生不同窗口宽度，反而可能掩盖 race。
+            # 如果未来 refactor 想去掉 Barrier 改用其他原语，请同步更新
+            # ``cr33.md §3.1`` 中关于本测试同步策略的描述。
+            barrier.wait()
             r = self.q.extend_task_deadline(
                 "t-race",
                 self.SECONDS_PER_EXTEND,

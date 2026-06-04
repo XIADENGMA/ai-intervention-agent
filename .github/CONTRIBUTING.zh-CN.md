@@ -55,6 +55,30 @@ node scripts/red_team_i18n_runtime.mjs
 > Makefile 仅是别名，源真理仍在 `scripts/ci_gate.py`；详见
 > [`scripts/README.md`](../scripts/README.md) 的 _Makefile shortcuts_ 表。
 
+### 2.1 pre-commit hooks — 永远修根因，禁用 `--no-verify`
+
+当 `git commit` 被 pre-commit hook 拒绝（如构建产物新鲜度、lint、
+type-check、locale 对齐、品牌色护栏等），**唯一**正确的回应是
+**修根因**后重新提交：
+
+- ❌ `git commit --no-verify -m "..."` — 跳过所有 hook，把真问题
+  藏起来不让 review 看到。
+- ❌ `SKIP=hook-id git commit -m "..."` — 单独跳一个 hook，往往
+  掩盖了真实的产物漂移。
+- ✅ 阅读 hook 的报错信息 → 运行它推荐的脚本（`scripts/
+  minify_assets.py` / `scripts/precompress_static.py` /
+  `scripts/gen_pseudo_locale.py` 等）→ `git add -A` → 重新提交。
+- ✅ 如果你确认 hook 本身错了，去改 hook 或者它的配置，**不要**
+  改触发它的那个 commit。
+
+唯一狭窄的例外：rebase 进行中、你已经手工验证过产物的场景，需要
+PR 描述里显式拿到 reviewer 的同意才能 bypass。
+
+本规则在 cr33 cycle (`16dbc34`) 之后被强化 —— 当时 custom-sound
+CSS 改动撞上了 R66 品牌色护栏，正确的修法是把 `var(--color-primary,
+#007aff)` 改成项目实际的 design token `--primary-500`，而不是
+压制 lint。
+
 ---
 
 ## 3. 提交风格
