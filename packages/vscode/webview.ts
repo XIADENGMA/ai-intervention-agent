@@ -1972,11 +1972,17 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 </label>
                 <label class="settings-field">
                     <span class="settings-label" data-i18n="settings.feedback.resubmitPrompt">${tl("settings.feedback.resubmitPrompt")}</span>
-                    <textarea id="feedbackResubmitPrompt" rows="2" maxlength="500" placeholder="${tl("settings.feedback.resubmitPromptPlaceholder")}" data-i18n-placeholder="settings.feedback.resubmitPromptPlaceholder"></textarea>
+                    <!-- maxlength 与 server_config.PROMPT_MAX_LENGTH (100_000) +
+                         web 端 templates/web_ui.html#feedback-resubmit-prompt 对齐 (BUG6-跨端).
+                         插件先前硬编码 500 让用户在 VSCode 设置面板里输入超过 500
+                         字符就被静默截断，导致后端实际接收的 resubmit_prompt 和
+                         配置文件持久化的内容长度不一致。 -->
+                    <textarea id="feedbackResubmitPrompt" rows="2" maxlength="100000" placeholder="${tl("settings.feedback.resubmitPromptPlaceholder")}" data-i18n-placeholder="settings.feedback.resubmitPromptPlaceholder"></textarea>
                 </label>
                 <label class="settings-field">
                     <span class="settings-label" data-i18n="settings.feedback.promptSuffix">${tl("settings.feedback.promptSuffix")}</span>
-                    <textarea id="feedbackPromptSuffix" rows="2" maxlength="500" placeholder="${tl("settings.feedback.promptSuffixPlaceholder")}" data-i18n-placeholder="settings.feedback.promptSuffixPlaceholder"></textarea>
+                    <!-- 同上：与 PROMPT_MAX_LENGTH = 100_000 对齐 -->
+                    <textarea id="feedbackPromptSuffix" rows="2" maxlength="100000" placeholder="${tl("settings.feedback.promptSuffixPlaceholder")}" data-i18n-placeholder="settings.feedback.promptSuffixPlaceholder"></textarea>
                 </label>
                 <div class="settings-divider"></div>
 
