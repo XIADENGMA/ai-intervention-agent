@@ -3064,62 +3064,53 @@ h1 {
   width: 100%; /* 占满容器宽度 */
 }
 
-/* 版本文本容器 */
-.version-text {
-  display: flex; /* Flexbox 布局 */
-  flex-direction: column; /* 垂直排列 */
-  align-items: center; /* 水平居中 */
-  gap: 0.25rem; /* 名称和版本号间距 */
-  text-align: center;
-}
-
-/* 项目名称 */
-.version-name {
-  font-size: 0.9rem;
-  color: rgba(255, 255, 255, 0.5); /* 半透明白色 */
-  font-weight: 500;
-}
-
-/* 版本号 */
-.version-number {
+/* ``.version-link`` —— feat-footer-link-web 合并后的单一链接按钮：
+   把原本「``AI Intervention Agent vX.Y.Z`` 文本 + 独立 GitHub 图标按钮」
+   合成一个可点击的胶囊。沿用原 ``.github-link`` 的视觉规格（圆角胶囊 +
+   半透明边框 + hover 加深），并接管原 ``.version-name`` / ``.version-number``
+   的语义角色。``.version-link-text`` 仅控制文字字号 / weight，避免污染整
+   段链接的 padding。 */
+.version-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.4); /* 更浅的半透明白色 */
-  font-family: "SF Mono", Monaco, Menlo, Consolas, monospace; /* 等宽字体 */
+  transition: all 0.2s ease;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* GitHub 链接按钮 */
-.github-link {
-  display: inline-flex; /* 内联 Flexbox */
-  align-items: center; /* 垂直居中 */
-  gap: 0.5rem; /* 图标和文字间距 */
-  padding: 0.5rem 1rem; /* 内边距 */
-  border-radius: 8px; /* 圆角 */
-  background: rgba(255, 255, 255, 0.05); /* 半透明背景 */
-  color: rgba(255, 255, 255, 0.6); /* 半透明文字 */
-  text-decoration: none; /* 移除下划线 */
-  font-size: 0.85rem;
-  transition: all 0.2s ease; /* 过渡动画 */
-  border: 1px solid rgba(255, 255, 255, 0.08); /* 边框 */
-}
-
-.github-link:hover {
-  background: rgba(255, 255, 255, 0.1); /* 悬停：加深背景 */
-  color: rgba(255, 255, 255, 0.9); /* 悬停：提亮文字 */
+.version-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
   border-color: rgba(255, 255, 255, 0.15);
   text-decoration: none;
 }
 
-.github-link:focus,
-.github-link:active {
-  text-decoration: none;
-  outline: none;
+.version-link:focus-visible {
+  outline: 2px solid var(--accent-500, rgba(139, 92, 246, 0.8));
+  outline-offset: 2px;
 }
 
-/* GitHub 图标 */
+.version-link:focus,
+.version-link:active {
+  text-decoration: none;
+}
+
+.version-link-text {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* GitHub 图标（保留供 ``.version-link`` 内嵌使用） */
 .github-icon {
   width: 14px;
   height: 14px;
-  flex-shrink: 0; /* 防止图标缩小 */
+  flex-shrink: 0;
 }
 
 /**
@@ -7532,32 +7523,23 @@ code,
   border-top-color: rgba(0, 0, 0, 0.08); /* 浅色分隔线 */
 }
 
-[data-theme="light"] .version-name {
-  color: rgba(20, 20, 19, 0.6); /* 半透明深色 */
-}
-
-[data-theme="light"] .version-number {
-  color: rgba(20, 20, 19, 0.5); /* 更浅的半透明深色 */
-}
-
-[data-theme="light"] .github-link {
+[data-theme="light"] .version-link {
   background: rgba(0, 0, 0, 0.03); /* 浅色背景 */
   color: rgba(20, 20, 19, 0.6); /* 半透明深色文字 */
   border-color: rgba(0, 0, 0, 0.08); /* 浅色边框 */
   text-decoration: none;
 }
 
-[data-theme="light"] .github-link:hover {
+[data-theme="light"] .version-link:hover {
   background: rgba(0, 0, 0, 0.06); /* 悬停：加深背景 */
   color: rgba(20, 20, 19, 0.9); /* 悬停：加深文字 */
   border-color: rgba(0, 0, 0, 0.12);
   text-decoration: none;
 }
 
-[data-theme="light"] .github-link:focus,
-[data-theme="light"] .github-link:active {
+[data-theme="light"] .version-link:focus,
+[data-theme="light"] .version-link:active {
   text-decoration: none;
-  outline: none;
 }
 
 /* 浅色主题 - 倒计时 */
