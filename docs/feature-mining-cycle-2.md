@@ -21,9 +21,13 @@
 1. **Baseline diff** — v2.6.0 (cycle-1 baseline) → main HEAD
    (cycle-2 baseline). New code: PR #207 = v2.6.1-unreleased
    session-scoped routes.
-2. **Pre-survey grep** — for each candidate feature, `git log
-   --grep '<reference-feature>'` in our repo to avoid §3.5-style
-   "already shipped" mining failures.
+2. **Pre-survey grep** — for each candidate feature, run BOTH
+   (cycle-2 hardened, after 3 survey misses):
+   - `rg '<feature-keyword>' src/` — filesystem scan
+   - `git log --grep '<feature-keyword>' --since='1 year ago'`
+     — history scan
+   This is **mandatory** for every backlog item; cycle-3 mining
+   doc must include the grep output as evidence per item.
 3. **Score** — each item gets a ROI estimate: { **high** =
    high user-value × low LoC, **medium** = either-or, **low** =
    high LoC for marginal value, **defer** = depends on
@@ -54,6 +58,7 @@ them.
 | Session-scoped settings (v2.5.6) | shipped (per-task state in TaskQueue) | architectural difference; we don't need session URLs because tasks ARE sessions |
 | AI work summary Markdown rendering (v2.5.0) | shipped (`marked.js` + DOMPurify path) | unified rendering pipeline |
 | Input height memory (v2.4.3) | **shipped** (R137 `feedback_textarea_height.js`) | full schema-v1 localStorage envelope + clamp + ResizeObserver primary + mouseup/touchend fallback + 150ms debounce. cycle-2 survey初次漏认；类似 cycle-1 §3.5 R131c 智能排序漂移，列入 process-learning |
+| Session Export (v2.6.0) | **shipped** (R125 / R125c / R135 `/api/tasks/export`) | json + markdown formats, include_images toggle, since=<ISO> 增量 export, 30/min rate-limit, Content-Disposition attachment, atomic read-lock snapshot. cycle-2 survey 第 3 次漏认；触发 §0 methodology 强化 |
 
 ---
 
@@ -100,25 +105,40 @@ mis-classifying them as backlog.
 Items where competitor genuinely has something we don't, ranked
 by ROI.
 
-### 3.1 Session Export feature (v2.6.0) — **MEDIUM ROI, ~200 LoC**
+### 3.1 Session Export feature (v2.6.0) — **already shipped (R125 / R125c / R135); doc corrected post-survey**
 
-- **Reference inspiration**: "Session Export Feature: Support
-  exporting session records to multiple formats for easy sharing
-  and archiving" (v2.6.0).
-- **Gap**: We have no "export task history as JSON / Markdown /
-  CSV" path. A user investigating "what feedback did I give last
-  week" has to inspect the JSON state file manually.
-- **Proposed scope**:
-  - Backend: `GET /api/tasks/export?format={json,md,csv}` returning
-    streaming export of completed tasks; rate-limited.
-  - Frontend: Settings page → "Export task history" button →
-    `<a href download>` trigger.
-  - Filter UI: by status, date range, label (if any).
-- **Acceptance**: regression test asserts endpoint + 3 formats +
-  rate limit; manual smoke on real task history.
-- **Risk**: JSON dump may leak prompt content user expected to be
-  ephemeral; UI needs "confirm + scope picker" before download.
-- **Decision**: **adopt**, plan as cycle-3 ship item.
+- **Survey miss (third in cycle-2)**: cycle-2 initial doc
+  classified Session Export as "MEDIUM ROI, ~200 LoC adopt".
+  Post-survey grep `rg '/api/tasks/export' src/` immediately
+  located the existing implementation at `web_ui_routes/task.py
+  ::export_tasks`:
+  - **R125** initial: `GET /api/tasks/export?format={json,
+    markdown}` with Content-Disposition attachment trigger,
+    timestamped filename, atomic snapshot via
+    `get_all_tasks_with_stats`, 30/min rate limit.
+  - **R125c** follow-up: `?include_images={true,false,1,0,yes,no}`
+    toggle to strip base64 image data for "lightweight backup"
+    workflows (JSON dump shrinks from MB to KB).
+  - **R135** later: `?since=<ISO8601>` incremental export filter
+    so periodic backups don't re-transfer unchanged tasks
+    (O(M×content) instead of O(N×content)).
+- **What is NOT shipped (the only real gap)**: no Settings-page UI
+  button. Users discover the endpoint only via API docs / curl.
+  This is a separate cycle-3 item (~30 LoC: anchor tag pointing
+  at `/api/tasks/export` with download attribute, perhaps a small
+  format selector dropdown).
+- **Process learning**: this is the **third** cycle-2 survey
+  miss (§3.3 input-height-memory, §3.4 partial, §3.1 Session
+  Export). Three misses in one cycle is a process-pattern, not
+  individual mistakes. Now mandatory in §0 methodology:
+  **EVERY backlog item, before classifying, must run BOTH**:
+  1. `rg '<feature-keyword>' src/` — filesystem scan
+  2. `git log --grep '<feature-keyword>' --since='1 year ago'` —
+     history scan
+  No exceptions. Cycle-3 mining doc must include the grep
+  output as evidence per item.
+- **Decision**: **no Session Export work needed**. UI button is
+  cycle-3 polish item (§7 batch C reordered below).
 
 ### 3.2 Session-link copy + open-session UI (v2.6.1 PR #207) — **shipped this cycle**
 
@@ -331,7 +351,7 @@ to learn from:
 
 | Item | Status | Commit | Date |
 |---|---|---|---|
-| §3.1 Session Export | not started | — | — |
+| §3.1 Session Export | **already shipped (R125 / R125c / R135)** | (pre-cycle-2) | survey miss #3; backend complete, only Settings-page UI button still missing — cycle-3 polish |
 | §3.2 Session-link copy | **shipped** | (this commit) | Shift+dblclick task tab; reuses extracted `_writeToClipboard` helper |
 | §3.3 Input height memory | **already shipped (R137)** | (pre-cycle-2) | survey miss; corrected |
 | §3.4 One-click copy (task_id) | **partial — shipped task_id, project_path n/a** | (this commit) | dblclick task tab to copy full task_id; project_directory not surfaced in UI so n/a |
@@ -344,16 +364,24 @@ to learn from:
 
 ## 7. Suggested ordering for cycle-3
 
-1. **Batch A (low-risk batch)**: §3.2 + §3.4 — share the
-   clipboard helper. §3.3 dropped (already shipped). ~2 small
-   commits + 1 batched test file. Plan ~0.5 day.
-2. **Batch B (medium item)**: §3.1 Session Export — separate
-   commit due to streaming + format-format dispatch + auth
-   considerations. Plan ~1 day.
+**Updated cycle-3 ordering** (cycle-2 closed with 3 survey
+misses; backlog clean):
+
+1. **Batch A done** (cycle-2): §3.2 + §3.4 shipped; §3.3 + §3.1
+   discovered as already shipped (R137 / R125 / R125c / R135).
+2. **Batch C polish** (cycle-3): Settings-page "Export task
+   history" UI button pointing at existing R125 endpoint with
+   format selector (~30 LoC). The only Session Export gap is
+   discoverability, not functionality.
 3. **§4.1 zhconv prototype** — non-shipping investigation; output
    is a `docs/zhconv-eval.md` go/no-go report.
-4. **Code review after batches A + B** (5 commits = cr34
-   trigger).
+4. **§4.3 gemini-cli / claude-code interaction-pattern survey**
+   — non-shipping; output is a `docs/feature-mining-cycle-3.md`
+   draft.
+5. **cr35** after 5 commits.
+
+§0 methodology enforcement: cycle-3 mining doc **must** include
+explicit grep evidence for each backlog item.
 
 ---
 
