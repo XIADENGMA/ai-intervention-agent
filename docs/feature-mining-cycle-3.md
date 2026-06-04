@@ -311,7 +311,7 @@ Original plan:
 | Track B gemini-cli survey | **done** | cycle-3 | 3 borrow + 2 anti-idiom |
 | Track B claude-code survey | **done** | cycle-3 | 0 borrow + 1 maybe + 1 defer + 1 anti-idiom |
 | gemini-cli `placeholder` per-task | **shipped** (cycle-3, commit `2db6eaa`) | full stack; 20 invariant tests; 200-char clamp + `placeholder_truncated` response field (cr36 §8 #2, commit `ec70124`) |
-| gemini-cli `yesno` type | **shipped** (cycle-3, commit `565d6e2`) | full stack; 25 invariant tests; whitelist normalization + forward-compat for future types; 44px WCAG touch target |
+| gemini-cli `yesno` type | **shipped** (cycle-3, commit `565d6e2`) | full stack; 25 invariant tests; whitelist normalization + forward-compat for future types; 44px WCAG touch target; cr37 §8 #3 hardened with aria-hidden+tabindex=-1 on hidden textarea (Safari/VO bug guard); **design note (cr37 §3.3 low #2)**: 切换到 yesno 时 textarea 内容不缓存——避免切回 textarea 时出现陌生残留困惑 user; if user 已经输入内容后 agent 改 question_type='yesno' 则 textarea 内容丢失，由 agent-side prompt design 负责避免此场景 |
 | gemini-cli `header` chip ≤16 chars | **shipped** | cycle-3 | placed inside task-id-container, not in tab; pill style |
 | CHANGELOG anti-pattern fix (auto-sync) | open | cycle-3 if time | low priority; flagged for "doc-drift gate" CI |
 | `additionalContext` template vars (claude-code idea) | maybe | cycle-4 | needs eval |

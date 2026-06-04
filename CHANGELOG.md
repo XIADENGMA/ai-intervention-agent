@@ -66,6 +66,34 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   `loadTaskDetails`, falls back to i18n
   `page.feedbackPlaceholder` when None. Backward-compat
   through persistence round-trip. (mining-cycle-3)
+- **§2.1 (mining-3) `question_type='yesno'`** —
+  borrowed from gemini-cli `ask_user.yesno` idiom. MCP
+  `interactive_feedback` accepts optional `question_type:
+  'yesno'` (whitelist, unknown values silently None for
+  forward-compat); frontend `updateYesnoButtonGroup` hides
+  the free-text textarea and renders a single-row Yes/No
+  button pair that directly submits literal "yes"/"no".
+  44px WCAG touch target; aria-hidden + tabindex=-1 on
+  hidden textarea (cr37 §3.3). (mining-cycle-3)
+- **§2.1 (mining-3) `header_label` chip** — borrowed from
+  gemini-cli `ask_user.header` idiom. ≤16-char short tag
+  rendered next to task ID (not in the crowded task tab);
+  pill style with primary outline; AT exposes via
+  `aria-label` + `role="status"`. Useful for multi-task
+  visual context cue (Auth / DB / Layout / CSS / i18n…).
+  (mining-cycle-3)
+- **API response field `placeholder_truncated`** —
+  `POST /api/tasks` now returns `placeholder_truncated:
+  true` + `placeholder_original_length` +
+  `placeholder_max_length` when the server-side 200-char
+  clamp on `feedback_placeholder` truncated input. Prevents
+  silent truncation hiding critical hint from agent.
+  (cr36 §8 #2)
+- **`PLACEHOLDER_MAX_LENGTH` / `HEADER_LABEL_MAX_LENGTH`
+  module constants** in `task_queue.py`. Single source of
+  truth; route handler imports them rather than inline
+  literals — avoids drift if either clamp value ever
+  changes. (cr37 §8 #1 + §2.1 borrow #1 follow-on)
 - **Settings reset confirm dialog** — native `confirm()`
   before destructive settings reset. Prevents accidental
   click. (BUG/UX cleanup)
