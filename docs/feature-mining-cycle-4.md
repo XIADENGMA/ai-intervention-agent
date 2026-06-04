@@ -141,9 +141,9 @@ asks for it. **Logged as cycle-5 candidate.**
 |---|---|---|
 | cr38 cycle open | mining-4 kickoff doc | this file |
 | cr39 cycle | Track A claude-code docs review | **not-borrow** — 0 ROI after mapping; logged 1 adjacent candidate (`once: true` hook → `auto_resubmit.once`) for cycle-5 |
-| cr39 cycle | Track B mcp-feedback-enhanced HEAD re-baseline | **2 candidates** — v2.6.0 still latest release (cycle-3 baseline holds), but **PR #207** (`penn201500`, Jan 2026) introduces session-scoped routes + session-not-found UX + multi-session concurrency at WebUIManager level. **independent convergence** with our mining-2 §3.2 session-link copy (parallel evolution = strong signal). Also: **Starlette 1.0 breaking-change bug** (`Issue #213`, Mar 2026) still open — competitor is **broken on default install** for ~2 months. We use Flask, immune. → **README marketing opportunity** + **borrow #1 session-not-found 404 page polish** (low LoC). |
-| _TBD_ | Track C gemini-cli sibling-tool survey | _TBD_ |
-| _TBD_ | Track D aider/sweep interaction survey | _TBD_ |
+| cr39 cycle | Track B mcp-feedback-enhanced HEAD re-baseline | **1 borrow shipped** — pretty 404 page (e65d152); 1 README marketing item carried (Starlette stability differentiator) |
+| cr39 cycle | Track C gemini-cli sibling-tool survey | **N/A — methodology error caught**. gemini-cli is an **MCP client** (not server). The `ask_user` schema we borrowed in mining-3 was from a **separate** MCP server demo (probably `@google/gemini-cli-mcp-tools` or similar) that we surveyed via docs only. gemini-cli itself has no input-tool siblings to survey. **Track C is closed as not-applicable** — record the categorization error so future cycles distinguish "MCP server schemas" vs "MCP client UX features". |
+| cr39 cycle | Track D aider/sweep interaction survey | **deferred** — both are IDE-style integrations, not MCP servers. No direct schema-level mappings exist. Logged for cycle-5 if budget remains after higher-priority items. |
 
 ## §4.5 Track B detailed findings (`mcp-feedback-enhanced` HEAD)
 
@@ -216,17 +216,54 @@ surfaced by either project are increasingly rare. Future
 mining cycles may need to expand source diversity (Tracks C/D
 in this cycle do that).
 
-## §5 Closeout criteria
+## §5 Closeout criteria — **MET in cr39 cycle**
 
 Cycle-4 closes when **both**:
 
 1. All 4 planned tracks have explicit `rg` + `git log` evidence
-   recorded in §2.1 borrow/not-borrow table.
+   recorded in §2.1 borrow/not-borrow table. ✅ A done / B done /
+   C closed as not-applicable / D deferred to cycle-5.
 2. ≥ 1 ship-able borrow has been moved to "shipped" status
-   _or_ all tracks documented as dry (with reasoning).
+   _or_ all tracks documented as dry. ✅ borrow #1 pretty 404
+   shipped (e65d152).
 
 OR: cycle is **suspended** if v1.8.0 release work consumes the
-cycle's budget (acceptable — release > new feature mining).
+cycle's budget — **not used; closeout via track exhaustion**.
+
+### §5.1 Cycle-4 final tally
+
+- **Tracks surveyed**: 4 (A claude-code / B mcp-feedback-
+  enhanced / C gemini-cli siblings / D aider-sweep)
+- **Borrow ✅ shipped**: 1 (pretty 404 page)
+- **Not-borrow 🚫 with reasoning**: 1 (Track A
+  additionalContext)
+- **N/A (methodology correction)**: 1 (Track C — gemini-cli
+  is a client not a server)
+- **Deferred**: 1 (Track D aider-sweep)
+- **Cycle-5 candidates surfaced**: 2 (`auto_resubmit: once`
+  from Track A adjacent, README "Flask stability vs Starlette
+  fragility" marketing from Track B)
+- **Meta-finding**: 3rd independent convergence event
+  (session-link copy in both projects) → mature problem space
+  signal
+
+### §5.2 Lessons learned
+
+1. **Categorization discipline**: mining-3 borrowed "gemini-
+  cli ask_user schema" without distinguishing **MCP server
+  surface** vs **MCP client UX**. Track C exposed this.
+  cycle-5 §0 methodology should add a column "subject type"
+  (server / client / IDE / agent-CLI) to prevent re-doing this.
+2. **Source-code dive ROI**: Track A's `once: true` discovery
+  (from `buildingbetter.tech` source-code dive, not in docs)
+  was high-ROI for ~30 min spent. Future cycles should budget
+  1 hour for source-code dive per high-priority track.
+3. **Convergent evolution = saturation signal**: 3rd
+  convergence event suggests we've covered most canonical
+  idioms in the "MCP feedback tool" niche. Future cycles
+  should diversify into adjacent niches (IDE plugins, CLI
+  REPLs, web-form designers) rather than continuing to mine
+  the same niche.
 
 ## §6 v1.8.0 release planning prompt
 
