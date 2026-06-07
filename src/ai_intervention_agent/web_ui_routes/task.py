@@ -1022,37 +1022,81 @@ class TaskRoutesMixin:
                         properties:
                           task_id:
                             type: string
+                            description: 任务唯一 ID (UUID v4 字符串, 由 task_queue.create_task 生成)
                           status:
                             type: string
                             enum: [pending, active, completed]
+                            description: 任务状态 (pending=待处理, active=激活, completed=已完成)
                           prompt:
                             type: string
                             description: 提示文本（前 100 字符）
                           created_at:
                             type: string
                             format: date-time
+                            description: 任务创建时间 (ISO 8601 字符串)
                           auto_resubmit_timeout:
                             type: number
+                            description: 倒计时秒数, 0=禁用 (与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐)
                           remaining_time:
                             type: number
+                            description: 剩余倒计时秒数 (server_time + remaining_time = deadline)
                           deadline:
                             type: number
                             description: 截止时间戳 (server_time + remaining_time)
+                          completed_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                            description: 完成时间 (任务未完成时为 null)
+                          extends_used:
+                            type: integer
+                            description: 用户主动扩展倒计时次数 (>= extends_max 时按钮 disabled)
+                          extends_max:
+                            type: integer
+                            description: 倒计时扩展次数上限 (来自 server_config)
+                          feedback_placeholder:
+                            type: string
+                            nullable: true
+                            description: 每任务可选 textarea placeholder, null = 走 i18n 默认值
+                          question_type:
+                            type: string
+                            nullable: true
+                            enum: [yesno]
+                            description: 二元决策时为 "yesno", 否则保留默认 textarea 主体
+                          header_label:
+                            type: string
+                            nullable: true
+                            description: 短标签 chip (≤16 chars), 渲染在 task pane prompt 之上
                     stats:
                       type: object
                       properties:
                         total:
                           type: integer
+                          description: 任务总数
                         pending:
                           type: integer
+                          description: 待处理任务数
                         active:
                           type: integer
+                          description: 激活中任务数
                         completed:
                           type: integer
+                          description: 已完成任务数
                     server_time:
                       type: number
+                      description: 服务器当前时间 (Unix timestamp 秒), 客户端用于校准 remaining_time
               500:
                 description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 服务器异常详情或通用提示
             """
             try:
                 task_queue = get_task_queue()
@@ -1155,8 +1199,28 @@ class TaskRoutesMixin:
                 description: 任务快照文件（带 Content-Disposition 触发下载）
               400:
                 description: 不支持的 format 参数 / since 不是合法 ISO 8601
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 参数校验失败的人类可读说明
               500:
                 description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 服务器异常详情或通用提示
             """
             # R125 实现说明：
             # - 输出 ``Content-Disposition: attachment`` 触发浏览器下载，避免
@@ -1438,12 +1502,52 @@ class TaskRoutesMixin:
                       type: boolean
                     task_id:
                       type: string
+                      description: 新创建任务的唯一 ID
               400:
                 description: 请求参数错误
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误分类码 (e.g., invalid_payload / invalid_field)
+                    message:
+                      type: string
+                      description: 人类可读错误说明
               409:
                 description: 任务 ID 重复或队列已满
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 冲突分类码 (e.g., duplicate_task_id / queue_full)
+                    message:
+                      type: string
+                      description: 冲突原因说明 + 可能的解决建议
               500:
                 description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误分类码
+                    message:
+                      type: string
+                      description: 服务器异常详情或通用提示
             """
             try:
                 raw = request.get_json(silent=False)
@@ -1675,20 +1779,25 @@ class TaskRoutesMixin:
                       type: boolean
                     server_time:
                       type: number
+                      description: 服务器当前时间 (Unix timestamp 秒), 客户端用于校准 remaining_time
                     task:
                       type: object
                       properties:
                         task_id:
                           type: string
+                          description: 任务唯一 ID
                         prompt:
                           type: string
+                          description: 提示文本 (完整内容, 不截断)
                         status:
                           type: string
                           enum: [pending, active, completed]
+                          description: 任务状态 (pending/active/completed)
                         predefined_options:
                           type: array
                           items:
                             type: string
+                          description: 预定义选项列表 (供前端渲染 chip 按钮)
                         predefined_options_defaults:
                           type: array
                           items:
@@ -1697,19 +1806,43 @@ class TaskRoutesMixin:
                         created_at:
                           type: string
                           format: date-time
+                          description: 任务创建时间 (ISO 8601)
                         auto_resubmit_timeout:
                           type: number
+                          description: 倒计时秒数, 0=禁用
                         remaining_time:
                           type: number
+                          description: 剩余倒计时秒数
                         deadline:
                           type: number
                           description: 截止时间戳 (server_time + remaining_time)
                         result:
                           type: object
+                          description: 反馈结果 (任务未完成时为空对象, 完成后含 user_input/selected_options/images)
               404:
                 description: 任务不存在
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 错误说明文本（如 `Task not found`）
               500:
                 description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 服务器异常详情或通用提示
             """
             try:
                 task_queue = get_task_queue()
@@ -1805,15 +1938,65 @@ class TaskRoutesMixin:
                 description: |
                   请求体无效（seconds 超出 [10, 300] / JSON 解析失败 /
                   task 已完成 / task 禁用了 auto-resubmit）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本
+                    code:
+                      type: string
+                      description: |
+                        机器可读错误码（如 `invalid_seconds`,
+                        `task_completed`, `auto_resubmit_disabled`）
               404:
                 description: task 不存在
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本（如 `task not found`）
               422:
                 description: |
                   延长上限已达（extends_used >= COUNTDOWN_EXTENDS_MAX）。
                   前端按钮应根据 ``extends_used`` 字段提前 disabled，正常
                   路径不会走到 422，但保留作为防御性校验。
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本
+                    code:
+                      type: string
+                      description: 固定为 `extends_exhausted`
+                    extends_used:
+                      type: integer
+                      description: 已使用的延长次数（用于前端展示）
+                    extends_max:
+                      type: integer
+                      description: 最大允许延长次数
               500:
                 description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本
             """
             try:
                 task_queue = get_task_queue()
@@ -1907,10 +2090,141 @@ class TaskRoutesMixin:
                 logger.error(f"延长任务倒计时失败: {e}", exc_info=True)
                 return jsonify({"success": False, "error": "服务器内部错误"}), 500
 
+        # ----------------------------------------------------------------
+        # freeze_task_deadline 设计原因 / 历史教训（不放进 docstring 是因
+        # 为 flasgger 把整段 docstring 当 YAML 解析，列首的 Markdown ``-``
+        # bullets 会被 YAML 解析器当成另一个 root 级别 sequence，触发
+        # ``ParserError: expected <block end>, but found '-'`` —— 见
+        # a11y-audit-cycle-4 R259d 修复，对应 ``tests/test_lazy_swagger_
+        # optin_r23_3.py::test_enabled_apispec_returns_json`` invariant）：
+        #
+        # - 与 ``extend`` 复用 ``_watched_write_lock`` facade 防止并发
+        #   竞态（详见 ``TaskQueue.freeze_task_deadline`` doc）。
+        # - 不提供反向 unfreeze endpoint（详见 ``Task.freeze_deadline``
+        #   doc §"不提供 unfreeze 反向操作"段）。用户若想恢复倒计时，
+        #   应让 agent 新建一个 task（语义更清晰，符合 "一次性配置" 的
+        #   认知）。
+        # - 速率限制与 ``/extend`` 一致 10/min — freeze 是单次操作，
+        #   理论上一个 task 只会被点 1 次，10/min 已经留了反复双击 +
+        #   多 task 并行操作的余量。
+        # ----------------------------------------------------------------
+        @self.app.route("/api/tasks/<task_id>/freeze", methods=["POST"])
+        @self.limiter.limit("10 per minute")
+        def freeze_task_deadline(task_id: str) -> ResponseReturnValue:
+            """mining-6 Track A (cycle-5 §3.6 derivative): 用户主动把指定 task
+            的 auto-resubmit 倒计时永久禁用，让 task 进入"等用户回答"状态。
+            ---
+            tags:
+              - Tasks
+            parameters:
+              - name: task_id
+                in: path
+                type: string
+                required: true
+            responses:
+              200:
+                description: 冻结成功（task.auto_resubmit_timeout 已置 0）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                    new_auto_resubmit_timeout:
+                      type: integer
+                      description: 冻结后必为 0
+              400:
+                description: task 已完成（无需冻结）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本（task_completed 类）
+                    code:
+                      type: string
+                      description: 错误码（如 `task_completed`）
+              404:
+                description: task 不存在
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本（如 `任务不存在`）
+              409:
+                description: |
+                  task 已经被冻结过（``already_frozen`` 错误码,
+                  ``auto_resubmit_timeout`` 已 <= 0）。这是 **idempotent No-Op**:
+                  第二次 freeze 不破坏状态, 仅返回 409 让前端知道按钮无需再点。
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本
+                    code:
+                      type: string
+                      description: 固定为 `already_frozen`
+              500:
+                description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本
+            """
+            try:
+                task_queue = get_task_queue()
+                success, error_code, new_timeout = task_queue.freeze_task_deadline(
+                    task_id
+                )
+                if error_code == "task_not_found":
+                    return jsonify({"success": False, "error": "任务不存在"}), 404
+                if not success:
+                    # 409 conflict: already_frozen（idempotent 的 No-Op）
+                    # 400 bad-request: task_completed（业务上不能 freeze 已完成 task）
+                    status_code = 409 if error_code == "already_frozen" else 400
+                    return jsonify(
+                        {
+                            "success": False,
+                            "error": error_code,
+                            "code": error_code,
+                            "new_auto_resubmit_timeout": new_timeout,
+                        }
+                    ), status_code
+                logger.info(f"task_id={task_id} 倒计时已冻结（auto_resubmit 禁用）")
+                return jsonify(
+                    {
+                        "success": True,
+                        "new_auto_resubmit_timeout": new_timeout,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"冻结任务倒计时失败: {e}", exc_info=True)
+                return jsonify({"success": False, "error": "服务器内部错误"}), 500
+
         @self.app.route("/api/tasks/<task_id>/activate", methods=["POST"])
         @self.limiter.limit("60 per minute")
         def activate_task(task_id: str) -> ResponseReturnValue:
             """激活指定任务
+
+            **幂等性 (idempotent)**: 已经是 active 状态的 task 再次 activate
+            会返回 success=True (P6R-2 修复, 防 multi-tab 同时点同一 task
+            造成 race condition / UX 错觉)。底层 ``set_active_task`` 在
+            ``new_task.status == ACTIVE`` 时短路返回 True, 不切换任何状态。
             ---
             tags:
               - Tasks

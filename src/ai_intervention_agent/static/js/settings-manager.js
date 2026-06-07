@@ -448,6 +448,23 @@ class SettingsManager {
     if (settingsCloseBtn) {
       settingsCloseBtn.addEventListener("click", () => this.hideSettings());
     }
+
+    // R277 / cycle-24 mining-15: backdrop click 关闭 — 与
+    // ``#image-modal`` (image-upload.js _imageModalBackgroundClickHandler)
+    // 和 ``#code-paste-panel`` (app.js codePastePanel click handler) 对齐。
+    // settings 是 auto-save，无 "dirty form" 概念，点 backdrop 直接关是
+    // 标准 UX (Material Design dismissible dialog / iOS sheet swipe down)。
+    // ``e.target === settingsPanel`` 守卫：只有点 panel 本身（即 backdrop
+    // 区域）才关，点 ``.settings-content`` 内部不冒泡到这里。
+    const settingsPanel = document.getElementById("settings-panel");
+    if (settingsPanel && !settingsPanel.dataset.aiiaBackdropWired) {
+      settingsPanel.addEventListener("click", (e) => {
+        if (e.target === settingsPanel) {
+          this.hideSettings();
+        }
+      });
+      settingsPanel.dataset.aiiaBackdropWired = "1";
+    }
     if (testNotificationBtn) {
       testNotificationBtn.addEventListener("click", () =>
         this.testNotification(),
@@ -619,34 +636,10 @@ class SettingsManager {
     // feat-custom-sound (§3.4): 自定义通知音效上传/测试/清除
     this._wireCustomSoundControls();
 
-    // mining-2 §3.1 (cycle-3 polish): Settings UI 触发 GET /api/tasks/export
-    // 后端 endpoint 早 ship (R125 / R125c / R135)；这里只补 UI 入口。
-    this._wireExportTasksControls();
-  }
-
-  /**
-   * mining-2 §3.1 cycle-3 polish — 把 export-tasks-format select 的值
-   * 同步到 export-tasks-link 的 href，让 ``<a download>`` 浏览器原生
-   * 下载触发器拿到正确的 ?format= query。
-   *
-   * 不引入任何 JS-driven fetch：依然走浏览器 anchor 下载，让用户能
-   * 获得标准 progress bar / 大文件 streaming / 文件保存对话框等浏
-   * 览器原生体验。
-   */
-  _wireExportTasksControls() {
-    const select = document.getElementById("export-tasks-format");
-    const link = document.getElementById("export-tasks-link");
-    if (!select || !link) return;
-    const sync = () => {
-      const fmt = String(select.value || "json").toLowerCase();
-      const safe = fmt === "markdown" ? "markdown" : "json";
-      link.setAttribute(
-        "href",
-        "/api/tasks/export?format=" + encodeURIComponent(safe),
-      );
-    };
-    select.addEventListener("change", sync);
-    sync();
+    // R274 / cycle-24 t24-1: ``_wireExportTasksControls`` 已按用户偏好
+    // 整体下架。后端 ``/api/tasks/export`` 路由保留供 CI / 备份脚本
+    // 独立调用 (R125/R135 用例文档化)。invariant 锚点：
+    // tests/test_feat_remove_export_tasks_ui_r274.py
   }
 
   /**
@@ -674,6 +667,13 @@ class SettingsManager {
         ? window.AIIA_I18N.t
         : (k) => k;
 
+    // R265 / cycle-22 follow-up: _wireCustomSoundControls 被 init() **和**
+    // resetSettings() 两处调用 — 旧实现每次都 add 新 listener，从不 remove。
+    // 真 bug 复现路径：reset 一次 → testBtn 上 2 个 click handler，点击播 2 次
+    // audio；reset 两次 → 播 3 次；reset N 次 → 播 N+1 次 + filePicker change
+    // 也线性叠加。Pattern 对齐 R263a image-modal: ``dataset.aiiaWired`` guard
+    // — 第一次绑定，之后只跑 ``refresh()``（refresh 纯 DOM read/write 无副作用，
+    // 重复跑安全且必要：reset 后要刷新 disabled / status 文本）。
     const refresh = () => {
       const meta = notificationManager.getCustomSoundMeta();
       if (meta) {
@@ -690,42 +690,45 @@ class SettingsManager {
       }
     };
 
-    fileInput.addEventListener("change", async (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      const result = await notificationManager.saveCustomSoundFromFile(file);
-      if (result.success) {
-        refresh();
-        // 立即播放一次让用户听到效果（同时也确认 decode 真的 OK）
-        try {
-          await notificationManager.playSound("custom");
-        } catch (_e) {
-          // 静默：上传成功 + decode 成功就够了，自动 play 失败不算 error
+    if (!fileInput.dataset.aiiaWired) {
+      fileInput.dataset.aiiaWired = "1";
+      fileInput.addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const result = await notificationManager.saveCustomSoundFromFile(file);
+        if (result.success) {
+          refresh();
+          // 立即播放一次让用户听到效果（同时也确认 decode 真的 OK）
+          try {
+            await notificationManager.playSound("custom");
+          } catch (_e) {
+            // 静默：上传成功 + decode 成功就够了，自动 play 失败不算 error
+          }
+        } else {
+          const code = String(result.error || "unknown");
+          let msgKey = "settings.customSound.errors.generic";
+          if (code === "invalid_mime") msgKey = "settings.customSound.errors.invalidMime";
+          else if (code === "too_large") msgKey = "settings.customSound.errors.tooLarge";
+          else if (code === "read_failed") msgKey = "settings.customSound.errors.readFailed";
+          else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
+          else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
+          else if (code === "duration_too_long") msgKey = "settings.customSound.errors.durationTooLong";
+          statusEl.textContent = t(msgKey);
+          statusEl.setAttribute("data-status", "error");
         }
-      } else {
-        const code = String(result.error || "unknown");
-        let msgKey = "settings.customSound.errors.generic";
-        if (code === "invalid_mime") msgKey = "settings.customSound.errors.invalidMime";
-        else if (code === "too_large") msgKey = "settings.customSound.errors.tooLarge";
-        else if (code === "read_failed") msgKey = "settings.customSound.errors.readFailed";
-        else if (code === "storage_failed") msgKey = "settings.customSound.errors.storageFailed";
-        else if (code === "decode_failed") msgKey = "settings.customSound.errors.decodeFailed";
-        else if (code === "duration_too_long") msgKey = "settings.customSound.errors.durationTooLong";
-        statusEl.textContent = t(msgKey);
-        statusEl.setAttribute("data-status", "error");
-      }
-      // reset input so re-selecting the same file re-triggers ``change``
-      e.target.value = "";
-    });
+        // reset input so re-selecting the same file re-triggers ``change``
+        e.target.value = "";
+      });
 
-    testBtn.addEventListener("click", () => {
-      notificationManager.playSound("custom").catch(() => {});
-    });
+      testBtn.addEventListener("click", () => {
+        notificationManager.playSound("custom").catch(() => {});
+      });
 
-    clearBtn.addEventListener("click", () => {
-      notificationManager.clearCustomSound();
-      refresh();
-    });
+      clearBtn.addEventListener("click", () => {
+        notificationManager.clearCustomSound();
+        refresh();
+      });
+    }
 
     refresh();
   }
@@ -881,7 +884,17 @@ class SettingsManager {
         );
       }
     } finally {
-      btn.disabled = originalDisabled;
+      // R279 / cycle-25 t25-3 (R268 spillover meta-lint): ``btn`` 在 await
+      // fetch 之后可能因 settings 重渲染（SSE config-changed → ``init()``
+      // 重跑会重建 DOM 节点）或 user 切语言/快速 hideSettings 而失效。
+      // 必须重新 query 而不是直接复用 stale closure 引用，否则在 panel
+      // 已关闭/重渲染时 ``btn.disabled = ...`` 会抛 TypeError 污染 finally
+      // 块、吞掉 catch 路径的 user-visible error toast（R268 一模一样的
+      // bug class）。null check 兜底：UI 已不在 DOM，无需重置 disabled。
+      const btnNow = document.getElementById("open-config-file-btn");
+      if (btnNow) {
+        btnNow.disabled = originalDisabled;
+      }
     }
   }
 
@@ -1037,6 +1050,20 @@ class SettingsManager {
 
     const panel = document.getElementById("settings-panel");
     if (panel) {
+      // cycle-22 / cr51 follow-up #1：升级到 capture-activeElement 模式（对齐
+      // image-modal cycle-8 R263a 与 keyboard_shortcut_help cycle-1 R255 的
+      // pattern）。关闭面板时回归到**真正触发打开的元素**，而非 hardcode
+      // 回 `#settings-btn`。常见误闭合场景：
+      //   1. 键盘快捷键打开（Cmd+,）→ 焦点本来在 feedback textarea，
+      //      关闭后跳到 settings-btn 会丢失输入位置；
+      //   2. 从子面板（如 code-paste-modal）触发设置 → 关闭后焦点也
+      //      应回到子面板原触发点；
+      //   3. 一般触摸/移动端打开 → 焦点不在 button 而在 body，
+      //      hardcode 跳到 settings-btn 会触发不必要的 viewport scroll。
+      // ``document.contains(prev)`` 兜底：若原元素已从 DOM 移除（如
+      // 重渲染后），降级到 settings-btn 而非 silent fail。
+      this._previouslyFocusedElement = document.activeElement;
+
       const container = document.querySelector(".container");
       if (container) {
         container.style.overflow = "visible";
@@ -1241,6 +1268,20 @@ class SettingsManager {
       this._settingsEscHandler = null;
     }
 
+    // cycle-22 / cr51 follow-up #1：先尝试回到 ``_previouslyFocusedElement``
+    // （捕获于 ``showSettings`` 开头）。如果原元素已脱离 DOM（极端场景：
+    // 重新连接 SSE 时 header 重渲染），fallback 到 ``#settings-btn``，
+    // 与升级前行为对齐避免完全失焦。
+    const prev = this._previouslyFocusedElement;
+    this._previouslyFocusedElement = null;
+    if (prev && document.contains(prev) && typeof prev.focus === "function") {
+      try {
+        prev.focus();
+        return;
+      } catch (_e) {
+        // 忽略：focus 失败（如元素被设为 inert）走 fallback
+      }
+    }
     const settingsBtn = document.getElementById("settings-btn");
     if (settingsBtn) settingsBtn.focus();
   }
@@ -1368,6 +1409,35 @@ class SettingsManager {
   }
 
   async resetFeedbackConfig() {
+    // R275 / cycle-24 t24-3：feedback config 是服务端持久化配置（写
+    // ``config.toml``），重置后**所有协作者的会话**都会受影响（其它
+    // 浏览器会通过 SSE config-changed 收到广播）。破坏性等级 ≥
+    // ``resetSettings``，必须同样走 ``window.confirm`` 二次确认。
+    //
+    // 选型理由：与 ``resetSettings()`` 范式完全一致（同样的 native
+    // confirm + 同样的 typeof guard + 同样的 _tl fallback），最小变更
+    // 面，行为可预测。
+    //
+    // i18n key ``settings.resetFeedbackConfirm`` / ``settings.resetFeedbackCancelled``
+    // 覆盖 en / zh-CN / zh-TW / pseudo；缺 key 时退到内置英文 fallback，
+    // 与 ``resetSettings`` 调用站对齐。
+    const confirmMsg = _tl(
+      "settings.resetFeedbackConfirm",
+      "Reset server-stored feedback config (countdown timeout, resubmit prompt, prompt suffix) to defaults? All collaborators on this server will see the change via SSE broadcast.",
+    );
+    if (
+      typeof window !== "undefined" &&
+      typeof window.confirm === "function" &&
+      !window.confirm(confirmMsg)
+    ) {
+      console.debug(
+        _tl(
+          "settings.resetFeedbackCancelled",
+          "Feedback config reset cancelled by user",
+        ),
+      );
+      return;
+    }
     // 真源：调用后端 /api/reset-feedback-config，避免前端硬编码中文默认值。
     // 若后端不可用，回退到重新读取当前配置；不再吞掉错误，好让用户知道发生了什么。
     try {

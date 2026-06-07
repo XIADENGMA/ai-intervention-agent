@@ -399,6 +399,44 @@ class Task(BaseModel):
         self.extends_used = self.extends_used + 1
         return True, None
 
+    def freeze_deadline(self) -> tuple[bool, str | None]:
+        """mining-6 Track A (cycle-5 §3.6 derivative): 用户主动把 task 的
+        auto-resubmit 倒计时禁用，把 task 变成无 timeout 的"等用户回答"状态。
+
+        实现方式：直接把 ``auto_resubmit_timeout`` 设为 0（既有"禁用倒计时"
+        语义）。``get_remaining_time`` 在 ``<=0`` 时返回 0；
+        ``is_expired`` 在 ``<=0`` 时返回 False（不过期）。所以 frozen task
+        在前端显示 0 倒计时但不会触发 auto-resubmit。
+
+        典型场景：用户在跑长任务（如 60min build）不想被反复 resubmit
+        干扰 → 点击 freeze 按钮 → 后端将该 task 的 timeout 永久置 0 →
+        前端展示"已冻结"状态。
+
+        与 ``extend_deadline`` 的关键区别：
+        - extend 是 +seconds（受 max_extends 上限制约）
+        - freeze 是 =0（一次性永久操作，无重复语义）
+
+        设计：**不提供** unfreeze 反向操作。理由：
+        1. 防止滥用（反复 freeze/unfreeze 在 max_extends 之外加倒计时）
+        2. 实际用户场景中"我想要倒计时"通过 agent 新建 task 表达更清晰
+        3. 简化协议（少 1 个 endpoint + 少 1 个状态机分支）
+
+        返回
+        ----
+        (success, error_code)：
+            - (True, None) 成功
+            - (False, "task_completed") task 已完成，无需 freeze
+            - (False, "already_frozen") task 已经无 timeout（``<=0``），
+              freeze 无意义（操作 idempotent 反而暴露双击 button 的常见
+              UX 问题）
+        """
+        if self.status == TaskStatus.COMPLETED:
+            return False, "task_completed"
+        if self.auto_resubmit_timeout <= 0:
+            return False, "already_frozen"
+        self.auto_resubmit_timeout = 0
+        return True, None
+
 
 class TaskQueue:
     """任务队列管理器（线程安全）
@@ -889,6 +927,39 @@ class TaskQueue:
                 success,
                 error_code,
                 task.extends_used,
+                task.auto_resubmit_timeout,
+            )
+
+    def freeze_task_deadline(
+        self,
+        task_id: str,
+    ) -> tuple[bool, str | None, int]:
+        """mining-6 Track A: 在写锁内调用 ``Task.freeze_deadline``。
+
+        理由跟 ``extend_task_deadline`` 同源 —— Python GIL 只保证 bytecode
+        原子，多步 read-check-write 必须串行化。两个并发 ``freeze`` 是
+        idempotent（结果都是 timeout=0），但混合 extend + freeze 必须
+        在写锁内才能保证 ``auto_resubmit_timeout`` 的最终值是良定义的。
+
+        Returns:
+            ``(success, error_code, auto_resubmit_timeout_after)``
+            - success=True 时 error_code=None；``auto_resubmit_timeout_after``
+              == 0（freeze 一律将其置 0）
+            - success=False 时 error_code ∈
+              {"task_not_found", "task_completed", "already_frozen"}；
+              第 3 个字段反映**当前** task.auto_resubmit_timeout（让前端能
+              立即同步按钮 disabled 状态）
+
+        Thread-safety: 写锁串行化整个操作。
+        """
+        with _watched_write_lock(self._lock, "freeze_task_deadline"):
+            task = self._tasks.get(task_id)
+            if task is None:
+                return False, "task_not_found", 0
+            success, error_code = task.freeze_deadline()
+            return (
+                success,
+                error_code,
                 task.auto_resubmit_timeout,
             )
 

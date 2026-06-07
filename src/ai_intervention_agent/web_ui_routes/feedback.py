@@ -139,8 +139,47 @@ class FeedbackRoutesMixin:
                       type: string
                     persistent:
                       type: boolean
+                      description: 是否保留在前端历史 (true=保留, false=自动清空)
                     clear_content:
                       type: boolean
+                      description: 提交后是否清空 textarea (前端 UX 提示)
+              400:
+                description: 请求格式错误 (JSON 解析失败 / 字段类型错误 /
+                  task_id 不存在)
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                    message:
+                      type: string
+              413:
+                description: payload 超出 ``_FEEDBACK_PAYLOAD_LIMIT_BYTES``
+                  上限 (含图片二进制)
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                    message:
+                      type: string
+              429:
+                description: 速率超限 (60 per minute)
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 `error`
+                    message:
+                      type: string
+                      description: 错误说明文本（如 `rate limit exceeded`）
+                    retry_after:
+                      type: integer
+                      description: 建议客户端等待秒数（如 `60`）后重试
             """
             logger.info(f"收到提交请求 - Content-Type: {request.content_type}")
             logger.debug(f"request.files keys: {list(request.files.keys())}")
@@ -288,8 +327,14 @@ class FeedbackRoutesMixin:
                       type: array
                       items:
                         type: string
+                      description: |
+                        预定义选项列表 (供前端 chip 按钮显示); 缺省则前端
+                        只渲染 freeform 输入框, 不展示 chip。
                     task_id:
                       type: string
+                      description: |
+                        目标任务 ID; 必须是当前 queue 内存在的 task, 否则
+                        返回 400。
                     auto_resubmit_timeout:
                       type: integer
                       minimum: 0
@@ -308,6 +353,7 @@ class FeedbackRoutesMixin:
                       type: string
                     prompt:
                       type: string
+                      description: 提示文本原文 (Markdown)
                     prompt_html:
                       type: string
                       description: Markdown 渲染后的 HTML
@@ -315,16 +361,40 @@ class FeedbackRoutesMixin:
                       type: array
                       items:
                         type: string
+                      description: 预定义选项列表 (供前端 chip 按钮)
                     task_id:
                       type: string
+                      description: 关联的任务 ID
                     auto_resubmit_timeout:
                       type: number
+                      description: 倒计时秒数, 0=禁用
                     has_content:
                       type: boolean
+                      description: 是否已有内容 (用于前端判断是否需要 toast 通知)
               400:
                 description: 请求参数错误
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 人类可读错误说明
               500:
                 description: 服务器内部错误
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 服务器异常详情或通用提示
             """
             try:
                 raw = request.get_json(silent=False)

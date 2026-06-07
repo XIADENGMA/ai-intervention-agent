@@ -114,6 +114,38 @@ def _bump_feedback_counter(name: str, by: int = 1) -> None:
         _FEEDBACK_COUNTERS[name] += by
 
 
+def reset_feedback_counters_for_testing() -> None:
+    """R352 (cycle-39 #C2) · **Test-only**: 把 ``_FEEDBACK_COUNTERS`` 全
+    部归零, 用于跨测试隔离 (v3.8 test-isolation 6th 应用)。
+
+    **为什么需要这个 helper?**
+
+    ``_FEEDBACK_COUNTERS`` 是 module-level dict, 一旦某测试调用了
+    ``_bump_feedback_counter`` 或者真实的 ``interactive_feedback()`` 路径
+    (例如 e2e 测试 / API 集成测试), 计数会在整个 pytest session 内累积,
+    污染后续测试对 ``get_feedback_counters()`` 的预期。
+
+    与 ``NotificationManager.reset_for_testing()`` (R323) /
+    ``ConfigManager._instance`` reset 思路一致 — 给 module-level 可变状态
+    暴露显式 reset API, 让 conftest 可以在测试边界 (fixture autouse) 调
+    用以隔离副作用。
+
+    **使用方式 (conftest.py)**::
+
+        @pytest.fixture(autouse=True)
+        def _reset_feedback_counters():
+            from ai_intervention_agent.server_feedback import (
+                reset_feedback_counters_for_testing,
+            )
+            reset_feedback_counters_for_testing()
+            yield
+            reset_feedback_counters_for_testing()
+    """
+    with _FEEDBACK_COUNTERS_LOCK:
+        for k in _FEEDBACK_COUNTERS:
+            _FEEDBACK_COUNTERS[k] = 0
+
+
 def get_feedback_counters() -> dict[str, int]:
     """返回 interactive_feedback 计数器快照（R47）；永远是拷贝，不是引用。
 

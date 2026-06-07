@@ -1235,38 +1235,76 @@ body.vscode-light .no-content-progress-bar {
   user-select: none;
 }
 
+/* feat-footer-link-plugin (cycle-22 restyle)：与 Web UI ``.version-info``
+   容器视觉对齐——上方分隔线 + 居中布局，便于在设置面板底部形成清晰的
+   「项目署名」分区。 */
 .settings-footer {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--vscode-descriptionForeground);
-  margin-top: 16px;
-  padding-top: 2px;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(127, 127, 127, 0.15);
+  text-align: center;
+  width: 100%;
 }
 
-/* feat-footer-link-plugin：``v1.7.X · GitHub``（中点分隔的两段）已合并为
-   单一可点击链接 ``AI Intervention Agent X.Y.Z``，所以原 ``::after`` 中点
-   伪元素去除；保留 ``.settings-footer-link`` 单一选择器并与 VSCode
-   textLink 主题色对齐。新增 ``focus-visible`` 强调框（无障碍）+ 微妙的
-   hover 字色加深，避免只有下划线一种 affordance。 */
+/* feat-footer-link-plugin (cycle-22 restyle)：从 VSCode textLink 简朴样式
+   升级为「胶囊按钮」(pill button) — 与 Web UI ``.version-link`` 视觉对齐
+   （圆角 8px + 半透明背景 + GitHub octocat icon prefix）。
+
+   主题适配策略 ── 不直接 hardcode dark / light 色值，而是用 ``rgba(127,
+   127, 127, .X)`` 这种**中性灰**做底，配合 ``var(--vscode-foreground)``
+   做文字色。这样 dark / light / high-contrast 三种主题下都能用同一组规则
+   render（hc 主题会自动用更高对比度的 ``--vscode-foreground``，无需 @media
+   分支）。GitHub 图标用 ``fill="currentColor"`` 继承链接文字色，主题切换
+   自动同步。 */
 .settings-footer-link {
-  color: var(--vscode-textLink-foreground);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid rgba(127, 127, 127, 0.18);
+  color: var(--vscode-foreground);
   text-decoration: none;
-  padding: 2px 0;
+  font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.01em;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .settings-footer-link:hover {
-  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
-  text-decoration: underline;
+  background: rgba(127, 127, 127, 0.16);
+  border-color: rgba(127, 127, 127, 0.28);
+  color: var(--vscode-textLink-activeForeground, var(--vscode-foreground));
+  text-decoration: none;
 }
 
 .settings-footer-link:focus-visible {
-  outline: 1px solid var(--vscode-focusBorder);
+  outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 2px;
-  border-radius: 2px;
+}
+
+.settings-footer-link:focus,
+.settings-footer-link:active {
+  text-decoration: none;
+}
+
+.settings-footer-link .github-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.settings-footer-link-text {
+  display: inline-block;
 }
 
 /* 代码块工具栏（复制/语言标签） */

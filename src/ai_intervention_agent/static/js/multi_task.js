@@ -364,79 +364,6 @@ function configureMarkedSecurityOnce() {
 
 configureMarkedSecurityOnce();
 
-// ==================== Favicon 徽章 ====================
-var _faviconState = { original: null, lastCount: -1 };
-
-function _loadOriginalFavicon() {
-  if (_faviconState.original) return Promise.resolve(_faviconState.original);
-  return new Promise((resolve) => {
-    var link =
-      document.querySelector('link[rel="icon"]') ||
-      document.querySelector('link[rel="shortcut icon"]');
-    var href = link ? link.href : "/favicon.ico";
-    var img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = function () {
-      _faviconState.original = img;
-      resolve(img);
-    };
-    img.onerror = function () {
-      resolve(null);
-    };
-    img.src = href;
-  });
-}
-
-function updateFaviconBadge(count) {
-  count = Math.max(0, Math.floor(count) || 0);
-  if (count === _faviconState.lastCount) return;
-  _faviconState.lastCount = count;
-
-  _loadOriginalFavicon().then(function (img) {
-    var size = 32;
-    var canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    var ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    if (img) ctx.drawImage(img, 0, 0, size, size);
-
-    if (count > 0) {
-      var text = count > 99 ? "99+" : String(count);
-      var radius = text.length > 2 ? 10 : 8;
-      var cx = size - radius;
-      var cy = radius;
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
-      ctx.fillStyle = "#ef4444";
-      ctx.fill();
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#fff";
-      ctx.stroke();
-
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold " + (text.length > 2 ? 8 : 10) + "px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(text, cx, cy + 0.5);
-    }
-
-    var link = document.querySelector('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "icon";
-      document.head.appendChild(link);
-    }
-    try {
-      link.href = canvas.toDataURL("image/png");
-    } catch (e) {
-      /* CSP/安全限制 */
-    }
-  });
-}
-
 // 创建本地引用以便在函数中使用
 var currentTasks = window.currentTasks;
 var activeTaskId = window.activeTaskId;
@@ -819,6 +746,11 @@ function handleExtendCountdownClick() {
           task.auto_resubmit_timeout = newTimeout;
           task.remaining_time = newRemaining;
           updateCountdownExtendButton(task);
+          // mining-6 Track A：extend 后保持 freeze 按钮 visible（task 仍
+          // 有 active timeout > 0），让用户在 extend 后仍可一键 freeze。
+          if (typeof updateFreezeCountdownButton === "function") {
+            updateFreezeCountdownButton(task);
+          }
         }
         // 立刻刷新主倒计时 UI（圆环 + 数字）
         if (typeof window.updateCountdownDisplay === "function") {
@@ -856,6 +788,169 @@ if (
     if (btnNow && !btnNow.__aiiaExtendBound) {
       btnNow.__aiiaExtendBound = true;
       btnNow.addEventListener("click", handleExtendCountdownClick);
+    }
+  }
+}
+
+// mining-6 Track A: freeze countdown button (cycle-5 §3.6 derivative).
+// 复用 ``_resolveExtendCountdownLabel`` 的 i18n key-equality fallback 模式。
+function _resolveFreezeCountdownLabel(state) {
+  var key;
+  var fallback;
+  if (state === "ariaLabel") {
+    key = "page.freezeCountdown.ariaLabel";
+    fallback = "Freeze auto-resubmit countdown (one-time)";
+  } else if (state === "title") {
+    key = "page.freezeCountdown.title";
+    fallback = "Permanently disable auto-resubmit for this task";
+  } else if (state === "label") {
+    key = "page.freezeCountdown.label";
+    fallback = "Freeze";
+  } else if (state === "alreadyFrozen") {
+    key = "page.freezeCountdown.alreadyFrozen";
+    fallback = "Already frozen";
+  } else {
+    key = "page.freezeCountdown.networkError";
+    fallback = "Failed to freeze countdown";
+  }
+  var v;
+  if (key === "page.freezeCountdown.ariaLabel") {
+    v = _t("page.freezeCountdown.ariaLabel");
+  } else if (key === "page.freezeCountdown.title") {
+    v = _t("page.freezeCountdown.title");
+  } else if (key === "page.freezeCountdown.label") {
+    v = _t("page.freezeCountdown.label");
+  } else if (key === "page.freezeCountdown.alreadyFrozen") {
+    v = _t("page.freezeCountdown.alreadyFrozen");
+  } else {
+    v = _t("page.freezeCountdown.networkError");
+  }
+  return typeof v === "string" && v.length > 0 && v !== key ? v : fallback;
+}
+
+// 同步 freeze 按钮的可见性 + disabled 状态。规则：
+// - 仅当 task 有 active auto-resubmit（``auto_resubmit_timeout > 0``）时显示
+// - 已 frozen（``<=0``）或 completed 时隐藏（无需再 freeze）
+// - 旧 backend 无 ``auto_resubmit_timeout`` 字段时按 hidden 处理（backward-compat）
+function updateFreezeCountdownButton(task) {
+  if (typeof document === "undefined") return;
+  var btn = document.getElementById("countdown-freeze-btn");
+  if (!btn) return;
+  if (
+    !task ||
+    typeof task.auto_resubmit_timeout !== "number" ||
+    task.status === "completed" ||
+    task.auto_resubmit_timeout <= 0
+  ) {
+    btn.classList.add("hidden");
+    btn.disabled = true;
+    return;
+  }
+  btn.classList.remove("hidden");
+  btn.disabled = false;
+  btn.setAttribute("title", _resolveFreezeCountdownLabel("title"));
+  btn.setAttribute("aria-label", _resolveFreezeCountdownLabel("ariaLabel"));
+}
+
+// 点击 freeze 按钮的 handler：POST → 成功后立即把 deadline/countdown
+// 缓存清掉让圆环消失，避免等到下次 polling 才反应。
+function handleFreezeCountdownClick() {
+  if (typeof document === "undefined" || typeof fetch === "undefined") return;
+  var btn = document.getElementById("countdown-freeze-btn");
+  if (!btn || btn.disabled) return;
+  var taskId = window.activeTaskId;
+  if (!taskId) return;
+  btn.disabled = true;
+  try {
+    fetch("/api/tasks/" + encodeURIComponent(taskId) + "/freeze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          return { ok: resp.ok, data: data };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok || !res.data || !res.data.success) {
+          var code = (res.data && res.data.code) || "unknown";
+          console.warn("Freeze countdown failed:", code);
+          if (typeof window.showInPageMessage === "function") {
+            try {
+              window.showInPageMessage(
+                code === "already_frozen"
+                  ? _resolveFreezeCountdownLabel("alreadyFrozen")
+                  : _resolveFreezeCountdownLabel("networkError"),
+                "warning",
+              );
+            } catch (_e) {
+              /* ignore: toast helper failed, console warn already covers it */
+            }
+          }
+          btn.disabled = false;
+          return;
+        }
+        // 成功路径：把 task 的本地 cache + UI 同步成 frozen 状态
+        var task = (window.currentTasks || []).find(function (t) {
+          return t.task_id === taskId;
+        });
+        if (task) {
+          task.auto_resubmit_timeout = 0;
+          task.remaining_time = 0;
+          updateFreezeCountdownButton(task);
+          // 同时让 extend 按钮也隐藏（因为 task 已无 timeout）
+          if (typeof updateCountdownExtendButton === "function") {
+            updateCountdownExtendButton(task);
+          }
+        }
+        // 清掉 deadline / countdown 缓存让圆环立刻消失
+        if (typeof window.taskDeadlines === "object" && window.taskDeadlines) {
+          delete window.taskDeadlines[taskId];
+        }
+        if (
+          typeof window.taskCountdowns === "object" &&
+          window.taskCountdowns
+        ) {
+          var cd = window.taskCountdowns[taskId];
+          if (cd) {
+            cd.remaining = 0;
+            cd.timeout = 0;
+          }
+        }
+        if (typeof window.updateCountdownDisplay === "function") {
+          window.updateCountdownDisplay(0);
+        }
+      })
+      .catch(function (e) {
+        console.warn("Freeze countdown network error:", e);
+        btn.disabled = false;
+      });
+  } catch (e) {
+    console.warn("Freeze countdown invocation failed:", e);
+    btn.disabled = false;
+  }
+}
+
+// 模块加载时一次性绑定 freeze click handler。
+if (
+  typeof document !== "undefined" &&
+  !window.__aiiaFreezeBtnBound
+) {
+  window.__aiiaFreezeBtnBound = true;
+  document.addEventListener("DOMContentLoaded", function () {
+    var btn = document.getElementById("countdown-freeze-btn");
+    if (btn) {
+      btn.addEventListener("click", handleFreezeCountdownClick);
+    }
+  });
+  if (
+    document.readyState === "interactive" ||
+    document.readyState === "complete"
+  ) {
+    var btnFreezeNow = document.getElementById("countdown-freeze-btn");
+    if (btnFreezeNow && !btnFreezeNow.__aiiaFreezeBound) {
+      btnFreezeNow.__aiiaFreezeBound = true;
+      btnFreezeNow.addEventListener("click", handleFreezeCountdownClick);
     }
   }
 }
@@ -1787,15 +1882,19 @@ function updateTasksList(tasks) {
     activeTaskId = null;
   }
 
-  // feat-countdown-extend (§3.2): 每次任务列表更新（轮询 / SSE / 手动 fetch）
-  // 都让 +60s 按钮根据 active task 的最新 extends_used / extends_max /
-  // status / auto_resubmit_timeout 同步可见性与可点击状态。**不**专门
-  // hook task_changed SSE 事件，因为 SSE 接收路径下游也走 updateTasksList。
+  // feat-countdown-extend (§3.2) + mining-6 Track A freeze: 每次任务列表
+  // 更新（轮询 / SSE / 手动 fetch）都让 +60s + freeze 按钮根据 active
+  // task 的最新 extends_used / extends_max / status /
+  // auto_resubmit_timeout 同步可见性与可点击状态。**不**专门 hook
+  // task_changed SSE 事件，因为 SSE 接收路径下游也走 updateTasksList。
   if (typeof updateCountdownExtendButton === "function") {
     var _activeTask = tasks.find(function (t) {
       return t.task_id === activeTaskId;
     });
     updateCountdownExtendButton(_activeTask);
+    if (typeof updateFreezeCountdownButton === "function") {
+      updateFreezeCountdownButton(_activeTask);
+    }
   }
 
   // 确保页面状态与任务状态一致
@@ -1956,11 +2055,9 @@ function renderTaskTabs() {
 
   if (incompleteTasks.length === 0) {
     container.classList.add("hidden");
-    updateFaviconBadge(0);
     return;
   }
 
-  updateFaviconBadge(incompleteTasks.length);
   container.classList.remove("hidden");
 
   // 优化：排除正在退出动画的标签，避免虚假重建
@@ -2952,7 +3049,19 @@ async function closeTask(taskId) {
     if (!response.ok || !data.success) {
       console.error("Server-side close task failed:", data.error);
       if (typeof showStatus === "function") {
-        showStatus(data.error || _t("status.closeFailed"), "error");
+        // R294 / cycle-28: 4xx/5xx 优先按 HTTP status 分类 (复用 app.js
+        // _classifyHttpResponse helper)，让 close-task 失败也能看到具体
+        // 原因 (401/403 不该登录 / 5xx 该稍后重试)。
+        const classifyHttp =
+          typeof window._classifyHttpResponse === "function"
+            ? window._classifyHttpResponse
+            : null;
+        const httpKey = classifyHttp ? classifyHttp(response) : null;
+        if (httpKey) {
+          showStatus(_t(httpKey), "error");
+        } else {
+          showStatus(data.error || _t("status.closeFailed"), "error");
+        }
       }
       return;
     }
@@ -2991,7 +3100,14 @@ async function closeTask(taskId) {
   } catch (error) {
     console.error("Close task failed:", error);
     if (typeof showStatus === "function") {
-      showStatus(_t("status.networkError"), "error");
+      // R289 / cycle-27: 复用 app.js 的错误分类 helper（如已加载），让 close
+      // task 失败也能看到具体原因（timeout / offline / 5xx / DOM stale）。
+      const classify =
+        typeof window._classifyFetchError === "function"
+          ? window._classifyFetchError
+          : null;
+      const key = classify ? classify(error) : "status.networkError";
+      showStatus(_t(key), "error");
     }
   }
 }
@@ -3006,6 +3122,41 @@ async function closeTask(taskId) {
  * 触发；hidden 期间 tick 跳过 DOM 写入，所以可见瞬间需要立即"补一帧"，
  * 否则用户会看到"上次离开时残留的数字"停留 0-1s。
  */
+// R266 / cycle-22 perf: countdown DOM cache helper —— `startTaskCountdown` +
+// `forceUpdateAllTaskCountdowns` 是 1Hz × N 个并发 task 的高频路径，
+// 每次 tick 之前为每个 task 都查 1× getElementById + 2× querySelector
+// (.circle / .countdown-number)。N=10 task 时 = 30 次 DOM 查找 / 秒。
+// DOM 查找虽然每次 O(1)，但 layout invalidation 会被这种"反复读"放大；
+// 同时 setAttribute 触发的 reflow 与 querySelector 的 cache miss 累加
+// 会吃掉 frame budget（特别是 user 切到 background tab 后浏览器把
+// setInterval throttle 到 1Hz 但 layout pipeline 仍然要做 work）。
+//
+// Cache 策略：把 DOM refs 挂到 `taskCountdowns[tid]._domCache` 上，
+// `document.contains(cache.ring)` 兜底 stale invalidation（SSE 重渲染
+// 或 incremental rebuild 会替换 .task-tab 节点，旧 cache 就脱离 DOM
+// tree）。命中 cache 直接复用，未命中重查并写回。
+function _getOrCacheCountdownDom(tid, entry) {
+  if (!entry) return null;
+  let cache = entry._domCache;
+  if (cache && cache.ring && document.contains(cache.ring)) {
+    return cache;
+  }
+  const ring = document.getElementById(`countdown-${tid}`);
+  if (!ring) {
+    if (cache) {
+      entry._domCache = null;
+    }
+    return null;
+  }
+  cache = {
+    ring: ring,
+    circle: ring.querySelector("circle"),
+    numberSpan: ring.querySelector(".countdown-number"),
+  };
+  entry._domCache = cache;
+  return cache;
+}
+
 function forceUpdateAllTaskCountdowns() {
   if (typeof document === "undefined" || document.hidden) return;
   if (!taskCountdowns || typeof taskCountdowns !== "object") return;
@@ -3021,13 +3172,11 @@ function forceUpdateAllTaskCountdowns() {
     const circumference = 2 * Math.PI * radius;
     const offset = circumference * (1 - progress);
 
-    const countdownRing = document.getElementById(`countdown-${tid}`);
-    if (countdownRing) {
-      const circle = countdownRing.querySelector("circle");
-      const numberSpan = countdownRing.querySelector(".countdown-number");
-      if (circle) circle.setAttribute("stroke-dashoffset", offset);
-      if (numberSpan) numberSpan.textContent = remaining;
-      countdownRing.title = _t("page.countdown", { seconds: remaining });
+    const cache = _getOrCacheCountdownDom(tid, entry);
+    if (cache) {
+      if (cache.circle) cache.circle.setAttribute("stroke-dashoffset", offset);
+      if (cache.numberSpan) cache.numberSpan.textContent = remaining;
+      cache.ring.title = _t("page.countdown", { seconds: remaining });
     }
 
     if (tid === activeTaskId) {
@@ -3191,9 +3340,11 @@ function startTaskCountdown(taskId, remaining, total = null) {
       typeof document !== "undefined" && document.hidden;
 
     // 更新SVG圆环倒计时
+    // R266 cache: 走 _getOrCacheCountdownDom，避免 1Hz × N task 反复
+    // getElementById + querySelector × 2（详细 rationale 见该 helper 注释）。
     if (!documentHidden) {
-      const countdownRing = document.getElementById(`countdown-${taskId}`);
-      if (countdownRing) {
+      const cache = _getOrCacheCountdownDom(taskId, taskCountdowns[taskId]);
+      if (cache) {
         const remaining = taskCountdowns[taskId].remaining;
         // Fallback = server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT (240); the
         // historical 250/290 were stale "MAX" values, not "DEFAULT".
@@ -3205,17 +3356,14 @@ function startTaskCountdown(taskId, remaining, total = null) {
         const circumference = 2 * Math.PI * radius;
         const offset = circumference * (1 - progress);
 
-        const circle = countdownRing.querySelector("circle");
-        const numberSpan = countdownRing.querySelector(".countdown-number");
-
-        if (circle) {
-          circle.setAttribute("stroke-dashoffset", offset);
+        if (cache.circle) {
+          cache.circle.setAttribute("stroke-dashoffset", offset);
         }
-        if (numberSpan) {
-          numberSpan.textContent = remaining;
+        if (cache.numberSpan) {
+          cache.numberSpan.textContent = remaining;
         }
 
-        countdownRing.title = _t("page.countdown", { seconds: remaining });
+        cache.ring.title = _t("page.countdown", { seconds: remaining });
       }
 
       // 如果是活动任务，也更新主倒计时

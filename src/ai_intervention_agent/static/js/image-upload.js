@@ -1099,7 +1099,54 @@ function initializeFileSelection() {
   });
 }
 
-// 图片模态框功能
+// 图片模态框功能（cycle-8 Track B R263：完整 a11y dialog 行为）
+//
+// 历史问题（cycle-8 audit 发现）：
+//   1. 每次 openImageModal 都 addEventListener("click", ...) 给 modal，
+//      累积 N 个 anonymous handler 永不解绑（leak + 多次触发）。
+//   2. 缺 focus 管理：用户键盘打开 modal 后焦点丢失，关闭后无法回到
+//      触发元素，违反 WAI-ARIA Dialog Pattern。
+//   3. 缺 Tab trap：用户 Tab 出 modal 后能进入背景（虽然 aria-modal
+//      告诉 AT 忽略背景，但视觉/键盘焦点还能游走）。
+//
+// 修复参考 keyboard_shortcut_help.js (cycle-1 Track A R255) 的模式。
+
+let _imageModalPreviouslyFocusedElement = null;
+
+function _imageModalBackgroundClickHandler(e) {
+  const modal = document.getElementById("image-modal");
+  if (e.target === modal) {
+    closeImageModal();
+  }
+}
+
+function _imageModalTabTrapHandler(event) {
+  // image-modal 内只有 1 个可聚焦元素（close button），简化方案：把所有
+  // Tab/Shift+Tab 都重定向回 close button，焦点不会逸出。
+  if (event.key !== "Tab") return;
+  const closeBtn = document.querySelector(".image-modal-close");
+  if (!closeBtn) return;
+  event.preventDefault();
+  try {
+    closeBtn.focus();
+  } catch (_e) {
+    // ignore: focus could throw if element is removed mid-event
+  }
+}
+
+function _initImageModalOnce() {
+  // 只在 DOMContentLoaded 时绑一次背景点击事件，避免 R263 历史 leak。
+  const modal = document.getElementById("image-modal");
+  if (!modal || modal.dataset.aiiaInited === "1") return;
+  modal.addEventListener("click", _imageModalBackgroundClickHandler);
+  modal.dataset.aiiaInited = "1";
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", _initImageModalOnce);
+} else {
+  _initImageModalOnce();
+}
+
 function openImageModal(base64, name, size) {
   const modal = document.getElementById("image-modal");
   const modalImage = document.getElementById("modal-image");
@@ -1117,25 +1164,51 @@ function openImageModal(base64, name, size) {
     size: _formatNum(size / 1024, { maximumFractionDigits: 2 }),
   });
 
+  // R263 a11y: 记录触发元素以便 close 时回归焦点（cycle-1 R255 pattern）
+  _imageModalPreviouslyFocusedElement = document.activeElement;
+
+  // R237 follow-up：HTML 默认带 ``hidden`` attribute（screen reader 跳过且
+  // user-agent stylesheet 默认 ``display: none``），打开 modal 时必须先
+  // 移除该属性，否则即使加了 ``.show`` class 屏幕阅读器仍会忽略整个 dialog。
+  modal.removeAttribute("hidden");
   modal.classList.add("show");
 
-  // 添加键盘事件监听
   document.addEventListener("keydown", handleModalKeydown);
+  document.addEventListener("keydown", _imageModalTabTrapHandler);
 
-  // 点击模态框背景关闭
-  modal.addEventListener("click", function (e) {
-    if (e.target === modal) {
-      closeImageModal();
+  // R263 a11y: 把焦点移到 close button（modal 内唯一可聚焦元素）
+  const closeBtn = modal.querySelector(".image-modal-close");
+  if (closeBtn) {
+    try {
+      closeBtn.focus();
+    } catch (_e) {
+      // ignore
     }
-  });
+  }
 }
 
 function closeImageModal() {
   const modal = document.getElementById("image-modal");
   modal.classList.remove("show");
+  // R237 follow-up：恢复 ``hidden`` attribute，让 screen reader 重新跳过
+  // 整个 modal 并避免 page-load 残留焦点陷阱。
+  modal.setAttribute("hidden", "");
 
-  // 移除键盘事件监听
   document.removeEventListener("keydown", handleModalKeydown);
+  document.removeEventListener("keydown", _imageModalTabTrapHandler);
+
+  // R263 a11y: 焦点回归到触发元素（cycle-1 R255 pattern）
+  if (
+    _imageModalPreviouslyFocusedElement &&
+    document.contains(_imageModalPreviouslyFocusedElement)
+  ) {
+    try {
+      _imageModalPreviouslyFocusedElement.focus();
+    } catch (_e) {
+      // ignore: focus restore is best-effort
+    }
+  }
+  _imageModalPreviouslyFocusedElement = null;
 }
 
 function handleModalKeydown(event) {

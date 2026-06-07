@@ -278,6 +278,57 @@ def _resolve_build_info() -> dict[str, str]:
         return dict(cache)
 
 
+def reset_sse_stats_cache_for_testing() -> None:
+    """R352 (cycle-39 #C2) · **Test-only**: 清空 ``_sse_stats_cache`` +
+    重置 timestamp, 让下次 ``_fetch_sse_stats_cached`` 重新拉取。
+
+    与 R352 其他 reset helper (build_info / feedback_counters) 同源 —
+    给 TTL-bound 进程级 cache 暴露测试隔离 API, 防止跨测试 cache 残留
+    污染断言。
+    """
+    global _sse_stats_cache_ts
+    with _sse_stats_cache_lock:
+        _sse_stats_cache.clear()
+        _sse_stats_cache_ts = 0.0
+
+
+def reset_recent_logs_cache_for_testing() -> None:
+    """R352 (cycle-39 #C2) · **Test-only**: 清空 ``_recent_logs_cache`` +
+    重置 timestamp, 让下次 ``_fetch_recent_logs_cached`` 重新拉取。
+    """
+    global _recent_logs_cache_ts
+    with _recent_logs_cache_lock:
+        _recent_logs_cache.clear()
+        _recent_logs_cache_ts = 0.0
+
+
+def reset_build_info_cache_for_testing() -> None:
+    """R352 (cycle-39 #C2) · **Test-only**: 清空 ``_BUILD_INFO_CACHE`` 让
+    下次 ``_resolve_build_info()`` 重新调用 git subprocess。
+
+    **为什么需要这个 helper?**
+
+    ``_BUILD_INFO_CACHE`` 是 module-level 进程级单次缓存; 测试 mock 了
+    ``subprocess.check_output`` 后, 如果 cache 已被填充过, mock 的返回值
+    不会被读取 (因为代码会 short-circuit 返回 cached dict)。这违反了
+    "测试可以重置全局状态" 的隔离原则。
+
+    与 R323 (NotificationManager) / R352 (FEEDBACK_COUNTERS) 同源 — 给
+    module-level cache 暴露显式 reset API。
+
+    **使用方式 (test)**::
+
+        from ai_intervention_agent.server import (
+            reset_build_info_cache_for_testing,
+        )
+        reset_build_info_cache_for_testing()
+        # 现在 mock subprocess 后调用 _resolve_build_info() 才会真的走 mock
+    """
+    global _BUILD_INFO_CACHE
+    with _BUILD_INFO_CACHE_LOCK:
+        _BUILD_INFO_CACHE = {}
+
+
 def _build_server_icons() -> list[Icon]:
     """启动时一次性把本地 icons 转成 data URI，让 server icons 完全 self-contained。
 

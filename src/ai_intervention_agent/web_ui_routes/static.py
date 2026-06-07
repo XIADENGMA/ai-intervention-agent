@@ -276,6 +276,40 @@ class StaticRoutesMixin:
             response.headers["Cache-Control"] = "public, max-age=3600"
             return response
 
+        @self.app.route("/offline.html")
+        @self.limiter.exempt
+        def serve_offline_html() -> ResponseReturnValue:
+            """提供 PWA 离线兜底页（R249 / mining-9 Track B）.
+
+            功能说明：
+                返回 ``templates/offline.html`` 自包含离线 shell，
+                Service Worker 在 ``install`` 阶段预缓存此页面，当
+                navigation request fetch 失败时（用户离线 / 后台中
+                断），SW 返回此页面给浏览器替代默认的网络错误页。
+
+                页面自带双语提示（中/英）、重连按钮、5s 间隔后台 ping
+                自动检测服务恢复、``online`` 事件监听 —— 服务恢复时
+                自动 reload。
+
+            返回值：
+                offline.html 内容（text/html MIME；``Cache-Control:
+                public, max-age=600`` 短缓存让 SW 拿到 fresh 副本）。
+
+            频率限制：
+                - 已豁免：浏览器仅在 SW install / 离线兜底时拉取，
+                  几乎不产生流量。
+
+            历史/锚点：
+                - R249 mining-9 Track B：PWA offline experience
+                - 测试：tests/test_feat_mining9_pwa_offline.py
+            """
+            from flask import render_template
+
+            response = self.app.make_response(render_template("offline.html"))
+            response.headers["Cache-Control"] = "public, max-age=600"
+            response.headers["Content-Type"] = "text/html; charset=utf-8"
+            return response
+
         @self.app.route("/sounds/<filename>")
         @self.limiter.exempt
         def serve_sounds(filename: str) -> ResponseReturnValue:

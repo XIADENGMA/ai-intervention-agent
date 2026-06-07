@@ -262,6 +262,24 @@ const ThemeManager = (function () {
       // 为已存在的按钮绑定点击事件
       bindExistingButtons();
 
+      // R253 / cycle-10 bonus：cross-tab theme sync
+      // tab A 改主题 → localStorage 写入 → 其他 tab 收到 ``storage`` 事件
+      // → 自动应用相同主题，无需 reload。事件只在**其他** tab 触发
+      // （origin tab 不会收到自己的写入），所以无递归风险。
+      try {
+        window.addEventListener('storage', function (event) {
+          if (event.key !== STORAGE_KEY) return;
+          const newTheme = event.newValue;
+          if (!newTheme || !Object.values(THEMES).includes(newTheme)) return;
+          if (newTheme === currentTheme) return;
+          currentTheme = newTheme;
+          applyTheme(newTheme);
+          updateToggleButton();
+        });
+      } catch (e) {
+        // 极少数浏览器 (very old IE) 不支持 storage event；不致命
+      }
+
       console.debug('Theme manager initialized:', currentTheme);
     },
 

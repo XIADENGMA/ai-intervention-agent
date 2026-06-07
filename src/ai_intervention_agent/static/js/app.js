@@ -518,11 +518,26 @@ function processCodeBlocks(container) {
 
 // 复制代码到剪贴板
 async function copyCodeToClipboard(preElement, button) {
-  // Claude 官方风格图标
+  // R285 / cycle-26 t26-2 (R268/R279/R280 entry-side 第四轮):
+  // preElement 与 button 是 caller (event handler) 传入的引用。点击瞬间
+  // 它们一定存在，但 await navigator.clipboard 之后可能：
+  // (a) preElement 因 markdown re-render (SSE auto-refresh) 被替换 → stale
+  // (b) button 因父 message bubble unmount → DOM detached
+  // 旧实现直接 ``button.innerHTML = ...`` 抛 TypeError → catch 路径再次
+  // ``button.innerHTML = errorIconSvg + ...`` 也抛 → 整个 setTimeout
+  // restore 链断裂，console error 无法被用户感知。
+  // R285 修复: 入口先 null/connected check，await 后访问也判 isConnected,
+  // best-effort UI feedback 缺失 silently skip。
   const checkIconSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M13.7803 4.21967C14.0732 4.51256 14.0732 4.98744 13.7803 5.28033L6.78033 12.2803C6.48744 12.5732 6.01256 12.5732 5.71967 12.2803L2.21967 8.78033C1.92678 8.48744 1.92678 8.01256 2.21967 7.71967C2.51256 7.42678 2.98744 7.42678 3.28033 7.71967L6.25 10.6893L12.7197 4.21967C13.0126 3.92678 13.4874 3.92678 13.7803 4.21967Z"/></svg>';
   const errorIconSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" style="width: 14px; height: 14px; margin-right: 4px; vertical-align: middle;"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.21967 4.21967C4.51256 3.92678 4.98744 3.92678 5.28033 4.21967L8 6.93934L10.7197 4.21967C11.0126 3.92678 11.4874 3.92678 11.7803 4.21967C12.0732 4.51256 12.0732 4.98744 11.7803 5.28033L9.06066 8L11.7803 10.7197C12.0732 11.0126 12.0732 11.4874 11.7803 11.7803C11.4874 12.0732 11.0126 12.0732 10.7197 11.7803L8 9.06066L5.28033 11.7803C4.98744 12.0732 4.51256 12.0732 4.21967 11.7803C3.92678 11.4874 3.92678 11.0126 4.21967 10.7197L6.93934 8L4.21967 5.28033C3.92678 4.98744 3.92678 4.51256 4.21967 4.21967Z"/></svg>';
+
+  // R285 entry-side guard
+  if (!preElement || !button) {
+    console.warn("copyCodeToClipboard: preElement/button missing — abort");
+    return;
+  }
 
   try {
     const codeElement = preElement.querySelector("code");
@@ -532,31 +547,48 @@ async function copyCodeToClipboard(preElement, button) {
 
     await navigator.clipboard.writeText(textToCopy);
 
-    // 更新按钮状态
+    // R285: button 可能在 await 期间 detach (DOM re-render)，
+    // isConnected 检查比直接访问 innerHTML 安全
+    if (!button.isConnected) {
+      console.debug(
+        "copyCodeToClipboard: button detached after copy success — skip UI",
+      );
+      return;
+    }
     const originalHTML = button.innerHTML;
     // AIIA-XSS-SAFE: checkIconSvg 是开发者手写 SVG 字面量；t('status.copied')
     // 走 locales/*.json 静态 key 且无参数。详见 docs/i18n.md § Security。
     button.innerHTML = checkIconSvg + t("status.copied");
     button.classList.add("copied");
 
-    // 2秒后恢复原状
     setTimeout(() => {
-      button.innerHTML = originalHTML;
-      button.classList.remove("copied");
+      if (button.isConnected) {
+        button.innerHTML = originalHTML;
+        button.classList.remove("copied");
+      }
     }, 2000);
   } catch (err) {
     console.error("Copy failed:", err);
 
-    // 显示错误状态
+    // R285: catch 路径同样需要 isConnected check —— err 可能就是因为
+    // button DOM detach 导致 (虽然多数 err 来自 navigator.clipboard)
+    if (!button.isConnected) {
+      console.debug(
+        "copyCodeToClipboard: button detached during copy failure — skip UI",
+      );
+      return;
+    }
     const originalHTML = button.innerHTML;
     // AIIA-XSS-SAFE: errorIconSvg 是开发者手写 SVG 字面量；t('status.copyFailed')
-    // 走静态 key 且无参数。
+    // 走 locales/*.json 静态 key 且无参数。与 line 561 success 路径同源安全。
     button.innerHTML = errorIconSvg + t("status.copyFailed");
     button.classList.add("error");
 
     setTimeout(() => {
-      button.innerHTML = originalHTML;
-      button.classList.remove("error");
+      if (button.isConnected) {
+        button.innerHTML = originalHTML;
+        button.classList.remove("error");
+      }
     }, 2000);
   }
 }
@@ -631,38 +663,59 @@ async function loadConfig() {
 
     // 页面首次加载不发送通知，只在内容变化时通知
 
-    // 更新描述 - 使用高性能渲染函数
+    // R285 / cycle-26 t26-2 (R268/R279/R280 entry-side 第四轮):
+    // loadConfig 在 await fetch 之后访问 DOM 节点。loadConfig 可能在
+    // SSE auto-refresh 路径多次重入；如果 #description 节点被 multi-task
+    // 切换 / 错误 fallback 替换，``renderMarkdownContent(null, ...)`` 会
+    // 抛 TypeError 被 catch 翻成 user-visible "Config load failed"——但
+    // 配置实际加载成功了，UI 渲染失败误报为"加载失败"。null check 兜底
+    // 让用户看到正确状态 (silently skip render + console.warn 留 trace)。
     const descriptionElement = document.getElementById("description");
-    renderMarkdownContent(
-      descriptionElement,
-      config.prompt_html || config.prompt,
-    );
+    if (descriptionElement) {
+      renderMarkdownContent(
+        descriptionElement,
+        config.prompt_html || config.prompt,
+      );
+    } else {
+      console.warn(
+        "loadConfig: #description not in DOM (SSE reload + multi-task " +
+          "switch concurrent?) — skipping prompt render",
+      );
+    }
 
-    // 加载预定义选项
     if (config.predefined_options && config.predefined_options.length > 0) {
       const optionsContainer = document.getElementById("options-container");
       const separator = document.getElementById("separator");
 
-      config.predefined_options.forEach((option, index) => {
-        const optionDiv = document.createElement("div");
-        optionDiv.className = "option-item";
+      // R285: 同上，options-container / separator 任一缺失即跳过 options
+      // 渲染，不报"加载失败"。
+      if (!optionsContainer || !separator) {
+        console.warn(
+          "loadConfig: #options-container or #separator missing — " +
+            "skipping options render",
+        );
+      } else {
+        config.predefined_options.forEach((option, index) => {
+          const optionDiv = document.createElement("div");
+          optionDiv.className = "option-item";
 
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.id = `option-${index}`;
-        checkbox.value = option;
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.id = `option-${index}`;
+          checkbox.value = option;
 
-        const label = document.createElement("label");
-        label.htmlFor = `option-${index}`;
-        label.textContent = option;
+          const label = document.createElement("label");
+          label.htmlFor = `option-${index}`;
+          label.textContent = option;
 
-        optionDiv.appendChild(checkbox);
-        optionDiv.appendChild(label);
-        optionsContainer.appendChild(optionDiv);
-      });
+          optionDiv.appendChild(checkbox);
+          optionDiv.appendChild(label);
+          optionsContainer.appendChild(optionDiv);
+        });
 
-      optionsContainer.style.display = "block";
-      separator.style.display = "block";
+        optionsContainer.style.display = "block";
+        separator.style.display = "block";
+      }
     }
   } catch (error) {
     console.error("Config load failed:", error);
@@ -942,6 +995,18 @@ function getClipboardFailureHint(error) {
   return t("status.clipboardDefault");
 }
 
+// cycle-22 / cr51 follow-up #1：与 image-modal R263a / settings-panel 同套
+// capture-activeElement 模式 — 模态打开前 snapshot 真正触发它的元素，
+// 关闭时回归。比 hardcode 回 ``#feedback-text`` 更鲁棒的场景：
+//   1. 用户从 quick-phrases 面板 paste 触发剪贴板降级，关闭后焦点应回
+//      到 quick-phrases 按钮，而非跳走打断 quick-phrases 流；
+//   2. 多 task tab 场景下 ``#feedback-text`` 可能并非当前 active task 的
+//      textarea（旧 hardcode 会跳到 cached 的第一个 textarea ID）；
+//   3. ``#feedback-text`` 元素本身可能在 SSE 重渲染后被替换，``getElementById``
+//      返回旧引用 → focus 失败 silent fail。
+// 仍保留 fallback 到 ``#feedback-text``，对齐升级前的语义。
+let _codePasteModalPreviouslyFocusedElement = null;
+
 function openCodePasteModal(error) {
   const panel = document.getElementById("code-paste-panel");
   const textarea = document.getElementById("code-paste-textarea");
@@ -951,6 +1016,8 @@ function openCodePasteModal(error) {
     showStatus(t("status.clipboardFailed"), "error");
     return;
   }
+
+  _codePasteModalPreviouslyFocusedElement = document.activeElement;
 
   if (hint) {
     hint.textContent = getClipboardFailureHint(error);
@@ -991,6 +1058,16 @@ function closeCodePasteModal() {
 
   document.removeEventListener("keydown", handleCodePasteModalKeydown);
 
+  const prev = _codePasteModalPreviouslyFocusedElement;
+  _codePasteModalPreviouslyFocusedElement = null;
+  if (prev && document.contains(prev) && typeof prev.focus === "function") {
+    try {
+      prev.focus();
+      return;
+    } catch (_e) {
+      // 忽略：focus 失败（如元素被设为 inert）走 fallback
+    }
+  }
   const feedbackTextarea = document.getElementById("feedback-text");
   if (feedbackTextarea) feedbackTextarea.focus();
 }
@@ -1080,10 +1157,110 @@ function captureSubmitBtnOriginalHTML() {
   if (btn) SUBMIT_BTN_ORIGINAL_HTML = btn.innerHTML;
 }
 
+// R289 / cycle-27: 错误消息精细化。把 fetch + DOM 操作的 catch error 分类
+// 成 5 个 i18n key，让用户看到"该重试 / 该刷新 / 该联系运维"而非笼统的
+// "网络错误"。
+//
+// 分类规则按 error.name + error.message 字符串特征：
+//   - AbortError                       → 请求超时（fetchWithTimeout AbortSignal）
+//   - TypeError "Failed to fetch"      → 网络不可达（CORS / DNS / offline）
+//   - SyntaxError                      → JSON 解析失败（5xx 返回 HTML / 服务器异常）
+//   - TypeError (其他)                  → DOM 访问异常 (stale ref 等)
+//   - 其他                              → 通用 networkError 兜底
+//
+// 通过 ``window._classifyFetchError`` 暴露，让 multi_task.js / settings-manager.js
+// 等其他模块也能复用同一套分类逻辑，避免 "网络错误" 重新散落到全代码库。
+function _classifyFetchError(error) {
+  if (!error) return "status.networkError";
+  const name = error.name || "";
+  const msg = String(error.message || "").toLowerCase();
+  if (name === "AbortError") {
+    return "status.requestTimeout";
+  }
+  if (
+    name === "TypeError" &&
+    (msg.includes("failed to fetch") ||
+      msg.includes("networkerror") ||
+      msg.includes("load failed"))
+  ) {
+    return "status.networkOffline";
+  }
+  if (name === "SyntaxError") {
+    return "status.serverResponseInvalid";
+  }
+  if (name === "TypeError") {
+    return "status.uiRenderingError";
+  }
+  return "status.networkError";
+}
+window._classifyFetchError = _classifyFetchError;
+
+// R294 / cycle-28: HTTP response-level 分类 helper（补 R289 _classifyFetchError
+// 不覆盖的 response.ok==false 分支）。fetch() 默认 4xx/5xx 不抛 → 当前
+// "else { showStatus(result.message || t(status.submitFailed)) }" 把所有 HTTP
+// 错误都笼统显示后端 error 字段，但：
+//   - 401/403：用户应"重新登录"，不是看后端 message
+//   - 5xx (502/503/504)：用户应"稍后重试"，不该看到栈跟踪
+//   - 其他：保留后端 message 给上下文
+//
+// _classifyHttpResponse(response, defaultMsg) 返回:
+//   - null  → 调用方按既有逻辑（一般是显示 backend message + defaultMsg 兜底）
+//   - 字符串 → i18n key (e.g. "status.unauthorized")
+//
+// 调用方典型用法:
+//   const key = _classifyHttpResponse(response);
+//   if (key) showStatus(t(key), "error");
+//   else showStatus(result.message || t("status.submitFailed"), "error");
+function _classifyHttpResponse(response) {
+  if (!response || typeof response.status !== "number") return null;
+  const status = response.status;
+  if (status === 401 || status === 403) {
+    return "status.unauthorized";
+  }
+  // R301 / cycle-30: 5xx 子分类 — 给 502/503/504 三类常见 reverse-proxy
+  // 错误码各自专属 i18n key,因为它们的语义和 user action 都不同：
+  //   - 502 (Bad Gateway): nginx/反代收到上游异常响应,通常上游 crash/启动中
+  //   - 503 (Service Unavailable): 上游主动返回 unavailable,通常 overload/maintenance
+  //   - 504 (Gateway Timeout): 上游处理超时,通常上游 hang/slow query
+  //   - 500/501/505+: fallback 到通用 status.serviceUnavailable
+  // 给用户一个可执行的暗示("稍后重试" vs "联系运维"),而不是看 backend stack trace。
+  if (status === 502) {
+    return "status.badGateway";
+  }
+  if (status === 503) {
+    return "status.serviceOverloaded";
+  }
+  if (status === 504) {
+    return "status.gatewayTimeout";
+  }
+  if (status >= 500 && status < 600) {
+    return "status.serviceUnavailable";
+  }
+  return null;
+}
+window._classifyHttpResponse = _classifyHttpResponse;
+
 // 提交反馈
 async function submitFeedback() {
   captureSubmitBtnOriginalHTML();
-  const feedbackText = document.getElementById("feedback-text").value.trim();
+  // R280 / cycle-25 entry-side null guard (R268/R279 同 class)：submitFeedback
+  // 可由 Ctrl/Cmd+Enter 键盘快捷键触发（line 1527 keyboard handler），即使
+  // submit-btn DOM 不在视图（任务切换动画中 / 新 SSE 推送替换了页面）。
+  // 旧实现直接 ``getElementById("feedback-text").value.trim()`` 会抛
+  // ``TypeError: Cannot read properties of null (reading 'value')``，被 catch
+  // 翻译成 user-visible "网络错误"——**误导用户排查网络问题，实际是 DOM
+  // stale**。R280 修复：feedback-text 不在 DOM → 视作"用户当前不在反馈视图"
+  // 早返回，不污染网络错误 toast；feedback-text 在 DOM 但 trim() 失败属于
+  // 字段实际问题，让原 catch 处理。
+  const feedbackTextEl = document.getElementById("feedback-text");
+  if (!feedbackTextEl) {
+    console.warn(
+      "submitFeedback: feedback-text not in DOM (likely keyboard shortcut " +
+        "triggered during task switch / SSE replace) — silently aborting",
+    );
+    return;
+  }
+  const feedbackText = feedbackTextEl.value.trim();
   const selectedOptions = [];
 
   // 【修复】直接从 DOM 获取选中的预定义选项
@@ -1112,10 +1289,16 @@ async function submitFeedback() {
   }
 
   try {
+    // R280 / cycle-25: submit-btn 也可能在 entry 时 stale (Ctrl+Enter 键盘
+    // 触发 + 任务切换并发场景)。null check 兜底——不存在时仍继续 fetch (
+    // 反馈不能因为 UI loading state 缺失就丢失)，UI loading state 是
+    // best-effort，silently 跳过即可。
     const submitBtn = document.getElementById("submit-btn");
-    submitBtn.disabled = true;
-    // AIIA-XSS-SAFE: t('status.submitting') 是静态 key 且无参数，不携带用户可控数据。
-    submitBtn.innerHTML = t("status.submitting");
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      // AIIA-XSS-SAFE: t('status.submitting') 是静态 key 且无参数，不携带用户可控数据。
+      submitBtn.innerHTML = t("status.submitting");
+    }
 
     // 使用 FormData 上传文件，避免 base64 编码
     const formData = new FormData();
@@ -1154,13 +1337,17 @@ async function submitFeedback() {
 
       // 反馈提交成功，不需要通知（用户要求）
 
-      // 清空表单
-      document.getElementById("feedback-text").value = "";
-      // 取消选中所有复选框
+      // R280 / cycle-25: 清空表单。await 期间 DOM 可能被 multi-task 切换
+      // 替换，再 ``getElementById("feedback-text").value = ""`` 会抛
+      // TypeError 污染 success path。null check 兜底——DOM 已切走时无需
+      // 清空（新视图自己负责状态）。
+      const fbTextEl = document.getElementById("feedback-text");
+      if (fbTextEl) {
+        fbTextEl.value = "";
+      }
       document
         .querySelectorAll('input[type="checkbox"]')
         .forEach((cb) => (cb.checked = false));
-      // 清除所有图片
       clearAllImages();
 
       // 清理该任务的缓存（如果是多任务模式）
@@ -1189,22 +1376,45 @@ async function submitFeedback() {
         showNoContentPage();
       }
     } else {
-      showStatus(result.message || t("status.submitFailed"), "error");
+      // R294 / cycle-28: HTTP 4xx/5xx 不进 catch (fetch 默认不 throw)。
+      // 优先按 status 分类 (401/403 → unauthorized, 5xx → serviceUnavailable)，
+      // 回退到 backend message + submitFailed 兜底。
+      const httpKey = _classifyHttpResponse(response);
+      if (httpKey) {
+        showStatus(t(httpKey), "error");
+      } else {
+        showStatus(result.message || t("status.submitFailed"), "error");
+      }
     }
   } catch (error) {
     console.error("Submit failed:", error);
-    showStatus(t("status.networkError"), "error");
+    // R289 / cycle-27: 通用 "网络错误" 在 stale DOM / 5xx / timeout / response
+    // parse 失败等场景都会被显示，误导用户重试网络。改为按 error.name
+    // 分类成更具体的 i18n key，让用户知道是该重试、该刷新、还是该联系运维。
+    showStatus(t(_classifyFetchError(error)), "error");
   } finally {
+    // R268 / cycle-22 fix: submit 期间任务可能 auto-resubmit timeout →
+    // showNoContentPage 把 #submit-btn 从 DOM 移除；或 SSE 重渲染替换
+    // 节点 → 旧 getElementById 引用作废。原实现 `submitBtn.disabled =
+    // false` 不做 null check，submit-btn 不存在时抛 TypeError 污染
+    // finally 块，吞掉原 error 信息（catch 块 console.error 已记录但
+    // finally 抛错会覆盖 user-visible status.networkError toast）。
+    //
+    // 修复：null check 兜底 — submit-btn 已经不在 DOM 时（用户已被切
+    // 走 / 任务已 timeout），UI 状态无需 reset，silently 跳过 finally
+    // body 即可。
     const submitBtn = document.getElementById("submit-btn");
-    submitBtn.disabled = false;
-    // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
-    if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
-      submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML;
-      if (
-        window.AIIA_I18N &&
-        typeof window.AIIA_I18N.translateDOM === "function"
-      ) {
-        window.AIIA_I18N.translateDOM(submitBtn);
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      // 还原为首次渲染时的 innerHTML（含 SVG + <span data-i18n>），然后重新翻译。
+      if (SUBMIT_BTN_ORIGINAL_HTML !== null) {
+        submitBtn.innerHTML = SUBMIT_BTN_ORIGINAL_HTML;
+        if (
+          window.AIIA_I18N &&
+          typeof window.AIIA_I18N.translateDOM === "function"
+        ) {
+          window.AIIA_I18N.translateDOM(submitBtn);
+        }
       }
     }
   }

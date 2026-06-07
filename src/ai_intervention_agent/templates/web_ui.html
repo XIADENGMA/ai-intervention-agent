@@ -78,6 +78,37 @@
       })();
     </script>
 
+    <!-- R250 / mining-9 perf-audit cycle-3 §3.1 — Anti-FOUC theme bootstrap
+         主题模块 ``theme.js`` 在 ``<body>`` 末尾 defer 加载，浏览器解析到此
+         时 ``ThemeManager.init`` 尚未执行，``<html data-theme>`` 未写。
+         结果：用户偏好与系统偏好不符（如系统亮色但偏好 dark）时会先按系
+         统偏好渲染 → defer 脚本 fire 后突变到用户偏好 → 肉眼可见 FOUC。
+         本脚本同步读 localStorage + 解析 auto 偏好 → 立即写 data-theme，
+         让 CSS 第一帧就用正确变量。~15 LoC 同步开销 < 1ms（缓存 hot），
+         远小于一次 layout/paint 切换成本（~10-30ms）。后续 ``theme.js``
+         init 不冲突（同 attribute 写入是幂等的）。
+         CSP nonce 必须保留——CSP `script-src 'nonce-...'` 不允许裸 inline。-->
+    <script nonce="{{ csp_nonce }}">
+      (function antiFoucThemeBootstrap() {
+        try {
+          var stored = localStorage.getItem("theme-preference");
+          var resolved = stored;
+          if (!stored || stored === "auto") {
+            resolved = window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+          }
+          if (resolved === "dark" || resolved === "light") {
+            document.documentElement.setAttribute("data-theme", resolved);
+          }
+        } catch (_) {
+          // localStorage 不可用（隐私模式 / iframe sandbox）→ 让 main.css
+          // 的 `prefers-color-scheme: light` 媒体查询自然兜底，仍能正确显示
+        }
+      })();
+    </script>
+
     <!-- 资源预加载优化：减少首屏渲染阻塞
          R21.1：扩展 preload 范围至首屏 critical JS（app.js / multi_task.js / i18n.js / state.js），
          让浏览器在 head 解析阶段就并行下载这些 body 末尾 defer 加载的脚本，FCP 提早 30-100 ms。
@@ -365,7 +396,15 @@
                用户偏好移除。后端 ``/api/tasks/export`` API 保留供 CI / 备份脚本
                独立调用（R125/R135 用例文档化）。
                历史 R125b/R232 invariant 锚点见 ``tests/test_icon_only_buttons_aria_label_invariant_r232.py``
-               与 ``CHANGELOG`` 中 feat-remove-download 段。 -->
+               与 ``CHANGELOG`` 中 feat-remove-download 段。
+               ----
+               ``#pwa-install-btn`` / ``#pwa-install-dismiss-btn``（原 R247 /
+               mining-7 Track A 自定义 PWA 安装提示按钮）也已按 cycle-22
+               用户偏好整体下架（``feat-remove-pwa-install``）。manifest 与
+               Service Worker 保留，PWA 安装能力本身完全不受影响，用户依然
+               可以通过 Chrome 地址栏「安装」图标 / iOS Safari Share → 添加
+               到主屏幕 等浏览器原生入口安装。invariant 锚点见
+               ``tests/test_feat_remove_pwa_install.py``。 -->
           <button
             class="settings-btn"
             id="settings-btn"
@@ -652,6 +691,30 @@
                   >+60s</span
                 >
               </button>
+              <!-- mining-6 Track A (cycle-5 §3.6 derivative): freeze button.
+                   永久禁用当前 task 的 auto-resubmit 倒计时；适合
+                   长任务场景（用户不希望被反复 resubmit 打断）。默认
+                   hidden + disabled，由 ``updateFreezeCountdownButton(task)``
+                   在 task 有 active timeout 时显示。点击触发
+                   POST /api/tasks/<task_id>/freeze，成功后倒计时圆环
+                   立刻消失（auto_resubmit_timeout = 0）。 -->
+              <button
+                type="button"
+                id="countdown-freeze-btn"
+                class="countdown-freeze-btn hidden"
+                aria-controls="countdown-text"
+                data-i18n-title="page.freezeCountdown.title"
+                data-i18n-aria-label="page.freezeCountdown.ariaLabel"
+                title="Permanently disable auto-resubmit for this task"
+                aria-label="Freeze auto-resubmit countdown (one-time)"
+                disabled
+              >
+                <span
+                  class="countdown-freeze-label"
+                  data-i18n="page.freezeCountdown.label"
+                  >Freeze</span
+                >
+              </button>
             </div>
           </div>
 
@@ -747,11 +810,34 @@
             </div>
           </div>
 
-          <!-- 图片放大预览模态框 -->
-          <div class="image-modal" id="image-modal">
+          <!-- 图片放大预览模态框
+               R237 invariant 合规：``role="dialog"`` 元素必须以 ``hidden``
+               attribute 或 ``class="hidden"`` 默认隐藏，由 JS 在用户触发
+               时显示。这里选用标准 ``hidden`` attribute（而非 class），
+               原因：项目 ``.hidden`` class 是 ``display: none !important``
+               会胜过 ``.image-modal.show`` 的 ``display: flex``；标准
+               ``hidden`` attribute 来自 user-agent stylesheet (无 !important)，
+               作者样式表 ``.image-modal.show`` 可以正常 override。
+               配套 JS 见 image-upload.js 的 openImageModal / closeImageModal
+               (cycle-22 R261 follow-up). -->
+          <div
+            class="image-modal"
+            id="image-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Image preview"
+            data-i18n-aria-label="page.imagePreview"
+            hidden
+          >
             <div class="image-modal-content">
               <img id="modal-image" src="" alt="" />
-              <button class="image-modal-close" onclick="closeImageModal()">
+              <button
+                class="image-modal-close"
+                type="button"
+                onclick="closeImageModal()"
+                aria-label="Close"
+                data-i18n-aria-label="shortcuts.closeModal"
+              >
                 ×
               </button>
               <div class="image-modal-info" id="modal-info"></div>
@@ -1348,7 +1434,9 @@
                 </div>
                 <div class="setting-item">
                   <label class="setting-label has-input">
-                    <span class="setting-title">Bark URL</span>
+                    <span class="setting-title" data-i18n="settings.barkUrl"
+                      >Bark URL</span
+                    >
                     <input
                       type="url"
                       id="bark-url"
@@ -1360,7 +1448,11 @@
                 </div>
                 <div class="setting-item">
                   <label class="setting-label has-input">
-                    <span class="setting-title">Device Key</span>
+                    <span
+                      class="setting-title"
+                      data-i18n="settings.barkDeviceKey"
+                      >Device Key</span
+                    >
                     <input
                       type="text"
                       id="bark-device-key"
@@ -1646,42 +1738,13 @@
                     <span data-i18n="settings.resetBtn">Reset settings</span>
                   </button>
                 </div>
-                <!-- mining-2 §3.1 cycle-3 polish — Export task history UI.
-                     Backend endpoint /api/tasks/export 早已 ship (R125 / R125c /
-                     R135)；这里只补一个 settings 入口让用户可发现。 -->
-                <div class="setting-item export-tasks-row">
-                  <label
-                    for="export-tasks-format"
-                    class="export-tasks-label"
-                    data-i18n="settings.exportTasks.label"
-                    >Export task history</label
-                  >
-                  <select
-                    id="export-tasks-format"
-                    class="export-tasks-format"
-                    data-i18n-aria-label="settings.exportTasks.formatLabel"
-                  >
-                    <option value="json" data-i18n="settings.exportTasks.json">
-                      JSON
-                    </option>
-                    <option
-                      value="markdown"
-                      data-i18n="settings.exportTasks.markdown"
-                    >
-                      Markdown
-                    </option>
-                  </select>
-                  <a
-                    id="export-tasks-link"
-                    class="btn btn-secondary export-tasks-btn"
-                    href="/api/tasks/export?format=json"
-                    download
-                    rel="noopener"
-                    data-i18n="settings.exportTasks.download"
-                    data-i18n-aria-label="settings.exportTasks.download"
-                    >Download</a
-                  >
-                </div>
+                <!-- R274 / cycle-24 t24-1：``.export-tasks-row``（mining-2 §3.1
+                     cycle-3 polish 引入的 Settings 页 Export task history UI 入口）
+                     已按用户偏好整体下架。后端 ``/api/tasks/export`` API 保留
+                     供 CI / 备份脚本独立调用（R125/R135 用例文档化）。
+                     历史 invariant 锚点见
+                     ``tests/test_feat_remove_export_tasks_ui_r274.py``
+                     与 ``CHANGELOG`` 中 ``feat-remove-export-tasks-ui-r274`` 段。 -->
               </div>
             </div>
 
@@ -1747,7 +1810,9 @@
                       id="open-config-file-btn"
                       class="btn btn-secondary btn-icon-only config-path-open-btn"
                       data-i18n-title="settings.openConfigInIde"
+                      data-i18n-aria-label="settings.openConfigInIde"
                       title="Open the config file in your installed IDE (Cursor / VS Code / etc.)"
+                      aria-label="Open the config file in your installed IDE (Cursor / VS Code / etc.)"
                       disabled
                     >
                       <svg
@@ -2182,6 +2247,19 @@
     <script
       defer
       src="/static/js/feedback_drafts.js?v={{ feedback_drafts_version }}"
+      nonce="{{ csp_nonce }}"
+    ></script>
+
+    <!-- R247 / mining-7 Track A — 自定义 PWA 安装提示按钮（beforeinstallprompt 捕获 +
+         localStorage dismissal + appinstalled 清理） -->
+    <!-- ``pwa_install.js`` 已随 ``feat-remove-pwa-install`` 整体下架（cycle-22）。
+         保留此空 placeholder 以防搜索"pwa_install"时找不到任何上下文。 -->
+
+    <!-- R248 / mining-8 Track A — iOS Safari "Add to Home Screen" hint banner
+         （仅在 iOS Safari + 非 standalone + 未 dismiss 时显示一次性底部 banner） -->
+    <script
+      defer
+      src="/static/js/ios_a2hs_hint.js?v={{ ios_a2hs_hint_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 

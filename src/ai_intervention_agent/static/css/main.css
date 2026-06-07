@@ -112,8 +112,14 @@
   /* 文本色 */
   --text-primary: #f5f5f7; /* 主文本 */
   --text-secondary: #a1a1aa; /* 次级文本 */
-  --text-tertiary: #71717a; /* 三级文本 */
-  --text-muted: #52525b; /* 弱化文本 */
+  /* 三级文本 — a11y-audit-cycle-2 Track A (R257) 把 #71717a (AA-large 3.59:1
+     on bg-primary / FAIL AA-normal) 提升到 #98989e
+     (AA-normal 6.04:1 on bg-primary, 5.30:1 on bg-secondary)。
+     仍保留视觉"muted"分层（vs primary 的 15.92:1）。 */
+  --text-tertiary: #98989e;
+  /* 弱化文本 —— 仅用于 background-color 非 foreground text。
+     R257 invariant test 守住此用途。 */
+  --text-muted: #52525b;
   --text-inverse: #1a1a1f; /* 反色文本（用于亮色按钮） */
 
   /* 字体（合规：仅使用系统默认字体栈，避免打包第三方字体引发版权风险） */
@@ -139,6 +145,10 @@
   --primary-400: #c084fc;
   --primary-500: #a855f7; /* 主色 */
   --primary-600: #9333ea;
+  /* a11y-audit-cycle-3 Track A (R258) · WCAG 1.4.11 Non-text Contrast
+     ≥ 3:1 for focus indicators。dark primary-500 #a855f7 自身已达 4.38
+     / 3.84 on bg-primary/secondary，复用即可。 */
+  --focus-ring-color: #a855f7;
   --primary-700: #7c3aed;
   --primary-800: #6b21a8;
   --primary-900: #581c87;
@@ -160,10 +170,13 @@
   --success-bg: rgba(34, 197, 94, 0.15);
   --warning-500: #f59e0b;
   --warning-bg: rgba(245, 158, 11, 0.15);
-  --error-500: #ef4444;
-  --error-bg: rgba(239, 68, 68, 0.15);
-  --info-500: #3b82f6;
-  --info-bg: rgba(59, 130, 246, 0.15);
+  /* error/info R257b：dark mode 提升到 AA-normal on both bgs
+     ef4444 → f87171 (6.27/5.50) + 3b82f6 → 60a5fa (6.82/5.98)
+     —— Tailwind palette step -100 (red-500→400, blue-500→400) */
+  --error-500: #f87171;
+  --error-bg: rgba(248, 113, 113, 0.15);
+  --info-500: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.15);
 
   /* 阴影 */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -226,8 +239,15 @@
   /* 文本色 - Anthropic 品牌色系 */
   --text-primary: #141413; /* 主文本：Dark */
   --text-secondary: #5a5955; /* 次级文本：Dark 淡化 */
-  --text-tertiary: #b0aea5; /* 三级文本：Mid Gray */
-  --text-muted: #c5c3ba; /* 弱化文本：Mid Gray 淡化 */
+  /* 三级文本 — a11y-audit-cycle-2 Track A (R257) 把 #b0aea5 (FAIL
+     1.78:1 on bg-primary) 提升到 #757470 (AA-large 3.74:1 on bg-primary,
+     4.44:1 on bg-secondary)。light bg-primary 偏 Anthropic 品牌米色
+     无法在保持 muted 语义同时达到 AA-normal 4.5:1，但 AA-large 3:1 +
+     strikethrough 装饰已是 WCAG 合规 muted text 标准做法。 */
+  --text-tertiary: #757470;
+  /* 弱化文本 —— 仅用于 background-color 非 foreground text。
+     R257 invariant test 守住此用途。 */
+  --text-muted: #c5c3ba;
   --text-inverse: #faf9f5; /* 反色文本：Light */
 
   /* 边框色 - 基于 Mid Gray */
@@ -244,14 +264,28 @@
   --accent-hover: #c56a4c; /* 强调色悬停：深 Orange */
   --primary-500: #d97757; /* 主色调：Orange */
   --primary-600: #c56a4c; /* 主色调深色 */
+  /* R258：light primary-500 #d97757 = 2.50/2.96 FAIL WCAG 1.4.11；
+     primary-600 #c56a4c = 3.03/3.60 边界；选更深 #b35a3c = 3.78/4.49
+     留充裕 margin。同 hue family，保持品牌一致性。 */
+  --focus-ring-color: #b35a3c;
 
-  /* 状态色 */
-  --error-500: #c54d47; /* 错误色：暖红 */
-  --error-bg: rgba(197, 77, 71, 0.1);
-  --success-500: #788c5d; /* 成功色：Green */
-  --success-bg: rgba(120, 140, 93, 0.1);
-  --info-500: #6a9bcc; /* 信息色：Blue */
-  --info-bg: rgba(106, 155, 204, 0.1);
+  /* 状态色 — R257b WCAG 2.1 SC 1.4.3 AA-normal (≥ 4.5:1) 升级
+     light bg-primary #e8e6dc (Anthropic 品牌米色) 是约束最强的 bg；
+     所有 status 都需 ≥ 4.5:1 才合规。保持原色相，仅加深亮度：
+       success: #788c5d (2.94/3.49) → #506840 (4.94/5.87)
+       warning: #f59e0b (1.72/2.04) → #825005 (5.42/6.43)
+       error:   #c54d47 (3.71/4.40) → #b03d38 (4.70/5.58)
+       info:    #6a9bcc (2.34/2.78) → #2e5e8c (5.42/6.44)
+     —— 中间候选 #5e7048/#965a07/#3a6f9f 在 bg-primary 上 4.24-4.46
+     全 borderline FAIL，需更深一档。 */
+  --success-500: #506840;
+  --success-bg: rgba(80, 104, 64, 0.1);
+  --warning-500: #825005;
+  --warning-bg: rgba(130, 80, 5, 0.1);
+  --error-500: #b03d38;
+  --error-bg: rgba(176, 61, 56, 0.1);
+  --info-500: #2e5e8c;
+  --info-bg: rgba(46, 94, 140, 0.1);
 
   /* 精致阴影 - 基于 Dark 色调 */
   --shadow-sm:
@@ -281,8 +315,9 @@
     /* 文本色 */
     --text-primary: #141413; /* Dark */
     --text-secondary: #5a5955; /* Dark 淡化 */
-    --text-tertiary: #b0aea5; /* Mid Gray */
-    --text-muted: #c5c3ba; /* Mid Gray 淡化 */
+    /* R257：#b0aea5 (FAIL) → #757470 (AA-large) */
+    --text-tertiary: #757470;
+    --text-muted: #c5c3ba; /* Mid Gray 淡化 - background-only */
     --text-inverse: #faf9f5; /* Light */
 
     /* 边框色 */
@@ -298,6 +333,22 @@
     --accent-tertiary: #788c5d; /* Green */
     --primary-500: #d97757;
     --primary-600: #c56a4c;
+    /* R258 mirror：value 同 [data-theme="light"] */
+    --focus-ring-color: #b35a3c;
+
+    /* 状态色 — R257b：mirror [data-theme="light"] block so users on
+       system-light without explicit data-theme also get WCAG AA-normal
+       compliant status colors (修复 cycle-2 §3 audit 发现的 latent bug：
+       原 :root dark status colors 在 light bg 上 FAIL 全部 4 个 cells)。
+       值与 [data-theme="light"] 完全一致，避免行为漂移。 */
+    --success-500: #506840;
+    --success-bg: rgba(80, 104, 64, 0.1);
+    --warning-500: #825005;
+    --warning-bg: rgba(130, 80, 5, 0.1);
+    --error-500: #b03d38;
+    --error-bg: rgba(176, 61, 56, 0.1);
+    --info-500: #2e5e8c;
+    --info-bg: rgba(46, 94, 140, 0.1);
 
     /* 阴影 */
     --shadow-sm:
@@ -2596,7 +2647,12 @@ h1 {
 }
 .upload-btn-label:focus-visible,
 .custom-sound-btn:focus-visible {
-  outline: 2px solid var(--primary-500);
+  /* a11y-audit-cycle-5 Track C (R259g): 从硬绑 var(--primary-500) 切到
+   * var(--focus-ring-color)，自动继承 cycle-3 R258 的 WCAG 1.4.11
+   * AA-compliant focus 色（light = #b35a3c 3.78:1, dark = #a855f7）。
+   */
+  outline: 2px solid
+    var(--focus-ring-color, var(--primary-500, currentColor));
   outline-offset: 2px;
 }
 .custom-sound-btn:disabled {
@@ -3661,6 +3717,202 @@ h1 {
 }
 
 /* ========================================================================
+   mining-6 Track A (cycle-5 §3.6 derivative): Freeze 倒计时按钮
+   ======================================================================== */
+
+/**
+ * Freeze 按钮（.countdown-freeze-btn）：
+ *
+ * 设计要点：
+ *   - 视觉上紧邻 +60s 按钮（margin-left: 4px，与 extend 拉近表示同组）
+ *   - 用蓝色调（vs extend 的橙红）以视觉区分两个操作的语义：
+ *     extend = "继续等待"（温暖红），freeze = "停止倒计时"（冷静蓝）
+ *   - 复用 extend btn 同型 hover/focus/disabled 交互模式（用户预期一致）
+ *   - 浅色主题下用更深的蓝色保证对比度
+ */
+.countdown-freeze-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border: 1px solid rgba(120, 160, 220, 0.4);
+  border-radius: 10px;
+  background-color: rgba(120, 160, 220, 0.08);
+  color: rgba(150, 190, 240, 0.95);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    opacity 200ms ease;
+}
+
+.countdown-freeze-btn:hover:not(:disabled) {
+  background-color: rgba(120, 160, 220, 0.15);
+  border-color: rgba(120, 160, 220, 0.55);
+}
+
+.countdown-freeze-btn:focus-visible {
+  outline: 2px solid rgba(120, 160, 220, 0.55);
+  outline-offset: 2px;
+}
+
+.countdown-freeze-btn:active:not(:disabled) {
+  background-color: rgba(120, 160, 220, 0.22);
+}
+
+.countdown-freeze-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.countdown-freeze-btn.hidden {
+  display: none;
+}
+
+[data-theme="light"] .countdown-freeze-btn {
+  border-color: rgba(59, 130, 246, 0.45);
+  background-color: rgba(59, 130, 246, 0.08);
+  color: rgba(29, 78, 216, 1);
+}
+[data-theme="light"] .countdown-freeze-btn:hover:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.16);
+  border-color: rgba(59, 130, 246, 0.65);
+}
+
+/* feat-remove-pwa-install (cycle-22)：``.pwa-install-btn`` /
+   ``.pwa-install-dismiss-btn`` (R247 / mining-7 Track A) 整块 CSS（95 行）
+   随按钮一起整体下架。invariant 锚点见
+   ``tests/test_feat_remove_pwa_install.py``。 */
+
+/* ========================================================================
+   iOS Safari A2HS hint banner (R248 / mining-8 Track A)
+   ========================================================================
+   底部固定 banner，仅在符合条件的 iOS Safari 环境出现一次；用户
+   关掉后通过 localStorage 永久持久化 dismiss 状态。
+   - position: fixed bottom：不占 layout 空间
+   - 上滑入场动画：300ms ease-out（prefers-reduced-motion 时 disable）
+   - 深浅主题分离：dark 用半透明深底 + 紫色 accent；light 用半透
+     明浅底 + 紫色 accent */
+
+.ios-a2hs-banner {
+  position: fixed;
+  left: max(env(safe-area-inset-left), 12px);
+  right: max(env(safe-area-inset-right), 12px);
+  bottom: calc(max(env(safe-area-inset-bottom), 12px));
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  background: rgba(28, 28, 32, 0.92);
+  color: #f5f5f7;
+  border: 1px solid rgba(139, 92, 246, 0.55);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  backdrop-filter: blur(14px);
+  transform: translateY(120%);
+  transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+  opacity: 0;
+}
+
+.ios-a2hs-banner.ios-a2hs-banner--visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.ios-a2hs-banner__content {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.ios-a2hs-banner__icon {
+  color: #c4b5fd;
+  flex-shrink: 0;
+  display: inline-flex;
+}
+
+.ios-a2hs-banner__text {
+  min-width: 0;
+}
+
+.ios-a2hs-banner__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-bottom: 0.15rem;
+}
+
+.ios-a2hs-banner__desc {
+  font-size: 0.82rem;
+  line-height: 1.3;
+  color: rgba(245, 245, 247, 0.78);
+}
+
+.ios-a2hs-banner__dismiss {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: rgba(245, 245, 247, 0.7);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.ios-a2hs-banner__dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(245, 245, 247, 0.95);
+}
+.ios-a2hs-banner__dismiss:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.55);
+}
+
+/* light theme overrides — 用 backdrop-filter 浅底 + 紫色 accent 边框 */
+[data-theme="light"] .ios-a2hs-banner {
+  background: rgba(255, 255, 255, 0.94);
+  color: rgba(28, 28, 30, 0.95);
+  border-color: rgba(139, 92, 246, 0.45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04) inset;
+}
+[data-theme="light"] .ios-a2hs-banner__icon {
+  color: #6d28d9;
+}
+[data-theme="light"] .ios-a2hs-banner__desc {
+  color: rgba(60, 60, 67, 0.78);
+}
+[data-theme="light"] .ios-a2hs-banner__dismiss {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: rgba(60, 60, 67, 0.7);
+}
+[data-theme="light"] .ios-a2hs-banner__dismiss:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(28, 28, 30, 0.95);
+}
+
+/* prefers-reduced-motion：动画完全禁用，banner 直接显示终态 */
+@media (prefers-reduced-motion: reduce) {
+  .ios-a2hs-banner {
+    transition: none;
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ========================================================================
    问题描述和选项容器 (Description & Options Container)
    ======================================================================== */
 
@@ -4340,7 +4592,14 @@ h1 {
  *   - 悬停时背景变深、阴影增强（由:hover规则控制）
  */
 .btn-primary {
-  background: #007aff; /* iOS蓝色背景 */
+  /* a11y-audit-cycle-5 Track D (R259h) WCAG 1.4.3 fix:
+   * 旧 #007aff 与白色文字 contrast = 4.02:1 (AA-normal FAIL)。
+   * 切到 #0056cc (6.56:1 AA-normal pass)，是原 :hover 色，
+   * 已被 R109 baseline 接受为 iOS 蓝家族成员。border-color
+   * 和 box-shadow 用 rgba(0, 122, 255, X) 保持装饰品牌色不变
+   * （alpha < 1 用于阴影/边框装饰，非主前景，contrast 要求不同）。
+   */
+  background: #0056cc; /* iOS 蓝深色变种（WCAG 1.4.3 AA-normal） */
   color: white; /* 白色文字 */
   border: 1px solid rgba(0, 122, 255, 0.3); /* 边框 */
   box-shadow: 0 4px 8px rgba(0, 122, 255, 0.2); /* 阴影 */
@@ -4354,7 +4613,12 @@ h1 {
  *   - 阴影增强（0 6px 12px）
  */
 .btn-primary:hover {
-  background: #0056cc; /* 背景变深 */
+  /* a11y-audit-cycle-5 Track D (R259h) WCAG 1.4.3 fix:
+   * 默认色升级到 #0056cc 后，hover 需更深以保持视觉差异。
+   * #0045a0 与白色 contrast = 8.90:1 (AAA pass)，纳入 R109
+   * iOS 蓝家族 baseline。
+   */
+  background: #0045a0; /* 更深 iOS 蓝（hover 状态，WCAG AAA） */
   box-shadow: 0 6px 12px rgba(0, 122, 255, 0.3); /* 阴影增强 */
 }
 
@@ -7029,26 +7293,8 @@ code,
   user-select: text; /* user 应能复制 chip 内容 */
 }
 
-/* mining-2 §3.1 cycle-3 polish — Export task history row in
- * settings panel. 触发 GET /api/tasks/export?format=...
- * 走原生 <a download>，不引入 JS-driven fetch。 */
-.export-tasks-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.export-tasks-label {
-  flex: 1 1 auto;
-  min-width: 140px;
-}
-.export-tasks-format {
-  flex: 0 0 auto;
-  min-width: 100px;
-}
-.export-tasks-btn {
-  flex: 0 0 auto;
-}
+/* R274 / cycle-24 t24-1: ``.export-tasks-*`` 样式已按用户偏好整体下架，
+ * 见 web_ui.html line 1741 注释。 */
 
 /* cr34 §8 #1 fix — task tab dblclick/Shift+dblclick 复制后 600ms
  * 视觉反馈。``copy-flash-ok`` / ``copy-flash-err`` 由 multi_task.js 的
@@ -7133,20 +7379,28 @@ code,
   opacity: 0.4;
   color: rgba(245, 245, 247, 0.6);
 }
-/** task-tab-close悬停：opacity 1，颜色变红 */
+/** task-tab-close悬停：opacity 1，颜色变红
+ *
+ * a11y-audit-cycle-4 R259a: 从 rgba(239, 68, 68, 1) (= 旧 #ef4444)
+ * 切到 var(--error-500)，跟随 cycle-2 R257b 升级
+ * （dark = #f87171 AA-normal on bg-primary）。
+ */
 .task-tab-close:hover {
   opacity: 1;
-  color: rgba(239, 68, 68, 1);
+  color: var(--error-500);
 }
 /** 激活标签关闭按钮：opacity 0.6，颜色变紫 */
 .task-tab.active .task-tab-close {
   opacity: 0.6;
   color: rgba(139, 92, 246, 1);
 }
-/** 激活标签关闭按钮悬停：opacity 1，颜色变红 */
+/** 激活标签关闭按钮悬停：opacity 1，颜色变红
+ *
+ * a11y-audit-cycle-4 R259a: 同上，跟随 var(--error-500)。
+ */
 .task-tab.active .task-tab-close:hover {
   opacity: 1;
-  color: rgba(239, 68, 68, 1);
+  color: var(--error-500);
 }
 
 /**
@@ -7506,7 +7760,11 @@ code,
 }
 
 [data-theme="light"] .task-tab-close:hover {
-  color: #ef4444; /* 红色 */
+  /* a11y-audit-cycle-4 R259a: 从 #ef4444 (2.40:1 light) 切到
+   * var(--error-500) = #b03d38 (5.06:1 AA-normal on light bg-primary)，
+   * 跟随 cycle-2 R257b 升级。
+   */
+  color: var(--error-500);
 }
 
 [data-theme="light"] .task-tab.active .task-tab-close {
@@ -8231,27 +8489,45 @@ code,
 }
 
 /* 浅色主题 - 次级按钮通用样式（Book Cloth 棕红色） */
+/* a11y-audit-cycle-6 Track A (R259i) WCAG 1.4.3 fix:
+ *   旧 Book Cloth #cc785c 与白色 contrast = 3.28:1 (AA-normal FAIL，仅
+ *   AA-large 3.0:1 极限）；hover #b86a50 = 4.03:1 (FAIL)。切到同 Claude
+ *   暖棕红家族但更深的 #a85234 (5.36:1 AA-normal pass) 与 #8a4525
+ *   (7.10:1 AAA-ish)，保持 Claude 调色板语义。R65 .btn-secondary:active
+ *   仍用 #c56a4c (R65 invariant 锁定，瞬时按下态)，让原 Book Cloth 色
+ *   还能在按压动作中"瞬间出现"。
+ */
 [data-theme="light"] .btn-secondary {
-  background: #cc785c; /* Book Cloth - Claude 调色板的温暖棕红色 */
-  border-color: #cc785c;
+  background: #a85234; /* Book Cloth deeper (WCAG 1.4.3 AA-normal) */
+  border-color: #a85234;
   color: #fff; /* 白色文字 */
 }
 
 [data-theme="light"] .btn-secondary:hover {
-  background: #b86a50; /* 悬停：加深约 10% */
-  border-color: #b86a50;
+  background: #8a4525; /* 更深 Book Cloth (hover, WCAG AAA-ish) */
+  border-color: #8a4525;
 }
 
-/* 浅色主题 - 主按钮使用 Orange */
+/* 浅色主题 - 主按钮使用 Orange
+ *
+ * a11y-audit-cycle-5 Track D (R259h) WCAG 1.4.3 fix:
+ *   旧 #d97757 (Anthropic 原品牌橙) 与白色 contrast = 3.12:1
+ *   (AA-normal FAIL)，#c56a4c hover = 3.79:1 (FAIL)。切到
+ *   同色族但更深的 #b35730 (4.86:1 AA-normal pass) 与
+ *   #9a4929 (6.25:1 AA-normal pass)，保持 Anthropic 橙色家族
+ *   语义，仅按钮主前景这两处加深。R65 `.btn:active` 仍用
+ *   #d97757/#c56a4c 字面量保留品牌色脉络（active 是瞬时按
+ *   下态，contrast 要求更低，且 R65 invariant 锁定）。
+ */
 [data-theme="light"] .btn-primary {
-  background: #d97757; /* Orange */
-  border-color: #d97757;
+  background: #b35730; /* Deeper Anthropic Orange (WCAG AA-normal) */
+  border-color: #b35730;
   color: #fff;
 }
 
 [data-theme="light"] .btn-primary:hover {
-  background: #c56a4c; /* 深 Orange */
-  border-color: #c56a4c;
+  background: #9a4929; /* Even deeper Orange (hover, WCAG AAA-ish) */
+  border-color: #9a4929;
 }
 
 /* 浅色主题 - 代码标签 */
@@ -8614,8 +8890,38 @@ code,
   }
 
   :focus-visible {
-    outline: 2px solid var(--primary-500, currentColor);
+    /* a11y-audit-cycle-3 Track A (R258)：focus ring 用专属 token
+       --focus-ring-color，保证 WCAG 1.4.11 ≥ 3:1 contrast on
+       两套主题的 bg-primary 和 bg-secondary。dark 复用 primary-500
+       已合规；light 用更深的 #b35a3c 覆盖 brand orange 在浅米色 bg
+       上的 contrast 不足问题（原 primary-500 #d97757 只有 2.50:1）。 */
+    outline: 2px solid
+      var(--focus-ring-color, var(--primary-500, currentColor));
     outline-offset: 2px;
+  }
+}
+
+/* ========================================================================
+   a11y-audit-cycle-1 Track B (R256) · prefers-contrast: more
+     用户在系统层面（macOS Increase Contrast / Windows High Contrast
+     Mode / Chromium ForcedColors）开启更高对比度偏好时，加粗焦点环、
+     增大 outline-offset，并把焦点环色切到系统 ``Highlight`` 色 ——
+     这样焦点指示器在任何主题（含 Windows High Contrast 黑白主题）
+     下都清晰可见。
+     ``@layer a11y`` 内声明，确保不被普通组件 CSS 覆盖。
+   ======================================================================== */
+@layer a11y {
+  @media (prefers-contrast: more) {
+    :focus-visible {
+      /* 4px → 比常规 2px 显著加粗 */
+      outline-width: 4px;
+      /* 偏移到 3px → 焦点环离元素更远，与背景对比更强 */
+      outline-offset: 3px;
+      /* 系统 Highlight 色：High Contrast 模式下用户已选高对比色，
+         直接复用避免与品牌色冲突。fallback 仍走 --primary-500，确保
+         不支持 ``Highlight`` keyword 的渲染器仍有可见样式 */
+      outline-color: Highlight;
+    }
   }
 }
 
@@ -8698,7 +9004,10 @@ code,
 .quick-phrases-add-btn:focus-visible,
 .quick-phrases-export-btn:focus-visible,
 .quick-phrases-import-btn:focus-visible {
-  outline: 2px solid var(--primary-500, #8b5cf6);
+  /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color
+   * cycle-3 R258 WCAG 1.4.11 compliant 色。 */
+  outline: 2px solid
+    var(--focus-ring-color, var(--primary-500, #8b5cf6));
   outline-offset: 2px;
 }
 
@@ -8753,7 +9062,9 @@ code,
 }
 
 .quick-phrase-chip:focus-visible {
-  outline: 2px solid var(--primary-500, #8b5cf6);
+  /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color。 */
+  outline: 2px solid
+    var(--focus-ring-color, var(--primary-500, #8b5cf6));
   outline-offset: 2px;
   border-radius: 999px;
 }
@@ -8789,7 +9100,9 @@ code,
 
 .quick-phrase-chip-edit:focus-visible,
 .quick-phrase-chip-delete:focus-visible {
-  outline: 2px solid var(--primary-500, #8b5cf6);
+  /* a11y-audit-cycle-5 Track C (R259g): 继承 --focus-ring-color。 */
+  outline: 2px solid
+    var(--focus-ring-color, var(--primary-500, #8b5cf6));
   outline-offset: 2px;
   border-radius: 999px;
 }

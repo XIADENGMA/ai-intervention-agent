@@ -43,6 +43,10 @@
  */
 
 const STATIC_CACHE_NAME = 'aiia-static-v1'
+// R249 / mining-9 Track B：offline shell 单独 cache，名字带 ``-offline``
+// 后缀让 activate 阶段的 ``startsWith('aiia-static-')`` 清理不会误杀。
+const OFFLINE_CACHE_NAME = 'aiia-offline-v1'
+const OFFLINE_FALLBACK_URL = '/offline.html'
 // 200 entry 的硬上限：典型 Web UI 加载 ~80 静态资源（含 prism-components/
 // 多语言子包），200 留 2.5× headroom 应对未来无意识资源增长 + locale 切换
 // 累积。超过即异步 FIFO 淘汰。
@@ -63,15 +67,40 @@ const CACHE_FIRST_PATTERNS = [
 ]
 
 self.addEventListener('install', event => {
-  // skipWaiting 让新 SW 立刻接管而不是等待所有旧 client 关闭。
-  // 配合 activate 阶段的 cache 清理，确保升级链路最短。
-  event.waitUntil(self.skipWaiting())
+  event.waitUntil(
+    (async () => {
+      // R249：install 阶段预缓存 offline.html，让离线场景下导航请求
+      // 兜底成功率 100%。失败不阻塞 install（用户可能首次访问就离
+      // 线，此时 fetch offline.html 也会失败 —— 那就 fall through 到
+      // 浏览器默认错误，下次有网时再缓存）。
+      try {
+        const cache = await caches.open(OFFLINE_CACHE_NAME)
+        const offlineResponse = await fetch(OFFLINE_FALLBACK_URL, {
+          cache: 'reload'
+        })
+        if (offlineResponse && offlineResponse.ok) {
+          await cache.put(OFFLINE_FALLBACK_URL, offlineResponse.clone())
+        }
+      } catch (_e) {
+        /* 忽略：offline 预缓存失败不阻塞 install */
+      }
+
+      // skipWaiting 让新 SW 立刻接管而不是等待所有旧 client 关闭。
+      // 配合 activate 阶段的 cache 清理，确保升级链路最短。
+      try {
+        await self.skipWaiting()
+      } catch (_e) {
+        /* 忽略：skipWaiting 失败极罕见 */
+      }
+    })()
+  )
 })
 
 self.addEventListener('activate', event => {
   event.waitUntil(
     (async () => {
       // R21.2：清理旧版本 ``aiia-static-*`` cache，让 SW 升级后能回收存储。
+      // R249：同款清理也清理旧 ``aiia-offline-*`` 版本，保留当前 OFFLINE_CACHE_NAME。
       try {
         const cacheNames = await caches.keys()
         await Promise.all(
@@ -79,8 +108,10 @@ self.addEventListener('activate', event => {
             .filter(
               name =>
                 typeof name === 'string' &&
-                name.startsWith('aiia-static-') &&
-                name !== STATIC_CACHE_NAME
+                ((name.startsWith('aiia-static-') &&
+                  name !== STATIC_CACHE_NAME) ||
+                  (name.startsWith('aiia-offline-') &&
+                    name !== OFFLINE_CACHE_NAME))
             )
             .map(name => caches.delete(name).catch(() => false))
         )
@@ -97,7 +128,10 @@ self.addEventListener('activate', event => {
   )
 })
 
-/* R21.2：fetch event handler — cache-first for whitelisted static paths */
+/* R21.2 / R249：fetch event handler
+ *   - 静态资源：cache-first（whitelisted 路径）
+ *   - 导航请求（HTML）：network-first + offline.html 兜底（R249 mining-9 Track B）
+ *   - 其他：fall through 到浏览器默认 */
 self.addEventListener('fetch', event => {
   const request = event.request
 
@@ -113,17 +147,52 @@ self.addEventListener('fetch', event => {
   }
   if (url.origin !== self.location.origin) return
 
-  // 只缓存白名单路径
-  if (!CACHE_FIRST_PATTERNS.some(re => re.test(url.pathname))) return
-
   // SSE 端点（如 /api/sse-events）虽然是 GET，但是 EventSource 长连接，
   // 绝不能 cache。CACHE_FIRST_PATTERNS 已经排除了 /api/，但保险起见
   // 再检查一遍 ``Accept: text/event-stream``。
   const acceptHeader = request.headers.get('Accept') || ''
   if (acceptHeader.includes('text/event-stream')) return
 
+  // R249：导航请求兜底
+  // ``request.mode === 'navigate'`` 是 fetch spec 标准识别 navigation（包括
+  // top-level + reload + back/forward），不依赖 Accept 头脆弱启发式。
+  // 离线兜底**只**作用于 navigation：API/static 资源走既有逻辑。
+  if (request.mode === 'navigate') {
+    event.respondWith(handleNavigationWithOfflineFallback(request))
+    return
+  }
+
+  // 白名单路径走 cache-first
+  if (!CACHE_FIRST_PATTERNS.some(re => re.test(url.pathname))) return
+
   event.respondWith(handleCacheFirst(request))
 })
+
+/* R249：navigation 请求 network-first + offline.html 兜底
+ *
+ * 策略：
+ *   1. 优先走网络（HTML 内容 session-stale 风险大，绝不 cache-first）
+ *   2. 网络成功 → 直接返回
+ *   3. 网络失败 → 查 OFFLINE_CACHE_NAME 的 offline.html 副本兜底
+ *   4. 兜底也没有 → 让浏览器走默认错误（不抛 reject，避免 SW 把请求标
+ *      记为永久失败；返回一个透明 503 给浏览器）
+ */
+async function handleNavigationWithOfflineFallback(request) {
+  try {
+    const networkResponse = await fetch(request)
+    return networkResponse
+  } catch (_e) {
+    // 网络失败 → offline.html 兜底
+    try {
+      const cache = await caches.open(OFFLINE_CACHE_NAME)
+      const offlineFallback = await cache.match(OFFLINE_FALLBACK_URL)
+      if (offlineFallback) return offlineFallback
+    } catch (_e2) {
+      /* 忽略：cache 读取失败 → 落到 makeOfflineResponse */
+    }
+    return makeOfflineResponse(request)
+  }
+}
 
 /* cache-first 策略：先查 cache，命中直接返回；未命中走网络并异步写 cache。
  *

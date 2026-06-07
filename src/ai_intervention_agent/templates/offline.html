@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#8B5CF6" />
+    <title>离线 — AI Intervention Agent</title>
+    <!-- R249 / mining-9 Track B —— PWA offline fallback page
+         设计目标：
+         - 极简（< 5 KB）让 SW 预缓存零负担
+         - 不依赖外部 CSS / JS（self-contained inline）
+         - 提供重连按钮 + 自动后台 ping 检测恢复
+         - 双语兜底（en + zh-CN）让用户一眼能读懂 -->
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <style>
+      :root {
+        --bg: #0f0f12;
+        --fg: #f5f5f7;
+        --muted: rgba(245, 245, 247, 0.62);
+        --accent: #8b5cf6;
+        --card-bg: rgba(255, 255, 255, 0.04);
+        --card-border: rgba(255, 255, 255, 0.08);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f4f5f8;
+          --fg: rgba(28, 28, 30, 0.95);
+          --muted: rgba(60, 60, 67, 0.62);
+          --card-bg: rgba(255, 255, 255, 0.7);
+          --card-border: rgba(0, 0, 0, 0.06);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        line-height: 1.5;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .card {
+        max-width: 460px;
+        width: 100%;
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: 18px;
+        padding: 2rem 1.75rem;
+        text-align: center;
+        backdrop-filter: blur(20px);
+      }
+      .icon {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 1.2rem;
+        color: var(--accent);
+        opacity: 0.9;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin: 0 0 0.5rem;
+        font-weight: 600;
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0 0 1.5rem;
+        font-size: 0.95rem;
+      }
+      .hint {
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin: 1.25rem 0 0;
+        line-height: 1.6;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-top: 1.25rem;
+      }
+      button {
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 0.7rem 1.5rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      button:hover {
+        filter: brightness(1.1);
+        transform: translateY(-1px);
+      }
+      button:active {
+        transform: translateY(0);
+      }
+      button:focus-visible {
+        outline: 2px solid rgba(139, 92, 246, 0.6);
+        outline-offset: 2px;
+      }
+      .status {
+        font-size: 0.82rem;
+        color: var(--muted);
+        margin-top: 1rem;
+        min-height: 1.2em;
+      }
+      .status.is-online {
+        color: #34d399;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        button {
+          transition: none;
+        }
+        button:hover {
+          transform: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card" role="main">
+      <svg
+        class="icon"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+        <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+        <line x1="12" y1="20" x2="12.01" y2="20" />
+        <line x1="23" y1="1" x2="1" y2="23" />
+      </svg>
+      <h1 lang="zh-CN">无法连接到 AI Intervention Agent</h1>
+      <p class="subtitle" lang="en">
+        Can't reach AI Intervention Agent
+      </p>
+      <p class="hint" lang="zh-CN">
+        服务可能已停止，或您当前处于离线状态。
+        <br />
+        Service may be stopped, or you're offline.
+      </p>
+      <div class="actions">
+        <button id="retry-btn" type="button" autofocus>
+          重试 / Retry
+        </button>
+      </div>
+      <p class="status" id="status" aria-live="polite"></p>
+    </main>
+    <!-- R306: offline.html 通过 Flask render_template() serve, 经过
+         after_request 钩子会附加 CSP `script-src 'self' 'nonce-...'`
+         头。原 R249 mining-9 引入时漏加 nonce 属性, 浏览器 CSP 阻止
+         该 inline script 执行, "重试 / Retry" 按钮事件监听器永不绑定
+         → 用户离线后点击重试无反应。补 nonce 后 CSP 允许执行, retry
+         按钮恢复正常。invariant: tests/test_feat_csp_nonce_consistency_r306.py -->
+    <script nonce="{{ csp_nonce }}">
+      (function () {
+        "use strict";
+        var btn = document.getElementById("retry-btn");
+        var status = document.getElementById("status");
+        var pingTimer = null;
+
+        // R252 / cr45 §7 follow-up #2：exponential backoff
+        // 让长时间断网（小时级别）不会持续以 5s 间隔产生 720 req/h
+        // 的 idle-tab churn。窗口 5s → 10s → 20s → 40s → 60s (max)。
+        // 一次成功 ping 会让用户自动 reload，所以 backoff 累积不会
+        // 让"刚刚恢复"的检测被严重延迟（最坏多等 60s）。
+        var BACKOFF_INITIAL_MS = 5000;
+        var BACKOFF_MAX_MS = 60000;
+        var BACKOFF_FACTOR = 2;
+        var currentDelayMs = BACKOFF_INITIAL_MS;
+
+        function reload() {
+          window.location.reload();
+        }
+
+        function setStatus(msg, isOnline) {
+          if (!status) return;
+          status.textContent = msg;
+          status.classList.toggle("is-online", !!isOnline);
+        }
+
+        async function ping() {
+          try {
+            var res = await fetch("/?_offline_ping=1", {
+              method: "HEAD",
+              cache: "no-store",
+              redirect: "manual",
+            });
+            // 即使是 redirect / 200 都算 "服务恢复"
+            return !!res;
+          } catch (_e) {
+            return false;
+          }
+        }
+
+        async function autoCheck() {
+          var ok = await ping();
+          if (ok) {
+            setStatus("服务已恢复，正在重新加载… / Service back, reloading…", true);
+            setTimeout(reload, 600);
+            return;
+          }
+          // 失败 → 增长 delay 再调度（exponential backoff with cap）
+          currentDelayMs = Math.min(
+            currentDelayMs * BACKOFF_FACTOR,
+            BACKOFF_MAX_MS
+          );
+          pingTimer = setTimeout(autoCheck, currentDelayMs);
+        }
+
+        // 浏览器 online 事件：连接恢复立刻自动重试
+        // 重置 backoff 让用户回到 fast-poll 模式（如果 online 事件
+        // 误报，下一轮失败会再次开始 backoff 累积）
+        window.addEventListener("online", function () {
+          currentDelayMs = BACKOFF_INITIAL_MS;
+          setStatus("网络已连接，重试中… / Online, retrying…", true);
+          setTimeout(reload, 400);
+        });
+
+        // 后台 ping：从 5s 开始，失败逐步 backoff 到 max 60s
+        pingTimer = setTimeout(autoCheck, currentDelayMs);
+
+        if (btn) {
+          btn.addEventListener("click", function () {
+            // 手动 retry 也重置 backoff
+            currentDelayMs = BACKOFF_INITIAL_MS;
+            setStatus("正在重试… / Retrying…");
+            reload();
+          });
+        }
+      })();
+    </script>
+  </body>
+</html>

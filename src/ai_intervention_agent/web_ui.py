@@ -281,6 +281,11 @@ _LAST_APPLIED_AUTO_RESUBMIT_TIMEOUT: int | None = None
 _CURRENT_WEB_UI_INSTANCE: Any | None = None
 _NETWORK_SECURITY_CALLBACK_REGISTERED: bool = False
 _NETWORK_SECURITY_CALLBACK_LOCK = threading.Lock()
+# RLock rationale (R331 contract): _ensure_feedback_timeout_hot_reload_
+# callback_registered 在持有此锁的 with 块内直接调用 _sync_existing_tasks_
+# timeout_from_config (web_ui_config_sync.py:128 → :137), 而后者**也会**
+# `with _FEEDBACK_TIMEOUT_CALLBACK_LOCK:` (line 47), 即同一线程在持锁状态
+# 下重入获取同一锁。Lock 会 self-deadlock, 必须 RLock。
 _FEEDBACK_TIMEOUT_CALLBACK_LOCK = threading.RLock()
 # R48：``config_changed`` SSE 推送回调注册状态。一次注册全局生效；后续
 # config 文件 mtime 变化时通过 ``_sse_bus.emit("config_changed", ...)``
@@ -454,7 +459,11 @@ class WebFeedbackUI(
         self._single_task_timeout_explicit = False
         self.has_content = bool(prompt)
         self.initial_empty = not bool(prompt)
-        # WebFeedbackUI 会被轮询与提交并发访问（Flask 默认 threaded），用锁保护共享状态
+        # RLock rationale (R331 contract): WebFeedbackUI 会被轮询与提交并发
+        # 访问（Flask 默认 threaded）, 用锁保护共享状态。RLock 而非 Lock 是
+        # 防御性选择: 未来若有 callback (render_markdown / update_*) 在持锁
+        # 状态下回调回来访问同一状态, RLock 避免 self-deadlock。当前 codebase
+        # 内无实际 reentry chain, 但为防御未来扩展保留 RLock。
         self._state_lock = threading.RLock()
         self.app = Flask(__name__)
         _cors_origins: list[str | re.Pattern[str]] = [
@@ -1388,6 +1397,10 @@ class WebFeedbackUI(
             # R139: feedback per-task 草稿持久化模块版本号
             "feedback_drafts_version": _compute_file_version(
                 str(static_dir / "js" / "feedback_drafts.js")
+            ),
+            # R248 / mining-8 Track A: iOS Safari A2HS hint banner 模块版本号
+            "ios_a2hs_hint_version": _compute_file_version(
+                str(static_dir / "js" / "ios_a2hs_hint.js")
             ),
             # R140: feedback 提交模式切换模块版本号
             "feedback_submit_mode_version": _compute_file_version(
