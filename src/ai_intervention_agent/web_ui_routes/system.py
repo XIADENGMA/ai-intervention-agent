@@ -1569,6 +1569,15 @@ class SystemRoutesMixin:
         @self.limiter.limit("20 per minute")
         def open_config_file() -> ResponseReturnValue:
             """用本机 IDE / 默认应用打开当前配置文件
+
+            **幂等性: 不幂等 (non-idempotent)**。每次成功调用都会通过
+            ``subprocess.Popen`` spawn 一个新 child process (即使目标编辑器
+            是 GUI 应用，OS 一般会聚焦已有窗口而非新开窗口，但 server 侧
+            **始终** spawn 新 subprocess，并消耗 PID / fd / 限流配额)。
+            重复点击 / 自动重试**不安全** — 会浪费 rate-limit (20/min) 并
+            可能让用户看到多次窗口闪烁。客户端必须在按钮按下后**禁用 +
+            cooldown**，不要做"网络超时 → 自动重发"重试。
+
             ---
             tags:
               - System
@@ -1608,10 +1617,49 @@ class SystemRoutesMixin:
                       description: 实际使用的命令（基名），"system" 表示系统默认
               400:
                 description: 路径不存在或编辑器不可用
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误分类码 (e.g., path_not_found / editor_unavailable)
+                    message:
+                      type: string
+                      description: 错误说明
               403:
                 description: 来源非环回地址，或路径不在白名单中
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 安全拒绝码 (e.g., non_loopback / path_not_whitelisted)
+                    message:
+                      type: string
+                      description: 安全拒绝原因说明
               500:
                 description: 启动子进程失败
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 子进程错误分类
+                    message:
+                      type: string
+                      description: 子进程启动失败详情
             """
             if not _is_authorized():
                 logger.warning(
@@ -2099,6 +2147,19 @@ class SystemRoutesMixin:
                 description: 服务健康（healthy 或 degraded）
               503:
                 description: 服务不健康（任意子检查内部异常）
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [unhealthy]
+                      description: 固定为 "unhealthy"
+                    timestamp:
+                      type: integer
+                      description: 上次检查的 Unix timestamp (秒)
+                    checks:
+                      type: object
+                      description: 各子检查的状态映射
             """
             ts = int(time.time())
             checks: dict[str, dict[str, object]] = {}
@@ -2406,6 +2467,20 @@ class SystemRoutesMixin:
                 （``DEBUG`` 排查具体问题）或拉低（事后恢复 ``WARNING`` 避免
                 stderr 爆量）。
 
+                **幂等性 (idempotent)**：本端点**收敛幂等**。重复用同一个
+                ``level`` 调用 N 次，root logger 最终级别一致 (``new_level``
+                = 第一次设置的值，``old_level`` 则反映上一次调用结果)。这
+                意味着监控 / 自动化脚本可以**安全重试**——网络抖动或临时
+                超时后再次发同一请求不会破坏 logger 状态。
+
+                **副作用 (non-pure)**：每次成功调用都会向 SSE bus emit
+                ``log_level_changed`` 事件（监控仪表板能看到「N 秒前又被
+                set 到 DEBUG」），即使 ``new_level`` 与 ``old_level`` 相等。
+                这是设计选择——重复 emit 比"判断是否变化再决定 emit"更简
+                单可靠 (R318 §2 设计 trade-off)。如果未来需要"真"幂等
+                (重复调用不 emit)，应在 SSE bus 侧加 dedupe，不要在端点
+                内 short-circuit (保持 contract 简单)。
+
                 **安全约束**：
 
                 * 仅 ``loopback`` 来源（``127.0.0.1`` / ``::1``）允许调用——
@@ -2450,8 +2525,34 @@ class SystemRoutesMixin:
                       description: 始终为 "root"（本端点只支持 root logger）
               400:
                 description: payload 无效或 level 不在 enum 内
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 校验失败分类码 (e.g., invalid_level / missing_field)
+                    message:
+                      type: string
+                      description: 错误说明
               403:
                 description: 非 loopback 来源
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 安全拒绝码 (e.g., non_loopback)
+                    message:
+                      type: string
+                      description: 安全拒绝原因说明
             """
             if not _is_authorized():
                 return (
@@ -2547,6 +2648,15 @@ class SystemRoutesMixin:
                 ``config.toml`` 的 ``[network_security].api_token`` 字段
                 （保留注释 + 原子替换），并通过响应体返回**一次**新 token。
 
+                **幂等性: 不幂等 (non-idempotent)**。每次成功调用都生成**全
+                新**的 random token + 时间戳，旧 token **立即失效**。重复
+                调用 N 次会产生 N 个新 token (后 N-1 个被废弃)，并触发 N
+                次 audit 日志。客户端**绝对不能**重试 — 网络超时**不重发**,
+                而应让用户手动确认是否生成成功 (检查 ``GET /api/system/
+                api-token-info`` 的 ``rotated_at``)。这是 R313 / R318 "非幂
+                等 endpoint 不重试" contract 中**最严格**的 1 个 (security
+                blast radius).
+
                 **同步写入 ``api_token_rotated_at``**（R199 / Cycle 7 起）：
                 同一次 ``update_network_security_config`` 调用里把
                 ``[network_security].api_token_rotated_at`` 设为本次 rotation
@@ -2597,15 +2707,48 @@ class SystemRoutesMixin:
                       description: 新生成的 token；**立即记录到 secret manager**
                     token_length:
                       type: integer
+                      description: |
+                        新 token 字符长度 (常 64); 客户端可用于 sanity check
+                        防止传输截断 (与 api_token 的 len 严格一致)。
                     rotated_at:
                       type: string
                       description: ISO-8601 UTC timestamp
               403:
                 description: 非 loopback 来源（rotation 强制只允许本机）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本（如 `loopback only`）
               500:
                 description: 写入 config 失败
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本（写入失败原因）
               429:
                 description: 速率超限（5/hour）
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本（如 `rate limit exceeded`）
+                    retry_after:
+                      type: integer
+                      description: 建议客户端等待秒数后重试
             """
             # 注意：本端点**不**用 ``_is_authorized()``——后者允许 token
             # 通过鉴权，但 rotation 必须强制 loopback only（见 docstring
@@ -2713,12 +2856,24 @@ class SystemRoutesMixin:
                       type: boolean
                     has_token:
                       type: boolean
+                      description: |
+                        当前是否已配置 API token (true = secret 已存在,
+                        false = 从未 rotate 过)。
                     token_length:
                       type: integer
+                      description: |
+                        当前 token 字符长度 (常 64); 用于客户端 sanity check;
+                        has_token=false 时为 0。
                     rotated_at:
                       type: string
+                      description: |
+                        上次 rotation 的 ISO-8601 UTC timestamp; 从未 rotate
+                        过时为空字符串。
                     age_seconds:
                       type: integer
+                      description: |
+                        距 rotated_at 的秒数 (server 当前时刻 - rotated_at);
+                        用于前端展示 "X days ago" 等友好时间。
               403:
                 description: 非 loopback 来源
             """
@@ -2887,6 +3042,43 @@ class SystemRoutesMixin:
             """返回当前可用的编辑器与允许打开的配置文件路径。
 
             前端用这个 endpoint 决定按钮是否可点、是否提示用户配置环境变量。
+
+            ---
+            tags:
+              - System
+            responses:
+              200:
+                description: 编辑器探测结果 + 允许打开的配置文件路径列表
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 探测是否成功 (loopback 调用永远 true)
+                    editor:
+                      type: [string, "null"]
+                      description: 默认编辑器命令名 (例如 "code" / "subl"); 未探测到则 null
+                    editor_available:
+                      type: boolean
+                      description: 是否存在可用编辑器
+                    system_fallback_available:
+                      type: boolean
+                      description: 是否存在系统 open 后备 (xdg-open / open)
+                    allowed_paths:
+                      type: array
+                      items:
+                        type: string
+                      description: 允许打开的配置文件绝对路径列表 (R20 安全策略)
+              403:
+                description: 非 loopback + 未携带有效 API token
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      enum: [false]
+                    error:
+                      type: string
             """
             if not _is_authorized():
                 return (

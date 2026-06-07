@@ -77,26 +77,47 @@ def _ensure_notification_loaded() -> None:
 
     幂等：``if notification_manager is None`` 短路；mock.patch 注入的 mock
     会让短路成立，从而保留 mock 不被覆盖。
+
+    **R324 修复 (cycle-34 #D)**: 早期版本只检查 ``notification_manager`` 是否
+    None, 但 ``@patch("...NotificationEvent")`` 这类**单一 attribute** mock
+    场景下, 如果 ``notification_manager`` 仍是 None (lazy load 还没被任何路由
+    触发), short-circuit 失败 → 进入 import 分支 → **覆盖**已被 mock 的
+    ``NotificationEvent`` 为真实 class, 导致测试看到的是真 ``NotificationEvent``
+    instance, 而不是 ``mock_event_cls.return_value``。
+
+    修复策略: **per-attribute lazy load**, 每个 attribute 独立检查 / 独立覆盖,
+    保证已 mock 的 attribute 不被 lazy import 覆盖。原 R20.10 性能 (~43 ms
+    cold-start saving) 不受影响, 因为所有 attribute 共享同一次 import 调用,
+    只是赋值前各自 ``is None`` 短路。
     """
     global \
         notification_manager, \
         NotificationEvent, \
         NotificationTrigger, \
         NotificationType
-    if notification_manager is None:
-        # 函数体内 lazy import，禁用 ruff isort（I001）；这是 R20.10 的核心
-        # 设计——一旦顶层化就会在 cold-start 时拖入 notification_manager 全部
-        # 依赖（~43 ms）。
-        from ai_intervention_agent.notification_manager import (  # noqa: I001
-            NotificationEvent as _NE,
-            NotificationTrigger as _NT,
-            NotificationType as _NTy,
-            notification_manager as _nm,
-        )
 
+    if (
+        notification_manager is not None
+        and NotificationEvent is not None
+        and NotificationTrigger is not None
+        and NotificationType is not None
+    ):
+        return
+
+    from ai_intervention_agent.notification_manager import (  # noqa: I001
+        NotificationEvent as _NE,
+        NotificationTrigger as _NT,
+        NotificationType as _NTy,
+        notification_manager as _nm,
+    )
+
+    if notification_manager is None:
         notification_manager = _nm
+    if NotificationEvent is None:
         NotificationEvent = _NE
+    if NotificationTrigger is None:
         NotificationTrigger = _NT
+    if NotificationType is None:
         NotificationType = _NTy
 
 
@@ -145,14 +166,23 @@ class NotificationRoutesMixin:
                     bark_url:
                       type: string
                       default: "https://api.day.app/push"
+                      description: |
+                        Bark 服务器 endpoint, 默认 day.app 官方实例。自部署
+                        Bark Server 时填自己的 URL。
                     bark_device_key:
                       type: string
                       description: Bark 设备密钥
                     bark_icon:
                       type: string
+                      description: |
+                        通知图标 URL (可选), 支持 https 图片地址; 留空使用
+                        Bark App 内置图标。
                     bark_action:
                       type: string
                       default: "none"
+                      description: |
+                        点击通知后的行为, none 为静默 (不跳转), 其他枚举值
+                        见 Bark 文档 (e.g., "url" 跳转链接)。
             responses:
               200:
                 description: 测试通知发送成功
@@ -166,8 +196,28 @@ class NotificationRoutesMixin:
                       type: string
               400:
                 description: 设备密钥为空
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 设备密钥为空的人类可读说明
               500:
                 description: 发送失败或通知系统不可用
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 后端异常或通知系统不可用的人类可读说明
             """
             try:
                 data = request.json or {}
@@ -330,6 +380,16 @@ class NotificationRoutesMixin:
                       type: string
               500:
                 description: 触发失败
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 触发失败的人类可读说明
             """
             try:
                 data = request.json or {}
@@ -448,26 +508,56 @@ class NotificationRoutesMixin:
                   properties:
                     enabled:
                       type: boolean
+                      description: |
+                        通知系统总开关; false 时所有 channel 一律静默 (即使
+                        webEnabled/barkEnabled 等子开关 true 也不发)。
                     webEnabled:
                       type: boolean
+                      description: |
+                        浏览器 Web Notification 通道开关 (Notification API);
+                        首次启用会触发浏览器权限请求。
                     soundEnabled:
                       type: boolean
+                      description: |
+                        声音提示开关; 与 webEnabled 独立, 仅 web channel 受
+                        soundVolume 控制。
                     soundVolume:
                       type: integer
                       minimum: 0
                       maximum: 100
+                      description: |
+                        提示音音量 0-100, 0 = 静音 (等价 soundEnabled=false);
+                        前端按线性映射到 HTMLAudioElement.volume (0.0-1.0)。
                     barkEnabled:
                       type: boolean
+                      description: |
+                        Bark iOS 推送通道开关; 启用后服务端会向 barkUrl + barkDeviceKey
+                        POST 通知 payload。
                     barkUrl:
                       type: string
+                      description: |
+                        Bark 服务器 endpoint, 默认 https://api.day.app/push;
+                        自部署 Bark Server 时填自己的 URL。
                     barkDeviceKey:
                       type: string
+                      description: |
+                        Bark 设备密钥 (App 内可见); 与 barkUrl 组合发送 iOS
+                        推送, 缺失则 channel 静默 fail 不阻塞主流程。
                     barkIcon:
                       type: string
+                      description: |
+                        通知图标 URL (可选), 支持 https 图片地址; 留空使用
+                        Bark App 内置图标。
                     barkAction:
                       type: string
+                      description: |
+                        点击 Bark 通知后行为; none 为静默 (不跳转), 其他枚举
+                        值见 Bark 文档 (e.g., "url" 跳转链接)。
                     macosNativeEnabled:
                       type: boolean
+                      description: |
+                        macOS 原生通知通道 (osascript display notification 或
+                        terminal-notifier); 仅 macOS 后端生效, 其他平台忽略。
             responses:
               200:
                 description: 配置已更新
@@ -481,6 +571,16 @@ class NotificationRoutesMixin:
                       type: string
               500:
                 description: 更新失败
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 写入 config 失败的人类可读说明
             """
             try:
                 data = request.json or {}
@@ -692,6 +792,13 @@ class NotificationRoutesMixin:
         @self.app.route("/api/get-notification-config", methods=["GET"])
         def get_notification_config() -> ResponseReturnValue:
             """获取当前通知配置
+
+            **幂等性 (idempotent + safe)**: 本端点是 HTTP GET, 严格遵循 RFC
+            7231 §4.2.1 (safe) + §4.2.2 (idempotent) 语义 — N 次调用与 1
+            次调用对**服务端状态影响完全一致** (= 0 影响), 仅读取 in-memory
+            config snapshot 并返回。客户端可以**安全无限重试** (典型场景:
+            网络抖动 / 浏览器 prefetch / 监控 dashboard 高频 poll), 不会引
+            起任何 side-effect 或资源消耗 (除了一次 ConfigManager 读取)。
             ---
             tags:
               - Notification
@@ -709,6 +816,16 @@ class NotificationRoutesMixin:
                       description: 完整通知配置项
               500:
                 description: 读取配置失败
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 读取配置失败的人类可读说明
             """
             try:
                 config_mgr = get_config()
@@ -725,6 +842,12 @@ class NotificationRoutesMixin:
         @self.app.route("/api/get-feedback-prompts", methods=["GET"])
         def get_feedback_prompts_api() -> ResponseReturnValue:
             """获取反馈提示语配置
+
+            **幂等性 (idempotent + safe)**: HTTP GET, RFC 7231 §4.2.1 +
+            §4.2.2 默认语义 — N 次调用对服务端状态影响为 0 (no side-effect)。
+            前端 settings page 加载时 + localStorage fallback 失败时都会
+            调用, 重试无副作用。返回的是 in-memory feedback config snapshot,
+            不读磁盘。
             ---
             tags:
               - Feedback
@@ -758,6 +881,16 @@ class NotificationRoutesMixin:
                           type: string
               500:
                 description: 读取配置失败
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 读取配置失败的人类可读说明
             """
             try:
                 config_mgr = get_config()
@@ -834,17 +967,39 @@ class NotificationRoutesMixin:
                       description: 倒计时秒数；0=禁用；非零值范围 [10, 3600]，与 server_config.AUTO_RESUBMIT_TIMEOUT_MAX 对齐
                     resubmit_prompt:
                       type: string
-                      maxLength: 10000
+                      maxLength: 100000
+                      description: 自动重发提示语；最大长度与 server_config.PROMPT_MAX_LENGTH 对齐（100,000 字符）
                     prompt_suffix:
                       type: string
-                      maxLength: 10000
+                      maxLength: 100000
+                      description: 反馈后缀提示语；最大长度与 server_config.PROMPT_MAX_LENGTH 对齐（100,000 字符）
             responses:
               200:
                 description: 配置已更新
               400:
                 description: 参数无效
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 参数校验失败的人类可读说明
               500:
                 description: 更新失败
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 "error"
+                    message:
+                      type: string
+                      description: 写入 config 失败的人类可读说明
             """
             try:
                 data = request.json or {}
@@ -939,6 +1094,16 @@ class NotificationRoutesMixin:
                 description: 配置已重置
               500:
                 description: 重置失败
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [error]
+                      description: 固定为 `error`
+                    message:
+                      type: string
+                      description: 错误说明文本
             """
             try:
                 from ai_intervention_agent.server_config import (
@@ -996,6 +1161,13 @@ class NotificationRoutesMixin:
             触发一条测试通知到指定（或全部已启用的）provider，返回 ``event_id``
             + 已 dispatch 的 provider 列表，调用方结合 ``GET /api/system/health``
             的 ``checks.notification.stats`` 字段查看实际投递结果。
+
+            **幂等性: 不幂等 (non-idempotent)**。每次成功调用都触发**真实
+            通知投递** (Bark push / Web Notification / 系统通知 / 声音播放),
+            用户的手机 / 浏览器 / 桌面会**多次响铃 + 振动 + 横幅闪烁**。
+            客户端在监控 dashboard 必须用"点击 + cooldown"模式 (典型 30 - 60 s)
+            避免运维误点把用户手机刷屏。**严禁**自动重试 — 监控脚本失败
+            后应等下一个 monitoring tick 而非立即 retry。
             ---
             tags:
               - System
@@ -1039,8 +1211,26 @@ class NotificationRoutesMixin:
                       type: string
               400:
                 description: provider 参数非法
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本（如 `invalid provider`）
               500:
                 description: 通知系统不可用
+                schema:
+                  type: object
+                  properties:
+                    success:
+                      type: boolean
+                      description: 固定为 false
+                    error:
+                      type: string
+                      description: 错误说明文本
             """
             _ensure_notification_loaded()
             if notification_manager is None:
