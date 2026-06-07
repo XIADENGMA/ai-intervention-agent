@@ -340,6 +340,21 @@ and the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.
   (cycle-39 → cycle-42) — 4 locales (main zh-CN/zh-TW + VSCode
   zh-CN/zh-TW) all audit-locked.
 
+### Build / Dependencies
+
+Integrated 7 outstanding Dependabot upgrades from `origin/main`
+(merged into the v1.7.11 release branch immediately before tagging):
+
+* **starlette** 1.0.0 → 1.0.1 (#49)
+* **zeroconf** 0.148.0 → 0.149.7 (#47)
+* **idna** 3.10 → 3.15 (#43)
+* **@types/node** (npm-dev minor + patch bumps, #41 / #45)
+* **step-security/harden-runner** GitHub Action (#40 / #44)
+
+All upgrades are non-breaking. `uv lock` re-resolved cleanly; full
+regression (7267 tests / 1774 subtests) passed post-merge with the
+new dependency versions.
+
 ## [1.7.10] - 2026-06-07
 
 > Cycles 17–21 (CR#30 → CR#39). The defining theme is
