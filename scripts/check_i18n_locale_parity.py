@@ -40,6 +40,14 @@ def _flatten_paths(data: Any, prefix: str = "") -> dict[str, str]:
     out: dict[str, str] = {}
     if isinstance(data, dict):
         for k, v in data.items():
+            # feat-zhtw-locale (§3.3): 顶层 ``_meta`` 是某些 locale（zh-TW）
+            # 用来记录翻译元数据（derivedFrom / source / translationNote）的
+            # 约定，i18n.js 的 ``t()`` 永远不会访问它（caller 不会写
+            # ``t("_meta.x")``）。这里在结构对比时跳过，避免把元数据当作
+            # "漂移"。与 ``tests/test_i18n_locale_key_parity.py::_flatten_paths``
+            # 和 ``tests/test_cr32_vscode_zhtw.py::_flatten`` 保持同款约定。
+            if prefix == "" and k.startswith("_"):
+                continue
             path = f"{prefix}.{k}" if prefix else k
             if isinstance(v, dict):
                 out[path] = "obj"
