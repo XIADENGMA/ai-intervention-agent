@@ -48,6 +48,15 @@
   var OVERLAY_ID = "aiia-keyboard-shortcut-help-overlay";
 
   /**
+   * a11y-audit-cycle-1 Track A (R255)：
+   * 记忆 overlay 打开时的 ``document.activeElement``，
+   * close 时 restore focus，遵循 WAI-ARIA Authoring Practices
+   * modal-dialog focus management 模式。
+   * 同 settings-manager.js ``hideSettings()`` 中 ``settingsBtn.focus()``。
+   */
+  var _previouslyFocusedElement = null;
+
+  /**
    * 触发 cheatsheet 的按键。``?`` 是 ``Shift+/``，浏览器 + 操作系统
    * 通用、与 textarea 输入字符不冲突（仅在 textarea 不 focus 时拦截）。
    */
@@ -61,6 +70,15 @@
    *
    * 顺序按"频率 × 学习曲线"排：常用 + 简单的在前。
    */
+  // cycle-22 / R267：cheatsheet 必须列出 **所有** 可能被键盘党触发的
+  // shortcut，否则 discoverability 名存实亡 —— 之前只列了 6 个核心快捷键，
+  // keyboard-shortcuts.js 的 5 个 system 级 shortcut（Cmd+,/Cmd+//T/Tab/
+  // Shift+Tab）完全缺席，用户按 `?` 看到不全的列表反而被误导。补全后
+  // 与 keyboard-shortcuts.js::showHelp 的 7 行 helpText 保持 1:1 对齐，
+  // 两个 help 入口（`?` 和 Cmd+/）展示同样的内容。
+  //
+  // 顺序按"频率 × 学习曲线"排：常用 + 简单的在前，文档化的 system
+  // 级在后。Cmd+Enter 提前，是 feedback 提交主路径。
   var SHORTCUTS = [
     {
       keys: ["?"],
@@ -71,11 +89,6 @@
       keys: ["Esc"],
       i18nKey: "shortcuts.closeModal",
       fallback: "Close this cheatsheet",
-    },
-    {
-      keys: ["Alt", "1-9"],
-      i18nKey: "shortcuts.quickPhrase",
-      fallback: "Insert Quick Phrase chip 1..9 (R131d)",
     },
     {
       keys: ["Ctrl", "Enter"],
@@ -91,6 +104,32 @@
       keys: ["Shift", "Enter"],
       i18nKey: "shortcuts.newline",
       fallback: "Insert newline (when Enter mode is selected)",
+    },
+    {
+      keys: ["Alt", "1-9"],
+      i18nKey: "shortcuts.quickPhrase",
+      fallback: "Insert Quick Phrase chip 1..9 (R131d)",
+    },
+    // R267：补 keyboard-shortcuts.js system shortcuts
+    {
+      keys: ["Ctrl", ","],
+      i18nKey: "shortcuts.openSettings",
+      fallback: "Open settings panel",
+    },
+    {
+      keys: ["Tab"],
+      i18nKey: "shortcuts.nextTask",
+      fallback: "Switch to next task tab",
+    },
+    {
+      keys: ["Shift", "Tab"],
+      i18nKey: "shortcuts.prevTask",
+      fallback: "Switch to previous task tab",
+    },
+    {
+      keys: ["T"],
+      i18nKey: "shortcuts.toggleTheme",
+      fallback: "Toggle dark/light theme",
     },
   ];
 
@@ -141,6 +180,19 @@
     }
     if (i18nKey === "shortcuts.newline") {
       return _t("shortcuts.newline", fallback);
+    }
+    // R267：4 个 system 级 shortcut 的 literal key 显式查询
+    if (i18nKey === "shortcuts.openSettings") {
+      return _t("shortcuts.openSettings", fallback);
+    }
+    if (i18nKey === "shortcuts.nextTask") {
+      return _t("shortcuts.nextTask", fallback);
+    }
+    if (i18nKey === "shortcuts.prevTask") {
+      return _t("shortcuts.prevTask", fallback);
+    }
+    if (i18nKey === "shortcuts.toggleTheme") {
+      return _t("shortcuts.toggleTheme", fallback);
     }
     return fallback;
   }
@@ -242,6 +294,67 @@
   // ============================================================================
 
   /**
+   * a11y-audit-cycle-1 Track A (R255)：safe setter for ``el.inert``。
+   * 老浏览器没有 setter 走 attribute fallback。同
+   * settings-manager.js ``_safelySetInert``。
+   */
+  function _safelySetInert(el, value) {
+    if (!el) return;
+    try {
+      el.inert = value;
+    } catch (_e) {
+      if (value) {
+        el.setAttribute("inert", "");
+      } else {
+        el.removeAttribute("inert");
+      }
+    }
+  }
+
+  /**
+   * a11y-audit-cycle-1 Track A (R255)：把 ``.container`` 的
+   * sibling 设为 inert，使背景内容键盘 + 屏幕阅读器都无法访问。
+   * 同 settings-manager.js ``_setContainerSiblingsInert``。
+   *
+   * overlay 本身不在 ``.container`` 内（直接挂 ``document.body``），
+   * 所以**所有** container children 都需要 inert。
+   */
+  function _setContainerSiblingsInert(value) {
+    var container = document.querySelector(".container");
+    if (!container) return;
+    var children = container.children;
+    for (var i = 0; i < children.length; i++) {
+      _safelySetInert(children[i], value);
+    }
+  }
+
+  /**
+   * a11y-audit-cycle-1 Track A (R255)：focus trap handler。
+   * kshelp overlay **没有**内部 focusable 元素（h2/p/kbd 都不可
+   * tab），所以 Tab/Shift+Tab 应该都重新 focus 到 card 上。
+   * 避免 Tab 键把焦点抛回背景 page。
+   *
+   * 同 settings-manager ``_settingsFocusTrap`` 的策略，但适配
+   * 0-focusable 场景：始终 preventDefault 并 refocus card。
+   */
+  function _onTabInOverlay(event) {
+    if (event.key !== "Tab") return;
+    var overlay = document.getElementById(OVERLAY_ID);
+    if (!overlay) return;
+    var card = overlay.querySelector(".aiia-kshelp-card");
+    if (!card) return;
+    // 0 内部 focusable —— 双方向都 cycle 回 card 本身
+    event.preventDefault();
+    if (typeof card.focus === "function") {
+      try {
+        card.focus({ preventScroll: true });
+      } catch (_e) {
+        card.focus();
+      }
+    }
+  }
+
+  /**
    * 显示 cheatsheet。idempotent：若已经显示，不重复挂 DOM。
    */
   function showOverlay() {
@@ -249,8 +362,22 @@
     if (existing) {
       return;
     }
+    // a11y-audit-cycle-1 Track A (R255)：记忆 opener element 供
+    // close 时 restore focus。读 activeElement **必须**在挂 DOM
+    // 之前 —— 否则 _buildOverlayDom -> appendChild 可能把 focus
+    // 移到 body 上。
+    try {
+      _previouslyFocusedElement = document.activeElement;
+    } catch (_e) {
+      _previouslyFocusedElement = null;
+    }
+
     var overlay = _buildOverlayDom();
     document.body.appendChild(overlay);
+
+    // a11y-audit-cycle-1 Track A (R255)：背景置 inert
+    _setContainerSiblingsInert(true);
+
     // 把 focus 移到卡片，方便屏幕阅读器读出 dialog 内容
     var card = overlay.querySelector(".aiia-kshelp-card");
     if (card && typeof card.focus === "function") {
@@ -260,6 +387,9 @@
         // 老浏览器不支持 focus options，忽略
       }
     }
+
+    // a11y-audit-cycle-1 Track A (R255)：Tab trap listener
+    document.addEventListener("keydown", _onTabInOverlay, true);
   }
 
   /**
@@ -269,6 +399,32 @@
     var overlay = document.getElementById(OVERLAY_ID);
     if (overlay && overlay.parentNode) {
       overlay.parentNode.removeChild(overlay);
+    }
+
+    // a11y-audit-cycle-1 Track A (R255)：清 Tab trap listener
+    document.removeEventListener("keydown", _onTabInOverlay, true);
+
+    // a11y-audit-cycle-1 Track A (R255)：恢复背景 interactive
+    _setContainerSiblingsInert(false);
+
+    // a11y-audit-cycle-1 Track A (R255)：restore opener focus
+    var prev = _previouslyFocusedElement;
+    _previouslyFocusedElement = null;
+    if (
+      prev &&
+      typeof prev.focus === "function" &&
+      // 元素仍在 DOM 中（避免 stale element error）
+      document.contains(prev)
+    ) {
+      try {
+        prev.focus({ preventScroll: true });
+      } catch (_e) {
+        try {
+          prev.focus();
+        } catch (_e2) {
+          // 元素不可 focus —— silent skip，对 a11y 无伤
+        }
+      }
     }
   }
 
@@ -360,6 +516,9 @@
     SHORTCUTS: SHORTCUTS,
     _shouldTriggerHelp: _shouldTriggerHelp,
     _isTypingTarget: _isTypingTarget,
+    // a11y-audit-cycle-1 Track A (R255) test hooks
+    _onTabInOverlay: _onTabInOverlay,
+    _setContainerSiblingsInert: _setContainerSiblingsInert,
   };
 
   // DOM ready 时挂 listener；defer script 已经在 DOMContentLoaded 之后

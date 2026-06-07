@@ -251,19 +251,58 @@ const KeyboardShortcuts = (function () {
      */
     registerDefaults: function () {
       // Escape - 关闭模态框/设置面板
+      //
+      // R272 / cycle-23 fix: 必须 delegate 到 settingsManager.hideSettings()
+      // 与 closeImageModal()，**不能**裸 remove class。
+      //
+      // 真 bug 复现路径：
+      //   1. Cmd+, 打开 settings-panel → settingsManager.showSettings() 做了
+      //      a) 捕获 _previouslyFocusedElement (R264 capture-activeElement)
+      //      b) 注册 _settingsEscHandler (内部 escape listener)
+      //      c) _setContainerSiblingsInert(panel, true) (背景 inert)
+      //      d) container.style.overflow = "hidden"
+      //   2. 用户按 Esc → 命中本 handler → 旧实现仅 classList swap
+      //   3. 漏: a) 焦点不回归 → 漂浮 / b) inert 不解除 → 背景仍键盘锁死
+      //      c) _settingsEscHandler 不解绑 → memory leak + 下次 Esc 二次触发
+      //      d) overflow 未恢复 → 滚动卡死
+      //
+      // 同 image-modal: closeImageModal() 必须解绑 keydown + tab trap +
+      // restore _imageModalPreviouslyFocusedElement，裸 remove("show")
+      // 全部漏掉。
+      //
+      // Delegation 安全性: settingsManager / closeImageModal 都是 top-level
+      // const / function (settings-manager.js + image-upload.js 在
+      // keyboard-shortcuts.js 之前加载, 见 web_ui.html script order)；
+      // typeof 守卫兼容潜在的延迟加载 / VSCode webview 部分 bundle 场景。
       this.register('escape', () => {
-        // 关闭设置面板
+        // 关闭设置面板 — delegate 到 settingsManager.hideSettings() (R272)
         const settingsPanel = document.getElementById('settings-panel');
         if (settingsPanel && settingsPanel.classList.contains('show')) {
-          settingsPanel.classList.remove('show');
-          settingsPanel.classList.add('hidden');
+          if (
+            typeof settingsManager !== 'undefined' &&
+            settingsManager &&
+            typeof settingsManager.hideSettings === 'function'
+          ) {
+            settingsManager.hideSettings();
+          } else {
+            // Fallback: settings-manager.js 未加载（极端 race / bundle 错
+            // 切场景），裸 remove class 至少恢复视觉可见性，但漏的清理由
+            // 后续 reload / re-init 自然修复。
+            settingsPanel.classList.remove('show');
+            settingsPanel.classList.add('hidden');
+          }
           return;
         }
 
-        // 关闭图片模态框
+        // 关闭图片模态框 — delegate 到 closeImageModal() (R272)
         const imageModal = document.getElementById('image-modal');
         if (imageModal && imageModal.classList.contains('show')) {
-          imageModal.classList.remove('show');
+          if (typeof closeImageModal === 'function') {
+            closeImageModal();
+          } else {
+            // Fallback: image-upload.js 未加载（同上）
+            imageModal.classList.remove('show');
+          }
           return;
         }
       });
@@ -326,11 +365,38 @@ const KeyboardShortcuts = (function () {
 
     /**
      * 显示快捷键帮助
+     *
+     * R267 / cycle-22 unify-help-entrypoints: 优先调用
+     * `window.AIIA_KEYBOARD_SHORTCUT_HELP.showOverlay()`（`?` cheatsheet
+     * 模态浮层），让 Cmd+/ 和 `?` 两个入口都展示同一个真正的 UI overlay。
+     *
+     * 旧实现把 help text 输出到 console.debug + 弹浏览器通知 —— 在 IDE
+     * webview / iframe / 关掉通知权限的场景下用户根本看不到任何反馈，
+     * Cmd+/ 等于"按了没反应"。改成走 modal overlay 后：
+     * 1. 视觉一致 — 两个入口（`?` 和 Cmd+/）展示同一份 cheatsheet
+     * 2. 可达性 — 不依赖通知权限 / console 打开
+     * 3. 可发现性 — overlay 列出完整的 10 个 shortcut（含 system 级）
+     *
+     * Fallback：overlay 模块未加载（CSP block / 静态资源 404）时退回
+     * 原 console.debug，保证 Cmd+/ 不"假死"。
      */
     showHelp: function () {
+      // R267 优先：弹真正的 modal overlay（`?` cheatsheet 同款）。
+      if (
+        typeof window !== 'undefined' &&
+        window.AIIA_KEYBOARD_SHORTCUT_HELP &&
+        typeof window.AIIA_KEYBOARD_SHORTCUT_HELP.showOverlay === 'function'
+      ) {
+        try {
+          window.AIIA_KEYBOARD_SHORTCUT_HELP.showOverlay();
+          return;
+        } catch (_e) {
+          // overlay 渲染异常 → 走通知 + console fallback（保留旧行为）
+        }
+      }
+
       const isMac = navigator.platform.includes('Mac');
       const mod = isMac ? '⌘' : 'Ctrl';
-      const alt = isMac ? '⌥' : 'Alt';
 
       const t = (key, params) => window.AIIA_I18N ? window.AIIA_I18N.t(key, params) : key;
       const helpText = [
@@ -349,6 +415,10 @@ const KeyboardShortcuts = (function () {
 
       console.debug(helpText);
 
+      // R228 invariant: overlay 不可用时（CSP block / 静态资源 404 / SW
+      // stale cache 等极少数 edge case），把 notifyBody 通知作为兜底 ——
+      // 普通浏览器场景下至少给用户一个视觉反馈。IDE webview 通常通知
+      // 也被 suppress，所以本路径主要服务于 plain browser fallback。
       if (typeof notificationManager !== 'undefined') {
         notificationManager.sendNotification(
           t('shortcuts.notifyTitle'),
