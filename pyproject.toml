@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-intervention-agent"
-version = "1.7.10"
+version = "1.7.11"
 description = "AI Intervention Agent: MCP server enabling real-time user intervention in AI-assisted development workflows."
 readme = "README.md"
 license = "MIT"
@@ -83,6 +83,13 @@ dev = [
     "pytest>=9.0.3",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.0",
+    # R305：pytest-xdist 并行化（4 worker 把 tests/ 总时长从 ~191s 压到 ~51s，3.7x
+    # 加速）。`worksteal` 调度比默认 `loadscope` 更适合本仓 invariant-heavy 测试集
+    # —— 6.4k+ 个静态测试 + 少数 SSE/network 长测试，worksteal 让快 worker 主动从
+    # 慢 worker 偷剩余 task，避免长尾把总时长拉回去。pytest.ini 不开 -n auto 默认
+    # 是因为开发者本地单测 (`pytest path/to/test_x.py`) 不需要 xdist overhead；CI
+    # 在 .github/workflows + scripts 显式传 `-n 4 --dist=worksteal`。
+    "pytest-xdist>=3.6.0",
     "ruff>=0.8.0",
     "ty",
     "rcssmin>=1.1.2",
@@ -163,6 +170,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.0",
+    "pytest-xdist>=3.6.0",
     "rcssmin>=1.1.2",
     "rjsmin>=1.2.5",
     "ruff>=0.8.0",
