@@ -27,6 +27,7 @@
     "clearAllImages": "Clear all images",
     "clearAllShort": "Clear all",
     "closeCodePaste": "Close",
+    "imagePreview": "Image preview",
     "closeSettings": "Close settings",
     "versionLinkTitle": "Open AI Intervention Agent on GitHub",
     "sseStatus": {
@@ -41,6 +42,19 @@
       "ariaLabel": "Extend countdown by 60 seconds",
       "limitReached": "Extension limit reached for this task",
       "networkError": "Failed to extend countdown — please retry"
+    },
+    "freezeCountdown": {
+      "label": "Freeze",
+      "title": "Permanently disable auto-resubmit for this task",
+      "ariaLabel": "Freeze auto-resubmit countdown (one-time)",
+      "alreadyFrozen": "Task already frozen",
+      "networkError": "Failed to freeze countdown — please retry"
+    },
+    "iosA2hs": {
+      "title": "Install as iOS app",
+      "desc": "Tap Share, then Add to Home Screen",
+      "dismissTitle": "Dismiss",
+      "dismissAriaLabel": "Dismiss this hint"
     },
     "taskLabel": "Task:",
     "imageCountPrefix": "Selected",
@@ -104,6 +118,8 @@
     "resetBtn": "Reset settings",
     "resetConfirm": "Reset all local notification settings to defaults? Your overrides will be lost (server-stored feedback config is not affected).",
     "resetCancelled": "Settings reset cancelled by user",
+    "resetFeedbackConfirm": "Reset server-stored feedback config (countdown timeout, resubmit prompt, prompt suffix) to defaults? All collaborators on this server will see the change via SSE broadcast.",
+    "resetFeedbackCancelled": "Feedback config reset cancelled by user",
     "configSection": "Configuration",
     "shortcutsSection": "Common shortcuts",
     "enableNotify": "Enable notifications",
@@ -130,16 +146,11 @@
         "durationTooLong": "Audio is too long (max 30 seconds)."
       }
     },
-    "exportTasks": {
-      "label": "Export task history",
-      "formatLabel": "Export format",
-      "json": "JSON",
-      "markdown": "Markdown",
-      "download": "Download"
-    },
     "mobileOptimize": "Mobile device optimization",
     "vibration": "Vibration alert",
     "enableBark": "Enable Bark notification",
+    "barkUrl": "Bark URL",
+    "barkDeviceKey": "Device Key",
     "barkIconUrl": "Icon URL (optional)",
     "barkAction": "Click action",
     "barkActionNone": "No action",
@@ -212,6 +223,15 @@
     "submitting": "Submitting…",
     "submitFailed": "Submit failed",
     "networkError": "Network error, please retry",
+    "requestTimeout": "Request timed out, please retry",
+    "networkOffline": "Network unreachable, please check your connection",
+    "serverResponseInvalid": "Server returned an invalid response, please retry",
+    "uiRenderingError": "UI rendering failed, please refresh the page",
+    "unauthorized": "Authentication required, please sign in again",
+    "serviceUnavailable": "Service temporarily unavailable, please retry shortly",
+    "badGateway": "Upstream server unreachable (502), please retry shortly",
+    "serviceOverloaded": "Service overloaded or in maintenance (503), please retry shortly",
+    "gatewayTimeout": "Upstream gateway timeout (504), please retry shortly",
     "closingWebUI": "Closing Web UI…",
     "closedRefreshing": "Web UI closed, refreshing page…",
     "closeFailed": "Close failed, refreshing page…",

@@ -32,6 +32,7 @@
     "clearAllImages": "清除所有圖片",
     "clearAllShort": "清除全部",
     "closeCodePaste": "關閉",
+    "imagePreview": "圖片預覽",
     "closeSettings": "關閉設定",
     "versionLinkTitle": "在 GitHub 打开 AI Intervention Agent",
     "sseStatus": {
@@ -46,6 +47,19 @@
       "ariaLabel": "延長倒數計時 60 秒",
       "limitReached": "本任務延長次數已達上限",
       "networkError": "延長倒數計時失敗 — 請重試"
+    },
+    "freezeCountdown": {
+      "label": "冻結",
+      "title": "永久停用本任務的自動重提（仅本次任務）",
+      "ariaLabel": "冻結自動重提倒數計時（一次性）",
+      "alreadyFrozen": "任務已被冻結",
+      "networkError": "冻結倒數計時失敗 — 請重試"
+    },
+    "iosA2hs": {
+      "title": "安裝到 iOS 主畫面",
+      "desc": "點分享按鈕，然後選「加入主畫面」",
+      "dismissTitle": "知道了",
+      "dismissAriaLabel": "關閉此提示"
     },
     "taskLabel": "任務：",
     "imageCountPrefix": "已選擇",
@@ -109,6 +123,8 @@
     "resetBtn": "重置設定",
     "resetConfirm": "確定要把所有本機通知設定恢复為預設值吗？你自訂的偏好会被全部覆寫（伺服器端儲存的回饋設定不受影响）。",
     "resetCancelled": "已取消重置設定",
+    "resetFeedbackConfirm": "確定要把伺服器端儲存的回饋設定（倒數計時、重送提示語、回饋後綴）重置為預設值嗎？同一伺服器上的所有協作者都會透過 SSE 廣播收到此次變更。",
+    "resetFeedbackCancelled": "已取消重置回饋設定",
     "configSection": "設定",
     "shortcutsSection": "常用快捷键",
     "enableNotify": "啟用通知功能",
@@ -135,16 +151,11 @@
         "durationTooLong": "音訊時長过長（最大 30 秒）。"
       }
     },
-    "exportTasks": {
-      "label": "匯出任務歷史",
-      "formatLabel": "匯出格式",
-      "json": "JSON",
-      "markdown": "Markdown",
-      "download": "下載"
-    },
     "mobileOptimize": "行動裝置优化",
     "vibration": "震動提醒",
     "enableBark": "啟用 Bark 通知",
+    "barkUrl": "Bark URL",
+    "barkDeviceKey": "裝置 Key",
     "barkIconUrl": "圖示 URL（選用）",
     "barkAction": "點擊行為",
     "barkActionNone": "無動作",
@@ -217,6 +228,15 @@
     "submitting": "提交中…",
     "submitFailed": "提交失敗",
     "networkError": "網路錯誤，請重試",
+    "requestTimeout": "請求逾時，請重試",
+    "networkOffline": "網路不可達，請檢查網路連線",
+    "serverResponseInvalid": "伺服器回應格式異常，請重試",
+    "uiRenderingError": "介面繪製異常，請重新整理頁面",
+    "unauthorized": "需要重新登入，請重新整理頁面或檢查存取權杖",
+    "serviceUnavailable": "服務暫時無法使用，請稍候再試",
+    "badGateway": "上游服務暫時無法連線 (502)，請稍候再試",
+    "serviceOverloaded": "服務過載或維護中 (503)，請稍候再試",
+    "gatewayTimeout": "上游閘道逾時 (504)，請稍候再試",
     "closingWebUI": "正在關閉 Web UI…",
     "closedRefreshing": "Web UI 已關閉，正在重新整理頁面…",
     "closeFailed": "關閉失敗，正在重新整理頁面…",

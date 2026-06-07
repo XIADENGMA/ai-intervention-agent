@@ -27,6 +27,7 @@
     "clearAllImages": "清除所有图片",
     "clearAllShort": "清除全部",
     "closeCodePaste": "关闭",
+    "imagePreview": "图片预览",
     "closeSettings": "关闭设置",
     "versionLinkTitle": "在 GitHub 打开 AI Intervention Agent",
     "sseStatus": {
@@ -41,6 +42,19 @@
       "ariaLabel": "延长倒计时 60 秒",
       "limitReached": "本任务延长次数已达上限",
       "networkError": "延长倒计时失败 — 请重试"
+    },
+    "freezeCountdown": {
+      "label": "冻结",
+      "title": "永久禁用本任务的自动重提（仅本次任务）",
+      "ariaLabel": "冻结自动重提倒计时（一次性）",
+      "alreadyFrozen": "任务已被冻结",
+      "networkError": "冻结倒计时失败 — 请重试"
+    },
+    "iosA2hs": {
+      "title": "安装到 iOS 桌面",
+      "desc": "点击分享按钮，然后选择「添加到主屏幕」",
+      "dismissTitle": "知道了",
+      "dismissAriaLabel": "关闭此提示"
     },
     "taskLabel": "任务：",
     "imageCountPrefix": "已选择",
@@ -104,6 +118,8 @@
     "resetBtn": "重置设置",
     "resetConfirm": "确定要把所有本地通知设置恢复为默认值吗？你自定义的偏好会被全部覆盖（服务端保存的反馈配置不受影响）。",
     "resetCancelled": "已取消重置设置",
+    "resetFeedbackConfirm": "确定要把服务端保存的反馈配置（倒计时、重发提示语、反馈后缀）重置为默认值吗？同一服务器上的所有协作者都会通过 SSE 广播收到这次变更。",
+    "resetFeedbackCancelled": "已取消重置反馈配置",
     "configSection": "配置",
     "shortcutsSection": "常用快捷键",
     "enableNotify": "启用通知功能",
@@ -130,16 +146,11 @@
         "durationTooLong": "音频时长过长（最大 30 秒）。"
       }
     },
-    "exportTasks": {
-      "label": "导出任务历史",
-      "formatLabel": "导出格式",
-      "json": "JSON",
-      "markdown": "Markdown",
-      "download": "下载"
-    },
     "mobileOptimize": "移动设备优化",
     "vibration": "震动提醒",
     "enableBark": "启用 Bark 通知",
+    "barkUrl": "Bark URL",
+    "barkDeviceKey": "设备 Key",
     "barkIconUrl": "图标 URL（可选）",
     "barkAction": "点击行为",
     "barkActionNone": "无操作",
@@ -212,6 +223,15 @@
     "submitting": "提交中…",
     "submitFailed": "提交失败",
     "networkError": "网络错误，请重试",
+    "requestTimeout": "请求超时，请重试",
+    "networkOffline": "网络不可达，请检查网络连接",
+    "serverResponseInvalid": "服务器响应格式异常，请重试",
+    "uiRenderingError": "界面渲染异常，请刷新页面",
+    "unauthorized": "需要重新登录，请刷新页面或检查访问令牌",
+    "serviceUnavailable": "服务暂不可用，请稍后重试",
+    "badGateway": "上游服务暂不可达 (502)，请稍后重试",
+    "serviceOverloaded": "服务过载或维护中 (503)，请稍后重试",
+    "gatewayTimeout": "上游网关超时 (504)，请稍后重试",
     "closingWebUI": "正在关闭 Web UI…",
     "closedRefreshing": "Web UI 已关闭，正在刷新页面…",
     "closeFailed": "关闭失败，正在刷新页面…",

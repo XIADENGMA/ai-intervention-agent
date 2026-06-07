@@ -63,7 +63,12 @@ JS_T_CALL_RE = re.compile(
     # ——同 ``tests/test_runtime_behavior.py::_JS_T_CALL_RE`` 同步更新。
     # multi_task.js 用 ``window.AIIA_I18N.t("page.taskTabCopyHint")``
     # 调用 i18n，原正则因 ``(?<![.\w])`` 排除 dot-access 而漏识别。
-    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
+    #
+    # a11y-audit-cycle-4 R259c：加 ``_resolveLabel('key', fallback)``
+    # 识别 — ios_a2hs_hint.js 的本地 i18n helper（i18n 未就绪 SSR/早期
+    # 渲染兜底）。原正则漏识别该 wrapper 导致 4 个 page.iosA2hs.* key
+    # 误判 dead。同步 tests/test_runtime_behavior.py::_JS_T_CALL_RE。
+    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]""",
 )
 
 # 源码注释剥离：与 ``check_i18n_param_signatures.py::_strip_source_comments``
@@ -210,6 +215,22 @@ def scan() -> dict[str, dict]:
         "settings.customSound.errors.decodeFailed",
         "settings.customSound.errors.durationTooLong",
         "settings.customSound.uploaded",
+        # R289 / cycle-27 t27-3：``_classifyFetchError`` helper 返回 i18n key
+        # 字符串，调用点写成 ``t(_classifyFetchError(error))``，正则无法
+        # trace dynamic 引用。5 个 status.* fetch-error key 全部走 dynamic 模式。
+        # 同步 tests/test_runtime_behavior.py::TestI18nDeadKeys._PRE_RESERVED_KEYS。
+        "status.networkError",
+        "status.networkOffline",
+        "status.requestTimeout",
+        "status.serverResponseInvalid",
+        "status.uiRenderingError",
+        # R294 / cycle-28 t28-5：``_classifyHttpResponse`` 同 dynamic 模式
+        # (按 response.status 分类返回 i18n key)，2 个新 key 走豁免清单。
+        "status.unauthorized",
+        "status.serviceUnavailable",
+        "status.badGateway",
+        "status.serviceOverloaded",
+        "status.gatewayTimeout",
     }
 
     report: dict[str, dict] = {}

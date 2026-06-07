@@ -175,8 +175,18 @@ def _line_has_allow_marker(original_src: str, line_number: int) -> bool:
 
 
 def scan_file(path: Path) -> list[tuple[int, str]]:
-    """Return a list of (line_number, literal) violations for a given file."""
-    src = path.read_text(encoding="utf-8")
+    """Return a list of (line_number, literal) violations for a given file.
+
+    Race-safe: 如果 ``rglob`` 列出文件后, 文件被并行 pytest worker / VS Code
+    监视器 / 临时文件 cleanup 删除 (典型 race window <50ms), 直接返回空列表
+    而非 raise FileNotFoundError。这种 race 在 CI (pre-commit hook + lint
+    并行执行) 与本地 xdist (-n 4) 都可能复现。本 invariant 关心的是 *真
+    实存在的 source file 是否含 CJK*, 临时文件本来就不该被 scanner 捕获。
+    """
+    try:
+        src = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
     stripped = _strip_comments(src)
 
     offenders: list[tuple[int, str]] = []
