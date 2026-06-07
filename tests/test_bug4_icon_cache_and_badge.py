@@ -269,5 +269,66 @@ class TestMultiTaskJsCleanedUp(unittest.TestCase):
         )
 
 
+class TestFaviconDynamicBadgeRemoved(unittest.TestCase):
+    """``multi_task.js`` 中 favicon 动态角标（``updateFaviconBadge`` /
+    ``_faviconState`` / ``_loadOriginalFavicon``）必须被完整移除。
+
+    背景：cycle-22 用户反馈「favicon 上的红色任务数角标我不喜欢，请去除」。
+    旧实现用 Canvas 把任务计数画到 favicon 的右上角再 ``toDataURL`` 替换
+    ``<link rel="icon">`` 的 href，视觉噪声大且与 SW 缓存策略冲突。
+
+    锁住三条 invariant：
+    1. 函数定义 ``updateFaviconBadge`` 不存在；
+    2. 内部状态 ``_faviconState`` 不存在；
+    3. 内部辅助 ``_loadOriginalFavicon`` 不存在；
+    4. 也无 minified 调用残留（``multi_task.min.js``）。
+    防止未来 rebase / cherry-pick 把 v1.7.10 之前的 badge 实现意外带回。
+    """
+
+    def setUp(self) -> None:
+        self.source = _read(MULTI_TASK_JS)
+        self.min_source = _read(STATIC_JS / "multi_task.min.js")
+
+    def test_updateFaviconBadge_function_absent(self) -> None:
+        self.assertNotIn(
+            "updateFaviconBadge",
+            self.source,
+            "multi_task.js 不应再有 ``updateFaviconBadge`` 函数或调用 "
+            "(BUG4 用户偏好：favicon 不要红色角标)",
+        )
+
+    def test_faviconState_object_absent(self) -> None:
+        self.assertNotIn(
+            "_faviconState",
+            self.source,
+            "multi_task.js 不应再有 ``_faviconState`` 状态对象 "
+            "(配套于 updateFaviconBadge 一并清理)",
+        )
+
+    def test_loadOriginalFavicon_helper_absent(self) -> None:
+        self.assertNotIn(
+            "_loadOriginalFavicon",
+            self.source,
+            "multi_task.js 不应再有 ``_loadOriginalFavicon`` 辅助函数 "
+            "(配套于 updateFaviconBadge 一并清理)",
+        )
+
+    def test_minified_also_clean(self) -> None:
+        """``multi_task.min.js`` 也必须重 minify 干净，避免 stale 产物
+        让浏览器继续加载老的角标逻辑。"""
+        self.assertNotIn(
+            "updateFaviconBadge",
+            self.min_source,
+            "multi_task.min.js 残留旧的 updateFaviconBadge —— "
+            "需要重新跑 scripts/minify_assets.py",
+        )
+        self.assertNotIn(
+            "_faviconState",
+            self.min_source,
+            "multi_task.min.js 残留旧的 _faviconState —— "
+            "需要重新跑 scripts/minify_assets.py",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

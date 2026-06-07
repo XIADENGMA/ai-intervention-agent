@@ -472,6 +472,220 @@ class NotificationManager:
                 )
                 self._inflight_seen_at_startup = []
 
+    def reset_for_testing(self) -> None:
+        """R323 (cycle-34 #B2) · **Test-only**: 重置 singleton instance state
+        以实现跨测试隔离 (与 R319 ``_create_test_instance()`` 互补)。
+
+        **为什么需要两个 helper?**
+
+        - **R319 ``_create_test_instance()``** (classmethod): 创建一个**新**
+          的 fresh instance, **不操作** singleton ``_instance``。适合需要
+          完全独立 instance 的测试 (e.g. R145, 测 streak 累加逻辑)
+        - **R323 ``reset_for_testing()``** (instance method, 本方法): 重置
+          ``notification_manager`` singleton 自身的 state, 让所有从
+          ``from ai_intervention_agent.notification_manager import
+          notification_manager`` 拿到 singleton 的代码 (e.g. ``web_ui_routes``
+          的多个 route handler) 在每个测试开始时看到 fresh state, 不被前一
+          个测试污染
+
+        **R323 重置范围**:
+
+        - state dicts: ``_stats`` (含完整 schema) / ``_providers`` /
+          ``_callbacks`` / ``_delayed_timers`` /
+          ``_provider_latency_histograms`` / ``_finalized_event_ids`` /
+          ``_event_queue``
+        - inflight: ``_inflight_persisted_ids`` /
+          ``_inflight_seen_at_startup``
+
+        **R323 不重置** (保留 singleton 完整性):
+
+        - ``config`` (由 ConfigManager 控制, conftest.py 已有 reload 逻辑)
+        - ``_initialized`` (避免触发 ``__init__`` 重新跑 config load)
+        - ``_executor`` / ``_worker_thread`` / ``_stop_event`` (由 shutdown
+          / restart 处理, R323 不参与 lifecycle)
+        - lock instances 本身 (``_stats_lock`` 等不替换, 因为正在被并发持
+          有的 lock 不能换掉, 只能让锁内 state 被覆盖)
+
+        **conftest.py 自动调用 (R323 同 commit)**:
+        ``_isolate_config_and_notification_singletons`` fixture 在每个测试
+        前后都会调用 ``notification_manager.reset_for_testing()``, 让默认行
+        为是 "singleton 跨测试隔离全自动化"。测试方不需要主动调用, 也不
+        需要在 setUp 维护一长串 reset 代码。
+
+        **Pattern lineage (test-isolation, v3.8)**:
+
+        - 1st app: R316 (cycle-33 #A1) — R145 setUp 显式补充缺失 attr (单
+          点修复, "止血")
+        - 2nd app: R319 (cycle-33 #A2) — ``_create_test_instance()`` class
+          method (集中化 helper for fresh instance, "升级")
+        - **3rd app: R323 (本 commit, cycle-34 #B2)** — ``reset_for_testing()``
+          instance method + conftest fixture 自动调用 (singleton 跨测试隔
+          离自动化, "全覆盖")
+
+        到 R323 cycle-34 #B2, **v3.8 test-isolation pattern 完全工业化** (3
+        app), 是 v3.8 第 2 个全工业化 pattern (与 R322 idempotent 同 cycle
+        达到全工业化).
+        """
+        with self._stats_lock:
+            self._stats = {
+                "events_total": 0,
+                "events_succeeded": 0,
+                "events_failed": 0,
+                "attempts_total": 0,
+                "retries_scheduled": 0,
+                "last_event_id": None,
+                "last_event_at": None,
+                "providers": {},
+            }
+            self._provider_latency_histograms = {}
+            self._finalized_event_ids = {}
+
+        with self._queue_lock:
+            self._event_queue = []
+
+        with self._callbacks_lock:
+            self._callbacks = {}
+
+        with self._delayed_timers_lock:
+            # 取消 pending timers, 避免它们在后续测试触发回调。
+            # R120 silent-failure baseline: timer.cancel() 在已 cancel /
+            # 已 fire 状态下 idempotent (CPython source: 设个 flag), 不应
+            # raise; 但出于防御性编程 + 不希望 reset 因为某个 race condition
+            # 半途崩掉, 这里包 try/except 是有意 silent (test-only path,
+            # 残留 timer 在最坏情况只会延后清理一个 cycle)。
+            for timer in list(self._delayed_timers.values()):
+                try:
+                    timer.cancel()
+                except Exception:
+                    pass
+            self._delayed_timers = {}
+
+        with self._providers_lock:
+            # 注意: 不清 _providers (保留已注册 providers, 避免破坏 fixture
+            # 的 _update_bark_provider 调用), 只清 in-flight state
+            pass
+
+        # inflight: 直接覆盖, 不需锁 (单进程串行测试)
+        self._inflight_persisted_ids = set()
+        self._inflight_seen_at_startup = []
+
+    @classmethod
+    def _create_test_instance(cls) -> "NotificationManager":
+        """R319 (cycle-33 #A2) · **Test-only**: 创建一个完整初始化的 fresh
+        instance, 绕过 singleton + config file load + background worker。
+
+        **为什么需要**:
+
+        R316 (cycle-33 #A1) 修复了 R145 setUp 的间歇性 flake — 根因是 R145
+        ``__new__(NotificationManager)`` 拿到的 singleton instance 在某些
+        测试顺序下没有 ``_provider_latency_histograms`` 等 attr, 导致
+        ``_send_single_notification`` 下游的 latency histogram 记录 method
+        触发 ``AttributeError`` 被外层 ``except`` 静默吞掉, streak 不更新,
+        测试 fail (R197 invariant 限制 latency 记录只能从 1 处入口调用,
+        所以这里不再展开具体方法名)。
+
+        R316 fix 在 R145 setUp 显式补充 3 个缺失 attr, 是**单点修复**。但
+        其他测试文件 (``test_notification_shutdown_race_r114`` /
+        ``test_notification_manager`` 等共 5 处) 也用 ``__new__()`` + 手动
+        部分初始化模式, 同款 flake 风险**仍未消除**。
+
+        R319 是 **test-isolation pattern 2nd app**, 把"完整 attr 初始化"集中
+        到 NotificationManager 自己暴露的 classmethod, 调用方:
+
+        .. code-block:: python
+
+            self.mgr = NotificationManager._create_test_instance()
+
+        即可拿到完整初始化的 instance, 不需要在 setUp 维护一长串 attr 列表,
+        也不会随 ``__init__`` 加新 attr 而被新引入 flake。
+
+        **覆盖的 attr** (与 ``__init__`` 完全对齐, 同 schema 但不读 config /
+        不启 worker / 不 load inflight 文件):
+
+        - locks: ``_stats_lock`` / ``_providers_lock`` / ``_callbacks_lock``
+          / ``_delayed_timers_lock`` / ``_queue_lock`` / ``_config_lock``
+        - state dicts: ``_stats`` (含完整 schema) / ``_providers`` /
+          ``_callbacks`` / ``_delayed_timers`` / ``_provider_latency_
+          histograms`` / ``_finalized_event_ids``
+        - state caps: ``_finalized_max_size`` / ``_config_file_mtime``
+        - lifecycle: ``_executor`` (None - 测试不启动后台 worker) /
+          ``_worker_thread`` / ``_stop_event`` / ``_shutdown_called``
+        - inflight: ``_inflight_persisted_ids`` / ``_inflight_seen_at_startup``
+        - flags: ``_initialized`` (True - 防止意外触发 ``__init__`` 再去读
+          config)
+        - config: ``config`` (一个无 side-effect 的 ``NotificationConfig()``
+          实例, 拿默认值)
+
+        **不读 config file**: 避免测试环境因为缺少 ``config.toml`` 而 raise
+        ``NotificationError``。``config`` 字段始终是默认 ``NotificationConfig()``,
+        测试方可以通过 ``inst.config.bark_enabled = True`` 等方式 override
+        任何字段而无需 patch。
+
+        **不启 worker / 不 load inflight**: 测试要全确定性, 不引入 I/O 或
+        异步副作用。
+
+        **R145 已是 R319 第 1 个 caller** (cycle-33 R319 同 commit 迁移)。其
+        他 4 处 (R114 / test_notification_manager:1101 / :1230) 暂保留, 标
+        为 future-migration target. R319 不强制迁移避免风险扩散。
+
+        Pattern lineage (test-isolation):
+
+        - 1st app: R316 (5a15a6c, cycle-33 #A1) — R145 setUp 显式补充缺失 attr
+        - **2nd app: R319 (本 commit, cycle-33 #A2)** — NotificationManager
+          自己提供集中化 helper API, R145 setUp 迁移为 1st caller
+
+        **Returns**: 全初始化的 ``NotificationManager`` instance, **不**等
+        于 singleton ``_instance`` (即 ``cls._instance``)。多次调用返回不同
+        instance, 适合每个 test 一个独立 instance。
+        """
+        inst = super().__new__(cls)
+        inst._initialized = True
+
+        # config: 默认 NotificationConfig, 不读文件
+        inst.config = NotificationConfig()
+
+        # locks
+        inst._stats_lock = threading.Lock()
+        inst._providers_lock = threading.Lock()
+        inst._callbacks_lock = threading.Lock()
+        inst._delayed_timers_lock = threading.Lock()
+        inst._queue_lock = threading.Lock()
+        inst._config_lock = threading.Lock()
+
+        # state dicts (与 __init__ 对齐)
+        inst._providers = {}
+        inst._stats = {
+            "events_total": 0,
+            "events_succeeded": 0,
+            "events_failed": 0,
+            "attempts_total": 0,
+            "retries_scheduled": 0,
+            "last_event_id": None,
+            "last_event_at": None,
+            "providers": {},
+        }
+        inst._callbacks = {}
+        inst._delayed_timers = {}
+        inst._provider_latency_histograms = {}
+        inst._finalized_event_ids = {}
+        inst._event_queue = []
+
+        # state caps
+        inst._finalized_max_size = 500
+        inst._config_file_mtime = 0.0
+
+        # lifecycle
+        inst._executor = None
+        inst._worker_thread = None
+        inst._stop_event = threading.Event()
+        inst._shutdown_called = False
+
+        # inflight
+        inst._inflight_persisted_ids = set()
+        inst._inflight_seen_at_startup = []
+
+        return inst
+
     def register_provider(
         self, notification_type: NotificationType, provider: Any
     ) -> None:

@@ -92,11 +92,26 @@ def _ensure_notification_system_loaded() -> tuple[Any, Any]:
     Returns:
         ``(notification_manager_singleton, initialize_notification_system_fn)``，
         加载失败时返回 ``(None, None)``。
+
+    **R325 修复 (cycle-34 #E, R324 follow-up)**: 原来用 ``_notification_
+    initialized`` flag 控制 short-circuit, 这要求测试必须同时 patch
+    ``_notification_initialized=True`` + ``_notification_manager_singleton``
+    才能 mock 成功。如果测试只 patch attribute 漏 patch flag, lazy load 会
+    覆盖 attribute mock (与 R324 web_ui_routes 同源问题)。
+
+    修复策略 (与 R324 对齐): **per-attribute null check** — 任一 attribute
+    已 non-None 就跳过对应赋值, mock 永远不会被 lazy import 覆盖。
+    ``_notification_initialized`` flag 保留为 fast-path 入口, 但不再是 mock
+    safety 的唯一防线。
     """
     global NOTIFICATION_AVAILABLE, _notification_initialized
     global _notification_manager_singleton, _initialize_notification_system_fn
 
-    if _notification_initialized:
+    if (
+        _notification_initialized
+        and _notification_manager_singleton is not None
+        and _initialize_notification_system_fn is not None
+    ):
         return _notification_manager_singleton, _initialize_notification_system_fn
 
     try:
@@ -107,12 +122,16 @@ def _ensure_notification_system_loaded() -> tuple[Any, Any]:
             initialize_notification_system as _init_fn,
         )
 
-        _notification_manager_singleton = _nm_singleton
-        _initialize_notification_system_fn = _init_fn
+        if _notification_manager_singleton is None:
+            _notification_manager_singleton = _nm_singleton
+        if _initialize_notification_system_fn is None:
+            _initialize_notification_system_fn = _init_fn
         NOTIFICATION_AVAILABLE = True
     except ImportError:
-        _notification_manager_singleton = None
-        _initialize_notification_system_fn = None
+        if _notification_manager_singleton is None:
+            _notification_manager_singleton = None
+        if _initialize_notification_system_fn is None:
+            _initialize_notification_system_fn = None
         NOTIFICATION_AVAILABLE = False
 
     _notification_initialized = True
@@ -273,6 +292,24 @@ def _invalidate_runtime_caches_on_config_change() -> None:
             f"{type(e).__name__}: {e}",
             exc_info=True,
         )
+
+
+def reset_config_cache_for_testing() -> None:
+    """R352 (cycle-39 #C2) · **Test-only**: 清空 ``_config_cache`` + bump
+    generation, 让下次 ``get_config()`` 重新从 disk 加载。
+
+    与 R352 其他 reset helper 同源 — 给 TTL-bound 进程级 cache 暴露测试
+    隔离 API。
+
+    注意: 不同于 ``_invalidate_runtime_caches_on_config_change()`` (生产
+    路径的 callback), 本函数**只**清 config cache, 不动 HTTP client (因
+    为后者关闭后会增加测试 fixture 复杂度)。
+    """
+    global _config_cache_generation
+    with _config_cache_lock:
+        _config_cache["config"] = None
+        _config_cache["timestamp"] = 0.0
+        _config_cache_generation += 1
 
 
 def _ensure_config_change_callbacks_registered() -> None:

@@ -87,6 +87,9 @@ class ReadWriteLock:
 
     def __init__(self):
         """初始化读写锁"""
+        # RLock rationale (R330 contract): Condition.wait() 内部会 release
+        # 然后 re-acquire 锁; 持锁的 reader 线程在 notify_all 后唤醒时需要
+        # 重新 acquire (即同一线程 re-entry), 因此必须 RLock 而非 Lock。
         self._read_ready = threading.Condition(threading.RLock())
         self._readers = 0
 
@@ -665,7 +668,13 @@ class ConfigManager(
         self._config: dict[str, Any] = {}
 
         # 初始化锁机制
-        self._lock = threading.RLock()  # 可重入锁，用于延迟保存定时器
+        # RLock rationale (R336 contract): set() (config_manager.py:1131)
+        # 在持有 self._lock 状态下调用 self._save_config() (line 1167),
+        # 后者 → self._schedule_save() → `with self._lock:`
+        # 即**同一线程在持锁状态下重入获取同一锁**。Lock 会 self-deadlock,
+        # RLock 必需。同理: set_section + set_network_security_config 等
+        # mutate API 都走相同 set→_save_config→_schedule_save chain。
+        self._lock = threading.RLock()
 
         # 初始化文件内容和访问时间
         self._original_content: str | None = None  # 保存原始文件内容（用于保留注释）

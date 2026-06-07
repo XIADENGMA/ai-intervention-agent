@@ -229,10 +229,26 @@ class TestRegressionContract(unittest.TestCase):
         ``_install_root_intercept_once()`` 的强一致性检测。如果 R72-A 的
         ``_install_root_intercept_once()`` 调用被静默从 module top-level 移
         除，这个 test 就会失败。
+
+        **Reload isolation 注意 (cycle-52 fix)**:
+        ``importlib.reload(enhanced_logging)`` 会**重新创建** ``InterceptHandler``
+        类，与本测试文件顶部 ``from ai_intervention_agent.enhanced_logging
+        import InterceptHandler`` 拿到的旧类**不是同一个对象**。
+        旧 reload (如果前面 test 已 reload 过) 的 install 注册的 handler 是
+        旧旧类的实例, 而本次 reload 的 install 注册的是新新类的实例 — 用顶部
+        import 的旧类 isinstance 会**漏判**。
+        修复: 用 ``enhanced_logging.InterceptHandler`` (reload 后的最新引用)
+        来 isinstance 检查, 而非顶部 import 的固定引用。这是 xdist 并行测试
+        + 多次 reload 场景下的 test isolation bug, 不属于 production code 问题。
         """
         importlib.reload(enhanced_logging)
+        # 用 reload 后的最新 InterceptHandler 类引用做 isinstance, 避免
+        # 因为多次 reload 让 isinstance 漏判跨 reload 创建的 handler 实例。
+        current_intercept_handler = enhanced_logging.InterceptHandler
         root = logging.getLogger()
-        intercepts = [h for h in root.handlers if isinstance(h, InterceptHandler)]
+        intercepts = [
+            h for h in root.handlers if isinstance(h, current_intercept_handler)
+        ]
         self.assertGreaterEqual(
             len(intercepts),
             1,

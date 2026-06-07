@@ -60,3 +60,31 @@ class NotificationEvent(BaseModel):
     priority: NotificationPriority = NotificationPriority.NORMAL
     source: str | None = None
     dedupe_key: str | None = None
+
+    # R396 (cycle-45 #A1): Pydantic field validator coverage 4th 应用
+    # 锁 retry_count / max_retries 必须非负且有合理上限, 防 silent bug:
+    # - retry_count < 0 → ``while event.retry_count < event.max_retries``
+    #   死循环 (条件永远 true);
+    # - max_retries 极大 (e.g., 99999) → notification spam 9 分钟 +
+    #   retry queue 阻塞其他 event;
+    # 实际 codebase 通过 NotificationManager 兜底 (event.max_retries =
+    # config.retry_count, config 端有 clamp), 但直接构造 NotificationEvent
+    # 或从持久化反序列化时绕过 manager, 此处显式 model-layer clamp 是
+    # 最后一道防线。
+    @field_validator("retry_count", mode="before")
+    @classmethod
+    def _clamp_retry_count(cls, v: Any) -> int:
+        try:
+            n = int(v) if v is not None else 0
+        except (TypeError, ValueError):
+            return 0
+        return max(0, min(n, 100))
+
+    @field_validator("max_retries", mode="before")
+    @classmethod
+    def _clamp_max_retries(cls, v: Any) -> int:
+        try:
+            n = int(v) if v is not None else 3
+        except (TypeError, ValueError):
+            return 3
+        return max(0, min(n, 100))
