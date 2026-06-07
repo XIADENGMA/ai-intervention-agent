@@ -14,6 +14,8 @@
 
 ### `_invalidate_runtime_caches_on_config_change() -> None`
 
+### `reset_config_cache_for_testing() -> None`
+
 ### `_ensure_config_change_callbacks_registered() -> None`
 
 ### `get_async_client(config: WebUIConfig) -> httpx.AsyncClient`

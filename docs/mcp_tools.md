@@ -73,6 +73,57 @@ Request **interactive user feedback** through the Web UI (browser or VS Code Web
     which is intentional: silent acceptance would let LLMs keep sampling the
     obsolete parallel-array shape without learning.
 
+#### Agent-mode parameters (Cursor / Composer / Cline / Augment / Trae)
+
+The following four optional parameters are **purpose-built for
+high-frequency Agent / Glass-mode workflows** where the LLM calls
+`interactive_feedback` many times during a long autonomous run. They let
+the agent pre-shape the UI per task so the human reviewer can decide in
+< 5 seconds instead of context-switching back to read the full prompt.
+All four are visible to the LLM via the `tools/list` JSON-Schema
+description; this doc section is the human-readable reference.
+
+- `header_label` (string, optional, max **16** chars)
+  - Short context chip rendered above the prompt in the task pane.
+    Examples: `"Auth"`, `"DB"`, `"i18n"`, `"CSS"`. Especially valuable
+    in **multi-task mode** where the user is reviewing 3+ concurrent
+    requests — the chip lets them visually distinguish task domains at
+    a glance. Borrowed from `gemini-cli`'s `ask_user.header` schema.
+  - Single-word recommendation, no spaces if avoidable. Overflow is
+    clamped server-side; omit or empty string → no chip rendered.
+
+- `question_type` (string, optional, currently only `"yesno"`)
+  - When `"yesno"`, the frontend **hides the free-text textarea** and
+    renders a single-row Yes / No button pair. User's click submits
+    the literal string `"yes"` or `"no"` — saves the typing + Submit
+    click for binary decisions (approve / reject, proceed / abort,
+    confirm-deletion). Unknown values silently treated as `None` for
+    forward-compat with future types (`"choice"` / `"rating"`).
+    Borrowed from `gemini-cli`'s `ask_user` schema.
+
+- `feedback_placeholder` (string, optional, max **200** chars)
+  - Per-task textarea placeholder hint shown to the user (overrides the
+    global `page.feedbackPlaceholder` i18n string). Examples:
+    `"Paste the error stack trace"`, `"Describe the visual glitch"`,
+    `"Reply 'ok' to approve or 'no' + reason to reject"`. Single-line
+    placeholders only (longer text silently truncated; the response
+    sets `placeholder_truncated: true` so callers know clamping
+    happened). Borrowed from `gemini-cli`'s `ask_user` schema.
+
+- `auto_resubmit_timeout` (int, optional, seconds, default from
+  `feedback.frontend_countdown` = `240`)
+  - Per-task override of the global frontend countdown — pass smaller
+    values (e.g. `60`) for low-stakes confirmations the agent doesn't
+    want to wait a full 4 minutes on; pass `0` to disable auto-resubmit
+    for a single critical task while leaving global config alone.
+    Range follows server config (`[0, 3600]`); out-of-range values are
+    silently clamped, not rejected.
+
+These four parameters compose: a typical Agent-mode call combines
+`header_label` (context) + `feedback_placeholder` (hint) + either
+`predefined_options` (multi-select) or `question_type='yesno'`
+(binary). See the full Agent-mode example below.
+
 #### Returns
 
 `interactive_feedback` returns a **list of MCP Content blocks**:
@@ -146,3 +197,36 @@ Simple prompt without options:
 ```text
 interactive_feedback(message="Please confirm the next step.")
 ```
+
+#### Agent-mode example (Cursor / Glass)
+
+A long-running Cursor agent refactoring authentication code asks for
+sign-off on a specific PR section. Combine **all four Agent-mode
+parameters** to get a sub-5-second human decision:
+
+```text
+interactive_feedback(
+  message=(
+    "I refactored `auth/session.py::renew_token()` to use the "
+    "PyJWT 2.x API. The new code:\n"
+    "- Drops the legacy `algorithms` kwarg fallback\n"
+    "- Replaces `jwt.PyJWTError` with `jwt.InvalidTokenError`\n"
+    "- Adds a 30s clock-skew tolerance\n\n"
+    "**Shall I proceed to run the auth integration suite?**"
+  ),
+  header_label="Auth",                      # 1-word chip in task pane
+  feedback_placeholder=                     # textarea hint for free-form
+    "Reply 'ok' to run tests, or 'no' + reason to roll back",
+  question_type="yesno",                    # binary → 2-button UI
+  auto_resubmit_timeout=120,                # 2 min instead of default 4
+)
+```
+
+UX result: the user sees an `Auth` chip + a clear 1-paragraph summary
++ Yes/No buttons. One click submits — no typing required. If the
+user steps away for >2 minutes, the agent gets a resubmit-prompt
+back automatically (instead of blocking the agent for the full 4
+minutes). For a list of all `header_label` / `question_type` /
+`feedback_placeholder` / `auto_resubmit_timeout` semantics see the
+[Agent-mode parameters](#agent-mode-parameters-cursor--composer--cline--augment--trae)
+section above.

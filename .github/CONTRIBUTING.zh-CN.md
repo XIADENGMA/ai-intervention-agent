@@ -116,6 +116,152 @@ Editor note: 上面的 `16dbc34` 引用是 cr33 当时这个 case 的 commit。
 
 ---
 
+## 3.bis 前端 `<html data-*>` 写入者 FOUC 检查清单
+
+> 源自 cr45 §4.1 / R250 perf-audit-cycle-3 经验。
+
+任何从 JS 写入 `<html data-X>` 属性（主题 / locale /
+密度 / color-scheme 等）的模块，都**必须配对**一个
+`<head>` 内同步 inline `<script>` 提前写入相同 attribute。
+否则页面会以"错误 CSS 变量"渲染 ~50-500ms，等 deferred
+脚本 fire 后突变，肉眼可感"闪一下"（FOUC = Flash of
+Unstyled Content）。
+
+**配对必查项**：
+
+| 项 | 状态 |
+|---|---|
+| 1. 模块从 JS 写 `<html data-X>`？ | 是 → 必须配对 |
+| 2. `<head>` 内 inline IIFE 读相同 localStorage key + 处理 `"auto"` 解析 | 必需 |
+| 3. inline IIFE 在所有 `<link rel="preload">` 之前写 `<html data-X>` | 必需 |
+| 4. inline IIFE 用 `try/catch` 兜底（隐私模式 / sandbox / 禁用存储）| 必需 |
+| 5. 保留 CSP nonce：`<script nonce="{{ csp_nonce }}">` | 必需 |
+| 6. 测试验证执行顺序（inline → preload → defer） | 必需 |
+| 7. 测试验证 `localStorage` key 字符串与模块 `STORAGE_KEY` 字面量一致 | 必需 |
+
+**参考实现**：
+- 生产代码：`templates/web_ui.html` "Anti-FOUC theme
+  bootstrap" IIFE (R250)
+- 测试：`tests/test_feat_perf_audit_cycle3_anti_fouc.py`
+  （10 个不变量）
+- 审计文档：`docs/perf-audit-cycle-3.md` §2.2
+
+**未来扩展示例**：如果新增 `<html data-locale>` 用于 SSR
+locale 处理，照搬 anti-FOUC 模式：`localStorage.getItem
+("locale-preference")` + `navigator.language` fallback。
+
+---
+
+## 3.quater i18n wrapper 函数 checklist
+
+> 源自 a11y-audit-cycle-5 §2.2 P3 / cycle-4 R259c
+> （`_resolveLabel` 被误判 orphan 事件）。
+
+项目有 7 个 i18n wrapper，**必须**在 call-site 正则
+里全部注册：
+
+| Wrapper | 定义位置 | 用途 |
+|---------|----------|------|
+| `_t` / `t` | `static/js/i18n.js` | 通用 Web UI t() |
+| `_tl` | `static/js/i18n.js` | t() + locale interpolation |
+| `hostT` | `packages/vscode/extension.ts` | VSCode 扩展主进程 |
+| `__vuT` | `static/js/validation-utils.js` | 本地 helper (避 import 循环) |
+| `__domSecT` | `static/js/dom-security.js` | 本地 helper |
+| `__ncT` | `static/js/webview-notify-core.js` | 本地 helper (P8) |
+| `AIIA_I18N.t` | `static/js/i18n.js`（命名空间） | multi_task.js dot-access |
+| `_resolveLabel` | `static/js/ios_a2hs_hint.js` | 带 fallback 的 i18n |
+
+**加新 wrapper 时**：以下两个文件**必须 lockstep**
+更新，否则会悄悄破坏 i18n orphan/dead-key 检测：
+
+1. `scripts/check_i18n_orphan_keys.py` → `JS_T_CALL_RE`
+2. `tests/test_runtime_behavior.py` → `_JS_T_CALL_RE`
+
+**正则模式**：
+
+```
+(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
+```
+
+在 `(?:...)` alternation 里加你的函数名。运行：
+
+```bash
+pytest tests/test_i18n_orphan_keys.py \
+       tests/test_runtime_behavior.py::TestI18nDeadKeys
+```
+
+确认无 orphan/dead-key false-positive。
+
+---
+
+## 3.ter 新颜色 token 的递归设计约束
+
+> 源自 cr48 §4 saturation signal：light `--bg-primary
+> #e8e6dc`（Anthropic 暖米色）在 **连续 3 个 a11y-audit
+> cycles** 都是 contrast-constraining axis
+> (cycle-2 L2 + L5，cycle-3 L2)。
+
+引入任何新颜色 token 时，若可能用作 foreground（文本、
+图标、focus indicator、宽 > 1px 的边框、状态指示器），
+**必须先**检查与 `#e8e6dc` 的对比度，再设计 dark theme：
+
+1. WCAG 2.1 SC 1.4.3（text）：normal ≥ 4.5:1，
+   large ≥ 3:1
+2. WCAG 2.1 SC 1.4.11（UI 组件、focus ring、non-text
+   contrast）：≥ 3:1
+
+用项目自带的 invariant 测试做计算：
+- `tests/test_feat_a11y_cycle2_wcag_contrast.py`：
+  text + status 色
+- `tests/test_feat_a11y_cycle3_wcag_focus_ring.py`：
+  focus ring + UI 组件
+
+**约束家族模式**：light `#e8e6dc` 要求亮度比大部分 web
+palette 的 "500" shade 都低 —— 新颜色通常需要落在
+Tailwind "600-700" shade 区间。**不要相信肉眼判断**，
+让 WCAG ratio 测试当 gate。
+
+如果 token 在 `#e8e6dc` 上无法达 AA-normal (4.5:1)
+且需保持语义，把 **AA-large fallback** 路径明确写
+进测试 + CSS 注释。
+
+---
+
+## 3.quinquies 标准 CSS a11y token
+
+经 a11y-audit cycles 1-7 沉淀，项目已固化一组**通用
+CSS 变量**，新组件应当复用而非硬编码 hex：
+
+| Token | 用途 | Dark | Light | 约束 |
+|-------|------|------|-------|------|
+| `--focus-ring-color` | `:focus-visible` 外环色 (WCAG 1.4.11) | `#a855f7` | `#b35a3c` | 同时满足 `--bg-primary` 与 `--bg-secondary` ≥ 3:1 (cycle-3 R258) |
+| `--error-500` | 错误文字 + 图标 | `#f87171` | `#b03d38` | AA-normal 文字 (cycle-2 R257b, cycle-4 R259a) |
+| `--success-500`, `--warning-500`, `--info-500` | 状态文字 | varies | varies | AA-normal 文字 (cycle-2 R257b) |
+| `--text-tertiary` | 仅删除线前景 | `#98989e` | `#757470` | AA-large（**仅限删除线**，cycle-2 R257）|
+| `--text-muted` | **仅背景** | varies | varies | 禁作 `color:` 用 (cycle-4 R259) |
+
+**`:focus-visible` 规则模板** (cycle-3 R258 / cycle-5 R259g)：
+
+```css
+.your-component:focus-visible {
+  outline: 2px solid
+    var(--focus-ring-color, var(--primary-500, currentColor));
+  outline-offset: 2px;
+}
+```
+
+三段 fallback chain 防 stylesheet 加载顺序 bug：
+`--focus-ring-color` > `--primary-500` > `currentColor`。
+**禁止硬绑 `var(--primary-500)`** 而不加 `--focus-ring-color`
+前置 —— cycle-3 此处出过回归，cycle-5 Track C 已全量扫清。
+
+**`@media (prefers-contrast: more)` 适配** (cycle-1 R256)
+已 ship 进 `@layer a11y`，对所有 `:focus-visible` 全局
+升级为 `4px Highlight outline`，自动覆盖 OS 高对比度
+模式用户。新组件无需手写。
+
+---
+
 ## 4. PR 流程
 
 1. 从 `main` 分支拉 feature 分支：`git checkout -b feat/<short-name>`

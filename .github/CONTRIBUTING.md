@@ -124,6 +124,159 @@ Examples:
 
 ---
 
+## 3.bis Frontend FOUC checklist for `<html data-*>` writers
+
+> Codified in cr45 §4.1 from R250 perf-audit-cycle-3
+> findings.
+
+**Any** JS module that writes a `data-*` attribute to
+`<html>` (theme, locale, density, color-scheme, etc.) must
+be **paired with a synchronous inline `<head>` pre-write**.
+Otherwise the page renders for ~50-500 ms with stale CSS
+variables before the deferred script catches up — visible
+as a "flash" (FOUC = Flash of Unstyled Content).
+
+**Required pairing checklist**:
+
+| Item | Status |
+|---|---|
+| 1. Module writes `<html data-X>` from JS? | If yes, continue |
+| 2. Inline `<head>` IIFE reads same `localStorage` key + resolves any `"auto"` value | Required |
+| 3. Inline IIFE writes `<html data-X>` before any `<link rel="preload">` | Required |
+| 4. Inline IIFE wrapped in `try/catch` (privacy mode / sandbox / disabled storage) | Required |
+| 5. CSP nonce preserved: `<script nonce="{{ csp_nonce }}">` | Required |
+| 6. Tests assert ordering (inline → preload → defer) | Required |
+| 7. Tests assert `localStorage` key string matches module's `STORAGE_KEY` literal | Required |
+
+**Reference implementation**:
+- Production: `templates/web_ui.html` "Anti-FOUC theme
+  bootstrap" IIFE (R250)
+- Tests: `tests/test_feat_perf_audit_cycle3_anti_fouc.py`
+  (10 invariants)
+- Audit: `docs/perf-audit-cycle-3.md` §2.2
+
+**Future extension example**: if a `<html data-locale>`
+attribute is added for SSR locale handling, mirror the
+anti-FOUC pattern with `localStorage.getItem("locale-
+preference")` + `navigator.language` fallback.
+
+---
+
+## 3.quater i18n wrapper function checklist
+
+> Codified in a11y-audit-cycle-5 §2.2 P3 from
+> cycle-4 R259c (the `_resolveLabel` orphan-key
+> false-positive incident).
+
+The project has 7 i18n wrapper functions, all
+**must** be registered in the call-site regex:
+
+| Wrapper | Where defined | Used for |
+|---------|---------------|----------|
+| `_t` / `t` | `static/js/i18n.js` | universal Web UI t() |
+| `_tl` | `static/js/i18n.js` | t() + locale interpolation |
+| `hostT` | `packages/vscode/extension.ts` | VSCode extension host |
+| `__vuT` | `static/js/validation-utils.js` | local helper (avoid import cycle) |
+| `__domSecT` | `static/js/dom-security.js` | local helper |
+| `__ncT` | `static/js/webview-notify-core.js` | local helper (P8) |
+| `AIIA_I18N.t` | `static/js/i18n.js` (namespace) | multi_task.js dot-access |
+| `_resolveLabel` | `static/js/ios_a2hs_hint.js` | fallback-aware i18n |
+
+**Adding a new wrapper**: you **must** update **both**
+of these files in lockstep, or you'll silently break
+i18n orphan/dead-key detection:
+
+1. `scripts/check_i18n_orphan_keys.py` → `JS_T_CALL_RE`
+2. `tests/test_runtime_behavior.py` → `_JS_T_CALL_RE`
+
+**Regex pattern**:
+
+```
+(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|YOUR_NEW_NAME)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]
+```
+
+Add your function name to the `(?:...)` alternation.
+Run both `pytest tests/test_i18n_orphan_keys.py` and
+`pytest tests/test_runtime_behavior.py::TestI18nDeadKeys`
+to verify no orphan/dead-key false-positives appear.
+
+---
+
+## 3.ter Recurring design constraint for new color tokens
+
+> Codified in cr48 §4 saturation signal: light
+> `--bg-primary #e8e6dc` (Anthropic warm beige) has
+> been the contrast-constraining axis in **3
+> consecutive a11y-audit cycles** (cycle-2 L2 + L5,
+> cycle-3 L2).
+
+When introducing **any new color token** that may be
+used as a foreground (text, icon, focus indicator,
+border with `> 1px width`, status indicator), check
+contrast against `#e8e6dc` **first** before
+designing for the dark theme:
+
+1. WCAG 2.1 SC 1.4.3 (text): ≥ 4.5:1 for normal,
+   ≥ 3:1 for large
+2. WCAG 2.1 SC 1.4.11 (UI components, focus ring,
+   non-text contrast): ≥ 3:1
+
+Use the project's invariant tests as your computation:
+- `tests/test_feat_a11y_cycle2_wcag_contrast.py` for
+  text + status colors
+- `tests/test_feat_a11y_cycle3_wcag_focus_ring.py`
+  for focus rings + UI components
+
+**Constraint family-pattern**: light `#e8e6dc` forces
+the brightness lower than most web palettes' "500"
+shade — your new color usually needs to be in the
+"600-700" Tailwind shade range. Don't trust your eye;
+let the WCAG ratio test be the gate.
+
+If your token cannot reach AA-normal (4.5:1) on
+`#e8e6dc` and still maintain semantic meaning, document
+the **AA-large fallback** path in the test file + CSS
+comment.
+
+---
+
+## 3.quinquies Standard CSS tokens for a11y
+
+After a11y-audit cycles 1-7, the project has crystallized
+a set of **shared CSS variables** that all new components
+should reuse instead of hardcoding hex values:
+
+| Token | Purpose | Dark | Light | Constraint |
+|-------|---------|------|-------|------------|
+| `--focus-ring-color` | `:focus-visible` outline color (WCAG 1.4.11) | `#a855f7` | `#b35a3c` | ≥ 3:1 on both `--bg-primary` and `--bg-secondary` (cycle-3 R258) |
+| `--error-500` | Error text + icons | `#f87171` | `#b03d38` | AA-normal text on `--bg-primary` (cycle-2 R257b, cycle-4 R259a) |
+| `--success-500`, `--warning-500`, `--info-500` | Status text | varies | varies | AA-normal text (cycle-2 R257b) |
+| `--text-tertiary` | Strikethrough-only foreground | `#98989e` | `#757470` | AA-large (use ONLY for strikethrough; cycle-2 R257) |
+| `--text-muted` | **Background-only** | varies | varies | NEVER as `color:` (cycle-4 R259) |
+
+**`:focus-visible` rule template** (cycle-3 R258 / cycle-5 R259g):
+
+```css
+.your-component:focus-visible {
+  outline: 2px solid
+    var(--focus-ring-color, var(--primary-500, currentColor));
+  outline-offset: 2px;
+}
+```
+
+The triple fallback chain protects against ordering bugs
+in stylesheet load: `--focus-ring-color` > `--primary-500`
+> `currentColor`. **Never hardcode `var(--primary-500)`**
+without the `--focus-ring-color` first — this regressed
+in cycle-3 and was swept in cycle-5 Track C.
+
+**`@media (prefers-contrast: more)` adapter** (cycle-1 R256)
+is already shipped in `@layer a11y` and globally upgrades
+any `:focus-visible` to `4px Highlight outline` for OS-level
+high-contrast users. Your component automatically inherits.
+
+---
+
 ## 4. Pull request flow
 
 1. Branch off `main`: `git checkout -b feat/<short-name>`

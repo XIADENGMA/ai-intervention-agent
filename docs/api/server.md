@@ -8,6 +8,12 @@
 
 ### `_resolve_build_info() -> dict[str, str]`
 
+### `reset_sse_stats_cache_for_testing() -> None`
+
+### `reset_recent_logs_cache_for_testing() -> None`
+
+### `reset_build_info_cache_for_testing() -> None`
+
 ### `_build_server_icons() -> list[Icon]`
 
 ### `get_mcp_error_stats() -> dict[str, int]`

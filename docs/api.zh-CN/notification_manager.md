@@ -59,6 +59,61 @@ callers 应当跳过持久化路径，避免污染 cwd。
 
 初始化配置、提供者字典、事件队列、线程池和回调
 
+##### `reset_for_testing(self) -> None`
+
+R323 (cycle-34 #B2) · **Test-only**: 重置 singleton instance state
+以实现跨测试隔离 (与 R319 ``_create_test_instance()`` 互补)。
+
+**为什么需要两个 helper?**
+
+- **R319 ``_create_test_instance()``** (classmethod): 创建一个**新**
+  的 fresh instance, **不操作** singleton ``_instance``。适合需要
+  完全独立 instance 的测试 (e.g. R145, 测 streak 累加逻辑)
+- **R323 ``reset_for_testing()``** (instance method, 本方法): 重置
+  ``notification_manager`` singleton 自身的 state, 让所有从
+  ``from ai_intervention_agent.notification_manager import
+  notification_manager`` 拿到 singleton 的代码 (e.g. ``web_ui_routes``
+  的多个 route handler) 在每个测试开始时看到 fresh state, 不被前一
+  个测试污染
+
+**R323 重置范围**:
+
+- state dicts: ``_stats`` (含完整 schema) / ``_providers`` /
+  ``_callbacks`` / ``_delayed_timers`` /
+  ``_provider_latency_histograms`` / ``_finalized_event_ids`` /
+  ``_event_queue``
+- inflight: ``_inflight_persisted_ids`` /
+  ``_inflight_seen_at_startup``
+
+**R323 不重置** (保留 singleton 完整性):
+
+- ``config`` (由 ConfigManager 控制, conftest.py 已有 reload 逻辑)
+- ``_initialized`` (避免触发 ``__init__`` 重新跑 config load)
+- ``_executor`` / ``_worker_thread`` / ``_stop_event`` (由 shutdown
+  / restart 处理, R323 不参与 lifecycle)
+- lock instances 本身 (``_stats_lock`` 等不替换, 因为正在被并发持
+  有的 lock 不能换掉, 只能让锁内 state 被覆盖)
+
+**conftest.py 自动调用 (R323 同 commit)**:
+``_isolate_config_and_notification_singletons`` fixture 在每个测试
+前后都会调用 ``notification_manager.reset_for_testing()``, 让默认行
+为是 "singleton 跨测试隔离全自动化"。测试方不需要主动调用, 也不
+需要在 setUp 维护一长串 reset 代码。
+
+**Pattern lineage (test-isolation, v3.8)**:
+
+- 1st app: R316 (cycle-33 #A1) — R145 setUp 显式补充缺失 attr (单
+  点修复, "止血")
+- 2nd app: R319 (cycle-33 #A2) — ``_create_test_instance()`` class
+  method (集中化 helper for fresh instance, "升级")
+- **3rd app: R323 (本 commit, cycle-34 #B2)** — ``reset_for_testing()``
+  instance method + conftest fixture 自动调用 (singleton 跨测试隔
+  离自动化, "全覆盖")
+
+到 R323 cycle-34 #B2, **v3.8 test-isolation pattern 完全工业化** (3
+app), 是 v3.8 第 2 个全工业化 pattern (与 R322 idempotent 同 cycle
+达到全工业化).
+
 ##### `register_provider(self, notification_type: NotificationType, provider: Any) -> None`
 
 注册通知提供者（需实现 send(event) -> bool）

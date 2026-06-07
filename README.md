@@ -200,14 +200,207 @@ ai-intervention-agent usage details:
 - 🏷️ **Header chips & Yes/No buttons** — agents can attach a ≤16-char `header_label` chip ("Auth", "DB", "i18n") for instant context, or set `question_type='yesno'` to render a one-click binary decision instead of a free-text textarea (borrowed from `gemini-cli` `ask_user`)
 - 🎨 **Custom placeholder hints** — per-task `feedback_placeholder` lets agents pre-fill the textarea hint (200-char clamp, falls back to i18n default)
 - 🌏 **i18n** — Web UI + VS Code extension shipped in `en` / `zh-CN` / `zh-TW` (plus pseudo-locale for translation coverage testing)
-- ⏱️ **Countdown extension** — `+60s` button to delay auto-resubmit when you need a bit more thinking time
+- ⚡ **Productivity shortcuts** — keyboard cheatsheet overlay (press `?`), per-textarea **draft autosave** (per-task; survives reload), configurable **submit mode** (Ctrl/Cmd+Enter vs Enter), and a live **character counter** with three-color thresholds
+- 💬 **Quick reply phrases** — save / edit / reuse canned responses in `localStorage`; JSON export + import for cross-device migration; one-click insert into the feedback textarea
+- 🔊 **Custom notification sound** — upload your own audio file (mp3/wav/ogg/m4a/flac, ≤ 700 KB, ≤ 30 s) to replace the built-in beep; persisted in `localStorage` (base64) so it survives across sessions
+- ⏱️ **Countdown extension** — `+60s` button to delay auto-resubmit when you need a bit more thinking time, plus a permanent ❄️ **freeze** button to disable auto-resubmit entirely for sessions where you genuinely need to step away
 - 🟢 **SSE liveness indicator** — 3-state corner badge (good / degraded / offline) so you always know whether the page is in sync with the backend
-- 🛡️ **Stable install** — built on Flask 3.x with conservative dependency pins; immune to the [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) that left several MCP feedback servers broken-on-default-install in early 2026
+- 📱 **PWA install support** — `manifest.webmanifest` + Service Worker so the Web UI is installable from the browser's native menu (Chrome / Edge address-bar icon, or iOS Safari Share → Add to Home Screen); a dedicated iOS Safari hint banner reminds users where the native option lives (since iOS doesn't fire `beforeinstallprompt`); permanently dismissable
+- 📡 **Offline-aware** — service worker pre-caches a branded `offline.html` shell with bilingual reconnect hints, dark/light theme + reduced-motion respect, and an auto-recovery ping that reloads when service returns (replaces the default browser "site can't be reached" screen)
+- ♿ **WCAG 2.1 AA accessible** — every focus indicator, body text, status color, modal overlay, primary/secondary button, and icon-only button passes WCAG 2.1 AA contrast + Name/Role/Value rules (audited cycles 1-40, 240+ a11y / correctness / consistency / concurrency-safety / API-contract invariants and 6,900+ tests, with new meta-lint patterns each cycle for setting labels, async reset confirmations, finally-block DOM null guards, **AST-based lock-acquisition-order contracts** (cycle-35), **cross-runtime resource lifecycle audits** (cycle-38, Python/Browser-JS/VS Code TS), and (new in cycle-40) **OpenAPI docstring coverage** + **i18n untranslated keys detection**); keyboard cheatsheet overlay traps Tab + restores opener focus on close; all three `role="dialog"` modals (settings, image preview, code paste) have consistent ESC + close-button + backdrop-click handling; supports `prefers-reduced-motion` and `prefers-contrast: more` for high-contrast OS modes
+- 🛡️ **Stable install** — built on Flask 3.x with conservative dependency pins
+  - Immune to the [Starlette 1.0 breaking change](https://github.com/Minidoracat/mcp-feedback-enhanced/issues/213) that left several MCP feedback servers broken-on-default-install in early 2026
 
 > Architecture diagram, "how it works" flow, production middleware chain,
 > server self-info resource, and MCP-spec compliance details live under
 > [`docs/api/index.md`](docs/api/index.md) and
 > [`docs/mcp_tools.md`](docs/mcp_tools.md).
+
+## Architecture overview
+
+A bird's-eye view of how AIIA's components fit together — useful when
+you're integrating a new client (custom MCP host, alternate IDE plugin)
+or debugging a cross-component issue.
+
+```mermaid
+graph LR
+    subgraph Clients["Clients (any MCP host)"]
+        A1[LLM Agent<br/>Cursor / Cline / Augment]
+        A2[Web browser<br/>multi-task dashboard]
+        A3[VS Code extension<br/>sidebar webview]
+        A4[CLI<br/>--print-config / --version]
+    end
+
+    subgraph Backend["AIIA backend (single Python process)"]
+        B1[MCP server<br/>stdio + interactive_feedback]
+        B2[Flask web server<br/>/api/* + SSE bus]
+        B3[Task queue<br/>RW-lock + persist]
+        B4[Notification manager<br/>browser / system / Bark]
+        B5[Config manager<br/>TOML + env override]
+    end
+
+    subgraph External["External"]
+        E1[File system<br/>config.toml + tasks.json]
+        E2[Browser / OS<br/>system notifications]
+        E3[Bark API<br/>iOS push]
+    end
+
+    A1 -- MCP stdio --> B1
+    A2 -- HTTP + SSE --> B2
+    A3 -- HTTP + SSE --> B2
+    A4 -- module import --> B5
+
+    B1 -- enqueue task --> B3
+    B2 -- read / mutate --> B3
+    B3 -- task_changed event --> B2
+    B2 -- "broadcast SSE<br/>(R51-B heartbeat 25s)" --> A2
+    B2 -- broadcast SSE --> A3
+    B3 -- on add_task --> B4
+    B4 -- "Web Notification API" --> E2
+    B4 -- POST --> E3
+    B5 -- read / watch mtime --> E1
+    B3 -- persist on mutate --> E1
+```
+
+**Key invariants** (locked by tests in `tests/`):
+- `task_changed` SSE payload schema enforced cross-language
+  (Python ↔ JS, `test_feat_sse_cross_language_schema_r297.py`).
+- SSE heartbeat = 25s, cleanup interval = 5s, hot-path throttle = 30s,
+  JS health check = 30s — locked across all source files
+  (`test_feat_perf_baseline_const_r296.py`).
+- Single `interactive_feedback` MCP tool surface — no dynamic tool
+  registration, no fan-out to multiple LLM-facing endpoints (keeps the
+  agent contract tight).
+- **Concurrency safety (new in cycle-35/36)** — AST-based lock-order
+  contracts statically verify all `threading.Lock` / `RLock` /
+  `ReadWriteLock` usages across `task_queue.py`, `notification_manager.py`,
+  `service_manager.py`, `config_manager.py`, `web_ui.py`. Any future
+  change is rejected by CI if it (a) introduces a deadlock cycle, (b)
+  bypasses the deadlock-aware `_watched_write_lock` wrapper, (c) adds an
+  unaudited `RLock`, or (d) acquires the same `Lock` twice in the same
+  call chain. See `test_feat_async_race_contract_r326.py` +
+  `test_feat_lock_acquisition_order_r328.py` +
+  `test_feat_service_manager_lock_order_r329.py` +
+  `test_feat_rlock_usage_contract_r330.py` +
+  `test_feat_web_ui_rlock_contract_r331.py`.
+- **Lazy-init audit (new in cycle-35)** — every `_ensure_*` function in
+  `src/` is classified into `_loaded` (multi-attribute import) /
+  `_registered` (single-flag callback) / `_started` (daemon thread spawn)
+  with category-specific safety contracts; new lazy-init functions are
+  rejected by CI until audited and classified
+  (`test_feat_lazy_init_audit_r327.py`).
+
+For deeper subsystem detail (config schema, MCP tool reference,
+i18n strategy, troubleshooting), follow the links in
+[`Documentation`](#documentation) below.
+
+## Agent / Glass mode workflow
+
+AIIA is designed for **long-running autonomous agent loops** (Cursor
+Composer, Cursor Glass mode, Cline, Augment, Trae) where the LLM calls
+`interactive_feedback` many times during a single run. The combined
+agent-side parameters + user-side UX features below let a human reviewer
+decide in **< 5 seconds per task**, so the agent never blocks the
+flow longer than necessary.
+
+### How a single interaction flows
+
+```mermaid
+sequenceDiagram
+    participant Agent as LLM Agent<br/>(Cursor / Cline)
+    participant MCP as MCP transport
+    participant AIIA as AIIA backend<br/>(Flask + SSE)
+    participant UI as Web UI / VS Code
+    participant Human as Human reviewer
+
+    Agent->>MCP: interactive_feedback(message,<br/>header_label, question_type, ...)
+    MCP->>AIIA: POST /api/tasks
+    AIIA->>UI: SSE task.created
+    UI->>Human: Browser/system notification<br/>+ countdown timer
+    Note over Human: Reads chip + prompt,<br/>clicks Yes/No or types reply
+    Human->>UI: Submit
+    UI->>AIIA: POST /api/tasks/{id}/complete
+    AIIA->>MCP: SSE task.completed (+ ctx.info)
+    MCP->>Agent: Returns text + images + selected options
+    Note over Agent: Resumes execution<br/>with human input
+```
+
+### Failure & recovery flows
+
+Beyond the happy path above, three boundary cases keep long-running
+Agent / Glass-mode sessions resilient: **auto-resubmit** (human steps
+away), **SSE reconnect** (network drop), and **❄️ freeze** (deep review
+across page refreshes).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Agent as LLM Agent
+    participant AIIA as AIIA backend
+    participant UI as Web UI
+    participant Human as Human reviewer
+
+    Note over Agent,Human: ① Auto-resubmit (human stepped away)
+    Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=120)
+    AIIA->>UI: SSE task.created (countdown=120s)
+    Note over UI: countdown hits 0<br/>(no ❄️ freeze clicked)
+    UI->>AIIA: POST /api/tasks/{id}/auto-resubmit
+    AIIA->>Agent: SSE task.completed<br/>(with "auto-resubmit" marker)
+
+    Note over UI,AIIA: ② SSE drop → degraded poll → reconnect
+    UI--xAIIA: SSE disconnect (sleep/network jitter)
+    UI->>AIIA: GET /api/tasks (fallback poll, every 5s)
+    UI->>AIIA: SSE reconnect (exponential backoff)
+    AIIA-->>UI: SSE resumed
+
+    Note over Agent,Human: ③ ❄️ Freeze (long review across refreshes)
+    Agent->>AIIA: interactive_feedback<br/>(auto_resubmit_timeout=60)
+    UI->>Human: countdown shows 60s
+    Human->>UI: click ❄️ freeze
+    Note over UI: persist freeze to localStorage<br/>(survives page refresh)
+    Human->>UI: unfreeze + submit
+    UI->>AIIA: POST /api/tasks/{id}/complete
+    AIIA->>Agent: SSE task.completed (full reply)
+```
+
+### Agent-side parameters (LLM passes these via MCP)
+
+| Parameter | Purpose | Max | Source |
+|---|---|---|---|
+| `header_label` | One-word context chip in task pane (`Auth`, `DB`, `i18n`) | 16 chars | gemini-cli `ask_user.header` |
+| `question_type='yesno'` | Hide textarea + render 2-button binary decision | — | gemini-cli `ask_user` |
+| `feedback_placeholder` | Per-task textarea hint (overrides global i18n) | 200 chars | gemini-cli `ask_user` |
+| `auto_resubmit_timeout` | Per-task countdown override (0 = disable) | `[0, 3600]` sec | AIIA native |
+| `predefined_options` | Multi-select chips with optional `default: true` recommendation | 10000 chars/each | AIIA + upstream parity |
+
+Full parameter reference + a single complete Agent-mode call example
+(`Auth` refactor flow combining all 4 + `predefined_options`) lives in
+[`docs/mcp_tools.md#agent-mode-parameters-cursor--composer--cline--augment--trae`](docs/mcp_tools.md#agent-mode-parameters-cursor--composer--cline--augment--trae).
+
+### User-side workflow features (built into the Web UI)
+
+- **Multi-task tabs** — when an agent fires 3+ requests in parallel
+  (typical Cursor Composer multi-edit), each gets its own tab + independent
+  countdown ring; switching tabs preserves textarea drafts
+- **Per-task draft autosave** — typing into one task tab and switching
+  to another doesn't lose your in-progress reply
+- **Countdown extend (`+60s`) + permanent freeze (`❄️`)** — when you
+  need to step away or think longer, extend (limited reps) or freeze
+  the auto-resubmit
+- **Quick reply phrases** — common replies (`"yes do that"`,
+  `"diff first then apply"`) saved to `localStorage`, one-click insert
+- **Custom notification sound** — upload your own short audio file
+  (`.mp3`/`.wav`/...) so Agent-mode tasks have a distinct chime
+- **Per-task images** — paste screenshots / diagrams (≤ 700 KB) inline
+  with the reply, returned to the agent as MCP `ImageContent` blocks
+- **SSE liveness badge** — green/orange/red corner indicator so you
+  always know whether the page is in sync (matters in long Agent runs)
+
+### Recommended LLM system prompt
+
+To force the agent to actually use this tool instead of "auto-finishing"
+the task, append the snippet under [`提示词（可复制）`](#方式一使用-uvx-启动推荐)
+(or its English copy) to your IDE's system prompt / `.cursorrules`.
 
 ## VS Code extension (optional)
 
@@ -310,12 +503,21 @@ so monitoring and CLI tell the same story.
 | --- | --- | --- |
 | [mcp-feedback-enhanced](https://github.com/Minidoracat/mcp-feedback-enhanced) (Minidoracat) | ~3.8k | Largest sibling. Dual-interface (Web UI + Tauri desktop app), auto-command execution, intelligent SSH Remote / WSL detection. Supports Cursor / Cline / Windsurf / Augment / Trae. |
 | [cunzhi](https://github.com/imhuso/cunzhi) (imhuso) | ~1.4k | Chinese-language project focused on preventing premature task completion ("告别 AI 提前终止烦恼"). |
+| [Relay](https://glama.ai/mcp/servers/andeya/ide-relay-mcp) (andeya) | new | Multi-IDE relay (Cursor / Claude Code / Windsurf), multi-tab session merging, native desktop window, Cursor real-time usage monitoring. |
+| [interactive-feedback-mcp (Node.js)](https://github.com/wellcomemayhem-spec/interactive-feedback-mcp-nodejs) | new | Node.js implementation of poliva's design with WebSocket real-time UI, **Speech-to-Text via OpenAI Whisper**, command execution with live output. |
+| [interactive-feedback-mcp](https://github.com/junanchn/interactive-feedback-mcp) (junanchn) | ~50 | Win32-native always-on-top window, auto-reply rules (oneshot/loop modes), drag-drop / paste file paths. |
 | [interactive-feedback-mcp](https://github.com/poliva/interactive-feedback-mcp) (poliva) | ~310 | Direct ancestor fork (rebased from noopstudios original — see Acknowledgements below); minimal Python MCP, single feedback dialog. |
 | [interactive-feedback-mcp](https://github.com/Pursue-LLL/interactive-feedback-mcp) (Pursue-LLL) | ~30 | Independent smaller-scale fork emphasising minimal dependencies. |
 
-**Where AIIA sits on the spectrum**: AIIA targets the operationally deep end — Web UI + VS Code extension sharing the same backend, production-grade observability (`/metrics` Prometheus endpoint + a [reference Grafana dashboard](docs/observability/README.md), SSE schema validation toggle), bilingual i18n + docs, strict invariant test discipline (5,400+ tests + ~800 subtests), pre-push tag-safety hook, and a 5-job release pipeline. If you want the smallest possible drop-in, poliva's fork; if you want a polished desktop app, mcp-feedback-enhanced; if you want full-stack operational integration, AIIA.
+**Where AIIA sits on the spectrum**: AIIA targets the operationally deep end — Web UI + VS Code extension sharing the same backend, production-grade observability (`/metrics` Prometheus endpoint + a [reference Grafana dashboard](docs/observability/README.md), SSE schema validation toggle), bilingual i18n + docs, strict invariant test discipline (6,900+ tests + 1,050+ subtests across **40 audit cycles**, including **AST-based lock-acquisition-order contracts** that statically prove the absence of deadlock cycles across all critical paths, **cross-runtime resource lifecycle audits** covering Python/Browser-JS/VS Code TS, and **OpenAPI docstring coverage** for all 32 API endpoints), pre-push tag-safety hook, and a 5-job release pipeline. If you want the smallest possible drop-in, poliva's fork; if you want a polished desktop app, mcp-feedback-enhanced; if you want voice / multi-tab UI, Relay or the Node.js fork; if you want full-stack operational integration with the deepest invariant test discipline, AIIA.
 
-> Star counts are approximate snapshots (last reviewed 2026-05); check each upstream for current numbers. Submit a PR if you'd like another related project listed.
+**Feature gap callouts** (planned for future releases, contributions welcome):
+- 🎤 **Speech-to-Text input** — like the Node.js fork (Whisper API integration)
+- 🪟 **Always-on-top native window** — like junanchn (currently Web UI only)
+- 📊 **Cursor usage/billing monitoring** — like Relay (Cursor-specific)
+- 🗂️ **Multi-tab session merging UI** — like Relay (AIIA has tasks but no unified tab hub)
+
+> Star counts are approximate snapshots (last reviewed 2026-06); check each upstream for current numbers. Submit a PR if you'd like another related project listed.
 
 ## Acknowledgements
 

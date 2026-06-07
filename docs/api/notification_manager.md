@@ -34,6 +34,8 @@
 
 ##### `__init__(self)`
 
+##### `reset_for_testing(self) -> None`
+
 ##### `register_provider(self, notification_type: NotificationType, provider: Any) -> None`
 
 ##### `get_provider_latency_histograms_snapshot(self) -> dict[str, dict[str, Any]]`

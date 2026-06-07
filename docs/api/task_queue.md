@@ -30,6 +30,8 @@
 
 ##### `extend_deadline(self, seconds: int) -> tuple[bool, str | None]`
 
+##### `freeze_deadline(self) -> tuple[bool, str | None]`
+
 ### `class TaskQueue`
 
 #### Methods
@@ -51,6 +53,8 @@
 ##### `get_active_task(self) -> Task | None`
 
 ##### `extend_task_deadline(self, task_id: str, seconds: int) -> tuple[bool, str | None, int, int]`
+
+##### `freeze_task_deadline(self, task_id: str) -> tuple[bool, str | None, int]`
 
 ##### `set_active_task(self, task_id: str) -> bool`
 

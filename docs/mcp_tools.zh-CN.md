@@ -66,6 +66,50 @@
     用 ToolError 拒掉——这是有意为之的硬错：静默接受会让 LLM 持续
     sample 错形态，永远学不到正确写法。
 
+#### Agent 模式专用参数（Cursor / Composer / Cline / Augment / Trae）
+
+以下 4 个可选参数**专为 Agent / Glass 模式高频调用场景设计**——LLM
+在长时间自主流程中会反复 invoke `interactive_feedback`，这 4 个参数让
+agent 能按任务预先调整 UI，让用户在 5 秒内完成审阅决策，而不必上下文
+切换回去读完整提示。LLM 通过 `tools/list` 的 JSON-Schema description 已
+经能看到这些字段；本节是给人类阅读的对照参考。
+
+- `header_label`（string，可选，**最长 16 字符**）
+  - 渲染在 prompt 上方的短上下文 chip。示例：`"Auth"`、`"DB"`、
+    `"i18n"`、`"CSS"`。在**多任务并发**模式下尤其有用——用户同时面对
+    3+ 个待审阅任务时，chip 能让他一眼区分任务领域。借鉴自
+    `gemini-cli` 的 `ask_user.header` schema。
+  - 推荐 1 个词，能不带空格就不带空格。超长服务端会自动 clamp；
+    省略或传空字符串 → 不渲染 chip。
+
+- `question_type`（string，可选，目前只支持 `"yesno"`）
+  - 当传 `"yesno"` 时，前端**隐藏文本框**，只渲染一行 Yes / No 按钮
+    对。用户点击直接提交字面字符串 `"yes"` 或 `"no"`——省掉
+    typing + Submit 两步动作，适合二元决策（批准 / 拒绝、proceed /
+    abort、确认删除）。未知值会静默当 `None` 处理，前向兼容未来的
+    `"choice"` / `"rating"` 等新类型。借鉴自 `gemini-cli` 的
+    `ask_user` schema。
+
+- `feedback_placeholder`（string，可选，**最长 200 字符**）
+  - 每任务级别的 textarea placeholder 提示（覆盖全局 i18n
+    `page.feedbackPlaceholder` 字符串）。示例：`"粘贴错误堆栈"`、
+    `"描述视觉异常"`、`"回复 'ok' 批准 或 'no' + 原因 拒绝"`。仅
+    支持单行（超长会静默截断，但响应会带 `placeholder_truncated: true`
+    标识，让调用方知道发生了 clamp）。借鉴自 `gemini-cli` 的
+    `ask_user` schema。
+
+- `auto_resubmit_timeout`（int，可选，单位秒，默认走
+  `feedback.frontend_countdown` = `240`）
+  - 每任务级别的前端倒计时覆盖——对低风险确认类任务，agent 不想等
+    完整 4 分钟时可以传 `60`；想完全禁用单任务自动重调时传 `0`
+    （不影响全局配置）。范围跟随服务端配置（`[0, 3600]`），越界值
+    静默 clamp 而非报错。
+
+这 4 个参数可组合使用：典型 Agent 模式调用 = `header_label`（上下文）
++ `feedback_placeholder`（提示） + 二选一：`predefined_options`（多选
+chip）或 `question_type='yesno'`（二元按钮）。下方有完整 Agent 模式
+调用示例。
+
 #### 返回值
 
 `interactive_feedback` 返回 **MCP 标准 Content 列表**：
@@ -137,3 +181,32 @@ interactive_feedback(
 ```text
 interactive_feedback(message="请确认下一步怎么做。")
 ```
+
+#### Agent 模式示例（Cursor / Glass）
+
+长时间运行的 Cursor agent 正在重构 auth 模块，需要在跑集成测试之前
+征求用户同意。组合 **4 个 Agent 模式参数**，让用户在 5 秒内决策：
+
+```text
+interactive_feedback(
+  message=(
+    "我重构了 `auth/session.py::renew_token()`，迁移到 PyJWT 2.x 新 API：\n"
+    "- 移除老的 `algorithms` kwarg fallback\n"
+    "- 把 `jwt.PyJWTError` 换成 `jwt.InvalidTokenError`\n"
+    "- 新增 30s 时钟漂移容忍\n\n"
+    "**是否同意运行 auth 集成测试套件？**"
+  ),
+  header_label="Auth",                      # 1 个词 chip 显示在 prompt 上方
+  feedback_placeholder=                     # 用户回复文本框提示
+    "回复 'ok' 跑测试，或 'no' + 原因 回滚",
+  question_type="yesno",                    # 二元 → 显示 2 个按钮
+  auto_resubmit_timeout=120,                # 单任务 2 分钟代替默认 4 分钟
+)
+```
+
+UX 效果：用户看到 `Auth` chip + 1 段清晰摘要 + Yes/No 按钮，一键提
+交无需打字。若用户超过 2 分钟未响应，agent 会拿到 resubmit prompt
+（而非被卡满 4 分钟）。`header_label` / `question_type` /
+`feedback_placeholder` / `auto_resubmit_timeout` 完整语义见上方
+[Agent 模式专用参数](#agent-模式专用参数cursor--composer--cline--augment--trae)
+小节。

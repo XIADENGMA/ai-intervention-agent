@@ -6,6 +6,8 @@
 
 ### `_bump_feedback_counter(name: str, by: int = 1) -> None`
 
+### `reset_feedback_counters_for_testing() -> None`
+
 ### `get_feedback_counters() -> dict[str, int]`
 
 ### `async _emit_ctx_info(ctx: FastMCPContext | None, message: str) -> None`
