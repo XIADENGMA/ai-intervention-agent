@@ -132,7 +132,14 @@ _JS_T_CALL_RE = re.compile(
     # 调用 i18n，原正则因 ``(?<![.\w])`` 排除 dot-access 而漏识别，导致
     # ``page.taskTabCopyHint`` 等被误判 dead。新增 ``|AIIA_I18N\.t``
     # 旁支允许该 namespace。同步到 scripts/check_i18n_orphan_keys.py。
-    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
+    #
+    # a11y-audit-cycle-4 R259c：新增 ``_resolveLabel('key', fallback)``
+    # 识别 — ios_a2hs_hint.js 的本地 i18n helper（带 fallback 默认值，
+    # 用于 i18n 未就绪时 SSR/早期渲染兜底）。原正则只识别 ``_tl/_t``
+    # 标准 helper，``_resolveLabel`` 被漏导致 4 个真在用 key
+    # (page.iosA2hs.{title,desc,dismissAriaLabel,dismissTitle}) 误判
+    # dead。同步到 scripts/check_i18n_orphan_keys.py。
+    r"""(?:(?<![.\w])(?:_?tl?|hostT|__vuT|__domSecT|__ncT|_resolveLabel)|AIIA_I18N\.t)\(\s*['"]([a-zA-Z][a-zA-Z0-9_.]+)['"]\s*[,)]"""
 )
 
 
@@ -761,6 +768,22 @@ class TestI18nDeadKeys(unittest.TestCase):
         # cr40 cycle health-fix #3 — ``settings.customSound.uploaded`` 是
         # 上传成功提示，通过 i18n setter 路径触发；同 dynamic 模式。
         "settings.customSound.uploaded": frozenset({"web"}),
+        # R289 / cycle-27 t27-3：``_classifyFetchError`` 通过 helper 返回
+        # i18n key 字符串，在调用点写成 ``t(_classifyFetchError(error))``，
+        # JS_T_CALL_RE 只识别字面值 ``t('...')``，无法 trace dynamic 引用。
+        # 5 个 status.* fetch-error key 全部走 dynamic 模式，加入豁免清单。
+        "status.networkError": frozenset({"web"}),
+        "status.networkOffline": frozenset({"web"}),
+        "status.requestTimeout": frozenset({"web"}),
+        "status.serverResponseInvalid": frozenset({"web"}),
+        "status.uiRenderingError": frozenset({"web"}),
+        # R294 / cycle-28 t28-5：``_classifyHttpResponse`` 同 dynamic 模式
+        # (按 response.status 分类返回 i18n key)，2 个新 key 走豁免清单。
+        "status.unauthorized": frozenset({"web"}),
+        "status.serviceUnavailable": frozenset({"web"}),
+        "status.badGateway": frozenset({"web"}),
+        "status.serviceOverloaded": frozenset({"web"}),
+        "status.gatewayTimeout": frozenset({"web"}),
     }
 
     @classmethod

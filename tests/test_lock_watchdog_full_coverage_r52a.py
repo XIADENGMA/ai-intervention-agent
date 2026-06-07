@@ -35,6 +35,7 @@ WRITE_METHOD_LABEL_MAP = {
     # facade。原 race-prone implementation 改为 ``_watched_write_lock``
     # 包装，label 加入 expected set 锁住 invariant。
     "extend_task_deadline": "extend_task_deadline",
+    "freeze_task_deadline": "freeze_task_deadline",
 }
 
 

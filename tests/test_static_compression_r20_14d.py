@@ -559,11 +559,20 @@ class TestSourceInvariants(unittest.TestCase):
         self.assertIn('".gz"', src, "SKIP_EXTENSIONS 必须包含 .gz 防嵌套")
 
     def test_ci_gate_precompresses_after_minify_before_pytest(self) -> None:
-        """CI gate 更新 .min 后必须重生 .gz/.br，再进入 pytest。"""
+        """CI gate 更新 .min 后必须重生 .gz/.br，再进入 pytest。
+
+        R305 把 ``pytest_cmd`` 改成多行 list 形式 (加 ``-n 4 --dist=loadfile``
+        xdist 参数), 原 ``src.find('pytest_cmd = ["uv", "run", "pytest"')``
+        单行字面值匹配失效。改用 regex 匹配 ``pytest_cmd\\s*=\\s*\\[`` 兼容
+        单行 / 多行两种格式, 既保留 invariant 又不限制代码格式。
+        """
+        import re as _re
+
         src = (REPO_ROOT / "scripts" / "ci_gate.py").read_text(encoding="utf-8")
         minify_idx = src.find('"scripts/minify_assets.py"')
         precompress_idx = src.find('"scripts/precompress_static.py"')
-        pytest_idx = src.find('pytest_cmd = ["uv", "run", "pytest"')
+        pytest_match = _re.search(r"pytest_cmd\s*=\s*\[", src)
+        pytest_idx = pytest_match.start() if pytest_match else -1
 
         self.assertGreaterEqual(minify_idx, 0, "ci_gate 必须先运行 minify_assets.py")
         self.assertGreaterEqual(
@@ -571,7 +580,11 @@ class TestSourceInvariants(unittest.TestCase):
             0,
             "ci_gate 必须在 pytest 前运行 precompress_static.py，避免 stale .gz",
         )
-        self.assertGreaterEqual(pytest_idx, 0, "ci_gate 必须声明 pytest_cmd")
+        self.assertGreaterEqual(
+            pytest_idx,
+            0,
+            "ci_gate 必须声明 pytest_cmd (regex: pytest_cmd\\s*=\\s*\\[)",
+        )
         self.assertLess(minify_idx, precompress_idx)
         self.assertLess(precompress_idx, pytest_idx)
 

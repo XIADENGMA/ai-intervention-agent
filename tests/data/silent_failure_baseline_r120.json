@@ -24,77 +24,82 @@
     },
     {
       "file": "src/ai_intervention_agent/config_modules/network_security.py",
-      "lineno": 212,
+      "lineno": 313,
       "qualified_name": "NetworkSecurityMixin._save_network_security_config_immediate"
     },
     {
       "file": "src/ai_intervention_agent/enhanced_logging.py",
-      "lineno": 603,
+      "lineno": 703,
       "qualified_name": "_record_to_ring"
     },
     {
       "file": "src/ai_intervention_agent/i18n.py",
-      "lineno": 113,
+      "lineno": 153,
       "qualified_name": "detect_request_lang"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 872,
+      "lineno": 1197,
       "qualified_name": "NotificationManager._process_event"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 972,
+      "lineno": 1297,
       "qualified_name": "NotificationManager._process_event"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1003,
+      "lineno": 1328,
       "qualified_name": "NotificationManager._process_event"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1055,
+      "lineno": 1380,
       "qualified_name": "NotificationManager._send_single_notification"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1082,
+      "lineno": 1407,
       "qualified_name": "NotificationManager._send_single_notification"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1152,
+      "lineno": 1485,
       "qualified_name": "NotificationManager._send_single_notification"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1188,
+      "lineno": 1521,
       "qualified_name": "NotificationManager._send_single_notification"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1518,
+      "lineno": 1851,
       "qualified_name": "NotificationManager.get_status"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1536,
+      "lineno": 1869,
       "qualified_name": "NotificationManager.get_status"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 563,
+      "lineno": 554,
+      "qualified_name": "NotificationManager.reset_for_testing"
+    },
+    {
+      "file": "src/ai_intervention_agent/notification_manager.py",
+      "lineno": 888,
       "qualified_name": "NotificationManager.send_notification"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1237,
+      "lineno": 1570,
       "qualified_name": "NotificationManager.shutdown"
     },
     {
       "file": "src/ai_intervention_agent/notification_manager.py",
-      "lineno": 1593,
+      "lineno": 1926,
       "qualified_name": "_shutdown_global_notification_manager"
     },
     {
@@ -109,7 +114,7 @@
     },
     {
       "file": "src/ai_intervention_agent/server_feedback.py",
-      "lineno": 1058,
+      "lineno": 1107,
       "qualified_name": "interactive_feedback"
     },
     {
@@ -134,17 +139,17 @@
     },
     {
       "file": "src/ai_intervention_agent/web_ui.py",
-      "lineno": 984,
+      "lineno": 1014,
       "qualified_name": "WebFeedbackUI.setup_routes.get_api_config"
     },
     {
       "file": "src/ai_intervention_agent/web_ui_routes/system.py",
-      "lineno": 714,
+      "lineno": 1043,
       "qualified_name": "_render_prometheus_metrics"
     },
     {
       "file": "src/ai_intervention_agent/web_ui_routes/system.py",
-      "lineno": 739,
+      "lineno": 1068,
       "qualified_name": "_render_prometheus_metrics"
     }
   ]

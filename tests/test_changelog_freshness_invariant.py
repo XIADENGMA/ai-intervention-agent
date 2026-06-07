@@ -10,11 +10,19 @@ clean）来确保 CHANGELOG.md 永远跟 git tag 同步。
 from __future__ import annotations
 
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check_changelog_freshness.py"
+# R269 / cycle-22 polish: bare ``"python"`` 在某些环境（macOS Homebrew
+# 默认 / fish-shell / 用 `uv run` 跑 test）没有 PATH lookup, 找不到
+# top-level binary → ``FileNotFoundError`` 让 3 个 freshness invariant
+# 在本地全部 fail，但 CI（含 Linux /usr/bin/python symlink）能 pass。
+# 用 ``sys.executable`` 直接指向当前解释器路径 = 无论本地还是 CI 都
+# 找得到，且保证子进程和父进程跑同一个 Python 版本。
+PYTHON_BIN = sys.executable
 
 
 class TestScriptExists(unittest.TestCase):
@@ -40,7 +48,7 @@ class TestRunsCleanOnHead(unittest.TestCase):
 
     def test_head_passes_default_mode(self) -> None:
         result = subprocess.run(
-            ["python", str(SCRIPT)],
+            [PYTHON_BIN, str(SCRIPT)],
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
@@ -66,7 +74,7 @@ class TestRunsCleanOnHead(unittest.TestCase):
         但 default 仍判 OK）。
         """
         result = subprocess.run(
-            ["python", str(SCRIPT), "--strict"],
+            [PYTHON_BIN, str(SCRIPT), "--strict"],
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
@@ -87,27 +95,56 @@ class TestDetectsActualDrift(unittest.TestCase):
     """
 
     def test_detects_missing_unreleased(self) -> None:
-        """临时把 ``## [Unreleased]`` 改名为 ``## [Foo]``，script 必须报警。"""
+        """临时把 ``## [Unreleased]`` 改名 + 把最新 tag section header 也改名，
+        script 必须报警（覆盖 check #1 ``CHANGELOG 缺 latest tag section``，
+        不依赖 HEAD-vs-tag commit 差，避免 immediate-post-release tag-cut
+        瞬态下假阴性）。
+        """
         changelog = REPO_ROOT / "CHANGELOG.md"
         original = changelog.read_text(encoding="utf-8")
-        broken = original.replace("## [Unreleased]", "## [TEMPORARILY_BROKEN]", 1)
+
+        # 找当前最新 git tag，rename 它的 CHANGELOG section → 必触发 check #1
+        try:
+            latest_tag = (
+                subprocess.run(
+                    ["git", "tag", "-l", "--sort=-v:refname"],
+                    cwd=str(REPO_ROOT),
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                .stdout.strip()
+                .splitlines()[0]
+            )
+        except (subprocess.CalledProcessError, IndexError):
+            self.skipTest("no git tag in repo; check #1 mutation not applicable")
+            return
+
+        latest_version = latest_tag.lstrip("v")
+        broken = original.replace(
+            f"## [{latest_version}]", "## [TEMP_HIDDEN_VERSION]", 1
+        )
+        broken = broken.replace("## [Unreleased]", "## [TEMPORARILY_BROKEN]", 1)
         if broken == original:
-            # 没找到 Unreleased，跳过 — repo 状态非测试所设计的标准形态
-            self.skipTest("no [Unreleased] section in CHANGELOG; skip drift sim")
+            self.skipTest(
+                f"no [{latest_version}] or [Unreleased] section to mutate; "
+                "repo state outside test design"
+            )
 
         try:
             changelog.write_text(broken, encoding="utf-8")
             result = subprocess.run(
-                ["python", str(SCRIPT), "--strict"],
+                [PYTHON_BIN, str(SCRIPT), "--strict"],
                 cwd=str(REPO_ROOT),
                 capture_output=True,
                 text=True,
                 timeout=30,
                 check=False,
             )
-            # strict + drift → exit 1
             self.assertEqual(
-                result.returncode, 1, f"strict 应检测到 drift；stdout={result.stdout!r}"
+                result.returncode,
+                1,
+                f"strict 应检测到 drift；stdout={result.stdout!r}",
             )
             self.assertIn("DRIFT", result.stdout)
         finally:

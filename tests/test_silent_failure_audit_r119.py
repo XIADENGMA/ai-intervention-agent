@@ -319,7 +319,11 @@ class TestR119DocumentationContract(unittest.TestCase):
             / "network_security.py",
         ]
         for path in fix_files:
-            with self.subTest(path=path):
+            # R305: subTest id 必须是 picklable 类型（int/str/bool/...），
+            # pytest-xdist 用 execnet 序列化 worker → controller, PosixPath
+            # 直接报 `DumpError: can't serialize <class 'pathlib.PosixPath'>`.
+            # str(path) 既保留可读性, 又 picklable, 还兼容 serial 运行。
+            with self.subTest(path=str(path)):
                 content = path.read_text(encoding="utf-8")
                 self.assertIn("R119", content, f"{path} 必须保留 R119 marker")
 
@@ -344,7 +348,8 @@ class TestR119DocumentationContract(unittest.TestCase):
             repo_root / "src" / "ai_intervention_agent" / "server_config.py",
         ]
         for path in intentional_silenced_files:
-            with self.subTest(path=path):
+            # R305: subTest id 必须 picklable（同上 fix_sites 的注释）。
+            with self.subTest(path=str(path)):
                 content = path.read_text(encoding="utf-8")
                 # 反向：必须有至少一处 ``except Exception:\n        pass``
                 # （或 ``except Exception:\n            pass`` 等不同缩进）

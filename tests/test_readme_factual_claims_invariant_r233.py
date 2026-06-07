@@ -50,7 +50,9 @@ What we DON'T check
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -82,12 +84,19 @@ def _extract_test_count_claim(readme: str) -> int:
 
 
 def _extract_subtest_count_claim(readme: str) -> int:
-    match = re.search(r"~([0-9]+)\s*subtests", readme)
-    assert match is not None, (
-        "R233: cannot find '~NNN subtests' claim in README; if positioning "
-        "paragraph was rewritten, update this regex."
+    # 支持新旧两种声明格式:
+    #   - 旧: "~800 subtests" (cycle-30 前)
+    #   - 新: "1,000+ subtests" (cycle-36 R333 起)
+    match = re.search(
+        r"(?:~([0-9]+)|([0-9],?[0-9]{3,})\+)\s*subtests",
+        readme,
     )
-    return int(match.group(1))
+    assert match is not None, (
+        "R233: cannot find '~NNN subtests' / 'N,NNN+ subtests' claim in "
+        "README; if positioning paragraph was rewritten, update this regex."
+    )
+    raw = match.group(1) or match.group(2)
+    return int(raw.replace(",", ""))
 
 
 def _extract_release_job_count_claim(readme: str) -> int:
@@ -108,14 +117,39 @@ def _count_release_workflow_jobs() -> int:
     return len(jobs)
 
 
+def _build_pytest_collect_cmd() -> list[str]:
+    """R270 / cycle-23 polish: graceful fallback between ``uv`` and ``python -m pytest``.
+
+    Pre-R270 (commit `dadeea3` 同期 R269 cousin bug): R233 hard-coded ``["uv",
+    "run", "pytest", "--collect-only", "-q"]`` 假设 ``uv`` 在 PATH 上。在
+    `pipx install pytest` / 直接 `pip install pytest` / fish shell 默认环境
+    （uv 装在 `~/.cargo/bin` 但 PATH 未导出）会 raise ``FileNotFoundError:
+    'uv'``，让 R233 4 个 invariant 全 fail，污染本地全套 pytest run。CI 上
+    GitHub Actions ``setup-uv@v3`` 总是把 uv 注入 PATH，所以问题在 CI **不
+    可见**——典型的 platform-asymmetry 测试脆弱性，与 R269 freshness 测试
+    bare ``"python"`` 同源。
+
+    Fallback 顺序：
+    1. ``shutil.which("uv")`` 命中 → 用 ``uv run pytest``（最佳，保证 uv-
+       managed venv 的版本一致性）
+    2. 否则 → ``[sys.executable, "-m", "pytest", "--collect-only", "-q"]``
+       （fallback，至少保证子进程跑同一 Python 解释器，不会被 PATH 上的
+       不同 pytest 版本影响）
+    """
+    if shutil.which("uv") is not None:
+        return ["uv", "run", "pytest", "--collect-only", "-q"]
+    return [sys.executable, "-m", "pytest", "--collect-only", "-q"]
+
+
 def _collect_pytest_test_count() -> int:
     """Run ``pytest --collect-only -q`` to count tests."""
     result = subprocess.run(
-        ["uv", "run", "pytest", "--collect-only", "-q"],
+        _build_pytest_collect_cmd(),
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         timeout=120,
+        check=False,
     )
     output = result.stdout + result.stderr
     match = re.search(r"^(\d+) tests collected", output, re.MULTILINE)

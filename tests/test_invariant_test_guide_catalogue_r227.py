@@ -172,7 +172,15 @@ class TestGuidesCrossLink(unittest.TestCase):
 # - Too high (15+) → invariant guide effectively never refreshed
 # - 10 is a working middle: roughly two cycles of R-work; forces
 #   refresh at code-review time at the latest.
-_TEST_FILE_R_RE = re.compile(r"_invariant_r(\d+)\.py$")
+#
+# R420 (cycle-48 #A1) / Cycle 47 cr77 §5 风险 A 修复: regex 放宽。
+# 原 regex ``_invariant_r(\d+)\.py$`` 只匹配带 ``_invariant_`` 前缀的文件,
+# 但 cycle-43+ 累积 ~15 个 invariant test 用 ``test_feat_<topic>_rNNN.py``
+# 简化命名 (省略 ``_invariant_``), 这些文件被 R231 静默忽略, 导致 catalogue
+# staleness guard 形成局部盲点。
+# 新 regex ``_r(\d+)\.py$`` 匹配任何 ``_rNNN.py`` 后缀, 与项目 cycle-43+
+# convention 一致。
+_TEST_FILE_R_RE = re.compile(r"_r(\d+)\.py$")
 
 MAX_R_LAG = 10
 

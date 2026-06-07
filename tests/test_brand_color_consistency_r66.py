@@ -269,12 +269,22 @@ class TestIosBlueHexFamilyR109(unittest.TestCase):
         count_007aff = len(_re.findall(r"#007aff\b", stripped, _re.IGNORECASE))
         count_0a84ff = len(_re.findall(r"#0a84ff\b", stripped, _re.IGNORECASE))
         count_0056cc = len(_re.findall(r"#0056cc\b", stripped, _re.IGNORECASE))
+        count_0045a0 = len(_re.findall(r"#0045a0\b", stripped, _re.IGNORECASE))
 
         self.assertEqual(
             count_007aff,
-            7,
-            f"R99 锁定 ``#007aff`` 应为 7 处实际硬编码（剥注释后），实际 {count_007aff}。"
+            6,
+            f"R99/R109/R259h 锁定 ``#007aff`` 应为 6 处实际硬编码"
+            f"（剥注释后；cycle-5 Track D R259h 把 ``.btn-primary`` 默认背景"
+            f"从 ``#007aff`` 升级到 ``#0056cc`` 修 WCAG 1.4.3 AA-normal "
+            f"FAIL，故计数 7→6），实际 {count_007aff}。"
             f"若变化，请同步 R109 docstring 的拆解数字。",
+        )
+        self.assertEqual(
+            count_0045a0,
+            1,
+            f"R259h 锁定 ``#0045a0`` 应为 1 处（``.btn-primary:hover`` 新背景，"
+            f"contrast 8.90:1 AAA-ish），实际 {count_0045a0}。",
         )
         self.assertEqual(
             count_0a84ff,
@@ -289,10 +299,11 @@ class TestIosBlueHexFamilyR109(unittest.TestCase):
             f"若被重构掉了，请把 ``DEFAULT_HEX_BASELINE`` 从 9 降到 8。",
         )
         self.assertEqual(
-            count_007aff + count_0a84ff + count_0056cc,
+            count_007aff + count_0a84ff + count_0056cc + count_0045a0,
             guard.DEFAULT_HEX_BASELINE,
-            f"三个 variant 总和必须 == DEFAULT_HEX_BASELINE "
-            f"({guard.DEFAULT_HEX_BASELINE})。",
+            f"四个 variant 总和必须 == DEFAULT_HEX_BASELINE "
+            f"({guard.DEFAULT_HEX_BASELINE})；cycle-5 R259h 把 #0045a0 "
+            f"加入 iOS 蓝家族 baseline，总数仍为 9 (6+1+1+1)。",
         )
 
 

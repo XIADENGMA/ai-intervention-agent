@@ -112,7 +112,13 @@ _IOS_BLUE_RE = re.compile(r"rgba?\s*\(\s*0\s*,\s*122\s*,\s*255\b")
 # ``\b`` 防止误匹 ``#007affab`` 之类扩展（CSS 不允许，但 robustness）。
 # R66 docstring 里的 hex 形式 RCA 引用（``#a855f7`` / ``#d97757``）不
 # 会误命中——它们都不是 iOS 蓝家族。
-_IOS_BLUE_HEX_RE = re.compile(r"#(?:007aff|0a84ff|0056cc)\b", re.IGNORECASE)
+# a11y-audit-cycle-5 Track D (R259h): 加 ``#0045a0`` —— WCAG 1.4.3 修复
+# 把 ``.btn-primary:hover`` 从 ``#0056cc`` (6.56:1) 升级到 ``#0045a0``
+# (8.90:1 AAA-ish)，同时把 ``.btn-primary`` 默认从 ``#007aff`` (4.02:1 FAIL)
+# 升到 ``#0056cc`` (AA pass)。``#0045a0`` 纳入 iOS 蓝家族 baseline，
+# 总 hex 计数 = 9 不变（``#007aff`` 7→6, ``#0056cc`` 1→1（位置切换）,
+# ``#0045a0`` 0→1）。
+_IOS_BLUE_HEX_RE = re.compile(r"#(?:007aff|0a84ff|0056cc|0045a0)\b", re.IGNORECASE)
 
 # CSS 块注释 ``/* ... */`` —— 跨行非贪婪。
 _CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)

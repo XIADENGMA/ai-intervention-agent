@@ -82,16 +82,37 @@ def _read_template() -> str:
     return TEMPLATE_PATH.read_text(encoding="utf-8")
 
 
+def _strip_html_comments(text: str) -> str:
+    """剥 ``<!-- ... -->`` HTML 注释，避免文档注释里的 ``<body>`` / ``<head>``
+    被结构 invariant 误命中。
+
+    a11y-audit-cycle-4 R259b 修复：模板里有 3 个 HTML 注释引用了 ``<body>``
+    与 ``<head>`` 标签做文档说明（line 82/117/184），原 ``_extract_body``
+    用 ``<body\\b[^>]*>([\\s\\S]*?)</body>`` 会从注释里的 ``<body>`` 开始
+    捕获，把 head 内 6 条 preload link 也当成"body 里的 preload"，
+    导致 ``test_preload_links_only_in_head`` 假性失败。
+    """
+    return re.sub(r"<!--[\s\S]*?-->", "", text)
+
+
 def _extract_head(text: str) -> str:
-    """抽出 ``<head>...</head>`` 内容。模板 head 形态稳定（有显式闭合标签）。"""
-    m = re.search(r"<head\b[^>]*>([\s\S]*?)</head>", text, re.IGNORECASE)
+    """抽出 ``<head>...</head>`` 内容。模板 head 形态稳定（有显式闭合标签）。
+
+    注：调用前先剥 HTML 注释，避免注释里的 ``<head>`` 引用被误匹配。
+    """
+    cleaned = _strip_html_comments(text)
+    m = re.search(r"<head\b[^>]*>([\s\S]*?)</head>", cleaned, re.IGNORECASE)
     assert m is not None, "模板找不到 <head>...</head>"
     return m.group(1)
 
 
 def _extract_body(text: str) -> str:
-    """抽出 ``<body>...</body>`` 内容。"""
-    m = re.search(r"<body\b[^>]*>([\s\S]*?)</body>", text, re.IGNORECASE)
+    """抽出 ``<body>...</body>`` 内容。
+
+    注：同 ``_extract_head``，先剥 HTML 注释再匹配。
+    """
+    cleaned = _strip_html_comments(text)
+    m = re.search(r"<body\b[^>]*>([\s\S]*?)</body>", cleaned, re.IGNORECASE)
     assert m is not None, "模板找不到 <body>...</body>"
     return m.group(1)
 

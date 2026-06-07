@@ -162,6 +162,17 @@ def _isolate_config_and_notification_singletons():
         except Exception:
             pass
 
+        # R323 (cycle-34 #B2, v3.8 test-isolation pattern 3rd app): 调用
+        # ``reset_for_testing()`` 重置 singleton 的 in-memory state (stats /
+        # histograms / queue / callbacks / delayed timers / inflight 等),
+        # 让跨测试 singleton 隔离全自动化, 不再需要测试 setUp 手动维护。
+        # 详见 ``NotificationManager.reset_for_testing()`` docstring (与 R319
+        # ``_create_test_instance()`` 互补关系)。
+        try:
+            notification_manager.reset_for_testing()
+        except Exception:
+            pass
+
         # 关键：有些测试会直接改 config 字段绕过 update_config_without_save，
         # 这里强制对齐 provider（避免 Bark provider “幽灵存在”）
         try:

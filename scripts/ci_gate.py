@@ -256,7 +256,36 @@ def _main_impl(argv: list[str]) -> int:
     # 测试集中包含大量“故意喂坏配置”的用例；这些用例会产生日志级
     # WARNING/ERROR，但断言本身期望通过。门禁输出保持干净，只让真实失败
     # 通过 pytest 退出码和失败摘要体现。
-    pytest_cmd = ["uv", "run", "pytest", "-q", "-o", "log_cli=false"]
+    #
+    # R305: 默认开 pytest-xdist 4 worker + ``--dist=loadfile`` 让本地
+    # ``make ci`` / 远端 CI 测试时长从 ~191s 压到 ~50s (3.8x 加速, 实测
+    # 6464 测试 + 1 skip + 878 subtests 全过)。``loadfile`` (同一文件保持
+    # 同一 worker) 而不是 ``worksteal`` 的原因是后者把同文件的测试拆到不
+    # 同 worker, 触发 R72-A 这类共享 root logger 状态的测试副作用污染 —
+    # loadfile 既能并行又能保留 file-local 测试隔离。
+    #
+    # 选 4 worker 而非 ``-n auto`` 的原因: CI runner 通常 2-4 核, ``auto``
+    # 会读 ``CPU_count()``, 在 GitHub Actions free tier (2-core) 上变成
+    # ``-n 2`` 反而比 ``-n 4`` 还要慢 (xdist 调度 overhead > CPU 上限)。
+    # 实测开发者笔记本 ``-n 4`` 是 sweet spot, 上限 ~4x 加速; ``-n 8`` 在
+    # 14 寸 M-series 上反而因 SSE bus 测试 GIL 竞争退化到 ~52s。
+    #
+    # ``-p no:cacheprovider`` 在测试中默认不开 (pytest cache 在本地是有
+    # 用的); CI 在 ``test.yml`` 显式追加才禁缓存以确保 PR 比对干净。
+    #
+    # 锁: ``tests/test_feat_ci_gate_pytest_xdist_r305.py`` 守护这两个参数
+    # 一字不差出现在 ``pytest_cmd`` 中, 防 cycle-31+ 误删 / 改成低效配置。
+    pytest_cmd = [
+        "uv",
+        "run",
+        "pytest",
+        "-q",
+        "-o",
+        "log_cli=false",
+        "-n",
+        "4",
+        "--dist=loadfile",
+    ]
     if args.with_coverage:
         # R76 src/ layout：覆盖率只统计源码包 ``src/ai_intervention_agent``；
         # ``scripts/`` 与 ``tests/`` 已在 ``[tool.coverage.run].omit`` 屏蔽。

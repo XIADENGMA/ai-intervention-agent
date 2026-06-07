@@ -398,6 +398,11 @@ class TestStreakInRealNotificationManagerSendPath(unittest.TestCase):
     """通过 NotificationManager._send_to_provider 真路径验证 streak。"""
 
     def setUp(self):
+        # R319 (cycle-33 #A2): 用 NotificationManager._create_test_instance()
+        # 集中化 helper, 替代 R316 的"显式补充缺失 attr"模式 — R319 是
+        # test-isolation pattern 2nd app, R145 setUp 是其 1st caller.
+        # 旧模式 (R316 R145 setUp 手动 13 行属性 init) 已被 R319 收编, 见
+        # NotificationManager._create_test_instance() docstring 详细说明.
         from ai_intervention_agent.notification_manager import (
             NotificationEvent,
             NotificationManager,
@@ -407,24 +412,7 @@ class TestStreakInRealNotificationManagerSendPath(unittest.TestCase):
         self._NotificationEvent = NotificationEvent
         self._NotificationType = NotificationType
 
-        import threading
-
-        self.mgr = NotificationManager.__new__(NotificationManager)
-        self.mgr._stats_lock = threading.Lock()
-        self.mgr._stats = {
-            "events_total": 0,
-            "events_finalized": 0,
-            "events_in_flight": 0,
-            "providers": {},
-        }
-        self.mgr._providers = {}
-        self.mgr._providers_lock = threading.Lock()
-        self.mgr._callbacks = {}
-        self.mgr._delay_timers = {}
-        self.mgr._delay_lock = threading.Lock()
-        self.mgr._executor = None
-        self.mgr._inflight_persisted_ids = set()
-        self.mgr._inflight_seen_at_startup = []
+        self.mgr = NotificationManager._create_test_instance()
 
     def _make_event(self):
         from ai_intervention_agent.notification_models import NotificationTrigger
