@@ -695,6 +695,9 @@ async function loadConfig() {
             "skipping options render",
         );
       } else {
+        const optionDefaults = Array.isArray(config.predefined_options_defaults)
+          ? config.predefined_options_defaults
+          : [];
         config.predefined_options.forEach((option, index) => {
           const optionDiv = document.createElement("div");
           optionDiv.className = "option-item";
@@ -703,6 +706,7 @@ async function loadConfig() {
           checkbox.type = "checkbox";
           checkbox.id = `option-${index}`;
           checkbox.value = option;
+          checkbox.checked = optionDefaults[index] === true;
 
           const label = document.createElement("label");
           label.htmlFor = `option-${index}`;
@@ -710,6 +714,9 @@ async function loadConfig() {
 
           optionDiv.appendChild(checkbox);
           optionDiv.appendChild(label);
+          if (checkbox.checked) {
+            optionDiv.classList.add("selected");
+          }
           optionsContainer.appendChild(optionDiv);
         });
 

@@ -3245,10 +3245,14 @@
       const t = data.task || {}
       const prompt = t.prompt ? String(t.prompt) : ''
       const predefined = Array.isArray(t.predefined_options) ? t.predefined_options : []
+      const predefinedDefaults = Array.isArray(t.predefined_options_defaults)
+        ? t.predefined_options_defaults
+        : []
       return {
         prompt,
         prompt_html: '',
         predefined_options: predefined,
+        predefined_options_defaults: predefinedDefaults,
         task_id: t.task_id ? String(t.task_id) : id,
         auto_resubmit_timeout:
           typeof t.auto_resubmit_timeout === 'number' && Number.isFinite(t.auto_resubmit_timeout)
@@ -3524,6 +3528,10 @@
             if (checkbox && checkbox.checked) {
               savedSelections.push(index)
             }
+          })
+        } else if (Array.isArray(config.predefined_options_defaults)) {
+          config.predefined_options_defaults.forEach((checked, index) => {
+            if (checked === true) savedSelections.push(index)
           })
         }
 

@@ -86,6 +86,7 @@ class FeedbackRoutesMixin:
         feedback_result: FeedbackResult | None
         current_prompt: str
         current_options: list[str]
+        current_options_defaults: list[bool]
         current_task_id: str | None
         current_auto_resubmit_timeout: int
         _single_task_timeout_explicit: bool
@@ -524,6 +525,7 @@ class FeedbackRoutesMixin:
                 with self._state_lock:
                     self.current_prompt = new_prompt
                     self.current_options = new_options
+                    self.current_options_defaults = []
                     self.current_task_id = new_task_id
                     self.current_auto_resubmit_timeout = new_auto_resubmit_timeout
                     self._single_task_timeout_explicit = timeout_explicit
@@ -553,6 +555,7 @@ class FeedbackRoutesMixin:
                         "prompt": prompt_snapshot,
                         "prompt_html": prompt_html,
                         "predefined_options": options_snapshot,
+                        "predefined_options_defaults": [],
                         "task_id": task_id_snapshot,
                         "auto_resubmit_timeout": timeout_snapshot,
                         "has_content": has_content_snapshot,

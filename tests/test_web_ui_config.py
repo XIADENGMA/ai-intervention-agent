@@ -2634,6 +2634,7 @@ class TestApiConfigBranches(unittest.TestCase):
             status=status,
             prompt=prompt,
             predefined_options=["opt1"],
+            predefined_options_defaults=[True],
             auto_resubmit_timeout=120,
             created_at=datetime.now(),
             get_remaining_time=lambda: 100,
@@ -2650,6 +2651,7 @@ class TestApiConfigBranches(unittest.TestCase):
             data = json.loads(resp.data)
             self.assertTrue(data["has_content"])
             self.assertEqual(data["task_id"], "t-active")
+            self.assertEqual(data["predefined_options_defaults"], [True])
 
     def test_auto_activate_pending_task(self):
         pending = self._make_task("t-pending", "pending")
@@ -2663,6 +2665,7 @@ class TestApiConfigBranches(unittest.TestCase):
             data = json.loads(resp.data)
             self.assertTrue(data["has_content"])
             self.assertEqual(data["task_id"], "t-pending")
+            self.assertEqual(data["predefined_options_defaults"], [True])
             mock_tq.set_active_task.assert_called_once_with("t-pending")
 
     def test_all_tasks_completed(self):
@@ -2676,6 +2679,7 @@ class TestApiConfigBranches(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
             self.assertFalse(data["has_content"])
+            self.assertEqual(data["predefined_options_defaults"], [])
 
     def test_single_task_mode_fallback(self):
         """无 TaskQueue 任务时回退到单任务模式"""
@@ -2686,6 +2690,7 @@ class TestApiConfigBranches(unittest.TestCase):
         self.web_ui.has_content = True
         self.web_ui.current_prompt = "single mode prompt"
         self.web_ui.current_options = ["opt"]
+        self.web_ui.current_options_defaults = [True]
         self.web_ui.current_task_id = "single-001"
         self.web_ui.current_auto_resubmit_timeout = 200
         self.web_ui._single_task_timeout_explicit = True
@@ -2696,6 +2701,7 @@ class TestApiConfigBranches(unittest.TestCase):
             data = json.loads(resp.data)
             self.assertTrue(data["has_content"])
             self.assertEqual(data["prompt"], "single mode prompt")
+            self.assertEqual(data["predefined_options_defaults"], [True])
 
     def test_single_task_mode_non_explicit_timeout(self):
         """单任务模式：非显式 timeout 时从配置读取"""
@@ -2706,6 +2712,7 @@ class TestApiConfigBranches(unittest.TestCase):
         self.web_ui.has_content = True
         self.web_ui.current_prompt = "non-explicit"
         self.web_ui.current_options = []
+        self.web_ui.current_options_defaults = []
         self.web_ui.current_task_id = "ne-001"
         self.web_ui.current_auto_resubmit_timeout = 100
         self.web_ui._single_task_timeout_explicit = False
@@ -2721,6 +2728,7 @@ class TestApiConfigBranches(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
             self.assertEqual(data["auto_resubmit_timeout"], 150)
+            self.assertEqual(data["predefined_options_defaults"], [])
 
     def test_single_task_mode_config_read_fails(self):
         """单任务模式：配置读取失败沿用当前值"""
@@ -2731,6 +2739,7 @@ class TestApiConfigBranches(unittest.TestCase):
         self.web_ui.has_content = False
         self.web_ui.current_prompt = ""
         self.web_ui.current_options = []
+        self.web_ui.current_options_defaults = []
         self.web_ui.current_task_id = None
         self.web_ui.current_auto_resubmit_timeout = 77
         self.web_ui._single_task_timeout_explicit = False
@@ -2747,6 +2756,17 @@ class TestApiConfigBranches(unittest.TestCase):
             self.assertEqual(resp.status_code, 200)
             data = json.loads(resp.data)
             self.assertEqual(data["auto_resubmit_timeout"], 77)
+            self.assertEqual(data["predefined_options_defaults"], [])
+
+    def test_config_error_includes_empty_option_defaults(self):
+        with patch(
+            "ai_intervention_agent.web_ui.get_task_queue",
+            side_effect=RuntimeError("boom"),
+        ):
+            resp = self.client.get("/api/config")
+            self.assertEqual(resp.status_code, 500)
+            data = json.loads(resp.data)
+            self.assertEqual(data["predefined_options_defaults"], [])
 
 
 # ──────────────────────────────────────────────────────────

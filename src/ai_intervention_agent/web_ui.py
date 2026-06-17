@@ -451,6 +451,7 @@ class WebFeedbackUI(
         self._static_dir: Path = self._project_root / "static"
         self.current_prompt = prompt if prompt else ""
         self.current_options = predefined_options or []
+        self.current_options_defaults: list[bool] = []
         self.current_task_id = task_id
         self.current_auto_resubmit_timeout = auto_resubmit_timeout
         # 单任务模式下：current_auto_resubmit_timeout 是否为“显式指定”（/api/update 传入）
@@ -910,6 +911,11 @@ class WebFeedbackUI(
                       items:
                         type: string
                       description: 预定义选项列表
+                    predefined_options_defaults:
+                      type: array
+                      items:
+                        type: boolean
+                      description: 与 predefined_options 按位置对应的默认勾选状态
                     task_id:
                       type: string
                     auto_resubmit_timeout:
@@ -942,6 +948,10 @@ class WebFeedbackUI(
                             "prompt": active_task.prompt,
                             "prompt_html": self.render_markdown(active_task.prompt),
                             "predefined_options": active_task.predefined_options,
+                            "predefined_options_defaults": getattr(
+                                active_task, "predefined_options_defaults", []
+                            )
+                            or [],
                             "task_id": active_task.task_id,
                             "auto_resubmit_timeout": active_task.auto_resubmit_timeout,
                             "remaining_time": active_task.get_remaining_time(),
@@ -972,6 +982,10 @@ class WebFeedbackUI(
                                 "prompt": first_task.prompt,
                                 "prompt_html": self.render_markdown(first_task.prompt),
                                 "predefined_options": first_task.predefined_options,
+                                "predefined_options_defaults": getattr(
+                                    first_task, "predefined_options_defaults", []
+                                )
+                                or [],
                                 "task_id": first_task.task_id,
                                 "auto_resubmit_timeout": first_task.auto_resubmit_timeout,
                                 "remaining_time": first_task.get_remaining_time(),
@@ -992,6 +1006,7 @@ class WebFeedbackUI(
                                 "prompt": "",
                                 "prompt_html": "",
                                 "predefined_options": [],
+                                "predefined_options_defaults": [],
                                 "task_id": None,
                                 "auto_resubmit_timeout": 0,
                                 "language": ui_lang,
@@ -1011,6 +1026,9 @@ class WebFeedbackUI(
                         effective_timeout = int(self.current_auto_resubmit_timeout)
                         prompt_snapshot = str(self.current_prompt)
                         options_snapshot = list(self.current_options)
+                        option_defaults_snapshot = list(
+                            getattr(self, "current_options_defaults", [])
+                        )
                         task_id_snapshot = self.current_task_id
                         has_content_snapshot = bool(self.has_content)
                         initial_empty_snapshot = bool(self.initial_empty)
@@ -1041,6 +1059,7 @@ class WebFeedbackUI(
                             "prompt": prompt_snapshot,
                             "prompt_html": prompt_html,
                             "predefined_options": options_snapshot,
+                            "predefined_options_defaults": option_defaults_snapshot,
                             "task_id": task_id_snapshot,
                             "auto_resubmit_timeout": effective_timeout,
                             "remaining_time": effective_timeout,
@@ -1058,6 +1077,7 @@ class WebFeedbackUI(
                         "prompt": "",
                         "prompt_html": "",
                         "predefined_options": [],
+                        "predefined_options_defaults": [],
                         "task_id": None,
                         "auto_resubmit_timeout": 0,
                         "language": "auto",
@@ -1455,6 +1475,7 @@ class WebFeedbackUI(
         with self._state_lock:
             self.current_prompt = new_prompt
             self.current_options = new_options if new_options is not None else []
+            self.current_options_defaults = []
             self.current_task_id = new_task_id
             self.has_content = bool(new_prompt)
         if new_prompt:
