@@ -268,9 +268,10 @@ graph LR
 - SSE heartbeat = 25s, cleanup interval = 5s, hot-path throttle = 30s,
   JS health check = 30s — locked across all source files
   (`test_feat_perf_baseline_const_r296.py`).
-- Single `interactive_feedback` MCP tool surface — no dynamic tool
-  registration, no fan-out to multiple LLM-facing endpoints (keeps the
-  agent contract tight).
+- Static `interactive_feedback` MCP core tool surface — no dynamic-tool-first
+  migration and no fan-out to multiple primary LLM-facing endpoints. Dynamic
+  registration is reserved for future optional/conditional diagnostics after
+  client `tools/list_changed` refresh behavior is proven.
 - **Concurrency safety (new in cycle-35/36)** — AST-based lock-order
   contracts statically verify all `threading.Lock` / `RLock` /
   `ReadWriteLock` usages across `task_queue.py`, `notification_manager.py`,

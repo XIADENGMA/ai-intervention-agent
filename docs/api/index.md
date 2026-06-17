@@ -128,6 +128,10 @@ ChatGPT Desktop / Claude Desktop / Cursor render the server natively without
 nagging "destructive operation" confirmations. See
 [`docs/mcp_tools.md`](../mcp_tools.md) for the full annotation table.
 
+`interactive_feedback` remains a statically registered core tool. Dynamic MCP
+tool registration is documented only as a future optional/conditional extension
+point, gated on proven client support for `notifications/tools/list_changed`.
+
 ## Modules
 
 - [config_manager](config_manager.md)

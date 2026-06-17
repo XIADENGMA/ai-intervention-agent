@@ -1,6 +1,6 @@
 ## MCP tool reference
 
-This project currently exposes **one** MCP tool:
+This project currently exposes **one static core** MCP tool:
 
 ### Server-level metadata (v1.5.21+)
 
@@ -40,6 +40,44 @@ surface tags can group it with human review / approval tools. Its tool-level
 intentionally does **not** set a FastMCP decorator timeout: this is a
 long-running human feedback tool, and wait policy is controlled by the backend
 configuration documented below.
+
+### Dynamic tool registration stance
+
+The MCP `2025-11-25` tools spec allows a server to declare
+`capabilities.tools.listChanged=true` and send
+`notifications/tools/list_changed` when the tool list changes. FastMCP 3.2.4
+also supports runtime `add_tool()` / `local_provider.remove_tool()` and
+automatically emits list-change notifications when add/remove/enable/disable
+happens inside an active MCP request context.
+
+AI Intervention Agent does **not** use dynamic registration as its primary tool
+surface. `interactive_feedback` is the long-running human-in-the-loop contract
+and must stay statically discoverable for all clients. Dynamic registration is
+only a future option for genuinely optional or conditional tools, such as
+experimental diagnostics, loop-engineering helpers, or auth/config-gated
+capabilities.
+
+Before any dynamic tool ships, it must satisfy these boundaries:
+
+- Keep `interactive_feedback` registered as a static fallback.
+- Prove target-client refresh behavior. VS Code documents dynamic tool
+  discovery support, but ChatGPT Desktop, Claude Desktop, and Cursor should be
+  treated as unproven or inconsistent for mid-session
+  `notifications/tools/list_changed` refresh until verified against the exact
+  client versions being supported.
+- Use stable MCP tool names: 1-128 ASCII letters/digits/`_`/`-`/`.` only.
+- Provide explicit annotations, tags, version, input schema, error semantics,
+  rate limiting, audit logging, and output sanitization.
+- Never treat hiding a dynamic tool as authorization. Tool handlers must still
+  validate configuration, auth state, inputs, access control, rate limits, and
+  sensitive output redaction.
+
+The local SDK spike is locked by
+`tests/test_mcp_dynamic_tools_spike_r457.py`: it verifies FastMCP 3.2.4 can add
+and remove a tool dynamically, preserves annotations/tags/version, rejects
+duplicate name+version with `on_duplicate="error"`, and uses the current
+`on_duplicate` constructor parameter rather than the older
+`on_duplicate_tools` spelling found in some docs.
 
 ---
 

@@ -1,6 +1,6 @@
 ## MCP 工具说明
 
-本项目当前对外暴露 **1 个** MCP 工具：
+本项目当前对外暴露 **1 个静态核心** MCP 工具：
 
 ### Server 级元数据（v1.5.21+）
 
@@ -37,6 +37,37 @@
 批准类工具。它的工具级 `version` 与包 / server version 保持一致，便于 client
 做契约诊断。它**没有**设置 FastMCP decorator timeout：这是长时间运行的人类反馈
 工具，等待策略由下方配置项中的后端超时规则控制。
+
+### 动态工具注册结论
+
+MCP `2025-11-25` tools spec 允许 server 声明
+`capabilities.tools.listChanged=true`，并在工具列表变化时发送
+`notifications/tools/list_changed`。FastMCP 3.2.4 也支持运行时
+`add_tool()` / `local_provider.remove_tool()`，并会在 active MCP request
+context 内发生 add/remove/enable/disable 时自动发送工具列表变化通知。
+
+AI Intervention Agent **不**把动态注册作为主工具面。`interactive_feedback`
+是长时间运行的人机协作入口，必须对所有 client 保持静态可发现。动态注册只作为
+未来可选能力：例如实验性诊断工具、loop engineering 辅助工具，或需要认证 /
+配置后才可用的条件性能力。
+
+任何动态工具真正上线前，都必须满足以下边界：
+
+- `interactive_feedback` 继续作为静态 fallback 注册。
+- 证明目标 client 的刷新行为。VS Code 官方文档说明支持 dynamic tool
+  discovery；但 ChatGPT Desktop、Claude Desktop、Cursor 对 mid-session
+  `notifications/tools/list_changed` 的刷新行为应先视为未证明或不稳定，直到用
+  目标版本实测确认。
+- 工具名稳定，长度 1-128，只使用 ASCII 字母/数字/`_`/`-`/`.`。
+- 每个动态工具必须有明确 annotations、tags、version、input schema、错误语义、
+  速率限制、审计日志和输出脱敏。
+- “隐藏不可用工具”不能替代授权。tool handler 内仍必须校验配置、认证状态、
+  输入、访问控制、速率限制和敏感输出脱敏。
+
+本地 SDK spike 由 `tests/test_mcp_dynamic_tools_spike_r457.py` 锁定：验证
+FastMCP 3.2.4 能动态 add/remove 工具，保留 annotations/tags/version，
+在 `on_duplicate="error"` 下拒绝重复 name+version，并确认当前运行时构造参数是
+`on_duplicate`，不是部分旧文档里的 `on_duplicate_tools`。
 
 ---
 
