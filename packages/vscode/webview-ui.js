@@ -1380,7 +1380,6 @@
       })
   }
 
-  /* 全局状态管理 */
   let currentConfig = null
   let selectedOptions = []
   let uploadedImages = []
@@ -1703,7 +1702,6 @@
     })
   }
 
-  /* 常规日志：默认 debug（由扩展侧 logLevel 控制是否显示） */
   function log(message) {
     try {
       vscode.postMessage({ type: 'log', level: 'debug', message: String(message) })
@@ -2095,7 +2093,6 @@
     }
   }
 
-  /* 初始化函数 */
   async function init() {
     installHostThemeObserver()
     setupEventListeners()
@@ -2157,10 +2154,8 @@
     hideBootSkeleton()
   }
 
-  /* 设置所有UI元素的事件监听器 - 包括按钮点击、图片上传、文本框调整等 */
   function setupEventListeners() {
     try {
-      /* 提交按钮点击事件 */
       const submitBtn = document.getElementById('submitBtn')
       if (submitBtn) {
         if (submitBtnDefaultHtml === null) {
@@ -2169,13 +2164,11 @@
         submitBtn.addEventListener('click', submitFeedback)
       }
 
-      /* 插入代码（剪贴板） */
       const insertCodeBtn = document.getElementById('insertCodeBtn')
       if (insertCodeBtn) {
         insertCodeBtn.addEventListener('click', requestInsertCodeFromClipboard)
       }
 
-      /* 图片上传按钮点击事件 */
       const uploadBtn = document.getElementById('uploadBtn')
       const imageInput = document.getElementById('imageInput')
 
@@ -2186,7 +2179,6 @@
         imageInput.addEventListener('change', handleImageSelect)
       }
 
-      /* 文本框粘贴图片支持 - 允许用户通过Ctrl+V粘贴图片 */
       const textarea = document.getElementById('feedbackText')
       if (textarea) {
         textarea.addEventListener('paste', handlePaste)
@@ -2229,7 +2221,6 @@
         })
       }
 
-      /* 设置面板（通知配置） */
       const settingsBtn = document.getElementById('settingsBtn')
       if (settingsBtn) {
         settingsBtn.addEventListener('click', openSettingsLazy)
@@ -2239,7 +2230,6 @@
         settingsBtnNoContent.addEventListener('click', openSettingsLazy)
       }
 
-      /* 文本框高度调整句柄 - 支持向上拖动扩展文本框高度 */
       const resizeHandle = document.getElementById('resizeHandle')
       let isResizing = false
       let startY = 0
@@ -2271,7 +2261,6 @@
       document.addEventListener('mousemove', e => {
         if (!isResizing || !textarea) return
 
-        /* 计算拖动距离 - 向上拖动时增加文本框高度（rows 驱动） */
         const deltaY = startY - e.clientY
         const perRow = resizeLineHeight || 20
         const deltaRows = Math.round(deltaY / perRow)
@@ -2293,7 +2282,6 @@
     }
   }
 
-  /* 检查服务器连接状态 - 向本地服务器发送健康检查请求 */
   async function checkServerStatus() {
     let controller = null
     let timeoutId = null
@@ -2343,7 +2331,6 @@
     }
   }
 
-  /* 更新UI中的服务器连接状态指示器 - 同步更新标签栏和无内容页面的状态灯 */
   function updateServerStatus(connected) {
     // 状态变化时给出轻量提示（避免无声重试/用户误以为无响应）
     if (typeof updateServerStatus._last === 'boolean' && updateServerStatus._last !== !!connected) {
@@ -2355,7 +2342,6 @@
     }
     updateServerStatus._last = !!connected
 
-    /* 更新标签栏的连接状态呼吸灯 */
     const light = document.getElementById('statusLight')
     if (light) {
       light.classList.remove('connected', 'disconnected')
@@ -2368,7 +2354,6 @@
       }
     }
 
-    /* 更新无内容页面的独立状态指示器和文字 */
     const lightStandalone = document.getElementById('statusLightStandalone')
     const textStandalone = document.getElementById('statusTextStandalone')
     const progressBar = document.getElementById('noContentProgress')
@@ -2390,7 +2375,6 @@
         : t('ui.status.disconnected')
     }
 
-    /* 只在服务器已连接时显示加载进度条 */
     if (progressBar) {
       if (connected) {
         progressBar.classList.remove('hidden')
@@ -2402,7 +2386,6 @@
     vscode.postMessage({ type: 'serverStatus', connected })
   }
 
-  /* 启动 SSE + 轮询混合模式 */
   function startPolling() {
     stopPolling()
     installPollingVisibilityHandler()
@@ -2466,7 +2449,6 @@
     pollingInFlight = false
   }
 
-  /* 轮询服务器数据 - 获取任务列表并渲染标签页，然后获取当前活跃任务的详细内容 */
   async function pollAllData(reason) {
     // 页面不可见：不发请求（由 visibilitychange 负责 stop，但这里再兜底）
     if (typeof document !== 'undefined' && document.hidden) {
@@ -2502,7 +2484,6 @@
         fetchOptions.signal = pollAbortController.signal
       }
 
-      /* 第一步：获取所有任务列表 */
       if (pollAbortController) {
         tasksTimeoutId = setTimeout(() => {
           try {
@@ -2668,7 +2649,6 @@
     }
   }
 
-  /* 隐藏任务标签栏 - 当没有任务或只有一个任务时隐藏标签栏 */
   function hideTabs() {
     const container = document.getElementById('tasksTabsContainer')
     if (!container) return
@@ -2677,7 +2657,6 @@
     container.classList.add('hidden')
   }
 
-  /* 显示任务标签栏 - 当有多个任务时显示标签栏供用户切换 */
   function showTabs() {
     document.getElementById('tasksTabsContainer').classList.remove('hidden')
   }

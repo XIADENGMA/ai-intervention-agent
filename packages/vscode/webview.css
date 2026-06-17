@@ -64,7 +64,6 @@
   box-sizing: border-box;
 }
 
-/* Cursor 可能在 WebView 内注入默认 padding/margin，这里强制清零 */
 html,
 body {
   margin: 0 !important;
@@ -92,7 +91,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 全局滚动条 - 完全隐藏（macOS风格，通过滚轮/触摸滚动） */
 * {
   scrollbar-width: none;
 }
@@ -110,7 +108,6 @@ body {
   position: relative;
 }
 
-/* 任务标签栏容器 - 显示多个任务的标签页和连接状态指示器 */
 .tabs-container {
   display: flex;
   align-items: center;
@@ -163,8 +160,6 @@ body {
   background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   border-color: var(--vscode-panel-border);
 }
-
-/* 标签栏滚动条继承全局细滚动条样式 */
 
 .tabs-container.hidden {
   display: none;
@@ -309,7 +304,6 @@ body {
   }
 }
 
-/* 主内容区域 - 深色背景以适配VSCode主题 */
 .content {
   flex: 1;
   overflow: hidden;
@@ -318,7 +312,6 @@ body {
   flex-direction: column;
 }
 
-/* 无有效内容状态 - 等待新任务时显示的占位界面 */
 .no-content {
   display: flex;
   flex-direction: column;
@@ -432,7 +425,6 @@ body.vscode-light .no-content-progress-bar {
   }
 }
 
-/* Markdown内容容器 - 渲染服务端返回的任务提示信息 */
 .markdown-content {
   line-height: 1.7;
   margin: 0 0 8px 0 !important;
@@ -455,7 +447,6 @@ body.vscode-light .no-content-progress-bar {
   margin-bottom: 12px;
 }
 
-/* Markdown行内代码样式 - 红色高亮显示代码片段 */
 .markdown-content code {
   background: var(--vscode-input-background);
   color: var(--vscode-textPreformat-foreground);
@@ -577,7 +568,6 @@ body.vscode-light .no-content-progress-bar {
   font-weight: 600;
 }
 
-/* 反馈表单容器 - 包含输入框、选项和按钮的主要交互区域 */
 .feedback-form {
   display: flex;
   flex-direction: column;
@@ -751,14 +741,12 @@ body.vscode-light .no-content-progress-bar {
   cursor: not-allowed;
 }
 
-/* Claude 风格按钮图标（使用 currentColor 适配主题） */
 .btn-icon {
   width: 16px;
   height: 16px;
   display: block;
 }
 
-/* 右箭头图标旋转为“上箭头”（提交） */
 .submit-icon {
   transform: rotate(-90deg);
 }
@@ -776,7 +764,6 @@ body.vscode-light .no-content-progress-bar {
   animation: aiia-spin 0.9s linear infinite;
 }
 
-/* 选项列表容器 - 显示服务端提供的预定义选项供用户选择 */
 .options-container {
   display: flex;
   flex-direction: column;
@@ -877,7 +864,6 @@ body.vscode-light .no-content-progress-bar {
   background: rgba(220, 38, 38, 0.9);
 }
 
-/* 倒计时容器 - 显示任务自动提交的剩余时间 */
 .countdown-container {
   display: flex;
   align-items: center;
@@ -931,7 +917,6 @@ body.vscode-light .no-content-progress-bar {
   color: var(--vscode-inputValidation-warningForeground);
 }
 
-/* 按钮容器 - 包含提交反馈等操作按钮 */
 .button-container {
   display: flex;
   gap: 8px;
@@ -994,7 +979,6 @@ body.vscode-light .no-content-progress-bar {
   }
 }
 
-/* 设置面板（通知配置） */
 .settings-overlay {
   position: fixed;
   inset: 0;

@@ -619,15 +619,26 @@ suite('Extension Test Suite', () => {
     const ext = vscode.extensions.getExtension('xiadengma.ai-intervention-agent')
     assert.ok(ext, 'Extension not found')
 
+    const extensionJsPath = path.join(ext.extensionPath, 'dist', 'extension.js')
+    assert.ok(fs.existsSync(extensionJsPath), 'Missing dist/extension.js')
+    const extensionJs = fs.readFileSync(extensionJsPath, 'utf8')
+
     const webviewJsPath = path.join(ext.extensionPath, 'dist', 'webview.js')
     assert.ok(fs.existsSync(webviewJsPath), 'Missing dist/webview.js')
     const webviewJs = fs.readFileSync(webviewJsPath, 'utf8')
 
     assert.ok(
+      extensionJs.includes('context.extension.packageJSON.version'),
+      'dist/extension.js 应从 VS Code ExtensionContext 读取 packageJSON.version'
+    )
+    assert.ok(
       webviewJs.includes('extensionVersion'),
       'dist/webview.js 应包含 extensionVersion 变量'
     )
-    assert.ok(webviewJs.includes('packageJSON'), 'dist/webview.js 应包含 packageJSON 版本读取逻辑')
+    assert.ok(
+      !webviewJs.includes('packageJSON'),
+      'dist/webview.js 不应在热路径查 packageJSON；版本应由 host 侧构造器注入'
+    )
   })
 
   // ===========================================================================

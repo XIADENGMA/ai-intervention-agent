@@ -1772,12 +1772,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
     </div>
 
     <div class="container">
-        <!-- Task tabs with status indicator -->
         <div class="tabs-container hidden" id="tasksTabsContainer">
             <div class="status-indicator">
                 <div class="breathing-light" id="statusLight" title="${tl("ui.status.serverStatus")}" data-i18n-title="ui.status.serverStatus"></div>
             </div>
-            <!-- Task tabs will be dynamically generated here -->
             <button class="settings-btn" id="settingsBtn" title="${tl("ui.settingsBtn")}" aria-label="${tl("ui.settingsBtn")}" data-i18n-title="ui.settingsBtn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -1830,15 +1828,12 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
             </div>
         </div>
 
-        <!-- Main content -->
         <div class="content" id="mainContent">
-            <!-- Loading state -->
             <div class="loading hidden" id="loadingState">
                 <div class="spinner"></div>
                 <div data-i18n="ui.connecting">${tl("ui.connecting")}</div>
             </div>
 
-            <!-- No content state -->
             <div class="no-content" id="noContentState">
                 <button class="settings-btn no-content-settings-btn" id="settingsBtnNoContent" title="${tl("ui.settingsBtn")}" aria-label="${tl("ui.settingsBtn")}" data-i18n-title="ui.settingsBtn">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
@@ -1857,14 +1852,10 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                 </div>
             </div>
 
-            <!-- Feedback form -->
             <div class="feedback-form hidden" id="feedbackForm">
-                <!-- Scrollable content -->
                 <div class="scrollable-content">
-                    <!-- Markdown content -->
                     <div class="markdown-content" id="markdownContent"></div>
 
-                    <!-- Predefined options -->
                     <div class="form-section hidden" id="optionsSection">
                         <div class="form-label" data-i18n="ui.form.optionsLabel">${tl("ui.form.optionsLabel")}</div>
                         <div class="options-container" id="optionsContainer"></div>
@@ -1872,9 +1863,7 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
 
                 </div>
 
-                <!-- Fixed bottom input -->
                 <div class="fixed-input-area">
-                    <!-- Image preview area (above textarea) -->
                     <div class="uploaded-images" id="uploadedImages"></div>
 
                     <div class="textarea-wrapper">
@@ -1886,10 +1875,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
                             data-i18n-placeholder="ui.form.placeholder"
                         ></textarea>
 
-                        <!-- Hidden file input -->
                         <input type="file" id="imageInput" accept="image/*" multiple class="hidden">
 
-                        <!-- Button group (upload + submit) -->
                         <div class="input-buttons">
                             <button type="button" class="insert-code-btn" id="insertCodeBtn" title="${tl("ui.form.insertCode")}" aria-label="${tl("ui.form.insertCode")}" data-i18n-title="ui.form.insertCode">
                                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
@@ -1915,10 +1902,8 @@ export class WebviewProvider implements vscode.WebviewViewProvider {
         </div>
     </div>
 
-        <!-- Toast host (in-webview, non-intrusive) -->
         <div class="toast-host" id="toastHost" aria-live="polite" aria-atomic="true"></div>
 
-    <!-- Settings overlay (notification config) -->
     <div class="settings-overlay hidden" id="settingsOverlay">
         <div class="settings-panel" id="settingsPanel" role="dialog" aria-modal="true">
             <div class="settings-header">

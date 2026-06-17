@@ -348,7 +348,6 @@
             title="Toggle theme"
             aria-label="Toggle theme"
           >
-            <!-- Claude 风格太阳图标（浅色模式）- 精致线条版 -->
             <svg
               class="theme-icon theme-icon-sun"
               xmlns="http://www.w3.org/2000/svg"
@@ -361,9 +360,7 @@
               aria-hidden="true"
               focusable="false"
             >
-              <!-- 太阳中心圆 -->
               <circle cx="10" cy="10" r="3" />
-              <!-- 光芒射线 -->
               <line x1="10" y1="2" x2="10" y2="4" />
               <line x1="10" y1="16" x2="10" y2="18" />
               <line x1="2" y1="10" x2="4" y2="10" />
@@ -373,7 +370,6 @@
               <line x1="4.2" y1="15.8" x2="5.8" y2="14.2" />
               <line x1="14.2" y1="5.8" x2="15.8" y2="4.2" />
             </svg>
-            <!-- Claude 风格月亮图标（深色模式）- 精致线条版 -->
             <svg
               class="theme-icon theme-icon-moon"
               xmlns="http://www.w3.org/2000/svg"
@@ -386,7 +382,6 @@
               aria-hidden="true"
               focusable="false"
             >
-              <!-- 新月形状 -->
               <path
                 d="M17.5 10.5C17.5 14.642 14.142 18 10 18C5.858 18 2.5 14.642 2.5 10.5C2.5 6.358 5.858 3 10 3C10.2 3 10.4 3.01 10.6 3.02C8.4 3.9 7 6.1 7 8.7C7 12.1 9.9 15 13.3 15C14.9 15 16.3 14.3 17.3 13.2C17.4 12.3 17.5 11.4 17.5 10.5Z"
               />
@@ -415,7 +410,6 @@
             aria-haspopup="dialog"
             aria-controls="settings-panel"
           >
-            <!-- Claude 风格设置/齿轮图标 - 精致线条版 -->
             <svg
               class="btn-icon"
               xmlns="http://www.w3.org/2000/svg"
@@ -428,9 +422,7 @@
               aria-hidden="true"
               focusable="false"
             >
-              <!-- 齿轮中心圆 -->
               <circle cx="12" cy="12" r="3" />
-              <!-- 齿轮外形 -->
               <path
                 d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
               />
@@ -439,7 +431,6 @@
         </div>
       </div>
 
-      <!-- 任务标签页 -->
       <div
         class="task-tabs-container hidden"
         id="task-tabs-container"
@@ -449,7 +440,6 @@
         data-i18n-aria-label="page.taskList"
       >
         <div class="task-tabs" id="task-tabs">
-          <!-- 标签页将由 JS 动态生成 -->
         </div>
       </div>
 
@@ -566,7 +556,6 @@
         </div>
       </div>
 
-      <!-- 无有效内容页面 -->
       <div id="no-content-container" class="no-content-container">
         <div class="no-content-icon" id="hourglass-lottie"></div>
         <h2 class="no-content-title" data-i18n="page.noContent.title">
@@ -592,7 +581,6 @@
             data-i18n-title="page.closeWebUI"
             data-i18n-aria-label="page.closeWebUI"
           >
-            <!-- Claude 风格关闭图标（X）- 精致线条版 -->
             <svg
               class="btn-icon"
               xmlns="http://www.w3.org/2000/svg"
@@ -606,14 +594,12 @@
               aria-hidden="true"
               focusable="false"
             >
-              <!-- 交叉线条 -->
               <line x1="5" y1="5" x2="15" y2="15" />
               <line x1="15" y1="5" x2="5" y2="15" />
             </svg>
             <span data-i18n="page.closeWebUI">Close Web UI</span>
           </button>
         </div>
-        <!-- 无内容页面的状态消息显示区域 -->
         <div
           class="status-message no-content-status"
           id="no-content-status-message"
@@ -622,14 +608,11 @@
         ></div>
       </div>
 
-      <!-- 正常内容页面 -->
       <div id="content-container" class="content">
         <div class="feedback-group">
-          <!-- 任务 ID 和倒计时显示区域 -->
           <div class="header-info-container">
             <div class="task-id-container hidden" id="task-id-container">
               <span class="task-id-label">
-                <!-- Claude 官方文档图标 -->
                 <svg
                   class="section-icon"
                   xmlns="http://www.w3.org/2000/svg"
@@ -723,7 +706,6 @@
             id="description"
             data-i18n="page.loading"
           >
-            <!-- 骨架屏占位（首次加载时显示，数据到达后自动移除） -->
             <div
               id="content-skeleton"
               class="skeleton-container"
@@ -746,12 +728,10 @@
           </div>
 
           <div class="options-container hidden" id="options-container">
-            <!-- 预定义选项将在这里动态加载 -->
           </div>
 
           <div class="separator hidden" id="separator"></div>
 
-          <!-- 图片预览区域 -->
           <div
             class="image-preview-container hidden"
             id="image-preview-container"
@@ -768,7 +748,6 @@
                 data-i18n-title="page.clearAllImages"
                 title="Clear all images"
               >
-                <!-- Claude 官方垃圾箱图标 -->
                 <svg
                   class="btn-icon"
                   xmlns="http://www.w3.org/2000/svg"
@@ -793,11 +772,9 @@
               </button>
             </div>
             <div class="image-previews" id="image-previews">
-              <!-- 图片预览缩略图将在这里动态添加 -->
             </div>
           </div>
 
-          <!-- 拖拽提示覆盖层 -->
           <div class="drag-overlay hidden" id="drag-overlay">
             <div class="drag-overlay-content">
               <div class="drag-icon">📁</div>
@@ -1035,7 +1012,6 @@
               class="btn btn-secondary"
               id="insert-code-btn"
             >
-              <!-- Claude 风格代码图标（线条版） -->
               <svg
                 class="btn-icon"
                 xmlns="http://www.w3.org/2000/svg"
@@ -1059,7 +1035,6 @@
               class="btn btn-secondary"
               id="upload-image-btn"
             >
-              <!-- Claude 风格图片图标（线条版） -->
               <svg
                 class="btn-icon"
                 xmlns="http://www.w3.org/2000/svg"
@@ -1079,7 +1054,6 @@
               <span data-i18n="page.uploadImageBtn">Upload image</span>
             </button>
             <button type="button" class="btn btn-primary" id="submit-btn">
-              <!-- Claude 风格发送图标（双箭头） -->
               <svg
                 class="btn-icon"
                 xmlns="http://www.w3.org/2000/svg"
@@ -1107,7 +1081,6 @@
         </div>
       </div>
 
-      <!-- 设置面板 -->
       <div
         class="settings-panel hidden"
         id="settings-panel"
@@ -1118,7 +1091,6 @@
         <div class="settings-content">
           <div class="settings-header">
             <h3 id="settings-title">
-              <!-- Claude 风格设置/齿轮图标 - 精致线条版 -->
               <svg
                 class="section-icon"
                 xmlns="http://www.w3.org/2000/svg"
@@ -1131,9 +1103,7 @@
                 aria-hidden="true"
                 focusable="false"
               >
-                <!-- 齿轮中心圆 -->
                 <circle cx="12" cy="12" r="3" />
-                <!-- 齿轮外形 -->
                 <path
                   d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
                 />
@@ -1150,9 +1120,7 @@
           </div>
 
           <div class="settings-body">
-            <!-- 通知标题 -->
             <h4 class="settings-main-title">
-              <!-- Claude 风格铃铛图标 -->
               <svg
                 class="section-icon"
                 xmlns="http://www.w3.org/2000/svg"
@@ -1170,9 +1138,7 @@
               <span data-i18n="settings.notifications">Notifications</span>
             </h4>
 
-            <!-- 通知设置 -->
             <div class="setting-group">
-              <!-- 通知总开关 -->
               <div class="setting-item">
                 <label class="setting-label">
                   <input type="checkbox" id="notification-enabled" checked />
@@ -1182,7 +1148,6 @@
                 </label>
               </div>
 
-              <!-- 桌面通知设置 -->
               <div class="setting-subgroup">
                 <h5 class="setting-subgroup-title">
                   <svg
@@ -1236,7 +1201,6 @@
                 </div>
               </div>
 
-              <!-- 声音通知设置 -->
               <div class="setting-subgroup">
                 <h5 class="setting-subgroup-title">
                   <svg
@@ -1362,7 +1326,6 @@
                 </div>
               </div>
 
-              <!-- 移动设备通知设置 -->
               <div class="setting-subgroup">
                 <h5 class="setting-subgroup-title">
                   <svg
@@ -1401,7 +1364,6 @@
                 </div>
               </div>
 
-              <!-- Bark 通知设置 -->
               <div class="setting-subgroup">
                 <h5 class="setting-subgroup-title">
                   <svg
@@ -1601,7 +1563,6 @@
                 </div>
               </div>
 
-              <!-- 通知状态信息 -->
               <div class="setting-subgroup">
                 <h5 class="setting-subgroup-title">
                   <svg
@@ -1661,7 +1622,6 @@
                 </div>
               </div>
 
-              <!-- 测试功能 -->
               <div class="setting-subgroup">
                 <h5 class="setting-subgroup-title">
                   <svg
@@ -1748,7 +1708,6 @@
               </div>
             </div>
 
-            <!-- 配置文件信息（用于明确“当前实际读取的 config.toml 是哪一份”） -->
             <h4 class="settings-main-title shortcuts-section">
               <svg
                 class="section-icon"
@@ -1849,7 +1808,6 @@
               </div>
             </div>
 
-            <!-- 反馈配置 -->
             <h4 class="settings-main-title">
               <svg
                 class="section-icon"
@@ -2113,30 +2071,24 @@
       </div>
     </div>
 
-    <!-- 验证工具类：统一验证和缓存功能 -->
     <script
       defer
       src="/static/js/validation-utils.js"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- 🎬 Lottie 动画库（已改为按需懒加载，见 app.js initHourglassAnimation） -->
-
-    <!-- 🎨 主题切换模块（defer 属性：按顺序异步加载） -->
     <script
       defer
       src="/static/js/theme.js?v={{ theme_version }}"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- ⌨️ 键盘快捷键模块（defer 属性：按顺序异步加载） -->
     <script
       defer
       src="/static/js/keyboard-shortcuts.js"
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- DOM 安全工具：防止 XSS 攻击（defer 属性：按顺序异步加载） -->
     <script
       defer
       src="/static/js/dom-security.js"
@@ -2151,7 +2103,6 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- 📋 多任务管理模块（defer 属性：按顺序异步加载，依赖内联脚本中的函数） -->
     <script
       defer
       src="/static/js/multi_task.js?v={{ multi_task_version }}"
@@ -2198,7 +2149,6 @@
       });
     </script>
 
-    <!-- 拆分模块（在 app.js 之前加载） -->
     <script
       defer
       src="/static/js/notification-manager.js"
@@ -2215,7 +2165,6 @@
       nonce="{{ csp_nonce }}"
     ></script>
 
-    <!-- 主应用脚本（依赖: 上述所有模块） -->
     <script
       defer
       src="/static/js/app.js?v={{ app_version }}"
