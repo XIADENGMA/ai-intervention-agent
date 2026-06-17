@@ -11,7 +11,7 @@ from typing import Any
 
 from ai_intervention_agent.config_utils import clamp_value
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
-from ai_intervention_agent.server_config import (
+from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_MAX,
     AUTO_RESUBMIT_TIMEOUT_MIN,
 )

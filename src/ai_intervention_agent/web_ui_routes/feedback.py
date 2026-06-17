@@ -9,8 +9,8 @@ from flask import jsonify, request
 from flask.typing import ResponseReturnValue
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
+from ai_intervention_agent.feedback_types import FeedbackResult
 from ai_intervention_agent.i18n import msg
-from ai_intervention_agent.shared_types import FeedbackResult
 
 # R20.8: 直接 import task_queue_singleton 避免拖入 fastmcp/mcp（详见模块注释）。
 from ai_intervention_agent.task_queue_singleton import get_task_queue
@@ -20,7 +20,8 @@ if TYPE_CHECKING:
     import threading
 
     from flask import Flask
-    from flask_limiter import Limiter
+
+    from ai_intervention_agent.web_ui_rate_limiter import WebUiLimiterProtocol
 
 logger = EnhancedLogger(__name__)
 
@@ -81,7 +82,7 @@ class FeedbackRoutesMixin:
 
     if TYPE_CHECKING:
         app: Flask
-        limiter: Limiter
+        limiter: WebUiLimiterProtocol
         _state_lock: threading.RLock
         feedback_result: FeedbackResult | None
         current_prompt: str

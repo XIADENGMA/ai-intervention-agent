@@ -56,6 +56,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PERF_BENCH_PATH = REPO_ROOT / "scripts" / "perf_e2e_bench.py"
 EXPECTED_BENCHMARKS = (
     "import_web_ui",
+    "web_ui_construct",
+    "web_ui_route_setup",
+    "socket_listen_after_construct",
+    "spawn_to_listen",
+    "html_render",
+    "api_health_round_trip",
+    "api_config_round_trip",
+)
+BASELINE_BENCHMARKS = (
+    "import_web_ui",
     "spawn_to_listen",
     "html_render",
     "api_health_round_trip",
@@ -229,8 +239,8 @@ class TestPerfBenchSourceContainsR116Fix(unittest.TestCase):
         )
 
 
-class TestPerfBenchAllFiveActuallyRun(unittest.TestCase):
-    """**核心**：真跑一次 ``perf_e2e_bench.py --quick`` 验证 5 条 benchmark
+class TestPerfBenchAllBenchmarksActuallyRun(unittest.TestCase):
+    """**核心**：真跑一次 ``perf_e2e_bench.py --quick`` 验证全部 benchmark
     都能产出非空 ``samples_ms``。
 
     这是反 ``run_all`` 那条 ``try/except Exception`` 把 RuntimeError 吞成
@@ -289,8 +299,8 @@ class TestPerfBenchAllFiveActuallyRun(unittest.TestCase):
             f"stderr={self._result.stderr[:1000]}",
         )
 
-    def test_all_five_benchmarks_present_in_payload(self) -> None:
-        """5 条 benchmark 名都要在 payload top-level（结构锁）。"""
+    def test_all_benchmarks_present_in_payload(self) -> None:
+        """所有 benchmark 名都要在 payload top-level（结构锁）。"""
         self.assertIsNone(self._json_error, self._json_error)
         for name in EXPECTED_BENCHMARKS:
             self.assertIn(
@@ -299,7 +309,7 @@ class TestPerfBenchAllFiveActuallyRun(unittest.TestCase):
                 f"benchmark {name!r} 缺失，可能被新一轮 refactor 漏掉",
             )
 
-    def test_all_five_benchmarks_have_samples(self) -> None:
+    def test_all_benchmarks_have_samples(self) -> None:
         """每条 benchmark 必须产出非空 ``samples_ms``，且 ``iterations > 0``。
 
         R116 之前 4/5 broken 时这里的 ``samples_ms`` 是 ``[]`` ——本测试
@@ -334,12 +344,12 @@ class TestPerfBenchAllFiveActuallyRun(unittest.TestCase):
 
 class TestPerfGateAlsoSeesRefreshedBaseline(unittest.TestCase):
     """守护：本次 R116 一并刷新的 ``tests/data/perf_e2e_baseline.json``
-    是合法的 perf_gate 输入，且包含全部 5 条 benchmark。
+    是合法的 perf_gate 输入，且包含旧 5 条 release-gate benchmark。
 
     这是结构层断言，不绑定具体数字（数字会随机器漂移）。
     """
 
-    def test_baseline_json_loads_and_has_five_benchmarks(self) -> None:
+    def test_baseline_json_loads_and_has_release_gate_benchmarks(self) -> None:
         baseline_path = REPO_ROOT / "tests" / "data" / "perf_e2e_baseline.json"
         self.assertTrue(
             baseline_path.exists(),
@@ -352,7 +362,7 @@ class TestPerfGateAlsoSeesRefreshedBaseline(unittest.TestCase):
             "baseline JSON top-level 必须有 ``benchmarks`` 字段（perf_gate 期望）",
         )
         bench = payload["benchmarks"]
-        for name in EXPECTED_BENCHMARKS:
+        for name in BASELINE_BENCHMARKS:
             with self.subTest(benchmark=name):
                 self.assertIn(
                     name,

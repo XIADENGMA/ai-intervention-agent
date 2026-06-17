@@ -31,7 +31,6 @@ import socket
 import threading
 from typing import TYPE_CHECKING, Any
 
-from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.web_ui_mdns_utils import (
     MDNS_DEFAULT_HOSTNAME,
@@ -44,6 +43,13 @@ if TYPE_CHECKING:
     from flask import Flask
 
 logger = EnhancedLogger(__name__)
+
+
+def get_config() -> Any:
+    """Lazy proxy kept patchable for tests and mixin callers."""
+    from ai_intervention_agent.config_manager import get_config as _get_config
+
+    return _get_config()
 
 
 class MdnsMixin:

@@ -18,12 +18,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ai_intervention_agent.config_manager import ReadWriteLock
-from ai_intervention_agent.server_config import (
+from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
     AUTO_RESUBMIT_TIMEOUT_MIN,
 )
+from ai_intervention_agent.rw_lock import ReadWriteLock
+from ai_intervention_agent.task_constants import PLACEHOLDER_MAX_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +73,6 @@ _PROMPT_WARN_BYTES: int = 6 * 1024 * 1024  # 6 MB
 _PROMPT_REJECT_BYTES: int = 10 * 1024 * 1024  # 10 MB
 """``add_task`` 收到的 prompt 超过此值时直接 ``return False``，不进队列。
 保护进程内存 + SSE history deque + 跨进程 IPC payload。"""
-
-PLACEHOLDER_MAX_LENGTH: int = 200
-"""mining-cycle-3 §2.1 borrow #3 single source of truth for the
-``feedback_placeholder`` clamp. cr37 §8 #1 提取自原 ``add_task`` 内嵌
-literal 200 — route handler 也引用此常量，避免双处 drift。
-
-理由：textarea ``placeholder`` 是单行 hint，超过 200 chars 会被截断
-显示，多行 placeholder 违反 a11y。"""
 
 HEADER_LABEL_MAX_LENGTH: int = 16
 """mining-cycle-3 §2.1 borrow #1 — header chip clamp。

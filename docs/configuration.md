@@ -89,6 +89,12 @@ the 10-second TTL like any other value.
 | `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int, `[1, 65535]`       | Out-of-range / non-numeric values are warned and ignored (server keeps using `config.toml`) |
 | `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN` | Forces the Web UI language regardless of OS locale or saved preference                      |
 
+Server runtime selection is intentionally **not** an env-var override. The
+local desktop profile keeps using `WebFeedbackUI.run()`; long-running remote
+deployments should start a WSGI server with
+`ai_intervention_agent.web_ui_wsgi:create_app` as described in
+[`deployment.md`](deployment.md).
+
 Non-matching values are **warned, not fatal**: env overrides are a convenience
 path, so a typo in your shell profile shouldn't keep the MCP server from
 starting. The original `config.toml` value is preserved and a `WARNING` line

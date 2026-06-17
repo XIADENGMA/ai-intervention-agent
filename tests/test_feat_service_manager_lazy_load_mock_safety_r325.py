@@ -230,6 +230,11 @@ class TestLayer3R324CrossModuleConsistency:
             "_ensure_notification_loaded",
             "_ensure_notification_system_loaded",
             "_ensure_bark_provider_loaded",  # 单 attribute, 无风险
+            # web_ui_security.SecurityMixin: single attribute lazy load for
+            # `network_security_config` only. It has a default-config guard,
+            # a TESTING short-circuit, and an instance lock, so it is not the
+            # multi-attribute mock-pollution pattern R324/R325 is guarding.
+            "_ensure_network_security_config_loaded",
         }
 
         # 扫整个 src 目录
@@ -248,6 +253,31 @@ class TestLayer3R324CrossModuleConsistency:
             f"pattern); (2) add to known_safe list with rationale; "
             f"(3) if multi-attribute, apply per-attribute null check."
         )
+
+    def test_network_security_loader_documents_known_safe_rationale(self):
+        text = (SRC / "ai_intervention_agent" / "web_ui_security.py").read_text(
+            encoding="utf-8"
+        )
+        m = re.search(
+            r"def\s+_ensure_network_security_config_loaded\s*\(\s*self\s*\)[^:]*:\s*\n"
+            r'\s*"""(?P<doc>.*?)"""',
+            text,
+            re.DOTALL,
+        )
+        assert m, "R325: network security lazy loader docstring missing"
+        doc = m.group("doc")
+        for keyword in (
+            "R325",
+            "single-attribute",
+            "network_security_config",
+            "TESTING",
+            "instance lock",
+            "multi-attribute mock-pollution",
+        ):
+            assert keyword in doc, (
+                "R325: _ensure_network_security_config_loaded known-safe "
+                f"rationale must mention {keyword!r}"
+            )
 
 
 class TestR325LineageMarker:

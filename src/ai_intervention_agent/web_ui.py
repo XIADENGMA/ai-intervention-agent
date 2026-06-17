@@ -55,24 +55,23 @@ from flask_cors import CORS
 # 第一次轮询命中 active task 时；早于此之前的 ``GET /static/*``、``GET /``、``OPTIONS *``
 # 等路径都不需要 Markdown 实例，纯粹的延迟收益。
 #
-# R26.1: ``flask_limiter`` imports 故意不在这里——见 ``WebUIApp.__init__``
-# 体内的本地 import。原因：``flask_limiter`` 顶级 import 实测 ~21 ms（在 flask
-# 已加载后的增量成本），但本模块**很多**单元测试只需 ``from web_ui import 小工具``
-# 而不会构造 ``WebUIApp``，那些路径不应该为永不使用的 ``Limiter`` 付费。
-from ai_intervention_agent.config_manager import get_config
+# R26.1/R452: ``flask_limiter`` imports 故意不在这里，也不在
+# ``WebFeedbackUI.__init__`` 里。Web UI 默认桌面 profile 用本地
+# ``WebUiRateLimiter`` 保留 ``limit`` / ``exempt`` 兼容面，避免构造期重新拉入
+# ``flask_limiter`` 的 cold-start 成本。
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
+from ai_intervention_agent.feedback_types import FeedbackResult
 from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.protocol import get_capabilities, get_server_clock
 from ai_intervention_agent.remote_environment import detect_remote_environment
 
 # R20.8: 直接 import 自 task_queue_singleton 模块，避免拖入 fastmcp/mcp 依赖链
 # （web_ui.py 是子进程入口，不需要 MCP server 能力，详见 task_queue_singleton.py 注释）。
-from ai_intervention_agent.server_config import (
+from ai_intervention_agent.runtime_constants import (
     AUTO_RESUBMIT_TIMEOUT_DEFAULT,
     AUTO_RESUBMIT_TIMEOUT_MAX,
     AUTO_RESUBMIT_TIMEOUT_MIN,
 )
-from ai_intervention_agent.shared_types import FeedbackResult
 from ai_intervention_agent.task_queue_singleton import get_task_queue
 from ai_intervention_agent.web_ui_config_sync import (
     _ensure_config_changed_sse_callback_registered,
@@ -91,6 +90,10 @@ from ai_intervention_agent.web_ui_mdns_utils import (
     _list_non_loopback_ipv4,
     detect_best_publish_ipv4,
     normalize_mdns_hostname,
+)
+from ai_intervention_agent.web_ui_rate_limiter import (
+    WebUiLimiterProtocol,
+    WebUiRateLimiter,
 )
 from ai_intervention_agent.web_ui_routes import (
     FeedbackRoutesMixin,
@@ -113,6 +116,21 @@ from ai_intervention_agent.web_ui_validators import (
 )
 
 logger = EnhancedLogger(__name__)
+
+
+def get_config() -> Any:
+    """Lazy proxy for the global ConfigManager.
+
+    ``config_manager`` constructs its global ``ConfigManager()`` at module import
+    time, and that path imports ``shared_types`` / Pydantic section models.
+    ``web_ui`` only needs configuration once an instance is rendering or handling
+    a route, so keep the public ``web_ui.get_config`` patch surface but defer the
+    heavy import until first use.
+    """
+    from ai_intervention_agent.config_manager import get_config as _get_config
+
+    return _get_config()
+
 
 # ============================================================================
 # 版本号和项目信息
@@ -466,6 +484,12 @@ class WebFeedbackUI(
         # 状态下回调回来访问同一状态, RLock 避免 self-deadlock。当前 codebase
         # 内无实际 reentry chain, 但为防御未来扩展保留 RLock。
         self._state_lock = threading.RLock()
+        self._network_security_config_lock = threading.Lock()
+        self._network_security_config_loaded_from_config = False
+        self._base_config_runtime_hooks_registered = False
+        self._base_config_runtime_hooks_lock = threading.Lock()
+        self._task_queue_runtime_hooks_registered = False
+        self._task_queue_runtime_hooks_lock = threading.Lock()
         self.app = Flask(__name__)
         _cors_origins: list[str | re.Pattern[str]] = [
             f"http://localhost:{port}",
@@ -543,8 +567,6 @@ class WebFeedbackUI(
         else:
             self._register_swagger_disabled_fallback()
 
-        # 【热更新】注册配置变更回调：让运行中的任务倒计时也能跟随配置更新
-        _ensure_feedback_timeout_hot_reload_callback_registered()
         # 记录当前实例（用于单任务模式热更新兜底）
         global _CURRENT_WEB_UI_INSTANCE
         _CURRENT_WEB_UI_INSTANCE = self
@@ -578,44 +600,42 @@ class WebFeedbackUI(
         self.app.config["COMPRESS_MIN_SIZE"] = 500  # 小于 500 字节不压缩
         Compress(self.app)
 
-        self.network_security_config = self._load_network_security_config()
-        # 【热更新】network_security（allowed_networks/blocked_ips/access_control_enabled）也应随配置文件变化生效
-        _ensure_network_security_hot_reload_callback_registered()
+        self.network_security_config = validate_network_security_config({})
 
-        # R48: 注册 config_changed SSE 推送回调，让 client 端在配置变更时
-        # 收到一个 ``event: config_changed``，可选地提示用户重载页面。
-        # 注册失败不阻塞 server 启动；详见 web_ui_config_sync 注释。
-        _ensure_config_changed_sse_callback_registered()
-
-        # R26.1: ``flask_limiter`` 推迟到第一次构造 ``WebUIApp`` 才加载——本模块顶部
-        # 不再 ``from flask_limiter import Limiter``，所以 ``import web_ui`` 路径
-        # （包含大量只取小工具函数的单元测试）不再付 ~64 ms 加载费。第二次以后的
-        # ``WebUIApp`` 构造命中 ``sys.modules`` cache，几乎零成本。
-        from flask_limiter import Limiter
-        from flask_limiter.util import get_remote_address
-
-        # R57：``headers_enabled=True`` 让 Flask-Limiter 在每个**受限响应**
-        # 上自动注入 `X-RateLimit-Limit` / `X-RateLimit-Remaining` /
-        # `X-RateLimit-Reset` / `Retry-After`（429 时）。这是 RFC 6585 + IETF
-        # `RateLimit-*` draft 行业标准，让客户端 SDK / 反向代理 / 监控面板能
-        # 主动观测限流状态，而不是被动等到 429 才反应。
-        # - ``limiter.exempt`` 装饰过的端点（绝大多数静态资源）默认**不带**
-        #   该头，避免 favicon / locales JSON 之类的无意义 noise；
-        # - 头值取自当前请求"最严格的那条限流"（比如 60 per minute 与 10
-        #   per second 同时生效，客户端会看到剩多少额度的是这两者中先耗尽
-        #   的那一条），符合用户直觉。
-        self.limiter = Limiter(
-            key_func=get_remote_address,
+        # R452: construction-time cold start now stays off the config_manager /
+        # pydantic / task_queue / flask_limiter graph. Runtime hooks are installed
+        # by the first request that needs them, while this lightweight limiter keeps
+        # the long-standing ``self.limiter.limit/exempt`` route-decorator surface.
+        self.limiter: WebUiLimiterProtocol = WebUiRateLimiter(
             app=self.app,
             default_limits=["60 per minute", "10 per second"],
-            storage_uri="memory://",
-            strategy="fixed-window",
             headers_enabled=True,
         )
 
         self.setup_security_headers()
         self.setup_markdown()
         self.setup_routes()
+
+    def _ensure_base_config_runtime_hooks_registered(self) -> None:
+        """Register config callbacks on first request that touches config."""
+        if self._base_config_runtime_hooks_registered:
+            return
+        with self._base_config_runtime_hooks_lock:
+            if self._base_config_runtime_hooks_registered:
+                return
+            _ensure_network_security_hot_reload_callback_registered()
+            _ensure_config_changed_sse_callback_registered()
+            self._base_config_runtime_hooks_registered = True
+
+    def _ensure_task_queue_runtime_hooks_registered(self) -> None:
+        """Register TaskQueue-touching config callbacks on task/config requests."""
+        if self._task_queue_runtime_hooks_registered:
+            return
+        with self._task_queue_runtime_hooks_lock:
+            if self._task_queue_runtime_hooks_registered:
+                return
+            _ensure_feedback_timeout_hot_reload_callback_registered()
+            self._task_queue_runtime_hooks_registered = True
 
     def _init_swagger_lazy(self) -> None:
         """opt-in 路径：同步 import + 实例化 flasgger.Swagger（R23.3）。
@@ -881,6 +901,11 @@ class WebFeedbackUI(
             - limiter装饰器需要放在路由装饰器之后
             - 静态资源路由使用send_from_directory安全地提供文件
         """
+
+        @self.app.before_request
+        def _ensure_task_queue_hooks_for_task_requests() -> None:
+            if request.path == "/api/config":
+                self._ensure_task_queue_runtime_hooks_registered()
 
         @self.app.route("/")
         def index() -> ResponseReturnValue:
@@ -1320,7 +1345,7 @@ class WebFeedbackUI(
 
         os.kill(os.getpid(), signal.SIGINT)
 
-    def _get_template_context(self) -> dict[str, str | None]:
+    def _get_template_context(self) -> dict[str, Any]:
         """构建 Jinja2 模板渲染上下文。
 
         返回 render_template('web_ui.html', **ctx) 所需的全部变量：
@@ -1384,6 +1409,57 @@ class WebFeedbackUI(
             ),
             "theme_version": _compute_file_version(str(static_dir / "js" / "theme.js")),
             "app_version": _compute_file_version(str(static_dir / "js" / "app.js")),
+            "prism_css_version": _compute_file_version(
+                str(static_dir / "css" / "prism.css")
+            ),
+            "tri_state_panel_css_version": _compute_file_version(
+                str(static_dir / "css" / "tri-state-panel.css")
+            ),
+            "mathjax_loader_version": _compute_file_version(
+                str(static_dir / "js" / "mathjax-loader.js")
+            ),
+            "validation_utils_version": _compute_file_version(
+                str(static_dir / "js" / "validation-utils.js")
+            ),
+            "keyboard_shortcuts_version": _compute_file_version(
+                str(static_dir / "js" / "keyboard-shortcuts.js")
+            ),
+            "dom_security_version": _compute_file_version(
+                str(static_dir / "js" / "dom-security.js")
+            ),
+            "notification_manager_version": _compute_file_version(
+                str(static_dir / "js" / "notification-manager.js")
+            ),
+            "settings_manager_version": _compute_file_version(
+                str(static_dir / "js" / "settings-manager.js")
+            ),
+            "image_upload_version": _compute_file_version(
+                str(static_dir / "js" / "image-upload.js")
+            ),
+            "tri_state_panel_version": _compute_file_version(
+                str(static_dir / "js" / "tri-state-panel.js")
+            ),
+            "tri_state_panel_loader_version": _compute_file_version(
+                str(static_dir / "js" / "tri-state-panel-loader.js")
+            ),
+            "tri_state_panel_bootstrap_version": _compute_file_version(
+                str(static_dir / "js" / "tri-state-panel-bootstrap.js")
+            ),
+            "lottie_min_version": _compute_file_version(
+                str(static_dir / "js" / "lottie.min.js")
+            ),
+            "locale_versions": {
+                "en": _compute_file_version(str(static_dir / "locales" / "en.json")),
+                "zh-CN": _compute_file_version(
+                    str(static_dir / "locales" / "zh-CN.json")
+                ),
+                "zh-TW": _compute_file_version(
+                    str(static_dir / "locales" / "zh-TW.json")
+                ),
+                "pseudo": _compute_file_version(
+                    str(static_dir / "locales" / "_pseudo" / "pseudo.json")
+                ),
+            },
             # R27.2: 给 i18n.js / state.js / marked.js / prism.min.js 也加上版本号查询
             # 串，模板中下游 ``<link rel="preload">`` 与 ``<script defer>`` 一起统一带
             # ``?v={{ ... }}``，从 ``serve_js`` 的 ``Cache-Control: public, max-age=3600``

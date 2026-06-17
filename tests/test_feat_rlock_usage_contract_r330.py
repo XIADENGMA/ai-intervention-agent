@@ -57,9 +57,9 @@ SRC = REPO_ROOT / "src" / "ai_intervention_agent"
 # 任何变更必须经过 audit + 更新本列表 + 在源代码附近注释 rationale
 ALLOWED_RLOCK_SITES = frozenset(
     {
-        # (1) config_manager.py: ReadWriteLock 内部 condition + RLock
+        # (1) rw_lock.py: ReadWriteLock 内部 condition + RLock
         #     合理因为 condition 需要 reentry-safe lock
-        ("config_manager.py", "self._read_ready = threading.Condition"),
+        ("rw_lock.py", "self._read_ready = threading.Condition"),
         # (2) config_manager.py: ConfigManager 实例延迟保存定时器
         #     合理因为定时器回调可能从持有锁的线程内触发
         ("config_manager.py", "self._lock = threading.RLock()"),

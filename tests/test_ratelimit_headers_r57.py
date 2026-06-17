@@ -1,6 +1,6 @@
-"""R57 — Flask-Limiter rate-limit response headers.
+"""R57 — Web UI rate-limit response headers.
 
-启用 ``headers_enabled=True`` 后，Limiter 会在每个**受限响应**上注入
+启用 ``headers_enabled=True`` 后，本地轻量 limiter 会在每个**受限响应**上注入
 ``X-RateLimit-Limit`` / ``X-RateLimit-Remaining`` / ``X-RateLimit-Reset``，
 以及在 429 响应上注入 ``Retry-After``。这是 RFC 6585 + IETF
 ``RateLimit-*`` draft 行业标准，让客户端 SDK / 反向代理 / 监控面板能
@@ -127,7 +127,7 @@ class TestExemptStaticResourcesDontLeakHeaders(_LimiterHeaderTestBase):
     """``limiter.exempt`` 静态资源不应携带 X-RateLimit-* 头。
 
     这些端点已在 ``serve_css`` / ``favicon`` 等位置 ``@limiter.exempt``，
-    Flask-Limiter 跳过限流逻辑、自然也不发头。如果有头泄漏说明 exempt
+    轻量 limiter 跳过限流逻辑、自然也不发头。如果有头泄漏说明 exempt
     decorator 漏掉了。
     """
 
@@ -157,7 +157,7 @@ class TestExemptStaticResourcesDontLeakHeaders(_LimiterHeaderTestBase):
 
 
 class TestLimiterConfigSourceOfTruth(unittest.TestCase):
-    """直接通过 import 校验 ``Limiter`` 构造参数 —— 防止未来谁不小心去掉
+    """直接通过源码校验轻量 limiter 构造参数 —— 防止未来谁不小心去掉
     ``headers_enabled=True``。
 
     运行时不构造 WebFeedbackUI，避开 fixture 成本。
@@ -176,7 +176,7 @@ class TestLimiterConfigSourceOfTruth(unittest.TestCase):
         self.assertIn(
             "headers_enabled=True",
             text,
-            "web_ui.Limiter(...) 必须带 headers_enabled=True，否则客户端拿不到 X-RateLimit-*",
+            "WebUiRateLimiter(...) 必须带 headers_enabled=True，否则客户端拿不到 X-RateLimit-*",
         )
 
 

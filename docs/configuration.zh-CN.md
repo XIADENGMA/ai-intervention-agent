@@ -84,6 +84,11 @@ dev 模式内部优先级顺序：
 | `AI_INTERVENTION_AGENT_WEB_UI_PORT`     | `web_ui.port`     | int，`[1, 65535]`       | 越界或非数字会记 WARNING 并忽略，server 继续用 `config.toml` 中的值 |
 | `AI_INTERVENTION_AGENT_WEB_UI_LANGUAGE` | `web_ui.language` | `auto` / `en` / `zh-CN` | 强制设置 Web UI 语言，忽略系统 locale 与已保存的偏好                |
 
+Server runtime 选择刻意**不是** env-var override。本地桌面 profile 继续使用
+`WebFeedbackUI.run()`；需要长期运行 / 远程访问时，应按
+[`deployment.zh-CN.md`](deployment.zh-CN.md) 用 WSGI server 启动
+`ai_intervention_agent.web_ui_wsgi:create_app`。
+
 非法值**仅 WARNING，不抛异常**：env override 是「便利路径」，shell profile 里
 打错一个字符不应该让 MCP server 起不来。原 `config.toml` 值会保留，且 WARNING
 行会写到 stderr，让你能在日志反查 typo。

@@ -9,6 +9,9 @@ Find your role below to jump straight to the page you need.
 
 - [`configuration.md`](configuration.md) · [`configuration.zh-CN.md`](configuration.zh-CN.md)
   — full TOML reference (`config.toml`), every setting with default and reload semantics.
+- [`deployment.md`](deployment.md) · [`deployment.zh-CN.md`](deployment.zh-CN.md)
+  — local desktop vs optional WSGI / reverse-proxy profiles, including
+  SSE buffering requirements and the single-worker task-queue constraint.
 - [`troubleshooting.md`](troubleshooting.md) · [`troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md)
   — nine most common issues ("port in use", "VS Code panel blank",
   "notifications silent", "mDNS broken", "Bark notification opens

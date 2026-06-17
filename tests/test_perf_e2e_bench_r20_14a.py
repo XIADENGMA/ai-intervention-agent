@@ -1,8 +1,8 @@
 """R20.14-A perf bench harness 单元测试。
 
 只测 ``perf_e2e_bench.py`` 里的 pure-function 工具 + 模块级常量，**不真跑**
-5 道 benchmark —— 那是 ``perf_e2e_bench.py`` 自己 ``--quick`` 模式的事，跑
-一次 5 秒以上，不适合放进单元测试套件。
+release-gate / cold-start breakdown benchmark —— 那是 ``perf_e2e_bench.py``
+自己 ``--quick`` 模式的事，跑一次 5 秒以上，不适合放进单元测试套件。
 
 覆盖内容
 ========
@@ -10,7 +10,7 @@
 1. ``_percentile`` 在 0 / 1 / 多元素 / 边界（p=0 / p=1）下的正确性；
 2. ``_summarize`` 的字段 contract（``median_ms`` / ``p90_ms`` / 等）；
 3. ``_free_port`` 真的返回一个 listen-able 端口；
-4. ``BENCHMARKS`` 字典严格包含 R20.14-A 设计的 5 道；
+4. ``BENCHMARKS`` 字典严格包含 R20.14-A/R452 设计的 benchmark；
 5. ``DEFAULT_ITERATIONS`` / ``QUICK_ITERATIONS`` 字典 key 与 ``BENCHMARKS``
    完全对齐（任意一边 typo 都会让 ``--select`` 模式悄悄失效）；
 6. CLI argparse 接受 ``--quick`` / ``--select`` / ``--output`` / ``--format``。
@@ -126,10 +126,13 @@ class TestFreePort(unittest.TestCase):
 
 
 class TestBenchmarkRegistry(unittest.TestCase):
-    """5 道 benchmark 的 registry —— 名字 / iterations 字典必须对齐。"""
+    """benchmark registry —— 名字 / iterations 字典必须对齐。"""
 
     EXPECTED_BENCH_NAMES = {
         "import_web_ui",
+        "web_ui_construct",
+        "web_ui_route_setup",
+        "socket_listen_after_construct",
         "spawn_to_listen",
         "html_render",
         "api_health_round_trip",

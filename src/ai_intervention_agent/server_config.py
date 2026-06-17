@@ -34,6 +34,16 @@ from ai_intervention_agent.config_utils import (
     truncate_string,
 )
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
+from ai_intervention_agent.runtime_constants import (
+    AUTO_RESUBMIT_TIMEOUT_DEFAULT,
+    AUTO_RESUBMIT_TIMEOUT_MAX,
+    AUTO_RESUBMIT_TIMEOUT_MIN,
+    BACKEND_BUFFER,
+    BACKEND_MIN,
+    FEEDBACK_TIMEOUT_DEFAULT,
+    FEEDBACK_TIMEOUT_MAX,
+    FEEDBACK_TIMEOUT_MIN,
+)
 
 if TYPE_CHECKING:
     # 仅供类型检查器解析签名/注解；运行时绝不触发 mcp.types 加载。
@@ -74,16 +84,10 @@ logger = EnhancedLogger(__name__)
 # 写 frontend_countdown=1000，shared_types Pydantic 接受 1000，但 web_ui_validators /
 # task_queue 用本文件的常量把它 clamp 回 250」这种 docs 撒谎、行为不一致的漂移。
 # ``tests/test_server_config_shared_types_parity.py`` 锁住此契约。
-FEEDBACK_TIMEOUT_DEFAULT = 600  # 默认后端最大等待时间（秒）
-FEEDBACK_TIMEOUT_MIN = 10  # 后端最小等待时间（秒，与 shared_types 对齐）
-FEEDBACK_TIMEOUT_MAX = 7200  # 后端最大等待时间上限（秒，2 小时；与 shared_types 对齐）
-
-AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240  # 默认前端倒计时（秒）
-AUTO_RESUBMIT_TIMEOUT_MIN = 10  # 前端最小倒计时（秒，与 shared_types 对齐）
-AUTO_RESUBMIT_TIMEOUT_MAX = 3600  # 前端最大倒计时（秒，1 小时；与 shared_types 对齐）
-
-BACKEND_BUFFER = 40  # 后端缓冲时间（秒，前端+缓冲=后端最小）
-BACKEND_MIN = 260  # 后端最低等待时间（秒，预留安全余量避免 MCPHub 300秒硬超时）
+# Constants are imported from ``runtime_constants`` and re-exported here for
+# backward compatibility. Do not move the source of truth back into this module:
+# ``server_config`` imports Pydantic models, while Web UI cold-start paths need
+# these numeric values without that cost.
 
 # R166: 大幅放宽文本长度限制（"手动输入 / 自动返回 / 额外附加"三块均收敛到
 # 远超正常使用的软上限）。背景：之前 10000 字符的硬截断会让"LLM 输出长上

@@ -10,7 +10,8 @@ R271 + R276 教训
 R278 推广 R276 cross-language constant pattern 到 3 个新场景：
 
 1. **AUTO_RESUBMIT_TIMEOUT_DEFAULT (240 seconds)** — 倒计时默认值出现 3 处:
-   - `server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240` (canonical source)
+   - `runtime_constants.AUTO_RESUBMIT_TIMEOUT_DEFAULT = 240` (canonical source)
+     and `server_config` re-export for compatibility
    - `templates/web_ui.html` `<input value="240">` (UI default)
    - `packages/vscode/webview.ts` `<input value="240">` (VSCode default)
 
@@ -18,7 +19,8 @@ R278 推广 R276 cross-language constant pattern 到 3 个新场景：
    错误默认 → 提交后才发现服务器实际行为不同 → silent drift。
 
 2. **AUTO_RESUBMIT_TIMEOUT_MAX (3600 seconds)** — 上限出现 3 处:
-   - `server_config.AUTO_RESUBMIT_TIMEOUT_MAX = 3600`
+   - `runtime_constants.AUTO_RESUBMIT_TIMEOUT_MAX = 3600`
+     and `server_config` re-export for compatibility
    - `templates/web_ui.html` `<input max="3600">`
    - `packages/vscode/webview.ts` `<input max="3600">`
 
@@ -45,8 +47,8 @@ R278 修复
 
 | Constant | Authoritative | Mirror sites |
 |----------|--------------|--------------|
-| 240 | `server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT` | HTML + webview.ts |
-| 3600 | `server_config.AUTO_RESUBMIT_TIMEOUT_MAX` | HTML + webview.ts |
+| 240 | `runtime_constants.AUTO_RESUBMIT_TIMEOUT_DEFAULT` | HTML + webview.ts |
+| 3600 | `runtime_constants.AUTO_RESUBMIT_TIMEOUT_MAX` | HTML + webview.ts |
 | 8080 | `shared_types.WebUISectionConfig.port` default | 7+ Python sites |
 
 Why locked
@@ -62,9 +64,9 @@ assign) 在 R278 复用到 HTML attribute parser (`<input value="...">`)，
 Invariant
 ---------
 
-1. `AUTO_RESUBMIT_TIMEOUT_DEFAULT` (server_config) ≡ HTML input value ≡
+1. `AUTO_RESUBMIT_TIMEOUT_DEFAULT` (runtime_constants) ≡ HTML input value ≡
    webview.ts input value
-2. `AUTO_RESUBMIT_TIMEOUT_MAX` (server_config) ≡ HTML input max attr ≡
+2. `AUTO_RESUBMIT_TIMEOUT_MAX` (runtime_constants) ≡ HTML input max attr ≡
    webview.ts input max attr
 3. `WebUISectionConfig.port` Pydantic default ≡ 所有 .py hardcode 8080
    场点一致（强制 7+ 站点必须保持同值）
@@ -85,6 +87,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SERVER_CONFIG_PY = REPO_ROOT / "src" / "ai_intervention_agent" / "server_config.py"
+RUNTIME_CONSTANTS_PY = (
+    REPO_ROOT / "src" / "ai_intervention_agent" / "runtime_constants.py"
+)
 SHARED_TYPES_PY = REPO_ROOT / "src" / "ai_intervention_agent" / "shared_types.py"
 WEB_UI_HTML = REPO_ROOT / "src" / "ai_intervention_agent" / "templates" / "web_ui.html"
 VSCODE_WEBVIEW_TS = REPO_ROOT / "packages" / "vscode" / "webview.ts"
@@ -146,27 +151,29 @@ def _count_python_hardcoded(src: str, value: int) -> int:
 class TestAutoResubmitTimeoutDefaultCrossSource(unittest.TestCase):
     """R278 #1: AUTO_RESUBMIT_TIMEOUT_DEFAULT (240) cross-source consistency."""
 
+    runtime_constants = RUNTIME_CONSTANTS_PY.read_text(encoding="utf-8")
     server_config = SERVER_CONFIG_PY.read_text(encoding="utf-8")
     web_ui_html = WEB_UI_HTML.read_text(encoding="utf-8")
     webview_ts = VSCODE_WEBVIEW_TS.read_text(encoding="utf-8")
 
     def test_server_config_default(self) -> None:
         val = _parse_python_int_const(
-            self.server_config, "AUTO_RESUBMIT_TIMEOUT_DEFAULT"
+            self.runtime_constants, "AUTO_RESUBMIT_TIMEOUT_DEFAULT"
         )
         self.assertEqual(
             val,
             240,
-            "R278: server_config.AUTO_RESUBMIT_TIMEOUT_DEFAULT 必须 = 240 "
+            "R278: runtime_constants.AUTO_RESUBMIT_TIMEOUT_DEFAULT 必须 = 240 "
             "(canonical authoritative source)",
         )
+        self.assertIn("AUTO_RESUBMIT_TIMEOUT_DEFAULT", self.server_config)
 
     def test_html_input_default_value(self) -> None:
         html_default = _parse_html_input_attr(
             self.web_ui_html, "feedback-countdown", "value"
         )
         server_default = _parse_python_int_const(
-            self.server_config, "AUTO_RESUBMIT_TIMEOUT_DEFAULT"
+            self.runtime_constants, "AUTO_RESUBMIT_TIMEOUT_DEFAULT"
         )
         self.assertEqual(
             html_default,
@@ -181,7 +188,7 @@ class TestAutoResubmitTimeoutDefaultCrossSource(unittest.TestCase):
             self.webview_ts, "feedbackCountdown", "value"
         )
         server_default = _parse_python_int_const(
-            self.server_config, "AUTO_RESUBMIT_TIMEOUT_DEFAULT"
+            self.runtime_constants, "AUTO_RESUBMIT_TIMEOUT_DEFAULT"
         )
         self.assertEqual(
             webview_default,
@@ -195,23 +202,27 @@ class TestAutoResubmitTimeoutDefaultCrossSource(unittest.TestCase):
 class TestAutoResubmitTimeoutMaxCrossSource(unittest.TestCase):
     """R278 #2: AUTO_RESUBMIT_TIMEOUT_MAX (3600) cross-source consistency."""
 
+    runtime_constants = RUNTIME_CONSTANTS_PY.read_text(encoding="utf-8")
     server_config = SERVER_CONFIG_PY.read_text(encoding="utf-8")
     web_ui_html = WEB_UI_HTML.read_text(encoding="utf-8")
     webview_ts = VSCODE_WEBVIEW_TS.read_text(encoding="utf-8")
 
     def test_server_config_max(self) -> None:
-        val = _parse_python_int_const(self.server_config, "AUTO_RESUBMIT_TIMEOUT_MAX")
+        val = _parse_python_int_const(
+            self.runtime_constants, "AUTO_RESUBMIT_TIMEOUT_MAX"
+        )
         self.assertEqual(
             val,
             3600,
-            "R278: server_config.AUTO_RESUBMIT_TIMEOUT_MAX 必须 = 3600 "
+            "R278: runtime_constants.AUTO_RESUBMIT_TIMEOUT_MAX 必须 = 3600 "
             "(canonical authoritative source)",
         )
+        self.assertIn("AUTO_RESUBMIT_TIMEOUT_MAX", self.server_config)
 
     def test_html_input_max_value(self) -> None:
         html_max = _parse_html_input_attr(self.web_ui_html, "feedback-countdown", "max")
         server_max = _parse_python_int_const(
-            self.server_config, "AUTO_RESUBMIT_TIMEOUT_MAX"
+            self.runtime_constants, "AUTO_RESUBMIT_TIMEOUT_MAX"
         )
         self.assertEqual(
             html_max,
@@ -227,7 +238,7 @@ class TestAutoResubmitTimeoutMaxCrossSource(unittest.TestCase):
             self.webview_ts, "feedbackCountdown", "max"
         )
         server_max = _parse_python_int_const(
-            self.server_config, "AUTO_RESUBMIT_TIMEOUT_MAX"
+            self.runtime_constants, "AUTO_RESUBMIT_TIMEOUT_MAX"
         )
         self.assertEqual(
             webview_max,

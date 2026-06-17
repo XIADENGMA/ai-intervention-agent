@@ -15,7 +15,7 @@ import threading
 import time
 
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
-from ai_intervention_agent.server_config import AUTO_RESUBMIT_TIMEOUT_DEFAULT
+from ai_intervention_agent.runtime_constants import AUTO_RESUBMIT_TIMEOUT_DEFAULT
 from ai_intervention_agent.web_ui_validators import validate_auto_resubmit_timeout
 
 logger = EnhancedLogger(__name__)
@@ -91,8 +91,10 @@ def _sync_network_security_from_config() -> None:
         if lock is not None:
             with lock:
                 inst.network_security_config = new_cfg
+                inst._network_security_config_loaded_from_config = True
         else:
             inst.network_security_config = new_cfg
+            inst._network_security_config_loaded_from_config = True
     except Exception as e:
         logger.warning(f"配置变更回调执行失败（同步网络安全配置）：{e}", exc_info=True)
 

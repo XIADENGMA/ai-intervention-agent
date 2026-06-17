@@ -27,6 +27,12 @@ LAN 上其他设备用 ``ai.local`` 路径访问时才会等 announcement 完成
 不变——既兼容现有 26+ 个直接调用该方法的单元测试，也允许 daemon thread 中按
 原契约执行。
 
+## 函数
+
+### `get_config() -> Any`
+
+Lazy proxy kept patchable for tests and mixin callers.
+
 ## 类
 
 ### `class MdnsMixin`

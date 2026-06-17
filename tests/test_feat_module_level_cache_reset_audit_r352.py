@@ -82,6 +82,7 @@ EXEMPT_MODULE_STATE: set[str] = {
     "_MESSAGES",  # i18n.py, frozen lookup dict, never mutated at runtime
     "_MD_EXTENSIONS",  # web_ui.py, list of markdown extension config
     "_MD_EXTENSION_CONFIGS",  # web_ui.py, frozen config dict
+    "_LIMIT_SECONDS",  # web_ui_rate_limiter.py, MappingProxyType frozen lookup map
     "_SERVER_ICONS",  # server.py, computed at import then frozen
     "_pending_acquisitions",  # task_queue.py, transient request-tracking,
     # 函数返回前 try/finally 会 pop

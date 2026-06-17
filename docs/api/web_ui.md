@@ -4,6 +4,8 @@
 
 ## Functions
 
+### `get_config() -> Any`
+
 ### `get_project_version() -> str`
 
 ### `_read_inline_locale_json(locale_path_str: str) -> str | None`

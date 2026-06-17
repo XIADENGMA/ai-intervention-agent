@@ -227,13 +227,17 @@ R20.14 拆四个子轮：A（harness）、C（跨进程）、D（资源压缩）
 
 ### R20.14-A · 端到端性能 harness + 回归 gate
 
-`scripts/perf_e2e_bench.py` 通过 subprocess 隔离测 5 条 wall-clock
-benchmark：
+`scripts/perf_e2e_bench.py` 通过 subprocess 隔离测 release-gate benchmark
+和 R452 cold-start 分段。JSON 输出包含环境元数据（`_meta.environment`），
+用于判断本地噪声和跨机器漂移，再决定是否动代码。
 
 | benchmark | 测什么 | R20.x 之后基线（中位） |
 |------|------|----:|
-| `import_web_ui` | `python -c "import web_ui"` 冷时间 | 156 ms |
-| `spawn_to_listen` | `subprocess.Popen([python, web_ui.py])` → socket listen | 203 ms |
+| `import_web_ui` | `python -c "from ai_intervention_agent import web_ui"` 冷时间 | 156 ms |
+| `web_ui_construct` | import 之后的 `WebFeedbackUI(...)` 构造 | 本地诊断 |
+| `web_ui_route_setup` | security / markdown / route setup 分段 | 本地诊断 |
+| `socket_listen_after_construct` | 构造完成后的 Flask dev-server listen | 本地诊断 |
+| `spawn_to_listen` | `python -m ai_intervention_agent.web_ui` → socket listen | 203 ms |
 | `html_render` | `_get_template_context()` + `render_template()` | 0.07 ms |
 | `api_health_round_trip` | localhost `/api/health` GET | ~3 ms |
 | `api_config_round_trip` | localhost `/api/config` GET | ~3 ms |
@@ -252,8 +256,9 @@ uv run python scripts/perf_gate.py --results /tmp/perf.json \
     --update-baseline --baseline tests/data/perf_e2e_baseline.json
 ```
 
-baseline JSON 顶层可选 `thresholds: {bench_name: pct}` 让运维单独收紧
-某条 benchmark（适用于本身比全局更确定性的指标）。
+baseline JSON 仍是本地发版门，不是跨硬件通用 CI 契约。顶层可选
+`thresholds: {bench_name: pct}` 让运维单独收紧某条 benchmark（适用于本身
+比全局更确定性的指标）。
 
 ### R20.14-C · 跨进程热路径优化
 
@@ -295,6 +300,11 @@ TaskQueue._trigger_status_change
 - **stats 嵌入**让每次 `task_changed` 事件多一次 `get_task_count()`
   调用（O(n) 遍历当前任务）。n 实际典型 < 100；如果未来负载能把它
   推高，可能需要切到维护型计数器；
+- **R452 计数器决策**：当前继续保留 `get_task_count()` 的 O(n) 快照。
+  队列默认 `max_tasks=10`，维护型 counters 会引入状态迁移一致性风险，
+  但没有可测的热路径收益。只有当 benchmark 证明更大的 `max_tasks` 下
+  统计成为瓶颈时，再引入 counters；届时必须先补并发状态迁移 /
+  property tests；
 - **乐观 UI 更新**可能短暂显示陈旧数据（如果 SSE 事件来自老快照 —— 即
   `_trigger_status_change` 和另一个变更竞态）。fetch 在 ~85 ms 内
   纠正。可接受的 trade-off。
@@ -390,10 +400,11 @@ uv run python scripts/perf_e2e_bench.py --output /tmp/perf.json --quiet
 uv run python scripts/perf_gate.py --results /tmp/perf.json
 ```
 
-如果你的机器比我的 Apple M1 显著快或慢，数字的*形状*应该仍成立（即
-`import_web_ui ≈ 1.5× spawn_to_listen ≈ 50× api_round_trip ≈ 2000×
-html_render`）。如果比例剧烈漂移，加 `--verbose` 看每条 bench 的
-`samples_ms` 数组，找异常值，附 JSON 输出开 issue。
+如果你的机器比我的 Apple M1 显著快或慢，先把 baseline 当成本地发版门，
+检查 `_meta.environment`、p50/p90 和原始 `samples_ms`。如果只有
+`import_web_ui` 移动，优先看依赖导入成本（`python -X importtime ...`）。
+如果 `spawn_to_listen` 移动而 import / construct / route-setup 分段不动，
+更可能是 socket 调度噪声，而不是 Web UI 实现退化。
 
 ## 后续工作
 

@@ -16,14 +16,14 @@ import sys
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
 import tomlkit
 
 from ai_intervention_agent.exceptions import ConfigValidationError
+from ai_intervention_agent.rw_lock import ReadWriteLock as ReadWriteLock
 from ai_intervention_agent.shared_types import SECTION_MODELS
 
 try:
@@ -75,54 +75,6 @@ def _sanitize_config_value_for_log(key: str, value: Any) -> str:
         return "<unprintable>"
     # 避免日志过长
     return text if len(text) <= 200 else (text[:200] + "...")
-
-
-class ReadWriteLock:
-    """
-    读写锁：多读者并发、写者独占，基于 Condition + RLock 实现。
-
-    注意：本类目前未被 ConfigManager 使用（ConfigManager 使用 threading.RLock），
-    作为独立工具类保留，供需要读写分离锁场景的调用方使用。
-    """
-
-    def __init__(self):
-        """初始化读写锁"""
-        # RLock rationale (R330 contract): Condition.wait() 内部会 release
-        # 然后 re-acquire 锁; 持锁的 reader 线程在 notify_all 后唤醒时需要
-        # 重新 acquire (即同一线程 re-entry), 因此必须 RLock 而非 Lock。
-        self._read_ready = threading.Condition(threading.RLock())
-        self._readers = 0
-
-    @contextmanager
-    def read_lock(self) -> Generator[None, None, None]:
-        """获取读锁（多读者并发，仅在写者持有锁时阻塞）"""
-        self._read_ready.acquire()
-        try:
-            self._readers += 1
-        finally:
-            self._read_ready.release()
-
-        try:
-            yield
-        finally:
-            self._read_ready.acquire()
-            try:
-                self._readers -= 1
-                if self._readers == 0:
-                    self._read_ready.notify_all()
-            finally:
-                self._read_ready.release()
-
-    @contextmanager
-    def write_lock(self) -> Generator[None, None, None]:
-        """获取写锁（独占访问，等待所有读者退出）"""
-        self._read_ready.acquire()
-        try:
-            while self._readers > 0:
-                self._read_ready.wait()
-            yield
-        finally:
-            self._read_ready.release()
 
 
 def parse_jsonc(content: str) -> dict[str, Any]:

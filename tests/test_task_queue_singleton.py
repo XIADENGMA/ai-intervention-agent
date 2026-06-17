@@ -21,10 +21,11 @@
    - ``server._shutdown_global_task_queue is
      task_queue_singleton._shutdown_global_task_queue``
 
-3. **解耦不变量**（R20.8 性能优化的核心）
+3. **解耦不变量**（R20.8 + cold-start 后续优化的核心）
    - 加载 ``task_queue_singleton`` 时**绝不**触发 ``fastmcp`` 模块加载
-     ——这是 R20.8 的全部价值（fastmcp 单独 ~310 ms 启动开销）
-   - 顶层依赖只有 stdlib + ``task_queue``
+     ——这是 R20.8 的第一目标（fastmcp 单独 ~310 ms 启动开销）
+   - 加载 ``task_queue_singleton`` 时也不触发 ``task_queue`` / Pydantic；
+     只有第一次 ``get_task_queue()`` 才 import 真正的队列实现
 
 4. **源文本不变量**（防止单例实现在重构中被悄悄挪回 server.py）
    - ``task_queue_singleton.py`` 文件存在且包含双重检查锁定
@@ -172,33 +173,26 @@ class TestServerReExportContract(unittest.TestCase):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 3. 解耦不变量：加载 task_queue_singleton 不能触发 fastmcp/mcp
+# 3. 解耦不变量：加载 task_queue_singleton 不能触发重型依赖
 # ═══════════════════════════════════════════════════════════════════════════
 class TestImportDecoupling(unittest.TestCase):
-    """R20.8 的核心价值：加载本模块时**绝不**拉起 fastmcp/mcp/loguru。
+    """加载本模块时**绝不**拉起 fastmcp/task_queue/Pydantic。
 
     使用全新的 Python 子进程独立验证（避免被父进程已加载的模块污染）。
     """
 
-    def test_loading_module_does_not_import_fastmcp(self) -> None:
-        """fresh interpreter 中 import task_queue_singleton 必须**不**拉起 fastmcp
+    def test_loading_module_does_not_import_heavy_dependencies(self) -> None:
+        """fresh interpreter 中 import task_queue_singleton 必须保持轻量。
 
-        fastmcp 是 R20.8 优化的**第一目标**——单独占 ~310 ms 启动开销，且
-        web_ui 子进程根本不需要任何 MCP server 能力。本不变量保证再有人
-        往 task_queue_singleton / task_queue / server_config 链路上加
-        ``import fastmcp`` 都会立即被本测试阻断。
-
-        注：``mcp.types`` / ``loguru`` 仍会被加载——这是 task_queue 经
-        ``server_config``（用于 ImageContent/TextContent 实例化）和
-        ``enhanced_logging``（loguru sink）的间接依赖。完全切割它们需要把
-        ``server_config`` 中的 ``mcp.types`` import 改成 lazy，并改造
-        ``enhanced_logging`` 的 loguru 入口——这是后续可独立衡量的优化项，
-        而非 R20.8 的范围。
+        R20.8 先切掉 fastmcp；后续 cold-start 优化再把 ``TaskQueue`` 真实现
+        下沉到第一次 ``get_task_queue()``，避免 Web UI 纯 import 触发
+        task model / Pydantic。
         """
         code = (
             "import sys\n"
             "import ai_intervention_agent.task_queue_singleton  # noqa: F401\n"
-            "leaked = [m for m in ('fastmcp',) if m in sys.modules]\n"
+            "heavy = ('fastmcp', 'ai_intervention_agent.task_queue', 'pydantic')\n"
+            "leaked = [m for m in heavy if m in sys.modules]\n"
             "print('LEAKED:' + ','.join(leaked))\n"
         )
         result = subprocess.run(
@@ -218,7 +212,8 @@ class TestImportDecoupling(unittest.TestCase):
         self.assertEqual(
             leaked,
             "",
-            f"task_queue_singleton 加载时不允许触发 fastmcp 加载，实际泄漏：{leaked}",
+            "task_queue_singleton 加载时不允许触发 fastmcp/task_queue/Pydantic "
+            f"加载，实际泄漏：{leaked}",
         )
 
 

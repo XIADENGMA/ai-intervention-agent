@@ -179,27 +179,6 @@ Windows: %APPDATA%、macOS: ~/Library/Application Support、Linux: $XDG_CONFIG_H
 
 ## 类
 
-### `class ReadWriteLock`
-
-读写锁：多读者并发、写者独占，基于 Condition + RLock 实现。
-
-注意：本类目前未被 ConfigManager 使用（ConfigManager 使用 threading.RLock），
-作为独立工具类保留，供需要读写分离锁场景的调用方使用。
-
-#### 方法
-
-##### `__init__(self)`
-
-初始化读写锁
-
-##### `read_lock(self) -> Generator[None, None, None]`
-
-获取读锁（多读者并发，仅在写者持有锁时阻塞）
-
-##### `write_lock(self) -> Generator[None, None, None]`
-
-获取写锁（独占访问，等待所有读者退出）
-
 ### `class ConfigManager`
 
 配置管理器：TOML 配置文件的加载、读写、持久化、热重载。

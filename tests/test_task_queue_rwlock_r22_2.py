@@ -27,7 +27,7 @@ import time
 import unittest
 from pathlib import Path
 
-from ai_intervention_agent.config_manager import ReadWriteLock
+from ai_intervention_agent.rw_lock import ReadWriteLock
 from ai_intervention_agent.task_queue import TaskQueue
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -99,9 +99,9 @@ class TestSourceInvariants(unittest.TestCase):
 
     def test_imports_read_write_lock(self) -> None:
         self.assertIn(
-            "from ai_intervention_agent.config_manager import ReadWriteLock",
+            "from ai_intervention_agent.rw_lock import ReadWriteLock",
             self.source,
-            "R22.2 必须显式从 config_manager 导入 ReadWriteLock",
+            "R22.2/R22.x perf 必须显式从轻量 rw_lock 导入 ReadWriteLock",
         )
 
     def test_lock_assignment_uses_read_write_lock(self) -> None:

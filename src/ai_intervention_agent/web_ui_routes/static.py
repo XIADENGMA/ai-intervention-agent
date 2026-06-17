@@ -13,7 +13,8 @@ from ai_intervention_agent.enhanced_logging import EnhancedLogger
 if TYPE_CHECKING:
     from flask import Flask
     from flask.wrappers import Response
-    from flask_limiter import Limiter
+
+    from ai_intervention_agent.web_ui_rate_limiter import WebUiLimiterProtocol
 
 logger = EnhancedLogger(__name__)
 
@@ -169,7 +170,7 @@ class StaticRoutesMixin:
 
     if TYPE_CHECKING:
         app: Flask
-        limiter: Limiter
+        limiter: WebUiLimiterProtocol
         _project_root: Path
 
         def _get_minified_file(

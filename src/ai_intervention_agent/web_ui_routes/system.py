@@ -26,13 +26,20 @@ from typing import TYPE_CHECKING, Any, cast
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
 
-from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 
 if TYPE_CHECKING:
     from flask import Flask
 
 logger = EnhancedLogger(__name__)
+
+
+def get_config() -> Any:
+    """Lazy proxy kept patchable for system routes."""
+    from ai_intervention_agent.config_manager import get_config as _get_config
+
+    return _get_config()
+
 
 # 自动探测时按优先级尝试的编辑器命令名（保留与 mcp.json 中常见 IDE 的呼应）
 _AUTO_DETECT_EDITORS: tuple[tuple[str, list[str]], ...] = (

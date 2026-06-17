@@ -67,6 +67,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import socket
 import statistics
 import subprocess
@@ -119,6 +120,19 @@ def _summarize(samples_ms: list[float]) -> dict[str, Any]:
         "max_ms": round(max(samples_ms), 2),
         "iterations": len(samples_ms),
         "samples_ms": [round(s, 2) for s in samples_ms],
+    }
+
+
+def _environment_metadata() -> dict[str, Any]:
+    """Capture local benchmark context so noisy results can be interpreted."""
+    return {
+        "python": sys.version.split()[0],
+        "python_executable": sys.executable,
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "cpu_count": os.cpu_count(),
+        "using_uv": "UV" in os.environ or "VIRTUAL_ENV" in os.environ,
     }
 
 
@@ -263,6 +277,149 @@ def bench_spawn_to_listen(iterations: int) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
+# 2a-c. segmented WebFeedbackUI cold path — import / construct / route setup
+# ---------------------------------------------------------------------------
+
+
+def bench_web_ui_construct(iterations: int) -> list[float]:
+    """Fresh-process ``WebFeedbackUI`` construction after module import."""
+    samples: list[float] = []
+    for _ in range(iterations):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import time; "
+                "from ai_intervention_agent import web_ui; "
+                "t=time.monotonic(); "
+                "web_ui.WebFeedbackUI(prompt='perf-bench', port=0); "
+                "print(f'{(time.monotonic()-t)*1000:.3f}')",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={**os.environ},
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"WebFeedbackUI construction subprocess failed: "
+                f"rc={proc.returncode}, stderr={proc.stderr[:500]}"
+            )
+        samples.append(float(proc.stdout.strip()))
+    return samples
+
+
+def bench_web_ui_route_setup(iterations: int) -> list[float]:
+    """Fresh-process route/setup slice using a small profiled subclass."""
+    samples: list[float] = []
+    code = r"""
+import time
+from ai_intervention_agent import web_ui
+
+class ProfiledWebFeedbackUI(web_ui.WebFeedbackUI):
+    def setup_routes(self):
+        t = time.monotonic()
+        try:
+            return super().setup_routes()
+        finally:
+            self._perf_setup_routes_ms = (time.monotonic() - t) * 1000
+
+    def setup_security_headers(self):
+        t = time.monotonic()
+        try:
+            return super().setup_security_headers()
+        finally:
+            self._perf_setup_security_ms = (time.monotonic() - t) * 1000
+
+    def setup_markdown(self):
+        t = time.monotonic()
+        try:
+            return super().setup_markdown()
+        finally:
+            self._perf_setup_markdown_ms = (time.monotonic() - t) * 1000
+
+ui = ProfiledWebFeedbackUI(prompt="perf-bench", port=0)
+total = (
+    ui._perf_setup_routes_ms
+    + ui._perf_setup_security_ms
+    + ui._perf_setup_markdown_ms
+)
+print(f"{total:.3f}")
+"""
+    for _ in range(iterations):
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env={**os.environ},
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"WebFeedbackUI route/setup subprocess failed: "
+                f"rc={proc.returncode}, stderr={proc.stderr[:500]}"
+            )
+        samples.append(float(proc.stdout.strip()))
+    return samples
+
+
+def bench_socket_listen_after_construct(iterations: int) -> list[float]:
+    """Construct in-process, then time Flask dev-server socket readiness."""
+    samples: list[float] = []
+    for _ in range(iterations):
+        port = _free_port()
+        code = f"""
+import socket
+import threading
+import time
+from ai_intervention_agent import web_ui
+
+ui = web_ui.WebFeedbackUI(prompt="perf-bench", port={port})
+t0 = time.monotonic()
+thread = threading.Thread(
+    target=lambda: ui.app.run(
+        host="127.0.0.1",
+        port={port},
+        debug=False,
+        use_reloader=False,
+        threaded=True,
+    ),
+    daemon=True,
+)
+thread.start()
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline:
+    try:
+        with socket.create_connection(("127.0.0.1", {port}), timeout=0.05):
+            print(f"{{(time.monotonic() - t0) * 1000:.3f}}")
+            raise SystemExit(0)
+    except OSError:
+        time.sleep(0.005)
+raise SystemExit("socket did not listen within 30s")
+"""
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=35,
+            env={**os.environ, "AI_INTERVENTION_AGENT_NO_BROWSER": "1"},
+            check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"socket-listen subprocess failed: "
+                f"rc={proc.returncode}, stderr={proc.stderr[:500]}"
+            )
+        samples.append(float(proc.stdout.strip().splitlines()[-1]))
+    return samples
+
+
+# ---------------------------------------------------------------------------
 # 3. html_render — in-process template render wall time
 # ---------------------------------------------------------------------------
 
@@ -370,7 +527,7 @@ def _cleanup_subprocess(proc: subprocess.Popen[bytes]) -> None:
 
 
 def _http_get(url: str, *, timeout: float = 5.0) -> tuple[int, bytes]:
-    """极简 HTTP GET — 不引外部 dep。"""
+    """极简 one-shot HTTP GET — 每次调用新建并关闭 TCP 连接。"""
     import http.client
     from urllib.parse import urlparse
 
@@ -390,6 +547,17 @@ def _http_get(url: str, *, timeout: float = 5.0) -> tuple[int, bytes]:
         conn.close()
 
 
+def _http_get_keepalive(
+    conn: Any,
+    path: str,
+) -> tuple[int, bytes]:
+    """极简 keep-alive HTTP GET — 复用 caller 持有的 HTTPConnection。"""
+    conn.request("GET", path)
+    resp = conn.getresponse()
+    body = resp.read()
+    return resp.status, body
+
+
 def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
     """启动一次 Web UI 子进程，对同一端点跑 ``iterations`` 次 round-trip。
 
@@ -400,28 +568,44 @@ def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
     proc = _start_web_ui_subprocess(port)
     try:
         url = f"http://127.0.0.1:{port}{endpoint}"
-        # 预热一次：第一个 request 会触发 lazy-load（R20.10 设计），不计时
-        try:
-            _http_get(url, timeout=3.0)
-        except Exception:
-            pass
+        import http.client
+        from urllib.parse import urlparse
 
-        samples: list[float] = []
-        for i in range(iterations):
-            # web_ui.py 配置 ``default_limits=['60 per minute', '10 per second']``，
-            # 不间断打 ``/api/health`` 会很快触发 429。每次请求间 sleep 110 ms
-            # 留 1 ms 余量保证稳定 < 10 req/s（10 iters × 110 ms ≈ 1.1 s 总
-            # 间隔时间，远小于 60 req/min 限速窗口）。被测的是 round-trip
-            # latency 而不是吞吐量，所以 sleep 不污染测量值。
-            if i > 0:
-                time.sleep(0.11)
-            t = time.perf_counter()
-            status, _body = _http_get(url, timeout=3.0)
-            elapsed_ms = (time.perf_counter() - t) * 1000.0
-            if status != 200:
-                raise RuntimeError(f"GET {url} returned status {status}, expected 200")
-            samples.append(elapsed_ms)
-        return samples
+        parsed = urlparse(url)
+        host = parsed.hostname or "127.0.0.1"
+        http_port = parsed.port or 80
+        path = parsed.path or "/"
+        if parsed.query:
+            path += f"?{parsed.query}"
+        conn = http.client.HTTPConnection(host, http_port, timeout=3.0)
+        try:
+            # 预热一次：第一个 request 会触发 lazy-load（R20.10 设计），不计时
+            try:
+                _http_get_keepalive(conn, path)
+            except Exception:
+                conn.close()
+                conn = http.client.HTTPConnection(host, http_port, timeout=3.0)
+
+            samples: list[float] = []
+            for i in range(iterations):
+                # web_ui.py 配置 ``default_limits=['60 per minute', '10 per second']``，
+                # 不间断打 ``/api/health`` 会很快触发 429。每次请求间 sleep 110 ms
+                # 留 1 ms 余量保证稳定 < 10 req/s（10 iters × 110 ms ≈ 1.1 s 总
+                # 间隔时间，远小于 60 req/min 限速窗口）。被测的是 round-trip
+                # latency 而不是吞吐量，所以 sleep 不污染测量值。
+                if i > 0:
+                    time.sleep(0.11)
+                t = time.perf_counter()
+                status, _body = _http_get_keepalive(conn, path)
+                elapsed_ms = (time.perf_counter() - t) * 1000.0
+                if status != 200:
+                    raise RuntimeError(
+                        f"GET {url} returned status {status}, expected 200"
+                    )
+                samples.append(elapsed_ms)
+            return samples
+        finally:
+            conn.close()
     finally:
         _cleanup_subprocess(proc)
 
@@ -433,6 +617,9 @@ def bench_api_round_trip(endpoint: str, iterations: int) -> list[float]:
 
 BENCHMARKS: dict[str, Callable[[int], list[float]]] = {
     "import_web_ui": bench_import_web_ui,
+    "web_ui_construct": bench_web_ui_construct,
+    "web_ui_route_setup": bench_web_ui_route_setup,
+    "socket_listen_after_construct": bench_socket_listen_after_construct,
     "spawn_to_listen": bench_spawn_to_listen,
     "html_render": bench_html_render,
     "api_health_round_trip": lambda n: bench_api_round_trip("/api/health", n),
@@ -441,6 +628,9 @@ BENCHMARKS: dict[str, Callable[[int], list[float]]] = {
 
 DEFAULT_ITERATIONS: dict[str, int] = {
     "import_web_ui": 3,
+    "web_ui_construct": 3,
+    "web_ui_route_setup": 3,
+    "socket_listen_after_construct": 3,
     "spawn_to_listen": 3,
     "html_render": 100,
     "api_health_round_trip": 10,
@@ -449,6 +639,9 @@ DEFAULT_ITERATIONS: dict[str, int] = {
 
 QUICK_ITERATIONS: dict[str, int] = {
     "import_web_ui": 2,
+    "web_ui_construct": 2,
+    "web_ui_route_setup": 2,
+    "socket_listen_after_construct": 2,
     "spawn_to_listen": 2,
     "html_render": 30,
     "api_health_round_trip": 5,
@@ -466,7 +659,13 @@ def run_all(
     iters = QUICK_ITERATIONS if quick else DEFAULT_ITERATIONS
     targets = select if select else list(BENCHMARKS.keys())
 
-    out: dict[str, Any] = {}
+    out: dict[str, Any] = {
+        "_meta": {
+            "environment": _environment_metadata(),
+            "quick": quick,
+            "selected": targets,
+        }
+    }
     for name in targets:
         if name not in BENCHMARKS:
             raise SystemExit(f"unknown benchmark: {name}")
@@ -496,6 +695,8 @@ def _format_human_table(results: dict[str, Any]) -> str:
     )
     rows.append("-" * 80)
     for name, info in results.items():
+        if name.startswith("_"):
+            continue
         if "error" in info:
             rows.append(f"{name:<28} ERROR: {info['error']}")
             continue

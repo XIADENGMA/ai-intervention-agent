@@ -1,18 +1,19 @@
-"""R26.1 性能不变量：``flask_limiter`` 顶级 import 必须延迟到 ``WebUIApp.__init__``。
+"""R26.1/R452 性能不变量：Web UI cold path 不加载 ``flask_limiter``。
 
 背景
 ====
 
 ``web_ui.py`` 在 R26.1 之前顶层 ``from flask_limiter import Limiter`` +
 ``from flask_limiter.util import get_remote_address``。``flask_limiter`` 模块本身
-的 cold-start ~65 ms，但只有当 ``Limiter(...)`` 实例化（在 ``WebUIApp.__init__``
-里）时才被真正使用——大量「``from web_ui import 小工具``」的单元测试（
+的 cold-start ~65 ms，但只有受限路由真正处理请求时才需要限流语义——大量「
+``from web_ui import 小工具``」的单元测试（
 ``validate_auto_resubmit_timeout`` / ``MDNS_DEFAULT_HOSTNAME`` /
-``_is_probably_virtual_interface`` 等）从来不构造 ``WebUIApp``，却被迫支付
+``_is_probably_virtual_interface`` 等）从来不构造 ``WebFeedbackUI``，却被迫支付
 ``flask_limiter`` 的加载成本。
 
-R26.1 把两个 import 推迟到 ``WebUIApp.__init__`` 体内（紧邻 ``self.limiter =
-Limiter(...)`` 那一行），让「只取小工具」路径不再加载 ``flask_limiter``。
+R452 进一步把构造期的 Flask-Limiter 替换为本地 ``WebUiRateLimiter`` 兼容层，
+保留 ``limit`` / ``exempt`` / ``enabled`` 运行时契约，同时让「只取小工具」和
+``WebFeedbackUI`` 构造路径都不加载 ``flask_limiter``。
 
 收益
 ====
@@ -20,7 +21,7 @@ Limiter(...)`` 那一行），让「只取小工具」路径不再加载 ``flask
 - ``import web_ui`` 路径（小工具单测视角）省 ~21 ms / call（``flask_limiter``
   在 ``flask`` 已加载后增量成本约 21 ms，绝对值 65 ms 的差额是因为大量传递依
   赖如 ``werkzeug`` / ``blinker`` / ``click`` 已经被 ``flask`` 提前加载）。
-- ``WebUIApp.__init__`` 路径首次构造仍付 21 ms，二次构造命中 ``sys.modules`` cache。
+- ``WebFeedbackUI.__init__`` 构造路径也不再支付 ``flask_limiter`` 成本。
 
 不变量
 ======
@@ -28,26 +29,23 @@ Limiter(...)`` 那一行），让「只取小工具」路径不再加载 ``flask
 1. **静态源码不变量**（``inspect.getsource``）：
    - 模块顶层不能有 ``from flask_limiter import Limiter`` 或
      ``from flask_limiter.util import get_remote_address``（缩进 0）。
-   - ``WebUIApp.__init__`` 函数体内必须有这两条 import 出现在
-     ``self.limiter = Limiter(...)`` **之前**（保证 Limiter 解析时已就绪）。
+   - ``WebFeedbackUI.__init__`` 函数体必须使用 ``WebUiRateLimiter``，且不能
+     重新引入 ``flask_limiter``。
 
 2. **运行时不变量**（fresh subprocess）：
    - ``import web_ui`` 不应让 ``flask_limiter`` 进入 ``sys.modules``。
    - ``from web_ui import validate_auto_resubmit_timeout`` 同上。
 
-3. **行为契约**：实例化 ``WebUIApp`` 后 ``self.limiter`` 必须是 ``flask_limiter.Limiter``
-   实例（保留运行时正确性）。
+3. **行为契约**：实例化 ``WebFeedbackUI`` 后 ``self.limiter`` 必须提供 ``limit`` /
+   ``exempt`` / ``enabled`` 兼容面，且受限路由保留 ``X-RateLimit-*`` 响应头。
 
 边界
 ====
 
-- 因 ``Limiter`` 在本模块只用作构造调用，没有任何模块级 ``: Limiter`` 类型注解，
-  所以**不**需要 ``if TYPE_CHECKING: from flask_limiter import Limiter`` 守护块；
-  下游 ``web_ui_routes/{task,feedback,static}.py`` 各自已经在自己的
-  ``TYPE_CHECKING`` 块里 import ``Limiter`` 用作 ``: Limiter`` 注解，那条路径不受
-  影响。
-- 小工具测试场景下「不加载 flask_limiter」是必要不变量；构造 ``WebUIApp`` 才加载
-  是预期行为，测试不应该断言「构造 WebUIApp 后 flask_limiter 不在 sys.modules」。
+- ``web_ui`` 与 ``web_ui_routes/{task,feedback,static}.py`` 的类型注解也不能
+  通过 ``TYPE_CHECKING`` 重新指向 ``flask_limiter.Limiter``；这些 mixin 只依赖
+  本地轻量 limiter 的 ``limit`` / ``exempt`` / ``enabled`` 协议面。
+- 小工具测试场景和 ``WebFeedbackUI`` 构造场景都不应加载 ``flask_limiter``。
 """
 
 from __future__ import annotations
@@ -85,50 +83,29 @@ class TestWebUiLazyFlaskLimiterStatic(unittest.TestCase):
                 self.assertIsNone(
                     re.search(pattern, self.source, re.MULTILINE),
                     f"R26.1 性能保护：web_ui 顶层禁止 ``{pattern_desc}``——"
-                    "应改成 ``WebUIApp.__init__`` 内部本地 import",
+                    "应改成本地轻量 WebUiRateLimiter 兼容层",
                 )
 
-    def test_init_has_local_imports_before_limiter_construction(self) -> None:
-        """``WebUIApp.__init__`` 体内必须本地 import 两个符号，且出现在
-        ``self.limiter = Limiter(...)`` **之前**。"""
+    def test_init_uses_lightweight_limiter(self) -> None:
+        """``WebFeedbackUI.__init__`` 必须使用轻量限流器，避免构造期重导入。"""
         # 用 inspect 拿 __init__ 函数体（class WebFeedbackUI 的 __init__）
         init_src = inspect.getsource(web_ui.WebFeedbackUI.__init__)
 
-        # 1) 必须有这两条本地 import
-        self.assertIn(
-            "from flask_limiter import Limiter",
-            init_src,
-            "WebUIApp.__init__ 必须本地 ``from flask_limiter import Limiter``",
-        )
-        self.assertIn(
-            "from flask_limiter.util import get_remote_address",
-            init_src,
-            "WebUIApp.__init__ 必须本地 ``from flask_limiter.util import get_remote_address``",
-        )
+        self.assertIn("WebUiRateLimiter(", init_src)
+        self.assertNotIn("from flask_limiter import Limiter", init_src)
+        self.assertNotIn("from flask_limiter.util import get_remote_address", init_src)
 
-        # 2) 必须出现在 ``self.limiter = Limiter(`` 之前
-        limiter_import_pos = init_src.find("from flask_limiter import Limiter")
-        get_remote_pos = init_src.find(
-            "from flask_limiter.util import get_remote_address"
-        )
-        limiter_construct_pos = init_src.find("self.limiter = Limiter(")
+    def test_route_mixins_type_against_local_limiter_protocol(self) -> None:
+        """路由 mixin 类型面不能把 ``flask_limiter`` 带回 cold path。"""
+        import pathlib
 
-        self.assertGreater(
-            limiter_construct_pos,
-            -1,
-            "WebUIApp.__init__ 必须有 ``self.limiter = Limiter(...)`` 构造调用",
-        )
-        self.assertLess(
-            limiter_import_pos,
-            limiter_construct_pos,
-            "``from flask_limiter import Limiter`` 必须在 ``self.limiter = Limiter(`` 之前",
-        )
-        self.assertLess(
-            get_remote_pos,
-            limiter_construct_pos,
-            "``from flask_limiter.util import get_remote_address`` 必须在 "
-            "``self.limiter = Limiter(`` 之前（``key_func=get_remote_address`` 解析依赖）",
-        )
+        route_dir = pathlib.Path(web_ui.__file__).parent / "web_ui_routes"
+        for filename in ("task.py", "feedback.py", "static.py"):
+            with self.subTest(file=filename):
+                text = (route_dir / filename).read_text(encoding="utf-8")
+                self.assertIn("WebUiLimiterProtocol", text)
+                self.assertNotIn("from flask_limiter import Limiter", text)
+                self.assertNotIn("limiter: Limiter", text)
 
 
 class TestWebUiLazyFlaskLimiterRuntime(unittest.TestCase):
@@ -170,27 +147,16 @@ class TestWebUiLazyFlaskLimiterRuntime(unittest.TestCase):
         )
 
 
-class TestWebUiAppStillUsesLimiter(unittest.TestCase):
-    """构造 ``WebFeedbackUI`` 后 ``self.limiter`` 必须是 ``flask_limiter.Limiter`` 实例。
+class TestWebFeedbackUIStillUsesLimiter(unittest.TestCase):
+    """构造 ``WebFeedbackUI`` 后 ``self.limiter`` 必须保留运行时契约。"""
 
-    保证 R26.1 的懒加载没有破坏「rate limit 仍然生效」的运行时契约。
-    """
-
-    def test_webuiapp_self_limiter_is_real_limiter(self) -> None:
-        """构造 WebFeedbackUI 后 ``self.limiter`` 必须能调用 ``.limit(...)`` 与 ``.exempt``。
+    def test_webuiapp_limiter_surface_and_headers(self) -> None:
+        """构造 WebFeedbackUI 后限流装饰器与响应头必须仍然可用。
 
         ``WebFeedbackUI.__init__`` 要求 ``prompt`` 位置参数，这里传一个最简的占位
         prompt 即可（不会触发任何 HTTP 路径，``init`` 只做对象组装）。
         """
-        from flask_limiter import Limiter
-
         ui = web_ui.WebFeedbackUI(prompt="r26-1-test", port=0)
-        self.assertIsInstance(
-            ui.limiter,
-            Limiter,
-            "WebFeedbackUI.__init__ 必须把 self.limiter 设为 flask_limiter.Limiter 实例",
-        )
-        # 验证 decorator 接口存在（rate-limit 测试依赖这两个属性）
         self.assertTrue(
             callable(ui.limiter.limit),
             "self.limiter.limit 必须是可调用 decorator factory",
@@ -199,6 +165,76 @@ class TestWebUiAppStillUsesLimiter(unittest.TestCase):
             callable(ui.limiter.exempt),
             "self.limiter.exempt 必须是可调用 decorator",
         )
+        self.assertTrue(hasattr(ui.limiter, "enabled"))
+
+        ui.network_security_config = {"access_control_enabled": False}
+        client = ui.app.test_client()
+        resp = client.get("/api/config")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("X-RateLimit-Limit", resp.headers)
+        self.assertIn("X-RateLimit-Remaining", resp.headers)
+        self.assertIn("X-RateLimit-Reset", resp.headers)
+
+    def test_constructing_webuiapp_does_not_load_flask_limiter(self) -> None:
+        stdout = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; from ai_intervention_agent.web_ui import WebFeedbackUI; "
+                "WebFeedbackUI(prompt='r452', port=0); "
+                "print('flask_limiter' in sys.modules)",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(__import__("pathlib").Path(web_ui.__file__).parents[2]),
+            check=True,
+        ).stdout
+        self.assertEqual(stdout.strip(), "False")
+
+
+class TestWebUiRateLimiterRuntime(unittest.TestCase):
+    """轻量 limiter 的本地 profile 行为边界。"""
+
+    def test_loopback_proxy_forwarded_for_uses_distinct_buckets(self) -> None:
+        ui = web_ui.WebFeedbackUI(prompt="r452-forwarded", port=0)
+        ui.app.config["TESTING"] = True
+        ui.network_security_config = {"access_control_enabled": False}
+        client = ui.app.test_client()
+
+        headers_a = {"X-Forwarded-For": "10.0.0.10"}
+        headers_b = {"X-Forwarded-For": "10.0.0.11"}
+
+        first = client.get(
+            "/api/config",
+            headers=headers_a,
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+        second = client.get(
+            "/api/config",
+            headers=headers_b,
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(
+            first.headers.get("X-RateLimit-Remaining"),
+            second.headers.get("X-RateLimit-Remaining"),
+            "loopback reverse proxy X-Forwarded-For clients must not share one bucket",
+        )
+
+    def test_prunes_expired_buckets(self) -> None:
+        from ai_intervention_agent.web_ui_rate_limiter import WebUiRateLimiter
+
+        ui = web_ui.WebFeedbackUI(prompt="r452-prune", port=0)
+        limiter = WebUiRateLimiter(app=ui.app, default_limits=[])
+        limiter._buckets[("old", "127.0.0.1", "1 per second")] = (1, 1)
+        limiter._buckets[("new", "127.0.0.1", "1 per hour")] = (3600, 1)
+
+        limiter._prune_expired_buckets(4000)
+
+        self.assertNotIn(("old", "127.0.0.1", "1 per second"), limiter._buckets)
+        self.assertIn(("new", "127.0.0.1", "1 per hour"), limiter._buckets)
 
 
 if __name__ == "__main__":

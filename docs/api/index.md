@@ -137,10 +137,13 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - [config_manager](config_manager.md)
 - [config_utils](config_utils.md)
 - [exceptions](exceptions.md)
+- [feedback_types](feedback_types.md)
 - [i18n](i18n.md)
 - [mcp_tool_call_metrics](mcp_tool_call_metrics.md)
 - [protocol](protocol.md)
 - [remote_environment](remote_environment.md)
+- [runtime_constants](runtime_constants.md)
+- [rw_lock](rw_lock.md)
 - [state_machine](state_machine.md)
 - [server](server.md)
 - [server_feedback](server_feedback.md)
@@ -151,14 +154,17 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 - [notification_manager](notification_manager.md)
 - [notification_models](notification_models.md)
 - [notification_providers](notification_providers.md)
+- [task_constants](task_constants.md)
 - [task_queue](task_queue.md)
 - [task_queue_singleton](task_queue_singleton.md)
 - [web_ui](web_ui.md)
 - [web_ui_config_sync](web_ui_config_sync.md)
 - [web_ui_mdns](web_ui_mdns.md)
 - [web_ui_mdns_utils](web_ui_mdns_utils.md)
+- [web_ui_rate_limiter](web_ui_rate_limiter.md)
 - [web_ui_security](web_ui_security.md)
 - [web_ui_validators](web_ui_validators.md)
+- [web_ui_wsgi](web_ui_wsgi.md)
 - [file_validator](file_validator.md)
 - [enhanced_logging](enhanced_logging.md)
 
@@ -184,18 +190,24 @@ point, gated on proven client support for `notifications/tools/list_changed`.
 ### Utility modules
 
 - **config_utils**: Configuration utility helpers
+- **feedback_types**: Lightweight feedback result typing used by Web UI routes without importing Pydantic-heavy configuration modules
 - **i18n**: Lightweight back-end i18n (request-language detection + locale-keyed message lookup)
 - **mcp_tool_call_metrics**: MCP tool call counter middleware (R187 / T2) — feeds `aiia_mcp_tool_calls_total{tool,status}` Prometheus metric in `/api/system/metrics`
+- **runtime_constants**: Cheap-to-import runtime timeout constants shared by Web UI, task queue, and server config
+- **rw_lock**: Lightweight read/write lock primitive shared by queue and compatibility tests
 - **shared_types**: Shared TypedDict definitions
 - **sse_event_schemas**: SSE event schema registry (R198 / Cycle 7) — central definition of every known SSE `event_type` + payload field set; tests assert every `_sse_bus.emit("<literal>", ...)` call site has a matching schema
 - **notification_models**: Notification data models
 - **notification_providers**: Concrete notification backends (Web Push / system sound / Bark / mobile vibration / macOS native)
+- **task_constants**: Cheap-to-import task constants used by task queue and Web UI cold-start paths
 - **file_validator**: File validation
 - **enhanced_logging**: Logging enhancements
 - **remote_environment**: SSH / WSL remote-environment detection (R225) — pure-function probes used by the Web UI startup banner to surface actionable port-forwarding hints when bound to loopback on a remote host
 - **web_ui_config_sync**: Hot-reload callbacks — propagate `feedback.auto_resubmit_timeout` and network-security config changes into running tasks / Web UI instances
 - **web_ui_mdns**: mDNS / DNS-SD lifecycle mixin — service discovery, registration, deregistration
 - **web_ui_mdns_utils**: mDNS pure helpers — hostname normalisation, virtual-NIC filtering, IPv4 detection
+- **web_ui_rate_limiter**: Lightweight in-memory Web UI rate limiter — preserves the Flask-Limiter decorator surface without importing `flask_limiter` on the cold path
+- **web_ui_wsgi**: Optional WSGI application factory for production-style runners while preserving the local Flask dev-server default
 
 ---
 

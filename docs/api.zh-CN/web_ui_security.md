@@ -7,6 +7,12 @@
 提供 IP 访问控制、CSP 安全头注入、网络安全配置加载等方法，
 由 WebFeedbackUI 通过 MRO 继承。
 
+## 函数
+
+### `get_config() -> Any`
+
+Lazy proxy kept patchable for tests and security helpers.
+
 ## 类
 
 ### `class SecurityMixin`

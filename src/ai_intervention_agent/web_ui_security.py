@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any
 from flask import Response, abort, g, request
 from flask.typing import ResponseReturnValue
 
-from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.web_ui_validators import validate_network_security_config
 
@@ -21,6 +20,13 @@ if TYPE_CHECKING:
     from flask import Flask
 
 logger = EnhancedLogger(__name__)
+
+
+def get_config() -> Any:
+    """Lazy proxy kept patchable for tests and security helpers."""
+    from ai_intervention_agent.config_manager import get_config as _get_config
+
+    return _get_config()
 
 
 class SecurityMixin:
@@ -96,11 +102,19 @@ class SecurityMixin:
 
         @self.app.before_request
         def check_ip_and_generate_nonce() -> ResponseReturnValue | None:
+            self._ensure_network_security_config_loaded()
             client_ip = self._get_request_client_ip(request.environ)
             if not self._is_ip_allowed(client_ip):
                 logger.warning(f"拒绝来自 {client_ip} 的访问请求")
                 abort(403)
             g.csp_nonce = secrets.token_urlsafe(16)
+            if self.app.config.get("TESTING"):
+                return None
+            ensure_hooks = getattr(
+                self, "_ensure_base_config_runtime_hooks_registered", None
+            )
+            if callable(ensure_hooks):
+                ensure_hooks()
 
         @self.app.after_request
         def add_security_headers(response: Response) -> Response:
@@ -199,6 +213,41 @@ class SecurityMixin:
         except Exception as e:
             logger.warning(f"无法加载网络安全配置，使用默认配置: {e}", exc_info=True)
             return validate_network_security_config({})
+
+    def _ensure_network_security_config_loaded(self) -> None:
+        """Load network security config once, just before request enforcement.
+
+        R325 audit: this is a single-attribute lazy load for
+        ``network_security_config`` only. It has a non-default-config guard,
+        a TESTING short-circuit, and an instance lock, so it is not the
+        multi-attribute mock-pollution pattern handled by the notification
+        lazy loaders.
+        """
+        if getattr(self, "_network_security_config_loaded_from_config", False):
+            return
+        default_config = validate_network_security_config({})
+        if getattr(self, "network_security_config", default_config) != default_config:
+            self._network_security_config_loaded_from_config = True
+            return
+        if getattr(getattr(self, "app", None), "config", {}).get("TESTING"):
+            self._network_security_config_loaded_from_config = True
+            return
+        lock = getattr(self, "_network_security_config_lock", None)
+        if lock is None:
+            self.network_security_config = self._load_network_security_config()
+            self._network_security_config_loaded_from_config = True
+            return
+        with lock:
+            if getattr(self, "_network_security_config_loaded_from_config", False):
+                return
+            if (
+                getattr(self, "network_security_config", default_config)
+                != default_config
+            ):
+                self._network_security_config_loaded_from_config = True
+                return
+            self.network_security_config = self._load_network_security_config()
+            self._network_security_config_loaded_from_config = True
 
     # ------------------------------------------------------------------
     # IP 访问控制

@@ -252,12 +252,12 @@ class TestFrontendListenersExist(unittest.TestCase):
 
 
 # ============================================================================
-# 5. web_ui.py 在启动流程里调用了 _ensure_config_changed_sse_callback_registered
+# 5. web_ui.py 在首个真实请求路径注册 _ensure_config_changed_sse_callback_registered
 # ============================================================================
 
 
-class TestWebUIBootupRegistersCallback(unittest.TestCase):
-    """``WebFeedbackUI.__init__`` 必须调用 ``_ensure_config_changed_sse_callback_registered``。
+class TestWebUIRuntimeHooksRegisterCallback(unittest.TestCase):
+    """``WebFeedbackUI`` 必须在 runtime hook 路径调用 config_changed 注册 helper。
 
     通过源码静态扫描验证（避免起 Flask app 的副作用）。
     """
@@ -272,11 +272,15 @@ class TestWebUIBootupRegistersCallback(unittest.TestCase):
             "web_ui.py 必须 import _ensure_config_changed_sse_callback_registered",
         )
 
-    def test_web_ui_calls_helper_in_init(self) -> None:
+    def test_web_ui_calls_helper_in_runtime_hook(self) -> None:
         source = (REPO_ROOT / "src" / "ai_intervention_agent" / "web_ui.py").read_text(
             encoding="utf-8"
         )
-        # 计数：import 1 处 + setup 阶段 1 处 = 至少 2 处
+        self.assertIn(
+            "def _ensure_base_config_runtime_hooks_registered",
+            source,
+            "web_ui.py 必须保留首个请求触发的 base config runtime hook",
+        )
         occurrences = source.count("_ensure_config_changed_sse_callback_registered")
         self.assertGreaterEqual(
             occurrences,

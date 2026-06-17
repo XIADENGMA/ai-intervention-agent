@@ -46,8 +46,10 @@ __all__ = [
 import atexit
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ai_intervention_agent.task_queue import TaskQueue
+if TYPE_CHECKING:
+    from ai_intervention_agent.task_queue import TaskQueue
 
 # TaskQueue 仅由 Web UI 子进程使用（web_ui.py / web_ui_routes 会调用 get_task_queue()）。
 # MCP 服务器主进程中此函数从未被调用，因此不会创建 TaskQueue 实例或后台清理线程。
@@ -66,6 +68,8 @@ def get_task_queue() -> TaskQueue:
     if _global_task_queue is None:
         with _global_task_queue_lock:
             if _global_task_queue is None:
+                from ai_intervention_agent.task_queue import TaskQueue
+
                 persist_path = str(
                     Path(__file__).resolve().parent / "data" / "tasks.json"
                 )

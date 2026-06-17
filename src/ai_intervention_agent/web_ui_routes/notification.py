@@ -46,7 +46,6 @@ from typing import TYPE_CHECKING, Any
 from flask import jsonify, request
 from flask.typing import ResponseReturnValue
 
-from ai_intervention_agent.config_manager import get_config
 from ai_intervention_agent.config_utils import clamp_value
 from ai_intervention_agent.enhanced_logging import EnhancedLogger
 from ai_intervention_agent.i18n import msg
@@ -70,6 +69,13 @@ NotificationEvent: Any = None
 NotificationTrigger: Any = None
 NotificationType: Any = None
 BarkNotificationProvider: Any = None
+
+
+def get_config() -> Any:
+    """Lazy proxy kept patchable for notification routes."""
+    from ai_intervention_agent.config_manager import get_config as _get_config
+
+    return _get_config()
 
 
 def _ensure_notification_loaded() -> None:

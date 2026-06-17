@@ -32,16 +32,6 @@
 
 ## Classes
 
-### `class ReadWriteLock`
-
-#### Methods
-
-##### `__init__(self)`
-
-##### `read_lock(self) -> Generator[None, None, None]`
-
-##### `write_lock(self) -> Generator[None, None, None]`
-
 ### `class ConfigManager`
 
 #### Methods

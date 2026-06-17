@@ -251,13 +251,18 @@ compression), E (this document).
 
 ### R20.14-A · End-to-end perf harness + regression gate
 
-`scripts/perf_e2e_bench.py` measures 5 wall-clock benchmarks via subprocess
-isolation:
+`scripts/perf_e2e_bench.py` measures the release-gate benchmarks plus the
+R452 cold-start breakdown via subprocess isolation. The JSON output includes
+environment metadata (`_meta.environment`) so local noise and cross-machine
+drift can be interpreted before changing code.
 
 | Benchmark | What it measures | R20.x baseline (median) |
 |-----------|------------------|------------------------:|
-| `import_web_ui` | `python -c "import web_ui"` cold time | 156 ms |
-| `spawn_to_listen` | `subprocess.Popen([python, web_ui.py])` → socket listen | 203 ms |
+| `import_web_ui` | `python -c "from ai_intervention_agent import web_ui"` cold time | 156 ms |
+| `web_ui_construct` | `WebFeedbackUI(...)` construction after import | local diagnostic |
+| `web_ui_route_setup` | security / markdown / route setup slice | local diagnostic |
+| `socket_listen_after_construct` | Flask dev-server listen after construction | local diagnostic |
+| `spawn_to_listen` | `python -m ai_intervention_agent.web_ui` → socket listen | 203 ms |
 | `html_render` | `_get_template_context()` + `render_template()` | 0.07 ms |
 | `api_health_round_trip` | localhost `/api/health` GET | ~3 ms |
 | `api_config_round_trip` | localhost `/api/config` GET | ~3 ms |
@@ -277,8 +282,9 @@ uv run python scripts/perf_gate.py --results /tmp/perf.json \
     --update-baseline --baseline tests/data/perf_e2e_baseline.json
 ```
 
-The baseline JSON's optional top-level `thresholds: {bench_name: pct}` lets
-ops manually tighten a single benchmark below the global default. Useful for
+The baseline JSON remains a local release gate, not a universal CI hardware
+contract. Its optional top-level `thresholds: {bench_name: pct}` lets ops
+manually tighten a single benchmark below the global default. Useful for
 benchmarks that are inherently more deterministic.
 
 ### R20.14-C · Cross-process hot-path optimizations
@@ -326,6 +332,12 @@ TaskQueue._trigger_status_change
 - **Stats embed** does a `get_task_count()` call (O(n) over current tasks)
   on each `task_changed` event. n is typically < 100 in practice; if a future
   workload pushes that high, we may want to switch to maintained counters.
+- **R452 counter decision:** keep `get_task_count()` as an O(n) snapshot for
+  now. The queue default is `max_tasks=10`, so maintained counters would add
+  mutation-time consistency risk for no measured hot-path win. Revisit only
+  after a benchmark shows queue stats as a bottleneck at a materially larger
+  `max_tasks` value, then add concurrent state-transition/property tests before
+  changing the data model.
 - **Optimistic UI update** can briefly show stale data if the SSE event was
   emitted from a stale snapshot (race between `_trigger_status_change` and
   another mutation). The fetch corrects within ~85 ms. Acceptable trade.
@@ -432,11 +444,13 @@ uv run python scripts/perf_e2e_bench.py --output /tmp/perf.json --quiet
 uv run python scripts/perf_gate.py --results /tmp/perf.json
 ```
 
-If your machine is significantly faster or slower than my Apple M1, the
-*shape* of the numbers should still hold (e.g., `import_web_ui ≈ 1.5×
-spawn_to_listen ≈ 50× api_round_trip ≈ 2000× html_render`). If the ratios
-shift dramatically, run with `--verbose` and the per-bench `samples_ms`
-arrays to find the outlier. Open an issue with the JSON output attached.
+If your machine is significantly faster or slower than my Apple M1, treat the
+baseline as a local release gate and first inspect `_meta.environment`,
+p50/p90, and the raw `samples_ms` arrays. If only `import_web_ui` moves,
+check dependency import costs (`python -X importtime ...`). If
+`spawn_to_listen` moves but the import / construct / route-setup slices do not,
+the noise is probably socket scheduling rather than a Web UI implementation
+regression.
 
 ## Future work
 

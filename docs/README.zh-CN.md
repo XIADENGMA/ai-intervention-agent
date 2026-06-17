@@ -9,6 +9,9 @@
 
 - [`configuration.zh-CN.md`](configuration.zh-CN.md) · [`configuration.md`](configuration.md)
   — 完整 TOML 参考（`config.toml`），每个配置项的默认值与热加载语义。
+- [`deployment.zh-CN.md`](deployment.zh-CN.md) · [`deployment.md`](deployment.md)
+  — 本地桌面 profile 与可选 WSGI / 反向代理 profile，包含 SSE
+  缓冲要求和单 worker task queue 约束。
 - [`troubleshooting.zh-CN.md`](troubleshooting.zh-CN.md) · [`troubleshooting.md`](troubleshooting.md)
   — 部署/运行最常见的 9 个问题（端口占用、VS Code 面板空白、
   通知不响、mDNS 异常、「Bark 通知点开是 Bark App 而不是 PWA」等），

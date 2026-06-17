@@ -24,13 +24,14 @@ from ai_intervention_agent.i18n import msg
 from ai_intervention_agent.sse_event_schemas import validate_payload
 
 # R20.8: 直接 import task_queue_singleton 避免拖入 fastmcp/mcp（详见模块注释）。
-from ai_intervention_agent.task_queue import PLACEHOLDER_MAX_LENGTH
+from ai_intervention_agent.task_constants import PLACEHOLDER_MAX_LENGTH
 from ai_intervention_agent.task_queue_singleton import get_task_queue
 from ai_intervention_agent.web_ui_routes._upload_helpers import extract_uploaded_images
 
 if TYPE_CHECKING:
     from flask import Flask
-    from flask_limiter import Limiter
+
+    from ai_intervention_agent.web_ui_rate_limiter import WebUiLimiterProtocol
 
 logger = EnhancedLogger(__name__)
 
@@ -851,15 +852,13 @@ class TaskRoutesMixin:
 
     if TYPE_CHECKING:
         app: Flask
-        limiter: Limiter
+        limiter: WebUiLimiterProtocol
 
     def _setup_task_routes(self) -> None:
         from ai_intervention_agent.web_ui import (
             _get_default_auto_resubmit_timeout_from_config,
             validate_auto_resubmit_timeout,
         )
-
-        _ensure_sse_callback_registered()
 
         @self.app.route("/api/events")
         @self.limiter.limit("300 per minute")

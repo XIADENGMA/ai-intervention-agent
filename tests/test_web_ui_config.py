@@ -2308,8 +2308,9 @@ class TestGetTemplateContext(unittest.TestCase):
         """_get_template_context 返回 Jinja2 所需的全部变量
 
         R20.12-B: 新增 ``inline_locale_json`` 字段（``str | None``），lang=auto 时为
-        ``None`` 让 Jinja 模板的 ``{% if inline_locale_json %}`` 跳过注入。其他字段
-        仍必须是 ``str``，模板用 ``{{ ... }}`` 直接插值不允许 ``None``。
+        ``None`` 让 Jinja 模板的 ``{% if inline_locale_json %}`` 跳过注入。
+        ``locale_versions`` 是给 ``tojson`` 注入的 version map；其他字段仍必须是
+        ``str``，模板用 ``{{ ... }}`` 直接插值不允许 ``None``。
         """
         with self.web_ui.app.test_request_context("/"):
             from flask import g
@@ -2330,9 +2331,18 @@ class TestGetTemplateContext(unittest.TestCase):
         # inline_locale_json 可以是 str 或 None（R20.12-B 契约）；其他 required key
         # 仍必须是 str —— 否则 Jinja 模板插值会抛或输出 "None"。
         nullable_keys = {"inline_locale_json"}
+        json_map_keys = {"locale_versions"}
         for k, v in ctx.items():
             if k in nullable_keys:
                 self.assertIsInstance(v, (str, type(None)))
+            elif k in json_map_keys:
+                self.assertIsInstance(v, dict)
+                self.assertTrue(v)
+                for locale_name, locale_version in v.items():
+                    self.assertIsInstance(locale_name, str)
+                    self.assertIsInstance(locale_version, str)
+                    self.assertTrue(locale_name)
+                    self.assertTrue(locale_version)
             else:
                 self.assertIsInstance(
                     v, str, msg=f"context['{k}'] 必须是 str（实际 {type(v).__name__})"
@@ -3291,6 +3301,40 @@ class TestIsIpAllowedAddressValueError(unittest.TestCase):
         ):
             result = ui._is_ip_allowed("anything")
             self.assertFalse(result)
+
+
+class TestNetworkSecurityLazyLoadManualOverride(unittest.TestCase):
+    def test_manual_non_default_config_survives_lazy_load(self):
+        """手工设置的非默认 network_security_config 不应被 lazy load 覆盖。"""
+        from ai_intervention_agent.web_ui import WebFeedbackUI
+
+        ui = WebFeedbackUI(prompt="manual ns override", port=18931)
+        manual_config = {
+            "bind_interface": "0.0.0.0",
+            "allowed_networks": ["10.10.0.0/16"],
+            "blocked_ips": ["10.10.9.9"],
+            "access_control_enabled": True,
+            "api_token": "manual-token-123456",
+            "api_token_rotated_at": "",
+        }
+        loaded_config = {
+            "bind_interface": "127.0.0.1",
+            "allowed_networks": ["127.0.0.0/8", "::1/128"],
+            "blocked_ips": [],
+            "access_control_enabled": True,
+            "api_token": "",
+            "api_token_rotated_at": "",
+        }
+        ui.network_security_config = dict(manual_config)
+        ui._network_security_config_loaded_from_config = False
+
+        with patch.object(
+            ui, "_load_network_security_config", return_value=loaded_config
+        ):
+            ui._ensure_network_security_config_loaded()
+
+        self.assertEqual(ui.network_security_config, manual_config)
+        self.assertTrue(ui._network_security_config_loaded_from_config)
 
 
 # ──────────────────────────────────────────────────────────
